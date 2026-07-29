@@ -1,3 +1,20 @@
+sobre
+Copyright 2026 The sobre contributors
+
+Licensed under the Apache License, Version 2.0.
+
+================================================================================
+sobre is a derivative work — a reduced hard fork of lean-ctx.
+Substantial portions of the original software have been removed, rewritten or
+restructured. See FORK.md for the statement of changes required by
+Apache-2.0 section 4(b).
+================================================================================
+
+The attribution notices below are reproduced verbatim from the upstream NOTICE
+file, as required by Apache-2.0 section 4(d). They apply to the original work
+from which sobre is derived, and must be retained.
+
+--------------------------------------------------------------------------------
 lean-ctx
 Copyright 2026 Yves Gugger
 
@@ -14,3 +31,8 @@ Third-party contributions:
 - Julien Bodin (jbodin): various improvements
 - Tarek Hamlaoui: various improvements
 - Almario Miano: various improvements
+--------------------------------------------------------------------------------
+
+This product vendors third-party code under permissive licences, including
+rmcp and rmcp-macros (Apache-2.0) under rust/crates/vendor/. The dependency
+licence policy is enforced by rust/deny.toml.

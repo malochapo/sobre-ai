@@ -1,86 +1,20 @@
-target/
-node_modules/
-dist/
-*.tsbuildinfo
-.env
-deploy.sh
-Dockerfile.web
-/src/
-/package.json
-/package-lock.json
-package-lock.json
-/tsconfig.json
-lean-ctx.config.example.json
-INTERNAL_ARCHITECTURE.md
-RELEASE_SUMMARY.md
-aur/
-server.md
+# --- Build ---
+rust/target/
+**/*.rs.bk
+*.pdb
 
-.lean-ctx/
+# --- Internal working documents ---
+# Fork-time reasoning: removal log, tool audit, working rules, publication
+# checklist. Useful to the maintainers, not part of the product.
+docs/removals.md
+docs/tools-audit.md
+docs/working-rules.md
+docs/pre-publication.md
+
+# --- Local scratch ---
+check*.txt
+tools*.txt
+tests*.txt
+rename*.txt
+*.local.toml
 .DS_Store
-DISCORD_POST.md
-DEPLOY_CHECKLIST.md
-
-# ── Discord Bot (private, deployed separately) ──
-discord-bot/
-
-# ── Private workflows ──
-n8n-workflows/
-
-# ── Lab / Neural (private, not for OSS) ──
-
-lab/
-rust/models/
-*.onnx
-*.pt
-
-# ── Private ──
-/cloud/
-docker-compose.yml
-DEVELOPMENT.md
-Makefile.deploy
-PROJECT.md
-memory-bank/
-docs/LEANCTX_CONSOLIDATION_TICKETS.md
-deploy_checklist.md
-
-# ── Business / Monetization (private, internal strategy) ──
-docs/business/
-
-# ── Local artifacts ──
-lean-ctx-chrome-extension.zip
-/docs/_local/
-test-results/
-lean-ctx-report.html
-rust/lean-ctx-report.html
-*.bak
-
-# ── IDE local config (may contain tokens/env) ──
-**/.cursor/
-.vscode/mcp.json
-.github/mcp.json
-*.mcp.json.bak
-# Claude Code per-machine config (absolute binary paths, session-local)
-**/.claude/settings.local.json*
-**/.claude/rules/
-
-# ── Generated / worktrees (local) ──
-website/generated/
-worktrees/website/generated/
-AGENTS.md.lean-ctx.*.bak
-docs/gpt/
-
-# ── Internal strategy (never public) ──
-/THINKERY-VISION.md
-/packages/jetbrains-lean-ctx/build/
-
-# ── Local AI-tooling / scratch dirs (not for OSS) ──
-/tmp/
-tmp/
-markdownai/
-.idea/
-.serena/
-.claude/
-ts-sdk/node_modules/
-.worktrees/
-*.kt

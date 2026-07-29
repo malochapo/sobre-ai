@@ -1,0 +1,144 @@
+# The five invariants
+
+These are not guidelines. They are the definition of the project. A change that
+breaks one of them is out of scope no matter how good it is — and if we ever
+decide to break one, it happens by explicitly amending this file in its own PR,
+never as a side effect of a feature.
+
+Why they are written down: scope grows through individually reasonable
+decisions, and no amount of good judgement stops that on its own. The only
+defence is a rule you cannot argue with case by case.
+
+---
+
+## 1. Twenty tools, and every new one replaces an old one
+
+The MCP tool surface is capped at **20 tools**. There is no exception, no
+"internal" tool that doesn't count, no meta-tool that fans out to a hidden
+registry.
+
+The surface currently stands at 19, leaving one slot. That margin is
+deliberate: a cap you are already touching is a cap you will break.
+
+Adding a tool requires naming the tool it replaces, in the same PR. If nothing
+is being replaced, the answer is no.
+
+> The failure mode this prevents: overlapping families where several tools
+> answer the same question, and the agent spends tokens choosing between them.
+
+## 2. One configuration file, one level, no cascade
+
+- **One** config file. One location. No per-repository init, no per-agent init.
+- **No layering.** No defaults → profile → file → env → flag resolution chain.
+  If a value can come from two places, it comes from one place.
+- **No environment variables that change behaviour.** `SOBRE_*` may exist for
+  paths and secrets. Never for what the tool does.
+- **No profiles**, no presets, no modes.
+- Hard cap: **15 configuration keys.** Adding one requires removing one.
+
+If a setting can be decided correctly by the tool, it is not a setting.
+
+> The failure mode this prevents: a resolution cascade where the effective value
+> of a setting cannot be determined by reading one file.
+
+## 3. One tool surface, always the same one
+
+There is exactly one answer to `tools/list`. It does not depend on an
+environment variable, a config key, a pinned profile, the identity of the
+calling client, a role, or a workflow state.
+
+Corollary: no "universal invoker" tool, because there are no hidden tools for it
+to reach.
+
+> The failure mode this prevents: an agent that cannot rely on a tool being
+> there, and a maintainer who cannot tell which surface a bug report describes.
+
+## 4. One machine, one person, nothing to sell
+
+**`sobre` is 100% local and 100% personal: a tool a developer installs on their
+own workstation.** That is the whole product. Everything below follows from it.
+
+No accounts. No licence checks. No plans, tiers or entitlements. No hosted
+service. No cloud sync. No telemetry — not opt-out, not opt-in, none.
+
+**No shared instance either.** No team server, no org gateway, no multi-user
+mode, no per-person API keys, no storage quotas, no role hierarchy. If a feature
+only makes sense when several people point at the same process, it does not
+belong here.
+
+**No remote data store.** Indexes, memory and caches live in the user's own
+filesystem or in-process. A remote vector database, a Postgres metering table,
+an admin console — all out. Local dense retrieval with an in-process HNSW index
+is fine, including GPU acceleration; the line is whether it needs a service
+someone has to run.
+
+`sobre` makes no network request the user did not ask for.
+
+This invariant is what buys us the right to delete code without asking whether
+it might be monetisable later, or whether some organisation might want it. It is
+load-bearing, and it is the sharpest tool we have against re-growing into what
+we forked away from.
+
+## 5. Subtraction is the default; the line budget is a hard ceiling
+
+Every release must be **smaller than or equal to** the previous one in lines of
+Rust, unless the PR states the exception explicitly and it is accepted.
+
+- Ceiling: **380,000 lines of Rust** under `rust/src`, vendored code excluded.
+- A PR that adds net lines must say so in its description and justify it.
+- "We might need it later" is not a justification. `git revert` exists.
+
+### Where 380,000 comes from
+
+The figure is measured, not chosen. At 491,554 lines in `rust/src`, executing
+**every** removal currently on the table — the tool surface (47,736), `cli/` (~27,100), `proxy/` (26,683),
+`context_kernel` (16,759), `ocla` (10,297), plus `doctor`, `dashboard`,
+`addons` and `lsp` (29,002) — lands at roughly **334,000**. Reaching 180,000
+would mean cutting a further 154,000 out of `core/`, `server/`, `shell/` and
+`hooks/`: the engine itself. A ceiling nobody can reach is a ceiling everybody
+ignores.
+
+380,000 is the realistic target for the scope we chose: the MCP context layer
+**plus** the local compressing proxy. It is a real constraint — about 111,000
+lines below where we stand — and it is one we can actually hold.
+
+### Scope decision behind the number
+
+`proxy/` stays. It is the only part of the system that acts on *all* traffic
+rather than on the tools an agent chooses to call, and it is what makes the
+token claim true rather than aspirational. It runs entirely on the user's
+machine and nobody else connects to it, so it sits inside invariant 4. It also
+carries `shape-xlat`, which is what lets a Claude-shaped client talk to a local
+Ollama — squarely the local-first use case.
+
+If the proxy is ever dropped, this ceiling drops with it, to 330,000.
+
+---
+
+## Process rules (not invariants, but not optional either)
+
+A release cadence is only as good as the stabilisation behind it. These rules
+exist so that shipping often and shipping safely are not in tension.
+
+- `main` is always releasable. Work lands on `develop`.
+- Every release is preceded by a `-rc.N` tag and a **72-hour soak**. No
+  exceptions for "trivial" fixes; trivial fixes are how regressions ship.
+- Branch protection on `main` and `develop`: no direct pushes, review required.
+- **Two maintainers with equal rights, from day one.** A project whose bus
+  factor is 1 has already reproduced the problem it was forking away from.
+- No generated artefacts, marketing material, or private notes in the
+  repository. The repo contains source, tests, docs and CI. Nothing else.
+- **Commit messages and comments describe what `sobre` does and why.** They do
+  not narrate what the upstream project got wrong. The fork is justified by
+  what it is. Technical observations about inherited code belong in the
+  maintainers' private notes, not in a permanent public record that sits
+  directly above the commits of the people it discusses.
+
+---
+
+## Amending this file
+
+Any change here is its own PR, titled `invariant:`, with a written rationale,
+approved by both maintainers. If we find ourselves amending it more than once a
+quarter, the project has failed and we should say so out loud rather than
+quietly widen the rules.
