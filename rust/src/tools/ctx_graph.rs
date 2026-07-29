@@ -31,6 +31,14 @@ pub fn handle(
         "path" => crate::tools::ctx_graph_primitives::shortest_path(path, to, root, format),
         "explain" => crate::tools::ctx_graph_primitives::explain(path, root, format),
         "diff" => crate::tools::ctx_graph_diff::diff(since, root, format),
+        // Two analyses the graph already supports and nothing else exposes.
+        // `entrypoints` — files with no dependents — is the primitive dead-code
+        // detection is built on, so it belongs on the graph tool rather than in
+        // a module only the CLI can reach.
+        "cycles" => crate::tools::impl_architecture::handle("cycles", None, root, format),
+        "entrypoints" => {
+            crate::tools::impl_architecture::handle("entrypoints", None, root, format)
+        }
         _ => "Unknown action. Use: build, related, symbol, impact, status, enrich, context, \
 diagram, neighbors, path, explain, diff"
             .to_string(),
