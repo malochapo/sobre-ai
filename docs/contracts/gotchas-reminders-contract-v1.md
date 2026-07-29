@@ -55,7 +55,6 @@ Configurable via `memory.gotcha` in `.lean-ctx/config.toml` or `MemoryPolicy`:
 max_gotchas_per_project = 100
 retrieval_budget_per_room = 10      # max gotchas returned per category
 default_decay_rate = 0.03
-auto_expire_days = null             # null = no auto-expire
 
 [memory.gotcha.category_decay_overrides]
 security = 0.005                    # security gotchas decay very slowly
@@ -65,7 +64,6 @@ convention = 0.05                   # convention gotchas decay faster
 ## Expiration
 
 - `expires_at`: absolute time after which the gotcha is automatically archived
-- `auto_expire_days` in policy: sets a default TTL for new gotchas (null = no default)
 - `decay_rate_override` per gotcha: overrides the category/default decay rate
 
 ## Retrieval Budgets

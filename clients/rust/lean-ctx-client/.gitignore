@@ -1,2 +1,0 @@
-/target
-# Cargo.lock is committed so standalone boundary checks run with --locked.

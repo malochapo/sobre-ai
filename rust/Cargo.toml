@@ -5,7 +5,6 @@
 [workspace]
 members = [
   ".",
-  "crates/lean-ctx-sdk",
   # Grammar-addon cdylibs (#690, Phase 1c) — one crate per long-tail
   # tree-sitter grammar, built per-platform by grammar-addons.yml and
   # dlopen'd at runtime by core::signatures_ts::grammar_loader. Add a new
@@ -47,11 +46,6 @@ path = "src/lib.rs"
 [[bin]]
 name = "lean-ctx"
 path = "src/main.rs"
-
-[[example]]
-name = "lean-ctx-cloud-api"
-path = "src/cloud_server_main.rs"
-required-features = ["cloud-server"]
 
 [[example]]
 name = "gen_mcp_manifest"
@@ -96,26 +90,18 @@ required-features = ["dev-tools"]
 [features]
 default = [
   "tree-sitter",
-  "embeddings",
   "http-server",
-  "team-server",
-  # Self-hosted org gateway (`lean-ctx gateway init|serve|doctor`): ships by
-  # default like team-server so the documented pilot path works with the
-  # standard binary (Local-Free Invariant — free, no license gate).
-  "gateway-server",
-  # Cross-shape routing Anthropic→OpenAI (enterprise#16): org model aliases
-  # (`acme/fast` → Foundry/vLLM/Ollama) must work from Claude-shaped clients
-  # with the shipped binary, so the pilot path needs no custom build
-  # (enterprise#63; Local-Free Invariant — compile-gated only, no license gate).
-  "shape-xlat",
   "secure-update",
   "jemalloc",
-  # Remote dense backends ship in release binaries so LEANCTX_QDRANT_URL /
-  # LEANCTX_PGVECTOR_URL work out of the box (both are env-gated at runtime).
-  "qdrant",
-  "pgvector",
   "context_kernel",
 ]
+
+# Local dense retrieval: ONNX embeddings + in-process HNSW, with the optional
+# GPU execution providers below. Opt-in rather than default so `cargo install
+# sobre` needs no model download and no ORT runtime preflight before the tool
+# is useful. Invariant: everything under `dense` runs on the user's machine —
+# no external service.
+dense = ["embeddings"]
 jemalloc = ["dep:tikv-jemallocator", "dep:tikv-jemalloc-ctl"]
 dev-tools = []
 no-jail = []
@@ -133,38 +119,10 @@ http-server = [
   "dep:tokio-tungstenite",
   "dep:rustls",
 ]
-qdrant = ["embeddings"]
-pgvector = ["embeddings"]
-team-server = ["http-server"]
-# Self-hostable org gateway (proxy remote-bind + usage store + admin API).
-# LOCAL_OPTIONAL: free, gated by compilation only — never by account/license/plan
-# (Local-Free Invariant; enforcement lives in lean-ctx-enterprise, not here).
-gateway-server = [
-  "http-server",
-  "dep:deadpool-postgres",
-  "dep:tokio-postgres",
-  "dep:tokio-postgres-rustls",
-  "dep:webpki-roots",
-  "dep:hex",
-]
-# N×M shape translation (enterprise#16): Claude clients on OpenAI-shape
-# upstreams (Foundry, vLLM, Ollama…). LOCAL_OPTIONAL: compile-gated only.
 shape-xlat = ["http-server"]
 secure-update = []
 experimental = []
 context_kernel = []
-cloud-server = [
-  "http-server",
-  "dep:deadpool-postgres",
-  "dep:tokio-postgres",
-  "dep:lettre",
-  "dep:jsonwebtoken",
-  "dep:uuid",
-  "dep:hex",
-  "dep:rand",
-  "dep:argon2",
-  "dep:resvg",
-]
 tree-sitter = [
   "dep:tree-sitter",
   "dep:tree-sitter-rust",
@@ -327,34 +285,15 @@ tokio-tungstenite = { version = "0.29", default-features = false, features = [
 # (#597). Default features keep the aws_lc_rs provider available.
 rustls = { version = "0.23", optional = true }
 tower-http = { version = "0.7", features = ["cors", "auth"], optional = true }
-deadpool-postgres = { version = "0.14", optional = true }
-tokio-postgres = { version = "0.7", features = [
-  "with-chrono-0_4",
-  "with-uuid-1",
-  # Evidence/GDPR exports read aggregated rows as jsonb (enterprise#36/#39).
-  "with-serde_json-1",
-], optional = true }
 # Postgres TLS (#54/#58): Azure Database for PostgreSQL enforces TLS — the
 # usage store must speak sslmode=require. Reuses the process rustls provider.
-tokio-postgres-rustls = { version = "0.14", optional = true }
-webpki-roots = { version = "1.0", optional = true }
-lettre = { version = "0.11", default-features = false, features = [
-  "tokio1-rustls-tls",
-  "smtp-transport",
-  "builder",
-], optional = true }
-jsonwebtoken = { version = "10.4", optional = true }
 # Non-optional since GH #727: `kind=skills` document blobs (featureless
 # context_package core) encode zstd bodies as base64 inside the pack JSON.
 base64 = "0.22"
-uuid = { version = "1.23", features = ["v4", "serde"], optional = true }
-hex = { version = "0.4", optional = true }
 hmac = "0.13"
 sha2 = "0.11"
 hkdf = "0.13"
 chacha20poly1305 = "0.10"
-rand = { version = "0.10", optional = true }
-argon2 = { version = "0.5", optional = true }
 glob = "0.3"
 urlencoding = "2.1"
 ratatui = "0.30"
@@ -380,7 +319,6 @@ memmap2 = "0.9"
 lsp-types = "0.97"
 fs2 = "0.4"
 unicode-width = "0.2"
-resvg = { version = "0.47", optional = true }
 wasmi = { version = "1.1", optional = true }
 gethostname = "1.1"
 yaml_serde = "0.10.4"
@@ -388,6 +326,12 @@ semver = "1.0.28"
 
 [lints.rust]
 unreachable_pub = "warn"
+# sobre: dead code is an error, not a warning. Upstream accumulated ~15k lines
+# of never-referenced modules partly because `pub mod` in a library crate is
+# public API, so rustc never lints it, and partly because a module-level
+# `#![allow(dead_code)]` silenced a 900-line island in proxy/. Flip to "warn"
+# if a green build proves too noisy — but flip it back.
+dead_code = "deny"
 # CI coverage (cargo-tarpaulin) injects `--cfg tarpaulin`; declare it to avoid
 # `-D unexpected_cfgs` failures when using `cfg_attr(tarpaulin, ...)`.
 unexpected_cfgs = { level = "warn", check-cfg = ["cfg(tarpaulin)"] }
