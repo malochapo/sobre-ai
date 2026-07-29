@@ -23,3 +23,7 @@ rename*.txt
 /w.txt
 *.local.toml
 .DS_Store
+
+# Throwaway build logs / scratch
+_scratch/
+*.buildlog.txt
