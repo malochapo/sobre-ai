@@ -7,7 +7,7 @@ use crate::server::tool_trait::{
 };
 use crate::tool_defs::tool_def;
 
-pub struct CtxEditTool;
+pub(crate) struct CtxEditTool;
 
 impl McpTool for CtxEditTool {
     fn name(&self) -> &'static str {

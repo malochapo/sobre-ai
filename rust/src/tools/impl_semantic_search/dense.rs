@@ -4,11 +4,8 @@
 use std::path::Path;
 
 use crate::core::bm25_index::BM25Index;
-use crate::core::embedding_index::EmbeddingIndex;
 #[cfg(feature = "embeddings")]
 use crate::core::embeddings::EmbeddingEngine;
-use crate::core::hnsw::FlatEmbeddings;
-use crate::core::hybrid_search::{HybridConfig, format_hybrid_results};
 
 #[allow(clippy::wildcard_imports)]
 use super::*;
@@ -204,12 +201,12 @@ pub(crate) fn hybrid_search_mode(
 }
 
 pub(crate) fn dense_search_mode(
-    query: &str,
-    root: &Path,
-    index: &BM25Index,
-    top_k: usize,
-    compact: bool,
-    filter: &SearchFilter,
+    _query: &str,
+    _root: &Path,
+    _index: &BM25Index,
+    _top_k: usize,
+    _compact: bool,
+    _filter: &SearchFilter,
 ) -> String {
     #[cfg(feature = "embeddings")]
     {

@@ -116,33 +116,6 @@ pub struct ProxyState {
 }
 
 impl ProxyState {
-    /// Test-only construction for modules outside `proxy` (the cookie store
-    /// field is deliberately `pub(crate)`-narrow): default upstreams, fresh
-    /// stats, the given MCP registry. Gated with the sole consumer
-    /// (`gateway_server::mcp::e2e_tests`) so feature-reduced builds don't
-    /// carry dead test scaffolding.
-    #[cfg(all(test, feature = "gateway-server"))]
-    pub(crate) fn for_tests(mcp_servers: Vec<crate::core::config::ResolvedMcpServer>) -> Self {
-        // Dropping the sender is fine: handlers only `borrow()` the last value.
-        let (_tx, rx) = tokio::sync::watch::channel(Arc::new(Upstreams {
-            anthropic: "https://api.anthropic.com".into(),
-            openai: "https://api.openai.com".into(),
-            chatgpt: "https://chatgpt.com".into(),
-            gemini: "https://generativelanguage.googleapis.com".into(),
-            providers: Vec::new(),
-        }));
-        Self {
-            client: reqwest::Client::new(),
-            port: 0,
-            stats: Arc::new(ProxyStats::default()),
-            introspect: Arc::new(introspect::IntrospectState::default()),
-            ocla_cache: None,
-            upstreams: rx,
-            chatgpt_cookies: chatgpt_cookies::shared_chatgpt_cloudflare_cookie_store(),
-            mcp_servers: Arc::new(mcp_servers),
-        }
-    }
-
     /// Consistent snapshot of all upstreams for the current request/response.
     pub fn upstream_snapshot(&self) -> Arc<Upstreams> {
         self.upstreams.borrow().clone()
@@ -551,9 +524,7 @@ pub async fn start_proxy_with_token(port: u16, auth_token: Option<String>) -> an
         mcp_servers: mcp_servers.clone(),
     };
 
-    // `mut` is only exercised by the gateway-server merge below.
-    #[cfg_attr(not(feature = "gateway-server"), allow(unused_mut))]
-    let mut app = Router::new()
+    let app = Router::new()
         .route("/health", get(health))
         .route("/status", get(status_handler))
         .route("/v1/messages", any(anthropic::handler))
@@ -608,27 +579,6 @@ pub async fn start_proxy_with_token(port: u16, auth_token: Option<String>) -> an
         // speaking its declared wire shape. New provider = config, not code.
         .route("/providers/{id}/{*rest}", any(providers::handler))
         .fallback(fallback_router);
-
-    // Personal usage view (enterprise#64): `/me` shell + guarded `/api/me/*`.
-    // Merged before the guard layers so host_guard and auth wrap it too; the
-    // shell paths themselves are exempted inside `proxy_auth_guard`.
-    #[cfg(feature = "gateway-server")]
-    {
-        app = app.merge(crate::gateway_server::user_api::router());
-    }
-
-    // Governed MCP reverse proxy (GL#91/#100): `/mcp/{server}` fronts the
-    // `[[gateway_server.mcp_servers]]` registry. Registered before the guard
-    // layers, so the same Bearer auth + host allowlist + rate limit wrap the
-    // tool channel — and `/mcp/*` is not a provider route, so the loopback
-    // provider-key fallback never authenticates it.
-    #[cfg(feature = "gateway-server")]
-    {
-        use crate::gateway_server::mcp::proxy::handler as mcp_handler;
-        app = app
-            .route("/mcp/{server}", any(mcp_handler))
-            .route("/mcp/{server}/", any(mcp_handler));
-    }
 
     let mut app = app
         .layer(axum::middleware::from_fn(move |req, next| {
@@ -1042,16 +992,8 @@ fn attach_gateway_tags(req: &mut axum::extract::Request, mut tags: gateway_ident
 /// The personal view's static shell (`/me` + assets) renders without a key —
 /// like the admin console's login screen, every number behind it comes from
 /// the guarded `/api/me/usage`. Compiled out with the `gateway-server` feature.
-fn me_shell_path(path: &str) -> bool {
-    #[cfg(feature = "gateway-server")]
-    {
-        crate::gateway_server::user_api::is_shell_path(path)
-    }
-    #[cfg(not(feature = "gateway-server"))]
-    {
-        let _ = path;
-        false
-    }
+fn me_shell_path(_path: &str) -> bool {
+    false
 }
 
 fn has_provider_api_key(req: &axum::extract::Request) -> bool {

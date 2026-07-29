@@ -113,17 +113,6 @@ fn is_provider_route_registry_providers() {
     assert!(!is_provider_route("/api/providers/x"));
 }
 
-#[cfg(feature = "gateway-server")]
-#[test]
-fn me_shell_is_public_but_data_api_stays_guarded() {
-    // enterprise#64: the personal view's static shell renders without a key
-    // (login screen); the data API and all LLM routes remain guarded.
-    assert!(me_shell_path("/me"));
-    assert!(me_shell_path("/me/static/me.js"));
-    assert!(!me_shell_path("/api/me/usage"));
-    assert!(!me_shell_path("/v1/messages"));
-}
-
 fn build_request(headers: &[(&str, &str)], path: &str) -> axum::extract::Request {
     let mut builder = axum::http::Request::builder().uri(path);
     for (k, v) in headers {

@@ -54,7 +54,7 @@ pub(in crate::cli::dispatch) fn cmd_gain(rest: &[String]) {
         .unwrap_or(10);
 
 
-    let open = rest.iter().any(|a| a == "--open");
+    let _open = rest.iter().any(|a| a == "--open");
 
     if rest.iter().any(|a| a == "--no-cache-adjust") {
         core::context_overhead::set_no_cache_adjust(true);

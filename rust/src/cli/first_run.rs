@@ -17,7 +17,7 @@ fn first_run_marker() -> Option<std::path::PathBuf> {
 /// after setup. Marker-guarded so re-running `setup` never repeats it. Stays silent (but
 /// still marks done) when there is too little history to be meaningful, so it never nags.
 /// Reads only local shell history and prints aggregate estimates — never command contents.
-pub fn show_first_run_wow() {
+pub(crate) fn show_first_run_wow() {
     let Some(marker) = first_run_marker() else {
         return;
     };
@@ -81,7 +81,7 @@ pub fn show_first_run_wow() {
     println!();
 }
 
-pub fn cmd_ghost(args: &[String]) {
+pub(crate) fn cmd_ghost(args: &[String]) {
     let json = args.iter().any(|a| a == "--json");
 
     let history = load_shell_history();

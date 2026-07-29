@@ -5,7 +5,7 @@ use std::fmt::Write;
 use std::path::Path;
 
 use crate::core::bm25_index::{BM25Index, format_search_results};
-use crate::core::hybrid_search::{HybridConfig, HybridResult, format_hybrid_results};
+use crate::core::hybrid_search::{HybridResult, format_hybrid_results};
 
 #[allow(clippy::wildcard_imports)]
 use super::*;
@@ -125,7 +125,7 @@ pub(crate) fn workspace_search(
     mode: &str,
 ) -> String {
     let linked = crate::core::workspace_config::load_linked_projects(root);
-    let mut warnings = linked.warnings;
+    let warnings = linked.warnings;
 
     let mut roots: Vec<std::path::PathBuf> = vec![root.to_path_buf()];
     roots.extend(linked.roots);
@@ -133,8 +133,8 @@ pub(crate) fn workspace_search(
     roots.dedup();
 
     let mut per_project: Vec<(String, Vec<HybridResult>)> = Vec::new();
-    let mut avg_cov: Option<f64> = None;
-    let mut cov_count = 0usize;
+    let avg_cov: Option<f64> = None;
+    let cov_count = 0usize;
 
     for r in &roots {
         let label = label_for_root(r);

@@ -129,9 +129,7 @@ fn features() -> Value {
         "semantic_search": cfg!(feature = "embeddings"),
         "http_server": cfg!(feature = "http-server"),
         "wasm_runtime": cfg!(feature = "wasm"),
-        "gateway_server": cfg!(feature = "gateway-server"),
         "shape_translation": cfg!(feature = "shape-xlat"),
-        "team_server": cfg!(feature = "team-server"),
     })
 }
 

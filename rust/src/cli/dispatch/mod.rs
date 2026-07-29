@@ -1,5 +1,5 @@
 use crate::{
-    core, doctor, heatmap, hook_handlers, report, setup, shell, status, token_report, uninstall,
+    core, doctor, hook_handlers, report, setup, shell, status, uninstall,
 };
 
 mod analytics;

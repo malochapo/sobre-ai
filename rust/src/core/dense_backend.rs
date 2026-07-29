@@ -1,8 +1,4 @@
-use std::path::Path;
 
-use crate::core::bm25_index::BM25Index;
-use crate::core::hnsw::FlatEmbeddings;
-use crate::core::hybrid_search::{DenseSearchResult, HybridConfig, HybridResult};
 
 /// Which dense backend served a query.
 ///
@@ -282,34 +278,6 @@ mod tests {
 
         let err = DenseBackendKind::try_from_env().unwrap_err();
         assert!(err.contains("Unknown LEANCTX_DENSE_BACKEND"));
-
-        restore_env("LEANCTX_DENSE_BACKEND", old_backend);
-        restore_env("LEANCTX_QDRANT_URL", old_url);
-    }
-
-    #[cfg(not(feature = "qdrant"))]
-    #[test]
-    fn dense_backend_qdrant_requires_feature() {
-        let _g = crate::core::data_dir::test_env_lock();
-        let old_backend = set_env("LEANCTX_DENSE_BACKEND", Some("qdrant"));
-        let old_url = set_env("LEANCTX_QDRANT_URL", None);
-
-        let err = DenseBackendKind::try_from_env().unwrap_err();
-        assert!(err.contains("feature 'qdrant' is not enabled"));
-
-        restore_env("LEANCTX_DENSE_BACKEND", old_backend);
-        restore_env("LEANCTX_QDRANT_URL", old_url);
-    }
-
-    #[cfg(not(feature = "pgvector"))]
-    #[test]
-    fn dense_backend_pgvector_requires_feature() {
-        let _g = crate::core::data_dir::test_env_lock();
-        let old_backend = set_env("LEANCTX_DENSE_BACKEND", Some("pgvector"));
-        let old_url = set_env("LEANCTX_QDRANT_URL", None);
-
-        let err = DenseBackendKind::try_from_env().unwrap_err();
-        assert!(err.contains("feature 'pgvector' is not enabled"));
 
         restore_env("LEANCTX_DENSE_BACKEND", old_backend);
         restore_env("LEANCTX_QDRANT_URL", old_url);

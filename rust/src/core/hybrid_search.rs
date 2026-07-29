@@ -12,7 +12,6 @@
 use std::collections::HashMap;
 
 use super::bm25_index::{BM25Index, ChunkKind, SearchResult};
-use super::hnsw::FlatEmbeddings;
 
 #[cfg(feature = "embeddings")]
 use super::embeddings::EmbeddingEngine;

@@ -1,27 +1,13 @@
-use std::collections::HashSet;
-use std::sync::MutexGuard;
-use std::time::{Duration, Instant};
 
 use axum::body::Body;
 use axum::http::{Request, StatusCode, header};
 use chrono::Utc;
-use ed25519_dalek::SigningKey;
 use lean_ctx::core::a2a::dlq::{DeadLetter, DeadLetterQueue};
-use lean_ctx::core::context_capsule::{
-    CONTEXT_CAPSULE_SCHEMA_VERSION, CapsuleReferenceKindV1, CapsuleSensitivityV1,
-    ContextCapsuleBudgetV1, ContextCapsuleChainV1, ContextCapsuleReferenceV1, ContextCapsuleV1,
-    SignedContextCapsuleV1,
-};
 use lean_ctx::core::ocla::budget::{BudgetLedger, BudgetLimit, BudgetScope};
 use lean_ctx::core::ocla::capsule::CapsuleStore;
-use lean_ctx::core::ocla::health::{HealthStatus, check_system_health};
-use lean_ctx::core::ocla::response_cache::{CachedResponse, ResponseCache, ResponseCacheKey};
-use lean_ctx::core::ocla::routing_quality::{
-    RoutingDecision, RoutingOutcome, RoutingQualityTracker,
-};
+use lean_ctx::core::ocla::health::check_system_health;
 use lean_ctx::core::ocla::tracing::{SpanStatus, spans_for_trace, start_span};
 use lean_ctx::core::ocla::wire_api::ocla_router;
-use lean_ctx::core::{agents::AgentRegistry, savings_ledger};
 use serde_json::Value;
 use tower::ServiceExt;
 

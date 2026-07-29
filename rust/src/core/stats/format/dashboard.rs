@@ -232,7 +232,7 @@ pub fn format_gain_footer() -> String {
 }
 
 #[allow(clippy::many_single_char_names)] // ANSI formatting: t=theme, r=reset, b=bold, d=dim
-fn gain_dashboard(t: &Theme, tick: Option<u64>, with_footer: bool) -> String {
+fn gain_dashboard(t: &Theme, _tick: Option<u64>, with_footer: bool) -> String {
     // Aggregate across split data dirs (#500) — see `format_gain_hero_themed`.
     let store = crate::core::stats::load_for_display();
     let mut out = Vec::new();
