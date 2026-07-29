@@ -262,7 +262,7 @@ pub static COMMAND_TREE: &[CommandNode] = &[
     },
     CommandNode {
         name: "terse",
-        aliases: &["compression"],
+        aliases: &[],
         description: "Set compression level",
         subcommands: &[],
         flags: &[],
@@ -481,7 +481,7 @@ pub static COMMAND_TREE: &[CommandNode] = &[
     },
     CommandNode {
         name: "gotchas",
-        aliases: &["bugs"],
+        aliases: &[],
         description: "Show known gotchas",
         subcommands: &[],
         flags: &[],
@@ -609,8 +609,17 @@ pub static COMMAND_TREE: &[CommandNode] = &[
         hidden: false,
     },
     CommandNode {
-        name: "addon",
-        aliases: &["addons", "plugin", "plugins"],
+        name: "plugins",
+        aliases: &[],
+        description: "Manage plugins",
+        subcommands: &[],
+        flags: &[],
+        positional: None,
+        hidden: false,
+    },
+    CommandNode {
+        name: "addons",
+        aliases: &[],
         description: "Manage addons",
         subcommands: &[
             CommandNode {
@@ -665,7 +674,7 @@ pub static COMMAND_TREE: &[CommandNode] = &[
     },
     CommandNode {
         name: "verify-cache",
-        aliases: &["cache-selftest"],
+        aliases: &[],
         description: "Verify cache consistency",
         subcommands: &[],
         flags: &[],
@@ -692,7 +701,7 @@ pub static COMMAND_TREE: &[CommandNode] = &[
     },
     CommandNode {
         name: "semantic-search",
-        aliases: &["search-code"],
+        aliases: &[],
         description: "Semantic code search",
         subcommands: &[],
         flags: &[],
@@ -967,7 +976,7 @@ pub static COMMAND_TREE: &[CommandNode] = &[
     },
     CommandNode {
         name: "token-report",
-        aliases: &["report-tokens"],
+        aliases: &[],
         description: "Token usage report",
         subcommands: &[],
         flags: &[],

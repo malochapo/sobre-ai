@@ -43,7 +43,7 @@ pub fn run() {
         let rest = args[2..].to_vec();
 
         match args[1].as_str() {
-            "-c" | "exec" => handle_exec(&args, &rest),
+            "exec" => handle_exec(&args, &rest),
             "-t" | "--track" => handle_track(&args),
             "shell" | "--shell" => {
                 shell::interactive();
@@ -65,7 +65,7 @@ pub fn run() {
                 cmd_learning(&rest);
                 return;
             }
-            "conformance" | "selftest" => {
+            "conformance" => {
                 cmd_conformance(&rest);
                 return;
             }
@@ -92,7 +92,7 @@ pub fn run() {
                 super::cmd_output_savings(&rest);
                 return;
             }
-            "token-report" | "report-tokens" => {
+            "token-report" => {
                 let code = token_report::run_cli(&rest);
                 if code != 0 {
                     std::process::exit(code);
@@ -107,11 +107,11 @@ pub fn run() {
                 crate::cli::cmd_policy(&rest);
                 return;
             }
-            "plugin" | "plugins" => {
+            "plugins" => {
                 crate::cli::plugin_cmd::cmd_plugin(&rest);
                 return;
             }
-            "addon" | "addons" => {
+            "addons" => {
                 crate::cli::addon_cmd::cmd_addon(&rest);
                 return;
             }
@@ -119,7 +119,7 @@ pub fn run() {
                 crate::cli::embeddings_cmd::cmd_embeddings(&rest);
                 return;
             }
-            "enable-gpu" | "gpu" => {
+            "enable-gpu" => {
                 core::updater::enable_gpu(&rest);
                 return;
             }
@@ -143,7 +143,7 @@ pub fn run() {
                 crate::cli::eval_cmd::cmd_eval(&rest);
                 return;
             }
-            "verify-cache" | "cache-selftest" => {
+            "verify-cache" => {
                 let code = crate::cli::verify_cache_cmd::cmd_verify_cache(&rest);
                 if code != 0 {
                     std::process::exit(code);
@@ -178,7 +178,7 @@ pub fn run() {
                 crate::cli::cmd_index(&rest);
                 return;
             }
-            "semantic-search" | "search-code" => {
+            "semantic-search" => {
                 crate::cli::cmd_semantic_search(&rest);
                 core::stats::flush();
                 return;
@@ -188,7 +188,7 @@ pub fn run() {
                 core::stats::flush();
                 return;
             }
-            "repomap" | "repo-map" => {
+            "repomap" => {
                 crate::cli::cmd_repomap(&rest);
                 core::stats::flush();
                 return;
@@ -331,15 +331,15 @@ pub fn run() {
                 super::cmd_ocla(&rest);
                 return;
             }
-            "control" | "context-control" => {
+            "control" => {
                 super::cmd_control(&rest);
                 return;
             }
-            "plan" | "context-plan" => {
+            "plan" => {
                 super::cmd_plan(&rest);
                 return;
             }
-            "compile" | "context-compile" => {
+            "compile" => {
                 super::cmd_compile(&rest);
                 return;
             }
@@ -367,7 +367,7 @@ pub fn run() {
                 eprintln!("'lean-ctx wrapped' has been removed. Use: lean-ctx gain --wrapped");
                 std::process::exit(1);
             }
-            "sessions" | "session-store" => {
+            "sessions" => {
                 super::cmd_sessions(&rest);
                 return;
             }
@@ -414,7 +414,7 @@ pub fn run() {
                 super::cmd_yolo(&rest);
                 return;
             }
-            "secure" | "lockdown" => {
+            "secure" => {
                 super::cmd_secure(&rest);
                 return;
             }
@@ -446,7 +446,7 @@ pub fn run() {
                 super::cmd_tee(&rest);
                 return;
             }
-            "terse" | "compression" => {
+            "terse" => {
                 super::cmd_compression(&rest);
                 return;
             }
@@ -524,7 +524,7 @@ pub fn run() {
                 super::completions::run___complete(&rest);
                 return;
             }
-            "gotchas" | "bugs" => {
+            "gotchas" => {
                 super::gotchas_cmd::cmd_gotchas(&rest);
                 return;
             }
@@ -569,7 +569,7 @@ pub fn run() {
                 }
                 return;
             }
-            "report-issue" | "report" => {
+            "report-issue" => {
                 report::run(&rest);
                 return;
             }
@@ -590,12 +590,12 @@ pub fn run() {
             // The old "bypass" wording read to a model like a *security* bypass,
             // but this only skips compression — the shell allowlist and path jail
             // still apply (GH security audit, finding 5).
-            "raw" | "bypass" => handle_raw(&args, &rest),
-            "safety-levels" | "safety" => {
+            "raw" => handle_raw(&args, &rest),
+            "safety-levels" => {
                 println!("{}", core::compression_safety::format_safety_table());
                 return;
             }
-            "cheat" | "cheatsheet" | "cheat-sheet" => {
+            "cheat" => {
                 super::cmd_cheatsheet();
                 return;
             }
