@@ -1,56 +1,12 @@
+//! First-run experience and the `ghost` report.
+//!
+//! Both used to live in `discover_cmd.rs` alongside the `discover` command.
+//! `setup` calls `show_first_run_wow` once after install, and `ghost` is its
+//! own dispatch arm — neither has anything to do with the command the file was
+//! named after.
+
 use super::common::load_shell_history;
 
-pub fn cmd_discover(args: &[String]) {
-    let history = load_shell_history();
-    if history.is_empty() {
-        println!("No shell history found.");
-        return;
-    }
-
-    let result = crate::tools::impl_discover::analyze_history(&history, 20);
-
-    if let Some(path) = card_target(args) {
-        match std::fs::write(
-            &path,
-            crate::tools::impl_discover::render_before_card(&result),
-        ) {
-            Ok(()) => println!(
-                "Before-card written to {path}\n\
-                 Share it, or run `lean-ctx gain --wrapped` after a week for your real numbers."
-            ),
-            Err(e) => {
-                eprintln!("Failed to write {path}: {e}");
-                std::process::exit(1);
-            }
-        }
-        return;
-    }
-
-    println!("{}", crate::tools::impl_discover::format_cli_output(&result));
-}
-
-/// Resolves the `--card[=<path>]` output path for the shareable "before" SVG, or `None`
-/// when not requested. A bare `--card` defaults to `lean-ctx-before.svg`.
-fn card_target(args: &[String]) -> Option<String> {
-    let mut requested = false;
-    let mut path: Option<String> = None;
-    for (i, a) in args.iter().enumerate() {
-        if let Some(v) = a.strip_prefix("--card=") {
-            requested = true;
-            path = Some(v.to_string());
-        } else if a == "--card" {
-            requested = true;
-            if let Some(next) = args.get(i + 1)
-                && !next.starts_with('-')
-            {
-                path = Some(next.clone());
-            }
-        }
-    }
-    requested.then(|| path.unwrap_or_else(|| "lean-ctx-before.svg".to_string()))
-}
-
-/// Path of the marker recording that the first-run "aha" was already shown.
 fn first_run_marker() -> Option<std::path::PathBuf> {
     crate::core::paths::cache_dir()
         .ok()

@@ -99,10 +99,6 @@ pub fn run() {
                 }
                 return;
             }
-            "pack" => {
-                crate::cli::cmd_pack(&rest);
-                return;
-            }
             "policy" => {
                 crate::cli::cmd_policy(&rest);
                 return;
@@ -127,16 +123,8 @@ pub fn run() {
                 crate::cli::rules_cmd::cmd_rules(&rest);
                 return;
             }
-            "proof" => {
-                crate::cli::cmd_proof(&rest);
-                return;
-            }
             "snapshot" => {
                 crate::cli::cmd_snapshot(&rest);
-                return;
-            }
-            "verify" => {
-                crate::cli::cmd_verify(&rest);
                 return;
             }
             "eval" => {
@@ -176,16 +164,6 @@ pub fn run() {
             }
             "index" => {
                 crate::cli::cmd_index(&rest);
-                return;
-            }
-            "semantic-search" => {
-                crate::cli::cmd_semantic_search(&rest);
-                core::stats::flush();
-                return;
-            }
-            "explore" => {
-                crate::cli::explore_cmd::cmd_explore(&rest);
-                core::stats::flush();
                 return;
             }
             "repomap" => {
@@ -295,10 +273,6 @@ pub fn run() {
                 core::tool_lifecycle::flush_all();
                 return;
             }
-            "discover" => {
-                super::cmd_discover(&rest);
-                return;
-            }
             "ghost" => {
                 super::cmd_ghost(&rest);
                 return;
@@ -331,36 +305,8 @@ pub fn run() {
                 super::cmd_ocla(&rest);
                 return;
             }
-            "control" => {
-                super::cmd_control(&rest);
-                return;
-            }
-            "plan" => {
-                super::cmd_plan(&rest);
-                return;
-            }
-            "compile" => {
-                super::cmd_compile(&rest);
-                return;
-            }
             "knowledge" => {
                 super::cmd_knowledge(&rest);
-                return;
-            }
-            "skillify" => {
-                super::cmd_skillify(&rest);
-                return;
-            }
-            "summary" => {
-                super::cmd_summary(&rest);
-                return;
-            }
-            "overview" => {
-                super::cmd_overview(&rest);
-                return;
-            }
-            "compress" => {
-                super::cmd_compress(&rest);
                 return;
             }
             "wrapped" => {

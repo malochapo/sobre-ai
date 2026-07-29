@@ -1,0 +1,85 @@
+﻿cargo : warning: linker stdout: Création de la bibliothèque 
+D:\Users\malom\sobre-ai\rust\target\debug\deps\rmcp_macros-479c3cb9d151d4df.dll.lib et de l'objet 
+D:\Users\malom\sobre-ai\rust\target\debug\deps\rmcp_macros-479c3cb9d151d4df.dll.exp
+Au caractère Ligne:3 : 8
++ $out = cargo check --all-targets --message-format short 2>&1 | Out-St ...
++        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (warning: linker...151d4df.dll.exp:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+warning: `rmcp-macros` (lib) generated 1 warning
+   Compiling lean-ctx v3.9.12 (D:\Users\malom\sobre-ai\rust)
+src\cli\mod.rs:57:16: error[E0432]: unresolved import `compress_cmd`: use of unresolved module or unlinked crate 
+`compress_cmd`
+src\cli\mod.rs:59:16: error[E0432]: unresolved import `context_cmd`: use of unresolved module or unlinked crate 
+`context_cmd`
+src\cli\mod.rs:72:16: error[E0432]: unresolved import `overview_cmd`: use of unresolved module or unlinked crate 
+`overview_cmd`
+src\cli\mod.rs:73:16: error[E0432]: unresolved import `pack_cmd`: use of unresolved module or unlinked crate `pack_cmd`
+src\cli\mod.rs:76:16: error[E0432]: unresolved import `proof_cmd`: use of unresolved module or unlinked crate 
+`proof_cmd`
+src\cli\mod.rs:81:16: error[E0432]: unresolved import `semantic_search_cmd`: use of unresolved module or unlinked 
+crate `semantic_search_cmd`
+src\cli\mod.rs:84:16: error[E0432]: unresolved import `skillify_cmd`: use of unresolved module or unlinked crate 
+`skillify_cmd`
+src\cli\mod.rs:86:16: error[E0432]: unresolved import `summary_cmd`: use of unresolved module or unlinked crate 
+`summary_cmd`
+src\cli\mod.rs:91:16: error[E0432]: unresolved import `verify_cmd`: use of unresolved module or unlinked crate 
+`verify_cmd`
+src\cli\addon_deps.rs:41:28: error[E0433]: cannot find `pack_remote` in `super`: could not find `pack_remote` in 
+`super`
+src\cli\addon_deps.rs:104:18: error[E0433]: cannot find `pack_remote` in `super`: could not find `pack_remote` in 
+`super`
+src\cli\dispatch\analytics\gain.rs:293:32: error[E0433]: cannot find `impl_discover` in `tools`: could not find 
+`impl_discover` in `tools`
+src\cli\dispatch\mod.rs:277:24: error[E0425]: cannot find function `cmd_ghost` in module `super`
+src\setup\mod.rs:690:17: error[E0425]: cannot find function `show_first_run_wow` in module `crate::cli`: not found in 
+`crate::cli`
+src\setup\mod.rs:781:17: error[E0425]: cannot find function `show_first_run_wow` in module `crate::cli`: not found in 
+`crate::cli`
+src\core\dense_backend.rs:1:5: warning: unused import: `std::path::Path`
+src\core\dense_backend.rs:3:5: warning: unused import: `crate::core::bm25_index::BM25Index`
+src\core\dense_backend.rs:4:5: warning: unused import: `crate::core::hnsw::FlatEmbeddings`
+src\core\dense_backend.rs:5:34: warning: unused imports: `DenseSearchResult`, `HybridConfig`, and `HybridResult`
+src\core\hybrid_search.rs:15:5: warning: unused import: `super::hnsw::FlatEmbeddings`
+src\core\dense_backend.rs:290:15: warning: unexpected `cfg` condition value: `qdrant`
+src\core\dense_backend.rs:304:15: warning: unexpected `cfg` condition value: `pgvector`
+src\core\server_capabilities.rs:132:32: warning: unexpected `cfg` condition value: `gateway-server`
+src\core\server_capabilities.rs:134:29: warning: unexpected `cfg` condition value: `team-server`
+src\tools\ctx_knowledge\embeddings.rs:5:5: warning: unused import: `super::*`
+src\tools\impl_semantic_search\dense.rs:7:5: warning: unused import: `crate::core::embedding_index::EmbeddingIndex`
+src\tools\impl_semantic_search\dense.rs:10:5: warning: unused import: `crate::core::hnsw::FlatEmbeddings`
+src\tools\impl_semantic_search\dense.rs:11:34: warning: unused imports: `HybridConfig` and `format_hybrid_results`
+src\tools\impl_semantic_search\multi_root.rs:8:34: warning: unused import: `HybridConfig`
+src\proxy\mod.rs:124:21: warning: unexpected `cfg` condition value: `gateway-server`
+src\proxy\mod.rs:555:20: warning: unexpected `cfg` condition value: `gateway-server`
+src\proxy\mod.rs:615:11: warning: unexpected `cfg` condition value: `gateway-server`
+src\proxy\mod.rs:625:11: warning: unexpected `cfg` condition value: `gateway-server`
+src\proxy\mod.rs:1046:11: warning: unexpected `cfg` condition value: `gateway-server`
+src\proxy\mod.rs:1050:15: warning: unexpected `cfg` condition value: `gateway-server`
+src\proxy\auth_tests.rs:116:7: warning: unexpected `cfg` condition value: `gateway-server`
+src\core\stats\format\dashboard.rs:235:30: warning: unused variable: `tick`: help: if this is intentional, prefix it 
+with an underscore: `_tick`
+src\tools\impl_semantic_search\dense.rs:207:5: warning: unused variable: `query`: help: if this is intentional, prefix 
+it with an underscore: `_query`
+src\tools\impl_semantic_search\dense.rs:208:5: warning: unused variable: `root`: help: if this is intentional, prefix 
+it with an underscore: `_root`
+src\tools\impl_semantic_search\dense.rs:209:5: warning: unused variable: `index`: help: if this is intentional, prefix 
+it with an underscore: `_index`
+src\tools\impl_semantic_search\dense.rs:210:5: warning: unused variable: `top_k`: help: if this is intentional, prefix 
+it with an underscore: `_top_k`
+src\tools\impl_semantic_search\dense.rs:211:5: warning: unused variable: `compact`: help: if this is intentional, 
+prefix it with an underscore: `_compact`
+src\tools\impl_semantic_search\dense.rs:212:5: warning: unused variable: `filter`: help: if this is intentional, 
+prefix it with an underscore: `_filter`
+src\tools\impl_semantic_search\multi_root.rs:128:9: warning: variable does not need to be mutable
+src\tools\impl_semantic_search\multi_root.rs:136:9: warning: variable does not need to be mutable
+src\tools\impl_semantic_search\multi_root.rs:137:9: warning: variable does not need to be mutable
+src\cli\dispatch\analytics\gain.rs:57:9: warning: unused variable: `open`: help: if this is intentional, prefix it 
+with an underscore: `_open`
+warning: `lean-ctx` (lib) generated 29 warnings (2 duplicates)
+error: could not compile `lean-ctx` (lib) due to 15 previous errors; 29 warnings emitted
+warning: build failed, waiting for other jobs to finish...
+warning: `lean-ctx` (lib test) generated 32 warnings (27 duplicates)
+error: could not compile `lean-ctx` (lib test) due to 15 previous errors; 32 warnings emitted
+
