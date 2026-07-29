@@ -19,5 +19,6 @@ check*.txt
 tools*.txt
 tests*.txt
 rename*.txt
+/t*.txt
 *.local.toml
 .DS_Store

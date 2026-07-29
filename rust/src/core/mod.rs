@@ -8,7 +8,6 @@ pub mod auto_findings;
 pub mod codebook;
 #[cfg(target_os = "macos")]
 pub mod codesign;
-pub mod compress_preview;
 pub mod compression_safety;
 pub mod compressor;
 pub mod datadog_push;
@@ -153,7 +152,6 @@ pub mod context {
 // ---------------------------------------------------------------------------
 // Domain: Knowledge
 // ---------------------------------------------------------------------------
-pub mod claim_extractor;
 pub mod cognition_loop;
 pub mod cognition_scheduler;
 pub mod knowledge;
@@ -170,7 +168,6 @@ pub mod knowledge_relations;
 
 /// Convenience re-export: all knowledge-related modules.
 pub mod knowledge_domain {
-    pub use super::claim_extractor;
     pub use super::cognition_loop;
     pub use super::knowledge;
     pub use super::knowledge_bridge;
@@ -200,7 +197,6 @@ pub mod embeddings;
 pub mod energy;
 pub mod hybrid_search;
 pub mod search_reranking;
-pub mod semantic_chunks;
 pub mod splade_retrieval;
 pub mod spreading_activation;
 
@@ -213,7 +209,6 @@ pub mod search {
     pub use super::embeddings;
     pub use super::hybrid_search;
     pub use super::search_reranking;
-    pub use super::semantic_chunks;
     pub use super::splade_retrieval;
 }
 
@@ -312,7 +307,6 @@ pub mod setup_report;
 pub mod slo;
 pub mod slow_log;
 pub mod smells;
-pub mod subagent_contract;
 pub mod surprise;
 pub mod verification_observability;
 
@@ -321,7 +315,6 @@ pub mod verification_observability;
 // ---------------------------------------------------------------------------
 pub mod active_inference;
 pub mod agent_budget;
-pub mod agent_lease;
 pub mod anchor;
 pub mod ann_cache;
 pub mod atomic_fs;
@@ -356,7 +349,6 @@ pub mod error;
 pub mod events;
 pub mod eviction_orchestrator;
 pub mod evidence;
-pub mod evidence_ledger;
 pub mod extension_registry;
 pub mod extractors;
 pub mod feedback;
@@ -383,7 +375,6 @@ pub mod ocla_bus;
 pub mod quality_benchmark;
 pub mod qubo_select;
 
-pub mod agent_registry;
 pub mod compliance;
 pub mod compliance_report;
 pub mod edit_metering;
@@ -469,7 +460,6 @@ pub mod security_posture;
 pub mod sensitivity;
 pub mod server_capabilities;
 pub mod session_token;
-pub mod share;
 pub mod shell_allowlist;
 pub mod startup_guard;
 pub mod stats;
@@ -487,7 +477,6 @@ pub mod telemetry;
 pub mod terse;
 pub mod theme;
 pub mod threshold_learning;
-pub mod tokenizer_translation_driver;
 pub mod text_similarity;
 pub mod tokens;
 pub mod tool_health;

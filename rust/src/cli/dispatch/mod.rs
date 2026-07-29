@@ -53,14 +53,6 @@ pub fn run() {
                 cmd_gain(&rest);
                 return;
             }
-            "spend" => {
-                cmd_spend(&rest);
-                return;
-            }
-            "savings" => {
-                cmd_savings(&rest);
-                return;
-            }
             "learning" => {
                 cmd_learning(&rest);
                 return;
@@ -76,27 +68,10 @@ pub fn run() {
                 }
                 return;
             }
-            "finops" => {
-                cmd_finops(&rest);
-                return;
-            }
-            "roi" => {
-                // Local ROI is individual + free. The team roll-up lives on its own
-                // surface (`savings team` / the web account), not under `roi`.
-                super::cmd_roi(&rest);
-                return;
-            }
             "output-savings" | "output_savings" => {
                 // #895 Track B: measured (A/B holdout) or estimated output-token
                 // reduction. Local + free, like `roi`.
                 super::cmd_output_savings(&rest);
-                return;
-            }
-            "token-report" => {
-                let code = token_report::run_cli(&rest);
-                if code != 0 {
-                    std::process::exit(code);
-                }
                 return;
             }
             "policy" => {
@@ -152,10 +127,6 @@ pub fn run() {
             }
             "compliance" => {
                 crate::cli::cmd_compliance(&rest);
-                return;
-            }
-            "agent" => {
-                crate::cli::cmd_agent(&rest);
                 return;
             }
             "instructions" => {
@@ -281,10 +252,6 @@ pub fn run() {
                 super::cmd_filter(&rest);
                 return;
             }
-            "heatmap" => {
-                heatmap::cmd_heatmap(&rest);
-                return;
-            }
             "graph" => {
                 cmd_graph(&rest);
                 return;
@@ -297,10 +264,6 @@ pub fn run() {
                 super::cmd_session_action(&rest);
                 return;
             }
-            "ledger" => {
-                super::cmd_ledger(&rest);
-                return;
-            }
             "ocla" => {
                 super::cmd_ocla(&rest);
                 return;
@@ -309,16 +272,8 @@ pub fn run() {
                 super::cmd_knowledge(&rest);
                 return;
             }
-            "wrapped" => {
-                eprintln!("'lean-ctx wrapped' has been removed. Use: lean-ctx gain --wrapped");
-                std::process::exit(1);
-            }
             "sessions" => {
                 super::cmd_sessions(&rest);
-                return;
-            }
-            "benchmark" => {
-                super::cmd_benchmark(&rest);
                 return;
             }
             "compact" => {
@@ -370,10 +325,6 @@ pub fn run() {
             }
             "untrust" => {
                 super::cmd_untrust(&rest);
-                return;
-            }
-            "stats" => {
-                super::cmd_stats(&rest);
                 return;
             }
             "introspect" => {
