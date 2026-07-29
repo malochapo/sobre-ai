@@ -1,16 +1,9 @@
-//! LLM reverse proxy — the core of the **Gateway pillar**.
+//! Local LLM reverse proxy.
 //!
-//! Intercepts Anthropic, OpenAI, Gemini and ChatGPT traffic, compresses
-//! prompts, meters usage, and optionally translates request shapes.
-//!
-//! # Cross-pillar coupling
-//!
-//! When the `gateway-server` feature is active, `start_proxy` mounts
-//! `gateway_server::user_api` and `gateway_server::mcp::proxy` routes into
-//! the Axum router. This is intentional: the self-hosted org gateway is a
-//! single process that combines the proxy with the admin/usage store.
-//! The dependency is feature-gated and uni-directional at the route level
-//! (proxy owns the router, gateway_server provides route handlers).
+//! Intercepts Anthropic, OpenAI, Gemini and ChatGPT traffic on loopback,
+//! compresses prompts, records usage locally, and optionally translates
+//! request shapes (`shape-xlat`) so a Claude-shaped client can reach an
+//! OpenAI-shaped upstream such as a local Ollama.
 
 pub mod anthropic;
 #[cfg(test)]
@@ -52,7 +45,6 @@ pub mod openai;
 pub mod openai_responses;
 pub mod openai_responses_ws;
 pub mod output_savings;
-pub mod pii;
 pub mod policy_gate;
 pub mod prefix_cache_stats;
 pub mod prefix_replay;
@@ -108,11 +100,6 @@ pub struct ProxyState {
     /// ChatGPT WebSocket passthrough replays the same clearance to chatgpt.com
     /// that the reqwest rail accumulated (#597).
     pub(crate) chatgpt_cookies: Arc<chatgpt_cookies::ChatGptCloudflareCookieStore>,
-    /// Resolved `[[gateway_server.mcp_servers]]` registry snapshot (GL#100).
-    /// Empty when none are registered; the `/mcp/{server}` routes are only
-    /// mounted with the `gateway-server` feature. Startup snapshot, restart
-    /// to reload — the same lifecycle as `gateway-keys.toml`.
-    pub mcp_servers: Arc<Vec<crate::core::config::ResolvedMcpServer>>,
 }
 
 impl ProxyState {
@@ -504,15 +491,6 @@ pub async fn start_proxy_with_token(port: u16, auth_token: Option<String>) -> an
         providers: initial_providers,
     } = initial;
 
-    // Governed MCP reverse proxy registry (GL#91/#100): resolved once at
-    // startup (restart to reload — the gateway-keys.toml lifecycle). The
-    // `/mcp/{server}` routes are mounted below with the gateway-server
-    // feature; the snapshot lives in ProxyState either way.
-    let mcp_servers = Arc::new(
-        cfg.gateway_server
-            .resolve_mcp_servers(cfg.proxy.allows_insecure_http_upstream()),
-    );
-
     let state = ProxyState {
         client,
         port,
@@ -521,7 +499,6 @@ pub async fn start_proxy_with_token(port: u16, auth_token: Option<String>) -> an
         ocla_cache: None,
         upstreams: upstream_rx,
         chatgpt_cookies,
-        mcp_servers: mcp_servers.clone(),
     };
 
     let app = Router::new()
@@ -672,18 +649,6 @@ pub async fn start_proxy_with_token(port: u16, auth_token: Option<String>) -> an
             p.shape.as_str(),
             if p.api_key_env.is_some() {
                 ", gateway-held key"
-            } else {
-                ""
-            }
-        );
-    }
-    for s in mcp_servers.iter() {
-        println!(
-            "  MCP:       any  /mcp/{} → {} (observed{})",
-            s.id,
-            s.url,
-            if s.auth_env.is_some() {
-                ", gateway-held credential"
             } else {
                 ""
             }
@@ -975,14 +940,6 @@ fn attach_gateway_tags(req: &mut axum::extract::Request, mut tags: gateway_ident
         .filter(|p| !p.is_empty() && p.len() <= 128 && !p.chars().any(char::is_control))
     {
         tags.project = Some(project.to_string());
-    }
-    // GDPR pseudonymization (enterprise#39): applied at this single
-    // choke-point, so budgets, usage rows, dashboards and logs only ever see
-    // the pseudonym. No-op unless [gateway_server].pseudonymize_persons.
-    if let Some(person) = tags.person.as_deref()
-        && pii::enabled()
-    {
-        tags.person = Some(pii::pseudonymize(person));
     }
     if !tags.is_empty() {
         req.extensions_mut().insert(tags);
