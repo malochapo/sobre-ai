@@ -40,7 +40,7 @@ pub fn handle(
             crate::tools::impl_architecture::handle("entrypoints", None, root, format)
         }
         _ => "Unknown action. Use: build, related, symbol, impact, status, enrich, context, \
-diagram, neighbors, path, explain, diff"
+diagram, neighbors, path, explain, diff, cycles, entrypoints"
             .to_string(),
     }
 }

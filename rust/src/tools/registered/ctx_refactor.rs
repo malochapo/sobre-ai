@@ -17,7 +17,7 @@ impl McpTool for CtxRefactorTool {
             "ctx_refactor",
             "Rename, move, safe_delete, inline, read-only analyses via LSP/IDE.\n\
              WORKFLOW: use action=references first to find usages before refactoring.\n\
-             ANTIPATTERN: not for symbol discovery — use ctx_symbol/ctx_compose.\n\
+             ANTIPATTERN: not for symbol discovery — use ctx_search action=symbol or ctx_compose.\n\
              Single-phase edits (replace_symbol_body, reformat) work headless via name_path.\n\
              Two-phase ops (_preview+_apply) need JetBrains IDE (else BACKEND_REQUIRED).\n\
              Conflicts blocked unless force=true. See `action` parameter for full list.",

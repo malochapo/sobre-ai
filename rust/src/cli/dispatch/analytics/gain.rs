@@ -144,12 +144,12 @@ pub(in crate::cli::dispatch) fn cmd_gain(rest: &[String]) {
 }
 
 /// `gain --cost` values savings with a *resolved* model (estimated). When the
-/// proxy has recorded real provider usage, point at the measured `spend` view so
-/// the user knows the exact bill is one command away.
+/// proxy has recorded real provider usage, point at the dashboard's usage
+/// breakdown, which reports the measured per-model bill from `proxy_usage.json`.
 fn print_measured_spend_hint() {
     if !crate::proxy::usage_meter::persisted_snapshot().is_empty() {
         eprintln!(
-            "\n  \x1b[2m💡 Measured provider spend available — run `lean-ctx spend` for the real per-model bill.\x1b[0m"
+            "\n  \x1b[2m💡 Measured provider spend available — open `sobre dashboard` for the real per-model bill.\x1b[0m"
         );
     }
 }

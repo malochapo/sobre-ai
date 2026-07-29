@@ -27,7 +27,7 @@ impl McpTool for CtxGraphTool {
                 "properties": {
                     "action": {
                         "type": "string",
-                        "description": "build|related|symbol|impact|status|enrich|context|diagram|neighbors|path|explain|diff"
+                        "description": "build|related|symbol|impact|status|enrich|context|diagram|neighbors|path|explain|diff|cycles|entrypoints"
                     },
                     "path": {
                         "type": "string",

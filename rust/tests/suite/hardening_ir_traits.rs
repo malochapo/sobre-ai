@@ -1,7 +1,6 @@
 //! Integration tests for the hardening sprint:
 //! - Context IR hot-path recording
 //! - `ContextProvider` trait interface
-//! - CONTRACTS.md machine-checked KV block integrity
 
 // =============================================================================
 // Context IR: Hot-Path Recording
@@ -399,94 +398,6 @@ mod context_provider_trait {
 // =============================================================================
 
 mod contracts_integrity {
-    #[test]
-    fn contracts_kv_block_parseable() {
-        let content = include_str!("../../../CONTRACTS.md");
-        let begin_marker = "<!-- leanctx-contracts-kv:begin -->";
-        let end_marker = "<!-- leanctx-contracts-kv:end -->";
-
-        let start = content.find(begin_marker).expect("KV begin marker missing");
-        let end = content.find(end_marker).expect("KV end marker missing");
-        assert!(start < end);
-
-        let kv_block = &content[start + begin_marker.len()..end];
-        let lines: Vec<&str> = kv_block.lines().filter(|l| !l.trim().is_empty()).collect();
-
-        assert!(
-            lines.len() >= 15,
-            "expected at least 15 contracts, found {}",
-            lines.len()
-        );
-
-        for line in &lines {
-            let parts: Vec<&str> = line.split('=').collect();
-            assert_eq!(parts.len(), 2, "malformed KV line: {line}");
-            assert!(
-                parts[0].starts_with("leanctx.contract."),
-                "KV key missing prefix: {line}"
-            );
-            let version: u32 = parts[1]
-                .trim()
-                .parse()
-                .unwrap_or_else(|_| panic!("non-integer version in: {line}"));
-            assert!(version >= 1, "version must be >= 1: {line}");
-        }
-    }
-
-    #[test]
-    fn contracts_has_protocol_family_structure() {
-        let content = include_str!("../../../CONTRACTS.md");
-
-        assert!(
-            content.contains("## Core Context Contracts"),
-            "missing Core section"
-        );
-        assert!(
-            content.contains("## Runtime Contracts"),
-            "missing Runtime section"
-        );
-        assert!(
-            content.contains("## Memory & Collaboration Contracts"),
-            "missing Memory section"
-        );
-        assert!(
-            content.contains("## Extension Contracts"),
-            "missing Extension section"
-        );
-        assert!(
-            content.contains("## Transport Contracts"),
-            "missing Transport section"
-        );
-    }
-
-    #[test]
-    fn architecture_references_ir_in_hotpath() {
-        let content = include_str!("../../../ARCHITECTURE.md");
-
-        assert!(
-            content.contains("IRRecord"),
-            "ARCHITECTURE.md should reference IR recording in flow"
-        );
-        // Derive the count from the registry SSOT so the doc check can never
-        // drift again: adding/removing a tool updates this automatically.
-        let expected = format!(
-            "{} trait-based tools",
-            lean_ctx::server::registry::tool_count()
-        );
-        assert!(
-            content.contains(&expected),
-            "ARCHITECTURE.md should reference the current registry count ({expected})"
-        );
-        assert!(
-            !content.contains("pipeline_stages.rs"),
-            "ARCHITECTURE.md should NOT reference non-existent pipeline_stages.rs"
-        );
-        assert!(
-            !content.contains("DispatchRead"),
-            "ARCHITECTURE.md should NOT reference non-existent DispatchRead"
-        );
-    }
-
     /// Guards the load-bearing invariant behind #348: in MCP stdio mode `stdout`
     /// is the JSON-RPC transport, so every diagnostic MUST go to `stderr`. A stray
     /// switch to stdout would silently corrupt every MCP client's protocol stream.

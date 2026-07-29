@@ -259,6 +259,13 @@ fn step_lateral_synthesis(knowledge: &ProjectKnowledge, graph: &mut KnowledgeRel
             {
                 continue;
             }
+            // Empty-valued facts have no content to relate. text_similarity
+            // treats two empty strings as identical (1.0) — correct for the
+            // dedup/merge caller, wrong here, where it would cross-link every
+            // empty fact. Skip them explicitly.
+            if a.value.trim().is_empty() || b.value.trim().is_empty() {
+                continue;
+            }
             let sim = crate::core::text_similarity::token_jaccard(&a.value, &b.value);
             if sim >= LATERAL_SIM_THRESHOLD {
                 let from = KnowledgeNodeRef::new(&a.category, &a.key);

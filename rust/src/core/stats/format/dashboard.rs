@@ -286,7 +286,7 @@ fn gain_dashboard(t: &Theme, _tick: Option<u64>, with_footer: bool) -> String {
             format!(
                 "\n{dim}⚠ {} savings events (~{} tokens) ARE in the ledger but not in stats.json —{rst}\
                  \n{dim}  the MCP server likely writes to a different data dir than this CLI.{rst}\
-                 \n{dim}  Inspect: lean-ctx savings   ·   Diagnose: lean-ctx doctor{rst}",
+                 \n{dim}  Inspect: sobre gain   ·   Diagnose: sobre doctor{rst}",
                 ledger.total_events,
                 crate::core::wrapped::format_tokens(ledger.saved_tokens),
             )

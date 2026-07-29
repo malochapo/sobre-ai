@@ -82,7 +82,7 @@ SAFETY (env vars):
 
 MORE:
     lean-ctx help all              Full command reference (every subcommand)
-    lean-ctx cheatsheet            Workflow cheat sheet for AI agents
+    lean-ctx cheat                 Workflow cheat sheet for AI agents
 
 WEBSITE: https://leanctx.com
 GITHUB:  https://github.com/yvgude/lean-ctx
@@ -176,7 +176,7 @@ COMMANDS:
     benchmark report [path]        Generate shareable Markdown report
     benchmark compare [--output F] Head-to-head comparison vs competitors
     benchmark scorecard [--json]   Reproducible savings+recall+latency scorecard
-    cheatsheet                     Command cheat sheet & workflow quick reference
+    cheat                          Command cheat sheet & workflow quick reference
     onboard                        Zero-prompt golden path: connect tools + sensible defaults
     setup                          Guided setup: shell + editor + verify (full control)
     install                        Alias for setup; install --repair = non-interactive refresh

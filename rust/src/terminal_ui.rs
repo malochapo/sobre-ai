@@ -157,10 +157,10 @@ pub fn print_command_box() {
         "  {dim}│{rst}  {cmd}{bold}lean-ctx dashboard{rst}   {m}Web analytics (browser){rst}        {dim}│{rst}"
     );
     println!(
-        "  {dim}│{rst}  {cmd}{bold}lean-ctx heatmap{rst}     {m}Project context heat map{rst}        {dim}│{rst}"
+        "  {dim}│{rst}  {cmd}{bold}lean-ctx gain{rst}        {m}Token savings report{rst}            {dim}│{rst}"
     );
     println!(
-        "  {dim}│{rst}  {cmd}{bold}lean-ctx benchmark{rst}   {m}Test compression quality{rst}        {dim}│{rst}"
+        "  {dim}│{rst}  {cmd}{bold}lean-ctx doctor{rst}      {m}Diagnose the install{rst}            {dim}│{rst}"
     );
     println!(
         "  {dim}│{rst}  {cmd}{bold}lean-ctx config{rst}      {m}Edit settings{rst}                   {dim}│{rst}"

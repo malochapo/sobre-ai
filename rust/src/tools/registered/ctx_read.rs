@@ -79,7 +79,7 @@ impl McpTool for CtxReadTool {
             let root = crate::core::multi_repo::resolve_repo_root(&repo).ok_or_else(|| {
                 let known = crate::core::multi_repo::known_aliases().join(", ");
                 let known = if known.is_empty() {
-                    "none registered — use ctx_multi_repo add_root".to_string()
+                    "none registered — add repos under [multi_repo] in the config".to_string()
                 } else {
                     known
                 };

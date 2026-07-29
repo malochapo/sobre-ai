@@ -1,14 +1,9 @@
-//! Hosted-registry installs for `lean-ctx pack` (GL #406, GH #727).
+//! Depth-1 install of an addon's declared dependencies.
 //!
-//! `pack install <ns>/<name>` / `pack update <ns>/<name>`: version resolution
-//! against the registry index, sha256-verified download, the standard local
-//! import gates, lockfile pinning — and depth-1 resolution of the declared
-//! dependencies so one install command yields a complete, reproducible set.
-
-// Inlined from the removed `pack_cmd`: these three helpers were its only
-// remaining consumers. `pack_remote` is reached from `addon_deps` — it
-// installs an addon's declared dependencies, which is why it outlives the
-// `pack` command it was named after.
+//! Reached from `addon_deps`: version resolution against the registry index,
+//! sha256-verified download, the standard local import gates and lockfile
+//! pinning, so one install yields a complete, reproducible set. Named after the
+//! removed `pack` command it was extracted from; only this entry point survives.
 
 
 /// Install every non-optional declared dependency in `deps` (declared by the
