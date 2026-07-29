@@ -81,7 +81,7 @@ pub(super) fn measure(home: &std::path::Path, project: &std::path::Path) -> Over
     // live knowledge + session state, so it reflects what this install actually
     // re-injects rather than a static estimate.
     let wakeup =
-        crate::tools::ctx_overview::build_wakeup_briefing(&project.to_string_lossy(), None);
+        crate::tools::impl_overview::build_wakeup_briefing(&project.to_string_lossy(), None);
 
     let budget_tokens = cfg.context_budget_tokens_effective();
 

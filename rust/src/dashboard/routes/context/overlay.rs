@@ -33,7 +33,7 @@ fn control() -> (&'static str, &'static str, String) {
         "action".to_string(),
         serde_json::Value::String("list".to_string()),
     );
-    let result = crate::tools::ctx_control::handle(Some(&args), &mut ledger, &mut overlays);
+    let result = crate::tools::impl_control::handle(Some(&args), &mut ledger, &mut overlays);
     ledger.save();
     let _ = overlays.save_project(&std::path::PathBuf::from(&project_root));
     let payload = serde_json::json!({
@@ -50,7 +50,7 @@ fn handles() -> (&'static str, &'static str, String) {
     let policies = crate::core::context_policies::PolicySet::load_project(
         &std::path::PathBuf::from(&project_root),
     );
-    let candidates = crate::tools::ctx_plan::plan_to_candidates(&ledger, &policies);
+    let candidates = crate::tools::impl_plan::plan_to_candidates(&ledger, &policies);
     let mut registry = crate::core::context_handles::HandleRegistry::new();
     for c in &candidates {
         if c.state == crate::core::context_field::ContextState::Excluded {
@@ -86,7 +86,7 @@ fn plan() -> (&'static str, &'static str, String) {
     let policies = crate::core::context_policies::PolicySet::load_project(
         &std::path::PathBuf::from(&project_root),
     );
-    let text = crate::tools::ctx_plan::handle(None, &ledger, &policies);
+    let text = crate::tools::impl_plan::handle(None, &ledger, &policies);
     let payload = serde_json::json!({ "plan": text });
     let json = serde_json::to_string(&payload).unwrap_or_else(|_| "{}".to_string());
     ("200 OK", "application/json", json)
@@ -231,7 +231,7 @@ fn post_overlay(body: &str) -> (&'static str, &'static str, String) {
         args.insert("value".into(), serde_json::Value::String(val_str));
     }
 
-    let _result = crate::tools::ctx_control::handle(Some(&args), &mut ledger, &mut overlays);
+    let _result = crate::tools::impl_control::handle(Some(&args), &mut ledger, &mut overlays);
     ledger.save();
     if let Err(e) = overlays.save_project(&root_path) {
         return (

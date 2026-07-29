@@ -110,7 +110,7 @@ pub const LOCAL_OPTIONAL_FEATURES: &[&str] = &[
 
 /// Commercial-plane capabilities — additive, opt-in, and never required for any
 /// local feature. Compiled in via opt-in Cargo features.
-pub const COMMERCIAL_PLANE_FEATURES: &[&str] = &["team_server", "cloud_server"];
+pub const COMMERCIAL_PLANE_FEATURES: &[&str] = &[];
 
 /// Always-on capabilities plus compiled-in feature flags. Booleans reflect what
 /// this binary can actually do.
@@ -132,7 +132,6 @@ fn features() -> Value {
         "gateway_server": cfg!(feature = "gateway-server"),
         "shape_translation": cfg!(feature = "shape-xlat"),
         "team_server": cfg!(feature = "team-server"),
-        "cloud_server": cfg!(feature = "cloud-server"),
     })
 }
 

@@ -124,7 +124,6 @@ impl Config {
         }
         override_if_ne!(default.slow_command_threshold_ms, slow_command_threshold_ms);
         override_if_ne!(default.theme, theme);
-        override_if_false!(buddy_enabled);
         override_if_false!(enable_wakeup_ctx);
         extend_if_nonempty!(redirect_exclude);
         extend_if_nonempty!(disabled_tools);

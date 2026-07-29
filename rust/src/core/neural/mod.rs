@@ -6,7 +6,6 @@
 
 pub mod attention_learned;
 pub mod cache_alignment;
-pub mod context_reorder;
 pub mod line_scorer;
 pub mod token_optimizer;
 

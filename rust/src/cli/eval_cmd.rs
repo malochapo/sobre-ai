@@ -2,23 +2,17 @@
 //!
 //! Subcommands:
 //! * `eval init <dir>`     — scaffold a runnable starter suite (one QA + one code task).
-//! * `eval ab --suite P`   — run the A/B comparison and write a signed, reproducible artifact.
-//! * `eval verify <file>`  — verify an artifact's signature + determinism digest offline.
+//! * `eval ab --suite P`   — run the A/B comparison and render the report.
 
 use std::path::{Path, PathBuf};
 
-use crate::core::eval_ab::artifact::{self, SignedAbReportV1};
 use crate::core::eval_ab::footprint::{
     Footprint, FootprintConfig, FootprintReport, run_footprint_ab,
 };
 use crate::core::eval_ab::model::{ModelRunner, OpenAiRunner, RecordedRunner, RecordingRunner};
 use crate::core::eval_ab::report::ReportConfig;
 use crate::core::eval_ab::suite::EvalSuite;
-use crate::core::eval_ab::testbench::lockfile::TestbenchLock;
-use crate::core::eval_ab::testbench::{self, TestbenchConfig, TestbenchReport, findings};
 use crate::core::eval_ab::{AbRunConfig, run_ab};
-use crate::core::ocla::registry::OclaRegistry;
-use crate::core::ocla::types::{ExperimentRequest, OclaRequestContext};
 
 /// Entry point dispatched from `cli::dispatch`.
 pub fn cmd_eval(args: &[String]) {
@@ -30,9 +24,6 @@ pub fn cmd_eval(args: &[String]) {
     match args.first().map(String::as_str) {
         Some("ab") => cmd_ab(&args[1..]),
         Some("footprint" | "delta") => cmd_footprint(&args[1..]),
-        Some("routing") => cmd_routing(&args[1..]),
-        Some("testbench") => cmd_testbench(&args[1..]),
-        Some("verify") => cmd_verify(&args[1..]),
         Some("init") => cmd_init(&args[1..]),
         Some("-h" | "--help") | None => print_help(),
         Some(other) => {
@@ -49,15 +40,12 @@ fn print_help() {
 USAGE:\n\
   lean-ctx eval init <dir>                 Scaffold a runnable starter suite\n\
   lean-ctx eval ab --suite <file> [opts]   Run the A/B quality comparison\n\
-  lean-ctx eval footprint --suite <f> [o]  Ablate lean-ctx's OWN injected context (#959)\n\
-  lean-ctx eval routing --suite <f> [o]    Router off-vs-on rate-card savings proof\n\
-  lean-ctx eval testbench --lock <f> [o]   Off-vs-on across pinned real repos (#611)\n\
-  lean-ctx eval verify <artifact.json>     Verify signature + determinism digest\n\n\
+  lean-ctx eval footprint --suite <f> [o]  Ablate the tool's OWN injected context\n\n\
 ab OPTIONS:\n\
   --suite <file>     NDJSON suite (required)\n\
   --budget <n>       Token budget per condition (default 4000)\n\
   --margin <f>       Non-inferiority margin for the gate (default 0.0)\n\
-  --out <file>       Artifact path (default: data dir)\n\
+  --out <file>       Write the JSON report here (optional)\n\
   --replay <file>    Replay a recording instead of calling a live model (deterministic CI)\n\
   --record <file>    Call the live model and save responses to a recording\n\
   --gate             Exit non-zero if the verdict is a regression\n\n\
@@ -68,20 +56,6 @@ footprint OPTIONS (also: `eval --delta`):\n\
   --replay <file>    Replay a recording (deterministic); --record to capture live\n\
   --json             Emit the full JSON report instead of the side-by-side table\n\
   --gate             Exit non-zero if any injected element is actively harmful\n\n\
-routing OPTIONS:\n\
-  --suite <file>     NDJSON suite of real task prompts (required)\n\
-  --requested <m>    Model the off-arm assumes (default: [proxy.baseline].reference_model)\n\
-  --json             Emit the full JSON report instead of the table\n\
-  --gate             Exit non-zero if routing downgraded premium work\n\
-  Rules come from [proxy.routing] in config.toml — the deployment's live rule set.\n\n\
-testbench OPTIONS:\n\
-  --lock <file>      Pinned-repo lockfile (default eval/testbench/testbench.lock.json)\n\
-  --out <dir>        Output dir for FINDINGS.md + regressions.json (default testbench-out)\n\
-  --cache <dir>      Clone cache for remote repos (default <out>/cache)\n\
-  --budget <n>       Token budget per condition (default 4000)\n\
-  --margin <f>       Non-inferiority margin for the per-repo gate (default 0.0)\n\
-  --replay <file>    Replay a recording (deterministic CI); --record to capture live\n\
-  --gate             Exit non-zero if any repo regressed\n\n\
 LIVE MODEL (when not replaying) is read from the environment:\n\
   LEAN_CTX_EVAL_MODEL_URL   OpenAI-compatible base URL (e.g. https://api.openai.com/v1)\n\
   LEAN_CTX_EVAL_MODEL       Model id (e.g. gpt-4o-mini)\n\
@@ -164,34 +138,29 @@ fn cmd_ab(args: &[String]) {
         }
     };
 
-    // Sign + persist the artifact.
-    let agent_id = crate::core::agent_identity::current_agent_id().to_string();
-    let mut signed = SignedAbReportV1::from_report(report, &agent_id);
-    if let Err(e) = signed.sign(&agent_id) {
-        eprintln!("eval ab: signing failed: {e}");
-        std::process::exit(1);
-    }
-    let out = match flag_value(args, "--out") {
-        Some(p) => PathBuf::from(p),
-        None => match artifact::default_artifact_path() {
-            Ok(p) => p,
+    // sobre: no ed25519 attestation. The report is the deliverable; the CI
+    // gate reads the verdict directly instead of a signed artifact.
+    if let Some(path) = flag_value(args, "--out") {
+        match serde_json::to_string_pretty(&report) {
+            Ok(json) => {
+                if let Err(e) = std::fs::write(path, json) {
+                    eprintln!("eval ab: writing {path}: {e}");
+                    std::process::exit(1);
+                }
+                println!("report written to {path}");
+            }
             Err(e) => {
-                eprintln!("eval ab: {e}");
+                eprintln!("eval ab: serializing report: {e}");
                 std::process::exit(1);
             }
-        },
-    };
-    if let Err(e) = artifact::write_artifact(&signed, &out) {
-        eprintln!("eval ab: {e}");
-        std::process::exit(1);
+        }
     }
 
-    println!("{}", signed.report.render());
-    println!("determinism digest: {}", signed.determinism_digest);
-    println!("artifact:           {}", out.display());
+    println!("{}", report.render());
 
-    if has_flag(args, "--gate") && !signed.verdict.gate_passes() {
-        eprintln!("\nquality gate FAILED: {}", signed.verdict.label());
+    if has_flag(args, "--gate") && !report.verdict.gate_passes() {
+        eprintln!("
+quality gate FAILED: {}", report.verdict.label());
         std::process::exit(1);
     }
 }
@@ -207,61 +176,6 @@ fn run_or_exit(
         Err(e) => {
             eprintln!("eval ab: run failed: {e:#}");
             std::process::exit(1);
-        }
-    }
-}
-
-/// `eval routing`: off-vs-on rate-card savings proof for the active router
-/// (enterprise#13/#21). Runs the deployment's `[proxy.routing]` rules and the
-/// production intent classifier over a suite's real prompts, priced from the
-/// shared pricing table; gates on "premium is never downgraded".
-fn cmd_routing(args: &[String]) {
-    let Some(suite_path) = flag_value(args, "--suite") else {
-        eprintln!("eval routing: --suite <file> is required");
-        std::process::exit(2);
-    };
-    let suite_path = PathBuf::from(suite_path);
-    if let Err(e) = EvalSuite::load(&suite_path) {
-        eprintln!("eval routing: {e:#}");
-        std::process::exit(1);
-    }
-    let suite_name = suite_path
-        .file_name()
-        .map_or_else(|| "suite".to_string(), |s| s.to_string_lossy().into_owned());
-
-    let request = ExperimentRequest {
-        context: OclaRequestContext {
-            request_id: format!("eval-routing:{suite_name}"),
-            session_id: "cli:eval-routing".into(),
-            agent_id: crate::core::agent_identity::current_agent_id().to_string(),
-            content_ref: suite_path.to_string_lossy().into_owned(),
-            tenant_id: None,
-            trace_id: "tr-unit".into(),
-        },
-        experiment_ref: suite_path.to_string_lossy().into_owned(),
-        cohort_ref: "cohort:routing-eval".into(),
-    };
-    let result = match OclaRegistry::global()
-        .experiment_runner
-        .run_experiment(request)
-    {
-        Ok(result) => result,
-        Err(e) => {
-            eprintln!("eval routing: {e:#}");
-            std::process::exit(1);
-        }
-    };
-
-    if has_flag(args, "--json") {
-        println!(
-            "{}",
-            serde_json::to_string_pretty(&result).expect("experiment result serializes")
-        );
-    } else {
-        println!("routing experiment: {}", result.experiment_ref);
-        println!("outcome ref:         {}", result.outcome_ref);
-        if let Some(rollback_ref) = result.rollback_ref {
-            println!("rollback ref:        {rollback_ref}");
         }
     }
 }
@@ -398,142 +312,6 @@ fn default_footprint_path() -> Result<PathBuf, String> {
     std::fs::create_dir_all(&dir).map_err(|e| format!("mkdir eval: {e}"))?;
     let stamp = chrono::Utc::now().format("%Y%m%dT%H%M%SZ");
     Ok(dir.join(format!("footprint-report-v1_{stamp}.json")))
-}
-
-/// `eval testbench`: run the off-vs-on answer-quality benchmark across every pinned
-/// repo in a lockfile, write `FINDINGS.md` + `regressions.json`, and (with `--gate`)
-/// fail the build if any repo regressed (#611).
-fn cmd_testbench(args: &[String]) {
-    let lock_path = flag_value(args, "--lock").map_or_else(
-        || PathBuf::from("eval/testbench/testbench.lock.json"),
-        PathBuf::from,
-    );
-    let lock = match TestbenchLock::load(&lock_path) {
-        Ok(l) => l,
-        Err(e) => {
-            eprintln!("eval testbench: {e:#}\n(use --lock <file> to point at a lockfile)");
-            std::process::exit(1);
-        }
-    };
-
-    let out_dir =
-        flag_value(args, "--out").map_or_else(|| PathBuf::from("testbench-out"), PathBuf::from);
-    let cache_dir =
-        flag_value(args, "--cache").map_or_else(|| out_dir.join("cache"), PathBuf::from);
-
-    let mut cfg = TestbenchConfig::default();
-    if let Some(b) = flag_value(args, "--budget").and_then(|v| v.parse().ok()) {
-        cfg.run.budget_tokens = b;
-    }
-    cfg.run.report = ReportConfig {
-        noninferiority_margin: flag_value(args, "--margin")
-            .and_then(|v| v.parse().ok())
-            .unwrap_or(0.0),
-        ..ReportConfig::default()
-    };
-
-    let report = if let Some(replay) = flag_value(args, "--replay") {
-        let runner = match RecordedRunner::from_file(Path::new(replay)) {
-            Ok(r) => r,
-            Err(e) => {
-                eprintln!("eval testbench: {e:#}");
-                std::process::exit(1);
-            }
-        };
-        run_testbench_or_exit(&lock, &cache_dir, &runner, &cfg)
-    } else {
-        let live = match OpenAiRunner::from_env() {
-            Ok(r) => r,
-            Err(e) => {
-                eprintln!(
-                    "eval testbench: no live model configured: {e:#}\n(use --replay <file> for an offline run)"
-                );
-                std::process::exit(1);
-            }
-        };
-        if let Some(record_path) = flag_value(args, "--record") {
-            let recorder = RecordingRunner::new(live);
-            let report = run_testbench_or_exit(&lock, &cache_dir, &recorder, &cfg);
-            if let Err(e) = recorder.into_recording().save(Path::new(record_path)) {
-                eprintln!("eval testbench: failed to save recording: {e:#}");
-                std::process::exit(1);
-            }
-            println!("Recording saved → {record_path}");
-            report
-        } else {
-            run_testbench_or_exit(&lock, &cache_dir, &live, &cfg)
-        }
-    };
-
-    let (findings_path, regressions_path) = match findings::write(&report, &out_dir) {
-        Ok(paths) => paths,
-        Err(e) => {
-            eprintln!("eval testbench: {e:#}");
-            std::process::exit(1);
-        }
-    };
-
-    print!("{}", findings::render_findings(&report));
-    println!("\nFINDINGS:     {}", findings_path.display());
-    println!("regressions:  {}", regressions_path.display());
-
-    if has_flag(args, "--gate") && !report.gate_passes() {
-        eprintln!("\ntestbench gate FAILED: {}", report.verdict.label());
-        std::process::exit(1);
-    }
-}
-
-fn run_testbench_or_exit(
-    lock: &TestbenchLock,
-    cache_dir: &Path,
-    runner: &dyn ModelRunner,
-    cfg: &TestbenchConfig,
-) -> TestbenchReport {
-    match testbench::run_testbench(lock, cache_dir, runner, cfg) {
-        Ok(r) => r,
-        Err(e) => {
-            eprintln!("eval testbench: run failed: {e:#}");
-            std::process::exit(1);
-        }
-    }
-}
-
-fn cmd_verify(args: &[String]) {
-    let Some(path) = args.first() else {
-        eprintln!("eval verify: <artifact.json> is required");
-        std::process::exit(2);
-    };
-    let artifact = match artifact::load_artifact(Path::new(path)) {
-        Ok(a) => a,
-        Err(e) => {
-            eprintln!("eval verify: {e}");
-            std::process::exit(1);
-        }
-    };
-    let result = artifact.verify();
-    println!("Artifact:           {path}");
-    println!("Verdict:            {}", artifact.verdict.label());
-    println!("Determinism digest: {}", artifact.determinism_digest);
-    println!(
-        "Digest matches:     {}",
-        if result.digest_matches { "yes" } else { "NO" }
-    );
-    println!(
-        "Signature valid:    {}",
-        if result.signature_valid { "yes" } else { "NO" }
-    );
-    if let Some(pk) = &result.signer_public_key {
-        println!("Signer public key:  {pk}");
-    }
-    if let Some(err) = &result.error {
-        println!("Error:              {err}");
-    }
-    if result.ok() {
-        println!("\nOK — artifact is authentic and internally consistent.");
-    } else {
-        eprintln!("\nFAILED — artifact could not be verified.");
-        std::process::exit(1);
-    }
 }
 
 fn cmd_init(args: &[String]) {

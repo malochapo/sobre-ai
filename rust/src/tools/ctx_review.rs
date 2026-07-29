@@ -51,7 +51,7 @@ fn handle_review(path: Option<&str>, root: &str, depth: usize) -> String {
         }
     }
 
-    let smells = super::ctx_smells::handle("file", None, Some(target), root, None);
+    let smells = super::impl_smells::handle("file", None, Some(target), root, None);
     if !smells.contains("No smells") {
         sections.push("### Code Smells".to_string());
         sections.push(smells);

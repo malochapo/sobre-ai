@@ -87,32 +87,6 @@ fn ensure_engine_background() {
     });
 }
 
-/// Engine status for diagnostics (#551): one honest word + reason.
-pub(crate) fn engine_status_line() -> String {
-    #[cfg(feature = "embeddings")]
-    {
-        let cfg = crate::core::config::Config::load();
-        let profile = crate::core::config::MemoryProfile::effective(&cfg);
-        if !profile.embeddings_enabled() {
-            return "off (memory profile: low)".to_string();
-        }
-        if crate::core::embeddings::try_shared_engine().is_some() {
-            return "loaded".to_string();
-        }
-        if EmbeddingEngine::is_available() {
-            return "model present, engine loads on first use".to_string();
-        }
-        if embeddings_auto_download_allowed() {
-            return "model missing — downloads in background on first semantic need".to_string();
-        }
-        "off (auto-download disabled, no model present)".to_string()
-    }
-    #[cfg(not(feature = "embeddings"))]
-    {
-        "off (binary built without embeddings feature)".to_string()
-    }
-}
-
 pub(crate) fn handle_embeddings_status(project_root: &str) -> String {
     #[cfg(feature = "embeddings")]
     {

@@ -1,6 +1,6 @@
 //! `lean-ctx skillify` — distill recurring session patterns into .cursor/rules (#290).
 
-use crate::tools::ctx_skillify;
+use crate::tools::impl_skillify;
 
 pub(crate) fn cmd_skillify(args: &[String]) {
     let project_root = super::common::detect_project_root(args);
@@ -21,7 +21,7 @@ pub(crate) fn cmd_skillify(args: &[String]) {
         .nth(1)
         .map(String::as_str);
 
-    let out = ctx_skillify::handle(&project_root, action, slug);
+    let out = impl_skillify::handle(&project_root, action, slug);
     println!("{out}");
 }
 

@@ -303,7 +303,7 @@ fn is_code_identifier(kw: &str) -> bool {
 fn resident_index(
     project_root: &str,
 ) -> Option<std::sync::Arc<crate::core::bm25_index::BM25Index>> {
-    let cache = crate::tools::ctx_semantic_search::get_thread_cache()?;
+    let cache = crate::tools::impl_semantic_search::get_thread_cache()?;
     crate::core::bm25_cache::get_or_background(&cache, std::path::Path::new(project_root))
 }
 
@@ -311,17 +311,17 @@ fn resident_index(
 /// block on time, or a short "deferred" note if the (cold) build overruns —
 /// in which case the detached worker keeps running to warm the resident cache.
 fn ranked_files_budgeted(task: &str, project_root: &str, crp_mode: CrpMode) -> String {
-    let shared_cache = crate::tools::ctx_semantic_search::get_thread_cache();
+    let shared_cache = crate::tools::impl_semantic_search::get_thread_cache();
     let (tx, rx) = mpsc::channel::<String>();
     let task_owned = task.to_string();
     let root_owned = project_root.to_string();
 
     std::thread::spawn(move || {
         if let Some(cache) = shared_cache {
-            crate::tools::ctx_semantic_search::set_thread_cache(cache);
+            crate::tools::impl_semantic_search::set_thread_cache(cache);
         }
         let ranked = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            crate::tools::ctx_semantic_search::handle(
+            crate::tools::impl_semantic_search::handle(
                 &task_owned,
                 &root_owned,
                 8,
@@ -452,7 +452,7 @@ pub fn handle(task: &str, project_root: &str, crp_mode: CrpMode) -> (String, usi
     let mut items: Vec<CoverageItem> = Vec::new();
     for kw in &keywords {
         if let Some((rendered, toks)) =
-            crate::tools::ctx_symbol::best_symbol_snippet_for_task(kw, task, project_root)
+            crate::tools::impl_symbol::best_symbol_snippet_for_task(kw, task, project_root)
         {
             // The snippet always covers its triggering keyword, plus any other
             // task keyword its body textually surfaces (a more central symbol).

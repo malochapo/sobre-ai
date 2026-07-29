@@ -259,7 +259,7 @@ fn step_lateral_synthesis(knowledge: &ProjectKnowledge, graph: &mut KnowledgeRel
             {
                 continue;
             }
-            let sim = crate::core::memory_consolidation::token_jaccard(&a.value, &b.value);
+            let sim = crate::core::text_similarity::token_jaccard(&a.value, &b.value);
             if sim >= LATERAL_SIM_THRESHOLD {
                 let from = KnowledgeNodeRef::new(&a.category, &a.key);
                 let to = KnowledgeNodeRef::new(&b.category, &b.key);
@@ -380,55 +380,15 @@ fn step_decay(
     low_conf_count
 }
 
-/// Step 8b (#3): replay consolidation over the knowledge facts. Maps facts into
-/// consolidation entries, runs the sleep-inspired NREM/REM/replay pass, then
-/// promotes the replay-boosted importance back onto fact confidence. Additive:
-/// merges and pruning are owned by the lifecycle step, so here we only *lift*
-/// the confidence of facts the replay pass found related-and-co-accessed —
-/// never lower or delete. Deterministic.
+/// Step 8b (#3): replay consolidation over the knowledge facts.
+///
+/// Now a single call into the lifecycle module, which owns every operation on
+/// `KnowledgeFact`. It used to convert each fact into a parallel
+/// `memory_consolidation::KnowledgeEntry`, run a merge+prune+replay pass, and
+/// read back only the importance. Additive: confidence is lifted, never
+/// lowered, and nothing is deleted. Deterministic.
 fn step_replay_consolidation(knowledge: &mut ProjectKnowledge) -> u32 {
-    use crate::core::memory_consolidation::{KnowledgeEntry, consolidate};
-
-    let mut entries: Vec<KnowledgeEntry> = knowledge
-        .facts
-        .iter()
-        .filter(|f| f.is_current())
-        .map(|f| {
-            let last_access = f
-                .last_retrieved
-                .unwrap_or(f.last_confirmed)
-                .timestamp()
-                .max(0) as u64;
-            KnowledgeEntry {
-                key: format!("{}/{}", f.category, f.key),
-                content: f.value.clone(),
-                access_count: u64::from(f.retrieval_count),
-                last_access,
-                created_at: f.created_at.timestamp().max(0) as u64,
-                importance: f64::from(f.confidence),
-            }
-        })
-        .collect();
-    if entries.len() < 2 {
-        return 0;
-    }
-    consolidate(&mut entries);
-
-    let boosted: std::collections::HashMap<String, f64> =
-        entries.into_iter().map(|e| (e.key, e.importance)).collect();
-
-    let mut promoted = 0u32;
-    for f in knowledge.facts.iter_mut().filter(|f| f.is_current()) {
-        let id = format!("{}/{}", f.category, f.key);
-        if let Some(&imp) = boosted.get(&id) {
-            let new_conf = (imp as f32).min(1.0);
-            if new_conf > f.confidence + 0.001 {
-                f.confidence = new_conf;
-                promoted += 1;
-            }
-        }
-    }
-    promoted
+    crate::core::memory_lifecycle::apply_replay_boost(&mut knowledge.facts)
 }
 
 /// Idle replay (#7): the sleep-inspired (sharp-wave-ripple) consolidation pass,

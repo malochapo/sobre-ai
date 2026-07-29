@@ -7,7 +7,7 @@
 //! `<final_answer>` block.
 
 use crate::tools::CrpMode;
-use crate::tools::ctx_explore::{self, Citation, ExploreOptions};
+use crate::tools::impl_explore::{self, Citation, ExploreOptions};
 
 /// Parsed `explore` invocation. Separated from execution so flag handling is
 /// unit-testable without running a real search.
@@ -83,7 +83,7 @@ pub(crate) fn cmd_explore(args: &[String]) {
     };
 
     let opts = ExploreOptions::new(parsed.max_turns, parsed.citation);
-    let outcome = ctx_explore::handle(&query, &parsed.path, CrpMode::Off, &opts);
+    let outcome = impl_explore::handle(&query, &parsed.path, CrpMode::Off, &opts);
 
     if outcome.text.starts_with("ERROR") {
         eprintln!("explore: {}", outcome.text.trim_start_matches("ERROR: "));

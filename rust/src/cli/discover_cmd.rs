@@ -7,12 +7,12 @@ pub fn cmd_discover(args: &[String]) {
         return;
     }
 
-    let result = crate::tools::ctx_discover::analyze_history(&history, 20);
+    let result = crate::tools::impl_discover::analyze_history(&history, 20);
 
     if let Some(path) = card_target(args) {
         match std::fs::write(
             &path,
-            crate::tools::ctx_discover::render_before_card(&result),
+            crate::tools::impl_discover::render_before_card(&result),
         ) {
             Ok(()) => println!(
                 "Before-card written to {path}\n\
@@ -26,7 +26,7 @@ pub fn cmd_discover(args: &[String]) {
         return;
     }
 
-    println!("{}", crate::tools::ctx_discover::format_cli_output(&result));
+    println!("{}", crate::tools::impl_discover::format_cli_output(&result));
 }
 
 /// Resolves the `--card[=<path>]` output path for the shareable "before" SVG, or `None`
@@ -78,7 +78,7 @@ pub fn show_first_run_wow() {
     if history.is_empty() {
         return;
     }
-    let result = crate::tools::ctx_discover::analyze_history(&history, 20);
+    let result = crate::tools::impl_discover::analyze_history(&history, 20);
     let total_missed: u32 = result.missed_commands.iter().map(|m| m.count).sum();
     if total_missed == 0 {
         return;
@@ -129,7 +129,7 @@ pub fn cmd_ghost(args: &[String]) {
     let json = args.iter().any(|a| a == "--json");
 
     let history = load_shell_history();
-    let discover = crate::tools::ctx_discover::analyze_history(&history, 20);
+    let discover = crate::tools::impl_discover::analyze_history(&history, 20);
 
     let session = crate::core::session::SessionState::load_latest();
     let store = crate::core::stats::load();

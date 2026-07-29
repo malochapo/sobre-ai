@@ -1,7 +1,7 @@
 //! `lean-ctx summary` — record + recall AI session summaries (#292).
 
 use crate::core::session::SessionState;
-use crate::tools::ctx_summary;
+use crate::tools::impl_summary;
 
 pub(crate) fn cmd_summary(args: &[String]) {
     let project_root = super::common::detect_project_root(args);
@@ -37,7 +37,7 @@ pub(crate) fn cmd_summary(args: &[String]) {
         .then(|| SessionState::load_latest_for_project_root(&project_root))
         .flatten();
 
-    let out = ctx_summary::handle(&project_root, session.as_ref(), action, query_opt, top_k);
+    let out = impl_summary::handle(&project_root, session.as_ref(), action, query_opt, top_k);
     println!("{out}");
 }
 

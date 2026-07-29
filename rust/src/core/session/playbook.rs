@@ -14,7 +14,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::core::memory_consolidation::token_jaccard;
+use crate::core::text_similarity::token_jaccard;
 
 /// Entries with this token-Jaccard similarity to an existing entry are
 /// duplicates: the existing entry gets confirmed instead of inserting.

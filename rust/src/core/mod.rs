@@ -1,11 +1,8 @@
 // ---------------------------------------------------------------------------
 // Domain: Compression
 // ---------------------------------------------------------------------------
-pub mod adaptive_chunking;
-pub mod adaptive_compression;
 pub mod addons;
 pub mod aggressiveness;
-pub mod attention_context;
 pub mod auto_capture;
 pub mod auto_findings;
 pub mod codebook;
@@ -14,61 +11,49 @@ pub mod codesign;
 pub mod compress_preview;
 pub mod compression_safety;
 pub mod compressor;
-#[cfg(feature = "experimental")]
-pub mod context_budget;
 pub mod datadog_push;
 pub mod entropy;
 pub mod eval_ab;
 pub mod eval_harness;
+// Without `embeddings` the engine still compiles these modules — their
+// entry points are internally cfg-gated and fall back — but their helpers
+// go uncalled. That is honest unused code, not dead code, so it is silenced
+// only in that configuration. TODO: proper cfg hygiene across the 21 call
+// sites listed in docs/removals.md would let this attribute go away.
+#[cfg_attr(not(feature = "embeddings"), allow(dead_code))]
 pub mod extractive;
 pub mod finops_export;
 pub mod html_crush;
-pub mod information_bottleneck;
 pub mod json_crush;
-pub mod json_sample;
 pub mod markdown_compact;
 pub mod output_sanitizer;
 pub mod policy;
 pub mod pop_pruning;
-pub mod predictive_coding;
-pub mod predictive_prefetch;
 pub mod preservation;
 pub mod process_guard;
-pub mod progressive_compression;
 pub mod protect;
 pub mod rabin_karp;
 pub mod relevance_tracker;
 pub mod rule_artifacts;
-#[cfg(feature = "experimental")]
-pub mod rule_scorer;
-#[cfg(feature = "experimental")]
-pub mod rule_staleness;
 pub mod rules_canonical;
 pub mod rules_channel;
 pub mod rules_overhead;
 pub mod rules_sections;
 pub mod rules_validation;
 pub mod runtime_flags;
-pub mod structural_tokenizer;
 pub mod structured_read;
 pub mod tabular_crush;
 pub mod yaml_crush;
 
 /// Convenience re-export: all compression-related modules.
 pub mod compression {
-    pub use super::adaptive_chunking;
     pub use super::codebook;
     pub use super::compression_safety;
     pub use super::compressor;
     pub use super::entropy;
-    pub use super::information_bottleneck;
     pub use super::json_crush;
-    pub use super::json_sample;
-    pub use super::pop_pruning;
     pub use super::preservation;
-    pub use super::progressive_compression;
     pub use super::rabin_karp;
-    pub use super::structural_tokenizer;
 }
 
 // ---------------------------------------------------------------------------
@@ -79,12 +64,10 @@ pub mod interrupt;
 pub mod memory_archive;
 pub mod memory_boundary;
 pub mod memory_capacity;
-pub mod memory_consolidation;
 pub mod memory_guard;
 pub mod memory_lifecycle;
 pub mod memory_policy;
 pub mod memory_salience;
-pub mod multiscale_index;
 pub mod procedural_memory;
 pub mod prospective_memory;
 
@@ -92,7 +75,6 @@ pub mod prospective_memory;
 pub mod memory {
     pub use super::episodic_memory;
     pub use super::memory_boundary;
-    pub use super::memory_consolidation;
     pub use super::memory_lifecycle;
     pub use super::memory_policy;
     pub use super::procedural_memory;
@@ -104,13 +86,11 @@ pub mod memory {
 // ---------------------------------------------------------------------------
 pub mod call_graph;
 pub mod community;
-pub mod gamma_cover;
 pub mod graph_analysis;
 pub mod graph_context;
 pub mod graph_coordinator;
 pub mod graph_enricher;
 pub mod graph_export;
-pub mod graph_features;
 pub mod graph_index;
 pub mod graph_parity;
 pub mod graph_provider;
@@ -122,11 +102,9 @@ pub mod repomap;
 pub mod graph {
     pub use super::call_graph;
     pub use super::community;
-    pub use super::gamma_cover;
     pub use super::graph_context;
     pub use super::graph_enricher;
     pub use super::graph_export;
-    pub use super::graph_features;
     pub use super::graph_index;
     pub use super::graph_provider;
     pub use super::pagerank;
@@ -136,8 +114,6 @@ pub mod graph {
 // ---------------------------------------------------------------------------
 // Domain: Context
 // ---------------------------------------------------------------------------
-pub mod context_artifacts;
-pub mod context_column;
 pub mod context_compiler;
 pub mod context_deficit;
 pub mod context_field;
@@ -155,14 +131,11 @@ pub mod context_proof;
 pub mod context_proof_v2;
 pub mod context_radar;
 pub mod context_snapshot;
-pub(crate) mod conversation_scorer;
 pub mod cross_source_edges;
 pub mod cross_source_hints;
 
 /// Convenience re-export: all context-related modules.
 pub mod context {
-    pub use super::context_artifacts;
-    pub use super::context_column;
     pub use super::context_compiler;
     pub use super::context_deficit;
     pub use super::context_field;
@@ -184,8 +157,13 @@ pub mod claim_extractor;
 pub mod cognition_loop;
 pub mod cognition_scheduler;
 pub mod knowledge;
-pub mod knowledge_bootstrap;
 pub mod knowledge_bridge;
+// Without `embeddings` the engine still compiles these modules — their
+// entry points are internally cfg-gated and fall back — but their helpers
+// go uncalled. That is honest unused code, not dead code, so it is silenced
+// only in that configuration. TODO: proper cfg hygiene across the 21 call
+// sites listed in docs/removals.md would let this attribute go away.
+#[cfg_attr(not(feature = "embeddings"), allow(dead_code))]
 pub mod knowledge_embedding;
 pub mod knowledge_provider_extract;
 pub mod knowledge_relations;
@@ -195,7 +173,6 @@ pub mod knowledge_domain {
     pub use super::claim_extractor;
     pub use super::cognition_loop;
     pub use super::knowledge;
-    pub use super::knowledge_bootstrap;
     pub use super::knowledge_bridge;
     pub use super::knowledge_embedding;
     pub use super::knowledge_relations;
@@ -213,15 +190,16 @@ pub mod cooccurrence;
 pub mod dense_backend;
 pub mod embedding_index;
 pub mod embedding_quant;
+// Without `embeddings` the engine still compiles these modules — their
+// entry points are internally cfg-gated and fall back — but their helpers
+// go uncalled. That is honest unused code, not dead code, so it is silenced
+// only in that configuration. TODO: proper cfg hygiene across the 21 call
+// sites listed in docs/removals.md would let this attribute go away.
+#[cfg_attr(not(feature = "embeddings"), allow(dead_code))]
 pub mod embeddings;
 pub mod energy;
 pub mod hybrid_search;
-#[cfg(feature = "pgvector")]
-pub mod pgvector_store;
-#[cfg(feature = "qdrant")]
-pub mod qdrant_store;
 pub mod search_reranking;
-pub mod semantic_cache;
 pub mod semantic_chunks;
 pub mod splade_retrieval;
 pub mod spreading_activation;
@@ -235,7 +213,6 @@ pub mod search {
     pub use super::embeddings;
     pub use super::hybrid_search;
     pub use super::search_reranking;
-    pub use super::semantic_cache;
     pub use super::semantic_chunks;
     pub use super::splade_retrieval;
 }
@@ -263,16 +240,12 @@ pub mod session_domain {
 // ---------------------------------------------------------------------------
 // Domain: Attention & Placement
 // ---------------------------------------------------------------------------
-pub mod attention_layout_driver;
 pub mod attention_model;
-pub mod attention_placement;
 pub mod litm;
 
 /// Convenience re-export: all attention-related modules.
 pub mod attention {
-    pub use super::attention_layout_driver;
     pub use super::attention_model;
-    pub use super::attention_placement;
     pub use super::litm;
 }
 
@@ -316,7 +289,6 @@ pub mod litm_calibration;
 pub mod mode_predictor;
 pub mod model_registry;
 pub mod task_relevance;
-pub mod token_calibration;
 
 // ---------------------------------------------------------------------------
 // Domain: Diagnostics & Quality
@@ -326,9 +298,7 @@ pub mod benchmark;
 pub mod benchmark_compare;
 /// Commercial-plane billing substrate (`billing-plane-v1`): plans, entitlements,
 /// and usage metering derived from the signed savings ledger. Never gates local.
-pub mod billing;
 pub mod code_health;
-pub mod cognitive_load;
 pub mod conformance;
 pub mod contracts;
 pub mod cyclomatic;
@@ -350,7 +320,6 @@ pub mod verification_observability;
 // Domain: Config & Infrastructure
 // ---------------------------------------------------------------------------
 pub mod active_inference;
-pub mod agent_attribution;
 pub mod agent_budget;
 pub mod agent_lease;
 pub mod anchor;
@@ -365,8 +334,6 @@ pub mod budgets;
 pub mod cache;
 pub mod cache_telemetry;
 pub mod capabilities;
-pub mod capsule_transport;
-pub mod chain_compression;
 pub mod cli_cache;
 pub mod client_capabilities;
 pub mod client_constraints;
@@ -382,7 +349,6 @@ pub mod crash_log;
 pub mod data_consolidate;
 pub mod data_dir;
 pub mod debug_log;
-pub mod deployment_profile;
 pub mod diagnostics_store;
 pub mod editor_signal;
 pub mod egress;
@@ -390,14 +356,12 @@ pub mod error;
 pub mod events;
 pub mod eviction_orchestrator;
 pub mod evidence;
-pub mod evidence_classification;
 pub mod evidence_ledger;
 pub mod extension_registry;
 pub mod extractors;
 pub mod feedback;
 pub mod fep_prefetch;
 pub mod filters;
-pub mod free_energy_budget;
 pub mod gain;
 pub mod git;
 pub mod git_cache;
@@ -418,7 +382,6 @@ pub mod ocla;
 pub mod ocla_bus;
 pub mod quality_benchmark;
 pub mod qubo_select;
-pub mod work_graph;
 
 pub mod agent_registry;
 pub mod compliance;
@@ -433,7 +396,6 @@ pub mod http_client;
 pub mod ide_permissions;
 pub mod import_resolver;
 pub mod index_admission;
-pub mod index_bundle;
 pub mod index_filter;
 pub mod index_namespace;
 pub mod index_orchestrator;
@@ -452,7 +414,6 @@ pub mod io_boundary;
 pub mod io_health;
 pub mod journal;
 pub mod jsonc;
-pub mod knowledge_vault;
 pub mod language_capabilities;
 #[cfg(target_os = "macos")]
 pub mod launchd;
@@ -465,10 +426,8 @@ pub mod llm_feedback;
 pub mod locomo;
 pub mod logging;
 pub mod mcp_manifest;
-pub mod mdl_selector;
 pub mod multi_repo;
 pub mod nc_compress;
-pub mod ocp;
 pub mod openapi;
 pub mod output_echo;
 pub mod owasp_alignment;
@@ -494,7 +453,6 @@ pub mod redaction;
 pub mod reference_docs;
 pub mod roles;
 pub mod route_extractor;
-pub mod saliency;
 pub mod sandbox;
 #[cfg(target_os = "linux")]
 pub mod sandbox_landlock;
@@ -515,7 +473,6 @@ pub mod share;
 pub mod shell_allowlist;
 pub mod startup_guard;
 pub mod stats;
-pub mod structural_diff;
 pub mod symbol_map;
 pub mod syntax_validate;
 pub mod task_briefing;
@@ -531,6 +488,7 @@ pub mod terse;
 pub mod theme;
 pub mod threshold_learning;
 pub mod tokenizer_translation_driver;
+pub mod text_similarity;
 pub mod tokens;
 pub mod tool_health;
 pub mod tool_lifecycle;
@@ -549,8 +507,6 @@ pub mod web;
 pub mod workflow;
 pub mod workspace_config;
 pub mod wrapped;
-pub mod wrapped_share;
-pub mod wrapped_svg;
 pub mod xdg_migrate;
 
 // ---------------------------------------------------------------------------
@@ -561,7 +517,6 @@ pub mod archive_fts;
 pub mod artifact_index;
 pub mod artifacts;
 pub mod ast_walk;
-pub mod buddy;
 #[cfg(feature = "tree-sitter")]
 pub mod chunks_ts;
 pub mod deep_queries;

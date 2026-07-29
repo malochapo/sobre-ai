@@ -647,7 +647,7 @@ mod overview_descriptions {
 
     #[test]
     fn scenario_overview_source_has_extract_call() {
-        let src = include_str!("../../src/tools/ctx_overview.rs");
+        let src = include_str!("../../src/tools/impl_overview.rs");
         assert!(
             src.contains("extract_module_doc"),
             "ctx_overview must call extract_module_doc"

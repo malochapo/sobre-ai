@@ -2,7 +2,7 @@ use std::sync::atomic::Ordering;
 
 use super::server::{CepComputedStats, CrpMode, LeanCtxServer, ToolCallRecord};
 use super::startup::auto_consolidate_knowledge;
-use super::{ctx_compress, ctx_share};
+use super::{impl_compress, impl_share};
 
 /// Build payload-free OCLA metrics for one completed MCP tool call.
 ///
@@ -245,7 +245,7 @@ impl LeanCtxServer {
             return None;
         }
         let complexity = crate::core::adaptive::classify_from_context(&cache);
-        let checkpoint = ctx_compress::handle(&cache, false, CrpMode::effective());
+        let checkpoint = impl_compress::handle(&cache, false, CrpMode::effective());
         drop(cache);
 
         let mut session = self.session.write().await;
@@ -328,7 +328,7 @@ impl LeanCtxServer {
                 .collect();
             let paths_csv = top_paths.join(",");
 
-            let _ = ctx_share::handle(
+            let _ = impl_share::handle(
                 "push",
                 Some(&my_id),
                 None,

@@ -31,22 +31,11 @@ fn get_routes(path: &str, _query_str: &str) -> Option<(&'static str, &'static st
                 &policy,
             );
 
-            let mut knowledge =
+            // sobre: an empty store renders as an empty graph. The previous
+            // code seeded derived facts here so the dashboard would not look
+            // bare — which made a GET handler write to the persistent store.
+            let knowledge =
                 crate::core::knowledge::ProjectKnowledge::load_or_create(&project_root);
-            if knowledge.facts.is_empty() {
-                // Keep /api/knowledge fast: read the property graph if it is already
-                // populated, but never force a full (re)build on this request path.
-                let open = crate::core::graph_provider::open_best_effort(&project_root);
-                let provider = open.as_ref().map(|o| &o.provider);
-                if crate::core::knowledge_bootstrap::bootstrap_if_empty(
-                    &mut knowledge,
-                    &project_root,
-                    provider,
-                    &policy,
-                ) {
-                    let _ = knowledge.save();
-                }
-            }
             // Expose the store cap so the UI can say "newest N kept" instead
             // of presenting a capped list as the complete history (#492).
             let mut value =

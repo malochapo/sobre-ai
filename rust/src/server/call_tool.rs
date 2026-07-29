@@ -966,7 +966,6 @@ impl LeanCtxServer {
 
         let current_count = self.call_count.load(std::sync::atomic::Ordering::Relaxed);
         if current_count > 0 && current_count.is_multiple_of(100) {
-            std::thread::spawn(crate::cloud_sync::cloud_background_tasks);
             // Bound the on-disk archive between restarts: prune TTL-expired and
             // over-budget entries off the hot path so it can't grow unbounded and
             // starve the host of RAM via the page cache (#417).

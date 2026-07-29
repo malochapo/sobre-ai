@@ -21,7 +21,7 @@ pub(crate) fn cmd_verify(args: &[String]) {
         }
     }
 
-    match crate::tools::ctx_verify::handle_stats(format.as_deref()) {
+    match crate::tools::impl_verify::handle_stats(format.as_deref()) {
         Ok(out) => println!("{out}"),
         Err(e) => {
             eprintln!("ERROR: {e}");

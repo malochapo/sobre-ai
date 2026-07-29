@@ -159,7 +159,7 @@ pub fn memory_usage(cache: &SharedBm25Cache) -> usize {
 /// bodies once the embedding pass has consumed them.
 ///
 /// Call this ONLY after embeddings for the current fingerprint are built and
-/// persisted (see `ctx_semantic_search::ensure_embeddings`). The on-disk index
+/// persisted (see `impl_semantic_search::ensure_embeddings`). The on-disk index
 /// is untouched, so a reload restores full bodies; the resident `content_truncated`
 /// flag guards a later embedding pass against re-embedding the trimmed bodies.
 ///

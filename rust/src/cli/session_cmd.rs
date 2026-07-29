@@ -280,7 +280,7 @@ pub fn cmd_wrapped(args: &[String]) {
     eprintln!("[DEPRECATED] Use `lean-ctx gain --wrapped`.");
     println!(
         "{}",
-        crate::tools::ctx_gain::handle("wrapped", Some(period), None, None)
+        crate::tools::impl_gain::handle("wrapped", Some(period), None, None)
     );
 }
 

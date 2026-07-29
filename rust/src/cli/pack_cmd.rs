@@ -125,7 +125,7 @@ fn cmd_pack_pr(args: &[String], project_root: &str) {
         None
     };
 
-    let out = crate::tools::ctx_pack::handle(
+    let out = crate::tools::impl_pack::handle(
         "pr",
         project_root,
         base.as_deref(),

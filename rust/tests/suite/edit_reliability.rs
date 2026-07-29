@@ -36,7 +36,7 @@ use std::path::Path;
 
 use lean_ctx::core::anchor::{annotate, line_hash};
 use lean_ctx::core::tokens::count_tokens;
-use lean_ctx::tools::ctx_edit::{self, CacheEffect, EditParams};
+use lean_ctx::tools::impl_edit::{self, CacheEffect, EditParams};
 use lean_ctx::tools::ctx_patch::{self, AnchorOp, PatchParams};
 
 /// One language's two source variants plus the lines that carry the mechanical
@@ -214,7 +214,7 @@ fn fix_str_replace(
 ) -> (bool, String) {
     let path = dir.join(format!("{tag}.{ext}"));
     fs::write(&path, src).unwrap();
-    let (_text, effect) = ctx_edit::run_io(&edit_params(&path, old, new), "");
+    let (_text, effect) = impl_edit::run_io(&edit_params(&path, old, new), "");
     (succeeded(&effect), fs::read_to_string(&path).unwrap())
 }
 

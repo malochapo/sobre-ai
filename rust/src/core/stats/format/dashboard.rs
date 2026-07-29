@@ -159,7 +159,7 @@ pub fn format_gain_hero_themed(t: &Theme) -> String {
     out.push(String::new());
 
     // Weekly nudge: after 7 days of data, if user hasn't published, show a prominent card
-    if store.daily.len() >= 7 && !crate::cli::wrapped_publish::has_published() {
+    if store.daily.len() >= 7 {
         let week_saved: u64 = store
             .daily
             .iter()
@@ -422,21 +422,6 @@ fn gain_dashboard(t: &Theme, tick: Option<u64>, with_footer: bool) -> String {
             )));
         }
         out.push(format!("  {}", t.box_bottom_square(w)));
-    }
-
-    // -- COMPANION section --
-    {
-        let cfg = crate::core::config::Config::load();
-        if cfg.buddy_enabled {
-            out.push(String::new());
-            out.push(format!("  {}", t.box_top_labeled(w, "YOUR COMPANION")));
-            let buddy = crate::core::buddy::BuddyState::compute();
-            let block = crate::core::buddy::format_buddy_block_at(&buddy, t, tick);
-            for line in block.lines() {
-                out.push(sec_line(line));
-            }
-            out.push(format!("  {}", t.box_bottom_square(w)));
-        }
     }
 
     out.push(String::new());

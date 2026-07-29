@@ -232,8 +232,6 @@ pub struct Config {
     /// Anthropic ~90%, OpenAI ~50%. Default 0.75 (conservative cross-provider).
     #[serde(default)]
     pub dashboard_cache_hit_rate: Option<f64>,
-    #[serde(default = "serde_defaults::default_buddy_enabled")]
-    pub buddy_enabled: bool,
     #[serde(default = "serde_defaults::default_true")]
     pub enable_wakeup_ctx: bool,
     #[serde(default)]
@@ -787,7 +785,6 @@ impl Default for Config {
             proxy_max_rps: None,
             dashboard_auth: true,
             dashboard_cache_hit_rate: None,
-            buddy_enabled: serde_defaults::default_buddy_enabled(),
             enable_wakeup_ctx: true,
             redirect_exclude: Vec::new(),
             disabled_tools: Vec::new(),

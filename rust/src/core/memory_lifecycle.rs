@@ -6,6 +6,7 @@
 //! - Compaction when limits are exceeded
 //! - Archival of old/unused facts
 
+use crate::core::text_similarity::{token_jaccard, token_jaccard_f32};
 use chrono::{DateTime, Duration, Utc};
 use std::path::PathBuf;
 
@@ -18,6 +19,14 @@ const LOW_CONFIDENCE_THRESHOLD: f32 = 0.3;
 const STALE_DAYS: i64 = 30;
 /// Default proactive headroom on a capacity reclaim: settle a full store at 75%
 /// so it keeps real working room instead of churning at its cap.
+/// Replay pairs must be *related*, not duplicates: below this they are
+/// unrelated, at or above [`REPLAY_RELATED_HIGH`] the lifecycle merge owns them.
+const REPLAY_RELATED_LOW: f64 = 0.12;
+const REPLAY_RELATED_HIGH: f64 = 0.79;
+const REPLAY_BOOST_SCALE: f64 = 0.02;
+/// Confidence must move by more than this for a fact to count as promoted.
+const REPLAY_MIN_DELTA: f32 = 0.001;
+
 pub const DEFAULT_RECLAIM_HEADROOM_PCT: f32 = 0.25;
 
 /// Spacing/testing effect: how strongly each prior retrieval lengthens memory
@@ -280,7 +289,7 @@ pub fn consolidate_similar(facts: &mut Vec<KnowledgeFact>, similarity_threshold:
                 if to_remove.contains(&j) {
                     continue;
                 }
-                let sim = word_similarity(&facts[i].value, &facts[j].value);
+                let sim = token_jaccard_f32(&facts[i].value, &facts[j].value);
                 if sim >= similarity_threshold {
                     if facts[i].confidence >= facts[j].confidence {
                         facts[i].confirmation_count += facts[j].confirmation_count;
@@ -442,7 +451,7 @@ pub fn compact_clusters(
             for (ci, cl) in cat_clusters.iter().enumerate() {
                 let avg = cl
                     .iter()
-                    .map(|&j| word_similarity(&facts[i].value, &facts[j].value))
+                    .map(|&j| token_jaccard_f32(&facts[i].value, &facts[j].value))
                     .sum::<f32>()
                     / cl.len() as f32;
                 if avg >= cfg.similarity && best.is_none_or(|(_, b)| avg > b) {
@@ -629,25 +638,66 @@ pub fn reachable_archives(cfg: &ArchiveConfig) -> Vec<PathBuf> {
     crate::core::memory_archive::reachable_archives(MemoryStore::Facts, None, cfg)
 }
 
-fn word_similarity(a: &str, b: &str) -> f32 {
-    let a_lower = a.to_lowercase();
-    let b_lower = b.to_lowercase();
-    let a_words: std::collections::HashSet<&str> = a_lower.split_whitespace().collect();
-    let b_words: std::collections::HashSet<&str> = b_lower.split_whitespace().collect();
-
-    if a_words.is_empty() && b_words.is_empty() {
-        return 1.0;
+/// Replay boost (#3): lift the confidence of facts that are *related but not
+/// duplicates* and that both get retrieved often.
+///
+/// Reconciled from the deleted `core::memory_consolidation`. That module mapped
+/// every `KnowledgeFact` into a 7-field `KnowledgeEntry` shadow type, ran an
+/// NREM merge + REM prune + replay pass over it, and then read back only the
+/// importance — throwing the merges and prunes away, because merging and
+/// pruning are owned by this module.
+///
+/// That round trip was not merely wasteful, it was wrong: the merge step
+/// rewrote entry keys and the prune step dropped entries, so the key→importance
+/// map the caller rebuilt afterwards attributed boosts to the wrong fact and
+/// silently skipped others. Operating on the facts directly removes both the
+/// conversion and the bug.
+///
+/// Additive by construction: confidence is only ever raised, never lowered, and
+/// no fact is removed. Deterministic.
+#[must_use]
+pub fn apply_replay_boost(facts: &mut [KnowledgeFact]) -> u32 {
+    let idx: Vec<usize> = facts
+        .iter()
+        .enumerate()
+        .filter(|(_, f)| f.is_current())
+        .map(|(i, _)| i)
+        .collect();
+    if idx.len() < 2 {
+        return 0;
     }
 
-    let intersection = a_words.intersection(&b_words).count();
-    let union = a_words.union(&b_words).count();
-
-    if union == 0 {
-        return 0.0;
+    let mut deltas = vec![0.0_f64; idx.len()];
+    for (pos_a, &i) in idx.iter().enumerate() {
+        for (pos_b, &j) in idx.iter().enumerate().skip(pos_a + 1) {
+            let jac = token_jaccard(&facts[i].value, &facts[j].value);
+            if !(REPLAY_RELATED_LOW..REPLAY_RELATED_HIGH).contains(&jac) {
+                continue;
+            }
+            let co = ((f64::from(facts[i].retrieval_count) + 1.0).ln()
+                * (f64::from(facts[j].retrieval_count) + 1.0).ln())
+            .sqrt();
+            let bump = REPLAY_BOOST_SCALE * co;
+            deltas[pos_a] += bump;
+            deltas[pos_b] += bump;
+        }
     }
 
-    intersection as f32 / union as f32
+    let mut promoted = 0u32;
+    for (pos, &i) in idx.iter().enumerate() {
+        if deltas[pos] <= 0.0 {
+            continue;
+        }
+        #[allow(clippy::cast_possible_truncation)]
+        let boosted = (f64::from(facts[i].confidence) + deltas[pos]).min(1.0) as f32;
+        if boosted > facts[i].confidence + REPLAY_MIN_DELTA {
+            facts[i].confidence = boosted;
+            promoted += 1;
+        }
+    }
+    promoted
 }
+
 
 #[cfg(test)]
 mod tests {
@@ -1050,24 +1100,6 @@ mod tests {
         let report = run_lifecycle(&mut facts, &config).expect("lifecycle succeeds");
         assert!(report.remaining_facts <= config.max_facts);
         assert!(report.decayed_count > 0 || report.compacted_count > 0);
-    }
-
-    #[test]
-    fn word_similarity_identical() {
-        assert!((word_similarity("hello world", "hello world") - 1.0).abs() < 0.01);
-    }
-
-    #[test]
-    fn word_similarity_partial() {
-        let sim = word_similarity("uses PostgreSQL database", "PostgreSQL database system");
-        assert!(sim >= 0.5, "Expected >= 0.5 but got {sim}");
-        assert!(sim < 1.0);
-    }
-
-    #[test]
-    fn word_similarity_different() {
-        let sim = word_similarity("Redis cache", "Docker compose");
-        assert!(sim < 0.1);
     }
 
     // === Cluster compaction (#971) ===

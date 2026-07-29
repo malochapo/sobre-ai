@@ -72,7 +72,7 @@ impl McpTool for CtxReadTool {
             .and_then(|v| v.as_array())
             .is_some_and(|a| !a.is_empty())
         {
-            return super::ctx_multi_read::batch_read(args, ctx);
+            return super::batch_read::batch_read(args, ctx);
         }
 
         let path = if let Some(repo) = get_str(args, "repo") {
@@ -194,7 +194,7 @@ impl CtxReadTool {
             pm
         } else if profile.read.default_mode_effective() == "auto" {
             if let Ok(cache) = cache_lock.try_read() {
-                crate::tools::ctx_smart_read::select_mode_with_task(&cache, path, task_ref)
+                crate::tools::impl_smart_read::select_mode_with_task(&cache, path, task_ref)
             } else {
                 tracing::debug!(
                     "cache lock contested during auto-mode selection for {path}; \

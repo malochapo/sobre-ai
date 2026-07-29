@@ -14,7 +14,7 @@ use crate::tools::CrpMode;
 // accuracy invariants (GL#441).
 pub mod dedup_hook;
 mod helpers;
-use helpers::{detect_project_root, find_similar_and_update_semantic_index};
+use helpers::detect_project_root;
 pub use helpers::{graph_related_hint, is_instruction_file};
 mod kernel;
 pub(crate) mod render;
@@ -1107,14 +1107,11 @@ fn handle_with_options_inner(
 
     // Skip expensive hint computation for line-range reads and first reads.
     // Hints are only useful from the 2nd read onwards when the file is contextually relevant.
-    let is_line_range = mode.starts_with("lines:");
-    let hints = crate::core::profiles::active_profile().output_hints;
-    let is_repeat_read = store_result.read_count > 1;
-    let similar_hint = if !is_line_range && is_repeat_read && hints.semantic_hint() {
-        find_similar_and_update_semantic_index(path, &content)
-    } else {
-        None
-    };
+    // sobre removed the TF-IDF semantic cache: `graph_related_hint` already
+    // answers "what else should I look at" from the code graph, which is a
+    // better signal on code than token overlap, and the cache reloaded and
+    // rewrote a JSON index from disk on every qualifying read.
+    let similar_hint: Option<String> = None;
     // #1098: graph hints moved to background — `graph_related_hint()` does a
     // SQLite query that can block for 50-200ms on Windows, which is unacceptable
     // while holding the global cache write-lock. The registered handler calls it

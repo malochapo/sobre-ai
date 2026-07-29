@@ -1,60 +1,37 @@
 use std::path::Path;
 
 use crate::core::bm25_index::BM25Index;
-#[cfg(any(feature = "qdrant", feature = "pgvector"))]
-use crate::core::bm25_index::ChunkKind;
 use crate::core::hnsw::FlatEmbeddings;
 use crate::core::hybrid_search::{DenseSearchResult, HybridConfig, HybridResult};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Which dense backend served a query.
+///
+/// sobre has exactly one: an in-process HNSW index over locally computed
+/// embeddings. The Qdrant and pgvector variants went with invariant 4 — a
+/// remote vector database is a service someone has to run. The enum survives so
+/// the search path can still report which backend answered.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum DenseBackendKind {
+    #[default]
     Local,
-    #[cfg(feature = "qdrant")]
-    Qdrant,
-    #[cfg(feature = "pgvector")]
-    Pgvector,
 }
 
 impl DenseBackendKind {
+    /// Honours `LEANCTX_DENSE_BACKEND` so an explicit `local` keeps working and
+    /// anything else fails loudly instead of silently falling back.
+    ///
+    /// # Errors
+    /// When the variable names a backend this build does not have.
     pub fn try_from_env() -> Result<Self, String> {
-        let explicit = std::env::var("LEANCTX_DENSE_BACKEND")
+        match std::env::var("LEANCTX_DENSE_BACKEND")
             .ok()
             .map(|v| v.trim().to_ascii_lowercase())
-            .filter(|v| !v.is_empty());
-
-        let inferred_qdrant =
-            std::env::var("LEANCTX_QDRANT_URL").is_ok_and(|v| !v.trim().is_empty());
-        let inferred_pgvector =
-            std::env::var("LEANCTX_PGVECTOR_URL").is_ok_and(|v| !v.trim().is_empty());
-
-        let requested = explicit
-            .or_else(|| inferred_qdrant.then_some("qdrant".to_string()))
-            .or_else(|| inferred_pgvector.then_some("pgvector".to_string()));
-
-        match requested.as_deref() {
+            .filter(|v| !v.is_empty())
+            .as_deref()
+        {
             None | Some("local") => Ok(Self::Local),
-            Some("qdrant") => {
-                #[cfg(feature = "qdrant")]
-                {
-                    Ok(Self::Qdrant)
-                }
-                #[cfg(not(feature = "qdrant"))]
-                {
-                    Err("Dense backend 'qdrant' requested, but feature 'qdrant' is not enabled. Rebuild with --features qdrant.".to_string())
-                }
-            }
-            Some("pgvector") => {
-                #[cfg(feature = "pgvector")]
-                {
-                    Ok(Self::Pgvector)
-                }
-                #[cfg(not(feature = "pgvector"))]
-                {
-                    Err("Dense backend 'pgvector' requested, but feature 'pgvector' is not enabled. Rebuild with --features pgvector.".to_string())
-                }
-            }
             Some(other) => Err(format!(
-                "Unknown LEANCTX_DENSE_BACKEND={other:?} (expected 'local', 'qdrant' or 'pgvector')"
+                "Unknown LEANCTX_DENSE_BACKEND={other:?} — sobre only has the local, in-process backend"
             )),
         }
     }
@@ -62,10 +39,6 @@ impl DenseBackendKind {
     pub fn label(&self) -> &'static str {
         match self {
             Self::Local => "local",
-            #[cfg(feature = "qdrant")]
-            Self::Qdrant => "qdrant",
-            #[cfg(feature = "pgvector")]
-            Self::Pgvector => "pgvector",
         }
     }
 }
@@ -146,86 +119,7 @@ pub fn hybrid_results(
             results.truncate(top_k);
             Ok(results)
         }
-        #[cfg(feature = "qdrant")]
-        DenseBackendKind::Qdrant => remote_hybrid_results(
-            backend,
-            root,
-            index,
-            engine,
-            aligned_embeddings,
-            changed_files,
-            query,
-            top_k,
-            config,
-            filter,
-            graph_file_ranks,
-        ),
-        #[cfg(feature = "pgvector")]
-        DenseBackendKind::Pgvector => remote_hybrid_results(
-            backend,
-            root,
-            index,
-            engine,
-            aligned_embeddings,
-            changed_files,
-            query,
-            top_k,
-            config,
-            filter,
-            graph_file_ranks,
-        ),
     }
-}
-
-/// Shared BM25+dense RRF pipeline for remote vector backends (qdrant, pgvector):
-/// the backends differ only in where `dense_results` fetches from.
-#[cfg(all(feature = "embeddings", any(feature = "qdrant", feature = "pgvector")))]
-#[allow(clippy::too_many_arguments)]
-fn remote_hybrid_results(
-    backend: DenseBackendKind,
-    root: &Path,
-    index: &BM25Index,
-    engine: &crate::core::embeddings::EmbeddingEngine,
-    aligned_embeddings: &FlatEmbeddings,
-    changed_files: &[String],
-    query: &str,
-    top_k: usize,
-    config: &HybridConfig,
-    filter: Option<&dyn Fn(&str) -> bool>,
-    graph_file_ranks: Option<&std::collections::HashMap<String, usize>>,
-) -> Result<Vec<HybridResult>, String> {
-    let bm25_k = config.bm25_candidates.max(top_k);
-    let dense_k = config.dense_candidates.max(top_k);
-
-    let mut bm25 = index.search(query, bm25_k);
-    if let Some(pred) = filter {
-        bm25.retain(|r| pred(&r.file_path));
-    }
-
-    let dense = dense_results(
-        backend,
-        root,
-        index,
-        engine,
-        aligned_embeddings,
-        changed_files,
-        query,
-        dense_k,
-        filter,
-    )?;
-
-    let mut fused = crate::core::hybrid_search::reciprocal_rank_fusion(
-        &bm25,
-        &dense,
-        config,
-        top_k,
-        graph_file_ranks,
-    );
-    if let Some(pred) = filter {
-        fused.retain(|r| pred(&r.file_path));
-    }
-    fused.truncate(top_k);
-    Ok(fused)
 }
 
 #[cfg(feature = "embeddings")]
@@ -245,38 +139,6 @@ fn dense_results(
         DenseBackendKind::Local => {
             let _ = (root, changed_files);
             dense_results_local(index, engine, aligned_embeddings, query, top_k, filter)
-        }
-        #[cfg(feature = "qdrant")]
-        DenseBackendKind::Qdrant => {
-            let vecs: Vec<Vec<f32>> = (0..aligned_embeddings.n_vectors())
-                .map(|i| aligned_embeddings.get_vec(i))
-                .collect();
-            dense_results_qdrant(
-                root,
-                index,
-                engine,
-                &vecs,
-                changed_files,
-                query,
-                top_k,
-                filter,
-            )
-        }
-        #[cfg(feature = "pgvector")]
-        DenseBackendKind::Pgvector => {
-            let vecs: Vec<Vec<f32>> = (0..aligned_embeddings.n_vectors())
-                .map(|i| aligned_embeddings.get_vec(i))
-                .collect();
-            dense_results_pgvector(
-                root,
-                index,
-                engine,
-                &vecs,
-                changed_files,
-                query,
-                top_k,
-                filter,
-            )
         }
     }
 }
@@ -378,174 +240,6 @@ fn top_k_by_similarity(
     result
 }
 
-#[cfg(feature = "qdrant")]
-#[cfg(feature = "embeddings")]
-fn dense_results_qdrant(
-    root: &Path,
-    index: &BM25Index,
-    engine: &crate::core::embeddings::EmbeddingEngine,
-    aligned_embeddings: &[Vec<f32>],
-    changed_files: &[String],
-    query: &str,
-    top_k: usize,
-    filter: Option<&dyn Fn(&str) -> bool>,
-) -> Result<Vec<DenseSearchResult>, String> {
-    let store = crate::core::qdrant_store::QdrantStore::from_env()?;
-    let collection = store.collection_name(root, engine.dimensions())?;
-    let created_new = store.ensure_collection(&collection, engine.dimensions())?;
-    store.sync_index(
-        &collection,
-        index,
-        aligned_embeddings,
-        changed_files,
-        created_new,
-    )?;
-
-    let query_vec = engine
-        .embed_query(query)
-        .map_err(|e| format!("embedding failed: {e}"))?;
-
-    let hits = store.search(&collection, &query_vec, top_k)?;
-    let mut out = Vec::with_capacity(hits.len());
-    for hit in hits {
-        if let Some(pred) = filter
-            && !pred(&hit.file_path)
-        {
-            continue;
-        }
-        let snippet = snippet_from_disk(root, &hit.file_path, hit.start_line, hit.end_line, 5);
-        out.push(DenseSearchResult {
-            chunk_idx: 0,
-            similarity: hit.score,
-            file_path: hit.file_path,
-            symbol_name: hit.symbol_name,
-            kind: hit.kind,
-            start_line: hit.start_line,
-            end_line: hit.end_line,
-            snippet,
-        });
-    }
-    Ok(out)
-}
-
-#[cfg(feature = "pgvector")]
-#[cfg(feature = "embeddings")]
-#[allow(clippy::too_many_arguments)]
-fn dense_results_pgvector(
-    root: &Path,
-    index: &BM25Index,
-    engine: &crate::core::embeddings::EmbeddingEngine,
-    aligned_embeddings: &[Vec<f32>],
-    changed_files: &[String],
-    query: &str,
-    top_k: usize,
-    filter: Option<&dyn Fn(&str) -> bool>,
-) -> Result<Vec<DenseSearchResult>, String> {
-    let store = crate::core::pgvector_store::PgvectorStore::from_env()?;
-    let table = store.table_name(root, engine.dimensions())?;
-    let created_new = store.ensure_table(&table, engine.dimensions())?;
-    store.sync_index(
-        &table,
-        index,
-        aligned_embeddings,
-        changed_files,
-        created_new,
-    )?;
-
-    let query_vec = engine
-        .embed_query(query)
-        .map_err(|e| format!("embedding failed: {e}"))?;
-
-    let hits = store.search(&table, &query_vec, top_k)?;
-    let mut out = Vec::with_capacity(hits.len());
-    for hit in hits {
-        if let Some(pred) = filter
-            && !pred(&hit.file_path)
-        {
-            continue;
-        }
-        let snippet = snippet_from_disk(root, &hit.file_path, hit.start_line, hit.end_line, 5);
-        out.push(DenseSearchResult {
-            chunk_idx: 0,
-            similarity: hit.score,
-            file_path: hit.file_path,
-            symbol_name: hit.symbol_name,
-            kind: hit.kind,
-            start_line: hit.start_line,
-            end_line: hit.end_line,
-            snippet,
-        });
-    }
-    Ok(out)
-}
-
-#[cfg(any(feature = "qdrant", feature = "pgvector"))]
-fn snippet_from_disk(
-    root: &Path,
-    rel_path: &str,
-    start_line: usize,
-    end_line: usize,
-    max_lines: usize,
-) -> String {
-    let Ok(path) = crate::core::pathjail::jail_path(&root.join(rel_path), root) else {
-        return String::new();
-    };
-    let Ok(content) = std::fs::read_to_string(path) else {
-        return String::new();
-    };
-    let lines: Vec<&str> = content.lines().collect();
-    if lines.is_empty() {
-        return String::new();
-    }
-    let start = start_line.saturating_sub(1).min(lines.len());
-    let end = end_line.max(start_line).min(lines.len());
-    let mut slice = &lines[start..end];
-    if slice.len() > max_lines {
-        slice = &slice[..max_lines];
-    }
-    slice.join("\n")
-}
-
-#[cfg(any(feature = "qdrant", feature = "pgvector"))]
-pub(crate) fn kind_to_str(kind: &ChunkKind) -> &'static str {
-    match kind {
-        ChunkKind::Function => "Function",
-        ChunkKind::Struct => "Struct",
-        ChunkKind::Impl => "Impl",
-        ChunkKind::Module => "Module",
-        ChunkKind::Class => "Class",
-        ChunkKind::Method => "Method",
-        ChunkKind::Issue => "Issue",
-        ChunkKind::PullRequest => "PullRequest",
-        ChunkKind::WikiPage => "WikiPage",
-        ChunkKind::DbSchema => "DbSchema",
-        ChunkKind::ApiEndpoint => "ApiEndpoint",
-        ChunkKind::Ticket => "Ticket",
-        ChunkKind::ExternalOther => "ExternalOther",
-        ChunkKind::Other => "Other",
-    }
-}
-
-#[cfg(any(feature = "qdrant", feature = "pgvector"))]
-pub(crate) fn kind_from_str(s: &str) -> ChunkKind {
-    match s {
-        "Function" => ChunkKind::Function,
-        "Struct" => ChunkKind::Struct,
-        "Impl" => ChunkKind::Impl,
-        "Module" => ChunkKind::Module,
-        "Class" => ChunkKind::Class,
-        "Method" => ChunkKind::Method,
-        "Issue" => ChunkKind::Issue,
-        "PullRequest" => ChunkKind::PullRequest,
-        "WikiPage" => ChunkKind::WikiPage,
-        "DbSchema" => ChunkKind::DbSchema,
-        "ApiEndpoint" => ChunkKind::ApiEndpoint,
-        "Ticket" => ChunkKind::Ticket,
-        "ExternalOther" => ChunkKind::ExternalOther,
-        _ => ChunkKind::Other,
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -591,59 +285,6 @@ mod tests {
 
         restore_env("LEANCTX_DENSE_BACKEND", old_backend);
         restore_env("LEANCTX_QDRANT_URL", old_url);
-    }
-
-    #[cfg(feature = "qdrant")]
-    #[test]
-    fn dense_backend_infers_qdrant_from_url() {
-        let _g = crate::core::data_dir::test_env_lock();
-        let old_backend = set_env("LEANCTX_DENSE_BACKEND", None);
-        let old_url = set_env("LEANCTX_QDRANT_URL", Some("http://127.0.0.1:6333"));
-        let old_pg = set_env("LEANCTX_PGVECTOR_URL", None);
-
-        let got = DenseBackendKind::try_from_env().unwrap();
-        assert_eq!(got, DenseBackendKind::Qdrant);
-
-        restore_env("LEANCTX_DENSE_BACKEND", old_backend);
-        restore_env("LEANCTX_QDRANT_URL", old_url);
-        restore_env("LEANCTX_PGVECTOR_URL", old_pg);
-    }
-
-    #[cfg(feature = "pgvector")]
-    #[test]
-    fn dense_backend_infers_pgvector_from_url() {
-        let _g = crate::core::data_dir::test_env_lock();
-        let old_backend = set_env("LEANCTX_DENSE_BACKEND", None);
-        let old_url = set_env("LEANCTX_QDRANT_URL", None);
-        let old_pg = set_env("LEANCTX_PGVECTOR_URL", Some("postgres://localhost/lctx"));
-
-        let got = DenseBackendKind::try_from_env().unwrap();
-        assert_eq!(got, DenseBackendKind::Pgvector);
-
-        restore_env("LEANCTX_DENSE_BACKEND", old_backend);
-        restore_env("LEANCTX_QDRANT_URL", old_url);
-        restore_env("LEANCTX_PGVECTOR_URL", old_pg);
-    }
-
-    #[cfg(all(feature = "qdrant", feature = "pgvector"))]
-    #[test]
-    fn dense_backend_qdrant_wins_when_both_urls_set() {
-        let _g = crate::core::data_dir::test_env_lock();
-        let old_backend = set_env("LEANCTX_DENSE_BACKEND", None);
-        let old_url = set_env("LEANCTX_QDRANT_URL", Some("http://127.0.0.1:6333"));
-        let old_pg = set_env("LEANCTX_PGVECTOR_URL", Some("postgres://localhost/lctx"));
-
-        let got = DenseBackendKind::try_from_env().unwrap();
-        assert_eq!(got, DenseBackendKind::Qdrant);
-
-        // Explicit selection overrides inference order.
-        crate::test_env::set_var("LEANCTX_DENSE_BACKEND", "pgvector");
-        let got = DenseBackendKind::try_from_env().unwrap();
-        assert_eq!(got, DenseBackendKind::Pgvector);
-
-        restore_env("LEANCTX_DENSE_BACKEND", old_backend);
-        restore_env("LEANCTX_QDRANT_URL", old_url);
-        restore_env("LEANCTX_PGVECTOR_URL", old_pg);
     }
 
     #[cfg(not(feature = "qdrant"))]

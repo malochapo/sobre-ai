@@ -78,7 +78,7 @@ pub(crate) fn cmd_proof(args: &[String]) {
         ..Default::default()
     };
 
-    match crate::tools::ctx_proof::handle_export(
+    match crate::tools::impl_proof::handle_export(
         &project_root,
         format.as_deref(),
         write,

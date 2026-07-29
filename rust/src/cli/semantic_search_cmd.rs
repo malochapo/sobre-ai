@@ -11,7 +11,7 @@
 //! best relevance, at the cost of a slower first run while embeddings build.
 
 use crate::core::hybrid_search::{HybridResult, format_hybrid_results};
-use crate::tools::ctx_semantic_search;
+use crate::tools::impl_semantic_search;
 
 /// Parsed `semantic-search` invocation. Kept separate from execution so the
 /// flag handling is unit-testable without spawning a process.
@@ -127,7 +127,7 @@ pub(crate) fn cmd_semantic_search(args: &[String]) {
             eprintln!("semantic-search: --json is not supported with --artifacts yet");
             std::process::exit(2);
         }
-        let out = ctx_semantic_search::handle(
+        let out = impl_semantic_search::handle(
             &query,
             &parsed.path,
             parsed.top_k,
@@ -146,7 +146,7 @@ pub(crate) fn cmd_semantic_search(args: &[String]) {
         return;
     }
 
-    match ctx_semantic_search::search_hits(
+    match impl_semantic_search::search_hits(
         &query,
         &parsed.path,
         parsed.top_k,

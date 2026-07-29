@@ -76,10 +76,6 @@ pub fn run() {
                 }
                 return;
             }
-            "billing" => {
-                cmd_billing(&rest);
-                return;
-            }
             "finops" => {
                 cmd_finops(&rest);
                 return;
@@ -205,10 +201,6 @@ pub fn run() {
                 cmd_dashboard(&rest);
                 return;
             }
-            "team" => {
-                cmd_team(&rest);
-                return;
-            }
             "provider" => {
                 cmd_provider(&rest);
                 return;
@@ -223,11 +215,6 @@ pub fn run() {
             }
             "proxy" => {
                 cmd_proxy(&rest);
-                return;
-            }
-            #[cfg(feature = "gateway-server")]
-            "gateway" => {
-                cmd_gateway(&rest);
                 return;
             }
             "daemon" => {
@@ -538,15 +525,11 @@ pub fn run() {
                 return;
             }
             "gotchas" | "bugs" => {
-                super::cloud::cmd_gotchas(&rest);
+                super::gotchas_cmd::cmd_gotchas(&rest);
                 return;
             }
             "learn" => {
                 super::cmd_learn(&rest);
-                return;
-            }
-            "buddy" | "pet" => {
-                super::cloud::cmd_buddy(&rest);
                 return;
             }
             "hook" => {
@@ -614,34 +597,6 @@ pub fn run() {
             }
             "cheat" | "cheatsheet" | "cheat-sheet" => {
                 super::cmd_cheatsheet();
-                return;
-            }
-            "login" => {
-                super::cloud::cmd_login(&rest);
-                return;
-            }
-            "register" => {
-                super::cloud::cmd_register(&rest);
-                return;
-            }
-            "forgot-password" => {
-                super::cloud::cmd_forgot_password(&rest);
-                return;
-            }
-            "sync" => {
-                super::cloud::cmd_sync(&rest);
-                return;
-            }
-            "contribute" => {
-                super::cloud::cmd_contribute();
-                return;
-            }
-            "cloud" => {
-                super::cloud::cmd_cloud(&rest);
-                return;
-            }
-            "upgrade" => {
-                super::cloud::cmd_upgrade();
                 return;
             }
             "--version" | "-V" => {

@@ -303,7 +303,7 @@ fn scenario_compress_if_beneficial_still_compresses_git_status() {
         "Changes not staged for commit:",
         "  (use \"git add <file>...\" to update what will be committed)",
         "  (use \"git restore <file>...\" to discard changes in working directory)",
-        "\tmodified:   src/tools/ctx_overview.rs",
+        "\tmodified:   src/tools/impl_overview.rs",
         "\tmodified:   src/tools/ctx_read/mod.rs",
         "\tmodified:   src/tools/ctx_read/render.rs",
         "\tmodified:   src/tools/ctx_search.rs",

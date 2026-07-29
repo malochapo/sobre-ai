@@ -53,82 +53,11 @@ pub(in crate::cli::dispatch) fn cmd_gain(rest: &[String]) {
         })
         .unwrap_or(10);
 
-    let copy = rest.iter().any(|a| a == "--copy");
+
     let open = rest.iter().any(|a| a == "--open");
 
     if rest.iter().any(|a| a == "--no-cache-adjust") {
         core::context_overhead::set_no_cache_adjust(true);
-    }
-
-    if let Some(req) = unpublish_request(rest) {
-        let id = match &req {
-            UnpublishReq::Id(s) => Some(s.as_str()),
-            UnpublishReq::Latest => None,
-        };
-        crate::cli::wrapped_publish::unpublish(id);
-        return;
-    }
-    if rest.iter().any(|a| a == "--publish") {
-        let leaderboard = rest.iter().any(|a| a == "--leaderboard");
-        crate::cli::wrapped_publish::publish(&period, name_arg(rest).as_deref(), leaderboard);
-        return;
-    }
-    if let Some(req) = link_request(rest) {
-        let code = match &req {
-            LinkReq::Complete(c) => Some(c.as_str()),
-            LinkReq::Start => None,
-        };
-        crate::cli::wrapped_publish::link(code);
-        return;
-    }
-
-    if let Some(svg_path) = svg_target(rest) {
-        let report = core::wrapped::WrappedReport::generate(&period);
-        match std::fs::write(&svg_path, report.to_svg()) {
-            Ok(()) => println!(
-                "Wrapped card written to {svg_path}\n\
-                 Share it directly, open it in a browser, or convert to PNG with any SVG tool."
-            ),
-            Err(e) => {
-                eprintln!("Failed to write {svg_path}: {e}");
-                std::process::exit(1);
-            }
-        }
-        share_side_effects(&report, Some(&svg_path), copy, open);
-        return;
-    }
-
-    if let Some(html_path) = share_target(rest) {
-        let report = core::wrapped::WrappedReport::generate(&period);
-        let base = base_url_arg(rest);
-        match std::fs::write(&html_path, report.to_share_html(base.as_deref())) {
-            Ok(()) => {
-                println!("Share page written to {html_path}");
-                if base.is_some() {
-                    println!(
-                        "Host it at your base URL; for social preview cards, place a PNG \
-                         (rasterise the SVG) at <base>/lean-ctx-wrapped.png."
-                    );
-                } else {
-                    println!(
-                        "Self-contained (SVG embedded) — host it anywhere to get a permalink. \
-                         Pass --base-url=https://… to emit social preview meta."
-                    );
-                }
-            }
-            Err(e) => {
-                eprintln!("Failed to write {html_path}: {e}");
-                std::process::exit(1);
-            }
-        }
-        share_side_effects(&report, Some(&html_path), copy, open);
-        return;
-    }
-
-    if copy {
-        let report = core::wrapped::WrappedReport::generate(&period);
-        share_side_effects(&report, None, true, false);
-        return;
     }
 
     if rest.iter().any(|a| a == "--by-tool") {
@@ -140,71 +69,39 @@ pub(in crate::cli::dispatch) fn cmd_gain(rest: &[String]) {
     } else if rest.iter().any(|a| a == "--json") {
         println!(
             "{}",
-            tools::ctx_gain::handle("json", Some(&period), model.as_deref(), Some(limit))
+            tools::impl_gain::handle("json", Some(&period), model.as_deref(), Some(limit))
         );
     } else if rest.iter().any(|a| a == "--score") {
         println!(
             "{}",
-            tools::ctx_gain::handle("score", None, model.as_deref(), Some(limit))
+            tools::impl_gain::handle("score", None, model.as_deref(), Some(limit))
         );
     } else if rest.iter().any(|a| a == "--cost") {
         println!(
             "{}",
-            tools::ctx_gain::handle("cost", None, model.as_deref(), Some(limit))
+            tools::impl_gain::handle("cost", None, model.as_deref(), Some(limit))
         );
         print_measured_spend_hint();
     } else if rest.iter().any(|a| a == "--tasks") {
         println!(
             "{}",
-            tools::ctx_gain::handle("tasks", None, None, Some(limit))
+            tools::impl_gain::handle("tasks", None, None, Some(limit))
         );
     } else if rest.iter().any(|a| a == "--agents") {
         println!(
             "{}",
-            tools::ctx_gain::handle("agents", None, None, Some(limit))
+            tools::impl_gain::handle("agents", None, None, Some(limit))
         );
     } else if rest.iter().any(|a| a == "--heatmap") {
         println!(
             "{}",
-            tools::ctx_gain::handle("heatmap", None, None, Some(limit))
+            tools::impl_gain::handle("heatmap", None, None, Some(limit))
         );
     } else if rest.iter().any(|a| a == "--wrapped") {
         println!(
             "{}",
-            tools::ctx_gain::handle("wrapped", Some(&period), model.as_deref(), Some(limit))
+            tools::impl_gain::handle("wrapped", Some(&period), model.as_deref(), Some(limit))
         );
-        // Interactive publish prompt (if TTY and not already published)
-        if !rest.iter().any(|a| a == "--publish")
-            && std::io::IsTerminal::is_terminal(&std::io::stdin())
-            && !crate::cli::wrapped_publish::has_published()
-        {
-            eprint!("\n  Publish this card? [y/N/leaderboard] ");
-            let mut input = String::new();
-            if std::io::stdin().read_line(&mut input).is_ok() {
-                let answer = input.trim().to_lowercase();
-                match answer.as_str() {
-                    "y" | "yes" => {
-                        let cfg = crate::core::config::Config::load();
-                        crate::cli::wrapped_publish::publish(
-                            &period,
-                            cfg.gain.display_name.as_deref(),
-                            cfg.gain.leaderboard,
-                        );
-                    }
-                    "l" | "leaderboard" => {
-                        let cfg = crate::core::config::Config::load();
-                        crate::cli::wrapped_publish::publish(
-                            &period,
-                            cfg.gain.display_name.as_deref(),
-                            true,
-                        );
-                    }
-                    _ => {}
-                }
-            }
-        } else {
-            crate::cli::wrapped_publish::maybe_auto_publish(&period);
-        }
     } else if rest.iter().any(|a| a == "--pipeline") {
         let stats_path = crate::core::paths::state_dir()
             .unwrap_or_else(|_| dirs::home_dir().unwrap_or_default().join(".lean-ctx"))
@@ -224,7 +121,7 @@ pub(in crate::cli::dispatch) fn cmd_gain(rest: &[String]) {
         println!("{}", core::stats::format_gain_body());
         print!(
             "{}",
-            tools::ctx_gain::format_deep_themed(model.as_deref(), limit)
+            tools::impl_gain::format_deep_themed(model.as_deref(), limit)
         );
         println!("{}", core::stats::format_gain_footer());
     } else if rest.iter().any(|a| a == "--opportunity") {
@@ -242,7 +139,6 @@ pub(in crate::cli::dispatch) fn cmd_gain(rest: &[String]) {
         print_support_hint();
         print_bridge_warning();
         print_split_hint();
-        crate::cli::wrapped_publish::maybe_auto_publish(&period);
         print_community_hint();
     }
 }
@@ -305,8 +201,8 @@ fn print_community_hint() {
         return;
     }
 
-    let on_board = crate::cli::wrapped_publish::has_leaderboard_entry();
-    let published = crate::cli::wrapped_publish::has_published();
+    let on_board = false;
+    let published = false;
     let has_name = crate::core::config::Config::load()
         .gain
         .display_name
@@ -380,150 +276,6 @@ fn print_support_hint() {
     println!("  {}", t.box_bottom(w));
 }
 
-/// Resolves the output path for the shareable SVG Wrapped card, or `None` when no
-/// card was requested. Accepts `--svg`, `--svg=<path>`, `--card`, `--card=<path>`;
-/// a bare flag falls back to `lean-ctx-wrapped.svg` in the current directory.
-/// A requested `--unpublish`: either an explicit card id, or the most recent published card.
-enum UnpublishReq {
-    Latest,
-    Id(String),
-}
-
-/// Parses `--unpublish[=<id>]`. `None` means it was not requested at all.
-fn unpublish_request(rest: &[String]) -> Option<UnpublishReq> {
-    for a in rest {
-        if let Some(v) = a.strip_prefix("--unpublish=") {
-            return Some(UnpublishReq::Id(v.to_string()));
-        }
-        if a == "--unpublish" {
-            return Some(UnpublishReq::Latest);
-        }
-    }
-    None
-}
-
-/// A requested `--link`: start a pairing (mint a code) or complete one with a code.
-enum LinkReq {
-    Start,
-    Complete(String),
-}
-
-/// Parses `--link[=CODE]` / `--link CODE` (GH #736). `None` = not requested.
-fn link_request(rest: &[String]) -> Option<LinkReq> {
-    for (i, a) in rest.iter().enumerate() {
-        if let Some(v) = a.strip_prefix("--link=") {
-            return Some(LinkReq::Complete(v.to_string()));
-        }
-        if a == "--link" {
-            return Some(match rest.get(i + 1) {
-                Some(next) if !next.starts_with('-') => LinkReq::Complete(next.clone()),
-                _ => LinkReq::Start,
-            });
-        }
-    }
-    None
-}
-
-/// Parses `--name=<display>` / `--name <display>` for the optional publish display label.
-fn name_arg(rest: &[String]) -> Option<String> {
-    rest.iter().enumerate().find_map(|(i, a)| {
-        if let Some(v) = a.strip_prefix("--name=") {
-            return Some(v.to_string());
-        }
-        if a == "--name" {
-            return rest.get(i + 1).cloned();
-        }
-        None
-    })
-}
-
-fn svg_target(rest: &[String]) -> Option<String> {
-    let mut requested = false;
-    let mut path: Option<String> = None;
-    for (i, a) in rest.iter().enumerate() {
-        if let Some(v) = a
-            .strip_prefix("--svg=")
-            .or_else(|| a.strip_prefix("--card="))
-        {
-            requested = true;
-            path = Some(v.to_string());
-        } else if a == "--svg" || a == "--card" {
-            requested = true;
-            if let Some(next) = rest.get(i + 1)
-                && !next.starts_with('-')
-            {
-                path = Some(next.clone());
-            }
-        }
-    }
-    requested.then(|| path.unwrap_or_else(|| "lean-ctx-wrapped.svg".to_string()))
-}
-
-/// Resolves the output path for the self-hostable HTML share page, or `None` when not
-/// requested. Accepts `--share`, `--share=<path>`, `--page`, `--page=<path>`; a bare flag
-/// falls back to `lean-ctx-wrapped.html`.
-fn share_target(rest: &[String]) -> Option<String> {
-    let mut requested = false;
-    let mut path: Option<String> = None;
-    for (i, a) in rest.iter().enumerate() {
-        if let Some(v) = a
-            .strip_prefix("--share=")
-            .or_else(|| a.strip_prefix("--page="))
-        {
-            requested = true;
-            path = Some(v.to_string());
-        } else if a == "--share" || a == "--page" {
-            requested = true;
-            if let Some(next) = rest.get(i + 1)
-                && !next.starts_with('-')
-            {
-                path = Some(next.clone());
-            }
-        }
-    }
-    requested.then(|| path.unwrap_or_else(|| "lean-ctx-wrapped.html".to_string()))
-}
-
-/// Reads `--base-url=<url>` / `--base-url <url>` (the location the share page will be
-/// hosted at, used for absolute social-preview image meta).
-fn base_url_arg(rest: &[String]) -> Option<String> {
-    rest.iter().enumerate().find_map(|(i, a)| {
-        if let Some(v) = a.strip_prefix("--base-url=") {
-            return Some(v.to_string());
-        }
-        if a == "--base-url" {
-            return rest.get(i + 1).cloned();
-        }
-        None
-    })
-}
-
-/// Applies the optional `--copy` (clipboard) and `--open` (browser) side effects for a
-/// Wrapped artifact. `path` is the just-written file to open, when one exists. Both
-/// degrade gracefully: a clipboard miss falls back to printing the share line.
-fn share_side_effects(
-    report: &core::wrapped::WrappedReport,
-    path: Option<&str>,
-    copy: bool,
-    open: bool,
-) {
-    if copy {
-        let text = report.share_text(None);
-        if core::share::copy_to_clipboard(&text) {
-            println!("Copied to clipboard:  {text}");
-        } else {
-            println!("Share text (copy it): {text}");
-        }
-    }
-    if open && let Some(p) = path {
-        if core::share::open_in_browser(p) {
-            println!("Opened {p}");
-        } else {
-            println!("Could not open {p} automatically — open it manually.");
-        }
-    }
-}
-
 /// `gain --opportunity` — merged discover + ghost (opportunity report).
 fn cmd_opportunity() {
     use crate::core::theme;
@@ -538,7 +290,7 @@ fn cmd_opportunity() {
     let w = 57;
 
     let history = crate::cli::common::load_shell_history();
-    let result = crate::tools::ctx_discover::analyze_history(&history, 10);
+    let result = crate::tools::impl_discover::analyze_history(&history, 10);
 
     let store = core::stats::load_for_display();
     let optimized_cmds = store.total_commands;
@@ -720,86 +472,5 @@ fn cmd_stats_raw(rest: &[String]) {
             "CEP tokens:    {} → {}",
             store.cep.total_tokens_original, store.cep.total_tokens_compressed
         );
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::{base_url_arg, share_target, svg_target};
-
-    fn args(xs: &[&str]) -> Vec<String> {
-        xs.iter().map(|s| (*s).to_string()).collect()
-    }
-
-    #[test]
-    fn no_flag_means_no_card() {
-        assert_eq!(svg_target(&args(&["--wrapped", "--period=month"])), None);
-    }
-
-    #[test]
-    fn bare_flag_uses_default_path() {
-        assert_eq!(
-            svg_target(&args(&["--svg"])).as_deref(),
-            Some("lean-ctx-wrapped.svg")
-        );
-        assert_eq!(
-            svg_target(&args(&["--card"])).as_deref(),
-            Some("lean-ctx-wrapped.svg")
-        );
-    }
-
-    #[test]
-    fn explicit_path_is_used() {
-        assert_eq!(
-            svg_target(&args(&["--svg=out.svg"])).as_deref(),
-            Some("out.svg")
-        );
-        assert_eq!(
-            svg_target(&args(&["--card=c.svg"])).as_deref(),
-            Some("c.svg")
-        );
-        assert_eq!(
-            svg_target(&args(&["--svg", "chosen.svg"])).as_deref(),
-            Some("chosen.svg")
-        );
-    }
-
-    #[test]
-    fn following_flag_is_not_consumed_as_path() {
-        assert_eq!(
-            svg_target(&args(&["--svg", "--period=week"])).as_deref(),
-            Some("lean-ctx-wrapped.svg")
-        );
-    }
-
-    #[test]
-    fn share_target_resolves_paths() {
-        assert_eq!(share_target(&args(&["--wrapped"])), None);
-        assert_eq!(
-            share_target(&args(&["--share"])).as_deref(),
-            Some("lean-ctx-wrapped.html")
-        );
-        assert_eq!(
-            share_target(&args(&["--page=out.html"])).as_deref(),
-            Some("out.html")
-        );
-        assert_eq!(
-            share_target(&args(&["--share", "--base-url=https://x"])).as_deref(),
-            Some("lean-ctx-wrapped.html"),
-            "a following flag must not be eaten as the path"
-        );
-    }
-
-    #[test]
-    fn base_url_is_parsed_both_forms() {
-        assert_eq!(
-            base_url_arg(&args(&["--base-url=https://me.dev"])).as_deref(),
-            Some("https://me.dev")
-        );
-        assert_eq!(
-            base_url_arg(&args(&["--base-url", "https://me.dev"])).as_deref(),
-            Some("https://me.dev")
-        );
-        assert_eq!(base_url_arg(&args(&["--share"])), None);
     }
 }

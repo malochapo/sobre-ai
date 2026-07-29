@@ -808,3 +808,24 @@ mod tests {
         assert_eq!(resolve_model("cursor", Some("  "), Some("  ")), "cursor");
     }
 }
+
+/// USD saved (or lost) by serving `input_tokens` on `serving` instead of the
+/// `requested` model — a rate difference on the same tokens.
+///
+/// Rescued from the deleted `core::eval_ab::routing_eval`: it is a pricing
+/// computation, not an evaluation harness, and the savings ledger is its only
+/// remaining caller. A negative result means the route was an upgrade; callers
+/// record those too rather than hiding regressions.
+#[must_use]
+pub fn routing_saving_usd(
+    pricing: &ModelPricing,
+    requested: &str,
+    serving: &str,
+    input_tokens: u64,
+) -> f64 {
+    let from = pricing.quote(Some(requested)).cost.input_per_m;
+    let to = pricing.quote(Some(serving)).cost.input_per_m;
+    #[allow(clippy::cast_precision_loss)]
+    let tokens = input_tokens as f64;
+    (from - to) / 1_000_000.0 * tokens
+}

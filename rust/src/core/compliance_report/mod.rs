@@ -173,28 +173,18 @@ fn build_owasp() -> OwaspSection {
 
 /// Retention posture: the pack's declared intent vs. the effective plan window.
 fn build_retention(resolved: &ResolvedPolicy) -> RetentionSection {
-    let eff = crate::cloud_client::resolve_effective_plan_cached();
-    let plan_days = eff.plan.entitlements().audit_retention_days;
-    let plan_covers_policy = resolved
-        .audit_retention_days
-        .map(|declared| plan_days >= declared);
+    // sobre has no commercial plane: retention is whatever the policy pack
+    // declares, and nothing caps it. `plan_*` fields are kept for wire
+    // compatibility and report the local, uncapped posture.
+    let plan_days = resolved.audit_retention_days.unwrap_or(u32::MAX);
+    let plan_covers_policy = Some(true);
     RetentionSection {
         policy_pack: Some(format!("{} v{}", resolved.name, resolved.version)),
         policy_audit_retention_days: resolved.audit_retention_days,
-        plan: eff.plan.as_str().to_string(),
-        plan_source: plan_source_label(eff.source).to_string(),
+        plan: "local".to_string(),
+        plan_source: "local".to_string(),
         plan_audit_retention_days: plan_days,
         plan_covers_policy,
-    }
-}
-
-fn plan_source_label(s: crate::cloud_client::PlanSource) -> &'static str {
-    use crate::cloud_client::PlanSource;
-    match s {
-        PlanSource::Live => "live",
-        PlanSource::Cached => "cached",
-        PlanSource::Expired => "expired",
-        PlanSource::None => "unverified",
     }
 }
 

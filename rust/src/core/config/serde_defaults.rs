@@ -33,10 +33,6 @@ pub(super) fn default_preserve_compact_formats() -> Vec<String> {
     vec!["toon".to_string()]
 }
 
-pub(super) fn default_buddy_enabled() -> bool {
-    true
-}
-
 pub(super) fn default_true() -> bool {
     true
 }

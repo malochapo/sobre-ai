@@ -7,7 +7,7 @@
 //! before the edit-quality store's `OnceLock` is first touched.
 
 use lean_ctx::core::auto_mode_resolver::{AutoModeContext, resolve};
-use lean_ctx::tools::ctx_edit::{EditParams, record_outcome, run_io};
+use lean_ctx::tools::impl_edit::{EditParams, record_outcome, run_io};
 
 fn params_for(path: &str, old_string: &str) -> EditParams {
     EditParams {

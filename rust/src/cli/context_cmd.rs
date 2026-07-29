@@ -58,7 +58,7 @@ pub(crate) fn cmd_control(args: &[String]) {
         ("reason", reason),
         ("value", value),
     ]);
-    let result = crate::tools::ctx_control::handle(Some(&args_map), &mut ledger, &mut overlays);
+    let result = crate::tools::impl_control::handle(Some(&args_map), &mut ledger, &mut overlays);
     ledger.save();
     let _ = overlays.save_project(&project_root);
 
@@ -95,7 +95,7 @@ pub(crate) fn cmd_plan(args: &[String]) {
     let policies = PolicySet::defaults();
 
     let args_map = build_map(&[("task", Some(task)), ("budget", budget)]);
-    let result = crate::tools::ctx_plan::handle(Some(&args_map), &ledger, &policies);
+    let result = crate::tools::impl_plan::handle(Some(&args_map), &ledger, &policies);
 
     println!("{result}");
 }
@@ -127,7 +127,7 @@ pub(crate) fn cmd_compile(args: &[String]) {
     let policies = PolicySet::defaults();
 
     let args_map = build_map(&[("mode", Some(mode)), ("budget", budget)]);
-    let result = crate::tools::ctx_compile::handle(Some(&args_map), &ledger, &policies);
+    let result = crate::tools::impl_compile::handle(Some(&args_map), &ledger, &policies);
 
     println!("{result}");
 }

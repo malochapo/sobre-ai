@@ -49,7 +49,7 @@ export const b = () => c();
         assert_ne!(status_v["freshness"], "empty");
 
         let arch =
-            lean_ctx::tools::ctx_architecture::handle("overview", None, &root_s, Some("json"));
+            lean_ctx::tools::impl_architecture::handle("overview", None, &root_s, Some("json"));
         let arch_v = parse_json(&arch);
         assert_eq!(arch_v["tool"], "ctx_architecture");
         assert_eq!(arch_v["action"], "overview");

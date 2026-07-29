@@ -209,10 +209,10 @@ pub fn session_lifecycle_pre_hook(
     }
 
     let (result, usable) = if let Some(task_desc) = task {
-        crate::tools::ctx_preload::handle(cache, task_desc, Some(&root), crp_mode)
+        crate::tools::impl_preload::handle(cache, task_desc, Some(&root), crp_mode)
     } else {
         let cache_readonly = &*cache;
-        crate::tools::ctx_overview::handle(cache_readonly, None, Some(&root), crp_mode)
+        crate::tools::impl_overview::handle(cache_readonly, None, Some(&root), crp_mode)
     };
 
     let empty = !usable || result.trim().is_empty();
@@ -285,7 +285,7 @@ pub fn enrich_after_read(
             record_event(AutonomyPhaseV1::PostRead, "ctx_read", None, decisions);
         } else {
             let changed = vec![file_path.to_string()];
-            let out = crate::tools::ctx_prefetch::handle(
+            let out = crate::tools::impl_prefetch::handle(
                 cache,
                 &root,
                 task,
@@ -440,7 +440,7 @@ pub fn maybe_auto_dedup(state: &AutonomyState, cache: &mut SessionCache, trigger
         return;
     }
 
-    let out = crate::tools::ctx_dedup::handle_action(cache, "apply");
+    let out = crate::tools::impl_dedup::handle_action(cache, "apply");
     let summary = out.lines().next().unwrap_or("").trim().to_string();
     decisions.push(AutonomyDriverDecisionV1 {
         driver: AutonomyDriverKindV1::Dedup,
@@ -649,7 +649,7 @@ pub fn maybe_auto_response(
     }
 
     let start = std::time::Instant::now();
-    let compressed = crate::tools::ctx_response::handle(output, crp_mode);
+    let compressed = crate::tools::impl_response::handle(output, crp_mode);
     let duration = start.elapsed();
     let output_tokens = count_tokens(&compressed);
 

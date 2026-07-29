@@ -25,7 +25,7 @@ use super::model::{ModelFingerprint, ModelRequest, ModelRunner};
 use super::report::{AbReport, PairRecord, ReportConfig, Verdict};
 use super::scorers::score_task;
 use super::suite::EvalSuite;
-use super::{artifact, sha256_hex};
+use super::sha256_hex;
 
 /// Report schema discriminator + version.
 const KIND: &str = "lean-ctx.footprint-report";
@@ -95,7 +95,7 @@ impl Footprint {
         Self {
             rules: crate::rules_inject::canonical_rules_block(),
             tool_schemas: serialize_tools(&tools),
-            wakeup: crate::tools::ctx_overview::build_wakeup_briefing(project_root, None),
+            wakeup: crate::tools::impl_overview::build_wakeup_briefing(project_root, None),
         }
     }
 
@@ -244,7 +244,7 @@ impl FootprintReport {
         let parts: Vec<String> = self
             .elements
             .iter()
-            .map(|e| artifact::determinism_digest(&e.report))
+            .map(|e| super::report::determinism_digest(&e.report))
             .collect();
         sha256_hex(parts.join("|").as_bytes())
     }
@@ -423,7 +423,7 @@ pub fn run_footprint_ab(
     let determinism_digest = {
         let parts: Vec<String> = elements
             .iter()
-            .map(|e| artifact::determinism_digest(&e.report))
+            .map(|e| super::report::determinism_digest(&e.report))
             .collect();
         sha256_hex(parts.join("|").as_bytes())
     };

@@ -32,12 +32,9 @@ pub mod cold_prefix;
 pub mod compress;
 pub mod compress_api;
 mod connector;
-#[cfg(feature = "experimental")]
-pub(crate) mod conversation;
 pub mod cost;
 pub mod counterfactual;
 pub mod effort;
-pub mod effort_routing;
 pub mod forward;
 pub mod gateway_identity;
 pub mod google;
@@ -63,14 +60,10 @@ pub mod prose;
 pub mod prose_ranker;
 pub mod providers;
 pub mod response_optimizer;
-#[cfg(feature = "experimental")]
-pub(crate) mod response_shaper;
 pub mod routing;
 pub mod routing_feedback;
 #[cfg(feature = "shape-xlat")]
 pub mod shape_xlat;
-#[cfg(feature = "experimental")]
-pub(crate) mod shaping_hook;
 pub mod sse_keepalive;
 #[cfg(test)]
 mod stats_tests;
@@ -81,7 +74,6 @@ pub mod tool_output;
 mod upstream_tests;
 pub mod usage;
 pub mod usage_accounting;
-pub mod usage_azure;
 pub mod usage_meter;
 pub mod usage_parity;
 pub mod usage_sink;

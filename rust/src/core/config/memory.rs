@@ -90,10 +90,6 @@ impl MemoryProfile {
         }
     }
 
-    pub fn semantic_cache_enabled(&self) -> bool {
-        !matches!(self, Self::Low)
-    }
-
     pub fn embeddings_enabled(&self) -> bool {
         !matches!(self, Self::Low)
     }

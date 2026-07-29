@@ -5,7 +5,6 @@
 //! `docs/business/03-verified-savings-ledger.md`.
 
 pub mod event;
-pub mod evidence_projection;
 pub mod push;
 pub mod roi;
 pub mod signed_batch;
@@ -15,16 +14,9 @@ pub mod store;
 mod migration_tests;
 
 pub use event::{MECHANISM_CACHING, MECHANISM_COMPRESSION, MECHANISM_ROUTING, SavingsEvent};
-pub use evidence_projection::{
-    LedgerAttributionLinkV2, LedgerEvidenceProjectionV2, LedgerEvidenceSourceBindingV2,
-    LedgerProjectionErrorV2, VerifiedLedgerSnapshotV2, load_projection_artifact_v2,
-    project_settlement_attribution_v2,
-};
 pub use roi::{RoiReport, roi_report};
 pub use signed_batch::{BatchVerifyResult, SignedSavingsBatchV1};
-pub use store::{
-    LedgerSnapshotReadErrorV2, LedgerSummary, VerifyResult, read_verified_snapshot_v2,
-};
+pub use store::{LedgerSummary, VerifyResult};
 
 use std::sync::OnceLock;
 
@@ -246,7 +238,7 @@ pub fn record_tool_event_with_stream(
 /// the request with a cheaper model than requested. Unlike compression events the saving is
 /// a **rate** difference on the same tokens, so the caller passes the measured input tokens
 /// plus both models; the event is valued with the shared ledger attribution formula
-/// (`eval_ab::routing_eval::routing_saving_usd`). Negative-value routes (an upgrade) are
+/// (`gain::model_pricing::routing_saving_usd`). Negative-value routes (an upgrade) are
 /// recorded too — the ledger never hides regressions. Skips only true no-ops.
 pub fn record_routing_event(requested_model: &str, serving_model: &str, input_tokens: u64) {
     if input_tokens == 0 || requested_model == serving_model || !enabled() {
@@ -257,7 +249,7 @@ pub fn record_routing_event(requested_model: &str, serving_model: &str, input_to
     };
 
     let pricing = crate::core::gain::model_pricing::ModelPricing::load();
-    let saved_usd = crate::core::eval_ab::routing_eval::routing_saving_usd(
+    let saved_usd = crate::core::gain::model_pricing::routing_saving_usd(
         &pricing,
         requested_model,
         serving_model,

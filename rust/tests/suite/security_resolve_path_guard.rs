@@ -22,14 +22,6 @@ fn registry_tools_use_resolved_path() {
             include_str!("../../src/tools/registered/ctx_tree.rs"),
         ),
         (
-            "ctx_benchmark",
-            include_str!("../../src/tools/registered/ctx_benchmark.rs"),
-        ),
-        (
-            "ctx_analyze",
-            include_str!("../../src/tools/registered/ctx_analyze.rs"),
-        ),
-        (
             "ctx_outline",
             include_str!("../../src/tools/registered/ctx_outline.rs"),
         ),
@@ -40,26 +32,6 @@ fn registry_tools_use_resolved_path() {
         (
             "ctx_impact",
             include_str!("../../src/tools/registered/ctx_impact.rs"),
-        ),
-        (
-            "ctx_architecture",
-            include_str!("../../src/tools/registered/ctx_architecture.rs"),
-        ),
-        (
-            "ctx_pack",
-            include_str!("../../src/tools/registered/ctx_pack.rs"),
-        ),
-        (
-            "ctx_index",
-            include_str!("../../src/tools/registered/ctx_index.rs"),
-        ),
-        (
-            "ctx_artifacts",
-            include_str!("../../src/tools/registered/ctx_artifacts.rs"),
-        ),
-        (
-            "ctx_compress_memory",
-            include_str!("../../src/tools/registered/ctx_compress_memory.rs"),
         ),
     ];
     for (name, src) in registry_tools {

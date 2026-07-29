@@ -11,19 +11,14 @@
 //!   run is byte-identical everywhere.
 //!
 //! The pipeline per task is: [`conditions::assemble`] → [`model::ModelRunner`] →
-//! [`scorers::score_task`]. Results become a paired [`report::AbReport`], which a
-//! [`artifact::SignedAbReportV1`] turns into a portable, verifiable attestation.
+//! [`scorers::score_task`]. Results become a paired [`report::AbReport`].
 
-pub mod artifact;
 pub mod conditions;
 pub mod footprint;
-pub mod judge;
 pub mod model;
 pub mod report;
-pub mod routing_eval;
 pub mod scorers;
 pub mod suite;
-pub mod testbench;
 
 use anyhow::Result;
 
@@ -200,8 +195,8 @@ mod tests {
         // Determinism: a second identical run yields the same evidence digest.
         let report2 = run_ab(&suite, "fixture-suite", &runner, &cfg).unwrap();
         assert_eq!(
-            artifact::determinism_digest(&report),
-            artifact::determinism_digest(&report2)
+            report::determinism_digest(&report),
+            report::determinism_digest(&report2)
         );
     }
 

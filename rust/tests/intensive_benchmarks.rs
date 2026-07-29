@@ -4,7 +4,7 @@ use lean_ctx::core::protocol::instruction_decoder_block;
 use lean_ctx::core::signatures::extract_signatures;
 use lean_ctx::core::tokens::count_tokens;
 use lean_ctx::tools::CrpMode;
-use lean_ctx::tools::ctx_response;
+use lean_ctx::tools::impl_response;
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -772,7 +772,7 @@ fn bench_rrf_eviction_empty() {
 #[test]
 fn bench_response_compression_off() {
     let verbose_response = generate_verbose_llm_response();
-    let compressed = ctx_response::handle(&verbose_response, CrpMode::Off);
+    let compressed = impl_response::handle(&verbose_response, CrpMode::Off);
     let (orig, comp, pct) = measure_text(&verbose_response, &compressed);
 
     eprintln!("\n  [ctx_response CRP Off] {orig} → {comp} tokens ({pct:.1}% saved)");
@@ -785,7 +785,7 @@ fn bench_response_compression_off() {
 #[test]
 fn bench_response_compression_compact() {
     let verbose_response = generate_verbose_llm_response();
-    let compressed = ctx_response::handle(&verbose_response, CrpMode::Compact);
+    let compressed = impl_response::handle(&verbose_response, CrpMode::Compact);
     let (orig, comp, pct) = measure_text(&verbose_response, &compressed);
 
     eprintln!("\n  [ctx_response CRP Compact] {orig} → {comp} tokens ({pct:.1}% saved)");
@@ -795,7 +795,7 @@ fn bench_response_compression_compact() {
 #[test]
 fn bench_response_compression_tdd() {
     let verbose_response = generate_verbose_llm_response();
-    let compressed = ctx_response::handle(&verbose_response, CrpMode::Tdd);
+    let compressed = impl_response::handle(&verbose_response, CrpMode::Tdd);
     let (orig, comp, pct) = measure_text(&verbose_response, &compressed);
 
     eprintln!("\n  [ctx_response CRP TDD] {orig} → {comp} tokens ({pct:.1}% saved)");
@@ -822,8 +822,8 @@ I hope this helps! Let me know if you have any other questions or if you'd like 
 additional changes to the implementation. Feel free to ask if anything is unclear.\n\n\
 Don't hesitate to reach out if you need further assistance with this or any other issues.";
 
-    let result_off = ctx_response::handle(response_with_fillers, CrpMode::Off);
-    let result_tdd = ctx_response::handle(response_with_fillers, CrpMode::Tdd);
+    let result_off = impl_response::handle(response_with_fillers, CrpMode::Off);
+    let result_tdd = impl_response::handle(response_with_fillers, CrpMode::Tdd);
 
     let orig_tokens = count_tokens(response_with_fillers);
     let off_tokens = count_tokens(&result_off);

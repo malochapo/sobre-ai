@@ -16,19 +16,19 @@ pub(super) fn get_route(
 
 fn health() -> (&'static str, &'static str, String) {
     let root = detect_project_root_for_dashboard();
-    let result = crate::tools::ctx_architecture::handle("health", None, &root, Some("json"));
+    let result = crate::tools::impl_architecture::handle("health", None, &root, Some("json"));
     ("200 OK", "application/json", result)
 }
 
 fn hotspots() -> (&'static str, &'static str, String) {
     let root = detect_project_root_for_dashboard();
-    let result = crate::tools::ctx_architecture::handle("hotspots", None, &root, Some("json"));
+    let result = crate::tools::impl_architecture::handle("hotspots", None, &root, Some("json"));
     ("200 OK", "application/json", result)
 }
 
 fn communities() -> (&'static str, &'static str, String) {
     let root = detect_project_root_for_dashboard();
-    let result = crate::tools::ctx_architecture::handle("communities", None, &root, Some("json"));
+    let result = crate::tools::impl_architecture::handle("communities", None, &root, Some("json"));
     ("200 OK", "application/json", result)
 }
 
@@ -36,7 +36,7 @@ fn smells(query_str: &str) -> (&'static str, &'static str, String) {
     let root = detect_project_root_for_dashboard();
     let rule = extract_query_param(query_str, "rule");
     let path_filter = extract_query_param(query_str, "path");
-    let result = crate::tools::ctx_smells::handle(
+    let result = crate::tools::impl_smells::handle(
         "scan",
         rule.as_deref(),
         path_filter.as_deref(),
@@ -48,6 +48,6 @@ fn smells(query_str: &str) -> (&'static str, &'static str, String) {
 
 fn smells_summary() -> (&'static str, &'static str, String) {
     let root = detect_project_root_for_dashboard();
-    let result = crate::tools::ctx_smells::handle("summary", None, None, &root, Some("json"));
+    let result = crate::tools::impl_smells::handle("summary", None, None, &root, Some("json"));
     ("200 OK", "application/json", result)
 }

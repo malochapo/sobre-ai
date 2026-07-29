@@ -298,7 +298,7 @@ fn delegate_replace_unique(
         )));
     }
 
-    crate::tools::registered::ctx_edit::CtxEditTool.handle(&edit_args, ctx)
+    crate::tools::registered::impl_edit::CtxEditTool.handle(&edit_args, ctx)
 }
 
 fn build_unique_edit_args(args: &Map<String, Value>) -> Result<Map<String, Value>, String> {
@@ -472,13 +472,13 @@ fn apply_one(
 
         crate::tools::ctx_patch::record_outcome(params, &last_mode, &output, &effect);
 
-        if !matches!(effect, crate::tools::ctx_edit::CacheEffect::None) {
+        if !matches!(effect, crate::tools::impl_edit::CacheEffect::None) {
             match rt.block_on(tokio::time::timeout(
                 std::time::Duration::from_secs(5),
                 cache_lock.write(),
             )) {
                 Ok(mut cache) => {
-                    crate::tools::ctx_edit::apply_cache_effect(&mut cache, &path, effect);
+                    crate::tools::impl_edit::apply_cache_effect(&mut cache, &path, effect);
                 }
                 Err(_) => {
                     tracing::warn!(

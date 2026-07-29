@@ -8,8 +8,6 @@
 //! downgrade, tampered log ⇒ invalid chain, denied tool ⇒ event).
 
 use lean_ctx::core::compliance::{self, Coverage, RowStatus};
-use lean_ctx::core::events::{EventKind, LeanCtxEvent};
-use lean_ctx::core::ocp;
 use lean_ctx::core::policy::{ResolvedPolicy, builtin, resolve};
 
 fn resolved(pack_name: &str) -> ResolvedPolicy {
@@ -235,63 +233,16 @@ fn aia_15_5_unauthorized_tool_use_is_blocked() {
     assert!(!check.allowed);
     assert!(!check.missing.is_empty());
 
-    // …and the violation surfaces as an exportable governance event.
-    let event = LeanCtxEvent {
-        id: 1,
-        timestamp: chrono::Utc::now().to_rfc3339(),
-        kind: EventKind::PolicyViolation {
-            role: "reviewer".into(),
-            tool: "ctx_edit".into(),
-            reason: "missing capability fs:write".into(),
-        },
-    };
-    let exported = ocp::export_event(&event).expect("violation exports");
-    assert_eq!(exported["kind"]["type"], "policy_violation");
-
     // Pack layer: the reference pack scopes the tool surface.
     let (status, _) = row_status("eu-ai-act", "AIA-15.5-access", "eu-ai-act-deployer");
     assert_eq!(status, RowStatus::Enforced);
 }
 
-#[test]
-fn aia_14_4a_capabilities_are_inspectable() {
-    let grant = ocp::capability_grant_set("developer");
-    let caps = grant["capabilities"].as_array().expect("array");
-    assert!(
-        !caps.is_empty(),
-        "oversight needs a non-empty capability view"
-    );
-    assert_eq!(grant["subject"], "developer");
-}
 
 #[test]
 fn aia_14_4e_budget_caps_bound_operation() {
     let policy = resolved("eu-ai-act-deployer");
     assert!(policy.max_context_tokens.expect("cap declared") > 0);
-
-    // Intervention signals exist before and at exhaustion.
-    for kind in [
-        EventKind::BudgetWarning {
-            role: "developer".into(),
-            dimension: "tokens".into(),
-            used: "9000".into(),
-            limit: "12000".into(),
-            percent: 75,
-        },
-        EventKind::BudgetExhausted {
-            role: "developer".into(),
-            dimension: "tokens".into(),
-            used: "12001".into(),
-            limit: "12000".into(),
-        },
-    ] {
-        let event = LeanCtxEvent {
-            id: 1,
-            timestamp: chrono::Utc::now().to_rfc3339(),
-            kind,
-        };
-        assert!(ocp::export_event(&event).is_some());
-    }
 
     // Violation: a pack without a cap does not earn the claim.
     let (status, _) = row_status("eu-ai-act", "AIA-14.4e", "open-source");
@@ -429,15 +380,6 @@ fn soc2_cc71_role_changes_are_audited() {
         serde_json::to_value(AuditEventType::RoleChanged).expect("serializes"),
         serde_json::Value::String("role_changed".into())
     );
-    let event = LeanCtxEvent {
-        id: 1,
-        timestamp: chrono::Utc::now().to_rfc3339(),
-        kind: EventKind::RoleChanged {
-            from: "developer".into(),
-            to: "reviewer".into(),
-        },
-    };
-    assert!(ocp::export_event(&event).is_some());
 }
 
 #[test]

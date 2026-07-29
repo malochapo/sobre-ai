@@ -113,7 +113,6 @@ pub(super) fn run_mcp_server() -> Result<()> {
             // savings recap — silent + detached, never touches stdout.
             cleanup_orphan_mcp_processes();
             spawn_proxy_if_needed();
-            crate::cli::wrapped_publish::maybe_auto_publish_background();
         });
 
         let transport =

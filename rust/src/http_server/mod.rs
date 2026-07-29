@@ -1,14 +1,9 @@
-//! HTTP server combining Streamable-HTTP MCP transport, REST APIs, and
-//! optional team/commercial surfaces behind feature flags.
+//! Local HTTP server: Streamable-HTTP MCP transport plus the REST surface the
+//! dashboard and local agents talk to.
 //!
-//! # Pillar mapping
-//!
-//! - **Engine:** HTTP MCP transport, Context OS event bus (SSE), A2A handoffs,
-//!   agent registry, capabilities/manifest/openapi endpoints.
-//! - **Cloud (commercial):** `team/` (hosted team server), `team_billing`
-//!   (billing proxy). Both gated by `feature = "team-server"`.
-//! - **Cross-pillar:** `savings_ingest`, `savings_summary`, `roi_webhook` —
-//!   consumed by both the local dashboard and cloud sync.
+//! Bound to loopback. The hosted team server, its billing proxy and the ROI
+//! webhook were removed with invariant 4 — there is no shared instance for
+//! them to serve.
 
 use std::net::SocketAddr;
 use std::path::PathBuf;
@@ -41,13 +36,7 @@ mod handlers;
 #[allow(clippy::wildcard_imports)]
 use handlers::*;
 
-pub mod context_views;
 pub mod kernel_api;
-pub mod roi_webhook;
-pub mod savings_ingest;
-pub mod savings_summary;
-pub mod team;
-pub mod team_billing;
 
 /// Wrapper stream that calls `record_sse_disconnect` on drop.
 use std::pin::Pin;
@@ -844,12 +833,6 @@ fn build_app_router_with_auth(cfg: &HttpServerConfig, require_auth: bool) -> Rou
         .route("/v1/tools", get(v1_tools))
         .route("/v1/tools/call", axum::routing::post(v1_tool_call))
         .route("/v1/events", get(v1_events))
-        .route(
-            "/v1/context/summary",
-            get(context_views::v1_context_summary),
-        )
-        .route("/v1/events/search", get(context_views::v1_events_search))
-        .route("/v1/events/lineage", get(context_views::v1_event_lineage))
         .route("/v1/metrics", get(v1_metrics))
         .route("/v1/audit/events", get(v1_audit_events))
         .route("/v1/a2a/handoff", axum::routing::post(v1_a2a_handoff))

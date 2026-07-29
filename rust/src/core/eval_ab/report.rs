@@ -382,3 +382,69 @@ mod tests {
         assert_eq!(a, b);
     }
 }
+
+/// Machine-independent digest of a run — the reproducibility receipt.
+///
+/// Rescued from the deleted `artifact` module: signing and attestation went
+/// with invariant 4, but proving two runs produced byte-identical evidence is
+/// the whole point of a pinned model and a replayed recording. Records are
+/// sorted by task id so the digest does not depend on iteration order.
+#[must_use]
+pub fn determinism_digest(report: &AbReport) -> String {
+    #[derive(serde::Serialize)]
+    struct EvidenceRow {
+        task_id: String,
+        domain: String,
+        baseline_value: f64,
+        lean_ctx_value: f64,
+        baseline_passed: bool,
+        lean_ctx_passed: bool,
+        baseline_context_digest: String,
+        lean_ctx_context_digest: String,
+        baseline_answer_digest: String,
+        lean_ctx_answer_digest: String,
+    }
+
+    #[derive(serde::Serialize)]
+    struct Evidence {
+        suite: String,
+        budget_tokens: usize,
+        model_fingerprint: String,
+        bootstrap_iters: usize,
+        bootstrap_seed: u64,
+        noninferiority_margin: f64,
+        verdict: Verdict,
+        tasks: Vec<EvidenceRow>,
+    }
+
+    let mut rows: Vec<EvidenceRow> = report
+        .records
+        .iter()
+        .map(|r| EvidenceRow {
+            task_id: r.task_id.clone(),
+            domain: r.domain.clone(),
+            baseline_value: r.baseline_value,
+            lean_ctx_value: r.lean_ctx_value,
+            baseline_passed: r.baseline_passed,
+            lean_ctx_passed: r.lean_ctx_passed,
+            baseline_context_digest: r.baseline_context_digest.clone(),
+            lean_ctx_context_digest: r.lean_ctx_context_digest.clone(),
+            baseline_answer_digest: r.baseline_answer_digest.clone(),
+            lean_ctx_answer_digest: r.lean_ctx_answer_digest.clone(),
+        })
+        .collect();
+    rows.sort_by(|a, b| a.task_id.cmp(&b.task_id));
+
+    let evidence = Evidence {
+        suite: report.suite.clone(),
+        budget_tokens: report.budget_tokens,
+        model_fingerprint: report.model.digest(),
+        bootstrap_iters: report.stats.bootstrap_iters,
+        bootstrap_seed: report.stats.bootstrap_seed,
+        noninferiority_margin: report.stats.noninferiority_margin,
+        verdict: report.verdict,
+        tasks: rows,
+    };
+    let bytes = serde_json::to_vec(&evidence).unwrap_or_default();
+    super::sha256_hex(&bytes)
+}

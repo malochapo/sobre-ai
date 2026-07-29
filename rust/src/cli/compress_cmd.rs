@@ -2,7 +2,7 @@ use std::io::Read;
 
 use crate::core::cache::SessionCache;
 use crate::core::compress_preview;
-use crate::tools::{CrpMode, ctx_compress};
+use crate::tools::{CrpMode, impl_compress};
 
 pub(crate) fn cmd_compress(args: &[String]) {
     // `compress diff <file|->` previews what a compressor would emit (#984).
@@ -37,7 +37,7 @@ pub(crate) fn cmd_compress(args: &[String]) {
     }
 
     let cache = build_cli_cache();
-    let out = ctx_compress::handle(&cache, signatures, CrpMode::Off);
+    let out = impl_compress::handle(&cache, signatures, CrpMode::Off);
 
     if json {
         let payload = serde_json::json!({ "output": out });

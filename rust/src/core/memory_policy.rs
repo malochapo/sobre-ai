@@ -507,7 +507,6 @@ pub struct GotchaPolicy {
     pub retrieval_budget_per_room: usize,
     pub default_decay_rate: f32,
     pub category_decay_overrides: HashMap<String, f32>,
-    pub auto_expire_days: Option<i64>,
 }
 
 impl Default for GotchaPolicy {
@@ -517,7 +516,6 @@ impl Default for GotchaPolicy {
             retrieval_budget_per_room: 10,
             default_decay_rate: 0.03,
             category_decay_overrides: HashMap::new(),
-            auto_expire_days: None,
         }
     }
 }

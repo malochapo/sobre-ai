@@ -316,7 +316,7 @@ fn resolve_path_or_root(ctx: &ToolContext) -> Result<String, ErrorData> {
 /// instead of reloading it from disk (perf parity with the former tool).
 fn prime_bm25_cache(ctx: &ToolContext) {
     if let Some(ref cache) = ctx.bm25_cache {
-        crate::tools::ctx_semantic_search::set_thread_cache(cache.clone());
+        crate::tools::impl_semantic_search::set_thread_cache(cache.clone());
     }
 }
 
@@ -334,7 +334,7 @@ fn handle_semantic(args: &Map<String, Value>, ctx: &ToolContext) -> Result<ToolO
     prime_bm25_cache(ctx);
 
     let mut result = tokio::task::block_in_place(|| {
-        crate::tools::ctx_semantic_search::handle(
+        crate::tools::impl_semantic_search::handle(
             &query,
             &path,
             top_k,
@@ -393,7 +393,7 @@ fn handle_symbol(args: &Map<String, Value>, ctx: &ToolContext) -> Result<ToolOut
 
     if let Some(handle) = get_str(args, "handle") {
         let (result, original) =
-            crate::tools::ctx_symbol::render_by_handle(&handle, &effective_root);
+            crate::tools::impl_symbol::render_by_handle(&handle, &effective_root);
         let sent = crate::core::tokens::count_tokens(&result);
         return Ok(ToolOutput {
             text: result,
@@ -414,7 +414,7 @@ fn handle_symbol(args: &Map<String, Value>, ctx: &ToolContext) -> Result<ToolOut
     let kind = get_str(args, "kind");
 
     let (result, original) =
-        crate::tools::ctx_symbol::handle(&name, file.as_deref(), kind.as_deref(), &effective_root);
+        crate::tools::impl_symbol::handle(&name, file.as_deref(), kind.as_deref(), &effective_root);
     let sent = crate::core::tokens::count_tokens(&result);
     // R30: Search evidence for symbol lookups.
     crate::tools::search_hook::on_search(&name, "symbol", original, sent);
@@ -439,9 +439,9 @@ fn handle_reindex(args: &Map<String, Value>, ctx: &ToolContext) -> Result<ToolOu
 
     let result = tokio::task::block_in_place(|| {
         if artifacts {
-            crate::tools::ctx_semantic_search::handle_reindex_artifacts(&path, workspace)
+            crate::tools::impl_semantic_search::handle_reindex_artifacts(&path, workspace)
         } else {
-            crate::tools::ctx_semantic_search::handle_reindex(&path)
+            crate::tools::impl_semantic_search::handle_reindex(&path)
         }
     });
 
@@ -466,7 +466,7 @@ fn handle_find_related(
     prime_bm25_cache(ctx);
 
     let result = tokio::task::block_in_place(|| {
-        crate::tools::ctx_semantic_search::handle_find_related(
+        crate::tools::impl_semantic_search::handle_find_related(
             &fp,
             line,
             &path,

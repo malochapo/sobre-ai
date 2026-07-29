@@ -93,14 +93,6 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
         ),
     );
     root.insert(
-        "buddy_enabled".into(),
-        key(
-            "bool",
-            serde_json::json!(cfg.buddy_enabled),
-            "Enable the buddy system for multi-agent coordination",
-        ),
-    );
-    root.insert(
             "enable_wakeup_ctx".into(),
             key(
                 "bool",

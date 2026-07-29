@@ -359,7 +359,7 @@ pub(in crate::cli::dispatch) fn cmd_smells(rest: &[String]) {
     };
     println!(
         "{}",
-        tools::ctx_smells::handle(action, rule.as_deref(), path.as_deref(), &root, fmt)
+        tools::impl_smells::handle(action, rule.as_deref(), path.as_deref(), &root, fmt)
     );
 }
 

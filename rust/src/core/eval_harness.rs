@@ -221,8 +221,8 @@ fn search_arm(
 /// token footprint is exactly what an agent would receive to locate the answer.
 fn explore_arm(project_root: &Path, query: &str) -> ArmRun {
     use std::collections::HashSet;
-    let opts = crate::tools::ctx_explore::ExploreOptions::new(None, true);
-    let outcome = crate::tools::ctx_explore::handle(
+    let opts = crate::tools::impl_explore::ExploreOptions::new(None, true);
+    let outcome = crate::tools::impl_explore::handle(
         query,
         &project_root.to_string_lossy(),
         crate::tools::CrpMode::Off,
@@ -258,11 +258,11 @@ fn try_hybrid_search(
     config: &HybridConfig,
 ) -> Result<Vec<String>, String> {
     use crate::core::dense_backend;
-    use crate::tools::ctx_semantic_search;
+    use crate::tools::impl_semantic_search;
 
-    let (engine, mut embed_idx) = ctx_semantic_search::load_engine_and_index_pub(project_root)?;
+    let (engine, mut embed_idx) = impl_semantic_search::load_engine_and_index_pub(project_root)?;
 
-    let (aligned, _coverage, changed_files) = ctx_semantic_search::ensure_embeddings_for_eval(
+    let (aligned, _coverage, changed_files) = impl_semantic_search::ensure_embeddings_for_eval(
         project_root,
         index,
         engine,
@@ -289,7 +289,7 @@ fn try_hybrid_search(
     if config.splade_weight > 0.0 {
         let splade = crate::core::splade_retrieval::hybrid_retrieve(query, index, candidate_k);
         if !splade.is_empty() {
-            ctx_semantic_search::boost_with_splade_pub(&mut results, &splade, config.splade_weight);
+            impl_semantic_search::boost_with_splade_pub(&mut results, &splade, config.splade_weight);
         }
     }
 

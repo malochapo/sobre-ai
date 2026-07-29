@@ -11,7 +11,7 @@
 //! (dominant category or shared path token), never via an LLM call.
 
 use super::types::KnowledgeFact;
-use crate::core::memory_consolidation::token_jaccard;
+use crate::core::text_similarity::token_jaccard;
 
 /// Theta capacity: clusters never grow beyond this many facts (7 = 4±1 max).
 const MAX_CLUSTER_SIZE: usize = 6;

@@ -19,9 +19,6 @@ use super::event::{
     CustomerApproval, EvidenceClass, MeasurementMethod, SavingsEvent, SettlementStatus,
     compute_hash,
 };
-use super::evidence_projection::{
-    LedgerProjectionErrorV2, MAX_LEDGER_SNAPSHOT_BYTES_V2, VerifiedLedgerSnapshotV2,
-};
 use crate::core::ocla_bus::{self, FeedbackOutcome, OclaEvent};
 
 pub const GENESIS: &str = "genesis";
@@ -33,98 +30,6 @@ pub fn default_path() -> Option<PathBuf> {
     let sub = dir.join("savings");
     fs::create_dir_all(&sub).ok()?;
     Some(sub.join("ledger.jsonl"))
-}
-
-/// Read, parse and verify one bounded ledger snapshot from a single locked file handle.
-///
-/// This is the file-backed entry point for evidence projection. It refuses symlinks and
-/// non-regular files, takes the same advisory lock used by ledger writers, reads at most
-/// 4 MiB, and validates chain plus event semantics before returning an opaque verified type.
-pub fn read_verified_snapshot_v2(
-    path: &Path,
-) -> Result<VerifiedLedgerSnapshotV2, LedgerSnapshotReadErrorV2> {
-    let link_metadata = fs::symlink_metadata(path)
-        .map_err(|error| LedgerSnapshotReadErrorV2::Io(error.to_string()))?;
-    if link_metadata.file_type().is_symlink() || !link_metadata.file_type().is_file() {
-        return Err(LedgerSnapshotReadErrorV2::NotRegular);
-    }
-
-    let mut options = OpenOptions::new();
-    options.read(true);
-    #[cfg(unix)]
-    options.custom_flags(libc::O_CLOEXEC | libc::O_NOFOLLOW | libc::O_NONBLOCK);
-    let mut file = options
-        .open(path)
-        .map_err(|error| LedgerSnapshotReadErrorV2::Io(error.to_string()))?;
-    FileExt::lock_shared(&file)
-        .map_err(|error| LedgerSnapshotReadErrorV2::Io(error.to_string()))?;
-
-    let result = (|| {
-        let before = file
-            .metadata()
-            .map_err(|error| LedgerSnapshotReadErrorV2::Io(error.to_string()))?;
-        if !before.file_type().is_file() {
-            return Err(LedgerSnapshotReadErrorV2::NotRegular);
-        }
-        if before.len() > MAX_LEDGER_SNAPSHOT_BYTES_V2 {
-            return Err(LedgerSnapshotReadErrorV2::TooLarge);
-        }
-
-        let mut bytes = Vec::with_capacity(before.len() as usize);
-        (&mut file)
-            .take(MAX_LEDGER_SNAPSHOT_BYTES_V2 + 1)
-            .read_to_end(&mut bytes)
-            .map_err(|error| LedgerSnapshotReadErrorV2::Io(error.to_string()))?;
-        if bytes.len() as u64 > MAX_LEDGER_SNAPSHOT_BYTES_V2 {
-            return Err(LedgerSnapshotReadErrorV2::TooLarge);
-        }
-
-        let after = file
-            .metadata()
-            .map_err(|error| LedgerSnapshotReadErrorV2::Io(error.to_string()))?;
-        if before.len() != after.len()
-            || before
-                .modified()
-                .ok()
-                .zip(after.modified().ok())
-                .is_some_and(|(before_modified, after_modified)| before_modified != after_modified)
-        {
-            return Err(LedgerSnapshotReadErrorV2::ChangedDuringRead);
-        }
-
-        let text = std::str::from_utf8(&bytes).map_err(|_| LedgerSnapshotReadErrorV2::Utf8)?;
-        let mut events = Vec::new();
-        for (line_index, line) in text.lines().enumerate() {
-            if line.is_empty() {
-                return Err(LedgerSnapshotReadErrorV2::MalformedJson { line_index });
-            }
-            let event = serde_json::from_str::<SavingsEvent>(line)
-                .map_err(|_| LedgerSnapshotReadErrorV2::MalformedJson { line_index })?;
-            events.push(event);
-        }
-        VerifiedLedgerSnapshotV2::try_from_events(events).map_err(LedgerSnapshotReadErrorV2::from)
-    })();
-
-    let _ = FileExt::unlock(&file);
-    result
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
-pub enum LedgerSnapshotReadErrorV2 {
-    #[error("ledger snapshot I/O failed: {0}")]
-    Io(String),
-    #[error("ledger snapshot is not a regular file")]
-    NotRegular,
-    #[error("ledger snapshot exceeds byte bound")]
-    TooLarge,
-    #[error("ledger snapshot is not UTF-8")]
-    Utf8,
-    #[error("ledger snapshot contains malformed JSON at line {line_index}")]
-    MalformedJson { line_index: usize },
-    #[error("ledger snapshot changed while it was read")]
-    ChangedDuringRead,
-    #[error(transparent)]
-    Projection(#[from] LedgerProjectionErrorV2),
 }
 
 /// Reads the most recent `entry_hash` by scanning only the file tail. Returns
