@@ -1,5 +1,5 @@
 use crate::{
-    core, doctor, hook_handlers, report, setup, shell, status, uninstall,
+    core, doctor, hook_handlers, setup, shell, status, uninstall,
 };
 
 mod analytics;
@@ -94,10 +94,6 @@ pub fn run() {
                 crate::cli::embeddings_cmd::cmd_embeddings(&rest);
                 return;
             }
-            "enable-gpu" => {
-                core::updater::enable_gpu(&rest);
-                return;
-            }
             "rules" => {
                 crate::cli::rules_cmd::cmd_rules(&rest);
                 return;
@@ -138,10 +134,6 @@ pub fn run() {
             }
             "compliance" => {
                 crate::cli::cmd_compliance(&rest);
-                return;
-            }
-            "instructions" => {
-                crate::cli::cmd_instructions(&rest);
                 return;
             }
             "index" => {
@@ -383,10 +375,6 @@ pub fn run() {
                 handle_editor_session(&rest);
                 return;
             }
-            "update" | "--self-update" => {
-                core::updater::run(&rest);
-                return;
-            }
             "restart" => {
                 cmd_restart();
                 return;
@@ -470,10 +458,6 @@ pub fn run() {
                 }
                 return;
             }
-            "report-issue" => {
-                report::run(&rest);
-                return;
-            }
             "uninstall" => {
                 // Safety: `--help`/`-h` must NEVER fall through to a real
                 // uninstall (issue #476). Short-circuit before any removal.
@@ -492,10 +476,6 @@ pub fn run() {
             // but this only skips compression — the shell allowlist and path jail
             // still apply (GH security audit, finding 5).
             "raw" => handle_raw(&args, &rest),
-            "safety-levels" => {
-                println!("{}", core::compression_safety::format_safety_table());
-                return;
-            }
             "--version" | "-V" => {
                 println!("{}", core::integrity::origin_line());
                 return;

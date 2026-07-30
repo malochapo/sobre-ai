@@ -33,10 +33,6 @@ pub fn run_cli(args: &[String]) -> i32 {
         return 0;
     }
 
-    // Refresh the latest-version cache opportunistically (#563) so the
-    // update hint below never advertises a stale "latest".
-    crate::core::version_check::check_background();
-
     match build_status_report() {
         Ok((report, path)) => {
             let text = serde_json::to_string_pretty(&report).unwrap_or_else(|_| "{}".to_string());
@@ -46,9 +42,6 @@ pub fn run_cli(args: &[String]) -> i32 {
                 println!("{text}");
             } else {
                 print_human(&report, &path);
-                if let Some(banner) = crate::core::version_check::get_update_banner() {
-                    println!("\n{banner}");
-                }
             }
 
             i32::from(!report.errors.is_empty())

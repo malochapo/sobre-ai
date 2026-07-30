@@ -8,7 +8,6 @@ pub mod auto_findings;
 pub mod codebook;
 #[cfg(target_os = "macos")]
 pub mod codesign;
-pub mod compression_safety;
 pub mod compressor;
 pub mod datadog_push;
 pub mod entropy;
@@ -46,7 +45,6 @@ pub mod yaml_crush;
 /// Convenience re-export: all compression-related modules.
 pub mod compression {
     pub use super::codebook;
-    pub use super::compression_safety;
     pub use super::compressor;
     pub use super::entropy;
     pub use super::json_crush;
@@ -393,7 +391,6 @@ pub mod index_paths;
 pub mod index_progress;
 pub mod ingestion;
 pub mod input_filters;
-pub mod instruction_compiler;
 pub mod integrity;
 pub mod intent_engine;
 pub(crate) mod intent_lang;
@@ -482,9 +479,6 @@ pub mod tool_health;
 pub mod tool_lifecycle;
 pub mod tool_profiles;
 pub mod transcript_compact;
-pub mod update_scheduler;
-pub mod updater;
-pub mod version_check;
 pub mod visualizer;
 pub mod walk_filter;
 /// WASM extension runtime (`wasm-abi-v1`): sandboxed, language-independent

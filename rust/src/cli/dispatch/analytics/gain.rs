@@ -4,10 +4,6 @@
 use crate::{core, tools};
 
 pub(in crate::cli::dispatch) fn cmd_gain(rest: &[String]) {
-    // Keep the latest-version cache fresh (#563): non-blocking, 24h-TTL
-    // guarded, opt-out respected. Without a CLI-side trigger the cache only
-    // refreshes on MCP maintenance ticks and can freeze on old versions.
-    core::version_check::check_background();
     if rest.iter().any(|a| a == "--reset") {
         core::stats::reset_all();
         println!("Stats reset. All token savings data cleared.");
@@ -135,12 +131,6 @@ pub(in crate::cli::dispatch) fn cmd_gain(rest: &[String]) {
         cmd_stats_raw(rest);
     } else {
         println!("{}", core::stats::format_gain_hero());
-        // Surface available updates where users actually look (#563) — the
-        // banner functions existed but had no caller, so terminals never
-        // showed update hints at all.
-        if let Some(banner) = core::version_check::get_update_banner() {
-            println!("\n{banner}");
-        }
         print_bridge_warning();
         print_split_hint();
     }

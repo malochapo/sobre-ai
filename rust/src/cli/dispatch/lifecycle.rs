@@ -240,9 +240,6 @@ pub(super) fn cmd_dev_install() {
         }
     }
 
-    // #828: enable shadow_mode for users who never set it.
-    crate::core::updater::migrate_shadow_mode_default_public();
-
     // Resync agent rules after install so a RULES_VERSION bump is propagated
     // without requiring a separate `lean-ctx setup` or `init` call.
     let cfg = crate::core::config::Config::load();

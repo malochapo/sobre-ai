@@ -58,7 +58,6 @@ pub mod cli;
 pub mod config_io;
 pub mod doctor;
 pub mod ipc;
-pub mod report;
 pub mod setup;
 pub mod status;
 #[cfg(test)]

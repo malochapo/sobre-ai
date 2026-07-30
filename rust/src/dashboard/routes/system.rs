@@ -30,16 +30,6 @@ pub(super) fn handle(
             let json = serde_json::to_string(&payload).unwrap_or_else(|_| "{}".to_string());
             Some(("200 OK", "application/json", json))
         }
-        "/api/version" => {
-            // Self-healing freshness (#563): the dashboard used to only read
-            // the 24h cache, so long-running daemons displayed a frozen
-            // "latest" forever (user report showed 3.6.26 while 3.7.5 was
-            // out). Kick the TTL-guarded background refresh on every poll —
-            // non-blocking, opt-out respected.
-            crate::core::version_check::check_background();
-            let json = crate::core::version_check::version_info_json();
-            Some(("200 OK", "application/json", json))
-        }
         "/metrics" => {
             let prom = crate::core::telemetry::global_metrics().to_prometheus();
             Some(("200 OK", "text/plain; version=0.0.4; charset=utf-8", prom))

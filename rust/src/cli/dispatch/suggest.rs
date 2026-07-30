@@ -23,7 +23,6 @@ pub(crate) const KNOWN_COMMANDS: &[&str] = &[
     "verify-cache",
     "visualize",
     "audit",
-    "instructions",
     "index",
     "repomap",
     "cep",
@@ -60,7 +59,6 @@ pub(crate) const KNOWN_COMMANDS: &[&str] = &[
     "theme",
     "tee",
     "terse",
-    "update",
     "restart",
     "stop",
     "dev-install",
@@ -90,7 +88,6 @@ mod tests {
 
     #[test]
     fn suggests_close_typos() {
-        assert_eq!(closest_command("udpate"), Some("update"));
         assert_eq!(closest_command("doctr"), Some("doctor"));
         assert_eq!(closest_command("statuss"), Some("status"));
         assert_eq!(closest_command("upgrad"), Some("upgrade"));

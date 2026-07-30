@@ -53,15 +53,18 @@ fn mcp_entrypoint_tools_are_advertised() {
     // The entrypoint tools that back the regressed CLI commands plus the core
     // read/search surface. If a handler exists but is not advertised here, the
     // tool is unreachable for MCP clients (the v3.4.7 "missing manifest entry").
+    // The reduced 19-tool surface. `ctx_pack`, `ctx_index`, `ctx_proof`,
+    // `ctx_verify` and `ctx_explore` were removed with the tool cut; this
+    // list had kept asserting them.
     let required = [
         "ctx_read",
         "ctx_shell",
         "ctx_search",
-        "ctx_pack",
-        "ctx_index",
-        "ctx_proof",
-        "ctx_verify",
-        "ctx_explore",
+        "ctx_compose",
+        "ctx_graph",
+        "ctx_knowledge",
+        "ctx_session",
+        "ctx_patch",
     ];
     for tool in required {
         assert!(
@@ -119,7 +122,7 @@ fn cli_subcommands_are_wired() {
     // unknown subcommand. The *full* tool surface is guarded MCP-side by
     // `mcp_entrypoint_tools_are_advertised`.
     let probe = "__leanctx_wiring_probe__";
-    for cmd in ["pack", "index", "instructions", "verify"] {
+    for cmd in ["index", "graph", "session", "knowledge"] {
         let (_stdout, stderr, _code) = run(&[cmd, probe]);
         assert!(
             !stderr.contains(&format!("unknown command '{cmd}'")),

@@ -934,19 +934,6 @@ impl LeanCtxServer {
             result_text.push_str(&nudge);
         }
 
-        // Proactive update nudge: when the running MCP binary is behind the
-        // latest release, surface it to the agent once per session (stable text
-        // per #498, read from the local cache the background check fills at
-        // server start). Notify-only — it never auto-installs and honors
-        // `update_check_disabled` / `LEAN_CTX_NO_UPDATE_CHECK`.
-        if !skip_checkpoint
-            && crate::core::protocol::meta_visible()
-            && let Some(hint) = crate::core::version_check::session_update_hint()
-        {
-            result_text.push_str("\n\n");
-            result_text.push_str(&hint);
-        }
-
         if !skip_checkpoint
             && self.increment_and_check()
             && let Some(checkpoint) = self.auto_checkpoint().await

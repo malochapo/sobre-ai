@@ -139,15 +139,6 @@ fn gain_reset_exits_zero() {
     assert_eq!(exit_code(&out), 0, "stderr: {}", stderr(&out));
 }
 
-#[test]
-fn safety_levels_exits_zero() {
-    let out = run(&["safety-levels"]);
-    assert_eq!(exit_code(&out), 0, "stderr: {}", stderr(&out));
-    assert!(
-        !stdout(&out).is_empty(),
-        "safety-levels should print a table"
-    );
-}
 
 
 #[test]
@@ -162,11 +153,6 @@ fn config_no_args_exits_zero() {
     assert_eq!(exit_code(&out), 0, "stderr: {}", stderr(&out));
 }
 
-#[test]
-fn stats_exits_zero() {
-    let out = run(&["stats"]);
-    assert_eq!(exit_code(&out), 0, "stderr: {}", stderr(&out));
-}
 
 #[test]
 fn cep_exits_zero() {
@@ -367,17 +353,6 @@ fn slow_log_exits_cleanly() {
     assert!(
         code == 0 || code == 1,
         "slow-log should not crash, got {code}"
-    );
-}
-
-#[test]
-fn bypass_no_args_prints_usage() {
-    let out = run(&["bypass"]);
-    assert_ne!(exit_code(&out), 0);
-    let err = stderr(&out);
-    assert!(
-        err.contains("Usage") || err.contains("raw"),
-        "bypass alias without args should show usage"
     );
 }
 

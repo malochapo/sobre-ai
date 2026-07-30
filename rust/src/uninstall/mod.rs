@@ -186,23 +186,9 @@ pub fn run(dry_run: bool, keep_config: bool, keep_binary: bool) {
     if dry_run {
         println!("  Would remove proxy autostart (LaunchAgent/systemd)");
         println!("  Would remove daemon autostart (LaunchAgent/systemd)");
-        println!("  Would remove auto-update schedule (LaunchAgent/systemd/Task)");
     } else {
         crate::proxy_autostart::uninstall(true);
         crate::daemon_autostart::uninstall(true);
-        // The 6-hourly self-update agent (com.leanctx.autoupdate) is a *separate*
-        // autostart entry from daemon/proxy. Without this it survives uninstall and
-        // keeps relaunching the now-deleted binary every 6h. remove_schedule() is the
-        // same idempotent routine used elsewhere (macOS/Linux/Windows aware).
-        let had_schedule = crate::core::update_scheduler::schedule_status().enabled;
-        match crate::core::update_scheduler::remove_schedule() {
-            Ok(()) if had_schedule => {
-                println!("  ✓ Auto-update schedule removed");
-                removed_any = true;
-            }
-            Ok(()) => {}
-            Err(e) => tracing::warn!("Failed to remove auto-update schedule: {e}"),
-        }
     }
 
     if !dry_run {

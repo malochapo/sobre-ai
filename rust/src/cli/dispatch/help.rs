@@ -72,8 +72,6 @@ EVERYDAY COMMANDS:
 
 MANAGE:
     lean-ctx status                Am I connected? (quick check)
-    lean-ctx update                Update to the latest version
-    lean-ctx enable-gpu            Install the CUDA-enabled Linux binary
     lean-ctx uninstall             Remove lean-ctx cleanly
 
 SAFETY (env vars):
@@ -207,8 +205,6 @@ COMMANDS:
     compression [off|lite|standard|max]  Set compression level (saves 25-65% tokens; alias: terse)
     slow-log [list|clear]          Show/clear slow command log (~/.lean-ctx/slow-commands.log)
     debug-log [list|tail N|clear|path]  Opt-in tool-call + hook-routing log (set debug_log / LEAN_CTX_DEBUG_LOG)
-    update [<version>] [--check]   Update lean-ctx, or pin a version, from GitHub Releases
-    enable-gpu [--check]           Install CUDA-enabled binary (x86_64 GNU/Linux)
     stop                           Stop ALL lean-ctx processes (daemon, proxy, orphans)
     restart                        Restart daemon (applies config.toml changes)
     dev-install                    Build release + atomic install + restart (for development)

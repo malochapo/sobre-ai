@@ -144,11 +144,11 @@ pub fn run_setup() {
     let (inject_rules, inject_skills) = first_run_setup_level();
     persist_setup_choice(inject_rules, inject_skills);
 
-    terminal_ui::print_step_header(1, 13, "Shell Hook");
+    terminal_ui::print_step_header(1, 12, "Shell Hook");
     crate::cli::cmd_init(&["--global".to_string()]);
     crate::shell_hook::install_all(false);
 
-    terminal_ui::print_step_header(2, 13, "Daemon");
+    terminal_ui::print_step_header(2, 12, "Daemon");
     if crate::daemon::is_daemon_running() {
         terminal_ui::print_status_ok("Daemon running — restarting with current binary…");
         let _ = crate::daemon::stop_daemon();
@@ -160,7 +160,7 @@ pub fn run_setup() {
         terminal_ui::print_status_warn(&format!("Daemon start failed: {e}"));
     }
 
-    terminal_ui::print_step_header(3, 13, "AI Tool Detection");
+    terminal_ui::print_step_header(3, 12, "AI Tool Detection");
 
     let targets = crate::core::editor_registry::build_targets(&home);
     // #281: in MCP-disabled environments (`auto_update_mcp = false`) editors are
@@ -243,7 +243,7 @@ pub fn run_setup() {
 
     configure_plan_mode_settings(&newly_configured, &already_configured);
 
-    terminal_ui::print_step_header(4, 13, "Agent Rules");
+    terminal_ui::print_step_header(4, 12, "Agent Rules");
     let rules_result = if inject_rules {
         let r = crate::rules_inject::inject_all_rules(&home);
         for name in &r.injected {
@@ -286,7 +286,7 @@ pub fn run_setup() {
         crate::hooks::install_agent_hook_with_mode(&target.agent_key, true, mode);
     }
 
-    terminal_ui::print_step_header(5, 13, "API Proxy (optional)");
+    terminal_ui::print_step_header(5, 12, "API Proxy (optional)");
     {
         let cfg = crate::core::config::Config::load();
         let proxy_port = crate::proxy_setup::default_port();
@@ -342,7 +342,7 @@ pub fn run_setup() {
         }
     }
 
-    terminal_ui::print_step_header(6, 13, "IDE Config Access (optional)");
+    terminal_ui::print_step_header(6, 12, "IDE Config Access (optional)");
     {
         let cfg = crate::core::config::Config::load();
         match cfg.allow_ide_config_dirs {
@@ -392,7 +392,7 @@ pub fn run_setup() {
         }
     }
 
-    terminal_ui::print_step_header(7, 13, "Skill Files");
+    terminal_ui::print_step_header(7, 12, "Skill Files");
     if inject_skills {
         let skill_result = install_skill_files(&home);
         for (name, installed) in &skill_result {
@@ -415,7 +415,7 @@ pub fn run_setup() {
         );
     }
 
-    terminal_ui::print_step_header(8, 13, "Environment Check");
+    terminal_ui::print_step_header(8, 12, "Environment Check");
     let lean_dir = crate::core::data_dir::lean_ctx_data_dir()
         .unwrap_or_else(|_| home.join(".config/lean-ctx"));
     if lean_dir.exists() {
@@ -454,7 +454,7 @@ pub fn run_setup() {
     // marker can never re-collapse config/data/state/cache later (GL #623).
     crate::core::layout_pin::heal();
 
-    terminal_ui::print_step_header(9, 13, "Help Improve lean-ctx");
+    terminal_ui::print_step_header(9, 12, "Help Improve lean-ctx");
     println!("  Share anonymous compression stats to make lean-ctx better.");
     println!("  \x1b[1mNo code, no file names, no personal data — ever.\x1b[0m");
     println!();
@@ -489,49 +489,13 @@ pub fn run_setup() {
         terminal_ui::print_status_skip("Skipped — enable later with: lean-ctx config");
     }
 
-    terminal_ui::print_step_header(10, 13, "Auto-Updates");
-    println!("  Keep lean-ctx up to date automatically.");
-    println!("  \x1b[1mChecks GitHub every 6h, installs only when a new release exists.\x1b[0m");
-    println!(
-        "  \x1b[2mNo restarts mid-session. Change anytime: lean-ctx update --schedule off\x1b[0m"
-    );
-    println!();
-    print!("  Enable automatic updates? \x1b[1m[y/N]\x1b[0m ");
-    std::io::stdout().flush().ok();
-
-    let mut auto_input = String::new();
-    let auto_update = if std::io::stdin().read_line(&mut auto_input).is_ok() {
-        let answer = auto_input.trim().to_lowercase();
-        answer == "y" || answer == "yes"
-    } else {
-        false
-    };
-
-    if auto_update {
-        let cfg = crate::core::config::Config::load();
-        let hours = cfg.updates.check_interval_hours;
-        match crate::core::update_scheduler::install_schedule(hours) {
-            Ok(info) => {
-                crate::core::update_scheduler::set_auto_update(true, false, hours);
-                terminal_ui::print_status_ok(&format!("Enabled — {info}"));
-            }
-            Err(e) => {
-                terminal_ui::print_status_warn(&format!("Scheduler setup failed: {e}"));
-                terminal_ui::print_status_skip("Enable later: lean-ctx update --schedule");
-            }
-        }
-    } else {
-        crate::core::update_scheduler::set_auto_update(false, false, 6);
-        terminal_ui::print_status_skip("Skipped — enable later: lean-ctx update --schedule");
-    }
-
-    terminal_ui::print_step_header(11, 13, "Tool Profile");
+    terminal_ui::print_step_header(10, 12, "Tool Profile");
     configure_tool_profile();
 
-    terminal_ui::print_step_header(12, 13, "Advanced Tuning (optional)");
+    terminal_ui::print_step_header(11, 12, "Advanced Tuning (optional)");
     configure_premium_features(&home);
 
-    terminal_ui::print_step_header(13, 13, "Code Intelligence");
+    terminal_ui::print_step_header(12, 12, "Code Intelligence");
     let cwd = std::env::current_dir().ok();
     let cwd_is_home = cwd
         .as_ref()

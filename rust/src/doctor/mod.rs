@@ -677,11 +677,6 @@ pub fn run() -> u32 {
     // binary is behind, nudge toward the fast self-updater right where a
     // confused user looks when something seems off (the "stuck updating"
     // report). Notify-only — never auto-installs.
-    crate::core::version_check::check_background();
-    if let Some(banner) = crate::core::version_check::get_update_banner() {
-        println!();
-        println!("{banner}");
-    }
 
     needs_attention
 }
