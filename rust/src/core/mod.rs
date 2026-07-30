@@ -21,7 +21,6 @@ pub mod eval_harness;
 // sites listed in docs/removals.md would let this attribute go away.
 #[cfg_attr(not(feature = "embeddings"), allow(dead_code))]
 pub mod extractive;
-pub mod finops_export;
 pub mod html_crush;
 pub mod json_crush;
 pub mod markdown_compact;

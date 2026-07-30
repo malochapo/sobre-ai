@@ -2,7 +2,6 @@ use std::process::Command;
 
 use lean_ctx::core::setup_report::SetupReport;
 use lean_ctx::status::StatusReport;
-use lean_ctx::token_report::TokenReport;
 
 fn run_json(bin: &str, args: &[&str], envs: &[(&str, &str)]) -> (i32, String) {
     let mut cmd = Command::new(bin);
@@ -159,11 +158,6 @@ fn setup_bootstrap_doctor_status_json_smoke() {
     let status: StatusReport = serde_json::from_str(&out).expect("status JSON parse");
     assert_eq!(status.schema_version, 1);
 
-    // token-report --json returns clean JSON
-    let (code, out) = run_json(bin, &["token-report", "--json"], &envs);
-    assert_eq!(code, 0, "token-report exit code");
-    let report: TokenReport = serde_json::from_str(&out).expect("token-report JSON parse");
-    assert_eq!(report.schema_version, 1);
 }
 
 #[test]

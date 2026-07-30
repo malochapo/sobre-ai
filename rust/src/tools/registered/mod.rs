@@ -20,7 +20,6 @@ pub mod ctx_session;
 pub mod ctx_shell;
 pub mod ctx_tree;
 pub mod plugin_tool;
-pub mod shell_alias;
 
 #[cfg(test)]
 mod schema_qa_tests;

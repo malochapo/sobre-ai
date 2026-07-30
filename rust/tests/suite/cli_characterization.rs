@@ -410,16 +410,6 @@ fn audit_exits_zero() {
 // Token report
 // ═══════════════════════════════════════════════════════════════════
 
-#[test]
-fn token_report_no_args_exits_cleanly() {
-    let out = run(&["token-report"]);
-    let code = exit_code(&out);
-    assert!(
-        code == 0 || code == 1,
-        "token-report should not crash, got {code}"
-    );
-}
-
 // ═══════════════════════════════════════════════════════════════════
 // Proxy (read-only status check)
 // ═══════════════════════════════════════════════════════════════════

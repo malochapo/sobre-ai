@@ -135,7 +135,6 @@ pub fn build_registry() -> ToolRegistry {
     registry.register(Box::new(registered::ctx_patch::CtxPatchTool));
     registry.register(Box::new(registered::ctx_glob::CtxGlobTool));
     registry.register(Box::new(registered::ctx_shell::CtxShellTool));
-    registry.register(Box::new(registered::shell_alias::ShellAliasTool));
     registry.register(Box::new(registered::ctx_search::CtxSearchTool));
     registry.register(Box::new(registered::ctx_checkpoint::CtxCheckpointTool));
     registry.register(Box::new(registered::ctx_compose::CtxComposeTool));
