@@ -1,4 +1,15 @@
+// Every consumer of these is behind `embeddings`, so gate the imports the same
+// way: a default build must stay warning-free, and a `--features dense` build
+// must still compile.
+#[cfg(feature = "embeddings")]
+use std::path::Path;
 
+#[cfg(feature = "embeddings")]
+use crate::core::bm25_index::BM25Index;
+#[cfg(feature = "embeddings")]
+use crate::core::hnsw::FlatEmbeddings;
+#[cfg(feature = "embeddings")]
+use crate::core::hybrid_search::{DenseSearchResult, HybridConfig, HybridResult};
 
 /// Which dense backend served a query.
 ///

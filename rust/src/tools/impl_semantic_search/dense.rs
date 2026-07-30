@@ -6,6 +6,10 @@ use std::path::Path;
 use crate::core::bm25_index::BM25Index;
 #[cfg(feature = "embeddings")]
 use crate::core::embeddings::EmbeddingEngine;
+#[cfg(feature = "embeddings")]
+use crate::core::hnsw::FlatEmbeddings;
+#[cfg(feature = "embeddings")]
+use crate::core::hybrid_search::{HybridConfig, format_hybrid_results};
 
 #[allow(clippy::wildcard_imports)]
 use super::*;
@@ -200,13 +204,17 @@ pub(crate) fn hybrid_search_mode(
     }
 }
 
+// Without `embeddings` the body is the one-line error arm, so every parameter
+// is genuinely unused there. Silence it on that build only — renaming them to
+// `_x` breaks the `embeddings` body, which does use them.
+#[cfg_attr(not(feature = "embeddings"), allow(unused_variables))]
 pub(crate) fn dense_search_mode(
-    _query: &str,
-    _root: &Path,
-    _index: &BM25Index,
-    _top_k: usize,
-    _compact: bool,
-    _filter: &SearchFilter,
+    query: &str,
+    root: &Path,
+    index: &BM25Index,
+    top_k: usize,
+    compact: bool,
+    filter: &SearchFilter,
 ) -> String {
     #[cfg(feature = "embeddings")]
     {

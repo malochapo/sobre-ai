@@ -1,6 +1,9 @@
 //! Embedding engine access + status/reset/reindex handlers.
 //! Split out of `ctx_knowledge/mod.rs`; `use super::*` re-imports parent items.
 
+// Everything in this file that needs the parent's items is `embeddings`-gated.
+#[cfg(feature = "embeddings")]
+use super::*;
 
 /// Auto-download policy (#551): the env var, when set, wins in either
 /// direction; otherwise `[embedding].auto_download` from config; otherwise

@@ -6,6 +6,8 @@ use std::path::Path;
 
 use crate::core::bm25_index::{BM25Index, format_search_results};
 use crate::core::hybrid_search::{HybridResult, format_hybrid_results};
+#[cfg(feature = "embeddings")]
+use crate::core::hybrid_search::HybridConfig;
 
 #[allow(clippy::wildcard_imports)]
 use super::*;
@@ -125,7 +127,11 @@ pub(crate) fn workspace_search(
     mode: &str,
 ) -> String {
     let linked = crate::core::workspace_config::load_linked_projects(root);
-    let warnings = linked.warnings;
+    // Only the `embeddings` arms below write to these three; without the
+    // feature they stay untouched, hence the scoped `unused_mut`. Dropping the
+    // `mut` instead breaks the dense build.
+    #[cfg_attr(not(feature = "embeddings"), allow(unused_mut))]
+    let mut warnings = linked.warnings;
 
     let mut roots: Vec<std::path::PathBuf> = vec![root.to_path_buf()];
     roots.extend(linked.roots);
@@ -133,8 +139,10 @@ pub(crate) fn workspace_search(
     roots.dedup();
 
     let mut per_project: Vec<(String, Vec<HybridResult>)> = Vec::new();
-    let avg_cov: Option<f64> = None;
-    let cov_count = 0usize;
+    #[cfg_attr(not(feature = "embeddings"), allow(unused_mut))]
+    let mut avg_cov: Option<f64> = None;
+    #[cfg_attr(not(feature = "embeddings"), allow(unused_mut))]
+    let mut cov_count = 0usize;
 
     for r in &roots {
         let label = label_for_root(r);

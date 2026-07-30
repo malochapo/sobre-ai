@@ -15,6 +15,8 @@ use super::bm25_index::{BM25Index, ChunkKind, SearchResult};
 
 #[cfg(feature = "embeddings")]
 use super::embeddings::EmbeddingEngine;
+#[cfg(feature = "embeddings")]
+use super::hnsw::FlatEmbeddings;
 
 const RRF_K: f64 = 60.0;
 
