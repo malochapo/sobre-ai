@@ -106,6 +106,13 @@ pub fn run() {
                 crate::cli::eval_cmd::cmd_eval(&rest);
                 return;
             }
+            // Distinct from `eval ab`: that measures answer-quality
+            // non-regression, this produces the reproducible savings + recall +
+            // latency scorecard the CI publishes as an artifact.
+            "benchmark" => {
+                super::cmd_benchmark(&rest);
+                return;
+            }
             "verify-cache" => {
                 let code = crate::cli::verify_cache_cmd::cmd_verify_cache(&rest);
                 if code != 0 {
@@ -253,6 +260,13 @@ pub fn run() {
                 return;
             }
             "graph" => {
+                // `graph --heatmap` is the structural view: per-file heat from
+                // token count x graph connections. Distinct from
+                // `gain --heatmap`, which ranks files by tokens saved.
+                if rest.iter().any(|a| a == "--heatmap") {
+                    crate::heatmap::cmd_heatmap(&rest);
+                    return;
+                }
                 cmd_graph(&rest);
                 return;
             }

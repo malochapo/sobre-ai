@@ -66,6 +66,11 @@ pub(in crate::cli::dispatch) fn cmd_gain(rest: &[String]) {
         println!("{}", core::stats::format_gain_graph());
     } else if rest.iter().any(|a| a == "--daily") {
         println!("{}", core::stats::format_gain_daily());
+    // Before `--json`: `--measured` selects a different data source, and it
+    // renders in either shape. Tested after `--json` it would be unreachable
+    // whenever both flags are passed.
+    } else if rest.iter().any(|a| a == "--measured") {
+        print_measured_spend(rest.iter().any(|a| a == "--json"));
     } else if rest.iter().any(|a| a == "--json") {
         println!(
             "{}",
@@ -143,13 +148,57 @@ pub(in crate::cli::dispatch) fn cmd_gain(rest: &[String]) {
     }
 }
 
+/// `gain --measured` — the real per-model bill the proxy recorded, as opposed
+/// to `--cost`, which prices our own token counts from a rate table. The
+/// dashboard has always shown this; without a CLI view the data was collected
+/// and unreadable.
+fn print_measured_spend(json: bool) {
+    let spend = crate::proxy::usage_meter::persisted_snapshot();
+    if json {
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&spend).unwrap_or_else(|_| "[]".into())
+        );
+        return;
+    }
+    if spend.is_empty() {
+        println!("No measured provider spend recorded yet.");
+        println!("Route traffic through `sobre proxy` to collect it, or use `gain --cost` for the estimate.");
+        return;
+    }
+    println!("Measured provider spend (from the proxy's recorded usage)\n");
+    println!(
+        "{:<34} {:>6} {:>12} {:>12} {:>10}",
+        "MODEL", "REQS", "INPUT", "OUTPUT", "COST USD"
+    );
+    let mut total = 0.0;
+    for m in &spend {
+        total += m.cost_usd;
+        // Flag the rows we could not price from a provider-reported figure, so
+        // an estimate is never silently read as a bill.
+        let mark = if m.measured_requests < m.requests {
+            " ~"
+        } else {
+            ""
+        };
+        println!(
+            "{:<34} {:>6} {:>12} {:>12} {:>10.4}{}",
+            m.model, m.requests, m.input_tokens, m.output_tokens, m.cost_usd, mark
+        );
+    }
+    println!("\n{:<34} {:>43.4}", "TOTAL", total);
+    if spend.iter().any(|m| m.measured_requests < m.requests) {
+        println!("\n  ~ partly estimated: the provider did not report a cost for every request.");
+    }
+}
+
 /// `gain --cost` values savings with a *resolved* model (estimated). When the
-/// proxy has recorded real provider usage, point at the dashboard's usage
-/// breakdown, which reports the measured per-model bill from `proxy_usage.json`.
+/// proxy has recorded real provider usage, point at the measured view so the
+/// estimate is never mistaken for the bill.
 fn print_measured_spend_hint() {
     if !crate::proxy::usage_meter::persisted_snapshot().is_empty() {
         eprintln!(
-            "\n  \x1b[2m💡 Measured provider spend available — open `sobre dashboard` for the real per-model bill.\x1b[0m"
+            "\n  \x1b[2m💡 Measured provider spend available — `sobre gain --measured` for the real per-model bill.\x1b[0m"
         );
     }
 }
