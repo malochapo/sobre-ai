@@ -141,10 +141,8 @@ pub(in crate::cli::dispatch) fn cmd_gain(rest: &[String]) {
         if let Some(banner) = core::version_check::get_update_banner() {
             println!("\n{banner}");
         }
-        print_support_hint();
         print_bridge_warning();
         print_split_hint();
-        print_community_hint();
     }
 }
 
@@ -244,86 +242,6 @@ fn print_split_hint() {
     }
 }
 
-fn print_community_hint() {
-    let s = core::savings_ledger::summary();
-    if s.total_events == 0 {
-        return;
-    }
-
-    let on_board = false;
-    let published = false;
-    let has_name = crate::core::config::Config::load()
-        .gain
-        .display_name
-        .is_some();
-
-    // State-aware nudge so the path to https://leanctx.com/metrics — and how to set a
-    // display name or unpublish — is always one copy-pasteable line away. Every state
-    // names both the public command and the way back out (community ask: a clear
-    // "how to publish/unpublish" line in the normal `gain` output).
-    let body = if on_board && has_name {
-        "💡 On the public leaderboard (https://leanctx.com/metrics).\n     \
-         Refresh:  lean-ctx gain --publish --leaderboard\n     \
-         Multiple machines?  lean-ctx gain --link  (combine into one entry)\n     \
-         Remove:  lean-ctx gain --unpublish"
-            .to_string()
-    } else if on_board {
-        "💡 You're on the leaderboard as \"anonymous\". Claim your handle:\n     \
-         lean-ctx gain --publish --leaderboard --name=\"your handle\"\n     \
-         Multiple machines?  lean-ctx gain --link  (combine into one entry)"
-            .to_string()
-    } else if published {
-        "💡 You're published privately. List on the public leaderboard at https://leanctx.com/metrics:\n     \
-         lean-ctx gain --publish --leaderboard --name=\"your handle\"   ·   Remove:  lean-ctx gain --unpublish"
-            .to_string()
-    } else {
-        "💡 Join the public leaderboard at https://leanctx.com/metrics (opt-in — shares only 4 aggregate totals, never your code):\n     \
-         Publish:  lean-ctx gain --publish --leaderboard --name=\"your handle\"   ·   Remove:  lean-ctx gain --unpublish"
-            .to_string()
-    };
-    eprintln!("\n  \x1b[2m{body}\x1b[0m");
-}
-
-/// A prominent, friendly nudge to support lean-ctx financially. The engine is
-/// free and never gated — this is the single place the default `gain` view asks
-/// for support, rendered right under the savings hero so the people who benefit
-/// most see the most natural moment to give back.
-fn print_support_hint() {
-    use crate::core::theme;
-    let t = theme::load_theme(&crate::core::config::Config::load().theme);
-    let rst = theme::rst();
-    let bold = theme::bold();
-    let dim = theme::dim();
-    let acc = t.accent.fg();
-    let heart = t.danger.fg();
-    let w = 57;
-    let side = t.box_side();
-    let row = |content: &str| -> String {
-        let padded = theme::pad_right(content, w);
-        format!("  {side}{padded}{side}")
-    };
-
-    println!();
-    println!("  {}", t.box_top(w));
-    println!(
-        "{}",
-        row(&format!(
-            "  {heart}\u{2665}{rst}  {bold}Enjoying lean-ctx? Keep it free & independent.{rst}"
-        ))
-    );
-    println!("{}", row(""));
-    println!(
-        "{}",
-        row(&format!(
-            "  {dim}Back development for the price of a coffee \u{2192}{rst}"
-        ))
-    );
-    println!(
-        "{}",
-        row(&format!("  {acc}{bold}https://leanctx.com/support{rst}"))
-    );
-    println!("  {}", t.box_bottom(w));
-}
 
 /// `gain --opportunity` — merged discover + ghost (opportunity report).
 fn cmd_opportunity() {

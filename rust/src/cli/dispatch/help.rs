@@ -128,8 +128,7 @@ COMMANDS:
     gain --daily                   Bordered day-by-day table with USD
     gain --score                   Gain score breakdown (4 sub-scores + trend)
     gain --cost                    Agent cost attribution report (estimated)
-    spend                          Measured provider bill (real model + billed tokens)
-    spend --json                   Machine-readable measured spend
+    gain --measured [--json]       Measured provider bill (what the proxy recorded)
     output-savings [--json]        Output-token reduction (A/B measured w/ 95% CI, else estimated)
     gain --tasks                   Task breakdown by category
     gain --agents                  Top agents by tool spend
@@ -143,19 +142,10 @@ COMMANDS:
     gain --model=<model>           Model for USD pricing calculations
     gain --period=<week|month|all> Period for wrapped/stats (default: all)
     gain --limit=<N>               Row limit for tables (default: 10, max: 50)
-    gain --wrapped                 Shareable Wrapped card (terminal)
-    gain --svg [=<path>]           Shareable Wrapped card as SVG (social/OG image)
-    gain --share [=<path>]         Self-hostable Wrapped page (HTML; alias: --page)
-    gain --copy                    Copy a ready-to-post share line to the clipboard
-    gain --svg|--share --open      Also open the written card/page in your browser
-    gain --publish [--name=<n>]    Publish an opt-in permalink (leanctx.com/w/<id>)
-    gain --publish --leaderboard   Also list the card on the public leaderboard (opt-in)
-    gain --link [CODE]             Combine machines into one leaderboard entry (pairing code, no account)
-    gain --unpublish[=<id>]        Remove a published permalink (most recent if no id)
-    config set gain.auto_publish true  Auto-(re)publish your recap on each `gain` (opt-in, throttled, off by default)
-    savings [summary|verify|export|sign|verify-batch] Verified savings ledger (local, signed)
-    learning [status|export|import]  Adaptive-learning state: inspect, share with team, merge
-         token-report [--json]          Token + memory report (project + session + CEP)
+    gain --wrapped                 Recap card (terminal)
+    gain --no-cache-adjust         Report raw counts, without the cache adjustment
+    graph --heatmap                Per-file heat: token count x graph connections
+    learning [status|export]       Adaptive-learning state: inspect, export
     pack --pr                      PR Context Pack (changed files, impact, tests, artifacts)
     snapshot create|list|show|verify|restore|publish|import  Context Time Machine: git-anchored, signed snapshots; replay, resume + share
     index <status|build|build-full|watch> [--force]  Codebase index utilities
