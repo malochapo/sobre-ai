@@ -145,8 +145,9 @@ fn back_half_query(doc: &str) -> Option<String> {
 /// Head-to-head: extractive (centrality) vs truncation over a real prose
 /// corpus, reporting token savings AND a meaning-retention fidelity for each.
 /// `#[ignore]`d (needs the embedding model + is slow); reproduce with:
-/// `cargo test -p lean-ctx --lib --features embeddings \
-///  core::extractive::tests::bench_extractive_vs_truncation -- --ignored --nocapture`.
+/// `SOBRE_BENCH_CORPUS=<dir of .md> cargo test -p lean-ctx --lib --features \
+///  embeddings core::extractive::tests::bench_extractive_vs_truncation \
+///  -- --ignored --nocapture`.
 #[cfg(feature = "embeddings")]
 #[test]
 #[ignore = "benchmark; needs the embedding model; run with --ignored --nocapture"]
@@ -154,7 +155,6 @@ fn back_half_query(doc: &str) -> Option<String> {
 fn bench_extractive_vs_truncation() {
     use crate::core::tokens::count_tokens;
     use crate::core::web::distill::squeeze_prose;
-    use std::path::Path;
     use std::time::Instant;
 
     // Force a blocking engine load (the non-blocking path is suppressed under
@@ -167,7 +167,15 @@ fn bench_extractive_vs_truncation() {
         return;
     };
 
-    let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("../docs/reference");
+    // The corpus is supplied by the operator, not committed: this benchmark
+    // needs long-form prose, and the repo carries none. Skip honestly rather
+    // than fail when it is not pointed at one.
+    let Some(corpus) = std::env::var_os("SOBRE_BENCH_CORPUS").map(std::path::PathBuf::from) else {
+        println!(
+            "{{\"available\": false, \"reason\": \"set SOBRE_BENCH_CORPUS to a directory of .md prose\"}}"
+        );
+        return;
+    };
     let mut docs: Vec<String> = Vec::new();
     if let Ok(entries) = std::fs::read_dir(&corpus) {
         let mut paths: Vec<_> = entries

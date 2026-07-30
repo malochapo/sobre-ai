@@ -21,7 +21,7 @@ struct MetricSpec {
 }
 
 fn contract_path() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("../docs/reference/metrics-contract.json")
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("../docs/contracts/metrics-contract.json")
 }
 
 /// Parse the Prometheus text format into name → (type, sorted label keys).

@@ -432,15 +432,21 @@ mod tests {
 
     /// Daemon-free, o200k_base benchmark over a real on-disk corpus. Prints a
     /// JSON report (ratio + latency) and is `#[ignore]`d so it stays out of CI.
-    /// Reproduce: `cargo test -p lean-ctx --lib \
+    /// Reproduce: `SOBRE_BENCH_CORPUS=<dir of .md> cargo test -p lean-ctx --lib \
     /// proxy::compress_api::tests::bench_real_corpus_o200k -- --ignored --nocapture`.
     #[test]
     #[ignore = "benchmark; run explicitly with --ignored --nocapture"]
     fn bench_real_corpus_o200k() {
-        use std::path::Path;
         use std::time::Instant;
 
-        let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("../docs/reference");
+        // Operator-supplied corpus — see the note on the extractive benchmark.
+        let Some(corpus) = std::env::var_os("SOBRE_BENCH_CORPUS").map(std::path::PathBuf::from)
+        else {
+            println!(
+                "{{\"available\": false, \"reason\": \"set SOBRE_BENCH_CORPUS to a directory of .md prose\"}}"
+            );
+            return;
+        };
         let mut messages = Vec::new();
         if let Ok(entries) = std::fs::read_dir(&corpus) {
             let mut paths: Vec<_> = entries
