@@ -43,7 +43,15 @@ pub fn run() {
         let rest = args[2..].to_vec();
 
         match args[1].as_str() {
-            "exec" => handle_exec(&args, &rest),
+            // `-c` is not a human-facing alias of `exec` — it is the wire form
+            // the installed shell shim and the hook rewriter emit. Both build
+            // `<binary> -c "<command>"`: cli/shell_init.rs writes it into the
+            // user's rc, hook_handlers/file_rewrite.rs into every agent command
+            // it rewrites. Removing it makes every hooked command exit 1, and
+            // the shim only falls back to the real command on 126/127, so the
+            // failure surfaces as a broken shell rather than a lost feature.
+            // shell/exec.rs:684 also matches on it when collapsing nesting.
+            "-c" | "exec" => handle_exec(&args, &rest),
             "-t" | "--track" => handle_track(&args),
             "shell" | "--shell" => {
                 shell::interactive();

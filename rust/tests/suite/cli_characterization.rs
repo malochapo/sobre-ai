@@ -452,3 +452,23 @@ fn uninstall_dry_run_exits_zero() {
         "uninstall --dry-run should describe what it would do"
     );
 }
+
+// ═══════════════════════════════════════════════════════════════════
+// Machine-facing entry points
+// ═══════════════════════════════════════════════════════════════════
+
+/// `-c` is the wire form the installed shell shim (`cli/shell_init.rs`) and the
+/// hook rewriter (`hook_handlers/file_rewrite.rs`) emit as
+/// `<binary> -c "<command>"`. It was once removed as if it were a cosmetic
+/// alias of `exec`; every hooked shell command then exited 1, and the shim only
+/// falls back to the real command on 126/127, so a hooked shell simply stopped
+/// working. Assert the dispatcher still knows it.
+#[test]
+fn dash_c_is_not_an_unknown_command() {
+    let out = run(&["-c", "echo hello"]);
+    let err = stderr(&out);
+    assert!(
+        !err.contains("unknown command"),
+        "`-c` must dispatch (shell shim + hook rewriter emit it), got stderr: {err}"
+    );
+}
