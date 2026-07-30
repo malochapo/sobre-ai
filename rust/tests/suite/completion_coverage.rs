@@ -3,21 +3,27 @@
 use lean_ctx::cli::completions::spec::COMMAND_TREE;
 
 #[test]
-fn top_level_has_shell_and_config() {
+fn top_level_has_config_and_proxy() {
     let names: Vec<&str> = COMMAND_TREE.iter().map(|n| n.name).collect();
-    assert!(names.contains(&"shell"), "missing 'shell'");
     assert!(names.contains(&"config"), "missing 'config'");
     assert!(names.contains(&"proxy"), "missing 'proxy'");
 }
 
 #[test]
-fn alias_command_resolves() {
-    let gotchas_node = COMMAND_TREE
+fn top_level_declares_no_aliases() {
+    // Every alias this tree carried named a command with no dispatch arm
+    // (`bugs`, `savings`, `lockdown`, `upgrade`), or aliased a command that has
+    // its own arm and its own flags (`secure` -> `yolo`, `find` -> `grep`).
+    // Both kinds mis-complete. The mechanism stays in `CommandNode`; adding one
+    // back should be deliberate, and `every_completion_name_has_a_dispatch_arm`
+    // will hold it to a real command.
+    let with_aliases: Vec<&str> = COMMAND_TREE
         .iter()
-        .find(|n| n.name == "gotchas")
-        .expect("gotchas command must exist");
+        .filter(|n| !n.aliases.is_empty())
+        .map(|n| n.name)
+        .collect();
     assert!(
-        gotchas_node.aliases.contains(&"bugs"),
-        "gotchas must have 'bugs' alias"
+        with_aliases.is_empty(),
+        "unexpected aliases on: {with_aliases:?}"
     );
 }

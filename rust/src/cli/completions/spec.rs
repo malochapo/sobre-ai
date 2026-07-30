@@ -36,32 +36,8 @@ pub struct CommandNode {
 
 pub static COMMAND_TREE: &[CommandNode] = &[
     CommandNode {
-        name: "shell",
-        aliases: &[],
-        description: "Activate shell integration",
-        subcommands: &[],
-        flags: &[
-            FlagSpec {
-                long: "--agent",
-                short: Some('a'),
-                description: "Agent name",
-                takes_value: true,
-                value_kind: Some(DynamicKind::Agents),
-            },
-            FlagSpec {
-                long: "--mode",
-                short: Some('m'),
-                description: "Integration mode",
-                takes_value: true,
-                value_kind: Some(DynamicKind::Modes),
-            },
-        ],
-        positional: Some(DynamicKind::Shells),
-        hidden: false,
-    },
-    CommandNode {
         name: "init",
-        aliases: &["setup", "onboard", "install", "bootstrap"],
+        aliases: &[],
         description: "Initialize lean-ctx for an agent",
         subcommands: &[],
         flags: &[
@@ -152,7 +128,7 @@ pub static COMMAND_TREE: &[CommandNode] = &[
     },
     CommandNode {
         name: "proxy",
-        aliases: &["serve"],
+        aliases: &[],
         description: "Start the proxy server",
         subcommands: &[
             CommandNode {
@@ -280,7 +256,7 @@ pub static COMMAND_TREE: &[CommandNode] = &[
     },
     CommandNode {
         name: "gain",
-        aliases: &["savings", "output-savings"],
+        aliases: &[],
         description: "Show token savings",
         subcommands: &[],
         flags: &[
@@ -303,21 +279,6 @@ pub static COMMAND_TREE: &[CommandNode] = &[
         hidden: false,
     },
     CommandNode {
-        name: "spend",
-        aliases: &["billing", "finops", "roi"],
-        description: "Show cost report",
-        subcommands: &[],
-        flags: &[FlagSpec {
-            long: "--json",
-            short: None,
-            description: "JSON output",
-            takes_value: false,
-            value_kind: None,
-        }],
-        positional: None,
-        hidden: false,
-    },
-    CommandNode {
         name: "index",
         aliases: &[],
         description: "Build or rebuild search index",
@@ -333,18 +294,11 @@ pub static COMMAND_TREE: &[CommandNode] = &[
         hidden: false,
     },
     CommandNode {
-        name: "explore",
-        aliases: &["repomap", "repo-map"],
-        description: "Explore repository structure",
+        name: "repomap",
+        aliases: &[],
+        description: "Repository map: structure and token cost per file",
         subcommands: &[],
         flags: &[
-            FlagSpec {
-                long: "--depth",
-                short: Some('d'),
-                description: "Max depth",
-                takes_value: true,
-                value_kind: None,
-            },
             FlagSpec {
                 long: "--json",
                 short: None,
@@ -352,14 +306,28 @@ pub static COMMAND_TREE: &[CommandNode] = &[
                 takes_value: false,
                 value_kind: None,
             },
+            FlagSpec {
+                long: "--limit",
+                short: None,
+                description: "Row limit",
+                takes_value: true,
+                value_kind: None,
+            },
+            FlagSpec {
+                long: "--max-tokens",
+                short: None,
+                description: "Token budget for the map",
+                takes_value: true,
+                value_kind: None,
+            },
         ],
         positional: None,
         hidden: false,
     },
     CommandNode {
-        name: "compress",
-        aliases: &["compact"],
-        description: "Compress input",
+        name: "compact",
+        aliases: &[],
+        description: "Compact agent transcripts in place (defaults to ~/.claude/projects)",
         subcommands: &[],
         flags: &[],
         positional: None,
@@ -367,7 +335,7 @@ pub static COMMAND_TREE: &[CommandNode] = &[
     },
     CommandNode {
         name: "update",
-        aliases: &["upgrade"],
+        aliases: &[],
         description: "Update lean-ctx",
         subcommands: &[],
         flags: &[FlagSpec {
@@ -435,11 +403,26 @@ pub static COMMAND_TREE: &[CommandNode] = &[
         hidden: false,
     },
     CommandNode {
-        name: "selftest",
-        aliases: &["health"],
-        description: "Run self-test",
+        name: "health",
+        aliases: &[],
+        description: "Context-health scan: hotspots and token tax",
         subcommands: &[],
-        flags: &[],
+        flags: &[
+            FlagSpec {
+                long: "--gate",
+                short: None,
+                description: "Exit non-zero when the score is below threshold",
+                takes_value: false,
+                value_kind: None,
+            },
+            FlagSpec {
+                long: "--json",
+                short: None,
+                description: "JSON output",
+                takes_value: false,
+                value_kind: None,
+            },
+        ],
         positional: None,
         hidden: false,
     },
@@ -463,7 +446,7 @@ pub static COMMAND_TREE: &[CommandNode] = &[
     },
     CommandNode {
         name: "harden",
-        aliases: &["security", "lockdown"],
+        aliases: &[],
         description: "Harden security settings",
         subcommands: &[],
         flags: &[],
@@ -498,15 +481,6 @@ pub static COMMAND_TREE: &[CommandNode] = &[
         hidden: false,
     },
     CommandNode {
-        name: "cloud",
-        aliases: &[],
-        description: "Cloud features",
-        subcommands: &[],
-        flags: &[],
-        positional: None,
-        hidden: false,
-    },
-    CommandNode {
         name: "help",
         aliases: &[],
         description: "Show help",
@@ -526,7 +500,7 @@ pub static COMMAND_TREE: &[CommandNode] = &[
     },
     CommandNode {
         name: "audit",
-        aliases: &["compliance"],
+        aliases: &[],
         description: "Run compliance audit",
         subcommands: &[],
         flags: &[],
@@ -534,23 +508,8 @@ pub static COMMAND_TREE: &[CommandNode] = &[
         hidden: false,
     },
     CommandNode {
-        name: "agent",
-        aliases: &[],
-        description: "Manage agent integrations",
-        subcommands: &[],
-        flags: &[FlagSpec {
-            long: "--agent",
-            short: Some('a'),
-            description: "Agent name",
-            takes_value: true,
-            value_kind: Some(DynamicKind::Agents),
-        }],
-        positional: None,
-        hidden: false,
-    },
-    CommandNode {
         name: "session",
-        aliases: &["sessions"],
+        aliases: &[],
         description: "Manage sessions",
         subcommands: &[],
         flags: &[],
@@ -567,26 +526,27 @@ pub static COMMAND_TREE: &[CommandNode] = &[
         hidden: false,
     },
     CommandNode {
-        name: "stats",
-        aliases: &["introspect"],
-        description: "Show statistics",
-        subcommands: &[],
-        flags: &[FlagSpec {
-            long: "--json",
-            short: None,
-            description: "JSON output",
-            takes_value: false,
-            value_kind: None,
-        }],
-        positional: None,
-        hidden: false,
-    },
-    CommandNode {
-        name: "cheatsheet",
+        name: "introspect",
         aliases: &[],
-        description: "Show cheatsheet",
-        subcommands: &[],
-        flags: &[],
+        description: "Subsystem activity registry",
+        subcommands: &[CommandNode {
+            name: "cognition",
+            aliases: &[],
+            description: "Cognition-loop activity per subsystem",
+            subcommands: &[],
+            flags: &[],
+            positional: None,
+            hidden: false,
+        }],
+        flags: &[
+            FlagSpec {
+                long: "--json",
+                short: None,
+                description: "JSON output",
+                takes_value: false,
+                value_kind: None,
+            },
+        ],
         positional: None,
         hidden: false,
     },
@@ -594,15 +554,6 @@ pub static COMMAND_TREE: &[CommandNode] = &[
         name: "mcp",
         aliases: &[],
         description: "MCP server management",
-        subcommands: &[],
-        flags: &[],
-        positional: None,
-        hidden: false,
-    },
-    CommandNode {
-        name: "wrapped",
-        aliases: &[],
-        description: "Show wrapped summary",
         subcommands: &[],
         flags: &[],
         positional: None,
@@ -664,15 +615,6 @@ pub static COMMAND_TREE: &[CommandNode] = &[
         hidden: false,
     },
     CommandNode {
-        name: "verify",
-        aliases: &["proof"],
-        description: "Verify cache integrity",
-        subcommands: &[],
-        flags: &[],
-        positional: None,
-        hidden: false,
-    },
-    CommandNode {
         name: "verify-cache",
         aliases: &[],
         description: "Verify cache consistency",
@@ -694,15 +636,6 @@ pub static COMMAND_TREE: &[CommandNode] = &[
         name: "instructions",
         aliases: &[],
         description: "Show agent instructions",
-        subcommands: &[],
-        flags: &[],
-        positional: None,
-        hidden: false,
-    },
-    CommandNode {
-        name: "semantic-search",
-        aliases: &[],
-        description: "Semantic code search",
         subcommands: &[],
         flags: &[],
         positional: None,
@@ -737,7 +670,7 @@ pub static COMMAND_TREE: &[CommandNode] = &[
     },
     CommandNode {
         name: "grep",
-        aliases: &["find"],
+        aliases: &[],
         description: "Search with compression",
         subcommands: &[],
         flags: &[],
@@ -772,15 +705,6 @@ pub static COMMAND_TREE: &[CommandNode] = &[
         hidden: false,
     },
     CommandNode {
-        name: "discover",
-        aliases: &[],
-        description: "Discover project structure",
-        subcommands: &[],
-        flags: &[],
-        positional: None,
-        hidden: false,
-    },
-    CommandNode {
         name: "ghost",
         aliases: &[],
         description: "Ghost context injection",
@@ -799,15 +723,6 @@ pub static COMMAND_TREE: &[CommandNode] = &[
         hidden: false,
     },
     CommandNode {
-        name: "heatmap",
-        aliases: &[],
-        description: "Show file heatmap",
-        subcommands: &[],
-        flags: &[],
-        positional: None,
-        hidden: false,
-    },
-    CommandNode {
         name: "graph",
         aliases: &[],
         description: "Show dependency graph",
@@ -820,60 +735,6 @@ pub static COMMAND_TREE: &[CommandNode] = &[
         name: "smells",
         aliases: &[],
         description: "Detect code smells",
-        subcommands: &[],
-        flags: &[],
-        positional: None,
-        hidden: false,
-    },
-    CommandNode {
-        name: "ledger",
-        aliases: &[],
-        description: "Token usage ledger",
-        subcommands: &[],
-        flags: &[],
-        positional: None,
-        hidden: false,
-    },
-    CommandNode {
-        name: "control",
-        aliases: &[],
-        description: "Runtime control",
-        subcommands: &[],
-        flags: &[],
-        positional: None,
-        hidden: false,
-    },
-    CommandNode {
-        name: "plan",
-        aliases: &[],
-        description: "Plan context strategy",
-        subcommands: &[],
-        flags: &[],
-        positional: None,
-        hidden: false,
-    },
-    CommandNode {
-        name: "compile",
-        aliases: &[],
-        description: "Compile context",
-        subcommands: &[],
-        flags: &[],
-        positional: None,
-        hidden: false,
-    },
-    CommandNode {
-        name: "skillify",
-        aliases: &[],
-        description: "Generate skill from code",
-        subcommands: &[],
-        flags: &[],
-        positional: None,
-        hidden: false,
-    },
-    CommandNode {
-        name: "summary",
-        aliases: &["overview"],
-        description: "Show project summary",
         subcommands: &[],
         flags: &[],
         positional: None,
@@ -913,7 +774,7 @@ pub static COMMAND_TREE: &[CommandNode] = &[
     },
     CommandNode {
         name: "allow",
-        aliases: &["trust"],
+        aliases: &[],
         description: "Allow a command/path",
         subcommands: &[],
         flags: &[],
@@ -957,36 +818,9 @@ pub static COMMAND_TREE: &[CommandNode] = &[
         hidden: false,
     },
     CommandNode {
-        name: "buddy",
-        aliases: &[],
-        description: "AI buddy assistant",
-        subcommands: &[],
-        flags: &[],
-        positional: None,
-        hidden: false,
-    },
-    CommandNode {
         name: "learning",
-        aliases: &["conformance"],
+        aliases: &[],
         description: "Show learning progress",
-        subcommands: &[],
-        flags: &[],
-        positional: None,
-        hidden: false,
-    },
-    CommandNode {
-        name: "token-report",
-        aliases: &[],
-        description: "Token usage report",
-        subcommands: &[],
-        flags: &[],
-        positional: None,
-        hidden: false,
-    },
-    CommandNode {
-        name: "pack",
-        aliases: &[],
-        description: "Pack context for export",
         subcommands: &[],
         flags: &[],
         positional: None,
@@ -1011,15 +845,6 @@ pub static COMMAND_TREE: &[CommandNode] = &[
         hidden: false,
     },
     CommandNode {
-        name: "team",
-        aliases: &[],
-        description: "Team management",
-        subcommands: &[],
-        flags: &[],
-        positional: None,
-        hidden: false,
-    },
-    CommandNode {
         name: "provider",
         aliases: &[],
         description: "Manage LLM providers",
@@ -1032,15 +857,6 @@ pub static COMMAND_TREE: &[CommandNode] = &[
         name: "watch",
         aliases: &[],
         description: "Watch for file changes",
-        subcommands: &[],
-        flags: &[],
-        positional: None,
-        hidden: false,
-    },
-    CommandNode {
-        name: "yolo",
-        aliases: &["secure"],
-        description: "Toggle security mode",
         subcommands: &[],
         flags: &[],
         positional: None,
@@ -1105,6 +921,66 @@ mod tests {
         assert!(
             missing.is_empty(),
             "KNOWN_COMMANDS entries missing from COMMAND_TREE: {missing:?}"
+        );
+    }
+
+    /// Every name Tab-completion offers must actually dispatch.
+    ///
+    /// This tree had drifted into offering 23 commands and 14 aliases that no
+    /// longer had a match arm: the user tabbed to them, ran them, and got
+    /// "unknown command". Some were worse than useless — `secure` was listed as
+    /// an alias of `yolo` while the two do the opposite thing.
+    ///
+    /// Reading the dispatch source is crude, but it is the only static handle
+    /// on a `match` that has no runtime representation, and spawning 65
+    /// processes is not an option: several top-level commands act on the
+    /// machine when run bare.
+    #[test]
+    fn every_completion_name_has_a_dispatch_arm() {
+        const DISPATCH_SRC: &str = include_str!("../dispatch/mod.rs");
+
+        let body = DISPATCH_SRC
+            .split_once("match args[1].as_str()")
+            .expect("dispatch match not found — update this test if it moved")
+            .1;
+
+        // Top-level arms sit at 12 spaces of indentation; each may list several
+        // patterns (`"a" | "b" =>`). Collect every quoted pattern on such a line.
+        let mut arms = std::collections::HashSet::new();
+        for line in body.lines() {
+            let Some(rest) = line.strip_prefix("            ") else {
+                continue;
+            };
+            if rest.starts_with(' ') || !rest.contains("=>") || !rest.starts_with('"') {
+                continue;
+            }
+            let patterns = rest.split_once("=>").map_or(rest, |(p, _)| p);
+            for chunk in patterns.split('|') {
+                let t = chunk.trim().trim_matches('"');
+                if !t.is_empty() {
+                    arms.insert(t.to_string());
+                }
+            }
+        }
+        assert!(
+            arms.len() > 50,
+            "parsed only {} dispatch arms — the parser is broken, not the tree",
+            arms.len()
+        );
+
+        let mut orphans = Vec::new();
+        for node in COMMAND_TREE {
+            for name in std::iter::once(node.name).chain(node.aliases.iter().copied()) {
+                if !arms.contains(name) {
+                    orphans.push(name);
+                }
+            }
+        }
+        assert!(
+            orphans.is_empty(),
+            "completion offers names with no dispatch arm: {orphans:?}\n\
+             Either add the arm or drop the entry — an offered command that \
+             exits 1 is worse than a missing one."
         );
     }
 }
