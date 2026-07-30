@@ -136,8 +136,6 @@ pub fn contract_docs() -> Vec<ContractDoc> {
         doc("billing-plane-v2", "billing-plane-v2.md", 2, Stable),
         // v2 = v1 + storageQuotaBytes/roiWebhookUrl (GL #387/#388); v1 stays frozen.
         doc("billing-plane-v3", "billing-plane-v3.md", 3, Stable),
-        // v3 = v1 + business plan + sso_oidc entitlement (GL #460/#533); additive.
-        doc("evidence-bundle", "evidence-bundle-v1.md", 1, Stable),
         // Offline-verifiable audit evidence ZIP (GL #425, H3 Epic A).
         doc(
             "settlement-evidence",
@@ -300,12 +298,6 @@ pub fn contract_docs() -> Vec<ContractDoc> {
         // licensing (#667) and success-fee billing (#669) live in the private
         // cloud plane, not in the open engine (oss-plane-separation-v1).
         doc("org-policy", "org-policy-v1.md", 1, Experimental),
-        doc(
-            "compliance-report",
-            "compliance-report-v1.md",
-            1,
-            Experimental,
-        ),
         doc("pillar-boundaries", "pillar-boundaries-v1.md", 1, Stable),
         // Logical editor-session telemetry is an additive local-dashboard surface;
         // keep it experimental until multiple integrations implement the lifecycle.

@@ -370,14 +370,11 @@ pub mod mcp_catalog;
 pub mod ocla;
 pub mod ocla_bus;
 pub mod quality_benchmark;
-pub mod qubo_select;
 
 pub mod compliance;
-pub mod compliance_report;
 pub mod edit_metering;
 pub mod edit_quality;
 pub mod efficacy;
-pub mod evidence_bundle;
 pub mod grammar_usage;
 pub mod graph_cache;
 pub mod http_client;

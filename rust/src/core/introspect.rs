@@ -85,11 +85,6 @@ pub const SUBSYSTEMS: &[Subsystem] = &[
         label: "Observation synthesis",
         science: "entity-summary memory (Hindsight)",
     },
-    Subsystem {
-        key: "qubo_select",
-        label: "QUBO selection (spike)",
-        science: "quantum-inspired optimization",
-    },
 ];
 
 /// Persisted activity record for a single subsystem.

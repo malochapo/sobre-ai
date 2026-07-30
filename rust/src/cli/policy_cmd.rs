@@ -51,9 +51,9 @@ USAGE:\n\
                                        Evaluate a tool call against the active\n\
                                        policy (deny/egress/redact/filter) and\n\
                                        record audit evidence — no server needed\n\
-  lean-ctx policy org <key|sign|verify|trust|install|status>\n\
+  lean-ctx policy org <trust|untrust|status>\n\
                                        Central, signed org policy distribution\n\
-                                       (un-bypassable floor); see `policy org -h`\n\n\
+                                       Pinned addon signing keys; see `policy org -h`\n\n\
 A pack pins governance expectations — default read mode, allowed/denied\n\
 tools, redaction patterns, audit retention, context budget — in reviewable\n\
 TOML with single inheritance (extends). Start from a built-in:\n\

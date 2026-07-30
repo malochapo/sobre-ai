@@ -125,15 +125,7 @@ pub fn run() {
                 return;
             }
             "audit" => {
-                if rest.first().map(String::as_str) == Some("evidence") {
-                    crate::cli::audit_report::cmd_evidence(&rest[1..]);
-                } else {
-                    println!("{}", crate::cli::audit_report::generate_report());
-                }
-                return;
-            }
-            "compliance" => {
-                crate::cli::cmd_compliance(&rest);
+                println!("{}", crate::cli::audit_report::generate_report());
                 return;
             }
             "index" => {

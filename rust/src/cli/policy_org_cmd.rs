@@ -1,23 +1,19 @@
-//! `lean-ctx policy org` — central, signed org policy distribution (GL #674).
+//! `sobre policy org` - the pinned signing keys this machine trusts.
 //!
-//! Admin side: mint an org signing key, sign a pack into a distributable
-//! artifact. Endpoint side: pin the org's public key once, then install signed
-//! artifacts that the runtime folds in as an un-bypassable floor.
+//! What remains of a central org-policy distribution plane. The admin side
+//! (mint a key, sign a pack, install a signed artifact as an un-bypassable
+//! floor) went with invariant 4: on one person's machine there is no admin
+//! pushing a floor. Pinning stayed because `core::addons::registry` and
+//! `grammar_registry` check it before loading a signed addon.
 //!
 //! Subcommands:
-//! * `key --org <name>`              — show/create the org signing key (+ pubkey)
-//! * `sign <pack.toml> --org <name>` — build + Ed25519-sign an artifact
-//! * `verify <artifact.json>`        — verify signature (+ trust if pinned)
-//! * `trust <pubkey> [--org <name>]` — pin a trusted org key (`--list` to show)
-//! * `untrust <pubkey>`              — remove a pinned key
-//! * `install <artifact.json>`       — verify + trust-check + install for runtime
-//! * `uninstall`                     — remove the installed artifact
-//! * `status` / `show`               — active org policy + effective floor
+//! * `trust <pubkey> [--org <name>]` - pin a trusted signing key (`--list`)
+//! * `untrust <pubkey>`              - remove a pinned key
+//! * `status` / `show`               - pinned keys + effective policy
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
-use crate::core::agent_identity;
-use crate::core::policy::org::{self, OrgPolicyV1};
+use crate::core::policy::org;
 use crate::core::policy::{self, ResolvedPolicy, floor};
 
 /// Project-local pack location, relative to the working directory.
@@ -25,13 +21,8 @@ const PROJECT_PACK_PATH: &str = ".lean-ctx/policy.toml";
 
 pub(crate) fn cmd_policy_org(args: &[String]) {
     match args.first().map(String::as_str) {
-        Some("key") => cmd_key(&args[1..]),
-        Some("sign") => cmd_sign(&args[1..]),
-        Some("verify") => cmd_verify(&args[1..]),
         Some("trust") => cmd_trust(&args[1..]),
         Some("untrust") => cmd_untrust(&args[1..]),
-        Some("install") => cmd_install(&args[1..]),
-        Some("uninstall") => cmd_uninstall(),
         Some("status" | "show") => cmd_status(),
         Some("-h" | "--help") | None => print_help(),
         Some(other) => {
@@ -97,126 +88,15 @@ fn first_positional(args: &[String]) -> Option<String> {
     None
 }
 
-fn require_org(args: &[String], ctx: &str) -> String {
-    flag(args, "--org").unwrap_or_else(|| {
-        eprintln!("{ctx}: --org <name> is required");
-        std::process::exit(2);
-    })
-}
 
 // ── key ──────────────────────────────────────────────────────────────────────
 
-fn cmd_key(args: &[String]) {
-    let org = require_org(args, "policy org key");
-    let key_id = org::org_key_id(&org);
-    let key = agent_identity::get_or_create_keypair(&key_id).unwrap_or_else(|e| {
-        eprintln!("policy org key: {e}");
-        std::process::exit(1);
-    });
-    let pubkey = agent_identity::hex_encode(&key.verifying_key().to_bytes());
-    println!("Org signing key for '{org}' (keystore id: {key_id})\n");
-    println!("  public key:  {pubkey}\n");
-    println!("Distribute this public key to every endpoint and pin it once:");
-    println!("  lean-ctx policy org trust {pubkey} --org {org}");
-}
 
 // ── sign ─────────────────────────────────────────────────────────────────────
 
-fn cmd_sign(args: &[String]) {
-    let org = require_org(args, "policy org sign");
-    let Some(pack_path) = first_positional(args) else {
-        eprintln!("policy org sign: a pack .toml path is required");
-        std::process::exit(2);
-    };
-    let pack_toml = std::fs::read_to_string(&pack_path).unwrap_or_else(|e| {
-        eprintln!("policy org sign: read {pack_path}: {e}");
-        std::process::exit(1);
-    });
-    // Default the distribution version to the pack's own version.
-    let policy_version = flag(args, "--policy-version").unwrap_or_else(|| {
-        policy::parse(&pack_toml).map_or_else(|_| "1".to_string(), |p| p.version)
-    });
-    let enforced = !args.iter().any(|a| a == "--advisory");
-
-    let mut artifact = OrgPolicyV1::build(&org, &policy_version, enforced, &pack_toml)
-        .unwrap_or_else(|e| {
-            eprintln!("policy org sign: {e}");
-            std::process::exit(1);
-        });
-    if let Err(e) = artifact.sign() {
-        eprintln!("policy org sign: signing failed: {e}");
-        std::process::exit(1);
-    }
-
-    let out = flag(args, "-o")
-        .or_else(|| flag(args, "--out"))
-        .unwrap_or_else(|| "org-policy.signed.json".to_string());
-    let json = artifact.to_json().unwrap_or_else(|e| {
-        eprintln!("policy org sign: {e}");
-        std::process::exit(1);
-    });
-    if let Err(e) = std::fs::write(&out, json) {
-        eprintln!("policy org sign: write {out}: {e}");
-        std::process::exit(1);
-    }
-
-    let pubkey = artifact.signer_public_key.as_deref().unwrap_or("");
-    println!(
-        "Signed org policy for '{org}' (version {policy_version}, {}) → {out}",
-        if enforced { "enforced" } else { "advisory" }
-    );
-    println!("  signer public key: {pubkey}");
-    println!("\nDistribute {out} + pin the key on each endpoint:");
-    println!("  lean-ctx policy org trust {pubkey} --org {org}");
-    println!("  lean-ctx policy org install {out}");
-}
 
 // ── verify ───────────────────────────────────────────────────────────────────
 
-fn cmd_verify(args: &[String]) {
-    let Some(path) = first_positional(args) else {
-        eprintln!("policy org verify: an artifact .json path is required");
-        std::process::exit(2);
-    };
-    let artifact = read_artifact(Path::new(&path), "policy org verify");
-    let verdict = artifact.verify();
-    if !verdict.signature_valid {
-        eprintln!(
-            "INVALID — {}",
-            verdict
-                .error
-                .as_deref()
-                .unwrap_or("signature does not verify")
-        );
-        std::process::exit(1);
-    }
-    let pubkey = verdict.signer_public_key.unwrap_or_default();
-    println!("VALID — signature verifies (Ed25519, offline)");
-    println!("  org:           {}", artifact.org);
-    println!("  version:       {}", artifact.policy_version);
-    println!(
-        "  mode:          {}",
-        if artifact.enforced {
-            "enforced"
-        } else {
-            "advisory"
-        }
-    );
-    println!("  signer key:    {pubkey}");
-    if org::trust::any_pinned() {
-        let trusted = org::trust::is_trusted(&pubkey);
-        println!(
-            "  trust:         {}",
-            if trusted {
-                "TRUSTED (key is pinned on this endpoint)"
-            } else {
-                "NOT TRUSTED (key is not pinned here)"
-            }
-        );
-    } else {
-        println!("  trust:         no anchors pinned on this endpoint");
-    }
-}
 
 // ── trust / untrust ────────────────────────────────────────────────────────────
 
@@ -278,76 +158,7 @@ fn cmd_untrust(args: &[String]) {
 
 // ── install / uninstall ─────────────────────────────────────────────────────────
 
-fn cmd_install(args: &[String]) {
-    let Some(path) = first_positional(args) else {
-        eprintln!("policy org install: an artifact .json path is required");
-        std::process::exit(2);
-    };
-    let artifact = read_artifact(Path::new(&path), "policy org install");
 
-    let verdict = artifact.verify();
-    if !verdict.signature_valid {
-        eprintln!(
-            "policy org install: refusing to install — signature INVALID ({})",
-            verdict.error.as_deref().unwrap_or("does not verify")
-        );
-        std::process::exit(1);
-    }
-    let pubkey = verdict.signer_public_key.clone().unwrap_or_default();
-
-    // Trust must be established. `--trust` pins the signer key (TOFU) in one
-    // step for first-time setup; otherwise the operator must pin it explicitly.
-    if !org::trust::is_trusted(&pubkey) {
-        if args.iter().any(|a| a == "--trust") {
-            if let Err(e) = org::trust::pin(&artifact.org, &pubkey) {
-                eprintln!("policy org install: {e}");
-                std::process::exit(1);
-            }
-            println!("Pinned trust anchor for '{}': {pubkey}", artifact.org);
-        } else {
-            eprintln!(
-                "policy org install: signer key is not trusted on this endpoint.\n  \
-                 Pin it first:  lean-ctx policy org trust {pubkey} --org {}\n  \
-                 or re-run with --trust to pin it now.",
-                artifact.org
-            );
-            std::process::exit(1);
-        }
-    }
-
-    let installed = org::store::install(&artifact).unwrap_or_else(|e| {
-        eprintln!("policy org install: {e}");
-        std::process::exit(1);
-    });
-    crate::core::policy::runtime::reload();
-    println!(
-        "Installed org policy '{}' v{} ({}) → {}",
-        artifact.org,
-        artifact.policy_version,
-        if artifact.enforced {
-            "enforced"
-        } else {
-            "advisory (not enforced)"
-        },
-        installed.display()
-    );
-    println!();
-    cmd_status();
-}
-
-fn cmd_uninstall() {
-    match org::store::uninstall() {
-        Ok(true) => {
-            crate::core::policy::runtime::reload();
-            println!("Removed the installed org policy.");
-        }
-        Ok(false) => println!("No org policy is installed."),
-        Err(e) => {
-            eprintln!("policy org uninstall: {e}");
-            std::process::exit(1);
-        }
-    }
-}
 
 // ── status / show ──────────────────────────────────────────────────────────────
 
@@ -441,16 +252,6 @@ fn local_pack() -> Option<ResolvedPolicy> {
         .ok()
 }
 
-fn read_artifact(path: &Path, ctx: &str) -> OrgPolicyV1 {
-    let text = std::fs::read_to_string(path).unwrap_or_else(|e| {
-        eprintln!("{ctx}: read {}: {e}", path.display());
-        std::process::exit(1);
-    });
-    OrgPolicyV1::from_json(&text).unwrap_or_else(|e| {
-        eprintln!("{ctx}: {e}");
-        std::process::exit(1);
-    })
-}
 
 /// Compact resolved-policy renderer (mirrors `policy show`).
 fn print_resolved(r: &ResolvedPolicy) {
