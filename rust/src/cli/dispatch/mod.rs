@@ -53,10 +53,6 @@ pub fn run() {
             // shell/exec.rs:684 also matches on it when collapsing nesting.
             "-c" | "exec" => handle_exec(&args, &rest),
             "-t" | "--track" => handle_track(&args),
-            "shell" | "--shell" => {
-                shell::interactive();
-                return;
-            }
             "gain" => {
                 cmd_gain(&rest);
                 return;
@@ -76,7 +72,7 @@ pub fn run() {
                 }
                 return;
             }
-            "output-savings" | "output_savings" => {
+            "output-savings" => {
                 // #895 Track B: measured (A/B holdout) or estimated output-token
                 // reduction. Local + free, like `roi`.
                 super::cmd_output_savings(&rest);
@@ -195,10 +191,6 @@ pub fn run() {
             }
             "onboard" => {
                 handle_onboard(&rest);
-                return;
-            }
-            "install" => {
-                handle_install(&rest);
                 return;
             }
             "bootstrap" => {
@@ -333,14 +325,6 @@ pub fn run() {
                 super::cmd_security(&rest);
                 return;
             }
-            "yolo" => {
-                super::cmd_yolo(&rest);
-                return;
-            }
-            "secure" => {
-                super::cmd_secure(&rest);
-                return;
-            }
             "trust" => {
                 super::cmd_trust(&rest);
                 return;
@@ -471,10 +455,8 @@ pub fn run() {
                     "deny" => hook_handlers::handle_deny(),
                     "read-dedup" => hook_handlers::handle_read_dedup(),
                     "observe" => hook_handlers::handle_observe(),
-                    "copilot" => hook_handlers::handle_copilot(),
                     "codex-pretooluse" => hook_handlers::handle_codex_pretooluse(),
                     "codex-session-start" => hook_handlers::handle_codex_session_start(),
-                    "rewrite-inline" => hook_handlers::handle_rewrite_inline(),
                     "vibe-pre-tool" => hook_handlers::handle_vibe_pre_tool(),
                     _ => {
                         eprintln!(
@@ -512,10 +494,6 @@ pub fn run() {
             "raw" => handle_raw(&args, &rest),
             "safety-levels" => {
                 println!("{}", core::compression_safety::format_safety_table());
-                return;
-            }
-            "cheat" => {
-                super::cmd_cheatsheet();
                 return;
             }
             "--version" | "-V" => {
@@ -744,17 +722,6 @@ fn handle_onboard(rest: &[String]) {
     setup::run_onboard();
 }
 
-fn handle_install(rest: &[String]) {
-    // Plain `lean-ctx install` is a natural thing to type after installing the
-    // binary; keep it as guided setup unless repair mode was explicitly asked.
-    let repair = rest.iter().any(|a| a == "--repair" || a == "--fix");
-    let json = rest.iter().any(|a| a == "--json");
-    if !repair {
-        setup::run_setup();
-        return;
-    }
-    run_repair_setup(json);
-}
 
 fn handle_bootstrap(rest: &[String]) {
     let json = rest.iter().any(|a| a == "--json");

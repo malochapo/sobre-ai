@@ -149,12 +149,6 @@ fn safety_levels_exits_zero() {
     );
 }
 
-#[test]
-fn cheatsheet_exits_zero() {
-    let out = run(&["cheatsheet"]);
-    assert_eq!(exit_code(&out), 0, "stderr: {}", stderr(&out));
-    assert!(!stdout(&out).is_empty(), "cheatsheet must produce output");
-}
 
 #[test]
 fn config_show_exits_zero() {

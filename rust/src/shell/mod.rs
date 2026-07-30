@@ -1,7 +1,6 @@
 pub(crate) mod agent_wrapper;
 pub mod compress;
 mod exec;
-mod interactive;
 pub mod output_policy;
 mod pipeline;
 pub(crate) mod platform;
@@ -13,7 +12,6 @@ pub use compress::compress_if_beneficial_pub;
 pub(crate) use exec::shell_timeout_with_override;
 pub(crate) use exec::{STDERR_LABEL, combine_streams};
 pub use exec::{exec, exec_argv};
-pub use interactive::interactive;
 pub use output_policy::{OutputPolicy, classify as classify_output};
 pub use platform::{
     decode_output, is_container, is_non_interactive, join_command, join_command_for,

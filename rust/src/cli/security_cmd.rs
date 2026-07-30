@@ -47,15 +47,7 @@ pub(crate) fn cmd_security(args: &[String]) {
     }
 }
 
-/// `lean-ctx yolo` — top-level alias for `security open`.
-pub(crate) fn cmd_yolo(args: &[String]) {
-    apply_open(args);
-}
 
-/// `lean-ctx secure` / `lean-ctx lockdown` — top-level alias for `security strict`.
-pub(crate) fn cmd_secure(_args: &[String]) {
-    apply_strict();
-}
 
 /// Drop containment (path jail + shell gating) in one step. Secret/`.env`
 /// redaction is intentionally left untouched.

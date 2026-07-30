@@ -82,7 +82,6 @@ SAFETY (env vars):
 
 MORE:
     lean-ctx help all              Full command reference (every subcommand)
-    lean-ctx cheat                 Workflow cheat sheet for AI agents
 
 WEBSITE: https://leanctx.com
 GITHUB:  https://github.com/yvgude/lean-ctx
@@ -118,7 +117,6 @@ USAGE:
     lean-ctx -c --raw \"command\"    Execute without compression (full output)
     lean-ctx raw \"command\"         Raw escape hatch: full, exact output (alias: bypass)
     lean-ctx exec \"command\"        Same as -c
-    lean-ctx shell                 Interactive shell with compression
 
 COMMANDS:
     gain                           Visual dashboard (colors, bars, sparklines, USD)
@@ -166,10 +164,8 @@ COMMANDS:
     benchmark report [path]        Generate shareable Markdown report
     benchmark compare [--output F] Head-to-head comparison vs competitors
     benchmark scorecard [--json]   Reproducible savings+recall+latency scorecard
-    cheat                          Command cheat sheet & workflow quick reference
     onboard                        Zero-prompt golden path: connect tools + sensible defaults
     setup                          Guided setup: shell + editor + verify (full control)
-    install                        Alias for setup; install --repair = non-interactive refresh
     bootstrap                      Non-interactive setup + fix (zero-config)
     status [--json]                Show setup + MCP + rules status
     init [--global]                Install shell aliases (zsh/bash/fish/PowerShell)
@@ -202,8 +198,6 @@ COMMANDS:
     compress diff <file|-> [--shell \"cmd\"] [--json]  Preview compression: original vs emitted + token diff
     config                         Show/edit configuration (~/.lean-ctx/config.toml)
     security [status]              Show security posture (containment + secret defense)
-    yolo                           Disable containment: any path + any command (keeps secret redaction on)
-    secure                         Restore secure defaults (path jail + shell gating + secret redaction)
     security secrets <on|off>      Toggle secret/.env redaction (separate from containment)
     allow <cmd>                    Allow one shell command (additive; granular re-enable after yolo)
     tools [minimal|standard|power|show|list]  How many MCP tools your agent sees
@@ -318,7 +312,6 @@ EXAMPLES:
     lean-ctx discover              Find missed savings in shell history
     lean-ctx discover --card       Shareable 'before' SVG -> lean-ctx-before.svg
     lean-ctx onboard               One-command setup (shell + editors + verify)
-    lean-ctx install --repair      Premium repair path (non-interactive, merge-based)
     lean-ctx bootstrap             Non-interactive setup + fix (zero-config)
     lean-ctx bootstrap --json      Machine-readable bootstrap report
     lean-ctx init --global         Install shell aliases (includes lean-ctx-on/off/mode/status)

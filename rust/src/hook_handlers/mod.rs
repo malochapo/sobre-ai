@@ -254,74 +254,7 @@ pub fn handle_redirect() {
     emit_gating_decision(HOOK_GATING_TIMEOUT, redirect::compute_redirect);
 }
 
-/// Dedicated Copilot PreToolUse handler (dispatched via `hook copilot`).
-///
-/// NOTE: the live Copilot CLI integration installed by `init --agent copilot`
-/// registers `hook rewrite` + `hook redirect` (see `hooks::agents::copilot`),
-/// so this entry point is currently unused by setup. It is kept correct for any
-/// host wired to `hook copilot` directly. It parses the same normalised payload
-/// as the other handlers so Copilot CLI's camelCase `toolName`/`toolArgs`
-/// (JSON-encoded string) are read correctly (#551).
-pub fn handle_copilot() {
-    if is_disabled() {
-        return;
-    }
-    let binary = resolve_binary();
-    let Some(input) = read_stdin_with_timeout(HOOK_STDIN_TIMEOUT) else {
-        return;
-    };
 
-    let Ok(v) = serde_json::from_str::<serde_json::Value>(&input) else {
-        return;
-    };
-
-    let Some(tool_name) = payload::resolve_tool_name(&v) else {
-        return;
-    };
-
-    if !is_shell_tool(&tool_name) {
-        return;
-    }
-
-    let tool_args = payload::resolve_tool_args(&v);
-    let Some(cmd) = payload::resolve_command(&v, tool_args.as_ref()) else {
-        return;
-    };
-
-    if let Some(rewritten) = file_rewrite::rewrite_candidate(&cmd, &binary) {
-        print!(
-            "{}",
-            build_dual_rewrite_output(tool_args.as_ref(), &rewritten)
-        );
-    }
-}
-
-/// Inline rewrite: takes a command as CLI args, prints the rewritten command to stdout.
-/// The command is passed as positional arguments, not via stdin JSON.
-pub fn handle_rewrite_inline() {
-    if is_disabled() {
-        return;
-    }
-    let binary = resolve_binary();
-    let args: Vec<String> = std::env::args().collect();
-    // args: [binary, "hook", "rewrite-inline", ...command parts]
-    if args.len() < 4 {
-        return;
-    }
-    let cmd = args[3..].join(" ");
-
-    if let Some(rewritten) = file_rewrite::rewrite_candidate(&cmd, &binary) {
-        print!("{rewritten}");
-        return;
-    }
-
-    if cmd.starts_with("lean-ctx ") || cmd.starts_with(&format!("{binary} ")) {
-        print!("{cmd}");
-        return;
-    }
-
-    print!("{cmd}");
-}
 
 /// Resolve the lean-ctx executable path for hook command emission and
 /// subprocess spawning. Always the **native** OS path: the MSYS/Git-Bash
