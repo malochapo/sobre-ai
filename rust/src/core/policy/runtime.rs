@@ -107,16 +107,7 @@ fn cache() -> &'static RwLock<Cache> {
 }
 
 fn load_from_disk() -> Option<Arc<ActivePolicy>> {
-    let local = load_local_pack();
-    // A central org policy (GL #674), when present + signed + trusted, is folded
-    // in as an un-bypassable floor *beneath* the local pack: the local pack can
-    // only ever tighten it. Untrusted/invalid org policies are ignored here
-    // (fail-open) — `org::active_resolved` already logged why.
-    let effective = match crate::core::policy::org::active_resolved() {
-        Some(org) => crate::core::policy::floor::merge_floor(&org, local.as_ref()),
-        None => local?,
-    };
-    Some(Arc::new(ActivePolicy::from_resolved(effective)))
+    Some(Arc::new(ActivePolicy::from_resolved(load_local_pack()?)))
 }
 
 /// The project-local pack (`.lean-ctx/policy.toml`), resolved. `None` when the

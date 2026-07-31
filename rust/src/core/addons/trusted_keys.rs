@@ -1,50 +1,51 @@
-//! Trust anchors for org policy distribution (GL #674).
+//! Signing keys this machine trusts for addons.
 //!
-//! A signed [`super::OrgPolicyV1`] is only honoured when its signing key is one
-//! the endpoint has **pinned out-of-band** — exactly the SSH-`known_hosts` /
-//! certificate-pinning model. Pinning is what makes central distribution
-//! *un-bypassable*: a user cannot forge an org policy without the org's private
-//! key, and cannot weaken a valid one because the runtime folds it in as a floor
-//! ([`crate::core::policy::floor`]).
+//! An addon carrying an Ed25519 signature is only loaded when its signing
+//! key is one pinned here out-of-band — the SSH `known_hosts` model.
+//! `addons::registry` and `addons::grammar_registry` check this before
+//! loading, and it is what makes `addons.require_signature = true`
+//! satisfiable.
 //!
 //! Two sources, checked in order:
-//! 1. `LEANCTX_ORG_TRUST_KEY` — one or more comma-separated hex public keys
-//!    (managed by MDM / config-management, never written to disk by us);
-//! 2. the pinned set in `<config_dir>/org-trust.toml`.
+//! 1. `SOBRE_TRUSTED_KEYS` — comma-separated hex public keys;
+//! 2. the pinned set in `<config_dir>/trusted-keys.toml`.
 //!
-//! Trust is the *separate* question from signature validity: [`super::OrgPolicyV1::verify`]
-//! proves the bytes were signed by the embedded key; [`is_trusted`] proves that
-//! key is one we accept. Both must hold before a policy is applied.
+//! Trust is a separate question from signature validity: verification proves
+//! the bytes were signed by the embedded key; [`is_trusted`] proves that key
+//! is one we accept. Both must hold.
+//!
+//! Came from the org-policy distribution plane, which was removed: pinning a
+//! key is a local decision, central policy distribution is not.
 
 use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
-/// Env override carrying one or more trusted org public keys (hex,
+/// Env override carrying one or more trusted public keys (hex,
 /// comma-separated). Intended for MDM / fleet provisioning.
-const TRUST_ENV: &str = "LEANCTX_ORG_TRUST_KEY";
+const TRUST_ENV: &str = "SOBRE_TRUSTED_KEYS";
 
-/// One pinned org key.
+/// One pinned signing key.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TrustedKey {
-    /// Organisation this key signs for (informational / for `--org` selection).
-    pub org: String,
+    /// Who this key signs for (informational).
+    pub publisher: String,
     /// Ed25519 public key, hex (64 chars).
     pub public_key: String,
     /// When it was pinned (RFC 3339) — for the audit conversation, not enforcement.
     pub added_at: String,
 }
 
-/// The pinned trust set, persisted as `org-trust.toml`.
+/// The pinned trust set, persisted as `trusted-keys.toml`.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct TrustStore {
     #[serde(default, rename = "trusted_key", skip_serializing_if = "Vec::is_empty")]
     pub trusted_keys: Vec<TrustedKey>,
 }
 
-/// Location of the pinned trust file (`<config_dir>/org-trust.toml`).
+/// Location of the pinned trust file (`<config_dir>/trusted-keys.toml`).
 pub fn trust_path() -> Result<PathBuf, String> {
-    Ok(crate::core::paths::config_dir()?.join("org-trust.toml"))
+    Ok(crate::core::paths::config_dir()?.join("trusted-keys.toml"))
 }
 
 /// Load the pinned set. A missing file is the common (un-pinned) case and
@@ -69,10 +70,10 @@ pub fn save(store: &TrustStore) -> Result<(), String> {
     std::fs::write(&path, text).map_err(|e| format!("write {}: {e}", path.display()))
 }
 
-/// Pin (or re-point) a trusted key for `org`. Re-pinning the same hex key for an
-/// org updates its `added_at`; a different org/key pair is added. Returns
+/// Pin (or re-point) a trusted key for `publisher`. Re-pinning the same hex key for an
+/// publisher updates its `added_at`; a different pair is added. Returns
 /// `true` when the set changed.
-pub fn pin(org: &str, public_key: &str) -> Result<bool, String> {
+pub fn pin(publisher: &str, public_key: &str) -> Result<bool, String> {
     let public_key = normalize_key(public_key)?;
     let mut store = load()?;
     if let Some(existing) = store
@@ -80,14 +81,14 @@ pub fn pin(org: &str, public_key: &str) -> Result<bool, String> {
         .iter_mut()
         .find(|k| k.public_key == public_key)
     {
-        let changed = existing.org != org;
-        existing.org = org.to_string();
+        let changed = existing.publisher != publisher;
+        existing.publisher = publisher.to_string();
         existing.added_at = now();
         save(&store)?;
         return Ok(changed);
     }
     store.trusted_keys.push(TrustedKey {
-        org: org.to_string(),
+        publisher: publisher.to_string(),
         public_key,
         added_at: now(),
     });
@@ -109,12 +110,12 @@ pub fn remove(public_key: &str) -> Result<bool, String> {
 }
 
 /// All trusted keys (env override first, then the pinned file). Env keys carry
-/// the synthetic org name `env` so `status` can show their provenance.
+/// the synthetic publisher `env` so their provenance stays visible.
 pub fn trusted_keys() -> Vec<TrustedKey> {
     let mut keys: Vec<TrustedKey> = env_keys()
         .into_iter()
         .map(|public_key| TrustedKey {
-            org: "env".to_string(),
+            publisher: "env".to_string(),
             public_key,
             added_at: String::new(),
         })
@@ -140,7 +141,7 @@ pub fn is_trusted(public_key: &str) -> bool {
 }
 
 /// Whether any trust anchor is configured at all (env or file). When `false`,
-/// org distribution is simply not in use on this endpoint (opt-in).
+/// no key has been pinned on this machine (opt-in).
 #[must_use]
 pub fn any_pinned() -> bool {
     !env_keys().is_empty() || load().is_ok_and(|s| !s.trusted_keys.is_empty())
@@ -208,7 +209,7 @@ mod tests {
         let _iso = isolated_data_dir();
         let key = sample_key();
         pin("acme", &key).unwrap();
-        // same key, new org → reported as changed; still a single entry.
+        // same key, new publisher -> reported as changed; still one entry.
         assert!(pin("acme-renamed", &key).unwrap());
         assert_eq!(
             trusted_keys()

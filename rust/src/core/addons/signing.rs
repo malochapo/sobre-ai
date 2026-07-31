@@ -8,7 +8,7 @@
 //! When `addons.require_signature` is on, an override is honoured only if a
 //! sidecar `addon_registry.json.sig` carries a valid signature **by a trusted
 //! org key** — the same pinned-key trust anchor as the signed org-policy floor
-//! ([`crate::core::policy::org::trust`]). This reuses the engine's Ed25519
+//! ([`crate::core::addons::trusted_keys`]). This reuses the engine's Ed25519
 //! primitives ([`crate::core::agent_identity`]); the signature covers the exact
 //! file bytes, so any tampering invalidates it.
 
@@ -82,7 +82,7 @@ pub enum OverrideVerdict {
 
 /// Decide whether to honour an override given the file `content`, its optional
 /// sidecar `sig`, and whether signatures are required. `is_trusted` resolves a
-/// hex public key to trust (inject [`crate::core::policy::org::trust::is_trusted`]
+/// hex public key to trust (inject [`crate::core::addons::trusted_keys::is_trusted`]
 /// in production; a closure in tests). Pure.
 #[must_use]
 pub fn gate_override(
@@ -107,7 +107,7 @@ pub fn gate_override(
     }
     if !is_trusted(&sig.signer_public_key) {
         return OverrideVerdict::Reject(format!(
-            "override registry signed by an untrusted key ({}…) — pin it with `policy org trust`",
+            "override registry signed by an untrusted key ({}…) — pin it with `sobre addons trust`",
             sig.signer_public_key.chars().take(12).collect::<String>()
         ));
     }

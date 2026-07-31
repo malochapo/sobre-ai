@@ -289,35 +289,6 @@ pub fn record(u: &super::usage::RealUsage) {
     // aggregation. Invalid/missing lineage stays explicitly unmanaged.
     project_ocla_usage(u, OclaRegistry::global().usage_sink.as_ref());
 
-    // Budget windows (enterprise#25): book this turn's measured cost against
-    // the person/day and project/month accumulators the policy gate checks.
-    // The provider's own reported charge wins (#1179); local turns book the
-    // shadow rate — the same valuation the usage store applies — so
-    // local-only budgets stay meaningful.
-    if let Some(wire) = u.wire.as_deref()
-        && (wire.person.is_some() || wire.project.is_some())
-    {
-        let baseline = crate::core::config::Config::load().proxy.baseline.clone();
-        #[allow(clippy::cast_precision_loss)]
-        let cost_usd = if wire.is_local {
-            let billable =
-                u.input_tokens + u.output_tokens + u.cache_read_tokens + u.cache_write_tokens;
-            baseline.effective_local_shadow_rate() / 1_000_000.0 * billable as f64
-        } else if let Some(measured) = u.provider_cost_usd {
-            measured
-        } else {
-            crate::core::gain::model_pricing::ModelPricing::load()
-                .quote(Some(&u.model))
-                .cost
-                .estimate_usd(
-                    u.input_tokens,
-                    u.output_tokens,
-                    u.cache_write_tokens,
-                    u.cache_read_tokens,
-                )
-        };
-        super::policy_gate::record_spend(wire.person.as_deref(), wire.project.as_deref(), cost_usd);
-    }
 
     // Mechanism attribution into the local savings ledger (enterprise#19).
     // Routing: the gateway served a cheaper model than requested — value the

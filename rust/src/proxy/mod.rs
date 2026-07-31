@@ -45,7 +45,6 @@ pub mod openai;
 pub mod openai_responses;
 pub mod openai_responses_ws;
 pub mod output_savings;
-pub mod policy_gate;
 pub mod prefix_cache_stats;
 pub mod prefix_replay;
 pub mod prose;

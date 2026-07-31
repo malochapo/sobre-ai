@@ -113,44 +113,12 @@ pub async fn forward_request(
         context.trace_id.clone_from(&trace_id);
     }
 
-    // Org-policy gate (enterprise#25): under a signed + trusted + enforced org
-    // policy, refuse models outside the ceiling and requests over a hard
-    // budget — before any routing/compression work. No policy → no-op.
-    let gate_rules = super::policy_gate::active_rules();
-    if let Some(rules) = &gate_rules {
-        let tags = parts
-            .extensions
-            .get::<super::gateway_identity::GatewayTags>()
-            .cloned()
-            .unwrap_or_default();
-        let requested_model = prepare::requested_model_of(&parts, &body_bytes);
-        if let Err(refusal) = super::policy_gate::enforce(rules, requested_model.as_deref(), &tags)
-        {
-            tracing::warn!(
-                "lean-ctx gateway: org policy refused request ({refusal:?}) \
-                 person={:?} project={:?}",
-                tags.person,
-                tags.project
-            );
-            let mut response = super::policy_gate::refusal_response(&refusal, provider_label);
-            trace_id::inject_trace_id(&mut response, &trace_id);
-            return Ok(response);
-        }
-    }
     // Active router (enterprise#13): may rewrite `model` in the parsed body
     // (before compression, so exactly one serialization) and re-target the
     // upstream within the same wire shape. Fail-open: any miss routes nothing.
-    // An org policy may exempt specific projects from downgrades (#25).
     let routing_rules = crate::core::config::Config::load().proxy.routing.clone();
-    let downgrade_forbidden = gate_rules.as_ref().is_some_and(|rules| {
-        let project = parts
-            .extensions
-            .get::<super::gateway_identity::GatewayTags>()
-            .and_then(|t| t.project.clone());
-        super::policy_gate::downgrade_forbidden(rules, project.as_deref())
-    });
     let route_upstreams =
-        (routing_rules.is_active() && !downgrade_forbidden).then(|| state.upstream_snapshot());
+        routing_rules.is_active().then(|| state.upstream_snapshot());
     // Cross-shape translation (enterprise#16) only exists for the exact
     // messages-create call — count_tokens/batches subpaths have no OpenAI
     // equivalent and must stay within-shape.

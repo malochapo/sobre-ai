@@ -13,28 +13,6 @@ use super::max_body_bytes;
 #[cfg(feature = "shape-xlat")]
 use super::xlat::translated_openai_body;
 
-/// Requested model for the policy gate (enterprise#25): from the JSON body
-/// (Anthropic/OpenAI dialects) or the URL path (Gemini). Encrypted-passthrough
-/// or unparseable bodies yield `None` — the ceiling governs what the gateway
-/// can see; budgets (identity-keyed) still apply to every request.
-pub(crate) fn requested_model_of(parts: &Parts, body_bytes: &[u8]) -> Option<String> {
-    if let Some(m) = crate::proxy::usage::gemini_model_from_path(parts.uri.path()) {
-        return Some(m);
-    }
-    let decoded: Cow<'_, [u8]> = match request_body_encoding(parts) {
-        RequestBodyEncoding::Identity => Cow::Borrowed(body_bytes),
-        RequestBodyEncoding::Gzip => {
-            Cow::Owned(decode_gzip_bounded(body_bytes, max_body_bytes()).ok()?)
-        }
-        RequestBodyEncoding::Zstd => {
-            Cow::Owned(decode_zstd_bounded(body_bytes, max_body_bytes()).ok()?)
-        }
-        RequestBodyEncoding::Passthrough => return None,
-    };
-    let v: serde_json::Value = serde_json::from_slice(&decoded).ok()?;
-    v.get("model")?.as_str().map(str::to_string)
-}
-
 /// Builds the request-side [`WireContext`](crate::proxy::usage::WireContext) stamped
 /// onto this turn's usage record: identity tags (inserted as a request
 /// extension by the auth guard, enterprise#11), the per-request compression

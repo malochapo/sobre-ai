@@ -51,6 +51,8 @@ pub fn cmd_addon(args: &[String]) {
         },
         "revocations" => cmd_revocations(),
         "verify" => cmd_verify(),
+        "trust" => cmd_trust(args),
+        "untrust" => cmd_untrust(args),
         "audit" => match positional(args) {
             Some(target) => cmd_audit(&target),
             None => usage_exit("lean-ctx addon audit <name|path-to-lean-ctx-addon.toml>"),
@@ -1478,4 +1480,56 @@ fn print_help() {
          \n    \
              Full guide: docs/guides/addons.md"
     );
+}
+
+/// `sobre addons trust [<pubkey>] [--publisher <name>]` — pin a signing key, or
+/// list the pinned set when called bare. These are the keys
+/// `addons.require_signature` checks against; without one, a signed addon
+/// cannot load.
+fn cmd_trust(args: &[String]) {
+    use crate::core::addons::trusted_keys;
+    let Some(pubkey) = positional(args) else {
+        let keys = trusted_keys::trusted_keys();
+        if keys.is_empty() {
+            println!("No signing keys pinned.");
+            println!("Pin one: sobre addons trust <pubkey> [--publisher <name>]");
+            return;
+        }
+        println!("Pinned signing keys:
+");
+        for k in keys {
+            println!("  {}  {}", k.public_key, k.publisher);
+        }
+        return;
+    };
+    let publisher = args
+        .iter()
+        .position(|a| a == "--publisher")
+        .and_then(|i| args.get(i + 1))
+        .cloned()
+        .unwrap_or_else(|| "unknown".to_string());
+    match trusted_keys::pin(&publisher, &pubkey) {
+        Ok(true) => println!("Pinned {pubkey} for {publisher}."),
+        Ok(false) => println!("{pubkey} was already pinned for {publisher}."),
+        Err(e) => {
+            eprintln!("addons trust: {e}");
+            std::process::exit(1);
+        }
+    }
+}
+
+/// `sobre addons untrust <pubkey>` — remove a pinned signing key.
+fn cmd_untrust(args: &[String]) {
+    use crate::core::addons::trusted_keys;
+    let Some(pubkey) = positional(args) else {
+        usage_exit("lean-ctx addons untrust <pubkey>");
+    };
+    match trusted_keys::remove(&pubkey) {
+        Ok(true) => println!("Removed {pubkey}."),
+        Ok(false) => println!("{pubkey} was not pinned."),
+        Err(e) => {
+            eprintln!("addons untrust: {e}");
+            std::process::exit(1);
+        }
+    }
 }

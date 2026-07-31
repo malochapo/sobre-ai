@@ -440,7 +440,7 @@ pub fn run() {
                     "vibe-pre-tool" => hook_handlers::handle_vibe_pre_tool(),
                     _ => {
                         eprintln!(
-                            "Usage: lean-ctx hook <rewrite|redirect|deny|read-dedup|observe|copilot|codex-pretooluse|codex-session-start|rewrite-inline|vibe-pre-tool>"
+                            "Usage: lean-ctx hook <rewrite|redirect|deny|read-dedup|observe|codex-pretooluse|codex-session-start|vibe-pre-tool>"
                         );
                         eprintln!(
                             "  Internal commands used by agent hooks (Claude, Cursor, Copilot, etc.)"

@@ -66,7 +66,7 @@ fn gate_override_file(
         .ok()
         .and_then(|t| super::signing::RegistrySignature::from_json(&t).ok());
     super::signing::gate_override(content, sig.as_ref(), require_sig, |pk| {
-        crate::core::policy::org::trust::is_trusted(pk)
+        crate::core::addons::trusted_keys::is_trusted(pk)
     })
 }
 

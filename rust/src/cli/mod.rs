@@ -26,7 +26,6 @@ mod output_savings_cmd;
 pub mod plugin_cmd;
 mod policy_cmd;
 mod policy_enforce_cmd;
-mod policy_org_cmd;
 mod profile_cmd;
 pub(crate) mod prompt;
 mod read_cmd;

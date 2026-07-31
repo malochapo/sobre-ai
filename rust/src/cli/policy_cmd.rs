@@ -19,7 +19,6 @@ pub(crate) fn cmd_policy(args: &[String]) {
         Some("show") => cmd_show(&args[1..]),
         Some("validate") => cmd_validate(&args[1..]),
         Some("enforce") => crate::cli::policy_enforce_cmd::cmd_enforce(&args[1..]),
-        Some("org") => crate::cli::policy_org_cmd::cmd_policy_org(&args[1..]),
         Some("-h" | "--help") | None => print_help(),
         Some(other) => {
             eprintln!("policy: unknown subcommand '{other}'\n");
@@ -41,9 +40,6 @@ USAGE:\n\
                                        Evaluate a tool call against the active\n\
                                        policy (deny/egress/redact/filter) and\n\
                                        record audit evidence — no server needed\n\
-  lean-ctx policy org <trust|untrust|status>\n\
-                                       Central, signed org policy distribution\n\
-                                       Pinned addon signing keys; see `policy org -h`\n\n\
 A pack pins governance expectations — default read mode, allowed/denied\n\
 tools, redaction patterns, audit retention, context budget — in reviewable\n\
 TOML with single inheritance (extends). Start from a built-in:\n\
@@ -138,7 +134,7 @@ fn cmd_show(args: &[String]) {
 
     if as_toml {
         // Raw, copyable pack definition (not the resolved view) — the natural
-        // starting point for an org-specific pack.
+        // starting point for a project-specific pack.
         match toml::to_string_pretty(&pack) {
             Ok(t) => print!("{t}"),
             Err(e) => {

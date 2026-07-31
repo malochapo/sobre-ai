@@ -271,8 +271,6 @@ pub fn contract_docs() -> Vec<ContractDoc> {
         ),
         doc("device-overview", "device-overview-v1.md", 1, Experimental),
         doc("email-digest", "email-digest-v1.md", 1, Experimental),
-        doc("org-audit-log", "org-audit-log-v1.md", 1, Experimental),
-        doc("org-sso-oidc", "org-sso-oidc-v1.md", 1, Experimental),
         // Quality loop (GL #494): edit-failure feedback into mode selection.
         doc("quality-loop", "quality-loop-v1.md", 1, Experimental),
         // Edit metering (GL #1144): anchored-vs-str_replace efficiency channel.
@@ -293,11 +291,6 @@ pub fn contract_docs() -> Vec<ContractDoc> {
             1,
             Experimental,
         ),
-        // Org policy & compliance surfaces, still evolving with the Enterprise
-        // plane — Experimental until they stabilise. Commercial Enterprise
-        // licensing (#667) and success-fee billing (#669) live in the private
-        // cloud plane, not in the open engine (oss-plane-separation-v1).
-        doc("org-policy", "org-policy-v1.md", 1, Experimental),
         doc("pillar-boundaries", "pillar-boundaries-v1.md", 1, Stable),
         // Logical editor-session telemetry is an additive local-dashboard surface;
         // keep it experimental until multiple integrations implement the lifecycle.
