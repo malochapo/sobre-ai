@@ -21,7 +21,6 @@
 //!   deliberate posture choice, not an accumulating set).
 
 pub mod builtin;
-pub mod coverage;
 pub mod floor;
 pub mod org;
 pub mod runtime;

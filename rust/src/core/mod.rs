@@ -371,7 +371,6 @@ pub mod ocla;
 pub mod ocla_bus;
 pub mod quality_benchmark;
 
-pub mod compliance;
 pub mod edit_metering;
 pub mod edit_quality;
 pub mod efficacy;
