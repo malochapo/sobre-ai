@@ -453,7 +453,7 @@ pub fn run_setup_with_options(opts: SetupOptions) -> Result<SetupReport, String>
     {
         let cfg = crate::core::config::Config::load();
         if cfg.tool_profile.is_none() && std::env::var("LEAN_CTX_TOOL_PROFILE").is_err() {
-            let lazy_count = crate::tool_defs::core_tool_names().len();
+            let lazy_count = crate::server::registry::build_registry().tool_defs().len();
             tool_profile_step.items.push(SetupItem {
                 name: "tool_profile".to_string(),
                 status: "lean default".to_string(),

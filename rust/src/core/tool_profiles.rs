@@ -64,9 +64,8 @@ impl ToolProfile {
         }
         match self {
             Self::Power => Self::Custom(
-                crate::tool_defs::CORE_TOOL_NAMES
+                STANDARD_TOOLS
                     .iter()
-                    .chain(STANDARD_TOOLS.iter())
                     .copied()
                     .filter(|t| *t != tool_name)
                     .collect::<std::collections::BTreeSet<_>>()

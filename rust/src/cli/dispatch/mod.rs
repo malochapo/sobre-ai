@@ -701,7 +701,7 @@ mod tests {
     #[test]
     fn concise_help_is_short_and_points_to_full() {
         let h = concise_help_text();
-        assert!(h.contains("lean-ctx wrap"), "must lead with wrap");
+        assert!(h.contains("lean-ctx init"), "must lead with init");
         assert!(
             h.contains("lean-ctx help all"),
             "must point to full reference"

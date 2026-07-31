@@ -270,7 +270,12 @@ mod tests {
     #[test]
     fn test_granular_tool_count() {
         let tools = crate::tool_defs::granular_tool_defs();
-        assert!(tools.len() >= 25, "Expected at least 25 granular tools");
+        // Was `>= 25`, from when the surface was 76 tools.
+        assert!(
+            !tools.is_empty() && tools.len() <= 20,
+            "granular defs must match the capped surface, got {}",
+            tools.len()
+        );
     }
 
     #[test]
@@ -278,8 +283,8 @@ mod tests {
         let registry = crate::server::registry::build_registry();
         assert_eq!(
             registry.len(),
-            81,
-            "Registry tool count drift! Update this test AND all docs when adding/removing tools."
+            19,
+            "registry tool count drift — the surface is 19 and capped at 20              (invariant 1). Update this test AND the docs when it moves."
         );
     }
 
@@ -301,14 +306,14 @@ mod tests {
     fn disabled_tools_filters_list() {
         let all = crate::tool_defs::granular_tool_defs();
         let total = all.len();
-        let disabled = ["ctx_graph".to_string(), "ctx_agent".to_string()];
+        let disabled = ["ctx_graph".to_string(), "ctx_knowledge".to_string()];
         let filtered: Vec<_> = all
             .into_iter()
             .filter(|t| !disabled.iter().any(|d| t.name.as_ref() == d.as_str()))
             .collect();
         assert_eq!(filtered.len(), total - 2);
         assert!(!filtered.iter().any(|t| t.name.as_ref() == "ctx_graph"));
-        assert!(!filtered.iter().any(|t| t.name.as_ref() == "ctx_agent"));
+        assert!(!filtered.iter().any(|t| t.name.as_ref() == "ctx_knowledge"));
     }
 
     #[test]

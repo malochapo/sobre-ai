@@ -177,19 +177,6 @@ mod tests {
         }
     }
 
-    /// Every curated core tool must exist in the registry, otherwise lazy mode
-    /// would silently drop it (the #141 drift symptom).
-    #[test]
-    fn core_tool_names_exist_in_registry() {
-        let registry = crate::server::registry::build_registry();
-        for &name in crate::tool_defs::CORE_TOOL_NAMES {
-            assert!(
-                registry.contains(name),
-                "CORE_TOOL_NAMES references '{name}' which is not registered"
-            );
-        }
-    }
-
     /// The unified surface may only advertise registry tools plus the single
     /// `ctx` meta-tool (which fans out via its `action` argument).
     #[test]
@@ -245,15 +232,4 @@ mod tests {
         }
     }
 
-    /// Every tool in READONLY_TOOL_NAMES must exist in the registry.
-    #[test]
-    fn readonly_tool_names_exist_in_registry() {
-        let registry = crate::server::registry::build_registry();
-        for &name in crate::tool_defs::READONLY_TOOL_NAMES {
-            assert!(
-                registry.contains(name),
-                "READONLY_TOOL_NAMES references '{name}' which is not registered"
-            );
-        }
-    }
 }

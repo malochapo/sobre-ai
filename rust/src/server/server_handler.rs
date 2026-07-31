@@ -270,159 +270,34 @@ impl ServerHandler for LeanCtxServer {
         _request: Option<PaginatedRequestParams>,
         _context: RequestContext<RoleServer>,
     ) -> Result<ListToolsResult, ErrorData> {
-        use crate::server::tool_visibility::CandidateSet;
-        // Panic guard (mirrors call_tool): a panic while filtering the registry /
-        // touching the dynamic-tools mutex must not kill the rmcp request task.
+        // Panic guard (mirrors call_tool): a panic here must not kill the rmcp
+        // request task.
         use std::panic::AssertUnwindSafe;
         let computed = AssertUnwindSafe(async {
-            let cfg = crate::core::config::Config::load();
-            let disabled = cfg.disabled_tools_effective();
-            let tool_profile = cfg.tool_profile_effective();
-            // A profile is "explicit" when the user opted into one (config field,
-            // env var, or a custom tools list). Without an explicit choice we keep
-            // the token-lean lazy core set as the default. With one, the profile is
-            // authoritative and resolves against the full registry, so e.g.
-            // `standard` advertises its full balanced set instead of the accidental
-            // `core ∩ standard` intersection.
-            let explicit_profile = crate::server::tool_visibility::explicit_profile(&cfg);
-
-            let candidate = crate::server::tool_visibility::candidate_set(
-                crate::tool_defs::is_full_mode(),
-                std::env::var("LEAN_CTX_UNIFIED").is_ok(),
-                explicit_profile,
-            );
-            let all_tools = match candidate {
-                CandidateSet::Full | CandidateSet::ProfileAuthoritative => {
-                    if let Some(ref reg) = self.registry {
-                        reg.tool_defs()
-                    } else {
-                        // Unreachable in production: every constructor sets a registry
-                        // (locked by `production_server_always_has_registry`). If it
-                        // ever fires, the advertised static defs can drift from what
-                        // dispatch (which needs the registry) can execute — make it loud.
-                        tracing::error!(
-                            "list_tools served WITHOUT a tool registry (full mode) — advertising \
-                             static granular defs that dispatch cannot run; tools may drift from handlers."
-                        );
-                        crate::tool_defs::granular_tool_defs()
-                    }
-                }
-                CandidateSet::Unified => crate::tool_defs::unified_tool_defs(),
-                CandidateSet::LazyCore => {
-                    if let Some(ref reg) = self.registry {
-                        let core_names = crate::tool_defs::core_tool_names();
-                        reg.tool_defs()
-                            .into_iter()
-                            .filter(|t| core_names.contains(&t.name.as_ref()))
-                            .collect()
-                    } else {
-                        // Unreachable in production (see above); loud if it ever fires.
-                        tracing::error!(
-                            "list_tools served WITHOUT a tool registry (lazy mode) — advertising \
-                             static lazy defs that dispatch cannot run; tools may drift from handlers."
-                        );
-                        crate::tool_defs::lazy_tool_defs()
-                    }
-                }
-            };
             let client = self.client_name.read().await.clone();
-            let quirks = crate::server::tool_visibility::ClientQuirks::resolve(&client, candidate);
 
-            let active_role = crate::core::roles::active_role();
-            let tools: Vec<_> = all_tools
-                .into_iter()
-                .filter(|t| {
-                    let name = t.name.as_ref();
-                    crate::server::tool_visibility::is_tool_visible(
-                        name,
-                        &tool_profile,
-                        &disabled,
-                        quirks,
-                        active_role.is_tool_allowed(name),
-                    )
-                })
-                .collect();
-
-            // Guarantee the universal invoker is advertised in non-full mode. Lazy
-            // and profile filtering hide most tools; without ctx_call a static-list
-            // client (one that only calls advertised tools) could not reach them.
-            // ctx_call enforces the same role/workflow gates on the inner tool.
-            let tools = {
-                use crate::server::tool_visibility::INVOKER;
-                let mut tools = tools;
-                let already = tools.iter().any(|t| t.name.as_ref() == INVOKER);
-                if crate::server::tool_visibility::needs_invoker(
-                    crate::tool_defs::is_full_mode(),
-                    already,
-                    active_role.is_tool_allowed(INVOKER),
-                    &disabled,
-                ) && let Some(def) = self.registry.as_ref().and_then(|reg| {
-                    reg.tool_defs()
-                        .into_iter()
-                        .find(|t| t.name.as_ref() == INVOKER)
-                }) {
-                    tools.push(def);
-                }
-                tools
-            };
-
-            let tools = {
-                let Ok(dyn_state) = dynamic_tools::global().lock() else {
-                    tracing::warn!(
-                        "dynamic_tools mutex poisoned in list_tools; returning unfiltered"
-                    );
-                    return Ok(ListToolsResult {
-                        tools,
-                        ..Default::default()
-                    });
-                };
-                // The lazy category gate (load tools on demand for dynamic_tools
-                // clients) only applies to the *default* lean-core surface. When the
-                // user opted into an explicit profile, that profile IS the
-                // authoritative surface — gating it by category would silently drop
-                // profile-enabled tools like Standard's ctx_architecture /
-                // ctx_semantic_search for Codex et al. (#358), so the advertised set
-                // would no longer match `lean-ctx tools show`.
-                if crate::server::tool_visibility::category_gate_applies(
-                    dyn_state.supports_list_changed(),
-                    explicit_profile,
-                ) {
-                    tools
-                        .into_iter()
-                        .filter(|t| dyn_state.is_tool_active(t.name.as_ref()))
-                        .collect()
-                } else {
-                    tools
+            // Invariant 3: exactly one answer. The registry IS the surface —
+            // no candidate set, no client quirks, no profile, no role, no
+            // workflow state, no lazy core.
+            //
+            // What used to be here filtered the registry through nine axes. One
+            // of them silently broke the product: `CORE_TOOL_NAMES` still named
+            // `shell` and `ctx_call` after both left the registry, so the
+            // default path (no config, no env, no pinned profile) advertised
+            // their intersection — ten tools out of nineteen, with no error.
+            let tools = match self.registry {
+                Some(ref reg) => reg.tool_defs(),
+                None => {
+                    // Every production constructor sets a registry; locked by
+                    // `production_server_always_has_registry`.
+                    tracing::error!("list_tools served without a tool registry");
+                    Vec::new()
                 }
             };
 
-            let tools = {
-                let active = self.workflow.read().await.clone();
-                if let Some(run) = active {
-                    if run.current == "done" || is_workflow_stale(&run) {
-                        let mut wf = self.workflow.write().await;
-                        *wf = None;
-                        let _ = crate::core::workflow::clear_active();
-                    } else if let Some(state) = run.spec.state(&run.current)
-                        && let Some(allowed) = &state.allowed_tools
-                    {
-                        let mut allow: std::collections::HashSet<&str> =
-                            allowed.iter().map(std::string::String::as_str).collect();
-                        for passthrough in WORKFLOW_PASSTHROUGH_TOOLS {
-                            allow.insert(passthrough);
-                        }
-                        return Ok(ListToolsResult {
-                            tools: tools
-                                .into_iter()
-                                .filter(|t| allow.contains(t.name.as_ref()))
-                                .collect(),
-                            ..Default::default()
-                        });
-                    }
-                }
-                tools
-            };
-
+            // Description compression is not a surface variation: the set of
+            // tools is identical, only the prose is squeezed. That squeeze is
+            // what the product is for.
             let tools = {
                 let cfg = crate::core::config::Config::load();
                 let level = crate::core::config::CompressionLevel::effective(&cfg);
@@ -448,28 +323,8 @@ impl ServerHandler for LeanCtxServer {
                 }
             };
 
-
             // R28: Kernel schema optimization — budget-aware description compression.
             let tools = crate::server::schema_hook::optimize_tools(tools, &client);
-            // #1008: When ctx_patch is hidden for this client, scrub references
-            // from other tools' descriptions so the LLM never sees the name and
-            // won't attempt to call it. Replace with ctx_edit (visible alternative).
-            let tools = if quirks.hide_ctx_patch {
-                tools
-                    .into_iter()
-                    .map(|mut t| {
-                        if let Some(ref desc) = t.description
-                            && desc.contains("ctx_patch")
-                        {
-                            t.description =
-                                Some(desc.replace("ctx_patch", "ctx_edit").into());
-                        }
-                        t
-                    })
-                    .collect()
-            } else {
-                tools
-            };
 
             Ok(ListToolsResult {
                 tools,
@@ -488,7 +343,11 @@ impl ServerHandler for LeanCtxServer {
                 "list_tools panicked; serving the static lazy-core tool set as a fallback"
             );
             Ok(ListToolsResult {
-                tools: crate::tool_defs::lazy_tool_defs(),
+                tools: self
+                    .registry
+                    .as_ref()
+                    .map(|r| r.tool_defs())
+                    .unwrap_or_default(),
                 ..Default::default()
             })
         })
@@ -643,18 +502,21 @@ mod tests {
         }
     }
 
-    /// The `list_tools` panic guard serves `lazy_tool_defs()`; it must contain the
-    /// essentials so an internal panic never leaves the agent tool-less (which is
-    /// indistinguishable from "MCP totally failed"). Regression guard for #688.
+    /// The `list_tools` panic guard serves the registry, so an internal panic
+    /// never leaves the agent tool-less — indistinguishable from "MCP totally
+    /// failed". Regression guard for #688.
+    ///
+    /// It used to serve a hand-maintained static list, which is how the
+    /// advertised surface drifted from the registry in the first place.
     #[test]
-    fn lazy_core_fallback_is_never_empty() {
+    fn panic_fallback_serves_the_registry() {
         let _guard = crate::core::data_dir::isolated_data_dir();
-        let defs = crate::tool_defs::lazy_tool_defs();
-        assert!(!defs.is_empty(), "lazy-core fallback must not be empty");
-        for essential in ["ctx_read", "ctx_shell", "ctx_call"] {
+        let defs = crate::server::registry::build_registry().tool_defs();
+        assert!(!defs.is_empty(), "the fallback must not be empty");
+        for essential in ["ctx_read", "ctx_shell"] {
             assert!(
                 defs.iter().any(|t| t.name.as_ref() == essential),
-                "lazy-core fallback must include {essential}"
+                "{essential} must survive the fallback"
             );
         }
     }

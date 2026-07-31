@@ -628,16 +628,16 @@ pub fn run() -> u32 {
     // tool stays reachable via ctx_call — so report that, not the internal
     // `power` call-gate fallback that `from_config` returns for an empty config
     // (otherwise `doctor` claimed "power" right after the wizard chose lean, #415).
-    let tool_profile_line = if crate::server::tool_visibility::explicit_profile(&cfg) {
+    let tool_profile_line = if cfg.tool_profile.is_some() {
         let profile = crate::core::tool_profiles::ToolProfile::from_config(&cfg);
         format!(
-            "{BOLD}Tool profile{RST}  {WHITE}{profile}{RST}  {DIM}{} + ctx_call gateway{RST}",
+            "{BOLD}Tool profile{RST}  {WHITE}{profile}{RST}  {DIM}{}{RST}",
             profile.description()
         )
     } else {
-        let lazy_count = crate::tool_defs::core_tool_names().len();
+        let count = crate::server::registry::build_registry().tool_defs().len();
         format!(
-            "{BOLD}Tool profile{RST}  {WHITE}lean (default){RST}  {DIM}{lazy_count} lazy-core tools advertised + ctx_call gateway{RST}"
+            "{BOLD}Tool profile{RST}  {WHITE}lean (default){RST}  {DIM}{count} tools advertised{RST}"
         )
     };
     println!("  {tool_profile_line}");

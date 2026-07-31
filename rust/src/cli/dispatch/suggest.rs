@@ -88,7 +88,7 @@ mod tests {
     fn suggests_close_typos() {
         assert_eq!(closest_command("doctr"), Some("doctor"));
         assert_eq!(closest_command("statuss"), Some("status"));
-        assert_eq!(closest_command("upgrad"), Some("upgrade"));
+        assert_eq!(closest_command("doctro"), Some("doctor"));
     }
 
     #[test]

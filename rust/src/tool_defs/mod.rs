@@ -119,44 +119,6 @@ pub fn normalize_for_strict_validators(schema: &mut Map<String, Value>) {
     }
 }
 
-pub const CORE_TOOL_NAMES: &[&str] = &[
-    "ctx_read",
-    "ctx_shell",
-    "shell",
-    // #509: ctx_search now subsumes semantic search + symbol lookup via `action`;
-    // ctx_semantic_search/ctx_symbol are deprecated aliases hidden from the surface.
-    "ctx_search",
-    "ctx_glob",
-    "ctx_tree",
-    "ctx_session",
-    "ctx_compose",
-    // #578: the injected INTENT playbook routes "callers/impact" to
-    // ctx_callgraph, so the advertised core matches the rules. ctx_graph
-    // (file-level deps, ~300 tok schema) stays reachable via ctx_call and the
-    // standard/power profiles.
-    "ctx_callgraph",
-    // #1008 anchored editing: the rules route "edit after reading" to ctx_patch,
-    // so the default surface must advertise it — but only where it earns its
-    // tokens. Clients with a reliable native str-replace editor (Cursor, Zed,
-    // Windsurf, …) skip it via the lazy-core client quirk in
-    // `server::tool_visibility::ClientQuirks`; Claude Code, SDK harnesses and
-    // unknown/headless clients get it.
-    "ctx_patch",
-    "ctx_call",
-    "ctx_expand",
-];
-
-pub fn core_tool_names() -> &'static [&'static str] {
-    CORE_TOOL_NAMES
-}
-
-pub fn lazy_tool_defs() -> Vec<Tool> {
-    let all = granular_tool_defs();
-    all.into_iter()
-        .filter(|t| CORE_TOOL_NAMES.contains(&t.name.as_ref()))
-        .collect()
-}
-
 pub fn discover_tools(query: &str) -> String {
     // Derived from the registry (single source of truth) so discovery results
     // never drift from the advertised tool schemas (#141).

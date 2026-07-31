@@ -393,12 +393,12 @@ fn cmd_tool_profile_show() {
         || !cfg.tools_enabled.is_empty();
 
     if !pinned {
-        let lazy_count = crate::tool_defs::core_tool_names().len();
+        let lazy_count = crate::server::registry::build_registry().tool_defs().len();
         println!("Tool Profile: lean (default)");
-        println!("  Tools advertised: {lazy_count} (lazy core)");
-        println!("  All {registry_count} registered tools stay callable via ctx_call.");
+        println!("  Tools advertised: {lazy_count} ");
+        println!("  All {registry_count} registered tools are advertised.");
         println!("\n  Advertised tools:");
-        for name in crate::tool_defs::core_tool_names() {
+        for name in crate::server::registry::build_registry().tool_defs().iter().map(|t| t.name.as_ref()) {
             println!("    {name}");
         }
         println!("\n  Switch with: lean-ctx tools <minimal|standard|power>");
@@ -450,7 +450,7 @@ fn cmd_tool_profile_list() {
             .is_ok_and(|v| !v.trim().is_empty() && !tool_profiles::is_unpinned_alias(v.trim()))
         || !cfg.tools_enabled.is_empty();
     let active_name = if pinned { active.as_str() } else { "lean" };
-    let lazy_count = crate::tool_defs::core_tool_names().len();
+    let lazy_count = crate::server::registry::build_registry().tool_defs().len();
 
     println!("Tool Profiles:\n");
     println!("  {:<12} {:<8} Description", "Name", "Tools");
@@ -488,9 +488,9 @@ fn cmd_tool_profile_switch(name: &str) {
             eprintln!("Error saving profile: {e}");
             std::process::exit(1);
         }
-        let lazy_count = crate::tool_defs::core_tool_names().len();
+        let lazy_count = crate::server::registry::build_registry().tool_defs().len();
         println!("Tool profile set to: lean (default)");
-        println!("  Tools advertised: {lazy_count} (lazy core)");
+        println!("  Tools advertised: {lazy_count} ");
         println!("  All other tools stay callable via ctx_call.");
         println!("\n  Changes take effect on the next tool call (auto-detected).");
         return;

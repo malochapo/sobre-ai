@@ -251,7 +251,7 @@ fn bench_lazy_default_vs_full_overhead() {
     // SAFETY: serialized by `test_env_lock()`.
     unsafe { std::env::set_var("LEAN_CTX_MINIMAL", "1") };
 
-    let lazy_tools = lean_ctx::tool_defs::lazy_tool_defs();
+    let lazy_tools = lean_ctx::server::registry::build_registry().tool_defs();
     let full_tools = lean_ctx::tool_defs::granular_tool_defs();
 
     let tool_tokens = |tools: &[rmcp::model::Tool]| -> (usize, usize) {
@@ -309,9 +309,9 @@ fn bench_lazy_default_vs_full_overhead() {
     // (#141: the prior `<=12` reflected a granular list that had drifted to omit
     // one core tool).
     assert!(
-        lazy_tools.len() <= lean_ctx::tool_defs::core_tool_names().len(),
-        "Lazy mode should expose <= core_tool_names() ({}), got {}",
-        lean_ctx::tool_defs::core_tool_names().len(),
+        lazy_tools.len() <= lean_ctx::server::registry::build_registry().tool_defs().len(),
+        "the advertised surface should be the registry ({}), got {}",
+        lean_ctx::server::registry::build_registry().tool_defs().len(),
         lazy_tools.len()
     );
     // Real default overhead: core tools carry their full registry schemas
@@ -1869,7 +1869,7 @@ fn bench_session_save_semantics() {
 fn bench_full_per_call_overhead_budget() {
     // Serialize the LEAN_CTX_MINIMAL toggle below against sibling env-mutating tests.
     let _lock = lean_ctx::core::data_dir::test_env_lock();
-    let lazy_tools = lean_ctx::tool_defs::lazy_tool_defs();
+    let lazy_tools = lean_ctx::server::registry::build_registry().tool_defs();
     let full_tools = lean_ctx::tool_defs::granular_tool_defs();
 
     let instructions_minimal = {

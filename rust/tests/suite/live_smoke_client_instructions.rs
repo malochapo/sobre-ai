@@ -175,31 +175,21 @@ fn mcp_handshake(bin: &str, env: &TestEnv, client_name: &str) -> (String, Vec<St
     (instructions, tools)
 }
 
-fn assert_lazy_core_surface(tools: &[String], client: &str) {
-    // The lazy core is client-aware for editing (#1008): clients with a
-    // reliable native editor don't get ctx_patch, everyone else does. Mirror
-    // the production rule instead of hardcoding per-client expectations here.
-    let quirks = lean_ctx::server::tool_visibility::ClientQuirks::resolve(
-        client,
-        lean_ctx::server::tool_visibility::CandidateSet::LazyCore,
-    );
-    for expected in lean_ctx::tool_defs::CORE_TOOL_NAMES {
-        if *expected == "ctx_patch" && quirks.hide_ctx_patch {
-            assert!(
-                !tools.iter().any(|t| t == expected),
-                "{client}: ctx_patch must be hidden for native-editor clients (#1008): {tools:?}"
-            );
-            continue;
-        }
+fn assert_full_surface(tools: &[String], client: &str) {
+    // Invariant 3: every client sees the same surface, and it is the whole
+    // registry. This used to mirror a per-client quirk that hid `ctx_patch`
+    // from clients with a native editor.
+    let registered: Vec<String> = lean_ctx::server::registry::build_registry()
+        .tool_defs()
+        .into_iter()
+        .map(|t| t.name.to_string())
+        .collect();
+    for expected in &registered {
         assert!(
             tools.iter().any(|t| t == expected),
-            "{client}: lazy core tool {expected} missing from tools/list: {tools:?}"
+            "{client}: {expected} must be advertised; got {tools:?}"
         );
     }
-    assert!(
-        !tools.iter().any(|t| t == "ctx_graph"),
-        "{client}: ctx_graph left the lazy core in #578 (ctx_callgraph replaced it): {tools:?}"
-    );
 }
 
 #[test]
@@ -233,7 +223,7 @@ fn cursor_covered_client_gets_anchor_and_lazy_core() {
         !has_skeleton(&instructions),
         "cursor instructions must NOT repeat the full skeleton.\n{instructions}"
     );
-    assert_lazy_core_surface(&tools, "cursor");
+    assert_full_surface(&tools, "cursor");
 }
 
 #[test]
@@ -262,7 +252,7 @@ fn claude_uncovered_client_gets_full_skeleton() {
         !instructions.contains(ANCHOR_PREFIX),
         "claude must not get the covered-client anchor.\n{instructions}"
     );
-    assert_lazy_core_surface(&tools, "claude");
+    assert_full_surface(&tools, "claude");
 }
 
 #[test]
@@ -296,7 +286,7 @@ fn codex_covered_client_gets_anchor() {
         !has_skeleton(&instructions),
         "codex instructions must NOT repeat the full skeleton.\n{instructions}"
     );
-    assert_lazy_core_surface(&tools, "codex");
+    assert_full_surface(&tools, "codex");
 }
 
 /// Zero-config golden path: the FIRST MCP session on a fresh machine must

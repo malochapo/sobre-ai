@@ -8,22 +8,17 @@
 use crate::core::config::{CompressionLevel, Config};
 use crate::core::rules_canonical::{RulesFile, Wrapper};
 use crate::core::tool_profiles::ToolProfile;
-use crate::server::tool_visibility::{CandidateSet, ClientQuirks};
 
 use super::RulesFormat;
 use super::content::rules_content;
 
-/// Resolve the effective profile for a rules-injection target, filtering tools
-/// that the target's MCP surface hides. Prevents rules from advertising tools
-/// (like `ctx_patch`) that the agent cannot call via `tools/list` (#1008).
-fn profile_for_target(cfg: &Config, target_name: &str) -> ToolProfile {
-    let base = ToolProfile::from_config(cfg);
-    let quirks = ClientQuirks::resolve(target_name, CandidateSet::LazyCore);
-    if quirks.hide_ctx_patch {
-        base.without_tool("ctx_patch")
-    } else {
-        base
-    }
+/// The profile for a rules-injection target.
+///
+/// Used to narrow by client quirk so the rules never named a tool that
+/// client's surface hid. Invariant 3 removed the quirks: every client sees
+/// the same surface, so every target gets the same rules.
+fn profile_for_target(cfg: &Config, _target_name: &str) -> ToolProfile {
+    ToolProfile::from_config(cfg)
 }
 
 pub(super) fn inject_rules(target: &RulesTarget) -> Result<RulesResult, String> {

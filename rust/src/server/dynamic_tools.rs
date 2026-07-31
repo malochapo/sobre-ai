@@ -599,22 +599,6 @@ mod tests {
     }
 
     #[test]
-    fn lazy_core_tools_survive_default_category_gate() {
-        // Regression for #575: every advertised lazy-core tool must stay
-        // active under the default category gate (Core + Session) when the
-        // client supports list_changed — otherwise Cursor silently loses
-        // tools like ctx_expand from the 13-tool core set.
-        let mut state = DynamicToolState::new();
-        state.set_supports_list_changed(true);
-        for name in crate::tool_defs::core_tool_names() {
-            assert!(
-                state.is_tool_active(name),
-                "{name} is in CORE_TOOL_NAMES but dropped by the default category gate"
-            );
-        }
-    }
-
-    #[test]
     fn categorize_known_tools() {
         assert_eq!(categorize_tool("ctx_read"), ToolCategory::Core);
         assert_eq!(categorize_tool("ctx_graph"), ToolCategory::Core);

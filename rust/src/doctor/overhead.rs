@@ -63,14 +63,14 @@ impl OverheadReport {
 pub(super) fn measure(home: &std::path::Path, project: &std::path::Path) -> OverheadReport {
     let cfg = crate::core::config::Config::load();
     let advertised = crate::server::tool_visibility::advertised_tool_defs_default();
-    let lean_default = crate::tool_defs::lazy_tool_defs();
+    let lean_default = advertised.clone();
 
     let instructions = crate::instructions::build_instructions(crate::tools::CrpMode::effective());
 
     let rules_files = collect_rules_files(home, project);
     let duplicates = duplicate_clients(&rules_files);
 
-    let pinned = crate::server::tool_visibility::explicit_profile(&cfg);
+    let pinned = cfg.tool_profile.is_some();
     let tool_profile = if pinned {
         cfg.tool_profile_effective().as_str().to_string()
     } else {
