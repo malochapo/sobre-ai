@@ -1,5 +1,5 @@
 use crate::{
-    core, doctor, hook_handlers, setup, shell, status, uninstall,
+    core, doctor, hook_handlers, shell, status, uninstall,
 };
 
 mod analytics;
@@ -167,26 +167,6 @@ pub fn run() {
             }
             "init" => {
                 super::cmd_init(&rest);
-                return;
-            }
-            "setup" => {
-                handle_setup(&rest);
-                return;
-            }
-            "onboard" => {
-                handle_onboard(&rest);
-                return;
-            }
-            "bootstrap" => {
-                handle_bootstrap(&rest);
-                return;
-            }
-            "wrap" => {
-                crate::wrap::run_wrap(&rest);
-                return;
-            }
-            "unwrap" => {
-                crate::wrap::run_unwrap(&rest);
                 return;
             }
             "status" => {
@@ -551,28 +531,6 @@ fn handle_editor_session(args: &[String]) {
     }
 }
 
-/// Long-lived server entry points keep Rust's default ignored SIGPIPE: they
-/// must survive peers closing sockets/pipes early. Bare `lean-ctx` counts as
-/// a server because MCP clients spawn the binary without a subcommand.
-/// Help for `lean-ctx setup`. Printed for `--help`/`-h` and unknown flags so
-/// asking about setup can never accidentally *run* setup (#476 class, #658).
-fn print_setup_help() {
-    println!("Usage: lean-ctx setup [options]");
-    println!();
-    println!("Guided setup: shell hook, agent hooks/rules, MCP registrations.");
-    println!("Interactive by default; runs non-interactively without a TTY.");
-    println!();
-    println!("Options:");
-    println!("  --non-interactive   No prompts; apply defaults");
-    println!("  --yes, -y           Assume yes for all prompts");
-    println!("  --fix               Repair an existing installation");
-    println!("  --json              Machine-readable report (implies non-interactive)");
-    println!("  --no-auto-approve   Skip auto-approve configuration");
-    println!("  --skip-rules        Do not write agent rules files");
-    println!("  --help, -h          Show this help (never runs setup)");
-    println!();
-    println!("See also: lean-ctx onboard (one-command setup), lean-ctx doctor");
-}
 
 fn is_server_mode(args: &[String]) -> bool {
     args.len() == 1
@@ -624,92 +582,10 @@ fn handle_track(args: &[String]) -> ! {
     std::process::exit(code);
 }
 
-fn handle_setup(rest: &[String]) {
-    // Safety (#476 class): `--help`/`-h` — or any unknown flag — must NEVER
-    // fall through to a real setup run that mutates shell + agent configs.
-    if rest.iter().any(|a| a == "--help" || a == "-h") {
-        print_setup_help();
-        return;
-    }
-    const KNOWN: &[&str] = &[
-        "--non-interactive",
-        "--yes",
-        "-y",
-        "--fix",
-        "--json",
-        "--no-auto-approve",
-        "--skip-rules",
-        "--no-agent-aliases",
-    ];
-    if let Some(unknown) = rest
-        .iter()
-        .find(|a| a.starts_with('-') && !KNOWN.contains(&a.as_str()))
-    {
-        eprintln!("setup: unknown flag '{unknown}'\n");
-        print_setup_help();
-        std::process::exit(2);
-    }
-    let non_interactive = rest.iter().any(|a| a == "--non-interactive");
-    let yes = rest.iter().any(|a| a == "--yes" || a == "-y");
-    let fix = rest.iter().any(|a| a == "--fix");
-    let json = rest.iter().any(|a| a == "--json");
-    let no_auto_approve = rest.iter().any(|a| a == "--no-auto-approve");
-    let skip_rules = rest.iter().any(|a| a == "--skip-rules");
-    let no_agent_aliases = rest.iter().any(|a| a == "--no-agent-aliases");
-
-    if no_agent_aliases {
-        let _ = crate::core::config::setter::set_by_key("skip_agent_aliases", "true");
-    }
-
-    if non_interactive || fix || json || yes {
-        let opts = setup::SetupOptions {
-            non_interactive,
-            yes,
-            fix,
-            json,
-            no_auto_approve,
-            skip_rules,
-            ..Default::default()
-        };
-        run_setup_options(opts, json);
-    } else {
-        setup::run_setup();
-    }
-}
-
-fn handle_onboard(rest: &[String]) {
-    if rest.iter().any(|a| a == "--help" || a == "-h") {
-        println!("Usage: lean-ctx onboard [--no-agent-aliases]");
-        println!("Connect your AI tools with one command: detects installed");
-        println!("agents, installs hooks/rules/MCP registrations, verifies.");
-        println!();
-        println!("  --no-agent-aliases  Do not install claude/codex/gemini shell aliases");
-        println!();
-        println!("Fine-grained control: lean-ctx setup --help");
-        return;
-    }
-    if rest.iter().any(|a| a == "--no-agent-aliases") {
-        let _ = crate::core::config::setter::set_by_key("skip_agent_aliases", "true");
-    }
-    setup::run_onboard();
-}
 
 
-fn handle_bootstrap(rest: &[String]) {
-    let json = rest.iter().any(|a| a == "--json");
-    run_repair_setup(json);
-}
 
-fn run_repair_setup(json: bool) {
-    let opts = setup::SetupOptions {
-        non_interactive: true,
-        yes: true,
-        fix: true,
-        json,
-        ..Default::default()
-    };
-    run_setup_options(opts, json);
-}
+
 
 fn handle_raw(args: &[String], rest: &[String]) -> ! {
     if rest.is_empty() {
@@ -730,25 +606,6 @@ fn handle_raw(args: &[String], rest: &[String]) -> ! {
     std::process::exit(code);
 }
 
-fn run_setup_options(opts: setup::SetupOptions, json: bool) {
-    match setup::run_setup_with_options(opts) {
-        Ok(report) => {
-            if json {
-                println!(
-                    "{}",
-                    serde_json::to_string_pretty(&report).unwrap_or_else(|_| "{}".to_string())
-                );
-            }
-            if !report.success {
-                std::process::exit(1);
-            }
-        }
-        Err(e) => {
-            eprintln!("{e}");
-            std::process::exit(1);
-        }
-    }
-}
 
 /// Restore the default SIGPIPE disposition for short-lived CLI invocations.
 ///

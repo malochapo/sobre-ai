@@ -32,8 +32,6 @@ pub(crate) const KNOWN_COMMANDS: &[&str] = &[
     "proxy",
     "daemon",
     "init",
-    "wrap",
-    "unwrap",
     "status",
     "read",
     "call",

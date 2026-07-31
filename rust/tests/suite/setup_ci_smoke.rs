@@ -110,7 +110,7 @@ fn setup_bootstrap_doctor_status_json_smoke() {
     envs.push(("LEAN_CTX_TRUST_CLAUDE_PATH", "1"));
 
     // bootstrap --json returns clean JSON (SetupReport)
-    let (code, out) = run_json(bin, &["bootstrap", "--json"], &envs);
+    let (code, out) = run_json(bin, &["init", "--repair", "--json"], &envs);
     assert_eq!(code, 0, "bootstrap exit code");
     let setup: SetupReport = serde_json::from_str(&out).unwrap_or_else(|e| {
         panic!(

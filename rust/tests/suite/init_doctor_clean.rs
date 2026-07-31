@@ -1,4 +1,4 @@
-//! Golden-path contract (zero-config excellence): `lean-ctx onboard --yes` on a
+//! Golden-path contract (zero-config excellence): `sobre init --repair` on a
 //! fresh machine with detected-but-unconfigured agents must leave `doctor` fully
 //! green — no "run: lean-ctx setup" follow-ups, no dead loops.
 //!
@@ -9,7 +9,7 @@
 
 use std::process::Command;
 
-/// Stops the daemon `onboard` started (scoped to the test's data dir), even
+/// Stops the daemon `init` started (scoped to the test's data dir), even
 /// when an assertion panics mid-test.
 struct DaemonStop<'a> {
     bin: &'a str,
@@ -31,7 +31,7 @@ impl Drop for DaemonStop<'_> {
     windows,
     ignore = "HOME-override isolation is Unix-only (dirs::home_dir uses the Win32 API)"
 )]
-fn onboard_yes_leaves_doctor_fully_green() {
+fn init_repair_leaves_doctor_fully_green() {
     let bin = env!("CARGO_BIN_EXE_lean-ctx");
 
     let tmp = tempfile::tempdir().unwrap();
@@ -77,17 +77,17 @@ fn onboard_yes_leaves_doctor_fully_green() {
         envs: envs.clone(),
     };
 
-    let onboard = Command::new(bin)
-        .args(["onboard", "--yes"])
+    let init = Command::new(bin)
+        .args(["init", "--repair"])
         .current_dir(&proj)
         .env_clear()
         .envs(envs.iter().map(|(k, v)| (k.as_str(), v.as_str())))
         .output()
-        .expect("onboard spawn");
+        .expect("init spawn");
     assert!(
-        onboard.status.success(),
+        init.status.success(),
         "onboard --yes must exit 0; stderr:\n{}",
-        String::from_utf8_lossy(&onboard.stderr)
+        String::from_utf8_lossy(&init.stderr)
     );
 
     let doctor = Command::new(bin)
@@ -100,10 +100,10 @@ fn onboard_yes_leaves_doctor_fully_green() {
     let stdout = String::from_utf8_lossy(&doctor.stdout);
 
     // The two checks that historically dead-looped ("run: lean-ctx setup"
-    // right after onboard already ran): Claude plan mode + CLAUDE.md block.
+    // right after init already ran): Claude plan mode + CLAUDE.md block.
     assert!(
         stdout.contains("permissions present"),
-        "Claude plan-mode permissions must be wired by onboard; doctor said:\n{stdout}"
+        "Claude plan-mode permissions must be wired by init; doctor said:\n{stdout}"
     );
     assert!(
         !stdout.contains("run: lean-ctx setup"),

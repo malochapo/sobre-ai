@@ -60,9 +60,9 @@ fn build_and_persist_fix_report(
         });
     } else {
         if quiet {
-            crate::cli::cmd_init_quiet(&["--global".to_string()]);
+            crate::cli::install_shell_hook_quiet(&["--global".to_string()]);
         } else {
-            crate::cli::cmd_init(&["--global".to_string()]);
+            crate::cli::install_shell_hook(&["--global".to_string()]);
         }
         let after = shell_aliases_outcome();
         shell_step.ok = after.ok;

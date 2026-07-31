@@ -52,10 +52,8 @@ pub(super) fn concise_help_text() -> String {
 {banner}
 
 GETTING STARTED:
-    lean-ctx wrap <agent>          One-command setup (wrap cursor / wrap claude / wrap codex)
-    lean-ctx unwrap <agent>        Undo wrap, restore pre-wrap config
-    lean-ctx onboard               Connect all AI tools at once (zero questions)
-    lean-ctx setup                 Guided setup with full control over every option
+    lean-ctx init                  Connect everything (one question: the proxy)
+    lean-ctx init <agent>          Connect one agent (claude / cursor / codex)
     lean-ctx doctor                Check that everything is wired up correctly
     lean-ctx gain                  See how many tokens you have saved
 
@@ -96,10 +94,8 @@ pub(super) fn print_help() {
 {banner}
 
 GETTING STARTED:
-    lean-ctx wrap <agent>          One-command setup (wrap cursor / wrap claude / wrap codex)
-    lean-ctx unwrap <agent>        Undo wrap, restore pre-wrap config
-    lean-ctx onboard               Connect all AI tools at once (zero questions)
-    lean-ctx setup                 Guided setup with full control over every option
+    lean-ctx init                  Connect everything (one question: the proxy)
+    lean-ctx init <agent>          Connect one agent (claude / cursor / codex)
     lean-ctx doctor                Check that everything is wired up correctly
     lean-ctx gain                  See how many tokens you have saved
     (everything below is reference — run `lean-ctx help` for the short version)
@@ -162,9 +158,6 @@ COMMANDS:
     benchmark report [path]        Generate shareable Markdown report
     benchmark compare [--output F] Head-to-head comparison vs competitors
     benchmark scorecard [--json]   Reproducible savings+recall+latency scorecard
-    onboard                        Zero-prompt golden path: connect tools + sensible defaults
-    setup                          Guided setup: shell + editor + verify (full control)
-    bootstrap                      Non-interactive setup + fix (zero-config)
     status [--json]                Show setup + MCP + rules status
     init [--global]                Install shell aliases (zsh/bash/fish/PowerShell)
     init --agent <name>            Configure MCP for specific editor/agent
@@ -306,9 +299,6 @@ EXAMPLES:
     lean-ctx sessions delete <id>  Delete one saved session
     lean-ctx discover              Find missed savings in shell history
     lean-ctx discover --card       Shareable 'before' SVG -> lean-ctx-before.svg
-    lean-ctx onboard               One-command setup (shell + editors + verify)
-    lean-ctx bootstrap             Non-interactive setup + fix (zero-config)
-    lean-ctx bootstrap --json      Machine-readable bootstrap report
     lean-ctx init --global         Install shell aliases (includes lean-ctx-on/off/mode/status)
     lean-ctx-on                    Enable shell aliases in track mode (full output + stats)
     lean-ctx-off                   Disable all shell aliases
