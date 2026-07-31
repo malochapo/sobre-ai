@@ -84,9 +84,34 @@ we forked away from.
 Every release must be **smaller than or equal to** the previous one in lines of
 Rust, unless the PR states the exception explicitly and it is accepted.
 
-- Ceiling: **380,000 lines of Rust** under `rust/src`, vendored code excluded.
+- Ceiling: **380,000 lines of Rust** under `rust/src`, excluding vendored code
+  **and tests** — `#[cfg(test)]` blocks and `rust/tests/`.
 - A PR that adds net lines must say so in its description and justify it.
 - "We might need it later" is not a justification. `git revert` exists.
+
+### Why tests are outside the ceiling
+
+They were inside it until the count was measured: **112,160 lines across 933
+`#[cfg(test)]` blocks**, a quarter of `rust/src`, all of it pushing against a
+budget the production code has to fit in. That is a standing incentive to
+delete tests, and this project has already been burned twice by not running the
+ones it has — a warning cleanup left `--features dense` broken at 62 errors for
+days, and `CORE_TOOL_NAMES references 'shell' which is not registered` sat red
+from the commit that caused it until an audit went looking. The suite is the
+only reliable oracle here. A budget that taxes it is aimed at the wrong thing.
+
+### Where we actually stand
+
+`rust/src` is 455,488 lines, of which 112,160 are test blocks. **Production
+code: 343,328 — 36,672 below the ceiling.**
+
+So the ceiling is met, and has been for a while without anyone knowing: the
+figure quoted above (491,554, "about 111,000 lines below where we stand") was
+counting tests on both sides. That does not make the remaining removals
+optional. `addons`, `context_package`, `plugins`, the dashboard and the
+config cascade go because invariants 1, 2 and 4 say so — not to hit a number.
+What it changes is that subtraction no longer needs to be argued from a budget
+it was already inside.
 
 ### Where 380,000 comes from
 
@@ -98,9 +123,8 @@ would mean cutting a further 154,000 out of `core/`, `server/`, `shell/` and
 `hooks/`: the engine itself. A ceiling nobody can reach is a ceiling everybody
 ignores.
 
-380,000 is the realistic target for the scope we chose: the MCP context layer
-**plus** the local compressing proxy. It is a real constraint — about 111,000
-lines below where we stand — and it is one we can actually hold.
+380,000 is the target for the scope we chose: the MCP context layer **plus**
+the local compressing proxy.
 
 ### Scope decision behind the number
 
