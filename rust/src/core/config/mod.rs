@@ -635,7 +635,7 @@ pub struct Config {
     /// requirement and sandboxing for spawned addon servers. Global-only (never
     /// merged from project-local config) and fully permissive by default.
     #[serde(default)]
-    pub addons: crate::core::addons::AddonsConfig,
+    pub addons: crate::core::artifacts_exec::policy::AddonsConfig,
     /// Allow automatic project-root re-rooting when absolute paths outside the jail are seen.
     /// When false (default), absolute paths outside the jail are rejected without re-rooting.
     /// Override via LEAN_CTX_ALLOW_REROOT env var.
@@ -854,7 +854,7 @@ impl Default for Config {
             secret_detection: SecretDetectionConfig::default(),
             sensitivity: crate::core::sensitivity::SensitivityConfig::default(),
             gateway: crate::core::mcp_catalog::GatewayConfig::default(),
-            addons: crate::core::addons::AddonsConfig::default(),
+            addons: crate::core::artifacts_exec::policy::AddonsConfig::default(),
             allow_auto_reroot: false,
             hook_binary: None,
             path_jail: None,

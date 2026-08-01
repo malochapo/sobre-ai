@@ -893,7 +893,6 @@ pub async fn serve(cfg: HttpServerConfig) -> Result<()> {
     // so a loosened boundary is never silent (GH security audit, finding 3).
     crate::core::pathjail::warn_if_relaxed();
 
-    crate::core::plugins::PluginManager::init();
     crate::core::savings_autopush::spawn_if_enabled();
 
     // Pre-warm the project indices in the background for this long-lived HTTP
@@ -939,11 +938,6 @@ pub async fn serve(cfg: HttpServerConfig) -> Result<()> {
 /// each plugin's own timeout) so listeners run before the process exits. A
 /// no-op unless a plugin declares the hook.
 pub(crate) fn fire_session_end() {
-    if crate::core::plugins::PluginManager::has_listener("on_session_end") {
-        let _ = crate::core::plugins::PluginManager::fire_hook(
-            &crate::core::plugins::executor::HookPoint::OnSessionEnd,
-        );
-    }
 }
 
 #[cfg(windows)]
@@ -973,7 +967,6 @@ impl axum::serve::Listener for crate::ipc::NamedPipeListener {
 pub async fn serve_ipc(cfg: HttpServerConfig, addr: crate::ipc::DaemonAddr) -> Result<()> {
     cfg.validate()?;
 
-    crate::core::plugins::PluginManager::init();
     crate::core::savings_autopush::spawn_if_enabled();
 
     match addr {

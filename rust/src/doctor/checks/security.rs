@@ -272,7 +272,7 @@ pub(crate) fn permission_inheritance_outcome() -> Outcome {
 /// means the spawn-time binhash gate will refuse the addon — surface it now
 /// with a fix, not opaquely at first tool call.
 pub(crate) fn managed_addon_binaries_outcome() -> Option<Outcome> {
-    let store = crate::core::addons::InstalledStore::load();
+    let store = crate::core::artifacts_exec::store::InstalledStore::load();
     let managed: Vec<_> = store
         .list()
         .into_iter()
@@ -285,12 +285,12 @@ pub(crate) fn managed_addon_binaries_outcome() -> Option<Outcome> {
     let mut broken: Vec<String> = Vec::new();
     for (addon, receipt) in &managed {
         let path = std::path::Path::new(&receipt.path);
-        if let Some(reason) = crate::core::addons::revocation::blocked_reason(&addon.name) {
+        if let Some(reason) = crate::core::artifacts_exec::revocation::blocked_reason(&addon.name) {
             broken.push(format!("{} revoked ({reason})", addon.name));
         } else if !path.is_file() {
             broken.push(format!("{} binary missing", addon.name));
         } else {
-            match crate::core::addons::binhash::sha256_file(path) {
+            match crate::core::artifacts_exec::binhash::sha256_file(path) {
                 Ok(h) if h.eq_ignore_ascii_case(&receipt.sha256) => {}
                 Ok(_) => broken.push(format!("{} hash mismatch", addon.name)),
                 Err(e) => broken.push(format!("{} unreadable ({e})", addon.name)),
@@ -326,14 +326,14 @@ pub(crate) fn managed_ort_outcome() -> Option<Outcome> {
     if !cfg!(feature = "embeddings") {
         return None;
     }
-    let path = crate::core::addons::ort_provision::managed_dylib_path()?;
-    let ok = crate::core::addons::binhash::sha256_file(&path).is_ok();
+    let path = crate::core::artifacts_exec::ort_provision::managed_dylib_path()?;
+    let ok = crate::core::artifacts_exec::binhash::sha256_file(&path).is_ok();
     Some(Outcome {
         ok,
         line: if ok {
             format!(
                 "{BOLD}Managed ONNX Runtime{RST}  {GREEN}{}{RST}  {DIM}({}){RST}",
-                crate::core::addons::ort_provision::ORT_VERSION,
+                crate::core::artifacts_exec::ort_provision::ORT_VERSION,
                 path.display()
             )
         } else {

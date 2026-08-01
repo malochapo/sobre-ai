@@ -249,7 +249,7 @@ fn finalize_hook_check_reports_drift_missing_and_stale() {
     let stale = finalize_hook_check("Hooks", p, true, Some("/old/lean-ctx".to_string()));
     assert!(!stale.ok);
     assert!(stale.detail.contains("stale binary"));
-    assert!(stale.detail.contains("setup --fix"));
+    assert!(stale.detail.contains("init --repair"));
 
     let healthy = finalize_hook_check("Hooks", p, true, None);
     assert!(healthy.ok);

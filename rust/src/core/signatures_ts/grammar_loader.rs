@@ -27,9 +27,9 @@ use std::sync::{Mutex, OnceLock};
 use tree_sitter::Language;
 use tree_sitter_language::LanguageFn;
 
-use crate::core::addons::artifact_install::current_target_triple;
-use crate::core::addons::grammar_manifest::GRAMMAR_SYMBOL;
-use crate::core::addons::{binhash, grammar_install, grammar_registry};
+use crate::core::artifacts_exec::artifact_install::current_target_triple;
+use crate::core::artifacts_exec::grammar_manifest::GRAMMAR_SYMBOL;
+use crate::core::artifacts_exec::{binhash, grammar_install, grammar_registry};
 
 fn dylib_dir(name: &str) -> Option<PathBuf> {
     Some(

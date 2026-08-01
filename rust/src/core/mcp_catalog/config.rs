@@ -8,7 +8,7 @@
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
-use crate::core::addons::capabilities::AddonCapabilities;
+use crate::core::artifacts_exec::capabilities::AddonCapabilities;
 
 /// Which transport a downstream MCP server speaks.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default, Hash)]
@@ -56,7 +56,7 @@ pub struct GatewayServer {
     /// spawn point ([`crate::core::mcp_catalog::client`]) verifies the resolved
     /// binary's hash and refuses to launch a swapped executable. Empty =
     /// unpinned (legacy behaviour). Part of the wiring, so it is covered by the
-    /// install-time integrity hash ([`crate::core::addons::integrity`]).
+    /// install-time integrity hash ([`crate::core::artifacts_exec::integrity`]).
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub binary_sha256: String,
 

@@ -213,8 +213,6 @@ COMMANDS:
     plan <task> [--budget=N]       Context planning (optimal Phi-scored context plan)
     compile [--mode=<m>] [--budget=N] Context compilation (knapsack + Boltzmann)
     visualize [--output F] [--open] Generate interactive HTML report (D3.js graph)
-    plugin list|enable|disable|info|init|hooks
-                                   Manage lean-ctx plugins
     addon list|search|info|add|remove
                                    Community addons: wire external MCP servers via the gateway
     rules sync|diff|lint|status|init

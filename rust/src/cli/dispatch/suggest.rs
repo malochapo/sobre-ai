@@ -15,7 +15,6 @@ pub(crate) const KNOWN_COMMANDS: &[&str] = &[
     "learning",
     "health",
     "policy",
-    "plugins",
     "addons",
     "rules",
     "eval",

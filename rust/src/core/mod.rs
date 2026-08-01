@@ -1,7 +1,7 @@
 // ---------------------------------------------------------------------------
 // Domain: Compression
 // ---------------------------------------------------------------------------
-pub mod addons;
+pub mod artifacts_exec;
 pub mod aggressiveness;
 pub mod auto_capture;
 pub mod auto_findings;
@@ -121,7 +121,6 @@ pub mod context_lint;
 pub mod context_os;
 pub mod context_overhead;
 pub mod context_overlay;
-pub mod context_package;
 pub mod context_policies;
 pub mod context_proof;
 pub mod context_proof_v2;
@@ -140,7 +139,6 @@ pub mod context {
     pub use super::context_ledger;
     pub use super::context_os;
     pub use super::context_overlay;
-    pub use super::context_package;
     pub use super::context_policies;
     pub use super::context_proof;
     pub use super::context_proof_v2;
@@ -421,7 +419,6 @@ pub mod paths;
 pub mod pathutil;
 pub mod persona;
 pub mod pipeline;
-pub mod plugins;
 pub mod portable_binary;
 pub mod profile_suggest;
 pub mod profiles;

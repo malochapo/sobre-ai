@@ -6,7 +6,6 @@ use super::*;
 use chrono::Utc;
 
 use crate::core::knowledge::{AdmissionResult, sort_fact_for_output};
-use crate::core::plugins::{PluginManager, executor::HookPoint};
 
 pub(crate) fn handle_remember(
     project_root: &str,
@@ -72,12 +71,6 @@ pub(crate) fn handle_remember(
     };
     let merged = matches!(admission, AdmissionResult::Merged { .. });
 
-    // Plugin seam: a fact was written. Guarded so it is a no-op without a plugin.
-    if PluginManager::has_listener("on_knowledge_update") {
-        PluginManager::fire_hook_background(HookPoint::OnKnowledgeUpdate {
-            fact_id: format!("{cat}:{k}"),
-        });
-    }
 
     let mut result = if let AdmissionResult::Merged {
         category,

@@ -6,7 +6,7 @@
 //! Nothing here runs implicitly — the policy decided on #732 is "no silent
 //! download at first tool call, ever".
 
-use crate::core::addons::ort_provision;
+use crate::core::artifacts_exec::ort_provision;
 
 pub(crate) fn cmd_embeddings(rest: &[String]) {
     match rest.first().map(String::as_str) {

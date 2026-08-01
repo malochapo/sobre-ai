@@ -98,7 +98,7 @@ pub fn verify_all() -> Vec<IntegrityFinding> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::addons::store::InstalledAddon;
+    use crate::core::artifacts_exec::store::InstalledAddon;
 
     fn server(name: &str, command: &str) -> GatewayServer {
         GatewayServer {

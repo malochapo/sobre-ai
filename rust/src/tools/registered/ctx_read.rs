@@ -566,13 +566,6 @@ impl CtxReadTool {
                     let outcome = {
                         let mut cache = acquire_write!(10, "prepare 10s");
 
-                        if crate::core::plugins::PluginManager::has_listener("pre_read") {
-                            crate::core::plugins::PluginManager::fire_hook_background(
-                                crate::core::plugins::executor::HookPoint::PreRead {
-                                    path: path_owned.clone(),
-                                },
-                            );
-                        }
                         if let Ok(mut bt) = crate::core::bounce_tracker::global().lock() {
                             bt.next_seq();
                         }

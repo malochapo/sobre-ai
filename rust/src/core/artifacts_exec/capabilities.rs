@@ -28,11 +28,15 @@
 
 use serde::{Deserialize, Serialize};
 
-/// Host environment variables a scrubbed child is always allowed to see, on top
-/// of whatever the addon declares. Chosen to let normal programs start (binary
-/// resolution, locale, temp dir) without exposing ambient secrets. Reuses the
-/// plugin allowlist so the two sandboxes converge on one list (P0).
-pub use crate::core::plugins::sandbox::ENV_ALLOWLIST as BASE_ENV_ALLOWLIST;
+/// Environment an addon sees in the sandbox. Everything else is scrubbed.
+///
+/// Lifted verbatim from the removed plugin sandbox — the Windows entries are
+/// load-bearing: without `SystemRoot`, `ComSpec` and `PATHEXT` most binaries
+/// will not start at all.
+pub const BASE_ENV_ALLOWLIST: &[&str] = &[
+    "PATH", "HOME", "LANG", "LC_ALL", "LC_CTYPE", "TMPDIR", "TEMP", "TMP",
+    "SystemRoot", "SYSTEMROOT", "ComSpec", "PATHEXT",
+];
 
 /// Outbound-network capability a stdio addon declares.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]

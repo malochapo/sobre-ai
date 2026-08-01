@@ -170,7 +170,7 @@ fn resolve_ort_dylib() -> anyhow::Result<PathBuf> {
     //    provision`, SHA-256 pinned to the official release and version-
     //    matched to this build's ort API level. After ORT_DYLIB_PATH so an
     //    operator override always wins.
-    if let Some(found) = crate::core::addons::ort_provision::managed_dylib_path() {
+    if let Some(found) = crate::core::artifacts_exec::ort_provision::managed_dylib_path() {
         return Ok(found);
     }
 

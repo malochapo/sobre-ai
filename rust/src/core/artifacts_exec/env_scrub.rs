@@ -50,7 +50,7 @@ pub fn apply_env(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::addons::capabilities::NetworkAccess;
+    use crate::core::artifacts_exec::capabilities::NetworkAccess;
 
     fn env_keys(cmd: &Command) -> Vec<String> {
         cmd.as_std()

@@ -92,7 +92,7 @@ pub async fn build(cfg: &GatewayConfig) -> Catalog {
     for server in cfg.active_servers() {
         // Kill-switch (P2): a revoked server is dropped from the catalog so its
         // tools cannot be discovered or called; the reason is surfaced.
-        if let Some(reason) = crate::core::addons::revocation::blocked_reason(&server.name) {
+        if let Some(reason) = crate::core::artifacts_exec::revocation::blocked_reason(&server.name) {
             errors.push(format!("{}: revoked — {reason}", server.name));
             continue;
         }
@@ -187,7 +187,7 @@ mod tests {
     #[tokio::test]
     async fn revoked_server_is_dropped_from_catalog() {
         let _iso = crate::core::data_dir::isolated_data_dir();
-        let mut list = crate::core::addons::revocation::RevocationList::load();
+        let mut list = crate::core::artifacts_exec::revocation::RevocationList::load();
         list.revoke("blocked", "kill-switch test", None);
         list.save().expect("save");
 

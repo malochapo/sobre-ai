@@ -82,14 +82,6 @@ pub fn run() {
                 crate::cli::cmd_policy(&rest);
                 return;
             }
-            "plugins" => {
-                crate::cli::plugin_cmd::cmd_plugin(&rest);
-                return;
-            }
-            "addons" => {
-                crate::cli::addon_cmd::cmd_addon(&rest);
-                return;
-            }
             "embeddings" => {
                 crate::cli::embeddings_cmd::cmd_embeddings(&rest);
                 return;

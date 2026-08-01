@@ -81,3 +81,23 @@ mod tests {
         assert!(toml.contains("MY_SVC_API_TOKEN"));
     }
 }
+
+/// Turn a free-form name into a filename-safe slug, or `None` when nothing
+/// usable remains. Moved here from the addon marketplace, whose only surviving
+/// caller was `provider init`.
+#[must_use]
+pub fn slugify(name: &str) -> Option<String> {
+    let mut out = String::new();
+    let mut prev_dash = false;
+    for ch in name.trim().chars() {
+        if ch.is_ascii_alphanumeric() {
+            out.push(ch.to_ascii_lowercase());
+            prev_dash = false;
+        } else if !prev_dash && !out.is_empty() {
+            out.push('-');
+            prev_dash = true;
+        }
+    }
+    let slug = out.trim_end_matches('-').to_string();
+    (!slug.is_empty()).then_some(slug)
+}

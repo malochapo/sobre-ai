@@ -84,8 +84,6 @@ pub(super) fn run_mcp_server() -> Result<()> {
         // Activate the plugin registry once per server process, then announce the
         // session. `notify` is a no-op unless a plugin listens for the hook.
         // Stays ahead of serve(): a plugin may hook the very first tool call.
-        core::plugins::PluginManager::init();
-        core::plugins::PluginManager::notify(core::plugins::executor::HookPoint::OnSessionStart);
 
         tracing::info!(
             "lean-ctx v{} MCP server starting",
@@ -164,13 +162,6 @@ pub(super) fn run_mcp_server() -> Result<()> {
 
         server_handle.shutdown().await;
 
-        // Symmetric to the on_session_start fired at startup. Synchronous so
-        // listeners run before the process exits; no-op without a plugin.
-        if core::plugins::PluginManager::has_listener("on_session_end") {
-            let _ = core::plugins::PluginManager::fire_hook(
-                &core::plugins::executor::HookPoint::OnSessionEnd,
-            );
-        }
 
         // Single source of truth for the buffered-telemetry flush set, shared
         // with the CLI tool arms and the parent watchdog so they can't drift (#550).

@@ -51,7 +51,6 @@ const KNOWN_TOOLS: &[&str] = &[
     "ctx_review",
     "ctx_multi_read",
     "ctx_graph",
-    "ctx_plugins",
     "ctx_repomap",
     "ctx_rules",
     "ctx_multi_repo",

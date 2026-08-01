@@ -52,7 +52,7 @@ pub fn build(opts: &SnapshotOptions) -> Result<ContextSnapshotV1, String> {
     snap.parent_id = super::timeline::head_id(&opts.project_root);
 
     if opts.sign {
-        let (key, _newly_created) = crate::core::context_package::keys::load_or_create()?;
+        let (key, _newly_created) = super::keys::load_or_create()?;
         sign_snapshot(&mut snap, &key)?;
     } else {
         finalize_id(&mut snap)?;

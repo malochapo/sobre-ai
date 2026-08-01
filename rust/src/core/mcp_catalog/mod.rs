@@ -65,7 +65,7 @@ pub async fn proxy(
         .find(|s| s.name == server_name)
         .ok_or_else(|| format!("unknown or disabled gateway server `{server_name}`"))?;
     // Kill-switch (P2): refuse to proxy a call to a revoked server.
-    if let Some(reason) = crate::core::addons::revocation::blocked_reason(server_name) {
+    if let Some(reason) = crate::core::artifacts_exec::revocation::blocked_reason(server_name) {
         return Err(format!(
             "gateway server `{server_name}` is revoked and will not run: {reason}"
         ));
@@ -77,12 +77,12 @@ pub async fn proxy(
     // tool. A transport failure or a downstream `is_error` counts as an error.
     // Side-channel only — never touches the returned text (output determinism).
     let ok = matches!(&call, Ok(r) if !r.is_error.unwrap_or(false));
-    crate::core::addons::meter::record(server_name, tool, ok);
+    crate::core::artifacts_exec::meter::record(server_name, tool, ok);
     let result = call?;
     // Downstream output is untrusted content (#866): redact secrets + audit it
     // before it enters the model context.
     let scrubbed =
-        crate::core::addons::runtime::scrub_output(server_name, &client::result_to_text(&result));
+        crate::core::artifacts_exec::runtime::scrub_output(server_name, &client::result_to_text(&result));
     if result.is_error.unwrap_or(false) {
         // Error text is surfaced verbatim (already scrubbed) — never compressed
         // or spilled, so the failure reason stays fully legible.

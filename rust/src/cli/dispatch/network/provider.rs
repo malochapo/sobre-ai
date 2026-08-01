@@ -48,7 +48,7 @@ fn provider_init(args: &[String]) {
         std::process::exit(1);
     };
     // Provider ids share the addon slug shape (`[a-z0-9-]`).
-    let Some(id) = crate::core::addons::scaffold::slugify(raw) else {
+    let Some(id) = scaffold::slugify(raw) else {
         eprintln!("`{raw}` has no usable id characters ([a-z0-9-]).");
         std::process::exit(1);
     };

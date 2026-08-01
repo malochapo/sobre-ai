@@ -92,7 +92,7 @@ fn try_compress(server: &str, input: &str) -> Option<String> {
         let result = client::proxy_call(&transport, &tool.name, args, timeout)
             .await
             .ok()?;
-        Some(crate::core::addons::runtime::scrub_output(
+        Some(crate::core::artifacts_exec::runtime::scrub_output(
             &server,
             &client::result_to_text(&result),
         ))

@@ -1,9 +1,10 @@
-//! Publisher signing-key management for ctxpkg (GL #406).
+//! Signing key for this machine's context snapshots.
 //!
-//! One ed25519 keypair per machine user, stored as a 32-byte hex seed under the
-//! XDG data dir at `<data_dir>/keys/ctxpkg-ed25519.key` (mode 0600 on unix).
-//! Created lazily on first `pack export --sign`. The public key identifies the
-//! publisher across releases — registries and clients surface it per version.
+//! One ed25519 keypair per user, stored as a 32-byte hex seed under the XDG
+//! data dir, created lazily on first signed snapshot. Came from the removed
+//! package marketplace, where it signed published packages; `snapshot create
+//! --sign` and `snapshot publish` are its remaining callers, and both are
+//! local operations.
 
 use std::path::PathBuf;
 

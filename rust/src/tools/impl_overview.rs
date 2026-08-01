@@ -25,8 +25,6 @@ pub fn handle(
 ) -> (String, bool) {
     let project_root = path.map_or_else(|| ".".to_string(), std::string::ToString::to_string);
 
-    let auto_loaded = crate::core::context_package::auto_load_packages(&project_root);
-
     let Some(open) = graph_provider::open_or_build(&project_root) else {
         crate::core::index_orchestrator::ensure_all_background(&project_root);
         return (partial_overview(&project_root), false);
@@ -229,14 +227,6 @@ pub fn handle(
             output.push(String::new());
             output.push(wakeup);
         }
-    }
-
-    if !auto_loaded.is_empty() {
-        output.push(String::new());
-        output.push(format!(
-            "CONTEXT PACKAGES AUTO-LOADED: {}",
-            auto_loaded.join(", ")
-        ));
     }
 
     let fc = gp.file_count();

@@ -527,15 +527,6 @@ pub static COMMAND_TREE: &[CommandNode] = &[
         hidden: false,
     },
     CommandNode {
-        name: "plugins",
-        aliases: &[],
-        description: "Manage plugins",
-        subcommands: &[],
-        flags: &[],
-        positional: None,
-        hidden: false,
-    },
-    CommandNode {
         name: "addons",
         aliases: &[],
         description: "Manage addons",

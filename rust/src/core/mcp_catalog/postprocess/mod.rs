@@ -2,7 +2,7 @@
 //!
 //! The single seam where lean-ctx's own context-engineering is applied to
 //! *downstream* MCP tool output. Invoked once from [`super::proxy`], right after
-//! [`crate::core::addons::runtime::scrub_output`] has removed secrets — so
+//! [`crate::core::artifacts_exec::runtime::scrub_output`] has removed secrets — so
 //! everything here operates on already-sanitized text.
 //!
 //! Three independent, config-gated layers (all default off → pure pass-through):

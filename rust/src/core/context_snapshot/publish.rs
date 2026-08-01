@@ -66,7 +66,7 @@ pub fn publish(
     let mut snap = snapshot.clone();
     let newly_signed = snap.signature.is_none();
     if newly_signed {
-        let (key, _newly_created) = crate::core::context_package::keys::load_or_create()?;
+        let (key, _newly_created) = super::keys::load_or_create()?;
         // Signing re-finalizes the id; the body is unchanged, so the id is
         // identical — the recipient imports it under the same id.
         sign_snapshot(&mut snap, &key)?;

@@ -133,37 +133,18 @@ fn features() -> Value {
     })
 }
 
-/// Runtime-discovered extensions: installed plugins plus the registered
+/// Runtime-discovered extensions: the registered
 /// read-modes / compressors / chunkers (EPIC 12.9). The sandboxed extension
 /// runtime (EPIC 12.8) expands what registers here.
 fn extensions() -> Value {
-    let plugins = crate::core::plugins::PluginManager::with_registry(|reg| {
-        reg.enabled_plugins()
-            .iter()
-            .map(|p| {
-                json!({
-                    "name": p.manifest.plugin.name,
-                    "version": p.manifest.plugin.version,
-                    "permissions": p.manifest.trust.policy().declared_permissions(),
-                })
-            })
-            .collect::<Vec<_>>()
-    })
-    .unwrap_or_default();
 
     let (read_modes, compressors, chunkers) = crate::core::extension_registry::global()
         .read()
         .map(|r| (r.read_mode_names(), r.compressor_names(), r.chunker_names()))
         .unwrap_or_default();
 
-    let tools: Vec<Value> = crate::core::plugins::PluginManager::tool_specs()
-        .iter()
-        .map(|t| json!({ "name": t.name, "plugin": t.plugin_name }))
-        .collect();
 
     json!({
-        "plugins": plugins,
-        "tools": tools,
         "read_modes": read_modes,
         "compressors": compressors,
         "chunkers": chunkers,
@@ -205,7 +186,6 @@ mod tests {
     fn extensions_expose_registry_builtins() {
         let v = capabilities_value();
         let ext = &v["extensions"];
-        assert!(ext["plugins"].is_array());
         let compressors = ext["compressors"].as_array().expect("compressors array");
         assert!(compressors.iter().any(|c| c == "identity"));
         assert!(

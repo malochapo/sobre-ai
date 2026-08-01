@@ -18,6 +18,7 @@
 //! id/signing semantics, and their tests. The builder that fills snapshots from
 //! live stores and the append-only timeline index land in Phase 1 (#1024).
 
+pub mod keys;
 pub mod builder;
 pub mod digest;
 pub mod publish;
