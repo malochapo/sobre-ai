@@ -265,7 +265,7 @@ fn apply(action: &Action) -> String {
     }
 }
 
-/// Non-interactive auto-heal used by `lean-ctx setup` and `doctor --fix`
+/// Non-interactive auto-heal used by `lean-ctx init` and `doctor --fix`
 /// (#578): applies every *fixable* dedup action (owned duplicates deleted,
 /// marked blocks stripped with `.bak` backups) and returns one result line per
 /// action. `Report`-only findings (user-maintained content) are never touched.

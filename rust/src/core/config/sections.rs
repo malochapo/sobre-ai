@@ -345,7 +345,7 @@ impl Default for AutonomyConfig {
 }
 
 /// Controls automatic update behavior. All defaults are OFF — auto-updates
-/// require explicit opt-in via `lean-ctx setup` or `lean-ctx update --schedule`.
+/// require explicit opt-in via `lean-ctx init` or `lean-ctx update --schedule`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct UpdatesConfig {

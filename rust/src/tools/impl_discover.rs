@@ -383,7 +383,7 @@ pub fn render_before_card(result: &DiscoverResult) -> String {
   <text x="74" y="462" fill="#94a3b8" font-size="22">potential monthly savings</text>
   <text x="70" y="512" fill="#cbd5e1" font-size="22">{total_missed} uncompressed commands · {already} already via lean-ctx</text>
 {top}
-  <text x="70" y="600" fill="#475569" font-size="17">Estimate from local shell history · run `lean-ctx onboard` to stop the leak</text>
+  <text x="70" y="600" fill="#475569" font-size="17">Estimate from local shell history · run `lean-ctx init` to stop the leak</text>
   <text x="1130" y="600" text-anchor="end" fill="#f59e0b" font-size="26" font-weight="700">leanctx.com</text>
 </svg>"##,
         already = result.already_optimized,

@@ -43,7 +43,7 @@ pub fn vscode_mcp_path() -> PathBuf {
 /// separate profile dir (`Code - Insiders`), so a server registered in
 /// stable's `Code/User/mcp.json` simply does not exist there — an Insiders
 /// user then sees an empty `MCP: Open User Configuration` even after
-/// `lean-ctx setup` succeeded (GH #694). On Linux `vscode_mcp_path()` can
+/// `lean-ctx init` succeeded (GH #694). On Linux `vscode_mcp_path()` can
 /// already resolve to Insiders via the shared fallback chain when it is the
 /// only install; this path is the *dedicated* Insiders location for the
 /// distinct-target case.

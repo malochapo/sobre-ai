@@ -195,11 +195,11 @@ pub(crate) fn integration_claude(
             S::ProjectScope => "project scope (global instructions intentionally absent)".into(),
             S::InjectionOff => "rules injection off (intentionally not installed)".into(),
             S::DedicatedWithSkill => "dedicated injection + skill".into(),
-            S::DedicatedMissingSkill => "skill missing (run: lean-ctx setup)".into(),
+            S::DedicatedMissingSkill => "skill missing (run: lean-ctx init)".into(),
             S::BlockAndSkill => format!("{} block + skill", claude_md.display()),
             S::BlockOnly => format!("{} block", claude_md.display()),
             S::LegacyRules => "legacy rules file (migrates on next setup)".into(),
-            S::Missing => "missing (run: lean-ctx setup)".into(),
+            S::Missing => "missing (run: lean-ctx init)".into(),
         };
         let advertises_ctx_tools = matches!(state, S::BlockAndSkill | S::BlockOnly);
         checks.push(NamedCheck {
@@ -218,7 +218,7 @@ pub(crate) fn integration_claude(
                 name: "Instructions/MCP consistency".to_string(),
                 ok: false,
                 detail: format!(
-                    "CLAUDE.md advertises ctx_* tools but no lean-ctx MCP server is registered in {} — run: lean-ctx setup",
+                    "CLAUDE.md advertises ctx_* tools but no lean-ctx MCP server is registered in {} — run: lean-ctx init",
                     mcp_path.display()
                 ),
             });
@@ -304,11 +304,11 @@ pub(crate) fn integration_codebuddy(
             S::ProjectScope => "project scope (global instructions intentionally absent)".into(),
             S::InjectionOff => "rules injection off (intentionally not installed)".into(),
             S::DedicatedWithSkill => "dedicated injection + skill".into(),
-            S::DedicatedMissingSkill => "skill missing (run: lean-ctx setup)".into(),
+            S::DedicatedMissingSkill => "skill missing (run: lean-ctx init)".into(),
             S::BlockAndSkill => format!("{} block + skill", codebuddy_md.display()),
             S::BlockOnly => format!("{} block", codebuddy_md.display()),
             S::LegacyRules => "legacy rules file (migrates on next setup)".into(),
-            S::Missing => "missing (run: lean-ctx setup)".into(),
+            S::Missing => "missing (run: lean-ctx init)".into(),
         };
         checks.push(NamedCheck {
             name: "Instructions".to_string(),

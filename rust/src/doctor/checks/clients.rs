@@ -67,7 +67,7 @@ pub(crate) fn claude_instructions_check(
             "{BOLD}Claude Code instructions{RST}  {GREEN}dedicated injection + skill installed{RST}  {DIM}(SessionStart hook injects instructions){RST}"
         ),
         S::DedicatedMissingSkill => format!(
-            "{BOLD}Claude Code instructions{RST}  {YELLOW}lean-ctx skill missing{RST}  {DIM}(run: lean-ctx setup){RST}"
+            "{BOLD}Claude Code instructions{RST}  {YELLOW}lean-ctx skill missing{RST}  {DIM}(run: lean-ctx init){RST}"
         ),
         S::BlockAndSkill => format!(
             "{BOLD}Claude Code instructions{RST}  {GREEN}CLAUDE.md block + skill installed{RST}  {DIM}(MCP instructions capped at 2048 chars — full content via CLAUDE.md){RST}"
@@ -76,10 +76,10 @@ pub(crate) fn claude_instructions_check(
             "{BOLD}Claude Code instructions{RST}  {GREEN}CLAUDE.md block installed{RST}  {DIM}(MCP instructions capped at 2048 chars — full content via CLAUDE.md){RST}"
         ),
         S::LegacyRules => format!(
-            "{BOLD}Claude Code instructions{RST}  {GREEN}legacy rules file installed{RST}  {DIM}(next `lean-ctx setup` migrates it to the CLAUDE.md block + skill){RST}"
+            "{BOLD}Claude Code instructions{RST}  {GREEN}legacy rules file installed{RST}  {DIM}(next `lean-ctx init` migrates it to the CLAUDE.md block + skill){RST}"
         ),
         S::Missing => format!(
-            "{BOLD}Claude Code instructions{RST}  {YELLOW}no CLAUDE.md block or rules file found — MCP instructions truncated at 2048 chars{RST}  {DIM}(run: lean-ctx setup){RST}"
+            "{BOLD}Claude Code instructions{RST}  {YELLOW}no CLAUDE.md block or rules file found — MCP instructions truncated at 2048 chars{RST}  {DIM}(run: lean-ctx init){RST}"
         ),
     };
     Outcome {
@@ -108,7 +108,7 @@ pub(crate) fn codebuddy_instructions_check(
             "{BOLD}CodeBuddy instructions{RST}  {GREEN}dedicated injection + skill installed{RST}  {DIM}(SessionStart hook injects instructions){RST}"
         ),
         S::DedicatedMissingSkill => format!(
-            "{BOLD}CodeBuddy instructions{RST}  {YELLOW}lean-ctx skill missing{RST}  {DIM}(run: lean-ctx setup){RST}"
+            "{BOLD}CodeBuddy instructions{RST}  {YELLOW}lean-ctx skill missing{RST}  {DIM}(run: lean-ctx init){RST}"
         ),
         S::BlockAndSkill => format!(
             "{BOLD}CodeBuddy instructions{RST}  {GREEN}CODEBUDDY.md block + skill installed{RST}  {DIM}(MCP instructions capped at 2048 chars — full content via CODEBUDDY.md){RST}"
@@ -117,10 +117,10 @@ pub(crate) fn codebuddy_instructions_check(
             "{BOLD}CodeBuddy instructions{RST}  {GREEN}CODEBUDDY.md block installed{RST}  {DIM}(MCP instructions capped at 2048 chars — full content via CODEBUDDY.md){RST}"
         ),
         S::LegacyRules => format!(
-            "{BOLD}CodeBuddy instructions{RST}  {GREEN}legacy rules file installed{RST}  {DIM}(next `lean-ctx setup` migrates it to the CODEBUDDY.md block + skill){RST}"
+            "{BOLD}CodeBuddy instructions{RST}  {GREEN}legacy rules file installed{RST}  {DIM}(next `lean-ctx init` migrates it to the CODEBUDDY.md block + skill){RST}"
         ),
         S::Missing => format!(
-            "{BOLD}CodeBuddy instructions{RST}  {YELLOW}no CODEBUDDY.md block or rules file found — MCP instructions truncated at 2048 chars{RST}  {DIM}(run: lean-ctx setup){RST}"
+            "{BOLD}CodeBuddy instructions{RST}  {YELLOW}no CODEBUDDY.md block or rules file found — MCP instructions truncated at 2048 chars{RST}  {DIM}(run: lean-ctx init){RST}"
         ),
     };
     Outcome {

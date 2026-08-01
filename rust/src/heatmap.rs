@@ -44,7 +44,7 @@ pub fn cmd_heatmap(args: &[String]) {
 
     if entries.is_empty() {
         eprintln!("No files found in project graph.");
-        eprintln!("  Run: lean-ctx setup  (to build the project graph)");
+        eprintln!("  Run: lean-ctx init  (to build the project graph)");
         return;
     }
 

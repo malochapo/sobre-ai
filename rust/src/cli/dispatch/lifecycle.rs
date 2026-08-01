@@ -241,7 +241,7 @@ pub(super) fn cmd_dev_install() {
     }
 
     // Resync agent rules after install so a RULES_VERSION bump is propagated
-    // without requiring a separate `lean-ctx setup` or `init` call.
+    // without requiring a separate `lean-ctx init` or `init` call.
     let cfg = crate::core::config::Config::load();
     if cfg.setup.should_inject_rules()
         && let Some(home) = dirs::home_dir()

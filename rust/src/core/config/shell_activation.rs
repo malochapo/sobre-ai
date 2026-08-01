@@ -12,7 +12,7 @@ use super::Config;
 ///   save *agent* tokens — in a plain human terminal the aliases add overhead
 ///   and surface allowlist diagnostics with no benefit (GH #699).
 /// - `Always`: Aliases are active in every interactive shell — the pre-#699
-///   default, still available for `lean-ctx wrapped` fans who want their own
+///   default, still available for `lean-ctx initped` fans who want their own
 ///   shell usage tracked.
 /// - `Off`: Aliases never auto-activate. The user must call `lean-ctx-on` manually.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]

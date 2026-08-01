@@ -203,7 +203,7 @@ pub(crate) fn mcp_config_outcome() -> Outcome {
         let hint = if has_claude {
             format!("{DIM}(run: lean-ctx doctor --fix OR lean-ctx init --agent claude){RST}")
         } else {
-            format!("{DIM}(run: lean-ctx doctor --fix OR lean-ctx setup){RST}")
+            format!("{DIM}(run: lean-ctx doctor --fix OR lean-ctx init){RST}")
         };
         Outcome {
             ok: false,
@@ -216,7 +216,7 @@ pub(crate) fn mcp_config_outcome() -> Outcome {
         Outcome {
             ok: false,
             line: format!(
-                "{BOLD}MCP config{RST}  {YELLOW}no MCP config found{RST}  {DIM}(run: lean-ctx setup){RST}"
+                "{BOLD}MCP config{RST}  {YELLOW}no MCP config found{RST}  {DIM}(run: lean-ctx init){RST}"
             ),
         }
     }
@@ -324,7 +324,7 @@ pub(crate) fn plan_mode_outcomes() -> Vec<Outcome> {
             results.push(Outcome {
                 ok: false,
                 line: format!(
-                    "{BOLD}Plan mode{RST}  VS Code  {YELLOW}not configured{RST}  {DIM}(run: lean-ctx setup){RST}"
+                    "{BOLD}Plan mode{RST}  VS Code  {YELLOW}not configured{RST}  {DIM}(run: lean-ctx init){RST}"
                 ),
             });
         }
@@ -340,7 +340,7 @@ pub(crate) fn plan_mode_outcomes() -> Vec<Outcome> {
             results.push(Outcome {
                 ok: false,
                 line: format!(
-                    "{BOLD}Plan mode{RST}  Claude Code  {YELLOW}not configured{RST}  {DIM}(run: lean-ctx setup){RST}"
+                    "{BOLD}Plan mode{RST}  Claude Code  {YELLOW}not configured{RST}  {DIM}(run: lean-ctx init){RST}"
                 ),
             });
         }
@@ -531,7 +531,7 @@ pub(crate) fn skill_files_outcome() -> Outcome {
         Outcome {
             ok: false,
             line: format!(
-                "{BOLD}SKILL.md{RST}  {YELLOW}not installed{RST}  {DIM}(run: lean-ctx setup){RST}"
+                "{BOLD}SKILL.md{RST}  {YELLOW}not installed{RST}  {DIM}(run: lean-ctx init){RST}"
             ),
         }
     } else {
@@ -629,7 +629,7 @@ pub(crate) fn config_parity_outcome() -> Outcome {
         Outcome {
             ok: false,
             line: format!(
-                "{BOLD}config parity{RST}  {YELLOW}{} pin a non-standard LEAN_CTX_DATA_DIR in their MCP config{RST}  {DIM}-> that editor's MCP server resolves a different config.toml than the CLI ({config_path}); run: lean-ctx setup (or doctor --fix) to unify{RST}",
+                "{BOLD}config parity{RST}  {YELLOW}{} pin a non-standard LEAN_CTX_DATA_DIR in their MCP config{RST}  {DIM}-> that editor's MCP server resolves a different config.toml than the CLI ({config_path}); run: lean-ctx init (or doctor --fix) to unify{RST}",
                 divergent.join(", ")
             ),
         }

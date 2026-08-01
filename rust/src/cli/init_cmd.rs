@@ -271,23 +271,48 @@ pub fn cmd_init(args: &[String]) {
         .cloned();
     let has_agent_flag = args.windows(2).any(|w| w[0] == "--agent");
 
+    let json = args.iter().any(|a| a == "--json");
+    let check = args.iter().any(|a| a == "--check" || a == "--dry-run");
+    let repair = args.iter().any(|a| a == "--repair");
+
+    // `--check` writes nothing, so it must be answered before any branch that
+    // installs — including the per-agent one. Tested after it, `init claude
+    // --check` performed a real install while the help promised otherwise.
+    if check {
+        let mut preview = vec!["--dry-run".to_string()];
+        if let Some(ref agent) = named_agent {
+            preview.push("--agent".to_string());
+            preview.push(agent.clone());
+        }
+        install_shell_hook(&preview);
+        return;
+    }
+
     if is_shell_arg || has_agent_flag {
         install_shell_hook(args);
         return;
     }
     if let Some(agent) = named_agent {
-        let mut forwarded = vec!["--agent".to_string(), agent];
-        forwarded.extend(args.iter().filter(|a| a.starts_with('-')).cloned());
+        // Forward flags AND their values: `--mode` and `--agent` take one.
+        // Filtering on `starts_with('-')` alone dropped every value, so
+        // `init claude --mode mcp` silently fell back to the recommended mode.
+        let mut forwarded = vec!["--agent".to_string(), agent.clone()];
+        let mut i = 0;
+        while i < args.len() {
+            let a = &args[i];
+            if a.starts_with('-') {
+                forwarded.push(a.clone());
+                if matches!(a.as_str(), "--mode" | "--agent")
+                    && let Some(value) = args.get(i + 1)
+                    && !value.starts_with('-')
+                {
+                    forwarded.push(value.clone());
+                    i += 1;
+                }
+            }
+            i += 1;
+        }
         install_shell_hook(&forwarded);
-        return;
-    }
-
-    let json = args.iter().any(|a| a == "--json");
-    let check = args.iter().any(|a| a == "--check" || a == "--dry-run");
-    let repair = args.iter().any(|a| a == "--repair");
-
-    if check {
-        install_shell_hook(&["--dry-run".to_string()]);
         return;
     }
 
@@ -304,6 +329,7 @@ pub fn cmd_init(args: &[String]) {
         json,
         no_auto_approve: args.iter().any(|a| a == "--no-auto-approve"),
         skip_rules: args.iter().any(|a| a == "--skip-rules"),
+        skip_shell_hook: args.iter().any(|a| a == "--no-shell-hook"),
         ..Default::default()
     };
     match crate::setup::run_setup_with_options(opts) {

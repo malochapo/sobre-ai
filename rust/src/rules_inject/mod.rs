@@ -339,7 +339,7 @@ pub fn check_rules_freshness(client_name: &str) -> Option<String> {
         if file.has_content() && !file.is_current() {
             return Some(format!(
                 "[RULES OUTDATED] Your {} rules were written by an older lean-ctx version. \
-                 Re-read your rules file ({}) or run `lean-ctx setup` to update, \
+                 Re-read your rules file ({}) or run `lean-ctx init` to update, \
                  then start a new session for full compatibility.",
                 target.name,
                 target.path.display()

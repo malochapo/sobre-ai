@@ -563,7 +563,7 @@ impl LeanCtxServer {
                 if !cfg.setup.should_inject_rules() {
                     result_text = format!(
                         "{result_text}\n\n\
-                         --- tip: run 'lean-ctx setup' to configure agent rules for optimal AI integration ---"
+                         --- tip: run 'lean-ctx init' to configure agent rules for optimal AI integration ---"
                     );
                 }
             }

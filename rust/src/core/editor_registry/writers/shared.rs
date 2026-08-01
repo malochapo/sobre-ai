@@ -204,7 +204,7 @@ pub(super) fn handle_invalid_json_write(
 
     if !allow_inject {
         return Err(format!(
-            "{} contains invalid JSON. Fix the syntax and re-run lean-ctx setup.\n  Path: {}",
+            "{} contains invalid JSON. Fix the syntax and re-run lean-ctx init.\n  Path: {}",
             path.display(),
             path.display()
         ));
@@ -240,7 +240,7 @@ pub(super) fn handle_invalid_json_write(
         "     1. Open {} and correct the JSON syntax errors",
         path.display()
     );
-    eprintln!("     2. Re-run: lean-ctx setup");
+    eprintln!("     2. Re-run: lean-ctx init");
     eprintln!("   (Common issue: trailing commas, missing quotes, unmatched braces)");
     Ok(WriteResult {
         action: WriteAction::Already,

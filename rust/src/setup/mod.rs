@@ -60,6 +60,8 @@ pub struct SetupOptions {
     pub skip_rules: bool,
     /// Explicitly request rules injection (overrides config).
     pub force_inject_rules: bool,
+    /// Leave the shell rc untouched (`init --no-shell-hook`).
+    pub skip_shell_hook: bool,
 }
 
 pub fn run_setup_with_options(opts: SetupOptions) -> Result<SetupReport, String> {
@@ -83,7 +85,7 @@ pub fn run_setup_with_options(opts: SetupOptions) -> Result<SetupReport, String>
         warnings: Vec::new(),
         errors: Vec::new(),
     };
-    if !opts.non_interactive || opts.yes {
+    if (!opts.non_interactive || opts.yes) && !opts.skip_shell_hook {
         if opts.json {
             crate::cli::install_shell_hook_quiet(&["--global".to_string()]);
         } else {
@@ -323,7 +325,7 @@ pub fn run_setup_with_options(opts: SetupOptions) -> Result<SetupReport, String>
         let reason = if opts.skip_rules {
             "--skip-rules flag set"
         } else {
-            "auto_inject_rules not enabled (run `lean-ctx setup` or set auto_inject_rules = true)"
+            "auto_inject_rules not enabled (run `lean-ctx init` or set auto_inject_rules = true)"
         };
         rules_step.items.push(SetupItem {
             name: "agent_rules".to_string(),

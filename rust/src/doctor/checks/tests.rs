@@ -156,7 +156,7 @@ fn nothing_installed_fails_and_suggests_setup() {
     let out = check(tmp.path(), RulesScope::Global, RulesInjection::Shared);
     assert!(!out.ok);
     assert!(
-        out.line.contains("lean-ctx setup"),
+        out.line.contains("lean-ctx init"),
         "must suggest a command that actually fixes it: {}",
         out.line
     );

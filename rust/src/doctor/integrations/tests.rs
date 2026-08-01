@@ -136,7 +136,7 @@ fn claude_flags_instructions_advertising_ctx_without_mcp_registration() {
         consistency.expect("block-without-MCP must produce the Instructions/MCP consistency check");
     assert!(!consistency.ok, "the combination is a failure, not a note");
     assert!(
-        consistency.detail.contains("lean-ctx setup"),
+        consistency.detail.contains("lean-ctx init"),
         "detail must carry the repair hint: {}",
         consistency.detail
     );

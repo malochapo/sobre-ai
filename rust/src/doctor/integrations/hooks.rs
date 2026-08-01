@@ -272,7 +272,7 @@ pub(crate) fn finalize_hook_check(
     let detail = if !entries_ok {
         format!("drift ({})", path.display())
     } else if let Some(old) = stale {
-        format!("stale binary {old} — run lean-ctx setup --fix")
+        format!("stale binary {old} — run lean-ctx init --repair")
     } else {
         format!("ok ({})", path.display())
     };
@@ -322,7 +322,7 @@ pub(crate) fn check_hook_wrapper_scripts(
     } else if let Some(s) = stale {
         (
             false,
-            format!("stale binary {s} — run lean-ctx setup --fix"),
+            format!("stale binary {s} — run lean-ctx init --repair"),
         )
     } else {
         (true, format!("ok ({seen} wrapper scripts)"))

@@ -1114,7 +1114,7 @@ fn ensure_state_dir(dir: &std::path::Path) -> bool {
         Ok(()) => true,
         Err(e) => {
             // Always surface — a swallowed dir failure was the #596 footgun.
-            eprintln!("lean-ctx setup: cannot prepare {}: {e}", dir.display());
+            eprintln!("lean-ctx init: cannot prepare {}: {e}", dir.display());
             false
         }
     }

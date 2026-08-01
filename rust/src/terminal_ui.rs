@@ -438,7 +438,7 @@ pub fn print_setup_header() {
     println!();
     println!("  {dim}╭──────────────────────────────────────────╮{rst}");
     println!(
-        "  {dim}│{rst}  {green}{bold}◆ lean-ctx setup{rst}                         {dim}│{rst}"
+        "  {dim}│{rst}  {green}{bold}◆ lean-ctx init{rst}                         {dim}│{rst}"
     );
     println!("  {dim}│{rst}  {dim}Configuring your development environment{rst} {dim}│{rst}");
     println!("  {dim}╰──────────────────────────────────────────╯{rst}");

@@ -72,7 +72,7 @@ pub(super) fn run_integrations(opts: &IntegrationsOptions) -> i32 {
         binary: binary.clone(),
         integrations,
         ok,
-        repair_command: "lean-ctx setup --fix".to_string(),
+        repair_command: "lean-ctx init --repair".to_string(),
     };
 
     if opts.json {

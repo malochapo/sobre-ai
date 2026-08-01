@@ -176,7 +176,7 @@ pub(crate) fn check_rules_file(path: &std::path::Path) -> NamedCheck {
     }
 }
 
-/// Cascade hook health for Windsurf (#593). `lean-ctx setup` writes observe +
+/// Cascade hook health for Windsurf (#593). `lean-ctx init` writes observe +
 /// pre_mcp_tool_use hooks into `~/.codeium/windsurf/hooks.json`; the `hook
 /// observe` command is the stable marker. A missing file is genuine drift, fixed
 /// by re-running setup.
@@ -189,7 +189,7 @@ pub(crate) fn check_windsurf_hooks(home: &std::path::Path) -> NamedCheck {
         detail: if ok {
             format!("ok ({})", path.display())
         } else {
-            "missing (run: lean-ctx setup)".to_string()
+            "missing (run: lean-ctx init)".to_string()
         },
     }
 }

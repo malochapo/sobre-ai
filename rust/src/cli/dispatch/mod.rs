@@ -684,7 +684,7 @@ mod tests {
     #[test]
     fn quickstart_is_short_and_points_to_setup() {
         let q = quickstart_text();
-        assert!(q.contains("lean-ctx wrap"), "quickstart must point to wrap");
+        assert!(q.contains("lean-ctx init"), "quickstart must point to wrap");
         assert!(q.contains("lean-ctx help"), "quickstart must point to help");
         // Must stay a *quickstart*, not the full reference — keep it tight.
         assert!(

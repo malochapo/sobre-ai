@@ -271,7 +271,7 @@ pub fn format_cep_report() -> String {
                     .to_string(),
             );
             out.push(format!(
-                "     Run {sec}lean-ctx setup{rst} to auto-configure your editors."
+                "     Run {sec}lean-ctx init{rst} to auto-configure your editors."
             ));
         }
         out.push(String::new());

@@ -30,3 +30,6 @@ rename*.txt
 # Throwaway build logs / scratch
 _scratch/
 *.buildlog.txt
+
+# Un test a cree ce repertoire avec la variable non developpee.
+%SystemDrive%/

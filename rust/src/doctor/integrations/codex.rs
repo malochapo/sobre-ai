@@ -275,7 +275,7 @@ pub(crate) fn check_codex_hooks_json(home: &std::path::Path, binary: &str) -> Na
     let detail = if !entries_ok {
         format!("missing managed entries ({})", path.display())
     } else if let Some(old) = stale {
-        format!("stale binary {old} — run lean-ctx setup --fix")
+        format!("stale binary {old} — run lean-ctx init --repair")
     } else {
         format!("ok ({})", path.display())
     };

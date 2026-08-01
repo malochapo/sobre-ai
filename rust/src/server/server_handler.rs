@@ -181,7 +181,7 @@ impl ServerHandler for LeanCtxServer {
                     // The on-demand SKILL.md belongs to the same steering surface
                     // as the rules block: the session-start heal writes rules for
                     // every detected client, so a fresh machine that never ran
-                    // `lean-ctx setup` otherwise carries a permanent doctor
+                    // `lean-ctx init` otherwise carries a permanent doctor
                     // warning ("SKILL.md not installed"). Idempotent + gated on
                     // the same opt-outs as setup (rules_injection=off inside,
                     // auto_inject_skills=Some(false) here).

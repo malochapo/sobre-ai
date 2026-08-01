@@ -28,11 +28,27 @@ pub fn optimize_tools(tools: Vec<rmcp::model::Tool>, client_name: &str) -> Vec<r
         .collect();
     let optimized = list_tools_opt::optimize_descriptions(tuples, client_name);
 
+    // Re-index by name, never by position. `optimize_schemas` sorts entries by
+    // estimated token size and drops them when the budget is exceeded, so the
+    // returned vec is neither in the input order nor necessarily the same
+    // length. Zipping it against the original list handed each tool the
+    // description of whichever tool happened to land at its index, and silently
+    // truncated the surface when entries had been dropped.
+    //
+    // A tool missing from the result keeps its own description: the optimizer
+    // dropping it is a budget decision about prose, not permission to stop
+    // advertising it.
+    let mut by_name: std::collections::HashMap<String, String> = optimized
+        .into_iter()
+        .map(|(name, description, _)| (name, description))
+        .collect();
+
     tools
         .into_iter()
-        .zip(optimized)
-        .map(|(mut tool, (_, description, _))| {
-            tool.description = Some(Cow::Owned(description));
+        .map(|mut tool| {
+            if let Some(description) = by_name.remove(tool.name.as_ref()) {
+                tool.description = Some(Cow::Owned(description));
+            }
             tool
         })
         .collect()
@@ -95,4 +111,50 @@ mod tests {
             "unknown-client"
         ));
     }
+    /// Every tool must keep its OWN description.
+    ///
+    /// `optimize_schemas` sorts entries by estimated token size and drops them
+    /// when over budget, so its output is neither in the input order nor the
+    /// same length. This used to be zipped against the original list by
+    /// position, which handed each tool someone else's description — and
+    /// truncated the advertised surface whenever an entry had been dropped.
+    /// Only clients the kernel considers addressable (Cursor, Zed) were hit.
+    #[test]
+    fn descriptions_stay_with_their_own_tool() {
+        let _guard = setup();
+
+        let tools = crate::server::registry::build_registry().tool_defs();
+        let before: std::collections::HashMap<String, String> = tools
+            .iter()
+            .map(|t| {
+                (
+                    t.name.to_string(),
+                    t.description.as_deref().unwrap_or("").to_owned(),
+                )
+            })
+            .collect();
+
+        let after = super::optimize_tools(tools, "cursor");
+
+        assert_eq!(
+            after.len(),
+            before.len(),
+            "optimization must not drop tools from the advertised surface"
+        );
+        for tool in &after {
+            let original = &before[tool.name.as_ref()];
+            let got = tool.description.as_deref().unwrap_or("");
+            // The optimizer may compress a description, but the result must be
+            // derived from that tool's own text — never from another tool's.
+            let belongs_elsewhere = before
+                .iter()
+                .any(|(name, text)| name != tool.name.as_ref() && text == got && text != original);
+            assert!(
+                !belongs_elsewhere,
+                "{} was given another tool's description",
+                tool.name
+            );
+        }
+    }
+
 }

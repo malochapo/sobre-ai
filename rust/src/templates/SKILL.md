@@ -9,7 +9,7 @@ description: Context Engineering for AI Agents — 81 MCP tools, 10 read modes, 
 
 ```bash
 which lean-ctx || curl -fsSL https://raw.githubusercontent.com/yvgude/lean-ctx/main/skills/lean-ctx/scripts/install.sh | bash
-lean-ctx setup
+lean-ctx init
 ```
 
 ## Core Tools (10 always visible)

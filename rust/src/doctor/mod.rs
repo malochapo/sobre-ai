@@ -218,7 +218,7 @@ pub fn run() -> u32 {
 
     // #594: a `config.toml` stranded in the data dir means the MCP server (an
     // older `LEAN_CTX_DATA_DIR` env collapsed its layout) and the CLI were
-    // reading *different* config. Flag it; `lean-ctx setup`/`update` and
+    // reading *different* config. Flag it; `lean-ctx init`/`update` and
     // `doctor --fix` relocate it to the config dir so both agree again.
     if let Some(stray) = crate::core::config_heal::pending() {
         board.check(&Outcome {

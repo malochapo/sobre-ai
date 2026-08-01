@@ -265,7 +265,7 @@ pub(super) fn should_persist_codex_chatgpt_optin(env_present: bool, current: Opt
 
 /// Bridges the shell's `LEAN_CTX_CODEX_CHATGPT_PROXY` opt-in into `config.toml` so
 /// the managed proxy and every env-less setup pass (the LaunchAgent / systemd
-/// proxy, the lean-ctx daemon, editor integrations, `lean-ctx setup`) honor it —
+/// proxy, the lean-ctx daemon, editor integrations, `lean-ctx init`) honor it —
 /// none of them inherit the shell env (#449 / #590). Without this the foreground
 /// `proxy enable` writes Codex's local `chatgpt_base_url`, but the next env-less
 /// `install_proxy_env` pass sees the opt-in as `false` and strips it straight back

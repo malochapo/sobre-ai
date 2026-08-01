@@ -12,8 +12,8 @@ With no arguments, lean-ctx speaks the MCP protocol on stdin/stdout — that is
 for your AI editor, not for interactive use, so it is waiting silently. You
 probably want one of these:
 
-  lean-ctx wrap cursor   One-command setup for Cursor (recommended)
-  lean-ctx wrap claude   One-command setup for Claude Code
+  lean-ctx init cursor   One-command setup for Cursor (recommended)
+  lean-ctx init claude   One-command setup for Claude Code
   lean-ctx doctor        Check that everything is wired up correctly
   lean-ctx help          Common commands (or `help all` for everything)
 
