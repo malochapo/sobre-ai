@@ -220,7 +220,7 @@ mod tests {
     /// `Config::default()` and it never appears in `config_derived_keys`: such a
     /// field is settable via `config set` **only** if it was hand-added to a
     /// `sections_*.rs` schema. Forgetting that is the `Unknown config key: <x>`
-    /// regression a user hit for `path_jail` before #507 (and `persona` /
+    /// regression a user hit for `path_jail` before #507 (and
     /// `bypass_hints` here). Guard the whole class so a new `Option` knob can't
     /// silently become un-settable again — if you add an `Option` scalar to
     /// `Config`, register it in `sections_*.rs` and list it here.
@@ -229,7 +229,6 @@ mod tests {
         let schema = ConfigSchema::generate();
         for key in [
             "path_jail",
-            "persona",
             "bypass_hints",
             "shell_security",
             "cache_policy",

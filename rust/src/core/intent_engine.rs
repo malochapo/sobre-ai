@@ -28,8 +28,7 @@ impl TaskType {
         }
     }
 
-    /// All task types in declaration order. The default (coding) intent
-    /// taxonomy; personas can override it (12.16).
+    /// All task types in declaration order.
     pub fn all() -> &'static [TaskType] {
         &[
             Self::Generate,

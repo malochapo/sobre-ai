@@ -187,7 +187,7 @@ pub fn config_dir() -> Result<PathBuf, String> {
 /// Resolve a member (a file or sub-directory) of the config dir, adopting a copy
 /// that older builds wrote under the OS-native `dirs::config_dir()` location.
 ///
-/// Before #594 (A3), providers/personas/plugins/multi-repo config resolved via
+/// Before #594 (A3), providers/multi-repo config resolved via
 /// `dirs::config_dir()` — on macOS `~/Library/Application Support`, a *different*
 /// base than the `$XDG_CONFIG_HOME/lean-ctx` dir used for `config.toml`, so those
 /// features silently diverged from the main config. Routing them through

@@ -16,12 +16,11 @@ use serde_json::{Value, json};
 use crate::core::contracts::{CAPABILITIES_CONTRACT_VERSION, status_kv, versions_kv};
 
 /// Stable, documented top-level keys of the capabilities document.
-pub const TOP_LEVEL_KEYS: [&str; 11] = [
+pub const TOP_LEVEL_KEYS: [&str; 10] = [
     "contract_version",
     "server",
     "plane",
     "transports",
-    "presets",
     "read_modes",
     "tools",
     "features",
@@ -35,19 +34,14 @@ pub fn capabilities_value() -> Value {
     let manifest = crate::core::mcp_manifest::manifest_value();
     let tool_names = tool_names(&manifest);
     let read_modes = manifest.get("read_modes").cloned().unwrap_or(Value::Null);
-    let active_persona =
-        crate::core::persona::Persona::resolve(&crate::core::config::Config::load());
-
     json!({
         "contract_version": CAPABILITIES_CONTRACT_VERSION,
         "server": {
             "name": "lean-ctx",
             "version": env!("CARGO_PKG_VERSION"),
-            "persona": active_persona.name,
         },
         "plane": "personal",
         "transports": ["stdio-mcp", "http-mcp", "rest", "sse"],
-        "presets": crate::core::persona::Persona::builtin_names(),
         "read_modes": read_modes,
         "tools": {
             "total": tool_names.len(),

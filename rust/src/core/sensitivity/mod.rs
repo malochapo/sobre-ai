@@ -119,26 +119,6 @@ impl SensitivityConfig {
         }
         self.enabled
     }
-
-    /// Fold the active persona's `sensitivity_floor` (persona-spec-v1) into
-    /// this config. A floor above `Public` turns enforcement on and can only
-    /// *tighten* the floor (`min`, since lower levels enforce more) — it never
-    /// relaxes an explicit `[sensitivity]` setting. `Public` (the `coding`
-    /// default) is the "no opinion" sentinel: the config passes through
-    /// unchanged. The `LEAN_CTX_SENSITIVITY=off` kill switch still wins via
-    /// [`Self::enabled_effective`].
-    #[must_use]
-    pub fn with_persona_floor(mut self, floor: SensitivityLevel) -> Self {
-        if floor > SensitivityLevel::Public {
-            if self.enabled {
-                self.policy_floor = self.policy_floor.min(floor);
-            } else {
-                self.enabled = true;
-                self.policy_floor = floor;
-            }
-        }
-        self
-    }
 }
 
 /// Outcome of enforcing the floor on a single text item.
@@ -293,43 +273,6 @@ mod tests {
             }
             other => panic!("expected Redacted, got {other:?}"),
         }
-    }
-
-    #[test]
-    fn persona_floor_public_is_a_noop() {
-        // The coding default ("public") must never flip enforcement on.
-        let cfg = SensitivityConfig::default().with_persona_floor(SensitivityLevel::Public);
-        assert_eq!(cfg, SensitivityConfig::default());
-    }
-
-    #[test]
-    fn persona_floor_enables_enforcement_when_config_is_off() {
-        // lead-gen declares "confidential" → PII protection out of the box.
-        let cfg = SensitivityConfig::default().with_persona_floor(SensitivityLevel::Confidential);
-        assert!(cfg.enabled);
-        assert_eq!(cfg.policy_floor, SensitivityLevel::Confidential);
-    }
-
-    #[test]
-    fn persona_floor_only_tightens_an_enabled_config() {
-        let base = SensitivityConfig {
-            enabled: true,
-            policy_floor: SensitivityLevel::Secret,
-            action: FloorAction::Redact,
-        };
-        // Persona floor below the configured floor → tightened (min wins).
-        let tightened = base.clone().with_persona_floor(SensitivityLevel::Internal);
-        assert_eq!(tightened.policy_floor, SensitivityLevel::Internal);
-        // Config already stricter than the persona → unchanged.
-        let strict = SensitivityConfig {
-            enabled: true,
-            policy_floor: SensitivityLevel::Internal,
-            action: FloorAction::Redact,
-        };
-        let kept = strict
-            .clone()
-            .with_persona_floor(SensitivityLevel::Confidential);
-        assert_eq!(kept.policy_floor, SensitivityLevel::Internal);
     }
 
     #[test]

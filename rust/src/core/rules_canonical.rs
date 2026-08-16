@@ -1249,26 +1249,39 @@ mod tests {
         }
     }
 
+    /// The tier no longer selects tools, so the only thing left that varies
+    /// is the `ctx_call` fallback line: `ctx_call_fallback` returns `None`
+    /// for Power and a line for every other tier. Production always renders
+    /// Power, so that line never ships — but the branch is still there.
     #[test]
-    fn minimal_rules_shorter_than_standard() {
+    fn only_the_ctx_call_fallback_varies_by_tier() {
         use super::super::tool_profiles::ToolProfile;
-        let min = render(
-            false,
-            Wrapper::Dedicated,
-            CompressionLevel::Off,
-            &ToolProfile::Minimal,
-        );
-        let std = render(
-            false,
-            Wrapper::Dedicated,
-            CompressionLevel::Off,
-            &ToolProfile::Standard,
-        );
-        assert!(
-            min.len() < std.len(),
-            "minimal ({}) must be shorter than standard ({})",
-            min.len(),
-            std.len()
+        use super::super::rules_sections as rs;
+        let render_for = |p: &ToolProfile| {
+            render(false, Wrapper::Dedicated, CompressionLevel::Off, p)
+        };
+        let minimal = render_for(&ToolProfile::Minimal);
+        let standard = render_for(&ToolProfile::Standard);
+        let power = render_for(&ToolProfile::Power);
+
+        assert_eq!(minimal, standard, "the tiers no longer select tools");
+
+        let fallback = rs::ctx_call_fallback(&ToolProfile::Minimal).expect("non-Power");
+        assert!(minimal.contains(&fallback), "non-Power must carry the fallback");
+        assert!(!power.contains(&fallback), "Power must omit the fallback");
+        // Compare the content lines, blank-line layout aside: the fallback is
+        // appended as its own section, so dropping it also drops a separator.
+        let body = |s: &str| {
+            s.lines()
+                .map(str::trim)
+                .filter(|l| !l.is_empty() && *l != fallback.trim())
+                .map(str::to_string)
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(
+            body(&minimal),
+            body(&power),
+            "the fallback line must be the only difference"
         );
     }
 

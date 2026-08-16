@@ -181,7 +181,6 @@ fn resolve_dynamic(kind: DynamicKind) -> Vec<Completion> {
         DynamicKind::Shells => &["bash", "zsh", "fish", "powershell"],
         DynamicKind::Modes => &["mcp", "hybrid"],
         DynamicKind::ConfigKeys => &[],
-        DynamicKind::Profiles => crate::core::tool_profiles::PROFILE_NAMES,
         DynamicKind::TerseLevel => &["off", "lite", "standard", "max"],
     };
     items

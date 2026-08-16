@@ -177,7 +177,6 @@ fn read_web(opts: &ReadOptions) -> Result<ReadResult, String> {
     };
 
     let body = render_mode(effective, &markdown, &links, &doc.final_url, opts);
-    let body = apply_persona_compressor(body, effective);
     let trimmed = enforce_budget(&body, opts.max_tokens);
     let citation = Citation::new(&doc.final_url, title);
 
@@ -215,7 +214,6 @@ fn read_youtube(video_id: &str, opts: &ReadOptions) -> Result<ReadResult, String
         ),
     };
 
-    let body = apply_persona_compressor(body, effective);
     let trimmed = enforce_budget(&body, opts.max_tokens);
     let citation = Citation::new(&transcript.source_url, transcript.title);
 
@@ -322,41 +320,13 @@ fn render_quotes(claims: &[Claim]) -> String {
         .join("\n\n")
 }
 
-/// persona-spec-v1 — apply the active persona's registry compressor to
-/// flowing-text modes (`research` → `markdown`, `support`/`lead-gen` →
-/// `prose`). Extractive modes (facts/quotes/links) stay verbatim: their lines
-/// are claims and citations whose wording must not be rewritten. `identity`
-/// (the `coding` default) is a guaranteed no-op and skips the registry lookup.
-fn apply_persona_compressor(body: String, mode: ReadMode) -> String {
-    if !matches!(
-        mode,
-        ReadMode::Auto | ReadMode::Markdown | ReadMode::Text | ReadMode::Transcript
-    ) {
-        return body;
-    }
-    let name = crate::core::persona::active().compressor;
-    if name == "identity" {
-        return body;
-    }
-    let Some(compressor) = crate::core::extension_registry::global()
-        .read()
-        .ok()
-        .and_then(|reg| reg.compressor(&name))
-    else {
-        tracing::debug!("persona compressor '{name}' not registered; passing through");
-        return body;
-    };
-    compressor.compress(&body, None)
-}
-
 fn enforce_budget(content: &str, max_tokens: usize) -> String {
     let tokens = crate::core::tokens::count_tokens(content);
     if tokens <= max_tokens {
         return content.to_string();
     }
-    // persona-spec-v1 — cut at the persona chunker's boundaries (paragraphs
-    // for research/support/lead-gen, line windows for coding/data-analysis)
-    // so the truncation lands between units of meaning, not mid-sentence.
+    // Cut at the chunker's 50-line window boundaries so the truncation lands
+    // between units of meaning, not mid-sentence.
     if let Some(trimmed) = trim_at_chunk_boundaries(content, max_tokens) {
         return trimmed;
     }
@@ -369,7 +339,7 @@ fn enforce_budget(content: &str, max_tokens: usize) -> String {
     format!("{truncated}\n\n…[truncated to fit ~{max_tokens} token budget]")
 }
 
-/// Trim `content` to whole persona-chunker chunks within `max_tokens`.
+/// Trim `content` to whole chunker chunks within `max_tokens`.
 ///
 /// Each kept chunk is located back in the original text (chunkers may trim
 /// separators), so the cut always lands on real source bytes. Returns `None`
@@ -378,11 +348,13 @@ fn enforce_budget(content: &str, max_tokens: usize) -> String {
 /// fits — callers then fall back to the proportional character cut.
 fn trim_at_chunk_boundaries(content: &str, max_tokens: usize) -> Option<String> {
     use crate::core::tokens::count_tokens;
-    let name = crate::core::persona::active().chunker;
+    // The `lines` chunker: fixed 50-line windows. This name used to come from
+    // the active persona; the one persona that survived declared "lines".
+    let name = "lines";
     let chunker = crate::core::extension_registry::global()
         .read()
         .ok()?
-        .chunker(&name)?;
+        .chunker(name)?;
     let chunks = chunker.chunk(content);
     if chunks.len() < 2 {
         return None;
@@ -496,64 +468,23 @@ mod tests {
     }
 
     #[test]
-    fn persona_chunker_trims_at_paragraph_boundaries() {
-        let _guard = crate::core::data_dir::test_env_lock();
-        crate::test_env::set_var("LEAN_CTX_PERSONA", "research");
+    fn budget_cut_lands_on_a_chunk_boundary() {
+        // enforce_budget trims at the `lines` chunker's 50-line windows rather
+        // than mid-sentence; the proportional character cut is the last resort.
+        let line = "alpha beta gamma delta epsilon zeta eta theta";
+        let content = (0..150).map(|_| line).collect::<Vec<_>>().join("
+");
+        let window = (0..50).map(|_| line).collect::<Vec<_>>().join("
+");
+        let budget = crate::core::tokens::count_tokens(&window) * 2 + 1;
 
-        let para = "alpha beta gamma delta epsilon zeta eta theta";
-        let content = format!("{para}\n\n{para}\n\n{para}\n\n{para}");
-        let budget = crate::core::tokens::count_tokens(para) * 2 + 1;
         let out = enforce_budget(&content, budget);
 
-        crate::test_env::remove_var("LEAN_CTX_PERSONA");
-
         assert!(out.contains("[truncated"), "{out}");
-        // The cut lands on a paragraph boundary: kept paragraphs verbatim,
-        // no mid-word fragment before the marker.
-        let body = out.split("\n\n…[truncated").next().unwrap();
-        assert_eq!(body, format!("{para}\n\n{para}"), "{out}");
-    }
+        let body = out.split("
 
-    #[test]
-    fn persona_compressor_strips_markdown_noise_for_research() {
-        let _guard = crate::core::data_dir::test_env_lock();
-        crate::test_env::set_var("LEAN_CTX_PERSONA", "research");
-
-        let body = "Intro ![badge](https://img.example/b.svg)\n\n\
-                    See [the docs](https://docs.example/page) for details."
-            .to_string();
-        let out = apply_persona_compressor(body, ReadMode::Markdown);
-
-        crate::test_env::remove_var("LEAN_CTX_PERSONA");
-
-        assert!(out.contains("the docs"), "{out}");
-        assert!(!out.contains("https://docs.example"), "{out}");
-        assert!(!out.contains("img.example"), "{out}");
-    }
-
-    #[test]
-    fn persona_compressor_leaves_extractive_modes_verbatim() {
-        let _guard = crate::core::data_dir::test_env_lock();
-        crate::test_env::set_var("LEAN_CTX_PERSONA", "research");
-
-        let body = "- (0.90) A [cited](https://src.example) claim.".to_string();
-        let out = apply_persona_compressor(body.clone(), ReadMode::Facts);
-
-        crate::test_env::remove_var("LEAN_CTX_PERSONA");
-
-        assert_eq!(out, body);
-    }
-
-    #[test]
-    fn persona_compressor_is_identity_for_coding() {
-        let _guard = crate::core::data_dir::test_env_lock();
-        crate::test_env::set_var("LEAN_CTX_PERSONA", "coding");
-
-        let body = "Anything ![badge](https://img.example/b.svg) stays.".to_string();
-        let out = apply_persona_compressor(body.clone(), ReadMode::Markdown);
-
-        crate::test_env::remove_var("LEAN_CTX_PERSONA");
-
-        assert_eq!(out, body);
+…[truncated").next().unwrap();
+        assert_eq!(body, format!("{window}
+{window}"));
     }
 }

@@ -195,7 +195,6 @@ pub fn contract_docs() -> Vec<ContractDoc> {
             1,
             Stable,
         ),
-        doc("persona-spec", "persona-spec-v1.md", 1, Stable),
         doc(
             "provider-framework",
             "provider-framework-contract-v1.md",

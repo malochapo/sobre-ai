@@ -193,103 +193,75 @@ pub fn ctx_call_fallback(p: &ToolProfile) -> Option<String> {
 mod tests {
     use super::*;
 
+    /// Invariant 3: the surface is the registry, so the injected rules text is
+    /// the same whatever tier is handed in. What still matters is *what* it
+    /// says — the tests below pin the content, not the tier.
     #[test]
-    fn intent_minimal_omits_compose_and_callgraph() {
-        let text = intent_section(&ToolProfile::Minimal);
-        assert!(!text.contains("ctx_compose"), "minimal has no ctx_compose");
-        assert!(
-            !text.contains("ctx_callgraph"),
-            "minimal has no ctx_callgraph"
-        );
-        assert!(!text.contains("ctx_patch"), "minimal has no ctx_patch");
-        assert!(text.contains("ctx_read"), "minimal always has ctx_read");
-        assert!(text.contains("ctx_search"), "minimal always has ctx_search");
-    }
-
-    #[test]
-    fn intent_standard_includes_compose_and_callgraph() {
-        let text = intent_section(&ToolProfile::Standard);
-        assert!(text.contains("ctx_compose"), "standard has ctx_compose");
-        assert!(text.contains("ctx_callgraph"), "standard has ctx_callgraph");
-        assert!(text.contains("ctx_patch"), "standard has ctx_patch");
-    }
-
-    #[test]
-    fn intent_power_matches_full_set() {
-        let text = intent_section(&ToolProfile::Power);
-        assert!(text.contains("ctx_compose"));
-        assert!(text.contains("ctx_callgraph"));
-        assert!(text.contains("ctx_patch"));
-        assert!(text.contains("ctx_session"));
-    }
-
-    #[test]
-    fn intent_uses_folded_search_actions() {
-        for p in [
+    fn sections_do_not_vary_by_tier() {
+        let tiers = [
             ToolProfile::Minimal,
             ToolProfile::Standard,
             ToolProfile::Power,
+        ];
+        for section in [
+            intent_section as fn(&ToolProfile) -> String,
+            hook_covered_tools_section,
+            shadow_minimal_section,
+            anti_section,
+            litm_end_section,
         ] {
-            let text = intent_section(&p);
-            assert!(
-                !text.contains("ctx_symbol"),
-                "must use ctx_search(action=symbol), not ctx_symbol"
-            );
-            assert!(
-                !text.contains("ctx_semantic_search"),
-                "must use ctx_search(action=semantic), not ctx_semantic_search"
-            );
-            assert!(text.contains("ctx_search(action=symbol)"));
-            assert!(text.contains("ctx_search(action=semantic)"));
+            let reference = section(&tiers[0]);
+            for t in &tiers[1..] {
+                assert_eq!(section(t), reference, "section varies for {t}");
+            }
         }
     }
 
     #[test]
-    fn hook_covered_tools_respects_profile() {
-        let min = hook_covered_tools_section(&ToolProfile::Minimal);
-        assert!(!min.contains("ctx_compose"), "minimal: no compose");
-        assert!(!min.contains("ctx_callgraph"), "minimal: no callgraph");
-        assert!(
-            min.contains("ctx_read"),
-            "minimal: always has ctx_read mapping"
-        );
-        assert!(
-            min.contains("ctx_search"),
-            "minimal: always has ctx_search mapping"
-        );
-        assert!(
-            min.contains("ctx_shell"),
-            "minimal: always has ctx_shell mapping"
-        );
-
-        let std = hook_covered_tools_section(&ToolProfile::Standard);
-        assert!(std.contains("ctx_compose"), "standard: compose present");
-        assert!(std.contains("ctx_callgraph"), "standard: callgraph present");
+    fn intent_names_the_whole_toolbox() {
+        let text = intent_section(&ToolProfile::Power);
+        for tool in ["ctx_read", "ctx_search", "ctx_compose", "ctx_callgraph", "ctx_patch"] {
+            assert!(text.contains(tool), "intent section must name {tool}");
+        }
     }
 
     #[test]
-    fn shadow_minimal_respects_profile() {
-        let min = shadow_minimal_section(&ToolProfile::Minimal);
-        assert!(!min.contains("ctx_compose"));
-        assert!(!min.contains("ctx_callgraph"));
-        assert!(min.contains("ctx_search(action=symbol)"));
-        assert!(!min.contains("ctx_patch"));
-
-        let power = shadow_minimal_section(&ToolProfile::Power);
-        assert!(power.contains("ctx_patch"));
+    fn intent_uses_folded_search_actions() {
+        let text = intent_section(&ToolProfile::Power);
+        assert!(
+            !text.contains("ctx_symbol"),
+            "must use ctx_search(action=symbol), not ctx_symbol"
+        );
+        assert!(
+            !text.contains("ctx_semantic_search"),
+            "must use ctx_search(action=semantic), not ctx_semantic_search"
+        );
+        assert!(text.contains("ctx_search(action=symbol)"));
+        assert!(text.contains("ctx_search(action=semantic)"));
     }
 
     #[test]
-    fn anti_minimal_omits_compose_chain() {
-        let text = anti_section(&ToolProfile::Minimal);
-        assert!(
-            !text.contains("ctx_compose"),
-            "minimal: no compose anti-pattern"
-        );
-        assert!(
-            text.contains("ctx_read(mode=full)"),
-            "universal anti-pattern stays"
-        );
+    fn hook_covered_section_maps_the_native_tools() {
+        let text = hook_covered_tools_section(&ToolProfile::Power);
+        for tool in ["ctx_read", "ctx_search", "ctx_shell", "ctx_compose", "ctx_callgraph"] {
+            assert!(text.contains(tool), "hook-covered mapping must name {tool}");
+        }
+    }
+
+    #[test]
+    fn anti_section_keeps_the_universal_pattern() {
+        let text = anti_section(&ToolProfile::Power);
+        assert!(text.contains("ctx_read(mode=full)"));
+        assert!(text.contains("ctx_compose"));
+    }
+
+    #[test]
+    fn litm_end_always_has_core_tools() {
+        let text = litm_end_section(&ToolProfile::Power);
+        assert!(text.contains("ctx_read>Read"));
+        assert!(text.contains("ctx_shell>Shell"));
+        assert!(text.contains("ctx_search>Grep"));
+        assert!(text.contains("ctx_compose"));
     }
 
     #[test]
@@ -301,27 +273,5 @@ mod tests {
     fn ctx_call_fallback_present_for_non_power() {
         assert!(ctx_call_fallback(&ToolProfile::Minimal).is_some());
         assert!(ctx_call_fallback(&ToolProfile::Standard).is_some());
-    }
-
-    #[test]
-    fn litm_end_always_has_core_tools() {
-        for p in [
-            ToolProfile::Minimal,
-            ToolProfile::Standard,
-            ToolProfile::Power,
-        ] {
-            let text = litm_end_section(&p);
-            assert!(text.contains("ctx_read>Read"));
-            assert!(text.contains("ctx_shell>Shell"));
-            assert!(text.contains("ctx_search>Grep"));
-        }
-    }
-
-    #[test]
-    fn litm_end_compose_only_when_enabled() {
-        let min = litm_end_section(&ToolProfile::Minimal);
-        assert!(!min.contains("ctx_compose"));
-        let std = litm_end_section(&ToolProfile::Standard);
-        assert!(std.contains("ctx_compose"));
     }
 }

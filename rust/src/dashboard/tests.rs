@@ -309,21 +309,6 @@ fn api_context_overlay_evict_removes_ledger_entry() {
 }
 
 #[test]
-fn api_profile_returns_json() {
-    let (_status, _ct, body) =
-        routes::route_response("/api/profile", "", None, None, false, "GET", "");
-    let v: serde_json::Value = serde_json::from_str(&body).expect("valid JSON");
-    assert!(v.get("active_name").is_some(), "missing active_name");
-    assert!(
-        v.pointer("/profile/profile/name")
-            .and_then(|n| n.as_str())
-            .is_some(),
-        "missing profile.profile.name"
-    );
-    assert!(v.get("available").and_then(|a| a.as_array()).is_some());
-}
-
-#[test]
 fn api_billing_badge_returns_cosmetic_shape() {
     let (status, ct, body) =
         routes::route_response("/api/billing-badge", "", None, None, false, "GET", "");

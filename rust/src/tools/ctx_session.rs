@@ -339,52 +339,6 @@ stale_files: {}\n",
 
         "resume" => session.build_resume_block(),
 
-        "profile" => {
-            use crate::core::profiles;
-            if let Some(name) = value {
-                if let Ok(p) = profiles::set_active_profile(name) {
-                    format!(
-                        "Profile switched to '{name}'.\n\
-                         Read mode: {}, Budget: {} tokens, CRP: {}, Density: {}",
-                        p.read.default_mode_effective(),
-                        p.budget.max_context_tokens_effective(),
-                        p.compression.crp_mode_effective(),
-                        p.compression.output_density_effective(),
-                    )
-                } else {
-                    let available: Vec<String> = profiles::list_profiles()
-                        .iter()
-                        .map(|p| p.name.clone())
-                        .collect();
-                    format!(
-                        "Profile '{name}' not found. Available: {}",
-                        available.join(", ")
-                    )
-                }
-            } else {
-                let name = profiles::active_profile_name();
-                let p = profiles::active_profile();
-                let list = profiles::list_profiles();
-                let mut out = format!(
-                    "Active profile: {name}\n\
-                     Read: {}, Budget: {} tok, CRP: {}, Density: {}\n\n\
-                     Available profiles:",
-                    p.read.default_mode_effective(),
-                    p.budget.max_context_tokens_effective(),
-                    p.compression.crp_mode_effective(),
-                    p.compression.output_density_effective(),
-                );
-                for info in &list {
-                    let marker = if info.name == name { " *" } else { "  " };
-                    out.push_str(&format!(
-                        "\n{marker} {:<14} ({}) {}",
-                        info.name, info.source, info.description
-                    ));
-                }
-                out.push_str("\n\nSwitch: ctx_session action=profile value=<name>");
-                out
-            }
-        }
 
         "budget" => {
             use crate::core::budget_tracker::BudgetTracker;
@@ -764,7 +718,7 @@ stale_files: {}\n",
         }
 
         _ => format!(
-            "Unknown action: {action}. Use: status, load, save, task, finding, decision, reset, list, cleanup, snapshot, restore, resume, configure, profile, role, budget, slo, diff, output_stats, verify, export, import, episodes, procedures"
+            "Unknown action: {action}. Use: status, load, save, task, finding, decision, reset, list, cleanup, snapshot, restore, resume, configure, role, budget, slo, diff, output_stats, verify, export, import, episodes, procedures"
         ),
     }
 }

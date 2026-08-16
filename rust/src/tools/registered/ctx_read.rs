@@ -177,21 +177,10 @@ impl CtxReadTool {
             crate::core::policy::runtime::active()
                 .and_then(|p| p.resolved.default_read_mode.clone())
         };
-        // persona-spec-v1 — the active persona's `default_read_mode` is the
-        // domain default: after an explicit arg and the org policy pack,
-        // before the profile/auto selection. The `coding` default declares
-        // "auto" → no override, so existing installs are unaffected.
-        let persona_default_mode = if explicit_mode || policy_default_mode.is_some() {
-            None
-        } else {
-            crate::core::persona::active().read_mode_override()
-        };
         let mut mode = if let Some(m) = explicit_mode_arg {
             m
         } else if let Some(pd) = policy_default_mode {
             pd
-        } else if let Some(pm) = persona_default_mode {
-            pm
         } else if profile.read.default_mode_effective() == "auto" {
             if let Ok(cache) = cache_lock.try_read() {
                 crate::tools::impl_smart_read::select_mode_with_task(&cache, path, task_ref)

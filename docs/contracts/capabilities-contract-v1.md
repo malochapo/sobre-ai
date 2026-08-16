@@ -20,16 +20,15 @@ The capabilities document has exactly these top-level keys (machine-readable —
 kept in sync with code by the drift test):
 
 <!-- capabilities-top-level-keys -->
-contract_version, server, plane, transports, presets, read_modes, tools, features, extensions, contracts, contract_status
+contract_version, server, plane, transports, read_modes, tools, features, extensions, contracts, contract_status
 <!-- /capabilities-top-level-keys -->
 
 | Key | Type | Meaning |
 |-----|------|---------|
 | `contract_version` | number | This contract's version (`1`). |
-| `server` | object | `{ name, version, persona }` — `version` is the running `lean-ctx` release; `persona` is the active context persona (`persona-spec-v1`, EPIC 12.15). |
+| `server` | object | `{ name, version }` — `version` is the running `lean-ctx` release. |
 | `plane` | string | Deployment plane: `personal` (local), `team`, or `cloud`. The local default is `personal`. See RFC §6 (Local-Free Invariant). |
 | `transports` | string[] | Wire transports this instance speaks: `stdio-mcp`, `http-mcp`, `rest`, `sse`. |
-| `presets` | string[] | Built-in context personas (`persona-spec-v1`, EPIC 12.15/12.16). Today: `coding` (the historical default); non-coding presets land in 12.16. |
 | `read_modes` | object | `{ count, modes }` — the `ctx_read` modes this build supports (mirrors the MCP manifest). |
 | `tools` | object | `{ total, names }` — the granular tool surface available on this instance. |
 | `features` | object | Capability flags. Always-on capabilities are `true`; feature-gated ones (`semantic_search`, `ast_compression`, `team_server`, `cloud_server`, `http_server`, `gateway_server`) mirror the compiled Cargo features. |
@@ -42,10 +41,9 @@ contract_version, server, plane, transports, presets, read_modes, tools, feature
 ```json
 {
   "contract_version": 1,
-  "server": { "name": "lean-ctx", "version": "3.7.1", "persona": "coding" },
+  "server": { "name": "lean-ctx", "version": "3.7.1" },
   "plane": "personal",
   "transports": ["stdio-mcp", "http-mcp", "rest", "sse"],
-  "presets": ["coding", "data-analysis", "lead-gen", "research", "support"],
   "read_modes": { "count": 10, "modes": ["auto", "full", "map", "signatures", "diff", "aggressive", "entropy", "task", "reference", "lines:N-M"] },
   "tools": { "total": 42, "names": ["ctx_read", "ctx_search", "..."] },
   "features": {
@@ -72,13 +70,13 @@ contract_version, server, plane, transports, presets, read_modes, tools, feature
 This policy governs the whole `/v1` HTTP/MCP surface, not just this endpoint.
 
 1. **Additive changes are non-breaking.** New top-level keys, new tools, new
-   feature flags, new presets/extensions, and new enum *values* may be added
+   feature flags, new extensions, and new enum *values* may be added
    within `v1`. Clients **must ignore unknown fields**.
 2. **Breaking changes bump the path.** Removing/renaming a key, changing a
    type, or changing the meaning of a value requires a new version (`/v2`).
    `v1` does not break under our control.
 3. **Discover, don't assume.** Clients should read `contract_version` and
-   `contracts`, and gate behavior on `features`/`presets`/`extensions` rather
+   `contracts`, and gate behavior on `features`/`extensions` rather
    than hardcoding assumptions about a given release.
 4. **Deprecation window.** A surface marked deprecated stays available for at
    least **two minor releases** after the release that introduces its

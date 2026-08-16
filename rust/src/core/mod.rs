@@ -417,7 +417,6 @@ pub mod path_mode_memory;
 pub mod path_resolve;
 pub mod paths;
 pub mod pathutil;
-pub mod persona;
 pub mod pipeline;
 pub mod portable_binary;
 pub mod profile_suggest;
