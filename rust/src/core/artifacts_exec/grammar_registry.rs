@@ -9,7 +9,7 @@
 use std::collections::BTreeMap;
 use std::sync::OnceLock;
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use super::grammar_manifest::GrammarManifest;
 
@@ -123,6 +123,66 @@ pub fn validate_entries(entries: &[GrammarManifest]) -> Vec<String> {
     problems
 }
 
+// ── Canonical snapshot form ────────────────────────────────
+//
+// `data/grammar_registry.json` is a generated snapshot, not a hand-maintained
+// document. `gen_registry` rewrites it into one canonical form — entries sorted
+// by name, struct field order, two-space indent, trailing newline — after
+// validating every entry. CI runs `gen_registry --check`, so a hand-edit that
+// bypasses the generator, or a field serde would silently drop, shows up as
+// byte drift and fails the build.
+
+/// Schema-preserving view of the file: `$schema` and `registry_version` must
+/// survive a round-trip, so this cannot reuse [`RegistryFile`], whose
+/// `#[serde(default)]` tolerance is what makes it safe for *reading*.
+#[derive(Debug, Serialize, Deserialize)]
+struct SnapshotFile {
+    #[serde(rename = "$schema")]
+    schema: String,
+    registry_version: u32,
+    grammars: Vec<GrammarManifest>,
+}
+
+/// One canonicalized document plus the fact the generator reports.
+#[derive(Debug)]
+pub struct Snapshot {
+    /// Canonical JSON (ends with a newline).
+    pub canonical: String,
+    pub entry_count: usize,
+}
+
+/// Canonicalize and validate a grammar-registry document.
+pub fn canonical_snapshot(text: &str) -> Result<Snapshot, String> {
+    let mut file: SnapshotFile = serde_json::from_str(text)
+        .map_err(|e| format!("grammar registry does not parse: {e}"))?;
+
+    let problems = validate_entries(&file.grammars);
+    if !problems.is_empty() {
+        return Err(format!(
+            "grammar registry fails validation:\n  {}",
+            problems.join("\n  ")
+        ));
+    }
+    // `validate_entries` already reports duplicate slugs case-insensitively;
+    // this catches two entries whose names differ only by case, which would
+    // make the sort below — and so the canonical bytes — order-dependent.
+    let mut seen = std::collections::BTreeSet::new();
+    for g in &file.grammars {
+        if !seen.insert(g.name.clone()) {
+            return Err(format!("duplicate grammar entry: {}", g.name));
+        }
+    }
+    file.grammars.sort_by(|a, b| a.name.cmp(&b.name));
+
+    let entry_count = file.grammars.len();
+    let mut canonical = serde_json::to_string_pretty(&file).map_err(|e| e.to_string())?;
+    canonical.push('\n');
+    Ok(Snapshot {
+        canonical,
+        entry_count,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -131,6 +191,33 @@ mod tests {
     fn bundled_registry_is_valid() {
         let problems = validate_entries(bundled());
         assert!(problems.is_empty(), "{problems:?}");
+    }
+
+    /// The same invariant `gen_registry --check` enforces in CI, kept as a lib
+    /// test so `cargo test` alone catches drift.
+    #[test]
+    fn bundled_registry_is_canonical() {
+        let snap = canonical_snapshot(BUNDLED).expect("canonicalize");
+        assert_eq!(
+            BUNDLED, snap.canonical,
+            "data/grammar_registry.json is not canonical — run: \
+             cargo run --example gen_registry --features dev-tools"
+        );
+    }
+
+    #[test]
+    fn snapshot_preserves_schema_and_trailing_newline() {
+        let snap = canonical_snapshot(BUNDLED).expect("canonicalize");
+        assert!(snap.canonical.contains("\"$schema\""), "{}", snap.canonical);
+        assert!(snap.canonical.contains("\"registry_version\""));
+        assert!(snap.canonical.ends_with('\n'));
+    }
+
+    #[test]
+    fn snapshot_rejects_a_document_missing_the_schema_key() {
+        let err = canonical_snapshot(r#"{"registry_version":1,"grammars":[]}"#)
+            .expect_err("missing $schema must not canonicalize silently");
+        assert!(err.contains("does not parse"), "{err}");
     }
 
     #[test]
