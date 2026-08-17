@@ -1,15 +1,10 @@
 //! Contract tests: verify that canonical rules rendering is consistent.
 //!
-//! Tests use `render(false, ..., CompressionLevel::Off, &ToolProfile::Power)` directly
+//! Tests use `render(false, ..., CompressionLevel::Off)` directly
 //! to bypass config-driven shadow mode, ensuring the non-shadow baseline is always tested.
 
 use lean_ctx::core::config::CompressionLevel;
 use lean_ctx::core::rules_canonical;
-use lean_ctx::core::tool_profiles::ToolProfile;
-
-fn tp() -> ToolProfile {
-    ToolProfile::Power
-}
 
 #[test]
 fn shared_non_shadow_contains_never() {
@@ -17,7 +12,6 @@ fn shared_non_shadow_contains_never() {
         false,
         rules_canonical::Wrapper::Shared,
         CompressionLevel::Off,
-        &tp(),
     );
     assert!(
         content.contains("NEVER"),
@@ -31,7 +25,6 @@ fn dedicated_non_shadow_contains_never() {
         false,
         rules_canonical::Wrapper::Dedicated,
         CompressionLevel::Off,
-        &tp(),
     );
     assert!(
         content.contains("NEVER"),
@@ -45,7 +38,6 @@ fn dedicated_non_shadow_contains_intent_and_anti() {
         false,
         rules_canonical::Wrapper::Dedicated,
         CompressionLevel::Off,
-        &tp(),
     );
     assert!(
         content.contains("Anti-patterns"),
@@ -63,7 +55,6 @@ fn shared_non_shadow_contains_mapping() {
         false,
         rules_canonical::Wrapper::Shared,
         CompressionLevel::Off,
-        &tp(),
     );
     assert!(
         content.contains("MANDATORY MAPPING"),
@@ -77,7 +68,6 @@ fn dedicated_has_markers() {
         false,
         rules_canonical::Wrapper::Dedicated,
         CompressionLevel::Off,
-        &tp(),
     );
     assert!(content.contains(rules_canonical::START_MARK));
     assert!(content.contains(rules_canonical::END_MARK));
@@ -90,7 +80,6 @@ fn bare_has_no_markers() {
         false,
         rules_canonical::Wrapper::Bare,
         CompressionLevel::Off,
-        &tp(),
     );
     assert!(!content.contains(rules_canonical::START_MARK));
     assert!(!content.contains(rules_canonical::END_MARK));
@@ -103,7 +92,7 @@ fn all_wrappers_use_current_version() {
         rules_canonical::Wrapper::Dedicated,
         rules_canonical::Wrapper::Shared,
     ] {
-        let content = rules_canonical::render(false, wrapper, CompressionLevel::Off, &tp());
+        let content = rules_canonical::render(false, wrapper, CompressionLevel::Off);
         assert!(
             content.contains(&version),
             "{wrapper:?} must use current version"
@@ -113,7 +102,6 @@ fn all_wrappers_use_current_version() {
         false,
         rules_canonical::Wrapper::Bare,
         CompressionLevel::Off,
-        &tp(),
     );
     assert!(
         !bare.contains("version:"),

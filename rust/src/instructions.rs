@@ -66,9 +66,7 @@ pub fn build_instructions_for_test(crp_mode: CrpMode) -> String {
     // Resolve the effective compression level from config/env (matches the live
     // build_full_instructions path) so terse/compression env vars are honoured.
     let level = CompressionLevel::effective(&crate::core::config::Config::load());
-    let tp =
-        crate::core::tool_profiles::ToolProfile::from_config(&crate::core::config::Config::load());
-    let skeleton = rc::render(shadow, Wrapper::Bare, level, &tp);
+    let skeleton = rc::render(shadow, Wrapper::Bare, level);
     let shell_hint = build_shell_hint();
 
     let base = format!(
@@ -96,9 +94,7 @@ pub fn build_instructions_with_client_for_compiler(
     client_name: &str,
     _unified_tool_mode: bool,
 ) -> String {
-    let tp =
-        crate::core::tool_profiles::ToolProfile::from_config(&crate::core::config::Config::load());
-    let skeleton = rc::render(true, Wrapper::Bare, CompressionLevel::Off, &tp);
+    let skeleton = rc::render(true, Wrapper::Bare, CompressionLevel::Off);
     let shell_hint = build_shell_hint();
 
     let base = format!(
@@ -303,13 +299,11 @@ fn build_full_instructions(
     // "ctx_* replaces native tools" to a Cursor whose hooks already compress
     // the native calls re-creates exactly the instruction dissonance the
     // HookCovered rule profile removes.
-    let cfg = crate::core::config::Config::load();
-    let tool_profile = crate::core::tool_profiles::ToolProfile::from_config(&cfg);
     let skeleton = if client_loads_rules_from_file(client_name) {
         let anchor = if client_is_hook_covered(client_name) {
-            hook_covered_anchor(&tool_profile)
+            hook_covered_anchor()
         } else {
-            skeleton_anchor(&tool_profile)
+            skeleton_anchor()
         };
         let compression = rc::compression_text(level);
         if compression.is_empty() {
@@ -326,7 +320,7 @@ fn build_full_instructions(
         // Gate on hook coverage: only clients with installed hooks get the
         // shadow instruction.
         let effective_shadow = shadow && client_is_hook_covered(client_name);
-        rc::render(effective_shadow, Wrapper::Bare, level, &tool_profile)
+        rc::render(effective_shadow, Wrapper::Bare, level)
     };
 
     // Pointer to the full rule file (honours CLAUDE_CONFIG_DIR): agents load the
@@ -432,9 +426,9 @@ pub fn claude_code_instructions() -> String {
 }
 
 /// One-line anchor for clients whose rule file carries the canonical block (#578).
-/// Profile-aware (#756): only mentions tools the profile exposes.
-fn skeleton_anchor(tp: &crate::core::tool_profiles::ToolProfile) -> String {
-    if tp.is_tool_enabled("ctx_compose") {
+/// Only names tools that are registered.
+fn skeleton_anchor() -> String {
+    if crate::server::registry::is_registered("ctx_compose") {
         "lean-ctx active — your auto-loaded lean-ctx rules apply: \
          ctx_* tools replace native Read/Grep/Shell/Glob (ctx_compose first)."
             .into()
@@ -445,15 +439,16 @@ fn skeleton_anchor(tp: &crate::core::tool_profiles::ToolProfile) -> String {
     }
 }
 
-/// Anchor for hook-covered hosts (GL #1153). Profile-aware (#756).
-fn hook_covered_anchor(tp: &crate::core::tool_profiles::ToolProfile) -> String {
+/// Anchor for hook-covered hosts (GL #1153). Only names registered tools.
+fn hook_covered_anchor() -> String {
+    use crate::server::registry::is_registered;
     let mut s =
         String::from("lean-ctx active — hooks compress native Shell/Read/Grep transparently");
-    if tp.is_tool_enabled("ctx_compose") {
+    if is_registered("ctx_compose") {
         s.push_str("; call ctx_compose to orient");
     }
     // #509: ctx_semantic_search folded into ctx_search(action=semantic)
-    if tp.is_tool_enabled("ctx_session") || tp.is_tool_enabled("ctx_knowledge") {
+    if is_registered("ctx_session") || is_registered("ctx_knowledge") {
         s.push_str(", ctx_search(action=semantic) / ctx_knowledge for meaning & memory");
     }
     s.push('.');
@@ -527,14 +522,12 @@ mod tests {
         std::fs::create_dir_all(home.join(".cursor/rules")).unwrap();
         let cfg = crate::core::config::Config::load();
         let shadow = cfg.shadow_mode;
-        let tp = crate::core::tool_profiles::ToolProfile::Power;
         std::fs::write(
             home.join(".cursor/rules/lean-ctx.mdc"),
             rc::render(
                 shadow,
                 Wrapper::Dedicated,
                 crate::core::config::CompressionLevel::Standard,
-                &tp,
             ),
         )
         .unwrap();
@@ -610,14 +603,12 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let home = tmp.path();
         std::fs::create_dir_all(home.join(".cursor/rules")).unwrap();
-        let tp = crate::core::tool_profiles::ToolProfile::Power;
         std::fs::write(
             home.join(".cursor/rules/lean-ctx.mdc"),
             rc::render(
                 false,
                 Wrapper::HookCovered,
                 crate::core::config::CompressionLevel::Off,
-                &tp,
             ),
         )
         .unwrap();

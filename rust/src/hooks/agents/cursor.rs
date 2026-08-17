@@ -240,12 +240,10 @@ fn cursor_mdc_content(home: &std::path::Path) -> String {
     } else {
         crate::core::rules_canonical::Wrapper::Dedicated
     };
-    let profile = crate::core::tool_profiles::ToolProfile::from_config(&cfg);
     let body = crate::core::rules_canonical::render(
         cfg.shadow_mode,
         wrapper,
         crate::core::config::CompressionLevel::effective(&cfg),
-        &profile,
     );
     crate::rules_inject::cursor_mdc_document(&body)
 }

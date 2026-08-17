@@ -1,28 +1,26 @@
-//! Profile-aware rules section builders (#756).
+//! Rules section builders (#756).
 //!
-//! Each function generates the text for one rules section, filtering tool
-//! references by the active [`ToolProfile`]. Power profile produces output
-//! identical to the previous static constants; Minimal/Standard/Custom omit
-//! tools the agent cannot call.
+//! Each function generates the text for one rules section. Tool references
+//! are gated on whether the tool is registered, so a name that left the
+//! registry stops being taught to the agent. This used to be gated on the
+//! active profile's tier instead; the tiers no longer select anything.
 //!
 //! Folded-tool alignment (#509): `ctx_symbol` → `ctx_search(action=symbol)`,
 //! `ctx_semantic_search` → `ctx_search(action=semantic)`.
 
-use super::tool_profiles::ToolProfile;
-
-fn has(p: &ToolProfile, name: &str) -> bool {
-    p.is_tool_enabled(name)
+fn has(name: &str) -> bool {
+    crate::server::registry::is_registered(name)
 }
 
 /// Intent-to-tool playbook — only advertises tools the profile exposes.
-pub fn intent_section(p: &ToolProfile) -> String {
+pub fn intent_section() -> String {
     let mut lines = vec!["Tool selection by intent:".to_string()];
 
-    if has(p, "ctx_compose") {
+    if has("ctx_compose") {
         lines.push("• Orient / understand code (call FIRST) -> ctx_compose".into());
     }
 
-    let read_line = if has(p, "ctx_patch") {
+    let read_line = if has("ctx_patch") {
         "• Read a file -> ctx_read(path, mode=signatures|map|full); edit after reading -> ctx_patch"
     } else {
         "• Read a file -> ctx_read(path, mode=signatures|map|full)"
@@ -36,13 +34,13 @@ pub fn intent_section(p: &ToolProfile) -> String {
     lines.push(search_parts.join("; "));
 
     let mut nav = String::from("• Files by glob -> ctx_glob; structure -> ctx_tree");
-    if has(p, "ctx_callgraph") {
+    if has("ctx_callgraph") {
         nav.push_str("; callers/impact -> ctx_callgraph");
     }
     lines.push(nav);
 
     let mut verify = String::from("• Verify after edits -> ctx_shell(test/build)");
-    if has(p, "ctx_session") || has(p, "ctx_knowledge") {
+    if has("ctx_session") || has("ctx_knowledge") {
         verify.push_str("; memory -> ctx_session / ctx_knowledge");
     }
     lines.push(verify);
@@ -57,7 +55,7 @@ pub fn intent_section(p: &ToolProfile) -> String {
 
 /// Mandatory tool mapping on hook-covered hosts (Cursor with hooks).
 /// v8: strict mode — always prefer ctx_* even when hooks would cover native tools.
-pub fn hook_covered_tools_section(p: &ToolProfile) -> String {
+pub fn hook_covered_tools_section() -> String {
     let mut lines = vec!["MANDATORY MAPPING (always use ctx_* instead of native):".to_string()];
 
     lines.push("• Read/cat -> ctx_read(path, mode) — cached, 10 modes, re-reads ~13 tokens".into());
@@ -68,7 +66,7 @@ pub fn hook_covered_tools_section(p: &ToolProfile) -> String {
     );
     lines.push("• Shell/bash -> ctx_shell(command) — 95+ compression patterns".into());
 
-    if has(p, "ctx_compose") {
+    if has("ctx_compose") {
         lines.push(
             "• ctx_compose — orient in code FIRST (bundles search + read + symbols) \
              — call before editing/debugging"
@@ -76,7 +74,7 @@ pub fn hook_covered_tools_section(p: &ToolProfile) -> String {
         );
     }
 
-    if has(p, "ctx_callgraph") {
+    if has("ctx_callgraph") {
         lines.push(
             "• ctx_callgraph — callers, callees, blast radius — use instead of manual \
              file reading"
@@ -84,7 +82,7 @@ pub fn hook_covered_tools_section(p: &ToolProfile) -> String {
         );
     }
 
-    if has(p, "ctx_session") || has(p, "ctx_knowledge") {
+    if has("ctx_session") || has("ctx_knowledge") {
         lines.push(
             "• ctx_session / ctx_knowledge — persistent memory — record decisions & \
              progress after milestones"
@@ -92,7 +90,7 @@ pub fn hook_covered_tools_section(p: &ToolProfile) -> String {
         );
     }
 
-    if has(p, "ctx_expand") {
+    if has("ctx_expand") {
         lines.push("• ctx_expand — recover full text from [Archived]/compressed output".into());
     }
 
@@ -100,10 +98,10 @@ pub fn hook_covered_tools_section(p: &ToolProfile) -> String {
 }
 
 /// Shadow-mode exclusive tools (no native trigger to intercept).
-pub fn shadow_minimal_section(p: &ToolProfile) -> String {
+pub fn shadow_minimal_section() -> String {
     let mut exclusives = Vec::new();
 
-    if has(p, "ctx_compose") {
+    if has("ctx_compose") {
         exclusives.push("ctx_compose (understand code, call first)");
     }
 
@@ -111,14 +109,14 @@ pub fn shadow_minimal_section(p: &ToolProfile) -> String {
     exclusives.push("ctx_search(action=symbol) (exact symbol)");
     exclusives.push("ctx_search(action=semantic) (by meaning)");
 
-    if has(p, "ctx_callgraph") {
+    if has("ctx_callgraph") {
         exclusives.push("ctx_callgraph (callers)");
     }
-    if has(p, "ctx_knowledge") || has(p, "ctx_session") {
+    if has("ctx_knowledge") || has("ctx_session") {
         exclusives.push("ctx_knowledge / ctx_session (memory)");
     }
 
-    let edit_line = if has(p, "ctx_patch") {
+    let edit_line = if has("ctx_patch") {
         "File editing → native Edit/StrReplace (lean-ctx only handles reads); if denied, use ctx_patch.\n"
     } else {
         "File editing → native Edit/StrReplace (lean-ctx only handles reads).\n"
@@ -134,10 +132,10 @@ pub fn shadow_minimal_section(p: &ToolProfile) -> String {
 }
 
 /// Anti-patterns — only references tools the profile exposes.
-pub fn anti_section(p: &ToolProfile) -> String {
+pub fn anti_section() -> String {
     let mut lines = vec!["Anti-patterns — do NOT:".to_string()];
 
-    if has(p, "ctx_compose") {
+    if has("ctx_compose") {
         lines.push(
             "• Chain ctx_search -> ctx_read -> ctx_search(action=symbol) \
              — one ctx_compose replaces all three"
@@ -147,7 +145,7 @@ pub fn anti_section(p: &ToolProfile) -> String {
 
     lines.push("• Use ctx_read(mode=full) for orientation — use mode=signatures".into());
 
-    if has(p, "ctx_callgraph") || has(p, "ctx_graph") {
+    if has("ctx_callgraph") || has("ctx_graph") {
         lines.push(
             "• Use ctx_callgraph/ctx_graph for const/static/variable refs — they track \
              call edges and file deps only; use ctx_search instead"
@@ -159,10 +157,10 @@ pub fn anti_section(p: &ToolProfile) -> String {
 }
 
 /// LITM end-of-instructions preference line — only lists enabled tools.
-pub fn litm_end_section(p: &ToolProfile) -> String {
+pub fn litm_end_section() -> String {
     let mut prefs = Vec::new();
 
-    if has(p, "ctx_compose") {
+    if has("ctx_compose") {
         prefs.push("ctx_compose>chain");
     }
     prefs.push("ctx_read>Read");
@@ -177,101 +175,87 @@ pub fn litm_end_section(p: &ToolProfile) -> String {
     )
 }
 
-/// `ctx_call` gateway fallback — shown when the profile hides tools the agent
-/// might need. Returns `None` for Power (all tools visible).
-pub fn ctx_call_fallback(p: &ToolProfile) -> Option<String> {
-    if matches!(p, ToolProfile::Power) {
-        return None;
-    }
-    Some(
-        "Advanced tools not in your profile are available via ctx_call(tool=<name>) gateway."
-            .into(),
-    )
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    /// Invariant 3: the surface is the registry, so the injected rules text is
-    /// the same whatever tier is handed in. What still matters is *what* it
-    /// says — the tests below pin the content, not the tier.
     #[test]
-    fn sections_do_not_vary_by_tier() {
-        let tiers = [
-            ToolProfile::Minimal,
-            ToolProfile::Standard,
-            ToolProfile::Power,
-        ];
-        for section in [
-            intent_section as fn(&ToolProfile) -> String,
-            hook_covered_tools_section,
-            shadow_minimal_section,
-            anti_section,
-            litm_end_section,
+    fn intent_names_the_registered_toolbox() {
+        let text = intent_section();
+        for tool in ["ctx_read", "ctx_search", "ctx_compose", "ctx_callgraph", "ctx_patch"] {
+            assert!(
+                !crate::server::registry::is_registered(tool) || text.contains(tool),
+                "intent section must name the registered {tool}"
+            );
+        }
+    }
+
+    /// A tool that left the registry must not be taught. `ctx_symbol` and
+    /// `ctx_semantic_search` were folded into `ctx_search` actions (#509), so
+    /// they are the standing case.
+    #[test]
+    fn unregistered_tools_are_never_named() {
+        for tool in ["ctx_symbol", "ctx_semantic_search", "ctx_multi_read"] {
+            assert!(
+                !crate::server::registry::is_registered(tool),
+                "test premise broken: {tool} is registered again"
+            );
+        }
+        for text in [
+            intent_section(),
+            hook_covered_tools_section(),
+            shadow_minimal_section(),
+            anti_section(),
+            litm_end_section(),
         ] {
-            let reference = section(&tiers[0]);
-            for t in &tiers[1..] {
-                assert_eq!(section(t), reference, "section varies for {t}");
+            for tool in ["ctx_symbol", "ctx_semantic_search", "ctx_multi_read"] {
+                // `ctx_search(action=symbol)` legitimately contains "symbol",
+                // so match the bare tool name followed by a word boundary.
+                for hit in text.match_indices(tool) {
+                    let after = text[hit.0 + tool.len()..].chars().next();
+                    assert!(
+                        after.is_some_and(|c| c.is_alphanumeric() || c == '_'),
+                        "section names the unregistered {tool}:
+{text}"
+                    );
+                }
             }
         }
     }
 
     #[test]
-    fn intent_names_the_whole_toolbox() {
-        let text = intent_section(&ToolProfile::Power);
-        for tool in ["ctx_read", "ctx_search", "ctx_compose", "ctx_callgraph", "ctx_patch"] {
-            assert!(text.contains(tool), "intent section must name {tool}");
-        }
-    }
-
-    #[test]
     fn intent_uses_folded_search_actions() {
-        let text = intent_section(&ToolProfile::Power);
-        assert!(
-            !text.contains("ctx_symbol"),
-            "must use ctx_search(action=symbol), not ctx_symbol"
-        );
-        assert!(
-            !text.contains("ctx_semantic_search"),
-            "must use ctx_search(action=semantic), not ctx_semantic_search"
-        );
+        let text = intent_section();
         assert!(text.contains("ctx_search(action=symbol)"));
         assert!(text.contains("ctx_search(action=semantic)"));
     }
 
     #[test]
     fn hook_covered_section_maps_the_native_tools() {
-        let text = hook_covered_tools_section(&ToolProfile::Power);
-        for tool in ["ctx_read", "ctx_search", "ctx_shell", "ctx_compose", "ctx_callgraph"] {
+        let text = hook_covered_tools_section();
+        for tool in ["ctx_read", "ctx_search", "ctx_shell"] {
             assert!(text.contains(tool), "hook-covered mapping must name {tool}");
         }
     }
 
     #[test]
     fn anti_section_keeps_the_universal_pattern() {
-        let text = anti_section(&ToolProfile::Power);
+        let text = anti_section();
         assert!(text.contains("ctx_read(mode=full)"));
-        assert!(text.contains("ctx_compose"));
     }
 
     #[test]
     fn litm_end_always_has_core_tools() {
-        let text = litm_end_section(&ToolProfile::Power);
+        let text = litm_end_section();
         assert!(text.contains("ctx_read>Read"));
         assert!(text.contains("ctx_shell>Shell"));
         assert!(text.contains("ctx_search>Grep"));
-        assert!(text.contains("ctx_compose"));
     }
 
     #[test]
-    fn ctx_call_fallback_absent_for_power() {
-        assert!(ctx_call_fallback(&ToolProfile::Power).is_none());
-    }
-
-    #[test]
-    fn ctx_call_fallback_present_for_non_power() {
-        assert!(ctx_call_fallback(&ToolProfile::Minimal).is_some());
-        assert!(ctx_call_fallback(&ToolProfile::Standard).is_some());
+    fn shadow_section_lists_the_exclusive_tools() {
+        let text = shadow_minimal_section();
+        assert!(text.contains("shadow mode"), "{text}");
+        assert!(text.contains("ctx_search(action=symbol)"), "{text}");
     }
 }

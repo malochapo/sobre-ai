@@ -67,12 +67,10 @@ fn emit_dedicated_session_context(input: &str) {
     if cfg.dedicated_session_context_active() {
         // Full Bare rules for dedicated-mode hosts (Claude Code, Codex, CodeBuddy)
         // where the static rules file is skipped.
-        let profile = crate::core::tool_profiles::ToolProfile::from_config(&cfg);
         let summary = crate::core::rules_canonical::render(
             cfg.shadow_mode,
             crate::core::rules_canonical::Wrapper::Bare,
             crate::core::config::CompressionLevel::Off,
-            &profile,
         );
         emit_session_start_additional_context(&summary);
     } else {

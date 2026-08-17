@@ -18,12 +18,10 @@ fn hermes_marked_block(mode: HookMode) -> String {
 /// Hermes extras sit after END_MARK and are preserved as user content.
 pub(super) fn hermes_rules_content() -> String {
     let cfg = crate::core::config::Config::load();
-    let profile = crate::core::tool_profiles::ToolProfile::from_config(&cfg);
     let base = crate::core::rules_canonical::render(
         cfg.shadow_mode,
         crate::core::rules_canonical::Wrapper::Shared,
         crate::core::config::CompressionLevel::Off,
-        &profile,
     );
     format!(
         "{base}\n\
@@ -129,12 +127,10 @@ fn install_hermes_rules(home: &std::path::Path, mode: HookMode) {
 
 fn hermes_replace_rules_content() -> String {
     let cfg = crate::core::config::Config::load();
-    let profile = crate::core::tool_profiles::ToolProfile::from_config(&cfg);
     let base = crate::core::rules_canonical::render(
         cfg.shadow_mode,
         crate::core::rules_canonical::Wrapper::Shared,
         crate::core::config::CompressionLevel::Off,
-        &profile,
     );
     format!(
         "{base}\n\

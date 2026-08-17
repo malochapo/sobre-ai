@@ -623,24 +623,15 @@ pub fn run() -> u32 {
     };
     println!("  {shadow_line}");
 
-    // Tool-schema footprint (informational, not scored). With no profile pinned
-    // the server runs in lean mode — only the lazy core is advertised and every
-    // tool stays reachable via ctx_call — so report that, not the internal
-    // `power` call-gate fallback that `from_config` returns for an empty config
-    // (otherwise `doctor` claimed "power" right after the wizard chose lean, #415).
-    let tool_profile_line = if cfg.tool_profile.is_some() {
-        let profile = crate::core::tool_profiles::ToolProfile::from_config(&cfg);
-        format!(
-            "{BOLD}Tool profile{RST}  {WHITE}{profile}{RST}  {DIM}{}{RST}",
-            profile.description()
-        )
-    } else {
-        let count = crate::server::registry::build_registry().tool_defs().len();
-        format!(
-            "{BOLD}Tool profile{RST}  {WHITE}lean (default){RST}  {DIM}{count} tools advertised{RST}"
-        )
-    };
-    println!("  {tool_profile_line}");
+    // Tool-schema footprint (informational, not scored). There is one surface —
+    // the registry — so report its size rather than a tier name. This used to
+    // branch on a pinned `tool_profile` and print the tier; #415 was already a
+    // bug where it claimed "power" right after the wizard chose lean.
+    let advertised = crate::server::registry::build_registry().tool_defs().len();
+    println!(
+        "  {BOLD}Tools{RST}  {WHITE}{advertised} advertised{RST}  \
+         {DIM}one surface, every client{RST}"
+    );
 
     // Session cache health (#361): answer "is the cache actually engaging?"
     // without external instrumentation. CEP sessions + the cross-call hit ratio

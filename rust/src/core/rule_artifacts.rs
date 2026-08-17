@@ -30,7 +30,6 @@ pub fn canonical_body() -> String {
             false,
             Wrapper::Longform,
             CompressionLevel::Off,
-            &super::tool_profiles::ToolProfile::Power,
         )
     )
 }

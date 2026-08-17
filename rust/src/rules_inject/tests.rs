@@ -8,12 +8,8 @@ use super::*;
 use crate::core::config::CompressionLevel;
 use crate::core::rules_canonical::{END_MARK, RULES_VERSION, RulesFile, START_MARK, Wrapper};
 
-fn power() -> crate::core::tool_profiles::ToolProfile {
-    crate::core::tool_profiles::ToolProfile::Power
-}
-
 fn shared_content() -> String {
-    crate::core::rules_canonical::render(false, Wrapper::Shared, CompressionLevel::Off, &power())
+    crate::core::rules_canonical::render(false, Wrapper::Shared, CompressionLevel::Off)
 }
 
 fn dedicated_content_cached() -> &'static str {
@@ -23,7 +19,6 @@ fn dedicated_content_cached() -> &'static str {
             false,
             Wrapper::Dedicated,
             CompressionLevel::Off,
-            &power(),
         )
     })
 }
@@ -58,7 +53,6 @@ fn shadow_dedicated_omits_mapping() {
         true,
         Wrapper::Dedicated,
         CompressionLevel::Off,
-        &power(),
     );
     assert!(
         !rules.contains("MUST USE"),
@@ -78,7 +72,6 @@ fn shadow_shared_omits_mapping() {
         true,
         Wrapper::Shared,
         CompressionLevel::Off,
-        &power(),
     );
     assert!(
         !rules.contains("MANDATORY MAPPING"),
@@ -173,12 +166,7 @@ fn rules_catalog_includes_previously_missing_agents_for_detection() {
 
 #[test]
 fn cursor_mdc_has_frontmatter_and_markers() {
-    let mdc = rules_content(
-        &RulesFormat::CursorMdc,
-        CompressionLevel::Off,
-        Wrapper::Dedicated,
-        &power(),
-    );
+    let mdc = rules_content(&RulesFormat::CursorMdc, CompressionLevel::Off, Wrapper::Dedicated);
     assert!(mdc.contains("alwaysApply: true"));
     assert!(mdc.contains(START_MARK));
     assert!(mdc.contains(END_MARK));
@@ -278,7 +266,7 @@ fn rules_file_merged_replaces_section_preserving_user_content() {
     assert_eq!(file.version(), 0);
     assert!(!file.is_current());
 
-    let merged = file.merged(false, Wrapper::Shared, CompressionLevel::Off, &power());
+    let merged = file.merged(false, Wrapper::Shared, CompressionLevel::Off);
     std::fs::write(&path, &merged).unwrap();
 
     let result = std::fs::read_to_string(&path).unwrap();
@@ -299,7 +287,7 @@ fn rules_file_merged_appends_when_no_section() {
     let file = RulesFile::parse(content);
     assert!(!file.has_content());
 
-    let merged = file.merged(false, Wrapper::Shared, CompressionLevel::Off, &power());
+    let merged = file.merged(false, Wrapper::Shared, CompressionLevel::Off);
     assert!(merged.contains("user content only"));
     assert!(merged.contains(START_MARK));
 }

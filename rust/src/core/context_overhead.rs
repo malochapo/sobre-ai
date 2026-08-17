@@ -249,6 +249,7 @@ mod tests {
         crate::test_env::set_var("LEAN_CTX_TOOL_PROFILE", "minimal");
         crate::test_env::set_var("LEAN_CTX_MINIMAL", "1");
         crate::test_env::set_var("LEAN_CTX_RULES_INJECTION", "off");
+        let registered = crate::server::registry::build_registry().tool_defs().len();
         let o = ContextOverhead::measure();
         crate::test_env::remove_var("LEAN_CTX_TOOL_PROFILE");
         crate::test_env::remove_var("LEAN_CTX_MINIMAL");
@@ -259,10 +260,10 @@ mod tests {
             "rules_injection=off must zero the rules block"
         );
         assert!(
-            o.tool_count <= crate::core::tool_profiles::ToolProfile::Minimal.tool_count() + 1,
-            "minimal profile must keep the surface lean, got {} tools (expected ≤ {})",
+            o.tool_count <= registered + 1,
+            "the advertised surface must be the registry, got {} tools (expected ≤ {})",
             o.tool_count,
-            crate::core::tool_profiles::ToolProfile::Minimal.tool_count() + 1,
+            registered + 1,
         );
         assert!(
             o.total_tokens() <= MINIMAL_ARM_PREFIX_BUDGET_TOKENS,

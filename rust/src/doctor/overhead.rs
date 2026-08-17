@@ -72,7 +72,7 @@ pub(super) fn measure(home: &std::path::Path, project: &std::path::Path) -> Over
 
     let pinned = cfg.tool_profile.is_some();
     let tool_profile = if pinned {
-        cfg.tool_profile_effective().as_str().to_string()
+        "power".to_string()
     } else {
         "lean (default)".to_string()
     };

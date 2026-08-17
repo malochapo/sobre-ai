@@ -74,22 +74,6 @@ impl ToolRegistry {
         crate::tool_defs::apply_tool_annotations(defs)
     }
 
-    /// Returns tool definitions filtered by a tool profile.
-    /// Only includes tools whose name is enabled by the given profile.
-    pub fn profile_tool_defs(
-        &self,
-        profile: &crate::core::tool_profiles::ToolProfile,
-    ) -> Vec<Tool> {
-        let mut defs: Vec<Tool> = self
-            .tools
-            .values()
-            .filter(|t| profile.is_tool_enabled(t.name()))
-            .map(|t| t.tool_def())
-            .collect();
-        defs.sort_by(|a, b| a.name.as_ref().cmp(b.name.as_ref()));
-        crate::tool_defs::apply_tool_annotations(defs)
-    }
-
     pub fn len(&self) -> usize {
         self.tools.len()
     }
@@ -152,9 +136,31 @@ pub fn build_registry() -> ToolRegistry {
     registry
 }
 
+/// Whether a tool name is registered, resolved against a set built once.
+///
+/// [`build_registry`] allocates every tool on each call, so callers that only
+/// need to know whether a name exists — the injected rules ask a dozen times
+/// per render — must not go through it.
+pub fn is_registered(name: &str) -> bool {
+    static NAMES: std::sync::OnceLock<std::collections::HashSet<&'static str>> =
+        std::sync::OnceLock::new();
+    NAMES
+        .get_or_init(|| build_registry().names().into_iter().collect())
+        .contains(name)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn is_registered_agrees_with_a_freshly_built_registry() {
+        let registry = build_registry();
+        for name in registry.names() {
+            assert!(is_registered(name), "{name} is registered but not reported");
+        }
+        assert!(!is_registered("ctx_does_not_exist_xyz"));
+    }
 
     #[test]
     fn get_arc_returns_owned_handle_for_known_tool() {

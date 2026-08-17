@@ -469,7 +469,6 @@ pub mod text_similarity;
 pub mod tokens;
 pub mod tool_health;
 pub mod tool_lifecycle;
-pub mod tool_profiles;
 pub mod transcript_compact;
 pub mod visualizer;
 pub mod walk_filter;

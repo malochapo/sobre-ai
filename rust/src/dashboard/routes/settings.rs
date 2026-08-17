@@ -14,12 +14,10 @@ use serde::Deserialize;
 
 use super::helpers::json_err;
 use crate::core::config::{CompressionLevel, Config, TerseAgent};
-use crate::core::tool_profiles::ToolProfile;
 
 const COMPRESSION_OPTIONS: &[&str] = &["off", "lite", "standard", "max"];
 const TERSE_OPTIONS: &[&str] = &["off", "lite", "full", "ultra"];
 // `lean` unpins the profile (clears the key) — same as `lean-ctx tools lean`.
-const TOOL_PROFILE_OPTIONS: &[&str] = &["minimal", "standard", "power", "lean"];
 
 pub(super) fn handle(
     path: &str,
@@ -83,7 +81,6 @@ fn validate_setting(key: &str, value: &str) -> Result<(), String> {
     match key {
         "compression_level" => ensure_in(value, COMPRESSION_OPTIONS),
         "terse_agent" => ensure_in(value, TERSE_OPTIONS),
-        "tool_profile" => ensure_in(value, TOOL_PROFILE_OPTIONS),
         "structure_first" => ensure_bool(value),
         _ => Err(format!("unknown or non-editable setting: '{key}'")),
     }
@@ -93,7 +90,6 @@ fn apply_setting(key: &str, value: &str) -> Result<(), String> {
     validate_setting(key, value)?;
     match key {
         "compression_level" => apply_compression(value),
-        "tool_profile" => apply_tool_profile(value),
         "structure_first" => crate::core::config::setter::set_by_key("structure_first", value)
             .map(|_| ())
             .map_err(|e| e.to_string()),
@@ -125,18 +121,6 @@ fn apply_compression(value: &str) -> Result<(), String> {
     let home = dirs::home_dir().unwrap_or_default();
     let _ = crate::rules_inject::inject_all_rules(&home);
     Ok(())
-}
-
-/// Mirror `lean-ctx tools <profile>`: pin minimal/standard/power, or unpin on
-/// `lean` (clear the key so the default unpinned behaviour returns).
-fn apply_tool_profile(value: &str) -> Result<(), String> {
-    match value {
-        "minimal" | "standard" | "power" => {
-            crate::core::tool_profiles::set_profile_in_config(value)
-        }
-        "lean" => crate::core::tool_profiles::clear_profile_in_config(),
-        other => Err(format!("invalid tool profile '{other}'")),
-    }
 }
 
 fn ensure_in(value: &str, allowed: &[&str]) -> Result<(), String> {
@@ -182,12 +166,6 @@ fn settings_payload() -> String {
                 "env_override": env_present("LEAN_CTX_COMPRESSION"),
                 "local_override": local("compression_level"),
             },
-            "tool_profile": {
-                "value": tool_profile_value(&cfg),
-                "options": TOOL_PROFILE_OPTIONS,
-                "env_override": env_present("LEAN_CTX_TOOL_PROFILE"),
-                "local_override": local("tool_profile"),
-            },
             "structure_first": {
                 "value": cfg.structure_first_effective(),
                 "env_override": env_present("LEAN_CTX_STRUCTURE_FIRST"),
@@ -225,41 +203,6 @@ fn terse_canon(t: &TerseAgent) -> &'static str {
     }
 }
 
-fn tool_profile_canon(p: &ToolProfile) -> &'static str {
-    match p {
-        ToolProfile::Minimal => "minimal",
-        ToolProfile::Standard => "standard",
-        ToolProfile::Power => "power",
-        ToolProfile::Custom(_) => "custom",
-    }
-}
-
-/// Canonical value for the dashboard's tool-profile toggle.
-///
-/// The unpinned default and an explicit `power` pin both resolve to
-/// `ToolProfile::Power` internally, so reporting the *effective* profile made
-/// the UI snap "Lean" back to "Power" the instant it was selected (#431). This
-/// mirrors `ToolProfile::from_config`'s precedence but maps the unpinned state
-/// to the `lean` sentinel the UI understands.
-fn tool_profile_value(cfg: &Config) -> &'static str {
-    // An env override wins and is surfaced separately via `env_override`.
-    if env_present("LEAN_CTX_TOOL_PROFILE") {
-        return tool_profile_canon(&cfg.tool_profile_effective());
-    }
-    // A real pin (minimal/standard/power) takes precedence. Unpin aliases
-    // (`lean`/`lazy`/`reset`) and unknown literals fail to parse and fall
-    // through to the same default resolution `from_config` uses.
-    if let Some(name) = cfg.tool_profile.as_deref()
-        && let Some(profile) = ToolProfile::parse(name)
-    {
-        return tool_profile_canon(&profile);
-    }
-    if !cfg.tools_enabled.is_empty() {
-        return "custom";
-    }
-    "lean"
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -268,8 +211,6 @@ mod tests {
     fn validate_accepts_known_enum_values() {
         assert!(validate_setting("compression_level", "max").is_ok());
         assert!(validate_setting("terse_agent", "ultra").is_ok());
-        assert!(validate_setting("tool_profile", "power").is_ok());
-        assert!(validate_setting("tool_profile", "lean").is_ok());
         assert!(validate_setting("structure_first", "true").is_ok());
         assert!(validate_setting("structure_first", "false").is_ok());
     }
@@ -278,7 +219,6 @@ mod tests {
     fn validate_rejects_bad_values() {
         assert!(validate_setting("compression_level", "ultra").is_err());
         assert!(validate_setting("terse_agent", "max").is_err());
-        assert!(validate_setting("tool_profile", "turbo").is_err());
         assert!(validate_setting("structure_first", "maybe").is_err());
     }
 
@@ -311,56 +251,13 @@ mod tests {
         assert!(normalize_value(&serde_json::json!(null)).is_none());
     }
 
-    /// GH #431: the unpinned default and a real `power` pin both resolve to
-    /// `ToolProfile::Power`, but the UI must tell them apart so selecting "Lean"
-    /// does not snap back to "Power".
     #[test]
-    fn tool_profile_value_distinguishes_lean_from_power() {
-        // Avoid env interference from the host running the suite.
-        crate::test_env::remove_var("LEAN_CTX_TOOL_PROFILE");
-
-        let unpinned = Config {
-            tool_profile: None,
-            tools_enabled: vec![],
-            ..Default::default()
-        };
-        assert_eq!(tool_profile_value(&unpinned), "lean");
-
-        // A persisted unpin alias self-heals to lean instead of "power".
-        let aliased = Config {
-            tool_profile: Some("lean".into()),
-            ..Default::default()
-        };
-        assert_eq!(tool_profile_value(&aliased), "lean");
-
-        let pinned = Config {
-            tool_profile: Some("power".into()),
-            ..Default::default()
-        };
-        assert_eq!(tool_profile_value(&pinned), "power");
-
-        let minimal = Config {
-            tool_profile: Some("minimal".into()),
-            ..Default::default()
-        };
-        assert_eq!(tool_profile_value(&minimal), "minimal");
-
-        let custom = Config {
-            tool_profile: None,
-            tools_enabled: vec!["ctx_read".into()],
-            ..Default::default()
-        };
-        assert_eq!(tool_profile_value(&custom), "custom");
-    }
-
-    #[test]
-    fn payload_is_valid_json_with_all_four_settings() {
+    fn payload_is_valid_json_with_every_setting() {
         let raw = settings_payload();
         let v: serde_json::Value = serde_json::from_str(&raw).expect("valid JSON");
         let s = &v["settings"];
         for key in [
             "compression_level",
-            "tool_profile",
             "structure_first",
             "terse_agent",
         ] {
@@ -389,7 +286,7 @@ mod tests {
 
         let s = &v["settings"];
         // The three locally-mergeable settings expose local_override…
-        for key in ["compression_level", "tool_profile", "terse_agent"] {
+        for key in ["compression_level", "terse_agent"] {
             assert!(
                 s[key]
                     .get("local_override")

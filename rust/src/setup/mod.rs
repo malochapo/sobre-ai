@@ -453,33 +453,15 @@ pub fn run_setup_with_options(opts: SetupOptions) -> Result<SetupReport, String>
         errors: Vec::new(),
     };
     {
-        let cfg = crate::core::config::Config::load();
-        if cfg.tool_profile.is_none() && std::env::var("LEAN_CTX_TOOL_PROFILE").is_err() {
-            let lazy_count = crate::server::registry::build_registry().tool_defs().len();
-            tool_profile_step.items.push(SetupItem {
-                name: "tool_profile".to_string(),
-                status: "lean default".to_string(),
-                path: None,
-                note: Some(format!(
-                    "{lazy_count} tools advertised, all reachable via ctx_call \
-                     (pin more with: lean-ctx tools standard|power)"
-                )),
-            });
-        } else {
-            let profile = cfg.tool_profile_effective();
-            let overhead_hint = match profile {
-                crate::core::tool_profiles::ToolProfile::Power => {
-                    "; advertises ALL tool schemas — `lean-ctx tools lean` cuts this to the lazy core"
-                }
-                _ => "",
-            };
-            tool_profile_step.items.push(SetupItem {
-                name: "tool_profile".to_string(),
-                status: "already".to_string(),
-                path: None,
-                note: Some(format!("profile={}{overhead_hint}", profile.as_str())),
-            });
-        }
+        let advertised = crate::server::registry::build_registry().tool_defs().len();
+        tool_profile_step.items.push(SetupItem {
+            name: "tools".to_string(),
+            status: "ok".to_string(),
+            path: None,
+            note: Some(format!(
+                "{advertised} tools advertised, the same for every client"
+            )),
+        });
     }
     steps.push(tool_profile_step);
 

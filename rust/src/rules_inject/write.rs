@@ -5,27 +5,16 @@
 //! `core::rules_canonical` — the single source of truth for marker/version
 //! detection and content boundary management.
 
-use crate::core::config::{CompressionLevel, Config};
+use crate::core::config::CompressionLevel;
 use crate::core::rules_canonical::{RulesFile, Wrapper};
-use crate::core::tool_profiles::ToolProfile;
 
 use super::RulesFormat;
 use super::content::rules_content;
-
-/// The profile for a rules-injection target.
-///
-/// Used to narrow by client quirk so the rules never named a tool that
-/// client's surface hid. Invariant 3 removed the quirks: every client sees
-/// the same surface, so every target gets the same rules.
-fn profile_for_target(cfg: &Config, _target_name: &str) -> ToolProfile {
-    ToolProfile::from_config(cfg)
-}
 
 pub(super) fn inject_rules(target: &RulesTarget) -> Result<RulesResult, String> {
     let cfg = crate::core::config::Config::load();
     let shadow = cfg.shadow_mode;
     let level = CompressionLevel::effective(&cfg);
-    let profile = profile_for_target(&cfg, target.name);
     let wrapper = match target.format {
         RulesFormat::SharedMarkdown => Wrapper::Shared,
         RulesFormat::DedicatedMarkdown => Wrapper::Dedicated,
@@ -38,16 +27,16 @@ pub(super) fn inject_rules(target: &RulesTarget) -> Result<RulesResult, String> 
 
         if file.has_content()
             && file.is_current()
-            && file.block_matches_render(shadow, wrapper, level, &profile)
+            && file.block_matches_render(shadow, wrapper, level)
         {
             return Ok(RulesResult::AlreadyPresent);
         }
 
-        file.merged(shadow, wrapper, level, &profile)
+        file.merged(shadow, wrapper, level)
     } else if matches!(target.format, RulesFormat::CursorMdc) {
-        rules_content(&target.format, level, wrapper, &profile)
+        rules_content(&target.format, level, wrapper)
     } else {
-        RulesFile::initial(shadow, wrapper, level, &profile)
+        RulesFile::initial(shadow, wrapper, level)
     };
 
     ensure_parent(&target.path)?;

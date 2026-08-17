@@ -1227,12 +1227,6 @@ impl Config {
         vec!["core".to_string(), "session".to_string()]
     }
 
-    /// The tool surface. Invariant 3: one answer, the same for everyone — no
-    /// env var, no config key, no persona narrows or widens it.
-    pub fn tool_profile_effective(&self) -> super::tool_profiles::ToolProfile {
-        super::tool_profiles::ToolProfile::Power
-    }
-
     /// The `[sensitivity]` config as written. It used to be folded with a
     /// per-persona floor; the personas that declared one are gone.
     #[must_use]

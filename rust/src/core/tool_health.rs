@@ -335,7 +335,7 @@ fn latest_footprint_note() -> Option<String> {
 fn resolve_tool_profile() -> String {
     let cfg = crate::core::config::Config::load();
     if cfg.tool_profile.is_some() {
-        cfg.tool_profile_effective().as_str().to_string()
+        "power".to_string()
     } else {
         "lean (default)".to_string()
     }

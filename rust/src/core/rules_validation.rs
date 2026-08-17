@@ -83,10 +83,9 @@ impl<'a> RulesFile<'a> {
         shadow: bool,
         wrapper: Wrapper,
         level: CompressionLevel,
-        tool_profile: &super::tool_profiles::ToolProfile,
     ) -> bool {
         match self.block() {
-            Some(block) => block.trim() == render(shadow, wrapper, level, tool_profile).trim(),
+            Some(block) => block.trim() == render(shadow, wrapper, level).trim(),
             None => false,
         }
     }
@@ -97,9 +96,8 @@ impl<'a> RulesFile<'a> {
         shadow: bool,
         wrapper: Wrapper,
         level: CompressionLevel,
-        tool_profile: &super::tool_profiles::ToolProfile,
     ) -> String {
-        let fresh = render(shadow, wrapper, level, tool_profile);
+        let fresh = render(shadow, wrapper, level);
         if self.start.is_some() {
             let before = self.prefix();
             let after = self.suffix();
@@ -136,9 +134,8 @@ impl<'a> RulesFile<'a> {
         shadow: bool,
         wrapper: Wrapper,
         level: CompressionLevel,
-        tool_profile: &super::tool_profiles::ToolProfile,
     ) -> String {
-        render(shadow, wrapper, level, tool_profile)
+        render(shadow, wrapper, level)
     }
 
     /// Strip the lean-ctx section, keeping user content before/after.

@@ -51,16 +51,15 @@ pub(super) fn rules_content(
     format: &RulesFormat,
     level: CompressionLevel,
     wrapper: Wrapper,
-    tool_profile: &crate::core::tool_profiles::ToolProfile,
 ) -> String {
     let shadow = crate::core::config::Config::load().shadow_mode;
     match format {
-        RulesFormat::SharedMarkdown => rc::render(shadow, Wrapper::Shared, level, tool_profile),
+        RulesFormat::SharedMarkdown => rc::render(shadow, Wrapper::Shared, level),
         RulesFormat::DedicatedMarkdown => {
-            rc::render(shadow, Wrapper::Dedicated, level, tool_profile)
+            rc::render(shadow, Wrapper::Dedicated, level)
         }
         RulesFormat::CursorMdc => {
-            cursor_mdc_document(&rc::render(shadow, wrapper, level, tool_profile))
+            cursor_mdc_document(&rc::render(shadow, wrapper, level))
         }
     }
 }
