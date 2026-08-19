@@ -314,8 +314,6 @@ impl Config {
         override_if_ne!(default.shell_allowlist, shell_allowlist);
         extend_if_nonempty!(shell_allowlist_extra);
         replace_if_nonempty!(default_tool_categories);
-        override_if_some!(tool_profile);
-        replace_if_nonempty!(tools_enabled);
         override_if_true!(no_degrade);
         override_if_true!(delta_explicit);
         override_if_some!(profile);

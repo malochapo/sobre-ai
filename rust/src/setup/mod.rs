@@ -440,13 +440,10 @@ pub fn run_setup_with_options(opts: SetupOptions) -> Result<SetupReport, String>
         steps.push(hooks_step);
     }
 
-    // Step: Tool profile. Deliberately does NOT write a default profile:
-    // writing `tool_profile = "standard"` made every install "explicit", which
-    // disables the lazy-core advertisement (the lazy core) and ships the full
-    // profile schema set (~5-15k tokens) to every session (#575). The lean
-    // default needs no config key — all tools stay reachable via ctx_call.
-    let mut tool_profile_step = SetupStepReport {
-        name: "tool_profile".to_string(),
+    // Step: tools. There is one surface and no key to write — setup reports
+    // its size rather than pinning anything.
+    let mut tools_step = SetupStepReport {
+        name: "tools".to_string(),
         ok: true,
         items: Vec::new(),
         warnings: Vec::new(),
@@ -454,7 +451,7 @@ pub fn run_setup_with_options(opts: SetupOptions) -> Result<SetupReport, String>
     };
     {
         let advertised = crate::server::registry::build_registry().tool_defs().len();
-        tool_profile_step.items.push(SetupItem {
+        tools_step.items.push(SetupItem {
             name: "tools".to_string(),
             status: "ok".to_string(),
             path: None,
@@ -463,7 +460,7 @@ pub fn run_setup_with_options(opts: SetupOptions) -> Result<SetupReport, String>
             )),
         });
     }
-    steps.push(tool_profile_step);
+    steps.push(tools_step);
 
     // Step: Proxy autostart + env vars (respects opt-in)
     let mut proxy_step = SetupStepReport {

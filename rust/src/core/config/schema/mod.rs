@@ -233,7 +233,6 @@ mod tests {
             "shell_security",
             "cache_policy",
             "profile",
-            "tool_profile",
             "rules_scope",
             "rules_injection",
             "permission_inheritance",

@@ -229,8 +229,8 @@ mod tests {
 
     #[test]
     fn minimal_arm_per_turn_prefix_stays_within_budget() {
-        // The "faithful arm" (#361): tool_profile=minimal (5 tools) +
-        // LEAN_CTX_MINIMAL (no session/knowledge prefix) + rules_injection=off
+        // The "faithful arm" (#361): LEAN_CTX_MINIMAL (no session/knowledge
+        // prefix) + rules_injection=off
         // (no rules block) must keep the fixed per-turn prefix tiny. This is the
         // regression guard for the "~3K tokens/turn injected" critique — if any
         // knob silently stops applying, the total balloons and this fails.
@@ -246,12 +246,10 @@ mod tests {
         const MINIMAL_ARM_PREFIX_BUDGET_TOKENS: usize = 1835;
 
         let _iso = crate::core::data_dir::isolated_data_dir();
-        crate::test_env::set_var("LEAN_CTX_TOOL_PROFILE", "minimal");
         crate::test_env::set_var("LEAN_CTX_MINIMAL", "1");
         crate::test_env::set_var("LEAN_CTX_RULES_INJECTION", "off");
         let registered = crate::server::registry::build_registry().tool_defs().len();
         let o = ContextOverhead::measure();
-        crate::test_env::remove_var("LEAN_CTX_TOOL_PROFILE");
         crate::test_env::remove_var("LEAN_CTX_MINIMAL");
         crate::test_env::remove_var("LEAN_CTX_RULES_INJECTION");
 

@@ -625,8 +625,8 @@ pub fn run() -> u32 {
 
     // Tool-schema footprint (informational, not scored). There is one surface —
     // the registry — so report its size rather than a tier name. This used to
-    // branch on a pinned `tool_profile` and print the tier; #415 was already a
-    // bug where it claimed "power" right after the wizard chose lean.
+    // branch on a pinned tier and print it; #415 was already a bug where it
+    // claimed "power" right after the wizard chose lean.
     let advertised = crate::server::registry::build_registry().tool_defs().len();
     println!(
         "  {BOLD}Tools{RST}  {WHITE}{advertised} advertised{RST}  \

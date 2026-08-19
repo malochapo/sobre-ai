@@ -89,7 +89,6 @@ pub struct KnowledgeHealth {
 
 #[derive(Debug, Clone, Serialize)]
 pub struct ToolHealthReport {
-    pub tool_profile: String,
     pub advertised_tools: usize,
     pub tool_schema_tokens: usize,
     pub instruction_tokens: usize,
@@ -172,7 +171,6 @@ pub fn build_report(
     rules: &[RulesFileCost],
     duplicates: Vec<(String, usize)>,
     instruction_tokens: usize,
-    tool_profile: String,
     knowledge: KnowledgeHealth,
 ) -> ToolHealthReport {
     let total_recorded_calls: u64 = usage.tools.values().map(|t| t.total_calls).sum();
@@ -231,7 +229,7 @@ pub fn build_report(
         String::new()
     } else {
         format!(
-            "consider disabling {} low-value tool(s) to reclaim {reclaimable_tokens} tok/session: {} — apply via `disabled_tools` in config or a leaner `tool_profile`",
+            "consider disabling {} low-value tool(s) to reclaim {reclaimable_tokens} tok/session: {} — apply via `disabled_tools` in config",
             disable_candidates.len(),
             disable_candidates.join(", ")
         )
@@ -263,7 +261,6 @@ pub fn build_report(
     let fixed_total_tokens = tool_schema_tokens + instruction_tokens + rules_tokens;
 
     ToolHealthReport {
-        tool_profile,
         advertised_tools: tools.len(),
         tool_schema_tokens,
         instruction_tokens,
@@ -332,15 +329,6 @@ fn latest_footprint_note() -> Option<String> {
     ))
 }
 
-fn resolve_tool_profile() -> String {
-    let cfg = crate::core::config::Config::load();
-    if cfg.tool_profile.is_some() {
-        "power".to_string()
-    } else {
-        "lean (default)".to_string()
-    }
-}
-
 fn knowledge_health(project: &Path) -> KnowledgeHealth {
     let Some(knowledge) =
         crate::core::knowledge::ProjectKnowledge::load(&project.to_string_lossy())
@@ -385,7 +373,6 @@ pub fn compute(home: &Path, project: &Path) -> ToolHealthReport {
         &rules,
         duplicates,
         instruction_tokens,
-        resolve_tool_profile(),
         knowledge,
     );
     report.footprint_note = latest_footprint_note();
@@ -459,7 +446,6 @@ mod tests {
             &[],
             Vec::new(),
             100,
-            "lean (default)".to_string(),
             KnowledgeHealth::default(),
         );
 
@@ -499,7 +485,6 @@ mod tests {
             &[],
             Vec::new(),
             0,
-            "lean (default)".to_string(),
             KnowledgeHealth::default(),
         );
         assert!(
@@ -531,7 +516,6 @@ mod tests {
             &[],
             Vec::new(),
             0,
-            "lean (default)".to_string(),
             KnowledgeHealth::default(),
         );
         assert!(!report.has_usage_data);
@@ -564,7 +548,6 @@ mod tests {
             &rules,
             dups,
             0,
-            "lean (default)".to_string(),
             KnowledgeHealth::default(),
         );
         assert_eq!(report.rules.len(), 2);
@@ -577,11 +560,10 @@ mod tests {
 
     #[test]
     fn compute_smoke_runs_and_counts_advertised_tools() {
-        // `advertised_tool_defs_default()` reads process-global env (tool
-        // profile, unified/full mode) and config, so it is not pure. Isolate the
-        // data dir and serialize on the shared test-env lock — otherwise a
-        // concurrent env-mutating test (e.g. the minimal-arm overhead test that
-        // sets LEAN_CTX_TOOL_PROFILE=minimal) can flip the profile between the two
+        // `advertised_tool_defs_default()` reads process-global env
+        // (unified/full mode) and config, so it is not pure. Isolate the data
+        // dir and serialize on the shared test-env lock — otherwise a
+        // concurrent env-mutating test can shift the surface between the two
         // calls below, making the counts disagree. Latent race; surfaced once a
         // slower sibling test shifted parallel scheduling (#945).
         let _iso = crate::core::data_dir::isolated_data_dir();
@@ -610,7 +592,6 @@ mod tests {
             &[],
             Vec::new(),
             0,
-            "lean".to_string(),
             KnowledgeHealth::default(),
         );
         assert_eq!(report.tools[0].name, "shell");

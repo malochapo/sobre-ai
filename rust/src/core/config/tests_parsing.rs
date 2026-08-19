@@ -452,25 +452,28 @@ mod setup_config_tests {
         let _ = result;
     }
 
+    /// Regression: a stray root scalar once landed under [secret_detection]
+    /// because whole-struct serialization placed it after a table. Any
+    /// `Option<String>` root key is exposed to that bug; `tool_profile` was
+    /// the original victim and is gone, so `profile` carries the guard now.
     #[test]
-    fn tool_profile_serializes_as_root_key_not_under_table() {
-        // Regression: a stray `tool_profile` once landed under [secret_detection]
-        // because whole-struct serialization placed the scalar after a table.
-        // It must always serialize as a root-level key and round-trip.
+    fn option_root_scalar_serializes_above_the_first_table() {
         let original = Config {
-            tool_profile: Some("standard".to_string()),
+            profile: Some("passthrough".to_string()),
             ..Config::default()
         };
         let toml_str = toml::to_string_pretty(&original).unwrap();
-        let tp_pos = toml_str
-            .find("tool_profile")
-            .expect("tool_profile should be serialized");
-        let first_table = toml_str.find("\n[").unwrap_or(toml_str.len());
+        let pos = toml_str
+            .find("profile")
+            .expect("profile should be serialized");
+        let first_table = toml_str.find("
+[").unwrap_or(toml_str.len());
         assert!(
-            tp_pos < first_table,
-            "tool_profile must be a root key, not nested under a [table]:\n{toml_str}"
+            pos < first_table,
+            "profile must be a root key, not nested under a [table]:
+{toml_str}"
         );
         let parsed: Config = toml::from_str(&toml_str).unwrap();
-        assert_eq!(parsed.tool_profile.as_deref(), Some("standard"));
+        assert_eq!(parsed.profile.as_deref(), Some("passthrough"));
     }
 }

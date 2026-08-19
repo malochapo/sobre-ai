@@ -1206,8 +1206,7 @@ fn full_server_entry(binary: &str) -> serde_json::Value {
     // No LEAN_CTX_FULL_TOOLS here: forcing the full toolset (69+ schemas,
     // ~15k tokens of tool definitions resent every turn) made lean-ctx one of
     // the biggest token consumers in users' sessions (GitHub #385). The server
-    // defaults to the core toolset + ctx_call/ctx_expand for on-demand access;
-    // power users opt in via `tool_profile = "power"` in config.toml.
+    // defaults to the core toolset + ctx_call/ctx_expand for on-demand access.
     serde_json::json!({
         "command": binary,
         "env": mcp_server_env_json()

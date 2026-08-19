@@ -95,14 +95,6 @@ pub(crate) fn strip_sensitive_overrides(local: &mut Config) -> Vec<&'static str>
         local.disabled_tools.clear();
         withheld.push("disabled_tools");
     }
-    if local.tool_profile.is_some() {
-        local.tool_profile = None;
-        withheld.push("tool_profile");
-    }
-    if !local.tools_enabled.is_empty() {
-        local.tools_enabled.clear();
-        withheld.push("tools_enabled");
-    }
     if !local.default_tool_categories.is_empty() {
         local.default_tool_categories.clear();
         withheld.push("default_tool_categories");

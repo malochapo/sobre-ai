@@ -30,7 +30,6 @@ pub(super) struct OverheadReport {
     pub tool_schema_tokens: usize,
     pub lean_default_tool_count: usize,
     pub lean_default_tool_tokens: usize,
-    pub tool_profile: String,
     pub instruction_tokens: usize,
     /// Tokens of the wakeup briefing (knowledge + session memory). With the
     /// default `minimal_overhead = true` it is delivered via the first tool
@@ -70,13 +69,6 @@ pub(super) fn measure(home: &std::path::Path, project: &std::path::Path) -> Over
     let rules_files = collect_rules_files(home, project);
     let duplicates = duplicate_clients(&rules_files);
 
-    let pinned = cfg.tool_profile.is_some();
-    let tool_profile = if pinned {
-        "power".to_string()
-    } else {
-        "lean (default)".to_string()
-    };
-
     // The wakeup briefing rides session start as its own source (#964). It reads
     // live knowledge + session state, so it reflects what this install actually
     // re-injects rather than a static estimate.
@@ -90,7 +82,6 @@ pub(super) fn measure(home: &std::path::Path, project: &std::path::Path) -> Over
         tool_schema_tokens: advertised.iter().map(tool_tokens).sum(),
         lean_default_tool_count: lean_default.len(),
         lean_default_tool_tokens: lean_default.iter().map(tool_tokens).sum(),
-        tool_profile,
         instruction_tokens: count_tokens(&instructions),
         wakeup_tokens: count_tokens(&wakeup),
         rules_files,
@@ -127,8 +118,8 @@ pub(super) fn run_overhead(json: bool, gate: bool) -> i32 {
 
     // 1. Tool schemas
     println!(
-        "  {BOLD}MCP tool schemas{RST}      {:>6} tok  {DIM}({} tools advertised, profile: {}){RST}",
-        report.tool_schema_tokens, report.tool_count, report.tool_profile
+        "  {BOLD}MCP tool schemas{RST}      {:>6} tok  {DIM}({} tools advertised){RST}",
+        report.tool_schema_tokens, report.tool_count
     );
     if report.tool_count > report.lean_default_tool_count {
         let saving = report
@@ -237,7 +228,6 @@ mod tests {
             tool_schema_tokens: schema,
             lean_default_tool_count: 1,
             lean_default_tool_tokens: schema,
-            tool_profile: "lean (default)".into(),
             instruction_tokens: instr,
             wakeup_tokens: wakeup,
             rules_files: Vec::new(),

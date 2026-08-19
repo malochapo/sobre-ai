@@ -6,8 +6,8 @@
 //! the effective value can be silently shadowed by:
 //!
 //!   - an environment variable (`LEAN_CTX_COMPRESSION`, …) — wins in `effective()`;
-//!   - a project-local `.lean-ctx.toml` — overrides `compression_level`,
-//!     `terse_agent` and `tool_profile` in [`Config::merge_local`];
+//!   - a project-local `.lean-ctx.toml` — overrides `compression_level` and
+//!     `terse_agent` in [`Config::merge_local`];
 //!   - a divergent *resolved config dir* (launchd vs. terminal env) — the
 //!     dashboard writes path X while the runtime reads path Y, so the global file
 //!     "does not exist" from the reader's view;
@@ -24,7 +24,7 @@ use super::Config;
 /// Editable quick-settings a project-local `.lean-ctx.toml` can override via
 /// [`Config::merge_local`]. `structure_first` is intentionally absent: the local
 /// merge never touches it.
-const LOCAL_OVERRIDABLE_KEYS: &[&str] = &["compression_level", "terse_agent", "tool_profile"];
+const LOCAL_OVERRIDABLE_KEYS: &[&str] = &["compression_level", "terse_agent"];
 
 /// Editable quick-settings paired with the environment variable that overrides
 /// each in `effective()`. Keep in sync with the dashboard allow-list and the
@@ -32,7 +32,6 @@ const LOCAL_OVERRIDABLE_KEYS: &[&str] = &["compression_level", "terse_agent", "t
 const ENV_OVERRIDABLE: &[(&str, &str)] = &[
     ("compression_level", "LEAN_CTX_COMPRESSION"),
     ("terse_agent", "LEAN_CTX_TERSE_AGENT"),
-    ("tool_profile", "LEAN_CTX_TOOL_PROFILE"),
     ("structure_first", "LEAN_CTX_STRUCTURE_FIRST"),
 ];
 
@@ -64,7 +63,7 @@ pub struct ConfigProvenance {
     /// Whether that project-local file exists and is readable.
     pub local_exists: bool,
     /// Editable keys the project-local file overrides (subset of
-    /// `compression_level` / `terse_agent` / `tool_profile`).
+    /// `compression_level` / `terse_agent`).
     pub local_keys: Vec<&'static str>,
     /// Active environment overrides among the editable settings.
     pub env_overrides: Vec<EnvOverride>,
@@ -164,12 +163,10 @@ mod tests {
 
     #[test]
     fn local_override_keys_detects_editable_keys() {
-        let toml =
-            "compression_level = \"max\"\nterse_agent = \"ultra\"\ntool_profile = \"power\"\n";
+        let toml = "compression_level = \"max\"\nterse_agent = \"ultra\"\n";
         let keys = local_override_keys(toml);
         assert!(keys.contains(&"compression_level"));
         assert!(keys.contains(&"terse_agent"));
-        assert!(keys.contains(&"tool_profile"));
     }
 
     #[test]

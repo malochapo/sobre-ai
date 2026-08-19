@@ -41,8 +41,8 @@ pub(crate) fn cmd_tools_health(args: &[String]) {
 fn print_report(r: &ToolHealthReport, show_all: bool) {
     println!("{BOLD}Tool & rule budget — does every token earn its place?{RST}");
     println!(
-        "{DIM}Profile: {} · {} advertised tools · cross-references fixed cost with recorded usage (#848){RST}\n",
-        r.tool_profile, r.advertised_tools
+        "{DIM}{} advertised tools · cross-references fixed cost with recorded usage (#848){RST}\n",
+        r.advertised_tools
     );
 
     // ── Fixed cost ────────────────────────────────────────────────────

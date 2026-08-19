@@ -157,22 +157,6 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
             ),
         );
     root.insert(
-            "tool_profile".into(),
-            key_enum(
-                &["minimal", "standard", "power"],
-                cfg.tool_profile.as_deref().unwrap_or(""),
-                "Tool visibility profile: minimal (5 tools), standard (16), power (all). Override via LEAN_CTX_TOOL_PROFILE",
-            ),
-        );
-    root.insert(
-        "tools_enabled".into(),
-        key(
-            "string[]",
-            serde_json::json!(cfg.tools_enabled),
-            "Explicit list of enabled tool names. Used only when no tool_profile is pinned (tool_profile takes precedence); leave tool_profile unset to apply this list. The universal invoker ctx_call stays advertised so unlisted tools remain reachable — add it to disabled_tools (disabled_tools = [\"ctx_call\"]) to make this allowlist authoritative.",
-        ),
-    );
-    root.insert(
         "rules_scope".into(),
         key_enum(
             &["both", "global", "project"],
