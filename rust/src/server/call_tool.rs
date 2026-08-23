@@ -436,9 +436,7 @@ impl LeanCtxServer {
         // exceeds the ephemeral threshold, the full (redacted) body is stored out-of-band
         // and the inline result is replaced by a compact digest + ctx_expand drilldown.
         let mut firewalled = false;
-        let archive_hint = if minimal || is_raw_shell {
-            None
-        } else {
+        if !(minimal || is_raw_shell) {
             use crate::core::archive;
             let archivable = matches!(
                 name,
@@ -457,20 +455,14 @@ impl LeanCtxServer {
                 let session_id = self.session.read().await.id.clone();
                 let to_store = crate::core::redaction::redact_text_if_enabled(&result_text);
                 let tokens = crate::core::tokens::count_tokens(&to_store);
-                match archive::store(name, &cmd, &to_store, Some(&session_id)) {
-                    Some(id) if crate::core::firewall::should_firewall(name, tokens, &config) => {
-                        result_text =
-                            crate::core::firewall::summarize(&to_store, &id, name, tokens);
-                        firewalled = true;
-                        None
-                    }
-                    Some(id) => Some(archive::format_hint(&id, to_store.len(), tokens)),
-                    None => None,
+                if let Some(id) = archive::store(name, &cmd, &to_store, Some(&session_id))
+                    && crate::core::firewall::should_firewall(name, tokens, &config)
+                {
+                    result_text = crate::core::firewall::summarize(&to_store, &id, name, tokens);
+                    firewalled = true;
                 }
-            } else {
-                None
             }
-        };
+        }
 
         let pre_compression = result_text.clone();
         // A firewalled result is already a compact digest — re-compressing it would mangle
@@ -487,15 +479,11 @@ impl LeanCtxServer {
         // and every subsequent wakeup briefing (#658).
         let findings_source = result_text.clone();
 
-        // Resolve the active profile once per dispatch: it is stable for the
-        // lifetime of a single tool call, and `active_profile()` is an expensive
-        // resolve (config load + disk reads + inheritance merge). Reused below
-        // for the verify footer and the auto-checkpoint marker.
-        let active_profile = crate::core::profiles::active_profile();
-        let profile_hints = active_profile.output_hints.clone();
+        // The verification config is the only profile section this path still
+        // reads; the output hints that gated the decorations are gone.
+        let verify_cfg = crate::core::profiles::active_profile().verification;
 
-        if !is_raw_shell && !firewalled && profile_hints.verify_footer() {
-            let verify_cfg = active_profile.verification;
+        if !is_raw_shell && !firewalled {
             let vr = crate::core::output_verification::verify_output(
                 &pre_compression,
                 &result_text,
@@ -505,13 +493,6 @@ impl LeanCtxServer {
                 let msg = format!("[VERIFY] {}", vr.format_compact());
                 result_text = format!("{result_text}\n\n{msg}");
             }
-        }
-
-        if !firewalled
-            && profile_hints.archive_hint()
-            && let Some(hint) = archive_hint
-        {
-            result_text = format!("{result_text}\n{hint}");
         }
 
         if !is_raw_shell && let Some(ctx) = auto_context {
@@ -635,9 +616,7 @@ impl LeanCtxServer {
                         crate::tools::CrpMode::effective(),
                         false,
                     );
-                    if profile_hints.related_hint()
-                        && let Some(hint) = enrich.related_hint
-                    {
+                    if let Some(hint) = enrich.related_hint {
                         result_text = format!("{result_text}\n{hint}");
                     }
                     crate::tools::autonomy::maybe_auto_dedup(&self.autonomy, &mut cache, name);
@@ -662,7 +641,6 @@ impl LeanCtxServer {
                     let out_tok = output_tokens as usize;
                     let sent_tok = crate::core::tokens::count_tokens(&result_text);
                     let wants_eviction = true;
-                    let wants_elicitation = profile_hints.elicitation_hint();
                     tokio::spawn(async move {
                         let result = std::panic::AssertUnwindSafe(async {
                             let active_task = {
@@ -688,9 +666,6 @@ impl LeanCtxServer {
                             drop(ledger);
                             if wants_eviction && let Some(hint) = &gate_result.eviction_hint {
                                 tracing::debug!("deferred eviction hint: {hint}");
-                            }
-                            if wants_elicitation && let Some(hint) = &gate_result.elicitation_hint {
-                                tracing::debug!("deferred elicitation hint: {hint}");
                             }
                             if let Some(hint) = &gate_result.prefetch_hint {
                                 tracing::debug!("deferred FEP prefetch hint: {hint}");
@@ -728,21 +703,6 @@ impl LeanCtxServer {
             {
                 bt.next_seq();
                 bt.record_shell_file_access(&file_path);
-            }
-
-            if profile_hints.efficiency_hint() {
-                let calls = self.tool_calls.read().await;
-                let last_original = calls.last().map_or(0, |c| c.original_tokens);
-                drop(calls);
-                let pre_hint_tokens = crate::core::tokens::count_tokens(&result_text);
-                if let Some(hint) = crate::tools::autonomy::shell_efficiency_hint(
-                    &self.autonomy,
-                    &cmd,
-                    last_original,
-                    pre_hint_tokens,
-                ) {
-                    result_text = format!("{result_text}\n{hint}");
-                }
             }
         }
 
@@ -935,7 +895,6 @@ impl LeanCtxServer {
         if !skip_checkpoint
             && self.increment_and_check()
             && let Some(checkpoint) = self.auto_checkpoint().await
-            && profile_hints.checkpoint_in_output()
             && crate::core::protocol::meta_visible()
         {
             // Stable header (#498): no interval interpolation — dynamic

@@ -647,11 +647,7 @@ fn render_signatures(content: &str, ctx: RenderCtx<'_>) -> (String, usize) {
     }
     // JIT disclosure (GL#447): signatures carry L-spans, so point at the
     // targeted range expansion before the full-read escalation.
-    if crate::core::profiles::active_profile()
-        .output_hints
-        .compressed_hint()
-        && !sigs.is_empty()
-    {
+    if !sigs.is_empty() {
         output.push_str(&format!(
                     "\n  ↳ expand a symbol: ctx_read(\"{file_path}\", mode=\"lines:N-M\") using the spans above"
                 ));
@@ -779,11 +775,7 @@ fn render_map(content: &str, ctx: RenderCtx<'_>) -> (String, usize) {
         output.push_str(&body);
     }
     // Located symbols are addressable as stable handles (#607).
-    if crate::core::profiles::active_profile()
-        .output_hints
-        .compressed_hint()
-        && !key_sigs.is_empty()
-    {
+    if !key_sigs.is_empty() {
         output.push_str(&format!("\n  {}", crate::core::handle::USAGE_HINT));
     }
 
@@ -1047,27 +1039,11 @@ fn render_task_mode(content: &str, ctx: RenderCtx<'_>, tuning: &ReadTuning<'_>) 
     } else {
         format!("{short} {line_count}L [task-filtered: {line_count}→{filtered_lines}]")
     };
-    let graph_ctx = if crate::core::profiles::active_profile()
-        .output_hints
-        .graph_context_block()
-    {
-        let project_root = detect_project_root(file_path);
-        crate::core::graph_context::build_graph_context(
-            file_path,
-            &project_root,
-            Some(crate::core::graph_context::GraphContextOptions::default()),
-        )
-        .map(|c| crate::core::graph_context::format_graph_context(&c))
-        .unwrap_or_default()
-    } else {
-        String::new()
-    };
-
-    let sent = count_tokens(&filtered) + count_tokens(&header) + count_tokens(&graph_ctx);
+    let sent = count_tokens(&filtered) + count_tokens(&header);
     let savings = protocol::format_savings(original_tokens, sent);
     (
         append_compressed_hint(
-            &format!("{header}\n{filtered}{graph_ctx}\n{savings}"),
+            &format!("{header}\n{filtered}\n{savings}"),
             file_path,
         ),
         sent,

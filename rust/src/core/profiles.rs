@@ -46,8 +46,6 @@ pub struct Profile {
     pub degradation: DegradationConfig,
     #[serde(default)]
     pub autonomy: ProfileAutonomy,
-    #[serde(default)]
-    pub output_hints: OutputHints,
 }
 
 /// Profile identity and inheritance.
@@ -193,52 +191,6 @@ impl DegradationConfig {
 
     pub fn throttle_ms_effective(&self) -> u64 {
         self.throttle_ms.unwrap_or(250)
-    }
-}
-
-/// Controls which optional hints/footers are appended to tool output.
-/// All default to `false` for minimal output overhead.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-#[serde(default)]
-pub struct OutputHints {
-    pub compressed_hint: Option<bool>,
-    pub archive_hint: Option<bool>,
-    pub verify_footer: Option<bool>,
-    pub related_hint: Option<bool>,
-    pub semantic_hint: Option<bool>,
-    pub elicitation_hint: Option<bool>,
-    pub checkpoint_in_output: Option<bool>,
-    pub graph_context_block: Option<bool>,
-    pub efficiency_hint: Option<bool>,
-}
-
-impl OutputHints {
-    pub fn compressed_hint(&self) -> bool {
-        self.compressed_hint.unwrap_or(false)
-    }
-    pub fn archive_hint(&self) -> bool {
-        self.archive_hint.unwrap_or(false)
-    }
-    pub fn verify_footer(&self) -> bool {
-        self.verify_footer.unwrap_or(false)
-    }
-    pub fn related_hint(&self) -> bool {
-        self.related_hint.unwrap_or(false)
-    }
-    pub fn semantic_hint(&self) -> bool {
-        self.semantic_hint.unwrap_or(false)
-    }
-    pub fn elicitation_hint(&self) -> bool {
-        self.elicitation_hint.unwrap_or(false)
-    }
-    pub fn checkpoint_in_output(&self) -> bool {
-        self.checkpoint_in_output.unwrap_or(false)
-    }
-    pub fn graph_context_block(&self) -> bool {
-        self.graph_context_block.unwrap_or(false)
-    }
-    pub fn efficiency_hint(&self) -> bool {
-        self.efficiency_hint.unwrap_or(false)
     }
 }
 
@@ -388,7 +340,6 @@ fn builtin_coder() -> Profile {
             checkpoint_interval: Some(10),
             ..ProfileAutonomy::default()
         },
-        output_hints: OutputHints::default(),
     }
 }
 
@@ -498,7 +449,6 @@ mod tests {
             routing: RoutingConfig::default(),
             degradation: DegradationConfig::default(),
             autonomy: ProfileAutonomy::default(),
-            output_hints: OutputHints::default(),
         };
         assert_eq!(p.read.default_mode_effective(), "auto");
         assert_eq!(p.compression.crp_mode_effective(), "tdd");

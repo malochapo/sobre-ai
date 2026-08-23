@@ -124,8 +124,8 @@ fn print_report(r: &ToolHealthReport, show_all: bool) {
     }
 
     // ── Value recommendation (#961) ───────────────────────────────────
-    if !r.disable_action.is_empty() {
-        println!("\n  {YELLOW}→ {}{RST}", r.disable_action);
+    if !r.low_value_note.is_empty() {
+        println!("\n  {YELLOW}→ {}{RST}", r.low_value_note);
     }
     if let Some(note) = &r.footprint_note {
         println!("  {DIM}{note}{RST}");

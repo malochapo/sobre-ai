@@ -5,75 +5,11 @@
 //! to the `config` module (identical to the original `super::*`).
 
 #[cfg(test)]
-mod disabled_tools_tests {
-    use super::super::*;
-
-    #[test]
-    fn config_field_default_is_empty() {
-        let cfg = Config::default();
-        assert!(cfg.disabled_tools.is_empty());
-    }
-
-    #[test]
-    fn effective_returns_config_field_when_no_env_var() {
-        // Only meaningful when LEAN_CTX_DISABLED_TOOLS is unset; skip otherwise.
-        if std::env::var("LEAN_CTX_DISABLED_TOOLS").is_ok() {
-            return;
-        }
-        let cfg = Config {
-            disabled_tools: vec!["ctx_graph".to_string(), "ctx_agent".to_string()],
-            ..Default::default()
-        };
-        assert_eq!(
-            cfg.disabled_tools_effective(),
-            vec!["ctx_graph", "ctx_agent"]
-        );
-    }
-
-    #[test]
-    fn parse_env_basic() {
-        let result = Config::parse_disabled_tools_env("ctx_graph,ctx_agent");
-        assert_eq!(result, vec!["ctx_graph", "ctx_agent"]);
-    }
-
-    #[test]
-    fn parse_env_trims_whitespace_and_skips_empty() {
-        let result = Config::parse_disabled_tools_env(" ctx_graph , , ctx_agent ");
-        assert_eq!(result, vec!["ctx_graph", "ctx_agent"]);
-    }
-
-    #[test]
-    fn parse_env_single_entry() {
-        let result = Config::parse_disabled_tools_env("ctx_graph");
-        assert_eq!(result, vec!["ctx_graph"]);
-    }
-
-    #[test]
-    fn parse_env_empty_string_returns_empty() {
-        let result = Config::parse_disabled_tools_env("");
-        assert!(result.is_empty());
-    }
-
-    #[test]
-    fn disabled_tools_deserialization_defaults_to_empty() {
-        let cfg: Config = toml::from_str("").unwrap();
-        assert!(cfg.disabled_tools.is_empty());
-    }
-
-    #[test]
-    fn disabled_tools_deserialization_from_toml() {
-        let cfg: Config = toml::from_str(r#"disabled_tools = ["ctx_graph", "ctx_agent"]"#).unwrap();
-        assert_eq!(cfg.disabled_tools, vec!["ctx_graph", "ctx_agent"]);
-    }
-}
-
-#[cfg(test)]
 mod prefer_native_editor_tests {
     use super::super::*;
 
     fn env_clean() -> bool {
         std::env::var("LEAN_CTX_PREFER_NATIVE_EDITOR").is_err()
-            && std::env::var("LEAN_CTX_DISABLED_TOOLS").is_err()
     }
 
     #[test]
@@ -85,7 +21,6 @@ mod prefer_native_editor_tests {
         assert!(!cfg.prefer_native_editor);
         assert!(!cfg.prefer_native_editor_effective());
         assert!(!cfg.edit_tool_blocked("ctx_edit"));
-        assert!(cfg.disabled_tools_effective().is_empty());
     }
 
     #[test]
@@ -106,8 +41,10 @@ mod prefer_native_editor_tests {
         assert!(!cfg.edit_tool_blocked("ctx_refactor"));
     }
 
+    /// Every name in `EDIT_TOOL_NAMES` must actually be blocked — the list and
+    /// the predicate must not drift apart.
     #[test]
-    fn enabled_hides_edit_tools_from_list() {
+    fn every_listed_edit_tool_is_blocked() {
         if !env_clean() {
             return;
         }
@@ -115,32 +52,9 @@ mod prefer_native_editor_tests {
             prefer_native_editor: true,
             ..Default::default()
         };
-        let disabled = cfg.disabled_tools_effective();
         for name in crate::core::config::EDIT_TOOL_NAMES {
-            assert!(
-                disabled.iter().any(|t| t == name),
-                "{name} must be folded into the effective disabled set"
-            );
+            assert!(cfg.edit_tool_blocked(name), "{name} must be blocked");
         }
-    }
-
-    #[test]
-    fn merges_existing_disabled_without_duplication() {
-        if !env_clean() {
-            return;
-        }
-        let cfg = Config {
-            prefer_native_editor: true,
-            disabled_tools: vec!["ctx_graph".to_string(), "ctx_edit".to_string()],
-            ..Default::default()
-        };
-        let eff = cfg.disabled_tools_effective();
-        assert_eq!(
-            eff.iter().filter(|t| *t == "ctx_edit").count(),
-            1,
-            "ctx_edit must not be duplicated when already disabled"
-        );
-        assert!(eff.iter().any(|t| t == "ctx_graph"));
     }
 }
 
@@ -336,17 +250,17 @@ mod no_degrade_tests {
     // --- Coexistence with other config fields ---
 
     #[test]
-    fn no_degrade_independent_of_disabled_tools() {
+    fn no_degrade_independent_of_prefer_native_editor() {
         if std::env::var("LCTX_NO_DEGRADE").is_ok() {
             return;
         }
         let cfg = Config {
             no_degrade: true,
-            disabled_tools: vec!["ctx_graph".to_string()],
+            prefer_native_editor: true,
             ..Default::default()
         };
         assert!(cfg.no_degrade_effective());
-        assert!(!cfg.disabled_tools.is_empty());
+        assert!(cfg.prefer_native_editor);
     }
 
     #[test]

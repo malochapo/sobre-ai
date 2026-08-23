@@ -91,10 +91,6 @@ pub(crate) fn strip_sensitive_overrides(local: &mut Config) -> Vec<&'static str>
         local.permission_inheritance = None;
         withheld.push("permission_inheritance");
     }
-    if !local.disabled_tools.is_empty() {
-        local.disabled_tools.clear();
-        withheld.push("disabled_tools");
-    }
     if !local.default_tool_categories.is_empty() {
         local.default_tool_categories.clear();
         withheld.push("default_tool_categories");

@@ -233,16 +233,9 @@ impl LeanCtxServer {
                 ));
             }
 
-            let config_changed =
-                super::tools_config_watch::has_changed(&self.last_tools_config_hash);
-            if (output.changed || config_changed)
+            if output.changed
                 && let Some(peer) = self.peer.read().await.as_ref()
             {
-                if config_changed {
-                    tracing::info!(
-                        "Tool-config changed (profile/enabled/disabled) — sending tools/list_changed"
-                    );
-                }
                 super::notifications::send_tools_list_changed(peer).await;
             }
 

@@ -13,7 +13,6 @@ use crate::tools::CrpMode;
 // accuracy invariants (GL#441).
 pub mod dedup_hook;
 mod helpers;
-use helpers::detect_project_root;
 pub use helpers::{graph_related_hint, is_instruction_file};
 mod kernel;
 pub(crate) mod render;

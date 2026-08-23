@@ -1,12 +1,9 @@
 //! Pure tool-visibility policy for the MCP `tools/list` response.
 //!
 //! Extracted from the (async, server-bound) `list_tools` handler so the policy
-//! is unit-testable in isolation. The handler resolves the candidate set
-//! (lazy-core vs profile-authoritative vs full registry) and the per-call gates
-//! (role, workflow), then defers to these helpers for the stable rules:
-//!   * Internal/meta tools are never advertised.
-//!   * The active profile, `disabled_tools`, and the per-client
-//!     [`ClientQuirks`] (Zed `ctx_edit`, native-editor `ctx_patch`) filter the
+//! is unit-testable in isolation. Nine axes used to narrow the surface here;
+//! invariant 3 removed every one of them, so what is left is the rule that
+//! internal/meta tools are never advertised.
 
 
 /// The advertised surface, with live description compression. Offline

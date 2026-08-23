@@ -545,43 +545,6 @@ pub fn large_ctx_read_full_hint(
     ))
 }
 
-/// Suggests a more token-efficient lean-ctx tool when shell compression is low.
-pub fn shell_efficiency_hint(
-    state: &AutonomyState,
-    command: &str,
-    input_tokens: usize,
-    output_tokens: usize,
-) -> Option<String> {
-    if !autonomy_enabled_effective(state) {
-        return None;
-    }
-
-    if input_tokens == 0 {
-        return None;
-    }
-
-    let savings_pct =
-        (input_tokens.saturating_sub(output_tokens) as f64 / input_tokens as f64) * 100.0;
-    if savings_pct >= 20.0 {
-        return None;
-    }
-
-    let cmd_lower = command.to_lowercase();
-    if cmd_lower.starts_with("grep ")
-        || cmd_lower.starts_with("rg ")
-        || cmd_lower.starts_with("find ")
-        || cmd_lower.starts_with("ag ")
-    {
-        return Some("[hint: ctx_search is more token-efficient for code search]".to_string());
-    }
-
-    if cmd_lower.starts_with("cat ") || cmd_lower.starts_with("head ") {
-        return Some("[hint: ctx_read provides cached, compressed file access]".to_string());
-    }
-
-    None
-}
-
 fn looks_like_json(text: &str) -> bool {
     let t = text.trim();
     if !(t.starts_with('{') || t.starts_with('[')) {
@@ -719,28 +682,6 @@ mod tests {
     }
 
     #[test]
-    fn shell_hint_for_grep() {
-        let state = AutonomyState::new();
-        let hint = shell_efficiency_hint(&state, "grep -rn foo .", 100, 95);
-        assert!(hint.is_some());
-        assert!(hint.unwrap().contains("ctx_search"));
-    }
-
-    #[test]
-    fn shell_hint_none_when_good_savings() {
-        let state = AutonomyState::new();
-        let hint = shell_efficiency_hint(&state, "grep -rn foo .", 100, 50);
-        assert!(hint.is_none());
-    }
-
-    #[test]
-    fn shell_hint_none_for_unknown_command() {
-        let state = AutonomyState::new();
-        let hint = shell_efficiency_hint(&state, "cargo build", 100, 95);
-        assert!(hint.is_none());
-    }
-
-    #[test]
     fn large_shell_hint_once_per_session() {
         let state = AutonomyState::new();
         let h1 = large_ctx_shell_output_hint(&state, "ls -la", 5001).expect("first");
@@ -775,15 +716,6 @@ mod tests {
         let big = "word ".repeat(20_000);
         assert!(large_ctx_shell_output_hint(&state, "cargo test", 6000).is_none());
         assert!(large_ctx_read_full_hint(&state, Some("full"), &big).is_none());
-    }
-
-    #[test]
-    fn disabled_state_blocks_all() {
-        let mut state = AutonomyState::new();
-        state.config.enabled = false;
-        assert!(!state.is_enabled());
-        let hint = shell_efficiency_hint(&state, "grep foo", 100, 95);
-        assert!(hint.is_none());
     }
 
     #[test]

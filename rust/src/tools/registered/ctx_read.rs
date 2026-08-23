@@ -1061,12 +1061,7 @@ impl CtxReadTool {
         // #1098: graph-related hints (callers/callees) are now computed AFTER the
         // cache lock is released. They involve SQLite queries (~50-200ms) that
         // previously blocked all parallel reads while holding the write lock.
-        let graph_hint = if !is_cache_hit
-            && !resolved_mode.starts_with("lines:")
-            && crate::core::profiles::active_profile()
-                .output_hints
-                .related_hint()
-        {
+        let graph_hint = if !is_cache_hit && !resolved_mode.starts_with("lines:") {
             crate::tools::ctx_read::graph_related_hint(path)
         } else {
             None

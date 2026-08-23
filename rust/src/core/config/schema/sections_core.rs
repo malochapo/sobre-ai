@@ -109,14 +109,6 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
         ),
     );
     root.insert(
-        "disabled_tools".into(),
-        key(
-            "string[]",
-            serde_json::json!(cfg.disabled_tools),
-            "Tools to exclude from the MCP tool list",
-        ),
-    );
-    root.insert(
         "prefer_native_editor".into(),
         key(
             "bool",

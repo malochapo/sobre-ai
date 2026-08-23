@@ -28,23 +28,13 @@ pub const COMPACT_VIEW_HEADER: &str =
 ///
 /// Resolution order:
 /// 1. `LEAN_CTX_RECOVERY_HINTS` env (`off|minimal|full`) — ops / test override.
-/// 2. Active profile: `output_hints.compressed_hint = Some(true)` →
-///    [`RecoveryHints::Full`] (the `exploration` / `review` profiles);
-///    `Some(false)` → [`RecoveryHints::Off`] (explicit profile opt-out).
-/// 3. Global `config.recovery_hints` (default [`RecoveryHints::Minimal`]).
+/// 2. Global `config.recovery_hints` (default [`RecoveryHints::Minimal`]).
+///
+/// A profile's `output_hints.compressed_hint` used to sit between the two.
+/// Only `exploration` and `review` ever set it, and both are gone.
 #[must_use]
 pub fn tier() -> RecoveryHints {
-    if let Some(t) = RecoveryHints::from_env() {
-        return t;
-    }
-    match crate::core::profiles::active_profile()
-        .output_hints
-        .compressed_hint
-    {
-        Some(true) => RecoveryHints::Full,
-        Some(false) => RecoveryHints::Off,
-        None => Config::load().recovery_hints,
-    }
+    RecoveryHints::from_env().unwrap_or_else(|| Config::load().recovery_hints)
 }
 
 /// Footer appended to a compressed `ctx_read` view. Leads with the MCP-free path

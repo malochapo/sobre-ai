@@ -85,7 +85,7 @@ const _: () = assert!(DEFAULT_BM25_PERSIST_MB >= 512);
 /// Deliberately narrow: only the dedicated edit tools are blocked — `ctx_edit`
 /// (str_replace) and `ctx_patch` (anchored, #1008). LSP refactor
 /// (`ctx_refactor`) also exposes read-only sub-actions (references/definition),
-/// so it is left available; users wanting it gone can add it to `disabled_tools`.
+/// so it is left available.
 pub const EDIT_TOOL_NAMES: &[&str] = &["ctx_edit", "ctx_patch"];
 
 /// Default locations for shell output capture.
@@ -236,11 +236,6 @@ pub struct Config {
     pub enable_wakeup_ctx: bool,
     #[serde(default)]
     pub redirect_exclude: Vec<String>,
-    /// Tools to exclude from the MCP tool list returned by list_tools.
-    /// Accepts exact tool names (e.g. `["ctx_graph", "ctx_agent"]`).
-    /// Empty by default — all tools listed, no behaviour change.
-    #[serde(default)]
-    pub disabled_tools: Vec<String>,
     /// Prefer the host agent's native editor over lean-ctx edit operations (#454).
     /// When true, the lean-ctx edit tool(s) (see [`EDIT_TOOL_NAMES`]) are neither
     /// advertised in `list_tools` nor dispatchable (direct or via `ctx_call`), so
@@ -765,7 +760,6 @@ impl Default for Config {
             dashboard_cache_hit_rate: None,
             enable_wakeup_ctx: true,
             redirect_exclude: Vec::new(),
-            disabled_tools: Vec::new(),
             prefer_native_editor: false,
             default_tool_categories: Vec::new(),
             no_degrade: false,
@@ -958,32 +952,6 @@ impl Config {
     pub fn dedicated_session_context_active(&self) -> bool {
         self.rules_injection_effective() == RulesInjection::Dedicated
             && self.rules_scope_effective() != RulesScope::Project
-    }
-
-    fn parse_disabled_tools_env(val: &str) -> Vec<String> {
-        val.split(',')
-            .map(|s| s.trim().to_string())
-            .filter(|s| !s.is_empty())
-            .collect()
-    }
-
-    /// Returns the effective disabled tools list, preferring env var over config
-    /// file. When `prefer_native_editor` is active, the lean-ctx edit tools are
-    /// folded in so they are hidden from `list_tools` (#454).
-    pub fn disabled_tools_effective(&self) -> Vec<String> {
-        let mut list = if let Ok(val) = std::env::var("LEAN_CTX_DISABLED_TOOLS") {
-            Self::parse_disabled_tools_env(&val)
-        } else {
-            self.disabled_tools.clone()
-        };
-        if self.prefer_native_editor_effective() {
-            for name in EDIT_TOOL_NAMES {
-                if !list.iter().any(|t| t == name) {
-                    list.push((*name).to_string());
-                }
-            }
-        }
-        list
     }
 
     /// Whether lean-ctx edit operations are disabled in favour of the host's

@@ -105,7 +105,7 @@ pub struct ToolHealthReport {
     /// Schema tokens reclaimable by disabling every [`Self::disable_candidates`].
     pub reclaimable_tokens: usize,
     /// Aggregated, copy-pasteable "consider disabling X" recommendation.
-    pub disable_action: String,
+    pub low_value_note: String,
     /// Outcome signal from the latest `eval footprint` artifact (#959), if any:
     /// whether the tool-schema element as a whole earns its tokens.
     pub footprint_note: Option<String>,
@@ -225,11 +225,11 @@ pub fn build_report(
         .filter(low_value)
         .map(|t| t.schema_tokens)
         .sum();
-    let disable_action = if disable_candidates.is_empty() {
+    let low_value_note = if disable_candidates.is_empty() {
         String::new()
     } else {
         format!(
-            "consider disabling {} low-value tool(s) to reclaim {reclaimable_tokens} tok/session: {} — apply via `disabled_tools` in config",
+            "{} low-value tool(s) cost {reclaimable_tokens} tok/session: {}",
             disable_candidates.len(),
             disable_candidates.join(", ")
         )
@@ -272,7 +272,7 @@ pub fn build_report(
         unused_tool_tokens,
         disable_candidates,
         reclaimable_tokens,
-        disable_action,
+        low_value_note,
         footprint_note: None,
         tools,
         rules: rules_out,
@@ -498,7 +498,7 @@ mod tests {
             "an active tool is never a disable candidate"
         );
         assert!(report.reclaimable_tokens > 0);
-        assert!(report.disable_action.contains("consider disabling"));
+        assert!(report.low_value_note.contains("low-value tool"));
         assert!(
             report.footprint_note.is_none(),
             "the pure builder never reads disk artifacts"

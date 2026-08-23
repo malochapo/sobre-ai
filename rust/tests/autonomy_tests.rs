@@ -3,7 +3,6 @@ use lean_ctx::core::config::AutonomyConfig;
 use lean_ctx::tools::CrpMode;
 use lean_ctx::tools::autonomy::{
     AutonomyState, enrich_after_read, maybe_auto_dedup, session_lifecycle_pre_hook,
-    shell_efficiency_hint,
 };
 use std::sync::OnceLock;
 use std::sync::atomic::Ordering;
@@ -189,43 +188,6 @@ fn auto_dedup_disabled() {
 
     maybe_auto_dedup(&state, &mut cache, "ctx_read");
     assert!(!state.dedup_applied.load(Ordering::SeqCst));
-}
-
-#[test]
-fn shell_hint_grep_low_savings() {
-    let state = make_state();
-    let hint = shell_efficiency_hint(&state, "grep -rn pattern src/", 200, 190);
-    assert!(hint.is_some());
-    assert!(hint.unwrap().contains("ctx_search"));
-}
-
-#[test]
-fn shell_hint_cat_low_savings() {
-    let state = make_state();
-    let hint = shell_efficiency_hint(&state, "cat src/main.rs", 500, 490);
-    assert!(hint.is_some());
-    assert!(hint.unwrap().contains("ctx_read"));
-}
-
-#[test]
-fn shell_hint_none_for_good_savings() {
-    let state = make_state();
-    let hint = shell_efficiency_hint(&state, "grep -rn foo .", 1000, 200);
-    assert!(hint.is_none());
-}
-
-#[test]
-fn shell_hint_none_for_non_search_command() {
-    let state = make_state();
-    let hint = shell_efficiency_hint(&state, "cargo build --release", 100, 95);
-    assert!(hint.is_none());
-}
-
-#[test]
-fn shell_hint_disabled() {
-    let state = make_disabled_state();
-    let hint = shell_efficiency_hint(&state, "grep foo bar", 100, 95);
-    assert!(hint.is_none());
 }
 
 #[test]

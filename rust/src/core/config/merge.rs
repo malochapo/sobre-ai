@@ -126,7 +126,6 @@ impl Config {
         override_if_ne!(default.theme, theme);
         override_if_false!(enable_wakeup_ctx);
         extend_if_nonempty!(redirect_exclude);
-        extend_if_nonempty!(disabled_tools);
         override_if_true!(prefer_native_editor);
         extend_if_nonempty!(extra_ignore_patterns);
         // Index filters (#735): repo-local excludes extend the global list; a

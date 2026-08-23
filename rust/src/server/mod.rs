@@ -23,7 +23,6 @@ pub mod schema_hook;
 use roots::has_project_marker;
 pub mod tool_trait;
 pub mod tool_visibility;
-pub mod tools_config_watch;
 
 use futures::FutureExt;
 use rmcp::ErrorData;
@@ -300,44 +299,6 @@ mod tests {
             server.registry.is_some(),
             "production server must carry a tool registry"
         );
-    }
-
-    #[test]
-    fn disabled_tools_filters_list() {
-        let all = crate::tool_defs::granular_tool_defs();
-        let total = all.len();
-        let disabled = ["ctx_graph".to_string(), "ctx_knowledge".to_string()];
-        let filtered: Vec<_> = all
-            .into_iter()
-            .filter(|t| !disabled.iter().any(|d| t.name.as_ref() == d.as_str()))
-            .collect();
-        assert_eq!(filtered.len(), total - 2);
-        assert!(!filtered.iter().any(|t| t.name.as_ref() == "ctx_graph"));
-        assert!(!filtered.iter().any(|t| t.name.as_ref() == "ctx_knowledge"));
-    }
-
-    #[test]
-    fn empty_disabled_tools_returns_all() {
-        let all = crate::tool_defs::granular_tool_defs();
-        let total = all.len();
-        let disabled: Vec<String> = vec![];
-        let filtered: Vec<_> = all
-            .into_iter()
-            .filter(|t| !disabled.iter().any(|d| t.name.as_ref() == d.as_str()))
-            .collect();
-        assert_eq!(filtered.len(), total);
-    }
-
-    #[test]
-    fn misspelled_disabled_tool_is_silently_ignored() {
-        let all = crate::tool_defs::granular_tool_defs();
-        let total = all.len();
-        let disabled = ["ctx_nonexistent_tool".to_string()];
-        let filtered: Vec<_> = all
-            .into_iter()
-            .filter(|t| !disabled.iter().any(|d| t.name.as_ref() == d.as_str()))
-            .collect();
-        assert_eq!(filtered.len(), total);
     }
 
     #[test]
