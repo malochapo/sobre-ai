@@ -89,7 +89,7 @@ fn apply_ocla_budget_admission(
     };
     let estimated_tokens = (estimated_bytes as u64).saturating_add(ESTIMATED_CHARS_PER_TOKEN - 1)
         / ESTIMATED_CHARS_PER_TOKEN;
-    crate::core::ocla::wire_api::admit_budgeted_request(scope, estimated_tokens, 0.0)
+    crate::core::ocla::budget_gate::admit_budgeted_request(scope, estimated_tokens, 0.0)
         .map_err(|_| StatusCode::PAYMENT_REQUIRED)
 }
 

@@ -5,6 +5,7 @@
 //! versioned boundary but must never become a data-plane dependency.
 
 pub mod budget;
+pub mod budget_gate;
 pub mod builtin;
 pub mod capsule;
 pub mod content_port;
@@ -15,18 +16,11 @@ pub mod registry;
 pub mod response_cache;
 pub mod routing_experiment;
 pub mod routing_quality;
-#[cfg(feature = "http-server")]
-pub mod runtime;
-pub mod sidecar;
 pub mod tracing;
 pub mod traits;
 pub mod types;
 pub mod unified_ledger;
 pub mod wire;
-#[cfg(feature = "http-server")]
-pub mod wire_api;
-#[cfg(feature = "http-server")]
-pub mod wire_middleware;
 pub mod wire_stream;
 
 pub use registry::OclaRegistry;

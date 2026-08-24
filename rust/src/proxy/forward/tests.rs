@@ -55,7 +55,7 @@ fn ocla_budget_admission_rejects_over_limit_scope() {
         max_tokens_per_day: 2,
         max_usd_per_day: 1.0,
     };
-    crate::core::ocla::wire_api::set_test_budget_limit(limit);
+    crate::core::ocla::budget_gate::set_test_budget_limit(limit);
 
     let err = apply_ocla_budget_admission(&parts, 12).unwrap_err();
 

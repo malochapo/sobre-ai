@@ -17,10 +17,6 @@ pub static malloc_conf: &[u8] = b"background_thread:true,dirty_decay_ms:1000,muz
 // ---------------------------------------------------------------------------
 pub mod compound_lexer;
 pub mod core;
-pub mod daemon;
-pub mod daemon_autostart;
-pub mod daemon_client;
-pub mod dashboard;
 pub mod dropin;
 pub mod engine;
 pub mod heatmap;
@@ -48,8 +44,6 @@ pub mod proxy;
 pub mod proxy_autostart;
 pub mod proxy_setup;
 
-#[cfg(feature = "http-server")]
-pub mod http_server;
 
 // ---------------------------------------------------------------------------
 // Shared — CLI, IPC, config, diagnostics, setup

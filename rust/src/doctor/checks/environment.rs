@@ -4,7 +4,6 @@
 #[allow(clippy::wildcard_imports)]
 use crate::doctor::common::*;
 use crate::doctor::{BOLD, DIM, GREEN, Outcome, RED, RST, YELLOW};
-use std::net::TcpListener;
 
 /// Cognition v2 activation: how many science-backed subsystems have actually
 /// fired on this install. Proves the stack is wired (not dead code) without
@@ -243,27 +242,6 @@ pub(crate) fn wsl_vscode_mcp_outcome() -> Option<Outcome> {
     })
 }
 
-pub(crate) fn port_3333_outcome() -> Outcome {
-    match TcpListener::bind("127.0.0.1:3333") {
-        Ok(_listener) => Outcome {
-            ok: true,
-            line: format!("{BOLD}Dashboard port 3333{RST}  {GREEN}available on 127.0.0.1{RST}"),
-        },
-        // #644: a busy port is only a problem if it's *not* us. Reuse the dashboard's
-        // own auth-aware /api/version probe (single source of truth) so our own
-        // running dashboard reads as healthy rather than a false conflict.
-        Err(_) if crate::dashboard::dashboard_responding("127.0.0.1", 3333) => Outcome {
-            ok: true,
-            line: format!(
-                "{BOLD}Dashboard port 3333{RST}  {GREEN}already serving lean-ctx dashboard{RST}  {DIM}(http://localhost:3333){RST}"
-            ),
-        },
-        Err(e) => Outcome {
-            ok: false,
-            line: format!("{BOLD}Dashboard port 3333{RST}  {RED}not available: {e}{RST}"),
-        },
-    }
-}
 pub(crate) fn pi_outcome() -> Option<Outcome> {
     let pi_result = std::process::Command::new("pi").arg("--version").output();
 

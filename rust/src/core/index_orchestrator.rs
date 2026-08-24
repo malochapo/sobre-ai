@@ -222,40 +222,6 @@ pub fn ensure_warm_for_tool(project_root: &str, tool: &str) -> bool {
 /// are iterative now too, so this is defense-in-depth.
 const INDEXER_STACK_BYTES: usize = 16 * 1024 * 1024;
 
-/// Fire-and-forget: ask a running daemon to own the index build for `root`
-/// (#460, shared-indexer-daemon / thin clients).
-///
-/// The daemon is the single long-lived, machine-wide indexer. Once it holds the
-/// per-repo `graph-idx`/`bm25-idx` build locks, every session load-shares its
-/// on-disk result instead of each running a full scan during a cold boot wave —
-/// turning N simultaneous index passes into ~one. Strictly additive and
-/// best-effort: it runs on its own thread (no ambient runtime to nest into), is
-/// skipped when we *are* the daemon or when no daemon is reachable, and never
-/// blocks the caller. The local build started right after remains the fallback,
-/// so indexing always works with no daemon present.
-fn nudge_daemon_index(project_root: &str) {
-    // The daemon must never delegate the build to itself.
-    if crate::daemon::is_foreground_daemon() {
-        return;
-    }
-    let root = project_root.to_string();
-    let _ = std::thread::Builder::new()
-        .name("leanctx-index-nudge".to_string())
-        .spawn(move || {
-            if !crate::daemon::is_daemon_running() {
-                return;
-            }
-            let Ok(rt) = tokio::runtime::Runtime::new() else {
-                return;
-            };
-            let body = serde_json::json!({ "root": root }).to_string();
-            rt.block_on(async {
-                let _ = crate::daemon_client::try_daemon_request("POST", "/v1/index/ensure", &body)
-                    .await;
-            });
-        });
-}
-
 /// Try to claim the per-root build slot. Returns `false` when a worker is
 /// already running for `project_root` (the claim is released by the build
 /// worker itself when it finishes).
@@ -277,18 +243,6 @@ fn try_claim_worker(project_root: &str) -> bool {
 pub fn ensure_all_background(project_root: &str) {
     if !try_claim_worker(project_root) {
         return;
-    }
-
-    // #460: hand the build to the daemon (the single machine-wide indexer) when
-    // one is running and we aren't it. Deduped naturally — we only reach here
-    // when this process is actually about to start a build. Purely additive: the
-    // local build below still runs and load-shares via the per-repo locks.
-    //
-    // #735 exception: with a per-run CLI filter overlay active, the daemon
-    // (which builds with *its* config, not the overlay) could overwrite the
-    // filtered result — the one-off run keeps the build local instead.
-    if !crate::core::index_filter::cli_overlay_active() {
-        nudge_daemon_index(project_root);
     }
 
     let state = entry_for(project_root);
@@ -317,12 +271,11 @@ pub fn ensure_all_background(project_root: &str) {
 /// own the threading. Requires the caller to have claimed the worker slot via
 /// [`try_claim_worker`]; releases it on exit.
 fn run_build_worker(root: &str) {
-    // #790: start memory guardian for daemon-spawned builds. Previously only
-    // the CLI path (index_cmd.rs) started the guardian, leaving background
-    // builds (MCP `ensure_all_background`, watcher, graph_coordinator) to run
-    // without RSS pressure checks — the guardian's abort/pressure flags never
-    // fired. `start_guard` is idempotent: a second call within the same
-    // process is a no-op.
+    // #790: start the memory guardian for background builds. Previously only
+    // the CLI path (index_cmd.rs) started it, leaving background builds (MCP
+    // `ensure_all_background`, watcher, graph_coordinator) to run without RSS
+    // pressure checks — the guardian's abort/pressure flags never fired.
+    // `start_guard` is idempotent: a second call in the same process is a no-op.
     crate::core::memory_guard::start_guard(std::sync::Arc::new(|level| {
         tracing::warn!(
             "[build_worker] memory pressure: {level:?} — background tasks will throttle"
@@ -588,7 +541,6 @@ pub fn ensure_extra_roots_background(primary_root: &str, extra_roots: &[String])
                 if !try_claim_worker(&root) {
                     continue; // already building elsewhere
                 }
-                nudge_daemon_index(&root);
                 run_build_worker(&root);
             }
         });

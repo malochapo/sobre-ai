@@ -133,16 +133,8 @@ pub fn run() {
                 println!("{}", core::stats::format_cep_report());
                 return;
             }
-            "dashboard" => {
-                cmd_dashboard(&rest);
-                return;
-            }
             "provider" => {
                 cmd_provider(&rest);
-                return;
-            }
-            "serve" => {
-                cmd_serve(&rest);
                 return;
             }
             "watch" => {
@@ -151,10 +143,6 @@ pub fn run() {
             }
             "proxy" => {
                 cmd_proxy(&rest);
-                return;
-            }
-            "daemon" => {
-                cmd_daemon(&rest);
                 return;
             }
             "init" => {
@@ -518,7 +506,7 @@ fn is_server_mode(args: &[String]) -> bool {
         || args.get(1).is_some_and(|a| {
             matches!(
                 a.as_str(),
-                "mcp" | "daemon" | "proxy" | "serve" | "watch" | "dashboard" | "gateway"
+                "mcp" | "proxy" | "watch"
             )
         })
 }
@@ -642,7 +630,7 @@ mod tests {
 
     #[test]
     fn server_modes_keep_ignored_sigpipe() {
-        for mode in ["mcp", "daemon", "proxy", "serve", "watch", "dashboard"] {
+        for mode in ["mcp", "proxy", "watch"] {
             assert!(
                 is_server_mode(&args_of(&["lean-ctx", mode])),
                 "{mode} must count as server mode"
