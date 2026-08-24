@@ -352,14 +352,8 @@ pub(crate) fn memory_cleanup_outcome() -> Outcome {
     }
 }
 pub(crate) fn ram_guardian_outcome() -> Outcome {
-    // Measure the daemon's RSS (not the CLI process) when the daemon is running.
-    let daemon_pid = crate::daemon::read_daemon_pid();
-    let snap = match daemon_pid {
-        Some(pid) if crate::ipc::process::is_alive(pid) => {
-            crate::core::memory_guard::MemorySnapshot::capture_for_pid(pid)
-        }
-        _ => crate::core::memory_guard::MemorySnapshot::capture(),
-    };
+    // This process: sobre has no long-lived daemon whose RSS to measure instead.
+    let snap = crate::core::memory_guard::MemorySnapshot::capture();
     let Some(snap) = snap else {
         return Outcome {
             ok: true,
@@ -373,11 +367,7 @@ pub(crate) fn ram_guardian_outcome() -> Outcome {
     } else {
         "system"
     };
-    let source = if daemon_pid.is_some() {
-        "daemon"
-    } else {
-        "self"
-    };
+    let source = "self";
     let ok = snap.pressure_level == crate::core::memory_guard::PressureLevel::Normal;
     let color = if ok { GREEN } else { RED };
     let pressure_hint = match snap.pressure_level {

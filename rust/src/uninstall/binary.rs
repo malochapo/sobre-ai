@@ -10,20 +10,18 @@ use std::path::{Path, PathBuf};
 
 use super::shorten;
 
-/// Stops the daemon, proxy, and any stray lean-ctx processes (mirrors `lean-ctx stop`,
+/// Stops the proxy and any stray lean-ctx processes (mirrors `lean-ctx stop`,
 /// but never exits the process — the uninstall must keep going). The current process and
 /// IDE-owned MCP servers are excluded by `find_killable_pids`.
 pub(super) fn stop_processes(dry_run: bool) {
     if dry_run {
-        println!("  Would stop the daemon, proxy, and any running lean-ctx processes");
+        println!("  Would stop the proxy and any running lean-ctx processes");
         return;
     }
 
     println!("  Stopping lean-ctx processes…");
 
     crate::proxy_autostart::stop();
-    crate::daemon_autostart::stop();
-    let _ = crate::daemon::stop_daemon();
 
     crate::ipc::process::kill_all_by_name("lean-ctx");
     std::thread::sleep(std::time::Duration::from_millis(500));
@@ -36,7 +34,6 @@ pub(super) fn stop_processes(dry_run: bool) {
         std::thread::sleep(std::time::Duration::from_millis(300));
     }
 
-    crate::daemon::cleanup_daemon_files();
     println!("  ✓ Processes stopped");
 }
 

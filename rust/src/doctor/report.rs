@@ -12,7 +12,6 @@ use serde::Serialize;
 
 use super::checks::{
     capacity_warnings, mcp_config_outcome, mcp_server_cwd_outcome, shell_aliases_outcome,
-    skill_files_outcome,
 };
 use super::common::{path_in_path_env, resolve_lean_ctx_binary};
 use super::deprecations::deprecations_outcome;
@@ -108,7 +107,6 @@ pub fn health_report() -> HealthReport {
     // from `lean-ctx doctor`; only the human-readable text is dashboard-specific.
     let shell_ok = shell_aliases_outcome().ok;
     let mcp_ok = mcp_config_outcome().ok;
-    let skills_ok = skill_files_outcome().ok;
 
     let checks = vec![
         check(
@@ -140,12 +138,6 @@ pub fn health_report() -> HealthReport {
             mcp_ok,
             "MCP server registered",
             "MCP server not registered — click Fix or run `lean-ctx doctor --fix`",
-        ),
-        check(
-            "skills",
-            skills_ok,
-            "agent skill files installed",
-            "agent skill files missing — click Fix or run `lean-ctx doctor --fix`",
         ),
     ];
 

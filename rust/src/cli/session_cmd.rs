@@ -10,17 +10,6 @@ pub fn cmd_session_action(args: &[String]) {
     match action {
         Some("task") => {
             let desc = args.get(1).map_or("(no description)", String::as_str);
-            #[cfg(unix)]
-            {
-                #[cfg(unix)]
-                if let Some(out) = crate::daemon_client::try_daemon_tool_call_blocking_text(
-                    "ctx_session",
-                    Some(serde_json::json!({ "action": "task", "value": desc })),
-                ) {
-                    println!("{out}");
-                    return;
-                }
-            }
             let mut session = load_or_create_session();
             let out =
                 ctx_session::handle(&mut session, &[], "task", Some(desc), None, default_opts());
@@ -29,17 +18,6 @@ pub fn cmd_session_action(args: &[String]) {
         }
         Some("finding") => {
             let summary = args.get(1).map_or("(no summary)", String::as_str);
-            #[cfg(unix)]
-            {
-                #[cfg(unix)]
-                if let Some(out) = crate::daemon_client::try_daemon_tool_call_blocking_text(
-                    "ctx_session",
-                    Some(serde_json::json!({ "action": "finding", "value": summary })),
-                ) {
-                    println!("{out}");
-                    return;
-                }
-            }
             let mut session = load_or_create_session();
             let out = ctx_session::handle(
                 &mut session,
@@ -53,67 +31,23 @@ pub fn cmd_session_action(args: &[String]) {
             println!("{out}");
         }
         Some("save") => {
-            #[cfg(unix)]
-            {
-                #[cfg(unix)]
-                if let Some(out) = crate::daemon_client::try_daemon_tool_call_blocking_text(
-                    "ctx_session",
-                    Some(serde_json::json!({ "action": "save" })),
-                ) {
-                    println!("{out}");
-                    return;
-                }
-            }
             let mut session = load_or_create_session();
             let out = ctx_session::handle(&mut session, &[], "save", None, None, default_opts());
             println!("{out}");
         }
         Some("load") => {
             let id = args.get(1).map(String::as_str);
-            #[cfg(unix)]
-            {
-                #[cfg(unix)]
-                if let Some(out) = crate::daemon_client::try_daemon_tool_call_blocking_text(
-                    "ctx_session",
-                    Some(serde_json::json!({ "action": "load", "session_id": id })),
-                ) {
-                    println!("{out}");
-                    return;
-                }
-            }
             let mut session = SessionState::new();
             let out = ctx_session::handle(&mut session, &[], "load", None, id, default_opts());
             println!("{out}");
         }
         Some("status") => {
-            #[cfg(unix)]
-            {
-                #[cfg(unix)]
-                if let Some(out) = crate::daemon_client::try_daemon_tool_call_blocking_text(
-                    "ctx_session",
-                    Some(serde_json::json!({ "action": "status" })),
-                ) {
-                    println!("{out}");
-                    return;
-                }
-            }
             let mut session = load_or_create_session();
             let out = ctx_session::handle(&mut session, &[], "status", None, None, default_opts());
             println!("{out}");
         }
         Some("decision") => {
             let desc = args.get(1).map_or("(no description)", String::as_str);
-            #[cfg(unix)]
-            {
-                #[cfg(unix)]
-                if let Some(out) = crate::daemon_client::try_daemon_tool_call_blocking_text(
-                    "ctx_session",
-                    Some(serde_json::json!({ "action": "decision", "value": desc })),
-                ) {
-                    println!("{out}");
-                    return;
-                }
-            }
             let mut session = load_or_create_session();
             let out = ctx_session::handle(
                 &mut session,
@@ -127,17 +61,6 @@ pub fn cmd_session_action(args: &[String]) {
             println!("{out}");
         }
         Some("reset" | "new") => {
-            #[cfg(unix)]
-            {
-                #[cfg(unix)]
-                if let Some(out) = crate::daemon_client::try_daemon_tool_call_blocking_text(
-                    "ctx_session",
-                    Some(serde_json::json!({ "action": "reset" })),
-                ) {
-                    println!("{out}");
-                    return;
-                }
-            }
             let mut session = load_or_create_session();
             let out = ctx_session::handle(&mut session, &[], "reset", None, None, default_opts());
             println!("{out}");

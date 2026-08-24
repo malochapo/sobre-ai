@@ -16,7 +16,6 @@ pub use crate::core::rules_canonical::{END_MARK, RULES_VERSION, START_MARK};
 
 mod content;
 mod detect;
-mod skills;
 mod targets;
 #[cfg(test)]
 mod tests;
@@ -26,7 +25,6 @@ pub(crate) use content::cursor_mdc_document;
 pub use content::{
     GEMINI_DEDICATED_CONTEXT_FILENAME, gemini_dedicated_rules_path, opencode_dedicated_rules_path,
 };
-pub use skills::{install_all_skills, install_skill_for_agent};
 
 /// Forwarding functions — content is delegated to `core::rules_canonical`.
 pub fn canonical_rules_block() -> String {

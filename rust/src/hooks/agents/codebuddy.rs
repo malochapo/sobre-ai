@@ -88,7 +88,6 @@ pub(crate) fn install_codebuddy_hook_with_mode(global: bool, mode: HookMode) {
         {
             remove_codebuddy_skill(&home);
         } else {
-            install_codebuddy_skill(&home);
         }
     }
 
@@ -271,29 +270,6 @@ fn remove_codebuddy_rules_file(home: &std::path::Path) {
             "Removed {} (always-loaded duplicate; CODEBUDDY.md block + skill replace it)",
             rules_path.display()
         );
-    }
-}
-
-fn install_codebuddy_skill(home: &std::path::Path) {
-    let skill_dir = home.join(".codebuddy/skills/lean-ctx");
-    let _ = std::fs::create_dir_all(skill_dir.join("scripts"));
-
-    let skill_md = include_str!("../../templates/SKILL.md");
-    let install_sh = include_str!("../../templates/skill_install.sh");
-
-    let skill_path = skill_dir.join("SKILL.md");
-    let script_path = skill_dir.join("scripts/install.sh");
-
-    write_file(&skill_path, skill_md);
-    write_file(&script_path, install_sh);
-
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        if let Ok(mut perms) = std::fs::metadata(&script_path).map(|m| m.permissions()) {
-            perms.set_mode(0o755);
-            let _ = std::fs::set_permissions(&script_path, perms);
-        }
     }
 }
 
@@ -715,7 +691,6 @@ mod tests {
     fn skill_install_then_remove_roundtrips() {
         let tmp = tempfile::tempdir().unwrap();
         let home = tmp.path();
-        install_codebuddy_skill(home);
         assert!(home.join(".codebuddy/skills/lean-ctx/SKILL.md").exists());
         remove_codebuddy_skill(home);
         assert!(!home.join(".codebuddy/skills/lean-ctx").exists());

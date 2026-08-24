@@ -5,15 +5,16 @@
 //! REST surface is gone with the rest of the HTTP server; the ledger stays,
 //! because `proxy::forward` asks it before every upstream call.
 
-use std::collections::HashMap;
 use std::sync::{Mutex, OnceLock};
 
-use super::budget::{BudgetLedger, BudgetLimit, BudgetScope};
+use super::budget::{BudgetLedger, BudgetScope};
 
+/// The ledger also carried a `limits` map, read only by the REST handlers that
+/// exposed `GET /ocla/v1/budget/{scope}`. The ledger holds its own limits for
+/// the admission check, so the map went with the handlers.
 #[derive(Default)]
 struct BudgetStore {
     ledger: BudgetLedger,
-    limits: HashMap<BudgetScope, BudgetLimit>,
 }
 
 static BUDGET_STORE: OnceLock<Mutex<BudgetStore>> = OnceLock::new();
@@ -39,14 +40,12 @@ pub fn admit_budgeted_request(scope: &str, tokens: u64, usd: f64) -> Result<(), 
 }
 
 #[cfg(test)]
-pub(crate) fn set_test_budget_limit(limit: BudgetLimit) {
+pub(crate) fn set_test_budget_limit(limit: super::budget::BudgetLimit) {
     let mut store = budget_store()
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
     store.ledger = BudgetLedger::new();
-    store.limits.clear();
-    store.ledger.set_limit(limit.clone());
-    store.limits.insert(limit.scope.clone(), limit);
+    store.ledger.set_limit(limit);
 }
 
 fn parse_budget_scope(raw: &str) -> Result<BudgetScope, String> {

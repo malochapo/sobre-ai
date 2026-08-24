@@ -44,10 +44,6 @@ fn should_allow(tool_name: &str, file_path: Option<&str>) -> bool {
         return true;
     }
 
-    if !is_mcp_server_reachable() {
-        return true;
-    }
-
     if file_path.is_some_and(is_binary_file) {
         return true;
     }
@@ -58,20 +54,6 @@ fn should_allow(tool_name: &str, file_path: Option<&str>) -> bool {
 
     let _ = tool_name;
     false
-}
-
-fn is_mcp_server_reachable() -> bool {
-    let path = crate::daemon::daemon_pid_path();
-    if !path.exists() {
-        return true;
-    }
-    if let Ok(pid_str) = std::fs::read_to_string(&path)
-        && let Ok(pid) = pid_str.trim().parse::<u32>()
-        && !crate::ipc::process::is_alive(pid)
-    {
-        return false;
-    }
-    true
 }
 
 fn is_replace_mode_disabled() -> bool {

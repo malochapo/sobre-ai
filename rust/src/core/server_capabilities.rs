@@ -1,8 +1,7 @@
 //! `GET /v1/capabilities` — runtime discovery of what this lean-ctx instance
 //! supports, so any client (any language) can branch on real features instead
-//! of trial calls. The HTTP route lives in `http_server`; the payload builder
-//! lives here so it stays compiled (and drift-tested) without the
-//! `http-server` feature.
+//! of trial calls. It was served over HTTP by a route that is gone; the
+//! payload builder stays because `doctor` and the drift tests read it.
 //!
 //! Contract: `docs/contracts/capabilities-contract-v1.md`. The set of
 //! [`TOP_LEVEL_KEYS`] is the stable contract surface and is bound to that doc
@@ -93,7 +92,6 @@ pub const LOCAL_ALWAYS_ON_FEATURES: &[&str] = &[
 pub const LOCAL_OPTIONAL_FEATURES: &[&str] = &[
     "ast_compression",
     "semantic_search",
-    "http_server",
     "wasm_runtime",
     // Self-hosted org gateway run-mode (remote bind + usage store + admin API).
     // Free to self-host; only compile-gated (`gateway-server` Cargo feature).
@@ -121,7 +119,6 @@ fn features() -> Value {
         "routing": true,
         "ast_compression": cfg!(feature = "tree-sitter"),
         "semantic_search": cfg!(feature = "embeddings"),
-        "http_server": cfg!(feature = "http-server"),
         "wasm_runtime": cfg!(feature = "wasm"),
         "shape_translation": cfg!(feature = "shape-xlat"),
     })

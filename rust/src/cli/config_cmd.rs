@@ -215,7 +215,6 @@ fn init_full_config() {
 }
 
 fn cmd_apply() {
-    use crate::daemon;
     use crate::ipc;
 
     println!("Applying config changes…");
@@ -270,10 +269,6 @@ fn cmd_apply() {
     println!("\n[2/4] Restarting processes…");
     crate::proxy_autostart::stop();
 
-    if let Err(e) = daemon::stop_daemon() {
-        eprintln!("  Warning: daemon stop: {e}");
-    }
-
     let orphans = ipc::process::kill_all_by_name("lean-ctx");
     if orphans > 0 {
         println!("  Terminated {orphans} orphan process(es).");
@@ -289,16 +284,7 @@ fn cmd_apply() {
         std::thread::sleep(std::time::Duration::from_millis(300));
     }
 
-    daemon::cleanup_daemon_files();
     crate::proxy_autostart::start();
-
-    match daemon::start_daemon(&[]) {
-        Ok(()) => println!("  ✓ Daemon restarted."),
-        Err(e) => {
-            eprintln!("  ✗ Daemon start failed: {e}");
-            std::process::exit(1);
-        }
-    }
 
     // 3. Safety checks
     println!("\n[3/4] Running safety checks…");

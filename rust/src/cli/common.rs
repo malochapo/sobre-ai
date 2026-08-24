@@ -5,24 +5,6 @@ pub(crate) fn print_savings(original: usize, sent: usize) {
     }
 }
 
-/// Strip savings footers from daemon output when the CLI client has footer suppressed.
-#[cfg(unix)]
-pub(crate) fn filter_daemon_output(text: &str) -> String {
-    if crate::core::protocol::savings_footer_visible() {
-        return text.to_string();
-    }
-    text.lines()
-        .filter(|l| {
-            let t = l.trim();
-            !(t.starts_with('[')
-                && t.contains("tok")
-                && t.ends_with(']')
-                && (t.contains("tok saved") || t.contains("lean-ctx:") || t.contains("vs native")))
-        })
-        .collect::<Vec<_>>()
-        .join("\n")
-}
-
 pub fn load_shell_history_pub() -> Vec<String> {
     load_shell_history()
 }
@@ -70,16 +52,6 @@ pub(crate) fn load_shell_history() -> Vec<String> {
             .collect(),
         Err(_) => Vec::new(),
     }
-}
-
-pub(crate) fn daemon_fallback_hint() {
-    use std::sync::Once;
-    static HINT: Once = Once::new();
-    HINT.call_once(|| {
-        if crate::core::protocol::meta_visible() {
-            eprintln!("\x1b[2;33mhint: daemon not running — stats tracked locally (lean-ctx serve -d for full tracking)\x1b[0m");
-        }
-    });
 }
 
 pub(crate) fn format_tokens_cli(tokens: u64) -> String {

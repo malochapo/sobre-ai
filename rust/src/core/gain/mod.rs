@@ -87,8 +87,6 @@ pub struct GainSummary {
     pub tool_spend_usd: f64,
     pub roi: Option<f64>,
     pub score: GainScore,
-    #[serde(skip_serializing_if = "Option::is_none", default)]
-    pub daemon_hint: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -171,16 +169,6 @@ impl GainEngine {
             model,
             current_project_navigability(),
         );
-        // is_daemon_running() is cross-platform; the old #[cfg(not(unix))] = None
-        // branch suppressed daemon state on Windows. See #576.
-        let daemon_hint = if crate::daemon::is_daemon_running() {
-            None
-        } else {
-            Some(
-                "daemon not running — stats tracked locally (lean-ctx serve -d for full tracking)"
-                    .to_string(),
-            )
-        };
         // Reconcile to the real bill: the proxy is the only component that sees
         // every provider turn, so its persisted request count is the honest
         // multiplier for the per-turn injection tax (GitHub #361). The math is
@@ -223,7 +211,6 @@ impl GainEngine {
             tool_spend_usd,
             roi,
             score,
-            daemon_hint,
         }
     }
 

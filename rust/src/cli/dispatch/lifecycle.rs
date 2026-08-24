@@ -4,19 +4,12 @@
 use crate::core;
 
 pub(super) fn cmd_stop() {
-    use crate::daemon;
     use crate::ipc;
 
     eprintln!("Stopping all lean-ctx processes…");
 
     crate::proxy_autostart::stop();
-    crate::daemon_autostart::stop();
     eprintln!("  Unloaded autostart (LaunchAgent/systemd).");
-
-    // 2. Stop daemon via IPC
-    if let Err(e) = daemon::stop_daemon() {
-        eprintln!("  Warning: daemon stop: {e}");
-    }
 
     // 3. SIGTERM all remaining lean-ctx processes
     let killed = ipc::process::kill_all_by_name("lean-ctx");
@@ -35,8 +28,6 @@ pub(super) fn cmd_stop() {
         }
         std::thread::sleep(std::time::Duration::from_millis(300));
     }
-
-    daemon::cleanup_daemon_files();
 
     let final_check = ipc::process::find_killable_pids("lean-ctx");
     if final_check.is_empty() {
@@ -60,17 +51,11 @@ pub(super) fn cmd_stop() {
 }
 
 pub(super) fn cmd_restart() {
-    use crate::daemon;
     use crate::ipc;
 
     eprintln!("Restarting lean-ctx…");
 
     crate::proxy_autostart::stop();
-    crate::daemon_autostart::stop();
-
-    if let Err(e) = daemon::stop_daemon() {
-        eprintln!("  Warning: daemon stop: {e}");
-    }
 
     let orphans = ipc::process::kill_all_by_name("lean-ctx");
     if orphans > 0 {
@@ -92,22 +77,7 @@ pub(super) fn cmd_restart() {
         std::thread::sleep(std::time::Duration::from_millis(300));
     }
 
-    daemon::cleanup_daemon_files();
-
     crate::proxy_autostart::start();
-
-    if crate::daemon_autostart::is_installed() {
-        crate::daemon_autostart::start();
-        eprintln!("  ✓ Daemon restarted via autostart.");
-    } else {
-        match daemon::start_daemon(&[]) {
-            Ok(()) => eprintln!("  ✓ Daemon restarted."),
-            Err(e) => {
-                eprintln!("  ✗ Daemon start failed: {e}");
-                std::process::exit(1);
-            }
-        }
-    }
 }
 
 pub(super) fn cmd_dev_install() {
@@ -170,8 +140,6 @@ pub(super) fn cmd_dev_install() {
 
     eprintln!("  Stopping all lean-ctx processes…");
     crate::proxy_autostart::stop();
-    crate::daemon_autostart::stop();
-    let _ = crate::daemon::stop_daemon();
     ipc::process::kill_all_by_name("lean-ctx");
     std::thread::sleep(std::time::Duration::from_millis(500));
 
@@ -227,17 +195,6 @@ pub(super) fn cmd_dev_install() {
     // restart would keep the previous, unwrapped plist.
     if crate::proxy_autostart::is_installed() {
         crate::proxy_autostart::install(crate::proxy_setup::default_port(), true);
-    }
-
-    if crate::daemon_autostart::is_installed() {
-        crate::daemon_autostart::install(true);
-        eprintln!("  ✓ Daemon restarted via autostart.");
-    } else {
-        eprintln!("  Starting daemon…");
-        match crate::daemon::start_daemon(&[]) {
-            Ok(()) => {}
-            Err(e) => eprintln!("  Warning: daemon start: {e} (will be started by editor)"),
-        }
     }
 
     // Resync agent rules after install so a RULES_VERSION bump is propagated
@@ -459,7 +416,7 @@ fn is_homebrew_cellar_link(target: &std::path::Path) -> bool {
 ///
 /// A stale Homebrew shim (e.g. `/opt/homebrew/bin/lean-ctx ->
 /// ../Cellar/lean-ctx/<old>/bin/lean-ctx`) silently shadows the freshly built
-/// `~/.local/bin/lean-ctx` on PATH, so the daemon and the CLI can end up running
+/// `~/.local/bin/lean-ctx` on PATH, so two copies can end up running
 /// *different* builds (observed md5 drift in #559). Repoint any such shim at the
 /// just-installed binary, and warn about any other PATH entry that still
 /// resolves before it.

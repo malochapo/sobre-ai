@@ -467,61 +467,6 @@ pub(crate) fn docker_env_outcomes() -> Vec<Outcome> {
 
     outcomes
 }
-pub(crate) fn skill_files_outcome() -> Outcome {
-    let Some(home) = dirs::home_dir() else {
-        return Outcome {
-            ok: false,
-            line: format!("{BOLD}SKILL.md{RST}  {RED}could not resolve home directory{RST}"),
-        };
-    };
-
-    let candidates = [
-        ("Claude Code", home.join(".claude/skills/lean-ctx/SKILL.md")),
-        (
-            "CodeBuddy",
-            home.join(".codebuddy/skills/lean-ctx/SKILL.md"),
-        ),
-        ("Cursor", home.join(".cursor/skills/lean-ctx/SKILL.md")),
-        (
-            "Codex CLI",
-            crate::core::home::resolve_codex_dir()
-                .unwrap_or_else(|| home.join(".codex"))
-                .join("skills/lean-ctx/SKILL.md"),
-        ),
-        (
-            "GitHub Copilot",
-            home.join(".copilot/skills/lean-ctx/SKILL.md"),
-        ),
-        (
-            "OpenCode",
-            home.join(".config/opencode/skills/lean-ctx/SKILL.md"),
-        ),
-    ];
-
-    let mut found: Vec<&str> = Vec::new();
-    for (name, path) in &candidates {
-        if path.exists() {
-            found.push(name);
-        }
-    }
-
-    if found.is_empty() {
-        Outcome {
-            ok: false,
-            line: format!(
-                "{BOLD}SKILL.md{RST}  {YELLOW}not installed{RST}  {DIM}(run: lean-ctx init){RST}"
-            ),
-        }
-    } else {
-        Outcome {
-            ok: true,
-            line: format!(
-                "{BOLD}SKILL.md{RST}  {GREEN}installed for {}{RST}",
-                found.join(", ")
-            ),
-        }
-    }
-}
 /// GH #594 config parity: surface whether the CLI and the editor-spawned MCP
 /// server resolve the *same* `config.toml`.
 ///

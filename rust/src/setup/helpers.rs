@@ -1,11 +1,5 @@
-//! Setup helper routines (skill install, TOML key upserts, profile + premium
-//! feature configuration). Split out of `setup/mod.rs` for focus.
-
-#[allow(clippy::wildcard_imports)]
-
-pub fn install_skill_files(home: &std::path::Path) -> Vec<(String, bool)> {
-    crate::rules_inject::install_all_skills(home)
-}
+//! Setup helper routines: Kiro steering install, TOML key upserts, path
+//! shortening. Split out of `setup/mod.rs` for focus.
 
 pub(crate) fn install_kiro_steering(home: &std::path::Path) {
     let cwd = std::env::current_dir().unwrap_or_else(|_| home.to_path_buf());

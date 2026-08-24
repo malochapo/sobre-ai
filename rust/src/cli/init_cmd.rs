@@ -58,9 +58,6 @@ pub fn install_shell_hook(args: &[String]) {
             for name in &result.rules.already {
                 qprintln!("  ✓ {name} rules up-to-date");
             }
-            if result.skill_installed {
-                qprintln!("  ✓ SKILL.md installed for {agent_name}");
-            }
             if result.mcp_skipped {
                 qprintln!("  • MCP registration skipped for {agent_name} (auto_update_mcp=false)");
             }

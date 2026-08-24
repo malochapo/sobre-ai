@@ -114,7 +114,7 @@ OPTIONS:
     -h, --help       Show this help and exit (does NOT uninstall)
 
 WHAT IT REMOVES:
-    • Running processes (daemon, proxy) and autostart entries
+    • Running processes (proxy) and autostart entries
     • Shell hooks and proxy environment from your shell rc files
     • MCP server configs and rules from every detected AI tool/IDE
     • Skill directories and project integration files
@@ -185,10 +185,8 @@ pub fn run(dry_run: bool, keep_config: bool, keep_binary: bool) {
 
     if dry_run {
         println!("  Would remove proxy autostart (LaunchAgent/systemd)");
-        println!("  Would remove daemon autostart (LaunchAgent/systemd)");
     } else {
         crate::proxy_autostart::uninstall(true);
-        crate::daemon_autostart::uninstall(true);
     }
 
     if !dry_run {
@@ -322,7 +320,7 @@ fn remove_skill_dirs(home: &Path, dry_run: bool) -> bool {
 /// macOS both resolve to `~/Library/Application Support` — so the *real* runtime
 /// dirs (`~/.local/share`, `~/.local/state`, `~/.cache`) were never removed and a
 /// "full" uninstall left >150 MB of data + cache behind. We now resolve through the
-/// exact same [`core::paths`](crate::core::paths) functions the daemon/proxy use,
+/// exact same [`core::paths`](crate::core::paths) functions the proxy uses,
 /// so every XDG category (config/data/state/cache, honoring `LEAN_CTX_*_DIR` and
 /// `XDG_*` overrides) is covered, plus the legacy single-dir and macOS
 /// Application Support locations for older installs.

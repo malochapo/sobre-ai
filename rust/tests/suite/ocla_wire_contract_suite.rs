@@ -1,8 +1,5 @@
 //! Golden contract tests for the public OCLA wire protocol.
 
-use axum::body::{Body, to_bytes};
-use axum::extract::DefaultBodyLimit;
-use axum::http::{Request, StatusCode, header};
 use lean_ctx::core::ocla::types::{
     AGENT_ENVELOPE_SCHEMA_VERSION, AgentEnvelope, CANONICAL_TOKEN_ENVELOPE_SCHEMA_VERSION,
     CanonicalTokenEnvelopeV1, OclaRequestContext, TokenBalanceV1, TokenEnvelopeSurface,
@@ -12,14 +9,11 @@ use lean_ctx::core::ocla::wire::{
     agent_envelope_schema, canonical_envelope_schema, decode_agent_envelope, decode_envelope,
     encode_agent_envelope, encode_envelope,
 };
-use lean_ctx::core::ocla::wire_api::ocla_router;
 use lean_ctx::core::ocla::wire_stream::{StreamFrame, decode_frame, encode_frame};
 use serde_json::Value;
-use tower::ServiceExt;
 
 const GOLDEN_ENVELOPE: &str = include_str!("../fixtures/ocla_envelope_golden.json");
 const GOLDEN_SCHEMA: &str = include_str!("../fixtures/ocla_schema_golden.json");
-const MIXED_BATCH: &str = include_str!("../fixtures/envelope_batch_mixed.json");
 const LEGACY_ENVELOPE: &str = include_str!("../fixtures/envelope_v1_legacy.json");
 
 fn golden_document() -> Value {
@@ -78,68 +72,6 @@ fn agent_envelope() -> AgentEnvelope {
     };
     envelope.assign_relay_id().expect("assign golden relay ID");
     envelope
-}
-
-async fn post_envelope(body: String, idempotency_key: Option<&str>) -> (StatusCode, Value) {
-    let mut request = Request::builder()
-        .method("POST")
-        .uri("/ocla/v1/envelope")
-        .header(header::CONTENT_TYPE, "application/json");
-    if let Some(key) = idempotency_key {
-        request = request.header("Idempotency-Key", key);
-    }
-    let response = ocla_router()
-        .oneshot(request.body(Body::from(body)).expect("request"))
-        .await
-        .expect("response");
-    let status = response.status();
-    let body = to_bytes(response.into_body(), 1_000_000)
-        .await
-        .expect("response body");
-    let value = serde_json::from_slice(&body).expect("JSON response");
-    (status, value)
-}
-
-async fn json_request(method: &str, uri: &str, body: Option<Value>) -> (StatusCode, Value) {
-    let request = Request::builder()
-        .method(method)
-        .uri(uri)
-        .header(header::CONTENT_TYPE, "application/json")
-        .body(Body::from(
-            body.map_or_else(String::new, |body| body.to_string()),
-        ))
-        .expect("request");
-    let response = ocla_router().oneshot(request).await.expect("response");
-    let status = response.status();
-    let body = to_bytes(response.into_body(), 1_000_000)
-        .await
-        .expect("response body");
-    let value = if body.is_empty() {
-        Value::Null
-    } else {
-        serde_json::from_slice(&body).expect("JSON response")
-    };
-    (status, value)
-}
-
-async fn text_request(uri: &str, body: &str) -> (StatusCode, Value) {
-    let response = ocla_router()
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri(uri)
-                .header(header::CONTENT_TYPE, "text/plain")
-                .body(Body::from(body.to_owned()))
-                .expect("request"),
-        )
-        .await
-        .expect("response");
-    let status = response.status();
-    let body = to_bytes(response.into_body(), 1_000_000)
-        .await
-        .expect("response body");
-    let value = serde_json::from_slice(&body).expect("JSON response");
-    (status, value)
 }
 
 #[test]
@@ -204,188 +136,6 @@ fn external_consumer_can_read_canonical_wire_as_serde_value() {
     }
     assert_eq!(value["context"]["tenant_id"], "tenant-golden");
     assert_eq!(value["token_balance"]["delivered_tokens"], 876);
-}
-
-#[tokio::test]
-async fn batch_validation_returns_per_item_results() {
-    let items: Vec<Value> = serde_json::from_str(MIXED_BATCH).expect("batch fixture");
-    let mut results = Vec::with_capacity(items.len());
-    for item in items {
-        results.push(post_envelope(item.to_string(), None).await.0);
-    }
-    assert_eq!(
-        results,
-        [StatusCode::OK, StatusCode::OK, StatusCode::BAD_REQUEST]
-    );
-}
-
-#[tokio::test]
-async fn idempotency_key_replays_the_same_response() {
-    let body = encode_envelope(&canonical_envelope()).expect("encode envelope");
-    let first = post_envelope(body.clone(), Some("contract-test-key")).await;
-    let second = post_envelope(body, Some("contract-test-key")).await;
-    assert_eq!(first, second);
-}
-
-#[tokio::test]
-async fn payload_over_256_kib_is_rejected_with_413() {
-    let body = format!("{{\"padding\":\"{}\"}}", "x".repeat(256 * 1024));
-    let response = ocla_router()
-        .layer(DefaultBodyLimit::max(256 * 1024))
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri("/ocla/v1/envelope")
-                .header(header::CONTENT_TYPE, "application/json")
-                .body(Body::from(body))
-                .expect("request"),
-        )
-        .await
-        .expect("response");
-    assert_eq!(response.status(), StatusCode::PAYLOAD_TOO_LARGE);
-}
-
-#[tokio::test]
-async fn budget_post_returns_the_configured_limit_schema() {
-    let scope = "user:contract-budget";
-    let (status, body) = json_request(
-        "POST",
-        "/ocla/v1/budget",
-        Some(serde_json::json!({
-            "scope": scope,
-            "max_tokens_per_day": 12_345,
-            "max_usd_per_day": 6.75
-        })),
-    )
-    .await;
-
-    assert_eq!(status, StatusCode::OK);
-    for field in [
-        "scope",
-        "max_tokens_per_day",
-        "max_usd_per_day",
-        "consumed_tokens",
-        "consumed_usd",
-    ] {
-        assert!(body.get(field).is_some(), "missing budget field: {field}");
-    }
-    assert_eq!(body["scope"], scope);
-    assert_eq!(body["max_tokens_per_day"], 12_345);
-}
-
-#[tokio::test]
-async fn budget_get_returns_existing_and_missing_scope_statuses() {
-    let scope = "team:contract-budget-get";
-    let (post_status, _) = json_request(
-        "POST",
-        "/ocla/v1/budget",
-        Some(serde_json::json!({
-            "scope": scope,
-            "max_tokens_per_day": 100,
-            "max_usd_per_day": 1.25
-        })),
-    )
-    .await;
-    assert_eq!(post_status, StatusCode::OK);
-
-    let (status, body) = json_request("GET", &format!("/ocla/v1/budget/{scope}"), None).await;
-    assert_eq!(status, StatusCode::OK);
-    assert_eq!(body["scope"], scope);
-    assert!(body["consumed_tokens"].is_number());
-    assert!(body["consumed_usd"].is_number());
-
-    let (missing_status, missing_body) =
-        json_request("GET", "/ocla/v1/budget/user:contract-budget-missing", None).await;
-    assert_eq!(missing_status, StatusCode::NOT_FOUND);
-    assert_eq!(missing_body["error"], "budget not found");
-}
-
-#[tokio::test]
-async fn dlq_get_returns_entries_and_stats_schema() {
-    let (status, body) = json_request("GET", "/ocla/v1/dlq", None).await;
-
-    assert_eq!(status, StatusCode::OK);
-    assert!(body["dead_letters"].is_array());
-    for field in ["total", "oldest_age_seconds", "by_target_agent"] {
-        assert!(
-            body["stats"].get(field).is_some(),
-            "missing DLQ field: {field}"
-        );
-    }
-    assert!(body["stats"]["by_target_agent"].is_object());
-}
-
-#[tokio::test]
-async fn health_get_returns_aggregated_report_schema() {
-    let (status, body) = json_request("GET", "/ocla/v1/health", None).await;
-
-    assert_eq!(status, StatusCode::OK);
-    assert!(body["overall"].is_string() || body["overall"].is_object());
-    assert!(body["components"].is_array());
-    assert!(body["uptime_seconds"].is_u64());
-    assert_eq!(body["version"], "ocla/v1");
-    assert!(
-        !body["components"]
-            .as_array()
-            .expect("components")
-            .is_empty()
-    );
-}
-
-#[tokio::test]
-async fn capsule_register_returns_ref() {
-    let (status, body) = text_request("/ocla/v1/capsule", "contract capsule").await;
-
-    assert_eq!(status, StatusCode::CREATED);
-    let capsule_ref = body["capsule_ref"].as_str().expect("capsule reference");
-    assert!(capsule_ref.starts_with("capsule:"));
-    assert_eq!(capsule_ref.len(), "capsule:".len() + 64);
-}
-
-#[tokio::test]
-async fn capsule_resolve_returns_data() {
-    let capsule_data = "contract resolve capsule";
-    let (register_status, registered) = text_request("/ocla/v1/capsule", capsule_data).await;
-    assert_eq!(register_status, StatusCode::CREATED);
-    let capsule_ref = registered["capsule_ref"]
-        .as_str()
-        .expect("capsule reference");
-
-    let (status, resolved) =
-        json_request("GET", &format!("/ocla/v1/capsule/{capsule_ref}"), None).await;
-    assert_eq!(status, StatusCode::OK);
-    assert_eq!(resolved["capsule_ref"], capsule_ref);
-    assert_eq!(resolved["data"], capsule_data);
-}
-
-#[tokio::test]
-async fn capsule_fork_creates_child() {
-    let (register_status, registered) =
-        text_request("/ocla/v1/capsule", "contract fork capsule").await;
-    assert_eq!(register_status, StatusCode::CREATED);
-    let parent_ref = registered["capsule_ref"]
-        .as_str()
-        .expect("parent reference");
-
-    let (fork_status, forked) = json_request(
-        "POST",
-        &format!("/ocla/v1/capsule/{parent_ref}/fork"),
-        Some(serde_json::json!({"budget_tokens": 256})),
-    )
-    .await;
-    assert_eq!(fork_status, StatusCode::CREATED);
-    let child_ref = forked["capsule_ref"].as_str().expect("child reference");
-    assert!(child_ref.starts_with("capsule:"));
-    assert_ne!(child_ref, parent_ref);
-}
-
-#[tokio::test]
-async fn capsule_resolve_unknown_returns_404() {
-    let (status, body) =
-        json_request("GET", "/ocla/v1/capsule/capsule:contract-missing", None).await;
-
-    assert_eq!(status, StatusCode::NOT_FOUND);
-    assert_eq!(body["error"], "capsule not found");
 }
 
 #[test]

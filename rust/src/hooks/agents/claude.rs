@@ -40,7 +40,6 @@ pub(crate) fn install_claude_hook_with_mode(global: bool, mode: HookMode) {
         {
             remove_claude_skill(&home);
         } else {
-            install_claude_skill(&home);
         }
     }
 
@@ -289,33 +288,6 @@ fn strip_claude_md_block(claude_md_path: &std::path::Path) {
         let _ = std::fs::remove_file(claude_md_path);
     } else {
         write_file(claude_md_path, &format!("{}\n", cleaned.trim_end()));
-    }
-}
-
-fn install_claude_skill(home: &std::path::Path) {
-    // Honor CLAUDE_CONFIG_DIR like every other Claude state path (CLAUDE.md,
-    // hooks, settings.json) instead of hardcoding `~/.claude` (#596).
-    let skill_dir = crate::core::editor_registry::claude_state_dir(home).join("skills/lean-ctx");
-    if !ensure_state_dir(&skill_dir.join("scripts")) {
-        return;
-    }
-
-    let skill_md = include_str!("../../templates/SKILL.md");
-    let install_sh = include_str!("../../templates/skill_install.sh");
-
-    let skill_path = skill_dir.join("SKILL.md");
-    let script_path = skill_dir.join("scripts/install.sh");
-
-    write_file(&skill_path, skill_md);
-    write_file(&script_path, install_sh);
-
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        if let Ok(mut perms) = std::fs::metadata(&script_path).map(|m| m.permissions()) {
-            perms.set_mode(0o755);
-            let _ = std::fs::set_permissions(&script_path, perms);
-        }
     }
 }
 
@@ -968,7 +940,6 @@ mod tests {
         crate::test_env::remove_var("CLAUDE_CONFIG_DIR");
         let tmp = tempfile::tempdir().unwrap();
         let home = tmp.path();
-        install_claude_skill(home);
         assert!(home.join(".claude/skills/lean-ctx/SKILL.md").exists());
         remove_claude_skill(home);
         assert!(!home.join(".claude/skills/lean-ctx").exists());

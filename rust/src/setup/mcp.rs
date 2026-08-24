@@ -14,7 +14,6 @@ pub struct AgentSetupResult {
     /// auto_update_mcp = false` (#281), not because it failed.
     pub mcp_skipped: bool,
     pub rules: crate::rules_inject::InjectResult,
-    pub skill_installed: bool,
     pub errors: Vec<String>,
 }
 
@@ -48,10 +47,6 @@ pub fn setup_single_agent(
     }
 
     result.rules = crate::rules_inject::inject_rules_for_agent(&home, agent_name);
-
-    if let Ok(path) = crate::rules_inject::install_skill_for_agent(&home, agent_name) {
-        result.skill_installed = path.exists();
-    }
 
     result
 }

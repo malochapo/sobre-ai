@@ -365,10 +365,6 @@ pub fn run() -> u32 {
         board.check(ws);
     }
 
-    // 9) SKILL.md
-    let skill = skill_files_outcome();
-    board.check(&skill);
-
     if let Some(log_path) = crate::core::startup_guard::crash_loop_log_path(
         crate::core::startup_guard::MCP_PROCESS_NAME,
     ) && log_path.exists()
@@ -665,7 +661,7 @@ pub fn run_cli(args: &[String]) -> i32 {
 
 pub fn compact_score() -> (u32, u32) {
     let mut passed = 0u32;
-    let total = 6u32;
+    let total = 5u32;
 
     if resolve_lean_ctx_binary().is_some() || path_in_path_env() {
         passed += 1;
@@ -686,9 +682,6 @@ pub fn compact_score() -> (u32, u32) {
         passed += 1;
     }
     if mcp_config_outcome().ok {
-        passed += 1;
-    }
-    if skill_files_outcome().ok {
         passed += 1;
     }
 

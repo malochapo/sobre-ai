@@ -85,7 +85,6 @@ required-features = ["dev-tools"]
 [features]
 default = [
   "tree-sitter",
-  "http-server",
   "secure-update",
   "jemalloc",
   "context_kernel",
@@ -107,14 +106,7 @@ ort-webgpu = ["ort?/webgpu"]
 ort-rocm = ["ort?/rocm"]
 ort-directml = ["ort?/directml"]
 ort-coreml = ["ort?/coreml"]
-http-server = [
-  "dep:axum",
-  "dep:tower-http",
-  "dep:reqwest",
-  "dep:tokio-tungstenite",
-  "dep:rustls",
-]
-shape-xlat = ["http-server"]
+shape-xlat = []
 secure-update = []
 experimental = []
 context_kernel = []
@@ -264,7 +256,7 @@ ort = { version = "=2.0.0-rc.12", optional = true, default-features = false, fea
   "load-dynamic",
 ] }
 ndarray = { version = "0.17", optional = true }
-axum = { version = "0.8", optional = true, features = ["ws"] }
+axum = { version = "0.8", features = ["ws"] }
 tower = "0.5"
 # Upstream WebSocket client for the Codex ChatGPT remote-control passthrough
 # (#597): tunnels `/backend-api` WS upgrades through to wss://chatgpt.com so
@@ -273,13 +265,12 @@ tower = "0.5"
 tokio-tungstenite = { version = "0.29", default-features = false, features = [
   "connect",
   "rustls-tls-webpki-roots",
-], optional = true }
+] }
 # tokio-tungstenite's rustls connector relies on the process-default
 # CryptoProvider. The tree pulls both aws-lc-rs (reqwest) and ring (lettre/ureq),
 # so rustls can't auto-pick one; we install aws-lc-rs explicitly at proxy start
 # (#597). Default features keep the aws_lc_rs provider available.
-rustls = { version = "0.23", optional = true }
-tower-http = { version = "0.7", features = ["cors", "auth"], optional = true }
+rustls = { version = "0.23" }
 # Postgres TLS (#54/#58): Azure Database for PostgreSQL enforces TLS — the
 # usage store must speak sslmode=require. Reuses the process rustls provider.
 # Non-optional since GH #727: `kind=skills` document blobs (featureless
@@ -302,7 +293,7 @@ reqwest = { version = "0.13", default-features = false, features = [
   "stream",
   "json",
   "cookies",
-], optional = true }
+] }
 bytecount = "0.6"
 libc = "0.2"
 blake3 = "1.8"

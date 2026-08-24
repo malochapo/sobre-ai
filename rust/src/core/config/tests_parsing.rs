@@ -346,10 +346,9 @@ mod setup_config_tests {
     use super::super::*;
 
     #[test]
-    fn default_is_none_for_rules_and_skills() {
+    fn default_is_none_for_rules() {
         let cfg = SetupConfig::default();
         assert!(cfg.auto_inject_rules.is_none());
-        assert!(cfg.auto_inject_skills.is_none());
         assert!(cfg.auto_update_mcp);
     }
 
@@ -357,29 +356,24 @@ mod setup_config_tests {
     fn explicit_true_injects() {
         let cfg = SetupConfig {
             auto_inject_rules: Some(true),
-            auto_inject_skills: Some(true),
             auto_update_mcp: true,
         };
         assert!(cfg.should_inject_rules());
-        assert!(cfg.should_inject_skills());
     }
 
     #[test]
     fn explicit_false_skips() {
         let cfg = SetupConfig {
             auto_inject_rules: Some(false),
-            auto_inject_skills: Some(false),
             auto_update_mcp: true,
         };
         assert!(!cfg.should_inject_rules());
-        assert!(!cfg.should_inject_skills());
     }
 
     #[test]
     fn deserialization_defaults_when_absent() {
         let cfg: Config = toml::from_str("").unwrap();
         assert!(cfg.setup.auto_inject_rules.is_none());
-        assert!(cfg.setup.auto_inject_skills.is_none());
         assert!(cfg.setup.auto_update_mcp);
     }
 
@@ -389,13 +383,11 @@ mod setup_config_tests {
             r"
             [setup]
             auto_inject_rules = true
-            auto_inject_skills = false
             auto_update_mcp = true
             ",
         )
         .unwrap();
         assert_eq!(cfg.setup.auto_inject_rules, Some(true));
-        assert_eq!(cfg.setup.auto_inject_skills, Some(false));
         assert!(cfg.setup.auto_update_mcp);
     }
 
@@ -409,7 +401,6 @@ mod setup_config_tests {
         )
         .unwrap();
         assert!(cfg.setup.auto_inject_rules.is_none());
-        assert!(cfg.setup.auto_inject_skills.is_none());
         assert!(!cfg.setup.auto_update_mcp);
     }
 
@@ -417,7 +408,7 @@ mod setup_config_tests {
     fn should_update_mcp_reflects_flag() {
         // #281: the predicate that gates MCP registration in setup/onboard/init
         // must mirror the config flag exactly, so a locked-down environment can
-        // disable MCP while still getting hooks/rules/skills.
+        // disable MCP while still getting hooks and rules.
         let mut s = SetupConfig::default();
         assert!(s.should_update_mcp());
         s.auto_update_mcp = false;
@@ -429,7 +420,6 @@ mod setup_config_tests {
         let original = Config {
             setup: SetupConfig {
                 auto_inject_rules: Some(true),
-                auto_inject_skills: Some(false),
                 auto_update_mcp: true,
             },
             ..Config::default()
@@ -437,7 +427,6 @@ mod setup_config_tests {
         let toml_str = toml::to_string_pretty(&original).unwrap();
         let parsed: Config = toml::from_str(&toml_str).unwrap();
         assert_eq!(parsed.setup.auto_inject_rules, Some(true));
-        assert_eq!(parsed.setup.auto_inject_skills, Some(false));
         assert!(parsed.setup.auto_update_mcp);
     }
 

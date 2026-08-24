@@ -20,7 +20,6 @@ fn help_flag_detected_after_verb() {
 // #603/#616: the Codex ChatGPT-subscription opt-in must be bridged from the
 // shell env into config.toml (the managed proxy / env-less setup passes never
 // see the env var), but only once and never overriding an explicit config.
-#[cfg(feature = "http-server")]
 #[test]
 fn codex_chatgpt_optin_persists_only_when_env_set_and_not_already_on() {
     use super::should_persist_codex_chatgpt_optin as persist;
@@ -37,7 +36,6 @@ fn codex_chatgpt_optin_persists_only_when_env_set_and_not_already_on() {
 
 // The durable `proxy codex-chatgpt <arg>` switch: on/off (+ synonyms) mutate,
 // `status`/no-arg is read-only, anything else is rejected (never a silent flip).
-#[cfg(feature = "http-server")]
 #[test]
 fn codex_chatgpt_action_parsing_is_explicit() {
     use super::CodexChatgptAction::{Off, On, Status, Unknown};
@@ -60,15 +58,4 @@ fn normal_verbs_do_not_trigger_help() {
     assert!(!wants_help(&args(&[])));
     // Values that merely contain "help" as a substring must not match.
     assert!(!wants_help(&args(&["--helper"])));
-}
-
-// GH #587: `--open=vscode` must never launch the external browser. The
-// vscode-intent fallback resolves to the guidance mode ("vscode") or, with
-// --no-open, to silent ("none") — but NEVER "browser" (the #424 contract).
-#[test]
-fn vscode_intent_never_falls_back_to_browser() {
-    assert_eq!(super::vscode_fallback_open_mode(false), "vscode");
-    assert_eq!(super::vscode_fallback_open_mode(true), "none");
-    assert_ne!(super::vscode_fallback_open_mode(false), "browser");
-    assert_ne!(super::vscode_fallback_open_mode(true), "browser");
 }

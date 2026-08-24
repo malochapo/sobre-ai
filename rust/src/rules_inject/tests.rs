@@ -1,7 +1,6 @@
 //! Tests for rules injection. `super::*` resolves to the `rules_inject` module.
 
 use super::content::rules_content;
-use super::skills::{SKILL_TEMPLATE, build_skill_targets};
 use std::sync::OnceLock;
 
 use super::*;
@@ -423,55 +422,6 @@ fn any_rules_marker_present_detects_opencode() {
 }
 
 // ── Skills ───────────────────────────────────────────────────
-
-#[test]
-fn skill_template_not_empty() {
-    assert!(!SKILL_TEMPLATE.is_empty());
-    assert!(SKILL_TEMPLATE.contains("lean-ctx"));
-}
-
-#[test]
-fn skill_targets_count() {
-    // Claude, CodeBuddy, Cursor, Codex, Copilot, Grok, OpenClaw + OpenCode (GH #686).
-    let home = std::path::PathBuf::from("/tmp/fake_home");
-    let targets = build_skill_targets(&home);
-    assert_eq!(targets.len(), 8);
-}
-
-#[test]
-fn install_skill_creates_file() {
-    let home = std::env::temp_dir().join("test_skill_install");
-    let _ = std::fs::create_dir_all(&home);
-    let fake_cursor = home.join(".cursor");
-    let _ = std::fs::create_dir_all(&fake_cursor);
-
-    let result = install_skill_for_agent(&home, "cursor");
-    assert!(result.is_ok());
-    let path = result.unwrap();
-    assert!(path.exists());
-    let content = std::fs::read_to_string(&path).unwrap();
-    assert_eq!(content, SKILL_TEMPLATE);
-    let _ = std::fs::remove_dir_all(&home);
-}
-
-#[test]
-fn install_skill_idempotent() {
-    let home = std::env::temp_dir().join("test_skill_idempotent");
-    let _ = std::fs::create_dir_all(&home);
-    let fake_cursor = home.join(".cursor");
-    let _ = std::fs::create_dir_all(&fake_cursor);
-    let p1 = install_skill_for_agent(&home, "cursor").unwrap();
-    let p2 = install_skill_for_agent(&home, "cursor").unwrap();
-    assert_eq!(p1, p2);
-    let _ = std::fs::remove_dir_all(&home);
-}
-
-#[test]
-fn install_skill_unknown_agent() {
-    let home = std::path::PathBuf::from("/tmp/fake_home");
-    let result = install_skill_for_agent(&home, "unknown_agent");
-    assert!(result.is_err());
-}
 
 // ── Agent name matching ──────────────────────────────────────
 

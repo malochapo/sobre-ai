@@ -600,14 +600,6 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
             ),
         );
     setup_keys.insert(
-            "auto_inject_skills".into(),
-            key(
-                "bool?",
-                serde_json::json!(null),
-                "Install SKILL.md files during setup/update. null=auto (install if rules present), true=always, false=never",
-            ),
-        );
-    setup_keys.insert(
         "auto_update_mcp".into(),
         key(
             "bool",

@@ -10,16 +10,6 @@ use super::serde_defaults;
 use super::*;
 use serde::{Deserialize, Serialize};
 
-/// OCLA deployment settings.
-///
-/// This wrapper maps the TOML shape `[ocla.grpc]`; the
-/// runtime types remain in `core::ocla` so they can be used independently.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-#[serde(default)]
-pub struct OclaConfig {
-    pub grpc: crate::core::ocla::grpc_bridge::GrpcConfig,
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct SecretDetectionConfig {
@@ -44,9 +34,6 @@ pub struct SetupConfig {
     /// None = undecided (legacy compat: inject if rules already present).
     /// Some(true) = always inject. Some(false) = never inject.
     pub auto_inject_rules: Option<bool>,
-    /// Install SKILL.md files for supported agents.
-    /// None = undecided. Some(true) = install. Some(false) = skip.
-    pub auto_inject_skills: Option<bool>,
     /// Register lean-ctx as an MCP server in editor configs.
     #[serde(default = "serde_defaults::default_true")]
     pub auto_update_mcp: bool,
@@ -56,7 +43,6 @@ impl Default for SetupConfig {
     fn default() -> Self {
         Self {
             auto_inject_rules: None,
-            auto_inject_skills: None,
             auto_update_mcp: true,
         }
     }
@@ -68,14 +54,6 @@ impl SetupConfig {
     /// in any agent config — if so, keeps injecting for backward compat.
     pub fn should_inject_rules(&self) -> bool {
         match self.auto_inject_rules {
-            Some(v) => v,
-            None => Self::rules_already_present(),
-        }
-    }
-
-    /// Returns whether skills should be installed.
-    pub fn should_inject_skills(&self) -> bool {
-        match self.auto_inject_skills {
             Some(v) => v,
             None => Self::rules_already_present(),
         }
@@ -885,32 +863,4 @@ pub struct EmbeddingConfig {
     /// `LEAN_CTX_EMBEDDING_DETERMINISTIC` env var overrides this either way.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub deterministic: Option<bool>,
-}
-
-#[cfg(test)]
-mod ocla_tests {
-    use super::OclaConfig;
-    use crate::core::ocla::grpc_bridge::GrpcConfig;
-    use serde::Deserialize;
-
-    #[derive(Deserialize)]
-    struct ConfigFile {
-        ocla: OclaConfig,
-    }
-
-    #[test]
-    fn nested_grpc_toml_deserializes() {
-        let config: ConfigFile = toml::from_str(
-            r#"
-                [ocla.grpc]
-                enabled = true
-                listen = "127.0.0.1:60051"
-            "#,
-        )
-        .expect("OCLA gRPC config");
-
-        assert_eq!(config.ocla.grpc.listen, "127.0.0.1:60051");
-        assert!(config.ocla.grpc.enabled);
-        assert_eq!(GrpcConfig::default().listen, "127.0.0.1:50051");
-    }
 }

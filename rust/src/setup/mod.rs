@@ -8,7 +8,7 @@ use chrono::Utc;
 mod mcp;
 pub use mcp::*;
 mod helpers;
-pub use helpers::*;
+pub(crate) use helpers::*;
 
 pub fn claude_config_json_path(home: &std::path::Path) -> PathBuf {
     crate::core::editor_registry::claude_mcp_json_path(home)
@@ -140,45 +140,6 @@ pub fn run_setup_with_options(opts: SetupOptions) -> Result<SetupReport, String>
         });
     }
     steps.push(shell_step);
-
-    // Step: Daemon (optional acceleration for CLI routing)
-    let mut daemon_step = SetupStepReport {
-        name: "daemon".to_string(),
-        ok: true,
-        items: Vec::new(),
-        warnings: Vec::new(),
-        errors: Vec::new(),
-    };
-    {
-        let was_running = crate::daemon::is_daemon_running();
-        if was_running {
-            let _ = crate::daemon::stop_daemon();
-            std::thread::sleep(std::time::Duration::from_millis(500));
-        }
-        match crate::daemon::start_daemon(&[]) {
-            Ok(()) => {
-                let action = if was_running { "restarted" } else { "started" };
-                daemon_step.items.push(SetupItem {
-                    name: "serve --daemon".to_string(),
-                    status: action.to_string(),
-                    path: Some(crate::daemon::daemon_addr().display()),
-                    note: Some("CLI commands can route via IPC when running".to_string()),
-                });
-            }
-            Err(e) => {
-                daemon_step
-                    .warnings
-                    .push(format!("daemon start failed (non-fatal): {e}"));
-                daemon_step.items.push(SetupItem {
-                    name: "serve --daemon".to_string(),
-                    status: "skipped".to_string(),
-                    path: None,
-                    note: Some(format!("optional — {e}")),
-                });
-            }
-        }
-    }
-    steps.push(daemon_step);
 
     // Step: Editor MCP config
     let mut editor_step = SetupStepReport {
@@ -362,45 +323,6 @@ pub fn run_setup_with_options(opts: SetupOptions) -> Result<SetupReport, String>
             });
         }
         steps.push(dedup_step);
-    }
-
-    // Step: Skill files — respect config
-    let mut skill_step = SetupStepReport {
-        name: "skill_files".to_string(),
-        ok: true,
-        items: Vec::new(),
-        warnings: Vec::new(),
-        errors: Vec::new(),
-    };
-    let should_install_skills = if opts.skip_rules {
-        false
-    } else if opts.force_inject_rules {
-        true
-    } else if opts.yes && opts.non_interactive {
-        setup_cfg.should_inject_skills()
-    } else {
-        true
-    };
-    if should_install_skills {
-        let skill_results = crate::rules_inject::install_all_skills(&home);
-        for (name, is_new) in &skill_results {
-            skill_step.items.push(SetupItem {
-                name: name.clone(),
-                status: if *is_new { "installed" } else { "already" }.to_string(),
-                path: None,
-                note: Some("SKILL.md".to_string()),
-            });
-        }
-    } else {
-        skill_step.items.push(SetupItem {
-            name: "skill_files".to_string(),
-            status: "skipped".to_string(),
-            path: None,
-            note: Some("auto_inject_skills not enabled".to_string()),
-        });
-    }
-    if !skill_step.items.is_empty() {
-        steps.push(skill_step);
     }
 
     // Step: Agent-specific hooks (all detected agents)

@@ -4,7 +4,6 @@
 use super::*;
 
 /// Parse `--port=N` from proxy args, falling back to the configured default.
-#[cfg(feature = "http-server")]
 fn parse_proxy_port(rest: &[String]) -> u16 {
     rest.iter()
         .find_map(|p| p.strip_prefix("--port="))
@@ -15,7 +14,6 @@ fn parse_proxy_port(rest: &[String]) -> u16 {
 /// Stops a standalone/foreground proxy by reading its PID from `/health` and
 /// terminating it (graceful, then force). Returns true if a proxy was reachable
 /// on `port`, false if nothing was listening. Shared by `stop` and `restart`.
-#[cfg(feature = "http-server")]
 fn stop_proxy_process(port: u16) -> bool {
     let health_url = format!("http://127.0.0.1:{port}/health");
     let Ok(resp) = ureq::get(&health_url).call() else {
@@ -45,7 +43,6 @@ fn stop_proxy_process(port: u16) -> bool {
     true
 }
 
-#[cfg(feature = "http-server")]
 fn print_compression_by_upstream(v: &serde_json::Value) {
     let Some(per_upstream) = v.get("per_upstream").and_then(|u| u.as_object()) else {
         return;
@@ -114,7 +111,6 @@ fn print_verified_savings(v: &serde_json::Value) {
 /// from what the operator expects. Covers both #449 cases: a shell-exported
 /// `LEAN_CTX_*_UPSTREAM` that never reached the MCP/service-spawned proxy, and a
 /// proxy started with an env override that now masks a later config.toml edit.
-#[cfg(feature = "http-server")]
 fn print_live_upstreams_and_drift(v: &serde_json::Value, cfg: &crate::core::config::Config) {
     use crate::core::config::{
         ProxyProvider, UpstreamDrift, diagnose_drift, env_upstream_override,
@@ -227,7 +223,6 @@ fn print_live_upstreams_and_drift(v: &serde_json::Value, cfg: &crate::core::conf
 /// No-op unless all three hold: the env opt-in is present, a custom-host upstream
 /// is actually configured, and `[proxy] allow_custom_upstream` is not already
 /// `true` (idempotent). Returns true when it persisted the flag.
-#[cfg(feature = "http-server")]
 fn bridge_custom_upstream_optin() -> bool {
     if std::env::var("LEAN_CTX_ALLOW_CUSTOM_UPSTREAM").is_err() {
         return false;
@@ -258,7 +253,6 @@ fn bridge_custom_upstream_optin() -> bool {
 /// Pure decision for [`bridge_codex_chatgpt_optin`]: persist the env opt-in only
 /// when it is present in the shell and `[proxy] codex_chatgpt_proxy` has not
 /// already enabled it (idempotent).
-#[cfg(feature = "http-server")]
 pub(super) fn should_persist_codex_chatgpt_optin(env_present: bool, current: Option<bool>) -> bool {
     env_present && current != Some(true)
 }
@@ -274,7 +268,6 @@ pub(super) fn should_persist_codex_chatgpt_optin(env_present: bool, current: Opt
 ///
 /// No-op unless the env opt-in is present and the config flag is not already
 /// `true` (idempotent). Returns true when it persisted the flag.
-#[cfg(feature = "http-server")]
 fn bridge_codex_chatgpt_optin() -> bool {
     let env_present = std::env::var("LEAN_CTX_CODEX_CHATGPT_PROXY").is_ok();
     let current = crate::core::config::Config::load()
@@ -304,7 +297,6 @@ fn bridge_codex_chatgpt_optin() -> bool {
 
 /// Action selected by `proxy codex-chatgpt <arg>`. A bare/no-arg call reports
 /// status (read-only), never silently mutating state.
-#[cfg(feature = "http-server")]
 #[derive(Debug, PartialEq, Eq)]
 pub(super) enum CodexChatgptAction {
     On,
@@ -315,7 +307,6 @@ pub(super) enum CodexChatgptAction {
 
 /// Pure arg → action mapping for `proxy codex-chatgpt`. `on/enable/true` and
 /// `off/disable/false` are accepted as synonyms; `status` or no arg reports state.
-#[cfg(feature = "http-server")]
 pub(super) fn parse_codex_chatgpt_action(arg: Option<&str>) -> CodexChatgptAction {
     match arg {
         Some("on" | "enable" | "true") => CodexChatgptAction::On,
@@ -332,7 +323,6 @@ pub(super) fn parse_codex_chatgpt_action(arg: Option<&str>) -> CodexChatgptActio
 /// env so Codex's `chatgpt_base_url` is written (on) or stripped (off) right away.
 /// This is what fixes the trap where exporting `LEAN_CTX_CODEX_CHATGPT_PROXY` in a
 /// shell never reached the process that actually rewrote the Codex config.
-#[cfg(feature = "http-server")]
 fn codex_chatgpt_set(on: bool, port: u16) {
     if let Err(e) =
         crate::core::config::Config::update_global(|c| c.proxy.codex_chatgpt_proxy = Some(on))
@@ -371,7 +361,6 @@ fn codex_chatgpt_set(on: bool, port: u16) {
 /// resolved opt-in, its source (config vs env), whether the Codex config actually
 /// carries the proxy rail, and whether the proxy is reachable — so a user can see
 /// at a glance why Codex is or isn't routed.
-#[cfg(feature = "http-server")]
 fn codex_chatgpt_status(port: u16) {
     let cfg = crate::core::config::Config::load();
     let effective = cfg.proxy.codex_chatgpt_proxy_enabled();
@@ -422,7 +411,6 @@ fn codex_chatgpt_status(port: u16) {
 }
 
 pub(crate) fn cmd_proxy(rest: &[String]) {
-    #[cfg(feature = "http-server")]
     {
         // `--help` anywhere must never execute the verb (GH #393).
         if wants_help(rest) {
@@ -683,7 +671,6 @@ pub(crate) fn cmd_proxy(rest: &[String]) {
     /// stdout/stderr redirected to a log file, then exit the parent immediately.
     /// The child's PID is written to the proxy PID file so `lean-ctx proxy stop`
     /// can find and kill it (#758).
-    #[cfg(feature = "http-server")]
     fn start_detached(port: u16) {
         let exe = std::env::current_exe().unwrap_or_else(|_| "lean-ctx".into());
         let log_dir = crate::core::paths::state_dir()
@@ -722,11 +709,5 @@ pub(crate) fn cmd_proxy(rest: &[String]) {
                 std::process::exit(1);
             }
         }
-    }
-
-    #[cfg(not(feature = "http-server"))]
-    {
-        eprintln!("lean-ctx proxy is not available in this build");
-        std::process::exit(1);
     }
 }

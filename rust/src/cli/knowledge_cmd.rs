@@ -17,19 +17,6 @@ pub(crate) fn cmd_knowledge(args: &[String]) {
         Some("consolidate") => cmd_consolidate(args, &project_root),
         Some("restore") => cmd_restore(args, &project_root),
         Some("status") => {
-            #[cfg(unix)]
-            {
-                if let Some(out) = crate::daemon_client::try_daemon_tool_call_blocking_text(
-                    "ctx_knowledge",
-                    Some(serde_json::json!({
-                        "action": "status",
-                        "project_root": project_root,
-                    })),
-                ) {
-                    println!("{out}");
-                    return;
-                }
-            }
             let out = ctx_knowledge::handle(
                 &project_root,
                 "status",
@@ -47,19 +34,6 @@ pub(crate) fn cmd_knowledge(args: &[String]) {
             println!("{out}");
         }
         Some("health") => {
-            #[cfg(unix)]
-            {
-                if let Some(out) = crate::daemon_client::try_daemon_tool_call_blocking_text(
-                    "ctx_knowledge",
-                    Some(serde_json::json!({
-                        "action": "health",
-                        "project_root": project_root,
-                    })),
-                ) {
-                    println!("{out}");
-                    return;
-                }
-            }
             let out = ctx_knowledge::handle(
                 &project_root,
                 "health",
@@ -77,19 +51,6 @@ pub(crate) fn cmd_knowledge(args: &[String]) {
             println!("{out}");
         }
         Some("lifecycle") => {
-            #[cfg(unix)]
-            {
-                if let Some(out) = crate::daemon_client::try_daemon_tool_call_blocking_text(
-                    "ctx_knowledge",
-                    Some(serde_json::json!({
-                        "action": "lifecycle_report",
-                        "project_root": project_root,
-                    })),
-                ) {
-                    println!("{out}");
-                    return;
-                }
-            }
             let out = ctx_knowledge::handle(
                 &project_root,
                 "lifecycle_report",
@@ -142,23 +103,6 @@ fn cmd_remember(args: &[String], project_root: &str) {
         return;
     }
 
-    #[cfg(unix)]
-    {
-        if let Some(out) = crate::daemon_client::try_daemon_tool_call_blocking_text(
-            "ctx_knowledge",
-            Some(serde_json::json!({
-                "action": "remember",
-                "project_root": project_root,
-                "category": category,
-                "key": key,
-                "value": value,
-                "confidence": confidence,
-            })),
-        ) {
-            println!("{out}");
-            return;
-        }
-    }
 
     let out = ctx_knowledge::handle(
         project_root,
@@ -254,23 +198,6 @@ fn cmd_recall(args: &[String], project_root: &str) {
         std::process::exit(1);
     }
 
-    #[cfg(unix)]
-    {
-        if let Some(out) = crate::daemon_client::try_daemon_tool_call_blocking_text(
-            "ctx_knowledge",
-            Some(serde_json::json!({
-                "action": "recall",
-                "project_root": project_root,
-                "category": category,
-                "query": query,
-                "mode": mode,
-                "as_of": as_of,
-            })),
-        ) {
-            println!("{out}");
-            return;
-        }
-    }
 
     let out = ctx_knowledge::handle(
         project_root,
@@ -298,19 +225,6 @@ fn cmd_search(args: &[String]) {
         std::process::exit(1);
     }
 
-    #[cfg(unix)]
-    {
-        if let Some(out) = crate::daemon_client::try_daemon_tool_call_blocking_text(
-            "ctx_knowledge",
-            Some(serde_json::json!({
-                "action": "search",
-                "query": query,
-            })),
-        ) {
-            println!("{out}");
-            return;
-        }
-    }
 
     let out = ctx_knowledge::handle(
         "",
@@ -409,21 +323,6 @@ fn cmd_remove(args: &[String], project_root: &str) {
         std::process::exit(1);
     }
 
-    #[cfg(unix)]
-    {
-        if let Some(out) = crate::daemon_client::try_daemon_tool_call_blocking_text(
-            "ctx_knowledge",
-            Some(serde_json::json!({
-                "action": "remove",
-                "project_root": project_root,
-                "category": category,
-                "key": key,
-            })),
-        ) {
-            println!("{out}");
-            return;
-        }
-    }
 
     let out = ctx_knowledge::handle(
         project_root,

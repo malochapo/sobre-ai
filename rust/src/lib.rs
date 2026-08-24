@@ -39,7 +39,6 @@ pub mod tui;
 // ---------------------------------------------------------------------------
 // Pillar: Gateway — LLM API proxy, org-wide monitoring, budget enforcement
 // ---------------------------------------------------------------------------
-#[cfg(feature = "http-server")]
 pub mod proxy;
 pub mod proxy_autostart;
 pub mod proxy_setup;

@@ -286,30 +286,6 @@ fn build_and_persist_fix_report(
         steps.push(hooks_step);
     }
 
-    let mut skill_step = SetupStepReport {
-        name: "skill_files".to_string(),
-        ok: true,
-        items: Vec::new(),
-        warnings: Vec::new(),
-        errors: Vec::new(),
-    };
-    let skill_result = crate::setup::install_skill_files(&home);
-    for (name, installed) in &skill_result {
-        skill_step.items.push(SetupItem {
-            name: name.clone(),
-            status: if *installed {
-                "installed".to_string()
-            } else {
-                "already".to_string()
-            },
-            path: None,
-            note: Some("SKILL.md".to_string()),
-        });
-    }
-    if !skill_result.is_empty() {
-        steps.push(skill_step);
-    }
-
     let mut bm25_step = SetupStepReport {
         name: "bm25_cache_prune".to_string(),
         ok: true,

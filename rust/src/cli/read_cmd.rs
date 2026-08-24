@@ -121,25 +121,6 @@ pub fn cmd_read(args: &[String]) {
         }
     }
 
-    #[cfg(unix)]
-    {
-        #[cfg(unix)]
-        if let Some(out) = crate::daemon_client::try_daemon_tool_call_blocking_text(
-            "ctx_read",
-            Some(serde_json::json!({
-                "path": path,
-                "mode": mode,
-                "fresh": force_fresh,
-            })),
-        ) {
-            let filtered = super::common::filter_daemon_output(&out);
-            if !filtered.trim().is_empty() {
-                println!("{filtered}");
-                return;
-            }
-        }
-    }
-    super::common::daemon_fallback_hint();
 
     // Read latency for the Context IR lineage (#566) — the standalone path only;
     // the daemon branch above records its own IR and returns before this.
@@ -458,25 +439,6 @@ pub fn cmd_grep(args: &[String]) {
     let abs_path = resolve_cli_path(raw_path);
     let path = abs_path.as_str();
 
-    #[cfg(unix)]
-    {
-        #[cfg(unix)]
-        if let Some(out) = crate::daemon_client::try_daemon_tool_call_blocking_text(
-            "ctx_search",
-            Some(serde_json::json!({
-                "pattern": pattern,
-                "path": path,
-            })),
-        ) {
-            let out = super::common::filter_daemon_output(&out);
-            println!("{out}");
-            if out.trim_start().starts_with("0 matches") {
-                std::process::exit(1);
-            }
-            return;
-        }
-    }
-    super::common::daemon_fallback_hint();
 
     // Search latency for the Context IR lineage (#566), standalone path only.
     let search_start = std::time::Instant::now();
@@ -522,19 +484,6 @@ pub fn cmd_glob(args: &[String]) {
     let abs_path = resolve_cli_path(raw_path);
     let path = abs_path.as_str();
 
-    #[cfg(unix)]
-    if let Some(out) = crate::daemon_client::try_daemon_tool_call_blocking_text(
-        "ctx_glob",
-        Some(serde_json::json!({
-            "pattern": pattern,
-            "path": path,
-        })),
-    ) {
-        let out = super::common::filter_daemon_output(&out);
-        println!("{out}");
-        return;
-    }
-    super::common::daemon_fallback_hint();
 
     let (out, _original) = crate::tools::ctx_glob::handle(
         pattern,
@@ -636,23 +585,6 @@ pub fn cmd_ls(args: &[String]) {
     let abs_path = resolve_cli_path(raw_path);
     let path = abs_path.as_str();
 
-    #[cfg(unix)]
-    {
-        #[cfg(unix)]
-        if let Some(out) = crate::daemon_client::try_daemon_tool_call_blocking_text(
-            "ctx_tree",
-            Some(serde_json::json!({
-                "path": path,
-                "depth": depth,
-                "show_hidden": show_hidden,
-                "respect_gitignore": respect_gitignore,
-            })),
-        ) {
-            println!("{}", super::common::filter_daemon_output(&out));
-            return;
-        }
-    }
-    super::common::daemon_fallback_hint();
 
     let (out, original) =
         crate::tools::ctx_tree::handle(path, depth, show_hidden, respect_gitignore);
