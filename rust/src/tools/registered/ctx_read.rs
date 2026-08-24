@@ -1058,15 +1058,6 @@ impl CtxReadTool {
             crate::core::agent_budget::record_consumption(aid, output_tokens);
         }
 
-        // #1098: graph-related hints (callers/callees) are now computed AFTER the
-        // cache lock is released. They involve SQLite queries (~50-200ms) that
-        // previously blocked all parallel reads while holding the write lock.
-        let graph_hint = if !is_cache_hit && !resolved_mode.starts_with("lines:") {
-            crate::tools::ctx_read::graph_related_hint(path)
-        } else {
-            None
-        };
-
         // Cross-source hints: if the property graph has cross-source edges
         // pointing to this file, append compact hints so the agent knows about
         // related issues/PRs/schemas without a separate tool call (#682). Only
@@ -1106,18 +1097,17 @@ impl CtxReadTool {
         if let Some(ref w) = mode_override_note {
             warnings.push(w.as_str());
         }
-        let graph_suffix = graph_hint.map(|h| format!("\n{h}")).unwrap_or_default();
         // #977: notices (mode override, budget, degradation, delta) go BEFORE the
         // payload so client-side truncation of large outputs cannot hide them.
         let final_output = if !warnings.is_empty() {
             format!(
-                "{}\n\n{output}{hints_suffix}{graph_suffix}",
+                "{}\n\n{output}{hints_suffix}",
                 warnings.join("\n")
             )
-        } else if hints_suffix.is_empty() && graph_suffix.is_empty() {
+        } else if hints_suffix.is_empty() {
             output
         } else {
-            format!("{output}{hints_suffix}{graph_suffix}")
+            format!("{output}{hints_suffix}")
         };
         let proactive_query = format!(
             "ctx_read path={path} mode={resolved_mode} task={}",

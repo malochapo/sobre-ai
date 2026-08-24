@@ -23,13 +23,3 @@ pub fn is_instruction_file(path: &str) -> bool {
         || lower.contains("/agents.md")
 }
 
-pub(super) fn detect_project_root(path: &str) -> String {
-    crate::core::protocol::detect_project_root_or_cwd(path)
-}
-
-/// Build graph-related hints (callers/callees) — exported for the registered
-/// handler to call in a background thread after releasing the cache lock (#1098).
-pub fn graph_related_hint(path: &str) -> Option<String> {
-    let project_root = detect_project_root(path);
-    crate::core::graph_context::build_related_hint(path, &project_root, 5)
-}

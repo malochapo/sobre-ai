@@ -892,21 +892,18 @@ impl LeanCtxServer {
             result_text.push_str(&nudge);
         }
 
-        if !skip_checkpoint
-            && self.increment_and_check()
-            && let Some(checkpoint) = self.auto_checkpoint().await
-            && crate::core::protocol::meta_visible()
-        {
-            // Stable header (#498): no interval interpolation — dynamic
-            // text in repeated markers degrades provider prompt caching.
-            let combined = format!("{result_text}\n\n--- AUTO CHECKPOINT ---\n{checkpoint}");
-            return Ok(finalize_call_result(&combined, shell_outcome));
-        }
-
         // #1020: tool-calls.log is now written on the dispatch path
         // (record_call_with_path / record_call_with_timing) with the real
         // original/saved/mode and the measured handler duration. The previous
         // zero-filled append here overwrote every row with `orig=0 saved=0 mode=-`.
+
+        // `increment_and_check` is the only place that advances `call_count`,
+        // which the every-100-calls maintenance below reads. It used to gate the
+        // AUTO CHECKPOINT marker too; no shipped profile ever emitted that, so
+        // only the counter survives.
+        if !skip_checkpoint {
+            let _ = self.increment_and_check();
+        }
 
         let current_count = self.call_count.load(std::sync::atomic::Ordering::Relaxed);
         if current_count > 0 && current_count.is_multiple_of(100) {

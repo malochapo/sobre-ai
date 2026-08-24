@@ -13,7 +13,7 @@ use crate::tools::CrpMode;
 // accuracy invariants (GL#441).
 pub mod dedup_hook;
 mod helpers;
-pub use helpers::{graph_related_hint, is_instruction_file};
+pub use helpers::is_instruction_file;
 mod kernel;
 pub(crate) mod render;
 pub(crate) use render::*;
@@ -1091,16 +1091,10 @@ fn handle_with_options_inner(
 
     // Skip expensive hint computation for line-range reads and first reads.
     // Hints are only useful from the 2nd read onwards when the file is contextually relevant.
-    // sobre removed the TF-IDF semantic cache: `graph_related_hint` already
-    // answers "what else should I look at" from the code graph, which is a
-    // better signal on code than token overlap, and the cache reloaded and
-    // rewrote a JSON index from disk on every qualifying read.
-    let similar_hint: Option<String> = None;
-    // #1098: graph hints moved to background — `graph_related_hint()` does a
-    // SQLite query that can block for 50-200ms on Windows, which is unacceptable
-    // while holding the global cache write-lock. The registered handler calls it
-    // after releasing the lock and appends it to the response.
-    let graph_hint: Option<String> = None;
+    // sobre removed the TF-IDF semantic cache: the post-dispatch `[related: …]`
+    // hint in `autonomy::enrich_after_read` already answers "what else should I
+    // look at" from the code graph — and names only files that are *not* in the
+    // session cache yet, which token overlap cannot do.
 
     if mode == "full" || mode == "full-compact" {
         cache.mark_full_delivered(path);
@@ -1117,7 +1111,7 @@ fn handle_with_options_inner(
             };
         }
 
-        let (mut output, _) = format_full_output(
+        let (output, _) = format_full_output(
             &file_ref,
             &short,
             ext,
@@ -1126,12 +1120,6 @@ fn handle_with_options_inner(
             store_result.line_count,
             task,
         );
-        if let Some(hint) = &graph_hint {
-            output.push_str(&format!("\n{hint}"));
-        }
-        if let Some(hint) = similar_hint {
-            output.push_str(&format!("\n{hint}"));
-        }
         let framed_tokens = count_tokens(&output);
         let output = cap_to_raw(
             output,
@@ -1174,7 +1162,7 @@ fn handle_with_options_inner(
     // Cap first, then cache the pure capped body so re-reads stay byte-stable
     // (#498) — the optional, read-state-dependent navigation hints below are
     // appended to the returned value only, never to the cached body.
-    let mut output = if mode_allows_raw_cap(&resolved_mode) {
+    let output = if mode_allows_raw_cap(&resolved_mode) {
         let framed_tokens = count_tokens(&output);
         cap_to_raw(
             output,
@@ -1194,12 +1182,6 @@ fn handle_with_options_inner(
             tuning.protect,
         );
         cache.set_compressed(path, &cache_key, output.clone());
-    }
-    if let Some(hint) = &graph_hint {
-        output.push_str(&format!("\n{hint}"));
-    }
-    if let Some(hint) = similar_hint {
-        output.push_str(&format!("\n{hint}"));
     }
     let output = crate::core::redaction::redact_text_if_enabled(&output);
     let final_tokens = count_tokens(&output);
