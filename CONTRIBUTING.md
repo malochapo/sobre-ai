@@ -1,261 +1,70 @@
-# Contributing to lean-ctx
+# Contributing
 
-Thanks for your interest in lean-ctx — contributions are welcome.
+`sobre` is a personal project under active reduction. It is not looking for
+feature contributions right now, and most of the work in flight is *removing*
+code rather than adding it. If you have found a bug, an issue is welcome.
 
-## Spec-driven workflow (non-trivial changes)
+There is no CLA. Contributions are under Apache-2.0, like the rest of the
+repository.
 
-lean-ctx develops non-trivial features **spec-anchored** (review-gated SDD):
+## Working in this codebase
 
-```text
-spec → plan → tasks → implement (impact-first) → verify → evidence
-```
+The code is inherited from a much larger product and is being cut down. Two
+consequences shape every change:
 
-1. **Spec** — `specs/NNN-<slug>/spec.md` (copy `specs/_template/`); `NNN` = tracking
-   issue iid, acceptance criteria in EARS. One feature = one dir.
-2. **Plan** — draft in your agent's plan mode (e.g. Cursor Plan Mode `Shift+Tab`),
-   then distill the approved approach into `specs/NNN-<slug>/plan.md`.
-   Review before coding.
-3. **Tasks** — `specs/NNN-<slug>/tasks.md`: atomic, individually testable.
-4. **Implement** — impact-first: run `ctx_impact` (or `lean-ctx graph impact <file>`)
-   before editing `rust/src/**` and verify the affected tests.
-5. **Verify** — `scripts/preflight.sh fast` + the affected tests.
-6. **Evidence** — cite the spec in commits (`refs specs/NNN-<slug>`), link issue #NNN.
+**Names lie.** A module called `addons` held artifact-execution infrastructure,
+not a marketplace. A file called `cheatsheet_cmd.rs` held the implementation of
+an unrelated live command. Read what a thing does before acting on what it is
+called.
 
-Skip the full loop for trivial fixes; use it for features, contracts, and anything
-touching the tool/CLI surface. See `specs/README.md`.
-
-## Quick start (core Rust binary)
-
-### Prerequisites
-
-- Rust (stable) via [rustup](https://rustup.rs/)
-- Git
-- A C toolchain (`cc`, plus `cmake` for `aws-lc`) — several dependencies
-  (jemalloc, `aws-lc`, …) build from source
-
-### Setup
+**The compiler is the only reliable oracle.** Grep decides what to *attempt*;
+only the compiler decides whether it worked.
 
 ```bash
-git clone https://github.com/yvgude/lean-ctx.git
-cd lean-ctx/rust
-
-cargo build
-cargo test
+cargo check --all-targets                  # the default, local-only build
+cargo check --all-targets --features dense # local embeddings + GPU providers
+cargo check --all-targets --all-features   # what CI checks
 ```
 
-### Quality bar (required)
+`--all-targets` matters: plain `cargo check` skips `#[cfg(test)]` blocks in the
+library, so a broken test module compiles clean without it.
+
+Never audit warnings under `--no-default-features`: `dead_code = "deny"` reports
+false positives when features are off.
+
+## Tests
 
 ```bash
-cargo fmt --check
-cargo clippy --all-targets --all-features -- -D warnings
-cargo test --all-features
-cargo test --release
+cargo test --manifest-path rust/Cargo.toml
 ```
 
-### Pre-push gate (CI parity)
+Run the whole thing, not `--lib`. The library tests are the bulk of the count,
+but a good deal of behaviour is pinned by the integration suites under
+`rust/tests/`, and `--lib` never touches them.
 
-`make setup-hooks` wires a pre-push hook that runs `scripts/preflight.sh fast` —
-the deterministic CI jobs (fmt, clippy, rustdoc, generated-docs drift, Windows
-cross-compile) mirrored locally so you catch them in seconds, not after a 50-min
-matrix. It is **change-aware**: a docs-only push (README, CHANGELOG, `*.md`,
-website, …) skips the Rust gates entirely, while CI still runs every job as the
-source of truth. Run the full gate (everything + `cargo test --lib`, ignoring the
-diff) with `make preflight`. Bypass once with `SKIP_PREFLIGHT=1 git push`.
+The suite is not fully green: a number of failures pre-date the fork or need
+tools that may not be on your machine (a `python` on `PATH`, for instance).
+Before claiming a change is clean, compare against a baseline run of the same
+suite on the commit you started from — the absolute count is not the signal, the
+delta is.
 
-A change to contract code (`proxy/`, `tools/`, `config/schema/`) that ships no
-test signal triggers a **no-test advisory**; export
-`LEAN_CTX_PREFLIGHT_STRICT_TESTS=1` to make it blocking.
+## Removing code
 
-## Building across worktrees & disk usage
+Most changes here are deletions. What works:
 
-lean-ctx pulls in a **heavy native-dependency tree** (jemalloc, an `aws-lc`
-crypto build, tree-sitter grammars, …), so a debug build is larger than the Rust
-source alone suggests. A couple of things worth knowing so it doesn't surprise
-your disk:
+1. **Neutralise behaviour first, keep the shape.** Make the function return the
+   constant it now always returns, leave its signature alone. This compiles
+   immediately and reaches the intended behaviour.
+2. **Let the compiler enumerate what died.** Note that `dead_code` does not see
+   `pub` items re-exported from `lib.rs`, so it will not find everything.
+3. **Cut, with an assertion on the block's bounds.** Pattern-based bulk edits
+   silently eat the wrong lines; assert on the first and last line of what you
+   are deleting.
 
-- **Each `git worktree` gets its own `target/`.** Keep several PR checkouts open
-  and Cargo compiles the full native tree *per worktree*, sharing nothing
-  between them.
-- **`target/debug` never garbage-collects.** Stale incremental units and old
-  dependency versions accumulate, so one heavily-rebuilt `target/` can reach
-  **tens of GB** (vs. ~2 GB for a clean build).
-
-### A shared compilation cache (recommended)
-
-[`sccache`](https://github.com/mozilla/sccache) deduplicates dependency compiles
-across worktrees and branches, without the build-lock contention a shared
-`CARGO_TARGET_DIR` introduces:
-
-```bash
-cargo install sccache
-export RUSTC_WRAPPER=sccache   # add to your shell profile
-```
-
-> A single shared `CARGO_TARGET_DIR` also dedups, but Cargo holds a per-target
-> build lock, so concurrent builds across worktrees **serialize**.
-
-### Prune stale artifacts
-
-[`cargo-sweep`](https://github.com/holmgr/cargo-sweep) drops build artifacts past
-a cutoff so `target/` can't grow without bound:
-
-```bash
-cargo install cargo-sweep
-cargo sweep --time 7      # remove artifacts unused for > 7 days
-```
-
-### Reclaim space fast
-
-`target/` is always safe to delete — it's pure build output and regenerates on
-the next build:
-
-```bash
-cargo clean               # this checkout's target/
-du -sh target             # check current size
-```
-
-Debug info is the bulk of that size: this repo sets
-`[profile.dev] debug = "line-tables-only"`, which keeps `file:line` in panics and
-backtraces while dropping full variable-level data. Set `debug = 2` in a local
-profile override if you need to step-debug.
-
-## Cookbook / SDK / extensions (optional)
-
-If you contribute to `cookbook/` or `packages/`, you’ll also need:
-
-- Node.js (>= 22.12.0)
-- npm
-
-```bash
-cd cookbook
-npm ci
-npm test
-```
-
-## Repo structure
-
-```text
-lean-ctx/
-├─ rust/                 # core binary (CLI + MCP server + shell hook)
-│  ├─ src/
-│  │  ├─ main.rs         # CLI entry point
-│  │  ├─ lib.rs          # library entry point (shared core)
-│  │  ├─ mcp_stdio.rs    # MCP stdio transport
-│  │  ├─ server/         # MCP server state + dispatch
-│  │  ├─ tools/          # MCP tool handlers (ctx_read, ctx_shell, ...)
-│  │  ├─ core/           # cache, compression, patterns/, memory, graphs, ...
-│  │  ├─ cli/            # CLI subcommands (setup, init, read, ...)
-│  │  └─ hooks/          # editor/agent installers (Cursor, Claude Code, ...)
-│  └─ tests/             # integration/e2e/adversarial tests
-├─ cookbook/             # real examples + lean-ctx-client
-├─ packages/             # editor integrations (VSCode, Chrome, JetBrains, ...)
-├─ docs/                 # repo docs (developer-facing)
-└─ website/generated/    # generated schemas (tool + TDD schema)
-```
-
-## Common contribution types
-
-### Add a shell compression pattern
-
-1. Add a new module in `rust/src/core/patterns/<tool>.rs`
-2. Implement:
-
-```rust
-pub fn compress(command: &str, output: &str) -> Option<String>
-```
-
-3. Register the module + routing in `rust/src/core/patterns/mod.rs` (`try_specific_pattern`)
-4. Add tests (unit tests in the module or integration tests in `rust/tests/`)
-5. Run the quality checks above
-
-Tip: open a ticket via the [New Compression Pattern](.github/ISSUE_TEMPLATE/compression_pattern.md) template and include raw output + expected compressed output.
-
-### Add or update an MCP tool
-
-- Core handler logic lives in `rust/src/tools/ctx_*.rs` — keep it pure and
-  deterministic (#498). See `ctx_explore.rs` for the citation-returning
-  exploration pattern (BM25 + static graph + AST, bounded turns, no session writes).
-- The MCP adapter (implements `McpTool`) lives in `rust/src/tools/registered/ctx_*.rs`:
-  schema via `tool_def`, arg parsing, `ToolOutput`. Register it in
-  `rust/src/server/registry.rs` and bump the count SSOT in `rust/src/server/mod.rs`
-  (`test_registry_tool_count_ssot`).
-- For a CLI surface, add `rust/src/cli/<name>_cmd.rs` and route it in
-  `rust/src/cli/dispatch/mod.rs` (+ `dispatch/help.rs`).
-- Regenerate and commit the SSOT artifacts:
-  `cargo run --example gen_mcp_manifest --features dev-tools` and
-  `cargo run --example gen_docs --features dev-tools`.
-- If you change the public tool surface, also update `LEANCTX_FEATURE_CATALOG.md`
-  (SSOT snapshot). The `entrypoints_wired`, `mcp_manifest_up_to_date` and
-  `reference_docs_drift` tests gate the wiring end to end.
-
-### Add an addon to the registry
-
-An addon entry in `rust/data/addon_registry.json` ships **executable trust** to
-every user (a `stdio` addon runs code on their machine; an `http` addon receives
-their context). Registry submissions are therefore reviewed like a security
-change, not a docs change. See the
-[addon manifest contract](docs/contracts/addon-manifest-v1.md#security-model).
-
-**Your submission must:**
-
-1. Use a unique slug `[a-z0-9-]` and fill `author`, `homepage`, `license`,
-   `description` (the CI validator rejects installable entries that don't).
-2. **Pin the upstream.** No `latest`, no `npx/uvx`-without-a-version. The exact
-   command + version must be reproducible.
-3. Not shell out (`sh -c`, `bash -c`), fetch-and-exec (`curl`, `wget`), or use a
-   non-HTTPS `url`. The validator flags all of these.
-4. Point `homepage` at **public, inspectable source** for the MCP server.
-5. Default to the **community** tier (`verified` stays `false`) — verification is
-   conferred by review, never self-asserted.
-
-Run the validator locally — it runs in CI on every change to the registry:
-
-```bash
-cd rust && cargo test --lib addons::registry
-```
-
-**Maintainer review checklist (binding):**
-
-- [ ] Source is public and the MCP server's behaviour matches its description.
-- [ ] Command/args/url are pinned and reproducible; no shell/fetch primitives.
-- [ ] `env` / `headers` carry no embedded secrets; any required secret is the
-      user's to supply, documented on the homepage.
-- [ ] License is a real SPDX id and compatible with redistribution of the entry.
-- [ ] `verified = true` requires **two** maintainer approvals **and** a clean
-      run with **no** `warn`/`danger` finding. Otherwise it stays community-tier.
-- [ ] When in doubt, merge as a **listed** entry (no `[mcp]` block) first.
-
-### Docs & examples
-
-- Prefer real, runnable examples (no mock data)
-- If you add a new example app, add it under `cookbook/examples/` and ensure it talks to a real `lean-ctx serve` instance
-
-## Issues
-
-- If your issue was closed but the problem persists, comment `/reopen` on it — as the original author, this reopens the issue automatically (GitHub itself does not let authors reopen maintainer-closed issues). The command is matched anywhere in your comment, so "Please `/reopen`" works too; issues closed as *not planned* stay a maintainer call
-- Issues closed as *not planned* are maintainer decisions and are not reopened automatically; a comment is still welcome
-
-## Pull requests
-
-- Keep PRs focused (one theme per PR)
-- Include a short test plan (commands you ran)
-- If relevant, include a small “before/after” token-savings snippet
-
-## Contributor License Agreement (CLA)
-
-Before your first pull request can be merged, you need to sign our
-[Contributor License Agreement](CLA.md). It is a one-time, automated step: the
-CLA Assistant bot comments on your PR, and you sign by replying:
-
-> I have read the CLA Document and I hereby sign the CLA
-
-The CLA keeps lean-ctx Apache-2.0 for everyone while allowing the maintainer to
-relicense (e.g. for the hosted/commercial offering). The free, open-source
-runtime for individual developers stays free — that commitment is written into
-the CLA itself (§8).
+When a test asserts behaviour that can no longer occur, prefer retargeting it
+onto the guarantee that survives over deleting it. A test that pinned a real
+property is worth keeping even when the mechanism it pinned has changed.
 
 ## License
 
-lean-ctx is distributed under the Apache License 2.0; by contributing, your
-contributions are licensed to the public under the same terms (see the [CLA](CLA.md)
-for the full grant).
+Apache-2.0. See [LICENSE](LICENSE), [NOTICE](NOTICE) and [FORK.md](FORK.md).

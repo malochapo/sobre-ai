@@ -1,11 +1,11 @@
 ---
 name: Bug Report
-about: Report a bug in lean-ctx
+about: Report a bug in sobre
 title: 'bug: '
 labels: bug
 ---
 
-**lean-ctx version:** (run `lean-ctx --version`)
+**sobre version:** (run `sobre --version`)
 
 **OS:** (macOS / Linux / Windows)
 
