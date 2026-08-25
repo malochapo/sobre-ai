@@ -43,26 +43,6 @@ fn add_test_marker(mut value: serde_json::Value, original_size: usize) -> (Vec<u
 }
 
 #[test]
-fn ocla_budget_admission_rejects_over_limit_scope() {
-    let mut parts = parts_for("/v1/chat/completions");
-    parts.headers.insert(
-        OCLA_BUDGET_SCOPE_HEADER,
-        axum::http::HeaderValue::from_static("user:budget-forward-test"),
-    );
-    let scope = crate::core::ocla::budget::BudgetScope::User("budget-forward-test".into());
-    let limit = crate::core::ocla::budget::BudgetLimit {
-        scope,
-        max_tokens_per_day: 2,
-        max_usd_per_day: 1.0,
-    };
-    crate::core::ocla::budget_gate::set_test_budget_limit(limit);
-
-    let err = apply_ocla_budget_admission(&parts, 12).unwrap_err();
-
-    assert_eq!(err, StatusCode::PAYMENT_REQUIRED);
-}
-
-#[test]
 fn proxy_cycle_invokes_and_stores_intent_classification() {
     let calls = Arc::new(AtomicUsize::new(0));
     let mut registry = crate::core::ocla::OclaRegistry::with_builtins();

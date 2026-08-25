@@ -47,8 +47,6 @@ use headers::should_forward_request_header;
 pub(super) use prepare::{cohort_arm, prepare_request_body, wire_context};
 
 const HEADROOM_COMPRESSED_HEADER: &str = "x-headroom-compressed";
-const OCLA_BUDGET_SCOPE_HEADER: &str = "x-ocla-budget-scope";
-const ESTIMATED_CHARS_PER_TOKEN: u64 = 4;
 
 /// Check whether an incoming request was already compressed by Headroom.
 pub(super) fn is_headroom_compressed(parts: &axum::http::request::Parts) -> bool {
@@ -72,25 +70,6 @@ pub(super) fn max_body_bytes() -> usize {
         .filter(|mb| *mb > 0)
         .unwrap_or(DEFAULT_MAX_BODY_MB)
         .saturating_mul(1024 * 1024)
-}
-
-fn apply_ocla_budget_admission(
-    parts: &axum::http::request::Parts,
-    estimated_bytes: usize,
-) -> Result<(), StatusCode> {
-    let Some(scope) = parts
-        .headers
-        .get(OCLA_BUDGET_SCOPE_HEADER)
-        .and_then(|value| value.to_str().ok())
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-    else {
-        return Ok(());
-    };
-    let estimated_tokens = (estimated_bytes as u64).saturating_add(ESTIMATED_CHARS_PER_TOKEN - 1)
-        / ESTIMATED_CHARS_PER_TOKEN;
-    crate::core::ocla::budget_gate::admit_budgeted_request(scope, estimated_tokens, 0.0)
-        .map_err(|_| StatusCode::PAYMENT_REQUIRED)
 }
 
 pub async fn forward_request(
@@ -146,7 +125,6 @@ pub async fn forward_request(
         upstream_base,
         provider_label == "OpenAI",
     )?;
-    apply_ocla_budget_admission(&parts, prepared.body.len())?;
     let original_size = prepared.original_size;
     let compressed_size = prepared.compressed_size;
     let compression_candidate = prepared.compression_candidate;

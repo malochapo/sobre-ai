@@ -1,7 +1,6 @@
 
 use chrono::Utc;
 use lean_ctx::core::a2a::dlq::{DeadLetter, DeadLetterQueue};
-use lean_ctx::core::ocla::budget::{BudgetLedger, BudgetLimit, BudgetScope};
 use lean_ctx::core::ocla::capsule::CapsuleStore;
 use lean_ctx::core::ocla::health::check_system_health;
 use lean_ctx::core::ocla::tracing::{SpanStatus, spans_for_trace, start_span};
@@ -32,19 +31,6 @@ fn health_reports_all_components() {
             "missing health component: {name}"
         );
     }
-}
-
-#[test]
-fn test_budget_blocks_over_limit() {
-    let scope = BudgetScope::Org("integration-budget-block".into());
-    let mut budget = BudgetLedger::new();
-    budget.set_limit(BudgetLimit {
-        scope: scope.clone(),
-        max_tokens_per_day: 10,
-        max_usd_per_day: 1.0,
-    });
-    budget.record_consumption(&scope, 10, 0.10);
-    assert!(budget.check_budget(&scope, 1).is_err());
 }
 
 #[test]

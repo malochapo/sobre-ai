@@ -4,8 +4,6 @@
 //! in the engine or an OSS extension; commercial systems may consume this
 //! versioned boundary but must never become a data-plane dependency.
 
-pub mod budget;
-pub mod budget_gate;
 pub mod builtin;
 pub mod capsule;
 pub mod content_port;
