@@ -410,8 +410,8 @@ fn init_claude_installs_dedicated_rules_file_without_claude_md() {
 
     // v3 (GL #555): the block is self-contained — Claude Code expands `@`
     // imports inline at launch, so the old `@rules/lean-ctx.md` pointer
-    // silently multiplied the per-session footprint. Detail docs moved to
-    // the on-demand skill; the CLAUDE.md block itself must stay compact.
+    // silently multiplied the per-session footprint. The block itself must
+    // stay compact.
     // v4 (GH #637 / GL #1138): MCP-aware — ctx_* guidance is conditional on
     // the tools actually existing in the session, and native Read → Edit is
     // documented as a guard-safe editing path (read-before-write gate).
@@ -444,12 +444,6 @@ fn init_claude_installs_dedicated_rules_file_without_claude_md() {
     assert!(
         !project.join("CLAUDE.md").exists(),
         "must not create project CLAUDE.md"
-    );
-
-    let skill_path = home.join(".claude/skills/lean-ctx/SKILL.md");
-    assert!(
-        skill_path.exists(),
-        "must install the on-demand lean-ctx skill (detail docs live there)"
     );
 }
 

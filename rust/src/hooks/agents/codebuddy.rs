@@ -79,16 +79,6 @@ pub(crate) fn install_codebuddy_hook_with_mode(global: bool, mode: HookMode) {
     if scope != crate::core::config::RulesScope::Project {
         remove_codebuddy_rules_file(&home);
         install_codebuddy_global_codebuddy_md_for_mode(&home, mode);
-        // rules_injection=off (#361): the functional hooks above still install
-        // (off opts out of *instructions*, not compression), but the on-demand
-        // skill is lean-ctx-authored steering — suppress it, and remove one a
-        // previous shared/dedicated install left behind.
-        if crate::core::config::Config::load().rules_injection_effective()
-            == crate::core::config::RulesInjection::Off
-        {
-            remove_codebuddy_skill(&home);
-        } else {
-        }
     }
 
     let _ = global;
@@ -170,7 +160,6 @@ Write and Delete — use native tools normally.
 Do NOT attempt native Read, Grep, Glob, or Bash — they will be denied.
 
 Read modes: anchored (edit), full (verbatim), map (overview), signatures (API), diff (post-edit), lines:N-M (range), auto.
-Details live in the `lean-ctx` skill (loads on demand — keep this file lean).
 <!-- /lean-ctx -->";
 
 const CODEBUDDY_MD_BLOCK_CONTENT_MCP: &str = "\
@@ -190,7 +179,6 @@ prior native Read of the same file path. Write, Delete, Glob — use normally.
 If no `ctx_*` tools are listed in this session, use the native tools throughout.
 
 Read modes: anchored (edit), full (verbatim), map (overview), signatures (API), diff (post-edit), lines:N-M (range), auto.
-Details live in the `lean-ctx` skill (loads on demand — keep this file lean).
 <!-- /lean-ctx -->";
 
 fn install_codebuddy_global_codebuddy_md_for_mode(home: &std::path::Path, mode: HookMode) {
@@ -267,23 +255,8 @@ fn remove_codebuddy_rules_file(home: &std::path::Path) {
         && !super::super::mcp_server_quiet_mode()
     {
         eprintln!(
-            "Removed {} (always-loaded duplicate; CODEBUDDY.md block + skill replace it)",
+            "Removed {} (always-loaded duplicate; the CODEBUDDY.md block replaces it)",
             rules_path.display()
-        );
-    }
-}
-
-/// Remove the lean-ctx skill directory (`rules_injection=off`, GH #361). Only the
-/// lean-ctx-owned `lean-ctx` skill folder is touched.
-fn remove_codebuddy_skill(home: &std::path::Path) {
-    let skill_dir = home.join(".codebuddy/skills/lean-ctx");
-    if skill_dir.exists()
-        && std::fs::remove_dir_all(&skill_dir).is_ok()
-        && !super::super::mcp_server_quiet_mode()
-    {
-        eprintln!(
-            "Removed {} (rules_injection=off — instructions intentionally not installed)",
-            skill_dir.display()
         );
     }
 }
@@ -685,15 +658,6 @@ mod tests {
             "rules_injection=off must strip the CODEBUDDY.md block, got:\n{after}"
         );
         assert!(after.contains("# my notes"), "user content must survive");
-    }
-
-    #[test]
-    fn skill_install_then_remove_roundtrips() {
-        let tmp = tempfile::tempdir().unwrap();
-        let home = tmp.path();
-        assert!(home.join(".codebuddy/skills/lean-ctx/SKILL.md").exists());
-        remove_codebuddy_skill(home);
-        assert!(!home.join(".codebuddy/skills/lean-ctx").exists());
     }
 
     #[test]

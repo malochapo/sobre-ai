@@ -180,7 +180,6 @@ pub fn run(dry_run: bool, keep_config: bool, keep_binary: bool) {
 
     removed_any |= remove_hook_files(&home, dry_run);
     removed_any |= remove_plan_mode_settings(&home, dry_run);
-    removed_any |= remove_skill_dirs(&home, dry_run);
     removed_any |= remove_project_agent_files(dry_run);
 
     if dry_run {
@@ -257,57 +256,6 @@ pub(super) fn remove_marked_block(content: &str, start: &str, end: &str) -> Stri
 // ---------------------------------------------------------------------------
 // Skill directories: lean-ctx SKILL.md + scripts
 // ---------------------------------------------------------------------------
-
-fn remove_skill_dirs(home: &Path, dry_run: bool) -> bool {
-    let claude_state = crate::core::editor_registry::claude_state_dir(home);
-    let codebuddy_state = crate::core::editor_registry::codebuddy_state_dir(home);
-    let mut skill_dirs: Vec<(&str, PathBuf)> = vec![
-        ("Claude Code", claude_state.join("skills/lean-ctx")),
-        ("CodeBuddy", codebuddy_state.join("skills/lean-ctx")),
-        ("Cursor", home.join(".cursor/skills/lean-ctx")),
-        (
-            "Codex CLI",
-            crate::core::home::resolve_codex_dir()
-                .unwrap_or_else(|| home.join(".codex"))
-                .join("skills/lean-ctx"),
-        ),
-        ("Grok", home.join(".grok/skills/lean-ctx")),
-        ("Copilot", home.join(".copilot/skills/lean-ctx")),
-        ("OpenClaw", home.join(".openclaw/skills/lean-ctx")),
-    ];
-
-    // If CLAUDE_CONFIG_DIR differs from ~/.claude, also clean default path
-    let default_claude_skill = home.join(".claude/skills/lean-ctx");
-    if !skill_dirs.iter().any(|(_, p)| *p == default_claude_skill) {
-        skill_dirs.push(("Claude Code (default)", default_claude_skill));
-    }
-
-    // If CODEBUDDY_CONFIG_DIR differs from ~/.codebuddy, also clean default path
-    let default_codebuddy_skill = home.join(".codebuddy/skills/lean-ctx");
-    if !skill_dirs
-        .iter()
-        .any(|(_, p)| *p == default_codebuddy_skill)
-    {
-        skill_dirs.push(("CodeBuddy (default)", default_codebuddy_skill));
-    }
-
-    let mut removed = false;
-    for (name, dir) in &skill_dirs {
-        if !dir.exists() {
-            continue;
-        }
-        if dry_run {
-            println!("  Would remove {name} skill directory");
-            removed = true;
-        } else if let Err(e) = fs::remove_dir_all(dir) {
-            tracing::warn!("Failed to remove {name} skill dir: {e}");
-        } else {
-            println!("  ✓ {name} skill directory removed");
-            removed = true;
-        }
-    }
-    removed
-}
 
 // ---------------------------------------------------------------------------
 // Data directory

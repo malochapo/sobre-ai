@@ -9,7 +9,6 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use crate::core::ocla::traits::{OclaService, SavingsLedger};
 use crate::core::ocla::types::{OclaCapability, OclaCapabilityKind, OclaResult, SavingsEvidence};
-use crate::core::ocla_bus::{self, OclaEvent, SavingsSource};
 
 const MAX_EVIDENCE_ENTRIES: usize = 4096;
 
@@ -112,14 +111,6 @@ impl SavingsLedger for BuiltinSavingsLedger {
 
         let ref_id = evidence.evidence_ref.clone();
 
-        ocla_bus::emit(OclaEvent::SavingsRecorded {
-            input_saved: saved,
-            output_saved: 0,
-            source: SavingsSource::Compression,
-            attribution_id: None,
-            evidence_class: None,
-            measurement_method: None,
-        });
 
         let mut entries = self
             .entries

@@ -8,7 +8,6 @@ use crate::core::ocla::traits::{IntentClassifier, OclaService};
 use crate::core::ocla::types::{
     IntentDecision, IntentRequest, OclaCapability, OclaCapabilityKind, OclaResult,
 };
-use crate::core::ocla_bus::{self, OclaEvent};
 
 pub struct BuiltinIntentClassifier;
 
@@ -42,11 +41,6 @@ impl IntentClassifier for BuiltinIntentClassifier {
                 |(candidate, score)| (candidate.clone(), confidence_milli(score)),
             );
 
-        ocla_bus::emit(OclaEvent::IntentClassified {
-            tier: intent.clone(),
-            confidence: f64::from(confidence) / 1000.0,
-            reasoning: format!("builtin:{}", request.context.request_id),
-        });
 
         Ok(IntentDecision {
             intent,

@@ -10,7 +10,6 @@ use crate::core::ocla::types::{
     IntentDecision, ModelRouteRequest, OclaCapability, OclaCapabilityKind, OclaResult,
     RoutingDecision,
 };
-use crate::core::ocla_bus::{self, OclaEvent};
 use crate::core::savings_ledger::store::{self, MechanismSummary};
 use serde_json::json;
 
@@ -75,7 +74,7 @@ impl BuiltinModelRouter {
             .and_then(|decision| route_for_intent(&requested_model, decision, &self.rules))
             .or_else(|| crate::proxy::model_router::route(&body, &self.rules));
         let ledger = routing_ledger_summary();
-        let (model, provider, tier, model_changed) = routed.map_or_else(
+        let (model, provider, tier, _model_changed) = routed.map_or_else(
             || {
                 (
                     requested_model.clone(),
@@ -94,12 +93,6 @@ impl BuiltinModelRouter {
             },
         );
 
-        ocla_bus::emit(OclaEvent::ModelRouted {
-            requested_model: requested_model.clone(),
-            routed_model: model.clone(),
-            tier: tier.clone(),
-            model_changed,
-        });
 
         let routing_rationale = routing_rationale(intent, tier.as_str(), ledger.as_ref());
         Ok(RoutingDecisionWithRationale {

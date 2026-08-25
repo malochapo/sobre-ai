@@ -602,14 +602,10 @@ pub(super) enum ClaudeInstructionsState {
     ProjectScope,
     /// rules_injection=off: user opted out of instructions entirely (GH #361).
     InjectionOff,
-    /// rules_injection=dedicated: SessionStart hook injects, skill on disk.
-    DedicatedWithSkill,
-    /// rules_injection=dedicated but the skill is missing.
-    DedicatedMissingSkill,
-    /// CLAUDE.md block + on-demand skill (post-3.8 default layout).
-    BlockAndSkill,
-    /// CLAUDE.md block present, skill missing (still functional).
-    BlockOnly,
+    /// rules_injection=dedicated: the SessionStart hook injects.
+    Dedicated,
+    /// CLAUDE.md block present.
+    Block,
     /// Legacy rules file from a pre-3.8 install (works until next setup).
     LegacyRules,
     /// Nothing installed — Claude only sees the 2048-char-capped MCP instructions.
@@ -618,7 +614,7 @@ pub(super) enum ClaudeInstructionsState {
 
 impl ClaudeInstructionsState {
     pub(super) fn ok(self) -> bool {
-        !matches!(self, Self::DedicatedMissingSkill | Self::Missing)
+        !matches!(self, Self::Missing)
     }
 }
 
@@ -636,25 +632,15 @@ pub(super) fn claude_instructions_state(
         return S::InjectionOff;
     }
 
-    let has_skill = home.join(".claude/skills/lean-ctx/SKILL.md").exists();
-
     if injection == crate::core::config::RulesInjection::Dedicated {
-        return if has_skill {
-            S::DedicatedWithSkill
-        } else {
-            S::DedicatedMissingSkill
-        };
+        return S::Dedicated;
     }
 
     let claude_md = crate::core::editor_registry::claude_state_dir(home).join("CLAUDE.md");
     let has_block = std::fs::read_to_string(&claude_md)
         .is_ok_and(|c| c.contains(crate::hooks::agents::CLAUDE_MD_BLOCK_START));
     if has_block {
-        return if has_skill {
-            S::BlockAndSkill
-        } else {
-            S::BlockOnly
-        };
+        return S::Block;
     }
 
     let has_rules = crate::core::editor_registry::claude_rules_dir(home)
@@ -668,7 +654,7 @@ pub(super) fn claude_instructions_state(
 }
 
 /// CodeBuddy instructions state — mirrors `claude_instructions_state` since
-/// CodeBuddy uses the same CODEBUDDY.md block + skill pattern as Claude Code.
+/// CodeBuddy uses the same CODEBUDDY.md block pattern as Claude Code.
 pub(super) fn codebuddy_instructions_state(
     home: &std::path::Path,
     scope: crate::core::config::RulesScope,
@@ -683,25 +669,15 @@ pub(super) fn codebuddy_instructions_state(
         return S::InjectionOff;
     }
 
-    let has_skill = home.join(".codebuddy/skills/lean-ctx/SKILL.md").exists();
-
     if injection == crate::core::config::RulesInjection::Dedicated {
-        return if has_skill {
-            S::DedicatedWithSkill
-        } else {
-            S::DedicatedMissingSkill
-        };
+        return S::Dedicated;
     }
 
     let codebuddy_md = crate::core::editor_registry::codebuddy_state_dir(home).join("CODEBUDDY.md");
     let has_block = std::fs::read_to_string(&codebuddy_md)
         .is_ok_and(|c| c.contains(crate::hooks::agents::CODEBUDDY_MD_BLOCK_START));
     if has_block {
-        return if has_skill {
-            S::BlockAndSkill
-        } else {
-            S::BlockOnly
-        };
+        return S::Block;
     }
 
     let has_rules = crate::core::editor_registry::codebuddy_rules_dir(home)

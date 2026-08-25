@@ -669,7 +669,7 @@ pub fn install_project_rules_for_agents(agents: &[&str]) {
             && !mcp_server_quiet_mode()
         {
             eprintln!(
-                "Removed .claude/rules/lean-ctx.md (always-loaded duplicate; AGENTS.md block + skill replace it)."
+                "Removed .claude/rules/lean-ctx.md (always-loaded duplicate; the AGENTS.md block replaces it)."
             );
         }
 
@@ -684,7 +684,7 @@ pub fn install_project_rules_for_agents(agents: &[&str]) {
             && !mcp_server_quiet_mode()
         {
             eprintln!(
-                "Removed .codebuddy/rules/lean-ctx.md (always-loaded duplicate; CODEBUDDY.md block + skill replace it)."
+                "Removed .codebuddy/rules/lean-ctx.md (always-loaded duplicate; the CODEBUDDY.md block replaces it)."
             );
         }
 

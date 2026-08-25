@@ -9,7 +9,6 @@ use crate::core::ocla::types::{
     OclaCapability, OclaCapabilityKind, OclaResult, ResponseOptimizationRequest,
     ResponseOptimizationResult,
 };
-use crate::core::ocla_bus::{self, OclaEvent};
 
 pub struct BuiltinResponseOptimizer;
 
@@ -38,11 +37,6 @@ impl ResponseOptimizer for BuiltinResponseOptimizer {
     ) -> OclaResult<ResponseOptimizationResult> {
         let decision = crate::proxy::response_optimizer::optimize_response(&request);
 
-        ocla_bus::emit(OclaEvent::ResponseOptimized {
-            cache_hit: decision.cache_hit,
-            is_duplicate: decision.is_duplicate,
-            tokens_saved: decision.tokens_saved,
-        });
 
         Ok(ResponseOptimizationResult {
             response_ref: request.response_ref.clone(),

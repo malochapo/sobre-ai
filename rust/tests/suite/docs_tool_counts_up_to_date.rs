@@ -35,8 +35,6 @@ fn docs_tool_counts_match_manifest() {
     let approx_checks: Vec<(&str, &str)> = vec![
         ("README.md", "MCP tools"),
         ("ARCHITECTURE.md", "tools"),
-        ("skills/lean-ctx/SKILL.md", "MCP tools"),
-        ("rust/src/templates/SKILL.md", "MCP tools"),
     ];
 
     let mut failures: Vec<String> = Vec::new();

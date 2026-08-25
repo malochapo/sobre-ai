@@ -212,7 +212,7 @@ mod tests {
     #[test]
     fn health_report_is_self_consistent() {
         let r = health_report();
-        assert_eq!(r.total, 6, "six scored install checks");
+        assert_eq!(r.total, 5, "five scored install checks");
         assert_eq!(
             r.passed,
             u32::try_from(r.checks.iter().filter(|c| c.ok).count()).unwrap(),

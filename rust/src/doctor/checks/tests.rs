@@ -100,8 +100,8 @@ fn cwd_looks_like_agent_dir_ignores_real_projects() {
     }
 }
 
-// GH #396: the exact post-`setup` state — CLAUDE.md block + skill, rules
-// file removed by setup. Must pass, not demand the retired rules file.
+// GH #396: the exact post-`setup` state — the CLAUDE.md block, rules file
+// removed by setup. Must pass, not demand the retired rules file.
 //
 // `serial(claude_config_dir)`: `claude_state_dir` honours the process-global
 // `CLAUDE_CONFIG_DIR`, which the contextops sync tests set for their own
@@ -109,7 +109,7 @@ fn cwd_looks_like_agent_dir_ignores_real_projects() {
 // the wrong `.claude` dir and flake under load (seen on release CI, #401).
 #[test]
 #[serial_test::serial(claude_config_dir)]
-fn v3_layout_block_and_skill_passes() {
+fn v3_layout_block_passes() {
     let tmp = tempfile::tempdir().unwrap();
     write(
         tmp.path(),
@@ -120,15 +120,14 @@ fn v3_layout_block_and_skill_passes() {
             crate::core::rules_canonical::AGENTS_BLOCK_END,
         ),
     );
-    write(tmp.path(), ".claude/skills/lean-ctx/SKILL.md", "skill");
     let out = check(tmp.path(), RulesScope::Global, RulesInjection::Shared);
     assert!(out.ok, "post-setup layout must pass: {}", out.line);
-    assert!(out.line.contains("CLAUDE.md block + skill"));
+    assert!(out.line.contains("CLAUDE.md block installed"));
 }
 
 #[test]
 #[serial_test::serial(claude_config_dir)]
-fn block_without_skill_still_passes() {
+fn block_alone_passes() {
     let tmp = tempfile::tempdir().unwrap();
     write(
         tmp.path(),
@@ -166,19 +165,14 @@ fn nothing_installed_fails_and_suggests_setup() {
     );
 }
 
+// `dedicated` means the SessionStart hook injects the instructions itself,
+// so there is no file on disk to look for — an empty home is the healthy
+// state, not a missing install.
 #[test]
-fn dedicated_injection_with_skill_passes_without_block() {
+fn dedicated_injection_passes_without_block() {
     let tmp = tempfile::tempdir().unwrap();
-    write(tmp.path(), ".claude/skills/lean-ctx/SKILL.md", "skill");
     let out = check(tmp.path(), RulesScope::Global, RulesInjection::Dedicated);
     assert!(out.ok, "{}", out.line);
-}
-
-#[test]
-fn dedicated_injection_without_skill_fails() {
-    let tmp = tempfile::tempdir().unwrap();
-    let out = check(tmp.path(), RulesScope::Global, RulesInjection::Dedicated);
-    assert!(!out.ok);
 }
 
 #[test]

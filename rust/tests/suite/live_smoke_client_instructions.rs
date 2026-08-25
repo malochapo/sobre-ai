@@ -290,19 +290,19 @@ fn codex_covered_client_gets_anchor() {
 }
 
 /// Zero-config golden path: the FIRST MCP session on a fresh machine must
-/// leave rules AND the on-demand SKILL.md behind (session-start heal), so
-/// `doctor` is green without the user ever running `lean-ctx setup`.
+/// leave the rules file behind (session-start heal), so `doctor` is green
+/// without the user ever running `lean-ctx setup`.
 ///
 /// Unlike the other smokes this one does NOT set LEAN_CTX_HEADLESS — the
-/// startup-maintenance block (rules inject + skills install) is the unit
-/// under test. The maintenance runs async after initialize, so the test
-/// polls for the artifacts with a deadline while the session stays open.
+/// startup-maintenance block (rules inject) is the unit under test. The
+/// maintenance runs async after initialize, so the test polls for the
+/// artifact with a deadline while the session stays open.
 #[test]
 #[cfg_attr(
     windows,
     ignore = "HOME-override isolation is Unix-only (dirs::home_dir uses the Win32 API)"
 )]
-fn first_session_heals_rules_and_skill() {
+fn first_session_heals_rules() {
     let bin = env!("CARGO_BIN_EXE_lean-ctx");
     let env = test_env();
     // A Cursor install is just its config dir — no prior lean-ctx wiring.
@@ -337,9 +337,8 @@ fn first_session_heals_rules_and_skill() {
     writeln!(stdin, "{init}").expect("write initialize");
 
     let rules = env.home.join(".cursor/rules/lean-ctx.mdc");
-    let skill = env.home.join(".cursor/skills/lean-ctx/SKILL.md");
     let deadline = std::time::Instant::now() + Duration::from_mins(1);
-    while (!rules.exists() || !skill.exists()) && std::time::Instant::now() < deadline {
+    while !rules.exists() && std::time::Instant::now() < deadline {
         std::thread::sleep(Duration::from_millis(200));
     }
 
@@ -350,10 +349,6 @@ fn first_session_heals_rules_and_skill() {
     assert!(
         rules.exists(),
         "session-start heal must write the Cursor rules file without any setup command"
-    );
-    assert!(
-        skill.exists(),
-        "session-start heal must install SKILL.md alongside the rules (zero-config: doctor green after first session)"
     );
 }
 

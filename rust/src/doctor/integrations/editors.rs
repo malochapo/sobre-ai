@@ -194,14 +194,12 @@ pub(crate) fn integration_claude(
         let detail = match state {
             S::ProjectScope => "project scope (global instructions intentionally absent)".into(),
             S::InjectionOff => "rules injection off (intentionally not installed)".into(),
-            S::DedicatedWithSkill => "dedicated injection + skill".into(),
-            S::DedicatedMissingSkill => "skill missing (run: lean-ctx init)".into(),
-            S::BlockAndSkill => format!("{} block + skill", claude_md.display()),
-            S::BlockOnly => format!("{} block", claude_md.display()),
+            S::Dedicated => "dedicated injection".into(),
+            S::Block => format!("{} block", claude_md.display()),
             S::LegacyRules => "legacy rules file (migrates on next setup)".into(),
             S::Missing => "missing (run: lean-ctx init)".into(),
         };
-        let advertises_ctx_tools = matches!(state, S::BlockAndSkill | S::BlockOnly);
+        let advertises_ctx_tools = matches!(state, S::Block);
         checks.push(NamedCheck {
             name: "Instructions".to_string(),
             ok: state.ok(),
@@ -289,7 +287,7 @@ pub(crate) fn integration_codebuddy(
     let hooks_dir = crate::core::editor_registry::codebuddy_state_dir(home).join("hooks");
     checks.push(check_hook_wrapper_scripts(&hooks_dir, binary, home));
 
-    // CodeBuddy uses the same block + skill pattern as Claude Code.
+    // CodeBuddy uses the same block pattern as Claude Code.
     {
         use crate::doctor::common::ClaudeInstructionsState as S;
         let cfg = crate::core::config::Config::load();
@@ -303,10 +301,8 @@ pub(crate) fn integration_codebuddy(
         let detail = match state {
             S::ProjectScope => "project scope (global instructions intentionally absent)".into(),
             S::InjectionOff => "rules injection off (intentionally not installed)".into(),
-            S::DedicatedWithSkill => "dedicated injection + skill".into(),
-            S::DedicatedMissingSkill => "skill missing (run: lean-ctx init)".into(),
-            S::BlockAndSkill => format!("{} block + skill", codebuddy_md.display()),
-            S::BlockOnly => format!("{} block", codebuddy_md.display()),
+            S::Dedicated => "dedicated injection".into(),
+            S::Block => format!("{} block", codebuddy_md.display()),
             S::LegacyRules => "legacy rules file (migrates on next setup)".into(),
             S::Missing => "missing (run: lean-ctx init)".into(),
         };

@@ -15,7 +15,7 @@ pub(crate) fn install_claude_hook_with_mode(global: bool, mode: HookMode) {
     install_claude_hook_config(&home);
 
     // #281: register the MCP server only when MCP updates are enabled. The hook
-    // scripts/config above and the rules/skill below still install, so an
+    // scripts/config above and the rules below still install, so an
     // MCP-disabled setup keeps the CLI integration without an MCP entry.
     if matches!(mode, HookMode::Hybrid | HookMode::Mcp | HookMode::Replace)
         && super::super::should_register_mcp()
@@ -31,16 +31,6 @@ pub(crate) fn install_claude_hook_with_mode(global: bool, mode: HookMode) {
     if scope != crate::core::config::RulesScope::Project {
         remove_claude_rules_file(&home);
         install_claude_global_claude_md_for_mode(&home, mode);
-        // rules_injection=off (#361): the functional hooks above still install
-        // (off opts out of *instructions*, not compression), but the on-demand
-        // skill is lean-ctx-authored steering — suppress it, and remove one a
-        // previous shared/dedicated install left behind.
-        if crate::core::config::Config::load().rules_injection_effective()
-            == crate::core::config::RulesInjection::Off
-        {
-            remove_claude_skill(&home);
-        } else {
-        }
     }
 
     let _ = global;
@@ -169,8 +159,8 @@ const CLAUDE_MD_BLOCK_VERSION: &str = "lean-ctx-claude-v7";
 // v3 (GL #555): self-contained, no `@rules/lean-ctx.md` import. Claude Code
 // expands `@` imports inline at launch ("imports do not reduce context usage"
 // — code.claude.com/docs/en/memory), so the old pointer silently tripled the
-// per-session footprint. Detail docs now live in the lean-ctx skill, which
-// loads on demand only.
+// per-session footprint. (The skill it pointed at was lean-ctx's; sobre
+// ships its own, and the block will point at it once that exists.)
 //
 // v4 (GH #637 / GL #1138): MCP-aware guidance. The old block recommended
 // `ctx_edit` unconditionally — in sessions where the lean-ctx MCP server is
@@ -206,7 +196,6 @@ prior native Read of the same file path. Write, Delete, Glob — use normally.
 If no `ctx_*` tools are listed in this session, use the native tools throughout.
 
 Read modes: anchored (edit), full (verbatim), map (overview), signatures (API), diff (post-edit), lines:N-M (range), auto.
-Details live in the `lean-ctx` skill (loads on demand — keep this file lean).
 <!-- /lean-ctx -->";
 
 const CLAUDE_MD_BLOCK_CONTENT_REPLACE: &str = "\
@@ -226,7 +215,6 @@ Native Read/Grep/Glob/Bash are denied by policy. Use ONLY `ctx_*` MCP tools:
 Do NOT attempt native Read, Grep, Glob, or Bash — they will be denied.
 
 Read modes: anchored (edit), full (verbatim), map (overview), signatures (API), diff (post-edit), lines:N-M (range), auto.
-Details live in the `lean-ctx` skill (loads on demand — keep this file lean).
 <!-- /lean-ctx -->";
 
 fn install_claude_global_claude_md_for_mode(home: &std::path::Path, mode: HookMode) {
@@ -291,22 +279,6 @@ fn strip_claude_md_block(claude_md_path: &std::path::Path) {
     }
 }
 
-/// Remove the lean-ctx skill directory (`rules_injection=off`, GH #361). Only the
-/// lean-ctx-owned `lean-ctx` skill folder is touched, so a user's other skills
-/// are never affected.
-fn remove_claude_skill(home: &std::path::Path) {
-    let skill_dir = crate::core::editor_registry::claude_state_dir(home).join("skills/lean-ctx");
-    if skill_dir.exists()
-        && std::fs::remove_dir_all(&skill_dir).is_ok()
-        && !super::super::mcp_server_quiet_mode()
-    {
-        eprintln!(
-            "Removed {} (rules_injection=off — instructions intentionally not installed)",
-            skill_dir.display()
-        );
-    }
-}
-
 /// Remove the lean-ctx-owned `~/.claude/rules/lean-ctx.md` (GL #555).
 ///
 /// Claude Code loads every rules file without `paths:` frontmatter
@@ -325,7 +297,7 @@ fn remove_claude_rules_file(home: &std::path::Path) {
         && !super::super::mcp_server_quiet_mode()
     {
         eprintln!(
-            "Removed {} (always-loaded duplicate; the CLAUDE.md block + on-demand skill replace it)",
+            "Removed {} (always-loaded duplicate; the CLAUDE.md block replaces it)",
             rules_path.display()
         );
     }
@@ -929,20 +901,6 @@ mod tests {
             "rules_injection=off must strip the CLAUDE.md block, got:\n{after}"
         );
         assert!(after.contains("# my notes"), "user content must survive");
-    }
-
-    #[test]
-    fn skill_install_then_remove_roundtrips() {
-        // The off path removes a previously installed skill; install+remove must
-        // touch only the lean-ctx skill folder. The skill dir now honors
-        // CLAUDE_CONFIG_DIR (#596); pin it off so the path is deterministic.
-        let _lock = crate::core::data_dir::test_env_lock();
-        crate::test_env::remove_var("CLAUDE_CONFIG_DIR");
-        let tmp = tempfile::tempdir().unwrap();
-        let home = tmp.path();
-        assert!(home.join(".claude/skills/lean-ctx/SKILL.md").exists());
-        remove_claude_skill(home);
-        assert!(!home.join(".claude/skills/lean-ctx").exists());
     }
 
     #[test]

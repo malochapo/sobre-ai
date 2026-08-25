@@ -17,7 +17,7 @@ pub struct AgentSetupResult {
     pub errors: Vec<String>,
 }
 
-/// Complete per-agent setup: MCP config + global rules + skill + hook.
+/// Complete per-agent setup: MCP config + global rules + hook.
 /// Single source of truth — called by both `init --agent` and `setup`.
 pub fn setup_single_agent(
     agent_name: &str,
@@ -32,7 +32,7 @@ pub fn setup_single_agent(
     crate::hooks::install_agent_hook_with_mode(agent_name, global, mode);
 
     // #281: honor `[setup] auto_update_mcp = false` — skip MCP registration but
-    // still install the hook, rules and skill. Locked-down environments can keep
+    // still install the hook and rules. Locked-down environments can keep
     // the MCP server out of agent settings without losing the CLI integration.
     if crate::core::config::Config::load()
         .setup

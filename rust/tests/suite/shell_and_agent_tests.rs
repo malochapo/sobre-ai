@@ -520,9 +520,6 @@ fn agent_init_grok_writes_mcp_without_unsupported_hooks() {
         "Grok Build's documented integration is MCP-only; do not install an unverified hook format"
     );
 
-    let skill = home.join(".grok/skills/lean-ctx/SKILL.md");
-    assert!(skill.exists(), "SKILL.md should be installed at {skill:?}");
-
     // Global rules injection uses ~/.grok/AGENTS.md when the home is detected.
     // Under a temp HOME with only config.toml present, detection should succeed.
     let agents_md = home.join(".grok/AGENTS.md");

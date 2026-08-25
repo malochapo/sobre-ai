@@ -12,7 +12,6 @@ use crate::core::ocla::traits::{AgentGateway, OclaService};
 use crate::core::ocla::types::{
     AgentEnvelope, OclaCapability, OclaCapabilityKind, OclaError, OclaResult,
 };
-use crate::core::ocla_bus::{self, OclaEvent};
 
 pub struct BuiltinAgentGateway;
 
@@ -102,11 +101,6 @@ impl AgentGateway for BuiltinAgentGateway {
             tracing::debug!("capsule forked for relay");
         }
 
-        ocla_bus::emit(OclaEvent::AgentChainEvent {
-            agent_id: envelope.from_agent_id.clone(),
-            action: "relay".to_string(),
-            parent_agent: Some(envelope.to_agent_id.clone()),
-        });
 
         Ok(envelope)
     }
