@@ -3,6 +3,7 @@
 
 // Everything in this file that needs the parent's items is `embeddings`-gated.
 #[cfg(feature = "embeddings")]
+#[allow(clippy::wildcard_imports)]
 use super::*;
 
 /// Auto-download policy (#551): the env var, when set, wins in either

@@ -15,7 +15,6 @@ impl CtxComposeTool {
     /// retrieval `compose` performs once a task is known — at session start
     /// there is no task yet, which is exactly when this is needed.
     fn overview(
-        &self,
         args: &Map<String, Value>,
         ctx: &ToolContext,
     ) -> Result<ToolOutput, ErrorData> {
@@ -101,7 +100,7 @@ impl McpTool for CtxComposeTool {
         // facts carried over from previous sessions. `task` is what turns
         // compose from "where am I" into "what do I need for this".
         let Some(task) = get_str(args, "task") else {
-            return self.overview(args, ctx);
+            return Self::overview(args, ctx);
         };
         let path = if let Some(p) = ctx.resolved_path("path") {
             p.to_string()
