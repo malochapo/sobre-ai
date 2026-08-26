@@ -11,7 +11,6 @@ pub mod codesign;
 pub mod compressor;
 pub mod datadog_push;
 pub mod entropy;
-pub mod eval_ab;
 pub mod eval_harness;
 // Without `embeddings` the engine still compiles these modules — their
 // entry points are internally cfg-gated and fall back — but their helpers
@@ -123,7 +122,6 @@ pub mod context_overhead;
 pub mod context_overlay;
 pub mod context_policies;
 pub mod context_proof;
-pub mod context_proof_v2;
 pub mod context_radar;
 pub mod context_snapshot;
 pub mod cross_source_edges;
@@ -141,7 +139,6 @@ pub mod context {
     pub use super::context_overlay;
     pub use super::context_policies;
     pub use super::context_proof;
-    pub use super::context_proof_v2;
 }
 
 // ---------------------------------------------------------------------------
@@ -403,7 +400,6 @@ pub mod levenshtein;
 pub mod limits;
 pub mod llm_enhance;
 pub mod llm_feedback;
-pub mod locomo;
 pub mod logging;
 pub mod mcp_manifest;
 pub mod multi_repo;
@@ -418,7 +414,6 @@ pub mod paths;
 pub mod pathutil;
 pub mod pipeline;
 pub mod portable_binary;
-pub mod profile_suggest;
 pub mod profiles;
 pub mod project_hash;
 pub mod protocol;

@@ -34,7 +34,6 @@ pub mod shell_hook;
 pub mod terminal_ui;
 pub mod tool_defs;
 pub mod tools;
-pub mod tui;
 
 // ---------------------------------------------------------------------------
 // Pillar: Gateway — LLM API proxy, org-wide monitoring, budget enforcement

@@ -8,7 +8,6 @@ mod config_cmd;
 mod debug_log_cmd;
 pub mod dispatch;
 pub(crate) mod embeddings_cmd;
-pub mod eval_cmd;
 pub mod export_rules;
 mod first_run;
 pub mod harden;

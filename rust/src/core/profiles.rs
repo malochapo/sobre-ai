@@ -74,12 +74,6 @@ impl ReadConfig {
     pub fn default_mode_effective(&self) -> &str {
         self.default_mode.as_deref().unwrap_or("auto")
     }
-    pub fn max_tokens_per_file_effective(&self) -> usize {
-        self.max_tokens_per_file.unwrap_or(50_000)
-    }
-    pub fn prefer_cache_effective(&self) -> bool {
-        self.prefer_cache.unwrap_or(false)
-    }
 }
 
 /// Compression strategy configuration.
@@ -100,18 +94,6 @@ impl CompressionConfig {
     pub fn crp_mode_effective(&self) -> &str {
         self.crp_mode.as_deref().unwrap_or("tdd")
     }
-    pub fn output_density_effective(&self) -> &str {
-        self.output_density.as_deref().unwrap_or("normal")
-    }
-    pub fn entropy_threshold_effective(&self) -> f64 {
-        self.entropy_threshold.unwrap_or(0.3)
-    }
-    pub fn terse_mode_effective(&self) -> bool {
-        self.terse_mode.unwrap_or(false)
-    }
-    pub fn adaptive_effective(&self) -> bool {
-        self.adaptive.unwrap_or(true)
-    }
 }
 
 /// Translation (tokenizer-aware) configuration.
@@ -128,9 +110,6 @@ impl TranslationConfig {
     pub fn enabled_effective(&self) -> bool {
         self.enabled.unwrap_or(false)
     }
-    pub fn ruleset_effective(&self) -> &str {
-        self.ruleset.as_deref().unwrap_or("legacy")
-    }
 }
 
 /// Layout (attention-aware reorder) configuration.
@@ -146,9 +125,6 @@ pub struct LayoutConfig {
 impl LayoutConfig {
     pub fn enabled_effective(&self) -> bool {
         self.enabled.unwrap_or(false)
-    }
-    pub fn min_lines_effective(&self) -> usize {
-        self.min_lines.unwrap_or(15)
     }
 }
 
@@ -204,15 +180,6 @@ pub struct BudgetConfig {
 }
 
 impl BudgetConfig {
-    pub fn max_context_tokens_effective(&self) -> usize {
-        self.max_context_tokens.unwrap_or(200_000)
-    }
-    pub fn max_shell_invocations_effective(&self) -> usize {
-        self.max_shell_invocations.unwrap_or(100)
-    }
-    pub fn max_cost_usd_effective(&self) -> f64 {
-        self.max_cost_usd.unwrap_or(5.0)
-    }
 }
 
 /// Pipeline layer activation per profile.
@@ -452,7 +419,6 @@ mod tests {
         };
         assert_eq!(p.read.default_mode_effective(), "auto");
         assert_eq!(p.compression.crp_mode_effective(), "tdd");
-        assert_eq!(p.budget.max_context_tokens_effective(), 200_000);
         assert!(p.pipeline.compression_effective());
         assert!(p.pipeline.intent_effective());
     }
@@ -485,8 +451,6 @@ default_mode = "entropy"
 "#;
         let p: Profile = toml::from_str(toml_str).unwrap();
         assert_eq!(p.read.default_mode_effective(), "entropy");
-        assert_eq!(p.read.max_tokens_per_file_effective(), 50_000);
-        assert_eq!(p.budget.max_context_tokens_effective(), 200_000);
         assert_eq!(p.compression.crp_mode_effective(), "tdd");
     }
 

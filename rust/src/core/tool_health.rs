@@ -108,7 +108,6 @@ pub struct ToolHealthReport {
     pub low_value_note: String,
     /// Outcome signal from the latest `eval footprint` artifact (#959), if any:
     /// whether the tool-schema element as a whole earns its tokens.
-    pub footprint_note: Option<String>,
     pub tools: Vec<ToolEntry>,
     pub rules: Vec<RuleEntry>,
     pub duplicate_clients: Vec<(String, usize)>,
@@ -273,60 +272,11 @@ pub fn build_report(
         disable_candidates,
         reclaimable_tokens,
         low_value_note,
-        footprint_note: None,
         tools,
         rules: rules_out,
         duplicate_clients: duplicates,
         knowledge,
     }
-}
-
-/// Reads the latest `eval footprint` artifact (#959) and summarises whether the
-/// tool-schema element earns its tokens — the per-outcome signal that complements
-/// the telemetry-based [`value_per_1k`]. Returns `None` when no run is on disk.
-fn latest_footprint_note() -> Option<String> {
-    use crate::core::eval_ab::footprint::{FootprintReport, InjectedElement};
-
-    let dir = crate::core::data_dir::lean_ctx_data_dir()
-        .ok()?
-        .join("eval");
-    let mut artifacts: Vec<(std::time::SystemTime, std::path::PathBuf)> = std::fs::read_dir(&dir)
-        .ok()?
-        .flatten()
-        .filter_map(|e| {
-            let path = e.path();
-            let name = path.file_name()?.to_str()?.to_string();
-            let is_json = path
-                .extension()
-                .and_then(|x| x.to_str())
-                .is_some_and(|x| x.eq_ignore_ascii_case("json"));
-            if name.starts_with("footprint-report-v1_") && is_json {
-                Some((e.metadata().ok()?.modified().ok()?, path))
-            } else {
-                None
-            }
-        })
-        .collect();
-    artifacts.sort_by_key(|a| a.0);
-    let (_, path) = artifacts.last()?;
-
-    let raw = std::fs::read_to_string(path).ok()?;
-    let report: FootprintReport = serde_json::from_str(&raw).ok()?;
-    let schemas = report
-        .elements
-        .iter()
-        .find(|e| e.element == InjectedElement::ToolSchemas)?;
-    let verdict = if schemas.prune_recommended {
-        "PRUNE-recommended"
-    } else {
-        "earns its cost"
-    };
-    Some(format!(
-        "footprint eval ({}): tool schemas {verdict} (Δpass {:+.0}%, cost {} tok)",
-        report.suite,
-        schemas.pass_rate_delta * 100.0,
-        schemas.token_cost
-    ))
 }
 
 fn knowledge_health(project: &Path) -> KnowledgeHealth {
@@ -367,7 +317,7 @@ pub fn compute(home: &Path, project: &Path) -> ToolHealthReport {
     let instructions = crate::instructions::build_instructions(crate::tools::CrpMode::effective());
     let instruction_tokens = crate::core::tokens::count_tokens(&instructions);
     let knowledge = knowledge_health(project);
-    let mut report = build_report(
+    let report = build_report(
         &advertised,
         &usage,
         &rules,
@@ -375,7 +325,6 @@ pub fn compute(home: &Path, project: &Path) -> ToolHealthReport {
         instruction_tokens,
         knowledge,
     );
-    report.footprint_note = latest_footprint_note();
     report
 }
 
@@ -499,10 +448,6 @@ mod tests {
         );
         assert!(report.reclaimable_tokens > 0);
         assert!(report.low_value_note.contains("low-value tool"));
-        assert!(
-            report.footprint_note.is_none(),
-            "the pure builder never reads disk artifacts"
-        );
         let read = report.tools.iter().find(|t| t.name == "ctx_read").unwrap();
         assert!(read.value_per_1k_tokens > 0.0);
     }

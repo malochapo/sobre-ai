@@ -3,9 +3,6 @@ use std::cell::RefCell;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-pub const OCLA_API_VERSION: &str = "ocla/v1";
-pub const CANONICAL_TOKEN_ENVELOPE_SCHEMA_VERSION: u16 = 1;
-pub const AGENT_ENVELOPE_SCHEMA_VERSION: u16 = 1;
 
 pub type OclaResult<T> = Result<T, OclaError>;
 
@@ -100,89 +97,6 @@ impl<'de> Deserialize<'de> for OclaRequestContext {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum TokenEnvelopeSurface {
-    Mcp,
-    Proxy,
-    Shell,
-    Agent,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum TokenFlowDirection {
-    Input,
-    Output,
-}
-
-/// Provider-neutral token accounting. Each field reflects a distinct lifecycle
-/// stage and prevents a cache or delivery mechanism from being double-counted.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct TokenBalanceV1 {
-    pub original_tokens: u64,
-    pub materialized_tokens: u64,
-    pub delivered_tokens: u64,
-    pub provider_billed_tokens: u64,
-}
-
-impl TokenBalanceV1 {
-    pub fn validate(&self) -> OclaResult<()> {
-        if self.materialized_tokens > self.original_tokens {
-            return Err(OclaError::InvalidRequest(
-                "materialized_tokens exceeds original_tokens".into(),
-            ));
-        }
-        if self.delivered_tokens > self.materialized_tokens {
-            return Err(OclaError::InvalidRequest(
-                "delivered_tokens exceeds materialized_tokens".into(),
-            ));
-        }
-        Ok(())
-    }
-}
-
-/// Canonical, payload-free representation of a token decision at any engine
-/// boundary. Provider adapters project into this type before ledger, policy or
-/// external SDK code observes the request.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct CanonicalTokenEnvelopeV1 {
-    pub schema_version: u16,
-    pub context: OclaRequestContext,
-    pub surface: TokenEnvelopeSurface,
-    pub direction: TokenFlowDirection,
-    pub provider: String,
-    pub model: String,
-    pub token_balance: TokenBalanceV1,
-    pub route_ref: Option<String>,
-    pub policy_ref: Option<String>,
-    pub idempotency_key: String,
-}
-
-impl CanonicalTokenEnvelopeV1 {
-    pub fn validate(&self) -> OclaResult<()> {
-        if self.schema_version != CANONICAL_TOKEN_ENVELOPE_SCHEMA_VERSION {
-            return Err(OclaError::UnsupportedVersion(
-                self.schema_version.to_string(),
-            ));
-        }
-        self.context.validate()?;
-        self.token_balance.validate()?;
-        for (label, value) in [
-            ("provider", &self.provider),
-            ("model", &self.model),
-            ("idempotency_key", &self.idempotency_key),
-        ] {
-            if value.trim().is_empty() {
-                return Err(OclaError::InvalidRequest(format!("{label} is required")));
-            }
-        }
-        Ok(())
-    }
-}
-
 impl OclaRequestContext {
     #[must_use]
     pub fn new(
@@ -235,93 +149,6 @@ impl OclaRequestContext {
         }
         Ok(())
     }
-}
-
-/// Canonical, payload-free admission contract for one A2A relay.
-///
-/// `budget_tokens` is an authorization ceiling, never observed delivery or
-/// savings evidence. A transport must create its own measured token envelope
-/// only after it actually materializes and delivers the handoff.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct AgentEnvelope {
-    pub schema_version: u16,
-    /// Content-derived relay identity for idempotent admission and event joins.
-    pub relay_id: String,
-    pub context: OclaRequestContext,
-    pub from_agent_id: String,
-    pub to_agent_id: String,
-    pub capsule_ref: String,
-    pub budget_tokens: u64,
-}
-
-impl AgentEnvelope {
-    /// Assigns the deterministic identity after all relay fields are set.
-    pub fn assign_relay_id(&mut self) -> OclaResult<()> {
-        self.relay_id = self.computed_relay_id()?;
-        Ok(())
-    }
-
-    /// Derives a stable relay ID without including payload bytes or the ID itself.
-    pub fn computed_relay_id(&self) -> OclaResult<String> {
-        let mut canonical = self.clone();
-        canonical.relay_id = "agent-relay:pending".to_string();
-        let bytes = serde_json::to_vec(&canonical).map_err(|error| {
-            OclaError::InvalidRequest(format!("cannot serialize agent relay: {error}"))
-        })?;
-        Ok(format!("agent-relay:{}", blake3::hash(&bytes).to_hex()))
-    }
-
-    pub fn validate(&self) -> OclaResult<()> {
-        if self.schema_version != AGENT_ENVELOPE_SCHEMA_VERSION {
-            return Err(OclaError::UnsupportedVersion(
-                self.schema_version.to_string(),
-            ));
-        }
-        self.context.validate()?;
-        for (label, value) in [
-            ("from_agent_id", &self.from_agent_id),
-            ("to_agent_id", &self.to_agent_id),
-        ] {
-            valid_agent_id(value)
-                .then_some(())
-                .ok_or_else(|| OclaError::InvalidRequest(format!("invalid {label}")))?;
-        }
-        if self.context.agent_id != self.from_agent_id {
-            return Err(OclaError::InvalidRequest(
-                "context agent_id must match from_agent_id".to_string(),
-            ));
-        }
-        valid_digest_ref("capsule", "capsule:", &self.capsule_ref)?;
-        valid_digest_ref("relay", "agent-relay:", &self.relay_id)?;
-        if self.budget_tokens == 0 {
-            return Err(OclaError::InvalidRequest(
-                "agent relay budget_tokens must be greater than zero".to_string(),
-            ));
-        }
-        if self.relay_id != self.computed_relay_id()? {
-            return Err(OclaError::InvalidRequest(
-                "agent relay_id does not match canonical relay content".to_string(),
-            ));
-        }
-        Ok(())
-    }
-}
-
-fn valid_agent_id(value: &str) -> bool {
-    !value.is_empty() && value.len() <= 256 && value.bytes().all(|byte| byte.is_ascii_graphic())
-}
-
-fn valid_digest_ref(label: &str, prefix: &str, value: &str) -> OclaResult<()> {
-    let digest = value.strip_prefix(prefix).ok_or_else(|| {
-        OclaError::InvalidRequest(format!("{label}_ref must use {prefix}BLAKE3-hex form"))
-    })?;
-    (digest.len() == 64
-        && digest.bytes().all(|byte| {
-            byte.is_ascii_digit() || (byte.is_ascii_lowercase() && byte.is_ascii_hexdigit())
-        }))
-    .then_some(())
-    .ok_or_else(|| OclaError::InvalidRequest(format!("invalid {label}_ref")))
 }
 
 #[derive(Debug, Error)]
@@ -422,39 +249,5 @@ mod tests {
         let preserved: OclaRequestContext =
             serde_json::from_value(provided).expect("context preserves trace");
         assert_eq!(preserved.trace_id, "tr-provided");
-    }
-
-    #[test]
-    fn agent_envelope_is_canonical_and_rejects_lineage_or_budget_drift() {
-        let mut envelope = AgentEnvelope {
-            schema_version: AGENT_ENVELOPE_SCHEMA_VERSION,
-            relay_id: "agent-relay:pending".to_string(),
-            context: OclaRequestContext {
-                request_id: "request".into(),
-                session_id: "session".into(),
-                agent_id: "owner-agent".into(),
-                content_ref: "blake3:content".into(),
-                tenant_id: None,
-                trace_id: "tr-test".into(),
-            },
-            from_agent_id: "owner-agent".into(),
-            to_agent_id: "reviewer-agent".into(),
-            capsule_ref: format!("capsule:{}", "a".repeat(64)),
-            budget_tokens: 900,
-        };
-        envelope.assign_relay_id().expect("relay identity assigns");
-        envelope.validate().expect("canonical relay validates");
-
-        let mut wire = serde_json::to_value(&envelope).expect("relay serializes");
-        wire.as_object_mut()
-            .expect("relay is an object")
-            .insert("unexpected".to_string(), serde_json::Value::Bool(true));
-        assert!(serde_json::from_value::<AgentEnvelope>(wire).is_err());
-
-        envelope.budget_tokens = 0;
-        assert!(matches!(
-            envelope.validate(),
-            Err(OclaError::InvalidRequest(_))
-        ));
     }
 }

@@ -94,10 +94,6 @@ pub fn run() {
                 crate::cli::cmd_snapshot(&rest);
                 return;
             }
-            "eval" => {
-                crate::cli::eval_cmd::cmd_eval(&rest);
-                return;
-            }
             // Distinct from `eval ab`: that measures answer-quality
             // non-regression, this produces the reproducible savings + recall +
             // latency scorecard the CI publishes as an artifact.
@@ -135,10 +131,6 @@ pub fn run() {
             }
             "provider" => {
                 cmd_provider(&rest);
-                return;
-            }
-            "watch" => {
-                cmd_watch(&rest);
                 return;
             }
             "proxy" => {
@@ -506,7 +498,7 @@ fn is_server_mode(args: &[String]) -> bool {
         || args.get(1).is_some_and(|a| {
             matches!(
                 a.as_str(),
-                "mcp" | "proxy" | "watch"
+                "mcp" | "proxy"
             )
         })
 }
@@ -630,7 +622,7 @@ mod tests {
 
     #[test]
     fn server_modes_keep_ignored_sigpipe() {
-        for mode in ["mcp", "proxy", "watch"] {
+        for mode in ["mcp", "proxy"] {
             assert!(
                 is_server_mode(&args_of(&["lean-ctx", mode])),
                 "{mode} must count as server mode"
