@@ -52,9 +52,12 @@ fn check_schema(tool: &str, node: &Value, path: &str, errors: &mut Vec<String>) 
 fn all_tool_schemas_survive_strict_validators() {
     let registry = lean_ctx::server::registry::build_registry();
     let tools = registry.tool_defs();
+    // Upstream asserted `>= 60`. Invariant 1 caps the surface at twenty, so the
+    // sanity check becomes the invariant itself: wired, and within the ceiling.
+    assert!(!tools.is_empty(), "registry is empty — wiring broken?");
     assert!(
-        tools.len() >= 60,
-        "registry unexpectedly small ({}) — wiring broken?",
+        tools.len() <= 20,
+        "invariant 1: at most twenty MCP tools, got {}",
         tools.len()
     );
 
