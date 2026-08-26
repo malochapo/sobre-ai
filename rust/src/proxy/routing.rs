@@ -27,18 +27,9 @@ use super::routing_feedback::RoutingFeedback;
 use crate::core::config::{
     ResolvedProvider, RoutingRules, Upstreams, WireShape, parse_route_target,
 };
-use crate::core::ocla::registry::OclaRegistry;
-use crate::core::ocla::types::{ModelRouteRequest, OclaRequestContext};
 use std::sync::OnceLock;
 
 static ROUTING_FEEDBACK: OnceLock<RoutingFeedback> = OnceLock::new();
-
-#[cfg(test)]
-use crate::core::ocla::builtin::model_router::BuiltinModelRouter;
-#[cfg(test)]
-use crate::core::ocla::registry::with_test_registry;
-#[cfg(test)]
-use std::sync::Arc;
 
 /// What the router decided for one request. Applied by the forward path:
 /// `model` already swapped in the body by [`route_request`]; the caller
@@ -109,43 +100,24 @@ pub fn route_request(
         return None;
     }
 
-    #[cfg(test)]
-    let _registry_guard = {
-        let mut registry = OclaRegistry::with_builtins();
-        registry.model_router = Arc::new(BuiltinModelRouter::with_rules(rules.clone()));
-        Some(with_test_registry(registry))
-    };
-
     let target = rules.aliases.get(&requested).cloned().or_else(|| {
         let content_ref = extract_user_query(parsed, request_shape)?;
-        let request_id = format!(
-            "proxy-routing:{}",
-            blake3::hash(&serde_json::to_vec(parsed).ok()?).to_hex()
-        );
-        let request = ModelRouteRequest {
-            context: OclaRequestContext {
-                request_id,
-                session_id: "proxy-routing".into(),
-                agent_id: "proxy-routing".into(),
-                content_ref,
-                tenant_id: None,
-                trace_id: "tr-unit".into(),
-            },
-            candidate_models: vec![requested.clone()],
-            maximum_cost_micros: None,
-            maximum_latency_ms: None,
-        };
-        let decision = OclaRegistry::global()
-            .model_router
-            .route_model(request)
-            .ok()?;
-        if decision.model == requested {
-            None
-        } else if decision.provider.is_empty() {
-            Some(decision.model)
-        } else {
-            Some(format!("{}:{}", decision.provider, decision.model))
+        // The router keys on a message body, so the extracted query is handed
+        // back in one. This used to detour through the OCLA ModelRouter, which
+        // rebuilt the same body, then loaded and summarised the whole savings
+        // ledger from disk to compose a rationale string it never returned.
+        let body = serde_json::json!({
+            "model": requested.clone(),
+            "messages": [{"role": "user", "content": content_ref}]
+        });
+        let decision = super::model_router::route(&body, rules)?;
+        if decision.routed_model == requested {
+            return None;
         }
+        let provider = decision
+            .routed_provider
+            .unwrap_or_else(|| infer_provider(&decision.routed_model));
+        Some(format!("{provider}:{}", decision.routed_model))
     })?;
     let (provider, new_model) = parse_route_target(&target)?;
     let new_model = new_model.to_string();
@@ -281,6 +253,21 @@ fn can_translate(
 /// - OpenAI Responses: `input` as string, or `input[]` items with
 ///   `role == "user"` and `content[]` parts (`input_text`/`text`).
 #[allow(dead_code)]
+
+/// Provider a model name implies when the routing rules name none. Moved here
+/// with the call site: it never returns an empty string, so the routed target
+/// is always `provider:model`.
+fn infer_provider(model: &str) -> String {
+    if model.contains("gpt") || model.contains("o1") || model.contains("o3") {
+        "openai".to_string()
+    } else if model.contains("claude") {
+        "anthropic".to_string()
+    } else if model.contains("gemini") {
+        "google".to_string()
+    } else {
+        "unknown".to_string()
+    }
+}
 fn extract_user_query(parsed: &serde_json::Value, shape: WireShape) -> Option<String> {
     debug_assert!(matches!(shape, WireShape::Anthropic | WireShape::OpenAi));
     let items = parsed.get("messages").or_else(|| parsed.get("input"))?;

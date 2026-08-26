@@ -129,10 +129,6 @@ pub(crate) async fn build_response(
         .map_err(|_| StatusCode::BAD_GATEWAY)?;
 
     // Non-streaming: the whole body is one JSON object carrying `usage`.
-    let ocla_context = wire
-        .as_ref()
-        .and_then(|wire| wire.ocla_request_context())
-        .cloned();
     let mut scanner = crate::proxy::usage::Scanner::new(usage_provider, url_model)
         .with_cohort(cohort)
         .with_wire_context(wire)
@@ -145,21 +141,6 @@ pub(crate) async fn build_response(
     } else {
         u64::try_from(resp_bytes.len().saturating_add(3)).unwrap_or(u64::MAX) / 4
     };
-
-    if let Some(context) = ocla_context {
-        let request = crate::core::ocla::types::ResponseOptimizationRequest {
-            context,
-            response_ref: format!("blake3:{}", blake3::hash(&resp_bytes).to_hex()),
-            original_tokens: measured_output_tokens,
-            target_tokens: measured_output_tokens,
-        };
-        if let Err(error) = crate::core::ocla::OclaRegistry::global()
-            .response_optimizer
-            .optimize_response(request)
-        {
-            tracing::warn!("lean-ctx response optimizer unavailable: {error:?}");
-        }
-    }
 
     let resp_bytes = if xlat {
         xlat_response_bytes(&resp_bytes, status)

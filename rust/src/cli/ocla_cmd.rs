@@ -1,32 +1,10 @@
-use crate::core::{ocla::OclaService, savings_ledger};
+use crate::core::savings_ledger;
 use anyhow::{Result, anyhow, bail};
 use clap::{ArgMatches, Command};
 
 use crate::core::savings_ledger::event::SavingsEvent;
 
 // ── Status (Agent 07) ────────────────────────────────────────────────────────
-
-type TraitEntry = (
-    &'static str,
-    for<'a> fn(&'a crate::core::ocla::OclaRegistry) -> &'a dyn OclaService,
-);
-
-const TRAITS: [TraitEntry; 14] = [
-    ("observation_hook", |r| r.observation_hook.as_ref()),
-    ("usage_sink", |r| r.usage_sink.as_ref()),
-    ("metrics_exporter", |r| r.metrics_exporter.as_ref()),
-    ("savings_ledger", |r| r.savings_ledger.as_ref()),
-    ("intent_classifier", |r| r.intent_classifier.as_ref()),
-    ("outcome_tracker", |r| r.outcome_tracker.as_ref()),
-    ("compression_provider", |r| r.compression_provider.as_ref()),
-    ("response_optimizer", |r| r.response_optimizer.as_ref()),
-    ("model_router", |r| r.model_router.as_ref()),
-    ("efficiency_analyzer", |r| r.efficiency_analyzer.as_ref()),
-    ("config_tuner", |r| r.config_tuner.as_ref()),
-    ("experiment_runner", |r| r.experiment_runner.as_ref()),
-    ("connector_scheduler", |r| r.connector_scheduler.as_ref()),
-    ("agent_gateway", |r| r.agent_gateway.as_ref()),
-];
 
 pub fn register(app: Command) -> Command {
     app.subcommand(
@@ -103,13 +81,6 @@ fn handle_reconcile(matches: &ArgMatches) -> Result<()> {
 }
 
 fn print_status() {
-    let registry = crate::core::ocla::OclaRegistry::global();
-    println!("OCLA traits:");
-    for (name, service) in TRAITS {
-        let capability = service(registry).capability();
-        println!("  {name}: builtin ({:?})", capability.status);
-    }
-
     let path = savings_ledger::store::default_path();
     let summary = path
         .as_deref()

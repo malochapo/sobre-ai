@@ -4,8 +4,6 @@ use std::sync::Mutex;
 use crate::core::cache::SessionCache;
 use crate::core::context_ledger::PressureAction;
 use crate::core::mode_predictor::{FileSignature, ModePredictor};
-use crate::core::ocla::registry::OclaRegistry;
-use crate::core::ocla::types::{ConfigTuningRequest, OclaRequestContext};
 
 /// Per-process counters of which signal decided each auto-mode resolution.
 /// Surfaced by `ctx_metrics` so the learning loops are observable (#496).
@@ -266,27 +264,12 @@ fn resolve_adaptive(ctx: &AutoModeContext) -> Option<ResolvedMode> {
         }
     }
 
-    let request_id = "auto-mode-resolution";
-    let request = ConfigTuningRequest {
-        context: OclaRequestContext {
-            request_id: request_id.to_string(),
-            session_id: "auto-mode".to_string(),
-            agent_id: "lean-ctx".to_string(),
-            content_ref: ctx.path.to_string(),
-            tenant_id: None,
-            trace_id: "tr-unit".into(),
-        },
-        config_ref: predicted.clone(),
-        objective_ref: ctx.task.unwrap_or_default().to_string(),
-    };
-    let chosen = match OclaRegistry::global().config_tuner.propose_tuning(request) {
-        Ok(proposal) => proposal
-            .proposal_ref
-            .strip_prefix(&format!("proposal:{predicted}->"))
-            .and_then(|value| value.strip_suffix(&format!(":{request_id}")))
-            .map_or_else(|| predicted.clone(), ToString::to_string),
-        Err(_) => predicted.clone(),
-    };
+    // Adaptive policy. This used to travel through the OCLA ConfigTuner, which
+    // called exactly this and encoded the answer into a `proposal:a->b:id`
+    // string that was parsed straight back apart here.
+    let objective = ctx.task.unwrap_or_default();
+    let chosen = crate::core::adaptive_mode_policy::AdaptiveModePolicyStore::load()
+        .choose_auto_mode((!objective.trim().is_empty()).then_some(objective), &predicted);
 
     if ctx.token_count > 2000 {
         if (predicted == "map" || predicted == "signatures")

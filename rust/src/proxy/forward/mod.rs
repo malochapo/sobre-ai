@@ -8,8 +8,6 @@ use axum::{
 };
 
 use super::ProxyState;
-use super::connector::schedule_provider_connector;
-use super::intent::classify_and_store_proxy_intent;
 
 #[cfg(feature = "shape-xlat")]
 mod xlat;
@@ -131,8 +129,6 @@ pub async fn forward_request(
     let preserve_content_encoding = prepared.preserve_content_encoding;
     let route = prepared.route;
     let parsed = prepared.parsed;
-    let _intent_classification =
-        classify_and_store_proxy_intent(&mut parts, parsed.as_ref(), lineage.as_ref(), &body_bytes);
     // Apply the routing decision to the wire: re-target the upstream and — for
     // registry providers holding their own key — swap the credential headers.
     let upstream_base = route
@@ -142,7 +138,6 @@ pub async fn forward_request(
     if let Some(provider) = route.as_ref().and_then(|r| r.credential.as_ref()) {
         super::providers::inject_gateway_credential(provider, &mut parts.headers)?;
     }
-    schedule_provider_connector(&parts, lineage.as_ref(), route.as_ref(), provider_label);
     if let Some(ref parsed) = parsed {
         let provider = match provider_label {
             "Anthropic" | "Bedrock" => super::introspect::Provider::Anthropic,

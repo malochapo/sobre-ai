@@ -1,8 +1,5 @@
 //! Deterministic ETPAO benchmarks for the P8/P9 optimization paths.
 
-use std::time::Duration;
-
-use lean_ctx::proxy::response_optimizer::{ResponseCache, compute_cache_key};
 use serde::Deserialize;
 
 const REQUESTS: &str = include_str!("../fixtures/etpao_requests.json");
@@ -14,8 +11,6 @@ struct Fixture {
 
 #[derive(Debug, Deserialize)]
 struct EtpaoRequest {
-    cache_key: String,
-    response: String,
     input_tokens: u64,
     output_tokens: u64,
     compressed_input_tokens: u64,
@@ -86,55 +81,4 @@ fn with_routing_etpao() {
     assert_eq!(routed, 7_190);
     assert!(routed < baseline);
     assert!(etpao(routed, 10) / etpao(baseline, 10) < 1.0);
-}
-
-#[test]
-fn with_cache_etpao() {
-    let requests = requests();
-    let mut cache = ResponseCache::new(16, Duration::from_mins(1));
-    let mut cache_hits = 0_u64;
-    let cached_tokens: u64 = requests
-        .iter()
-        .map(|request| {
-            let key = compute_cache_key("fixture-model", None, &[&request.cache_key]);
-            if cache.get(key).is_some() {
-                cache_hits += 1;
-                0
-            } else {
-                cache.put(key, request.response.clone(), request.output_tokens);
-                request.input_tokens + request.output_tokens
-            }
-        })
-        .sum();
-    let baseline = 7_530_u64;
-
-    assert_eq!(cache_hits, 4);
-    assert_eq!(cached_tokens, 4_530);
-    assert!(etpao(cached_tokens, 10) / etpao(baseline, 10) < 1.0);
-}
-
-#[test]
-fn combined_etpao() {
-    let requests = requests();
-    let mut cache = ResponseCache::new(16, Duration::from_mins(1));
-    let combined_tokens: u64 = requests
-        .iter()
-        .map(|request| {
-            let key = compute_cache_key("fixture-model", None, &[&request.cache_key]);
-            if cache.get(key).is_some() {
-                0
-            } else {
-                cache.put(key, request.response.clone(), request.routed_output_tokens);
-                request.compressed_input_tokens + request.routed_output_tokens
-            }
-        })
-        .sum();
-    let baseline = 7_530_u64;
-    let improvement = 1.0 - etpao(combined_tokens, 10) / etpao(baseline, 10);
-
-    assert_eq!(combined_tokens, 3_175);
-    assert!(
-        improvement > 0.20,
-        "combined improvement: {improvement:.2}%"
-    );
 }

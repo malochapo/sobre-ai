@@ -12,7 +12,6 @@ use crate::core::context_ir::{ContextIrSourceKindV1, ContextIrV1, RecordIrInput}
 use crate::core::context_ledger::ContextLedger;
 use crate::core::heatmap;
 use crate::core::intent_engine::StructuredIntent;
-use crate::core::ocla::EfficiencyAnalyzer;
 use crate::core::session::SessionState;
 use crate::core::stats;
 
@@ -171,14 +170,12 @@ pub fn record_file_read(
     });
     ir.save();
 
-    // OCLA CompressionProvider runtime projection: for aggressive-mode reads with
-    // positive savings, record the compression event through the canonical OCLA
-    // capability so the registry tracks real compression evidence.
+    // Realized read savings go to the verified ledger. The sibling
+    // "compression provider" projection that used to sit here re-read the file
+    // and compressed it a second time, only to park the bytes in an in-memory
+    // cache nothing retrieves.
     if saved > 0 {
-        project_ocla_savings(path, original_tokens as u64, output_tokens as u64);
-    }
-    if mode == "aggressive" && saved > 0 {
-        project_ocla_compression(path, original_tokens as u64, output_tokens as u64);
+        project_read_savings(path, original_tokens as u64, output_tokens as u64);
     }
 }
 
@@ -206,23 +203,7 @@ fn record_read_learning(
     // Route the realized read through the OCLA efficiency capability so the
     // production CLI path records the same ETPAO semantics as the contract.
     // The analyzer is local and deterministic; failure keeps the legacy ratio.
-    let ocla_density = ocla_read_density(
-        path,
-        resolved_mode,
-        original_tokens,
-        output_tokens,
-        task_completed,
-        project_root,
-    );
-    record_outcome(
-        path,
-        resolved_mode,
-        original_tokens,
-        saved,
-        task_completed,
-        project_root,
-    );
-
+    let ocla_density = read_density(path, original_tokens, output_tokens, task_completed);
     // Mode predictor: train auto-mode selection on the realized compression
     // density, exactly as the MCP background thread does.
     let sig = crate::core::mode_predictor::FileSignature::from_path(path, original_tokens);
@@ -280,87 +261,33 @@ fn record_read_learning(
     crate::core::anomaly::save_debounced();
 }
 
-fn record_outcome(
-    path: &str,
-    resolved_mode: &str,
-    original_tokens: usize,
-    saved: usize,
-    task_completed: bool,
-    project_root: &str,
-) {
-    let context = crate::core::ocla::OclaRequestContext {
-        request_id: format!("cli-read:{path}:{resolved_mode}"),
-        session_id: SessionState::load_latest()
-            .map_or_else(|| "cli-read".to_string(), |session| session.id),
-        agent_id: "lean-ctx".to_string(),
-        content_ref: format!("file:{path}"),
-        tenant_id: None,
-        trace_id: "tr-unit".into(),
-    };
-    let outcome = crate::core::ocla::Outcome {
-        context,
-        accepted: Some(task_completed),
-        quality_score_milli: (original_tokens > 0)
-            .then(|| ((saved as u64 * 1000) / original_tokens as u64).min(1000) as u16),
-        outcome_ref: Some(format!("read:{project_root}:{resolved_mode}")),
-    };
-    let _ = crate::core::ocla::OclaRegistry::global()
-        .outcome_tracker
-        .record_outcome(outcome);
-}
-
 /// Compute read density through the production OCLA efficiency capability.
 /// Returns `None` when no accepted outcome can produce an ETPAO value.
-fn ocla_read_density(
+/// ETPAO for the realized read: delivered tokens over original, where original
+/// is re-measured from the file whenever it is still readable — the count that
+/// reached this function may predate a terse pass.
+///
+/// This used to route through the OCLA EfficiencyAnalyzer, which also derived a
+/// compression rate, a cache-hit rate, a duplicate ratio and a recommendation
+/// list. The caller read none of them.
+fn read_density(
     path: &str,
-    resolved_mode: &str,
     original_tokens: usize,
     output_tokens: usize,
     task_completed: bool,
-    project_root: &str,
 ) -> Option<f64> {
-    let analyzer = crate::core::ocla::OclaRegistry::global()
-        .efficiency_analyzer
-        .as_ref();
-    read_density_with_analyzer(
-        analyzer,
-        path,
-        resolved_mode,
-        original_tokens,
-        output_tokens,
-        task_completed,
-        project_root,
-    )
-}
-
-fn read_density_with_analyzer(
-    analyzer: &dyn EfficiencyAnalyzer,
-    path: &str,
-    resolved_mode: &str,
-    original_tokens: usize,
-    output_tokens: usize,
-    task_completed: bool,
-    project_root: &str,
-) -> Option<f64> {
-    analyzer
-        .analyze_efficiency(crate::core::ocla::EfficiencySample {
-            context: crate::core::ocla::OclaRequestContext {
-                request_id: format!("read:{path}:{resolved_mode}"),
-                session_id: project_root.to_string(),
-                agent_id: "lean-ctx".to_string(),
-                content_ref: path.to_string(),
-                tenant_id: None,
-                trace_id: "tr-unit".into(),
-            },
-            original_tokens: original_tokens as u64,
-            delivered_tokens: output_tokens as u64,
-            accepted: Some(task_completed),
-            cache_reads: 0,
-            cache_hits: 0,
-        })
-        .ok()
-        .and_then(|analysis| analysis.etpao_milli)
-        .map(|milli| milli as f64 / 1000.0)
+    if !task_completed || output_tokens == 0 {
+        return None;
+    }
+    let measured = if std::path::Path::new(path).is_file()
+        && let Ok(content) = crate::core::io_boundary::read_file_lossy(path)
+    {
+        crate::core::tokens::count_tokens(&content) as u64
+    } else {
+        original_tokens as u64
+    };
+    let etpao_milli = (output_tokens as u64).saturating_mul(1000) / measured.max(1);
+    Some(etpao_milli as f64 / 1000.0)
 }
 
 /// Record a search/grep operation with full Context OS side effects.
@@ -487,95 +414,27 @@ fn maybe_consolidate(project_root: Option<&str>, calls: u32) {
     }
 }
 
-/// Project an aggressive-mode compression event into the OCLA CompressionProvider.
-/// Best-effort: silently drops if provider is unavailable or source_ref can't be
-/// constructed. This is the canonical production callsite for the compression capability.
-fn project_ocla_compression(path: &str, source_tokens: u64, output_tokens: u64) {
-    use crate::core::ocla::OclaRegistry;
-    use crate::core::ocla::types::{CompressionRequest, OclaRequestContext};
-
-    let reg = OclaRegistry::global();
-    let source_ref = format!("file:{path}");
-    let request = CompressionRequest {
-        context: OclaRequestContext {
-            request_id: format!("cli-read-{}", path.len()),
-            session_id: SessionState::load_latest()
-                .map(|s| s.id)
-                .unwrap_or_default(),
-            agent_id: String::new(),
-            content_ref: source_ref.clone(),
-            tenant_id: None,
-            trace_id: "tr-unit".into(),
-        },
-        source_ref,
-        source_tokens,
-        target_tokens: output_tokens,
-        quality_policy_ref: None,
-    };
-    let _ = reg.compression_provider.compress(request);
-}
-
 /// Project a realized read-savings event into the OCLA SavingsLedger.
 /// Best-effort: silently drops if the provider is unavailable. Canonical
 /// production callsite for the savings-evidence capability.
-fn project_ocla_savings(path: &str, original_tokens: u64, output_tokens: u64) {
-    use crate::core::ocla::OclaRegistry;
-    use crate::core::ocla::types::{OclaRequestContext, SavingsEvidence};
-
-    let context = OclaRequestContext {
-        request_id: format!("cli-read-{}", path.len()),
-        session_id: SessionState::load_latest()
-            .map_or_else(|| "cli-read".to_string(), |session| session.id),
-        agent_id: "lean-ctx".to_string(),
-        content_ref: format!("file:{path}"),
-        tenant_id: None,
-        trace_id: String::new(),
-    };
-    let evidence = SavingsEvidence {
-        context,
-        original_tokens,
-        delivered_tokens: output_tokens,
-        quality_ref: None,
-        evidence_ref: format!("read:{path}:{original_tokens}:{output_tokens}"),
-    };
-    let _ = OclaRegistry::global()
-        .savings_ledger
-        .record_savings(evidence);
+/// Record the realized read savings in the verified ledger.
+///
+/// The tool name is `cli_read`, matching its `cli_grep` and `cli_shell`
+/// siblings above. Routed through the OCLA SavingsLedger this landed as
+/// `ocla_savings` — a label naming the plumbing rather than the work, which
+/// would have outlived the plumbing. Everything else that adapter did (two
+/// atomic counters and a bounded evidence list) had no reader.
+fn project_read_savings(path: &str, original_tokens: u64, output_tokens: u64) {
+    let _ = path;
+    crate::core::savings_ledger::record_tool_event(
+        "cli_read",
+        original_tokens.try_into().unwrap_or(usize::MAX),
+        output_tokens.try_into().unwrap_or(usize::MAX),
+    );
 }
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::atomic::{AtomicUsize, Ordering};
-
-    struct SpyAnalyzer {
-        calls: AtomicUsize,
-    }
-
-    impl crate::core::ocla::OclaService for SpyAnalyzer {
-        fn capability(&self) -> crate::core::ocla::OclaCapability {
-            crate::core::ocla::OclaCapability::available(
-                crate::core::ocla::OclaCapabilityKind::EfficiencyAnalyzer,
-            )
-        }
-    }
-
-    impl EfficiencyAnalyzer for SpyAnalyzer {
-        fn analyze_efficiency(
-            &self,
-            sample: crate::core::ocla::EfficiencySample,
-        ) -> crate::core::ocla::OclaResult<crate::core::ocla::EfficiencyAnalysis> {
-            self.calls.fetch_add(1, Ordering::Relaxed);
-            assert_eq!(sample.original_tokens, 1000);
-            assert_eq!(sample.delivered_tokens, 375);
-            Ok(crate::core::ocla::EfficiencyAnalysis {
-                etpao_milli: sample.accepted.map(|_| 375),
-                duplicate_ratio_milli: 625,
-                compression_rate_milli: 625,
-                cache_hit_rate_milli: 0,
-                recommendation_refs: Vec::new(),
-            })
-        }
-    }
 
     // The record_* paths now drive process-global telemetry sinks (mode
     // predictor buffer, anomaly singleton) and read the data-dir env (#550), so
@@ -583,27 +442,26 @@ mod tests {
     // and keep its disk writes inside a throwaway dir.
 
     #[test]
-    fn ocla_read_density_uses_etpao_for_accepted_reads() {
-        let result = ocla_read_density("src/main.rs", "aggressive", 1000, 250, true, ".");
+    fn read_density_uses_etpao_for_accepted_reads() {
+        let result = read_density("src/main.rs", 1000, 250, true);
         assert!(result.is_some(), "accepted read must produce ETPAO");
         assert!(result.unwrap() > 0.0, "ETPAO must be positive");
         assert_eq!(
-            ocla_read_density("src/main.rs", "aggressive", 1000, 250, false, "."),
+            read_density("src/main.rs", 1000, 250, false),
             None,
             "unaccepted read must not produce ETPAO"
         );
     }
 
+    // An unreadable path falls back to the caller's count, so the ratio is
+    // exactly delivered/original.
     #[test]
-    fn ocla_read_density_accepts_injected_analyzer() {
-        let spy = SpyAnalyzer {
-            calls: AtomicUsize::new(0),
-        };
+    fn read_density_falls_back_to_the_reported_original() {
         assert_eq!(
-            read_density_with_analyzer(&spy, "src/main.rs", "full", 1000, 375, true, "."),
+            read_density("does/not/exist.rs", 1000, 375, true),
             Some(0.375)
         );
-        assert_eq!(spy.calls.load(Ordering::Relaxed), 1);
+        assert_eq!(read_density("does/not/exist.rs", 1000, 0, true), None);
     }
 
     #[test]

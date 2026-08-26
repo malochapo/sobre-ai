@@ -1,36 +1,4 @@
 use super::*;
-use crate::core::ocla::registry::with_test_registry;
-use crate::core::ocla::traits::{IntentClassifier, OclaService};
-use crate::core::ocla::types::{
-    IntentDecision, IntentRequest, OclaCapability, OclaCapabilityKind, OclaResult,
-};
-use crate::proxy::intent::ProxyIntentClassification;
-use std::sync::Arc;
-use std::sync::atomic::{AtomicUsize, Ordering};
-
-struct SpyIntentClassifier(Arc<AtomicUsize>);
-
-impl OclaService for SpyIntentClassifier {
-    fn capability(&self) -> OclaCapability {
-        OclaCapability::available(OclaCapabilityKind::IntentClassifier)
-    }
-}
-
-impl IntentClassifier for SpyIntentClassifier {
-    fn classify_intent(&self, request: IntentRequest) -> OclaResult<IntentDecision> {
-        self.0.fetch_add(1, Ordering::Relaxed);
-        Ok(IntentDecision {
-            intent: request
-                .candidate_intents
-                .into_iter()
-                .next()
-                .unwrap_or_default(),
-            confidence_milli: 1000,
-            rationale_ref: None,
-        })
-    }
-}
-
 fn parts_for(uri: &str) -> Parts {
     Request::builder().uri(uri).body(()).unwrap().into_parts().0
 }
@@ -40,36 +8,6 @@ fn add_test_marker(mut value: serde_json::Value, original_size: usize) -> (Vec<u
     let out = serde_json::to_vec(&value).unwrap();
     let compressed_size = out.len();
     (out, original_size, compressed_size)
-}
-
-#[test]
-fn proxy_cycle_invokes_and_stores_intent_classification() {
-    let calls = Arc::new(AtomicUsize::new(0));
-    let mut registry = crate::core::ocla::OclaRegistry::with_builtins();
-    registry.intent_classifier = Arc::new(SpyIntentClassifier(calls.clone()));
-    let _guard = with_test_registry(registry);
-
-    let body = serde_json::json!({
-        "model": "gpt-5",
-        "messages": [{"role": "user", "content": "explain caching"}]
-    });
-    let body_bytes = serde_json::to_vec(&body).unwrap();
-    let mut parts = parts_for("/v1/chat/completions");
-    let classification =
-        classify_and_store_proxy_intent(&mut parts, Some(&body), None, &body_bytes)
-            .expect("builtin proxy classification should succeed");
-
-    assert_eq!(calls.load(Ordering::Relaxed), 1);
-    assert_eq!(
-        classification._decision.intent,
-        "model=gpt-5; message=explain caching"
-    );
-    assert!(
-        parts
-            .extensions
-            .get::<ProxyIntentClassification>()
-            .is_some()
-    );
 }
 
 // --- enterprise#11/#18: wire context (identity + baseline inputs) ---

@@ -4,49 +4,6 @@ use super::server::{CepComputedStats, CrpMode, LeanCtxServer, ToolCallRecord};
 use super::startup::auto_consolidate_knowledge;
 use super::{impl_compress, impl_share};
 
-/// Build payload-free OCLA metrics for one completed MCP tool call.
-///
-/// Values use milli-units and saturate at the signed metric contract's upper
-/// bound. Tool dimensions are bounded metadata; request payloads and paths
-/// never enter the exporter.
-fn ocla_metric_points(
-    context: &crate::core::ocla::OclaRequestContext,
-    tool: &str,
-    original: usize,
-    saved: usize,
-    duration_ms: u64,
-) -> Vec<crate::core::ocla::MetricPoint> {
-    let mut dimensions = std::collections::BTreeMap::new();
-    dimensions.insert("tool".to_string(), tool.to_string());
-    let original = metric_milli(original as u64);
-    let saved = metric_milli(saved as u64);
-    let duration = metric_milli(duration_ms);
-    vec![
-        crate::core::ocla::MetricPoint {
-            context: context.clone(),
-            name: "mcp.tool.original_tokens".to_string(),
-            value_milli: original,
-            dimensions: dimensions.clone(),
-        },
-        crate::core::ocla::MetricPoint {
-            context: context.clone(),
-            name: "mcp.tool.saved_tokens".to_string(),
-            value_milli: saved,
-            dimensions: dimensions.clone(),
-        },
-        crate::core::ocla::MetricPoint {
-            context: context.clone(),
-            name: "mcp.tool.duration_ms".to_string(),
-            value_milli: duration,
-            dimensions,
-        },
-    ]
-}
-
-fn metric_milli(value: u64) -> i64 {
-    i64::try_from(value.saturating_mul(1_000)).unwrap_or(i64::MAX)
-}
-
 impl LeanCtxServer {
     /// Records a tool call's token savings without timing information.
     pub async fn record_call(
@@ -154,60 +111,32 @@ impl LeanCtxServer {
             crate::core::savings_ledger::record_tool_event(tool, original, output_tokens);
         }
 
-        // OCLA ObservationHook: project every MCP tool call as a structured
-        // observation for the canonical observation capability.
+        // Heatmap: every path-bearing tool call feeds the per-file pressure
+        // view. This used to travel through the OCLA ObservationHook, whose
+        // only surviving effect was this call — the rest went into ring
+        // buffers the dashboard's SSE routes read, and those are gone.
+        //
+        // Behaviour is preserved exactly, double count included: `ctx_read`
+        // and `ctx_multi_read` also record the heatmap from the read path, so
+        // a read lands here twice. Tools that carry a path but do not record
+        // themselves (`ctx_patch`) land here only. Deciding what the counts
+        // should be is a separate change.
+        if let Some(file_path) = path
+            && !file_path.is_empty()
+            && original > 0
         {
-            let session_r = self.session.read().await;
             let agent_id = self
                 .presence_agent_id
                 .read()
                 .await
                 .clone()
                 .unwrap_or_default();
-            let ctx = crate::core::ocla::OclaRequestContext {
-                request_id: format!("mcp-{}", self.call_count.load(Ordering::Relaxed)),
-                session_id: session_r.id.clone(),
-                agent_id,
-                content_ref: path.map_or_else(|| format!("tool:{tool}"), |p| format!("file:{p}")),
-                tenant_id: None,
-                trace_id: "tr-unit".into(),
-            };
-            drop(session_r);
-            let observation = crate::core::ocla::Observation {
-                context: ctx.clone(),
-                name: format!("tool_call:{tool}"),
-                attributes: std::collections::BTreeMap::from([
-                    ("original_tokens".into(), original.to_string()),
-                    ("saved_tokens".into(), saved.to_string()),
-                    ("duration_ms".into(), duration_ms.to_string()),
-                ]),
-            };
-            let hook = crate::core::ocla::OclaRegistry::global()
-                .observation_hook
-                .as_ref();
-            let _ = hook.observe(observation);
-
-            let outcome = crate::core::ocla::Outcome {
-                context: ctx.clone(),
-                accepted: Some(saved > 0),
-                quality_score_milli: if original > 0 {
-                    Some(((saved as u64 * 1000) / original as u64).min(1000) as u16)
-                } else {
-                    None
-                },
-                outcome_ref: None,
-            };
-            let _ = crate::core::ocla::OclaRegistry::global()
-                .outcome_tracker
-                .record_outcome(outcome);
-
-            // OCLA MetricsExporter projection: one bounded, local batch per
-            // tool call. This is observational only and cannot affect stats,
-            // billing, or external export destinations.
-            let metrics = ocla_metric_points(&ctx, tool, original, saved, duration_ms);
-            let _ = crate::core::ocla::OclaRegistry::global()
-                .metrics_exporter
-                .export_metrics(metrics);
+            crate::core::heatmap::record_file_access_with_agent(
+                file_path,
+                original,
+                saved.min(original),
+                Some(&agent_id),
+            );
         }
         let mut session = self.session.write().await;
         session.record_tool_call(saved as u64, original as u64);
@@ -735,37 +664,5 @@ mod activity_score_tests {
         let (score, sig, _, _) = LeanCtxServer::compute_activity_score(&calls, None);
         assert_eq!(score, 2 + 4 + 4 + 3 + 2);
         assert_eq!(sig, 4);
-    }
-
-    #[test]
-    fn ocla_metrics_are_payload_free_and_saturating() {
-        let context = crate::core::ocla::OclaRequestContext {
-            request_id: "mcp-1".into(),
-            session_id: "session-1".into(),
-            agent_id: "agent-1".into(),
-            content_ref: "tool:ctx_read".into(),
-            tenant_id: None,
-            trace_id: "tr-unit".into(),
-        };
-        let points = super::ocla_metric_points(&context, "ctx_read", 750, 125, 42);
-        assert_eq!(points.len(), 3);
-        assert_eq!(points[0].name, "mcp.tool.original_tokens");
-        assert_eq!(points[0].value_milli, 750_000);
-        assert_eq!(points[1].name, "mcp.tool.saved_tokens");
-        assert_eq!(points[1].value_milli, 125_000);
-        assert_eq!(points[2].name, "mcp.tool.duration_ms");
-        assert_eq!(points[2].value_milli, 42_000);
-        assert_eq!(points[0].dimensions["tool"], "ctx_read");
-        assert_eq!(points[0].context, context);
-        assert!(!points[0].dimensions.contains_key("path"));
-
-        let saturated = super::ocla_metric_points(
-            &points[0].context,
-            "ctx_shell",
-            usize::MAX,
-            usize::MAX,
-            u64::MAX,
-        );
-        assert!(saturated.iter().all(|point| point.value_milli == i64::MAX));
     }
 }

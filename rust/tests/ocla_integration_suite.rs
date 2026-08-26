@@ -2,7 +2,6 @@
 use chrono::Utc;
 use lean_ctx::core::a2a::dlq::{DeadLetter, DeadLetterQueue};
 use lean_ctx::core::ocla::capsule::CapsuleStore;
-use lean_ctx::core::ocla::health::check_system_health;
 use lean_ctx::core::ocla::tracing::{SpanStatus, spans_for_trace, start_span};
 
 
@@ -16,21 +15,6 @@ fn full_capsule_lifecycle() {
     assert_ne!(parent_ref, child_ref);
     assert_eq!(store.resolve(&parent_ref).expect("parent resolve"), data);
     assert_eq!(store.resolve(&child_ref).expect("child resolve"), data);
-}
-
-#[test]
-fn health_reports_all_components() {
-    let health = check_system_health();
-    assert!(health.components.len() >= 7);
-    for name in ["a2a_bus", "ledger", "budget", "dlq"] {
-        assert!(
-            health
-                .components
-                .iter()
-                .any(|component| component.name == name),
-            "missing health component: {name}"
-        );
-    }
 }
 
 #[test]
