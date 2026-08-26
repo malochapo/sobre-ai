@@ -339,7 +339,6 @@ stale_files: {}\n",
 
         "resume" => session.build_resume_block(),
 
-
         "budget" => {
             use crate::core::budget_tracker::BudgetTracker;
             let snap = BudgetTracker::global().check();

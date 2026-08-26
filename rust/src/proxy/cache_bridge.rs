@@ -5,11 +5,11 @@ use std::time::{Duration, Instant};
 
 use axum::http::StatusCode;
 
-use crate::core::ocla::response_cache::{CachedResponse, ResponseCache, ResponseCacheKey};
+use crate::proxy::response_cache::{CachedResponse, ResponseCache, ResponseCacheKey};
 
 /// Shared proxy adapter for the OCLA response cache.
 #[derive(Clone, Debug)]
-pub struct OclaCacheBridge {
+pub struct CacheBridge {
     cache: Arc<ResponseCache>,
 }
 
@@ -19,7 +19,7 @@ pub struct CachedProviderResponse {
     pub status: StatusCode,
 }
 
-impl OclaCacheBridge {
+impl CacheBridge {
     /// Creates a bridge backed by a shared OCLA response cache.
     pub fn new(cache: Arc<ResponseCache>) -> Self {
         Self { cache }
@@ -94,7 +94,7 @@ mod tests {
 
     #[test]
     fn bridge_serves_recorded_response_and_misses_other_requests() {
-        let bridge = OclaCacheBridge::new(Arc::new(ResponseCache::new(4, Duration::from_mins(1))));
+        let bridge = CacheBridge::new(Arc::new(ResponseCache::new(4, Duration::from_mins(1))));
         let hash = prompt_hash(br#"{"prompt":"hello"}"#);
 
         assert!(bridge.try_cache_hit("model", &hash, 0.2, 128).is_none());

@@ -1176,11 +1176,7 @@ mod tests {
 
     #[test]
     fn hook_covered_wraps_compression_in_markers() {
-        let out = render(
-            false,
-            Wrapper::HookCovered,
-            CompressionLevel::Standard,
-        );
+        let out = render(false, Wrapper::HookCovered, CompressionLevel::Standard);
         assert!(out.contains(COMPRESSION_BLOCK_START) && out.contains(COMPRESSION_BLOCK_END));
         assert!(out.contains("OUTPUT STYLE: dense"));
     }

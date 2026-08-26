@@ -50,14 +50,21 @@ pub async fn open(
                 // the profile (network/filesystem); absent caps fall back to the
                 // legacy `addons.sandbox` mode. May wrap with sandbox-exec /
                 // bwrap, or refuse to spawn (strict / enforce_capabilities).
-                let (spawn_cmd, spawn_args) =
-                    crate::core::artifacts_exec::sandbox::apply_for(command, args, capabilities.as_ref())?;
+                let (spawn_cmd, spawn_args) = crate::core::artifacts_exec::sandbox::apply_for(
+                    command,
+                    args,
+                    capabilities.as_ref(),
+                )?;
                 let mut cmd = tokio::process::Command::new(&spawn_cmd);
                 cmd.args(&spawn_args);
                 // Secure-by-default environment (P1): a capability-declaring
                 // addon gets a scrubbed env (base allowlist + declared names);
                 // legacy addons inherit the host env unchanged.
-                crate::core::artifacts_exec::env_scrub::apply_env(&mut cmd, env, capabilities.as_ref());
+                crate::core::artifacts_exec::env_scrub::apply_env(
+                    &mut cmd,
+                    env,
+                    capabilities.as_ref(),
+                );
                 let child = TokioChildProcess::new(cmd)
                     .map_err(|e| format!("spawn `{command}` failed: {e}"))?;
                 ().serve(child)

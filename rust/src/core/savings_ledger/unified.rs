@@ -6,7 +6,7 @@ use std::path::PathBuf;
 
 use fs2::FileExt;
 
-use super::types::{OclaError, OclaRequestContext, OclaResult};
+use crate::core::request_context::{ContextError, ContextResult, RequestContext};
 use crate::core::savings_ledger::SavingsEvent;
 
 /// Unified P5 savings event combining the legacy chain fields with
@@ -50,9 +50,9 @@ pub struct ReconciliationReport {
 /// - Phase 2: migrate existing events into unified events.
 /// - Phase 3: deactivate the legacy schema after migration verification.
 pub trait UnifiedLedger: Send + Sync {
-    fn record_unified(&self, event: UnifiedSavingsEventV2) -> OclaResult<String>;
-    fn verify_chain(&self) -> OclaResult<bool>;
-    fn query_by_attribution(&self, id: &str) -> OclaResult<Option<UnifiedSavingsEventV2>>;
+    fn record_unified(&self, event: UnifiedSavingsEventV2) -> ContextResult<String>;
+    fn verify_chain(&self) -> ContextResult<bool>;
+    fn query_by_attribution(&self, id: &str) -> ContextResult<Option<UnifiedSavingsEventV2>>;
 }
 
 /// File-backed implementation used during the P5 dual-write migration.
@@ -61,9 +61,9 @@ pub(crate) struct FileUnifiedLedger {
 }
 
 impl FileUnifiedLedger {
-    pub(crate) fn from_data_dir() -> OclaResult<Self> {
+    pub(crate) fn from_data_dir() -> ContextResult<Self> {
         let data_dir = crate::core::data_dir::lean_ctx_data_dir()
-            .map_err(|error| OclaError::InvalidRequest(error.clone()))?;
+            .map_err(|error| ContextError::InvalidRequest(error.clone()))?;
         Ok(Self::new(data_dir.join("savings/unified_ledger.jsonl")))
     }
 
@@ -71,11 +71,11 @@ impl FileUnifiedLedger {
         Self { path }
     }
 
-    fn io_error(error: impl std::fmt::Display) -> OclaError {
-        OclaError::InvalidRequest(format!("unified ledger I/O failed: {error}"))
+    fn io_error(error: impl std::fmt::Display) -> ContextError {
+        ContextError::InvalidRequest(format!("unified ledger I/O failed: {error}"))
     }
 
-    fn read_events(&self) -> OclaResult<Vec<UnifiedSavingsEventV2>> {
+    fn read_events(&self) -> ContextResult<Vec<UnifiedSavingsEventV2>> {
         let file = match File::open(&self.path) {
             Ok(file) => file,
             Err(error) if error.kind() == ErrorKind::NotFound => return Ok(Vec::new()),
@@ -103,7 +103,7 @@ impl FileUnifiedLedger {
     }
 
     /// Compares legacy and unified entries by hash and reports accounting drift.
-    pub(crate) fn reconcile(&self) -> OclaResult<ReconciliationReport> {
+    pub(crate) fn reconcile(&self) -> ContextResult<ReconciliationReport> {
         let legacy = self.read_legacy_events();
         let unified = self.read_events()?;
         let mut counts: BTreeMap<String, (usize, usize)> = BTreeMap::new();
@@ -147,7 +147,7 @@ impl FileUnifiedLedger {
         })
     }
 
-    pub(crate) fn from_savings_event(event: &SavingsEvent) -> OclaResult<UnifiedSavingsEventV2> {
+    pub(crate) fn from_savings_event(event: &SavingsEvent) -> ContextResult<UnifiedSavingsEventV2> {
         let timestamp_epoch_ms = chrono::DateTime::parse_from_rfc3339(&event.ts)
             .map_err(Self::io_error)?
             .timestamp_millis();
@@ -173,13 +173,13 @@ impl FileUnifiedLedger {
                 .attribution_id
                 .clone()
                 .unwrap_or_else(|| event.repo_hash.clone()),
-            trace_id: OclaRequestContext::current_trace_id(),
+            trace_id: RequestContext::current_trace_id(),
         })
     }
 }
 
 impl UnifiedLedger for FileUnifiedLedger {
-    fn record_unified(&self, event: UnifiedSavingsEventV2) -> OclaResult<String> {
+    fn record_unified(&self, event: UnifiedSavingsEventV2) -> ContextResult<String> {
         if let Some(parent) = self.path.parent() {
             fs::create_dir_all(parent).map_err(Self::io_error)?;
         }
@@ -200,7 +200,7 @@ impl UnifiedLedger for FileUnifiedLedger {
                 last_hash = Some(previous.event_hash);
             }
             if event.prev_hash != last_hash.as_deref().unwrap_or("genesis") {
-                return Err(OclaError::InvalidRequest(
+                return Err(ContextError::InvalidRequest(
                     "unified ledger chain link mismatch".into(),
                 ));
             }
@@ -213,7 +213,7 @@ impl UnifiedLedger for FileUnifiedLedger {
         result
     }
 
-    fn verify_chain(&self) -> OclaResult<bool> {
+    fn verify_chain(&self) -> ContextResult<bool> {
         let events = self.read_events()?;
         Ok(events.iter().enumerate().all(|(index, event)| {
             event.prev_hash
@@ -225,7 +225,7 @@ impl UnifiedLedger for FileUnifiedLedger {
         }))
     }
 
-    fn query_by_attribution(&self, id: &str) -> OclaResult<Option<UnifiedSavingsEventV2>> {
+    fn query_by_attribution(&self, id: &str) -> ContextResult<Option<UnifiedSavingsEventV2>> {
         Ok(self
             .read_events()?
             .into_iter()
@@ -308,7 +308,7 @@ mod tests {
 
     #[test]
     fn request_context_trace_id_reaches_unified_event() {
-        let context = OclaRequestContext {
+        let context = RequestContext {
             request_id: "request".into(),
             session_id: "session".into(),
             agent_id: "agent".into(),

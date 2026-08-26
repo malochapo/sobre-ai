@@ -14,10 +14,7 @@ impl CtxComposeTool {
     /// facts carried over from previous sessions. Distinct from the ranked
     /// retrieval `compose` performs once a task is known — at session start
     /// there is no task yet, which is exactly when this is needed.
-    fn overview(
-        args: &Map<String, Value>,
-        ctx: &ToolContext,
-    ) -> Result<ToolOutput, ErrorData> {
+    fn overview(args: &Map<String, Value>, ctx: &ToolContext) -> Result<ToolOutput, ErrorData> {
         let resolved_path = if get_str(args, "path").is_some() {
             if let Some(p) = ctx.resolved_path("path") {
                 Some(p.to_string())

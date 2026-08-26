@@ -2,7 +2,6 @@ use std::collections::HashMap;
 
 use crate::core::audit_trail::{AuditEntry, AuditEventType};
 
-
 pub fn generate_report() -> String {
     let entries = crate::core::audit_trail::load_recent(10000);
     let chain = crate::core::audit_trail::verify_chain();

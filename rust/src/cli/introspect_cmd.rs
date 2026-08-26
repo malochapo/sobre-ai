@@ -26,4 +26,3 @@ pub(crate) fn cmd_introspect(args: &[String]) {
         }
     }
 }
-

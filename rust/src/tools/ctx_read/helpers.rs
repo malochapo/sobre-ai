@@ -22,4 +22,3 @@ pub fn is_instruction_file(path: &str) -> bool {
         || lower.contains("/.claude/rules/")
         || lower.contains("/agents.md")
 }
-

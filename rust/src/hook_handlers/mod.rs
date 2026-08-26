@@ -254,8 +254,6 @@ pub fn handle_redirect() {
     emit_gating_decision(HOOK_GATING_TIMEOUT, redirect::compute_redirect);
 }
 
-
-
 /// Resolve the lean-ctx executable path for hook command emission and
 /// subprocess spawning. Always the **native** OS path: the MSYS/Git-Bash
 /// `/c/...` form breaks `CreateProcess` on Windows and cannot be run by

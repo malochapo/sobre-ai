@@ -55,12 +55,8 @@ pub(super) fn rules_content(
     let shadow = crate::core::config::Config::load().shadow_mode;
     match format {
         RulesFormat::SharedMarkdown => rc::render(shadow, Wrapper::Shared, level),
-        RulesFormat::DedicatedMarkdown => {
-            rc::render(shadow, Wrapper::Dedicated, level)
-        }
-        RulesFormat::CursorMdc => {
-            cursor_mdc_document(&rc::render(shadow, wrapper, level))
-        }
+        RulesFormat::DedicatedMarkdown => rc::render(shadow, Wrapper::Dedicated, level),
+        RulesFormat::CursorMdc => cursor_mdc_document(&rc::render(shadow, wrapper, level)),
     }
 }
 

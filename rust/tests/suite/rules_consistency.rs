@@ -76,11 +76,8 @@ fn dedicated_has_markers() {
 
 #[test]
 fn bare_has_no_markers() {
-    let content = rules_canonical::render(
-        false,
-        rules_canonical::Wrapper::Bare,
-        CompressionLevel::Off,
-    );
+    let content =
+        rules_canonical::render(false, rules_canonical::Wrapper::Bare, CompressionLevel::Off);
     assert!(!content.contains(rules_canonical::START_MARK));
     assert!(!content.contains(rules_canonical::END_MARK));
 }
@@ -98,11 +95,8 @@ fn all_wrappers_use_current_version() {
             "{wrapper:?} must use current version"
         );
     }
-    let bare = rules_canonical::render(
-        false,
-        rules_canonical::Wrapper::Bare,
-        CompressionLevel::Off,
-    );
+    let bare =
+        rules_canonical::render(false, rules_canonical::Wrapper::Bare, CompressionLevel::Off);
     assert!(
         !bare.contains("version:"),
         "bare must not have version comment"

@@ -111,12 +111,12 @@ pub struct WireContext {
     pub counterfactual: Option<super::counterfactual::CounterfactualSlot>,
     /// Complete, validated OCLA lineage for managed HTTP requests. `None` keeps
     /// legacy, malformed and non-HTTP traffic explicitly unmanaged.
-    pub lineage: Option<crate::core::ocla::OclaRequestContext>,
+    pub lineage: Option<crate::core::request_context::RequestContext>,
 }
 
 impl WireContext {
     #[must_use]
-    pub fn ocla_request_context(&self) -> Option<&crate::core::ocla::OclaRequestContext> {
+    pub fn ocla_request_context(&self) -> Option<&crate::core::request_context::RequestContext> {
         self.lineage.as_ref()
     }
 }

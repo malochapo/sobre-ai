@@ -162,7 +162,6 @@ pub(super) fn run_mcp_server() -> Result<()> {
 
         server_handle.shutdown().await;
 
-
         // Single source of truth for the buffered-telemetry flush set, shared
         // with the CLI tool arms and the parent watchdog so they can't drift (#550).
         core::tool_lifecycle::flush_all();

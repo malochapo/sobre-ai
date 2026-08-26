@@ -103,7 +103,6 @@ fn cmd_remember(args: &[String], project_root: &str) {
         return;
     }
 
-
     let out = ctx_knowledge::handle(
         project_root,
         "remember",
@@ -198,7 +197,6 @@ fn cmd_recall(args: &[String], project_root: &str) {
         std::process::exit(1);
     }
 
-
     let out = ctx_knowledge::handle(
         project_root,
         "recall",
@@ -224,7 +222,6 @@ fn cmd_search(args: &[String]) {
         eprintln!("Example: lean-ctx knowledge search \"authentication\"");
         std::process::exit(1);
     }
-
 
     let out = ctx_knowledge::handle(
         "",
@@ -322,7 +319,6 @@ fn cmd_remove(args: &[String], project_root: &str) {
         eprintln!("Example: lean-ctx knowledge remove --category auth --key token-type");
         std::process::exit(1);
     }
-
 
     let out = ctx_knowledge::handle(
         project_root,

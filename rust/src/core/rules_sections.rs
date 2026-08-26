@@ -182,7 +182,13 @@ mod tests {
     #[test]
     fn intent_names_the_registered_toolbox() {
         let text = intent_section();
-        for tool in ["ctx_read", "ctx_search", "ctx_compose", "ctx_callgraph", "ctx_patch"] {
+        for tool in [
+            "ctx_read",
+            "ctx_search",
+            "ctx_compose",
+            "ctx_callgraph",
+            "ctx_patch",
+        ] {
             assert!(
                 !crate::server::registry::is_registered(tool) || text.contains(tool),
                 "intent section must name the registered {tool}"

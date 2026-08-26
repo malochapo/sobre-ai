@@ -94,8 +94,7 @@ pub async fn forward_request(
     // (before compression, so exactly one serialization) and re-target the
     // upstream within the same wire shape. Fail-open: any miss routes nothing.
     let routing_rules = crate::core::config::Config::load().proxy.routing.clone();
-    let route_upstreams =
-        routing_rules.is_active().then(|| state.upstream_snapshot());
+    let route_upstreams = routing_rules.is_active().then(|| state.upstream_snapshot());
     // Cross-shape translation (enterprise#16) only exists for the exact
     // messages-create call — count_tokens/batches subpaths have no OpenAI
     // equivalent and must stay within-shape.
@@ -207,7 +206,7 @@ pub async fn forward_request(
         .as_ref()
         .and_then(|v| v.get("model"))
         .and_then(|m| m.as_str());
-    let cache_prompt_hash = super::ocla_cache_bridge::prompt_hash(&body_bytes);
+    let cache_prompt_hash = super::cache_bridge::prompt_hash(&body_bytes);
     if let (Some(cache), Some(model)) = (&state.ocla_cache, model)
         && let Some(cached) = cache.try_cache_hit(model, &cache_prompt_hash, 0.0, 0)
     {

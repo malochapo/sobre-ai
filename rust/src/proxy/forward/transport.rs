@@ -73,7 +73,7 @@ pub(crate) async fn build_response(
     cohort: Option<crate::proxy::holdout::Arm>,
     wire: Option<Box<crate::proxy::usage::WireContext>>,
     xlat: bool,
-    cache: Option<&crate::proxy::ocla_cache_bridge::OclaCacheBridge>,
+    cache: Option<&crate::proxy::cache_bridge::CacheBridge>,
     model: Option<&str>,
     cache_prompt_hash: &str,
 ) -> Result<Response, StatusCode> {

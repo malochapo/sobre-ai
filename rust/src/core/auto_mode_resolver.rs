@@ -269,7 +269,10 @@ fn resolve_adaptive(ctx: &AutoModeContext) -> Option<ResolvedMode> {
     // string that was parsed straight back apart here.
     let objective = ctx.task.unwrap_or_default();
     let chosen = crate::core::adaptive_mode_policy::AdaptiveModePolicyStore::load()
-        .choose_auto_mode((!objective.trim().is_empty()).then_some(objective), &predicted);
+        .choose_auto_mode(
+            (!objective.trim().is_empty()).then_some(objective),
+            &predicted,
+        );
 
     if ctx.token_count > 2000 {
         if (predicted == "map" || predicted == "signatures")

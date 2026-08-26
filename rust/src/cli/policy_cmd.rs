@@ -248,4 +248,3 @@ fn cmd_validate(args: &[String]) {
         }
     }
 }
-

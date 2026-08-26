@@ -455,8 +455,12 @@ mod setup_config_tests {
         let pos = toml_str
             .find("profile")
             .expect("profile should be serialized");
-        let first_table = toml_str.find("
-[").unwrap_or(toml_str.len());
+        let first_table = toml_str
+            .find(
+                "
+[",
+            )
+            .unwrap_or(toml_str.len());
         assert!(
             pos < first_table,
             "profile must be a root key, not nested under a [table]:

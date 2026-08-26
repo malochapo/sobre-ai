@@ -149,7 +149,7 @@ fn wire_context_without_tags_still_carries_baseline() {
 #[test]
 fn wire_context_carries_managed_lineage_without_forwarding_control_headers() {
     let parts = Request::builder().body(()).unwrap().into_parts().0;
-    let lineage = crate::core::ocla::OclaRequestContext {
+    let lineage = crate::core::request_context::RequestContext {
         request_id: "req-1".into(),
         session_id: "session-1".into(),
         agent_id: "agent-1".into(),
@@ -548,7 +548,7 @@ fn chatgpt_responses_use_openai_responses_holdout_key() {
 
 #[test]
 fn cache_prompt_hash_is_content_sensitive() {
-    let hash = super::super::ocla_cache_bridge::prompt_hash;
+    let hash = super::super::cache_bridge::prompt_hash;
     assert_ne!(hash(b"one"), hash(b"two"));
 }
 

@@ -538,7 +538,6 @@ fn handle_with_options_resolved_preread(
         || force_fresh_env()
         || (is_subagent_context() && !crate::core::conversation::scope_enabled());
 
-
     if let Ok(mut bt) = crate::core::bounce_tracker::global().lock() {
         bt.next_seq();
     }
@@ -627,7 +626,6 @@ fn handle_with_options_resolved_preread(
             );
         }
     }
-
 
     // Stigmergy (#540): deposit a Hot scent for this read in the background
     // (the field file lock may briefly block; never stall the read path). The

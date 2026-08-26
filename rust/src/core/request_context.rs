@@ -3,13 +3,12 @@ use std::cell::RefCell;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-
-pub type OclaResult<T> = Result<T, OclaError>;
+pub type ContextResult<T> = Result<T, ContextError>;
 
 /// Stable identifiers required to join decisions across interception surfaces.
 /// Payload bytes intentionally never belong in this contract.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
-pub struct OclaRequestContext {
+pub struct RequestContext {
     pub request_id: String,
     pub session_id: String,
     pub agent_id: String,
@@ -20,7 +19,7 @@ pub struct OclaRequestContext {
 }
 
 thread_local! {
-    static CURRENT_REQUEST_CONTEXT: RefCell<Option<OclaRequestContext>> = const {
+    static CURRENT_REQUEST_CONTEXT: RefCell<Option<RequestContext>> = const {
         RefCell::new(None)
     };
 }
@@ -80,7 +79,7 @@ struct WireContext {
     trace_id: Option<String>,
 }
 
-impl<'de> Deserialize<'de> for OclaRequestContext {
+impl<'de> Deserialize<'de> for RequestContext {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: serde::Deserializer<'de>,
@@ -97,7 +96,7 @@ impl<'de> Deserialize<'de> for OclaRequestContext {
     }
 }
 
-impl OclaRequestContext {
+impl RequestContext {
     #[must_use]
     pub fn new(
         request_id: String,
@@ -135,7 +134,7 @@ impl OclaRequestContext {
         })
     }
 
-    pub fn validate(&self) -> OclaResult<()> {
+    pub fn validate(&self) -> ContextResult<()> {
         for (label, value) in [
             ("request_id", &self.request_id),
             ("session_id", &self.session_id),
@@ -144,7 +143,7 @@ impl OclaRequestContext {
             ("trace_id", &self.trace_id),
         ] {
             if value.trim().is_empty() {
-                return Err(OclaError::InvalidRequest(format!("{label} is required")));
+                return Err(ContextError::InvalidRequest(format!("{label} is required")));
             }
         }
         Ok(())
@@ -152,7 +151,7 @@ impl OclaRequestContext {
 }
 
 #[derive(Debug, Error)]
-pub enum OclaError {
+pub enum ContextError {
     #[error("invalid OCLA request: {0}")]
     InvalidRequest(String),
     #[error("unsupported OCLA contract version: {0}")]
@@ -165,7 +164,7 @@ mod tests {
 
     #[test]
     fn request_context_rejects_incomplete_lineage() {
-        let context = OclaRequestContext {
+        let context = RequestContext {
             request_id: "request".into(),
             session_id: String::new(),
             agent_id: "agent".into(),
@@ -175,7 +174,7 @@ mod tests {
         };
         assert!(matches!(
             context.validate(),
-            Err(OclaError::InvalidRequest(_))
+            Err(ContextError::InvalidRequest(_))
         ));
     }
 
@@ -227,7 +226,7 @@ mod tests {
 
     #[test]
     fn request_context_generates_or_preserves_trace_id() {
-        let generated = OclaRequestContext::new(
+        let generated = RequestContext::new(
             "request".into(),
             "session".into(),
             "agent".into(),
@@ -246,7 +245,7 @@ mod tests {
             "tenant_id": null
         });
         provided["trace_id"] = serde_json::Value::String("tr-provided".into());
-        let preserved: OclaRequestContext =
+        let preserved: RequestContext =
             serde_json::from_value(provided).expect("context preserves trace");
         assert_eq!(preserved.trace_id, "tr-provided");
     }

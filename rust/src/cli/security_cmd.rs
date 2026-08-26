@@ -47,8 +47,6 @@ pub(crate) fn cmd_security(args: &[String]) {
     }
 }
 
-
-
 /// Drop containment (path jail + shell gating) in one step. Secret/`.env`
 /// redaction is intentionally left untouched.
 fn apply_open(args: &[String]) {

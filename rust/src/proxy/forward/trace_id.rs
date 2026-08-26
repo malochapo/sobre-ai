@@ -1,7 +1,7 @@
 use axum::http::{HeaderMap, HeaderValue};
 use axum::response::Response;
 
-use crate::core::ocla::types::OclaRequestContext;
+use crate::core::request_context::RequestContext;
 
 const TRACE_ID_HEADER: &str = "x-trace-id";
 
@@ -12,7 +12,7 @@ pub(super) fn extract_or_generate_trace_id(headers: &HeaderMap) -> String {
         .filter(|value| !value.is_empty())
         .map_or_else(
             || {
-                OclaRequestContext::new(
+                RequestContext::new(
                     String::new(),
                     String::new(),
                     String::new(),

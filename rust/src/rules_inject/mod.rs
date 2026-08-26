@@ -91,13 +91,11 @@ pub fn expected_blocks_by_target(
                 // CursorMdc embeds the render verbatim between the markers
                 // (frontmatter lives outside them); the wrapper is dynamic —
                 // HookCovered on hook-covered installs (GL #1153).
-                RulesFormat::CursorMdc => {
-                    crate::core::rules_canonical::render(
-                        shadow,
-                        content::cursor_wrapper_for_mdc(&target.path),
-                        level,
-                    )
-                }
+                RulesFormat::CursorMdc => crate::core::rules_canonical::render(
+                    shadow,
+                    content::cursor_wrapper_for_mdc(&target.path),
+                    level,
+                ),
             };
             (target.name.to_string(), expected)
         })

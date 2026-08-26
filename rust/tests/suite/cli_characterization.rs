@@ -139,8 +139,6 @@ fn gain_reset_exits_zero() {
     assert_eq!(exit_code(&out), 0, "stderr: {}", stderr(&out));
 }
 
-
-
 #[test]
 fn config_show_exits_zero() {
     let out = run(&["config", "show"]);
@@ -152,7 +150,6 @@ fn config_no_args_exits_zero() {
     let out = run(&["config"]);
     assert_eq!(exit_code(&out), 0, "stderr: {}", stderr(&out));
 }
-
 
 #[test]
 fn cep_exits_zero() {

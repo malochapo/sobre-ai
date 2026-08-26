@@ -289,7 +289,11 @@ fn try_hybrid_search(
     if config.splade_weight > 0.0 {
         let splade = crate::core::splade_retrieval::hybrid_retrieve(query, index, candidate_k);
         if !splade.is_empty() {
-            impl_semantic_search::boost_with_splade_pub(&mut results, &splade, config.splade_weight);
+            impl_semantic_search::boost_with_splade_pub(
+                &mut results,
+                &splade,
+                config.splade_weight,
+            );
         }
     }
 

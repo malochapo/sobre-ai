@@ -276,7 +276,6 @@ pub fn record(u: &super::usage::RealUsage) {
         crate::core::context_kernel::envelope_bridge::record_proxy_envelope(&envelope);
     }
 
-
     // Mechanism attribution into the local savings ledger (enterprise#19).
     // Routing: the gateway served a cheaper model than requested — value the
     // rate delta on the measured input tokens. Caching: provider prompt-cache

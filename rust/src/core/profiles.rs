@@ -179,8 +179,7 @@ pub struct BudgetConfig {
     pub max_cost_usd: Option<f64>,
 }
 
-impl BudgetConfig {
-}
+impl BudgetConfig {}
 
 /// Pipeline layer activation per profile.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -310,9 +309,6 @@ fn builtin_coder() -> Profile {
     }
 }
 
-
-
-
 /// The one profile's name.
 #[must_use]
 pub fn active_profile_name() -> String {
@@ -330,8 +326,6 @@ pub fn active_profile_name() -> String {
 pub fn active_profile() -> Profile {
     builtin_coder()
 }
-
-
 
 /// Information about an available profile.
 #[derive(Debug, Clone)]
@@ -359,21 +353,11 @@ impl std::fmt::Display for ProfileSource {
     }
 }
 
-
 // ── Tests ──────────────────────────────────────────────────
 
 #[cfg(test)]
 mod tests {
     use super::*;
-
-
-
-
-
-
-
-
-
 
     #[test]
     fn active_profile_defaults_to_coder() {

@@ -160,7 +160,8 @@ fn raw_shell_skips_all_postprocessing() {
     // The archive guard reads either way round depending on whether the block
     // is an expression or a statement; pin the property, not the spelling.
     assert!(
-        src.contains("if minimal || is_raw_shell {") || src.contains("if !(minimal || is_raw_shell)"),
+        src.contains("if minimal || is_raw_shell {")
+            || src.contains("if !(minimal || is_raw_shell)"),
         "archiving must be skipped for raw shell"
     );
     assert!(

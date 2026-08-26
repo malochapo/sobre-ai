@@ -14,11 +14,7 @@ fn shared_content() -> String {
 fn dedicated_content_cached() -> &'static str {
     static RULES: OnceLock<String> = OnceLock::new();
     RULES.get_or_init(|| {
-        crate::core::rules_canonical::render(
-            false,
-            Wrapper::Dedicated,
-            CompressionLevel::Off,
-        )
+        crate::core::rules_canonical::render(false, Wrapper::Dedicated, CompressionLevel::Off)
     })
 }
 
@@ -48,11 +44,8 @@ fn dedicated_rules_have_markers() {
 
 #[test]
 fn shadow_dedicated_omits_mapping() {
-    let rules = crate::core::rules_canonical::render(
-        true,
-        Wrapper::Dedicated,
-        CompressionLevel::Off,
-    );
+    let rules =
+        crate::core::rules_canonical::render(true, Wrapper::Dedicated, CompressionLevel::Off);
     assert!(
         !rules.contains("MUST USE"),
         "shadow must not include tool mapping"
@@ -67,11 +60,7 @@ fn shadow_dedicated_omits_mapping() {
 
 #[test]
 fn shadow_shared_omits_mapping() {
-    let rules = crate::core::rules_canonical::render(
-        true,
-        Wrapper::Shared,
-        CompressionLevel::Off,
-    );
+    let rules = crate::core::rules_canonical::render(true, Wrapper::Shared, CompressionLevel::Off);
     assert!(
         !rules.contains("MANDATORY MAPPING"),
         "shadow shared must not include mapping header"
@@ -165,7 +154,11 @@ fn rules_catalog_includes_previously_missing_agents_for_detection() {
 
 #[test]
 fn cursor_mdc_has_frontmatter_and_markers() {
-    let mdc = rules_content(&RulesFormat::CursorMdc, CompressionLevel::Off, Wrapper::Dedicated);
+    let mdc = rules_content(
+        &RulesFormat::CursorMdc,
+        CompressionLevel::Off,
+        Wrapper::Dedicated,
+    );
     assert!(mdc.contains("alwaysApply: true"));
     assert!(mdc.contains(START_MARK));
     assert!(mdc.contains(END_MARK));

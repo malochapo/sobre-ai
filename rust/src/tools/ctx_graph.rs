@@ -36,9 +36,7 @@ pub fn handle(
         // detection is built on, so it belongs on the graph tool rather than in
         // a module only the CLI can reach.
         "cycles" => crate::tools::impl_architecture::handle("cycles", None, root, format),
-        "entrypoints" => {
-            crate::tools::impl_architecture::handle("entrypoints", None, root, format)
-        }
+        "entrypoints" => crate::tools::impl_architecture::handle("entrypoints", None, root, format),
         _ => "Unknown action. Use: build, related, symbol, impact, status, enrich, context, \
 diagram, neighbors, path, explain, diff, cycles, entrypoints"
             .to_string(),

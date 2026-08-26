@@ -483,5 +483,4 @@ sha256 = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
         let toml = toml::to_string(&m).expect("serialize");
         assert!(!toml.contains("[artifacts"), "got: {toml}");
     }
-
 }

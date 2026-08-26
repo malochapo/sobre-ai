@@ -309,9 +309,14 @@ fn bench_lazy_default_vs_full_overhead() {
     // (#141: the prior `<=12` reflected a granular list that had drifted to omit
     // one core tool).
     assert!(
-        lazy_tools.len() <= lean_ctx::server::registry::build_registry().tool_defs().len(),
+        lazy_tools.len()
+            <= lean_ctx::server::registry::build_registry()
+                .tool_defs()
+                .len(),
         "the advertised surface should be the registry ({}), got {}",
-        lean_ctx::server::registry::build_registry().tool_defs().len(),
+        lean_ctx::server::registry::build_registry()
+            .tool_defs()
+            .len(),
         lazy_tools.len()
     );
     // Real default overhead: core tools carry their full registry schemas

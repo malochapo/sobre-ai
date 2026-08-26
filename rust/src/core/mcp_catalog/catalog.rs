@@ -92,7 +92,8 @@ pub async fn build(cfg: &GatewayConfig) -> Catalog {
     for server in cfg.active_servers() {
         // Kill-switch (P2): a revoked server is dropped from the catalog so its
         // tools cannot be discovered or called; the reason is surfaced.
-        if let Some(reason) = crate::core::artifacts_exec::revocation::blocked_reason(&server.name) {
+        if let Some(reason) = crate::core::artifacts_exec::revocation::blocked_reason(&server.name)
+        {
             errors.push(format!("{}: revoked — {reason}", server.name));
             continue;
         }

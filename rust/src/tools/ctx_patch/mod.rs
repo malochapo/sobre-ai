@@ -29,11 +29,11 @@ use std::path::{Path, PathBuf};
 
 use crate::core::cache::SessionCache;
 use crate::core::tokens::count_tokens;
-use crate::tools::impl_edit::{CacheEffect, apply_cache_effect, build_diff_evidence};
 use crate::tools::edit_io::{
     default_backup_path, ensure_preimage_still_matches, read_preimage,
     write_atomic_bytes_with_permissions,
 };
+use crate::tools::impl_edit::{CacheEffect, apply_cache_effect, build_diff_evidence};
 
 /// Parameters for an anchored patch: the target file and one or more anchored
 /// edit ops, plus optional guards/evidence (mirrors `EditParams` where it makes

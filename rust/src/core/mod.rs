@@ -1,8 +1,8 @@
 // ---------------------------------------------------------------------------
 // Domain: Compression
 // ---------------------------------------------------------------------------
-pub mod artifacts_exec;
 pub mod aggressiveness;
+pub mod artifacts_exec;
 pub mod auto_capture;
 pub mod auto_findings;
 pub mod codebook;
@@ -362,8 +362,8 @@ pub mod home;
 pub mod homeostasis;
 pub mod immune_detector;
 pub mod mcp_catalog;
-pub mod ocla;
 pub mod quality_benchmark;
+pub mod request_context;
 
 pub mod edit_metering;
 pub mod edit_quality;
@@ -456,9 +456,9 @@ pub mod tdd_schema;
 pub mod team_slo;
 pub mod telemetry;
 pub mod terse;
+pub mod text_similarity;
 pub mod theme;
 pub mod threshold_learning;
-pub mod text_similarity;
 pub mod tokens;
 pub mod tool_health;
 pub mod tool_lifecycle;

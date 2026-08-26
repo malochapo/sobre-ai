@@ -191,7 +191,6 @@ fn cmd_session_legacy() {
     println!("\nRun 'lean-ctx discover' for details on missed commands.");
 }
 
-
 pub fn cmd_sessions(args: &[String]) {
     use crate::core::session::SessionState;
 

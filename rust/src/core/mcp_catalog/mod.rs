@@ -81,8 +81,10 @@ pub async fn proxy(
     let result = call?;
     // Downstream output is untrusted content (#866): redact secrets + audit it
     // before it enters the model context.
-    let scrubbed =
-        crate::core::artifacts_exec::runtime::scrub_output(server_name, &client::result_to_text(&result));
+    let scrubbed = crate::core::artifacts_exec::runtime::scrub_output(
+        server_name,
+        &client::result_to_text(&result),
+    );
     if result.is_error.unwrap_or(false) {
         // Error text is surfaced verbatim (already scrubbed) — never compressed
         // or spilled, so the failure reason stays fully legible.

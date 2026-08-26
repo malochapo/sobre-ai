@@ -471,15 +471,13 @@ pub static COMMAND_TREE: &[CommandNode] = &[
             positional: None,
             hidden: false,
         }],
-        flags: &[
-            FlagSpec {
-                long: "--json",
-                short: None,
-                description: "JSON output",
-                takes_value: false,
-                value_kind: None,
-            },
-        ],
+        flags: &[FlagSpec {
+            long: "--json",
+            short: None,
+            description: "JSON output",
+            takes_value: false,
+            value_kind: None,
+        }],
         positional: None,
         hidden: false,
     },

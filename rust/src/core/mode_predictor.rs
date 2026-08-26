@@ -221,8 +221,6 @@ impl ModePredictor {
             .map(|(mode, _)| mode.to_string())
     }
 
-
-
     /// Built-in defaults for common file types and sizes.
     /// Ensures reasonable compression even without local history.
     /// Respects Kolmogorov-Gate: files with K>0.7 skip aggressive modes.

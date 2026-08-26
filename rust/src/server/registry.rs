@@ -132,7 +132,6 @@ pub fn build_registry() -> ToolRegistry {
     registry.register(Box::new(registered::ctx_session::CtxSessionTool));
     registry.register(Box::new(registered::ctx_knowledge::CtxKnowledgeTool));
 
-
     registry
 }
 

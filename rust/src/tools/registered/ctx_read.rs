@@ -1100,10 +1100,7 @@ impl CtxReadTool {
         // #977: notices (mode override, budget, degradation, delta) go BEFORE the
         // payload so client-side truncation of large outputs cannot hide them.
         let final_output = if !warnings.is_empty() {
-            format!(
-                "{}\n\n{output}{hints_suffix}",
-                warnings.join("\n")
-            )
+            format!("{}\n\n{output}{hints_suffix}", warnings.join("\n"))
         } else if hints_suffix.is_empty() {
             output
         } else {

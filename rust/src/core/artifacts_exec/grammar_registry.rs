@@ -153,8 +153,8 @@ pub struct Snapshot {
 
 /// Canonicalize and validate a grammar-registry document.
 pub fn canonical_snapshot(text: &str) -> Result<Snapshot, String> {
-    let mut file: SnapshotFile = serde_json::from_str(text)
-        .map_err(|e| format!("grammar registry does not parse: {e}"))?;
+    let mut file: SnapshotFile =
+        serde_json::from_str(text).map_err(|e| format!("grammar registry does not parse: {e}"))?;
 
     let problems = validate_entries(&file.grammars);
     if !problems.is_empty() {

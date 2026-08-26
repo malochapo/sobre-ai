@@ -71,7 +71,6 @@ pub(crate) fn handle_remember(
     };
     let merged = matches!(admission, AdmissionResult::Merged { .. });
 
-
     let mut result = if let AdmissionResult::Merged {
         category,
         key,

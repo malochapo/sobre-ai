@@ -34,8 +34,18 @@ use serde::{Deserialize, Serialize};
 /// load-bearing: without `SystemRoot`, `ComSpec` and `PATHEXT` most binaries
 /// will not start at all.
 pub const BASE_ENV_ALLOWLIST: &[&str] = &[
-    "PATH", "HOME", "LANG", "LC_ALL", "LC_CTYPE", "TMPDIR", "TEMP", "TMP",
-    "SystemRoot", "SYSTEMROOT", "ComSpec", "PATHEXT",
+    "PATH",
+    "HOME",
+    "LANG",
+    "LC_ALL",
+    "LC_CTYPE",
+    "TMPDIR",
+    "TEMP",
+    "TMP",
+    "SystemRoot",
+    "SYSTEMROOT",
+    "ComSpec",
+    "PATHEXT",
 ];
 
 /// Outbound-network capability a stdio addon declares.

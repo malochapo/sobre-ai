@@ -200,11 +200,7 @@ fn settings_endpoint_persists_and_enforces_auth() {
     let (status, body) =
         http(dash.port, "GET", "/api/settings", TOKEN, None).expect("GET /api/settings");
     assert_eq!(status, 200, "GET should be 200; body: {body}");
-    for key in [
-        "compression_level",
-        "structure_first",
-        "terse_agent",
-    ] {
+    for key in ["compression_level", "structure_first", "terse_agent"] {
         assert!(body.contains(key), "settings payload missing {key}: {body}");
     }
 

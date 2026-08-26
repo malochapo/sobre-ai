@@ -1,5 +1,4 @@
 pub(crate) mod batch_read;
-pub(crate) mod impl_edit;
 pub mod ctx_callgraph;
 pub mod ctx_checkpoint;
 pub mod ctx_compose;
@@ -19,6 +18,7 @@ pub mod ctx_search;
 pub mod ctx_session;
 pub mod ctx_shell;
 pub mod ctx_tree;
+pub(crate) mod impl_edit;
 
 #[cfg(test)]
 mod schema_qa_tests;

@@ -55,7 +55,7 @@ pub fn handle(matches: &ArgMatches) -> Result<()> {
 }
 
 fn handle_reconcile(matches: &ArgMatches) -> Result<()> {
-    let ledger = crate::core::ocla::unified_ledger::FileUnifiedLedger::from_data_dir()
+    let ledger = crate::core::savings_ledger::unified::FileUnifiedLedger::from_data_dir()
         .map_err(|error| anyhow!(error.to_string()))?;
     let report = ledger
         .reconcile()

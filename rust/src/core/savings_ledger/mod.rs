@@ -20,7 +20,8 @@ pub use store::{LedgerSummary, VerifyResult};
 
 use std::sync::OnceLock;
 
-use crate::core::ocla::unified_ledger::{FileUnifiedLedger, UnifiedLedger};
+pub mod unified;
+use crate::core::savings_ledger::unified::{FileUnifiedLedger, UnifiedLedger};
 
 fn enabled() -> bool {
     enabled_from(std::env::var("LEAN_CTX_SAVINGS_LEDGER").ok().as_deref())
@@ -452,7 +453,7 @@ mod tests {
         assert_eq!(ev.evidence_class, Some(event::EvidenceClass::Measured));
         assert_eq!(ev.confidence, Some(1.0));
 
-        let unified: crate::core::ocla::unified_ledger::UnifiedSavingsEventV2 =
+        let unified: crate::core::savings_ledger::unified::UnifiedSavingsEventV2 =
             serde_json::from_str(unified_content.lines().next().unwrap()).unwrap();
         assert_eq!(unified.tool_name, ev.tool);
         assert_eq!(unified.mode, ev.mechanism);

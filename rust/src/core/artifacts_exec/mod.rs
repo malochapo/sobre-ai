@@ -23,8 +23,8 @@
 //!    [`meter`], [`trusted_keys`].
 
 pub mod artifact_install;
-pub mod bootstrap;
 pub mod binhash;
+pub mod bootstrap;
 pub mod capabilities;
 pub mod env_scrub;
 pub mod grammar_install;

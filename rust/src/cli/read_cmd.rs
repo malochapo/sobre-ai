@@ -121,7 +121,6 @@ pub fn cmd_read(args: &[String]) {
         }
     }
 
-
     // Read latency for the Context IR lineage (#566) — the standalone path only;
     // the daemon branch above records its own IR and returns before this.
     let read_start = std::time::Instant::now();
@@ -439,7 +438,6 @@ pub fn cmd_grep(args: &[String]) {
     let abs_path = resolve_cli_path(raw_path);
     let path = abs_path.as_str();
 
-
     // Search latency for the Context IR lineage (#566), standalone path only.
     let search_start = std::time::Instant::now();
 
@@ -483,7 +481,6 @@ pub fn cmd_glob(args: &[String]) {
     let raw_path = args.get(1).map_or(".", std::string::String::as_str);
     let abs_path = resolve_cli_path(raw_path);
     let path = abs_path.as_str();
-
 
     let (out, _original) = crate::tools::ctx_glob::handle(
         pattern,
@@ -584,7 +581,6 @@ pub fn cmd_ls(args: &[String]) {
 
     let abs_path = resolve_cli_path(raw_path);
     let path = abs_path.as_str();
-
 
     let (out, original) =
         crate::tools::ctx_tree::handle(path, depth, show_hidden, respect_gitignore);

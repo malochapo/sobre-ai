@@ -838,8 +838,11 @@ mod extra_roots_tests {
         // strip_sensitive_overrides), with no [SECURITY] warning. The
         // The two tool-surface keys this also covered are gone.
         let mut base = Config::default();
-        base.merge_local("default_tool_categories = [\"arch\"]
-", false);
+        base.merge_local(
+            "default_tool_categories = [\"arch\"]
+",
+            false,
+        );
         assert!(
             base.default_tool_categories.is_empty(),
             "default_tool_categories override must be withheld for untrusted workspace"
@@ -849,8 +852,11 @@ mod extra_roots_tests {
     #[test]
     fn merge_local_trusted_applies_tool_surface_overrides() {
         let mut base = Config::default();
-        base.merge_local("default_tool_categories = [\"arch\"]
-", true);
+        base.merge_local(
+            "default_tool_categories = [\"arch\"]
+",
+            true,
+        );
         assert_eq!(base.default_tool_categories, vec!["arch"]);
     }
 

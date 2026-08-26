@@ -132,4 +132,3 @@ fn handle_inner(args: &Map<String, Value>, ctx: &ToolContext) -> Result<ToolOutp
         content_blocks: None,
     })
 }
-

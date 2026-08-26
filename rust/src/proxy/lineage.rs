@@ -2,7 +2,7 @@
 
 use axum::http::{HeaderMap, request::Parts};
 
-use crate::core::ocla::OclaRequestContext;
+use crate::core::request_context::RequestContext;
 
 pub(super) const REQUEST_ID_HEADER: &str = "x-leanctx-request-id";
 pub(super) const SESSION_ID_HEADER: &str = "x-leanctx-session-id";
@@ -26,12 +26,12 @@ fn content_ref_v1(exact_bounded_raw_body: &[u8]) -> String {
 pub(super) fn from_trusted_headers(
     headers: &HeaderMap,
     exact_bounded_body: &[u8],
-) -> Option<OclaRequestContext> {
+) -> Option<RequestContext> {
     let request_id = exact_id(headers, REQUEST_ID_HEADER)?;
     let session_id = exact_id(headers, SESSION_ID_HEADER)?;
     let agent_id = exact_id(headers, AGENT_ID_HEADER)?;
 
-    Some(OclaRequestContext {
+    Some(RequestContext {
         request_id,
         session_id,
         agent_id,
@@ -47,7 +47,7 @@ pub(super) fn from_trusted_headers(
 pub(super) fn from_trusted_request(
     parts: &Parts,
     exact_bounded_body: &[u8],
-) -> Option<OclaRequestContext> {
+) -> Option<RequestContext> {
     parts
         .extensions
         .get::<super::gateway_identity::TrustedGatewayRequest>()

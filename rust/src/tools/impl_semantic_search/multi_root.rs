@@ -5,9 +5,9 @@ use std::fmt::Write;
 use std::path::Path;
 
 use crate::core::bm25_index::{BM25Index, format_search_results};
-use crate::core::hybrid_search::{HybridResult, format_hybrid_results};
 #[cfg(feature = "embeddings")]
 use crate::core::hybrid_search::HybridConfig;
+use crate::core::hybrid_search::{HybridResult, format_hybrid_results};
 
 #[allow(clippy::wildcard_imports)]
 use super::*;

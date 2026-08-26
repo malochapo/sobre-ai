@@ -32,10 +32,8 @@ fn docs_tool_counts_match_manifest() {
     // VISION.md is intentionally absent: the public manifesto carries no tool
     // counts since the vision-docs consolidation (numbers live in README,
     // ARCHITECTURE and the internal source of truth).
-    let approx_checks: Vec<(&str, &str)> = vec![
-        ("README.md", "MCP tools"),
-        ("ARCHITECTURE.md", "tools"),
-    ];
+    let approx_checks: Vec<(&str, &str)> =
+        vec![("README.md", "MCP tools"), ("ARCHITECTURE.md", "tools")];
 
     let mut failures: Vec<String> = Vec::new();
 

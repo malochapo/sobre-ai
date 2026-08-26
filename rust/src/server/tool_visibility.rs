@@ -5,7 +5,6 @@
 //! invariant 3 removed every one of them, so what is left is the rule that
 //! internal/meta tools are never advertised.
 
-
 /// The advertised surface, with live description compression. Offline
 /// counterpart of the `tools/list` handler for `doctor overhead` and
 /// `ContextOverhead::measure`, so measurement cannot drift from what the
@@ -65,11 +64,10 @@ mod tests {
                 .into_iter()
                 .map(|t| t.name.to_string())
                 .collect();
-        let advertised: std::collections::BTreeSet<String> =
-            super::advertised_tool_defs_default()
-                .into_iter()
-                .map(|t| t.name.to_string())
-                .collect();
+        let advertised: std::collections::BTreeSet<String> = super::advertised_tool_defs_default()
+            .into_iter()
+            .map(|t| t.name.to_string())
+            .collect();
         assert_eq!(
             registered, advertised,
             "every registered tool must be advertised, and nothing else"

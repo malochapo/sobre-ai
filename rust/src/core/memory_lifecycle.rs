@@ -698,7 +698,6 @@ pub fn apply_replay_boost(facts: &mut [KnowledgeFact]) -> u32 {
     promoted
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;

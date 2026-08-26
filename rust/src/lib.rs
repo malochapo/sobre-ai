@@ -42,7 +42,6 @@ pub mod proxy;
 pub mod proxy_autostart;
 pub mod proxy_setup;
 
-
 // ---------------------------------------------------------------------------
 // Shared — CLI, IPC, config, diagnostics, setup
 // ---------------------------------------------------------------------------

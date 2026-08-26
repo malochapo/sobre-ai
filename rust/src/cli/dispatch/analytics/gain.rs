@@ -49,7 +49,6 @@ pub(in crate::cli::dispatch) fn cmd_gain(rest: &[String]) {
         })
         .unwrap_or(10);
 
-
     let _open = rest.iter().any(|a| a == "--open");
 
     if rest.iter().any(|a| a == "--no-cache-adjust") {
@@ -151,7 +150,9 @@ fn print_measured_spend(json: bool) {
     }
     if spend.is_empty() {
         println!("No measured provider spend recorded yet.");
-        println!("Route traffic through `sobre proxy` to collect it, or use `gain --cost` for the estimate.");
+        println!(
+            "Route traffic through `sobre proxy` to collect it, or use `gain --cost` for the estimate."
+        );
         return;
     }
     println!("Measured provider spend (from the proxy's recorded usage)\n");
@@ -231,7 +232,6 @@ fn print_split_hint() {
         );
     }
 }
-
 
 /// `gain --opportunity` — merged discover + ghost (opportunity report).
 fn cmd_opportunity() {

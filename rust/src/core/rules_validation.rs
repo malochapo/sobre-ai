@@ -91,12 +91,7 @@ impl<'a> RulesFile<'a> {
     }
 
     /// Merge freshly-rendered rules into this file.
-    pub fn merged(
-        &self,
-        shadow: bool,
-        wrapper: Wrapper,
-        level: CompressionLevel,
-    ) -> String {
+    pub fn merged(&self, shadow: bool, wrapper: Wrapper, level: CompressionLevel) -> String {
         let fresh = render(shadow, wrapper, level);
         if self.start.is_some() {
             let before = self.prefix();
@@ -130,11 +125,7 @@ impl<'a> RulesFile<'a> {
     }
 
     /// Create initial rules content.
-    pub fn initial(
-        shadow: bool,
-        wrapper: Wrapper,
-        level: CompressionLevel,
-    ) -> String {
+    pub fn initial(shadow: bool, wrapper: Wrapper, level: CompressionLevel) -> String {
         render(shadow, wrapper, level)
     }
 

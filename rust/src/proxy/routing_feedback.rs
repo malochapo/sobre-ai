@@ -3,7 +3,7 @@
 use std::collections::{HashMap, VecDeque};
 use std::sync::{Arc, Mutex};
 
-use crate::core::ocla::routing_quality::{RoutingDecision, RoutingOutcome, RoutingQualityTracker};
+use crate::proxy::routing_quality::{RoutingDecision, RoutingOutcome, RoutingQualityTracker};
 
 const MAX_PENDING_DECISIONS: usize = 1_000;
 type PendingDecisions = HashMap<(String, String), VecDeque<RoutingDecision>>;

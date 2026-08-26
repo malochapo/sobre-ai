@@ -157,7 +157,6 @@ fn setup_bootstrap_doctor_status_json_smoke() {
     assert_eq!(code, 0, "status exit code");
     let status: StatusReport = serde_json::from_str(&out).expect("status JSON parse");
     assert_eq!(status.schema_version, 1);
-
 }
 
 #[test]

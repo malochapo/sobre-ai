@@ -1,6 +1,4 @@
-use crate::{
-    core, doctor, hook_handlers, shell, status, uninstall,
-};
+use crate::{core, doctor, hook_handlers, shell, status, uninstall};
 
 mod analytics;
 mod help;
@@ -492,15 +490,11 @@ fn handle_editor_session(args: &[String]) {
     }
 }
 
-
 fn is_server_mode(args: &[String]) -> bool {
     args.len() == 1
-        || args.get(1).is_some_and(|a| {
-            matches!(
-                a.as_str(),
-                "mcp" | "proxy"
-            )
-        })
+        || args
+            .get(1)
+            .is_some_and(|a| matches!(a.as_str(), "mcp" | "proxy"))
 }
 
 fn handle_exec(args: &[String], rest: &[String]) -> ! {
@@ -543,11 +537,6 @@ fn handle_track(args: &[String]) -> ! {
     std::process::exit(code);
 }
 
-
-
-
-
-
 fn handle_raw(args: &[String], rest: &[String]) -> ! {
     if rest.is_empty() {
         eprintln!("Usage: lean-ctx raw \"command\"");
@@ -566,7 +555,6 @@ fn handle_raw(args: &[String], rest: &[String]) -> ! {
     let code = shell::exec(&command);
     std::process::exit(code);
 }
-
 
 /// Restore the default SIGPIPE disposition for short-lived CLI invocations.
 ///

@@ -12,6 +12,7 @@ pub mod bedrock;
 pub mod cache_aligner;
 pub mod cache_attribution;
 pub mod cache_breakpoint;
+pub mod cache_bridge;
 pub mod cache_policy;
 pub mod cache_safety;
 pub mod ccr;
@@ -38,7 +39,6 @@ mod lineage;
 pub mod metrics;
 pub mod model_router;
 pub mod models_api;
-pub mod ocla_cache_bridge;
 pub mod openai;
 pub mod openai_responses;
 pub mod openai_responses_ws;
@@ -48,8 +48,10 @@ pub mod prefix_replay;
 pub mod prose;
 pub mod prose_ranker;
 pub mod providers;
+pub mod response_cache;
 pub mod routing;
 pub mod routing_feedback;
+pub mod routing_quality;
 #[cfg(feature = "shape-xlat")]
 pub mod shape_xlat;
 pub mod sse_keepalive;
@@ -88,7 +90,7 @@ pub struct ProxyState {
     pub port: u16,
     pub stats: Arc<ProxyStats>,
     pub introspect: Arc<introspect::IntrospectState>,
-    pub ocla_cache: Option<Arc<ocla_cache_bridge::OclaCacheBridge>>,
+    pub ocla_cache: Option<Arc<cache_bridge::CacheBridge>>,
     /// Live provider upstreams, refreshed from config.toml without a proxy
     /// restart (#449). Read per request via [`ProxyState::openai_upstream`] etc.
     pub upstreams: tokio::sync::watch::Receiver<Arc<Upstreams>>,

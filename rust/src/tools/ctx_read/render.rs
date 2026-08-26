@@ -1042,10 +1042,7 @@ fn render_task_mode(content: &str, ctx: RenderCtx<'_>, tuning: &ReadTuning<'_>) 
     let sent = count_tokens(&filtered) + count_tokens(&header);
     let savings = protocol::format_savings(original_tokens, sent);
     (
-        append_compressed_hint(
-            &format!("{header}\n{filtered}\n{savings}"),
-            file_path,
-        ),
+        append_compressed_hint(&format!("{header}\n{filtered}\n{savings}"), file_path),
         sent,
     )
 }
