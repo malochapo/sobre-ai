@@ -95,47 +95,17 @@ pub fn contract_docs() -> Vec<ContractDoc> {
     };
     vec![
         // ── Frozen: externally consumed platform/transport promises ────────
-        doc("http-mcp", "http-mcp-contract-v1.md", 1, Frozen),
-        doc("team-server", "team-server-contract-v1.md", 1, Frozen),
         doc("context-ir", "context-ir-v1.md", 1, Frozen),
-        doc(
-            "local-free-invariant",
-            "local-free-invariant-v1.md",
-            1,
-            Frozen,
-        ),
-        doc(
-            "oss-plane-separation",
-            "oss-plane-separation-v1.md",
-            1,
-            Frozen,
-        ),
-        doc("billing-plane", "billing-plane-v1.md", 1, Frozen),
-        doc("wasm-abi", "wasm-abi-v1.md", 1, Frozen),
         // Release promotion, offline rollback rehearsal and signing-key
         // rotation are externally consumed fail-closed supply-chain formats.
         // Their exact v1 semantics are immutable; evolution requires v2.
         doc("delivery-manifest", "delivery-manifest-v1.md", 1, Frozen),
-        doc(
-            "deployment-rehearsal",
-            "deployment-rehearsal-v1.md",
-            1,
-            Frozen,
-        ),
-        doc(
-            "release-key-rotation",
-            "release-key-rotation-v1.md",
-            1,
-            Frozen,
-        ),
         // ── Stable: additive evolution allowed ──────────────────────────────
         // capabilities is additive BY DESIGN: its drift test binds the doc's
         // key list to TOP_LEVEL_KEYS, so the doc grows with every new key —
         // freezing the file would contradict its own contract.
         doc("capabilities", "capabilities-contract-v1.md", 1, Stable),
-        doc("billing-plane-v2", "billing-plane-v2.md", 2, Stable),
         // v2 = v1 + storageQuotaBytes/roiWebhookUrl (GL #387/#388); v1 stays frozen.
-        doc("billing-plane-v3", "billing-plane-v3.md", 3, Stable),
         // Offline-verifiable audit evidence ZIP (GL #425, H3 Epic A).
         doc(
             "settlement-evidence",
@@ -144,8 +114,6 @@ pub fn contract_docs() -> Vec<ContractDoc> {
             Stable,
         ),
         // Payload-free OSS eligibility evidence; approval/invoice authority stays private.
-        doc("team-server-v2", "team-server-contract-v2.md", 2, Stable),
-        doc("a2a", "a2a-contract-v1.md", 1, Stable),
         doc(
             "attention-layout-driver",
             "attention-layout-driver-v1.md",
@@ -155,12 +123,6 @@ pub fn contract_docs() -> Vec<ContractDoc> {
         doc("autonomy-drivers", "autonomy-drivers-v1.md", 1, Stable),
         doc("ccp-session-bundle", "ccp-session-bundle-v1.md", 1, Stable),
         doc("conformance", "conformance-v1.md", 1, Stable),
-        doc(
-            "ocla-verifier-conformance",
-            "ocla-verifier-conformance-v1.md",
-            1,
-            Stable,
-        ),
         doc("degradation-policy", "degradation-policy-v1.md", 1, Stable),
         doc("extension-trust", "extension-trust-v1.md", 1, Stable),
         doc("extractors", "extractors-v1.md", 1, Stable),
@@ -216,7 +178,6 @@ pub fn contract_docs() -> Vec<ContractDoc> {
         doc("wrapped-permalink", "wrapped-permalink-v1.md", 1, Stable),
         // Community addon manifest (#858): self-declared stable (v1); the format
         // evolves additively (new optional fields), so Stable, not Frozen.
-        doc("addon-manifest", "addon-manifest-v1.md", 1, Stable),
         // ── Experimental: may change without notice ─────────────────────────
         // W0/W1 token-intelligence foundations are locally verified but do not
         // yet claim complete hotpath adoption or externally consumed stability.
@@ -226,40 +187,10 @@ pub fn contract_docs() -> Vec<ContractDoc> {
             1,
             Experimental,
         ),
-        doc(
-            "multi-agent-efficiency-benchmark",
-            "multi-agent-efficiency-benchmark-v1.md",
-            1,
-            Experimental,
-        ),
         // The committed artifact is conformance-only; external deployment use
         // and governed attestor adoption remain deliberately unclaimed.
-        doc(
-            "test-deployment-evidence",
-            "test-deployment-evidence-v1.md",
-            1,
-            Experimental,
-        ),
         // Local Rust adapter only; external callability, authenticated approval,
         // and recovery orchestration are deliberately not claimed by v2.
-        doc(
-            "ocla-config-tuning",
-            "ocla-config-tuning-v2.md",
-            2,
-            Experimental,
-        ),
-        doc(
-            "hosted-personal-index",
-            "hosted-personal-index-v1.md",
-            1,
-            Experimental,
-        ),
-        doc(
-            "personal-cloud-encryption",
-            "personal-cloud-encryption-v1.md",
-            1,
-            Experimental,
-        ),
         // 2026-06 org/cloud-plane wave — fresh surfaces, not yet consumed by
         // external integrations; promote to Stable deliberately, not by default.
         doc(
@@ -268,25 +199,16 @@ pub fn contract_docs() -> Vec<ContractDoc> {
             1,
             Experimental,
         ),
-        doc("device-overview", "device-overview-v1.md", 1, Experimental),
-        doc("email-digest", "email-digest-v1.md", 1, Experimental),
         // Quality loop (GL #494): edit-failure feedback into mode selection.
         doc("quality-loop", "quality-loop-v1.md", 1, Experimental),
         // Edit metering (GL #1144): anchored-vs-str_replace efficiency channel.
         doc("edit-metering", "edit-metering-v1.md", 1, Experimental),
         // Hosted ctxpkg registry (GL #406): fresh server surface.
-        doc("ctxpkg-registry", "ctxpkg-registry-v1.md", 1, Experimental),
         // Context Time Machine (GL #1022/#1023): git-anchored, signed temporal
         // snapshot format — fresh surface, evolving additively until stable.
         doc(
             "context-snapshot",
             "context-snapshot-v1.md",
-            1,
-            Experimental,
-        ),
-        doc(
-            "team-invite-links",
-            "team-invite-links-v1.md",
             1,
             Experimental,
         ),
@@ -445,18 +367,7 @@ mod tests {
         // surfaces are actually in it. Removing one of these from `Frozen`
         // is itself a breaking policy change.
         let docs = contract_docs();
-        for id in [
-            "http-mcp",
-            "team-server",
-            "context-ir",
-            "local-free-invariant",
-            "oss-plane-separation",
-            "billing-plane",
-            "wasm-abi",
-            "delivery-manifest",
-            "deployment-rehearsal",
-            "release-key-rotation",
-        ] {
+        for id in ["context-ir", "delivery-manifest"] {
             let entry = docs.iter().find(|d| d.id == id).expect("listed");
             assert_eq!(
                 entry.status,
@@ -470,12 +381,9 @@ mod tests {
     fn status_kv_matches_docs() {
         let kv = status_kv();
         assert_eq!(kv.len(), contract_docs().len());
-        assert_eq!(kv["http-mcp"], "frozen");
-        assert_eq!(kv["hosted-personal-index"], "experimental");
-        assert_eq!(kv["personal-cloud-encryption"], "experimental");
+        assert_eq!(kv["context-ir"], "frozen");
         assert_eq!(kv["context-candidate-admission"], "experimental");
-        assert_eq!(kv["multi-agent-efficiency-benchmark"], "experimental");
-        assert_eq!(kv["test-deployment-evidence"], "experimental");
+        assert_eq!(kv["quality-loop"], "experimental");
     }
 
     #[test]

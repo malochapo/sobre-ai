@@ -47,8 +47,6 @@ mod mcp_manifest_up_to_date;
 mod mcp_optout_281;
 mod metrics_contract;
 mod init_doctor_clean;
-mod openapi_contract_up_to_date;
-mod openapi_stability;
 mod outline_machine_readable_e2e;
 mod pattern_snapshots;
 mod performance_stress;

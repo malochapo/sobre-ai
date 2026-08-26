@@ -404,7 +404,6 @@ pub mod logging;
 pub mod mcp_manifest;
 pub mod multi_repo;
 pub mod nc_compress;
-pub mod openapi;
 pub mod output_echo;
 pub mod owasp_alignment;
 pub mod path_locks;

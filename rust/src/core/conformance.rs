@@ -5,7 +5,7 @@
 //!
 //! * **contracts** — every machine-verified contract version is present.
 //! * **reproducibility** — the public discovery documents (`/v1/capabilities`,
-//!   `/v1/openapi.json`) are deterministic (same bytes across two builds).
+//!   are deterministic (same bytes across two builds).
 //! * **extensions** — every registered compressor / chunker / read-mode in the
 //!   [`extension_registry`](super::extension_registry) satisfies the stable
 //!   invariants the engine relies on (determinism, budget honoring, coverage).
@@ -259,22 +259,12 @@ fn contract_checks() -> Vec<Check> {
 fn reproducibility_checks() -> Vec<Check> {
     let caps_stable = crate::core::server_capabilities::capabilities_value()
         == crate::core::server_capabilities::capabilities_value();
-    let openapi_stable =
-        crate::core::openapi::openapi_value() == crate::core::openapi::openapi_value();
-    vec![
-        Check::from_bool(
-            "reproducibility",
-            "capabilities_deterministic",
-            caps_stable,
-            "capabilities document differs across builds",
-        ),
-        Check::from_bool(
-            "reproducibility",
-            "openapi_deterministic",
-            openapi_stable,
-            "openapi document differs across builds",
-        ),
-    ]
+    vec![Check::from_bool(
+        "reproducibility",
+        "capabilities_deterministic",
+        caps_stable,
+        "capabilities document differs across builds",
+    )]
 }
 
 fn extension_checks() -> Vec<Check> {
