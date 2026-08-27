@@ -343,7 +343,7 @@ fn compress_if_beneficial_with_exit(command: &str, output: &str, exit_code: i32)
         // reconstructible, never a dropped datum — when it at least halves the
         // payload. Passthrough (auth/dev servers/streaming) is never touched.
         if policy == crate::shell::output_policy::OutputPolicy::Verbatim {
-            let enabled = cfg.crush_verbatim_json_enabled();
+            let enabled = cfg.crush_verbatim_json_effective();
             // Lossless first (fully reconstructible). Only if it does not pay does
             // the lossy stage drop high-entropy noise — and always behind a CCR
             // handle, so a dropped datum is never irrecoverable (#936).

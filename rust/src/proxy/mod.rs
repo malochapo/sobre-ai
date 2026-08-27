@@ -446,7 +446,7 @@ pub async fn start_proxy_with_token(port: u16, auth_token: Option<String>) -> an
 
     let cfg = Config::load();
     // Read once at startup — avoids a Config::load() on every proxied request.
-    let bind_host = cfg.resolved_proxy_bind_host();
+    let bind_host = cfg.proxy_bind_host_effective();
     let loopback_bind = bind_host.is_loopback();
     // Gateway mode (non-loopback bind, enterprise#8) hard-requires the Bearer
     // token: the provider-key fallback's whole justification is "loopback only",

@@ -1223,7 +1223,7 @@ mod shell_timeout_and_writes_tests {
     fn write_allow_paths_default_to_os_temp() {
         let cfg = Config::default();
         assert!(cfg.write_allow_paths.is_empty());
-        let effective = cfg.shell_write_allow_paths_effective();
+        let effective = cfg.write_allow_paths_effective();
         assert!(
             effective
                 .iter()
@@ -1239,7 +1239,7 @@ mod shell_timeout_and_writes_tests {
             cfg.write_allow_paths,
             vec!["/var/agent-scratch", "/opt/logs"]
         );
-        assert_eq!(cfg.shell_write_allow_paths_effective().len(), 2);
+        assert_eq!(cfg.write_allow_paths_effective().len(), 2);
     }
 
     #[test]

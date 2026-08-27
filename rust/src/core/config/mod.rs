@@ -132,7 +132,7 @@ pub struct Config {
     /// those outputs stay byte-for-byte verbatim. When on, an array-heavy JSON
     /// payload the crusher can at least halve is reshaped into a compact, fully
     /// reconstructible form; everything else stays verbatim. See
-    /// [`Config::crush_verbatim_json_enabled`] (#936).
+    /// [`Config::crush_verbatim_json_effective`] (#936).
     #[serde(default)]
     pub crush_verbatim_json: bool,
     /// Commands taking longer than this threshold (ms) are recorded in the slow log.
@@ -806,7 +806,7 @@ impl Config {
     /// Whether opt-in lossless JSON crushing of verbatim data commands (#936) is
     /// active. `LEAN_CTX_CRUSH_VERBATIM_JSON` (any value) wins, then the
     /// `crush_verbatim_json` config flag, else `false`.
-    pub fn crush_verbatim_json_enabled(&self) -> bool {
+    pub fn crush_verbatim_json_effective(&self) -> bool {
         std::env::var("LEAN_CTX_CRUSH_VERBATIM_JSON").is_ok() || self.crush_verbatim_json
     }
 
@@ -816,7 +816,7 @@ impl Config {
     /// resolves to `127.0.0.1` — a typo can only ever *narrow* exposure, never
     /// silently open the listener.
     #[must_use]
-    pub fn resolved_proxy_bind_host(&self) -> std::net::IpAddr {
+    pub fn proxy_bind_host_effective(&self) -> std::net::IpAddr {
         let raw = std::env::var("LEAN_CTX_PROXY_BIND_HOST")
             .ok()
             .filter(|v| !v.trim().is_empty())
@@ -1060,7 +1060,7 @@ impl Config {
 
     /// Returns the effective paths where shell output capture may write.
     /// Empty configuration intentionally falls back to OS temp directories.
-    pub fn shell_write_allow_paths_effective(&self) -> Vec<String> {
+    pub fn write_allow_paths_effective(&self) -> Vec<String> {
         if self.write_allow_paths.is_empty() {
             default_shell_write_allow_paths()
         } else {

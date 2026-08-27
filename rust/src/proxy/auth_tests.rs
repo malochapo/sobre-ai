@@ -472,20 +472,20 @@ fn resolved_bind_host_defaults_to_loopback_and_never_opens_on_typo() {
     let _lock = crate::core::data_dir::test_env_lock();
     crate::test_env::remove_var("LEAN_CTX_PROXY_BIND_HOST");
     let cfg = crate::core::config::Config::default();
-    assert!(cfg.resolved_proxy_bind_host().is_loopback());
+    assert!(cfg.proxy_bind_host_effective().is_loopback());
 
     // A typo in the config must narrow to loopback — never open the bind.
     let typo = crate::core::config::Config {
         proxy_bind_host: Some("all-interfaces-please".into()),
         ..Default::default()
     };
-    assert!(typo.resolved_proxy_bind_host().is_loopback());
+    assert!(typo.proxy_bind_host_effective().is_loopback());
 
     let open = crate::core::config::Config {
         proxy_bind_host: Some("0.0.0.0".into()),
         ..Default::default()
     };
-    assert!(!open.resolved_proxy_bind_host().is_loopback());
+    assert!(!open.proxy_bind_host_effective().is_loopback());
 }
 
 #[test]
