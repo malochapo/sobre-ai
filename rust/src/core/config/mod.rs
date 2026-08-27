@@ -377,22 +377,6 @@ pub struct Config {
     /// Override via the LEAN_CTX_AUTO_MODE_LEARNING env var.
     #[serde(default)]
     pub auto_mode_learning: bool,
-    /// Team server URL for opt-in savings roll-up.
-    /// Set via `lean-ctx config set team_url https://...` or `[team] url` in config.toml.
-    /// Override via LEAN_CTX_TEAM_URL env var.
-    #[serde(default)]
-    pub team_url: Option<String>,
-    /// Bearer token for the team server (Authorization header on savings push /
-    /// pull). Set via `lean-ctx config set team_token <tok>` or `team_token` in
-    /// config.toml. Override via the LEAN_CTX_TEAM_TOKEN env var.
-    #[serde(default)]
-    pub team_token: Option<String>,
-    /// Opt-in: when true, the running daemon periodically pushes this machine's
-    /// signed savings batch to `team_url` so the team roll-up fills itself (no
-    /// manual `savings push` per dev). Off by default; requires `team_url` +
-    /// `team_token`. Set via `lean-ctx config set team_auto_push true`.
-    #[serde(default)]
-    pub team_auto_push: bool,
     /// Enable human-readable activity journal (~/.lean-ctx/journal.md).
     #[serde(default)]
     pub journal_enabled: bool,
@@ -757,9 +741,6 @@ impl Default for Config {
             symbol_map_auto: false,
             structure_first: true,
             auto_mode_learning: false,
-            team_url: None,
-            team_token: None,
-            team_auto_push: false,
             journal_enabled: true,
             auto_capture: true,
             search: crate::core::hybrid_search::HybridConfig::default(),

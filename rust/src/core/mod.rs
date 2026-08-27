@@ -9,7 +9,6 @@ pub mod codebook;
 #[cfg(target_os = "macos")]
 pub mod codesign;
 pub mod compressor;
-pub mod datadog_push;
 pub mod entropy;
 pub mod eval_harness;
 // Without `embeddings` the engine still compiles these modules — their
@@ -429,7 +428,6 @@ pub mod sandbox;
 pub mod sandbox_landlock;
 pub mod sandbox_seatbelt;
 pub mod sanitize;
-pub mod savings_autopush;
 pub mod savings_footer;
 pub mod savings_ledger;
 pub mod scent_field;

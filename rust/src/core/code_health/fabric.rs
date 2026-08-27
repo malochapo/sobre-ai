@@ -208,6 +208,7 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial(code_health_fabric)]
     fn build_emits_triplet_per_hotspot() {
         let health = health_with(vec![
             hotspot("src/a.rs", "big", 10, 22),
@@ -274,6 +275,7 @@ mod tests {
     /// The core Phase 3 guarantee: a resolved hotspot is pruned from knowledge
     /// and the property graph on the next pass, never lingering as stale signal.
     #[test]
+    #[serial_test::serial(code_health_fabric)]
     fn apply_then_clean_prunes_every_store() {
         // apply() persists through data-dir-addressed stores (BM25 / property
         // graph / knowledge). Hold the env lock via an isolated data dir so a
@@ -372,7 +374,11 @@ mod tests {
 
     /// `hotspot_cc` recovers a symbol's complexity from the persisted edges —
     /// the lookup `ctx_callgraph risk` uses.
+    // `apply` writes into stores the sibling tests in this module also touch,
+    // so a parallel run reads back another test's state. Serialized rather than
+    // ignored: the assertion itself is meaningful.
     #[test]
+    #[serial_test::serial(code_health_fabric)]
     fn hotspot_cc_reads_back_persisted_edge() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path().to_str().unwrap();

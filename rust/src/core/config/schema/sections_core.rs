@@ -310,30 +310,6 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
         ),
     );
     root.insert(
-        "team_url".into(),
-        key(
-            "string?",
-            serde_json::json!(cfg.team_url),
-            "Team server base URL for the opt-in savings roll-up (push/pull)",
-        ),
-    );
-    root.insert(
-        "team_token".into(),
-        key(
-            "string?",
-            serde_json::json!(cfg.team_token),
-            "Bearer token for the team server (push needs a member token; pull/auto-push needs the configured team token)",
-        ),
-    );
-    root.insert(
-        "team_auto_push".into(),
-        key(
-            "bool",
-            serde_json::json!(cfg.team_auto_push),
-            "Opt-in: daemon periodically pushes your signed savings batch to team_url (off by default; requires team_url + team_token)",
-        ),
-    );
-    root.insert(
             "cache_policy".into(),
             key_with_env(
                 "enum(aggressive|safe|off)",

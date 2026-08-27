@@ -81,9 +81,6 @@ Top-level configuration keys
 - `slow_command_threshold_ms` (u64, default `5000`) — Commands taking longer than this (ms) are recorded in the slow log. Set to 0 to disable
 - `structure_first` (bool, default `false` — env `LEAN_CTX_STRUCTURE_FIRST`) — Opt-in: bias `auto` toward structure-first reads (map) for medium code files on a cold read. Off by default — for phase-isolated harnesses with no warm-session cache payback. Override via LEAN_CTX_STRUCTURE_FIRST
 - `symbol_map_auto` (bool, default `false`) — Opt-in: α-code identifier substitution in aggressive reads (>50-file projects). Off by default — abbreviated symbols hinder editing/refactoring
-- `team_auto_push` (bool, default `false`) — Opt-in: daemon periodically pushes your signed savings batch to team_url (off by default; requires team_url + team_token)
-- `team_token` (string?, default `null`) — Bearer token for the team server (push needs a member token; pull/auto-push needs the configured team token)
-- `team_url` (string?, default `null`) — Team server base URL for the opt-in savings roll-up (push/pull)
 - `tee_mode` (enum: never | failures | highcompression | always, default `highcompression`) — Controls when shell output is tee'd to disk for later retrieval
 - `terse_agent` (enum: off | lite | full | ultra, default `off` — env `LEAN_CTX_TERSE_AGENT`) — Controls agent output verbosity via instructions injection
 - `theme` (string, default `default`) — Dashboard color theme
