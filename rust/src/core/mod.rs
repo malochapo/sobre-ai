@@ -387,7 +387,6 @@ pub mod intent_router;
 pub mod introspect;
 pub mod io_boundary;
 pub mod io_health;
-pub mod journal;
 pub mod jsonc;
 pub mod language_capabilities;
 #[cfg(target_os = "macos")]

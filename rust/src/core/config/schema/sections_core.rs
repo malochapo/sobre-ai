@@ -10,14 +10,6 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
     let cfg = crate::core::config::Config::default();
     let mut root = BTreeMap::new();
     root.insert(
-        "ultra_compact".into(),
-        key(
-            "bool",
-            serde_json::json!(false),
-            "Legacy flag for maximum compression (use compression_level instead)",
-        ),
-    );
-    root.insert(
         "tee_mode".into(),
         key_enum(
             &["never", "failures", "highcompression", "always"],
@@ -276,29 +268,12 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
         ),
     );
     root.insert(
-        "structure_first".into(),
-        key_with_env(
-            "bool",
-            serde_json::json!(false),
-            "Opt-in: bias `auto` toward structure-first reads (map) for medium code files on a cold read. Off by default — for phase-isolated harnesses with no warm-session cache payback. Override via LEAN_CTX_STRUCTURE_FIRST",
-            "LEAN_CTX_STRUCTURE_FIRST",
-        ),
-    );
-    root.insert(
         "auto_mode_learning".into(),
         key_with_env(
             "bool",
             serde_json::json!(false),
             "Opt-in: let adaptive learning signals (predictor, bandit, heatmap, adaptive policy, bounce/path memory) influence `auto` mode. Off by default for a deterministic, I/O-light cascade (capability guards + size/task heuristic only) that keeps output byte-stable for prompt caching. Override via LEAN_CTX_AUTO_MODE_LEARNING",
             "LEAN_CTX_AUTO_MODE_LEARNING",
-        ),
-    );
-    root.insert(
-        "journal_enabled".into(),
-        key(
-            "bool",
-            serde_json::json!(true),
-            "Write human-readable activity journal to ~/.lean-ctx/journal.md",
         ),
     );
     root.insert(

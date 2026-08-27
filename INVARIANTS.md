@@ -139,6 +139,41 @@ If the proxy is ever dropped, this ceiling drops with it, to 330,000.
 
 ---
 
+## 6. Permissive by default; the developer decides what to forbid
+
+**`sobre` allows every shell command by default. Restrictions are an explicit
+deny list the user writes, never an allow list they must maintain.**
+
+The tool it forks from ships a curated allow list of 242 executables, plus a
+second list of cloud CLIs held back because "a coding agent that can run
+`terraform apply` by default is an incident waiting to happen". That design
+assumes the user needs protecting from their own agent. `sobre` assumes the
+opposite: it is for developers who know what they are running.
+
+The reasoning is not bravado, it is accounting. **An agent without `sobre` runs
+those commands anyway** — the shell is right there. Gating them here buys no
+safety; it only moves where the friction lands, and costs a data table someone
+has to review forever. And the cloud CLIs specifically are *useful* to an agent
+doing diagnosis: reading a cluster's state is most of the work.
+
+A developer working against production is responsible for blocking what must
+not run there, in that project. That is their call, not a default we make for
+everyone.
+
+What follows from this:
+
+- No default allow list. Shipping one recreates the maintenance we forked away
+  from, and the "empty list" path already exists in the engine.
+- Blocks are opt-in, explicit, and few. What remains unconditional is what a
+  deny list cannot express — inline interpreter evaluation and the shell
+  builtins that hide a command from inspection.
+- **No hidden behaviour.** `sobre` does not silently refuse, silently rewrite,
+  or silently substitute. If it declines something, it says so and says why.
+
+`sobre` is therefore more dangerous than a tool that says no by default — and
+exactly as dangerous as the terminal the developer already has open. That is
+the intended position.
+
 ## Process rules (not invariants, but not optional either)
 
 A release cadence is only as good as the stabilisation behind it. These rules

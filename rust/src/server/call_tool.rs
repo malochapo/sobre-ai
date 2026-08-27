@@ -763,8 +763,6 @@ impl LeanCtxServer {
             let dbg_saved = tool_saved_tokens;
             let dbg_elapsed = tool_start.elapsed();
             std::thread::spawn(move || {
-                crate::core::journal::maybe_day_separator();
-                crate::core::journal::log_tool_call(&tool_name, &summary);
                 crate::core::debug_log::log_mcp_call(
                     &tool_name,
                     dbg_args.as_ref(),

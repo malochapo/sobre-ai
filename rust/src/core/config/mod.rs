@@ -108,7 +108,6 @@ pub(crate) fn default_shell_write_allow_paths() -> Vec<String> {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Config {
-    pub ultra_compact: bool,
     #[serde(default, deserialize_with = "serde_defaults::deserialize_tee_mode")]
     pub tee_mode: TeeMode,
     /// Verbosity of the reactive recovery footer on compressed output
@@ -360,14 +359,6 @@ pub struct Config {
     /// needs the real package and symbol names. Enable for max exploration savings.
     #[serde(default)]
     pub symbol_map_auto: bool,
-    /// Opt-in: bias `auto` toward structure-first reads (`map`) for medium code
-    /// files on a cold read. Off by default — interactive sessions keep the
-    /// conservative `full` floor that avoids a follow-up body read. Enable for
-    /// phase-isolated harnesses (no warm-session cache payback), where a cold
-    /// `full` read is pure overhead and structure-first reads aid localization.
-    /// Override via the LEAN_CTX_STRUCTURE_FIRST env var.
-    #[serde(default)]
-    pub structure_first: bool,
     /// Opt-in: let the adaptive *learning* signals (predictor, bandit, heatmap,
     /// adaptive policy, bounce/path memory) participate in `auto` mode
     /// resolution. Off by default (#683): the default cascade is a deterministic
@@ -377,9 +368,6 @@ pub struct Config {
     /// Override via the LEAN_CTX_AUTO_MODE_LEARNING env var.
     #[serde(default)]
     pub auto_mode_learning: bool,
-    /// Enable human-readable activity journal (~/.lean-ctx/journal.md).
-    #[serde(default)]
-    pub journal_enabled: bool,
     /// Opt-in: auto-persist interesting findings as knowledge facts.
     #[serde(default)]
     pub auto_capture: bool,
@@ -687,7 +675,6 @@ pub struct Config {
 impl Default for Config {
     fn default() -> Self {
         Self {
-            ultra_compact: false,
             tee_mode: TeeMode::default(),
             recovery_hints: RecoveryHints::default(),
             output_density: OutputDensity::default(),
@@ -719,7 +706,7 @@ impl Default for Config {
             prefer_native_editor: false,
             default_tool_categories: Vec::new(),
             no_degrade: false,
-            delta_explicit: false,
+            delta_explicit: true,
             profile: None,
             loop_detection: LoopDetectionConfig::default(),
             rules_scope: None,
@@ -739,9 +726,7 @@ impl Default for Config {
             content_defined_chunking: false,
             minimal_overhead: true,
             symbol_map_auto: false,
-            structure_first: true,
             auto_mode_learning: false,
-            journal_enabled: true,
             auto_capture: true,
             search: crate::core::hybrid_search::HybridConfig::default(),
             graph: GraphConfig::default(),
@@ -936,21 +921,6 @@ impl Config {
     /// Returns `true` if minimal overhead is enabled via env var or config.
     pub fn minimal_overhead_effective(&self) -> bool {
         std::env::var("LEAN_CTX_MINIMAL").is_ok() || self.minimal_overhead
-    }
-
-    /// Returns `true` if structure-first auto reads are enabled.
-    ///
-    /// The `LEAN_CTX_STRUCTURE_FIRST` env var wins over the config field, and
-    /// accepts the usual truthy/falsy spellings so a harness can flip it per run
-    /// (`LEAN_CTX_STRUCTURE_FIRST=0` forces it off even if config enables it).
-    pub fn structure_first_effective(&self) -> bool {
-        match std::env::var("LEAN_CTX_STRUCTURE_FIRST") {
-            Ok(raw) => matches!(
-                raw.trim().to_lowercase().as_str(),
-                "1" | "true" | "yes" | "on"
-            ),
-            Err(_) => self.structure_first,
-        }
     }
 
     /// Returns `true` when the adaptive learning signals may participate in

@@ -103,7 +103,6 @@ impl Config {
 
         let default = Config::default();
 
-        override_if_true!(ultra_compact);
         override_if_ne!(default.tee_mode, tee_mode);
         override_if_ne!(default.recovery_hints, recovery_hints);
         override_if_ne!(default.output_density, output_density);

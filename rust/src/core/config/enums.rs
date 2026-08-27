@@ -287,9 +287,8 @@ impl CompressionLevel {
     /// 0. Session-level degrade override (set by correction-loop feedback)
     /// 1. `LEAN_CTX_COMPRESSION` env var
     /// 2. `compression_level` in config
-    /// 3. Legacy `ultra_compact` flag (maps to `Max`)
-    /// 4. Legacy env vars (`LEAN_CTX_TERSE_AGENT`, `LEAN_CTX_OUTPUT_DENSITY`)
-    /// 5. Legacy config fields (`terse_agent`, `output_density`)
+    /// 3. Legacy env vars (`LEAN_CTX_TERSE_AGENT`, `LEAN_CTX_OUTPUT_DENSITY`)
+    /// 4. Legacy config fields (`terse_agent`, `output_density`)
     pub fn effective(config: &Config) -> Self {
         if let Some(degraded) = Self::session_degrade_level() {
             return degraded;
@@ -299,9 +298,6 @@ impl CompressionLevel {
         }
         if config.compression_level != Self::Off {
             return config.compression_level;
-        }
-        if config.ultra_compact {
-            return Self::Max;
         }
         let ta_env = TerseAgent::from_env();
         let od_env = OutputDensity::from_env();

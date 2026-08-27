@@ -202,7 +202,11 @@ fn resolve_inner(ctx: &AutoModeContext) -> ResolvedMode {
     // lets a phase-isolated host opt into a lower `map` floor for medium code
     // files; all capability guards (diagnostic / edit-fail / intent) already ran
     // above, and the anti-inflation guarantee keeps `map` break-even at worst.
-    let structure_first = crate::core::config::Config::load().structure_first_effective();
+    // Structure-first is how sobre reads cold code: a medium source file comes
+    // back as `map`, not `full`, so the agent localizes before paying for the
+    // body. It shipped as a config key defaulting to `true` — a knob whose only
+    // useful position was the default.
+    let structure_first = true;
     let heuristic = heuristic_mode(ext, ctx.token_count, structure_first);
     let source = if structure_first && heuristic == "map" && ctx.token_count <= 6000 {
         "structure_first"
@@ -794,29 +798,6 @@ mod tests {
             cache: None,
         };
         assert_eq!(resolve(&tiny).mode, "full");
-
-        crate::test_env::remove_var("LEAN_CTX_STRUCTURE_FIRST");
-        crate::test_env::remove_var("LEAN_CTX_DATA_DIR");
-        let _ = std::fs::remove_dir_all(&dir);
-    }
-
-    #[test]
-    fn structure_first_off_keeps_medium_code_full() {
-        let _lock = crate::core::data_dir::test_env_lock();
-        let dir = std::env::temp_dir().join(format!("lctx-amr-sfoff-{}", std::process::id()));
-        let _ = std::fs::create_dir_all(&dir);
-        crate::test_env::set_var("LEAN_CTX_DATA_DIR", dir.to_str().unwrap());
-        crate::test_env::set_var("LEAN_CTX_STRUCTURE_FIRST", "0");
-
-        let ctx = AutoModeContext {
-            path: "src/versioncmp.c",
-            token_count: 1500,
-            task: None,
-            cache: None,
-        };
-        let result = resolve(&ctx);
-        assert_eq!(result.mode, "full");
-        assert_eq!(result.source, "heuristic");
 
         crate::test_env::remove_var("LEAN_CTX_STRUCTURE_FIRST");
         crate::test_env::remove_var("LEAN_CTX_DATA_DIR");

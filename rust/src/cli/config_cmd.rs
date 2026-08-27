@@ -300,7 +300,6 @@ fn cmd_apply() {
     // 4. Summary
     println!("\n[4/4] Config applied successfully.");
     println!("  Theme:       {}", cfg.theme);
-    println!("  Ultra compact: {}", cfg.ultra_compact);
     println!("  Checkpoint:  every {} calls", cfg.checkpoint_interval);
     if let Some(ref root) = cfg.project_root {
         println!("  Project root: {root}");

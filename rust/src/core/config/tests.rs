@@ -290,13 +290,14 @@ mod delta_explicit_tests {
     // --- Defaults ---
 
     #[test]
-    fn default_is_false() {
+    fn default_is_on() {
+        // Flipped on 2026-08-27: a changed cached file comes back as a diff.
         let cfg = Config::default();
-        assert!(!cfg.delta_explicit);
+        assert!(cfg.delta_explicit);
     }
 
     #[test]
-    fn effective_false_when_unset() {
+    fn effective_follows_the_default_when_unset() {
         // Serialize with the env-mutating sibling test below: this reads the var
         // as a guard and again inside delta_explicit_effective(), so without the
         // shared lock a parallel set_var between the two reads flips the result.
@@ -305,7 +306,7 @@ mod delta_explicit_tests {
             return;
         }
         let cfg = Config::default();
-        assert!(!cfg.delta_explicit_effective());
+        assert!(cfg.delta_explicit_effective());
     }
 
     // --- Config field ---
