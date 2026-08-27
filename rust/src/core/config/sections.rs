@@ -506,30 +506,6 @@ impl AutonomyConfig {
     }
 }
 
-/// Cloud sync and contribution settings (pattern sharing, model pulls).
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-#[serde(default)]
-pub struct CloudConfig {
-    pub contribute_enabled: bool,
-    pub last_contribute: Option<String>,
-    pub last_sync: Option<String>,
-    pub last_gain_sync: Option<String>,
-    pub last_model_pull: Option<String>,
-    /// Auto-push the Pro Personal-Cloud surfaces (knowledge, commands, CEP,
-    /// gotchas, buddy, feedback) from the background task — opt-in, once per
-    /// day, offline-tolerant (GL #384). Toggle: `lean-ctx cloud autosync on`.
-    pub auto_sync: bool,
-    pub last_auto_sync: Option<String>,
-    /// Auto-push the project's encrypted retrieval-index bundle (hosted
-    /// Personal Index, GL #392) alongside the daily auto-sync — separate
-    /// opt-in because index bundles are orders of magnitude larger than the
-    /// other surfaces. Toggle: `lean-ctx cloud autoindex on`.
-    pub auto_index: bool,
-    /// Per-project debounce: `project_hash → YYYY-MM-DD` of the last
-    /// successful background index push.
-    pub last_index_push: std::collections::HashMap<String, String>,
-}
-
 /// Settings for publishing your token-savings recap (`gain --publish` / auto-publish).
 ///
 /// Publishing is always opt-in: it sends a small, whitelisted *aggregate* payload (tokens
@@ -729,41 +705,6 @@ impl Default for GraphConfig {
     }
 }
 
-/// Skillify (#290): mine the project's session diary + knowledge facts into
-/// versioned, git-committable `.cursor/rules/skillify-*.mdc` rule files.
-///
-/// The miner is precision-biased — it only codifies recurring or high-confidence
-/// patterns and never invents content. Runs on demand (`ctx_skillify` /
-/// `lean-ctx skillify`); re-running merges (bumps version) only when the distilled
-/// content actually changes.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(default)]
-pub struct SkillifyConfig {
-    /// Master switch for the skillify miner. On by default; the miner only ever
-    /// acts when explicitly invoked, so this never writes files unprompted.
-    pub enabled: bool,
-    /// Where generated rules are written: `project` (`<repo>/.cursor/rules`,
-    /// git-committable, default) or `global` (`~/.cursor/rules`).
-    pub scope: String,
-    /// Minimum confidence for a single curated knowledge fact to be codified even
-    /// without repetition. 0.0..=1.0.
-    pub min_confidence: f32,
-    /// Minimum number of reinforcements (confirmations / repeated mentions) before
-    /// a pattern is codified when its confidence is below `min_confidence`.
-    pub min_recurrence: u32,
-}
-
-impl Default for SkillifyConfig {
-    fn default() -> Self {
-        Self {
-            enabled: true,
-            scope: "project".to_string(),
-            min_confidence: 0.7,
-            min_recurrence: 2,
-        }
-    }
-}
-
 /// AI session summaries (#292): periodically distil the working session into a
 /// compact, *semantically recallable* summary so a future session can answer
 /// "what did I do last time on X?". Deterministic and local-first — recall uses
@@ -789,13 +730,6 @@ impl Default for SummariesConfig {
             max_kept: 100,
         }
     }
-}
-
-/// A user-defined command alias mapping for shell compression patterns.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct AliasEntry {
-    pub command: String,
-    pub alias: String,
 }
 
 /// Thresholds for detecting and throttling repetitive agent tool call loops.

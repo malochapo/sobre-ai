@@ -60,10 +60,6 @@ pub(crate) fn strip_sensitive_overrides(local: &mut Config) -> Vec<&'static str>
         local.allow_symlink_roots.clear();
         withheld.push("allow_symlink_roots");
     }
-    if !local.custom_aliases.is_empty() {
-        local.custom_aliases.clear();
-        withheld.push("custom_aliases");
-    }
     if !local.passthrough_urls.is_empty() {
         local.passthrough_urls.clear();
         withheld.push("passthrough_urls");

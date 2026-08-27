@@ -110,7 +110,6 @@ impl Config {
         override_if_ne!(default.checkpoint_interval, checkpoint_interval);
         extend_if_nonempty!(excluded_commands);
         extend_if_nonempty!(passthrough_urls);
-        extend_if_nonempty!(custom_aliases);
         // Additive merge with dedup: project-local config can add formats on top
         // of the global default (`["toon"]`) without re-listing it.
         for fmt in local.preserve_compact_formats {
@@ -125,7 +124,6 @@ impl Config {
         override_if_ne!(default.slow_command_threshold_ms, slow_command_threshold_ms);
         override_if_ne!(default.theme, theme);
         override_if_false!(enable_wakeup_ctx);
-        extend_if_nonempty!(redirect_exclude);
         override_if_true!(prefer_native_editor);
         extend_if_nonempty!(extra_ignore_patterns);
         // Index filters (#735): repo-local excludes extend the global list; a

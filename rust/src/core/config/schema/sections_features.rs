@@ -1,5 +1,5 @@
 //! Feature config sections (autonomy, providers, loop-detection, updates,
-//! boundary-policy, secret-detection, cloud, gain).
+//! boundary-policy, secret-detection, gain).
 //! Split out of `schema/mod.rs`; `use super::*` re-imports helpers + `SectionSchema`.
 
 #[allow(clippy::wildcard_imports)]
@@ -673,31 +673,6 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
         SectionSchema {
             description: "Addon ecosystem security floor: install policy, signature requirement, per-addon capability sandbox (#863, P1). Global-only.".into(),
             keys: addons,
-        },
-    );
-
-    let mut cloud = BTreeMap::new();
-    cloud.insert(
-        "contribute_enabled".into(),
-        key(
-            "bool",
-            serde_json::json!(cfg.cloud.contribute_enabled),
-            "Enable contributing anonymized stats to lean-ctx cloud",
-        ),
-    );
-    cloud.insert(
-        "auto_sync".into(),
-        key(
-            "bool",
-            serde_json::json!(cfg.cloud.auto_sync),
-            "Push the Personal Cloud (knowledge, commands, CEP, gotchas, buddy, feedback) silently once per day at session end (Pro; toggle: `lean-ctx cloud autosync on|off`)",
-        ),
-    );
-    sections.insert(
-        "cloud".into(),
-        SectionSchema {
-            description: "Cloud feature settings".into(),
-            keys: cloud,
         },
     );
 

@@ -1,4 +1,4 @@
-//! Advanced config sections (proxy, memory subsystems, custom_aliases, setup, llm).
+//! Advanced config sections (proxy, memory subsystems, setup, llm).
 //! Split out of `schema/mod.rs`; `use super::*` re-imports helpers + `SectionSchema`.
 
 #[allow(clippy::wildcard_imports)]
@@ -556,39 +556,6 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
             keys: mem_embeddings,
         },
     );
-
-    let mut aliases = BTreeMap::new();
-    aliases.insert(
-        "command".into(),
-        key(
-            "string",
-            serde_json::json!(""),
-            "The command pattern to match (e.g. 'deploy')",
-        ),
-    );
-    aliases.insert(
-        "alias".into(),
-        key(
-            "string",
-            serde_json::json!(""),
-            "The alias definition to execute",
-        ),
-    );
-    sections.insert("custom_aliases".into(), SectionSchema {
-            description: "Custom command aliases (array of {command, alias} entries). Note: field names are 'command' and 'alias' (not 'name')".into(),
-            keys: aliases,
-        });
-
-    if let Some(root_section) = sections.get_mut("root") {
-        root_section.keys.insert(
-            "custom_aliases".into(),
-            key(
-                "array",
-                serde_json::json!([]),
-                "Custom command aliases (array of {command, alias} entries)",
-            ),
-        );
-    }
 
     let mut setup_keys = BTreeMap::new();
     setup_keys.insert(

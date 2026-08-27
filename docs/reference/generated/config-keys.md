@@ -26,8 +26,6 @@ Top-level configuration keys
 - `compression_level` (enum: off | lite | standard | max, default `lite` — env `LEAN_CTX_COMPRESSION`) — Unified output-style level for the model's prose (not tool-output compression). lite=plain concise (default), standard/max=denser symbolic 'power modes'
 - `content_defined_chunking` (bool, default `false`) — Enable Rabin-Karp chunking for cache-optimal output ordering
 - `crush_verbatim_json` (bool, default `false` — env `LEAN_CTX_CRUSH_VERBATIM_JSON`) — Opt-in: losslessly crush array-heavy JSON from verbatim data commands (gh api, jq, kubectl get -o json, curl). Off by default keeps them verbatim. Reshapes only when it at least halves the payload; fully reconstructible
-- `custom_aliases` (array, default `[]`) — Custom command aliases (array of {command, alias} entries)
-- `dashboard_auth` (bool, default `true`) — Require Bearer-token auth for the dashboard (default true). Set false for no-auth mode protected by Sec-Fetch-Site/Origin/Host checks. Override per-run with --no-auth or LEAN_CTX_DASHBOARD_AUTH
 - `debug_log` (bool, default `false` — env `LEAN_CTX_DEBUG_LOG`) — Opt-in (default off): write a human-readable debug log of intercepted MCP tool calls and hook routing decisions (lean-ctx vs native, with the reason) to <state_dir>/logs/debug.log. View with `lean-ctx debug-log`
 - `default_tool_categories` (string[], default `[]`) — Tool categories active by default (core, arch, debug, memory, metrics, session). Override via LCTX_DEFAULT_CATEGORIES
 - `delta_explicit` (boolean, default `false`) — Serve explicit full/lines re-reads of changed cached files as diffs (opt-in). Override via LCTX_DELTA_EXPLICIT=1
@@ -63,7 +61,6 @@ Top-level configuration keys
 - `read_only_roots` (string[], default `[]` — env `LEAN_CTX_READ_ONLY_ROOTS`) — Read-only sibling roots: reads allowed, writes always denied (edit/refactor/export)
 - `read_redirect` (enum: auto | on | off, default `auto` — env `LEAN_CTX_READ_REDIRECT`) — Controls the native-Read → ctx_read redirect hook. auto (default): redirect everywhere except hosts with a native read-before-write guard (Claude Code / CodeBuddy), where rewriting Read to a temp copy breaks native Write/Edit (#637). on: always redirect. off: never redirect native Read (ctx_read MCP tool + Grep/Glob redirect stay active)
 - `recovery_hints` (enum: off | minimal | full, default `minimal`) — Verbosity of the reactive recovery footer on compressed output (path-first, MCP-optional)
-- `redirect_exclude` (string[], default `[]`) — URL patterns to exclude from proxy redirection
 - `reference_results` (bool, default `false` — env `LEAN_CTX_REFERENCE_RESULTS`) — Store large tool outputs as references instead of inline content
 - `response_verbosity` (enum: normal | compact | minimal, default `normal` — env `LEAN_CTX_RESPONSE_VERBOSITY`) — Controls how verbose tool responses are
 - `rules_injection` (enum: shared | dedicated | off, default `shared`) — How rules load for CLAUDE.md/AGENTS.md/GEMINI.md agents: shared block, dedicated (no shared-file edits; SessionStart hook / instructions[] / context.fileName), or off (write no rules file — for hosts that supply their own steering or phase-isolated/non-caching harnesses). Override via LEAN_CTX_RULES_INJECTION
@@ -91,7 +88,6 @@ Top-level configuration keys
 - `terse_agent` (enum: off | lite | full | ultra, default `off` — env `LEAN_CTX_TERSE_AGENT`) — Controls agent output verbosity via instructions injection
 - `theme` (string, default `default`) — Dashboard color theme
 - `ultra_compact` (bool, default `false`) — Legacy flag for maximum compression (use compression_level instead)
-- `update_check_disabled` (bool, default `false` — env `LEAN_CTX_NO_UPDATE_CHECK`) — Disable the daily version check
 - `write_allow_paths` (string[], default `[]`) — Absolute paths allowed for ctx_shell redirects and tee output; empty = OS temp directories
 
 ## `[addons]`
@@ -147,13 +143,6 @@ Cross-project boundary and access control policies
 - `cross_project_search` (bool, default `false`) — Allow searching across project boundaries
 - `universal_gotchas_enabled` (bool, default `true`) — Load universal (cross-project) gotchas
 
-## `[cloud]`
-
-Cloud feature settings
-
-- `auto_sync` (bool, default `false`) — Push the Personal Cloud (knowledge, commands, CEP, gotchas, buddy, feedback) silently once per day at session end (Pro; toggle: `lean-ctx cloud autosync on|off`)
-- `contribute_enabled` (bool, default `false`) — Enable contributing anonymized stats to lean-ctx cloud
-
 ## `[context]`
 
 Fixed-context budget accounting (#964)
@@ -170,13 +159,6 @@ Model declaration for measured-vs-estimated cost reporting
 
 - `default_model` (string?, default `null`) — Fallback pricing model for MCP-only IDEs whose real model lean-ctx cannot observe (Cursor, Copilot, Windsurf, …). Unset → blended heuristic. Per-IDE overrides live in [cost.models]
 - `prices` (table?, default `[]`) — Operator price overrides per model, USD per million tokens: [cost.prices."<model>"] with input_per_m / output_per_m / cache_write_per_m / cache_read_per_m. For negotiated enterprise rates (committed-use discounts, Azure PTU, zero-rated internal models); overrides embedded and live catalog rows, only a provider-measured bill beats it
-
-## `[custom_aliases]`
-
-Custom command aliases (array of {command, alias} entries). Note: field names are 'command' and 'alias' (not 'name')
-
-- `alias` (string, default `""`) — The alias definition to execute
-- `command` (string, default `""`) — The command pattern to match (e.g. 'deploy')
 
 ## `[embedding]`
 
@@ -419,15 +401,6 @@ Controls what lean-ctx injects during setup and updates. Fresh installs default 
 
 - `auto_inject_rules` (bool?, default `null`) — Inject agent rule files during setup/update. null=auto (inject if already present), true=always, false=never
 - `auto_update_mcp` (bool, default `true`) — Register lean-ctx MCP server in editor configs during setup/update
-
-## `[skillify]`
-
-Skillify miner: distill recurring session diary + knowledge patterns into rules
-
-- `enabled` (bool, default `true`) — Master switch for the skillify miner (codify recurring session patterns into .cursor/rules). Only acts when explicitly invoked.
-- `min_confidence` (f32, default `0.699999988079071`) — Minimum confidence for a single curated knowledge fact to be codified without repetition (0.0..=1.0).
-- `min_recurrence` (u32, default `2`) — Minimum reinforcements (confirmations / repeated mentions) before a sub-threshold-confidence pattern is codified.
-- `scope` (enum: project | global, default `project`) — Where generated rules are written: project (<repo>/.cursor/rules, git-committable) or global (~/.cursor/rules).
 
 ## `[summaries]`
 

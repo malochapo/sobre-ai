@@ -120,7 +120,6 @@ pub struct Config {
     pub checkpoint_interval: u32,
     pub excluded_commands: Vec<String>,
     pub passthrough_urls: Vec<String>,
-    pub custom_aliases: Vec<AliasEntry>,
     /// Output formats that are already compact/token-oriented and must be
     /// preserved verbatim instead of being recompressed (#342). Matched against
     /// the *output shape* (not the command name), so any tool emitting the
@@ -141,8 +140,6 @@ pub struct Config {
     pub slow_command_threshold_ms: u64,
     #[serde(default = "serde_defaults::default_theme")]
     pub theme: String,
-    #[serde(default)]
-    pub cloud: CloudConfig,
     #[serde(default)]
     pub gain: GainConfig,
     /// Model declaration for measured-vs-estimated cost reporting (MCP-only IDEs).
@@ -216,26 +213,12 @@ pub struct Config {
     /// mode (explicit opt-out).
     #[serde(default)]
     pub proxy_max_rps: Option<u32>,
-    /// Require Bearer-token authentication for the dashboard. Default `true`:
-    /// the dashboard generates (or uses the pinned) token and rejects `/api/*`
-    /// and `/metrics` without it. Set to `false` to run the dashboard with **no
-    /// auth token** — useful for a local/Docker setup where managing a token is
-    /// inconvenient. No-auth mode is not unprotected: cross-origin and CSRF
-    /// attacks from a malicious local website are blocked by request-header
-    /// validation instead (`Sec-Fetch-Site`, `Origin`/`Host` same-origin, and a
-    /// `Host` allowlist against DNS rebinding — see `dashboard::no_auth_request_ok`).
-    /// Override per-run via the `--no-auth` / `--auth=<bool>` flag or the
-    /// `LEAN_CTX_DASHBOARD_AUTH` env var.
-    #[serde(default = "serde_defaults::default_true")]
-    pub dashboard_auth: bool,
     /// Provider prompt-cache hit rate for net-of-injection calculation (#1104).
     /// Anthropic ~90%, OpenAI ~50%. Default 0.75 (conservative cross-provider).
     #[serde(default)]
     pub dashboard_cache_hit_rate: Option<f64>,
     #[serde(default = "serde_defaults::default_true")]
     pub enable_wakeup_ctx: bool,
-    #[serde(default)]
-    pub redirect_exclude: Vec<String>,
     /// Prefer the host agent's native editor over lean-ctx edit operations (#454).
     /// When true, the lean-ctx edit tool(s) (see [`EDIT_TOOL_NAMES`]) are neither
     /// advertised in `list_tools` nor dispatchable (direct or via `ctx_call`), so
@@ -426,9 +409,6 @@ pub struct Config {
     /// handling, applied by every index builder via `core::index_filter`.
     #[serde(default)]
     pub index: IndexConfig,
-    /// Skillify miner settings (#290): codify recurring patterns into rules.
-    #[serde(default)]
-    pub skillify: SkillifyConfig,
     /// AI session-summary settings (#292): periodic, semantically-recallable summaries.
     #[serde(default)]
     pub summaries: SummariesConfig,
@@ -498,10 +478,6 @@ pub struct Config {
     /// Override via the `LEAN_CTX_READ_DEDUP` env var.
     #[serde(default)]
     pub read_dedup: ReadDedup,
-    /// Disable the daily version check against leanctx.com/version.txt.
-    /// Override via LEAN_CTX_NO_UPDATE_CHECK env var.
-    #[serde(default)]
-    pub update_check_disabled: bool,
     #[serde(default)]
     pub updates: UpdatesConfig,
     /// Fixed-context budget accounting for `doctor overhead` / `gain` (#964).
@@ -734,12 +710,10 @@ impl Default for Config {
             checkpoint_interval: 15,
             excluded_commands: Vec::new(),
             passthrough_urls: Vec::new(),
-            custom_aliases: Vec::new(),
             preserve_compact_formats: serde_defaults::default_preserve_compact_formats(),
             crush_verbatim_json: false,
             slow_command_threshold_ms: 5000,
             theme: serde_defaults::default_theme(),
-            cloud: CloudConfig::default(),
             gain: GainConfig::default(),
             cost: CostConfig::default(),
             code_health: CodeHealthConfig::default(),
@@ -756,10 +730,8 @@ impl Default for Config {
             proxy_bind_host: None,
             proxy_allowed_hosts: Vec::new(),
             proxy_max_rps: None,
-            dashboard_auth: true,
             dashboard_cache_hit_rate: None,
             enable_wakeup_ctx: true,
-            redirect_exclude: Vec::new(),
             prefer_native_editor: false,
             default_tool_categories: Vec::new(),
             no_degrade: false,
@@ -793,7 +765,6 @@ impl Default for Config {
             search: crate::core::hybrid_search::HybridConfig::default(),
             graph: GraphConfig::default(),
             index: IndexConfig::default(),
-            skillify: SkillifyConfig::default(),
             summaries: SummariesConfig::default(),
             llm: crate::core::llm_enhance::LlmConfig::default(),
             embedding: EmbeddingConfig::default(),
@@ -805,7 +776,6 @@ impl Default for Config {
             skip_agent_aliases: false,
             read_redirect: ReadRedirect::default(),
             read_dedup: ReadDedup::default(),
-            update_check_disabled: false,
             updates: UpdatesConfig::default(),
             context: ContextConfig::default(),
             graph_index_max_files: serde_defaults::default_graph_index_max_files(),
@@ -1129,11 +1099,6 @@ impl Config {
             ),
             Err(_) => self.shell_allow_inline_scripts,
         }
-    }
-
-    /// Returns `true` if the daily update check is disabled via env var or config.
-    pub fn update_check_disabled_effective(&self) -> bool {
-        std::env::var("LEAN_CTX_NO_UPDATE_CHECK").is_ok() || self.update_check_disabled
     }
 
     pub fn memory_policy_effective(&self) -> Result<MemoryPolicy, String> {

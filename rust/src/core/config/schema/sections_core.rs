@@ -101,14 +101,6 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
             ),
         );
     root.insert(
-        "redirect_exclude".into(),
-        key(
-            "string[]",
-            serde_json::json!(cfg.redirect_exclude),
-            "URL patterns to exclude from proxy redirection",
-        ),
-    );
-    root.insert(
         "prefer_native_editor".into(),
         key(
             "bool",
@@ -434,15 +426,6 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
         ),
     );
     root.insert(
-        "update_check_disabled".into(),
-        key_with_env(
-            "bool",
-            serde_json::json!(false),
-            "Disable the daily version check",
-            "LEAN_CTX_NO_UPDATE_CHECK",
-        ),
-    );
-    root.insert(
         "bm25_max_cache_mb".into(),
         key_with_env(
             "u64",
@@ -569,14 +552,6 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
             "bool",
             serde_json::json!(cfg.proxy_loopback_open),
             "Skip ALL proxy authentication on loopback binds. MCP/HTTP clients work without tokens. Ignored on non-loopback (gateway mode)",
-        ),
-    );
-    root.insert(
-        "dashboard_auth".into(),
-        key(
-            "bool",
-            serde_json::json!(cfg.dashboard_auth),
-            "Require Bearer-token auth for the dashboard (default true). Set false for no-auth mode protected by Sec-Fetch-Site/Origin/Host checks. Override per-run with --no-auth or LEAN_CTX_DASHBOARD_AUTH",
         ),
     );
     root.insert(
@@ -936,49 +911,6 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
                 "Index-time file filters: declare the retrieval corpus explicitly (BM25 + graph + semantic + watch share one filter layer, #735)"
                     .into(),
             keys: index,
-        },
-    );
-
-    let mut skillify = BTreeMap::new();
-    skillify.insert(
-        "enabled".into(),
-        key(
-            "bool",
-            serde_json::json!(cfg.skillify.enabled),
-            "Master switch for the skillify miner (codify recurring session patterns into .cursor/rules). Only acts when explicitly invoked.",
-        ),
-    );
-    skillify.insert(
-        "scope".into(),
-        key_enum(
-            &["project", "global"],
-            "project",
-            "Where generated rules are written: project (<repo>/.cursor/rules, git-committable) or global (~/.cursor/rules).",
-        ),
-    );
-    skillify.insert(
-        "min_confidence".into(),
-        key(
-            "f32",
-            serde_json::json!(cfg.skillify.min_confidence),
-            "Minimum confidence for a single curated knowledge fact to be codified without repetition (0.0..=1.0).",
-        ),
-    );
-    skillify.insert(
-        "min_recurrence".into(),
-        key(
-            "u32",
-            serde_json::json!(cfg.skillify.min_recurrence),
-            "Minimum reinforcements (confirmations / repeated mentions) before a sub-threshold-confidence pattern is codified.",
-        ),
-    );
-    sections.insert(
-        "skillify".into(),
-        SectionSchema {
-            description:
-                "Skillify miner: distill recurring session diary + knowledge patterns into rules"
-                    .into(),
-            keys: skillify,
         },
     );
 
