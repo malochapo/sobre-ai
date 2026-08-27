@@ -229,12 +229,17 @@ mod tests {
         std::fs::create_dir_all(&vault).unwrap();
         std::fs::write(vault.join("note.md"), "# Vault note\nrotation policy").unwrap();
 
+        // Serialize rather than interpolate: a Windows path is full of
+        // backslashes, and `\U` / `\t` inside a raw JSON literal are invalid
+        // escapes — the registry then failed to parse for the wrong reason.
         write_registry(
             project.path(),
-            &format!(
-                r#"{{"artifacts":[{{"name":"vault","path":"{}","description":"notes"}}]}}"#,
-                vault.display()
-            ),
+            &serde_json::json!({
+                "artifacts": [
+                    {"name": "vault", "path": vault, "description": "notes"}
+                ]
+            })
+            .to_string(),
         );
 
         // Without an allow-list entry the external path is rejected by the jail.

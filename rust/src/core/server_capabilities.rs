@@ -93,9 +93,6 @@ pub const LOCAL_OPTIONAL_FEATURES: &[&str] = &[
     "ast_compression",
     "semantic_search",
     "wasm_runtime",
-    // Self-hosted org gateway run-mode (remote bind + usage store + admin API).
-    // Free to self-host; only compile-gated (`gateway-server` Cargo feature).
-    "gateway_server",
     // Cross-shape routing Anthropic→OpenAI (enterprise#16, `shape-xlat`).
     "shape_translation",
 ];
