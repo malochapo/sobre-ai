@@ -41,10 +41,8 @@ fn strip_comments_keeps_hash_in_words_and_expansions() {
 #[test]
 fn comment_line_between_commands_does_not_block() {
     let _lock = crate::core::data_dir::test_env_lock();
-    crate::test_env::set_var("LEAN_CTX_SHELL_ALLOWLIST_OVERRIDE", "cd,sed,grep");
     let cmd = "cd /repo\n# drop the conflict block\nsed s/a/b/ f\ngrep -c x f";
-    let result = super::super::enforce_shell_allowlist(cmd);
-    crate::test_env::remove_var("LEAN_CTX_SHELL_ALLOWLIST_OVERRIDE");
+    let result = super::super::enforce_shell_gate(cmd);
     assert!(
         result.is_ok(),
         "a comment line must not be treated as a command: {result:?}"
@@ -54,9 +52,7 @@ fn comment_line_between_commands_does_not_block() {
 #[test]
 fn commented_out_command_is_not_executed_but_does_not_leak() {
     let _lock = crate::core::data_dir::test_env_lock();
-    crate::test_env::set_var("LEAN_CTX_SHELL_ALLOWLIST_OVERRIDE", "ls");
-    let result = super::super::enforce_shell_allowlist("ls # rm -rf /");
-    crate::test_env::remove_var("LEAN_CTX_SHELL_ALLOWLIST_OVERRIDE");
+    let result = super::super::enforce_shell_gate("ls # rm -rf /");
     assert!(
         result.is_ok(),
         "trailing comment must not block: {result:?}"

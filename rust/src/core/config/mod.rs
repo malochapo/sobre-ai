@@ -10,7 +10,6 @@ use super::memory_policy::MemoryPolicy;
 /// later load re-reads + re-hashes and only rebuilds on a real change (#406).
 type ConfigCacheSlot = Option<(Arc<Config>, Option<String>, Option<String>)>;
 
-mod defaults_allowlist;
 mod enums;
 mod loader;
 mod memory;
@@ -34,7 +33,6 @@ mod tests;
 #[cfg(test)]
 mod tests_parsing;
 
-pub(crate) use defaults_allowlist::{cloud_infra_commands, default_shell_allowlist};
 pub use enums::{
     CompressionLevel, Effort, OutputDensity, PermissionInheritance, RecoveryHints,
     ResponseVerbosity, RulesInjection, RulesScope, SessionDegrade, TeeMode, TerseAgent,
@@ -600,25 +598,6 @@ pub struct Config {
     /// Override per-agent via ctx_session or programmatically.
     #[serde(default)]
     pub agent_token_budget: usize,
-    /// Optional shell command allowlist. When non-empty, only commands whose base binary
-    /// is in this list are permitted by ctx_shell. Empty = disable allowlist (allow all).
-    /// Default includes common dev tools. Set to `[]` to disable.
-    /// Override via LEAN_CTX_SHELL_ALLOWLIST env var (comma-separated).
-    #[serde(default = "default_shell_allowlist")]
-    pub shell_allowlist: Vec<String>,
-
-    /// Extra commands MERGED on top of the effective `shell_allowlist` without replacing
-    /// the defaults. Setting `shell_allowlist` replaces the whole built-in list (a common
-    /// footgun); entries here are purely additive, which is what `lean-ctx allow <cmd>`
-    /// writes. Only applied in restricted mode (when the base allowlist is non-empty).
-    #[serde(default)]
-    pub shell_allowlist_extra: Vec<String>,
-
-    /// When true, block command substitution ($(), backticks) and process substitution
-    /// (<(), >()) in shell arguments. When false (default), only warn via tracing.
-    /// Default false preserves backward compatibility — set true for maximum security.
-    #[serde(default)]
-    pub shell_strict_mode: bool,
 
     /// Shell-security mode for ctx_shell / `lean-ctx -c` command gating (GL #788):
     /// `enforce` (default, secure), `warn` (run checks, log violations, never
@@ -772,9 +751,6 @@ impl Default for Config {
             sandbox_level: 0,
             reference_results: false,
             agent_token_budget: 0,
-            shell_allowlist: default_shell_allowlist(),
-            shell_allowlist_extra: Vec::new(),
-            shell_strict_mode: false,
             shell_security: None,
             shell_timeout_secs: None,
             shell_heavy_timeout_secs: None,

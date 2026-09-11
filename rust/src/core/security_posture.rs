@@ -17,7 +17,7 @@
 //! to call and safe to use inside deterministic output paths.
 
 use crate::core::config::Config;
-use crate::core::shell_allowlist::ShellSecurity;
+use crate::core::shell_gate::ShellSecurity;
 use std::path::Path;
 
 /// Effective state of the filesystem path jail.

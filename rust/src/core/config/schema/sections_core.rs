@@ -567,31 +567,6 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
         ),
     );
     root.insert(
-        "shell_allowlist".into(),
-        key_with_env(
-            "array",
-            serde_json::json!([]),
-            "Optional shell command allowlist. When non-empty, only listed binaries are permitted",
-            "LEAN_CTX_SHELL_ALLOWLIST",
-        ),
-    );
-    root.insert(
-            "shell_allowlist_extra".into(),
-            key(
-                "array",
-                serde_json::json!([]),
-                "Commands merged on top of shell_allowlist without replacing the defaults. Managed via `lean-ctx allow <cmd>`",
-            ),
-        );
-    root.insert(
-        "shell_strict_mode".into(),
-        key(
-            "bool",
-            serde_json::json!(false),
-            "Block $(), backticks, <() in shell arguments. Default false = warn only.",
-        ),
-    );
-    root.insert(
         "shell_security".into(),
         key_with_env(
             "string",

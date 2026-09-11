@@ -107,7 +107,7 @@ impl McpTool for CtxShellTool {
         // The write-doctrine check (no `>`, `tee`, heredoc-to-file, curl -o, …)
         // is an MCP-payload-safety convention, not a security boundary, so it is
         // opt-out via `shell_allow_writes` (#523). The real command gating
-        // (`check_shell_allowlist`, below) is NOT affected by this flag.
+        // (`check_shell_command`, below) is NOT affected by this flag.
         let config = crate::core::config::Config::load();
         let write_allow_paths = config.write_allow_paths_effective();
         let project_root = crate::core::config::Config::find_project_root();
@@ -128,7 +128,7 @@ impl McpTool for CtxShellTool {
             });
         }
 
-        if let Err(msg) = crate::core::shell_allowlist::check_shell_allowlist(&command) {
+        if let Err(msg) = crate::core::shell_gate::check_shell_command(&command) {
             return Ok(ToolOutput {
                 shell_outcome: Some(ShellOutcome::Blocked),
                 content_blocks: None,
@@ -601,10 +601,10 @@ fn is_dangerous_env_key(key: &str) -> bool {
 /// WARN-ONLY: command still executes, this is purely observational.
 fn warn_shell_secret_paths(command: &str) {
     const READ_CMDS: &[&str] = &["cat", "head", "tail", "less", "more", "bat"];
-    let segments = crate::core::shell_allowlist::extract_all_commands_pub(command);
+    let segments = crate::core::shell_gate::extract_all_commands_pub(command);
     for seg in &segments {
         let trimmed = seg.trim();
-        let tokens = crate::core::shell_allowlist::shell_tokenize(trimmed);
+        let tokens = crate::core::shell_gate::shell_tokenize(trimmed);
         if tokens.is_empty() {
             continue;
         }

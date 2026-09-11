@@ -3,7 +3,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
-use super::{Config, ConfigCacheSlot, default_shell_allowlist};
+use super::{Config, ConfigCacheSlot};
 
 /// Holds the most recent global `config.toml` parse error, if the file currently
 /// fails to parse. When that happens `Config::load()` silently falls back to the
@@ -40,14 +40,6 @@ fn record_parse_error(err: Option<String>) {
 pub(crate) fn strip_sensitive_overrides(local: &mut Config) -> Vec<&'static str> {
     let mut withheld: Vec<&'static str> = Vec::new();
 
-    if local.shell_allowlist != default_shell_allowlist() {
-        local.shell_allowlist = default_shell_allowlist();
-        withheld.push("shell_allowlist");
-    }
-    if !local.shell_allowlist_extra.is_empty() {
-        local.shell_allowlist_extra.clear();
-        withheld.push("shell_allowlist_extra");
-    }
     if !local.allow_paths.is_empty() {
         local.allow_paths.clear();
         withheld.push("allow_paths");

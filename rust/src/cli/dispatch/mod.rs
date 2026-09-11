@@ -240,10 +240,6 @@ pub fn run() {
                 super::cmd_config(&rest);
                 return;
             }
-            "allow" => {
-                super::cmd_allow(&rest);
-                return;
-            }
             "security" => {
                 super::cmd_security(&rest);
                 return;

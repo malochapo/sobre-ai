@@ -552,7 +552,7 @@ fn stdout_is_regular_file() -> bool {
 /// that exit code; `None` when execution may proceed (allowed, or warn-only for
 /// an interactive human — see [`allowlist_must_enforce`]).
 fn allowlist_gate(command: &str) -> Option<i32> {
-    if let Err(msg) = crate::core::shell_allowlist::check_shell_allowlist(command) {
+    if let Err(msg) = crate::core::shell_gate::check_shell_command(command) {
         if allowlist_must_enforce() {
             eprintln!("{msg}");
             eprintln!(
@@ -892,7 +892,6 @@ mod exec_tests {
     fn exec_argv_runs_simple_command() {
         let _lock = crate::core::data_dir::test_env_lock();
         crate::test_env::remove_var("LEAN_CTX_HOOK_CHILD");
-        crate::test_env::remove_var("LEAN_CTX_SHELL_ALLOWLIST_OVERRIDE");
         let code = super::exec_argv(&["true".to_string()]);
         assert_eq!(code, 0);
     }
@@ -900,37 +899,10 @@ mod exec_tests {
     #[test]
     fn exec_argv_passes_through_when_disabled() {
         let _lock = crate::core::data_dir::test_env_lock();
-        crate::test_env::remove_var("LEAN_CTX_SHELL_ALLOWLIST_OVERRIDE");
         crate::test_env::set_var("LEAN_CTX_DISABLED", "1");
         let code = super::exec_argv(&["true".to_string()]);
         crate::test_env::remove_var("LEAN_CTX_DISABLED");
         assert_eq!(code, 0);
-    }
-
-    // Finding 1 (GH security audit): the `-t` track path is the default shell
-    // hook, so it must enforce the allowlist exactly like the `-c` path. A
-    // non-allowlisted command must be blocked (126), not executed.
-    #[test]
-    fn exec_argv_enforces_allowlist_for_disallowed_command() {
-        let _lock = crate::core::data_dir::test_env_lock();
-        crate::test_env::remove_var("LEAN_CTX_ACTIVE");
-        crate::test_env::remove_var("LEAN_CTX_DISABLED");
-        crate::test_env::remove_var("LEAN_CTX_ALLOWLIST_WARN_ONLY");
-        // hook-child forces enforcement regardless of the test runner's TTY state.
-        crate::test_env::set_var("LEAN_CTX_HOOK_CHILD", "1");
-        crate::test_env::set_var("LEAN_CTX_SHELL_ALLOWLIST_OVERRIDE", "git");
-
-        // #1022: `true` is now a SHELL_BUILTIN (bypasses allowlist).
-        // Use `xxd` which is a real binary and not in the override list.
-        let code = super::exec_argv(&["xxd".to_string()]);
-
-        crate::test_env::remove_var("LEAN_CTX_HOOK_CHILD");
-        crate::test_env::remove_var("LEAN_CTX_SHELL_ALLOWLIST_OVERRIDE");
-
-        assert_eq!(
-            code, 126,
-            "non-allowlisted command must be blocked on the -t track path"
-        );
     }
 
     #[test]
@@ -939,12 +911,10 @@ mod exec_tests {
         crate::test_env::remove_var("LEAN_CTX_ACTIVE");
         crate::test_env::remove_var("LEAN_CTX_DISABLED");
         crate::test_env::set_var("LEAN_CTX_HOOK_CHILD", "1");
-        crate::test_env::set_var("LEAN_CTX_SHELL_ALLOWLIST_OVERRIDE", "true");
 
         let code = super::exec_argv(&["true".to_string()]);
 
         crate::test_env::remove_var("LEAN_CTX_HOOK_CHILD");
-        crate::test_env::remove_var("LEAN_CTX_SHELL_ALLOWLIST_OVERRIDE");
 
         assert_eq!(code, 0, "allowlisted command must run on the -t track path");
     }

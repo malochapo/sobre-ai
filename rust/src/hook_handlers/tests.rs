@@ -20,15 +20,11 @@ fn expect_wrapped(cmd: &str, binary: &str) -> String {
 /// branch (left raw for the agent shell, #589) is exercised. Serialized via the
 /// shared test lock; the env is removed before the caller asserts so a failed
 /// assertion can never leak it into another test.
+/// Serializes on the shared env lock. It used to install a test allowlist too;
+/// with invariant 6 there is no list, so only the lock remains.
 fn with_test_allowlist<T>(body: impl FnOnce() -> T) -> T {
     let _lock = crate::core::data_dir::test_env_lock();
-    crate::test_env::set_var(
-        "LEAN_CTX_SHELL_ALLOWLIST_OVERRIDE",
-        "git,cargo,npm,head,grep,wc,cat,rg,echo,cd,ls",
-    );
-    let out = body();
-    crate::test_env::remove_var("LEAN_CTX_SHELL_ALLOWLIST_OVERRIDE");
-    out
+    body()
 }
 
 #[test]
@@ -652,15 +648,6 @@ fn compound_tricky_interpreter_sink_left_raw() {
 }
 
 #[test]
-fn compound_tricky_non_allowlisted_sink_left_raw() {
-    // `kubectl` is rewritable but deliberately excluded from the defaults; the
-    // compound therefore fails the gate and stays raw rather than being blocked.
-    let result =
-        with_test_allowlist(|| build_rewrite_compound("git log | kubectl apply -f -", "lean-ctx"));
-    assert_eq!(result, None);
-}
-
-#[test]
 fn compound_tricky_chain_sink_left_raw() {
     let result = with_test_allowlist(|| {
         build_rewrite_compound("cargo test && python3 -c 'print(1)'", "lean-ctx")
@@ -1207,27 +1194,12 @@ fn gh760_non_rewritable_command_not_wrapped() {
 #[test]
 fn gh760_pipeline_with_path_segments_wraps_when_gate_clean() {
     let _lock = crate::core::data_dir::test_env_lock();
-    crate::test_env::set_var("LEAN_CTX_SHELL_ALLOWLIST_OVERRIDE", "find,tr");
     let cmd = "find target/quarkus-app/lib -name \"*.jar\" | tr '\\n' ':'";
     let result = rewrite_candidate(cmd, "lean-ctx");
-    crate::test_env::remove_var("LEAN_CTX_SHELL_ALLOWLIST_OVERRIDE");
     assert_eq!(
         result,
         Some(expect_wrapped(cmd, "lean-ctx")),
         "gate-clean pipeline must be wrapped whole; path segment 'lib' must not interfere"
-    );
-}
-
-#[test]
-fn gh760_pipeline_with_non_allowed_sink_left_raw() {
-    let _lock = crate::core::data_dir::test_env_lock();
-    crate::test_env::set_var("LEAN_CTX_SHELL_ALLOWLIST_OVERRIDE", "find");
-    let cmd = "find . -name '*.jar' | custom-tool";
-    let result = rewrite_candidate(cmd, "lean-ctx");
-    crate::test_env::remove_var("LEAN_CTX_SHELL_ALLOWLIST_OVERRIDE");
-    assert_eq!(
-        result, None,
-        "non-allowlisted sink must not be wrapped (passes through raw)"
     );
 }
 

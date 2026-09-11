@@ -1,4 +1,3 @@
-mod allow_cmd;
 pub mod audit_report;
 mod call_cmd;
 mod common;
@@ -37,7 +36,6 @@ mod tools_health_cmd;
 mod trust_cmd;
 mod verify_cache_cmd;
 mod visualize_cmd;
-pub use allow_cmd::cmd_allow;
 pub(crate) use call_cmd::cmd_call;
 pub use common::load_shell_history_pub;
 pub use config_cmd::*;

@@ -6,55 +6,43 @@ use crate::doctor::{BOLD, DIM, GREEN, Outcome, RED, RST, YELLOW};
 /// Reports the shell allowlist exactly as the MCP tools enforce it — and, crucially,
 /// flags when `config.toml` fails to parse (the silent-default trap behind #341,
 /// where an allowlist edit appears to "do nothing" because the file never loaded).
-pub(crate) fn shell_allowlist_outcome() -> Outcome {
+pub(crate) fn shell_gate_outcome() -> Outcome {
     if let Some(err) = crate::core::config::last_config_parse_error() {
         let short = err.lines().next().unwrap_or("parse error");
         return Outcome {
             ok: false,
             line: format!(
-                "{BOLD}Shell allowlist{RST}  {RED}config.toml fails to parse → running on DEFAULTS{RST}  {DIM}({short}){RST}"
+                "{BOLD}Shell gating{RST}  {RED}config.toml fails to parse → running on DEFAULTS{RST}  {DIM}({short}){RST}"
             ),
         };
     }
 
-    // GL #788: the security mode overrides the allowlist view, so surface a
-    // relaxed posture loudly — an unexpected `off`/`warn` must never hide behind
-    // a populated allowlist.
-    match crate::core::shell_allowlist::ShellSecurity::resolve() {
-        crate::core::shell_allowlist::ShellSecurity::Off => {
+    // GL #788: surface a relaxed posture loudly — an unexpected `off`/`warn`
+    // silently drops the unconditional blocks, which is the only gating left.
+    match crate::core::shell_gate::ShellSecurity::resolve() {
+        crate::core::shell_gate::ShellSecurity::Off => {
             return Outcome {
                 ok: true,
                 line: format!(
-                    "{BOLD}Shell allowlist{RST}  {YELLOW}off{RST}  {DIM}(shell_security=off — gating skipped, all commands allowed){RST}"
+                    "{BOLD}Shell gating{RST}  {YELLOW}off{RST}  {DIM}(shell_security=off — even the unconditional blocks are skipped){RST}"
                 ),
             };
         }
-        crate::core::shell_allowlist::ShellSecurity::Warn => {
+        crate::core::shell_gate::ShellSecurity::Warn => {
             return Outcome {
                 ok: true,
                 line: format!(
-                    "{BOLD}Shell allowlist{RST}  {YELLOW}warn-only{RST}  {DIM}(shell_security=warn — violations logged, never blocked){RST}"
+                    "{BOLD}Shell gating{RST}  {YELLOW}warn-only{RST}  {DIM}(shell_security=warn — violations logged, never blocked){RST}"
                 ),
             };
         }
-        crate::core::shell_allowlist::ShellSecurity::Enforce => {}
-    }
-
-    let effective = crate::core::shell_allowlist::effective_allowlist_pub();
-    if effective.is_empty() {
-        return Outcome {
-            ok: true,
-            line: format!(
-                "{BOLD}Shell allowlist{RST}  {YELLOW}disabled{RST}  {DIM}(all commands allowed){RST}"
-            ),
-        };
+        crate::core::shell_gate::ShellSecurity::Enforce => {}
     }
 
     Outcome {
         ok: true,
         line: format!(
-            "{BOLD}Shell allowlist{RST}  {GREEN}{} command(s) enforced{RST}  {DIM}(add one: lean-ctx allow <cmd>){RST}",
-            effective.len()
+            "{BOLD}Shell gating{RST}  {GREEN}enforce{RST}  {DIM}(every command allowed; eval/exec/source and interpreter-eval blocked){RST}"
         ),
     }
 }

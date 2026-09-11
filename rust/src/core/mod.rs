@@ -437,7 +437,7 @@ pub mod security_posture;
 pub mod sensitivity;
 pub mod server_capabilities;
 pub mod session_token;
-pub mod shell_allowlist;
+pub mod shell_gate;
 pub mod startup_guard;
 pub mod stats;
 pub mod symbol_map;

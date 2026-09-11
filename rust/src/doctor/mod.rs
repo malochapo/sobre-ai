@@ -294,7 +294,7 @@ pub fn run() -> u32 {
     board.check(&config_parity_outcome());
 
     // 5b) Shell allowlist (effective runtime view + silent-parse-error trap, #341)
-    let allowlist_outcome = shell_allowlist_outcome();
+    let allowlist_outcome = shell_gate_outcome();
     board.check(&allowlist_outcome);
 
     // 5b2) Path jail (effective state + dead allow_paths entries, GH #392)

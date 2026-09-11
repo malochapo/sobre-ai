@@ -12,7 +12,7 @@ pub fn handle(
     timeout: Option<u64>,
 ) -> (String, ShellOutcome) {
     if language.eq_ignore_ascii_case("shell")
-        && let Err(message) = crate::core::shell_allowlist::check_shell_allowlist(code)
+        && let Err(message) = crate::core::shell_gate::check_shell_command(code)
     {
         return (message.to_string(), ShellOutcome::Blocked);
     }
@@ -88,7 +88,7 @@ pub fn handle_file(
 pub fn handle_batch(items: &[(String, String)]) -> (String, ShellOutcome) {
     for (index, (language, code)) in items.iter().enumerate() {
         if language.eq_ignore_ascii_case("shell")
-            && let Err(message) = crate::core::shell_allowlist::check_shell_allowlist(code)
+            && let Err(message) = crate::core::shell_gate::check_shell_command(code)
         {
             return (
                 format!(
@@ -300,18 +300,16 @@ mod tests {
 
     #[test]
     #[serial_test::serial]
-    fn shell_execution_cannot_bypass_ctx_shell_allowlist() {
+    fn shell_execution_cannot_bypass_the_shell_gate() {
         // Both guards are needed: `#[serial]` and `test_env_lock` are separate
         // mutexes. The override below replaces the allowlist wholesale, which
         // broke `gh391_strict_mode_blocks_substitution_in_args` — a test that
         // serializes on the lock, not on `#[serial]`.
         let _env_lock = crate::core::data_dir::test_env_lock();
-        crate::test_env::set_var("LEAN_CTX_SHELL_ALLOWLIST_OVERRIDE", "echo");
-        let (result, outcome) = handle("shell", "definitely_not_allowed_command", None, None);
-        crate::test_env::remove_var("LEAN_CTX_SHELL_ALLOWLIST_OVERRIDE");
+        let (result, outcome) = handle("shell", "eval 'rm -rf /'", None, None);
         assert_eq!(outcome, ShellOutcome::Blocked);
         assert!(
-            result.contains("shell allowlist"),
+            result.contains("DO NOT RETRY"),
             "unexpected result: {result}"
         );
     }
@@ -320,16 +318,11 @@ mod tests {
     #[serial_test::serial]
     fn shell_batch_is_preflighted_before_any_item_runs() {
         let _env_lock = crate::core::data_dir::test_env_lock();
-        crate::test_env::set_var("LEAN_CTX_SHELL_ALLOWLIST_OVERRIDE", "echo");
         let items = vec![
             ("shell".to_string(), "echo safe".to_string()),
-            (
-                "shell".to_string(),
-                "definitely_not_allowed_command".to_string(),
-            ),
+            ("shell".to_string(), "eval 'rm -rf /'".to_string()),
         ];
         let (result, outcome) = handle_batch(&items);
-        crate::test_env::remove_var("LEAN_CTX_SHELL_ALLOWLIST_OVERRIDE");
         assert_eq!(outcome, ShellOutcome::Blocked);
         assert!(result.contains("batch item 2 blocked"));
     }

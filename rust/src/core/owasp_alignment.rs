@@ -45,7 +45,7 @@ pub fn alignment() -> Vec<OwaspMapping> {
                 },
                 Mitigation {
                     feature: "Shell Allowlist",
-                    module: "core/shell_allowlist.rs",
+                    module: "core/shell_gate/mod.rs",
                     description: "Opt-in command allowlist restricting which binaries agents can execute",
                 },
                 Mitigation {

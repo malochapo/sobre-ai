@@ -22,7 +22,7 @@
 use super::prompt::{confirm, wants_yes};
 use crate::core::config::setter::set_by_key;
 use crate::core::security_posture::{JailState, PostureLevel, SecurityPosture};
-use crate::core::shell_allowlist::ShellSecurity;
+use crate::core::shell_gate::ShellSecurity;
 
 const BOLD: &str = "\x1b[1m";
 const DIM: &str = "\x1b[2m";
@@ -79,7 +79,7 @@ fn apply_open(args: &[String]) {
 
 /// Restore the secure defaults for both containment planes. Always safe, so no
 /// confirmation is required. Leaves legitimate multi-root config
-/// (`allow_paths`/`extra_roots`, `shell_allowlist_extra`) untouched.
+/// (`allow_paths`/`extra_roots`) untouched.
 fn apply_strict() {
     apply_keys(
         &[

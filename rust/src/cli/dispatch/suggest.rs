@@ -43,7 +43,6 @@ pub(crate) const KNOWN_COMMANDS: &[&str] = &[
     "compact",
     "tools",
     "config",
-    "allow",
     "untrust",
     "introspect",
     "cache",

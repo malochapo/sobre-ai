@@ -224,7 +224,7 @@ pub fn list() -> Vec<TrustedWorkspace> {
 ///
 /// `Config::merge_local` already logs the identical fact via `tracing::warn`, but
 /// that goes to stderr — invisible over an MCP/stdio transport. So a blocked
-/// command (`shell_allowlist*`) or read (`allow_paths`) otherwise gives the agent
+/// read scope (`allow_paths`/`extra_roots`) otherwise gives the agent
 /// no clue why an edit "did nothing"; this surfaces it inside the error itself.
 #[must_use]
 pub fn untrusted_override_notice() -> Option<String> {
@@ -334,12 +334,12 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(
             dir.path().join(".lean-ctx.toml"),
-            "allow_paths = [\"/srv/data\"]\nshell_allowlist_extra = [\"glab\"]\n",
+            "allow_paths = [\"/srv/data\"]\nextra_roots = [\"/srv/other\"]\n",
         )
         .unwrap();
         let notice = untrusted_override_notice_for(dir.path()).expect("untrusted → notice");
         assert!(notice.contains("allow_paths"), "{notice}");
-        assert!(notice.contains("shell_allowlist_extra"), "{notice}");
+        assert!(notice.contains("extra_roots"), "{notice}");
         assert!(notice.contains("lean-ctx trust"), "{notice}");
     }
 

@@ -300,15 +300,6 @@ impl Config {
         override_if_ne!(default.bm25_max_cache_mb, bm25_max_cache_mb);
         override_if_ne!(default.memory_profile, memory_profile);
         override_if_ne!(default.memory_cleanup, memory_cleanup);
-        // Only override when the local file actually defines `shell_allowlist`.
-        // The field carries `#[serde(default = "default_shell_allowlist")]`, so a
-        // local `.lean-ctx.toml` that omits the key still deserializes to the full
-        // 201-entry built-in list — an `is_empty()` guard would then silently clobber
-        // a deliberately shorter global allowlist with the defaults. Comparing against
-        // the default (the same pattern used for every other merged field) treats
-        // "omitted" as "no override".
-        override_if_ne!(default.shell_allowlist, shell_allowlist);
-        extend_if_nonempty!(shell_allowlist_extra);
         replace_if_nonempty!(default_tool_categories);
         override_if_true!(no_degrade);
         override_if_true!(delta_explicit);

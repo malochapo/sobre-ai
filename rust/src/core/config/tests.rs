@@ -731,56 +731,16 @@ mod extra_roots_tests {
     }
 
     #[test]
-    fn merge_local_omitting_shell_allowlist_keeps_global() {
-        // Regression: the field defaults (via serde) to the full built-in list, so a
-        // local override that never mentions `shell_allowlist` must NOT clobber a
-        // deliberately shorter global allowlist.
-        let mut base = Config {
-            shell_allowlist: vec!["git".to_string(), "cargo".to_string()],
-            ..Config::default()
-        };
-        base.merge_local(r"minimal_overhead = true", true);
-        assert_eq!(base.shell_allowlist, vec!["git", "cargo"]);
-    }
-
-    #[test]
-    fn merge_local_defining_shell_allowlist_overrides() {
-        let mut base = Config {
-            shell_allowlist: vec!["git".to_string(), "cargo".to_string()],
-            ..Config::default()
-        };
-        base.merge_local(r#"shell_allowlist = ["npm"]"#, true);
-        assert_eq!(base.shell_allowlist, vec!["npm"]);
-    }
-
-    #[test]
-    fn merge_local_empty_shell_allowlist_disables_restriction() {
-        // Explicit empty list = intentional blocklist-only mode; must be honored.
-        let mut base = Config {
-            shell_allowlist: vec!["git".to_string()],
-            ..Config::default()
-        };
-        base.merge_local(r"shell_allowlist = []", true);
-        assert!(base.shell_allowlist.is_empty());
-    }
-
-    #[test]
     fn merge_local_untrusted_withholds_sensitive_keeps_comfort() {
-        // Finding 4: an untrusted workspace's security-sensitive overrides
-        // (allowlist, path-jail widening) are withheld, but a comfort override
-        // (theme) still applies — selective gating, not a blanket block.
-        let mut base = Config {
-            shell_allowlist: vec!["git".to_string()],
-            ..Config::default()
-        };
+        // Finding 4: an untrusted workspace's security-sensitive override
+        // (path-jail widening) is withheld, but a comfort override (theme)
+        // still applies — selective gating, not a blanket block.
+        let mut base = Config::default();
         base.merge_local(
-            "shell_allowlist = [\"rm\"]\nextra_roots = [\"/etc\"]\ntheme = \"midnight\"\n",
+            "extra_roots = [\"/etc\"]
+theme = \"midnight\"
+",
             false,
-        );
-        assert_eq!(
-            base.shell_allowlist,
-            vec!["git"],
-            "sensitive allowlist override must be withheld for untrusted workspace"
         );
         assert!(
             base.extra_roots.is_empty(),
@@ -794,15 +754,12 @@ mod extra_roots_tests {
 
     #[test]
     fn merge_local_trusted_applies_sensitive() {
-        let mut base = Config {
-            shell_allowlist: vec!["git".to_string()],
-            ..Config::default()
-        };
+        let mut base = Config::default();
         base.merge_local(
-            "shell_allowlist = [\"rm\"]\nextra_roots = [\"/etc\"]\n",
+            "extra_roots = [\"/etc\"]
+",
             true,
         );
-        assert_eq!(base.shell_allowlist, vec!["rm"]);
         assert_eq!(base.extra_roots, vec!["/etc"]);
     }
 

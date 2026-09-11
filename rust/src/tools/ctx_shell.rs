@@ -27,7 +27,7 @@ pub(crate) fn validate_command_with_write_allow_paths(
 
     // #931: strip heredoc bodies before the redirect scanner — a `>` inside a
     // heredoc body is opaque data, not a file-write redirect.
-    let cmd_no_heredoc = crate::core::shell_allowlist::strip_all_heredoc_bodies(command);
+    let cmd_no_heredoc = crate::core::shell_gate::strip_all_heredoc_bodies(command);
     if has_file_write_redirect(&cmd_no_heredoc, write_allow_paths, project_root) {
         return Some(
             "ERROR: ctx_shell detected a file-write command (shell redirect > or >>). \
@@ -101,8 +101,8 @@ fn is_scratch_path(path: &str) -> bool {
 /// (`curl -o`, `wget` default mode, `dd of=`) — the redirect-free equivalent of
 /// `> file`, reported as a `validate_command` bypass in GH #391.
 fn download_to_file_reason(command: &str) -> Option<String> {
-    for seg in crate::core::shell_allowlist::extract_all_commands_pub(command) {
-        let tokens = crate::core::shell_allowlist::shell_tokenize(seg.trim());
+    for seg in crate::core::shell_gate::extract_all_commands_pub(command) {
+        let tokens = crate::core::shell_gate::shell_tokenize(seg.trim());
         let Some(first) = tokens.first() else {
             continue;
         };
@@ -192,7 +192,7 @@ fn is_heredoc_file_write(
     }
     // #931: strip heredoc bodies so `>` / `>>` inside the body are not
     // mistaken for file-write redirects.
-    let stripped = crate::core::shell_allowlist::strip_all_heredoc_bodies(command);
+    let stripped = crate::core::shell_gate::strip_all_heredoc_bodies(command);
     has_file_write_redirect(&stripped, write_allow_paths, project_root)
 }
 
@@ -273,10 +273,10 @@ fn resolve_path_for_comparison(path: &std::path::Path) -> std::path::PathBuf {
 }
 
 fn tee_targets(command: &str) -> Vec<String> {
-    crate::core::shell_allowlist::extract_all_commands_pub(command)
+    crate::core::shell_gate::extract_all_commands_pub(command)
         .into_iter()
         .filter_map(|segment| {
-            let tokens = crate::core::shell_allowlist::shell_tokenize(segment.trim());
+            let tokens = crate::core::shell_gate::shell_tokenize(segment.trim());
             let first = tokens.first()?;
             if first.rsplit('/').next().unwrap_or(first) != "tee" {
                 return None;
