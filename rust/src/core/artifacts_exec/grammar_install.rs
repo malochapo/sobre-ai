@@ -8,7 +8,7 @@
 //! Since GH #724 Phase 1 the download → verify → atomic-install mechanics
 //! live in [`super::artifact_install`] (shared with managed addon binaries);
 //! this module keeps only the grammar-specific policy gates and the silent
-//! failure contract. Fetch is skipped when `addons.policy = locked`; any
+//! failure contract. Fetch is skipped when `addons.locked = true`; any
 //! other failure (offline, network error, hash mismatch) is silent to the
 //! caller — [`super::super::signatures_ts::grammar_loader`] treats "could
 //! not fetch" exactly like "not installed" and falls through to the
@@ -21,7 +21,6 @@ use std::path::Path;
 use super::artifact_install::{ArtifactUse, fetch_verified, require_sha256_pin};
 use super::binhash::sha256_file;
 use super::grammar_manifest::{GrammarAsset, GrammarManifest};
-use super::policy::AddonPolicy;
 
 /// Ensure `asset` is present at `dest` with a matching SHA-256, fetching it
 /// if not. No-op if already installed and valid. `dest`'s parent directory
@@ -41,8 +40,8 @@ pub(crate) fn ensure_installed(
     require_sha256_pin(&context, &asset.sha256)?;
 
     let addons = crate::core::config::Config::load().addons;
-    if addons.policy() == AddonPolicy::Locked {
-        return Err("addons.policy = locked: grammar-addon fetch disabled".into());
+    if addons.locked {
+        return Err("addons.locked = true: grammar-addon fetch disabled".into());
     }
     if !addons.grammar_auto_fetch {
         return Err("addons.grammar_auto_fetch = false: fetch disabled".into());

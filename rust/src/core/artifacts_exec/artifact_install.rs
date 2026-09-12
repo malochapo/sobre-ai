@@ -22,7 +22,6 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 
 use super::binhash::sha256_file;
-use super::policy::AddonPolicy;
 
 /// One platform's downloadable artifact: a grammar dylib or an addon binary.
 /// The shape every registry surface shares (GH #724 — `GrammarAsset` is an
@@ -170,7 +169,7 @@ pub(crate) fn fetch_verified(
 /// Ensure the prebuilt addon binary for `asset` is installed in the managed
 /// bin dir for `name`/`version`, fetching + verifying it if absent. Returns
 /// the absolute binary path the gateway must spawn. No-op (pure hash check)
-/// when already installed and valid; `addons.policy = locked` blocks any
+/// when already installed and valid; `addons.locked = true` blocks any
 /// fetch before network I/O.
 pub fn ensure_addon_binary(
     name: &str,
@@ -187,8 +186,8 @@ pub fn ensure_addon_binary(
     }
 
     let addons = crate::core::config::Config::load().addons;
-    if addons.policy() == AddonPolicy::Locked {
-        return Err("addons.policy = locked: managed artifact fetch disabled".into());
+    if addons.locked {
+        return Err("addons.locked = true: managed artifact fetch disabled".into());
     }
 
     let context = format!("addon `{name}`");
@@ -284,13 +283,13 @@ mod tests {
         assert_eq!(got, bin);
     }
 
-    /// `addons.policy = locked` blocks the fetch before any network I/O —
+    /// `addons.locked = true` blocks the fetch before any network I/O —
     /// the acceptance criterion of GH #725.
     #[test]
     fn locked_policy_blocks_fetch() {
         let _iso = isolated_data_dir();
         crate::core::config::Config::update_global(|cfg| {
-            cfg.addons.policy = "locked".into();
+            cfg.addons.locked = true;
         })
         .unwrap();
 

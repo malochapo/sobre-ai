@@ -73,11 +73,6 @@ pub async fn proxy(
     let resolved = server.resolve()?;
     let timeout = std::time::Duration::from_secs(cfg.call_timeout_secs.max(1));
     let call = client::proxy_call(&resolved, tool, arguments, timeout).await;
-    // Per-addon usage metering (P5): attribute every proxied call to its server +
-    // tool. A transport failure or a downstream `is_error` counts as an error.
-    // Side-channel only — never touches the returned text (output determinism).
-    let ok = matches!(&call, Ok(r) if !r.is_error.unwrap_or(false));
-    crate::core::artifacts_exec::meter::record(server_name, tool, ok);
     let result = call?;
     // Downstream output is untrusted content (#866): redact secrets + audit it
     // before it enters the model context.

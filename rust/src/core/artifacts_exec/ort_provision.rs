@@ -6,7 +6,7 @@
 //!
 //! - Release binaries stay CPU-only `load-dynamic`; nothing is bundled.
 //! - Provisioning is **explicit** (`lean-ctx embeddings provision`) — never a
-//!   silent download on first tool call. `addons.policy = locked` blocks it.
+//!   silent download on first tool call. `addons.locked = true` blocks it.
 //! - Only the official CPU runtime is managed. GPU/NPU execution providers
 //!   remain opt-in feature builds with user-supplied runtimes.
 //!
@@ -25,7 +25,6 @@ use std::path::{Path, PathBuf};
 
 use super::artifact_install::current_target_triple;
 use super::binhash::sha256_file;
-use super::policy::AddonPolicy;
 
 /// Managed ONNX Runtime version. Must satisfy `1.{ort::MINOR_VERSION}.x` of
 /// the `ort` crate compiled into this binary (guarded by a test when the
@@ -130,8 +129,8 @@ pub fn provision(force: bool) -> Result<PathBuf, String> {
     }
 
     let addons = crate::core::config::Config::load().addons;
-    if addons.policy() == AddonPolicy::Locked {
-        return Err("addons.policy = locked: managed artifact fetch disabled".into());
+    if addons.locked {
+        return Err("addons.locked = true: managed artifact fetch disabled".into());
     }
 
     let archive = archive_for(current_target_triple())?;

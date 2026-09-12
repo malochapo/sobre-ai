@@ -110,16 +110,7 @@ impl RevocationList {
 /// the installed-addon version. Returns the reason when the server must not run.
 #[must_use]
 pub fn blocked_reason(server_name: &str) -> Option<String> {
-    let installed_version = super::store::InstalledStore::load()
-        .get(server_name)
-        .map(|a| a.version.clone());
-    RevocationList::load().verdict(server_name, installed_version.as_deref())
-}
-
-/// Install-time block check: the manifest version is known directly.
-#[must_use]
-pub fn install_block(name: &str, version: &str) -> Option<String> {
-    RevocationList::load().verdict(name, Some(version))
+    RevocationList::load().verdict(server_name, None)
 }
 
 #[cfg(test)]
@@ -166,34 +157,5 @@ mod tests {
         assert!(reloaded.unrevoke("evil").is_some());
         reloaded.save().expect("save");
         assert!(RevocationList::load().verdict("evil", None).is_none());
-    }
-
-    #[test]
-    fn blocked_reason_uses_installed_version() {
-        let _iso = isolated_data_dir();
-        // Revoke a specific installed version.
-        let mut list = RevocationList::load();
-        list.revoke("demo", "pinned bad version", Some("1.0.0".into()));
-        list.save().expect("save");
-
-        let mut store = super::super::store::InstalledStore::load();
-        store.upsert(super::super::store::InstalledAddon {
-            name: "demo".into(),
-            version: "1.0.0".into(),
-            source: "registry".into(),
-            gateway_server: "demo".into(),
-            granted_capabilities: None,
-            content_hash: None,
-            install: None,
-            artifact: None,
-        });
-        store.save().expect("save");
-
-        assert!(
-            blocked_reason("demo").is_some(),
-            "installed 1.0.0 is revoked"
-        );
-        assert!(install_block("demo", "1.0.0").is_some());
-        assert!(install_block("demo", "1.0.1").is_none());
     }
 }

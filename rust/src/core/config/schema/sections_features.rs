@@ -597,19 +597,11 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
 
     let mut addons = BTreeMap::new();
     addons.insert(
-        "policy".into(),
-        key_enum(
-            &["open", "verified_only", "allowlist", "locked"],
-            cfg.addons.policy.as_str(),
-            "Addon install policy: open (any) | verified_only | allowlist | locked",
-        ),
-    );
-    addons.insert(
-        "allowlist".into(),
+        "locked".into(),
         key(
-            "array",
-            serde_json::json!(cfg.addons.allowlist),
-            "Addon slugs permitted when policy = allowlist",
+            "bool",
+            serde_json::json!(cfg.addons.locked),
+            "Refuse every managed fetch: grammar dylibs, the ONNX Runtime dylib, artifact downloads",
         ),
     );
     addons.insert(
@@ -629,35 +621,11 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
         ),
     );
     addons.insert(
-        "block_risky".into(),
-        key(
-            "bool",
-            serde_json::json!(cfg.addons.block_risky),
-            "Refuse to install an addon that has a high-risk (Danger) capability",
-        ),
-    );
-    addons.insert(
         "enforce_capabilities".into(),
         key(
             "bool",
             serde_json::json!(cfg.addons.enforce_capabilities),
             "Fail closed when an addon declares restricted [capabilities] but no OS sandbox launcher is available to enforce them",
-        ),
-    );
-    addons.insert(
-        "metering".into(),
-        key(
-            "bool",
-            serde_json::json!(cfg.addons.metering),
-            "Record per-addon / per-tool gateway usage to <data_dir>/addons/usage.json (analytics + billing base)",
-        ),
-    );
-    addons.insert(
-        "allow_bootstrap".into(),
-        key(
-            "bool",
-            serde_json::json!(cfg.addons.allow_bootstrap),
-            "Allow `addon add` to install an addon's upstream package via a pinned manager (uv/pip/cargo/npm/brew/dotnet). Off = refuse bootstrap installs",
         ),
     );
     addons.insert(

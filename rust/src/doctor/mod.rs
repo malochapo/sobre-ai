@@ -313,9 +313,6 @@ pub fn run() -> u32 {
     // 5b3c) Managed addon binaries (GH #725): receipt path + sha256 pin +
     // revocation, so binhash-gate refusals surface here instead of at first
     // tool call. Silent when nothing is managed.
-    if let Some(managed_bins) = managed_addon_binaries_outcome() {
-        board.check(&managed_bins);
-    }
 
     // 5b3d) Managed ONNX Runtime (GH #732): present + readable on
     // embedding-enabled builds. Silent when not provisioned (opt-in).
