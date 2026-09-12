@@ -93,7 +93,7 @@ fn apply_strict() {
         "{GREEN}✓ Secure defaults restored.{RST} Path jail enforced, shell gating on, secret redaction on."
     );
     println!(
-        "  {DIM}Any extra allow_paths / allowed commands you added are kept — review them with {RST}lean-ctx security status{DIM}.{RST}"
+        "  {DIM}Any extra allow_paths you added are kept — review them with {RST}lean-ctx security status{DIM}.{RST}"
     );
     println!();
     print_status();
@@ -170,7 +170,7 @@ fn print_status() {
     );
     println!("    {DIM}secrets →{RST}  lean-ctx security secrets <on|off>");
     println!(
-        "    {DIM}granular →{RST} lean-ctx config set shell_security warn|off · path_jail false · lean-ctx allow <cmd>"
+        "    {DIM}granular →{RST} lean-ctx config set shell_security warn|off · path_jail false"
     );
 }
 
@@ -192,7 +192,7 @@ fn jail_line(jail: &JailState) -> String {
 fn shell_line(shell: ShellSecurity) -> String {
     match shell {
         ShellSecurity::Enforce => {
-            format!("{GREEN}enforce{RST}  {DIM}(allowlist + dangerous-pattern blocks active){RST}")
+            format!("{GREEN}enforce{RST}  {DIM}(hard blocks active){RST}")
         }
         ShellSecurity::Warn => {
             format!("{YELLOW}warn{RST}  {DIM}(violations logged, never blocked){RST}")

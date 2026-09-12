@@ -30,7 +30,6 @@ Top-level configuration keys
 - `default_tool_categories` (string[], default `[]`) — Tool categories active by default (core, arch, debug, memory, metrics, session). Override via LCTX_DEFAULT_CATEGORIES
 - `delta_explicit` (boolean, default `true`) — Serve explicit full/lines re-reads of changed cached files as diffs (opt-in). Override via LCTX_DELTA_EXPLICIT=1
 - `enable_wakeup_ctx` (bool, default `true`) — Append wakeup briefing (facts, session summary) to ctx_overview output. Set false to reduce context bloat when calling ctx_overview frequently.
-- `excluded_commands` (string[], default `[]`) — Commands to exclude from shell hook interception
 - `extra_ignore_patterns` (string[], default `[]`) — Extra glob patterns to ignore in graph/overview/preload
 - `extra_roots` (string[], default `[]` — env `LEAN_CTX_EXTRA_ROOTS`) — Extra project roots for multi-root workspaces (auto-added to PathJail allow-list)
 - `graph_index_max_files` (u64, default `15000`) — Maximum files in graph index. 0 = unlimited (default). Set >0 to cap for constrained systems
@@ -44,6 +43,7 @@ Top-level configuration keys
 - `minimal_overhead` (bool, default `true` — env `LEAN_CTX_MINIMAL`) — Skip session/knowledge/gotcha blocks in MCP instructions
 - `no_degrade` (boolean, default `false`) — Disable all automatic read-mode degradation. Override via LCTX_NO_DEGRADE=1
 - `output_density` (enum: normal | terse | ultra, default `normal` — env `LEAN_CTX_OUTPUT_DENSITY`) — Controls how dense/compact MCP tool output is formatted
+- `passthrough_commands` (string[], default `[]`) — Commands whose output is passed through uncompressed (the command still runs normally)
 - `passthrough_urls` (string[], default `[]`) — URLs to pass through without proxy interception
 - `path_jail` (bool?, default `null`) — Filesystem path jail. null/true = enforced (tools confined to the project root + allow_paths). false = the blanket "any path" opt-out — every tool path is allowed (for containers/sandboxes where the boundary is external). Compression and secret redaction are unaffected. Flip both planes at once with `lean-ctx yolo` / `lean-ctx secure`
 - `permission_inheritance` (enum: off | on, default `off`) — Mirror the host IDE's permission rules onto lean-ctx tools (v1: OpenCode). When on, ctx_shell honors your bash/rm * rules instead of bypassing them. Override via LEAN_CTX_PERMISSION_INHERITANCE
@@ -68,10 +68,9 @@ Top-level configuration keys
 - `savings_footer` (enum: auto | always | never, default `always` — env `LEAN_CTX_SAVINGS_FOOTER`) — Controls visibility of token savings footers: always (default, show on every response), never, auto (context-dependent). Also: LEAN_CTX_SHOW_SAVINGS=1|0
 - `shadow_mode` (bool, default `true` — env `LEAN_CTX_SHADOW_MODE`) — Default on: denies native tools at the permission level, forcing agents to use ctx_* MCP tools for maximum compression. Disable with shadow_mode = false if you prefer native tools.
 - `shell_activation` (enum: always | agents-only | off, default `agents-only` — env `LEAN_CTX_SHELL_ACTIVATION`) — Controls when the shell hook auto-activates aliases (agents-only since #699: transparent in plain human terminals)
-- `shell_allow_writes` (bool, default `false` — env `LEAN_CTX_SHELL_ALLOW_WRITES`) — Allow ctx_shell file-write redirects (>, >>, tee, heredoc-to-file, curl -o, wget default mode). Default false — prefer the native Write/Edit tool. The real command gating (allowlist, dangerous-pattern, interpreter-eval) still applies
 - `shell_heavy_timeout_secs` (u64?, default `null` — env `LEAN_CTX_SHELL_HEAVY_TIMEOUT_SECS`) — Shell command timeout (seconds) for heavy commands (cargo build/test, make, docker build, git commit/push). null = built-in 10-minute ceiling
 - `shell_hook_disabled` (bool, default `false` — env `LEAN_CTX_NO_HOOK`) — Disable shell hook injection
-- `shell_security` (string, default `enforce` — env `LEAN_CTX_SHELL_SECURITY`) — Shell command gating: enforce (default, secure), warn (log only, never block) or off (skip allowlist + hard blocks; compression stays active)
+- `shell_security` (string, default `enforce` — env `LEAN_CTX_SHELL_SECURITY`) — Shell command gating: enforce (default, secure), warn (log only, never block) or off (skip the hard blocks; compression stays active)
 - `shell_timeout_secs` (u64?, default `null` — env `LEAN_CTX_SHELL_TIMEOUT_SECS`) — Shell command timeout (seconds) for normal commands. null = built-in 2-minute default. LEAN_CTX_SHELL_TIMEOUT_MS overrides both tiers (in ms)
 - `skip_agent_aliases` (bool, default `false`) — Do not install agent CLI aliases (claude, codex, gemini) into shell rc files. Existing alias blocks are removed on next setup
 - `slow_command_threshold_ms` (u64, default `5000`) — Commands taking longer than this (ms) are recorded in the slow log. Set to 0 to disable
@@ -79,7 +78,6 @@ Top-level configuration keys
 - `tee_mode` (enum: never | failures | highcompression | always, default `highcompression`) — Controls when shell output is tee'd to disk for later retrieval
 - `terse_agent` (enum: off | lite | full | ultra, default `off` — env `LEAN_CTX_TERSE_AGENT`) — Controls agent output verbosity via instructions injection
 - `theme` (string, default `default`) — Dashboard color theme
-- `write_allow_paths` (string[], default `[]`) — Absolute paths allowed for ctx_shell redirects and tee output; empty = OS temp directories
 
 ## `[addons]`
 

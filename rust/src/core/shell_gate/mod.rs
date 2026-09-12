@@ -67,12 +67,12 @@ pub fn passes_enforced(command: &str) -> bool {
     enforce_shell_gate(command).is_ok()
 }
 
-/// Allowlist + dangerous-pattern enforcement, evaluated as if in `enforce` mode.
+/// Hard-block enforcement, evaluated as if in `enforce` mode.
 /// [`check_shell_command`] decides whether a violation blocks, warns, or is
 /// skipped based on the active [`ShellSecurity`] mode.
 ///
-/// When the allowlist is empty, all commands pass (blocklist-only mode).
-/// When non-empty, EVERY command segment in the pipeline must match.
+/// Invariant 6: every command passes. Only the constructs that hide the real
+/// command from inspection are refused — see [`UNCONDITIONAL_BLOCKED`].
 fn enforce_shell_gate(command: &str) -> Result<(), ShellError> {
     let normalized = normalize_line_continuations(command);
     // #876: a quoted-delimiter heredoc body (`<<'EOF' … EOF`) is literal stdin
@@ -95,7 +95,7 @@ fn enforce_shell_gate(command: &str) -> Result<(), ShellError> {
     if has_dangerous_patterns(cmd) {
         return Err(format!(
             "[BLOCKED — DO NOT RETRY] Command uses eval or $()/ backticks at command position, \
-             which is blocked regardless of allowlist. \
+             which is blocked unconditionally. \
              This is a permanent security restriction, not a transient error.\n\
              Command: {command}"
         )
@@ -295,19 +295,12 @@ fn quote_aware_token_end(input: &str) -> usize {
 /// cannot smuggle inline code past the check (GH #391).
 fn check_interpreter_eval_only(segment: &str) -> Result<(), ShellError> {
     let inline_ok = crate::core::config::Config::load().shell_allow_inline_scripts_effective();
-    check_interpreter_inner(segment, None, 0, inline_ok)
+    check_interpreter_inner(segment, 0, inline_ok)
 }
 
-/// #823: unified interpreter-abuse walk. Both eval-only (empty allowlist) and
-/// restricted (non-empty allowlist) modes share this single recursive check.
-/// `allowlist`: None = blocklist-only mode, Some = restricted mode with delegation gating.
+/// #823: unified interpreter-abuse walk over delegation wrappers.
 /// `inline_ok`: if true, skip eval-flag/heredoc checks (#814 opt-in).
-fn check_interpreter_inner(
-    segment: &str,
-    allowlist: Option<&[String]>,
-    depth: usize,
-    inline_ok: bool,
-) -> Result<(), ShellError> {
+fn check_interpreter_inner(segment: &str, depth: usize, inline_ok: bool) -> Result<(), ShellError> {
     if depth > 3 {
         return Ok(());
     }
@@ -350,20 +343,9 @@ fn check_interpreter_inner(
     // Delegation-command walk (recursive).
     if DELEGATION_COMMANDS.contains(&base.as_str()) {
         let rest_tokens = delegated_command_tokens(&tokens[1..]);
-        if let Some(&delegated_tok) = rest_tokens.first() {
-            // In restricted mode, the delegated command must be in the allowlist.
-            if let Some(al) = allowlist {
-                let delegated = delegated_tok.rsplit('/').next().unwrap_or(delegated_tok);
-                if !delegated.is_empty() && !al.iter().any(|a| a == delegated) {
-                    return Err(format!(
-                        "[BLOCKED — DO NOT RETRY] '{base}' delegates to '{delegated}' which is not \
-                         in the shell allowlist. This is a permanent restriction."
-                    )
-                    .into());
-                }
-            }
+        if !rest_tokens.is_empty() {
             let rest_str = rest_tokens.join(" ");
-            return check_interpreter_inner(&rest_str, allowlist, depth + 1, inline_ok);
+            return check_interpreter_inner(&rest_str, depth + 1, inline_ok);
         }
     }
 

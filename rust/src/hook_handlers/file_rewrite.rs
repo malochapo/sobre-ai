@@ -82,7 +82,7 @@ pub(super) fn rewrite_skip_reason(cmd: &str) -> &'static str {
     } else if cmd.contains("<<") {
         "heredoc cannot be rewritten safely"
     } else if is_compound(cmd) && !crate::core::shell_gate::passes_enforced(cmd) {
-        "compound pipes/chains into a non-allowlisted or interpreter sink — left raw for the agent shell"
+        "compound pipes/chains into a gate-blocked or interpreter sink — left raw for the agent shell"
     } else {
         "not a known read/search/list command"
     }
@@ -143,7 +143,7 @@ pub(super) fn rewrite_candidate(cmd: &str, binary: &str) -> Option<String> {
     // Single-command fallback only. A compound that `build_rewrite_compound`
     // declined (tricky pipe/chain sink, or no rewritable segment) must NOT be
     // re-wrapped here: wrapping the whole string in `lean-ctx -c '…'` would newly
-    // subject its sink to the allowlist gate and could block a command the
+    // subject its sink to the shell gate and could block a command the
     // agent's shell ran fine before (#589). Compounds are authoritative above.
     if !is_compound(cmd) && is_rewritable(cmd) {
         return Some(wrap_single_command(cmd, binary));
@@ -329,7 +329,7 @@ pub(super) fn parse_head_tail_args<'a>(args: &[&'a str]) -> (Option<usize>, Opti
 
 /// Rewrites a compound/pipeline (`a | b`, `a && b`, `a; b`, …) by wrapping the
 /// WHOLE string in a single `lean-ctx -c "…"` — but only when it would pass the
-/// allowlist gate. Otherwise it declines (`None`) and the command is left to the
+/// shell gate. Otherwise it declines (`None`) and the command is left to the
 /// agent's shell unchanged.
 ///
 /// Why wrap-whole (not per-segment, the previous behavior): `lean-ctx -c` runs
@@ -343,10 +343,10 @@ pub(super) fn parse_head_tail_args<'a>(args: &[&'a str]) -> (Option<usize>, Opti
 ///      the lean-ctx digest instead of the raw bytes it expected.
 ///
 /// Why gate-clean only (compat-first, no new block, no bypass): wrapping subjects
-/// every segment — including the pipe sink — to the allowlist. For gate-clean
+/// every segment — including the pipe sink — to the gate. For gate-clean
 /// compounds (`git log | head`, `cargo test && npm run lint`) that is exactly
 /// right (compressed + fully gated). For a compound whose sink is an
-/// interpreter-eval (`python3 -c …`) or a non-allowlisted tool, wrapping would
+/// interpreter-eval (`python3 -c …`) or a gate-blocked tool, wrapping would
 /// NEWLY block a command the agent's shell ran fine before. We decline instead
 /// and leave it raw, so the user's own shell-security config keeps governing it
 /// — the pre-existing behavior, with no agent-reachable raw/no-gate path opened.
@@ -378,7 +378,7 @@ pub(super) fn build_rewrite_compound(cmd: &str, binary: &str) -> Option<String> 
         return None;
     }
 
-    // Wrap-whole only when the entire compound would pass the allowlist gate;
+    // Wrap-whole only when the entire compound would pass the shell gate;
     // otherwise a tricky sink would be newly blocked (see doc above).
     if crate::core::shell_gate::passes_enforced(cmd) {
         Some(wrap_single_command(cmd, binary))

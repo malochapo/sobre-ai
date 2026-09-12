@@ -31,7 +31,7 @@ fn run_dash_c(command: &str, home: &Path) -> Output {
         .env_remove("LEAN_CTX_WRAPPED")
         .env_remove("LEAN_CTX_ACTIVE")
         .env_remove("LEAN_CTX_DISABLED")
-        .env_remove("LEAN_CTX_ALLOWLIST_WARN_ONLY")
+        .env_remove("LEAN_CTX_SHELL_GATE_WARN_ONLY")
         .output()
         .expect("failed to spawn lean-ctx binary")
 }

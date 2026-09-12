@@ -44,9 +44,9 @@ pub fn alignment() -> Vec<OwaspMapping> {
                     description: "5 built-in roles with tool allowlists and shell policy",
                 },
                 Mitigation {
-                    feature: "Shell Allowlist",
+                    feature: "Shell Gate",
                     module: "core/shell_gate/mod.rs",
-                    description: "Opt-in command allowlist restricting which binaries agents can execute",
+                    description: "Hard blocks on the constructs that hide a command from inspection (eval, exec, source, command substitution at command position)",
                 },
                 Mitigation {
                     feature: "Context Budget",

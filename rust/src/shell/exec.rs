@@ -417,7 +417,7 @@ pub fn exec_argv(args: &[String]) -> i32 {
         return 127;
     }
 
-    // Quote-safe join used only for the allowlist/policy *checks*; execution
+    // Quote-safe join used only for the gate/policy *checks*; execution
     // below still consumes the pre-split argv verbatim (the whole reason `-t`
     // avoids `sh -c`). Joining first means a single argv element such as
     // `git status; rm -rf /` is checked as ONE quoted token, never re-parsed.
@@ -431,11 +431,11 @@ pub fn exec_argv(args: &[String]) -> i32 {
     }
 
     // The `-t` track path is the agent's default shell hook
-    // (`_lc() { lean-ctx -t "$@" }`), so it MUST enforce the same allowlist
+    // (`_lc() { lean-ctx -t "$@" }`), so it MUST enforce the same gate
     // boundary as `-c` (see `exec`). Previously it skipped the check entirely,
     // letting every aliased multi-arg invocation (`_lc git …`) bypass the
     // restriction that `lean-ctx -c` enforces (GH security audit, finding 1).
-    if let Some(code) = allowlist_gate(&joined) {
+    if let Some(code) = gate_cli_command(&joined) {
         return code;
     }
 
@@ -444,7 +444,7 @@ pub fn exec_argv(args: &[String]) -> i32 {
     }
 
     let cfg = config::Config::load();
-    let policy = super::output_policy::classify(&joined, &cfg.excluded_commands);
+    let policy = super::output_policy::classify(&joined, &cfg.passthrough_commands);
 
     if policy.is_protected() {
         let code = exec_direct(args);
@@ -476,7 +476,7 @@ fn exec_direct(args: &[String]) -> i32 {
     }
 }
 
-/// Decides whether an allowlist violation on the CLI path blocks (exit 126) or
+/// Decides whether a gate violation on the CLI path blocks (exit 126) or
 /// only warns.
 ///
 /// Enforced when:
@@ -487,17 +487,17 @@ fn exec_direct(args: &[String]) -> i32 {
 ///
 /// Warn-only when a human runs `lean-ctx -c` at an interactive terminal (they
 /// can run the command without lean-ctx anyway, so blocking adds friction, not
-/// a boundary) or when `LEAN_CTX_ALLOWLIST_WARN_ONLY=1` explicitly opts out.
-fn allowlist_must_enforce() -> bool {
+/// a boundary) or when `LEAN_CTX_SHELL_GATE_WARN_ONLY=1` explicitly opts out.
+fn gate_must_enforce() -> bool {
     let hook_child = crate::core::runtime_flags::hook_child_enabled();
-    let warn_only = std::env::var("LEAN_CTX_ALLOWLIST_WARN_ONLY")
+    let warn_only = std::env::var("LEAN_CTX_SHELL_GATE_WARN_ONLY")
         .is_ok_and(|v| v == "1" || v.eq_ignore_ascii_case("true"));
-    allowlist_must_enforce_inner(hook_child, warn_only, io::stderr().is_terminal())
+    gate_must_enforce_inner(hook_child, warn_only, io::stderr().is_terminal())
 }
 
-/// Pure decision core of [`allowlist_must_enforce`] (unit-testable without
+/// Pure decision core of [`gate_must_enforce`] (unit-testable without
 /// process-global env/TTY state).
-fn allowlist_must_enforce_inner(hook_child: bool, warn_only: bool, stderr_is_tty: bool) -> bool {
+fn gate_must_enforce_inner(hook_child: bool, warn_only: bool, stderr_is_tty: bool) -> bool {
     if hook_child {
         return true;
     }
@@ -544,21 +544,22 @@ fn stdout_is_regular_file() -> bool {
     }
 }
 
-/// Shared allowlist gate for the CLI shell entrypoints — `-c` (via [`exec`]) and
+/// Shared shell gate for the CLI entrypoints — `-c` (via [`exec`]) and
 /// `-t` (via [`exec_argv`]). Both must apply the SAME boundary so the track path
 /// (the default shell hook) cannot be weaker than the compress path.
 ///
 /// Returns `Some(126)` when the command is blocked and the caller must return
 /// that exit code; `None` when execution may proceed (allowed, or warn-only for
-/// an interactive human — see [`allowlist_must_enforce`]).
-fn allowlist_gate(command: &str) -> Option<i32> {
+/// an interactive human — see [`gate_must_enforce`]).
+fn gate_cli_command(command: &str) -> Option<i32> {
     if let Err(msg) = crate::core::shell_gate::check_shell_command(command) {
-        if allowlist_must_enforce() {
+        if gate_must_enforce() {
             eprintln!("{msg}");
             eprintln!(
-                "lean-ctx: command blocked by shell allowlist. \
-                 Allow it permanently: lean-ctx allow <cmd> — or set \
-                 LEAN_CTX_ALLOWLIST_WARN_ONLY=1 to downgrade to a warning."
+                "lean-ctx: blocked by the shell gate. Every command is allowed \
+                 except the constructs that hide the real one from inspection. \
+                 Downgrade to a warning with shell_security = warn, or \
+                 LEAN_CTX_SHELL_GATE_WARN_ONLY=1."
             );
             return Some(126);
         }
@@ -577,9 +578,9 @@ fn allowlist_gate(command: &str) -> Option<i32> {
 
 pub fn exec(command: &str) -> i32 {
     // #595: when the agent wraps its command in host scaffolding
-    // (`… && eval '<cmd>' … && pwd -P >| …-cwd`), look through it so the allowlist
+    // (`… && eval '<cmd>' … && pwd -P >| …-cwd`), look through it so the gate
     // and compression act on the REAL command, not the wrapper — whose `eval` the
-    // allowlist would otherwise hard-block on every single call. The cwd snapshot
+    // gate would otherwise hard-block on every single call. The cwd snapshot
     // is preserved so the host keeps tracking the working directory.
     let unwrapped = super::agent_wrapper::unwrap_agent_wrapper(command).map(|u| u.rebuild());
     let mut collapsed_nested = false;
@@ -593,7 +594,7 @@ pub fn exec(command: &str) -> i32 {
         command
     };
 
-    if let Some(code) = allowlist_gate(command) {
+    if let Some(code) = gate_cli_command(command) {
         return code;
     }
 
@@ -616,7 +617,7 @@ pub fn exec(command: &str) -> i32 {
         return exec_inherit_tracked(command, &shell, &shell_flag);
     }
 
-    let policy = super::output_policy::classify(command, &cfg.excluded_commands);
+    let policy = super::output_policy::classify(command, &cfg.passthrough_commands);
 
     // Passthrough: ALWAYS bypass compression, even with force_compress.
     if policy == super::output_policy::OutputPolicy::Passthrough {
@@ -906,7 +907,7 @@ mod exec_tests {
     }
 
     #[test]
-    fn exec_argv_allows_allowlisted_command() {
+    fn exec_argv_allows_ordinary_command() {
         let _lock = crate::core::data_dir::test_env_lock();
         crate::test_env::remove_var("LEAN_CTX_ACTIVE");
         crate::test_env::remove_var("LEAN_CTX_DISABLED");
@@ -916,7 +917,7 @@ mod exec_tests {
 
         crate::test_env::remove_var("LEAN_CTX_HOOK_CHILD");
 
-        assert_eq!(code, 0, "allowlisted command must run on the -t track path");
+        assert_eq!(code, 0, "an ordinary command must run on the -t track path");
     }
 
     #[test]
@@ -1380,30 +1381,30 @@ mod exec_tests {
         }
     }
 
-    // P0-1 (#413): the CLI allowlist must enforce for agents, warn for humans.
+    // P0-1 (#413): the CLI gate must enforce for agents, warn for humans.
     #[test]
-    fn allowlist_enforces_in_hook_child_mode() {
+    fn gate_enforces_in_hook_child_mode() {
         // Hook-child wins over everything, even an interactive TTY.
-        assert!(super::allowlist_must_enforce_inner(true, false, true));
-        assert!(super::allowlist_must_enforce_inner(true, true, true));
+        assert!(super::gate_must_enforce_inner(true, false, true));
+        assert!(super::gate_must_enforce_inner(true, true, true));
     }
 
     #[test]
-    fn allowlist_enforces_for_non_interactive_callers() {
+    fn gate_enforces_for_non_interactive_callers() {
         // Agent/script invocation: stderr is a pipe → enforce.
-        assert!(super::allowlist_must_enforce_inner(false, false, false));
+        assert!(super::gate_must_enforce_inner(false, false, false));
     }
 
     #[test]
-    fn allowlist_warns_for_interactive_humans() {
+    fn gate_warns_for_interactive_humans() {
         // Human at a TTY → warn-only (they can bypass lean-ctx anyway).
-        assert!(!super::allowlist_must_enforce_inner(false, false, true));
+        assert!(!super::gate_must_enforce_inner(false, false, true));
     }
 
     #[test]
-    fn allowlist_warn_only_opt_out_downgrades_non_interactive() {
-        // Explicit LEAN_CTX_ALLOWLIST_WARN_ONLY=1 opt-out (but never in hook-child mode).
-        assert!(!super::allowlist_must_enforce_inner(false, true, false));
-        assert!(super::allowlist_must_enforce_inner(true, true, false));
+    fn gate_warn_only_opt_out_downgrades_non_interactive() {
+        // Explicit LEAN_CTX_SHELL_GATE_WARN_ONLY=1 opt-out (but never in hook-child mode).
+        assert!(!super::gate_must_enforce_inner(false, true, false));
+        assert!(super::gate_must_enforce_inner(true, true, false));
     }
 }

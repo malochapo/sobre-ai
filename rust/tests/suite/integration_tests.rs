@@ -10,7 +10,7 @@ fn lean_ctx_bin() -> Command {
     // so `allowlist_must_enforce()` would block test scripts (`for`/`while`
     // loops are not allowlisted) with exit 126 — hermetic warn-only keeps the
     // tests pinned to what they actually assert.
-    cmd.env("LEAN_CTX_ALLOWLIST_WARN_ONLY", "1");
+    cmd.env("LEAN_CTX_SHELL_GATE_WARN_ONLY", "1");
     cmd
 }
 
@@ -312,7 +312,7 @@ fn forced_compress_bin() -> Command {
         .env("__LEAN_CTX_SKIP_EVENTS", "1")
         // Allowlist enforcement (non-TTY stderr ⇒ block) is out of scope here;
         // the fidelity scripts use `while` loops that are not allowlisted.
-        .env("LEAN_CTX_ALLOWLIST_WARN_ONLY", "1");
+        .env("LEAN_CTX_SHELL_GATE_WARN_ONLY", "1");
     cmd
 }
 
@@ -461,7 +461,7 @@ fn pipe_guard_rust_side_defense_in_depth() {
         .env("__LEAN_CTX_SKIP_EVENTS", "1")
         // `for` + command substitution are not allowlisted; this test pins the
         // pipe guard, not enforcement (covered by shell::exec unit tests).
-        .env("LEAN_CTX_ALLOWLIST_WARN_ONLY", "1")
+        .env("LEAN_CTX_SHELL_GATE_WARN_ONLY", "1")
         .args(["-c", script])
         .output()
         .expect("failed to run lean-ctx -c");

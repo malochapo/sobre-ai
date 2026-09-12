@@ -5,11 +5,11 @@
 //! [`check_shell_command`](super::check_shell_command) so MCP and CLI behave
 //! identically:
 //!
-//! - `enforce` (**default**, secure-by-default): the allowlist and the
+//! - `enforce` (**default**, secure-by-default): the unconditional blocks and the
 //!   unconditional/dangerous-pattern blocks are enforced — today's behaviour.
 //! - `warn`: the same checks run but a violation is only logged (tracing),
 //!   never blocked.
-//! - `off`: command gating is skipped entirely (allowlist, dangerous patterns,
+//! - `off`: command gating is skipped entirely (unconditional blocks, dangerous patterns,
 //!   `eval`/`exec`/interpreter `-c`). A deliberate, documented opt-out for power
 //!   users who accept the risk — **compression stays fully active**.
 //!
@@ -20,9 +20,7 @@
 //!
 //! The default is `enforce` on purpose: lean-ctx mediates the agent's shell, so
 //! defaulting to anything weaker would silently downgrade security for every
-//! existing install on upgrade. The redirect/“read-only output” doctrine in
-//! `validate_command` is a separate concern (MCP payload safety) and is NOT
-//! governed by this switch.
+//! existing install on upgrade.
 
 /// Active shell-security posture. Order is least → most permissive only for
 /// readability; do not rely on ordinal values.

@@ -1,11 +1,11 @@
-//! Containment & security posture: shell allowlist, path jail, workspace
+//! Containment & security posture: shell gate, path jail, workspace
 //! trust, secret redaction, IDE permission inheritance.
 
 use crate::doctor::{BOLD, DIM, GREEN, Outcome, RED, RST, YELLOW};
 
-/// Reports the shell allowlist exactly as the MCP tools enforce it — and, crucially,
+/// Reports the shell gate exactly as the MCP tools enforce it — and, crucially,
 /// flags when `config.toml` fails to parse (the silent-default trap behind #341,
-/// where an allowlist edit appears to "do nothing" because the file never loaded).
+/// where a `shell_security` edit appears to "do nothing" because the file never loaded).
 pub(crate) fn shell_gate_outcome() -> Outcome {
     if let Some(err) = crate::core::config::last_config_parse_error() {
         let short = err.lines().next().unwrap_or("parse error");

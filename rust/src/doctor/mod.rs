@@ -293,9 +293,9 @@ pub fn run() -> u32 {
     // read a different config.toml than this CLI), and print the resolved path.
     board.check(&config_parity_outcome());
 
-    // 5b) Shell allowlist (effective runtime view + silent-parse-error trap, #341)
-    let allowlist_outcome = shell_gate_outcome();
-    board.check(&allowlist_outcome);
+    // 5b) Shell gate (effective runtime view + silent-parse-error trap, #341)
+    let gate_outcome = shell_gate_outcome();
+    board.check(&gate_outcome);
 
     // 5b2) Path jail (effective state + dead allow_paths entries, GH #392)
     let path_jail = path_jail_outcome();

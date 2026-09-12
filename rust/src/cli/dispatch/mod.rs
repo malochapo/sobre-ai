@@ -538,7 +538,7 @@ fn handle_raw(args: &[String], rest: &[String]) -> ! {
         eprintln!("Usage: lean-ctx raw \"command\"");
         eprintln!(
             "Runs the command with output passed through unchanged (no compression). \
-             The shell allowlist still applies."
+             The shell gate still applies."
         );
         std::process::exit(1);
     }

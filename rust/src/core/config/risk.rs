@@ -28,7 +28,7 @@ pub fn classify(key: &str) -> Option<ConfigRisk> {
             "Path jail confines agent file access to the project root. Disabling it lets tools read and write any path on this machine."
         }
         "shell_security" => {
-            "Shell gating blocks dangerous commands via an allowlist. Lowering it (warn/off) lets the agent run any command."
+            "Shell gating hard-blocks the constructs that hide a command from every check (eval, exec, source, command substitution at command position). Lowering it (warn/off) removes even that."
         }
         "sandbox_level" => {
             "Sandbox level governs how strictly tool execution is contained. Lowering it reduces isolation."

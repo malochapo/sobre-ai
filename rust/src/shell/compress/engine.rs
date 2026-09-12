@@ -334,7 +334,7 @@ fn compress_if_beneficial_with_exit(command: &str, output: &str, exit_code: i32)
     let min_output_tokens = 20;
 
     let cfg = crate::core::config::Config::load();
-    let policy = crate::shell::output_policy::classify(command, &cfg.excluded_commands);
+    let policy = crate::shell::output_policy::classify(command, &cfg.passthrough_commands);
     if policy == crate::shell::output_policy::OutputPolicy::Verbatim
         || policy == crate::shell::output_policy::OutputPolicy::Passthrough
     {

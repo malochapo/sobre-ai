@@ -43,11 +43,11 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
         ),
     );
     root.insert(
-        "excluded_commands".into(),
+        "passthrough_commands".into(),
         key(
             "string[]",
-            serde_json::json!(cfg.excluded_commands),
-            "Commands to exclude from shell hook interception",
+            serde_json::json!(cfg.passthrough_commands),
+            "Commands whose output is passed through uncompressed (the command still runs normally)",
         ),
     );
     root.insert(
@@ -571,7 +571,7 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
         key_with_env(
             "string",
             serde_json::json!("enforce"),
-            "Shell command gating: enforce (default, secure), warn (log only, never block) or off (skip allowlist + hard blocks; compression stays active)",
+            "Shell command gating: enforce (default, secure), warn (log only, never block) or off (skip the hard blocks; compression stays active)",
             "LEAN_CTX_SHELL_SECURITY",
         ),
     );
@@ -591,23 +591,6 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
             serde_json::json!(null),
             "Shell command timeout (seconds) for heavy commands (cargo build/test, make, docker build, git commit/push). null = built-in 10-minute ceiling",
             "LEAN_CTX_SHELL_HEAVY_TIMEOUT_SECS",
-        ),
-    );
-    root.insert(
-        "shell_allow_writes".into(),
-        key_with_env(
-            "bool",
-            serde_json::json!(false),
-            "Allow ctx_shell file-write redirects (>, >>, tee, heredoc-to-file, curl -o, wget default mode). Default false — prefer the native Write/Edit tool. The real command gating (allowlist, dangerous-pattern, interpreter-eval) still applies",
-            "LEAN_CTX_SHELL_ALLOW_WRITES",
-        ),
-    );
-    root.insert(
-        "write_allow_paths".into(),
-        key(
-            "string[]",
-            serde_json::json!(cfg.write_allow_paths),
-            "Absolute paths allowed for ctx_shell redirects and tee output; empty = OS temp directories",
         ),
     );
 

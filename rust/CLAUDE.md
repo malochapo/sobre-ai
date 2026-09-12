@@ -1,6 +1,6 @@
 # sobre — Rust engine
 
-The project's rules are the five invariants in `../INVARIANTS.md`. The
+The project's rules are the six invariants in `../INVARIANTS.md`. The
 hard-won working practices for editing this inherited codebase are in
 `../docs/working-rules.md` (gitignored): the compiler is the only reliable
 oracle (`cargo check --all-targets`, and `--features dense` too), names lie so

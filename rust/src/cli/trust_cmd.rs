@@ -1,8 +1,8 @@
 //! `lean-ctx trust` / `lean-ctx untrust` — workspace trust for project-local
 //! `.lean-ctx.toml` overrides (GH security audit, finding 4).
 //!
-//! A cloned repo's `.lean-ctx.toml` can raise security-sensitive settings (shell
-//! allowlist, path-jail roots, proxy upstream, command aliases). Those overrides
+//! A cloned repo's `.lean-ctx.toml` can raise security-sensitive settings
+//! (path-jail roots, proxy upstreams, rules injection, tool categories). Those
 //! are withheld until the user explicitly trusts the workspace here. Trust is
 //! pinned to the workspace path AND the file's content hash, so editing it after
 //! trust requires re-trusting (see [`crate::core::workspace_trust`]).
@@ -164,7 +164,7 @@ fn print_usage() {
          \x20      lean-ctx untrust [<path>]       Remove a workspace from the trust store\n\
          \n\
          Why this exists: a cloned repo's `.lean-ctx.toml` can raise security-sensitive\n\
-         settings (shell allowlist, path-jail roots, proxy upstream, command aliases).\n\
+         settings (path-jail roots, proxy upstreams, rules injection, tool categories).\n\
          Those are withheld until you trust the workspace. Trust is pinned to the file's\n\
          contents, so editing it later requires re-running `lean-ctx trust`."
     );

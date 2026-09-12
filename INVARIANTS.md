@@ -1,4 +1,4 @@
-# The five invariants
+# The six invariants
 
 These are not guidelines. They are the definition of the project. A change that
 breaks one of them is out of scope no matter how good it is — and if we ever

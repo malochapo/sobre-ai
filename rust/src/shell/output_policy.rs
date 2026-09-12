@@ -5,7 +5,7 @@
 /// code path may bypass it.
 ///
 /// Priority (first match wins):
-///   1. User `excluded_commands` config      → Passthrough
+///   1. User `passthrough_commands` config      → Passthrough
 ///   2. `BUILTIN_PASSTHROUGH` + dev scripts  → Passthrough
 ///   3. Verbatim data commands               → Verbatim
 ///   4. Everything else                      → Compressible
@@ -39,12 +39,12 @@ impl OutputPolicy {
 
 /// Classify a command into an `OutputPolicy`.
 ///
-/// `user_excluded` comes from `Config::excluded_commands`. Precedence:
+/// `user_passthrough` comes from `Config::passthrough_commands`. Precedence:
 ///   1. `is_passthrough` (BUILTIN_PASSTHROUGH + dev-script runners + user excludes)
 ///   2. `compress::is_verbatim_output` (HTTP clients, file viewers, data formats …)
 ///   3. otherwise `Compressible`
-pub fn classify(command: &str, user_excluded: &[String]) -> OutputPolicy {
-    if is_passthrough(command, user_excluded) {
+pub fn classify(command: &str, user_passthrough: &[String]) -> OutputPolicy {
+    if is_passthrough(command, user_passthrough) {
         return OutputPolicy::Passthrough;
     }
     if super::compress::is_verbatim_output(command) {
@@ -53,8 +53,8 @@ pub fn classify(command: &str, user_excluded: &[String]) -> OutputPolicy {
     OutputPolicy::Compressible
 }
 
-fn is_passthrough(command: &str, user_excluded: &[String]) -> bool {
-    super::compress::is_excluded_command(command, user_excluded)
+fn is_passthrough(command: &str, user_passthrough: &[String]) -> bool {
+    super::compress::is_excluded_command(command, user_passthrough)
 }
 
 #[cfg(test)]
@@ -76,7 +76,7 @@ mod tests {
     }
 
     #[test]
-    fn user_excluded_is_passthrough() {
+    fn user_passthrough_is_passthrough() {
         let excl = vec!["mycommand".to_string()];
         assert_eq!(
             classify("mycommand --flag", &excl),

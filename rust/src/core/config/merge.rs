@@ -107,7 +107,7 @@ impl Config {
         override_if_ne!(default.recovery_hints, recovery_hints);
         override_if_ne!(default.output_density, output_density);
         override_if_ne!(default.checkpoint_interval, checkpoint_interval);
-        extend_if_nonempty!(excluded_commands);
+        extend_if_nonempty!(passthrough_commands);
         extend_if_nonempty!(passthrough_urls);
         // Additive merge with dedup: project-local config can add formats on top
         // of the global default (`["toon"]`) without re-listing it.
@@ -283,7 +283,6 @@ impl Config {
             memory.embeddings.max_facts
         );
         extend_if_nonempty!(allow_paths);
-        extend_if_nonempty!(write_allow_paths);
         extend_if_nonempty!(extra_roots);
         // Project-local config may only ADD read-only roots (tighten the write
         // boundary), never remove them — merge mirrors extra_roots (#475).

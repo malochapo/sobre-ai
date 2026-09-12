@@ -86,22 +86,6 @@ const _: () = assert!(DEFAULT_BM25_PERSIST_MB >= 512);
 /// so it is left available.
 pub const EDIT_TOOL_NAMES: &[&str] = &["ctx_edit", "ctx_patch"];
 
-/// Default locations for shell output capture.
-///
-/// `/private/tmp` is the canonical target behind macOS's `/tmp` symlink, while
-/// `temp_dir()` also covers per-user scratch directories such as `$TMPDIR`.
-pub(crate) fn default_shell_write_allow_paths() -> Vec<String> {
-    #[allow(unused_mut)]
-    let mut paths = vec![std::env::temp_dir().to_string_lossy().into_owned()];
-    #[cfg(unix)]
-    for path in ["/tmp", "/private/tmp", "/var/tmp"] {
-        if !paths.iter().any(|existing| existing == path) {
-            paths.push(path.to_string());
-        }
-    }
-    paths
-}
-
 /// Global lean-ctx configuration loaded from `config.toml`, merged with project-local overrides.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
@@ -115,12 +99,12 @@ pub struct Config {
     #[serde(default)]
     pub output_density: OutputDensity,
     pub checkpoint_interval: u32,
-    pub excluded_commands: Vec<String>,
+    pub passthrough_commands: Vec<String>,
     pub passthrough_urls: Vec<String>,
     /// Output formats that are already compact/token-oriented and must be
     /// preserved verbatim instead of being recompressed (#342). Matched against
     /// the *output shape* (not the command name), so any tool emitting the
-    /// format is covered without enumerating commands in `excluded_commands`.
+    /// format is covered without enumerating commands in `passthrough_commands`.
     /// Default: `["toon"]`. Set to `[]` to disable and always recompress.
     #[serde(default = "serde_defaults::default_preserve_compact_formats")]
     pub preserve_compact_formats: Vec<String>,
@@ -601,7 +585,7 @@ pub struct Config {
 
     /// Shell-security mode for ctx_shell / `lean-ctx -c` command gating (GL #788):
     /// `enforce` (default, secure), `warn` (run checks, log violations, never
-    /// block) or `off` (skip the allowlist + dangerous-pattern blocks entirely —
+    /// block) or `off` (skip the hard blocks entirely —
     /// a deliberate opt-out; compression stays active). Override via
     /// LEAN_CTX_SHELL_SECURITY. `None` resolves to `enforce`.
     #[serde(default)]
@@ -626,20 +610,6 @@ pub struct Config {
     /// Example: `shell_heavy_prefixes = ["python3 ", "./scripts/"]`
     #[serde(default)]
     pub shell_heavy_prefixes: Vec<String>,
-    /// When true, `ctx_shell` accepts shell file-write redirects (`>`, `>>`,
-    /// `tee`, heredoc-to-file, `curl -o`, `wget` default mode). Default false —
-    /// the native Write/Edit tool is preferred. Opt-in for power users who want
-    /// classic shell syntax; the real command gating (allowlist,
-    /// dangerous-pattern and interpreter-eval blocks) still applies. Override
-    /// via `LEAN_CTX_SHELL_ALLOW_WRITES=1`.
-    #[serde(default)]
-    pub shell_allow_writes: bool,
-    /// Absolute paths where shell redirects and `tee` may capture output.
-    /// Empty uses the operating system's temporary directories. Project files
-    /// remain denied even when a configured path overlaps the project root.
-    #[serde(default)]
-    pub write_allow_paths: Vec<String>,
-
     /// #814: opt-in to allow `python3 -c`, `node -e`, etc. in ctx_shell.
     /// Default `false` — inline code is blocked because it leaves no auditable
     /// artifact. Override via `LEAN_CTX_SHELL_ALLOW_INLINE_SCRIPTS=1`.
@@ -658,7 +628,7 @@ impl Default for Config {
             recovery_hints: RecoveryHints::default(),
             output_density: OutputDensity::default(),
             checkpoint_interval: 15,
-            excluded_commands: Vec::new(),
+            passthrough_commands: Vec::new(),
             passthrough_urls: Vec::new(),
             preserve_compact_formats: serde_defaults::default_preserve_compact_formats(),
             crush_verbatim_json: false,
@@ -755,8 +725,6 @@ impl Default for Config {
             shell_timeout_secs: None,
             shell_heavy_timeout_secs: None,
             shell_heavy_prefixes: Vec::new(),
-            shell_allow_writes: false,
-            write_allow_paths: Vec::new(),
             shell_allow_inline_scripts: false,
             setup: SetupConfig::default(),
         }
@@ -991,33 +959,10 @@ impl Config {
         ShellActivation::effective(self)
     }
 
-    /// Returns `true` if `ctx_shell` may accept shell file-write redirects.
-    /// `LEAN_CTX_SHELL_ALLOW_WRITES` (`1`/`true`/`yes`/`on`) overrides
-    /// `config.toml`. The real command gating still applies either way.
-    pub fn shell_allow_writes_effective(&self) -> bool {
-        match std::env::var("LEAN_CTX_SHELL_ALLOW_WRITES") {
-            Ok(raw) => matches!(
-                raw.trim().to_ascii_lowercase().as_str(),
-                "1" | "true" | "yes" | "on"
-            ),
-            Err(_) => self.shell_allow_writes,
-        }
-    }
-
-    /// Returns the effective paths where shell output capture may write.
-    /// Empty configuration intentionally falls back to OS temp directories.
-    pub fn write_allow_paths_effective(&self) -> Vec<String> {
-        if self.write_allow_paths.is_empty() {
-            default_shell_write_allow_paths()
-        } else {
-            self.write_allow_paths.clone()
-        }
-    }
-
     /// #814: returns `true` if `ctx_shell` may accept inline interpreter scripts
     /// (`python3 -c "..."`, `node -e "..."`, etc.).
     /// `LEAN_CTX_SHELL_ALLOW_INLINE_SCRIPTS` (`1`/`true`/`yes`/`on`) overrides
-    /// `config.toml`. The real command gating (allowlist) still applies.
+    /// `config.toml`. The hard blocks still apply.
     pub fn shell_allow_inline_scripts_effective(&self) -> bool {
         match std::env::var("LEAN_CTX_SHELL_ALLOW_INLINE_SCRIPTS") {
             Ok(raw) => matches!(

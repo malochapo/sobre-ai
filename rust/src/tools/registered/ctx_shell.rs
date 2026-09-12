@@ -20,8 +20,8 @@ impl McpTool for CtxShellTool {
             "WORKFLOW: preferred — auto-compresses output (build/test/log).\n\
               raw=true for verbatim output; inline=true for moderately-sized verbatim output.\n\
              [exit:N] on errors (lossless).\n\
-             POLICY (by design): allowlisted read-only path; ctx_execute is the trusted script path.\n\
-             A [BLOCKED] command is permanent — escalate to ctx_execute(language=\"shell\"), do not retry here.\n\
+             POLICY: every command is allowed except constructs that execute something the command text does not name (eval/exec/source, $() at command position, interpreter -c, find -exec, LD_PRELOAD=, …). Same gate in ctx_execute.\n\
+             A [BLOCKED] command is permanent — do not retry it here or in ctx_execute.\n\
              ANTIPATTERN: multi-line scripts, sh/bash script.sh, $var-as-command → ctx_execute.",
             json!({
                 "type": "object",
@@ -103,30 +103,6 @@ impl McpTool for CtxShellTool {
         let command = get_str(args, "command")
             .ok_or_else(|| ErrorData::invalid_params("command is required", None))?;
         let timeout_ms = get_int(args, "timeout_ms").and_then(|n| u64::try_from(n).ok());
-
-        // The write-doctrine check (no `>`, `tee`, heredoc-to-file, curl -o, …)
-        // is an MCP-payload-safety convention, not a security boundary, so it is
-        // opt-out via `shell_allow_writes` (#523). The real command gating
-        // (`check_shell_command`, below) is NOT affected by this flag.
-        let config = crate::core::config::Config::load();
-        let write_allow_paths = config.write_allow_paths_effective();
-        let project_root = crate::core::config::Config::find_project_root();
-        if !config.shell_allow_writes_effective()
-            && let Some(rejection) =
-                crate::tools::ctx_shell::validate_command_with_write_allow_paths(
-                    &command,
-                    &write_allow_paths,
-                    project_root.as_deref(),
-                )
-        {
-            // The command never ran — report as a tool error so MCP clients
-            // (guards, retry logic) can detect it programmatically (#389).
-            return Ok(ToolOutput {
-                shell_outcome: Some(ShellOutcome::Blocked),
-                content_blocks: None,
-                ..ToolOutput::simple(rejection)
-            });
-        }
 
         if let Err(msg) = crate::core::shell_gate::check_shell_command(&command) {
             return Ok(ToolOutput {
