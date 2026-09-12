@@ -450,7 +450,6 @@ pub mod task_briefing;
 pub mod tcc_guard_sandbox;
 pub mod tdd_schema;
 pub mod team_slo;
-pub mod telemetry;
 pub mod terse;
 pub mod text_similarity;
 pub mod theme;

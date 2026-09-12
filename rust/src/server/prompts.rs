@@ -21,16 +21,6 @@ pub fn list_prompts() -> Vec<Prompt> {
             None,
         ),
         Prompt::new(
-            "context-reset",
-            Some("Clear all overlays and reset context state"),
-            None,
-        ),
-        Prompt::new(
-            "context-pin",
-            Some("Pin a file to keep it in full context"),
-            Some(vec![required_arg("path", "Path to the file to pin")]),
-        ),
-        Prompt::new(
             "context-budget",
             Some("Set the token budget for this session"),
             Some(vec![required_arg(
@@ -56,16 +46,6 @@ pub fn get_prompt(
             Some(get_context_focus(task, ledger))
         }
         "context-review" => Some(get_context_review(ledger)),
-        "context-reset" => Some(get_context_reset()),
-        "context-pin" => {
-            let path = params
-                .arguments
-                .as_ref()
-                .and_then(|a| a.get("path"))
-                .and_then(|v| v.as_str())
-                .unwrap_or("");
-            Some(get_context_pin(path))
-        }
         "context-budget" => {
             let tokens = params
                 .arguments
@@ -87,7 +67,6 @@ fn get_context_focus(
     let msg = format!(
         "Focus context on task: {task}\n\
          Current state: {} files, {:.0}% pressure\n\
-         Use ctx_plan(task=\"{task}\") to compute optimal modes for all tracked files.\n\
          Files matching this task's intent targets should be read as 'full', others compressed.",
         ledger.entries.len(),
         pressure.utilization * 100.0,
@@ -102,31 +81,15 @@ fn get_context_review(ledger: &crate::core::context_ledger::ContextLedger) -> Ge
         Ok(bt) => bt.format_summary(),
         _ => String::new(),
     };
-    let msg = format!(
-        "Context Review:\n{summary}\nAdjusted savings: {adjusted} tokens\n{bounce_info}\n\n\
-         Use ctx_metrics() for detailed breakdown or ctx_plan(task=\"review context state\") for mode recommendations.",
-    );
-    GetPromptResult::new(vec![PromptMessage::new_text(Role::Assistant, msg)])
-}
-
-fn get_context_reset() -> GetPromptResult {
-    GetPromptResult::new(vec![PromptMessage::new_text(
-        Role::Assistant,
-        "Reset context: Use ctx_control(action=\"reset\") to clear all overlays and reset ledger states.",
-    )])
-}
-
-fn get_context_pin(path: &str) -> GetPromptResult {
-    let msg = format!(
-        "Pin file: Use ctx_control(action=\"pin\", target=\"{path}\") to keep this file in full context regardless of pressure."
-    );
+    let msg =
+        format!("Context Review:\n{summary}\nAdjusted savings: {adjusted} tokens\n{bounce_info}");
     GetPromptResult::new(vec![PromptMessage::new_text(Role::Assistant, msg)])
 }
 
 fn get_context_budget(tokens: &str) -> GetPromptResult {
     let msg = format!(
         "Set budget: Configure the context window to {tokens} tokens. \
-         Use ctx_session(action=\"budget\", value=\"{tokens}\") or set LCTX_CONTEXT_BUDGET={tokens} in your environment."
+         Use ctx_session(action=\"budget\", value=\"{tokens}\")."
     );
     GetPromptResult::new(vec![PromptMessage::new_text(Role::Assistant, msg)])
 }
@@ -136,9 +99,12 @@ mod tests {
     use super::*;
 
     #[test]
-    fn list_returns_five_prompts() {
+    fn list_returns_three_prompts() {
         let prompts = list_prompts();
-        assert_eq!(prompts.len(), 5);
+        // `context-reset` and `context-pin` were removed: each one's whole
+        // body was an instruction to call `ctx_control`, which no longer
+        // exists, so nothing truthful was left to say.
+        assert_eq!(prompts.len(), 3);
     }
 
     #[test]

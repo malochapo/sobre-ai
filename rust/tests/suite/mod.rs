@@ -45,7 +45,6 @@ mod lsp_integration;
 mod mcp_fast_initialize_669;
 mod mcp_manifest_up_to_date;
 mod mcp_optout_281;
-mod metrics_contract;
 mod outline_machine_readable_e2e;
 mod pattern_snapshots;
 mod performance_stress;
