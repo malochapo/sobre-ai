@@ -63,7 +63,7 @@ pub fn alignment() -> Vec<OwaspMapping> {
             lean_ctx_mitigations: vec![
                 Mitigation {
                     feature: "Context Compression",
-                    module: "core/terse/",
+                    module: "core/terse/mod.rs",
                     description: "Deterministic compression reduces attack surface in injected content",
                 },
                 Mitigation {
@@ -101,7 +101,7 @@ pub fn alignment() -> Vec<OwaspMapping> {
                 },
                 Mitigation {
                     feature: "Proxy Header Allowlist",
-                    module: "proxy/forward.rs",
+                    module: "proxy/forward/headers.rs",
                     description: "Prevents leaking Set-Cookie and other sensitive headers",
                 },
                 Mitigation {
@@ -134,7 +134,7 @@ pub fn alignment() -> Vec<OwaspMapping> {
                 },
                 Mitigation {
                     feature: "Loop Detection",
-                    module: "config loop_detection",
+                    module: "core/loop_detection.rs",
                     description: "Detects and throttles repetitive tool call patterns",
                 },
                 Mitigation {
@@ -185,8 +185,8 @@ pub fn alignment() -> Vec<OwaspMapping> {
                 },
                 Mitigation {
                     feature: "Context OS Events",
-                    module: "core/context_os.rs",
-                    description: "Real-time event bus with SSE streaming for dashboard",
+                    module: "core/context_os/context_bus.rs",
+                    description: "Append-only SQLite event log of tool calls and session \n                                  mutations, with an in-process broadcast for live readers",
                 },
                 Mitigation {
                     feature: "Proxy Metrics",
@@ -218,7 +218,7 @@ pub fn alignment() -> Vec<OwaspMapping> {
                 },
                 Mitigation {
                     feature: "Command Blocklist",
-                    module: "tools ctx_shell",
+                    module: "core/shell_gate/mod.rs",
                     description: "Dangerous command patterns blocked before execution",
                 },
             ],
@@ -266,11 +266,6 @@ pub fn alignment() -> Vec<OwaspMapping> {
                     feature: "Agent Registry",
                     module: "core/agents.rs",
                     description: "HTTP-backed registration with heartbeat and auto-deregistration",
-                },
-                Mitigation {
-                    feature: "TaskStore File Locks",
-                    module: "core/a2a/task.rs",
-                    description: "Advisory file locks prevent lost updates from concurrent access",
                 },
                 Mitigation {
                     feature: "Atomic Writes",
@@ -360,6 +355,44 @@ mod tests {
             assert_eq!(m.owasp_id, format!("OWASP-AGENT-{:02}", i + 1));
             assert!(!m.lean_ctx_mitigations.is_empty());
         }
+    }
+
+    /// Every `module:` in this file must name a real file under `rust/src`.
+    ///
+    /// These mappings are a hand-written table of compliance claims with no
+    /// link to the code they describe, so a deleted module leaves its
+    /// mitigation standing and the file keeps asserting a control that no
+    /// longer exists. Twice already: `Shell Allowlist — opt-in command
+    /// allowlist restricting which binaries agents can execute` survived the
+    /// allowlist's removal, and `TaskStore File Locks` outlived
+    /// `core/a2a/task.rs`.
+    ///
+    /// The path is only the cheap half of the check. A mitigation whose file
+    /// still exists can still describe something the file no longer does —
+    /// verify the *description* by hand when you touch the module it names.
+    #[test]
+    fn every_mitigation_names_a_real_module() {
+        let src = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+        let mut missing: Vec<String> = Vec::new();
+        for mapping in alignment() {
+            for m in &mapping.lean_ctx_mitigations {
+                if !src.join(m.module).exists() {
+                    missing.push(format!(
+                        "{} / {} -> src/{}",
+                        mapping.owasp_id, m.feature, m.module
+                    ));
+                }
+            }
+        }
+        assert!(
+            missing.is_empty(),
+            "{} OWASP mitigation(s) name a module that does not exist: {missing:#?}\n\
+             Either the path drifted (a module became a directory: `foo.rs` -> \
+             `foo/mod.rs`) or the subject was deleted, in which case delete the \
+             mitigation rather than repointing it — an alignment table that \
+             claims a control we removed is worse than one that claims less.",
+            missing.len(),
+        );
     }
 
     #[test]

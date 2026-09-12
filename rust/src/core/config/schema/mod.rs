@@ -172,6 +172,117 @@ fn config_derived_keys() -> Vec<String> {
 mod tests {
     use super::*;
 
+    /// Sections whose Rust type is a map, not a struct: their schema keys are
+    /// *example entries* a user may add (`[lsp] go = "gopls"`), not fields. The
+    /// map is empty by default, so nothing resolves and every key would look
+    /// orphaned.
+    const MAP_TYPED_SECTIONS: &[&str] = &["lsp"];
+
+    /// Fields serde omits from `Config::default()` because they carry
+    /// `skip_serializing_if` and are empty by default. They are real fields —
+    /// they simply cannot be observed through a serialised default — so the
+    /// reverse-parity test below has to know about them. Adding a
+    /// `skip_serializing_if` field to a config struct means adding it here.
+    const SERDE_OMITTED_BY_DEFAULT: &[&str] = &[
+        "cost.default_model",
+        "cost.models",
+        "cost.prices",
+        "embedding.model",
+        "embedding.dimensions",
+        "embedding.auto_download",
+        "embedding.deterministic",
+    ];
+
+    /// `Config::default()` as JSON rather than TOML: JSON keeps `Option::None`
+    /// as `null`, so the 21 `Option` fields that TOML drops stay visible.
+    fn config_as_json() -> serde_json::Value {
+        serde_json::to_value(crate::core::config::Config::default())
+            .expect("Config must serialise to JSON")
+    }
+
+    /// Walk a dotted path into a JSON value. `None` when any segment is absent.
+    fn resolve<'a>(root: &'a serde_json::Value, path: &str) -> Option<&'a serde_json::Value> {
+        let mut cur = root;
+        for seg in path.split('.') {
+            cur = cur.as_object()?.get(seg)?;
+        }
+        Some(cur)
+    }
+
+    /// The reverse of [`known_keys_cover_every_config_struct_field`], and the
+    /// direction that actually bit.
+    ///
+    /// A `sections_*.rs` entry that hardcodes its default — `json!(false)`,
+    /// `json!([])` — instead of reading `cfg.<field>` keeps compiling after the
+    /// struct field is deleted. The key then stays in `config schema`, in
+    /// `config validate` and in the published
+    /// `docs/reference/generated/config-keys.md` while nothing reads it: a
+    /// setting the user can write that silently does nothing. `shell_allowlist`,
+    /// `shell_allowlist_extra` and `update_check_disabled` each survived their
+    /// field exactly that way.
+    ///
+    /// The compiler cannot see it — a hardcoded `json!` value has no link to the
+    /// struct — so it takes a test.
+    #[test]
+    fn every_schema_key_has_a_config_field() {
+        let schema = ConfigSchema::generate();
+        let cfg = config_as_json();
+
+        let mut orphans: Vec<String> = Vec::new();
+        for (section, sec) in &schema.sections {
+            // A section declaring no keys is a free-form map (`[ide_paths]`,
+            // `[model_context_windows]`): nothing to pair up.
+            if sec.keys.is_empty() {
+                continue;
+            }
+            if MAP_TYPED_SECTIONS.contains(&section.as_str()) {
+                continue;
+            }
+            let section_value = if section == "root" {
+                Some(&cfg)
+            } else {
+                resolve(&cfg, section)
+            };
+            match section_value {
+                None => orphans.push(format!("[{section}] (whole section)")),
+                // `[gateway.servers]` is a `Vec<GatewayServer>`: its schema keys
+                // describe the shape of one *entry*, not fields on `Config`.
+                // Same for any section that is not a plain object.
+                Some(v) if !v.is_object() => continue,
+                Some(_) => {
+                    for name in sec.keys.keys() {
+                        // `providers.mcp_bridges.<name>.url` and friends: the
+                        // `<…>` placeholder stands for a user-chosen map key, so
+                        // the path is unresolvable by construction.
+                        if name.contains('<') {
+                            continue;
+                        }
+                        let path = if section == "root" {
+                            name.clone()
+                        } else {
+                            format!("{section}.{name}")
+                        };
+                        // A key name may itself be dotted (`github.enabled`
+                        // inside `[providers]`), so resolve the whole path
+                        // rather than looking `name` up in the section object.
+                        if resolve(&cfg, &path).is_none()
+                            && !SERDE_OMITTED_BY_DEFAULT.contains(&path.as_str())
+                        {
+                            orphans.push(path);
+                        }
+                    }
+                }
+            }
+        }
+
+        assert!(
+            orphans.is_empty(),
+            "schema declares {} key(s) with no matching field on `Config`: {orphans:#?}
+             Either the struct field was deleted and the `sections_*.rs` entry              outlived it (delete the entry), or the field carries              `skip_serializing_if` and is empty by default (add it to              SERDE_OMITTED_BY_DEFAULT, above, with the reason).",
+            orphans.len(),
+        );
+    }
+
     /// Mirrors the acceptance rule used by `config validate` / `config apply`:
     /// a key is valid if it is listed verbatim or sits under a known section.
     fn accepted(known: &[String], key: &str) -> bool {

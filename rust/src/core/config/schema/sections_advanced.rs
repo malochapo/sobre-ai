@@ -608,14 +608,6 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
         ),
     );
     llm_keys.insert(
-        "api_key".into(),
-        key(
-            "string",
-            serde_json::json!(""),
-            "API key for OpenRouter or Anthropic backends",
-        ),
-    );
-    llm_keys.insert(
         "timeout_secs".into(),
         key(
             "u64",
