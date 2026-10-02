@@ -1,6 +1,9 @@
 fn main() {
     guard_source_contamination();
-    println!("cargo::rerun-if-changed=src/dashboard/dashboard.html");
+    // The guard reads every file under src/, so that is what must trigger a
+    // rerun. A watched path that does not exist makes the script always stale,
+    // which rebuilds the crate and every test binary on each cargo command.
+    println!("cargo::rerun-if-changed=src");
 }
 
 fn guard_source_contamination() {
