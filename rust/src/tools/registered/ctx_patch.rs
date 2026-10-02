@@ -605,6 +605,12 @@ fn handle_replace_all(
         )));
     }
 
+    // #475: the write below goes through `config_io::write_atomic`, which has
+    // no read-only-roots choke point (the edit_io writer every other op uses
+    // does). Deny here, or replace_all rewrites files inside a read-only root.
+    ctx.ensure_writable(&path)
+        .map_err(|e| ErrorData::invalid_params(e, None))?;
+
     let file_lock = crate::core::path_locks::per_file_lock(&path);
     let _guard = file_lock
         .lock()

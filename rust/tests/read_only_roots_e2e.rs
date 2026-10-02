@@ -33,6 +33,22 @@ fn clear_env(key: &str) {
     unsafe { std::env::remove_var(key) };
 }
 
+/// Call a tool and return what came back, whichever channel it used. A write
+/// gate answers either in the tool text (the atomic-write choke points return
+/// `ERROR: …`) or as a JSON-RPC error (the early `ensure_writable` gates return
+/// `invalid_params`). Folding both into one string keeps each assertion about
+/// the refusal itself, not about the channel that carried it.
+async fn call_outcome(
+    engine: &lean_ctx::engine::ContextEngine,
+    tool: &str,
+    args: serde_json::Value,
+) -> String {
+    match engine.call_tool_text(tool, Some(args)).await {
+        Ok(text) => text,
+        Err(e) => format!("{e:?}"),
+    }
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn read_only_root_is_readable_but_never_writable_via_engine() {
     let _lock = lean_ctx::core::data_dir::test_env_lock();
@@ -51,10 +67,25 @@ async fn read_only_root_is_readable_but_never_writable_via_engine() {
 
     let proj_file = project.join("src/main.rs");
     std::fs::write(&proj_file, "fn main() { let x = 1; }\n").expect("main.rs");
+    let proj_consts = project.join("src/consts.rs");
+    std::fs::write(
+        &proj_consts,
+        "pub const A: i32 = 1;\npub const B: i32 = 1;\n",
+    )
+    .expect("consts.rs");
 
+    let ref_line = "pub fn shared_secret() -> i32 { 42 }";
     let ref_file = refrepo.join("lib.rs");
-    let ref_original = "pub fn shared_secret() -> i32 { 42 }\n";
-    std::fs::write(&ref_file, ref_original).expect("refrepo/lib.rs");
+    let ref_original = format!("{ref_line}\n");
+    std::fs::write(&ref_file, &ref_original).expect("refrepo/lib.rs");
+    let ref_path = ref_file.to_string_lossy().to_string();
+    // The line's real anchor: the anchored ops pass the hash check and reach
+    // the write, so what stops them below is the read-only tier, not a CONFLICT.
+    let ref_hash = lean_ctx::core::anchor::line_hash(ref_line);
+    let rewritten = "pub fn shared_secret() -> i32 { 999 }";
+    // A file in a not-yet-existing directory, so a create that slipped through
+    // would leave a directory behind as well as a file.
+    let injected = refrepo.join("injected").join("injected.rs");
 
     let data_dir = dir.path().join("data");
     std::fs::create_dir_all(&data_dir).expect("data");
@@ -74,51 +105,131 @@ async fn read_only_root_is_readable_but_never_writable_via_engine() {
         .await
         .expect("ctx_read call");
 
-    // 2) WRITE (edit) into the read-only root must be refused.
-    let edit_ro = engine
-        .call_tool_text(
-            "ctx_edit",
-            Some(json!({
-                "path": ref_file.to_string_lossy(),
-                "old_string": "42",
-                "new_string": "999",
-            })),
-        )
-        .await
-        .expect("ctx_edit (read-only) call");
+    // 2) Every live write route, aimed at the read-only root. Each call carries
+    //    valid arguments for its route, so without the tier it would write.
+    let attempts = [
+        (
+            "ctx_patch set_line (anchored)",
+            "ctx_patch",
+            json!({
+                "path": ref_path,
+                "op": "set_line",
+                "line": 1,
+                "hash": ref_hash,
+                "new_text": rewritten,
+            }),
+        ),
+        (
+            "ctx_patch replace_unique",
+            "ctx_patch",
+            json!({
+                "path": ref_path,
+                "op": "replace_unique",
+                "old_text": "42",
+                "new_text": "999",
+            }),
+        ),
+        (
+            "ctx_patch replace_all",
+            "ctx_patch",
+            json!({
+                "path": ref_path,
+                "op": "replace_all",
+                "find": "42",
+                "replace": "999",
+            }),
+        ),
+        (
+            // A batch resolves each op's own `path` itself; the dispatch layer
+            // only pre-resolves a top-level `path`, and there is none here.
+            "ctx_patch ops[] batch",
+            "ctx_patch",
+            json!({
+                "ops": [{
+                    "op": "set_line",
+                    "path": ref_path,
+                    "line": 1,
+                    "hash": ref_hash,
+                    "new_text": rewritten,
+                }],
+            }),
+        ),
+        (
+            "ctx_patch create",
+            "ctx_patch",
+            json!({
+                "path": injected.to_string_lossy(),
+                "op": "create",
+                "new_text": "pub fn injected() {}\n",
+            }),
+        ),
+        (
+            "ctx_patch replace_symbol",
+            "ctx_patch",
+            json!({
+                "path": ref_path,
+                "op": "replace_symbol",
+                "line": 1,
+                "new_text": rewritten,
+            }),
+        ),
+        (
+            "ctx_refactor replace_symbol_body",
+            "ctx_refactor",
+            json!({
+                "action": "replace_symbol_body",
+                "path": ref_path,
+                "line": 1,
+                "new_text": rewritten,
+            }),
+        ),
+    ];
+    let mut refusals = Vec::with_capacity(attempts.len());
+    for (label, tool, args) in attempts {
+        refusals.push((label, call_outcome(&engine, tool, args).await));
+    }
 
-    // 3) CREATE of a new file inside the read-only root must be refused too.
-    let create_ro = engine
-        .call_tool_text(
-            "ctx_edit",
-            Some(json!({
-                "path": refrepo.join("injected.rs").to_string_lossy(),
-                "old_string": "",
-                "new_string": "pub fn injected() {}\n",
-                "create": true,
-            })),
-        )
-        .await
-        .expect("ctx_edit (create in read-only) call");
-
-    // 4) CONTROL: a normal edit inside the project root still works.
+    // 3) CONTROL: the same routes still write inside the project root.
     let edit_ok = engine
         .call_tool_text(
-            "ctx_edit",
+            "ctx_patch",
             Some(json!({
                 "path": proj_file.to_string_lossy(),
-                "old_string": "let x = 1;",
-                "new_string": "let x = 2;",
+                "op": "replace_unique",
+                "old_text": "let x = 1;",
+                "new_text": "let x = 2;",
             })),
         )
         .await
-        .expect("ctx_edit (project) call");
+        .expect("ctx_patch replace_unique (project) call");
+    let replace_all_ok = engine
+        .call_tool_text(
+            "ctx_patch",
+            Some(json!({
+                "path": proj_consts.to_string_lossy(),
+                "op": "replace_all",
+                "find": "= 1;",
+                "replace": "= 7;",
+            })),
+        )
+        .await
+        .expect("ctx_patch replace_all (project) call");
 
     // Snapshot disk state, then drop the env before asserting so a failure can
     // never leak the read-only root into a parallel test sharing the lock.
     let ref_after = std::fs::read_to_string(&ref_file).expect("read refrepo file");
+    let mut ref_entries: Vec<String> = std::fs::read_dir(&refrepo)
+        .expect("list refrepo")
+        .map(|e| {
+            e.expect("refrepo entry")
+                .file_name()
+                .to_string_lossy()
+                .into_owned()
+        })
+        .collect();
+    ref_entries.sort();
     let proj_after = std::fs::read_to_string(&proj_file).expect("read project file");
-    let injected_exists = refrepo.join("injected.rs").exists();
+    let consts_after = std::fs::read_to_string(&proj_consts).expect("read consts file");
     clear_env("LEAN_CTX_READ_ONLY_ROOTS");
     clear_env("LEAN_CTX_DATA_DIR");
 
@@ -129,28 +240,32 @@ async fn read_only_root_is_readable_but_never_writable_via_engine() {
     );
 
     // Every write into the read-only root is denied and names the tier.
-    assert!(
-        edit_ro.contains("read-only"),
-        "editing a file in a read-only root must be refused: {edit_ro}"
-    );
-    assert!(
-        create_ro.contains("read-only"),
-        "creating a file in a read-only root must be refused: {create_ro}"
-    );
+    for (label, out) in &refusals {
+        assert!(
+            out.contains("read-only root"),
+            "{label} into a read-only root must be refused by the read-only tier: {out}"
+        );
+    }
 
-    // The read-only tree is byte-identical — nothing leaked through any tool.
+    // The read-only tree is byte-identical — nothing leaked through any tool:
+    // no rewrite, no created file or directory, no temp or backup file.
     assert_eq!(
         ref_after, ref_original,
         "the read-only file must be untouched"
     );
-    assert!(
-        !injected_exists,
-        "no file may be created inside a read-only root"
+    assert_eq!(
+        ref_entries,
+        ["lib.rs"],
+        "nothing may be created inside a read-only root"
     );
 
-    // The project write applied normally — the feature does not break writes.
-    assert!(
-        proj_after.contains("let x = 2;"),
+    // The project writes applied normally — the tier does not break writes.
+    assert_eq!(
+        proj_after, "fn main() { let x = 2; }\n",
         "a normal project edit must still apply: {edit_ok}"
+    );
+    assert_eq!(
+        consts_after, "pub const A: i32 = 7;\npub const B: i32 = 7;\n",
+        "a normal project replace_all must still apply: {replace_all_ok}"
     );
 }
