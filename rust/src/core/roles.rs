@@ -211,29 +211,26 @@ fn builtin_reviewer() -> Role {
         tools: ToolPolicy {
             allowed: vec![
                 "ctx_read".into(),
-                "ctx_multi_read".into(),
-                "ctx_smart_read".into(),
-                "ctx_fill".into(),
                 "ctx_search".into(),
+                "ctx_glob".into(),
                 "ctx_tree".into(),
-                "ctx_graph".into(),
-                "ctx_architecture".into(),
-                "ctx_analyze".into(),
-                "ctx_diff".into(),
-                "ctx_symbol".into(),
+                "ctx_outline".into(),
                 "ctx_expand".into(),
-                "ctx_deps".into(),
+                "ctx_compose".into(),
+                "ctx_context".into(),
+                "ctx_graph".into(),
+                "ctx_callgraph".into(),
+                "ctx_impact".into(),
                 "ctx_review".into(),
                 "ctx_session".into(),
                 "ctx_knowledge".into(),
-                "ctx_semantic_search".into(),
-                "ctx_overview".into(),
-                "ctx_preload".into(),
-                "ctx_metrics".into(),
-                "ctx_cost".into(),
-                "ctx_gain".into(),
             ],
-            denied: vec!["ctx_edit".into(), "ctx_shell".into(), "ctx_execute".into()],
+            denied: vec![
+                "ctx_patch".into(),
+                "ctx_refactor".into(),
+                "ctx_shell".into(),
+                "ctx_execute".into(),
+            ],
         },
         io: IoPolicy {
             boundary_mode: "enforce".into(),
@@ -282,15 +279,16 @@ fn builtin_ops() -> Role {
             allowed: vec![
                 "ctx_read".into(),
                 "ctx_shell".into(),
+                "ctx_execute".into(),
                 "ctx_search".into(),
+                "ctx_glob".into(),
                 "ctx_tree".into(),
+                "ctx_outline".into(),
+                "ctx_context".into(),
                 "ctx_session".into(),
                 "ctx_knowledge".into(),
-                "ctx_overview".into(),
-                "ctx_metrics".into(),
-                "ctx_cost".into(),
             ],
-            denied: vec!["ctx_edit".into()],
+            denied: vec!["ctx_patch".into(), "ctx_refactor".into()],
         },
         io: IoPolicy::default(),
         limits: RoleLimits {
@@ -667,7 +665,7 @@ mod tests {
     fn coder_allows_all() {
         let r = builtin_coder();
         assert!(r.is_tool_allowed("ctx_read"));
-        assert!(r.is_tool_allowed("ctx_edit"));
+        assert!(r.is_tool_allowed("ctx_patch"));
         assert!(r.is_tool_allowed("ctx_shell"));
         assert!(r.is_tool_allowed("anything"));
     }
@@ -677,9 +675,18 @@ mod tests {
         let r = builtin_reviewer();
         assert!(r.is_tool_allowed("ctx_read"));
         assert!(r.is_tool_allowed("ctx_review"));
-        assert!(!r.is_tool_allowed("ctx_edit"));
-        assert!(!r.is_tool_allowed("ctx_shell"));
-        assert!(!r.is_tool_allowed("ctx_execute"));
+        // ctx_edit is unregistered and was never in the allow list, so denying it
+        // proved nothing. Bind the live write/exec tools to the explicit deny list.
+        for tool in ["ctx_patch", "ctx_refactor", "ctx_shell", "ctx_execute"] {
+            assert!(
+                !r.is_tool_allowed(tool),
+                "reviewer must not be allowed {tool}"
+            );
+            assert!(
+                r.tools.denied.iter().any(|d| d == tool),
+                "{tool} missing from the reviewer denied list"
+            );
+        }
     }
 
     #[test]
@@ -691,15 +698,17 @@ mod tests {
     #[test]
     fn ops_denies_edit() {
         let r = builtin_ops();
-        assert!(!r.is_tool_allowed("ctx_edit"));
+        assert!(!r.is_tool_allowed("ctx_patch"));
+        assert!(!r.is_tool_allowed("ctx_refactor"));
         assert!(r.is_tool_allowed("ctx_shell"));
+        assert!(r.is_tool_allowed("ctx_execute"));
         assert!(r.is_shell_allowed());
     }
 
     #[test]
     fn admin_unlimited() {
         let r = builtin_admin();
-        assert!(r.is_tool_allowed("ctx_edit"));
+        assert!(r.is_tool_allowed("ctx_patch"));
         assert!(r.is_tool_allowed("ctx_shell"));
         assert_eq!(r.limits.max_context_tokens, 500_000);
         assert_eq!(r.limits.max_cost_usd, 50.0);
@@ -714,13 +723,13 @@ mod tests {
             },
             tools: ToolPolicy {
                 allowed: vec!["*".into()],
-                denied: vec!["ctx_edit".into()],
+                denied: vec!["ctx_patch".into()],
             },
             io: IoPolicy::default(),
             limits: RoleLimits::default(),
         };
         assert!(r.is_tool_allowed("ctx_read"));
-        assert!(!r.is_tool_allowed("ctx_edit"));
+        assert!(!r.is_tool_allowed("ctx_patch"));
     }
 
     #[test]
@@ -768,7 +777,7 @@ mod tests {
         let merged = merge_roles(&parent, &child);
         assert_eq!(merged.role.name, "custom");
         assert_eq!(merged.role.description, "Custom reviewer");
-        assert!(!merged.is_tool_allowed("ctx_edit"));
+        assert!(!merged.is_tool_allowed("ctx_patch"));
         assert_eq!(merged.limits.max_context_tokens, 50_000);
     }
 

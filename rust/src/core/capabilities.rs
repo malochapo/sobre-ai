@@ -14,7 +14,6 @@ pub enum Capability {
     KnowledgeWrite,
     CrossProject,
     ConfigWrite,
-    AgentManage,
 }
 
 impl Capability {
@@ -30,7 +29,6 @@ impl Capability {
             Self::KnowledgeWrite => "knowledge:write",
             Self::CrossProject => "cross_project",
             Self::ConfigWrite => "config:write",
-            Self::AgentManage => "agent:manage",
         }
     }
 }
@@ -42,15 +40,14 @@ pub struct CapabilityCheckResult {
 
 pub fn required_capabilities(tool_name: &str) -> &'static [Capability] {
     match tool_name {
-        "ctx_edit" => &[Capability::FsRead, Capability::FsWrite],
-        "ctx_shell" => &[Capability::ExecUnrestricted],
+        // The live write path. `ctx_edit` is not registered: keying FsWrite on it
+        // meant no shipped tool required FsWrite at all, so a role without it
+        // could still edit files through ctx_patch.
+        "ctx_patch" | "ctx_refactor" => &[Capability::FsRead, Capability::FsWrite],
+        // ctx_execute's own description says it "shares ctx_shell's security
+        // policy"; requiring the same capability is what makes that true.
+        "ctx_shell" | "ctx_execute" => &[Capability::ExecUnrestricted],
         "ctx_knowledge" => &[Capability::KnowledgeRead, Capability::KnowledgeWrite],
-        // ctx_share is agent-to-agent handover WITHIN one project: the store is
-        // keyed per project root and push is jailed to it (enterprise#28), so it
-        // is not a cross-project data flow. AgentManage keeps it (like
-        // ctx_handoff) out of read-only roles (reviewer/ci/minimal).
-        "ctx_handoff" | "ctx_share" => &[Capability::KnowledgeRead, Capability::AgentManage],
-        "ctx_agent" | "ctx_task" => &[Capability::AgentManage],
         "ctx_session" | "ctx" => &[],
         _ => &[Capability::FsRead],
     }
@@ -69,7 +66,6 @@ pub fn role_capabilities(role_name: &str) -> HashSet<Capability> {
             Capability::KnowledgeWrite,
             Capability::CrossProject,
             Capability::ConfigWrite,
-            Capability::AgentManage,
         ]),
         "reviewer" | "ci" => HashSet::from([
             Capability::FsRead,
@@ -90,7 +86,6 @@ fn capabilities_from_role(role_name: &str) -> HashSet<Capability> {
             Capability::ExecUnrestricted,
             Capability::KnowledgeRead,
             Capability::KnowledgeWrite,
-            Capability::AgentManage,
         ]);
     };
 
@@ -102,19 +97,16 @@ fn capabilities_from_role(role_name: &str) -> HashSet<Capability> {
             && !role.tools.denied.iter().any(|d| d == name || d == "*")
     };
 
-    if has_tool("ctx_edit") {
+    if has_tool("ctx_patch") || has_tool("ctx_refactor") {
         caps.insert(Capability::FsWrite);
     }
-    if has_tool("ctx_shell") {
+    if has_tool("ctx_shell") || has_tool("ctx_execute") {
         caps.insert(Capability::ExecSandbox);
         caps.insert(Capability::ExecUnrestricted);
     }
     if has_tool("ctx_knowledge") {
         caps.insert(Capability::KnowledgeRead);
         caps.insert(Capability::KnowledgeWrite);
-    }
-    if has_tool("ctx_agent") || has_tool("ctx_task") || has_tool("ctx_handoff") {
-        caps.insert(Capability::AgentManage);
     }
     if role.io.allow_cross_project_search {
         caps.insert(Capability::CrossProject);
@@ -159,14 +151,86 @@ mod tests {
         assert!(caps.contains(&Capability::NetOutbound));
         assert!(caps.contains(&Capability::ExecUnrestricted));
         assert!(caps.contains(&Capability::ConfigWrite));
-        assert!(caps.contains(&Capability::AgentManage));
     }
 
     #[test]
     fn reviewer_cannot_write() {
-        let result = check_capabilities("reviewer", "ctx_edit");
-        assert!(!result.allowed);
-        assert!(result.missing.contains(&Capability::FsWrite));
+        // ctx_patch and ctx_refactor are the registered write paths. ctx_edit is
+        // not registered and falls through to the fs:read default, so asserting
+        // on it proved nothing.
+        for tool in ["ctx_patch", "ctx_refactor"] {
+            assert!(
+                crate::server::registry::is_registered(tool),
+                "{tool} is not registered: this test no longer proves anything"
+            );
+            let result = check_capabilities("reviewer", tool);
+            assert!(!result.allowed, "reviewer must not be granted {tool}");
+            assert!(
+                result.missing.contains(&Capability::FsWrite),
+                "{tool}: reviewer must be missing fs:write, got {:?}",
+                result.missing
+            );
+        }
+    }
+
+    #[test]
+    fn ops_role_gets_exec_but_not_write() {
+        // ops is resolved through roles.rs (capabilities_from_role), not a
+        // hard-coded grant. It does not grant ctx_patch/ctx_refactor, so it must
+        // not get fs:write; it grants ctx_shell/ctx_execute, so it gets exec.
+        for tool in ["ctx_patch", "ctx_refactor"] {
+            let result = check_capabilities("ops", tool);
+            assert!(!result.allowed, "ops must not be granted {tool}");
+            assert!(result.missing.contains(&Capability::FsWrite));
+        }
+        for tool in ["ctx_shell", "ctx_execute"] {
+            assert!(
+                check_capabilities("ops", tool).allowed,
+                "ops must be granted {tool}"
+            );
+        }
+    }
+
+    /// `capabilities_from_role` derives capabilities from tool names. Built-in
+    /// roles cannot pin that derivation (coder and admin use "*", reviewer is a
+    /// hard-coded arm), so custom roles that name one tool each do: keying the
+    /// derivation back on an unregistered name fails here.
+    #[test]
+    fn custom_role_capabilities_follow_the_live_tools() {
+        let iso = crate::core::data_dir::isolated_data_dir();
+        let dir = iso.path().join("roles");
+        std::fs::create_dir_all(&dir).unwrap();
+        let write_role = |name: &str, allowed: &[&str]| {
+            let list = allowed
+                .iter()
+                .map(|t| format!("\"{t}\""))
+                .collect::<Vec<_>>()
+                .join(", ");
+            std::fs::write(
+                dir.join(format!("{name}.toml")),
+                format!("[tools]\nallowed = [{list}]\n"),
+            )
+            .unwrap();
+        };
+
+        for tool in ["ctx_patch", "ctx_refactor", "ctx_shell", "ctx_execute"] {
+            let name = format!("probe_{}", tool.trim_start_matches("ctx_"));
+            write_role(&name, &["ctx_read", tool]);
+            let result = check_capabilities(&name, tool);
+            assert!(
+                result.allowed,
+                "a role allowing only ctx_read and {tool} must be granted {tool}, missing {:?}",
+                result.missing
+            );
+        }
+
+        write_role("probe_readonly", &["ctx_read"]);
+        for tool in ["ctx_patch", "ctx_refactor", "ctx_shell", "ctx_execute"] {
+            assert!(
+                !check_capabilities("probe_readonly", tool).allowed,
+                "a role allowing only ctx_read must not be granted {tool}"
+            );
+        }
     }
 
     #[test]
@@ -185,8 +249,19 @@ mod tests {
 
     #[test]
     fn developer_can_edit() {
-        let result = check_capabilities("developer", "ctx_edit");
-        assert!(result.allowed);
+        // "developer" is not a built-in role, so it exercises the not-found
+        // fallback grant; "coder" exercises capabilities_from_role with "*".
+        // Both must reach the live write tools, which require fs:write.
+        for role in ["developer", "coder"] {
+            for tool in ["ctx_patch", "ctx_refactor"] {
+                let result = check_capabilities(role, tool);
+                assert!(
+                    result.allowed,
+                    "{role}/{tool}: missing {:?}",
+                    result.missing
+                );
+            }
+        }
     }
 
     #[test]
@@ -208,6 +283,5 @@ mod tests {
             Capability::ExecUnrestricted.display_name(),
             "exec:unrestricted"
         );
-        assert_eq!(Capability::AgentManage.display_name(), "agent:manage");
     }
 }
