@@ -154,7 +154,7 @@ fn scenario_done_state_gate_would_block() {
 
     // These tools are NOT in done's allowed list
     assert!(!allowed.contains(&"ctx_read".to_string()));
-    assert!(!allowed.contains(&"ctx_edit".to_string()));
+    assert!(!allowed.contains(&"ctx_patch".to_string()));
     assert!(!allowed.contains(&"ctx_shell".to_string()));
 
     // Only ctx + ctx_workflow are allowed (the bypass)
@@ -344,13 +344,41 @@ fn scenario_passthrough_tools_never_blocked() {
     use lean_ctx::server::WORKFLOW_PASSTHROUGH_TOOLS;
 
     assert!(WORKFLOW_PASSTHROUGH_TOOLS.contains(&"ctx_read"));
-    assert!(WORKFLOW_PASSTHROUGH_TOOLS.contains(&"ctx_multi_read"));
-    assert!(WORKFLOW_PASSTHROUGH_TOOLS.contains(&"ctx_smart_read"));
     assert!(WORKFLOW_PASSTHROUGH_TOOLS.contains(&"ctx_search"));
     assert!(WORKFLOW_PASSTHROUGH_TOOLS.contains(&"ctx_tree"));
     assert!(WORKFLOW_PASSTHROUGH_TOOLS.contains(&"ctx_session"));
     assert!(WORKFLOW_PASSTHROUGH_TOOLS.contains(&"ctx"));
-    assert!(WORKFLOW_PASSTHROUGH_TOOLS.contains(&"ctx_workflow"));
+
+    // The batch read (ctx_multi_read once) and the auto-mode read
+    // (ctx_smart_read once) are ctx_read with `paths` / `mode`: the gate
+    // keys on the tool name, so they pass through as ctx_read.
+    let ctx_read = lean_ctx::server::registry::build_registry()
+        .tool_defs()
+        .into_iter()
+        .find(|def| def.name == "ctx_read")
+        .expect("ctx_read is registered");
+    let props = ctx_read
+        .input_schema
+        .get("properties")
+        .expect("ctx_read schema has properties");
+    assert!(
+        props.get("paths").is_some(),
+        "the batch read must stay ctx_read(paths)"
+    );
+    assert!(
+        props.get("mode").is_some(),
+        "the auto-mode read must stay ctx_read(mode)"
+    );
+
+    // Every entry names a registered tool, or `ctx` (the fan-out name). A
+    // dead name exempts nothing; ctx_workflow needs no entry, since
+    // guard_workflow skips that name itself.
+    for name in WORKFLOW_PASSTHROUGH_TOOLS {
+        assert!(
+            *name == "ctx" || lean_ctx::server::registry::is_registered(name),
+            "WORKFLOW_PASSTHROUGH_TOOLS names {name}, which is not a registered tool"
+        );
+    }
 }
 
 // ==========================================================================

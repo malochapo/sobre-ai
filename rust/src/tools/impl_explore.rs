@@ -55,13 +55,13 @@ fn env_usize(key: &str, default: usize) -> usize {
 /// Caller-facing knobs. `max_turns` is clamped to a sane range; `citation_only`
 /// mirrors FastContext's terse mode (emit only the `<final_answer>` block).
 #[derive(Debug, Clone)]
-pub struct ExploreOptions {
+pub(crate) struct ExploreOptions {
     pub max_turns: usize,
     pub citation_only: bool,
 }
 
 impl ExploreOptions {
-    pub fn new(max_turns: Option<usize>, citation_only: bool) -> Self {
+    pub(crate) fn new(max_turns: Option<usize>, citation_only: bool) -> Self {
         let mt = max_turns
             .unwrap_or_else(|| env_usize("LEAN_CTX_EXPLORE_MAX_TURNS", DEFAULT_MAX_TURNS))
             .clamp(1, 8);
@@ -80,7 +80,7 @@ impl Default for ExploreOptions {
 
 /// A single cited source span.
 #[derive(Debug, Clone)]
-pub struct Citation {
+pub(crate) struct Citation {
     pub file: String,
     pub start: usize,
     pub end: usize,
@@ -89,7 +89,13 @@ pub struct Citation {
 
 /// Result of an exploration run.
 #[derive(Debug, Clone)]
-pub struct ExploreOutcome {
+pub(crate) struct ExploreOutcome {
+    /// The answer, and the error message when the run fails. The only caller
+    /// today (`core::eval_harness`) runs in citation-only mode and reads just
+    /// `citations`, so nothing in production reads this — but it is the
+    /// function's primary result, not display metadata, and dropping it would
+    /// leave `handle` unable to report why a run failed.
+    #[allow(dead_code)]
     pub text: String,
     pub tokens: usize,
     pub citations: Vec<Citation>,
@@ -401,7 +407,7 @@ fn render(
 }
 
 /// Run a bounded, deterministic exploration for `query`.
-pub fn handle(
+pub(crate) fn handle(
     query: &str,
     project_root: &str,
     crp_mode: CrpMode,
@@ -510,36 +516,6 @@ pub fn handle(
     }
 }
 
-/// Parse the `path:start-end` citations out of an explore answer. Reused by the
-/// eval harness to score the Explore arm. Tolerant of the optional trailing
-/// label and of text outside the `<final_answer>` block.
-pub fn parse_final_answer(text: &str) -> Vec<(String, usize, usize)> {
-    let mut out = Vec::new();
-    let mut inside = false;
-    for line in text.lines() {
-        let trimmed = line.trim();
-        if trimmed == "<final_answer>" {
-            inside = true;
-            continue;
-        }
-        if trimmed == "</final_answer>" {
-            break;
-        }
-        if !inside || trimmed.is_empty() {
-            continue;
-        }
-        // First whitespace-delimited token is `path:start-end`.
-        let token = trimmed.split_whitespace().next().unwrap_or("");
-        if let Some((path, range)) = token.rsplit_once(':')
-            && let Some((s, e)) = range.split_once('-')
-            && let (Ok(start), Ok(end)) = (s.parse::<usize>(), e.parse::<usize>())
-        {
-            out.push((path.to_string(), start, end));
-        }
-    }
-    out
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -579,26 +555,6 @@ mod tests {
         assert!(!terms.iter().any(|t| t == "ab")); // too short
         // "cache" appears once despite two casings.
         assert_eq!(terms.iter().filter(|t| *t == "cache").count(), 1);
-    }
-
-    #[test]
-    fn parse_final_answer_extracts_citations() {
-        let text = "EXPLORE: foo\n\n<final_answer>\nsrc/a.rs:10-20  foo (fn)\nsrc/b.rs:5-5\n</final_answer>\n";
-        let cits = parse_final_answer(text);
-        assert_eq!(
-            cits,
-            vec![
-                ("src/a.rs".to_string(), 10, 20),
-                ("src/b.rs".to_string(), 5, 5),
-            ]
-        );
-    }
-
-    #[test]
-    fn parse_final_answer_ignores_text_outside_block() {
-        let text = "noise:1-2 should be ignored\n<final_answer>\nsrc/x.rs:1-3\n</final_answer>\ntrailing:9-9";
-        let cits = parse_final_answer(text);
-        assert_eq!(cits, vec![("src/x.rs".to_string(), 1, 3)]);
     }
 
     #[test]

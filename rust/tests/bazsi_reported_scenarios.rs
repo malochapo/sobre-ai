@@ -1,6 +1,7 @@
 //! Scenario tests for issues reported by `BazsiBazsi`:
 //!
-//! 1. Workflow persists after agent crash → blocks `ctx_multi_read` in next session
+//! 1. Workflow persists after agent crash → blocks the batch read in next session
+//!    (`ctx_multi_read` then; `ctx_read` with `paths` in sobre)
 //! 2. Cache-hit message is misleading when subagent cached the file
 //!
 //! These tests simulate real multi-session scenarios to verify the fixes.
@@ -159,25 +160,41 @@ fn scenario_crash_at_boundary_31min_expired() {
 }
 
 // ==========================================================================
-// SCENARIO 2: ctx_read / ctx_multi_read NEVER blocked by workflow
+// SCENARIO 2: ctx_read, batch read included, NEVER blocked by workflow
 // ==========================================================================
 // Bazsi's problem: "it also limits the multi-read tool, which is useful
 // across any phase"
+//
+// The multi-read and the auto-mode read were tools of their own then
+// (`ctx_multi_read`, `ctx_smart_read`). Neither is registered now: both are
+// `ctx_read`, with `paths` and with `mode` (auto by default). The workflow
+// gate keys on the tool name alone, so they pass through exactly when
+// `ctx_read` does, for as long as `ctx_read` is the tool taking them.
+
+/// Whether the registered `ctx_read` advertises `param` in its input schema.
+fn ctx_read_takes(param: &str) -> bool {
+    lean_ctx::server::registry::build_registry()
+        .tool_defs()
+        .iter()
+        .find(|def| def.name == "ctx_read")
+        .and_then(|def| def.input_schema.get("properties"))
+        .is_some_and(|props| props.get(param).is_some())
+}
 
 #[test]
 fn scenario_read_tools_in_passthrough_list() {
-    // ctx_read and ctx_multi_read must ALWAYS be in passthrough
+    // ctx_read (single, batch and auto-mode) must ALWAYS be in passthrough
     assert!(
         WORKFLOW_PASSTHROUGH_TOOLS.contains(&"ctx_read"),
         "ctx_read must always pass through workflow gate"
     );
     assert!(
-        WORKFLOW_PASSTHROUGH_TOOLS.contains(&"ctx_multi_read"),
-        "ctx_multi_read must always pass through workflow gate"
+        ctx_read_takes("paths"),
+        "the batch read must stay ctx_read(paths) to pass through as ctx_read"
     );
     assert!(
-        WORKFLOW_PASSTHROUGH_TOOLS.contains(&"ctx_smart_read"),
-        "ctx_smart_read must always pass through workflow gate"
+        ctx_read_takes("mode"),
+        "the auto-mode read must stay ctx_read(mode) to pass through as ctx_read"
     );
 }
 
@@ -192,8 +209,9 @@ fn scenario_search_and_tree_also_passthrough() {
 fn scenario_write_tools_not_in_passthrough() {
     // Write tools should still be gated
     assert!(!WORKFLOW_PASSTHROUGH_TOOLS.contains(&"ctx_shell"));
-    assert!(!WORKFLOW_PASSTHROUGH_TOOLS.contains(&"ctx_edit"));
-    assert!(!WORKFLOW_PASSTHROUGH_TOOLS.contains(&"ctx_write"));
+    assert!(!WORKFLOW_PASSTHROUGH_TOOLS.contains(&"ctx_patch"));
+    assert!(!WORKFLOW_PASSTHROUGH_TOOLS.contains(&"ctx_refactor"));
+    assert!(!WORKFLOW_PASSTHROUGH_TOOLS.contains(&"ctx_execute"));
 }
 
 #[test]
@@ -203,13 +221,12 @@ fn scenario_workflow_with_restricted_tools_still_allows_reads() {
     let state = spec.state("planning").unwrap();
     let allowed = state.allowed_tools.as_ref().unwrap();
 
-    // ctx_read is NOT in the allowed list
+    // ctx_read (the batch read included) is NOT in the allowed list
     assert!(!allowed.contains(&"ctx_read".to_string()));
-    assert!(!allowed.contains(&"ctx_multi_read".to_string()));
 
-    // But it IS in passthrough — so the gate won't block it
+    // But it IS in passthrough — so the gate won't block it, batch read included
     assert!(WORKFLOW_PASSTHROUGH_TOOLS.contains(&"ctx_read"));
-    assert!(WORKFLOW_PASSTHROUGH_TOOLS.contains(&"ctx_multi_read"));
+    assert!(ctx_read_takes("paths"));
 }
 
 // ==========================================================================
@@ -429,7 +446,7 @@ fn scenario_agent_b_not_blocked_after_agent_a_crash() {
 
     // Even if somehow loaded, passthrough tools wouldn't be blocked
     assert!(WORKFLOW_PASSTHROUGH_TOOLS.contains(&"ctx_read"));
-    assert!(WORKFLOW_PASSTHROUGH_TOOLS.contains(&"ctx_multi_read"));
+    assert!(ctx_read_takes("paths"));
 
     cleanup_data_dir();
 }
@@ -455,9 +472,9 @@ fn scenario_agent_b_sees_active_workflow_if_recent() {
     let run = loaded.unwrap();
     assert_eq!(run.current, "implementing");
 
-    // But ctx_read/ctx_multi_read are still allowed via passthrough
+    // But ctx_read, single and batch (paths), is still allowed via passthrough
     assert!(WORKFLOW_PASSTHROUGH_TOOLS.contains(&"ctx_read"));
-    assert!(WORKFLOW_PASSTHROUGH_TOOLS.contains(&"ctx_multi_read"));
+    assert!(ctx_read_takes("paths"));
 
     cleanup_data_dir();
 }

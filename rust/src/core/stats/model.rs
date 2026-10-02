@@ -139,15 +139,8 @@ pub(crate) fn classify_command(command: &str) -> TrafficClass {
         "cli_full" | "cli_raw" | "cli_glob" | "cli_find" | "cli_deps" | "cli_ls"
         | "ctx_compose" | "ctx_glob" | "ctx_tree" => TrafficClass::Passthrough,
         c if c.starts_with("cli_") => TrafficClass::Compressible,
-        "ctx_shell" | "ctx_search" | "ctx_semantic_search" => TrafficClass::Compressible,
-        c if c.starts_with("ctx_read")
-            || c.starts_with("ctx_multi_read")
-            || c == "ctx_smart_read"
-            || c == "ctx_git_read"
-            || c == "ctx_url_read" =>
-        {
-            TrafficClass::Compressible
-        }
+        "ctx_shell" | "ctx_search" => TrafficClass::Compressible,
+        c if c.starts_with("ctx_read") => TrafficClass::Compressible,
         _ => TrafficClass::Passthrough,
     }
 }

@@ -32,7 +32,7 @@ pub fn is_firewallable_tool(name: &str) -> bool {
 /// read always returns content"; both the firewall and the reference-results path
 /// honour it so a `ctx_read` can never degrade to a preview the agent can't edit.
 pub fn is_protected_read(name: &str) -> bool {
-    matches!(name, "ctx_read" | "ctx_multi_read" | "ctx_smart_read")
+    matches!(name, "ctx_read")
 }
 
 /// Effective minimum token count before firewalling (config + env override).
@@ -123,16 +123,29 @@ mod tests {
         assert!(is_firewallable_tool("ctx_tree"));
         assert!(is_firewallable_tool("ctx_execute"));
         assert!(!is_firewallable_tool("ctx_read"));
-        assert!(!is_firewallable_tool("ctx_multi_read"));
+        assert!(!is_firewallable_tool("ctx_expand"));
         assert!(!is_firewallable_tool("ctx_knowledge"));
     }
 
     #[test]
     fn protected_reads_are_file_readers_and_never_firewallable() {
         // Explicit reads must always return content (no firewall digest, no
-        // reference stub) so the agent can edit against the lines.
-        for read in ["ctx_read", "ctx_multi_read", "ctx_smart_read"] {
-            assert!(is_protected_read(read), "{read} must be a protected read");
+        // reference stub) so the agent can edit against the lines. `ctx_read`
+        // is the one live explicit read: it absorbed the batch read (`paths`,
+        // ex-`ctx_multi_read`), and the `ctx` fan-out resolves `tool=read` to
+        // `ctx_read` before dispatch. A protected read that is not a registered
+        // tool guards nothing, so the set is checked against the live registry.
+        let live_protected: Vec<&str> = crate::server::registry::build_registry()
+            .names()
+            .into_iter()
+            .filter(|name| is_protected_read(name))
+            .collect();
+        assert_eq!(
+            live_protected,
+            ["ctx_read"],
+            "the protected reads must be exactly the live explicit reads"
+        );
+        for read in live_protected {
             assert!(
                 !is_firewallable_tool(read),
                 "{read} must never be firewallable"

@@ -4,11 +4,7 @@ use crate::core::cache::{SessionCache, SharedBlock};
 use crate::core::codebook;
 use crate::core::tokens::count_tokens;
 
-pub fn handle(cache: &SessionCache) -> String {
-    analyze(cache)
-}
-
-pub fn handle_action(cache: &mut SessionCache, action: &str) -> String {
+pub(crate) fn handle_action(cache: &mut SessionCache, action: &str) -> String {
     match action {
         "apply" => apply_dedup(cache),
         _ => analyze(cache),

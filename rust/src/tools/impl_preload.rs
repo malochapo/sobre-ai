@@ -13,7 +13,7 @@ const TOTAL_TOKEN_BUDGET: usize = 4000;
 /// Returns the rendered preload plus whether it actually carries context
 /// (#1134). Callers must not re-derive that from the body: the guidance
 /// strings below are prose and drift, and a preloaded file may quote them.
-pub fn handle(
+pub(crate) fn handle(
     cache: &mut SessionCache,
     task: &str,
     path: Option<&str>,

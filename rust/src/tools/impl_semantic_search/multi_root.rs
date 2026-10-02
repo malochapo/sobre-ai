@@ -481,6 +481,7 @@ pub(crate) fn hybrid_results_for_root(
 }
 
 /// Boost existing hybrid results with SPLADE expansion scores.
+#[cfg(feature = "embeddings")]
 pub(crate) fn boost_with_splade(
     results: &mut [HybridResult],
     splade: &[crate::core::splade_retrieval::SpladeResult],

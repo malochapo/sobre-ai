@@ -440,13 +440,7 @@ impl LeanCtxServer {
             use crate::core::archive;
             let archivable = matches!(
                 name,
-                "ctx_shell"
-                    | "ctx_read"
-                    | "ctx_multi_read"
-                    | "ctx_smart_read"
-                    | "ctx_execute"
-                    | "ctx_search"
-                    | "ctx_tree"
+                "ctx_shell" | "ctx_read" | "ctx_execute" | "ctx_search" | "ctx_tree"
             );
             if archivable && archive::should_archive(&result_text) {
                 let cmd = helpers::get_str(args, "command")
@@ -854,32 +848,8 @@ impl LeanCtxServer {
         self.persist_shared_context_os(name, action.as_deref(), args)
             .await;
 
-        let skip_checkpoint = minimal
-            || matches!(
-                name,
-                "ctx_compress"
-                    | "ctx_metrics"
-                    | "ctx_benchmark"
-                    | "ctx_analyze"
-                    | "ctx_cache"
-                    | "ctx_discover"
-                    | "ctx_dedup"
-                    | "ctx_session"
-                    | "ctx_knowledge"
-                    | "ctx_agent"
-                    | "ctx_share"
-                    | "ctx_gain"
-                    | "ctx_overview"
-                    | "ctx_preload"
-                    | "ctx_cost"
-                    | "ctx_heatmap"
-                    | "ctx_task"
-                    | "ctx_impact"
-                    | "ctx_architecture"
-                    | "ctx_smells"
-                    | "ctx_quality"
-                    | "ctx_workflow"
-            );
+        let skip_checkpoint =
+            minimal || matches!(name, "ctx_session" | "ctx_knowledge" | "ctx_impact");
 
         // Output-echo nudge (#501): when the agent keeps re-quoting delivered
         // content, tell it once (cooldown-limited, stable text per #498).
@@ -916,12 +886,6 @@ impl LeanCtxServer {
             if let Some(root) = self.session.read().await.project_root.clone() {
                 crate::core::cognition_scheduler::maybe_run(&root);
             }
-        }
-
-        // #509: a folded read-cluster alias (ctx_smart_read / ctx_multi_read) stays
-        // callable but warns — prepend a one-line notice steering to the primary.
-        if let Some(notice) = crate::server::dynamic_tools::deprecation_notice(name) {
-            result_text = format!("{notice}\n{result_text}");
         }
 
         // #990: a machine-readable invocation (e.g. ctx_outline format=json) must

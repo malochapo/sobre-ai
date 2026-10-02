@@ -151,6 +151,7 @@ mod cold_start_guard_tests {
 mod determinism_tests {
     #[allow(clippy::wildcard_imports)]
     use super::super::*;
+    use crate::core::hybrid_search::HybridResult;
 
     #[test]
     fn rrf_merge_hybrid_is_deterministic_on_ties() {

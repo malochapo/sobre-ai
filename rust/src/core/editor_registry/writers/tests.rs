@@ -287,8 +287,16 @@ fn auto_approve_contains_core_tools() {
     assert!(tools.contains(&"ctx_read"));
     assert!(tools.contains(&"ctx_shell"));
     assert!(tools.contains(&"ctx_search"));
-    assert!(tools.contains(&"ctx_workflow"));
-    assert!(tools.contains(&"ctx_cost"));
+    assert!(tools.contains(&"ctx_session"));
+    assert!(tools.contains(&"ctx"));
+    // autoApprove is written into client configs: a name the registry does not
+    // serve is an approval for a tool that answers "Unknown tool".
+    for t in &tools {
+        assert!(
+            *t == "ctx" || crate::server::registry::is_registered(t),
+            "{t} is auto-approved but not registered"
+        );
+    }
 }
 
 #[test]

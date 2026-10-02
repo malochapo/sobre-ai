@@ -187,17 +187,8 @@ pub fn tool_schemas_json_for_test() -> String {
 /// Tools that always pass through the workflow gate regardless of state.
 /// Read-only tools should never be blocked — agents need them for context
 /// recovery after crashes or session transitions.
-pub const WORKFLOW_PASSTHROUGH_TOOLS: &[&str] = &[
-    "ctx",
-    "ctx_workflow",
-    "ctx_read",
-    "ctx_multi_read",
-    "ctx_smart_read",
-    "ctx_search",
-    "ctx_tree",
-    "ctx_session",
-    "ctx_ledger",
-];
+pub const WORKFLOW_PASSTHROUGH_TOOLS: &[&str] =
+    &["ctx", "ctx_read", "ctx_search", "ctx_tree", "ctx_session"];
 
 /// A workflow is stale if it hasn't been updated in 30 minutes.
 /// This prevents dead workflows from blocking tools across sessions.

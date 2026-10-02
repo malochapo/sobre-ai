@@ -25,15 +25,7 @@ pub const READONLY_TOOL_NAMES: &[&str] = &[
     "ctx_tree",
     "ctx_glob",
     "ctx_callgraph",
-    "ctx_overview",
     "ctx_expand",
-    "ctx_explore",
-    "ctx_delta",
-    "ctx_url_read",
-    "ctx_benchmark",
-    "ctx_analyze",
-    "ctx_discover",
-    "ctx_response",
 ];
 
 /// Tools that may destructively modify their environment.

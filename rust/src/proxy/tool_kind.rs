@@ -48,7 +48,6 @@ pub fn classify_tool_name(name: &str) -> ToolResultKind {
         "get_file",
         "fetch_file",
         "ctx_read",
-        "ctx_multi_read",
         "multi_read",
         "multiread",
         "read_many", // Gemini CLI `read_many_files`
@@ -333,7 +332,6 @@ mod tests {
             "ctx_read",
             "mcp__fs__readFile",
             // Multi-file reads return file content and must be protected too.
-            "ctx_multi_read",
             "read_many_files",
         ] {
             assert_eq!(

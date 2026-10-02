@@ -107,7 +107,7 @@ pub(super) fn context_ir_source_kind(name: &str) -> ContextIrSourceKindV1 {
             ContextIrSourceKindV1::Read
         }
         "ctx_shell" => ContextIrSourceKindV1::Shell,
-        "ctx_search" | "ctx_semantic_search" => ContextIrSourceKindV1::Search,
+        "ctx_search" => ContextIrSourceKindV1::Search,
         "ctx_provider" => ContextIrSourceKindV1::Provider,
         _ => ContextIrSourceKindV1::Other,
     }
@@ -126,7 +126,8 @@ pub(super) fn context_ir_source_kind(name: &str) -> ContextIrSourceKindV1 {
 /// when the read had *already saved* tokens, so verbatim `full`/`lines:` reads
 /// (0 savings) were silently dictionary-mangled and de-duplicated.
 ///
-/// `ctx_edit` is exempt for the same reason (#382): its `evidence (diff)` block
+/// `ctx_patch` is exempt for the same reason (#382): its `evidence (diff)` block
+/// (anchored ops and the `replace_unique` delegate to the edit handler alike)
 /// embeds verbatim source lines that must stay byte-accurate — agents treat the
 /// evidence as proof of what was written. The rest of its output (status line,
 /// pre/postimage hashes) is already minimal, so terse has nothing to gain.
@@ -134,7 +135,7 @@ fn skip_terse(name: &str, args: Option<&Map<String, Value>>, is_raw_shell: bool)
     let mode = crate::server::helpers::get_str(args, "mode");
     is_raw_shell
         || crate::core::terse::is_verbatim_read(name, mode.as_deref())
-        || name == "ctx_edit"
+        || name == "ctx_patch"
         || (name == "ctx_shell"
             && crate::server::helpers::get_str(args, "command")
                 .is_some_and(|c| crate::shell::compress::has_structural_output(&c)))
@@ -219,19 +220,11 @@ mod tests {
             ContextIrSourceKindV1::Read
         ));
         assert!(matches!(
-            context_ir_source_kind("ctx_smart_read"),
-            ContextIrSourceKindV1::Read
-        ));
-        assert!(matches!(
             context_ir_source_kind("ctx_shell"),
             ContextIrSourceKindV1::Shell
         ));
         assert!(matches!(
             context_ir_source_kind("ctx_search"),
-            ContextIrSourceKindV1::Search
-        ));
-        assert!(matches!(
-            context_ir_source_kind("ctx_semantic_search"),
             ContextIrSourceKindV1::Search
         ));
         assert!(matches!(
@@ -267,22 +260,15 @@ mod tests {
             "full/verbatim read (0 savings) must still skip terse"
         );
         assert!(
-            skip_terse("ctx_multi_read", None, false),
-            "multi_read must skip terse"
-        );
-        assert!(
-            skip_terse("ctx_smart_read", None, false),
-            "smart_read must skip terse"
-        );
-        assert!(
-            !skip_terse("ctx_grep", None, false),
+            !skip_terse("ctx_search", None, false),
             "ordinary tool output is eligible for terse"
         );
-        // #382: ctx_edit embeds verbatim source in its evidence diff — the
-        // terse dictionary (`return`→`ret`) and line-score filtering corrupted
-        // it into a false "the edit went wrong" signal for agents.
+        // #382: ctx_patch embeds verbatim source in its evidence diff (anchored
+        // ops and the replace_unique delegate alike) — the terse dictionary
+        // (`return`→`ret`) and line-score filtering corrupted it into a false
+        // "the edit went wrong" signal for agents.
         assert!(
-            skip_terse("ctx_edit", None, false),
+            skip_terse("ctx_patch", None, false),
             "edit evidence must stay byte-accurate"
         );
     }

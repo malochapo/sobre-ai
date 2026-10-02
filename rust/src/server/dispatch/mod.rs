@@ -552,10 +552,9 @@ mod tests {
             fixture,
             "ctx_read must never lose file bytes to the flood filter"
         );
-        assert_eq!(
-            sanitized_tool_text("ctx_multi_read", fixture.clone()),
-            fixture
-        );
+        // Batch reads (`paths`, ex-`ctx_multi_read`) and the `ctx` fan-out's
+        // `tool=read` both reach dispatch under the name `ctx_read`, so the
+        // assertion above covers every live explicit read.
 
         // Non-read tools keep the #257 degenerate-output cleanup.
         let cleaned = sanitized_tool_text("ctx_shell", fixture);

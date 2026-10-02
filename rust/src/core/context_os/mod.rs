@@ -143,8 +143,8 @@ pub fn secondary_event_kind(tool: &str, action: Option<&str>) -> Option<ContextE
                 None
             }
         }
-        "ctx_handoff" | "ctx_workflow" | "ctx_share" => Some(ContextEventKindV1::SessionMutated),
-        "ctx_knowledge" | "ctx_knowledge_relations" => {
+        "ctx_workflow" => Some(ContextEventKindV1::SessionMutated),
+        "ctx_knowledge" => {
             let a = action.unwrap_or("");
             if matches!(
                 a,
@@ -183,7 +183,7 @@ pub fn secondary_event_kind(tool: &str, action: Option<&str>) -> Option<ContextE
                 None
             }
         }
-        "ctx_proof" | "ctx_verify" => {
+        "ctx_verify" => {
             let a = action.unwrap_or("");
             if matches!(a, "generate" | "export" | "verify") {
                 Some(ContextEventKindV1::ProofAdded)

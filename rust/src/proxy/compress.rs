@@ -395,7 +395,6 @@ mod tests {
             "ctx_shell",
             "ctx_read",
             "ctx_search",
-            "ctx_grep",
             "mcp__lean-ctx__ctx_shell",
             "lean-ctx:ctx_read",
         ] {

@@ -72,7 +72,7 @@ fn verify_expected_preimage(pre: &FilePreimage, params: &EditParams) -> Result<(
 
 /// Bounded, secret-redacted unified diff for edit evidence. `pub(crate)` so the
 /// anchored editor (`ctx_patch`) reuses the identical evidence format (#1008).
-pub(crate) fn build_diff_evidence(old: &str, new: &str, label: &str, max_lines: usize) -> String {
+pub fn build_diff_evidence(old: &str, new: &str, label: &str, max_lines: usize) -> String {
     let diff = similar::TextDiff::from_lines(old, new)
         .unified_diff()
         .context_radius(3)
@@ -110,21 +110,6 @@ pub enum CacheEffect {
     /// Auto-escalation re-read full content that should be stored and marked
     /// as fully delivered.
     StoreFull(String),
-}
-
-/// Performs a string replacement edit on a file with CRLF/LF and whitespace
-/// tolerance. Thin wrapper that runs the I/O and applies the resulting cache
-/// effect to `cache` in one shot (used by tests and any in-process caller that
-/// already holds the cache exclusively).
-pub fn handle(cache: &mut SessionCache, params: &EditParams) -> String {
-    let last_mode = cache
-        .get(&params.path)
-        .map(|e| e.last_mode.clone())
-        .unwrap_or_default();
-    let (text, effect) = run_io(params, &last_mode);
-    record_outcome(params, &last_mode, &text, &effect);
-    apply_cache_effect(cache, &params.path, effect);
-    text
 }
 
 /// Quality loop (#494): classify the edit result and feed it into
@@ -680,6 +665,22 @@ fn find_original_span(content: &str, normalized_needle: &str) -> Option<String> 
 
 #[cfg(test)]
 mod tests {
+    /// The three-call sequence production runs inline (`run_io` ->
+    /// `record_outcome` -> `apply_cache_effect`). It used to be a shipped free
+    /// function whose only callers were the tests below, so it is test
+    /// scaffolding now rather than dead production code. It must stay in step
+    /// with `registered::impl_edit::CtxEditTool::handle`, which runs the same
+    /// three calls for real.
+    fn handle(cache: &mut SessionCache, params: &EditParams) -> String {
+        let last_mode = cache
+            .get(&params.path)
+            .map(|e| e.last_mode.clone())
+            .unwrap_or_default();
+        let (text, effect) = run_io(params, &last_mode);
+        record_outcome(params, &last_mode, &text, &effect);
+        apply_cache_effect(cache, &params.path, effect);
+        text
+    }
     use super::*;
     use std::io::Write;
     use tempfile::NamedTempFile;

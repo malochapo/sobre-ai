@@ -5,7 +5,7 @@ use crate::core::tokens::count_tokens;
 use crate::tools::CrpMode;
 use crate::tools::impl_response;
 
-pub fn handle(cache: &SessionCache, include_signatures: bool, crp_mode: CrpMode) -> String {
+pub(crate) fn handle(cache: &SessionCache, include_signatures: bool, crp_mode: CrpMode) -> String {
     let entries = cache.get_all_entries();
     let file_count = entries.len();
 

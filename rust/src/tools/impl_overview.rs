@@ -17,7 +17,7 @@ use crate::tools::CrpMode;
 /// Returns the rendered overview plus whether it is the complete graph-backed
 /// view (#1134). `false` means the partial, still-indexing fallback — callers
 /// must take it from here rather than pattern-matching the body text.
-pub fn handle(
+pub(crate) fn handle(
     _cache: &SessionCache,
     task: Option<&str>,
     path: Option<&str>,
@@ -352,7 +352,7 @@ fn import_hotspots_from_edges(gp: &GraphProvider, limit: usize) -> Vec<(String, 
     v
 }
 
-pub fn build_wakeup_briefing(project_root: &str, task: Option<&str>) -> String {
+pub(crate) fn build_wakeup_briefing(project_root: &str, task: Option<&str>) -> String {
     let mut parts = Vec::new();
 
     if let Some(knowledge) = crate::core::knowledge::ProjectKnowledge::load(project_root) {

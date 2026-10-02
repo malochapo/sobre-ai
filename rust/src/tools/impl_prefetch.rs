@@ -9,7 +9,7 @@ use crate::tools::CrpMode;
 
 const DEFAULT_MAX_FILES: usize = 10;
 
-pub fn handle(
+pub(crate) fn handle(
     cache: &mut SessionCache,
     root: &str,
     task: Option<&str>,

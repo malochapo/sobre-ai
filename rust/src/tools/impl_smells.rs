@@ -9,7 +9,7 @@ use crate::core::tokens::count_tokens;
 use crate::tools::output_format::{OutputFormat, parse_format};
 use serde_json::{Value, json};
 
-pub fn handle(
+pub(crate) fn handle(
     action: &str,
     rule: Option<&str>,
     path: Option<&str>,

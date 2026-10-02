@@ -24,25 +24,27 @@ pub mod ctx_tree;
 pub(crate) mod edit_io;
 pub(crate) mod edit_recovery;
 pub(crate) mod graph_meta;
+// Stays `pub`: driven from outside the crate by tests/suite/property_graph_reproducibility_contract.rs.
 pub mod impl_architecture;
-pub mod impl_compress;
-pub mod impl_control;
-pub mod impl_dedup;
-pub mod impl_discover;
+pub(crate) mod impl_compress;
+pub(crate) mod impl_dedup;
+pub(crate) mod impl_discover;
+// Stays `pub`: driven from outside the crate by tests/quality_loop_golden.rs and tests/suite/edit_reliability.rs.
 pub mod impl_edit;
-pub mod impl_explore;
-pub mod impl_gain;
+pub(crate) mod impl_explore;
+pub(crate) mod impl_gain;
+// Stays `pub`: driven from outside the crate by tests/multi_read_cap_scenarios.rs.
 pub mod impl_multi_read;
-pub mod impl_overview;
-pub mod impl_plan;
-pub mod impl_prefetch;
-pub mod impl_preload;
+pub(crate) mod impl_overview;
+pub(crate) mod impl_prefetch;
+pub(crate) mod impl_preload;
+// Stays `pub`: driven from outside the crate by tests/intensive_benchmarks.rs.
 pub mod impl_response;
-pub mod impl_semantic_search;
-pub mod impl_share;
-pub mod impl_smart_read;
-pub mod impl_smells;
-pub mod impl_symbol;
+pub(crate) mod impl_semantic_search;
+pub(crate) mod impl_share;
+pub(crate) mod impl_smart_read;
+pub(crate) mod impl_smells;
+pub(crate) mod impl_symbol;
 pub(crate) mod knowledge_shared;
 pub(crate) mod output_format;
 pub mod registered;

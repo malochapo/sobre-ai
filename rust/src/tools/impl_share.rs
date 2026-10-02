@@ -68,7 +68,7 @@ fn read_within_root(path: &str, project_root: &str) -> Option<(String, String, u
     Some((resolved_str, content, tokens))
 }
 
-pub fn handle(
+pub(crate) fn handle(
     action: &str,
     from_agent: Option<&str>,
     to_agent: Option<&str>,

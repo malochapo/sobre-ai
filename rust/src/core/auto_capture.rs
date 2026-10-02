@@ -71,7 +71,7 @@ fn derive_key(finding: &AutoFinding) -> String {
 /// Extract knowledge-worthy patterns from tool output that auto_findings misses.
 pub fn extract_extra(tool_name: &str, output: &str) -> Option<AutoFinding> {
     match tool_name {
-        "ctx_edit" | "ctx_multi_edit" => extract_edit_finding(output),
+        "ctx_multi_edit" => extract_edit_finding(output),
         "ctx_diff" => extract_diff_finding(output),
         _ => None,
     }

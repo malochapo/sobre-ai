@@ -5,12 +5,13 @@ use crate::core::bm25_index::{BM25Index, format_search_results};
 use crate::core::embedding_index::EmbeddingIndex;
 #[cfg(feature = "embeddings")]
 use crate::core::embeddings::EmbeddingEngine;
+#[cfg(feature = "embeddings")]
 use crate::core::hybrid_search::HybridResult;
 use crate::tools::CrpMode;
 
 /// Performs semantic code search using BM25, dense embeddings, or hybrid ranking.
 #[allow(clippy::too_many_arguments)]
-pub fn handle(
+pub(crate) fn handle(
     query: &str,
     path: &str,
     top_k: usize,
@@ -134,59 +135,7 @@ fn shrink_resident_after_embedding(root: &Path, index: std::sync::Arc<BM25Index>
     }
 }
 
-/// Structured single-root search used by the `semantic-search` CLI (`--json`)
-/// and any programmatic caller (editor extensions). Mirrors `handle`'s
-/// single-root logic but returns the ranked [`HybridResult`]s instead of a
-/// formatted report, so callers control their own serialization. Reuses the
-/// exact same hybrid/dense/BM25 ranking as the `ctx_semantic_search` MCP tool —
-/// no second code path to drift.
-pub fn search_hits(
-    query: &str,
-    path: &str,
-    top_k: usize,
-    mode: &str,
-    languages: Option<&[String]>,
-    path_glob: Option<&str>,
-) -> Result<Vec<HybridResult>, String> {
-    let (root_buf, subdir) = resolve_search_root(path)?;
-    let root = root_buf.as_path();
-
-    let filter = SearchFilter::new(languages, path_glob)
-        .map_err(|e| format!("invalid filter: {e}"))?
-        .with_subdir(subdir);
-
-    let index = BM25Index::load_or_build(root);
-    if index.doc_count == 0 {
-        return Ok(Vec::new());
-    }
-
-    let results = match mode.to_lowercase().as_str() {
-        "bm25" => bm25_hits(&index, query, top_k, &filter),
-        "dense" => {
-            #[cfg(feature = "embeddings")]
-            {
-                dense_results_for_root(query, root, &index, top_k, &filter).map(|(v, _)| v)?
-            }
-            #[cfg(not(feature = "embeddings"))]
-            {
-                return Err("dense mode requires the embeddings feature".to_string());
-            }
-        }
-        _ => {
-            #[cfg(feature = "embeddings")]
-            {
-                hybrid_results_for_root(query, root, &index, top_k, &filter).map(|(v, _)| v)?
-            }
-            #[cfg(not(feature = "embeddings"))]
-            {
-                bm25_hits(&index, query, top_k, &filter)
-            }
-        }
-    };
-
-    Ok(results)
-}
-
+#[cfg(feature = "embeddings")]
 fn bm25_hits(
     index: &BM25Index,
     query: &str,
@@ -206,7 +155,7 @@ fn bm25_hits(
 
 /// Rebuilds the BM25 search index for the given directory from scratch.
 #[must_use]
-pub fn handle_reindex(path: &str) -> String {
+pub(crate) fn handle_reindex(path: &str) -> String {
     // Promote to the project root so the rebuilt index lands in the same
     // namespace the search path resolves to (#948) — reindexing a subdirectory
     // would otherwise build an index the search can never find.
@@ -228,7 +177,7 @@ pub fn handle_reindex(path: &str) -> String {
 }
 
 #[must_use]
-pub fn handle_reindex_artifacts(path: &str, workspace: bool) -> String {
+pub(crate) fn handle_reindex_artifacts(path: &str, workspace: bool) -> String {
     let (root_buf, _subdir) = match resolve_search_root(path) {
         Ok(v) => v,
         Err(e) => return format!("ERR: {e}"),
@@ -267,7 +216,7 @@ pub fn handle_reindex_artifacts(path: &str, workspace: bool) -> String {
 ///
 /// Marchionini (2006): Exploratory search navigates from known points.
 /// This enables "show me similar code" workflows.
-pub fn handle_find_related(
+pub(crate) fn handle_find_related(
     file_path: &str,
     line: usize,
     project_root: &str,
@@ -349,7 +298,7 @@ fn truncate_query(q: &str, max: usize) -> &str {
 
 /// Public wrapper for eval harness: load embedding engine + index.
 #[cfg(feature = "embeddings")]
-pub fn load_engine_and_index_pub(
+pub(crate) fn load_engine_and_index_pub(
     root: &Path,
 ) -> Result<(&'static EmbeddingEngine, EmbeddingIndex), String> {
     load_engine_and_index(root)
@@ -357,7 +306,7 @@ pub fn load_engine_and_index_pub(
 
 /// Public wrapper for eval harness: prepare embeddings for a project.
 #[cfg(feature = "embeddings")]
-pub fn ensure_embeddings_for_eval(
+pub(crate) fn ensure_embeddings_for_eval(
     root: &Path,
     index: &BM25Index,
     engine: &EmbeddingEngine,
@@ -367,7 +316,8 @@ pub fn ensure_embeddings_for_eval(
 }
 
 /// Public wrapper for eval harness: apply SPLADE boosting.
-pub fn boost_with_splade_pub(
+#[cfg(feature = "embeddings")]
+pub(crate) fn boost_with_splade_pub(
     results: &mut [HybridResult],
     splade: &[crate::core::splade_retrieval::SpladeResult],
     weight: f64,
@@ -381,7 +331,7 @@ pub(crate) mod multi_root;
 mod scope;
 
 pub(crate) use bm25_store::*;
-pub use bm25_store::{get_thread_cache, set_thread_cache};
+pub(crate) use bm25_store::{get_thread_cache, set_thread_cache};
 pub(crate) use dense::*;
 pub(crate) use multi_root::*;
 pub(crate) use scope::*;

@@ -8,15 +8,9 @@ pub fn plan_mode_tools() -> &'static [&'static str] {
         "ctx_read",
         "ctx_search",
         "ctx_tree",
-        "ctx_overview",
-        "ctx_plan",
-        "ctx_metrics",
-        "ctx_compress",
         "ctx_session",
         "ctx_knowledge",
         "ctx_graph",
-        "ctx_retrieve",
-        "ctx_provider",
     ]
 }
 
@@ -320,16 +314,47 @@ mod tests {
 
     #[test]
     fn plan_mode_tools_are_readonly() {
+        use crate::core::capabilities::{Capability, required_capabilities};
+
         let tools = plan_mode_tools();
         assert!(tools.contains(&"ctx_read"));
         assert!(tools.contains(&"ctx_search"));
         assert!(tools.contains(&"ctx_tree"));
-        assert!(tools.contains(&"ctx_overview"));
-        assert!(tools.contains(&"ctx_plan"));
 
-        assert!(!tools.contains(&"ctx_edit"));
-        assert!(!tools.contains(&"ctx_shell"));
-        assert!(!tools.contains(&"ctx_compile"));
+        // Every live tool that writes files or runs commands. ctx_checkpoint is
+        // one: action=restore reverts files.
+        for writer in [
+            "ctx_patch",
+            "ctx_refactor",
+            "ctx_checkpoint",
+            "ctx_shell",
+            "ctx_execute",
+        ] {
+            assert!(
+                !tools.contains(&writer),
+                "{writer} writes or executes and must not be a plan-mode tool"
+            );
+        }
+
+        // Every entry is written into client allow-lists: it must be a tool the
+        // registry serves, and the capability gate must not class it as a writer.
+        for t in tools {
+            assert!(
+                crate::server::registry::is_registered(t),
+                "{t} is a plan-mode tool but not registered"
+            );
+            for cap in [
+                Capability::FsWrite,
+                Capability::FsDelete,
+                Capability::ExecSandbox,
+                Capability::ExecUnrestricted,
+            ] {
+                assert!(
+                    !required_capabilities(t).contains(&cap),
+                    "{t} requires {cap:?} but is a plan-mode tool"
+                );
+            }
+        }
     }
 
     #[test]

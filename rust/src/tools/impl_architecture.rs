@@ -549,7 +549,7 @@ fn handle_cycles(root: &str, fmt: OutputFormat) -> String {
                 let root_path = Path::new(root);
                 let v = json!({
                     "schema_version": crate::core::contracts::GRAPH_REPRODUCIBILITY_V1_SCHEMA_VERSION,
-                    "tool": "ctx_architecture",
+                    "tool": "ctx_graph",
                     "action": "cycles",
                     "project": project_meta(root),
                     "graph": graph_summary(root_path),
@@ -577,7 +577,7 @@ fn handle_cycles(root: &str, fmt: OutputFormat) -> String {
                 .collect();
             let v = json!({
                 "schema_version": crate::core::contracts::GRAPH_REPRODUCIBILITY_V1_SCHEMA_VERSION,
-                "tool": "ctx_architecture",
+                "tool": "ctx_graph",
                 "action": "cycles",
                 "project": project_meta(root),
                 "graph": graph_summary(root_path),
@@ -633,7 +633,7 @@ fn handle_entrypoints(root: &str, fmt: OutputFormat) -> String {
                 .collect();
             let v = json!({
                 "schema_version": crate::core::contracts::GRAPH_REPRODUCIBILITY_V1_SCHEMA_VERSION,
-                "tool": "ctx_architecture",
+                "tool": "ctx_graph",
                 "action": "entrypoints",
                 "project": project_meta(root),
                 "graph": graph_summary(root_path),

@@ -43,18 +43,11 @@ impl TaskClassifier {
     pub fn classify_tool(tool_name: &str) -> TaskCategory {
         let t = normalize(tool_name);
         match t.as_str() {
-            "ctx_edit" | "ctx_fill" => TaskCategory::Refactoring,
-            "ctx_read" | "ctx_multi_read" | "ctx_smart_read" | "ctx_delta" | "ctx_tree"
-            | "ctx_search" | "ctx_outline" | "ctx_graph" | "ctx_callgraph" => {
-                TaskCategory::Exploration
-            }
-            "ctx_semantic_search" | "ctx_architecture" | "ctx_impact" => TaskCategory::Architecture,
-            "ctx_overview" | "ctx_preload" | "ctx_task" | "ctx_intent" | "ctx_workflow" => {
-                TaskCategory::Planning
-            }
-            "ctx_handoff" | "ctx_agent" | "ctx_share" => TaskCategory::Delegation,
-            "ctx_session" | "ctx_knowledge" | "ctx_compress_memory" => TaskCategory::Knowledge,
-            "ctx_cost" | "ctx_gain" | "ctx_metrics" | "ctx_heatmap" => TaskCategory::Review,
+            "ctx_patch" | "ctx_refactor" => TaskCategory::Refactoring,
+            "ctx_read" | "ctx_tree" | "ctx_search" | "ctx_outline" | "ctx_graph"
+            | "ctx_callgraph" => TaskCategory::Exploration,
+            "ctx_impact" => TaskCategory::Architecture,
+            "ctx_session" | "ctx_knowledge" => TaskCategory::Knowledge,
             "ctx_shell" | "ctx_execute" => TaskCategory::Debugging,
             _ => TaskCategory::General,
         }
@@ -151,7 +144,7 @@ mod tests {
     #[test]
     fn classify_tools() {
         assert_eq!(
-            TaskClassifier::classify_tool("ctx_semantic_search"),
+            TaskClassifier::classify_tool("ctx_impact"),
             TaskCategory::Architecture
         );
     }
@@ -169,7 +162,7 @@ mod tests {
             TaskCategory::Exploration
         );
         assert_eq!(
-            TaskClassifier::classify_command_key("ctx_edit"),
+            TaskClassifier::classify_command_key("ctx_patch"),
             TaskCategory::Refactoring
         );
         assert_eq!(

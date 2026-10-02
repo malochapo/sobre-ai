@@ -153,10 +153,6 @@ pub fn session_lifecycle_pre_hook(
         return None;
     }
 
-    if tool_name == "ctx_overview" || tool_name == "ctx_preload" {
-        return None;
-    }
-
     let prof = profile_autonomy();
     let root = match project_root {
         Some(r) if !r.is_empty() && r != "." => r.to_string(),

@@ -4,20 +4,6 @@ use crate::core::tokens::count_tokens;
 use crate::tools::CrpMode;
 use crate::tools::ctx_read;
 
-pub fn handle(cache: &mut SessionCache, paths: &[String], mode: &str, crp_mode: CrpMode) -> String {
-    handle_with_task(cache, paths, mode, crp_mode, None)
-}
-
-pub fn handle_with_task(
-    cache: &mut SessionCache,
-    paths: &[String],
-    mode: &str,
-    crp_mode: CrpMode,
-    task: Option<&str>,
-) -> String {
-    handle_with_task_fresh(cache, paths, mode, false, crp_mode, task)
-}
-
 const DEFAULT_MAX_MULTI_READ_BYTES: usize = 512 * 1024;
 
 fn max_multi_read_bytes() -> usize {

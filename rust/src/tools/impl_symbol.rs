@@ -4,7 +4,7 @@ use crate::core::graph_provider::{self, FileInfo, GraphProvider, SymbolInfo};
 use crate::core::protocol;
 use crate::core::tokens::count_tokens;
 
-pub fn handle(
+pub(crate) fn handle(
     name: &str,
     file: Option<&str>,
     kind: Option<&str>,
@@ -59,7 +59,7 @@ pub fn handle(
 }
 
 /// Render the body of the symbol named `name` that best matches the full task.
-pub fn best_symbol_snippet_for_task(
+pub(crate) fn best_symbol_snippet_for_task(
     name: &str,
     task: &str,
     project_root: &str,
@@ -75,10 +75,6 @@ pub fn best_symbol_snippet_for_task(
     let (rendered, _full_file_tokens) = render_single(&candidates[index], gp, project_root);
     let emitted_tokens = count_tokens(&rendered);
     Some((rendered, emitted_tokens))
-}
-
-pub fn best_symbol_snippet(name: &str, project_root: &str) -> Option<(String, usize)> {
-    best_symbol_snippet_for_task(name, name, project_root)
 }
 
 /// Return the first index with the highest score so an uninformative task
@@ -123,7 +119,7 @@ fn symbol_task_score(symbol: &SymbolInfo, task: &str) -> usize {
 /// disambiguation entirely. Returns `(rendered, full_file_tokens)`, or a clear,
 /// actionable message (tokens = 0) when the handle is malformed, the graph is
 /// unavailable, or nothing resolves.
-pub fn render_by_handle(handle: &str, project_root: &str) -> (String, usize) {
+pub(crate) fn render_by_handle(handle: &str, project_root: &str) -> (String, usize) {
     let Some(parsed) = crate::core::handle::SymbolHandle::parse(handle) else {
         return (
             format!(

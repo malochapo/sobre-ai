@@ -163,17 +163,9 @@ pub fn warm_need_for_tool(tool: &str) -> WarmNeed {
     match tool {
         "ctx_search" => WarmNeed::Search,
         // Tools that build/consume the graph, call-graph, BM25 or artifact index.
-        "ctx_graph"
-        | "ctx_callgraph"
-        | "ctx_routes"
-        | "ctx_repomap"
-        | "ctx_impact"
-        | "ctx_artifacts"
-        | "ctx_semantic_search"
-        | "ctx_provider"
-        | "ctx_compose"
-        | "ctx_explore"
-        | "ctx_review" => WarmNeed::Heavy,
+        "ctx_graph" | "ctx_callgraph" | "ctx_impact" | "ctx_compose" | "ctx_review" => {
+            WarmNeed::Heavy
+        }
         _ => WarmNeed::None,
     }
 }
@@ -1027,14 +1019,8 @@ mod tests {
         for heavy in [
             "ctx_graph",
             "ctx_callgraph",
-            "ctx_routes",
-            "ctx_repomap",
             "ctx_impact",
-            "ctx_artifacts",
-            "ctx_semantic_search",
-            "ctx_provider",
             "ctx_compose",
-            "ctx_explore",
             "ctx_review",
         ] {
             assert_eq!(warm_need_for_tool(heavy), WarmNeed::Heavy, "{heavy}");
