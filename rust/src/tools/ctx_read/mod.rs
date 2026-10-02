@@ -11,10 +11,8 @@ use crate::core::tokens::count_tokens;
 use crate::tools::CrpMode;
 // `pub(crate)`: the conformance suite renders modes directly for its
 // accuracy invariants (GL#441).
-pub mod dedup_hook;
 mod helpers;
 pub use helpers::is_instruction_file;
-mod kernel;
 pub(crate) mod render;
 pub(crate) use render::*;
 /// Type-safe read-mode vocabulary (#528): single source of truth for which
@@ -345,9 +343,7 @@ pub fn handle_with_task(
     crp_mode: CrpMode,
     task: Option<&str>,
 ) -> String {
-    let mut result = handle_with_options(cache, path, mode, false, crp_mode, task);
-    kernel::enrich_with_kernel(&mut result, task);
-    result
+    handle_with_options(cache, path, mode, false, crp_mode, task)
 }
 
 /// Like `handle_with_task`, also returns the resolved mode name and pre-counted tokens.
@@ -577,18 +573,6 @@ fn handle_with_options_resolved_preread(
         }
     }
 
-    // R28: Kernel content dedup — detect re-reads of unchanged content.
-    if let Some(stub) = dedup_hook::maybe_dedup(path, &result.content, mode) {
-        let stub_tokens = count_tokens(&stub);
-        if stub_tokens < result.output_tokens {
-            result.content = stub;
-            result.output_tokens = stub_tokens;
-            result.is_cache_hit = true;
-        }
-    }
-
-    // R30: Feed bounce-tracker signal into adaptive compression bridge.
-    crate::core::context_kernel::adaptive_hook::update_from_bounce_tracker();
     if let Ok(mut bt) = crate::core::bounce_tracker::global().lock() {
         let original_tokens = cache.get(path).map_or(0, |e| e.original_tokens);
         bt.record_read(

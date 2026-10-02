@@ -167,41 +167,6 @@ pub async fn forward_request(
     let tokens_saved = original_size.saturating_sub(compressed_size) as u64 / 4;
     super::metrics::record_request(tokens_saved, compressed_size as u64);
 
-    // Context Kernel: record identity, coverage, ETPAO for this request.
-    {
-        let proxy_headers: Vec<(String, String)> = parts
-            .headers
-            .iter()
-            .filter_map(|(k, v)| {
-                v.to_str()
-                    .ok()
-                    .map(|v| (k.as_str().to_owned(), v.to_owned()))
-            })
-            .collect();
-        let kernel_data = crate::core::context_kernel::proxy_bridge::ProxyRequestData {
-            headers: proxy_headers,
-            input_tokens: original_size / 4,
-            output_tokens: 0,
-            tokens_saved: tokens_saved as usize,
-            model: parsed
-                .as_ref()
-                .and_then(|v| v.get("model"))
-                .and_then(|m| m.as_str())
-                .map(String::from),
-            provider: Some(provider_label.to_owned()),
-            request_count: 1,
-            ..Default::default()
-        };
-
-        // Evidence pipeline: proxy data → envelope → normalizer → receipt chain.
-        let kernel_result =
-            crate::core::context_kernel::proxy_bridge::process_proxy_request(&kernel_data);
-        crate::core::context_kernel::envelope_wiring::process_proxy_evidence(
-            &kernel_data,
-            &kernel_result,
-        );
-    }
-
     let model = parsed
         .as_ref()
         .and_then(|v| v.get("model"))

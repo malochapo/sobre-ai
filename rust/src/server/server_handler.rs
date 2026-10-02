@@ -263,8 +263,6 @@ impl ServerHandler for LeanCtxServer {
         // request task.
         use std::panic::AssertUnwindSafe;
         let computed = AssertUnwindSafe(async {
-            let client = self.client_name.read().await.clone();
-
             // Invariant 3: exactly one answer. The registry IS the surface —
             // no candidate set, no client quirks, no profile, no role, no
             // workflow state, no lazy core.
@@ -311,9 +309,6 @@ impl ServerHandler for LeanCtxServer {
                         .collect()
                 }
             };
-
-            // R28: Kernel schema optimization — budget-aware description compression.
-            let tools = crate::server::schema_hook::optimize_tools(tools, &client);
 
             Ok(ListToolsResult {
                 tools,

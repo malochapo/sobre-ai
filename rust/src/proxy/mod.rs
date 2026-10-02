@@ -65,7 +65,6 @@ mod upstream_tests;
 pub mod usage;
 pub mod usage_accounting;
 pub mod usage_meter;
-pub mod usage_parity;
 pub mod usage_sink;
 pub mod verbosity;
 

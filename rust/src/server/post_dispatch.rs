@@ -137,51 +137,6 @@ impl LeanCtxServer {
             if let Err(e) = store.save() {
                 tracing::warn!("lean-ctx: failed to persist cost attribution: {e}");
             }
-
-            // R29: Dispatch-level evidence for kernel health + adaptive signals.
-            crate::core::context_kernel::evidence_wiring::record_from_tool_dispatch(
-                &name_owned.clone(),
-                input_token_count as usize,
-                output_token_count_u64 as usize,
-                0, // savings tracked separately per-tool
-            );
-
-            // Context Kernel: record MCP tool call for ETPAO and receipt tracking.
-            crate::core::context_kernel::mcp_bridge::record_mcp_call(
-                &crate::core::context_kernel::mcp_bridge::McpCallData {
-                    tool_name: name_owned.clone(),
-                    input_tokens: input_token_count as usize,
-                    output_tokens: output_token_count_u64 as usize,
-                    is_retry: false,
-                    call_number: 1,
-                },
-            );
-
-            // Evidence pipeline: MCP data → envelope → normalizer → receipt chain.
-            let mcp_call_data = crate::core::context_kernel::mcp_bridge::McpCallData {
-                tool_name: name_owned.clone(),
-                input_tokens: input_token_count as usize,
-                output_tokens: output_token_count_u64 as usize,
-                is_retry: false,
-                call_number: 1,
-            };
-            crate::core::context_kernel::envelope_wiring::process_mcp_evidence(&mcp_call_data);
-            crate::core::context_kernel::mcp_receipt::record_receipt(
-                crate::core::context_kernel::mcp_receipt::McpReceipt {
-                    tool: name_owned.clone(),
-                    tokens_in: input_token_count as usize,
-                    tokens_out: output_token_count_u64 as usize,
-                    kernel_overhead: 0,
-                    accepted: true,
-                },
-            );
-
-            // R30: Response evidence — output token tracking.
-            crate::core::context_kernel::response_evidence::record_response(
-                &name_owned.clone(),
-                output_token_count_u64 as usize,
-                false,
-            );
         });
     }
 

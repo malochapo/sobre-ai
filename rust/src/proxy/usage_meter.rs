@@ -258,24 +258,6 @@ pub fn record(u: &super::usage::RealUsage) {
     // the installed sink (no-op locally). Never blocks the request path.
     super::usage_sink::push(u);
 
-    // R33: Feed measured usage into kernel envelope pipeline.
-    {
-        let label = u.wire.as_ref().map_or("Unknown", |w| {
-            // provider_kind_from_label expects a static or owned string;
-            // the label lives long enough for the conversion call.
-            match w.provider.as_str() {
-                "Anthropic" => "Anthropic",
-                "OpenAI" | "ChatGPT" => "OpenAI",
-                "Gemini" => "Gemini",
-                "Bedrock" => "Bedrock",
-                "Azure" => "Azure",
-                _ => "Unknown",
-            }
-        });
-        let envelope = super::usage_parity::real_usage_to_envelope(u, label);
-        crate::core::context_kernel::envelope_bridge::record_proxy_envelope(&envelope);
-    }
-
     // Mechanism attribution into the local savings ledger (enterprise#19).
     // Routing: the gateway served a cheaper model than requested — value the
     // rate delta on the measured input tokens. Caching: provider prompt-cache

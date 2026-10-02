@@ -37,46 +37,6 @@ pub fn handle(command: &str, output: &str, exit_code: i32, _crp_mode: CrpMode) -
     crate::shell::compress::engine::compress_for_outcome(command, output, exit_code)
 }
 
-pub fn handle_with_context(
-    command: &str,
-    output: &str,
-    exit_code: i32,
-    crp_mode: CrpMode,
-    project_root: Option<&str>,
-) -> String {
-    let mut result = handle(command, output, exit_code, crp_mode);
-
-    {
-        if let Some(root) = project_root {
-            let estimated_tokens = result.len() / 4;
-            if estimated_tokens > 500 {
-                let kernel_budget = 100;
-                if let Some(enrichment) =
-                    crate::core::context_kernel::bridge::kernel_enrich(command, root, kernel_budget)
-                    && !enrichment.blocks.is_empty()
-                {
-                    result.push_str("\n--- kernel context ---\n");
-                    result.push_str(&enrichment.blocks);
-                }
-            }
-        }
-    }
-
-    result
-}
-
-#[cfg(test)]
-mod kernel_tests {
-    use super::handle_with_context;
-    use crate::tools::CrpMode;
-
-    #[test]
-    fn handle_with_context_does_not_panic_on_short_output() {
-        let result = handle_with_context("ls", "file.txt", 0, CrpMode::Tdd, Some("/tmp"));
-        assert!(!result.is_empty());
-    }
-}
-
 #[cfg(test)]
 fn is_search_command(command: &str) -> bool {
     let cmd = command.trim_start();

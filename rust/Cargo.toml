@@ -82,7 +82,6 @@ default = [
   "tree-sitter",
   "secure-update",
   "jemalloc",
-  "context_kernel",
 ]
 
 # Local dense retrieval: ONNX embeddings + in-process HNSW, with the optional
@@ -104,7 +103,6 @@ ort-coreml = ["ort?/coreml"]
 shape-xlat = []
 secure-update = []
 experimental = []
-context_kernel = []
 tree-sitter = [
   "dep:tree-sitter",
   "dep:tree-sitter-rust",

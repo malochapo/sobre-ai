@@ -19,7 +19,6 @@ pub mod registry;
 pub mod resources;
 pub mod role_guard;
 pub mod roots;
-pub mod schema_hook;
 use roots::has_project_marker;
 pub mod tool_trait;
 pub mod tool_visibility;

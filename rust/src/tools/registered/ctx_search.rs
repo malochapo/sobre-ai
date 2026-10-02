@@ -285,9 +285,6 @@ fn handle_regex(args: &Map<String, Value>, ctx: &ToolContext) -> Result<ToolOutp
     // wrong). Align with cli_grep/cli_shell, which pass the output count.
     crate::core::savings_ledger::record_tool_event("ctx_search", total_observed, total_sent);
 
-    // R30: Search evidence for batch queries.
-    crate::tools::search_hook::on_search("batch_query", "regex", total_observed, total_sent);
-
     Ok(ToolOutput {
         text: final_out,
         original_tokens: total_observed,
@@ -333,7 +330,7 @@ fn handle_semantic(args: &Map<String, Value>, ctx: &ToolContext) -> Result<ToolO
     let artifacts = get_bool(args, "artifacts").unwrap_or(false);
     prime_bm25_cache(ctx);
 
-    let mut result = tokio::task::block_in_place(|| {
+    let result = tokio::task::block_in_place(|| {
         crate::tools::impl_semantic_search::handle(
             &query,
             &path,
@@ -347,21 +344,6 @@ fn handle_semantic(args: &Map<String, Value>, ctx: &ToolContext) -> Result<ToolO
         )
     });
 
-    // Context Kernel: enrich semantic search with cross-store context
-    {
-        let kernel_budget = 100;
-        if let Some(enrichment) =
-            crate::core::context_kernel::bridge::kernel_enrich(&query, &path, kernel_budget)
-            && !enrichment.blocks.is_empty()
-        {
-            result.push_str("\n--- kernel context ---\n");
-            result.push_str(&enrichment.blocks);
-        }
-    }
-
-    // R30: Search evidence for semantic searches.
-    let search_tokens = crate::core::tokens::count_tokens(&result);
-    crate::tools::search_hook::on_search(&query, "semantic", search_tokens, search_tokens);
     Ok(semantic_output(result))
 }
 
@@ -416,8 +398,6 @@ fn handle_symbol(args: &Map<String, Value>, ctx: &ToolContext) -> Result<ToolOut
     let (result, original) =
         crate::tools::impl_symbol::handle(&name, file.as_deref(), kind.as_deref(), &effective_root);
     let sent = crate::core::tokens::count_tokens(&result);
-    // R30: Search evidence for symbol lookups.
-    crate::tools::search_hook::on_search(&name, "symbol", original, sent);
     Ok(ToolOutput {
         text: result,
         original_tokens: original,
@@ -554,9 +534,6 @@ fn search_single(
     // multi-root branch above for why the previous arg was a double bug.
     crate::core::savings_ledger::record_tool_event("ctx_search", observed, sent);
 
-    // R30: Search evidence + dedup detection via kernel.
-    crate::tools::search_hook::on_search(pattern, "regex", observed, sent);
-
     Ok(ToolOutput {
         text: final_out,
         original_tokens: observed,
@@ -678,9 +655,6 @@ fn handle_batch_queries(
     let final_out = crate::core::protocol::append_savings(&combined, total_observed, total_sent);
     let saved = total_observed.saturating_sub(total_sent);
     crate::core::savings_ledger::record_tool_event("ctx_search", total_observed, total_sent);
-
-    // R30: Search evidence for batch queries.
-    crate::tools::search_hook::on_search("batch_query", "regex", total_observed, total_sent);
 
     Ok(ToolOutput {
         text: final_out,

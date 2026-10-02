@@ -48,8 +48,6 @@ pub(crate) mod impl_symbol;
 pub(crate) mod knowledge_shared;
 pub(crate) mod output_format;
 pub mod registered;
-pub mod search_hook;
-pub mod search_kernel;
 pub(crate) mod walk_guard;
 
 mod server;

@@ -113,7 +113,6 @@ pub mod context_deficit;
 pub mod context_field;
 pub mod context_handles;
 pub mod context_ir;
-pub mod context_kernel;
 pub mod context_ledger;
 pub mod context_lint;
 pub mod context_os;

@@ -426,33 +426,6 @@ pub fn post_dispatch_record_with_task(
     let prefetch_hint =
         project_root.and_then(|root| crate::core::fep_prefetch::prefetch_hint(root, path, ledger));
 
-    // Context Kernel: generate receipt for delivered context
-    {
-        if let (Some(task_str), Some(root)) = (task, project_root) {
-            let kernel =
-                crate::core::context_kernel::orchestrator::ContextKernel::for_project(root);
-            let ctx = crate::core::context_kernel::types::RetrievalContext {
-                query: task_str.to_owned(),
-                task: Some(task_str.to_owned()),
-                project_root: root.to_owned(),
-                budget: crate::core::context_field::TokenBudget {
-                    total: original_tokens,
-                    used: 0,
-                },
-                max_candidates: 10,
-            };
-            let plan = kernel.plan(&ctx);
-            let receipt = kernel.record_receipt(
-                &plan,
-                sent_tokens,
-                crate::core::context_kernel::types::ReceiptOutcome::Accepted,
-            );
-            let logger =
-                crate::core::context_kernel::shadow::ShadowLogger::default_for_project(root);
-            logger.log_receipt(&receipt);
-        }
-    }
-
     PostDispatchResult {
         eviction_hint: None,
         elicitation_hint: elicitation,
