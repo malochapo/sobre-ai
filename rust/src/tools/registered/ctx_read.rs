@@ -1254,7 +1254,7 @@ fn auto_degrade_read_mode(mode: &str) -> (String, Option<String>) {
     let warning = if degraded {
         Some(format!(
             "⚠ Context pressure: mode={mode} was downgraded to mode={new_mode} \
-             (verdict: {:?}). Use start_line=1 to bypass, or run ctx_compress to free budget.",
+             (verdict: {:?}). Use start_line=1 to bypass.",
             policy.decision.verdict
         ))
     } else {

@@ -50,7 +50,7 @@ pub fn read_footer(file_path: &str) -> Option<String> {
         // The header line is the SSOT [`COMPACT_VIEW_HEADER`] (also in `tdd_schema`);
         // the ladder now leads with the native path before the MCP shortcuts.
         RecoveryHints::Full => Some(format!(
-            "{COMPACT_VIEW_HEADER}\n  full: read \"{file_path}\" directly (no MCP)  ·  ctx_read(\"{file_path}\", mode=\"full\")  ·  exact bytes: ctx_read(\"{file_path}\", raw=true)  ·  recover: ctx_retrieve(\"{file_path}\")"
+            "{COMPACT_VIEW_HEADER}\n  full: read \"{file_path}\" directly (no MCP)  ·  ctx_read(\"{file_path}\", mode=\"full\")  ·  exact bytes: ctx_read(\"{file_path}\", raw=true)"
         )),
     }
 }
@@ -107,7 +107,15 @@ mod tests {
 
         crate::test_env::set_var("LEAN_CTX_RECOVERY_HINTS", "full");
         let full = read_footer("src/x.rs").expect("full emits a footer");
-        assert!(full.contains("raw=true") && full.contains("ctx_retrieve"));
+        assert!(full.contains("raw=true"));
+        assert!(
+            crate::server::registry::unregistered_tool_mentions(&full).is_empty(),
+            "the full footer names an unregistered tool: {full}"
+        );
+        assert!(
+            crate::server::registry::unregistered_tool_mentions(&minimal).is_empty(),
+            "the minimal footer names an unregistered tool: {minimal}"
+        );
         assert!(
             full.find("read \"src/x.rs\" directly").unwrap() < full.find("raw=true").unwrap(),
             "full ladder still leads with the native path"

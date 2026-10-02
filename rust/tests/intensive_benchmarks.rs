@@ -1032,10 +1032,12 @@ fn guard_tool_descriptions_not_empty() {
     );
 }
 
-/// #905: the ctx_shell/ctx_execute policy split is intentional, so the split must
-/// be self-describing. An agent that learns "ctx_execute runs what ctx_shell blocks"
-/// only by exhausting dead ctx_shell calls is paying for our documentation gap —
-/// pin the cross-reference in both directions so it cannot silently rot away.
+/// #905: the ctx_shell/ctx_execute relationship must be self-describing in both
+/// directions. It used to be a split — ctx_execute ran what ctx_shell blocked — and
+/// this test pinned the word "allowlist". Since invariant 6 there is no allowlist
+/// and both tools apply the same gate, so an agent told to escalate a [BLOCKED]
+/// command to ctx_execute is sent on a round trip that cannot succeed. Pin the
+/// shared gate, and forbid the allowlist claim from coming back.
 #[test]
 fn guard_shell_execute_policy_is_discoverable() {
     let descs = lean_ctx::server::tool_descriptions_for_test();
@@ -1054,8 +1056,12 @@ fn guard_shell_execute_policy_is_discoverable() {
         "ctx_shell must name ctx_execute as the escalation path (#905), got: '{shell}'"
     );
     assert!(
-        shell.contains("allowlist"),
-        "ctx_shell must state that it is the allowlisted path (#905), got: '{shell}'"
+        shell.contains("Same gate in ctx_execute"),
+        "ctx_shell must state that ctx_execute applies the same gate (#905), got: '{shell}'"
+    );
+    assert!(
+        !shell.to_lowercase().contains("allowlist"),
+        "ctx_shell must not claim an allowlist: there is none (invariant 6), got: '{shell}'"
     );
 
     let execute = desc_of("ctx_execute");

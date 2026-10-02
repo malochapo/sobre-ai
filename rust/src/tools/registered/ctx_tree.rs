@@ -18,7 +18,7 @@ impl McpTool for CtxTreeTool {
             "Directory tree with file counts per directory. depth=N (default 3);\n\
              show_hidden for dotfiles; paths for multi-root.\n\
              respect_gitignore filters ignored files (default true).\n\
-             WORKFLOW: lightweight orientation before ctx_repomap or ctx_compose.",
+             WORKFLOW: lightweight orientation before ctx_compose.",
             json!({
                 "type": "object",
                 "properties": {

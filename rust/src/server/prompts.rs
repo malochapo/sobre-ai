@@ -98,6 +98,40 @@ fn get_context_budget(tokens: &str) -> GetPromptResult {
 mod tests {
     use super::*;
 
+    /// Two prompts were deleted because their whole body told the agent to
+    /// call a tool that no longer exists. Guard the survivors.
+    #[test]
+    fn prompts_name_only_registered_tools() {
+        let ledger = crate::core::context_ledger::ContextLedger::new();
+        let mut seen: Vec<(String, String)> = Vec::new();
+        for p in list_prompts() {
+            let mut text = p.description.clone().unwrap_or_default();
+            let mut params = GetPromptRequestParams::new(p.name.clone());
+            let mut args = serde_json::Map::new();
+            for a in p.arguments.clone().unwrap_or_default() {
+                args.insert(a.name.clone(), serde_json::Value::String("x".into()));
+            }
+            params.arguments = Some(args);
+            if let Some(result) = get_prompt(&params, &ledger) {
+                text.push_str(&format!("{result:?}"));
+            }
+            let dead = crate::server::registry::unregistered_tool_mentions(&text);
+            assert!(dead.is_empty(), "prompt {} names {dead:?}", p.name);
+            seen.push((p.name.clone(), text));
+        }
+        // The body is read through `Debug`: prove it carries the message text,
+        // or this test would pass on an empty string.
+        let review = seen
+            .iter()
+            .find(|(n, _)| n == "context-review")
+            .expect("context-review");
+        assert!(
+            review.1.contains("Context Review"),
+            "prompt body not captured: {}",
+            review.1
+        );
+    }
+
     #[test]
     fn list_returns_three_prompts() {
         let prompts = list_prompts();

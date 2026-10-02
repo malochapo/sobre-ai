@@ -148,9 +148,72 @@ pub fn is_registered(name: &str) -> bool {
         .contains(name)
 }
 
+/// Every `ctx_*` token in `text` that does not name a registered tool.
+///
+/// Text sent to the agent — tool descriptions, injected rules, prompt bodies,
+/// recovery footers, host hook blocks — names tools by string, and nothing
+/// links a string to the registry. A tool leaves `build_registry()` and the
+/// sentences recommending it stay, telling the agent to call something that
+/// answers `Unknown tool`. This is the check that closes that class.
+///
+/// A token is `ctx_` followed by `[a-z0-9_]`, bounded on both sides by a
+/// character that cannot continue an identifier, so `ctx_search(action=symbol)`
+/// yields `ctx_search` and nothing else.
+pub fn unregistered_tool_mentions(text: &str) -> Vec<String> {
+    let bytes = text.as_bytes();
+    let is_ident = |b: u8| b.is_ascii_alphanumeric() || b == b'_';
+    let mut out: Vec<String> = Vec::new();
+    let mut i = 0;
+    while let Some(off) = text[i..].find("ctx_") {
+        let start = i + off;
+        let mut end = start + 4;
+        while end < bytes.len() && is_ident(bytes[end]) {
+            end += 1;
+        }
+        let bounded_left = start == 0 || !is_ident(bytes[start - 1]);
+        if bounded_left && end > start + 4 {
+            let token = &text[start..end];
+            if !is_registered(token) && !out.iter().any(|t| t == token) {
+                out.push(token.to_string());
+            }
+        }
+        i = end.max(start + 4);
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn unregistered_tool_mentions_finds_only_dead_names() {
+        assert_eq!(
+            unregistered_tool_mentions("use ctx_search(action=symbol) or ctx_symbol"),
+            vec!["ctx_symbol".to_string()],
+        );
+        assert!(unregistered_tool_mentions("ctx_read, ctx_patch.").is_empty());
+        assert!(unregistered_tool_mentions("my_ctx_thing and ctx_").is_empty());
+    }
+
+    /// Every tool description and parameter description the agent receives
+    /// names only registered tools.
+    #[test]
+    fn tool_descriptions_name_only_registered_tools() {
+        let mut offenders: Vec<String> = Vec::new();
+        for def in build_registry().tool_defs() {
+            let mut text = def.description.as_deref().unwrap_or_default().to_string();
+            text.push('\n');
+            text.push_str(&serde_json::Value::Object((*def.input_schema).clone()).to_string());
+            for dead in unregistered_tool_mentions(&text) {
+                offenders.push(format!("{} -> {dead}", def.name));
+            }
+        }
+        assert!(
+            offenders.is_empty(),
+            "tool definitions name tools that are not registered: {offenders:#?}"
+        );
+    }
 
     #[test]
     fn is_registered_agrees_with_a_freshly_built_registry() {

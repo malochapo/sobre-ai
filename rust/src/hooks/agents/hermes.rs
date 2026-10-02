@@ -23,13 +23,7 @@ pub(super) fn hermes_rules_content() -> String {
         crate::core::rules_canonical::Wrapper::Shared,
         crate::core::config::CompressionLevel::Off,
     );
-    format!(
-        "{base}\n\
-         Available tools: ctx_overview, ctx_preload, ctx_dedup, ctx_compress, \
-         ctx_session, ctx_knowledge, ctx_semantic_search.\n\
-         Multi-agent: ctx_agent(action=handoff|sync). \
-         Diary: ctx_agent(action=diary, category=discovery|decision|blocker|progress|insight).\n"
-    )
+    format!("{base}\n")
 }
 
 pub(crate) fn install_hermes_hook_with_mode(global: bool, mode: HookMode) {
@@ -135,11 +129,7 @@ fn hermes_replace_rules_content() -> String {
     format!(
         "{base}\n\
          ## Replace Mode — native tools denied\n\
-         Native Read/Grep/Glob/Bash are denied. Use ONLY ctx_* MCP tools.\n\
-         Available tools: ctx_overview, ctx_preload, ctx_dedup, ctx_compress, \
-         ctx_session, ctx_knowledge, ctx_semantic_search.\n\
-         Multi-agent: ctx_agent(action=handoff|sync). \
-         Diary: ctx_agent(action=diary, category=discovery|decision|blocker|progress|insight).\n"
+         Native Read/Grep/Glob/Bash are denied. Use ONLY ctx_* MCP tools.\n"
     )
 }
 
@@ -157,4 +147,23 @@ fn install_project_hermes_rules(mode: HookMode) {
         false,
         "lean-ctx rules in .hermes.md",
     );
+}
+
+#[cfg(test)]
+mod tool_name_tests {
+    use super::*;
+
+    /// Replace mode denies the native tools, so a wrong tool list there leaves
+    /// the agent with nothing that works. Both blocks must name only
+    /// registered tools.
+    #[test]
+    fn hermes_blocks_name_only_registered_tools() {
+        for (label, text) in [
+            ("shared", hermes_rules_content()),
+            ("replace", hermes_replace_rules_content()),
+        ] {
+            let dead = crate::server::registry::unregistered_tool_mentions(&text);
+            assert!(dead.is_empty(), "hermes {label} block names {dead:?}");
+        }
+    }
 }

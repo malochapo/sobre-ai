@@ -40,7 +40,7 @@ Parameters: `path`, `task`
 ## `ctx_context`
 
 Session context overview — cached files, seen files, session state, CRP mode.
-WORKFLOW: track context budget periodically — use before ctx_compress/ctx_compile.
+WORKFLOW: track context budget periodically.
 ANTIPATTERN: not for reading file content — use ctx_read or ctx_compose.
 
 Parameters: _none_
@@ -176,7 +176,7 @@ Parameters: `background_action`, `command`, `cwd`, `env`, `inline`, `job_id`, `r
 Directory tree with file counts per directory. depth=N (default 3);
 show_hidden for dotfiles; paths for multi-root.
 respect_gitignore filters ignored files (default true).
-WORKFLOW: lightweight orientation before ctx_repomap or ctx_compose.
+WORKFLOW: lightweight orientation before ctx_compose.
 
 Parameters: `depth`, `path`, `paths`, `respect_gitignore`, `show_hidden`
 

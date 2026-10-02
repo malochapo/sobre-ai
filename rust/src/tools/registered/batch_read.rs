@@ -50,11 +50,10 @@ fn handle_inner(args: &Map<String, Value>, ctx: &ToolContext) -> Result<ToolOutp
     // `block_in_place`. The previous nested `block_in_place` calls could exhaust the
     // 32-thread blocking pool under concurrent reads and freeze the server (#271).
     let (paths, current_task) = {
-        let Some(session) =
-            crate::server::bounded_lock::read(session_lock, "ctx_multi_read:session")
+        let Some(session) = crate::server::bounded_lock::read(session_lock, "batch_read:session")
         else {
             return Err(ErrorData::internal_error(
-                "session read-lock timeout in ctx_multi_read — another tool may be holding it. Retry in a moment.",
+                "session read-lock timeout in batch ctx_read — another tool may be holding it. Retry in a moment.",
                 None,
             ));
         };
@@ -98,10 +97,9 @@ fn handle_inner(args: &Map<String, Value>, ctx: &ToolContext) -> Result<ToolOutp
     // Batch read under one bounded write lock. `bounded_lock` guarantees we never
     // block the runtime indefinitely and degrade gracefully on contention instead
     // of hanging; ctx_read's own fast/slow path tolerates this lock being held.
-    let Some(mut cache) = crate::server::bounded_lock::write(cache_lock, "ctx_multi_read:cache")
-    else {
+    let Some(mut cache) = crate::server::bounded_lock::write(cache_lock, "batch_read:cache") else {
         return Err(ErrorData::internal_error(
-            "cache write-lock timeout in ctx_multi_read — another tool may be holding it. Retry in a moment.",
+            "cache write-lock timeout in batch ctx_read — another tool may be holding it. Retry in a moment.",
             None,
         ));
     };

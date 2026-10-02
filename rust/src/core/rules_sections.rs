@@ -196,36 +196,21 @@ mod tests {
         }
     }
 
-    /// A tool that left the registry must not be taught. `ctx_symbol` and
-    /// `ctx_semantic_search` were folded into `ctx_search` actions (#509), so
-    /// they are the standing case.
+    /// A tool that left the registry must not be taught. This used to check
+    /// three names by hand (`ctx_symbol`, `ctx_semantic_search`,
+    /// `ctx_multi_read`), each added after it had already leaked; it now checks
+    /// every `ctx_*` token against the registry.
     #[test]
     fn unregistered_tools_are_never_named() {
-        for tool in ["ctx_symbol", "ctx_semantic_search", "ctx_multi_read"] {
-            assert!(
-                !crate::server::registry::is_registered(tool),
-                "test premise broken: {tool} is registered again"
-            );
-        }
-        for text in [
-            intent_section(),
-            hook_covered_tools_section(),
-            shadow_minimal_section(),
-            anti_section(),
-            litm_end_section(),
+        for (label, text) in [
+            ("intent", intent_section()),
+            ("hook_covered_tools", hook_covered_tools_section()),
+            ("shadow_minimal", shadow_minimal_section()),
+            ("anti", anti_section()),
+            ("litm_end", litm_end_section()),
         ] {
-            for tool in ["ctx_symbol", "ctx_semantic_search", "ctx_multi_read"] {
-                // `ctx_search(action=symbol)` legitimately contains "symbol",
-                // so match the bare tool name followed by a word boundary.
-                for hit in text.match_indices(tool) {
-                    let after = text[hit.0 + tool.len()..].chars().next();
-                    assert!(
-                        after.is_some_and(|c| c.is_alphanumeric() || c == '_'),
-                        "section names the unregistered {tool}:
-{text}"
-                    );
-                }
-            }
+            let dead = crate::server::registry::unregistered_tool_mentions(&text);
+            assert!(dead.is_empty(), "{label} section names {dead:?}:\n{text}");
         }
     }
 
