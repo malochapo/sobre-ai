@@ -380,6 +380,10 @@ mod tests {
     #[test]
     #[serial_test::serial(code_health_fabric)]
     fn hotspot_cc_reads_back_persisted_edge() {
+        // serial_test only orders this module's tests; a test elsewhere that
+        // flips `LEAN_CTX_DATA_DIR` can still split apply's write and the
+        // read-back across two dirs (#695). Same guard as the sibling above.
+        let _iso = crate::core::data_dir::isolated_data_dir();
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path().to_str().unwrap();
         std::fs::write(dir.path().join("lib.rs"), "pub fn ok() {}\n").unwrap();

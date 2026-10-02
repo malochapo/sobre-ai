@@ -400,6 +400,10 @@ fn resolve_name_path_ambiguous_trait_impls() {
 /// #845: file_scope narrows ambiguous symbols to a single file.
 #[test]
 fn file_scope_disambiguates_ambiguous_symbol() {
+    // Private data dir under the global env lock: serializes this test against
+    // resolve_name_path_unknown_is_no_symbol (which sets LEAN_CTX_DATA_DIR and
+    // reaches the same graph build) and restores the env on drop, even on panic.
+    let _data = crate::core::data_dir::isolated_data_dir();
     let dir = tempfile::tempdir().unwrap();
     let proj = dir.path().join("proj845");
     std::fs::create_dir_all(proj.join("src")).unwrap();
@@ -420,6 +424,14 @@ fn file_scope_disambiguates_ambiguous_symbol() {
     .unwrap();
     let root = proj.to_string_lossy().to_string();
 
+    // Pre-build the graph so every resolve below is served by `open_existing`
+    // and never reaches `graph_provider::BUILD_GATE`. That gate is process-wide
+    // and try_lock'ed: while ANY other test builds ANY graph, `open_or_build`
+    // returns None and resolve answers "NO_SYMBOL: no symbol index available".
+    // Same remedy as impl_overview's overview_header_surfaces_persisted_call_edges.
+    crate::core::graph_provider::build_property_graph(&root)
+        .expect("premise: symbol graph must build for the fixture");
+
     // Without file_scope: ambiguous (2 matches).
     let err = super::resolve_name_path("RenderBridge/execute", &root)
         .expect_err("should be ambiguous without file_scope");
@@ -434,8 +446,6 @@ fn file_scope_disambiguates_ambiguous_symbol() {
     let r = super::resolve_name_path_scoped("RenderBridge/execute", &root, Some("src/b.rs"))
         .expect("file_scope should disambiguate");
     assert!(r.rel_path.ends_with("src/b.rs"), "got: {}", r.rel_path);
-
-    crate::test_env::remove_var("LEAN_CTX_DATA_DIR");
 }
 
 #[test]

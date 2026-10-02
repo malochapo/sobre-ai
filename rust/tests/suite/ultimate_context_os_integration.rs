@@ -30,6 +30,22 @@ fn rand_u32() -> u32 {
     (h.finish() & 0xFFFF_FFFF) as u32
 }
 
+/// Serializes the tests in this file that open a `ContextBus`.
+///
+/// `ContextBus::new()` takes no path: every bus here opens the same on-disk DB
+/// under the default data dir, each on its own SQLite connection.
+/// `multi_agent_event_storm` keeps that DB's write lock busy from eight threads
+/// back to back on one connection, and SQLite's busy handler is not a queue, so
+/// another connection can wait out the bus's 5 s `busy_timeout`. `append` then
+/// returns `None`, nothing is broadcast, and a subscriber's `try_recv` sees
+/// `Empty`. Each test that opens a bus takes this lock first. Poison is ignored:
+/// one failed test must not fail the next.
+fn context_bus_db_lock() -> std::sync::MutexGuard<'static, ()> {
+    static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    LOCK.lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
 mod shared_sessions {
     use super::*;
     use lean_ctx::core::context_os::SharedSessionStore;
@@ -209,6 +225,7 @@ mod context_bus {
 
     #[test]
     fn multi_agent_event_storm() {
+        let _db = context_bus_db_lock();
         let bus = Arc::new(ContextBus::new());
         let ws = unique_ws();
         let ch = unique_ch();
@@ -270,6 +287,7 @@ mod context_bus {
 
     #[test]
     fn broadcast_receives_all_events_from_multiple_agents() {
+        let _db = context_bus_db_lock();
         let bus = Arc::new(ContextBus::new());
         let ws = unique_ws();
         let ch = unique_ch();
@@ -312,6 +330,7 @@ mod context_bus {
 
     #[test]
     fn replay_from_cursor_with_multi_agent_events() {
+        let _db = context_bus_db_lock();
         let bus = ContextBus::new();
         let ws = unique_ws();
         let ch = unique_ch();
@@ -348,6 +367,7 @@ mod context_bus {
 
     #[test]
     fn cross_workspace_isolation_with_events() {
+        let _db = context_bus_db_lock();
         let bus = ContextBus::new();
         let pid = std::process::id();
 
@@ -526,7 +546,9 @@ mod external_app_docking {
     use lean_ctx::core::session::FileTouched;
 
     #[tokio::test]
+    #[allow(clippy::await_holding_lock)]
     async fn external_app_reads_agent_session_and_subscribes_to_events() {
+        let _db = context_bus_db_lock();
         let store = Arc::new(SharedSessionStore::new());
         let bus = Arc::new(ContextBus::new());
         let metrics = Arc::new(ContextOsMetrics::default());
@@ -597,7 +619,9 @@ mod external_app_docking {
     }
 
     #[tokio::test]
+    #[allow(clippy::await_holding_lock)]
     async fn multiple_external_apps_and_agents_coexist() {
+        let _db = context_bus_db_lock();
         let store = Arc::new(SharedSessionStore::new());
         let bus = Arc::new(ContextBus::new());
         let project = "/tmp/multi-app-test";
@@ -625,14 +649,16 @@ mod external_app_docking {
             &ContextEventKindV1::SessionMutated,
             Some("agent-1"),
             serde_json::json!({"step": "deploy"}),
-        );
+        )
+        .expect("agent-1's event must be persisted before it is broadcast");
         bus.append(
             ws,
             ch,
             &ContextEventKindV1::SessionMutated,
             Some("agent-2"),
             serde_json::json!({"step": "test"}),
-        );
+        )
+        .expect("agent-2's event must be persisted before it is broadcast");
 
         let app1_ev1 = app1_rx.try_recv().unwrap();
         let app1_ev2 = app1_rx.try_recv().unwrap();
@@ -1082,7 +1108,9 @@ mod e2e_multi_agent_scenario {
     use lean_ctx::core::session::*;
 
     #[tokio::test]
+    #[allow(clippy::await_holding_lock)]
     async fn full_multi_agent_workflow_simulation() {
+        let _db = context_bus_db_lock();
         let store = Arc::new(SharedSessionStore::new());
         let bus = Arc::new(ContextBus::new());
         let metrics = Arc::new(ContextOsMetrics::default());
