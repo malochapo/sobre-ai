@@ -136,8 +136,8 @@ fn proxy_enable_respects_codex_auth_mode_554() {
     // developer who enabled it would see the default opt-out scenario observe an
     // opt-in it never set. Integration tests cannot use the crate-private
     // `isolated_data_dir()` (`#[cfg(test)]`), so replicate it: point all four XDG
-    // category overrides at a throwaway dir. This binary runs one serial test in its
-    // own process, so mutating process env here is private and safe.
+    // category overrides at a throwaway dir. This test lives in the serial
+    // binary, which runs one test at a time, so mutating process env is safe.
     let data_home = tempfile::tempdir().unwrap();
     let _iso: Vec<EnvVar> = ISOLATED_ENV_VARS
         .iter()

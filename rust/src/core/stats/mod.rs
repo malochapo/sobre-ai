@@ -102,6 +102,17 @@ pub fn flush() {
     }
 }
 
+/// Integration tests only: drops the in-process buffer without saving it, so
+/// the next record or load reads the current data dir. The buffer is bound to
+/// the dir it was first loaded from, and tests sharing one process each point
+/// `LEAN_CTX_DATA_DIR` somewhere else.
+#[doc(hidden)]
+pub fn clear_buffer_for_tests() {
+    *STATS_BUFFER
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner) = None;
+}
+
 /// Debounced flush: persists at most once per FLUSH_INTERVAL_SECS.
 /// Call from post_dispatch on every tool call to bound data loss
 /// on abrupt MCP termination to at most 2 seconds of events.

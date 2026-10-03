@@ -183,7 +183,7 @@ pub const RECOVER: &str = "RECOVER: compressed output is reversible — never re
 
 /// Terse injected variant of [`RECOVER`] (FULL + COMPACT/Bare). The cold
 /// first-contact handshake renders the COMPACT profile, so this one-liner keeps
-/// the static char/token budget (`tests/intensive_benchmarks.rs`,
+/// the static char/token budget (`tests/serial_suite/intensive_benchmarks.rs`,
 /// `instructions.rs`); since v5 the FULL dedicated files carry it too (#578).
 /// Keeps the two primary MCP-optional paths and the "never line-by-line" rule.
 /// Must keep the `(no MCP)` clause (asserted in tests).

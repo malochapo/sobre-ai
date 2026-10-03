@@ -1,9 +1,11 @@
 //! Integration tests merged into one binary (tests/main.rs) so target/
 //! holds one linked test artifact instead of ~100 (was 17-25 GB of disk).
-//! Add new integration tests as modules here, NOT as new tests/*.rs files —
-//! unless the test mutates process env (set_var) or depends on exclusive
-//! process-global state (Config cache, graph-idx lock): those need their own
-//! process and stay as standalone tests/*.rs binaries.
+//! Add new integration tests as modules here, NOT as new tests/*.rs files.
+//! A test that mutates process env (set_var) or process-global state (Config
+//! cache, stats buffer) goes in tests/serial_suite/ instead, which runs one
+//! test at a time. Only a test that needs a process of its own — a OnceLock
+//! that must start empty, a lock held for the whole run — gets its own
+//! tests/*.rs binary.
 
 mod adversarial_compression;
 mod benchmark_compare_integration;
@@ -18,6 +20,7 @@ mod config_path_parity_594;
 mod conformance_suite;
 mod context_radar_perf;
 mod contracts_frozen;
+mod critical_module_integration;
 mod ctx_read_lmd_md_raw;
 mod daviddatu_powershell_scenarios;
 mod edit_reliability;
@@ -29,6 +32,7 @@ mod etpao_benchmark_suite;
 mod eval_harness_integration;
 mod gateway_e2e;
 mod glob_cli_556;
+mod graph_export_contract;
 mod hardening_ir_traits;
 mod hn_hardening_scenarios;
 mod hook_connect_only_566;
@@ -36,6 +40,7 @@ mod http_server_streamable;
 mod init_doctor_clean;
 mod integration_tests;
 mod io_health_scenarios;
+mod issue_1088_batch_replace_unique;
 mod issue_885_anchored_after_patch;
 mod legacy_path_firewall;
 mod live_smoke_client_instructions;

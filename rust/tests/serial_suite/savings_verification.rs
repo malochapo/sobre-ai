@@ -211,6 +211,10 @@ fn verify_cep_delta_tracking_prevents_overcounting() {
         );
     };
 
+    // Another test in this process may have loaded the stats buffer from its
+    // own data dir; start from this test's empty one.
+    lean_ctx::core::stats::clear_buffer_for_tests();
+
     let mut modes = HashMap::new();
     modes.insert("full".to_string(), 5u64);
 

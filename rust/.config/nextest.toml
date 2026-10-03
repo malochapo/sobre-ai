@@ -8,18 +8,18 @@ test-threads = -4
 # not fixes, the underlying non-hermeticity (tracked separately).
 retries = 2
 
-# Integration-test binaries that each use a FIXED temp path (e.g.
-# temp_dir()/lean_ctx_bazsi_test, …/lean_ctx_workflow_test) and remove_dir_all +
-# recreate it in setup. Their #[serial] marker only serializes within one process
-# — but nextest runs each test in its own process, so tests in the same binary
-# race on that shared path. Pinning them to a max-threads=1 group serializes them
-# for real, fixing the race at the source (retries below stays as a net for
-# load-induced flakiness like the in-memory http_server tests).
+# The `serial` integration binary holds tests that change process-global state,
+# some of them through FIXED temp paths (e.g. temp_dir()/lean_ctx_bazsi_test)
+# that setup removes and recreates. Its pre-main initializer only serializes
+# within one process — but nextest runs each test in its own process, so tests
+# in that binary would still race on shared paths. Pinning them to a
+# max-threads=1 group serializes them for real (retries below stays as a net
+# for load-induced flakiness like the in-memory http_server tests).
 [test-groups]
 serial-state = { max-threads = 1 }
 
 [[profile.default.overrides]]
-filter = 'binary(bazsi_reported_scenarios) | binary(workflow_done_scenarios) | test(/^http_server::tests::/)'
+filter = 'binary(serial) | test(/^http_server::tests::/)'
 test-group = 'serial-state'
 
 [scripts.setup.tmpdir]

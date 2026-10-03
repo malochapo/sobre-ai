@@ -33,12 +33,12 @@ pub(crate) mod impl_discover;
 pub mod impl_edit;
 pub(crate) mod impl_explore;
 pub(crate) mod impl_gain;
-// Stays `pub`: driven from outside the crate by tests/multi_read_cap_scenarios.rs.
+// Stays `pub`: driven from outside the crate by tests/serial_suite/multi_read_cap_scenarios.rs.
 pub mod impl_multi_read;
 pub(crate) mod impl_overview;
 pub(crate) mod impl_prefetch;
 pub(crate) mod impl_preload;
-// Stays `pub`: driven from outside the crate by tests/intensive_benchmarks.rs.
+// Stays `pub`: driven from outside the crate by tests/serial_suite/intensive_benchmarks.rs.
 pub mod impl_response;
 pub(crate) mod impl_semantic_search;
 pub(crate) mod impl_share;
