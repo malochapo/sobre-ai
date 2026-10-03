@@ -29,5 +29,3 @@ mod savings_verification;
 mod terse_agent_tests;
 mod ticket_fixes_scenarios;
 mod wiring_memory_persistence;
-mod workflow_done_scenarios;
-mod workflow_tests;

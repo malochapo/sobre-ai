@@ -163,9 +163,6 @@ pub struct ToolContext {
         Option<std::sync::Arc<tokio::sync::RwLock<Vec<crate::core::protocol::ToolCallRecord>>>>,
     /// Current agent identity for multi-agent tools.
     pub agent_id: Option<std::sync::Arc<tokio::sync::RwLock<Option<String>>>>,
-    /// Active workflow run state.
-    pub workflow:
-        Option<std::sync::Arc<tokio::sync::RwLock<Option<crate::core::workflow::WorkflowRun>>>>,
     /// Context ledger for handoff operations.
     pub ledger:
         Option<std::sync::Arc<tokio::sync::RwLock<crate::core::context_ledger::ContextLedger>>>,
@@ -204,7 +201,6 @@ impl Default for ToolContext {
             session: None,
             tool_calls: None,
             agent_id: None,
-            workflow: None,
             ledger: None,
             client_name: None,
             pipeline_stats: None,

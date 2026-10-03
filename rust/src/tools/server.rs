@@ -71,7 +71,6 @@ pub struct LeanCtxServer {
     pub client_name: Arc<RwLock<String>>,
     pub autonomy: Arc<super::autonomy::AutonomyState>,
     pub loop_detector: Arc<RwLock<crate::core::loop_detection::LoopDetector>>,
-    pub workflow: Arc<RwLock<Option<crate::core::workflow::WorkflowRun>>>,
     pub ledger: Arc<RwLock<crate::core::context_ledger::ContextLedger>>,
     pub pipeline_stats: Arc<RwLock<crate::core::pipeline::PipelineStats>>,
     pub session_mode: SessionMode,

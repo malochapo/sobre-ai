@@ -27,10 +27,6 @@ impl LeanCtxServer {
             return Ok(blocked);
         }
 
-        if let Some(blocked) = self.guard_workflow(name).await {
-            return Ok(blocked);
-        }
-
         // #794: cost cap guard — block tool calls when session cost exceeds the
         // configured limit. ctx_session is exempt so the agent can inspect
         // budget status and override the cap.
@@ -906,36 +902,6 @@ impl LeanCtxServer {
                         "[POLICY BLOCKED] {kind} rate limit exceeded ({max}/min) by context \
                          policy pack. Slow agent writes/actions or adjust .lean-ctx/policy.toml."
                     ))]));
-                }
-            }
-        }
-        None
-    }
-
-    async fn guard_workflow(&self, name: &str) -> Option<CallToolResult> {
-        if name != "ctx_workflow" {
-            let active = self.workflow.read().await.clone();
-            if let Some(run) = active {
-                if run.current == "done" || is_workflow_stale(&run) {
-                    let mut wf = self.workflow.write().await;
-                    *wf = None;
-                    let _ = crate::core::workflow::clear_active();
-                } else if !WORKFLOW_PASSTHROUGH_TOOLS.contains(&name)
-                    && let Some(state) = run.spec.state(&run.current)
-                    && let Some(allowed) = &state.allowed_tools
-                {
-                    let allowed_ok = allowed.iter().any(|t| t == name);
-                    if !allowed_ok {
-                        let mut shown = allowed.clone();
-                        shown.sort();
-                        shown.truncate(30);
-                        return Some(CallToolResult::success(vec![ContentBlock::text(format!(
-                            "Tool '{name}' blocked by workflow '{}' (state: {}). Allowed: {}.",
-                            run.spec.name,
-                            run.current,
-                            shown.join(", ")
-                        ))]));
-                    }
                 }
             }
         }

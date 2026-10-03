@@ -142,7 +142,6 @@ mod tests {
             session: None,
             tool_calls: None,
             agent_id: None,
-            workflow: None,
             ledger: None,
             client_name: None,
             pipeline_stats: None,

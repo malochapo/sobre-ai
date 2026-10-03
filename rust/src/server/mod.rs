@@ -183,21 +183,6 @@ pub fn tool_schemas_json_for_test() -> String {
         .join("\n")
 }
 
-/// Tools that always pass through the workflow gate regardless of state.
-/// Read-only tools should never be blocked — agents need them for context
-/// recovery after crashes or session transitions.
-pub const WORKFLOW_PASSTHROUGH_TOOLS: &[&str] =
-    &["ctx_read", "ctx_search", "ctx_tree", "ctx_session"];
-
-/// A workflow is stale if it hasn't been updated in 30 minutes.
-/// This prevents dead workflows from blocking tools across sessions.
-pub fn is_workflow_stale(run: &crate::core::workflow::types::WorkflowRun) -> bool {
-    let elapsed = chrono::Utc::now()
-        .signed_duration_since(run.updated_at)
-        .num_minutes();
-    elapsed > 30
-}
-
 fn is_shell_tool_name(name: &str) -> bool {
     matches!(name, "ctx_shell" | "ctx_execute")
 }

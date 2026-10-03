@@ -186,7 +186,6 @@ impl LeanCtxServer {
                 session: Some(self.session.clone()),
                 tool_calls: Some(self.tool_calls.clone()),
                 agent_id: Some(self.agent_id.clone()),
-                workflow: Some(self.workflow.clone()),
                 ledger: Some(self.ledger.clone()),
                 client_name: Some(self.client_name.clone()),
                 pipeline_stats: Some(self.pipeline_stats.clone()),
