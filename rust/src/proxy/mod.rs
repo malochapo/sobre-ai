@@ -29,7 +29,6 @@ pub mod cost;
 pub mod counterfactual;
 pub mod effort;
 pub mod forward;
-pub mod gateway_identity;
 pub mod google;
 pub mod history_prune;
 pub mod holdout;
@@ -48,6 +47,7 @@ pub mod prefix_replay;
 pub mod prose;
 pub mod prose_ranker;
 pub mod providers;
+pub mod request_tags;
 pub mod response_cache;
 pub mod routing;
 pub mod routing_feedback;
@@ -445,29 +445,10 @@ pub async fn start_proxy_with_token(port: u16, auth_token: Option<String>) -> an
 
     let cfg = Config::load();
     // Read once at startup — avoids a Config::load() on every proxied request.
-    let bind_host = cfg.proxy_bind_host_effective();
-    let loopback_bind = bind_host.is_loopback();
-    // Gateway mode (non-loopback bind, enterprise#8) hard-requires the Bearer
-    // token: the provider-key fallback's whole justification is "loopback only",
-    // so it is disabled by construction once the listener is reachable from the
-    // network — regardless of the config flag.
-    let require_token = cfg.proxy_require_token || !loopback_bind;
-    let loopback_open = cfg.proxy_loopback_open && loopback_bind;
-    let allowed_hosts: Arc<Vec<String>> = Arc::new(
-        cfg.proxy_allowed_hosts
-            .iter()
-            .map(|h| h.trim().trim_end_matches('.').to_ascii_lowercase())
-            .filter(|h| !h.is_empty())
-            .collect(),
-    );
-    // Rate limit (enterprise#37): explicit config wins; gateway mode ships a
-    // sane default floor; loopback stays unlimited unless configured. `0`
-    // disables the limiter explicitly.
-    let rate_limiter = match (cfg.proxy_max_rps, loopback_bind) {
-        (Some(rps), _) if rps > 0 => Some(Arc::new(RateLimiter::new(rps, rps.saturating_mul(2)))),
-        (None, false) => Some(Arc::new(RateLimiter::new(50, 100))),
-        _ => None,
-    };
+    // The proxy serves this machine only: it always binds loopback.
+    let bind_host = std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST);
+    let require_token = cfg.proxy_require_token;
+    let loopback_open = cfg.proxy_loopback_open;
     let initial = cfg.proxy.resolve_all();
 
     // The proxy reads its upstreams live from a watch channel: a background task
@@ -555,53 +536,16 @@ pub async fn start_proxy_with_token(port: u16, auth_token: Option<String>) -> an
         .fallback(fallback_router);
 
     let mut app = app
-        .layer(axum::middleware::from_fn(move |req, next| {
-            let allowed = allowed_hosts.clone();
-            host_guard(req, next, allowed)
-        }))
+        .layer(axum::middleware::from_fn(host_guard))
         .with_state(state);
-
-    // Per-person gateway keys (enterprise#11): sha256(bearer) → person/team/
-    // default_project. Loaded once at startup; rotation = restart (the standard
-    // secret-mount flow). A malformed file fails the start loudly.
-    let gateway_keys = match gateway_identity::GatewayKeys::load_default() {
-        Ok(keys) => {
-            if !keys.is_empty() {
-                println!(
-                    "  Identity:  {} gateway key(s) loaded ({})",
-                    keys.len(),
-                    gateway_identity::GatewayKeys::default_path().display()
-                );
-            }
-            Arc::new(keys)
-        }
-        Err(e) => anyhow::bail!("gateway-keys.toml: {e}"),
-    };
 
     {
         let expected = auth_token.clone();
-        let keys = gateway_keys.clone();
         let upstreams = auth_upstreams;
         app = app.layer(axum::middleware::from_fn(move |req, next| {
             let expected = expected.clone();
-            let keys = keys.clone();
             let upstreams = upstreams.clone();
-            proxy_auth_guard(
-                req,
-                next,
-                expected,
-                require_token,
-                loopback_open,
-                keys,
-                upstreams,
-            )
-        }));
-    }
-
-    if let Some(limiter) = rate_limiter {
-        app = app.layer(axum::middleware::from_fn(move |req, next| {
-            let limiter = limiter.clone();
-            rate_limit_guard(req, next, limiter)
+            proxy_auth_guard(req, next, expected, require_token, loopback_open, upstreams)
         }));
     }
 
@@ -615,13 +559,6 @@ pub async fn start_proxy_with_token(port: u16, auth_token: Option<String>) -> an
         println!("lean-ctx proxy listening on http://{addr} (loopback-open: auth disabled)");
     } else {
         println!("lean-ctx proxy listening on http://{addr} (token auth enabled)");
-    }
-    if !loopback_bind {
-        println!(
-            "  ⚠ gateway mode: non-loopback bind — Bearer token REQUIRED for gateway-held \
-             keys and non-registry routes; client-auth /providers/* (api_key_env unset) \
-             still accept provider credentials. Host allowlist + rate limit active"
-        );
     }
     println!("  Anthropic: POST /v1/messages → {anthropic_upstream}");
     println!("  OpenAI:    POST /v1/chat/completions → {openai_upstream}");
@@ -835,7 +772,6 @@ async fn proxy_auth_guard(
     expected_token: String,
     require_token: bool,
     loopback_open: bool,
-    gateway_keys: Arc<gateway_identity::GatewayKeys>,
     upstreams: tokio::sync::watch::Receiver<Arc<Upstreams>>,
 ) -> Result<Response, Response> {
     let path = req.uri().path();
@@ -846,8 +782,8 @@ async fn proxy_auth_guard(
     // #755: loopback-open mode skips all auth — every local process is trusted.
     if loopback_open {
         req.extensions_mut()
-            .insert(gateway_identity::TrustedGatewayRequest);
-        attach_gateway_tags(&mut req, gateway_identity::GatewayTags::default());
+            .insert(request_tags::AuthenticatedRequest);
+        attach_request_tags(&mut req);
         return Ok(next.run(req).await);
     }
 
@@ -862,20 +798,8 @@ async fn proxy_auth_guard(
         && constant_time_eq(token.as_bytes(), expected_token.as_bytes())
     {
         req.extensions_mut()
-            .insert(gateway_identity::TrustedGatewayRequest);
-        attach_gateway_tags(&mut req, gateway_identity::GatewayTags::default());
-        return Ok(next.run(req).await);
-    }
-
-    // Per-person gateway keys (enterprise#11): a bearer key whose SHA-256 is in
-    // gateway-keys.toml authenticates AND identifies — its person/team/project
-    // tags travel with the request and end up on the usage record.
-    if let Some(token) = bearer.as_deref()
-        && let Some(tags) = gateway_keys.lookup(token)
-    {
-        req.extensions_mut()
-            .insert(gateway_identity::TrustedGatewayRequest);
-        attach_gateway_tags(&mut req, tags);
+            .insert(request_tags::AuthenticatedRequest);
+        attach_request_tags(&mut req);
         return Ok(next.run(req).await);
     }
 
@@ -891,7 +815,7 @@ async fn proxy_auth_guard(
         is_provider_route(path),
         client_auth_registry,
     ) {
-        attach_gateway_tags(&mut req, gateway_identity::GatewayTags::default());
+        attach_request_tags(&mut req);
         return Ok(next.run(req).await);
     }
 
@@ -920,15 +844,12 @@ fn auth_error_response(path: &str) -> Response {
     (StatusCode::UNAUTHORIZED, axum::Json(body)).into_response()
 }
 
-/// Resolves the final identity tags for an authenticated request and inserts
-/// them as a request extension (read by `forward.rs::wire_context`).
-///
-/// Project resolution (enterprise#11): the `x-leanctx-project` header wins over
-/// the key's `default_project` — one person books work onto different projects
-/// per request. The header also works without a gateway key (solo/local mode:
-/// project tagging without identity). It is an internal gateway header, not on
-/// `ALLOWED_REQUEST_HEADERS`, so it never reaches the upstream.
-fn attach_gateway_tags(req: &mut axum::extract::Request, mut tags: gateway_identity::GatewayTags) {
+/// Tags an authenticated request with the project named in the
+/// `x-leanctx-project` header, read by `forward.rs::wire_context`. The header
+/// is internal: it is not on `ALLOWED_REQUEST_HEADERS`, so it never reaches
+/// the upstream.
+fn attach_request_tags(req: &mut axum::extract::Request) {
+    let mut tags = request_tags::RequestTags::default();
     if let Some(project) = req
         .headers()
         .get("x-leanctx-project")
@@ -938,7 +859,7 @@ fn attach_gateway_tags(req: &mut axum::extract::Request, mut tags: gateway_ident
     {
         tags.project = Some(project.to_string());
     }
-    if !tags.is_empty() {
+    if tags.project.is_some() {
         req.extensions_mut().insert(tags);
     }
 }
@@ -1025,9 +946,7 @@ fn is_provider_route(path: &str) -> bool {
 /// the lean-ctx Bearer token.
 ///
 /// * Built-in provider routes (`/v1/*`, bare endpoints, …): only when
-///   `require_token` is false (loopback-friendly default). Gateway mode
-///   (non-loopback bind) forces `require_token` so these require the lean-ctx
-///   Bearer (enterprise#8).
+///   `require_token` is false (the default).
 /// * Client-auth registry routes (`/providers/{id}` with `api_key_env = None`,
 ///   e.g. Grok dual-rail): always allowed when a provider credential is present.
 ///   The Authorization / `x-xai-token-auth` header must carry the upstream
@@ -1126,21 +1045,18 @@ fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
 async fn host_guard(
     req: axum::extract::Request,
     next: axum::middleware::Next,
-    allowed_hosts: Arc<Vec<String>>,
 ) -> Result<Response, StatusCode> {
     if let Some(host) = req.headers().get("host").and_then(|v| v.to_str().ok())
-        && host_allowed(host, &allowed_hosts)
+        && host_allowed(host)
     {
         return Ok(next.run(req).await);
     }
     Err(StatusCode::FORBIDDEN)
 }
 
-/// DNS-rebinding guard: loopback Host headers always pass (today's local
-/// behavior); in gateway mode the operator additionally allowlists the names
-/// the gateway is reachable under (`proxy_allowed_hosts`, enterprise#8).
-/// Matching is case-insensitive on the host with the port stripped.
-fn host_allowed(host_header: &str, allowed: &[String]) -> bool {
+/// DNS-rebinding guard: only loopback Host headers pass. Matching is
+/// case-insensitive on the host with the port stripped.
+fn host_allowed(host_header: &str) -> bool {
     // `[::1]:8080` carries the port after the bracket; plain hosts after `:`.
     let host = host_header.trim();
     let h = if let Some(bracketed) = host.strip_prefix('[') {
@@ -1155,61 +1071,7 @@ fn host_allowed(host_header: &str, allowed: &[String]) -> bool {
         return false;
     };
     let h = h.trim_end_matches('.').to_ascii_lowercase();
-    matches!(h.as_str(), "127.0.0.1" | "localhost" | "[::1]") || allowed.contains(&h)
-}
-
-/// Proxy-wide token-bucket rate limit (enterprise#37). `/health` is exempt so
-/// orchestrator liveness probes never get throttled into a false restart.
-async fn rate_limit_guard(
-    req: axum::extract::Request,
-    next: axum::middleware::Next,
-    limiter: Arc<RateLimiter>,
-) -> Result<Response, StatusCode> {
-    if req.uri().path() != "/health" && !limiter.allow().await {
-        return Err(StatusCode::TOO_MANY_REQUESTS);
-    }
-    Ok(next.run(req).await)
-}
-
-/// Token bucket: `max_rps` sustained, `burst` peak. Mirrors the team server's
-/// limiter; lives here so the proxy stays independent of `http_server`
-/// internals.
-pub(crate) struct RateLimiter {
-    max_rps: f64,
-    burst: f64,
-    state: tokio::sync::Mutex<RateLimiterState>,
-}
-
-struct RateLimiterState {
-    tokens: f64,
-    last: std::time::Instant,
-}
-
-impl RateLimiter {
-    pub(crate) fn new(max_rps: u32, burst: u32) -> Self {
-        Self {
-            max_rps: f64::from(max_rps.max(1)),
-            burst: f64::from(burst.max(1)),
-            state: tokio::sync::Mutex::new(RateLimiterState {
-                tokens: f64::from(burst.max(1)),
-                last: std::time::Instant::now(),
-            }),
-        }
-    }
-
-    pub(crate) async fn allow(&self) -> bool {
-        let mut s = self.state.lock().await;
-        let now = std::time::Instant::now();
-        let refill = now.saturating_duration_since(s.last).as_secs_f64() * self.max_rps;
-        s.tokens = (s.tokens + refill).min(self.burst);
-        s.last = now;
-        if s.tokens >= 1.0 {
-            s.tokens -= 1.0;
-            true
-        } else {
-            false
-        }
-    }
+    matches!(h.as_str(), "127.0.0.1" | "localhost" | "[::1]")
 }
 
 async fn fallback_router(State(state): State<ProxyState>, req: Request<Body>) -> Response {

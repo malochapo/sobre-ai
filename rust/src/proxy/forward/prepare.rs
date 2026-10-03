@@ -14,8 +14,8 @@ use super::max_body_bytes;
 use super::xlat::translated_openai_body;
 
 /// Builds the request-side [`WireContext`](crate::proxy::usage::WireContext) stamped
-/// onto this turn's usage record: identity tags (inserted as a request
-/// extension by the auth guard, enterprise#11), the per-request compression
+/// onto this turn's usage record: the project tag (inserted as a request
+/// extension by the auth guard), the per-request compression
 /// saving, the pre-compression token estimate (baseline input, enterprise#18)
 /// and whether the serving upstream is local.
 pub(crate) fn wire_context(
@@ -28,7 +28,7 @@ pub(crate) fn wire_context(
 ) -> Box<crate::proxy::usage::WireContext> {
     let tags = parts
         .extensions
-        .get::<crate::proxy::gateway_identity::GatewayTags>()
+        .get::<crate::proxy::request_tags::RequestTags>()
         .cloned()
         .unwrap_or_default();
     // Registry routes attribute usage to the provider identity ("foundry",
@@ -45,8 +45,6 @@ pub(crate) fn wire_context(
     );
     Box::new(crate::proxy::usage::WireContext {
         provider: provider.to_string(),
-        person: tags.person,
-        team: tags.team,
         project: tags.project,
         saved_tokens: tokens_saved,
         // bytes/4 — the same estimation basis the proxy stats use throughout.

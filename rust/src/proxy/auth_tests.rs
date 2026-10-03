@@ -270,106 +270,46 @@ fn auth_error_response_generic_hint() {
     assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
 }
 
-// --- enterprise#11: identity tags + x-leanctx-project header ---
+// --- x-leanctx-project header ---
 
 #[test]
-fn attach_gateway_tags_header_overrides_default_project() {
-    // The per-request header wins over the key's default_project: one
-    // person books work onto different projects request by request.
-    let mut req = build_request(&[("x-leanctx-project", "billing")], "/v1/messages");
-    attach_gateway_tags(
-        &mut req,
-        gateway_identity::GatewayTags {
-            person: Some("yves".into()),
-            team: Some("platform".into()),
-            project: Some("ai-gateway".into()),
-        },
-    );
-    let tags = req
-        .extensions()
-        .get::<gateway_identity::GatewayTags>()
-        .expect("tags attached");
-    assert_eq!(tags.person.as_deref(), Some("yves"));
-    assert_eq!(tags.project.as_deref(), Some("billing"));
-}
-
-#[test]
-fn attach_gateway_tags_header_works_without_key_identity() {
-    // Solo/local mode: project tagging must not require a gateway key.
+fn attach_request_tags_reads_the_project_header() {
     let mut req = build_request(&[("x-leanctx-project", "side-quest")], "/v1/messages");
-    attach_gateway_tags(&mut req, gateway_identity::GatewayTags::default());
+    attach_request_tags(&mut req);
     let tags = req
         .extensions()
-        .get::<gateway_identity::GatewayTags>()
+        .get::<request_tags::RequestTags>()
         .expect("tags attached");
-    assert_eq!(tags.person, None);
     assert_eq!(tags.project.as_deref(), Some("side-quest"));
 }
 
 #[test]
-fn attach_gateway_tags_empty_leaves_no_extension() {
-    // No identity, no header: nothing to stamp — the extension stays absent
-    // so downstream code can treat its presence as "gateway context exists".
+fn attach_request_tags_without_header_leaves_no_extension() {
     let mut req = build_request(&[], "/v1/messages");
-    attach_gateway_tags(&mut req, gateway_identity::GatewayTags::default());
+    attach_request_tags(&mut req);
     assert!(
         req.extensions()
-            .get::<gateway_identity::GatewayTags>()
+            .get::<request_tags::RequestTags>()
             .is_none()
     );
 }
 
 #[test]
-fn attach_gateway_tags_rejects_oversized_or_blank_header() {
-    // Defensive bound: a blank or absurdly long project header is ignored,
-    // the key's default project stays authoritative.
+fn attach_request_tags_ignores_blank_oversized_or_control_headers() {
+    // A blank or absurdly long project header is ignored, and control
+    // characters would poison usage rows and logs (#54/#59). HTAB is the only
+    // control byte the HTTP layer lets through — HeaderValue rejects the rest.
     let long = "p".repeat(200);
-    for bad in ["", "   ", long.as_str()] {
+    for bad in ["", "   ", long.as_str(), "bil\tling"] {
         let mut req = build_request(&[("x-leanctx-project", bad)], "/v1/messages");
-        attach_gateway_tags(
-            &mut req,
-            gateway_identity::GatewayTags {
-                person: Some("yves".into()),
-                team: None,
-                project: Some("default-proj".into()),
-            },
-        );
-        let tags = req
-            .extensions()
-            .get::<gateway_identity::GatewayTags>()
-            .expect("tags attached");
-        assert_eq!(
-            tags.project.as_deref(),
-            Some("default-proj"),
-            "bad header {bad:?} must not override"
+        attach_request_tags(&mut req);
+        assert!(
+            req.extensions()
+                .get::<request_tags::RequestTags>()
+                .is_none(),
+            "bad header {bad:?} must not tag the request"
         );
     }
-}
-
-#[test]
-fn attach_gateway_tags_rejects_control_characters() {
-    // #54/#59: control chars in the project header would poison usage rows
-    // and logs (log-injection). The tag is dropped, the key default stays.
-    // HTAB is the only control byte the HTTP layer lets through to us — the
-    // rest (`\n`, ESC, DEL, …) is rejected by HeaderValue itself.
-    let mut req = build_request(&[("x-leanctx-project", "bil\tling")], "/v1/messages");
-    attach_gateway_tags(
-        &mut req,
-        gateway_identity::GatewayTags {
-            person: Some("yves".into()),
-            team: None,
-            project: Some("default-proj".into()),
-        },
-    );
-    let tags = req
-        .extensions()
-        .get::<gateway_identity::GatewayTags>()
-        .expect("tags attached");
-    assert_eq!(
-        tags.project.as_deref(),
-        Some("default-proj"),
-        "control chars must not override"
-    );
 }
 
 #[test]
@@ -465,55 +405,25 @@ fn normalized_provider_uri_noop_for_canonical() {
     assert!(normalized_provider_uri(&uri).is_none());
 }
 
-// --- enterprise#8: gateway mode (non-loopback bind) hardening ---
+// --- DNS-rebinding guard ---
 
 #[test]
-fn resolved_bind_host_defaults_to_loopback_and_never_opens_on_typo() {
-    let _lock = crate::core::data_dir::test_env_lock();
-    crate::test_env::remove_var("LEAN_CTX_PROXY_BIND_HOST");
-    let cfg = crate::core::config::Config::default();
-    assert!(cfg.proxy_bind_host_effective().is_loopback());
-
-    // A typo in the config must narrow to loopback — never open the bind.
-    let typo = crate::core::config::Config {
-        proxy_bind_host: Some("all-interfaces-please".into()),
-        ..Default::default()
-    };
-    assert!(typo.proxy_bind_host_effective().is_loopback());
-
-    let open = crate::core::config::Config {
-        proxy_bind_host: Some("0.0.0.0".into()),
-        ..Default::default()
-    };
-    assert!(!open.proxy_bind_host_effective().is_loopback());
-}
-
-#[test]
-fn host_allowed_loopback_always_passes_and_allowlist_extends() {
-    let allowed = vec!["gateway.example.com".to_string()];
-    for h in ["127.0.0.1", "127.0.0.1:4444", "localhost:9999", "[::1]:80"] {
-        assert!(host_allowed(h, &allowed), "loopback host must pass: {h}");
+fn host_allowed_passes_only_loopback() {
+    for h in [
+        "127.0.0.1",
+        "127.0.0.1:4444",
+        "localhost:9999",
+        "[::1]:80",
+        "LOCALHOST.",
+    ] {
+        assert!(host_allowed(h), "loopback host must pass: {h}");
     }
-    assert!(host_allowed("gateway.example.com", &allowed));
-    assert!(host_allowed("Gateway.Example.COM:443", &allowed));
-    // Trailing-dot FQDN normalizes to the same allowlisted name.
-    assert!(host_allowed("gateway.example.com.:443", &allowed));
-    assert!(!host_allowed("evil.example.com", &allowed));
-    assert!(!host_allowed("gateway.example.com.evil.io", &allowed));
-    // Empty allowlist (gateway not configured) → only loopback passes.
-    assert!(!host_allowed("gateway.example.com", &[]));
-}
-
-// --- enterprise#37: proxy rate limiting ---
-
-#[tokio::test]
-async fn rate_limiter_enforces_burst_then_recovers() {
-    let limiter = RateLimiter::new(10, 3);
-    assert!(limiter.allow().await);
-    assert!(limiter.allow().await);
-    assert!(limiter.allow().await);
-    assert!(!limiter.allow().await, "burst of 3 must exhaust the bucket");
-    // 10 rps refill → one token back after ~100ms.
-    tokio::time::sleep(std::time::Duration::from_millis(150)).await;
-    assert!(limiter.allow().await, "bucket must refill at max_rps");
+    for h in [
+        "gateway.example.com",
+        "evil.example.com",
+        "127.0.0.1.evil.io",
+        "0.0.0.0",
+    ] {
+        assert!(!host_allowed(h), "non-loopback host must be refused: {h}");
+    }
 }

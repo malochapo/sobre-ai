@@ -50,7 +50,7 @@ pub(super) fn from_trusted_request(
 ) -> Option<RequestContext> {
     parts
         .extensions
-        .get::<super::gateway_identity::TrustedGatewayRequest>()
+        .get::<super::request_tags::AuthenticatedRequest>()
         .and_then(|_| from_trusted_headers(&parts.headers, exact_bounded_body))
 }
 
@@ -190,7 +190,7 @@ mod tests {
 
         parts
             .extensions
-            .insert(super::super::gateway_identity::TrustedGatewayRequest);
+            .insert(super::super::request_tags::AuthenticatedRequest);
         let context = from_trusted_request(&parts, b"raw-body").expect("managed lineage");
         assert_eq!(context.request_id, "req-1");
         assert_eq!(context.session_id, "session-1");

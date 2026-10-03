@@ -70,15 +70,14 @@ pub struct RealUsage {
     /// no holdout is active. Stamped from the request, not parsed from the
     /// response — it identifies whether this turn was output-shaped.
     pub cohort: Option<super::holdout::Arm>,
-    /// Request-side gateway context (enterprise#11/#17/#18): identity tags,
-    /// compression savings and baseline inputs, stamped from the request before
+    /// Request-side context: the project tag, compression savings and baseline inputs, stamped from the request before
     /// it left for the upstream. `None` outside the forward path (e.g. tests
     /// that only parse response bodies).
     pub wire: Option<Box<WireContext>>,
 }
 
 /// Request-side context the forward path knows and the response scanner does
-/// not: who sent the request (gateway identity, enterprise#11), what the proxy
+/// not: the request's project tag, what the proxy
 /// saved on the wire, and the counterfactual-baseline inputs (enterprise#18).
 /// Travels inside [`RealUsage`] so `usage_meter::record` stays the single
 /// choke-point through which every measured turn flows.
@@ -86,11 +85,7 @@ pub struct RealUsage {
 pub struct WireContext {
     /// Provider label (`Anthropic|OpenAI|ChatGPT|Gemini`) of the serving route.
     pub provider: String,
-    /// Person tag from the gateway key (enterprise#11).
-    pub person: Option<String>,
-    /// Team tag from the gateway key.
-    pub team: Option<String>,
-    /// Project: `x-leanctx-project` header wins over the key's default project.
+    /// Project from the `x-leanctx-project` header.
     pub project: Option<String>,
     /// Estimated tokens this request saved through wire compression
     /// (bytes/4 heuristic, same basis as the proxy stats).
@@ -150,7 +145,7 @@ pub struct Scanner {
     url_model: Option<String>,
     /// Output-savings arm (#895), stamped onto the usage at finalize.
     cohort: Option<super::holdout::Arm>,
-    /// Request-side gateway context (enterprise#11/#18), stamped at finalize.
+    /// Request-side context (see [`WireContext`]), stamped at finalize.
     wire: Option<Box<WireContext>>,
     /// Billed USD from a gateway response header (#1189), stamped at finalize
     /// unless the body already reported the charge.
@@ -179,8 +174,8 @@ impl Scanner {
         self
     }
 
-    /// Attaches the request-side gateway context (identity tags, wire savings,
-    /// baseline inputs — enterprise#11/#17/#18) stamped onto the usage record.
+    /// Attaches the request-side context (project tag, wire savings, baseline
+    /// inputs) stamped onto the usage record.
     #[must_use]
     pub fn with_wire_context(mut self, wire: Option<Box<WireContext>>) -> Self {
         self.wire = wire;
@@ -561,12 +556,10 @@ mod tests {
 
     #[test]
     fn scanner_stamps_wire_context_onto_usage() {
-        // enterprise#11/#17: the request-side context must survive scanning and
+        // The request-side context must survive scanning and
         // arrive on the finalized record that usage_meter/store consume.
         let wire = Box::new(WireContext {
             provider: "Anthropic".into(),
-            person: Some("yves".into()),
-            team: None,
             project: Some("billing".into()),
             saved_tokens: 42,
             uncompressed_input_tokens: 500,

@@ -502,7 +502,7 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
         key(
             "bool",
             serde_json::json!(cfg.proxy_loopback_open),
-            "Skip ALL proxy authentication on loopback binds. MCP/HTTP clients work without tokens. Ignored on non-loopback (gateway mode)",
+            "Skip ALL proxy authentication on loopback binds. MCP/HTTP clients work without tokens.",
         ),
     );
     root.insert(

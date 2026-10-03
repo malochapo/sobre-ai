@@ -264,8 +264,8 @@ pub async fn forward_request(
         None
     };
 
-    // Gateway context (enterprise#11/#17/#18): identity tags from the auth
-    // guard + wire savings + baseline inputs, stamped onto the usage record.
+    // Request-side context: the project tag from the auth guard, wire savings
+    // and baseline inputs, stamped onto the usage record.
     // A routed request is attributed to the provider actually serving it, and
     // carries the originally requested model as routed_from (enterprise#13).
     let mut wire = prepare::wire_context(

@@ -107,7 +107,9 @@ Content for section {i}."
     );
     assert!(
         cache.is_full_delivered(&p),
-        "full_content_delivered must be set"
+        "full_content_delivered must be set; first read returned mode {} and:\n{}",
+        full1.resolved_mode,
+        full1.content.chars().take(300).collect::<String>()
     );
 
     // 2. Task read -- partial/filtered content. The fix clears full_content_delivered.

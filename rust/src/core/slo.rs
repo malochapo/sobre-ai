@@ -42,12 +42,6 @@ pub enum SloMetric {
     ShellInvocations,
     ToolCallsTotal,
     ToolCallCount,
-    /// Rolling p95 latency (ms) across team-server `/v1` routes (GL #391).
-    TeamQueryP95Ms,
-    /// Percentage (0–100) of non-5xx team-server requests in the rolling window.
-    TeamAvailabilityPct,
-    /// Seconds since the last successful index-mutating tool call on the team server.
-    TeamIndexLagSeconds,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -234,15 +228,6 @@ fn read_metric(metric: SloMetric) -> f64 {
             }
         }
         SloMetric::ToolCallsTotal | SloMetric::ToolCallCount => tracker.tool_calls_count() as f64,
-        SloMetric::TeamQueryP95Ms => crate::core::team_slo::global().snapshot().p95_ms,
-        SloMetric::TeamAvailabilityPct => {
-            crate::core::team_slo::global().snapshot().availability_pct
-        }
-        SloMetric::TeamIndexLagSeconds => crate::core::team_slo::global()
-            .snapshot()
-            .index_lag_seconds
-            // No index write yet means "nothing to be stale" — never a violation.
-            .unwrap_or(0.0),
     }
 }
 
@@ -436,9 +421,6 @@ impl std::fmt::Display for SloMetric {
             Self::ShellInvocations => write!(f, "shell_invocations"),
             Self::ToolCallsTotal => write!(f, "tool_calls_total"),
             Self::ToolCallCount => write!(f, "tool_call_count"),
-            Self::TeamQueryP95Ms => write!(f, "team_query_p95_ms"),
-            Self::TeamAvailabilityPct => write!(f, "team_availability_pct"),
-            Self::TeamIndexLagSeconds => write!(f, "team_index_lag_seconds"),
         }
     }
 }
@@ -503,58 +485,6 @@ direction = "max"
         assert_eq!(cfg.slo[0].name, "test_budget");
         assert_eq!(cfg.slo[0].metric, SloMetric::SessionContextTokens);
         assert_eq!(cfg.slo[1].action, SloAction::Block);
-    }
-
-    #[test]
-    fn team_slo_metrics_parse_and_evaluate() {
-        // The three hosted-index gate metrics (GL #391) must round-trip
-        // through TOML and read live values without panicking.
-        let toml_str = r#"
-[[slo]]
-name = "hosted_index_latency"
-metric = "team_query_p95_ms"
-threshold = 500
-action = "warn"
-
-[[slo]]
-name = "hosted_index_availability"
-metric = "team_availability_pct"
-threshold = 99.5
-direction = "min"
-action = "warn"
-
-[[slo]]
-name = "hosted_index_freshness"
-metric = "team_index_lag_seconds"
-threshold = 300
-action = "warn"
-"#;
-        let cfg: SloConfig = toml::from_str(toml_str).unwrap();
-        assert_eq!(cfg.slo.len(), 3);
-        assert_eq!(cfg.slo[0].metric, SloMetric::TeamQueryP95Ms);
-        assert_eq!(cfg.slo[1].metric, SloMetric::TeamAvailabilityPct);
-        assert_eq!(cfg.slo[1].direction, SloDirection::Min);
-        assert_eq!(cfg.slo[2].metric, SloMetric::TeamIndexLagSeconds);
-
-        // read_metric must work for team metrics regardless of what other
-        // (parallel) tests feed into the global store: only invariant ranges
-        // are asserted here, exact values are covered in core::team_slo.
-        let availability = read_metric(SloMetric::TeamAvailabilityPct);
-        assert!((0.0..=100.0).contains(&availability));
-        let lag = read_metric(SloMetric::TeamIndexLagSeconds);
-        assert!(lag >= 0.0);
-        let p95 = read_metric(SloMetric::TeamQueryP95Ms);
-        assert!(p95 >= 0.0);
-
-        assert_eq!(SloMetric::TeamQueryP95Ms.to_string(), "team_query_p95_ms");
-        assert_eq!(
-            SloMetric::TeamAvailabilityPct.to_string(),
-            "team_availability_pct"
-        );
-        assert_eq!(
-            SloMetric::TeamIndexLagSeconds.to_string(),
-            "team_index_lag_seconds"
-        );
     }
 
     #[test]

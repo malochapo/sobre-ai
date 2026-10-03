@@ -10,7 +10,7 @@ fn add_test_marker(mut value: serde_json::Value, original_size: usize) -> (Vec<u
     (out, original_size, compressed_size)
 }
 
-// --- enterprise#11/#18: wire context (identity + baseline inputs) ---
+// --- wire context (project tag + baseline inputs) ---
 
 #[test]
 fn upstream_is_local_detects_loopback_hosts() {
@@ -38,13 +38,11 @@ fn upstream_is_local_detects_loopback_hosts() {
 }
 
 #[test]
-fn wire_context_carries_identity_tags_and_baseline() {
+fn wire_context_carries_project_tag_and_baseline() {
     let mut parts = parts_for("/v1/messages");
     parts
         .extensions
-        .insert(super::super::gateway_identity::GatewayTags {
-            person: Some("yves".into()),
-            team: Some("platform".into()),
+        .insert(super::super::request_tags::RequestTags {
             project: Some("billing".into()),
         });
     let wire = wire_context(
@@ -56,8 +54,6 @@ fn wire_context_carries_identity_tags_and_baseline() {
         None,
     );
     assert_eq!(wire.provider, "Anthropic");
-    assert_eq!(wire.person.as_deref(), Some("yves"));
-    assert_eq!(wire.team.as_deref(), Some("platform"));
     assert_eq!(wire.project.as_deref(), Some("billing"));
     assert_eq!(wire.saved_tokens, 750);
     // bytes/4 estimate, same basis as the proxy stats (enterprise#18).
@@ -137,10 +133,9 @@ fn retry_covers_exactly_not_processed_statuses() {
 
 #[test]
 fn wire_context_without_tags_still_carries_baseline() {
-    // Local solo mode: no identity, but savings + baseline are still real.
+    // No project tag, but savings + baseline are still real.
     let parts = parts_for("/v1/chat/completions");
     let wire = wire_context(&parts, "OpenAI", "http://127.0.0.1:11434", 0, 400, None);
-    assert_eq!(wire.person, None);
     assert_eq!(wire.project, None);
     assert_eq!(wire.uncompressed_input_tokens, 100);
     assert!(wire.is_local);
@@ -503,7 +498,7 @@ fn forwards_grok_cli_chat_proxy_headers() {
             "request header `{required}` must be on the allowlist"
         );
     }
-    // Internal gateway tag must stay off the allowlist (enterprise#11).
+    // The internal project tag must stay off the allowlist.
     assert!(!is_allowed_request_header("x-leanctx-project"));
 }
 

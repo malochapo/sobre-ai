@@ -446,7 +446,6 @@ pub mod task_briefing;
 #[cfg(target_os = "macos")]
 pub mod tcc_guard_sandbox;
 pub mod tdd_schema;
-pub mod team_slo;
 pub mod terse;
 pub mod text_similarity;
 pub mod theme;

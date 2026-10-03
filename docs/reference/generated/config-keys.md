@@ -52,7 +52,7 @@ Top-level configuration keys
 - `profile` (string, default `""`) — Persistent profile name. Checked after LEAN_CTX_PROFILE env var. Set via: lean-ctx config set profile passthrough
 - `project_root` (string?, default `null` — env `LEAN_CTX_PROJECT_ROOT`) — Explicit project root directory. Prevents accidental home-directory scans
 - `proxy_enabled` (bool?, default `null`) — Enable/disable the proxy layer. null = auto-detect, true = force on, false = force off
-- `proxy_loopback_open` (bool, default `false`) — Skip ALL proxy authentication on loopback binds. MCP/HTTP clients work without tokens. Ignored on non-loopback (gateway mode)
+- `proxy_loopback_open` (bool, default `false`) — Skip ALL proxy authentication on loopback binds. MCP/HTTP clients work without tokens.
 - `proxy_port` (u16?, default `null`) — Custom proxy port (default: 4444). Useful for multi-user systems. Env: LEAN_CTX_PROXY_PORT
 - `proxy_require_token` (bool, default `false`) — Require lean-ctx Bearer token authentication and disable provider API key fallback
 - `proxy_timeout_ms` (u64?, default `null`) — Proxy reachability timeout in ms (default: 200). Override via LEAN_CTX_PROXY_TIMEOUT_MS
