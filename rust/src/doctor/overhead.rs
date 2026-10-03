@@ -32,8 +32,8 @@ pub(super) struct OverheadReport {
     pub lean_default_tool_tokens: usize,
     pub instruction_tokens: usize,
     /// Tokens of the wakeup briefing (knowledge + session memory). With the
-    /// default `minimal_overhead = true` it is delivered via the first tool
-    /// call's AUTO CONTEXT block (instructions stay byte-stable, #498); with
+    /// default `minimal_overhead = true` it is delivered via the AUTO CONTEXT
+    /// block of the first tool call other than the `ctx_compose` overview (instructions stay byte-stable, #498); with
     /// `false` it is injected at session start. Either way it bills once per
     /// session — its own source, not folded into `instruction_tokens` (#964).
     pub wakeup_tokens: usize,

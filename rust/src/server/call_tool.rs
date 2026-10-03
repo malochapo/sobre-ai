@@ -121,7 +121,11 @@ impl LeanCtxServer {
         // pre-hook latches `session_initialized` via compare-exchange, so calling
         // it here would burn the once-per-session slot for a briefing we then
         // throw away. Deferring keeps the briefing intact for the next call.
-        let auto_context = if machine_readable {
+        // The session-start overview call already returns that briefing's
+        // content, so it defers it the same way.
+        let auto_context = if machine_readable
+            || crate::tools::autonomy::is_session_overview_call(name, args)
+        {
             None
         } else {
             let task = {

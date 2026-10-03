@@ -14,8 +14,7 @@
 //!   - a parse error — `load()` falls back to defaults (only a stderr warning).
 //!
 //! [`Config::provenance`] captures all four mechanisms in one snapshot, consumed
-//! by both `lean-ctx config validate` and the dashboard `/api/settings` endpoint
-//! so each becomes visible — and therefore fixable.
+//! by `lean-ctx config validate` so each becomes visible — and therefore fixable.
 
 use std::path::PathBuf;
 

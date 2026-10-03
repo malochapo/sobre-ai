@@ -329,9 +329,9 @@ pub struct Config {
     /// across sessions, which keeps the provider prompt-cache prefix warm (#498)
     /// and holds the fixed per-session cost at the `doctor overhead --gate`
     /// budget. Session continuity is NOT lost — the wakeup briefing (task,
-    /// findings, knowledge) is delivered through the first tool call's
-    /// `--- AUTO CONTEXT ---` block instead, which only bills when the agent
-    /// actually works. Set to `false` to additionally inject the ACTIVE SESSION
+    /// findings, knowledge) is delivered through the `--- AUTO CONTEXT ---`
+    /// block of the first tool call other than the `ctx_compose` overview,
+    /// which only bills when the agent actually works. Set to `false` to additionally inject the ACTIVE SESSION
     /// / PROJECT MEMORY blocks directly into the MCP `initialize` instructions.
     #[serde(default)]
     pub minimal_overhead: bool,

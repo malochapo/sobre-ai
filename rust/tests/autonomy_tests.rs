@@ -2,7 +2,8 @@ use lean_ctx::core::cache::SessionCache;
 use lean_ctx::core::config::AutonomyConfig;
 use lean_ctx::tools::CrpMode;
 use lean_ctx::tools::autonomy::{
-    AutonomyState, enrich_after_read, maybe_auto_dedup, session_lifecycle_pre_hook,
+    AutonomyState, enrich_after_read, is_session_overview_call, maybe_auto_dedup,
+    session_lifecycle_pre_hook,
 };
 use std::sync::OnceLock;
 use std::sync::atomic::Ordering;
@@ -80,45 +81,19 @@ fn session_lifecycle_skips_without_project_root() {
 }
 
 #[test]
-fn session_lifecycle_skips_overview_tool() {
-    let state = make_state();
-    let mut cache = SessionCache::new();
+fn session_overview_call_is_compose_without_task() {
+    let no_args = serde_json::Map::new();
+    let mut with_task = serde_json::Map::new();
+    with_task.insert("task".into(), serde_json::json!("auth flow"));
+    let mut empty_task = serde_json::Map::new();
+    empty_task.insert("task".into(), serde_json::json!(""));
 
-    let result = session_lifecycle_pre_hook(
-        &state,
-        "ctx_overview",
-        &mut cache,
-        Some("task"),
-        None,
-        CrpMode::Tdd,
-    );
-
-    assert!(result.is_none(), "must skip when tool is ctx_overview");
-    assert!(
-        !state.session_initialized.load(Ordering::SeqCst),
-        "flag must NOT be set when skipped"
-    );
-}
-
-#[test]
-fn session_lifecycle_skips_preload_tool() {
-    let state = make_state();
-    let mut cache = SessionCache::new();
-
-    let result = session_lifecycle_pre_hook(
-        &state,
-        "ctx_preload",
-        &mut cache,
-        Some("task"),
-        None,
-        CrpMode::Tdd,
-    );
-
-    assert!(result.is_none(), "must skip when tool is ctx_preload");
-    assert!(
-        !state.session_initialized.load(Ordering::SeqCst),
-        "flag must NOT be set when skipped"
-    );
+    assert!(is_session_overview_call("ctx_compose", None));
+    assert!(is_session_overview_call("ctx_compose", Some(&no_args)));
+    // ctx_compose routes any string task, even an empty one, to retrieval.
+    assert!(!is_session_overview_call("ctx_compose", Some(&with_task)));
+    assert!(!is_session_overview_call("ctx_compose", Some(&empty_task)));
+    assert!(!is_session_overview_call("ctx_read", None));
 }
 
 #[test]

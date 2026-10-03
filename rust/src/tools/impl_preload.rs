@@ -31,7 +31,9 @@ pub(crate) fn handle(
 
     let Some(open) = graph_provider::open_or_build(&project_root) else {
         return (
-            format!("[task: {task}]\nNo graph available. Use ctx_overview for project map."),
+            format!(
+                "[task: {task}]\nNo graph available. Use ctx_compose without a task for the project map."
+            ),
             false,
         );
     };
@@ -68,7 +70,7 @@ pub(crate) fn handle(
     if candidates.is_empty() {
         return (
             format!(
-                "[task: {task}]\nNo directly relevant files found. Use ctx_overview for project map."
+                "[task: {task}]\nNo directly relevant files found. Use ctx_compose without a task for the project map."
             ),
             false,
         );
@@ -83,7 +85,7 @@ pub(crate) fn handle(
     if max_score < MIN_USEFUL_SCORE {
         return (
             format!(
-                "[task: {task}]\nNo sufficiently relevant files (max score {max_score:.1} < {MIN_USEFUL_SCORE}). Use ctx_overview for project map."
+                "[task: {task}]\nNo sufficiently relevant files (max score {max_score:.1} < {MIN_USEFUL_SCORE}). Use ctx_compose without a task for the project map."
             ),
             false,
         );

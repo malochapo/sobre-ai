@@ -564,7 +564,7 @@ fn partial_overview(project_root: &str) -> String {
 
     out.push(
         "The full task-relevant graph view (signatures, neighbors, relevance) will be \
-         available shortly — re-run ctx_overview to get it."
+         available shortly — call ctx_compose again without a task to get it."
             .to_string(),
     );
     out.join("\n")

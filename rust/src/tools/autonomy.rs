@@ -140,6 +140,21 @@ fn record_event(
     let _ = store.save();
 }
 
+/// True for the call that is itself the session-start overview: `ctx_compose`
+/// without a `task` returns the same overview the briefing would prepend. The
+/// caller skips the pre-hook for it, so the once-per-session slot stays open
+/// for the next call.
+pub fn is_session_overview_call(
+    tool_name: &str,
+    args: Option<&serde_json::Map<String, serde_json::Value>>,
+) -> bool {
+    tool_name == "ctx_compose"
+        && args
+            .and_then(|a| a.get("task"))
+            .and_then(serde_json::Value::as_str)
+            .is_none()
+}
+
 /// Auto-preloads project context on the first tool call of a session.
 pub fn session_lifecycle_pre_hook(
     state: &AutonomyState,

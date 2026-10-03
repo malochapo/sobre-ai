@@ -55,7 +55,6 @@ mod property_graph_reproducibility_contract;
 mod provider_pipeline_e2e;
 mod provider_wiring_proof;
 mod proxy_smoke;
-mod quick_settings_427;
 mod read_fidelity;
 mod reference_docs_drift;
 mod reranking_scenarios;

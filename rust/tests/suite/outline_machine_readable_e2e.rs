@@ -7,7 +7,7 @@
 //! fires on the next human-facing call.
 //!
 //! Determinism: the project root is pinned via `LEAN_CTX_PROJECT_ROOT` (no
-//! async client-roots race) and the test polls `ctx_overview` — which returns
+//! async client-roots race) and the test polls `ctx_compose` (no task) — which returns
 //! the project overview *without* consuming the briefing flag — until the graph
 //! is loaded in-process. Only then does it run the discriminating sequence
 //! (json call, then two text calls), so the graph-build race cannot make this
@@ -218,18 +218,21 @@ impl McpSession {
         text_content(&resp).unwrap_or_default()
     }
 
-    /// Poll `ctx_overview` until the project graph is loaded in-process. This
-    /// tool returns `None` from the autonomy pre-hook *before* the briefing flag
-    /// is touched, so warming this way never consumes the once-per-session slot.
+    /// Poll `ctx_compose` without a task (the session-start overview) until the
+    /// project graph is loaded in-process. This tool returns `None` from the
+    /// autonomy pre-hook *before* the briefing flag is touched, so warming this
+    /// way never consumes the once-per-session slot.
     fn warm_overview(&mut self) {
         for i in 0..50 {
-            let overview = self.call(1000 + i, "ctx_overview", &json!({}));
-            if overview.contains("PROJECT OVERVIEW") {
+            let overview = self.call(1000 + i, "ctx_compose", &json!({}));
+            // The partial overview (graph still indexing) carries the same
+            // header; only the graph-backed one counts as ready.
+            if overview.contains("PROJECT OVERVIEW") && !overview.contains("(partial") {
                 return;
             }
             std::thread::sleep(Duration::from_millis(100));
         }
-        panic!("ctx_overview never reported a ready project graph");
+        panic!("ctx_compose never reported a ready project graph");
     }
 
     fn shutdown(mut self) {
