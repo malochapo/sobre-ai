@@ -381,6 +381,10 @@ const SANDBOX_ENV_ALLOWLIST: &[&str] = &[
     "TEMP",
     "SYSTEMROOT",
     "WINDIR",
+    // Windows expands registry paths such as `%SystemDrive%\ProgramData`
+    // from it; without it a child (Python) creates a literal `%SystemDrive%`
+    // directory in its working directory.
+    "SYSTEMDRIVE",
 ];
 
 fn apply_sandbox_env(cmd: &mut Command, runtime: &RuntimeConfig) {

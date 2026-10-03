@@ -198,9 +198,26 @@ pub fn config_dir() -> Result<PathBuf, String> {
 /// touch a developer's real `~/Library/Application Support`.
 pub fn config_dir_member(sub: &str) -> Result<PathBuf, String> {
     let canonical = config_dir()?.join(sub);
+    // A config dir set explicitly — by `LEAN_CTX_CONFIG_DIR`, or by a
+    // non-standard `LEAN_CTX_DATA_DIR` that holds every category — is used
+    // exactly as given: nothing is moved into it from the OS-native location.
+    // Integration tests point it at a temp dir, and on Windows
+    // `dirs::config_dir()` ignores the environment, so adopting there would
+    // move a developer's real files.
     #[cfg(not(test))]
-    adopt_legacy_config_member(sub, &canonical);
+    if !config_dir_is_explicit() {
+        adopt_legacy_config_member(sub, &canonical);
+    }
     Ok(canonical)
+}
+
+/// True when the environment, not the home-based resolution, decides the
+/// config dir: `LEAN_CTX_CONFIG_DIR`, or a non-standard `LEAN_CTX_DATA_DIR`
+/// that [`single_dir_override`] collapses every category onto.
+#[cfg(not(test))]
+fn config_dir_is_explicit() -> bool {
+    env_path("LEAN_CTX_CONFIG_DIR").is_some()
+        || env_path("LEAN_CTX_DATA_DIR").is_some_and(|p| !is_standard_xdg_data_dir(&p))
 }
 
 /// Decide whether a legacy config member should be adopted: only when the

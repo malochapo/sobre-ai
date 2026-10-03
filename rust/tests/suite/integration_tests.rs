@@ -389,7 +389,12 @@ fn binary_gain_json_returns_valid_json() {
         .args(["gain", "--json"])
         .output()
         .expect("failed to run lean-ctx gain --json");
-    assert!(output.status.success(), "gain --json should succeed");
+    assert!(
+        output.status.success(),
+        "gain --json should succeed: {}\nstderr: {}",
+        output.status,
+        String::from_utf8_lossy(&output.stderr)
+    );
     let stdout = String::from_utf8_lossy(&output.stdout);
     let parsed: Result<serde_json::Value, _> = serde_json::from_str(stdout.trim());
     assert!(

@@ -7,6 +7,14 @@
 //! nextest, `.config/nextest.toml` puts this binary in the `serial-state`
 //! group for the same reason.
 
+#[path = "support/user_dirs.rs"]
+mod user_dirs;
+
+#[test]
+fn harness_sandboxes_user_dirs() {
+    user_dirs::assert_sandboxed();
+}
+
 mod serial_suite;
 
 extern "C" fn force_single_test_thread() {

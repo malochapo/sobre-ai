@@ -22,6 +22,14 @@
 //! data-dir env around them — exactly the pattern `data_dir::isolated_data_dir`
 //! uses internally.
 
+#[path = "support/user_dirs.rs"]
+mod user_dirs;
+
+#[test]
+fn harness_sandboxes_user_dirs() {
+    user_dirs::assert_sandboxed();
+}
+
 use std::fmt::Write as _;
 use std::process::{Command, Stdio};
 use std::sync::Once;
