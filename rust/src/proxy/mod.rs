@@ -12,7 +12,6 @@ pub mod bedrock;
 pub mod cache_aligner;
 pub mod cache_attribution;
 pub mod cache_breakpoint;
-pub mod cache_bridge;
 pub mod cache_policy;
 pub mod cache_safety;
 pub mod ccr;
@@ -32,7 +31,6 @@ pub mod forward;
 pub mod google;
 pub mod history_prune;
 pub mod holdout;
-pub mod image_compression;
 pub mod introspect;
 mod lineage;
 pub mod metrics;
@@ -48,10 +46,7 @@ pub mod prose;
 pub mod prose_ranker;
 pub mod providers;
 pub mod request_tags;
-pub mod response_cache;
 pub mod routing;
-pub mod routing_feedback;
-pub mod routing_quality;
 #[cfg(feature = "shape-xlat")]
 pub mod shape_xlat;
 pub mod sse_keepalive;
@@ -65,7 +60,6 @@ mod upstream_tests;
 pub mod usage;
 pub mod usage_accounting;
 pub mod usage_meter;
-pub mod usage_sink;
 pub mod verbosity;
 
 use std::net::SocketAddr;
@@ -89,7 +83,6 @@ pub struct ProxyState {
     pub port: u16,
     pub stats: Arc<ProxyStats>,
     pub introspect: Arc<introspect::IntrospectState>,
-    pub ocla_cache: Option<Arc<cache_bridge::CacheBridge>>,
     /// Live provider upstreams, refreshed from config.toml without a proxy
     /// restart (#449). Read per request via [`ProxyState::openai_upstream`] etc.
     pub upstreams: tokio::sync::watch::Receiver<Arc<Upstreams>>,
@@ -474,7 +467,6 @@ pub async fn start_proxy_with_token(port: u16, auth_token: Option<String>) -> an
         port,
         stats: Arc::new(ProxyStats::default()),
         introspect: Arc::new(introspect::IntrospectState::default()),
-        ocla_cache: None,
         upstreams: upstream_rx,
         chatgpt_cookies,
     };

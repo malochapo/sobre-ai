@@ -24,7 +24,6 @@ async fn proxy_state_reads_upstream_live_from_watch() {
         port: 0,
         stats: Arc::new(ProxyStats::default()),
         introspect: Arc::new(introspect::IntrospectState::default()),
-        ocla_cache: None,
         upstreams: rx,
         chatgpt_cookies: chatgpt_cookies::shared_chatgpt_cloudflare_cookie_store(),
     };

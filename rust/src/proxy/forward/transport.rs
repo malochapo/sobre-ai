@@ -73,9 +73,6 @@ pub(crate) async fn build_response(
     cohort: Option<crate::proxy::holdout::Arm>,
     wire: Option<Box<crate::proxy::usage::WireContext>>,
     xlat: bool,
-    cache: Option<&crate::proxy::cache_bridge::CacheBridge>,
-    model: Option<&str>,
-    cache_prompt_hash: &str,
 ) -> Result<Response, StatusCode> {
     let status = StatusCode::from_u16(response.status().as_u16()).unwrap_or(StatusCode::OK);
     let resp_headers = response.headers().clone();
@@ -134,30 +131,15 @@ pub(crate) async fn build_response(
         .with_wire_context(wire)
         .with_header_cost(header_cost);
     scanner.feed_body(&resp_bytes);
-    let measured_output_tokens = if let Some(usage) = scanner.finalize() {
-        let output_tokens = usage.output_tokens;
+    if let Some(usage) = scanner.finalize() {
         crate::proxy::usage_meter::record(&usage);
-        output_tokens
-    } else {
-        u64::try_from(resp_bytes.len().saturating_add(3)).unwrap_or(u64::MAX) / 4
-    };
+    }
 
     let resp_bytes = if xlat {
         xlat_response_bytes(&resp_bytes, status)
     } else {
         resp_bytes.to_vec()
     };
-    if let (Some(cache), Some(model)) = (cache, model) {
-        cache.record_response(
-            model,
-            cache_prompt_hash,
-            0.0,
-            0,
-            status,
-            &resp_bytes,
-            measured_output_tokens,
-        );
-    }
 
     let mut resp = Response::builder().status(status);
     for (k, v) in &resp_headers {

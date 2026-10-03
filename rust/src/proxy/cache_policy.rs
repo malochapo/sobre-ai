@@ -12,9 +12,6 @@
 //! - [`worth_repacking`] — the live gate applied in `anthropic.rs`. It runs
 //!   *before* compression, so it can only weigh the measurable precondition: is
 //!   the cacheable prefix even large enough to be worth re-seeding?
-//! - [`net_cost_decision`] / [`repack_saving_usd`] — the fully priced primitive
-//!   (before/after token counts × [`ModelCost`]) for callers that already know
-//!   the compressed size (tests today, cache-edit batching later).
 //!
 //! Pure functions, no globals; gated behind the opt-in `proxy.cache_policy` at
 //! the call site so a default proxy keeps today's behaviour exactly.
@@ -69,27 +66,6 @@ pub fn prefix_tokens(system: Option<&Value>, messages: &[Value], cached: usize) 
 #[must_use]
 pub fn worth_repacking(system: Option<&Value>, messages: &[Value], cached: usize) -> bool {
     prefix_tokens(system, messages, cached) >= MIN_CACHEABLE_TOKENS
-}
-
-/// Cache-write cost saved by re-seeding a compressed prefix instead of the full
-/// one, in USD. On a cold prefix the provider re-writes regardless, so the saving
-/// is the avoided write of the dropped tokens: `(before − after) × cache_write`.
-/// Clamped to `0.0` when compression did not shrink the prefix.
-#[must_use]
-pub fn repack_saving_usd(before_tokens: u64, after_tokens: u64, cost: &ModelCost) -> f64 {
-    let saved = before_tokens.saturating_sub(after_tokens);
-    saved as f64 / 1_000_000.0 * cost.cache_write_per_m
-}
-
-/// Fully priced repack decision for callers that already know the compressed
-/// size. True when the prefix is cacheable *and* re-seeding it strictly lowers
-/// the unavoidable cold re-write cost. The precondition mirrors
-/// [`worth_repacking`] so the live gate and the priced primitive never disagree.
-#[must_use]
-pub fn net_cost_decision(before_tokens: u64, after_tokens: u64, cost: &ModelCost) -> bool {
-    before_tokens >= MIN_CACHEABLE_TOKENS
-        && after_tokens < before_tokens
-        && repack_saving_usd(before_tokens, after_tokens, cost) > 0.0
 }
 
 /// Decision outcome for a frozen-region mutation.
@@ -224,31 +200,6 @@ mod tests {
             worth_repacking(Some(&big_system), &msgs, 1),
             "a large system prompt makes the prefix worth re-seeding"
         );
-    }
-
-    #[test]
-    fn net_cost_decision_rejects_subcacheable_even_if_smaller() {
-        // Below the cacheable floor: a smaller "after" still doesn't pay.
-        assert!(!net_cost_decision(500, 200, &opus()));
-    }
-
-    #[test]
-    fn net_cost_decision_rejects_when_no_shrink() {
-        assert!(!net_cost_decision(4000, 4000, &opus()));
-        assert!(!net_cost_decision(4000, 5000, &opus()));
-    }
-
-    #[test]
-    fn net_cost_decision_accepts_real_saving() {
-        assert!(net_cost_decision(4000, 2500, &opus()));
-        // Saving is the avoided write of the 1500 dropped tokens.
-        let saved = repack_saving_usd(4000, 2500, &opus());
-        assert!((saved - (1500.0 / 1_000_000.0 * 18.75)).abs() < 1e-9);
-    }
-
-    #[test]
-    fn repack_saving_is_zero_when_inflated() {
-        assert_eq!(repack_saving_usd(1000, 2000, &opus()), 0.0);
     }
 
     #[test]

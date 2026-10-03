@@ -23,13 +23,9 @@
 //! shape mismatch, unextractable query — routes nothing: the request forwards
 //! unchanged. A routing bug can cost savings, never availability.
 
-use super::routing_feedback::RoutingFeedback;
 use crate::core::config::{
     ResolvedProvider, RoutingRules, Upstreams, WireShape, parse_route_target,
 };
-use std::sync::OnceLock;
-
-static ROUTING_FEEDBACK: OnceLock<RoutingFeedback> = OnceLock::new();
 
 /// What the router decided for one request. Applied by the forward path:
 /// `model` already swapped in the body by [`route_request`]; the caller
@@ -78,13 +74,6 @@ pub fn route_request(
     rules: &RoutingRules,
     xlat_ok: bool,
 ) -> Option<RouteDecision> {
-    if ROUTING_FEEDBACK
-        .get_or_init(RoutingFeedback::new)
-        .should_use_fallback()
-    {
-        tracing::warn!("routing quality below threshold, using fallback");
-        return None;
-    }
     if !rules.is_active() {
         return None;
     }
@@ -363,26 +352,6 @@ mod tests {
                 .map(|(k, v)| (k.to_string(), v.to_string()))
                 .collect(),
         }
-    }
-
-    #[test]
-    fn route_decision_does_not_record_feedback_before_outcome() {
-        let feedback = ROUTING_FEEDBACK.get_or_init(RoutingFeedback::new);
-        let before = feedback.stats();
-        let mut body = json!({"model":"expensive","messages":[{"role":"user","content":"hi"}]});
-
-        let decision = route_request(
-            &mut body,
-            "OpenAI",
-            &upstreams_with_foundry(),
-            &rules(&[("expensive", "fast")], &[]),
-            false,
-        )
-        .expect("alias should route");
-
-        assert_eq!(decision.routed_from, "expensive");
-        assert_eq!(decision.model, "fast");
-        assert_eq!(feedback.stats(), before);
     }
 
     #[test]

@@ -189,7 +189,6 @@ mod tests {
             port: 0,
             stats: Arc::new(crate::proxy::ProxyStats::default()),
             introspect: Arc::new(crate::proxy::introspect::IntrospectState::default()),
-            ocla_cache: None,
             upstreams: rx,
             chatgpt_cookies: crate::proxy::chatgpt_cookies::shared_chatgpt_cloudflare_cookie_store(
             ),

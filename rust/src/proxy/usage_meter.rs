@@ -254,10 +254,6 @@ pub fn resume_from_disk() {
 /// Records one turn's measured usage against its model bucket (and its
 /// output-savings cohort, when tagged) and persists.
 pub fn record(u: &super::usage::RealUsage) {
-    // Gateway store subscription (enterprise#17): forward the full record to
-    // the installed sink (no-op locally). Never blocks the request path.
-    super::usage_sink::push(u);
-
     // Mechanism attribution into the local savings ledger (enterprise#19).
     // Routing: the gateway served a cheaper model than requested — value the
     // rate delta on the measured input tokens. Caching: provider prompt-cache

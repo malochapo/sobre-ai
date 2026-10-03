@@ -91,20 +91,6 @@ pub(crate) fn persist(content: &str) -> Option<String> {
     persist_with(content, "proxy")
 }
 
-/// Persist a dropped conversation message under a compact `conv_` handle.
-///
-/// Conversation messages may be short, so unlike tool-output tees this path has
-/// no minimum-size gate. The returned basename is sufficient for `ctx_expand` and
-/// avoids putting machine-specific absolute paths into provider prompts.
-#[allow(dead_code)]
-pub(crate) fn persist_conversation(content: &str) -> Option<String> {
-    let path = persist_with_min(content, "conv", 1)?;
-    Path::new(&path)
-        .file_name()
-        .and_then(|name| name.to_str())
-        .map(str::to_owned)
-}
-
 /// Persist a JSON crusher's verbatim original (#936) under the `json_` prefix and
 /// return its `{state}/tee/json_{hash}.log` handle. Used by the lossy crush stage
 /// so a dropped column is always recoverable out-of-band via [`resolve_tee`] /
@@ -447,34 +433,6 @@ mod tests {
             on_disk.contains("recoverable verbatim line"),
             "the verbatim original must be retrievable from the handle"
         );
-    }
-
-    #[test]
-    #[allow(clippy::case_sensitive_file_extension_comparisons)]
-    fn conversation_handle_is_compact_and_deterministic() {
-        let _lock = crate::core::data_dir::test_env_lock();
-        let a = persist_conversation("{\"role\":\"user\",\"content\":\"hello\"}")
-            .expect("conversation handle");
-        let b = persist_conversation("{\"role\":\"user\",\"content\":\"hello\"}")
-            .expect("conversation handle");
-        assert_eq!(a, b);
-        assert!(a.starts_with("conv_") && a.ends_with(".log"));
-    }
-
-    #[test]
-    fn conversation_handle_resolves_short_messages() {
-        let _lock = crate::core::data_dir::test_env_lock();
-        let handle = persist_conversation("short conversation message").expect("handle");
-        assert!(resolve_tee(&handle).is_some());
-    }
-
-    #[test]
-    fn conversation_original_is_recoverable() {
-        let _lock = crate::core::data_dir::test_env_lock();
-        let original = "{\"role\":\"tool\",\"content\":\"recover me\"}";
-        let handle = persist_conversation(original).expect("handle");
-        let path = resolve_tee(&handle).expect("resolved handle");
-        assert_eq!(std::fs::read_to_string(path).unwrap(), original);
     }
 
     #[test]

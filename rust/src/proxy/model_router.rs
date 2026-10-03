@@ -113,19 +113,6 @@ pub fn route(body: &Value, rules: &RoutingRules) -> Option<RoutingDecision> {
     })
 }
 
-/// Applies a routing decision to a mutable request body (in-place model swap).
-pub fn apply_decision(body: &mut Value, decision: &RoutingDecision) {
-    if !decision.model_changed {
-        return;
-    }
-    if let Some(obj) = body.as_object_mut() {
-        obj.insert(
-            "model".to_string(),
-            Value::String(decision.routed_model.clone()),
-        );
-    }
-}
-
 /// Classifies a request without applying routing — for dry-run / observability.
 pub fn classify_only(body: &Value) -> Option<(TaskClassification, intent_engine::IntentRoute)> {
     let messages = body.get("messages")?;
@@ -364,40 +351,6 @@ mod tests {
     }
 
     // ─── Decision application ────────────────────────────────────────────
-
-    #[test]
-    fn apply_decision_rewrites_body() {
-        let mut body = request_body("claude-sonnet-4", "explain");
-        let decision = RoutingDecision {
-            requested_model: "claude-sonnet-4".into(),
-            routed_model: "claude-haiku-4-5".into(),
-            routed_provider: Some("anthropic".into()),
-            tier: "fast".into(),
-            confidence: 0.85,
-            reasoning: "explore(what) + low complexity -> fast".into(),
-            model_changed: true,
-            estimated_cost_ratio: Some(0.2),
-        };
-        apply_decision(&mut body, &decision);
-        assert_eq!(body["model"], "claude-haiku-4-5");
-    }
-
-    #[test]
-    fn apply_decision_noop_when_unchanged() {
-        let mut body = request_body("claude-sonnet-4", "explain");
-        let decision = RoutingDecision {
-            requested_model: "claude-sonnet-4".into(),
-            routed_model: "claude-sonnet-4".into(),
-            routed_provider: None,
-            tier: "standard".into(),
-            confidence: 0.8,
-            reasoning: "fix_bug(how) -> standard".into(),
-            model_changed: false,
-            estimated_cost_ratio: None,
-        };
-        apply_decision(&mut body, &decision);
-        assert_eq!(body["model"], "claude-sonnet-4");
-    }
 
     // ─── Cost estimation ─────────────────────────────────────────────────
 

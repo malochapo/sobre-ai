@@ -125,10 +125,6 @@ fn compress_inner(content: &str, tool_name: Option<&str>) -> String {
         });
     }
 
-    if is_cited_research_output(content) {
-        return content.to_string();
-    }
-
     if extract_command_hint(content).is_none()
         && looks_like_prose(content)
         && let Some(out) = squeeze_research_prose(content)
@@ -192,12 +188,6 @@ fn output_looks_like_build_failure(content: &str) -> bool {
         "Segmentation fault",
     ];
     NEEDLES.iter().any(|n| content.contains(n))
-}
-
-/// True when `content` is a lean-ctx web read: distilled body + citation footer
-/// (`Source: …\nSite: … · Retrieved: …`). Such output is re-compression-hostile.
-fn is_cited_research_output(content: &str) -> bool {
-    content.contains("· Retrieved: ") && content.contains("\nSource: ")
 }
 
 /// Code/shell symbols whose density cleanly separates source/logs from prose.
@@ -411,16 +401,6 @@ mod tests {
             raw,
             "foreign-tool output should still be compressed by the proxy"
         );
-    }
-
-    #[test]
-    fn cited_research_output_is_preserved_verbatim() {
-        let cited = format!(
-            "Rust is a language.\n\n---\nSource: Rust — https://x.com/a\n\
-             Site: x.com · Retrieved: 2026-06-06T00:00:00Z\n{}",
-            "Extra body line that would otherwise be touched. ".repeat(20)
-        );
-        assert_eq!(compress_tool_result(&cited, Some("ctx_url_read")), cited);
     }
 
     #[test]
