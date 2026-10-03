@@ -503,7 +503,7 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
         key(
             "bool",
             serde_json::json!(cfg.addons.grammar_auto_fetch),
-            "Zero-config grammar-addon fetch (#690): download a SHA-256-pinned grammar dylib on first use of a covered extension. Off = regex-signature fallback only (strict egress/DLP posture)",
+            "Grammar-addon fetch (#690): download a SHA-256-pinned grammar dylib on first use of a covered extension. Off by default (no unrequested network); off = regex-signature fallback only",
         ),
     );
     sections.insert(

@@ -19,12 +19,10 @@ pub struct AddonsConfig {
     /// Honour a user-override registry (`<data_dir>/addon_registry.json`) only
     /// when it carries a valid signature by a trusted org key.
     pub require_signature: bool,
-    /// Zero-config grammar-addon fetch (#690): transparently download a
-    /// SHA-256-pinned grammar dylib on first use of a registry-covered file
-    /// extension. On by default (a grammar addon is a parsing fallback, not a
-    /// spawned server). Orgs with a strict egress/DLP posture set this to
-    /// `false` — reads then degrade to the regex-signature fallback, exactly
-    /// like offline. `policy = locked` implies the same.
+    /// Grammar-addon fetch (#690): download a SHA-256-pinned grammar dylib on
+    /// first use of a registry-covered file extension. Off by default: sobre
+    /// makes no network request the user did not ask for (invariant 4). Off,
+    /// reads use the regex-signature fallback, exactly like offline.
     pub grammar_auto_fetch: bool,
 }
 
@@ -33,7 +31,7 @@ impl Default for AddonsConfig {
         Self {
             locked: false,
             require_signature: false,
-            grammar_auto_fetch: true,
+            grammar_auto_fetch: false,
         }
     }
 }
