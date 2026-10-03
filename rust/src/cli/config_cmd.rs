@@ -547,7 +547,6 @@ fn normalize_optional_upstream(value: &str) -> Option<String> {
 
 pub fn cmd_benchmark(args: &[String]) {
     use crate::core::benchmark;
-    use crate::core::benchmark_compare;
 
     let action = args.first().map_or("run", std::string::String::as_str);
 
@@ -558,7 +557,6 @@ pub fn cmd_benchmark(args: &[String]) {
             println!("       lean-ctx benchmark replay <sessions.json> [--output report.md]");
             println!("       lean-ctx benchmark eval [path] [--json]");
             println!("       lean-ctx benchmark eval-ab [path] [--suite file.ndjson] [--json]");
-            println!("       lean-ctx benchmark compare [--repo path] [--output file.md]");
             println!("       lean-ctx benchmark scorecard [--json] [--output file]");
             println!("       lean-ctx benchmark dual-arm [--json] [--output file]");
         }
@@ -711,24 +709,6 @@ pub fn cmd_benchmark(args: &[String]) {
                 }
             }
         }
-        "compare" => {
-            let repo = parse_flag_value(args, "--repo").unwrap_or_else(|| ".".to_string());
-            let output = parse_flag_value(args, "--output");
-
-            let root = std::path::Path::new(&repo);
-            if !root.exists() {
-                eprintln!("Repository path does not exist: {repo}");
-                std::process::exit(1);
-            }
-
-            let report = benchmark_compare::run_compare(root, output.as_deref());
-
-            println!("{}", benchmark_compare::report::generate_terminal(&report));
-
-            if output.is_none() {
-                eprintln!("Tip: use --output BENCHMARKS.md to save the full markdown report");
-            }
-        }
         _ => {
             if std::path::Path::new(action).exists() {
                 let result = benchmark::run_project_benchmark(action);
@@ -741,7 +721,6 @@ pub fn cmd_benchmark(args: &[String]) {
                 eprintln!(
                     "       lean-ctx benchmark eval-ab [path] [--suite file.ndjson] [--json]"
                 );
-                eprintln!("       lean-ctx benchmark compare [--repo path] [--output file.md]");
                 eprintln!("       lean-ctx benchmark scorecard [--json] [--output file]");
                 std::process::exit(1);
             }

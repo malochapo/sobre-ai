@@ -8,7 +8,6 @@
 //! tests/*.rs binary.
 
 mod adversarial_compression;
-mod benchmark_compare_integration;
 mod capabilities_contract_up_to_date;
 mod cli_anti_inflation;
 mod cli_characterization;

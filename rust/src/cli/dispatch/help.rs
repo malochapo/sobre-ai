@@ -156,7 +156,6 @@ COMMANDS:
     sessions [list|show|delete|cleanup]  Manage saved session snapshots — PLURAL; see 'session' for live memory (alias: session-store)
     benchmark run [path] [--json]  Run real benchmark on project files
     benchmark report [path]        Generate shareable Markdown report
-    benchmark compare [--output F] Head-to-head comparison vs competitors
     benchmark scorecard [--json]   Reproducible savings+recall+latency scorecard
     status [--json]                Show setup + MCP + rules status
     init [--global]                Install shell aliases (zsh/bash/fish/PowerShell)
