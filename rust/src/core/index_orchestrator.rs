@@ -656,6 +656,7 @@ pub struct SlotProgress {
 }
 
 impl SlotProgress {
+    #[cfg(test)]
     pub fn is_determinate(&self) -> bool {
         self.building && self.total > 0
     }
@@ -681,10 +682,6 @@ impl ProgressView {
     /// race and the graph→BM25 handoff without waiting for search pre-warm.
     pub fn graph_bm25_active(&self) -> bool {
         self.worker_running && !(self.graph_run_done && self.bm25_run_done)
-    }
-
-    pub fn semantic_active(&self) -> bool {
-        self.semantic.building
     }
 }
 

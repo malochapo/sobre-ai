@@ -84,19 +84,6 @@ impl ToolOutput {
         format!("[{tool_name}: {path_str}, mode={mode_str}, {sent} tok sent, -{pct}%]")
     }
 
-    pub fn with_savings(text: String, original: usize, saved: usize) -> Self {
-        Self {
-            text,
-            original_tokens: original,
-            saved_tokens: saved,
-            mode: None,
-            path: None,
-            changed: false,
-            shell_outcome: None,
-            content_blocks: None,
-        }
-    }
-
     /// Construct a ToolOutput for image/binary content blocks.
     /// Bypasses all text processing in the dispatch pipeline.
     pub fn image(blocks: Vec<ContentBlock>, path: String) -> Self {

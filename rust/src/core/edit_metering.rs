@@ -132,22 +132,6 @@ pub fn record_str_replace_miss() {
     with_store(|s| s.str_replace_misses = s.str_replace_misses.saturating_add(1));
 }
 
-/// Snapshot for `ctx_metrics` and the dashboard `/api/stats` payload.
-pub fn metrics_snapshot() -> serde_json::Value {
-    let Ok(store) = global().lock() else {
-        return serde_json::json!({});
-    };
-    serde_json::json!({
-        "anchored_calls": store.anchored_calls,
-        "anchored_ops": store.anchored_ops,
-        "anchored_avoided_output_tokens": store.anchored_avoided_output_tokens,
-        "anchored_conflicts": store.anchored_conflicts,
-        "str_replace_calls": store.str_replace_calls,
-        "str_replace_old_string_tokens": store.str_replace_old_string_tokens,
-        "str_replace_misses": store.str_replace_misses,
-    })
-}
-
 pub fn flush() {
     if let Ok(store) = global().lock()
         && store.dirty

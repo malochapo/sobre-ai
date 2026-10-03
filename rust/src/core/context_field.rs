@@ -32,13 +32,16 @@ impl ContextItemId {
     pub fn from_file(path: &str) -> Self {
         Self(format!("file:{path}"))
     }
+    #[cfg(test)]
     pub fn from_shell(command: &str) -> Self {
         let hash = crate::core::project_hash::hash_project_root(command);
         Self(format!("shell:{hash}"))
     }
+    #[cfg(test)]
     pub fn from_knowledge(category: &str, key: &str) -> Self {
         Self(format!("knowledge:{category}:{key}"))
     }
+    #[cfg(test)]
     pub fn from_memory(key: &str) -> Self {
         Self(format!("memory:{key}"))
     }
@@ -155,15 +158,6 @@ impl ViewCosts {
 
     pub fn get(&self, view: &ViewKind) -> usize {
         self.estimates.get(view).copied().unwrap_or(0)
-    }
-
-    /// Cheapest view that still provides content (excludes Handle).
-    pub fn cheapest_content_view(&self) -> Option<(ViewKind, usize)> {
-        self.estimates
-            .iter()
-            .filter(|(v, _)| **v != ViewKind::Handle)
-            .min_by_key(|&(_, &tokens)| tokens)
-            .map(|(&v, &t)| (v, t))
     }
 
     pub fn from_full_tokens(full_tokens: usize) -> Self {
@@ -294,15 +288,6 @@ pub struct FieldSignals {
     pub redundancy: f64,
 }
 
-/// Combined potential for a context item.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct FieldPotential {
-    pub signals: FieldSignals,
-    pub phi: f64,
-    pub view_costs: ViewCosts,
-    pub best_view: ViewKind,
-}
-
 /// Token budget parameters for compilation.
 #[derive(Debug, Clone, Copy)]
 pub struct TokenBudget {
@@ -347,10 +332,6 @@ impl ContextField {
         }
     }
 
-    pub fn with_weights(weights: FieldWeights) -> Self {
-        Self { weights }
-    }
-
     /// Construct a field using the process-wide learned FieldWeights (#4) when an
     /// arm has been selected, else the defaults. Cheap (a `RwLock` read), so it is
     /// safe to call on the per-read Phi hot path.
@@ -373,39 +354,6 @@ impl ContextField {
             - w.w_cost * signals.token_cost_norm
             - w.w_redundancy * signals.redundancy;
         phi.clamp(0.0, 1.0)
-    }
-
-    /// Select the best view for an item given the temperature (budget pressure).
-    ///
-    /// Uses Boltzmann-weighted view selection:
-    ///   P(view_v | item_i, T) = exp(-C(v) / T) / Z(i, T)
-    ///
-    /// At low temperature (relaxed budget), denser views are preferred.
-    /// At high temperature (tight budget), sparser views are preferred.
-    pub fn select_view(&self, costs: &ViewCosts, temperature: f64) -> ViewKind {
-        if costs.estimates.is_empty() {
-            return ViewKind::Full;
-        }
-
-        let t = temperature.max(0.01);
-        let max_cost = costs.estimates.values().copied().max().unwrap_or(1).max(1) as f64;
-
-        let mut best_view = ViewKind::Full;
-        let mut best_score = f64::NEG_INFINITY;
-
-        for (&view, &tokens) in &costs.estimates {
-            let normalized_cost = tokens as f64 / max_cost;
-            let density_bonus = 1.0 - (view.density_rank() as f64 / 8.0);
-            // At low T, density_bonus dominates (prefer dense/full views).
-            // At high T, the cost penalty dominates (prefer cheap/sparse views).
-            let score = density_bonus * (2.0 - t) - normalized_cost * t;
-            if score > best_score {
-                best_score = score;
-                best_view = view;
-            }
-        }
-
-        best_view
     }
 }
 
@@ -448,21 +396,6 @@ pub fn efficiency(phi: f64, tokens: usize) -> f64 {
         return phi;
     }
     phi / tokens as f64
-}
-
-/// Default MMR trade-off: how much relevance (Phi) is weighted against
-/// non-redundancy during integration-aware selection (#5). 0.7 keeps relevance
-/// dominant while still penalizing near-duplicates.
-pub const MMR_LAMBDA: f64 = 0.7;
-
-/// Maximal Marginal Relevance score (#5): reward relevance (`phi`) but penalize
-/// redundancy with the already-selected set (`max_similarity`). This makes
-/// selection *integration-aware* in the IIT sense — a context package gains more
-/// from a complementary item than from a near-duplicate of one it already holds.
-/// Deterministic: a pure function of its inputs, no sampling.
-pub fn mmr_score(phi: f64, max_similarity: f64, lambda: f64) -> f64 {
-    let l = lambda.clamp(0.0, 1.0);
-    l * phi - (1.0 - l) * max_similarity.clamp(0.0, 1.0)
 }
 
 /// Compute real signals for a file path using existing scoring modules.
@@ -591,30 +524,6 @@ mod tests {
     }
 
     #[test]
-    fn view_selection_prefers_dense_at_low_temperature() {
-        let field = ContextField::new();
-        let costs = ViewCosts::from_full_tokens(5000);
-        let view = field.select_view(&costs, 0.1);
-        assert_eq!(
-            view,
-            ViewKind::Full,
-            "low temperature (relaxed budget) should prefer full view"
-        );
-    }
-
-    #[test]
-    fn view_selection_prefers_sparse_at_high_temperature() {
-        let field = ContextField::new();
-        let costs = ViewCosts::from_full_tokens(5000);
-        let view = field.select_view(&costs, 2.0);
-        assert_ne!(
-            view,
-            ViewKind::Full,
-            "high temperature (tight budget) should prefer sparser view"
-        );
-    }
-
-    #[test]
     fn budget_temperature_scales_with_utilization() {
         let low = TokenBudget {
             total: 10000,
@@ -692,23 +601,6 @@ mod tests {
         let w = active_weights();
         let d = FieldWeights::default();
         assert!((w.w_relevance - d.w_relevance).abs() < f64::EPSILON);
-    }
-
-    #[test]
-    fn mmr_penalizes_redundancy() {
-        // #5: a redundant high-Phi item scores lower than a unique one.
-        let unique = mmr_score(0.8, 0.0, MMR_LAMBDA);
-        let redundant = mmr_score(0.8, 0.9, MMR_LAMBDA);
-        assert!(
-            unique > redundant,
-            "redundant item ({redundant}) must score below unique ({unique})"
-        );
-    }
-
-    #[test]
-    fn mmr_lambda_one_is_pure_relevance() {
-        // λ=1 ignores redundancy entirely → equals Phi.
-        assert!((mmr_score(0.6, 0.9, 1.0) - 0.6).abs() < f64::EPSILON);
     }
 
     #[test]

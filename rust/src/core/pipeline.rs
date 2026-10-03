@@ -171,19 +171,6 @@ impl Pipeline {
         self
     }
 
-    /// Appends a layer only if the profile's pipeline config allows it.
-    pub fn add_layer_if_enabled(
-        self,
-        layer: Box<dyn Layer>,
-        cfg: &crate::core::profiles::PipelineConfig,
-    ) -> Self {
-        if is_layer_enabled(layer.kind(), cfg) {
-            self.add_layer(layer)
-        } else {
-            self
-        }
-    }
-
     /// Runs all layers in sequence, collecting per-layer metrics.
     pub fn execute(&self, input: LayerInput) -> (LayerOutput, Vec<LayerMetrics>) {
         let mut current = input;
@@ -216,39 +203,6 @@ impl Pipeline {
         };
 
         (final_output, metrics)
-    }
-
-    /// Formats pipeline metrics as a human-readable summary with per-layer and total stats.
-    pub fn format_metrics(metrics: &[LayerMetrics]) -> String {
-        let mut out = String::from("Pipeline Metrics:\n");
-        let mut total_saved = 0usize;
-        for m in metrics {
-            let saved = m.input_tokens.saturating_sub(m.output_tokens);
-            total_saved += saved;
-            out.push_str(&format!(
-                "  {} : {} -> {} tok ({:.0}%, {:.1}ms)\n",
-                m.layer,
-                m.input_tokens,
-                m.output_tokens,
-                m.compression_ratio * 100.0,
-                m.duration_us as f64 / 1000.0,
-            ));
-        }
-        if let (Some(first), Some(last)) = (metrics.first(), metrics.last()) {
-            let total_ratio = if first.input_tokens == 0 {
-                1.0
-            } else {
-                last.output_tokens as f64 / first.input_tokens as f64
-            };
-            out.push_str(&format!(
-                "  TOTAL: {} -> {} tok ({:.0}%, saved {})\n",
-                first.input_tokens,
-                last.output_tokens,
-                total_ratio * 100.0,
-                total_saved,
-            ));
-        }
-        out
     }
 }
 
@@ -305,22 +259,6 @@ impl PipelineStats {
             agg.total_duration_us += m.duration_us;
             agg.count += 1;
         }
-    }
-
-    /// Records metrics for a single layer execution.
-    pub fn record_single(
-        &mut self,
-        layer: LayerKind,
-        input_tokens: usize,
-        output_tokens: usize,
-        duration: std::time::Duration,
-    ) {
-        self.runs += 1;
-        let agg = self.per_layer.entry(layer).or_default();
-        agg.total_input_tokens += input_tokens;
-        agg.total_output_tokens += output_tokens;
-        agg.total_duration_us += duration.as_micros() as u64;
-        agg.count += 1;
     }
 
     /// Returns the total tokens saved across all pipeline layers.
@@ -517,20 +455,6 @@ mod tests {
     }
 
     #[test]
-    fn metrics_format_readable() {
-        let metrics = vec![
-            LayerMetrics::new(LayerKind::Input, 1000, 1000, 100),
-            LayerMetrics::new(LayerKind::Compression, 1000, 300, 5000),
-            LayerMetrics::new(LayerKind::Delivery, 300, 300, 50),
-        ];
-        let formatted = Pipeline::format_metrics(&metrics);
-        assert!(formatted.contains("input"));
-        assert!(formatted.contains("compression"));
-        assert!(formatted.contains("delivery"));
-        assert!(formatted.contains("TOTAL"));
-    }
-
-    #[test]
     fn empty_pipeline_passes_through() {
         let pipeline = Pipeline::new();
         let input = LayerInput {
@@ -610,22 +534,6 @@ mod tests {
     }
 
     #[test]
-    fn pipeline_stats_record_single() {
-        let mut stats = PipelineStats::new();
-        stats.record_single(
-            LayerKind::Compression,
-            1000,
-            300,
-            std::time::Duration::from_millis(5),
-        );
-        assert_eq!(stats.runs, 1);
-        let agg = stats.per_layer.get(&LayerKind::Compression).unwrap();
-        assert_eq!(agg.total_input_tokens, 1000);
-        assert_eq!(agg.total_output_tokens, 300);
-        assert_eq!(agg.count, 1);
-    }
-
-    #[test]
     fn pipeline_full_flow_integration() {
         let pipeline = Pipeline::new()
             .add_layer(Box::new(PassthroughLayer {
@@ -666,10 +574,6 @@ mod tests {
         stats.record(&metrics);
         assert_eq!(stats.runs, 1);
         assert_eq!(stats.total_tokens_saved(), 350);
-
-        let formatted = Pipeline::format_metrics(&metrics);
-        assert!(formatted.contains("TOTAL"));
-        assert!(formatted.contains("500"));
     }
 
     #[test]
@@ -687,53 +591,5 @@ mod tests {
         assert!(is_layer_enabled(LayerKind::Compression, &cfg));
         assert!(is_layer_enabled(LayerKind::Translation, &cfg));
         assert!(is_layer_enabled(LayerKind::Delivery, &cfg));
-    }
-
-    #[test]
-    fn add_layer_if_enabled_skips_disabled() {
-        let cfg = crate::core::profiles::PipelineConfig {
-            intent: Some(false),
-            relevance: Some(true),
-            compression: Some(true),
-            translation: Some(true),
-        };
-
-        let pipeline = Pipeline::new()
-            .add_layer_if_enabled(
-                Box::new(PassthroughLayer {
-                    kind: LayerKind::Input,
-                }),
-                &cfg,
-            )
-            .add_layer_if_enabled(
-                Box::new(PassthroughLayer {
-                    kind: LayerKind::Intent,
-                }),
-                &cfg,
-            )
-            .add_layer_if_enabled(Box::new(CompressionLayer { ratio: 0.5 }), &cfg)
-            .add_layer_if_enabled(
-                Box::new(PassthroughLayer {
-                    kind: LayerKind::Delivery,
-                }),
-                &cfg,
-            );
-
-        let input = LayerInput {
-            content: "x ".repeat(100),
-            tokens: 100,
-            metadata: HashMap::new(),
-        };
-        let (output, metrics) = pipeline.execute(input);
-
-        assert_eq!(
-            metrics.len(),
-            3,
-            "Intent layer should be skipped, leaving Input + Compression + Delivery"
-        );
-        assert_eq!(metrics[0].layer, LayerKind::Input);
-        assert_eq!(metrics[1].layer, LayerKind::Compression);
-        assert_eq!(metrics[2].layer, LayerKind::Delivery);
-        assert_eq!(output.tokens, 50);
     }
 }

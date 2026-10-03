@@ -1,11 +1,3 @@
-/// Pattern engine version. Bump when output format changes to maintain
-/// shell-output determinism guarantees. Consumers (proofs, benchmarks)
-/// can embed this version to detect pattern-breaking updates.
-///
-/// v2 (#936): `json_schema::compress` now prefers the lossless `json_crush`
-/// form over the schema outline for redundant array-of-object payloads.
-pub const PATTERN_ENGINE_VERSION: u32 = 2;
-
 pub mod alembic;
 pub mod ansible;
 pub mod argocd;

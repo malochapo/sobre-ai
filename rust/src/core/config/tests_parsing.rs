@@ -151,14 +151,6 @@ mod memory_cleanup_tests {
     }
 
     #[test]
-    fn index_retention_multiplier_values() {
-        assert!(
-            (MemoryCleanup::Aggressive.index_retention_multiplier() - 1.0).abs() < f64::EPSILON
-        );
-        assert!((MemoryCleanup::Shared.index_retention_multiplier() - 3.0).abs() < f64::EPSILON);
-    }
-
-    #[test]
     fn deserialization_defaults_to_shared() {
         let cfg: Config = toml::from_str("").unwrap();
         assert_eq!(cfg.memory_cleanup, MemoryCleanup::Shared);

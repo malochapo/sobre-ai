@@ -53,27 +53,6 @@ pub fn list_issues(
     Ok(result)
 }
 
-pub fn show_issue(config: &GitLabConfig, iid: u64) -> Result<ProviderResult, String> {
-    let project = config
-        .project_path
-        .as_deref()
-        .ok_or("No project path configured.")?;
-    let encoded = urlencoding::encode(project);
-    let url = format!("/projects/{encoded}/issues/{iid}");
-
-    let body = api_get(config, &url)?;
-    let issue: serde_json::Value =
-        serde_json::from_str(&body).map_err(|e| format!("JSON parse error: {e}"))?;
-
-    Ok(ProviderResult {
-        provider: "gitlab".to_string(),
-        resource_type: "issue".to_string(),
-        total_count: Some(1),
-        truncated: false,
-        items: vec![parse_issue(&issue)],
-    })
-}
-
 pub fn list_mrs(
     config: &GitLabConfig,
     state: Option<&str>,

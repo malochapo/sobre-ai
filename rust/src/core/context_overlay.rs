@@ -201,10 +201,6 @@ impl OverlayStore {
         items
     }
 
-    pub fn remove_for_item(&mut self, target: &ContextItemId) {
-        self.overlays.retain(|o| o.target != *target);
-    }
-
     pub fn all(&self) -> &[ContextOverlay] {
         &self.overlays
     }

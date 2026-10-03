@@ -111,6 +111,7 @@ pub struct WireContext {
 
 impl WireContext {
     #[must_use]
+    #[cfg(test)]
     pub fn ocla_request_context(&self) -> Option<&crate::core::request_context::RequestContext> {
         self.lineage.as_ref()
     }

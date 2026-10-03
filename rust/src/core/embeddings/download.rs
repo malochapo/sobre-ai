@@ -266,22 +266,6 @@ fn write_lockfile(
     Ok(())
 }
 
-/// Remove all downloaded model files (for cleanup/re-download).
-pub fn clean_model(model_dir: &Path) -> anyhow::Result<()> {
-    for name in ["model.onnx", "vocab.txt", "tokenizer.json", LOCKFILE] {
-        let path = model_dir.join(name);
-        if path.exists() {
-            std::fs::remove_file(&path)?;
-            tracing::info!("Removed {}", path.display());
-        }
-        let tmp_path = model_dir.join(format!("{name}.tmp"));
-        if tmp_path.exists() {
-            std::fs::remove_file(&tmp_path)?;
-        }
-    }
-    Ok(())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

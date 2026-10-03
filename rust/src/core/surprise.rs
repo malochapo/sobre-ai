@@ -75,17 +75,6 @@ pub enum SurpriseLevel {
     High,
 }
 
-pub fn classify_surprise(text: &str) -> SurpriseLevel {
-    let s = line_surprise(text);
-    if s < 8.0 {
-        SurpriseLevel::Low
-    } else if s < 12.0 {
-        SurpriseLevel::Medium
-    } else {
-        SurpriseLevel::High
-    }
-}
-
 /// Enhanced entropy filter that combines Shannon entropy with predictive surprise.
 /// Lines pass if EITHER their entropy is above threshold OR their surprise is high.
 /// This prevents dropping lines that look "low entropy" but contain rare, unique tokens.

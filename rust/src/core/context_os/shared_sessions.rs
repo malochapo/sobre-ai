@@ -107,18 +107,6 @@ impl SharedSessionStore {
         }
     }
 
-    pub fn active_count(&self) -> usize {
-        self.sessions
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .len()
-    }
-
-    /// Returns the max sessions limit for diagnostics.
-    pub fn max_sessions() -> usize {
-        MAX_CACHED_SESSIONS
-    }
-
     pub fn persist_best_effort(
         &self,
         project_root: &str,

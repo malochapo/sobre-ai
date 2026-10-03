@@ -4,7 +4,6 @@ use lean_ctx::core::protocol::instruction_decoder_block;
 use lean_ctx::core::signatures::extract_signatures;
 use lean_ctx::core::tokens::count_tokens;
 use lean_ctx::tools::CrpMode;
-use lean_ctx::tools::impl_response;
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -725,88 +724,6 @@ fn bench_rrf_eviction_empty() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// SECTION 4: OUTPUT TOKEN BENCHMARKS — Response Compression
-// ═══════════════════════════════════════════════════════════════════════════
-
-#[test]
-fn bench_response_compression_off() {
-    let verbose_response = generate_verbose_llm_response();
-    let compressed = impl_response::handle(&verbose_response, CrpMode::Off);
-    let (orig, comp, pct) = measure_text(&verbose_response, &compressed);
-
-    eprintln!("\n  [ctx_response CRP Off] {orig} → {comp} tokens ({pct:.1}% saved)");
-    assert!(
-        pct > 5.0,
-        "Even Off mode should strip some filler, got {pct:.1}%"
-    );
-}
-
-#[test]
-fn bench_response_compression_compact() {
-    let verbose_response = generate_verbose_llm_response();
-    let compressed = impl_response::handle(&verbose_response, CrpMode::Compact);
-    let (orig, comp, pct) = measure_text(&verbose_response, &compressed);
-
-    eprintln!("\n  [ctx_response CRP Compact] {orig} → {comp} tokens ({pct:.1}% saved)");
-    assert!(pct > 10.0, "Compact mode should save >10%, got {pct:.1}%");
-}
-
-#[test]
-fn bench_response_compression_tdd() {
-    let verbose_response = generate_verbose_llm_response();
-    let compressed = impl_response::handle(&verbose_response, CrpMode::Tdd);
-    let (orig, comp, pct) = measure_text(&verbose_response, &compressed);
-
-    eprintln!("\n  [ctx_response CRP TDD] {orig} → {comp} tokens ({pct:.1}% saved)");
-    assert!(pct > 15.0, "TDD mode should save >15%, got {pct:.1}%");
-}
-
-#[test]
-fn bench_response_filler_removal_accuracy() {
-    let response_with_fillers = "\
-Sure, I'd be happy to help you with that! Let me take a look at this for you.\n\n\
-Great question! Here's what I found after analyzing the codebase thoroughly:\n\n\
-I'll now walk you through the changes step by step so you can understand each modification.\n\n\
-First, let me explain how the authentication flow works in the current implementation.\n\n\
-The function `process_data` in `src/handlers.rs` has a critical bug on line 42 where the \
-validation logic doesn't properly handle edge cases with expired tokens.\n\n\
-```rust\npub fn process_data(input: &str) -> Result<Output, Error> {\n    let validated = validate(input)?;\n    Ok(Output::new(validated))\n}\n```\n\n\
-As you can see, the function currently doesn't check for token expiration before processing.\n\n\
-I've also updated the tests to cover the new edge cases. The test file now includes comprehensive \
-coverage for both valid and invalid token scenarios.\n\n\
-```rust\n#[test]\nfn test_process_data_valid() {\n    let result = process_data(\"hello\");\n    assert!(result.is_ok());\n}\n\n\
-#[test]\nfn test_process_data_expired() {\n    let result = process_data(\"expired_token\");\n    assert!(result.is_err());\n}\n```\n\n\
-Moving on to the next part, I also refactored the configuration module to improve maintainability.\n\n\
-I hope this helps! Let me know if you have any other questions or if you'd like me to make any \
-additional changes to the implementation. Feel free to ask if anything is unclear.\n\n\
-Don't hesitate to reach out if you need further assistance with this or any other issues.";
-
-    let result_off = impl_response::handle(response_with_fillers, CrpMode::Off);
-    let result_tdd = impl_response::handle(response_with_fillers, CrpMode::Tdd);
-
-    let orig_tokens = count_tokens(response_with_fillers);
-    let off_tokens = count_tokens(&result_off);
-    let tdd_tokens = count_tokens(&result_tdd);
-
-    let off_savings = compression_ratio(orig_tokens, off_tokens);
-    let tdd_savings = compression_ratio(orig_tokens, tdd_tokens);
-
-    eprintln!("\n  [filler removal in context]");
-    eprintln!("    Original:    {orig_tokens} tokens");
-    eprintln!("    CRP Off:     {off_tokens} tokens ({off_savings:.1}% saved)");
-    eprintln!("    CRP TDD:     {tdd_tokens} tokens ({tdd_savings:.1}% saved)");
-
-    assert!(
-        off_savings > 5.0,
-        "Filler removal (Off mode) should save >5%, got {off_savings:.1}%"
-    );
-    assert!(
-        tdd_tokens <= off_tokens,
-        "TDD should compress at least as much as Off mode"
-    );
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
 // SECTION 5: THINKING TOKEN BENCHMARKS — CRP/TDD Instruction Effectiveness
 // ═══════════════════════════════════════════════════════════════════════════
 
@@ -1156,31 +1073,6 @@ fn generate_typescript_file(lines: usize) -> String {
         line += 14;
     }
     s
-}
-
-fn generate_verbose_llm_response() -> String {
-    "Sure, I'd be happy to help you with that! Let me take a look at the code.\n\n\
-     Great question! Here's what I found after analyzing the codebase:\n\n\
-     I'll now walk you through the changes step by step.\n\n\
-     First, let me read the relevant files to understand the current state of things.\n\n\
-     The function `process_data` in `src/handlers.rs` needs to be updated. Here are the changes:\n\n\
-     ```rust\n\
-     pub fn process_data(input: &str) -> Result<Output, Error> {\n\
-         let validated = validate(input)?;\n\
-         Ok(Output::new(validated))\n\
-     }\n\
-     ```\n\n\
-     I've also updated the tests to cover the new edge cases. The test file now includes:\n\n\
-     ```rust\n\
-     #[test]\n\
-     fn test_process_data() {\n\
-         let result = process_data(\"hello\");\n\
-         assert!(result.is_ok());\n\
-     }\n\
-     ```\n\n\
-     I hope this helps! Let me know if you have any other questions or if you'd like me to make any additional changes.\n\n\
-     Is there anything else I can assist you with?"
-        .to_string()
 }
 
 fn generate_git_status() -> String {

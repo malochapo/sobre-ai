@@ -82,21 +82,6 @@ pub fn stable_order(old_chunks: &[Chunk], new_chunks: &[Chunk]) -> Vec<usize> {
     unchanged
 }
 
-pub fn reorder_content(content: &str, old_content: &str) -> String {
-    let old_chunks = chunk(old_content);
-    let new_chunks = chunk(content);
-    let order = stable_order(&old_chunks, &new_chunks);
-
-    let mut result = String::with_capacity(content.len());
-    for &idx in &order {
-        if let Some(c) = new_chunks.get(idx) {
-            let end = (c.offset + c.length).min(content.len());
-            result.push_str(&content[c.offset..end]);
-        }
-    }
-    result
-}
-
 fn full_hash(data: &[u8]) -> u64 {
     let mut h = 0u64;
     for &b in data {

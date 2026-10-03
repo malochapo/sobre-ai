@@ -61,6 +61,7 @@ pub fn classify(key: &str) -> Option<ConfigRisk> {
 
 /// True if changing `key` is consequential enough to require a review.
 #[must_use]
+#[cfg(test)]
 pub fn is_consequential(key: &str) -> bool {
     classify(key).is_some()
 }

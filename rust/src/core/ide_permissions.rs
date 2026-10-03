@@ -114,6 +114,7 @@ impl IdePermissionPolicy {
 
     /// Construct directly from a raw `permission` object (test/utility hook).
     #[must_use]
+    #[cfg(test)]
     pub fn from_rules(rules: Map<String, Value>) -> Self {
         Self { rules }
     }

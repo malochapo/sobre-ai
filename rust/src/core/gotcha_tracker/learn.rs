@@ -150,22 +150,6 @@ pub fn apply_learnings(project_root: &str, learnings: &[Learning]) -> Result<Vec
     Ok(written)
 }
 
-/// Back-compat single-target wrapper (AGENTS.md only). Prefer [`apply_learnings`],
-/// which also updates CLAUDE.local.md when present.
-pub fn apply_to_agents_md(project_root: &str, learnings: &[Learning]) -> Result<String, String> {
-    let section = format_agents_section(learnings);
-    if section.is_empty() {
-        return Ok("No learnings to write (need >=2 occurrences with >=50% confidence).".into());
-    }
-    let path = std::path::Path::new(project_root).join("AGENTS.md");
-    apply_to_memory_file(&path, &section, true)?;
-    Ok(format!(
-        "Wrote {} learnings to {}",
-        learnings.len(),
-        path.display()
-    ))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

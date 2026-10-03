@@ -243,24 +243,6 @@ pub fn report() -> Vec<String> {
     out
 }
 
-/// Machine-readable efficacy for the dashboard (#548).
-pub fn report_json() -> serde_json::Value {
-    let (prev, recent) = bounce_week_over_week();
-    let store = EfficacyStore::load();
-    serde_json::json!({
-        "bounce": {
-            "prev_week": prev.map(|(r, n)| serde_json::json!({"rate": r, "reads": n})),
-            "last_week": recent.map(|(r, n)| serde_json::json!({"rate": r, "reads": n})),
-            "daily": crate::core::savings_ledger::daily_bounce_trend(14)
-                .into_iter()
-                .map(|(d, b, r)| serde_json::json!({"day": d, "bounces": b, "reads": r}))
-                .collect::<Vec<_>>(),
-        },
-        "snapshots": store.snapshots,
-        "claims_rejected_total": crate::core::scent_field::claims_rejected_total(),
-    })
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

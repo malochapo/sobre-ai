@@ -38,7 +38,6 @@ pub(crate) mod impl_overview;
 pub(crate) mod impl_prefetch;
 pub(crate) mod impl_preload;
 // Stays `pub`: driven from outside the crate by tests/serial_suite/intensive_benchmarks.rs.
-pub mod impl_response;
 pub(crate) mod impl_semantic_search;
 pub(crate) mod impl_smart_read;
 pub(crate) mod impl_smells;

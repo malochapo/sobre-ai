@@ -330,11 +330,6 @@ pub fn handle(cache: &mut SessionCache, path: &str, mode: &str, crp_mode: CrpMod
     handle_with_options(cache, path, mode, false, crp_mode, None)
 }
 
-/// Like `handle`, but invalidates the cache first to force a fresh disk read.
-pub fn handle_fresh(cache: &mut SessionCache, path: &str, mode: &str, crp_mode: CrpMode) -> String {
-    handle_with_options(cache, path, mode, true, crp_mode, None)
-}
-
 /// Reads a file with task-aware filtering to prioritize task-relevant content.
 pub fn handle_with_task(
     cache: &mut SessionCache,
@@ -388,32 +383,6 @@ pub fn handle_with_task_resolved_tuned(
     )
 }
 
-/// Like [`handle_with_task_resolved_tuned`] but accepts pre-read file content,
-/// avoiding disk I/O under the cache write-lock (Two-Phase Read pattern, #1098).
-#[allow(clippy::too_many_arguments)]
-pub fn handle_with_preread(
-    cache: &mut SessionCache,
-    path: &str,
-    mode: &str,
-    fresh: bool,
-    crp_mode: CrpMode,
-    task: Option<&str>,
-    aggressiveness: Option<f64>,
-    protect: &[String],
-    preread: String,
-) -> ReadOutput {
-    handle_with_options_resolved_preread(
-        cache,
-        path,
-        mode,
-        fresh,
-        crp_mode,
-        task,
-        ReadTuning::resolve(aggressiveness, protect),
-        Some(preread),
-    )
-}
-
 /// Fresh read with task-aware filtering (invalidates cache first).
 pub fn handle_fresh_with_task(
     cache: &mut SessionCache,
@@ -426,6 +395,7 @@ pub fn handle_fresh_with_task(
 }
 
 /// Fresh read with task-aware filtering, also returns the resolved mode name and pre-counted tokens.
+#[cfg(test)]
 pub fn handle_fresh_with_task_resolved(
     cache: &mut SessionCache,
     path: &str,

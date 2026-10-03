@@ -259,6 +259,7 @@ impl CodeGraph {
         cross_source::all(&self.conn).unwrap_or_default()
     }
 
+    #[cfg(test)]
     pub fn cross_source_edge_count(&self) -> anyhow::Result<usize> {
         cross_source::count(&self.conn)
     }

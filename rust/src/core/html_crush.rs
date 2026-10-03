@@ -130,6 +130,7 @@ pub fn crush_if_beneficial(html: &str) -> Option<CrushResult> {
     })
 }
 
+#[cfg(test)]
 pub fn extract_article(html: &str) -> String {
     extract_article_content(html).content
 }

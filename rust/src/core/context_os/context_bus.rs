@@ -384,18 +384,6 @@ impl ContextBus {
         Some(tx.subscribe())
     }
 
-    /// Subscribe with a filter — only events matching the filter are delivered.
-    /// Returns `(Receiver, TopicFilter)` for use in filtered receive loops.
-    pub fn subscribe_filtered(
-        &self,
-        workspace_id: &str,
-        channel_id: &str,
-        filter: TopicFilter,
-    ) -> Option<FilteredSubscription> {
-        let rx = self.subscribe(workspace_id, channel_id)?;
-        Some(FilteredSubscription { rx, filter })
-    }
-
     pub fn append(
         &self,
         workspace_id: &str,

@@ -189,12 +189,6 @@ fn record() {
     STEERED.fetch_add(1, Ordering::Relaxed);
 }
 
-/// Total requests that received a wire verbosity steer (telemetry).
-#[must_use]
-pub fn steered_count() -> u64 {
-    STEERED.load(Ordering::Relaxed)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

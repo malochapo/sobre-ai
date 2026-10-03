@@ -67,50 +67,6 @@ pub struct ScannedRead {
     pub was_redacted: bool,
 }
 
-/// Reads a file and applies secret detection/redaction per config.
-///
-/// - `enabled=true, redact=false`: returns original content + warnings in `secret_matches`
-/// - `enabled=true, redact=true`: returns redacted content + `was_redacted=true`
-/// - `enabled=false`: returns original content, no scanning
-pub fn read_file_scanned(path: &str) -> Result<ScannedRead, std::io::Error> {
-    let raw = read_file_lossy(path)?;
-    let cfg = crate::core::config::Config::load();
-    let sd = &cfg.secret_detection;
-
-    if !sd.enabled {
-        return Ok(ScannedRead {
-            content: raw,
-            secret_matches: Vec::new(),
-            was_redacted: false,
-        });
-    }
-
-    let (content, matches) = secret_detection::scan_and_redact(&raw, sd);
-
-    if !matches.is_empty() {
-        let role_name = roles::active_role_name();
-        let names: Vec<&str> = matches.iter().map(|m| m.pattern_name).collect();
-        let mut unique: Vec<&str> = names;
-        unique.sort_unstable();
-        unique.dedup();
-        let msg = format!(
-            "[SECRET DETECTION] {} secret(s) found in {}: {}",
-            matches.len(),
-            path,
-            unique.join(", ")
-        );
-        events::emit_policy_violation(&role_name, "read_file", &msg);
-        tracing::warn!("{msg}");
-    }
-
-    let was_redacted = sd.redact && !matches.is_empty();
-    Ok(ScannedRead {
-        content,
-        secret_matches: matches,
-        was_redacted,
-    })
-}
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum BoundaryMode {
     Warn,

@@ -68,6 +68,7 @@ pub fn session_totals() -> (usize, usize, usize) {
     )
 }
 
+#[cfg(test)]
 pub fn reset_session() {
     SESSION_ORIGINAL.store(0, Ordering::Relaxed);
     SESSION_SAVED.store(0, Ordering::Relaxed);

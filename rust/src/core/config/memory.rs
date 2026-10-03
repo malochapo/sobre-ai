@@ -40,14 +40,6 @@ impl MemoryCleanup {
             Self::Shared => 3600,
         }
     }
-
-    /// BM25 index eviction age multiplier (shared mode retains longer).
-    pub fn index_retention_multiplier(&self) -> f64 {
-        match self {
-            Self::Aggressive => 1.0,
-            Self::Shared => 3.0,
-        }
-    }
 }
 
 /// Controls RAM usage vs. feature richness trade-off.

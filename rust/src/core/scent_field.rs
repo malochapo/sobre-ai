@@ -288,27 +288,6 @@ pub fn claims_rejected_total() -> u64 {
     field_path().map_or(0, |p| ScentField::load_unlocked(&p).claims_rejected)
 }
 
-/// Read-only view of currently effective scents for the dashboard (#548):
-/// `(scent, effective_intensity_now)`, strongest first. Lock-free read —
-/// a slightly stale view is fine for display.
-pub fn active_scents() -> Vec<(Scent, f64)> {
-    let Ok(path) = field_path() else {
-        return Vec::new();
-    };
-    let field = ScentField::load_unlocked(&path);
-    let now = now_secs();
-    let mut v: Vec<(Scent, f64)> = field
-        .scents
-        .into_iter()
-        .filter_map(|s| {
-            let eff = s.effective_intensity(now);
-            (eff >= GC_THRESHOLD).then_some((s, eff))
-        })
-        .collect();
-    v.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
-    v
-}
-
 /// Release a claim (and any Hot scent) on `target` held by `agent_id`.
 pub fn release(agent_id: &str, target: &str) {
     let _ = with_field(|field, now| {
@@ -317,27 +296,6 @@ pub fn release(agent_id: &str, target: &str) {
         });
         field.gc(now);
     });
-}
-
-/// One-line hint for ctx_read when someone else actively claimed this path.
-/// Costs ~10 tokens and prevents duplicate work.
-pub fn read_hint(path: &str, self_agent: &str) -> Option<String> {
-    let field_file = field_path().ok()?;
-    // Read-only fast path: no lock needed for a hint; stale reads are fine.
-    let field = ScentField::load_unlocked(&field_file);
-    let now = now_secs();
-    let rel = crate::core::pathutil::normalize_tool_path(path);
-    let (holder, age) = field.foreign_claim(&rel, self_agent, now)?;
-    Some(format!("[scent: claimed by {holder} {}m ago]", age / 60))
-}
-
-/// Arithmetic sync block for ctx_agent sync.
-pub fn sync_block() -> String {
-    let Ok(path) = field_path() else {
-        return String::new();
-    };
-    let field = ScentField::load_unlocked(&path);
-    field.render_sync(now_secs())
 }
 
 #[cfg(test)]

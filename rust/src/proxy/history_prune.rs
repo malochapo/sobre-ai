@@ -89,6 +89,7 @@ fn message_has_cache_control(msg: &Value) -> bool {
 /// read* is replaced with an honest, actionable stub ("re-read the file") rather
 /// than a misleading first-3/last-2 excerpt of source code. Command/log output
 /// keeps the head/tail summary, which stays readable for diagnostics.
+#[cfg(test)]
 pub fn prune_history(
     messages: &mut [Value],
     prune_end: usize,

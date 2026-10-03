@@ -56,21 +56,6 @@ pub fn acquire() -> Option<ProcessGuard> {
     None
 }
 
-/// Checks how many slots are currently held (best-effort).
-pub fn active_count() -> usize {
-    let Some(dir) = lock_dir() else { return 0 };
-    let mut count = 0;
-    for slot in 0..MAX_CONCURRENT {
-        let path = dir.join(format!("slot-{slot}.lock"));
-        if let Ok(f) = std::fs::OpenOptions::new().read(true).open(&path)
-            && !try_flock(&f)
-        {
-            count += 1;
-        }
-    }
-    count
-}
-
 #[cfg(unix)]
 fn try_flock(file: &File) -> bool {
     use std::os::unix::io::AsRawFd;
@@ -125,18 +110,6 @@ mod tests {
             let guard = acquire();
             assert!(guard.is_some(), "should acquire first slot");
             drop(guard);
-        });
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn active_count_reflects_held_slots() {
-        with_isolated_lock_dir(|| {
-            let g1 = acquire();
-            assert!(g1.is_some());
-            let count = active_count();
-            assert!(count >= 1, "at least one slot held, got {count}");
-            drop(g1);
         });
     }
 }

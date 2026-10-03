@@ -18,19 +18,6 @@ fn count_source(source: &'static str) {
     }
 }
 
-/// Snapshot of auto-mode decision sources, sorted by count descending.
-pub fn source_counts() -> Vec<(&'static str, u64)> {
-    let Ok(guard) = SOURCE_COUNTS.lock() else {
-        return Vec::new();
-    };
-    let mut items: Vec<(&'static str, u64)> = guard
-        .as_ref()
-        .map(|m| m.iter().map(|(k, v)| (*k, *v)).collect())
-        .unwrap_or_default();
-    items.sort_by_key(|(_, n)| std::cmp::Reverse(*n));
-    items
-}
-
 fn sources_path() -> Option<std::path::PathBuf> {
     crate::core::data_dir::lean_ctx_data_dir()
         .ok()
@@ -72,6 +59,7 @@ pub fn flush_sources() {
 
 /// Cumulative auto-mode decision sources from disk (all processes, all time),
 /// sorted by count descending. Used by the dashboard's Live Signals panel.
+#[cfg(test)]
 pub fn persisted_source_counts() -> Vec<(String, u64)> {
     let Some(path) = sources_path() else {
         return Vec::new();

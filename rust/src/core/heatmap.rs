@@ -119,32 +119,6 @@ impl HeatMap {
         (total_accesses > 0).then(|| total_original / total_accesses)
     }
 
-    /// Compute stigmergic context credit: which agents' file-access traces
-    /// benefited other agents? An agent A gets credit for a file F when A
-    /// accessed F before (or alongside) agent B, because A's trace effectively
-    /// pointed B to useful context. The credit for each (agent_A, file) pair is
-    /// proportional to how many *other* agents also accessed that file.
-    /// Returns `Vec<(agent_id, total_credit)>` sorted descending.
-    pub fn context_credit(&self) -> Vec<(String, f64)> {
-        let mut credit: HashMap<String, f64> = HashMap::new();
-        for entry in self.entries.values() {
-            let n_agents = entry.agent_accesses.len();
-            if n_agents < 2 {
-                continue;
-            }
-            // Shapley-inspired: each agent that accessed a shared file gets
-            // credit = (n_other_agents) / n_agents. The more agents a file
-            // served, the more each contributor is credited.
-            let share = (n_agents - 1) as f64 / n_agents as f64;
-            for agent in entry.agent_accesses.keys() {
-                *credit.entry(agent.clone()).or_insert(0.0) += share;
-            }
-        }
-        let mut sorted: Vec<(String, f64)> = credit.into_iter().collect();
-        sorted.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
-        sorted
-    }
-
     pub fn directory_summary(&self) -> Vec<(String, u32, u64)> {
         let mut dirs: HashMap<String, (u32, u64)> = HashMap::new();
         for entry in self.entries.values() {
@@ -281,46 +255,7 @@ pub fn reset() {
     }
 }
 
-pub fn format_heatmap_status(heatmap: &HeatMap, limit: usize) -> String {
-    let top = heatmap.top_files(limit);
-    if top.is_empty() {
-        return "No file access data recorded yet.".to_string();
-    }
-    let mut lines = vec![format!(
-        "File Access Heat Map ({} tracked files):",
-        heatmap.entries.len()
-    )];
-    lines.push(String::new());
-    for (i, entry) in top.iter().enumerate() {
-        let short = short_path(&entry.path);
-        let heat = heat_indicator(entry.access_count);
-        lines.push(format!(
-            "  {heat} #{} {} — {} accesses, {:.0}% compression, {} tok saved",
-            i + 1,
-            short,
-            entry.access_count,
-            entry.avg_compression_ratio * 100.0,
-            entry.total_tokens_saved
-        ));
-    }
-    lines.join("\n")
-}
-
-pub fn format_directory_summary(heatmap: &HeatMap) -> String {
-    let dirs = heatmap.directory_summary();
-    if dirs.is_empty() {
-        return "No directory data.".to_string();
-    }
-    let mut lines = vec!["Directory Heat Map:".to_string(), String::new()];
-    for (dir, count, saved) in dirs.iter().take(15) {
-        let heat = heat_indicator(*count);
-        lines.push(format!(
-            "  {heat} {dir}/ — {count} accesses, {saved} tok saved"
-        ));
-    }
-    lines.join("\n")
-}
-
+#[cfg(test)]
 fn heat_indicator(count: u32) -> &'static str {
     match count {
         0 => "  ",
@@ -329,16 +264,6 @@ fn heat_indicator(count: u32) -> &'static str {
         9..=15 => "▅▅",
         16..=30 => "▇▇",
         _ => "██",
-    }
-}
-
-fn short_path(path: &str) -> &str {
-    let parts: Vec<&str> = path.rsplitn(3, '/').collect();
-    if parts.len() >= 2 {
-        let start = path.len() - parts[0].len() - parts[1].len() - 1;
-        &path[start..]
-    } else {
-        path
     }
 }
 
@@ -414,27 +339,5 @@ mod tests {
         hm.record_access("a.rs", 1000, 800);
         let entry = &hm.entries["a.rs"];
         assert!((entry.avg_compression_ratio - 0.8).abs() < 0.01);
-    }
-
-    #[test]
-    fn agent_scoped_access_and_context_credit() {
-        let mut hm = HeatMap::default();
-        hm.record_access_with_agent("shared.rs", 100, 50, Some("agent-a"));
-        hm.record_access_with_agent("shared.rs", 100, 60, Some("agent-b"));
-        hm.record_access_with_agent("only-a.rs", 100, 70, Some("agent-a"));
-
-        let entry = &hm.entries["shared.rs"];
-        assert_eq!(entry.agent_accesses.len(), 2);
-        assert_eq!(entry.agent_accesses["agent-a"], 1);
-        assert_eq!(entry.agent_accesses["agent-b"], 1);
-
-        let credit = hm.context_credit();
-        assert!(!credit.is_empty());
-        // Both agents get credit for the shared file; only-a.rs contributes
-        // no credit (single-agent access).
-        let a_credit = credit.iter().find(|(id, _)| id == "agent-a").unwrap().1;
-        let b_credit = credit.iter().find(|(id, _)| id == "agent-b").unwrap().1;
-        assert!(a_credit > 0.0);
-        assert!((a_credit - b_credit).abs() < 1e-9);
     }
 }

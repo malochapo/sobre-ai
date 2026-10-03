@@ -47,17 +47,6 @@ impl KnowledgeArchetype {
         }
     }
 
-    /// Whether this archetype is objective *evidence* (vs. *inference*). Hindsight's
-    /// central idea: evidence (the external world, structural facts) should be
-    /// treated differently from inference (decisions, preferences, synthesized
-    /// observations). Used by archetype-aware decay so evidence persists longer.
-    pub fn is_evidence(&self) -> bool {
-        matches!(
-            self,
-            Self::Architecture | Self::Dependency | Self::Convention | Self::Gotcha | Self::Fact
-        )
-    }
-
     /// Ebbinghaus stability multiplier (≥ 1.0 slows decay). Structural evidence is
     /// more durable than inference; only applied when `archetype_aware_decay` is on
     /// (default off), so the baseline tuning is unchanged.

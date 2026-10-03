@@ -695,25 +695,6 @@ pub fn animate_countup_usd(final_usd: f64, width: usize) -> Vec<String> {
         .collect()
 }
 
-/// Writes sections to stdout one by one with a delay between each, using cursor
-/// control to create a reveal effect. Skips animation when `NO_COLOR` or non-TTY.
-pub fn animate_section_reveal(sections: &[String], delay_ms: u64) {
-    use std::io::Write;
-    let is_tty = std::io::stdout().is_terminal();
-    if no_color() || !is_tty || delay_ms == 0 {
-        for s in sections {
-            println!("{s}");
-        }
-        return;
-    }
-    let mut stdout = std::io::stdout();
-    for s in sections {
-        let _ = writeln!(stdout, "{s}");
-        let _ = stdout.flush();
-        std::thread::sleep(std::time::Duration::from_millis(delay_ms));
-    }
-}
-
 fn format_big_animated(n: u64) -> String {
     if n >= 1_000_000_000_000 {
         format!("{:.2}T", n as f64 / 1_000_000_000_000.0)

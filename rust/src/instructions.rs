@@ -85,36 +85,6 @@ pub fn build_instructions_for_test(crp_mode: CrpMode) -> String {
     }
 }
 
-/// Deterministic instruction builder for the Instruction Compiler.
-/// Uses shadow mode (COMPACT_SHADOW profile) to avoid duplicating
-/// BULLETS/NEVER/CRITICAL that the CLAUDE.md / dedicated rule file carries.
-#[must_use]
-pub fn build_instructions_with_client_for_compiler(
-    crp_mode: CrpMode,
-    client_name: &str,
-    _unified_tool_mode: bool,
-) -> String {
-    let skeleton = rc::render(true, Wrapper::Bare, CompressionLevel::Off);
-    let shell_hint = build_shell_hint();
-
-    let base = format!(
-        "{skeleton}\n\
-        {shell_hint}\n\
-        {decoder_block}\n\
-        {origin}",
-        decoder_block =
-            crate::core::protocol::instruction_decoder_block(matches!(crp_mode, CrpMode::Tdd)),
-        origin = crate::core::integrity::origin_line(),
-    );
-
-    let _ = client_name;
-
-    match crp_mode_suffix(crp_mode) {
-        "" => format!("{base}\n\n{}", rc::INTELLIGENCE),
-        crp => format!("{base}\n\n{crp}\n\n{}", rc::INTELLIGENCE),
-    }
-}
-
 /// LITM calibration manifest rotation (#539).
 fn rotate_wakeup_manifest(session: &crate::core::session::SessionState, profile_name: &str) {
     use crate::core::litm_calibration::{Position, record_outcome};

@@ -159,6 +159,7 @@ pub fn is_registered(name: &str) -> bool {
 /// A token is `ctx_` followed by `[a-z0-9_]`, bounded on both sides by a
 /// character that cannot continue an identifier, so `ctx_search(action=symbol)`
 /// yields `ctx_search` and nothing else.
+#[cfg(test)]
 pub fn unregistered_tool_mentions(text: &str) -> Vec<String> {
     let bytes = text.as_bytes();
     let is_ident = |b: u8| b.is_ascii_alphanumeric() || b == b'_';

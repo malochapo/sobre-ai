@@ -115,6 +115,7 @@ fn trim_lines_to_budget(block: &str, budget: usize) -> String {
 ///   P1 (begin): task, decisions, project topology, file refs
 ///   P2 (end): recent findings, test results, next steps
 ///   P3 (dropped): old completed tasks, historical reads beyond limit
+#[cfg(test)]
 pub fn position_optimize(session: &SessionState) -> PositionedOutput {
     position_optimize_with_share(session, crate::core::litm_calibration::DEFAULT_BEGIN_SHARE)
 }

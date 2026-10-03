@@ -13,35 +13,6 @@ pub fn write_atomic_with_backup(path: &Path, content: &str) -> Result<(), String
     write_atomic_with_backup_checked(path, content, None)
 }
 
-/// Writes TOML config while preserving comments, formatting, key ordering, and
-/// any keys present on disk but absent from `new_content` (user customizations,
-/// unknown/future keys). Values from `new_content` are merged onto the existing
-/// document. Falls back to a plain atomic write when there is nothing to merge
-/// or the existing file cannot be parsed.
-pub fn write_toml_preserving(path: &Path, new_content: &str) -> Result<(), String> {
-    let merged = match std::fs::read_to_string(path) {
-        Ok(existing) if !existing.trim().is_empty() => {
-            merge_toml(&existing, new_content).unwrap_or_else(|_| new_content.to_string())
-        }
-        _ => new_content.to_string(),
-    };
-    write_atomic_with_backup(path, &merged)
-}
-
-/// Loads a TOML file into an editable document, preserving comments and
-/// formatting. Returns an empty document when the file is missing or invalid.
-pub fn load_toml_document(path: &Path) -> toml_edit::DocumentMut {
-    std::fs::read_to_string(path)
-        .ok()
-        .and_then(|c| c.parse::<toml_edit::DocumentMut>().ok())
-        .unwrap_or_default()
-}
-
-/// Persists an edited document via the atomic-with-backup path.
-pub fn write_toml_document(path: &Path, doc: &toml_edit::DocumentMut) -> Result<(), String> {
-    write_atomic_with_backup(path, &doc.to_string())
-}
-
 /// Like `write_toml_preserving`, but keeps the config minimal: keys whose value
 /// equals the type's default AND are not already present on disk are skipped,
 /// so a hand-written config is not bloated with every default key. Existing
@@ -75,6 +46,7 @@ pub fn write_toml_preserving_minimal(
 
 /// Merges `incoming` TOML values onto the `existing` document, retaining the
 /// existing document's comments, whitespace, and unknown keys.
+#[cfg(test)]
 fn merge_toml(existing: &str, incoming: &str) -> Result<String, String> {
     merge_toml_inner(existing, incoming, None)
 }
@@ -171,21 +143,6 @@ fn item_equals_default(item: &toml_edit::Item, default: Option<&toml_edit::Item>
     match default {
         Some(d) => item.to_string().trim() == d.to_string().trim(),
         None => false,
-    }
-}
-
-/// Remove stale timestamped `.bak` files left by the old backup scheme.
-/// Called once at startup to clean up the accumulated backups.
-pub fn cleanup_legacy_backups(data_dir: &Path) {
-    let Ok(entries) = std::fs::read_dir(data_dir) else {
-        return;
-    };
-    for entry in entries.flatten() {
-        let name = entry.file_name();
-        let name = name.to_string_lossy();
-        if name.contains(".lean-ctx.") && name.ends_with(".bak") {
-            let _ = std::fs::remove_file(entry.path());
-        }
     }
 }
 
@@ -490,35 +447,6 @@ enabled = true
             .duration_since(std::time::UNIX_EPOCH)
             .map_or(0, |d| d.as_nanos());
         std::env::temp_dir().join(format!("lc_{tag}_{}_{nanos}", std::process::id()))
-    }
-
-    #[test]
-    fn write_toml_preserving_backs_up_and_keeps_comments() {
-        let tmp = unique_tmp("cfg_test");
-        let _ = std::fs::create_dir_all(&tmp);
-        let path = tmp.join("config.toml");
-        std::fs::write(&path, "# keep\nultra_compact = true\n").unwrap();
-
-        write_toml_preserving(&path, "ultra_compact = false\n").unwrap();
-
-        let result = std::fs::read_to_string(&path).unwrap();
-        assert!(result.contains("# keep"));
-        assert!(result.contains("ultra_compact = false"));
-        // Backup created.
-        assert!(path.with_file_name("config.toml.bak").exists());
-
-        let _ = std::fs::remove_dir_all(&tmp);
-    }
-
-    #[test]
-    fn write_toml_preserving_handles_missing_file() {
-        let tmp = unique_tmp("cfg_new");
-        let _ = std::fs::remove_dir_all(&tmp);
-        let path = tmp.join("config.toml");
-        write_toml_preserving(&path, "ultra_compact = true\n").unwrap();
-        let result = std::fs::read_to_string(&path).unwrap();
-        assert!(result.contains("ultra_compact = true"));
-        let _ = std::fs::remove_dir_all(&tmp);
     }
 
     #[test]

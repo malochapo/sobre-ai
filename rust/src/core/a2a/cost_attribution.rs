@@ -65,12 +65,6 @@ pub struct SessionCostSnapshot {
     pub duration_secs: u64,
 }
 
-pub fn estimate_cost(model_key: Option<&str>, input: u64, output: u64, cached: u64) -> f64 {
-    let pricing = crate::core::gain::model_pricing::ModelPricing::load();
-    let quote = pricing.quote(model_key);
-    quote.cost.estimate_usd(input, output, 0, cached)
-}
-
 static COST_BUFFER: Mutex<Option<CostStore>> = Mutex::new(None);
 
 impl CostStore {
@@ -306,12 +300,6 @@ pub fn format_cost_report(store: &CostStore, limit: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn cost_estimation() {
-        let cost = estimate_cost(Some("fallback-blended"), 1000, 100, 500);
-        assert!(cost > 0.0);
-    }
 
     #[test]
     fn record_and_query() {

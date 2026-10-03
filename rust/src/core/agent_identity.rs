@@ -25,33 +25,10 @@ pub fn get_or_create_keypair(agent_id: &str) -> Result<SigningKey, String> {
     }
 }
 
-pub fn get_public_key(agent_id: &str) -> Result<VerifyingKey, String> {
-    let key = get_or_create_keypair(agent_id)?;
-    Ok(key.verifying_key())
-}
-
 pub fn sign_bytes(agent_id: &str, data: &[u8]) -> Result<Vec<u8>, String> {
     let key = get_or_create_keypair(agent_id)?;
     let sig = key.sign(data);
     Ok(sig.to_bytes().to_vec())
-}
-
-/// Sign `data` and return the signature together with the verifying key of
-/// the SAME keypair — one atomic key-store resolution.
-///
-/// Callers that embed both the signature and the public key MUST use this
-/// instead of separate `sign_bytes` + `get_public_key` calls: those perform
-/// two independent store reads, and when the store location or key file
-/// changes in between (env-driven data-dir moves under test, key
-/// regeneration by a concurrent process), the embedded public key belongs to
-/// a different keypair than the signature — which then can never verify.
-pub fn sign_with_public_key(
-    agent_id: &str,
-    data: &[u8],
-) -> Result<(Vec<u8>, VerifyingKey), String> {
-    let key = get_or_create_keypair(agent_id)?;
-    let sig = key.sign(data);
-    Ok((sig.to_bytes().to_vec(), key.verifying_key()))
 }
 
 /// Sign with an already-resolved keypair (no store access). Pair with

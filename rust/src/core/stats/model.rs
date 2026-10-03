@@ -214,7 +214,6 @@ pub struct GainSummary {
 
 /// Average LLM pricing per 1M tokens (blended across Claude, GPT, Gemini).
 pub const DEFAULT_INPUT_PRICE_PER_M: f64 = 2.50;
-pub const DEFAULT_OUTPUT_PRICE_PER_M: f64 = 10.0;
 
 /// LLM pricing model for estimating dollar savings from token compression.
 pub struct CostModel {

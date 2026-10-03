@@ -170,19 +170,6 @@ pub fn flush() {
     }
 }
 
-/// Dashboard summary: `(tracked_paths, forced_full_paths)`. Reads straight
-/// from disk so a separate process (the dashboard) sees the same state the
-/// MCP/CLI processes persisted (#505).
-pub fn disk_summary() -> (usize, usize) {
-    let store = PathModeMemory::load_from_disk();
-    let forced = store
-        .paths
-        .keys()
-        .filter(|p| store.should_force_full(p))
-        .count();
-    (store.paths.len(), forced)
-}
-
 fn maybe_flush(store: &mut PathModeMemory) {
     let n = RECORD_CALLS.fetch_add(1, Ordering::Relaxed) + 1;
     if n.is_multiple_of(FLUSH_EVERY) && store.dirty && store.save().is_ok() {

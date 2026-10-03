@@ -393,37 +393,6 @@ pub fn is_risky_mode(path: &str, mode: &str) -> bool {
     global().lock().is_ok_and(|s| s.is_risky(&ext, mode))
 }
 
-/// Snapshot for `ctx_metrics`: (risky pairs, per-pair stats, escalations served).
-pub fn metrics_snapshot() -> serde_json::Value {
-    let Ok(store) = global().lock() else {
-        return serde_json::json!({});
-    };
-    let mut pairs: Vec<serde_json::Value> = store
-        .pairs
-        .iter()
-        .map(|(key, s)| {
-            serde_json::json!({
-                "pair": key,
-                "fails": s.fails,
-                "successes": s.successes,
-                "fail_rate": (s.fail_rate() * 1000.0).round() / 1000.0,
-                "risky": s.risky,
-            })
-        })
-        .collect();
-    pairs.sort_by(|a, b| {
-        let fa = a["fail_rate"].as_f64().unwrap_or(0.0);
-        let fb = b["fail_rate"].as_f64().unwrap_or(0.0);
-        fb.partial_cmp(&fa).unwrap_or(std::cmp::Ordering::Equal)
-    });
-    serde_json::json!({
-        "pairs": pairs,
-        "pending_escalations": store.pending_escalations.len(),
-        "pending_anchored_escalations": store.pending_anchored_escalations.len(),
-        "escalations_served": store.escalations_served,
-    })
-}
-
 pub fn flush() {
     if let Ok(store) = global().lock()
         && store.dirty

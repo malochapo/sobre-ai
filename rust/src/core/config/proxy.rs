@@ -246,6 +246,7 @@ pub const DEFAULT_LOCAL_SHADOW_RATE_PER_MTOK: f64 = 0.25;
 impl BaselineConfig {
     /// Effective shadow rate: configured value (clamped positive) or default.
     #[must_use]
+    #[cfg(test)]
     pub fn effective_local_shadow_rate(&self) -> f64 {
         match self.local_shadow_rate_per_mtok {
             Some(r) if r > 0.0 => r,
@@ -450,18 +451,6 @@ impl ResolvedProvider {
     #[must_use]
     pub fn injects_gateway_credential(&self) -> bool {
         self.api_key_env.is_some() || self.shape == WireShape::Bedrock
-    }
-
-    #[must_use]
-    pub fn gateway_credential_present(&self) -> bool {
-        if self.shape == WireShape::Bedrock {
-            return ["AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY"]
-                .into_iter()
-                .all(|name| std::env::var(name).is_ok_and(|value| !value.trim().is_empty()));
-        }
-        self.api_key_env
-            .as_deref()
-            .is_some_and(|name| std::env::var(name).is_ok_and(|value| !value.trim().is_empty()))
     }
 }
 

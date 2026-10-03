@@ -113,24 +113,6 @@ pub fn clear_buffer_for_tests() {
         .unwrap_or_else(std::sync::PoisonError::into_inner) = None;
 }
 
-/// Debounced flush: persists at most once per FLUSH_INTERVAL_SECS.
-/// Call from post_dispatch on every tool call to bound data loss
-/// on abrupt MCP termination to at most 2 seconds of events.
-pub fn flush_if_due() {
-    let due = {
-        let guard = STATS_BUFFER
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        match guard.as_ref() {
-            Some((_, _, last_flush)) => last_flush.elapsed().as_secs() >= FLUSH_INTERVAL_SECS,
-            None => false,
-        }
-    };
-    if due {
-        flush();
-    }
-}
-
 /// Adjust saved tokens after post-processing (terse, hints) changed the output size.
 /// Positive delta = savings were over-reported, negative = under-reported.
 ///

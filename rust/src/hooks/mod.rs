@@ -957,10 +957,6 @@ pub(crate) fn should_register_mcp() -> bool {
         .should_update_mcp()
 }
 
-pub fn install_agent_hook(agent: &str, global: bool) {
-    install_agent_hook_with_mode(agent, global, HookMode::Mcp);
-}
-
 pub fn install_agent_hook_with_mode(agent: &str, global: bool, mode: HookMode) {
     let home = crate::core::home::resolve_home_dir().unwrap_or_default();
     match agent {

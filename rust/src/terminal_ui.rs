@@ -11,12 +11,6 @@ const LOGO: [&str; 6] = [
 
 const TAGLINE: &str = "Context Runtime for AI Agents";
 
-pub fn print_logo_animated() {
-    let cfg = crate::core::config::Config::load();
-    let t = crate::core::theme::load_theme(&cfg.theme);
-    print_logo_animated_themed(&t);
-}
-
 pub fn print_logo_animated_themed(t: &crate::core::theme::Theme) {
     if crate::core::theme::no_color() {
         print_logo_plain();
@@ -82,12 +76,6 @@ pub fn print_logo_animated_themed(t: &crate::core::theme::Theme) {
     print_logo_themed_static(t);
 }
 
-pub fn print_logo_static() {
-    let cfg = crate::core::config::Config::load();
-    let t = crate::core::theme::load_theme(&cfg.theme);
-    print_logo_themed_static(&t);
-}
-
 fn print_logo_themed_static(t: &crate::core::theme::Theme) {
     if crate::core::theme::no_color() {
         print_logo_plain();
@@ -135,96 +123,6 @@ fn print_logo_plain() {
     }
     println!("             {TAGLINE}");
     println!();
-}
-
-#[allow(clippy::many_single_char_names)] // ANSI formatting: t=theme, r=reset, b=bold, d=dim
-pub fn print_command_box() {
-    use crate::core::theme;
-    let cfg = crate::core::config::Config::load();
-    let theme = theme::load_theme(&cfg.theme);
-    let dim = theme::dim();
-    let bold = theme::bold();
-    let rst = theme::rst();
-    let cmd = theme.accent.fg();
-    let ok = theme.success.fg();
-    let m = theme.muted.fg();
-
-    println!("  {dim}┌─────────────────────────────────────────────────────────┐{rst}");
-    println!(
-        "  {dim}│{rst}  {cmd}{bold}lean-ctx gain{rst}        {m}Token savings dashboard{rst}         {dim}│{rst}"
-    );
-    println!(
-        "  {dim}│{rst}  {cmd}{bold}lean-ctx dashboard{rst}   {m}Web analytics (browser){rst}        {dim}│{rst}"
-    );
-    println!(
-        "  {dim}│{rst}  {cmd}{bold}lean-ctx gain{rst}        {m}Token savings report{rst}            {dim}│{rst}"
-    );
-    println!(
-        "  {dim}│{rst}  {cmd}{bold}lean-ctx doctor{rst}      {m}Diagnose the install{rst}            {dim}│{rst}"
-    );
-    println!(
-        "  {dim}│{rst}  {cmd}{bold}lean-ctx config{rst}      {m}Edit settings{rst}                   {dim}│{rst}"
-    );
-    println!(
-        "  {dim}│{rst}  {cmd}{bold}lean-ctx doctor{rst}      {m}Verify installation{rst}             {dim}│{rst}"
-    );
-    println!(
-        "  {dim}│{rst}  {cmd}{bold}lean-ctx update{rst}      {m}Self-update to latest{rst}           {dim}│{rst}"
-    );
-    println!(
-        "  {dim}│{rst}  {cmd}{bold}LEAN_CTX_DISABLED=1{rst}  {m}Disable compression{rst}             {dim}│{rst}"
-    );
-    println!(
-        "  {dim}│{rst}  {cmd}{bold}lean-ctx report-issue{rst} {m}Report a bug (auto-diagnostics){rst} {dim}│{rst}"
-    );
-    println!(
-        "  {dim}│{rst}  {cmd}{bold}lean-ctx contribute{rst}  {m}Share anonymized compression stats{rst}{dim}│{rst}"
-    );
-    println!(
-        "  {dim}│{rst}  {cmd}{bold}lean-ctx uninstall{rst}   {m}Clean removal{rst}                   {dim}│{rst}"
-    );
-    println!("  {dim}└─────────────────────────────────────────────────────────┘{rst}");
-    println!("  {ok}Ready!{rst} Your next AI command will be automatically optimized.");
-    println!("  {dim}Docs: https://leanctx.com/docs{rst}");
-    println!();
-}
-
-pub fn print_step_header(step: u8, total: u8, title: &str) {
-    let dim = "\x1b[2m";
-    let bold = "\x1b[1m";
-    let cyan = "\x1b[36m";
-    let rst = "\x1b[0m";
-    println!();
-    println!("  {cyan}{bold}[{step}/{total}]{rst} {bold}{title}{rst}");
-    println!("  {dim}─────────────────────────────────────────────────────{rst}");
-}
-
-pub fn print_status_ok(msg: &str) {
-    println!("  \x1b[32m✓\x1b[0m {msg}");
-}
-
-pub fn print_status_skip(msg: &str) {
-    println!("  \x1b[2m○\x1b[0m \x1b[2m{msg}\x1b[0m");
-}
-
-pub fn print_status_new(msg: &str) {
-    println!("  \x1b[1;32m✓\x1b[0m \x1b[1m{msg}\x1b[0m");
-}
-
-pub fn print_status_warn(msg: &str) {
-    println!("  \x1b[33m⚠\x1b[0m {msg}");
-}
-
-pub fn spinner_tick(msg: &str, frame: usize) {
-    let frames = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
-    let ch = frames[frame % frames.len()];
-    print!("\r  \x1b[36m{ch}\x1b[0m {msg}");
-    let _ = io::stdout().flush();
-}
-
-pub fn spinner_done(msg: &str) {
-    print!("\r  \x1b[32m✓\x1b[0m {msg}\x1b[K\n");
-    let _ = io::stdout().flush();
 }
 
 // ── Unified progress indicator (index builds, long CLI work) ──────────
@@ -352,97 +250,6 @@ impl ProgressIndicator {
         let bar: String = bar.into_iter().collect();
         format!("  {label} [{bar}]")
     }
-}
-
-/// Animated dashboard intro: logo wave, then KPI count-up, then section-by-section reveal.
-/// `header_box` is the pre-rendered KPI box (with placeholder values for frame 0).
-/// `kpi_values` are (final_value, width) for the 4 KPI counters.
-/// `sections` are the remaining dashboard sections to reveal sequentially.
-pub fn animate_dashboard_intro(
-    t: &crate::core::theme::Theme,
-    kpi_box_builder: &dyn Fn(&[String]) -> String,
-    kpi_final: &[(u64, f64, u64, f64)], // (tokens, pct, commands, usd)
-    sections: &[String],
-) {
-    use std::io::Write;
-    let is_tty = std::io::stdout().is_terminal();
-    if crate::core::theme::no_color() || !is_tty {
-        if let &[(tokens, pct, commands, usd)] = kpi_final {
-            let kw = 14;
-            let vals = [
-                crate::core::theme::animate_countup(tokens, kw)
-                    .pop()
-                    .unwrap_or_default(),
-                crate::core::theme::animate_countup_pct(pct, kw)
-                    .pop()
-                    .unwrap_or_default(),
-                crate::core::theme::animate_countup(commands, kw)
-                    .pop()
-                    .unwrap_or_default(),
-                crate::core::theme::animate_countup_usd(usd, kw)
-                    .pop()
-                    .unwrap_or_default(),
-            ];
-            println!("{}", kpi_box_builder(&vals));
-        }
-        for s in sections {
-            println!("{s}");
-        }
-        return;
-    }
-
-    print_logo_animated_themed(t);
-
-    let mut stdout = std::io::stdout();
-    let frames = 11;
-    let frame_ms = 70;
-
-    if let &[(tokens, pct, commands, usd)] = kpi_final {
-        let kw = 14;
-        let tok_frames = crate::core::theme::animate_countup(tokens, kw);
-        let pct_frames = crate::core::theme::animate_countup_pct(pct, kw);
-        let cmd_frames = crate::core::theme::animate_countup(commands, kw);
-        let usd_frames = crate::core::theme::animate_countup_usd(usd, kw);
-
-        let mut last_line_count = 0usize;
-        for f in 0..frames {
-            if last_line_count > 0 {
-                print!("\x1b[{last_line_count}A\x1b[J");
-            }
-            let vals = [
-                tok_frames[f].clone(),
-                pct_frames[f].clone(),
-                cmd_frames[f].clone(),
-                usd_frames[f].clone(),
-            ];
-            let box_str = kpi_box_builder(&vals);
-            last_line_count = box_str.lines().count();
-            print!("{box_str}");
-            let _ = stdout.flush();
-            std::thread::sleep(std::time::Duration::from_millis(frame_ms));
-        }
-    }
-
-    for s in sections {
-        let _ = writeln!(stdout, "{s}");
-        let _ = stdout.flush();
-        std::thread::sleep(std::time::Duration::from_millis(60));
-    }
-}
-
-pub fn print_setup_header() {
-    let dim = "\x1b[2m";
-    let bold = "\x1b[1m";
-    let green = "\x1b[32m";
-    let rst = "\x1b[0m";
-    println!();
-    println!("  {dim}╭──────────────────────────────────────────╮{rst}");
-    println!(
-        "  {dim}│{rst}  {green}{bold}◆ lean-ctx init{rst}                         {dim}│{rst}"
-    );
-    println!("  {dim}│{rst}  {dim}Configuring your development environment{rst} {dim}│{rst}");
-    println!("  {dim}╰──────────────────────────────────────────╯{rst}");
-    println!();
 }
 
 #[cfg(test)]

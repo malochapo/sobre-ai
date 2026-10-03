@@ -93,34 +93,6 @@ pub fn emit_event(
     }
 }
 
-/// Emit an event directed at specific agents only.
-pub fn emit_directed_event(
-    workspace_id: &str,
-    channel_id: &str,
-    kind: &ContextEventKindV1,
-    actor: Option<&str>,
-    payload: serde_json::Value,
-    target_agents: Vec<String>,
-) {
-    let rt = runtime();
-    if rt
-        .bus
-        .append_directed(
-            workspace_id,
-            channel_id,
-            kind,
-            actor,
-            payload,
-            target_agents,
-        )
-        .is_some()
-    {
-        rt.metrics.record_event_appended();
-        rt.metrics.record_event_broadcast();
-        rt.metrics.record_workspace_active(workspace_id);
-    }
-}
-
 /// Classify a tool name into a secondary event kind (beyond ToolCallRecorded).
 pub fn secondary_event_kind(tool: &str, action: Option<&str>) -> Option<ContextEventKindV1> {
     match tool {

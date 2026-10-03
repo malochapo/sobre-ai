@@ -392,6 +392,7 @@ impl SessionState {
     }
 
     /// Appends a manual (non-tool) evidence record to the audit log.
+    #[cfg(test)]
     pub fn record_manual_evidence(&mut self, key: &str, value: Option<&str>) {
         self.evidence.push(EvidenceRecord {
             kind: EvidenceKind::Manual,
@@ -408,11 +409,6 @@ impl SessionState {
             self.evidence.remove(0);
         }
         self.increment();
-    }
-
-    /// Returns `true` if an evidence record with the given key exists.
-    pub fn has_evidence_key(&self, key: &str) -> bool {
-        self.evidence.iter().any(|e| e.key == key)
     }
 
     /// Increments the session-level cache hit counter.

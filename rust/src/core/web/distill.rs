@@ -13,51 +13,6 @@
 
 use std::collections::HashSet;
 
-const FILLER: &[&str] = &[
-    "um",
-    "uh",
-    "erm",
-    "hmm",
-    "like",
-    "basically",
-    "actually",
-    "literally",
-    "honestly",
-    "okay",
-    "ok",
-    "yeah",
-    "right",
-    "so",
-    "well",
-    "anyway",
-    "anyways",
-];
-
-/// Condense a transcript: strip filler, drop near-duplicate runs, cap length.
-pub fn transcript_summary(text: &str, max_chars: usize) -> String {
-    let mut kept: Vec<String> = Vec::new();
-    let mut total = 0usize;
-
-    for sentence in split_sentences(text) {
-        let cleaned = strip_filler(&sentence);
-        let cleaned = cleaned.trim();
-        if cleaned.chars().count() < 8 {
-            continue;
-        }
-        if let Some(last) = kept.last()
-            && jaccard(last, cleaned) > 0.8
-        {
-            continue;
-        }
-        if total + cleaned.len() > max_chars && !kept.is_empty() {
-            break;
-        }
-        total += cleaned.len();
-        kept.push(cleaned.to_string());
-    }
-    kept.join(" ")
-}
-
 /// Line-structure-preserving prose squeeze for the proxy tool-result funnel.
 ///
 /// Unlike [`transcript_summary`] (which collapses everything into one paragraph),
@@ -182,21 +137,6 @@ fn jaccard(a: &str, b: &str) -> f64 {
     if union == 0.0 { 0.0 } else { inter / union }
 }
 
-fn strip_filler(sentence: &str) -> String {
-    sentence
-        .split_whitespace()
-        .filter(|tok| {
-            let core: String = tok
-                .chars()
-                .filter(|c| c.is_alphanumeric())
-                .collect::<String>()
-                .to_lowercase();
-            !core.is_empty() && !FILLER.contains(&core.as_str())
-        })
-        .collect::<Vec<_>>()
-        .join(" ")
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -208,27 +148,6 @@ mod tests {
         assert_eq!(s.len(), 3);
         assert_eq!(s[0], "First sentence here.");
         assert_eq!(s[2], "Third line stands alone?");
-    }
-
-    #[test]
-    fn transcript_summary_strips_filler_and_dupes() {
-        let text = "Um so basically the model is really fast. \
-                    Um so basically the model is really fast. \
-                    Actually it scales to millions of requests.";
-        let summary = transcript_summary(text, 500);
-        assert!(!summary.to_lowercase().contains("basically"));
-        // Near-duplicate second line is dropped.
-        assert_eq!(summary.matches("the model is really fast").count(), 1);
-        assert!(summary.contains("scales to millions"));
-    }
-
-    #[test]
-    fn transcript_summary_respects_budget() {
-        let text = "Alpha statement number one here. Beta statement number two here. \
-                    Gamma statement number three here.";
-        let summary = transcript_summary(text, 30);
-        assert!(summary.len() <= 60, "got {} chars", summary.len());
-        assert!(summary.contains("Alpha"));
     }
 
     #[test]

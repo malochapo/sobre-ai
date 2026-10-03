@@ -361,14 +361,6 @@ impl GotchaStore {
         }
     }
 
-    pub fn mark_prevented(&mut self, gotcha_id: &str) {
-        if let Some(g) = self.gotchas.iter_mut().find(|g| g.id == gotcha_id) {
-            g.prevented_count += 1;
-            g.confidence = (g.confidence + 0.05).min(0.99);
-            self.stats.total_prevented += 1;
-        }
-    }
-
     // -- CLI ----------------------------------------------------------------
 
     pub fn format_list(&self) -> String {

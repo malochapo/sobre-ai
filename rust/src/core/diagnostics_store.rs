@@ -392,15 +392,6 @@ fn parse_eslint(output: &str) -> Vec<Diagnostic> {
     out
 }
 
-/// Ranking boost per path: errors dominate, warnings hint (#499).
-pub fn relevance_boost(path: &str) -> f64 {
-    match severity_for(path) {
-        Some(Severity::Error) => 0.35,
-        Some(Severity::Warning) => 0.10,
-        None => 0.0,
-    }
-}
-
 /// Apply diagnostic boosts to a relevance ranking and re-sort.
 pub fn apply_boost(scores: &mut [crate::core::task_relevance::RelevanceScore]) {
     let snap = snapshot();

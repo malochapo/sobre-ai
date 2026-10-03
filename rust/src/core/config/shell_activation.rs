@@ -42,44 +42,6 @@ impl ShellActivation {
         }
         config.shell_activation.clone()
     }
-
-    /// Returns the shell condition snippet that guards auto-activation.
-    /// Used in generated shell hooks (posix, fish, powershell).
-    pub fn posix_guard(&self) -> &'static str {
-        match self {
-            Self::Always => {
-                r#"if [ -z "${LEAN_CTX_ACTIVE:-}" ] && [ -z "${LEAN_CTX_DISABLED:-}" ] && [ "${LEAN_CTX_ENABLED:-1}" != "0" ]; then"#
-            }
-            Self::AgentsOnly => {
-                r#"if [ -z "${LEAN_CTX_ACTIVE:-}" ] && [ -z "${LEAN_CTX_DISABLED:-}" ] && [ "${LEAN_CTX_ENABLED:-1}" != "0" ] && { [ -n "${LEAN_CTX_AGENT:-}" ] || [ -n "${CURSOR_AGENT:-}" ] || [ -n "${CLAUDECODE:-}" ] || [ -n "${CODEBUDDY:-}" ] || [ -n "${CODEX_CLI_SESSION:-}" ] || [ -n "${GEMINI_SESSION:-}" ]; }; then"#
-            }
-            Self::Off => "",
-        }
-    }
-
-    pub fn fish_guard(&self) -> &'static str {
-        match self {
-            Self::Always => {
-                "if not set -q LEAN_CTX_ACTIVE; and not set -q LEAN_CTX_DISABLED; and test (set -q LEAN_CTX_ENABLED; and echo $LEAN_CTX_ENABLED; or echo 1) != '0'"
-            }
-            Self::AgentsOnly => {
-                "if not set -q LEAN_CTX_ACTIVE; and not set -q LEAN_CTX_DISABLED; and test (set -q LEAN_CTX_ENABLED; and echo $LEAN_CTX_ENABLED; or echo 1) != '0'; and begin; set -q LEAN_CTX_AGENT; or set -q CURSOR_AGENT; or set -q CLAUDECODE; or set -q CODEBUDDY; or set -q CODEX_CLI_SESSION; or set -q GEMINI_SESSION; end"
-            }
-            Self::Off => "",
-        }
-    }
-
-    pub fn powershell_guard(&self) -> &'static str {
-        match self {
-            Self::Always => {
-                "if (-not $env:LEAN_CTX_ACTIVE -and -not $env:LEAN_CTX_DISABLED -and -not $env:LEAN_CTX_NO_HOOK)"
-            }
-            Self::AgentsOnly => {
-                "if (-not $env:LEAN_CTX_ACTIVE -and -not $env:LEAN_CTX_DISABLED -and -not $env:LEAN_CTX_NO_HOOK -and ($env:LEAN_CTX_AGENT -or $env:CURSOR_AGENT -or $env:CLAUDECODE -or $env:CODEBUDDY -or $env:CODEX_CLI_SESSION -or $env:GEMINI_SESSION))"
-            }
-            Self::Off => "",
-        }
-    }
 }
 
 #[cfg(test)]
@@ -103,43 +65,5 @@ mod tests {
         }
         let w: Wrapper = toml::from_str(toml_str).unwrap();
         assert_eq!(w.shell_activation, ShellActivation::AgentsOnly);
-    }
-
-    #[test]
-    fn posix_guard_always_has_content() {
-        assert!(!ShellActivation::Always.posix_guard().is_empty());
-    }
-
-    #[test]
-    fn posix_guard_agents_checks_env_vars() {
-        let guard = ShellActivation::AgentsOnly.posix_guard();
-        assert!(guard.contains("LEAN_CTX_AGENT"));
-        assert!(guard.contains("CURSOR_AGENT"));
-        assert!(guard.contains("CLAUDECODE"));
-        assert!(guard.contains("CODEBUDDY"));
-        assert!(guard.contains("CODEX_CLI_SESSION"));
-        assert!(guard.contains("GEMINI_SESSION"));
-    }
-
-    /// The agents-only default only works if every guard flavor recognizes
-    /// the same agent markers — a shell where Cursor's env var is missing
-    /// from one variant silently loses the hook there.
-    #[test]
-    fn all_guards_recognize_cursor_agent() {
-        assert!(
-            ShellActivation::AgentsOnly
-                .fish_guard()
-                .contains("CURSOR_AGENT")
-        );
-        assert!(
-            ShellActivation::AgentsOnly
-                .powershell_guard()
-                .contains("CURSOR_AGENT")
-        );
-    }
-
-    #[test]
-    fn posix_guard_off_is_empty() {
-        assert!(ShellActivation::Off.posix_guard().is_empty());
     }
 }

@@ -204,10 +204,6 @@ pub fn detect_secrets(content: &str) -> Vec<SecretMatch> {
     collect_matches(content, &[], &[])
 }
 
-pub fn detect_secrets_with_custom(content: &str, custom_patterns: &[String]) -> Vec<SecretMatch> {
-    collect_matches(content, custom_patterns, &[])
-}
-
 pub fn scan_and_redact(
     content: &str,
     config: &SecretDetectionConfig,

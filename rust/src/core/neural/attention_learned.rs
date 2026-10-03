@@ -6,8 +6,6 @@
 //! The learned weights are a piecewise-linear function fitted to
 //! real attention maps from multiple LLMs.
 
-use std::path::Path;
-
 pub struct LearnedAttention {
     breakpoints: Vec<(f64, f64)>,
 }
@@ -41,40 +39,10 @@ const DEFAULT_BREAKPOINTS: &[(f64, f64)] = &[
 ];
 
 impl LearnedAttention {
-    pub fn load_or_default(model_dir: &Path) -> Self {
-        let config_path = model_dir.join("attention_weights.json");
-        if config_path.exists() {
-            match Self::load_from_file(&config_path) {
-                Ok(attn) => {
-                    tracing::info!(
-                        "Learned attention loaded ({} breakpoints) from {:?}",
-                        attn.breakpoints.len(),
-                        config_path,
-                    );
-                    return attn;
-                }
-                Err(e) => {
-                    tracing::warn!("Failed to load attention weights: {e}. Using defaults.");
-                }
-            }
-        }
-
-        Self::with_defaults()
-    }
-
     pub fn with_defaults() -> Self {
         Self {
             breakpoints: DEFAULT_BREAKPOINTS.to_vec(),
         }
-    }
-
-    fn load_from_file(path: &Path) -> anyhow::Result<Self> {
-        let content = std::fs::read_to_string(path)?;
-        let data: Vec<(f64, f64)> = serde_json::from_str(&content)?;
-        if data.len() < 2 {
-            anyhow::bail!("Need at least 2 breakpoints");
-        }
-        Ok(Self { breakpoints: data })
     }
 
     /// Compute attention weight for a normalized position [0.0, 1.0].
@@ -105,15 +73,6 @@ impl LearnedAttention {
         }
 
         0.5
-    }
-
-    /// Replace breakpoints with new empirically measured values.
-    pub fn update_from_experiment(&mut self, new_breakpoints: Vec<(f64, f64)>) {
-        self.breakpoints = new_breakpoints;
-    }
-
-    pub fn breakpoint_count(&self) -> usize {
-        self.breakpoints.len()
     }
 }
 

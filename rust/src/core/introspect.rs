@@ -111,9 +111,6 @@ struct Registry {
 
 static REGISTRY: LazyLock<Mutex<Registry>> = LazyLock::new(|| Mutex::new(Registry::default()));
 
-/// Minimum gap between debounced flushes, keeping `tick` cheap on the hot path.
-const FLUSH_DEBOUNCE: std::time::Duration = std::time::Duration::from_secs(2);
-
 fn now_unix() -> i64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -175,20 +172,6 @@ pub fn flush() {
         }
     }
     reg.last_flush = Some(Instant::now());
-}
-
-/// Debounced [`flush`]: persists at most once per `FLUSH_DEBOUNCE`. Safe to
-/// call from `post_dispatch` on every tool call.
-pub fn flush_if_due() {
-    let due = {
-        match REGISTRY.lock() {
-            Ok(reg) => reg.last_flush.is_none_or(|t| t.elapsed() >= FLUSH_DEBOUNCE),
-            Err(_) => false,
-        }
-    };
-    if due {
-        flush();
-    }
 }
 
 /// Snapshot of all known subsystems merged with persisted activity, for the

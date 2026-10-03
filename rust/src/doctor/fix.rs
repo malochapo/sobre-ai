@@ -23,13 +23,6 @@ pub(super) fn run_fix(opts: &DoctorFixOptions) -> Result<i32, String> {
     Ok(i32::from(!report.success))
 }
 
-/// Run every `doctor --fix` repair step and persist the `SetupReport`, returning
-/// it without printing anything. Shared by the CLI (`run_fix`) and the dashboard
-/// fix route (#466) so both run byte-identical repair logic.
-pub(super) fn fix_report() -> Result<crate::core::setup_report::SetupReport, String> {
-    build_and_persist_fix_report(true)
-}
-
 fn build_and_persist_fix_report(
     quiet: bool,
 ) -> Result<crate::core::setup_report::SetupReport, String> {

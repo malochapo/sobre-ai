@@ -70,17 +70,6 @@ impl ProviderRegistry {
         provider.execute(action, params)
     }
 
-    /// Execute and convert results to ContentChunks for BM25/embedding ingest.
-    pub fn execute_as_chunks(
-        &self,
-        provider_id: &str,
-        action: &str,
-        params: &ProviderParams,
-    ) -> Result<Vec<ContentChunk>, String> {
-        let result = self.execute(provider_id, action, params)?;
-        Ok(result_to_chunks(&result))
-    }
-
     /// List all registered providers with their availability and actions.
     pub fn discover(&self) -> Vec<ProviderInfo> {
         let Ok(map) = self.providers.read() else {

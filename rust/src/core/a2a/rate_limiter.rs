@@ -137,15 +137,6 @@ fn env_u32(keys: &[&str]) -> Option<u32> {
     None
 }
 
-pub fn init_rate_limiter(global_per_min: u32, agent_per_min: u32, tool_per_min: u32) {
-    let mut guard = global_rate_limiter();
-    *guard = Some(RateLimiter::new(
-        global_per_min,
-        agent_per_min,
-        tool_per_min,
-    ));
-}
-
 pub fn check_rate_limit(agent_id: &str, tool_name: &str) -> RateLimitResult {
     let mut guard = global_rate_limiter();
     if guard.is_none() {

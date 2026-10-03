@@ -364,15 +364,6 @@ impl CacheStats {
         self.total_original_tokens()
             .saturating_sub(self.total_sent_tokens())
     }
-
-    /// Returns the savings as a percentage of total original tokens.
-    pub fn savings_percent(&self) -> f64 {
-        let original = self.total_original_tokens();
-        if original == 0 {
-            return 0.0;
-        }
-        (self.tokens_saved() as f64 / original as f64) * 100.0
-    }
 }
 
 /// A block shared across multiple files, identified by its canonical source.
@@ -418,17 +409,9 @@ impl SessionCache {
         }
     }
 
-    /// Record that `path` was accessed, strengthening its Hebbian association
-    /// with other files read in the same burst window (#3). Called on every
-    /// `store`; co-access boundaries are flushed via `flush_co_access`.
-    pub fn record_co_access(&mut self, path: &str) {
-        let key = normalize_key(path);
-        self.co_access
-            .record_access(crate::core::hebbian_cache::path_hash(&key));
-    }
-
     /// Close the current co-access burst so its associations are committed.
     /// Call at the end of a logical tool call (post-dispatch).
+    #[cfg(test)]
     pub fn flush_co_access(&mut self) {
         self.co_access.end_burst();
     }
@@ -504,33 +487,6 @@ impl SessionCache {
         self.entries
             .get(&normalize_key(path))
             .and_then(CacheEntry::content)
-    }
-
-    /// Staleness-safe accessor for the *current* full content and its token
-    /// count: returns the cached copy when it is still fresh, or a fresh disk
-    /// re-read when the cached copy is stale (mtime/hash changed since it was
-    /// cached). Returns `None` when there is no cache entry, or the entry is
-    /// stale and the file can no longer be read.
-    ///
-    /// Cross-agent / retrieve paths (`ctx_retrieve`, `ctx_share`) MUST use this
-    /// instead of [`get_full_content`](Self::get_full_content): serving the raw
-    /// cached copy hands an agent a version that may no longer match disk — e.g.
-    /// a handover file edited between two agents — silently feeding it stale
-    /// context. Validation uses the entry's stored absolute `path`, because a
-    /// caller's `path` may be relative and resolve against a different CWD.
-    pub fn current_full_content(&self, path: &str) -> Option<(String, usize)> {
-        let entry = self.entries.get(&normalize_key(path))?;
-        if is_cache_entry_stale_verified(&entry.path, entry.stored_mtime, &entry.hash)
-            && let Ok(fresh) = crate::core::io_boundary::read_file_lossy(&entry.path)
-        {
-            // Cache is behind disk → serve the current bytes. If the file is now
-            // unreadable (deleted/permission), fall through to the cached copy:
-            // last-known content beats nothing, and that fall-through is not the
-            // staleness bug (it only fires when there is no current content).
-            let tokens = count_tokens(&fresh);
-            return Some((fresh, tokens));
-        }
-        Some((entry.content()?, entry.original_tokens))
     }
 
     /// Records a cache hit, updates access stats, and emits a cache-hit event.
@@ -715,11 +671,6 @@ impl SessionCache {
     /// Replaces the cross-file shared blocks used for deduplication.
     pub fn set_shared_blocks(&mut self, blocks: Vec<SharedBlock>) {
         self.shared_blocks = blocks;
-    }
-
-    /// Returns the current set of cross-file shared blocks.
-    pub fn get_shared_blocks(&self) -> &[SharedBlock] {
-        &self.shared_blocks
     }
 
     /// Replace shared blocks in content with cross-file references.
@@ -908,31 +859,6 @@ impl SessionCache {
         crate::core::cache_telemetry::record_eviction(redelivered);
     }
 
-    /// Estimates the approximate heap memory usage in bytes.
-    pub fn approximate_bytes(&self) -> usize {
-        let entries_bytes: usize = self
-            .entries
-            .values()
-            .map(|e| {
-                e.compressed_content.len()
-                    + e.hash.len()
-                    + e.path.len()
-                    + e.compressed_outputs
-                        .iter()
-                        .map(|(k, v)| k.len() + v.len())
-                        .sum::<usize>()
-                    + 128 // fixed overhead per entry
-            })
-            .sum();
-        let refs_bytes: usize = self.file_refs.iter().map(|(k, v)| k.len() + v.len()).sum();
-        let blocks_bytes: usize = self
-            .shared_blocks
-            .iter()
-            .map(|b| b.canonical_path.len() + b.canonical_ref.len() + b.content.len() + 32)
-            .sum();
-        entries_bytes + refs_bytes + blocks_bytes
-    }
-
     const MAX_SHARED_BLOCKS: usize = 100;
 
     /// Trims shared blocks to a maximum count, keeping the most recent.
@@ -1091,73 +1017,6 @@ mod tests {
         assert_eq!(stats.total_reads(), 2);
         assert_eq!(stats.cache_hits(), 1);
         assert!(stats.hit_rate() > 0.0);
-    }
-
-    #[test]
-    fn current_full_content_serves_cached_when_fresh() {
-        let dir = tempfile::tempdir().unwrap();
-        let file = dir.path().join("handover.md");
-        std::fs::write(&file, "HANDOVER V1\n").unwrap();
-        let path = file.to_str().unwrap();
-
-        let mut cache = SessionCache::new();
-        cache.store(path, "HANDOVER V1\n");
-
-        let (content, tokens) = cache.current_full_content(path).unwrap();
-        assert_eq!(content, "HANDOVER V1\n");
-        assert!(tokens > 0);
-    }
-
-    #[test]
-    fn current_full_content_rereads_when_file_changed() {
-        // Handover staleness: a file cached by agent A and then edited must not
-        // be served from the stale cache to agent B (ctx_retrieve / ctx_share).
-        let dir = tempfile::tempdir().unwrap();
-        let file = dir.path().join("handover.md");
-        std::fs::write(&file, "HANDOVER V1\n").unwrap();
-        let path = file.to_str().unwrap();
-
-        let mut cache = SessionCache::new();
-        cache.store(path, "HANDOVER V1\n");
-
-        // Simulate an edit between agents (new mtime + new content).
-        std::thread::sleep(std::time::Duration::from_millis(10));
-        std::fs::write(&file, "HANDOVER V2 CHANGED\n").unwrap();
-
-        let (content, _) = cache.current_full_content(path).unwrap();
-        assert_eq!(
-            content, "HANDOVER V2 CHANGED\n",
-            "stale cached copy must be re-read from disk, not served as-is"
-        );
-    }
-
-    #[test]
-    fn current_full_content_none_without_entry() {
-        let cache = SessionCache::new();
-        assert!(cache.current_full_content("/no/such/file.rs").is_none());
-    }
-
-    #[test]
-    fn current_full_content_falls_back_to_cache_when_file_unreadable() {
-        // Stale + now-unreadable (deleted/moved): there is no current content to
-        // serve, so the last-known cached copy is returned rather than nothing.
-        // Canonicalize the temp dir up front so the cache key is stable after the
-        // file is removed (macOS /var -> /private/var symlink).
-        let dir = tempfile::tempdir().unwrap();
-        let canon = dir.path().canonicalize().unwrap();
-        let file = canon.join("gone.md");
-        std::fs::write(&file, "ORIGINAL\n").unwrap();
-        let path = file.to_str().unwrap().to_string();
-
-        let mut cache = SessionCache::new();
-        cache.store(&path, "ORIGINAL\n");
-        std::fs::remove_file(&file).unwrap();
-
-        let (content, _) = cache.current_full_content(&path).unwrap();
-        assert_eq!(
-            content, "ORIGINAL\n",
-            "unreadable file must fall back to last-known cached content"
-        );
     }
 
     #[test]

@@ -65,12 +65,6 @@ pub fn format_co2(grams: f64) -> String {
     }
 }
 
-/// Convenience: formatted CO₂ string straight from a saved-token count.
-#[must_use]
-pub fn format_co2_for_tokens(tokens_saved: u64) -> String {
-    format_co2(co2_grams_for_tokens(tokens_saved))
-}
-
 /// Human-readable energy with adaptive units (`Wh` / `kWh` / `MWh`).
 #[must_use]
 pub fn format_wh(wh: f64) -> String {

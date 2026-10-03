@@ -319,6 +319,7 @@ impl ContextLedger {
 
     /// Set the state for an entry. Accepts partial paths and basenames via
     /// [`Self::resolve_entry`] (#715).
+    #[cfg(test)]
     pub fn set_state(&mut self, path: &str, state: ContextState) {
         if let LedgerResolution::Unique(idx) = self.resolve_entry(path, None) {
             self.entries[idx].state = Some(state);
@@ -507,16 +508,6 @@ impl ContextLedger {
             return 1.0;
         }
         self.total_tokens_sent as f64 / total_original as f64
-    }
-
-    pub fn files_by_token_cost(&self) -> Vec<(String, usize)> {
-        let mut costs: Vec<(String, usize)> = self
-            .entries
-            .iter()
-            .map(|e| (e.path.clone(), e.sent_tokens))
-            .collect();
-        costs.sort_by_key(|b| std::cmp::Reverse(b.1));
-        costs
     }
 
     pub fn eviction_candidates(&self, keep_count: usize) -> Vec<String> {
@@ -760,13 +751,6 @@ pub struct ReinjectionAction {
     pub current_mode: String,
     pub new_mode: String,
     pub tokens_freed: usize,
-}
-
-#[derive(Debug, Clone)]
-pub struct ReinjectionPlan {
-    pub actions: Vec<ReinjectionAction>,
-    pub total_tokens_freed: usize,
-    pub new_utilization: f64,
 }
 
 impl ContextLedger {}

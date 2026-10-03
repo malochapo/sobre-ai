@@ -118,15 +118,6 @@ pub fn init_from_config() {
     }
 }
 
-pub fn default_limit_from_config() -> usize {
-    let cfg_limit = crate::core::config::Config::load().agent_token_budget;
-    if cfg_limit == 0 {
-        usize::MAX
-    } else {
-        cfg_limit
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

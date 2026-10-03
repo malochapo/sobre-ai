@@ -81,10 +81,3 @@ pub fn manifest_value() -> Value {
         }
     })
 }
-
-pub fn manifest_pretty_json() -> String {
-    let mut s =
-        serde_json::to_string_pretty(&manifest_value()).unwrap_or_else(|_| "{}".to_string());
-    s.push('\n');
-    s
-}

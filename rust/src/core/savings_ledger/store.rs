@@ -230,6 +230,7 @@ pub struct LedgerSummary {
 
 impl LedgerSummary {
     /// Net saved tokens = gross savings minus bounce.
+    #[cfg(test)]
     pub fn net_saved_tokens(&self) -> u64 {
         self.saved_tokens.saturating_sub(self.bounce_tokens)
     }
@@ -407,14 +408,6 @@ pub fn bounce_tokens_since(path: &Path, days: Option<u32>) -> u64 {
         total = total.saturating_add(ev.bounce_adjustment);
     }
     total
-}
-
-/// Aggregated savings for one ledger mechanism.
-#[derive(Debug, Clone, Default, PartialEq)]
-pub struct MechanismSummary {
-    pub count: usize,
-    pub saved_tokens: u64,
-    pub saved_usd: f64,
 }
 
 #[cfg(test)]

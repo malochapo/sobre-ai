@@ -122,20 +122,6 @@ impl DynamicToolState {
         }
     }
 
-    pub fn all_enabled() -> Self {
-        let mut active = HashSet::new();
-        active.insert(ToolCategory::Core);
-        active.insert(ToolCategory::Arch);
-        active.insert(ToolCategory::Debug);
-        active.insert(ToolCategory::Memory);
-        active.insert(ToolCategory::Metrics);
-        active.insert(ToolCategory::Session);
-        Self {
-            active_categories: active,
-            supports_list_changed: false,
-        }
-    }
-
     pub fn set_supports_list_changed(&mut self, val: bool) {
         self.supports_list_changed = val;
     }
@@ -160,10 +146,6 @@ impl DynamicToolState {
             return true;
         }
         self.active_categories.contains(&cat)
-    }
-
-    pub fn all_categories() -> Vec<&'static str> {
-        vec!["core", "arch", "debug", "memory", "metrics", "session"]
     }
 }
 

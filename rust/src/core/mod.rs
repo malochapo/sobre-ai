@@ -115,7 +115,6 @@ pub mod context_lint;
 pub mod context_os;
 pub mod context_overhead;
 pub mod context_overlay;
-pub mod context_proof;
 pub mod context_radar;
 pub mod context_snapshot;
 pub mod cross_source_edges;
@@ -129,7 +128,6 @@ pub mod context {
     pub use super::context_ledger;
     pub use super::context_os;
     pub use super::context_overlay;
-    pub use super::context_proof;
 }
 
 // ---------------------------------------------------------------------------
@@ -201,7 +199,6 @@ pub mod search {
 pub mod ccp_session_bundle;
 pub mod session;
 pub mod session_diff;
-pub mod session_summary;
 
 /// Convenience re-export: all session-related modules.
 pub mod session_domain {
@@ -394,7 +391,6 @@ pub mod portable_binary;
 pub mod profiles;
 pub mod project_hash;
 pub mod protocol;
-pub mod provider_bandit;
 pub mod providers;
 pub mod read_stub_index;
 pub mod recovery;

@@ -546,13 +546,6 @@ impl GotchaPolicy {
         }
         Ok(())
     }
-
-    pub fn effective_decay_rate(&self, category: &str) -> f32 {
-        self.category_decay_overrides
-            .get(category)
-            .copied()
-            .unwrap_or(self.default_decay_rate)
-    }
 }
 
 /// Write-time admission control for the knowledge store (#970). The cap +

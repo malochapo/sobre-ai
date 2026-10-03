@@ -1,7 +1,3 @@
-// Hard defaults: token-first, output-stable, deterministic.
-
-pub const READ_MODE_COUNT: f64 = 10.0;
-
 pub const KNOWLEDGE_RECALL_FACTS_LIMIT: usize = 10;
 pub const KNOWLEDGE_TIMELINE_LIMIT: usize = 25;
 pub const KNOWLEDGE_ROOMS_LIMIT: usize = 25;
@@ -22,12 +18,6 @@ pub const PROSPECTIVE_REMINDER_MAX_CHARS: usize = 160;
 
 pub const INTENTS_PER_SESSION_LIMIT: usize = 50;
 
-// Graph-driven context (budgeted, deterministic)
-pub const GRAPH_CONTEXT_TOKEN_BUDGET: usize = 8000;
-pub const GRAPH_CONTEXT_MAX_FILES: usize = 8;
-pub const GRAPH_CONTEXT_MAX_EDGES: usize = 250;
-pub const GRAPH_CONTEXT_MAX_DEPTH: usize = 2;
-
 // Property graph tools (bounded outputs, deterministic ordering)
 pub const IMPACT_AFFECTED_FILES_LIMIT: usize = 200;
 
@@ -42,6 +32,3 @@ pub const ARCHITECTURE_LAYER_FILES_LIMIT: usize = 20;
 pub const ARCHITECTURE_ENTRYPOINTS_LIMIT: usize = 50;
 pub const ARCHITECTURE_CYCLES_LIMIT: usize = 20;
 pub const ARCHITECTURE_MODULE_FILES_LIMIT: usize = 200;
-
-// Knowledge embeddings index (bounded growth)
-pub const KNOWLEDGE_EMBEDDINGS_MAX_FACTS: usize = 2000;

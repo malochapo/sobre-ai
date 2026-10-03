@@ -37,6 +37,7 @@ pub struct PostDispatchResult {
     pub prefetch_hint: Option<String>,
 }
 
+#[cfg(test)]
 pub fn pre_dispatch_read(
     path: &str,
     requested_mode: &str,
@@ -331,6 +332,7 @@ fn check_overlay_mode_override(
     None
 }
 
+#[cfg(test)]
 pub fn post_dispatch_record(
     path: &str,
     mode: &str,

@@ -52,37 +52,6 @@ pub fn resolve_on_path(command: &str) -> Option<PathBuf> {
         .find(|candidate| candidate.is_file())
 }
 
-/// Verify that `command` resolves to a binary whose SHA-256 equals
-/// `expected_sha256`. An empty `expected_sha256` means "no pin" → `Ok`. The
-/// comparison is case-insensitive over hex; any mismatch, unresolved binary, or
-/// read error is a hard failure (fail-closed — a pin you cannot check is a pin
-/// that failed).
-pub fn verify_binary(command: &str, expected_sha256: &str) -> Result<(), String> {
-    let expected = expected_sha256.trim();
-    if expected.is_empty() {
-        return Ok(());
-    }
-    let path = resolve_on_path(command).ok_or_else(|| {
-        format!("binary `{command}` is pinned (sha256) but could not be found on PATH")
-    })?;
-    let actual = sha256_file(&path)?;
-    if actual.eq_ignore_ascii_case(expected) {
-        Ok(())
-    } else {
-        Err(format!(
-            "binary `{command}` failed its sha256 pin — expected {}…, got {}… ({} may have been \
-             replaced)",
-            short(expected),
-            short(&actual),
-            path.display()
-        ))
-    }
-}
-
-fn short(hex: &str) -> String {
-    hex.chars().take(12).collect()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -103,39 +72,6 @@ mod tests {
         let expected = "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad";
         assert_eq!(sha256_file(&f).unwrap(), expected);
         std::fs::remove_dir_all(&dir).ok();
-    }
-
-    #[test]
-    fn empty_pin_is_ok_without_resolving() {
-        // No pin → never even touches the filesystem.
-        assert!(verify_binary("definitely-not-a-real-binary-xyz", "").is_ok());
-    }
-
-    #[test]
-    fn verify_matches_and_detects_mismatch() {
-        let dir = tmp("verify");
-        std::fs::create_dir_all(&dir).unwrap();
-        let f = dir.join("my-mcp");
-        std::fs::write(&f, b"hello world").unwrap();
-        let good = sha256_file(&f).unwrap();
-        let path_str = f.to_string_lossy().to_string();
-
-        assert!(verify_binary(&path_str, &good).is_ok());
-        assert!(verify_binary(&path_str, &good.to_uppercase()).is_ok());
-        assert!(
-            verify_binary(&path_str, &"0".repeat(64)).is_err(),
-            "wrong hash must fail"
-        );
-        std::fs::remove_dir_all(&dir).ok();
-    }
-
-    #[test]
-    fn pinned_but_missing_binary_fails_closed() {
-        let err = verify_binary(
-            "/nonexistent/path/to/mcp",
-            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
-        );
-        assert!(err.is_err(), "a pin that cannot be checked must fail");
     }
 
     #[test]

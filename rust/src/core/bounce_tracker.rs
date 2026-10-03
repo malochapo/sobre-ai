@@ -64,6 +64,7 @@ impl BounceTracker {
         self.seq_counter
     }
 
+    #[cfg(test)]
     pub fn set_seq(&mut self, seq: u64) {
         self.seq_counter = seq;
     }
@@ -259,32 +260,6 @@ impl BounceTracker {
 
     pub fn adjusted_savings(&self, raw_savings: usize) -> isize {
         raw_savings as isize - self.total_wasted_tokens as isize
-    }
-
-    pub fn per_extension_json(&self) -> Vec<serde_json::Value> {
-        let mut exts: Vec<_> = self
-            .per_extension
-            .iter()
-            .filter(|(_, s)| s.total_reads > 0)
-            .collect();
-        exts.sort_by_key(|a| std::cmp::Reverse(a.1.bounces));
-        exts.iter()
-            .take(10)
-            .map(|(ext, stats)| {
-                let rate = if stats.total_reads > 0 {
-                    stats.bounces as f64 / stats.total_reads as f64
-                } else {
-                    0.0
-                };
-                serde_json::json!({
-                    "ext": ext,
-                    "reads": stats.total_reads,
-                    "bounces": stats.bounces,
-                    "wasted_tokens": stats.wasted_tokens,
-                    "rate": (rate * 1000.0).round() / 1000.0,
-                })
-            })
-            .collect()
     }
 
     pub fn format_summary(&self) -> String {

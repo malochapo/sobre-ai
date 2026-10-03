@@ -122,58 +122,6 @@ pub fn combined_attention(line: &str, position: f64, alpha: f64, beta: f64, gamm
     (pos_weight * struct_weight).sqrt()
 }
 
-/// Reorder lines to maximize predicted attention utilization.
-/// Places high-attention lines at begin and end positions.
-pub fn attention_optimize(lines: &[&str], _alpha: f64, _beta: f64, _gamma: f64) -> Vec<String> {
-    if lines.len() <= 3 {
-        return lines.iter().map(std::string::ToString::to_string).collect();
-    }
-
-    let mut scored: Vec<(usize, f64)> = lines
-        .iter()
-        .enumerate()
-        .map(|(i, line)| {
-            let importance = structural_importance(line);
-            (i, importance)
-        })
-        .collect();
-
-    // Sort by importance (high first)
-    scored.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
-
-    // Place most important at begin (alpha) and end (gamma) positions
-    let n = scored.len();
-    let mut result = vec![String::new(); n];
-    let mut begin_idx = 0;
-    let mut end_idx = n - 1;
-    let mut mid_idx = n / 4; // start mid section after first quarter
-
-    for (i, (orig_idx, _importance)) in scored.iter().enumerate() {
-        if i % 3 == 0 && begin_idx < n / 3 {
-            result[begin_idx] = lines[*orig_idx].to_string();
-            begin_idx += 1;
-        } else if i % 3 == 1 && end_idx > 2 * n / 3 {
-            result[end_idx] = lines[*orig_idx].to_string();
-            end_idx -= 1;
-        } else if mid_idx < 2 * n / 3 {
-            result[mid_idx] = lines[*orig_idx].to_string();
-            mid_idx += 1;
-        }
-    }
-
-    // Fill any remaining empty slots with original order
-    let mut remaining: Vec<String> = lines.iter().map(std::string::ToString::to_string).collect();
-    for slot in &mut result {
-        if slot.is_empty()
-            && let Some(line) = remaining.pop()
-        {
-            *slot = line;
-        }
-    }
-
-    result
-}
-
 /// Compute the theoretical attention efficiency for a given context layout.
 /// Returns a percentage [0, 100] indicating how much of the context
 /// is in attention-optimal positions.

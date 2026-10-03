@@ -86,12 +86,6 @@ pub fn load_fresh(max_age_secs: u64) -> Option<EditorSignal> {
     Some(signal)
 }
 
-/// Load regardless of freshness — for status surfaces (Live Signals panel)
-/// that want to show a stale signal *as stale* instead of hiding it (#505).
-pub fn load_raw_for_status() -> Option<EditorSignal> {
-    load_raw()
-}
-
 /// Ranking boost for a path: 0.30 for the active file, 0.10 for recent tabs.
 pub fn boost_for(signal: &EditorSignal, path: &str) -> f64 {
     let norm = crate::core::pathutil::normalize_tool_path(path);

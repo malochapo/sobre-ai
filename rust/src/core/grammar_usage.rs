@@ -173,18 +173,6 @@ pub fn flush() {
     }
 }
 
-/// Ranked per-extension usage, read straight from disk so a separate process
-/// (dashboard, `doctor`) sees what the MCP/CLI processes persisted.
-pub fn disk_ranked() -> Vec<(String, ExtUsage)> {
-    GrammarUsage::load_from_disk().ranked()
-}
-
-/// Ranked per-extension usage from the live in-process store (includes
-/// not-yet-flushed records) — what `ctx_metrics` shows.
-pub fn live_ranked() -> Vec<(String, ExtUsage)> {
-    global().lock().map(|s| s.ranked()).unwrap_or_default()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

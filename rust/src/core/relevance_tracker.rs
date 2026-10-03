@@ -172,11 +172,6 @@ impl RelevanceTracker {
         }
     }
 
-    /// Stop proactive expansion for one archive after a caller reports a bounce.
-    pub fn disable_handle(&mut self, handle: &str) {
-        self.disabled_handles.insert(handle.to_string());
-    }
-
     /// Find entries matching the current query context. Returns matches
     /// sorted by score (highest first), within the token budget.
     pub fn find_matches(&self, query_context: &str) -> Vec<ExpansionMatch> {

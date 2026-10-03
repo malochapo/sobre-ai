@@ -305,12 +305,6 @@ impl BM25Index {
         Self::build_from_directory_inner(root, &HashMap::new())
     }
 
-    /// Like `build_from_directory` but reuses file content from a prior scan
-    /// (e.g. the graph index walk) to avoid redundant disk reads.
-    pub fn build_with_content_hint(root: &Path, content_hint: &HashMap<String, String>) -> Self {
-        Self::build_from_directory_inner(root, content_hint)
-    }
-
     fn build_from_directory_inner(root: &Path, content_hint: &HashMap<String, String>) -> Self {
         let root_str = root.to_string_lossy();
         if !super::graph_index::is_safe_scan_root_public(&root_str) {

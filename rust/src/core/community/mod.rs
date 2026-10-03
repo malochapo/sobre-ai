@@ -74,8 +74,8 @@ impl CommunityResult {
 }
 
 /// Detect communities on the PropertyGraph (ids are deterministic but not
-/// remapped to a previous run). Prefer [`detect_communities_stable`] when a
-/// project root is available.
+/// remapped to a previous run).
+#[cfg(test)]
 pub fn detect_communities(conn: &Connection) -> CommunityResult {
     let graph = AdjGraph::from_property_graph(conn);
     analyze(&graph, None).1

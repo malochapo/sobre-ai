@@ -5,8 +5,6 @@ use std::path::PathBuf;
 
 use crate::core::a2a::message::{A2AMessage, MessageCategory, MessagePriority, PrivacyLevel};
 
-const MAX_SCRATCHPAD_ENTRIES: usize = 200;
-const MAX_DIARY_ENTRIES: usize = 100;
 pub(crate) const LOGICAL_SESSION_TTL_SECONDS: u64 = 180;
 const LOGICAL_SESSION_SOURCE_MAX_BYTES: usize = 64;
 const LOGICAL_SESSION_WORKSPACE_MAX_BYTES: usize = 4096;
@@ -300,70 +298,6 @@ impl AgentRegistry {
             .collect()
     }
 
-    pub fn list_all(&self) -> &[AgentEntry] {
-        &self.agents
-    }
-
-    pub fn post_message_full(
-        &mut self,
-        from_agent: &str,
-        to_agent: Option<&str>,
-        category: &str,
-        message: &str,
-        privacy: PrivacyLevel,
-        priority: MessagePriority,
-        ttl_hours: Option<u64>,
-    ) -> String {
-        let id = generate_short_id();
-        let expires_at = ttl_hours.map(|h| Utc::now() + chrono::Duration::hours(h as i64));
-        self.scratchpad.push(ScratchpadEntry {
-            id: id.clone(),
-            from_agent: from_agent.to_string(),
-            to_agent: to_agent.map(std::string::ToString::to_string),
-            task_id: None,
-            category: category.to_string(),
-            priority,
-            privacy,
-            message: message.to_string(),
-            metadata: HashMap::new(),
-            project_root: None,
-            timestamp: Utc::now(),
-            read_by: vec![from_agent.to_string()],
-            expires_at,
-        });
-
-        if self.scratchpad.len() > MAX_SCRATCHPAD_ENTRIES {
-            self.scratchpad
-                .drain(0..self.scratchpad.len() - MAX_SCRATCHPAD_ENTRIES);
-        }
-
-        self.updated_at = Utc::now();
-        id
-    }
-
-    pub fn read_messages(&mut self, agent_id: &str) -> Vec<&ScratchpadEntry> {
-        let unread: Vec<usize> = self
-            .scratchpad
-            .iter()
-            .enumerate()
-            .filter(|(_, e)| {
-                !e.read_by.contains(&agent_id.to_string())
-                    && (e.to_agent.is_none() || e.to_agent.as_deref() == Some(agent_id))
-            })
-            .map(|(i, _)| i)
-            .collect();
-
-        for i in &unread {
-            self.scratchpad[*i].read_by.push(agent_id.to_string());
-        }
-
-        self.scratchpad
-            .iter()
-            .filter(|e| e.to_agent.is_none() || e.to_agent.as_deref() == Some(agent_id))
-            .filter(|e| e.from_agent != agent_id)
-            .collect()
-    }
-
     pub fn cleanup_stale(&mut self, max_age_hours: u64) {
         let cutoff = Utc::now() - chrono::Duration::hours(max_age_hours as i64);
 
@@ -459,20 +393,6 @@ impl AgentDiary {
         }
     }
 
-    pub fn add_entry(&mut self, entry_type: DiaryEntryType, content: &str, context: Option<&str>) {
-        self.entries.push(DiaryEntry {
-            entry_type,
-            content: content.to_string(),
-            context: context.map(std::string::ToString::to_string),
-            timestamp: Utc::now(),
-        });
-        if self.entries.len() > MAX_DIARY_ENTRIES {
-            self.entries
-                .drain(0..self.entries.len() - MAX_DIARY_ENTRIES);
-        }
-        self.updated_at = Utc::now();
-    }
-
     pub fn format_summary(&self) -> String {
         if self.entries.is_empty() {
             return format!("Diary [{}]: empty", self.agent_id);
@@ -542,57 +462,6 @@ impl AgentDiary {
 
     pub fn load_or_create(agent_id: &str, agent_type: &str, project_root: &str) -> Self {
         Self::load(agent_id).unwrap_or_else(|| Self::new(agent_id, agent_type, project_root))
-    }
-
-    pub fn list_all() -> Vec<(String, usize, DateTime<Utc>)> {
-        let Ok(dir) = diary_dir() else {
-            return Vec::new();
-        };
-        if !dir.exists() {
-            return Vec::new();
-        }
-        let mut results = Vec::new();
-        if let Ok(entries) = std::fs::read_dir(&dir) {
-            for entry in entries.flatten() {
-                if entry.path().extension().and_then(|e| e.to_str()) == Some("json")
-                    && let Ok(content) = std::fs::read_to_string(entry.path())
-                    && let Ok(diary) = serde_json::from_str::<AgentDiary>(&content)
-                {
-                    results.push((diary.agent_id, diary.entries.len(), diary.updated_at));
-                }
-            }
-        }
-        results.sort_by_key(|x| std::cmp::Reverse(x.2));
-        results
-    }
-
-    /// Load every diary whose `project_root` matches `project_root`, most
-    /// recently updated first. Used by skillify to mine a project's decisions
-    /// and insights across all its agents (#290).
-    pub fn load_all_for_project(project_root: &str) -> Vec<AgentDiary> {
-        let Ok(dir) = diary_dir() else {
-            return Vec::new();
-        };
-        if !dir.exists() {
-            return Vec::new();
-        }
-        let want = project_root.trim_end_matches('/');
-        let mut diaries: Vec<AgentDiary> = Vec::new();
-        if let Ok(entries) = std::fs::read_dir(&dir) {
-            for entry in entries.flatten() {
-                if entry.path().extension().and_then(|e| e.to_str()) != Some("json") {
-                    continue;
-                }
-                if let Ok(content) = std::fs::read_to_string(entry.path())
-                    && let Ok(diary) = serde_json::from_str::<AgentDiary>(&content)
-                    && diary.project_root.trim_end_matches('/') == want
-                {
-                    diaries.push(diary);
-                }
-            }
-        }
-        diaries.sort_by_key(|d| std::cmp::Reverse(d.updated_at));
-        diaries
     }
 }
 
@@ -722,81 +591,7 @@ pub struct SharedFact {
     pub received_by: Vec<String>,
 }
 
-impl AgentRegistry {
-    pub fn share_knowledge(&mut self, from: &str, category: &str, facts: &[(String, String)]) {
-        for (key, value) in facts {
-            self.scratchpad.push(ScratchpadEntry {
-                id: format!("knowledge-{}", chrono::Utc::now().timestamp_millis()),
-                from_agent: from.to_string(),
-                to_agent: None,
-                task_id: None,
-                category: category.to_string(),
-                priority: MessagePriority::default(),
-                privacy: PrivacyLevel::Team,
-                message: format!("[knowledge] {key}={value}"),
-                metadata: HashMap::new(),
-                project_root: None,
-                timestamp: Utc::now(),
-                read_by: Vec::new(),
-                expires_at: None,
-            });
-        }
-        let shared_path = Self::shared_knowledge_path();
-        let mut existing: Vec<SharedFact> = std::fs::read_to_string(&shared_path)
-            .ok()
-            .and_then(|s| serde_json::from_str(&s).ok())
-            .unwrap_or_default();
-
-        for (key, value) in facts {
-            existing.push(SharedFact {
-                from_agent: from.to_string(),
-                category: category.to_string(),
-                key: key.clone(),
-                value: value.clone(),
-                timestamp: Utc::now(),
-                received_by: Vec::new(),
-            });
-        }
-
-        if existing.len() > 500 {
-            existing.drain(..existing.len() - 500);
-        }
-        if let Ok(json) = serde_json::to_string_pretty(&existing) {
-            let _ = std::fs::write(&shared_path, json);
-        }
-    }
-
-    pub fn receive_shared_knowledge(&mut self, agent_id: &str) -> Vec<SharedFact> {
-        let shared_path = Self::shared_knowledge_path();
-        let mut all: Vec<SharedFact> = std::fs::read_to_string(&shared_path)
-            .ok()
-            .and_then(|s| serde_json::from_str(&s).ok())
-            .unwrap_or_default();
-
-        let mut new_facts = Vec::new();
-        for fact in &mut all {
-            if fact.from_agent != agent_id && !fact.received_by.contains(&agent_id.to_string()) {
-                fact.received_by.push(agent_id.to_string());
-                new_facts.push(fact.clone());
-            }
-        }
-
-        if !new_facts.is_empty()
-            && let Ok(json) = serde_json::to_string_pretty(&all)
-        {
-            let _ = std::fs::write(&shared_path, json);
-        }
-        new_facts
-    }
-
-    fn shared_knowledge_path() -> PathBuf {
-        // GH #439: route through the typed data resolver so a post-migration
-        // split install writes to $XDG_DATA_HOME, not a re-created ~/.lean-ctx.
-        crate::core::paths::data_dir()
-            .unwrap_or_else(|_| PathBuf::from("."))
-            .join("shared_knowledge.json")
-    }
-}
+impl AgentRegistry {}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -835,85 +630,7 @@ pub struct ContextDepthConfig {
     pub context_budget_ratio: f64,
 }
 
-impl ContextDepthConfig {
-    pub fn for_role(role: AgentRole) -> Self {
-        match role {
-            AgentRole::Coder => Self {
-                max_files_full: 5,
-                max_files_signatures: 15,
-                preferred_mode: "full",
-                include_graph: true,
-                include_knowledge: true,
-                include_gotchas: true,
-                context_budget_ratio: 0.7,
-            },
-            AgentRole::Reviewer => Self {
-                max_files_full: 3,
-                max_files_signatures: 20,
-                preferred_mode: "signatures",
-                include_graph: true,
-                include_knowledge: true,
-                include_gotchas: true,
-                context_budget_ratio: 0.5,
-            },
-            AgentRole::Planner => Self {
-                max_files_full: 1,
-                max_files_signatures: 10,
-                preferred_mode: "map",
-                include_graph: true,
-                include_knowledge: true,
-                include_gotchas: false,
-                context_budget_ratio: 0.3,
-            },
-            AgentRole::Explorer => Self {
-                max_files_full: 2,
-                max_files_signatures: 8,
-                preferred_mode: "map",
-                include_graph: true,
-                include_knowledge: false,
-                include_gotchas: false,
-                context_budget_ratio: 0.4,
-            },
-            AgentRole::Debugger => Self {
-                max_files_full: 8,
-                max_files_signatures: 5,
-                preferred_mode: "full",
-                include_graph: false,
-                include_knowledge: true,
-                include_gotchas: true,
-                context_budget_ratio: 0.8,
-            },
-            AgentRole::Tester => Self {
-                max_files_full: 4,
-                max_files_signatures: 10,
-                preferred_mode: "full",
-                include_graph: false,
-                include_knowledge: false,
-                include_gotchas: true,
-                context_budget_ratio: 0.6,
-            },
-            AgentRole::Orchestrator => Self {
-                max_files_full: 0,
-                max_files_signatures: 5,
-                preferred_mode: "map",
-                include_graph: true,
-                include_knowledge: true,
-                include_gotchas: false,
-                context_budget_ratio: 0.2,
-            },
-        }
-    }
-
-    pub fn mode_for_rank(&self, rank: usize) -> &'static str {
-        if rank < self.max_files_full {
-            "full"
-        } else if rank < self.max_files_full + self.max_files_signatures {
-            "signatures"
-        } else {
-            "map"
-        }
-    }
-}
+impl ContextDepthConfig {}
 
 impl From<ScratchpadEntry> for A2AMessage {
     fn from(entry: ScratchpadEntry) -> Self {
@@ -991,50 +708,6 @@ mod tests {
     }
 
     #[test]
-    fn diary_add_and_format() {
-        let mut diary = AgentDiary::new("test-agent-001", "cursor", "/tmp/project");
-        diary.add_entry(
-            DiaryEntryType::Discovery,
-            "Found auth module at src/auth.rs",
-            Some("auth"),
-        );
-        diary.add_entry(
-            DiaryEntryType::Decision,
-            "Use JWT RS256 for token signing",
-            None,
-        );
-        diary.add_entry(
-            DiaryEntryType::Progress,
-            "Implemented login endpoint",
-            Some("auth"),
-        );
-
-        assert_eq!(diary.entries.len(), 3);
-
-        let summary = diary.format_summary();
-        assert!(summary.contains("test-agent-001"));
-        assert!(summary.contains("FOUND"));
-        assert!(summary.contains("DECIDED"));
-        assert!(summary.contains("DONE"));
-    }
-
-    #[test]
-    fn diary_compact_format() {
-        let mut diary = AgentDiary::new("test-agent-002", "claude", "/tmp/project");
-        diary.add_entry(DiaryEntryType::Insight, "DB queries are N+1", None);
-        diary.add_entry(
-            DiaryEntryType::Blocker,
-            "Missing API credentials",
-            Some("deploy"),
-        );
-
-        let compact = diary.format_compact();
-        assert!(compact.contains("diary:test-agent-002"));
-        assert!(compact.contains("B:Missing API credentials"));
-        assert!(compact.contains("I:DB queries are N+1"));
-    }
-
-    #[test]
     fn diary_entry_types() {
         let types = vec![
             DiaryEntryType::Discovery,
@@ -1046,15 +719,6 @@ mod tests {
         for t in types {
             assert!(!format!("{t}").is_empty());
         }
-    }
-
-    #[test]
-    fn diary_truncation() {
-        let mut diary = AgentDiary::new("test-agent", "cursor", "/tmp");
-        for i in 0..150 {
-            diary.add_entry(DiaryEntryType::Progress, &format!("Step {i}"), None);
-        }
-        assert!(diary.entries.len() <= 100);
     }
 
     #[test]

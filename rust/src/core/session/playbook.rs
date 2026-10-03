@@ -109,6 +109,7 @@ impl Playbook {
     }
 
     /// Vote on an entry by stable ID (agent feedback via ctx_session).
+    #[cfg(test)]
     pub fn vote(&mut self, id: u32, helpful: bool) -> bool {
         match self.entries.iter_mut().find(|e| e.id == id) {
             Some(e) => {
@@ -177,6 +178,7 @@ impl Playbook {
 
     /// Total content volume (entries × chars) — used by the brevity-bias
     /// regression test: repeated checkpoints must never shrink this.
+    #[cfg(test)]
     pub fn information_volume(&self) -> usize {
         self.entries.iter().map(|e| e.content.len()).sum()
     }

@@ -308,19 +308,6 @@ impl MultiRepoManager {
         fused.truncate(max_results);
         fused
     }
-
-    /// Search within a specific repo root (no RRF, single-repo query).
-    pub fn search_single_repo(
-        &mut self,
-        repo: &str,
-        query: &str,
-        max_results: usize,
-    ) -> Result<Vec<RepoSearchResult>, String> {
-        let idx = self
-            .resolve_root(repo)
-            .ok_or_else(|| format!("Unknown repo: {repo}"))?;
-        Ok(self.roots[idx].search(query, max_results))
-    }
 }
 
 impl Default for MultiRepoManager {
@@ -359,23 +346,6 @@ pub fn global_manager() -> &'static std::sync::Mutex<MultiRepoManager> {
     })
 }
 
-/// Initialize the global manager with explicit roots (e.g. from CLI `--root` flags).
-pub fn init_with_roots(
-    roots: &[(String, Option<String>)],
-    rrf_k: Option<f64>,
-) -> Result<(), String> {
-    let mut manager = MultiRepoManager::new();
-    if let Some(k) = rrf_k {
-        manager.rrf_k = k;
-    }
-    for (path, alias) in roots {
-        manager.add_root(path, alias.as_deref())?;
-    }
-    GLOBAL_MANAGER
-        .set(std::sync::Mutex::new(manager))
-        .map_err(|_| "Multi-repo manager already initialized".to_string())
-}
-
 /// Resolve a `repo` alias/path to the actual filesystem root.
 /// Used by existing tools (ctx_read, ctx_search, etc.) when a `repo` param is provided.
 /// Returns the absolute path to the repo root, or None if multi-repo is inactive or repo not found.
@@ -395,24 +365,6 @@ pub fn known_aliases() -> Vec<String> {
         return Vec::new();
     };
     mgr.roots.iter().map(ActiveRepoRoot::alias).collect()
-}
-
-/// Check if multi-repo mode is active (more than 1 root configured).
-pub fn is_multi_repo_active() -> bool {
-    let manager = global_manager();
-    manager.lock().is_ok_and(|mgr| mgr.is_active())
-}
-
-/// Get all configured repo root paths (for tools that need to iterate).
-pub fn all_root_paths() -> Vec<String> {
-    let manager = global_manager();
-    let Ok(mgr) = manager.lock() else {
-        return Vec::new();
-    };
-    mgr.roots
-        .iter()
-        .map(|r| r.path.to_string_lossy().to_string())
-        .collect()
 }
 
 #[cfg(test)]

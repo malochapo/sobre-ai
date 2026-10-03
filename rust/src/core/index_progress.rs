@@ -23,6 +23,7 @@ pub struct ProgressSnapshot {
 
 impl ProgressSnapshot {
     /// `true` when a known total exists (determinate bar).
+    #[cfg(test)]
     pub fn is_determinate(&self) -> bool {
         self.total > 0
     }
@@ -54,11 +55,6 @@ impl ProgressGuard {
 
     pub fn report(&self, done: u64, total: u64) {
         report(&self.root, self.component, done, total);
-    }
-
-    /// Disable auto-clear (rarely needed).
-    pub fn disarm(mut self) {
-        self.cleared = true;
     }
 }
 
@@ -105,6 +101,7 @@ pub fn clear(root: &str, component: IndexComponent) {
     g.remove(&(root.to_string(), component));
 }
 
+#[cfg(test)]
 pub fn clear_root(root: &str) {
     let mut g = map()
         .lock()

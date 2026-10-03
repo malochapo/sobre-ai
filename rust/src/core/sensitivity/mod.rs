@@ -147,11 +147,6 @@ impl Enforced {
             Enforced::Dropped { notice, .. } => notice,
         }
     }
-
-    /// True if the floor changed the content.
-    pub fn was_enforced(&self) -> bool {
-        !matches!(self, Enforced::Pass(_))
-    }
 }
 
 /// Apply the configured floor to a text item (e.g. a tool output).

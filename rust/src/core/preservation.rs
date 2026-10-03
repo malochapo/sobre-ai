@@ -12,6 +12,7 @@ pub struct PreservationScore {
 }
 
 impl PreservationScore {
+    #[cfg(test)]
     pub fn function_rate(&self) -> f64 {
         if self.functions_total == 0 {
             return 1.0;
@@ -19,6 +20,7 @@ impl PreservationScore {
         self.functions_preserved as f64 / self.functions_total as f64
     }
 
+    #[cfg(test)]
     pub fn export_rate(&self) -> f64 {
         if self.exports_total == 0 {
             return 1.0;
@@ -26,6 +28,7 @@ impl PreservationScore {
         self.exports_preserved as f64 / self.exports_total as f64
     }
 
+    #[cfg(test)]
     pub fn import_rate(&self) -> f64 {
         if self.imports_total == 0 {
             return 1.0;

@@ -245,9 +245,6 @@ impl ProfileAutonomy {
     pub fn auto_prefetch_effective(&self) -> bool {
         self.auto_prefetch.unwrap_or(false)
     }
-    pub fn auto_response_effective(&self) -> bool {
-        self.auto_response.unwrap_or(false)
-    }
     pub fn dedup_threshold_effective(&self) -> usize {
         self.dedup_threshold.unwrap_or(8)
     }
@@ -256,9 +253,6 @@ impl ProfileAutonomy {
     }
     pub fn prefetch_budget_tokens_effective(&self) -> usize {
         self.prefetch_budget_tokens.unwrap_or(4000)
-    }
-    pub fn response_min_tokens_effective(&self) -> usize {
-        self.response_min_tokens.unwrap_or(600)
     }
     pub fn checkpoint_interval_effective(&self) -> u32 {
         self.checkpoint_interval.unwrap_or(15)
@@ -325,14 +319,6 @@ pub fn active_profile_name() -> String {
 #[must_use]
 pub fn active_profile() -> Profile {
     builtin_coder()
-}
-
-/// Information about an available profile.
-#[derive(Debug, Clone)]
-pub struct ProfileInfo {
-    pub name: String,
-    pub description: String,
-    pub source: ProfileSource,
 }
 
 /// Where a profile was loaded from.

@@ -513,23 +513,6 @@ pub fn emit_role_changed(from: &str, to: &str) {
     });
 }
 
-pub fn emit_profile_changed(from: &str, to: &str) {
-    emit(EventKind::ProfileChanged {
-        from: from.to_string(),
-        to: to.to_string(),
-    });
-}
-
-pub fn emit_slo_violation(slo_name: &str, metric: &str, threshold: f64, actual: f64, action: &str) {
-    emit(EventKind::SloViolation {
-        slo_name: slo_name.to_string(),
-        metric: metric.to_string(),
-        threshold,
-        actual,
-        action: action.to_string(),
-    });
-}
-
 pub fn emit_anomaly(metric: &str, expected: f64, actual: f64, deviation_factor: f64) {
     emit(EventKind::Anomaly {
         metric: metric.to_string(),

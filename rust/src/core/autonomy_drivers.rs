@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 const STORE_FILENAME: &str = "autonomy_drivers_v1.json";
 
@@ -162,27 +162,6 @@ fn truncate(s: &str, max: usize) -> String {
     let mut out = s[..max].to_string();
     out.push('…');
     out
-}
-
-pub fn write_project_autonomy_drivers_v1(
-    project_root: &Path,
-    drivers: &AutonomyDriversV1,
-    filename: Option<&str>,
-) -> Result<PathBuf, String> {
-    let proofs_dir = crate::core::pathutil::safe_project_data_dir(project_root)?.join("proofs");
-    std::fs::create_dir_all(&proofs_dir).map_err(|e| e.to_string())?;
-
-    let ts = chrono::Utc::now().format("%Y-%m-%d_%H%M%S");
-    let name = filename.map_or_else(
-        || format!("autonomy-drivers-v1_{ts}.json"),
-        std::string::ToString::to_string,
-    );
-    let path = proofs_dir.join(name);
-
-    let json = serde_json::to_string_pretty(drivers).map_err(|e| e.to_string())?;
-    let json = crate::core::redaction::redact_text(&json);
-    crate::config_io::write_atomic(&path, &json)?;
-    Ok(path)
 }
 
 #[cfg(test)]

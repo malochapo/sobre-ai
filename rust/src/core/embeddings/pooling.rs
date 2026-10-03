@@ -71,11 +71,6 @@ pub fn normalize_l2(vec: &mut [f32]) {
     }
 }
 
-/// Compute the L2 norm of a vector.
-pub fn l2_norm(vec: &[f32]) -> f32 {
-    vec.iter().map(|x| x * x).sum::<f32>().sqrt()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -142,15 +137,5 @@ mod tests {
         let mut vec = vec![0.0, 0.0, 0.0];
         normalize_l2(&mut vec);
         assert!(vec.iter().all(|&v| v == 0.0));
-    }
-
-    #[test]
-    fn l2_norm_basic() {
-        assert!((l2_norm(&[3.0, 4.0]) - 5.0).abs() < 1e-6);
-    }
-
-    #[test]
-    fn l2_norm_unit() {
-        assert!((l2_norm(&[1.0, 0.0, 0.0]) - 1.0).abs() < 1e-6);
     }
 }

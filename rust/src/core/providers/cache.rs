@@ -40,15 +40,7 @@ pub struct CacheMetrics {
     pub provider_stats: Vec<ProviderCacheStats>,
 }
 
-impl CacheMetrics {
-    pub fn total_hit_rate(&self) -> f64 {
-        let total = self.total_hits + self.total_misses;
-        if total == 0 {
-            return 0.0;
-        }
-        self.total_hits as f64 / total as f64
-    }
-}
+impl CacheMetrics {}
 
 struct ProviderCache {
     entries: HashMap<String, CacheEntry>,

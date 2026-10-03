@@ -205,6 +205,7 @@ pub fn supports_call_graph(lang: LanguageId) -> bool {
 }
 
 /// Friendly names of every language with call-graph extraction support.
+#[cfg(test)]
 pub fn callgraph_supported_language_names() -> Vec<&'static str> {
     ALL_LANGUAGES
         .iter()
@@ -231,44 +232,6 @@ pub struct LanguageCapabilityRow {
     /// Call edges whose caller file is in this language. `None` when call data
     /// isn't available in the calling context (e.g. the dependency-graph route).
     pub calls_found: Option<usize>,
-}
-
-/// Build a capability matrix for the languages actually present in `file_paths`,
-/// sorted by file count (desc) then name. `symbols`/`imports` come from
-/// `capabilities()`; `call_graph` from `supports_call_graph()`.
-pub fn language_capability_matrix<I, S>(file_paths: I) -> Vec<LanguageCapabilityRow>
-where
-    I: IntoIterator<Item = S>,
-    S: AsRef<str>,
-{
-    let mut counts: std::collections::HashMap<LanguageId, usize> = std::collections::HashMap::new();
-    for path in file_paths {
-        if let Some(lang) = language_for_path(path.as_ref()) {
-            *counts.entry(lang).or_default() += 1;
-        }
-    }
-    let mut rows: Vec<LanguageCapabilityRow> = counts
-        .into_iter()
-        .map(|(lang, files)| {
-            let caps = capabilities(lang);
-            LanguageCapabilityRow {
-                language: lang.id_str(),
-                files,
-                symbols: caps.deep_queries,
-                imports: caps.import_resolver,
-                call_graph: supports_call_graph(lang),
-                symbols_found: None,
-                imports_found: None,
-                calls_found: None,
-            }
-        })
-        .collect();
-    rows.sort_by(|a, b| {
-        b.files
-            .cmp(&a.files)
-            .then_with(|| a.language.cmp(b.language))
-    });
-    rows
 }
 
 #[cfg(test)]
@@ -335,29 +298,5 @@ mod tests {
     fn non_indexed_source_extensions_are_not_indexable() {
         assert!(!is_indexable_ext("r"));
         assert!(!is_indexable_ext("jl"));
-    }
-
-    #[test]
-    fn capability_matrix_reports_per_language_support() {
-        let paths = ["a.rs", "b.rs", "c.rb", "d.cs", "readme.md"];
-        let matrix = language_capability_matrix(paths);
-
-        // Non-code files are excluded; three languages are detected.
-        assert_eq!(matrix.len(), 3);
-
-        let rust = matrix.iter().find(|r| r.language == "rust").unwrap();
-        assert_eq!(rust.files, 2);
-        assert!(rust.symbols && rust.imports && rust.call_graph);
-
-        // Ruby has symbols + imports but no call-graph extraction.
-        let ruby = matrix.iter().find(|r| r.language == "ruby").unwrap();
-        assert!(ruby.symbols && ruby.imports && !ruby.call_graph);
-
-        // C# is fully supported (the language behind the original bug report).
-        let csharp = matrix.iter().find(|r| r.language == "csharp").unwrap();
-        assert!(csharp.symbols && csharp.imports && csharp.call_graph);
-
-        // Sorted by file count desc → Rust (2 files) leads.
-        assert_eq!(matrix[0].language, "rust");
     }
 }

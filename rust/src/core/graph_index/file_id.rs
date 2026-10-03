@@ -11,10 +11,6 @@ pub struct FileId(u32);
 
 #[allow(dead_code)]
 impl FileId {
-    /// Sentinel for "no file" / placeholder contexts. Never returned by
-    /// [`PathInterner::intern`]; safe to use as a default or error marker.
-    pub const NONE: Self = Self(u32::MAX);
-
     #[inline]
     pub(crate) fn raw(self) -> u32 {
         self.0
@@ -67,18 +63,6 @@ impl PathInterner {
     }
 
     #[allow(dead_code)]
-    /// Intern an already-owned `String`, avoiding a clone when the path is new.
-    pub fn intern_owned(&mut self, path: String) -> FileId {
-        if let Some(&id) = self.to_id.get(&path) {
-            return id;
-        }
-        let id = FileId(self.to_path.len() as u32);
-        self.to_path.push(path.clone());
-        self.to_id.insert(path, id);
-        id
-    }
-
-    #[allow(dead_code)]
     /// Look up a path without interning it.
     pub fn get(&self, path: &str) -> Option<FileId> {
         self.to_id.get(path).copied()
@@ -92,12 +76,6 @@ impl PathInterner {
     #[inline]
     pub fn resolve(&self, id: FileId) -> &str {
         &self.to_path[id.0 as usize]
-    }
-
-    #[allow(dead_code)]
-    /// Non-panicking resolve — returns `None` for out-of-range ids.
-    pub fn try_resolve(&self, id: FileId) -> Option<&str> {
-        self.to_path.get(id.0 as usize).map(String::as_str)
     }
 
     #[allow(dead_code)]
@@ -157,15 +135,6 @@ mod tests {
     }
 
     #[test]
-    fn intern_owned_avoids_double_allocation() {
-        let mut interner = PathInterner::new();
-        let id1 = interner.intern_owned("src/foo.rs".to_owned());
-        let id2 = interner.intern("src/foo.rs");
-        assert_eq!(id1, id2);
-        assert_eq!(interner.len(), 1);
-    }
-
-    #[test]
     fn get_returns_none_for_unknown() {
         let interner = PathInterner::new();
         assert_eq!(interner.get("nonexistent.rs"), None);
@@ -176,22 +145,6 @@ mod tests {
         let mut interner = PathInterner::new();
         let id = interner.intern("src/lib.rs");
         assert_eq!(interner.get("src/lib.rs"), Some(id));
-    }
-
-    #[test]
-    fn try_resolve_returns_none_for_invalid_id() {
-        let interner = PathInterner::new();
-        assert_eq!(interner.try_resolve(FileId(999)), None);
-        assert_eq!(interner.try_resolve(FileId::NONE), None);
-    }
-
-    #[test]
-    fn file_id_none_is_never_returned_by_intern() {
-        let mut interner = PathInterner::new();
-        for i in 0..100 {
-            let id = interner.intern(&format!("file_{i}.rs"));
-            assert_ne!(id, FileId::NONE);
-        }
     }
 
     #[test]

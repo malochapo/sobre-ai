@@ -304,28 +304,4 @@ impl LeanCtxServer {
             let _ = std::fs::write(dir.join("mcp-live.json"), live.to_string());
         }
     }
-
-    /// Persists a CEP (Cognitive Efficiency Protocol) score snapshot for analytics.
-    pub async fn record_cep_snapshot(&self) {
-        let cache = self.cache.read().await;
-        let calls = self.tool_calls.read().await;
-        let stats = cache.get_stats();
-        let complexity = crate::core::adaptive::classify_from_context(&cache);
-
-        let cs = Self::compute_cep_stats(&calls, stats, &complexity);
-
-        drop(cache);
-        drop(calls);
-
-        crate::core::stats::record_cep_session(
-            cs.cep_score,
-            cs.cache_hits,
-            cs.total_reads,
-            cs.total_original,
-            cs.total_compressed,
-            &cs.mode_counts,
-            cs.tool_call_count,
-            &cs.complexity,
-        );
-    }
 }

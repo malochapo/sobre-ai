@@ -69,38 +69,6 @@ fn tool_names(manifest: &Value) -> Vec<String> {
         .unwrap_or_default()
 }
 
-/// Always-on local capabilities — free, ungated, unconditionally available in
-/// every build. The heart of the Local-Free Invariant (RFC §6): these must
-/// never depend on an account, license, or plan.
-pub const LOCAL_ALWAYS_ON_FEATURES: &[&str] = &[
-    "compression",
-    "caching",
-    "knowledge",
-    "session",
-    "gateway",
-    "sensitivity_floor",
-    "savings_ledger",
-    "audit_trail",
-    // Cost/intent routing (classify -> tier -> model). Lowering your own bill
-    // is a local capability by contract (11-core-vs-enterprise-boundary §5);
-    // org-wide *enforced* budgets/policies are the commercial add-on.
-    "routing",
-];
-
-/// Local capabilities that are free but gated by *compilation* only (Cargo
-/// features) — never by account/license/plan.
-pub const LOCAL_OPTIONAL_FEATURES: &[&str] = &[
-    "ast_compression",
-    "semantic_search",
-    "wasm_runtime",
-    // Cross-shape routing Anthropic→OpenAI (enterprise#16, `shape-xlat`).
-    "shape_translation",
-];
-
-/// Commercial-plane capabilities — additive, opt-in, and never required for any
-/// local feature. Compiled in via opt-in Cargo features.
-pub const COMMERCIAL_PLANE_FEATURES: &[&str] = &[];
-
 /// Always-on capabilities plus compiled-in feature flags. Booleans reflect what
 /// this binary can actually do.
 fn features() -> Value {
@@ -184,44 +152,6 @@ mod tests {
                 .as_array()
                 .is_some_and(|a| a.iter().any(|c| c == "lines"))
         );
-    }
-
-    #[test]
-    fn feature_keys_partition_into_local_and_commercial() {
-        // Every advertised feature must be classified as local (always-on or
-        // compile-optional) or commercial — no unclassified flag. This keeps the
-        // Local-Free Invariant lists honest as features are added.
-        let v = capabilities_value();
-        let keys: std::collections::BTreeSet<String> = v["features"]
-            .as_object()
-            .expect("features object")
-            .keys()
-            .cloned()
-            .collect();
-        let mut classified: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
-        for k in LOCAL_ALWAYS_ON_FEATURES
-            .iter()
-            .chain(LOCAL_OPTIONAL_FEATURES)
-            .chain(COMMERCIAL_PLANE_FEATURES)
-        {
-            classified.insert((*k).to_string());
-        }
-        assert_eq!(
-            keys, classified,
-            "every feature must be classified local vs commercial (Local-Free Invariant)"
-        );
-    }
-
-    #[test]
-    fn local_always_on_features_are_unconditionally_true() {
-        let v = capabilities_value();
-        for key in LOCAL_ALWAYS_ON_FEATURES {
-            assert_eq!(
-                v["features"][key],
-                json!(true),
-                "local capability '{key}' must be free + always on"
-            );
-        }
     }
 
     #[test]

@@ -1186,12 +1186,3 @@ fn skip_env_assignments(segment: &str) -> &str {
 pub fn extract_all_commands_pub(command: &str) -> Vec<String> {
     extract_all_commands(command)
 }
-
-// Legacy compat: single-segment extraction (used by other callers)
-pub fn extract_base_command(command: &str) -> String {
-    let first_seg = split_on_operators(command)
-        .into_iter()
-        .next()
-        .unwrap_or(command);
-    extract_base_from_segment(first_seg)
-}

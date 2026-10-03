@@ -48,13 +48,6 @@ impl PrivacyLevel {
             _ => Self::Team,
         }
     }
-
-    pub fn allows_access(&self, requester_is_sender: bool, requester_is_recipient: bool) -> bool {
-        match self {
-            Self::Public | Self::Team => true,
-            Self::Private => requester_is_sender || requester_is_recipient,
-        }
-    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -141,24 +134,8 @@ impl A2AMessage {
         self
     }
 
-    pub fn with_priority(mut self, priority: MessagePriority) -> Self {
-        self.priority = priority;
-        self
-    }
-
-    pub fn with_ttl_hours(mut self, hours: u64) -> Self {
-        self.expires_at = Some(Utc::now() + chrono::Duration::hours(hours as i64));
-        self
-    }
-
     pub fn is_expired(&self) -> bool {
         self.expires_at.is_some_and(|exp| Utc::now() > exp)
-    }
-
-    pub fn mark_read(&mut self, agent_id: &str) {
-        if !self.read_by.contains(&agent_id.to_string()) {
-            self.read_by.push(agent_id.to_string());
-        }
     }
 }
 
@@ -170,18 +147,4 @@ fn generate_msg_id() -> String {
         .as_nanos();
     let rand: u64 = (ts as u64).wrapping_mul(6364136223846793005);
     format!("msg-{:x}-{:08x}", ts % 0xFFFF_FFFF, rand as u32)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn privacy_access_control() {
-        assert!(PrivacyLevel::Public.allows_access(false, false));
-        assert!(PrivacyLevel::Team.allows_access(false, false));
-        assert!(!PrivacyLevel::Private.allows_access(false, false));
-        assert!(PrivacyLevel::Private.allows_access(true, false));
-        assert!(PrivacyLevel::Private.allows_access(false, true));
-    }
 }

@@ -8,51 +8,6 @@ use super::*;
 
 // --- extract_base_command tests (legacy compat) ---
 
-#[test]
-fn extract_simple_command() {
-    assert_eq!(extract_base_command("git status"), "git");
-}
-
-#[test]
-fn extract_with_path() {
-    assert_eq!(extract_base_command("/usr/bin/git log"), "git");
-}
-
-#[test]
-fn extract_with_env_assignment() {
-    assert_eq!(extract_base_command("LANG=en_US git log"), "git");
-}
-
-#[test]
-fn extract_chained_commands() {
-    assert_eq!(extract_base_command("cd /tmp && ls -la"), "cd");
-}
-
-#[test]
-fn extract_piped_command() {
-    assert_eq!(extract_base_command("grep foo | wc -l"), "grep");
-}
-
-#[test]
-fn extract_semicolon_chain() {
-    assert_eq!(extract_base_command("echo hello; rm -rf /"), "echo");
-}
-
-#[test]
-fn extract_empty_command() {
-    assert_eq!(extract_base_command(""), "");
-}
-
-#[test]
-fn extract_whitespace_only() {
-    assert_eq!(extract_base_command("   "), "");
-}
-
-#[test]
-fn extract_multiple_env_vars() {
-    assert_eq!(extract_base_command("FOO=bar BAZ=qux cargo test"), "cargo");
-}
-
 // --- All-segments validation tests ---
 
 // --- GL #1160: backslash escapes outside quotes are data, not operators ---

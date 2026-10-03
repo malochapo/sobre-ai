@@ -3,14 +3,10 @@
 //! Wraps the existing `core::tokens` module to provide compression-specific
 //! counting with before/after tracking.
 
-use crate::core::tokens::{self, TokenizerFamily};
+use crate::core::tokens::{self};
 
 pub fn count(text: &str) -> u32 {
     tokens::count_tokens(text) as u32
-}
-
-pub fn count_with_family(text: &str, family: TokenizerFamily) -> u32 {
-    tokens::count_tokens_for(text, family) as u32
 }
 
 /// Calculates savings percentage from before/after token counts.

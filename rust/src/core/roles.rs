@@ -167,13 +167,6 @@ impl Role {
     pub fn is_shell_allowed(&self) -> bool {
         self.role.shell_policy != "deny"
     }
-
-    pub fn allowed_tools_set(&self) -> HashSet<String> {
-        if self.tools.allowed.is_empty() || self.tools.allowed.iter().any(|a| a == "*") {
-            return HashSet::new(); // empty = all allowed
-        }
-        self.tools.allowed.iter().cloned().collect()
-    }
 }
 
 // ── Built-in roles ──────────────────────────────────────────────

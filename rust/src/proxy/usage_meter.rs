@@ -298,15 +298,6 @@ pub fn record(u: &super::usage::RealUsage) {
     persist();
 }
 
-/// Live output-savings cohort totals (#895). Empty until a holdout runs.
-#[must_use]
-pub fn cohort_snapshot() -> HashMap<String, CohortUsage> {
-    cohort_store()
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner)
-        .clone()
-}
-
 /// Cross-process read of the persisted output-savings cohort totals.
 #[must_use]
 pub fn persisted_cohorts() -> HashMap<String, CohortUsage> {

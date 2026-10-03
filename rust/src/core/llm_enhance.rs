@@ -71,25 +71,7 @@ impl LlmConfig {
     }
 }
 
-/// Generate a human-readable explanation for a knowledge contradiction.
-/// Falls back to a simple diff-style description.
-pub fn explain_contradiction(fact_a: &str, fact_b: &str) -> String {
-    let cfg = crate::core::config::Config::load().llm;
-    if !cfg.enabled {
-        return deterministic_contradiction(fact_a, fact_b);
-    }
-
-    let prompt = format!(
-        "These two facts contradict. Explain the conflict in one sentence:\n\
-         A: {fact_a}\nB: {fact_b}"
-    );
-
-    match call_llm(&cfg, &prompt) {
-        Ok(explanation) => explanation.trim().to_string(),
-        Err(_) => deterministic_contradiction(fact_a, fact_b),
-    }
-}
-
+#[cfg(test)]
 fn deterministic_contradiction(a: &str, b: &str) -> String {
     format!("Conflict: \"{a}\" vs \"{b}\"")
 }

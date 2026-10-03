@@ -36,10 +36,12 @@ impl LandlockRuleset {
         }
     }
 
+    #[cfg(test)]
     pub fn contains_read_path(&self, path: &str) -> bool {
         self.read_paths.iter().any(|p| p == path)
     }
 
+    #[cfg(test)]
     pub fn contains_rw_path(&self, path: &str) -> bool {
         self.read_write_paths.iter().any(|p| p == path)
     }

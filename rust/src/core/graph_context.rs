@@ -41,26 +41,6 @@ pub fn build_related_paths_csv(
     )
 }
 
-/// Lightweight one-line hint of the top related files from the Property Graph.
-/// Returns `None` if no graph is available or no neighbors found.
-pub fn build_related_hint(file_path: &str, project_root: &str, limit: usize) -> Option<String> {
-    let scored = related_files_scored_for_path(file_path, project_root, limit)?;
-
-    let entries: Vec<String> = scored
-        .iter()
-        .map(|(path, score)| {
-            let short = path.rsplit('/').next().unwrap_or(path);
-            if *score >= 0.9 {
-                short.to_string()
-            } else {
-                format!("{short} ({:.0}%)", score * 100.0)
-            }
-        })
-        .collect();
-
-    Some(format!("[related: {}]", entries.join(", ")))
-}
-
 /// Repo-relative paths (same style as BM25 chunks / property graph) ranked for RRF graph proximity.
 ///
 /// `recent_repo_paths` should be ordered **most recently touched first**. Neighbors from earlier

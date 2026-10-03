@@ -472,14 +472,6 @@ pub fn content_path_str(id: &str) -> String {
     content_path(id).to_string_lossy().into_owned()
 }
 
-pub fn format_hint(id: &str, size_chars: usize, size_tokens: usize) -> String {
-    // Unified, non-MCP-first recovery grammar (see [`crate::core::recovery`]): the
-    // archived blob is a real file readable with any tool, and `ctx_expand(id)`
-    // reaches the same bytes for surgical slices.
-    let clause = crate::core::recovery::handle_clause(id, Some(&content_path_str(id)));
-    format!("[Archived: {size_chars} chars ({size_tokens} tok). {clause}]")
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -496,15 +488,6 @@ mod tests {
     #[test]
     fn nonexistent_id_returns_none() {
         assert!(retrieve("nonexistent_archive_id_xyz").is_none());
-    }
-
-    #[test]
-    fn format_hint_readable() {
-        let hint = format_hint("abc123", 5000, 1200);
-        assert!(hint.contains("5000 chars"));
-        assert!(hint.contains("1200 tok"));
-        assert!(hint.contains("ctx_expand"));
-        assert!(hint.contains("abc123"));
     }
 
     fn write_test_entry(id: &str, created_at: DateTime<Utc>, content_bytes: usize) {

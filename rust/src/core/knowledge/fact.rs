@@ -1,6 +1,6 @@
 use chrono::{DateTime, Utc};
 
-use super::types::{COGNITION_SYNTHESIS_SOURCE, FidelityScore, KnowledgeArchetype, KnowledgeFact};
+use super::types::{COGNITION_SYNTHESIS_SOURCE, KnowledgeArchetype, KnowledgeFact};
 
 impl KnowledgeFact {
     pub fn is_current(&self) -> bool {
@@ -66,14 +66,5 @@ impl KnowledgeFact {
             score += 0.1;
         }
         score.min(1.0)
-    }
-
-    pub fn update_fidelity(&mut self) {
-        let structural = self.compute_structural_fidelity();
-        self.fidelity = Some(FidelityScore {
-            structural,
-            semantic: structural,
-            computed_at: Utc::now(),
-        });
     }
 }

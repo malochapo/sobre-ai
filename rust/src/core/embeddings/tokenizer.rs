@@ -28,16 +28,7 @@ pub struct TokenizedInput {
     pub token_type_ids: Vec<i32>,
 }
 
-impl TokenizedInput {
-    /// Pad the input to a fixed length.
-    pub fn pad_to(&mut self, target_len: usize, pad_id: i32) {
-        while self.input_ids.len() < target_len {
-            self.input_ids.push(pad_id);
-            self.attention_mask.push(0);
-            self.token_type_ids.push(0);
-        }
-    }
-}
+impl TokenizedInput {}
 
 impl WordPieceTokenizer {
     /// Load vocabulary from a standard vocab.txt file (one token per line).
@@ -415,16 +406,6 @@ mod tests {
         assert!(words.contains(&"fn".to_string()));
         assert!(words.contains(&"(".to_string()));
         assert!(words.contains(&")".to_string()));
-    }
-
-    #[test]
-    fn pad_to_extends() {
-        let tok = test_vocab();
-        let mut input = tok.encode("hello", 512);
-        let original_len = input.input_ids.len();
-        input.pad_to(10, tok.pad_id);
-        assert_eq!(input.input_ids.len(), 10);
-        assert_eq!(input.attention_mask[original_len], 0);
     }
 
     #[test]

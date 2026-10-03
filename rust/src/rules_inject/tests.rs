@@ -284,17 +284,6 @@ fn rules_file_merged_appends_when_no_section() {
     assert!(merged.contains(START_MARK));
 }
 
-#[test]
-fn rules_file_without_section_strips_lean_ctx_block() {
-    let content = format!("header\n{START_MARK}\n<!-- version: 1 -->\n\nbody\n{END_MARK}\nfooter");
-    let file = RulesFile::parse(&content);
-    let stripped = file.without_section();
-    assert!(stripped.contains("header"));
-    assert!(stripped.contains("footer"));
-    assert!(!stripped.contains("body"));
-    assert!(!stripped.contains(START_MARK));
-}
-
 // ── Injection ────────────────────────────────────────────────
 
 #[test]

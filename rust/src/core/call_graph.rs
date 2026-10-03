@@ -450,47 +450,6 @@ impl CallGraph {
         })
     }
 
-    /// Returns current build status without starting anything.
-    pub fn build_status() -> BuildProgress {
-        let state = global_state();
-        let guard = state
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        match &*guard {
-            BuildState::Idle => BuildProgress {
-                status: "idle",
-                files_total: 0,
-                files_done: 0,
-                edges_found: 0,
-            },
-            BuildState::Building {
-                files_total,
-                files_done,
-                edges_found,
-            } => BuildProgress {
-                status: "building",
-                files_total: *files_total,
-                files_done: files_done.load(Ordering::Relaxed),
-                edges_found: edges_found.load(Ordering::Relaxed),
-            },
-            BuildState::Ready(graph) => BuildProgress {
-                status: "ready",
-                files_total: graph.file_hashes.len(),
-                files_done: graph.file_hashes.len(),
-                edges_found: graph.edges.len(),
-            },
-            BuildState::Failed(msg) => {
-                tracing::debug!("[call_graph: status check — failed: {msg}]");
-                BuildProgress {
-                    status: "error",
-                    files_total: 0,
-                    files_done: 0,
-                    edges_found: 0,
-                }
-            }
-        }
-    }
-
     /// Force-invalidate the cached result so next request triggers a rebuild.
     pub fn invalidate() {
         if let Ok(mut g) = global_state().lock() {
@@ -859,18 +818,6 @@ fn simple_hash(content: &str) -> String {
 // These helpers resolve a callee to its defining file using the caller's
 // lexical scope and refuse to guess when a name stays ambiguous.
 // ---------------------------------------------------------------------------
-
-/// Build a `file -> imported files` adjacency from the project index's import
-/// and reexport edges, used to scope callee resolution to a caller's imports.
-pub fn build_import_adjacency(
-    inputs: &CallGraphInputs,
-) -> HashMap<String, std::collections::HashSet<String>> {
-    let mut adj: HashMap<String, std::collections::HashSet<String>> = HashMap::new();
-    for (from, to) in &inputs.import_edges {
-        adj.entry(from.clone()).or_default().insert(to.clone());
-    }
-    adj
-}
 
 #[cfg(test)]
 mod tests {

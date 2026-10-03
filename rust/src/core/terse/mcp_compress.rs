@@ -67,22 +67,6 @@ fn lazy_description(name: &str, desc: &str) -> String {
     }
 }
 
-/// Estimates token savings from compressing all tool descriptions.
-pub fn estimate_savings(descriptions: &[(&str, &str)], mode: DescriptionMode) -> (u32, u32) {
-    let mut total_before = 0u32;
-    let mut total_after = 0u32;
-
-    for (name, desc) in descriptions {
-        let before = super::counter::count(desc);
-        let compressed = compress_description(name, desc, mode);
-        let after = super::counter::count(&compressed);
-        total_before += before;
-        total_after += after;
-    }
-
-    (total_before, total_after)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -146,23 +130,5 @@ mod tests {
             DescriptionMode::from_compression_level(&CompressionLevel::Max),
             DescriptionMode::Lazy
         );
-    }
-
-    #[test]
-    fn estimate_savings_returns_values() {
-        let descs = vec![
-            (
-                "ctx_read",
-                "Read a configuration file from the directory with caching.",
-            ),
-            (
-                "ctx_shell",
-                "Execute a shell command with pattern compression.",
-            ),
-        ];
-        let (before, after) = estimate_savings(&descs, DescriptionMode::Terse);
-        assert!(before > 0);
-        assert!(after > 0);
-        assert!(after <= before);
     }
 }

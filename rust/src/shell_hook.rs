@@ -72,15 +72,6 @@ pub fn shell_rc_file() -> &'static str {
     rc_file_for_shell(&std::env::var("SHELL").unwrap_or_default())
 }
 
-/// Human-facing one-liner telling the user how to load the refreshed aliases,
-/// tailored to their login shell. Used after `lean-ctx update`.
-pub fn reload_aliases_hint() -> String {
-    match shell_source_command() {
-        Some(cmd) => format!("Run '{cmd}' (or restart terminal) for updated shell aliases."),
-        None => "Restart your terminal to load updated shell aliases.".to_string(),
-    }
-}
-
 /// Installation style for the shell hook + agent aliases.
 ///
 /// `Auto` (default) inspects each rc file to decide: if the file references

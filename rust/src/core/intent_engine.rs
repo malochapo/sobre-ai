@@ -86,10 +86,6 @@ impl ThinkingBudget {
             }
         }
     }
-
-    pub fn suppresses_thinking(&self) -> bool {
-        matches!(self, Self::Minimal)
-    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -475,20 +471,6 @@ pub fn detect_multi_intent(query: &str) -> Vec<TaskClassification> {
     parts.iter().map(|part| classify(part)).collect()
 }
 
-pub fn format_briefing_header(classification: &TaskClassification) -> String {
-    format!(
-        "[TASK:{} CONF:{:.0}% TARGETS:{} KW:{}]",
-        classification.task_type.as_str(),
-        classification.confidence * 100.0,
-        if classification.targets.is_empty() {
-            "-".to_string()
-        } else {
-            classification.targets.join(",")
-        },
-        classification.keywords.join(","),
-    )
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum IntentScope {
     SingleFile,
@@ -647,6 +629,7 @@ impl StructuredIntent {
         intent
     }
 
+    #[cfg(test)]
     pub fn format_header(&self) -> String {
         format!(
             "[TASK:{} SCOPE:{} CONF:{:.0}%{}{}]",

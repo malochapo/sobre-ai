@@ -73,33 +73,6 @@ pub struct RouteInputs {
     pub pressure_remaining_tokens: usize,
 }
 
-pub fn route_v1(query: &str) -> IntentRouteV1 {
-    let budgets = crate::core::budget_tracker::BudgetTracker::global().check();
-    let ledger = crate::core::context_ledger::ContextLedger::load();
-    let pressure = ledger.pressure();
-    let profile_name = crate::core::profiles::active_profile_name();
-    let profile = crate::core::profiles::active_profile();
-    let role_name = crate::core::roles::active_role_name();
-
-    let inputs = RouteInputs {
-        tokens_level: budgets.tokens.level.clone(),
-        cost_level: budgets.cost.level.clone(),
-        pressure_action: pressure.recommendation,
-        pressure_utilization: pressure.utilization,
-        pressure_remaining_tokens: pressure.remaining_tokens,
-    };
-
-    route_v1_with(
-        query,
-        &role_name,
-        &profile_name,
-        &profile.routing,
-        budgets,
-        &inputs,
-        None,
-    )
-}
-
 pub fn route_v1_with(
     query: &str,
     role_name: &str,

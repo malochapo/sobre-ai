@@ -17,7 +17,7 @@
 //! hijacking and the "download a binary and move it around manually" UX.
 
 use std::io::Read;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
@@ -67,22 +67,6 @@ pub fn current_target_triple() -> &'static str {
     } else {
         "unknown"
     }
-}
-
-/// The managed install dir for one addon version:
-/// `<data_dir>/addons/bin/<name>/<version>/`. A blank version (local
-/// manifests without one) maps to `unversioned` so the layout stays uniform.
-pub fn managed_bin_dir(name: &str, version: &str) -> Result<PathBuf, String> {
-    let version = version.trim();
-    Ok(crate::core::data_dir::lean_ctx_data_dir()?
-        .join("addons")
-        .join("bin")
-        .join(name)
-        .join(if version.is_empty() {
-            "unversioned"
-        } else {
-            version
-        }))
 }
 
 /// Reject an artifact missing its mandatory SHA-256 pin before any policy or network work.

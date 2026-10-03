@@ -32,7 +32,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::core::config::{RoutingRules, parse_route_target};
-use crate::core::intent_engine::{self, TaskClassification};
+use crate::core::intent_engine::{self};
 
 /// A routing decision record — emitted for observability and future OCLA bus
 /// integration (P2). Deterministic: same input → same decision (#498).
@@ -111,15 +111,6 @@ pub fn route(body: &Value, rules: &RoutingRules) -> Option<RoutingDecision> {
         model_changed: requested_model != model,
         estimated_cost_ratio: cost_ratio,
     })
-}
-
-/// Classifies a request without applying routing — for dry-run / observability.
-pub fn classify_only(body: &Value) -> Option<(TaskClassification, intent_engine::IntentRoute)> {
-    let messages = body.get("messages")?;
-    let content = extract_last_user_content(messages)?;
-    let classification = intent_engine::classify(&content);
-    let route = intent_engine::route_intent(&content, &classification);
-    Some((classification, route))
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────

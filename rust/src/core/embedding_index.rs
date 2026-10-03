@@ -333,11 +333,6 @@ impl EmbeddingIndex {
         );
     }
 
-    /// Load a previously saved index, or create a new empty one.
-    pub fn load_or_new(root: &Path, dimensions: usize) -> Self {
-        Self::load(root).unwrap_or_else(|| Self::new(dimensions))
-    }
-
     /// Determine which files need re-embedding based on content hashes.
     ///
     /// When the index is empty (no prior embeddings), skips hash computation

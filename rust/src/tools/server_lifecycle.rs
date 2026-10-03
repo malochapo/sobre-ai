@@ -34,21 +34,6 @@ impl LeanCtxServer {
         )
     }
 
-    /// Creates a new server in Context OS shared mode for a specific workspace/channel.
-    pub fn new_shared_with_context(
-        project_root: &str,
-        workspace_id: &str,
-        channel_id: &str,
-    ) -> Self {
-        Self::new_with_startup(
-            Some(project_root),
-            std::env::current_dir().ok().as_deref(),
-            SessionMode::Shared,
-            workspace_id,
-            channel_id,
-        )
-    }
-
     pub(crate) fn new_with_startup(
         project_root: Option<&str>,
         startup_cwd: Option<&Path>,

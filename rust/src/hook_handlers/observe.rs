@@ -609,29 +609,6 @@ fn write_compaction_marker(data_dir: &std::path::Path, ts: u64) {
     let _ = std::fs::rename(&tmp_path, &marker_path);
 }
 
-/// Count the IDE-hook observe events recorded in `context_radar.jsonl`.
-///
-/// `watch` uses this to explain an empty live feed (#593): a non-zero count
-/// means IDE hooks ARE firing — lean-ctx is wired into the editor — even though
-/// no `ctx_*` MCP tool has been called yet. That distinguishes "the agent is
-/// using native tools instead of ctx_*" from "nothing is connected at all".
-/// Counts newline-delimited records; returns 0 when the file is absent.
-#[must_use]
-pub fn radar_event_count() -> usize {
-    let Ok(data_dir) = crate::core::data_dir::lean_ctx_data_dir() else {
-        return 0;
-    };
-    let Ok(file) = std::fs::File::open(data_dir.join("context_radar.jsonl")) else {
-        return 0;
-    };
-    use std::io::{BufRead, BufReader};
-    BufReader::new(file)
-        .lines()
-        .map_while(Result::ok)
-        .filter(|l| !l.trim().is_empty())
-        .count()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

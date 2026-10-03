@@ -81,6 +81,7 @@ impl ConfigProvenance {
     // `&str` keeps the call site lifetime-agnostic, so the manual compare stays.
     #[must_use]
     #[allow(clippy::manual_contains)]
+    #[cfg(test)]
     pub fn local_overrides(&self, setting: &str) -> bool {
         self.local_keys.iter().any(|k| *k == setting)
     }

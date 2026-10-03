@@ -44,6 +44,7 @@ pub(super) fn all(conn: &Connection) -> anyhow::Result<Vec<IndexEdge>> {
     Ok(edges)
 }
 
+#[cfg(test)]
 pub(super) fn count(conn: &Connection) -> anyhow::Result<usize> {
     let c: i64 = conn.query_row("SELECT COUNT(*) FROM cross_source_edges", [], |row| {
         row.get(0)

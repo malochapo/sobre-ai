@@ -1,5 +1,4 @@
 use serde::{Deserialize, Serialize};
-use std::path::{Path, PathBuf};
 
 const STORE_FILENAME: &str = "context_ir_v1.json";
 
@@ -209,27 +208,6 @@ impl Default for ContextIrV1 {
     fn default() -> Self {
         Self::new()
     }
-}
-
-pub fn write_project_context_ir(
-    project_root: &Path,
-    ir: &ContextIrV1,
-    filename: Option<&str>,
-) -> Result<PathBuf, String> {
-    let proofs_dir = crate::core::pathutil::safe_project_data_dir(project_root)?.join("proofs");
-    std::fs::create_dir_all(&proofs_dir).map_err(|e| e.to_string())?;
-
-    let ts = chrono::Utc::now().format("%Y-%m-%d_%H%M%S");
-    let name = filename.map_or_else(
-        || format!("context-ir-v1_{ts}.json"),
-        std::string::ToString::to_string,
-    );
-    let path = proofs_dir.join(name);
-
-    let json = serde_json::to_string_pretty(ir).map_err(|e| e.to_string())?;
-    let json = crate::core::redaction::redact_text(&json);
-    crate::config_io::write_atomic(&path, &json)?;
-    Ok(path)
 }
 
 fn bound_and_redact_excerpt(s: &str) -> (String, bool) {

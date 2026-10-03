@@ -288,34 +288,6 @@ pub fn init_powershell(binary: &str) {
     }
 }
 
-pub fn remove_lean_ctx_block_ps(content: &str) -> String {
-    let mut result = String::new();
-    let mut in_block = false;
-    let mut brace_depth = 0i32;
-
-    for line in content.lines() {
-        if line.contains("lean-ctx shell hook") {
-            in_block = true;
-            continue;
-        }
-        if in_block {
-            brace_depth += line.matches('{').count() as i32;
-            brace_depth -= line.matches('}').count() as i32;
-            if brace_depth <= 0 && (line.trim() == "}" || line.trim().is_empty()) {
-                if line.trim() == "}" {
-                    in_block = false;
-                    brace_depth = 0;
-                }
-                continue;
-            }
-            continue;
-        }
-        result.push_str(line);
-        result.push('\n');
-    }
-    result
-}
-
 pub fn generate_hook_fish(binary: &str) -> String {
     let config = crate::core::config::Config::load();
     let activation = config.shell_activation_effective();
@@ -981,31 +953,6 @@ export EDITOR=vim
         assert!(!result.contains("lean-ctx"), "block should be removed");
         assert!(result.contains("set -x FOO"), "other content preserved");
         assert!(result.contains("set -x BAZ"), "trailing content preserved");
-    }
-
-    #[test]
-    fn test_remove_lean_ctx_block_ps() {
-        let input = "# PowerShell profile\n$env:FOO = 'bar'\n\n# lean-ctx shell hook — transparent CLI compression (95+ patterns)\nif (-not $env:LEAN_CTX_ACTIVE) {\n  $LeanCtxBin = \"C:\\\\bin\\\\lean-ctx.exe\"\n  function git { & $LeanCtxBin -c \"git $($args -join ' ')\" }\n}\n\n# other stuff\n$env:EDITOR = 'vim'\n";
-        let result = remove_lean_ctx_block_ps(input);
-        assert!(
-            !result.contains("lean-ctx shell hook"),
-            "block should be removed"
-        );
-        assert!(result.contains("$env:FOO"), "other content preserved");
-        assert!(result.contains("$env:EDITOR"), "trailing content preserved");
-    }
-
-    #[test]
-    fn test_remove_lean_ctx_block_ps_nested() {
-        let input = "# PowerShell profile\n$env:FOO = 'bar'\n\n# lean-ctx shell hook — transparent CLI compression (95+ patterns)\nif (-not $env:LEAN_CTX_ACTIVE) {\n  $LeanCtxBin = \"lean-ctx\"\n  function _lc {\n    & $LeanCtxBin -c \"$($args -join ' ')\"\n  }\n  if (Get-Command lean-ctx -ErrorAction SilentlyContinue) {\n    function git { _lc git @args }\n    foreach ($c in @('npm','pnpm')) {\n      if ($a) {\n        Set-Variable -Name \"_lc_$c\" -Value $a.Source -Scope Script\n      }\n    }\n  }\n}\n\n# other stuff\n$env:EDITOR = 'vim'\n";
-        let result = remove_lean_ctx_block_ps(input);
-        assert!(
-            !result.contains("lean-ctx shell hook"),
-            "block should be removed"
-        );
-        assert!(!result.contains("_lc"), "function should be removed");
-        assert!(result.contains("$env:FOO"), "other content preserved");
-        assert!(result.contains("$env:EDITOR"), "trailing content preserved");
     }
 
     #[test]

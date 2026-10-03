@@ -24,4 +24,3 @@ pub async fn send_tools_list_changed(peer: &Peer<RoleServer>) {
 }
 
 pub const RESOURCE_URI_SUMMARY: &str = "lean-ctx://context/summary";
-pub const RESOURCE_URI_PRESSURE: &str = "lean-ctx://context/pressure";

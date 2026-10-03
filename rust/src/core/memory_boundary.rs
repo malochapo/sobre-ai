@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::fs;
+#[cfg(test)]
 use std::io::{BufRead, BufReader};
 
 use crate::core::data_dir::lean_ctx_data_dir;
@@ -121,6 +122,7 @@ pub fn record_audit_event(event: &CrossProjectAuditEvent) {
     }
 }
 
+#[cfg(test)]
 pub fn load_audit_events(limit: usize) -> Vec<CrossProjectAuditEvent> {
     let path = match lean_ctx_data_dir() {
         Ok(d) => d.join("audit").join("cross-project.jsonl"),

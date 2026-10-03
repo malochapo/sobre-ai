@@ -190,7 +190,6 @@ fn synthetic_probe_source() -> String {
     for i in 0..24 {
         s.push_str(&format!(
             "/// Probe function number {i}, present so the full read is unambiguous.\n\
-             pub fn probe_{i}(input: &str, factor: usize) -> HashMap<String, usize> {{\n    \
              let mut counts: HashMap<String, usize> = HashMap::new();\n    \
              for token in input.split_whitespace() {{\n        \
              *counts.entry(token.to_string()).or_insert(0) += factor + {i};\n    }}\n    \

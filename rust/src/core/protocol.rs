@@ -260,6 +260,7 @@ pub fn format_savings(original: usize, compressed: usize) -> String {
 /// Formats a savings footer with mode and optional detail context.
 ///
 /// Output: `─── 4,200 → 840 tok (↓80%) | mode: map ───`
+#[cfg(test)]
 pub fn format_savings_with_info(
     original: usize,
     compressed: usize,
@@ -409,17 +410,6 @@ pub fn encode_instructions(complexity: &str) -> String {
         }
         _ => "MODE: BRIEF | BUDGET: <=200 tokens".to_string(),
     }
-}
-
-/// Encode instructions with SNR metric for context quality awareness.
-pub fn encode_instructions_with_snr(complexity: &str, compression_pct: f64) -> String {
-    let snr = if compression_pct > 0.0 {
-        1.0 - (compression_pct / 100.0)
-    } else {
-        1.0
-    };
-    let base = encode_instructions(complexity);
-    format!("{base} | SNR: {snr:.2}")
 }
 
 #[cfg(test)]

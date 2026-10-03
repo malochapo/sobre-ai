@@ -213,6 +213,7 @@ impl VocabSource {
         }
     }
 
+    #[cfg(test)]
     pub fn is_wordpiece(&self) -> bool {
         matches!(self, Self::VocabTxt(_))
     }

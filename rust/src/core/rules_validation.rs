@@ -128,24 +128,4 @@ impl<'a> RulesFile<'a> {
     pub fn initial(shadow: bool, wrapper: Wrapper, level: CompressionLevel) -> String {
         render(shadow, wrapper, level)
     }
-
-    /// Strip the lean-ctx section, keeping user content before/after.
-    pub fn without_section(&self) -> String {
-        if let Some(start_pos) = self.start {
-            let before = self.content[..start_pos].trim();
-            let after = self.suffix();
-            let mut out = String::new();
-            if !before.is_empty() {
-                out.push_str(before);
-                out.push('\n');
-            }
-            if !after.is_empty() {
-                out.push('\n');
-                out.push_str(after);
-            }
-            out
-        } else {
-            self.content.to_string()
-        }
-    }
 }

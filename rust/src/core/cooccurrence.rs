@@ -294,33 +294,6 @@ pub fn record_focus_access(project_root: &str, focus: &str, others: &[String]) {
     save(project_root, &graph);
 }
 
-/// Record that a *set* of files was surfaced together (e.g. search results)
-/// after normalizing to repo-relative. No-op when disabled or <2 distinct files.
-pub fn record_set_access(project_root: &str, files: &[String]) {
-    if !traversal_enabled() {
-        return;
-    }
-    let rel: Vec<String> = files
-        .iter()
-        .map(|f| to_repo_rel(f, project_root))
-        .filter(|f| !f.is_empty())
-        .collect();
-    record_access(project_root, &rel);
-}
-
-/// Canonical undirected co-access edges for `project_root` (strongest first),
-/// for dashboard overlay and graph folding. Empty when traversal edges are off.
-pub fn export_edges(
-    project_root: &str,
-    min_weight: f64,
-    max_edges: usize,
-) -> Vec<(String, String, f64)> {
-    if !traversal_enabled() {
-        return Vec::new();
-    }
-    load(project_root).canonical_edges(min_weight, max_edges)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

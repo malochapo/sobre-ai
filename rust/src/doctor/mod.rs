@@ -18,15 +18,6 @@ use common::*;
 
 pub use report::{HealthCheck, HealthLevel, HealthReport, health_report};
 
-/// Run `doctor --fix` and return the structured `SetupReport` without printing
-/// anything — the in-process entry point for the dashboard fix route (#466).
-///
-/// # Errors
-/// Propagates any repair-step failure (e.g. an unwritable data directory).
-pub fn run_fix_report() -> Result<crate::core::setup_report::SetupReport, String> {
-    fix::fix_report()
-}
-
 pub(super) const GREEN: &str = "\x1b[32m";
 
 pub(super) const RED: &str = "\x1b[31m";
@@ -582,11 +573,6 @@ pub fn run() -> u32 {
     // report). Notify-only — never auto-installs.
 
     needs_attention
-}
-
-pub fn run_compact() {
-    let (passed, total) = compact_score();
-    print_compact_status(passed, total);
 }
 
 pub fn run_cli(args: &[String]) -> i32 {

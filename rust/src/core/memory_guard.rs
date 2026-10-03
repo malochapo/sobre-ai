@@ -175,13 +175,6 @@ impl MemorySnapshot {
         Self::capture_impl(get_rss_bytes()?)
     }
 
-    /// Capture memory snapshot for the **daemon** process (by PID).
-    /// Falls back to the current process if the PID is dead or unreadable.
-    pub fn capture_for_pid(pid: u32) -> Option<Self> {
-        let rss = get_rss_bytes_for_pid(pid).or_else(get_rss_bytes)?;
-        Self::capture_impl(rss)
-    }
-
     fn capture_impl(rss: u64) -> Option<Self> {
         let sys = get_system_ram_bytes()?;
         let limit = rss_limit_bytes()?;
@@ -600,13 +593,5 @@ mod tests {
     fn rss_for_dead_pid_returns_none() {
         let dead_pid = 999_999_999u32;
         assert!(get_rss_bytes_for_pid(dead_pid).is_none());
-    }
-
-    #[test]
-    fn capture_for_pid_falls_back_on_dead_pid() {
-        if cfg!(any(target_os = "linux", target_os = "macos")) {
-            let snap = MemorySnapshot::capture_for_pid(999_999_999);
-            assert!(snap.is_some(), "should fall back to self RSS");
-        }
     }
 }

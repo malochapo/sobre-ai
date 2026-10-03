@@ -48,16 +48,6 @@ pub fn set_cli_overlay(
     });
 }
 
-/// True when a CLI overlay is installed. The orchestrator uses this to skip
-/// delegating the build to the daemon: the daemon would build with *its*
-/// config and could overwrite the one-off filtered result.
-pub fn cli_overlay_active() -> bool {
-    CLI_OVERLAY
-        .read()
-        .unwrap_or_else(std::sync::PoisonError::into_inner)
-        .is_some()
-}
-
 /// The resolved corpus-membership filter for one indexing run.
 #[derive(Debug)]
 pub struct IndexFileFilter {

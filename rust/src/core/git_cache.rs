@@ -107,13 +107,6 @@ pub fn git_status_cached(cwd: &str) -> Option<String> {
     git_cached(&["status", "--porcelain"], cwd, Duration::from_secs(10))
 }
 
-/// Short-TTL (10s) for git diff.
-pub fn git_diff_cached(args: &[&str], cwd: &str) -> Option<String> {
-    let mut full_args = vec!["diff"];
-    full_args.extend_from_slice(args);
-    git_cached(&full_args, cwd, Duration::from_secs(10))
-}
-
 /// Longer-TTL (60s) for git log (rarely changes within a session).
 pub fn git_log_cached(args: &[&str], cwd: &str) -> Option<String> {
     let mut full_args = vec!["log"];

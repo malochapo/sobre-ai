@@ -330,12 +330,6 @@ impl ModelPricing {
         self.quote(Some(&resolve_model_for_client(client)))
     }
 
-    /// Back-compat alias for [`ModelPricing::quote_for_client`]; now also honors
-    /// the `[cost]` config, not just the env override.
-    pub fn quote_from_env_or_agent_type(&self, agent_type: &str) -> ModelQuote {
-        self.quote_for_client(agent_type)
-    }
-
     fn heuristic_key(model: &str) -> Option<(String, PricingMatchKind)> {
         let m = normalize(model);
         if m.is_empty() {

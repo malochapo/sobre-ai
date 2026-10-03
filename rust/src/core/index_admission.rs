@@ -69,24 +69,6 @@ impl Admission {
     }
 }
 
-/// Decide whether a parallel build over `corpus_bytes` of source fits the
-/// current memory headroom.
-///
-/// Budget anchor: the guardian escalates to Hard at 2× the configured RSS
-/// limit (`max_ram_percent`), where background builds are aborted anyway —
-/// so a build whose estimated peak would push RSS past that threshold (1.5× max_ram_percent) is
-/// pointless to start in parallel. Everything below stays on the fast path;
-/// normal repositories (a few hundred MB of source) are never affected.
-#[must_use]
-pub fn admit(kind: BuildKind, corpus_bytes: u64) -> Admission {
-    let Some(limit) = super::memory_guard::rss_limit_bytes() else {
-        // No platform memory introspection — nothing to enforce.
-        return Admission::admitted();
-    };
-    let rss = super::memory_guard::get_rss_bytes().unwrap_or(0);
-    admit_with(kind, corpus_bytes, rss, limit)
-}
-
 /// Pure decision core, separated for tests.
 fn admit_with(kind: BuildKind, corpus_bytes: u64, rss_bytes: u64, limit_bytes: u64) -> Admission {
     let estimated = corpus_bytes.saturating_mul(kind.expansion_factor());

@@ -31,11 +31,6 @@ pub use score::{Hotspot, NavigabilityInputs, NavigabilityScore, grade, navigabil
 
 use serde::Serialize;
 
-/// Default cognitive-complexity threshold (SonarQube S3776 "HIGH" default).
-/// A function at or below this is considered navigable. Mirrored by
-/// `CodeHealthConfig::default().cognitive_threshold`.
-pub const DEFAULT_COGNITIVE_THRESHOLD: u32 = 15;
-
 /// Edit-gate behavior when an edit increases cognitive complexity.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum GateMode {

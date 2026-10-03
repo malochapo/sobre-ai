@@ -35,12 +35,7 @@ pub struct FunctionCognitive {
     pub cognitive: u32,
 }
 
-impl FunctionCognitive {
-    /// Number of source lines the function spans (at least 1).
-    pub fn line_span(&self) -> usize {
-        self.end_line.saturating_sub(self.line).saturating_add(1)
-    }
-}
+impl FunctionCognitive {}
 
 /// Compute cognitive complexity per function for `source` of the given file
 /// `extension`. Returns `None` when tree-sitter is disabled, the extension is

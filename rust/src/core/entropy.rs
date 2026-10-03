@@ -17,16 +17,7 @@ pub struct EntropyResult {
     pub techniques: Vec<String>,
 }
 
-impl EntropyResult {
-    /// Returns the percentage of tokens saved by compression.
-    pub fn savings_percent(&self) -> f64 {
-        if self.original_tokens == 0 {
-            return 0.0;
-        }
-        let saved = self.original_tokens.saturating_sub(self.compressed_tokens);
-        (saved as f64 / self.original_tokens as f64) * 100.0
-    }
-}
+impl EntropyResult {}
 
 /// Computes Shannon entropy (bits) over character frequencies in the text.
 pub fn shannon_entropy(text: &str) -> f64 {
@@ -821,28 +812,6 @@ mod tests {
         let result = entropy_compress(content);
         assert!(!result.output.is_empty(), "should produce non-empty output");
         assert!(result.compressed_tokens <= result.original_tokens);
-    }
-
-    #[test]
-    fn entropy_result_savings() {
-        let r = EntropyResult {
-            output: "short".to_string(),
-            original_tokens: 100,
-            compressed_tokens: 60,
-            techniques: vec!["test".to_string()],
-        };
-        assert!((r.savings_percent() - 40.0).abs() < 0.1);
-    }
-
-    #[test]
-    fn entropy_result_zero_original() {
-        let r = EntropyResult {
-            output: String::new(),
-            original_tokens: 0,
-            compressed_tokens: 0,
-            techniques: vec![],
-        };
-        assert_eq!(r.savings_percent(), 0.0);
     }
 
     #[test]

@@ -12,10 +12,13 @@
 //! primitives ([`crate::core::agent_identity`]); the signature covers the exact
 //! file bytes, so any tampering invalidates it.
 
-use ed25519_dalek::SigningKey;
 use serde::{Deserialize, Serialize};
 
-use crate::core::agent_identity::{hex_decode, hex_encode, sign_bytes_with, verify_signature};
+use crate::core::agent_identity::{hex_decode, verify_signature};
+#[cfg(test)]
+use crate::core::agent_identity::{hex_encode, sign_bytes_with};
+#[cfg(test)]
+use ed25519_dalek::SigningKey;
 
 /// A detached signature sidecar, written next to the registry file.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -50,6 +53,7 @@ pub fn sidecar_path(registry_path: &std::path::Path) -> std::path::PathBuf {
 /// Sign `content` with `key`, embedding the public key. For maintainers / the
 /// `addon registry sign` path. Pure.
 #[must_use]
+#[cfg(test)]
 pub fn sign_detached(content: &str, key: &SigningKey) -> RegistrySignature {
     let sig = sign_bytes_with(key, content.as_bytes());
     RegistrySignature {

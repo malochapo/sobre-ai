@@ -163,14 +163,6 @@ pub fn open_file(file_path: &str, project_root: &str) -> Result<Uri, String> {
     })
 }
 
-pub fn shutdown_all() {
-    if let Ok(mut backends) = BACKENDS.lock() {
-        for (_, backend) in backends.drain() {
-            drop(backend);
-        }
-    }
-}
-
 #[cfg(test)]
 pub(crate) fn seed_stub_backend(language: &str, backend: Box<dyn LspBackend>) {
     if let Ok(mut backends) = BACKENDS.lock() {

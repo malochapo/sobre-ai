@@ -21,11 +21,6 @@ use std::path::Path;
 /// readers and the `render()` writer can never disagree (#548).
 pub use crate::core::rules_canonical::{COMPRESSION_BLOCK_END, COMPRESSION_BLOCK_START};
 
-/// The agents that auto-load the shared project `AGENTS.md`. Kept in sync with
-/// `core::rules_overhead::collect_rules_files`, which attributes `AGENTS.md` to
-/// the same set.
-pub const AGENTS_MD_READERS: &[&str] = &["cursor", "codex"];
-
 /// True when `content` carries a *full* lean-ctx payload — the canonical rule
 /// set (the `RULES_MARKER` header) or the compression/output-style block —
 /// rather than just the lightweight `<!-- lean-ctx -->` cross-reference pointer.
@@ -40,6 +35,7 @@ pub fn carries_full_rules(content: &str) -> bool {
 
 /// True when `content` contains a lean-ctx block but only the lightweight
 /// pointer (no canonical rules, no compression payload).
+#[cfg(test)]
 pub fn is_pointer_only(content: &str) -> bool {
     content.contains("<!-- lean-ctx") && !carries_full_rules(content)
 }
