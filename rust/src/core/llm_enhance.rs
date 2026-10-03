@@ -71,32 +71,6 @@ impl LlmConfig {
     }
 }
 
-/// Expand a search query using LLM. Falls back to the original query on failure.
-pub fn expand_query(query: &str) -> String {
-    let cfg = crate::core::config::Config::load().llm;
-    if !cfg.enabled {
-        return query.to_string();
-    }
-
-    let prompt = format!(
-        "Expand this code search query with 2-3 related terms. \
-         Return ONLY the expanded query, no explanation.\n\
-         Query: {query}"
-    );
-
-    match call_llm(&cfg, &prompt) {
-        Ok(expanded) => {
-            let cleaned = expanded.trim().to_string();
-            if cleaned.is_empty() || cleaned.len() > query.len() * 5 {
-                query.to_string()
-            } else {
-                cleaned
-            }
-        }
-        Err(_) => query.to_string(),
-    }
-}
-
 /// Generate a human-readable explanation for a knowledge contradiction.
 /// Falls back to a simple diff-style description.
 pub fn explain_contradiction(fact_a: &str, fact_b: &str) -> String {
@@ -272,12 +246,6 @@ mod tests {
         let cfg = LlmConfig::default();
         assert!(!cfg.enabled);
         assert!(matches!(cfg.backend, LlmBackend::Ollama));
-    }
-
-    #[test]
-    fn expand_query_passthrough_when_disabled() {
-        let result = expand_query("test query");
-        assert_eq!(result, "test query");
     }
 
     #[test]

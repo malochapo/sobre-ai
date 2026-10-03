@@ -44,17 +44,6 @@ pub fn maybe_record_periodic(project_root: &str, candidate: SummaryCandidate) ->
     record_into(&mut store, candidate, cfg.max_kept as usize)
 }
 
-/// Force-record a summary now (explicit action), ignoring the turn cadence.
-pub fn record_now(project_root: &str, candidate: SummaryCandidate) -> Result<String, String> {
-    if !candidate.has_content {
-        return Err("session has nothing to summarize yet".to_string());
-    }
-    let cfg = config();
-    let mut store = SummaryStore::load_or_create(project_root);
-    record_into(&mut store, candidate, cfg.max_kept as usize)
-        .ok_or_else(|| "failed to persist summary".to_string())
-}
-
 fn record_into(
     store: &mut SummaryStore,
     candidate: SummaryCandidate,
@@ -114,12 +103,12 @@ mod tests {
     }
 
     #[test]
-    fn record_now_and_lexical_recall() {
+    fn recorded_summary_is_lexically_recalled() {
         let _g = crate::core::data_dir::test_env_lock();
         let (_tmp, root) = isolated();
 
-        let c = build_candidate(&session_with_work(3));
-        record_now(&root, c).unwrap();
+        let c = build_candidate(&session_with_work(30));
+        assert!(maybe_record_periodic(&root, c).is_some());
 
         let hits = recall(&root, "traversal edges cooccurrence", 5);
         assert!(!hits.is_empty(), "should recall the summary lexically");

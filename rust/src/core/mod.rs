@@ -199,7 +199,6 @@ pub mod search {
 // Domain: Session & Handoff
 // ---------------------------------------------------------------------------
 pub mod ccp_session_bundle;
-pub mod handoff_ledger;
 pub mod session;
 pub mod session_diff;
 pub mod session_summary;
@@ -207,7 +206,6 @@ pub mod session_summary;
 /// Convenience re-export: all session-related modules.
 pub mod session_domain {
     pub use super::ccp_session_bundle;
-    pub use super::handoff_ledger;
     pub use super::session;
     pub use super::session_diff;
 }
@@ -286,7 +284,6 @@ pub mod slo;
 pub mod slow_log;
 pub mod smells;
 pub mod surprise;
-pub mod verification_observability;
 
 // ---------------------------------------------------------------------------
 // Domain: Config & Infrastructure

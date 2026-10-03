@@ -294,18 +294,6 @@ pub fn cache_dir() -> Result<PathBuf, String> {
     category_dir("LEAN_CTX_CACHE_DIR", "XDG_CACHE_HOME", ".cache")
 }
 
-/// Runtime directory — `daemon.pid`, `daemon.sock`. `$XDG_RUNTIME_DIR/lean-ctx`.
-///
-/// When `XDG_RUNTIME_DIR` is unset (common on macOS), falls back to
-/// [`state_dir`] so runtime files stay in a private, writable, non-config path
-/// rather than a world-readable temp location.
-pub fn runtime_dir() -> Result<PathBuf, String> {
-    if let Some(base) = env_path("XDG_RUNTIME_DIR") {
-        return Ok(base.join("lean-ctx"));
-    }
-    state_dir()
-}
-
 /// Raw per-category target dir for the four XDG categories, **bypassing**
 /// single-dir back-compat and the test sandbox. Honors an explicit
 /// `LEAN_CTX_<CAT>_DIR` override, otherwise `<XDG base>/lean-ctx`.
@@ -665,15 +653,5 @@ mod tests {
             data_dir().unwrap(),
             crate::core::data_dir::lean_ctx_data_dir().unwrap()
         );
-    }
-
-    #[test]
-    fn runtime_dir_honors_xdg_runtime_dir() {
-        let _lock = crate::core::data_dir::test_env_lock();
-        let tmp = tempfile::tempdir().unwrap();
-        crate::test_env::set_var("XDG_RUNTIME_DIR", tmp.path());
-        let got = runtime_dir().unwrap();
-        crate::test_env::remove_var("XDG_RUNTIME_DIR");
-        assert_eq!(got, tmp.path().join("lean-ctx"));
     }
 }

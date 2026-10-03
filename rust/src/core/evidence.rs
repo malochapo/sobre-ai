@@ -35,12 +35,6 @@ impl Claim {
         }
     }
 
-    /// Attach the source URL the claim was extracted from.
-    pub fn with_source(mut self, url: impl Into<String>) -> Self {
-        self.source_url = Some(url.into());
-        self
-    }
-
     /// Compact one-line rendering: `(0.82) text` (+ ` — source` when present).
     pub fn render(&self) -> String {
         let mut s = format!("({:.2}) {}", self.confidence, self.text);
@@ -60,23 +54,6 @@ mod tests {
     fn new_clamps_confidence() {
         assert_eq!(Claim::new("x", 1.7).confidence, 1.0);
         assert_eq!(Claim::new("x", -0.3).confidence, 0.0);
-    }
-
-    #[test]
-    fn render_with_and_without_source() {
-        assert_eq!(Claim::new("Fact", 0.5).render(), "(0.50) Fact");
-        assert_eq!(
-            Claim::new("Fact", 0.5)
-                .with_source("https://x.com")
-                .render(),
-            "(0.50) Fact — https://x.com"
-        );
-    }
-
-    #[test]
-    fn with_source_sets_field() {
-        let c = Claim::new("t", 0.9).with_source("https://s");
-        assert_eq!(c.source_url.as_deref(), Some("https://s"));
     }
 
     #[test]

@@ -278,25 +278,6 @@ mod tests {
     }
 
     #[test]
-    fn ledger_slice_maps_state_and_phi() {
-        let mut led = ContextLedger::new();
-        led.record("src/a.rs", "full", 500, 13);
-        led.update_phi("src/a.rs", 0.9);
-        led.set_state("src/a.rs", ContextState::Pinned);
-        led.record("src/b.rs", "signatures", 800, 40);
-
-        let slice = ledger_slice(&led);
-        assert_eq!(slice.items.len(), 2);
-        let a = slice.items.iter().find(|i| i.path == "src/a.rs").unwrap();
-        assert_eq!(a.state, "pinned");
-        assert_eq!(a.phi, Some(0.9));
-        // record() marks a fresh entry as included (it just entered the window);
-        // the candidate fallback only applies to entries with no recorded state.
-        let b = slice.items.iter().find(|i| i.path == "src/b.rs").unwrap();
-        assert_eq!(b.state, "included");
-    }
-
-    #[test]
     fn session_slice_projects_task_and_lists() {
         let mut s = SessionState::new();
         s.task = Some(TaskInfo {
@@ -329,6 +310,29 @@ mod tests {
             slice.files_touched,
             vec!["rust/src/core/context_snapshot/timeline.rs".to_string()]
         );
+    }
+
+    #[test]
+    fn ledger_slice_maps_state_and_phi() {
+        let mut led = ContextLedger::new();
+        led.record("src/a.rs", "full", 500, 13);
+        for e in &mut led.entries {
+            if e.path == "src/a.rs" {
+                e.phi = Some(0.9);
+            }
+        }
+        led.set_state("src/a.rs", ContextState::Pinned);
+        led.record("src/b.rs", "signatures", 800, 40);
+
+        let slice = ledger_slice(&led);
+        assert_eq!(slice.items.len(), 2);
+        let a = slice.items.iter().find(|i| i.path == "src/a.rs").unwrap();
+        assert_eq!(a.state, "pinned");
+        assert_eq!(a.phi, Some(0.9));
+        // record() marks a fresh entry as included (it just entered the window);
+        // the candidate fallback only applies to entries with no recorded state.
+        let b = slice.items.iter().find(|i| i.path == "src/b.rs").unwrap();
+        assert_eq!(b.state, "included");
     }
 
     #[test]

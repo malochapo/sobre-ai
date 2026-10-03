@@ -17,28 +17,8 @@
 //! Net bill impact ≈ `gross_saved_tokens − total_tokens() × turns`.
 
 use std::sync::OnceLock;
-use std::sync::atomic::{AtomicUsize, Ordering};
 
 use crate::core::tokens::count_tokens;
-
-static PROACTIVE_INJECTED_TOKENS: AtomicUsize = AtomicUsize::new(0);
-
-/// Record tokens appended as proactive context so savings reports can account
-/// for the dynamic response-side injection separately from fixed overhead.
-pub fn record_proactive_injection(tokens: usize) {
-    PROACTIVE_INJECTED_TOKENS.fetch_add(tokens, Ordering::Relaxed);
-}
-
-/// Total proactive context tokens appended by this process.
-#[must_use]
-pub fn proactive_injected_tokens() -> usize {
-    PROACTIVE_INJECTED_TOKENS.load(Ordering::Relaxed)
-}
-
-#[cfg(test)]
-fn reset_proactive_injection() {
-    PROACTIVE_INJECTED_TOKENS.store(0, Ordering::Relaxed);
-}
 
 /// A measured breakdown, in tokens, of the per-turn context lean-ctx adds.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -296,13 +276,5 @@ mod tests {
     #[test]
     fn net_of_injection_collapses_to_gross_without_proxy_turns() {
         assert_eq!(net_of_injection(1234, 3000, 0), (0, 1234));
-    }
-
-    #[test]
-    fn proactive_injection_counter_accumulates() {
-        reset_proactive_injection();
-        record_proactive_injection(17);
-        record_proactive_injection(5);
-        assert_eq!(proactive_injected_tokens(), 22);
     }
 }

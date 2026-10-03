@@ -209,43 +209,6 @@ impl EntryEnergy {
     }
 }
 
-/// Boltzmann eviction decision.
-/// Returns the indices to evict from a list of energy scores, given a temperature T.
-///
-/// Temperature T = normalized memory pressure:
-/// - T ≈ 0: almost deterministic (only lowest-energy entries evicted)
-/// - T ≈ 1: stochastic (prevents pathological thrashing)
-pub fn boltzmann_select_evictions(
-    energies: &[f64],
-    num_to_evict: usize,
-    temperature: f64,
-) -> Vec<usize> {
-    if energies.is_empty() || num_to_evict == 0 {
-        return Vec::new();
-    }
-
-    let n = energies.len().min(num_to_evict);
-    let t = temperature.max(0.01); // avoid division by zero
-
-    // Compute eviction probabilities: P(evict_i) ∝ exp(-E_i / T)
-    let max_e = energies.iter().copied().fold(f64::MIN, f64::max);
-    let probs: Vec<f64> = energies
-        .iter()
-        .map(|&e| {
-            let normalized = (e - max_e) / t.max(0.01);
-            (-normalized).exp() // lower energy → higher eviction probability
-        })
-        .collect();
-
-    // Sort by eviction probability (highest first = lowest energy first)
-    let mut indexed: Vec<(usize, f64)> = probs.into_iter().enumerate().collect();
-    indexed.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
-
-    // At low temperature, this is nearly deterministic (sorted by energy).
-    // At high temperature, the probabilities flatten out.
-    indexed.into_iter().take(n).map(|(idx, _)| idx).collect()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -275,22 +238,6 @@ mod tests {
         let a = path_hash("src/main.rs");
         let b = path_hash("src/lib.rs");
         assert_eq!(matrix.association_strength(a, &[b]), 0.0);
-    }
-
-    #[test]
-    fn boltzmann_low_temp_is_deterministic() {
-        let energies = vec![10.0, 1.0, 5.0, 0.5, 8.0];
-        let evictions = boltzmann_select_evictions(&energies, 2, 0.01);
-        // Should evict lowest-energy entries: idx 3 (0.5) and idx 1 (1.0)
-        assert!(evictions.contains(&3));
-        assert!(evictions.contains(&1));
-    }
-
-    #[test]
-    fn boltzmann_high_temp_still_picks_n() {
-        let energies = vec![10.0, 1.0, 5.0, 0.5, 8.0];
-        let evictions = boltzmann_select_evictions(&energies, 2, 100.0);
-        assert_eq!(evictions.len(), 2);
     }
 
     #[test]

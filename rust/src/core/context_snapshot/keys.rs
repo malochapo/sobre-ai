@@ -46,11 +46,6 @@ pub fn load_or_create() -> Result<(SigningKey, bool), String> {
     Ok((SigningKey::from_bytes(&seed), true))
 }
 
-/// Hex of the public verifying key — the publisher's stable identity.
-pub fn public_key_hex(key: &SigningKey) -> String {
-    hex_encode(key.verifying_key().as_bytes())
-}
-
 fn parse_seed(s: &str) -> Result<[u8; 32], String> {
     if s.len() != 64 || !s.chars().all(|c| c.is_ascii_hexdigit()) {
         return Err(format!(
@@ -91,13 +86,5 @@ mod tests {
     fn corrupt_seed_rejected() {
         assert!(parse_seed("zz").is_err());
         assert!(parse_seed(&"a".repeat(63)).is_err());
-    }
-
-    #[test]
-    fn public_key_is_stable_for_seed() {
-        let k1 = SigningKey::from_bytes(&[7u8; 32]);
-        let k2 = SigningKey::from_bytes(&[7u8; 32]);
-        assert_eq!(public_key_hex(&k1), public_key_hex(&k2));
-        assert_eq!(public_key_hex(&k1).len(), 64);
     }
 }

@@ -61,31 +61,6 @@ impl EchoStats {
         }
         recent.iter().map(|r| r.echo_ratio).sum::<f64>() / recent.len() as f64
     }
-
-    /// Per-day `(YYYY-MM-DD, avg_echo_ratio, samples)` over the last `days`
-    /// days, ascending by day — the dashboard's learning trend (#507).
-    /// Days are UTC, consistent with the ledger's day slices.
-    pub fn daily_trend(&self, days: u32) -> Vec<(String, f64, u64)> {
-        use std::collections::BTreeMap;
-        let cutoff = now_unix().saturating_sub(u64::from(days) * 86_400);
-        let mut by_day: BTreeMap<String, (f64, u64)> = BTreeMap::new();
-        for r in &self.reports {
-            if r.recorded_unix < cutoff {
-                continue;
-            }
-            let Some(dt) = chrono::DateTime::from_timestamp(r.recorded_unix as i64, 0) else {
-                continue;
-            };
-            let day = dt.format("%Y-%m-%d").to_string();
-            let entry = by_day.entry(day).or_default();
-            entry.0 += r.echo_ratio;
-            entry.1 += 1;
-        }
-        by_day
-            .into_iter()
-            .map(|(d, (sum, n))| (d, sum / n as f64, n))
-            .collect()
-    }
 }
 
 fn stats_path() -> PathBuf {
@@ -383,50 +358,6 @@ mod tests {
         let report = analyze(response, &[src]);
         assert_eq!(report.code_lines, 0);
         assert!(report.echo_ratio.abs() < f64::EPSILON);
-    }
-
-    #[test]
-    fn daily_trend_groups_by_utc_day_and_averages() {
-        let now = now_unix();
-        // Anchor both "today" samples to the start of the current UTC day. A naive
-        // `now` / `now - 60` pair straddles midnight when the suite runs within 60s
-        // of a UTC day rollover, yielding a spurious third day (flaky in CI).
-        let day = now - (now % 86_400);
-        let stats = EchoStats {
-            reports: vec![
-                // Two samples on the same UTC day (today): avg of 0.2 and 0.6 = 0.4.
-                EchoReport {
-                    echo_ratio: 0.2,
-                    recorded_unix: day + 100,
-                    ..Default::default()
-                },
-                EchoReport {
-                    echo_ratio: 0.6,
-                    recorded_unix: day + 200,
-                    ..Default::default()
-                },
-                // One sample two UTC days ago.
-                EchoReport {
-                    echo_ratio: 1.0,
-                    recorded_unix: day - 2 * 86_400 + 100,
-                    ..Default::default()
-                },
-                // Outside the 14-day window — must be excluded.
-                EchoReport {
-                    echo_ratio: 1.0,
-                    recorded_unix: day - 30 * 86_400,
-                    ..Default::default()
-                },
-            ],
-            ..Default::default()
-        };
-        let trend = stats.daily_trend(14);
-        assert_eq!(trend.len(), 2, "two distinct days inside the window");
-        // Ascending by day: the older day first.
-        assert_eq!(trend[0].2, 1, "older day has one sample");
-        assert!((trend[0].1 - 1.0).abs() < f64::EPSILON);
-        assert_eq!(trend[1].2, 2, "today has two samples");
-        assert!((trend[1].1 - 0.4).abs() < 1e-9);
     }
 
     #[test]

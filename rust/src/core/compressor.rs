@@ -32,15 +32,6 @@ pub fn strip_ansi(s: &str) -> String {
     result
 }
 
-/// Returns the ratio of ANSI escape characters to total string length.
-pub fn ansi_density(s: &str) -> f64 {
-    if s.is_empty() {
-        return 0.0;
-    }
-    let escape_bytes = s.chars().filter(|&c| c == '\x1b').count();
-    escape_bytes as f64 / s.len() as f64
-}
-
 /// Strips comments, blank lines, and normalizes indentation for maximum token savings.
 pub fn aggressive_compress(content: &str, ext: Option<&str>) -> String {
     // Structured data (JSON/JSONL) carries no comments and barely compresses via
@@ -564,16 +555,5 @@ mod tests {
         let input = "clean text without escapes";
         let result = strip_ansi(input);
         assert_eq!(result, input);
-    }
-
-    #[test]
-    fn test_ansi_density_zero_for_clean() {
-        assert_eq!(ansi_density("hello world"), 0.0);
-    }
-
-    #[test]
-    fn test_ansi_density_nonzero_for_colored() {
-        let input = "\x1b[31mred\x1b[0m";
-        assert!(ansi_density(input) > 0.0);
     }
 }

@@ -146,11 +146,6 @@ impl A2AMessage {
         self
     }
 
-    pub fn with_privacy(mut self, privacy: PrivacyLevel) -> Self {
-        self.privacy = privacy;
-        self
-    }
-
     pub fn with_ttl_hours(mut self, hours: u64) -> Self {
         self.expires_at = Some(Utc::now() + chrono::Duration::hours(hours as i64));
         self
@@ -158,15 +153,6 @@ impl A2AMessage {
 
     pub fn is_expired(&self) -> bool {
         self.expires_at.is_some_and(|exp| Utc::now() > exp)
-    }
-
-    pub fn is_visible_to(&self, agent_id: &str) -> bool {
-        if self.is_expired() {
-            return false;
-        }
-        let is_sender = self.from_agent == agent_id;
-        let is_recipient = self.to_agent.as_deref().is_some_and(|t| t == agent_id);
-        self.privacy.allows_access(is_sender, is_recipient)
     }
 
     pub fn mark_read(&mut self, agent_id: &str) {
@@ -197,35 +183,5 @@ mod tests {
         assert!(!PrivacyLevel::Private.allows_access(false, false));
         assert!(PrivacyLevel::Private.allows_access(true, false));
         assert!(PrivacyLevel::Private.allows_access(false, true));
-    }
-
-    #[test]
-    fn message_visibility() {
-        let msg = A2AMessage::new(
-            "agent-a",
-            Some("agent-b"),
-            MessageCategory::Notification,
-            "hello",
-        )
-        .with_privacy(PrivacyLevel::Private);
-
-        assert!(msg.is_visible_to("agent-a"));
-        assert!(msg.is_visible_to("agent-b"));
-        assert!(!msg.is_visible_to("agent-c"));
-    }
-
-    #[test]
-    fn broadcast_visibility() {
-        let msg = A2AMessage::new("agent-a", None, MessageCategory::Notification, "hey all");
-        assert!(msg.is_visible_to("agent-a"));
-        assert!(msg.is_visible_to("agent-x"));
-    }
-
-    #[test]
-    fn message_expiry() {
-        let mut msg = A2AMessage::new("a", None, MessageCategory::Notification, "tmp");
-        msg.expires_at = Some(Utc::now() - chrono::Duration::hours(1));
-        assert!(msg.is_expired());
-        assert!(!msg.is_visible_to("a"));
     }
 }

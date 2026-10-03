@@ -26,12 +26,6 @@ impl ModeGuard {
         CURRENT_MODE.with(|m| *m.borrow_mut() = Some(mode.to_string()));
         Self
     }
-
-    pub fn with_detail(mode: &str, detail: &str) -> Self {
-        CURRENT_MODE.with(|m| *m.borrow_mut() = Some(mode.to_string()));
-        CURRENT_DETAIL.with(|d| *d.borrow_mut() = Some(detail.to_string()));
-        Self
-    }
 }
 
 impl Drop for ModeGuard {
@@ -369,16 +363,5 @@ mod tests {
             assert_eq!(current_mode().as_deref(), Some("map"));
         }
         assert!(current_mode().is_none());
-    }
-
-    #[test]
-    fn mode_guard_with_detail() {
-        {
-            let _guard = ModeGuard::with_detail("shell", "3 patterns");
-            assert_eq!(current_mode().as_deref(), Some("shell"));
-            assert_eq!(current_detail().as_deref(), Some("3 patterns"));
-        }
-        assert!(current_mode().is_none());
-        assert!(current_detail().is_none());
     }
 }

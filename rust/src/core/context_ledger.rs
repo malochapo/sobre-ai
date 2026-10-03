@@ -1,5 +1,3 @@
-use std::collections::HashMap;
-
 use serde::{Deserialize, Serialize};
 
 use super::context_field::{
@@ -319,13 +317,6 @@ impl ContextLedger {
         }
     }
 
-    /// Update the Phi score for an entry.
-    pub fn update_phi(&mut self, path: &str, phi: f64) {
-        if let Some(entry) = self.entries.iter_mut().find(|e| e.path == path) {
-            entry.phi = Some(phi);
-        }
-    }
-
     /// Set the state for an entry. Accepts partial paths and basenames via
     /// [`Self::resolve_entry`] (#715).
     pub fn set_state(&mut self, path: &str, state: ContextState) {
@@ -398,19 +389,6 @@ impl ContextLedger {
         }
     }
 
-    /// Find an entry by its ContextItemId.
-    pub fn find_by_id(&self, id: &ContextItemId) -> Option<&LedgerEntry> {
-        self.entries.iter().find(|e| e.id.as_ref() == Some(id))
-    }
-
-    /// Get all entries with a specific state.
-    pub fn items_by_state(&self, state: ContextState) -> Vec<&LedgerEntry> {
-        self.entries
-            .iter()
-            .filter(|e| e.state == Some(state))
-            .collect()
-    }
-
     /// Eviction candidates ordered by Phi (lowest first), falling back to
     /// timestamp for entries without Phi scores.
     pub fn eviction_candidates_by_phi(&self, keep_count: usize) -> Vec<String> {
@@ -470,17 +448,6 @@ impl ContextLedger {
             crate::core::introspect::tick("gwt_ignition");
         }
         ignited
-    }
-
-    /// Mark entries as stale if their source hash has changed.
-    pub fn mark_stale_by_hash(&mut self, path: &str, new_hash: &str) {
-        if let Some(entry) = self.entries.iter_mut().find(|e| e.path == path)
-            && let Some(ref old_hash) = entry.source_hash
-            && old_hash != new_hash
-        {
-            entry.state = Some(ContextState::Stale);
-            entry.source_hash = Some(new_hash.to_string());
-        }
     }
 
     pub fn pressure(&self) -> ContextPressure {
@@ -550,14 +517,6 @@ impl ContextLedger {
             .collect();
         costs.sort_by_key(|b| std::cmp::Reverse(b.1));
         costs
-    }
-
-    pub fn mode_distribution(&self) -> HashMap<String, usize> {
-        let mut dist: HashMap<String, usize> = HashMap::new();
-        for entry in &self.entries {
-            *dist.entry(entry.mode.clone()).or_insert(0) += 1;
-        }
-        dist
     }
 
     pub fn eviction_candidates(&self, keep_count: usize) -> Vec<String> {
@@ -810,86 +769,7 @@ pub struct ReinjectionPlan {
     pub new_utilization: f64,
 }
 
-impl ContextLedger {
-    pub fn reinjection_plan(
-        &self,
-        intent: &super::intent_engine::StructuredIntent,
-        target_utilization: f64,
-    ) -> ReinjectionPlan {
-        let current_util = self.total_tokens_sent as f64 / self.window_size as f64;
-        if current_util <= target_utilization {
-            return ReinjectionPlan {
-                actions: Vec::new(),
-                total_tokens_freed: 0,
-                new_utilization: current_util,
-            };
-        }
-
-        let tokens_to_free =
-            self.total_tokens_sent - (self.window_size as f64 * target_utilization) as usize;
-
-        let target_set: std::collections::HashSet<&str> = intent
-            .targets
-            .iter()
-            .map(std::string::String::as_str)
-            .collect();
-
-        let mut candidates: Vec<(usize, &LedgerEntry)> = self
-            .entries
-            .iter()
-            .enumerate()
-            .filter(|(_, e)| !target_set.iter().any(|t| e.path.contains(t)))
-            .collect();
-
-        candidates.sort_by(|a, b| {
-            let a_phi = a.1.phi.unwrap_or(0.0);
-            let b_phi = b.1.phi.unwrap_or(0.0);
-            a_phi
-                .partial_cmp(&b_phi)
-                .unwrap_or_else(|| a.1.timestamp.cmp(&b.1.timestamp))
-        });
-
-        let mut actions = Vec::new();
-        let mut freed = 0usize;
-
-        for (_, entry) in &candidates {
-            if freed >= tokens_to_free {
-                break;
-            }
-            if let Some((new_mode, new_tokens)) = downgrade_mode(&entry.mode, entry.sent_tokens) {
-                let saving = entry.sent_tokens.saturating_sub(new_tokens);
-                if saving > 0 {
-                    actions.push(ReinjectionAction {
-                        path: entry.path.clone(),
-                        current_mode: entry.mode.clone(),
-                        new_mode,
-                        tokens_freed: saving,
-                    });
-                    freed += saving;
-                }
-            }
-        }
-
-        let new_sent = self.total_tokens_sent.saturating_sub(freed);
-        let new_utilization = new_sent as f64 / self.window_size as f64;
-
-        ReinjectionPlan {
-            actions,
-            total_tokens_freed: freed,
-            new_utilization,
-        }
-    }
-}
-
-fn downgrade_mode(current_mode: &str, current_tokens: usize) -> Option<(String, usize)> {
-    match current_mode {
-        "full" => Some(("signatures".to_string(), current_tokens / 5)),
-        "aggressive" => Some(("signatures".to_string(), current_tokens / 3)),
-        "signatures" => Some(("map".to_string(), current_tokens / 2)),
-        "map" => Some(("reference".to_string(), current_tokens / 4)),
-        _ => None,
-    }
-}
+impl ContextLedger {}
 
 /// Resolve the Global-Workspace ignition z-score threshold (#6): the
 /// `LEAN_CTX_GWT_IGNITION_Z` env override (must be > 0) wins, else the default
@@ -928,6 +808,40 @@ mod tests {
         assert_eq!(ledger.total_tokens_sent, 700);
         assert_eq!(ledger.total_tokens_saved, 800);
         assert_eq!(ledger.entries.len(), 2);
+    }
+
+    fn set_phi(ledger: &mut ContextLedger, path: &str, phi: f64) {
+        for e in &mut ledger.entries {
+            if e.path == path {
+                e.phi = Some(phi);
+            }
+        }
+    }
+
+    #[test]
+    fn eviction_by_phi_prefers_low_phi() {
+        let mut ledger = ContextLedger::with_window_size(10000);
+        ledger.record("high.rs", "full", 100, 100);
+        set_phi(&mut ledger, "high.rs", 0.9);
+        ledger.record("low.rs", "full", 100, 100);
+        set_phi(&mut ledger, "low.rs", 0.1);
+        let candidates = ledger.eviction_candidates_by_phi(1);
+        assert_eq!(candidates, vec!["low.rs"]);
+    }
+
+    #[test]
+    fn eviction_by_phi_skips_pinned() {
+        let mut ledger = ContextLedger::with_window_size(10000);
+        ledger.record("pinned.rs", "full", 100, 100);
+        set_phi(&mut ledger, "pinned.rs", 0.01);
+        ledger.set_state(
+            "pinned.rs",
+            crate::core::context_field::ContextState::Pinned,
+        );
+        ledger.record("normal.rs", "full", 100, 100);
+        set_phi(&mut ledger, "normal.rs", 0.5);
+        let candidates = ledger.eviction_candidates_by_phi(1);
+        assert_eq!(candidates, vec!["normal.rs"]);
     }
 
     #[test]
@@ -1103,88 +1017,12 @@ mod tests {
     }
 
     #[test]
-    fn mode_distribution_counts() {
-        let mut ledger = ContextLedger::new();
-        ledger.record("a.rs", "full", 100, 100);
-        ledger.record("b.rs", "signatures", 100, 50);
-        ledger.record("c.rs", "full", 100, 100);
-        let dist = ledger.mode_distribution();
-        assert_eq!(dist.get("full"), Some(&2));
-        assert_eq!(dist.get("signatures"), Some(&1));
-    }
-
-    #[test]
     fn format_summary_includes_key_info() {
         let mut ledger = ContextLedger::with_window_size(10000);
         ledger.record("a.rs", "full", 500, 500);
         let summary = ledger.format_summary();
         assert!(summary.contains("500/10000"));
         assert!(summary.contains("1 files"));
-    }
-
-    #[test]
-    fn reinjection_no_action_when_low_pressure() {
-        use crate::core::intent_engine::StructuredIntent;
-
-        let mut ledger = ContextLedger::with_window_size(10000);
-        ledger.record("a.rs", "full", 100, 100);
-        let intent = StructuredIntent::from_query("fix bug in a.rs");
-        let plan = ledger.reinjection_plan(&intent, 0.7);
-        assert!(plan.actions.is_empty());
-        assert_eq!(plan.total_tokens_freed, 0);
-    }
-
-    #[test]
-    fn reinjection_downgrades_non_target_files() {
-        use crate::core::intent_engine::StructuredIntent;
-
-        let mut ledger = ContextLedger::with_window_size(1000);
-        ledger.record("src/target.rs", "full", 400, 400);
-        std::thread::sleep(std::time::Duration::from_millis(10));
-        ledger.record("src/other.rs", "full", 400, 400);
-        std::thread::sleep(std::time::Duration::from_millis(10));
-        ledger.record("src/utils.rs", "full", 200, 200);
-
-        let intent = StructuredIntent::from_query("fix bug in target.rs");
-        let plan = ledger.reinjection_plan(&intent, 0.5);
-
-        assert!(!plan.actions.is_empty());
-        assert!(
-            plan.actions.iter().all(|a| !a.path.contains("target")),
-            "should not downgrade target file"
-        );
-        assert!(plan.total_tokens_freed > 0);
-    }
-
-    #[test]
-    fn reinjection_preserves_targets() {
-        use crate::core::intent_engine::StructuredIntent;
-
-        let mut ledger = ContextLedger::with_window_size(1000);
-        ledger.record("src/auth.rs", "full", 900, 900);
-        let intent = StructuredIntent::from_query("fix bug in auth.rs");
-        let plan = ledger.reinjection_plan(&intent, 0.5);
-        assert!(
-            plan.actions.is_empty(),
-            "should not downgrade target files even under pressure"
-        );
-    }
-
-    #[test]
-    fn downgrade_mode_chain() {
-        assert_eq!(
-            downgrade_mode("full", 1000),
-            Some(("signatures".to_string(), 200))
-        );
-        assert_eq!(
-            downgrade_mode("signatures", 200),
-            Some(("map".to_string(), 100))
-        );
-        assert_eq!(
-            downgrade_mode("map", 100),
-            Some(("reference".to_string(), 25))
-        );
-        assert_eq!(downgrade_mode("reference", 25), None);
     }
 
     #[test]
@@ -1219,14 +1057,6 @@ mod tests {
     }
 
     #[test]
-    fn update_phi_works() {
-        let mut ledger = ContextLedger::new();
-        ledger.record("a.rs", "full", 100, 100);
-        ledger.update_phi("a.rs", 0.85);
-        assert_eq!(ledger.entries[0].phi, Some(0.85));
-    }
-
-    #[test]
     fn set_state_works() {
         let mut ledger = ContextLedger::new();
         ledger.record("a.rs", "full", 100, 100);
@@ -1235,63 +1065,6 @@ mod tests {
             ledger.entries[0].state,
             Some(crate::core::context_field::ContextState::Pinned)
         );
-    }
-
-    #[test]
-    fn items_by_state_filters() {
-        let mut ledger = ContextLedger::new();
-        ledger.record("a.rs", "full", 100, 100);
-        ledger.record("b.rs", "full", 100, 100);
-        ledger.set_state("b.rs", crate::core::context_field::ContextState::Excluded);
-        let included = ledger.items_by_state(crate::core::context_field::ContextState::Included);
-        assert_eq!(included.len(), 1);
-        assert_eq!(included[0].path, "a.rs");
-    }
-
-    #[test]
-    fn eviction_by_phi_prefers_low_phi() {
-        let mut ledger = ContextLedger::with_window_size(10000);
-        ledger.record("high.rs", "full", 100, 100);
-        ledger.update_phi("high.rs", 0.9);
-        ledger.record("low.rs", "full", 100, 100);
-        ledger.update_phi("low.rs", 0.1);
-        let candidates = ledger.eviction_candidates_by_phi(1);
-        assert_eq!(candidates, vec!["low.rs"]);
-    }
-
-    #[test]
-    fn eviction_by_phi_skips_pinned() {
-        let mut ledger = ContextLedger::with_window_size(10000);
-        ledger.record("pinned.rs", "full", 100, 100);
-        ledger.update_phi("pinned.rs", 0.01);
-        ledger.set_state(
-            "pinned.rs",
-            crate::core::context_field::ContextState::Pinned,
-        );
-        ledger.record("normal.rs", "full", 100, 100);
-        ledger.update_phi("normal.rs", 0.5);
-        let candidates = ledger.eviction_candidates_by_phi(1);
-        assert_eq!(candidates, vec!["normal.rs"]);
-    }
-
-    #[test]
-    fn mark_stale_by_hash_detects_change() {
-        let mut ledger = ContextLedger::new();
-        ledger.record("a.rs", "full", 100, 100);
-        ledger.entries[0].source_hash = Some("hash_v1".to_string());
-        ledger.mark_stale_by_hash("a.rs", "hash_v2");
-        assert_eq!(
-            ledger.entries[0].state,
-            Some(crate::core::context_field::ContextState::Stale)
-        );
-    }
-
-    #[test]
-    fn find_by_id_works() {
-        let mut ledger = ContextLedger::new();
-        ledger.record("src/lib.rs", "full", 100, 100);
-        let id = crate::core::context_field::ContextItemId::from_file("src/lib.rs");
-        assert!(ledger.find_by_id(&id).is_some());
     }
 
     #[test]

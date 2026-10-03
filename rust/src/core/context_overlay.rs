@@ -168,10 +168,6 @@ impl OverlayStore {
             .collect()
     }
 
-    pub fn active_for_scope(&self, scope: &OverlayScope) -> Vec<&ContextOverlay> {
-        self.overlays.iter().filter(|o| o.scope == *scope).collect()
-    }
-
     /// Applies all overlays for `target` to `current_state`, returning the
     /// effective state. Later overlays take precedence.
     pub fn apply_to_state(
@@ -191,15 +187,6 @@ impl OverlayStore {
             };
         }
         state
-    }
-
-    /// Marks overlays as stale when the source hash has changed.
-    pub fn mark_stale_by_hash(&mut self, target: &ContextItemId, new_hash: &str) {
-        for overlay in self.overlays.iter_mut().filter(|o| o.target == *target) {
-            if overlay.before_hash != new_hash {
-                overlay.stale = true;
-            }
-        }
     }
 
     /// Removes overlays whose `Expire` operation has elapsed.
@@ -331,47 +318,7 @@ mod tests {
 
     // -- Staleness -----------------------------------------------------------
 
-    #[test]
-    fn mark_stale_when_hash_changes() {
-        let mut store = OverlayStore::new();
-        store.add(make_overlay(OverlayOp::Include));
-        assert!(!store.overlays[0].stale);
-
-        store.mark_stale_by_hash(&make_target(), "different_hash");
-        assert!(store.overlays[0].stale);
-    }
-
-    #[test]
-    fn no_stale_when_hash_matches() {
-        let mut store = OverlayStore::new();
-        store.add(make_overlay(OverlayOp::Include));
-        store.mark_stale_by_hash(&make_target(), "abc123");
-        assert!(!store.overlays[0].stale);
-    }
-
     // -- Scope filtering -----------------------------------------------------
-
-    #[test]
-    fn active_for_scope_filters_correctly() {
-        let mut store = OverlayStore::new();
-        store.add(make_overlay(OverlayOp::Include));
-        store.add(ContextOverlay::new(
-            ContextItemId::from_file("other.rs"),
-            OverlayOp::Include,
-            OverlayScope::Project,
-            "xyz".into(),
-            OverlayAuthor::User,
-        ));
-
-        let session = store.active_for_scope(&OverlayScope::Session);
-        assert_eq!(session.len(), 1);
-
-        let project = store.active_for_scope(&OverlayScope::Project);
-        assert_eq!(project.len(), 1);
-
-        let global = store.active_for_scope(&OverlayScope::Global);
-        assert!(global.is_empty());
-    }
 
     // -- Expiry pruning ------------------------------------------------------
 

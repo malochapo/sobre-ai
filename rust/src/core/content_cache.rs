@@ -194,22 +194,6 @@ pub fn insert(path: &Path, state: FileState, content: Arc<str>) {
     }
 }
 
-/// Read a file through the cache: returns cached content on a fresh hit, else
-/// reads from disk (UTF-8), populates the cache, and returns it. `None` on a
-/// non-UTF-8/unreadable/unstatable file. Convenience for callers without their
-/// own size/special-file gating (the search-index build and `ctx_search` use
-/// the explicit [`get`]/[`insert`] pair so they keep their own skip rules).
-pub fn get_or_read(path: &Path) -> Option<Arc<str>> {
-    let state = FileState::from_path(path)?;
-    if let Some(hit) = get(path, state) {
-        return Some(hit);
-    }
-    let content = std::fs::read_to_string(path).ok()?;
-    let arc: Arc<str> = Arc::from(content);
-    insert(path, state, Arc::clone(&arc));
-    Some(arc)
-}
-
 /// Drop all entries, freeing the heap. Called by the eviction orchestrator under
 /// memory pressure; the cache simply re-warms on subsequent reads.
 pub fn clear() {
@@ -343,35 +327,6 @@ mod tests {
             ..s1
         };
         assert!(get(&p, s_newer).is_none(), "mtime change must miss");
-    }
-
-    #[test]
-    fn get_or_read_populates_then_serves_from_cache() {
-        let _g = TEST_LOCK
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        fresh_cache(1024 * 1024);
-        let dir = tempfile::tempdir().unwrap();
-        let p = write(dir.path(), "a.rs", "hello world\n");
-
-        let before = stats();
-        let first = get_or_read(&p).unwrap();
-        assert_eq!(&*first, "hello world\n");
-        let after_first = stats();
-        assert_eq!(
-            after_first.inserts,
-            before.inserts + 1,
-            "first read inserts"
-        );
-
-        let second = get_or_read(&p).unwrap();
-        assert_eq!(&*second, "hello world\n");
-        let after_second = stats();
-        assert_eq!(
-            after_second.inserts, after_first.inserts,
-            "second read must NOT re-insert (served from cache)"
-        );
-        assert!(after_second.hits > after_first.hits, "second read is a hit");
     }
 
     #[test]

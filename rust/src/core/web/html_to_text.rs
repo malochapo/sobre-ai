@@ -43,58 +43,6 @@ pub fn title(html: &str) -> Option<String> {
     extract_title(html)
 }
 
-/// Strip Markdown decorations to obtain flowing plain text.
-pub fn markdown_to_text(markdown: &str) -> String {
-    let mut out = String::with_capacity(markdown.len());
-    let mut in_fence = false;
-    for line in markdown.lines() {
-        if line.trim_start().starts_with("```") {
-            in_fence = !in_fence;
-            continue;
-        }
-        if in_fence {
-            out.push_str(line);
-            out.push('\n');
-            continue;
-        }
-        let stripped = strip_inline_markup(line);
-        out.push_str(&stripped);
-        out.push('\n');
-    }
-    out.trim().to_string()
-}
-
-fn strip_inline_markup(line: &str) -> String {
-    let without_heading = line.trim_start().trim_start_matches('#').trim_start();
-    replace_links_with_text(without_heading)
-}
-
-/// Replace `[text](href)` spans with their visible text only.
-fn replace_links_with_text(s: &str) -> String {
-    let mut out = String::with_capacity(s.len());
-    let bytes = s.as_bytes();
-    let mut i = 0;
-    while i < bytes.len() {
-        if bytes[i] == b'['
-            && let Some(rel_close) = s[i + 1..].find(']')
-        {
-            let close = i + 1 + rel_close;
-            if s[close + 1..].starts_with('(')
-                && let Some(rel_paren) = s[close + 2..].find(')')
-            {
-                out.push_str(&s[i + 1..close]);
-                i = close + 2 + rel_paren + 1;
-                continue;
-            }
-        }
-        // Copy a whole UTF-8 char starting at i.
-        let ch_len = utf8_len(bytes[i]);
-        out.push_str(&s[i..i + ch_len]);
-        i += ch_len;
-    }
-    out
-}
-
 fn utf8_len(first: u8) -> usize {
     match first {
         b if b < 0x80 => 1,
@@ -949,13 +897,6 @@ mod tests {
             doc.markdown,
             "| a | b | c |\n| --- | --- | --- |\n| 1 |  |  |"
         );
-    }
-
-    #[test]
-    fn markdown_to_text_strips_markup() {
-        let md = "# Heading\n\nSee [link](https://x.com) here.";
-        let text = markdown_to_text(md);
-        assert_eq!(text, "Heading\n\nSee link here.");
     }
 
     #[test]

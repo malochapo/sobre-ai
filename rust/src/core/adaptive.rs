@@ -52,49 +52,8 @@ pub fn classify_from_context(cache: &SessionCache) -> TaskComplexity {
 }
 
 #[cfg(test)]
-pub fn classify_from_signals(
-    file_count: usize,
-    has_tests: bool,
-    has_multi_lang: bool,
-) -> TaskComplexity {
-    if has_tests && file_count >= 5 {
-        return TaskComplexity::Architectural;
-    }
-
-    if has_multi_lang || file_count >= 3 {
-        return TaskComplexity::Standard;
-    }
-
-    TaskComplexity::Mechanical
-}
-
-#[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_mechanical_classification() {
-        let result = classify_from_signals(1, false, false);
-        assert_eq!(result, TaskComplexity::Mechanical);
-    }
-
-    #[test]
-    fn test_standard_classification() {
-        let result = classify_from_signals(3, false, false);
-        assert_eq!(result, TaskComplexity::Standard);
-    }
-
-    #[test]
-    fn test_architectural_classification() {
-        let result = classify_from_signals(5, true, false);
-        assert_eq!(result, TaskComplexity::Architectural);
-    }
-
-    #[test]
-    fn test_multi_lang_triggers_standard() {
-        let result = classify_from_signals(1, false, true);
-        assert_eq!(result, TaskComplexity::Standard);
-    }
 
     #[test]
     fn test_instruction_suffix_not_empty() {

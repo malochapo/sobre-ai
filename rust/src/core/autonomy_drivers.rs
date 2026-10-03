@@ -185,32 +185,6 @@ pub fn write_project_autonomy_drivers_v1(
     Ok(path)
 }
 
-pub fn format_compact_event(ev: &AutonomyDriverEventV1) -> String {
-    let mut parts = Vec::new();
-    for d in &ev.decisions {
-        let driver = match d.driver {
-            AutonomyDriverKindV1::Preload => "preload",
-            AutonomyDriverKindV1::Prefetch => "prefetch",
-            AutonomyDriverKindV1::Dedup => "dedup",
-            AutonomyDriverKindV1::Response => "response",
-        };
-        let verdict = match d.verdict {
-            AutonomyVerdictV1::Run => "run",
-            AutonomyVerdictV1::Skip => "skip",
-        };
-        parts.push(format!("{driver}={verdict}({})", d.reason_code));
-    }
-    format!(
-        "[autonomy:{}] {}",
-        match ev.phase {
-            AutonomyPhaseV1::PreCall => "pre",
-            AutonomyPhaseV1::PostRead => "read",
-            AutonomyPhaseV1::PostCall => "post",
-        },
-        parts.join(", ")
-    )
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -238,28 +212,5 @@ mod tests {
         }
         assert!(s.events.len() <= MAX_EVENTS);
         assert_eq!(s.events.last().unwrap().seq, s.next_seq - 1);
-    }
-
-    #[test]
-    fn compact_format_includes_phase_and_drivers() {
-        let ev = AutonomyDriverEventV1 {
-            seq: 1,
-            created_at: "2026-01-01T00:00:00Z".to_string(),
-            phase: AutonomyPhaseV1::PostCall,
-            role: "coder".to_string(),
-            profile: "exploration".to_string(),
-            tool: "ctx_read".to_string(),
-            action: Some("full".to_string()),
-            decisions: vec![AutonomyDriverDecisionV1 {
-                driver: AutonomyDriverKindV1::Response,
-                verdict: AutonomyVerdictV1::Run,
-                reason_code: "output_large".to_string(),
-                reason: "output large".to_string(),
-                detail: None,
-            }],
-        };
-        let s = format_compact_event(&ev);
-        assert!(s.contains("autonomy:post"));
-        assert!(s.contains("response=run"));
     }
 }

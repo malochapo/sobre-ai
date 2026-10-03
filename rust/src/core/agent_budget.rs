@@ -87,10 +87,6 @@ pub fn record_consumption(agent_id: &str, tokens: usize) {
     });
 }
 
-pub fn get_status(agent_id: &str) -> AgentBudget {
-    with_budgets(|map| ensure_entry(map, agent_id).clone())
-}
-
 pub fn reset(agent_id: &str) {
     with_budgets(|map| {
         let budget = ensure_entry(map, agent_id);
@@ -106,13 +102,6 @@ pub fn reset(agent_id: &str) {
 pub fn remove(agent_id: &str) {
     with_budgets(|map| {
         map.remove(agent_id);
-    });
-}
-
-pub fn set_limit(agent_id: &str, limit: usize) {
-    with_budgets(|map| {
-        let budget = ensure_entry(map, agent_id);
-        budget.token_limit = if limit == 0 { usize::MAX } else { limit };
     });
 }
 
@@ -151,58 +140,5 @@ mod tests {
         let id = test_agent("unlimited");
         let result = check_budget(&id, 1_000_000);
         assert!(matches!(result, BudgetCheckResult::Allowed { .. }));
-    }
-
-    #[test]
-    fn set_limit_and_exceed() {
-        let id = test_agent("exceed");
-        set_limit(&id, 1000);
-        record_consumption(&id, 800);
-        let result = check_budget(&id, 300);
-        assert!(matches!(
-            result,
-            BudgetCheckResult::Exceeded {
-                limit: 1000,
-                consumed: 800
-            }
-        ));
-    }
-
-    #[test]
-    fn warning_at_80_percent() {
-        let id = test_agent("warning");
-        set_limit(&id, 1000);
-        record_consumption(&id, 700);
-        let result = check_budget(&id, 100);
-        assert!(matches!(result, BudgetCheckResult::Warning { .. }));
-    }
-
-    #[test]
-    fn reset_clears_consumption() {
-        let id = test_agent("reset");
-        set_limit(&id, 1000);
-        record_consumption(&id, 900);
-        reset(&id);
-        let status = get_status(&id);
-        assert_eq!(status.tokens_consumed, 0);
-        assert_eq!(status.reads_count, 0);
-    }
-
-    #[test]
-    fn zero_limit_means_unlimited() {
-        let id = test_agent("zero");
-        set_limit(&id, 0);
-        let result = check_budget(&id, 1_000_000);
-        assert!(matches!(result, BudgetCheckResult::Allowed { .. }));
-    }
-
-    #[test]
-    fn record_increments_reads_count() {
-        let id = test_agent("reads");
-        record_consumption(&id, 100);
-        record_consumption(&id, 200);
-        let status = get_status(&id);
-        assert_eq!(status.reads_count, 2);
-        assert_eq!(status.tokens_consumed, 300);
     }
 }

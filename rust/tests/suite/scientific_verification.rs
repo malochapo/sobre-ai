@@ -2,8 +2,7 @@ use lean_ctx::core::attention_model::{
     attention_efficiency, combined_attention, positional_attention, structural_importance,
 };
 use lean_ctx::core::entropy::{
-    jaccard_similarity, kolmogorov_proxy, ngram_jaccard, normalized_token_entropy, shannon_entropy,
-    token_entropy,
+    jaccard_similarity, kolmogorov_proxy, normalized_token_entropy, shannon_entropy, token_entropy,
 };
 use lean_ctx::core::tokens::count_tokens;
 
@@ -196,22 +195,6 @@ fn jaccard_triangle_inequality() {
         j_ab + j_bc
     );
 }
-
-#[test]
-fn ngram_jaccard_order_sensitive() {
-    let a = "fn foo(a: i32, b: i32)";
-    let b = "fn foo(b: i32, a: i32)";
-    let word_j = jaccard_similarity(a, b);
-    let ngram_j = ngram_jaccard(a, b, 2);
-    assert!(
-        ngram_j < word_j || (word_j - ngram_j).abs() < f64::EPSILON,
-        "bigram Jaccard should be ≤ word Jaccard for reordered text: ngram={ngram_j:.3}, word={word_j:.3}"
-    );
-}
-
-// ═══════════════════════════════════════════════════════════════════
-// 6. LITM QUADRATIC U-CURVE — mathematical properties
-// ═══════════════════════════════════════════════════════════════════
 
 #[test]
 fn litm_boundary_values() {

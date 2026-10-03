@@ -158,13 +158,6 @@ impl KnowledgeBridge {
         before - self.shared_facts.len()
     }
 
-    pub fn entries_for_agent(&self, agent_id: &str) -> Vec<&BridgeEntry> {
-        self.shared_facts
-            .iter()
-            .filter(|e| e.source_agent == agent_id)
-            .collect()
-    }
-
     pub fn summary(&self) -> String {
         if self.shared_facts.is_empty() {
             return format!(
@@ -352,31 +345,6 @@ mod tests {
         assert_eq!(removed, 1);
         assert_eq!(bridge.shared_facts.len(), 1);
         assert_eq!(bridge.shared_facts[0].fact_key, "fresh");
-    }
-
-    #[test]
-    fn entries_for_agent_filters_correctly() {
-        let mut bridge = KnowledgeBridge::new("test-hash");
-        let facts_a = vec![make_fact(
-            "arch",
-            "db",
-            "PostgreSQL",
-            0.9,
-            KnowledgeArchetype::Architecture,
-        )];
-        let facts_b = vec![make_fact(
-            "gotcha",
-            "trap",
-            "watch out",
-            0.85,
-            KnowledgeArchetype::Gotcha,
-        )];
-        bridge.publish("agent-a", &facts_a);
-        bridge.publish("agent-b", &facts_b);
-
-        assert_eq!(bridge.entries_for_agent("agent-a").len(), 1);
-        assert_eq!(bridge.entries_for_agent("agent-b").len(), 1);
-        assert_eq!(bridge.entries_for_agent("agent-c").len(), 0);
     }
 
     #[test]

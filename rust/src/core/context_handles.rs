@@ -122,58 +122,9 @@ impl HandleRegistry {
         self.handles.iter().find(|h| h.ref_label == label)
     }
 
-    /// Look up a handle by its underlying item ID.
-    pub fn resolve_by_item(&self, item_id: &ContextItemId) -> Option<&ContextHandle> {
-        self.handles.iter().find(|h| h.item_id == *item_id)
-    }
-
     /// All registered handles, in registration order.
     pub fn all(&self) -> &[ContextHandle] {
         &self.handles
-    }
-
-    /// Sum of `handle_tokens` across all registered handles.
-    pub fn total_handle_tokens(&self) -> usize {
-        self.handles.iter().map(|h| h.handle_tokens).sum()
-    }
-
-    /// Render the compact handle manifest for inclusion in a system prompt.
-    pub fn format_manifest(&self, budget_total: usize, budget_used: usize) -> String {
-        if self.handles.is_empty() {
-            return String::new();
-        }
-
-        let mut lines = Vec::with_capacity(self.handles.len() + 3);
-        lines.push("Context Handles (expand with ctx_expand @ref):".to_string());
-
-        for h in &self.handles {
-            let best = h
-                .available_views
-                .first()
-                .map_or("full", |(v, _)| v.as_str());
-
-            let cheapest_tokens = h.available_views.iter().map(|(_, t)| *t).min().unwrap_or(0);
-
-            let pinned_tag = if h.pinned { " [pinned]" } else { "" };
-
-            lines.push(format!(
-                "@{} {} {} {}t phi={:.2}{}",
-                h.ref_label, h.source_path, best, cheapest_tokens, h.phi, pinned_tag,
-            ));
-        }
-
-        let remaining_pct = if budget_total > 0 {
-            ((budget_total.saturating_sub(budget_used)) as f64 / budget_total as f64) * 100.0
-        } else {
-            0.0
-        };
-
-        lines.push(String::new());
-        lines.push(format!(
-            "Budget: {budget_used}/{budget_total} tokens ({remaining_pct:.1}% remaining)",
-        ));
-
-        lines.join("\n")
     }
 }
 
@@ -284,99 +235,6 @@ mod tests {
         assert_eq!(reg.resolve("@S1").unwrap().source_path, "cargo_test");
 
         assert!(reg.resolve("F99").is_none());
-    }
-
-    #[test]
-    fn resolve_by_item_id() {
-        let mut reg = HandleRegistry::new();
-        let id = ContextItemId::from_file("main.rs");
-        reg.register(
-            id.clone(),
-            ContextKind::File,
-            "main.rs",
-            "entrypoint",
-            &sample_view_costs(600),
-            0.92,
-            false,
-        );
-
-        let found = reg.resolve_by_item(&id);
-        assert!(found.is_some());
-        assert_eq!(found.unwrap().ref_label, "F1");
-
-        let missing = reg.resolve_by_item(&ContextItemId::from_file("nope.rs"));
-        assert!(missing.is_none());
-    }
-
-    #[test]
-    fn manifest_formatting() {
-        let mut reg = HandleRegistry::new();
-        reg.register(
-            ContextItemId::from_file("billing/service.ts"),
-            ContextKind::File,
-            "billing/service.ts",
-            "exports: createInvoice, calculateTax",
-            &sample_view_costs(2000),
-            0.93,
-            false,
-        );
-        reg.register(
-            ContextItemId::from_knowledge("domain", "annual"),
-            ContextKind::Knowledge,
-            "annual_billing",
-            "assumption",
-            &sample_view_costs(200),
-            0.95,
-            true,
-        );
-
-        let manifest = reg.format_manifest(12000, 2460);
-
-        assert!(manifest.contains("Context Handles"));
-        assert!(manifest.contains("@F1"));
-        assert!(manifest.contains("billing/service.ts"));
-        assert!(manifest.contains("phi=0.93"));
-        assert!(manifest.contains("@K1"));
-        assert!(manifest.contains("[pinned]"));
-        assert!(manifest.contains("Budget: 2460/12000 tokens"));
-        assert!(manifest.contains("remaining"));
-    }
-
-    #[test]
-    fn manifest_empty_registry() {
-        let reg = HandleRegistry::new();
-        let manifest = reg.format_manifest(10000, 0);
-        assert!(manifest.is_empty());
-    }
-
-    #[test]
-    fn total_handle_tokens() {
-        let mut reg = HandleRegistry::new();
-        reg.register(
-            ContextItemId::from_file("a.rs"),
-            ContextKind::File,
-            "a.rs",
-            "mod A",
-            &sample_view_costs(1000),
-            0.8,
-            false,
-        );
-        reg.register(
-            ContextItemId::from_file("b.rs"),
-            ContextKind::File,
-            "b.rs",
-            "mod B",
-            &sample_view_costs(2000),
-            0.7,
-            false,
-        );
-
-        let total = reg.total_handle_tokens();
-        assert_eq!(
-            total,
-            25 + 25,
-            "both handles should use ViewKind::Handle cost (25)"
-        );
     }
 
     #[test]
@@ -513,25 +371,5 @@ mod tests {
             h.handle_tokens <= 50,
             "fallback should produce at most 50 tokens"
         );
-    }
-
-    #[test]
-    fn budget_remaining_percentage() {
-        let reg = {
-            let mut r = HandleRegistry::new();
-            r.register(
-                ContextItemId::from_file("x.rs"),
-                ContextKind::File,
-                "x.rs",
-                "x",
-                &sample_view_costs(100),
-                0.5,
-                false,
-            );
-            r
-        };
-
-        let manifest = reg.format_manifest(10000, 2000);
-        assert!(manifest.contains("80.0% remaining"));
     }
 }

@@ -146,13 +146,6 @@ impl Codebook {
     }
 }
 
-/// Cosine similarity between two documents using TF-IDF vectors.
-/// IDF is computed over the two-document corpus to down-weight common terms
-/// like `fn`, `let`, `return` and up-weight domain-specific identifiers.
-pub fn tfidf_cosine_similarity(doc_a: &str, doc_b: &str) -> f64 {
-    tfidf_cosine_similarity_with_corpus(&[doc_a, doc_b], doc_a, doc_b)
-}
-
 /// TF-IDF cosine similarity with IDF computed over a larger corpus.
 pub fn tfidf_cosine_similarity_with_corpus(corpus: &[&str], doc_a: &str, doc_b: &str) -> f64 {
     let idf = compute_idf(corpus);
@@ -311,24 +304,6 @@ mod tests {
         let mut cb = Codebook::new();
         cb.build_from_files(&files);
         assert!(!cb.is_empty(), "should find common patterns");
-    }
-
-    #[test]
-    fn cosine_identical_is_one() {
-        let sim = tfidf_cosine_similarity("hello world foo", "hello world foo");
-        assert!((sim - 1.0).abs() < 0.01);
-    }
-
-    #[test]
-    fn cosine_disjoint_is_zero() {
-        let sim = tfidf_cosine_similarity("alpha beta gamma", "delta epsilon zeta");
-        assert!(sim < 0.01);
-    }
-
-    #[test]
-    fn cosine_partial_overlap() {
-        let sim = tfidf_cosine_similarity("hello world foo bar", "hello world baz qux");
-        assert!(sim > 0.0 && sim < 1.0);
     }
 
     #[test]

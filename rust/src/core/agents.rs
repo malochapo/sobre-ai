@@ -304,24 +304,6 @@ impl AgentRegistry {
         &self.agents
     }
 
-    pub fn post_message(
-        &mut self,
-        from_agent: &str,
-        to_agent: Option<&str>,
-        category: &str,
-        message: &str,
-    ) -> String {
-        self.post_message_full(
-            from_agent,
-            to_agent,
-            category,
-            message,
-            PrivacyLevel::default(),
-            MessagePriority::default(),
-            None,
-        )
-    }
-
     pub fn post_message_full(
         &mut self,
         from_agent: &str,
@@ -379,36 +361,6 @@ impl AgentRegistry {
             .iter()
             .filter(|e| e.to_agent.is_none() || e.to_agent.as_deref() == Some(agent_id))
             .filter(|e| e.from_agent != agent_id)
-            .collect()
-    }
-
-    pub fn read_unread(&mut self, agent_id: &str) -> Vec<&ScratchpadEntry> {
-        let unread_indices: Vec<usize> = self
-            .scratchpad
-            .iter()
-            .enumerate()
-            .filter(|(_, e)| {
-                !e.read_by.contains(&agent_id.to_string())
-                    && e.from_agent != agent_id
-                    && (e.to_agent.is_none() || e.to_agent.as_deref() == Some(agent_id))
-            })
-            .map(|(i, _)| i)
-            .collect();
-
-        for i in &unread_indices {
-            self.scratchpad[*i].read_by.push(agent_id.to_string());
-        }
-
-        self.updated_at = Utc::now();
-
-        self.scratchpad
-            .iter()
-            .filter(|e| {
-                e.from_agent != agent_id
-                    && (e.to_agent.is_none() || e.to_agent.as_deref() == Some(agent_id))
-                    && e.read_by.contains(&agent_id.to_string())
-                    && e.read_by.iter().filter(|r| *r == agent_id).count() == 1
-            })
             .collect()
     }
 
@@ -1027,17 +979,6 @@ mod tests {
     }
 
     #[test]
-    fn post_and_read_messages() {
-        let mut reg = AgentRegistry::new();
-        reg.post_message("agent-a", None, "finding", "Found a bug in auth.rs");
-        reg.post_message("agent-b", Some("agent-a"), "request", "Please review");
-
-        let msgs = reg.read_unread("agent-a");
-        assert_eq!(msgs.len(), 1);
-        assert_eq!(msgs[0].category, "request");
-    }
-
-    #[test]
     fn set_status() {
         let mut reg = AgentRegistry::new();
         let id = reg.register("claude", None, "/tmp/project");
@@ -1047,19 +988,6 @@ mod tests {
             reg.agents[0].status_message,
             Some("waiting for review".to_string())
         );
-    }
-
-    #[test]
-    fn broadcast_message() {
-        let mut reg = AgentRegistry::new();
-        reg.post_message("agent-a", None, "status", "Starting refactor");
-
-        let msgs_b = reg.read_unread("agent-b");
-        assert_eq!(msgs_b.len(), 1);
-        assert_eq!(msgs_b[0].message, "Starting refactor");
-
-        let msgs_a = reg.read_unread("agent-a");
-        assert!(msgs_a.is_empty());
     }
 
     #[test]

@@ -183,11 +183,6 @@ pub const ALL_LANGUAGES: &[LanguageId] = &[
     LanguageId::Tscn,
 ];
 
-/// Friendly names of every graph-indexable language (e.g. for an empty-graph hint).
-pub fn graph_supported_language_names() -> Vec<&'static str> {
-    ALL_LANGUAGES.iter().map(LanguageId::id_str).collect()
-}
-
 /// Whether lean-ctx extracts call sites for a language (i.e. it can populate the
 /// call graph). Keep in sync with `deep_queries::calls::parse_call` — a language
 /// missing there yields zero call edges, which the dashboard must communicate
@@ -276,138 +271,6 @@ where
     rows
 }
 
-/// Like [`language_capability_matrix`] but enriched with *realized* counts for
-/// this project: how many symbols, import edges and (optionally) call edges were
-/// actually produced per language — not merely whether the language *could*
-/// produce them. This turns an honest "imports ✓" into "imports ✓ (142)" / "✓
-/// (0 found)", so an empty graph view explains itself.
-///
-/// Inputs are plain path lists so this stays decoupled from the index types:
-/// - `file_paths`: every indexed file (drives the per-language file count),
-/// - `symbol_files`: the file of each extracted symbol,
-/// - `import_from_files`: the source file of each import/reexport edge,
-/// - `call_caller_files`: the caller file of each call edge, or `None` when call
-///   data isn't available (then `calls_found` stays `None`).
-pub fn language_capability_matrix_realized(
-    file_paths: &[String],
-    symbol_files: &[String],
-    import_from_files: &[String],
-    call_caller_files: Option<&[String]>,
-) -> Vec<LanguageCapabilityRow> {
-    use std::collections::HashMap;
-
-    fn tally(paths: &[String], acc: &mut HashMap<LanguageId, usize>) {
-        for p in paths {
-            if let Some(lang) = language_for_path(p) {
-                *acc.entry(lang).or_default() += 1;
-            }
-        }
-    }
-
-    let mut files: HashMap<LanguageId, usize> = HashMap::new();
-    let mut symbols: HashMap<LanguageId, usize> = HashMap::new();
-    let mut imports: HashMap<LanguageId, usize> = HashMap::new();
-    let mut calls: HashMap<LanguageId, usize> = HashMap::new();
-    tally(file_paths, &mut files);
-    tally(symbol_files, &mut symbols);
-    tally(import_from_files, &mut imports);
-    if let Some(callers) = call_caller_files {
-        tally(callers, &mut calls);
-    }
-
-    let mut rows: Vec<LanguageCapabilityRow> = files
-        .into_iter()
-        .map(|(lang, file_count)| {
-            let caps = capabilities(lang);
-            LanguageCapabilityRow {
-                language: lang.id_str(),
-                files: file_count,
-                symbols: caps.deep_queries,
-                imports: caps.import_resolver,
-                call_graph: supports_call_graph(lang),
-                symbols_found: Some(symbols.get(&lang).copied().unwrap_or(0)),
-                imports_found: Some(imports.get(&lang).copied().unwrap_or(0)),
-                calls_found: call_caller_files.map(|_| calls.get(&lang).copied().unwrap_or(0)),
-            }
-        })
-        .collect();
-    rows.sort_by(|a, b| {
-        b.files
-            .cmp(&a.files)
-            .then_with(|| a.language.cmp(b.language))
-    });
-    rows
-}
-
-/// Maps a file extension to a human-readable *programming language* name that
-/// lean-ctx recognizes but does **not** graph-index. Returns `None` for
-/// graph-indexed languages and for non-code files (docs, data, config). Used
-/// only to explain an empty graph — e.g. an R or Julia project. (Lua/Luau are
-/// now first-class graph-indexed languages, see #360.)
-fn unsupported_source_language_name(ext: &str) -> Option<&'static str> {
-    match ext.trim().trim_start_matches('.').to_lowercase().as_str() {
-        "r" => Some("R"),
-        "jl" => Some("Julia"),
-        "nim" => Some("Nim"),
-        "cr" => Some("Crystal"),
-        "clj" | "cljs" | "cljc" => Some("Clojure"),
-        "erl" | "hrl" => Some("Erlang"),
-        "hs" => Some("Haskell"),
-        "ml" | "mli" => Some("OCaml"),
-        "fs" | "fsx" => Some("F#"),
-        "pl" | "pm" => Some("Perl"),
-        "groovy" | "gradle" => Some("Groovy"),
-        "tf" => Some("Terraform"),
-        "sol" => Some("Solidity"),
-        "f90" | "f95" | "f03" => Some("Fortran"),
-        "pas" => Some("Pascal"),
-        "d" => Some("D"),
-        "sql" => Some("SQL"),
-        "tcl" => Some("Tcl"),
-        "raku" | "rakumod" => Some("Raku"),
-        _ => None,
-    }
-}
-
-/// Bounded project scan returning programming languages present in `root` that
-/// lean-ctx does **not** graph-index, with file counts (descending, capped to 5).
-/// Honors .gitignore/hidden like the graph walker and stops after `max_entries`
-/// filesystem entries. Lets the dashboard turn a confusing empty graph into a
-/// clear "Lua is not graph-indexed" message instead of an endless loading state.
-pub fn scan_unsupported_source_languages(root: &str, max_entries: usize) -> Vec<(String, usize)> {
-    let mut counts: std::collections::HashMap<&'static str, usize> =
-        std::collections::HashMap::new();
-    let walker = ignore::WalkBuilder::new(root)
-        .hidden(true)
-        .git_ignore(true)
-        .git_global(true)
-        .git_exclude(true)
-        .require_git(false)
-        .max_depth(Some(20))
-        .filter_entry(crate::core::walk_filter::keep_entry)
-        .build();
-    for entry in walker.flatten().take(max_entries) {
-        if !entry.file_type().is_some_and(|ft| ft.is_file()) {
-            continue;
-        }
-        let ext = entry
-            .path()
-            .extension()
-            .and_then(|e| e.to_str())
-            .unwrap_or("");
-        if let Some(name) = unsupported_source_language_name(ext) {
-            *counts.entry(name).or_default() += 1;
-        }
-    }
-    let mut ranked: Vec<(String, usize)> = counts
-        .into_iter()
-        .map(|(k, c)| (k.to_string(), c))
-        .collect();
-    ranked.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
-    ranked.truncate(5);
-    ranked
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -438,18 +301,6 @@ mod tests {
     }
 
     #[test]
-    fn all_languages_match_ext_table() {
-        // Every enumerated language must be reachable via at least one extension,
-        // so the UI's "supported languages" list never drifts from reality.
-        for lang in ALL_LANGUAGES {
-            let names = graph_supported_language_names();
-            assert!(names.contains(&lang.id_str()));
-        }
-        assert!(graph_supported_language_names().contains(&"rust"));
-        assert_eq!(ALL_LANGUAGES.len(), graph_supported_language_names().len());
-    }
-
-    #[test]
     fn callgraph_support_is_consistent() {
         // C# must be call-graph capable (issue: NINA's empty Call Graph tab).
         assert!(supports_call_graph(LanguageId::CSharp));
@@ -459,12 +310,31 @@ mod tests {
         assert!(names.contains(&"typescript"));
         // Every call-graph language is also graph-indexable, and the list is a
         // strict subset (some graph-indexed languages have no call extraction).
+        let indexed: Vec<&str> = ALL_LANGUAGES.iter().map(LanguageId::id_str).collect();
         for name in &names {
-            assert!(graph_supported_language_names().contains(name));
+            assert!(indexed.contains(name));
         }
         assert!(names.len() <= ALL_LANGUAGES.len());
         // A language without call extraction must report false.
         assert!(!supports_call_graph(LanguageId::Ruby));
+    }
+
+    #[test]
+    fn lua_luau_are_first_class_indexed() {
+        // Lua/Luau (issue #360) are graph-indexed.
+        assert_eq!(language_for_ext("lua"), Some(LanguageId::Lua));
+        assert_eq!(language_for_ext(".luau"), Some(LanguageId::Luau));
+        assert!(is_indexable_ext("lua"));
+        assert!(is_indexable_ext("luau"));
+        // They participate in symbols, import edges and the call graph.
+        assert!(supports_call_graph(LanguageId::Lua));
+        assert!(supports_call_graph(LanguageId::Luau));
+    }
+
+    #[test]
+    fn non_indexed_source_extensions_are_not_indexable() {
+        assert!(!is_indexable_ext("r"));
+        assert!(!is_indexable_ext("jl"));
     }
 
     #[test]
@@ -489,80 +359,5 @@ mod tests {
 
         // Sorted by file count desc → Rust (2 files) leads.
         assert_eq!(matrix[0].language, "rust");
-    }
-
-    #[test]
-    fn realized_matrix_counts_actual_symbols_imports_calls() {
-        let files = vec!["a.rs".to_string(), "b.rs".to_string(), "c.rb".to_string()];
-        let symbol_files = vec!["a.rs".to_string(), "a.rs".to_string(), "c.rb".to_string()];
-        let import_from = vec!["a.rs".to_string()]; // one Rust import edge
-        let callers = vec!["b.rs".to_string()]; // one Rust call edge
-
-        let m = language_capability_matrix_realized(
-            &files,
-            &symbol_files,
-            &import_from,
-            Some(&callers),
-        );
-
-        let rust = m.iter().find(|r| r.language == "rust").unwrap();
-        assert_eq!(rust.files, 2);
-        assert_eq!(rust.symbols_found, Some(2));
-        assert_eq!(rust.imports_found, Some(1));
-        assert_eq!(rust.calls_found, Some(1));
-
-        let ruby = m.iter().find(|r| r.language == "ruby").unwrap();
-        assert_eq!(ruby.files, 1);
-        assert_eq!(ruby.symbols_found, Some(1));
-        assert_eq!(ruby.imports_found, Some(0)); // no Ruby import edges produced
-        assert_eq!(ruby.calls_found, Some(0));
-
-        // Without call data, `calls_found` stays None (honest "not measured").
-        let m2 = language_capability_matrix_realized(&files, &symbol_files, &import_from, None);
-        let rust2 = m2.iter().find(|r| r.language == "rust").unwrap();
-        assert_eq!(rust2.calls_found, None);
-    }
-
-    #[test]
-    fn lua_luau_are_first_class_indexed() {
-        // Lua/Luau (issue #360) are now graph-indexed, not "unsupported code".
-        assert_eq!(language_for_ext("lua"), Some(LanguageId::Lua));
-        assert_eq!(language_for_ext(".luau"), Some(LanguageId::Luau));
-        assert!(is_indexable_ext("lua"));
-        assert!(is_indexable_ext("luau"));
-        assert!(unsupported_source_language_name("lua").is_none());
-        assert!(unsupported_source_language_name("luau").is_none());
-        // They participate in symbols, import edges and the call graph.
-        assert!(supports_call_graph(LanguageId::Lua));
-        assert!(supports_call_graph(LanguageId::Luau));
-        let names = graph_supported_language_names();
-        assert!(names.contains(&"lua"));
-        assert!(names.contains(&"luau"));
-    }
-
-    #[test]
-    fn unsupported_source_languages_named_but_not_indexed() {
-        // Languages still recognized as code yet never graph-indexed.
-        assert_eq!(unsupported_source_language_name("r"), Some("R"));
-        assert_eq!(unsupported_source_language_name(".jl"), Some("Julia"));
-        assert!(!is_indexable_ext("r"));
-        assert!(!is_indexable_ext("jl"));
-        // Graph-indexed languages and plain data/docs are not reported as "unsupported code".
-        assert_eq!(unsupported_source_language_name("rs"), None);
-        assert_eq!(unsupported_source_language_name("lua"), None);
-        assert_eq!(unsupported_source_language_name("md"), None);
-        assert_eq!(unsupported_source_language_name("json"), None);
-    }
-
-    #[test]
-    fn scan_reports_unsupported_project() {
-        let dir = tempfile::tempdir().unwrap();
-        std::fs::write(dir.path().join("analysis.r"), "x <- 1").unwrap();
-        std::fs::write(dir.path().join("model.jl"), "x = 1").unwrap();
-        std::fs::write(dir.path().join("README.md"), "# docs").unwrap();
-        let found = scan_unsupported_source_languages(&dir.path().to_string_lossy(), 1000);
-        let names: Vec<&str> = found.iter().map(|(n, _)| n.as_str()).collect();
-        assert!(names.contains(&"R"));
-        assert!(names.contains(&"Julia"));
     }
 }

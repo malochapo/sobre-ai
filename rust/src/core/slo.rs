@@ -295,8 +295,6 @@ pub fn evaluate() -> SloSnapshot {
 }
 
 pub fn evaluate_quiet() -> SloSnapshot {
-    // Record that SLO evaluation happened (count-only observability).
-    crate::core::verification_observability::record_slo_eval();
     let defs = active_slos();
     let mut slos = Vec::with_capacity(defs.len());
     let mut violations = Vec::new();

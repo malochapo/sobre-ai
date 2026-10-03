@@ -163,21 +163,6 @@ impl HeatMap {
         result
     }
 
-    pub fn cold_files(&self, all_files: &[String], limit: usize) -> Vec<String> {
-        let hot: std::collections::HashSet<&str> = self
-            .entries
-            .keys()
-            .map(std::string::String::as_str)
-            .collect();
-        let mut cold: Vec<String> = all_files
-            .iter()
-            .filter(|f| !hot.contains(f.as_str()))
-            .cloned()
-            .collect();
-        cold.truncate(limit);
-        cold
-    }
-
     fn storage_path() -> PathBuf {
         crate::core::paths::state_dir()
             .unwrap_or_else(|_| PathBuf::from("."))
@@ -413,21 +398,6 @@ mod tests {
 
         let dirs = hm.directory_summary();
         assert!(dirs.len() >= 2);
-    }
-
-    #[test]
-    fn cold_files_detection() {
-        let mut hm = HeatMap::default();
-        hm.record_access("src/a.rs", 100, 50);
-
-        let all = vec![
-            "src/a.rs".to_string(),
-            "src/b.rs".to_string(),
-            "src/c.rs".to_string(),
-        ];
-        let cold = hm.cold_files(&all, 10);
-        assert_eq!(cold.len(), 2);
-        assert!(cold.contains(&"src/b.rs".to_string()));
     }
 
     #[test]

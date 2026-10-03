@@ -230,24 +230,6 @@ impl GainScore {
             },
         }
     }
-
-    /// Progress within the current level (0.0 to 1.0).
-    pub fn level_progress(&self) -> f64 {
-        let lvl = self.level();
-        let range_start = lvl.min_score;
-        let range_end = match lvl.level {
-            5 => 100,
-            4 => 80,
-            3 => 60,
-            2 => 40,
-            _ => 20,
-        };
-        let range = (range_end - range_start) as f64;
-        if range == 0.0 {
-            return 1.0;
-        }
-        ((self.total - range_start) as f64 / range).clamp(0.0, 1.0)
-    }
 }
 
 #[cfg(test)]
@@ -275,21 +257,6 @@ mod tests {
         let lvl = score.level();
         assert_eq!(lvl.level, 4);
         assert_eq!(lvl.title, "Guardian");
-    }
-
-    #[test]
-    fn level_progress_calc() {
-        let score = GainScore {
-            total: 50,
-            compression: 50,
-            cost_efficiency: 50,
-            quality: 50,
-            consistency: 50,
-            navigability: 0,
-            trend: Trend::Stable,
-        };
-        let p = score.level_progress();
-        assert!(p > 0.0 && p < 1.0);
     }
 
     #[test]

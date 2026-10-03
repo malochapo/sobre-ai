@@ -62,43 +62,6 @@ impl ProviderBandit {
         }
     }
 
-    /// Select the best provider for a given task type using Thompson Sampling.
-    /// Returns the provider_id with the highest sampled value.
-    pub fn select_provider(
-        &mut self,
-        task_type: &str,
-        available_providers: &[String],
-    ) -> Option<String> {
-        if available_providers.is_empty() {
-            return None;
-        }
-
-        if available_providers.len() == 1 {
-            return Some(available_providers[0].clone());
-        }
-
-        let mut best_sample = f64::NEG_INFINITY;
-        let mut best_provider = &available_providers[0];
-
-        for provider_id in available_providers {
-            let key = arm_key(task_type, provider_id);
-            let arm = self.arms.entry(key).or_insert_with(|| ProviderArm {
-                name: provider_id.clone(),
-                alpha: 1.0,
-                beta: 1.0,
-                pulls: 0,
-            });
-
-            let sample = arm.sample();
-            if sample > best_sample {
-                best_sample = sample;
-                best_provider = provider_id;
-            }
-        }
-
-        Some(best_provider.clone())
-    }
-
     /// Update the bandit after observing the outcome of a provider query.
     pub fn update(&mut self, task_type: &str, provider_id: &str, was_useful: bool) {
         let key = arm_key(task_type, provider_id);
@@ -228,49 +191,6 @@ fn rng_f64() -> f64 {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn select_from_single_provider() {
-        let mut bandit = ProviderBandit::new();
-        let providers = vec!["github".into()];
-
-        let selected = bandit.select_provider("bugfix", &providers);
-        assert_eq!(selected.as_deref(), Some("github"));
-    }
-
-    #[test]
-    fn select_from_empty_returns_none() {
-        let mut bandit = ProviderBandit::new();
-        let selected = bandit.select_provider("bugfix", &[]);
-        assert!(selected.is_none());
-    }
-
-    #[test]
-    fn update_shifts_distribution() {
-        let mut bandit = ProviderBandit::new();
-        let providers = vec!["github".into(), "jira".into()];
-
-        // Train: github is always useful for bugfix
-        for _ in 0..20 {
-            bandit.update("bugfix", "github", true);
-            bandit.update("bugfix", "jira", false);
-        }
-
-        let gh_prob = bandit.estimated_probability("bugfix", "github");
-        let jira_prob = bandit.estimated_probability("bugfix", "jira");
-        assert!(gh_prob > 0.8);
-        assert!(jira_prob < 0.2);
-
-        // Should strongly prefer github for bugfix tasks.
-        let mut github_selected = 0;
-        for _ in 0..100 {
-            let selected = bandit.select_provider("bugfix", &providers).unwrap();
-            if selected == "github" {
-                github_selected += 1;
-            }
-        }
-        assert!(github_selected > 80);
-    }
 
     #[test]
     fn different_task_types_have_independent_arms() {

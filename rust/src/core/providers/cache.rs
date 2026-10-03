@@ -103,44 +103,6 @@ impl ProviderCache {
         self.entries.clear();
         count
     }
-
-    fn metrics(&mut self) -> CacheMetrics {
-        self.entries.retain(|_, v| v.expires_at > Instant::now());
-
-        let mut by_provider: HashMap<String, ProviderCacheStats> = HashMap::new();
-
-        for entry in self.entries.values() {
-            let stats = by_provider.entry(entry.provider_id.clone()).or_default();
-            stats.provider_id.clone_from(&entry.provider_id);
-            stats.entry_count += 1;
-        }
-
-        for (pid, &count) in &self.hits {
-            let stats = by_provider.entry(pid.clone()).or_default();
-            stats.provider_id.clone_from(pid);
-            stats.hits = count;
-        }
-        for (pid, &count) in &self.misses {
-            let stats = by_provider.entry(pid.clone()).or_default();
-            stats.provider_id.clone_from(pid);
-            stats.misses = count;
-        }
-        for (pid, &ts) in &self.last_fetch {
-            let stats = by_provider.entry(pid.clone()).or_default();
-            stats.provider_id.clone_from(pid);
-            stats.last_fetch = Some(ts);
-        }
-
-        let mut provider_stats: Vec<_> = by_provider.into_values().collect();
-        provider_stats.sort_by(|a, b| a.provider_id.cmp(&b.provider_id));
-
-        CacheMetrics {
-            total_hits: self.hits.values().sum(),
-            total_misses: self.misses.values().sum(),
-            total_entries: self.entries.len(),
-            provider_stats,
-        }
-    }
 }
 
 pub fn get_cached(key: &str) -> Option<String> {
@@ -184,14 +146,6 @@ pub fn invalidate_all() -> usize {
         .map_or(0, |mut c| c.invalidate_all())
 }
 
-pub fn cache_metrics() -> CacheMetrics {
-    PROVIDER_CACHE
-        .lock()
-        .ok()
-        .map(|mut c| c.metrics())
-        .unwrap_or_default()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -219,25 +173,6 @@ mod tests {
         );
         std::thread::sleep(Duration::from_millis(10));
         assert!(cache.get("test:key").is_none());
-    }
-
-    #[test]
-    fn cache_tracks_hits_and_misses() {
-        let mut cache = ProviderCache::new();
-        cache.set(
-            "github:key".into(),
-            "data".into(),
-            Duration::from_mins(1),
-            "github",
-        );
-        cache.get("github:key"); // hit
-        cache.get("github:key"); // hit
-        cache.get("github:missing"); // miss
-
-        let metrics = cache.metrics();
-        assert_eq!(metrics.total_hits, 2);
-        assert_eq!(metrics.total_misses, 1);
-        assert!((metrics.total_hit_rate() - 0.666).abs() < 0.01);
     }
 
     #[test]
@@ -277,44 +212,6 @@ mod tests {
         let removed = cache.invalidate_all();
         assert_eq!(removed, 2);
         assert!(cache.get("a").is_none());
-    }
-
-    #[test]
-    fn cache_metrics_per_provider() {
-        let mut cache = ProviderCache::new();
-        cache.set(
-            "github:x".into(),
-            "a".into(),
-            Duration::from_mins(1),
-            "github",
-        );
-        cache.set(
-            "gitlab:y".into(),
-            "b".into(),
-            Duration::from_mins(1),
-            "gitlab",
-        );
-        cache.get("github:x");
-        cache.get("gitlab:miss");
-
-        let metrics = cache.metrics();
-        assert_eq!(metrics.provider_stats.len(), 2);
-
-        let gh = metrics
-            .provider_stats
-            .iter()
-            .find(|s| s.provider_id == "github")
-            .unwrap();
-        assert_eq!(gh.entry_count, 1);
-        assert_eq!(gh.hits, 1);
-
-        let gl = metrics
-            .provider_stats
-            .iter()
-            .find(|s| s.provider_id == "gitlab")
-            .unwrap();
-        assert_eq!(gl.entry_count, 1);
-        assert!(gl.last_fetch.is_some());
     }
 
     #[test]

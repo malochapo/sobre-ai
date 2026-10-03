@@ -134,29 +134,6 @@ impl WrappedReport {
         }
     }
 
-    /// One-line, conservative explanation of how the headline numbers were derived.
-    /// Reused by the ASCII footer, the compact summary, and the SVG share card so the
-    /// figure is always explainable and never over-claimed.
-    pub fn methodology_line(&self) -> String {
-        let price = if self.pricing_estimated {
-            format!(
-                "{} blended fallback price (set LEAN_CTX_MODEL for exact)",
-                self.model_key
-            )
-        } else {
-            format!("{} input price", self.model_key)
-        };
-        let basis = if self.bounce_tokens > 0 {
-            format!(
-                "measured original - compressed - {} bounce tokens",
-                format_tokens(self.bounce_tokens)
-            )
-        } else {
-            "measured original - compressed tokens".to_string()
-        };
-        format!("Savings = {basis}; USD is an upper bound at {price}")
-    }
-
     /// Renders a premium, shareable "Wrapped" card. Colors are emitted only when
     /// stdout is a TTY (see `theme::no_color`), so piping to a file or social post
     /// yields clean copy-pasteable ASCII.
@@ -473,16 +450,6 @@ mod tests {
     }
 
     #[test]
-    fn methodology_is_conservative_and_explainable() {
-        let m = sample().methodology_line();
-        assert!(
-            m.contains("upper bound"),
-            "must state it is an upper bound: {m}"
-        );
-        assert!(m.contains("claude-3.5-sonnet"), "must name the model: {m}");
-    }
-
-    #[test]
     fn ascii_footer_surfaces_model_and_upper_bound() {
         let out = sample().format_ascii();
         assert!(
@@ -504,6 +471,5 @@ mod tests {
             "estimated price must show (est.)"
         );
         assert!(r.format_compact().contains("(est.)"));
-        assert!(r.methodology_line().contains("fallback"));
     }
 }

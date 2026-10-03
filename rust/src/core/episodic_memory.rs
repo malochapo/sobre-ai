@@ -407,17 +407,6 @@ fn count_tools(actions: &[Action]) -> Vec<(String, usize)> {
     sorted
 }
 
-pub fn format_episode_compact(episode: &Episode) -> String {
-    format!(
-        "[{}] {} — {} ({} actions, {} files)",
-        episode.outcome.label(),
-        episode.task_description,
-        episode.summary,
-        episode.actions.len(),
-        episode.affected_files.len()
-    )
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -593,14 +582,6 @@ mod tests {
             );
         }
         assert!(store.episodes.len() <= policy.max_episodes);
-    }
-
-    #[test]
-    fn format_compact() {
-        let ep = make_episode("Deploy v2", Outcome::Success { tests_passed: true });
-        let output = format_episode_compact(&ep);
-        assert!(output.contains("[success]"));
-        assert!(output.contains("Deploy v2"));
     }
 
     #[test]

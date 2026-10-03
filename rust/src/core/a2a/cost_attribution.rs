@@ -186,37 +186,6 @@ impl CostStore {
         let cached: u64 = self.agents.values().map(|a| a.total_cached_tokens).sum();
         (input, output, cached)
     }
-
-    pub fn add_session_snapshot(
-        &mut self,
-        agent_id: &str,
-        input: u64,
-        output: u64,
-        saved: u64,
-        duration_secs: u64,
-    ) {
-        let model_key = self
-            .agents
-            .get(agent_id)
-            .and_then(|a| a.model_key.as_deref())
-            .map(std::string::ToString::to_string);
-        let cost = estimate_cost(model_key.as_deref(), input, output, 0);
-        self.sessions.push(SessionCostSnapshot {
-            timestamp: Utc::now().to_rfc3339(),
-            agent_id: agent_id.to_string(),
-            model_key,
-            total_input: input,
-            total_output: output,
-            total_cached: 0,
-            total_saved: saved,
-            cost_usd: cost,
-            duration_secs,
-        });
-
-        if self.sessions.len() > 500 {
-            self.sessions.drain(0..self.sessions.len() - 500);
-        }
-    }
 }
 
 fn cost_store_path() -> Option<PathBuf> {
@@ -374,13 +343,5 @@ mod tests {
         assert!(report.contains("Cost Attribution Report"));
         assert!(report.contains("agent-a"));
         assert!(report.contains("ctx_read"));
-    }
-
-    #[test]
-    fn session_snapshots() {
-        let mut store = CostStore::default();
-        store.add_session_snapshot("agent-a", 50000, 5000, 30000, 120);
-        assert_eq!(store.sessions.len(), 1);
-        assert!(store.sessions[0].cost_usd > 0.0);
     }
 }

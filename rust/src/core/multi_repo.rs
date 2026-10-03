@@ -182,11 +182,6 @@ impl MultiRepoManager {
         }
     }
 
-    pub fn with_rrf_k(mut self, k: f64) -> Self {
-        self.rrf_k = k;
-        self
-    }
-
     pub fn from_config(config: &MultiRepoConfig) -> Result<Self, String> {
         let mut manager = Self::new();
         if let Some(k) = config.rrf_k {
@@ -229,19 +224,6 @@ impl MultiRepoManager {
         Ok(())
     }
 
-    pub fn remove_root(&mut self, path: &str) -> Result<(), String> {
-        let normalized = PathBuf::from(path)
-            .canonicalize()
-            .unwrap_or_else(|_| PathBuf::from(path));
-        let before = self.roots.len();
-        self.roots
-            .retain(|r| r.path != normalized && r.config.path != path);
-        if self.roots.len() == before {
-            return Err(format!("Root not found: {path}"));
-        }
-        Ok(())
-    }
-
     pub fn list_roots(&self) -> Vec<RootInfo> {
         self.roots
             .iter()
@@ -251,10 +233,6 @@ impl MultiRepoManager {
                 has_index: r.index.is_some(),
             })
             .collect()
-    }
-
-    pub fn root_count(&self) -> usize {
-        self.roots.len()
     }
 
     /// The configured RRF constant, so external fusers (e.g. the hybrid
@@ -437,43 +415,6 @@ pub fn all_root_paths() -> Vec<String> {
         .collect()
 }
 
-/// Format search results for MCP output.
-pub fn format_fused_results(results: &[FusedSearchResult]) -> String {
-    if results.is_empty() {
-        return "No results found across repos.".to_string();
-    }
-
-    let mut out = String::with_capacity(results.len() * 200);
-    out.push_str(&format!(
-        "Cross-repo results ({} matches):\n\n",
-        results.len()
-    ));
-
-    for (i, result) in results.iter().enumerate() {
-        out.push_str(&format!(
-            "{}. [{}] {}:{}-{} ({})\n   RRF: {:.4}\n",
-            i + 1,
-            result.repo_alias,
-            result.file_path,
-            result.start_line,
-            result.end_line,
-            result.symbol_name,
-            result.rrf_score,
-        ));
-        let preview: String = result
-            .content
-            .lines()
-            .take(3)
-            .collect::<Vec<_>>()
-            .join("\n");
-        if !preview.is_empty() {
-            out.push_str(&format!("   {}\n", preview.replace('\n', "\n   ")));
-        }
-        out.push('\n');
-    }
-    out
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -558,20 +499,6 @@ path = "/home/user/frontend"
     }
 
     #[test]
-    fn remove_root_works() {
-        let dir = std::env::temp_dir().join("multi_repo_remove_test");
-        let _ = std::fs::create_dir_all(&dir);
-        let mut manager = MultiRepoManager::new();
-        manager
-            .add_root(&dir.to_string_lossy(), Some("removable"))
-            .unwrap();
-        assert_eq!(manager.root_count(), 1);
-        manager.remove_root(&dir.to_string_lossy()).unwrap();
-        assert_eq!(manager.root_count(), 0);
-        let _ = std::fs::remove_dir_all(&dir);
-    }
-
-    #[test]
     fn list_roots_returns_info() {
         let dir = std::env::temp_dir().join("multi_repo_list_test");
         let _ = std::fs::create_dir_all(&dir);
@@ -583,12 +510,5 @@ path = "/home/user/frontend"
         assert_eq!(roots.len(), 1);
         assert_eq!(roots[0].alias, "myrepo");
         let _ = std::fs::remove_dir_all(&dir);
-    }
-
-    #[test]
-    fn format_empty_results() {
-        let results: Vec<FusedSearchResult> = Vec::new();
-        let output = format_fused_results(&results);
-        assert!(output.contains("No results"));
     }
 }

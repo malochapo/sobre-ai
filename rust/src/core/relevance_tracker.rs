@@ -322,11 +322,7 @@ pub(crate) fn proactive_context(query_context: &str) -> Option<String> {
         cfg.proactive_expansion_threshold_effective(),
         cfg.proactive_expansion_max_age_secs_effective(),
     );
-    let block = tracker.expand_if_relevant(query_context)?;
-    crate::core::context_overhead::record_proactive_injection(crate::core::tokens::count_tokens(
-        &block,
-    ));
-    Some(block)
+    tracker.expand_if_relevant(query_context)
 }
 
 /// Bounce-aware query path used by file reads. A path already pinned to full

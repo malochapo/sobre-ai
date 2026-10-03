@@ -1,5 +1,4 @@
 use std::collections::{HashMap, HashSet};
-use std::hash::{Hash, Hasher};
 use std::io::Write;
 
 use flate2::Compression;
@@ -123,20 +122,6 @@ pub fn jaccard_similarity(a: &str, b: &str) -> f64 {
     intersection as f64 / union as f64
 }
 
-/// N-gram Jaccard similarity — preserves word order (unlike word-set Jaccard).
-pub fn ngram_jaccard(a: &str, b: &str, n: usize) -> f64 {
-    let set_a = ngram_set(a, n);
-    let set_b = ngram_set(b, n);
-
-    let intersection = set_a.intersection(&set_b).count();
-    let union = set_a.union(&set_b).count();
-
-    if union == 0 {
-        return 0.0;
-    }
-    intersection as f64 / union as f64
-}
-
 fn ngram_set(text: &str, n: usize) -> HashSet<Vec<String>> {
     let words: Vec<&str> = text.split_whitespace().collect();
     if words.len() < n {
@@ -150,45 +135,6 @@ fn ngram_set(text: &str, n: usize) -> HashSet<Vec<String>> {
         .windows(n)
         .map(|w| w.iter().map(std::string::ToString::to_string).collect())
         .collect()
-}
-
-/// Minhash signature for approximate Jaccard via LSH.
-/// Uses k independent hash functions (polynomial hashing with different seeds).
-pub fn minhash_signature(text: &str, n: usize, k: usize) -> Vec<u64> {
-    let ngrams = ngram_set(text, n);
-    if ngrams.is_empty() {
-        return vec![u64::MAX; k];
-    }
-    let mut signature = vec![u64::MAX; k];
-    for ngram in &ngrams {
-        for (i, min) in signature.iter_mut().enumerate() {
-            let h = hash_with_seed(ngram, i as u64);
-            if h < *min {
-                *min = h;
-            }
-        }
-    }
-    signature
-}
-
-/// Approximate Jaccard from two minhash signatures.
-pub fn minhash_similarity(sig_a: &[u64], sig_b: &[u64]) -> f64 {
-    if sig_a.len() != sig_b.len() || sig_a.is_empty() {
-        return 0.0;
-    }
-    let matches = sig_a
-        .iter()
-        .zip(sig_b.iter())
-        .filter(|(a, b)| a == b)
-        .count();
-    matches as f64 / sig_a.len() as f64
-}
-
-fn hash_with_seed<T: Hash>(value: &T, seed: u64) -> u64 {
-    let mut hasher = std::collections::hash_map::DefaultHasher::new();
-    seed.hash(&mut hasher);
-    value.hash(&mut hasher);
-    hasher.finish()
 }
 
 /// Kolmogorov complexity proxy: K(x) ≈ len(gzip(x)) / len(x).
@@ -219,18 +165,6 @@ impl CompressibilityClass {
             Self::Medium => "medium (0.3≤K<0.6)",
             Self::Low => "low (K≥0.6)",
         }
-    }
-}
-
-/// Classify how compressible content is based on gzip ratio.
-pub fn compressibility_class(content: &str) -> CompressibilityClass {
-    let k = kolmogorov_proxy(content);
-    if k < 0.3 {
-        CompressibilityClass::High
-    } else if k < 0.6 {
-        CompressibilityClass::Medium
-    } else {
-        CompressibilityClass::Low
     }
 }
 
@@ -940,51 +874,6 @@ mod tests {
     }
 
     #[test]
-    fn ngram_jaccard_preserves_order() {
-        let a = "a b c d";
-        let b = "d c b a";
-        let word_j = jaccard_similarity(a, b);
-        let ngram_j = ngram_jaccard(a, b, 2);
-        assert!(
-            ngram_j < word_j,
-            "reordered text should have lower bigram Jaccard ({ngram_j}) than word Jaccard ({word_j})"
-        );
-    }
-
-    #[test]
-    fn ngram_jaccard_identical_is_one() {
-        let text = "fn main() { println!(\"hello\"); }";
-        let j = ngram_jaccard(text, text, 2);
-        assert!((j - 1.0).abs() < f64::EPSILON);
-    }
-
-    #[test]
-    fn ngram_jaccard_disjoint_is_zero() {
-        let j = ngram_jaccard("alpha beta gamma", "delta epsilon zeta", 2);
-        assert_eq!(j, 0.0);
-    }
-
-    #[test]
-    fn minhash_approximates_jaccard() {
-        let a = "fn main() { let x = 1; let y = 2; let z = x + y; println!(z); }";
-        let b = "fn main() { let x = 1; let y = 2; let z = x + y; return z; }";
-        let exact = ngram_jaccard(a, b, 2);
-        let sig_a = minhash_signature(a, 2, 128);
-        let sig_b = minhash_signature(b, 2, 128);
-        let approx = minhash_similarity(&sig_a, &sig_b);
-        assert!(
-            (exact - approx).abs() < 0.2,
-            "minhash ({approx}) should approximate exact ({exact}) within 0.2"
-        );
-    }
-
-    #[test]
-    fn minhash_empty_text() {
-        let sig = minhash_signature("", 2, 64);
-        assert!(sig.iter().all(|&v| v == u64::MAX));
-    }
-
-    #[test]
     fn kolmogorov_empty_is_one() {
         assert_eq!(kolmogorov_proxy(""), 1.0);
     }
@@ -1010,12 +899,6 @@ mod tests {
             kolmogorov_proxy(&diverse) > kolmogorov_proxy(&repetitive),
             "diverse content should have higher K than repetitive"
         );
-    }
-
-    #[test]
-    fn compressibility_class_repetitive_is_high() {
-        let text = "use std::io;\n".repeat(200);
-        assert_eq!(compressibility_class(&text), CompressibilityClass::High);
     }
 
     fn density_fixture() -> String {

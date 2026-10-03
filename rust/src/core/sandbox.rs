@@ -615,22 +615,6 @@ fn truncate_smart(output: &str, max_bytes: usize) -> String {
     )
 }
 
-pub fn supported_languages() -> &'static [&'static str] {
-    &[
-        "javascript",
-        "typescript",
-        "python",
-        "shell",
-        "ruby",
-        "go",
-        "rust",
-        "php",
-        "perl",
-        "r",
-        "elixir",
-    ]
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -701,15 +685,6 @@ mod tests {
         assert!(truncated.contains("line 0:"));
         assert!(truncated.contains("line 99:"));
         assert!(truncated.contains("truncated"));
-    }
-
-    #[test]
-    fn supported_languages_list() {
-        let langs = supported_languages();
-        assert!(langs.contains(&"python"));
-        assert!(langs.contains(&"javascript"));
-        assert!(langs.contains(&"rust"));
-        assert_eq!(langs.len(), 11);
     }
 
     #[test]

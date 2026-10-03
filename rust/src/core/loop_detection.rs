@@ -405,16 +405,6 @@ impl LoopDetector {
             .count() as u32
     }
 
-    /// Returns the correction rate: signals per minute within the window.
-    pub fn correction_rate(&self) -> f64 {
-        let count = self.correction_count();
-        if count == 0 {
-            return 0.0;
-        }
-        let window_mins = CORRECTION_WINDOW.as_secs_f64() / 60.0;
-        f64::from(count) / window_mins
-    }
-
     /// Prunes expired correction signals and stale read/command entries.
     pub fn prune_corrections(&mut self) {
         let now = Instant::now();
@@ -830,20 +820,6 @@ mod tests {
         // Same command again within 60s = correction
         detector.record_shell_for_correction("cargo test --lib");
         assert_eq!(detector.correction_count(), 1);
-    }
-
-    #[test]
-    fn correction_rate_calculation() {
-        let mut detector = LoopDetector::new();
-        for i in 0..COLD_START_CALLS {
-            detector.record_shell_for_correction(&format!("init{i}"));
-        }
-        detector.record_shell_for_correction("cargo check");
-        detector.record_shell_for_correction("cargo check");
-        detector.record_shell_for_correction("cargo check");
-        // 2 corrections (first run doesn't count)
-        assert_eq!(detector.correction_count(), 2);
-        assert!(detector.correction_rate() > 0.0);
     }
 
     #[test]

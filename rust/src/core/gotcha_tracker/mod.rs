@@ -266,21 +266,6 @@ impl GotchaStore {
 
     // -- Promotion ----------------------------------------------------------
 
-    /// High-value gotchas eligible for promotion into durable project knowledge
-    /// (the loop-weighting bridge, #980): proven across sessions and shown to
-    /// prevent real errors. Read-only companion to [`Self::check_promotions`],
-    /// sorted by confidence so callers can take the strongest first.
-    #[must_use]
-    pub fn promotable(&self) -> Vec<&Gotcha> {
-        let mut v: Vec<&Gotcha> = self.gotchas.iter().filter(|g| g.is_promotable()).collect();
-        v.sort_by(|a, b| {
-            b.confidence
-                .partial_cmp(&a.confidence)
-                .unwrap_or(std::cmp::Ordering::Equal)
-        });
-        v
-    }
-
     pub fn check_promotions(&mut self) -> Vec<(String, String, String, f32)> {
         let mut promoted = Vec::new();
         for gotcha in &self.gotchas {
@@ -788,45 +773,6 @@ mod tests {
 
         g.occurrences = 2;
         assert!(!g.is_promotable());
-    }
-
-    #[test]
-    fn promotable_keeps_only_proven_and_sorts_by_confidence() {
-        // #980 loop-weighting bridge: only gotchas that cleared every threshold
-        // (incl. having prevented real errors) are eligible, strongest first.
-        let mut store = GotchaStore::new("testhash");
-        let mut strong = Gotcha::new(
-            GotchaCategory::Convention,
-            GotchaSeverity::Warning,
-            "use thiserror",
-            "derive thiserror::Error",
-            GotchaSource::AgentReported {
-                session_id: "s1".into(),
-            },
-            "s1",
-        );
-        strong.confidence = 0.92;
-        strong.occurrences = 6;
-        strong.session_ids = vec!["s1".into(), "s2".into(), "s3".into()];
-        strong.prevented_count = 3;
-
-        let mut strongest = strong.clone();
-        strongest.trigger = "always run fmt".into();
-        strongest.confidence = 0.98;
-
-        // Never prevented anything → not promotable despite high confidence.
-        let mut weak = strong.clone();
-        weak.trigger = "unproven".into();
-        weak.confidence = 0.99;
-        weak.prevented_count = 0;
-
-        store.gotchas = vec![strong, weak, strongest];
-        let promotable = store.promotable();
-        assert_eq!(promotable.len(), 2, "the unproven gotcha is excluded");
-        assert_eq!(
-            promotable[0].trigger, "always run fmt",
-            "highest confidence first"
-        );
     }
 
     #[test]

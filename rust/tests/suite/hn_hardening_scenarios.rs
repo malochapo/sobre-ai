@@ -59,9 +59,6 @@ mod correction_loop {
         // Agent re-reads same file with fresh=true (lost trust in compression)
         detector.record_read_for_correction("src/cache.rs", "full", true);
         assert_eq!(detector.correction_count(), 1);
-
-        // Rate should be positive
-        assert!(detector.correction_rate() > 0.0);
     }
 
     #[test]

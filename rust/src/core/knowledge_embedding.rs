@@ -604,39 +604,6 @@ fn semantic_duplicates_from_query(
     out
 }
 
-pub fn format_scored_facts(results: &[ScoredFact<'_>]) -> String {
-    if results.is_empty() {
-        return "No matching facts found.".to_string();
-    }
-
-    let mut output = String::new();
-    for (i, scored) in results.iter().enumerate() {
-        let f = scored.fact;
-        let stars = if f.confidence >= 0.9 {
-            "★★★★"
-        } else if f.confidence >= 0.7 {
-            "★★★"
-        } else if f.confidence >= 0.5 {
-            "★★"
-        } else {
-            "★"
-        };
-
-        if i > 0 {
-            output.push('|');
-        }
-        output.push_str(&format!(
-            "{}:{}={}{} [s:{:.0}%]",
-            f.category,
-            f.key,
-            f.value,
-            stars,
-            scored.score * 100.0
-        ));
-    }
-    output
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -981,50 +948,6 @@ mod tests {
         let results = idx.semantic_search(&query, 2);
         assert_eq!(results.len(), 2);
         assert_eq!(results[0].0.key, "db");
-    }
-
-    #[test]
-    fn format_scored_empty() {
-        assert_eq!(format_scored_facts(&[]), "No matching facts found.");
-    }
-
-    #[test]
-    fn format_scored_output() {
-        let fact = KnowledgeFact {
-            category: "arch".to_string(),
-            key: "db".to_string(),
-            value: "PostgreSQL".to_string(),
-            source_session: "s1".to_string(),
-            confidence: 0.95,
-            created_at: chrono::Utc::now(),
-            last_confirmed: chrono::Utc::now(),
-            retrieval_count: 0,
-            last_retrieved: None,
-            valid_from: None,
-            valid_until: None,
-            supersedes: None,
-            confirmation_count: 3,
-            feedback_up: 0,
-            feedback_down: 0,
-            last_feedback: None,
-            privacy: crate::core::memory_boundary::FactPrivacy::default(),
-            sensitivity: crate::core::sensitivity::SensitivityLevel::default(),
-            imported_from: None,
-            archetype: KnowledgeArchetype::default(),
-            fidelity: None,
-            revision_count: 0,
-        };
-        let scored = vec![ScoredFact {
-            fact: &fact,
-            score: 0.85,
-            semantic_score: 0.9,
-            confidence_score: 0.95,
-            recency_score: 1.0,
-        }];
-        let output = format_scored_facts(&scored);
-        assert!(output.contains("arch:db=PostgreSQL"));
-        assert!(output.contains("★★★★"));
-        assert!(output.contains("[s:85%]"));
     }
 
     #[test]

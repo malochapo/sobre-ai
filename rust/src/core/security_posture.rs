@@ -109,13 +109,6 @@ impl SecurityPosture {
             PostureLevel::Relaxed
         }
     }
-
-    /// True when secrets still cannot leak to the provider (detection + masking
-    /// both on). This stays independent of [`Self::level`] on purpose.
-    #[must_use]
-    pub fn secrets_protected(&self) -> bool {
-        self.secrets_enabled && self.secrets_redact
-    }
 }
 
 /// Mirror of the precedence in `pathjail` + the doctor `path_jail_outcome`, kept
@@ -210,24 +203,6 @@ mod tests {
             true,
         );
         assert_eq!(widened.level(), PostureLevel::Relaxed);
-    }
-
-    #[test]
-    fn secrets_protection_is_independent_of_containment() {
-        // Fully open containment, yet secrets are still protected.
-        let open_but_secret_safe = posture(
-            JailState::Disabled("path_jail = false".into()),
-            ShellSecurity::Off,
-            true,
-            true,
-        );
-        assert_eq!(open_but_secret_safe.level(), PostureLevel::Open);
-        assert!(open_but_secret_safe.secrets_protected());
-
-        // Strict containment, yet redaction explicitly turned off.
-        let strict_but_leaky = posture(JailState::Enforced, ShellSecurity::Enforce, false, true);
-        assert_eq!(strict_but_leaky.level(), PostureLevel::Strict);
-        assert!(!strict_but_leaky.secrets_protected());
     }
 
     #[test]

@@ -407,32 +407,6 @@ impl ContextField {
 
         best_view
     }
-
-    /// Compute potentials for a batch of items.
-    pub fn compute_batch(
-        &self,
-        items: &[(ContextItemId, FieldSignals, ViewCosts)],
-        budget: TokenBudget,
-    ) -> HashMap<ContextItemId, FieldPotential> {
-        let temperature = budget.temperature();
-        let mut result = HashMap::new();
-
-        for (id, signals, costs) in items {
-            let phi = self.compute_phi(signals);
-            let best_view = self.select_view(costs, temperature);
-            result.insert(
-                id.clone(),
-                FieldPotential {
-                    signals: signals.clone(),
-                    phi,
-                    view_costs: costs.clone(),
-                    best_view,
-                },
-            );
-        }
-
-        result
-    }
 }
 
 // ---------------------------------------------------------------------------
@@ -751,36 +725,5 @@ mod tests {
         assert_eq!(vc.get(&ViewKind::Signatures), 1000);
         assert_eq!(vc.get(&ViewKind::Map), 625);
         assert_eq!(vc.get(&ViewKind::Handle), 25);
-    }
-
-    #[test]
-    fn batch_compute_produces_results_for_all_items() {
-        let field = ContextField::new();
-        let items = vec![
-            (
-                ContextItemId::from_file("a.rs"),
-                FieldSignals {
-                    relevance: 0.8,
-                    ..Default::default()
-                },
-                ViewCosts::from_full_tokens(2000),
-            ),
-            (
-                ContextItemId::from_file("b.rs"),
-                FieldSignals {
-                    relevance: 0.3,
-                    ..Default::default()
-                },
-                ViewCosts::from_full_tokens(500),
-            ),
-        ];
-        let budget = TokenBudget {
-            total: 10000,
-            used: 2000,
-        };
-        let results = field.compute_batch(&items, budget);
-        assert_eq!(results.len(), 2);
-        assert!(results.contains_key(&ContextItemId::from_file("a.rs")));
-        assert!(results.contains_key(&ContextItemId::from_file("b.rs")));
     }
 }

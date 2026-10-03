@@ -84,22 +84,6 @@ pub fn categorize_tool(name: &str) -> ToolCategory {
     }
 }
 
-pub fn is_readonly_tool(name: &str) -> bool {
-    matches!(
-        name,
-        "ctx_read"
-            | "ctx_search"
-            | "ctx_tree"
-            | "ctx_session"
-            | "ctx_knowledge"
-            | "ctx_graph"
-            | "ctx_outline"
-            | "ctx_context"
-            | "ctx_impact"
-            | "ctx_callgraph"
-    )
-}
-
 #[derive(Debug)]
 pub struct DynamicToolState {
     active_categories: HashSet<ToolCategory>,
@@ -160,10 +144,6 @@ impl DynamicToolState {
         self.supports_list_changed
     }
 
-    pub fn load_category(&mut self, cat: ToolCategory) -> bool {
-        self.active_categories.insert(cat)
-    }
-
     pub fn unload_category(&mut self, cat: ToolCategory) -> bool {
         if cat == ToolCategory::Core || cat == ToolCategory::Internal {
             return false;
@@ -182,16 +162,6 @@ impl DynamicToolState {
         self.active_categories.contains(&cat)
     }
 
-    pub fn active_categories(&self) -> Vec<&'static str> {
-        let mut cats: Vec<_> = self
-            .active_categories
-            .iter()
-            .map(ToolCategory::as_str)
-            .collect();
-        cats.sort_unstable();
-        cats
-    }
-
     pub fn all_categories() -> Vec<&'static str> {
         vec!["core", "arch", "debug", "memory", "metrics", "session"]
     }
@@ -201,10 +171,6 @@ static GLOBAL: OnceLock<Mutex<DynamicToolState>> = OnceLock::new();
 
 pub fn global() -> &'static Mutex<DynamicToolState> {
     GLOBAL.get_or_init(|| Mutex::new(DynamicToolState::new()))
-}
-
-pub fn init_all_enabled() {
-    let _ = GLOBAL.set(Mutex::new(DynamicToolState::all_enabled()));
 }
 
 /// Initializes the global state from user config (env var > config.toml > default).
@@ -233,15 +199,6 @@ mod tests {
         assert!(!state.is_tool_active("ctx_review"));
         assert!(!state.is_tool_active("ctx_impact"));
         assert!(state.is_tool_active("ctx_read"));
-    }
-
-    #[test]
-    fn load_category_enables_tools() {
-        let mut state = DynamicToolState::new();
-        state.set_supports_list_changed(true);
-        assert!(!state.is_tool_active("ctx_impact"));
-        state.load_category(ToolCategory::Arch);
-        assert!(state.is_tool_active("ctx_impact"));
     }
 
     #[test]
@@ -352,17 +309,6 @@ mod tests {
 
     // --- from_config: duplicate categories are idempotent ---
 
-    #[test]
-    fn from_config_duplicates_are_harmless() {
-        let cats = vec!["arch".to_string(), "arch".to_string(), "arch".to_string()];
-        let mut state = DynamicToolState::from_config(&cats);
-        state.set_supports_list_changed(true);
-        assert!(state.is_tool_active("ctx_impact"));
-        let active = state.active_categories();
-        let arch_count = active.iter().filter(|&&c| c == "arch").count();
-        assert_eq!(arch_count, 1);
-    }
-
     // --- from_config: internal category is never user-activatable ---
 
     #[test]
@@ -397,16 +343,6 @@ mod tests {
     }
 
     // --- from_config: subsequent load/unload still works ---
-
-    #[test]
-    fn from_config_then_load_additional_category() {
-        let cats = vec!["core".to_string()];
-        let mut state = DynamicToolState::from_config(&cats);
-        state.set_supports_list_changed(true);
-        assert!(!state.is_tool_active("ctx_impact"));
-        state.load_category(ToolCategory::Arch);
-        assert!(state.is_tool_active("ctx_impact"));
-    }
 
     #[test]
     fn from_config_then_unload_non_core_category() {
@@ -455,31 +391,6 @@ mod tests {
                 categorize_tool(name),
                 ToolCategory::Internal,
                 "{name} would never be listed"
-            );
-        }
-    }
-
-    #[test]
-    fn readonly_classification() {
-        assert!(is_readonly_tool("ctx_read"));
-        assert!(is_readonly_tool("ctx_search"));
-        assert!(is_readonly_tool("ctx_tree"));
-        assert!(is_readonly_tool("ctx_outline"));
-        assert!(is_readonly_tool("ctx_callgraph"));
-
-        assert!(!is_readonly_tool("ctx_patch"));
-        assert!(!is_readonly_tool("ctx_shell"));
-        assert!(!is_readonly_tool("ctx_refactor"));
-        assert!(!is_readonly_tool("ctx_execute"));
-        assert!(!is_readonly_tool("ctx_checkpoint"));
-    }
-
-    #[test]
-    fn plan_mode_tools_are_all_readonly() {
-        for tool in crate::core::editor_registry::plan_mode::plan_mode_tools() {
-            assert!(
-                is_readonly_tool(tool),
-                "{tool} is listed as plan mode tool but not marked readonly"
             );
         }
     }

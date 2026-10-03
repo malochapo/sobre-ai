@@ -26,7 +26,6 @@ pub(crate) mod edit_recovery;
 pub(crate) mod graph_meta;
 // Stays `pub`: driven from outside the crate by tests/suite/property_graph_reproducibility_contract.rs.
 pub mod impl_architecture;
-pub(crate) mod impl_compress;
 pub(crate) mod impl_dedup;
 pub(crate) mod impl_discover;
 // Stays `pub`: driven from outside the crate by tests/quality_loop_golden.rs and tests/suite/edit_reliability.rs.
@@ -41,7 +40,6 @@ pub(crate) mod impl_preload;
 // Stays `pub`: driven from outside the crate by tests/serial_suite/intensive_benchmarks.rs.
 pub mod impl_response;
 pub(crate) mod impl_semantic_search;
-pub(crate) mod impl_share;
 pub(crate) mod impl_smart_read;
 pub(crate) mod impl_smells;
 pub(crate) mod impl_symbol;
