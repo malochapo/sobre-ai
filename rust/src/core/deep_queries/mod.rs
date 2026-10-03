@@ -125,23 +125,28 @@ mod tests {
     use super::*;
 
     /// Indexing a deeply nested AST must not overflow the worker-thread stack
-    /// (the #378 SIGABRT) through the real `analyze` entry point. The depth is
-    /// well past what a recursive walk survives on a default stack, yet because
-    /// every walk is iterative now it returns normally. (The dedicated, much
-    /// deeper overflow guard lives in `core::ast_walk`.)
+    /// (the #378 SIGABRT) through the real `analyze` entry point. It runs on a
+    /// 128 KiB stack: 2,000 levels exceed that for any recursive walk using
+    /// more than 64 bytes a frame, yet because every walk is iterative it
+    /// returns normally. Analysis time grows with the square of the depth, so a
+    /// small stack keeps this fast where a deep input on the default stack
+    /// took about a minute. (The dedicated, much deeper overflow guard lives
+    /// in `core::ast_walk`.)
     #[test]
     fn deeply_nested_source_does_not_overflow() {
-        let depth = 12_000;
-        // Nested Rust call expressions drive the call walk through the real
-        // entry point at a depth far past what a recursive walk survives on a
-        // default stack; it returns normally because the walks are iterative.
+        let depth = 2_000;
         let rs = format!(
             "fn m() {{ let _ = {}0{}; }}",
             "f(".repeat(depth),
             ")".repeat(depth)
         );
-        let analysis = analyze(&rs, "rs");
-        assert!(!analysis.calls.is_empty());
+        let calls = std::thread::Builder::new()
+            .stack_size(128 * 1024)
+            .spawn(move || analyze(&rs, "rs").calls.len())
+            .expect("spawn small-stack thread")
+            .join()
+            .expect("analysis thread panicked");
+        assert!(calls > 0);
     }
 
     #[test]
