@@ -173,46 +173,6 @@ fn overlay_save_does_not_write_to_data_dir() {
 }
 
 // ---------------------------------------------------------------------------
-// PolicySet: save_project / load_project
-// ---------------------------------------------------------------------------
-
-#[test]
-fn policy_load_returns_defaults_for_home_dir() {
-    use lean_ctx::core::context_policies::PolicySet;
-
-    if let Some(home) = dirs::home_dir() {
-        let policies = PolicySet::load_project(&home);
-        let defaults = PolicySet::defaults();
-        assert_eq!(
-            policies.policies.len(),
-            defaults.policies.len(),
-            "load_project from home dir should return defaults"
-        );
-    }
-}
-
-#[test]
-fn policy_save_load_roundtrip_normal_project() {
-    use lean_ctx::core::context_policies::PolicySet;
-
-    let tmp = tempfile::tempdir().unwrap();
-    let project = tmp.path().join("policy-project");
-    std::fs::create_dir_all(&project).unwrap();
-
-    let policies = PolicySet::defaults();
-    policies
-        .save_project(&project)
-        .expect("save should succeed");
-
-    let loaded = PolicySet::load_project(&project);
-    assert_eq!(
-        loaded.policies.len(),
-        policies.policies.len(),
-        "roundtrip should preserve policy count"
-    );
-}
-
-// ---------------------------------------------------------------------------
 // Proof writers: safe_project_data_dir gate
 // ---------------------------------------------------------------------------
 
@@ -263,7 +223,6 @@ fn collision_detects_when_project_lean_ctx_equals_data_dir() {
 #[test]
 fn cowwoc_scenario_home_as_project_root() {
     use lean_ctx::core::context_overlay::OverlayStore;
-    use lean_ctx::core::context_policies::PolicySet;
 
     if let Some(home) = dirs::home_dir() {
         let overlay_result = OverlayStore::new().save_project(&home);
@@ -276,12 +235,6 @@ fn cowwoc_scenario_home_as_project_root() {
         assert!(
             overlay_store.all().is_empty(),
             "cowwoc scenario: overlay load from ~ should return empty"
-        );
-
-        let policy_result = PolicySet::defaults().save_project(&home);
-        assert!(
-            policy_result.is_err(),
-            "cowwoc scenario: policy save to ~ should be blocked"
         );
 
         let safe_dir_result = safe_project_data_dir(&home);
@@ -298,7 +251,6 @@ fn normal_project_all_writes_succeed() {
     use lean_ctx::core::context_overlay::{
         ContextOverlay, OverlayAuthor, OverlayOp, OverlayScope, OverlayStore,
     };
-    use lean_ctx::core::context_policies::PolicySet;
 
     let tmp = tempfile::tempdir().unwrap();
     let project = tmp.path().join("healthy-project");
@@ -314,15 +266,11 @@ fn normal_project_all_writes_succeed() {
     ));
     overlay_store.save_project(&project).expect("overlay save");
 
-    let policies = PolicySet::defaults();
-    policies.save_project(&project).expect("policy save");
-
     let proof_dir = safe_project_data_dir(&project)
         .expect("safe dir")
         .join("proofs");
     std::fs::create_dir_all(&proof_dir).expect("create proofs dir");
 
     assert!(project.join(".lean-ctx").join("overlays.json").exists());
-    assert!(project.join(".lean-ctx").join("policies.json").exists());
     assert!(project.join(".lean-ctx").join("proofs").is_dir());
 }

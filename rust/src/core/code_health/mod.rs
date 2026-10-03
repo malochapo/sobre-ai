@@ -1,8 +1,8 @@
 //! Native code-health engine — clean code as a token-cost lever.
 //!
 //! Computes the structural signals the Sonar study links to agent token cost —
-//! **cognitive complexity** (S3776-style), **naming quality**, and **module
-//! coupling** — once during indexing, then fans them out across the data fabric
+//! **cognitive complexity** (S3776-style) and **naming quality** — once during
+//! indexing, then fans them out across the data fabric
 //! and every agent surface (see the Code Health Engine plan).
 //!
 //! Naming note: this is distinct from [`crate::core::quality`] (compression
@@ -13,7 +13,6 @@ pub mod annotate;
 #[cfg(feature = "tree-sitter")]
 pub(crate) mod astutil;
 pub mod cognitive;
-pub mod coupling;
 pub mod delta;
 pub mod fabric;
 pub mod gate;
@@ -25,7 +24,6 @@ pub mod score;
 
 pub use annotate::{ReadAnnotation, annotations_for_file};
 pub use cognitive::{FunctionCognitive, cognitive_per_function};
-pub use coupling::{ModuleCoupling, module_coupling};
 pub use delta::{CognitiveDelta, cognitive_delta, format_gate_notice, worst_regression};
 pub use naming::{NamingFinding, cryptic_reason, naming_findings};
 pub use scan::{FileReport, ProjectHealth, scan_project};

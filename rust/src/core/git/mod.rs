@@ -10,8 +10,6 @@
 //! disables interactive credential prompts (so a private/auth-required remote
 //! fails fast instead of hanging), and enforces a wall-clock timeout.
 
-pub mod clone;
-pub mod repo_url;
 pub mod shadow;
 
 use std::io::Read;

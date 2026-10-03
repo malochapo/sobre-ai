@@ -428,10 +428,6 @@ pub fn run() -> u32 {
         line: integrity_line,
     });
 
-    // 13) Cache safety
-    let cache_safety = cache_safety_outcome();
-    board.check(&cache_safety);
-
     // 14) Claude Code instruction truncation guard
     let claude_truncation = claude_truncation_outcome();
     if let Some(ref ct) = claude_truncation {

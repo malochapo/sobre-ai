@@ -151,11 +151,6 @@ pub fn alignment() -> Vec<OwaspMapping> {
             risk_description: "Compromised tools, plugins, or dependencies affect agent behavior",
             lean_ctx_mitigations: vec![
                 Mitigation {
-                    feature: "Signed Handoff Bundles",
-                    module: "core/handoff_transfer_bundle.rs",
-                    description: "Ed25519 signatures verify integrity and provenance of transferred data",
-                },
-                Mitigation {
                     feature: "Audit Trail",
                     module: "core/audit_trail.rs",
                     description: "SHA-256 chained append-only log of all tool calls and security events",
@@ -280,11 +275,6 @@ pub fn alignment() -> Vec<OwaspMapping> {
             owasp_title: "Insufficient Governance",
             risk_description: "Lack of organizational policies and controls over agent behavior",
             lean_ctx_mitigations: vec![
-                Mitigation {
-                    feature: "Policy Engine",
-                    module: "core/context_policies.rs",
-                    description: "Declarative policies with agent, content, and time-based conditions",
-                },
                 Mitigation {
                     feature: "Compliance Reports",
                     module: "cli/audit_report.rs",

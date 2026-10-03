@@ -5,16 +5,12 @@
 //! `docs/business/03-verified-savings-ledger.md`.
 
 pub mod event;
-pub mod roi;
-pub mod signed_batch;
 pub mod store;
 
 #[cfg(test)]
 mod migration_tests;
 
 pub use event::{MECHANISM_CACHING, MECHANISM_COMPRESSION, MECHANISM_ROUTING, SavingsEvent};
-pub use roi::{RoiReport, roi_report};
-pub use signed_batch::{BatchVerifyResult, SignedSavingsBatchV1};
 pub use store::{LedgerSummary, VerifyResult};
 
 use std::sync::OnceLock;

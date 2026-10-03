@@ -605,7 +605,7 @@ impl CostConfig {
 
 /// Code-health engine (`[code_health]`): clean code as a token-cost lever.
 ///
-/// Cognitive complexity, naming quality, and coupling are computed once during
+/// Cognitive complexity and naming quality are computed once during
 /// indexing and surfaced at read- and edit-time. These switches tune the
 /// thresholds and how assertively findings are surfaced.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -621,8 +621,6 @@ pub struct CodeHealthConfig {
     pub annotate_reads: bool,
     /// Run the naming-quality heuristic.
     pub naming: bool,
-    /// Compute module-coupling metrics.
-    pub coupling: bool,
     /// Inject `[CODE HEALTH]` notices as `additionalContext` in PostToolUse stdout.
     /// Default: **false** — prevents prompt-cache invalidation on Anthropic models
     /// (#778: each injection causes 440-520k tokens of cache re-bills when Claude
@@ -639,7 +637,6 @@ impl Default for CodeHealthConfig {
             gate: "warn".to_string(),
             annotate_reads: true,
             naming: true,
-            coupling: true,
             inject_context: false,
         }
     }

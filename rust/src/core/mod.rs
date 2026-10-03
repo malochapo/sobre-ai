@@ -82,7 +82,6 @@ pub mod call_graph;
 pub mod community;
 pub mod graph_analysis;
 pub mod graph_context;
-pub mod graph_coordinator;
 pub mod graph_enricher;
 pub mod graph_export;
 pub mod graph_index;
@@ -108,8 +107,6 @@ pub mod graph {
 // ---------------------------------------------------------------------------
 // Domain: Context
 // ---------------------------------------------------------------------------
-pub mod context_compiler;
-pub mod context_deficit;
 pub mod context_field;
 pub mod context_handles;
 pub mod context_ir;
@@ -118,7 +115,6 @@ pub mod context_lint;
 pub mod context_os;
 pub mod context_overhead;
 pub mod context_overlay;
-pub mod context_policies;
 pub mod context_proof;
 pub mod context_radar;
 pub mod context_snapshot;
@@ -127,15 +123,12 @@ pub mod cross_source_hints;
 
 /// Convenience re-export: all context-related modules.
 pub mod context {
-    pub use super::context_compiler;
-    pub use super::context_deficit;
     pub use super::context_field;
     pub use super::context_handles;
     pub use super::context_ir;
     pub use super::context_ledger;
     pub use super::context_os;
     pub use super::context_overlay;
-    pub use super::context_policies;
     pub use super::context_proof;
 }
 
@@ -207,7 +200,6 @@ pub mod search {
 // ---------------------------------------------------------------------------
 pub mod ccp_session_bundle;
 pub mod handoff_ledger;
-pub mod handoff_transfer_bundle;
 pub mod session;
 pub mod session_diff;
 pub mod session_summary;
@@ -216,7 +208,6 @@ pub mod session_summary;
 pub mod session_domain {
     pub use super::ccp_session_bundle;
     pub use super::handoff_ledger;
-    pub use super::handoff_transfer_bundle;
     pub use super::session;
     pub use super::session_diff;
 }
@@ -255,7 +246,6 @@ pub mod patterns;
 // Domain: Agents & A2A
 // ---------------------------------------------------------------------------
 pub mod a2a;
-pub mod a2a_transport;
 pub mod agent_identity;
 pub mod agent_runtime_env;
 pub mod agents;
@@ -301,12 +291,10 @@ pub mod verification_observability;
 // ---------------------------------------------------------------------------
 // Domain: Config & Infrastructure
 // ---------------------------------------------------------------------------
-pub mod active_inference;
 pub mod agent_budget;
 pub mod anchor;
 pub mod ann_cache;
 pub mod atomic_fs;
-pub mod attribution;
 pub mod audit_trail;
 pub mod binary_detect;
 pub mod bounce_tracker;
@@ -323,7 +311,6 @@ pub mod config;
 pub mod config_heal;
 pub mod consolidation;
 pub mod consolidation_engine;
-pub mod context_capsule;
 pub mod contextops;
 pub mod conversation;
 pub mod crash_log;
@@ -411,14 +398,12 @@ pub mod profiles;
 pub mod project_hash;
 pub mod protocol;
 pub mod provider_bandit;
-pub mod provider_cache;
 pub mod providers;
 pub mod read_stub_index;
 pub mod recovery;
 pub mod redaction;
 pub mod reference_docs;
 pub mod roles;
-pub mod route_extractor;
 pub mod sandbox;
 #[cfg(target_os = "linux")]
 pub mod sandbox_landlock;

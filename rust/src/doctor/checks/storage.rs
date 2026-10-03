@@ -5,48 +5,6 @@
 use crate::doctor::common::*;
 use crate::doctor::{BOLD, DIM, GREEN, Outcome, RED, RST, YELLOW};
 
-pub(crate) fn cache_safety_outcome() -> Outcome {
-    use crate::core::neural::cache_alignment::CacheAlignedOutput;
-    use crate::core::provider_cache::ProviderCacheState;
-
-    let mut issues = Vec::new();
-
-    let mut aligned = CacheAlignedOutput::new();
-    aligned.add_stable_block("test", "stable content".into(), 1);
-    aligned.add_variable_block("test_var", "variable content".into(), 1);
-    let rendered = aligned.render();
-    if rendered.find("stable content").unwrap_or(usize::MAX)
-        > rendered.find("variable content").unwrap_or(0)
-    {
-        issues.push("cache_alignment: stable blocks not ordered first");
-    }
-
-    let mut state = ProviderCacheState::new();
-    let section = crate::core::provider_cache::CacheableSection::new(
-        "doctor_test",
-        "test content".into(),
-        crate::core::provider_cache::SectionPriority::System,
-        true,
-    );
-    state.mark_sent(&section);
-    if state.needs_update(&section) {
-        issues.push("provider_cache: hash tracking broken");
-    }
-
-    if issues.is_empty() {
-        Outcome {
-            ok: true,
-            line: format!(
-                "{BOLD}Cache safety{RST}  {GREEN}cache_alignment + provider_cache operational{RST}"
-            ),
-        }
-    } else {
-        Outcome {
-            ok: false,
-            line: format!("{BOLD}Cache safety{RST}  {RED}{}{RST}", issues.join("; ")),
-        }
-    }
-}
 /// Flags a quarantined `stats.json.corrupt` (#706): the stats loader moves an
 /// unparseable display cache aside instead of silently overwriting history.
 /// Doctor surfaces the quarantine so the loss is visible and recoverable
