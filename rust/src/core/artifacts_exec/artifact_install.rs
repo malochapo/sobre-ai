@@ -166,92 +166,9 @@ pub(crate) fn fetch_verified(
     Ok(())
 }
 
-/// Ensure the prebuilt addon binary for `asset` is installed in the managed
-/// bin dir for `name`/`version`, fetching + verifying it if absent. Returns
-/// the absolute binary path the gateway must spawn. No-op (pure hash check)
-/// when already installed and valid; `addons.locked = true` blocks any
-/// fetch before network I/O.
-pub fn ensure_addon_binary(
-    name: &str,
-    version: &str,
-    asset: &ArtifactAsset,
-) -> Result<PathBuf, String> {
-    if asset.filename.trim().is_empty() {
-        return Err(format!("addon `{name}` artifact has no filename"));
-    }
-    let dest = managed_bin_dir(name, version)?.join(asset.filename.trim());
-
-    if dest.is_file() && sha256_file(&dest).is_ok_and(|h| h.eq_ignore_ascii_case(&asset.sha256)) {
-        return Ok(dest);
-    }
-
-    let addons = crate::core::config::Config::load().addons;
-    if addons.locked {
-        return Err("addons.locked = true: managed artifact fetch disabled".into());
-    }
-
-    let context = format!("addon `{name}`");
-    fetch_verified(
-        &context,
-        &asset.url,
-        &asset.sha256,
-        &dest,
-        ArtifactUse::Executable,
-    )?;
-    // Egress transparency: the one network round-trip must be visible.
-    tracing::info!(
-        "addon `{name}` binary {version} installed from {} (sha256 verified)",
-        asset.url
-    );
-    Ok(dest)
-}
-
-/// Remove every managed binary version dir for `name` (best-effort cleanup
-/// on `addon remove`). Returns whether anything was deleted.
-pub fn remove_managed_binaries(name: &str) -> bool {
-    let Ok(dir) = managed_bin_dir(name, "unversioned") else {
-        return false;
-    };
-    // Pop the version leaf to get the addon's root: `…/bin/<name>/`.
-    let root = dir.parent().map(Path::to_path_buf).unwrap_or(dir);
-    if !root.is_dir() {
-        return false;
-    }
-    std::fs::remove_dir_all(&root).is_ok()
-}
-
-/// Prune every managed version dir of `name` except `keep_version`
-/// (post-update cleanup; best-effort).
-pub fn prune_other_versions(name: &str, keep_version: &str) {
-    let Ok(keep) = managed_bin_dir(name, keep_version) else {
-        return;
-    };
-    let Some(root) = keep.parent() else {
-        return;
-    };
-    let Ok(entries) = std::fs::read_dir(root) else {
-        return;
-    };
-    for entry in entries.flatten() {
-        let p = entry.path();
-        if p.is_dir() && p != keep {
-            let _ = std::fs::remove_dir_all(&p);
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::data_dir::isolated_data_dir;
-
-    fn asset(filename: &str, sha256: &str) -> ArtifactAsset {
-        ArtifactAsset {
-            filename: filename.into(),
-            url: "https://example.invalid/bin".into(),
-            sha256: sha256.into(),
-        }
-    }
 
     #[test]
     fn missing_pin_is_refused_without_network() {
@@ -268,52 +185,6 @@ mod tests {
         assert!(!dest.exists());
     }
 
-    /// Already-valid install short-circuits into a pure hash check — no
-    /// policy read, no network (example.invalid would fail loudly).
-    #[test]
-    fn valid_managed_binary_short_circuits() {
-        let _iso = isolated_data_dir();
-        let dir = managed_bin_dir("demo", "1.0.0").unwrap();
-        std::fs::create_dir_all(&dir).unwrap();
-        let bin = dir.join("demo-bin");
-        std::fs::write(&bin, b"binary bytes").unwrap();
-        let hash = sha256_file(&bin).unwrap();
-
-        let got = ensure_addon_binary("demo", "1.0.0", &asset("demo-bin", &hash)).unwrap();
-        assert_eq!(got, bin);
-    }
-
-    /// `addons.locked = true` blocks the fetch before any network I/O —
-    /// the acceptance criterion of GH #725.
-    #[test]
-    fn locked_policy_blocks_fetch() {
-        let _iso = isolated_data_dir();
-        crate::core::config::Config::update_global(|cfg| {
-            cfg.addons.locked = true;
-        })
-        .unwrap();
-
-        let err =
-            ensure_addon_binary("demo", "1.0.0", &asset("demo-bin", &"a".repeat(64))).unwrap_err();
-        assert!(err.contains("locked"), "got: {err}");
-    }
-
-    #[test]
-    fn tampered_managed_binary_refetches_and_fails_offline() {
-        let _iso = isolated_data_dir();
-        let dir = managed_bin_dir("demo", "1.0.0").unwrap();
-        std::fs::create_dir_all(&dir).unwrap();
-        let bin = dir.join("demo-bin");
-        std::fs::write(&bin, b"tampered").unwrap();
-
-        // Hash no longer matches the pin → not a short-circuit; the refetch
-        // hits example.invalid and fails, never silently accepting the
-        // tampered file.
-        let err =
-            ensure_addon_binary("demo", "1.0.0", &asset("demo-bin", &"a".repeat(64))).unwrap_err();
-        assert!(err.contains("fetch failed"), "got: {err}");
-    }
-
     #[test]
     fn current_triple_is_known_on_ci_platforms() {
         if cfg!(any(
@@ -324,22 +195,5 @@ mod tests {
         {
             assert_ne!(current_target_triple(), "unknown");
         }
-    }
-
-    #[test]
-    fn remove_and_prune_managed_binaries() {
-        let _iso = isolated_data_dir();
-        for v in ["1.0.0", "1.1.0"] {
-            let dir = managed_bin_dir("demo", v).unwrap();
-            std::fs::create_dir_all(&dir).unwrap();
-            std::fs::write(dir.join("demo-bin"), v).unwrap();
-        }
-
-        prune_other_versions("demo", "1.1.0");
-        assert!(!managed_bin_dir("demo", "1.0.0").unwrap().exists());
-        assert!(managed_bin_dir("demo", "1.1.0").unwrap().exists());
-
-        assert!(remove_managed_binaries("demo"));
-        assert!(!managed_bin_dir("demo", "1.1.0").unwrap().exists());
     }
 }

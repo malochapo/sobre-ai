@@ -535,11 +535,6 @@ pub struct Config {
     /// Disabled by default → fully no-op until `sensitivity.enabled = true`.
     #[serde(default)]
     pub sensitivity: crate::core::sensitivity::SensitivityConfig,
-    /// MCP Tool-Catalog Gateway (#210): aggregate + query-route downstream MCP
-    /// servers. Global-only (never merged from project-local config) and a full
-    /// no-op until `gateway.enabled = true`.
-    #[serde(default)]
-    pub gateway: crate::core::mcp_catalog::GatewayConfig,
     /// Addon ecosystem security floor (#863): install policy, registry-signature
     /// requirement and sandboxing for spawned addon servers. Global-only (never
     /// merged from project-local config) and fully permissive by default.
@@ -713,7 +708,6 @@ impl Default for Config {
             boundary_policy: crate::core::memory_boundary::BoundaryPolicy::default(),
             secret_detection: SecretDetectionConfig::default(),
             sensitivity: crate::core::sensitivity::SensitivityConfig::default(),
-            gateway: crate::core::mcp_catalog::GatewayConfig::default(),
             addons: crate::core::artifacts_exec::policy::AddonsConfig::default(),
             allow_auto_reroot: false,
             hook_binary: None,

@@ -28,7 +28,6 @@ mod embeddings_shared_engine;
 mod engine_call;
 mod entrypoints_wired;
 mod eval_harness_integration;
-mod gateway_e2e;
 mod glob_cli_556;
 mod graph_export_contract;
 mod hardening_ir_traits;

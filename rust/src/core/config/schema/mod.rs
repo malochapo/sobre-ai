@@ -245,9 +245,9 @@ mod tests {
             };
             match section_value {
                 None => orphans.push(format!("[{section}] (whole section)")),
-                // `[gateway.servers]` is a `Vec<GatewayServer>`: its schema keys
-                // describe the shape of one *entry*, not fields on `Config`.
-                // Same for any section that is not a plain object.
+                // A section that is a list: its schema keys describe the shape
+                // of one *entry*, not fields on `Config`. Same for any section
+                // that is not a plain object.
                 Some(v) if !v.is_object() => continue,
                 Some(_) => {
                     for name in sec.keys.keys() {

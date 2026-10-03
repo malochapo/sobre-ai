@@ -24,15 +24,10 @@
 
 pub mod artifact_install;
 pub mod binhash;
-pub mod capabilities;
-pub mod env_scrub;
 pub mod grammar_install;
 pub mod grammar_manifest;
 pub mod grammar_registry;
 pub mod ort_provision;
 pub mod policy;
-pub mod revocation;
-pub mod runtime;
-pub mod sandbox;
 pub mod signing;
 pub mod trusted_keys;

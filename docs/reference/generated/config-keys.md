@@ -83,11 +83,9 @@ Top-level configuration keys
 
 Addon ecosystem security floor: install policy, signature requirement, per-addon capability sandbox (#863, P1). Global-only.
 
-- `enforce_capabilities` (bool, default `false`) — Fail closed when an addon declares restricted [capabilities] but no OS sandbox launcher is available to enforce them
 - `grammar_auto_fetch` (bool, default `true`) — Zero-config grammar-addon fetch (#690): download a SHA-256-pinned grammar dylib on first use of a covered extension. Off = regex-signature fallback only (strict egress/DLP posture)
 - `locked` (bool, default `false`) — Refuse every managed fetch: grammar dylibs, the ONNX Runtime dylib, artifact downloads
 - `require_signature` (bool, default `false`) — Honour a user-override registry only if signed by a trusted org key
-- `sandbox` (enum: off | auto | strict, default `off`) — Sandbox spawned addon stdio servers: off | auto (block network) | strict (read-only fs + refuse if no launcher)
 
 ## `[archive]`
 
@@ -163,28 +161,6 @@ Token-savings recap publishing (gain --publish / auto-publish)
 - `display_name` (string?, default `null`) — Optional display name shown on your published card / leaderboard entry
 - `last_auto_publish` (string?, default `null`) — Timestamp of the last automatic publish (written by lean-ctx for throttling — not meant to be edited)
 - `leaderboard` (bool, default `true`) — When auto-publishing, also list the card on the public opt-in leaderboard
-
-## `[gateway]`
-
-MCP Tool-Catalog Gateway: aggregate + query-route downstream MCP servers (#210). Global-only.
-
-- `cache_ttl_secs` (integer, default `300`) — Aggregated-catalog cache lifetime in seconds
-- `call_timeout_secs` (integer, default `30`) — Per-operation timeout for downstream connect/list/call (seconds)
-- `enabled` (bool, default `false`) — Enable the MCP Tool-Catalog Gateway (no-op when false)
-- `top_n` (integer, default `5`) — How many tools `ctx_tools find` returns per query (clamped 1..=50)
-
-## `[gateway.servers]`
-
-Downstream MCP servers (array of tables: `[[gateway.servers]]`)
-
-- `args` (array, default `[]`) — Arguments for the spawned command (stdio transport)
-- `command` (string, default `""`) — Executable to spawn (stdio transport)
-- `enabled` (bool, default `true`) — Per-server switch (default true)
-- `env` (table, default `{}`) — Extra environment variables for the child process (stdio transport)
-- `headers` (table, default `{}`) — Extra request headers, e.g. Authorization (http transport)
-- `name` (string, default `""`) — Stable server id; becomes the catalog namespace (`name::tool`)
-- `transport` (string, default `stdio`) — Transport: stdio (spawn command) or http (connect to url)
-- `url` (string, default `""`) — Streamable-HTTP endpoint (http transport)
 
 ## `[graph]`
 

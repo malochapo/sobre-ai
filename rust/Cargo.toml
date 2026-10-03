@@ -145,14 +145,9 @@ wasm = ["dep:wasmi"]
 [dependencies]
 rmcp = { version = "2", features = [
   "server",
-  "client",
   "transport-io",
   "transport-streamable-http-server",
-  "transport-child-process",
-  "transport-streamable-http-client-reqwest",
 ] }
-# Header types for the gateway's downstream HTTP MCP client (already in the tree via rmcp/reqwest).
-http = "1.4"
 tiktoken-rs = "0.12"
 tokio = { version = "1.52", features = [
   "rt",
