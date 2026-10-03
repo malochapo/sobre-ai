@@ -930,7 +930,7 @@ impl LeanCtxServer {
                         shown.sort();
                         shown.truncate(30);
                         return Some(CallToolResult::success(vec![ContentBlock::text(format!(
-                            "Tool '{name}' blocked by workflow '{}' (state: {}). Allowed: {}. Use ctx_workflow(action=\"stop\") to exit.",
+                            "Tool '{name}' blocked by workflow '{}' (state: {}). Allowed: {}.",
                             run.spec.name,
                             run.current,
                             shown.join(", ")

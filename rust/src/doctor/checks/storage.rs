@@ -411,6 +411,26 @@ pub(crate) fn orphaned_knowledge_outcome() -> Outcome {
         ),
     }
 }
+/// Classify one memory store against its cap: `None` below 80% or with no
+/// cap, otherwise `(over_cap, "name: current/limit (pct%)")`. A store sitting
+/// *at* its cap is healthy: eviction (run_lifecycle) keeps it there by design.
+/// Only a store genuinely *over* cap is critical, which means eviction is not
+/// keeping up.
+pub(crate) fn capacity_level(name: &str, current: usize, limit: usize) -> Option<(bool, String)> {
+    if limit == 0 {
+        return None;
+    }
+    let pct = (current as f64 / limit as f64 * 100.0) as u32;
+    let warning = format!("{name}: {current}/{limit} ({pct}%)");
+    if pct > 100 {
+        Some((true, warning))
+    } else if pct >= 80 {
+        Some((false, warning))
+    } else {
+        None
+    }
+}
+
 pub(crate) fn capacity_warnings() -> Vec<Outcome> {
     let Ok(data_dir) = crate::core::data_dir::lean_ctx_data_dir() else {
         return vec![];
@@ -521,18 +541,9 @@ pub(crate) fn capacity_warnings() -> Vec<Outcome> {
         let mut critical = false;
 
         for (name, current, limit) in &checks {
-            if *limit == 0 {
-                continue;
-            }
-            let pct = (*current as f64 / *limit as f64 * 100.0) as u32;
-            // A store sitting *at* its cap is healthy: eviction (run_lifecycle)
-            // keeps it there by design. Only flag CRIT when it is genuinely
-            // *over* cap, which means eviction is not keeping up.
-            if pct > 100 {
-                critical = true;
-                warnings.push(format!("{name}: {current}/{limit} ({pct}%)"));
-            } else if pct >= 80 {
-                warnings.push(format!("{name}: {current}/{limit} ({pct}%)"));
+            if let Some((over_cap, warning)) = capacity_level(name, *current, *limit) {
+                critical |= over_cap;
+                warnings.push(warning);
             }
         }
 

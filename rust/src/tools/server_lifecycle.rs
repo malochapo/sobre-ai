@@ -170,9 +170,9 @@ impl LeanCtxServer {
                     &crate::core::config::Config::load().loop_detection,
                 ),
             )),
-            workflow: Arc::new(RwLock::new(
-                crate::core::workflow::load_active().ok().flatten(),
-            )),
+            // No tool starts or stops a workflow, so a run left on disk by an
+            // older build would gate tools with no way out for the agent.
+            workflow: Arc::new(RwLock::new(None)),
             ledger: Arc::new(RwLock::new(
                 crate::core::context_ledger::ContextLedger::load(),
             )),

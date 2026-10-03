@@ -698,32 +698,18 @@ pub(super) fn print_compact_status(passed: u32, total: u32) {
 mod tests {
     use super::is_active_shell_impl;
 
-    // Mirrors the inline classification in `checks::capacity_warnings`: a store at
-    // or below its cap is at most a WARN (healthy, eviction keeps it there); only
-    // a store *over* cap is CRIT (eviction is not keeping up).
-    fn make_capacity_check(name: &str, current: usize, limit: usize) -> Option<(bool, String)> {
-        if limit == 0 {
-            return None;
-        }
-        let pct = (current as f64 / limit as f64 * 100.0) as u32;
-        if pct > 100 {
-            Some((true, format!("{name}: {current}/{limit} ({pct}%)")))
-        } else if pct >= 80 {
-            Some((false, format!("{name}: {current}/{limit} ({pct}%)")))
-        } else {
-            None
-        }
-    }
-
+    // `checks::capacity_level`, the classification `capacity_warnings` applies
+    // to each store: at or below its cap is at most a WARN (healthy, eviction
+    // keeps it there); only a store *over* cap is CRIT.
     #[test]
     fn capacity_below_80_no_warning() {
-        assert!(make_capacity_check("facts", 100, 200).is_none());
-        assert!(make_capacity_check("facts", 159, 200).is_none());
+        assert!(super::checks::capacity_level("facts", 100, 200).is_none());
+        assert!(super::checks::capacity_level("facts", 159, 200).is_none());
     }
 
     #[test]
     fn capacity_at_80_yellow_warning() {
-        let result = make_capacity_check("facts", 160, 200);
+        let result = super::checks::capacity_level("facts", 160, 200);
         assert!(result.is_some());
         let (critical, msg) = result.unwrap();
         assert!(!critical);
@@ -733,7 +719,7 @@ mod tests {
 
     #[test]
     fn capacity_at_92_yellow_warning() {
-        let result = make_capacity_check("facts", 185, 200);
+        let result = super::checks::capacity_level("facts", 185, 200);
         assert!(result.is_some());
         let (critical, msg) = result.unwrap();
         assert!(!critical);
@@ -743,7 +729,7 @@ mod tests {
 
     #[test]
     fn capacity_at_95_is_warning_not_critical() {
-        let result = make_capacity_check("facts", 190, 200);
+        let result = super::checks::capacity_level("facts", 190, 200);
         assert!(result.is_some());
         let (critical, msg) = result.unwrap();
         assert!(!critical, "95% is full-but-healthy, not over cap");
@@ -754,7 +740,7 @@ mod tests {
     #[test]
     fn capacity_at_100_is_warning_not_critical() {
         // A store exactly at its cap is healthy — eviction keeps it there.
-        let result = make_capacity_check("facts", 200, 200);
+        let result = super::checks::capacity_level("facts", 200, 200);
         assert!(result.is_some());
         let (critical, _) = result.unwrap();
         assert!(!critical);
@@ -764,7 +750,7 @@ mod tests {
     fn capacity_over_100_is_critical() {
         // Genuinely over cap => eviction is not keeping up (regression guard for
         // the 206/200 "CRIT" that fired before lifecycle eviction was fixed).
-        let result = make_capacity_check("facts", 206, 200);
+        let result = super::checks::capacity_level("facts", 206, 200);
         assert!(result.is_some());
         let (critical, msg) = result.unwrap();
         assert!(critical);
@@ -774,7 +760,7 @@ mod tests {
 
     #[test]
     fn capacity_zero_limit_skipped() {
-        assert!(make_capacity_check("facts", 50, 0).is_none());
+        assert!(super::checks::capacity_level("facts", 50, 0).is_none());
     }
 
     #[test]

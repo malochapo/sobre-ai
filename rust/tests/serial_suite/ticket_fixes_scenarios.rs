@@ -449,23 +449,37 @@ fn ls_mixed_suffix_variants() {
 
 #[test]
 fn crash_hardening_no_remaining_unwrap_on_ctx_fields() {
-    use std::process::Command;
-
-    let output = Command::new("rg")
-        .args([
-            "--count",
-            r"ctx\.(cache|session|workflow|agent_id|client_name|tool_calls|ledger)\.as_ref\(\)\.unwrap\(\)",
-            "rust/src/tools/registered/",
-        ])
-        .output();
-
-    if let Ok(o) = output {
-        let stdout = String::from_utf8_lossy(&o.stdout);
-        assert!(
-            stdout.trim().is_empty(),
-            "Found remaining .as_ref().unwrap() on ctx fields:\n{stdout}"
-        );
+    const FIELDS: &[&str] = &[
+        "cache",
+        "session",
+        "workflow",
+        "agent_id",
+        "client_name",
+        "tool_calls",
+        "ledger",
+    ];
+    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/tools/registered");
+    let mut scanned = 0;
+    let mut hits = Vec::new();
+    for entry in std::fs::read_dir(&dir).expect("src/tools/registered exists") {
+        let path = entry.unwrap().path();
+        if path.extension().is_none_or(|e| e != "rs") {
+            continue;
+        }
+        scanned += 1;
+        let text = std::fs::read_to_string(&path).unwrap();
+        for field in FIELDS {
+            if text.contains(&format!("ctx.{field}.as_ref().unwrap()")) {
+                hits.push(format!("{}: ctx.{field}", path.display()));
+            }
+        }
     }
+    assert!(scanned > 0, "no tool sources found under {}", dir.display());
+    assert!(
+        hits.is_empty(),
+        "Found remaining .as_ref().unwrap() on ctx fields:\n{}",
+        hits.join("\n")
+    );
 }
 
 // ──────────────────────────────────────────────────────────

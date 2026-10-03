@@ -56,6 +56,11 @@ impl OverheadReport {
             + self.wakeup_tokens
             + self.rules_tokens_total()
     }
+
+    /// Strictly above a non-zero budget; a budget of 0 disables the check (#964).
+    fn is_over_budget(&self) -> bool {
+        self.budget_tokens > 0 && self.total_tokens() > self.budget_tokens
+    }
 }
 
 #[must_use]
@@ -89,7 +94,7 @@ pub(super) fn measure(home: &std::path::Path, project: &std::path::Path) -> Over
         budget_tokens,
         over_budget: false,
     };
-    report.over_budget = budget_tokens > 0 && report.total_tokens() > budget_tokens;
+    report.over_budget = report.is_over_budget();
     report
 }
 
@@ -246,18 +251,21 @@ mod tests {
 
     #[test]
     fn over_budget_threshold_is_strict() {
-        // Mirrors the check in `measure`: breach only above a non-zero budget.
-        let mut r = report(100, 200, 50, 300);
-        r.over_budget = r.budget_tokens > 0 && r.total_tokens() > r.budget_tokens;
-        assert!(r.over_budget, "350 > 300 must breach");
-
-        let mut under = report(100, 200, 50, 8000);
-        under.over_budget = under.budget_tokens > 0 && under.total_tokens() > under.budget_tokens;
-        assert!(!under.over_budget, "350 < 8000 is within budget");
-
-        let mut disabled = report(100, 200, 50, 0);
-        disabled.over_budget =
-            disabled.budget_tokens > 0 && disabled.total_tokens() > disabled.budget_tokens;
-        assert!(!disabled.over_budget, "budget 0 disables the check");
+        assert!(
+            report(100, 200, 50, 300).is_over_budget(),
+            "350 > 300 must breach"
+        );
+        assert!(
+            !report(100, 200, 50, 350).is_over_budget(),
+            "a total equal to the budget is within it"
+        );
+        assert!(
+            !report(100, 200, 50, 8000).is_over_budget(),
+            "350 < 8000 is within budget"
+        );
+        assert!(
+            !report(100, 200, 50, 0).is_over_budget(),
+            "budget 0 disables the check"
+        );
     }
 }
