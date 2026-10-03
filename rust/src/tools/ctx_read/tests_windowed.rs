@@ -37,7 +37,7 @@ fn disk_windowed_anchored_read_serves_file_over_the_size_cap() {
     let p = path.to_string_lossy().to_string();
     let real_size = std::fs::metadata(&path).unwrap().len();
 
-    crate::test_env::set_var("LCTX_MAX_READ_BYTES", "512");
+    crate::core::limits::set_max_read_bytes_for_this_thread(Some(512));
     assert!(
         real_size > 512,
         "fixture must exceed the test cap to exercise the regression"
@@ -58,7 +58,7 @@ fn disk_windowed_anchored_read_serves_file_over_the_size_cap() {
         ReadTuning::default(),
         None,
     );
-    crate::test_env::remove_var("LCTX_MAX_READ_BYTES");
+    crate::core::limits::set_max_read_bytes_for_this_thread(None);
 
     assert_eq!(out.resolved_mode, "anchored:5-7");
     assert!(
