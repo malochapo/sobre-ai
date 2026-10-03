@@ -83,7 +83,7 @@ Top-level configuration keys
 
 Addon ecosystem security floor: install policy, signature requirement, per-addon capability sandbox (#863, P1). Global-only.
 
-- `grammar_auto_fetch` (bool, default `true`) — Zero-config grammar-addon fetch (#690): download a SHA-256-pinned grammar dylib on first use of a covered extension. Off = regex-signature fallback only (strict egress/DLP posture)
+- `grammar_auto_fetch` (bool, default `false`) — Grammar-addon fetch (#690): download a SHA-256-pinned grammar dylib on first use of a covered extension. Off by default (no unrequested network); off = regex-signature fallback only
 - `locked` (bool, default `false`) — Refuse every managed fetch: grammar dylibs, the ONNX Runtime dylib, artifact downloads
 - `require_signature` (bool, default `false`) — Honour a user-override registry only if signed by a trusted org key
 
