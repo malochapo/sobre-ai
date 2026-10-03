@@ -1067,18 +1067,59 @@ mod exec_tests {
             elapsed < std::time::Duration::from_secs(5),
             "group kill must unblock the reader threads, took {elapsed:?}"
         );
-        // The whole group must be gone (ESRCH), not just the direct child.
-        // A brief grace period lets the kernel finish reaping.
+        // The whole group must be dead, not just the direct child.
+        // A brief grace period lets the kernel finish the kill.
         let mut group_gone = false;
         for _ in 0..50 {
-            // SAFETY: signal 0 only probes for existence.
-            if unsafe { libc::killpg(pgid, 0) } == -1 {
+            if process_group_dead(pgid) {
                 group_gone = true;
                 break;
             }
             std::thread::sleep(std::time::Duration::from_millis(20));
         }
-        assert!(group_gone, "process group {pgid} must be fully reaped");
+        assert!(group_gone, "process group {pgid} must be fully killed");
+    }
+
+    /// True once no live process remains in group `pgid`. The killed
+    /// grandchild is orphaned and reparented to PID 1; it stays a zombie until
+    /// PID 1 reaps it, which some container inits never do, and
+    /// `killpg(pgid, 0)` still counts a zombie. On Linux, /proc tells a dead
+    /// zombie from a survivor.
+    #[cfg(unix)]
+    fn process_group_dead(pgid: libc::pid_t) -> bool {
+        // SAFETY: signal 0 only probes for existence.
+        if unsafe { libc::killpg(pgid, 0) } == -1 {
+            return true;
+        }
+        cfg!(target_os = "linux") && live_group_members(pgid).is_empty()
+    }
+
+    /// PIDs in group `pgid` whose state is neither zombie nor dead, read from
+    /// /proc/<pid>/stat: `pid (comm) state ppid pgrp ...`.
+    #[cfg(unix)]
+    fn live_group_members(pgid: libc::pid_t) -> Vec<libc::pid_t> {
+        let mut live = Vec::new();
+        for entry in std::fs::read_dir("/proc").expect("/proc must be readable") {
+            let Ok(entry) = entry else { continue };
+            let Ok(pid) = entry.file_name().to_string_lossy().parse::<libc::pid_t>() else {
+                continue;
+            };
+            // A process that exits between read_dir and here has no stat.
+            let Ok(stat) = std::fs::read_to_string(entry.path().join("stat")) else {
+                continue;
+            };
+            // `comm` may contain spaces and parentheses: fields resume after the last ')'.
+            let Some((_, rest)) = stat.rsplit_once(')') else {
+                continue;
+            };
+            let mut fields = rest.split_whitespace();
+            let state = fields.next();
+            let pgrp = fields.nth(1).and_then(|f| f.parse::<libc::pid_t>().ok());
+            if pgrp == Some(pgid) && !matches!(state, Some("Z" | "X")) {
+                live.push(pid);
+            }
+        }
+        live
     }
 
     /// #806: piped stdin must be forwarded to the child via Stdio::piped()
