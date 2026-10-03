@@ -8,6 +8,21 @@ use lean_ctx::core::cache::SessionCache;
 use lean_ctx::core::protocol::CrpMode;
 use std::io::Write;
 
+/// Writes `contents`, then sets the mtime at least 2 s past both the previous
+/// mtime and now, so the read cache sees a modified file without the test
+/// sleeping out the filesystem's timestamp granularity.
+fn write_newer(path: &std::path::Path, contents: &str) {
+    let before = std::fs::metadata(path).and_then(|m| m.modified()).ok();
+    std::fs::write(path, contents).unwrap();
+    let now = std::time::SystemTime::now();
+    let floor = before.map_or(now, |b| b.max(now));
+    filetime::set_file_mtime(
+        path,
+        filetime::FileTime::from_system_time(floor + std::time::Duration::from_secs(2)),
+    )
+    .unwrap();
+}
+
 // =============================================================================
 // Fix 1 + 2: ctx_read Fast-Path + mtime guard
 // =============================================================================
@@ -64,10 +79,7 @@ mod read_cache_hits {
             CrpMode::Off,
             None,
         );
-
-        // Ensure mtime granularity catches the change
-        std::thread::sleep(std::time::Duration::from_millis(1100));
-        std::fs::write(&file, "fn v2() { updated(); }\n").unwrap();
+        super::write_newer(&file, "fn v2() { updated(); }\n");
 
         let out = lean_ctx::tools::ctx_read::handle_with_task_resolved(
             &mut cache,
@@ -287,8 +299,7 @@ mod diff_guard {
         );
 
         // Modify file
-        std::thread::sleep(std::time::Duration::from_millis(1100));
-        std::fs::write(&file, "fn version_two() { changed(); }\n").unwrap();
+        super::write_newer(&file, "fn version_two() { changed(); }\n");
 
         // Now diff should work
         let out = lean_ctx::tools::ctx_read::handle_with_task_resolved(
@@ -743,8 +754,7 @@ mod integration_workflow {
         assert!(out2.content.contains("unchanged") || out2.content.contains("cached"));
 
         // 3. File is edited externally
-        std::thread::sleep(std::time::Duration::from_millis(1100));
-        std::fs::write(&file, "fn edited_version() { new_logic(); }\n").unwrap();
+        super::write_newer(&file, "fn edited_version() { new_logic(); }\n");
 
         // 4. Agent reads again — detects change
         let out3 = lean_ctx::tools::ctx_read::handle_with_task_resolved(

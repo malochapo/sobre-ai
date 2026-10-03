@@ -10,6 +10,10 @@ use tokio::sync::RwLock;
 // Scenario 1: bounded_lock returns None when lock is held
 // ---------------------------------------------------------------------------
 
+/// Base timeout for the held-lock scenarios. The production base is 10 s; the
+/// timeout path is the same at any base, so these wait 0.2 s instead.
+const TEST_BASE: Duration = Duration::from_millis(200);
+
 #[tokio::test]
 async fn bounded_read_returns_none_when_write_held() {
     let lock: Arc<RwLock<u32>> = Arc::new(RwLock::new(42));
@@ -21,7 +25,7 @@ async fn bounded_read_returns_none_when_write_held() {
     let start = Instant::now();
     let result = tokio::task::spawn_blocking({
         let lock = lock.clone();
-        move || lean_ctx::server::bounded_lock::read(&lock, "test:write_held")
+        move || lean_ctx::server::bounded_lock::read_within(&lock, "test:write_held", TEST_BASE)
     })
     .await
     .unwrap();
@@ -31,9 +35,9 @@ async fn bounded_read_returns_none_when_write_held() {
         "should return None when write lock is held"
     );
     let elapsed = start.elapsed();
-    // adaptive_timeout may increase base 10s up to 2x in degraded mode
+    // adaptive_timeout may double the base in degraded mode
     assert!(
-        elapsed < Duration::from_secs(25),
+        elapsed < Duration::from_secs(5),
         "should not hang indefinitely, elapsed: {elapsed:?}"
     );
 }
@@ -48,7 +52,7 @@ async fn bounded_write_returns_none_when_read_held() {
     let start = Instant::now();
     let result = tokio::task::spawn_blocking({
         let lock = lock.clone();
-        move || lean_ctx::server::bounded_lock::write(&lock, "test:read_held")
+        move || lean_ctx::server::bounded_lock::write_within(&lock, "test:read_held", TEST_BASE)
     })
     .await
     .unwrap();
@@ -58,9 +62,9 @@ async fn bounded_write_returns_none_when_read_held() {
         "should return None when read lock is held"
     );
     let elapsed = start.elapsed();
-    // adaptive_timeout may increase base 10s up to 2x in degraded mode
+    // adaptive_timeout may double the base in degraded mode
     assert!(
-        elapsed < Duration::from_secs(25),
+        elapsed < Duration::from_secs(5),
         "should not hang, elapsed: {elapsed:?}"
     );
 }

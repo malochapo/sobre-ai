@@ -61,6 +61,10 @@ fn adaptive_timeout_never_zero_or_sub_second() {
 // 2. bounded_lock: timeout returns None, no panic
 // ═══════════════════════════════════════════════════════════════════════════════
 
+/// Base timeout for the contention tests. The production base is 10 s; the
+/// timeout path is the same at any base, so these wait 0.2 s instead.
+const TEST_BASE: Duration = Duration::from_millis(200);
+
 #[tokio::test]
 async fn bounded_write_under_contention_returns_none_not_panic() {
     let lock: Arc<RwLock<u32>> = Arc::new(RwLock::new(0));
@@ -68,7 +72,7 @@ async fn bounded_write_under_contention_returns_none_not_panic() {
 
     let result = tokio::task::spawn_blocking({
         let lock = lock.clone();
-        move || lean_ctx::server::bounded_lock::write(&lock, "contention_test")
+        move || lean_ctx::server::bounded_lock::write_within(&lock, "contention_test", TEST_BASE)
     })
     .await
     .unwrap();
@@ -87,14 +91,16 @@ async fn bounded_read_under_write_contention_returns_none() {
     let start = Instant::now();
     let result = tokio::task::spawn_blocking({
         let lock = lock.clone();
-        move || lean_ctx::server::bounded_lock::read(&lock, "read_contention_test")
+        move || {
+            lean_ctx::server::bounded_lock::read_within(&lock, "read_contention_test", TEST_BASE)
+        }
     })
     .await
     .unwrap();
 
     assert!(result.is_none());
     assert!(
-        start.elapsed() < Duration::from_secs(25),
+        start.elapsed() < Duration::from_secs(5),
         "should not hang indefinitely"
     );
 }
@@ -465,7 +471,7 @@ async fn bounded_lock_respects_adaptive_timeout_in_degraded() {
     let start = Instant::now();
     let result = tokio::task::spawn_blocking({
         let lock = lock.clone();
-        move || lean_ctx::server::bounded_lock::write(&lock, "degraded_test")
+        move || lean_ctx::server::bounded_lock::write_within(&lock, "degraded_test", TEST_BASE)
     })
     .await
     .unwrap();
@@ -473,13 +479,13 @@ async fn bounded_lock_respects_adaptive_timeout_in_degraded() {
     let elapsed = start.elapsed();
 
     assert!(result.is_none(), "should return None under contention");
-    // In degraded mode, base 10s * 2.0 = 20s timeout
+    // In degraded mode the timeout is twice the base.
     assert!(
-        elapsed >= Duration::from_secs(10),
-        "degraded timeout should be >= 10s (2x base), got {elapsed:?}"
+        elapsed >= TEST_BASE * 2,
+        "degraded timeout should be >= 2x base, got {elapsed:?}"
     );
     assert!(
-        elapsed < Duration::from_secs(25),
+        elapsed < Duration::from_secs(5),
         "should not exceed reasonable bounds, got {elapsed:?}"
     );
 }

@@ -2,7 +2,6 @@
 //! `super::*` resolves to the `ctx_read` module.
 
 use super::*;
-use std::time::Duration;
 
 #[test]
 fn test_header_toon_format_no_brackets() {
@@ -159,8 +158,7 @@ fn cached_lines_mode_invalidates_on_mtime_change() {
     let got1 = got1.split_once('|').map_or(got1, |(_, s)| s.trim());
     assert_eq!(got1, "one");
 
-    std::thread::sleep(Duration::from_secs(1));
-    std::fs::write(&path, "two\nsecond\n").unwrap();
+    crate::test_env::write_newer(&path, "two\nsecond\n");
 
     let r2 = handle_with_task_resolved(&mut cache, &p, "lines:1-1", CrpMode::Off, None);
     let l2: Vec<&str> = r2.content.lines().collect();
@@ -187,8 +185,7 @@ fn try_stub_hit_readonly_none_for_uncached_and_stale() {
 
     // Modify the file so the cached entry is stale → must NOT serve a stub,
     // independent of cache policy (the write path re-reads instead).
-    std::thread::sleep(Duration::from_secs(1));
-    std::fs::write(&path, "fn main() { changed(); }\n").unwrap();
+    crate::test_env::write_newer(&path, "fn main() { changed(); }\n");
     assert!(
         try_stub_hit_readonly(&cache, &p).is_none(),
         "stale file must never be served from the read-locked stub path"

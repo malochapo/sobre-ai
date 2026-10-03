@@ -22,7 +22,17 @@ pub fn read<T: Send + Sync + 'static>(
     lock: &Arc<RwLock<T>>,
     context: &str,
 ) -> Option<OwnedRwLockReadGuard<T>> {
-    let timeout = crate::core::io_health::adaptive_timeout(BASE_READ_TIMEOUT);
+    read_within(lock, context, BASE_READ_TIMEOUT)
+}
+
+/// [`read`] with a caller-chosen base timeout, still scaled by the I/O health
+/// multiplier. Lets tests exercise the timeout path without waiting 10 s.
+pub fn read_within<T: Send + Sync + 'static>(
+    lock: &Arc<RwLock<T>>,
+    context: &str,
+    base: Duration,
+) -> Option<OwnedRwLockReadGuard<T>> {
+    let timeout = crate::core::io_health::adaptive_timeout(base);
     let deadline = std::time::Instant::now() + timeout;
 
     loop {
@@ -49,7 +59,16 @@ pub fn write<T: Send + Sync + 'static>(
     lock: &Arc<RwLock<T>>,
     context: &str,
 ) -> Option<OwnedRwLockWriteGuard<T>> {
-    let timeout = crate::core::io_health::adaptive_timeout(BASE_WRITE_TIMEOUT);
+    write_within(lock, context, BASE_WRITE_TIMEOUT)
+}
+
+/// [`write`] with a caller-chosen base timeout. See [`read_within`].
+pub fn write_within<T: Send + Sync + 'static>(
+    lock: &Arc<RwLock<T>>,
+    context: &str,
+    base: Duration,
+) -> Option<OwnedRwLockWriteGuard<T>> {
+    let timeout = crate::core::io_health::adaptive_timeout(base);
     let deadline = std::time::Instant::now() + timeout;
 
     loop {

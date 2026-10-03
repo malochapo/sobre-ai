@@ -395,18 +395,15 @@ fn content_aware_staleness_detects_edits_and_additions() {
         "a just-built index must be fresh"
     );
 
-    // mtime resolution can be coarse; ensure the next writes are strictly newer.
-    std::thread::sleep(std::time::Duration::from_millis(1100));
-
     // Edit detection.
-    std::fs::write(td.path().join("a.rs"), "fn a() { let _x = 1; }\n").unwrap();
+    crate::test_env::write_newer(td.path().join("a.rs"), "fn a() { let _x = 1; }\n");
     assert!(
         index_looks_stale(&idx, &root_s),
         "an edited source file must mark the index stale"
     );
 
     // Addition detection.
-    std::fs::write(td.path().join("b.rs"), "fn b() {}\n").unwrap();
+    crate::test_env::write_newer(td.path().join("b.rs"), "fn b() {}\n");
     assert!(
         index_looks_stale(&idx, &root_s),
         "a new source file must mark the index stale"
@@ -434,11 +431,8 @@ fn touch_without_content_change_keeps_index_fresh() {
         "a just-built index must be fresh"
     );
 
-    // mtime resolution can be coarse; ensure the rewrite is strictly newer.
-    std::thread::sleep(std::time::Duration::from_millis(1100));
-
     // Rewrite identical bytes: mtime advances but the content hash is unchanged.
-    std::fs::write(td.path().join("a.rs"), "fn a() {}\n").unwrap();
+    crate::test_env::write_newer(td.path().join("a.rs"), "fn a() {}\n");
     assert!(
         !index_looks_stale(&idx, &root_s),
         "a content-identical rewrite must NOT mark the index stale"

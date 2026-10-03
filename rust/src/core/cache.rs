@@ -1331,10 +1331,7 @@ mod tests {
 
         let entry = cache.get(&p).unwrap();
         assert!(!is_cache_entry_stale(&p, entry.stored_mtime));
-
-        // Ensure mtime granularity differences don't make this flaky.
-        std::thread::sleep(Duration::from_secs(1));
-        std::fs::write(&path, "two").unwrap();
+        crate::test_env::write_newer(&path, "two");
 
         let entry = cache.get(&p).unwrap();
         assert!(is_cache_entry_stale(&p, entry.stored_mtime));
