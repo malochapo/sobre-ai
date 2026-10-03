@@ -10,9 +10,6 @@ use std::fs::{self, OpenOptions};
 use std::io::{BufRead, BufReader, Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 
-#[cfg(unix)]
-use std::os::unix::fs::OpenOptionsExt;
-
 use fs2::FileExt;
 
 use super::event::{

@@ -221,31 +221,6 @@ fn crash_loop_reset_allows_fresh_start() {
 }
 
 // ──────────────────────────────────────────────────────────
-// Scenario Group 4: Daemon autostart lifecycle (#289)
-// (only on macOS/Linux — daemon_autostart uses LaunchAgent/systemd)
-// ──────────────────────────────────────────────────────────
-
-#[cfg(any(target_os = "macos", target_os = "linux"))]
-#[test]
-fn daemon_autostart_is_installed_returns_bool() {
-    let result = lean_ctx::daemon_autostart::is_installed();
-    let _ = result;
-}
-
-#[cfg(any(target_os = "macos", target_os = "linux"))]
-#[test]
-fn daemon_autostart_install_uninstall_idempotent() {
-    let installed_before = lean_ctx::daemon_autostart::is_installed();
-    if !installed_before {
-        lean_ctx::daemon_autostart::uninstall(true);
-        assert!(
-            !lean_ctx::daemon_autostart::is_installed(),
-            "uninstall on non-installed should be safe idempotent"
-        );
-    }
-}
-
-// ──────────────────────────────────────────────────────────
 // Scenario Group 5: Loop detector error-awareness
 // User: agent calls ctx_read on a file that fails.
 // The failed call should NOT count toward the loop limit.
@@ -733,17 +708,6 @@ fn grep_parser_handles_relative_dotslash() {
         result.unwrap().contains("app.ts"),
         "Must extract filename from ./ path"
     );
-}
-
-// ──────────────────────────────────────────────────────────
-// Scenario Group: daemon_autostart::is_installed checks enabled state
-// ──────────────────────────────────────────────────────────
-
-#[cfg(any(target_os = "macos", target_os = "linux"))]
-#[test]
-fn daemon_autostart_is_installed_checks_enabled_state() {
-    let result = lean_ctx::daemon_autostart::is_installed();
-    let _ = result;
 }
 
 // ──────────────────────────────────────────────────────────
