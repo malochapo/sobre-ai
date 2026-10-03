@@ -343,15 +343,6 @@ mod tests {
     }
 
     #[test]
-    fn bash_case_pattern_valid() {
-        let pattern = bash_case_pattern();
-        assert!(pattern.contains(r"git\ *"));
-        assert!(pattern.contains(r"cargo\ *"));
-        assert!(pattern.contains(r"rg\ *"));
-        assert!(pattern.contains(r"ls\ *"));
-    }
-
-    #[test]
     fn hook_prefixes_superset_of_bare_commands() {
         let prefixes = hook_prefixes();
         let bare = hook_bare_commands();

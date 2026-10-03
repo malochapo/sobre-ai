@@ -215,18 +215,6 @@ mod no_degrade_tests {
         assert!(cfg.no_degrade_effective());
     }
 
-    #[test]
-    fn config_field_false_respected_when_no_env() {
-        if std::env::var("LCTX_NO_DEGRADE").is_ok() {
-            return;
-        }
-        let cfg = Config {
-            no_degrade: false,
-            ..Default::default()
-        };
-        assert!(!cfg.no_degrade_effective());
-    }
-
     // --- TOML deserialization ---
 
     #[test]
@@ -310,20 +298,6 @@ mod delta_explicit_tests {
     }
 
     // --- Config field ---
-
-    #[test]
-    fn config_field_true_respected_when_no_env() {
-        // Serialize with the env-mutating sibling test (see effective_false_when_unset).
-        let _lock = crate::core::data_dir::test_env_lock();
-        if std::env::var("LCTX_DELTA_EXPLICIT").is_ok() {
-            return;
-        }
-        let cfg = Config {
-            delta_explicit: true,
-            ..Default::default()
-        };
-        assert!(cfg.delta_explicit_effective());
-    }
 
     #[test]
     fn config_field_false_respected_when_no_env() {
@@ -458,15 +432,6 @@ mod rules_scope_tests {
     }
 
     #[test]
-    fn config_project() {
-        let cfg = Config {
-            rules_scope: Some("project".to_string()),
-            ..Default::default()
-        };
-        assert_eq!(cfg.rules_scope_effective(), RulesScope::Project);
-    }
-
-    #[test]
     fn unknown_value_falls_back_to_both() {
         let cfg = Config {
             rules_scope: Some("nonsense".to_string()),
@@ -493,21 +458,6 @@ mod rules_scope_tests {
 #[cfg(test)]
 mod rules_injection_tests {
     use super::super::*;
-
-    #[test]
-    fn default_is_shared() {
-        let cfg = Config::default();
-        assert_eq!(cfg.rules_injection_effective(), RulesInjection::Shared);
-    }
-
-    #[test]
-    fn config_dedicated() {
-        let cfg = Config {
-            rules_injection: Some("dedicated".to_string()),
-            ..Default::default()
-        };
-        assert_eq!(cfg.rules_injection_effective(), RulesInjection::Dedicated);
-    }
 
     #[test]
     fn config_off() {

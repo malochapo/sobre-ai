@@ -238,26 +238,6 @@ fn builtin_spec_roundtrip_serde() {
 }
 
 #[test]
-fn store_roundtrip() {
-    let dir = tempfile::tempdir().expect("tempdir");
-    let path = dir.path().join("active.json");
-
-    let spec = minimal_spec();
-    let mut run = WorkflowRun::new(spec);
-    run.add_manual_evidence("test-key", Some("test-value"));
-
-    let json = serde_json::to_string_pretty(&run).expect("serialize");
-    std::fs::write(&path, &json).expect("write");
-
-    let content = std::fs::read_to_string(&path).expect("read");
-    let loaded: WorkflowRun = serde_json::from_str(&content).expect("deserialize");
-
-    assert_eq!(loaded.current, "a");
-    assert_eq!(loaded.evidence.len(), 1);
-    assert_eq!(loaded.evidence[0].key, "test-key");
-}
-
-#[test]
 fn store_load_active_returns_none_when_file_is_missing() {
     let _env_lock = lean_ctx::core::data_dir::test_env_lock();
     let tmp = tempfile::tempdir().expect("tempdir");

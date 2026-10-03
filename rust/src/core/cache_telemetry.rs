@@ -104,21 +104,6 @@ mod tests {
     }
 
     #[test]
-    fn zero_is_a_noop() {
-        // A zero-sized event must never move a counter (avoids logging "0 wiped").
-        let before = snapshot();
-        record_compaction(0);
-        record_idle(0);
-        record_eviction(0);
-        // Only `>=` is safe to assert on a process-global counter: other tests
-        // may increment concurrently. A 0-sized call adds nothing of its own.
-        let after = snapshot();
-        assert!(after.compaction >= before.compaction);
-        assert!(after.idle >= before.idle);
-        assert!(after.eviction >= before.eviction);
-    }
-
-    #[test]
     fn each_cause_increments_monotonically() {
         let before = snapshot();
         record_compaction(2);

@@ -757,24 +757,4 @@ mod batch_grouping_tests {
         let only_old = Map::from_iter([("old_text".into(), json!("old"))]);
         assert!(build_unique_edit_args(&only_old).is_err());
     }
-
-    #[test]
-    fn dry_run_replace_unique_does_not_apply() {
-        let args = Map::from_iter([
-            ("path".into(), json!("a.rs")),
-            ("op".into(), json!("replace_unique")),
-            ("old_text".into(), json!("old")),
-            ("new_text".into(), json!("new")),
-            ("dry_run".into(), json!(true)),
-        ]);
-        let edit_args = build_unique_edit_args(&args).expect("validation passes");
-        assert!(
-            edit_args.contains_key("old_string"),
-            "args mapped correctly"
-        );
-        assert!(
-            args.get("dry_run").and_then(Value::as_bool) == Some(true),
-            "dry_run flag preserved in original args"
-        );
-    }
 }

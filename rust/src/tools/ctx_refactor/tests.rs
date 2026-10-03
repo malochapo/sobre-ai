@@ -857,22 +857,3 @@ fn handle_replace_symbol_worktree_mismatch_blocks_write() {
 
     crate::test_env::remove_var("LEAN_CTX_DATA_DIR");
 }
-
-/// #803: when `path` matches the resolved symbol (same file), the edit succeeds.
-#[test]
-fn handle_replace_symbol_same_path_succeeds() {
-    let dir = tempfile::tempdir().unwrap();
-    std::fs::write(dir.path().join("a.rs"), "fn old() {\n  1\n}\n").unwrap();
-    let abs = dir.path().join("a.rs").to_string_lossy().to_string();
-    let args = serde_json::json!({
-        "action": "replace_symbol_body",
-        "path": "a.rs",
-        "line": 1,
-        "end_line": 3,
-        "new_text": "fn new() {\n  2\n}"
-    });
-    let out = super::handle(&args, dir.path().to_str().unwrap(), &abs);
-    assert!(out.contains("replace_symbol_body applied"), "got: {out}");
-    let after = std::fs::read_to_string(dir.path().join("a.rs")).unwrap();
-    assert!(after.contains("fn new()"), "file: {after}");
-}

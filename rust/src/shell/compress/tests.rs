@@ -516,12 +516,6 @@ mod verbatim_output_tests {
     }
 
     #[test]
-    fn kubectl_get_uses_pattern_not_verbatim() {
-        assert!(!is_verbatim_output("kubectl get pods"));
-        assert!(!is_verbatim_output("kubectl get deployments"));
-    }
-
-    #[test]
     fn crypto_commands_are_verbatim() {
         assert!(is_verbatim_output("openssl x509 -in cert.pem -text"));
         assert!(is_verbatim_output(

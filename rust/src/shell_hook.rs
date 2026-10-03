@@ -970,29 +970,6 @@ mod tests {
     }
 
     #[test]
-    fn install_migrates_dropin_to_inline() {
-        let tmp = tempfile::tempdir().unwrap();
-        // No source loop → Style::Inline forces inline. Pre-stage a
-        // leftover drop-in file as if the user previously had the layout.
-        std::fs::create_dir_all(tmp.path().join(".zshenv.d")).unwrap();
-        std::fs::write(
-            tmp.path().join(".zshenv.d").join(DROPIN_ZSH),
-            "# stale lean-ctx drop-in\n",
-        )
-        .unwrap();
-        std::fs::write(tmp.path().join(".zshenv"), "export PATH=/usr/bin\n").unwrap();
-
-        install_zshenv(tmp.path(), true, Style::Inline, &test_stamp());
-
-        assert!(
-            !tmp.path().join(".zshenv.d").join(DROPIN_ZSH).exists(),
-            "drop-in file should be removed when installing inline"
-        );
-        let body = std::fs::read_to_string(tmp.path().join(".zshenv")).unwrap();
-        assert!(body.contains(MARKER_START));
-    }
-
-    #[test]
     fn install_is_idempotent_in_dropin_mode() {
         let tmp = tempfile::tempdir().unwrap();
         std::fs::create_dir_all(tmp.path().join(".zshenv.d")).unwrap();
@@ -1124,24 +1101,6 @@ mod tests {
     // `dump_zsh_state >&4; builtin exit $?`) or lean-ctx's own hooks: doing so
     // breaks the fd handshake so the IDE reports "no exit status" for every
     // command (and the 120s/8MB cap truncates output). See REDIRECT_SKIP_MARKERS.
-
-    #[test]
-    fn redirect_block_guards_every_skip_marker() {
-        let block = redirect_block("ZSH_EXECUTION_STRING", "[[ -n \"$LEAN_CTX_AGENT\" ]]");
-        let exec_pos = block
-            .find("exec lean-ctx")
-            .expect("redirect must exec lean-ctx");
-        for marker in REDIRECT_SKIP_MARKERS {
-            let guard = format!("[[ \"$ZSH_EXECUTION_STRING\" != *\"{marker}\"* ]]");
-            let guard_pos = block
-                .find(&guard)
-                .unwrap_or_else(|| panic!("redirect must guard against {marker:?}:\n{block}"));
-            assert!(
-                guard_pos < exec_pos,
-                "guard for {marker:?} must precede the exec redirect"
-            );
-        }
-    }
 
     #[test]
     fn zshenv_redirect_skips_ide_sandbox_and_hooks() {

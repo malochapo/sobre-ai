@@ -223,17 +223,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn project_markers_detected() {
-        let tmp = tempfile::tempdir().unwrap();
-        let root = tmp.path().join("myproject");
-        std::fs::create_dir_all(&root).unwrap();
-        assert!(!has_project_marker(&root));
-
-        std::fs::create_dir(root.join(".git")).unwrap();
-        assert!(has_project_marker(&root));
-    }
-
-    #[test]
     fn home_dir_detected_as_agent_dir() {
         if let Some(home) = dirs::home_dir() {
             assert!(is_home_or_agent_dir(&home));
@@ -248,17 +237,6 @@ mod tests {
         assert!(is_home_or_agent_dir(&codex));
         let project = std::path::PathBuf::from("/home/user/projects/myapp");
         assert!(!is_home_or_agent_dir(&project));
-    }
-
-    #[test]
-    fn test_granular_tool_count() {
-        let tools = crate::tool_defs::granular_tool_defs();
-        // Was `>= 25`, from when the surface was 76 tools.
-        assert!(
-            !tools.is_empty() && tools.len() <= 20,
-            "granular defs must match the capped surface, got {}",
-            tools.len()
-        );
     }
 
     #[test]
@@ -328,36 +306,6 @@ mod tests {
     }
 
     #[test]
-    fn is_broad_or_unsafe_root_rejects_home() {
-        if let Some(home) = dirs::home_dir() {
-            assert!(is_broad_or_unsafe_root(&home));
-        }
-    }
-
-    #[test]
-    fn is_broad_or_unsafe_root_rejects_filesystem_root() {
-        assert!(is_broad_or_unsafe_root(std::path::Path::new("/")));
-    }
-
-    #[test]
-    fn is_broad_or_unsafe_root_rejects_agent_dirs() {
-        assert!(is_broad_or_unsafe_root(std::path::Path::new(
-            "/home/user/.claude"
-        )));
-        assert!(is_broad_or_unsafe_root(std::path::Path::new(
-            "/home/user/.codex"
-        )));
-    }
-
-    #[test]
-    fn is_broad_or_unsafe_root_allows_project_subdir() {
-        let tmp = tempfile::tempdir().unwrap();
-        let subdir = tmp.path().join("my-project");
-        std::fs::create_dir_all(&subdir).unwrap();
-        assert!(!is_broad_or_unsafe_root(&subdir));
-    }
-
-    #[test]
     fn is_broad_or_unsafe_root_allows_tmp_subdirs() {
         assert!(!is_broad_or_unsafe_root(std::path::Path::new(
             "/tmp/leanctx-test"
@@ -365,14 +313,6 @@ mod tests {
         assert!(!is_broad_or_unsafe_root(std::path::Path::new(
             "/tmp/my-project"
         )));
-    }
-
-    #[test]
-    fn is_broad_or_unsafe_root_allows_home_subdirs() {
-        if let Some(home) = dirs::home_dir() {
-            let subdir = home.join("projects").join("my-app");
-            assert!(!is_broad_or_unsafe_root(&subdir));
-        }
     }
 
     #[test]

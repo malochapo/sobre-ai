@@ -92,13 +92,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn read_succeeds_on_uncontested_lock() {
-        let lock = Arc::new(RwLock::new(42u32));
-        let guard = read(&lock, "test").expect("uncontested read must succeed");
-        assert_eq!(*guard, 42);
-    }
-
-    #[test]
     fn write_succeeds_on_uncontested_lock() {
         let lock = Arc::new(RwLock::new(0u32));
         let mut guard = write(&lock, "test").expect("uncontested write must succeed");
@@ -113,12 +106,5 @@ mod tests {
         let g2 = read(&lock, "r2").expect("second reader");
         assert_eq!(*g1, 99);
         assert_eq!(*g2, 99);
-    }
-
-    #[test]
-    fn write_excludes_readers() {
-        let lock = Arc::new(RwLock::new(0u32));
-        let _hold = lock.clone().try_write_owned().unwrap();
-        assert!(lock.clone().try_read_owned().is_err());
     }
 }

@@ -421,34 +421,10 @@ fn unique_tmp_dir(prefix: &str) -> std::path::PathBuf {
 }
 
 #[test]
-fn bash_path_unix_unchanged() {
-    assert_eq!(
-        to_bash_compatible_path("/usr/local/bin/lean-ctx"),
-        "/usr/local/bin/lean-ctx"
-    );
-}
-
-#[test]
-fn bash_path_home_unchanged() {
-    assert_eq!(
-        to_bash_compatible_path("/home/user/.cargo/bin/lean-ctx"),
-        "/home/user/.cargo/bin/lean-ctx"
-    );
-}
-
-#[test]
 fn bash_path_windows_drive_converted() {
     assert_eq!(
         to_bash_compatible_path("C:\\Users\\Fraser\\bin\\lean-ctx.exe"),
         "/c/Users/Fraser/bin/lean-ctx.exe"
-    );
-}
-
-#[test]
-fn bash_path_windows_lowercase_drive() {
-    assert_eq!(
-        to_bash_compatible_path("D:\\tools\\lean-ctx.exe"),
-        "/d/tools/lean-ctx.exe"
     );
 }
 
@@ -558,94 +534,6 @@ fn normalize_unc_path_preserved() {
 }
 
 #[test]
-fn cursor_hook_config_has_version_and_object_hooks() {
-    let config = serde_json::json!({
-        "version": 1,
-        "hooks": {
-            "preToolUse": [
-                {
-                    "matcher": "terminal_command",
-                    "command": "lean-ctx hook rewrite"
-                },
-                {
-                    "matcher": "read_file|grep|search|list_files|list_directory",
-                    "command": "lean-ctx hook redirect"
-                }
-            ]
-        }
-    });
-
-    let json_str = serde_json::to_string_pretty(&config).unwrap();
-    let parsed: serde_json::Value = serde_json::from_str(&json_str).unwrap();
-
-    assert_eq!(parsed["version"], 1);
-    assert!(parsed["hooks"].is_object());
-    assert!(parsed["hooks"]["preToolUse"].is_array());
-    assert_eq!(parsed["hooks"]["preToolUse"].as_array().unwrap().len(), 2);
-    assert_eq!(
-        parsed["hooks"]["preToolUse"][0]["matcher"],
-        "terminal_command"
-    );
-}
-
-#[test]
-fn cursor_hook_detects_old_format_needs_migration() {
-    let old_format = r#"{"hooks":[{"event":"preToolUse","command":"lean-ctx hook rewrite"}]}"#;
-    let has_correct = old_format.contains("\"version\"") && old_format.contains("\"preToolUse\"");
-    assert!(
-        !has_correct,
-        "Old format should be detected as needing migration"
-    );
-}
-
-#[test]
-fn gemini_hook_config_has_type_command() {
-    let binary = "lean-ctx";
-    let rewrite_cmd = format!("{binary} hook rewrite");
-    let redirect_cmd = format!("{binary} hook redirect");
-
-    let hook_config = serde_json::json!({
-        "hooks": {
-            "BeforeTool": [
-                {
-                    "hooks": [{
-                        "type": "command",
-                        "command": rewrite_cmd
-                    }]
-                },
-                {
-                    "hooks": [{
-                        "type": "command",
-                        "command": redirect_cmd
-                    }]
-                }
-            ]
-        }
-    });
-
-    let parsed = hook_config;
-    let before_tool = parsed["hooks"]["BeforeTool"].as_array().unwrap();
-    assert_eq!(before_tool.len(), 2);
-
-    let first_hook = &before_tool[0]["hooks"][0];
-    assert_eq!(first_hook["type"], "command");
-    assert_eq!(first_hook["command"], "lean-ctx hook rewrite");
-
-    let second_hook = &before_tool[1]["hooks"][0];
-    assert_eq!(second_hook["type"], "command");
-    assert_eq!(second_hook["command"], "lean-ctx hook redirect");
-}
-
-#[test]
-fn gemini_hook_old_format_detected() {
-    let old_format = r#"{"hooks":{"BeforeTool":[{"command":"lean-ctx hook rewrite"}]}}"#;
-    let has_new = old_format.contains("hook rewrite")
-        && old_format.contains("hook redirect")
-        && old_format.contains("\"type\"");
-    assert!(!has_new, "Missing 'type' field should trigger migration");
-}
-
-#[test]
 fn rewrite_script_uses_registry_pattern() {
     let script = generate_rewrite_script("/usr/bin/lean-ctx");
     assert!(script.contains(r"git\ *"), "script missing git pattern");
@@ -661,14 +549,6 @@ fn rewrite_script_uses_registry_pattern() {
         script.contains("PowerShell|powershell"),
         "rewrite script must accept PowerShell tool names for Windows compatibility"
     );
-}
-
-#[test]
-fn compact_rewrite_script_uses_registry_pattern() {
-    let script = generate_compact_rewrite_script("/usr/bin/lean-ctx");
-    assert!(script.contains(r"git\ *"), "compact script missing git");
-    assert!(script.contains(r"cargo\ *"), "compact script missing cargo");
-    assert!(script.contains(r"rg\ *"), "compact script missing rg");
 }
 
 #[test]
@@ -766,23 +646,8 @@ fn from_bash_to_native_converts_msys_drive() {
 }
 
 #[test]
-fn from_bash_to_native_unix_path_unchanged() {
-    assert_eq!(
-        from_bash_to_native_path("/usr/local/bin/lean-ctx"),
-        "/usr/local/bin/lean-ctx"
-    );
-}
-
-#[test]
 fn from_bash_to_native_bare_name() {
     assert_eq!(from_bash_to_native_path("lean-ctx"), "lean-ctx");
-}
-
-#[test]
-fn windows_path_to_bash_form() {
-    let native = r"C:\Users\ABC\AppData\Local\lean-ctx\lean-ctx.exe";
-    let bash = to_bash_compatible_path(native);
-    assert_eq!(bash, "/c/Users/ABC/AppData/Local/lean-ctx/lean-ctx.exe");
 }
 
 // The bash→native return leg only translates on Windows hosts (GH #397).

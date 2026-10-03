@@ -675,11 +675,4 @@ mod tests {
             );
         }
     }
-
-    #[test]
-    fn poor_feedback_triggers_fallback() {
-        let feedback = RoutingFeedback::new();
-        feedback.record_outcome("expensive", "fast", 0.4, 0, 0);
-        assert!(feedback.should_use_fallback());
-    }
 }

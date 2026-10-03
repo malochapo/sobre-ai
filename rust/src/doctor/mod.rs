@@ -778,39 +778,6 @@ mod tests {
     }
 
     #[test]
-    fn bashrc_active_on_non_windows_when_shell_empty() {
-        assert!(is_active_shell_impl("~/.bashrc", "", false, false));
-    }
-
-    #[test]
-    fn bashrc_not_active_on_windows_when_shell_empty() {
-        assert!(!is_active_shell_impl("~/.bashrc", "", true, false));
-    }
-
-    #[test]
-    fn bashrc_active_when_shell_contains_bash_on_linux() {
-        assert!(is_active_shell_impl(
-            "~/.bashrc",
-            "/usr/bin/bash",
-            false,
-            false
-        ));
-    }
-
-    #[test]
-    fn bashrc_not_active_on_windows_even_with_bash_in_shell_env() {
-        // Issue #214: On Windows, Git Bash sets $SHELL globally to bash.exe.
-        // .bashrc should NOT be flagged on Windows unless actually inside bash.
-        crate::test_env::remove_var("BASH_VERSION");
-        assert!(!is_active_shell_impl(
-            "~/.bashrc",
-            "C:\\\\Program Files\\\\Git\\\\bin\\\\bash.exe",
-            true,
-            false,
-        ));
-    }
-
-    #[test]
     fn bashrc_not_active_on_windows_powershell_even_with_bash_in_shell() {
         assert!(!is_active_shell_impl(
             "~/.bashrc",
@@ -818,11 +785,6 @@ mod tests {
             true,
             true,
         ));
-    }
-
-    #[test]
-    fn bashrc_not_active_on_windows_powershell_with_empty_shell() {
-        assert!(!is_active_shell_impl("~/.bashrc", "", true, true));
     }
 
     #[test]

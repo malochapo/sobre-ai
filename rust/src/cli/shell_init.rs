@@ -1033,54 +1033,6 @@ export EDITOR=vim
     }
 
     #[test]
-    fn test_lc_uses_track_mode_by_default() {
-        let binary = "/usr/local/bin/lean-ctx";
-        let alias_list = crate::rewrite_registry::shell_alias_list();
-        let aliases = format!(
-            r#"_lc() {{
-    '{binary}' -t "$@"
-}}
-_lc_compress() {{
-    '{binary}' -c "$@"
-}}"#
-        );
-        assert!(
-            aliases.contains("-t \"$@\""),
-            "_lc must use -t (track mode) by default"
-        );
-        assert!(
-            aliases.contains("-c \"$@\""),
-            "_lc_compress must use -c (compress mode)"
-        );
-        let _ = alias_list;
-    }
-
-    #[test]
-    fn test_posix_shell_has_lean_ctx_mode() {
-        let alias_list = crate::rewrite_registry::shell_alias_list();
-        let aliases = r#"
-lean-ctx-mode() {{
-    case "${{1:-}}" in
-        compress) echo compress ;;
-        track) echo track ;;
-        off) echo off ;;
-    esac
-}}
-"#
-        .to_string();
-        assert!(
-            aliases.contains("lean-ctx-mode()"),
-            "lean-ctx-mode function must exist"
-        );
-        assert!(
-            aliases.contains("compress"),
-            "compress mode must be available"
-        );
-        assert!(aliases.contains("track"), "track mode must be available");
-        let _ = alias_list;
-    }
-
-    #[test]
     fn test_fish_hook_contains_pipe_guard_and_agent_bypass() {
         let output = generate_hook_fish("/usr/local/bin/lean-ctx");
         assert!(
@@ -1090,15 +1042,6 @@ lean-ctx-mode() {{
         assert!(
             output.contains("_lc_is_agent"),
             "fish hook must have agent-aware bypass"
-        );
-    }
-
-    #[test]
-    fn test_powershell_hook_contains_pipe_guard() {
-        let hook = "function _lc { if ($env:LEAN_CTX_DISABLED -or [Console]::IsOutputRedirected) { & @args; return } }";
-        assert!(
-            hook.contains("IsOutputRedirected"),
-            "PowerShell hook must contain pipe guard ([Console]::IsOutputRedirected)"
         );
     }
 

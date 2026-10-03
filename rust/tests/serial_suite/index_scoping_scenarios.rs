@@ -1,22 +1,6 @@
 // ===== Group A: Index Scoping & Dashboard =====
 
 #[test]
-fn graph_api_response_contains_project_root_full() {
-    let root = "/tmp/test-project-abc";
-    let index = lean_ctx::core::graph_index::ProjectIndex::new(root);
-    let mut val = serde_json::to_value(&index).unwrap_or_default();
-    if let Some(obj) = val.as_object_mut() {
-        obj.insert(
-            "project_root_full".to_string(),
-            serde_json::Value::String(root.to_string()),
-        );
-    }
-    let json_str = serde_json::to_string(&val).unwrap();
-    assert!(json_str.contains("project_root_full"));
-    assert!(json_str.contains(root));
-}
-
-#[test]
 fn load_or_build_does_not_use_legacy_dot_cache() {
     let tmp = tempfile::tempdir().unwrap();
     let project = tmp.path().join("myproject");
@@ -31,18 +15,6 @@ fn load_or_build_does_not_use_legacy_dot_cache() {
         idx.project_root.contains("myproject") || idx.files.is_empty(),
         "Should not load from a legacy '.' cache"
     );
-}
-
-#[test]
-fn cwd_fallback_only_used_if_subdirectory_of_root() {
-    let tmp = tempfile::tempdir().unwrap();
-    let project_a = tmp.path().join("project-a");
-    let project_b = tmp.path().join("project-b");
-    std::fs::create_dir_all(&project_a).unwrap();
-    std::fs::create_dir_all(&project_b).unwrap();
-
-    let idx = lean_ctx::core::graph_index::load_or_build(project_a.to_str().unwrap());
-    assert_ne!(idx.project_root, project_b.to_str().unwrap());
 }
 
 // ===== Group B: Index Status =====

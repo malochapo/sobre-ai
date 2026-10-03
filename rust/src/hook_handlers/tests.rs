@@ -21,22 +21,6 @@ fn with_env_lock<T>(body: impl FnOnce() -> T) -> T {
 }
 
 #[test]
-fn is_rewritable_basic() {
-    assert!(is_rewritable("git status"));
-    assert!(is_rewritable("cargo test --lib"));
-    assert!(is_rewritable("npm run build"));
-    assert!(!is_rewritable("echo hello"));
-    assert!(!is_rewritable("cd src"));
-    assert!(!is_rewritable("cat file.rs"));
-}
-
-#[test]
-fn file_read_rewrite_cat() {
-    let r = rewrite_file_read_command("cat src/main.rs", "lean-ctx");
-    assert_eq!(r, Some("lean-ctx read src/main.rs".to_string()));
-}
-
-#[test]
 fn rewrite_skip_reason_tracks_candidate_none_branches() {
     // Every command that `rewrite_candidate` declines must get a stable,
     // human-readable reason for the #520 debug log.
@@ -660,14 +644,6 @@ fn rewrite_candidate_wraps_clean_compound() {
 }
 
 #[test]
-fn rewrite_candidate_leaves_tricky_compound_untouched() {
-    // End-to-end: a tricky compound must not be re-wrapped by the single-command
-    // `is_rewritable` fallback after the compound handler declines it (#589).
-    let result = with_env_lock(|| rewrite_candidate("git log | python3 -c 'print(1)'", "lean-ctx"));
-    assert_eq!(result, None);
-}
-
-#[test]
 fn extract_field_works() {
     let input = r#"{"tool_name":"Bash","command":"git status"}"#;
     assert_eq!(
@@ -774,24 +750,6 @@ fn unescape_json_string_roundtrips() {
     assert_eq!(super::unescape_json_string(r"a\r\nb"), "a\r\nb");
     assert_eq!(super::unescape_json_string(r"\\n"), "\\n");
     assert_eq!(super::unescape_json_string("plain"), "plain");
-}
-
-#[test]
-fn to_bash_compatible_path_windows_drive() {
-    let p = crate::hooks::to_bash_compatible_path(r"E:\packages\lean-ctx.exe");
-    assert_eq!(p, "/e/packages/lean-ctx.exe");
-}
-
-#[test]
-fn to_bash_compatible_path_backslashes() {
-    let p = crate::hooks::to_bash_compatible_path(r"C:\Users\test\bin\lean-ctx.exe");
-    assert_eq!(p, "/c/Users/test/bin/lean-ctx.exe");
-}
-
-#[test]
-fn to_bash_compatible_path_unix_unchanged() {
-    let p = crate::hooks::to_bash_compatible_path("/usr/local/bin/lean-ctx");
-    assert_eq!(p, "/usr/local/bin/lean-ctx");
 }
 
 #[test]

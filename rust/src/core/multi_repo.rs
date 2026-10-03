@@ -558,16 +558,6 @@ path = "/home/user/frontend"
     }
 
     #[test]
-    fn rrf_fusion_basic() {
-        let manager = MultiRepoManager::new().with_rrf_k(60.0);
-        // RRF score for rank 0: 1/(60+0+1) = 1/61 ≈ 0.01639
-        let score: f64 = 1.0 / (60.0 + 0.0 + 1.0);
-        assert!((score - 0.01639).abs() < 0.001);
-
-        assert_eq!(manager.rrf_k, 60.0);
-    }
-
-    #[test]
     fn remove_root_works() {
         let dir = std::env::temp_dir().join("multi_repo_remove_test");
         let _ = std::fs::create_dir_all(&dir);

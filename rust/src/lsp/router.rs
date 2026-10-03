@@ -192,14 +192,6 @@ pub(crate) fn stub_test_lock() -> std::sync::MutexGuard<'static, ()> {
 mod tests {
     use super::*;
 
-    #[test]
-    fn no_port_file_means_no_backing_b() {
-        // With no IDE port file for an unlikely root, discovery yields None →
-        // select_backend would deterministically fall through to Backing A.
-        let pf = port_discovery::read_port_file("/nonexistent/leanctx/proj/xyz");
-        assert!(pf.is_none(), "unexpected port file for nonexistent root");
-    }
-
     struct StaleStub(bool);
     impl LspBackend for StaleStub {
         fn open_file(&mut self, _u: &Uri, _l: &str, _t: &str) -> Result<(), String> {

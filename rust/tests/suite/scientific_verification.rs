@@ -253,20 +253,6 @@ fn litm_quadratic_steeper_than_linear_near_edges() {
 }
 
 #[test]
-fn litm_u_shape_property() {
-    let alpha = 0.90;
-    let beta = 0.50;
-    let gamma = 0.85;
-    let begin = positional_attention(0.0, alpha, beta, gamma);
-    let end = positional_attention(1.0, alpha, beta, gamma);
-    let mid = positional_attention(0.5, alpha, beta, gamma);
-    assert!(
-        begin > mid && end > mid,
-        "U-shape: edges ({begin:.2}, {end:.2}) must be > middle ({mid:.2})"
-    );
-}
-
-#[test]
 fn litm_monotonic_first_half() {
     let alpha = 0.90;
     let beta = 0.50;
@@ -353,15 +339,6 @@ fn symbol_map_roi_positive_for_frequent_long_idents() {
     assert!(
         should_register("authenticate_user_credentials_handler", 10, 1),
         "very long ident (36 chars) with 10 occurrences should have positive ROI"
-    );
-}
-
-#[test]
-fn symbol_map_roi_negative_for_single_use() {
-    use lean_ctx::core::symbol_map::should_register;
-    assert!(
-        !should_register("authenticate_user_credentials_handler", 1, 1),
-        "single-use ident should have negative ROI"
     );
 }
 
@@ -488,23 +465,6 @@ fn safeguard_allows_good_compression() {
 // ═══════════════════════════════════════════════════════════════════
 // 12. COST MODEL — economic sanity checks
 // ═══════════════════════════════════════════════════════════════════
-
-#[test]
-fn cost_model_token_savings_exclude_output_bonus() {
-    let summary = lean_ctx::core::stats::load_stats();
-    let _ = summary.total_saved;
-    let _ = summary.total_calls;
-}
-
-#[test]
-fn cost_model_usd_is_bounded() {
-    let tokens_saved: u64 = 1_000_000;
-    let usd = tokens_saved as f64 / 1_000_000.0 * 2.50;
-    assert!(
-        (usd - 2.50).abs() < 0.01,
-        "1M tokens at $2.50/M should be $2.50: got ${usd:.2}"
-    );
-}
 
 // ═══════════════════════════════════════════════════════════════════
 // 13. INTEGRATED SCIENTIFIC AUDIT

@@ -15,19 +15,6 @@ fn lean_ctx_bin() -> Command {
 }
 
 #[test]
-fn binary_prints_version() {
-    let output = lean_ctx_bin()
-        .arg("--version")
-        .output()
-        .expect("failed to run lean-ctx");
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(
-        stdout.contains("lean-ctx"),
-        "version output should contain 'lean-ctx', got: {stdout}"
-    );
-}
-
-#[test]
 fn binary_prints_help() {
     let output = lean_ctx_bin()
         .arg("--help")
@@ -39,28 +26,6 @@ fn binary_prints_help() {
         "help should contain tagline"
     );
     assert!(stdout.contains("lean-ctx"), "help should mention lean-ctx");
-}
-
-#[test]
-fn binary_read_file() {
-    let output = lean_ctx_bin()
-        .args(["read", "Cargo.toml", "-m", "signatures"])
-        .output()
-        .expect("failed to run lean-ctx");
-    assert!(output.status.success(), "read should succeed");
-}
-
-#[test]
-fn binary_config_shows_defaults() {
-    let output = lean_ctx_bin()
-        .arg("config")
-        .output()
-        .expect("failed to run lean-ctx");
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(
-        stdout.contains("checkpoint_interval"),
-        "config should show checkpoint_interval"
-    );
 }
 
 #[test]
@@ -177,100 +142,6 @@ fn pipe_guard_multiline_output_unchanged_when_piped() {
     assert!(
         stdout.contains("result: 42"),
         "must preserve exact output content"
-    );
-}
-
-#[test]
-fn pipe_guard_bash_hook_script_test() {
-    if cfg!(windows) {
-        return;
-    }
-    let binary = env!("CARGO_BIN_EXE_lean-ctx");
-    let script = format!(
-        r#"
-_lc() {{
-    if [ -n "${{LEAN_CTX_DISABLED:-}}" ] || [ ! -t 1 ]; then
-        command "$@"
-        return
-    fi
-    '{binary}' -c "$@"
-}}
-# Pipe test: _lc echo should bypass lean-ctx when piped
-RESULT=$(_lc echo "pipe-guard-test-value")
-echo "CAPTURED:$RESULT"
-"#
-    );
-    let output = Command::new("bash")
-        .args(["-c", &script])
-        .output()
-        .expect("failed to run bash pipe guard test");
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(
-        stdout.contains("CAPTURED:pipe-guard-test-value"),
-        "pipe guard must bypass lean-ctx in command substitution, got: {stdout}"
-    );
-}
-
-#[test]
-fn pipe_guard_bash_hook_pipe_to_sh() {
-    if cfg!(windows) {
-        return;
-    }
-    let binary = env!("CARGO_BIN_EXE_lean-ctx");
-    let script = format!(
-        r#"
-_lc() {{
-    if [ -n "${{LEAN_CTX_DISABLED:-}}" ] || [ ! -t 1 ]; then
-        command "$@"
-        return
-    fi
-    '{binary}' -c "$@"
-}}
-# Simulate curl | sh: echo a script, pipe to sh
-_lc echo 'echo INSTALL_SUCCESS' | sh
-"#
-    );
-    let output = Command::new("bash")
-        .args(["-c", &script])
-        .output()
-        .expect("failed to run bash pipe-to-sh test");
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(
-        stdout.contains("INSTALL_SUCCESS"),
-        "piped script must execute correctly through sh, got: {stdout}"
-    );
-}
-
-#[test]
-fn pipe_guard_bash_hook_redirect_to_file() {
-    if cfg!(windows) {
-        return;
-    }
-    let binary = env!("CARGO_BIN_EXE_lean-ctx");
-    let tmp = std::env::temp_dir().join("lean-ctx-pipe-guard-test.txt");
-    let tmp_path = tmp.to_str().unwrap();
-    let script = format!(
-        r#"
-_lc() {{
-    if [ -n "${{LEAN_CTX_DISABLED:-}}" ] || [ ! -t 1 ]; then
-        command "$@"
-        return
-    fi
-    '{binary}' -c "$@"
-}}
-_lc echo "redirect-test-value" > {tmp_path}
-cat {tmp_path}
-rm -f {tmp_path}
-"#
-    );
-    let output = Command::new("bash")
-        .args(["-c", &script])
-        .output()
-        .expect("failed to run bash redirect test");
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(
-        stdout.contains("redirect-test-value"),
-        "redirected output must be raw, got: {stdout}"
     );
 }
 

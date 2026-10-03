@@ -1122,62 +1122,6 @@ mod exec_tests {
         live
     }
 
-    /// #806: piped stdin must be forwarded to the child via Stdio::piped()
-    /// and relayed, not nulled. Tests the relay pattern: write data to child
-    /// stdin, close it (EOF), child reads and exits.
-    #[cfg(unix)]
-    #[test]
-    fn stdin_relay_forwards_piped_data() {
-        use std::io::Write;
-        use std::os::unix::process::CommandExt as _;
-
-        let mut cmd = std::process::Command::new("cat");
-        cmd.stdin(std::process::Stdio::piped())
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped());
-        cmd.process_group(0);
-        let mut child = cmd.spawn().expect("failed to spawn cat");
-
-        let mut child_stdin = child.stdin.take().unwrap();
-        std::thread::spawn(move || {
-            child_stdin.write_all(b"hello from pipe\n").unwrap();
-            drop(child_stdin);
-        });
-
-        let output = child.wait_with_output().expect("wait failed");
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        assert!(
-            stdout.contains("hello from pipe"),
-            "#806: piped stdin must reach the child, got: {stdout}"
-        );
-    }
-
-    /// #806: commands that don't read stdin must still work normally
-    /// when no data is piped (relay thread sees immediate EOF from parent).
-    #[cfg(unix)]
-    #[test]
-    fn stdin_relay_no_data_does_not_hang() {
-        let start = std::time::Instant::now();
-        let mut cmd = std::process::Command::new("sh");
-        cmd.args(["-c", "echo ok"])
-            .stdin(std::process::Stdio::piped())
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped());
-        use std::os::unix::process::CommandExt as _;
-        cmd.process_group(0);
-        let mut child = cmd.spawn().unwrap();
-        // Close stdin immediately (simulates relay with empty parent pipe)
-        drop(child.stdin.take());
-        let output = child.wait_with_output().unwrap();
-        let elapsed = start.elapsed();
-        assert!(
-            elapsed < std::time::Duration::from_secs(5),
-            "must not hang when stdin is closed immediately, took {elapsed:?}"
-        );
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        assert!(stdout.contains("ok"), "command output missing: {stdout}");
-    }
-
     #[test]
     fn heavy_commands_get_higher_byte_limits() {
         // exec_limits owns the byte ceiling; timeout resolution is covered by

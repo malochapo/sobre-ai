@@ -447,30 +447,6 @@ mod tests {
         assert!((t.bpe_entropy - 1.0).abs() < f64::EPSILON);
     }
 
-    #[test]
-    fn adaptive_adjusts_for_compressibility() {
-        let repetitive = "use std::io;\n".repeat(200);
-        let diverse = (0..200).fold(String::new(), |mut s, i| {
-            use std::fmt::Write;
-            let _ = writeln!(s, "let var_{i} = compute_{i}(arg_{i});");
-            s
-        });
-
-        let base_rep = thresholds_for_path("main.rs");
-        let base_div = thresholds_for_path("main.rs");
-        assert!(
-            (base_rep.bpe_entropy - base_div.bpe_entropy).abs() < f64::EPSILON,
-            "same path should get same base thresholds"
-        );
-
-        let k_rep = kolmogorov_proxy(&repetitive);
-        let k_div = kolmogorov_proxy(&diverse);
-        assert!(
-            k_rep < k_div,
-            "repetitive content should have lower Kolmogorov proxy: {k_rep} vs {k_div}"
-        );
-    }
-
     use crate::core::threshold_learning::QualitySignal;
 
     fn arm_mean(project_root: &str, key: &str, arm: &str) -> f64 {

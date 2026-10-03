@@ -261,13 +261,6 @@ mod tests {
         }
     }
 
-    #[cfg(unix)]
-    #[test]
-    fn fsync_dir_succeeds_on_a_real_directory() {
-        let dir = tempfile::tempdir().unwrap();
-        fsync_dir(dir.path());
-    }
-
     // --- #958: orphaned-temp sweep ---
 
     #[test]

@@ -134,14 +134,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn classify_git() {
-        assert_eq!(
-            TaskClassifier::classify_command_key("git status"),
-            TaskCategory::Git
-        );
-    }
-
-    #[test]
     fn classify_tools() {
         assert_eq!(
             TaskClassifier::classify_tool("ctx_impact"),

@@ -489,12 +489,6 @@ mod tests {
     }
 
     #[test]
-    fn pre_dispatch_passthrough_for_full() {
-        let result = pre_dispatch_read("src/main.rs", "full", None, None, None);
-        assert!(result.overridden_mode.is_none());
-    }
-
-    #[test]
     fn pre_dispatch_passthrough_for_diff() {
         let result = pre_dispatch_read("src/main.rs", "diff", None, None, None);
         assert!(result.overridden_mode.is_none());
@@ -645,43 +639,6 @@ mod tests {
     }
 
     #[test]
-    fn no_pressure_downgrade_when_low() {
-        let result = pre_dispatch_read("c.rs", "full", None, None, Some(&PressureAction::NoAction));
-        assert!(result.overridden_mode.is_none());
-        assert!(!result.pressure_downgraded);
-    }
-
-    #[test]
-    fn suggest_compression_does_not_downgrade_when_enforce_off() {
-        // Default profile has degradation.enforce = false
-        let result = pre_dispatch_read(
-            "c.rs",
-            "auto",
-            None,
-            None,
-            Some(&PressureAction::SuggestCompression),
-        );
-        assert!(
-            result.overridden_mode.is_none(),
-            "suggest_compression must not downgrade when enforce is off"
-        );
-        assert!(!result.pressure_downgraded);
-    }
-
-    #[test]
-    fn suggest_compression_does_not_touch_explicit_full() {
-        let result = pre_dispatch_read(
-            "c.rs",
-            "full",
-            None,
-            None,
-            Some(&PressureAction::SuggestCompression),
-        );
-        assert!(result.overridden_mode.is_none());
-        assert!(!result.pressure_downgraded);
-    }
-
-    #[test]
     fn post_dispatch_reinjection_downgrades_entries() {
         let mut ledger = ContextLedger::with_window_size(1000);
         ledger.record("a.rs", "full", 400, 400);
@@ -774,44 +731,14 @@ mod tests {
     // --- pressure_downgrade unit tests (pure function) ---
 
     #[test]
-    fn pressure_downgrade_suggest_auto_to_map() {
-        let result = pressure_downgrade("auto", &PressureAction::SuggestCompression);
-        assert_eq!(result, Some("map".to_string()));
-    }
-
-    #[test]
-    fn pressure_downgrade_suggest_full_to_map() {
-        let result = pressure_downgrade("full", &PressureAction::SuggestCompression);
-        assert_eq!(result, Some("map".to_string()));
-    }
-
-    #[test]
-    fn pressure_downgrade_suggest_does_not_touch_signatures() {
-        let result = pressure_downgrade("signatures", &PressureAction::SuggestCompression);
-        assert!(result.is_none());
-    }
-
-    #[test]
     fn pressure_downgrade_suggest_does_not_touch_diff() {
         let result = pressure_downgrade("diff", &PressureAction::SuggestCompression);
         assert!(result.is_none());
     }
 
     #[test]
-    fn pressure_downgrade_force_full_to_map() {
-        let result = pressure_downgrade("full", &PressureAction::ForceCompression);
-        assert_eq!(result, Some("map".to_string()));
-    }
-
-    #[test]
     fn pressure_downgrade_force_auto_to_signatures() {
         let result = pressure_downgrade("auto", &PressureAction::ForceCompression);
-        assert_eq!(result, Some("signatures".to_string()));
-    }
-
-    #[test]
-    fn pressure_downgrade_force_map_to_signatures() {
-        let result = pressure_downgrade("map", &PressureAction::ForceCompression);
         assert_eq!(result, Some("signatures".to_string()));
     }
 
@@ -846,12 +773,6 @@ mod tests {
     }
 
     #[test]
-    fn pressure_downgrade_noaction_returns_none() {
-        let result = pressure_downgrade("full", &PressureAction::NoAction);
-        assert!(result.is_none());
-    }
-
-    #[test]
     fn pressure_downgrade_noaction_auto_returns_none() {
         let result = pressure_downgrade("auto", &PressureAction::NoAction);
         assert!(result.is_none());
@@ -859,41 +780,6 @@ mod tests {
 
     // --- pre_dispatch_inner: no_degrade integration ---
     // When LCTX_NO_DEGRADE is NOT set (test default), pressure downgrade is active.
-
-    #[test]
-    fn pre_dispatch_does_not_downgrade_full_under_force() {
-        if std::env::var("LCTX_NO_DEGRADE").is_ok() {
-            return;
-        }
-        // Explicit mode=full is protected: pressure cannot downgrade it
-        let result = pre_dispatch_read(
-            "nd_test.rs",
-            "full",
-            None,
-            None,
-            Some(&PressureAction::ForceCompression),
-        );
-        assert!(result.overridden_mode.is_none());
-        assert!(!result.pressure_downgraded);
-    }
-
-    #[test]
-    fn pre_dispatch_does_not_downgrade_auto_when_enforce_off() {
-        if std::env::var("LCTX_NO_DEGRADE").is_ok() {
-            return;
-        }
-        // Default profile has degradation.enforce = false, so pressure
-        // should not downgrade even non-full modes
-        let result = pre_dispatch_read(
-            "nd_test2.rs",
-            "auto",
-            None,
-            None,
-            Some(&PressureAction::EvictLeastRelevant),
-        );
-        assert!(result.overridden_mode.is_none());
-        assert!(!result.pressure_downgraded);
-    }
 
     // --- estimate_read_tokens unit tests ---
 

@@ -14,17 +14,6 @@ fn measure_compression(command: &str, output: &str) -> (usize, usize, f64) {
 }
 
 #[test]
-fn verify_git_log_patch_savings() {
-    let output = generate_git_log_patch(10);
-    let (orig, comp, pct) = measure_compression("git log -p", &output);
-    eprintln!("[git log -p, 10 commits] {orig} → {comp} tokens ({pct:.1}% saved)");
-    assert!(
-        pct > 70.0,
-        "git log -p should save >70% tokens, got {pct:.1}%"
-    );
-}
-
-#[test]
 fn verify_git_log_patch_large_savings() {
     let output = generate_git_log_patch(50);
     let (orig, comp, pct) = measure_compression("git log -p", &output);
@@ -262,41 +251,6 @@ fn verify_cep_delta_tracking_prevents_overcounting() {
     // (env-race legacy — see .github/workflows/ci.yml), so no other test in
     // this binary touches the environment concurrently.
     unsafe { std::env::remove_var("LEAN_CTX_DATA_DIR") };
-}
-
-#[test]
-#[ignore = "requires manual setup: git log -p -10 > /tmp/git_log_raw.txt"]
-fn e2e_real_git_log_compression() {
-    let raw_path = "/tmp/git_log_raw.txt";
-    if !std::path::Path::new(raw_path).exists() {
-        eprintln!(
-            "[SKIP] /tmp/git_log_raw.txt not found — run: git log -p -10 > /tmp/git_log_raw.txt"
-        );
-        return;
-    }
-    let raw = std::fs::read_to_string(raw_path).unwrap();
-    let original = count_tokens(&raw);
-    let compressed = git::compress("git log -p -10", &raw).unwrap_or_else(|| raw.clone());
-    let compressed_tokens = count_tokens(&compressed);
-    let saved = original.saturating_sub(compressed_tokens);
-    let pct = if original > 0 {
-        saved as f64 / original as f64 * 100.0
-    } else {
-        0.0
-    };
-
-    eprintln!("\n=== E2E: Real git log -p -10 ===");
-    eprintln!("Raw: {} bytes, {} lines", raw.len(), raw.lines().count());
-    eprintln!("Original: {original} tokens");
-    eprintln!("Compressed: {compressed_tokens} tokens");
-    eprintln!("Saved: {saved} tokens ({pct:.1}%)");
-    eprintln!("\n=== Compressed output ===");
-    eprintln!("{}", compressed.chars().take(800).collect::<String>());
-
-    assert!(
-        pct > 80.0,
-        "real git log -p should save >80%, got {pct:.1}%"
-    );
 }
 
 #[test]

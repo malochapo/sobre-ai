@@ -316,15 +316,6 @@ mod augment_tests {
     use super::*;
 
     #[test]
-    fn augment_cli_settings_path_is_under_dot_augment() {
-        let home = Path::new("/home/tester");
-        assert_eq!(
-            augment_cli_settings_path(home),
-            home.join(".augment").join("settings.json")
-        );
-    }
-
-    #[test]
     #[cfg(target_os = "linux")]
     fn augment_vscode_mcp_path_uses_linux_globalstorage() {
         let home = Path::new("/home/tester");
@@ -367,15 +358,6 @@ mod augment_tests {
 #[cfg(test)]
 mod qodercli_tests {
     use super::*;
-
-    #[test]
-    fn qodercli_settings_path_uses_shared_qoder_settings_file() {
-        let home = Path::new("/home/tester");
-        assert_eq!(
-            qodercli_settings_path(home),
-            home.join(".qoder/settings.json")
-        );
-    }
 
     #[test]
     fn qodercli_settings_path_is_distinct_from_qoder_ide_mcp_path() {

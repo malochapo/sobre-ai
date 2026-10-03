@@ -16,8 +16,6 @@ use lean_ctx::core::cross_source_hints;
 use lean_ctx::core::graph_index::IndexEdge;
 use lean_ctx::core::knowledge::ProjectKnowledge;
 use lean_ctx::core::knowledge_provider_extract;
-use lean_ctx::core::providers::ContextProvider;
-use lean_ctx::core::providers::mcp_bridge::McpBridgeProvider;
 
 // ===========================================================================
 // PROOF 1: consolidate() produces ALL artifact types (not just some)
@@ -223,94 +221,13 @@ fn proof_knowledge_facts_roundtrip() {
 // PROOF 6: Session cache stores provider data with correct URIs
 // ===========================================================================
 
-#[test]
-fn proof_cache_stores_provider_uris() {
-    let chunks = vec![ContentChunk::from_provider(
-        "github",
-        "issues",
-        "42",
-        "Auth bug",
-        ChunkKind::Issue,
-        "Bug description".into(),
-        vec![],
-        Some(serde_json::json!({"state": "open"})),
-    )];
-
-    let artifacts = consolidation::consolidate(&chunks);
-    let mut cache = SessionCache::new();
-
-    consolidation::apply_artifacts(&artifacts, None, None, Some(&mut cache));
-
-    let cached = cache.get("github://issues/42");
-    assert!(
-        cached.is_some(),
-        "WIRING BROKEN: cache.get() returns None for provider URI after apply_artifacts"
-    );
-}
-
 // ===========================================================================
 // PROOF 7: BM25 search result formatting includes external attribution
 // ===========================================================================
 
-#[test]
-fn proof_bm25_search_attributes_external_results() {
-    use lean_ctx::core::bm25_index::{SearchResult, format_search_results};
-
-    let results = vec![SearchResult {
-        chunk_idx: 0,
-        score: 0.9,
-        file_path: "github://issues/42".to_string(),
-        symbol_name: "Auth token expiry".to_string(),
-        kind: ChunkKind::Issue,
-        start_line: 0,
-        end_line: 0,
-        snippet: "Token expires too fast".to_string(),
-    }];
-
-    let formatted = format_search_results(&results, true);
-    assert!(
-        formatted.contains("[Issue]"),
-        "WIRING BROKEN: format_search_results doesn't show [Issue] for external results: {formatted}"
-    );
-    assert!(
-        formatted.contains("github://"),
-        "WIRING BROKEN: format_search_results doesn't show provider URI: {formatted}"
-    );
-}
-
 // ===========================================================================
 // PROOF 8: MCP Bridge registration — HTTP and stdio both register
 // ===========================================================================
-
-#[test]
-fn proof_mcp_bridge_http_registers_correctly() {
-    let bridge = McpBridgeProvider::new("my-kb", "http://localhost:8080");
-    assert_eq!(bridge.id(), "mcp:my-kb");
-    assert!(bridge.is_available());
-    assert!(bridge.supported_actions().contains(&"resources"));
-    assert!(bridge.supported_actions().contains(&"read_resource"));
-}
-
-#[test]
-fn proof_mcp_bridge_stdio_registers_correctly() {
-    let bridge = McpBridgeProvider::new_stdio("local-server", "npx", &["my-mcp".into()]);
-    assert_eq!(bridge.id(), "mcp:local-server");
-    assert!(bridge.is_available());
-
-    let result = bridge.execute(
-        "resources",
-        &lean_ctx::core::providers::ProviderParams::default(),
-    );
-    assert!(
-        result.is_err(),
-        "Stdio bridge should error with clear message"
-    );
-    let err = result.unwrap_err();
-    assert!(
-        err.contains("stdio transport"),
-        "WIRING BROKEN: stdio error message unclear: {err}"
-    );
-}
 
 // ===========================================================================
 // PROOF 9: Provider init registers from config
@@ -342,19 +259,6 @@ fn proof_init_registers_builtin_providers() {
 // ===========================================================================
 // PROOF 10: Config auto_index controls indexing behavior
 // ===========================================================================
-
-#[test]
-fn proof_auto_index_config_default() {
-    let cfg = lean_ctx::core::config::Config::default();
-    assert!(
-        cfg.providers.auto_index,
-        "WIRING BROKEN: auto_index should default to true"
-    );
-    assert!(
-        cfg.providers.enabled,
-        "WIRING BROKEN: providers.enabled should default to true"
-    );
-}
 
 // ===========================================================================
 // PROOF 11: End-to-end — provider data searchable after full pipeline

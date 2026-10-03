@@ -285,14 +285,6 @@ mod tests {
     }
 
     #[test]
-    fn stats_returns_defaults_on_empty() {
-        let s = CliCacheStore::default();
-        assert_eq!(s.total_hits, 0);
-        assert_eq!(s.total_reads, 0);
-        assert!(s.entries.is_empty());
-    }
-
-    #[test]
     fn cache_result_integration() {
         let _lock = crate::core::data_dir::test_env_lock();
 

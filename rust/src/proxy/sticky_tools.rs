@@ -95,7 +95,6 @@ mod tests {
     const INJECT: u64 = 0xAA02;
     const DEDUP: u64 = 0xAA03;
     const STABLE: u64 = 0xAA04;
-    const STICKY: u64 = 0xAA05;
 
     #[test]
     fn tool_not_injected_without_ccr() {
@@ -139,14 +138,6 @@ mod tests {
             snap1, snap2,
             "tool list must be byte-identical across turns"
         );
-    }
-
-    #[test]
-    fn sticky_survives_turn_without_markers() {
-        mark_ccr_active(STICKY);
-        assert!(is_ccr_active(STICKY));
-        let mut doc = json!({"tools": [], "messages": []});
-        assert!(ensure_tool_present(STICKY, &mut doc));
     }
 
     #[test]

@@ -227,13 +227,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn core_tools_always_active() {
-        let state = DynamicToolState::new();
-        assert!(state.is_tool_active("ctx_read"));
-        assert!(state.is_tool_active("ctx_search"));
-    }
-
-    #[test]
     fn dynamic_tools_filtered_when_list_changed() {
         let mut state = DynamicToolState::new();
         state.set_supports_list_changed(true);
@@ -423,13 +416,6 @@ mod tests {
         assert!(state.is_tool_active("ctx_impact"));
         state.unload_category(ToolCategory::Arch);
         assert!(!state.is_tool_active("ctx_impact"));
-    }
-
-    #[test]
-    fn from_config_cannot_unload_core() {
-        let cats = vec!["core".to_string(), "arch".to_string()];
-        let mut state = DynamicToolState::from_config(&cats);
-        assert!(!state.unload_category(ToolCategory::Core));
     }
 
     // --- from_config: without list_changed, all tools visible ---

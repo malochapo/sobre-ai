@@ -334,19 +334,6 @@ mod tests {
     }
 
     #[test]
-    fn no_session_filter_counts_all() {
-        let dir = TempDir::new().unwrap();
-        let path = dir.path().join("context_radar.jsonl");
-        let mut f = std::fs::File::create(&path).unwrap();
-        writeln!(f, r#"{{"ts":1100,"event_type":"native_tool","tokens":200,"tool_name":"Read","conversation_id":"session-A"}}"#).unwrap();
-        writeln!(f, r#"{{"ts":1200,"event_type":"native_tool","tokens":150,"tool_name":"Read","conversation_id":"session-B"}}"#).unwrap();
-        drop(f);
-
-        // No session filter → counts all
-        assert_eq!(count_native_since(dir.path(), 1_000_000, None), 2);
-    }
-
-    #[test]
     fn ignores_ctx_tools_in_native_events() {
         let dir = TempDir::new().unwrap();
         let path = dir.path().join("context_radar.jsonl");
@@ -385,34 +372,7 @@ mod tests {
 
     // ── Gate 2: cold-start fallback ─────────────────────────────
 
-    #[test]
-    fn cold_start_uses_server_start_fallback() {
-        LAST_LCTX_CALL_TS.store(0, Ordering::Relaxed);
-        let baseline = if LAST_LCTX_CALL_TS.load(Ordering::Relaxed) > 0 {
-            LAST_LCTX_CALL_TS.load(Ordering::Relaxed)
-        } else {
-            *SERVER_START_TS.get_or_init(now_millis)
-        };
-        assert!(baseline > 0, "fallback must produce a non-zero timestamp");
-    }
-
     // ── Gate 3: session-ID fallback ──────────────────────────────
-
-    #[test]
-    fn session_id_fallback_counts_all_when_filtered_is_zero() {
-        let dir = TempDir::new().unwrap();
-        let path = dir.path().join("context_radar.jsonl");
-        let mut f = std::fs::File::create(&path).unwrap();
-        writeln!(f, r#"{{"ts":1100,"event_type":"native_tool","tokens":200,"tool_name":"Read","conversation_id":"cursor-uuid-123"}}"#).unwrap();
-        drop(f);
-
-        // Session "lean-ctx-session-xyz" has zero matches → fallback to unfiltered
-        let mut count = count_native_since(dir.path(), 1_000_000, Some("lean-ctx-session-xyz"));
-        if count == 0 {
-            count = count_native_since(dir.path(), 1_000_000, None);
-        }
-        assert_eq!(count, 1, "fallback to unfiltered must catch the event");
-    }
 
     // ── model_is_drifting ────────────────────────────────────────
 
@@ -458,9 +418,4 @@ mod tests {
     }
 
     // ── is_enabled ───────────────────────────────────────────────
-
-    #[test]
-    fn is_enabled_respects_effective_mode() {
-        assert!(is_enabled() || effective_mode() == "off");
-    }
 }

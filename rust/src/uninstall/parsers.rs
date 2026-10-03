@@ -923,34 +923,6 @@ command = \"other\"
     // --- hooks.json tests ---
 
     #[test]
-    fn hooks_json_preserves_other_hooks() {
-        let input = r#"{
-  "version": 1,
-  "hooks": {
-    "preToolUse": [
-      {
-        "matcher": "Shell",
-        "command": "lean-ctx hook rewrite"
-      },
-      {
-        "matcher": "Shell",
-        "command": "my-other-tool hook"
-      }
-    ]
-  }
-}"#;
-        let result = match remove_lean_ctx_from_hooks_json(input) {
-            HookCleanupResult::Cleaned(s) => s,
-            other => panic!("expected Cleaned, got {other:?}"),
-        };
-        assert!(!result.contains("lean-ctx"), "lean-ctx should be removed");
-        assert!(
-            result.contains("my-other-tool"),
-            "other hooks should be preserved"
-        );
-    }
-
-    #[test]
     fn hooks_json_entirely_lean_ctx_no_other_keys() {
         let input = r#"{
   "hooks": {

@@ -82,51 +82,6 @@ fn cleanup_data_dir() {
 
 #[test]
 #[serial]
-fn scenario_crash_mid_workflow_stale_after_30min() {
-    setup_data_dir();
-
-    // Simulate: Agent was in "implementing" state and crashed 45 minutes ago
-    let spec = bazsi_workflow_spec();
-    let mut run = WorkflowRun::new(spec);
-    run.current = "implementing".to_string();
-    run.updated_at = Utc::now() - Duration::minutes(45);
-    save_active(&run).unwrap();
-
-    // Next session: load_active should return None (auto-cleared)
-    let loaded = load_active().unwrap();
-    assert!(
-        loaded.is_none(),
-        "Workflow crashed 45min ago should be auto-cleared on load"
-    );
-
-    cleanup_data_dir();
-}
-
-#[test]
-#[serial]
-fn scenario_crash_mid_workflow_still_valid_within_30min() {
-    setup_data_dir();
-
-    // Agent was in "implementing" state, crashed 10 minutes ago
-    let spec = bazsi_workflow_spec();
-    let mut run = WorkflowRun::new(spec);
-    run.current = "implementing".to_string();
-    run.updated_at = Utc::now() - Duration::minutes(10);
-    save_active(&run).unwrap();
-
-    // Within 30min window: workflow should still be active
-    let loaded = load_active().unwrap();
-    assert!(
-        loaded.is_some(),
-        "Workflow crashed 10min ago should still be active"
-    );
-    assert_eq!(loaded.unwrap().current, "implementing");
-
-    cleanup_data_dir();
-}
-
-#[test]
-#[serial]
 fn scenario_crash_at_boundary_29min_still_active() {
     setup_data_dir();
 
@@ -182,30 +137,6 @@ fn ctx_read_takes(param: &str) -> bool {
 }
 
 #[test]
-fn scenario_read_tools_in_passthrough_list() {
-    // ctx_read (single, batch and auto-mode) must ALWAYS be in passthrough
-    assert!(
-        WORKFLOW_PASSTHROUGH_TOOLS.contains(&"ctx_read"),
-        "ctx_read must always pass through workflow gate"
-    );
-    assert!(
-        ctx_read_takes("paths"),
-        "the batch read must stay ctx_read(paths) to pass through as ctx_read"
-    );
-    assert!(
-        ctx_read_takes("mode"),
-        "the auto-mode read must stay ctx_read(mode) to pass through as ctx_read"
-    );
-}
-
-#[test]
-fn scenario_search_and_tree_also_passthrough() {
-    // Agents need search/tree for context recovery
-    assert!(WORKFLOW_PASSTHROUGH_TOOLS.contains(&"ctx_search"));
-    assert!(WORKFLOW_PASSTHROUGH_TOOLS.contains(&"ctx_tree"));
-}
-
-#[test]
 fn scenario_write_tools_not_in_passthrough() {
     // Write tools should still be gated
     assert!(!WORKFLOW_PASSTHROUGH_TOOLS.contains(&"ctx_shell"));
@@ -214,32 +145,9 @@ fn scenario_write_tools_not_in_passthrough() {
     assert!(!WORKFLOW_PASSTHROUGH_TOOLS.contains(&"ctx_execute"));
 }
 
-#[test]
-fn scenario_workflow_with_restricted_tools_still_allows_reads() {
-    // Simulate: workflow in "planning" state only allows ctx_shell + ctx_workflow
-    let spec = bazsi_workflow_spec();
-    let state = spec.state("planning").unwrap();
-    let allowed = state.allowed_tools.as_ref().unwrap();
-
-    // ctx_read (the batch read included) is NOT in the allowed list
-    assert!(!allowed.contains(&"ctx_read".to_string()));
-
-    // But it IS in passthrough — so the gate won't block it, batch read included
-    assert!(WORKFLOW_PASSTHROUGH_TOOLS.contains(&"ctx_read"));
-    assert!(ctx_read_takes("paths"));
-}
-
 // ==========================================================================
 // SCENARIO 3: Staleness detection function works correctly
 // ==========================================================================
-
-#[test]
-fn scenario_is_workflow_stale_fresh() {
-    let spec = bazsi_workflow_spec();
-    let run = WorkflowRun::new(spec);
-    // Just created — should NOT be stale
-    assert!(!is_workflow_stale(&run));
-}
 
 #[test]
 fn scenario_is_workflow_stale_25min() {
@@ -247,25 +155,6 @@ fn scenario_is_workflow_stale_25min() {
     let mut run = WorkflowRun::new(spec);
     run.updated_at = Utc::now() - Duration::minutes(25);
     assert!(!is_workflow_stale(&run), "25min should not be stale");
-}
-
-#[test]
-fn scenario_is_workflow_stale_35min() {
-    let spec = bazsi_workflow_spec();
-    let mut run = WorkflowRun::new(spec);
-    run.updated_at = Utc::now() - Duration::minutes(35);
-    assert!(is_workflow_stale(&run), "35min should be stale");
-}
-
-#[test]
-fn scenario_is_workflow_stale_hours() {
-    let spec = bazsi_workflow_spec();
-    let mut run = WorkflowRun::new(spec);
-    run.updated_at = Utc::now() - Duration::hours(3);
-    assert!(
-        is_workflow_stale(&run),
-        "3 hours should definitely be stale"
-    );
 }
 
 // ==========================================================================

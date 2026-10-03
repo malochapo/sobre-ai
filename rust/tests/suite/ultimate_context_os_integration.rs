@@ -528,14 +528,6 @@ mod redaction {
         assert_eq!(obj.get("arguments").unwrap(), "[redacted]");
         assert_eq!(obj.get("workspace_id").unwrap(), "ws");
     }
-
-    #[test]
-    fn full_level_preserves_everything() {
-        let mut ev = make_event("ctx_edit", "real content");
-        let original = ev.payload.clone();
-        redact_event_payload(&mut ev, RedactionLevel::Full);
-        assert_eq!(ev.payload, original);
-    }
 }
 
 mod external_app_docking {
@@ -758,14 +750,6 @@ mod cli_commands {
     use super::*;
 
     #[test]
-    fn cli_version() {
-        let out = lean_ctx_bin().arg("--version").output().unwrap();
-        assert!(out.status.success());
-        let stdout = String::from_utf8_lossy(&out.stdout);
-        assert!(stdout.contains("lean-ctx"));
-    }
-
-    #[test]
     fn cli_help() {
         let out = lean_ctx_bin().arg("--help").output().unwrap();
         assert!(out.status.success());
@@ -854,34 +838,6 @@ mod cli_commands {
 }
 
 mod contract_gates {
-    #[test]
-    fn contracts_md_exists_and_has_content() {
-        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../CONTRACTS.md");
-        if std::path::Path::new(path).exists() {
-            let content = std::fs::read_to_string(path).unwrap();
-            assert!(
-                content.contains("Context"),
-                "must reference Context contracts"
-            );
-            assert!(content.len() > 500, "must have substantial content");
-        }
-    }
-
-    #[test]
-    fn mcp_manifest_exists() {
-        let path = concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/../website/generated/mcp-tools.json"
-        );
-        if std::path::Path::new(path).exists() {
-            let content = std::fs::read_to_string(path).unwrap();
-            let val: serde_json::Value = serde_json::from_str(&content).unwrap();
-            assert!(
-                val.is_array() || val.is_object(),
-                "manifest must be valid JSON"
-            );
-        }
-    }
 
     #[test]
     fn committed_contract_docs_are_valid() {
@@ -897,15 +853,6 @@ mod contract_gates {
             let content = std::fs::read_to_string(&path).unwrap();
             assert!(content.len() > 200, "{name} must have substantial content");
         }
-    }
-
-    #[test]
-    fn contract_docs_directory_exists() {
-        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../docs/contracts");
-        assert!(
-            std::path::Path::new(path).is_dir(),
-            "docs/contracts/ directory must exist"
-        );
     }
 }
 

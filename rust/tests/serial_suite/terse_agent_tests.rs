@@ -52,12 +52,6 @@ fn cleanup_env() {
 // ── TerseAgent unit tests ──
 
 #[test]
-fn terse_agent_default_is_off() {
-    let ta = TerseAgent::default();
-    assert!(matches!(ta, TerseAgent::Off));
-}
-
-#[test]
 fn terse_agent_from_env() {
     let _g = lock();
     // SAFETY: serialized by this file's local `ENV_LOCK` mutex.

@@ -368,9 +368,4 @@ mod tests {
         let s = det.summary();
         assert_eq!(s.len(), 2);
     }
-
-    #[test]
-    fn global_record_works() {
-        let _ = record_metric("test_global", 42.0);
-    }
 }

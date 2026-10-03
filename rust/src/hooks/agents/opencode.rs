@@ -443,14 +443,6 @@ mod shadow_permission_tests {
     }
 
     #[test]
-    fn apply_creates_permission_when_missing() {
-        let (_dir, cfg) = temp_cfg_with_tag("create_perm", r#"{"mcp":{"other":{"type":"local"}}}"#);
-        apply_shadow_permissions(&cfg, "test");
-        let json = read_json(&cfg);
-        assert!(json.get("permission").is_some(), "permission key created");
-    }
-
-    #[test]
     fn apply_overwrites_user_allow() {
         let (_dir, cfg) = temp_cfg_with_tag(
             "overwrite_allow",

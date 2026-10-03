@@ -541,12 +541,6 @@ mod tests {
     }
 
     #[test]
-    fn minilm_is_wordpiece() {
-        let cfg = EmbeddingModel::AllMiniLmL6V2.config();
-        assert!(cfg.vocab_file.is_wordpiece());
-    }
-
-    #[test]
     fn builtin_models_have_valid_vocab_sources() {
         // All current built-ins are WordPiece (vocab.txt) models. Custom HF
         // repos use tokenizer.json, but those are user-defined, not built-ins.

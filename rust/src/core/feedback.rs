@@ -296,13 +296,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn empty_store_loads() {
-        let store = FeedbackStore::default();
-        assert!(store.outcomes.is_empty());
-        assert!(store.learned_thresholds.is_empty());
-    }
-
-    #[test]
     fn learned_thresholds_need_minimum_samples() {
         let mut store = FeedbackStore::default();
         for i in 0..3 {

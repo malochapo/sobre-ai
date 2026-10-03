@@ -314,12 +314,6 @@ mod tests {
     }
 
     #[test]
-    fn normal_pressure_is_noop() {
-        let orch = make_orchestrator();
-        orch.on_pressure(memory_guard::PressureLevel::Normal);
-    }
-
-    #[test]
     fn soft_pressure_with_empty_cache_is_noop() {
         let orch = make_orchestrator();
         orch.on_pressure(memory_guard::PressureLevel::Soft);

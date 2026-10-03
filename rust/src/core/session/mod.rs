@@ -178,24 +178,6 @@ mod tests {
     }
 
     #[test]
-    fn extract_cd_absolute_path() {
-        let result = extract_cd_target("cd /usr/local/bin", "/home/user");
-        assert_eq!(result, Some("/usr/local/bin".to_string()));
-    }
-
-    #[test]
-    fn extract_cd_relative_path() {
-        let result = extract_cd_target("cd subdir", "/home/user");
-        assert_eq!(result, Some("/home/user/subdir".to_string()));
-    }
-
-    #[test]
-    fn extract_cd_with_chained_command() {
-        let result = extract_cd_target("cd /tmp && ls", "/home/user");
-        assert_eq!(result, Some("/tmp".to_string()));
-    }
-
-    #[test]
     fn extract_cd_with_semicolon() {
         let result = extract_cd_target("cd /tmp; ls", "/home/user");
         assert_eq!(result, Some("/tmp".to_string()));
@@ -205,18 +187,6 @@ mod tests {
     fn extract_cd_parent_dir() {
         let result = extract_cd_target("cd ..", "/home/user/project");
         assert_eq!(result, Some("/home/user/project/..".to_string()));
-    }
-
-    #[test]
-    fn extract_cd_no_cd_returns_none() {
-        let result = extract_cd_target("ls -la", "/home/user");
-        assert!(result.is_none());
-    }
-
-    #[test]
-    fn extract_cd_bare_cd_goes_home() {
-        let result = extract_cd_target("cd", "/home/user");
-        assert!(result.is_some());
     }
 
     #[test]

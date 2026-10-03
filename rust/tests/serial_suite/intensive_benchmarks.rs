@@ -599,16 +599,6 @@ fn bench_signatures_mode_typescript() {
 }
 
 #[test]
-fn bench_lightweight_cleanup() {
-    let content = generate_rust_file(200);
-    let cleaned = lightweight_cleanup(&content);
-    let (orig, comp, pct) = measure_text(&content, &cleaned);
-
-    eprintln!("\n  [lightweight cleanup, Rust 200L] {orig} → {comp} tokens ({pct:.1}% saved)");
-    assert!(comp <= orig, "Cleanup should never increase token count");
-}
-
-#[test]
 fn bench_safeguard_prevents_over_compression() {
     let original = generate_rust_file(100);
     let over_compressed = "fn main() {}";
@@ -629,42 +619,6 @@ fn bench_safeguard_prevents_over_compression() {
         ratio > 0.05,
         "Safeguard should prevent extreme compression on small outputs, ratio: {ratio:.2}"
     );
-}
-
-#[test]
-fn bench_all_modes_comparison() {
-    let content = generate_rust_file(300);
-    let orig_tokens = count_tokens(&content);
-
-    let aggressive = aggressive_compress(&content, Some("rs"));
-    let entropy = entropy_compress(&content);
-    let sigs = extract_signatures(&content, "rs");
-    let sig_text = sigs.iter().fold(String::new(), |mut s, sig| {
-        use std::fmt::Write;
-        let _ = writeln!(s, "{}", sig.to_compact());
-        s
-    });
-    let cleaned = lightweight_cleanup(&content);
-
-    let modes = vec![
-        ("full (baseline)", orig_tokens),
-        ("aggressive", count_tokens(&aggressive)),
-        ("entropy", count_tokens(&entropy.output)),
-        ("signatures", count_tokens(&sig_text)),
-        ("lightweight", count_tokens(&cleaned)),
-    ];
-
-    eprintln!("\n{}", "=".repeat(70));
-    eprintln!("  ALL COMPRESSION MODES — Rust File (300 lines)");
-    eprintln!("{}", "=".repeat(70));
-    eprintln!("  {:<20} {:>8} {:>7}", "Mode", "Tokens", "Saved%");
-    eprintln!("  {}", "-".repeat(40));
-
-    for (name, tokens) in &modes {
-        let pct = compression_ratio(orig_tokens, *tokens);
-        eprintln!("  {name:<20} {tokens:>8} {pct:>6.1}%");
-    }
-    eprintln!("{}", "=".repeat(70));
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -920,35 +874,6 @@ fn bench_crp_mode_token_budgets() {
     assert!(
         tdd_budget_present,
         "TDD mode must specify ≤150 token budget"
-    );
-}
-
-#[test]
-fn bench_tdd_symbols_token_efficiency() {
-    let prose = "I added a new function called process_data to the module handlers in file server.rs at line 42. \
-                 Then I removed lines 10 through 15 from the file because they were no longer needed. \
-                 I also modified the function validate_token and renamed it to verify_jwt for clarity. \
-                 The operation completed successfully with no warnings or errors detected.";
-
-    let tdd = "+F1:42 fn process_data(handlers)\n\
-               -F1:10-15\n\
-               ~F1:42 validate_token -> verify_jwt\n\
-               ok 0w";
-
-    let prose_tokens = count_tokens(prose);
-    let tdd_tokens = count_tokens(tdd);
-    let savings_pct = compression_ratio(prose_tokens, tdd_tokens);
-
-    eprintln!(
-        "\n  [TDD symbols] Prose: {prose_tokens} tokens → TDD: {tdd_tokens} tokens ({savings_pct:.1}% saved)"
-    );
-    eprintln!(
-        "  Semantic density: {:.1}x more meaning per token",
-        prose_tokens as f64 / tdd_tokens as f64
-    );
-    assert!(
-        savings_pct > 40.0,
-        "TDD notation should save >40% vs prose, got {savings_pct:.1}%"
     );
 }
 
@@ -1723,34 +1648,6 @@ fn bench_hash_fast_vs_full_correctness() {
         hash_fast(&suffix_changed),
         "large hash_fast fingerprints the suffix"
     );
-}
-
-#[test]
-fn bench_terse_pipeline_compression() {
-    use lean_ctx::core::config::CompressionLevel;
-    use lean_ctx::core::terse;
-
-    let input = "fn main() {\n    println!(\"hello\");\n}\n".repeat(500);
-
-    let start_standard = std::time::Instant::now();
-    for _ in 0..100 {
-        let _ = terse::pipeline::compress(&input, &CompressionLevel::Standard, None);
-    }
-    let standard_us = start_standard.elapsed().as_micros();
-
-    let start_off = std::time::Instant::now();
-    for _ in 0..100 {
-        let result = terse::pipeline::compress(&input, &CompressionLevel::Off, None);
-        assert_eq!(result.output.len(), input.len());
-    }
-    let off_us = start_off.elapsed().as_micros();
-
-    eprintln!("\n{}", "=".repeat(70));
-    eprintln!("  TERSE PIPELINE BENCHMARK (100 iters, ~20KB input)");
-    eprintln!("{}", "=".repeat(70));
-    eprintln!("  Off (passthrough):  {off_us:>6} us");
-    eprintln!("  Standard (4-layer): {standard_us:>6} us");
-    eprintln!("{}", "=".repeat(70));
 }
 
 #[test]

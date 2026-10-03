@@ -223,15 +223,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn has_data_files_empty_dir() {
-        let dir = std::env::temp_dir().join("test_data_dir_empty");
-        let _ = std::fs::remove_dir_all(&dir);
-        let _ = std::fs::create_dir_all(&dir);
-        assert!(!has_data_files(&dir));
-        let _ = std::fs::remove_dir_all(&dir);
-    }
-
-    #[test]
     fn has_data_files_with_stats() {
         let dir = std::env::temp_dir().join("test_data_dir_stats");
         let _ = std::fs::remove_dir_all(&dir);

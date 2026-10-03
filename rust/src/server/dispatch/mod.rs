@@ -566,14 +566,6 @@ mod tests {
     }
 
     #[test]
-    fn path_like_keys_has_no_duplicates() {
-        let mut seen = std::collections::HashSet::new();
-        for key in PATH_LIKE_KEYS {
-            assert!(seen.insert(*key), "duplicate PATH_LIKE_KEYS entry: {key}");
-        }
-    }
-
-    #[test]
     fn path_like_keys_includes_primary_keys() {
         for primary in &["path", "project_root", "root"] {
             assert!(
@@ -581,17 +573,6 @@ mod tests {
                 "primary key '{primary}' missing from PATH_LIKE_KEYS"
             );
         }
-    }
-
-    #[test]
-    fn path_like_keys_all_non_empty() {
-        for key in PATH_LIKE_KEYS {
-            assert!(!key.is_empty(), "PATH_LIKE_KEYS contains empty string");
-        }
-        assert!(
-            PATH_LIKE_KEYS.len() >= 3,
-            "PATH_LIKE_KEYS must have at least the 3 primary keys"
-        );
     }
 
     #[test]

@@ -88,20 +88,6 @@ mod tests {
     }
 
     #[test]
-    fn already_installed_with_matching_hash_is_a_no_op() {
-        let tmp = std::env::temp_dir().join(format!(
-            "lc-grammar-install-test-{}-a.dll",
-            std::process::id()
-        ));
-        std::fs::write(&tmp, b"fake dylib bytes").unwrap();
-        let hash = sha256_file(&tmp).unwrap();
-        let (manifest, asset) = manifest_and_asset(&hash);
-
-        assert!(ensure_installed(&manifest, &asset, &tmp).is_ok());
-        std::fs::remove_file(&tmp).ok();
-    }
-
-    #[test]
     fn missing_sha256_pin_is_refused_without_network() {
         let dest = std::env::temp_dir().join(format!(
             "lc-grammar-install-test-{}-b.dll",

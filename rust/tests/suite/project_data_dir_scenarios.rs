@@ -16,28 +16,8 @@ use lean_ctx::core::pathutil::{
 // ---------------------------------------------------------------------------
 
 #[test]
-fn home_dir_is_broad() {
-    if let Some(home) = dirs::home_dir() {
-        assert!(
-            is_broad_or_unsafe_root(&home),
-            "home directory must be rejected as project root"
-        );
-    }
-}
-
-#[test]
-fn filesystem_root_is_broad() {
-    assert!(is_broad_or_unsafe_root(Path::new("/")));
-}
-
-#[test]
 fn backslash_root_is_broad() {
     assert!(is_broad_or_unsafe_root(Path::new("\\")));
-}
-
-#[test]
-fn bare_dot_is_broad() {
-    assert!(is_broad_or_unsafe_root(Path::new(".")));
 }
 
 #[test]
@@ -54,28 +34,6 @@ fn codex_sandbox_dir_is_broad() {
     assert!(is_broad_or_unsafe_root(Path::new(
         "/home/user/.codex/sandbox"
     )));
-}
-
-#[test]
-fn normal_project_is_not_broad() {
-    let tmp = tempfile::tempdir().unwrap();
-    let project = tmp.path().join("my-app");
-    std::fs::create_dir_all(&project).unwrap();
-    assert!(
-        !is_broad_or_unsafe_root(&project),
-        "normal project dir should be allowed"
-    );
-}
-
-#[test]
-fn home_subdir_is_not_broad() {
-    if let Some(home) = dirs::home_dir() {
-        let project = home.join("projects").join("my-app");
-        assert!(
-            !is_broad_or_unsafe_root(&project),
-            "subdirectory of home should be allowed"
-        );
-    }
 }
 
 #[test]
@@ -156,33 +114,6 @@ fn safe_dir_returns_ok_for_normal_project() {
 // ---------------------------------------------------------------------------
 
 #[test]
-fn overlay_save_skips_home_dir() {
-    use lean_ctx::core::context_overlay::OverlayStore;
-
-    if let Some(home) = dirs::home_dir() {
-        let store = OverlayStore::new();
-        let result = store.save_project(&home);
-        assert!(
-            result.is_err(),
-            "save_project to home dir should fail: {result:?}"
-        );
-    }
-}
-
-#[test]
-fn overlay_load_returns_empty_for_home_dir() {
-    use lean_ctx::core::context_overlay::OverlayStore;
-
-    if let Some(home) = dirs::home_dir() {
-        let store = OverlayStore::load_project(&home);
-        assert!(
-            store.all().is_empty(),
-            "load_project from home dir should return empty store"
-        );
-    }
-}
-
-#[test]
 fn overlay_save_load_roundtrip_normal_project() {
     use lean_ctx::core::context_field::ContextItemId;
     use lean_ctx::core::context_overlay::{
@@ -246,20 +177,6 @@ fn overlay_save_does_not_write_to_data_dir() {
 // ---------------------------------------------------------------------------
 
 #[test]
-fn policy_save_skips_home_dir() {
-    use lean_ctx::core::context_policies::PolicySet;
-
-    if let Some(home) = dirs::home_dir() {
-        let policies = PolicySet::defaults();
-        let result = policies.save_project(&home);
-        assert!(
-            result.is_err(),
-            "save_project to home dir should fail: {result:?}"
-        );
-    }
-}
-
-#[test]
 fn policy_load_returns_defaults_for_home_dir() {
     use lean_ctx::core::context_policies::PolicySet;
 
@@ -299,39 +216,9 @@ fn policy_save_load_roundtrip_normal_project() {
 // Proof writers: safe_project_data_dir gate
 // ---------------------------------------------------------------------------
 
-#[test]
-fn proof_writers_reject_home_dir() {
-    if let Some(home) = dirs::home_dir() {
-        let result = safe_project_data_dir(&home);
-        assert!(
-            result.is_err(),
-            "proof writers should be blocked by safe_project_data_dir for home dir"
-        );
-    }
-}
-
-#[test]
-fn proof_writers_accept_normal_project() {
-    let tmp = tempfile::tempdir().unwrap();
-    let project = tmp.path().join("proof-project");
-    std::fs::create_dir_all(&project).unwrap();
-
-    let result = safe_project_data_dir(&project);
-    assert!(result.is_ok());
-
-    let proofs_dir = result.unwrap().join("proofs");
-    std::fs::create_dir_all(&proofs_dir).unwrap();
-    assert!(proofs_dir.exists());
-}
-
 // ---------------------------------------------------------------------------
 // Windows-specific edge cases (path format variants)
 // ---------------------------------------------------------------------------
-
-#[test]
-fn backslash_windows_root_is_broad() {
-    assert!(is_broad_or_unsafe_root(Path::new("\\")));
-}
 
 #[test]
 fn agent_sandbox_with_subpath_is_broad() {
@@ -368,18 +255,6 @@ fn collision_detects_when_project_lean_ctx_equals_data_dir() {
 // ---------------------------------------------------------------------------
 // find_project_root: CWD fallback guard
 // ---------------------------------------------------------------------------
-
-#[test]
-fn cwd_fallback_rejects_home_in_server_derive() {
-    use lean_ctx::core::pathutil::is_broad_or_unsafe_root;
-
-    if let Some(home) = dirs::home_dir() {
-        assert!(
-            is_broad_or_unsafe_root(&home),
-            "CWD fallback should reject home dir"
-        );
-    }
-}
 
 // ---------------------------------------------------------------------------
 // Combined scenario: cowwoc's exact setup

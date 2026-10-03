@@ -305,10 +305,4 @@ mod tests {
         record_proactive_injection(5);
         assert_eq!(proactive_injected_tokens(), 22);
     }
-
-    #[test]
-    fn proactive_injection_counter_starts_at_zero_after_reset() {
-        reset_proactive_injection();
-        assert_eq!(proactive_injected_tokens(), 0);
-    }
 }

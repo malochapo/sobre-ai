@@ -790,21 +790,6 @@ mod tests {
     }
 
     #[test]
-    fn lenient_fallback_uses_unknown_string_key_as_pattern() {
-        use super::{KNOWN_KEYS, get_str};
-
-        // Simulate Gemma sending {"search_term": "fn main"} — an unknown key
-        // with a string value should be picked up by the lenient fallback.
-        let a = args(&[("search_term", json!("fn main"))]);
-        let pattern = get_str(&a, "pattern").or_else(|| {
-            a.iter()
-                .find(|(k, v)| !KNOWN_KEYS.contains(&k.as_str()) && v.is_string())
-                .and_then(|(_, v)| v.as_str().map(String::from))
-        });
-        assert_eq!(pattern, Some("fn main".to_string()));
-    }
-
-    #[test]
     fn lenient_fallback_does_not_grab_known_keys() {
         use super::{KNOWN_KEYS, get_str};
 

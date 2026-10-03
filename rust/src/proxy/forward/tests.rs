@@ -528,31 +528,6 @@ fn forwards_codex_state_response_headers() {
 }
 
 #[test]
-fn chatgpt_responses_use_openai_responses_holdout_key() {
-    let _iso = crate::core::data_dir::isolated_data_dir();
-    crate::core::config::Config::update_global(|c| {
-        c.proxy.output_holdout = Some(1.0);
-    })
-    .unwrap();
-
-    let body = serde_json::json!({
-        "model": "gpt-5",
-        "input": "same conversation",
-    });
-
-    assert_eq!(
-        cohort_arm(&body, "ChatGPT", "/backend-api/codex/responses"),
-        cohort_arm(&body, "OpenAI", "/v1/responses")
-    );
-}
-
-#[test]
-fn cache_prompt_hash_is_content_sensitive() {
-    let hash = super::super::cache_bridge::prompt_hash;
-    assert_ne!(hash(b"one"), hash(b"two"));
-}
-
-#[test]
 fn forwards_commandcode_cli_headers() {
     // Command Code (`cmd`) gates agent calls on `x-command-code-version`.
     // Stripping it yields 403 upgrade_required ("CLI is out of date").

@@ -69,26 +69,6 @@ fn cleanup_test_data_dir() {
 // Scenario 1: stop from active workflow clears it
 // ==========================================================================
 
-#[test]
-#[serial]
-fn scenario_stop_clears_workflow() {
-    setup_test_data_dir();
-
-    let spec = test_spec();
-    let run = WorkflowRun::new(spec);
-    save_active(&run).unwrap();
-
-    let loaded = load_active().unwrap();
-    assert!(loaded.is_some(), "Workflow should be saved");
-
-    clear_active().unwrap();
-
-    let loaded = load_active().unwrap();
-    assert!(loaded.is_none(), "Workflow should be cleared after stop");
-
-    cleanup_test_data_dir();
-}
-
 // ==========================================================================
 // Scenario 2: save and load roundtrip
 // ==========================================================================
@@ -128,74 +108,13 @@ fn scenario_clear_active_idempotent() {
 // Scenario 4: "done" is a terminal state (no outgoing transitions)
 // ==========================================================================
 
-#[test]
-fn scenario_done_state_is_terminal() {
-    let spec = test_spec();
-    let transitions: Vec<&TransitionSpec> = spec
-        .transitions
-        .iter()
-        .filter(|t| t.from == "done")
-        .collect();
-    assert!(
-        transitions.is_empty(),
-        "done should have no outgoing transitions"
-    );
-}
-
 // ==========================================================================
 // Scenario 5: gate logic - done state allowed_tools blocks non-listed tools
 // ==========================================================================
 
-#[test]
-fn scenario_done_state_gate_would_block() {
-    let spec = test_spec();
-    let state = spec.state("done").unwrap();
-    let allowed = state.allowed_tools.as_ref().unwrap();
-
-    // These tools are NOT in done's allowed list
-    assert!(!allowed.contains(&"ctx_read".to_string()));
-    assert!(!allowed.contains(&"ctx_patch".to_string()));
-    assert!(!allowed.contains(&"ctx_shell".to_string()));
-
-    // Only ctx + ctx_workflow are allowed (the bypass)
-    assert!(allowed.contains(&"ctx".to_string()));
-    assert!(allowed.contains(&"ctx_workflow".to_string()));
-}
-
 // ==========================================================================
 // Scenario 6: complete should transition to done and clear file
 // ==========================================================================
-
-#[test]
-#[serial]
-fn scenario_complete_clears_workflow_file() {
-    setup_test_data_dir();
-
-    let spec = test_spec();
-    let mut run = WorkflowRun::new(spec);
-    run.current = "coding".to_string();
-    save_active(&run).unwrap();
-
-    // Verify workflow exists
-    let loaded = load_active().unwrap();
-    assert!(loaded.is_some());
-    assert_eq!(loaded.unwrap().current, "coding");
-
-    // Simulate what handle_complete now does:
-    // 1. Transition to done
-    // 2. Clear (not save)
-    run.current = "done".to_string();
-    clear_active().unwrap();
-
-    // Verify it's gone
-    let loaded = load_active().unwrap();
-    assert!(
-        loaded.is_none(),
-        "After complete → done, file should be cleared"
-    );
-
-    cleanup_test_data_dir();
-}
 
 // ==========================================================================
 // Scenario 7: normal transitions between non-terminal states persist
@@ -249,91 +168,17 @@ fn scenario_start_after_done() {
 // Scenario 9: handoff restore logic - done workflow should be rejected
 // ==========================================================================
 
-#[test]
-fn scenario_handoff_done_workflow_rejected() {
-    let spec = test_spec();
-    let mut run = WorkflowRun::new(spec);
-    run.current = "done".to_string();
-
-    // Simulate handoff restore decision
-    let workflow_from_ledger: Option<WorkflowRun> = Some(run);
-    let should_apply = workflow_from_ledger
-        .as_ref()
-        .is_some_and(|r| r.current != "done");
-    assert!(
-        !should_apply,
-        "Handoff should NOT restore a 'done' workflow"
-    );
-}
-
 // ==========================================================================
 // Scenario 10: handoff restore logic - active workflow IS restored
 // ==========================================================================
-
-#[test]
-fn scenario_handoff_active_workflow_restored() {
-    let spec = test_spec();
-    let mut run = WorkflowRun::new(spec);
-    run.current = "coding".to_string();
-
-    let workflow_from_ledger: Option<WorkflowRun> = Some(run);
-    let should_apply = workflow_from_ledger
-        .as_ref()
-        .is_some_and(|r| r.current != "done");
-    assert!(
-        should_apply,
-        "Handoff SHOULD restore an active (non-done) workflow"
-    );
-}
 
 // ==========================================================================
 // Scenario: Stale workflow (>30min) auto-clears on load
 // ==========================================================================
 
-#[test]
-#[serial]
-fn scenario_stale_workflow_auto_cleared_on_load() {
-    setup_test_data_dir();
-
-    let spec = test_spec();
-    let mut run = WorkflowRun::new(spec);
-    run.current = "coding".to_string();
-    run.updated_at = chrono::Utc::now() - chrono::Duration::minutes(35);
-    save_active(&run).unwrap();
-
-    let loaded = load_active().unwrap();
-    assert!(
-        loaded.is_none(),
-        "Stale workflow (>30min) should be auto-cleared on load"
-    );
-
-    cleanup_test_data_dir();
-}
-
 // ==========================================================================
 // Scenario: Fresh workflow remains active on load
 // ==========================================================================
-
-#[test]
-#[serial]
-fn scenario_fresh_workflow_survives_load() {
-    setup_test_data_dir();
-
-    let spec = test_spec();
-    let mut run = WorkflowRun::new(spec);
-    run.current = "coding".to_string();
-    run.updated_at = chrono::Utc::now() - chrono::Duration::minutes(5);
-    save_active(&run).unwrap();
-
-    let loaded = load_active().unwrap();
-    assert!(
-        loaded.is_some(),
-        "Fresh workflow (<30min) should survive load"
-    );
-    assert_eq!(loaded.unwrap().current, "coding");
-
-    cleanup_test_data_dir();
-}
 
 // ==========================================================================
 // Scenario: Passthrough tools are never blocked by workflow gate

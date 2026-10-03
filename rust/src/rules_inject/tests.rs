@@ -451,17 +451,3 @@ fn match_agent_name_no_false_positives() {
 }
 
 // ── InjectResult ─────────────────────────────────────────────
-
-#[test]
-fn inject_result_tracks_backed_up_files() {
-    let result = InjectResult {
-        backed_up: vec!["/tmp/test.md.bak".to_string()],
-        ..Default::default()
-    };
-    assert_eq!(result.backed_up.len(), 1);
-    assert!(
-        std::path::Path::new(&result.backed_up[0])
-            .extension()
-            .is_some_and(|ext| ext.eq_ignore_ascii_case("bak"))
-    );
-}

@@ -240,27 +240,6 @@ class UserService {
 }
 
 #[test]
-fn test_signature_spans_override_fallback_range() {
-    let sig = signatures::Signature {
-        kind: "method",
-        name: "release".to_string(),
-        params: "id:String".to_string(),
-        return_type: "Boolean".to_string(),
-        is_async: true,
-        is_exported: true,
-        indent: 2,
-        start_line: Some(42),
-        end_line: Some(43),
-    };
-
-    let (start, end) = sig
-        .start_line
-        .zip(sig.end_line)
-        .unwrap_or_else(|| find_symbol_range("ignored", &sig));
-    assert_eq!((start, end), (42, 43));
-}
-
-#[test]
 fn test_parse_stale_index_version() {
     let json = format!(
         r#"{{"version":{},"project_root":"/test","last_scan":"now","files":{{}},"edges":[],"symbols":{{}}}}"#,
@@ -969,24 +948,6 @@ fn scan_respects_gitignore_without_git_dir() {
         !idx.files.keys().any(|p| p.contains("bundle.js")),
         "gitignored dir must be skipped without .git; files: {:?}",
         idx.files.keys().collect::<Vec<_>>()
-    );
-}
-
-#[test]
-fn safe_scan_root_rejects_broad_dir_without_repos() {
-    let tmp = tempdir().unwrap();
-    let broad = tmp.path().join("broad");
-    std::fs::create_dir_all(&broad).unwrap();
-
-    // Create >50 subdirs but no project markers
-    for i in 0..55 {
-        std::fs::create_dir(broad.join(format!("dir-{i}"))).unwrap();
-    }
-
-    let broad_str = broad.to_string_lossy().to_string();
-    assert!(
-        !is_safe_scan_root(&broad_str),
-        "Broad dir without project markers should be rejected"
     );
 }
 

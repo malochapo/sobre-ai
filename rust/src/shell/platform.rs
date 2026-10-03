@@ -647,12 +647,6 @@ mod powershell_profile_tests {
     use super::{powershell_profile_path, resolve_powershell_profile_path};
     use std::path::Path;
 
-    #[test]
-    fn always_ends_with_profile_file() {
-        let p = powershell_profile_path(Path::new("/home/u"));
-        assert!(p.ends_with("Microsoft.PowerShell_profile.ps1"));
-    }
-
     #[cfg(not(windows))]
     #[test]
     fn non_windows_uses_config_powershell_never_documents() {
@@ -731,15 +725,6 @@ mod windows_shell_flag_tests {
 
 #[cfg(test)]
 mod platform_tests {
-    #[test]
-    fn is_container_returns_bool() {
-        let _ = super::is_container();
-    }
-
-    #[test]
-    fn is_non_interactive_returns_bool() {
-        let _ = super::is_non_interactive();
-    }
 
     #[test]
     fn join_command_preserves_structure() {

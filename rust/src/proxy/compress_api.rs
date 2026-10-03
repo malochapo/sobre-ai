@@ -299,18 +299,6 @@ mod tests {
     }
 
     #[test]
-    fn output_is_deterministic() {
-        let _lock = crate::core::data_dir::test_env_lock();
-        let msgs = vec![
-            json!({"role": "system", "content": "You are a helpful assistant."}),
-            json!({"role": "user", "content": dedupable_prose()}),
-        ];
-        let a = serde_json::to_string(&run(msgs.clone(), Some("gpt-4o"))).unwrap();
-        let b = serde_json::to_string(&run(msgs, Some("gpt-4o"))).unwrap();
-        assert_eq!(a, b, "same input must yield byte-identical output");
-    }
-
-    #[test]
     fn short_content_is_untouched() {
         let resp = run(vec![json!({"role": "user", "content": "hi there"})], None);
         assert_eq!(resp.messages[0]["content"], "hi there");

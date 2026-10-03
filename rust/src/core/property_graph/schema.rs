@@ -133,13 +133,6 @@ mod tests {
     }
 
     #[test]
-    fn schema_idempotent() {
-        let conn = Connection::open_in_memory().unwrap();
-        initialize(&conn).unwrap();
-        initialize(&conn).unwrap();
-    }
-
-    #[test]
     fn legacy_path_schema_is_replaced() {
         let conn = Connection::open_in_memory().unwrap();
         conn.execute_batch(

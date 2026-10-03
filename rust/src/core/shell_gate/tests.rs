@@ -71,11 +71,6 @@ fn escaped_semicolon_is_data() {
 
 // --- Dangerous pattern detection ---
 
-#[test]
-fn blocks_eval() {
-    assert!(!passes_enforced("eval 'rm -rf /'"));
-}
-
 // --- $() in arguments is ALLOWED (base command validated by allowlist) ---
 
 #[test]

@@ -219,54 +219,6 @@ mod cache_hit_messages {
     use super::*;
 
     #[test]
-    fn scenario_first_read_returns_full_content() {
-        let dir = tempfile::tempdir().unwrap();
-        let file = dir.path().join("module.rs");
-        std::fs::write(
-            &file,
-            "use std::io;\n\nfn main() {\n    println!(\"hello\");\n}\n",
-        )
-        .unwrap();
-        let path = file.to_string_lossy().to_string();
-
-        let mut cache = SessionCache::new();
-        let result = lean_ctx::tools::ctx_read::handle(&mut cache, &path, "full", CrpMode::Off);
-
-        // First read should return full content
-        assert!(
-            result.contains("fn main()"),
-            "first read must show full content"
-        );
-    }
-
-    #[test]
-    fn scenario_second_read_returns_proof_line() {
-        let dir = tempfile::tempdir().unwrap();
-        let file = dir.path().join("module.rs");
-        std::fs::write(
-            &file,
-            "use std::io;\n\nfn main() {\n    println!(\"hello\");\n}\n",
-        )
-        .unwrap();
-        let path = file.to_string_lossy().to_string();
-
-        let mut cache = SessionCache::new();
-        // First read
-        lean_ctx::tools::ctx_read::handle(&mut cache, &path, "full", CrpMode::Off);
-        // Second read (cache hit)
-        lean_ctx::tools::ctx_read::handle(&mut cache, &path, "full", CrpMode::Off);
-        // Third read (should have proof line since read_count >= 2)
-        let result = lean_ctx::tools::ctx_read::handle(&mut cache, &path, "full", CrpMode::Off);
-
-        assert!(
-            result.contains("unchanged since your last read")
-                || result.contains("unchanged")
-                || result.contains("cached"),
-            "cache hit must indicate file unchanged: got: {result}"
-        );
-    }
-
-    #[test]
     fn scenario_modified_file_returns_new_content() {
         let dir = tempfile::tempdir().unwrap();
         let file = dir.path().join("changing.rs");
@@ -416,14 +368,6 @@ tests/test_auth.py::test_refresh PASSED
 
 mod confidence_signal {
     use lean_ctx::core::config::TeeMode;
-
-    #[test]
-    fn scenario_tee_mode_high_compression_variant_exists() {
-        let mode = TeeMode::HighCompression;
-        assert_ne!(mode, TeeMode::Never);
-        assert_ne!(mode, TeeMode::Failures);
-        assert_ne!(mode, TeeMode::Always);
-    }
 
     #[test]
     fn scenario_tee_mode_serialization() {

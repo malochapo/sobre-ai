@@ -161,16 +161,6 @@ mod tests {
         assert_eq!(v["reason"], "nope");
     }
 
-    #[test]
-    fn pre_tool_payload_shape_parses() {
-        // Guards the exact wire shape we build stdin fixtures against.
-        let s = pre_tool_json("bash", &serde_json::json!({ "command": "cat a.txt" }));
-        let v: serde_json::Value = serde_json::from_str(&s).unwrap();
-        assert_eq!(v["hook_event_name"], "pre_tool");
-        assert_eq!(v["tool_name"], "bash");
-        assert_eq!(v["tool_input"]["command"], "cat a.txt");
-    }
-
     use crate::hooks::HookMode;
 
     fn inv(tool: &str, tool_input: &serde_json::Value) -> serde_json::Value {

@@ -85,15 +85,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn project_hash_is_stable_and_16_hex() {
-        let h1 = project_hash("/some/project");
-        let h2 = project_hash("/some/project");
-        assert_eq!(h1, h2, "hash must be deterministic");
-        assert_eq!(h1.len(), 16, "expected 16 hex chars (8 bytes)");
-        assert!(h1.chars().all(|c| c.is_ascii_hexdigit()));
-    }
-
-    #[test]
     fn port_file_absent_for_unlikely_root() {
         // A path that has no port file → None (never panics).
         assert!(read_port_file("/nonexistent/lean-ctx/project/xyz").is_none());

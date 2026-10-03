@@ -155,12 +155,4 @@ mod tests {
         let params = GetPromptRequestParams::new("unknown-prompt");
         assert!(get_prompt(&params, &ledger).is_none());
     }
-
-    #[test]
-    fn get_context_review_returns_result() {
-        let ledger = crate::core::context_ledger::ContextLedger::new();
-        let params = GetPromptRequestParams::new("context-review");
-        let result = get_prompt(&params, &ledger);
-        assert!(result.is_some());
-    }
 }

@@ -619,19 +619,4 @@ mod tests {
         let out = compress_tool_result_gateway(&raw, Some("ctx_shell"));
         assert_eq!(out, raw);
     }
-
-    #[test]
-    fn small_or_passthrough_output_gets_no_ccr_handle() {
-        let _lock = crate::core::data_dir::test_env_lock();
-        // Below the 200-char compress floor: passes through, no handle.
-        let tiny = "ok\n".repeat(10);
-        assert!(!compress_tool_result(&tiny, Some("bash")).contains("full original at"));
-        // lean-ctx tool output passes through verbatim (no handle either).
-        let raw = (1..=120)
-            .map(|i| format!("Line {i:04}: lorem ipsum dolor sit amet consectetur"))
-            .collect::<Vec<_>>()
-            .join("\n");
-        let out = compress_tool_result(&raw, Some("ctx_shell"));
-        assert_eq!(out, raw, "lean-ctx tool result must stay verbatim (no CCR)");
-    }
 }

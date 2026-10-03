@@ -130,39 +130,9 @@ fn freeze_counter_escalates_to_degraded() {
     );
 }
 
-#[test]
-fn adaptive_timeout_never_zero() {
-    use lean_ctx::core::io_health;
-
-    for _ in 0..10 {
-        io_health::record_freeze();
-    }
-
-    let base = Duration::from_secs(10);
-    let adapted = io_health::adaptive_timeout(base);
-    assert!(
-        adapted > Duration::ZERO,
-        "timeout should never be zero even in degraded mode"
-    );
-    assert!(
-        adapted >= Duration::from_secs(1),
-        "timeout should be at least 1s, got {adapted:?}"
-    );
-}
-
 // ---------------------------------------------------------------------------
 // Scenario 4: WSL2 detection (safe to run on non-WSL)
 // ---------------------------------------------------------------------------
-
-#[test]
-fn wsl_detection_returns_bool() {
-    let result = lean_ctx::core::io_health::is_wsl();
-    // On macOS this should be false; on WSL2 it would be true
-    // We just verify it doesn't panic
-    if cfg!(target_os = "macos") {
-        assert!(!result, "macOS should not be detected as WSL");
-    }
-}
 
 // ---------------------------------------------------------------------------
 // Scenario 5: slow_mount detection

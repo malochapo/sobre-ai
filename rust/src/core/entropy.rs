@@ -1018,19 +1018,6 @@ mod tests {
         assert_eq!(compressibility_class(&text), CompressibilityClass::High);
     }
 
-    #[test]
-    fn kolmogorov_diverse_higher_than_repetitive() {
-        let rep = "test\n".repeat(500);
-        let diverse = (0..500)
-            .map(|i| format!("unique_line_{i}_xk{}", i * 31 % 1000))
-            .collect::<Vec<_>>()
-            .join("\n");
-        assert!(
-            kolmogorov_proxy(&diverse) > kolmogorov_proxy(&rep),
-            "diverse content should have higher K"
-        );
-    }
-
     fn density_fixture() -> String {
         (0..120)
             .map(|i| {

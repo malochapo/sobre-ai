@@ -441,76 +441,6 @@ fn ls_mixed_suffix_variants() {
 // at compression boundaries.
 // ──────────────────────────────────────────────────────────
 
-#[test]
-fn utf8_truncation_at_every_boundary() {
-    let mixed = "日本語テスト → résumé → план → 中文 → emoji🎉 end ";
-    let mut s = String::new();
-    while s.len() < 60_000 {
-        s.push_str(mixed);
-    }
-
-    for boundary in [32, 47, 50, 57, 77, 80, 117, 200, 4096, 50000] {
-        let end = s.floor_char_boundary(boundary);
-        assert!(end <= boundary, "floor_char_boundary({boundary}) = {end}");
-        assert!(
-            s.is_char_boundary(end),
-            "invalid char boundary at {end} for limit {boundary}"
-        );
-        let _slice = &s[..end];
-    }
-}
-
-#[test]
-fn utf8_emoji_cluster_boundary() {
-    let s = "prefix🇩🇪suffix";
-    for i in 0..s.len() {
-        let end = s.floor_char_boundary(i);
-        assert!(s.is_char_boundary(end));
-        let _slice = &s[..end];
-    }
-}
-
-// ──────────────────────────────────────────────────────────
-// Scenario Group 9: PowerShell detection
-// (is_powershell is pub(crate), so unit tests cover it
-// directly in shell/platform.rs. Here we verify the shell
-// module is accessible and the platform submodule exists.)
-// ──────────────────────────────────────────────────────────
-
-fn is_powershell_like(shell_path: &str) -> bool {
-    let lower = shell_path.to_lowercase();
-    let basename = lower.rsplit(['/', '\\']).next().unwrap_or(&lower);
-    basename.starts_with("powershell") || basename.starts_with("pwsh")
-}
-
-#[test]
-fn powershell_detection_logic_with_common_shells() {
-    let non_ps = ["bash", "zsh", "fish", "/bin/sh", "/bin/bash"];
-    for shell in non_ps {
-        assert!(
-            !is_powershell_like(shell),
-            "'{shell}' should NOT be detected as PowerShell"
-        );
-    }
-
-    let ps = [
-        "powershell",
-        "pwsh",
-        "powershell.exe",
-        "pwsh.exe",
-        "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
-        "/usr/local/bin/pwsh",
-        "PowerShell.exe",
-        "PWSH",
-    ];
-    for shell in ps {
-        assert!(
-            is_powershell_like(shell),
-            "'{shell}' SHOULD be detected as PowerShell"
-        );
-    }
-}
-
 // ──────────────────────────────────────────────────────────
 // Scenario Group 10: Crash hardening — ctx fields
 // Verify that ToolContext optional fields return errors
@@ -562,15 +492,6 @@ fn hash_fast_with_real_world_cyrillic_plan_file() {
 // Verifies that the process name constant is shared between
 // crash_loop_backoff and reset_crash_loop.
 // ──────────────────────────────────────────────────────────
-
-#[test]
-fn crash_loop_process_name_constant_matches_usage() {
-    assert_eq!(
-        lean_ctx::core::startup_guard::MCP_PROCESS_NAME,
-        "mcp-server",
-        "MCP_PROCESS_NAME must match the name used in crash_loop_backoff"
-    );
-}
 
 #[test]
 fn crash_loop_reset_uses_same_name_as_backoff() {
@@ -632,29 +553,6 @@ fn uninstall_bak_path_generation() {
     assert!(
         bak.to_string_lossy().contains("settings.json"),
         "Backup must preserve original filename"
-    );
-}
-
-#[test]
-fn uninstall_bak_cleanup_handles_temp_files() {
-    let tmp = tempfile::tempdir().unwrap();
-    let dir = tmp.path().join(".cursor");
-    std::fs::create_dir_all(&dir).unwrap();
-    std::fs::write(dir.join("mcp.json.lean-ctx.tmp"), "tmp").unwrap();
-    std::fs::write(dir.join("mcp.json.lean-ctx.bak"), "bak").unwrap();
-
-    assert!(dir.join("mcp.json.lean-ctx.tmp").exists());
-    assert!(dir.join("mcp.json.lean-ctx.bak").exists());
-}
-
-#[test]
-fn uninstall_invalid_bak_pattern_detected() {
-    let name = "settings.json.lean-ctx.invalid.20260525.bak";
-    assert!(name.contains(".lean-ctx.invalid."));
-    assert!(
-        std::path::Path::new(name)
-            .extension()
-            .is_some_and(|ext| ext.eq_ignore_ascii_case("bak"))
     );
 }
 
@@ -726,13 +624,6 @@ fn hook_shell_tokenize_handles_single_quotes() {
     use lean_ctx::hook_handlers::shell_tokenize;
     let tokens = shell_tokenize("rg 'hello world' src/");
     assert_eq!(tokens, vec!["rg", "hello world", "src/"]);
-}
-
-#[test]
-fn hook_shell_tokenize_handles_backslash_escapes() {
-    use lean_ctx::hook_handlers::shell_tokenize;
-    let tokens = shell_tokenize(r"cat My\ Documents/file.txt");
-    assert_eq!(tokens, vec!["cat", "My Documents/file.txt"]);
 }
 
 #[test]

@@ -343,13 +343,6 @@ mod tests {
     }
 
     #[test]
-    fn client_hint_none_falls_back() {
-        let caps = ClientMcpCapabilities::detect_with_hint("Cursor", None);
-        assert_eq!(caps.client_id, "cursor");
-        assert_eq!(caps.tier(), 1);
-    }
-
-    #[test]
     fn format_summary() {
         let caps = ClientMcpCapabilities::detect("Cursor");
         let s = caps.format_summary();

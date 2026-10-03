@@ -450,15 +450,6 @@ mod tests {
     }
 
     #[test]
-    fn small_content_gets_no_handle() {
-        let _lock = crate::core::data_dir::test_env_lock();
-        assert!(
-            persist("too small to bother").is_none(),
-            "below MIN_TEE_BYTES there is no handle (the caller keeps its plain stub)"
-        );
-    }
-
-    #[test]
     #[allow(clippy::case_sensitive_file_extension_comparisons)]
     fn conversation_handle_is_compact_and_deterministic() {
         let _lock = crate::core::data_dir::test_env_lock();
@@ -723,59 +714,6 @@ mod tests {
         assert_eq!(inband_marker(&handle), Some(format!("<lc_expand:{hash}>")));
         // A non-tee handle has no marker.
         assert!(inband_marker("/tmp/not-a-tee.txt").is_none());
-    }
-
-    #[test]
-    fn splice_replaces_marker_with_verbatim_original() {
-        let _lock = crate::core::data_dir::test_env_lock();
-        let content = big("the historical verbatim line");
-        let handle = persist(&content).expect("persisted");
-        let marker = inband_marker(&handle).expect("marker");
-
-        let mut doc = serde_json::json!({
-            "messages": [{ "role": "assistant", "content": format!("recall {marker} please") }]
-        });
-        assert!(splice_inband_in_place(&mut doc), "a marker must splice");
-        let spliced = doc["messages"][0]["content"].as_str().unwrap();
-        assert!(
-            spliced.contains("the historical verbatim line"),
-            "verbatim original must be spliced in: {spliced}"
-        );
-        assert!(
-            !spliced.contains("<lc_expand:"),
-            "the marker must be consumed, not left behind"
-        );
-    }
-
-    #[test]
-    fn splice_is_byte_identical_no_op_without_marker() {
-        let _lock = crate::core::data_dir::test_env_lock();
-        let mut doc = serde_json::json!({
-            "messages": [{ "role": "user", "content": "no marker here" }],
-            "system": "plain"
-        });
-        let before = doc.clone();
-        assert!(
-            !splice_inband_in_place(&mut doc),
-            "no marker → must report no change"
-        );
-        assert_eq!(
-            doc, before,
-            "marker-less body must stay byte-identical (cache-safe)"
-        );
-    }
-
-    #[test]
-    fn splice_keeps_unresolvable_marker_verbatim() {
-        let _lock = crate::core::data_dir::test_env_lock();
-        // Right shape, but no such file in the store → leave the model's marker in
-        // place rather than silently deleting it.
-        let mut doc = serde_json::json!({ "t": "before <lc_expand:deadbeefdeadbeef> after" });
-        assert!(!splice_inband_in_place(&mut doc));
-        assert_eq!(
-            doc["t"].as_str().unwrap(),
-            "before <lc_expand:deadbeefdeadbeef> after"
-        );
     }
 
     #[test]

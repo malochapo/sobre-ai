@@ -277,16 +277,6 @@ fn doctor_none_when_path_not_provided() {
 // ── is_readonly_tool cross-check ──────────────────────────────────
 
 #[test]
-fn all_plan_mode_tools_are_readonly() {
-    for tool in plan_mode_tools() {
-        assert!(
-            is_readonly_tool(tool),
-            "plan_mode_tools() contains '{tool}' which is_readonly_tool() says is NOT readonly"
-        );
-    }
-}
-
-#[test]
 fn write_tools_are_not_readonly() {
     let write_tools = [
         "ctx_edit",

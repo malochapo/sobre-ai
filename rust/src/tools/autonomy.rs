@@ -674,25 +674,6 @@ mod tests {
     }
 
     #[test]
-    fn session_initialized_fires_once() {
-        let state = AutonomyState::new();
-        let first = state.session_initialized.compare_exchange(
-            false,
-            true,
-            Ordering::SeqCst,
-            Ordering::SeqCst,
-        );
-        assert!(first.is_ok());
-        let second = state.session_initialized.compare_exchange(
-            false,
-            true,
-            Ordering::SeqCst,
-            Ordering::SeqCst,
-        );
-        assert!(second.is_err());
-    }
-
-    #[test]
     fn large_shell_hint_once_per_session() {
         let state = AutonomyState::new();
         let h1 = large_ctx_shell_output_hint(&state, "ls -la", 5001).expect("first");

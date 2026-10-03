@@ -219,11 +219,4 @@ mod tests {
             .expect_err("missing $schema must not canonicalize silently");
         assert!(err.contains("does not parse"), "{err}");
     }
-
-    #[test]
-    fn find_by_extension_is_case_insensitive() {
-        // No entries shipped yet (Phase 1c builds the first dylibs) — this
-        // just proves the lookup doesn't panic on an empty catalog.
-        assert!(find_by_extension("LUA").is_none() || find_by_extension("lua").is_some());
-    }
 }

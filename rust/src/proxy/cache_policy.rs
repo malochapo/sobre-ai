@@ -203,12 +203,6 @@ mod tests {
     }
 
     #[test]
-    fn worth_repacking_rejects_small_prefix() {
-        let msgs = vec![json!({"role": "user", "content": "tiny"})];
-        assert!(!worth_repacking(None, &msgs, 1));
-    }
-
-    #[test]
     fn worth_repacking_accepts_large_prefix() {
         // Comfortably above the 1024-token cacheable floor.
         let big = "context engineering ".repeat(1500);

@@ -129,26 +129,6 @@ mod compression_level_tests {
         let cfg: Config = toml::from_str(r#"compression_level = "standard""#).unwrap();
         assert_eq!(cfg.compression_level, CompressionLevel::Standard);
     }
-
-    #[test]
-    fn roundtrip_all_levels() {
-        for level in [
-            CompressionLevel::Off,
-            CompressionLevel::Lite,
-            CompressionLevel::Standard,
-            CompressionLevel::Max,
-        ] {
-            let (ta, od, crp, tm) = level.to_components();
-            assert!(!crp.is_empty());
-            if level == CompressionLevel::Off {
-                assert!(!tm);
-                assert_eq!(ta, TerseAgent::Off);
-                assert_eq!(od, OutputDensity::Normal);
-            } else {
-                assert!(tm);
-            }
-        }
-    }
 }
 
 #[cfg(test)]

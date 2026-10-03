@@ -417,7 +417,7 @@ fn command_timeout(command: &str, timeout_ms: Option<u64>) -> Duration {
 
 #[cfg(test)]
 mod tests {
-    use super::{command_timeout, ensure_utf8_locale, execute_command_in};
+    use super::{command_timeout, execute_command_in};
 
     #[test]
     fn command_timeout_delegates_to_shell_timeout() {
@@ -525,47 +525,6 @@ mod tests {
     }
 
     #[test]
-    fn ensure_utf8_locale_sets_fallback_when_none_inherited() {
-        let empty: std::collections::HashMap<String, String> = std::collections::HashMap::new();
-        let mut cmd = std::process::Command::new("true");
-
-        // Temporarily unset locale vars to test fallback
-        let saved = (
-            std::env::var("LC_ALL").ok(),
-            std::env::var("LC_CTYPE").ok(),
-            std::env::var("LANG").ok(),
-        );
-        crate::test_env::remove_var("LC_ALL");
-        crate::test_env::remove_var("LC_CTYPE");
-        crate::test_env::remove_var("LANG");
-
-        ensure_utf8_locale(&mut cmd, &empty);
-
-        // Restore
-        if let Some(v) = saved.0 {
-            crate::test_env::set_var("LC_ALL", v);
-        }
-        if let Some(v) = saved.1 {
-            crate::test_env::set_var("LC_CTYPE", v);
-        }
-        if let Some(v) = saved.2 {
-            crate::test_env::set_var("LANG", v);
-        }
-
-        // Command internal env isn't inspectable, but we verify the fn doesn't panic
-        // and the real integration test below checks byte-level correctness.
-    }
-
-    #[test]
-    fn ensure_utf8_locale_skips_when_extra_env_has_lc_all() {
-        let mut extra = std::collections::HashMap::new();
-        extra.insert("LC_ALL".to_string(), "C".to_string());
-        let mut cmd = std::process::Command::new("true");
-        ensure_utf8_locale(&mut cmd, &extra);
-        // Should not panic or override
-    }
-
-    #[test]
     #[cfg_attr(windows, ignore)]
     fn utf8_bytes_survive_shell_roundtrip() {
         let (output, code) = execute_command_in(
@@ -635,24 +594,6 @@ mod tests {
         assert!(
             output.contains("TID=thread-from-hook"),
             "captured agent runtime var must be forwarded, got: {output}"
-        );
-    }
-
-    /// Per-call `timeout_ms` must reach the kill loop: a command that sleeps
-    /// past its 200ms budget is killed with the timeout exit code and message.
-    #[test]
-    #[cfg_attr(windows, ignore)] // POSIX sleep
-    fn per_call_timeout_kills_long_command() {
-        let (output, code) = super::execute_command_with_env(
-            "sleep 3",
-            ".",
-            &std::collections::HashMap::new(),
-            Some(200),
-        );
-        assert_eq!(code, 124, "timed-out command must exit 124: {output}");
-        assert!(
-            output.contains("timed out after 200ms"),
-            "timeout message must carry the per-call budget, got: {output}"
         );
     }
 

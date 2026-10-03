@@ -274,14 +274,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn tracker_starts_at_zero() {
-        let t = BudgetTracker::new();
-        assert_eq!(t.tokens_used(), 0);
-        assert_eq!(t.shell_used(), 0);
-        assert!((t.cost_usd() - 0.0).abs() < f64::EPSILON);
-    }
-
-    #[test]
     fn record_and_read() {
         let t = BudgetTracker::new();
         t.record_tokens(5000);

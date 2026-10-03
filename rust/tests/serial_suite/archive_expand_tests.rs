@@ -148,20 +148,6 @@ fn archive_cleanup_expired() {
 }
 
 #[test]
-fn archive_nonexistent_returns_none() {
-    assert!(archive::retrieve("does_not_exist_abc123").is_none());
-}
-
-#[test]
-fn archive_format_hint_contains_expand() {
-    let hint = archive::format_hint("test123", 8000, 2000);
-    assert!(hint.contains("ctx_expand"));
-    assert!(hint.contains("test123"));
-    assert!(hint.contains("8000"));
-    assert!(hint.contains("2000"));
-}
-
-#[test]
 fn archive_should_archive_respects_threshold() {
     let _guard = ENV_LOCK.lock().unwrap();
     // SAFETY: serialized by this file's local `ENV_LOCK` mutex.

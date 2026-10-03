@@ -281,32 +281,6 @@ mod tests {
     }
 
     #[test]
-    fn schema_instantiates_legacy_and_p5_fields() {
-        let event = UnifiedSavingsEventV2 {
-            tool_name: "context_read".into(),
-            mode: "compressed".into(),
-            original_tokens: 1_000,
-            compressed_tokens: 400,
-            saved_tokens: 600,
-            content_hash: "blake3:content".into(),
-            timestamp_epoch_ms: 1_700_000_000_000,
-            prev_hash: "blake3:previous".into(),
-            event_hash: "blake3:event".into(),
-            intent: Some("summarize".into()),
-            outcome: Some("accepted".into()),
-            routing_decision: Some("local".into()),
-            agent_id: Some("agent-test".into()),
-            efficiency_etpao: Some(750),
-            attribution_id: "attribution:test".into(),
-            trace_id: Some("tr-test".into()),
-        };
-
-        assert_eq!(event.saved_tokens, 600);
-        assert_eq!(event.attribution_id, "attribution:test");
-        assert_eq!(event.intent.as_deref(), Some("summarize"));
-    }
-
-    #[test]
     fn request_context_trace_id_reaches_unified_event() {
         let context = RequestContext {
             request_id: "request".into(),

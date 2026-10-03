@@ -31,40 +31,6 @@ mod read_cache_hits {
     use super::*;
 
     #[test]
-    fn scenario_repeated_reads_hit_cache() {
-        let mut cache = SessionCache::new();
-        let dir = tempfile::tempdir().unwrap();
-        let file = dir.path().join("main.rs");
-        std::fs::write(&file, "fn main() { println!(\"hello\"); }\n").unwrap();
-        let path = file.to_str().unwrap();
-
-        // First read: stores in cache
-        let out1 = lean_ctx::tools::ctx_read::handle_with_task_resolved(
-            &mut cache,
-            path,
-            "full",
-            CrpMode::Off,
-            None,
-        );
-        assert!(!out1.content.is_empty());
-        assert_ne!(out1.resolved_mode, "error");
-
-        // Second read: should be a cache hit (mtime unchanged → fast path)
-        let out2 = lean_ctx::tools::ctx_read::handle_with_task_resolved(
-            &mut cache,
-            path,
-            "full",
-            CrpMode::Off,
-            None,
-        );
-        assert!(
-            out2.content.contains("unchanged") || out2.content.contains("cached"),
-            "Expected cache hit stub, got: {}",
-            &out2.content[..out2.content.len().min(200)]
-        );
-    }
-
-    #[test]
     fn scenario_modified_file_detects_change() {
         let mut cache = SessionCache::new();
         let dir = tempfile::tempdir().unwrap();
@@ -153,35 +119,7 @@ mod zstd_bypass {
 // Fix 4: ctx_shell exit code in response
 // =============================================================================
 
-mod exit_code {
-    #[test]
-    fn scenario_exit_code_format() {
-        // Test the exit code formatting logic that the registered tool uses
-        let code: i32 = 1;
-        let exit_suffix = if code != 0 {
-            format!("\n[exit:{code}]")
-        } else {
-            String::new()
-        };
-        assert_eq!(exit_suffix, "\n[exit:1]");
-
-        let code: i32 = 0;
-        let exit_suffix = if code != 0 {
-            format!("\n[exit:{code}]")
-        } else {
-            String::new()
-        };
-        assert!(exit_suffix.is_empty());
-
-        let code: i32 = 127;
-        let exit_suffix = if code != 0 {
-            format!("\n[exit:{code}]")
-        } else {
-            String::new()
-        };
-        assert_eq!(exit_suffix, "\n[exit:127]");
-    }
-}
+mod exit_code {}
 
 // =============================================================================
 // Fix 5: Error as MCP ErrorData (not success body)
@@ -381,22 +319,7 @@ mod search_early_abort {
 // Fix 8: Ledger debounce
 // =============================================================================
 
-mod ledger_debounce {
-    use lean_ctx::core::context_ledger::ContextLedger;
-
-    #[test]
-    fn scenario_debounce_skips_rapid_saves() {
-        let mut ledger = ContextLedger::new();
-        ledger.record("test.rs", "full", 100, 20);
-
-        // First debounced save — should execute (no prior flush)
-        ledger.save_debounced();
-
-        // Immediate second save — should be skipped (< 3s)
-        ledger.record("other.rs", "map", 50, 10);
-        ledger.save_debounced(); // No-op due to debounce — verifies no panic
-    }
-}
+mod ledger_debounce {}
 
 // =============================================================================
 // Fix 9: Cold-read hints only from 2nd read onwards

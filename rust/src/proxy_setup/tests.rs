@@ -14,23 +14,6 @@ fn uid_port_first_regular_user() {
 }
 
 #[test]
-fn uid_port_no_overflow() {
-    // Ensure port stays in valid range even with high UIDs
-    // uid 2999 → offset (2999-1000) % 1000 = 999 → port 5443
-    let port = DEFAULT_PROXY_PORT + 999;
-    assert_eq!(port, 5443);
-    assert!(port < u16::MAX);
-}
-
-#[test]
-fn uid_port_system_accounts_get_base() {
-    // uid < 1000 → saturating_sub gives 0 → base port
-    let uid: u16 = 500;
-    let offset = uid.saturating_sub(1000) % 1000;
-    assert_eq!(DEFAULT_PROXY_PORT + offset, DEFAULT_PROXY_PORT);
-}
-
-#[test]
 fn proxy_timeout_default_200ms() {
     if std::env::var("LEAN_CTX_PROXY_TIMEOUT_MS").is_ok() {
         return;
@@ -39,68 +22,8 @@ fn proxy_timeout_default_200ms() {
 }
 
 #[test]
-fn proxy_timeout_is_non_zero() {
-    let t = proxy_timeout();
-    assert!(t.as_millis() > 0);
-}
-
-#[test]
 fn is_proxy_reachable_returns_false_on_unused_port() {
     assert!(!is_proxy_reachable(19999));
-}
-
-#[test]
-fn posix_block_contains_all_provider_env_vars() {
-    let base = "http://127.0.0.1:4444";
-    let block = format!(
-        r#"{PROXY_ENV_START}
-export ANTHROPIC_BASE_URL="{base}"
-export OPENAI_BASE_URL="{base}/v1"
-export GEMINI_API_BASE_URL="{base}"
-{PROXY_ENV_END}"#
-    );
-    assert!(
-        block.contains("ANTHROPIC_BASE_URL"),
-        "shell exports must include ANTHROPIC_BASE_URL"
-    );
-    assert!(
-        block.contains("OPENAI_BASE_URL"),
-        "shell exports must include OPENAI_BASE_URL"
-    );
-    assert!(
-        block.contains("GEMINI_API_BASE_URL"),
-        "shell exports must include GEMINI_API_BASE_URL"
-    );
-}
-
-#[test]
-fn fish_block_contains_all_provider_env_vars() {
-    let base = "http://127.0.0.1:4444";
-    let block = format!(
-        r#"{PROXY_ENV_START}
-set -gx ANTHROPIC_BASE_URL "{base}"
-set -gx OPENAI_BASE_URL "{base}/v1"
-set -gx GEMINI_API_BASE_URL "{base}"
-{PROXY_ENV_END}"#
-    );
-    assert!(block.contains("ANTHROPIC_BASE_URL"));
-    assert!(block.contains("OPENAI_BASE_URL"));
-    assert!(block.contains("GEMINI_API_BASE_URL"));
-}
-
-#[test]
-fn powershell_block_contains_all_provider_env_vars() {
-    let base = "http://127.0.0.1:4444";
-    let block = format!(
-        r#"{PROXY_ENV_START}
-$env:ANTHROPIC_BASE_URL = "{base}"
-$env:OPENAI_BASE_URL = "{base}/v1"
-$env:GEMINI_API_BASE_URL = "{base}"
-{PROXY_ENV_END}"#
-    );
-    assert!(block.contains("ANTHROPIC_BASE_URL"));
-    assert!(block.contains("OPENAI_BASE_URL"));
-    assert!(block.contains("GEMINI_API_BASE_URL"));
 }
 
 /// The subscription guard reads the process environment; these tests are only

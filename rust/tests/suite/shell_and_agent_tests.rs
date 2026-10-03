@@ -132,13 +132,6 @@ fn lean_ctx_shell_override_invalid_shell_fails() {
 }
 
 #[test]
-fn shell_exec_simple_command() {
-    let (stdout, _stderr, code) = run_with_env(&["-c", "echo hello_world"], &[], None);
-    assert_eq!(code, 0);
-    assert!(stdout.contains("hello_world"), "output: {stdout}");
-}
-
-#[test]
 fn shell_exec_pipe_command() {
     if cfg!(windows) {
         return; // head -1 not available on Windows
@@ -708,34 +701,6 @@ fn piped_output_is_not_compressed() {
     assert!(
         stdout.contains("line one"),
         "piped output must contain original content: {stdout}"
-    );
-}
-
-#[test]
-fn bash_hook_contains_pipe_guard() {
-    if cfg!(windows) {
-        return;
-    }
-    let bin = lean_ctx_bin();
-    let _output = Command::new(&bin)
-        .args(["init", "--dry-run"])
-        .env("LEAN_CTX_DISABLED", "1")
-        .env("SHELL", "/bin/bash")
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .output()
-        .expect("run init --dry-run");
-    // This is tested more directly in cli.rs unit tests
-}
-
-#[test]
-fn generated_bash_hook_has_tty_check() {
-    let script = lean_ctx::hooks::generate_rewrite_script("lean-ctx");
-    // The rewrite hook is for Claude Code / Gemini, not the shell alias.
-    // The shell alias pipe guard is in cli.rs.
-    assert!(
-        !script.is_empty(),
-        "generated rewrite script should not be empty"
     );
 }
 

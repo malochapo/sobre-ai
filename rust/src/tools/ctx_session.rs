@@ -849,12 +849,4 @@ mod tests {
         assert_eq!(line, None);
         assert_eq!(text, ">=0.15.14,<0.16.0 (был 0.14.x)");
     }
-
-    #[test]
-    fn finding_em_dash_at_start() {
-        let (file, line, text) = parse_finding_value("src/main.rs:1 \u{2014} entry point");
-        assert_eq!(file.as_deref(), Some("src/main.rs"));
-        assert_eq!(line, Some(1));
-        assert_eq!(text, "entry point");
-    }
 }

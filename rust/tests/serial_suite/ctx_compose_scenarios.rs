@@ -106,16 +106,6 @@ fn compose_degrades_under_tight_budget_without_stalling() {
 }
 
 #[test]
-fn compose_rejects_empty_task() {
-    let _guard = ENV_GUARD
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
-    let (out, tokens) = ctx_compose::handle("   ", "/tmp", CrpMode::Off);
-    assert!(out.starts_with("ERROR"));
-    assert_eq!(tokens, 0);
-}
-
-#[test]
 fn compose_surfaces_associative_neighbours() {
     let _guard = ENV_GUARD
         .lock()

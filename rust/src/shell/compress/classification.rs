@@ -1009,11 +1009,6 @@ mod verbatim_classification_tests {
     }
 
     #[test]
-    fn simple_cat_still_verbatim() {
-        assert!(is_verbatim_output("cat src/main.rs"));
-    }
-
-    #[test]
     fn non_viewer_compound_not_verbatim() {
         assert!(!is_verbatim_output("cd /repo && cargo build"));
     }

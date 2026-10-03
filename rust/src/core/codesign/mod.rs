@@ -154,9 +154,4 @@ mod tests {
         assert_eq!(CODESIGN_IDENTIFIER, "com.leanctx.cli");
         assert_eq!(IDENTITY_CN, "lean-ctx-codesign");
     }
-
-    #[test]
-    fn sign_kind_is_comparable() {
-        assert_ne!(SignKind::Stable, SignKind::AdHoc);
-    }
 }

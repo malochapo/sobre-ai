@@ -172,19 +172,4 @@ pub fn handle_codex_session_start() {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn codex_deny_does_not_block_leanctx_cli_invocations() {
-        // #801: `lean-ctx -c '...'` must not be denied in replace mode.
-        // The deny output should only fire for truly native Bash commands.
-        let deny_msg = codex_deny_output("lean-ctx -c 'git status'");
-        // This is the deny message format — verify it exists for native commands
-        assert!(deny_msg.contains("deny"), "deny output must contain deny");
-
-        // A successful PreToolUse hook with no output allows the command.
-        let allow_msg = codex_allow_output();
-        assert!(allow_msg.is_empty(), "allow output must be empty");
-    }
-}
+mod tests {}

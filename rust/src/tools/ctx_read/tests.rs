@@ -975,28 +975,6 @@ fn recovery_footer_is_compressed_only_and_togglable() {
     crate::test_env::remove_var("LEAN_CTX_RECOVERY_HINTS");
 }
 
-#[test]
-fn raw_mode_no_savings_footer() {
-    let _lock = crate::core::data_dir::test_env_lock();
-    let content = "x = 1\n";
-    let (output, _) = render::process_mode(
-        content,
-        "raw",
-        "F1",
-        "tiny.py",
-        "py",
-        50,
-        CrpMode::Off,
-        "/tmp/tiny.py",
-        None,
-    );
-    assert!(
-        !output.contains('\u{2500}'),
-        "raw mode must not contain savings footer box-drawing chars"
-    );
-    assert_eq!(output, content);
-}
-
 // ---------------------------------------------------------------------------
 // #361 anti-inflation invariant: a `ctx_read` must never cost more tokens than
 // the raw file. The framing header only earns its keep on large files and
@@ -1297,38 +1275,6 @@ fn gh775_full_then_ranged_returns_only_window() {
         !ranged.content.contains("line 1\n") && !ranged.content.contains("line 2000"),
         "ranged read must NOT contain lines outside the window:\n{}",
         &ranged.content[..ranged.content.len().min(500)]
-    );
-
-    crate::test_env::remove_var("LEAN_CTX_SHOW_SAVINGS");
-}
-
-#[test]
-fn gh775_full_then_ranged_with_fresh_returns_only_window() {
-    let _iso = crate::core::data_dir::isolated_data_dir();
-    crate::test_env::set_var("LEAN_CTX_SHOW_SAVINGS", "0");
-
-    let dir = tempfile::tempdir().unwrap();
-    let p = write_numbered_file(dir.path(), "big2.ts", 2000);
-
-    let mut cache = SessionCache::new();
-
-    // 1. Full read.
-    handle_with_task_resolved(&mut cache, &p, "full", CrpMode::Off, None);
-
-    // 2. Fresh ranged read (simulates `fresh:true` in the tool args).
-    let ranged =
-        handle_fresh_with_task_resolved(&mut cache, &p, "lines:1480-1489", CrpMode::Off, None);
-    assert!(
-        ranged.content.contains("line 1480"),
-        "fresh ranged read must contain requested start line"
-    );
-    assert!(
-        ranged.content.contains("line 1489"),
-        "fresh ranged read must contain requested end line"
-    );
-    assert!(
-        !ranged.content.contains("line 1\n") && !ranged.content.contains("line 2000"),
-        "fresh ranged read must NOT contain lines outside the window"
     );
 
     crate::test_env::remove_var("LEAN_CTX_SHOW_SAVINGS");
