@@ -17,7 +17,7 @@ pub fn check_tool_access(tool_name: &str) -> RoleCheckResult {
     let role_name = roles::active_role_name();
     let role = roles::active_role();
 
-    if tool_name == "ctx_session" || tool_name == "ctx" {
+    if tool_name == "ctx_session" {
         return RoleCheckResult {
             blocked: false,
             role_name,
@@ -143,12 +143,6 @@ mod tests {
     }
 
     #[test]
-    fn meta_tool_always_allowed() {
-        let result = check_tool_access("ctx");
-        assert!(!result.blocked);
-    }
-
-    #[test]
     fn coder_role_allows_all() {
         // Reset to coder for this test (other tests may have changed the global role)
         let _ = roles::set_active_role("coder");
@@ -159,15 +153,5 @@ mod tests {
             result.role_name
         );
         assert_eq!(result.role_name, "coder");
-    }
-
-    #[test]
-    fn ctx_call_is_not_exempt_from_guard() {
-        let _ = roles::set_active_role("coder");
-        let result = check_tool_access("ctx_call");
-        assert!(
-            !result.blocked,
-            "ctx_call itself should be allowed for coder"
-        );
     }
 }

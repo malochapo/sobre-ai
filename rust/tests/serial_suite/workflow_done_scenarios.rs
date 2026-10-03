@@ -347,7 +347,6 @@ fn scenario_passthrough_tools_never_blocked() {
     assert!(WORKFLOW_PASSTHROUGH_TOOLS.contains(&"ctx_search"));
     assert!(WORKFLOW_PASSTHROUGH_TOOLS.contains(&"ctx_tree"));
     assert!(WORKFLOW_PASSTHROUGH_TOOLS.contains(&"ctx_session"));
-    assert!(WORKFLOW_PASSTHROUGH_TOOLS.contains(&"ctx"));
 
     // The batch read (ctx_multi_read once) and the auto-mode read
     // (ctx_smart_read once) are ctx_read with `paths` / `mode`: the gate

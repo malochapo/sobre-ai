@@ -73,20 +73,3 @@ fn all_tool_schemas_survive_strict_validators() {
         errors.join("\n  ")
     );
 }
-
-#[test]
-fn granular_and_unified_defs_are_strict_safe() {
-    let mut errors = Vec::new();
-    for tool in lean_ctx::tool_defs::granular_tool_defs()
-        .iter()
-        .chain(lean_ctx::tool_defs::unified_tool_defs().iter())
-    {
-        let schema = Value::Object((*tool.input_schema).clone());
-        check_schema(tool.name.as_ref(), &schema, "schema", &mut errors);
-    }
-    assert!(
-        errors.is_empty(),
-        "tool schemas not strict-validator safe:\n  {}",
-        errors.join("\n  ")
-    );
-}

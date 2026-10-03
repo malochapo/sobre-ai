@@ -15,9 +15,9 @@ use rmcp::model::{CallToolResult, ContentBlock};
 
 use crate::core::policy::runtime::{self, ActivePolicy};
 
-/// Tools that can never be policy-denied (mirror role_guard's session/meta
+/// Tools that can never be policy-denied (mirror role_guard's session
 /// exemption), so a pack can't lock the operator out of fixing the policy.
-const EXEMPT_TOOLS: &[&str] = &["ctx", "ctx_session", "ctx_policy"];
+const EXEMPT_TOOLS: &[&str] = &["ctx_session"];
 
 pub struct PolicyCheckResult {
     pub blocked: bool,
@@ -219,11 +219,9 @@ mod tests {
     #[test]
     fn exempt_tools_never_blocked_even_under_allowlist() {
         // An allowlist of only ctx_read must still let the operator reach the
-        // policy/session meta-tools to recover.
+        // session tool to recover.
         let p = active(Some(vec!["ctx_read"]), vec![]);
-        for t in ["ctx", "ctx_session", "ctx_policy"] {
-            assert!(!evaluate(Some(&p), t).blocked, "{t} must be exempt");
-        }
+        assert!(!evaluate(Some(&p), "ctx_session").blocked);
     }
 
     #[test]

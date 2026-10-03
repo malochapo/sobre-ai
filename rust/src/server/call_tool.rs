@@ -14,58 +14,16 @@ impl LeanCtxServer {
         self.resolve_roots_once().await;
         elicitation::increment_call();
 
-        let original_name = request.name.as_ref().to_string();
-        let (resolved_name, resolved_args) = if original_name == "ctx" {
-            let sub = request
-                .arguments
-                .as_ref()
-                .and_then(|a| a.get("tool"))
-                .and_then(|v| v.as_str())
-                .map(std::string::ToString::to_string)
-                .ok_or_else(|| {
-                    ErrorData::invalid_params("'tool' is required for ctx meta-tool", None)
-                })?;
-            let tool_name = if sub.starts_with("ctx_") {
-                sub
-            } else {
-                format!("ctx_{sub}")
-            };
-            let mut args = request.arguments.unwrap_or_default();
-            args.remove("tool");
-            (tool_name, Some(args))
-        } else {
-            (original_name, request.arguments)
-        };
-        let name = resolved_name.as_str();
-        let args = resolved_args.as_ref();
+        let tool_name = request.name.as_ref().to_string();
+        let tool_args = request.arguments;
+        let name = tool_name.as_str();
+        let args = tool_args.as_ref();
 
         if let Some(denied) = Self::guard_role_and_policy(name) {
             return Ok(denied);
         }
 
-        // ctx_call is a meta-dispatcher: the egress DLP and permission-
-        // inheritance gates below must inspect the INNER tool + arguments, or
-        // the universal invoker becomes a policy bypass (#1008 security pass).
-        // Role/rate/workflow gates for the inner tool already run inside the
-        // dispatch layer; these two ran only on the wrapper name before.
-        let inner_call: Option<(String, Option<serde_json::Map<String, serde_json::Value>>)> =
-            if name == "ctx_call" {
-                helpers::get_str(args, "name").map(|inner_name| {
-                    let inner_args = args
-                        .and_then(|m| m.get("arguments"))
-                        .and_then(serde_json::Value::as_object)
-                        .cloned();
-                    (inner_name, inner_args)
-                })
-            } else {
-                None
-            };
-        let (guard_name, guard_args): (&str, Option<&serde_json::Map<_, _>>) = match &inner_call {
-            Some((n, a)) => (n.as_str(), a.as_ref()),
-            None => (name, args),
-        };
-
-        if let Some(blocked) = Self::guard_egress(guard_name, guard_args) {
+        if let Some(blocked) = Self::guard_egress(name, args) {
             return Ok(blocked);
         }
 
@@ -92,30 +50,11 @@ impl LeanCtxServer {
         // dispatch — means such a call also never *consumes* a latched
         // once-per-session flag (auto-context briefing, rules tip) whose prose
         // we would then discard, so those surface on the next human-facing call.
-        //
-        // `ctx_call` is a meta-dispatcher: the contract belongs to its *inner*
-        // tool + inner arguments, not to ctx_call itself. Unwrap one level so
-        // JSON reached via the lazy `ctx_call` path (the default advertised
-        // surface, where ctx_outline is not a top-level tool) is just as
-        // byte-exact as a direct call. This also covers JSON error envelopes
-        // from the early rate-limit path, which the first-call auto-context
-        // briefing would otherwise corrupt.
-        let (mr_name, mr_args): (
-            Option<String>,
-            Option<&serde_json::Map<String, serde_json::Value>>,
-        ) = if name == "ctx_call" {
-            (
-                helpers::get_str(args, "name"),
-                args.and_then(|m| m.get("arguments"))
-                    .and_then(serde_json::Value::as_object),
-            )
-        } else {
-            (Some(name.to_string()), args)
-        };
-        let machine_readable = mr_name
-            .as_deref()
-            .and_then(|n| self.registry.as_ref().and_then(|r| r.get_arc(n)))
-            .is_some_and(|tool| tool.produces_machine_readable(mr_args));
+        let machine_readable = self
+            .registry
+            .as_ref()
+            .and_then(|r| r.get_arc(name))
+            .is_some_and(|tool| tool.produces_machine_readable(args));
 
         // Skip the session wake-up briefing for machine-readable calls: the
         // pre-hook latches `session_initialized` via compare-exchange, so calling
@@ -221,8 +160,7 @@ impl LeanCtxServer {
         // bash/read/edit/grep permission rules onto the matching lean-ctx tool so
         // e.g. `ctx_shell` honors a `rm *: ask` rule instead of bypassing it.
         // Gated on the cheap effective() check so the default (off) pays no lock
-        // cost on the hot path. Checks the ctx_call-unwrapped inner tool (#1008)
-        // so the invoker cannot side-step an IDE deny.
+        // cost on the hot path.
         if config.permission_inheritance_effective()
             == crate::core::config::PermissionInheritance::On
         {
@@ -230,13 +168,13 @@ impl LeanCtxServer {
             let project_root = self.session.read().await.project_root.clone();
             let perm = permission_inheritance::check(
                 &client_name,
-                guard_name,
-                guard_args,
+                name,
+                args,
                 project_root.as_deref(),
                 &config,
             );
             if let Some(blocked) = permission_inheritance::into_call_tool_result(&perm) {
-                tracing::warn!(tool = guard_name, "held back by IDE permission inheritance");
+                tracing::warn!(tool = name, "held back by IDE permission inheritance");
                 return Ok(blocked);
             }
         }

@@ -187,7 +187,7 @@ pub fn tool_schemas_json_for_test() -> String {
 /// Read-only tools should never be blocked — agents need them for context
 /// recovery after crashes or session transitions.
 pub const WORKFLOW_PASSTHROUGH_TOOLS: &[&str] =
-    &["ctx", "ctx_read", "ctx_search", "ctx_tree", "ctx_session"];
+    &["ctx_read", "ctx_search", "ctx_tree", "ctx_session"];
 
 /// A workflow is stale if it hasn't been updated in 30 minutes.
 /// This prevents dead workflows from blocking tools across sessions.
@@ -248,12 +248,6 @@ mod tests {
         assert!(is_home_or_agent_dir(&codex));
         let project = std::path::PathBuf::from("/home/user/projects/myapp");
         assert!(!is_home_or_agent_dir(&project));
-    }
-
-    #[test]
-    fn test_unified_tool_count() {
-        let tools = crate::tool_defs::unified_tool_defs();
-        assert_eq!(tools.len(), 5, "Expected 5 unified tools");
     }
 
     #[test]
