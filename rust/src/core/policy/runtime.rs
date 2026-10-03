@@ -195,8 +195,6 @@ mod tests {
                 .collect::<BTreeMap<_, _>>(),
             filters: crate::core::policy::FilterRules::default(),
             egress: crate::core::policy::EgressRules::default(),
-            routing: crate::core::policy::RoutingPolicyRules::default(),
-            budgets: crate::core::policy::BudgetRules::default(),
         }
     }
 

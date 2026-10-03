@@ -77,13 +77,6 @@ pub struct PolicyPack {
     /// Egress/output DLP on agent writes & actions (GL #676).
     #[serde(default, skip_serializing_if = "EgressRules::is_empty")]
     pub egress: EgressRules,
-    /// Gateway routing governance: model allowlist + downgrade exemptions
-    /// (enterprise#25). Enforced by the org gateway under a signed policy.
-    #[serde(default, skip_serializing_if = "RoutingPolicyRules::is_empty")]
-    pub routing: RoutingPolicyRules,
-    /// Hard org spend caps per person/project (enterprise#25).
-    #[serde(default, skip_serializing_if = "BudgetRules::is_empty")]
-    pub budgets: BudgetRules,
 }
 
 /// The `[context]` section of a pack. All fields optional — only what a pack
@@ -170,61 +163,6 @@ impl EgressRules {
     }
 }
 
-/// The `[routing]` section — org gateway routing governance (enterprise#25,
-/// Doc 08 §4.3). Enforced in the gateway forward path when this pack arrives
-/// via a signed, trusted, `enforced = true` [`org::OrgPolicyV1`].
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct RoutingPolicyRules {
-    /// Model allowlist patterns (`"claude-*"`, `"gpt-4o-mini"`). A request for
-    /// a model matching none of them is refused org-wide. Empty = no
-    /// restriction. Accumulates down the `extends` chain (union — the floor
-    /// merge then intersects org vs. local, see `floor`).
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub allowed_models: Vec<String>,
-    /// Projects whose requests the router must never downgrade to a cheaper
-    /// tier (`["security", "prod"]`). Accumulates down the chain.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub forbid_downgrade_for: Vec<String>,
-}
-
-impl RoutingPolicyRules {
-    /// True when no routing governance is configured.
-    #[must_use]
-    pub fn is_empty(&self) -> bool {
-        self.allowed_models.is_empty() && self.forbid_downgrade_for.is_empty()
-    }
-}
-
-/// The `[budgets]` section — hard org spend caps (enterprise#25, Doc 08 §4.3).
-/// USD amounts against the measured `cost_usd` of the usage meter; breaching a
-/// cap makes the gateway refuse further requests (429) until the window rolls.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct BudgetRules {
-    /// Max measured spend per person per UTC day.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub max_cost_usd_per_person_per_day: Option<f64>,
-    /// Max measured spend per project per UTC month.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub max_cost_usd_per_project_per_month: Option<f64>,
-    /// Max accepted requests per person per UTC minute (enterprise#66) —
-    /// protects shared upstreams from a single runaway agent. Counted per
-    /// gateway process; multi-replica deployments multiply accordingly.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub max_requests_per_minute_per_person: Option<u32>,
-}
-
-impl BudgetRules {
-    /// True when no cap is configured.
-    #[must_use]
-    pub fn is_empty(&self) -> bool {
-        self.max_cost_usd_per_person_per_day.is_none()
-            && self.max_cost_usd_per_project_per_month.is_none()
-            && self.max_requests_per_minute_per_person.is_none()
-    }
-}
-
 // ── Resolved view ────────────────────────────────────────────────────────────
 
 /// A pack with its full `extends` chain folded in — what enforcement and
@@ -249,12 +187,6 @@ pub struct ResolvedPolicy {
     /// Folded egress/output DLP rules (GL #676).
     #[serde(default, skip_serializing_if = "EgressRules::is_empty")]
     pub egress: EgressRules,
-    /// Folded gateway routing governance (enterprise#25).
-    #[serde(default, skip_serializing_if = "RoutingPolicyRules::is_empty")]
-    pub routing: RoutingPolicyRules,
-    /// Folded org spend caps (enterprise#25).
-    #[serde(default, skip_serializing_if = "BudgetRules::is_empty")]
-    pub budgets: BudgetRules,
 }
 
 // ── Errors ───────────────────────────────────────────────────────────────────
@@ -275,8 +207,6 @@ pub enum PolicyError {
     ExtendsCycle(Vec<String>),
     ExtendsTooDeep(usize),
     UnknownFilterAction { field: String, value: String },
-    InvalidBudget { field: String, value: String },
-    EmptyModelPattern,
 }
 
 impl std::fmt::Display for PolicyError {
@@ -325,13 +255,6 @@ impl std::fmt::Display for PolicyError {
                 f,
                 "filters.{field} '{value}' is not a valid action (one of: off, warn, redact, block)"
             ),
-            PolicyError::InvalidBudget { field, value } => write!(
-                f,
-                "budgets.{field} must be a positive, finite USD amount (got {value})"
-            ),
-            PolicyError::EmptyModelPattern => {
-                write!(f, "routing.allowed_models must not contain empty patterns")
-            }
         }
     }
 }
@@ -415,35 +338,6 @@ pub fn validate(pack: &PolicyPack) -> Result<(), PolicyError> {
             });
         }
     }
-    if pack
-        .routing
-        .allowed_models
-        .iter()
-        .any(|p| p.trim().is_empty())
-    {
-        return Err(PolicyError::EmptyModelPattern);
-    }
-    validate_budget(
-        "max_cost_usd_per_person_per_day",
-        pack.budgets.max_cost_usd_per_person_per_day,
-    )?;
-    validate_budget(
-        "max_cost_usd_per_project_per_month",
-        pack.budgets.max_cost_usd_per_project_per_month,
-    )?;
-    Ok(())
-}
-
-/// A budget cap must be a positive, finite USD amount.
-fn validate_budget(field: &str, value: Option<f64>) -> Result<(), PolicyError> {
-    if let Some(v) = value
-        && !(v.is_finite() && v > 0.0)
-    {
-        return Err(PolicyError::InvalidBudget {
-            field: field.to_string(),
-            value: v.to_string(),
-        });
-    }
     Ok(())
 }
 
@@ -508,8 +402,6 @@ pub fn resolve(pack: &PolicyPack) -> Result<ResolvedPolicy, PolicyError> {
         redaction: BTreeMap::new(),
         filters: FilterRules::default(),
         egress: EgressRules::default(),
-        routing: RoutingPolicyRules::default(),
-        budgets: BudgetRules::default(),
     };
     for layer in lineage.iter().rev() {
         if let Some(mode) = &layer.context.default_read_mode {
@@ -559,25 +451,6 @@ pub fn resolve(pack: &PolicyPack) -> Result<ResolvedPolicy, PolicyError> {
         if let Some(v) = layer.egress.max_writes_per_min {
             resolved.egress.max_writes_per_min = Some(v);
         }
-        // Routing governance: restriction lists accumulate down the chain.
-        for pattern in &layer.routing.allowed_models {
-            if !resolved.routing.allowed_models.contains(pattern) {
-                resolved.routing.allowed_models.push(pattern.clone());
-            }
-        }
-        for project in &layer.routing.forbid_downgrade_for {
-            if !resolved.routing.forbid_downgrade_for.contains(project) {
-                resolved.routing.forbid_downgrade_for.push(project.clone());
-            }
-        }
-        // Budgets: scalar caps override (child wins) — the floor merge takes
-        // the stricter side across org vs. local separately.
-        if let Some(v) = layer.budgets.max_cost_usd_per_person_per_day {
-            resolved.budgets.max_cost_usd_per_person_per_day = Some(v);
-        }
-        if let Some(v) = layer.budgets.max_cost_usd_per_project_per_month {
-            resolved.budgets.max_cost_usd_per_project_per_month = Some(v);
-        }
     }
 
     // A resolved allowlist must not collide with accumulated denies.
@@ -613,8 +486,6 @@ mod tests {
             redaction: BTreeMap::new(),
             filters: FilterRules::default(),
             egress: EgressRules::default(),
-            routing: RoutingPolicyRules::default(),
-            budgets: BudgetRules::default(),
         }
     }
 
@@ -642,64 +513,6 @@ employee_id = 'EMP-\d{6}'
         assert_eq!(pack.extends.as_deref(), Some("strict-redaction"));
         assert_eq!(pack.context.deny_tools, vec!["ctx_url_read"]);
         assert!(pack.redaction.contains_key("employee_id"));
-    }
-
-    #[test]
-    fn parses_gateway_governance_sections() {
-        // enterprise#25: [routing] + [budgets] ride inside the same signed pack.
-        let resolved = load(
-            r#"
-name = "acme-gateway"
-version = "1.0.0"
-description = "org gateway governance"
-
-[routing]
-allowed_models = ["claude-*", "gpt-4o-mini"]
-forbid_downgrade_for = ["prod"]
-
-[budgets]
-max_cost_usd_per_person_per_day = 50.0
-max_cost_usd_per_project_per_month = 20000.0
-"#,
-        )
-        .expect("resolves");
-        assert_eq!(
-            resolved.routing.allowed_models,
-            vec!["claude-*".to_string(), "gpt-4o-mini".to_string()]
-        );
-        assert_eq!(resolved.routing.forbid_downgrade_for, vec!["prod"]);
-        assert_eq!(resolved.budgets.max_cost_usd_per_person_per_day, Some(50.0));
-        assert_eq!(
-            resolved.budgets.max_cost_usd_per_project_per_month,
-            Some(20000.0)
-        );
-    }
-
-    #[test]
-    fn rejects_invalid_budget_and_empty_model_pattern() {
-        let neg = parse(
-            r#"
-name = "bad-budget"
-version = "1.0.0"
-description = "x"
-
-[budgets]
-max_cost_usd_per_person_per_day = -5.0
-"#,
-        );
-        assert!(matches!(neg, Err(PolicyError::InvalidBudget { .. })));
-
-        let empty = parse(
-            r#"
-name = "bad-pattern"
-version = "1.0.0"
-description = "x"
-
-[routing]
-allowed_models = ["claude-*", " "]
-"#,
-        );
-        assert_eq!(empty.unwrap_err(), PolicyError::EmptyModelPattern);
     }
 
     #[test]
