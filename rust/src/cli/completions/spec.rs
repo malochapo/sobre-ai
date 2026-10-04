@@ -640,15 +640,6 @@ pub static COMMAND_TREE: &[CommandNode] = &[
         hidden: false,
     },
     CommandNode {
-        name: "theme",
-        aliases: &[],
-        description: "Set dashboard theme",
-        subcommands: &[],
-        flags: &[],
-        positional: None,
-        hidden: false,
-    },
-    CommandNode {
         name: "tee",
         aliases: &[],
         description: "Tee output to file",

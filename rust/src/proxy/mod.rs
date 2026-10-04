@@ -374,8 +374,8 @@ pub async fn start_proxy_with_token(port: u16, auth_token: Option<String>) -> an
     // Read once at startup — avoids a Config::load() on every proxied request.
     // The proxy serves this machine only: it always binds loopback.
     let bind_host = std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST);
-    let require_token = cfg.proxy_require_token;
-    let loopback_open = cfg.proxy_loopback_open;
+    let require_token = false;
+    let loopback_open = false;
     let initial = cfg.proxy.resolve_all();
 
     // The proxy reads its upstreams live from a watch channel: a background task
@@ -734,8 +734,7 @@ fn auth_error_response(path: &str) -> Response {
     } else if is_provider_route(path) {
         "Provider route requires authentication. Set your API key header or use: lean-ctx proxy token"
     } else {
-        "This endpoint requires a lean-ctx Bearer token. Get it with: lean-ctx proxy token  \
-         — or set proxy_loopback_open = true to disable auth on localhost"
+        "This endpoint requires a lean-ctx Bearer token. Get it with: lean-ctx proxy token"
     };
 
     let body = serde_json::json!({

@@ -2,7 +2,7 @@ use std::sync::OnceLock;
 
 use regex::Regex;
 
-use crate::core::config::{Config, SecretDetectionConfig};
+use crate::core::config::SecretDetectionConfig;
 
 macro_rules! static_regex {
     ($pattern:expr_2021) => {{
@@ -265,8 +265,10 @@ pub fn scan_and_redact(
 }
 
 pub fn scan_and_redact_from_config(content: &str) -> (String, Vec<SecretMatch>) {
-    let cfg = Config::load();
-    scan_and_redact(content, &cfg.secret_detection)
+    scan_and_redact(
+        content,
+        &crate::core::config::SecretDetectionConfig::default(),
+    )
 }
 
 #[cfg(test)]

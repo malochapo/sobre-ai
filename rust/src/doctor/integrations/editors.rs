@@ -228,8 +228,7 @@ pub(crate) fn integration_claude(
     // every mode is a valid choice, so it never fails the integration.
     {
         use crate::core::config::ReadRedirect;
-        let cfg = crate::core::config::Config::load();
-        let detail = match ReadRedirect::effective(&cfg) {
+        let detail = match ReadRedirect::default() {
             ReadRedirect::Auto => {
                 "auto — native Read passes through Claude Code's read-before-write guard; re-reads dedup via PostToolUse, ctx_read + Grep/Glob still compress (#637)"
             }

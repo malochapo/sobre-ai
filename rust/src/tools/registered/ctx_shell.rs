@@ -350,12 +350,11 @@ impl McpTool for CtxShellTool {
                 let sent = crate::core::tokens::count_tokens(&result);
                 let saved = original.saturating_sub(sent);
 
-                let cfg = crate::core::config::Config::load();
                 // Shared tee policy (#811): identical decision to the CLI path —
                 // `Failures` keys off the real exit code, not a substring match.
                 let timeout_notice_only = is_timeout_notice_only(&output, exit_code);
                 let tee_hint = if crate::shell::tee_policy::should_tee(
-                    &cfg.tee_mode,
+                    &crate::core::config::TeeMode::default(),
                     exit_code,
                     output.trim().is_empty() || timeout_notice_only,
                     crate::shell::tee_policy::output_was_elided(&output, &result),
@@ -364,7 +363,7 @@ impl McpTool for CtxShellTool {
                 ) {
                     crate::shell::save_tee(&cmd_clone, &output)
                         .map(|p| {
-                            if matches!(cfg.tee_mode, crate::core::config::TeeMode::HighCompression)
+                            if matches!(crate::core::config::TeeMode::default(), crate::core::config::TeeMode::HighCompression)
                             {
                                 let pct = crate::shell::tee_policy::savings_pct(original, sent);
                                 // Recovery grammar is path-first: agents without ctx_expand
@@ -592,12 +591,13 @@ fn warn_shell_secret_paths(command: &str) {
 }
 
 fn redact_shell_output_secrets(output: &str) -> String {
-    let cfg = crate::core::config::Config::load();
-    if !cfg.secret_detection.enabled {
+    if !crate::core::config::SecretDetectionConfig::default().enabled {
         return output.to_string();
     }
-    let (redacted, matches) =
-        crate::core::secret_detection::scan_and_redact(output, &cfg.secret_detection);
+    let (redacted, matches) = crate::core::secret_detection::scan_and_redact(
+        output,
+        &crate::core::config::SecretDetectionConfig::default(),
+    );
     if !matches.is_empty() {
         let names: Vec<&str> = matches.iter().map(|m| m.pattern_name).collect();
         tracing::warn!(

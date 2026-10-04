@@ -1,18 +1,12 @@
 use std::io::{self, IsTerminal, Read, Write};
 use std::process::{Command, Stdio};
 
-use crate::core::config;
 use crate::core::slow_log;
 use crate::core::tokens::count_tokens;
 
 use super::exec::{combine_streams, exec_limits, wait_with_limits};
 
-pub(super) fn exec_buffered(
-    command: &str,
-    shell: &str,
-    shell_flag: &str,
-    cfg: &config::Config,
-) -> i32 {
+pub(super) fn exec_buffered(command: &str, shell: &str, shell_flag: &str) -> i32 {
     #[cfg(windows)]
     super::platform::set_console_utf8();
 
@@ -150,7 +144,7 @@ pub(super) fn exec_buffered(
     }
     // Shared tee policy (#811): same decision on CLI and MCP paths.
     let should_tee = super::tee_policy::should_tee(
-        &cfg.tee_mode,
+        &crate::core::config::TeeMode::default(),
         exit_code,
         full_output.trim().is_empty(),
         super::tee_policy::output_was_elided(&full_output, &compressed),
@@ -164,7 +158,7 @@ pub(super) fn exec_buffered(
         eprintln!("[lean-ctx: full output -> {path} (redacted, 24h TTL)]");
     }
 
-    let threshold = cfg.slow_command_threshold_ms;
+    let threshold = crate::core::config::SLOW_COMMAND_THRESHOLD_MS;
     if threshold > 0 && duration_ms >= threshold as u128 {
         slow_log::record(command, duration_ms, exit_code);
     }

@@ -17,9 +17,8 @@ fn hermes_marked_block(mode: HookMode) -> String {
 /// The canonical section uses markers so the injection layer can update it;
 /// Hermes extras sit after END_MARK and are preserved as user content.
 pub(super) fn hermes_rules_content() -> String {
-    let cfg = crate::core::config::Config::load();
     let base = crate::core::rules_canonical::render(
-        cfg.shadow_mode,
+        true,
         crate::core::rules_canonical::Wrapper::Shared,
         crate::core::config::CompressionLevel::Off,
     );
@@ -120,9 +119,8 @@ fn install_hermes_rules(home: &std::path::Path, mode: HookMode) {
 }
 
 fn hermes_replace_rules_content() -> String {
-    let cfg = crate::core::config::Config::load();
     let base = crate::core::rules_canonical::render(
-        cfg.shadow_mode,
+        true,
         crate::core::rules_canonical::Wrapper::Shared,
         crate::core::config::CompressionLevel::Off,
     );

@@ -18,8 +18,7 @@ const SHORT_ID_PREFIX: char = 'α';
 /// On when `symbol_map_auto = true` in config and the project has >50 source
 /// files; off by default (the abbreviated form hinders editing; opt-in only).
 pub fn substitution_enabled() -> bool {
-    let cfg = crate::core::config::Config::load();
-    if cfg.symbol_map_auto {
+    if false {
         return auto_detect_large_project();
     }
     false

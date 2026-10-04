@@ -18,7 +18,6 @@
 use super::payload;
 use crate::core::code_health::GateMode;
 use crate::core::code_health::gate::{self, GateOutcome};
-use crate::core::config::Config;
 use serde_json::Value;
 
 /// Largest post-edit file we will parse inside a hook. Above this the tree-sitter
@@ -56,7 +55,7 @@ pub(super) fn maybe_emit(input: &str) {
 
 /// Check if `additionalContext` injection is enabled (opt-in, default off).
 fn inject_context_enabled() -> bool {
-    Config::load().code_health.inject_context
+    crate::core::config::CodeHealthConfig::default().inject_context
 }
 
 /// Persist a health notice to `ctx_knowledge` so the agent sees it on the next
@@ -119,12 +118,11 @@ fn resolve_root(v: &Value) -> String {
 /// The advisory notice for a native edit, or `None` when not applicable. Loads
 /// the `[code_health]` config for mode + threshold.
 pub(super) fn edit_health_notice(v: &Value, root: &str) -> Option<String> {
-    let cfg = Config::load();
     notice_with(
         v,
         root,
-        GateMode::parse(&cfg.code_health.gate),
-        cfg.code_health.cognitive_threshold,
+        GateMode::parse(&crate::core::config::CodeHealthConfig::default().gate),
+        crate::core::config::CodeHealthConfig::default().cognitive_threshold,
     )
 }
 

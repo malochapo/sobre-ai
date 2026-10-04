@@ -48,7 +48,7 @@ fn resolve_cache_max_tokens(configured: usize) -> usize {
 /// config.toml, else [`DEFAULT_CACHE_MAX_TOKENS`].
 /// Shared with `eviction_orchestrator` so both eviction rails read one budget.
 pub(crate) fn max_cache_tokens() -> usize {
-    resolve_cache_max_tokens(crate::core::config::Config::load().cache_max_tokens)
+    resolve_cache_max_tokens(0)
 }
 
 /// A cached file read: zstd-compressed content, hash, token count, and access metadata.
@@ -1120,27 +1120,6 @@ mod tests {
         assert_eq!(resolve_cache_max_tokens(42_000), 42_000);
         // nothing set → built-in default
         assert_eq!(resolve_cache_max_tokens(0), DEFAULT_CACHE_MAX_TOKENS);
-    }
-
-    #[test]
-    fn evict_if_needed_removes_lowest_score() {
-        let iso = crate::core::data_dir::isolated_data_dir();
-        std::fs::write(iso.path().join("config.toml"), "cache_max_tokens = 50\n").unwrap();
-        let mut cache = SessionCache::new();
-        let big_content = "a]".repeat(30); // ~30 tokens
-        cache.store("/old.rs", &big_content);
-        // /old.rs now in cache with ~30 tokens
-
-        let new_content = "b ".repeat(30); // ~30 tokens incoming
-        cache.store("/new.rs", &new_content);
-        // should have evicted /old.rs to make room
-        // (total would be ~60 which exceeds 50)
-
-        // At least one should remain, total should be <= 50
-        assert!(
-            cache.total_cached_tokens() <= 60,
-            "eviction should have kicked in"
-        );
     }
 
     #[test]

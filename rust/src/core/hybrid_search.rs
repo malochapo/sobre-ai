@@ -72,7 +72,7 @@ impl Default for HybridConfig {
 impl HybridConfig {
     /// Load from the global config, falling back to defaults.
     pub fn from_config() -> Self {
-        crate::core::config::Config::load().search
+        crate::core::hybrid_search::HybridConfig::default()
     }
 }
 

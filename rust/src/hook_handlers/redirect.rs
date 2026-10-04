@@ -127,9 +127,7 @@ pub(super) fn redirect_read(tool_input: Option<&serde_json::Value>) -> String {
     // intact; compression flows through the explicit ctx_read MCP tool instead.
     // Evaluated per hook fire (fresh Config + env), so it also covers headless
     // `claude -p` and never needs to fight the settings.json self-heal.
-    if !crate::core::config::ReadRedirect::read_redirect_enabled(
-        &crate::core::config::Config::load(),
-    ) {
+    if !crate::core::config::ReadRedirect::read_redirect_enabled() {
         debug_log::log_hook_decision(
             "redirect",
             "Read",
@@ -552,9 +550,7 @@ fn redirect_temp_path(key: &str) -> std::path::PathBuf {
 /// Default OFF — prevents prompt-cache invalidation on Anthropic models.
 /// Opt-in via `[code_health] inject_context = true`.
 fn inject_context_allowed() -> bool {
-    crate::core::config::Config::load()
-        .code_health
-        .inject_context
+    crate::core::config::CodeHealthConfig::default().inject_context
 }
 
 pub(super) fn build_redirect_output(

@@ -244,10 +244,6 @@ pub fn run() {
                 super::cmd_cache(&rest);
                 return;
             }
-            "theme" => {
-                super::cmd_theme(&rest);
-                return;
-            }
             "tee" => {
                 super::cmd_tee(&rest);
                 return;

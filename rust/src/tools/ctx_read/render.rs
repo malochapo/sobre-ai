@@ -62,14 +62,13 @@ fn techniques_tag(techniques: &[String]) -> String {
 /// Empty when disabled, unsupported, or nothing qualifies. Deterministic
 /// (#498-safe): a pure function of content + the active threshold.
 fn health_annotations(content: &str, ext: &str) -> std::collections::HashMap<String, String> {
-    let cfg = crate::core::config::Config::load();
-    if !cfg.code_health.annotate_reads {
+    if !crate::core::config::CodeHealthConfig::default().annotate_reads {
         return std::collections::HashMap::new();
     }
     let annotations = crate::core::code_health::annotate::annotations_for_file(
         content,
         ext,
-        cfg.code_health.cognitive_threshold,
+        crate::core::config::CodeHealthConfig::default().cognitive_threshold,
     );
     crate::core::code_health::annotate::by_name(&annotations)
 }

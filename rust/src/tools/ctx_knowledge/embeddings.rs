@@ -22,8 +22,7 @@ pub(crate) fn embedding_engine_nonblocking() -> Option<&'static EmbeddingEngine>
 
 #[cfg(feature = "embeddings")]
 pub(crate) fn embedding_engine_impl(nonblocking: bool) -> Option<&'static EmbeddingEngine> {
-    let cfg = crate::core::config::Config::load();
-    let profile = crate::core::config::MemoryProfile::effective(&cfg);
+    let profile = crate::core::config::MemoryProfile::default();
     if !profile.embeddings_enabled() {
         return None;
     }

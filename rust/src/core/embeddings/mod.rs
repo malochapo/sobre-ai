@@ -789,8 +789,7 @@ pub fn try_shared_engine() -> Option<&'static EmbeddingEngine> {
 /// from config, otherwise `false`.
 #[cfg(feature = "embeddings")]
 fn deterministic_inference() -> bool {
-    crate::core::config::Config::load()
-        .embedding
+    crate::core::config::EmbeddingConfig::default()
         .deterministic
         .unwrap_or(false)
 }

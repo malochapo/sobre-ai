@@ -305,12 +305,9 @@ mod tests {
     }
 
     #[test]
-    fn system_message_compressed_and_assistant_untouched() {
+    fn system_and_assistant_prose_pass_through_verbatim() {
+        // #710: role aggressiveness is off, so prose is never rewritten.
         let _iso = crate::core::data_dir::isolated_data_dir();
-        crate::core::config::Config::update_global(|c| {
-            c.proxy.role_aggressiveness.system = Some(0.6);
-        })
-        .unwrap();
 
         let prose = big_prose();
         let body = serde_json::json!({
@@ -325,9 +322,10 @@ mod tests {
         let (out, _o, _c) = compress_request_body(body, bytes.len());
         let parsed: Value = serde_json::from_slice(&out).unwrap();
 
-        assert!(
-            parsed["messages"][0]["content"].as_str().unwrap().len() < prose.len(),
-            "system message prose must be compressed when enabled"
+        assert_eq!(
+            parsed["messages"][0]["content"].as_str().unwrap(),
+            prose,
+            "system prose must pass through verbatim"
         );
         assert_eq!(
             parsed["messages"][2]["content"].as_str().unwrap(),
@@ -337,12 +335,8 @@ mod tests {
     }
 
     #[test]
-    fn openai_prose_compression_is_deterministic() {
+    fn openai_request_rewrite_is_deterministic() {
         let _iso = crate::core::data_dir::isolated_data_dir();
-        crate::core::config::Config::update_global(|c| {
-            c.proxy.role_aggressiveness.system = Some(0.6);
-        })
-        .unwrap();
         let prose = big_prose();
         let mk = || {
             serde_json::json!({
@@ -361,7 +355,7 @@ mod tests {
     }
 
     #[test]
-    fn effort_control_sets_reasoning_effort_and_off_is_noop() {
+    fn effort_control_is_off_and_a_noop() {
         // #834 end-to-end through the Chat Completions request path.
         let _iso = crate::core::data_dir::isolated_data_dir();
         let body = serde_json::json!({
@@ -369,25 +363,14 @@ mod tests {
         });
         let bytes = serde_json::to_vec(&body).unwrap();
 
-        // Off by default: a cache-safe no-op (size unchanged, no param added).
-        let (off, o, c) = compress_request_body(body.clone(), bytes.len());
+        // Off: a cache-safe no-op (size unchanged, no param added).
+        let (off, o, c) = compress_request_body(body, bytes.len());
         assert_eq!(c, o, "effort off must be a passthrough");
         assert!(
             serde_json::from_slice::<Value>(&off)
                 .unwrap()
                 .get("reasoning_effort")
                 .is_none()
-        );
-
-        // Enabled: reasoning_effort is filled on the reasoning model.
-        crate::core::config::Config::update_global(|cfg| {
-            cfg.proxy.effort = Some("low".into());
-        })
-        .unwrap();
-        let (on, _o, _c) = compress_request_body(body, bytes.len());
-        assert_eq!(
-            serde_json::from_slice::<Value>(&on).unwrap()["reasoning_effort"],
-            "low"
         );
     }
 }

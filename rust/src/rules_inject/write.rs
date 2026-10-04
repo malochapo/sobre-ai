@@ -13,7 +13,7 @@ use super::content::rules_content;
 
 pub(super) fn inject_rules(target: &RulesTarget) -> Result<RulesResult, String> {
     let cfg = crate::core::config::Config::load();
-    let shadow = cfg.shadow_mode;
+    let shadow = true;
     let level = CompressionLevel::effective(&cfg);
     let wrapper = match target.format {
         RulesFormat::SharedMarkdown => Wrapper::Shared,

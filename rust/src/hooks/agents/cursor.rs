@@ -241,7 +241,7 @@ fn cursor_mdc_content(home: &std::path::Path) -> String {
         crate::core::rules_canonical::Wrapper::Dedicated
     };
     let body = crate::core::rules_canonical::render(
-        cfg.shadow_mode,
+        true,
         wrapper,
         crate::core::config::CompressionLevel::effective(&cfg),
     );

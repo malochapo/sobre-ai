@@ -163,7 +163,7 @@ pub enum ResponseVerbosity {
 
 impl ResponseVerbosity {
     pub fn effective() -> Self {
-        Config::load().response_verbosity
+        crate::core::config::ResponseVerbosity::default()
     }
 
     pub fn is_headers_only(&self) -> bool {
@@ -375,23 +375,6 @@ pub enum RulesInjection {
     Shared,
     Dedicated,
     Off,
-}
-
-/// Whether lean-ctx mirrors the host IDE's tool-permission rules onto its own
-/// MCP tools ("permission inheritance").
-///
-/// - `Off` (default): lean-ctx tools are governed only by lean-ctx's own layers
-///   (role policy, shell allowlist). lean-ctx's `ctx_shell` therefore runs
-///   independently of the IDE's `bash`/`rm *` permission rules.
-/// - `On`: before dispatching, lean-ctx reads the active IDE's permission config
-///   (v1: OpenCode `opencode.json[c]`) and applies the equivalent decision to
-///   the matching lean-ctx tool — `deny` blocks, `ask` is held back (MCP cannot
-///   prompt for these tools), `allow` proceeds. Read-only; lean-ctx never writes
-///   the IDE's `permission` block.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum PermissionInheritance {
-    Off,
-    On,
 }
 
 #[cfg(test)]

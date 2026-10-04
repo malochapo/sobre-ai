@@ -69,48 +69,6 @@ mod resolve_path_tests {
     #[cfg(not(feature = "no-jail"))]
     #[tokio::test]
     #[allow(clippy::await_holding_lock)]
-    async fn resolve_path_can_reroot_to_trusted_startup_root_when_session_root_is_stale() {
-        // #991: a private config.toml (via `isolated_data_dir`, which holds
-        // `test_env_lock`) carries the `allow_auto_reroot` opt-in, so no sibling
-        // reroot test running in parallel can observe or clobber it.
-        let iso = crate::core::data_dir::isolated_data_dir();
-        std::fs::write(iso.path().join("config.toml"), "allow_auto_reroot = true\n").unwrap();
-        let tmp = tempfile::tempdir().unwrap();
-        let stale = tmp.path().join("stale");
-        let real = tmp.path().join("real");
-        std::fs::create_dir_all(&stale).unwrap();
-        let real_root = create_git_root(&real);
-        std::fs::write(real.join("a.txt"), "ok").unwrap();
-
-        let server = LeanCtxServer::new_with_startup(
-            None,
-            Some(real.as_path()),
-            SessionMode::Personal,
-            "default",
-            "default",
-        );
-        {
-            let mut session = server.session.write().await;
-            session.project_root = Some(stale.to_string_lossy().to_string());
-            session.shell_cwd = Some(stale.to_string_lossy().to_string());
-        }
-
-        let out = server
-            .resolve_path(&real.join("a.txt").to_string_lossy())
-            .await
-            .unwrap();
-
-        assert!(out.ends_with("/a.txt"));
-
-        let session = server.session.read().await;
-        assert_eq!(session.project_root.as_deref(), Some(real_root.as_str()));
-        assert_eq!(session.shell_cwd.as_deref(), Some(real_root.as_str()));
-        drop(session);
-    }
-
-    #[cfg(not(feature = "no-jail"))]
-    #[tokio::test]
-    #[allow(clippy::await_holding_lock)]
     async fn resolve_path_rejects_absolute_path_outside_trusted_startup_root() {
         // Hermetic config + serialized via test_env_lock so a parallel test that
         // flips `path_jail` cannot disable this jail-enforcement assertion (#406).

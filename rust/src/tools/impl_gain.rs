@@ -280,10 +280,8 @@ fn format_usd(amount: f64) -> String {
 
 /// Premium themed deep sections for the CLI `gain --deep` dashboard.
 pub(crate) fn format_deep_themed(model: Option<&str>, limit: usize) -> String {
-    use crate::core::theme;
     let engine = GainEngine::load();
-    let cfg = crate::core::config::Config::load();
-    let t = theme::load_theme(&cfg.theme);
+    let t = crate::core::theme::Theme::default();
     let lim = limit.clamp(1, 50);
 
     let mut out = Vec::new();
@@ -528,9 +526,7 @@ fn format_injection_methodology(t: &crate::core::theme::Theme, out: &mut Vec<Str
     let row = |s: &str| -> String { format!("  {ss}{}{ss}", pad_right(s, w)) };
 
     let overhead = crate::core::context_overhead::ContextOverhead::cached();
-    let cache_rate = crate::core::config::Config::load()
-        .dashboard_cache_hit_rate()
-        .unwrap_or(0.75);
+    let cache_rate = 0.75;
 
     out.push(String::new());
     out.push(format!(

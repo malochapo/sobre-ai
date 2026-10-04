@@ -55,8 +55,7 @@ pub fn check(data_dir: &Path) -> Option<String> {
         return None;
     }
 
-    let cfg = crate::core::config::Config::load();
-    let shadow = cfg.shadow_mode;
+    let shadow = true;
     let aggressive = mode == "aggressive" || shadow;
 
     if !aggressive {
@@ -159,8 +158,7 @@ fn is_read_grep_tool(tool_name: Option<&String>) -> bool {
 }
 
 fn effective_mode() -> String {
-    let cfg = crate::core::config::Config::load();
-    cfg.bypass_hints.as_deref().unwrap_or("on").to_lowercase()
+    None::<String>.as_deref().unwrap_or("on").to_lowercase()
 }
 
 /// Returns `true` if no lean-ctx MCP calls have been seen in the last 5 minutes.

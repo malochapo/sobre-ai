@@ -283,7 +283,10 @@ fn cmd_apply() {
 
     // 3. Safety checks
     println!("\n[3/4] Running safety checks…");
-    println!("  RAM guard: max {}% system", cfg.max_ram_percent);
+    println!(
+        "  RAM guard: max {}% system",
+        crate::core::config::MAX_RAM_PERCENT
+    );
 
     if let Ok(data_dir) = crate::core::data_dir::lean_ctx_data_dir() {
         let sessions_dir = data_dir.join("sessions");
@@ -294,7 +297,6 @@ fn cmd_apply() {
 
     // 4. Summary
     println!("\n[4/4] Config applied successfully.");
-    println!("  Theme:       {}", cfg.theme);
     if let Some(ref root) = cfg.project_root {
         println!("  Project root: {root}");
     }
@@ -406,20 +408,6 @@ fn cmd_validate() {
             } else {
                 eprintln!("[WARN] Unknown key '{uk}' -- this field does not exist");
             }
-        }
-    }
-
-    let cfg = config::Config::load();
-    let budget = cfg.max_disk_mb_effective();
-    if budget > 0 {
-        let explicit_archive = cfg.archive.max_disk_mb;
-        let explicit_bm25 = cfg.bm25_max_cache_mb;
-        let sum = explicit_archive + explicit_bm25;
-        if sum > budget {
-            warnings += 1;
-            println!(
-                "  ⚠ max_disk_mb={budget} but archive.max_disk_mb({explicit_archive}) + bm25_max_cache_mb({explicit_bm25}) = {sum} exceeds budget"
-            );
         }
     }
 
@@ -1013,33 +1001,9 @@ pub const SIMPLIFIED_TEMPLATE: &str = r#"# lean-ctx — Simplified Configuration
 # Full reference: https://leanctx.com/docs/configuration
 # For all settings: lean-ctx config init --full
 
-# ── High-Level Knobs ─────────────────────────────────────────────────
-# These auto-adjust advanced settings. Override individual values below
-# only if you need fine-grained control.
-
-# Output style for the model's prose (not tool-output compression):
-#   off    — no style guidance
-#   lite   — plain-English concise (default; readable, still token-saving)
-#   standard / max — denser symbolic "power modes" (opt-in)
-compression_level = "lite"
-
-# RAM/feature trade-off: low | balanced | performance
-memory_profile = "balanced"
-
-# Maximum % of system RAM lean-ctx may use (1-50)
-max_ram_percent = 5
-
-# Total disk budget in MB (0 = use individual limits).
-# Distributes proportionally: archive ~25%, BM25 cache ~10%.
-# max_disk_mb = 2000
-
-# Auto-purge data older than N days (0 = disabled).
-# Flows into archive.max_age_hours.
-# max_staleness_days = 30
-
-# Explicit project paths to scan/index (default: auto-detect).
-# [ide_paths]
-# cursor = ["/home/user/projects/app1"]
+# Compression intensity, 0.0 (none) to 1.0 (densest). Leave unset for
+# sobre's adaptive defaults with the "lite" prose style.
+# compression_level = 0.3
 
 # ── Proxy ────────────────────────────────────────────────────────────
 # proxy_enabled = false
@@ -1060,7 +1024,7 @@ fn cmd_show_effective() {
     let compression = config::CompressionLevel::effective(&cfg);
     let policy = cfg.memory_policy_effective().unwrap_or_default();
 
-    println!("{}", box_top("Simplified (high-level)"));
+    println!("{}", box_top("Settings"));
     box_row(&format!(
         " compression_level   = {:10}  {}",
         cfg.compression_level.map_or_else(
@@ -1069,30 +1033,10 @@ fn cmd_show_effective() {
         ),
         source_hint(cfg.compression_level.is_some())
     ));
-    box_row(&format!(
-        " max_disk_mb         = {:10}  {}",
-        cfg.max_disk_mb_effective(),
-        source_hint(cfg.max_disk_mb > 0)
-    ));
-    box_row(&format!(
-        " max_ram_percent     = {:10}  {}",
-        cfg.max_ram_percent,
-        source_hint(cfg.max_ram_percent != 5)
-    ));
-    box_row(&format!(
-        " max_staleness_days  = {:10}  {}",
-        cfg.max_staleness_days_effective(),
-        source_hint(cfg.max_staleness_days > 0)
-    ));
-    box_row(&format!(
-        " memory_profile      = {:10}  {}",
-        format!("{:?}", cfg.memory_profile),
-        source_hint(false)
-    ));
     println!("{}", box_bottom());
 
     println!();
-    println!("{}", box_top("Derived effective limits"));
+    println!("{}", box_top("Built-in limits"));
     box_row(&format!(
         " archive_max_disk_mb    = {:>6} MB",
         cfg.archive_max_disk_mb_effective()
@@ -1107,7 +1051,7 @@ fn cmd_show_effective() {
     ));
     box_row(&format!(
         " graph_index_max_files  = {:>6}",
-        cfg.graph_index_max_files
+        crate::core::config::GRAPH_INDEX_MAX_FILES
     ));
     box_row("");
     box_row(&format!(
@@ -1127,15 +1071,6 @@ fn cmd_show_effective() {
         policy.procedural.max_procedures
     ));
     println!("{}", box_bottom());
-
-    if cfg.max_disk_mb_effective() > 0 {
-        println!();
-        println!(
-            "  ℹ  max_disk_mb={} → limits scaled proportionally (factor: {:.1}x)",
-            cfg.max_disk_mb_effective(),
-            (cfg.max_disk_mb_effective() as f64 / 500.0).clamp(0.5, 10.0)
-        );
-    }
 }
 
 /// Interior width of the `config show` frames, in terminal columns.
@@ -1200,8 +1135,8 @@ mod tests {
 
     // Reproduces `Config::save()`'s on-disk merge without touching the real
     // config path: serialize `cfg`, then merge it onto `existing` exactly as
-    // save() does, and return the value that `max_ram_percent` ends up with.
-    fn merged_max_ram(cfg: &config::Config, existing: &str) -> u8 {
+    // save() does, and return the value that `sandbox_level` ends up with.
+    fn merged_sandbox_level(cfg: &config::Config, existing: &str) -> u8 {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("config.toml");
         std::fs::write(&path, existing).unwrap();
@@ -1212,44 +1147,45 @@ mod tests {
         let written = std::fs::read_to_string(&path).unwrap();
         toml::from_str::<config::Config>(&written)
             .unwrap()
-            .max_ram_percent
+            .sandbox_level
     }
 
     #[test]
     fn full_init_uses_existing_values_not_defaults() {
-        let existing = "max_ram_percent = 30\ncompression_level = \"standard\"\n";
+        let existing = "sandbox_level = 2\ncompression_level = \"standard\"\n";
         let cfg = config_for_full_init(Some(existing)).expect("parse existing");
-        assert_eq!(cfg.max_ram_percent, 30, "must keep the user's value, not 5");
+        assert_eq!(cfg.sandbox_level, 2, "must keep the user's value, not 0");
         assert_eq!(cfg.compression_level, Some(0.5));
     }
 
     #[test]
     fn full_init_falls_back_to_defaults_on_fresh_install() {
         let cfg = config_for_full_init(None).expect("default");
+        assert_eq!(cfg.sandbox_level, config::Config::default().sandbox_level);
         assert_eq!(
-            cfg.max_ram_percent,
-            config::Config::default().max_ram_percent
+            cfg.compression_level,
+            config::Config::default().compression_level
         );
         let cfg_empty = config_for_full_init(Some("   \n")).expect("blank -> default");
         assert_eq!(
-            cfg_empty.max_ram_percent,
-            config::Config::default().max_ram_percent
+            cfg_empty.sandbox_level,
+            config::Config::default().sandbox_level
         );
     }
 
     #[test]
     fn full_init_refuses_unparseable_config() {
-        assert!(config_for_full_init(Some("max_ram_percent = = =")).is_err());
+        assert!(config_for_full_init(Some("sandbox_level = = =")).is_err());
     }
 
     // #443 end-to-end: `config init --full` must not reset a customized value.
     #[test]
     fn full_init_preserves_value_through_save_merge() {
-        let existing = "max_ram_percent = 30\n";
+        let existing = "sandbox_level = 2\n";
         let cfg = config_for_full_init(Some(existing)).unwrap();
         assert_eq!(
-            merged_max_ram(&cfg, existing),
-            30,
+            merged_sandbox_level(&cfg, existing),
+            2,
             "user value must survive `config init --full`"
         );
     }
@@ -1259,11 +1195,11 @@ mod tests {
     // load the existing config instead.
     #[test]
     fn default_seed_resets_value_root_cause_marker() {
-        let existing = "max_ram_percent = 30\n";
+        let existing = "sandbox_level = 2\n";
         assert_eq!(
-            merged_max_ram(&config::Config::default(), existing),
-            5,
-            "default seed resets to 5 — the #443 regression we fixed"
+            merged_sandbox_level(&config::Config::default(), existing),
+            0,
+            "default seed resets to 0 — the #443 regression we fixed"
         );
     }
 }

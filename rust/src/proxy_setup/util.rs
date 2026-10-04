@@ -23,7 +23,7 @@ pub fn is_local_lean_ctx_url(url: &str) -> bool {
 
 /// Proxy reachability timeout: config.toml, else 200ms.
 pub fn proxy_timeout() -> std::time::Duration {
-    if let Some(ms) = crate::core::config::Config::load().proxy_timeout_ms {
+    if let Some(ms) = None::<u64> {
         return std::time::Duration::from_millis(ms);
     }
     std::time::Duration::from_millis(200)

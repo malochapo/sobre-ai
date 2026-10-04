@@ -492,15 +492,9 @@ fn compressed_cache_key_distinguishes_protect() {
 
 #[test]
 fn aggressiveness_is_deterministic_and_monotonic() {
-    let iso = crate::core::data_dir::isolated_data_dir();
-    // Suppress the savings footer: it carries session-cumulative counters by
-    // design (state-triggered suffix), so we compare the pure compressed body.
-    std::fs::write(
-        iso.path().join("config.toml"),
-        "savings_footer = \"never\"\n",
-    )
-    .unwrap();
-
+    let _iso = crate::core::data_dir::isolated_data_dir();
+    // The savings footer is off (it would carry session-cumulative counters),
+    // so we compare the pure compressed body.
     // Prose-y fixture with redundant low-information lines the density pass can
     // shed; enough lines that compression is meaningful.
     let mut content = String::new();
@@ -542,12 +536,7 @@ fn aggressiveness_is_deterministic_and_monotonic() {
 
 #[test]
 fn aggressive_json_uses_lossless_crush_core() {
-    let iso = crate::core::data_dir::isolated_data_dir();
-    std::fs::write(
-        iso.path().join("config.toml"),
-        "savings_footer = \"never\"\n",
-    )
-    .unwrap();
+    let _iso = crate::core::data_dir::isolated_data_dir();
 
     // A redundant array-of-objects JSON file: aggressive mode compacts it through
     // the shared json_crush core (#936) instead of generic text pruning, which
@@ -915,13 +904,13 @@ fn process_mode_output_is_byte_stable_across_calls() {
 }
 
 /// The reactive recovery footer (#premium-recovery): present on compressed views,
-/// leading with the MCP-free native path; absent from verbatim views and when the
-/// `recovery_hints` tier is `off`; and byte-stable across calls (#498).
+/// leading with the MCP-free native path; absent from verbatim views; and
+/// byte-stable across calls (#498).
 #[test]
-fn recovery_footer_is_compressed_only_and_togglable() {
+fn recovery_footer_is_compressed_only() {
     // `isolated_data_dir()` already holds `test_env_lock` for its lifetime; taking
     // the lock again here would self-deadlock (the mutex is non-reentrant).
-    let iso = crate::core::data_dir::isolated_data_dir();
+    let _iso = crate::core::data_dir::isolated_data_dir();
     let content: String = (0..120)
         .map(|i| format!("pub fn handler_{i}(x: u32) -> u32 {{ x * {i} }}"))
         .collect::<Vec<_>>()
@@ -942,13 +931,8 @@ fn recovery_footer_is_compressed_only_and_togglable() {
         .0
     };
 
-    // Default tier (minimal): a compressed view leads its footer with the native,
+    // Minimal tier: a compressed view leads its footer with the native,
     // MCP-free path so an agent needing the full source never reads line-by-line.
-    std::fs::write(
-        iso.path().join("config.toml"),
-        "recovery_hints = \"minimal\"\n",
-    )
-    .unwrap();
     let sigs = run("signatures");
     assert!(
         sigs.contains("read \"/tmp/rec.rs\" directly (no MCP)"),
@@ -961,13 +945,6 @@ fn recovery_footer_is_compressed_only_and_togglable() {
     assert!(
         !run("raw").contains("(no MCP)"),
         "raw view needs no recovery footer"
-    );
-
-    // The off switch suppresses the footer cleanly.
-    std::fs::write(iso.path().join("config.toml"), "recovery_hints = \"off\"\n").unwrap();
-    assert!(
-        !run("signatures").contains("(no MCP)"),
-        "recovery_hints=off must drop the footer"
     );
 }
 
@@ -1172,56 +1149,6 @@ fn cache_hit_stub_is_byte_stable_across_rereads() {
 
 // ---------------------------------------------------------------------------
 
-#[test]
-fn compress_protect_glob_forces_full_verbatim_read() {
-    // #1150: a path matching a `compress_protect` glob is returned verbatim even
-    // when an aggressive mode is requested. Control + treatment in one test: the
-    // unprotected read strips comments, the protected read keeps every byte.
-    let iso = crate::core::data_dir::isolated_data_dir();
-    std::fs::write(
-        iso.path().join("config.toml"),
-        "savings_footer = \"never\"\n",
-    )
-    .unwrap();
-
-    let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("protected.rs");
-    let p = path.to_string_lossy().to_string();
-    // Large enough that aggressive compression genuinely strips the comments
-    // rather than falling back to raw via the anti-inflation cap.
-    let mut content = String::new();
-    for i in 0..60 {
-        content.push_str(&format!(
-            "// distinctive-comment-{i}\npub fn handler_{i}(x: u32) -> u32 {{ x + {i} }}\n"
-        ));
-    }
-    std::fs::write(&path, &content).unwrap();
-
-    // Control: with nothing protected, aggressive strips the comments.
-    crate::core::config::Config::update_global(|c| c.proxy.compress_protect = None).unwrap();
-    let mut cold = SessionCache::new();
-    let stripped = handle_with_task_resolved(&mut cold, &p, "aggressive", CrpMode::Off, None);
-    assert!(
-        !stripped.content.contains("// distinctive-comment-0"),
-        "control: aggressive must strip comments when the path is not protected"
-    );
-
-    // Treatment: protect *.rs → the same aggressive read returns the file in full.
-    crate::core::config::Config::update_global(|c| {
-        c.proxy.compress_protect = Some(vec!["*.rs".into()]);
-    })
-    .unwrap();
-    let mut warm = SessionCache::new();
-    let protected = handle_with_task_resolved(&mut warm, &p, "aggressive", CrpMode::Off, None);
-    assert!(
-        protected.content.contains("// distinctive-comment-0")
-            && protected.content.contains("// distinctive-comment-59"),
-        "a protected path must be returned verbatim with every comment intact"
-    );
-
-    crate::core::config::Config::update_global(|c| c.proxy.compress_protect = None).unwrap();
-}
-
 // -- Regression: GitHub Issue #775 --
 // After a full-file read is cached, a subsequent ranged read with `lines:N-M`
 // must return only the requested window — not the full file content again.
@@ -1239,12 +1166,7 @@ fn write_numbered_file(dir: &std::path::Path, name: &str, n: usize) -> String {
 
 #[test]
 fn gh775_full_then_ranged_returns_only_window() {
-    let iso = crate::core::data_dir::isolated_data_dir();
-    std::fs::write(
-        iso.path().join("config.toml"),
-        "savings_footer = \"never\"\n",
-    )
-    .unwrap();
+    let _iso = crate::core::data_dir::isolated_data_dir();
 
     let dir = tempfile::tempdir().unwrap();
     let p = write_numbered_file(dir.path(), "big.ts", 2000);
@@ -1283,12 +1205,7 @@ fn gh775_full_then_ranged_returns_only_window() {
 
 #[test]
 fn gh775_ranged_response_starts_at_requested_line() {
-    let iso = crate::core::data_dir::isolated_data_dir();
-    std::fs::write(
-        iso.path().join("config.toml"),
-        "savings_footer = \"never\"\n",
-    )
-    .unwrap();
+    let _iso = crate::core::data_dir::isolated_data_dir();
 
     let dir = tempfile::tempdir().unwrap();
     let p = write_numbered_file(dir.path(), "big3.ts", 2000);
@@ -1328,12 +1245,7 @@ fn gh775_ranged_response_starts_at_requested_line() {
 
 #[test]
 fn gh775_cold_ranged_read_returns_only_window() {
-    let iso = crate::core::data_dir::isolated_data_dir();
-    std::fs::write(
-        iso.path().join("config.toml"),
-        "savings_footer = \"never\"\n",
-    )
-    .unwrap();
+    let _iso = crate::core::data_dir::isolated_data_dir();
 
     let dir = tempfile::tempdir().unwrap();
     let p = write_numbered_file(dir.path(), "cold.ts", 2000);

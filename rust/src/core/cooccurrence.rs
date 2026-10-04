@@ -218,7 +218,7 @@ pub fn related(project_root: &str, file: &str, top_k: usize) -> Vec<(String, f64
 
 /// Whether traversal (co-access) edges are enabled (`[graph] traversal_edges`).
 pub fn traversal_enabled() -> bool {
-    crate::core::config::Config::load().graph.traversal_edges
+    crate::core::config::GraphConfig::default().traversal_edges
 }
 
 /// Normalize an absolute-or-relative path to the repo-relative form used as the

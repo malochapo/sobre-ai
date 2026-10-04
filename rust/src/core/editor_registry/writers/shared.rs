@@ -55,7 +55,7 @@ pub(super) fn lean_ctx_server_entry_with_instructions(
     agent_key: &str,
 ) -> Value {
     let mut entry = lean_ctx_server_entry(binary, include_auto_approve);
-    let shadow = crate::core::config::Config::load().shadow_mode;
+    let shadow = true;
     let level =
         crate::core::config::CompressionLevel::effective(&crate::core::config::Config::load());
     // Hook-covered hosts (GL #1153): the static instructions snapshot must

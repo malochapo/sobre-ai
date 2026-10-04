@@ -93,7 +93,7 @@ impl LeanCtxServer {
                 }
                 if p.is_absolute() {
                     if let Some(new_root) = maybe_derive_project_root_from_absolute(&resolved) {
-                        let cfg_allow = crate::core::config::Config::load().allow_auto_reroot;
+                        let cfg_allow = false;
                         let candidate_under_jail = resolved.starts_with(jail_root_path);
                         // #580/#649: when the MCP server was launched from an
                         // agent/IDE config dir (e.g. ~/.copilot) or a markerless

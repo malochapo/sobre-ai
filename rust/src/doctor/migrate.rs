@@ -320,13 +320,9 @@ mod tests {
     #[test]
     fn known_keys_contains_sectioned_and_root() {
         let keys = known_keys(&ConfigSchema::generate());
-        assert!(keys.contains("embedding.model"));
+        assert!(keys.contains("index.exclude"));
+        assert!(keys.contains("proxy.anthropic_upstream"));
         assert!(keys.iter().any(|k| !k.contains('.')), "root keys exist");
-        // Free-form sections register as a prefix...
-        assert!(keys.contains("ide_paths"));
-        // ...and runtime-written keys are schema-documented (regression: GL #396
-        // migrate-check flagged gain.last_auto_publish on a real machine).
-        assert!(keys.contains("gain.last_auto_publish"));
     }
 
     #[test]

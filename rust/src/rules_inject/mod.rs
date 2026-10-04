@@ -29,7 +29,7 @@ pub use content::{
 /// Forwarding functions — content is delegated to `core::rules_canonical`.
 pub fn canonical_rules_block() -> String {
     let cfg = crate::core::config::Config::load();
-    let shadow = cfg.shadow_mode;
+    let shadow = true;
     let level = crate::core::config::CompressionLevel::effective(&cfg);
     crate::core::rules_canonical::render(
         shadow,
@@ -42,7 +42,7 @@ pub fn rules_shared_content() -> String {
 }
 pub fn rules_dedicated_markdown() -> String {
     let cfg = crate::core::config::Config::load();
-    let shadow = cfg.shadow_mode;
+    let shadow = true;
     let level = crate::core::config::CompressionLevel::effective(&cfg);
     crate::core::rules_canonical::render(
         shadow,
@@ -56,7 +56,7 @@ pub fn rules_dedicated_markdown() -> String {
 /// LONGFORM profile with the verbose teaching sections.
 pub fn rules_longform_markdown() -> String {
     let cfg = crate::core::config::Config::load();
-    let shadow = cfg.shadow_mode;
+    let shadow = true;
     let level = crate::core::config::CompressionLevel::effective(&cfg);
     crate::core::rules_canonical::render(
         shadow,
@@ -78,7 +78,7 @@ pub fn expected_blocks_by_target(
 ) -> std::collections::HashMap<String, String> {
     let injection = crate::core::config::Config::load().rules_injection_effective();
     let cfg = crate::core::config::Config::load();
-    let shadow = cfg.shadow_mode;
+    let shadow = true;
     let level = crate::core::config::CompressionLevel::effective(&cfg);
     let shared = canonical_rules_block();
     let dedicated = rules_dedicated_markdown();

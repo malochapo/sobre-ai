@@ -137,8 +137,7 @@ impl WrappedReport {
     pub fn format_ascii(&self) -> String {
         use crate::core::theme;
 
-        let cfg = crate::core::config::Config::load();
-        let t = theme::load_theme(&cfg.theme);
+        let t = crate::core::theme::Theme::default();
         let rst = theme::rst();
         let bold = theme::bold();
         let dim = theme::dim();

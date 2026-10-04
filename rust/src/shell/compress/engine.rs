@@ -396,8 +396,7 @@ fn compress_if_beneficial_with_exit(command: &str, output: &str, exit_code: i32)
     // Recompressing it saves little and rewrites the exact line/field shape an
     // agent relies on to validate a CLI output contract. This is output-shape
     // based, so any tool emitting the format is covered without listing commands.
-    if cfg
-        .preserve_compact_formats
+    if crate::core::config::PRESERVE_COMPACT_FORMATS
         .iter()
         .any(|f| f.eq_ignore_ascii_case("toon"))
         && looks_like_toon(output)

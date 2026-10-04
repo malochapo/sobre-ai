@@ -266,7 +266,7 @@ impl ModelConfig {
 /// Priority: `[embedding].model` in `config.toml` > the default model. An
 /// unrecognized name falls back to the default (with a warning).
 pub fn resolve_model() -> EmbeddingModel {
-    let embedding_cfg = crate::core::config::Config::load().embedding;
+    let embedding_cfg = crate::core::config::EmbeddingConfig::default();
     resolve_model_from(embedding_cfg.model.as_deref(), embedding_cfg.dimensions)
 }
 

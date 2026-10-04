@@ -291,10 +291,9 @@ pub(crate) fn load_engine_and_index(
     root: &Path,
 ) -> Result<(&'static EmbeddingEngine, EmbeddingIndex), String> {
     reject_under_hard_pressure("semantic embedding load")?;
-    let cfg = crate::core::config::Config::load();
-    let profile = crate::core::config::MemoryProfile::effective(&cfg);
+    let profile = crate::core::config::MemoryProfile::default();
     if !profile.embeddings_enabled() {
-        return Err("embeddings disabled by memory_profile=low".into());
+        return Err("embeddings disabled by the memory profile".into());
     }
 
     let engine = crate::core::embeddings::shared_engine()

@@ -17,7 +17,6 @@ mod proxy;
 mod read_dedup;
 pub(crate) mod read_redirect;
 mod render;
-mod response_shaping;
 pub mod risk;
 pub mod schema;
 mod sections;
@@ -32,23 +31,18 @@ mod tests;
 mod tests_parsing;
 
 pub use enums::{
-    CompressionLevel, Effort, OutputDensity, PermissionInheritance, RecoveryHints,
-    ResponseVerbosity, RulesInjection, RulesScope, SessionDegrade, TeeMode, TerseAgent,
+    CompressionLevel, Effort, OutputDensity, RecoveryHints, ResponseVerbosity, RulesInjection,
+    RulesScope, SessionDegrade, TeeMode, TerseAgent,
 };
 pub use loader::last_config_parse_error;
 pub use memory::{MemoryCleanup, MemoryGuardConfig, MemoryProfile, SavingsFooter};
 pub use proxy::{
-    BaselineConfig, DEFAULT_LOCAL_SHADOW_RATE_PER_MTOK, HistoryMode, ProseRanker, ProseRole,
-    ProviderEntry, ProxyConfig, ProxyMode, ProxyProvider, ResolvedProvider, RoleAggressiveness,
-    RoutingRules, Upstreams, WireShape, is_local_proxy_url, normalize_url, normalize_url_opt,
-    parse_route_target, upstream_drifted,
+    HistoryMode, ProseRanker, ProseRole, ProviderEntry, ProxyConfig, ProxyMode, ProxyProvider,
+    ResolvedProvider, RoutingRules, Upstreams, WireShape, is_local_proxy_url, normalize_url,
+    normalize_url_opt, parse_route_target, upstream_drifted,
 };
 pub use read_dedup::ReadDedup;
 pub use read_redirect::ReadRedirect;
-pub use response_shaping::{
-    CodeRepetitionConfig, ConfirmationConfig, NarrationConfig, PreambleConfig,
-    ResponseShapingConfig,
-};
 pub use shell_activation::ShellActivation;
 
 /// Default BM25 cache cap from config (also used by `bm25_index` heuristics).
@@ -67,6 +61,18 @@ pub fn default_bm25_max_cache_mb() -> u64 {
 /// eviction orchestrator (which measures real heap).
 pub const DEFAULT_BM25_PERSIST_MB: u64 = 512;
 
+/// Compact output formats preserved verbatim instead of recompressed (#342).
+pub const PRESERVE_COMPACT_FORMATS: &[&str] = &["toon"];
+
+/// Cap on files the graph index scans, bounding its RAM (#790).
+pub const GRAPH_INDEX_MAX_FILES: u64 = 15_000;
+
+/// Share of system RAM the memory guard allows lean-ctx to use.
+pub const MAX_RAM_PERCENT: u8 = 5;
+
+/// Commands slower than this get a timing note in their output.
+pub const SLOW_COMMAND_THRESHOLD_MS: u64 = 5000;
+
 // Compile-time regression guard (#249): the default disk ceiling must stay well
 // above the old RAM-profile caps (64/128 MB) that starved large repos.
 const _: () = assert!(DEFAULT_BM25_PERSIST_MB >= 512);
@@ -83,52 +89,9 @@ pub const EDIT_TOOL_NAMES: &[&str] = &["ctx_patch", "ctx_refactor"];
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Config {
-    #[serde(default, deserialize_with = "serde_defaults::deserialize_tee_mode")]
-    pub tee_mode: TeeMode,
-    /// Verbosity of the reactive recovery footer on compressed output
-    /// (`off|minimal|full`, default `minimal`). See [`RecoveryHints`].
-    #[serde(default)]
-    pub recovery_hints: RecoveryHints,
     pub passthrough_commands: Vec<String>,
-    pub passthrough_urls: Vec<String>,
-    /// Output formats that are already compact/token-oriented and must be
-    /// preserved verbatim instead of being recompressed (#342). Matched against
-    /// the *output shape* (not the command name), so any tool emitting the
-    /// format is covered without enumerating commands in `passthrough_commands`.
-    /// Default: `["toon"]`. Set to `[]` to disable and always recompress.
-    #[serde(default = "serde_defaults::default_preserve_compact_formats")]
-    pub preserve_compact_formats: Vec<String>,
-    /// Opt-in: apply the lossless JSON crusher to *verbatim* data commands
-    /// (`gh api`, `jq`, `kubectl get -o json`, `curl` JSON). Off by default, so
-    /// those outputs stay byte-for-byte verbatim. When on, an array-heavy JSON
-    /// payload the crusher can at least halve is reshaped into a compact, fully
-    /// reconstructible form; everything else stays verbatim. See
-    /// [`Config::crush_verbatim_json_effective`] (#936).
-    #[serde(default)]
-    pub crush_verbatim_json: bool,
-    /// Commands taking longer than this threshold (ms) are recorded in the slow log.
-    /// Set to 0 to disable slow logging.
-    pub slow_command_threshold_ms: u64,
-    #[serde(default = "serde_defaults::default_theme")]
-    pub theme: String,
-    #[serde(default)]
-    pub gain: GainConfig,
-    /// Model declaration for measured-vs-estimated cost reporting (MCP-only IDEs).
-    #[serde(default)]
-    pub cost: CostConfig,
-    /// Code-health engine: cognitive complexity, naming, coupling, edit-gate.
-    #[serde(default)]
-    pub code_health: CodeHealthConfig,
-    #[serde(default)]
-    pub autonomy: AutonomyConfig,
     #[serde(default)]
     pub proxy: ProxyConfig,
-    /// Conversation-history compression (`[conversation]`, opt-in; #1123).
-    #[serde(default)]
-    pub conversation: ConversationConfig,
-    /// Proxy-layer response shaping (`[response_shaping]`, #1125).
-    #[serde(default)]
-    pub response_shaping: ResponseShapingConfig,
     /// Whether the API proxy is enabled. Tri-state:
     /// - None: undecided (fresh install, will prompt on interactive setup)
     /// - Some(true): user opted in, proxy managed by lean-ctx
@@ -137,48 +100,6 @@ pub struct Config {
     pub proxy_enabled: Option<bool>,
     #[serde(default)]
     pub proxy_port: Option<u16>,
-    /// Proxy reachability timeout in milliseconds. Default: 200.
-    #[serde(default)]
-    pub proxy_timeout_ms: Option<u64>,
-    /// Strict proxy auth: when true, authenticate ONLY via the Bearer token
-    /// (`LEAN_CTX_PROXY_TOKEN`) and disable the provider-API-key fallback. Default
-    /// false keeps the loopback-friendly behavior where any local AI tool's own
-    /// provider key authenticates (the proxy never injects upstream credentials —
-    /// it forwards the caller's key verbatim). Enable on shared/multi-user hosts to
-    /// require the token; clients must then send `Authorization: Bearer <token>`.
-    #[serde(default)]
-    pub proxy_require_token: bool,
-    /// Skip ALL proxy authentication on loopback-bound listeners (#755).
-    /// When true **and** the proxy binds a loopback address, every request is
-    /// accepted without a Bearer token or provider API key — MCP clients,
-    /// browser dashboards, and CLI tools all work without auth setup.
-    #[serde(default)]
-    pub proxy_loopback_open: bool,
-    /// Provider prompt-cache hit rate for net-of-injection calculation (#1104).
-    /// Anthropic ~90%, OpenAI ~50%. Default 0.75 (conservative cross-provider).
-    #[serde(default)]
-    pub dashboard_cache_hit_rate: Option<f64>,
-    #[serde(default = "serde_defaults::default_true")]
-    pub enable_wakeup_ctx: bool,
-    /// Prefer the host agent's native editor over lean-ctx edit operations (#454).
-    /// When true, the lean-ctx edit tools (see [`EDIT_TOOL_NAMES`]) are refused
-    /// at dispatch, so the agent falls back to the host's built-in editing UI. Reads / search /
-    /// shell / memory tools are unaffected.
-    #[serde(default)]
-    pub prefer_native_editor: bool,
-    /// Disable all automatic read-mode degradation (auto_degrade + context_gate pressure).
-    /// When true, lean-ctx never downgrades requested read modes regardless of pressure.
-    #[serde(default)]
-    pub no_degrade: bool,
-    /// Serve explicit `full`/`lines:N-M` re-reads of session-cached files as
-    /// deltas: when the file changed on disk since it was cached, the read
-    /// returns `mode=diff` instead of re-emitting content the model already
-    /// holds. First reads are unaffected; `fresh=true` always bypasses.
-    /// Opt-in.
-    #[serde(default)]
-    pub delta_explicit: bool,
-    #[serde(default)]
-    pub loop_detection: LoopDetectionConfig,
     /// Controls where lean-ctx installs agent rule files.
     /// Values: "both" (default), "global" (home-dir only), "project" (repo-local only).
     #[serde(default)]
@@ -191,13 +112,6 @@ pub struct Config {
     /// tool-steering workflow or phase-isolated/non-caching harnesses, #361).
     #[serde(default)]
     pub rules_injection: Option<String>,
-    /// Mirror the host IDE's tool-permission rules onto lean-ctx's own MCP tools.
-    /// Values: "off" (default) or "on". When "on", lean-ctx reads the active
-    /// IDE's permission config (v1: OpenCode) and applies the equivalent
-    /// deny/ask/allow decision to the matching lean-ctx tool — so `ctx_shell`
-    /// honors your `bash`/`rm *` rules instead of bypassing them.
-    #[serde(default)]
-    pub permission_inheritance: Option<String>,
     /// Extra glob patterns to ignore in graph/overview/preload (repo-local).
     /// Example: `["externals/**", "target/**", "temp/**"]`
     #[serde(default)]
@@ -214,12 +128,6 @@ pub struct Config {
         skip_serializing_if = "Option::is_none"
     )]
     pub compression_level: Option<f64>,
-    /// Archive configuration for zero-loss compression.
-    #[serde(default)]
-    pub archive: ArchiveConfig,
-    /// Memory policy (knowledge/episodic/procedural/lifecycle budgets & thresholds).
-    #[serde(default)]
-    pub memory: MemoryPolicy,
     /// Additional paths allowed by PathJail (absolute).
     /// Useful for multi-project workspaces where the jail root is a parent directory.
     #[serde(default)]
@@ -252,71 +160,13 @@ pub struct Config {
     /// `extra_roots`, security-sensitive.
     #[serde(default)]
     pub allow_symlink_roots: Vec<String>,
-    /// Enable content-defined chunking (Rabin-Karp) for cache-optimal output ordering.
-    /// Stable chunks are emitted first to maximize prompt cache hits.
-    #[serde(default)]
-    pub content_defined_chunking: bool,
-    /// Skip session/knowledge/gotcha blocks in MCP instructions to minimize token overhead.
-    /// Default `true` (deliberate): initialize-time instructions stay byte-stable
-    /// across sessions, which keeps the provider prompt-cache prefix warm (#498)
-    /// and holds the fixed per-session cost at the `doctor overhead --gate`
-    /// budget. Session continuity is NOT lost — the wakeup briefing (task,
-    /// findings, knowledge) is delivered through the `--- AUTO CONTEXT ---`
-    /// block of the first tool call other than the `ctx_compose` overview,
-    /// which only bills when the agent actually works. Set to `false` to additionally inject the ACTIVE SESSION
-    /// / PROJECT MEMORY blocks directly into the MCP `initialize` instructions.
-    #[serde(default)]
-    pub minimal_overhead: bool,
-    /// Opt-in: substitute long identifiers with short α-codes (+ a `§MAP` table)
-    /// in `aggressive` reads for projects with >50 source files. Off by default —
-    /// the abbreviated form is confusing for editing/refactoring, where the agent
-    /// needs the real package and symbol names. Enable for max exploration savings.
-    #[serde(default)]
-    pub symbol_map_auto: bool,
-    /// Opt-in: let the adaptive *learning* signals (predictor, bandit, heatmap,
-    /// adaptive policy, bounce/path memory) participate in `auto` mode
-    /// resolution. Off by default (#683): the default cascade is a deterministic
-    /// function of (file, task) — only capability guards and the size/task
-    /// heuristic decide — which keeps output byte-stable for provider prompt
-    /// caching (#498) and avoids per-read disk I/O from the learning stores.
-    #[serde(default)]
-    pub auto_mode_learning: bool,
-    /// Opt-in: auto-persist interesting findings as knowledge facts.
-    #[serde(default)]
-    pub auto_capture: bool,
-    /// Hybrid search weights (BM25/dense/candidates).
-    #[serde(default)]
-    pub search: crate::core::hybrid_search::HybridConfig,
-    /// Code-graph settings, including traversal (co-access) edges (#289).
-    #[serde(default)]
-    pub graph: GraphConfig,
     /// Index-time file filters (#735): include/exclude globs + gitignore
     /// handling, applied by every index builder via `core::index_filter`.
     #[serde(default)]
     pub index: IndexConfig,
-    /// AI session-summary settings (#292): periodic, semantically-recallable summaries.
-    #[serde(default)]
-    pub summaries: SummariesConfig,
-    /// Semantic-embedding engine settings (which local ONNX model to use).
-    #[serde(default)]
-    pub embedding: EmbeddingConfig,
     /// Disable shell hook injection (the _lc() function that wraps CLI commands).
     #[serde(default)]
     pub shell_hook_disabled: bool,
-    /// Shadow mode (default: true): denies native tools (Read/Grep/Shell) at
-    /// the permission level, forcing agents to use ctx_* MCP tools for maximum
-    /// compression. Without this, many harnesses silently prefer native tools,
-    /// negating lean-ctx's token savings. Disable with `shadow_mode = false`.
-    #[serde(default = "serde_defaults::default_true")]
-    pub shadow_mode: bool,
-    /// Global hook mode override. When set, overrides the per-agent auto-detection.
-    /// - `replace`: Native Read/Grep/Glob/Shell denied, lean-ctx MCP is the only path
-    /// - `hybrid`: MCP + shell hooks for compression (legacy)
-    /// - `mcp`: MCP server only, no hooks
-    ///
-    /// Default: unset (auto-detect per agent via `recommend_hook_mode`)
-    #[serde(default)]
-    pub hook_mode: Option<String>,
     /// Opt-in (#520): write a human-readable debug log of intercepted MCP tool
     /// calls and hook routing decisions (lean-ctx vs native, with reasons) to
     /// `<state_dir>/logs/debug.log`.
@@ -337,119 +187,11 @@ pub struct Config {
     /// controls *when* aliases activate, not *whether* they are installed.
     #[serde(default)]
     pub skip_agent_aliases: bool,
-    /// Controls the native-Read → `ctx_read` redirect hook (#637).
-    /// - `auto`: (Default) redirect everywhere except hosts with a native
-    ///   read-before-write guard (Claude Code / CodeBuddy), where the path-swap
-    ///   would break native Write/Edit.
-    /// - `on`: always redirect (legacy behavior).
-    /// - `off`: never redirect native Read.
-    #[serde(default)]
-    pub read_redirect: ReadRedirect,
-    /// Controls the PostToolUse native-Read re-read dedup (GL #1140).
-    /// - `auto`: (Default) replace only re-reads of unchanged files, and only on
-    ///   guard hosts (Claude Code / CodeBuddy) where the PreToolUse redirect is
-    ///   disabled — the guard-safe way to win the dedup savings back.
-    /// - `on`: dedup wherever the PostToolUse hook fires.
-    /// - `off`: never replace a Read result.
-    #[serde(default)]
-    pub read_dedup: ReadDedup,
-    /// Fixed-context budget accounting for `doctor overhead` / `gain` (#964).
-    #[serde(default)]
-    pub context: ContextConfig,
-    /// Maximum BM25 cache file size in MB. Indexes exceeding this are quarantined on load
-    /// and refused on save.
-    #[serde(default = "serde_defaults::default_bm25_max_cache_mb")]
-    pub bm25_max_cache_mb: u64,
-    /// Maximum number of files scanned by the lightweight JSON graph index.
-    /// 0 = unlimited (default). Set >0 to cap for constrained systems.
-    #[serde(default = "serde_defaults::default_graph_index_max_files")]
-    pub graph_index_max_files: u64,
-    /// Controls RAM vs feature trade-off. Values: "low", "balanced" (default), "performance".
-    #[serde(default)]
-    pub memory_profile: MemoryProfile,
-    /// Controls how aggressively memory is freed when idle.
-    /// Values: "shared" (default, 1h TTL), "aggressive" (5 min TTL for low-memory devices).
-    #[serde(default)]
-    pub memory_cleanup: MemoryCleanup,
-    /// Soft process-RSS target as a percentage of system RAM (default: 5).
-    /// The guardian throttles and evicts above it, but this is not an OS hard cap.
-    /// Use a cgroup/container MemoryMax when strict isolation is required.
-    #[serde(default = "serde_defaults::default_max_ram_percent")]
-    pub max_ram_percent: u8,
-    /// Simplified disk budget (MB). When set and detail values are at defaults,
-    /// distributes proportionally: archive=25%, bm25=10%, remainder for stores.
-    /// 0 = disabled (use individual settings).
-    #[serde(default)]
-    pub max_disk_mb: u64,
-    /// Auto-purge data older than this many days. 0 = disabled.
-    /// Flows into archive.max_age_hours and lifecycle idle TTL.
-    #[serde(default)]
-    pub max_staleness_days: u32,
-    /// Cap on the rayon worker threads used by the CPU-heavy index build
-    /// (call graph etc.). 0 = rayon default (all cores). Set >0 to bound
-    /// per-instance CPU so a fleet of concurrent sessions can't saturate the
-    /// host on startup.
-    #[serde(default)]
-    pub max_index_threads: usize,
-    /// Controls visibility of token savings footers in tool output.
-    /// Values: "always" (default, show on every response), "never", "auto" (legacy compatibility).
-    #[serde(default)]
-    pub savings_footer: SavingsFooter,
     /// Explicit project root override. When set, lean-ctx uses this instead of auto-detection.
     /// This prevents accidental home-directory scans when running from $HOME.
     /// Override via LEAN_CTX_PROJECT_ROOT env var.
     #[serde(default)]
     pub project_root: Option<String>,
-    /// LSP server overrides. Map language name to custom binary path.
-    /// Example: `[lsp]\nrust = "/opt/rust-analyzer"\npython = "~/.venvs/main/bin/pylsp"`
-    #[serde(default)]
-    pub lsp: std::collections::HashMap<String, String>,
-    /// Per-IDE allowed paths. Restricts which directories lean-ctx will scan/index for each IDE.
-    /// Example: `[ide_paths]\ncursor = ["/home/user/projects/app1"]\ncodex = ["/home/user/codex"]`
-    /// When set, only these paths are indexed for the matching agent. Global `allow_paths` still applies.
-    #[serde(default)]
-    pub ide_paths: HashMap<String, Vec<String>>,
-    /// Custom model context window overrides.
-    /// Example: `[model_context_windows]\n"my-custom-model" = 500000`
-    #[serde(default)]
-    pub model_context_windows: HashMap<String, usize>,
-    /// Controls how much detail tool responses include.
-    ///
-    /// - `full` (default): complete compressed output
-    /// - `headers_only`: metadata line only (path, mode, token count)
-    #[serde(default)]
-    pub response_verbosity: ResponseVerbosity,
-    /// Bypass hint mode. When agents use native Read/Grep instead of lean-ctx tools,
-    /// a hint is appended to the next tool response.
-    /// Values: "on" (default), "off", "aggressive" (hint on every call, no cooldown).
-    #[serde(default)]
-    pub bypass_hints: Option<String>,
-    /// Cache policy for ctx_read. Controls behavior on cache hits.
-    /// Values: "aggressive" (default, 13-tok stubs + compaction-aware reset),
-    /// "safe" (delivers map instead of stub), "off" (no caching, always disk read).
-    #[serde(default)]
-    pub cache_policy: Option<String>,
-    /// Token budget for the in-memory `ctx_read` cache. When the cached total
-    /// plus an incoming read would exceed this, lean-ctx evicts the least-valuable
-    /// entries *immediately* (RRF: recency × frequency × size) so the read always
-    /// proceeds — eviction is never deferred to the staleness TTL. `0` uses the
-    /// built-in default (2M).
-    #[serde(default)]
-    pub cache_max_tokens: usize,
-    /// Cross-project boundary policy.
-    /// Controls whether cross-project search/import is allowed and whether access is audited.
-    #[serde(default)]
-    pub boundary_policy: crate::core::memory_boundary::BoundaryPolicy,
-    #[serde(default)]
-    pub secret_detection: SecretDetectionConfig,
-    /// Per-item sensitivity model with a uniform policy floor (#212).
-    /// Disabled by default → fully no-op until `sensitivity.enabled = true`.
-    #[serde(default)]
-    pub sensitivity: crate::core::sensitivity::SensitivityConfig,
-    /// Allow automatic project-root re-rooting when absolute paths outside the jail are seen.
-    /// When false (default), absolute paths outside the jail are rejected without re-rooting.
-    #[serde(default)]
-    pub allow_auto_reroot: bool,
     /// Verbatim binary path/expression for generated agent-hook commands
     /// (#708). Users who sync agent settings (`~/.claude/settings.json`, …)
     /// across machines with different usernames need an env-based form like
@@ -470,10 +212,6 @@ pub struct Config {
     /// 0 = subprocess only (current), 1 = OS-level restriction (Seatbelt/Landlock).
     #[serde(default)]
     pub sandbox_level: u8,
-    /// When true, large tool outputs (>4000 chars) are stored as references
-    /// and a short URI is returned instead of the full content.
-    #[serde(default)]
-    pub reference_results: bool,
 
     /// Shell-security mode for ctx_shell / `lean-ctx -c` command gating (GL #788):
     /// `enforce` (default, secure), `warn` (run checks, log violations, never
@@ -514,88 +252,28 @@ pub struct Config {
 impl Default for Config {
     fn default() -> Self {
         Self {
-            tee_mode: TeeMode::default(),
-            recovery_hints: RecoveryHints::default(),
             passthrough_commands: Vec::new(),
-            passthrough_urls: Vec::new(),
-            preserve_compact_formats: serde_defaults::default_preserve_compact_formats(),
-            crush_verbatim_json: false,
-            slow_command_threshold_ms: 5000,
-            theme: serde_defaults::default_theme(),
-            gain: GainConfig::default(),
-            cost: CostConfig::default(),
-            code_health: CodeHealthConfig::default(),
-            autonomy: AutonomyConfig::default(),
             proxy: ProxyConfig::default(),
-            conversation: ConversationConfig::default(),
-            response_shaping: ResponseShapingConfig::default(),
             proxy_enabled: None,
             proxy_port: None,
-            proxy_timeout_ms: None,
-            proxy_require_token: false,
-            proxy_loopback_open: false,
-            dashboard_cache_hit_rate: None,
-            enable_wakeup_ctx: true,
-            prefer_native_editor: false,
-            no_degrade: false,
-            delta_explicit: true,
-            loop_detection: LoopDetectionConfig::default(),
             rules_scope: None,
             rules_injection: None,
-            permission_inheritance: None,
             extra_ignore_patterns: Vec::new(),
             compression_level: None,
-            archive: ArchiveConfig::default(),
-            memory: MemoryPolicy::default(),
             allow_paths: Vec::new(),
             allow_ide_config_dirs: None,
             extra_roots: Vec::new(),
             read_only_roots: Vec::new(),
             allow_symlink_roots: Vec::new(),
-            content_defined_chunking: false,
-            minimal_overhead: true,
-            symbol_map_auto: false,
-            auto_mode_learning: false,
-            auto_capture: true,
-            search: crate::core::hybrid_search::HybridConfig::default(),
-            graph: GraphConfig::default(),
             index: IndexConfig::default(),
-            summaries: SummariesConfig::default(),
-            embedding: EmbeddingConfig::default(),
             shell_hook_disabled: false,
-            shadow_mode: true,
-            hook_mode: None,
             debug_log: false,
             shell_activation: ShellActivation::default(),
             skip_agent_aliases: false,
-            read_redirect: ReadRedirect::default(),
-            read_dedup: ReadDedup::default(),
-            context: ContextConfig::default(),
-            graph_index_max_files: serde_defaults::default_graph_index_max_files(),
-            bm25_max_cache_mb: serde_defaults::default_bm25_max_cache_mb(),
-            memory_profile: MemoryProfile::default(),
-            memory_cleanup: MemoryCleanup::default(),
-            max_ram_percent: serde_defaults::default_max_ram_percent(),
-            max_disk_mb: 0,
-            max_staleness_days: 0,
-            max_index_threads: 0,
-            savings_footer: SavingsFooter::default(),
             project_root: None,
-            lsp: std::collections::HashMap::new(),
-            ide_paths: HashMap::new(),
-            model_context_windows: HashMap::new(),
-            response_verbosity: ResponseVerbosity::default(),
-            bypass_hints: None,
-            cache_policy: None,
-            cache_max_tokens: 0,
-            boundary_policy: crate::core::memory_boundary::BoundaryPolicy::default(),
-            secret_detection: SecretDetectionConfig::default(),
-            sensitivity: crate::core::sensitivity::SensitivityConfig::default(),
-            allow_auto_reroot: false,
             hook_binary: None,
             path_jail: None,
             sandbox_level: 0,
-            reference_results: false,
             shell_security: None,
             shell_timeout_secs: None,
             shell_heavy_timeout_secs: None,
@@ -608,9 +286,9 @@ impl Default for Config {
 
 impl Config {
     /// Whether opt-in lossless JSON crushing of verbatim data commands (#936) is
-    /// active.
+    /// active. Off.
     pub fn crush_verbatim_json_effective(&self) -> bool {
-        self.crush_verbatim_json
+        false
     }
 
     /// Returns the effective rules scope.
@@ -634,30 +312,6 @@ impl Config {
         }
     }
 
-    /// Provider prompt-cache hit rate for net-of-injection (#1104).
-    /// Returns the configured value or None (caller picks the default).
-    #[must_use]
-    pub fn dashboard_cache_hit_rate(&self) -> Option<f64> {
-        self.dashboard_cache_hit_rate
-    }
-    /// Returns the user-configured hook mode override, or `None` for auto-detect.
-    #[must_use]
-    pub fn hook_mode_override(&self) -> Option<crate::hooks::HookMode> {
-        let raw = self.hook_mode.clone()?;
-        crate::hooks::HookMode::from_str_loose(raw.trim())
-    }
-
-    /// Returns the effective permission-inheritance mode. Default is `Off`.
-    /// Accepts `on`/`true`/`1` as enabled.
-    #[must_use]
-    pub fn permission_inheritance_effective(&self) -> PermissionInheritance {
-        let raw = self.permission_inheritance.clone().unwrap_or_default();
-        match raw.trim().to_lowercase().as_str() {
-            "on" | "true" | "1" | "inherit" => PermissionInheritance::On,
-            _ => PermissionInheritance::Off,
-        }
-    }
-
     /// True when lean-ctx should inject its rules via each agent's dedicated,
     /// non-polluting auto-load path *and* global rules are in scope.
     ///
@@ -670,57 +324,36 @@ impl Config {
             && self.rules_scope_effective() != RulesScope::Project
     }
 
-    /// Whether lean-ctx edit operations are disabled in favour of the host's
-    /// native editor (#454).
-    pub fn prefer_native_editor_effective(&self) -> bool {
-        self.prefer_native_editor
-    }
-
     /// Cap on the rayon index-build worker threads; `0` means "no cap" —
     /// rayon's all-cores default is kept.
     pub fn max_index_threads_effective(&self) -> usize {
-        self.max_index_threads
+        0
     }
 
-    /// Whether `name` is a lean-ctx edit operation that must be blocked from
-    /// dispatch when [`Self::prefer_native_editor_effective`]
-    /// is set (#454). Read/search/shell/memory tools are never blocked.
-    pub fn edit_tool_blocked(&self, name: &str) -> bool {
-        self.prefer_native_editor_effective() && EDIT_TOOL_NAMES.contains(&name)
-    }
-
-    /// Returns `true` if minimal overhead is enabled.
+    /// Minimal overhead: on. Tool outputs carry no optional metadata blocks.
     pub fn minimal_overhead_effective(&self) -> bool {
-        self.minimal_overhead
+        true
     }
 
-    /// Returns `true` when the adaptive learning signals may participate in
-    /// `auto` mode resolution (#683). Off by default for a deterministic,
-    /// I/O-light cascade.
+    /// Whether the adaptive learning signals may participate in `auto` mode
+    /// resolution (#683). Off: a deterministic, I/O-light cascade.
     pub fn auto_mode_learning_effective(&self) -> bool {
-        self.auto_mode_learning
+        false
     }
 
-    /// Returns `true` when probabilistic exploration (Thompson sampling,
-    /// Boltzmann-temperature eviction, simulated annealing) may influence
-    /// decisions. Off by default so tool output stays a deterministic, byte-
-    /// stable function of (content, mode, task) — the determinism contract
-    /// (#498) that lets provider prompt caching apply. Follows
-    /// [`Self::auto_mode_learning_effective`], which is off by default.
+    /// Whether probabilistic exploration (Thompson sampling, Boltzmann-
+    /// temperature eviction, simulated annealing) may influence decisions.
+    /// Off, so tool output stays a deterministic, byte-stable function of
+    /// (content, mode, task) — the determinism contract (#498) that lets
+    /// provider prompt caching apply.
     pub fn is_stochastic_enabled(&self) -> bool {
         self.auto_mode_learning_effective()
     }
 
-    /// Returns `true` if minimal overhead should be enabled for this MCP client.
-    /// This is a superset of `minimal_overhead_effective()`: low-context
-    /// clients are treated as minimal to prevent large metadata blocks from
-    /// destabilizing smaller context windows (e.g. Hermes + MiniMax).
-    pub fn minimal_overhead_effective_for_client(&self, client_name: &str) -> bool {
-        if self.minimal_overhead_effective() {
-            return true;
-        }
-        let client_lower = client_name.trim().to_lowercase();
-        client_lower.contains("hermes") || client_lower.contains("minimax")
+    /// Whether minimal overhead applies to this MCP client: always, see
+    /// [`Self::minimal_overhead_effective`].
+    pub fn minimal_overhead_effective_for_client(&self, _client_name: &str) -> bool {
+        self.minimal_overhead_effective()
     }
 
     /// Returns `true` if shell hook injection is disabled.
@@ -740,124 +373,74 @@ impl Config {
         self.shell_allow_inline_scripts
     }
 
+    /// The memory policy: [`MemoryPolicy::default`], validated.
     pub fn memory_policy_effective(&self) -> Result<MemoryPolicy, String> {
-        let mut policy = self.memory.clone();
-
-        let budget = self.max_disk_mb_effective();
-        if budget > 0 {
-            let scale_factor = (budget as f64 / 500.0).clamp(0.5, 10.0);
-            let default_policy = MemoryPolicy::default();
-            if policy.knowledge.max_facts == default_policy.knowledge.max_facts {
-                policy.knowledge.max_facts = (200.0 * scale_factor) as usize;
-            }
-            if policy.knowledge.max_patterns == default_policy.knowledge.max_patterns {
-                policy.knowledge.max_patterns = (50.0 * scale_factor) as usize;
-            }
-            if policy.episodic.max_episodes == default_policy.episodic.max_episodes {
-                policy.episodic.max_episodes = (500.0 * scale_factor) as usize;
-            }
-            if policy.procedural.max_procedures == default_policy.procedural.max_procedures {
-                policy.procedural.max_procedures = (100.0 * scale_factor) as usize;
-            }
-        }
-
+        let policy = MemoryPolicy::default();
         policy.validate()?;
         Ok(policy)
     }
 
-    /// The `[sensitivity]` config as written. It used to be folded with a
-    /// per-persona floor; the personas that declared one are gone.
+    /// Sensitivity classification: [`SensitivityConfig::default`] (off).
+    ///
+    /// [`SensitivityConfig::default`]: crate::core::sensitivity::SensitivityConfig
     #[must_use]
     pub fn sensitivity_effective(&self) -> crate::core::sensitivity::SensitivityConfig {
-        self.sensitivity.clone()
+        crate::core::sensitivity::SensitivityConfig::default()
     }
 
-    /// Returns `true` if all automatic read-mode degradation is disabled.
+    /// Whether all automatic read-mode degradation is disabled. No.
     pub fn no_degrade_effective(&self) -> bool {
-        self.no_degrade
+        false
     }
 
-    /// Returns `true` if explicit `full`/`lines:N-M` re-reads of
-    /// cached-but-changed files should be served as deltas (`mode=diff`)
-    /// instead of re-emitting full content.
+    /// Whether explicit `full`/`lines:N-M` re-reads of cached-but-changed files
+    /// are served as deltas (`mode=diff`) instead of re-emitting full content.
+    /// Yes.
     pub fn delta_explicit_effective(&self) -> bool {
-        self.delta_explicit
+        true
     }
 
-    /// Effective max_disk_mb.
-    pub fn max_disk_mb_effective(&self) -> u64 {
-        self.max_disk_mb
-    }
-
-    /// Effective max_staleness_days.
-    pub fn max_staleness_days_effective(&self) -> u32 {
-        self.max_staleness_days
-    }
-
-    /// Effective fixed-context budget (tokens) (#964). `0` disables the
-    /// warning; otherwise the per-session footprint is checked against this in
-    /// `doctor overhead` and `gain`.
+    /// Fixed-context budget (tokens) (#964): the per-session footprint is
+    /// checked against this in `doctor overhead` and `gain`.
     pub fn context_budget_tokens_effective(&self) -> usize {
-        self.context.budget_tokens
+        ContextConfig::default().budget_tokens
     }
 
     /// Whether later tool calls may receive matching CCR context.
     pub fn proactive_expansion_effective(&self) -> bool {
-        self.context.proactive_expansion
+        ContextConfig::default().proactive_expansion
     }
 
     /// Per-response token budget for proactive CCR expansion.
     pub fn proactive_expansion_budget_tokens_effective(&self) -> usize {
-        self.context.proactive_expansion_budget_tokens
+        ContextConfig::default().proactive_expansion_budget_tokens
     }
 
     /// Normalized BM25 score threshold for proactive CCR expansion.
     pub fn proactive_expansion_threshold_effective(&self) -> f64 {
-        self.context.proactive_expansion_threshold
+        ContextConfig::default().proactive_expansion_threshold
     }
 
     /// Maximum archive age considered for proactive expansion.
     pub fn proactive_expansion_max_age_secs_effective(&self) -> u64 {
-        self.context.proactive_expansion_max_age_secs
+        ContextConfig::default().proactive_expansion_max_age_secs
     }
 
-    /// Archive max_disk_mb derived from simplified max_disk_mb if the detail
-    /// value is still at its default. Explicit overrides take priority.
+    /// Archive disk ceiling (MB).
     pub fn archive_max_disk_mb_effective(&self) -> u64 {
-        let budget = self.max_disk_mb_effective();
-        if budget > 0 && self.archive.max_disk_mb == ArchiveConfig::default().max_disk_mb {
-            budget * 25 / 100
-        } else {
-            self.archive.max_disk_mb
-        }
+        ArchiveConfig::default().max_disk_mb
     }
 
-    /// Archive max_age_hours derived from max_staleness_days if the detail
-    /// value is still at its default. Explicit overrides take priority.
+    /// Archive retention (hours).
     pub fn archive_max_age_hours_effective(&self) -> u64 {
-        let staleness = self.max_staleness_days_effective();
-        if staleness > 0 && self.archive.max_age_hours == ArchiveConfig::default().max_age_hours {
-            staleness as u64 * 24
-        } else {
-            self.archive.max_age_hours
-        }
+        ArchiveConfig::default().max_age_hours
     }
 
-    /// Effective on-disk ceiling (MB) for the persisted BM25 index. Single source
-    /// of truth for `save`/`load`, `cache prune`, and the doctor health check.
-    ///
-    /// Priority: explicit `bm25_max_cache_mb` › `max_disk_mb` budget (10%) ›
-    /// generous default ([`DEFAULT_BM25_PERSIST_MB`]). The default is decoupled
-    /// from the RAM profile so large repos persist instead of rebuilding forever
-    /// (issue #249).
+    /// On-disk ceiling (MB) for the persisted BM25 index. Single source of
+    /// truth for `save`/`load`, `cache prune`, and the doctor health check.
+    /// Decoupled from the RAM profile so large repos persist instead of
+    /// rebuilding forever (issue #249).
     pub fn bm25_max_cache_mb_effective(&self) -> u64 {
-        if self.bm25_max_cache_mb != serde_defaults::default_bm25_max_cache_mb() {
-            return self.bm25_max_cache_mb;
-        }
-        let budget = self.max_disk_mb_effective();
-        if budget > 0 {
-            return budget * 10 / 100;
-        }
         DEFAULT_BM25_PERSIST_MB
     }
 }

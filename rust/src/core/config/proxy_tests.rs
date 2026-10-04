@@ -100,187 +100,90 @@ fn has_custom_host_upstream_detects_only_custom_https() {
 }
 
 #[test]
-fn cold_prefix_repack_is_opt_in_and_config_enables() {
-    // #480: off by default (a wrong cold guess re-bills reads as writes ~12x),
-    // enabled via config.
+fn cold_prefix_repack_is_off() {
+    // #480: off (a wrong cold guess re-bills reads as writes ~12x).
     assert!(
         !ProxyConfig::default().repacks_cold_prefix(),
-        "cold-prefix repack must be opt-in (off by default)"
+        "cold-prefix repack must be off"
     );
-    let cfg = ProxyConfig {
-        cold_prefix_repack: Some(true),
-        ..Default::default()
-    };
-    assert!(cfg.repacks_cold_prefix());
 }
 
 #[test]
-fn ccr_inband_is_opt_in_and_config_enables() {
-    // #493: off by default (the splice mutates provider-visible content for
-    // the expand turn), enabled via config.
+fn ccr_inband_is_off() {
+    // #493: off (the splice mutates provider-visible content for the expand
+    // turn).
     assert!(
         !ProxyConfig::default().ccr_inband_enabled(),
-        "in-band CCR must be opt-in (off by default)"
+        "in-band CCR must be off"
     );
-    let cfg = ProxyConfig {
-        ccr_inband: Some(true),
-        ..Default::default()
-    };
-    assert!(cfg.ccr_inband_enabled());
 }
 
 #[test]
-fn cache_breakpoint_is_opt_in_and_config_enables() {
-    // #939: off by default (it reshapes the provider-visible system field),
-    // enabled via config.
+fn cache_breakpoint_is_off() {
+    // #939: off (it reshapes the provider-visible system field).
     assert!(
         !ProxyConfig::default().cache_breakpoint_enabled(),
-        "cache-breakpoint injection must be opt-in (off by default)"
+        "cache-breakpoint injection must be off"
     );
-    let cfg = ProxyConfig {
-        cache_breakpoint: Some(true),
-        ..Default::default()
-    };
-    assert!(cfg.cache_breakpoint_enabled());
 }
 
 #[test]
-fn cache_aligner_defaults_on_and_config_disables() {
-    // #986 premium defaults: the volatile-field scan is measurement-only and
-    // strictly cache-safe, so it ships on by default; `false` opts out.
+fn cache_aligner_is_on() {
+    // #986: the volatile-field scan is measurement-only and strictly
+    // cache-safe, so it is on.
     assert!(
         ProxyConfig::default().cache_aligner_enabled(),
-        "cache-aligner telemetry must be on by default (measurement-only, safe)"
+        "cache-aligner telemetry must be on (measurement-only, safe)"
     );
-    let cfg = ProxyConfig {
-        cache_aligner: Some(false),
-        ..Default::default()
-    };
-    assert!(!cfg.cache_aligner_enabled(), "explicit false opts out");
 }
 
 #[test]
-fn cache_aligner_legacy_opt_in_still_enables() {
-    // An explicit `true` (a pre-#986 config) keeps working unchanged.
-    let cfg = ProxyConfig {
-        cache_aligner: Some(true),
-        ..Default::default()
-    };
-    assert!(cfg.cache_aligner_enabled());
-}
-
-#[test]
-fn cache_align_relocate_is_opt_in_and_config_enables() {
-    // #974: off by default (it reshapes the provider-visible system field by
-    // relocating volatile values to the tail).
+fn cache_align_relocate_is_off() {
+    // #974: off (it reshapes the provider-visible system field by relocating
+    // volatile values to the tail).
     assert!(
         !ProxyConfig::default().cache_align_relocate_enabled(),
-        "active cache-aligner relocate must be opt-in (off by default)"
+        "active cache-aligner relocate must be off"
     );
-    let cfg = ProxyConfig {
-        cache_align_relocate: Some(true),
-        ..Default::default()
-    };
-    assert!(cfg.cache_align_relocate_enabled());
 }
 
 #[test]
-fn cache_policy_defaults_on_and_can_be_disabled() {
-    // #986 premium defaults: telemetry + a more-conservative repack gate are
-    // both strictly safe, so cache-economics ships on by default and is
-    // opt-out via config `false`.
+fn cache_policy_is_on() {
+    // #986: telemetry + a more-conservative repack gate are both strictly
+    // safe, so cache-economics is on.
     assert!(
         ProxyConfig::default().cache_policy_enabled(),
-        "cache-economics must be on by default (measurement + safe gate)"
+        "cache-economics must be on (measurement + safe gate)"
     );
-    let cfg = ProxyConfig {
-        cache_policy: Some(false),
-        ..Default::default()
-    };
-    assert!(!cfg.cache_policy_enabled(), "explicit false opts out");
 }
 
 #[test]
-fn effort_defaults_off_and_config_sets_it() {
-    // #834: cache-safe effort control is opt-in.
+fn effort_is_off() {
+    // #834: effort control is off (a strict no-op).
     assert_eq!(
         ProxyConfig::default().resolved_effort(),
         None,
-        "effort control must be opt-in (off by default)"
+        "effort control must be off"
     );
-    let cfg = ProxyConfig {
-        effort: Some("low".into()),
-        ..Default::default()
-    };
-    assert_eq!(
-        cfg.resolved_effort(),
-        Some(crate::core::config::Effort::Low)
-    );
-    // An unknown configured value resolves to off — never a silent default.
-    let typo = ProxyConfig {
-        effort: Some("lowish".into()),
-        ..Default::default()
-    };
-    assert_eq!(typo.resolved_effort(), None);
 }
 
 #[test]
-fn prose_ranker_defaults_to_auto_and_config_sets_it() {
-    // #895: premium extractive path is the default; `truncate`/`off` selects
-    // the legacy squeeze; a typo can never silently disable the premium path.
+fn prose_ranker_is_auto() {
+    // #895: the premium extractive path (with truncation fallback) is used.
     assert_eq!(
         ProxyConfig::default().resolved_prose_ranker(),
         ProseRanker::Auto
     );
-    let truncate = ProxyConfig {
-        prose_ranker: Some("truncate".into()),
-        ..Default::default()
-    };
-    assert_eq!(truncate.resolved_prose_ranker(), ProseRanker::Truncate);
-    let off = ProxyConfig {
-        prose_ranker: Some("off".into()),
-        ..Default::default()
-    };
-    assert_eq!(off.resolved_prose_ranker(), ProseRanker::Truncate);
-    let extractive = ProxyConfig {
-        prose_ranker: Some("extractive".into()),
-        ..Default::default()
-    };
-    assert_eq!(extractive.resolved_prose_ranker(), ProseRanker::Extractive);
-    let typo = ProxyConfig {
-        prose_ranker: Some("extractiveish".into()),
-        ..Default::default()
-    };
-    assert_eq!(
-        typo.resolved_prose_ranker(),
-        ProseRanker::Auto,
-        "unknown value must resolve to Auto, never silently off"
-    );
 }
 
 #[test]
-fn output_holdout_defaults_off_and_clamps() {
+fn output_holdout_is_off() {
     assert_eq!(ProxyConfig::default().output_holdout_fraction(), 0.0);
-    let cfg = ProxyConfig {
-        output_holdout: Some(0.2),
-        ..Default::default()
-    };
-    assert!((cfg.output_holdout_fraction() - 0.2).abs() < f64::EPSILON);
-    let over = ProxyConfig {
-        output_holdout: Some(5.0),
-        ..Default::default()
-    };
-    assert_eq!(over.output_holdout_fraction(), 1.0, "clamped into [0,1]");
 }
 
 #[test]
-fn verbosity_steer_defaults_off_and_config_enables() {
+fn verbosity_steer_is_off() {
     assert!(!ProxyConfig::default().verbosity_steer_enabled());
-    let cfg = ProxyConfig {
-        verbosity_steer: Some(true),
-        ..Default::default()
-    };
-    assert!(cfg.verbosity_steer_enabled());
 }
 
 #[test]
@@ -567,9 +470,9 @@ fn provider_entry_toml_round_trip() {
 }
 
 #[test]
-fn routing_and_baseline_toml_round_trip() {
-    // The `[proxy.routing]` + `[proxy.baseline]` TOML surface
-    // (enterprise#13/#15). Absent tables must default to inactive.
+fn routing_toml_round_trip() {
+    // The `[proxy.routing]` TOML surface (enterprise#13). An absent table must
+    // default to inactive.
     let toml_src = r#"
         [routing]
         enabled = true
@@ -580,12 +483,8 @@ fn routing_and_baseline_toml_round_trip() {
         [routing.tiers]
         fast = "foundry:phi-4"
         premium = ""
-
-        [baseline]
-        reference_model = "claude-opus-4.5"
-        local_shadow_rate_per_mtok = 0.4
     "#;
-    let cfg: ProxyConfig = toml::from_str(toml_src).expect("parse routing/baseline");
+    let cfg: ProxyConfig = toml::from_str(toml_src).expect("parse routing");
     assert!(cfg.routing.is_active());
     assert_eq!(
         cfg.routing.aliases.get("acme/fast").map(String::as_str),
@@ -595,19 +494,9 @@ fn routing_and_baseline_toml_round_trip() {
         cfg.routing.tiers.get("fast").map(String::as_str),
         Some("foundry:phi-4")
     );
-    assert_eq!(
-        cfg.baseline.reference_model.as_deref(),
-        Some("claude-opus-4.5")
-    );
-    assert!((cfg.baseline.effective_local_shadow_rate() - 0.4).abs() < f64::EPSILON);
 
     let empty: ProxyConfig = toml::from_str("").expect("empty config");
     assert!(!empty.routing.is_active(), "absent [routing] = passthrough");
-    assert_eq!(empty.baseline.reference_model, None);
-    assert!(
-        (empty.baseline.effective_local_shadow_rate() - DEFAULT_LOCAL_SHADOW_RATE_PER_MTOK).abs()
-            < f64::EPSILON
-    );
 
     // enabled=true with no rules is still inactive (nothing to apply).
     let enabled_only: ProxyConfig = toml::from_str("[routing]\nenabled = true").expect("parse");
@@ -631,44 +520,21 @@ fn parse_route_target_shapes() {
 }
 
 #[test]
-fn role_aggressiveness_defaults_to_off() {
-    // Opt-in: a fresh config compresses no prose, so the proxy stays
-    // byte-for-byte unchanged until an operator sets a value (#710).
+fn role_aggressiveness_is_off() {
+    // A config compresses no prose, so the proxy stays byte-for-byte
+    // unchanged (#710).
     let cfg = ProxyConfig::default();
     assert_eq!(cfg.resolved_role_aggressiveness(ProseRole::System), None);
     assert_eq!(cfg.resolved_role_aggressiveness(ProseRole::User), None);
 }
 
 #[test]
-fn role_aggressiveness_reads_config_and_clamps() {
-    let cfg = ProxyConfig {
-        role_aggressiveness: RoleAggressiveness {
-            system: Some(0.7),
-            user: Some(1.5),
-        },
-        ..Default::default()
-    };
-    assert_eq!(
-        cfg.resolved_role_aggressiveness(ProseRole::System),
-        Some(0.7)
-    );
-    // Out-of-range config values are clamped into [0,1].
-    assert_eq!(cfg.resolved_role_aggressiveness(ProseRole::User), Some(1.0));
-}
-
-#[test]
-fn live_compress_defaults_on_and_config_disables() {
-    // #481: default ON (today's behaviour); a config `false` opts into the
-    // meter-only mode.
+fn live_compress_is_on() {
+    // #481: the proxy live-compresses tool results.
     assert!(
         ProxyConfig::default().live_compresses(),
-        "live_compress must default to true"
+        "live_compress must be on"
     );
-    let cfg = ProxyConfig {
-        live_compress: Some(false),
-        ..Default::default()
-    };
-    assert!(!cfg.live_compresses());
 }
 
 #[test]
@@ -682,63 +548,9 @@ fn live_compress_exclude_defaults_to_serena() {
 }
 
 #[test]
-fn live_compress_exclude_explicit_list_replaces_default() {
-    // An explicit list narrows the exclusion (Serena no longer protected).
-    let cfg = ProxyConfig {
-        live_compress_exclude: Some(vec!["my_reader".into()]),
-        ..Default::default()
-    };
-    assert!(cfg.is_tool_live_compress_excluded("acme_my_reader_v2"));
-    assert!(!cfg.is_tool_live_compress_excluded("mcp__serena__find_symbol"));
-}
-
-#[test]
-fn live_compress_exclude_empty_list_disables_protection() {
-    // `[]` fully clears the exclusion (operator opts every tool back in).
-    let cfg = ProxyConfig {
-        live_compress_exclude: Some(vec![]),
-        ..Default::default()
-    };
-    assert!(!cfg.is_tool_live_compress_excluded("mcp__serena__find_symbol"));
-}
-
-#[test]
-fn compress_protect_unset_is_a_noop() {
-    // #1150: the default protects nothing, so compression stays on for all.
+fn compress_protect_is_a_noop() {
+    // #1150: nothing is protected, so compression stays on for all.
     let cfg = ProxyConfig::default();
     assert!(!cfg.is_path_compress_protected("tests/golden/output.snap"));
     assert!(cfg.compress_protect_globs().is_empty());
-}
-
-#[test]
-fn compress_protect_matches_basename_and_path_globs() {
-    // `*.snap` matches by file name anywhere; `**/golden/**` targets a dir.
-    let cfg = ProxyConfig {
-        compress_protect: Some(vec!["*.snap".into(), "**/golden/**".into()]),
-        ..Default::default()
-    };
-    assert!(cfg.is_path_compress_protected("a/b/c/output.snap"));
-    assert!(cfg.is_path_compress_protected("output.snap"));
-    assert!(cfg.is_path_compress_protected("tests/golden/case1.txt"));
-    assert!(!cfg.is_path_compress_protected("src/main.rs"));
-}
-
-#[test]
-fn compress_protect_normalises_backslashes() {
-    // A Windows-style path still matches a forward-slash glob.
-    let cfg = ProxyConfig {
-        compress_protect: Some(vec!["**/fixtures/*".into()]),
-        ..Default::default()
-    };
-    assert!(cfg.is_path_compress_protected("tests\\fixtures\\big.json"));
-}
-
-#[test]
-fn compress_protect_skips_malformed_globs_without_disabling_rest() {
-    // One bad pattern must not take the valid ones down with it.
-    let cfg = ProxyConfig {
-        compress_protect: Some(vec!["[".into(), "*.lock".into()]),
-        ..Default::default()
-    };
-    assert!(cfg.is_path_compress_protected("Cargo.lock"));
 }

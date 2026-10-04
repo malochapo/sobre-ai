@@ -98,10 +98,6 @@ mod tests {
 
     #[test]
     fn squeeze_is_stable_across_calls() {
-        // Serialize with `truncate_mode_bypasses_memo_and_matches_squeeze_prose`:
-        // that test flips `[proxy] prose_ranker` in config, and a flip
-        // between our two calls would legitimately change the selected path.
-        let _lock = crate::core::data_dir::test_env_lock();
         // In `cargo test` the engine is never loaded, so this exercises the
         // memoized truncate fallback — which must be byte-identical across calls.
         let text = long_unique_prose();
@@ -109,17 +105,5 @@ mod tests {
         let b = squeeze(&text, 200);
         assert_eq!(a, b, "wire squeeze must be byte-stable across turns");
         assert!(a.len() <= text.len());
-    }
-
-    #[test]
-    fn truncate_mode_bypasses_memo_and_matches_squeeze_prose() {
-        let iso = crate::core::data_dir::isolated_data_dir();
-        std::fs::write(
-            iso.path().join("config.toml"),
-            "[proxy]\nprose_ranker = \"truncate\"\n",
-        )
-        .unwrap();
-        let text = long_unique_prose();
-        assert_eq!(squeeze(&text, 200), squeeze_prose(&text, 200));
     }
 }

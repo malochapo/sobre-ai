@@ -14,30 +14,7 @@ use super::port_discovery;
 static BACKENDS: std::sync::LazyLock<Mutex<HashMap<String, Box<dyn LspBackend>>>> =
     std::sync::LazyLock::new(|| Mutex::new(HashMap::new()));
 
-fn expand_tilde(path: &str) -> String {
-    if let Some(rest) = path.strip_prefix("~/")
-        && let Some(home) = dirs::home_dir()
-    {
-        return format!("{}/{rest}", home.display());
-    }
-    path.to_string()
-}
-
 fn resolve_config_for_language(language: &str) -> LspServerConfig {
-    let cfg = crate::core::config::Config::load();
-    if let Some(custom_path) = cfg.lsp.get(language) {
-        let expanded = expand_tilde(custom_path);
-        return LspServerConfig {
-            command: expanded,
-            args: if language == "typescript" || language == "javascript" {
-                vec!["--stdio".into()]
-            } else if language == "go" {
-                vec!["serve".into()]
-            } else {
-                vec![]
-            },
-        };
-    }
     let servers = default_servers();
     servers.get(language).cloned().unwrap_or(LspServerConfig {
         command: format!("{language}-language-server"),
@@ -47,20 +24,13 @@ fn resolve_config_for_language(language: &str) -> LspServerConfig {
 
 /// Selects a code-intelligence backend for `language` (§4.3).
 ///
-/// Config `cfg.lsp[language]` (HashMap<String,String>):
-///   - absent      → "auto" = B-first (JetBrains if reachable, else rust-analyzer)
-///   - "auto"      → same as absent
-///   - "jetbrains" → B only (error if the IDE is not reachable; no fallback)
-///   - anything else → treated as an explicit rust-analyzer binary path = A only
+/// B-first: JetBrains if reachable, else the language server found on PATH.
 ///
 /// Reachability = live port file + pid alive + `/health` ping. On any miss in
 /// "auto" mode we fall back to Backing A deterministically (one ~300ms timeout max).
 fn select_backend(language: &str, project_root: &str) -> Result<Box<dyn LspBackend>, String> {
-    let cfg = crate::core::config::Config::load();
-    let mode = cfg.lsp.get(language).map(String::as_str);
-
-    let want_b = matches!(mode, None | Some("auto" | "jetbrains"));
-    let b_only = mode == Some("jetbrains");
+    let want_b = true;
+    let b_only = false;
 
     if want_b {
         if let Some(pf) = port_discovery::read_port_file(project_root)

@@ -55,7 +55,7 @@ pub fn handle_read_dedup() {
 /// Decide the read-dedup hook's stdout. `None` = emit nothing (passthrough, the
 /// documented PostToolUse no-op). Split from [`handle_read_dedup`] for tests.
 fn compute_read_dedup(input: &str) -> Option<String> {
-    if !crate::core::config::ReadDedup::read_dedup_enabled(&crate::core::config::Config::load()) {
+    if !crate::core::config::ReadDedup::read_dedup_enabled() {
         return None;
     }
 
@@ -344,19 +344,27 @@ fn sweep_stale_sessions(root: &std::path::Path) {
 mod tests {
     use super::*;
 
-    /// RAII guard that forces `read_dedup = "on"` (in a private config.toml)
-    /// for deterministic tests regardless of host (Cursor exports its own env
-    /// vars that would make Auto resolve to disabled). Holds the global test
-    /// env lock via `isolated_data_dir`; restores the environment on drop.
+    /// RAII guard that makes this process look like a Claude Code guard host
+    /// (where `read_dedup = auto` dedups) for deterministic tests regardless of
+    /// host: the Cursor markers a Cursor agent shell exports itself would make
+    /// Auto resolve to disabled, so they are cleared. Holds the global test env
+    /// lock via `isolated_data_dir`; restores the environment on drop.
     struct GuardHost {
         _iso: crate::core::data_dir::IsolatedDataDir,
     }
     impl GuardHost {
         fn claude() -> Self {
             let iso = crate::core::data_dir::isolated_data_dir();
-            // Force dedup on — avoids depending on host_has_read_before_write_guard()
-            // which fails inside Cursor agent shells (CURSOR_* vars present).
-            std::fs::write(iso.path().join("config.toml"), "read_dedup = \"on\"\n").unwrap();
+            for var in [
+                "CURSOR_VERSION",
+                "CURSOR_PROJECT_DIR",
+                "CURSOR_TRANSCRIPT_PATH",
+                "CURSOR_EXTENSION_HOST_ROLE",
+                "CURSOR_AGENT",
+                "CURSOR_TRACE_ID",
+            ] {
+                crate::test_env::remove_var(var);
+            }
             crate::test_env::set_var("CLAUDE_PROJECT_DIR", "/repo");
             GuardHost { _iso: iso }
         }

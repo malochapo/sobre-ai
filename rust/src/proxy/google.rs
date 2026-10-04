@@ -395,12 +395,9 @@ mod tests {
     }
 
     #[test]
-    fn system_instruction_compressed_and_model_untouched() {
+    fn system_instruction_and_model_prose_pass_through_verbatim() {
+        // #710: role aggressiveness is off, so prose is never rewritten.
         let _iso = crate::core::data_dir::isolated_data_dir();
-        crate::core::config::Config::update_global(|c| {
-            c.proxy.role_aggressiveness.system = Some(0.6);
-        })
-        .unwrap();
 
         let prose = big_prose();
         let body = serde_json::json!({
@@ -414,13 +411,12 @@ mod tests {
         let (out, _o, _c) = compress_request_body(body, bytes.len(), None);
         let parsed: Value = serde_json::from_slice(&out).unwrap();
 
-        assert!(
+        assert_eq!(
             parsed["systemInstruction"]["parts"][0]["text"]
                 .as_str()
-                .unwrap()
-                .len()
-                < prose.len(),
-            "systemInstruction prose must be compressed when enabled"
+                .unwrap(),
+            prose,
+            "systemInstruction prose must pass through verbatim"
         );
         assert_eq!(
             parsed["contents"][1]["parts"][0]["text"].as_str().unwrap(),
@@ -430,12 +426,8 @@ mod tests {
     }
 
     #[test]
-    fn gemini_prose_compression_is_deterministic() {
+    fn gemini_system_instruction_rewrite_is_deterministic() {
         let _iso = crate::core::data_dir::isolated_data_dir();
-        crate::core::config::Config::update_global(|c| {
-            c.proxy.role_aggressiveness.system = Some(0.6);
-        })
-        .unwrap();
         let prose = big_prose();
         let mk = || {
             serde_json::json!({
@@ -488,28 +480,15 @@ mod tests {
     }
 
     #[test]
-    fn effort_control_sets_thinking_config_by_generation() {
-        // #840 end-to-end: the model is taken from the URL path, so the handler
-        // threads it in. 3.x → thinkingLevel; off / unknown model → byte no-op.
+    fn effort_control_is_off() {
+        // #840: effort control is off, so even a 3.x model gets no
+        // thinkingConfig — the body is byte-unchanged.
         let _iso = crate::core::data_dir::isolated_data_dir();
-        crate::core::config::Config::update_global(|c| {
-            c.proxy.effort = Some("low".into());
-        })
-        .unwrap();
-
         let body = serde_json::json!({
             "contents": [{"role": "user", "parts": [{"text": "hi"}]}]
         });
         let bytes = serde_json::to_vec(&body).unwrap();
         let (out, _o, _c) = compress_request_body(body.clone(), bytes.len(), Some("gemini-3-pro"));
-        assert_eq!(
-            serde_json::from_slice::<Value>(&out).unwrap()["generationConfig"]["thinkingConfig"]["thinkingLevel"],
-            "low"
-        );
-
-        // No model (path didn't resolve) → strict no-op, body byte-unchanged.
-        let bytes = serde_json::to_vec(&body).unwrap();
-        let (out, _o, _c) = compress_request_body(body.clone(), bytes.len(), None);
         assert_eq!(serde_json::from_slice::<Value>(&out).unwrap(), body);
     }
 }

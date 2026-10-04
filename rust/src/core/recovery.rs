@@ -16,7 +16,7 @@
 //! recovery action itself) drops it — rather than by fragile session state that
 //! would break the byte-stability guards.
 
-use crate::core::config::{Config, RecoveryHints};
+use crate::core::config::RecoveryHints;
 
 /// Header line of the `Full`-tier compressed-view footer. Single source of truth:
 /// also surfaced verbatim in `tdd_schema` so the published schema and the runtime
@@ -25,10 +25,10 @@ pub const COMPACT_VIEW_HEADER: &str =
     "[lean-ctx: compact view — nothing lost, full source on request]";
 
 /// Resolve the effective recovery tier for the current call.
-/// `config.recovery_hints` (default [`RecoveryHints::Minimal`]).
+/// `crate::core::config::RecoveryHints::default()` (default [`RecoveryHints::Minimal`]).
 #[must_use]
 pub fn tier() -> RecoveryHints {
-    Config::load().recovery_hints
+    crate::core::config::RecoveryHints::default()
 }
 
 /// Footer appended to a compressed `ctx_read` view. Leads with the MCP-free path
@@ -53,59 +53,23 @@ pub fn read_footer(file_path: &str) -> Option<String> {
 mod tests {
     use super::*;
 
-    /// `recovery_hints` in config.toml pins the tier.
+    /// The tier is the built-in default, `Minimal`.
     #[test]
-    fn config_pins_tier() {
-        let iso = crate::core::data_dir::isolated_data_dir();
-        std::fs::write(iso.path().join("config.toml"), "recovery_hints = \"off\"\n").unwrap();
-        assert_eq!(tier(), RecoveryHints::Off);
-        std::fs::write(
-            iso.path().join("config.toml"),
-            "recovery_hints = \"full\"\n",
-        )
-        .unwrap();
-        assert_eq!(tier(), RecoveryHints::Full);
+    fn tier_is_minimal() {
+        assert_eq!(tier(), RecoveryHints::Minimal);
     }
 
     #[test]
-    fn read_footer_leads_with_native_path_and_respects_off() {
-        let iso = crate::core::data_dir::isolated_data_dir();
-        std::fs::write(iso.path().join("config.toml"), "recovery_hints = \"off\"\n").unwrap();
-        assert!(
-            read_footer("src/x.rs").is_none(),
-            "off suppresses the footer"
-        );
-
-        std::fs::write(
-            iso.path().join("config.toml"),
-            "recovery_hints = \"minimal\"\n",
-        )
-        .unwrap();
+    fn read_footer_leads_with_native_path() {
         let minimal = read_footer("src/x.rs").expect("minimal emits a footer");
         assert!(minimal.lines().count() == 1, "minimal is a single line");
         // Non-MCP path must come before the MCP shortcut.
         let native = minimal.find("read \"src/x.rs\" directly").unwrap();
         let mcp = minimal.find("ctx_read(").unwrap();
         assert!(native < mcp, "native path must precede the MCP route");
-
-        std::fs::write(
-            iso.path().join("config.toml"),
-            "recovery_hints = \"full\"\n",
-        )
-        .unwrap();
-        let full = read_footer("src/x.rs").expect("full emits a footer");
-        assert!(full.contains("raw=true"));
-        assert!(
-            crate::server::registry::unregistered_tool_mentions(&full).is_empty(),
-            "the full footer names an unregistered tool: {full}"
-        );
         assert!(
             crate::server::registry::unregistered_tool_mentions(&minimal).is_empty(),
             "the minimal footer names an unregistered tool: {minimal}"
-        );
-        assert!(
-            full.find("read \"src/x.rs\" directly").unwrap() < full.find("raw=true").unwrap(),
-            "full ladder still leads with the native path"
         );
     }
 
@@ -113,12 +77,6 @@ mod tests {
     /// so repeated calls are byte-identical (provider prompt caching depends on it).
     #[test]
     fn footer_is_byte_stable() {
-        let iso = crate::core::data_dir::isolated_data_dir();
-        std::fs::write(
-            iso.path().join("config.toml"),
-            "recovery_hints = \"minimal\"\n",
-        )
-        .unwrap();
         assert_eq!(read_footer("src/a.rs"), read_footer("src/a.rs"));
     }
 }

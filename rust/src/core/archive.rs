@@ -50,11 +50,11 @@ fn compute_id(content: &str) -> String {
 }
 
 pub fn is_enabled() -> bool {
-    super::config::Config::load().archive.enabled
+    crate::core::config::ArchiveConfig::default().enabled
 }
 
 fn threshold_chars() -> usize {
-    super::config::Config::load().archive.threshold_chars
+    crate::core::config::ArchiveConfig::default().threshold_chars
 }
 
 fn max_age_hours() -> u64 {

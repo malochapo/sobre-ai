@@ -680,7 +680,7 @@ fn append_gain_footer(out: &mut Vec<String>, t: &Theme, store: &StatsStore) {
                         ("nodes", "")
                     }
                     crate::core::graph_provider::GraphProviderSource::GraphIndex => {
-                        let max_cfg = crate::core::config::Config::load().graph_index_max_files;
+                        let max_cfg = crate::core::config::GRAPH_INDEX_MAX_FILES;
                         if max_cfg > 0 && nc >= max_cfg as usize {
                             ("files", " (limit reached)")
                         } else {
@@ -818,26 +818,6 @@ fn build_tips(store: &StatsStore) -> Vec<String> {
 
     tips.push("Run ctx_overview(task) at session start for a task-aware project map.".into());
     tips.push("Run lean-ctx dashboard for a live web UI with all your stats.".into());
-
-    let cfg = crate::core::config::Config::load();
-    if cfg.theme == "default" {
-        tips.push(
-            "Customize your dashboard! Try: lean-ctx theme set cyberpunk (or neon, ocean, sunset, monochrome)".into(),
-        );
-        tips.push(
-            "Want a unique look? Run lean-ctx theme list to see all available themes.".into(),
-        );
-    } else {
-        tips.push(format!(
-            "Current theme: {}. Run lean-ctx theme list to explore others.",
-            cfg.theme
-        ));
-    }
-
-    tips.push(
-        "Create a custom theme: write a TOML file and import it with lean-ctx theme import <file>"
-            .into(),
-    );
 
     tips
 }

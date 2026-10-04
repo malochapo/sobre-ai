@@ -29,20 +29,11 @@ pub(crate) fn cognition_activity_outcome() -> Outcome {
 /// token-oriented format (TOON by default) is preserved verbatim instead of
 /// recompressed, so an agent's proof-of-output-shape survives intact.
 pub(crate) fn compact_format_passthrough_outcome() -> Outcome {
-    let cfg = crate::core::config::Config::load();
-    if cfg.preserve_compact_formats.is_empty() {
-        return Outcome {
-            ok: true,
-            line: format!(
-                "{BOLD}Compact-format passthrough{RST}  {YELLOW}off{RST}  {DIM}(set preserve_compact_formats to keep e.g. TOON verbatim){RST}"
-            ),
-        };
-    }
     Outcome {
         ok: true,
         line: format!(
             "{BOLD}Compact-format passthrough{RST}  {GREEN}{}{RST}  {DIM}(preserved verbatim, not recompressed){RST}",
-            cfg.preserve_compact_formats.join(", ")
+            crate::core::config::PRESERVE_COMPACT_FORMATS.join(", ")
         ),
     }
 }

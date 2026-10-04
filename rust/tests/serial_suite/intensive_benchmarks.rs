@@ -1483,8 +1483,7 @@ fn bench_minimal_overhead_suppresses_all_meta_strings() {
     // The data dir is process-global; serialize against the other instruction
     // benchmarks (cf. bench_lazy_default_vs_full_overhead).
     let _lock = lean_ctx::core::data_dir::test_env_lock();
-    let config = TempConfig::new();
-    config.write("minimal_overhead = true\n");
+    let _config = TempConfig::new();
 
     let instructions = lean_ctx::server::build_instructions_for_test(CrpMode::Tdd);
     let instr_tokens = count_tokens(&instructions);
@@ -1493,25 +1492,11 @@ fn bench_minimal_overhead_suppresses_all_meta_strings() {
     eprintln!("  MINIMAL OVERHEAD: Instructions Token Count");
     eprintln!("{}", "=".repeat(70));
     eprintln!("  Instructions (minimal):  {instr_tokens:>5} tokens");
+    eprintln!("{}", "=".repeat(70));
 
     assert!(
         !instructions.contains("--- ACTIVE SESSION"),
         "minimal_overhead should suppress session block"
-    );
-
-    config.write("minimal_overhead = false\n");
-
-    let full_instructions = lean_ctx::server::build_instructions_for_test(CrpMode::Tdd);
-    let full_tokens = count_tokens(&full_instructions);
-
-    eprintln!("  Instructions (full):     {full_tokens:>5} tokens");
-    let saved = full_tokens.saturating_sub(instr_tokens);
-    eprintln!("  Tokens saved by minimal: {saved:>5}");
-    eprintln!("{}", "=".repeat(70));
-
-    assert!(
-        instr_tokens <= full_tokens,
-        "minimal instructions ({instr_tokens}) should be <= full ({full_tokens})"
     );
 }
 

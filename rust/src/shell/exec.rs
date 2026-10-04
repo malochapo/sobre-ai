@@ -626,7 +626,7 @@ pub fn exec(command: &str) -> i32 {
         return exec_inherit_tracked(command, &shell, &shell_flag);
     }
 
-    super::pipeline::exec_buffered(command, &shell, &shell_flag, &cfg)
+    super::pipeline::exec_buffered(command, &shell, &shell_flag)
 }
 
 fn collapse_nested_lean_ctx_exec(command: &str) -> Option<String> {

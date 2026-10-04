@@ -219,8 +219,7 @@ pub(crate) fn handle(
     }
     append_graph_hotspots_section(&mut output, &project_root, gp);
 
-    let cfg = crate::core::config::Config::load();
-    if cfg.enable_wakeup_ctx {
+    if true {
         let wakeup = build_wakeup_briefing(&project_root, task);
         if !wakeup.is_empty() {
             output.push(String::new());

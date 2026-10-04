@@ -52,9 +52,7 @@ pub struct ModelPricing {
 
 impl ModelPricing {
     pub fn load() -> Self {
-        let mut p = Self::embedded();
-        p.apply_config_overrides(&crate::core::config::Config::load().cost.prices);
-        p
+        Self::embedded()
     }
 
     pub fn embedded() -> Self {
@@ -422,52 +420,6 @@ impl ModelPricing {
 
         None
     }
-
-    /// Merges `[cost.prices]` operator overrides (#1189) into the table as
-    /// exact entries. Negotiated enterprise rates override embedded rows and
-    /// (via exact-match precedence) every live/heuristic price; only a
-    /// provider-measured bill beats them. Rows without any rate are ignored;
-    /// omitted fields inherit from the existing row for that key, falling back
-    /// to the blended profile — cache rates default to the input rate.
-    fn apply_config_overrides(
-        &mut self,
-        prices: &std::collections::HashMap<String, crate::core::config::PriceOverride>,
-    ) {
-        for (model, o) in prices {
-            if o.input_per_m.is_none()
-                && o.output_per_m.is_none()
-                && o.cache_write_per_m.is_none()
-                && o.cache_read_per_m.is_none()
-            {
-                continue;
-            }
-            let key = normalize(model);
-            if key.is_empty() {
-                continue;
-            }
-            let base = self.models.get(&key).copied();
-            let input = o
-                .input_per_m
-                .or(base.map(|b| b.input_per_m))
-                .unwrap_or(2.50);
-            let merged = ModelCost {
-                input_per_m: input,
-                output_per_m: o
-                    .output_per_m
-                    .or(base.map(|b| b.output_per_m))
-                    .unwrap_or(10.00),
-                cache_write_per_m: o
-                    .cache_write_per_m
-                    .or(base.map(|b| b.cache_write_per_m))
-                    .unwrap_or(input),
-                cache_read_per_m: o
-                    .cache_read_per_m
-                    .or(base.map(|b| b.cache_read_per_m))
-                    .unwrap_or(input),
-            };
-            self.models.insert(key, merged);
-        }
-    }
 }
 
 fn normalize(s: &str) -> String {
@@ -494,31 +446,10 @@ fn dot_versions(s: &str) -> String {
     out
 }
 
-fn non_blank(s: &str) -> Option<String> {
-    let t = s.trim();
-    if t.is_empty() {
-        None
-    } else {
-        Some(t.to_string())
-    }
-}
-
-/// Pure model resolution: configured model → client hint. Split out for
-/// deterministic testing without touching global config.
-fn resolve_model(client: &str, configured: Option<&str>) -> String {
-    configured
-        .and_then(non_blank)
-        .unwrap_or_else(|| client.to_string())
-}
-
-/// Resolves the pricing model id for a client/agent: the `[cost]` config
-/// (`models[client]` → `default_model`), then the client/agent string itself.
+/// The pricing model id for a client/agent: the client/agent string itself.
 /// The returned string is fed to [`ModelPricing::quote`] for the actual price.
 pub fn resolve_model_for_client(client: &str) -> String {
-    let configured = crate::core::config::Config::load()
-        .cost
-        .model_for_client(client);
-    resolve_model(client, configured.as_deref())
+    client.to_string()
 }
 
 #[cfg(test)]
@@ -583,57 +514,6 @@ mod tests {
             after.match_kind,
             PricingMatchKind::Fallback,
             "no snapshot → fallback"
-        );
-    }
-
-    #[test]
-    fn config_price_overrides_are_exact_and_beat_embedded_rows() {
-        // #1189: negotiated enterprise rates. A custom model name unknown to
-        // any catalog prices exactly; an embedded row is overridden in place.
-        let mut p = ModelPricing::embedded();
-        let overrides: std::collections::HashMap<String, crate::core::config::PriceOverride> = [
-            (
-                "internal-llm".to_string(),
-                crate::core::config::PriceOverride {
-                    input_per_m: Some(0.10),
-                    output_per_m: Some(0.40),
-                    ..Default::default()
-                },
-            ),
-            (
-                "claude-opus-4.5".to_string(),
-                crate::core::config::PriceOverride {
-                    input_per_m: Some(4.00), // committed-use discount
-                    ..Default::default()
-                },
-            ),
-            (
-                "empty-row".to_string(),
-                crate::core::config::PriceOverride::default(),
-            ),
-        ]
-        .into();
-        p.apply_config_overrides(&overrides);
-
-        let custom = p.quote(Some("internal-llm"));
-        assert_eq!(custom.match_kind, PricingMatchKind::Exact);
-        assert!((custom.cost.input_per_m - 0.10).abs() < 1e-9);
-        assert!(
-            (custom.cost.cache_read_per_m - 0.10).abs() < 1e-9,
-            "omitted cache rates default to the input rate"
-        );
-
-        let discounted = p.quote(Some("claude-opus-4.5"));
-        assert!((discounted.cost.input_per_m - 4.00).abs() < 1e-9);
-        assert!(
-            (discounted.cost.output_per_m - 25.00).abs() < 1e-9,
-            "omitted fields inherit the embedded row"
-        );
-
-        assert_eq!(
-            p.quote(Some("empty-row")).match_kind,
-            PricingMatchKind::Fallback,
-            "a row without any rate is ignored"
         );
     }
 
@@ -727,16 +607,13 @@ mod tests {
     }
 
     #[test]
-    fn resolve_model_precedence() {
-        // configured model wins over the client hint.
+    fn resolve_model_for_client_is_the_client_hint() {
+        // The client/agent string is the pricing hint.
         assert_eq!(
-            resolve_model("cursor", Some("claude-opus-4.5")),
-            "claude-opus-4.5"
+            resolve_model_for_client("claude-haiku-4.5"),
+            "claude-haiku-4.5"
         );
-        // client/agent string is the final hint.
-        assert_eq!(resolve_model("claude-haiku-4.5", None), "claude-haiku-4.5");
-        // blanks are ignored.
-        assert_eq!(resolve_model("cursor", Some("  ")), "cursor");
+        assert_eq!(resolve_model_for_client("cursor"), "cursor");
     }
 }
 

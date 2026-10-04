@@ -76,7 +76,9 @@ pub fn run_cognition_loop(project_root: &str, max_steps: u8) -> CognitionLoopRep
     let Ok(policy) = config.memory_policy_effective() else {
         return report;
     };
-    let synth_min_cluster = config.autonomy.cognition_synthesis_min_cluster.max(1);
+    let synth_min_cluster = crate::core::config::AutonomyConfig::default()
+        .cognition_synthesis_min_cluster
+        .max(1);
     let can_run = |step| max_steps >= step && !crate::core::memory_guard::abort_requested();
 
     // Knowledge read-modify-write under the shared in-process + cross-process

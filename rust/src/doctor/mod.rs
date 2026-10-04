@@ -315,10 +315,6 @@ pub fn run() -> u32 {
     let passthrough_outcome = compact_format_passthrough_outcome();
     board.check(&passthrough_outcome);
 
-    // 5d) IDE permission inheritance (mirror host IDE bash/rm rules onto ctx_*)
-    let perm_inherit_outcome = permission_inheritance_outcome();
-    board.check(&perm_inherit_outcome);
-
     // 6) Proxy upstreams
     let proxy_outcome = proxy_upstream_outcome();
     board.check(&proxy_outcome);
@@ -500,8 +496,7 @@ pub fn run() -> u32 {
     }
 
     // Shadow mode status
-    let cfg = crate::core::config::Config::load();
-    let shadow_line = if cfg.shadow_mode {
+    let shadow_line = if true {
         format!(
             "{BOLD}Shadow mode{RST}  {GREEN}active{RST}  {DIM}(native tools denied → ctx_* mandatory){RST}"
         )

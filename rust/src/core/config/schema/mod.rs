@@ -7,7 +7,6 @@ use serde::Serialize;
 use std::collections::BTreeMap;
 mod sections_advanced;
 mod sections_core;
-mod sections_features;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct ConfigSchema {
@@ -29,11 +28,6 @@ pub struct KeySchema {
     pub description: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub values: Option<Vec<String>>,
-}
-
-fn clean_f32(v: f32) -> serde_json::Value {
-    let clean: f64 = format!("{v}").parse().unwrap_or(v as f64);
-    serde_json::json!(clean)
 }
 
 fn key(ty: &str, default: serde_json::Value, desc: &str) -> KeySchema {
@@ -58,7 +52,6 @@ impl ConfigSchema {
     pub fn generate() -> Self {
         let mut sections = BTreeMap::new();
         sections_core::build(&mut sections);
-        sections_features::build(&mut sections);
         sections_advanced::build(&mut sections);
 
         ConfigSchema {
@@ -280,12 +273,7 @@ mod tests {
     #[test]
     fn known_keys_recognise_reported_456_keys() {
         let known = ConfigSchema::generate().known_keys();
-        for key in [
-            "proxy_require_token",
-            "allow_ide_config_dirs",
-            "memory.episodic",
-            "proxy",
-        ] {
+        for key in ["allow_ide_config_dirs", "proxy"] {
             assert!(
                 accepted(&known, key),
                 "validation must recognise '{key}' (#456)"
@@ -299,24 +287,19 @@ mod tests {
     /// `Config::default()` and it never appears in `config_derived_keys`: such a
     /// field is settable via `config set` **only** if it was hand-added to a
     /// `sections_*.rs` schema. Forgetting that is the `Unknown config key: <x>`
-    /// regression a user hit for `path_jail` before #507 (and
-    /// `bypass_hints` here). Guard the whole class so a new `Option` knob can't
-    /// silently become un-settable again — if you add an `Option` scalar to
+    /// regression a user hit for `path_jail` before #507. Guard the whole
+    /// class so a new `Option` knob can't silently become un-settable again — if you add an `Option` scalar to
     /// `Config`, register it in `sections_*.rs` and list it here.
     #[test]
     fn option_scalar_keys_are_cli_settable() {
         let schema = ConfigSchema::generate();
         for key in [
             "path_jail",
-            "bypass_hints",
             "shell_security",
-            "cache_policy",
             "rules_scope",
             "rules_injection",
-            "permission_inheritance",
             "proxy_enabled",
             "proxy_port",
-            "proxy_timeout_ms",
         ] {
             assert!(
                 schema.lookup(key).is_some(),
@@ -324,14 +307,5 @@ mod tests {
                  add `{key}` to a sections_*.rs schema"
             );
         }
-    }
-
-    #[test]
-    fn proxy_require_token_is_cli_settable() {
-        let schema = ConfigSchema::generate();
-        assert!(
-            schema.lookup("proxy_require_token").is_some(),
-            "`lean-ctx config set proxy_require_token <bool>` must be accepted"
-        );
     }
 }

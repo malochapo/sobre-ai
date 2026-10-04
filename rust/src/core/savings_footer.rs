@@ -282,11 +282,8 @@ mod tests {
     }
 
     #[test]
-    fn visibility_gated_tests() {
-        let iso = crate::core::data_dir::isolated_data_dir();
-        let cfg = iso.path().join("config.toml");
-
-        std::fs::write(&cfg, "savings_footer = \"never\"\n").unwrap();
+    fn footer_is_hidden() {
+        // `savings_footer` is `never`: no footer is rendered or appended.
         let result = format_footer_basic(100, 50);
         assert!(
             result.is_empty(),
@@ -295,20 +292,6 @@ mod tests {
 
         let result = append_footer_basic("hello", 100, 50);
         assert_eq!(result, "hello");
-
-        std::fs::write(&cfg, "savings_footer = \"always\"\n").unwrap();
-        crate::test_env::remove_var("LEAN_CTX_QUIET");
-        super::super::protocol::set_mcp_context(false);
-
-        let result = append_footer_basic("hello", 100, 50);
-        assert!(
-            result.starts_with("hello\n"),
-            "should start with original: {result}"
-        );
-        assert!(
-            result.contains("\u{2500}\u{2500}\u{2500}"),
-            "should contain box-drawing: {result}"
-        );
     }
 
     #[test]

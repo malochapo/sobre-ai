@@ -318,7 +318,7 @@ pub fn config_exclude_patterns() -> std::sync::Arc<Vec<regex::Regex>> {
     }
 
     let compiled = std::sync::Arc::new(
-        cfg.secret_detection
+        crate::core::config::SecretDetectionConfig::default()
             .exclude_patterns
             .iter()
             .filter_map(|p| regex::Regex::new(p).ok())

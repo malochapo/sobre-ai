@@ -22,7 +22,7 @@ fn with_config<F: FnOnce()>(toml: &str, f: F) {
 }
 
 fn with_test_dir<F: FnOnce()>(f: F) {
-    with_config("[archive]\nenabled = true\n", f);
+    with_config("", f);
 }
 
 #[test]
@@ -157,16 +157,11 @@ fn archive_cleanup_expired() {
 
 #[test]
 fn archive_should_archive_respects_threshold() {
-    with_config("[archive]\nenabled = true\nthreshold_chars = 100\n", || {
+    with_test_dir(|| {
+        let threshold = lean_ctx::core::config::ArchiveConfig::default().threshold_chars;
         assert!(!archive::should_archive("short"));
-        assert!(archive::should_archive(&"x".repeat(101)));
-    });
-}
-
-#[test]
-fn archive_disabled_returns_false() {
-    with_config("[archive]\nenabled = false\n", || {
-        assert!(!archive::should_archive(&"x".repeat(99999)));
+        assert!(!archive::should_archive(&"x".repeat(threshold - 1)));
+        assert!(archive::should_archive(&"x".repeat(threshold)));
     });
 }
 

@@ -110,9 +110,7 @@ fn provider_cache_hit_rate() -> f64 {
     if no_cache_adjust_active() {
         return 0.0;
     }
-    crate::core::config::Config::load()
-        .dashboard_cache_hit_rate()
-        .unwrap_or(0.75)
+    0.75
 }
 
 // #1104: `--no-cache-adjust` forces cache_rate=0 (worst-case view).

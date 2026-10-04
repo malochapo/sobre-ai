@@ -731,10 +731,10 @@ fn scan_inner(project_root: &str) -> (ProjectIndex, HashMap<String, String>) {
     let mut content_cache: HashMap<String, String> = HashMap::new();
     let mut content_cache_bytes: usize = 0;
     const CONTENT_CACHE_MAX_BYTES: usize = 256 * 1024 * 1024; // #790: cap at 256MB
-    let max_files = if cfg.graph_index_max_files == 0 {
+    let max_files = if crate::core::config::GRAPH_INDEX_MAX_FILES == 0 {
         usize::MAX // unlimited
     } else {
-        cfg.graph_index_max_files as usize
+        crate::core::config::GRAPH_INDEX_MAX_FILES as usize
     };
     const MAX_ENTRIES_VISITED: usize = 500_000;
     const MAX_FILE_SIZE_BYTES: u64 = 2 * 1024 * 1024; // 2 MB per file

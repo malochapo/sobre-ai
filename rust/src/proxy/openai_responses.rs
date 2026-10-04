@@ -472,11 +472,6 @@ mod tests {
     #[test]
     fn chatgpt_responses_eval_fixture_keeps_exact_payloads_and_pairing() {
         let _iso = crate::core::data_dir::isolated_data_dir();
-        crate::core::config::Config::update_global(|c| {
-            c.proxy.role_aggressiveness.user = Some(0.8);
-        })
-        .unwrap();
-
         let command_input = "$ cargo test --lib proxy::openai_responses\nerror[E0425]: cannot find value `x` in this scope\nsrc/proxy/openai_responses.rs:12:9";
         let body = serde_json::json!({"model": "gpt-5", "input": command_input});
         let bytes = serde_json::to_vec(&body).unwrap();
@@ -532,12 +527,9 @@ mod tests {
     }
 
     #[test]
-    fn responses_instructions_prose_compressed_and_assistant_untouched() {
+    fn responses_instructions_and_assistant_prose_pass_through_verbatim() {
+        // #710: role aggressiveness is off, so prose is never rewritten.
         let _iso = crate::core::data_dir::isolated_data_dir();
-        crate::core::config::Config::update_global(|c| {
-            c.proxy.role_aggressiveness.system = Some(0.6);
-        })
-        .unwrap();
 
         let prose = big_prose();
         let body = serde_json::json!({
@@ -549,13 +541,13 @@ mod tests {
             ]
         });
         let bytes = serde_json::to_vec(&body).unwrap();
-        let (out, orig, comp) = compress_request_body(body, bytes.len());
-        assert!(comp < orig, "enabled instructions prose must save bytes");
+        let (out, _orig, _comp) = compress_request_body(body, bytes.len());
         let parsed: Value = serde_json::from_slice(&out).unwrap();
 
-        assert!(
-            parsed["instructions"].as_str().unwrap().len() < prose.len(),
-            "Responses instructions must be compressed when enabled"
+        assert_eq!(
+            parsed["instructions"].as_str().unwrap(),
+            prose,
+            "Responses instructions must pass through verbatim"
         );
         assert_eq!(
             parsed["input"][1]["content"].as_str().unwrap(),
@@ -565,54 +557,8 @@ mod tests {
     }
 
     #[test]
-    fn responses_user_prose_compressed_only_in_frozen_region() {
+    fn responses_instructions_rewrite_is_deterministic() {
         let _iso = crate::core::data_dir::isolated_data_dir();
-        crate::core::config::Config::update_global(|c| {
-            c.proxy.role_aggressiveness.user = Some(0.7);
-        })
-        .unwrap();
-
-        let prose = big_prose();
-        // 30 messages -> cache-aware boundary = ((30 - 8) / 16) * 16 = 16.
-        let mut input = Vec::new();
-        for i in 0..30 {
-            let role = if i % 2 == 0 { "user" } else { "assistant" };
-            input.push(serde_json::json!({
-                "type": "message",
-                "role": role,
-                "content": prose,
-            }));
-        }
-        let body = serde_json::json!({"model": "gpt-5", "input": input});
-        let bytes = serde_json::to_vec(&body).unwrap();
-        let (out, orig, comp) = compress_request_body(body, bytes.len());
-        assert!(comp < orig, "old user prose must save bytes");
-        let parsed: Value = serde_json::from_slice(&out).unwrap();
-
-        let frozen_user = parsed["input"][0]["content"].as_str().unwrap();
-        assert!(
-            frozen_user.len() < prose.len(),
-            "old user prose should compress"
-        );
-        assert_eq!(
-            parsed["input"][1]["content"].as_str().unwrap(),
-            prose,
-            "assistant prose must stay verbatim"
-        );
-        assert_eq!(
-            parsed["input"][16]["content"].as_str().unwrap(),
-            prose,
-            "live-tail user prose must stay verbatim"
-        );
-    }
-
-    #[test]
-    fn responses_prose_compression_is_deterministic() {
-        let _iso = crate::core::data_dir::isolated_data_dir();
-        crate::core::config::Config::update_global(|c| {
-            c.proxy.role_aggressiveness.system = Some(0.6);
-        })
-        .unwrap();
 
         let prose = big_prose();
         let mk = || {
@@ -758,19 +704,17 @@ mod tests {
     }
 
     #[test]
-    fn effort_control_sets_nested_reasoning_effort() {
-        // #834 end-to-end through the Responses request path.
+    fn effort_control_is_off() {
+        // #834: effort control is off, so no `reasoning` object is added.
         let _iso = crate::core::data_dir::isolated_data_dir();
-        crate::core::config::Config::update_global(|c| {
-            c.proxy.effort = Some("low".into());
-        })
-        .unwrap();
         let body = serde_json::json!({"model": "gpt-5.5", "input": []});
         let bytes = serde_json::to_vec(&body).unwrap();
         let (out, _o, _c) = compress_request_body(body, bytes.len());
-        assert_eq!(
-            serde_json::from_slice::<Value>(&out).unwrap()["reasoning"]["effort"],
-            "low"
+        assert!(
+            serde_json::from_slice::<Value>(&out)
+                .unwrap()
+                .get("reasoning")
+                .is_none()
         );
     }
 }

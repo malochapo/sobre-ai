@@ -135,29 +135,6 @@ impl LeanCtxServer {
         let config = crate::core::config::Config::load_arc();
         let minimal = config.minimal_overhead_effective();
 
-        // IDE permission inheritance: when enabled, mirror the host IDE's
-        // bash/read/edit/grep permission rules onto the matching lean-ctx tool so
-        // e.g. `ctx_shell` honors a `rm *: ask` rule instead of bypassing it.
-        // Gated on the cheap effective() check so the default (off) pays no lock
-        // cost on the hot path.
-        if config.permission_inheritance_effective()
-            == crate::core::config::PermissionInheritance::On
-        {
-            let client_name = self.client_name.read().await.clone();
-            let project_root = self.session.read().await.project_root.clone();
-            let perm = permission_inheritance::check(
-                &client_name,
-                name,
-                args,
-                project_root.as_deref(),
-                &config,
-            );
-            if let Some(blocked) = permission_inheritance::into_call_tool_result(&perm) {
-                tracing::warn!(tool = name, "held back by IDE permission inheritance");
-                return Ok(blocked);
-            }
-        }
-
         let tool_start = std::time::Instant::now();
         let (mut result_text, tool_saved_tokens, shell_outcome, content_blocks) =
             match self.dispatch_tool(name, args, minimal).await {
@@ -191,7 +168,6 @@ impl LeanCtxServer {
             && crate::core::firewall::should_inline_shell(
                 helpers::get_bool(args, "inline").unwrap_or(false),
                 result_text.len(),
-                &config,
             );
         let is_raw_shell = name == "ctx_shell" && {
             let arg_raw = helpers::get_bool(args, "raw").unwrap_or(false);
@@ -297,7 +273,7 @@ impl LeanCtxServer {
                 let to_store = crate::core::redaction::redact_text_if_enabled(&result_text);
                 let tokens = crate::core::tokens::count_tokens(&to_store);
                 if let Some(id) = archive::store(name, &cmd, &to_store, Some(&session_id))
-                    && crate::core::firewall::should_firewall(name, tokens, &config)
+                    && crate::core::firewall::should_firewall(name, tokens)
                 {
                     result_text = crate::core::firewall::summarize(&to_store, &id, name, tokens);
                     firewalled = true;

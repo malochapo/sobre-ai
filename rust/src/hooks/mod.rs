@@ -103,28 +103,11 @@ pub const HYBRID_AGENTS: &[&str] = &[
 
 /// Auto-detect the best hook mode for a given agent key.
 ///
-/// Priority: disabled/shadow_mode cap > config override > Replace > Hybrid > Mcp
+/// Priority: Replace > Hybrid > Mcp
 /// - Replace: native tools denied, MCP-only path (zero tool drift)
 /// - Hybrid: MCP + shell hooks (fallback for agents without deny support)
 /// - Mcp: MCP server only (no shell hooks available)
-///
-/// `shadow_mode = false` caps the mode at Hybrid so
-/// the deny-list is never injected when the user opted out (#1037).
 pub fn recommend_hook_mode(agent_key: &str) -> HookMode {
-    let deny_suppressed = is_deny_suppressed();
-    if let Some(override_mode) = crate::core::config::Config::load().hook_mode_override() {
-        return if deny_suppressed {
-            override_mode.cap_at_hybrid()
-        } else {
-            override_mode
-        };
-    }
-    if deny_suppressed {
-        if REPLACE_AGENTS.contains(&agent_key) || HYBRID_AGENTS.contains(&agent_key) {
-            return HookMode::Hybrid;
-        }
-        return HookMode::Mcp;
-    }
     if REPLACE_AGENTS.contains(&agent_key) {
         HookMode::Replace
     } else if HYBRID_AGENTS.contains(&agent_key) {
@@ -134,10 +117,6 @@ pub fn recommend_hook_mode(agent_key: &str) -> HookMode {
     }
 }
 
-/// True when the user explicitly opted out of deny-list injection.
-fn is_deny_suppressed() -> bool {
-    !crate::core::config::Config::load().shadow_mode
-}
 use agents::{
     install_amp_hook, install_antigravity_cli_hook, install_antigravity_hook,
     install_claude_hook_config, install_claude_hook_scripts, install_claude_hook_with_mode,

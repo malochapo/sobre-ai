@@ -79,8 +79,7 @@ pub fn maybe_run(project_root: &str) {
     if crate::core::memory_guard::is_under_pressure() {
         return;
     }
-    let cfg = crate::core::config::Config::load();
-    if !cfg.autonomy.cognition_loop_enabled {
+    if !crate::core::config::AutonomyConfig::default().cognition_loop_enabled {
         return;
     }
     let now = now_secs();
@@ -90,8 +89,7 @@ pub fn maybe_run(project_root: &str) {
     maybe_idle_replay(project_root, now);
     LAST_ACTIVITY_SECS.store(now, Ordering::Relaxed);
 
-    let interval = cfg
-        .autonomy
+    let interval = crate::core::config::AutonomyConfig::default()
         .cognition_loop_interval_secs
         .max(MIN_INTERVAL_SECS);
     if !is_due(now, LAST_RUN_SECS.load(Ordering::Relaxed), interval) {
@@ -104,7 +102,7 @@ pub fn maybe_run(project_root: &str) {
     LAST_RUN_SECS.store(now, Ordering::Relaxed);
 
     let root = project_root.to_string();
-    let max_steps = cfg.autonomy.cognition_loop_max_steps;
+    let max_steps = crate::core::config::AutonomyConfig::default().cognition_loop_max_steps;
     std::thread::spawn(move || {
         let _guard = RunningGuard;
         let report = crate::core::cognition_loop::run_cognition_loop(&root, max_steps);

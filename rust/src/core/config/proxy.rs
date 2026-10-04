@@ -18,9 +18,6 @@ pub struct ProxyConfig {
     /// The legacy `*_upstream` fields above stay authoritative for the four
     /// built-in provider routes (backwards compatible).
     pub providers: Vec<ProviderEntry>,
-    /// History-pruning strategy for proxied chat requests.
-    /// "cache-aware" (default) | "rolling" | "off". See [`HistoryMode`].
-    pub history_mode: Option<String>,
     /// Allow a non-loopback plaintext `http://` upstream (trusted local network
     /// only). Opt-in; see [`ProxyConfig::allows_insecure_http_upstream`]. (#440)
     pub allow_insecure_http_upstream: Option<bool>,
@@ -30,217 +27,10 @@ pub struct ProxyConfig {
     /// so the long-lived managed proxy (LaunchAgent / systemd), which only reads
     /// `config.toml`, can honor a custom upstream too (#590).
     pub allow_custom_upstream: Option<bool>,
-    /// Inject `stream_options.include_usage = true` into streamed OpenAI Chat
-    /// Completions so the final chunk reports real token usage for the measured
-    /// spend meter. Default on; set `false` for a client that mishandles the
-    /// trailing usage chunk. Anthropic/Gemini/OpenAI-Responses report usage
-    /// without any request change, so this only affects Chat Completions.
-    pub meter_openai_usage: Option<bool>,
-    /// Additional response header carrying the upstream gateway's billed USD
-    /// for the turn (#1189). LiteLLM's `x-litellm-response-cost` is always
-    /// recognized; set this for a corporate gateway that reports the charge
-    /// under its own header name. Measured header costs beat table estimates
-    /// (body-reported costs, e.g. OpenRouter `usage.cost`, beat headers).
-    pub cost_response_header: Option<String>,
-    /// Opt-in "big-gap cold-prefix repack" (#480). When the proxy can confidently
-    /// predict (from idle time vs the provider cache TTL) that the client-cached
-    /// prefix has already expired, it overrides the normal "never rewrite the
-    /// cached prefix" rule for that one resume request and prunes the now-cold
-    /// prefix too, re-seeding a leaner cache. `None`/`false` (the default) keeps
-    /// the prefix always protected. See [`ProxyConfig::repacks_cold_prefix`].
-    pub cold_prefix_repack: Option<bool>,
-    /// Opt-in per-role prose compression for the proxy's frozen request region
-    /// (#710). `None` for a role (the default) leaves that role untouched —
-    /// today's behaviour. See [`RoleAggressiveness`].
-    pub role_aggressiveness: RoleAggressiveness,
-    /// Live tool-result compression on the wire (#481). `true` (the default)
-    /// keeps today's behaviour: the proxy compresses non-protected `tool_result`
-    /// content on every request. `false` turns it off so the proxy can run
-    /// **meter-only** — real billed/cache token metering with zero request
-    /// rewriting (combine with `history_mode = "off"` and no `role_aggressiveness`
-    /// for a fully byte-unchanged body).
-    /// See [`ProxyConfig::live_compresses`].
-    pub live_compress: Option<bool>,
-    /// Per-tool exclusion list for live tool-result compression (#481). Tool
-    /// names are matched case-insensitively as substrings (the same style as
-    /// [`crate::proxy::tool_kind::classify_tool_name`]); a match is treated as
-    /// protected, exactly like a file read. `None` (the default) protects
-    /// Serena's code-reading tools (`find_symbol`/`find_referencing_symbols`/
-    /// `search_for_pattern` return source bodies the model edits, but are
-    /// mis-bucketed as `Search` by name). Set an explicit list to narrow it, or
-    /// `[]` to disable the exclusion. See [`ProxyConfig::is_tool_live_compress_excluded`].
-    pub live_compress_exclude: Option<Vec<String>>,
-    /// File-path globs whose reads are never compressed (#1150). A read whose path
-    /// matches any of these is returned verbatim (`full`) by the read tools — for
-    /// files where exact bytes matter more than token savings: golden snapshots,
-    /// byte-asserted fixtures, security-sensitive configs. Globs (`*`/`**`/`?`,
-    /// the `glob` crate) are matched against the path and its file name, so
-    /// `*.snap`, `**/golden/**`, and `tests/fixtures/*` all work. `None`/empty (the
-    /// default) protects nothing — the lossless crushers and beneficial gate
-    /// already keep compression safe, so this is an explicit escape hatch, not a
-    /// default. See [`ProxyConfig::is_path_compress_protected`].
-    pub compress_protect: Option<Vec<String>>,
-    /// Opt-in in-band CCR retrieval for a remote proxy with no shared filesystem
-    /// (#493, follow-up to #482). When enabled, a lossy stub advertises a compact
-    /// `<lc_expand:HASH>` marker (instead of a local tee path the remote agent
-    /// can't read); when the model echoes that marker back, the proxy splices the
-    /// verbatim original — recovered from its **local** tee store — inline on the
-    /// next request, costing one turn of latency and needing no MCP/FS on the
-    /// agent host. `None`/`false` (the default) keeps the path-handle stub. The
-    /// splice is a strict no-op on marker-less turns, so it never perturbs the
-    /// provider cache prefix unless the model explicitly asked to expand. See
-    /// [`ProxyConfig::ccr_inband_enabled`].
-    pub ccr_inband: Option<bool>,
-    /// Opt-in active prompt-cache breakpoint injection for Anthropic (#939). When
-    /// enabled and the client set no `cache_control` of its own, the proxy adds a
-    /// single `cache_control: {type:"ephemeral"}` breakpoint to the `system`
-    /// field so an otherwise-uncached, stable system prompt bills later turns at
-    /// the cached rate. Anthropic-only: OpenAI/Gemini cache prefixes automatically
-    /// and ignore the marker, so those paths stay byte-unchanged. The injection is
-    /// deterministic, never adds a second breakpoint, and is skipped below
-    /// Anthropic's minimum cacheable size. `None`/`false` (the default) leaves the
-    /// request untouched. See [`ProxyConfig::cache_breakpoint_enabled`].
-    pub cache_breakpoint: Option<bool>,
-    /// Opt-in counterfactual savings metering (#701). When enabled, each
-    /// *rewritten* Anthropic `/v1/messages` request additionally fires a **free**
-    /// `count_tokens` probe with the original, uncompressed body, concurrently
-    /// with the real forward. The provider-counted answer ("this request would
-    /// have cost N input tokens without lean-ctx") is paired with the actually
-    /// billed usage from the same response — provider-authoritative receipts
-    /// instead of local tokenizer estimates. The probe never mutates or delays
-    /// the forwarded request; probe failures degrade to the estimate. Off by
-    /// default: it adds one extra HTTP call per compressed request (free at
-    /// Anthropic, but latency/rate-limit surface). See
-    /// [`ProxyConfig::counterfactual_metering_enabled`].
-    pub counterfactual_metering: Option<bool>,
-    /// Opt-in cache-aligner volatile-field telemetry (#940). When enabled, the
-    /// proxy scans each *unanchored* Anthropic system prompt for volatile,
-    /// cache-busting fields (ISO dates/datetimes, UUIDs, git SHAs) and records how
-    /// many it found on `/status` `cache_safety` — purely to quantify how much
-    /// prompt-cache the client is leaking. **Measurement only**: the request body
-    /// is never mutated, so it is strictly cache-safe. `None` (the default) enables
-    /// it — every proxy ships cache-leak visibility out of the box (#986 premium
-    /// defaults); set `false` to opt out of the per-request scan. See
-    /// [`ProxyConfig::cache_aligner_enabled`].
-    pub cache_aligner: Option<bool>,
-    /// Opt-in active cache-aligner relocate (#974). When enabled, the proxy
-    /// rewrites an *unanchored* Anthropic `system` prompt into a stable block
-    /// (volatile values — ISO dates/datetimes, UUIDs, git SHAs — replaced by
-    /// constant placeholders) carrying the `cache_control` breakpoint, plus an
-    /// *uncached* trailing block that re-states the relocated values. The cacheable
-    /// prefix then stays byte-stable turn-to-turn and finally caches; only the
-    /// small tail is reprocessed. Anthropic-only, Treatment-arm, gated on a client
-    /// that anchored nothing and on Anthropic's minimum cacheable size.
-    /// Deterministic (#498) and idempotent. `None`/`false` (the default) leaves the
-    /// request untouched. The `cache_aligner` telemetry above is the precursor that
-    /// quantifies how much this would save. See
-    /// [`ProxyConfig::cache_align_relocate_enabled`].
-    pub cache_align_relocate: Option<bool>,
-    /// Cache-economics (#986), **on by default**. Bundles two strictly-safe halves
-    /// behind one flag: (1) prompt-cache **miss attribution** telemetry — per turn,
-    /// classify why the cache hit or missed (cold start / warm reuse / TTL lapse /
-    /// prefix change) and expose cumulative gauges on `/status`
-    /// ([`crate::proxy::cache_attribution`]); and (2) a **net-cost gate** on the
-    /// cold-prefix repack ([`crate::proxy::cache_policy::worth_repacking`]) that
-    /// skips re-seeding prefixes too small to be cached. The telemetry never
-    /// touches the body and the gate only makes repacking *more* conservative, so
-    /// it can never bust a cache that would otherwise have been kept. `None` (the
-    /// default) enables both — every proxy gets the diagnosis and the safer repack
-    /// out of the box (#986 premium defaults); set `false` to opt out. See
-    /// [`ProxyConfig::cache_policy_enabled`].
-    pub cache_policy: Option<bool>,
-    /// Cache-safe, cross-provider reasoning-effort control (#834). One of
-    /// `minimal|low|medium|high` pins the model's reasoning depth across every
-    /// provider; `None`/`"off"` (the default) is a strict no-op. The value is a
-    /// constant — identical on every request — so the provider prompt-cache
-    /// prefix stays byte-stable (#448/#498) and only the model's reasoning depth
-    /// changes. lean-ctx translates it to each provider's native parameter and
-    /// only ever *fills* it (never overrides a client-set value), on models that
-    /// accept it. Per-turn effort switching is deliberately unsupported — it
-    /// would invalidate the prompt cache. See
-    /// [`ProxyConfig::resolved_effort`].
-    pub effort: Option<String>,
-    /// How the proxy squeezes prose it must shrink (#895): `"auto"` (default) and
-    /// `"extractive"` use embedding-based extractive ranking — keeping the most
-    /// central sentences instead of just the prefix — when the local embedding
-    /// engine is available, falling back to truncation otherwise; `"truncate"`
-    /// keeps the original deterministic FIFO squeeze (and no engine). Wire
-    /// rewrites are memoized per content so the engine's cold→warm transition
-    /// never changes an already-emitted frozen-region rewrite (#448/#498). See [`ProxyConfig::resolved_prose_ranker`].
-    pub prose_ranker: Option<String>,
-    /// Fraction `0.0..=1.0` of conversations placed in the output-savings control
-    /// arm (#895 Track B). `0` (default) = no holdout (every conversation is
-    /// shaped). When `> 0`, a deterministic cohort = `blake3(system + first user
-    /// msg)` puts ~this fraction of conversations in a control arm that skips
-    /// output-shaping (effort control + verbosity steer) but is still metered —
-    /// giving an honest measured output-token reduction. The cohort is a pure
-    /// function of conversation identity, so a conversation stays in one arm
-    /// across turns (cache-safe). See
-    /// [`ProxyConfig::output_holdout_fraction`].
-    pub output_holdout: Option<f64>,
-    /// Opt-in cache-safe wire verbosity steer (#895). When `true`, the proxy
-    /// appends a single constant "be concise" instruction to the last user turn
-    /// of each request (output-shaping for non-rules-aware API clients). The
-    /// suffix is constant and appended strictly after the last `cache_control`
-    /// breakpoint, so the provider prompt-cache prefix stays byte-stable. Default
-    /// `false`. See
-    /// [`ProxyConfig::verbosity_steer_enabled`].
-    pub verbosity_steer: Option<bool>,
-    /// Unified proxy operation mode (`[proxy] proxy_mode`). `"cache"` (default)
-    /// or `"token"`. Sets sensible defaults for all cache-related knobs; explicit
-    /// per-knob overrides always win.
-    pub proxy_mode: Option<String>,
-    /// Headroom stacking compatibility (`[proxy] compat_stack`). When set to
-    /// `"headroom"`, the proxy auto-configures for running behind Headroom:
-    /// live compression off, breakpoint injection off, cache alignment on.
-    /// Also auto-detected via the `X-Headroom-Compressed` request header.
-    pub compat_stack: Option<String>,
     /// Active request routing (`[proxy.routing]`, enterprise#13): model aliases
     /// and intent-tier downgrades applied in the forward path. Off by default —
     /// an empty/absent table is a strict passthrough. See [`RoutingRules`].
     pub routing: RoutingRules,
-    /// Counterfactual-baseline parameters (`[proxy.baseline]`, enterprise#15/#18)
-    /// for the avoided-cost evidence chain. See [`BaselineConfig`].
-    pub baseline: BaselineConfig,
-}
-
-/// `[proxy.baseline]` — the contract-frozen counterfactual parameters that make
-/// the success fee provable (enterprise#15, Doc 04 §6 / Doc 08 §2).
-///
-/// - `reference_model`: the model the customer *would have used* without
-///   lean-ctx. Frozen per deployment/contract (calibration: enterprise#41);
-///   every usage event stores `reference_cost_usd` = the request's
-///   **uncompressed** input tokens priced at this model's input rate — the
-///   counterfactual cost the avoided-cost ledger settles against.
-/// - `local_shadow_rate_per_mtok`: USD per 1M tokens booked as the actual cost
-///   of locally served (loopback) inference. Local compute is never free —
-///   hardware and power are real — so the shadow rate keeps local-model savings
-///   honest instead of infinite. Default: `0.25` USD/MTok, a conservative
-///   self-hosting cost estimate; calibrate per deployment.
-#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
-#[serde(default)]
-pub struct BaselineConfig {
-    /// Counterfactual reference model (`None` = baseline evidence off).
-    pub reference_model: Option<String>,
-    /// USD per 1M tokens for local/loopback inference (default 0.25, never 0).
-    pub local_shadow_rate_per_mtok: Option<f64>,
-}
-
-/// Default local shadow rate (USD per 1M tokens) when `[proxy.baseline]` sets
-/// none: a conservative self-hosted inference cost so `is_local` usage is
-/// never booked at $0 (Doc 04 §6 "local-free ≠ cost-free").
-pub const DEFAULT_LOCAL_SHADOW_RATE_PER_MTOK: f64 = 0.25;
-
-impl BaselineConfig {
-    /// Effective shadow rate: configured value (clamped positive) or default.
-    #[must_use]
-    #[cfg(test)]
-    pub fn effective_local_shadow_rate(&self) -> f64 {
-        match self.local_shadow_rate_per_mtok {
-            Some(r) if r > 0.0 => r,
-            _ => DEFAULT_LOCAL_SHADOW_RATE_PER_MTOK,
-        }
-    }
 }
 
 /// `[proxy.routing]` — the active router's rule set (enterprise#13).
@@ -442,25 +232,6 @@ impl ResolvedProvider {
     }
 }
 
-/// Per-role prose-compression intensity for the proxy's frozen request region.
-///
-/// Each value is a `0.0–1.0` aggressiveness level reusing the same mapping as
-/// the `ctx_read` knob (#708): `0.0` keeps everything, `1.0` is most aggressive.
-/// `None` (the default) means "do not compress this role's prose" so the proxy
-/// stays byte-for-byte unchanged until an operator opts in. The `assistant`
-/// role is never represented here — model turns are always passed through
-/// verbatim (the #710 passthrough guarantee).
-#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
-#[serde(default)]
-pub struct RoleAggressiveness {
-    /// Aggressiveness for system prompts (Anthropic `system` / OpenAI `system`
-    /// messages / Gemini `systemInstruction`). `None` = leave untouched.
-    pub system: Option<f64>,
-    /// Aggressiveness for user prose (free-text user turns, never tool results).
-    /// `None` = leave untouched.
-    pub user: Option<f64>,
-}
-
 /// The conversation roles whose prose the proxy may compress in the frozen
 /// region. Deliberately excludes `assistant` — model turns are never rewritten.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -487,32 +258,7 @@ pub enum ProxyMode {
     Token,
 }
 
-impl ProxyMode {
-    fn parse(s: &str) -> Option<Self> {
-        match s.trim().to_ascii_lowercase().as_str() {
-            "cache" | "cache_mode" | "cost_savings" => Some(Self::Cache),
-            "token" | "token_mode" | "token_savings" => Some(Self::Token),
-            _ => None,
-        }
-    }
-
-    /// Default value for a cache-related knob under this mode.
-    pub fn preset_for(self, knob: &str) -> Option<bool> {
-        match (self, knob) {
-            (Self::Cache | Self::Token, "cache_aligner" | "cache_policy")
-            | (Self::Token, "cache_align_relocate" | "cold_prefix_repack" | "verbosity_steer") => {
-                Some(true)
-            }
-
-            (Self::Cache | Self::Token, "cache_breakpoint")
-            | (Self::Cache, "cache_align_relocate" | "cold_prefix_repack" | "verbosity_steer") => {
-                Some(false)
-            }
-
-            _ => None,
-        }
-    }
-}
+impl ProxyMode {}
 
 /// How the proxy squeezes prose it must shrink (#895).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -554,206 +300,113 @@ pub enum HistoryMode {
 }
 
 impl ProxyConfig {
-    /// Resolved proxy mode: config, then `Cache`.
+    /// The proxy mode: [`ProxyMode::Cache`], which keeps the request prefix
+    /// byte-stable for provider prompt caches.
     #[must_use]
     pub fn resolved_proxy_mode(&self) -> ProxyMode {
-        self.proxy_mode
-            .as_deref()
-            .and_then(ProxyMode::parse)
-            .unwrap_or(ProxyMode::Cache)
+        ProxyMode::Cache
     }
 
-    /// Whether a Headroom-compatible stack is configured.
+    /// Whether a Headroom-compatible stack is configured. No.
     #[must_use]
     pub fn is_headroom_compat(&self) -> bool {
-        self.compat_stack
-            .as_deref()
-            .is_some_and(|s| s.trim().eq_ignore_ascii_case("headroom"))
+        false
     }
 
-    /// Resolved history mode: `[proxy].history_mode` in config.toml, then
-    /// cache-aware. Unknown values fall back to the default so a typo can never
-    /// silently re-enable the cache-hostile rolling mode.
+    /// History pruning: cache-aware, so provider prompt caches keep hitting.
     pub fn resolved_history_mode(&self) -> HistoryMode {
-        if let Some(mode) = self.history_mode.as_deref().map(str::trim) {
-            if mode.eq_ignore_ascii_case("rolling") {
-                return HistoryMode::Rolling;
-            }
-            if mode.eq_ignore_ascii_case("off") {
-                return HistoryMode::Off;
-            }
-        }
-        match self.resolved_proxy_mode() {
-            ProxyMode::Token => HistoryMode::Rolling,
-            ProxyMode::Cache => HistoryMode::CacheAware,
-        }
+        HistoryMode::CacheAware
     }
 
     /// Whether the proxy injects `stream_options.include_usage` into streamed
-    /// OpenAI Chat Completions to meter real spend. `[proxy] meter_openai_usage`
-    /// in config.toml, default `true`.
+    /// OpenAI Chat Completions to meter real spend. Yes.
     pub fn meters_openai_usage(&self) -> bool {
-        self.meter_openai_usage.unwrap_or(true)
+        true
     }
 
-    /// Operator-configured extra cost header (#1189), normalized to lowercase.
-    /// `None` when unset/blank — LiteLLM's standard header is always checked.
+    /// Operator-configured extra cost header (#1189). None: LiteLLM's standard
+    /// header is always checked.
     pub fn cost_response_header(&self) -> Option<String> {
-        self.cost_response_header
-            .as_deref()
-            .map(str::trim)
-            .filter(|h| !h.is_empty())
-            .map(str::to_lowercase)
+        None
     }
 
-    /// Resolved prose-ranker strategy (#895): `[proxy] prose_ranker` in
-    /// config.toml, then `Auto`. Unknown values resolve to `Auto` so a typo can
-    /// never silently disable the premium path; `"truncate"`/`"off"` selects the
-    /// legacy squeeze.
+    /// Prose-ranker strategy (#895): extractive ranking when the embedding
+    /// engine is available, else truncation.
     #[must_use]
     pub fn resolved_prose_ranker(&self) -> ProseRanker {
-        match self.prose_ranker.as_deref().map(str::trim) {
-            Some(s) if s.eq_ignore_ascii_case("truncate") || s.eq_ignore_ascii_case("off") => {
-                ProseRanker::Truncate
-            }
-            Some(s) if s.eq_ignore_ascii_case("extractive") => ProseRanker::Extractive,
-            _ => ProseRanker::Auto,
-        }
+        ProseRanker::Auto
     }
 
-    /// Resolved output-savings holdout fraction (#895 Track B), clamped to
-    /// `[0,1]`: `[proxy] output_holdout`, else `0.0` (no holdout).
+    /// Output-savings holdout fraction (#895 Track B): none.
     #[must_use]
     pub fn output_holdout_fraction(&self) -> f64 {
-        self.output_holdout.unwrap_or(0.0).clamp(0.0, 1.0)
+        0.0
     }
 
-    /// Whether the cache-safe wire verbosity steer (#895) is enabled:
-    /// `[proxy] verbosity_steer`, else the proxy-mode preset (off).
+    /// Whether the wire verbosity steer (#895) is enabled. No.
     #[must_use]
     pub fn verbosity_steer_enabled(&self) -> bool {
-        if let Some(v) = self.verbosity_steer {
-            return v;
-        }
-        self.resolved_proxy_mode()
-            .preset_for("verbosity_steer")
-            .unwrap_or(false)
+        false
     }
 
-    /// Whether the opt-in cold-prefix repack (#480) is enabled. A wrong "cold"
-    /// guess re-bills cache reads as writes (~12x), so this is off by default and
-    /// must be explicitly enabled via `[proxy] cold_prefix_repack`.
+    /// Whether the cold-prefix repack (#480) is enabled. No: a wrong "cold"
+    /// guess re-bills cache reads as writes (~12x).
     pub fn repacks_cold_prefix(&self) -> bool {
-        if let Some(v) = self.cold_prefix_repack {
-            return v;
-        }
-        self.resolved_proxy_mode()
-            .preset_for("cold_prefix_repack")
-            .unwrap_or(false)
+        false
     }
 
-    /// Whether opt-in in-band CCR retrieval (#493) is enabled. Off by default:
-    /// the splice mutates provider-visible conversation content for the one turn
-    /// the model asks to expand, so it must be an explicit opt-in
-    /// (`[proxy] ccr_inband`).
+    /// Whether in-band CCR retrieval (#493) is enabled. No: the splice mutates
+    /// provider-visible conversation content.
     pub fn ccr_inband_enabled(&self) -> bool {
-        self.ccr_inband.unwrap_or(false)
+        false
     }
 
-    /// Whether opt-in Anthropic prompt-cache breakpoint injection (#939) is
-    /// enabled. Off by default: it mutates the provider-visible `system` shape
-    /// (string → cache-marked block array), so it must be an explicit opt-in
-    /// (`[proxy] cache_breakpoint`).
+    /// Whether Anthropic prompt-cache breakpoint injection (#939) is enabled.
+    /// No: it mutates the provider-visible `system` shape.
     pub fn cache_breakpoint_enabled(&self) -> bool {
-        if let Some(v) = self.cache_breakpoint {
-            return v;
-        }
-        if self.is_headroom_compat() {
-            return false;
-        }
-        self.resolved_proxy_mode()
-            .preset_for("cache_breakpoint")
-            .unwrap_or(false)
+        false
     }
 
-    /// Whether opt-in counterfactual savings metering (#701) is enabled. Off by
-    /// default: it fires one extra (free) Anthropic `count_tokens` call per
-    /// rewritten request — pure telemetry, but extra latency budget and
-    /// rate-limit surface, so it must be an explicit opt-in
-    /// (`[proxy] counterfactual_metering`).
+    /// Whether counterfactual savings metering (#701) is enabled. No.
     pub fn counterfactual_metering_enabled(&self) -> bool {
-        self.counterfactual_metering.unwrap_or(false)
+        false
     }
 
-    /// Whether opt-in cache-aligner volatile-field telemetry (#940) is enabled.
-    /// On by default (#986 premium defaults): the scan is pure measurement and
-    /// never mutates the body, so every proxy ships cache-leak visibility out of
-    /// the box. Strictly cache-safe. Opt **out** (`[proxy] cache_aligner =
-    /// false`) only to drop the per-request system-prompt scan.
+    /// Whether cache-aligner volatile-field telemetry (#940) is enabled. Yes:
+    /// the scan is pure measurement and never mutates the body.
     pub fn cache_aligner_enabled(&self) -> bool {
-        self.cache_aligner.unwrap_or(true)
+        true
     }
 
-    /// Whether opt-in active cache-aligner relocate (#974) is enabled. Off by
-    /// default: it reshapes the provider-visible `system` field (moving volatile
-    /// values to an uncached tail block), so it must be an explicit opt-in
-    /// (`[proxy] cache_align_relocate`).
+    /// Whether active cache-aligner relocate (#974) is enabled. No: it
+    /// reshapes the provider-visible `system` field.
     pub fn cache_align_relocate_enabled(&self) -> bool {
-        if let Some(v) = self.cache_align_relocate {
-            return v;
-        }
-        if self.is_headroom_compat() {
-            return false;
-        }
-        self.resolved_proxy_mode()
-            .preset_for("cache_align_relocate")
-            .unwrap_or(false)
+        false
     }
 
     /// Whether cache-economics (#986) is enabled: prompt-cache miss attribution
-    /// telemetry plus the net-cost repack gate. Both are strictly safe
-    /// (measurement + a more-conservative repack that never busts a cache the
-    /// default kept), so this is **on by default** — every proxy gets the
-    /// diagnosis and the safer repack out of the box. Opt out (`[proxy]
-    /// cache_policy = false`) to keep `/status` free of the attribution gauges
-    /// and skip the per-request prefix hash.
+    /// telemetry plus the net-cost repack gate. Yes, both are strictly safe.
     pub fn cache_policy_enabled(&self) -> bool {
-        self.cache_policy.unwrap_or(true)
+        true
     }
 
-    /// Resolved cross-provider reasoning effort (#834), or `None` when the
-    /// feature is off (the default — a strict no-op that preserves the
-    /// byte-unchanged meter-only path), set by `[proxy] effort`. Any unknown
-    /// value resolves to `None` so a typo can never silently enable reasoning
-    /// steering.
+    /// Cross-provider reasoning effort (#834): off, a strict no-op that
+    /// preserves the byte-unchanged meter-only path.
     #[must_use]
     pub fn resolved_effort(&self) -> Option<super::Effort> {
-        self.effort.as_deref().and_then(super::Effort::parse)
+        None
     }
 
     /// Whether the proxy live-compresses non-protected `tool_result` content
-    /// (#481): `[proxy] live_compress` in config.toml, else on.
+    /// (#481). Yes.
     pub fn live_compresses(&self) -> bool {
-        if let Some(v) = self.live_compress {
-            return v;
-        }
-        if self.is_headroom_compat() {
-            return false;
-        }
-        match self.resolved_proxy_mode() {
-            ProxyMode::Cache | ProxyMode::Token => true,
-        }
+        true
     }
 
-    /// Resolved per-tool live-compress exclusion patterns (#481). `None` in
-    /// config falls back to the built-in default (protect Serena); an explicit
-    /// list — including the empty list — is used verbatim so operators can narrow
-    /// or fully clear it.
+    /// Per-tool live-compress exclusion patterns (#481): protect Serena.
     #[must_use]
     pub fn live_compress_exclude_patterns(&self) -> Vec<String> {
-        self.live_compress_exclude
-            .clone()
-            .unwrap_or_else(default_live_compress_exclude)
+        default_live_compress_exclude()
     }
 
     /// Whether `tool_name` is on the live-compress exclusion list (#481) and must
@@ -768,50 +421,23 @@ impl ProxyConfig {
         })
     }
 
-    /// Compiled `compress_protect` globs (#1150), skipping any that fail to parse
-    /// so one malformed entry never disables the rest. Empty when unset — the
-    /// default — which makes [`Self::is_path_compress_protected`] a fast no-op.
+    /// Never-compress path globs (#1150): none.
     #[must_use]
     pub fn compress_protect_globs(&self) -> Vec<glob::Pattern> {
-        self.compress_protect
-            .as_deref()
-            .unwrap_or_default()
-            .iter()
-            .filter_map(|p| glob::Pattern::new(p.trim()).ok())
-            .collect()
+        Vec::new()
     }
 
-    /// Whether `path` is on the never-compress list (#1150) and must be returned
-    /// verbatim. Each glob is tried against both the full path (with backslashes
-    /// normalised to `/`) and the bare file name, so `*.snap` matches anywhere
-    /// while `**/golden/**` can still target a directory. Empty list → always
-    /// `false` (today's behaviour), so a default proxy pays nothing.
+    /// Whether `path` is on the never-compress list (#1150). Never.
     #[must_use]
     pub fn is_path_compress_protected(&self, path: &str) -> bool {
-        let patterns = self.compress_protect_globs();
-        if patterns.is_empty() {
-            return false;
-        }
-        let norm = path.replace('\\', "/");
-        let base = norm.rsplit('/').next().unwrap_or(norm.as_str());
-        patterns.iter().any(|p| p.matches(&norm) || p.matches(base))
+        let _ = path;
+        false
     }
 
-    /// Resolved prose-compression aggressiveness for `role`, clamped to `[0,1]`,
-    /// or `None` when prose compression is off for that role (the default).
-    /// Set by `[proxy.role_aggressiveness]` in config.toml.
+    /// Prose-compression aggressiveness for `role`: off.
     #[must_use]
     pub fn resolved_role_aggressiveness(&self, role: ProseRole) -> Option<f64> {
-        let resolved = match role {
-            ProseRole::System => self.role_aggressiveness.system,
-            ProseRole::User => self.role_aggressiveness.user,
-        };
-        if resolved.is_some() {
-            return resolved.map(|a| a.clamp(0.0, 1.0));
-        }
-        if self.resolved_proxy_mode() == ProxyMode::Token && role == ProseRole::System {
-            return Some(0.5);
-        }
+        let _ = role;
         None
     }
 

@@ -23,7 +23,7 @@ pub(crate) fn install_opencode_hook_with_mode(mode: HookMode) {
     // forcing the agent to use ctx_* equivalents via the MCP server.
     // In Replace mode, shadow permissions are always applied regardless of config.
     let cfg = Config::load();
-    let shadow = cfg.shadow_mode || mode == HookMode::Replace;
+    let shadow = true || mode == HookMode::Replace;
 
     let should_reg_mcp = super::super::should_register_mcp();
     let mcp_needed =

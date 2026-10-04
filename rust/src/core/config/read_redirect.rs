@@ -11,8 +11,6 @@
 
 use serde::{Deserialize, Serialize};
 
-use super::Config;
-
 /// Controls the native-Read → `ctx_read` redirect hook.
 ///
 /// - `Auto`: (Default) redirect everywhere except hosts with a native
@@ -30,15 +28,11 @@ pub enum ReadRedirect {
 }
 
 impl ReadRedirect {
-    pub fn effective(config: &Config) -> Self {
-        config.read_redirect
-    }
-
     /// Whether the native-Read redirect should rewrite the Read into a temp
     /// `ctx_read` copy for the current process/host. `Auto` disables it on hosts
     /// with a read-before-write guard so native Write/Edit keeps working (#637).
-    pub fn read_redirect_enabled(config: &Config) -> bool {
-        match Self::effective(config) {
+    pub fn read_redirect_enabled() -> bool {
+        match Self::default() {
             Self::On => true,
             Self::Off => false,
             Self::Auto => !host_has_read_before_write_guard(),
@@ -99,22 +93,6 @@ mod tests {
         assert_eq!(ReadRedirect::default(), ReadRedirect::Auto);
     }
 
-    #[test]
-    fn serde_roundtrip_kebab() {
-        #[derive(Deserialize)]
-        struct Wrapper {
-            read_redirect: ReadRedirect,
-        }
-        for (raw, want) in [
-            ("auto", ReadRedirect::Auto),
-            ("on", ReadRedirect::On),
-            ("off", ReadRedirect::Off),
-        ] {
-            let w: Wrapper = toml::from_str(&format!("read_redirect = \"{raw}\"")).expect("parse");
-            assert_eq!(w.read_redirect, want, "{raw}");
-        }
-    }
-
     /// Clear every env var the guard detection reads, so tests are
     /// deterministic no matter which host runs `cargo test` (a Cursor agent
     /// shell exports `CURSOR_*` itself, GH #720).
@@ -135,34 +113,12 @@ mod tests {
     }
 
     #[test]
-    fn enabled_on_and_off_are_absolute() {
-        let _lock = crate::core::data_dir::test_env_lock();
-        clear_host_markers();
-
-        // `on` redirects even under a guard host.
-        let cfg_on = Config {
-            read_redirect: ReadRedirect::On,
-            ..Config::default()
-        };
-        crate::test_env::set_var("CLAUDE_PROJECT_DIR", "/repo");
-        assert!(ReadRedirect::read_redirect_enabled(&cfg_on));
-        crate::test_env::remove_var("CLAUDE_PROJECT_DIR");
-
-        let cfg_off = Config {
-            read_redirect: ReadRedirect::Off,
-            ..Config::default()
-        };
-        assert!(!ReadRedirect::read_redirect_enabled(&cfg_off));
-    }
-
-    #[test]
     fn auto_disables_only_on_guard_hosts() {
         let _lock = crate::core::data_dir::test_env_lock();
         clear_host_markers();
 
-        let cfg = Config::default(); // Auto
         assert!(
-            ReadRedirect::read_redirect_enabled(&cfg),
+            ReadRedirect::read_redirect_enabled(),
             "auto redirects when no guard host is detected"
         );
 
@@ -170,21 +126,21 @@ mod tests {
         // one that makes the fix work in headless `claude -p`.
         crate::test_env::set_var("CLAUDE_PROJECT_DIR", "/repo");
         assert!(
-            !ReadRedirect::read_redirect_enabled(&cfg),
+            !ReadRedirect::read_redirect_enabled(),
             "auto must disable the Read redirect under Claude Code hooks (CLAUDE_PROJECT_DIR)"
         );
         crate::test_env::remove_var("CLAUDE_PROJECT_DIR");
 
         crate::test_env::set_var("CLAUDECODE", "1");
         assert!(
-            !ReadRedirect::read_redirect_enabled(&cfg),
+            !ReadRedirect::read_redirect_enabled(),
             "auto must also disable under the CLAUDECODE marker"
         );
         crate::test_env::remove_var("CLAUDECODE");
 
         crate::test_env::set_var("CODEBUDDY", "1");
         assert!(
-            !ReadRedirect::read_redirect_enabled(&cfg),
+            !ReadRedirect::read_redirect_enabled(),
             "auto must disable the Read redirect under CodeBuddy (shared Claude hook contract)"
         );
         crate::test_env::remove_var("CODEBUDDY");
@@ -198,14 +154,13 @@ mod tests {
     fn auto_stays_enabled_when_cursor_exports_claude_project_dir() {
         let _lock = crate::core::data_dir::test_env_lock();
         clear_host_markers();
-        let cfg = Config::default(); // Auto
 
         // Exactly what the Cursor 3.7.36 extension host exports to hooks.
         crate::test_env::set_var("CLAUDE_PROJECT_DIR", "/repo");
         crate::test_env::set_var("CURSOR_PROJECT_DIR", "/repo");
         crate::test_env::set_var("CURSOR_VERSION", "3.7.36");
         assert!(
-            ReadRedirect::read_redirect_enabled(&cfg),
+            ReadRedirect::read_redirect_enabled(),
             "Cursor markers must win over the Claude-compat variable"
         );
         assert!(!host_has_read_before_write_guard());
@@ -214,12 +169,12 @@ mod tests {
         clear_host_markers();
         crate::test_env::set_var("CLAUDE_PROJECT_DIR", "/repo");
         crate::test_env::set_var("CURSOR_AGENT", "1");
-        assert!(ReadRedirect::read_redirect_enabled(&cfg));
+        assert!(ReadRedirect::read_redirect_enabled());
 
         // Without any Cursor marker the Claude guard still wins (real Claude Code).
         clear_host_markers();
         crate::test_env::set_var("CLAUDE_PROJECT_DIR", "/repo");
-        assert!(!ReadRedirect::read_redirect_enabled(&cfg));
+        assert!(!ReadRedirect::read_redirect_enabled());
         clear_host_markers();
     }
 }

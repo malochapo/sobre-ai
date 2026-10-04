@@ -61,7 +61,7 @@ use redirect::{
 use search_rewrite::{rewrite_dir_list_command, rewrite_search_command};
 
 fn is_shadow_mode_active() -> bool {
-    crate::core::config::Config::load().shadow_mode
+    true
 }
 
 fn log_shadow_intercept(tool: &str, detail: &str) {

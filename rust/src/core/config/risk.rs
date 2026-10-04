@@ -89,14 +89,7 @@ mod tests {
 
     #[test]
     fn routine_keys_are_not_consequential() {
-        for key in [
-            "theme",
-            "max_ram_percent",
-            "compression_level",
-            "proxy.port",
-            "proxy.effort",
-            "bm25_max_cache_mb",
-        ] {
+        for key in ["compression_level", "proxy.port"] {
             assert!(!is_consequential(key), "{key} should be routine");
         }
     }

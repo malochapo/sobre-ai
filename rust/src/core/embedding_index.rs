@@ -105,12 +105,11 @@ pub fn build_or_update(root: &Path, bm25: &super::bm25_index::BM25Index) -> Embe
     {
         // Respect the config gates so the orchestrator does not force-embed when
         // the user explicitly opted out.
-        let cfg = crate::core::config::Config::load();
-        if !cfg.search.dense_enabled {
+        if !crate::core::hybrid_search::HybridConfig::default().dense_enabled {
             tracing::info!("[embedding_index] build_or_update skipped: search.dense_enabled=false");
             return EmbeddingBuildOutcome::Skipped;
         }
-        let profile = crate::core::config::MemoryProfile::effective(&cfg);
+        let profile = crate::core::config::MemoryProfile::default();
         if !profile.embeddings_enabled() {
             tracing::info!(
                 "[embedding_index] build_or_update skipped: memory_profile disables embeddings"

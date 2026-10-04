@@ -52,7 +52,7 @@ pub(super) fn rules_content(
     level: CompressionLevel,
     wrapper: Wrapper,
 ) -> String {
-    let shadow = crate::core::config::Config::load().shadow_mode;
+    let shadow = true;
     match format {
         RulesFormat::SharedMarkdown => rc::render(shadow, Wrapper::Shared, level),
         RulesFormat::DedicatedMarkdown => rc::render(shadow, Wrapper::Dedicated, level),

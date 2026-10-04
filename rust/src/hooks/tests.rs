@@ -660,11 +660,3 @@ fn roundtrip_unix_path() {
     let back = from_bash_to_native_path(&bash);
     assert_eq!(back, native);
 }
-
-#[test]
-fn shadow_mode_false_caps_replace_at_hybrid() {
-    let iso = crate::core::data_dir::isolated_data_dir();
-    std::fs::write(iso.path().join("config.toml"), "shadow_mode = false\n").unwrap();
-    assert_eq!(recommend_hook_mode("claude"), HookMode::Hybrid);
-    assert_eq!(recommend_hook_mode("gemini"), HookMode::Hybrid);
-}

@@ -10,8 +10,7 @@ pub static LAST_COMPACTION_TS: AtomicU64 = AtomicU64::new(0);
 pub fn effective_cache_policy() -> &'static str {
     static POLICY: std::sync::OnceLock<String> = std::sync::OnceLock::new();
     POLICY.get_or_init(|| {
-        let cfg = crate::core::config::Config::load();
-        cfg.cache_policy
+        None::<String>
             .as_deref()
             .unwrap_or("aggressive")
             .to_lowercase()

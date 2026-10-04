@@ -9,8 +9,6 @@
 //! Scope: tool *outputs* (`ctx_shell`, `ctx_execute`, `ctx_search`, `ctx_tree`). Explicit
 //! file reads keep their own read-mode system and are never firewalled.
 
-use crate::core::config::Config;
-
 const HEAD_LINES: usize = 20;
 const TAIL_LINES: usize = 8;
 const LONG_LINE_HEAD_CHARS: usize = 800;
@@ -35,22 +33,24 @@ pub fn is_protected_read(name: &str) -> bool {
     matches!(name, "ctx_read")
 }
 
-/// Effective minimum token count before firewalling (config + env override).
-pub fn min_tokens(config: &Config) -> usize {
-    config.archive.ephemeral_min_tokens_effective()
+/// Minimum token count before firewalling.
+pub fn min_tokens() -> usize {
+    crate::core::config::ArchiveConfig::default().ephemeral_min_tokens_effective()
 }
 
 /// Whether a result of `output_tokens` from `tool` should be firewalled.
-pub fn should_firewall(tool: &str, output_tokens: usize, config: &Config) -> bool {
-    config.archive.ephemeral_effective()
+pub fn should_firewall(tool: &str, output_tokens: usize) -> bool {
+    crate::core::config::ArchiveConfig::default().ephemeral_effective()
         && is_firewallable_tool(tool)
-        && output_tokens >= min_tokens(config)
+        && output_tokens >= min_tokens()
 }
 
 /// Whether an explicitly requested `ctx_shell(inline=true)` result fits the
 /// configured verbatim-delivery cap.
-pub fn should_inline_shell(inline_requested: bool, output_bytes: usize, config: &Config) -> bool {
-    inline_requested && output_bytes <= config.archive.inline_max_bytes_effective()
+pub fn should_inline_shell(inline_requested: bool, output_bytes: usize) -> bool {
+    inline_requested
+        && output_bytes
+            <= crate::core::config::ArchiveConfig::default().inline_max_bytes_effective()
 }
 
 /// Build the inline digest that replaces a firewalled output. Deterministic (no LLM):
@@ -157,45 +157,31 @@ mod tests {
 
     #[test]
     fn should_firewall_respects_tool_and_threshold() {
-        let mut cfg = Config::default();
-        cfg.archive.enabled = true;
-        cfg.archive.ephemeral = true;
-        cfg.archive.ephemeral_min_tokens = 2000;
-        // Env can override ephemeral; clear it for a deterministic test.
+        // Archive + ephemeral are on, threshold 2000 tokens.
+        assert_eq!(min_tokens(), 2000);
+        assert!(should_firewall("ctx_shell", 5000));
+        assert!(!should_firewall("ctx_shell", 1000)); // below threshold
+        assert!(!should_firewall("ctx_read", 5000)); // not firewallable
+    }
 
-        assert!(should_firewall("ctx_shell", 5000, &cfg));
-        assert!(!should_firewall("ctx_shell", 1000, &cfg)); // below threshold
-        assert!(!should_firewall("ctx_read", 5000, &cfg)); // not firewallable
+    fn inline_cap() -> usize {
+        crate::core::config::ArchiveConfig::default().inline_max_bytes_effective()
     }
 
     #[test]
     fn inline_shell_stays_inline_under_byte_cap() {
-        let _env_lock = crate::core::data_dir::test_env_lock();
-        let mut cfg = Config::default();
-        cfg.archive.inline_max_bytes = 1024;
-
-        assert!(should_inline_shell(true, 1024, &cfg));
-        assert!(should_inline_shell(true, 0, &cfg));
+        assert!(should_inline_shell(true, inline_cap()));
+        assert!(should_inline_shell(true, 0));
     }
 
     #[test]
     fn inline_shell_over_byte_cap_uses_archive_path() {
-        // Clearing the env cap only holds if no other test sets it meanwhile.
-        let _env_lock = crate::core::data_dir::test_env_lock();
-        let mut cfg = Config::default();
-        cfg.archive.inline_max_bytes = 1024;
-
-        assert!(!should_inline_shell(true, 1025, &cfg));
+        assert!(!should_inline_shell(true, inline_cap() + 1));
     }
 
     #[test]
-    fn inline_shell_requires_explicit_request_and_honors_configured_cap() {
-        let mut cfg = Config::default();
-        cfg.archive.inline_max_bytes = 2048;
-
-        assert!(!should_inline_shell(false, 1, &cfg));
-        assert!(should_inline_shell(true, 2048, &cfg));
-        assert!(!should_inline_shell(true, 2049, &cfg));
+    fn inline_shell_requires_explicit_request() {
+        assert!(!should_inline_shell(false, 1));
     }
 
     #[test]

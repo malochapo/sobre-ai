@@ -375,8 +375,7 @@ fn shrink_resident_trims_long_bodies_keeps_short_and_flags() {
 
 #[test]
 fn shrink_resident_is_not_persisted_to_disk() {
-    let iso = crate::core::data_dir::isolated_data_dir();
-    std::fs::write(iso.path().join("config.toml"), "bm25_max_cache_mb = 512\n").unwrap();
+    let _iso = crate::core::data_dir::isolated_data_dir();
     let td = tempdir().expect("tempdir");
     let root = td.path();
     std::fs::write(
@@ -415,68 +414,8 @@ fn shrink_resident_is_not_persisted_to_disk() {
 }
 
 #[test]
-fn load_quarantines_oversized_index() {
-    let iso = crate::core::data_dir::isolated_data_dir();
-    std::fs::write(iso.path().join("config.toml"), "bm25_max_cache_mb = 0\n").unwrap();
-    let td = tempdir().expect("tempdir");
-    let root = td.path();
-    let dir = crate::core::index_namespace::vectors_dir(root);
-    std::fs::create_dir_all(&dir).expect("create vectors dir");
-
-    let index_path = dir.join("bm25_index.json");
-    std::fs::write(&index_path, r#"{"chunks":[]}"#).expect("write index");
-
-    let result = BM25Index::load(root);
-    assert!(result.is_none(), "oversized index should return None");
-    assert!(
-        !index_path.exists(),
-        "original index should be removed after quarantine"
-    );
-    assert!(
-        dir.join("bm25_index.json.quarantined").exists(),
-        "quarantined file should exist"
-    );
-}
-
-#[test]
-fn save_refuses_oversized_output() {
-    let iso = crate::core::data_dir::isolated_data_dir();
-    std::fs::write(iso.path().join("config.toml"), "bm25_max_cache_mb = 0\n").unwrap();
-
-    let td = tempdir().expect("tempdir");
-    let root = td.path();
-
-    let mut index = BM25Index::new();
-    index.add_chunk(CodeChunk {
-        file_path: "a.rs".into(),
-        symbol_name: "a".into(),
-        kind: ChunkKind::Function,
-        start_line: 1,
-        end_line: 1,
-        content: "fn a() {}".into(),
-        tokens: tokenize("fn a"),
-        token_count: 2,
-    });
-    index.finalize();
-
-    let outcome = index
-        .save(root)
-        .expect("save returns Ok even when refusing");
-    assert!(
-        matches!(outcome, SaveOutcome::SkippedTooLarge { .. }),
-        "oversized save must report SkippedTooLarge (not a silent success), got {outcome:?}"
-    );
-    let index_path = BM25Index::index_file_path(root);
-    assert!(
-        !index_path.exists(),
-        "save should refuse to persist oversized index"
-    );
-}
-
-#[test]
 fn save_reports_persisted_outcome() {
-    let iso = crate::core::data_dir::isolated_data_dir();
-    std::fs::write(iso.path().join("config.toml"), "bm25_max_cache_mb = 512\n").unwrap();
+    let _iso = crate::core::data_dir::isolated_data_dir();
     let td = tempdir().expect("tempdir");
     let root = td.path();
     std::fs::write(root.join("a.rs"), "pub fn alpha() {}\n").expect("write");
@@ -494,12 +433,13 @@ fn save_reports_persisted_outcome() {
 }
 
 #[test]
-fn persist_ceiling_honors_configured_value() {
-    // The public ceiling accessor (shared with doctor) must honor an explicit
-    // override exactly, so operators can size it to their monorepo.
-    let iso = crate::core::data_dir::isolated_data_dir();
-    std::fs::write(iso.path().join("config.toml"), "bm25_max_cache_mb = 777\n").unwrap();
-    assert_eq!(persist_ceiling_bytes(), 777 * 1024 * 1024);
+fn persist_ceiling_is_the_disk_default() {
+    // The public ceiling accessor (shared with doctor) is the generous disk
+    // default, decoupled from the RAM profile (#249).
+    assert_eq!(
+        persist_ceiling_bytes(),
+        crate::core::config::DEFAULT_BM25_PERSIST_MB * 1024 * 1024
+    );
 }
 
 #[test]
@@ -521,8 +461,7 @@ fn save_writes_project_root_marker() {
 
 #[test]
 fn save_load_roundtrip_uses_zstd() {
-    let iso = crate::core::data_dir::isolated_data_dir();
-    std::fs::write(iso.path().join("config.toml"), "bm25_max_cache_mb = 512\n").unwrap();
+    let _iso = crate::core::data_dir::isolated_data_dir();
     let td = tempdir().expect("tempdir");
     let root = td.path();
 
@@ -556,8 +495,7 @@ fn save_load_roundtrip_uses_zstd() {
 
 #[test]
 fn auto_migrate_bin_to_zst() {
-    let iso = crate::core::data_dir::isolated_data_dir();
-    std::fs::write(iso.path().join("config.toml"), "bm25_max_cache_mb = 512\n").unwrap();
+    let _iso = crate::core::data_dir::isolated_data_dir();
     let td = tempdir().expect("tempdir");
     let root = td.path();
 

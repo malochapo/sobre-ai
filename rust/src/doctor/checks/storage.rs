@@ -246,7 +246,7 @@ pub(crate) fn archive_footprint_outcome() -> Outcome {
 }
 pub(crate) fn memory_profile_outcome() -> Outcome {
     let cfg = crate::core::config::Config::load();
-    let profile = crate::core::config::MemoryProfile::effective(&cfg);
+    let profile = crate::core::config::MemoryProfile::default();
     // The BM25 *disk* ceiling is decoupled from the RAM profile (#249); show the
     // real effective ceiling rather than a hardcoded per-profile figure.
     let bm25_mb = cfg.bm25_max_cache_mb_effective();
@@ -264,7 +264,9 @@ pub(crate) fn memory_profile_outcome() -> Outcome {
             format!("full caches, BM25 disk {bm25_mb} MB"),
         ),
     };
-    let source = if cfg.memory_profile != crate::core::config::MemoryProfile::default() {
+    let source = if crate::core::config::MemoryProfile::default()
+        != crate::core::config::MemoryProfile::default()
+    {
         "config"
     } else {
         "default"
@@ -277,8 +279,7 @@ pub(crate) fn memory_profile_outcome() -> Outcome {
     }
 }
 pub(crate) fn memory_cleanup_outcome() -> Outcome {
-    let cfg = crate::core::config::Config::load();
-    let cleanup = crate::core::config::MemoryCleanup::effective(&cfg);
+    let cleanup = crate::core::config::MemoryCleanup::default();
     let (label, detail) = match cleanup {
         crate::core::config::MemoryCleanup::Aggressive => (
             "aggressive",
@@ -289,7 +290,9 @@ pub(crate) fn memory_cleanup_outcome() -> Outcome {
             "cache retained 1 hour, multi-IDE/multi-model optimized",
         ),
     };
-    let source = if cfg.memory_cleanup != crate::core::config::MemoryCleanup::default() {
+    let source = if crate::core::config::MemoryCleanup::default()
+        != crate::core::config::MemoryCleanup::default()
+    {
         "config"
     } else {
         "default"
@@ -546,7 +549,7 @@ pub(crate) fn capacity_warnings() -> Vec<Outcome> {
     }
 
     // Graph index file count vs limit
-    let graph_max_files = cfg.graph_index_max_files;
+    let graph_max_files = crate::core::config::GRAPH_INDEX_MAX_FILES;
     if graph_max_files > 0
         && let Some(session) = crate::core::session::SessionState::load_latest()
         && let Some(ref project_root) = session.project_root

@@ -48,8 +48,7 @@ pub fn get_system_ram_bytes() -> Option<u64> {
 /// Returns the RSS limit in bytes based on `max_ram_percent` config.
 pub fn rss_limit_bytes() -> Option<u64> {
     let sys_ram = get_system_ram_bytes()?;
-    let cfg = super::config::Config::load();
-    let pct = super::config::MemoryGuardConfig::effective(&cfg).max_ram_percent;
+    let pct = super::config::MemoryGuardConfig::default().max_ram_percent;
     Some(sys_ram / 100 * u64::from(pct))
 }
 
@@ -169,8 +168,7 @@ impl MemorySnapshot {
 
         PEAK_RSS.fetch_max(rss, Ordering::Relaxed);
 
-        let cfg = super::config::Config::load();
-        let guard_cfg = super::config::MemoryGuardConfig::effective(&cfg);
+        let guard_cfg = super::config::MemoryGuardConfig::default();
         let base = f64::from(guard_cfg.max_ram_percent);
 
         // #790: tightened multipliers so ABORT fires earlier:

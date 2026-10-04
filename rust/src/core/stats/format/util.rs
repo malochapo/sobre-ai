@@ -1,12 +1,11 @@
 //! Shared number/string formatting helpers for the stats views.
 
-use crate::core::theme::{self, Theme};
+use crate::core::theme::Theme;
 
 use super::super::model::{CommandStats, CostModel, DayStats};
 
 pub(super) fn active_theme() -> Theme {
-    let cfg = crate::core::config::Config::load();
-    theme::load_theme(&cfg.theme)
+    crate::core::theme::Theme::default()
 }
 
 pub(super) fn format_usd(amount: f64) -> String {

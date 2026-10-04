@@ -927,7 +927,7 @@ fn handle_rooms(project_root: &str) -> String {
 }
 
 fn handle_cognition_loop(project_root: &str) -> String {
-    let cfg = crate::core::config::Config::load().autonomy;
+    let cfg = crate::core::config::AutonomyConfig::default();
     if !cfg.cognition_loop_enabled {
         return "Cognition loop is disabled (autonomy.cognition_loop_enabled=false).".to_string();
     }

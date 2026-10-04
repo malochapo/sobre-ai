@@ -65,7 +65,7 @@ fn emit_dedicated_session_context(input: &str) {
         // Full Bare rules for dedicated-mode hosts (Claude Code, Codex, CodeBuddy)
         // where the static rules file is skipped.
         let summary = crate::core::rules_canonical::render(
-            cfg.shadow_mode,
+            true,
             crate::core::rules_canonical::Wrapper::Bare,
             crate::core::config::CompressionLevel::Off,
         );

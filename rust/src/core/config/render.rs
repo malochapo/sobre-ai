@@ -137,13 +137,13 @@ mod tests {
 
     fn customized() -> Config {
         let mut cfg = Config {
-            max_ram_percent: 30,
+            proxy_port: Some(4444),
             compression_level: Some(0.5),
-            theme: "neon".to_string(),
+            rules_scope: Some("global".to_string()),
             ..Config::default()
         };
         cfg.proxy.anthropic_upstream = Some("https://upstream.example".to_string());
-        cfg.gain.display_name = Some("alice".to_string());
+        cfg.index.exclude = vec!["vendor/**".to_string()];
         cfg
     }
 
@@ -174,9 +174,13 @@ mod tests {
 
         let parsed: Config = toml::from_str(&render_annotated_config(&cfg, &schema)).unwrap();
 
-        assert_eq!(parsed.max_ram_percent, 30);
+        assert_eq!(parsed.proxy_port, Some(4444));
         assert_eq!(parsed.compression_level, Some(0.5));
-        assert_eq!(parsed.theme, "neon");
+        assert_eq!(parsed.rules_scope.as_deref(), Some("global"));
+        assert_eq!(
+            parsed.proxy.anthropic_upstream.as_deref(),
+            Some("https://upstream.example")
+        );
     }
 
     // Output must be a deterministic function of its inputs (#498) and actually
@@ -192,7 +196,7 @@ mod tests {
         assert_eq!(first, second, "render must be deterministic (#498)");
         assert!(first.contains("# lean-ctx configuration"));
         assert!(
-            first.contains("max_ram_percent"),
+            first.contains("sandbox_level"),
             "documented keys must appear"
         );
         assert!(

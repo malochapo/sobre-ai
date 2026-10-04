@@ -16,7 +16,6 @@ mod index_scoping_scenarios;
 mod intensive_benchmarks;
 mod intent_protocol_side_effects;
 mod issue_244_ledger_reset;
-mod issue_249_index_observability;
 mod issue_326_parallel_knowledge;
 mod memory_benchmark_suite;
 mod multi_read_cap_scenarios;

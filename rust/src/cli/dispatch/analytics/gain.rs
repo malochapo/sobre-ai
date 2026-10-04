@@ -224,10 +224,7 @@ fn print_split_hint() {
 fn cmd_opportunity() {
     use crate::core::theme;
 
-    let t = {
-        let cfg = crate::core::config::Config::load();
-        theme::load_theme(&cfg.theme)
-    };
+    let t = { crate::core::theme::Theme::default() };
     let rst = theme::rst();
     let bold = theme::bold();
     let dim = theme::dim();

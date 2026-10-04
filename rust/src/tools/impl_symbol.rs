@@ -253,8 +253,7 @@ fn render_multiple(
 /// flagged `(over)`. Honors the `code_health.annotate_reads` opt-out and is
 /// empty for non-functions / when tree-sitter is off.
 fn symbol_cc_note(content: &str, file: &str, name: &str, start_line: usize) -> String {
-    let cfg = crate::core::config::Config::load();
-    if !cfg.code_health.annotate_reads {
+    if !crate::core::config::CodeHealthConfig::default().annotate_reads {
         return String::new();
     }
     let ext = Path::new(file)
@@ -262,7 +261,9 @@ fn symbol_cc_note(content: &str, file: &str, name: &str, start_line: usize) -> S
         .and_then(|e| e.to_str())
         .unwrap_or("");
     match crate::core::code_health::annotate::cognitive_for_symbol(content, ext, name, start_line) {
-        Some(cc) if cc > cfg.code_health.cognitive_threshold => format!(" · cc={cc} (over)"),
+        Some(cc) if cc > crate::core::config::CodeHealthConfig::default().cognitive_threshold => {
+            format!(" · cc={cc} (over)")
+        }
         Some(cc) => format!(" · cc={cc}"),
         None => String::new(),
     }

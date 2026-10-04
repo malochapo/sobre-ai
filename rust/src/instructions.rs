@@ -35,7 +35,7 @@ pub fn build_instructions(crp_mode: CrpMode) -> String {
 pub fn build_instructions_with_client(crp_mode: CrpMode, client_name: &str) -> String {
     let cfg = crate::core::config::Config::load();
     let minimal = cfg.minimal_overhead_effective_for_client(client_name);
-    let shadow = cfg.shadow_mode;
+    let shadow = true;
     // Cross-channel dedup: if the client auto-loads compression from its own rule
     // file, skip it here to avoid duplicate billing.
     let level = if client_loads_compression_from_file(client_name) {
@@ -486,12 +486,11 @@ mod tests {
     fn covered_client_gets_anchor_instead_of_skeleton() {
         // #578: a client whose rule file carries the canonical block must not
         // pay for the full skeleton again in every MCP session.
-        let iso = crate::core::data_dir::isolated_data_dir();
+        let _iso = crate::core::data_dir::isolated_data_dir();
         let tmp = tempfile::tempdir().unwrap();
         let home = tmp.path();
         std::fs::create_dir_all(home.join(".cursor/rules")).unwrap();
-        let cfg = crate::core::config::Config::load();
-        let shadow = cfg.shadow_mode;
+        let shadow = true;
         std::fs::write(
             home.join(".cursor/rules/lean-ctx.mdc"),
             rc::render(
@@ -503,7 +502,6 @@ mod tests {
         .unwrap();
         let old_home = std::env::var("HOME").ok();
         crate::test_env::set_var("HOME", home);
-        std::fs::write(iso.path().join("config.toml"), "minimal_overhead = true\n").unwrap();
 
         let covered = build_instructions_with_client(CrpMode::Off, "cursor");
         let uncovered = build_instructions_with_client(CrpMode::Off, "some-other-agent");
@@ -568,7 +566,7 @@ mod tests {
         // GL #1153: with lean-ctx hooks covering the native tools, the anchor
         // must not repeat "ctx_* replaces native tools" — that is exactly the
         // instruction dissonance the HookCovered profile removes.
-        let iso = crate::core::data_dir::isolated_data_dir();
+        let _iso = crate::core::data_dir::isolated_data_dir();
         let tmp = tempfile::tempdir().unwrap();
         let home = tmp.path();
         std::fs::create_dir_all(home.join(".cursor/rules")).unwrap();
@@ -591,7 +589,6 @@ mod tests {
         .unwrap();
         let old_home = std::env::var("HOME").ok();
         crate::test_env::set_var("HOME", home);
-        std::fs::write(iso.path().join("config.toml"), "minimal_overhead = true\n").unwrap();
 
         let covered = build_instructions_with_client(CrpMode::Off, "cursor");
 
@@ -643,8 +640,7 @@ mod tests {
     fn minimal_overhead_instructions_stay_within_budget() {
         const MINIMAL_INSTRUCTION_BUDGET_TOKENS: usize =
             STATIC_INSTRUCTION_BUDGET_TDD_TOKENS + STATIC_INSTRUCTION_SHELL_HINT_TOKENS;
-        let iso = crate::core::data_dir::isolated_data_dir();
-        std::fs::write(iso.path().join("config.toml"), "minimal_overhead = true\n").unwrap();
+        let _iso = crate::core::data_dir::isolated_data_dir();
         let out = build_instructions(CrpMode::Compact);
         let tokens = count_tokens(&out);
         assert!(

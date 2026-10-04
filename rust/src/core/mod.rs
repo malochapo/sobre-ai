@@ -331,7 +331,6 @@ pub mod edit_quality;
 pub mod efficacy;
 pub mod graph_cache;
 pub mod http_client;
-pub mod ide_permissions;
 pub mod import_resolver;
 pub mod index_admission;
 pub mod index_filter;

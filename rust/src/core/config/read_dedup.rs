@@ -10,8 +10,6 @@
 
 use serde::{Deserialize, Serialize};
 
-use super::Config;
-
 /// Controls the PostToolUse native-Read re-read dedup.
 ///
 /// - `Auto`: (Default) dedup only on hosts with a read-before-write guard
@@ -30,16 +28,12 @@ pub enum ReadDedup {
 }
 
 impl ReadDedup {
-    pub fn effective(config: &Config) -> Self {
-        config.read_dedup
-    }
-
     /// Whether the PostToolUse read-dedup may replace a re-read result in the
     /// current process/host. `Auto` restricts it to guard hosts, where the
     /// PreToolUse redirect is disabled and re-reads would otherwise flow at
     /// full size (#637 / GL #1140).
-    pub fn read_dedup_enabled(config: &Config) -> bool {
-        match Self::effective(config) {
+    pub fn read_dedup_enabled() -> bool {
+        match Self::default() {
             Self::On => true,
             Self::Off => false,
             Self::Auto => super::read_redirect::host_has_read_before_write_guard(),
@@ -54,22 +48,6 @@ mod tests {
     #[test]
     fn default_is_auto() {
         assert_eq!(ReadDedup::default(), ReadDedup::Auto);
-    }
-
-    #[test]
-    fn serde_roundtrip_kebab() {
-        #[derive(Deserialize)]
-        struct Wrapper {
-            read_dedup: ReadDedup,
-        }
-        for (raw, want) in [
-            ("auto", ReadDedup::Auto),
-            ("on", ReadDedup::On),
-            ("off", ReadDedup::Off),
-        ] {
-            let w: Wrapper = toml::from_str(&format!("read_dedup = \"{raw}\"")).expect("parse");
-            assert_eq!(w.read_dedup, want, "{raw}");
-        }
     }
 
     /// Clear every env var the guard detection reads — including the Cursor
@@ -97,22 +75,21 @@ mod tests {
         let _lock = crate::core::data_dir::test_env_lock();
         clear_host_markers();
 
-        let cfg = Config::default(); // Auto
         assert!(
-            !ReadDedup::read_dedup_enabled(&cfg),
+            !ReadDedup::read_dedup_enabled(),
             "auto must stay passive off guard hosts (PreToolUse redirect dedups there)"
         );
 
         crate::test_env::set_var("CLAUDE_PROJECT_DIR", "/repo");
         assert!(
-            ReadDedup::read_dedup_enabled(&cfg),
+            ReadDedup::read_dedup_enabled(),
             "auto must dedup under Claude Code hooks (CLAUDE_PROJECT_DIR)"
         );
         crate::test_env::remove_var("CLAUDE_PROJECT_DIR");
 
         crate::test_env::set_var("CODEBUDDY", "1");
         assert!(
-            ReadDedup::read_dedup_enabled(&cfg),
+            ReadDedup::read_dedup_enabled(),
             "auto must dedup under CodeBuddy (shared guard contract)"
         );
         crate::test_env::remove_var("CODEBUDDY");
@@ -123,29 +100,9 @@ mod tests {
         crate::test_env::set_var("CLAUDE_PROJECT_DIR", "/repo");
         crate::test_env::set_var("CURSOR_VERSION", "3.7.36");
         assert!(
-            !ReadDedup::read_dedup_enabled(&cfg),
+            !ReadDedup::read_dedup_enabled(),
             "Cursor must not be treated as a guard host despite CLAUDE_PROJECT_DIR"
         );
         clear_host_markers();
-    }
-
-    #[test]
-    fn on_and_off_are_absolute() {
-        let _lock = crate::core::data_dir::test_env_lock();
-        clear_host_markers();
-
-        let cfg_on = Config {
-            read_dedup: ReadDedup::On,
-            ..Config::default()
-        };
-        assert!(ReadDedup::read_dedup_enabled(&cfg_on));
-
-        let cfg_off = Config {
-            read_dedup: ReadDedup::Off,
-            ..Config::default()
-        };
-        crate::test_env::set_var("CLAUDE_PROJECT_DIR", "/repo");
-        assert!(!ReadDedup::read_dedup_enabled(&cfg_off));
-        crate::test_env::remove_var("CLAUDE_PROJECT_DIR");
     }
 }

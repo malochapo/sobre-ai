@@ -1,6 +1,5 @@
 use serde::{Deserialize, Serialize};
 use std::io::IsTerminal;
-use std::path::PathBuf;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
@@ -627,33 +626,6 @@ pub fn from_preset(name: &str) -> Option<Theme> {
         "cyberpunk" => Some(preset_cyberpunk()),
         _ => None,
     }
-}
-
-pub fn theme_file_path() -> Option<PathBuf> {
-    crate::core::data_dir::lean_ctx_data_dir()
-        .ok()
-        .map(|d| d.join("theme.toml"))
-}
-
-pub fn load_theme(config_theme: &str) -> Theme {
-    if let Some(path) = theme_file_path()
-        && path.exists()
-        && let Ok(content) = std::fs::read_to_string(&path)
-        && let Ok(theme) = toml::from_str::<Theme>(&content)
-    {
-        return theme;
-    }
-
-    from_preset(config_theme).unwrap_or_default()
-}
-
-pub fn save_theme(theme: &Theme) -> Result<(), String> {
-    let path = theme_file_path().ok_or("cannot determine home directory")?;
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
-    }
-    let content = toml::to_string_pretty(theme).map_err(|e| e.to_string())?;
-    std::fs::write(&path, content).map_err(|e| e.to_string())
 }
 
 #[cfg(test)]

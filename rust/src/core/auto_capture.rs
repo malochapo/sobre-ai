@@ -9,7 +9,7 @@ use crate::core::knowledge::ProjectKnowledge;
 
 /// Check if auto-capture is enabled.
 pub fn is_enabled() -> bool {
-    crate::core::config::Config::load().auto_capture
+    true
 }
 
 /// Persist an auto-finding as a knowledge fact if auto-capture is enabled.

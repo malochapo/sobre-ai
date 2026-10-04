@@ -88,8 +88,8 @@ impl SecurityPosture {
         Self {
             jail: detect_jail(&cfg),
             shell: ShellSecurity::resolve(),
-            secrets_enabled: cfg.secret_detection.enabled,
-            secrets_redact: cfg.secret_detection.redact,
+            secrets_enabled: crate::core::config::SecretDetectionConfig::default().enabled,
+            secrets_redact: crate::core::config::SecretDetectionConfig::default().redact,
         }
     }
 

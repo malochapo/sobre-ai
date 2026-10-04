@@ -19,7 +19,7 @@ pub(crate) fn install_cline_rules(global: bool) {
         return;
     };
 
-    let shadow = crate::core::config::Config::load().shadow_mode;
+    let shadow = true;
     write_file(&rules_path, &cline_rules_body(shadow));
     if !mcp_server_quiet_mode() {
         eprintln!("Installed .clinerules in current project.");

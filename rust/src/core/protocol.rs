@@ -93,9 +93,6 @@ pub fn detect_project_root_or_cwd(file_path: &str) -> String {
     {
         return cfg_root.clone();
     }
-    if let Some(ide_root) = resolve_ide_path(&cfg, file_path) {
-        return ide_root;
-    }
     if let Some(root) = detect_project_root(file_path) {
         return root;
     }
@@ -143,26 +140,6 @@ fn is_broad_directory(path: &str) -> bool {
         }
     }
     false
-}
-
-/// Resolves per-IDE allowed paths from config. If the active agent has
-/// `ide_paths` configured, returns the first path that contains `file_path`.
-fn resolve_ide_path(cfg: &crate::core::config::Config, file_path: &str) -> Option<String> {
-    if cfg.ide_paths.is_empty() {
-        return None;
-    }
-    let agent = std::env::var("LEAN_CTX_AGENT").ok()?;
-    let agent_lower = agent.to_lowercase();
-    let paths = cfg.ide_paths.get(&agent_lower)?;
-    let fp = Path::new(file_path);
-    for allowed in paths {
-        let ap = Path::new(allowed.as_str());
-        if fp.starts_with(ap) {
-            return Some(allowed.clone());
-        }
-    }
-    // file_path is outside all allowed paths — return first allowed path as root
-    paths.first().cloned()
 }
 
 /// Returns the file name component of a path for compact display.
@@ -220,7 +197,7 @@ pub fn savings_footer_visible() -> bool {
     if matches!(std::env::var("LEAN_CTX_QUIET"), Ok(v) if v.trim() == "1") {
         return false;
     }
-    let mode = super::config::SavingsFooter::effective();
+    let mode = super::config::SavingsFooter::default();
     match mode {
         super::config::SavingsFooter::Always => true,
         super::config::SavingsFooter::Never => false,
@@ -583,41 +560,17 @@ mod tests {
     }
 
     #[test]
-    fn savings_footer_config_gated_tests() {
-        let iso = crate::core::data_dir::isolated_data_dir();
-        let cfg = iso.path().join("config.toml");
-
-        // Test: always mode shows box-drawing format
-        super::MCP_CONTEXT.store(false, std::sync::atomic::Ordering::Relaxed);
-        std::fs::write(&cfg, "savings_footer = \"always\"\n").unwrap();
-        crate::test_env::remove_var("LEAN_CTX_QUIET");
-
-        let s = super::format_savings(100, 50);
-        assert!(s.contains("\u{2192}"), "expected arrow: {s}");
-        assert!(s.contains("\u{2193}50%"), "expected pct: {s}");
-        assert!(
-            s.starts_with("\u{2500}\u{2500}\u{2500}"),
-            "expected box-drawing: {s}"
-        );
-
-        // Test: mode info included
-        let s = super::format_savings_with_info(4200, 840, Some("map"), None);
-        assert!(s.contains("mode: map"), "expected mode: {s}");
-        assert!(s.contains("\u{2193}80%"), "expected 80%: {s}");
-
-        // Test: never mode suppresses
-        std::fs::write(&cfg, "savings_footer = \"never\"\n").unwrap();
-        let s = super::format_savings(100, 50);
-        assert!(s.is_empty(), "expected empty with never: {s}");
-
-        let result = super::append_savings("hello", 100, 50);
-        assert_eq!(result, "hello");
-
-        // Test: MCP auto mode suppresses
-        super::MCP_CONTEXT.store(true, std::sync::atomic::Ordering::Relaxed);
-        std::fs::write(&cfg, "savings_footer = \"auto\"\n").unwrap();
-        let s = super::format_savings(100, 50);
-        assert!(s.is_empty(), "expected empty in MCP+auto: {s}");
+    fn savings_footer_is_suppressed() {
+        // `savings_footer` is `never`: suppressed in every transport.
+        for mcp in [false, true] {
+            super::MCP_CONTEXT.store(mcp, std::sync::atomic::Ordering::Relaxed);
+            assert!(!super::savings_footer_visible());
+            let s = super::format_savings(100, 50);
+            assert!(s.is_empty(), "expected empty with never: {s}");
+            let s = super::format_savings_with_info(4200, 840, Some("map"), None);
+            assert!(s.is_empty(), "expected empty with never: {s}");
+            assert_eq!(super::append_savings("hello", 100, 50), "hello");
+        }
         super::MCP_CONTEXT.store(false, std::sync::atomic::Ordering::Relaxed);
     }
 }

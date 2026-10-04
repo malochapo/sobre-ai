@@ -218,16 +218,6 @@ fn has_provider_api_key_x_xai_token_auth() {
 }
 
 #[test]
-fn proxy_require_token_defaults_off() {
-    assert!(!crate::core::config::Config::default().proxy_require_token);
-}
-
-#[test]
-fn proxy_loopback_open_defaults_off() {
-    assert!(!crate::core::config::Config::default().proxy_loopback_open);
-}
-
-#[test]
 fn auth_error_response_mcp_hint() {
     let resp = auth_error_response("/mcp/sse");
     assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
