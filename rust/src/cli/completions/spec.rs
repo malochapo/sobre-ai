@@ -640,15 +640,6 @@ pub static COMMAND_TREE: &[CommandNode] = &[
         hidden: false,
     },
     CommandNode {
-        name: "untrust",
-        aliases: &[],
-        description: "Untrust a command/path",
-        subcommands: &[],
-        flags: &[],
-        positional: None,
-        hidden: false,
-    },
-    CommandNode {
         name: "theme",
         aliases: &[],
         description: "Set dashboard theme",

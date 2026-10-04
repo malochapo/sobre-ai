@@ -564,13 +564,6 @@ pub fn jail_path_with_roots(
                  ~/.config/lean-ctx/config.toml — `lean-ctx doctor` shows the config in effect"
                     .to_string()
             };
-            // An untrusted workspace's project-local `allow_paths` is silently
-            // withheld; always surface that reason (the stderr warning is
-            // invisible over MCP, and the hint above is meta-gated off) (#540).
-            if let Some(notice) = crate::core::workspace_trust::untrusted_override_notice() {
-                hint.push_str(". ");
-                hint.push_str(&notice);
-            }
             // The global config the runtime reads doesn't exist → on defaults, so
             // an `allow_paths` edit made to a config.toml elsewhere (XDG vs legacy
             // dir, or a sandboxed/container HOME) is never seen (#540).

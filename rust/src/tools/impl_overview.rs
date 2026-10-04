@@ -578,7 +578,6 @@ fn detected_markers(project_root: &str) -> Vec<String> {
         "pyproject.toml",
         "pom.xml",
         "build.gradle",
-        ".lean-ctx.toml",
     ];
     let root = std::path::Path::new(project_root);
     MARKERS

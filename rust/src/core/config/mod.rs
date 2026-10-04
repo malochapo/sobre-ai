@@ -6,15 +6,13 @@ use std::sync::Arc;
 use super::memory_policy::MemoryPolicy;
 
 /// Cache payload for [`Config::load_arc`]: the shared config alongside the
-/// content hashes of the global and project-local files it was built from, so a
+/// content hash of the file it was built from, so a
 /// later load re-reads + re-hashes and only rebuilds on a real change (#406).
-type ConfigCacheSlot = Option<(Arc<Config>, Option<String>, Option<String>)>;
+type ConfigCacheSlot = Option<(Arc<Config>, Option<String>)>;
 
 mod enums;
 mod loader;
 mod memory;
-mod merge;
-mod provenance;
 mod proxy;
 mod read_dedup;
 pub(crate) mod read_redirect;
@@ -38,10 +36,7 @@ pub use enums::{
     ResponseVerbosity, RulesInjection, RulesScope, SessionDegrade, TeeMode, TerseAgent,
 };
 pub use loader::last_config_parse_error;
-pub use loader::local_sensitive_overrides;
-pub(crate) use loader::strip_sensitive_overrides;
 pub use memory::{MemoryCleanup, MemoryGuardConfig, MemoryProfile, SavingsFooter};
-pub use provenance::{ConfigProvenance, EnvOverride};
 pub use proxy::{
     BaselineConfig, DEFAULT_LOCAL_SHADOW_RATE_PER_MTOK, HistoryMode, ProseRanker, ProseRole,
     ProviderEntry, ProxyConfig, ProxyMode, ProxyProvider, ResolvedProvider, RoleAggressiveness,
@@ -84,7 +79,7 @@ const _: () = assert!(DEFAULT_BM25_PERSIST_MB >= 512);
 /// same lookups stay available through `ctx_search` and `ctx_callgraph`.
 pub const EDIT_TOOL_NAMES: &[&str] = &["ctx_patch", "ctx_refactor"];
 
-/// Global lean-ctx configuration loaded from `config.toml`, merged with project-local overrides.
+/// lean-ctx configuration, loaded from the single `config.toml`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Config {
@@ -271,8 +266,7 @@ pub struct Config {
     /// stays in force (a planted symlink can never redirect a config write out of
     /// the user's home, preserving the GL#442 symlink-hijack protection). Add a
     /// parent like `/opt/dotfiles` only for a location you own and trust. Like
-    /// `extra_roots`, security-sensitive: stripped from untrusted project-local
-    /// configs. Override via LEAN_CTX_ALLOW_SYMLINK_ROOTS env var (path-list sep).
+    /// `extra_roots`, security-sensitive. Override via LEAN_CTX_ALLOW_SYMLINK_ROOTS env var (path-list sep).
     #[serde(default)]
     pub allow_symlink_roots: Vec<String>,
     /// Enable content-defined chunking (Rabin-Karp) for cache-optimal output ordering.
@@ -1022,14 +1016,10 @@ impl Config {
 }
 
 impl Config {
-    /// Safely mutate and persist the GLOBAL config. Reads the global file only
-    /// (no project-local merge), applies `f`, then writes minimally. Refuses
-    /// (returns `Err`) when the file exists but is unparseable, so a typo can
-    /// never clobber a customized config (#443). Returns the saved `Config`.
-    ///
-    /// This is the canonical persistence entry point: prefer it over
-    /// `Config::load()` followed by `save()`, which leaks project-local
-    /// overrides into the global file.
+    /// Safely mutate and persist the config. Reads the file (bypassing the
+    /// cache), applies `f`, then writes minimally. Refuses (returns `Err`) when
+    /// the file exists but is unparseable, so a typo can never clobber a
+    /// customized config (#443). Returns the saved `Config`.
     pub fn update_global<F>(f: F) -> std::result::Result<Self, super::error::LeanCtxError>
     where
         F: FnOnce(&mut Self),
@@ -1103,19 +1093,6 @@ impl Config {
             |p| p.to_string_lossy().to_string(),
         );
         let content = toml::to_string_pretty(self).unwrap_or_default();
-        let mut out = format!("Global config: {global_path}\n\n{content}");
-
-        if let Some(root) = Self::find_project_root() {
-            let local = Self::local_path(&root);
-            if local.exists() {
-                out.push_str(&format!("\n\nLocal config (merged): {}\n", local.display()));
-            } else {
-                out.push_str(&format!(
-                    "\n\nLocal config: not found (create {} to override per-project)\n",
-                    local.display()
-                ));
-            }
-        }
-        out
+        format!("Config: {global_path}\n\n{content}")
     }
 }

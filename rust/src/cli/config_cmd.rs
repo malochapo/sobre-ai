@@ -158,9 +158,7 @@ fn write_config_key(key: &str, value: &str, display_key: &str, display_val: &str
 
 /// Resolves the [`config::Config`] that `config init --full` should persist.
 ///
-/// `existing_raw` is the verbatim content of the current GLOBAL `config.toml`
-/// (never the project-local `.lean-ctx.toml` — those overrides must not leak
-/// into the global file). When it holds a non-empty, parseable document we
+/// `existing_raw` is the verbatim content of the current `config.toml`. When it holds a non-empty, parseable document we
 /// return its deserialized form so every user value is retained; an empty/absent
 /// file yields defaults, and an unparseable one is surfaced as an error so the
 /// caller can refuse to clobber it.
@@ -320,8 +318,8 @@ fn cmd_config_path() {
 
 fn cmd_validate() {
     // GH #450: always surface *where* the effective settings come from first, so
-    // a "no config" result is never a dead end and a silently shadowed value
-    // (env / project-local / parse error) is immediately visible.
+    // a "no config" result is never a dead end and a parse error that puts the
+    // runtime on defaults is immediately visible.
     print_config_provenance();
 
     let schema = config::schema::ConfigSchema::generate();
@@ -440,17 +438,14 @@ fn cmd_validate() {
     }
 }
 
-/// Print where the editable settings actually come from (GH #450): the resolved
-/// `config.toml` path, the layout pin, any parse error, and the env /
-/// project-local overrides that can silently shadow a saved value. This makes the
-/// "my quick settings keep resetting" reports self-diagnosing — the reporter sees
-/// the exact mechanism instead of an opaque "no config" message.
+/// Print where the settings come from (GH #450): the resolved `config.toml`
+/// path, the layout pin and any parse error that silently puts the runtime on
+/// defaults.
 fn print_config_provenance() {
-    let prov = config::Config::provenance();
-
+    let path = config::Config::path();
     println!("Config source:");
-    match &prov.config_path {
-        Some(p) if prov.config_exists => println!("  config.toml:    {} (exists)", p.display()),
+    match &path {
+        Some(p) if p.exists() => println!("  config.toml:    {} (exists)", p.display()),
         Some(p) => println!(
             "  config.toml:    {} (missing — using defaults)",
             p.display()
@@ -459,45 +454,25 @@ fn print_config_provenance() {
     }
     println!(
         "  layout pin:     {}",
-        if prov.xdg_pinned { "xdg" } else { "unpinned" }
+        if crate::core::layout_pin::is_xdg_pinned() {
+            "xdg"
+        } else {
+            "unpinned"
+        }
     );
 
-    if let Some(err) = &prov.parse_error {
+    // A present-but-unparseable file means the runtime silently runs on
+    // defaults. Parse into `Config` to match exactly what `load()` rejects.
+    let parse_error = path.as_ref().and_then(|p| {
+        let raw = std::fs::read_to_string(p).ok()?;
+        toml::from_str::<config::Config>(&raw)
+            .err()
+            .map(|e| e.to_string())
+    });
+    if let Some(err) = parse_error {
         println!("  [!] parse error: config.toml is unparseable — running on DEFAULTS:");
         println!("                  {err}");
         println!("                  Run `lean-ctx doctor --fix` to repair.");
-    }
-
-    if prov.local_exists && !prov.local_keys.is_empty() {
-        let path = prov
-            .local_path
-            .as_ref()
-            .map(|p| p.display().to_string())
-            .unwrap_or_default();
-        println!(
-            "  [!] project-local: {path} overrides {}",
-            prov.local_keys.join(", ")
-        );
-        println!("                  (these win over the global config for this project)");
-    }
-
-    if !prov.env_overrides.is_empty() {
-        let list = prov
-            .env_overrides
-            .iter()
-            .map(|e| format!("{} ({})", e.var, e.setting))
-            .collect::<Vec<_>>()
-            .join(", ");
-        println!("  [!] env override: {list}");
-        println!(
-            "                  (these win over config.toml; unset them for saved values to apply)"
-        );
-    }
-
-    if prov.has_shadow() {
-        println!(
-            "  -> A saved setting can appear to \"reset\" because a source above shadows it (GH #450)."
-        );
     }
     println!();
 }

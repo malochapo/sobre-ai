@@ -297,9 +297,7 @@ fn ensure_target_allowed(link_path: &Path, real_target: &Path) -> Result<(), Str
 
 /// Trusted roots OUTSIDE `$HOME` the user explicitly opted into for symlinked
 /// agent configs (#596). Sourced from the `LEAN_CTX_ALLOW_SYMLINK_ROOTS` env var
-/// (path-list separator) and the user-level `allow_symlink_roots` config key
-/// (untrusted project-local configs are stripped at load — see
-/// `strip_sensitive_overrides`). Each entry is made absolute + canonicalized so
+/// (path-list separator) and the `allow_symlink_roots` config key. Each entry is made absolute + canonicalized so
 /// the boundary check compares real paths; relative/empty entries are dropped.
 fn allowed_symlink_roots() -> Vec<PathBuf> {
     let mut raw: Vec<PathBuf> = Vec::new();

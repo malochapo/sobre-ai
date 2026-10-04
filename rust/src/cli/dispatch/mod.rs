@@ -232,14 +232,6 @@ pub fn run() {
                 super::cmd_security(&rest);
                 return;
             }
-            "trust" => {
-                super::cmd_trust(&rest);
-                return;
-            }
-            "untrust" => {
-                super::cmd_untrust(&rest);
-                return;
-            }
             "introspect" => {
                 super::cmd_introspect(&rest);
                 return;

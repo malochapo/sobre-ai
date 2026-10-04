@@ -149,7 +149,7 @@ pub fn config_keys_markdown() -> String {
     out.push_str("\n\n");
     out.push_str("Source of truth: `rust/src/core/config/schema.rs`.\n\n");
     out.push_str(
-        "lean-ctx reads `~/.lean-ctx/config.toml` (and a project `.lean-ctx.toml` overlay). \
+        "lean-ctx reads one file, `~/.lean-ctx/config.toml`. \
          Below is every recognized key with its type, default, and environment-variable \
          override where one exists.\n\n",
     );

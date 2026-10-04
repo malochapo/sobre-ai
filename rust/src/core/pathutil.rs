@@ -273,7 +273,6 @@ pub const PROJECT_MARKERS: &[&str] = &[
     "build.gradle",
     "Makefile",
     "project.godot",
-    ".lean-ctx.toml",
     ".planning",
 ];
 

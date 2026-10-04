@@ -292,10 +292,6 @@ pub fn run() -> u32 {
     let path_jail = path_jail_outcome();
     board.check(&path_jail);
 
-    // 5b3) Workspace trust for project-local .lean-ctx.toml (security audit #4)
-    let workspace_trust = workspace_trust_outcome();
-    board.check(&workspace_trust);
-
     // 5b3b) Secret/.env redaction — the exfiltration-defense plane, independent
     // of the jail + shell gating above (#507).
     let secret_detection = secret_detection_outcome();

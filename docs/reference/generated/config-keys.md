@@ -4,7 +4,7 @@
 
 Source of truth: `rust/src/core/config/schema.rs`.
 
-lean-ctx reads `~/.lean-ctx/config.toml` (and a project `.lean-ctx.toml` overlay). Below is every recognized key with its type, default, and environment-variable override where one exists.
+lean-ctx reads one file, `~/.lean-ctx/config.toml`. Below is every recognized key with its type, default, and environment-variable override where one exists.
 
 ## Top-level keys
 
