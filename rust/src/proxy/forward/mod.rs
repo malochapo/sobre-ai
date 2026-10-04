@@ -85,10 +85,6 @@ pub async fn forward_request(
     let body_bytes = axum::body::to_bytes(body, body_limit)
         .await
         .map_err(|_| StatusCode::PAYLOAD_TOO_LARGE)?;
-    let mut lineage = super::lineage::from_trusted_request(&parts, &body_bytes);
-    if let Some(context) = lineage.as_mut() {
-        context.trace_id.clone_from(&trace_id);
-    }
 
     // Active router (enterprise#13): may rewrite `model` in the parsed body
     // (before compression, so exactly one serialization) and re-target the
@@ -263,7 +259,6 @@ pub async fn forward_request(
         upstream_base,
         tokens_saved,
         original_size,
-        lineage,
     );
     if let Some(route) = &route {
         wire.routed_from = Some(route.routed_from.clone());

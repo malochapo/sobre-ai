@@ -175,7 +175,7 @@ pub fn record_file_read(
     // and compressed it a second time, only to park the bytes in an in-memory
     // cache nothing retrieves.
     if saved > 0 {
-        project_read_savings(path, original_tokens as u64, output_tokens as u64);
+        project_read_savings(original_tokens as u64, output_tokens as u64);
     }
 }
 
@@ -200,14 +200,12 @@ fn record_read_learning(
         .is_none_or(|rate| rate < 0.30);
     let saved = original_tokens.saturating_sub(output_tokens);
 
-    // Route the realized read through the OCLA efficiency capability so the
-    // production CLI path records the same ETPAO semantics as the contract.
-    // The analyzer is local and deterministic; failure keeps the legacy ratio.
-    let ocla_density = read_density(path, original_tokens, output_tokens, task_completed);
+    // Realized read density (ETPAO); `None` falls back to the plain ratio.
+    let read_density = read_density(path, original_tokens, output_tokens, task_completed);
     // Mode predictor: train auto-mode selection on the realized compression
     // density, exactly as the MCP background thread does.
     let sig = crate::core::mode_predictor::FileSignature::from_path(path, original_tokens);
-    let density = ocla_density.unwrap_or_else(|| {
+    let density = read_density.unwrap_or_else(|| {
         if output_tokens > 0 {
             original_tokens as f64 / output_tokens as f64
         } else {
@@ -259,15 +257,10 @@ fn record_read_learning(
     // marker starts at 0), so the single shadow read persists before exit.
 }
 
-/// Compute read density through the production OCLA efficiency capability.
-/// Returns `None` when no accepted outcome can produce an ETPAO value.
 /// ETPAO for the realized read: delivered tokens over original, where original
 /// is re-measured from the file whenever it is still readable — the count that
-/// reached this function may predate a terse pass.
-///
-/// This used to route through the OCLA EfficiencyAnalyzer, which also derived a
-/// compression rate, a cache-hit rate, a duplicate ratio and a recommendation
-/// list. The caller read none of them.
+/// reached this function may predate a terse pass. Returns `None` when no
+/// accepted outcome can produce a value.
 fn read_density(
     path: &str,
     original_tokens: usize,
@@ -406,18 +399,10 @@ fn maybe_consolidate(project_root: Option<&str>, calls: u32) {
     }
 }
 
-/// Project a realized read-savings event into the OCLA SavingsLedger.
-/// Best-effort: silently drops if the provider is unavailable. Canonical
-/// production callsite for the savings-evidence capability.
-/// Record the realized read savings in the verified ledger.
-///
+/// Record the realized read savings in the verified ledger (best-effort).
 /// The tool name is `cli_read`, matching its `cli_grep` and `cli_shell`
-/// siblings above. Routed through the OCLA SavingsLedger this landed as
-/// `ocla_savings` — a label naming the plumbing rather than the work, which
-/// would have outlived the plumbing. Everything else that adapter did (two
-/// atomic counters and a bounded evidence list) had no reader.
-fn project_read_savings(path: &str, original_tokens: u64, output_tokens: u64) {
-    let _ = path;
+/// siblings above.
+fn project_read_savings(original_tokens: u64, output_tokens: u64) {
     crate::core::savings_ledger::record_tool_event(
         "cli_read",
         original_tokens.try_into().unwrap_or(usize::MAX),

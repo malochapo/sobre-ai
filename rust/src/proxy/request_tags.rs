@@ -10,9 +10,3 @@
 pub struct RequestTags {
     pub project: Option<String>,
 }
-
-/// Set only after the proxy auth guard accepts the proxy's own token (or in
-/// loopback-open mode). The provider API-key fallback must not be able to
-/// manufacture managed lineage headers.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub(crate) struct AuthenticatedRequest;

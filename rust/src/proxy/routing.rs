@@ -92,9 +92,7 @@ pub fn route_request(
     let target = rules.aliases.get(&requested).cloned().or_else(|| {
         let content_ref = extract_user_query(parsed, request_shape)?;
         // The router keys on a message body, so the extracted query is handed
-        // back in one. This used to detour through the OCLA ModelRouter, which
-        // rebuilt the same body, then loaded and summarised the whole savings
-        // ledger from disk to compose a rationale string it never returned.
+        // back in one.
         let body = serde_json::json!({
             "model": requested.clone(),
             "messages": [{"role": "user", "content": content_ref}]

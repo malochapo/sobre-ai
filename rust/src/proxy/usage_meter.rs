@@ -18,11 +18,6 @@ use serde::{Deserialize, Serialize};
 
 use crate::core::gain::model_pricing::ModelPricing;
 
-/// Projects one managed, provider-measured turn into the OCLA usage sink.
-///
-/// This is deliberately one-way and best-effort: the existing meter remains
-/// authoritative for billing/ledger totals, while OCLA receives a validated
-/// payload-free projection only when complete lineage is present.
 /// Cumulative real token counts for one model. Cost is derived at read time so a
 /// pricing-table change re-values historical usage consistently.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]

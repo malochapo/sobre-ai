@@ -45,14 +45,7 @@ fn wire_context_carries_project_tag_and_baseline() {
         .insert(super::super::request_tags::RequestTags {
             project: Some("billing".into()),
         });
-    let wire = wire_context(
-        &parts,
-        "Anthropic",
-        "https://api.anthropic.com",
-        750,
-        4000,
-        None,
-    );
+    let wire = wire_context(&parts, "Anthropic", "https://api.anthropic.com", 750, 4000);
     assert_eq!(wire.provider, "Anthropic");
     assert_eq!(wire.project.as_deref(), Some("billing"));
     assert_eq!(wire.saved_tokens, 750);
@@ -73,7 +66,7 @@ fn wire_context_prefers_registry_provider_id_over_shape_label() {
             id: "local".into(),
             local: false,
         });
-    let wire = wire_context(&parts, "OpenAI", "http://127.0.0.1:11434", 0, 400, None);
+    let wire = wire_context(&parts, "OpenAI", "http://127.0.0.1:11434", 0, 400);
     assert_eq!(wire.provider, "local");
 }
 
@@ -96,7 +89,6 @@ fn wire_context_registry_local_flag_beats_url_heuristic() {
         "http://host.docker.internal:11434",
         0,
         400,
-        None,
     );
     assert!(wire.is_local, "declared local flag must win");
 
@@ -107,7 +99,7 @@ fn wire_context_registry_local_flag_beats_url_heuristic() {
             id: "tunnel".into(),
             local: false,
         });
-    let wire = wire_context(&parts, "OpenAI", "http://127.0.0.1:9999", 0, 400, None);
+    let wire = wire_context(&parts, "OpenAI", "http://127.0.0.1:9999", 0, 400);
     assert!(!wire.is_local, "declared non-local flag must win");
 }
 
@@ -135,40 +127,10 @@ fn retry_covers_exactly_not_processed_statuses() {
 fn wire_context_without_tags_still_carries_baseline() {
     // No project tag, but savings + baseline are still real.
     let parts = parts_for("/v1/chat/completions");
-    let wire = wire_context(&parts, "OpenAI", "http://127.0.0.1:11434", 0, 400, None);
+    let wire = wire_context(&parts, "OpenAI", "http://127.0.0.1:11434", 0, 400);
     assert_eq!(wire.project, None);
     assert_eq!(wire.uncompressed_input_tokens, 100);
     assert!(wire.is_local);
-}
-
-#[test]
-fn wire_context_carries_managed_lineage_without_forwarding_control_headers() {
-    let parts = Request::builder().body(()).unwrap().into_parts().0;
-    let lineage = crate::core::request_context::RequestContext {
-        request_id: "req-1".into(),
-        session_id: "session-1".into(),
-        agent_id: "agent-1".into(),
-        content_ref: "blake3:abc".into(),
-        tenant_id: None,
-        trace_id: "tr-unit".into(),
-    };
-    let wire = wire_context(
-        &parts,
-        "OpenAI",
-        "https://api.openai.com",
-        0,
-        4,
-        Some(lineage.clone()),
-    );
-    assert_eq!(wire.ocla_request_context(), Some(&lineage));
-    for header in [
-        super::super::lineage::REQUEST_ID_HEADER,
-        super::super::lineage::SESSION_ID_HEADER,
-        super::super::lineage::AGENT_ID_HEADER,
-    ] {
-        assert!(!is_allowed_request_header(header));
-        assert!(!should_forward_request_header(header, false));
-    }
 }
 
 #[test]

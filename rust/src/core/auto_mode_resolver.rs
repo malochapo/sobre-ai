@@ -255,9 +255,7 @@ fn resolve_adaptive(ctx: &AutoModeContext) -> Option<ResolvedMode> {
         }
     }
 
-    // Adaptive policy. This used to travel through the OCLA ConfigTuner, which
-    // called exactly this and encoded the answer into a `proposal:a->b:id`
-    // string that was parsed straight back apart here.
+    // Adaptive policy.
     let objective = ctx.task.unwrap_or_default();
     let chosen = crate::core::adaptive_mode_policy::AdaptiveModePolicyStore::load()
         .choose_auto_mode(

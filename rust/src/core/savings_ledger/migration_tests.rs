@@ -1,6 +1,5 @@
 use super::event::{
-    CustomerApproval, EvidenceClass, MECHANISM_COMPRESSION, MeasurementMethod, SavingsEvent,
-    SettlementStatus, compute_hash,
+    EvidenceClass, MECHANISM_COMPRESSION, MeasurementMethod, SavingsEvent, compute_hash,
 };
 use super::store::{self, GENESIS};
 use serde_json::{Value, json};
@@ -53,8 +52,6 @@ fn assert_p5_defaults(ev: &SavingsEvent) {
     assert!(ev.attribution_id.is_none());
     assert!(ev.baseline_ref.is_none());
     assert!(ev.price_version.is_none());
-    assert!(ev.customer_approval.is_none());
-    assert!(ev.settlement_status.is_none());
 }
 
 fn full_event() -> SavingsEvent {
@@ -78,6 +75,7 @@ fn full_event() -> SavingsEvent {
     value["attribution_id"] = json!("blake3-scope");
     value["baseline_ref"] = json!("baseline-1");
     value["price_version"] = json!("pricing-2026-06");
+    // Retired fields older ledgers may still carry; loading ignores them.
     value["customer_approval"] = json!("approved");
     value["settlement_status"] = json!("settled");
     event(value)
@@ -147,8 +145,6 @@ fn v5_ledger_includes_p5() {
         Some(MeasurementMethod::DirectCount)
     );
     assert_eq!(parsed.evidence_class, Some(EvidenceClass::Measured));
-    assert_eq!(parsed.customer_approval, Some(CustomerApproval::Approved));
-    assert_eq!(parsed.settlement_status, Some(SettlementStatus::Settled));
 }
 
 #[test]
@@ -201,8 +197,6 @@ fn p5_fields_omitted_in_json_when_none() {
         "attribution_id",
         "baseline_ref",
         "price_version",
-        "customer_approval",
-        "settlement_status",
     ] {
         assert!(
             !json.contains(&format!("\"{field}\"")),
@@ -229,8 +223,6 @@ fn rechain_preserves_p5_fields() {
         assert_eq!(new.measurement_method, old.measurement_method);
         assert_eq!(new.evidence_class, old.evidence_class);
         assert_eq!(new.attribution_id, old.attribution_id);
-        assert_eq!(new.customer_approval, old.customer_approval);
-        assert_eq!(new.settlement_status, old.settlement_status);
     }
     assert!(store::verify(&path).valid);
     let _ = std::fs::remove_file(path);

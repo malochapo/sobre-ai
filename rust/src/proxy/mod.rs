@@ -32,7 +32,6 @@ pub mod google;
 pub mod history_prune;
 pub mod holdout;
 pub mod introspect;
-mod lineage;
 pub mod metrics;
 pub mod model_router;
 pub mod models_api;
@@ -773,8 +772,6 @@ async fn proxy_auth_guard(
 
     // #755: loopback-open mode skips all auth — every local process is trusted.
     if loopback_open {
-        req.extensions_mut()
-            .insert(request_tags::AuthenticatedRequest);
         attach_request_tags(&mut req);
         return Ok(next.run(req).await);
     }
@@ -789,8 +786,6 @@ async fn proxy_auth_guard(
     if let Some(token) = bearer.as_deref()
         && constant_time_eq(token.as_bytes(), expected_token.as_bytes())
     {
-        req.extensions_mut()
-            .insert(request_tags::AuthenticatedRequest);
         attach_request_tags(&mut req);
         return Ok(next.run(req).await);
     }

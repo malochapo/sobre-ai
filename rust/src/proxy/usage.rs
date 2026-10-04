@@ -104,17 +104,6 @@ pub struct WireContext {
     /// or no probe was spawned; an empty slot at read time (probe failed or
     /// still in flight) degrades the row to the local estimate.
     pub counterfactual: Option<super::counterfactual::CounterfactualSlot>,
-    /// Complete, validated OCLA lineage for managed HTTP requests. `None` keeps
-    /// legacy, malformed and non-HTTP traffic explicitly unmanaged.
-    pub lineage: Option<crate::core::request_context::RequestContext>,
-}
-
-impl WireContext {
-    #[must_use]
-    #[cfg(test)]
-    pub fn ocla_request_context(&self) -> Option<&crate::core::request_context::RequestContext> {
-        self.lineage.as_ref()
-    }
 }
 
 impl RealUsage {
@@ -567,7 +556,6 @@ mod tests {
             is_local: false,
             routed_from: None,
             counterfactual: None,
-            lineage: None,
         });
         let mut s = Scanner::new(Provider::Anthropic, None).with_wire_context(Some(wire.clone()));
         s.feed_body(

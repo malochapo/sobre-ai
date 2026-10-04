@@ -64,34 +64,6 @@ pub enum EvidenceClass {
     Unclassified,
 }
 
-/// Customer disposition of a savings claim (P5 — settlement path).
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
-pub enum CustomerApproval {
-    /// No customer review yet.
-    Pending,
-    /// Customer accepted the savings claim.
-    Approved,
-    /// Customer disputed the savings claim.
-    Disputed,
-    /// Claim superseded by a correction event.
-    Superseded,
-}
-
-/// Settlement lifecycle state (P5 — billing pipeline).
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
-pub enum SettlementStatus {
-    /// Not eligible for settlement (insufficient evidence).
-    Ineligible,
-    /// Evidence sufficient, awaiting approval.
-    Eligible,
-    /// Included in a settlement batch.
-    Settled,
-    /// Reversed after settlement.
-    Reversed,
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct SavingsEvent {
     pub ts: String,
@@ -191,12 +163,6 @@ pub struct SavingsEvent {
     /// Pricing model version used for valuation.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub price_version: Option<String>,
-    /// Customer approval state.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub customer_approval: Option<CustomerApproval>,
-    /// Settlement lifecycle state.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub settlement_status: Option<SettlementStatus>,
 
     // ── G8 Token-Stream Attribution (#1191) ──
     /// Whether this is a first-inject (turn 1 = cache_write rate) or re-read
@@ -418,8 +384,6 @@ mod tests {
             attribution_id: None,
             baseline_ref: None,
             price_version: None,
-            customer_approval: None,
-            settlement_status: None,
             is_first_inject: None,
             cache_read_per_m_usd: None,
             cache_write_per_m_usd: None,
@@ -621,8 +585,6 @@ mod tests {
         assert_eq!(parsed.attribution_id, None);
         assert_eq!(parsed.measurement_method, None);
         assert_eq!(parsed.evidence_class, None);
-        assert_eq!(parsed.customer_approval, None);
-        assert_eq!(parsed.settlement_status, None);
     }
 
     #[test]
@@ -630,8 +592,6 @@ mod tests {
         let mut e = ev();
         e.measurement_method = Some(MeasurementMethod::Holdout);
         e.evidence_class = Some(EvidenceClass::Statistical);
-        e.customer_approval = Some(CustomerApproval::Approved);
-        e.settlement_status = Some(SettlementStatus::Eligible);
         e.confidence = Some(0.95);
         e.attribution_id = Some("blake3_abc".into());
 
@@ -639,8 +599,6 @@ mod tests {
         let parsed: SavingsEvent = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed.measurement_method, Some(MeasurementMethod::Holdout));
         assert_eq!(parsed.evidence_class, Some(EvidenceClass::Statistical));
-        assert_eq!(parsed.customer_approval, Some(CustomerApproval::Approved));
-        assert_eq!(parsed.settlement_status, Some(SettlementStatus::Eligible));
         assert_eq!(parsed.confidence, Some(0.95));
         assert_eq!(parsed.attribution_id, Some("blake3_abc".into()));
     }

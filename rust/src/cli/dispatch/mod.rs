@@ -204,10 +204,6 @@ pub fn run() {
                 super::cmd_session_action(&rest);
                 return;
             }
-            "ocla" => {
-                super::cmd_ocla(&rest);
-                return;
-            }
             "knowledge" => {
                 super::cmd_knowledge(&rest);
                 return;

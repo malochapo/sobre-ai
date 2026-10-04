@@ -24,7 +24,6 @@ pub(crate) fn wire_context(
     upstream_base: &str,
     tokens_saved: u64,
     original_size: usize,
-    lineage: Option<crate::core::request_context::RequestContext>,
 ) -> Box<crate::proxy::usage::WireContext> {
     let tags = parts
         .extensions
@@ -52,7 +51,6 @@ pub(crate) fn wire_context(
         is_local,
         routed_from: None,    // populated by the routing hook (wave 3)
         counterfactual: None, // populated after the probe spawn (#701)
-        lineage,
     })
 }
 

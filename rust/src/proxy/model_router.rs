@@ -34,8 +34,8 @@ use serde_json::Value;
 use crate::core::config::{RoutingRules, parse_route_target};
 use crate::core::intent_engine::{self};
 
-/// A routing decision record — emitted for observability and future OCLA bus
-/// integration (P2). Deterministic: same input → same decision (#498).
+/// A routing decision record, emitted for observability. Deterministic: same
+/// input → same decision (#498).
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct RoutingDecision {
     /// The model the client originally requested.

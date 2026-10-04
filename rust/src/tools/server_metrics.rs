@@ -110,11 +110,7 @@ impl LeanCtxServer {
         }
 
         // Heatmap: every path-bearing tool call feeds the per-file pressure
-        // view. This used to travel through the OCLA ObservationHook, whose
-        // only surviving effect was this call — the rest went into ring
-        // buffers the dashboard's SSE routes read, and those are gone.
-        //
-        // Behaviour is preserved exactly, double count included: `ctx_read`
+        // view. Note the double count: `ctx_read`
         // and `ctx_multi_read` also record the heatmap from the read path, so
         // a read lands here twice. Tools that carry a path but do not record
         // themselves (`ctx_patch`) land here only. Deciding what the counts
