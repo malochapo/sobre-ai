@@ -159,7 +159,6 @@ impl ServerHandler for LeanCtxServer {
         // ctx_read/ctx_shell/ctx_tree must not pay a full graph + BM25 scan.
         // See `index_orchestrator::ensure_warm_for_tool`, driven from dispatch.
 
-        let agent_name = name.clone();
         let agent_root = effective_root.clone().unwrap_or_default();
         let agent_id_handle = self.agent_id.clone();
         tokio::task::spawn_blocking(move || {
@@ -190,26 +189,9 @@ impl ServerHandler for LeanCtxServer {
             drop(maintenance);
 
             if !agent_root.is_empty() {
-                let heuristic_role = match agent_name.to_lowercase().as_str() {
-                    n if n.contains("cursor") => Some("coder"),
-                    n if n.contains("claude") => Some("coder"),
-                    n if n.contains("codebuddy") => Some("coder"),
-                    n if n.contains("codex") => Some("coder"),
-                    n if n.contains("antigravity") || n.contains("gemini") => Some("coder"),
-                    n if n.contains("review") => Some("reviewer"),
-                    n if n.contains("test") => Some("debugger"),
-                    _ => None,
-                };
-                let env_role = std::env::var("LEAN_CTX_ROLE")
-                    .or_else(|_| std::env::var("LEAN_CTX_AGENT_ROLE"))
-                    .ok();
-                let effective_role = env_role.as_deref().or(heuristic_role).unwrap_or("coder");
-
-                let _ = crate::core::roles::set_active_role_with_source(effective_role, true);
-
                 let id = crate::core::agents::AgentRegistry::mutate_locked(|registry| {
                     registry.cleanup_stale(24);
-                    registry.register("mcp", Some(effective_role), &agent_root)
+                    registry.register("mcp", None, &agent_root)
                 })
                 .map(|(_, id)| id)
                 .ok();

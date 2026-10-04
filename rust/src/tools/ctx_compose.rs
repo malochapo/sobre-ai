@@ -400,7 +400,7 @@ pub fn handle(task: &str, project_root: &str, crp_mode: CrpMode) -> (String, usi
     }
 
     let keywords = extract_keywords(task, 6);
-    let allow_secret = crate::core::roles::active_role().io.allow_secret_paths;
+    let allow_secret = false;
 
     let mut out = String::new();
     out.push_str(&format!("TASK: {task}\n"));

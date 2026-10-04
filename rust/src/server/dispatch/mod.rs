@@ -295,7 +295,6 @@ impl LeanCtxServer {
                 .await
                 .clone()
                 .unwrap_or_else(|| "unknown".into());
-            let role = crate::core::roles::active_role_name();
             {
                 let input_hash = crate::core::audit_trail::hash_input(args_map);
                 crate::core::audit_trail::record(crate::core::audit_trail::AuditEntryData {
@@ -304,7 +303,6 @@ impl LeanCtxServer {
                     action: None,
                     input_hash,
                     output_tokens: output_token_estimate,
-                    role: role.clone(),
                     event_type: crate::core::audit_trail::AuditEventType::ToolCall,
                 });
             }
@@ -327,7 +325,6 @@ impl LeanCtxServer {
                     action: None,
                     input_hash: String::new(),
                     output_tokens: 0,
-                    role: role.clone(),
                     event_type: crate::core::audit_trail::AuditEventType::SecurityViolation,
                 });
             }

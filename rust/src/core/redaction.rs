@@ -7,20 +7,7 @@ macro_rules! static_regex {
     }};
 }
 
-pub fn redaction_enabled_for_active_role() -> bool {
-    let role = crate::core::roles::active_role();
-    if role.role.name == "admin" {
-        role.io.redact_outputs
-    } else {
-        // Contract: redaction never disabled for non-admin roles.
-        true
-    }
-}
-
 pub fn redact_text_if_enabled(input: &str) -> String {
-    if !redaction_enabled_for_active_role() {
-        return input.to_string();
-    }
     redact_text_with_excludes(input, config_exclude_patterns().as_slice())
 }
 

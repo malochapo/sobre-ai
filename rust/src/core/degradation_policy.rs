@@ -204,7 +204,6 @@ mod tests {
 
     fn budget_snapshot(level: BudgetLevel) -> crate::core::budget_tracker::BudgetSnapshot {
         crate::core::budget_tracker::BudgetSnapshot {
-            role: "coder".to_string(),
             tokens: DimensionStatus {
                 used: 10,
                 limit: 10,

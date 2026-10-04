@@ -208,7 +208,7 @@ fn handle_regex(args: &Map<String, Value>, ctx: &ToolContext) -> Result<ToolOutp
 
     let crp = ctx.crp_mode;
     let respect = !no_gitignore;
-    let allow_secret_paths = crate::core::roles::active_role().io.allow_secret_paths;
+    let allow_secret_paths = false;
 
     if !resolved.is_multi {
         return search_single(
@@ -578,7 +578,7 @@ fn handle_batch_queries(
     let anchored = get_bool(args, "anchored").unwrap_or(false);
     let crp = ctx.crp_mode;
     let respect = !no_gitignore;
-    let allow_secret_paths = crate::core::roles::active_role().io.allow_secret_paths;
+    let allow_secret_paths = false;
     let root = &resolved.roots[0];
     let global_max = (get_int(args, "max_results").unwrap_or(20) as usize).min(500);
     let per_query_max = (global_max / queries.len()).max(5);

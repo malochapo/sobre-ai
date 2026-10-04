@@ -3,7 +3,7 @@
 //! When `permission_inheritance = on`, lean-ctx mirrors the host IDE's
 //! tool-permission rules onto its own MCP tools so that, e.g., `ctx_shell`
 //! honors the user's `bash` / `rm *` rules instead of forming a parallel,
-//! ungoverned execution path. Shaped like [`super::role_guard`]: returns a
+//! ungoverned execution path. Returns a
 //! blocking [`CallToolResult`] message, or `None` to proceed.
 //!
 //! The decision is split into a pure `decide` (policy in, decision out — fully
@@ -218,7 +218,7 @@ fn load_policy(client_id: &str, project_root: Option<&str>) -> IdePermissionPoli
     }
 }
 
-/// Convert a check into a blocking tool result (like `role_guard`): a successful
+/// Convert a check into a blocking tool result: a successful
 /// result carrying the explanation, so the agent reads *why* it was held back.
 #[must_use]
 pub fn into_call_tool_result(check: &PermissionCheck) -> Option<CallToolResult> {

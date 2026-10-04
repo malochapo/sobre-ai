@@ -50,7 +50,7 @@ impl McpTool for CtxGlobTool {
         }
 
         let respect = !no_gitignore;
-        let allow_secret_paths = crate::core::roles::active_role().io.allow_secret_paths;
+        let allow_secret_paths = false;
 
         if !resolved.is_multi {
             return handle_single(

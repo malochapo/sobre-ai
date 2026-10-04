@@ -1,14 +1,35 @@
-//! Runtime budget tracking against role limits.
+//! Runtime budget tracking against fixed session limits.
 //!
-//! Compares accumulated session counters with the active role's `RoleLimits`
-//! and produces `BudgetStatus` verdicts (Ok / Warning / Exhausted).
+//! Compares accumulated session counters with [`SessionLimits`] and produces
+//! `BudgetStatus` verdicts (Ok / Warning / Exhausted).
 
 use std::sync::OnceLock;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 
 use serde::Serialize;
 
-use crate::core::roles::{self, RoleLimits};
+/// Session limits the counters are compared against.
+#[derive(Debug, Clone)]
+pub struct SessionLimits {
+    pub max_context_tokens: usize,
+    pub max_shell_invocations: usize,
+    pub max_cost_usd: f64,
+    pub warn_at_percent: u8,
+    /// 255 = never block: warnings only.
+    pub block_at_percent: u8,
+}
+
+impl Default for SessionLimits {
+    fn default() -> Self {
+        Self {
+            max_context_tokens: 200_000,
+            max_shell_invocations: 100,
+            max_cost_usd: 5.0,
+            warn_at_percent: 80,
+            block_at_percent: 255,
+        }
+    }
+}
 
 static TRACKER: OnceLock<BudgetTracker> = OnceLock::new();
 
@@ -107,8 +128,7 @@ impl BudgetTracker {
     }
 
     pub fn check(&self) -> BudgetSnapshot {
-        let mut limits = roles::active_role().limits;
-        let role_name = roles::active_role_name();
+        let mut limits = SessionLimits::default();
 
         // #673 — apply the active context policy pack's token cap (Local-Free:
         // this only affects agent budget accounting, never a human's own reads).
@@ -121,7 +141,6 @@ impl BudgetTracker {
         let cost = self.cost_usd();
 
         BudgetSnapshot {
-            role: role_name,
             tokens: DimensionStatus::evaluate(tokens as usize, limits.max_context_tokens, &limits),
             shell: DimensionStatus::evaluate(shell, limits.max_shell_invocations, &limits),
             cost: CostStatus::evaluate(cost, limits.max_cost_usd, &limits),
@@ -155,7 +174,7 @@ pub struct DimensionStatus {
 }
 
 impl DimensionStatus {
-    fn evaluate(used: usize, limit: usize, limits: &RoleLimits) -> Self {
+    fn evaluate(used: usize, limit: usize, limits: &SessionLimits) -> Self {
         if limit == 0 {
             // Zero limit with any usage => Warning (not Exhausted, LeanCTX never blocks)
             return Self {
@@ -196,7 +215,7 @@ pub struct CostStatus {
 }
 
 impl CostStatus {
-    fn evaluate(used: f64, limit: f64, limits: &RoleLimits) -> Self {
+    fn evaluate(used: f64, limit: f64, limits: &SessionLimits) -> Self {
         if limit <= 0.0 {
             // Zero limit with any usage => Warning (not Exhausted, LeanCTX never blocks)
             return Self {
@@ -230,7 +249,6 @@ impl CostStatus {
 
 #[derive(Debug, Clone, Serialize)]
 pub struct BudgetSnapshot {
-    pub role: String,
     pub tokens: DimensionStatus,
     pub shell: DimensionStatus,
     pub cost: CostStatus,
@@ -253,8 +271,7 @@ impl BudgetSnapshot {
 
     pub fn format_compact(&self) -> String {
         format!(
-            "Budget[role:{}]: tokens {}/{} ({}%) | shell {}/{} ({}%) | cost ${:.2}/${:.2} ({}%) → {}",
-            self.role,
+            "Budget: tokens {}/{} ({}%) | shell {}/{} ({}%) | cost ${:.2}/${:.2} ({}%) → {}",
             self.tokens.used,
             self.tokens.limit,
             self.tokens.percent,
@@ -300,7 +317,7 @@ mod tests {
 
     #[test]
     fn dimension_status_ok() {
-        let limits = RoleLimits::default();
+        let limits = SessionLimits::default();
         let s = DimensionStatus::evaluate(50_000, 200_000, &limits);
         assert_eq!(s.level, BudgetLevel::Ok);
         assert_eq!(s.percent, 25);
@@ -322,7 +339,7 @@ mod tests {
 
     #[test]
     fn dimension_status_warning() {
-        let limits = RoleLimits::default();
+        let limits = SessionLimits::default();
         let s = DimensionStatus::evaluate(170_000, 200_000, &limits);
         assert_eq!(s.level, BudgetLevel::Warning);
         assert_eq!(s.percent, 85);
@@ -331,7 +348,7 @@ mod tests {
     #[test]
     fn dimension_status_at_100_percent_is_warning_by_default() {
         // With block_at_percent=255 (default), 100% usage is Warning, not Exhausted
-        let limits = RoleLimits::default();
+        let limits = SessionLimits::default();
         assert_eq!(limits.block_at_percent, 255); // Default = never block
         let s = DimensionStatus::evaluate(200_000, 200_000, &limits);
         assert_eq!(s.level, BudgetLevel::Warning);
@@ -341,7 +358,7 @@ mod tests {
     #[test]
     fn dimension_status_exhausted_when_blocking_enabled() {
         // Exhausted only happens when block_at_percent is explicitly set low
-        let limits = RoleLimits {
+        let limits = SessionLimits {
             block_at_percent: 100,
             ..Default::default()
         };
@@ -352,7 +369,7 @@ mod tests {
     #[test]
     fn zero_limit_warns_usage() {
         // Zero limit with any usage => Warning (not Exhausted, LeanCTX never blocks by default)
-        let limits = RoleLimits::default();
+        let limits = SessionLimits::default();
         let s = DimensionStatus::evaluate(1, 0, &limits);
         assert_eq!(s.level, BudgetLevel::Warning);
     }
@@ -386,16 +403,15 @@ mod tests {
 
     #[test]
     fn cost_status_warning() {
-        let limits = RoleLimits::default();
+        let limits = SessionLimits::default();
         let s = CostStatus::evaluate(4.5, 5.0, &limits);
         assert_eq!(s.level, BudgetLevel::Warning);
     }
 
     #[test]
     fn snapshot_worst_level() {
-        let limits = RoleLimits::default();
+        let limits = SessionLimits::default();
         let snap = BudgetSnapshot {
-            role: "test".into(),
             tokens: DimensionStatus::evaluate(50_000, 200_000, &limits),
             shell: DimensionStatus::evaluate(90, 100, &limits),
             cost: CostStatus::evaluate(1.0, 5.0, &limits),
@@ -406,7 +422,6 @@ mod tests {
     #[test]
     fn format_compact_includes_all() {
         let s = BudgetSnapshot {
-            role: "coder".into(),
             tokens: DimensionStatus {
                 used: 1000,
                 limit: 200_000,
@@ -427,7 +442,7 @@ mod tests {
             },
         };
         let out = s.format_compact();
-        assert!(out.contains("role:coder"));
+        assert!(out.starts_with("Budget:"));
         assert!(out.contains("tokens"));
         assert!(out.contains("shell"));
         assert!(out.contains("cost"));

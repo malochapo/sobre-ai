@@ -16,7 +16,6 @@ pub mod prompts;
 pub mod reference_store;
 pub mod registry;
 pub mod resources;
-pub mod role_guard;
 pub mod roots;
 use roots::has_project_marker;
 pub mod tool_trait;

@@ -56,30 +56,19 @@ pub enum EventKind {
         new_jaccard: f64,
     },
     BudgetWarning {
-        role: String,
         dimension: String,
         used: String,
         limit: String,
         percent: u8,
     },
     BudgetExhausted {
-        role: String,
         dimension: String,
         used: String,
         limit: String,
     },
     PolicyViolation {
-        role: String,
         tool: String,
         reason: String,
-    },
-    RoleChanged {
-        from: String,
-        to: String,
-    },
-    ProfileChanged {
-        from: String,
-        to: String,
     },
     SloViolation {
         slo_name: String,
@@ -479,9 +468,8 @@ pub fn emit_agent_action(agent_id: &str, action: &str, tool: Option<&str>) {
     });
 }
 
-pub fn emit_budget_warning(role: &str, dimension: &str, used: &str, limit: &str, percent: u8) {
+pub fn emit_budget_warning(dimension: &str, used: &str, limit: &str, percent: u8) {
     emit(EventKind::BudgetWarning {
-        role: role.to_string(),
         dimension: dimension.to_string(),
         used: used.to_string(),
         limit: limit.to_string(),
@@ -489,27 +477,18 @@ pub fn emit_budget_warning(role: &str, dimension: &str, used: &str, limit: &str,
     });
 }
 
-pub fn emit_budget_exhausted(role: &str, dimension: &str, used: &str, limit: &str) {
+pub fn emit_budget_exhausted(dimension: &str, used: &str, limit: &str) {
     emit(EventKind::BudgetExhausted {
-        role: role.to_string(),
         dimension: dimension.to_string(),
         used: used.to_string(),
         limit: limit.to_string(),
     });
 }
 
-pub fn emit_policy_violation(role: &str, tool: &str, reason: &str) {
+pub fn emit_policy_violation(tool: &str, reason: &str) {
     emit(EventKind::PolicyViolation {
-        role: role.to_string(),
         tool: tool.to_string(),
         reason: reason.to_string(),
-    });
-}
-
-pub fn emit_role_changed(from: &str, to: &str) {
-    emit(EventKind::RoleChanged {
-        from: from.to_string(),
-        to: to.to_string(),
     });
 }
 

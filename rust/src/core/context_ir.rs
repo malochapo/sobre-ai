@@ -144,9 +144,7 @@ impl ContextIrV1 {
                 redacted: true,
                 boundary_mode: Some(format!(
                     "{:?}",
-                    crate::core::io_boundary::boundary_mode_effective(
-                        &crate::core::roles::active_role()
-                    )
+                    crate::core::io_boundary::boundary_mode_effective()
                 )),
             },
             verification: ContextIrVerificationV1 { content_md5 },

@@ -133,7 +133,7 @@ pub fn handle_filtered(
     const MAX_PATTERN_LEN: usize = 1024;
     const MAX_REGEX_SIZE: usize = 1 << 20; // 1 MiB DFA limit
 
-    let redact = crate::core::redaction::redaction_enabled_for_active_role();
+    let redact = true;
     if pattern.len() > MAX_PATTERN_LEN {
         return SearchOutcome::error(format!(
             "ERROR: pattern too long ({} > {MAX_PATTERN_LEN} chars)",

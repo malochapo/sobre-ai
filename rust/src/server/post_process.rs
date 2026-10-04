@@ -46,13 +46,12 @@ pub(super) fn budget_exhausted_message(name: &str) -> Option<String> {
         ),
     ] {
         if *lvl == BudgetLevel::Exhausted {
-            crate::core::events::emit_budget_exhausted(&snap.role, dim, &used, &limit);
+            crate::core::events::emit_budget_exhausted(dim, &used, &limit);
         }
     }
     Some(format!(
         "[BUDGET EXHAUSTED] {}\n\
-         Use `ctx_session action=role` to check/switch roles, \
-         or `ctx_session action=reset` to start fresh.",
+         Use `ctx_session action=reset` to start fresh.",
         snap.format_compact()
     ))
 }
@@ -90,7 +89,7 @@ pub(super) fn budget_warning_message() -> Option<String> {
         ),
     ] {
         if *lvl == BudgetLevel::Warning {
-            crate::core::events::emit_budget_warning(&snap.role, dim, &used, &limit, pct);
+            crate::core::events::emit_budget_warning(dim, &used, &limit, pct);
         }
     }
     if crate::core::protocol::meta_visible() {

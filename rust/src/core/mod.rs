@@ -295,7 +295,6 @@ pub mod budget_tracker;
 pub mod budgets;
 pub mod cache;
 pub mod cache_telemetry;
-pub mod capabilities;
 pub mod cli_cache;
 pub mod client_capabilities;
 pub mod client_constraints;
@@ -394,7 +393,6 @@ pub mod read_stub_index;
 pub mod recovery;
 pub mod redaction;
 pub mod reference_docs;
-pub mod roles;
 pub mod sandbox;
 #[cfg(target_os = "linux")]
 pub mod sandbox_landlock;

@@ -19,7 +19,7 @@ impl LeanCtxServer {
         let name = tool_name.as_str();
         let args = tool_args.as_ref();
 
-        if let Some(denied) = Self::guard_role_and_policy(name) {
+        if let Some(denied) = Self::guard_policy(name) {
             return Ok(denied);
         }
 
@@ -838,20 +838,10 @@ impl LeanCtxServer {
         Ok(finalize_call_result(&result_text, shell_outcome))
     }
 
-    fn guard_role_and_policy(name: &str) -> Option<CallToolResult> {
-        let role_check = role_guard::check_tool_access(name);
-        if let Some(denied) = role_guard::into_call_tool_result(&role_check) {
-            tracing::warn!(
-                tool = name,
-                role = %role_check.role_name,
-                "Tool blocked by role policy"
-            );
-            return Some(denied);
-        }
-
-        // #673 — context-policy-pack tool gating. Additive to the role guard:
-        // a pack's `allow_tools`/`deny_tools` are enforced here. No-op (allow)
-        // when no policy pack is active, so existing behavior is unchanged.
+    fn guard_policy(name: &str) -> Option<CallToolResult> {
+        // #673 — context-policy-pack tool gating: a pack's
+        // `allow_tools`/`deny_tools` are enforced here. No-op (allow) when no
+        // policy pack is active.
         let policy_check = policy_guard::check_tool_access(name);
         if let Some(denied) = policy_guard::into_call_tool_result(&policy_check) {
             tracing::warn!(

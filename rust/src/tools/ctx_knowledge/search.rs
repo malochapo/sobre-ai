@@ -20,10 +20,8 @@ pub(crate) fn handle_search(query: Option<&str>) -> String {
 
     let knowledge_dir = data_dir.join("knowledge");
 
-    let allow_cross_project = {
-        let role = crate::core::roles::active_role();
-        role.io.allow_cross_project_search
-    };
+    // Knowledge search stays within the current project.
+    let allow_cross_project = false;
 
     let current_project_hash = std::env::current_dir()
         .ok()

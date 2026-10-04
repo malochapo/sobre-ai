@@ -2,7 +2,7 @@
 //!
 //! Runs the **same guard sequence** as the live MCP agent path
 //! ([`crate::server::call_tool`]'s `call_tool_guarded`) using the **same guard
-//! functions** ([`crate::server::role_guard`], [`crate::server::policy_guard`],
+//! functions** ([`crate::server::policy_guard`],
 //! [`crate::core::egress`], [`crate::core::input_filters`]) and records the
 //! **same audit-trail entries** — but **without starting the MCP server**.
 //!
@@ -24,13 +24,11 @@
 use serde_json::{Map, Value};
 
 use crate::core::policy::runtime;
-use crate::server::{policy_guard, role_guard};
+use crate::server::policy_guard;
 
 /// Structured result of a single guarded evaluation.
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) enum EnforceOutcome {
-    /// Blocked by the active role policy (recorded as `ToolDenied`).
-    DeniedRole(String),
     /// Blocked by the active context policy pack's allow/deny lists (`ToolDenied`).
     DeniedPolicy(String),
     /// Write/action blocked by the pack's `[egress]` DLP (`ToolDenied`).
@@ -50,7 +48,6 @@ impl EnforceOutcome {
     /// Single-line status used by both the text renderer and `--json`.
     fn status(&self) -> &'static str {
         match self {
-            EnforceOutcome::DeniedRole(_) => "denied-role",
             EnforceOutcome::DeniedPolicy(_) => "denied-policy",
             EnforceOutcome::BlockedEgress(_) => "blocked-egress",
             EnforceOutcome::BlockedFilter(_) => "blocked-filter",
@@ -169,13 +166,7 @@ pub(crate) fn run_enforce(
     args_json: &str,
     map: &Map<String, Value>,
 ) -> EnforceOutcome {
-    // 1. Role guard (records ToolDenied on block).
-    let role = role_guard::check_tool_access(tool);
-    if role.blocked {
-        return EnforceOutcome::DeniedRole(role.message.unwrap_or_else(|| "role denied".into()));
-    }
-
-    // 2. Context-policy-pack tool gating (records ToolDenied on block).
+    // 1. Context-policy-pack tool gating (records ToolDenied on block).
     let policy = policy_guard::check_tool_access(tool);
     if policy.blocked {
         return EnforceOutcome::DeniedPolicy(
@@ -183,7 +174,7 @@ pub(crate) fn run_enforce(
         );
     }
 
-    // 3. Egress / output DLP on write & action payloads, BEFORE dispatch — so a
+    // 2. Egress / output DLP on write & action payloads, BEFORE dispatch — so a
     //    forbidden write never touches disk and a forbidden command never runs.
     //    Payload mapping (ctx_edit/ctx_patch/ctx_shell/ctx_execute) is shared
     //    with the server gate via `core::egress::write_payload`.
@@ -255,7 +246,7 @@ pub(crate) fn run_enforce(
 
 fn print_text(tool: &str, outcome: &EnforceOutcome) {
     match outcome {
-        EnforceOutcome::DeniedRole(msg) | EnforceOutcome::DeniedPolicy(msg) => {
+        EnforceOutcome::DeniedPolicy(msg) => {
             println!("DENIED  {tool}\n{msg}");
         }
         EnforceOutcome::BlockedEgress(reason) => {
@@ -287,8 +278,7 @@ fn print_text(tool: &str, outcome: &EnforceOutcome) {
 
 fn print_json(tool: &str, outcome: &EnforceOutcome) {
     let detail = match outcome {
-        EnforceOutcome::DeniedRole(m)
-        | EnforceOutcome::DeniedPolicy(m)
+        EnforceOutcome::DeniedPolicy(m)
         | EnforceOutcome::BlockedEgress(m)
         | EnforceOutcome::BlockedFilter(m)
         | EnforceOutcome::DispatchError(m) => Value::String(m.clone()),
@@ -338,8 +328,8 @@ mod tests {
     #[test]
     fn status_labels_are_stable() {
         assert_eq!(
-            EnforceOutcome::DeniedRole(String::new()).status(),
-            "denied-role"
+            EnforceOutcome::DeniedPolicy(String::new()).status(),
+            "denied-policy"
         );
         assert_eq!(
             EnforceOutcome::BlockedEgress(String::new()).status(),

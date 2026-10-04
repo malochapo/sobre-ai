@@ -1,7 +1,7 @@
 //! Context-policy-pack enforcement for the MCP server pipeline (GL #673).
 //!
 //! Consults the resolved active policy ([`crate::core::policy::runtime`]) to
-//! allow/deny tool calls, in addition to the [`super::role_guard`]. This is the
+//! allow/deny tool calls. This is the
 //! runtime half of Context Policy Packs v1 (GL #489), whose engine module ships
 //! the format/validation/CLI and defers enforcement to here.
 //!
@@ -9,14 +9,14 @@
 //! - **Local-Free:** only the agent pipeline is constrained, never a human's
 //!   own local reads.
 //! - **No self-lockout:** the `EXEMPT_TOOLS` meta tools can never be
-//!   policy-denied, so an operator can always switch roles/policies back out.
+//!   policy-denied, so an operator can always switch policies back out.
 
 use rmcp::model::{CallToolResult, ContentBlock};
 
 use crate::core::policy::runtime::{self, ActivePolicy};
 
-/// Tools that can never be policy-denied (mirror role_guard's session
-/// exemption), so a pack can't lock the operator out of fixing the policy.
+/// Tools that can never be policy-denied, so a pack can't lock the operator
+/// out of fixing the policy.
 const EXEMPT_TOOLS: &[&str] = &["ctx_session"];
 
 pub struct PolicyCheckResult {
@@ -26,16 +26,15 @@ pub struct PolicyCheckResult {
 }
 
 /// Check whether `tool_name` is allowed by the active policy pack, recording an
-/// audit entry on denial (same APIs as [`super::role_guard`]).
+/// audit entry on denial.
 pub fn check_tool_access(tool_name: &str) -> PolicyCheckResult {
     let check = evaluate(runtime::active().as_deref(), tool_name);
     if check.blocked
         && let Some(policy) = &check.policy_name
     {
         crate::core::events::emit_policy_violation(
-            policy,
             tool_name,
-            "tool denied by context policy pack",
+            &format!("tool denied by context policy pack '{policy}'"),
         );
         crate::core::audit_trail::record(crate::core::audit_trail::AuditEntryData {
             agent_id: "unknown".into(),
@@ -43,7 +42,6 @@ pub fn check_tool_access(tool_name: &str) -> PolicyCheckResult {
             action: None,
             input_hash: String::new(),
             output_tokens: 0,
-            role: policy.clone(),
             event_type: crate::core::audit_trail::AuditEventType::ToolDenied,
         });
     }
@@ -131,9 +129,8 @@ pub fn audit_filter(tool: &str, audit: &[(String, usize)], blocked: bool) {
         .join(", ");
     if blocked {
         crate::core::events::emit_policy_violation(
-            &policy,
             tool,
-            &format!("input filter blocked: {summary}"),
+            &format!("input filter blocked by '{policy}': {summary}"),
         );
     }
     crate::core::audit_trail::record(crate::core::audit_trail::AuditEntryData {
@@ -142,7 +139,6 @@ pub fn audit_filter(tool: &str, audit: &[(String, usize)], blocked: bool) {
         action: None,
         input_hash: String::new(),
         output_tokens: 0,
-        role: policy,
         event_type: if blocked {
             crate::core::audit_trail::AuditEventType::ToolDenied
         } else {
@@ -157,14 +153,16 @@ pub fn audit_filter(tool: &str, audit: &[(String, usize)], blocked: bool) {
 pub fn audit_egress(tool: &str, reason: &str) {
     let policy =
         runtime::active().map_or_else(|| "policy".to_string(), |a| a.resolved.name.clone());
-    crate::core::events::emit_policy_violation(&policy, tool, &format!("egress blocked: {reason}"));
+    crate::core::events::emit_policy_violation(
+        tool,
+        &format!("egress blocked by '{policy}': {reason}"),
+    );
     crate::core::audit_trail::record(crate::core::audit_trail::AuditEntryData {
         agent_id: "unknown".into(),
         tool: tool.to_string(),
         action: None,
         input_hash: String::new(),
         output_tokens: 0,
-        role: policy,
         event_type: crate::core::audit_trail::AuditEventType::ToolDenied,
     });
 }

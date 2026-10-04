@@ -32,23 +32,11 @@ pub fn alignment() -> Vec<OwaspMapping> {
             owasp_id: "OWASP-AGENT-01",
             owasp_title: "Excessive Agency",
             risk_description: "Agent performs actions beyond intended scope or without proper authorization",
-            lean_ctx_mitigations: vec![
-                Mitigation {
-                    feature: "Capability System",
-                    module: "core/capabilities.rs",
-                    description: "Fine-grained capability declarations per tool (fs:read, fs:write, exec, net)",
-                },
-                Mitigation {
-                    feature: "Role Guard",
-                    module: "server/role_guard.rs",
-                    description: "5 built-in roles with tool allowlists and shell policy",
-                },
-                Mitigation {
-                    feature: "Shell Gate",
-                    module: "core/shell_gate/mod.rs",
-                    description: "Hard blocks on the constructs that hide a command from inspection (eval, exec, source, command substitution at command position)",
-                },
-            ],
+            lean_ctx_mitigations: vec![Mitigation {
+                feature: "Shell Gate",
+                module: "core/shell_gate/mod.rs",
+                description: "Hard blocks on the constructs that hide a command from inspection (eval, exec, source, command substitution at command position)",
+            }],
             coverage: Coverage::Full,
         },
         OwaspMapping {
@@ -161,7 +149,7 @@ pub fn alignment() -> Vec<OwaspMapping> {
                 Mitigation {
                     feature: "Audit Trail",
                     module: "core/audit_trail.rs",
-                    description: "Every tool call logged with agent ID, role, input hash, output tokens",
+                    description: "Every tool call logged with agent ID, input hash, output tokens",
                 },
                 Mitigation {
                     feature: "Compliance Reports",
@@ -214,16 +202,6 @@ pub fn alignment() -> Vec<OwaspMapping> {
             owasp_title: "Broken Access Control",
             risk_description: "Agent accesses resources or performs actions beyond its permissions",
             lean_ctx_mitigations: vec![
-                Mitigation {
-                    feature: "RBAC",
-                    module: "core/roles.rs",
-                    description: "5 built-in roles (viewer, coder, admin, ci, restricted) with granular policies",
-                },
-                Mitigation {
-                    feature: "Capability System",
-                    module: "core/capabilities.rs",
-                    description: "Tool-level capability requirements checked against role grants",
-                },
                 Mitigation {
                     feature: "PathJail",
                     module: "core/pathjail.rs",

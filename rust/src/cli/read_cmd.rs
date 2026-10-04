@@ -6,7 +6,6 @@ use crate::core::entropy;
 use crate::core::io_boundary;
 use crate::core::patterns::deps_cmd;
 use crate::core::protocol;
-use crate::core::roles;
 use crate::core::signatures;
 
 fn resolve_cli_path(raw: &str) -> String {
@@ -448,7 +447,7 @@ pub fn cmd_grep(args: &[String]) {
         20,
         crate::tools::CrpMode::effective(),
         true,
-        roles::active_role().io.allow_secret_paths,
+        false,
         false,
     );
     let out = outcome.text;
@@ -482,13 +481,7 @@ pub fn cmd_glob(args: &[String]) {
     let abs_path = resolve_cli_path(raw_path);
     let path = abs_path.as_str();
 
-    let (out, _original) = crate::tools::ctx_glob::handle(
-        pattern,
-        path,
-        true,
-        roles::active_role().io.allow_secret_paths,
-        200,
-    );
+    let (out, _original) = crate::tools::ctx_glob::handle(pattern, path, true, false, 200);
     println!("{out}");
     crate::core::stats::record("cli_glob", 0, 0);
     if out.starts_with("ERROR:") {

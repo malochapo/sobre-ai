@@ -47,10 +47,9 @@ pub fn handle(
         "export" => {
             let requested_privacy =
                 crate::core::ccp_session_bundle::BundlePrivacyV1::parse(opts.privacy);
-            if requested_privacy == crate::core::ccp_session_bundle::BundlePrivacyV1::Full
-                && crate::core::roles::active_role_name() != "admin"
-            {
-                return "ERROR: privacy=full requires role 'admin'.".to_string();
+            if requested_privacy == crate::core::ccp_session_bundle::BundlePrivacyV1::Full {
+                return "ERROR: privacy=full is not supported; exports are always redacted."
+                    .to_string();
             }
 
             let bundle =
@@ -356,65 +355,6 @@ stale_files: {}\n",
             out
         }
 
-        "role" => {
-            use crate::core::roles;
-            if let Some(name) = value {
-                match roles::set_active_role(name) {
-                    Ok(r) => {
-                        crate::core::budget_tracker::BudgetTracker::global().reset();
-                        format!(
-                            "Role switched to '{name}'.\n\
-                             Shell: {}, Budget: {} tokens / {} shell / ${:.2}\n\
-                             Tools: {}",
-                            r.role.shell_policy,
-                            r.limits.max_context_tokens,
-                            r.limits.max_shell_invocations,
-                            r.limits.max_cost_usd,
-                            if r.tools.allowed.iter().any(|a| a == "*") {
-                                let denied = if r.tools.denied.is_empty() {
-                                    "none".to_string()
-                                } else {
-                                    format!("denied: {}", r.tools.denied.join(", "))
-                                };
-                                format!("* (all), {denied}")
-                            } else {
-                                r.tools.allowed.join(", ")
-                            }
-                        )
-                    }
-                    Err(e) => {
-                        let available: Vec<String> =
-                            roles::list_roles().iter().map(|r| r.name.clone()).collect();
-                        format!("{e}. Available: {}", available.join(", "))
-                    }
-                }
-            } else {
-                let name = roles::active_role_name();
-                let r = roles::active_role();
-                let list = roles::list_roles();
-                let mut out = format!(
-                    "Active role: {name}\n\
-                     Description: {}\n\
-                     Shell policy: {}, Budget: {} tokens / {} shell / ${:.2}\n\n\
-                     Available roles:",
-                    r.role.description,
-                    r.role.shell_policy,
-                    r.limits.max_context_tokens,
-                    r.limits.max_shell_invocations,
-                    r.limits.max_cost_usd,
-                );
-                for info in &list {
-                    let marker = if info.is_active { " *" } else { "  " };
-                    out.push_str(&format!(
-                        "\n{marker} {:<14} ({}) {}",
-                        info.name, info.source, info.description
-                    ));
-                }
-                out.push_str("\n\nSwitch: ctx_session action=role value=<name>");
-                out
-            }
-        }
-
         "diff" => {
             let parts: Vec<&str> = value.unwrap_or("").split_whitespace().collect();
             if parts.len() < 2 {
@@ -717,7 +657,7 @@ stale_files: {}\n",
         }
 
         _ => format!(
-            "Unknown action: {action}. Use: status, load, save, task, finding, decision, reset, list, cleanup, snapshot, restore, resume, configure, role, budget, slo, diff, output_stats, verify, export, import, episodes, procedures"
+            "Unknown action: {action}. Use: status, load, save, task, finding, decision, reset, list, cleanup, snapshot, restore, resume, configure, budget, slo, diff, output_stats, verify, export, import, episodes, procedures"
         ),
     }
 }

@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use crate::core::{events, pathjail, roles, secret_detection};
+use crate::core::{events, pathjail, secret_detection};
 
 /// Reads a file without following symlinks (TOCTOU protection).
 /// Falls back to regular read on non-Unix platforms.
@@ -82,13 +82,13 @@ impl BoundaryMode {
     }
 }
 
-pub fn boundary_mode_effective(role: &roles::Role) -> BoundaryMode {
+pub fn boundary_mode_effective() -> BoundaryMode {
     if let Ok(v) = std::env::var("LEAN_CTX_IO_BOUNDARY_MODE")
         && !v.trim().is_empty()
     {
         return BoundaryMode::parse(&v);
     }
-    BoundaryMode::parse(&role.io.boundary_mode)
+    BoundaryMode::Enforce
 }
 
 pub fn is_secret_like(path: &Path) -> Option<&'static str> {
@@ -172,24 +172,17 @@ pub fn is_secret_like(path: &Path) -> Option<&'static str> {
 }
 
 pub fn check_secret_path_for_tool(tool: &str, path: &Path) -> Result<Option<String>, String> {
-    let role_name = roles::active_role_name();
-    let role = roles::active_role();
-    let mode = boundary_mode_effective(&role);
+    let mode = boundary_mode_effective();
 
     let Some(reason) = is_secret_like(path) else {
         return Ok(None);
     };
 
-    if role.io.allow_secret_paths {
-        return Ok(None);
-    }
-
     let msg = format!(
-        "[I/O BOUNDARY] Secret-like path detected ({reason}): {}.\n\
-Role: {role_name}. To allow: switch role to 'admin' or set io.allow_secret_paths=true in the active role.",
+        "[I/O BOUNDARY] Secret-like path detected ({reason}): {}.",
         path.display()
     );
-    events::emit_policy_violation(&role_name, tool, &msg);
+    events::emit_policy_violation(tool, &msg);
 
     match mode {
         BoundaryMode::Enforce => Err(format!("ERROR: {msg}")),
@@ -208,7 +201,6 @@ pub fn jail_and_check_path(
     candidate: &Path,
     jail_root: &Path,
 ) -> Result<(PathBuf, Option<String>), String> {
-    let role_name = roles::active_role_name();
     let jailed = pathjail::jail_path(candidate, jail_root).map_err(|e| {
         // Only a real jail escape is a security event. A path that simply doesn't exist
         // (stale graph entry, removed file) is benign — emitting a policy violation for it
@@ -218,7 +210,7 @@ pub fn jail_and_check_path(
             crate::core::error::PathJailError::NoExistingAncestor { .. }
         ) {
             let msg = format!("pathjail denied: {} ({e})", candidate.display());
-            events::emit_policy_violation(&role_name, tool, &msg);
+            events::emit_policy_violation(tool, &msg);
         }
         e.to_string()
     })?;
@@ -227,20 +219,9 @@ pub fn jail_and_check_path(
 }
 
 pub fn ensure_ignore_gitignore_allowed(tool: &str) -> Result<(), String> {
-    let role_name = roles::active_role_name();
-    let role = roles::active_role();
-    if role.io.allow_ignore_gitignore {
-        return Ok(());
-    }
-    let msg = format!(
-        "[I/O BOUNDARY] ignore_gitignore requires explicit policy.\n\
-Role '{role_name}' does not allow scanning .gitignore'd paths. \
-An agent cannot escalate to a privileged role at runtime, so configure this where lean-ctx starts:\n\
-- set LEAN_CTX_ROLE=admin, or\n\
-- add `io.allow_ignore_gitignore = true` to a role file (~/.lean-ctx/roles/<name>.toml), then select it via LEAN_CTX_ROLE.\n\
-Docs: https://leanctx.com/docs/security/#ignore-gitignore"
-    );
-    events::emit_policy_violation(&role_name, tool, &msg);
+    let msg =
+        "[I/O BOUNDARY] ignore_gitignore is not supported: .gitignore'd paths are never scanned.";
+    events::emit_policy_violation(tool, msg);
     Err(format!("ERROR: {msg}"))
 }
 
