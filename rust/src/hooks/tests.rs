@@ -181,13 +181,11 @@ fn vscode_instruction_setting_respects_explicit_user_value() {
 }
 
 #[test]
-fn mcp_env_pairs_propagate_project_and_extra_roots_from_env() {
-    // #403: init must bake the captured project/worktree scope into the MCP
-    // server entry, otherwise the long-lived server rejects explicit paths
-    // under sibling worktrees as jail escapes.
+fn mcp_env_pairs_propagate_project_root_from_env() {
+    // #403: init must bake the captured project scope into the MCP server
+    // entry, otherwise the long-lived server loses it.
     let _iso = crate::core::data_dir::isolated_data_dir();
     crate::test_env::set_var("LEAN_CTX_PROJECT_ROOT", "/work/main");
-    crate::test_env::set_var("LEAN_CTX_EXTRA_ROOTS", "/work/wt-a:/work/wt-b");
 
     let pairs = mcp_server_env_pairs();
     let get = |k: &str| pairs.iter().find(|(p, _)| p == k).map(|(_, v)| v.as_str());
@@ -196,14 +194,12 @@ fn mcp_env_pairs_propagate_project_and_extra_roots_from_env() {
         "data dir is auto-detected at runtime, never pinned into the config (GH #408)"
     );
     assert_eq!(get("LEAN_CTX_PROJECT_ROOT"), Some("/work/main"));
-    assert_eq!(get("LEAN_CTX_EXTRA_ROOTS"), Some("/work/wt-a:/work/wt-b"));
 
     // The JSON view mirrors the pairs for the JSON-config agents.
     let json = mcp_server_env_json();
     assert_eq!(json["LEAN_CTX_PROJECT_ROOT"].as_str(), Some("/work/main"));
 
     crate::test_env::remove_var("LEAN_CTX_PROJECT_ROOT");
-    crate::test_env::remove_var("LEAN_CTX_EXTRA_ROOTS");
 }
 
 #[test]
@@ -213,7 +209,6 @@ fn mcp_env_pairs_omit_roots_when_unset() {
     // empty/placeholder root keys into agent configs.
     let _iso = crate::core::data_dir::isolated_data_dir();
     crate::test_env::remove_var("LEAN_CTX_PROJECT_ROOT");
-    crate::test_env::remove_var("LEAN_CTX_EXTRA_ROOTS");
 
     let pairs = mcp_server_env_pairs();
     let keys: Vec<&str> = pairs.iter().map(|(k, _)| k.as_str()).collect();
@@ -226,15 +221,15 @@ fn mcp_env_pairs_omit_roots_when_unset() {
 
 #[test]
 fn hook_command_binary_honors_override_and_skips_msys_rewrite() {
-    let _iso = crate::core::data_dir::isolated_data_dir();
-
-    crate::test_env::set_var("LEAN_CTX_HOOK_BINARY", "$HOME/.local/bin/lean-ctx");
+    let iso = crate::core::data_dir::isolated_data_dir();
+    let cfg = iso.path().join("config.toml");
+    std::fs::write(&cfg, "hook_binary = \"$HOME/.local/bin/lean-ctx\"\n").unwrap();
     assert_eq!(resolve_hook_command_binary(), "$HOME/.local/bin/lean-ctx");
     // The override is already the user's chosen shell form — never rewritten
     // into the MSYS `/c/…` form.
     assert_eq!(resolve_binary_path_for_bash(), "$HOME/.local/bin/lean-ctx");
 
-    crate::test_env::remove_var("LEAN_CTX_HOOK_BINARY");
+    std::fs::remove_file(&cfg).unwrap();
     // Without an override the #367 contract holds: resolved absolute path.
     assert!(std::path::Path::new(&resolve_hook_command_binary()).is_absolute());
     // MCP server entries always keep the absolute path — env-var forms would
@@ -244,11 +239,12 @@ fn hook_command_binary_honors_override_and_skips_msys_rewrite() {
 
 #[test]
 fn claude_settings_hooks_emit_override_verbatim_and_stay_idempotent() {
-    let _iso = crate::core::data_dir::isolated_data_dir();
-    crate::test_env::set_var(
-        "LEAN_CTX_HOOK_BINARY",
-        "$USERPROFILE/AppData/Roaming/npm/node_modules/lean-ctx-bin/bin/lean-ctx.exe",
-    );
+    let iso = crate::core::data_dir::isolated_data_dir();
+    std::fs::write(
+        iso.path().join("config.toml"),
+        "hook_binary = \"$USERPROFILE/AppData/Roaming/npm/node_modules/lean-ctx-bin/bin/lean-ctx.exe\"\n",
+    )
+    .unwrap();
     let home = tempfile::tempdir().unwrap();
 
     install_claude_hook_config(home.path());
@@ -271,20 +267,19 @@ fn claude_settings_hooks_emit_override_verbatim_and_stay_idempotent() {
     install_claude_hook_config(home.path());
     let after = std::fs::read_to_string(&settings_path).unwrap();
     assert_eq!(settings, after, "idempotent under a stable override");
-
-    crate::test_env::remove_var("LEAN_CTX_HOOK_BINARY");
 }
 
 // ── #719: wrapper scripts must honor the override and survive healing ──
 
 #[test]
 fn claude_wrapper_scripts_emit_override_verbatim_and_quoted() {
-    let _iso = crate::core::data_dir::isolated_data_dir();
+    let iso = crate::core::data_dir::isolated_data_dir();
     // A portable form WITH a space — quoting is part of the contract.
-    crate::test_env::set_var(
-        "LEAN_CTX_HOOK_BINARY",
-        "$HOME/App Data/npm/node_modules/lean-ctx-bin/bin/lean-ctx.exe",
-    );
+    std::fs::write(
+        iso.path().join("config.toml"),
+        "hook_binary = \"$HOME/App Data/npm/node_modules/lean-ctx-bin/bin/lean-ctx.exe\"\n",
+    )
+    .unwrap();
     let home = tempfile::tempdir().unwrap();
 
     install_claude_hook_scripts(home.path());
@@ -314,14 +309,11 @@ fn claude_wrapper_scripts_emit_override_verbatim_and_quoted() {
             "{file}: no machine-absolute path may leak into a synced wrapper"
         );
     }
-
-    crate::test_env::remove_var("LEAN_CTX_HOOK_BINARY");
 }
 
 #[test]
 fn heal_without_override_preserves_working_portable_wrapper() {
     let _iso = crate::core::data_dir::isolated_data_dir();
-    crate::test_env::remove_var("LEAN_CTX_HOOK_BINARY");
     let home = tempfile::tempdir().unwrap();
 
     // The synced peer's portable wrapper resolves on THIS machine: the
@@ -681,18 +673,9 @@ fn disabled_env_caps_replace_at_hybrid() {
 }
 
 #[test]
-fn shadow_mode_false_env_caps_replace_at_hybrid() {
-    let _env = crate::core::data_dir::test_env_lock();
-    crate::test_env::set_var("LEAN_CTX_SHADOW_MODE", "false");
+fn shadow_mode_false_caps_replace_at_hybrid() {
+    let iso = crate::core::data_dir::isolated_data_dir();
+    std::fs::write(iso.path().join("config.toml"), "shadow_mode = false\n").unwrap();
     assert_eq!(recommend_hook_mode("claude"), HookMode::Hybrid);
     assert_eq!(recommend_hook_mode("gemini"), HookMode::Hybrid);
-    crate::test_env::remove_var("LEAN_CTX_SHADOW_MODE");
-}
-
-#[test]
-fn heal_off_env_caps_replace_at_hybrid() {
-    let _env = crate::core::data_dir::test_env_lock();
-    crate::test_env::set_var("LEAN_CTX_HEAL", "off");
-    assert_eq!(recommend_hook_mode("claude"), HookMode::Hybrid);
-    crate::test_env::remove_var("LEAN_CTX_HEAL");
 }

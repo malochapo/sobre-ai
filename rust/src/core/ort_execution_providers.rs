@@ -1,76 +1,47 @@
 //! ONNX Runtime execution provider selection: CPU default, opt-in GPU providers.
 //!
 //! Each GPU EP is gated behind its own Cargo feature (`ort-cuda`, `ort-rocm`, etc.).
-//! `LEAN_CTX_ORT_EXECUTION_PROVIDER=cpu|gpu|auto` controls runtime selection.
-//! By default, `auto` enables GPU only when the selected ORT dylib looks like a
-//! GPU runtime; otherwise CPU is used. ORT falls back to CPU when a registered
-//! GPU EP is unusable.
+//! GPU is used only when the selected ORT dylib looks like a GPU runtime;
+//! otherwise CPU is used. ORT falls back to CPU when a registered GPU EP is
+//! unusable.
 
 use std::path::Path;
 
-const PROVIDER_ENV: &str = "LEAN_CTX_ORT_EXECUTION_PROVIDER";
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum ProviderPolicy {
-    Cpu,
-    Gpu,
-    Auto,
-}
-
-/// Build the execution provider list for the current runtime policy.
+/// Build the execution provider list for the selected runtime.
 pub fn execution_providers() -> Vec<ort::ep::ExecutionProviderDispatch> {
-    match provider_policy() {
-        ProviderPolicy::Cpu => cpu_execution_providers(),
-        ProviderPolicy::Gpu => gpu_execution_providers(),
-        ProviderPolicy::Auto => {
-            if selected_runtime_looks_gpu() {
-                gpu_execution_providers()
-            } else {
-                tracing::debug!(
-                    env = PROVIDER_ENV,
-                    "ONNX Runtime GPU auto-detect did not find a GPU runtime; using CPU"
-                );
-                cpu_execution_providers()
-            }
-        }
+    if selected_runtime_looks_gpu() {
+        gpu_execution_providers()
+    } else {
+        tracing::debug!("ONNX Runtime GPU auto-detect did not find a GPU runtime; using CPU");
+        cpu_execution_providers()
     }
 }
 
 pub fn execution_provider_status() -> String {
-    let policy = provider_policy_name();
     let compiled = compiled_gpu_provider_names();
     let compiled = if compiled.is_empty() {
         "none".to_string()
     } else {
         compiled.join(",")
     };
-    format!(
-        "ORT execution provider policy: {policy} (env {PROVIDER_ENV}; compiled GPU EPs: {compiled})"
-    )
+    format!("ORT execution provider: auto-detected (compiled GPU EPs: {compiled})")
 }
 
-/// Whether the current policy resolves to a GPU execution provider — regardless
+/// Whether the selected runtime resolves to a GPU execution provider — regardless
 /// of whether that provider's runtime dependencies can actually be loaded.
-fn policy_wants_gpu() -> bool {
-    if compiled_gpu_provider_names().is_empty() {
-        return false;
-    }
-    match provider_policy() {
-        ProviderPolicy::Cpu => false,
-        ProviderPolicy::Gpu => true,
-        ProviderPolicy::Auto => selected_runtime_looks_gpu(),
-    }
+fn runtime_wants_gpu() -> bool {
+    !compiled_gpu_provider_names().is_empty() && selected_runtime_looks_gpu()
 }
 
 /// Whether a real GPU execution provider will *actually* run inference — i.e.
-/// the policy wants a GPU **and** the provider's runtime libraries load. Used to
+/// the runtime wants a GPU **and** the provider's runtime libraries load. Used to
 /// scale batch size: small mini-batches under-utilize a GPU and pay
 /// kernel-launch/host↔device-copy overhead per call that isn't amortized
 /// (notably under WSL2 GPU passthrough), but oversizing batches for a GPU that
 /// silently fell back to CPU makes the CPU path dramatically slower — so this
-/// must reflect the EP that ORT will really register, not just the policy.
+/// must reflect the EP that ORT will really register, not just the selected runtime.
 pub fn gpu_active() -> bool {
-    if !policy_wants_gpu() {
+    if !runtime_wants_gpu() {
         return false;
     }
     // The shipped Linux/Windows GPU build compiles only the CUDA EP. If its
@@ -86,14 +57,14 @@ pub fn gpu_active() -> bool {
     }
 }
 
-/// When the policy expects a GPU but the CUDA runtime can't be loaded (so ORT
+/// When the selected runtime expects a GPU but the CUDA runtime can't be loaded (so ORT
 /// falls back to CPU), returns a user-facing explanation with the exact install
 /// commands for the missing libraries. Returns `None` when the GPU actually
 /// works or when CPU was requested.
 pub fn gpu_fallback_warning() -> Option<String> {
     #[cfg(feature = "ort-cuda")]
     {
-        if !policy_wants_gpu() || cuda_runtime_available() {
+        if !runtime_wants_gpu() || cuda_runtime_available() {
             return None;
         }
         let detail = probe_cuda_runtime().err().unwrap_or_default();
@@ -170,7 +141,7 @@ fn cuda_runtime_available() -> bool {
 #[cfg(feature = "ort-cuda")]
 fn cuda_missing_message(probe_err: &str) -> String {
     format!(
-        "GPU requested (via {env}) but the CUDA runtime libraries required by ONNX Runtime \
+        "GPU runtime selected but the CUDA runtime libraries required by ONNX Runtime \
          could not be loaded — embedding is running on CPU. Loader error: {probe_err}\n\
          ONNX Runtime 1.{ort_minor}.x needs CUDA 12 + cuDNN 9. Missing libraries typically \
          include: libcudart.so.12, libcublas.so.12, libcublasLt.so.12, libcudnn.so.9, \
@@ -183,14 +154,13 @@ fn cuda_missing_message(probe_err: &str) -> String {
          $HOME/.local/share/lean-ctx/cuda-libs/bin/python -m pip install nvidia-cudnn-cu12==9.8.0.87\n  \
          # then ensure the loader can find them (if not already on the path):\n  \
          export LD_LIBRARY_PATH=$($HOME/.local/share/lean-ctx/cuda-libs/bin/python -c 'import pathlib, nvidia.cudnn; print(pathlib.Path(nvidia.cudnn.__file__).parent / '\''lib'\'')'):/usr/local/cuda-12.8/targets/x86_64-linux/lib:/usr/lib/x86_64-linux-gnu:$LD_LIBRARY_PATH\n\
-         To silence this and stay on CPU, set {env}=cpu.",
-        env = PROVIDER_ENV,
+         To stay on CPU, point ORT_DYLIB_PATH at a CPU runtime.",
         ort_minor = ort::MINOR_VERSION,
     )
 }
 
 pub fn execution_provider_help() -> &'static str {
-    "By default lean-ctx auto-detects GPU runtimes from ORT_DYLIB_PATH and otherwise uses CPU. Set LEAN_CTX_ORT_EXECUTION_PROVIDER=cpu|gpu|auto to override."
+    "lean-ctx uses the GPU when ORT_DYLIB_PATH points at a GPU runtime, and the CPU otherwise."
 }
 
 fn cpu_execution_providers() -> Vec<ort::ep::ExecutionProviderDispatch> {
@@ -244,29 +214,6 @@ pub fn gpu_execution_providers() -> Vec<ort::ep::ExecutionProviderDispatch> {
     eps
 }
 
-fn provider_policy() -> ProviderPolicy {
-    match std::env::var(PROVIDER_ENV) {
-        Ok(value) => provider_policy_from_value(&value),
-        Err(_) => ProviderPolicy::Auto,
-    }
-}
-
-fn provider_policy_name() -> &'static str {
-    match provider_policy() {
-        ProviderPolicy::Cpu => "cpu",
-        ProviderPolicy::Gpu => "gpu",
-        ProviderPolicy::Auto => "auto",
-    }
-}
-
-fn provider_policy_from_value(value: &str) -> ProviderPolicy {
-    match value.trim().to_lowercase().as_str() {
-        "gpu" | "cuda" | "rocm" | "webgpu" | "directml" | "coreml" => ProviderPolicy::Gpu,
-        "auto" => ProviderPolicy::Auto,
-        _ => ProviderPolicy::Cpu,
-    }
-}
-
 fn selected_runtime_looks_gpu() -> bool {
     crate::core::ort_environment::resolved_ort_dylib_path()
         .ok()
@@ -309,23 +256,4 @@ fn compiled_gpu_provider_names() -> Vec<&'static str> {
     ];
     let _ = &mut names; // suppress unused_mut when no GPU feature is active
     names
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn provider_policy_defaults_to_cpu_for_unknown_values() {
-        assert_eq!(provider_policy_from_value(""), ProviderPolicy::Cpu);
-        assert_eq!(provider_policy_from_value("bogus"), ProviderPolicy::Cpu);
-        assert_eq!(provider_policy_from_value("cpu"), ProviderPolicy::Cpu);
-    }
-
-    #[test]
-    fn provider_policy_accepts_gpu_and_auto_aliases() {
-        assert_eq!(provider_policy_from_value("gpu"), ProviderPolicy::Gpu);
-        assert_eq!(provider_policy_from_value("CUDA"), ProviderPolicy::Gpu);
-        assert_eq!(provider_policy_from_value("auto"), ProviderPolicy::Auto);
-    }
 }

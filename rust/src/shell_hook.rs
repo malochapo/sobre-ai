@@ -350,29 +350,8 @@ pub fn install_all_with_style(quiet: bool, style: Style) {
 
 /// Returns `true` if the given shell binary is installed on the system.
 /// Checks common installation paths without spawning a subprocess.
-///
-/// `LEAN_CTX_SHELL_HOOK_FORCE` overrides detection for environments where the
-/// shell lives in a non-standard path or is provisioned after install (minimal
-/// containers, custom images): set it to `1`/`true`/`all` to force every shell,
-/// or to a comma-separated list (e.g. `zsh,bash`) to force specific ones.
 #[cfg(unix)]
 fn shell_available(shell: &str) -> bool {
-    if let Ok(forced) = std::env::var("LEAN_CTX_SHELL_HOOK_FORCE") {
-        let forced = forced.trim();
-        if forced == "1"
-            || forced.eq_ignore_ascii_case("true")
-            || forced.eq_ignore_ascii_case("all")
-        {
-            return true;
-        }
-        if forced
-            .split(',')
-            .any(|s| s.trim().eq_ignore_ascii_case(shell))
-        {
-            return true;
-        }
-    }
-
     let candidates: &[&str] = match shell {
         "zsh" => &[
             "/bin/zsh",
@@ -1140,18 +1119,9 @@ mod tests {
 
     // --- #309: shell_available guards ---
 
-    /// Serialises the env-sensitive `shell_available` tests so one setting
-    /// `LEAN_CTX_SHELL_HOOK_FORCE` can't race the filesystem-match assertions.
-    #[cfg(unix)]
-    static SHELL_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
-
     #[cfg(unix)]
     #[test]
     fn shell_available_rejects_unknown_shell() {
-        let _g = SHELL_ENV_LOCK
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        crate::test_env::remove_var("LEAN_CTX_SHELL_HOOK_FORCE");
         assert!(!shell_available("fish"));
         assert!(!shell_available("nushell"));
         assert!(!shell_available(""));
@@ -1160,10 +1130,6 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn shell_available_finds_installed_shells() {
-        let _g = SHELL_ENV_LOCK
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        crate::test_env::remove_var("LEAN_CTX_SHELL_HOOK_FORCE");
         // On any Unix CI/dev machine at least one of bash/zsh should exist.
         let has_bash = Path::new("/bin/bash").exists() || Path::new("/usr/bin/bash").exists();
         let has_zsh = Path::new("/bin/zsh").exists() || Path::new("/usr/bin/zsh").exists();
@@ -1175,26 +1141,5 @@ mod tests {
             shell_available("zsh") == has_zsh,
             "shell_available(zsh) should match filesystem"
         );
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn shell_hook_force_overrides_detection() {
-        let _g = SHELL_ENV_LOCK
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-
-        // `all` forces every shell, even ones not on disk.
-        crate::test_env::set_var("LEAN_CTX_SHELL_HOOK_FORCE", "all");
-        assert!(shell_available("zsh"));
-        assert!(shell_available("bash"));
-
-        // A comma list forces only the named shells.
-        crate::test_env::set_var("LEAN_CTX_SHELL_HOOK_FORCE", "zsh");
-        assert!(shell_available("zsh"));
-        // `bash` falls back to filesystem detection here; assert only the
-        // forced-on guarantee to stay host-independent.
-
-        crate::test_env::remove_var("LEAN_CTX_SHELL_HOOK_FORCE");
     }
 }

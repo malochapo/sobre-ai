@@ -119,10 +119,9 @@ pub(crate) fn path_jail_outcome() -> Outcome {
     };
 
     // Env-channel relaxations the config view above can't see (inherited from the
-    // IDE/launchd process env, e.g. LEAN_CTX_ALLOW_PATH / EXTRA_ROOTS /
-    // ALLOW_IDE_DIRS). Surface them as a standing security note (GH security
+    // multi-root workspace or `allow_ide_config_dirs`). Surface them as a standing security note (GH security
     // audit, finding 3); no-jail / path_jail=false are handled by the early
-    // returns above, so only the env/IDE-dir relaxations reach here.
+    // returns above, so only those relaxations reach here.
     let relaxed: Vec<&str> = crate::core::pathjail::active_relaxations()
         .iter()
         .map(|r| r.source)

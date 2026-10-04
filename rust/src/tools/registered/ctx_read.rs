@@ -241,8 +241,7 @@ impl CtxReadTool {
             mode
         };
 
-        // Delta-aware explicit re-reads (opt-in: config `delta_explicit`, env
-        // LCTX_DELTA_EXPLICIT). Re-requesting full/lines:N-M content for a file
+        // Delta-aware explicit re-reads (opt-in: config `delta_explicit`). Re-requesting full/lines:N-M content for a file
         // this session already read re-emits content the model already holds;
         // when the file changed on disk, a diff carries the same information in
         // a fraction of the tokens, and an unchanged lines: request of a
@@ -287,7 +286,7 @@ impl CtxReadTool {
                 && meta.len() > cap
             {
                 let msg = format!(
-                    "File too large ({} bytes, limit {} bytes via LCTX_MAX_READ_BYTES). \
+                    "File too large ({} bytes, limit {} bytes). \
                      Use mode=\"lines:1-100\" or start_line+limit for partial reads, \
                      mode=\"anchored\" with start_line+limit for edit-ready windows, \
                      or increase the limit.",
@@ -526,7 +525,6 @@ impl CtxReadTool {
                         let file_ref = cache.get_file_ref(&path_owned);
 
                         let effective_fresh = fresh
-                            || crate::tools::ctx_read::force_fresh_env()
                             || (crate::tools::ctx_read::is_subagent_context()
                                 && !crate::core::conversation::scope_enabled());
 

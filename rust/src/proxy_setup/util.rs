@@ -21,13 +21,8 @@ pub fn is_local_lean_ctx_url(url: &str) -> bool {
     url.starts_with("http://127.0.0.1:") || url.starts_with("http://localhost:")
 }
 
-/// Proxy reachability timeout. Priority: env var > config.toml > 200ms default.
+/// Proxy reachability timeout: config.toml, else 200ms.
 pub fn proxy_timeout() -> std::time::Duration {
-    if let Ok(val) = std::env::var("LEAN_CTX_PROXY_TIMEOUT_MS")
-        && let Ok(ms) = val.parse::<u64>()
-    {
-        return std::time::Duration::from_millis(ms);
-    }
     if let Some(ms) = crate::core::config::Config::load().proxy_timeout_ms {
         return std::time::Duration::from_millis(ms);
     }
@@ -41,11 +36,6 @@ pub(crate) fn is_proxy_reachable(port: u16) -> bool {
 }
 
 pub fn default_port() -> u16 {
-    if let Ok(val) = std::env::var("LEAN_CTX_PROXY_PORT")
-        && let Ok(port) = val.parse::<u16>()
-    {
-        return port;
-    }
     let cfg = crate::core::config::Config::load();
     if let Some(port) = cfg.proxy_port {
         return port;

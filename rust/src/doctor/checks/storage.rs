@@ -220,11 +220,7 @@ pub(crate) fn semantic_index_outcome() -> Option<Outcome> {
 }
 pub(crate) fn archive_footprint_outcome() -> Outcome {
     let bytes = crate::core::archive_fts::db_size_bytes();
-    let cap_mb = std::env::var("LEAN_CTX_ARCHIVE_DB_MAX_MB")
-        .ok()
-        .and_then(|v| v.trim().parse::<u64>().ok())
-        .filter(|m| *m > 0)
-        .unwrap_or(500);
+    let cap_mb = crate::core::archive_fts::DEFAULT_MAX_DB_MB;
     let cap_bytes = cap_mb * 1024 * 1024;
     let mb = bytes as f64 / 1_048_576.0;
     if bytes > cap_bytes {
@@ -268,9 +264,7 @@ pub(crate) fn memory_profile_outcome() -> Outcome {
             format!("full caches, BM25 disk {bm25_mb} MB"),
         ),
     };
-    let source = if crate::core::config::MemoryProfile::from_env().is_some() {
-        "env"
-    } else if cfg.memory_profile != crate::core::config::MemoryProfile::default() {
+    let source = if cfg.memory_profile != crate::core::config::MemoryProfile::default() {
         "config"
     } else {
         "default"
@@ -295,9 +289,7 @@ pub(crate) fn memory_cleanup_outcome() -> Outcome {
             "cache retained 1 hour, multi-IDE/multi-model optimized",
         ),
     };
-    let source = if crate::core::config::MemoryCleanup::from_env().is_some() {
-        "env"
-    } else if cfg.memory_cleanup != crate::core::config::MemoryCleanup::default() {
+    let source = if cfg.memory_cleanup != crate::core::config::MemoryCleanup::default() {
         "config"
     } else {
         "default"

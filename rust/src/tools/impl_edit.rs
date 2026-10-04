@@ -750,20 +750,20 @@ mod tests {
     #[cfg(not(feature = "no-jail"))]
     #[test]
     fn create_denied_in_read_only_root() {
-        let _iso = crate::core::data_dir::isolated_data_dir();
+        let iso = crate::core::data_dir::isolated_data_dir();
         let dir = tempfile::tempdir().unwrap();
         let ro = dir.path().join("refrepo");
         std::fs::create_dir_all(&ro).unwrap();
         let path = ro.join("sub/new_file.txt");
 
         let ro_canon = crate::core::pathjail::canonicalize_or_self(&ro);
-        crate::test_env::set_var(
-            "LEAN_CTX_READ_ONLY_ROOTS",
-            ro_canon.to_string_lossy().as_ref(),
-        );
+        std::fs::write(
+            iso.path().join("config.toml"),
+            format!("read_only_roots = [{:?}]\n", ro_canon.to_string_lossy()),
+        )
+        .unwrap();
         let mut cache = SessionCache::new();
         let result = handle(&mut cache, &mk_params(&path, "", "x\n", false, true));
-        crate::test_env::remove_var("LEAN_CTX_READ_ONLY_ROOTS");
 
         assert!(
             result.contains("read-only"),
@@ -782,7 +782,7 @@ mod tests {
     #[cfg(not(feature = "no-jail"))]
     #[test]
     fn edit_denied_in_read_only_root() {
-        let _iso = crate::core::data_dir::isolated_data_dir();
+        let iso = crate::core::data_dir::isolated_data_dir();
         let dir = tempfile::tempdir().unwrap();
         let ro = dir.path().join("refrepo");
         std::fs::create_dir_all(&ro).unwrap();
@@ -790,16 +790,16 @@ mod tests {
         std::fs::write(&path, "alpha beta\n").unwrap();
 
         let ro_canon = crate::core::pathjail::canonicalize_or_self(&ro);
-        crate::test_env::set_var(
-            "LEAN_CTX_READ_ONLY_ROOTS",
-            ro_canon.to_string_lossy().as_ref(),
-        );
+        std::fs::write(
+            iso.path().join("config.toml"),
+            format!("read_only_roots = [{:?}]\n", ro_canon.to_string_lossy()),
+        )
+        .unwrap();
         let mut cache = SessionCache::new();
         let result = handle(
             &mut cache,
             &mk_params(&path, "alpha", "OMEGA", false, false),
         );
-        crate::test_env::remove_var("LEAN_CTX_READ_ONLY_ROOTS");
 
         assert!(
             result.contains("read-only"),
@@ -820,7 +820,7 @@ mod tests {
     #[cfg(not(feature = "no-jail"))]
     #[test]
     fn backup_path_cannot_smuggle_writes_into_read_only_root() {
-        let _iso = crate::core::data_dir::isolated_data_dir();
+        let iso = crate::core::data_dir::isolated_data_dir();
         let dir = tempfile::tempdir().unwrap();
         let ro = dir.path().join("refrepo");
         let work = dir.path().join("work");
@@ -831,16 +831,16 @@ mod tests {
         let smuggled = ro.join("leak.bak"); // attacker-chosen backup inside RO root
 
         let ro_canon = crate::core::pathjail::canonicalize_or_self(&ro);
-        crate::test_env::set_var(
-            "LEAN_CTX_READ_ONLY_ROOTS",
-            ro_canon.to_string_lossy().as_ref(),
-        );
+        std::fs::write(
+            iso.path().join("config.toml"),
+            format!("read_only_roots = [{:?}]\n", ro_canon.to_string_lossy()),
+        )
+        .unwrap();
         let mut params = mk_params(&target, "alpha", "OMEGA", false, false);
         params.backup = true;
         params.backup_path = Some(smuggled.to_string_lossy().to_string());
         let mut cache = SessionCache::new();
         let result = handle(&mut cache, &params);
-        crate::test_env::remove_var("LEAN_CTX_READ_ONLY_ROOTS");
 
         assert!(
             result.contains("read-only"),

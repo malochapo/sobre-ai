@@ -139,14 +139,6 @@ fn is_deny_suppressed() -> bool {
     if std::env::var("LEAN_CTX_DISABLED").is_ok() {
         return true;
     }
-    if matches!(std::env::var("LEAN_CTX_SHADOW_MODE"), Ok(v) if v.trim() == "false" || v.trim() == "0")
-    {
-        return true;
-    }
-    if matches!(std::env::var("LEAN_CTX_HEAL"), Ok(v) if v.trim().eq_ignore_ascii_case("off") || v.trim() == "0")
-    {
-        return true;
-    }
     let cfg = crate::core::config::Config::load();
     !cfg.shadow_mode
 }
@@ -344,7 +336,7 @@ fn resolve_binary_path() -> String {
 /// Binary token for **shell-executed** hook commands (`<binary> hook rewrite`
 /// in Claude/Cursor/Gemini/… hook configs and generated `#!/bin/sh` scripts).
 ///
-/// Portable override (#708): `LEAN_CTX_HOOK_BINARY` env, then config
+/// Portable override (#708): the
 /// `hook_binary`, is emitted **verbatim** — for settings files synced across
 /// machines with different usernames (`$HOME/.local/bin/lean-ctx`). Hook
 /// hosts run these commands through a shell, so the variable expands at
@@ -1145,11 +1137,11 @@ fn make_executable(_path: &PathBuf) {}
 /// per-category dirs (config/data/state/cache) at runtime, and pinning the data
 /// dir would set that var in the server's environment, forcing single-dir mode
 /// and collapsing config/state/cache onto the data dir — defeating the XDG split
-/// (GH #408). Emits `LEAN_CTX_PROJECT_ROOT` and `LEAN_CTX_EXTRA_ROOTS` when known
-/// (process env first, then config). Without these, a long-lived MCP server
-/// spawned by the agent loses the project / worktree scope captured at `init`,
-/// so an explicit path under a sibling worktree is wrongly rejected as a jail
-/// escape (#403). Single source of truth so every agent installer stays consistent.
+/// (GH #408). Emits `LEAN_CTX_PROJECT_ROOT` when known (process env first,
+/// then config). Without it, a long-lived MCP server spawned by the agent loses
+/// the project scope captured at `init` (#403). Extra roots come from
+/// config.toml, which the server reads itself. Single source of truth so every
+/// agent installer stays consistent.
 pub(crate) fn mcp_server_env_pairs() -> Vec<(String, String)> {
     let mut pairs = Vec::new();
 
@@ -1161,29 +1153,6 @@ pub(crate) fn mcp_server_env_pairs() -> Vec<(String, String)> {
         .or_else(|| cfg.project_root.clone().filter(|v| !v.trim().is_empty()));
     if let Some(root) = project_root {
         pairs.push(("LEAN_CTX_PROJECT_ROOT".to_string(), root));
-    }
-
-    // Env override is already a platform path-list; config is a Vec we join the
-    // same way `LEAN_CTX_EXTRA_ROOTS` is parsed (`std::env::split_paths`).
-    let extra_roots = std::env::var("LEAN_CTX_EXTRA_ROOTS")
-        .ok()
-        .filter(|v| !v.trim().is_empty())
-        .or_else(|| {
-            let roots: Vec<&str> = cfg
-                .extra_roots
-                .iter()
-                .map(String::as_str)
-                .filter(|s| !s.trim().is_empty())
-                .collect();
-            if roots.is_empty() {
-                return None;
-            }
-            std::env::join_paths(roots)
-                .ok()
-                .map(|s| s.to_string_lossy().to_string())
-        });
-    if let Some(extra) = extra_roots {
-        pairs.push(("LEAN_CTX_EXTRA_ROOTS".to_string(), extra));
     }
 
     pairs

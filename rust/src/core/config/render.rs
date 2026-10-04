@@ -129,11 +129,6 @@ fn append_key_comment(out: &mut String, key_schema: &KeySchema) {
         out.push_str(&values.join(", "));
         out.push('\n');
     }
-    if let Some(env) = &key_schema.env_override {
-        out.push_str("#   env: ");
-        out.push_str(env);
-        out.push('\n');
-    }
 }
 
 #[cfg(test)]

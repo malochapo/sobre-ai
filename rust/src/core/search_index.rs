@@ -33,7 +33,7 @@
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, OnceLock};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use glob::Pattern;
 use ignore::WalkBuilder;
@@ -538,10 +538,6 @@ fn corpus_signature(root: &str, respect_gitignore: bool, allow_secret_paths: boo
 struct CacheEntry {
     index: Option<Arc<SearchIndex>>,
     building: bool,
-    /// When this root's resident index was last confirmed current against disk.
-    /// Gates the optional coalesce window in [`get_fresh`]; `None` forces a fresh
-    /// verification on the next lookup.
-    last_verified: Option<Instant>,
 }
 
 impl CacheEntry {
@@ -549,7 +545,6 @@ impl CacheEntry {
         Self {
             index: None,
             building: false,
-            last_verified: None,
         }
     }
 }
@@ -558,26 +553,6 @@ static CACHE: OnceLock<Mutex<HashMap<String, CacheEntry>>> = OnceLock::new();
 
 fn cache() -> &'static Mutex<HashMap<String, CacheEntry>> {
     CACHE.get_or_init(|| Mutex::new(HashMap::new()))
-}
-
-/// Escape hatch: `LEAN_CTX_DISABLE_SEARCH_INDEX=1` forces the walk path
-/// everywhere (debugging / A-B measurement / opt-out).
-fn index_disabled() -> bool {
-    std::env::var("LEAN_CTX_DISABLE_SEARCH_INDEX")
-        .is_ok_and(|v| v == "1" || v.eq_ignore_ascii_case("true"))
-}
-
-/// Optional coalescing window for the freshness check. Default `0` (disabled):
-/// every [`get_fresh`] re-verifies the corpus signature against disk, so a fresh
-/// edit is never missed. On very large indexed trees, set
-/// `LEAN_CTX_SEARCH_INDEX_COALESCE_MS` to trade a bounded staleness window for
-/// fewer stat-walks under bursty search load.
-fn coalesce_window() -> Option<Duration> {
-    let ms = std::env::var("LEAN_CTX_SEARCH_INDEX_COALESCE_MS")
-        .ok()
-        .and_then(|v| v.trim().parse::<u64>().ok())
-        .unwrap_or(0);
-    (ms > 0).then(|| Duration::from_millis(ms))
 }
 
 /// Returns a fresh resident index for `root` if one is available for the given
@@ -589,24 +564,23 @@ pub fn get_fresh(
     allow_secret_paths: bool,
 ) -> Option<Arc<SearchIndex>> {
     // Privileged "ignore gitignore" scans are rare and bypass the index.
-    if !respect_gitignore || index_disabled() {
+    if !respect_gitignore {
         return None;
     }
 
-    // Phase 1 (locked, O(1)): grab the resident index for this config, if any,
-    // together with when it was last verified against disk.
-    let (candidate, last_verified) = {
+    // Phase 1 (locked, O(1)): grab the resident index for this config, if any.
+    let candidate = {
         let map = cache()
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         match map.get(root) {
             Some(entry) => match &entry.index {
                 Some(idx) if idx.config_matches(respect_gitignore, allow_secret_paths) => {
-                    (Some(Arc::clone(idx)), entry.last_verified)
+                    Some(Arc::clone(idx))
                 }
-                _ => (None, None),
+                _ => None,
             },
-            None => (None, None),
+            None => None,
         }
     };
 
@@ -616,22 +590,11 @@ pub fn get_fresh(
         return None;
     };
 
-    // Coalesce (opt-in, default off): inside the window trust the recent
-    // verification and skip the stat-walk — keeps bursty search load O(1).
-    if let Some(window) = coalesce_window()
-        && last_verified.is_some_and(|t| t.elapsed() < window)
-    {
-        return Some(idx);
-    }
-
     // Phase 2 (unlocked): verify the live corpus signature. Deliberately held
     // *outside* the cache mutex so a multi-millisecond stat-walk never serializes
     // other roots or concurrent searches.
     match corpus_signature(root, respect_gitignore, allow_secret_paths) {
-        Some(sig) if sig == idx.signature => {
-            mark_verified(root);
-            Some(idx)
-        }
+        Some(sig) if sig == idx.signature => Some(idx),
         _ => {
             // Corpus changed (or root no longer indexable): walk accurately now
             // and rebuild the index in the background for the next call.
@@ -652,18 +615,6 @@ pub fn clear_resident() {
         .unwrap_or_else(std::sync::PoisonError::into_inner);
     for entry in map.values_mut() {
         entry.index = None;
-        entry.last_verified = None;
-    }
-}
-
-/// Record that `root`'s resident index was just confirmed current, extending its
-/// coalesce window.
-fn mark_verified(root: &str) {
-    let mut map = cache()
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
-    if let Some(entry) = map.get_mut(root) {
-        entry.last_verified = Some(Instant::now());
     }
 }
 
@@ -691,7 +642,7 @@ fn request_build(root: &str, respect_gitignore: bool, allow_secret_paths: bool) 
 /// Ensure a resident index for `root` is built (or building) in the background.
 /// Safe to call repeatedly; deduped via the per-root `building` flag.
 pub fn ensure_background(root: &str, respect_gitignore: bool, allow_secret_paths: bool) {
-    if !respect_gitignore || index_disabled() {
+    if !respect_gitignore {
         return;
     }
     // Prewarm only when there is no usable index yet — staleness of an existing
@@ -717,7 +668,7 @@ pub fn ensure_background(root: &str, respect_gitignore: bool, allow_secret_paths
 /// Returns `true` on success. Useful for CLI prewarm and benchmarks that need a
 /// guaranteed-warm index. Respects the disable env var.
 pub fn warm_blocking(root: &str, respect_gitignore: bool, allow_secret_paths: bool) -> bool {
-    if !respect_gitignore || index_disabled() {
+    if !respect_gitignore {
         return false;
     }
     let Some(idx) = SearchIndex::build(root, respect_gitignore, allow_secret_paths) else {
@@ -731,7 +682,6 @@ pub fn warm_blocking(root: &str, respect_gitignore: bool, allow_secret_paths: bo
         CacheEntry {
             index: Some(Arc::new(idx)),
             building: false,
-            last_verified: Some(Instant::now()),
         },
     );
     true
@@ -796,8 +746,6 @@ fn build_guarded(root: &str, respect_gitignore: bool, allow_secret_paths: bool) 
         entry.building = false;
         if let Some(idx) = built {
             entry.index = Some(Arc::new(idx));
-            // A just-built index is current with the disk it walked.
-            entry.last_verified = Some(Instant::now());
         }
     }
     // `lock` is held until here so the cross-process guard spans the whole walk.
@@ -1198,7 +1146,6 @@ mod tests {
                 CacheEntry {
                     index: None,
                     building: true,
-                    last_verified: None,
                 },
             );
         }
@@ -1240,7 +1187,6 @@ mod tests {
                 CacheEntry {
                     index: None,
                     building: true,
-                    last_verified: None,
                 },
             );
         }
@@ -1315,8 +1261,6 @@ mod tests {
         let _env = crate::core::data_dir::test_env_lock();
         let data = tempfile::tempdir().unwrap();
         let _guard = DataDirGuard::set(data.path());
-        crate::test_env::remove_var("LEAN_CTX_DISABLE_SEARCH_INDEX");
-        crate::test_env::remove_var("LEAN_CTX_SEARCH_INDEX_COALESCE_MS");
 
         let dir = corpus();
         let root = dir.path().to_string_lossy().to_string();

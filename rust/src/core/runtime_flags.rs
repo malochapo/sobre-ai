@@ -70,7 +70,6 @@ pub fn quiet_enabled() -> bool {
 
 pub fn mcp_server_enabled() -> bool {
     MCP_SERVER.load(Ordering::Relaxed)
-        || std::env::var("LEAN_CTX_MCP_SERVER").is_ok_and(|value| value == "1")
 }
 
 pub fn hook_child_enabled() -> bool {
@@ -86,6 +85,4 @@ pub fn allow_paths() -> Vec<PathBuf> {
 
 pub fn allow_path_enabled() -> bool {
     !allow_paths().is_empty()
-        || std::env::var("LEAN_CTX_ALLOW_PATH").is_ok()
-        || std::env::var("LCTX_ALLOW_PATH").is_ok()
 }

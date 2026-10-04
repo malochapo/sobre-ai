@@ -358,7 +358,6 @@ fn enforce_allows_project_root_binary_path() {
 #[test]
 fn python3_inline_blocked_by_default() {
     let _lock = crate::core::data_dir::test_env_lock();
-    crate::test_env::remove_var("LEAN_CTX_SHELL_ALLOW_INLINE_SCRIPTS");
     let result = super::enforce_shell_gate("python3 -c \"print(42)\"");
     assert!(result.is_err(), "python3 -c must be blocked by default");
 }
@@ -366,10 +365,13 @@ fn python3_inline_blocked_by_default() {
 /// #814: python3 -c is allowed when opt-in is enabled.
 #[test]
 fn python3_inline_allowed_with_opt_in() {
-    let _lock = crate::core::data_dir::test_env_lock();
-    crate::test_env::set_var("LEAN_CTX_SHELL_ALLOW_INLINE_SCRIPTS", "1");
+    let iso = crate::core::data_dir::isolated_data_dir();
+    std::fs::write(
+        iso.path().join("config.toml"),
+        "shell_allow_inline_scripts = true\n",
+    )
+    .unwrap();
     let result = super::enforce_shell_gate("python3 -c \"print(42)\"");
-    crate::test_env::remove_var("LEAN_CTX_SHELL_ALLOW_INLINE_SCRIPTS");
     assert!(
         result.is_ok(),
         "python3 -c must be allowed with opt-in: {result:?}"
@@ -379,10 +381,13 @@ fn python3_inline_allowed_with_opt_in() {
 /// #814: node -e is also gated by the same opt-in.
 #[test]
 fn node_eval_allowed_with_opt_in() {
-    let _lock = crate::core::data_dir::test_env_lock();
-    crate::test_env::set_var("LEAN_CTX_SHELL_ALLOW_INLINE_SCRIPTS", "1");
+    let iso = crate::core::data_dir::isolated_data_dir();
+    std::fs::write(
+        iso.path().join("config.toml"),
+        "shell_allow_inline_scripts = true\n",
+    )
+    .unwrap();
     let result = super::enforce_shell_gate("node -e \"console.log(42)\"");
-    crate::test_env::remove_var("LEAN_CTX_SHELL_ALLOW_INLINE_SCRIPTS");
     assert!(
         result.is_ok(),
         "node -e must be allowed with opt-in: {result:?}"

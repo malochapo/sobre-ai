@@ -44,14 +44,6 @@ const MAX_CITATIONS: usize = 15;
 const MAX_KEYWORDS: usize = 6;
 const MAX_SYMS_PER_KW: usize = 3;
 
-fn env_usize(key: &str, default: usize) -> usize {
-    std::env::var(key)
-        .ok()
-        .and_then(|v| v.parse::<usize>().ok())
-        .filter(|&v| v > 0)
-        .unwrap_or(default)
-}
-
 /// Caller-facing knobs. `max_turns` is clamped to a sane range; `citation_only`
 /// mirrors FastContext's terse mode (emit only the `<final_answer>` block).
 #[derive(Debug, Clone)]
@@ -62,9 +54,7 @@ pub(crate) struct ExploreOptions {
 
 impl ExploreOptions {
     pub(crate) fn new(max_turns: Option<usize>, citation_only: bool) -> Self {
-        let mt = max_turns
-            .unwrap_or_else(|| env_usize("LEAN_CTX_EXPLORE_MAX_TURNS", DEFAULT_MAX_TURNS))
-            .clamp(1, 8);
+        let mt = max_turns.unwrap_or(DEFAULT_MAX_TURNS).clamp(1, 8);
         Self {
             max_turns: mt,
             citation_only,
@@ -449,7 +439,7 @@ pub(crate) fn handle(
     let relevant: BTreeSet<String> = best_hit_for_file.keys().cloned().collect();
 
     // Turn 1 frontier: the top-k distinct files by lexical relevance.
-    let per_turn_k = env_usize("LEAN_CTX_EXPLORE_K", DEFAULT_PER_TURN_K);
+    let per_turn_k = DEFAULT_PER_TURN_K;
     let seeds: Vec<String> = seed_order.iter().take(per_turn_k).cloned().collect();
 
     // Bounded BFS over the static graph, grounded in the lexical hit set.
@@ -486,7 +476,7 @@ pub(crate) fn handle(
 
     let files_examined = discovered.len();
     let candidates: Vec<Candidate> = by_loc.into_values().collect();
-    let budget = env_usize("LEAN_CTX_EXPLORE_BUDGET_TOKENS", DEFAULT_BUDGET_TOKENS);
+    let budget = DEFAULT_BUDGET_TOKENS;
     let selected = select_citations(candidates, budget);
 
     let citations: Vec<Citation> = selected

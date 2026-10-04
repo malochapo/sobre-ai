@@ -4,14 +4,8 @@
 //! full `handle()` path (semantic ranking + exact match + symbol body) and the
 //! H1 hardening: the semantic stage must never stall the call beyond its budget.
 
-use std::sync::Mutex;
-use std::time::{Duration, Instant};
-
 use lean_ctx::tools::CrpMode;
 use lean_ctx::tools::ctx_compose;
-
-/// `LEAN_CTX_COMPOSE_BUDGET_MS` is process-global; serialize tests that set it.
-static ENV_GUARD: Mutex<()> = Mutex::new(());
 
 fn write_corpus() -> tempfile::TempDir {
     let dir = tempfile::tempdir().unwrap();
@@ -33,13 +27,6 @@ fn write_corpus() -> tempfile::TempDir {
 
 #[test]
 fn compose_returns_all_sections_with_symbol_body() {
-    let _guard = ENV_GUARD
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
-    // SAFETY: the project's test suite always runs with `--test-threads=1`
-    // (env-race legacy — see .github/workflows/ci.yml), so no other test in
-    // this binary touches the environment concurrently.
-    unsafe { std::env::remove_var("LEAN_CTX_COMPOSE_BUDGET_MS") };
     let dir = write_corpus();
 
     let (out, tokens) = ctx_compose::handle(
@@ -65,60 +52,7 @@ fn compose_returns_all_sections_with_symbol_body() {
 }
 
 #[test]
-fn compose_degrades_under_tight_budget_without_stalling() {
-    let _guard = ENV_GUARD
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
-    // A 1 ms budget guarantees the semantic worker cannot finish in time, so the
-    // call must degrade gracefully instead of blocking on the (cold) build.
-    // SAFETY: the project's test suite always runs with `--test-threads=1`
-    // (env-race legacy — see .github/workflows/ci.yml), so no other test in
-    // this binary touches the environment concurrently.
-    unsafe { std::env::set_var("LEAN_CTX_COMPOSE_BUDGET_MS", "1") };
-    let dir = write_corpus();
-
-    let start = Instant::now();
-    let (out, _tokens) = ctx_compose::handle(
-        "how does authenticate_user validate the token",
-        &dir.path().to_string_lossy(),
-        CrpMode::Off,
-    );
-    let elapsed = start.elapsed();
-    // SAFETY: the project's test suite always runs with `--test-threads=1`
-    // (env-race legacy — see .github/workflows/ci.yml), so no other test in
-    // this binary touches the environment concurrently.
-    unsafe { std::env::remove_var("LEAN_CTX_COMPOSE_BUDGET_MS") };
-
-    // The exact-match + symbol stages are synchronous and index-backed, so the
-    // whole call should still return promptly even when ranking is deferred.
-    assert!(
-        elapsed < Duration::from_secs(10),
-        "tight budget must not stall the call (took {elapsed:?})"
-    );
-    assert!(
-        out.contains("## Ranked files (semantic)"),
-        "section header is always present"
-    );
-    assert!(
-        out.contains("## Exact matches"),
-        "exact matches remain authoritative under degradation"
-    );
-}
-
-#[test]
 fn compose_surfaces_associative_neighbours() {
-    let _guard = ENV_GUARD
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
-    // SAFETY: the project's test suite always runs with `--test-threads=1`
-    // (env-race legacy — see .github/workflows/ci.yml), so no other test in
-    // this binary touches the environment concurrently.
-    unsafe { std::env::remove_var("LEAN_CTX_COMPOSE_BUDGET_MS") };
-    // Generous graph budget so the (tiny) index build never times out here.
-    // SAFETY: the project's test suite always runs with `--test-threads=1`
-    // (env-race legacy — see .github/workflows/ci.yml), so no other test in
-    // this binary touches the environment concurrently.
-    unsafe { std::env::set_var("LEAN_CTX_COMPOSE_GRAPH_BUDGET_MS", "8000") };
     let dir = write_corpus();
 
     // `authenticate_user` lives in auth.rs; config.rs is a same-dir sibling, so
@@ -129,10 +63,6 @@ fn compose_surfaces_associative_neighbours() {
         &dir.path().to_string_lossy(),
         CrpMode::Off,
     );
-    // SAFETY: the project's test suite always runs with `--test-threads=1`
-    // (env-race legacy — see .github/workflows/ci.yml), so no other test in
-    // this binary touches the environment concurrently.
-    unsafe { std::env::remove_var("LEAN_CTX_COMPOSE_GRAPH_BUDGET_MS") };
 
     assert!(
         out.contains("## Related (associative"),
@@ -171,11 +101,6 @@ fn write_ambiguous_symbol_corpus() -> tempfile::TempDir {
 
 #[test]
 fn compose_disambiguates_same_named_symbol_by_task_keywords() {
-    let _guard = ENV_GUARD
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
-    // SAFETY: the suite runs with --test-threads=1 (see ci.yml).
-    unsafe { std::env::remove_var("LEAN_CTX_COMPOSE_BUDGET_MS") };
     let dir = write_ambiguous_symbol_corpus();
     // `ctx_compose` reads symbol bodies from the graph index. Build the tiny
     // fixture explicitly so this scenario verifies disambiguation rather than

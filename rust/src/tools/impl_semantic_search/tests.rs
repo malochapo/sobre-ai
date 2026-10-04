@@ -129,11 +129,9 @@ mod cold_start_guard_tests {
     }
 
     #[test]
-    fn default_threshold_positive_when_env_unset() {
-        // With the env override unset the default must be a real, positive guard.
-        if std::env::var_os("LEAN_CTX_HYBRID_INLINE_EMBED_MAX").is_none() {
-            assert!(inline_embed_max_chunks() >= 1);
-        }
+    fn default_threshold_is_positive() {
+        // The inline-embed budget must be a real, positive guard.
+        assert!(inline_embed_max_chunks() >= 1);
     }
 
     #[test]

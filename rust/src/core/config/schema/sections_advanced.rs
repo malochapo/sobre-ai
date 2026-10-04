@@ -34,29 +34,26 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
     );
     proxy.insert(
         "history_mode".into(),
-        key_enum_with_env(
+        key_enum(
             &["cache-aware", "rolling", "off"],
             "cache-aware",
             "History pruning strategy. cache-aware: frozen boundaries that keep provider prompt caches valid (default). rolling: legacy moving window (max raw savings, breaks prompt caching). off: never prune",
-            "LEAN_CTX_PROXY_HISTORY_MODE",
         ),
     );
     proxy.insert(
         "allow_insecure_http_upstream".into(),
-        key_with_env(
+        key(
             "bool",
             serde_json::json!(cfg.proxy.allow_insecure_http_upstream.unwrap_or(false)),
             "Allow a non-loopback plaintext http:// upstream (trusted local network only, e.g. http://host.docker.internal:2455 in front of codex-lb). Opt-in; default false",
-            "LEAN_CTX_ALLOW_INSECURE_HTTP_UPSTREAM",
         ),
     );
     proxy.insert(
         "allow_custom_upstream".into(),
-        key_with_env(
+        key(
             "bool",
             serde_json::json!(cfg.proxy.allow_custom_upstream.unwrap_or(false)),
             "Allow a custom (non-allowlisted) HTTPS upstream host, e.g. a corporate gateway in front of the provider API. Opt-in; default false. Unlike the env var, this config flag reaches the managed (service-spawned) proxy started by `proxy enable`/`restart` (#590)",
-            "LEAN_CTX_ALLOW_CUSTOM_UPSTREAM",
         ),
     );
     proxy.insert(
@@ -77,20 +74,18 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
     );
     proxy.insert(
         "cold_prefix_repack".into(),
-        key_with_env(
+        key(
             "bool",
             serde_json::json!(cfg.proxy.repacks_cold_prefix()),
             "Opt-in big-gap cold-prefix repack (#480): on a session-resume request the proxy may predict (from idle time vs the provider cache TTL) that the client-cached prefix has already expired, then prune that now-cold prefix to re-seed a leaner cache and keep applying the same deterministic compression on later turns so warm follow-ups hit it (sticky; baselines persist across restarts, #499). A wrong guess re-bills cache reads as writes (~12x), so default false",
-            "LEAN_CTX_PROXY_COLD_PREFIX_REPACK",
         ),
     );
     proxy.insert(
         "live_compress".into(),
-        key_with_env(
+        key(
             "bool",
             serde_json::json!(cfg.proxy.live_compresses()),
             "Live-compress non-protected tool_result content on the wire (#481). Default true. Set false for a meter-only proxy — real billed/cache token metering with zero request rewriting (combine with history_mode = \"off\" and no role_aggressiveness for a byte-unchanged body)",
-            "LEAN_CTX_PROXY_LIVE_COMPRESS",
         ),
     );
     proxy.insert(
@@ -111,92 +106,82 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
     );
     proxy.insert(
         "ccr_inband".into(),
-        key_with_env(
+        key(
             "bool",
             serde_json::json!(cfg.proxy.ccr_inband_enabled()),
             "Opt-in in-band CCR retrieval for a remote proxy with no shared filesystem (#493). When on, a lossy stub advertises a compact <lc_expand:HASH> marker instead of a local tee path; when the model echoes that marker, the proxy splices the verbatim original (from its local tee store) back inline next turn — one turn of latency, no MCP/filesystem on the agent host. The splice is a strict no-op on marker-less turns, so it never perturbs the provider cache prefix unless the model asked to expand. Default false",
-            "LEAN_CTX_PROXY_CCR_INBAND",
         ),
     );
     proxy.insert(
         "counterfactual_metering".into(),
-        key_with_env(
+        key(
             "bool",
             serde_json::json!(cfg.proxy.counterfactual_metering_enabled()),
             "Opt-in counterfactual savings metering (#701): each rewritten Anthropic /v1/messages request fires a free count_tokens probe with the original, uncompressed body, concurrently with the real forward. The provider-counted answer is paired with the same response's billed usage — provider-authoritative savings receipts ('would have cost N, billed M') instead of local tokenizer estimates, shown as verified_savings on /status. The probe never mutates or delays the forwarded request; failures degrade to the estimate. Default false (one extra free HTTP call per compressed request)",
-            "LEAN_CTX_PROXY_COUNTERFACTUAL",
         ),
     );
     proxy.insert(
         "cache_breakpoint".into(),
-        key_with_env(
+        key(
             "bool",
             serde_json::json!(cfg.proxy.cache_breakpoint_enabled()),
             "Opt-in active prompt-cache breakpoint injection for Anthropic (#939). When on and the client set no cache_control of its own, the proxy adds one cache_control: {type:ephemeral} marker to the system field so an otherwise-uncached, stable system prompt bills later turns at the cached rate (the win a raw API client leaves on the table). Anthropic-only: OpenAI/Gemini cache prefixes automatically and ignore the marker, so those paths stay byte-unchanged. Deterministic, never adds a second breakpoint, and skipped below Anthropic's minimum cacheable size. Default false",
-            "LEAN_CTX_PROXY_CACHE_BREAKPOINT",
         ),
     );
     proxy.insert(
         "cache_aligner".into(),
-        key_with_env(
+        key(
             "bool",
             serde_json::json!(cfg.proxy.cache_aligner_enabled()),
             "Cache-aligner volatile-field telemetry (#940), on by default. The proxy scans each unanchored Anthropic system prompt for volatile, cache-busting fields (ISO dates/datetimes, UUIDs, git SHAs) and reports how many it found on /status cache_safety (volatile_system_requests, volatile_fields_detected) - purely to quantify how much prompt-cache the client leaks. Measurement only: the request body is never mutated, so it is strictly cache-safe, which is why it ships on for every proxy (#986 premium defaults). The deterministic scan is the precursor to the opt-in tail-relocate below. Set false to opt out of the per-request scan. Default true",
-            "LEAN_CTX_PROXY_CACHE_ALIGNER",
         ),
     );
     proxy.insert(
         "cache_align_relocate".into(),
-        key_with_env(
+        key(
             "bool",
             serde_json::json!(cfg.proxy.cache_align_relocate_enabled()),
             "Opt-in active cache-aligner relocate (#974). When on, the proxy rewrites an unanchored Anthropic system prompt into a stable block (volatile values - ISO dates/datetimes, UUIDs, git SHAs - replaced by constant placeholders) carrying the cache_control breakpoint, plus an uncached trailing block that re-states the relocated values. The cacheable prefix then stays byte-stable turn-to-turn and finally caches; only the small tail is reprocessed. Anthropic-only, Treatment-arm, gated on a client that anchored nothing and on Anthropic's minimum cacheable size. Deterministic (#498) and idempotent. The cache_aligner telemetry is the precursor that quantifies the saving. Default false",
-            "LEAN_CTX_PROXY_CACHE_ALIGN_RELOCATE",
         ),
     );
     proxy.insert(
         "cache_policy".into(),
-        key_with_env(
+        key(
             "bool",
             serde_json::json!(cfg.proxy.cache_policy_enabled()),
             "Cache-economics (#986), on by default. Enables prompt-cache miss attribution telemetry (per turn, classify the outcome as cold start / warm reuse / TTL lapse / prefix change and report cumulative gauges on /status cache_attribution) plus a net-cost gate on the cold-prefix repack that skips re-seeding prefixes too small to be cached (below Anthropic's ~1024-token minimum). The telemetry never mutates the body and the gate only makes repacking more conservative, so it can never bust a cache that would otherwise have been kept - both halves are strictly safe, so every proxy gets them out of the box (#986 premium defaults). Set false to opt out (drops the /status attribution gauges and the per-request prefix hash). Default true",
-            "LEAN_CTX_PROXY_CACHE_POLICY",
         ),
     );
     proxy.insert(
         "effort".into(),
-        key_enum_with_env(
+        key_enum(
             &["off", "minimal", "low", "medium", "high"],
             "off",
             "Cache-safe cross-provider reasoning-effort control (#834). off (default) = no-op. minimal|low|medium|high pins the model's reasoning depth across providers: lean-ctx translates it to OpenAI reasoning_effort / reasoning.effort, Anthropic output_config.effort, and Gemini thinkingConfig (thinkingLevel on 3.x, thinkingBudget on 2.5 pro/flash), only on models that accept it and only when the client didn't set its own value. The level is a constant, so it never breaks the provider prompt cache (unlike per-turn effort routing). Anthropic is dialed only when the client already requested adaptive thinking",
-            "LEAN_CTX_PROXY_EFFORT",
         ),
     );
     proxy.insert(
         "prose_ranker".into(),
-        key_enum_with_env(
+        key_enum(
             &["auto", "extractive", "truncate"],
             "auto",
             "How the proxy squeezes prose it must shrink (#895). auto (default) and extractive use embedding-based extractive ranking — keeping the most central sentences instead of just the prefix — when the local embedding engine is available, else fall back to truncation; truncate keeps the original deterministic FIFO squeeze and never loads the engine. Wire rewrites are memoized per content so the engine's cold→warm transition never changes an already-emitted frozen-region rewrite (cache-safe, #448/#498)",
-            "LEAN_CTX_PROXY_PROSE_RANKER",
         ),
     );
     proxy.insert(
         "output_holdout".into(),
-        key_with_env(
+        key(
             "f64",
             serde_json::json!(cfg.proxy.output_holdout_fraction()),
             "Fraction 0.0-1.0 of conversations placed in the output-savings control arm (#895). 0 (default) = no holdout (every conversation is output-shaped). When > 0, a deterministic cohort = blake3(system + first user message) puts ~this fraction in a control arm that skips output-shaping (effort control + verbosity steer) but is still metered, yielding an honest measured output-token reduction (lean-ctx output-savings). The cohort is a pure function of conversation identity, so a conversation keeps one arm across all turns - cache-safe",
-            "LEAN_CTX_PROXY_OUTPUT_HOLDOUT",
         ),
     );
     proxy.insert(
         "verbosity_steer".into(),
-        key_with_env(
+        key(
             "bool",
             serde_json::json!(cfg.proxy.verbosity_steer_enabled()),
             "Opt-in cache-safe wire verbosity steer (#895). When true, the proxy appends a single constant 'be concise' instruction to the last user turn of each request - output-shaping for raw API clients that do not load lean-ctx rules. The suffix is constant and appended strictly after the last cache_control breakpoint (a new trailing text block, never modifying a cache-anchored block), so the provider prompt-cache prefix stays byte-stable. Under an output_holdout the control arm skips it so its effect is measured. Default false",
-            "LEAN_CTX_PROXY_VERBOSITY_STEER",
         ),
     );
     sections.insert(
@@ -210,20 +195,18 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
     let mut role_aggr = BTreeMap::new();
     role_aggr.insert(
         "system".into(),
-        key_with_env(
+        key(
             "f64",
             serde_json::json!(cfg.proxy.role_aggressiveness.system),
             "Opt-in prose compression intensity (0.0–1.0) for system prompts in the proxy's frozen request region. Unset = leave untouched. Higher = more aggressive. Cache-safe (deterministic, never touches the client-cached prefix)",
-            "LEAN_CTX_PROXY_SYSTEM_AGGR",
         ),
     );
     role_aggr.insert(
         "user".into(),
-        key_with_env(
+        key(
             "f64",
             serde_json::json!(cfg.proxy.role_aggressiveness.user),
             "Opt-in prose compression intensity (0.0–1.0) for free-text user turns (never tool results) in the proxy's frozen request region. Unset = leave untouched",
-            "LEAN_CTX_PROXY_USER_AGGR",
         ),
     );
     sections.insert(
@@ -466,20 +449,18 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
     );
     mem_lifecycle.insert(
         "reclaim_headroom_pct".into(),
-        key_with_env(
+        key(
             "f32",
             clean_f32(mem.lifecycle.reclaim_headroom_pct),
             "Proactive headroom on a capacity reclaim: settle a full store at 1 - this fraction (0.25 = 75%) instead of churning at the cap. Lossless — the reclaimed tail is archived and restorable",
-            "LEAN_CTX_LIFECYCLE_RECLAIM_HEADROOM_PCT",
         ),
     );
     mem_lifecycle.insert(
         "reclaim_enabled".into(),
-        key_with_env(
+        key(
             "bool",
             serde_json::json!(mem.lifecycle.reclaim_enabled),
             "Master switch for the proactive capacity reclaim (#995). false trims only the overflow (escape hatch, no headroom); eviction stays lossless either way",
-            "LEAN_CTX_LIFECYCLE_RECLAIM_ENABLED",
         ),
     );
     sections.insert(

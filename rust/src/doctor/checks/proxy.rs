@@ -266,15 +266,11 @@ pub(crate) fn proxy_upstream_outcome() -> Outcome {
     }
 }
 /// #449 drift check: warns when the running proxy forwards to a different
-/// upstream than the operator expects. Covers both traps — a shell-exported
-/// `LEAN_CTX_*_UPSTREAM` that never reached the MCP/service-spawned proxy, and a
-/// proxy started with an env override that now masks a later config.toml edit.
+/// upstream than config.toml resolves to (an edit that failed validation).
 /// Returns `None` when the proxy is down or in sync, so the board stays quiet
 /// unless there is something actionable.
 pub(crate) fn proxy_upstream_drift_outcome() -> Option<Outcome> {
-    use crate::core::config::{
-        Config, ProxyProvider, UpstreamDrift, diagnose_drift, env_upstream_override,
-    };
+    use crate::core::config::{Config, upstream_drifted};
 
     let cfg = Config::load();
     if cfg.proxy_enabled != Some(true) {
@@ -282,62 +278,26 @@ pub(crate) fn proxy_upstream_drift_outcome() -> Option<Outcome> {
     }
     let port = crate::proxy_setup::default_port();
     let (live_anthropic, live_openai, live_gemini) = proxy_live_upstreams(port)?;
-    let disk = cfg.proxy.resolve_all_disk();
+    let configured = cfg.proxy.resolve_all();
 
-    let mut env_not_applied = Vec::new();
-    let mut config_not_applied = Vec::new();
-    for (label, key, provider, disk_val, live) in [
-        (
-            "Anthropic",
-            "anthropic",
-            ProxyProvider::Anthropic,
-            &disk.anthropic,
-            &live_anthropic,
-        ),
-        (
-            "OpenAI",
-            "openai",
-            ProxyProvider::OpenAi,
-            &disk.openai,
-            &live_openai,
-        ),
-        (
-            "Gemini",
-            "gemini",
-            ProxyProvider::Gemini,
-            &disk.gemini,
-            &live_gemini,
-        ),
-    ] {
-        let env = env_upstream_override(provider);
-        match diagnose_drift(env.as_deref(), disk_val, live) {
-            Some(UpstreamDrift::EnvNotApplied) => {
-                env_not_applied.push(format!(
-                    "{label} → `lean-ctx config set proxy.{key}_upstream`"
-                ));
-            }
-            Some(UpstreamDrift::ConfigNotApplied) => {
-                config_not_applied.push(format!("{label} live {live} ≠ config {disk_val}"));
-            }
-            None => {}
-        }
-    }
+    let drifted: Vec<String> = [
+        ("Anthropic", &configured.anthropic, &live_anthropic),
+        ("OpenAI", &configured.openai, &live_openai),
+        ("Gemini", &configured.gemini, &live_gemini),
+    ]
+    .into_iter()
+    .filter(|(_, configured, live)| upstream_drifted(configured, live))
+    .map(|(label, configured, live)| format!("{label} live {live} ≠ config {configured}"))
+    .collect();
 
-    if env_not_applied.is_empty() && config_not_applied.is_empty() {
+    if drifted.is_empty() {
         return None;
     }
-    let mut line = format!("{BOLD}Proxy upstream drift{RST}");
-    if !env_not_applied.is_empty() {
-        line.push_str(&format!(
-            "  {YELLOW}LEAN_CTX_*_UPSTREAM set in this shell but not reaching the proxy — env never reaches an MCP/service-spawned proxy (#449); persist it (applies live): {}{RST}",
-            env_not_applied.join(", ")
-        ));
-    }
-    if !config_not_applied.is_empty() {
-        line.push_str(&format!(
-            "  {YELLOW}{} — apply: lean-ctx proxy restart{RST}",
-            config_not_applied.join("; ")
-        ));
-    }
-    Some(Outcome { ok: false, line })
+    Some(Outcome {
+        ok: false,
+        line: format!(
+            "{BOLD}Proxy upstream drift{RST}  {YELLOW}{} — check the upstream in config.toml, then: lean-ctx proxy restart{RST}",
+            drifted.join("; ")
+        ),
+    })
 }

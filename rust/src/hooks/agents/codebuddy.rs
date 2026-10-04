@@ -636,7 +636,7 @@ mod tests {
     fn rules_injection_off_strips_codebuddy_md_block() {
         // #361: with instructions opted out, no lean-ctx block may remain in
         // CODEBUDDY.md (and one left by a prior install must be stripped).
-        let _lock = crate::core::data_dir::test_env_lock();
+        let iso = crate::core::data_dir::isolated_data_dir();
         let tmp = tempfile::tempdir().unwrap();
         let home = tmp.path();
         let dir = crate::core::editor_registry::codebuddy_state_dir(home);
@@ -648,9 +648,12 @@ mod tests {
         )
         .unwrap();
 
-        crate::test_env::set_var("LEAN_CTX_RULES_INJECTION", "off");
+        std::fs::write(
+            iso.path().join("config.toml"),
+            "rules_injection = \"off\"\n",
+        )
+        .unwrap();
         install_codebuddy_global_codebuddy_md_for_mode(home, HookMode::Mcp);
-        crate::test_env::remove_var("LEAN_CTX_RULES_INJECTION");
 
         let after = std::fs::read_to_string(&md).unwrap_or_default();
         assert!(
@@ -675,15 +678,18 @@ mod tests {
 
     #[test]
     fn installer_writes_single_codebuddy_block_and_is_idempotent() {
-        let _lock = crate::core::data_dir::test_env_lock();
+        let iso = crate::core::data_dir::isolated_data_dir();
         let tmp = tempfile::tempdir().unwrap();
         let home = tmp.path();
         let md = crate::core::editor_registry::codebuddy_state_dir(home).join("CODEBUDDY.md");
 
-        crate::test_env::set_var("LEAN_CTX_RULES_INJECTION", "shared");
+        std::fs::write(
+            iso.path().join("config.toml"),
+            "rules_injection = \"shared\"\n",
+        )
+        .unwrap();
         install_codebuddy_global_codebuddy_md_for_mode(home, HookMode::Mcp);
         install_codebuddy_global_codebuddy_md_for_mode(home, HookMode::Mcp);
-        crate::test_env::remove_var("LEAN_CTX_RULES_INJECTION");
 
         let after = std::fs::read_to_string(&md).unwrap();
         assert_eq!(
@@ -696,7 +702,7 @@ mod tests {
 
     #[test]
     fn installer_heals_duplicate_codebuddy_blocks() {
-        let _lock = crate::core::data_dir::test_env_lock();
+        let iso = crate::core::data_dir::isolated_data_dir();
         let tmp = tempfile::tempdir().unwrap();
         let home = tmp.path();
         let dir = crate::core::editor_registry::codebuddy_state_dir(home);
@@ -706,9 +712,12 @@ mod tests {
         let dupes = format!("# my notes\n\n{b}\n\n{b}\n\n{b}\n");
         std::fs::write(&md, dupes).unwrap();
 
-        crate::test_env::set_var("LEAN_CTX_RULES_INJECTION", "shared");
+        std::fs::write(
+            iso.path().join("config.toml"),
+            "rules_injection = \"shared\"\n",
+        )
+        .unwrap();
         install_codebuddy_global_codebuddy_md_for_mode(home, HookMode::Mcp);
-        crate::test_env::remove_var("LEAN_CTX_RULES_INJECTION");
 
         let after = std::fs::read_to_string(&md).unwrap();
         assert_eq!(

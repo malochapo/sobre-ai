@@ -5,20 +5,15 @@ use super::*;
 
 #[test]
 fn test_header_toon_format_no_brackets() {
-    let _lock = crate::core::data_dir::test_env_lock();
-    crate::test_env::set_var("LEAN_CTX_META", "1");
     let content = "use std::io;\nfn main() {}\n";
     let header = build_header("F1", "main.rs", "rs", content, 2, false);
     assert!(!header.contains('['));
     assert!(!header.contains(']'));
-    assert!(header.contains("F1=main.rs 2L"));
-    crate::test_env::remove_var("LEAN_CTX_META");
+    assert!(header.contains("main.rs 2L"));
 }
 
 #[test]
 fn test_header_toon_deps_indented() {
-    let _lock = crate::core::data_dir::test_env_lock();
-    crate::test_env::set_var("LEAN_CTX_META", "1");
     let content = "use crate::core::cache;\nuse crate::tools;\npub fn main() {}\n";
     let header = build_header("F1", "main.rs", "rs", content, 3, true);
     if header.contains("deps") {
@@ -31,13 +26,10 @@ fn test_header_toon_deps_indented() {
             "deps should not use bracket format"
         );
     }
-    crate::test_env::remove_var("LEAN_CTX_META");
 }
 
 #[test]
 fn test_header_toon_saves_tokens() {
-    let _lock = crate::core::data_dir::test_env_lock();
-    crate::test_env::set_var("LEAN_CTX_META", "1");
     let content = "use crate::foo;\nuse crate::bar;\npub fn baz() {}\npub fn qux() {}\n";
     let old_header = "F1=main.rs [4L +] deps:[foo,bar] exports:[baz,qux]".to_string();
     let new_header = build_header("F1", "main.rs", "rs", content, 4, true);
@@ -47,7 +39,6 @@ fn test_header_toon_saves_tokens() {
         new_tokens <= old_tokens,
         "TOON header ({new_tokens} tok) should be <= old format ({old_tokens} tok)"
     );
-    crate::test_env::remove_var("LEAN_CTX_META");
 }
 
 #[test]
@@ -501,10 +492,14 @@ fn compressed_cache_key_distinguishes_protect() {
 
 #[test]
 fn aggressiveness_is_deterministic_and_monotonic() {
-    let _lock = crate::core::data_dir::test_env_lock();
+    let iso = crate::core::data_dir::isolated_data_dir();
     // Suppress the savings footer: it carries session-cumulative counters by
     // design (state-triggered suffix), so we compare the pure compressed body.
-    crate::test_env::set_var("LEAN_CTX_SHOW_SAVINGS", "0");
+    std::fs::write(
+        iso.path().join("config.toml"),
+        "savings_footer = \"never\"\n",
+    )
+    .unwrap();
 
     // Prose-y fixture with redundant low-information lines the density pass can
     // shed; enough lines that compression is meaningful.
@@ -543,14 +538,16 @@ fn aggressiveness_is_deterministic_and_monotonic() {
         high <= low,
         "aggressiveness 0.9 ({high} tok) must not exceed 0.2 ({low} tok)"
     );
-
-    crate::test_env::remove_var("LEAN_CTX_SHOW_SAVINGS");
 }
 
 #[test]
 fn aggressive_json_uses_lossless_crush_core() {
-    let _lock = crate::core::data_dir::test_env_lock();
-    crate::test_env::set_var("LEAN_CTX_SHOW_SAVINGS", "0");
+    let iso = crate::core::data_dir::isolated_data_dir();
+    std::fs::write(
+        iso.path().join("config.toml"),
+        "savings_footer = \"never\"\n",
+    )
+    .unwrap();
 
     // A redundant array-of-objects JSON file: aggressive mode compacts it through
     // the shared json_crush core (#936) instead of generic text pruning, which
@@ -587,8 +584,6 @@ fn aggressive_json_uses_lossless_crush_core() {
         sent < original,
         "crush must reduce tokens ({sent} >= {original})"
     );
-
-    crate::test_env::remove_var("LEAN_CTX_SHOW_SAVINGS");
 }
 
 #[test]
@@ -879,8 +874,6 @@ fn process_mode_output_is_byte_stable_across_calls() {
     // `session: N saved` line every 10th call across ALL tests. Other tests
     // leaked `LEAN_CTX_SAVINGS_FOOTER=always` here in the past — neutralize
     // defensively while we hold the env lock.
-    crate::test_env::remove_var("LEAN_CTX_SAVINGS_FOOTER");
-    crate::test_env::remove_var("LEAN_CTX_SHOW_SAVINGS");
     crate::test_env::remove_var("LEAN_CTX_QUIET");
     let content: String = (0..120)
         .map(|i| format!("pub fn handler_{i}(x: u32) -> u32 {{ x * {i} }}"))
@@ -928,7 +921,7 @@ fn process_mode_output_is_byte_stable_across_calls() {
 fn recovery_footer_is_compressed_only_and_togglable() {
     // `isolated_data_dir()` already holds `test_env_lock` for its lifetime; taking
     // the lock again here would self-deadlock (the mutex is non-reentrant).
-    let _iso = crate::core::data_dir::isolated_data_dir();
+    let iso = crate::core::data_dir::isolated_data_dir();
     let content: String = (0..120)
         .map(|i| format!("pub fn handler_{i}(x: u32) -> u32 {{ x * {i} }}"))
         .collect::<Vec<_>>()
@@ -951,7 +944,11 @@ fn recovery_footer_is_compressed_only_and_togglable() {
 
     // Default tier (minimal): a compressed view leads its footer with the native,
     // MCP-free path so an agent needing the full source never reads line-by-line.
-    crate::test_env::set_var("LEAN_CTX_RECOVERY_HINTS", "minimal");
+    std::fs::write(
+        iso.path().join("config.toml"),
+        "recovery_hints = \"minimal\"\n",
+    )
+    .unwrap();
     let sigs = run("signatures");
     assert!(
         sigs.contains("read \"/tmp/rec.rs\" directly (no MCP)"),
@@ -967,12 +964,11 @@ fn recovery_footer_is_compressed_only_and_togglable() {
     );
 
     // The off switch suppresses the footer cleanly.
-    crate::test_env::set_var("LEAN_CTX_RECOVERY_HINTS", "off");
+    std::fs::write(iso.path().join("config.toml"), "recovery_hints = \"off\"\n").unwrap();
     assert!(
         !run("signatures").contains("(no MCP)"),
         "recovery_hints=off must drop the footer"
     );
-    crate::test_env::remove_var("LEAN_CTX_RECOVERY_HINTS");
 }
 
 // ---------------------------------------------------------------------------
@@ -1181,8 +1177,12 @@ fn compress_protect_glob_forces_full_verbatim_read() {
     // #1150: a path matching a `compress_protect` glob is returned verbatim even
     // when an aggressive mode is requested. Control + treatment in one test: the
     // unprotected read strips comments, the protected read keeps every byte.
-    let _iso = crate::core::data_dir::isolated_data_dir();
-    crate::test_env::set_var("LEAN_CTX_SHOW_SAVINGS", "0");
+    let iso = crate::core::data_dir::isolated_data_dir();
+    std::fs::write(
+        iso.path().join("config.toml"),
+        "savings_footer = \"never\"\n",
+    )
+    .unwrap();
 
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("protected.rs");
@@ -1220,7 +1220,6 @@ fn compress_protect_glob_forces_full_verbatim_read() {
     );
 
     crate::core::config::Config::update_global(|c| c.proxy.compress_protect = None).unwrap();
-    crate::test_env::remove_var("LEAN_CTX_SHOW_SAVINGS");
 }
 
 // -- Regression: GitHub Issue #775 --
@@ -1240,8 +1239,12 @@ fn write_numbered_file(dir: &std::path::Path, name: &str, n: usize) -> String {
 
 #[test]
 fn gh775_full_then_ranged_returns_only_window() {
-    let _iso = crate::core::data_dir::isolated_data_dir();
-    crate::test_env::set_var("LEAN_CTX_SHOW_SAVINGS", "0");
+    let iso = crate::core::data_dir::isolated_data_dir();
+    std::fs::write(
+        iso.path().join("config.toml"),
+        "savings_footer = \"never\"\n",
+    )
+    .unwrap();
 
     let dir = tempfile::tempdir().unwrap();
     let p = write_numbered_file(dir.path(), "big.ts", 2000);
@@ -1276,14 +1279,16 @@ fn gh775_full_then_ranged_returns_only_window() {
         "ranged read must NOT contain lines outside the window:\n{}",
         &ranged.content[..ranged.content.len().min(500)]
     );
-
-    crate::test_env::remove_var("LEAN_CTX_SHOW_SAVINGS");
 }
 
 #[test]
 fn gh775_ranged_response_starts_at_requested_line() {
-    let _iso = crate::core::data_dir::isolated_data_dir();
-    crate::test_env::set_var("LEAN_CTX_SHOW_SAVINGS", "0");
+    let iso = crate::core::data_dir::isolated_data_dir();
+    std::fs::write(
+        iso.path().join("config.toml"),
+        "savings_footer = \"never\"\n",
+    )
+    .unwrap();
 
     let dir = tempfile::tempdir().unwrap();
     let p = write_numbered_file(dir.path(), "big3.ts", 2000);
@@ -1319,14 +1324,16 @@ fn gh775_ranged_response_starts_at_requested_line() {
         "lines:500-504 must return exactly 5 lines, got {}",
         body_lines.len()
     );
-
-    crate::test_env::remove_var("LEAN_CTX_SHOW_SAVINGS");
 }
 
 #[test]
 fn gh775_cold_ranged_read_returns_only_window() {
-    let _iso = crate::core::data_dir::isolated_data_dir();
-    crate::test_env::set_var("LEAN_CTX_SHOW_SAVINGS", "0");
+    let iso = crate::core::data_dir::isolated_data_dir();
+    std::fs::write(
+        iso.path().join("config.toml"),
+        "savings_footer = \"never\"\n",
+    )
+    .unwrap();
 
     let dir = tempfile::tempdir().unwrap();
     let p = write_numbered_file(dir.path(), "cold.ts", 2000);
@@ -1347,8 +1354,6 @@ fn gh775_cold_ranged_read_returns_only_window() {
         !ranged.content.contains("line 2000"),
         "cold ranged read must NOT contain lines outside window"
     );
-
-    crate::test_env::remove_var("LEAN_CTX_SHOW_SAVINGS");
 }
 
 // ---------------------------------------------------------------------------

@@ -1064,30 +1064,27 @@ fn cmd_show_effective() {
     box_row(&format!(
         " compression_level   = {:10}  {}",
         format!("{compression:?}"),
-        source_hint(
-            "LEAN_CTX_COMPRESSION",
-            cfg.compression_level != config::CompressionLevel::Off
-        )
+        source_hint(cfg.compression_level != config::CompressionLevel::Off)
     ));
     box_row(&format!(
         " max_disk_mb         = {:10}  {}",
         cfg.max_disk_mb_effective(),
-        source_hint("LEAN_CTX_MAX_DISK_MB", cfg.max_disk_mb > 0)
+        source_hint(cfg.max_disk_mb > 0)
     ));
     box_row(&format!(
         " max_ram_percent     = {:10}  {}",
         cfg.max_ram_percent,
-        source_hint("LEAN_CTX_MAX_RAM_PERCENT", cfg.max_ram_percent != 5)
+        source_hint(cfg.max_ram_percent != 5)
     ));
     box_row(&format!(
         " max_staleness_days  = {:10}  {}",
         cfg.max_staleness_days_effective(),
-        source_hint("LEAN_CTX_MAX_STALENESS_DAYS", cfg.max_staleness_days > 0)
+        source_hint(cfg.max_staleness_days > 0)
     ));
     box_row(&format!(
         " memory_profile      = {:10}  {}",
         format!("{:?}", cfg.memory_profile),
-        source_hint("LEAN_CTX_MEMORY_PROFILE", false)
+        source_hint(false)
     ));
     println!("{}", box_bottom());
 
@@ -1158,10 +1155,8 @@ fn box_row(content: &str) {
     println!("│{}│", crate::core::theme::pad_right(content, SHOW_BOX_W));
 }
 
-fn source_hint(env_var: &str, config_set: bool) -> &'static str {
-    if std::env::var(env_var).is_ok() {
-        "← env"
-    } else if config_set {
+fn source_hint(config_set: bool) -> &'static str {
+    if config_set {
         "← config"
     } else {
         "← default"

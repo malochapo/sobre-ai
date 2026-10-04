@@ -939,25 +939,6 @@ mod knowledge_system {
     }
 }
 
-mod a2a_communication {
-    #[test]
-    fn a2a_rate_limiter_enforces_limits() {
-        use lean_ctx::core::a2a::rate_limiter::RateLimiter;
-
-        let mut limiter = RateLimiter::new(100, 50, 30);
-
-        for _ in 0..25 {
-            let result = limiter.check("agent-a", "ctx_read");
-            match result {
-                lean_ctx::core::a2a::rate_limiter::RateLimitResult::Allowed => {}
-                lean_ctx::core::a2a::rate_limiter::RateLimitResult::Limited { .. } => {
-                    panic!("first 25 calls with limit 30/tool should be allowed");
-                }
-            }
-        }
-    }
-}
-
 mod shell_compression {
     use super::*;
 

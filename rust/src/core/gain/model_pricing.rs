@@ -54,7 +54,6 @@ impl ModelPricing {
     pub fn load() -> Self {
         let mut p = Self::embedded();
         p.apply_config_overrides(&crate::core::config::Config::load().cost.prices);
-        p.apply_env_override();
         p
     }
 
@@ -322,7 +321,7 @@ impl ModelPricing {
     }
 
     /// Resolves a pricing model for a client/agent, then quotes it. Resolution
-    /// order: `LEAN_CTX_MODEL`/`LCTX_MODEL` env → `[cost.models]` entry →
+    /// order: `[cost.models]` entry →
     /// `[cost] default_model` → the client/agent string as a heuristic hint →
     /// blended fallback (inside [`ModelPricing::quote`]). This is what lets
     /// MCP-only IDEs (Cursor, Copilot, …) be priced with a declared model.
@@ -469,55 +468,6 @@ impl ModelPricing {
             self.models.insert(key, merged);
         }
     }
-
-    fn apply_env_override(&mut self) {
-        let raw = std::env::var("LEAN_CTX_MODEL_PRICING_JSON")
-            .or_else(|_| std::env::var("LCTX_MODEL_PRICING_JSON"))
-            .ok();
-        let Some(raw) = raw else { return };
-
-        let Ok(v) = serde_json::from_str::<serde_json::Value>(&raw) else {
-            return;
-        };
-        let Some(models) = v.get("models").and_then(|m| m.as_object()) else {
-            return;
-        };
-        for (k, vv) in models {
-            let Some(obj) = vv.as_object() else { continue };
-            let input_per_m = obj.get("input_per_m").and_then(serde_json::Value::as_f64);
-            let output_per_m = obj.get("output_per_m").and_then(serde_json::Value::as_f64);
-            if input_per_m.is_none() && output_per_m.is_none() {
-                continue;
-            }
-
-            let key_norm = normalize(k);
-            let base = self.models.get(&key_norm).copied().unwrap_or_else(|| {
-                self.models
-                    .get("fallback-blended")
-                    .copied()
-                    .unwrap_or(ModelCost {
-                        input_per_m: 2.50,
-                        output_per_m: 10.00,
-                        cache_write_per_m: 2.50,
-                        cache_read_per_m: 2.50,
-                    })
-            });
-
-            let merged = ModelCost {
-                input_per_m: input_per_m.unwrap_or(base.input_per_m),
-                output_per_m: output_per_m.unwrap_or(base.output_per_m),
-                cache_write_per_m: obj
-                    .get("cache_write_per_m")
-                    .and_then(serde_json::Value::as_f64)
-                    .unwrap_or(base.cache_write_per_m),
-                cache_read_per_m: obj
-                    .get("cache_read_per_m")
-                    .and_then(serde_json::Value::as_f64)
-                    .unwrap_or(base.cache_read_per_m),
-            };
-            self.models.insert(key_norm, merged);
-        }
-    }
 }
 
 fn normalize(s: &str) -> String {
@@ -553,27 +503,22 @@ fn non_blank(s: &str) -> Option<String> {
     }
 }
 
-/// Pure model resolution: env override → configured model → client hint.
-/// Split out for deterministic testing without touching global config/env.
-fn resolve_model(client: &str, env_model: Option<&str>, configured: Option<&str>) -> String {
-    env_model
+/// Pure model resolution: configured model → client hint. Split out for
+/// deterministic testing without touching global config.
+fn resolve_model(client: &str, configured: Option<&str>) -> String {
+    configured
         .and_then(non_blank)
-        .or_else(|| configured.and_then(non_blank))
         .unwrap_or_else(|| client.to_string())
 }
 
-/// Resolves the pricing model id for a client/agent: the `LEAN_CTX_MODEL`/
-/// `LCTX_MODEL` env override wins, then the `[cost]` config
+/// Resolves the pricing model id for a client/agent: the `[cost]` config
 /// (`models[client]` → `default_model`), then the client/agent string itself.
 /// The returned string is fed to [`ModelPricing::quote`] for the actual price.
 pub fn resolve_model_for_client(client: &str) -> String {
-    let env_model = std::env::var("LEAN_CTX_MODEL")
-        .or_else(|_| std::env::var("LCTX_MODEL"))
-        .ok();
     let configured = crate::core::config::Config::load()
         .cost
         .model_for_client(client);
-    resolve_model(client, env_model.as_deref(), configured.as_deref())
+    resolve_model(client, configured.as_deref())
 }
 
 #[cfg(test)]
@@ -783,23 +728,15 @@ mod tests {
 
     #[test]
     fn resolve_model_precedence() {
-        // env override wins over everything.
+        // configured model wins over the client hint.
         assert_eq!(
-            resolve_model("cursor", Some("gpt-5.4"), Some("claude-opus-4.5")),
-            "gpt-5.4"
-        );
-        // configured model used when no env override.
-        assert_eq!(
-            resolve_model("cursor", None, Some("claude-opus-4.5")),
+            resolve_model("cursor", Some("claude-opus-4.5")),
             "claude-opus-4.5"
         );
         // client/agent string is the final hint.
-        assert_eq!(
-            resolve_model("claude-haiku-4.5", None, None),
-            "claude-haiku-4.5"
-        );
-        // blanks are ignored at each level.
-        assert_eq!(resolve_model("cursor", Some("  "), Some("  ")), "cursor");
+        assert_eq!(resolve_model("claude-haiku-4.5", None), "claude-haiku-4.5");
+        // blanks are ignored.
+        assert_eq!(resolve_model("cursor", Some("  ")), "cursor");
     }
 }
 

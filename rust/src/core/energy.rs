@@ -17,8 +17,7 @@ pub const WH_PER_PHONE_CHARGE: f64 = 12.0;
 
 /// Grams of CO₂-equivalent per kWh of grid electricity. ~475 g/kWh is the global
 /// average grid carbon intensity (IEA, ~2023) — a transparent, conservative
-/// midpoint. Users on cleaner grids can override via `LEAN_CTX_GRID_CO2_G_PER_KWH`
-/// so the local footprint reflects their actual electricity mix.
+/// midpoint.
 pub const G_CO2_PER_KWH: f64 = 475.0;
 
 /// Energy (Wh) saved for a given number of saved tokens. `Wh = tokens · J/token / 3600`.
@@ -33,15 +32,10 @@ pub fn phone_charges(tokens_saved: u64) -> f64 {
     wh_for_tokens(tokens_saved) / WH_PER_PHONE_CHARGE
 }
 
-/// Effective grid carbon intensity (g CO₂/kWh), honoring the
-/// `LEAN_CTX_GRID_CO2_G_PER_KWH` override when it is a positive, finite number.
+/// Grid carbon intensity (g CO₂/kWh).
 #[must_use]
 pub fn grid_co2_g_per_kwh() -> f64 {
-    std::env::var("LEAN_CTX_GRID_CO2_G_PER_KWH")
-        .ok()
-        .and_then(|v| v.trim().parse::<f64>().ok())
-        .filter(|v| v.is_finite() && *v > 0.0)
-        .unwrap_or(G_CO2_PER_KWH)
+    G_CO2_PER_KWH
 }
 
 /// Grams of CO₂-equivalent avoided for a given number of saved tokens.
@@ -153,7 +147,6 @@ mod tests {
     fn grid_intensity_default_when_no_override() {
         // The override is read from the environment; without it we use the constant.
         // (Env mutation is covered indirectly; here we assert the documented default.)
-        crate::test_env::remove_var("LEAN_CTX_GRID_CO2_G_PER_KWH");
         assert!((grid_co2_g_per_kwh() - G_CO2_PER_KWH).abs() < 1e-9);
     }
 }

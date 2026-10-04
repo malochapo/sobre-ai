@@ -49,10 +49,7 @@ pub(crate) fn index_fingerprint(root: &Path) -> IndexFingerprint {
 }
 
 fn ttl_secs() -> u64 {
-    std::env::var("LEAN_CTX_BM25_CACHE_TTL")
-        .ok()
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(DEFAULT_TTL_SECS)
+    DEFAULT_TTL_SECS
 }
 
 pub type SharedBm25Cache = std::sync::Arc<std::sync::Mutex<Option<Bm25CacheEntry>>>;

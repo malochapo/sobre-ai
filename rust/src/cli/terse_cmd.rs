@@ -43,7 +43,6 @@ pub fn cmd_compression(args: &[String]) {
         println!("  standard — {}", CompressionLevel::Standard.description());
         println!("  max      — {}", CompressionLevel::Max.description());
         println!();
-        println!("Override per session:  LEAN_CTX_COMPRESSION=standard");
         println!();
 
         let (ta, od, crp, tm) = effective.to_components();

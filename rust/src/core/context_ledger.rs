@@ -747,15 +747,9 @@ impl ContextLedger {
 
 impl ContextLedger {}
 
-/// Resolve the Global-Workspace ignition z-score threshold (#6): the
-/// `LEAN_CTX_GWT_IGNITION_Z` env override (must be > 0) wins, else the default
-/// [`GWT_IGNITION_Z`]. Deterministic for a given environment.
+/// The Global-Workspace ignition z-score threshold (#6).
 fn ignition_z_threshold() -> f64 {
-    std::env::var("LEAN_CTX_GWT_IGNITION_Z")
-        .ok()
-        .and_then(|v| v.trim().parse::<f64>().ok())
-        .filter(|v| *v > 0.0)
-        .unwrap_or(GWT_IGNITION_Z)
+    GWT_IGNITION_Z
 }
 
 impl Default for ContextLedger {

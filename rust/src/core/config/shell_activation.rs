@@ -25,21 +25,7 @@ pub enum ShellActivation {
 }
 
 impl ShellActivation {
-    pub fn from_env() -> Option<Self> {
-        std::env::var("LEAN_CTX_SHELL_ACTIVATION")
-            .ok()
-            .and_then(|v| match v.trim().to_lowercase().as_str() {
-                "always" => Some(Self::Always),
-                "agents-only" | "agents_only" | "agentsonly" => Some(Self::AgentsOnly),
-                "off" | "none" | "manual" => Some(Self::Off),
-                _ => None,
-            })
-    }
-
     pub fn effective(config: &Config) -> Self {
-        if let Some(env_val) = Self::from_env() {
-            return env_val;
-        }
         config.shell_activation.clone()
     }
 }

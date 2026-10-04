@@ -267,35 +267,22 @@ impl ProviderStats {
     }
 }
 
-/// TCP connect timeout (seconds). Configurable via `LEAN_CTX_PROXY_CONNECT_TIMEOUT_SECS`.
+/// TCP connect timeout (seconds).
 fn connect_timeout_secs() -> u64 {
-    std::env::var("LEAN_CTX_PROXY_CONNECT_TIMEOUT_SECS")
-        .ok()
-        .and_then(|v| v.trim().parse::<u64>().ok())
-        .filter(|s| *s > 0)
-        .unwrap_or(15)
+    15
 }
 
 /// Idle read timeout (seconds) between bytes from upstream. Generous by default
 /// so long extended-thinking phases (which still emit SSE keepalives) are never
-/// cut, while a truly dead connection eventually fails. Configurable via
-/// `LEAN_CTX_PROXY_READ_TIMEOUT_SECS`.
+/// cut, while a truly dead connection eventually fails.
 fn read_idle_timeout_secs() -> u64 {
-    std::env::var("LEAN_CTX_PROXY_READ_TIMEOUT_SECS")
-        .ok()
-        .and_then(|v| v.trim().parse::<u64>().ok())
-        .filter(|s| *s > 0)
-        .unwrap_or(300)
+    300
 }
 
 /// How often (seconds) a running proxy re-reads config.toml for upstream
-/// changes. `LEAN_CTX_PROXY_RELOAD_SECS` overrides; default 5s.
+/// changes.
 fn upstream_reload_secs() -> u64 {
-    std::env::var("LEAN_CTX_PROXY_RELOAD_SECS")
-        .ok()
-        .and_then(|v| v.trim().parse::<u64>().ok())
-        .filter(|s| *s > 0)
-        .unwrap_or(5)
+    5
 }
 
 /// Background task: re-resolves the provider upstreams from config.toml on an

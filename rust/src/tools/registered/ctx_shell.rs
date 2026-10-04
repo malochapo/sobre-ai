@@ -30,7 +30,7 @@ impl McpTool for CtxShellTool {
                     "raw": { "type": "boolean", "description": "Skip compression (verbatim)" },
                     "inline": { "type": "boolean", "description": "Return verbatim output inline up to archive.inline_max_bytes; larger output uses the archive/firewall" },
                     "cwd": { "type": "string", "description": "Working dir (persists across calls)" },
-                    "timeout_ms": { "type": "integer", "description": "Job lifetime in ms (max 3600000) — NOT the inline wait. A command still running at the ~110s foreground cap detaches to a pollable shell_* job and keeps running up to timeout_ms. Overridden by LEAN_CTX_SHELL_TIMEOUT_MS." },
+                    "timeout_ms": { "type": "integer", "description": "Job lifetime in ms (max 3600000) — NOT the inline wait. A command still running at the ~110s foreground cap detaches to a pollable shell_* job and keeps running up to timeout_ms." },
                     "env": { "type": "object", "description": "Extra env vars", "additionalProperties": { "type": "string" } },
                     "run_in_background": { "type": "boolean", "description": "Detach immediately and return a job id. The command keeps timeout_ms; poll or cancel with background_action and job_id." },
                     "background_action": { "type": "string", "enum": ["status", "cancel"], "description": "Inspect or cancel a background ctx_shell job." },
@@ -285,7 +285,6 @@ impl McpTool for CtxShellTool {
             // inline wait — the host aborts at ~120s regardless — it only
             // suppressed our own detach, producing exactly the unresolvable
             // task id the cap exists to prevent. Separate knobs, one direction:
-            // `LEAN_CTX_SHELL_FG_CAP_MS` moves the cap, `timeout_ms` does not.
             let soft_cap = std::time::Duration::from_millis(foreground_soft_cap_ms());
             let progress_sender = ctx.progress_sender.clone();
             let progress_label: String = cmd_clone.chars().take(60).collect();
@@ -638,13 +637,9 @@ fn should_auto_background(command: &str, timeout_ms: Option<u64>) -> bool {
 /// Foreground wait budget before a still-running command is detached into a
 /// pollable background job. Kept below the MCP host's ~120s tool-call abort so
 /// the caller always receives a real `shell_*` job id instead of an
-/// unresolvable task id (#1106). Override with `LEAN_CTX_SHELL_FG_CAP_MS`.
+/// unresolvable task id (#1106).
 fn foreground_soft_cap_ms() -> u64 {
-    std::env::var("LEAN_CTX_SHELL_FG_CAP_MS")
-        .ok()
-        .and_then(|v| v.parse().ok())
-        .filter(|&ms| ms > 0)
-        .unwrap_or(110_000)
+    110_000
 }
 
 /// #842: detect a bare `cat <single_file>` command (no pipes, redirects, flags).

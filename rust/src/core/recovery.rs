@@ -25,16 +25,10 @@ pub const COMPACT_VIEW_HEADER: &str =
     "[lean-ctx: compact view — nothing lost, full source on request]";
 
 /// Resolve the effective recovery tier for the current call.
-///
-/// Resolution order:
-/// 1. `LEAN_CTX_RECOVERY_HINTS` env (`off|minimal|full`) — ops / test override.
-/// 2. Global `config.recovery_hints` (default [`RecoveryHints::Minimal`]).
-///
-/// A profile's `output_hints.compressed_hint` used to sit between the two.
-/// Only `exploration` and `review` ever set it, and both are gone.
+/// `config.recovery_hints` (default [`RecoveryHints::Minimal`]).
 #[must_use]
 pub fn tier() -> RecoveryHints {
-    RecoveryHints::from_env().unwrap_or_else(|| Config::load().recovery_hints)
+    Config::load().recovery_hints
 }
 
 /// Footer appended to a compressed `ctx_read` view. Leads with the MCP-free path
@@ -58,30 +52,35 @@ pub fn read_footer(file_path: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::data_dir::test_env_lock;
 
-    /// The env override forces a tier regardless of profile/config — the knob ops
-    /// and tests use to pin behaviour.
+    /// `recovery_hints` in config.toml pins the tier.
     #[test]
-    fn env_override_pins_tier() {
-        let _lock = test_env_lock();
-        crate::test_env::set_var("LEAN_CTX_RECOVERY_HINTS", "off");
+    fn config_pins_tier() {
+        let iso = crate::core::data_dir::isolated_data_dir();
+        std::fs::write(iso.path().join("config.toml"), "recovery_hints = \"off\"\n").unwrap();
         assert_eq!(tier(), RecoveryHints::Off);
-        crate::test_env::set_var("LEAN_CTX_RECOVERY_HINTS", "full");
+        std::fs::write(
+            iso.path().join("config.toml"),
+            "recovery_hints = \"full\"\n",
+        )
+        .unwrap();
         assert_eq!(tier(), RecoveryHints::Full);
-        crate::test_env::remove_var("LEAN_CTX_RECOVERY_HINTS");
     }
 
     #[test]
     fn read_footer_leads_with_native_path_and_respects_off() {
-        let _lock = test_env_lock();
-        crate::test_env::set_var("LEAN_CTX_RECOVERY_HINTS", "off");
+        let iso = crate::core::data_dir::isolated_data_dir();
+        std::fs::write(iso.path().join("config.toml"), "recovery_hints = \"off\"\n").unwrap();
         assert!(
             read_footer("src/x.rs").is_none(),
             "off suppresses the footer"
         );
 
-        crate::test_env::set_var("LEAN_CTX_RECOVERY_HINTS", "minimal");
+        std::fs::write(
+            iso.path().join("config.toml"),
+            "recovery_hints = \"minimal\"\n",
+        )
+        .unwrap();
         let minimal = read_footer("src/x.rs").expect("minimal emits a footer");
         assert!(minimal.lines().count() == 1, "minimal is a single line");
         // Non-MCP path must come before the MCP shortcut.
@@ -89,7 +88,11 @@ mod tests {
         let mcp = minimal.find("ctx_read(").unwrap();
         assert!(native < mcp, "native path must precede the MCP route");
 
-        crate::test_env::set_var("LEAN_CTX_RECOVERY_HINTS", "full");
+        std::fs::write(
+            iso.path().join("config.toml"),
+            "recovery_hints = \"full\"\n",
+        )
+        .unwrap();
         let full = read_footer("src/x.rs").expect("full emits a footer");
         assert!(full.contains("raw=true"));
         assert!(
@@ -104,16 +107,18 @@ mod tests {
             full.find("read \"src/x.rs\" directly").unwrap() < full.find("raw=true").unwrap(),
             "full ladder still leads with the native path"
         );
-        crate::test_env::remove_var("LEAN_CTX_RECOVERY_HINTS");
     }
 
     /// Determinism (#498): the footer/clause are pure functions of their inputs,
     /// so repeated calls are byte-identical (provider prompt caching depends on it).
     #[test]
     fn footer_is_byte_stable() {
-        let _lock = test_env_lock();
-        crate::test_env::set_var("LEAN_CTX_RECOVERY_HINTS", "minimal");
+        let iso = crate::core::data_dir::isolated_data_dir();
+        std::fs::write(
+            iso.path().join("config.toml"),
+            "recovery_hints = \"minimal\"\n",
+        )
+        .unwrap();
         assert_eq!(read_footer("src/a.rs"), read_footer("src/a.rs"));
-        crate::test_env::remove_var("LEAN_CTX_RECOVERY_HINTS");
     }
 }

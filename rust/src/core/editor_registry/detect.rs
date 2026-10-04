@@ -863,9 +863,7 @@ mod footgun_audit_tests {
         // steering. A regression to Off would make the shipped default
         // misrepresent the product on every opt-in MCP host at once.
         let _lock = crate::core::data_dir::test_env_lock();
-        crate::test_env::remove_var("LEAN_CTX_RULES_INJECTION");
         let mode = crate::core::config::Config::default().rules_injection_effective();
-        crate::test_env::remove_var("LEAN_CTX_RULES_INJECTION");
         assert_eq!(
             mode,
             crate::core::config::RulesInjection::Shared,

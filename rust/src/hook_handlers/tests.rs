@@ -1034,16 +1034,14 @@ fn redirect_read_passes_through_when_disabled_by_config() {
     // #637: read_redirect=off must make a native Read fall through untouched —
     // the exact dual-allow response, with no path-swap to a temp copy — so the
     // host's read-before-write guard tracks the real file and Write/Edit works.
-    let _lock = crate::core::data_dir::test_env_lock();
+    let iso = crate::core::data_dir::isolated_data_dir();
     crate::test_env::remove_var("CLAUDE_PROJECT_DIR");
     crate::test_env::remove_var("CLAUDECODE");
     crate::test_env::remove_var("CODEBUDDY");
-    crate::test_env::set_var("LEAN_CTX_READ_REDIRECT", "off");
+    std::fs::write(iso.path().join("config.toml"), "read_redirect = \"off\"\n").unwrap();
 
     let tool_input = serde_json::json!({ "file_path": "/repo/src/main.rs" });
     let out = redirect_read(Some(&tool_input));
-
-    crate::test_env::remove_var("LEAN_CTX_READ_REDIRECT");
 
     assert_eq!(
         out,
@@ -1062,8 +1060,8 @@ fn redirect_read_auto_passes_through_under_claude_code() {
     // subprocesses — CLAUDE_PROJECT_DIR — must disable the Read path-swap out of the
     // box, no config edit. This is exactly what fixes headless `claude -p`
     // (CLAUDECODE is NOT propagated to hook children, so it cannot be the signal).
-    let _lock = crate::core::data_dir::test_env_lock();
-    crate::test_env::set_var("LEAN_CTX_READ_REDIRECT", "auto");
+    let iso = crate::core::data_dir::isolated_data_dir();
+    std::fs::write(iso.path().join("config.toml"), "read_redirect = \"auto\"\n").unwrap();
     crate::test_env::remove_var("CLAUDECODE");
     crate::test_env::remove_var("CODEBUDDY");
     crate::test_env::set_var("CLAUDE_PROJECT_DIR", "/repo");
@@ -1072,7 +1070,6 @@ fn redirect_read_auto_passes_through_under_claude_code() {
     let out = redirect_read(Some(&tool_input));
 
     crate::test_env::remove_var("CLAUDE_PROJECT_DIR");
-    crate::test_env::remove_var("LEAN_CTX_READ_REDIRECT");
 
     assert_eq!(
         out,

@@ -26,10 +26,9 @@ fn https_allowlisted_host_is_allowed() {
 fn non_loopback_http_is_rejected_without_optin() {
     let err = validate_upstream_url("http://host.docker.internal:2455", false, false).unwrap_err();
     // The hint must point at the flag that actually lifts the scheme check
-    // (#440). The old message pointed at LEAN_CTX_ALLOW_CUSTOM_UPSTREAM,
-    // which never bypassed the HTTPS requirement.
+    // (#440). The custom-host opt-in never bypassed the HTTPS requirement.
     assert!(
-        err.contains("LEAN_CTX_ALLOW_INSECURE_HTTP_UPSTREAM"),
+        err.contains("allow_insecure_http_upstream"),
         "hint must name the working opt-in, got: {err}"
     );
 }
@@ -50,18 +49,17 @@ fn unknown_scheme_is_rejected() {
 #[test]
 fn https_custom_host_is_rejected_without_optin() {
     // #590: a custom HTTPS host (e.g. a corporate gateway) is blocked unless
-    // the operator opts in. The hint must name BOTH the env var and the
-    // config flag — only the config flag reaches the managed proxy.
+    // the operator opts in. The hint must name the config flag.
     let err = validate_upstream_url("https://gw.corp.example/anthropic", false, false).unwrap_err();
     assert!(
-        err.contains("LEAN_CTX_ALLOW_CUSTOM_UPSTREAM") && err.contains("allow_custom_upstream"),
-        "hint must name both opt-ins, got: {err}"
+        err.contains("allow_custom_upstream"),
+        "hint must name the opt-in, got: {err}"
     );
 }
 
 #[test]
 fn https_custom_host_is_allowed_with_optin() {
-    // The opt-in (env or `[proxy] allow_custom_upstream`) lifts the allowlist.
+    // The opt-in (`[proxy] allow_custom_upstream`) lifts the allowlist.
     assert_eq!(
         validate_upstream_url("https://gw.corp.example/anthropic", false, true).unwrap(),
         "https://gw.corp.example/anthropic"
@@ -104,10 +102,7 @@ fn has_custom_host_upstream_detects_only_custom_https() {
 #[test]
 fn cold_prefix_repack_is_opt_in_and_config_enables() {
     // #480: off by default (a wrong cold guess re-bills reads as writes ~12x),
-    // enabled via config. Isolate from a developer shell that may export the
-    // env override.
-    let _lock = crate::core::data_dir::test_env_lock();
-    crate::test_env::remove_var("LEAN_CTX_PROXY_COLD_PREFIX_REPACK");
+    // enabled via config.
     assert!(
         !ProxyConfig::default().repacks_cold_prefix(),
         "cold-prefix repack must be opt-in (off by default)"
@@ -122,10 +117,7 @@ fn cold_prefix_repack_is_opt_in_and_config_enables() {
 #[test]
 fn ccr_inband_is_opt_in_and_config_enables() {
     // #493: off by default (the splice mutates provider-visible content for
-    // the expand turn), enabled via config. Isolate from a developer shell
-    // that may export the env override.
-    let _lock = crate::core::data_dir::test_env_lock();
-    crate::test_env::remove_var("LEAN_CTX_PROXY_CCR_INBAND");
+    // the expand turn), enabled via config.
     assert!(
         !ProxyConfig::default().ccr_inband_enabled(),
         "in-band CCR must be opt-in (off by default)"
@@ -140,10 +132,7 @@ fn ccr_inband_is_opt_in_and_config_enables() {
 #[test]
 fn cache_breakpoint_is_opt_in_and_config_enables() {
     // #939: off by default (it reshapes the provider-visible system field),
-    // enabled via config. Isolate from a developer shell that may export the
-    // env override.
-    let _lock = crate::core::data_dir::test_env_lock();
-    crate::test_env::remove_var("LEAN_CTX_PROXY_CACHE_BREAKPOINT");
+    // enabled via config.
     assert!(
         !ProxyConfig::default().cache_breakpoint_enabled(),
         "cache-breakpoint injection must be opt-in (off by default)"
@@ -159,9 +148,6 @@ fn cache_breakpoint_is_opt_in_and_config_enables() {
 fn cache_aligner_defaults_on_and_config_disables() {
     // #986 premium defaults: the volatile-field scan is measurement-only and
     // strictly cache-safe, so it ships on by default; `false` opts out.
-    // Isolate from a developer shell that may export the env override.
-    let _lock = crate::core::data_dir::test_env_lock();
-    crate::test_env::remove_var("LEAN_CTX_PROXY_CACHE_ALIGNER");
     assert!(
         ProxyConfig::default().cache_aligner_enabled(),
         "cache-aligner telemetry must be on by default (measurement-only, safe)"
@@ -175,10 +161,7 @@ fn cache_aligner_defaults_on_and_config_disables() {
 
 #[test]
 fn cache_aligner_legacy_opt_in_still_enables() {
-    // An explicit `true` (a pre-#986 config) keeps working unchanged. Isolate
-    // from a developer shell that may export the env override.
-    let _lock = crate::core::data_dir::test_env_lock();
-    crate::test_env::remove_var("LEAN_CTX_PROXY_CACHE_ALIGNER");
+    // An explicit `true` (a pre-#986 config) keeps working unchanged.
     let cfg = ProxyConfig {
         cache_aligner: Some(true),
         ..Default::default()
@@ -189,10 +172,7 @@ fn cache_aligner_legacy_opt_in_still_enables() {
 #[test]
 fn cache_align_relocate_is_opt_in_and_config_enables() {
     // #974: off by default (it reshapes the provider-visible system field by
-    // relocating volatile values to the tail). Isolate from a developer shell
-    // that may export the env override.
-    let _lock = crate::core::data_dir::test_env_lock();
-    crate::test_env::remove_var("LEAN_CTX_PROXY_CACHE_ALIGN_RELOCATE");
+    // relocating volatile values to the tail).
     assert!(
         !ProxyConfig::default().cache_align_relocate_enabled(),
         "active cache-aligner relocate must be opt-in (off by default)"
@@ -208,10 +188,7 @@ fn cache_align_relocate_is_opt_in_and_config_enables() {
 fn cache_policy_defaults_on_and_can_be_disabled() {
     // #986 premium defaults: telemetry + a more-conservative repack gate are
     // both strictly safe, so cache-economics ships on by default and is
-    // opt-out via config `false` or `LEAN_CTX_PROXY_CACHE_POLICY=off`. Isolate
-    // from a developer shell that may export the env override.
-    let _lock = crate::core::data_dir::test_env_lock();
-    crate::test_env::remove_var("LEAN_CTX_PROXY_CACHE_POLICY");
+    // opt-out via config `false`.
     assert!(
         ProxyConfig::default().cache_policy_enabled(),
         "cache-economics must be on by default (measurement + safe gate)"
@@ -221,23 +198,11 @@ fn cache_policy_defaults_on_and_can_be_disabled() {
         ..Default::default()
     };
     assert!(!cfg.cache_policy_enabled(), "explicit false opts out");
-
-    // An explicit env `off` wins even over a config `true`.
-    crate::test_env::set_var("LEAN_CTX_PROXY_CACHE_POLICY", "off");
-    let on = ProxyConfig {
-        cache_policy: Some(true),
-        ..Default::default()
-    };
-    assert!(!on.cache_policy_enabled(), "env off overrides config true");
-    crate::test_env::remove_var("LEAN_CTX_PROXY_CACHE_POLICY");
 }
 
 #[test]
 fn effort_defaults_off_and_config_sets_it() {
-    // #834: cache-safe effort control is opt-in. Isolate from a developer
-    // shell that may export the env override.
-    let _lock = crate::core::data_dir::test_env_lock();
-    crate::test_env::remove_var("LEAN_CTX_PROXY_EFFORT");
+    // #834: cache-safe effort control is opt-in.
     assert_eq!(
         ProxyConfig::default().resolved_effort(),
         None,
@@ -260,31 +225,9 @@ fn effort_defaults_off_and_config_sets_it() {
 }
 
 #[test]
-fn effort_env_overrides_and_off_disables() {
-    use crate::core::config::Effort;
-    let _lock = crate::core::data_dir::test_env_lock();
-    let cfg = ProxyConfig {
-        effort: Some("high".into()),
-        ..Default::default()
-    };
-    // A valid env level wins over config.
-    crate::test_env::set_var("LEAN_CTX_PROXY_EFFORT", "minimal");
-    assert_eq!(cfg.resolved_effort(), Some(Effort::Minimal));
-    // `off` explicitly disables even a configured level.
-    crate::test_env::set_var("LEAN_CTX_PROXY_EFFORT", "off");
-    assert_eq!(cfg.resolved_effort(), None);
-    // A blank/garbage env value is ignored → falls back to config.
-    crate::test_env::set_var("LEAN_CTX_PROXY_EFFORT", "   ");
-    assert_eq!(cfg.resolved_effort(), Some(Effort::High));
-    crate::test_env::remove_var("LEAN_CTX_PROXY_EFFORT");
-}
-
-#[test]
 fn prose_ranker_defaults_to_auto_and_config_sets_it() {
     // #895: premium extractive path is the default; `truncate`/`off` selects
     // the legacy squeeze; a typo can never silently disable the premium path.
-    let _lock = crate::core::data_dir::test_env_lock();
-    crate::test_env::remove_var("LEAN_CTX_PROXY_PROSE_RANKER");
     assert_eq!(
         ProxyConfig::default().resolved_prose_ranker(),
         ProseRanker::Auto
@@ -317,8 +260,6 @@ fn prose_ranker_defaults_to_auto_and_config_sets_it() {
 
 #[test]
 fn output_holdout_defaults_off_and_clamps() {
-    let _lock = crate::core::data_dir::test_env_lock();
-    crate::test_env::remove_var("LEAN_CTX_PROXY_OUTPUT_HOLDOUT");
     assert_eq!(ProxyConfig::default().output_holdout_fraction(), 0.0);
     let cfg = ProxyConfig {
         output_holdout: Some(0.2),
@@ -333,30 +274,13 @@ fn output_holdout_defaults_off_and_clamps() {
 }
 
 #[test]
-fn verbosity_steer_defaults_off_and_env_overrides() {
-    let _lock = crate::core::data_dir::test_env_lock();
-    crate::test_env::remove_var("LEAN_CTX_PROXY_VERBOSITY_STEER");
+fn verbosity_steer_defaults_off_and_config_enables() {
     assert!(!ProxyConfig::default().verbosity_steer_enabled());
     let cfg = ProxyConfig {
         verbosity_steer: Some(true),
         ..Default::default()
     };
     assert!(cfg.verbosity_steer_enabled());
-    crate::test_env::set_var("LEAN_CTX_PROXY_VERBOSITY_STEER", "on");
-    assert!(ProxyConfig::default().verbosity_steer_enabled());
-    crate::test_env::remove_var("LEAN_CTX_PROXY_VERBOSITY_STEER");
-}
-
-#[test]
-fn prose_ranker_env_overrides_config() {
-    let _lock = crate::core::data_dir::test_env_lock();
-    let cfg = ProxyConfig {
-        prose_ranker: Some("auto".into()),
-        ..Default::default()
-    };
-    crate::test_env::set_var("LEAN_CTX_PROXY_PROSE_RANKER", "truncate");
-    assert_eq!(cfg.resolved_prose_ranker(), ProseRanker::Truncate);
-    crate::test_env::remove_var("LEAN_CTX_PROXY_PROSE_RANKER");
 }
 
 #[test]
@@ -370,35 +294,32 @@ fn config_flag_enables_insecure_http_optin() {
     assert!(cfg.allows_insecure_http_upstream());
 }
 
-/// `resolve_all_disk` ignores `LEAN_CTX_*_UPSTREAM` env by construction, so
-/// these assertions are env-independent (no lock needed). Loopback HTTP is an
-/// always-valid custom upstream (no allowlist / opt-in required).
+/// Loopback HTTP is an always-valid custom upstream (no allowlist / opt-in
+/// required).
 #[test]
-fn resolve_all_disk_uses_config_then_default() {
+fn resolve_all_uses_config_then_default() {
     let cfg = ProxyConfig {
         openai_upstream: Some("http://127.0.0.1:19101".into()),
         ..Default::default()
     };
-    let up = cfg.resolve_all_disk();
+    let up = cfg.resolve_all();
     assert_eq!(up.openai, "http://127.0.0.1:19101");
     assert_eq!(up.anthropic, "https://api.anthropic.com");
     assert_eq!(up.gemini, "https://generativelanguage.googleapis.com");
 }
 
 #[test]
-fn resolve_all_disk_honors_custom_upstream_via_config_flag() {
-    // #590: `resolve_all_disk` is the env-independent view — exactly what the
-    // managed (service-spawned) proxy serves, since it never sees the shell's
-    // LEAN_CTX_ALLOW_CUSTOM_UPSTREAM. With the config opt-in, a custom HTTPS
-    // host resolves; without it, it falls back to the provider default. This
-    // is the regression guard for the reported bug.
+fn resolve_all_honors_custom_upstream_via_config_flag() {
+    // #590: with the config opt-in, a custom HTTPS host resolves; without it,
+    // it falls back to the provider default. This is the regression guard for
+    // the reported bug.
     let custom = ProxyConfig {
         anthropic_upstream: Some("https://gw.corp.example/anthropic".into()),
         allow_custom_upstream: Some(true),
         ..Default::default()
     };
     assert_eq!(
-        custom.resolve_all_disk().anthropic,
+        custom.resolve_all().anthropic,
         "https://gw.corp.example/anthropic",
         "config flag must let the managed proxy honor the custom upstream"
     );
@@ -407,32 +328,24 @@ fn resolve_all_disk_honors_custom_upstream_via_config_flag() {
         anthropic_upstream: Some("https://gw.corp.example/anthropic".into()),
         ..Default::default()
     };
-    // Isolate from a developer shell that may export the env opt-in.
-    let _lock = crate::core::data_dir::test_env_lock();
-    crate::test_env::remove_var("LEAN_CTX_ALLOW_CUSTOM_UPSTREAM");
     assert_eq!(
-        blocked.resolve_all_disk().anthropic,
+        blocked.resolve_all().anthropic,
         "https://api.anthropic.com",
         "without the opt-in the custom host is rejected → provider default"
     );
 }
 
 #[test]
-fn resolve_all_disk_normalizes_trailing_slash() {
+fn resolve_all_normalizes_trailing_slash() {
     let cfg = ProxyConfig {
         openai_upstream: Some("http://127.0.0.1:19101/".into()),
         ..Default::default()
     };
-    assert_eq!(cfg.resolve_all_disk().openai, "http://127.0.0.1:19101");
+    assert_eq!(cfg.resolve_all().openai, "http://127.0.0.1:19101");
 }
 
 #[test]
 fn refresh_keeps_last_good_on_invalid_config() {
-    // `refresh_upstreams` is env-aware; isolate from a developer's shell that
-    // may export LEAN_CTX_OPENAI_UPSTREAM (e.g. while reproducing #449).
-    let _lock = crate::core::data_dir::test_env_lock();
-    crate::test_env::remove_var("LEAN_CTX_OPENAI_UPSTREAM");
-
     // A typo in config.toml must never reroute a live proxy to the default.
     let last = Upstreams {
         anthropic: "https://api.anthropic.com".into(),
@@ -453,9 +366,6 @@ fn refresh_keeps_last_good_on_invalid_config() {
 
 #[test]
 fn refresh_adopts_valid_config_change() {
-    let _lock = crate::core::data_dir::test_env_lock();
-    crate::test_env::remove_var("LEAN_CTX_OPENAI_UPSTREAM");
-
     let last = Upstreams {
         anthropic: "https://api.anthropic.com".into(),
         openai: "http://127.0.0.1:19101".into(),
@@ -473,46 +383,19 @@ fn refresh_adopts_valid_config_change() {
 }
 
 #[test]
-fn diagnose_drift_env_set_but_proxy_serves_other() {
-    // The exact #449 / Codex case: env exported in the shell, but the
-    // MCP-spawned proxy serves config.toml → the env never reached it.
-    assert_eq!(
-        diagnose_drift(
-            Some("http://127.0.0.1:2455"),
-            "https://api.openai.com",
-            "https://api.openai.com"
-        ),
-        Some(UpstreamDrift::EnvNotApplied)
-    );
+fn upstream_drift_config_changed_needs_restart() {
+    assert!(upstream_drifted(
+        "http://127.0.0.1:2455",
+        "https://api.openai.com"
+    ));
 }
 
 #[test]
-fn diagnose_drift_env_consistent_is_in_sync() {
-    // Proxy was started with the env value and serves it → not drift.
-    assert_eq!(
-        diagnose_drift(
-            Some("http://127.0.0.1:2455"),
-            "https://api.openai.com",
-            "http://127.0.0.1:2455"
-        ),
-        None
-    );
-}
-
-#[test]
-fn diagnose_drift_config_changed_needs_restart() {
-    assert_eq!(
-        diagnose_drift(None, "http://127.0.0.1:2455", "https://api.openai.com"),
-        Some(UpstreamDrift::ConfigNotApplied)
-    );
-}
-
-#[test]
-fn diagnose_drift_in_sync() {
-    assert_eq!(
-        diagnose_drift(None, "https://api.openai.com", "https://api.openai.com"),
-        None
-    );
+fn upstream_drift_in_sync() {
+    assert!(!upstream_drifted(
+        "https://api.openai.com",
+        "https://api.openai.com"
+    ));
 }
 
 fn entry(id: &str, shape: WireShape, base_url: &str) -> ProviderEntry {
@@ -606,8 +489,6 @@ fn bedrock_provider_requires_region_matching_endpoint_and_aws_env_mode() {
 
 #[test]
 fn provider_registry_skips_invalid_entries_without_killing_rest() {
-    let _lock = crate::core::data_dir::test_env_lock();
-    crate::test_env::remove_var("LEAN_CTX_ALLOW_INSECURE_HTTP_UPSTREAM");
     let cfg = ProxyConfig {
         providers: vec![
             // Shadows a built-in name → skipped.
@@ -754,19 +635,12 @@ fn role_aggressiveness_defaults_to_off() {
     // Opt-in: a fresh config compresses no prose, so the proxy stays
     // byte-for-byte unchanged until an operator sets a value (#710).
     let cfg = ProxyConfig::default();
-    // Isolate from a developer shell that may export the override.
-    let _lock = crate::core::data_dir::test_env_lock();
-    crate::test_env::remove_var("LEAN_CTX_PROXY_SYSTEM_AGGR");
-    crate::test_env::remove_var("LEAN_CTX_PROXY_USER_AGGR");
     assert_eq!(cfg.resolved_role_aggressiveness(ProseRole::System), None);
     assert_eq!(cfg.resolved_role_aggressiveness(ProseRole::User), None);
 }
 
 #[test]
 fn role_aggressiveness_reads_config_and_clamps() {
-    let _lock = crate::core::data_dir::test_env_lock();
-    crate::test_env::remove_var("LEAN_CTX_PROXY_SYSTEM_AGGR");
-    crate::test_env::remove_var("LEAN_CTX_PROXY_USER_AGGR");
     let cfg = ProxyConfig {
         role_aggressiveness: RoleAggressiveness {
             system: Some(0.7),
@@ -783,49 +657,9 @@ fn role_aggressiveness_reads_config_and_clamps() {
 }
 
 #[test]
-fn role_aggressiveness_env_overrides_config() {
-    let _lock = crate::core::data_dir::test_env_lock();
-    crate::test_env::set_var("LEAN_CTX_PROXY_SYSTEM_AGGR", "0.25");
-    let cfg = ProxyConfig {
-        role_aggressiveness: RoleAggressiveness {
-            system: Some(0.9),
-            user: None,
-        },
-        ..Default::default()
-    };
-    assert_eq!(
-        cfg.resolved_role_aggressiveness(ProseRole::System),
-        Some(0.25),
-        "env override must win over the configured value"
-    );
-    crate::test_env::remove_var("LEAN_CTX_PROXY_SYSTEM_AGGR");
-}
-
-#[test]
-fn role_aggressiveness_ignores_blank_env() {
-    let _lock = crate::core::data_dir::test_env_lock();
-    crate::test_env::set_var("LEAN_CTX_PROXY_USER_AGGR", "  ");
-    let cfg = ProxyConfig {
-        role_aggressiveness: RoleAggressiveness {
-            system: None,
-            user: Some(0.4),
-        },
-        ..Default::default()
-    };
-    assert_eq!(
-        cfg.resolved_role_aggressiveness(ProseRole::User),
-        Some(0.4),
-        "a blank/garbage env value must fall back to config, not disable it"
-    );
-    crate::test_env::remove_var("LEAN_CTX_PROXY_USER_AGGR");
-}
-
-#[test]
 fn live_compress_defaults_on_and_config_disables() {
     // #481: default ON (today's behaviour); a config `false` opts into the
-    // meter-only mode. Isolate from a developer shell exporting the override.
-    let _lock = crate::core::data_dir::test_env_lock();
-    crate::test_env::remove_var("LEAN_CTX_PROXY_LIVE_COMPRESS");
+    // meter-only mode.
     assert!(
         ProxyConfig::default().live_compresses(),
         "live_compress must default to true"
@@ -835,25 +669,6 @@ fn live_compress_defaults_on_and_config_disables() {
         ..Default::default()
     };
     assert!(!cfg.live_compresses());
-}
-
-#[test]
-fn live_compress_env_overrides_config() {
-    let _lock = crate::core::data_dir::test_env_lock();
-    // env `off` wins over a config `true`.
-    crate::test_env::set_var("LEAN_CTX_PROXY_LIVE_COMPRESS", "off");
-    let cfg = ProxyConfig {
-        live_compress: Some(true),
-        ..Default::default()
-    };
-    assert!(!cfg.live_compresses(), "env off must win over config true");
-    // A garbage env value is ignored → falls back to config.
-    crate::test_env::set_var("LEAN_CTX_PROXY_LIVE_COMPRESS", "maybe");
-    assert!(
-        cfg.live_compresses(),
-        "unparseable env must fall back to config, not flip the mode"
-    );
-    crate::test_env::remove_var("LEAN_CTX_PROXY_LIVE_COMPRESS");
 }
 
 #[test]

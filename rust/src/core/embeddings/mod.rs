@@ -2,7 +2,7 @@
 //!
 //! Provides dense vector embeddings for code chunks using a local ONNX model.
 //! Supports multiple models via `EmbeddingModel` registry — selected via
-//! `LEAN_CTX_EMBEDDING_MODEL` env var (default: all-MiniLM-L6-v2).
+//! `[embedding].model` config key (default: all-MiniLM-L6-v2).
 //!
 //! Feature-gated under `embeddings` — falls back gracefully to BM25-only
 //! search when the feature or model is not available.
@@ -269,18 +269,16 @@ impl EmbeddingEngine {
         // Process in mini-batches to cap peak memory. Prefixing and tokenization
         // deliberately happen inside the loop: retaining those buffers for the
         // entire corpus used to defeat the mini-batch cap under large indexes.
-        // Override the upper bound via LEAN_CTX_EMBEDDING_BATCH_SIZE.
-        let configured_batch_size: usize = std::env::var("LEAN_CTX_EMBEDDING_BATCH_SIZE")
-            .ok()
-            .and_then(|v| v.parse().ok())
-            .filter(|&v| v >= 1)
-            .unwrap_or_else(|| {
-                #[cfg(any(feature = "embeddings", feature = "neural"))]
-                if crate::core::ort_execution_providers::gpu_active() {
-                    return 256;
-                }
+        let configured_batch_size: usize = {
+            #[cfg(any(feature = "embeddings", feature = "neural"))]
+            if crate::core::ort_execution_providers::gpu_active() {
+                256
+            } else {
                 64
-            });
+            }
+            #[cfg(not(any(feature = "embeddings", feature = "neural")))]
+            64
+        };
         // Approximate tokenizer tensors plus transformer activations per input.
         // Saturating arithmetic keeps hostile custom-model dimensions harmless.
         let estimated_bytes_per_text = self
@@ -779,17 +777,10 @@ pub fn try_shared_engine() -> Option<&'static EmbeddingEngine> {
     SHARED_ENGINE.get()?.as_ref().ok()
 }
 
-/// Resolve the deterministic-inference policy (#895): the
-/// `LEAN_CTX_EMBEDDING_DETERMINISTIC` env var wins in either direction,
-/// otherwise `[embedding].deterministic` from config, otherwise `false`.
+/// Resolve the deterministic-inference policy (#895): `[embedding].deterministic`
+/// from config, otherwise `false`.
 #[cfg(feature = "embeddings")]
 fn deterministic_inference() -> bool {
-    if let Ok(v) = std::env::var("LEAN_CTX_EMBEDDING_DETERMINISTIC") {
-        return matches!(
-            v.trim().to_lowercase().as_str(),
-            "1" | "true" | "yes" | "on"
-        );
-    }
     crate::core::config::Config::load()
         .embedding
         .deterministic

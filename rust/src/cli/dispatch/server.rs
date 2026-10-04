@@ -27,8 +27,6 @@ pub(super) fn run_mcp_server() -> Result<()> {
     // Concurrency hardening:
     // - Smooths "thundering herd" MCP startups (multiple agent sessions).
     // - Limits Tokio worker/blocking threads to avoid host degradation.
-    // - LEAN_CTX_WORKER_THREADS overrides the default for environments
-    //   with many concurrent subagents (e.g. parallel review pipelines).
     let startup_lock = crate::core::startup_guard::try_acquire_lock(
         "mcp-startup",
         std::time::Duration::from_secs(3),
@@ -43,7 +41,7 @@ pub(super) fn run_mcp_server() -> Result<()> {
     // on rayon, whose global pool otherwise grabs *every* core — so a fleet of
     // concurrent sessions still spikes the host on startup (#460). Resolve the
     // cap in three tiers:
-    //   1. an explicit `LEANCTX_INDEX_THREADS` / config value always wins;
+    //   1. an explicit `max_index_threads` config value always wins;
     //   2. otherwise, if other lean-ctx processes are running, split the cores
     //      fairly across the fleet so N sessions use ~one core-count of index
     //      work between them instead of N × all-cores;
@@ -309,10 +307,7 @@ fn spawn_parent_watchdog() {
 }
 
 pub(super) fn resolve_worker_threads(parallelism: usize) -> usize {
-    std::env::var("LEAN_CTX_WORKER_THREADS")
-        .ok()
-        .and_then(|v| v.parse::<usize>().ok())
-        .unwrap_or_else(|| parallelism.clamp(1, 4))
+    parallelism.clamp(1, 4)
 }
 
 /// Herd-aware default for the rayon index-build thread cap when the operator

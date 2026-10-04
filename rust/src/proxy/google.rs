@@ -492,7 +492,6 @@ mod tests {
         // #840 end-to-end: the model is taken from the URL path, so the handler
         // threads it in. 3.x → thinkingLevel; off / unknown model → byte no-op.
         let _iso = crate::core::data_dir::isolated_data_dir();
-        crate::test_env::remove_var("LEAN_CTX_PROXY_EFFORT");
         crate::core::config::Config::update_global(|c| {
             c.proxy.effort = Some("low".into());
         })

@@ -546,7 +546,6 @@ mod tests {
         // emits an <lc_expand:HASH> marker, the model echoes it, and the proxy
         // splices the verbatim original back inline on the next request.
         let _iso = crate::core::data_dir::isolated_data_dir();
-        crate::test_env::remove_var("LEAN_CTX_PROXY_CCR_INBAND");
         crate::core::config::Config::update_global(|c| {
             c.proxy.ccr_inband = Some(true);
         })
@@ -610,7 +609,6 @@ mod tests {
         // never perturbed unless the model actually asked to expand. Uses a body
         // with nothing to prune/compress, isolating the splice from stub emission.
         let _iso = crate::core::data_dir::isolated_data_dir();
-        crate::test_env::remove_var("LEAN_CTX_PROXY_CCR_INBAND");
         let body = serde_json::json!({
             "messages": [
                 {"role": "user", "content": [{"type": "text", "text": "hello there"}]},
@@ -859,7 +857,6 @@ mod tests {
     #[test]
     fn cold_prefix_repack_rewrites_protected_system_prose_when_enabled() {
         let _iso = crate::core::data_dir::isolated_data_dir();
-        crate::test_env::remove_var("LEAN_CTX_PROXY_COLD_PREFIX_REPACK");
         crate::core::config::Config::update_global(|c| {
             c.proxy.role_aggressiveness.system = Some(0.9);
             c.proxy.cold_prefix_repack = Some(true);
@@ -892,8 +889,6 @@ mod tests {
         // enabled and the prefix is cold, but it is too small (≈345 tokens) to
         // cache, so the system prose must stay protected (unchanged).
         let _iso = crate::core::data_dir::isolated_data_dir();
-        crate::test_env::remove_var("LEAN_CTX_PROXY_COLD_PREFIX_REPACK");
-        crate::test_env::remove_var("LEAN_CTX_PROXY_CACHE_POLICY");
         crate::core::config::Config::update_global(|c| {
             c.proxy.role_aggressiveness.system = Some(0.9);
             c.proxy.cold_prefix_repack = Some(true);
@@ -917,7 +912,6 @@ mod tests {
     #[test]
     fn cold_prefix_repack_off_by_default_keeps_prefix_protected() {
         let _iso = crate::core::data_dir::isolated_data_dir();
-        crate::test_env::remove_var("LEAN_CTX_PROXY_COLD_PREFIX_REPACK");
         crate::core::config::Config::update_global(|c| {
             c.proxy.role_aggressiveness.system = Some(0.9);
             c.proxy.cold_prefix_repack = Some(false);
@@ -942,7 +936,6 @@ mod tests {
     #[test]
     fn cold_prefix_repack_protects_warm_prefix_even_when_enabled() {
         let _iso = crate::core::data_dir::isolated_data_dir();
-        crate::test_env::remove_var("LEAN_CTX_PROXY_COLD_PREFIX_REPACK");
         crate::core::config::Config::update_global(|c| {
             c.proxy.role_aggressiveness.system = Some(0.9);
             c.proxy.cold_prefix_repack = Some(true);
@@ -970,8 +963,6 @@ mod tests {
         // must never change the bytes on the wire — the same request compressed
         // with the policy off vs on is byte-identical (strictly cache-safe).
         let _iso = crate::core::data_dir::isolated_data_dir();
-        crate::test_env::remove_var("LEAN_CTX_PROXY_CACHE_POLICY");
-        crate::test_env::remove_var("LEAN_CTX_PROXY_COLD_PREFIX_REPACK");
 
         let prose = big_prose();
         let (_messages, body) = cached_prefix_body("cache-policy-measurement-session", &prose);
@@ -1000,7 +991,6 @@ mod tests {
         // #834 end-to-end: fill output_config.effort when the client already
         // asked for adaptive thinking, but never enable thinking otherwise.
         let _iso = crate::core::data_dir::isolated_data_dir();
-        crate::test_env::remove_var("LEAN_CTX_PROXY_EFFORT");
         crate::core::config::Config::update_global(|c| {
             c.proxy.effort = Some("medium".into());
         })
@@ -1039,9 +1029,6 @@ mod tests {
         // #895: the holdout control arm must be byte-unchanged (so its output is
         // the measurement baseline); the treatment arm gets the constant steer.
         let _iso = crate::core::data_dir::isolated_data_dir();
-        crate::test_env::remove_var("LEAN_CTX_PROXY_VERBOSITY_STEER");
-        crate::test_env::remove_var("LEAN_CTX_PROXY_OUTPUT_HOLDOUT");
-        crate::test_env::remove_var("LEAN_CTX_PROXY_EFFORT");
 
         let req = serde_json::json!({
             "model": "claude-opus-4-8",
@@ -1092,7 +1079,6 @@ mod tests {
         // #939: opt-in on AND the client set no cache_control of its own → exactly
         // one ephemeral breakpoint lands on `system`, wrapping the verbatim text.
         let _iso = crate::core::data_dir::isolated_data_dir();
-        crate::test_env::remove_var("LEAN_CTX_PROXY_CACHE_BREAKPOINT");
         let body = serde_json::json!({
             "model": "claude-opus-4-8",
             "system": cacheable_system(),
@@ -1123,7 +1109,6 @@ mod tests {
         // Default off → the request must be byte-identical (no system reshape),
         // preserving the meter-only / cache-stable contract.
         let _iso = crate::core::data_dir::isolated_data_dir();
-        crate::test_env::remove_var("LEAN_CTX_PROXY_CACHE_BREAKPOINT");
         let body = serde_json::json!({
             "model": "claude-opus-4-8",
             "system": cacheable_system(),
@@ -1142,7 +1127,6 @@ mod tests {
         // #939 safety: a client cache_control on a message means `system` is part
         // of the already-cached prefix — never add a second, prefix-shifting anchor.
         let _iso = crate::core::data_dir::isolated_data_dir();
-        crate::test_env::remove_var("LEAN_CTX_PROXY_CACHE_BREAKPOINT");
         let body = serde_json::json!({
             "model": "claude-opus-4-8",
             "system": cacheable_system(),
@@ -1172,8 +1156,6 @@ mod tests {
         // the request byte-identical (measurement, not a rewrite), even on a
         // volatile-field-rich system prompt.
         let _iso = crate::core::data_dir::isolated_data_dir();
-        crate::test_env::remove_var("LEAN_CTX_PROXY_CACHE_ALIGNER");
-        crate::test_env::remove_var("LEAN_CTX_PROXY_CACHE_BREAKPOINT");
         let body = serde_json::json!({
             "model": "claude-opus-4-8",
             "system": "Today is 2026-06-22. Session 550e8400-e29b-41d4-a716-446655440000.",
@@ -1194,12 +1176,7 @@ mod tests {
         format!("Today is 2026-06-27. {}", cacheable_system())
     }
 
-    fn clear_relocate_env() {
-        crate::test_env::remove_var("LEAN_CTX_PROXY_CACHE_ALIGN_RELOCATE");
-        crate::test_env::remove_var("LEAN_CTX_PROXY_CACHE_BREAKPOINT");
-        crate::test_env::remove_var("LEAN_CTX_PROXY_CACHE_ALIGNER");
-        crate::test_env::remove_var("LEAN_CTX_PROXY_OUTPUT_HOLDOUT");
-    }
+    fn clear_relocate_env() {}
 
     #[test]
     fn cache_align_relocate_moves_volatiles_to_tail_when_opt_in() {

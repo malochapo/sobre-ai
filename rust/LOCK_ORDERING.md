@@ -47,7 +47,7 @@ All `std::sync::Mutex` unless noted otherwise.
 | L50 | `LINE_EMBED_CACHE` | `core/entropy.rs:299` | `Mutex<Option<HashMap<u64, Vec<f32>>>>` | Per-line embedding cache (line-hash → vector) for the semantic redundancy filter (#544); capacity-bounded, never blocks on model loads |
 | L51 | `SELECTED_ARMS` | `core/adaptive_thresholds.rs:342` | `Mutex<Option<SelectedArmRegistry>>` | Registry of recently selected bandit arms (per project root) so real bounce/edit-fail signals are attributed to the arm that produced the compression (#593); capacity-bounded (64 paths, oldest-first eviction) |
 | L53 | `REGISTRY` (introspect) | `core/introspect.rs:112` | `LazyLock<Mutex<Registry>>` | Cognition v2 activity registry — per-subsystem tick counters + last-run; flushed debounced to a project-scoped JSON so `introspect cognition` / `doctor` can report wired/active across processes (#cognition-v2) |
-| L54 | `ACTIVE_WEIGHTS` | `core/context_field.rs:266` | `RwLock<Option<FieldWeights>>` | In-process learned Φ field-weights cache set by `set_active_weights` (bandit-chosen arm), read by `active_weights()` / `compute_phi`; deterministic by default, sampling only under `LEAN_CTX_STOCHASTIC` (#cognition-v2) |
+| L54 | `ACTIVE_WEIGHTS` | `core/context_field.rs:266` | `RwLock<Option<FieldWeights>>` | In-process learned Φ field-weights cache set by `set_active_weights` (bandit-chosen arm), read by `active_weights()` / `compute_phi`; deterministic by default, sampling only with `auto_mode_learning` (#cognition-v2) |
 | L56 | `MEMO` | `proxy/prose_ranker.rs:30` | `Mutex<Option<HashMap<u64, String>>>` | Cache-safe wire-prose squeeze memo (#895): the first squeeze of a `(content, budget)` is frozen for the process lifetime so a later warm recompute returns identical bytes (provider prompt-cache stability, #448/#498); capacity-bounded (8192), independent leaf lock, never nested |
 | L57 | `SEEN` | `core/conversation.rs:80` | `OnceLock<RwLock<Vec<(String, Instant)>>>` | Recent sightings of distinct conversation ids (`id` → last-seen instant) feeding the multi-conversation stub-gate detector (#1040/#1042); capacity-pruned, independent leaf lock, never nested |
 | L61 | `CLI_OVERLAY` | `core/index_filter.rs:31` | `RwLock<Option<CliOverlay>>` | Per-run index corpus filter overlay (#735): written once by the `index` CLI dispatch before builders start, read by every index walk via `IndexFileFilter::resolve`; independent leaf lock, never nested |
@@ -180,10 +180,8 @@ Rule: never acquire L4 and then L22.
 
 ### Worker Thread Tuning
 
-The Tokio runtime worker thread count defaults to `available_parallelism().clamp(1, 4)`.
-Override via `LEAN_CTX_WORKER_THREADS` (positive integer) for environments with many
-concurrent subagents. Example: `LEAN_CTX_WORKER_THREADS=8`. The blocking thread pool
-is always `worker_threads * 4`, clamped to `[8, 32]`.
+The Tokio runtime worker thread count is `available_parallelism().clamp(1, 4)`. The
+blocking thread pool is always `worker_threads * 4`, clamped to `[8, 32]`.
 
 ### Independent Static Locks (L3–L82)
 

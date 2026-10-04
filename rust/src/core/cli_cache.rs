@@ -265,7 +265,7 @@ mod tests {
 
     #[test]
     fn format_hit_output() {
-        let _lock = crate::core::data_dir::test_env_lock();
+        let iso = crate::core::data_dir::isolated_data_dir();
         let entry = CliCacheEntry {
             path: "/test.rs".into(),
             hash: "abc".into(),
@@ -274,14 +274,17 @@ mod tests {
             timestamp: now_secs(),
             read_count: 3,
         };
-        crate::test_env::set_var("LEAN_CTX_SAVINGS_FOOTER", "never");
+        std::fs::write(
+            iso.path().join("config.toml"),
+            "savings_footer = \"never\"\n",
+        )
+        .unwrap();
         let output = format_hit(&entry, "F1", "test.rs");
         assert!(output.contains("cached test.rs"));
         assert!(output.contains("42L"));
         assert!(!output.contains("F1"));
         assert!(!output.contains("500t"));
         assert!(!output.contains("read #3"));
-        crate::test_env::remove_var("LEAN_CTX_SAVINGS_FOOTER");
     }
 
     #[test]

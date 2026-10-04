@@ -43,7 +43,7 @@ async fn proxy_state_reads_upstream_live_from_watch() {
 /// frozen at the start-time upstream forever.
 ///
 /// The process-global env lock is intentionally held across the polling
-/// `.await`s to keep `LEAN_CTX_*` isolated for the whole test; safe because
+/// `.await`s to keep the data dir isolated for the whole test; safe because
 /// each `#[tokio::test]` owns its current-thread runtime, so this std guard
 /// only makes *other* test threads wait — it can never deadlock this one.
 #[tokio::test]
@@ -54,10 +54,6 @@ async fn config_change_is_picked_up_live_without_restart() {
     let _lock = crate::core::data_dir::test_env_lock();
     let tmp = tempfile::tempdir().unwrap();
     crate::test_env::set_var("LEAN_CTX_DATA_DIR", tmp.path());
-    // Isolate from a developer shell that exports the env override (#449),
-    // and make the reload fast + deterministic.
-    crate::test_env::remove_var("LEAN_CTX_OPENAI_UPSTREAM");
-    crate::test_env::set_var("LEAN_CTX_PROXY_RELOAD_SECS", "1");
 
     // Start state: config.toml points OpenAI at a loopback upstream.
     Config::update_global(|c| {
@@ -90,6 +86,5 @@ async fn config_change_is_picked_up_live_without_restart() {
         "running proxy must serve the new config.toml upstream without a restart"
     );
 
-    crate::test_env::remove_var("LEAN_CTX_PROXY_RELOAD_SECS");
     crate::test_env::remove_var("LEAN_CTX_DATA_DIR");
 }

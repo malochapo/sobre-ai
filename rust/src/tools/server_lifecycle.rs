@@ -41,13 +41,10 @@ impl LeanCtxServer {
         workspace_id: &str,
         channel_id: &str,
     ) -> Self {
-        let ttl = std::env::var("LEAN_CTX_CACHE_TTL")
-            .ok()
-            .and_then(|v| v.parse().ok())
-            .unwrap_or_else(|| {
-                let cfg = crate::core::config::Config::load();
-                crate::core::config::MemoryCleanup::effective(&cfg).idle_ttl_secs()
-            });
+        let ttl = {
+            let cfg = crate::core::config::Config::load();
+            crate::core::config::MemoryCleanup::effective(&cfg).idle_ttl_secs()
+        };
 
         // Purge stale graph indices on startup to prevent serving outdated data
         crate::core::graph_index::ProjectIndex::purge_stale_indices();

@@ -8,10 +8,6 @@ pub(crate) fn handle(
 ) -> String {
     let engine = GainEngine::load();
     let lim = limit.unwrap_or(10).clamp(1, 50);
-    let env_model = std::env::var("LEAN_CTX_MODEL")
-        .or_else(|_| std::env::var("LCTX_MODEL"))
-        .ok();
-    let model = model.or(env_model.as_deref());
 
     match action {
         "status" | "report" | "" => format_summary(&engine, model),
@@ -378,10 +374,7 @@ fn format_cost_themed(
     let (total_in, total_out, total_cached) = store.total_tokens();
     let total_cost = store.total_cost();
 
-    let env_model = std::env::var("LEAN_CTX_MODEL")
-        .or_else(|_| std::env::var("LCTX_MODEL"))
-        .ok();
-    let resolved_model = model.or(env_model.as_deref());
+    let resolved_model = model;
 
     out.push(String::new());
     let header = format!(

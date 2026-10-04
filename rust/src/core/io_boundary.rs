@@ -60,27 +60,14 @@ pub(crate) fn strip_utf8_bom(s: String) -> String {
     }
 }
 
+/// How a secret-like path is handled. Only enforcement remains; the label is
+/// still recorded in the Context IR.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum BoundaryMode {
-    Warn,
     Enforce,
 }
 
-impl BoundaryMode {
-    fn parse(s: &str) -> Self {
-        match s.trim().to_lowercase().as_str() {
-            "enforce" | "strict" => Self::Enforce,
-            _ => Self::Warn,
-        }
-    }
-}
-
 pub fn boundary_mode_effective() -> BoundaryMode {
-    if let Ok(v) = std::env::var("LEAN_CTX_IO_BOUNDARY_MODE")
-        && !v.trim().is_empty()
-    {
-        return BoundaryMode::parse(&v);
-    }
     BoundaryMode::Enforce
 }
 
@@ -165,8 +152,6 @@ pub fn is_secret_like(path: &Path) -> Option<&'static str> {
 }
 
 pub fn check_secret_path(path: &Path) -> Result<Option<String>, String> {
-    let mode = boundary_mode_effective();
-
     let Some(reason) = is_secret_like(path) else {
         return Ok(None);
     };
@@ -176,16 +161,7 @@ pub fn check_secret_path(path: &Path) -> Result<Option<String>, String> {
         path.display()
     );
 
-    match mode {
-        BoundaryMode::Enforce => Err(format!("ERROR: {msg}")),
-        BoundaryMode::Warn => {
-            if crate::core::protocol::meta_visible() {
-                Ok(Some(format!("[BOUNDARY WARNING] {msg}")))
-            } else {
-                Ok(None)
-            }
-        }
-    }
+    Err(format!("ERROR: {msg}"))
 }
 
 pub fn jail_and_check_path(

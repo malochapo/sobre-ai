@@ -1,16 +1,32 @@
+use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::OnceLock;
+
+/// A config dir whose `config.toml` sets `shell_security = "warn"`. These tests
+/// exercise CLI/compression behavior, not the shell allowlist (which has its
+/// own unit tests in shell::exec). On CI stderr is not a TTY, so the gate would
+/// block test scripts (`for`/`while` loops are not allowlisted) with exit 126 —
+/// warn-only keeps the tests pinned to what they actually assert.
+fn warn_only_config_dir() -> &'static Path {
+    static DIR: OnceLock<PathBuf> = OnceLock::new();
+    DIR.get_or_init(|| {
+        let dir = std::env::temp_dir().join(format!(
+            "lean-ctx-it-warn-only-config-{}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&dir).expect("create warn-only config dir");
+        std::fs::write(dir.join("config.toml"), "shell_security = \"warn\"\n")
+            .expect("write warn-only config.toml");
+        dir
+    })
+}
 
 fn lean_ctx_bin() -> Command {
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_lean-ctx"));
     cmd.current_dir(env!("CARGO_MANIFEST_DIR"));
     cmd.env("LEAN_CTX_ACTIVE", "1");
     cmd.env("__LEAN_CTX_SKIP_EVENTS", "1");
-    // These tests exercise CLI/compression behavior, not the shell allowlist
-    // (which has its own unit tests in shell::exec). On CI stderr is not a TTY,
-    // so `allowlist_must_enforce()` would block test scripts (`for`/`while`
-    // loops are not allowlisted) with exit 126 — hermetic warn-only keeps the
-    // tests pinned to what they actually assert.
-    cmd.env("LEAN_CTX_SHELL_GATE_WARN_ONLY", "1");
+    cmd.env("LEAN_CTX_CONFIG_DIR", warn_only_config_dir());
     cmd
 }
 
@@ -183,7 +199,7 @@ fn forced_compress_bin() -> Command {
         .env("__LEAN_CTX_SKIP_EVENTS", "1")
         // Allowlist enforcement (non-TTY stderr ⇒ block) is out of scope here;
         // the fidelity scripts use `while` loops that are not allowlisted.
-        .env("LEAN_CTX_SHELL_GATE_WARN_ONLY", "1");
+        .env("LEAN_CTX_CONFIG_DIR", warn_only_config_dir());
     cmd
 }
 
@@ -337,7 +353,7 @@ fn pipe_guard_rust_side_defense_in_depth() {
         .env("__LEAN_CTX_SKIP_EVENTS", "1")
         // `for` + command substitution are not allowlisted; this test pins the
         // pipe guard, not enforcement (covered by shell::exec unit tests).
-        .env("LEAN_CTX_SHELL_GATE_WARN_ONLY", "1")
+        .env("LEAN_CTX_CONFIG_DIR", warn_only_config_dir())
         .args(["-c", script])
         .output()
         .expect("failed to run lean-ctx -c");

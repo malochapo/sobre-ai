@@ -23,8 +23,7 @@ impl Default for ClientMcpCapabilities {
 
 impl ClientMcpCapabilities {
     pub fn detect(client_name: &str) -> Self {
-        let hint = std::env::var("LEAN_CTX_CLIENT_HINT").ok();
-        Self::detect_with_hint(client_name, hint.as_deref())
+        Self::detect_with_hint(client_name, None)
     }
 
     fn detect_with_hint(client_name: &str, hint: Option<&str>) -> Self {

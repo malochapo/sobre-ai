@@ -244,14 +244,10 @@ pub(super) fn exec_limits(command: &str) -> (usize, std::time::Duration) {
 ///
 /// Heavy builds/tests (cargo install/nextest/build, npm ci, git commit/push, …)
 /// get the long ceiling instead of being killed at the 2-minute default, keeping
-/// the MCP path and the interactive hook consistent. The constants are
-/// overridable so operators can pin any value. Precedence (first match wins):
+/// the MCP path and the interactive hook consistent:
 ///
-/// 1. `LEAN_CTX_SHELL_TIMEOUT_MS` — universal override, in milliseconds.
-/// 2. heavy command → `LEAN_CTX_SHELL_HEAVY_TIMEOUT_SECS` / config
-///    `shell_heavy_timeout_secs`, else [`HEAVY_TIMEOUT`].
-/// 3. normal command → `LEAN_CTX_SHELL_TIMEOUT_SECS` / config
-///    `shell_timeout_secs`, else [`DEFAULT_TIMEOUT`].
+/// - heavy command → config `shell_heavy_timeout_secs`, else [`HEAVY_TIMEOUT`].
+/// - normal command → config `shell_timeout_secs`, else [`DEFAULT_TIMEOUT`].
 #[must_use]
 pub(crate) fn shell_timeout(command: &str) -> std::time::Duration {
     shell_timeout_with_override(command, None)
@@ -263,44 +259,28 @@ pub(crate) fn shell_timeout(command: &str) -> std::time::Duration {
 const MAX_CALL_TIMEOUT_MS: u64 = 3_600_000; // 1 hour
 
 /// [`shell_timeout`] with an optional per-call override (ctx_shell's
-/// `timeout_ms` arg). Precedence: operator env pin (`LEAN_CTX_SHELL_TIMEOUT_MS`)
-/// > per-call override (clamped to [`MAX_CALL_TIMEOUT_MS`], zero ignored)
-/// > per-tier env/config > built-in heavy/normal ceilings.
+/// `timeout_ms` arg). Precedence: per-call override (clamped to
+/// [`MAX_CALL_TIMEOUT_MS`], zero ignored) > per-tier config > built-in
+/// heavy/normal ceilings.
 #[must_use]
 pub(crate) fn shell_timeout_with_override(
     command: &str,
     override_ms: Option<u64>,
 ) -> std::time::Duration {
-    if let Some(ms) = env_u64("LEAN_CTX_SHELL_TIMEOUT_MS") {
-        return std::time::Duration::from_millis(ms);
-    }
     if let Some(ms) = override_ms.filter(|n| *n > 0) {
         return std::time::Duration::from_millis(ms.min(MAX_CALL_TIMEOUT_MS));
     }
     if is_heavy_command(command) {
-        if let Some(secs) = env_u64("LEAN_CTX_SHELL_HEAVY_TIMEOUT_SECS")
-            .or_else(|| config::Config::load().shell_heavy_timeout_secs)
-        {
+        if let Some(secs) = config::Config::load().shell_heavy_timeout_secs {
             return std::time::Duration::from_secs(secs);
         }
         HEAVY_TIMEOUT
     } else {
-        if let Some(secs) = env_u64("LEAN_CTX_SHELL_TIMEOUT_SECS")
-            .or_else(|| config::Config::load().shell_timeout_secs)
-        {
+        if let Some(secs) = config::Config::load().shell_timeout_secs {
             return std::time::Duration::from_secs(secs);
         }
         DEFAULT_TIMEOUT
     }
-}
-
-/// Parse a positive `u64` from an env var, ignoring absent/empty/zero/invalid
-/// values so the caller falls through to the next precedence tier.
-fn env_u64(var: &str) -> Option<u64> {
-    std::env::var(var)
-        .ok()
-        .and_then(|v| v.parse::<u64>().ok())
-        .filter(|n| *n > 0)
 }
 
 /// #1113: detect shell loop constructs that are intentionally long-running.
@@ -487,12 +467,10 @@ fn exec_direct(args: &[String]) -> i32 {
 ///
 /// Warn-only when a human runs `lean-ctx -c` at an interactive terminal (they
 /// can run the command without lean-ctx anyway, so blocking adds friction, not
-/// a boundary) or when `LEAN_CTX_SHELL_GATE_WARN_ONLY=1` explicitly opts out.
+/// a boundary). `shell_security = warn` in config downgrades the gate itself.
 fn gate_must_enforce() -> bool {
     let hook_child = crate::core::runtime_flags::hook_child_enabled();
-    let warn_only = std::env::var("LEAN_CTX_SHELL_GATE_WARN_ONLY")
-        .is_ok_and(|v| v == "1" || v.eq_ignore_ascii_case("true"));
-    gate_must_enforce_inner(hook_child, warn_only, io::stderr().is_terminal())
+    gate_must_enforce_inner(hook_child, false, io::stderr().is_terminal())
 }
 
 /// Pure decision core of [`gate_must_enforce`] (unit-testable without
@@ -558,8 +536,7 @@ fn gate_cli_command(command: &str) -> Option<i32> {
             eprintln!(
                 "lean-ctx: blocked by the shell gate. Every command is allowed \
                  except the constructs that hide the real one from inspection. \
-                 Downgrade to a warning with shell_security = warn, or \
-                 LEAN_CTX_SHELL_GATE_WARN_ONLY=1."
+                 Downgrade to a warning with shell_security = warn."
             );
             return Some(126);
         }
@@ -1125,8 +1102,8 @@ mod exec_tests {
     #[test]
     fn heavy_commands_get_higher_byte_limits() {
         // exec_limits owns the byte ceiling; timeout resolution is covered by
-        // `shell_timeout_resolves_heavy_normal_and_env_overrides` (which is
-        // env/config-isolated, so these stay deterministic regardless of the
+        // `shell_timeout_resolves_heavy_normal_and_config_overrides` (which is
+        // config-isolated, so these stay deterministic regardless of the
         // operator's config.toml).
         for cmd in [
             "cargo build --release",
@@ -1164,19 +1141,9 @@ mod exec_tests {
     }
 
     #[test]
-    fn shell_timeout_resolves_heavy_normal_and_env_overrides() {
-        // Serialize env mutation so this never races other env-reading tests.
-        let _lock = crate::core::data_dir::test_env_lock();
-        let saved_ms = std::env::var("LEAN_CTX_SHELL_TIMEOUT_MS").ok();
-        let saved_secs = std::env::var("LEAN_CTX_SHELL_TIMEOUT_SECS").ok();
-        let saved_heavy = std::env::var("LEAN_CTX_SHELL_HEAVY_TIMEOUT_SECS").ok();
-        for v in [
-            "LEAN_CTX_SHELL_TIMEOUT_MS",
-            "LEAN_CTX_SHELL_TIMEOUT_SECS",
-            "LEAN_CTX_SHELL_HEAVY_TIMEOUT_SECS",
-        ] {
-            crate::test_env::remove_var(v);
-        }
+    fn shell_timeout_resolves_heavy_normal_and_config_overrides() {
+        // Private config dir so the operator's config.toml cannot leak in.
+        let iso = crate::core::data_dir::isolated_data_dir();
 
         // Heavy builds/tests and hook-firing git verbs get the heavy ceiling;
         // read-only verbs stay on the default. Preserves the #854 promotion.
@@ -1212,43 +1179,21 @@ mod exec_tests {
             super::HEAVY_TIMEOUT
         );
 
-        // Per-tier env overrides win over the built-in constants. (Non-round
+        // Per-tier config values win over the built-in constants. (Non-round
         // second values keep the literals clippy-clean and unambiguous.)
-        crate::test_env::set_var("LEAN_CTX_SHELL_HEAVY_TIMEOUT_SECS", "90");
+        std::fs::write(
+            iso.path().join("config.toml"),
+            "shell_heavy_timeout_secs = 90\nshell_timeout_secs = 30\n",
+        )
+        .unwrap();
         assert_eq!(
             super::shell_timeout("cargo build"),
             std::time::Duration::from_secs(90)
         );
-        crate::test_env::remove_var("LEAN_CTX_SHELL_HEAVY_TIMEOUT_SECS");
-
-        crate::test_env::set_var("LEAN_CTX_SHELL_TIMEOUT_SECS", "30");
         assert_eq!(
             super::shell_timeout("git status"),
             std::time::Duration::from_secs(30)
         );
-        crate::test_env::remove_var("LEAN_CTX_SHELL_TIMEOUT_SECS");
-
-        // The universal millisecond override wins over everything.
-        crate::test_env::set_var("LEAN_CTX_SHELL_TIMEOUT_MS", "5000");
-        assert_eq!(
-            super::shell_timeout("cargo build"),
-            std::time::Duration::from_secs(5)
-        );
-        assert_eq!(
-            super::shell_timeout("git status"),
-            std::time::Duration::from_secs(5)
-        );
-        crate::test_env::remove_var("LEAN_CTX_SHELL_TIMEOUT_MS");
-
-        for (var, saved) in [
-            ("LEAN_CTX_SHELL_TIMEOUT_MS", saved_ms),
-            ("LEAN_CTX_SHELL_TIMEOUT_SECS", saved_secs),
-            ("LEAN_CTX_SHELL_HEAVY_TIMEOUT_SECS", saved_heavy),
-        ] {
-            if let Some(v) = saved {
-                crate::test_env::set_var(var, v);
-            }
-        }
     }
 
     // Task runners (mise/just) wrap builds and test gates that routinely run
@@ -1257,30 +1202,15 @@ mod exec_tests {
     #[test]
     fn task_runners_get_heavy_ceiling() {
         let _lock = crate::core::data_dir::test_env_lock();
-        let saved_ms = std::env::var("LEAN_CTX_SHELL_TIMEOUT_MS").ok();
-        let saved_heavy = std::env::var("LEAN_CTX_SHELL_HEAVY_TIMEOUT_SECS").ok();
-        crate::test_env::remove_var("LEAN_CTX_SHELL_TIMEOUT_MS");
-        crate::test_env::remove_var("LEAN_CTX_SHELL_HEAVY_TIMEOUT_SECS");
 
         assert_eq!(super::shell_timeout("mise gate"), super::HEAVY_TIMEOUT);
         assert_eq!(super::shell_timeout("mise run gate"), super::HEAVY_TIMEOUT);
         assert_eq!(super::shell_timeout("just build"), super::HEAVY_TIMEOUT);
-
-        if let Some(v) = saved_ms {
-            crate::test_env::set_var("LEAN_CTX_SHELL_TIMEOUT_MS", v);
-        }
-        if let Some(v) = saved_heavy {
-            crate::test_env::set_var("LEAN_CTX_SHELL_HEAVY_TIMEOUT_SECS", v);
-        }
     }
 
     #[test]
     fn scripts_and_timeout_get_heavy_ceiling() {
         let _lock = crate::core::data_dir::test_env_lock();
-        let saved_ms = std::env::var("LEAN_CTX_SHELL_TIMEOUT_MS").ok();
-        let saved_heavy = std::env::var("LEAN_CTX_SHELL_HEAVY_TIMEOUT_SECS").ok();
-        crate::test_env::remove_var("LEAN_CTX_SHELL_TIMEOUT_MS");
-        crate::test_env::remove_var("LEAN_CTX_SHELL_HEAVY_TIMEOUT_SECS");
 
         assert_eq!(
             super::shell_timeout("python3 scripts/audit.py"),
@@ -1316,23 +1246,14 @@ mod exec_tests {
             super::shell_timeout("cd /repo && timeout 600 make"),
             super::HEAVY_TIMEOUT
         );
-
-        if let Some(v) = saved_ms {
-            crate::test_env::set_var("LEAN_CTX_SHELL_TIMEOUT_MS", v);
-        }
-        if let Some(v) = saved_heavy {
-            crate::test_env::set_var("LEAN_CTX_SHELL_HEAVY_TIMEOUT_SECS", v);
-        }
     }
 
     // Per-call `timeout_ms` (ctx_shell tool arg): explicit caller intent beats
     // the built-in tiers in both directions, absurd values clamp to the 1h
-    // ceiling, zero is ignored, and the operator's universal env pin stays top.
+    // ceiling, and zero is ignored.
     #[test]
     fn per_call_timeout_override_resolves_and_clamps() {
         let _lock = crate::core::data_dir::test_env_lock();
-        let saved_ms = std::env::var("LEAN_CTX_SHELL_TIMEOUT_MS").ok();
-        crate::test_env::remove_var("LEAN_CTX_SHELL_TIMEOUT_MS");
 
         assert_eq!(
             super::shell_timeout_with_override("git status", Some(300_000)),
@@ -1354,16 +1275,6 @@ mod exec_tests {
             super::shell_timeout_with_override("git status", None),
             super::DEFAULT_TIMEOUT
         );
-
-        crate::test_env::set_var("LEAN_CTX_SHELL_TIMEOUT_MS", "5000");
-        assert_eq!(
-            super::shell_timeout_with_override("git status", Some(300_000)),
-            std::time::Duration::from_secs(5)
-        );
-        crate::test_env::remove_var("LEAN_CTX_SHELL_TIMEOUT_MS");
-        if let Some(v) = saved_ms {
-            crate::test_env::set_var("LEAN_CTX_SHELL_TIMEOUT_MS", v);
-        }
     }
 
     // P0-1 (#413): the CLI gate must enforce for agents, warn for humans.
@@ -1388,7 +1299,7 @@ mod exec_tests {
 
     #[test]
     fn gate_warn_only_opt_out_downgrades_non_interactive() {
-        // Explicit LEAN_CTX_SHELL_GATE_WARN_ONLY=1 opt-out (but never in hook-child mode).
+        // Warn-only opt-out (but never in hook-child mode).
         assert!(!super::gate_must_enforce_inner(false, true, false));
         assert!(super::gate_must_enforce_inner(true, true, false));
     }

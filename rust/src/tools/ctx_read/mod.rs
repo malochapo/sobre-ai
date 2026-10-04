@@ -158,7 +158,7 @@ pub fn read_file_lossy(path: &str) -> Result<String, std::io::Error> {
         .map_err(|e| std::io::Error::other(format!("cannot stat open file descriptor: {e}")))?;
     if meta.len() > cap as u64 {
         return Err(std::io::Error::other(format!(
-            "file too large ({} bytes, limit {} bytes via LCTX_MAX_READ_BYTES). \
+            "file too large ({} bytes, limit {} bytes). \
              Increase the limit or use a line-range read: mode=\"lines:1-100\"",
             meta.len(),
             cap
@@ -362,7 +362,7 @@ pub fn handle_with_task_resolved(
 
 /// Like [`handle_with_task_resolved`] but with an explicit per-call
 /// aggressiveness (the `ctx_read` `aggressiveness` arg, #714). `None` falls back
-/// to the `LEAN_CTX_AGGRESSIVENESS` env var / config field.
+/// to the config field.
 pub fn handle_with_task_resolved_tuned(
     cache: &mut SessionCache,
     path: &str,
@@ -455,15 +455,6 @@ fn handle_with_options(
     .content
 }
 
-/// `LEAN_CTX_FORCE_FRESH=1` — an explicit operator override that always forces a
-/// cold full read, independent of conversation scoping.
-pub(crate) fn force_fresh_env() -> bool {
-    static FORCE_FRESH: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *FORCE_FRESH.get_or_init(|| {
-        std::env::var("LEAN_CTX_FORCE_FRESH").is_ok_and(|v| v == "1" || v == "true")
-    })
-}
-
 /// Detects a subagent (forked agent) execution context via `CURSOR_TASK_ID`.
 ///
 /// A subagent must never be served a stub for content only the parent received.
@@ -500,9 +491,8 @@ fn handle_with_options_resolved_preread(
     tuning: ReadTuning<'_>,
     preread: Option<String>,
 ) -> ReadOutput {
-    let effective_fresh = fresh
-        || force_fresh_env()
-        || (is_subagent_context() && !crate::core::conversation::scope_enabled());
+    let effective_fresh =
+        fresh || (is_subagent_context() && !crate::core::conversation::scope_enabled());
 
     if let Ok(mut bt) = crate::core::bounce_tracker::global().lock() {
         bt.next_seq();
@@ -710,7 +700,7 @@ pub struct DeltaExplicitDecision {
 
 /// Decide whether an **explicit** `full`/`lines:N-M` re-read of a session-cached
 /// file should be served as a delta instead of re-emitting content the model
-/// already holds (the `delta_explicit` opt-in; env `LCTX_DELTA_EXPLICIT`).
+/// already holds (the `delta_explicit` opt-in).
 ///
 /// Returns the mode the read should proceed with:
 /// - **Changed on disk** (verified mtime+md5 stale) and full content is cached →

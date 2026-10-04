@@ -2,7 +2,7 @@
 //!
 //! Supports multiple ONNX embedding models with different dimensions,
 //! tokenizers, and download sources. Models are selected via the
-//! `LEAN_CTX_EMBEDDING_MODEL` env var or the `[embedding].model` key in `config.toml`
+//! the `[embedding].model` key in `config.toml`
 //! (env var wins) — see [`resolve_model`].
 //!
 //! Besides the built-ins, any compatible HuggingFace repo can be loaded with
@@ -263,35 +263,17 @@ impl ModelConfig {
 }
 
 /// Resolve which embedding model to use.
-///
-/// Priority: `LEAN_CTX_EMBEDDING_MODEL` env var > `[embedding].model` in `config.toml` >
-/// the default model. An unrecognized name is skipped (with a warning) so a typo in one
-/// source never silently swaps the model — which would otherwise force a full re-index.
+/// Priority: `[embedding].model` in `config.toml` > the default model. An
+/// unrecognized name falls back to the default (with a warning).
 pub fn resolve_model() -> EmbeddingModel {
-    let env_val = std::env::var("LEAN_CTX_EMBEDDING_MODEL").ok();
     let embedding_cfg = crate::core::config::Config::load().embedding;
-    resolve_model_from(
-        env_val.as_deref(),
-        embedding_cfg.model.as_deref(),
-        embedding_cfg.dimensions,
-    )
+    resolve_model_from(embedding_cfg.model.as_deref(), embedding_cfg.dimensions)
 }
 
-/// Pure model resolution used by [`resolve_model`]; kept separate so the env-var/config
-/// precedence is unit-testable without touching the process environment or the on-disk
-/// `config.toml`.
-fn resolve_model_from(
-    env_val: Option<&str>,
-    config_val: Option<&str>,
-    config_dims: Option<usize>,
-) -> EmbeddingModel {
-    for (source, raw) in [
-        ("LEAN_CTX_EMBEDDING_MODEL", env_val),
-        ("[embedding].model", config_val),
-    ] {
-        let Some(name) = raw.map(str::trim).filter(|s| !s.is_empty()) else {
-            continue;
-        };
+/// Pure model resolution used by [`resolve_model`]; kept separate so it is
+/// unit-testable without touching the on-disk `config.toml`.
+fn resolve_model_from(config_val: Option<&str>, config_dims: Option<usize>) -> EmbeddingModel {
+    if let Some(name) = config_val.map(str::trim).filter(|s| !s.is_empty()) {
         match EmbeddingModel::from_str_name(name) {
             Some(EmbeddingModel::Custom(mut spec)) => {
                 spec.dimensions = config_dims;
@@ -309,7 +291,7 @@ fn resolve_model_from(
             Some(model) => return model,
             None => {
                 tracing::warn!(
-                    "Unknown embedding model {name:?} from {source}; using {} instead \
+                    "Unknown embedding model {name:?} from [embedding].model; using {} instead \
                      (built-ins: minilm, nomic — or hf:org/repo[@rev])",
                     EmbeddingModel::DEFAULT
                 );
@@ -474,58 +456,37 @@ mod tests {
 
     #[test]
     fn resolve_defaults_when_nothing_set() {
+        assert_eq!(resolve_model_from(None, None), EmbeddingModel::DEFAULT);
         assert_eq!(
-            resolve_model_from(None, None, None),
-            EmbeddingModel::DEFAULT
-        );
-        assert_eq!(
-            resolve_model_from(Some(""), Some("   "), None),
+            resolve_model_from(Some("   "), None),
             EmbeddingModel::DEFAULT
         );
     }
 
     #[test]
-    fn config_selects_model_when_env_unset() {
+    fn config_selects_model() {
         assert_eq!(
-            resolve_model_from(None, Some("nomic"), None),
+            resolve_model_from(Some("nomic"), None),
             EmbeddingModel::NomicEmbedV1_5
         );
         assert_eq!(
-            resolve_model_from(None, Some("minilm"), None),
+            resolve_model_from(Some("minilm"), None),
             EmbeddingModel::AllMiniLmL6V2
         );
     }
 
     #[test]
-    fn env_var_overrides_config() {
+    fn unknown_name_defaults() {
+        // Bad config value → default (never silently breaks the index).
         assert_eq!(
-            resolve_model_from(Some("minilm"), Some("nomic"), None),
-            EmbeddingModel::AllMiniLmL6V2
-        );
-    }
-
-    #[test]
-    fn unknown_name_falls_through_then_defaults() {
-        // Bad env value → valid config value wins.
-        assert_eq!(
-            resolve_model_from(Some("bogus"), Some("nomic"), None),
-            EmbeddingModel::NomicEmbedV1_5
-        );
-        // Bad everywhere → default (never silently breaks the index).
-        assert_eq!(
-            resolve_model_from(Some("bogus"), Some("nope"), None),
+            resolve_model_from(Some("nope"), None),
             EmbeddingModel::DEFAULT
-        );
-        // Empty/whitespace in the higher-priority source is skipped, not treated as a match.
-        assert_eq!(
-            resolve_model_from(Some("   "), Some("nomic"), None),
-            EmbeddingModel::NomicEmbedV1_5
         );
     }
 
     #[test]
     fn resolve_custom_picks_up_config_dimensions() {
-        let m = resolve_model_from(None, Some("hf:org/model@pin"), Some(1024));
+        let m = resolve_model_from(Some("hf:org/model@pin"), Some(1024));
         let EmbeddingModel::Custom(spec) = m else {
             panic!("expected custom")
         };

@@ -49,8 +49,7 @@ pub(crate) fn execute_command_with_env(
 /// those detach at the soft cap and become exactly such a job. Only the
 /// degraded no-session path runs strict wall-clock. Two bounds keep it honest:
 /// genuinely runaway output hits the byte cap, which freezes the captured
-/// length and so restarts the clock, and `LEAN_CTX_SHELL_BG_MAX_MS` (default
-/// 1h) caps lifetime absolutely.
+/// length and so restarts the clock, and a 1h ceiling caps lifetime absolutely.
 pub(crate) fn execute_command_with_env_cancellable(
     command: &str,
     cwd: &str,
@@ -334,13 +333,7 @@ fn captured_len(buf: &Arc<Mutex<CaptureBuf>>) -> usize {
 /// Absolute ceiling on an idle-keyed (background) job, so a command that keeps
 /// emitting output forever still cannot outlive the daemon's patience (#1173).
 fn streaming_max_lifetime() -> Duration {
-    Duration::from_millis(
-        std::env::var("LEAN_CTX_SHELL_BG_MAX_MS")
-            .ok()
-            .and_then(|v| v.parse().ok())
-            .filter(|&ms: &u64| ms > 0)
-            .unwrap_or(3_600_000),
-    )
+    Duration::from_mins(60)
 }
 
 /// Command lines still alive in the timed-out child's process group, i.e. the
@@ -423,16 +416,18 @@ mod tests {
     fn command_timeout_delegates_to_shell_timeout() {
         // `command_timeout` is a thin alias for `shell::exec::shell_timeout`
         // (full precedence coverage lives there). Smoke-test the delegation:
-        // heavy beats normal, and the universal MS override pins both.
-        let _lock = crate::core::data_dir::test_env_lock();
-        let saved = std::env::var("LEAN_CTX_SHELL_TIMEOUT_MS").ok();
-        crate::test_env::remove_var("LEAN_CTX_SHELL_TIMEOUT_MS");
+        // heavy beats normal, and the configured per-tier ceilings apply.
+        let iso = crate::core::data_dir::isolated_data_dir();
 
         assert!(
             command_timeout("cargo install --path .", None) > command_timeout("git status", None)
         );
 
-        crate::test_env::set_var("LEAN_CTX_SHELL_TIMEOUT_MS", "5000");
+        std::fs::write(
+            iso.path().join("config.toml"),
+            "shell_timeout_secs = 5\nshell_heavy_timeout_secs = 5\n",
+        )
+        .unwrap();
         assert_eq!(
             command_timeout("cargo install --path .", None),
             std::time::Duration::from_secs(5)
@@ -441,11 +436,6 @@ mod tests {
             command_timeout("git status", None),
             std::time::Duration::from_secs(5)
         );
-
-        crate::test_env::remove_var("LEAN_CTX_SHELL_TIMEOUT_MS");
-        if let Some(v) = saved {
-            crate::test_env::set_var("LEAN_CTX_SHELL_TIMEOUT_MS", v);
-        }
     }
 
     /// #1113/#1173: a poll loop that emits a short line every so often must
@@ -455,7 +445,6 @@ mod tests {
     #[cfg_attr(windows, ignore)]
     fn idle_keyed_timeout_survives_a_trickling_loop() {
         let _lock = crate::core::data_dir::test_env_lock();
-        crate::test_env::remove_var("LEAN_CTX_SHELL_TIMEOUT_MS");
         let env = std::collections::HashMap::new();
         // Emits every 100ms for ~900ms under a 400ms budget.
         let cmd = "for i in 1 2 3 4 5 6 7 8 9; do printf T; sleep 0.1; done; printf DONE";
@@ -480,7 +469,6 @@ mod tests {
     #[cfg_attr(windows, ignore)]
     fn timeout_names_the_still_running_segment() {
         let _lock = crate::core::data_dir::test_env_lock();
-        crate::test_env::remove_var("LEAN_CTX_SHELL_TIMEOUT_MS");
         let env = std::collections::HashMap::new();
         let (out, code) = super::execute_command_with_env_cancellable(
             "printf FIRST_OK; sleep 47",

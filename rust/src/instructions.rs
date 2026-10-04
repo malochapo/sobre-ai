@@ -7,7 +7,7 @@ const INSTRUCTION_CAP_TOKENS: usize = 800;
 
 /// Token budget for the static instruction skeleton (no session/knowledge
 /// state).  Asserted in CI so instruction creep cannot silently tax every
-/// session. Measured at compression `Off` (the test pins `LEAN_CTX_COMPRESSION=off`)
+/// session. Measured at compression `Off` (the test pins `compression_level = "off"`)
 /// so the budget is deterministic across dev machines, not just clean CI (#498).
 /// Raised in reviewed steps: 520→540 / 600→640 for the sharpened ctx_* redirects
 /// (#1030), then 540→590 / 640→680 (#609 loop one-liner), then 590→615 / 680→712
@@ -486,7 +486,7 @@ mod tests {
     fn covered_client_gets_anchor_instead_of_skeleton() {
         // #578: a client whose rule file carries the canonical block must not
         // pay for the full skeleton again in every MCP session.
-        let _guard = crate::core::data_dir::test_env_lock();
+        let iso = crate::core::data_dir::isolated_data_dir();
         let tmp = tempfile::tempdir().unwrap();
         let home = tmp.path();
         std::fs::create_dir_all(home.join(".cursor/rules")).unwrap();
@@ -503,7 +503,7 @@ mod tests {
         .unwrap();
         let old_home = std::env::var("HOME").ok();
         crate::test_env::set_var("HOME", home);
-        crate::test_env::set_var("LEAN_CTX_MINIMAL", "1");
+        std::fs::write(iso.path().join("config.toml"), "minimal_overhead = true\n").unwrap();
 
         let covered = build_instructions_with_client(CrpMode::Off, "cursor");
         let uncovered = build_instructions_with_client(CrpMode::Off, "some-other-agent");
@@ -513,7 +513,6 @@ mod tests {
         } else {
             crate::test_env::remove_var("HOME");
         }
-        crate::test_env::remove_var("LEAN_CTX_MINIMAL");
 
         assert!(
             covered.contains(SKELETON_ANCHOR),
@@ -569,7 +568,7 @@ mod tests {
         // GL #1153: with lean-ctx hooks covering the native tools, the anchor
         // must not repeat "ctx_* replaces native tools" — that is exactly the
         // instruction dissonance the HookCovered profile removes.
-        let _guard = crate::core::data_dir::test_env_lock();
+        let iso = crate::core::data_dir::isolated_data_dir();
         let tmp = tempfile::tempdir().unwrap();
         let home = tmp.path();
         std::fs::create_dir_all(home.join(".cursor/rules")).unwrap();
@@ -592,7 +591,7 @@ mod tests {
         .unwrap();
         let old_home = std::env::var("HOME").ok();
         crate::test_env::set_var("HOME", home);
-        crate::test_env::set_var("LEAN_CTX_MINIMAL", "1");
+        std::fs::write(iso.path().join("config.toml"), "minimal_overhead = true\n").unwrap();
 
         let covered = build_instructions_with_client(CrpMode::Off, "cursor");
 
@@ -601,7 +600,6 @@ mod tests {
         } else {
             crate::test_env::remove_var("HOME");
         }
-        crate::test_env::remove_var("LEAN_CTX_MINIMAL");
 
         assert!(
             covered.contains("hooks compress native Shell/Read/Grep"),
@@ -645,10 +643,9 @@ mod tests {
     fn minimal_overhead_instructions_stay_within_budget() {
         const MINIMAL_INSTRUCTION_BUDGET_TOKENS: usize =
             STATIC_INSTRUCTION_BUDGET_TDD_TOKENS + STATIC_INSTRUCTION_SHELL_HINT_TOKENS;
-        let _iso = crate::core::data_dir::isolated_data_dir();
-        crate::test_env::set_var("LEAN_CTX_MINIMAL", "1");
+        let iso = crate::core::data_dir::isolated_data_dir();
+        std::fs::write(iso.path().join("config.toml"), "minimal_overhead = true\n").unwrap();
         let out = build_instructions(CrpMode::Compact);
-        crate::test_env::remove_var("LEAN_CTX_MINIMAL");
         let tokens = count_tokens(&out);
         assert!(
             tokens <= MINIMAL_INSTRUCTION_BUDGET_TOKENS,
@@ -658,10 +655,14 @@ mod tests {
 
     #[test]
     fn static_skeleton_stays_within_budget() {
-        let _iso = crate::core::data_dir::isolated_data_dir();
+        let iso = crate::core::data_dir::isolated_data_dir();
         // Pin compression Off so the measured skeleton — and thus this budget —
         // is deterministic regardless of the dev's local compression_level (#498).
-        crate::test_env::set_var("LEAN_CTX_COMPRESSION", "off");
+        std::fs::write(
+            iso.path().join("config.toml"),
+            "compression_level = \"off\"\n",
+        )
+        .unwrap();
         for (mode, base_budget) in [
             (CrpMode::Off, STATIC_INSTRUCTION_BUDGET_TOKENS),
             (CrpMode::Compact, STATIC_INSTRUCTION_BUDGET_TOKENS),
@@ -675,6 +676,5 @@ mod tests {
                 "static instructions for {mode:?} = {tokens} tok, budget {budget}\n---\n{out}\n---"
             );
         }
-        crate::test_env::remove_var("LEAN_CTX_COMPRESSION");
     }
 }

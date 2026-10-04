@@ -616,7 +616,7 @@ pub fn archive_facts(facts: &[KnowledgeFact]) -> Result<(), String> {
         MemoryStore::Facts,
         None,
         facts,
-        &ArchiveConfig::from_env(),
+        &ArchiveConfig::default(),
     )
     .map(|_| ())
 }

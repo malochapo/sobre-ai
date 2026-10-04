@@ -314,10 +314,6 @@ mod tests {
 
     #[test]
     fn check_off_by_default_allows_everything() {
-        // Env var takes precedence over config; skip if a stray one is set.
-        if std::env::var("LEAN_CTX_PERMISSION_INHERITANCE").is_ok() {
-            return;
-        }
         let cfg = Config {
             permission_inheritance: Some("off".to_string()),
             ..Default::default()

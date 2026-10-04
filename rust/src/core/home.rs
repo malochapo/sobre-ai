@@ -1,9 +1,7 @@
 use std::path::{Path, PathBuf};
 
-/// Explicit profile override understood by lean-ctx when it is run outside
-/// the Codex process that received `--profile`.
-pub const LEAN_CTX_CODEX_PROFILE_ENV: &str = "LEAN_CTX_CODEX_PROFILE";
-/// Compatibility with launchers that export the Codex profile name.
+/// Codex profile name exported by launchers, honoured when lean-ctx runs
+/// outside the Codex process that received `--profile`.
 pub const CODEX_PROFILE_ENV: &str = "CODEX_PROFILE";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -80,17 +78,13 @@ pub fn resolve_codex_dir() -> Option<PathBuf> {
     resolve_home_dir().map(|h| h.join(".codex"))
 }
 
-/// Resolve the Codex profile name from an explicit env override.
+/// Resolve the Codex profile name from `CODEX_PROFILE`.
 fn env_codex_profile() -> Option<String> {
-    [LEAN_CTX_CODEX_PROFILE_ENV, CODEX_PROFILE_ENV]
-        .into_iter()
-        .find_map(|key| {
-            std::env::var(key)
-                .ok()
-                .map(|value| value.trim().to_string())
-                .filter(|value| !value.is_empty())
-                .filter(|value| valid_codex_profile_name(value))
-        })
+    std::env::var(CODEX_PROFILE_ENV)
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .filter(|value| valid_codex_profile_name(value))
 }
 
 fn valid_codex_profile_name(name: &str) -> bool {
@@ -150,7 +144,6 @@ mod tests {
     fn resolve_codex_dir_respects_env_var() {
         let _guard = env_lock();
         crate::test_env::set_var("CODEX_HOME", "/tmp/custom-codex");
-        crate::test_env::remove_var(LEAN_CTX_CODEX_PROFILE_ENV);
         crate::test_env::remove_var(CODEX_PROFILE_ENV);
         let result = resolve_codex_dir();
         assert_eq!(result, Some(PathBuf::from("/tmp/custom-codex")));
@@ -161,7 +154,6 @@ mod tests {
     fn resolve_codex_dir_ignores_empty_env() {
         let _guard = env_lock();
         crate::test_env::set_var("CODEX_HOME", "  ");
-        crate::test_env::remove_var(LEAN_CTX_CODEX_PROFILE_ENV);
         crate::test_env::remove_var(CODEX_PROFILE_ENV);
         let result = resolve_codex_dir();
         assert!(result.is_some());
@@ -173,7 +165,6 @@ mod tests {
     fn resolve_codex_dir_falls_back_to_home() {
         let _guard = env_lock();
         crate::test_env::remove_var("CODEX_HOME");
-        crate::test_env::remove_var(LEAN_CTX_CODEX_PROFILE_ENV);
         crate::test_env::remove_var(CODEX_PROFILE_ENV);
         let result = resolve_codex_dir();
         assert!(result.is_some());
@@ -185,29 +176,13 @@ mod tests {
         let _guard = env_lock();
         let dir = tempfile::tempdir().unwrap();
         crate::test_env::set_var("CODEX_HOME", dir.path());
-        crate::test_env::set_var(LEAN_CTX_CODEX_PROFILE_ENV, "cat");
-        crate::test_env::remove_var(CODEX_PROFILE_ENV);
+        crate::test_env::set_var(CODEX_PROFILE_ENV, "cat");
 
         let paths = resolve_codex_config_paths().unwrap();
         assert_eq!(paths.profile_name(), Some("cat"));
         assert_eq!(paths.effective(), dir.path().join("cat.config.toml"));
         assert_eq!(paths.layers().count(), 2);
         assert_eq!(paths.base(), &dir.path().join("config.toml"));
-
-        crate::test_env::remove_var("CODEX_HOME");
-        crate::test_env::remove_var(LEAN_CTX_CODEX_PROFILE_ENV);
-    }
-
-    #[test]
-    fn legacy_profile_env_selects_overlay() {
-        let _guard = env_lock();
-        let dir = tempfile::tempdir().unwrap();
-        crate::test_env::set_var("CODEX_HOME", dir.path());
-        crate::test_env::remove_var(LEAN_CTX_CODEX_PROFILE_ENV);
-        crate::test_env::set_var(CODEX_PROFILE_ENV, "work");
-
-        let paths = resolve_codex_config_paths().unwrap();
-        assert_eq!(paths.effective(), dir.path().join("work.config.toml"));
 
         crate::test_env::remove_var("CODEX_HOME");
         crate::test_env::remove_var(CODEX_PROFILE_ENV);
@@ -219,7 +194,6 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join("cat.config.toml"), "").unwrap();
         crate::test_env::set_var("CODEX_HOME", dir.path());
-        crate::test_env::remove_var(LEAN_CTX_CODEX_PROFILE_ENV);
         crate::test_env::remove_var(CODEX_PROFILE_ENV);
         assert_eq!(
             resolve_codex_config_paths().unwrap().profile_name(),
@@ -237,15 +211,14 @@ mod tests {
         let _guard = env_lock();
         let dir = tempfile::tempdir().unwrap();
         crate::test_env::set_var("CODEX_HOME", dir.path());
-        crate::test_env::set_var(LEAN_CTX_CODEX_PROFILE_ENV, "../outside");
-        crate::test_env::remove_var(CODEX_PROFILE_ENV);
+        crate::test_env::set_var(CODEX_PROFILE_ENV, "../outside");
 
         let paths = resolve_codex_config_paths().unwrap();
         assert_eq!(paths.profile_name(), None);
         assert_eq!(paths.effective(), dir.path().join("config.toml"));
 
         crate::test_env::remove_var("CODEX_HOME");
-        crate::test_env::remove_var(LEAN_CTX_CODEX_PROFILE_ENV);
+        crate::test_env::remove_var(CODEX_PROFILE_ENV);
     }
 
     fn env_lock() -> std::sync::MutexGuard<'static, ()> {

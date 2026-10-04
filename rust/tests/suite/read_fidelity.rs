@@ -3,7 +3,7 @@
 //! the CLI catch-all and mangled source (dictionary substitutions, line-drop
 //! dedup), breaking a `full` read's "complete content" contract.
 //!
-//! We spawn the real binary with `LEAN_CTX_COMPRESSION=max` (so terse *would*
+//! We spawn the real binary with `compression_level = "max"` (so terse *would*
 //! fire if it were allowed to) and the daemon suppressed, so the CLI fallback
 //! path is the one under test and the assertion fails loudly on any regression.
 
@@ -15,15 +15,17 @@ use std::process::{Command, Output};
 const SAMPLE: &str = "fn run() {\n\n    let command = execution();\n    let command = execution();\n    // command execution pipeline\n    return command;\n}\n";
 
 fn read_output(home: &Path, file: &Path, mode: &str) -> Output {
+    let data = home.join("data");
+    std::fs::create_dir_all(&data).unwrap();
+    // Force the densest compression so a missing guard would visibly mangle.
+    std::fs::write(data.join("config.toml"), "compression_level = \"max\"\n").unwrap();
     Command::new(env!("CARGO_BIN_EXE_lean-ctx"))
         .args(["read", file.to_str().unwrap(), "-m", mode, "--fresh"])
-        // Force the densest compression so a missing guard would visibly mangle.
-        .env("LEAN_CTX_COMPRESSION", "max")
         .env("LEAN_CTX_ACTIVE", "1")
         // Suppress daemon auto-start: exercise the CLI fallback path and never
         // talk to a developer's already-running (possibly stale) daemon build.
         .env("LEAN_CTX_HOOK_CHILD", "1")
-        .env("LEAN_CTX_DATA_DIR", home.join("data"))
+        .env("LEAN_CTX_DATA_DIR", &data)
         .env("HOME", home)
         .output()
         .expect("spawn lean-ctx read")

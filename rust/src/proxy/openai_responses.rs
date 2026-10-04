@@ -761,7 +761,6 @@ mod tests {
     fn effort_control_sets_nested_reasoning_effort() {
         // #834 end-to-end through the Responses request path.
         let _iso = crate::core::data_dir::isolated_data_dir();
-        crate::test_env::remove_var("LEAN_CTX_PROXY_EFFORT");
         crate::core::config::Config::update_global(|c| {
             c.proxy.effort = Some("low".into());
         })

@@ -424,10 +424,6 @@ impl ProjectIndex {
 /// If no valid index exists, automatically scans the project to build one.
 /// This is the primary entry point — ensures zero-config usage.
 pub fn load_or_build(project_root: &str) -> ProjectIndex {
-    if std::env::var("LEAN_CTX_NO_INDEX").is_ok() {
-        return ProjectIndex::load(project_root).unwrap_or_else(|| ProjectIndex::new(project_root));
-    }
-
     // Prefer stable absolute roots. Using "." as a cache key is fragile because
     // it depends on the process cwd and can accidentally load the wrong project.
     let root_abs = if project_root.trim().is_empty() || project_root == "." {
@@ -672,11 +668,6 @@ pub fn scan_with_content_cache(project_root: &str) -> (ProjectIndex, HashMap<Str
 }
 
 fn scan_inner(project_root: &str) -> (ProjectIndex, HashMap<String, String>) {
-    if std::env::var("LEAN_CTX_NO_INDEX").is_ok() {
-        tracing::info!("[graph_index: LEAN_CTX_NO_INDEX set — skipping scan]");
-        return (ProjectIndex::new(project_root), HashMap::new());
-    }
-
     let project_root = normalize_project_root(project_root);
 
     if !is_safe_scan_root(&project_root) {

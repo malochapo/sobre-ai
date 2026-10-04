@@ -15,9 +15,8 @@ fn uid_port_first_regular_user() {
 
 #[test]
 fn proxy_timeout_default_200ms() {
-    if std::env::var("LEAN_CTX_PROXY_TIMEOUT_MS").is_ok() {
-        return;
-    }
+    // Private config without `proxy_timeout_ms` → the built-in default.
+    let _iso = crate::core::data_dir::isolated_data_dir();
     assert_eq!(proxy_timeout(), std::time::Duration::from_millis(200));
 }
 

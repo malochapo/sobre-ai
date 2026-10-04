@@ -75,13 +75,9 @@ pub(crate) fn load_or_refresh_bm25(root: &Path) -> Bm25LoadResult {
 }
 
 /// Time budget for waiting on a cold BM25 build in the MCP handler before
-/// returning `Building`. Overridable via `LEAN_CTX_BM25_COLD_BUDGET_MS`.
+/// returning `Building`.
 pub(crate) fn bm25_cold_build_budget() -> std::time::Duration {
-    let ms = std::env::var("LEAN_CTX_BM25_COLD_BUDGET_MS")
-        .ok()
-        .and_then(|v| v.parse::<u64>().ok())
-        .unwrap_or(60_000);
-    std::time::Duration::from_millis(ms)
+    std::time::Duration::from_mins(1)
 }
 
 pub(crate) fn store_in_thread_cache(root: &Path, idx: &std::sync::Arc<BM25Index>) {

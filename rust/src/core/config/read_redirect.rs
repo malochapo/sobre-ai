@@ -30,22 +30,8 @@ pub enum ReadRedirect {
 }
 
 impl ReadRedirect {
-    /// Parse `LEAN_CTX_READ_REDIRECT`. Accepts the canonical `auto|on|off` plus the
-    /// usual boolean spellings so an env-first user can flip it like any toggle.
-    pub fn from_env() -> Option<Self> {
-        std::env::var("LEAN_CTX_READ_REDIRECT").ok().and_then(|v| {
-            match v.trim().to_lowercase().as_str() {
-                "auto" => Some(Self::Auto),
-                "on" | "1" | "true" | "yes" => Some(Self::On),
-                "off" | "0" | "false" | "no" => Some(Self::Off),
-                _ => None,
-            }
-        })
-    }
-
-    /// Env override (`LEAN_CTX_READ_REDIRECT`) wins over the on-disk config value.
     pub fn effective(config: &Config) -> Self {
-        Self::from_env().unwrap_or(config.read_redirect)
+        config.read_redirect
     }
 
     /// Whether the native-Read redirect should rewrite the Read into a temp
@@ -129,46 +115,11 @@ mod tests {
         }
     }
 
-    #[test]
-    fn from_env_parses_canonical_and_boolean_spellings() {
-        let _lock = crate::core::data_dir::test_env_lock();
-
-        crate::test_env::set_var("LEAN_CTX_READ_REDIRECT", "auto");
-        assert_eq!(ReadRedirect::from_env(), Some(ReadRedirect::Auto));
-        crate::test_env::set_var("LEAN_CTX_READ_REDIRECT", "ON");
-        assert_eq!(ReadRedirect::from_env(), Some(ReadRedirect::On));
-        crate::test_env::set_var("LEAN_CTX_READ_REDIRECT", " off ");
-        assert_eq!(ReadRedirect::from_env(), Some(ReadRedirect::Off));
-        crate::test_env::set_var("LEAN_CTX_READ_REDIRECT", "1");
-        assert_eq!(ReadRedirect::from_env(), Some(ReadRedirect::On));
-        crate::test_env::set_var("LEAN_CTX_READ_REDIRECT", "nonsense");
-        assert_eq!(ReadRedirect::from_env(), None);
-        crate::test_env::remove_var("LEAN_CTX_READ_REDIRECT");
-        assert_eq!(ReadRedirect::from_env(), None);
-    }
-
-    #[test]
-    fn effective_env_overrides_config() {
-        let _lock = crate::core::data_dir::test_env_lock();
-        crate::test_env::remove_var("LEAN_CTX_READ_REDIRECT");
-
-        let cfg = Config {
-            read_redirect: ReadRedirect::On,
-            ..Config::default()
-        };
-        assert_eq!(ReadRedirect::effective(&cfg), ReadRedirect::On);
-
-        crate::test_env::set_var("LEAN_CTX_READ_REDIRECT", "off");
-        assert_eq!(ReadRedirect::effective(&cfg), ReadRedirect::Off);
-        crate::test_env::remove_var("LEAN_CTX_READ_REDIRECT");
-    }
-
     /// Clear every env var the guard detection reads, so tests are
     /// deterministic no matter which host runs `cargo test` (a Cursor agent
     /// shell exports `CURSOR_*` itself, GH #720).
     fn clear_host_markers() {
         for var in [
-            "LEAN_CTX_READ_REDIRECT",
             "CLAUDE_PROJECT_DIR",
             "CLAUDECODE",
             "CODEBUDDY",

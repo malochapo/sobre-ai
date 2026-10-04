@@ -24,7 +24,6 @@ use std::path::{Path, PathBuf};
 
 /// Retention bound on archive files, kept well above the rehydrate reach so a
 /// recall miss can still find recently-evicted items. Overridable via
-/// `LEAN_CTX_ARCHIVE_MAX_FILES`.
 const DEFAULT_MAX_ARCHIVE_FILES: usize = 16;
 
 /// Which memory store an archive belongs to. Drives the on-disk path only — the
@@ -96,28 +95,7 @@ impl Default for ArchiveConfig {
     }
 }
 
-impl ArchiveConfig {
-    /// Read overrides from the environment. `rehydrate_reach` defaults to
-    /// `max_files` and is clamped to it (cannot reach more files than retained).
-    pub fn from_env() -> Self {
-        let mut cfg = Self::default();
-        if let Ok(v) = std::env::var("LEAN_CTX_ARCHIVE_MAX_FILES")
-            && let Ok(n) = v.parse::<usize>()
-            && n > 0
-        {
-            cfg.max_files = n;
-            cfg.rehydrate_reach = n;
-        }
-        if let Ok(v) = std::env::var("LEAN_CTX_ARCHIVE_REHYDRATE_REACH")
-            && let Ok(n) = v.parse::<usize>()
-            && n > 0
-        {
-            cfg.rehydrate_reach = n;
-        }
-        cfg.rehydrate_reach = cfg.rehydrate_reach.min(cfg.max_files);
-        cfg
-    }
-}
+impl ArchiveConfig {}
 
 /// Unified archive envelope for reading every store. The collection is keyed
 /// `items`; the `facts` alias keeps legacy facts archives (which used that key)
@@ -379,18 +357,6 @@ mod tests {
     fn reachable_is_bounded_and_aligns_with_retention_by_default() {
         let cfg = ArchiveConfig::default();
         assert_eq!(cfg.rehydrate_reach, cfg.max_files);
-    }
-
-    #[test]
-    fn from_env_reach_clamped_to_max() {
-        let _lock = crate::core::data_dir::test_env_lock();
-        crate::test_env::set_var("LEAN_CTX_ARCHIVE_MAX_FILES", "5");
-        crate::test_env::set_var("LEAN_CTX_ARCHIVE_REHYDRATE_REACH", "99");
-        let cfg = ArchiveConfig::from_env();
-        assert_eq!(cfg.max_files, 5);
-        assert_eq!(cfg.rehydrate_reach, 5, "reach clamped to max_files");
-        crate::test_env::remove_var("LEAN_CTX_ARCHIVE_MAX_FILES");
-        crate::test_env::remove_var("LEAN_CTX_ARCHIVE_REHYDRATE_REACH");
     }
 
     #[test]

@@ -8,8 +8,7 @@
 use crate::core::code_health::{report, scan_project};
 use std::path::Path;
 
-/// Default minimum score for `--gate` (grade C boundary). Override with
-/// `LEAN_CTX_HEALTH_MIN_SCORE`.
+/// Minimum score for `--gate` (grade C boundary).
 const DEFAULT_GATE_MIN_SCORE: u32 = 60;
 
 /// Number of hotspots to surface.
@@ -39,15 +38,8 @@ pub(crate) fn cmd_health(args: &[String]) -> i32 {
         println!("{}", report::text(&health, root, threshold, &model));
     }
 
-    if gate && health.score.score < gate_min_score() {
+    if gate && health.score.score < DEFAULT_GATE_MIN_SCORE {
         return 1;
     }
     0
-}
-
-fn gate_min_score() -> u32 {
-    std::env::var("LEAN_CTX_HEALTH_MIN_SCORE")
-        .ok()
-        .and_then(|v| v.trim().parse::<u32>().ok())
-        .unwrap_or(DEFAULT_GATE_MIN_SCORE)
 }

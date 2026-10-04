@@ -93,8 +93,7 @@ impl ThresholdBandit {
     /// the highest posterior mean (argmax) — so tool behavior is reproducible and
     /// provider prompt caching stays valid (#498). Probabilistic exploration
     /// (epsilon-greedy + Thompson sampling) is used only when
-    /// [`Config::is_stochastic_enabled`] is on (`LEAN_CTX_STOCHASTIC` or
-    /// auto-mode-learning). Always counts the pull and registers activity (#4).
+    /// [`Config::is_stochastic_enabled`] is on (auto-mode-learning). Always counts the pull and registers activity (#4).
     ///
     /// [`Config::is_stochastic_enabled`]: crate::core::config::Config::is_stochastic_enabled
     pub fn choose_arm(&mut self) -> &BanditArm {

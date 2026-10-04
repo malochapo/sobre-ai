@@ -91,7 +91,11 @@ async fn read_only_root_is_readable_but_never_writable_via_engine() {
     std::fs::create_dir_all(&data_dir).expect("data");
     set_env("LEAN_CTX_DATA_DIR", &data_dir);
     // The feature under test: the sibling repo is a read-only root.
-    set_env("LEAN_CTX_READ_ONLY_ROOTS", &refrepo);
+    std::fs::write(
+        data_dir.join("config.toml"),
+        format!("read_only_roots = [{:?}]\n", refrepo.to_string_lossy()),
+    )
+    .expect("config.toml");
 
     let engine = lean_ctx::engine::ContextEngine::with_project_root(&project);
 
@@ -230,7 +234,6 @@ async fn read_only_root_is_readable_but_never_writable_via_engine() {
     ref_entries.sort();
     let proj_after = std::fs::read_to_string(&proj_file).expect("read project file");
     let consts_after = std::fs::read_to_string(&proj_consts).expect("read consts file");
-    clear_env("LEAN_CTX_READ_ONLY_ROOTS");
     clear_env("LEAN_CTX_DATA_DIR");
 
     // Reads are allowed.

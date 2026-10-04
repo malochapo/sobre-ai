@@ -61,10 +61,7 @@ pub(crate) fn cmd_embeddings(rest: &[String]) {
                 "Unknown subcommand `{other}`.\n\n\
                  Usage:\n  \
                  lean-ctx embeddings status              Show the managed ONNX Runtime state\n  \
-                                 lean-ctx embeddings provision [--force] Download the official CPU runtime (sha256-pinned)
-
-                                 GPU opt-in:
-                                     LEAN_CTX_ORT_EXECUTION_PROVIDER=gpu|auto"
+                                 lean-ctx embeddings provision [--force] Download the official CPU runtime (sha256-pinned)"
             );
             std::process::exit(1);
         }

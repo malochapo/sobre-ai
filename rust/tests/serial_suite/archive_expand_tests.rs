@@ -3,18 +3,26 @@ use std::sync::Mutex;
 
 static ENV_LOCK: Mutex<()> = Mutex::new(());
 
-fn with_test_dir<F: FnOnce()>(f: F) {
+/// Runs `f` with `LEAN_CTX_DATA_DIR` (which also holds `config.toml`) pointed
+/// at a fresh temp dir whose config is `toml`, then restores the previous dir.
+fn with_config<F: FnOnce()>(toml: &str, f: F) {
     let _guard = ENV_LOCK.lock().unwrap();
     let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("config.toml"), toml).unwrap();
+    let prev = std::env::var_os("LEAN_CTX_DATA_DIR");
     // SAFETY: serialized by this file's local `ENV_LOCK` mutex.
     unsafe { std::env::set_var("LEAN_CTX_DATA_DIR", dir.path()) };
-    // SAFETY: serialized by this file's local `ENV_LOCK` mutex.
-    unsafe { std::env::set_var("LEAN_CTX_ARCHIVE", "1") };
     f();
-    // SAFETY: serialized by this file's local `ENV_LOCK` mutex.
-    unsafe { std::env::remove_var("LEAN_CTX_DATA_DIR") };
-    // SAFETY: serialized by this file's local `ENV_LOCK` mutex.
-    unsafe { std::env::remove_var("LEAN_CTX_ARCHIVE") };
+    match prev {
+        // SAFETY: serialized by this file's local `ENV_LOCK` mutex.
+        Some(v) => unsafe { std::env::set_var("LEAN_CTX_DATA_DIR", v) },
+        // SAFETY: serialized by this file's local `ENV_LOCK` mutex.
+        None => unsafe { std::env::remove_var("LEAN_CTX_DATA_DIR") },
+    }
+}
+
+fn with_test_dir<F: FnOnce()>(f: F) {
+    with_config("[archive]\nenabled = true\n", f);
 }
 
 #[test]
@@ -149,27 +157,17 @@ fn archive_cleanup_expired() {
 
 #[test]
 fn archive_should_archive_respects_threshold() {
-    let _guard = ENV_LOCK.lock().unwrap();
-    // SAFETY: serialized by this file's local `ENV_LOCK` mutex.
-    unsafe { std::env::set_var("LEAN_CTX_ARCHIVE", "1") };
-    // SAFETY: serialized by this file's local `ENV_LOCK` mutex.
-    unsafe { std::env::set_var("LEAN_CTX_ARCHIVE_THRESHOLD", "100") };
-    assert!(!archive::should_archive("short"));
-    assert!(archive::should_archive(&"x".repeat(101)));
-    // SAFETY: serialized by this file's local `ENV_LOCK` mutex.
-    unsafe { std::env::remove_var("LEAN_CTX_ARCHIVE_THRESHOLD") };
-    // SAFETY: serialized by this file's local `ENV_LOCK` mutex.
-    unsafe { std::env::remove_var("LEAN_CTX_ARCHIVE") };
+    with_config("[archive]\nenabled = true\nthreshold_chars = 100\n", || {
+        assert!(!archive::should_archive("short"));
+        assert!(archive::should_archive(&"x".repeat(101)));
+    });
 }
 
 #[test]
 fn archive_disabled_returns_false() {
-    let _guard = ENV_LOCK.lock().unwrap();
-    // SAFETY: serialized by this file's local `ENV_LOCK` mutex.
-    unsafe { std::env::set_var("LEAN_CTX_ARCHIVE", "0") };
-    assert!(!archive::should_archive(&"x".repeat(99999)));
-    // SAFETY: serialized by this file's local `ENV_LOCK` mutex.
-    unsafe { std::env::remove_var("LEAN_CTX_ARCHIVE") };
+    with_config("[archive]\nenabled = false\n", || {
+        assert!(!archive::should_archive(&"x".repeat(99999)));
+    });
 }
 
 #[test]

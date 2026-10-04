@@ -10,12 +10,6 @@ pub static LAST_COMPACTION_TS: AtomicU64 = AtomicU64::new(0);
 pub fn effective_cache_policy() -> &'static str {
     static POLICY: std::sync::OnceLock<String> = std::sync::OnceLock::new();
     POLICY.get_or_init(|| {
-        if let Ok(v) = std::env::var("LEAN_CTX_CACHE_POLICY") {
-            let v = v.trim().to_lowercase();
-            if matches!(v.as_str(), "aggressive" | "safe" | "off") {
-                return v;
-            }
-        }
         let cfg = crate::core::config::Config::load();
         cfg.cache_policy
             .as_deref()

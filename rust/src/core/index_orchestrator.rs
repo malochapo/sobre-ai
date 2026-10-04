@@ -560,7 +560,7 @@ fn bm25_build_note(
             limit_bytes,
         }) => format!(
             "indexed {doc_count} chunks but NOT persisted to disk: compressed {:.1} MB exceeds the {:.0} MB cap. \
-             Raise it via LEAN_CTX_BM25_MAX_CACHE_MB (or bm25_max_cache_mb in config) or add extra_ignore_patterns, \
+             Raise bm25_max_cache_mb in config or add extra_ignore_patterns, \
              then run `lean-ctx reindex`. Until then the index is rebuilt from scratch on every cold start.",
             *compressed_bytes as f64 / 1_048_576.0,
             *limit_bytes as f64 / 1_048_576.0
@@ -1086,7 +1086,7 @@ mod tests {
             "must flag non-persistence: {note}"
         );
         assert!(
-            note.contains("LEAN_CTX_BM25_MAX_CACHE_MB") && note.contains("reindex"),
+            note.contains("bm25_max_cache_mb") && note.contains("reindex"),
             "too-large note must carry an actionable remedy: {note}"
         );
     }

@@ -57,17 +57,11 @@ pub(super) fn is_headroom_compressed(parts: &axum::http::request::Parts) -> bool
 
 /// Default request-body ceiling (MiB). A large-codebase refactor with several
 /// big files in context easily exceeds the old 10 MiB cap, which surfaced to the
-/// agent as a hard `400` mid-task. Raised and made configurable via
-/// `LEAN_CTX_PROXY_MAX_BODY_MB`.
+/// agent as a hard `400` mid-task, hence 64 MiB.
 const DEFAULT_MAX_BODY_MB: usize = 64;
 
 pub(super) fn max_body_bytes() -> usize {
-    std::env::var("LEAN_CTX_PROXY_MAX_BODY_MB")
-        .ok()
-        .and_then(|v| v.trim().parse::<usize>().ok())
-        .filter(|mb| *mb > 0)
-        .unwrap_or(DEFAULT_MAX_BODY_MB)
-        .saturating_mul(1024 * 1024)
+    DEFAULT_MAX_BODY_MB.saturating_mul(1024 * 1024)
 }
 
 pub async fn forward_request(

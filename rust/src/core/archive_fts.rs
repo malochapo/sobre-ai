@@ -7,10 +7,9 @@ use super::data_dir::lean_ctx_data_dir;
 static DB: std::sync::LazyLock<Mutex<Option<Connection>>> =
     std::sync::LazyLock::new(|| Mutex::new(open_db()));
 
-/// Default maximum on-disk size for the archive FTS database. Overridable via
-/// `LEAN_CTX_ARCHIVE_DB_MAX_MB`. Without enforcement this DB grew unbounded
+/// Maximum on-disk size for the archive FTS database. Without enforcement this DB grew unbounded
 /// (observed 576 MB in the field — see EPIC 6 / #2364).
-const DEFAULT_MAX_DB_MB: u64 = 500;
+pub(crate) const DEFAULT_MAX_DB_MB: u64 = 500;
 
 /// Run cap enforcement roughly every N inserts to amortize the VACUUM cost.
 const ENFORCE_EVERY_N_INSERTS: usize = 200;
@@ -22,12 +21,7 @@ const ENFORCE_EVERY_N_INSERTS: usize = 200;
 const WAL_TRUNCATE_THRESHOLD_BYTES: u64 = 32 * 1024 * 1024;
 
 fn max_db_bytes() -> u64 {
-    std::env::var("LEAN_CTX_ARCHIVE_DB_MAX_MB")
-        .ok()
-        .and_then(|v| v.trim().parse::<u64>().ok())
-        .filter(|m| *m > 0)
-        .unwrap_or(DEFAULT_MAX_DB_MB)
-        .saturating_mul(1024 * 1024)
+    DEFAULT_MAX_DB_MB.saturating_mul(1024 * 1024)
 }
 
 fn db_path() -> PathBuf {

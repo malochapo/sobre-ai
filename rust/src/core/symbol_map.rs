@@ -15,16 +15,9 @@ const MIN_IDENT_LENGTH: usize = 6;
 const SHORT_ID_PREFIX: char = 'α';
 
 /// Whether alpha/§MAP identifier substitution should be applied to tool output.
-///
-/// Activation order:
-/// 1. `LEAN_CTX_SYMBOL_MAP=1` env var → force on
-/// 2. `LEAN_CTX_SYMBOL_MAP=0` env var → force off
-/// 3. `symbol_map_auto = true` in config + project >50 source files → auto-on
-/// 4. Default: off (the abbreviated form hinders editing; opt-in only)
+/// On when `symbol_map_auto = true` in config and the project has >50 source
+/// files; off by default (the abbreviated form hinders editing; opt-in only).
 pub fn substitution_enabled() -> bool {
-    if let Ok(v) = std::env::var("LEAN_CTX_SYMBOL_MAP") {
-        return v == "1" || v.eq_ignore_ascii_case("true") || v.eq_ignore_ascii_case("on");
-    }
     let cfg = crate::core::config::Config::load();
     if cfg.symbol_map_auto {
         return auto_detect_large_project();

@@ -32,19 +32,11 @@ fn normalize_key(path: &str) -> String {
 /// provides an independent safety net regardless of this budget.
 pub(crate) const DEFAULT_CACHE_MAX_TOKENS: usize = 2_000_000;
 
-/// Pure resolver for the read-cache token budget. `env` (the raw
-/// `LEAN_CTX_CACHE_MAX_TOKENS` value) wins when it parses to a positive integer,
-/// then the `configured` `[core] cache_max_tokens`, else
-/// [`DEFAULT_CACHE_MAX_TOKENS`]. A `0` (or unparseable env) in either source
-/// means "use the default". Split out so the precedence is unit-testable without
-/// touching the global env or config.
-fn resolve_cache_max_tokens(env: Option<&str>, configured: usize) -> usize {
-    if let Some(raw) = env
-        && let Ok(n) = raw.trim().parse::<usize>()
-        && n > 0
-    {
-        return n;
-    }
+/// Pure resolver for the read-cache token budget: the `configured`
+/// `cache_max_tokens` when positive, else [`DEFAULT_CACHE_MAX_TOKENS`] (`0`
+/// means "use the default"). Split out so it is unit-testable without touching
+/// the global config.
+fn resolve_cache_max_tokens(configured: usize) -> usize {
     if configured > 0 {
         configured
     } else {
@@ -52,15 +44,11 @@ fn resolve_cache_max_tokens(env: Option<&str>, configured: usize) -> usize {
     }
 }
 
-/// Resolved token budget for the read cache. `LEAN_CTX_CACHE_MAX_TOKENS` wins
-/// (env-first keeps the hot eviction path cheap for power users), then
-/// `[core] cache_max_tokens` in config.toml, else [`DEFAULT_CACHE_MAX_TOKENS`].
+/// Resolved token budget for the read cache: `cache_max_tokens` in
+/// config.toml, else [`DEFAULT_CACHE_MAX_TOKENS`].
 /// Shared with `eviction_orchestrator` so both eviction rails read one budget.
 pub(crate) fn max_cache_tokens() -> usize {
-    resolve_cache_max_tokens(
-        std::env::var("LEAN_CTX_CACHE_MAX_TOKENS").ok().as_deref(),
-        crate::core::config::Config::load().cache_max_tokens,
-    )
+    resolve_cache_max_tokens(crate::core::config::Config::load().cache_max_tokens)
 }
 
 /// A cached file read: zstd-compressed content, hash, token count, and access metadata.
@@ -894,10 +882,6 @@ pub fn is_cache_entry_stale(path: &str, cached_mtime: Option<SystemTime>) -> boo
 /// mtime check alone decides. Keeps the stub fast-path O(small-file-read).
 const VERIFY_HASH_CAP_BYTES: u64 = 8 * 1024 * 1024;
 
-fn cache_verify_enabled() -> bool {
-    std::env::var("LEAN_CTX_CACHE_VERIFY").map_or(true, |v| v != "0")
-}
-
 /// Staleness with content verification: like [`is_cache_entry_stale`], but when
 /// the mtime claims "unchanged", additionally compares the md5 of the on-disk
 /// content against the cached hash.
@@ -907,7 +891,7 @@ fn cache_verify_enabled() -> bool {
 /// be restored by tools. Serving an `[unchanged]` stub for changed content
 /// would silently mislead the agent — the worst failure mode a context layer
 /// can have. The extra disk read costs microseconds for typical source files;
-/// the stub's token savings are unaffected. Opt out: `LEAN_CTX_CACHE_VERIFY=0`.
+/// the stub's token savings are unaffected.
 ///
 /// Note: entries whose stored content differs from disk by design (e.g. secret
 /// redaction) hash differently and therefore never serve stubs — conservative
@@ -920,7 +904,7 @@ pub fn is_cache_entry_stale_verified(
     if is_cache_entry_stale(path, cached_mtime) {
         return true;
     }
-    if cached_hash.is_empty() || !cache_verify_enabled() {
+    if cached_hash.is_empty() {
         return false;
     }
     let Ok(meta) = std::fs::metadata(path) else {
@@ -1132,26 +1116,16 @@ mod tests {
 
     #[test]
     fn cache_budget_resolver_precedence() {
-        // env wins when positive
-        assert_eq!(resolve_cache_max_tokens(Some("250000"), 999), 250_000);
-        assert_eq!(resolve_cache_max_tokens(Some(" 80000 "), 0), 80_000);
-        // env 0 / blank / garbage falls through to config
-        assert_eq!(resolve_cache_max_tokens(Some("0"), 123_456), 123_456);
-        assert_eq!(resolve_cache_max_tokens(Some(""), 123_456), 123_456);
-        assert_eq!(resolve_cache_max_tokens(Some("lots"), 123_456), 123_456);
-        // no env → config field
-        assert_eq!(resolve_cache_max_tokens(None, 42_000), 42_000);
-        // nothing set anywhere → built-in default
-        assert_eq!(resolve_cache_max_tokens(None, 0), DEFAULT_CACHE_MAX_TOKENS);
-        assert_eq!(
-            resolve_cache_max_tokens(Some("0"), 0),
-            DEFAULT_CACHE_MAX_TOKENS
-        );
+        // configured value wins when positive
+        assert_eq!(resolve_cache_max_tokens(42_000), 42_000);
+        // nothing set → built-in default
+        assert_eq!(resolve_cache_max_tokens(0), DEFAULT_CACHE_MAX_TOKENS);
     }
 
     #[test]
     fn evict_if_needed_removes_lowest_score() {
-        crate::test_env::set_var("LEAN_CTX_CACHE_MAX_TOKENS", "50");
+        let iso = crate::core::data_dir::isolated_data_dir();
+        std::fs::write(iso.path().join("config.toml"), "cache_max_tokens = 50\n").unwrap();
         let mut cache = SessionCache::new();
         let big_content = "a]".repeat(30); // ~30 tokens
         cache.store("/old.rs", &big_content);
@@ -1167,7 +1141,6 @@ mod tests {
             cache.total_cached_tokens() <= 60,
             "eviction should have kicked in"
         );
-        crate::test_env::remove_var("LEAN_CTX_CACHE_MAX_TOKENS");
     }
 
     #[test]

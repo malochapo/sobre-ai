@@ -150,8 +150,7 @@ pub fn config_keys_markdown() -> String {
     out.push_str("Source of truth: `rust/src/core/config/schema.rs`.\n\n");
     out.push_str(
         "lean-ctx reads one file, `~/.lean-ctx/config.toml`. \
-         Below is every recognized key with its type, default, and environment-variable \
-         override where one exists.\n\n",
+         Below is every recognized key with its type and default.\n\n",
     );
 
     // `root` first (top-level keys), then named sections alphabetically.
@@ -189,15 +188,8 @@ fn render_section_keys(section: &crate::core::config::schema::SectionSchema) -> 
             ty = format!("{ty}: {}", values.join(" | "));
         }
         let default = value_to_inline(&ks.default);
-        let env = ks
-            .env_override
-            .as_ref()
-            .map(|e| format!(" — env `{e}`"))
-            .unwrap_or_default();
         let desc = ks.description.trim();
-        out.push_str(&format!(
-            "- `{key}` ({ty}, default `{default}`{env}) — {desc}\n"
-        ));
+        out.push_str(&format!("- `{key}` ({ty}, default `{default}`) — {desc}\n"));
     }
     if !out.is_empty() {
         out.push('\n');

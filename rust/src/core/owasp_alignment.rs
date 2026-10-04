@@ -101,11 +101,6 @@ pub fn alignment() -> Vec<OwaspMapping> {
             risk_description: "Agent overwhelms system resources or causes service disruption",
             lean_ctx_mitigations: vec![
                 Mitigation {
-                    feature: "Rate Limiter",
-                    module: "core/a2a/rate_limiter.rs",
-                    description: "Per-agent per-tool rate limiting",
-                },
-                Mitigation {
                     feature: "Memory Guard",
                     module: "core/config/memory.rs",
                     description: "RAM usage caps and idle cleanup",

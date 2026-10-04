@@ -161,10 +161,6 @@ impl ServerHandler for LeanCtxServer {
         let agent_root = effective_root.clone().unwrap_or_default();
         let agent_id_handle = self.agent_id.clone();
         tokio::task::spawn_blocking(move || {
-            if std::env::var("LEAN_CTX_HEADLESS").is_ok() {
-                return;
-            }
-
             // Avoid startup stampedes when multiple agent sessions initialize at once.
             // These are best-effort maintenance tasks; it's fine to skip if another
             // lean-ctx instance is already doing them.

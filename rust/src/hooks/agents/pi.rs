@@ -124,29 +124,10 @@ fn propagate_pi_replace_mode() {
         serde_json::Value::String("replace".to_string()),
     );
 
-    // Propagate engine settings from config.toml (#793).
-    let cfg = crate::core::config::Config::load();
-    let env_block = obj.entry("env").or_insert_with(|| serde_json::json!({}));
-    if let Some(env_obj) = env_block.as_object_mut() {
-        let level_str = format!("{:?}", cfg.compression_level).to_lowercase();
-        env_obj.insert(
-            "LEAN_CTX_COMPRESSION_LEVEL".to_string(),
-            serde_json::Value::String(level_str),
-        );
-        let footer_str = serde_json::to_string(&cfg.savings_footer)
-            .unwrap_or_default()
-            .trim_matches('"')
-            .to_string();
-        env_obj.insert(
-            "LEAN_CTX_SAVINGS_FOOTER".to_string(),
-            serde_json::Value::String(footer_str),
-        );
-    }
-
     if let Ok(out) = serde_json::to_string_pretty(&json) {
         write_file(&config_path, &out);
         println!(
-            "  \x1b[32m✓\x1b[0m Pi config: set mode=replace + engine settings in {}",
+            "  \x1b[32m✓\x1b[0m Pi config: set mode=replace in {}",
             config_path.display()
         );
     }
@@ -185,39 +166,6 @@ fn propagate_pi_hybrid_mode() {
         changed = true;
     }
 
-    // Propagate engine settings from config.toml (#793).
-    let cfg = crate::core::config::Config::load();
-    let env_block = obj.entry("env").or_insert_with(|| serde_json::json!({}));
-    if let Some(env_obj) = env_block.as_object_mut() {
-        let level_str = format!("{:?}", cfg.compression_level).to_lowercase();
-        if env_obj
-            .get("LEAN_CTX_COMPRESSION_LEVEL")
-            .and_then(|v| v.as_str())
-            != Some(&level_str)
-        {
-            env_obj.insert(
-                "LEAN_CTX_COMPRESSION_LEVEL".to_string(),
-                serde_json::Value::String(level_str),
-            );
-            changed = true;
-        }
-        let footer_str = serde_json::to_string(&cfg.savings_footer)
-            .unwrap_or_default()
-            .trim_matches('"')
-            .to_string();
-        if env_obj
-            .get("LEAN_CTX_SAVINGS_FOOTER")
-            .and_then(|v| v.as_str())
-            != Some(&footer_str)
-        {
-            env_obj.insert(
-                "LEAN_CTX_SAVINGS_FOOTER".to_string(),
-                serde_json::Value::String(footer_str),
-            );
-            changed = true;
-        }
-    }
-
     if !changed {
         return;
     }
@@ -225,7 +173,7 @@ fn propagate_pi_hybrid_mode() {
     if let Ok(out) = serde_json::to_string_pretty(&json) {
         write_file(&config_path, &out);
         println!(
-            "  \x1b[32m✓\x1b[0m Pi config: set routeShell=true + engine settings in {}",
+            "  \x1b[32m✓\x1b[0m Pi config: set routeShell=true in {}",
             config_path.display()
         );
     }

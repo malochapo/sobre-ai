@@ -29,8 +29,6 @@ pub struct KeySchema {
     pub description: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub values: Option<Vec<String>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub env_override: Option<String>,
 }
 
 fn clean_f32(v: f32) -> serde_json::Value {
@@ -44,7 +42,6 @@ fn key(ty: &str, default: serde_json::Value, desc: &str) -> KeySchema {
         default,
         description: desc.to_string(),
         values: None,
-        env_override: None,
     }
 }
 
@@ -54,27 +51,6 @@ fn key_enum(values: &[&str], default: &str, desc: &str) -> KeySchema {
         default: serde_json::Value::String(default.to_string()),
         description: desc.to_string(),
         values: Some(values.iter().map(ToString::to_string).collect()),
-        env_override: None,
-    }
-}
-
-fn key_with_env(ty: &str, default: serde_json::Value, desc: &str, env: &str) -> KeySchema {
-    KeySchema {
-        ty: ty.to_string(),
-        default,
-        description: desc.to_string(),
-        values: None,
-        env_override: Some(env.to_string()),
-    }
-}
-
-fn key_enum_with_env(values: &[&str], default: &str, desc: &str, env: &str) -> KeySchema {
-    KeySchema {
-        ty: "enum".to_string(),
-        default: serde_json::Value::String(default.to_string()),
-        description: desc.to_string(),
-        values: Some(values.iter().map(ToString::to_string).collect()),
-        env_override: Some(env.to_string()),
     }
 }
 

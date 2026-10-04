@@ -90,14 +90,7 @@ fn format_number(n: usize) -> String {
     }
 }
 
-fn is_explicitly_enabled() -> bool {
-    matches!(std::env::var("LEAN_CTX_SHOW_SAVINGS"), Ok(v) if v.trim() == "1")
-}
-
 fn is_ultra_suppressed() -> bool {
-    if is_explicitly_enabled() {
-        return false;
-    }
     let level = super::config::CompressionLevel::effective(&super::config::Config::load());
     matches!(level, super::config::CompressionLevel::Max)
 }
@@ -290,10 +283,10 @@ mod tests {
 
     #[test]
     fn visibility_gated_tests() {
-        let _lock = crate::core::data_dir::test_env_lock();
+        let iso = crate::core::data_dir::isolated_data_dir();
+        let cfg = iso.path().join("config.toml");
 
-        crate::test_env::set_var("LEAN_CTX_SHOW_SAVINGS", "0");
-        crate::test_env::set_var("LEAN_CTX_SAVINGS_FOOTER", "never");
+        std::fs::write(&cfg, "savings_footer = \"never\"\n").unwrap();
         let result = format_footer_basic(100, 50);
         assert!(
             result.is_empty(),
@@ -303,8 +296,7 @@ mod tests {
         let result = append_footer_basic("hello", 100, 50);
         assert_eq!(result, "hello");
 
-        crate::test_env::set_var("LEAN_CTX_SHOW_SAVINGS", "1");
-        crate::test_env::set_var("LEAN_CTX_SAVINGS_FOOTER", "always");
+        std::fs::write(&cfg, "savings_footer = \"always\"\n").unwrap();
         crate::test_env::remove_var("LEAN_CTX_QUIET");
         super::super::protocol::set_mcp_context(false);
 
@@ -317,11 +309,6 @@ mod tests {
             result.contains("\u{2500}\u{2500}\u{2500}"),
             "should contain box-drawing: {result}"
         );
-
-        // Restore ALL touched env — leaking LEAN_CTX_SAVINGS_FOOTER=always
-        // made footers visible in unrelated tests (GL #556 flakiness).
-        crate::test_env::remove_var("LEAN_CTX_SHOW_SAVINGS");
-        crate::test_env::remove_var("LEAN_CTX_SAVINGS_FOOTER");
     }
 
     #[test]

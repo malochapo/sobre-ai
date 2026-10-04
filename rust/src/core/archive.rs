@@ -50,27 +50,14 @@ fn compute_id(content: &str) -> String {
 }
 
 pub fn is_enabled() -> bool {
-    if let Ok(v) = std::env::var("LEAN_CTX_ARCHIVE") {
-        return !matches!(v.as_str(), "0" | "false" | "off");
-    }
     super::config::Config::load().archive.enabled
 }
 
 fn threshold_chars() -> usize {
-    if let Ok(v) = std::env::var("LEAN_CTX_ARCHIVE_THRESHOLD")
-        && let Ok(n) = v.parse::<usize>()
-    {
-        return n;
-    }
     super::config::Config::load().archive.threshold_chars
 }
 
 fn max_age_hours() -> u64 {
-    if let Ok(v) = std::env::var("LEAN_CTX_ARCHIVE_TTL")
-        && let Ok(n) = v.parse::<u64>()
-    {
-        return n;
-    }
     super::config::Config::load().archive_max_age_hours_effective()
 }
 

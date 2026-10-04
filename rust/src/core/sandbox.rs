@@ -45,10 +45,7 @@ pub fn execute(language: &str, code: &str, timeout_secs: Option<u64>) -> Sandbox
         };
     };
 
-    let sandbox_level = std::env::var("LEAN_CTX_SANDBOX_LEVEL")
-        .ok()
-        .and_then(|v| v.parse::<u8>().ok())
-        .unwrap_or_else(|| crate::core::config::Config::load().sandbox_level);
+    let sandbox_level = crate::core::config::Config::load().sandbox_level;
 
     if sandbox_level >= 1 && cfg!(target_os = "macos") {
         let result = seatbelt_execute(&runtime, code, timeout);

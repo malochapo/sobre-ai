@@ -4,7 +4,6 @@ use std::time::Duration;
 use rmcp::ErrorData;
 use serde_json::Value;
 
-use crate::server::helpers::get_str;
 use crate::server::tool_trait::{McpTool, ShellOutcome, ToolContext, ToolOutput};
 use crate::tools::LeanCtxServer;
 use rmcp::model::ContentBlock;
@@ -29,45 +28,6 @@ impl LeanCtxServer {
         ),
         ErrorData,
     > {
-        fn format_rate_limited(
-            tool: &str,
-            agent_id: &str,
-            retry_after_ms: u64,
-            args: Option<&serde_json::Map<String, Value>>,
-        ) -> String {
-            let as_json = get_str(args, "format").as_deref() == Some("json");
-            if as_json {
-                serde_json::json!({
-                    "error": "rate_limited",
-                    "tool": tool,
-                    "agent_id": agent_id,
-                    "retry_after_ms": retry_after_ms,
-                })
-                .to_string()
-            } else {
-                format!("[RATE LIMITED] tool={tool} retry_after_ms={retry_after_ms}")
-            }
-        }
-
-        let agent_id = self
-            .agent_id
-            .read()
-            .await
-            .clone()
-            .unwrap_or_else(|| "unknown".to_string());
-        {
-            if let crate::core::a2a::rate_limiter::RateLimitResult::Limited { retry_after_ms } =
-                crate::core::a2a::rate_limiter::check_rate_limit(&agent_id, name)
-            {
-                return Ok((
-                    format_rate_limited(name, &agent_id, retry_after_ms, args),
-                    0,
-                    None,
-                    None,
-                ));
-            }
-        }
-
         // Invariant 3 has no universal invoker: there are no hidden tools for
         // one to reach. `ctx_call` used to sit here — dispatchable, never in
         // `tools/list`, unwrapping an inner tool name and calling it.
@@ -328,10 +288,7 @@ impl LeanCtxServer {
                 });
             }
 
-            let reference_enabled = std::env::var("LEAN_CTX_REFERENCE_RESULTS").map_or_else(
-                |_| crate::core::config::Config::load().reference_results,
-                |v| v == "1" || v == "true",
-            );
+            let reference_enabled = crate::core::config::Config::load().reference_results;
 
             // An explicit file read must always return its content — never a
             // stored-reference stub — so the agent can edit against the lines. The
@@ -469,7 +426,6 @@ impl LeanCtxServer {
     /// test suites) and already enforce their own command timeouts, so a generic
     /// watchdog would wrongly abort a legitimate long-running command. Every
     /// other tool is bounded so a hang can never swallow the JSON-RPC response.
-    /// Tunable via `LEAN_CTX_TOOL_TIMEOUT_SECS` (`0` disables the watchdog).
     fn handler_watchdog(name: &str) -> Option<Duration> {
         if super::is_shell_tool_name(name) {
             return None;
@@ -491,14 +447,10 @@ fn sanitized_tool_text(name: &str, raw_text: String) -> String {
     crate::core::output_sanitizer::sanitize(&raw_text)
 }
 
-/// Read the configured watchdog budget in seconds (defaults to
-/// [`DEFAULT_TOOL_TIMEOUT_SECS`]). Kept separate from the policy so the pure
+/// The watchdog budget in seconds. Kept separate from the policy so the pure
 /// `secs -> Option<Duration>` mapping stays trivially testable.
 fn read_watchdog_secs() -> u64 {
-    std::env::var("LEAN_CTX_TOOL_TIMEOUT_SECS")
-        .ok()
-        .and_then(|v| v.parse::<u64>().ok())
-        .unwrap_or(DEFAULT_TOOL_TIMEOUT_SECS)
+    DEFAULT_TOOL_TIMEOUT_SECS
 }
 
 /// Map a watchdog budget in seconds to a duration; `0` disables the watchdog.

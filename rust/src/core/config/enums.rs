@@ -109,13 +109,6 @@ impl RecoveryHints {
         }
     }
 
-    /// Reads the recovery-hint tier from `LEAN_CTX_RECOVERY_HINTS` (ops/test
-    /// override). Unset or unrecognized yields `None` (use the configured value).
-    #[must_use]
-    pub fn from_env() -> Option<Self> {
-        Self::parse(&std::env::var("LEAN_CTX_RECOVERY_HINTS").ok()?)
-    }
-
     /// Stable lowercase label (config display, schema, `/status`).
     #[must_use]
     pub fn label(self) -> &'static str {
@@ -140,21 +133,7 @@ pub enum TerseAgent {
     Ultra,
 }
 
-impl TerseAgent {
-    /// Reads the terse-agent level from the `LEAN_CTX_TERSE_AGENT` env var.
-    pub fn from_env() -> Self {
-        match std::env::var("LEAN_CTX_TERSE_AGENT")
-            .unwrap_or_default()
-            .to_lowercase()
-            .as_str()
-        {
-            "lite" => Self::Lite,
-            "full" => Self::Full,
-            "ultra" => Self::Ultra,
-            _ => Self::Off,
-        }
-    }
-}
+impl TerseAgent {}
 
 /// Legacy: Controls how dense/compact MCP tool output is formatted.
 /// Superseded by `CompressionLevel`. Kept for backward compatibility with old config.toml files.
@@ -168,20 +147,7 @@ pub enum OutputDensity {
     Ultra,
 }
 
-impl OutputDensity {
-    /// Reads the output density from the `LEAN_CTX_OUTPUT_DENSITY` env var.
-    pub fn from_env() -> Self {
-        match std::env::var("LEAN_CTX_OUTPUT_DENSITY")
-            .unwrap_or_default()
-            .to_lowercase()
-            .as_str()
-        {
-            "terse" => Self::Terse,
-            "ultra" => Self::Ultra,
-            _ => Self::Normal,
-        }
-    }
-}
+impl OutputDensity {}
 
 /// Unified compression level that replaces the 4 separate legacy concepts:
 /// `terse_agent`, `output_density`, `terse_mode`, and `crp_mode`.
@@ -197,13 +163,6 @@ pub enum ResponseVerbosity {
 
 impl ResponseVerbosity {
     pub fn effective() -> Self {
-        if let Ok(v) = std::env::var("LEAN_CTX_RESPONSE_VERBOSITY") {
-            match v.trim().to_lowercase().as_str() {
-                "headers_only" | "headers" | "minimal" => return Self::HeadersOnly,
-                "full" | "" => return Self::Full,
-                _ => {}
-            }
-        }
         Config::load().response_verbosity
     }
 
@@ -269,49 +228,18 @@ impl CompressionLevel {
         }
     }
 
-    /// Reads the compression level from the `LEAN_CTX_COMPRESSION` env var.
-    pub fn from_env() -> Option<Self> {
-        std::env::var("LEAN_CTX_COMPRESSION").ok().and_then(|v| {
-            match v.trim().to_lowercase().as_str() {
-                "off" => Some(Self::Off),
-                "lite" => Some(Self::Lite),
-                "standard" => Some(Self::Standard),
-                "max" => Some(Self::Max),
-                "raw" => Some(Self::Raw),
-                _ => None,
-            }
-        })
-    }
-
     /// Returns the effective compression level with resolution order:
     /// 0. Session-level degrade override (set by correction-loop feedback)
-    /// 1. `LEAN_CTX_COMPRESSION` env var
-    /// 2. `compression_level` in config
-    /// 3. Legacy env vars (`LEAN_CTX_TERSE_AGENT`, `LEAN_CTX_OUTPUT_DENSITY`)
-    /// 4. Legacy config fields (`terse_agent`, `output_density`)
+    /// 1. `compression_level` in config
+    /// 2. Legacy config fields (`terse_agent`, `output_density`)
     pub fn effective(config: &Config) -> Self {
         if let Some(degraded) = Self::session_degrade_level() {
             return degraded;
         }
-        if let Some(env_level) = Self::from_env() {
-            return env_level;
-        }
         if config.compression_level != Self::Off {
             return config.compression_level;
         }
-        let ta_env = TerseAgent::from_env();
-        let od_env = OutputDensity::from_env();
-        let ta = if ta_env == TerseAgent::Off {
-            config.terse_agent.clone()
-        } else {
-            ta_env
-        };
-        let od = if od_env == OutputDensity::Normal {
-            config.output_density.clone()
-        } else {
-            od_env
-        };
-        Self::from_legacy(&ta, &od)
+        Self::from_legacy(&config.terse_agent, &config.output_density)
     }
 
     /// Session-level degrade: correction loop detected, temporarily reduce compression.

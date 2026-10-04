@@ -6,8 +6,7 @@
 //! the model.
 //!
 //! Design goals:
-//! - **No-op by default.** Disabled until `sensitivity.enabled = true` (or the
-//!   `LEAN_CTX_SENSITIVITY` env override). Nothing changes for existing users.
+//! - **No-op by default.** Disabled until `sensitivity.enabled = true`. Nothing changes for existing users.
 //! - **Honest classification.** Only high-precision signals raise a level:
 //!   secret-like paths and detected secrets → `Secret`; Luhn-validated card
 //!   numbers and IBANs → `Confidential`. No speculative heuristics.
@@ -111,12 +110,8 @@ impl Default for SensitivityConfig {
 }
 
 impl SensitivityConfig {
-    /// Effective enabled flag, honoring the `LEAN_CTX_SENSITIVITY` env override
-    /// (`0|false|off` disables, anything else enables).
+    /// Effective enabled flag.
     pub fn enabled_effective(&self) -> bool {
-        if let Ok(v) = std::env::var("LEAN_CTX_SENSITIVITY") {
-            return !matches!(v.trim(), "0" | "false" | "off");
-        }
         self.enabled
     }
 }

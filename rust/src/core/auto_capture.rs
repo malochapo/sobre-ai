@@ -9,9 +9,6 @@ use crate::core::knowledge::ProjectKnowledge;
 
 /// Check if auto-capture is enabled.
 pub fn is_enabled() -> bool {
-    if let Ok(v) = std::env::var("LEAN_CTX_AUTO_CAPTURE") {
-        return matches!(v.trim(), "1" | "true" | "on");
-    }
     crate::core::config::Config::load().auto_capture
 }
 

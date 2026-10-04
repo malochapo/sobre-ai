@@ -6,14 +6,9 @@ use crate::core::web::distill;
 /// Only oversized prose is truncated; the squeeze's main job is dedup + blank-collapse,
 /// not cutting.
 const RESEARCH_PROSE_CAP: usize = 20_000;
-const RESEARCH_PROSE_CAP_ENV: &str = "LEAN_CTX_RESEARCH_PROSE_CAP";
 
 fn research_prose_cap() -> usize {
-    std::env::var(RESEARCH_PROSE_CAP_ENV)
-        .ok()
-        .and_then(|v| v.trim().parse::<usize>().ok())
-        .filter(|cap| *cap > 0)
-        .unwrap_or(RESEARCH_PROSE_CAP)
+    RESEARCH_PROSE_CAP
 }
 
 /// Proxy compression funnel: routes a tool result to the right compressor.
@@ -311,7 +306,6 @@ fn extract_command_hint(content: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serial_test::serial;
 
     /// #980/#985: search tool results must compress without corrupting source.
     #[test]
@@ -414,26 +408,6 @@ mod tests {
         let out = compress_tool_result(&input, Some("web_fetch"));
         assert_eq!(out.matches("fearless concurrency").count(), 1);
         assert!(out.contains("performance, type safety"));
-    }
-
-    #[test]
-    #[serial]
-    fn research_prose_cap_env_overrides_default() {
-        let _lock = crate::core::data_dir::test_env_lock();
-        crate::test_env::set_var(RESEARCH_PROSE_CAP_ENV, "1234");
-        assert_eq!(research_prose_cap(), 1234);
-        crate::test_env::remove_var(RESEARCH_PROSE_CAP_ENV);
-    }
-
-    #[test]
-    #[serial]
-    fn research_prose_cap_env_invalid_falls_back() {
-        let _lock = crate::core::data_dir::test_env_lock();
-        for value in ["", "not_a_number", "0"] {
-            crate::test_env::set_var(RESEARCH_PROSE_CAP_ENV, value);
-            assert_eq!(research_prose_cap(), RESEARCH_PROSE_CAP);
-        }
-        crate::test_env::remove_var(RESEARCH_PROSE_CAP_ENV);
     }
 
     #[test]

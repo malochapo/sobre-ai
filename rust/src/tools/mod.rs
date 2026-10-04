@@ -70,14 +70,11 @@ mod resolve_path_tests {
     #[tokio::test]
     #[allow(clippy::await_holding_lock)]
     async fn resolve_path_can_reroot_to_trusted_startup_root_when_session_root_is_stale() {
-        // #991: serialize via `isolated_data_dir` (holds `test_env_lock`) so the
-        // `LEAN_CTX_ALLOW_REROOT` set below cannot be removed by a sibling
-        // reroot test running in parallel (e.g. the `remove_var` in
-        // `..._without_opt_in`) between set and `resolve_path` — which would
-        // silently disable rerooting and flake this assertion. Cleaned up at the
-        // end so the opt-in never leaks to other tests.
-        let _iso = crate::core::data_dir::isolated_data_dir();
-        crate::test_env::set_var("LEAN_CTX_ALLOW_REROOT", "1");
+        // #991: a private config.toml (via `isolated_data_dir`, which holds
+        // `test_env_lock`) carries the `allow_auto_reroot` opt-in, so no sibling
+        // reroot test running in parallel can observe or clobber it.
+        let iso = crate::core::data_dir::isolated_data_dir();
+        std::fs::write(iso.path().join("config.toml"), "allow_auto_reroot = true\n").unwrap();
         let tmp = tempfile::tempdir().unwrap();
         let stale = tmp.path().join("stale");
         let real = tmp.path().join("real");
@@ -109,7 +106,6 @@ mod resolve_path_tests {
         assert_eq!(session.project_root.as_deref(), Some(real_root.as_str()));
         assert_eq!(session.shell_cwd.as_deref(), Some(real_root.as_str()));
         drop(session);
-        crate::test_env::remove_var("LEAN_CTX_ALLOW_REROOT");
     }
 
     #[cfg(not(feature = "no-jail"))]
@@ -215,7 +211,6 @@ mod resolve_path_tests {
         // absolute path into a real project must still correct the root — an
         // agent config dir is never a real jail boundary.
         let _iso = crate::core::data_dir::isolated_data_dir();
-        crate::test_env::remove_var("LEAN_CTX_ALLOW_REROOT");
         let tmp = tempfile::tempdir().unwrap();
         let agent = tmp.path().join(".copilot");
         let real = tmp.path().join("repo");
@@ -257,7 +252,6 @@ mod resolve_path_tests {
         // workspace lives under /mnt/d. That markerless cwd must not become a
         // permanent PathJail root when the request points at a real project.
         let _iso = crate::core::data_dir::isolated_data_dir();
-        crate::test_env::remove_var("LEAN_CTX_ALLOW_REROOT");
         let tmp = tempfile::tempdir().unwrap();
         let client_cwd = tmp.path().join("Users").join("user");
         let real = tmp.path().join("workspaces").join("lean-ctx");
@@ -299,7 +293,6 @@ mod resolve_path_tests {
         // path that derives NO project marker stays blocked and the root is
         // unchanged. Only rerooting *to a real project* is permitted.
         let _iso = crate::core::data_dir::isolated_data_dir();
-        crate::test_env::remove_var("LEAN_CTX_ALLOW_REROOT");
         let tmp = tempfile::tempdir().unwrap();
         let client_cwd = tmp.path().join("Users").join("user");
         let loose = tmp.path().join("workspaces").join("loose");
@@ -341,7 +334,6 @@ mod resolve_path_tests {
         // marker). A markerless absolute path outside the jail stays blocked —
         // PathJail enforcement is unchanged, only the root *choice* is corrected.
         let _iso = crate::core::data_dir::isolated_data_dir();
-        crate::test_env::remove_var("LEAN_CTX_ALLOW_REROOT");
         let tmp = tempfile::tempdir().unwrap();
         let agent = tmp.path().join(".copilot");
         let loose = tmp.path().join("loose");

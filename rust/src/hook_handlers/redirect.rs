@@ -5,8 +5,8 @@
 //! subcommand for compression, caching, and (in shadow/harden mode) telemetry.
 
 use super::{
-    HOOK_STDIN_TIMEOUT, build_dual_allow_output, dedup, is_disabled, is_harden_active,
-    is_shadow_mode_active, log_shadow_intercept, payload, read_stdin_with_timeout, resolve_binary,
+    HOOK_STDIN_TIMEOUT, build_dual_allow_output, dedup, is_disabled, is_shadow_mode_active,
+    log_shadow_intercept, payload, read_stdin_with_timeout, resolve_binary,
 };
 use crate::core::debug_log::{self, Route};
 use std::io::Read;
@@ -156,7 +156,7 @@ pub(super) fn redirect_read(tool_input: Option<&serde_json::Value>) -> String {
     }
 
     let shadow = is_shadow_mode_active();
-    if is_harden_active() || shadow {
+    if shadow {
         tracing::info!(
             "[hook redirect] {} active, redirecting Read through lean-ctx",
             if shadow { "shadow mode" } else { "harden mode" }
@@ -352,7 +352,7 @@ fn redirect_grep(tool_input: Option<&serde_json::Value>) -> String {
     }
 
     let shadow = is_shadow_mode_active();
-    if is_harden_active() || shadow {
+    if shadow {
         tracing::info!(
             "[hook redirect] {} active, redirecting Grep through lean-ctx",
             if shadow { "shadow mode" } else { "harden mode" }
@@ -422,7 +422,7 @@ fn redirect_grep(tool_input: Option<&serde_json::Value>) -> String {
 fn redirect_glob(tool_input: Option<&serde_json::Value>) -> String {
     let allow = build_dual_allow_output();
     let shadow = is_shadow_mode_active();
-    if !shadow && !is_harden_active() {
+    if !shadow {
         return allow;
     }
 
@@ -555,12 +555,11 @@ fn redirect_temp_path(key: &str) -> std::path::PathBuf {
 
 /// #778: Whether `additionalContext` injection is allowed.
 /// Default OFF — prevents prompt-cache invalidation on Anthropic models.
-/// Opt-in via `[code_health] inject_context = true` or `LEAN_CTX_INJECT_CONTEXT=1`.
+/// Opt-in via `[code_health] inject_context = true`.
 fn inject_context_allowed() -> bool {
-    std::env::var("LEAN_CTX_INJECT_CONTEXT").is_ok()
-        || crate::core::config::Config::load()
-            .code_health
-            .inject_context
+    crate::core::config::Config::load()
+        .code_health
+        .inject_context
 }
 
 pub(super) fn build_redirect_output(

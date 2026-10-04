@@ -398,7 +398,7 @@ pub(crate) fn dense_results_for_root(
     let (aligned, coverage, changed_files) =
         ensure_embeddings(root, index, engine, &mut embed_idx)?;
 
-    let backend = crate::core::dense_backend::DenseBackendKind::try_from_env()?;
+    let backend = crate::core::dense_backend::DenseBackendKind::Local;
     let filter_fn = |p: &str| filter.matches(p);
     let filter_pred: Option<&dyn Fn(&str) -> bool> = filter
         .is_active()
@@ -444,7 +444,7 @@ pub(crate) fn hybrid_results_for_root(
     let (aligned, coverage, changed_files) =
         ensure_embeddings(root, index, engine, &mut embed_idx)?;
 
-    let backend = crate::core::dense_backend::DenseBackendKind::try_from_env()?;
+    let backend = crate::core::dense_backend::DenseBackendKind::Local;
     let cfg = HybridConfig::from_config();
     let filter_fn = |p: &str| filter.matches(p);
     let filter_pred: Option<&dyn Fn(&str) -> bool> = filter

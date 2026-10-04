@@ -25,41 +25,8 @@ pub(crate) fn namespace_hash(project_root: &Path) -> String {
 
 fn namespace_seed(project_root: &Path) -> String {
     let root_s = project_root.to_string_lossy().to_string();
-    let base = crate::core::project_hash::project_identity(&root_s)
-        .unwrap_or_else(|| crate::core::graph_index::normalize_project_root(&root_s));
-
-    if !branch_aware_enabled() {
-        return base;
-    }
-
-    let branch = git_branch(project_root).unwrap_or_else(|| "HEAD".to_string());
-    format!("{base}|branch:{branch}")
-}
-
-fn branch_aware_enabled() -> bool {
-    let Ok(v) = std::env::var("LEANCTX_INDEX_BRANCH_AWARE") else {
-        return false;
-    };
-    matches!(
-        v.trim().to_lowercase().as_str(),
-        "1" | "true" | "yes" | "on"
-    )
-}
-
-fn git_branch(project_root: &Path) -> Option<String> {
-    let out = std::process::Command::new("git")
-        .args(["rev-parse", "--abbrev-ref", "HEAD"])
-        .current_dir(project_root)
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::null())
-        .output()
-        .ok()?;
-    if !out.status.success() {
-        return None;
-    }
-    let s = String::from_utf8(out.stdout).ok()?;
-    let s = s.trim().to_string();
-    if s.is_empty() { None } else { Some(s) }
+    crate::core::project_hash::project_identity(&root_s)
+        .unwrap_or_else(|| crate::core::graph_index::normalize_project_root(&root_s))
 }
 
 fn legacy_vectors_hash(project_root: &Path) -> String {

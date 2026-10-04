@@ -8,15 +8,8 @@
 mod prefer_native_editor_tests {
     use super::super::*;
 
-    fn env_clean() -> bool {
-        std::env::var("LEAN_CTX_PREFER_NATIVE_EDITOR").is_err()
-    }
-
     #[test]
     fn default_is_off_and_blocks_nothing() {
-        if !env_clean() {
-            return;
-        }
         let cfg = Config::default();
         assert!(!cfg.prefer_native_editor);
         assert!(!cfg.prefer_native_editor_effective());
@@ -25,9 +18,6 @@ mod prefer_native_editor_tests {
 
     #[test]
     fn enabled_blocks_only_edit_tools() {
-        if !env_clean() {
-            return;
-        }
         let cfg = Config {
             prefer_native_editor: true,
             ..Default::default()
@@ -44,9 +34,6 @@ mod prefer_native_editor_tests {
     /// the predicate must not drift apart.
     #[test]
     fn every_listed_edit_tool_is_blocked() {
-        if !env_clean() {
-            return;
-        }
         let cfg = Config {
             prefer_native_editor: true,
             ..Default::default()
@@ -71,9 +58,6 @@ mod no_degrade_tests {
 
     #[test]
     fn effective_false_when_unset() {
-        if std::env::var("LCTX_NO_DEGRADE").is_ok() {
-            return;
-        }
         let cfg = Config::default();
         assert!(!cfg.no_degrade_effective());
     }
@@ -81,10 +65,7 @@ mod no_degrade_tests {
     // --- Config field ---
 
     #[test]
-    fn config_field_true_respected_when_no_env() {
-        if std::env::var("LCTX_NO_DEGRADE").is_ok() {
-            return;
-        }
+    fn config_field_true_respected() {
         let cfg = Config {
             no_degrade: true,
             ..Default::default()
@@ -116,9 +97,6 @@ mod no_degrade_tests {
 
     #[test]
     fn no_degrade_independent_of_prefer_native_editor() {
-        if std::env::var("LCTX_NO_DEGRADE").is_ok() {
-            return;
-        }
         let cfg = Config {
             no_degrade: true,
             prefer_native_editor: true,
@@ -144,13 +122,6 @@ mod delta_explicit_tests {
 
     #[test]
     fn effective_follows_the_default_when_unset() {
-        // Serialize with the env-mutating sibling test below: this reads the var
-        // as a guard and again inside delta_explicit_effective(), so without the
-        // shared lock a parallel set_var between the two reads flips the result.
-        let _lock = crate::core::data_dir::test_env_lock();
-        if std::env::var("LCTX_DELTA_EXPLICIT").is_ok() {
-            return;
-        }
         let cfg = Config::default();
         assert!(cfg.delta_explicit_effective());
     }
@@ -158,59 +129,12 @@ mod delta_explicit_tests {
     // --- Config field ---
 
     #[test]
-    fn config_field_false_respected_when_no_env() {
-        // Serialize with the env-mutating sibling test (see effective_false_when_unset).
-        let _lock = crate::core::data_dir::test_env_lock();
-        if std::env::var("LCTX_DELTA_EXPLICIT").is_ok() {
-            return;
-        }
+    fn config_field_false_respected() {
         let cfg = Config {
             delta_explicit: false,
             ..Default::default()
         };
         assert!(!cfg.delta_explicit_effective());
-    }
-
-    // --- Env override (both directions) ---
-
-    #[test]
-    fn env_overrides_config_field_in_both_directions() {
-        // All env mutation serializes through this lock (Rust 2024 set_var is
-        // `unsafe`; the lock is the documented soundness precondition).
-        let _lock = crate::core::data_dir::test_env_lock();
-
-        // env=1 turns the feature ON even when the config field is false.
-        crate::test_env::set_var("LCTX_DELTA_EXPLICIT", "1");
-        let off_cfg = Config {
-            delta_explicit: false,
-            ..Default::default()
-        };
-        assert!(
-            off_cfg.delta_explicit_effective(),
-            "LCTX_DELTA_EXPLICIT=1 must enable the feature over a false config field"
-        );
-
-        // env=0 forces it OFF even when the config field is true.
-        crate::test_env::set_var("LCTX_DELTA_EXPLICIT", "0");
-        let on_cfg = Config {
-            delta_explicit: true,
-            ..Default::default()
-        };
-        assert!(
-            !on_cfg.delta_explicit_effective(),
-            "LCTX_DELTA_EXPLICIT=0 must disable the feature over a true config field"
-        );
-
-        // `true`/`false` spellings are honoured too (case-insensitive).
-        crate::test_env::set_var("LCTX_DELTA_EXPLICIT", "true");
-        assert!(off_cfg.delta_explicit_effective());
-        crate::test_env::set_var("LCTX_DELTA_EXPLICIT", "FALSE");
-        assert!(!on_cfg.delta_explicit_effective());
-
-        // Restore: with the var removed the config field decides again.
-        crate::test_env::remove_var("LCTX_DELTA_EXPLICIT");
-        assert!(on_cfg.delta_explicit_effective());
-        assert!(!off_cfg.delta_explicit_effective());
     }
 
     // --- TOML deserialization ---
@@ -254,12 +178,6 @@ mod delta_explicit_tests {
 
     #[test]
     fn delta_explicit_independent_of_no_degrade() {
-        // Serialize with the env-mutating sibling tests (see effective_false_when_unset).
-        let _lock = crate::core::data_dir::test_env_lock();
-        if std::env::var("LCTX_DELTA_EXPLICIT").is_ok() || std::env::var("LCTX_NO_DEGRADE").is_ok()
-        {
-            return;
-        }
         let cfg = Config {
             delta_explicit: true,
             no_degrade: true,
@@ -386,10 +304,6 @@ mod permission_inheritance_tests {
 
     #[test]
     fn default_is_off() {
-        // Guard against a stray env var leaking into the test process.
-        if std::env::var("LEAN_CTX_PERMISSION_INHERITANCE").is_ok() {
-            return;
-        }
         let cfg = Config::default();
         assert_eq!(
             cfg.permission_inheritance_effective(),
@@ -399,9 +313,6 @@ mod permission_inheritance_tests {
 
     #[test]
     fn config_on() {
-        if std::env::var("LEAN_CTX_PERMISSION_INHERITANCE").is_ok() {
-            return;
-        }
         let cfg = Config {
             permission_inheritance: Some("on".to_string()),
             ..Default::default()
@@ -414,9 +325,6 @@ mod permission_inheritance_tests {
 
     #[test]
     fn unknown_value_falls_back_to_off() {
-        if std::env::var("LEAN_CTX_PERMISSION_INHERITANCE").is_ok() {
-            return;
-        }
         let cfg = Config {
             permission_inheritance: Some("nonsense".to_string()),
             ..Default::default()
@@ -735,11 +643,7 @@ mod max_index_threads_tests {
     }
 
     #[test]
-    fn effective_uses_config_when_env_unset() {
-        // Only meaningful when LEANCTX_INDEX_THREADS is unset; skip otherwise.
-        if std::env::var("LEANCTX_INDEX_THREADS").is_ok() {
-            return;
-        }
+    fn effective_uses_config() {
         let cfg = Config {
             max_index_threads: 4,
             ..Default::default()
@@ -749,9 +653,6 @@ mod max_index_threads_tests {
 
     #[test]
     fn effective_zero_means_no_cap() {
-        if std::env::var("LEANCTX_INDEX_THREADS").is_ok() {
-            return;
-        }
         assert_eq!(Config::default().max_index_threads_effective(), 0);
     }
 }
@@ -828,11 +729,7 @@ mod context_budget_tests {
     }
 
     #[test]
-    fn effective_uses_config_field_when_no_env() {
-        let _lock = crate::core::data_dir::test_env_lock();
-        if std::env::var("LEAN_CTX_CONTEXT_BUDGET_TOKENS").is_ok() {
-            return;
-        }
+    fn effective_uses_config_field() {
         let cfg = Config {
             context: ContextConfig {
                 budget_tokens: 5000,
@@ -841,21 +738,6 @@ mod context_budget_tests {
             ..Default::default()
         };
         assert_eq!(cfg.context_budget_tokens_effective(), 5000);
-    }
-
-    #[test]
-    fn env_overrides_config_budget() {
-        let _lock = crate::core::data_dir::test_env_lock();
-        crate::test_env::set_var("LEAN_CTX_CONTEXT_BUDGET_TOKENS", "1234");
-        let cfg = Config {
-            context: ContextConfig {
-                budget_tokens: 5000,
-                ..Default::default()
-            },
-            ..Default::default()
-        };
-        assert_eq!(cfg.context_budget_tokens_effective(), 1234);
-        crate::test_env::remove_var("LEAN_CTX_CONTEXT_BUDGET_TOKENS");
     }
 
     #[test]

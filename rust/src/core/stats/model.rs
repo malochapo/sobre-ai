@@ -225,11 +225,8 @@ pub struct CostModel {
 
 impl Default for CostModel {
     fn default() -> Self {
-        let env_model = std::env::var("LEAN_CTX_MODEL")
-            .or_else(|_| std::env::var("LCTX_MODEL"))
-            .ok();
         let pricing = crate::core::gain::model_pricing::ModelPricing::load();
-        let quote = pricing.quote(env_model.as_deref());
+        let quote = pricing.quote(None);
         Self {
             input_price_per_m: quote.cost.input_per_m,
             output_price_per_m: quote.cost.output_per_m,

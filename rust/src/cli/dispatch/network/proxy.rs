@@ -106,55 +106,28 @@ fn print_verified_savings(v: &serde_json::Value) {
     );
 }
 
-/// Prints the proxy's live upstreams (from `/status`) and warns when they drift
-/// from what the operator expects. Covers both #449 cases: a shell-exported
-/// `LEAN_CTX_*_UPSTREAM` that never reached the MCP/service-spawned proxy, and a
-/// proxy started with an env override that now masks a later config.toml edit.
+/// Prints the proxy's live upstreams (from `/status`) and warns when one
+/// differs from what config.toml resolves to — the proxy keeps its last good
+/// value when an edit fails validation (#449).
 fn print_live_upstreams_and_drift(v: &serde_json::Value, cfg: &crate::core::config::Config) {
-    use crate::core::config::{
-        ProxyProvider, UpstreamDrift, diagnose_drift, env_upstream_override,
-    };
-
     let Some(up) = v.get("upstreams").and_then(|u| u.as_object()) else {
         return;
     };
-    let disk = cfg.proxy.resolve_all_disk();
+    let configured = cfg.proxy.resolve_all();
     println!("  Upstreams (live):");
     let mut notes = Vec::new();
-    for (label, key, provider, disk_val) in [
-        (
-            "Anthropic",
-            "anthropic",
-            ProxyProvider::Anthropic,
-            &disk.anthropic,
-        ),
-        ("OpenAI", "openai", ProxyProvider::OpenAi, &disk.openai),
-        ("Gemini", "gemini", ProxyProvider::Gemini, &disk.gemini),
+    for (label, key, configured_val) in [
+        ("Anthropic", "anthropic", &configured.anthropic),
+        ("OpenAI", "openai", &configured.openai),
+        ("Gemini", "gemini", &configured.gemini),
     ] {
         let live = up.get(key).and_then(|x| x.as_str()).unwrap_or("?");
         println!("    {label:<10} {live}");
-        if live == "?" {
-            continue;
-        }
-        let env = env_upstream_override(provider);
-        match diagnose_drift(env.as_deref(), disk_val, live) {
-            Some(UpstreamDrift::EnvNotApplied) => {
-                let want = env.as_deref().unwrap_or("");
-                notes.push(format!(
-                    "  \x1b[33m⚠ {label}: LEAN_CTX_{}_UPSTREAM is set in this shell ({want})\x1b[0m\n  \
-                       \x1b[33m  but the running proxy serves {live}. Environment variables do not reach\x1b[0m\n  \
-                       \x1b[33m  an MCP/service-spawned proxy (#449). Persist it — applies live:\x1b[0m\n  \
-                       \x1b[33m    lean-ctx config set proxy.{key}_upstream {want}\x1b[0m",
-                    label.to_uppercase(),
-                ));
-            }
-            Some(UpstreamDrift::ConfigNotApplied) => {
-                notes.push(format!(
-                    "  \x1b[33m⚠ {label}: proxy serves {live} but config.toml resolves to {disk_val}.\x1b[0m\n  \
-                       \x1b[33m  Apply it: lean-ctx proxy restart\x1b[0m",
-                ));
-            }
-            None => {}
+        if live != "?" && crate::core::config::upstream_drifted(configured_val, live) {
+            notes.push(format!(
+                "  \x1b[33m⚠ {label}: proxy serves {live} but config.toml resolves to {configured_val}.\x1b[0m\n  \
+                   \x1b[33m  Check proxy.{key}_upstream, then: lean-ctx proxy restart\x1b[0m",
+            ));
         }
     }
     // Registry providers (enterprise#7): Grok dual-rail and other
@@ -211,40 +184,6 @@ fn print_live_upstreams_and_drift(v: &serde_json::Value, cfg: &crate::core::conf
         );
         println!("  \x1b[33m    lean-ctx config set proxy.allow_custom_upstream true\x1b[0m");
         println!("  \x1b[33m    lean-ctx proxy restart\x1b[0m");
-    }
-}
-
-/// Bridges the shell's `LEAN_CTX_ALLOW_CUSTOM_UPSTREAM` opt-in into `config.toml`
-/// so the managed (LaunchAgent / systemd) proxy — which only reads `config.toml`,
-/// never the shell env — honors a configured custom upstream (#590).
-///
-/// No-op unless all three hold: the env opt-in is present, a custom-host upstream
-/// is actually configured, and `[proxy] allow_custom_upstream` is not already
-/// `true` (idempotent). Returns true when it persisted the flag.
-fn bridge_custom_upstream_optin() -> bool {
-    if std::env::var("LEAN_CTX_ALLOW_CUSTOM_UPSTREAM").is_err() {
-        return false;
-    }
-    let cfg = crate::core::config::Config::load();
-    if cfg.proxy.allow_custom_upstream == Some(true) || !cfg.proxy.has_custom_host_upstream() {
-        return false;
-    }
-    match crate::core::config::Config::update_global(|c| {
-        c.proxy.allow_custom_upstream = Some(true);
-    }) {
-        Ok(_) => {
-            println!(
-                "  \x1b[32m✓\x1b[0m Custom upstream opt-in persisted: [proxy] allow_custom_upstream = true"
-            );
-            println!(
-                "  \x1b[2m  (so the managed proxy honors your custom upstream — the env var never reaches it, #590)\x1b[0m"
-            );
-            true
-        }
-        Err(e) => {
-            tracing::warn!("could not persist allow_custom_upstream: {e}");
-            false
-        }
     }
 }
 
@@ -305,14 +244,10 @@ pub(crate) fn cmd_proxy(rest: &[String]) {
             "restart" => {
                 let port = parse_proxy_port(rest);
                 if crate::proxy_autostart::is_installed() {
-                    // #590: persist the shell's custom-upstream opt-in to config
-                    // before the restart so the re-read picks up the custom host.
-                    bridge_custom_upstream_optin();
                     // Managed service (LaunchAgent / systemd): a clean bootout +
                     // bootstrap restarts the proxy so it re-reads config.toml. It
-                    // deliberately drops any `LEAN_CTX_*_UPSTREAM` env override
-                    // (the service context has none), making config.toml the
-                    // single source of truth for the long-lived proxy (#449).
+                    // makes config.toml the single source of truth for the
+                    // long-lived proxy (#449).
                     crate::proxy_autostart::stop();
                     std::thread::sleep(std::time::Duration::from_millis(700));
                     if crate::proxy_autostart::start_on_port(port) {
@@ -410,11 +345,6 @@ pub(crate) fn cmd_proxy(rest: &[String]) {
                 {
                     tracing::warn!("could not persist proxy_enabled: {e}");
                 }
-
-                // #590: persist the shell's custom-upstream opt-in to config BEFORE
-                // the managed proxy starts, so it reads the flag on startup (the
-                // service never inherits the shell's env var).
-                bridge_custom_upstream_optin();
 
                 let port = crate::proxy_setup::default_port();
                 if !crate::proxy_autostart::install(port, false) {

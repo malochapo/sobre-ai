@@ -162,8 +162,6 @@ mod tests {
         cfg.archive.ephemeral = true;
         cfg.archive.ephemeral_min_tokens = 2000;
         // Env can override ephemeral; clear it for a deterministic test.
-        crate::test_env::remove_var("LEAN_CTX_EPHEMERAL");
-        crate::test_env::remove_var("LEAN_CTX_EPHEMERAL_MIN_TOKENS");
 
         assert!(should_firewall("ctx_shell", 5000, &cfg));
         assert!(!should_firewall("ctx_shell", 1000, &cfg)); // below threshold
@@ -175,7 +173,6 @@ mod tests {
         let _env_lock = crate::core::data_dir::test_env_lock();
         let mut cfg = Config::default();
         cfg.archive.inline_max_bytes = 1024;
-        crate::test_env::remove_var("LEAN_CTX_INLINE_MAX_BYTES");
 
         assert!(should_inline_shell(true, 1024, &cfg));
         assert!(should_inline_shell(true, 0, &cfg));
@@ -187,25 +184,18 @@ mod tests {
         let _env_lock = crate::core::data_dir::test_env_lock();
         let mut cfg = Config::default();
         cfg.archive.inline_max_bytes = 1024;
-        crate::test_env::remove_var("LEAN_CTX_INLINE_MAX_BYTES");
 
         assert!(!should_inline_shell(true, 1025, &cfg));
     }
 
     #[test]
-    fn inline_shell_requires_explicit_request_and_honors_env_cap() {
-        // Sets the env cap to 2048. Unlocked, that leaks into the sibling tests
-        // above, which assert the behaviour with *no* cap set.
-        let _env_lock = crate::core::data_dir::test_env_lock();
+    fn inline_shell_requires_explicit_request_and_honors_configured_cap() {
         let mut cfg = Config::default();
-        cfg.archive.inline_max_bytes = 1024;
-        crate::test_env::set_var("LEAN_CTX_INLINE_MAX_BYTES", "2048");
+        cfg.archive.inline_max_bytes = 2048;
 
         assert!(!should_inline_shell(false, 1, &cfg));
         assert!(should_inline_shell(true, 2048, &cfg));
         assert!(!should_inline_shell(true, 2049, &cfg));
-
-        crate::test_env::remove_var("LEAN_CTX_INLINE_MAX_BYTES");
     }
 
     #[test]

@@ -27,7 +27,7 @@ static IDLE_REPLAY_RUNNING: AtomicBool = AtomicBool::new(false);
 const MIN_INTERVAL_SECS: u64 = 60;
 
 /// Default quiet gap (seconds) after which the next dispatch triggers an idle
-/// replay-consolidation pass (#7). Overridable via `LEAN_CTX_COGNITION_IDLE_SECS`.
+/// replay-consolidation pass (#7).
 const IDLE_REPLAY_SECS: u64 = 300;
 
 /// Resets [`RUNNING`] on drop so a panicking loop can never wedge the guard.
@@ -65,13 +65,9 @@ fn idle_replay_due(now: u64, last_activity: u64, idle_secs: u64) -> bool {
     last_activity != 0 && now.saturating_sub(last_activity) >= idle_secs
 }
 
-/// Quiet-gap threshold for idle replay, env-overridable (must be > 0).
+/// Quiet-gap threshold for idle replay.
 fn idle_replay_secs() -> u64 {
-    std::env::var("LEAN_CTX_COGNITION_IDLE_SECS")
-        .ok()
-        .and_then(|v| v.trim().parse::<u64>().ok())
-        .filter(|v| *v > 0)
-        .unwrap_or(IDLE_REPLAY_SECS)
+    IDLE_REPLAY_SECS
 }
 
 /// Fire the cognition loop in the background when enabled and the configured

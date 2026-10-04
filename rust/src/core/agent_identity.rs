@@ -1,19 +1,11 @@
 use ed25519_dalek::{Signature, Signer, SigningKey, Verifier, VerifyingKey};
 use std::path::{Path, PathBuf};
-use std::sync::OnceLock;
 
-/// Canonical resolver for the current agent identity. Reads `LEAN_CTX_AGENT_ID`
-/// (or legacy `LCTX_AGENT_ID`), falling back to `"local"`. Resolved once per
-/// process and cached, so all subsystems (heatmap, savings ledger, audit)
-/// attribute traces to the same identity.
+/// The agent identity every subsystem (heatmap, savings ledger, audit)
+/// attributes traces to. sobre serves one person on one machine.
 #[must_use]
 pub fn current_agent_id() -> &'static str {
-    static CACHE: OnceLock<String> = OnceLock::new();
-    CACHE.get_or_init(|| {
-        std::env::var("LEAN_CTX_AGENT_ID")
-            .or_else(|_| std::env::var("LCTX_AGENT_ID"))
-            .unwrap_or_else(|_| "local".to_string())
-    })
+    "local"
 }
 
 pub fn get_or_create_keypair(agent_id: &str) -> Result<SigningKey, String> {

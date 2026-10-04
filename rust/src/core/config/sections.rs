@@ -173,27 +173,14 @@ impl Default for ArchiveConfig {
 
 impl ArchiveConfig {
     pub fn ephemeral_effective(&self) -> bool {
-        if let Ok(v) = std::env::var("LEAN_CTX_EPHEMERAL") {
-            return !matches!(v.trim(), "0" | "false" | "off");
-        }
         self.ephemeral && self.enabled
     }
 
     pub fn ephemeral_min_tokens_effective(&self) -> usize {
-        if let Ok(v) = std::env::var("LEAN_CTX_EPHEMERAL_MIN_TOKENS")
-            && let Ok(n) = v.trim().parse::<usize>()
-        {
-            return n;
-        }
         self.ephemeral_min_tokens
     }
 
     pub fn inline_max_bytes_effective(&self) -> usize {
-        if let Ok(v) = std::env::var("LEAN_CTX_INLINE_MAX_BYTES")
-            && let Ok(n) = v.trim().parse::<usize>()
-        {
-            return n;
-        }
         self.inline_max_bytes
     }
 }
@@ -245,8 +232,7 @@ impl Default for AutonomyConfig {
 
 /// Fixed-context budget accounting (#964). The per-session footprint lean-ctx
 /// adds — tool schemas + MCP instructions + auto-loaded rules files + the wakeup
-/// briefing — is warned about once it crosses `budget_tokens`. The
-/// `LEAN_CTX_CONTEXT_BUDGET_TOKENS` env var overrides it; `lean-ctx doctor
+/// briefing — is warned about once it crosses `budget_tokens`. `lean-ctx doctor
 /// overhead --gate` turns a breach into a non-zero exit for CI.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
@@ -283,110 +269,9 @@ impl Default for ContextConfig {
 }
 
 impl AutonomyConfig {
-    /// Creates an autonomy config from env vars, falling back to defaults.
-    pub fn from_env() -> Self {
-        let mut cfg = Self::default();
-        if let Ok(v) = std::env::var("LEAN_CTX_AUTONOMY")
-            && (v == "false" || v == "0")
-        {
-            cfg.enabled = false;
-        }
-        if let Ok(v) = std::env::var("LEAN_CTX_AUTO_PRELOAD") {
-            cfg.auto_preload = v != "false" && v != "0";
-        }
-        if let Ok(v) = std::env::var("LEAN_CTX_AUTO_DEDUP") {
-            cfg.auto_dedup = v != "false" && v != "0";
-        }
-        if let Ok(v) = std::env::var("LEAN_CTX_AUTO_RELATED") {
-            cfg.auto_related = v != "false" && v != "0";
-        }
-        if let Ok(v) = std::env::var("LEAN_CTX_AUTO_CONSOLIDATE") {
-            cfg.auto_consolidate = v != "false" && v != "0";
-        }
-        if let Ok(v) = std::env::var("LEAN_CTX_SILENT_PRELOAD") {
-            cfg.silent_preload = v != "false" && v != "0";
-        }
-        if let Ok(v) = std::env::var("LEAN_CTX_DEDUP_THRESHOLD")
-            && let Ok(n) = v.parse()
-        {
-            cfg.dedup_threshold = n;
-        }
-        if let Ok(v) = std::env::var("LEAN_CTX_CONSOLIDATE_EVERY_CALLS")
-            && let Ok(n) = v.parse()
-        {
-            cfg.consolidate_every_calls = n;
-        }
-        if let Ok(v) = std::env::var("LEAN_CTX_CONSOLIDATE_COOLDOWN_SECS")
-            && let Ok(n) = v.parse()
-        {
-            cfg.consolidate_cooldown_secs = n;
-        }
-        if let Ok(v) = std::env::var("LEAN_CTX_COGNITION_LOOP_ENABLED") {
-            cfg.cognition_loop_enabled = v != "false" && v != "0";
-        }
-        if let Ok(v) = std::env::var("LEAN_CTX_COGNITION_LOOP_INTERVAL_SECS")
-            && let Ok(n) = v.parse()
-        {
-            cfg.cognition_loop_interval_secs = n;
-        }
-        if let Ok(v) = std::env::var("LEAN_CTX_COGNITION_LOOP_MAX_STEPS")
-            && let Ok(n) = v.parse()
-        {
-            cfg.cognition_loop_max_steps = n;
-        }
-        if let Ok(v) = std::env::var("LEAN_CTX_COGNITION_SYNTHESIS_MIN_CLUSTER")
-            && let Ok(n) = v.parse()
-        {
-            cfg.cognition_synthesis_min_cluster = n;
-        }
-        cfg
-    }
-
-    /// Loads autonomy config from disk, with env var overrides applied.
+    /// Loads the autonomy config from disk.
     pub fn load() -> Self {
-        let file_cfg = Config::load().autonomy;
-        let mut cfg = file_cfg;
-        if let Ok(v) = std::env::var("LEAN_CTX_AUTONOMY")
-            && (v == "false" || v == "0")
-        {
-            cfg.enabled = false;
-        }
-        if let Ok(v) = std::env::var("LEAN_CTX_AUTO_PRELOAD") {
-            cfg.auto_preload = v != "false" && v != "0";
-        }
-        if let Ok(v) = std::env::var("LEAN_CTX_AUTO_DEDUP") {
-            cfg.auto_dedup = v != "false" && v != "0";
-        }
-        if let Ok(v) = std::env::var("LEAN_CTX_AUTO_RELATED") {
-            cfg.auto_related = v != "false" && v != "0";
-        }
-        if let Ok(v) = std::env::var("LEAN_CTX_SILENT_PRELOAD") {
-            cfg.silent_preload = v != "false" && v != "0";
-        }
-        if let Ok(v) = std::env::var("LEAN_CTX_DEDUP_THRESHOLD")
-            && let Ok(n) = v.parse()
-        {
-            cfg.dedup_threshold = n;
-        }
-        if let Ok(v) = std::env::var("LEAN_CTX_COGNITION_LOOP_ENABLED") {
-            cfg.cognition_loop_enabled = v != "false" && v != "0";
-        }
-        if let Ok(v) = std::env::var("LEAN_CTX_COGNITION_LOOP_INTERVAL_SECS")
-            && let Ok(n) = v.parse()
-        {
-            cfg.cognition_loop_interval_secs = n;
-        }
-        if let Ok(v) = std::env::var("LEAN_CTX_COGNITION_LOOP_MAX_STEPS")
-            && let Ok(n) = v.parse()
-        {
-            cfg.cognition_loop_max_steps = n;
-        }
-        if let Ok(v) = std::env::var("LEAN_CTX_COGNITION_SYNTHESIS_MIN_CLUSTER")
-            && let Ok(n) = v.parse()
-        {
-            cfg.cognition_synthesis_min_cluster = n;
-        }
-        cfg
+        Config::load().autonomy
     }
 }
 
@@ -640,7 +525,7 @@ impl Default for LoopDetectionConfig {
 /// Semantic-embedding engine settings.
 ///
 /// `model` selects which local ONNX embedding model lean-ctx downloads and uses for
-/// `ctx_semantic_search`. Accepts the same aliases as the `LEAN_CTX_EMBEDDING_MODEL` env
+/// `ctx_semantic_search`. Accepts the model aliases
 /// var: `minilm` (all-MiniLM-L6-v2, 384d — the default), `nomic` (768d) — or any
 /// HuggingFace repo with an ONNX export via `hf:org/repo[@revision]` (GL #397), e.g.
 /// `hf:jinaai/jina-embeddings-v2-base-code` for code-specialized embeddings. When the
@@ -660,16 +545,14 @@ pub struct EmbeddingConfig {
     /// Allow downloading the embedding model on first semantic need (#551).
     /// `None` (unset) means **allowed** — the soft default that activates the
     /// semantic features without manual setup. Set `false` for air-gapped
-    /// machines. The `LEAN_CTX_EMBEDDINGS_AUTO_DOWNLOAD` env var, when set,
-    /// overrides this in either direction.
+    /// machines.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub auto_download: Option<bool>,
     /// Pin embedding inference to a single CPU thread (no GPU EP) so vectors are
     /// bit-identical across machines, not just run-to-run on one host (#895).
     /// `None`/`false` keeps the multi-threaded GPU-capable path. Extractive prose
     /// ranking is already deterministic via score quantization + stable tiebreak;
-    /// this flag is the extra hardening for cross-machine reproducibility. The
-    /// `LEAN_CTX_EMBEDDING_DETERMINISTIC` env var overrides this either way.
+    /// this flag is the extra hardening for cross-machine reproducibility.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub deterministic: Option<bool>,
 }

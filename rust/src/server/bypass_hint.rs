@@ -159,12 +159,6 @@ fn is_read_grep_tool(tool_name: Option<&String>) -> bool {
 }
 
 fn effective_mode() -> String {
-    if let Ok(v) = std::env::var("LEAN_CTX_BYPASS_HINTS") {
-        let v = v.trim().to_lowercase();
-        if matches!(v.as_str(), "off" | "on" | "aggressive") {
-            return v;
-        }
-    }
     let cfg = crate::core::config::Config::load();
     cfg.bypass_hints.as_deref().unwrap_or("on").to_lowercase()
 }

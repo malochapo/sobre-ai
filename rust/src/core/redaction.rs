@@ -340,6 +340,9 @@ mod tests {
 
     #[test]
     fn config_exclude_patterns_reuses_compiled_regexes_when_config_unchanged() {
+        // Hold the env lock: a parallel test pointing the config dir elsewhere
+        // would legitimately invalidate the cache between the two reads.
+        let _lock = crate::core::data_dir::test_env_lock();
         let first = config_exclude_patterns();
         let second = config_exclude_patterns();
         assert!(

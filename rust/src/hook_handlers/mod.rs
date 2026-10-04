@@ -64,14 +64,7 @@ fn is_disabled() -> bool {
     std::env::var("LEAN_CTX_DISABLED").is_ok()
 }
 
-fn is_harden_active() -> bool {
-    matches!(std::env::var("LEAN_CTX_HARDEN"), Ok(v) if v.trim() == "1")
-}
-
 fn is_shadow_mode_active() -> bool {
-    if matches!(std::env::var("LEAN_CTX_SHADOW"), Ok(v) if v.trim() == "1") {
-        return true;
-    }
     crate::core::config::Config::load().shadow_mode
 }
 

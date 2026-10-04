@@ -289,28 +289,21 @@ fn ensure_target_allowed(link_path: &Path, real_target: &Path) -> Result<(), Str
          - point the agent at the real path (set CLAUDE_CONFIG_DIR / CODEX_HOME), or\n    \
          - move the target under $HOME, or\n    \
          - add its parent to `allow_symlink_roots` in your lean-ctx config \
-         (or the LEAN_CTX_ALLOW_SYMLINK_ROOTS env var).",
+.",
         link_path.display(),
         real_target.display()
     ))
 }
 
 /// Trusted roots OUTSIDE `$HOME` the user explicitly opted into for symlinked
-/// agent configs (#596). Sourced from the `LEAN_CTX_ALLOW_SYMLINK_ROOTS` env var
-/// (path-list separator) and the `allow_symlink_roots` config key. Each entry is made absolute + canonicalized so
-/// the boundary check compares real paths; relative/empty entries are dropped.
+/// agent configs (#596), from the `allow_symlink_roots` config key. Each entry
+/// is made absolute + canonicalized so the boundary check compares real paths;
+/// relative/empty entries are dropped.
 fn allowed_symlink_roots() -> Vec<PathBuf> {
-    let mut raw: Vec<PathBuf> = Vec::new();
-    if let Some(env) = std::env::var_os("LEAN_CTX_ALLOW_SYMLINK_ROOTS") {
-        raw.extend(std::env::split_paths(&env));
-    }
-    raw.extend(
-        crate::core::config::Config::load()
-            .allow_symlink_roots
-            .into_iter()
-            .map(PathBuf::from),
-    );
-    raw.into_iter()
+    crate::core::config::Config::load()
+        .allow_symlink_roots
+        .into_iter()
+        .map(PathBuf::from)
         .filter(|p| !p.as_os_str().is_empty() && p.is_absolute())
         .map(|p| crate::core::pathutil::canonicalize_secure_or_self(&p))
         .collect()
@@ -560,29 +553,11 @@ mod symlink_596_tests {
         );
     }
 
-    /// RAII override of `LEAN_CTX_ALLOW_SYMLINK_ROOTS` (restores on drop).
-    struct AllowRootsGuard(Option<std::ffi::OsString>);
-    impl AllowRootsGuard {
-        fn set(value: &std::ffi::OsStr) -> Self {
-            let prev = std::env::var_os("LEAN_CTX_ALLOW_SYMLINK_ROOTS");
-            crate::test_env::set_var("LEAN_CTX_ALLOW_SYMLINK_ROOTS", value);
-            AllowRootsGuard(prev)
-        }
-    }
-    impl Drop for AllowRootsGuard {
-        fn drop(&mut self) {
-            match self.0.take() {
-                Some(v) => crate::test_env::set_var("LEAN_CTX_ALLOW_SYMLINK_ROOTS", v),
-                None => crate::test_env::remove_var("LEAN_CTX_ALLOW_SYMLINK_ROOTS"),
-            }
-        }
-    }
-
     #[test]
     fn allows_symlink_escape_when_target_root_is_allowlisted() {
         // #596 premium: an out-of-$HOME target IS written through once its root
-        // is explicitly opted into via LEAN_CTX_ALLOW_SYMLINK_ROOTS.
-        let _lock = crate::core::data_dir::test_env_lock();
+        // is explicitly opted into via `allow_symlink_roots` in config.toml.
+        let iso = crate::core::data_dir::isolated_data_dir();
         let home = tempfile::tempdir().unwrap();
         let outside = tempfile::tempdir().unwrap();
         let _home = HomeGuard::set(home.path());
@@ -594,7 +569,14 @@ mod symlink_596_tests {
         let link = home.path().join(".agent.json");
         symlink(&target, &link).unwrap();
 
-        let _roots = AllowRootsGuard::set(real_outside.as_os_str());
+        std::fs::write(
+            iso.path().join("config.toml"),
+            format!(
+                "allow_symlink_roots = [{:?}]\n",
+                real_outside.to_string_lossy()
+            ),
+        )
+        .unwrap();
         write_atomic(&link, "{\"k\":1}\n").unwrap();
 
         assert_eq!(std::fs::read_to_string(&target).unwrap(), "{\"k\":1}\n");

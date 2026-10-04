@@ -579,8 +579,6 @@ mod tests {
 
     #[test]
     fn repeated_calls_trigger_reduced() {
-        let _lock = crate::core::data_dir::test_env_lock();
-        crate::test_env::set_var("LEAN_CTX_META", "1");
         let cfg = LoopDetectionConfig::default();
         let mut detector = LoopDetector::with_config(&cfg);
         for _ in 0..cfg.normal_threshold {
@@ -588,8 +586,6 @@ mod tests {
         }
         let result = detector.record_call("ctx_read", "same_fp");
         assert_eq!(result.level, ThrottleLevel::Reduced);
-        assert!(result.message.is_some());
-        crate::test_env::remove_var("LEAN_CTX_META");
     }
 
     #[test]

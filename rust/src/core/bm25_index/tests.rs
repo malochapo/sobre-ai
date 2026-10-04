@@ -375,10 +375,8 @@ fn shrink_resident_trims_long_bodies_keeps_short_and_flags() {
 
 #[test]
 fn shrink_resident_is_not_persisted_to_disk() {
-    let _env = crate::core::data_dir::test_env_lock();
-    let data_dir = tempdir().expect("data_dir");
-    crate::test_env::set_var("LEAN_CTX_DATA_DIR", data_dir.path());
-    crate::test_env::set_var("LEAN_CTX_BM25_MAX_CACHE_MB", "512");
+    let iso = crate::core::data_dir::isolated_data_dir();
+    std::fs::write(iso.path().join("config.toml"), "bm25_max_cache_mb = 512\n").unwrap();
     let td = tempdir().expect("tempdir");
     let root = td.path();
     std::fs::write(
@@ -414,21 +412,18 @@ fn shrink_resident_is_not_persisted_to_disk() {
         .max()
         .unwrap();
     assert_eq!(max_lines, full_lines, "reload restores full content");
-
-    crate::test_env::remove_var("LEAN_CTX_BM25_MAX_CACHE_MB");
-    crate::test_env::remove_var("LEAN_CTX_DATA_DIR");
 }
 
 #[test]
 fn load_quarantines_oversized_index() {
-    let _env = crate::core::data_dir::test_env_lock();
+    let iso = crate::core::data_dir::isolated_data_dir();
+    std::fs::write(iso.path().join("config.toml"), "bm25_max_cache_mb = 0\n").unwrap();
     let td = tempdir().expect("tempdir");
     let root = td.path();
     let dir = crate::core::index_namespace::vectors_dir(root);
     std::fs::create_dir_all(&dir).expect("create vectors dir");
 
     let index_path = dir.join("bm25_index.json");
-    crate::test_env::set_var("LEAN_CTX_BM25_MAX_CACHE_MB", "0");
     std::fs::write(&index_path, r#"{"chunks":[]}"#).expect("write index");
 
     let result = BM25Index::load(root);
@@ -441,16 +436,12 @@ fn load_quarantines_oversized_index() {
         dir.join("bm25_index.json.quarantined").exists(),
         "quarantined file should exist"
     );
-
-    crate::test_env::remove_var("LEAN_CTX_BM25_MAX_CACHE_MB");
 }
 
 #[test]
 fn save_refuses_oversized_output() {
-    let _env = crate::core::data_dir::test_env_lock();
-    let data_dir = tempdir().expect("data_dir");
-    crate::test_env::set_var("LEAN_CTX_DATA_DIR", data_dir.path());
-    crate::test_env::set_var("LEAN_CTX_BM25_MAX_CACHE_MB", "0");
+    let iso = crate::core::data_dir::isolated_data_dir();
+    std::fs::write(iso.path().join("config.toml"), "bm25_max_cache_mb = 0\n").unwrap();
 
     let td = tempdir().expect("tempdir");
     let root = td.path();
@@ -480,16 +471,12 @@ fn save_refuses_oversized_output() {
         !index_path.exists(),
         "save should refuse to persist oversized index"
     );
-
-    crate::test_env::remove_var("LEAN_CTX_BM25_MAX_CACHE_MB");
 }
 
 #[test]
 fn save_reports_persisted_outcome() {
-    let _env = crate::core::data_dir::test_env_lock();
-    let data_dir = tempdir().expect("data_dir");
-    crate::test_env::set_var("LEAN_CTX_DATA_DIR", data_dir.path());
-    crate::test_env::set_var("LEAN_CTX_BM25_MAX_CACHE_MB", "512");
+    let iso = crate::core::data_dir::isolated_data_dir();
+    std::fs::write(iso.path().join("config.toml"), "bm25_max_cache_mb = 512\n").unwrap();
     let td = tempdir().expect("tempdir");
     let root = td.path();
     std::fs::write(root.join("a.rs"), "pub fn alpha() {}\n").expect("write");
@@ -504,19 +491,15 @@ fn save_reports_persisted_outcome() {
             panic!("expected Persisted, got {outcome:?}")
         }
     }
-
-    crate::test_env::remove_var("LEAN_CTX_BM25_MAX_CACHE_MB");
-    crate::test_env::remove_var("LEAN_CTX_DATA_DIR");
 }
 
 #[test]
-fn persist_ceiling_honors_env_override() {
+fn persist_ceiling_honors_configured_value() {
     // The public ceiling accessor (shared with doctor) must honor an explicit
     // override exactly, so operators can size it to their monorepo.
-    let _env = crate::core::data_dir::test_env_lock();
-    crate::test_env::set_var("LEAN_CTX_BM25_MAX_CACHE_MB", "777");
+    let iso = crate::core::data_dir::isolated_data_dir();
+    std::fs::write(iso.path().join("config.toml"), "bm25_max_cache_mb = 777\n").unwrap();
     assert_eq!(persist_ceiling_bytes(), 777 * 1024 * 1024);
-    crate::test_env::remove_var("LEAN_CTX_BM25_MAX_CACHE_MB");
 }
 
 #[test]
@@ -526,7 +509,6 @@ fn save_writes_project_root_marker() {
     let root = td.path();
     std::fs::write(root.join("a.rs"), "pub fn a() {}\n").expect("write");
 
-    crate::test_env::remove_var("LEAN_CTX_BM25_MAX_CACHE_MB");
     let index = BM25Index::build_from_directory(root);
     index.save(root).expect("save");
 
@@ -539,10 +521,8 @@ fn save_writes_project_root_marker() {
 
 #[test]
 fn save_load_roundtrip_uses_zstd() {
-    let _env = crate::core::data_dir::test_env_lock();
-    let data_dir = tempdir().expect("data_dir");
-    crate::test_env::set_var("LEAN_CTX_DATA_DIR", data_dir.path());
-    crate::test_env::set_var("LEAN_CTX_BM25_MAX_CACHE_MB", "512");
+    let iso = crate::core::data_dir::isolated_data_dir();
+    std::fs::write(iso.path().join("config.toml"), "bm25_max_cache_mb = 512\n").unwrap();
     let td = tempdir().expect("tempdir");
     let root = td.path();
 
@@ -572,17 +552,12 @@ fn save_load_roundtrip_uses_zstd() {
     let loaded = BM25Index::load(root).expect("load compressed index");
     assert_eq!(loaded.doc_count, index.doc_count);
     assert_eq!(loaded.chunks.len(), index.chunks.len());
-
-    crate::test_env::remove_var("LEAN_CTX_BM25_MAX_CACHE_MB");
-    crate::test_env::remove_var("LEAN_CTX_DATA_DIR");
 }
 
 #[test]
 fn auto_migrate_bin_to_zst() {
-    let _env = crate::core::data_dir::test_env_lock();
-    let data_dir = tempdir().expect("data_dir");
-    crate::test_env::set_var("LEAN_CTX_DATA_DIR", data_dir.path());
-    crate::test_env::set_var("LEAN_CTX_BM25_MAX_CACHE_MB", "512");
+    let iso = crate::core::data_dir::isolated_data_dir();
+    std::fs::write(iso.path().join("config.toml"), "bm25_max_cache_mb = 512\n").unwrap();
     let td = tempdir().expect("tempdir");
     let root = td.path();
 
@@ -604,9 +579,6 @@ fn auto_migrate_bin_to_zst() {
         !dir.join("bm25_index.bin").exists(),
         ".bin should be removed"
     );
-
-    crate::test_env::remove_var("LEAN_CTX_BM25_MAX_CACHE_MB");
-    crate::test_env::remove_var("LEAN_CTX_DATA_DIR");
 }
 
 #[test]

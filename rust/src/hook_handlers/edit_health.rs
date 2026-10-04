@@ -55,9 +55,8 @@ pub(super) fn maybe_emit(input: &str) {
 }
 
 /// Check if `additionalContext` injection is enabled (opt-in, default off).
-/// Env `LEAN_CTX_INJECT_CONTEXT=1` force-enables for debugging.
 fn inject_context_enabled() -> bool {
-    std::env::var("LEAN_CTX_INJECT_CONTEXT").is_ok() || Config::load().code_health.inject_context
+    Config::load().code_health.inject_context
 }
 
 /// Persist a health notice to `ctx_knowledge` so the agent sees it on the next
@@ -366,16 +365,6 @@ mod tests {
     fn inject_context_disabled_by_default() {
         // #778: with default config, inject_context is false → no stdout emission
         let _lock = crate::core::data_dir::test_env_lock();
-        crate::test_env::remove_var("LEAN_CTX_INJECT_CONTEXT");
         assert!(!inject_context_enabled());
-    }
-
-    #[test]
-    fn inject_context_enabled_via_env() {
-        // #778: env override forces injection (for debugging/opt-in)
-        let _lock = crate::core::data_dir::test_env_lock();
-        crate::test_env::set_var("LEAN_CTX_INJECT_CONTEXT", "1");
-        assert!(inject_context_enabled());
-        crate::test_env::remove_var("LEAN_CTX_INJECT_CONTEXT");
     }
 }

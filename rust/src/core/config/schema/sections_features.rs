@@ -83,38 +83,34 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
     );
     autonomy.insert(
         "cognition_loop_enabled".into(),
-        key_with_env(
+        key(
             "bool",
             serde_json::json!(cfg.autonomy.cognition_loop_enabled),
             "Enable the background cognition loop (periodic knowledge consolidation)",
-            "LEAN_CTX_COGNITION_LOOP_ENABLED",
         ),
     );
     autonomy.insert(
         "cognition_loop_interval_secs".into(),
-        key_with_env(
+        key(
             "u64",
             serde_json::json!(cfg.autonomy.cognition_loop_interval_secs),
             "Seconds between cognition loop iterations",
-            "LEAN_CTX_COGNITION_LOOP_INTERVAL_SECS",
         ),
     );
     autonomy.insert(
         "cognition_loop_max_steps".into(),
-        key_with_env(
+        key(
             "u8",
             serde_json::json!(cfg.autonomy.cognition_loop_max_steps),
             "Maximum steps per cognition loop iteration (>= 9 enables observation synthesis)",
-            "LEAN_CTX_COGNITION_LOOP_MAX_STEPS",
         ),
     );
     autonomy.insert(
         "cognition_synthesis_min_cluster".into(),
-        key_with_env(
+        key(
             "usize",
             serde_json::json!(cfg.autonomy.cognition_synthesis_min_cluster),
             "Minimum facts per entity before observation synthesis writes a summary (needs cognition_loop_max_steps >= 9)",
-            "LEAN_CTX_COGNITION_SYNTHESIS_MIN_CLUSTER",
         ),
     );
     sections.insert(
@@ -187,11 +183,10 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
     let mut context = BTreeMap::new();
     context.insert(
         "budget_tokens".into(),
-        key_with_env(
+        key(
             "usize",
             serde_json::json!(cfg.context.budget_tokens),
             "Fixed per-session context budget (tool schemas + MCP instructions + auto-loaded rules + wakeup briefing). `doctor overhead` warns past this; `doctor overhead --gate` exits non-zero for CI. 0 disables the warning",
-            "LEAN_CTX_CONTEXT_BUDGET_TOKENS",
         ),
     );
     context.insert(

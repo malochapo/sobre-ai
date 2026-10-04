@@ -28,8 +28,7 @@ pub struct ProxyConfig {
     /// gateway in front of the provider API. Opt-in; see
     /// [`ProxyConfig::allows_custom_upstream`]. Mirrors `allow_insecure_http_upstream`
     /// so the long-lived managed proxy (LaunchAgent / systemd), which only reads
-    /// `config.toml` and never the shell's `LEAN_CTX_ALLOW_CUSTOM_UPSTREAM`, can
-    /// honor a custom upstream too (#590).
+    /// `config.toml`, can honor a custom upstream too (#590).
     pub allow_custom_upstream: Option<bool>,
     /// Inject `stream_options.include_usage = true` into streamed OpenAI Chat
     /// Completions so the final chunk reports real token usage for the measured
@@ -59,7 +58,7 @@ pub struct ProxyConfig {
     /// content on every request. `false` turns it off so the proxy can run
     /// **meter-only** — real billed/cache token metering with zero request
     /// rewriting (combine with `history_mode = "off"` and no `role_aggressiveness`
-    /// for a fully byte-unchanged body). Env `LEAN_CTX_PROXY_LIVE_COMPRESS`.
+    /// for a fully byte-unchanged body).
     /// See [`ProxyConfig::live_compresses`].
     pub live_compress: Option<bool>,
     /// Per-tool exclusion list for live tool-result compression (#481). Tool
@@ -158,7 +157,7 @@ pub struct ProxyConfig {
     /// changes. lean-ctx translates it to each provider's native parameter and
     /// only ever *fills* it (never overrides a client-set value), on models that
     /// accept it. Per-turn effort switching is deliberately unsupported — it
-    /// would invalidate the prompt cache. Env `LEAN_CTX_PROXY_EFFORT`. See
+    /// would invalidate the prompt cache. See
     /// [`ProxyConfig::resolved_effort`].
     pub effort: Option<String>,
     /// How the proxy squeezes prose it must shrink (#895): `"auto"` (default) and
@@ -167,8 +166,7 @@ pub struct ProxyConfig {
     /// engine is available, falling back to truncation otherwise; `"truncate"`
     /// keeps the original deterministic FIFO squeeze (and no engine). Wire
     /// rewrites are memoized per content so the engine's cold→warm transition
-    /// never changes an already-emitted frozen-region rewrite (#448/#498). Env
-    /// `LEAN_CTX_PROXY_PROSE_RANKER`. See [`ProxyConfig::resolved_prose_ranker`].
+    /// never changes an already-emitted frozen-region rewrite (#448/#498). See [`ProxyConfig::resolved_prose_ranker`].
     pub prose_ranker: Option<String>,
     /// Fraction `0.0..=1.0` of conversations placed in the output-savings control
     /// arm (#895 Track B). `0` (default) = no holdout (every conversation is
@@ -177,7 +175,7 @@ pub struct ProxyConfig {
     /// output-shaping (effort control + verbosity steer) but is still metered —
     /// giving an honest measured output-token reduction. The cohort is a pure
     /// function of conversation identity, so a conversation stays in one arm
-    /// across turns (cache-safe). Env `LEAN_CTX_PROXY_OUTPUT_HOLDOUT`. See
+    /// across turns (cache-safe). See
     /// [`ProxyConfig::output_holdout_fraction`].
     pub output_holdout: Option<f64>,
     /// Opt-in cache-safe wire verbosity steer (#895). When `true`, the proxy
@@ -185,18 +183,17 @@ pub struct ProxyConfig {
     /// of each request (output-shaping for non-rules-aware API clients). The
     /// suffix is constant and appended strictly after the last `cache_control`
     /// breakpoint, so the provider prompt-cache prefix stays byte-stable. Default
-    /// `false`. Env `LEAN_CTX_PROXY_VERBOSITY_STEER`. See
+    /// `false`. See
     /// [`ProxyConfig::verbosity_steer_enabled`].
     pub verbosity_steer: Option<bool>,
     /// Unified proxy operation mode (`[proxy] proxy_mode`). `"cache"` (default)
     /// or `"token"`. Sets sensible defaults for all cache-related knobs; explicit
-    /// per-knob overrides always win. Env `LEAN_CTX_PROXY_MODE`.
+    /// per-knob overrides always win.
     pub proxy_mode: Option<String>,
     /// Headroom stacking compatibility (`[proxy] compat_stack`). When set to
     /// `"headroom"`, the proxy auto-configures for running behind Headroom:
     /// live compression off, breakpoint injection off, cache alignment on.
     /// Also auto-detected via the `X-Headroom-Compressed` request header.
-    /// Env `LEAN_CTX_PROXY_COMPAT_STACK`.
     pub compat_stack: Option<String>,
     /// Active request routing (`[proxy.routing]`, enterprise#13): model aliases
     /// and intent-tier downgrades applied in the forward path. Off by default —
@@ -557,13 +554,11 @@ pub enum HistoryMode {
 }
 
 impl ProxyConfig {
-    /// Resolved proxy mode. `LEAN_CTX_PROXY_MODE` env wins, then config, then `Cache`.
+    /// Resolved proxy mode: config, then `Cache`.
     #[must_use]
     pub fn resolved_proxy_mode(&self) -> ProxyMode {
-        let raw = std::env::var("LEAN_CTX_PROXY_MODE")
-            .ok()
-            .or_else(|| self.proxy_mode.clone());
-        raw.as_deref()
+        self.proxy_mode
+            .as_deref()
             .and_then(ProxyMode::parse)
             .unwrap_or(ProxyMode::Cache)
     }
@@ -571,22 +566,16 @@ impl ProxyConfig {
     /// Whether a Headroom-compatible stack is configured.
     #[must_use]
     pub fn is_headroom_compat(&self) -> bool {
-        let raw = std::env::var("LEAN_CTX_PROXY_COMPAT_STACK")
-            .ok()
-            .or_else(|| self.compat_stack.clone());
-        raw.as_deref()
+        self.compat_stack
+            .as_deref()
             .is_some_and(|s| s.trim().eq_ignore_ascii_case("headroom"))
     }
 
-    /// Resolved history mode: `LEAN_CTX_PROXY_HISTORY_MODE` env var wins,
-    /// then `[proxy].history_mode` in config.toml, then cache-aware.
-    /// Unknown values fall back to the default so a typo can never silently
-    /// re-enable the cache-hostile rolling mode.
+    /// Resolved history mode: `[proxy].history_mode` in config.toml, then
+    /// cache-aware. Unknown values fall back to the default so a typo can never
+    /// silently re-enable the cache-hostile rolling mode.
     pub fn resolved_history_mode(&self) -> HistoryMode {
-        let raw = std::env::var("LEAN_CTX_PROXY_HISTORY_MODE")
-            .ok()
-            .or_else(|| self.history_mode.clone());
-        if let Some(mode) = raw.as_deref().map(str::trim) {
+        if let Some(mode) = self.history_mode.as_deref().map(str::trim) {
             if mode.eq_ignore_ascii_case("rolling") {
                 return HistoryMode::Rolling;
             }
@@ -617,17 +606,13 @@ impl ProxyConfig {
             .map(str::to_lowercase)
     }
 
-    /// Resolved prose-ranker strategy (#895). Precedence: the
-    /// `LEAN_CTX_PROXY_PROSE_RANKER` env var, then `[proxy] prose_ranker` in
+    /// Resolved prose-ranker strategy (#895): `[proxy] prose_ranker` in
     /// config.toml, then `Auto`. Unknown values resolve to `Auto` so a typo can
     /// never silently disable the premium path; `"truncate"`/`"off"` selects the
     /// legacy squeeze.
     #[must_use]
     pub fn resolved_prose_ranker(&self) -> ProseRanker {
-        let raw = std::env::var("LEAN_CTX_PROXY_PROSE_RANKER")
-            .ok()
-            .or_else(|| self.prose_ranker.clone());
-        match raw.as_deref().map(str::trim) {
+        match self.prose_ranker.as_deref().map(str::trim) {
             Some(s) if s.eq_ignore_ascii_case("truncate") || s.eq_ignore_ascii_case("off") => {
                 ProseRanker::Truncate
             }
@@ -637,32 +622,16 @@ impl ProxyConfig {
     }
 
     /// Resolved output-savings holdout fraction (#895 Track B), clamped to
-    /// `[0,1]`. Precedence: `LEAN_CTX_PROXY_OUTPUT_HOLDOUT` env > `[proxy]
-    /// output_holdout` > `0.0` (no holdout). An unparseable/blank env value is
-    /// ignored so a typo can never silently change the experiment fraction.
+    /// `[0,1]`: `[proxy] output_holdout`, else `0.0` (no holdout).
     #[must_use]
     pub fn output_holdout_fraction(&self) -> f64 {
-        let from_env = std::env::var("LEAN_CTX_PROXY_OUTPUT_HOLDOUT")
-            .ok()
-            .and_then(|v| v.trim().parse::<f64>().ok());
-        from_env
-            .or(self.output_holdout)
-            .unwrap_or(0.0)
-            .clamp(0.0, 1.0)
+        self.output_holdout.unwrap_or(0.0).clamp(0.0, 1.0)
     }
 
-    /// Whether the cache-safe wire verbosity steer (#895) is enabled. Precedence:
-    /// `LEAN_CTX_PROXY_VERBOSITY_STEER` env (`1`/`true`/`on`) > `[proxy]
-    /// verbosity_steer` > `false` (off).
+    /// Whether the cache-safe wire verbosity steer (#895) is enabled:
+    /// `[proxy] verbosity_steer`, else the proxy-mode preset (off).
     #[must_use]
     pub fn verbosity_steer_enabled(&self) -> bool {
-        if let Ok(raw) = std::env::var("LEAN_CTX_PROXY_VERBOSITY_STEER") {
-            let v = raw.trim();
-            return v.eq_ignore_ascii_case("1")
-                || v.eq_ignore_ascii_case("true")
-                || v.eq_ignore_ascii_case("on")
-                || v.eq_ignore_ascii_case("yes");
-        }
         if let Some(v) = self.verbosity_steer {
             return v;
         }
@@ -673,13 +642,8 @@ impl ProxyConfig {
 
     /// Whether the opt-in cold-prefix repack (#480) is enabled. A wrong "cold"
     /// guess re-bills cache reads as writes (~12x), so this is off by default and
-    /// must be explicitly enabled. `LEAN_CTX_PROXY_COLD_PREFIX_REPACK` (any
-    /// value) wins, then `[proxy] cold_prefix_repack` in config.toml, else
-    /// `false`.
+    /// must be explicitly enabled via `[proxy] cold_prefix_repack`.
     pub fn repacks_cold_prefix(&self) -> bool {
-        if std::env::var("LEAN_CTX_PROXY_COLD_PREFIX_REPACK").is_ok() {
-            return true;
-        }
         if let Some(v) = self.cold_prefix_repack {
             return v;
         }
@@ -690,22 +654,17 @@ impl ProxyConfig {
 
     /// Whether opt-in in-band CCR retrieval (#493) is enabled. Off by default:
     /// the splice mutates provider-visible conversation content for the one turn
-    /// the model asks to expand, so it must be an explicit opt-in.
-    /// `LEAN_CTX_PROXY_CCR_INBAND` (any value) wins, then `[proxy] ccr_inband` in
-    /// config.toml, else `false`.
+    /// the model asks to expand, so it must be an explicit opt-in
+    /// (`[proxy] ccr_inband`).
     pub fn ccr_inband_enabled(&self) -> bool {
-        std::env::var("LEAN_CTX_PROXY_CCR_INBAND").is_ok() || self.ccr_inband.unwrap_or(false)
+        self.ccr_inband.unwrap_or(false)
     }
 
     /// Whether opt-in Anthropic prompt-cache breakpoint injection (#939) is
     /// enabled. Off by default: it mutates the provider-visible `system` shape
-    /// (string → cache-marked block array), so it must be an explicit opt-in.
-    /// `LEAN_CTX_PROXY_CACHE_BREAKPOINT` (any value) wins, then `[proxy]
-    /// cache_breakpoint` in config.toml, else `false`.
+    /// (string → cache-marked block array), so it must be an explicit opt-in
+    /// (`[proxy] cache_breakpoint`).
     pub fn cache_breakpoint_enabled(&self) -> bool {
-        if std::env::var("LEAN_CTX_PROXY_CACHE_BREAKPOINT").is_ok() {
-            return true;
-        }
         if let Some(v) = self.cache_breakpoint {
             return v;
         }
@@ -720,33 +679,26 @@ impl ProxyConfig {
     /// Whether opt-in counterfactual savings metering (#701) is enabled. Off by
     /// default: it fires one extra (free) Anthropic `count_tokens` call per
     /// rewritten request — pure telemetry, but extra latency budget and
-    /// rate-limit surface, so it must be an explicit opt-in.
-    /// `LEAN_CTX_PROXY_COUNTERFACTUAL` (any value) wins, then `[proxy]
-    /// counterfactual_metering` in config.toml, else `false`.
+    /// rate-limit surface, so it must be an explicit opt-in
+    /// (`[proxy] counterfactual_metering`).
     pub fn counterfactual_metering_enabled(&self) -> bool {
-        std::env::var("LEAN_CTX_PROXY_COUNTERFACTUAL").is_ok()
-            || self.counterfactual_metering.unwrap_or(false)
+        self.counterfactual_metering.unwrap_or(false)
     }
 
     /// Whether opt-in cache-aligner volatile-field telemetry (#940) is enabled.
     /// On by default (#986 premium defaults): the scan is pure measurement and
     /// never mutates the body, so every proxy ships cache-leak visibility out of
-    /// the box. Strictly cache-safe. `LEAN_CTX_PROXY_CACHE_ALIGNER=on|off` wins,
-    /// then `[proxy] cache_aligner` in config.toml, else `true`. Opt **out** only
-    /// to drop the per-request system-prompt scan.
+    /// the box. Strictly cache-safe. Opt **out** (`[proxy] cache_aligner =
+    /// false`) only to drop the per-request system-prompt scan.
     pub fn cache_aligner_enabled(&self) -> bool {
-        env_bool_or("LEAN_CTX_PROXY_CACHE_ALIGNER", self.cache_aligner, true)
+        self.cache_aligner.unwrap_or(true)
     }
 
     /// Whether opt-in active cache-aligner relocate (#974) is enabled. Off by
     /// default: it reshapes the provider-visible `system` field (moving volatile
-    /// values to an uncached tail block), so it must be an explicit opt-in.
-    /// `LEAN_CTX_PROXY_CACHE_ALIGN_RELOCATE` (any value) wins, then `[proxy]
-    /// cache_align_relocate` in config.toml, else `false`.
+    /// values to an uncached tail block), so it must be an explicit opt-in
+    /// (`[proxy] cache_align_relocate`).
     pub fn cache_align_relocate_enabled(&self) -> bool {
-        if std::env::var("LEAN_CTX_PROXY_CACHE_ALIGN_RELOCATE").is_ok() {
-            return true;
-        }
         if let Some(v) = self.cache_align_relocate {
             return v;
         }
@@ -762,49 +714,26 @@ impl ProxyConfig {
     /// telemetry plus the net-cost repack gate. Both are strictly safe
     /// (measurement + a more-conservative repack that never busts a cache the
     /// default kept), so this is **on by default** — every proxy gets the
-    /// diagnosis and the safer repack out of the box.
-    /// `LEAN_CTX_PROXY_CACHE_POLICY=on|off` wins, then `[proxy] cache_policy` in
-    /// config.toml, else `true`. Opt out to keep `/status` free of the attribution
-    /// gauges and skip the per-request prefix hash.
+    /// diagnosis and the safer repack out of the box. Opt out (`[proxy]
+    /// cache_policy = false`) to keep `/status` free of the attribution gauges
+    /// and skip the per-request prefix hash.
     pub fn cache_policy_enabled(&self) -> bool {
-        env_bool_or("LEAN_CTX_PROXY_CACHE_POLICY", self.cache_policy, true)
+        self.cache_policy.unwrap_or(true)
     }
 
     /// Resolved cross-provider reasoning effort (#834), or `None` when the
     /// feature is off (the default — a strict no-op that preserves the
-    /// byte-unchanged meter-only path). Precedence: `LEAN_CTX_PROXY_EFFORT` env
-    /// (`off` disables, a valid level wins, an unparseable/blank value is
-    /// ignored) > `[proxy] effort` in config.toml. Any unknown value resolves to
-    /// `None` so a typo can never silently enable reasoning steering.
+    /// byte-unchanged meter-only path), set by `[proxy] effort`. Any unknown
+    /// value resolves to `None` so a typo can never silently enable reasoning
+    /// steering.
     #[must_use]
     pub fn resolved_effort(&self) -> Option<super::Effort> {
-        if let Ok(raw) = std::env::var("LEAN_CTX_PROXY_EFFORT") {
-            let trimmed = raw.trim();
-            if trimmed.eq_ignore_ascii_case("off") {
-                return None;
-            }
-            if let Some(effort) = super::Effort::parse(trimmed) {
-                return Some(effort);
-            }
-            // Blank/unknown env → ignore and fall through to config, mirroring
-            // `live_compresses` so a typo never flips the configured behaviour.
-        }
         self.effort.as_deref().and_then(super::Effort::parse)
     }
 
     /// Whether the proxy live-compresses non-protected `tool_result` content
-    /// (#481). `LEAN_CTX_PROXY_LIVE_COMPRESS` (`0`/`false`/`off`/`no` → off,
-    /// `1`/`true`/`on`/`yes` → on) wins, then `[proxy] live_compress` in
-    /// config.toml, else `true`. An unparseable/blank env value is ignored so a
-    /// typo can never silently flip the mode.
+    /// (#481): `[proxy] live_compress` in config.toml, else on.
     pub fn live_compresses(&self) -> bool {
-        if let Ok(raw) = std::env::var("LEAN_CTX_PROXY_LIVE_COMPRESS") {
-            match raw.trim().to_ascii_lowercase().as_str() {
-                "0" | "false" | "off" | "no" => return false,
-                "1" | "true" | "on" | "yes" => return true,
-                _ => {}
-            }
-        }
         if let Some(v) = self.live_compress {
             return v;
         }
@@ -870,24 +799,13 @@ impl ProxyConfig {
 
     /// Resolved prose-compression aggressiveness for `role`, clamped to `[0,1]`,
     /// or `None` when prose compression is off for that role (the default).
-    ///
-    /// Precedence: the role's env override (`LEAN_CTX_PROXY_SYSTEM_AGGR` /
-    /// `LEAN_CTX_PROXY_USER_AGGR`) wins, then `[proxy.role_aggressiveness]` in
-    /// config.toml. An unparseable or blank env value is ignored so a typo can
-    /// never silently disable the configured behaviour.
+    /// Set by `[proxy.role_aggressiveness]` in config.toml.
     #[must_use]
     pub fn resolved_role_aggressiveness(&self, role: ProseRole) -> Option<f64> {
-        let (env_var, configured) = match role {
-            ProseRole::System => (
-                "LEAN_CTX_PROXY_SYSTEM_AGGR",
-                self.role_aggressiveness.system,
-            ),
-            ProseRole::User => ("LEAN_CTX_PROXY_USER_AGGR", self.role_aggressiveness.user),
+        let resolved = match role {
+            ProseRole::System => self.role_aggressiveness.system,
+            ProseRole::User => self.role_aggressiveness.user,
         };
-        let from_env = std::env::var(env_var)
-            .ok()
-            .and_then(|v| v.trim().parse::<f64>().ok());
-        let resolved = from_env.or(configured);
         if resolved.is_some() {
             return resolved.map(|a| a.clamp(0.0, 1.0));
         }
@@ -900,29 +818,20 @@ impl ProxyConfig {
     /// Whether a non-loopback plaintext `http://` upstream is allowed. Opt-in
     /// only — a deliberate downgrade for a trusted local-network service such as
     /// `http://host.docker.internal:2455` in front of codex-lb (#440).
-    /// `LEAN_CTX_ALLOW_INSECURE_HTTP_UPSTREAM` (any value) wins, then
     /// `[proxy] allow_insecure_http_upstream` in config.toml, default `false`.
     pub fn allows_insecure_http_upstream(&self) -> bool {
-        std::env::var("LEAN_CTX_ALLOW_INSECURE_HTTP_UPSTREAM").is_ok()
-            || self.allow_insecure_http_upstream.unwrap_or(false)
+        self.allow_insecure_http_upstream.unwrap_or(false)
     }
 
     /// Whether a custom (non-allowlisted) HTTPS upstream host is allowed. Opt-in
     /// only — lifting the built-in host allowlist points the proxy at a host you
     /// control (e.g. a corporate gateway), so it must be deliberate.
-    /// `LEAN_CTX_ALLOW_CUSTOM_UPSTREAM` (any value) wins, then
     /// `[proxy] allow_custom_upstream` in config.toml, default `false`.
-    ///
-    /// Unlike the env var, the **config flag reaches the managed (service-spawned)
-    /// proxy**, which only reads `config.toml` — that is the whole point of #590:
-    /// `proxy enable`/`restart` start the proxy via launchd/systemd, which never
-    /// inherits the shell's `LEAN_CTX_ALLOW_CUSTOM_UPSTREAM`.
     pub fn allows_custom_upstream(&self) -> bool {
-        std::env::var("LEAN_CTX_ALLOW_CUSTOM_UPSTREAM").is_ok()
-            || self.allow_custom_upstream.unwrap_or(false)
+        self.allow_custom_upstream.unwrap_or(false)
     }
 
-    /// True when any `*_upstream` configured in `config.toml` (env-independent) is a
+    /// True when any `*_upstream` configured in `config.toml` is a
     /// custom HTTPS host outside the built-in allowlist — i.e. one that resolves
     /// only with the [`Self::allows_custom_upstream`] opt-in. Plaintext-HTTP custom
     /// hosts are governed by `allow_insecure_http_upstream` instead, so they are
@@ -942,55 +851,29 @@ impl ProxyConfig {
         .any(|u| is_custom_upstream_host(&u))
     }
 
-    /// `(env var, configured value, provider default)` for one provider.
-    fn provider_spec(&self, provider: ProxyProvider) -> (&'static str, Option<&str>, &'static str) {
+    /// `(configured value, provider default)` for one provider.
+    fn provider_spec(&self, provider: ProxyProvider) -> (Option<&str>, &'static str) {
         match provider {
             ProxyProvider::Anthropic => (
-                "LEAN_CTX_ANTHROPIC_UPSTREAM",
                 self.anthropic_upstream.as_deref(),
                 "https://api.anthropic.com",
             ),
-            ProxyProvider::OpenAi => (
-                "LEAN_CTX_OPENAI_UPSTREAM",
-                self.openai_upstream.as_deref(),
-                "https://api.openai.com",
-            ),
+            ProxyProvider::OpenAi => (self.openai_upstream.as_deref(), "https://api.openai.com"),
             ProxyProvider::Gemini => (
-                "LEAN_CTX_GEMINI_UPSTREAM",
                 self.gemini_upstream.as_deref(),
                 "https://generativelanguage.googleapis.com",
             ),
         }
     }
 
-    /// Resolve one upstream with precedence `LEAN_CTX_*_UPSTREAM` env var >
-    /// `[proxy].*_upstream` (config.toml) > provider default.
-    ///
+    /// Resolve one upstream: `[proxy].*_upstream` (config.toml) > provider
+    /// default.
     /// Returns `Err` when a value is *present but invalid* so a live reload can
     /// keep the last good value instead of silently rerouting to the default; an
     /// *absent* value resolves to the provider default (`Ok`).
     fn resolve_upstream_checked(&self, provider: ProxyProvider) -> Result<String, String> {
-        self.resolve_upstream_inner(provider, true)
-    }
-
-    /// Shared resolver for [`resolve_upstream_checked`] and the disk-only view.
-    /// `use_env = false` ignores the `LEAN_CTX_*_UPSTREAM` override and yields
-    /// the config.toml truth a freshly (re)started managed proxy would serve.
-    fn resolve_upstream_inner(
-        &self,
-        provider: ProxyProvider,
-        use_env: bool,
-    ) -> Result<String, String> {
-        let (env_var, config_val, default) = self.provider_spec(provider);
-        let env_val = if use_env {
-            std::env::var(env_var)
-                .ok()
-                .and_then(|v| normalize_url_opt(&v))
-        } else {
-            None
-        };
-        let candidate = env_val.or_else(|| config_val.and_then(normalize_url_opt));
-        match candidate {
+        let (config_val, default) = self.provider_spec(provider);
+        match config_val.and_then(normalize_url_opt) {
             None => Ok(normalize_url(default)),
             Some(url) => validate_upstream_url(
                 &url,
@@ -1000,20 +883,20 @@ impl ProxyConfig {
         }
     }
 
-    /// Effective upstream for a provider (env > config > default). An invalid
-    /// configured/env value falls back to the provider default (logged) — the
+    /// Effective upstream for a provider (config > default). An invalid
+    /// configured value falls back to the provider default (logged) — the
     /// safe choice at startup.
     pub fn resolve_upstream(&self, provider: ProxyProvider) -> String {
         match self.resolve_upstream_checked(provider) {
             Ok(url) => url,
             Err(e) => {
                 tracing::warn!("upstream validation failed, using default: {e}");
-                normalize_url(self.provider_spec(provider).2)
+                normalize_url(self.provider_spec(provider).1)
             }
         }
     }
 
-    /// Resolve all three upstreams at once (startup snapshot, env-aware).
+    /// Resolve all three upstreams at once.
     pub fn resolve_all(&self) -> Upstreams {
         Upstreams {
             anthropic: self.resolve_upstream(ProxyProvider::Anthropic),
@@ -1103,24 +986,8 @@ impl ProxyConfig {
         out
     }
 
-    /// Resolve all upstreams from config.toml only (ignoring `LEAN_CTX_*` env) —
-    /// the values a freshly (re)started managed proxy would serve. Used by
-    /// status/doctor to detect drift from a running proxy's live upstream (#449).
-    pub fn resolve_all_disk(&self) -> Upstreams {
-        let pick = |provider: ProxyProvider| {
-            self.resolve_upstream_inner(provider, false)
-                .unwrap_or_else(|_| normalize_url(self.provider_spec(provider).2))
-        };
-        Upstreams {
-            anthropic: pick(ProxyProvider::Anthropic),
-            openai: pick(ProxyProvider::OpenAi),
-            gemini: pick(ProxyProvider::Gemini),
-            providers: self.resolve_providers(),
-        }
-    }
-
     /// Re-resolve upstreams for a *running* proxy (#449). For any provider whose
-    /// currently configured/env value fails validation, the last good value is
+    /// currently configured value fails validation, the last good value is
     /// kept instead of rerouting live traffic to the provider default — so a typo
     /// in config.toml can never silently redirect in-flight requests.
     pub fn refresh_upstreams(&self, last: &Upstreams) -> Upstreams {
@@ -1171,62 +1038,12 @@ pub enum ProxyProvider {
     Gemini,
 }
 
-/// Why a running proxy's live upstream differs from what the operator expects.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum UpstreamDrift {
-    /// A `LEAN_CTX_*_UPSTREAM` env var is set in *this* process but the proxy
-    /// serves a different value — the env never reached the MCP/service-spawned
-    /// proxy. This is the #449 trap: Codex (and other MCP hosts) launch the
-    /// server with a stripped, allowlisted env that omits `LEAN_CTX_*_UPSTREAM`,
-    /// so the proxy it spawns never sees it. Fix: persist it to config.toml,
-    /// which the proxy reads live.
-    EnvNotApplied,
-    /// The proxy serves a value other than config.toml resolves to: it was
-    /// started with an env override that now masks a later config edit. Fix:
-    /// `lean-ctx proxy restart`.
-    ConfigNotApplied,
-}
-
-/// The `LEAN_CTX_*_UPSTREAM` override visible to *this* process for a provider,
-/// normalized (`None` if unset/blank). Lets status/doctor explain why an env var
-/// a user exported in their shell never reaches an MCP/service-spawned proxy.
-pub fn env_upstream_override(provider: ProxyProvider) -> Option<String> {
-    let var = match provider {
-        ProxyProvider::Anthropic => "LEAN_CTX_ANTHROPIC_UPSTREAM",
-        ProxyProvider::OpenAi => "LEAN_CTX_OPENAI_UPSTREAM",
-        ProxyProvider::Gemini => "LEAN_CTX_GEMINI_UPSTREAM",
-    };
-    std::env::var(var).ok().and_then(|v| normalize_url_opt(&v))
-}
-
-/// Diagnose upstream drift for one provider from the CLI-visible env override
-/// (`env`), the config.toml value (`disk`) and the proxy's live value (`live`).
-/// `None` means in sync.
-pub fn diagnose_drift(env: Option<&str>, disk: &str, live: &str) -> Option<UpstreamDrift> {
-    if let Some(env) = env {
-        // An env override is present in this process: the proxy honours it only
-        // if it was started with it. If the proxy serves something else, the env
-        // never reached it (#449). If it matches, that is consistent (no drift).
-        return (env != live).then_some(UpstreamDrift::EnvNotApplied);
-    }
-    // No env override here: the proxy should mirror config.toml.
-    (disk != live).then_some(UpstreamDrift::ConfigNotApplied)
-}
-
-/// Resolve a tri-state boolean toggle for the default-**on** proxy features: an
-/// explicit `on`/`off`-style environment variable wins, then the config
-/// `Option<bool>`, else `default`. Lets an operator force a feature on **or** off
-/// from the shell; an unparseable value is ignored so a typo can never silently
-/// flip it (mirrors [`ProxyConfig::live_compresses`]).
-fn env_bool_or(env_key: &str, configured: Option<bool>, default: bool) -> bool {
-    if let Ok(raw) = std::env::var(env_key) {
-        match raw.trim().to_ascii_lowercase().as_str() {
-            "1" | "true" | "yes" | "on" => return true,
-            "0" | "false" | "no" | "off" => return false,
-            _ => {}
-        }
-    }
-    configured.unwrap_or(default)
+/// True when a running proxy's live upstream differs from what config.toml
+/// resolves to. The proxy keeps its last good value when a config edit fails
+/// validation, so this flags an invalid upstream that never took effect.
+#[must_use]
+pub fn upstream_drifted(configured: &str, live: &str) -> bool {
+    configured != live
 }
 
 /// Built-in default live-compress exclusion (#481). Serena's code-reading tools
@@ -1276,8 +1093,7 @@ pub(super) fn validate_upstream_url(
 
     // A non-loopback plaintext `http://` upstream is reachable only through the
     // explicit opt-in (#440). The old code rejected it on the HTTPS check *before*
-    // any override could apply, and pointed at `LEAN_CTX_ALLOW_CUSTOM_UPSTREAM`,
-    // which never lifted the scheme restriction. Handle it up front: the opt-in
+    // any override could apply. Handle it up front: the opt-in
     // implies a deliberate custom host on a trusted local network, so it needs no
     // separate allowlist check; otherwise give a hint that actually works.
     if normalized.starts_with("http://") {
@@ -1286,8 +1102,7 @@ pub(super) fn validate_upstream_url(
         }
         return Err(format!(
             "upstream URL must use HTTPS: {normalized} (for a trusted local-network HTTP \
-             upstream opt in with LEAN_CTX_ALLOW_INSECURE_HTTP_UPSTREAM=1 or \
-             `[proxy] allow_insecure_http_upstream = true`)"
+             upstream opt in with `[proxy] allow_insecure_http_upstream = true`)"
         ));
     }
     let Some(host_segment) = normalized.strip_prefix("https://") else {
@@ -1303,8 +1118,7 @@ pub(super) fn validate_upstream_url(
     } else {
         Err(format!(
             "upstream host '{host_no_port}' not in allowlist {ALLOWED_UPSTREAM_HOSTS:?} (for a \
-             custom upstream host opt in with LEAN_CTX_ALLOW_CUSTOM_UPSTREAM=1 or \
-             `[proxy] allow_custom_upstream = true`)"
+             custom upstream host opt in with `[proxy] allow_custom_upstream = true`)"
         ))
     }
 }

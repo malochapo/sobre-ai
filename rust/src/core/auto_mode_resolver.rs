@@ -691,7 +691,6 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("lctx-amr-sf-{}", std::process::id()));
         let _ = std::fs::create_dir_all(&dir);
         crate::test_env::set_var("LEAN_CTX_DATA_DIR", dir.to_str().unwrap());
-        crate::test_env::set_var("LEAN_CTX_STRUCTURE_FIRST", "1");
 
         let suspect = AutoModeContext {
             path: "src/versioncmp.c",
@@ -711,7 +710,6 @@ mod tests {
         };
         assert_eq!(resolve(&tiny).mode, "full");
 
-        crate::test_env::remove_var("LEAN_CTX_STRUCTURE_FIRST");
         crate::test_env::remove_var("LEAN_CTX_DATA_DIR");
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -725,8 +723,6 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("lctx-amr-det-{}", std::process::id()));
         let _ = std::fs::create_dir_all(&dir);
         crate::test_env::set_var("LEAN_CTX_DATA_DIR", dir.to_str().unwrap());
-        crate::test_env::remove_var("LEAN_CTX_AUTO_MODE_LEARNING");
-        crate::test_env::remove_var("LEAN_CTX_STRUCTURE_FIRST");
 
         let ctx = AutoModeContext {
             path: "src/widget.rs",
@@ -742,17 +738,5 @@ mod tests {
 
         crate::test_env::remove_var("LEAN_CTX_DATA_DIR");
         let _ = std::fs::remove_dir_all(&dir);
-    }
-
-    /// #683: the `LEAN_CTX_AUTO_MODE_LEARNING` env var gates the adaptive block
-    /// and wins over the (default-off) config field.
-    #[test]
-    fn auto_mode_learning_env_opt_in_is_honored() {
-        let _lock = crate::core::data_dir::test_env_lock();
-        crate::test_env::set_var("LEAN_CTX_AUTO_MODE_LEARNING", "1");
-        assert!(crate::core::config::Config::default().auto_mode_learning_effective());
-        crate::test_env::set_var("LEAN_CTX_AUTO_MODE_LEARNING", "0");
-        assert!(!crate::core::config::Config::default().auto_mode_learning_effective());
-        crate::test_env::remove_var("LEAN_CTX_AUTO_MODE_LEARNING");
     }
 }

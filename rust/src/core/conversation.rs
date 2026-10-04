@@ -51,7 +51,7 @@
 //! which chat a direct `ctx_read` belongs to, and withholding under concurrency
 //! stays the correct ceiling until the host adds per-call identity.
 //!
-//! Disabled with `LEAN_CTX_CONVERSATION_SCOPE=0` (falls back to the legacy
+//! (Previously disabled with an env switch, falling back to the legacy
 //! process-scoped behavior).
 
 use std::sync::OnceLock;
@@ -86,16 +86,7 @@ fn seen_store() -> &'static RwLock<Vec<(String, Instant)>> {
 }
 
 pub(crate) fn scope_enabled() -> bool {
-    static ENABLED: OnceLock<bool> = OnceLock::new();
-    *ENABLED.get_or_init(|| {
-        !matches!(
-            std::env::var("LEAN_CTX_CONVERSATION_SCOPE")
-                .ok()
-                .as_deref()
-                .map(str::trim),
-            Some("0" | "false" | "off")
-        )
-    })
+    true
 }
 
 /// Pure core of [`subagent_scope`] — split out so the derivation is unit-testable

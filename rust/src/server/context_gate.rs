@@ -549,7 +549,7 @@ mod tests {
     // --- pressure_downgrade unit tests (pure function) ---
 
     // --- pre_dispatch_inner: no_degrade integration ---
-    // When LCTX_NO_DEGRADE is NOT set (test default), pressure downgrade is active.
+    // With no_degrade off (the default), pressure downgrade is active.
 
     // --- estimate_read_tokens unit tests ---
 

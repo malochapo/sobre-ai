@@ -26,7 +26,7 @@ pub enum JailState {
     /// Fully enforced: tools are confined to the project root (+ any configured
     /// `allow_paths`/`extra_roots`), with no blanket relaxation active.
     Enforced,
-    /// Enforced, but widened by one or more knobs (e.g. `LEAN_CTX_ALLOW_PATH`,
+    /// Enforced, but widened by one or more knobs (e.g. `allow_paths`,
     /// `extra_roots`, IDE-config dirs). Carries the source labels for display.
     Relaxed(Vec<String>),
     /// Disabled outright — every tool path is allowed. Carries the knob that

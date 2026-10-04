@@ -27,22 +27,36 @@ use lean_ctx::shell_hook::{Style, install_all, install_all_with_style, uninstall
 /// both modes.
 static HOME_LOCK: Mutex<()> = Mutex::new(());
 
+/// `install_all*` only touches the rc files of shells installed on this host
+/// (`shell_available` checks the usual zsh/bash paths). These tests validate
+/// the cross-file install logic for both shells, so they need both present.
+fn host_has_zsh_and_bash() -> bool {
+    let any = |paths: &[&str]| paths.iter().any(|p| Path::new(p).exists());
+    any(&[
+        "/bin/zsh",
+        "/usr/bin/zsh",
+        "/usr/local/bin/zsh",
+        "/opt/homebrew/bin/zsh",
+    ]) && any(&[
+        "/bin/bash",
+        "/usr/bin/bash",
+        "/usr/local/bin/bash",
+        "/opt/homebrew/bin/bash",
+    ])
+}
+
 fn with_home<F: FnOnce(&Path)>(f: F) {
+    if !host_has_zsh_and_bash() {
+        eprintln!("SKIP: install_all tests need both zsh and bash installed on this host");
+        return;
+    }
     let _guard = HOME_LOCK
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
     let tmp = tempfile::tempdir().expect("tempdir");
     let prev = std::env::var_os("HOME");
-    let prev_force = std::env::var_os("LEAN_CTX_SHELL_HOOK_FORCE");
     // SAFETY: serialised via HOME_LOCK.
     unsafe { std::env::set_var("HOME", tmp.path()) };
-    // These tests validate the cross-file *install logic*, not host shell
-    // detection (which has its own unit test). CI runners may lack zsh, so force
-    // both shells "available" to keep the assertions host-independent.
-    // SAFETY: the project's test suite always runs with `--test-threads=1`
-    // (env-race legacy — see .github/workflows/ci.yml), so no other test in
-    // this binary touches the environment concurrently.
-    unsafe { std::env::set_var("LEAN_CTX_SHELL_HOOK_FORCE", "all") };
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| f(tmp.path())));
     match prev {
         // SAFETY: the project's test suite always runs with `--test-threads=1`
@@ -53,16 +67,6 @@ fn with_home<F: FnOnce(&Path)>(f: F) {
         // (env-race legacy — see .github/workflows/ci.yml), so no other test in
         // this binary touches the environment concurrently.
         None => unsafe { std::env::remove_var("HOME") },
-    }
-    match prev_force {
-        // SAFETY: the project's test suite always runs with `--test-threads=1`
-        // (env-race legacy — see .github/workflows/ci.yml), so no other test in
-        // this binary touches the environment concurrently.
-        Some(v) => unsafe { std::env::set_var("LEAN_CTX_SHELL_HOOK_FORCE", v) },
-        // SAFETY: the project's test suite always runs with `--test-threads=1`
-        // (env-race legacy — see .github/workflows/ci.yml), so no other test in
-        // this binary touches the environment concurrently.
-        None => unsafe { std::env::remove_var("LEAN_CTX_SHELL_HOOK_FORCE") },
     }
     if let Err(p) = result {
         std::panic::resume_unwind(p);

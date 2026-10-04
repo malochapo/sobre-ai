@@ -1,7 +1,6 @@
 //! Opt-in human-readable debug log of intercepted tool activity (#520).
-//!
-//! Off by default. Enable with the `LEAN_CTX_DEBUG_LOG` env var (truthy) or the
-//! `debug_log = true` config key. Records two kinds of events to
+//! Off by default. Enable with the `debug_log = true` config key. Records
+//! two kinds of events to
 //! `<state_dir>/logs/debug.log`:
 //!
 //! 1. **MCP tool calls** handled by the lean-ctx server (`ctx_*`) — tool name, a
@@ -51,17 +50,9 @@ impl Route {
 }
 
 /// Whether the opt-in debug log is active.
-///
-/// The env var wins over config so a user can flip it per-session
-/// (`LEAN_CTX_DEBUG_LOG=1`) without editing config; the `debug_log` config key
-/// makes it persistent and is what hook subprocesses read when the IDE does not
-/// export the env var into the hook environment.
+/// Set by the `debug_log` config key, which hook subprocesses read too.
 #[must_use]
 pub fn is_enabled() -> bool {
-    if let Ok(v) = std::env::var("LEAN_CTX_DEBUG_LOG") {
-        let v = v.trim().to_ascii_lowercase();
-        return !matches!(v.as_str(), "" | "0" | "false" | "off" | "no");
-    }
     crate::core::config::Config::load().debug_log
 }
 
@@ -129,7 +120,7 @@ pub fn read_log(tail_lines: usize) -> String {
     };
     if !path.exists() {
         return format!(
-            "No debug-log entries yet. Enable with `LEAN_CTX_DEBUG_LOG=1` or \
+            "No debug-log entries yet. Enable with \
              `lean-ctx config set debug_log true`, then re-run your tool calls.\nPath: {}",
             path.display()
         );
@@ -243,17 +234,13 @@ fn append(message: &str) {
 mod tests {
     use super::*;
 
-    fn enabled_guard() {
-        crate::test_env::set_var("LEAN_CTX_DEBUG_LOG", "1");
-    }
-    fn disable_guard() {
-        crate::test_env::remove_var("LEAN_CTX_DEBUG_LOG");
+    fn enable(iso: &crate::core::data_dir::IsolatedDataDir) {
+        std::fs::write(iso.path().join("config.toml"), "debug_log = true\n").unwrap();
     }
 
     #[test]
     fn disabled_by_default_writes_nothing() {
         let iso = crate::core::data_dir::isolated_data_dir();
-        disable_guard();
         // Config default is `debug_log = false`, so nothing should be written.
         log_mcp_call("ctx_read", None, "hello", 5, 0, Duration::from_millis(1));
         let path = iso.path().join("logs").join("debug.log");
@@ -261,9 +248,9 @@ mod tests {
     }
 
     #[test]
-    fn env_enables_and_records_mcp_call() {
-        let _iso = crate::core::data_dir::isolated_data_dir();
-        enabled_guard();
+    fn config_enables_and_records_mcp_call() {
+        let iso = crate::core::data_dir::isolated_data_dir();
+        enable(&iso);
         let mut args = Map::new();
         args.insert("path".into(), Value::String("src/main.rs".into()));
         args.insert("mode".into(), Value::String("full".into()));
@@ -283,13 +270,12 @@ mod tests {
         assert!(content.contains("mode=\"full\""), "arg summary");
         assert!(content.contains("saved≈87 tok"), "savings");
         assert!(content.contains("1234B"), "byte size");
-        disable_guard();
     }
 
     #[test]
     fn redacts_secrets_in_args_and_results() {
-        let _iso = crate::core::data_dir::isolated_data_dir();
-        enabled_guard();
+        let iso = crate::core::data_dir::isolated_data_dir();
+        enable(&iso);
         let secret = "token=ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
         let mut args = Map::new();
         args.insert("command".into(), Value::String(secret.into()));
@@ -302,13 +288,12 @@ mod tests {
             !content.contains("ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"),
             "raw secret must not be written"
         );
-        disable_guard();
     }
 
     #[test]
     fn hook_decision_records_route_and_reason() {
-        let _iso = crate::core::data_dir::isolated_data_dir();
-        enabled_guard();
+        let iso = crate::core::data_dir::isolated_data_dir();
+        enable(&iso);
 
         log_hook_decision(
             "rewrite",
@@ -328,7 +313,6 @@ mod tests {
         let content = std::fs::read_to_string(log_path().unwrap()).unwrap();
         assert!(content.contains("hook rewrite Bash -> lean-ctx (rewritable): cat foo.rs"));
         assert!(content.contains("hook redirect Read -> native (sensitive path): /etc/passwd"));
-        disable_guard();
     }
 
     #[test]
@@ -351,8 +335,8 @@ mod tests {
 
     #[test]
     fn rotates_when_file_exceeds_max() {
-        let _iso = crate::core::data_dir::isolated_data_dir();
-        enabled_guard();
+        let iso = crate::core::data_dir::isolated_data_dir();
+        enable(&iso);
         let path = log_path().unwrap();
         // Sparse file of MAX+1 bytes: metadata().len() reports the size without
         // actually writing 5 MiB to disk.
@@ -365,6 +349,5 @@ mod tests {
         assert!(rotated_path(&path).exists(), "backup debug.log.1 created");
         let fresh = std::fs::read_to_string(&path).unwrap();
         assert!(fresh.contains("after rotation"), "new log started");
-        disable_guard();
     }
 }

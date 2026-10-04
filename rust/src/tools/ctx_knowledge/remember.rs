@@ -60,7 +60,7 @@ pub(crate) fn handle_remember(
         return format!(
             "Skipped [{cat}] {k}: salience {salience} below admission floor {floor}. \
              Rephrase with more signal, or lower the floor \
-             (memory.admission.min_salience / LEAN_CTX_ADMISSION_MIN_SALIENCE)."
+             (memory.admission.min_salience)."
         );
     }
 
@@ -600,7 +600,7 @@ pub(crate) fn rehydrate_from_archives(
     // so a recall miss can recover from any archive still on disk instead of only
     // the newest few that the prior fixed cap left reachable.
     let archives = crate::core::memory_lifecycle::reachable_archives(
-        &crate::core::memory_archive::ArchiveConfig::from_env(),
+        &crate::core::memory_archive::ArchiveConfig::default(),
     );
     if archives.is_empty() {
         return false;

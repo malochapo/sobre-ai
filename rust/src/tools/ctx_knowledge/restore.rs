@@ -266,7 +266,7 @@ pub(crate) fn run_restore(
     project_root: &str,
     opts: &RestoreOptions,
 ) -> Result<RestoreReport, String> {
-    let cfg = ArchiveConfig::from_env();
+    let cfg = ArchiveConfig::default();
     let query = opts.query.clone();
     let want = |s: MemoryStore| opts.stores.contains(&s);
 

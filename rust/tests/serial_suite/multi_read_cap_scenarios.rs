@@ -1,12 +1,9 @@
-use std::sync::Mutex;
-
 use lean_ctx::core::cache::SessionCache;
 use lean_ctx::tools::CrpMode;
 use lean_ctx::tools::impl_multi_read;
 
-/// `LCTX_MAX_MULTI_READ_BYTES` is process-global, so tests that mutate it must
-/// not run concurrently or they clobber each other's value. Serialize them.
-static ENV_GUARD: Mutex<()> = Mutex::new(());
+/// The multi-read output cap (512 KiB, a fixed constant).
+const CAP_BYTES: usize = 512 * 1024;
 
 fn setup_test_files(count: usize, size_per_file: usize) -> (tempfile::TempDir, Vec<String>) {
     let dir = tempfile::tempdir().unwrap();
@@ -22,14 +19,8 @@ fn setup_test_files(count: usize, size_per_file: usize) -> (tempfile::TempDir, V
 
 #[test]
 fn multi_read_respects_output_cap() {
-    let _guard = ENV_GUARD
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
-    // SAFETY: the project's test suite always runs with `--test-threads=1`
-    // (env-race legacy — see .github/workflows/ci.yml), so no other test in
-    // this binary touches the environment concurrently.
-    unsafe { std::env::set_var("LCTX_MAX_MULTI_READ_BYTES", "10000") };
-    let (_dir, paths) = setup_test_files(20, 5000);
+    // 20 files of CAP/10 bytes each: twice the cap in total.
+    let (_dir, paths) = setup_test_files(20, CAP_BYTES / 10);
 
     let mut cache = SessionCache::new();
     let output = impl_multi_read::handle_with_task_fresh(
@@ -50,21 +41,10 @@ fn multi_read_respects_output_cap() {
         output.contains("file(s) skipped"),
         "must report skipped files"
     );
-    // SAFETY: the project's test suite always runs with `--test-threads=1`
-    // (env-race legacy — see .github/workflows/ci.yml), so no other test in
-    // this binary touches the environment concurrently.
-    unsafe { std::env::remove_var("LCTX_MAX_MULTI_READ_BYTES") };
 }
 
 #[test]
 fn multi_read_no_cap_when_under_limit() {
-    let _guard = ENV_GUARD
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
-    // SAFETY: the project's test suite always runs with `--test-threads=1`
-    // (env-race legacy — see .github/workflows/ci.yml), so no other test in
-    // this binary touches the environment concurrently.
-    unsafe { std::env::set_var("LCTX_MAX_MULTI_READ_BYTES", "1000000") };
     let (_dir, paths) = setup_test_files(3, 100);
 
     let mut cache = SessionCache::new();
@@ -82,17 +62,10 @@ fn multi_read_no_cap_when_under_limit() {
         "should not cap when under limit"
     );
     assert!(output.contains("Read 3 files"), "should read all files");
-    // SAFETY: the project's test suite always runs with `--test-threads=1`
-    // (env-race legacy — see .github/workflows/ci.yml), so no other test in
-    // this binary touches the environment concurrently.
-    unsafe { std::env::remove_var("LCTX_MAX_MULTI_READ_BYTES") };
 }
 
 #[test]
 fn multi_read_empty_paths() {
-    let _guard = ENV_GUARD
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
     let mut cache = SessionCache::new();
     let output =
         impl_multi_read::handle_with_task_fresh(&mut cache, &[], "full", false, CrpMode::Off, None);
@@ -101,14 +74,8 @@ fn multi_read_empty_paths() {
 
 #[test]
 fn multi_read_single_large_file_passes() {
-    let _guard = ENV_GUARD
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
-    // SAFETY: the project's test suite always runs with `--test-threads=1`
-    // (env-race legacy — see .github/workflows/ci.yml), so no other test in
-    // this binary touches the environment concurrently.
-    unsafe { std::env::set_var("LCTX_MAX_MULTI_READ_BYTES", "100000") };
-    let (_dir, paths) = setup_test_files(1, 50000);
+    // One file larger than the whole cap.
+    let (_dir, paths) = setup_test_files(1, CAP_BYTES + 50_000);
 
     let mut cache = SessionCache::new();
     let output = impl_multi_read::handle_with_task_fresh(
@@ -128,8 +95,4 @@ fn multi_read_single_large_file_passes() {
         !output.contains("Output capped"),
         "single file should not trigger cap"
     );
-    // SAFETY: the project's test suite always runs with `--test-threads=1`
-    // (env-race legacy — see .github/workflows/ci.yml), so no other test in
-    // this binary touches the environment concurrently.
-    unsafe { std::env::remove_var("LCTX_MAX_MULTI_READ_BYTES") };
 }

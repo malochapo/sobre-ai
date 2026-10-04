@@ -6,14 +6,10 @@ use crate::core::tokens::count_tokens;
 /// is unchanged while a pathological session can no longer crowd out the task.
 pub const DEFAULT_ACTIVE_SESSION_BUDGET: usize = 800;
 
-/// Effective ACTIVE SESSION token budget (`LEAN_CTX_ACTIVE_SESSION_BUDGET` overrides).
+/// Effective ACTIVE SESSION token budget.
 #[must_use]
 pub fn active_session_budget() -> usize {
-    std::env::var("LEAN_CTX_ACTIVE_SESSION_BUDGET")
-        .ok()
-        .and_then(|v| v.parse().ok())
-        .filter(|&n| n > 0)
-        .unwrap_or(DEFAULT_ACTIVE_SESSION_BUDGET)
+    DEFAULT_ACTIVE_SESSION_BUDGET
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -46,9 +42,6 @@ impl LitmProfile {
     pub const DEFAULT: Self = Self::GPT;
 
     pub fn from_client_name(client: &str) -> Self {
-        if let Ok(override_val) = std::env::var("LEAN_CTX_LITM_PROFILE") {
-            return Self::from_name(&override_val);
-        }
         let lower = client.to_lowercase();
         if lower.contains("claude") || lower.contains("cursor") {
             Self::CLAUDE

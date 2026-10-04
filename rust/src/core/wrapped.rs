@@ -51,12 +51,8 @@ impl WrappedReport {
         };
         let bounce_tokens = crate::core::savings_ledger::bounce_tokens(period_days);
         let tokens_saved = gross_tokens_saved.saturating_sub(bounce_tokens);
-
-        let env_model = std::env::var("LEAN_CTX_MODEL")
-            .or_else(|_| std::env::var("LCTX_MODEL"))
-            .ok();
         let pricing = crate::core::gain::model_pricing::ModelPricing::load();
-        let quote = pricing.quote(env_model.as_deref());
+        let quote = pricing.quote(None);
         // Saved tokens would have been *input* tokens, so value them at the input rate.
         // Still an upper bound on the bounce-adjusted figure: it ignores prompt-cache
         // discounts. We never inflate beyond this.

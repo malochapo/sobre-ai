@@ -223,13 +223,12 @@ fn stale_hook_binary_accepts_bare_path_command() {
 /// rewrite it back to an absolute path and restart the sync ping-pong.
 #[test]
 fn stale_hook_binary_accepts_configured_portable_override() {
-    let _lock = crate::core::data_dir::test_env_lock();
-    // SAFETY: serialized by test_env_lock.
-    unsafe { std::env::set_var("LEAN_CTX_HOOK_BINARY", "$HOME/.local/bin/lean-ctx") };
+    let iso = crate::core::data_dir::isolated_data_dir();
+    let cfg = iso.path().join("config.toml");
+    std::fs::write(&cfg, "hook_binary = \"$HOME/.local/bin/lean-ctx\"\n").unwrap();
     let content = r#""$HOME/.local/bin/lean-ctx hook rewrite""#;
     assert!(stale_hook_binary(content, "/machine/abs/lean-ctx").is_none());
-    // SAFETY: serialized by test_env_lock.
-    unsafe { std::env::remove_var("LEAN_CTX_HOOK_BINARY") };
+    std::fs::remove_file(&cfg).unwrap();
 
     // Without the override the same content IS stale — the acceptance is
     // strictly opt-in.

@@ -30,22 +30,8 @@ pub enum ReadDedup {
 }
 
 impl ReadDedup {
-    /// Parse `LEAN_CTX_READ_DEDUP`. Accepts the canonical `auto|on|off` plus the
-    /// usual boolean spellings, mirroring `LEAN_CTX_READ_REDIRECT`.
-    pub fn from_env() -> Option<Self> {
-        std::env::var("LEAN_CTX_READ_DEDUP").ok().and_then(|v| {
-            match v.trim().to_lowercase().as_str() {
-                "auto" => Some(Self::Auto),
-                "on" | "1" | "true" | "yes" => Some(Self::On),
-                "off" | "0" | "false" | "no" => Some(Self::Off),
-                _ => None,
-            }
-        })
-    }
-
-    /// Env override (`LEAN_CTX_READ_DEDUP`) wins over the on-disk config value.
     pub fn effective(config: &Config) -> Self {
-        Self::from_env().unwrap_or(config.read_dedup)
+        config.read_dedup
     }
 
     /// Whether the PostToolUse read-dedup may replace a re-read result in the
@@ -86,30 +72,11 @@ mod tests {
         }
     }
 
-    #[test]
-    fn from_env_parses_canonical_and_boolean_spellings() {
-        let _lock = crate::core::data_dir::test_env_lock();
-
-        crate::test_env::set_var("LEAN_CTX_READ_DEDUP", "auto");
-        assert_eq!(ReadDedup::from_env(), Some(ReadDedup::Auto));
-        crate::test_env::set_var("LEAN_CTX_READ_DEDUP", "ON");
-        assert_eq!(ReadDedup::from_env(), Some(ReadDedup::On));
-        crate::test_env::set_var("LEAN_CTX_READ_DEDUP", " off ");
-        assert_eq!(ReadDedup::from_env(), Some(ReadDedup::Off));
-        crate::test_env::set_var("LEAN_CTX_READ_DEDUP", "0");
-        assert_eq!(ReadDedup::from_env(), Some(ReadDedup::Off));
-        crate::test_env::set_var("LEAN_CTX_READ_DEDUP", "nonsense");
-        assert_eq!(ReadDedup::from_env(), None);
-        crate::test_env::remove_var("LEAN_CTX_READ_DEDUP");
-        assert_eq!(ReadDedup::from_env(), None);
-    }
-
     /// Clear every env var the guard detection reads — including the Cursor
     /// markers a Cursor agent shell exports itself (GH #720/#722) — so these
     /// tests are deterministic on any host running `cargo test`.
     fn clear_host_markers() {
         for var in [
-            "LEAN_CTX_READ_DEDUP",
             "CLAUDE_PROJECT_DIR",
             "CLAUDECODE",
             "CODEBUDDY",

@@ -114,7 +114,7 @@ use crate::core::pathutil::is_broad_or_unsafe_root;
 
 /// Detect a multi-root workspace: a directory that has no project markers
 /// itself, but contains child directories that do. In this case, use the
-/// parent as jail root and auto-allow all child projects via LEAN_CTX_ALLOW_PATH.
+/// parent as jail root and auto-allow all child projects.
 fn detect_multi_root_workspace(dir: &std::path::Path) -> Option<String> {
     // Never enumerate the home dir or macOS TCC-protected dirs (Documents/Desktop/
     // Downloads): read_dir there triggers a macOS privacy prompt (#356), and a real
@@ -243,7 +243,7 @@ mod tests {
 
     #[test]
     fn detect_multi_root_workspace_with_child_projects() {
-        // detect_multi_root_workspace SETS `LEAN_CTX_ALLOW_PATH` as a side
+        // detect_multi_root_workspace adds runtime allow paths as a side
         // effect (auto-allowing the child projects) — hold the global env
         // lock so a parallel jail test never observes the transient value
         // (the pre-existing full-suite flake reported in #695).
@@ -263,8 +263,6 @@ mod tests {
             result.is_some(),
             "should detect workspace with 2 child projects"
         );
-
-        crate::test_env::remove_var("LEAN_CTX_ALLOW_PATH");
     }
 
     #[test]

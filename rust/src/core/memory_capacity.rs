@@ -81,7 +81,7 @@ where
     // Persist borrowed candidates before mutating the live store. Serializing
     // references avoids requiring `T: Clone` while preserving archive order.
     let candidates: Vec<&T> = evict.iter().map(|&idx| &items[idx]).collect();
-    archive_items(store, scope, &candidates, &ArchiveConfig::from_env())?;
+    archive_items(store, scope, &candidates, &ArchiveConfig::default())?;
 
     // Order-preserving: only chosen indices are removed, so retained items keep
     // their original relative order. Reverse removal avoids index shifts.

@@ -278,33 +278,39 @@ fn loop_header_substitution_is_not_a_bypass() {
 }
 
 // --- Shell-security mode dispatcher (GL #788) ---
-// `check_shell_command` honours LEAN_CTX_SHELL_SECURITY. Env is serialized via
-// the shared test lock and removed BEFORE asserting, so a failed assert can never
-// leak the var into another test.
+// `check_shell_command` honours `shell_security` from config.toml. Each test
+// writes a private config via `isolated_data_dir`, which holds the shared test
+// lock, so the mode can never leak into another test.
 
 #[test]
 fn security_off_skips_all_gating() {
-    let _lock = crate::core::data_dir::test_env_lock();
-    crate::test_env::set_var("LEAN_CTX_SHELL_SECURITY", "off");
+    let iso = crate::core::data_dir::isolated_data_dir();
+    std::fs::write(iso.path().join("config.toml"), "shell_security = \"off\"\n").unwrap();
     // `eval` is unconditionally blocked under enforce; off must let it through.
     let eval_ok = check_shell_command("eval rm -rf /");
     // An ordinary binary also passes under off.
     let exotic_ok = check_shell_command("some-exotic-tool --flag");
-    crate::test_env::remove_var("LEAN_CTX_SHELL_SECURITY");
     assert!(eval_ok.is_ok(), "off must skip the eval block");
     assert!(exotic_ok.is_ok(), "off must allow non-allowlisted binaries");
 }
 
 #[test]
 fn security_warn_never_blocks_while_enforce_does() {
-    let _lock = crate::core::data_dir::test_env_lock();
+    let iso = crate::core::data_dir::isolated_data_dir();
     // `eval …` is blocked in enforce mode regardless of allowlist contents.
     let blocked = "eval danger";
-    crate::test_env::set_var("LEAN_CTX_SHELL_SECURITY", "enforce");
+    std::fs::write(
+        iso.path().join("config.toml"),
+        "shell_security = \"enforce\"\n",
+    )
+    .unwrap();
     let enforced = check_shell_command(blocked);
-    crate::test_env::set_var("LEAN_CTX_SHELL_SECURITY", "warn");
+    std::fs::write(
+        iso.path().join("config.toml"),
+        "shell_security = \"warn\"\n",
+    )
+    .unwrap();
     let warned = check_shell_command(blocked);
-    crate::test_env::remove_var("LEAN_CTX_SHELL_SECURITY");
     assert!(enforced.is_err(), "enforce must block eval");
     assert!(warned.is_ok(), "warn must run the check but never block");
 }
@@ -332,13 +338,12 @@ fn passes_enforced_gates_clean_vs_sink() {
 
 #[test]
 fn passes_enforced_is_mode_independent() {
-    let _lock = crate::core::data_dir::test_env_lock();
+    let iso = crate::core::data_dir::isolated_data_dir();
     // Even with gating turned OFF, passes_enforced answers the *enforce* question
     // so the hook keeps a would-be-blocked sink raw instead of compressing it.
-    crate::test_env::set_var("LEAN_CTX_SHELL_SECURITY", "off");
+    std::fs::write(iso.path().join("config.toml"), "shell_security = \"off\"\n").unwrap();
     let tricky_off = passes_enforced("git log | python3 -c 'print(1)'");
     let clean_off = passes_enforced("git log | head");
-    crate::test_env::remove_var("LEAN_CTX_SHELL_SECURITY");
     assert!(!tricky_off, "mode-independent: sink still fails under off");
     assert!(clean_off, "clean pipeline passes regardless of mode");
 }

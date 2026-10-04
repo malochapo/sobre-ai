@@ -192,11 +192,14 @@ mod tests {
         // With rules injection off, no rules file is written, so the per-turn
         // overhead must not count the rules block (#361). The tool/instruction
         // surface is unaffected. `isolated_data_dir` holds the env lock.
-        let _iso = crate::core::data_dir::isolated_data_dir();
+        let iso = crate::core::data_dir::isolated_data_dir();
         let on = ContextOverhead::measure();
-        crate::test_env::set_var("LEAN_CTX_RULES_INJECTION", "off");
+        std::fs::write(
+            iso.path().join("config.toml"),
+            "rules_injection = \"off\"\n",
+        )
+        .unwrap();
         let off = ContextOverhead::measure();
-        crate::test_env::remove_var("LEAN_CTX_RULES_INJECTION");
 
         assert!(on.rules_block_tokens > 0, "default still injects rules");
         assert_eq!(off.rules_block_tokens, 0, "off must drop the rules block");
@@ -209,7 +212,7 @@ mod tests {
 
     #[test]
     fn minimal_arm_per_turn_prefix_stays_within_budget() {
-        // The "faithful arm" (#361): LEAN_CTX_MINIMAL (no session/knowledge
+        // The "faithful arm" (#361): minimal_overhead (no session/knowledge
         // prefix) + rules_injection=off
         // (no rules block) must keep the fixed per-turn prefix tiny. This is the
         // regression guard for the "~3K tokens/turn injected" critique — if any
@@ -225,13 +228,14 @@ mod tests {
         // ~3K balloon this guard exists to catch — it is not a license for silent creep.
         const MINIMAL_ARM_PREFIX_BUDGET_TOKENS: usize = 1835;
 
-        let _iso = crate::core::data_dir::isolated_data_dir();
-        crate::test_env::set_var("LEAN_CTX_MINIMAL", "1");
-        crate::test_env::set_var("LEAN_CTX_RULES_INJECTION", "off");
+        let iso = crate::core::data_dir::isolated_data_dir();
+        std::fs::write(
+            iso.path().join("config.toml"),
+            "minimal_overhead = true\nrules_injection = \"off\"\n",
+        )
+        .unwrap();
         let registered = crate::server::registry::build_registry().tool_defs().len();
         let o = ContextOverhead::measure();
-        crate::test_env::remove_var("LEAN_CTX_MINIMAL");
-        crate::test_env::remove_var("LEAN_CTX_RULES_INJECTION");
 
         assert_eq!(
             o.rules_block_tokens, 0,

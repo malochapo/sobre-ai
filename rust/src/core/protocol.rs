@@ -215,17 +215,10 @@ pub fn set_mcp_context(active: bool) {
 }
 
 /// Returns true if savings footers should be shown based on config + transport context.
-///
-/// Suppressed when `LEAN_CTX_QUIET=1`, `LEAN_CTX_SHOW_SAVINGS=0`, or compression is `Max` (ultra).
+/// Suppressed when lean-ctx runs its own child quietly (`LEAN_CTX_QUIET=1`).
 pub fn savings_footer_visible() -> bool {
     if matches!(std::env::var("LEAN_CTX_QUIET"), Ok(v) if v.trim() == "1") {
         return false;
-    }
-    if matches!(std::env::var("LEAN_CTX_SHOW_SAVINGS"), Ok(v) if v.trim() == "0") {
-        return false;
-    }
-    if matches!(std::env::var("LEAN_CTX_SHOW_SAVINGS"), Ok(v) if v.trim() == "1") {
-        return true;
     }
     let mode = super::config::SavingsFooter::effective();
     match mode {
@@ -237,15 +230,10 @@ pub fn savings_footer_visible() -> bool {
     }
 }
 
-/// Whether non-essential meta lines (cache refs, budget warnings, repetition hints) should be shown.
-///
-/// Default is false to keep tool outputs clean for agents; opt-in via env var.
+/// Whether non-essential meta lines (cache refs, budget warnings, repetition
+/// hints) should be shown. Off: tool outputs stay clean for agents.
 pub fn meta_visible() -> bool {
-    if matches!(std::env::var("LEAN_CTX_QUIET"), Ok(v) if v.trim() == "1") {
-        return false;
-    }
-    matches!(std::env::var("LEAN_CTX_META"), Ok(v) if v.trim() == "1")
-        || matches!(std::env::var("LEAN_CTX_DIAGNOSTICS"), Ok(v) if v.trim() == "1")
+    false
 }
 
 /// Formats a token savings footer with box-drawing delimiters.
@@ -595,13 +583,13 @@ mod tests {
     }
 
     #[test]
-    fn savings_footer_env_gated_tests() {
-        let _lock = crate::core::data_dir::test_env_lock();
+    fn savings_footer_config_gated_tests() {
+        let iso = crate::core::data_dir::isolated_data_dir();
+        let cfg = iso.path().join("config.toml");
 
         // Test: always mode shows box-drawing format
         super::MCP_CONTEXT.store(false, std::sync::atomic::Ordering::Relaxed);
-        crate::test_env::set_var("LEAN_CTX_SAVINGS_FOOTER", "always");
-        crate::test_env::set_var("LEAN_CTX_SHOW_SAVINGS", "1");
+        std::fs::write(&cfg, "savings_footer = \"always\"\n").unwrap();
         crate::test_env::remove_var("LEAN_CTX_QUIET");
 
         let s = super::format_savings(100, 50);
@@ -618,8 +606,7 @@ mod tests {
         assert!(s.contains("\u{2193}80%"), "expected 80%: {s}");
 
         // Test: never mode suppresses
-        crate::test_env::set_var("LEAN_CTX_SAVINGS_FOOTER", "never");
-        crate::test_env::set_var("LEAN_CTX_SHOW_SAVINGS", "0");
+        std::fs::write(&cfg, "savings_footer = \"never\"\n").unwrap();
         let s = super::format_savings(100, 50);
         assert!(s.is_empty(), "expected empty with never: {s}");
 
@@ -628,22 +615,9 @@ mod tests {
 
         // Test: MCP auto mode suppresses
         super::MCP_CONTEXT.store(true, std::sync::atomic::Ordering::Relaxed);
-        crate::test_env::set_var("LEAN_CTX_SAVINGS_FOOTER", "auto");
-        crate::test_env::remove_var("LEAN_CTX_SHOW_SAVINGS");
+        std::fs::write(&cfg, "savings_footer = \"auto\"\n").unwrap();
         let s = super::format_savings(100, 50);
         assert!(s.is_empty(), "expected empty in MCP+auto: {s}");
         super::MCP_CONTEXT.store(false, std::sync::atomic::Ordering::Relaxed);
-
-        // Test: SHOW_SAVINGS overrides config
-        crate::test_env::set_var("LEAN_CTX_SAVINGS_FOOTER", "never");
-        crate::test_env::set_var("LEAN_CTX_SHOW_SAVINGS", "1");
-        assert!(super::savings_footer_visible());
-        crate::test_env::set_var("LEAN_CTX_SHOW_SAVINGS", "0");
-        assert!(!super::savings_footer_visible());
-
-        // Restore ALL touched env — leaking LEAN_CTX_SAVINGS_FOOTER made
-        // footers visible in unrelated tests (GL #556 flakiness).
-        crate::test_env::remove_var("LEAN_CTX_SHOW_SAVINGS");
-        crate::test_env::remove_var("LEAN_CTX_SAVINGS_FOOTER");
     }
 }

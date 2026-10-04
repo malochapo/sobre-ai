@@ -6,18 +6,11 @@
 #[allow(clippy::wildcard_imports)]
 use super::*;
 
-/// Auto-download policy (#551): the env var, when set, wins in either
-/// direction; otherwise `[embedding].auto_download` from config; otherwise
-/// **allowed** — the soft default that lights up the semantic features
+/// Auto-download policy (#551): `[embedding].auto_download` from config;
+/// otherwise **allowed** — the soft default that lights up the semantic features
 /// (semantic recall, EFF-7 redundancy filtering) without manual setup.
 #[cfg(feature = "embeddings")]
 pub(crate) fn embeddings_auto_download_allowed() -> bool {
-    if let Ok(v) = std::env::var("LEAN_CTX_EMBEDDINGS_AUTO_DOWNLOAD") {
-        return matches!(
-            v.trim().to_lowercase().as_str(),
-            "1" | "true" | "yes" | "on"
-        );
-    }
     crate::core::config::Config::load()
         .embedding
         .auto_download
@@ -156,7 +149,7 @@ pub(crate) fn handle_embeddings_reindex(project_root: &str) -> String {
         };
 
         let Some(engine) = embedding_engine() else {
-            return "Embeddings model not available. Set LEAN_CTX_EMBEDDINGS_AUTO_DOWNLOAD=1 to allow auto-download, then re-run."
+            return "Embeddings model not available. Set `[embedding] auto_download = true` or run `lean-ctx embeddings provision`, then re-run."
                     .to_string();
         };
 

@@ -269,7 +269,7 @@ fn try_hybrid_search(
         &mut embed_idx,
     )?;
 
-    let backend = dense_backend::DenseBackendKind::try_from_env()?;
+    let backend = dense_backend::DenseBackendKind::Local;
     let candidate_k = config.bm25_candidates.max(config.dense_candidates);
 
     let mut results = dense_backend::hybrid_results(

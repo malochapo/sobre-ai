@@ -60,14 +60,9 @@ impl SearchOutcome {
 /// FIFO/socket/device (#336) — while this deadline is the backstop for any
 /// *other* pathological case (a gigantic corpus, a stuck network mount): the
 /// tool returns partial results with a hint instead of appearing to hang.
-/// Tunable via `LEAN_CTX_SEARCH_DEADLINE_MS` (`0` disables). Default 10s.
+/// 10s.
 fn search_deadline() -> Option<Duration> {
-    const DEFAULT_MS: u64 = 10_000;
-    let ms = std::env::var("LEAN_CTX_SEARCH_DEADLINE_MS")
-        .ok()
-        .and_then(|v| v.trim().parse::<u64>().ok())
-        .unwrap_or(DEFAULT_MS);
-    (ms > 0).then(|| Duration::from_millis(ms))
+    Some(Duration::from_secs(10))
 }
 
 /// Back-compat shim: the pre-#870 8-arg entry point. Delegates to
@@ -1002,8 +997,6 @@ mod tests {
         // corpus signature, so stale trigrams can never hide on-disk content from
         // a word-literal query — the very path that uses trigram narrowing.
         let _lock = crate::core::data_dir::test_env_lock();
-        crate::test_env::remove_var("LEAN_CTX_DISABLE_SEARCH_INDEX");
-        crate::test_env::remove_var("LEAN_CTX_SEARCH_INDEX_COALESCE_MS");
 
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join("a.rs"), "fn existing() {}\n").unwrap();
@@ -1059,7 +1052,6 @@ mod tests {
     #[test]
     fn symbol_substitution_is_off_by_default() {
         let _lock = crate::core::data_dir::test_env_lock();
-        crate::test_env::remove_var("LEAN_CTX_SYMBOL_MAP");
         let dir = tempfile::tempdir().unwrap();
         let f = dir.path().join("a.rs");
         std::fs::write(
@@ -1172,21 +1164,6 @@ mod tests {
         assert!(
             out.contains("special files skipped"),
             "the FIFO must be reported as a skipped special file: {out}"
-        );
-    }
-
-    #[test]
-    fn search_deadline_env_override_is_respected() {
-        let _lock = crate::core::data_dir::test_env_lock();
-        crate::test_env::set_var("LEAN_CTX_SEARCH_DEADLINE_MS", "0");
-        assert!(search_deadline().is_none(), "0 must disable the deadline");
-        crate::test_env::set_var("LEAN_CTX_SEARCH_DEADLINE_MS", "250");
-        assert_eq!(search_deadline(), Some(Duration::from_millis(250)));
-        crate::test_env::remove_var("LEAN_CTX_SEARCH_DEADLINE_MS");
-        assert_eq!(
-            search_deadline(),
-            Some(Duration::from_secs(10)),
-            "default budget is 10s"
         );
     }
 

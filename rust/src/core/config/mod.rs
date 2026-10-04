@@ -40,8 +40,8 @@ pub use memory::{MemoryCleanup, MemoryGuardConfig, MemoryProfile, SavingsFooter}
 pub use proxy::{
     BaselineConfig, DEFAULT_LOCAL_SHADOW_RATE_PER_MTOK, HistoryMode, ProseRanker, ProseRole,
     ProviderEntry, ProxyConfig, ProxyMode, ProxyProvider, ResolvedProvider, RoleAggressiveness,
-    RoutingRules, UpstreamDrift, Upstreams, WireShape, diagnose_drift, env_upstream_override,
-    is_local_proxy_url, normalize_url, normalize_url_opt, parse_route_target,
+    RoutingRules, Upstreams, WireShape, is_local_proxy_url, normalize_url, normalize_url_opt,
+    parse_route_target, upstream_drifted,
 };
 pub use read_dedup::ReadDedup;
 pub use read_redirect::ReadRedirect;
@@ -140,7 +140,6 @@ pub struct Config {
     #[serde(default)]
     pub proxy_port: Option<u16>,
     /// Proxy reachability timeout in milliseconds. Default: 200.
-    /// Override via LEAN_CTX_PROXY_TIMEOUT_MS env var.
     #[serde(default)]
     pub proxy_timeout_ms: Option<u64>,
     /// Strict proxy auth: when true, authenticate ONLY via the Bearer token
@@ -155,7 +154,6 @@ pub struct Config {
     /// When true **and** the proxy binds a loopback address, every request is
     /// accepted without a Bearer token or provider API key — MCP clients,
     /// browser dashboards, and CLI tools all work without auth setup.
-    /// Env override: `LEAN_CTX_PROXY_LOOPBACK_OPEN`.
     #[serde(default)]
     pub proxy_loopback_open: bool,
     /// Provider prompt-cache hit rate for net-of-injection calculation (#1104).
@@ -167,27 +165,24 @@ pub struct Config {
     /// Prefer the host agent's native editor over lean-ctx edit operations (#454).
     /// When true, the lean-ctx edit tools (see [`EDIT_TOOL_NAMES`]) are refused
     /// at dispatch, so the agent falls back to the host's built-in editing UI. Reads / search /
-    /// shell / memory tools are unaffected. Override via
-    /// `LEAN_CTX_PREFER_NATIVE_EDITOR=1`.
+    /// shell / memory tools are unaffected.
     #[serde(default)]
     pub prefer_native_editor: bool,
     /// Disable all automatic read-mode degradation (auto_degrade + context_gate pressure).
     /// When true, lean-ctx never downgrades requested read modes regardless of pressure.
-    /// Override via LCTX_NO_DEGRADE=1 env var.
     #[serde(default)]
     pub no_degrade: bool,
     /// Serve explicit `full`/`lines:N-M` re-reads of session-cached files as
     /// deltas: when the file changed on disk since it was cached, the read
     /// returns `mode=diff` instead of re-emitting content the model already
     /// holds. First reads are unaffected; `fresh=true` always bypasses.
-    /// Opt-in. Override via LCTX_DELTA_EXPLICIT=1/0 env var.
+    /// Opt-in.
     #[serde(default)]
     pub delta_explicit: bool,
     #[serde(default)]
     pub loop_detection: LoopDetectionConfig,
     /// Controls where lean-ctx installs agent rule files.
     /// Values: "both" (default), "global" (home-dir only), "project" (repo-local only).
-    /// Override via LEAN_CTX_RULES_SCOPE env var.
     #[serde(default)]
     pub rules_scope: Option<String>,
     /// Controls how rules are injected for shared-instruction-file agents.
@@ -196,7 +191,6 @@ pub struct Config {
     /// auto-load: SessionStart hook / instructions[] / context.fileName, #343), or
     /// "off" (write no rules file at all — for hosts that supply their own
     /// tool-steering workflow or phase-isolated/non-caching harnesses, #361).
-    /// Override via LEAN_CTX_RULES_INJECTION env var.
     #[serde(default)]
     pub rules_injection: Option<String>,
     /// Mirror the host IDE's tool-permission rules onto lean-ctx's own MCP tools.
@@ -204,7 +198,6 @@ pub struct Config {
     /// IDE's permission config (v1: OpenCode) and applies the equivalent
     /// deny/ask/allow decision to the matching lean-ctx tool — so `ctx_shell`
     /// honors your `bash`/`rm *` rules instead of bypassing them.
-    /// Override via LEAN_CTX_PERMISSION_INHERITANCE env var.
     #[serde(default)]
     pub permission_inheritance: Option<String>,
     /// Extra glob patterns to ignore in graph/overview/preload (repo-local).
@@ -213,18 +206,16 @@ pub struct Config {
     pub extra_ignore_patterns: Vec<String>,
     /// Controls agent output verbosity via instructions injection.
     /// Values: "off" (default), "lite", "full", "ultra".
-    /// Override via LEAN_CTX_TERSE_AGENT env var.
     #[serde(default)]
     pub terse_agent: TerseAgent,
     /// Unified compression level (replaces separate terse_agent + output_density).
     /// Values: "off" (default), "lite", "standard", "max".
-    /// Override via LEAN_CTX_COMPRESSION env var.
     #[serde(default)]
     pub compression_level: CompressionLevel,
     /// Global compression intensity 0.0 (lossless) – 1.0 (max), mapped onto the
     /// read modes / entropy / IB stages (see `core::aggressiveness`). `None`
-    /// (default) keeps each mode's built-in default. Override via the
-    /// `LEAN_CTX_AGGRESSIVENESS` env var or the `ctx_read` `aggressiveness` arg.
+    /// (default) keeps each mode's built-in default. The `ctx_read`
+    /// `aggressiveness` arg overrides it per call.
     #[serde(default)]
     pub compression_aggressiveness: Option<f64>,
     /// Archive configuration for zero-loss compression.
@@ -235,7 +226,6 @@ pub struct Config {
     pub memory: MemoryPolicy,
     /// Additional paths allowed by PathJail (absolute).
     /// Useful for multi-project workspaces where the jail root is a parent directory.
-    /// Override via LEAN_CTX_ALLOW_PATH env var (path-list separator).
     #[serde(default)]
     pub allow_paths: Vec<String>,
     /// Allow jailed tool access to home-level IDE config dirs (~/.cursor, VS Code,
@@ -243,21 +233,18 @@ pub struct Config {
     /// once), `Some(false)` = declined, `Some(true)` = opted in. Those dirs can
     /// expose other agents' sessions, MCP configs and credentials, so the effective
     /// default is off. `~/.lean-ctx` (own data dir) is always allowed. The opt-in
-    /// set is registry-derived, covering every supported editor. Override via
-    /// LEAN_CTX_ALLOW_IDE_DIRS=1.
+    /// set is registry-derived, covering every supported editor.
     #[serde(default)]
     pub allow_ide_config_dirs: Option<bool>,
     /// Extra project roots for multi-root workspaces.
     /// Tools like ctx_tree and ctx_search can scan across all roots in a single call.
     /// These paths are automatically added to PathJail's allow-list.
-    /// Override via LEAN_CTX_EXTRA_ROOTS env var (path-list separator).
     #[serde(default)]
     pub extra_roots: Vec<String>,
     /// Read-only roots: sibling subtrees the agent may READ but never WRITE.
     /// Reads resolve as if they were extra_roots; every write tool (edit, refactor,
     /// handoff/session export, memory compaction) is default-denied inside these
     /// paths. Useful for reference repos mounted next to the project.
-    /// Override via LEAN_CTX_READ_ONLY_ROOTS env var (path-list separator).
     #[serde(default)]
     pub read_only_roots: Vec<String>,
     /// Extra trusted roots OUTSIDE `$HOME` that lean-ctx may follow when an agent
@@ -266,7 +253,7 @@ pub struct Config {
     /// stays in force (a planted symlink can never redirect a config write out of
     /// the user's home, preserving the GL#442 symlink-hijack protection). Add a
     /// parent like `/opt/dotfiles` only for a location you own and trust. Like
-    /// `extra_roots`, security-sensitive. Override via LEAN_CTX_ALLOW_SYMLINK_ROOTS env var (path-list sep).
+    /// `extra_roots`, security-sensitive.
     #[serde(default)]
     pub allow_symlink_roots: Vec<String>,
     /// Enable content-defined chunking (Rabin-Karp) for cache-optimal output ordering.
@@ -274,8 +261,6 @@ pub struct Config {
     #[serde(default)]
     pub content_defined_chunking: bool,
     /// Skip session/knowledge/gotcha blocks in MCP instructions to minimize token overhead.
-    /// Override via LEAN_CTX_MINIMAL env var.
-    ///
     /// Default `true` (deliberate): initialize-time instructions stay byte-stable
     /// across sessions, which keeps the provider prompt-cache prefix warm (#498)
     /// and holds the fixed per-session cost at the `doctor overhead --gate`
@@ -298,7 +283,6 @@ pub struct Config {
     /// function of (file, task) — only capability guards and the size/task
     /// heuristic decide — which keeps output byte-stable for provider prompt
     /// caching (#498) and avoids per-read disk I/O from the learning stores.
-    /// Override via the LEAN_CTX_AUTO_MODE_LEARNING env var.
     #[serde(default)]
     pub auto_mode_learning: bool,
     /// Opt-in: auto-persist interesting findings as knowledge facts.
@@ -321,7 +305,6 @@ pub struct Config {
     #[serde(default)]
     pub embedding: EmbeddingConfig,
     /// Disable shell hook injection (the _lc() function that wraps CLI commands).
-    /// Override via LEAN_CTX_NO_HOOK env var.
     #[serde(default)]
     pub shell_hook_disabled: bool,
     /// Shadow mode (default: true): denies native tools (Read/Grep/Shell) at
@@ -340,7 +323,7 @@ pub struct Config {
     pub hook_mode: Option<String>,
     /// Opt-in (#520): write a human-readable debug log of intercepted MCP tool
     /// calls and hook routing decisions (lean-ctx vs native, with reasons) to
-    /// `<state_dir>/logs/debug.log`. Override via the LEAN_CTX_DEBUG_LOG env var.
+    /// `<state_dir>/logs/debug.log`.
     #[serde(default)]
     pub debug_log: bool,
     /// Controls when the shell hook auto-activates aliases.
@@ -348,8 +331,6 @@ pub struct Config {
     ///   agent env var is detected — transparent in plain human terminals.
     /// - `always`: Aliases active in every interactive shell (pre-#699 default).
     /// - `off`: Aliases never auto-activate (user must call `lean-ctx-on` manually).
-    ///
-    /// Override via `LEAN_CTX_SHELL_ACTIVATION` env var.
     #[serde(default)]
     pub shell_activation: ShellActivation,
     /// Do not install agent CLI aliases (`claude`, `codex`, `gemini`,
@@ -366,8 +347,6 @@ pub struct Config {
     ///   would break native Write/Edit.
     /// - `on`: always redirect (legacy behavior).
     /// - `off`: never redirect native Read.
-    ///
-    /// Override via the `LEAN_CTX_READ_REDIRECT` env var.
     #[serde(default)]
     pub read_redirect: ReadRedirect,
     /// Controls the PostToolUse native-Read re-read dedup (GL #1140).
@@ -376,15 +355,13 @@ pub struct Config {
     ///   disabled — the guard-safe way to win the dedup savings back.
     /// - `on`: dedup wherever the PostToolUse hook fires.
     /// - `off`: never replace a Read result.
-    ///
-    /// Override via the `LEAN_CTX_READ_DEDUP` env var.
     #[serde(default)]
     pub read_dedup: ReadDedup,
     /// Fixed-context budget accounting for `doctor overhead` / `gain` (#964).
     #[serde(default)]
     pub context: ContextConfig,
     /// Maximum BM25 cache file size in MB. Indexes exceeding this are quarantined on load
-    /// and refused on save. Override via LEAN_CTX_BM25_MAX_CACHE_MB env var.
+    /// and refused on save.
     #[serde(default = "serde_defaults::default_bm25_max_cache_mb")]
     pub bm25_max_cache_mb: u64,
     /// Maximum number of files scanned by the lightweight JSON graph index.
@@ -392,23 +369,20 @@ pub struct Config {
     #[serde(default = "serde_defaults::default_graph_index_max_files")]
     pub graph_index_max_files: u64,
     /// Controls RAM vs feature trade-off. Values: "low", "balanced" (default), "performance".
-    /// Override via LEAN_CTX_MEMORY_PROFILE env var.
     #[serde(default)]
     pub memory_profile: MemoryProfile,
     /// Controls how aggressively memory is freed when idle.
     /// Values: "shared" (default, 1h TTL), "aggressive" (5 min TTL for low-memory devices).
-    /// Override via LEAN_CTX_MEMORY_CLEANUP env var.
     #[serde(default)]
     pub memory_cleanup: MemoryCleanup,
     /// Soft process-RSS target as a percentage of system RAM (default: 5).
     /// The guardian throttles and evicts above it, but this is not an OS hard cap.
     /// Use a cgroup/container MemoryMax when strict isolation is required.
-    /// Override via LEAN_CTX_MAX_RAM_PERCENT env var.
     #[serde(default = "serde_defaults::default_max_ram_percent")]
     pub max_ram_percent: u8,
     /// Simplified disk budget (MB). When set and detail values are at defaults,
     /// distributes proportionally: archive=25%, bm25=10%, remainder for stores.
-    /// 0 = disabled (use individual settings). Override via LEAN_CTX_MAX_DISK_MB.
+    /// 0 = disabled (use individual settings).
     #[serde(default)]
     pub max_disk_mb: u64,
     /// Auto-purge data older than this many days. 0 = disabled.
@@ -418,12 +392,11 @@ pub struct Config {
     /// Cap on the rayon worker threads used by the CPU-heavy index build
     /// (call graph etc.). 0 = rayon default (all cores). Set >0 to bound
     /// per-instance CPU so a fleet of concurrent sessions can't saturate the
-    /// host on startup. Override via LEANCTX_INDEX_THREADS env var.
+    /// host on startup.
     #[serde(default)]
     pub max_index_threads: usize,
     /// Controls visibility of token savings footers in tool output.
     /// Values: "always" (default, show on every response), "never", "auto" (legacy compatibility).
-    /// Override via LEAN_CTX_SAVINGS_FOOTER or LEAN_CTX_SHOW_SAVINGS=1|0 env var.
     #[serde(default)]
     pub savings_footer: SavingsFooter,
     /// Explicit project root override. When set, lean-ctx uses this instead of auto-detection.
@@ -448,27 +421,23 @@ pub struct Config {
     ///
     /// - `full` (default): complete compressed output
     /// - `headers_only`: metadata line only (path, mode, token count)
-    ///
-    /// Override via `LEAN_CTX_RESPONSE_VERBOSITY` env var.
     #[serde(default)]
     pub response_verbosity: ResponseVerbosity,
     /// Bypass hint mode. When agents use native Read/Grep instead of lean-ctx tools,
     /// a hint is appended to the next tool response.
     /// Values: "on" (default), "off", "aggressive" (hint on every call, no cooldown).
-    /// Override via LEAN_CTX_BYPASS_HINTS env var.
     #[serde(default)]
     pub bypass_hints: Option<String>,
     /// Cache policy for ctx_read. Controls behavior on cache hits.
     /// Values: "aggressive" (default, 13-tok stubs + compaction-aware reset),
     /// "safe" (delivers map instead of stub), "off" (no caching, always disk read).
-    /// Override via LEAN_CTX_CACHE_POLICY env var.
     #[serde(default)]
     pub cache_policy: Option<String>,
     /// Token budget for the in-memory `ctx_read` cache. When the cached total
     /// plus an incoming read would exceed this, lean-ctx evicts the least-valuable
     /// entries *immediately* (RRF: recency × frequency × size) so the read always
     /// proceeds — eviction is never deferred to the staleness TTL. `0` uses the
-    /// built-in default (2M). `LEAN_CTX_CACHE_MAX_TOKENS` env var overrides this.
+    /// built-in default (2M).
     #[serde(default)]
     pub cache_max_tokens: usize,
     /// Cross-project boundary policy.
@@ -483,15 +452,13 @@ pub struct Config {
     pub sensitivity: crate::core::sensitivity::SensitivityConfig,
     /// Allow automatic project-root re-rooting when absolute paths outside the jail are seen.
     /// When false (default), absolute paths outside the jail are rejected without re-rooting.
-    /// Override via LEAN_CTX_ALLOW_REROOT env var.
     #[serde(default)]
     pub allow_auto_reroot: bool,
     /// Verbatim binary path/expression for generated agent-hook commands
     /// (#708). Users who sync agent settings (`~/.claude/settings.json`, …)
     /// across machines with different usernames need an env-based form like
     /// `$HOME/.local/bin/lean-ctx` — agent hosts run hook commands through a
-    /// shell, which expands it. When set (env `LEAN_CTX_HOOK_BINARY` wins,
-    /// then this key), every hook writer emits the value verbatim instead of
+    /// shell, which expands it. When set, every hook writer emits the value verbatim instead of
     /// the machine-absolute exe path, so `init`/`doctor --fix`/`update` stop
     /// rewriting synced files into sync ping-pong. Autostart plists/services
     /// and daemon spawns are NOT affected — launchd/systemd do not expand
@@ -501,39 +468,34 @@ pub struct Config {
     pub hook_binary: Option<String>,
     /// Disable PathJail entirely by setting `path_jail = false` in config.toml.
     /// Useful in container/Docker environments where the sandbox is the boundary.
-    /// (The former `LEAN_CTX_NO_JAIL=1` env override was removed in v3.7.3.)
     #[serde(default)]
     pub path_jail: Option<bool>,
     /// Sandbox level for code execution (ctx_exec).
     /// 0 = subprocess only (current), 1 = OS-level restriction (Seatbelt/Landlock).
-    /// Override via LEAN_CTX_SANDBOX_LEVEL env var.
     #[serde(default)]
     pub sandbox_level: u8,
     /// When true, large tool outputs (>4000 chars) are stored as references
     /// and a short URI is returned instead of the full content.
-    /// Override via LEAN_CTX_REFERENCE_RESULTS env var.
     #[serde(default)]
     pub reference_results: bool,
 
     /// Shell-security mode for ctx_shell / `lean-ctx -c` command gating (GL #788):
     /// `enforce` (default, secure), `warn` (run checks, log violations, never
     /// block) or `off` (skip the hard blocks entirely —
-    /// a deliberate opt-out; compression stays active). Override via
-    /// LEAN_CTX_SHELL_SECURITY. `None` resolves to `enforce`.
+    /// a deliberate opt-out; compression stays active). `None` resolves to
+    /// `enforce`.
     #[serde(default)]
     pub shell_security: Option<String>,
 
     /// Default shell-command timeout in seconds for *normal* commands. `None`
     /// resolves to the built-in 2-minute default; heavy builds/tests use
-    /// [`Config::shell_heavy_timeout_secs`]. Override via
-    /// `LEAN_CTX_SHELL_TIMEOUT_SECS` (`LEAN_CTX_SHELL_TIMEOUT_MS` still wins over
-    /// both, in milliseconds).
+    /// [`Config::shell_heavy_timeout_secs`].
     #[serde(default)]
     pub shell_timeout_secs: Option<u64>,
 
     /// Shell-command timeout in seconds for *heavy* commands (cargo build/test,
     /// make, docker build, git commit/push, …). `None` resolves to the built-in
-    /// 10-minute ceiling. Override via `LEAN_CTX_SHELL_HEAVY_TIMEOUT_SECS`.
+    /// 10-minute ceiling.
     #[serde(default)]
     pub shell_heavy_timeout_secs: Option<u64>,
 
@@ -544,7 +506,7 @@ pub struct Config {
     pub shell_heavy_prefixes: Vec<String>,
     /// #814: opt-in to allow `python3 -c`, `node -e`, etc. in ctx_shell.
     /// Default `false` — inline code is blocked because it leaves no auditable
-    /// artifact. Override via `LEAN_CTX_SHELL_ALLOW_INLINE_SCRIPTS=1`.
+    /// artifact.`.
     #[serde(default)]
     pub shell_allow_inline_scripts: bool,
 
@@ -653,18 +615,14 @@ impl Default for Config {
 
 impl Config {
     /// Whether opt-in lossless JSON crushing of verbatim data commands (#936) is
-    /// active. `LEAN_CTX_CRUSH_VERBATIM_JSON` (any value) wins, then the
-    /// `crush_verbatim_json` config flag, else `false`.
+    /// active.
     pub fn crush_verbatim_json_effective(&self) -> bool {
-        std::env::var("LEAN_CTX_CRUSH_VERBATIM_JSON").is_ok() || self.crush_verbatim_json
+        self.crush_verbatim_json
     }
 
-    /// Returns the effective rules scope, preferring env var over config file.
+    /// Returns the effective rules scope.
     pub fn rules_scope_effective(&self) -> RulesScope {
-        let raw = std::env::var("LEAN_CTX_RULES_SCOPE")
-            .ok()
-            .or_else(|| self.rules_scope.clone())
-            .unwrap_or_default();
+        let raw = self.rules_scope.clone().unwrap_or_default();
         match raw.trim().to_lowercase().as_str() {
             "global" => RulesScope::Global,
             "project" => RulesScope::Project,
@@ -672,13 +630,10 @@ impl Config {
         }
     }
 
-    /// Returns the effective rules injection mode, preferring env var over config.
-    /// Default is `Shared` (zero-config discovery via a CLAUDE.md/CODEBUDDY.md/AGENTS.md block).
+    /// Returns the effective rules injection mode. Default is `Shared`
+    /// (zero-config discovery via a CLAUDE.md/CODEBUDDY.md/AGENTS.md block).
     pub fn rules_injection_effective(&self) -> RulesInjection {
-        let raw = std::env::var("LEAN_CTX_RULES_INJECTION")
-            .ok()
-            .or_else(|| self.rules_injection.clone())
-            .unwrap_or_default();
+        let raw = self.rules_injection.clone().unwrap_or_default();
         match raw.trim().to_lowercase().as_str() {
             "dedicated" => RulesInjection::Dedicated,
             "off" | "none" | "disabled" => RulesInjection::Off,
@@ -690,30 +645,20 @@ impl Config {
     /// Returns the configured value or None (caller picks the default).
     #[must_use]
     pub fn dashboard_cache_hit_rate(&self) -> Option<f64> {
-        std::env::var("LEAN_CTX_CACHE_HIT_RATE")
-            .ok()
-            .and_then(|v| v.parse().ok())
-            .or(self.dashboard_cache_hit_rate)
+        self.dashboard_cache_hit_rate
     }
     /// Returns the user-configured hook mode override, or `None` for auto-detect.
-    /// Env var `LEAN_CTX_HOOK_MODE` takes priority over config.
     #[must_use]
     pub fn hook_mode_override(&self) -> Option<crate::hooks::HookMode> {
-        let raw = std::env::var("LEAN_CTX_HOOK_MODE")
-            .ok()
-            .or_else(|| self.hook_mode.clone())?;
+        let raw = self.hook_mode.clone()?;
         crate::hooks::HookMode::from_str_loose(raw.trim())
     }
 
-    /// Returns the effective permission-inheritance mode, preferring the
-    /// `LEAN_CTX_PERMISSION_INHERITANCE` env var over config. Default is `Off`.
+    /// Returns the effective permission-inheritance mode. Default is `Off`.
     /// Accepts `on`/`true`/`1` as enabled.
     #[must_use]
     pub fn permission_inheritance_effective(&self) -> PermissionInheritance {
-        let raw = std::env::var("LEAN_CTX_PERMISSION_INHERITANCE")
-            .ok()
-            .or_else(|| self.permission_inheritance.clone())
-            .unwrap_or_default();
+        let raw = self.permission_inheritance.clone().unwrap_or_default();
         match raw.trim().to_lowercase().as_str() {
             "on" | "true" | "1" | "inherit" => PermissionInheritance::On,
             _ => PermissionInheritance::Off,
@@ -733,24 +678,15 @@ impl Config {
     }
 
     /// Whether lean-ctx edit operations are disabled in favour of the host's
-    /// native editor (#454). `LEAN_CTX_PREFER_NATIVE_EDITOR` wins over config.
+    /// native editor (#454).
     pub fn prefer_native_editor_effective(&self) -> bool {
-        match std::env::var("LEAN_CTX_PREFER_NATIVE_EDITOR") {
-            Ok(raw) => matches!(
-                raw.trim().to_lowercase().as_str(),
-                "1" | "true" | "yes" | "on"
-            ),
-            Err(_) => self.prefer_native_editor,
-        }
+        self.prefer_native_editor
     }
 
-    /// Cap on the rayon index-build worker threads. `LEANCTX_INDEX_THREADS` wins
-    /// over config; `0` means "no cap" — rayon's all-cores default is kept.
+    /// Cap on the rayon index-build worker threads; `0` means "no cap" —
+    /// rayon's all-cores default is kept.
     pub fn max_index_threads_effective(&self) -> usize {
-        std::env::var("LEANCTX_INDEX_THREADS")
-            .ok()
-            .and_then(|raw| raw.trim().parse::<usize>().ok())
-            .unwrap_or(self.max_index_threads)
+        self.max_index_threads
     }
 
     /// Whether `name` is a lean-ctx edit operation that must be blocked from
@@ -760,120 +696,59 @@ impl Config {
         self.prefer_native_editor_effective() && EDIT_TOOL_NAMES.contains(&name)
     }
 
-    /// Returns `true` if minimal overhead is enabled via env var or config.
+    /// Returns `true` if minimal overhead is enabled.
     pub fn minimal_overhead_effective(&self) -> bool {
-        std::env::var("LEAN_CTX_MINIMAL").is_ok() || self.minimal_overhead
+        self.minimal_overhead
     }
 
     /// Returns `true` when the adaptive learning signals may participate in
     /// `auto` mode resolution (#683). Off by default for a deterministic,
-    /// I/O-light cascade; the `LEAN_CTX_AUTO_MODE_LEARNING` env var wins over the
-    /// config field and accepts the usual truthy/falsy spellings.
+    /// I/O-light cascade.
     pub fn auto_mode_learning_effective(&self) -> bool {
-        match std::env::var("LEAN_CTX_AUTO_MODE_LEARNING") {
-            Ok(raw) => matches!(
-                raw.trim().to_lowercase().as_str(),
-                "1" | "true" | "yes" | "on"
-            ),
-            Err(_) => self.auto_mode_learning,
-        }
+        self.auto_mode_learning
     }
 
     /// Returns `true` when probabilistic exploration (Thompson sampling,
     /// Boltzmann-temperature eviction, simulated annealing) may influence
     /// decisions. Off by default so tool output stays a deterministic, byte-
     /// stable function of (content, mode, task) — the determinism contract
-    /// (#498) that lets provider prompt caching apply. The `LEAN_CTX_STOCHASTIC`
-    /// env var wins (the usual truthy/falsy spellings); otherwise it follows
-    /// [`Self::auto_mode_learning_effective`], which is itself off by default.
+    /// (#498) that lets provider prompt caching apply. Follows
+    /// [`Self::auto_mode_learning_effective`], which is off by default.
     pub fn is_stochastic_enabled(&self) -> bool {
-        match std::env::var("LEAN_CTX_STOCHASTIC") {
-            Ok(raw) => matches!(
-                raw.trim().to_lowercase().as_str(),
-                "1" | "true" | "yes" | "on"
-            ),
-            Err(_) => self.auto_mode_learning_effective(),
-        }
+        self.auto_mode_learning_effective()
     }
 
     /// Returns `true` if minimal overhead should be enabled for this MCP client.
-    ///
-    /// This is a superset of `minimal_overhead_effective()`:
-    /// - `LEAN_CTX_OVERHEAD_MODE=minimal` forces minimal overhead
-    /// - `LEAN_CTX_OVERHEAD_MODE=full` disables client/model heuristics (still honors LEAN_CTX_MINIMAL / config)
-    /// - In auto mode (default), certain low-context clients/models are treated as minimal to prevent
-    ///   large metadata blocks from destabilizing smaller context windows (e.g. Hermes + MiniMax).
+    /// This is a superset of `minimal_overhead_effective()`: low-context
+    /// clients are treated as minimal to prevent large metadata blocks from
+    /// destabilizing smaller context windows (e.g. Hermes + MiniMax).
     pub fn minimal_overhead_effective_for_client(&self, client_name: &str) -> bool {
-        if let Ok(raw) = std::env::var("LEAN_CTX_OVERHEAD_MODE") {
-            match raw.trim().to_lowercase().as_str() {
-                "minimal" => return true,
-                "full" => return self.minimal_overhead_effective(),
-                _ => {}
-            }
-        }
-
         if self.minimal_overhead_effective() {
             return true;
         }
-
         let client_lower = client_name.trim().to_lowercase();
-        if !client_lower.is_empty() {
-            if let Ok(list) = std::env::var("LEAN_CTX_MINIMAL_CLIENTS") {
-                for needle in list.split(',').map(|s| s.trim().to_lowercase()) {
-                    if !needle.is_empty() && client_lower.contains(&needle) {
-                        return true;
-                    }
-                }
-            } else if client_lower.contains("hermes") || client_lower.contains("minimax") {
-                return true;
-            }
-        }
-
-        let model = std::env::var("LEAN_CTX_MODEL")
-            .or_else(|_| std::env::var("LCTX_MODEL"))
-            .unwrap_or_default();
-        let model = model.trim().to_lowercase();
-        if !model.is_empty() {
-            let m = model.replace(['_', ' '], "-");
-            if m.contains("minimax")
-                || m.contains("mini-max")
-                || m.contains("m2.7")
-                || m.contains("m2-7")
-            {
-                return true;
-            }
-        }
-
-        false
+        client_lower.contains("hermes") || client_lower.contains("minimax")
     }
 
-    /// Returns `true` if shell hook injection is disabled via env var or config.
+    /// Returns `true` if shell hook injection is disabled.
     pub fn shell_hook_disabled_effective(&self) -> bool {
-        std::env::var("LEAN_CTX_NO_HOOK").is_ok() || self.shell_hook_disabled
+        self.shell_hook_disabled
     }
 
-    /// Returns the effective shell activation mode (env var > config > default).
+    /// Returns the effective shell activation mode.
     pub fn shell_activation_effective(&self) -> ShellActivation {
         ShellActivation::effective(self)
     }
 
     /// #814: returns `true` if `ctx_shell` may accept inline interpreter scripts
     /// (`python3 -c "..."`, `node -e "..."`, etc.).
-    /// `LEAN_CTX_SHELL_ALLOW_INLINE_SCRIPTS` (`1`/`true`/`yes`/`on`) overrides
-    /// `config.toml`. The hard blocks still apply.
+    /// The hard blocks still apply.
     pub fn shell_allow_inline_scripts_effective(&self) -> bool {
-        match std::env::var("LEAN_CTX_SHELL_ALLOW_INLINE_SCRIPTS") {
-            Ok(raw) => matches!(
-                raw.trim().to_ascii_lowercase().as_str(),
-                "1" | "true" | "yes" | "on"
-            ),
-            Err(_) => self.shell_allow_inline_scripts,
-        }
+        self.shell_allow_inline_scripts
     }
 
     pub fn memory_policy_effective(&self) -> Result<MemoryPolicy, String> {
         let mut policy = self.memory.clone();
-        policy.apply_env_overrides();
 
         let budget = self.max_disk_mb_effective();
         if budget > 0 {
@@ -905,53 +780,32 @@ impl Config {
     }
 
     /// Returns `true` if all automatic read-mode degradation is disabled.
-    /// Checks LCTX_NO_DEGRADE env var first, then config.toml field.
     pub fn no_degrade_effective(&self) -> bool {
-        if let Ok(val) = std::env::var("LCTX_NO_DEGRADE") {
-            return val == "1" || val.eq_ignore_ascii_case("true");
-        }
         self.no_degrade
     }
 
     /// Returns `true` if explicit `full`/`lines:N-M` re-reads of
     /// cached-but-changed files should be served as deltas (`mode=diff`)
     /// instead of re-emitting full content.
-    ///
-    /// Checks the `LCTX_DELTA_EXPLICIT` env var first, then the config.toml
-    /// field. Unlike a presence-only knob, an explicit `0`/`false` in the env
-    /// forces the feature OFF even when the config field is `true`, so the env
-    /// can fully override config in both directions.
     pub fn delta_explicit_effective(&self) -> bool {
-        if let Ok(val) = std::env::var("LCTX_DELTA_EXPLICIT") {
-            return val == "1" || val.eq_ignore_ascii_case("true");
-        }
         self.delta_explicit
     }
 
-    /// Effective max_disk_mb from env or config.
+    /// Effective max_disk_mb.
     pub fn max_disk_mb_effective(&self) -> u64 {
-        std::env::var("LEAN_CTX_MAX_DISK_MB")
-            .ok()
-            .and_then(|v| v.parse().ok())
-            .unwrap_or(self.max_disk_mb)
+        self.max_disk_mb
     }
 
-    /// Effective max_staleness_days from env or config.
+    /// Effective max_staleness_days.
     pub fn max_staleness_days_effective(&self) -> u32 {
-        std::env::var("LEAN_CTX_MAX_STALENESS_DAYS")
-            .ok()
-            .and_then(|v| v.parse().ok())
-            .unwrap_or(self.max_staleness_days)
+        self.max_staleness_days
     }
 
-    /// Effective fixed-context budget (tokens) from env or config (#964). `0`
-    /// (env or config) disables the warning; otherwise the per-session footprint
-    /// is checked against this in `doctor overhead` and `gain`.
+    /// Effective fixed-context budget (tokens) (#964). `0` disables the
+    /// warning; otherwise the per-session footprint is checked against this in
+    /// `doctor overhead` and `gain`.
     pub fn context_budget_tokens_effective(&self) -> usize {
-        std::env::var("LEAN_CTX_CONTEXT_BUDGET_TOKENS")
-            .ok()
-            .and_then(|v| v.parse().ok())
-            .unwrap_or(self.context.budget_tokens)
+        self.context.budget_tokens
     }
 
     /// Whether later tool calls may receive matching CCR context.

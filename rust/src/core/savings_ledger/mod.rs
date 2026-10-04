@@ -1,6 +1,6 @@
 //! Verified Savings Ledger (G1) — the per-event, auditable counterfactual store.
 //!
-//! Local-only and on by default (set `LEAN_CTX_SAVINGS_LEDGER=off` to disable). It never
+//! Local-only and always on. It never
 //! leaves the machine; opt-in org roll-up + cryptographic signing are later phases. See
 //! `docs/business/03-verified-savings-ledger.md`.
 
@@ -15,35 +15,15 @@ pub use store::{LedgerSummary, VerifyResult};
 
 use std::sync::OnceLock;
 
-fn enabled() -> bool {
-    enabled_from(std::env::var("LEAN_CTX_SAVINGS_LEDGER").ok().as_deref())
-}
-
-/// Pure opt-out logic (testable without mutating process env). Enabled unless explicitly
-/// set to a falsy value.
-fn enabled_from(value: Option<&str>) -> bool {
-    match value {
-        Some(v) => !matches!(
-            v.trim().to_lowercase().as_str(),
-            "off" | "0" | "false" | "no"
-        ),
-        None => true,
-    }
-}
-
 /// Resolved (model_key, input_price_per_m) for this process. The active model is stable
 /// within a process, so we resolve the pricing table once.
 fn model_and_price() -> &'static (String, f64) {
     static CACHE: OnceLock<(String, f64)> = OnceLock::new();
     CACHE.get_or_init(|| {
-        let resolved = std::env::var("LEAN_CTX_MODEL")
-            .or_else(|_| std::env::var("LCTX_MODEL"))
-            .ok()
-            .filter(|s| !s.trim().is_empty())
-            // No explicit model → value savings against the real model the proxy
-            // measured most, instead of the blended fallback (cross-process hint
-            // from `proxy_usage.json`). Falls back to blended when absent.
-            .or_else(crate::proxy::usage_meter::persisted_dominant_model);
+        // Value savings against the real model the proxy measured most, instead
+        // of the blended fallback (cross-process hint from `proxy_usage.json`).
+        // Falls back to blended when absent.
+        let resolved = crate::proxy::usage_meter::persisted_dominant_model();
         let quote =
             crate::core::gain::model_pricing::ModelPricing::load().quote(resolved.as_deref());
         (quote.model_key, quote.cost.input_per_m)
@@ -168,7 +148,7 @@ pub fn record_read_event(original_tokens: usize, saved_tokens: usize) {
 /// where compression saved nothing and never panics.
 pub fn record_tool_event(tool: &str, baseline_tokens: usize, actual_tokens: usize) {
     let saved = baseline_tokens.saturating_sub(actual_tokens);
-    if saved == 0 || !enabled() {
+    if saved == 0 {
         return;
     }
     let Some(path) = store::default_path() else {
@@ -191,7 +171,7 @@ pub fn record_tool_event(tool: &str, baseline_tokens: usize, actual_tokens: usiz
 /// (`gain::model_pricing::routing_saving_usd`). Negative-value routes (an upgrade) are
 /// recorded too — the ledger never hides regressions. Skips only true no-ops.
 pub fn record_routing_event(requested_model: &str, serving_model: &str, input_tokens: u64) {
-    if input_tokens == 0 || requested_model == serving_model || !enabled() {
+    if input_tokens == 0 || requested_model == serving_model {
         return;
     }
     let Some(path) = store::default_path() else {
@@ -231,7 +211,7 @@ pub fn record_routing_event(requested_model: &str, serving_model: &str, input_to
 /// below the input rate. `discount_usd` must be the measured price difference
 /// (input rate − cache-read rate) × cache-read tokens for the serving model.
 pub fn record_caching_event(model: &str, cache_read_tokens: u64, discount_usd: f64) {
-    if cache_read_tokens == 0 || discount_usd <= 0.0 || !enabled() {
+    if cache_read_tokens == 0 || discount_usd <= 0.0 {
         return;
     }
     let Some(path) = store::default_path() else {
@@ -253,7 +233,7 @@ pub fn record_caching_event(model: &str, cache_read_tokens: u64, discount_usd: f
 /// full re-read, so the earlier saving was (partly) illusory. Recorded as a negative
 /// adjustment with `tool = "bounce"` so totals net out without editing the original entry.
 pub fn record_bounce_event(wasted_tokens: usize) {
-    if wasted_tokens == 0 || !enabled() {
+    if wasted_tokens == 0 {
         return;
     }
     let Some(path) = store::default_path() else {
@@ -317,17 +297,6 @@ pub fn all_events() -> Vec<SavingsEvent> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn opt_out_logic_is_correct() {
-        assert!(enabled_from(None), "enabled by default when unset");
-        assert!(enabled_from(Some("on")));
-        assert!(enabled_from(Some("1")));
-        assert!(!enabled_from(Some("off")));
-        assert!(!enabled_from(Some("0")));
-        assert!(!enabled_from(Some("false")));
-        assert!(!enabled_from(Some(" No ")), "trim + case-insensitive");
-    }
 
     #[test]
     fn repo_hash_is_truncated_hex() {

@@ -256,19 +256,6 @@ fn safe_scan_root_rejects_broad_dir() {
 }
 
 #[test]
-fn no_index_env_skips_scan() {
-    let _env = crate::core::data_dir::test_env_lock();
-    let tmp = tempdir().unwrap();
-    std::fs::write(tmp.path().join("Cargo.toml"), "").unwrap();
-    std::fs::write(tmp.path().join("main.rs"), "fn main() {}").unwrap();
-
-    crate::test_env::set_var("LEAN_CTX_NO_INDEX", "1");
-    let idx = scan(&tmp.path().to_string_lossy());
-    crate::test_env::remove_var("LEAN_CTX_NO_INDEX");
-    assert!(idx.files.is_empty(), "LEAN_CTX_NO_INDEX should skip scan");
-}
-
-#[test]
 fn stale_index_detected_by_contamination() {
     let root_s = "/home/testuser/myproject";
     let mut idx = ProjectIndex::new(root_s);

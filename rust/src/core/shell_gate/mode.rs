@@ -12,12 +12,8 @@
 //! - `off`: command gating is skipped entirely (unconditional blocks, dangerous patterns,
 //!   `eval`/`exec`/interpreter `-c`). A deliberate, documented opt-out for power
 //!   users who accept the risk — **compression stays fully active**.
-//!
-//! Resolution precedence (first hit wins):
-//! 1. `LEAN_CTX_SHELL_SECURITY` env (`enforce` | `warn` | `off`)
-//! 2. `shell_security` in `config.toml`
-//! 3. default → [`ShellSecurity::Enforce`]
-//!
+//! Resolution: `shell_security` in `config.toml`, else
+//! [`ShellSecurity::Enforce`].
 //! The default is `enforce` on purpose: lean-ctx mediates the agent's shell, so
 //! defaulting to anything weaker would silently downgrade security for every
 //! existing install on upgrade.
@@ -56,13 +52,8 @@ impl ShellSecurity {
         }
     }
 
-    /// Resolve the active mode: env override → config → secure default.
+    /// Resolve the active mode: config → secure default.
     pub fn resolve() -> Self {
-        if let Ok(raw) = std::env::var("LEAN_CTX_SHELL_SECURITY")
-            && let Some(mode) = Self::parse(&raw)
-        {
-            return mode;
-        }
         crate::core::config::Config::load()
             .shell_security
             .as_deref()
@@ -116,19 +107,13 @@ mod tests {
     }
 
     #[test]
-    fn env_override_takes_precedence_over_config() {
-        // Serialize env access through the shared test lock so this never races
-        // other env-reading tests (the qubo_select lesson).
-        let _lock = crate::core::data_dir::test_env_lock();
-        crate::test_env::set_var("LEAN_CTX_SHELL_SECURITY", "off");
+    fn resolve_reads_config_and_tolerates_garbage() {
+        let iso = crate::core::data_dir::isolated_data_dir();
+        let cfg = iso.path().join("config.toml");
+        std::fs::write(&cfg, "shell_security = \"off\"\n").unwrap();
         assert_eq!(ShellSecurity::resolve(), ShellSecurity::Off);
-        crate::test_env::set_var("LEAN_CTX_SHELL_SECURITY", "garbage");
-        // Unknown env value → fall through (config/default), never panics.
-        let resolved = ShellSecurity::resolve();
-        assert!(matches!(
-            resolved,
-            ShellSecurity::Enforce | ShellSecurity::Warn | ShellSecurity::Off
-        ));
-        crate::test_env::remove_var("LEAN_CTX_SHELL_SECURITY");
+        std::fs::write(&cfg, "shell_security = \"garbage\"\n").unwrap();
+        // Unknown config value → the default, never panics.
+        assert_eq!(ShellSecurity::resolve(), ShellSecurity::default());
     }
 }

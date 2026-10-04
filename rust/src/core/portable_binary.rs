@@ -1,17 +1,15 @@
 /// Verbatim hook-binary override (#708), or `None` when unset/blank.
 ///
 /// Users who sync agent settings (`~/.claude/settings.json`, …) across
-/// machines with different usernames set `LEAN_CTX_HOOK_BINARY` (env, wins)
-/// or `hook_binary` (config.toml) to an env-based form like
+/// machines with different usernames set `hook_binary` (config.toml) to an env-based form like
 /// `$HOME/.local/bin/lean-ctx`. Hook hosts execute commands through a shell,
 /// which expands the variable at run time. The value is emitted verbatim by
 /// every hook writer and accepted verbatim by `doctor`'s staleness check —
 /// scoped to hook/agent artifacts only, never to launchd/systemd units
 /// (which do not expand shell variables).
 pub fn hook_binary_override() -> Option<String> {
-    std::env::var("LEAN_CTX_HOOK_BINARY")
-        .ok()
-        .or_else(|| crate::core::config::Config::load().hook_binary.clone())
+    crate::core::config::Config::load()
+        .hook_binary
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty())
 }
@@ -188,23 +186,20 @@ mod tests {
         );
     }
 
-    /// #708: the env override is emitted verbatim — no absolutization, no
-    /// rewriting — so synced settings keep `$HOME/...` forms; blank means
-    /// unset so an empty export cannot wedge hook generation.
+    /// #708: the configured override is emitted verbatim — no absolutization,
+    /// no rewriting — so synced settings keep `$HOME/...` forms; blank means
+    /// unset so an empty value cannot wedge hook generation.
     #[test]
-    fn hook_binary_override_env_is_verbatim_and_blank_is_none() {
-        let _lock = crate::core::data_dir::test_env_lock();
-        // SAFETY: serialized by test_env_lock.
-        unsafe { std::env::set_var("LEAN_CTX_HOOK_BINARY", "$HOME/.local/bin/lean-ctx") };
+    fn hook_binary_override_is_verbatim_and_blank_is_none() {
+        let iso = crate::core::data_dir::isolated_data_dir();
+        let cfg = iso.path().join("config.toml");
+        std::fs::write(&cfg, "hook_binary = \"$HOME/.local/bin/lean-ctx\"\n").unwrap();
         assert_eq!(
             hook_binary_override().as_deref(),
             Some("$HOME/.local/bin/lean-ctx")
         );
-        // SAFETY: serialized by test_env_lock.
-        unsafe { std::env::set_var("LEAN_CTX_HOOK_BINARY", "   ") };
+        std::fs::write(&cfg, "hook_binary = \"   \"\n").unwrap();
         assert_eq!(hook_binary_override(), None);
-        // SAFETY: serialized by test_env_lock.
-        unsafe { std::env::remove_var("LEAN_CTX_HOOK_BINARY") };
     }
 
     #[test]

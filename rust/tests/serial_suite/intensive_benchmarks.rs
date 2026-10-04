@@ -243,12 +243,11 @@ fn bench_lazy_default_vs_full_overhead() {
     let tmp = tempfile::tempdir().expect("tempdir");
 
     let prev_data_dir = std::env::var("LEAN_CTX_DATA_DIR").ok();
-    let prev_minimal = std::env::var("LEAN_CTX_MINIMAL").ok();
 
     // SAFETY: serialized by `test_env_lock()`.
     unsafe { std::env::set_var("LEAN_CTX_DATA_DIR", tmp.path()) };
-    // SAFETY: serialized by `test_env_lock()`.
-    unsafe { std::env::set_var("LEAN_CTX_MINIMAL", "1") };
+    std::fs::write(tmp.path().join("config.toml"), "minimal_overhead = true\n")
+        .expect("config.toml");
 
     let lazy_tools = lean_ctx::server::registry::build_registry().tool_defs();
     let full_tools = lean_ctx::tool_defs::granular_tool_defs();
@@ -335,12 +334,6 @@ fn bench_lazy_default_vs_full_overhead() {
         Some(v) => unsafe { std::env::set_var("LEAN_CTX_DATA_DIR", v) },
         // SAFETY: serialized by `test_env_lock()`.
         None => unsafe { std::env::remove_var("LEAN_CTX_DATA_DIR") },
-    }
-    match prev_minimal {
-        // SAFETY: serialized by `test_env_lock()`.
-        Some(v) => unsafe { std::env::set_var("LEAN_CTX_MINIMAL", v) },
-        // SAFETY: serialized by `test_env_lock()`.
-        None => unsafe { std::env::remove_var("LEAN_CTX_MINIMAL") },
     }
 }
 
@@ -1452,14 +1445,46 @@ fn generate_git_log_stat(n: usize) -> String {
 // v3.4.1 Optimization benchmarks: Token overhead + Latency
 // ---------------------------------------------------------------------------
 
+/// Points `LEAN_CTX_DATA_DIR` (which also holds `config.toml`) at a fresh temp
+/// dir for the guard's lifetime and restores the previous value on drop.
+/// Callers hold `test_env_lock()`.
+struct TempConfig {
+    dir: tempfile::TempDir,
+    prev_data_dir: Option<String>,
+}
+
+impl TempConfig {
+    fn new() -> Self {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let prev_data_dir = std::env::var("LEAN_CTX_DATA_DIR").ok();
+        // SAFETY: serialized by `test_env_lock()`.
+        unsafe { std::env::set_var("LEAN_CTX_DATA_DIR", dir.path()) };
+        Self { dir, prev_data_dir }
+    }
+
+    fn write(&self, toml: &str) {
+        std::fs::write(self.dir.path().join("config.toml"), toml).expect("config.toml");
+    }
+}
+
+impl Drop for TempConfig {
+    fn drop(&mut self) {
+        match self.prev_data_dir.take() {
+            // SAFETY: serialized by `test_env_lock()`.
+            Some(v) => unsafe { std::env::set_var("LEAN_CTX_DATA_DIR", v) },
+            // SAFETY: serialized by `test_env_lock()`.
+            None => unsafe { std::env::remove_var("LEAN_CTX_DATA_DIR") },
+        }
+    }
+}
+
 #[test]
 fn bench_minimal_overhead_suppresses_all_meta_strings() {
-    // LEAN_CTX_MINIMAL is process-global; serialize against the other instruction
-    // benchmarks (cf. bench_lazy_default_vs_full_overhead) so a parallel test can't
-    // clear it between set_var and build_instructions_for_test.
+    // The data dir is process-global; serialize against the other instruction
+    // benchmarks (cf. bench_lazy_default_vs_full_overhead).
     let _lock = lean_ctx::core::data_dir::test_env_lock();
-    // SAFETY: serialized by `test_env_lock()`.
-    unsafe { std::env::set_var("LEAN_CTX_MINIMAL", "1") };
+    let config = TempConfig::new();
+    config.write("minimal_overhead = true\n");
 
     let instructions = lean_ctx::server::build_instructions_for_test(CrpMode::Tdd);
     let instr_tokens = count_tokens(&instructions);
@@ -1474,8 +1499,7 @@ fn bench_minimal_overhead_suppresses_all_meta_strings() {
         "minimal_overhead should suppress session block"
     );
 
-    // SAFETY: serialized by `test_env_lock()`.
-    unsafe { std::env::remove_var("LEAN_CTX_MINIMAL") };
+    config.write("minimal_overhead = false\n");
 
     let full_instructions = lean_ctx::server::build_instructions_for_test(CrpMode::Tdd);
     let full_tokens = count_tokens(&full_instructions);
@@ -1667,19 +1691,17 @@ fn bench_session_save_semantics() {
 
 #[test]
 fn bench_full_per_call_overhead_budget() {
-    // Serialize the LEAN_CTX_MINIMAL toggle below against sibling env-mutating tests.
+    // Serialize the minimal_overhead toggle below against sibling env-mutating tests.
     let _lock = lean_ctx::core::data_dir::test_env_lock();
+    let config = TempConfig::new();
     let lazy_tools = lean_ctx::server::registry::build_registry().tool_defs();
     let full_tools = lean_ctx::tool_defs::granular_tool_defs();
 
     let instructions_minimal = {
-        // SAFETY: serialized by `test_env_lock()`.
-        unsafe { std::env::set_var("LEAN_CTX_MINIMAL", "1") };
-        let i = lean_ctx::server::build_instructions_for_test(CrpMode::Tdd);
-        // SAFETY: serialized by `test_env_lock()`.
-        unsafe { std::env::remove_var("LEAN_CTX_MINIMAL") };
-        i
+        config.write("minimal_overhead = true\n");
+        lean_ctx::server::build_instructions_for_test(CrpMode::Tdd)
     };
+    config.write("minimal_overhead = false\n");
     let instructions_full = lean_ctx::server::build_instructions_for_test(CrpMode::Tdd);
 
     let lazy_tool_tokens: usize = lazy_tools

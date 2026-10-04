@@ -284,7 +284,7 @@ mod tests {
     #[cfg(not(feature = "no-jail"))]
     #[test]
     fn local_range_write_denied_in_read_only_root() {
-        let _iso = crate::core::data_dir::isolated_data_dir();
+        let iso = crate::core::data_dir::isolated_data_dir();
         let dir = tempfile::tempdir().unwrap();
         let ro = dir.path().join("refrepo");
         std::fs::create_dir_all(&ro).unwrap();
@@ -292,10 +292,11 @@ mod tests {
         std::fs::write(&path, "aaa\nBODY\nccc\n").unwrap();
 
         let ro_canon = crate::core::pathjail::canonicalize_or_self(&ro);
-        crate::test_env::set_var(
-            "LEAN_CTX_READ_ONLY_ROOTS",
-            ro_canon.to_string_lossy().as_ref(),
-        );
+        std::fs::write(
+            iso.path().join("config.toml"),
+            format!("read_only_roots = [{:?}]\n", ro_canon.to_string_lossy()),
+        )
+        .unwrap();
         let r = TextRange0Based {
             start_line: 1,
             start_char: 0,
@@ -303,7 +304,6 @@ mod tests {
             end_char: 4,
         };
         let res = local_range_write(&edit(&path.to_string_lossy(), r, "NEW", None));
-        crate::test_env::remove_var("LEAN_CTX_READ_ONLY_ROOTS");
 
         let err = res.expect_err("write into a read-only root must be denied");
         assert!(

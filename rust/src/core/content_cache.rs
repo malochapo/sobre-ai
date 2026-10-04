@@ -15,8 +15,7 @@
 //! stale. A miss simply falls back to a disk read.
 //!
 //! Bounds & safety:
-//! - Total resident bytes are capped (`LEAN_CTX_CONTENT_CACHE_MB`, default
-//!   128 MB) with approximate-LRU eviction, so a large corpus cannot grow the
+//! - Total resident bytes are capped (128 MB) with approximate-LRU eviction, so a large corpus cannot grow the
 //!   cache without limit.
 //! - Inserts are skipped while the process is under memory pressure, and the
 //!   eviction orchestrator can [`clear`] the cache on `UnloadIndices` /
@@ -29,7 +28,7 @@ use std::time::UNIX_EPOCH;
 
 use lru::LruCache;
 
-/// Default resident byte budget when `LEAN_CTX_CONTENT_CACHE_MB` is unset.
+/// Resident byte budget.
 const DEFAULT_BUDGET_MB: usize = 128;
 
 /// Identity of one file *version*. A changed mtime or size ⇒ stale ⇒ cache miss.
@@ -118,19 +117,13 @@ impl Cache {
 static CACHE: OnceLock<Mutex<Cache>> = OnceLock::new();
 
 fn budget_bytes() -> usize {
-    let mb = std::env::var("LEAN_CTX_CONTENT_CACHE_MB")
-        .ok()
-        .and_then(|v| v.trim().parse::<usize>().ok())
-        .unwrap_or(DEFAULT_BUDGET_MB);
-    mb.saturating_mul(1024 * 1024)
+    DEFAULT_BUDGET_MB.saturating_mul(1024 * 1024)
 }
 
 fn disabled() -> bool {
-    // A zero byte budget (or the explicit disable flag) turns the cache into a
-    // no-op pass-through — every `get` misses and `insert` is dropped.
-    std::env::var("LEAN_CTX_DISABLE_CONTENT_CACHE")
-        .is_ok_and(|v| v == "1" || v.eq_ignore_ascii_case("true"))
-        || budget_bytes() == 0
+    // A zero byte budget turns the cache into a no-op pass-through — every
+    // `get` misses and `insert` is dropped.
+    budget_bytes() == 0
 }
 
 fn cache() -> &'static Mutex<Cache> {
@@ -270,8 +263,6 @@ mod tests {
     static TEST_LOCK: Mutex<()> = Mutex::new(());
 
     fn fresh_cache(budget_bytes: usize) {
-        crate::test_env::remove_var("LEAN_CTX_CONTENT_CACHE_MB");
-        crate::test_env::remove_var("LEAN_CTX_DISABLE_CONTENT_CACHE");
         let mut c = lock();
         *c = Cache::new(budget_bytes);
     }
@@ -355,20 +346,5 @@ mod tests {
         assert!(st.bytes <= 64, "cache must respect byte budget: {st:?}");
         assert!(st.evictions >= 1, "an eviction must have occurred: {st:?}");
         assert!(get(&pa, sa).is_some(), "recently-used entry must survive");
-    }
-
-    #[test]
-    fn disabled_via_zero_budget_is_passthrough() {
-        let _g = TEST_LOCK
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        fresh_cache(1024 * 1024);
-        crate::test_env::set_var("LEAN_CTX_CONTENT_CACHE_MB", "0");
-        let dir = tempfile::tempdir().unwrap();
-        let p = write(dir.path(), "a.rs", "x\n");
-        let state = FileState::from_path(&p).unwrap();
-        insert(&p, state, Arc::from("x\n"));
-        assert!(get(&p, state).is_none(), "zero-budget cache is a no-op");
-        crate::test_env::remove_var("LEAN_CTX_CONTENT_CACHE_MB");
     }
 }
