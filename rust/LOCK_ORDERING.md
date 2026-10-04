@@ -20,20 +20,11 @@ All `std::sync::Mutex` unless noted otherwise.
 | L7 | `STATS_BUFFER` | `core/stats/mod.rs:13` | `Mutex<Option<(StatsStore, StatsStore, Instant)>>` | Token-savings statistics |
 | L8 | `COST_BUFFER` | `core/a2a/cost_attribution.rs:69` | `Mutex<Option<CostStore>>` | A2A cost tracking |
 | L9 | `GLOBAL_LIMITER` | `core/a2a/rate_limiter.rs:121` | `Mutex<Option<RateLimiter>>` | Global A2A rate limiter |
-| L10 | `DETECTOR` | `core/anomaly.rs:222` | `OnceLock<Mutex<AnomalyDetector>>` | Anomaly detection state |
-| L11 | `SLO_CONFIG` | `core/slo.rs:101` | `OnceLock<Mutex<Vec<SloDefinition>>>` | SLO definitions |
-| L12 | `VIOLATION_LOG` | `core/slo.rs:102` | `OnceLock<Mutex<ViolationHistory>>` | SLO violation history |
-| L13 | `EMIT_STATE` | `core/slo.rs:103` | `OnceLock<Mutex<HashMap<String, EmitState>>>` | SLO emission dedup state |
-| L14 | `ACTIVE_ROLE_NAME` | `core/roles.rs:12` | `OnceLock<Mutex<String>>` | Currently active role name |
-| L15 | `PROVIDER_CACHE` | `core/providers/cache.rs:5` | `LazyLock<Mutex<ProviderCache>>` | Cached provider metadata |
-| L16 | `LAST_BANDIT_ARM` | `core/adaptive_thresholds.rs:337` | `Mutex<Option<(String, String, String)>>` | Last bandit arm selection for adaptive thresholds |
-| L17 | `FILE_LOCKS` | `tools/registered/ctx_read.rs` | `OnceLock<Mutex<HashMap<String, Arc<Mutex<()>>>>>` | Per-file read serialization for concurrent subagents |
-| L18 | `LAST_HASH` | `core/audit_trail.rs:52` | `Mutex<Option<String>>` | Dedup hash for audit trail entries |
+| L17 | `FILE_LOCKS` | `core/path_locks.rs:30` | `OnceLock<Mutex<HashMap<String, Arc<Mutex<()>>>>>` | Per-file read serialization for concurrent subagents |
 | L19 | `CACHE` (graph) | `core/graph_cache.rs:31` | `OnceLock<Mutex<HashMap<String, Entry>>>` | Property graph query result cache |
 | L20 | `RECENT` | `core/auto_findings.rs:15` | `Mutex<Vec<RecentEntry>>` | Recent auto-finding entries |
 | L21 | `LOCK` (home) | `core/home.rs:79` | `Mutex<()>` | Serialize home directory creation |
 | L22 | `BACKENDS` | `lsp/router.rs:14` | `LazyLock<Mutex<HashMap<String, Box<dyn LspBackend>>>>` | Per-language code-intelligence backend registry (rust-analyzer / JetBrains); replaces the former `CLIENTS` map. Held across `Config::load` (L4) — see §3 |
-| L23 | `BUDGETS` | `core/agent_budget.rs:6` | `Mutex<Option<HashMap<String, AgentBudget>>>` | Per-agent token budget tracking |
 | L24 | `SHELL_ENV_LOCK` | `shell_hook.rs:928` | `Mutex<()>` | Serialize env-var access in shell hook |
 | L25 | `TRACKER` | `core/search_delta.rs:49` | `Mutex<Option<SearchDeltaTracker>>` | Tracks search result changes between calls |
 | L26 | `SESSION_ID` | `server/bypass_hint.rs:9` | `Mutex<Option<String>>` | Current bypass hint session ID |
@@ -41,35 +32,24 @@ All `std::sync::Mutex` unless noted otherwise.
 | L28 | `STORE` (refs) | `server/reference_store.rs:15` | `OnceLock<Mutex<HashMap<String, RefEntry>>>` | Function reference store for Fn-ref system |
 | L29 | `DB` | `core/archive_fts.rs:7` | `LazyLock<Mutex<Option<Connection>>>` | SQLite FTS archive connection |
 | L30 | `LOCK` (prop-graph) | `core/property_graph/mod.rs:423` | `Mutex<()>` | Serialize property graph test access |
-| L31 | `GLOBAL` (dyn-tools) | `server/dynamic_tools.rs:232` | `OnceLock<Mutex<DynamicToolState>>` | Dynamic tool registration state |
-| L32 | `APPLIED_PACKAGES` | `core/context_package/auto_load.rs:6` | `Mutex<Option<HashSet<String>>>` | Track which context packages have been applied |
 | L33 | `CACHE` (search) | `core/search_index.rs:401` | `OnceLock<Mutex<HashMap<String, CacheEntry>>>` | BM25 search index query cache |
 | L34 | `GLOBAL` (capabilities) | `core/client_capabilities.rs:188` | `OnceLock<Mutex<ClientMcpCapabilities>>` | Client MCP capability flags |
 | L35 | `LOCK` (doctor) | `doctor/workspace_scope.rs:132` | `Mutex<()>` | Serialize doctor workspace scope tests |
 | L36 | `BUILD` | `core/call_graph.rs:54` | `OnceLock<Mutex<BuildState>>` | Call graph build state |
 | L37 | `LAST_REAL` | `proxy/introspect.rs:54` | `Mutex<[Option<String>; 3]>` | Last 3 real (non-proxy) request paths |
 | L38 | `GLOBAL_TRACKER` | `core/bounce_tracker.rs:226` | `OnceLock<Mutex<BounceTracker>>` | Tracks repeated tool-call bounces |
-| L39 | `GLOBAL_REGISTRY` | `core/plugins/mod.rs:10` | `OnceLock<Mutex<PluginRegistry>>` | Loaded plugin registry |
 | L40 | `GLOBAL_MANAGER` | `core/multi_repo.rs:363` | `OnceLock<Mutex<MultiRepoManager>>` | Multi-repo workspace manager |
 | L41 | `KNOWLEDGE_LOCKS` | `core/knowledge/persist.rs` | `OnceLock<Mutex<HashMap<String, Arc<Mutex<()>>>>>` | Per-project knowledge.json read-modify-write serialization |
-| L42 | `LAST_PARSE_ERROR` | `core/config/mod.rs:440` | `Mutex<Option<String>>` | Most recent global `config.toml` parse error (surfaced by doctor/diagnostics) |
+| L42 | `LAST_PARSE_ERROR` | `core/config/loader.rs:13` | `Mutex<Option<String>>` | Most recent global `config.toml` parse error (surfaced by doctor/diagnostics) |
 | L43 | `POLICY_CACHE` | `server/permission_inheritance.rs:53` | `OnceLock<Mutex<Option<CacheEntry>>>` | Cached host-IDE permission policy (TTL-bounded) for permission inheritance |
-| L44 | `POOL` | `core/providers/mod.rs:28` | `OnceLock<Mutex<HashSet<&'static str>>>` | Provider string-interning pool; bounds per-construction leaks to the finite set of distinct provider ids/names/actions |
-| L45 | `ISSUER_CACHE` | `cloud_server/sso.rs:57` | `Mutex<Option<HashMap<String, (Value, Value, Instant)>>>` | OIDC issuer discovery/JWKS metadata cache (public documents, TTL-bounded) |
-| L46 | `ATTEMPTS` | `cloud_server/team_join.rs:32` | `Mutex<Option<HashMap<String, Vec<Instant>>>>` | Invite-redeem rate-limit attempt log (salted ip-hash → instants, pruned per insert) |
 | L47 | `SOURCE_COUNTS` | `core/auto_mode_resolver.rs:10` | `Mutex<Option<HashMap<&'static str, u64>>>` | Per-process counters of which signal decided each auto-mode resolution; surfaced by `ctx_metrics` (#496) |
 | L48 | `NO_GIT_ROOTS` | `core/git_signals.rs:23` | `Mutex<Option<HashSet<String>>>` | Roots probed and found non-git — negative cache so each root is probed at most once per process |
-| L49 | `BASELINE` | `core/datadog_push.rs:46` | `Mutex<Option<Baseline>>` | Last pushed counter totals for the Datadog agentless push — deltas are computed against it each interval (#401) |
 | L50 | `LINE_EMBED_CACHE` | `core/entropy.rs:299` | `Mutex<Option<HashMap<u64, Vec<f32>>>>` | Per-line embedding cache (line-hash → vector) for the semantic redundancy filter (#544); capacity-bounded, never blocks on model loads |
 | L51 | `SELECTED_ARMS` | `core/adaptive_thresholds.rs:342` | `Mutex<Option<SelectedArmRegistry>>` | Registry of recently selected bandit arms (per project root) so real bounce/edit-fail signals are attributed to the arm that produced the compression (#593); capacity-bounded (64 paths, oldest-first eviction) |
 | L53 | `REGISTRY` (introspect) | `core/introspect.rs:112` | `LazyLock<Mutex<Registry>>` | Cognition v2 activity registry — per-subsystem tick counters + last-run; flushed debounced to a project-scoped JSON so `introspect cognition` / `doctor` can report wired/active across processes (#cognition-v2) |
 | L54 | `ACTIVE_WEIGHTS` | `core/context_field.rs:266` | `RwLock<Option<FieldWeights>>` | In-process learned Φ field-weights cache set by `set_active_weights` (bandit-chosen arm), read by `active_weights()` / `compute_phi`; deterministic by default, sampling only under `LEAN_CTX_STOCHASTIC` (#cognition-v2) |
-| L55 | `WRITE_LOCK` | `core/addons/meter.rs:48` | `Mutex<()>` | Serialises read-modify-write of the addons usage ledger (`<data_dir>/addons/usage.json`) so concurrent gateway proxy calls don't clobber each other's increments (P5 metering); independent leaf lock, never nested |
 | L56 | `MEMO` | `proxy/prose_ranker.rs:30` | `Mutex<Option<HashMap<u64, String>>>` | Cache-safe wire-prose squeeze memo (#895): the first squeeze of a `(content, budget)` is frozen for the process lifetime so a later warm recompute returns identical bytes (provider prompt-cache stability, #448/#498); capacity-bounded (8192), independent leaf lock, never nested |
 | L57 | `SEEN` | `core/conversation.rs:80` | `OnceLock<RwLock<Vec<(String, Instant)>>>` | Recent sightings of distinct conversation ids (`id` → last-seen instant) feeding the multi-conversation stub-gate detector (#1040/#1042); capacity-pruned, independent leaf lock, never nested |
-| L58 | `SNAPSHOT` | `proxy/policy_gate.rs:76` | `RwLock<Option<CachedSnapshot>>` | TTL-cached org-policy gate rules (enterprise#25) so the forward path re-verifies the signed policy at most once per minute; independent leaf lock, never nested |
-| L59 | `LEDGER` | `proxy/policy_gate.rs:247` | `OnceLock<Mutex<BudgetLedger>>` | In-process person/day + project/month spend counters backing hard budget caps (enterprise#25); fed from the metering choke-point, seeded from Postgres when available; independent leaf lock, never nested |
-| L60 | `RATE` | `proxy/policy_gate.rs:281` | `OnceLock<Mutex<RateLedger>>` | Per-person accepted-request counts for the current UTC minute backing the org-policy rate limit (enterprise#66); reset on every minute roll, at most one entry per active person; independent leaf lock, never nested |
 | L61 | `CLI_OVERLAY` | `core/index_filter.rs:31` | `RwLock<Option<CliOverlay>>` | Per-run index corpus filter overlay (#735): written once by the `index` CLI dispatch before builders start, read by every index walk via `IndexFileFilter::resolve`; independent leaf lock, never nested |
 | L62 | `TARGETS` | `core/eviction_orchestrator.rs:48` | `LazyLock<Mutex<EvictionRegistry>>` | Process-wide registry of live `EvictionOrchestrator` weak refs (RAM guardian, multi-session): `register()`/`on_memory_pressure()` lock it only to clone/upgrade the target list, then drop it before calling `on_pressure()` on each target — never held while a per-target `controller` lock (or any other lock) is acquired; independent leaf lock, never nested |
 | L63 | `BLOCK` | `core/events.rs:289` | `OnceLock<Mutex<LocalBlock>>` (fn-local static) | Per-process cache of the current pre-reserved event-id block (`next`/`last`) inside `next_event_id()`: most calls just bump `next` under the lock; on exhaustion the lock is held across the refill call to `reserve_event_id_block_at`, which takes its own independent OS file lock (`events.seq.lock`, not a Rust static) to persist the next block — never nested with another *static* Rust lock |
@@ -77,35 +57,14 @@ All `std::sync::Mutex` unless noted otherwise.
 | L65 | `SESSIONS` | `proxy/sticky_tools.rs:17` | `OnceLock<Mutex<HashSet<u64>>>` (fn-local static) | CCR active conversation tracking; capacity-bounded (`MAX_TRACKED`), oldest-first eviction on overflow; independent leaf lock, never nested |
 | L66 | `JOBS` | `server/background_shell.rs:26` | `LazyLock<Mutex<HashMap<String, Job>>>` | Content-addressed background shell jobs; lock is held only to insert, inspect, or remove a job, then released before executing or joining its worker thread; independent leaf lock, never nested |
 | L67 | `BUILD_GATE` | `core/graph_provider.rs:659` | `LazyLock<Mutex<()>>` | Serializes synchronous graph-index builds; acquired with `try_lock()` and held only while the spawned builder is awaited, never nested with another static lock |
-| L68 | `BUDGET_STORE` | `core/ocla/wire_api.rs:54` | `OnceLock<Mutex<BudgetStore>>` | OCLA budget enforcement store; tracks per-scope daily token/USD budgets; independent leaf lock, never nested |
-| L69 | `DASHBOARD_PROJECT` | `core/runtime_flags.rs:10` | `OnceLock<Mutex<Option<String>>>` | Caches the active project name for dashboard display; independent leaf lock, never nested |
 | L70 | `ALLOW_PATHS` | `core/runtime_flags.rs:11` | `OnceLock<Mutex<Vec<PathBuf>>>` | Runtime-configured additional allowed paths for PathJail; independent leaf lock, never nested |
-| L71 | `GRPC_TASK` | `core/ocla/grpc_bridge.rs:20` | `OnceLock<Mutex<Option<JoinHandle<()>>>>` | Handle to the spawned OCLA gRPC listener task, checked/replaced by `start_grpc_server`/`stop_grpc_server`; critical section never spans an `.await`, independent leaf lock, never nested |
-| L72 | `IDENTITY_LEDGER` | `core/context_kernel/proxy_bridge.rs:13` | `OnceLock<Mutex<IdentityLedger>>` | Per-user identity tracking in the proxy-to-kernel bridge; updated after proxy ETPAO tracking, independent leaf lock |
-| L73 | `ETPAO_TRACKER` | `core/context_kernel/proxy_bridge.rs:14` | `OnceLock<Mutex<EtpaoLive>>` | ETPAO efficiency tracking for proxy requests; locked and released before `IDENTITY_LEDGER` |
-| L74 | `CHAIN` | `core/context_kernel/receipt_chain.rs:37` | `OnceLock<Mutex<ReceiptChain>>` | Evidence chain for context delivery lifecycles and monotonic ids; independent leaf lock, never nested |
-| L75 | `RECEIPTS` | `core/context_kernel/mcp_receipt.rs:46` | `OnceLock<Mutex<McpReceiptStore>>` | Receipt recording and honest accounting for MCP tool calls; independent leaf lock, never nested |
-| L76 | `DEDUP` | `core/context_kernel/dedup_wiring.rs:8` | `OnceLock<Mutex<ContextDedup>>` | Global content-deduplication cache for context delivery hot paths; acquired before `SEEN_PATHS`/`STATS` in reset paths |
-| L77 | `SEEN_PATHS` | `core/context_kernel/dedup_wiring.rs:9` | `OnceLock<Mutex<HashSet<String>>>` | Tracks previously seen file paths for dedup modified-vs-fresh distinction; may be touched after `DEDUP` |
-| L78 | `STATS` | `core/context_kernel/dedup_wiring.rs:10` | `OnceLock<Mutex<DedupStats>>` | Cumulative content-deduplication counters; may be reset after `DEDUP` and `SEEN_PATHS` |
-| L79 | `MCP_ETPAO` | `core/context_kernel/mcp_bridge.rs:12` | `OnceLock<Mutex<EtpaoLive>>` | ETPAO efficiency tracking for MCP tool calls; locked and released before `MCP_IDENTITY` |
-| L80 | `MCP_IDENTITY` | `core/context_kernel/mcp_bridge.rs:13` | `OnceLock<Mutex<IdentityLedger>>` | Per-user identity tracking for MCP clients; independent leaf lock |
-| L81 | `SAVINGS` | `core/context_kernel/schema_wiring.rs:47` | `OnceLock<Mutex<SavingsState>>` | Cumulative schema optimization savings tracking; independent leaf lock, never nested |
-| L82 | `NORMALIZER` | `core/context_kernel/usage_normalizer.rs:73` | `OnceLock<Mutex<SessionUsage>>` | Session-level token usage aggregation from canonical envelopes; independent leaf lock, never nested |
-| L83 | `FEATURES` | `core/context_kernel/kernel_config.rs:47` | `OnceLock<Mutex<KernelFeatures>>` | Central runtime feature toggles for all kernel modules; independent leaf lock, never nested |
-| L84 | `QUERY_TOKENS` | `tools/search_kernel.rs:10` | `LazyLock<Mutex<HashMap<u64, usize>>>` | Per-session repeated-query tracking for the search tool (r29): maps a query hash to its result-token count so repeat searches are counted; locked only to record or read a single entry, never held across another lock or an `.await`; independent leaf lock, never nested |
-| L85 | `PROVIDER_STATS` | `core/context_kernel/envelope_bridge.rs:37` | `OnceLock<Mutex<HashMap<ProviderKind, ProviderAccum>>>` | Per-provider token/cost accumulation from canonical envelopes (r32); locked briefly to record or read a single entry; independent leaf lock, never nested |
 
 ### Test / Environment Locks (serialise env-var mutations)
 
 | # | Lock | File | Purpose |
 |---|------|------|---------|
-| E1 | `ENV_LOCK` | `dashboard/mod.rs:537` | Serialize env-var access in dashboard tests |
-| E2 | `ENV_LOCK` | `core/dense_backend.rs:412` | Serialize env-var access in dense-backend tests |
-| E3 | `ENV_LOCK` | `core/workspace_config.rs:101` | Serialize env-var access in workspace-config tests |
 | E4 | `LOCK` | `core/data_dir.rs:50` | Serialize data-dir creation |
 | E5 | `LOCK` | `core/tokens.rs:190` | Serialize tokenizer tests |
-| E6 | `LOCK` | `core/tokenizer_translation_driver.rs:248` | Serialize tokenizer-translation tests |
 
 ---
 
@@ -124,7 +83,6 @@ Defined in `tools/mod.rs` on `ToolContext`:
 | `loop_detector` | `Arc<RwLock<LoopDetector>>` | Loop-detection state |
 | `workflow` | `Arc<RwLock<Option<WorkflowRun>>>` | Active workflow run |
 | `ledger` | `Arc<RwLock<ContextLedger>>` | Context ledger |
-| `pipeline_stats` | `Arc<RwLock<PipelineStats>>` | Pipeline statistics |
 | `context_ir` | `Option<Arc<RwLock<ContextIrV1>>>` | Context IR state |
 
 These are all **`tokio::sync::RwLock`** and are scoped to a single session — no cross-session
@@ -245,7 +203,7 @@ Session-scoped `RwLock`s on `ToolContext` are logically independent:
 - **Never hold a session RwLock while locking a global static Mutex** — this risks priority
   inversion between the tokio runtime and OS threads.
 
-### Test/Environment Locks (E1–E6)
+### Test/Environment Locks (E-numbered)
 
 These exist solely to serialise tests that mutate environment variables. They must not be held
 across any other lock acquisition.
