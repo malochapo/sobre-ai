@@ -1,42 +1,11 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 use std::path::PathBuf;
-
-use crate::core::a2a::message::{A2AMessage, MessageCategory, MessagePriority, PrivacyLevel};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AgentRegistry {
     pub agents: Vec<AgentEntry>,
-    pub scratchpad: Vec<ScratchpadEntry>,
     pub updated_at: DateTime<Utc>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct AgentDiary {
-    pub agent_id: String,
-    pub agent_type: String,
-    pub project_root: String,
-    pub entries: Vec<DiaryEntry>,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct DiaryEntry {
-    pub entry_type: DiaryEntryType,
-    pub content: String,
-    pub context: Option<String>,
-    pub timestamp: DateTime<Utc>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub enum DiaryEntryType {
-    Discovery,
-    Decision,
-    Blocker,
-    Progress,
-    Insight,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -69,34 +38,10 @@ impl std::fmt::Display for AgentStatus {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ScratchpadEntry {
-    pub id: String,
-    pub from_agent: String,
-    pub to_agent: Option<String>,
-    #[serde(default)]
-    pub task_id: Option<String>,
-    pub category: String,
-    #[serde(default)]
-    pub priority: MessagePriority,
-    #[serde(default)]
-    pub privacy: PrivacyLevel,
-    pub message: String,
-    #[serde(default)]
-    pub metadata: HashMap<String, String>,
-    #[serde(default)]
-    pub project_root: Option<String>,
-    pub timestamp: DateTime<Utc>,
-    pub read_by: Vec<String>,
-    #[serde(default)]
-    pub expires_at: Option<DateTime<Utc>>,
-}
-
 impl AgentRegistry {
     pub fn new() -> Self {
         Self {
             agents: Vec::new(),
-            scratchpad: Vec::new(),
             updated_at: Utc::now(),
         }
     }
@@ -263,128 +208,6 @@ impl Default for AgentRegistry {
     }
 }
 
-impl AgentDiary {
-    pub fn new(agent_id: &str, agent_type: &str, project_root: &str) -> Self {
-        let now = Utc::now();
-        Self {
-            agent_id: agent_id.to_string(),
-            agent_type: agent_type.to_string(),
-            project_root: project_root.to_string(),
-            entries: Vec::new(),
-            created_at: now,
-            updated_at: now,
-        }
-    }
-
-    pub fn format_summary(&self) -> String {
-        if self.entries.is_empty() {
-            return format!("Diary [{}]: empty", self.agent_id);
-        }
-        let mut out = format!(
-            "Diary [{}] ({} entries):\n",
-            self.agent_id,
-            self.entries.len()
-        );
-        let now = Utc::now();
-        for e in self.entries.iter().rev().take(10) {
-            let age = (now - e.timestamp).num_minutes();
-            let prefix = match e.entry_type {
-                DiaryEntryType::Discovery => "FOUND",
-                DiaryEntryType::Decision => "DECIDED",
-                DiaryEntryType::Blocker => "BLOCKED",
-                DiaryEntryType::Progress => "DONE",
-                DiaryEntryType::Insight => "INSIGHT",
-            };
-            let ctx = e
-                .context
-                .as_deref()
-                .map(|c| format!(" [{c}]"))
-                .unwrap_or_default();
-            out.push_str(&format!("  [{prefix}] {}{ctx} ({age}m ago)\n", e.content));
-        }
-        out
-    }
-
-    pub fn format_compact(&self) -> String {
-        if self.entries.is_empty() {
-            return String::new();
-        }
-        let items: Vec<String> = self
-            .entries
-            .iter()
-            .rev()
-            .take(5)
-            .map(|e| {
-                let prefix = match e.entry_type {
-                    DiaryEntryType::Discovery => "F",
-                    DiaryEntryType::Decision => "D",
-                    DiaryEntryType::Blocker => "B",
-                    DiaryEntryType::Progress => "P",
-                    DiaryEntryType::Insight => "I",
-                };
-                format!("{prefix}:{}", truncate(&e.content, 50))
-            })
-            .collect();
-        format!("diary:{}|{}", self.agent_id, items.join("|"))
-    }
-
-    pub fn save(&self) -> Result<(), String> {
-        let dir = diary_dir()?;
-        std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-        let path = dir.join(format!("{}.json", sanitize_filename(&self.agent_id)));
-        let json = serde_json::to_string_pretty(self).map_err(|e| e.to_string())?;
-        std::fs::write(&path, json).map_err(|e| e.to_string())
-    }
-
-    pub fn load(agent_id: &str) -> Option<Self> {
-        let dir = diary_dir().ok()?;
-        let path = dir.join(format!("{}.json", sanitize_filename(agent_id)));
-        let content = std::fs::read_to_string(&path).ok()?;
-        serde_json::from_str(&content).ok()
-    }
-
-    pub fn load_or_create(agent_id: &str, agent_type: &str, project_root: &str) -> Self {
-        Self::load(agent_id).unwrap_or_else(|| Self::new(agent_id, agent_type, project_root))
-    }
-}
-
-impl std::fmt::Display for DiaryEntryType {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            DiaryEntryType::Discovery => write!(f, "discovery"),
-            DiaryEntryType::Decision => write!(f, "decision"),
-            DiaryEntryType::Blocker => write!(f, "blocker"),
-            DiaryEntryType::Progress => write!(f, "progress"),
-            DiaryEntryType::Insight => write!(f, "insight"),
-        }
-    }
-}
-
-fn diary_dir() -> Result<PathBuf, String> {
-    let dir = crate::core::data_dir::lean_ctx_data_dir()?;
-    Ok(dir.join("agents").join("diaries"))
-}
-
-fn sanitize_filename(name: &str) -> String {
-    name.chars()
-        .map(|c| {
-            if c.is_alphanumeric() || c == '-' || c == '_' {
-                c
-            } else {
-                '_'
-            }
-        })
-        .collect()
-}
-
-fn truncate(s: &str, max: usize) -> String {
-    if s.len() <= max {
-        s.to_string()
-    } else {
-        format!("{}...", &s[..s.floor_char_boundary(max.saturating_sub(3))])
-    }
-}
-
 fn agents_dir() -> Result<PathBuf, String> {
     let dir = crate::core::data_dir::lean_ctx_data_dir()?;
     Ok(dir.join("agents"))
@@ -463,87 +286,6 @@ impl Drop for FileLock {
     }
 }
 
-impl AgentRegistry {}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum AgentRole {
-    Coder,
-    Reviewer,
-    Planner,
-    Explorer,
-    Debugger,
-    Tester,
-    Orchestrator,
-}
-
-impl AgentRole {
-    pub fn from_str_loose(s: &str) -> Self {
-        match s.to_lowercase().as_str() {
-            "review" | "reviewer" | "code_review" => Self::Reviewer,
-            "plan" | "planner" | "architect" => Self::Planner,
-            "explore" | "explorer" | "research" => Self::Explorer,
-            "debug" | "debugger" => Self::Debugger,
-            "test" | "tester" | "qa" => Self::Tester,
-            "orchestrator" | "coordinator" | "manager" => Self::Orchestrator,
-            _ => Self::Coder,
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct ContextDepthConfig {
-    pub max_files_full: usize,
-    pub max_files_signatures: usize,
-    pub preferred_mode: &'static str,
-    pub include_graph: bool,
-    pub include_knowledge: bool,
-    pub include_gotchas: bool,
-    pub context_budget_ratio: f64,
-}
-
-impl ContextDepthConfig {}
-
-impl From<ScratchpadEntry> for A2AMessage {
-    fn from(entry: ScratchpadEntry) -> Self {
-        Self {
-            id: entry.id,
-            from_agent: entry.from_agent,
-            to_agent: entry.to_agent,
-            task_id: entry.task_id,
-            category: MessageCategory::parse_str(&entry.category),
-            priority: entry.priority,
-            privacy: entry.privacy,
-            content: entry.message,
-            metadata: entry.metadata,
-            project_root: entry.project_root,
-            timestamp: entry.timestamp,
-            read_by: entry.read_by,
-            expires_at: entry.expires_at,
-        }
-    }
-}
-
-impl From<A2AMessage> for ScratchpadEntry {
-    fn from(msg: A2AMessage) -> Self {
-        Self {
-            id: msg.id,
-            from_agent: msg.from_agent,
-            to_agent: msg.to_agent,
-            task_id: msg.task_id,
-            category: msg.category.to_string(),
-            priority: msg.priority,
-            privacy: msg.privacy,
-            message: msg.content,
-            metadata: msg.metadata,
-            project_root: msg.project_root,
-            timestamp: msg.timestamp,
-            read_by: msg.read_by,
-            expires_at: msg.expires_at,
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -577,37 +319,6 @@ mod tests {
             reg.agents[0].status_message,
             Some("waiting for review".to_string())
         );
-    }
-
-    #[test]
-    fn diary_entry_types() {
-        let types = vec![
-            DiaryEntryType::Discovery,
-            DiaryEntryType::Decision,
-            DiaryEntryType::Blocker,
-            DiaryEntryType::Progress,
-            DiaryEntryType::Insight,
-        ];
-        for t in types {
-            assert!(!format!("{t}").is_empty());
-        }
-    }
-
-    #[test]
-    fn truncate_utf8_emoji_no_panic() {
-        let result = truncate("Agent 🤖 Name ist lang genug", 15);
-        assert!(result.ends_with("..."));
-    }
-
-    #[test]
-    fn truncate_utf8_cyrillic_no_panic() {
-        let result = truncate("агент выполняет длинную задачу", 15);
-        assert!(result.ends_with("..."));
-    }
-
-    #[test]
-    fn truncate_short_utf8_unchanged() {
-        assert_eq!(truncate("短い", 20), "短い");
     }
 
     fn test_entry(agent_id: &str, project_root: &str, pid: u32) -> AgentEntry {
