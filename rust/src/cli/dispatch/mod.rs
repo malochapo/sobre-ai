@@ -76,10 +76,6 @@ pub fn run() {
                 super::cmd_output_savings(&rest);
                 return;
             }
-            "policy" => {
-                crate::cli::cmd_policy(&rest);
-                return;
-            }
             "embeddings" => {
                 crate::cli::embeddings_cmd::cmd_embeddings(&rest);
                 return;

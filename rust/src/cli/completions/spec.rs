@@ -685,15 +685,6 @@ pub static COMMAND_TREE: &[CommandNode] = &[
         hidden: false,
     },
     CommandNode {
-        name: "policy",
-        aliases: &[],
-        description: "Manage security policies",
-        subcommands: &[],
-        flags: &[],
-        positional: None,
-        hidden: false,
-    },
-    CommandNode {
         name: "cep",
         aliases: &[],
         description: "Context engineering pipeline",

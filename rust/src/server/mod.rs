@@ -10,7 +10,6 @@ pub mod helpers;
 pub mod multi_path;
 pub mod notifications;
 pub mod permission_inheritance;
-pub mod policy_guard;
 pub mod progress;
 pub mod prompts;
 pub mod reference_store;

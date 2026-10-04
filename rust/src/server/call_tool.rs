@@ -19,14 +19,6 @@ impl LeanCtxServer {
         let name = tool_name.as_str();
         let args = tool_args.as_ref();
 
-        if let Some(denied) = Self::guard_policy(name) {
-            return Ok(denied);
-        }
-
-        if let Some(blocked) = Self::guard_egress(name, args) {
-            return Ok(blocked);
-        }
-
         // #990: determine machine-readability *before* the once-per-session
         // decorations below. A machine-readable invocation (e.g. ctx_outline
         // format=json) must reach the client byte-exact and parseable, so every
@@ -303,47 +295,6 @@ impl LeanCtxServer {
                 &config.sensitivity_effective(),
             );
             result_text = enforced.into_text();
-        }
-
-        // #673 — context-policy-pack redaction. Applies the active pack's
-        // `[redaction]` patterns to outbound content before it reaches the model
-        // (and before the out-of-band copy below). No-op when no pack is active,
-        // so existing behavior is unchanged.
-        if crate::core::policy::runtime::is_active() {
-            let (redacted, hits) = policy_guard::redact_result(&result_text);
-            if hits > 0 {
-                tracing::debug!(redactions = hits, "context policy redaction applied");
-                result_text = redacted;
-            }
-        }
-
-        // #675 — inbound content filters (PII / classification / prompt-injection).
-        // Runs at the same outbound chokepoint as redaction, before the archive /
-        // compression below. A `block` decision replaces the content with a
-        // refusal so it never reaches the model; `redact`/`warn` rewrite/annotate.
-        // No-op unless the active pack enables a `[filters]` action.
-        if let Some(active) = crate::core::policy::runtime::active()
-            && active.filters.is_active()
-        {
-            let outcome = crate::core::input_filters::apply(&result_text, &active.filters);
-            if outcome.blocked {
-                let reason = outcome.block_reason.as_deref().unwrap_or("policy");
-                tracing::warn!(tool = name, reason, "content blocked by input filter");
-                policy_guard::audit_filter(name, &outcome.audit, true);
-                result_text = format!(
-                    "[POLICY BLOCKED] Content withheld by the active context policy pack \
-                     (input filter: {reason}). Adjust .lean-ctx/policy.toml to proceed."
-                );
-            } else {
-                if !outcome.audit.is_empty() {
-                    tracing::debug!(tool = name, "input filters applied");
-                    policy_guard::audit_filter(name, &outcome.audit, false);
-                }
-                result_text = outcome.text;
-                for warning in &outcome.warnings {
-                    result_text = format!("{result_text}\n\n[FILTER] {warning}");
-                }
-            }
         }
 
         // Out-of-band archive + optional context firewall for large tool outputs.
@@ -802,61 +753,6 @@ impl LeanCtxServer {
         }
 
         Ok(finalize_call_result(&result_text, shell_outcome))
-    }
-
-    fn guard_policy(name: &str) -> Option<CallToolResult> {
-        // #673 — context-policy-pack tool gating: a pack's
-        // `allow_tools`/`deny_tools` are enforced here. No-op (allow) when no
-        // policy pack is active.
-        let policy_check = policy_guard::check_tool_access(name);
-        if let Some(denied) = policy_guard::into_call_tool_result(&policy_check) {
-            tracing::warn!(
-                tool = name,
-                policy = ?policy_check.policy_name,
-                "Tool blocked by context policy pack"
-            );
-            return Some(denied);
-        }
-        None
-    }
-
-    fn guard_egress(
-        guard_name: &str,
-        guard_args: Option<&serde_json::Map<String, serde_json::Value>>,
-    ) -> Option<CallToolResult> {
-        // #676 — egress / output DLP on agent writes & actions. Inspect the
-        // payload of write/action tools BEFORE dispatch so a forbidden write
-        // never touches disk and a forbidden command never runs. Only the
-        // agent's tool-driven egress is governed here (a human's own editor
-        // writes never pass through this path). No-op unless the active pack has
-        // an `[egress]` section. Payload mapping (incl. all ctx_patch bodies)
-        // lives in `core::egress::write_payload` — shared with `policy enforce`.
-        if let Some(active) = crate::core::policy::runtime::active()
-            && active.egress.is_active()
-        {
-            let target = crate::core::egress::write_payload(guard_name, guard_args);
-            if let Some((payload, kind)) = target {
-                if let Some(reason) = active.egress.check_content(&payload, &active.redaction) {
-                    tracing::warn!(tool = guard_name, %reason, "agent egress blocked by policy");
-                    policy_guard::audit_egress(guard_name, &reason);
-                    return Some(CallToolResult::success(vec![ContentBlock::text(format!(
-                        "[POLICY BLOCKED] {kind} blocked by context policy pack egress rule \
-                         ({reason}). Adjust .lean-ctx/policy.toml to proceed."
-                    ))]));
-                }
-                if let Some(max) = active.egress.max_writes_per_min
-                    && !crate::core::egress::check_rate(max)
-                {
-                    tracing::warn!(tool = guard_name, max, "agent egress rate limit exceeded");
-                    policy_guard::audit_egress(guard_name, "rate-limit");
-                    return Some(CallToolResult::success(vec![ContentBlock::text(format!(
-                        "[POLICY BLOCKED] {kind} rate limit exceeded ({max}/min) by context \
-                         policy pack. Slow agent writes/actions or adjust .lean-ctx/policy.toml."
-                    ))]));
-                }
-            }
-        }
-        None
     }
 
     /// Resolve project root from MCP client roots (once per session).

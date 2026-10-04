@@ -180,14 +180,6 @@ pub fn contract_docs() -> Vec<ContractDoc> {
         // and governed attestor adoption remain deliberately unclaimed.
         // Local Rust adapter only; external callability, authenticated approval,
         // and recovery orchestration are deliberately not claimed by v2.
-        // 2026-06 org/cloud-plane wave — fresh surfaces, not yet consumed by
-        // external integrations; promote to Stable deliberately, not by default.
-        doc(
-            "context-policy-packs",
-            "context-policy-packs-v1.md",
-            1,
-            Experimental,
-        ),
         // Quality loop (GL #494): edit-failure feedback into mode selection.
         doc("quality-loop", "quality-loop-v1.md", 1, Experimental),
         // Edit metering (GL #1144): anchored-vs-str_replace efficiency channel.

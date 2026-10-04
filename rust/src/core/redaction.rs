@@ -332,31 +332,6 @@ pub fn config_exclude_patterns() -> std::sync::Arc<Vec<regex::Regex>> {
     compiled
 }
 
-/// Apply caller-supplied policy redaction patterns on top of the built-in
-/// secret rules: each regex match becomes `[REDACTED:<label>]`. Returns the
-/// transformed text and the number of redactions applied (for audit counts).
-///
-/// Used by context policy packs (GL #673) so a pack's `[redaction]` block
-/// actually removes matching content from what the model sees. The patterns are
-/// the pack's `[redaction]` entries, precompiled by
-/// [`crate::core::policy::runtime`].
-#[must_use]
-pub fn redact_with_patterns(input: &str, patterns: &[(String, regex::Regex)]) -> (String, usize) {
-    let mut out = input.to_string();
-    let mut hits = 0usize;
-    for (label, re) in patterns {
-        let mut local = 0usize;
-        out = re
-            .replace_all(&out, |_caps: &regex::Captures| {
-                local += 1;
-                format!("[REDACTED:{label}]")
-            })
-            .to_string();
-        hits += local;
-    }
-    (out, hits)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -556,26 +531,6 @@ mod tests {
         assert!(is_placeholder_value("<token>"));
         assert!(is_placeholder_value("your_api_key_123"));
         assert!(!is_placeholder_value("A1b2C3d4E5f6G7h8"));
-    }
-
-    #[test]
-    fn policy_patterns_redact_with_label_and_count() {
-        let patterns = vec![(
-            "employee_id".to_string(),
-            regex::Regex::new(r"EMP-\d{4}").unwrap(),
-        )];
-        let (out, hits) = redact_with_patterns("user EMP-1234 and EMP-5678", &patterns);
-        assert_eq!(hits, 2);
-        assert!(!out.contains("EMP-1234"));
-        assert!(out.contains("[REDACTED:employee_id]"));
-    }
-
-    #[test]
-    fn policy_patterns_noop_when_no_match() {
-        let patterns = vec![("iban".to_string(), regex::Regex::new(r"CH\d{2}").unwrap())];
-        let (out, hits) = redact_with_patterns("nothing sensitive here", &patterns);
-        assert_eq!(hits, 0);
-        assert_eq!(out, "nothing sensitive here");
     }
 
     /// GH #827: scientific notation and plain numbers after keys containing

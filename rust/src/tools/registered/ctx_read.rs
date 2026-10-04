@@ -166,20 +166,8 @@ impl CtxReadTool {
         {
             return Err(ErrorData::invalid_params(e.user_message(), None));
         }
-        // #673 — when the caller omits `mode`, a context policy pack's
-        // `default_read_mode` (if set) takes precedence over the auto
-        // selection. An explicit `mode` arg always wins; line windows below may
-        // still narrow it (it is a default, not a pin).
-        let policy_default_mode = if explicit_mode {
-            None
-        } else {
-            crate::core::policy::runtime::active()
-                .and_then(|p| p.resolved.default_read_mode.clone())
-        };
         let mut mode = if let Some(m) = explicit_mode_arg {
             m
-        } else if let Some(pd) = policy_default_mode {
-            pd
         } else if let Ok(cache) = cache_lock.try_read() {
             crate::tools::impl_smart_read::select_mode_with_task(&cache, path, task_ref)
         } else {
