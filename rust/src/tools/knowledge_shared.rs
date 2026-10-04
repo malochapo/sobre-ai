@@ -7,12 +7,10 @@ pub(crate) fn load_policy_or_error() -> Result<MemoryPolicy, String> {
         |p| p.display().to_string(),
     );
 
-    let mut policy = cfg
+    let policy = cfg
         .memory_policy_effective()
         .map_err(|e| format!("Error: invalid memory policy: {e}\nFix: edit {path}"))?;
 
-    let profile = crate::core::profiles::active_profile();
-    policy.apply_overrides(&profile.memory);
     policy
         .validate()
         .map_err(|e| format!("Error: invalid memory policy: {e}\nFix: edit {path}"))?;

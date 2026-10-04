@@ -762,7 +762,7 @@ mod cli_commands {
         let out = lean_ctx_bin().arg("config").output().unwrap();
         assert!(out.status.success());
         let stdout = String::from_utf8_lossy(&out.stdout);
-        assert!(stdout.contains("checkpoint_interval"));
+        assert!(stdout.contains("passthrough_commands"));
     }
 
     #[test]

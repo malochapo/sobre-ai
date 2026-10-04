@@ -106,7 +106,6 @@ impl Config {
         override_if_ne!(default.tee_mode, tee_mode);
         override_if_ne!(default.recovery_hints, recovery_hints);
         override_if_ne!(default.output_density, output_density);
-        override_if_ne!(default.checkpoint_interval, checkpoint_interval);
         extend_if_nonempty!(passthrough_commands);
         extend_if_nonempty!(passthrough_urls);
         // Additive merge with dedup: project-local config can add formats on top
@@ -301,7 +300,6 @@ impl Config {
         override_if_ne!(default.memory_cleanup, memory_cleanup);
         override_if_true!(no_degrade);
         override_if_true!(delta_explicit);
-        override_if_some!(profile);
         override_if_some!(proxy_timeout_ms);
     }
 }

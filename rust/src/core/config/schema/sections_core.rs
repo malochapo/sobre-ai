@@ -35,14 +35,6 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
         ),
     );
     root.insert(
-        "checkpoint_interval".into(),
-        key(
-            "u32",
-            serde_json::json!(cfg.checkpoint_interval),
-            "Session checkpoint interval in minutes",
-        ),
-    );
-    root.insert(
         "passthrough_commands".into(),
         key(
             "string[]",
@@ -116,14 +108,6 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
             "Serve explicit full/lines re-reads of changed cached files as diffs (opt-in). Override via LCTX_DELTA_EXPLICIT=1",
         ),
     );
-    root.insert(
-            "profile".into(),
-            key(
-                "string",
-                serde_json::json!(cfg.profile.as_deref().unwrap_or("")),
-                "Persistent profile name. Checked after LEAN_CTX_PROFILE env var. Set via: lean-ctx config set profile passthrough",
-            ),
-        );
     root.insert(
         "rules_scope".into(),
         key_enum(

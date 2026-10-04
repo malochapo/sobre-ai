@@ -58,12 +58,14 @@ impl AutonomyState {
     }
 }
 
-fn profile_autonomy() -> crate::core::profiles::ProfileAutonomy {
-    crate::core::profiles::active_profile().autonomy
-}
+/// Token budget and file cap of the prefetch run after a read.
+const PREFETCH_BUDGET_TOKENS: usize = 4000;
+const PREFETCH_MAX_FILES: usize = 3;
+/// Floor of the cache-dedup threshold (`autonomy.dedup_threshold`).
+const MIN_DEDUP_THRESHOLD: usize = 8;
 
 fn autonomy_enabled_effective(state: &AutonomyState) -> bool {
-    state.is_enabled() && profile_autonomy().enabled_effective()
+    state.is_enabled()
 }
 
 fn policy_allows(tool: &str) -> Result<(), (String, String)> {
@@ -89,8 +91,6 @@ fn record_event(
         seq: 0,
         created_at: chrono::Utc::now().to_rfc3339(),
         phase,
-        role: crate::core::roles::active_role_name(),
-        profile: crate::core::profiles::active_profile_name(),
         tool: tool.to_string(),
         action: action.map(std::string::ToString::to_string),
         decisions,
@@ -133,7 +133,6 @@ pub fn session_lifecycle_pre_hook(
         return None;
     }
 
-    let prof = profile_autonomy();
     let root = match project_root {
         Some(r) if !r.is_empty() && r != "." => r.to_string(),
         _ => return None,
@@ -155,12 +154,12 @@ pub fn session_lifecycle_pre_hook(
 
     let mut decisions = Vec::new();
 
-    if !state.config.auto_preload || !prof.auto_preload_effective() {
+    if !state.config.auto_preload {
         decisions.push(AutonomyDriverDecisionV1 {
             driver: AutonomyDriverKindV1::Preload,
             verdict: AutonomyVerdictV1::Skip,
             reason_code: "disabled".to_string(),
-            reason: "auto_preload disabled by config/profile".to_string(),
+            reason: "auto_preload disabled by config".to_string(),
             detail: None,
         });
         record_event(AutonomyPhaseV1::PreCall, tool_name, None, decisions);
@@ -258,7 +257,6 @@ pub fn enrich_after_read(
         return result;
     }
 
-    let prof = profile_autonomy();
     let root = match project_root {
         Some(r) if !r.is_empty() && r != "." => r.to_string(),
         _ => return result,
@@ -272,15 +270,15 @@ pub fn enrich_after_read(
         return result;
     }
 
-    if state.config.auto_related && prof.auto_related_effective() {
+    if state.config.auto_related {
         result.related_hint = build_related_hints(cache, file_path, provider);
     }
 
-    if state.config.silent_preload && prof.silent_preload_effective() {
+    if state.config.silent_preload {
         silent_preload_imports(cache, file_path, provider, &root);
     }
 
-    if !minimal_overhead && prof.auto_prefetch_effective() {
+    if !minimal_overhead {
         let mut decisions = Vec::new();
         if let Err((code, reason)) = policy_allows("ctx_prefetch") {
             decisions.push(AutonomyDriverDecisionV1 {
@@ -298,8 +296,8 @@ pub fn enrich_after_read(
                 &root,
                 task,
                 Some(&changed),
-                prof.prefetch_budget_tokens_effective(),
-                Some(prof.prefetch_max_files_effective()),
+                PREFETCH_BUDGET_TOKENS,
+                Some(PREFETCH_MAX_FILES),
                 crp_mode,
             );
             let summary = out.lines().next().unwrap_or("").trim().to_string();
@@ -410,8 +408,7 @@ pub fn maybe_auto_dedup(state: &AutonomyState, cache: &mut SessionCache, trigger
         return;
     }
 
-    let prof = profile_autonomy();
-    if !state.config.auto_dedup || !prof.auto_dedup_effective() {
+    if !state.config.auto_dedup {
         return;
     }
 
@@ -424,11 +421,7 @@ pub fn maybe_auto_dedup(state: &AutonomyState, cache: &mut SessionCache, trigger
     }
 
     let entries = cache.get_all_entries();
-    let threshold = state
-        .config
-        .dedup_threshold
-        .max(prof.dedup_threshold_effective())
-        .max(1);
+    let threshold = state.config.dedup_threshold.max(MIN_DEDUP_THRESHOLD).max(1);
     if entries.len() < threshold {
         state.dedup_applied.store(false, Ordering::SeqCst);
         return;

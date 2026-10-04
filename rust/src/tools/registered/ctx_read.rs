@@ -146,7 +146,6 @@ impl CtxReadTool {
             }
         };
         let task_ref = current_task.as_deref();
-        let profile = crate::core::profiles::active_profile();
         // #513: `raw=true` is the intuitive "give me the exact bytes" escape an
         // agent reaches for. Alias it to mode="raw" (verbatim, unframed) and
         // force a fresh disk read below so a re-read never collapses to an
@@ -168,7 +167,7 @@ impl CtxReadTool {
             return Err(ErrorData::invalid_params(e.user_message(), None));
         }
         // #673 — when the caller omits `mode`, a context policy pack's
-        // `default_read_mode` (if set) takes precedence over the profile/auto
+        // `default_read_mode` (if set) takes precedence over the auto
         // selection. An explicit `mode` arg always wins; line windows below may
         // still narrow it (it is a default, not a pin).
         let policy_default_mode = if explicit_mode {
@@ -181,18 +180,14 @@ impl CtxReadTool {
             m
         } else if let Some(pd) = policy_default_mode {
             pd
-        } else if profile.read.default_mode_effective() == "auto" {
-            if let Ok(cache) = cache_lock.try_read() {
-                crate::tools::impl_smart_read::select_mode_with_task(&cache, path, task_ref)
-            } else {
-                tracing::debug!(
-                    "cache lock contested during auto-mode selection for {path}; \
-                     falling back to full"
-                );
-                "full".to_string()
-            }
+        } else if let Ok(cache) = cache_lock.try_read() {
+            crate::tools::impl_smart_read::select_mode_with_task(&cache, path, task_ref)
         } else {
-            profile.read.default_mode_effective().to_string()
+            tracing::debug!(
+                "cache lock contested during auto-mode selection for {path}; \
+                 falling back to full"
+            );
+            "full".to_string()
         };
         let mut fresh = get_bool(args, "fresh").unwrap_or(false);
         // #513: a raw/verbatim request always reads from disk — the whole point
@@ -231,13 +226,11 @@ impl CtxReadTool {
             get_int(args, "limit"),
         );
 
-        let pressure_action = ctx.pressure_snapshot.as_ref().map(|p| &p.recommendation);
         let gate_result = crate::server::context_gate::pre_dispatch_read(
             path,
             &mode,
             task_ref,
             Some(&ctx.project_root),
-            pressure_action,
         );
         // #513: an explicit raw/verbatim request is never silently downgraded by
         // the budget gate — the caller asked for exact bytes.
@@ -254,15 +247,10 @@ impl CtxReadTool {
             mode = overridden;
         }
 
-        let (mut mode, degrade_warning) = if crate::tools::ctx_read::is_instruction_file(path) {
-            ("full".to_string(), None)
-        } else if mode == "raw" {
-            // #513: raw bypasses context-pressure degradation (which would
-            // otherwise downgrade to signatures under Block), exactly like
-            // instruction files — verbatim means verbatim.
-            ("raw".to_string(), None)
+        let mut mode = if crate::tools::ctx_read::is_instruction_file(path) {
+            "full".to_string()
         } else {
-            auto_degrade_read_mode(&mode)
+            mode
         };
 
         // Delta-aware explicit re-reads (opt-in: config `delta_explicit`, env
@@ -1069,9 +1057,6 @@ impl CtxReadTool {
         };
 
         let mut warnings = Vec::new();
-        if let Some(ref w) = degrade_warning {
-            warnings.push(w.as_str());
-        }
         if let Some(ref w) = delta_explicit_note {
             warnings.push(w.as_str());
         }
@@ -1195,53 +1180,6 @@ fn resolve_raw_alias(arg_raw: bool, mode_arg: Option<String>) -> Option<String> 
     } else {
         mode_arg
     }
-}
-
-fn apply_verdict(
-    mode: &str,
-    verdict: crate::core::degradation_policy::DegradationVerdictV1,
-) -> (String, bool) {
-    use crate::core::degradation_policy::DegradationVerdictV1;
-    match verdict {
-        DegradationVerdictV1::Ok => (mode.to_string(), false),
-        DegradationVerdictV1::Warn => match mode {
-            "full" => ("map".to_string(), true),
-            other => (other.to_string(), false),
-        },
-        DegradationVerdictV1::Throttle => match mode {
-            "full" | "map" => ("signatures".to_string(), true),
-            other => (other.to_string(), false),
-        },
-        DegradationVerdictV1::Block => {
-            if mode == "signatures" {
-                ("signatures".to_string(), false)
-            } else {
-                ("signatures".to_string(), true)
-            }
-        }
-    }
-}
-
-fn auto_degrade_read_mode(mode: &str) -> (String, Option<String>) {
-    if crate::core::config::Config::load().no_degrade_effective() {
-        return (mode.to_string(), None);
-    }
-    let profile = crate::core::profiles::active_profile();
-    if !profile.degradation.enforce_effective() {
-        return (mode.to_string(), None);
-    }
-    let policy = crate::core::degradation_policy::evaluate_v1_for_tool("ctx_read", None);
-    let (new_mode, degraded) = apply_verdict(mode, policy.decision.verdict);
-    let warning = if degraded {
-        Some(format!(
-            "⚠ Context pressure: mode={mode} was downgraded to mode={new_mode} \
-             (verdict: {:?}). Use start_line=1 to bypass.",
-            policy.decision.verdict
-        ))
-    } else {
-        None
-    };
-    (new_mode, warning)
 }
 
 fn extract_file_summary(output: &str, path: &str) -> String {

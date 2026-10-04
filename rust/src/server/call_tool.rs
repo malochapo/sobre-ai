@@ -413,9 +413,7 @@ impl LeanCtxServer {
         // and every subsequent wakeup briefing (#658).
         let findings_source = result_text.clone();
 
-        // The verification config is the only profile section this path still
-        // reads; the output hints that gated the decorations are gone.
-        let verify_cfg = crate::core::profiles::active_profile().verification;
+        let verify_cfg = crate::core::output_verification::VerificationConfig::default();
 
         if !is_raw_shell && !firewalled {
             let vr = crate::core::output_verification::verify_output(
@@ -802,12 +800,10 @@ impl LeanCtxServer {
         // original/saved/mode and the measured handler duration. The previous
         // zero-filled append here overwrote every row with `orig=0 saved=0 mode=-`.
 
-        // `increment_and_check` is the only place that advances `call_count`,
-        // which the every-100-calls maintenance below reads. It used to gate the
-        // AUTO CHECKPOINT marker too; no shipped profile ever emitted that, so
-        // only the counter survives.
+        // The only place that advances `call_count`, which the
+        // every-100-calls maintenance below reads.
         if !skip_checkpoint {
-            let _ = self.increment_and_check();
+            self.increment_call_count();
         }
 
         let current_count = self.call_count.load(std::sync::atomic::Ordering::Relaxed);

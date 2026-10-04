@@ -30,10 +30,9 @@ pub(crate) fn normalize_loaded_session(mut session: SessionState) -> SessionStat
             session.compression_level = env_level.label().to_string();
             session.terse_mode = env_level.is_active();
         } else {
-            // Do NOT call active_profile() here — this function is called during
+            // Do NOT call Config::load() here — this function is called during
             // Config::load() → find_project_root() → SessionState::load_latest(),
-            // and active_profile() → active_profile_name() would re-enter Config::load(),
-            // causing an OnceLock reentrancy deadlock (#301).
+            // so it would re-enter Config::load() and deadlock on its OnceLock (#301).
             session.compression_level = "off".to_string();
         }
     } else if !session.terse_mode {

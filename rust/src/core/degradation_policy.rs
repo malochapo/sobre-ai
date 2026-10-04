@@ -32,8 +32,6 @@ pub struct DegradationDecisionV1 {
 pub struct DegradationPolicyV1 {
     pub schema_version: u32,
     pub created_at: String,
-    pub role: String,
-    pub profile: String,
     pub tool: String,
     pub budgets: crate::core::budget_tracker::BudgetSnapshot,
     pub slo: crate::core::slo::SloSnapshot,
@@ -47,11 +45,9 @@ pub fn evaluate_v1_for_tool(tool: &str, created_at_override: Option<&str>) -> De
         std::string::ToString::to_string,
     );
 
-    let role = crate::core::roles::active_role_name();
-    let profile_name = crate::core::profiles::active_profile_name();
-    let profile = crate::core::profiles::active_profile();
-    let enforce = profile.degradation.enforce_effective();
-    let throttle_ms = profile.degradation.throttle_ms_effective();
+    // SLO verdicts are advisory: they warn, they never block or throttle.
+    let enforce = false;
+    let throttle_ms = 250;
 
     let budgets = crate::core::budget_tracker::BudgetTracker::global().check();
     let slo = crate::core::slo::evaluate_quiet();
@@ -68,8 +64,6 @@ pub fn evaluate_v1_for_tool(tool: &str, created_at_override: Option<&str>) -> De
     DegradationPolicyV1 {
         schema_version: crate::core::contracts::DEGRADATION_POLICY_V1_SCHEMA_VERSION,
         created_at,
-        role,
-        profile: profile_name,
         tool: tool.to_string(),
         budgets,
         slo,

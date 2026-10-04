@@ -101,12 +101,9 @@ fn run_probe(path: &str) -> ProbeOutcome {
     // confusing failure. Two independent gates disable re-read stubs:
     //   * cache_policy `safe` (delivers a map) or `off` (the registered handler
     //     forces `fresh=true`, always re-reading from disk), and
-    //   * forced full reads (no_degrade, or read.default_mode=full + crp=off).
+    //   * forced full reads (no_degrade).
     let no_degrade = crate::core::config::Config::load().no_degrade_effective();
-    let prof = crate::core::profiles::active_profile();
-    let force_full = no_degrade
-        || (prof.read.default_mode_effective() == "full"
-            && prof.compression.crp_mode_effective() == "off");
+    let force_full = no_degrade;
     let policy = crate::server::compaction_sync::effective_cache_policy();
     let stub_enabled = policy != "safe" && policy != "off" && !force_full;
     let disabled_reason = if stub_enabled {
@@ -115,10 +112,8 @@ fn run_probe(path: &str) -> ProbeOutcome {
         Some("cache policy is 'safe' (stubbing disabled)".to_string())
     } else if policy == "off" {
         Some("cache policy is 'off' (every read goes to disk)".to_string())
-    } else if no_degrade {
-        Some("no_degrade is enabled (full content forced)".to_string())
     } else {
-        Some("active profile forces full reads (read.default_mode=full, crp=off)".to_string())
+        Some("no_degrade is enabled (full content forced)".to_string())
     };
 
     let first = ctx_read::handle_with_task_resolved(&mut cache, path, "full", crp, None);

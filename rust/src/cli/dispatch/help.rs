@@ -189,8 +189,7 @@ COMMANDS:
     config                         Show/edit configuration (~/.lean-ctx/config.toml)
     security [status]              Show security posture (containment + secret defense)
     security secrets <on|off>      Toggle secret/.env redaction (separate from containment)
-    tools [minimal|standard|power|show|list]  How many MCP tools your agent sees
-    profile [list|show|diff|create|set|suggest]  Manage context profiles (suggest = recommend from repo)
+    tools health                   Token budget and tool-surface report
     theme [list|set|export|import] Customize terminal colors and themes
     tee [list|clear|show <file>|last] Manage output tee files (~/.lean-ctx/tee/)
     compression [off|lite|standard|max]  Set compression level (saves 25-65% tokens; alias: terse)

@@ -143,17 +143,6 @@ pub trait Layer {
     fn process(&self, input: LayerInput) -> LayerOutput;
 }
 
-/// Returns whether a given layer is enabled according to a profile's pipeline config.
-pub fn is_layer_enabled(kind: LayerKind, cfg: &crate::core::profiles::PipelineConfig) -> bool {
-    match kind {
-        LayerKind::Input | LayerKind::Autonomy | LayerKind::Delivery => true,
-        LayerKind::Intent => cfg.intent_effective(),
-        LayerKind::Relevance => cfg.relevance_effective(),
-        LayerKind::Compression => cfg.compression_effective(),
-        LayerKind::Translation => cfg.translation_effective(),
-    }
-}
-
 /// A chain of processing layers that content flows through sequentially.
 pub struct Pipeline {
     layers: Vec<Box<dyn Layer>>,
@@ -574,22 +563,5 @@ mod tests {
         stats.record(&metrics);
         assert_eq!(stats.runs, 1);
         assert_eq!(stats.total_tokens_saved(), 350);
-    }
-
-    #[test]
-    fn is_layer_enabled_respects_config() {
-        let cfg = crate::core::profiles::PipelineConfig {
-            intent: Some(false),
-            relevance: Some(false),
-            compression: Some(true),
-            translation: Some(true),
-        };
-
-        assert!(is_layer_enabled(LayerKind::Input, &cfg));
-        assert!(!is_layer_enabled(LayerKind::Intent, &cfg));
-        assert!(!is_layer_enabled(LayerKind::Relevance, &cfg));
-        assert!(is_layer_enabled(LayerKind::Compression, &cfg));
-        assert!(is_layer_enabled(LayerKind::Translation, &cfg));
-        assert!(is_layer_enabled(LayerKind::Delivery, &cfg));
     }
 }

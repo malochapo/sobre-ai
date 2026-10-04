@@ -415,18 +415,18 @@ mod setup_config_tests {
 
     /// Regression: a stray root scalar once landed under [secret_detection]
     /// because whole-struct serialization placed it after a table. Any
-    /// `Option<String>` root key is exposed to that bug; `tool_profile` was
-    /// the original victim and is gone, so `profile` carries the guard now.
+    /// `Option<String>` root key is exposed to that bug; `tool_profile` and
+    /// then `profile` carried the guard and are gone, so `rules_scope` does.
     #[test]
     fn option_root_scalar_serializes_above_the_first_table() {
         let original = Config {
-            profile: Some("passthrough".to_string()),
+            rules_scope: Some("global".to_string()),
             ..Config::default()
         };
         let toml_str = toml::to_string_pretty(&original).unwrap();
         let pos = toml_str
-            .find("profile")
-            .expect("profile should be serialized");
+            .find("rules_scope")
+            .expect("rules_scope should be serialized");
         let first_table = toml_str
             .find(
                 "
@@ -435,10 +435,10 @@ mod setup_config_tests {
             .unwrap_or(toml_str.len());
         assert!(
             pos < first_table,
-            "profile must be a root key, not nested under a [table]:
+            "rules_scope must be a root key, not nested under a [table]:
 {toml_str}"
         );
         let parsed: Config = toml::from_str(&toml_str).unwrap();
-        assert_eq!(parsed.profile.as_deref(), Some("passthrough"));
+        assert_eq!(parsed.rules_scope.as_deref(), Some("global"));
     }
 }

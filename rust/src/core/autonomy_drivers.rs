@@ -51,8 +51,6 @@ pub struct AutonomyDriverEventV1 {
     pub seq: u64,
     pub created_at: String,
     pub phase: AutonomyPhaseV1,
-    pub role: String,
-    pub profile: String,
     pub tool: String,
     #[serde(default)]
     pub action: Option<String>,
@@ -176,8 +174,6 @@ mod tests {
                 seq: 0,
                 created_at: "2026-01-01T00:00:00Z".to_string(),
                 phase: AutonomyPhaseV1::PreCall,
-                role: "coder".to_string(),
-                profile: "exploration".to_string(),
                 tool: format!("tool{i}"),
                 action: None,
                 decisions: vec![AutonomyDriverDecisionV1 {

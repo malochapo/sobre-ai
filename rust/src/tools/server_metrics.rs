@@ -158,11 +158,9 @@ impl LeanCtxServer {
         self.write_mcp_live_stats().await;
     }
 
-    /// Increments the call counter and returns true if a checkpoint is due.
-    pub fn increment_and_check(&self) -> bool {
-        let count = self.call_count.fetch_add(1, Ordering::Relaxed) + 1;
-        let interval = Self::checkpoint_interval_effective();
-        interval > 0 && count.is_multiple_of(interval)
+    /// Increments the tool-call counter.
+    pub fn increment_call_count(&self) {
+        self.call_count.fetch_add(1, Ordering::Relaxed);
     }
 
     /// Appends a tool call entry to the rotating `tool-calls.log` file.

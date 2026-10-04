@@ -82,16 +82,11 @@ fn handle_inner(args: &Map<String, Value>, ctx: &ToolContext) -> Result<ToolOutp
         ));
     }
 
-    // Default to the profile's read mode (auto) and let ctx_read resolve the
-    // optimal mode per file. Previously this forced auto→full, which is exactly
-    // the "everything comes back as full" complaint (#421): batch reads must
-    // honour auto like single ctx_read does.
-    let mode = get_str(args, "mode").unwrap_or_else(|| {
-        crate::core::profiles::active_profile()
-            .read
-            .default_mode_effective()
-            .to_string()
-    });
+    // Default to auto and let ctx_read resolve the optimal mode per file.
+    // Previously this forced auto→full, which is exactly the "everything comes
+    // back as full" complaint (#421): batch reads must honour auto like single
+    // ctx_read does.
+    let mode = get_str(args, "mode").unwrap_or_else(|| "auto".to_string());
     let fresh = get_bool(args, "fresh").unwrap_or(false);
 
     // Batch read under one bounded write lock. `bounded_lock` guarantees we never

@@ -102,7 +102,6 @@ pub fn handle(
 
 fn handle_policy(value: Option<&str>) -> String {
     let sub = value.unwrap_or("show").trim().to_lowercase();
-    let profile = crate::core::profiles::active_profile_name();
 
     match sub.as_str() {
         "show" => {
@@ -117,7 +116,7 @@ fn handle_policy(value: Option<&str>) -> String {
             );
 
             format!(
-                "Knowledge policy (effective, profile={profile}):\n\
+                "Knowledge policy (effective):\n\
                  - memory.knowledge.max_facts={}\n\
                  - memory.knowledge.contradiction_threshold={}\n\
                  - memory.knowledge.recall_facts_limit={}\n\
@@ -138,7 +137,7 @@ fn handle_policy(value: Option<&str>) -> String {
             )
         }
         "validate" => match load_policy_or_error() {
-            Ok(_) => format!("OK: memory policy valid (profile={profile})"),
+            Ok(_) => format!("OK: memory policy valid"),
             Err(e) => e,
         },
         _ => "Error: policy value must be show|validate".to_string(),

@@ -630,10 +630,7 @@ pub(crate) fn try_stub_hit_readonly_scoped(
     current_conversation: Option<&str>,
 ) -> Option<ReadOutput> {
     let no_deg = crate::core::config::Config::load().no_degrade_effective();
-    let prof = crate::core::profiles::active_profile();
-    let force_full = no_deg
-        || (prof.read.default_mode_effective() == "full"
-            && prof.compression.crp_mode_effective() == "off");
+    let force_full = no_deg;
     let policy_allows_stub =
         crate::server::compaction_sync::effective_cache_policy() != "safe" && !force_full;
     if !policy_allows_stub {
@@ -1243,10 +1240,7 @@ fn handle_full_with_auto_delta(
     };
 
     let no_deg = crate::core::config::Config::load().no_degrade_effective();
-    let prof = crate::core::profiles::active_profile();
-    let force_full = no_deg
-        || (prof.read.default_mode_effective() == "full"
-            && prof.compression.crp_mode_effective() == "off");
+    let force_full = no_deg;
 
     let old_content = cache
         .get(path)

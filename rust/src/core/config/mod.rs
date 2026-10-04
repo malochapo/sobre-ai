@@ -96,7 +96,6 @@ pub struct Config {
     pub recovery_hints: RecoveryHints,
     #[serde(default)]
     pub output_density: OutputDensity,
-    pub checkpoint_interval: u32,
     pub passthrough_commands: Vec<String>,
     pub passthrough_urls: Vec<String>,
     /// Output formats that are already compact/token-oriented and must be
@@ -191,10 +190,6 @@ pub struct Config {
     /// Opt-in. Override via LCTX_DELTA_EXPLICIT=1/0 env var.
     #[serde(default)]
     pub delta_explicit: bool,
-    /// Persistent profile name. Checked after LEAN_CTX_PROFILE env var.
-    /// Set via `lean-ctx config set profile passthrough` or editing config.toml.
-    #[serde(default)]
-    pub profile: Option<String>,
     #[serde(default)]
     pub loop_detection: LoopDetectionConfig,
     /// Controls where lean-ctx installs agent rule files.
@@ -582,7 +577,6 @@ impl Default for Config {
             tee_mode: TeeMode::default(),
             recovery_hints: RecoveryHints::default(),
             output_density: OutputDensity::default(),
-            checkpoint_interval: 15,
             passthrough_commands: Vec::new(),
             passthrough_urls: Vec::new(),
             preserve_compact_formats: serde_defaults::default_preserve_compact_formats(),
@@ -607,7 +601,6 @@ impl Default for Config {
             prefer_native_editor: false,
             no_degrade: false,
             delta_explicit: true,
-            profile: None,
             loop_detection: LoopDetectionConfig::default(),
             rules_scope: None,
             rules_injection: None,

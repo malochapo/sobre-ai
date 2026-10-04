@@ -387,7 +387,6 @@ pub mod paths;
 pub mod pathutil;
 pub mod pipeline;
 pub mod portable_binary;
-pub mod profiles;
 pub mod project_hash;
 pub mod protocol;
 pub mod providers;

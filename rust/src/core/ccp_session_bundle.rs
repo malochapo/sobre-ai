@@ -30,8 +30,6 @@ pub struct CcpSessionBundleV1 {
     pub schema_version: u32,
     pub exported_at: DateTime<Utc>,
     pub project: ProjectIdentityV1,
-    pub role: PolicyIdentityV1,
-    pub profile: PolicyIdentityV1,
     pub session: SessionExcerptV1,
 }
 
@@ -39,12 +37,6 @@ pub struct CcpSessionBundleV1 {
 pub struct ProjectIdentityV1 {
     pub project_root_hash: Option<String>,
     pub project_identity_hash: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PolicyIdentityV1 {
-    pub name: String,
-    pub policy_md5: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -71,16 +63,6 @@ pub struct SessionExcerptV1 {
 }
 
 pub fn build_bundle_v1(session: &SessionState, privacy: BundlePrivacyV1) -> CcpSessionBundleV1 {
-    let role_name = crate::core::roles::active_role_name();
-    let role = crate::core::roles::active_role();
-    let profile_name = crate::core::profiles::active_profile_name();
-    let profile = crate::core::profiles::active_profile();
-
-    let role_policy_md5 =
-        crate::core::hasher::hash_str(&serde_json::to_string(&role).unwrap_or_default());
-    let profile_policy_md5 =
-        crate::core::hasher::hash_str(&serde_json::to_string(&profile).unwrap_or_default());
-
     let (project_root_hash, project_identity_hash) =
         session
             .project_root
@@ -136,13 +118,9 @@ pub fn build_bundle_v1(session: &SessionState, privacy: BundlePrivacyV1) -> CcpS
 
     match privacy {
         BundlePrivacyV1::Full => {
-            // Full export is allowed only for admin role; otherwise force redaction.
-            if role_name != "admin" {
-                redact_excerpt_in_place(&mut excerpt);
-            } else if crate::core::redaction::redaction_enabled_for_active_role() {
-                // Admin opted into redaction — keep it consistent.
-                redact_excerpt_in_place(&mut excerpt);
-            }
+            // Exports are always redacted: unredacted export was an admin-role
+            // privilege, and there are no roles.
+            redact_excerpt_in_place(&mut excerpt);
         }
         BundlePrivacyV1::Redacted => {
             redact_excerpt_in_place(&mut excerpt);
@@ -155,14 +133,6 @@ pub fn build_bundle_v1(session: &SessionState, privacy: BundlePrivacyV1) -> CcpS
         project: ProjectIdentityV1 {
             project_root_hash,
             project_identity_hash,
-        },
-        role: PolicyIdentityV1 {
-            name: role_name,
-            policy_md5: role_policy_md5,
-        },
-        profile: PolicyIdentityV1 {
-            name: profile_name,
-            policy_md5: profile_policy_md5,
         },
         session: excerpt,
     }

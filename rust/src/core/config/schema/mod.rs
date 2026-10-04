@@ -343,7 +343,6 @@ mod tests {
             "bypass_hints",
             "shell_security",
             "cache_policy",
-            "profile",
             "rules_scope",
             "rules_injection",
             "permission_inheritance",
