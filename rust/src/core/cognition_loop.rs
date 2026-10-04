@@ -467,8 +467,6 @@ fn step_synthesize_observations(
         members.truncate(SYNTHESIS_MAX_MEMBERS);
 
         let summary = synthesize_observation_value(&entity, &members);
-        // Optional LLM refinement (opt-in via `llm.enabled`); deterministic fallback.
-        let summary = crate::core::llm_enhance::enhance_observation(&entity, &summary);
         // An observation never out-confidences its own evidence: mean, capped.
         let mean = members.iter().map(|m| m.2).sum::<f32>() / members.len() as f32;
         knowledge.remember(

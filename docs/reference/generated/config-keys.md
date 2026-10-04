@@ -75,14 +75,6 @@ Top-level configuration keys
 - `terse_agent` (enum: off | lite | full | ultra, default `off` — env `LEAN_CTX_TERSE_AGENT`) — Controls agent output verbosity via instructions injection
 - `theme` (string, default `default`) — Dashboard color theme
 
-## `[addons]`
-
-Addon ecosystem security floor: install policy, signature requirement, per-addon capability sandbox (#863, P1). Global-only.
-
-- `grammar_auto_fetch` (bool, default `false`) — Grammar-addon fetch (#690): download a SHA-256-pinned grammar dylib on first use of a covered extension. Off by default (no unrequested network); off = regex-signature fallback only
-- `locked` (bool, default `false`) — Refuse every managed fetch: grammar dylibs, the ONNX Runtime dylib, artifact downloads
-- `require_signature` (bool, default `false`) — Honour a user-override registry only if signed by a trusted org key
-
 ## `[archive]`
 
 Settings for the zero-loss compression archive (large tool outputs saved to disk)
@@ -174,15 +166,6 @@ Index-time file filters: declare the retrieval corpus explicitly (BM25 + graph +
 - `exclude` (string[], default `[]`) — Globs dropped from the index corpus (root-relative, forward slashes), e.g. ["**/*.csv", "fixtures/**"]. Wins over include. CLI --exclude appends per run. Excluded files produce no chunks, graph nodes, or embeddings.
 - `include` (string[], default `[]`) — When non-empty, ONLY matching files enter the index corpus, e.g. ["**/*.rs", "**/*.ts"]. Empty = no restriction. CLI --include replaces this set per run.
 - `respect_gitignore` (bool, default `true`) — Honor .gitignore / global gitignore / .git/info/exclude during index walks. false indexes ignored files too (the vendor-directory guard still applies). CLI override: --no-gitignore / --respect-gitignore.
-
-## `[llm]`
-
-Optional LLM enhancement settings (query expansion, contradiction explanation). Deterministic fallback when disabled or unreachable.
-
-- `backend` (enum: ollama | openrouter | anthropic, default `ollama`) — LLM backend provider
-- `enabled` (bool, default `false`) — Enable optional LLM enhancements (query expansion, contradiction explanation)
-- `model` (string, default `llama3.2`) — Model name for the selected backend
-- `timeout_secs` (u64, default `10`) — HTTP timeout for LLM requests
 
 ## `[loop_detection]`
 
@@ -346,12 +329,4 @@ AI session summaries: periodic, semantically-recallable session digests
 - `enabled` (bool, default `true`) — Record periodic, semantically-recallable AI session summaries (what was done, files, decisions).
 - `every_n_turns` (u32, default `25`) — Tool calls between automatic session summaries (gated by the auto-checkpoint cadence).
 - `max_kept` (u32, default `100`) — Maximum session summaries kept per project (oldest pruned first).
-
-## `[updates]`
-
-Automatic update configuration
-
-- `auto_update` (bool, default `false`) — Enable automatic updates (requires explicit opt-in)
-- `check_interval_hours` (u64, default `6`) — How often to check for updates (hours)
-- `notify_only` (bool, default `false`) — Only notify about updates, don't install automatically
 

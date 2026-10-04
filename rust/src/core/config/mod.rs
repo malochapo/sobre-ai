@@ -323,9 +323,6 @@ pub struct Config {
     /// AI session-summary settings (#292): periodic, semantically-recallable summaries.
     #[serde(default)]
     pub summaries: SummariesConfig,
-    /// Optional LLM enhancement (query expansion, contradiction explanation).
-    #[serde(default)]
-    pub llm: crate::core::llm_enhance::LlmConfig,
     /// Semantic-embedding engine settings (which local ONNX model to use).
     #[serde(default)]
     pub embedding: EmbeddingConfig,
@@ -389,8 +386,6 @@ pub struct Config {
     /// Override via the `LEAN_CTX_READ_DEDUP` env var.
     #[serde(default)]
     pub read_dedup: ReadDedup,
-    #[serde(default)]
-    pub updates: UpdatesConfig,
     /// Fixed-context budget accounting for `doctor overhead` / `gain` (#964).
     #[serde(default)]
     pub context: ContextConfig,
@@ -492,11 +487,6 @@ pub struct Config {
     /// Disabled by default → fully no-op until `sensitivity.enabled = true`.
     #[serde(default)]
     pub sensitivity: crate::core::sensitivity::SensitivityConfig,
-    /// Addon ecosystem security floor (#863): install policy, registry-signature
-    /// requirement and sandboxing for spawned addon servers. Global-only (never
-    /// merged from project-local config) and fully permissive by default.
-    #[serde(default)]
-    pub addons: crate::core::artifacts_exec::policy::AddonsConfig,
     /// Allow automatic project-root re-rooting when absolute paths outside the jail are seen.
     /// When false (default), absolute paths outside the jail are rejected without re-rooting.
     /// Override via LEAN_CTX_ALLOW_REROOT env var.
@@ -622,7 +612,6 @@ impl Default for Config {
             graph: GraphConfig::default(),
             index: IndexConfig::default(),
             summaries: SummariesConfig::default(),
-            llm: crate::core::llm_enhance::LlmConfig::default(),
             embedding: EmbeddingConfig::default(),
             shell_hook_disabled: false,
             shadow_mode: true,
@@ -632,7 +621,6 @@ impl Default for Config {
             skip_agent_aliases: false,
             read_redirect: ReadRedirect::default(),
             read_dedup: ReadDedup::default(),
-            updates: UpdatesConfig::default(),
             context: ContextConfig::default(),
             graph_index_max_files: serde_defaults::default_graph_index_max_files(),
             bm25_max_cache_mb: serde_defaults::default_bm25_max_cache_mb(),
@@ -654,7 +642,6 @@ impl Default for Config {
             boundary_policy: crate::core::memory_boundary::BoundaryPolicy::default(),
             secret_detection: SecretDetectionConfig::default(),
             sensitivity: crate::core::sensitivity::SensitivityConfig::default(),
-            addons: crate::core::artifacts_exec::policy::AddonsConfig::default(),
             allow_auto_reroot: false,
             hook_binary: None,
             path_jail: None,

@@ -581,42 +581,4 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
                 keys: setup_keys,
             },
         );
-
-    let mut llm_keys = BTreeMap::new();
-    llm_keys.insert(
-        "enabled".into(),
-        key(
-            "bool",
-            serde_json::json!(false),
-            "Enable optional LLM enhancements (query expansion, contradiction explanation)",
-        ),
-    );
-    llm_keys.insert(
-        "backend".into(),
-        key_enum(
-            &["ollama", "openrouter", "anthropic"],
-            "ollama",
-            "LLM backend provider",
-        ),
-    );
-    llm_keys.insert(
-        "model".into(),
-        key(
-            "string",
-            serde_json::json!("llama3.2"),
-            "Model name for the selected backend",
-        ),
-    );
-    llm_keys.insert(
-        "timeout_secs".into(),
-        key(
-            "u64",
-            serde_json::json!(10),
-            "HTTP timeout for LLM requests",
-        ),
-    );
-    sections.insert("llm".into(), SectionSchema {
-            description: "Optional LLM enhancement settings (query expansion, contradiction explanation). Deterministic fallback when disabled or unreachable.".into(),
-            keys: llm_keys,
-        });
 }

@@ -184,39 +184,6 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
         },
     );
 
-    let mut updates = BTreeMap::new();
-    updates.insert(
-        "auto_update".into(),
-        key(
-            "bool",
-            serde_json::json!(cfg.updates.auto_update),
-            "Enable automatic updates (requires explicit opt-in)",
-        ),
-    );
-    updates.insert(
-        "check_interval_hours".into(),
-        key(
-            "u64",
-            serde_json::json!(cfg.updates.check_interval_hours),
-            "How often to check for updates (hours)",
-        ),
-    );
-    updates.insert(
-        "notify_only".into(),
-        key(
-            "bool",
-            serde_json::json!(cfg.updates.notify_only),
-            "Only notify about updates, don't install automatically",
-        ),
-    );
-    sections.insert(
-        "updates".into(),
-        SectionSchema {
-            description: "Automatic update configuration".into(),
-            keys: updates,
-        },
-    );
-
     let mut context = BTreeMap::new();
     context.insert(
         "budget_tokens".into(),
@@ -355,39 +322,6 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
         SectionSchema {
             description: "Per-item sensitivity model with a uniform policy floor (#212)".into(),
             keys: sensitivity,
-        },
-    );
-
-    let mut addons = BTreeMap::new();
-    addons.insert(
-        "locked".into(),
-        key(
-            "bool",
-            serde_json::json!(cfg.addons.locked),
-            "Refuse every managed fetch: grammar dylibs, the ONNX Runtime dylib, artifact downloads",
-        ),
-    );
-    addons.insert(
-        "require_signature".into(),
-        key(
-            "bool",
-            serde_json::json!(cfg.addons.require_signature),
-            "Honour a user-override registry only if signed by a trusted org key",
-        ),
-    );
-    addons.insert(
-        "grammar_auto_fetch".into(),
-        key(
-            "bool",
-            serde_json::json!(cfg.addons.grammar_auto_fetch),
-            "Grammar-addon fetch (#690): download a SHA-256-pinned grammar dylib on first use of a covered extension. Off by default (no unrequested network); off = regex-signature fallback only",
-        ),
-    );
-    sections.insert(
-        "addons".into(),
-        SectionSchema {
-            description: "Addon ecosystem security floor: install policy, signature requirement, per-addon capability sandbox (#863, P1). Global-only.".into(),
-            keys: addons,
         },
     );
 

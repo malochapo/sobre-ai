@@ -243,26 +243,6 @@ impl Default for AutonomyConfig {
     }
 }
 
-/// Controls automatic update behavior. All defaults are OFF — auto-updates
-/// require explicit opt-in via `lean-ctx init` or `lean-ctx update --schedule`.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(default)]
-pub struct UpdatesConfig {
-    pub auto_update: bool,
-    pub check_interval_hours: u64,
-    pub notify_only: bool,
-}
-
-impl Default for UpdatesConfig {
-    fn default() -> Self {
-        Self {
-            auto_update: false,
-            check_interval_hours: 6,
-            notify_only: false,
-        }
-    }
-}
-
 /// Fixed-context budget accounting (#964). The per-session footprint lean-ctx
 /// adds — tool schemas + MCP instructions + auto-loaded rules files + the wakeup
 /// briefing — is warned about once it crosses `budget_tokens`. The
@@ -299,24 +279,6 @@ impl Default for ContextConfig {
             proactive_expansion_threshold: 0.6,
             proactive_expansion_max_age_secs: 3600,
         }
-    }
-}
-
-impl UpdatesConfig {
-    pub fn from_env() -> Self {
-        let mut cfg = Self::default();
-        if let Ok(v) = std::env::var("LEAN_CTX_AUTO_UPDATE") {
-            cfg.auto_update = v == "1" || v.eq_ignore_ascii_case("true");
-        }
-        if let Ok(v) = std::env::var("LEAN_CTX_UPDATE_INTERVAL_HOURS")
-            && let Ok(h) = v.parse::<u64>()
-        {
-            cfg.check_interval_hours = h.clamp(1, 168);
-        }
-        if let Ok(v) = std::env::var("LEAN_CTX_UPDATE_NOTIFY_ONLY") {
-            cfg.notify_only = v == "1" || v.eq_ignore_ascii_case("true");
-        }
-        cfg
     }
 }
 
