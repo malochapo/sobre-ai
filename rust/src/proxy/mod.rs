@@ -1,6 +1,6 @@
 //! Local LLM reverse proxy.
 //!
-//! Intercepts Anthropic, OpenAI, Gemini and ChatGPT traffic on loopback,
+//! Intercepts Anthropic, OpenAI and Gemini traffic on loopback,
 //! compresses prompts, records usage locally, and optionally translates
 //! request shapes (`shape-xlat`) so a Claude-shaped client can reach an
 //! OpenAI-shaped upstream such as a local Ollama.
@@ -17,9 +17,6 @@ pub mod cache_safety;
 pub mod ccr;
 #[cfg(test)]
 mod ccr_robustness_tests;
-pub mod chatgpt;
-pub mod chatgpt_cookies;
-pub mod chatgpt_ws;
 mod codec;
 pub mod cold_prefix;
 pub mod compress;
@@ -85,10 +82,6 @@ pub struct ProxyState {
     /// Live provider upstreams, refreshed from config.toml without a proxy
     /// restart (#449). Read per request via [`ProxyState::openai_upstream`] etc.
     pub upstreams: tokio::sync::watch::Receiver<Arc<Upstreams>>,
-    /// Shared Cloudflare cookie jar (also wired into `client`), so the Codex
-    /// ChatGPT WebSocket passthrough replays the same clearance to chatgpt.com
-    /// that the reqwest rail accumulated (#597).
-    pub(crate) chatgpt_cookies: Arc<chatgpt_cookies::ChatGptCloudflareCookieStore>,
 }
 
 impl ProxyState {
@@ -107,24 +100,9 @@ impl ProxyState {
         self.upstreams.borrow().openai.clone()
     }
 
-    /// Current ChatGPT upstream (live).
-    pub fn chatgpt_upstream(&self) -> String {
-        self.upstreams.borrow().chatgpt.clone()
-    }
-
     /// Current Gemini upstream (live).
     pub fn gemini_upstream(&self) -> String {
         self.upstreams.borrow().gemini.clone()
-    }
-
-    /// Cloudflare `Cookie` header for the current ChatGPT upstream, used by the
-    /// WebSocket passthrough handshake (#597). `None` until a request on the
-    /// reqwest rail has seen Cloudflare clearance.
-    pub fn chatgpt_cookie_header(&self) -> Option<String> {
-        let url = reqwest::Url::parse(&self.chatgpt_upstream()).ok()?;
-        self.chatgpt_cookies
-            .cookie_header(&url)
-            .and_then(|v| v.to_str().ok().map(str::to_owned))
     }
 }
 
@@ -136,7 +114,6 @@ pub struct ProxyStats {
     pub bytes_compressed: AtomicU64,
     pub anthropic: ProviderStats,
     pub openai: ProviderStats,
-    pub chatgpt: ProviderStats,
     pub gemini: ProviderStats,
     /// Grok dual-rail (`/providers/grok-chat`, `/providers/xai`) — OpenAI wire
     /// shape, separate identity so `proxy status` does not fold xAI traffic
@@ -167,7 +144,6 @@ impl Default for ProxyStats {
             bytes_compressed: AtomicU64::new(0),
             anthropic: ProviderStats::default(),
             openai: ProviderStats::default(),
-            chatgpt: ProviderStats::default(),
             gemini: ProviderStats::default(),
             grok: ProviderStats::default(),
             commandcode: ProviderStats::default(),
@@ -233,7 +209,6 @@ impl ProxyStats {
         match provider_label {
             "Anthropic" => Some(&self.anthropic),
             "OpenAI" => Some(&self.openai),
-            "ChatGPT" => Some(&self.chatgpt),
             "Gemini" => Some(&self.gemini),
             "Grok" => Some(&self.grok),
             "CommandCode" => Some(&self.commandcode),
@@ -245,7 +220,6 @@ impl ProxyStats {
         serde_json::json!({
             "anthropic": self.anthropic.summary(),
             "openai": self.openai.summary(),
-            "chatgpt": self.chatgpt.summary(),
             "gemini": self.gemini.summary(),
             "grok": self.grok.summary(),
             "commandcode": self.commandcode.summary(),
@@ -361,9 +335,6 @@ fn log_upstream_change(old: &Upstreams, new: &Upstreams) {
     if old.openai != new.openai {
         println!("  ↻ OpenAI upstream → {}", new.openai);
     }
-    if old.chatgpt != new.chatgpt {
-        println!("  ↻ ChatGPT upstream → {}", new.chatgpt);
-    }
     if old.gemini != new.gemini {
         println!("  ↻ Gemini upstream → {}", new.gemini);
     }
@@ -388,25 +359,8 @@ fn effective_auth_token(auth_token: Option<String>) -> String {
         .unwrap_or_else(|| crate::core::session_token::resolve_proxy_token("LEAN_CTX_PROXY_TOKEN"))
 }
 
-/// Install the process-default rustls `CryptoProvider` for the Codex ChatGPT
-/// WebSocket passthrough (#597).
-///
-/// `tokio-tungstenite`'s rustls connector builds its `ClientConfig` from the
-/// process-default provider. Our tree pulls *both* aws-lc-rs (reqwest) and ring
-/// (lettre/ureq), so rustls cannot auto-pick one and the `wss://chatgpt.com`
-/// handshake aborts with *"Could not automatically determine the process-level
-/// CryptoProvider"*. reqwest is unaffected (it configures aws-lc-rs explicitly),
-/// so we match it here. Idempotent: a prior install just returns the provider
-/// back as `Err`, which we ignore.
-fn install_default_crypto_provider() {
-    let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
-}
-
 pub async fn start_proxy_with_token(port: u16, auth_token: Option<String>) -> anyhow::Result<()> {
     use crate::core::config::{Config, is_local_proxy_url};
-
-    // Must run before any WebSocket passthrough opens a wss:// upstream (#597).
-    install_default_crypto_provider();
 
     let auth_token = effective_auth_token(auth_token);
 
@@ -414,14 +368,10 @@ pub async fn start_proxy_with_token(port: u16, auth_token: Option<String>) -> an
     // a big refactor) mid-response. Use a connect timeout plus a read (idle)
     // timeout instead: a genuinely hung upstream still fails, but a slow-but-
     // alive stream is never cut off. Both are configurable for edge networks.
-    let chatgpt_cookies = chatgpt_cookies::shared_chatgpt_cloudflare_cookie_store();
-    let client = chatgpt_cookies::with_chatgpt_cloudflare_cookie_store(
-        reqwest::Client::builder(),
-        chatgpt_cookies.clone(),
-    )
-    .connect_timeout(std::time::Duration::from_secs(connect_timeout_secs()))
-    .read_timeout(std::time::Duration::from_secs(read_idle_timeout_secs()))
-    .build()?;
+    let client = reqwest::Client::builder()
+        .connect_timeout(std::time::Duration::from_secs(connect_timeout_secs()))
+        .read_timeout(std::time::Duration::from_secs(read_idle_timeout_secs()))
+        .build()?;
 
     // Seed the measured-spend meter from disk so a proxy restart never zeroes
     // the user's cumulative real provider bill.
@@ -456,7 +406,6 @@ pub async fn start_proxy_with_token(port: u16, auth_token: Option<String>) -> an
     let Upstreams {
         anthropic: anthropic_upstream,
         openai: openai_upstream,
-        chatgpt: chatgpt_upstream,
         gemini: gemini_upstream,
         providers: initial_providers,
     } = initial;
@@ -467,7 +416,6 @@ pub async fn start_proxy_with_token(port: u16, auth_token: Option<String>) -> an
         stats: Arc::new(ProxyStats::default()),
         introspect: Arc::new(introspect::IntrospectState::default()),
         upstreams: upstream_rx,
-        chatgpt_cookies,
     };
 
     let app = Router::new()
@@ -495,18 +443,6 @@ pub async fn start_proxy_with_token(port: u16, auth_token: Option<String>) -> an
             post(openai_responses::handler).get(openai_responses::ws_handler),
         )
         .route("/responses/{*rest}", any(openai_responses::handler))
-        .route(
-            "/backend-api/codex/responses",
-            post(chatgpt::codex_responses_handler).get(chatgpt::codex_responses_ws_handler),
-        )
-        .route(
-            "/backend-api/codex/responses/{*rest}",
-            any(chatgpt::codex_responses_handler),
-        )
-        // Non-model ChatGPT backend calls (including codex_apps MCP) are not
-        // prompt JSON. Keep them as credential-preserving passthrough traffic.
-        .route("/backend-api", any(chatgpt::backend_api_handler))
-        .route("/backend-api/{*rest}", any(chatgpt::backend_api_handler))
         .route("/v1/references/{id}", get(v1_resolve_reference))
         // LiteLLM headroom-guardrail CCR retrieval (#702): resolves the 24-hex
         // `hash=` marker `/v1/compress` emits back to the verbatim original.
@@ -556,8 +492,6 @@ pub async fn start_proxy_with_token(port: u16, auth_token: Option<String>) -> an
     println!(
         "  OpenAI:    POST /v1/responses → {openai_upstream}  (bare /responses also accepted)"
     );
-    println!("  ChatGPT:   POST /backend-api/codex/responses → {chatgpt_upstream}");
-    println!("  ChatGPT:   any  /backend-api/* → {chatgpt_upstream}");
     println!("  Gemini:    POST /v1beta/models/... → {gemini_upstream}");
     println!("  Compress:  POST /v1/compress (deterministic messages-in/out, local)");
     // Codex defaults to a WebSocket Responses transport (ws://…/responses). The
@@ -708,7 +642,6 @@ async fn status_handler(State(state): State<ProxyState>) -> impl IntoResponse {
         "upstreams": {
             "anthropic": up.anthropic.clone(),
             "openai": up.openai.clone(),
-            "chatgpt": up.chatgpt.clone(),
             "gemini": up.gemini.clone(),
         },
         // Universal registry (`[[proxy.providers]]`, enterprise#7). Key names
@@ -917,7 +850,6 @@ fn is_provider_route(path: &str) -> bool {
         || path.starts_with("/chat/completions")
         || path.starts_with("/responses")
         || path.starts_with("/messages")
-        || path.starts_with("/backend-api")
         // Bare model-catalog discovery (enterprise#63): clients whose base URL
         // omits `/v1` send `GET /models` with their provider key.
         || path == "/models"

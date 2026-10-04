@@ -4,7 +4,7 @@ use super::*;
 #[test]
 fn codex_chatgpt_proxy_artifact_detects_only_top_level_entries() {
     use CodexProxyState::*;
-    // Incomplete ChatGPT subscription config is stale/broken.
+    // Any remnant of the removed ChatGPT-subscription routing is stale.
     assert_eq!(
         classify_codex_proxy_entries("model_provider = \"leanctx-chatgpt\"\nmodel = \"gpt-5.5\"\n"),
         Artifact
@@ -45,7 +45,8 @@ fn codex_chatgpt_proxy_artifact_detects_only_top_level_entries() {
         classify_codex_proxy_entries(
             "model_provider = \"leanctx-chatgpt\"\nchatgpt_base_url = \"http://127.0.0.1:8765/backend-api/\"\n\n[model_providers.leanctx-chatgpt]\nbase_url = \"http://127.0.0.1:8765/backend-api/codex\"\n"
         ),
-        OptInRouted
+        Artifact,
+        "the complete routed layout is a remnant too"
     );
     // Default provider → native.
     assert_eq!(

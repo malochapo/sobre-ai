@@ -31,11 +31,11 @@ pub enum Provider {
 }
 
 impl Provider {
-    /// Maps the proxy's `provider_label` (`"Anthropic"`, `"OpenAI"`/`"ChatGPT"`, else Gemini).
+    /// Maps the proxy's `provider_label` (`"Anthropic"`, `"OpenAI"`, else Gemini).
     pub fn from_label(label: &str) -> Self {
         match label {
             "Anthropic" | "Bedrock" => Self::Anthropic,
-            "OpenAI" | "ChatGPT" | "Azure" => Self::OpenAi,
+            "OpenAI" | "Azure" => Self::OpenAi,
             _ => Self::Gemini,
         }
     }
@@ -83,7 +83,7 @@ pub struct RealUsage {
 /// choke-point through which every measured turn flows.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct WireContext {
-    /// Provider label (`Anthropic|OpenAI|ChatGPT|Gemini`) of the serving route.
+    /// Provider label (`Anthropic|OpenAI|Gemini`) of the serving route.
     pub provider: String,
     /// Project from the `x-leanctx-project` header.
     pub project: Option<String>,

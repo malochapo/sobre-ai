@@ -25,14 +25,6 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
         ),
     );
     proxy.insert(
-        "chatgpt_upstream".into(),
-        key(
-            "string?",
-            serde_json::json!(cfg.proxy.chatgpt_upstream),
-            "Custom upstream URL for ChatGPT/Codex subscription API proxy",
-        ),
-    );
-    proxy.insert(
         "gemini_upstream".into(),
         key(
             "string?",
@@ -205,15 +197,6 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
             serde_json::json!(cfg.proxy.verbosity_steer_enabled()),
             "Opt-in cache-safe wire verbosity steer (#895). When true, the proxy appends a single constant 'be concise' instruction to the last user turn of each request - output-shaping for raw API clients that do not load lean-ctx rules. The suffix is constant and appended strictly after the last cache_control breakpoint (a new trailing text block, never modifying a cache-anchored block), so the provider prompt-cache prefix stays byte-stable. Under an output_holdout the control arm skips it so its effect is measured. Default false",
             "LEAN_CTX_PROXY_VERBOSITY_STEER",
-        ),
-    );
-    proxy.insert(
-        "codex_chatgpt_proxy".into(),
-        key_with_env(
-            "bool",
-            serde_json::json!(cfg.proxy.codex_chatgpt_proxy_enabled()),
-            "Opt-in routing of a Codex ChatGPT-subscription login through the proxy for model-turn compression (#603/#616). Default false leaves Codex native (history visible, cloud/remote intact, no #597). When true, setup pins model_provider = leanctx-chatgpt + chatgpt_base_url + a [model_providers.leanctx-chatgpt] block, so model turns route through /backend-api/codex/responses (the proxy strips the responses-lite marker so every model incl. gpt-5.5 works); pinning a provider scopes Codex history to it (#597), hence opt-in. Toggle durably with `lean-ctx proxy codex-chatgpt on|off|status`. Default false",
-            "LEAN_CTX_CODEX_CHATGPT_PROXY",
         ),
     );
     sections.insert(

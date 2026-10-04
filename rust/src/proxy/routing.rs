@@ -78,7 +78,7 @@ pub fn route_request(
         return None;
     }
     // Body-addressed model dialects route. Gemini keys the model in the URL
-    // path and ChatGPT-backend is OAuth'd Codex traffic — both passthrough.
+    // path, so it passes through.
     let request_shape = match provider_label {
         "Anthropic" => WireShape::Anthropic,
         "OpenAI" => WireShape::OpenAi,
@@ -315,7 +315,6 @@ mod tests {
         Upstreams {
             anthropic: "https://api.anthropic.com".into(),
             openai: "https://api.openai.com".into(),
-            chatgpt: "https://chatgpt.com".into(),
             gemini: "https://generativelanguage.googleapis.com".into(),
             providers: vec![
                 ResolvedProvider {
@@ -626,9 +625,9 @@ mod tests {
     }
 
     #[test]
-    fn gemini_and_chatgpt_labels_are_passthrough() {
+    fn gemini_and_unknown_labels_are_passthrough() {
         let mut body = json!({"model":"m","messages":[{"role":"user","content":"hi"}]});
-        for label in ["Gemini", "ChatGPT"] {
+        for label in ["Gemini", "Mystery"] {
             assert_eq!(
                 route_request(
                     &mut body,

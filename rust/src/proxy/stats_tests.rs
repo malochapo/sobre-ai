@@ -33,15 +33,15 @@ fn provider_stats_are_separate() {
     let stats = ProxyStats::default();
 
     stats.record_provider_request("OpenAI", 1_000, 500);
-    stats.record_provider_request("ChatGPT", 2_000, 1_000);
+    stats.record_provider_request("Gemini", 2_000, 1_000);
 
     assert_eq!(stats.requests_total.load(Ordering::Relaxed), 2);
     assert_eq!(stats.openai.requests_total.load(Ordering::Relaxed), 1);
-    assert_eq!(stats.chatgpt.requests_total.load(Ordering::Relaxed), 1);
+    assert_eq!(stats.gemini.requests_total.load(Ordering::Relaxed), 1);
     assert_eq!(stats.openai.tokens_saved.load(Ordering::Relaxed), 125);
-    assert_eq!(stats.chatgpt.tokens_saved.load(Ordering::Relaxed), 250);
+    assert_eq!(stats.gemini.tokens_saved.load(Ordering::Relaxed), 250);
     assert_eq!(stats.openai.compression_ratio(), 50.0);
-    assert_eq!(stats.chatgpt.compression_ratio(), 50.0);
+    assert_eq!(stats.gemini.compression_ratio(), 50.0);
 }
 
 #[test]
@@ -64,7 +64,6 @@ fn unknown_label_is_not_recorded_to_any_bucket() {
     assert_eq!(stats.requests_total.load(Ordering::Relaxed), 1);
     assert_eq!(stats.anthropic.requests_total.load(Ordering::Relaxed), 0);
     assert_eq!(stats.openai.requests_total.load(Ordering::Relaxed), 0);
-    assert_eq!(stats.chatgpt.requests_total.load(Ordering::Relaxed), 0);
     assert_eq!(stats.gemini.requests_total.load(Ordering::Relaxed), 0);
     assert_eq!(stats.grok.requests_total.load(Ordering::Relaxed), 0);
     assert_eq!(stats.commandcode.requests_total.load(Ordering::Relaxed), 0);

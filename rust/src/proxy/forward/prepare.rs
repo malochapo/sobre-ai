@@ -70,7 +70,7 @@ pub(crate) fn cohort_arm(
     }
     let key = match provider_label {
         "Anthropic" => crate::proxy::holdout::anthropic_key(parsed),
-        "OpenAI" | "ChatGPT" => {
+        "OpenAI" => {
             if default_path.contains("responses") {
                 crate::proxy::holdout::openai_responses_key(parsed)
             } else {

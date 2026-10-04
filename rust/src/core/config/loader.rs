@@ -58,12 +58,10 @@ pub(crate) fn strip_sensitive_overrides(local: &mut Config) -> Vec<&'static str>
     }
     if local.proxy.anthropic_upstream.is_some()
         || local.proxy.openai_upstream.is_some()
-        || local.proxy.chatgpt_upstream.is_some()
         || local.proxy.gemini_upstream.is_some()
     {
         local.proxy.anthropic_upstream = None;
         local.proxy.openai_upstream = None;
-        local.proxy.chatgpt_upstream = None;
         local.proxy.gemini_upstream = None;
         withheld.push("proxy.*_upstream");
     }

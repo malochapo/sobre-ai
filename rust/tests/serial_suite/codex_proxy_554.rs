@@ -1,17 +1,10 @@
-//! End-to-end regression for #554 / #597 / #603: `proxy enable` must treat the two
-//! Codex auth modes differently, and a ChatGPT *subscription* login must stay native
-//! unless the user explicitly opts into proxy routing.
+//! End-to-end regression for #554 / #597: `proxy enable` must treat the two
+//! Codex auth modes differently.
 //!
-//! - **API-key** mode is billed per token, so Codex is pointed at the proxy's `/v1`
-//!   rail (top-level `openai_base_url`).
-//! - **ChatGPT subscription, default (opt-out)**: left native — no lean-ctx Codex
-//!   config — so history and `codex cloud`/remote keep working (#597). Pinning a
-//!   `model_provider` scopes Codex history to that provider, which is exactly the
-//!   regression #597 reverted, so routing a subscription is opt-in.
-//! - **ChatGPT subscription, opt-in** (`LEAN_CTX_CODEX_CHATGPT_PROXY` set, or
-//!   `[proxy] codex_chatgpt_proxy = true`): setup pins the generated
-//!   `leanctx-chatgpt` provider so model turns route through the proxy's Codex
-//!   backend rail.
+//! - **API-key** mode: Codex is pointed at the proxy's `/v1` rail (top-level
+//!   `openai_base_url`).
+//! - **ChatGPT login**: left native — no lean-ctx Codex config — so history and
+//!   `codex cloud`/remote keep working (#597).
 //!
 //! All scenarios live in one serial test: they redirect Codex via `CODEX_HOME`
 //! (the documented override `resolve_codex_dir` honours) and a live dummy proxy so
@@ -64,8 +57,7 @@ impl Drop for CodexHome {
 }
 
 /// Scope-guard for an arbitrary env var that restores the previous value on drop.
-/// Used to flip the `LEAN_CTX_CODEX_CHATGPT_PROXY` opt-in per scenario without
-/// leaking into the next one. Same `unsafe`/serial-test caveat as [`CodexHome`].
+/// Same `unsafe`/serial-test caveat as [`CodexHome`].
 struct EnvVar {
     key: &'static str,
     prev: Option<OsString>,
@@ -78,15 +70,6 @@ impl EnvVar {
         // (env-race legacy — see .github/workflows/ci.yml), so no other test in
         // this binary touches the environment concurrently.
         unsafe { std::env::set_var(key, value) };
-        EnvVar { key, prev }
-    }
-
-    fn cleared(key: &'static str) -> Self {
-        let prev = std::env::var_os(key);
-        // SAFETY: the project's test suite always runs with `--test-threads=1`
-        // (env-race legacy — see .github/workflows/ci.yml), so no other test in
-        // this binary touches the environment concurrently.
-        unsafe { std::env::remove_var(key) };
         EnvVar { key, prev }
     }
 }
@@ -131,10 +114,8 @@ fn proxy_enable_respects_codex_auth_mode_554() {
         return;
     }
 
-    // Hermetic config isolation. The ChatGPT-proxy opt-in is resolved from the global
-    // `[proxy] codex_chatgpt_proxy` (env-independent, #603/#616), so without this a
-    // developer who enabled it would see the default opt-out scenario observe an
-    // opt-in it never set. Integration tests cannot use the crate-private
+    // Hermetic config isolation: setup reads the global config, so point it at
+    // a throwaway dir. Integration tests cannot use the crate-private
     // `isolated_data_dir()` (`#[cfg(test)]`), so replicate it: point all four XDG
     // category overrides at a throwaway dir. This test lives in the serial
     // binary, which runs one test at a time, so mutating process env is safe.
@@ -147,9 +128,8 @@ fn proxy_enable_respects_codex_auth_mode_554() {
 
     const CHATGPT_AUTH: &str = r#"{"auth_mode":"chatgpt","tokens":{"access_token":"x"}}"#;
 
-    // --- ChatGPT login, default (opt-out): stay native, write no proxy entries (#597).
+    // --- ChatGPT login: stay native, write no proxy entries (#597).
     {
-        let _no_optin = EnvVar::cleared("LEAN_CTX_CODEX_CHATGPT_PROXY");
         let (home, codex) = codex_home_with_auth(CHATGPT_AUTH);
         let _codex_home = CodexHome::set(&codex);
         let (_listener, port) = dummy_proxy_port();
@@ -158,11 +138,11 @@ fn proxy_enable_respects_codex_auth_mode_554() {
         let cfg = std::fs::read_to_string(codex.join("config.toml")).unwrap();
         assert!(
             !cfg.contains("model_provider = \"leanctx-chatgpt\""),
-            "default ChatGPT login must stay native — no model_provider pin (#597), got:\n{cfg}"
+            "a ChatGPT login must stay native — no model_provider pin (#597), got:\n{cfg}"
         );
         assert!(
             !cfg.contains("chatgpt_base_url"),
-            "default ChatGPT login must write no proxy rail, got:\n{cfg}"
+            "a ChatGPT login must write no proxy rail, got:\n{cfg}"
         );
         assert!(
             !cfg.contains("openai_base_url"),
@@ -174,42 +154,8 @@ fn proxy_enable_respects_codex_auth_mode_554() {
         );
     }
 
-    // --- ChatGPT login, opt-in: pin the lean-ctx ChatGPT provider + backend rail.
-    {
-        let _optin = EnvVar::set("LEAN_CTX_CODEX_CHATGPT_PROXY", "1");
-        let (home, codex) = codex_home_with_auth(CHATGPT_AUTH);
-        let _codex_home = CodexHome::set(&codex);
-        let (_listener, port) = dummy_proxy_port();
-        lean_ctx::proxy_setup::install_proxy_env_unchecked(home.path(), port, true, false);
-
-        let cfg = std::fs::read_to_string(codex.join("config.toml")).unwrap();
-        assert!(
-            cfg.contains("model_provider = \"leanctx-chatgpt\""),
-            "opt-in ChatGPT login must select the lean-ctx ChatGPT provider, got:\n{cfg}"
-        );
-        assert!(
-            !cfg.contains("chatgpt_base_url"),
-            "stale ChatGPT aux/app routing must be removed, got:\n{cfg}"
-        );
-        assert!(
-            cfg.contains(&format!(
-                "base_url = \"http://127.0.0.1:{port}/backend-api/codex\""
-            )),
-            "ChatGPT provider block must point model turns at backend-api/codex, got:\n{cfg}"
-        );
-        assert!(
-            !cfg.contains("openai_base_url"),
-            "opt-in ChatGPT login must not use the OpenAI API-key /v1 rail, got:\n{cfg}"
-        );
-        assert!(
-            cfg.contains("model = \"gpt-5.5\""),
-            "unrelated Codex config must be preserved, got:\n{cfg}"
-        );
-    }
-
     // --- API-key login: Codex is pointed at the proxy via top-level openai_base_url.
     {
-        let _no_optin = EnvVar::cleared("LEAN_CTX_CODEX_CHATGPT_PROXY");
         let (home, codex) =
             codex_home_with_auth(r#"{"auth_mode":"apikey","OPENAI_API_KEY":"sk-test"}"#);
         let _codex_home = CodexHome::set(&codex);

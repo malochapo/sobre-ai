@@ -139,7 +139,7 @@ fn zstd_request_bodies_are_rewritten_and_reencoded() {
     let json = serde_json::to_vec(&body).unwrap();
     let encoded = encode_zstd(&json).unwrap();
     let parts = Request::builder()
-        .uri("/backend-api/codex/responses")
+        .uri("/v1/responses")
         .header(axum::http::header::CONTENT_ENCODING, "zstd")
         .body(())
         .unwrap()
@@ -174,7 +174,7 @@ fn gzip_request_bodies_are_rewritten_and_reencoded() {
     let json = serde_json::to_vec(&body).unwrap();
     let encoded = encode_gzip(&json).unwrap();
     let parts = Request::builder()
-        .uri("/backend-api/codex/responses")
+        .uri("/v1/responses")
         .header(axum::http::header::CONTENT_ENCODING, "gzip")
         .body(())
         .unwrap()

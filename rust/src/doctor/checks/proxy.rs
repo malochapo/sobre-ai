@@ -199,11 +199,6 @@ pub(crate) fn proxy_upstream_outcome() -> Outcome {
             cfg.proxy.resolve_upstream(ProxyProvider::OpenAi),
         ),
         (
-            "ChatGPT",
-            "proxy.chatgpt_upstream",
-            cfg.proxy.resolve_upstream(ProxyProvider::ChatGpt),
-        ),
-        (
             "Gemini",
             "proxy.gemini_upstream",
             cfg.proxy.resolve_upstream(ProxyProvider::Gemini),
@@ -235,9 +230,6 @@ pub(crate) fn proxy_upstream_outcome() -> Outcome {
         ) || matches!(
             *label,
             "OpenAI" if resolved == "https://api.openai.com"
-        ) || matches!(
-            *label,
-            "ChatGPT" if resolved == "https://chatgpt.com"
         ) || matches!(
             *label,
             "Gemini" if resolved == "https://generativelanguage.googleapis.com"
@@ -289,7 +281,7 @@ pub(crate) fn proxy_upstream_drift_outcome() -> Option<Outcome> {
         return None;
     }
     let port = crate::proxy_setup::default_port();
-    let (live_anthropic, live_openai, live_chatgpt, live_gemini) = proxy_live_upstreams(port)?;
+    let (live_anthropic, live_openai, live_gemini) = proxy_live_upstreams(port)?;
     let disk = cfg.proxy.resolve_all_disk();
 
     let mut env_not_applied = Vec::new();
@@ -308,13 +300,6 @@ pub(crate) fn proxy_upstream_drift_outcome() -> Option<Outcome> {
             ProxyProvider::OpenAi,
             &disk.openai,
             &live_openai,
-        ),
-        (
-            "ChatGPT",
-            "chatgpt",
-            ProxyProvider::ChatGpt,
-            &disk.chatgpt,
-            &live_chatgpt,
         ),
         (
             "Gemini",

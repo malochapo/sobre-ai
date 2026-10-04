@@ -75,10 +75,7 @@ pub fn cmd_config(args: &[String]) {
                     );
                     std::process::exit(1);
                 }
-                "proxy.anthropic_upstream"
-                | "proxy.openai_upstream"
-                | "proxy.chatgpt_upstream"
-                | "proxy.gemini_upstream" => {
+                "proxy.anthropic_upstream" | "proxy.openai_upstream" | "proxy.gemini_upstream" => {
                     let effective = normalize_optional_upstream(val).unwrap_or_default();
                     (key.clone(), effective)
                 }

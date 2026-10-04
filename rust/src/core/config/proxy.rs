@@ -8,7 +8,6 @@ use serde::{Deserialize, Serialize};
 pub struct ProxyConfig {
     pub anthropic_upstream: Option<String>,
     pub openai_upstream: Option<String>,
-    pub chatgpt_upstream: Option<String>,
     pub gemini_upstream: Option<String>,
     /// Universal provider registry (`[[proxy.providers]]`): additional upstream
     /// providers beyond the four built-ins, declared as data — id + wire shape +
@@ -199,14 +198,6 @@ pub struct ProxyConfig {
     /// Also auto-detected via the `X-Headroom-Compressed` request header.
     /// Env `LEAN_CTX_PROXY_COMPAT_STACK`.
     pub compat_stack: Option<String>,
-    /// Opt-in: route a Codex *ChatGPT-subscription* login through the proxy for
-    /// model-turn compression. Default `None`/`false` keeps Codex native (history
-    /// visible, cloud/remote intact, no #597). When `true`, Codex setup pins the
-    /// generated `leanctx-chatgpt` provider + `chatgpt_base_url`; that scopes Codex
-    /// history to the provider (#597), so it stays opt-in. Toggle durably with
-    /// `lean-ctx proxy codex-chatgpt on|off`; resolved via
-    /// [`ProxyConfig::codex_chatgpt_proxy_enabled`].
-    pub codex_chatgpt_proxy: Option<bool>,
     /// Active request routing (`[proxy.routing]`, enterprise#13): model aliases
     /// and intent-tier downgrades applied in the forward path. Off by default —
     /// an empty/absent table is a strict passthrough. See [`RoutingRules`].
@@ -354,7 +345,7 @@ impl WireShape {
 pub struct ProviderEntry {
     /// Registry id, used in the `/providers/{id}/...` route and in routing
     /// rules. Lowercase alphanumeric plus `-`/`_`; must not shadow a built-in
-    /// provider name (`anthropic`, `openai`, `chatgpt`, `gemini`).
+    /// provider name (`anthropic`, `openai`, `gemini`).
     pub id: String,
     /// Which API dialect the endpoint speaks (`anthropic|openai|gemini|bedrock`).
     pub shape: WireShape,
@@ -399,7 +390,7 @@ pub struct ResolvedProvider {
 }
 
 /// Built-in provider route names a registry entry must not shadow.
-const BUILTIN_PROVIDER_IDS: &[&str] = &["anthropic", "openai", "chatgpt", "gemini"];
+const BUILTIN_PROVIDER_IDS: &[&str] = &["anthropic", "openai", "gemini"];
 
 /// True when `id` is usable as a registry id: non-empty, lowercase alnum plus
 /// `-`/`_` (it becomes a URL path segment), and not a built-in provider name.
@@ -680,14 +671,6 @@ impl ProxyConfig {
             .unwrap_or(false)
     }
 
-    /// Resolved Codex ChatGPT-subscription proxy opt-in (default off).
-    /// `LEAN_CTX_CODEX_CHATGPT_PROXY` (any value) forces it on for the current
-    /// process, then `[proxy] codex_chatgpt_proxy` in config.toml, else `false`.
-    pub fn codex_chatgpt_proxy_enabled(&self) -> bool {
-        std::env::var("LEAN_CTX_CODEX_CHATGPT_PROXY").is_ok()
-            || self.codex_chatgpt_proxy.unwrap_or(false)
-    }
-
     /// Whether the opt-in cold-prefix repack (#480) is enabled. A wrong "cold"
     /// guess re-bills cache reads as writes (~12x), so this is off by default and
     /// must be explicitly enabled. `LEAN_CTX_PROXY_COLD_PREFIX_REPACK` (any
@@ -951,7 +934,6 @@ impl ProxyConfig {
         [
             self.anthropic_upstream.as_deref(),
             self.openai_upstream.as_deref(),
-            self.chatgpt_upstream.as_deref(),
             self.gemini_upstream.as_deref(),
         ]
         .into_iter()
@@ -972,11 +954,6 @@ impl ProxyConfig {
                 "LEAN_CTX_OPENAI_UPSTREAM",
                 self.openai_upstream.as_deref(),
                 "https://api.openai.com",
-            ),
-            ProxyProvider::ChatGpt => (
-                "LEAN_CTX_CHATGPT_UPSTREAM",
-                self.chatgpt_upstream.as_deref(),
-                "https://chatgpt.com",
             ),
             ProxyProvider::Gemini => (
                 "LEAN_CTX_GEMINI_UPSTREAM",
@@ -1041,7 +1018,6 @@ impl ProxyConfig {
         Upstreams {
             anthropic: self.resolve_upstream(ProxyProvider::Anthropic),
             openai: self.resolve_upstream(ProxyProvider::OpenAi),
-            chatgpt: self.resolve_upstream(ProxyProvider::ChatGpt),
             gemini: self.resolve_upstream(ProxyProvider::Gemini),
             providers: self.resolve_providers(),
         }
@@ -1138,7 +1114,6 @@ impl ProxyConfig {
         Upstreams {
             anthropic: pick(ProxyProvider::Anthropic),
             openai: pick(ProxyProvider::OpenAi),
-            chatgpt: pick(ProxyProvider::ChatGpt),
             gemini: pick(ProxyProvider::Gemini),
             providers: self.resolve_providers(),
         }
@@ -1158,7 +1133,6 @@ impl ProxyConfig {
         Upstreams {
             anthropic: keep(ProxyProvider::Anthropic, &last.anthropic),
             openai: keep(ProxyProvider::OpenAi, &last.openai),
-            chatgpt: keep(ProxyProvider::ChatGpt, &last.chatgpt),
             gemini: keep(ProxyProvider::Gemini, &last.gemini),
             // Registry re-resolution is deterministic from config; an entry
             // that turned invalid is dropped with a warning (see
@@ -1175,7 +1149,6 @@ impl ProxyConfig {
 pub struct Upstreams {
     pub anthropic: String,
     pub openai: String,
-    pub chatgpt: String,
     pub gemini: String,
     /// Registry providers from `[[proxy.providers]]` (universal framework),
     /// validated and live-reloadable exactly like the built-ins.
@@ -1195,7 +1168,6 @@ impl Upstreams {
 pub enum ProxyProvider {
     Anthropic,
     OpenAi,
-    ChatGpt,
     Gemini,
 }
 
@@ -1222,7 +1194,6 @@ pub fn env_upstream_override(provider: ProxyProvider) -> Option<String> {
     let var = match provider {
         ProxyProvider::Anthropic => "LEAN_CTX_ANTHROPIC_UPSTREAM",
         ProxyProvider::OpenAi => "LEAN_CTX_OPENAI_UPSTREAM",
-        ProxyProvider::ChatGpt => "LEAN_CTX_CHATGPT_UPSTREAM",
         ProxyProvider::Gemini => "LEAN_CTX_GEMINI_UPSTREAM",
     };
     std::env::var(var).ok().and_then(|v| normalize_url_opt(&v))
@@ -1282,7 +1253,6 @@ pub fn normalize_url_opt(value: &str) -> Option<String> {
 const ALLOWED_UPSTREAM_HOSTS: &[&str] = &[
     "api.anthropic.com",
     "api.openai.com",
-    "chatgpt.com",
     "generativelanguage.googleapis.com",
     // xAI Grok (OpenAI-compatible). Used by auto-seeded registry providers
     // when `lean-ctx proxy enable` wires Grok (API-key rail + subscription rail).

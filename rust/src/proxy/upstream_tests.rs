@@ -6,7 +6,6 @@ fn upstreams_with_openai(openai: &str) -> Upstreams {
     Upstreams {
         anthropic: "https://api.anthropic.com".into(),
         openai: openai.into(),
-        chatgpt: "https://chatgpt.com".into(),
         gemini: "https://generativelanguage.googleapis.com".into(),
         providers: Vec::new(),
     }
@@ -25,7 +24,6 @@ async fn proxy_state_reads_upstream_live_from_watch() {
         stats: Arc::new(ProxyStats::default()),
         introspect: Arc::new(introspect::IntrospectState::default()),
         upstreams: rx,
-        chatgpt_cookies: chatgpt_cookies::shared_chatgpt_cloudflare_cookie_store(),
     };
     assert_eq!(state.openai_upstream(), "https://old.example");
 

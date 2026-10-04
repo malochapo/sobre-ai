@@ -284,57 +284,8 @@ fn codex_env_preserves_custom_remote_endpoint() {
     );
 }
 
-#[test]
-fn codex_env_chatgpt_mode_writes_subscription_provider() {
-    let dir = tempfile::tempdir().unwrap();
-    let codex_dir = dir.path().join(".codex");
-    std::fs::create_dir_all(&codex_dir).unwrap();
-    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-    let port = listener.local_addr().unwrap().port();
-    std::fs::write(
-        codex_dir.join("config.toml"),
-        "model_provider = \"custom\"\nchatgpt_base_url = \"https://chatgpt.example.com/backend-api/\"\nmodel = \"gpt-5.5\"\n",
-    )
-    .unwrap();
-
-    install_codex_env_at_mode(&codex_dir, port, true, CodexProxyMode::ChatGpt, true);
-
-    let cfg = std::fs::read_to_string(codex_dir.join("config.toml")).unwrap();
-    assert!(
-        !cfg.contains("openai_base_url"),
-        "ChatGPT mode must not write a proxy openai_base_url, got:\n{cfg}"
-    );
-    assert!(
-        cfg.contains(&format!("model_provider = \"{CODEX_CHATGPT_PROVIDER_ID}\"")),
-        "ChatGPT mode must select the lean-ctx ChatGPT provider, got:\n{cfg}"
-    );
-    assert!(
-        !cfg.contains("model_provider = \"custom\""),
-        "ChatGPT mode must replace stale top-level model_provider, got:\n{cfg}"
-    );
-    assert!(
-        !cfg.contains("chatgpt_base_url"),
-        "ChatGPT mode must leave aux/apps rail native, got:\n{cfg}"
-    );
-    assert!(
-        cfg.contains(&format!("[model_providers.{CODEX_CHATGPT_PROVIDER_ID}]")),
-        "ChatGPT mode must install the generated provider block, got:\n{cfg}"
-    );
-    assert!(
-        cfg.contains(&format!(
-            "base_url = \"http://127.0.0.1:{port}/backend-api/codex\""
-        )),
-        "ChatGPT provider must target the Codex backend rail, got:\n{cfg}"
-    );
-    assert!(
-        cfg.contains("model = \"gpt-5.5\""),
-        "user keys are preserved, got:\n{cfg}"
-    );
-}
-
-/// #597-safe default: a ChatGPT login with the opt-in OFF must leave Codex
-/// native — no `model_provider` pin (which would scope/hide history), no
-/// `chatgpt_base_url`, no provider block, no proxy URL at all.
+/// A ChatGPT login leaves Codex native — no `model_provider` pin (which would
+/// scope/hide history), no `chatgpt_base_url`, no provider block, no proxy URL.
 #[test]
 fn codex_env_chatgpt_mode_optout_writes_nothing() {
     let dir = tempfile::tempdir().unwrap();
@@ -344,107 +295,26 @@ fn codex_env_chatgpt_mode_optout_writes_nothing() {
     let port = listener.local_addr().unwrap().port();
     std::fs::write(codex_dir.join("config.toml"), "model = \"gpt-5.5\"\n").unwrap();
 
-    // Opt-in OFF (chatgpt_proxy = false).
-    install_codex_env_at_mode(&codex_dir, port, true, CodexProxyMode::ChatGpt, false);
+    install_codex_env_at_mode(&codex_dir, port, true, CodexProxyMode::ChatGpt);
 
     let cfg = std::fs::read_to_string(codex_dir.join("config.toml")).unwrap();
     assert!(
         !cfg.contains("model_provider"),
-        "opt-out must not pin a model_provider (#597), got:\n{cfg}"
+        "ChatGPT mode must not pin a model_provider (#597), got:\n{cfg}"
     );
     assert!(
         !cfg.contains("chatgpt_base_url") && !cfg.contains("openai_base_url"),
-        "opt-out must not write any proxy base URL, got:\n{cfg}"
+        "ChatGPT mode must not write any proxy base URL, got:\n{cfg}"
     );
     assert!(
         !cfg.contains(CODEX_CHATGPT_PROVIDER_ID) && !cfg.contains("127.0.0.1"),
-        "opt-out must not install the provider block or any proxy URL, got:\n{cfg}"
+        "ChatGPT mode must not install the provider block or any proxy URL, got:\n{cfg}"
     );
     assert!(cfg.contains("model = \"gpt-5.5\""), "user keys preserved");
 }
 
-/// Flipping the opt-in OFF after it was ON strips the provider config back to
-/// native, so Codex history + cloud/remote return (#597).
-#[test]
-fn codex_env_chatgpt_optin_toggle_off_restores_native() {
-    let dir = tempfile::tempdir().unwrap();
-    let codex_dir = dir.path().join(".codex");
-    std::fs::create_dir_all(&codex_dir).unwrap();
-    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-    let port = listener.local_addr().unwrap().port();
-    std::fs::write(codex_dir.join("config.toml"), "model = \"gpt-5.5\"\n").unwrap();
-
-    // ON → provider config present.
-    install_codex_env_at_mode(&codex_dir, port, true, CodexProxyMode::ChatGpt, true);
-    let on = std::fs::read_to_string(codex_dir.join("config.toml")).unwrap();
-    assert!(
-        on.contains(CODEX_CHATGPT_PROVIDER_ID),
-        "opt-in writes provider"
-    );
-
-    // OFF → stripped back to native.
-    install_codex_env_at_mode(&codex_dir, port, true, CodexProxyMode::ChatGpt, false);
-    let off = std::fs::read_to_string(codex_dir.join("config.toml")).unwrap();
-    assert!(
-        !off.contains("model_provider")
-            && !off.contains("chatgpt_base_url")
-            && !off.contains(CODEX_CHATGPT_PROVIDER_ID)
-            && !off.contains("127.0.0.1"),
-        "toggling opt-in off restores native config, got:\n{off}"
-    );
-    assert!(off.contains("model = \"gpt-5.5\""), "user keys preserved");
-}
-
-/// With the opt-in enabled, ChatGPT subscription mode writes only the model
-/// provider. It must leave `chatgpt_base_url` native so Codex Apps MCP keeps
-/// first-party ChatGPT auth cookies/headers.
-#[test]
-fn codex_env_chatgpt_mode_writes_backend_url_idempotently() {
-    let dir = tempfile::tempdir().unwrap();
-    let codex_dir = dir.path().join(".codex");
-    std::fs::create_dir_all(&codex_dir).unwrap();
-    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-    let port = listener.local_addr().unwrap().port();
-    std::fs::write(codex_dir.join("config.toml"), "model = \"gpt-5.5\"\n").unwrap();
-
-    install_codex_env_at_mode(&codex_dir, port, true, CodexProxyMode::ChatGpt, true);
-
-    let cfg = std::fs::read_to_string(codex_dir.join("config.toml")).unwrap();
-    assert!(
-        cfg.contains(&format!("model_provider = \"{CODEX_CHATGPT_PROVIDER_ID}\"")),
-        "ChatGPT mode must pin the lean-ctx provider, got:\n{cfg}"
-    );
-    assert!(
-        !cfg.contains("chatgpt_base_url"),
-        "ChatGPT mode must not proxy aux/apps via chatgpt_base_url, got:\n{cfg}"
-    );
-    assert!(
-        !cfg.contains("openai_base_url"),
-        "ChatGPT mode routes via the generated provider, not the /v1 openai_base_url, got:\n{cfg}"
-    );
-    assert!(
-        cfg.contains("model = \"gpt-5.5\""),
-        "user keys are preserved, got:\n{cfg}"
-    );
-
-    // Idempotent: a second run yields the identical body ("already configured").
-    install_codex_env_at_mode(&codex_dir, port, true, CodexProxyMode::ChatGpt, true);
-    let again = std::fs::read_to_string(codex_dir.join("config.toml")).unwrap();
-    assert_eq!(cfg, again, "opt-in render must be idempotent");
-
-    // Switching to API-key mode strips the ChatGPT-only rail.
-    install_codex_env_at_mode(&codex_dir, port, true, CodexProxyMode::ApiKey, false);
-    let off = std::fs::read_to_string(codex_dir.join("config.toml")).unwrap();
-    assert!(
-        !off.contains("chatgpt_base_url") && !off.contains(CODEX_CHATGPT_PROVIDER_ID),
-        "API-key mode must remove ChatGPT-only config, got:\n{off}"
-    );
-    assert!(off.contains(&format!("openai_base_url = \"http://127.0.0.1:{port}/v1\"")));
-    assert!(off.contains("model = \"gpt-5.5\""));
-}
-
-/// Upgrade over old ChatGPT-proxy entries strips stale aux/app routing first,
-/// then writes the current ChatGPT subscription model provider config.
+/// Upgrade over the removed ChatGPT-subscription routing strips every entry it
+/// wrote — provider pin, provider block and both base URLs — back to native.
 #[test]
 fn codex_chatgpt_upgrade_strips_legacy_leanctx_provider() {
     let dir = tempfile::tempdir().unwrap();
@@ -463,7 +333,7 @@ fn codex_chatgpt_upgrade_strips_legacy_leanctx_provider() {
     );
     std::fs::write(codex_dir.join("config.toml"), legacy).unwrap();
 
-    install_codex_env_at_mode(&codex_dir, port, true, CodexProxyMode::ChatGpt, true);
+    install_codex_env_at_mode(&codex_dir, port, true, CodexProxyMode::ChatGpt);
 
     let cfg = std::fs::read_to_string(codex_dir.join("config.toml")).unwrap();
     assert!(
@@ -471,8 +341,8 @@ fn codex_chatgpt_upgrade_strips_legacy_leanctx_provider() {
         "backend-api openai_base_url override must be removed (breaks remote), got:\n{cfg}"
     );
     assert!(
-        cfg.contains(&format!("model_provider = \"{CODEX_CHATGPT_PROVIDER_ID}\"")),
-        "current ChatGPT provider must be written, got:\n{cfg}"
+        !cfg.contains("model_provider") && !cfg.contains(CODEX_CHATGPT_PROVIDER_ID),
+        "the provider pin and its block must be removed, got:\n{cfg}"
     );
     assert!(
         !cfg.contains("chatgpt_base_url"),
@@ -486,8 +356,8 @@ fn codex_chatgpt_upgrade_strips_legacy_leanctx_provider() {
 #[test]
 fn render_codex_config_is_idempotent() {
     let entries = vec![("openai_base_url", "http://127.0.0.1:4444/v1".to_string())];
-    let once = render_codex_config("model = \"gpt-5.5\"\n", &entries, None);
-    let twice = render_codex_config(&once, &entries, None);
+    let once = render_codex_config("model = \"gpt-5.5\"\n", &entries);
+    let twice = render_codex_config(&once, &entries);
     assert_eq!(once, twice, "render must be idempotent");
     assert!(once.starts_with("openai_base_url = \"http://127.0.0.1:4444/v1\"\n"));
     assert!(once.contains("model = \"gpt-5.5\""));
@@ -544,7 +414,7 @@ fn codex_proxy_cleanup_detection_ignores_plain_openai_provider() {
 fn render_codex_config_inserts_before_first_table() {
     let body = "model = \"gpt-5.5\"\n\n[features]\nhooks = true\n";
     let entries = vec![("openai_base_url", "http://127.0.0.1:4444/v1".to_string())];
-    let out = render_codex_config(body, &entries, None);
+    let out = render_codex_config(body, &entries);
     let key_idx = out.find("openai_base_url").expect("key present");
     let table_idx = out.find("[features]").expect("table present");
     assert!(

@@ -348,26 +348,6 @@ fn verbosity_steer_defaults_off_and_env_overrides() {
 }
 
 #[test]
-fn codex_chatgpt_proxy_flag_reads_config_and_env() {
-    // Isolate from a developer shell that may export the env override.
-    let _lock = crate::core::data_dir::test_env_lock();
-    crate::test_env::remove_var("LEAN_CTX_CODEX_CHATGPT_PROXY");
-    assert!(
-        !ProxyConfig::default().codex_chatgpt_proxy_enabled(),
-        "Codex ChatGPT proxy opt-in defaults off"
-    );
-    let cfg = ProxyConfig {
-        codex_chatgpt_proxy: Some(true),
-        ..Default::default()
-    };
-    assert!(cfg.codex_chatgpt_proxy_enabled());
-    // An explicit env value wins even over an unset/false config.
-    crate::test_env::set_var("LEAN_CTX_CODEX_CHATGPT_PROXY", "1");
-    assert!(ProxyConfig::default().codex_chatgpt_proxy_enabled());
-    crate::test_env::remove_var("LEAN_CTX_CODEX_CHATGPT_PROXY");
-}
-
-#[test]
 fn prose_ranker_env_overrides_config() {
     let _lock = crate::core::data_dir::test_env_lock();
     let cfg = ProxyConfig {
@@ -402,7 +382,6 @@ fn resolve_all_disk_uses_config_then_default() {
     let up = cfg.resolve_all_disk();
     assert_eq!(up.openai, "http://127.0.0.1:19101");
     assert_eq!(up.anthropic, "https://api.anthropic.com");
-    assert_eq!(up.chatgpt, "https://chatgpt.com");
     assert_eq!(up.gemini, "https://generativelanguage.googleapis.com");
 }
 
@@ -458,7 +437,6 @@ fn refresh_keeps_last_good_on_invalid_config() {
     let last = Upstreams {
         anthropic: "https://api.anthropic.com".into(),
         openai: "http://127.0.0.1:19101".into(),
-        chatgpt: "https://chatgpt.com".into(),
         gemini: "https://generativelanguage.googleapis.com".into(),
         providers: Vec::new(),
     };
@@ -481,7 +459,6 @@ fn refresh_adopts_valid_config_change() {
     let last = Upstreams {
         anthropic: "https://api.anthropic.com".into(),
         openai: "http://127.0.0.1:19101".into(),
-        chatgpt: "https://chatgpt.com".into(),
         gemini: "https://generativelanguage.googleapis.com".into(),
         providers: Vec::new(),
     };
@@ -668,7 +645,6 @@ fn provider_registry_respects_enabled_flag_and_trims_key_env() {
         Upstreams {
             anthropic: String::new(),
             openai: String::new(),
-            chatgpt: String::new(),
             gemini: String::new(),
             providers: resolved,
         }

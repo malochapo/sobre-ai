@@ -136,7 +136,7 @@ pub async fn forward_request(
     if let Some(ref parsed) = parsed {
         let provider = match provider_label {
             "Anthropic" | "Bedrock" => super::introspect::Provider::Anthropic,
-            "OpenAI" | "ChatGPT" => super::introspect::Provider::OpenAi,
+            "OpenAI" => super::introspect::Provider::OpenAi,
             _ => super::introspect::Provider::Gemini,
         };
         let breakdown = super::introspect::analyze_request(parsed, provider);

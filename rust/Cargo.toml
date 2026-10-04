@@ -225,23 +225,6 @@ ort = { version = "=2.0.0-rc.12", optional = true, default-features = false, fea
 ] }
 ndarray = { version = "0.17", optional = true }
 axum = { version = "0.8", features = ["ws"] }
-# Upstream WebSocket client for the Codex ChatGPT remote-control passthrough
-# (#597): tunnels `/backend-api` WS upgrades through to wss://chatgpt.com so
-# Codex Desktop remote-control pairing works while the subscription opt-in routes
-# model turns through the proxy. Already in the tree via axum's `ws` feature.
-tokio-tungstenite = { version = "0.29", default-features = false, features = [
-  "connect",
-  "rustls-tls-webpki-roots",
-] }
-# tokio-tungstenite's rustls connector relies on the process-default
-# CryptoProvider. The tree pulls both aws-lc-rs (reqwest) and ring (lettre/ureq),
-# so rustls can't auto-pick one; we install aws-lc-rs explicitly at proxy start
-# (#597). Default features keep the aws_lc_rs provider available.
-rustls = { version = "0.23" }
-# Postgres TLS (#54/#58): Azure Database for PostgreSQL enforces TLS — the
-# usage store must speak sslmode=require. Reuses the process rustls provider.
-# Non-optional since GH #727: `kind=skills` document blobs (featureless
-# context_package core) encode zstd bodies as base64 inside the pack JSON.
 base64 = "0.22"
 hmac = "0.13"
 sha2 = "0.11"
@@ -254,7 +237,6 @@ reqwest = { version = "0.13", default-features = false, features = [
   "rustls",
   "stream",
   "json",
-  "cookies",
 ] }
 bytecount = "0.6"
 blake3 = "1.8"

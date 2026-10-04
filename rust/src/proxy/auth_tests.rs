@@ -19,19 +19,6 @@ fn effective_auth_token_never_yields_empty() {
     crate::test_env::remove_var("LEAN_CTX_DATA_DIR");
 }
 
-// #597: the Codex ChatGPT WS passthrough opens a wss://chatgpt.com socket via
-// tokio-tungstenite, which needs a process-default rustls CryptoProvider. The
-// tree has both aws-lc-rs and ring, so one must be installed explicitly or the
-// handshake aborts. Guards against that regression.
-#[test]
-fn installs_default_crypto_provider_for_ws_passthrough() {
-    install_default_crypto_provider();
-    assert!(
-        rustls::crypto::CryptoProvider::get_default().is_some(),
-        "WS passthrough needs a process-default CryptoProvider"
-    );
-}
-
 #[test]
 fn is_provider_route_v1() {
     assert!(is_provider_route("/v1/chat/completions"));
@@ -54,18 +41,6 @@ fn is_provider_route_v1beta() {
 #[test]
 fn is_provider_route_chat() {
     assert!(is_provider_route("/chat/completions"));
-}
-
-#[test]
-fn is_provider_route_chatgpt_backend_api() {
-    assert!(is_provider_route("/backend-api/codex/responses"));
-    assert!(is_provider_route("/backend-api/codex/responses/resp_123"));
-    assert!(is_provider_route("/backend-api/wham/session"));
-    assert!(is_provider_route("/backend-api/ps/mcp"));
-    assert!(is_provider_route("/backend-api/codex_apps"));
-    assert!(is_provider_route("/backend-api/codex_apps/mcp"));
-    assert!(is_provider_route("/backend-api/mcp/codex_apps"));
-    assert!(is_provider_route("/backend-api/apps/codex_apps/mcp"));
 }
 
 #[test]

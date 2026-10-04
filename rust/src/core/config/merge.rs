@@ -136,7 +136,6 @@ impl Config {
         override_if_some!(permission_inheritance);
         override_if_some!(proxy.anthropic_upstream);
         override_if_some!(proxy.openai_upstream);
-        override_if_some!(proxy.chatgpt_upstream);
         override_if_some!(proxy.gemini_upstream);
         // Conversation compression is comfort-only, so trusted and untrusted
         // project configs may tune it. Merge only keys present under the
