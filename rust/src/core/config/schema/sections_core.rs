@@ -97,17 +97,9 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
         key(
             "bool",
             serde_json::json!(cfg.prefer_native_editor),
-            "Disable lean-ctx edit tools (ctx_edit, ctx_patch) so the host's native editor handles edits (#454)",
+            "Disable lean-ctx edit tools (ctx_patch, ctx_refactor) so the host's native editor handles edits (#454)",
         ),
     );
-    root.insert(
-            "default_tool_categories".into(),
-            key(
-                "string[]",
-                serde_json::json!(cfg.default_tool_categories),
-                "Tool categories active by default (core, arch, debug, memory, metrics, session). Override via LCTX_DEFAULT_CATEGORIES",
-            ),
-        );
     root.insert(
         "no_degrade".into(),
         key(
@@ -556,14 +548,6 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
             serde_json::json!(false),
             "Store large tool outputs as references instead of inline content",
             "LEAN_CTX_REFERENCE_RESULTS",
-        ),
-    );
-    root.insert(
-        "agent_token_budget".into(),
-        key(
-            "usize",
-            serde_json::json!(0),
-            "Default per-agent token budget. 0 = unlimited",
         ),
     );
     root.insert(

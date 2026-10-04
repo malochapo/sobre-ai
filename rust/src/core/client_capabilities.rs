@@ -7,8 +7,6 @@ pub struct ClientMcpCapabilities {
     pub prompts: bool,
     pub elicitation: bool,
     pub sampling: bool,
-    pub dynamic_tools: bool,
-    pub max_tools: Option<usize>,
 }
 
 impl Default for ClientMcpCapabilities {
@@ -19,8 +17,6 @@ impl Default for ClientMcpCapabilities {
             prompts: false,
             elicitation: false,
             sampling: false,
-            dynamic_tools: false,
-            max_tools: None,
         }
     }
 }
@@ -45,8 +41,6 @@ impl ClientMcpCapabilities {
                 prompts: true,
                 elicitation: true,
                 sampling: false,
-                dynamic_tools: true,
-                max_tools: None,
             },
             "claude-code" => Self {
                 client_id: id,
@@ -54,8 +48,6 @@ impl ClientMcpCapabilities {
                 prompts: true,
                 elicitation: true,
                 sampling: true,
-                dynamic_tools: true,
-                max_tools: None,
             },
             "windsurf" => Self {
                 client_id: id,
@@ -63,8 +55,6 @@ impl ClientMcpCapabilities {
                 prompts: false,
                 elicitation: false,
                 sampling: false,
-                dynamic_tools: true,
-                max_tools: Some(100),
             },
             "zed" => Self {
                 client_id: id,
@@ -72,8 +62,6 @@ impl ClientMcpCapabilities {
                 prompts: true,
                 elicitation: false,
                 sampling: false,
-                dynamic_tools: true,
-                max_tools: None,
             },
             "vscode-copilot" => Self {
                 client_id: id,
@@ -81,8 +69,6 @@ impl ClientMcpCapabilities {
                 prompts: true,
                 elicitation: false,
                 sampling: false,
-                dynamic_tools: true,
-                max_tools: None,
             },
             "codex" => Self {
                 client_id: id,
@@ -90,8 +76,6 @@ impl ClientMcpCapabilities {
                 prompts: false,
                 elicitation: false,
                 sampling: false,
-                dynamic_tools: true,
-                max_tools: None,
             },
             "antigravity" | "gemini-cli" => Self {
                 client_id: id,
@@ -99,8 +83,6 @@ impl ClientMcpCapabilities {
                 prompts: false,
                 elicitation: false,
                 sampling: false,
-                dynamic_tools: false,
-                max_tools: None,
             },
             _ => Self {
                 client_id: id,
@@ -115,15 +97,14 @@ impl ClientMcpCapabilities {
             self.prompts,
             self.elicitation,
             self.sampling,
-            self.dynamic_tools,
         ]
         .iter()
         .filter(|&&v| v)
         .count();
 
         match score {
-            4..=5 => 1,
-            2..=3 => 2,
+            3..=4 => 1,
+            2 => 2,
             1 => 3,
             _ => 4,
         }
@@ -135,24 +116,17 @@ impl ClientMcpCapabilities {
             ("prompts", self.prompts),
             ("elicitation", self.elicitation),
             ("sampling", self.sampling),
-            ("dynamic_tools", self.dynamic_tools),
         ]
         .iter()
         .filter(|(_, v)| *v)
         .map(|(k, _)| *k)
         .collect();
 
-        let tools_note = self
-            .max_tools
-            .map(|n| format!(" (max {n} tools)"))
-            .unwrap_or_default();
-
         format!(
-            "{} (tier {}): [{}]{}",
+            "{} (tier {}): [{}]",
             self.client_id,
             self.tier(),
             features.join(", "),
-            tools_note,
         )
     }
 }
@@ -272,7 +246,6 @@ mod tests {
         assert!(caps.resources);
         assert!(caps.prompts);
         assert!(caps.elicitation);
-        assert!(caps.dynamic_tools);
         assert_eq!(caps.tier(), 1);
     }
 
@@ -290,8 +263,8 @@ mod tests {
         assert_eq!(caps.client_id, "windsurf");
         assert!(!caps.resources);
         assert!(!caps.prompts);
-        assert_eq!(caps.max_tools, Some(100));
-        assert_eq!(caps.tier(), 3);
+        // None of the tiered MCP features: the lowest tier.
+        assert_eq!(caps.tier(), 4);
     }
 
     #[test]
@@ -307,7 +280,6 @@ mod tests {
         assert_eq!(caps.client_id, "vscode-copilot");
         assert!(caps.resources);
         assert!(caps.prompts);
-        assert!(caps.dynamic_tools);
         assert_eq!(caps.tier(), 2);
     }
 

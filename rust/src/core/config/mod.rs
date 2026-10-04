@@ -76,15 +76,13 @@ pub const DEFAULT_BM25_PERSIST_MB: u64 = 512;
 // above the old RAM-profile caps (64/128 MB) that starved large repos.
 const _: () = assert!(DEFAULT_BM25_PERSIST_MB >= 512);
 
-/// lean-ctx tools whose sole purpose is editing the user's source files. When
-/// `prefer_native_editor` is set (#454) these are hidden from `list_tools` and
-/// refused at dispatch so the host's native editor handles edits instead.
-///
-/// Deliberately narrow: only the dedicated edit tools are blocked — `ctx_edit`
-/// (str_replace) and `ctx_patch` (anchored, #1008). LSP refactor
-/// (`ctx_refactor`) also exposes read-only sub-actions (references/definition),
-/// so it is left available.
-pub const EDIT_TOOL_NAMES: &[&str] = &["ctx_edit", "ctx_patch"];
+/// lean-ctx tools that edit the user's source files. When
+/// `prefer_native_editor` is set (#454) these are refused at dispatch so the
+/// host's native editor handles edits instead:
+/// `ctx_patch` (anchored edits, #1008) and `ctx_refactor` (LSP rename, move,
+/// inline, safe-delete). `ctx_refactor`'s read-only actions go with it; the
+/// same lookups stay available through `ctx_search` and `ctx_callgraph`.
+pub const EDIT_TOOL_NAMES: &[&str] = &["ctx_patch", "ctx_refactor"];
 
 /// Global lean-ctx configuration loaded from `config.toml`, merged with project-local overrides.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -175,20 +173,12 @@ pub struct Config {
     #[serde(default = "serde_defaults::default_true")]
     pub enable_wakeup_ctx: bool,
     /// Prefer the host agent's native editor over lean-ctx edit operations (#454).
-    /// When true, the lean-ctx edit tool(s) (see [`EDIT_TOOL_NAMES`]) are neither
-    /// advertised in `list_tools` nor dispatchable (direct or via `ctx_call`), so
-    /// the agent falls back to the host's built-in editing UI. Reads / search /
+    /// When true, the lean-ctx edit tools (see [`EDIT_TOOL_NAMES`]) are refused
+    /// at dispatch, so the agent falls back to the host's built-in editing UI. Reads / search /
     /// shell / memory tools are unaffected. Override via
     /// `LEAN_CTX_PREFER_NATIVE_EDITOR=1`.
     #[serde(default)]
     pub prefer_native_editor: bool,
-    /// Tool categories to activate by default for dynamic-tool-capable clients.
-    /// Values: "core" (always on), "arch", "debug", "memory", "metrics", "session".
-    /// Example: `default_tool_categories = ["core", "arch", "memory"]`
-    /// Override via LCTX_DEFAULT_CATEGORIES env var (comma-separated).
-    /// Empty = lean-ctx default (core + session).
-    #[serde(default)]
-    pub default_tool_categories: Vec<String>,
     /// Disable all automatic read-mode degradation (auto_degrade + context_gate pressure).
     /// When true, lean-ctx never downgrades requested read modes regardless of pressure.
     /// Override via LCTX_NO_DEGRADE=1 env var.
@@ -547,10 +537,6 @@ pub struct Config {
     /// Override via LEAN_CTX_REFERENCE_RESULTS env var.
     #[serde(default)]
     pub reference_results: bool,
-    /// Default per-agent token budget. 0 means unlimited.
-    /// Override per-agent via ctx_session or programmatically.
-    #[serde(default)]
-    pub agent_token_budget: usize,
 
     /// Shell-security mode for ctx_shell / `lean-ctx -c` command gating (GL #788):
     /// `enforce` (default, secure), `warn` (run checks, log violations, never
@@ -619,7 +605,6 @@ impl Default for Config {
             dashboard_cache_hit_rate: None,
             enable_wakeup_ctx: true,
             prefer_native_editor: false,
-            default_tool_categories: Vec::new(),
             no_degrade: false,
             delta_explicit: true,
             profile: None,
@@ -685,7 +670,6 @@ impl Default for Config {
             path_jail: None,
             sandbox_level: 0,
             reference_results: false,
-            agent_token_budget: 0,
             shell_security: None,
             shell_timeout_secs: None,
             shell_heavy_timeout_secs: None,
@@ -799,7 +783,7 @@ impl Config {
     }
 
     /// Whether `name` is a lean-ctx edit operation that must be blocked from
-    /// dispatch (direct and via `ctx_call`) when [`Self::prefer_native_editor_effective`]
+    /// dispatch when [`Self::prefer_native_editor_effective`]
     /// is set (#454). Read/search/shell/memory tools are never blocked.
     pub fn edit_tool_blocked(&self, name: &str) -> bool {
         self.prefer_native_editor_effective() && EDIT_TOOL_NAMES.contains(&name)
@@ -940,26 +924,6 @@ impl Config {
 
         policy.validate()?;
         Ok(policy)
-    }
-
-    /// Returns the effective set of default tool categories.
-    /// Priority: LCTX_DEFAULT_CATEGORIES env var > config.toml > hardcoded default.
-    pub fn default_tool_categories_effective(&self) -> Vec<String> {
-        if let Ok(val) = std::env::var("LCTX_DEFAULT_CATEGORIES") {
-            return val
-                .split(',')
-                .map(|s| s.trim().to_lowercase())
-                .filter(|s| !s.is_empty())
-                .collect();
-        }
-        if !self.default_tool_categories.is_empty() {
-            return self
-                .default_tool_categories
-                .iter()
-                .map(|s| s.to_lowercase())
-                .collect();
-        }
-        vec!["core".to_string(), "session".to_string()]
     }
 
     /// The `[sensitivity]` config as written. It used to be folded with a

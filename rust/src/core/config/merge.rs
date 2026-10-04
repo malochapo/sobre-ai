@@ -299,7 +299,6 @@ impl Config {
         override_if_ne!(default.bm25_max_cache_mb, bm25_max_cache_mb);
         override_if_ne!(default.memory_profile, memory_profile);
         override_if_ne!(default.memory_cleanup, memory_cleanup);
-        replace_if_nonempty!(default_tool_categories);
         override_if_true!(no_degrade);
         override_if_true!(delta_explicit);
         override_if_some!(profile);

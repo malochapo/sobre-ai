@@ -285,7 +285,6 @@ pub mod surprise;
 // ---------------------------------------------------------------------------
 // Domain: Config & Infrastructure
 // ---------------------------------------------------------------------------
-pub mod agent_budget;
 pub mod anchor;
 pub mod ann_cache;
 pub mod atomic_fs;

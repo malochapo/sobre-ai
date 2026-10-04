@@ -163,7 +163,7 @@ fn resolve_runtime(language: &str) -> Option<RuntimeConfig> {
             env: HashMap::new(),
         }),
         "python" | "py" => Some(RuntimeConfig {
-            command: find_binary(&["python3", "python"])?,
+            command: find_python()?,
             args: vec!["-c".to_string()],
             needs_temp_file: false,
             file_extension: "py".to_string(),
@@ -553,6 +553,30 @@ fn find_binary(candidates: &[&str]) -> Option<String> {
     None
 }
 
+/// The first Python interpreter that actually runs: `python3`, then `python`,
+/// then the Windows `py` launcher. Probing `--version` instead of only looking
+/// the name up on PATH skips the Microsoft Store alias stubs that Windows puts
+/// on PATH as `python3`/`python`: they are found but do not run a Python.
+fn find_python() -> Option<String> {
+    static PYTHON: std::sync::OnceLock<Option<String>> = std::sync::OnceLock::new();
+    PYTHON
+        .get_or_init(|| {
+            ["python3", "python", "py"]
+                .into_iter()
+                .find(|name| {
+                    Command::new(name)
+                        .arg("--version")
+                        .stdin(std::process::Stdio::null())
+                        .stdout(std::process::Stdio::null())
+                        .stderr(std::process::Stdio::null())
+                        .status()
+                        .is_ok_and(|s| s.success())
+                })
+                .map(str::to_string)
+        })
+        .clone()
+}
+
 fn which_exists(name: &str) -> bool {
     #[cfg(target_os = "windows")]
     let check_cmd = Command::new("where")
@@ -620,7 +644,7 @@ mod tests {
     use super::*;
 
     fn python_available() -> bool {
-        find_binary(&["python3", "python"]).is_some()
+        find_python().is_some()
     }
 
     #[test]

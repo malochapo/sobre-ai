@@ -232,25 +232,13 @@ impl CtxReadTool {
         );
 
         let pressure_action = ctx.pressure_snapshot.as_ref().map(|p| &p.recommendation);
-        let resolved_agent_id = ctx.agent_id.as_ref().and_then(|a| match a.try_read() {
-            Ok(guard) => guard.clone(),
-            Err(_) => None,
-        });
-        let gate_result = crate::server::context_gate::pre_dispatch_read_for_agent(
+        let gate_result = crate::server::context_gate::pre_dispatch_read(
             path,
             &mode,
             task_ref,
             Some(&ctx.project_root),
             pressure_action,
-            resolved_agent_id.as_deref(),
         );
-        if gate_result.budget_blocked {
-            let msg = gate_result
-                .budget_warning
-                .unwrap_or_else(|| "Agent token budget exceeded".to_string());
-            return Err(ErrorData::invalid_params(msg, None));
-        }
-        let budget_warning = gate_result.budget_warning.clone();
         // #513: an explicit raw/verbatim request is never silently downgraded by
         // the budget gate — the caller asked for exact bytes.
         let mut mode_override_note: Option<String> = None;
@@ -1054,10 +1042,6 @@ impl CtxReadTool {
             });
         }
 
-        if let Some(aid) = resolved_agent_id.as_deref() {
-            crate::core::agent_budget::record_consumption(aid, output_tokens);
-        }
-
         // Cross-source hints: if the property graph has cross-source edges
         // pointing to this file, append compact hints so the agent knows about
         // related issues/PRs/schemas without a separate tool call (#682). Only
@@ -1085,9 +1069,6 @@ impl CtxReadTool {
         };
 
         let mut warnings = Vec::new();
-        if let Some(ref w) = budget_warning {
-            warnings.push(w.as_str());
-        }
         if let Some(ref w) = degrade_warning {
             warnings.push(w.as_str());
         }

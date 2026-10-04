@@ -48,11 +48,6 @@ pub fn alignment() -> Vec<OwaspMapping> {
                     module: "core/shell_gate/mod.rs",
                     description: "Hard blocks on the constructs that hide a command from inspection (eval, exec, source, command substitution at command position)",
                 },
-                Mitigation {
-                    feature: "Context Budget",
-                    module: "core/agent_budget.rs",
-                    description: "Per-agent token budgets preventing resource exhaustion",
-                },
             ],
             coverage: Coverage::Full,
         },
@@ -126,11 +121,6 @@ pub fn alignment() -> Vec<OwaspMapping> {
                     feature: "Memory Guard",
                     module: "core/config/memory.rs",
                     description: "RAM usage caps and idle cleanup",
-                },
-                Mitigation {
-                    feature: "Budget Tracker",
-                    module: "core/agent_budget.rs",
-                    description: "Token budget enforcement with hard limits",
                 },
                 Mitigation {
                     feature: "Loop Detection",

@@ -57,23 +57,6 @@ impl ToolRegistry {
         crate::tool_defs::apply_tool_annotations(defs)
     }
 
-    /// Returns tool definitions filtered by the dynamic tool state.
-    /// Only includes tools whose category is currently active.
-    pub fn active_tool_defs(&self) -> Vec<Tool> {
-        let Ok(state) = super::dynamic_tools::global().lock() else {
-            tracing::warn!("dynamic_tools mutex poisoned in active_tool_defs; returning all");
-            return self.tool_defs();
-        };
-        let mut defs: Vec<Tool> = self
-            .tools
-            .values()
-            .filter(|t| state.is_tool_active(t.name()))
-            .map(|t| t.tool_def())
-            .collect();
-        defs.sort_by(|a, b| a.name.as_ref().cmp(b.name.as_ref()));
-        crate::tool_defs::apply_tool_annotations(defs)
-    }
-
     pub fn len(&self) -> usize {
         self.tools.len()
     }

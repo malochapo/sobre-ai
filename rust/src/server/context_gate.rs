@@ -23,8 +23,6 @@ pub struct PreDispatchResult {
     pub overridden_mode: Option<String>,
     pub reason: Option<&'static str>,
     pub pressure_downgraded: bool,
-    pub budget_blocked: bool,
-    pub budget_warning: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -37,7 +35,6 @@ pub struct PostDispatchResult {
     pub prefetch_hint: Option<String>,
 }
 
-#[cfg(test)]
 pub fn pre_dispatch_read(
     path: &str,
     requested_mode: &str,
@@ -45,78 +42,10 @@ pub fn pre_dispatch_read(
     project_root: Option<&str>,
     pressure: Option<&PressureAction>,
 ) -> PreDispatchResult {
-    pre_dispatch_read_for_agent(path, requested_mode, task, project_root, pressure, None)
-}
-
-pub fn pre_dispatch_read_for_agent(
-    path: &str,
-    requested_mode: &str,
-    task: Option<&str>,
-    project_root: Option<&str>,
-    pressure: Option<&PressureAction>,
-    agent_id: Option<&str>,
-) -> PreDispatchResult {
     let no_change = PreDispatchResult {
         overridden_mode: None,
         reason: None,
         pressure_downgraded: false,
-        budget_blocked: false,
-        budget_warning: None,
-    };
-
-    if let Some(aid) = agent_id {
-        let estimated_tokens = estimate_read_tokens(path, requested_mode);
-        match crate::core::agent_budget::check_budget(aid, estimated_tokens) {
-            crate::core::agent_budget::BudgetCheckResult::Exceeded { limit, consumed } => {
-                return PreDispatchResult {
-                    overridden_mode: None,
-                    reason: Some("agent-budget-exceeded"),
-                    pressure_downgraded: false,
-                    budget_blocked: true,
-                    budget_warning: Some(format!(
-                        "Agent budget exceeded: {consumed}/{limit} tokens consumed. Reset via ctx_session or set a higher limit."
-                    )),
-                };
-            }
-            crate::core::agent_budget::BudgetCheckResult::Warning {
-                remaining,
-                percent_used,
-            } => {
-                let warning = format!(
-                    "[BUDGET WARNING] Agent '{aid}' at {:.0}% budget ({remaining} tokens remaining)",
-                    percent_used * 100.0
-                );
-                let mut result = no_change.clone();
-                result.budget_warning = Some(warning);
-                if is_precise_pinned_mode(requested_mode) {
-                    return result;
-                }
-                let rest = pre_dispatch_inner(path, requested_mode, task, project_root, pressure);
-                return PreDispatchResult {
-                    budget_warning: result.budget_warning,
-                    ..rest
-                };
-            }
-            crate::core::agent_budget::BudgetCheckResult::Allowed { .. } => {}
-        }
-    }
-
-    pre_dispatch_inner(path, requested_mode, task, project_root, pressure)
-}
-
-fn pre_dispatch_inner(
-    path: &str,
-    requested_mode: &str,
-    task: Option<&str>,
-    project_root: Option<&str>,
-    pressure: Option<&PressureAction>,
-) -> PreDispatchResult {
-    let no_change = PreDispatchResult {
-        overridden_mode: None,
-        reason: None,
-        pressure_downgraded: false,
-        budget_blocked: false,
-        budget_warning: None,
     };
 
     if is_precise_pinned_mode(requested_mode) {
@@ -147,8 +76,6 @@ fn pre_dispatch_inner(
                 overridden_mode: Some(downgraded),
                 reason: Some("pressure-auto-downgrade"),
                 pressure_downgraded: true,
-                budget_blocked: false,
-                budget_warning: None,
             };
         }
     }
@@ -160,8 +87,6 @@ fn pre_dispatch_inner(
             overridden_mode: Some("full".to_string()),
             reason: Some("bounce-prevention"),
             pressure_downgraded: false,
-            budget_blocked: false,
-            budget_warning: None,
         };
     }
 
@@ -177,8 +102,6 @@ fn pre_dispatch_inner(
                 overridden_mode: Some("full".to_string()),
                 reason: Some("intent-target"),
                 pressure_downgraded: false,
-                budget_blocked: false,
-                budget_warning: None,
             };
         }
     }
@@ -201,8 +124,6 @@ fn pre_dispatch_inner(
                         overridden_mode: Some("map".to_string()),
                         reason: Some("graph-direct-import"),
                         pressure_downgraded: false,
-                        budget_blocked: false,
-                        budget_warning: None,
                     };
                 }
             }
@@ -214,8 +135,6 @@ fn pre_dispatch_inner(
                     overridden_mode: Some("map".to_string()),
                     reason: Some("graph-hub-file"),
                     pressure_downgraded: false,
-                    budget_blocked: false,
-                    budget_warning: None,
                 };
             }
         }
@@ -235,51 +154,11 @@ fn pre_dispatch_inner(
                 overridden_mode: Some("map".to_string()),
                 reason: Some("knowledge-high-relevance"),
                 pressure_downgraded: false,
-                budget_blocked: false,
-                budget_warning: None,
             };
         }
     }
 
     no_change
-}
-
-fn estimate_read_tokens(path: &str, mode: &str) -> usize {
-    let file_size = std::fs::metadata(path).map_or(4000, |m| m.len() as usize);
-    let char_estimate = file_size;
-    let full_tokens = char_estimate / 4;
-    match mode {
-        "signatures" => full_tokens / 5,
-        "map" => full_tokens / 3,
-        "aggressive" | "entropy" => full_tokens / 4,
-        "diff" => full_tokens / 10,
-        _ if mode.starts_with("lines:") => {
-            if let Some(range) = mode.strip_prefix("lines:") {
-                // #971: comma is multi-select. Splitting the whole payload on
-                // '-' yields 3 parts for `620-622,1214-1218` and fell through to
-                // the whole-file tenth; sum the selected spans instead.
-                let mut selected = 0usize;
-                for part in range.split(',') {
-                    let part = part.trim();
-                    selected += if let Some((s, e)) = part.split_once('-') {
-                        let start = s.trim().parse::<usize>().unwrap_or(1);
-                        let end = e.trim().parse::<usize>().unwrap_or(start + 100);
-                        end.saturating_sub(start) + 1
-                    } else {
-                        1
-                    };
-                }
-                if selected == 0 {
-                    full_tokens / 10
-                } else {
-                    selected * 10
-                }
-            } else {
-                full_tokens / 10
-            }
-        }
-        _ => full_tokens,
-    }
 }
 
 fn pressure_downgrade(requested_mode: &str, action: &PressureAction) -> Option<String> {
@@ -303,8 +182,6 @@ fn check_overlay_mode_override(
                         overridden_mode: Some(mode_str.to_string()),
                         reason: Some("overlay-set-view"),
                         pressure_downgraded: false,
-                        budget_blocked: false,
-                        budget_warning: None,
                     });
                 }
             }
@@ -313,8 +190,6 @@ fn check_overlay_mode_override(
                     overridden_mode: Some("full".to_string()),
                     reason: Some("pinned"),
                     pressure_downgraded: false,
-                    budget_blocked: false,
-                    budget_warning: None,
                 });
             }
             OverlayOp::Exclude { .. } if requested_mode != "signatures" => {
@@ -322,8 +197,6 @@ fn check_overlay_mode_override(
                     overridden_mode: Some("signatures".to_string()),
                     reason: Some("excluded"),
                     pressure_downgraded: false,
-                    budget_blocked: false,
-                    budget_warning: None,
                 });
             }
             _ => {}
@@ -784,25 +657,6 @@ mod tests {
     // When LCTX_NO_DEGRADE is NOT set (test default), pressure downgrade is active.
 
     // --- estimate_read_tokens unit tests ---
-
-    #[test]
-    fn estimate_tokens_diff_mode_is_small() {
-        let tokens = estimate_read_tokens("nonexistent.rs", "diff");
-        assert!(tokens < 500, "diff mode should estimate low: got {tokens}");
-    }
-
-    #[test]
-    fn estimate_tokens_signatures_smaller_than_full() {
-        let sig = estimate_read_tokens("nonexistent.rs", "signatures");
-        let full = estimate_read_tokens("nonexistent.rs", "full");
-        assert!(sig < full, "signatures={sig} should be < full={full}");
-    }
-
-    #[test]
-    fn estimate_tokens_lines_range() {
-        let tokens = estimate_read_tokens("nonexistent.rs", "lines:1-10");
-        assert!(tokens <= 200, "lines:1-10 should be small: got {tokens}");
-    }
 
     #[test]
     fn overlay_set_view_forces_specified_mode() {

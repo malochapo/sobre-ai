@@ -311,15 +311,8 @@ impl AgentRegistry {
         }
 
         // Remove finished agents older than the cutoff to keep recent history visible.
-        // Drop each retired agent's budget entry too — a finished/dead agent can't read
-        // again, so removing its budget loses no live enforcement and bounds BUDGETS.
-        self.agents.retain(|a| {
-            let retire = a.status == AgentStatus::Finished && a.last_active < cutoff;
-            if retire {
-                crate::core::agent_budget::remove(&a.agent_id);
-            }
-            !retire
-        });
+        self.agents
+            .retain(|a| !(a.status == AgentStatus::Finished && a.last_active < cutoff));
 
         self.updated_at = Utc::now();
     }

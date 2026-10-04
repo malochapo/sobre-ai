@@ -43,12 +43,15 @@ pub fn required_capabilities(tool_name: &str) -> &'static [Capability] {
         // The live write path. `ctx_edit` is not registered: keying FsWrite on it
         // meant no shipped tool required FsWrite at all, so a role without it
         // could still edit files through ctx_patch.
-        "ctx_patch" | "ctx_refactor" => &[Capability::FsRead, Capability::FsWrite],
+        // ctx_checkpoint restore rewrites files from a snapshot.
+        "ctx_patch" | "ctx_refactor" | "ctx_checkpoint" => {
+            &[Capability::FsRead, Capability::FsWrite]
+        }
         // ctx_execute's own description says it "shares ctx_shell's security
         // policy"; requiring the same capability is what makes that true.
         "ctx_shell" | "ctx_execute" => &[Capability::ExecUnrestricted],
         "ctx_knowledge" => &[Capability::KnowledgeRead, Capability::KnowledgeWrite],
-        "ctx_session" | "ctx" => &[],
+        "ctx_session" => &[],
         _ => &[Capability::FsRead],
     }
 }
@@ -97,7 +100,7 @@ fn capabilities_from_role(role_name: &str) -> HashSet<Capability> {
             && !role.tools.denied.iter().any(|d| d == name || d == "*")
     };
 
-    if has_tool("ctx_patch") || has_tool("ctx_refactor") {
+    if has_tool("ctx_patch") || has_tool("ctx_refactor") || has_tool("ctx_checkpoint") {
         caps.insert(Capability::FsWrite);
     }
     if has_tool("ctx_shell") || has_tool("ctx_execute") {
@@ -151,6 +154,11 @@ mod tests {
         assert!(caps.contains(&Capability::NetOutbound));
         assert!(caps.contains(&Capability::ExecUnrestricted));
         assert!(caps.contains(&Capability::ConfigWrite));
+    }
+
+    #[test]
+    fn checkpoint_restore_requires_write() {
+        assert!(required_capabilities("ctx_checkpoint").contains(&Capability::FsWrite));
     }
 
     #[test]
