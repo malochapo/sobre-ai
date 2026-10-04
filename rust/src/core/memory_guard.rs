@@ -29,23 +29,6 @@ pub fn get_rss_bytes() -> Option<u64> {
     }
 }
 
-/// RSS of an arbitrary process by PID, or `None` if unavailable/dead.
-pub fn get_rss_bytes_for_pid(pid: u32) -> Option<u64> {
-    #[cfg(target_os = "linux")]
-    {
-        linux_rss_for_pid(pid)
-    }
-    #[cfg(target_os = "macos")]
-    {
-        macos_rss_for_pid(pid)
-    }
-    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
-    {
-        let _ = pid;
-        None
-    }
-}
-
 /// Total physical RAM in bytes, or `None` if unavailable.
 pub fn get_system_ram_bytes() -> Option<u64> {
     #[cfg(target_os = "linux")]
@@ -574,24 +557,5 @@ mod tests {
             !fired.load(Ordering::Relaxed),
             "eviction callback must never fire in tests"
         );
-    }
-
-    #[test]
-    fn rss_for_own_pid_matches_self() {
-        if cfg!(any(target_os = "linux", target_os = "macos")) {
-            let self_rss = get_rss_bytes().unwrap();
-            let pid_rss = get_rss_bytes_for_pid(std::process::id()).unwrap();
-            let ratio = self_rss as f64 / pid_rss as f64;
-            assert!(
-                (0.5..2.0).contains(&ratio),
-                "self RSS ({self_rss}) and pid-based RSS ({pid_rss}) should be within 2x"
-            );
-        }
-    }
-
-    #[test]
-    fn rss_for_dead_pid_returns_none() {
-        let dead_pid = 999_999_999u32;
-        assert!(get_rss_bytes_for_pid(dead_pid).is_none());
     }
 }

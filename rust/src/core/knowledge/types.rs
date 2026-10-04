@@ -292,36 +292,6 @@ mod archetype_tests {
     }
 
     #[test]
-    fn fidelity_structural_computation() {
-        let fact = KnowledgeFact {
-            category: "test".into(),
-            key: "k".into(),
-            value: "v".into(),
-            source_session: "sess1".into(),
-            confidence: 0.9,
-            created_at: Utc::now(),
-            last_confirmed: Utc::now(),
-            retrieval_count: 0,
-            last_retrieved: None,
-            valid_from: None,
-            valid_until: None,
-            supersedes: None,
-            confirmation_count: 3,
-            feedback_up: 2,
-            feedback_down: 0,
-            last_feedback: None,
-            privacy: FactPrivacy::default(),
-            sensitivity: SensitivityLevel::default(),
-            imported_from: None,
-            archetype: KnowledgeArchetype::default(),
-            fidelity: None,
-            revision_count: 0,
-        };
-        let fidelity = fact.compute_structural_fidelity();
-        assert!(fidelity >= 0.8);
-    }
-
-    #[test]
     fn backward_compatible_deserialization() {
         let json = r#"{
             "category": "test",

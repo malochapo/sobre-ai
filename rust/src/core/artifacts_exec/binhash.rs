@@ -10,7 +10,7 @@
 //! pin is reproducible without lean-ctx.
 
 use std::io::Read;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use sha2::{Digest, Sha256};
 
@@ -33,28 +33,10 @@ pub fn sha256_file(path: &Path) -> Result<String, String> {
     Ok(crate::core::agent_identity::hex_encode(&hasher.finalize()))
 }
 
-/// Resolve a stdio `command` to a concrete file path. An absolute/relative path
-/// (anything containing a separator) is used as-is; a bare name is looked up on
-/// `PATH`, honouring `PATHEXT`-free Unix semantics (first executable match).
-#[must_use]
-pub fn resolve_on_path(command: &str) -> Option<PathBuf> {
-    let cmd = command.trim();
-    if cmd.is_empty() {
-        return None;
-    }
-    if cmd.contains('/') || cmd.contains('\\') {
-        let p = PathBuf::from(cmd);
-        return p.is_file().then_some(p);
-    }
-    let path_var = std::env::var_os("PATH")?;
-    std::env::split_paths(&path_var)
-        .map(|dir| dir.join(cmd))
-        .find(|candidate| candidate.is_file())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::PathBuf;
 
     /// A unique scratch dir per test (PID + label) so parallel tests never share
     /// — and clean up — the same directory.
@@ -71,17 +53,6 @@ mod tests {
         // Known SHA-256 of "abc".
         let expected = "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad";
         assert_eq!(sha256_file(&f).unwrap(), expected);
-        std::fs::remove_dir_all(&dir).ok();
-    }
-
-    #[test]
-    fn resolve_absolute_path_roundtrips() {
-        let dir = tmp("resolve");
-        std::fs::create_dir_all(&dir).unwrap();
-        let f = dir.join("tool");
-        std::fs::write(&f, b"x").unwrap();
-        let resolved = resolve_on_path(&f.to_string_lossy()).expect("absolute path resolves");
-        assert_eq!(resolved, f);
         std::fs::remove_dir_all(&dir).ok();
     }
 }

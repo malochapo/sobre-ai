@@ -2,7 +2,6 @@ use std::collections::HashMap;
 use std::sync::Mutex;
 
 use crate::core::cache::SessionCache;
-use crate::core::context_ledger::PressureAction;
 use crate::core::mode_predictor::{FileSignature, ModePredictor};
 
 /// Per-process counters of which signal decided each auto-mode resolution.
@@ -289,29 +288,6 @@ fn resolve_adaptive(ctx: &AutoModeContext) -> Option<ResolvedMode> {
     None
 }
 
-/// Unified pressure downgrade table.
-/// Used by both context_gate and intent_router pressure paths.
-pub fn pressure_downgrade(requested_mode: &str, action: &PressureAction) -> Option<String> {
-    match action {
-        PressureAction::SuggestCompression => match requested_mode {
-            "auto" | "full" => Some("map".to_string()),
-            _ => None,
-        },
-        PressureAction::ForceCompression => match requested_mode {
-            "full" => Some("map".to_string()),
-            "auto" | "map" => Some("signatures".to_string()),
-            _ => None,
-        },
-        PressureAction::EvictLeastRelevant => match requested_mode {
-            "full" => Some("map".to_string()),
-            "auto" | "map" => Some("signatures".to_string()),
-            "signatures" => Some("reference".to_string()),
-            _ => None,
-        },
-        PressureAction::NoAction => None,
-    }
-}
-
 /// True when the task text explicitly names this file (basename match). A real
 /// filename mention ("versioncmp.c") is a strong suspect signal for a bug-fix;
 /// requiring an extension-bearing, non-trivial basename keeps it precise — the
@@ -489,56 +465,6 @@ fn resolved(mode: &str, source: &'static str) -> ResolvedMode {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn pressure_suggest_full_to_map() {
-        assert_eq!(
-            pressure_downgrade("full", &PressureAction::SuggestCompression),
-            Some("map".to_string())
-        );
-    }
-
-    #[test]
-    fn pressure_suggest_auto_to_map() {
-        assert_eq!(
-            pressure_downgrade("auto", &PressureAction::SuggestCompression),
-            Some("map".to_string())
-        );
-    }
-
-    #[test]
-    fn pressure_suggest_does_not_touch_signatures() {
-        assert!(pressure_downgrade("signatures", &PressureAction::SuggestCompression).is_none());
-    }
-
-    #[test]
-    fn pressure_force_full_to_map() {
-        assert_eq!(
-            pressure_downgrade("full", &PressureAction::ForceCompression),
-            Some("map".to_string())
-        );
-    }
-
-    #[test]
-    fn pressure_force_map_to_signatures() {
-        assert_eq!(
-            pressure_downgrade("map", &PressureAction::ForceCompression),
-            Some("signatures".to_string())
-        );
-    }
-
-    #[test]
-    fn pressure_evict_signatures_to_reference() {
-        assert_eq!(
-            pressure_downgrade("signatures", &PressureAction::EvictLeastRelevant),
-            Some("reference".to_string())
-        );
-    }
-
-    #[test]
-    fn pressure_noaction_returns_none() {
-        assert!(pressure_downgrade("full", &PressureAction::NoAction).is_none());
-    }
 
     #[test]
     fn flush_sources_merges_additively_into_disk_file() {

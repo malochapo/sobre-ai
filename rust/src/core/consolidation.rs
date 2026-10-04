@@ -124,20 +124,6 @@ pub struct CacheableProviderResult {
     pub token_count: usize,
 }
 
-/// Apply consolidation artifacts to the live systems.
-///
-/// This function performs the actual side effects: writing to BM25, graph,
-/// knowledge, and session cache. Designed to be called from a background
-/// thread or after a provider query returns.
-pub fn apply_artifacts(
-    artifacts: &ConsolidationArtifacts,
-    bm25: Option<&mut crate::core::bm25_index::BM25Index>,
-    graph_edges: Option<&mut Vec<IndexEdge>>,
-    session_cache: Option<&mut crate::core::cache::SessionCache>,
-) -> ConsolidationResult {
-    apply_artifacts_with_pg(artifacts, bm25, graph_edges, session_cache, None)
-}
-
 pub fn apply_artifacts_with_pg(
     artifacts: &ConsolidationArtifacts,
     bm25: Option<&mut crate::core::bm25_index::BM25Index>,
@@ -273,8 +259,7 @@ pub fn apply_artifacts_to_stores(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::bm25_index::{BM25Index, ChunkKind};
-    use crate::core::cache::SessionCache;
+    use crate::core::bm25_index::ChunkKind;
     use crate::core::content_chunk::ContentChunk;
 
     fn sample_chunks() -> Vec<ContentChunk> {
@@ -379,67 +364,6 @@ mod tests {
         assert!(summary.edges_created > 0);
         assert!(summary.facts_extracted > 0);
         assert_eq!(summary.cache_entries_stored, 2);
-    }
-
-    #[test]
-    fn apply_artifacts_to_bm25() {
-        let chunks = sample_chunks();
-        let artifacts = consolidate(&chunks);
-
-        let mut index = BM25Index::new();
-
-        let result = apply_artifacts(&artifacts, Some(&mut index), None, None);
-        assert_eq!(result.chunks_indexed, 2);
-        assert_eq!(index.doc_count, 2);
-        assert_eq!(index.external_chunk_count(), 2);
-    }
-
-    #[test]
-    fn apply_artifacts_to_graph() {
-        let chunks = sample_chunks();
-        let artifacts = consolidate(&chunks);
-
-        let mut edges: Vec<IndexEdge> = Vec::new();
-        let result = apply_artifacts(&artifacts, None, Some(&mut edges), None);
-
-        assert!(result.edges_created > 0);
-        assert!(!edges.is_empty());
-        assert!(edges.iter().any(|e| e.to == "src/auth.rs"));
-    }
-
-    #[test]
-    fn apply_artifacts_to_session_cache() {
-        let chunks = sample_chunks();
-        let artifacts = consolidate(&chunks);
-
-        let mut cache = SessionCache::new();
-        let result = apply_artifacts(&artifacts, None, None, Some(&mut cache));
-
-        assert_eq!(result.cache_entries_stored, 2);
-        assert!(cache.get("github://issues/42").is_some());
-        assert!(cache.get("github://pull_requests/100").is_some());
-    }
-
-    #[test]
-    fn apply_artifacts_to_all_systems() {
-        let chunks = sample_chunks();
-        let artifacts = consolidate(&chunks);
-
-        let mut index = BM25Index::new();
-        let mut edges: Vec<IndexEdge> = Vec::new();
-        let mut cache = SessionCache::new();
-
-        let result = apply_artifacts(
-            &artifacts,
-            Some(&mut index),
-            Some(&mut edges),
-            Some(&mut cache),
-        );
-
-        assert!(result.chunks_indexed > 0);
-        assert!(result.edges_created > 0);
-        assert!(result.facts_extracted > 0);
-        assert!(result.cache_entries_stored > 0);
     }
 
     #[test]

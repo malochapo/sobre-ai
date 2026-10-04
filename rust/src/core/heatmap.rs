@@ -119,24 +119,6 @@ impl HeatMap {
         (total_accesses > 0).then(|| total_original / total_accesses)
     }
 
-    pub fn directory_summary(&self) -> Vec<(String, u32, u64)> {
-        let mut dirs: HashMap<String, (u32, u64)> = HashMap::new();
-        for entry in self.entries.values() {
-            let dir = std::path::Path::new(&entry.path)
-                .parent()
-                .map_or_else(|| ".".to_string(), |p| p.to_string_lossy().to_string());
-            let stat = dirs.entry(dir).or_insert((0, 0));
-            stat.0 += entry.access_count;
-            stat.1 += entry.total_tokens_saved;
-        }
-        let mut result: Vec<(String, u32, u64)> = dirs
-            .into_iter()
-            .map(|(dir, (count, saved))| (dir, count, saved))
-            .collect();
-        result.sort_by_key(|x| std::cmp::Reverse(x.1));
-        result
-    }
-
     fn storage_path() -> PathBuf {
         crate::core::paths::state_dir()
             .unwrap_or_else(|_| PathBuf::from("."))
@@ -312,17 +294,6 @@ mod tests {
         assert_eq!(top.len(), 2);
         assert_eq!(top[0].path, "c.rs");
         assert_eq!(top[1].path, "b.rs");
-    }
-
-    #[test]
-    fn directory_summary_works() {
-        let mut hm = HeatMap::default();
-        hm.record_access("src/a.rs", 100, 50);
-        hm.record_access("src/b.rs", 100, 50);
-        hm.record_access("tests/t.rs", 200, 100);
-
-        let dirs = hm.directory_summary();
-        assert!(dirs.len() >= 2);
     }
 
     #[test]

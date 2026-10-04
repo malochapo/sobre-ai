@@ -129,8 +129,6 @@ pub struct Config {
     #[serde(default)]
     pub autonomy: AutonomyConfig,
     #[serde(default)]
-    pub providers: ProvidersConfig,
-    #[serde(default)]
     pub proxy: ProxyConfig,
     /// Conversation-history compression (`[conversation]`, opt-in; #1123).
     #[serde(default)]
@@ -587,7 +585,6 @@ impl Default for Config {
             cost: CostConfig::default(),
             code_health: CodeHealthConfig::default(),
             autonomy: AutonomyConfig::default(),
-            providers: ProvidersConfig::default(),
             proxy: ProxyConfig::default(),
             conversation: ConversationConfig::default(),
             response_shaping: ResponseShapingConfig::default(),

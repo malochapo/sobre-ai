@@ -793,14 +793,6 @@ impl BM25Index {
         count
     }
 
-    /// Number of chunks originating from external providers.
-    pub fn external_chunk_count(&self) -> usize {
-        self.chunks
-            .iter()
-            .filter(|c| c.file_path.contains("://"))
-            .count()
-    }
-
     /// Remove every chunk whose `file_path` starts with `prefix` (e.g.
     /// `health://`) and rebuild the inverted index. Lets a recomputed source
     /// (like the code-health fabric) evict its prior pass so stale entries never

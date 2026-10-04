@@ -417,30 +417,6 @@ impl ContextBus {
         Some(ev)
     }
 
-    /// Append an event directed at specific agents only.
-    /// Only subscribers whose `TopicFilter.agent_id` matches a target will see it.
-    pub fn append_directed(
-        &self,
-        workspace_id: &str,
-        channel_id: &str,
-        kind: &ContextEventKindV1,
-        actor: Option<&str>,
-        payload: Value,
-        target_agents: Vec<String>,
-    ) -> Option<ContextEventV1> {
-        let ev = self.insert_event(
-            workspace_id,
-            channel_id,
-            kind,
-            actor,
-            payload,
-            None,
-            Some(target_agents),
-        )?;
-        self.broadcast_event(&ev);
-        Some(ev)
-    }
-
     fn insert_event(
         &self,
         workspace_id: &str,

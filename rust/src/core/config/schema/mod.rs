@@ -251,20 +251,13 @@ mod tests {
                 Some(v) if !v.is_object() => continue,
                 Some(_) => {
                     for name in sec.keys.keys() {
-                        // `providers.mcp_bridges.<name>.url` and friends: the
-                        // `<…>` placeholder stands for a user-chosen map key, so
-                        // the path is unresolvable by construction.
-                        if name.contains('<') {
-                            continue;
-                        }
                         let path = if section == "root" {
                             name.clone()
                         } else {
                             format!("{section}.{name}")
                         };
-                        // A key name may itself be dotted (`github.enabled`
-                        // inside `[providers]`), so resolve the whole path
-                        // rather than looking `name` up in the section object.
+                        // Resolve the whole path so a dotted key name works
+                        // too, rather than looking `name` up in the section.
                         if resolve(&cfg, &path).is_none()
                             && !SERDE_OMITTED_BY_DEFAULT.contains(&path.as_str())
                         {
@@ -291,7 +284,7 @@ mod tests {
 
     /// #456: every field the `Config` struct actually serialises must be
     /// accepted by validation. Before the fix, 38 real keys/sections
-    /// (`proxy_require_token`, `memory.*`, `providers.*`, `proxy`, …) were
+    /// (`proxy_require_token`, `memory.*`, `proxy`, …) were
     /// flagged "unknown" because the hand-written schema had drifted.
     #[test]
     fn known_keys_cover_every_config_struct_field() {
@@ -315,7 +308,6 @@ mod tests {
             "proxy_require_token",
             "allow_ide_config_dirs",
             "memory.episodic",
-            "providers.github",
             "proxy",
         ] {
             assert!(

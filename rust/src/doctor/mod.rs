@@ -368,16 +368,6 @@ pub fn run() -> u32 {
         }
     }
 
-    // Providers (advisory — presence/health varies per environment, not scored)
-    let provider_outcome = provider_outcome();
-    board.info(&provider_outcome);
-
-    // MCP Bridges (advisory)
-    let bridge_outcomes = mcp_bridge_outcomes();
-    for bridge_check in &bridge_outcomes {
-        board.info(bridge_check);
-    }
-
     // Plan mode (advisory)
     let plan_outcomes = plan_mode_outcomes();
     for plan_check in &plan_outcomes {

@@ -1,5 +1,3 @@
-use serde::Serialize;
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum LanguageId {
     Rust,
@@ -143,13 +141,6 @@ pub fn language_for_ext(ext: &str) -> Option<LanguageId> {
     }
 }
 
-pub fn language_for_path(path: &str) -> Option<LanguageId> {
-    std::path::Path::new(path)
-        .extension()
-        .and_then(|e| e.to_str())
-        .and_then(language_for_ext)
-}
-
 pub fn is_indexable_ext(ext: &str) -> bool {
     language_for_ext(ext).is_some()
 }
@@ -212,26 +203,6 @@ pub fn callgraph_supported_language_names() -> Vec<&'static str> {
         .filter(|l| supports_call_graph(**l))
         .map(LanguageId::id_str)
         .collect()
-}
-
-/// Per-language capability row for a project: which analyses are available for a
-/// language and how many files use it. Backs the dashboard capability legend so
-/// each detected language is labelled honestly (symbols / import edges / calls).
-#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
-pub struct LanguageCapabilityRow {
-    pub language: &'static str,
-    pub files: usize,
-    pub symbols: bool,
-    pub imports: bool,
-    pub call_graph: bool,
-    /// Symbols actually extracted for this language in *this* project. `None`
-    /// when realized counts weren't measured in the calling context.
-    pub symbols_found: Option<usize>,
-    /// Import/reexport edges whose source file is in this language.
-    pub imports_found: Option<usize>,
-    /// Call edges whose caller file is in this language. `None` when call data
-    /// isn't available in the calling context (e.g. the dependency-graph route).
-    pub calls_found: Option<usize>,
 }
 
 #[cfg(test)]

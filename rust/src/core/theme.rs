@@ -656,59 +656,6 @@ pub fn save_theme(theme: &Theme) -> Result<(), String> {
     std::fs::write(&path, content).map_err(|e| e.to_string())
 }
 
-pub fn animate_countup(final_value: u64, width: usize) -> Vec<String> {
-    let frames = 10;
-    (0..=frames)
-        .map(|f| {
-            let t = f as f64 / frames as f64;
-            let eased = t * t * (3.0 - 2.0 * t);
-            let v = (final_value as f64 * eased).round() as u64;
-            format!("{:>width$}", format_big_animated(v), width = width)
-        })
-        .collect()
-}
-
-/// Count-up for percentage values (0.0 -> final_pct, displayed as "68.3%").
-pub fn animate_countup_pct(final_pct: f64, width: usize) -> Vec<String> {
-    let frames = 10;
-    (0..=frames)
-        .map(|f| {
-            let t = f as f64 / frames as f64;
-            let eased = t * t * (3.0 - 2.0 * t);
-            let v = final_pct * eased;
-            format!("{:>width$}", format!("{v:.1}%"), width = width)
-        })
-        .collect()
-}
-
-/// Count-up for USD values (0.00 -> final_usd, displayed as "$1,289.35").
-pub fn animate_countup_usd(final_usd: f64, width: usize) -> Vec<String> {
-    let frames = 10;
-    (0..=frames)
-        .map(|f| {
-            let t = f as f64 / frames as f64;
-            let eased = t * t * (3.0 - 2.0 * t);
-            let v = final_usd * eased;
-            let formatted = format!("${v:.2}");
-            format!("{formatted:>width$}")
-        })
-        .collect()
-}
-
-fn format_big_animated(n: u64) -> String {
-    if n >= 1_000_000_000_000 {
-        format!("{:.2}T", n as f64 / 1_000_000_000_000.0)
-    } else if n >= 1_000_000_000 {
-        format!("{:.2}B", n as f64 / 1_000_000_000.0)
-    } else if n >= 1_000_000 {
-        format!("{:.1}M", n as f64 / 1_000_000.0)
-    } else if n >= 1_000 {
-        format!("{:.1}K", n as f64 / 1_000.0)
-    } else {
-        format!("{n}")
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -778,13 +725,6 @@ mod tests {
         let bot = theme.box_bottom(20);
         assert_eq!(top.chars().count(), bot.chars().count());
         crate::test_env::remove_var("NO_COLOR");
-    }
-
-    #[test]
-    fn countup_frames() {
-        let frames = animate_countup(1000, 6);
-        assert_eq!(frames.len(), 11);
-        assert!(frames.last().unwrap().contains("1.0K"));
     }
 
     #[test]

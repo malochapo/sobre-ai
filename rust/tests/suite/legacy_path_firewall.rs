@@ -34,7 +34,6 @@ const ALLOWLIST: &[&str] = &[
     "uninstall/mod.rs",
     "doctor/common.rs",
     // Group 2: pre-existing direct home-writers/readers (tracked debt).
-    "core/providers/config_provider/discovery.rs",
 ];
 
 fn collect_rs_files(dir: &Path, out: &mut Vec<PathBuf>) {

@@ -317,7 +317,6 @@ fn try_load_graph(project_root: &str) -> Option<crate::core::graph_provider::Ope
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::auto_mode_resolver::pressure_downgrade;
 
     #[test]
     fn eviction_target_display_emits_resolvable_targets() {
@@ -548,54 +547,6 @@ mod tests {
     }
 
     // --- pressure_downgrade unit tests (pure function) ---
-
-    #[test]
-    fn pressure_downgrade_suggest_does_not_touch_diff() {
-        let result = pressure_downgrade("diff", &PressureAction::SuggestCompression);
-        assert!(result.is_none());
-    }
-
-    #[test]
-    fn pressure_downgrade_force_auto_to_signatures() {
-        let result = pressure_downgrade("auto", &PressureAction::ForceCompression);
-        assert_eq!(result, Some("signatures".to_string()));
-    }
-
-    #[test]
-    fn pressure_downgrade_force_does_not_touch_signatures() {
-        let result = pressure_downgrade("signatures", &PressureAction::ForceCompression);
-        assert!(result.is_none());
-    }
-
-    #[test]
-    fn pressure_downgrade_force_does_not_touch_lines() {
-        let result = pressure_downgrade("lines:1-50", &PressureAction::ForceCompression);
-        assert!(result.is_none());
-    }
-
-    #[test]
-    fn pressure_downgrade_evict_full_to_map() {
-        let result = pressure_downgrade("full", &PressureAction::EvictLeastRelevant);
-        assert_eq!(result, Some("map".to_string()));
-    }
-
-    #[test]
-    fn pressure_downgrade_evict_auto_to_signatures() {
-        let result = pressure_downgrade("auto", &PressureAction::EvictLeastRelevant);
-        assert_eq!(result, Some("signatures".to_string()));
-    }
-
-    #[test]
-    fn pressure_downgrade_evict_map_to_signatures() {
-        let result = pressure_downgrade("map", &PressureAction::EvictLeastRelevant);
-        assert_eq!(result, Some("signatures".to_string()));
-    }
-
-    #[test]
-    fn pressure_downgrade_noaction_auto_returns_none() {
-        let result = pressure_downgrade("auto", &PressureAction::NoAction);
-        assert!(result.is_none());
-    }
 
     // --- pre_dispatch_inner: no_degrade integration ---
     // When LCTX_NO_DEGRADE is NOT set (test default), pressure downgrade is active.

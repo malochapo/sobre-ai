@@ -463,17 +463,6 @@ impl Drop for FileLock {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SharedFact {
-    pub from_agent: String,
-    pub category: String,
-    pub key: String,
-    pub value: String,
-    pub timestamp: DateTime<Utc>,
-    #[serde(default)]
-    pub received_by: Vec<String>,
-}
-
 impl AgentRegistry {}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

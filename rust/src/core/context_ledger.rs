@@ -745,14 +745,6 @@ impl ContextLedger {
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct ReinjectionAction {
-    pub path: String,
-    pub current_mode: String,
-    pub new_mode: String,
-    pub tokens_freed: usize,
-}
-
 impl ContextLedger {}
 
 /// Resolve the Global-Workspace ignition z-score threshold (#6): the

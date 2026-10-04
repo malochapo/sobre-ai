@@ -63,18 +63,6 @@ pub fn line_surprise(text: &str) -> f64 {
     total / tokens.len() as f64
 }
 
-/// Classify how surprising a line is relative to the LLM's expected knowledge.
-/// Uses empirically calibrated thresholds for o200k_base.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SurpriseLevel {
-    /// Common patterns — safe to compress aggressively
-    Low,
-    /// Mixed content — standard compression
-    Medium,
-    /// Rare/unique tokens — preserve carefully
-    High,
-}
-
 /// Enhanced entropy filter that combines Shannon entropy with predictive surprise.
 /// Lines pass if EITHER their entropy is above threshold OR their surprise is high.
 /// This prevents dropping lines that look "low entropy" but contain rare, unique tokens.

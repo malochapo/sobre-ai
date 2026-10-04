@@ -376,7 +376,6 @@ pub mod pathutil;
 pub mod portable_binary;
 pub mod project_hash;
 pub mod protocol;
-pub mod providers;
 pub mod read_stub_index;
 pub mod recovery;
 pub mod redaction;

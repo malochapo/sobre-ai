@@ -55,22 +55,6 @@ pub fn read_footer(file_path: &str) -> Option<String> {
     }
 }
 
-/// Canonical recovery clause for a content-addressed handle (archive / firewall /
-/// spill / `ctx_shell` tee). Always names the on-disk path first (MCP-free), then
-/// the `ctx_expand(id=...)` shortcut. Unlike [`read_footer`] this is *functional*
-/// (it points at where the bytes live), so it is not tier-gated — but `Off`
-/// collapses it to the bare path so a `recovery_hints=off` operator still gets the
-/// pointer without the coaching.
-#[must_use]
-pub fn handle_clause(id: &str, on_disk_path: Option<&str>) -> String {
-    match (tier(), on_disk_path) {
-        (RecoveryHints::Off, Some(p)) => format!("full: {p}"),
-        (RecoveryHints::Off, None) => format!("full: ctx_expand(id=\"{id}\")"),
-        (_, Some(p)) => format!("full: read {p} directly (no MCP)  ·  or ctx_expand(id=\"{id}\")"),
-        (_, None) => format!("full: ctx_expand(id=\"{id}\")  ·  or read the shown path"),
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -126,35 +110,10 @@ mod tests {
     /// Determinism (#498): the footer/clause are pure functions of their inputs,
     /// so repeated calls are byte-identical (provider prompt caching depends on it).
     #[test]
-    fn footer_and_clause_are_byte_stable() {
+    fn footer_is_byte_stable() {
         let _lock = test_env_lock();
         crate::test_env::set_var("LEAN_CTX_RECOVERY_HINTS", "minimal");
         assert_eq!(read_footer("src/a.rs"), read_footer("src/a.rs"));
-        assert_eq!(
-            handle_clause("id1", Some("/tmp/t.log")),
-            handle_clause("id1", Some("/tmp/t.log"))
-        );
-        crate::test_env::remove_var("LEAN_CTX_RECOVERY_HINTS");
-    }
-
-    #[test]
-    fn handle_clause_is_non_mcp_first() {
-        let _lock = test_env_lock();
-        crate::test_env::set_var("LEAN_CTX_RECOVERY_HINTS", "minimal");
-        let with_path = handle_clause("abc123", Some("/tmp/tee/run.log"));
-        assert!(
-            with_path.find("/tmp/tee/run.log").unwrap() < with_path.find("ctx_expand").unwrap(),
-            "on-disk path must precede ctx_expand"
-        );
-        let no_path = handle_clause("abc123", None);
-        assert!(no_path.contains("ctx_expand(id=\"abc123\")"));
-
-        crate::test_env::set_var("LEAN_CTX_RECOVERY_HINTS", "off");
-        assert_eq!(
-            handle_clause("abc123", Some("/tmp/tee/run.log")),
-            "full: /tmp/tee/run.log",
-            "off keeps the bare functional pointer, drops the coaching"
-        );
         crate::test_env::remove_var("LEAN_CTX_RECOVERY_HINTS");
     }
 }

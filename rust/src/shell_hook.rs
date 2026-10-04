@@ -32,6 +32,7 @@ const AGENT_ALIASES: &[(&str, &str)] = &[
 /// shell is unknown/unsupported (callers should fall back to "restart your
 /// shell"). Kept pure so it is deterministic to unit-test without mutating the
 /// process environment.
+#[cfg(test)]
 fn source_command_for_shell(shell: &str) -> Option<&'static str> {
     if shell.contains("zsh") {
         Some("source ~/.zshrc")
@@ -42,14 +43,6 @@ fn source_command_for_shell(shell: &str) -> Option<&'static str> {
     } else {
         None
     }
-}
-
-/// The `source <rc>` command for the user's current login shell (`$SHELL`), or
-/// `None` when it cannot be determined. Single source of truth so post-`setup`
-/// and post-`update` hints stay in sync and never advise sourcing a shell the
-/// user does not have (e.g. `~/.zshrc` on a bash-only system — see #321).
-pub fn shell_source_command() -> Option<&'static str> {
-    source_command_for_shell(&std::env::var("SHELL").unwrap_or_default())
 }
 
 /// The rc file path for a given login-shell path (pure, testable).

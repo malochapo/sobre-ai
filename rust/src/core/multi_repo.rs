@@ -193,6 +193,7 @@ impl MultiRepoManager {
         Ok(manager)
     }
 
+    #[cfg(test)]
     pub fn add_root(&mut self, path: &str, alias: Option<&str>) -> Result<(), String> {
         if self.roots.len() >= MAX_ROOTS {
             return Err(format!("Maximum number of roots ({MAX_ROOTS}) reached"));

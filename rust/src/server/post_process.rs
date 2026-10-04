@@ -20,7 +20,6 @@ pub(super) fn context_ir_source_kind(name: &str) -> ContextIrSourceKindV1 {
         }
         "ctx_shell" => ContextIrSourceKindV1::Shell,
         "ctx_search" => ContextIrSourceKindV1::Search,
-        "ctx_provider" => ContextIrSourceKindV1::Provider,
         _ => ContextIrSourceKindV1::Other,
     }
 }
@@ -138,10 +137,6 @@ mod tests {
         assert!(matches!(
             context_ir_source_kind("ctx_search"),
             ContextIrSourceKindV1::Search
-        ));
-        assert!(matches!(
-            context_ir_source_kind("ctx_provider"),
-            ContextIrSourceKindV1::Provider
         ));
         assert!(matches!(
             context_ir_source_kind("ctx_knowledge"),

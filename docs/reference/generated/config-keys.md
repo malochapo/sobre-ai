@@ -268,22 +268,6 @@ Per-model context-window overrides in tokens. Keys are model names (case-insensi
 
 _No sub-keys (presence of the section toggles the feature)._
 
-## `[providers]`
-
-External context providers (GitHub, GitLab, Jira, MCP bridges, etc.). Set tokens via env vars (GITHUB_TOKEN, GITLAB_TOKEN). MCP bridges connect external MCP servers as context sources.
-
-- `auto_index` (bool, default `true`) — Auto-ingest provider results into BM25/embedding indexes
-- `cache_ttl_secs` (u64, default `120`) — Default cache TTL for provider results (seconds)
-- `enabled` (bool, default `true`) — Master switch for the provider subsystem (GitHub, GitLab, etc.)
-- `github.api_url` (string, default `null`) — GitHub API base URL (for GitHub Enterprise)
-- `github.enabled` (bool, default `true`) — Enable/disable GitHub provider
-- `gitlab.api_url` (string, default `null`) — GitLab API base URL (for self-hosted instances)
-- `gitlab.enabled` (bool, default `true`) — Enable/disable GitLab provider
-- `mcp_bridges.<name>.args` (array, default `[]`) — Arguments for the MCP server command
-- `mcp_bridges.<name>.auth_env` (string, default `null`) — Environment variable name containing auth token for MCP server
-- `mcp_bridges.<name>.command` (string, default `null`) — Command to spawn a local MCP server (stdio transport)
-- `mcp_bridges.<name>.url` (string, default `null`) — HTTP/SSE URL for a remote MCP server
-
 ## `[proxy]`
 
 Proxy upstream configuration for API routing

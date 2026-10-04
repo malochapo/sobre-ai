@@ -38,33 +38,4 @@ impl KnowledgeFact {
         let before_end = self.valid_until.is_none_or(|until| at <= until);
         after_start && before_end
     }
-
-    /// Compute structural fidelity score (0.0 - 1.0).
-    /// Based on: has source, confirmations, confidence, freshness, feedback.
-    pub fn compute_structural_fidelity(&self) -> f64 {
-        let mut score: f64 = 0.0;
-        if !self.source_session.is_empty() && self.source_session != "unknown" {
-            score += 0.2;
-        }
-        if self.confirmation_count >= 2 {
-            score += 0.2;
-        }
-        if self.confidence > 0.7 {
-            score += 0.2;
-        }
-        let days_since_confirmed = Utc::now()
-            .signed_duration_since(self.last_confirmed)
-            .num_days();
-        if days_since_confirmed < 14 {
-            score += 0.2;
-        } else if days_since_confirmed < 30 {
-            score += 0.1;
-        }
-        if self.feedback_up > self.feedback_down {
-            score += 0.2;
-        } else if self.feedback_up > 0 {
-            score += 0.1;
-        }
-        score.min(1.0)
-    }
 }

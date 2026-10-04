@@ -123,10 +123,6 @@ pub fn run() {
                 println!("{}", core::stats::format_cep_report());
                 return;
             }
-            "provider" => {
-                cmd_provider(&rest);
-                return;
-            }
             "proxy" => {
                 cmd_proxy(&rest);
                 return;

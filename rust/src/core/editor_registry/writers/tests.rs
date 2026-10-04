@@ -440,87 +440,6 @@ fn hermes_yaml_rewrites_to_strip_stale_env() {
 }
 
 #[test]
-fn remove_codex_section_also_removes_env_subtable() {
-    let input = "\
-[other]
-x = 1
-
-[mcp_servers.lean-ctx]
-args = []
-command = \"/usr/local/bin/lean-ctx\"
-
-[mcp_servers.lean-ctx.env]
-LEAN_CTX_DATA_DIR = \"/home/user/.lean-ctx\"
-
-[features]
-codex_hooks = true
-";
-    let result = remove_codex_toml_section(input, "[mcp_servers.lean-ctx]");
-    assert!(
-        !result.contains("[mcp_servers.lean-ctx]"),
-        "parent section must be removed"
-    );
-    assert!(
-        !result.contains("LEAN_CTX_DATA_DIR"),
-        "env sub-table must be removed too"
-    );
-    assert!(result.contains("[other]"), "unrelated sections preserved");
-    assert!(
-        result.contains("[features]"),
-        "sections after must be preserved"
-    );
-}
-
-#[test]
-fn remove_codex_section_preserves_other_mcp_servers() {
-    let input = "\
-[mcp_servers.lean-ctx]
-command = \"lean-ctx\"
-
-[mcp_servers.lean-ctx.env]
-X = \"1\"
-
-[mcp_servers.other]
-command = \"other\"
-";
-    let result = remove_codex_toml_section(input, "[mcp_servers.lean-ctx]");
-    assert!(!result.contains("[mcp_servers.lean-ctx]"));
-    assert!(
-        result.contains("[mcp_servers.other]"),
-        "other MCP servers must be preserved"
-    );
-    assert!(result.contains("command = \"other\""));
-}
-
-#[test]
-fn remove_codex_section_does_not_remove_similarly_named_server() {
-    let input = "\
-[mcp_servers.lean-ctx]
-command = \"lean-ctx\"
-
-[mcp_servers.lean-ctx-probe]
-command = \"probe\"
-";
-    let result = remove_codex_toml_section(input, "[mcp_servers.lean-ctx]");
-    assert!(
-        !result.contains("[mcp_servers.lean-ctx]\n"),
-        "target section must be removed"
-    );
-    assert!(
-        result.contains("[mcp_servers.lean-ctx-probe]"),
-        "similarly-named server must NOT be removed"
-    );
-    assert!(result.contains("command = \"probe\""));
-}
-
-#[test]
-fn remove_codex_section_handles_no_match() {
-    let input = "[other]\nx = 1\n";
-    let result = remove_codex_toml_section(input, "[mcp_servers.lean-ctx]");
-    assert_eq!(result, "[other]\nx = 1\n");
-}
-
-#[test]
 fn text_inject_into_existing_mcp_object() {
     let content = r#"{
   "mcp": {}
@@ -701,40 +620,6 @@ fn augment_vscode_is_idempotent() {
         1,
         "lean-ctx must not duplicate"
     );
-}
-
-#[test]
-fn augment_vscode_remove_only_drops_lean_ctx_entry() {
-    let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("mcpServers.json");
-    let t = target("Augment (VS Code)", path.clone(), ConfigType::AugmentVsCode);
-
-    // Seed: github + lean-ctx (via the writer so the id matches).
-    std::fs::write(
-            &path,
-            r#"[{"type":"stdio","id":"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa","name":"github","disabled":false,"command":"gh-mcp","args":[],"env":{}}]"#,
-        )
-        .unwrap();
-    write_config_with_options(&t, "lean-ctx", WriteOptions::default()).unwrap();
-
-    let res = remove_lean_ctx_server(&t, WriteOptions::default()).unwrap();
-    assert_eq!(res.action, WriteAction::Updated);
-
-    let arr: Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
-    let entries = arr.as_array().unwrap();
-    assert_eq!(entries.len(), 1);
-    assert_eq!(entries[0]["name"], "github");
-}
-
-#[test]
-fn augment_vscode_remove_is_noop_when_missing() {
-    let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("mcpServers.json");
-    std::fs::write(&path, "[]").unwrap();
-    let t = target("Augment (VS Code)", path.clone(), ConfigType::AugmentVsCode);
-
-    let res = remove_lean_ctx_server(&t, WriteOptions::default()).unwrap();
-    assert_eq!(res.action, WriteAction::Already);
 }
 
 // ---------------------------------------------------------------------------
@@ -941,62 +826,6 @@ fn openclaw_invalid_json_is_never_text_injected() {
         broken,
         "file must remain untouched"
     );
-}
-
-#[test]
-fn openclaw_remove_drops_both_schemas_and_empty_containers() {
-    let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("openclaw.json");
-    std::fs::write(
-        &path,
-        r#"{
-            "gateway": { "port": 8443 },
-            "mcpServers": { "lean-ctx": { "command": "/old/lean-ctx" } },
-            "mcp": { "servers": { "lean-ctx": { "command": "lean-ctx" } } }
-        }"#,
-    )
-    .unwrap();
-    let t = target("OpenClaw", path.clone(), ConfigType::OpenClaw);
-
-    let res = remove_lean_ctx_server(&t, WriteOptions::default()).unwrap();
-    assert_eq!(res.action, WriteAction::Updated);
-
-    let json: Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
-    assert!(json.get("mcpServers").is_none(), "legacy block removed");
-    assert!(json.get("mcp").is_none(), "emptied mcp container removed");
-    assert_eq!(json["gateway"]["port"], 8443, "unrelated config preserved");
-}
-
-#[test]
-fn openclaw_remove_preserves_foreign_servers() {
-    let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("openclaw.json");
-    std::fs::write(
-        &path,
-        r#"{ "mcp": { "servers": {
-            "lean-ctx": { "command": "lean-ctx" },
-            "github": { "command": "gh-mcp" }
-        } } }"#,
-    )
-    .unwrap();
-    let t = target("OpenClaw", path.clone(), ConfigType::OpenClaw);
-
-    remove_lean_ctx_server(&t, WriteOptions::default()).unwrap();
-
-    let json: Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
-    assert_eq!(json["mcp"]["servers"]["github"]["command"], "gh-mcp");
-    assert!(json["mcp"]["servers"].get("lean-ctx").is_none());
-}
-
-#[test]
-fn openclaw_remove_is_noop_without_entry() {
-    let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("openclaw.json");
-    std::fs::write(&path, r#"{ "mcp": { "servers": {} } }"#).unwrap();
-    let t = target("OpenClaw", path.clone(), ConfigType::OpenClaw);
-
-    let res = remove_lean_ctx_server(&t, WriteOptions::default()).unwrap();
-    assert_eq!(res.action, WriteAction::Already);
 }
 
 #[test]

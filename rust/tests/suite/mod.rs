@@ -51,8 +51,6 @@ mod plan_mode_scenarios;
 mod project_data_dir_scenarios;
 mod property_compression;
 mod property_graph_reproducibility_contract;
-mod provider_pipeline_e2e;
-mod provider_wiring_proof;
 mod proxy_smoke;
 mod read_fidelity;
 mod reference_docs_drift;

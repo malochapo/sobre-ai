@@ -7,6 +7,7 @@
 
 use std::collections::HashMap;
 
+#[cfg(test)]
 use rusqlite::Connection;
 
 use crate::core::graph_provider::GraphProvider;
@@ -92,6 +93,7 @@ impl AdjGraph {
         }
     }
 
+    #[cfg(test)]
     pub(super) fn from_property_graph(conn: &Connection) -> Self {
         let files = query_files(conn);
         let idx: HashMap<&str, usize> = files
@@ -188,6 +190,7 @@ pub(super) fn cohesion_of(graph: &AdjGraph, members: &[usize]) -> f64 {
     internal as f64 / total
 }
 
+#[cfg(test)]
 fn query_files(conn: &Connection) -> Vec<String> {
     let Ok(mut stmt) = conn.prepare(
         "SELECT DISTINCT p.path
@@ -205,6 +208,7 @@ fn query_files(conn: &Connection) -> Vec<String> {
     files
 }
 
+#[cfg(test)]
 fn query_file_edges(conn: &Connection) -> Vec<(String, String, f64)> {
     let sql = "
         SELECT DISTINCT p1.path, p2.path, e.kind

@@ -22,7 +22,6 @@ pub(crate) const KNOWN_COMMANDS: &[&str] = &[
     "index",
     "repomap",
     "cep",
-    "provider",
     "proxy",
     "init",
     "status",

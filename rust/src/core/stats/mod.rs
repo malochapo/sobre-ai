@@ -250,16 +250,6 @@ pub fn record_at_turn(command: &str, input_tokens: usize, output_tokens: usize, 
     }
 }
 
-pub fn reset_cep() {
-    let mut guard = STATS_BUFFER
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
-    let mut store = io::load_from_disk();
-    store.cep = CepStats::default();
-    io::locked_write(&store);
-    *guard = Some((store.clone(), store, Instant::now()));
-}
-
 pub fn reset_all() {
     let mut guard = STATS_BUFFER
         .lock()

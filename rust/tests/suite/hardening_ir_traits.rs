@@ -213,39 +213,6 @@ mod context_ir_hotpath {
 }
 
 // =============================================================================
-// ContextProvider Trait Interface
-// =============================================================================
-
-mod context_provider_trait {
-    use lean_ctx::core::providers::{ContextProvider, ProviderParams, ProviderResult};
-
-    #[test]
-    fn provider_default_cache_ttl() {
-        struct MinimalProvider;
-        impl ContextProvider for MinimalProvider {
-            fn id(&self) -> &'static str {
-                "test"
-            }
-            fn display_name(&self) -> &'static str {
-                "Test"
-            }
-            fn supported_actions(&self) -> &[&str] {
-                &[]
-            }
-            fn execute(&self, _: &str, _: &ProviderParams) -> Result<ProviderResult, String> {
-                Err("not impl".to_string())
-            }
-            fn is_available(&self) -> bool {
-                false
-            }
-        }
-        let p = MinimalProvider;
-        assert_eq!(p.cache_ttl_secs(), 120); // default from trait
-        assert!(p.requires_auth()); // default from trait
-    }
-}
-
-// =============================================================================
 // Contracts KV Block Integrity
 // =============================================================================
 

@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use crate::core::{pathjail, secret_detection};
+use crate::core::pathjail;
 
 /// Reads a file without following symlinks (TOCTOU protection).
 /// Falls back to regular read on non-Unix platforms.
@@ -58,13 +58,6 @@ pub(crate) fn strip_utf8_bom(s: String) -> String {
         Some(rest) => rest.to_owned(),
         None => s,
     }
-}
-
-/// Result of a file read with secret scanning applied.
-pub struct ScannedRead {
-    pub content: String,
-    pub secret_matches: Vec<secret_detection::SecretMatch>,
-    pub was_redacted: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

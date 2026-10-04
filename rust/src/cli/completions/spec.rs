@@ -693,15 +693,6 @@ pub static COMMAND_TREE: &[CommandNode] = &[
         positional: None,
         hidden: false,
     },
-    CommandNode {
-        name: "provider",
-        aliases: &[],
-        description: "Manage LLM providers",
-        subcommands: &[],
-        flags: &[],
-        positional: None,
-        hidden: false,
-    },
     // Hidden internal commands
     CommandNode {
         name: "__complete",

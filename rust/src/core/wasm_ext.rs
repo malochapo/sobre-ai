@@ -1,7 +1,7 @@
 //! WASM extension runtime (`wasm-abi-v1`).
 //!
-//! A sandboxed, language-independent way to contribute extensions (compressors,
-//! chunkers, context providers) without recompiling lean-ctx. Guests are plain
+//! A sandboxed, language-independent way to contribute compressors without
+//! recompiling lean-ctx. Guests are plain
 //! `.wasm` modules compiled from any language (Rust, AssemblyScript, TinyGo, …)
 //! that satisfy a tiny, uniform ABI.
 //!
@@ -22,13 +22,11 @@
 //! - `lctx_compress` — text → compressed text. `arg` = soft byte budget
 //!   (`-1` = none). The host *additionally* enforces the hard budget after
 //!   decoding, so a naive guest can never exceed it.
-//! - `lctx_provider_fetch` — request JSON → result JSON. `arg` = `0`.
 //!
 //! ## Why per-call instantiation
 //!
 //! `wasmi::Store`/`Instance` are not `Sync`, but
-//! [`Compressor`](crate::core::extension_registry::Compressor) /
-//! [`ContextProvider`](crate::core::providers::ContextProvider) must be. The
+//! [`Compressor`](crate::core::extension_registry::Compressor) must be. The
 //! thread-safe, deterministic pattern is to keep the `Send + Sync`
 //! [`wasmi::Engine`] + [`wasmi::Module`] and spin up a fresh `Store` per call.
 //! Modules are small and instantiation is cheap; this also gives each call a
@@ -40,16 +38,12 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use serde_json::Value;
 use wasmi::{Engine, Linker, Module, Store, TypedFunc};
 
 use crate::core::extension_registry::{Compressor, ExtensionRegistry, truncate_to_budget};
-use crate::core::providers::{ContextProvider, ProviderItem, ProviderParams, ProviderResult};
 
 /// Well-known ABI entrypoint names.
 pub const ENTRY_COMPRESS: &str = "lctx_compress";
-/// Well-known ABI entrypoint for providers.
-pub const ENTRY_PROVIDER_FETCH: &str = "lctx_provider_fetch";
 
 /// Error loading or running a WASM extension.
 #[derive(Debug, thiserror::Error)]
@@ -226,225 +220,17 @@ pub fn register_compressors_from_dir(
     registered
 }
 
-// ----------------------------------------------------------------------------
-// Provider (EPIC 12.10)
-// ----------------------------------------------------------------------------
-
-/// A [`ContextProvider`] backed by a WASM `lctx_provider_fetch` entrypoint.
-///
-/// The host sends a request JSON (`{"action":…,"params":{…}}`) and parses the
-/// guest's result JSON leniently into a [`ProviderResult`], so guests can omit
-/// optional fields.
-pub struct WasmProvider {
-    id: &'static str,
-    display: &'static str,
-    actions: Vec<&'static str>,
-    module: WasmModule,
-}
-
-impl WasmProvider {
-    /// Build a provider over a compiled module. `id`/`display`/`actions` are
-    /// leaked to `'static` once at load (the provider lives for the process).
-    #[must_use]
-    pub fn new(
-        id: impl Into<String>,
-        display: impl Into<String>,
-        actions: Vec<String>,
-        module: WasmModule,
-    ) -> Self {
-        let id: &'static str = Box::leak(id.into().into_boxed_str());
-        let display: &'static str = Box::leak(display.into().into_boxed_str());
-        let actions: Vec<&'static str> = actions
-            .into_iter()
-            .map(|a| &*Box::leak(a.into_boxed_str()))
-            .collect();
-        Self {
-            id,
-            display,
-            actions,
-            module,
-        }
-    }
-
-    /// Load a `.wasm` provider from disk.
-    pub fn load(
-        path: impl AsRef<Path>,
-        id: impl Into<String>,
-        display: impl Into<String>,
-        actions: Vec<String>,
-    ) -> Result<Self, WasmError> {
-        Ok(Self::new(
-            id,
-            display,
-            actions,
-            WasmModule::from_path(path)?,
-        ))
-    }
-
-    fn parse_result(&self, action: &str, bytes: &[u8]) -> Result<ProviderResult, String> {
-        let v: Value = serde_json::from_slice(bytes)
-            .map_err(|e| format!("guest returned invalid JSON: {e}"))?;
-        let resource_type = v
-            .get("resource_type")
-            .and_then(Value::as_str)
-            .unwrap_or(action)
-            .to_string();
-        let truncated = v.get("truncated").and_then(Value::as_bool).unwrap_or(false);
-        let total_count = v
-            .get("total_count")
-            .and_then(Value::as_u64)
-            .map(|n| n as usize);
-        let items = v
-            .get("items")
-            .and_then(Value::as_array)
-            .map(|arr| arr.iter().map(item_from_json).collect())
-            .unwrap_or_default();
-        Ok(ProviderResult {
-            provider: self.id.to_string(),
-            resource_type,
-            items,
-            total_count,
-            truncated,
-        })
-    }
-}
-
-fn item_from_json(v: &Value) -> ProviderItem {
-    let s = |k: &str| v.get(k).and_then(Value::as_str).map(str::to_string);
-    ProviderItem {
-        id: s("id").unwrap_or_default(),
-        title: s("title").unwrap_or_default(),
-        state: s("state"),
-        author: s("author"),
-        created_at: s("created_at"),
-        updated_at: s("updated_at"),
-        url: s("url"),
-        labels: v
-            .get("labels")
-            .and_then(Value::as_array)
-            .map(|a| {
-                a.iter()
-                    .filter_map(Value::as_str)
-                    .map(str::to_string)
-                    .collect()
-            })
-            .unwrap_or_default(),
-        body: s("body"),
-        claims: Vec::new(),
-    }
-}
-
-/// Sidecar metadata (`<stem>.provider.json`) describing a WASM provider's
-/// identity and supported actions, since a bare `.wasm` carries no such info.
-#[derive(Debug, serde::Deserialize)]
-struct ProviderSidecar {
-    id: Option<String>,
-    display: Option<String>,
-    #[serde(default)]
-    actions: Vec<String>,
-}
-
-/// Scan `dir` for `*.wasm` providers and register each into `reg`.
-///
-/// Each module may ship a sidecar `<stem>.provider.json` declaring `id`,
-/// `display`, and `actions`. Missing fields default to the file stem / a single
-/// `fetch` action. Returns the provider ids registered. Best-effort: unreadable
-/// or invalid modules are skipped.
-pub fn register_providers_from_dir(
-    reg: &crate::core::providers::ProviderRegistry,
-    dir: impl AsRef<Path>,
-) -> Vec<String> {
-    let mut registered = Vec::new();
-    let Ok(entries) = std::fs::read_dir(dir.as_ref()) else {
-        return registered;
-    };
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if path.extension().and_then(|e| e.to_str()) != Some("wasm") {
-            continue;
-        }
-        let Some(stem) = path.file_stem().and_then(|s| s.to_str()) else {
-            continue;
-        };
-        let sidecar: ProviderSidecar =
-            std::fs::read_to_string(path.with_extension("provider.json"))
-                .ok()
-                .and_then(|t| serde_json::from_str(&t).ok())
-                .unwrap_or(ProviderSidecar {
-                    id: None,
-                    display: None,
-                    actions: Vec::new(),
-                });
-        let id = sidecar.id.unwrap_or_else(|| stem.to_string());
-        let display = sidecar.display.unwrap_or_else(|| id.clone());
-        let actions = if sidecar.actions.is_empty() {
-            vec!["fetch".to_string()]
-        } else {
-            sidecar.actions
-        };
-        if let Ok(p) = WasmProvider::load(&path, id.clone(), display, actions) {
-            reg.register(Arc::new(p));
-            registered.push(id);
-        }
-    }
-    registered.sort();
-    registered
-}
-
-impl ContextProvider for WasmProvider {
-    fn id(&self) -> &'static str {
-        self.id
-    }
-
-    fn display_name(&self) -> &'static str {
-        self.display
-    }
-
-    fn supported_actions(&self) -> &[&str] {
-        &self.actions
-    }
-
-    fn execute(&self, action: &str, params: &ProviderParams) -> Result<ProviderResult, String> {
-        let request = serde_json::json!({
-            "action": action,
-            "params": {
-                "project": params.project,
-                "state": params.state,
-                "limit": params.limit,
-                "query": params.query,
-                "id": params.id,
-            }
-        });
-        let req_bytes = serde_json::to_vec(&request).map_err(|e| e.to_string())?;
-        let out = self
-            .module
-            .call_bytes(ENTRY_PROVIDER_FETCH, &req_bytes, 0)
-            .map_err(|e| e.to_string())?;
-        self.parse_result(action, &out)
-    }
-
-    fn requires_auth(&self) -> bool {
-        false
-    }
-
-    fn is_available(&self) -> bool {
-        true
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     /// A minimal ABI-v1 guest, in WAT, exercised through the real wasmi host.
     /// `alloc` is a bump allocator starting past the data segment; `lctx_compress`
-    /// echoes its input (host enforces the budget); `lctx_provider_fetch` returns
-    /// a fixed 95-byte ProviderResult JSON living at offset 0.
+    /// echoes its input (host enforces the budget).
     const GUEST_WAT: &str = r#"
         (module
           (memory (export "memory") 1)
           (global $heap (mut i32) (i32.const 1024))
-          (data (i32.const 0) "{\"provider\":\"wasm\",\"resource_type\":\"items\",\"items\":[{\"id\":\"1\",\"title\":\"hi\"}],\"truncated\":false}")
           (func (export "alloc") (param $n i32) (result i32)
             (local $p i32)
             (local.set $p (global.get $heap))
@@ -453,11 +239,7 @@ mod tests {
           (func (export "lctx_compress") (param $ptr i32) (param $len i32) (param $arg i32) (result i64)
             (i64.or
               (i64.shl (i64.extend_i32_u (local.get $ptr)) (i64.const 32))
-              (i64.extend_i32_u (local.get $len))))
-          (func (export "lctx_provider_fetch") (param $ptr i32) (param $len i32) (param $arg i32) (result i64)
-            (i64.or
-              (i64.shl (i64.extend_i32_u (i32.const 0)) (i64.const 32))
-              (i64.const 95))))
+              (i64.extend_i32_u (local.get $len)))))
     "#;
 
     fn guest() -> WasmModule {
@@ -498,28 +280,6 @@ mod tests {
         assert!(reg.compressor_names().contains(&"wecho".to_string()));
         let c = reg.compressor("wecho").unwrap();
         assert_eq!(c.compress("xyz", None), "xyz");
-    }
-
-    #[test]
-    fn wasm_provider_maps_guest_json_to_result() {
-        let p = WasmProvider::new(
-            "wasm".to_string(),
-            "WASM Provider".to_string(),
-            vec!["items".to_string()],
-            guest(),
-        );
-        assert_eq!(p.id(), "wasm");
-        assert_eq!(p.supported_actions(), &["items"]);
-        assert!(!p.requires_auth());
-        assert!(p.is_available());
-
-        let res = p.execute("items", &ProviderParams::default()).unwrap();
-        assert_eq!(res.provider, "wasm");
-        assert_eq!(res.resource_type, "items");
-        assert_eq!(res.items.len(), 1);
-        assert_eq!(res.items[0].id, "1");
-        assert_eq!(res.items[0].title, "hi");
-        assert!(!res.truncated);
     }
 
     #[test]
