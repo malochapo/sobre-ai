@@ -48,26 +48,11 @@ export const b = () => c();
         assert_eq!(status_v["action"], "status");
         assert_ne!(status_v["freshness"], "empty");
 
-        let arch =
-            lean_ctx::tools::impl_architecture::handle("overview", None, &root_s, Some("json"));
+        // Entrypoints (ctx_graph action=entrypoints): a.ts has no dependents.
+        let arch = lean_ctx::tools::impl_architecture::handle("entrypoints", &root_s, Some("json"));
         let arch_v = parse_json(&arch);
-        assert_eq!(arch_v["tool"], "ctx_architecture");
-        assert_eq!(arch_v["action"], "overview");
-        assert_eq!(arch_v["files_total"], 3);
-        assert_eq!(arch_v["import_edges"], 2);
-
-        // Clusters: all files under src/ → single cluster.
-        assert_eq!(arch_v["clusters_total"], 1);
-        assert_eq!(arch_v["clusters"][0]["dir"], "src");
-        assert_eq!(arch_v["clusters"][0]["file_count"], 3);
-
-        // Layers: c=0, b=1, a=2 → 3 layers.
-        assert_eq!(arch_v["layers_total"], 3);
-        assert_eq!(arch_v["layers"][0]["depth"], 0);
-        assert_eq!(arch_v["layers"][1]["depth"], 1);
-        assert_eq!(arch_v["layers"][2]["depth"], 2);
-
-        // Entrypoints: a.ts has no dependents.
+        assert_eq!(arch_v["tool"], "ctx_graph");
+        assert_eq!(arch_v["action"], "entrypoints");
         assert_eq!(arch_v["entrypoints_total"], 1);
         assert_eq!(arch_v["entrypoints"][0]["file"], "src/a.ts");
 

@@ -21,14 +21,5 @@ pub const INTENTS_PER_SESSION_LIMIT: usize = 50;
 // Property graph tools (bounded outputs, deterministic ordering)
 pub const IMPACT_AFFECTED_FILES_LIMIT: usize = 200;
 
-pub const ARCHITECTURE_OVERVIEW_CLUSTERS_LIMIT: usize = 5;
-pub const ARCHITECTURE_OVERVIEW_LAYERS_LIMIT: usize = 20;
-pub const ARCHITECTURE_OVERVIEW_ENTRYPOINTS_LIMIT: usize = 10;
-pub const ARCHITECTURE_OVERVIEW_CYCLES_LIMIT: usize = 5;
-pub const ARCHITECTURE_CLUSTERS_LIMIT: usize = 25;
-pub const ARCHITECTURE_CLUSTER_FILES_LIMIT: usize = 15;
-pub const ARCHITECTURE_LAYERS_LIMIT: usize = 20;
-pub const ARCHITECTURE_LAYER_FILES_LIMIT: usize = 20;
 pub const ARCHITECTURE_ENTRYPOINTS_LIMIT: usize = 50;
 pub const ARCHITECTURE_CYCLES_LIMIT: usize = 20;
-pub const ARCHITECTURE_MODULE_FILES_LIMIT: usize = 200;
