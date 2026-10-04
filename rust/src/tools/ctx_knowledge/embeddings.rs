@@ -6,25 +6,15 @@
 #[allow(clippy::wildcard_imports)]
 use super::*;
 
-/// Auto-download policy (#551): `[embedding].auto_download` from config;
-/// otherwise **allowed** — the soft default that lights up the semantic features
-/// (semantic recall, EFF-7 redundancy filtering) without manual setup.
-#[cfg(feature = "embeddings")]
-pub(crate) fn embeddings_auto_download_allowed() -> bool {
-    crate::core::config::Config::load()
-        .embedding
-        .auto_download
-        .unwrap_or(true)
-}
-
 #[cfg(feature = "embeddings")]
 pub(crate) fn embedding_engine() -> Option<&'static EmbeddingEngine> {
     embedding_engine_impl(false)
 }
 
 /// Non-blocking: returns engine only if already loaded. Never blocks the
-/// calling path — but kicks off a one-time background load/download (#551)
-/// so the first semantic need self-activates the engine for later calls.
+/// calling path — but kicks off a one-time background load (#551) so the first
+/// semantic need activates the engine for later calls. Nothing is downloaded:
+/// the model must already be installed.
 #[cfg(feature = "embeddings")]
 pub(crate) fn embedding_engine_nonblocking() -> Option<&'static EmbeddingEngine> {
     embedding_engine_impl(true)
@@ -37,7 +27,7 @@ pub(crate) fn embedding_engine_impl(nonblocking: bool) -> Option<&'static Embedd
     if !profile.embeddings_enabled() {
         return None;
     }
-    if !EmbeddingEngine::is_available() && !embeddings_auto_download_allowed() {
+    if !EmbeddingEngine::is_available() {
         return None;
     }
     if nonblocking {
@@ -51,10 +41,9 @@ pub(crate) fn embedding_engine_impl(nonblocking: bool) -> Option<&'static Embedd
     }
 }
 
-/// One-time background engine activation (#551): downloads the model if
-/// missing (TOFU-pinned, see `core/embeddings/download.rs`) and warms the
-/// shared engine, so non-blocking callers start succeeding without any hot
-/// path ever waiting. Policy gates (memory profile, auto-download) are
+/// One-time background engine activation (#551): warms the shared engine from
+/// the installed model, so non-blocking callers start succeeding without any
+/// hot path ever waiting. Policy gates (memory profile, model present) are
 /// checked by the caller.
 #[cfg(feature = "embeddings")]
 fn ensure_engine_background() {
@@ -63,7 +52,7 @@ fn ensure_engine_background() {
     // loader thread still running when the process returns from `main` races
     // libonnxruntime's static-destructor teardown → SIGSEGV in onnx::OpSchema.
     // This also keeps the process-global shared engine untouched in tests
-    // (races assertions) and avoids model-download network I/O in CI sandboxes.
+    // (races assertions).
     // `background_load_allowed` covers unit tests (cfg!(test)) AND integration/
     // bench/doctest binaries (which link the lib with cfg(test) = false).
     if !crate::core::embeddings::background_load_allowed() {
@@ -74,9 +63,9 @@ fn ensure_engine_background() {
         return;
     }
     std::thread::spawn(|| {
-        // `shared_engine` runs ensure_model (download when absent) and the
-        // ONNX load inside the OnceLock init; concurrent blocking callers
-        // simply wait on the same init instead of duplicating work.
+        // `shared_engine` runs the ONNX load inside the OnceLock init;
+        // concurrent blocking callers simply wait on the same init instead of
+        // duplicating work.
         let loaded = crate::core::embeddings::shared_engine().is_some();
         tracing::info!("embedding engine background activation finished (loaded={loaded})");
     });
@@ -87,7 +76,6 @@ pub(crate) fn handle_embeddings_status(project_root: &str) -> String {
     {
         let knowledge = ProjectKnowledge::load_or_create(project_root);
         let model_available = EmbeddingEngine::is_available();
-        let auto = embeddings_auto_download_allowed();
 
         let entries = crate::core::knowledge_embedding::KnowledgeEmbeddingIndex::load(
             &knowledge.project_hash,
@@ -104,13 +92,12 @@ pub(crate) fn handle_embeddings_status(project_root: &str) -> String {
             .map_or_else(|| "<unknown>".to_string(), |p| p.display().to_string());
 
         format!(
-            "Knowledge embeddings: model={}, auto_download={}, index_entries={}, path={path}",
+            "Knowledge embeddings: model={}, index_entries={}, path={path}",
             if model_available {
                 "present"
             } else {
                 "missing"
             },
-            if auto { "on" } else { "off" },
             entries
         )
     }
@@ -149,7 +136,7 @@ pub(crate) fn handle_embeddings_reindex(project_root: &str) -> String {
         };
 
         let Some(engine) = embedding_engine() else {
-            return "Embeddings model not available. Set `[embedding] auto_download = true` or run `lean-ctx embeddings provision`, then re-run."
+            return "Embeddings model not installed. Run `lean-ctx embeddings provision`, then re-run."
                     .to_string();
         };
 

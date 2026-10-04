@@ -8,26 +8,36 @@
 
 use crate::core::artifacts_exec::ort_provision;
 
+/// Download everything local embeddings need: the official ONNX Runtime and,
+/// in an embedding-enabled build, the configured model. The one place either
+/// is fetched outside an explicit `index build-semantic`.
+pub(crate) fn provision(force: bool) -> Result<(), String> {
+    println!(
+        "Fetching the official ONNX Runtime {} (CPU) from microsoft/onnxruntime…",
+        ort_provision::ORT_VERSION
+    );
+    let path = ort_provision::provision(force)?;
+    println!("Installed: {}", path.display());
+    #[cfg(feature = "embeddings")]
+    {
+        println!("Fetching the embedding model from HuggingFace…");
+        crate::core::embeddings::EmbeddingEngine::ensure_downloaded()
+            .map_err(|e| format!("model download failed: {e}"))?;
+        println!("Model installed.");
+    }
+    println!(
+        "Embeddings now work — semantic search picks this runtime up automatically \
+         (ORT_DYLIB_PATH still overrides it)."
+    );
+    Ok(())
+}
+
 pub(crate) fn cmd_embeddings(rest: &[String]) {
     match rest.first().map(String::as_str) {
         Some("provision") => {
-            let force = rest.iter().any(|a| a == "--force");
-            println!(
-                "Fetching the official ONNX Runtime {} (CPU) from microsoft/onnxruntime…",
-                ort_provision::ORT_VERSION
-            );
-            match ort_provision::provision(force) {
-                Ok(path) => {
-                    println!("Installed: {}", path.display());
-                    println!(
-                        "Embeddings now work out of the box — semantic search picks this \
-                         runtime up automatically (ORT_DYLIB_PATH still overrides it)."
-                    );
-                }
-                Err(e) => {
-                    eprintln!("Provisioning failed: {e}");
-                    std::process::exit(1);
-                }
+            if let Err(e) = provision(rest.iter().any(|a| a == "--force")) {
+                eprintln!("Provisioning failed: {e}");
+                std::process::exit(1);
             }
         }
         Some("status") | None => {
@@ -61,7 +71,7 @@ pub(crate) fn cmd_embeddings(rest: &[String]) {
                 "Unknown subcommand `{other}`.\n\n\
                  Usage:\n  \
                  lean-ctx embeddings status              Show the managed ONNX Runtime state\n  \
-                                 lean-ctx embeddings provision [--force] Download the official CPU runtime (sha256-pinned)"
+                                 lean-ctx embeddings provision [--force] Download the official CPU runtime (sha256-pinned) and the model"
             );
             std::process::exit(1);
         }

@@ -542,12 +542,6 @@ pub struct EmbeddingConfig {
     pub model: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub dimensions: Option<usize>,
-    /// Allow downloading the embedding model on first semantic need (#551).
-    /// `None` (unset) means **allowed** — the soft default that activates the
-    /// semantic features without manual setup. Set `false` for air-gapped
-    /// machines.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub auto_download: Option<bool>,
     /// Pin embedding inference to a single CPU thread (no GPU EP) so vectors are
     /// bit-identical across machines, not just run-to-run on one host (#895).
     /// `None`/`false` keeps the multi-threaded GPU-capable path. Extractive prose

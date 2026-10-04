@@ -165,7 +165,6 @@ mod tests {
         "cost.prices",
         "embedding.model",
         "embedding.dimensions",
-        "embedding.auto_download",
         "embedding.deterministic",
     ];
 

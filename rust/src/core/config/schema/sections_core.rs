@@ -811,14 +811,6 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
         ),
     );
     embedding.insert(
-        "auto_download".into(),
-        key(
-            "bool",
-            serde_json::json!(null),
-            "Download the embedding model in the background on first semantic need (default: allowed). Set false for air-gapped machines; semantic features then stay off until a model is provided manually.",
-        ),
-    );
-    embedding.insert(
         "deterministic".into(),
         key(
             "bool",

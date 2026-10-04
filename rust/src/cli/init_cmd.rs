@@ -317,6 +317,7 @@ pub fn cmd_init(args: &[String]) {
     // when anything failed. CI gates on that exit code.
     if !repair && !json {
         ask_about_proxy();
+        ask_about_embeddings();
     }
 
     let opts = crate::setup::SetupOptions {
@@ -387,6 +388,39 @@ fn ask_about_proxy() {
         println!("  Proxy enabled.");
     } else {
         println!("  Skipped. Turn it on later with `sobre proxy enable`.");
+    }
+}
+
+/// Semantic search needs a local model. It is downloaded only with consent:
+/// here, or later with `lean-ctx embeddings provision`. Asked only by builds
+/// that can use it, and only while the model is missing.
+fn ask_about_embeddings() {
+    #[cfg(feature = "embeddings")]
+    {
+        use std::io::Write;
+
+        if crate::core::embeddings::EmbeddingEngine::is_available()
+            || crate::shell::is_non_interactive()
+        {
+            return;
+        }
+
+        println!();
+        println!("  Semantic search runs a small embedding model on this machine.");
+        println!("  It needs the ONNX Runtime and the model (about 120 MB, one-time).");
+        println!();
+        print!("  Download them now? [y/N] ");
+        let _ = std::io::stdout().flush();
+
+        let mut input = String::new();
+        let _ = std::io::stdin().read_line(&mut input);
+        if matches!(input.trim().to_lowercase().as_str(), "y" | "yes") {
+            if let Err(e) = crate::cli::embeddings_cmd::provision(false) {
+                eprintln!("  Download failed: {e}");
+            }
+        } else {
+            println!("  Skipped. Download later with `lean-ctx embeddings provision`.");
+        }
     }
 }
 

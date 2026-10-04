@@ -53,14 +53,7 @@ fn init_repair_leaves_doctor_fully_green() {
         ("NO_COLOR".into(), "1".into()),
         ("TERM".into(), "dumb".into()),
     ];
-    // Hermetic: doctor must not try to fetch embedding models in CI.
-    let cfg_dir = home.join("cfg");
-    std::fs::create_dir_all(&cfg_dir).unwrap();
-    std::fs::write(
-        cfg_dir.join("config.toml"),
-        "[embedding]\nauto_download = false\n",
-    )
-    .unwrap();
+    std::fs::create_dir_all(home.join("cfg")).unwrap();
     let init = Command::new(bin)
         .args(["init", "--repair"])
         .current_dir(&proj)

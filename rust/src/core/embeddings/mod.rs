@@ -89,7 +89,15 @@ impl EmbeddingEngine {
         let config = model_id.config();
         let model_dir = base_dir.join(model_id.storage_dir_name());
 
-        download::ensure_model(&model_dir, &config)?;
+        // Never download here: loading happens on tool paths the user did not
+        // ask to touch the network. The model arrives through an explicit
+        // request (`lean-ctx embeddings provision`, `init`, `index
+        // build-semantic`), which call `ensure_downloaded` first.
+        anyhow::ensure!(
+            model_dir.join("model.onnx").exists()
+                && model_dir.join(config.vocab_file.filename()).exists(),
+            "embedding model not installed — run `lean-ctx embeddings provision`"
+        );
 
         let tokenizer = load_tokenizer(&model_dir, &config)?;
         let model_path = model_dir.join("model.onnx");
