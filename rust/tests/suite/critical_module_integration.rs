@@ -31,28 +31,6 @@ fn pathjail_allows_safe_path() {
 }
 
 // ---------------------------------------------------------------------------
-// degradation_policy: must evaluate without panic
-// ---------------------------------------------------------------------------
-#[test]
-fn degradation_policy_evaluates_for_known_tool() {
-    use lean_ctx::core::degradation_policy::evaluate_v1_for_tool;
-
-    let policy = evaluate_v1_for_tool("ctx_read", Some("2025-01-01T00:00:00Z"));
-    assert_eq!(policy.schema_version, 1);
-    assert_eq!(policy.tool, "ctx_read");
-    assert!(!policy.decision.reason.is_empty());
-}
-
-#[test]
-fn degradation_policy_evaluates_for_unknown_tool() {
-    let policy = lean_ctx::core::degradation_policy::evaluate_v1_for_tool(
-        "nonexistent_tool",
-        Some("2025-01-01T00:00:00Z"),
-    );
-    assert_eq!(policy.tool, "nonexistent_tool");
-}
-
-// ---------------------------------------------------------------------------
 // gotcha_tracker/learn: extract learnings from resolved gotchas
 // ---------------------------------------------------------------------------
 #[test]

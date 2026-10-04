@@ -12,93 +12,6 @@ use serde_json::{Map, Value};
 use crate::core::config::{CompressionLevel, Config};
 use crate::core::context_ir::ContextIrSourceKindV1;
 
-/// Tools that are always allowed to run even when the budget is exhausted —
-/// they are how the agent inspects/recovers the budget.
-const BUDGET_BYPASS_TOOLS: &[&str] = &["ctx_session", "ctx_cost", "ctx_metrics"];
-
-/// Pre-dispatch budget guard. Returns `Some(message)` when the call must be
-/// short-circuited because the budget is exhausted (and emits the matching
-/// `budget_exhausted` events), or `None` to proceed.
-pub(super) fn budget_exhausted_message(name: &str) -> Option<String> {
-    use crate::core::budget_tracker::{BudgetLevel, BudgetTracker};
-    let snap = BudgetTracker::global().check();
-    if *snap.worst_level() != BudgetLevel::Exhausted || BUDGET_BYPASS_TOOLS.contains(&name) {
-        return None;
-    }
-    for (dim, lvl, used, limit) in [
-        (
-            "tokens",
-            &snap.tokens.level,
-            format!("{}", snap.tokens.used),
-            format!("{}", snap.tokens.limit),
-        ),
-        (
-            "shell",
-            &snap.shell.level,
-            format!("{}", snap.shell.used),
-            format!("{}", snap.shell.limit),
-        ),
-        (
-            "cost",
-            &snap.cost.level,
-            format!("${:.2}", snap.cost.used_usd),
-            format!("${:.2}", snap.cost.limit_usd),
-        ),
-    ] {
-        if *lvl == BudgetLevel::Exhausted {
-            crate::core::events::emit_budget_exhausted(dim, &used, &limit);
-        }
-    }
-    Some(format!(
-        "[BUDGET EXHAUSTED] {}\n\
-         Use `ctx_session action=reset` to start fresh.",
-        snap.format_compact()
-    ))
-}
-
-/// Post-dispatch budget guard. Returns `Some(message)` to append a
-/// `[BUDGET WARNING]` footer (emitting the matching `budget_warning` events), or
-/// `None`. Suppressed when meta output is not visible.
-pub(super) fn budget_warning_message() -> Option<String> {
-    use crate::core::budget_tracker::{BudgetLevel, BudgetTracker};
-    let snap = BudgetTracker::global().check();
-    if *snap.worst_level() != BudgetLevel::Warning {
-        return None;
-    }
-    for (dim, lvl, used, limit, pct) in [
-        (
-            "tokens",
-            &snap.tokens.level,
-            format!("{}", snap.tokens.used),
-            format!("{}", snap.tokens.limit),
-            snap.tokens.percent,
-        ),
-        (
-            "shell",
-            &snap.shell.level,
-            format!("{}", snap.shell.used),
-            format!("{}", snap.shell.limit),
-            snap.shell.percent,
-        ),
-        (
-            "cost",
-            &snap.cost.level,
-            format!("${:.2}", snap.cost.used_usd),
-            format!("${:.2}", snap.cost.limit_usd),
-            snap.cost.percent,
-        ),
-    ] {
-        if *lvl == BudgetLevel::Warning {
-            crate::core::events::emit_budget_warning(dim, &used, &limit, pct);
-        }
-    }
-    if crate::core::protocol::meta_visible() {
-        Some(format!("[BUDGET WARNING] {}", snap.format_compact()))
-    } else {
-        None
-    }
-}
-
 /// Map a tool name to the Context-IR source kind recorded for lineage.
 pub(super) fn context_ir_source_kind(name: &str) -> ContextIrSourceKindV1 {
     match name {
@@ -234,18 +147,6 @@ mod tests {
             context_ir_source_kind("ctx_knowledge"),
             ContextIrSourceKindV1::Other
         ));
-    }
-
-    #[test]
-    fn budget_bypass_tools_never_short_circuit() {
-        // Regardless of budget state, the recovery tools must be allowed: the
-        // function returns None for them (they bypass the exhaustion gate).
-        for t in BUDGET_BYPASS_TOOLS {
-            assert!(
-                budget_exhausted_message(t).is_none(),
-                "{t} must bypass the budget gate"
-            );
-        }
     }
 
     #[test]

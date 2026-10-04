@@ -27,16 +27,6 @@ impl LeanCtxServer {
             return Ok(blocked);
         }
 
-        // #794: cost cap guard — block tool calls when session cost exceeds the
-        // configured limit. ctx_session is exempt so the agent can inspect
-        // budget status and override the cap.
-        if name != "ctx_session"
-            && let Some(cap_msg) =
-                crate::core::budget_tracker::BudgetTracker::global().cost_cap_message()
-        {
-            return Ok(CallToolResult::error(vec![ContentBlock::text(cap_msg)]));
-        }
-
         // #990: determine machine-readability *before* the once-per-session
         // decorations below. A machine-readable invocation (e.g. ctx_outline
         // format=json) must reach the client byte-exact and parseable, so every
@@ -177,15 +167,6 @@ impl LeanCtxServer {
             }
         }
 
-        if let Some(msg) = post_process::budget_exhausted_message(name) {
-            tracing::warn!(tool = name, "{msg}");
-            return Ok(CallToolResult::success(vec![ContentBlock::text(msg)]));
-        }
-
-        if is_shell_tool_name(name) {
-            crate::core::budget_tracker::BudgetTracker::global().record_shell();
-        }
-
         let tool_start = std::time::Instant::now();
         let (mut result_text, tool_saved_tokens, shell_outcome, content_blocks) =
             match self.dispatch_tool(name, args, minimal).await {
@@ -232,11 +213,7 @@ impl LeanCtxServer {
         };
 
         let pre_terse_len = result_text.len();
-        let output_tokens = {
-            let tokens = crate::core::tokens::count_tokens(&result_text) as u64;
-            crate::core::budget_tracker::BudgetTracker::global().record_tokens(tokens);
-            tokens
-        };
+        let output_tokens = crate::core::tokens::count_tokens(&result_text) as u64;
 
         crate::core::anomaly::record_metric("tokens_per_call", output_tokens as f64);
 
@@ -314,8 +291,6 @@ impl LeanCtxServer {
 
         // Persist anomaly detector — debounced to reduce I/O in burst sequences.
         crate::core::anomaly::save_debounced();
-
-        let budget_warning = post_process::budget_warning_message();
 
         // #212 — per-item sensitivity floor. Enforced uniformly here (before
         // archiving + compression) so it covers both the inline result and the
@@ -435,10 +410,6 @@ impl LeanCtxServer {
             result_text = format!("{result_text}\n\n{warning}");
         }
 
-        if let Some(bw) = budget_warning {
-            result_text = format!("{result_text}\n\n{bw}");
-        }
-
         // Gated on `!machine_readable` (short-circuits before the swap) so a
         // json-first call does not consume this once-per-session slot for a tip
         // we would immediately discard; it then surfaces on the next call.
@@ -475,11 +446,6 @@ impl LeanCtxServer {
                     );
                 }
             }
-        }
-
-        {
-            // Evaluate SLOs for observability (watch/dashboard), but keep tool outputs clean.
-            let _ = crate::core::slo::evaluate();
         }
 
         if name == "ctx_read" {

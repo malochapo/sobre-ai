@@ -55,27 +55,9 @@ pub enum EventKind {
         old_jaccard: f64,
         new_jaccard: f64,
     },
-    BudgetWarning {
-        dimension: String,
-        used: String,
-        limit: String,
-        percent: u8,
-    },
-    BudgetExhausted {
-        dimension: String,
-        used: String,
-        limit: String,
-    },
     PolicyViolation {
         tool: String,
         reason: String,
-    },
-    SloViolation {
-        slo_name: String,
-        metric: String,
-        threshold: f64,
-        actual: f64,
-        action: String,
     },
     Anomaly {
         metric: String,
@@ -465,23 +447,6 @@ pub fn emit_agent_action(agent_id: &str, action: &str, tool: Option<&str>) {
         agent_id: agent_id.to_string(),
         action: action.to_string(),
         tool: tool.map(std::string::ToString::to_string),
-    });
-}
-
-pub fn emit_budget_warning(dimension: &str, used: &str, limit: &str, percent: u8) {
-    emit(EventKind::BudgetWarning {
-        dimension: dimension.to_string(),
-        used: used.to_string(),
-        limit: limit.to_string(),
-        percent,
-    });
-}
-
-pub fn emit_budget_exhausted(dimension: &str, used: &str, limit: &str) {
-    emit(EventKind::BudgetExhausted {
-        dimension: dimension.to_string(),
-        used: used.to_string(),
-        limit: limit.to_string(),
     });
 }
 

@@ -264,7 +264,6 @@ stale_files: {}\n",
             let _ = session.save();
             let old_id = session.id.clone();
             *session = SessionState::new();
-            crate::core::budget_tracker::BudgetTracker::global().reset();
             // Clear the persistent context ledger so pressure resets to 0%
             let mut ledger = crate::core::context_ledger::ContextLedger::load();
             ledger.reset();
@@ -338,23 +337,6 @@ stale_files: {}\n",
 
         "resume" => session.build_resume_block(),
 
-        "budget" => {
-            use crate::core::budget_tracker::BudgetTracker;
-            let snap = BudgetTracker::global().check();
-            let mut out = snap.format_compact();
-
-            if let Ok(data_dir) = crate::core::data_dir::lean_ctx_data_dir() {
-                let window = crate::core::context_radar::default_window_for_client("cursor");
-                let radar = crate::core::context_radar::ContextRadar::load(&data_dir, window);
-                let radar_display = radar.format_display();
-                if !radar_display.is_empty() {
-                    out.push_str("\n\n");
-                    out.push_str(&radar_display);
-                }
-            }
-            out
-        }
-
         "diff" => {
             let parts: Vec<&str> = value.unwrap_or("").split_whitespace().collect();
             if parts.len() < 2 {
@@ -382,36 +364,6 @@ stale_files: {}\n",
                 (_, None) => format!("Session not found: {id_b}"),
             }
         }
-
-        "slo" => match value {
-            Some("reload") => {
-                crate::core::slo::reload();
-                "SLO definitions reloaded from disk.".to_string()
-            }
-            Some("history") => {
-                let hist = crate::core::slo::violation_history(20);
-                if hist.is_empty() {
-                    "No SLO violations recorded.".to_string()
-                } else {
-                    let mut out = format!("SLO violations (last {}):\n", hist.len());
-                    for v in &hist {
-                        out.push_str(&format!(
-                            "  {} {} ({}) {:.2} vs {:.2} → {}\n",
-                            v.timestamp, v.slo_name, v.metric, v.actual, v.threshold, v.action
-                        ));
-                    }
-                    out
-                }
-            }
-            Some("clear") => {
-                crate::core::slo::clear_violations();
-                "SLO violation history cleared.".to_string()
-            }
-            _ => {
-                let snap = crate::core::slo::evaluate_quiet();
-                snap.format_compact()
-            }
-        },
 
         "output_stats" => {
             let snap = crate::core::output_verification::stats_snapshot();
@@ -657,7 +609,7 @@ stale_files: {}\n",
         }
 
         _ => format!(
-            "Unknown action: {action}. Use: status, load, save, task, finding, decision, reset, list, cleanup, snapshot, restore, resume, configure, budget, slo, diff, output_stats, verify, export, import, episodes, procedures"
+            "Unknown action: {action}. Use: status, load, save, task, finding, decision, reset, list, cleanup, snapshot, restore, resume, configure, diff, output_stats, verify, export, import, episodes, procedures"
         ),
     }
 }
