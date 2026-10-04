@@ -58,6 +58,7 @@ All `std::sync::Mutex` unless noted otherwise.
 | L66 | `JOBS` | `server/background_shell.rs:26` | `LazyLock<Mutex<HashMap<String, Job>>>` | Content-addressed background shell jobs; lock is held only to insert, inspect, or remove a job, then released before executing or joining its worker thread; independent leaf lock, never nested |
 | L67 | `BUILD_GATE` | `core/graph_provider.rs:659` | `LazyLock<Mutex<()>>` | Serializes synchronous graph-index builds; acquired with `try_lock()` and held only while the spawned builder is awaited, never nested with another static lock |
 | L70 | `ALLOW_PATHS` | `core/runtime_flags.rs:11` | `OnceLock<Mutex<Vec<PathBuf>>>` | Runtime-configured additional allowed paths for PathJail; independent leaf lock, never nested |
+| L86 | `SNAP` | `core/gain/live_pricing.rs:75` | `OnceLock<RwLock<Option<Arc<LivePriceTable>>>>` | Cached live price table; swapped whole under a brief write lock, independent leaf lock, never nested |
 
 ### Test / Environment Locks (serialise env-var mutations)
 
