@@ -322,7 +322,7 @@ pub fn install_all_with_style(quiet: bool, style: Style) {
     if cfg.shell_hook_disabled_effective() {
         if !quiet {
             eprintln!(
-                "lean-ctx: shell hook disabled (shell_hook_disabled=true or LEAN_CTX_NO_HOOK).                  Skipping hook installation."
+                "lean-ctx: shell hook disabled (shell_hook_disabled=true). Skipping hook installation."
             );
         }
         return;
@@ -426,7 +426,7 @@ const REDIRECT_SKIP_MARKERS: &[&str] = &[
 /// (see [`REDIRECT_SKIP_MARKERS`]).
 fn redirect_block(exec_var: &str, env_check: &str) -> String {
     let mut lines = vec![format!(
-        "if [[ -z \"$LEAN_CTX_ACTIVE\" && -z \"$LEAN_CTX_NO_HOOK\" && -n \"${exec_var}\" ]] \\"
+        "if [[ -z \"$LEAN_CTX_ACTIVE\" && -n \"${exec_var}\" ]] \\"
     )];
     for marker in REDIRECT_SKIP_MARKERS {
         lines.push(format!("  && [[ \"${exec_var}\" != *\"{marker}\"* ]] \\"));

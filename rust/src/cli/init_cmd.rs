@@ -134,7 +134,7 @@ pub fn install_shell_hook(args: &[String]) {
 
     if no_hook {
         qprintln!("Shell hook disabled (--no-shell-hook or shell_hook_disabled config).");
-        qprintln!("MCP tools remain active. Set LEAN_CTX_NO_HOOK=1 to disable at runtime.");
+        qprintln!("MCP tools remain active.");
     } else if is_powershell {
         super::shell_init::init_powershell(&binary);
     } else {

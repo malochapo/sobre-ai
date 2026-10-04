@@ -5,7 +5,7 @@
 //! subcommand for compression, caching, and (in shadow/harden mode) telemetry.
 
 use super::{
-    HOOK_STDIN_TIMEOUT, build_dual_allow_output, dedup, is_disabled, is_shadow_mode_active,
+    HOOK_STDIN_TIMEOUT, build_dual_allow_output, dedup, is_shadow_mode_active,
     log_shadow_intercept, payload, read_stdin_with_timeout, resolve_binary,
 };
 use crate::core::debug_log::{self, Route};
@@ -39,11 +39,6 @@ pub(super) fn classify_redirect(tool_name: &str) -> RedirectKind {
 /// Decide the redirect hook's stdout (a redirect or an allow-passthrough) without
 /// printing, so `handle_redirect` can run it under the fail-open timeout (#1035).
 pub(super) fn compute_redirect() -> String {
-    if is_disabled() {
-        let _ = read_stdin_with_timeout(HOOK_STDIN_TIMEOUT);
-        return build_dual_allow_output();
-    }
-
     let Some(input) = read_stdin_with_timeout(HOOK_STDIN_TIMEOUT) else {
         return build_dual_allow_output();
     };

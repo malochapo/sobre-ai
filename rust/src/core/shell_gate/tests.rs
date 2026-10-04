@@ -461,14 +461,3 @@ fn eval_still_blocked_despite_builtins() {
         "eval must remain blocked"
     );
 }
-
-/// #1026: redirect_block includes LEAN_CTX_NO_HOOK guard.
-#[test]
-fn redirect_block_contains_no_hook_guard() {
-    let block =
-        crate::shell_hook::test_helpers::redirect_block_for_test("ZSH_EXECUTION_STRING", "true");
-    assert!(
-        block.contains("LEAN_CTX_NO_HOOK"),
-        "redirect_block must check LEAN_CTX_NO_HOOK: {block}"
-    );
-}

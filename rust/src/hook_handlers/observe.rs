@@ -13,9 +13,6 @@ use super::*;
 /// Reads JSON from stdin, normalizes to `ObserveEvent`, counts tokens,
 /// appends to `context_radar.jsonl`, and exits immediately.
 pub fn handle_observe() {
-    if is_disabled() {
-        return;
-    }
     let Some(input) = read_stdin_with_timeout(HOOK_STDIN_TIMEOUT) else {
         return;
     };

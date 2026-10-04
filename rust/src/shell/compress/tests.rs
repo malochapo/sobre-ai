@@ -1350,7 +1350,7 @@ mod structural_output_tests {
 /// Regression guard: test-runner output must never have its pass/fail summaries
 /// compressed or truncated away — even a large, fully-passing run. This is the
 /// exact failure where a multi-crate `cargo test` lost its per-binary
-/// `test result:` lines and the user had to fall back to LEAN_CTX_RAW=1.
+/// `test result:` lines and the user had to fall back to `lean-ctx raw`.
 #[cfg(test)]
 mod test_runner_output_tests {
     use super::super::engine::compress_if_beneficial;

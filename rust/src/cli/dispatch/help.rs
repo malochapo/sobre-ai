@@ -72,9 +72,10 @@ MANAGE:
     lean-ctx status                Am I connected? (quick check)
     lean-ctx uninstall             Remove lean-ctx cleanly
 
-SAFETY (env vars):
-    LEAN_CTX_DISABLED=1            Bypass ALL compression + prevent the shell hook from loading
-    LEAN_CTX_RAW=1                 Pass output through unmodified (same as --raw)
+ESCAPE HATCHES:
+    lean-ctx raw \"command\"         Run one command with unmodified output
+    lean-ctx-off                   Turn the shell aliases off for this shell
+    shell_hook_disabled = true     (config.toml) Never install the shell hook
 
 MORE:
     lean-ctx help all              Full command reference (every subcommand)
@@ -252,13 +253,6 @@ READ MODES:
     diff                           Changed lines only
     lines:N-M                      Specific line ranges (e.g. lines:10-50,80)
 
-ENVIRONMENT:
-    LEAN_CTX_DISABLED=1            Bypass ALL compression + prevent shell hook from loading
-    LEAN_CTX_ENABLED=0             Prevent shell hook auto-start (lean-ctx-on still works)
-    LEAN_CTX_RAW=1                 Same as --raw for current command
-    LEAN_CTX_AUTONOMY=false        Disable autonomous features
-    LEAN_CTX_COMPRESS=1            Force compression (even for excluded commands)
-
 OPTIONS:
     --version, -V                  Show version
     --help, -h                     Show this help
@@ -295,7 +289,6 @@ EXAMPLES:
     lean-ctx-on                    Enable shell aliases in track mode (full output + stats)
     lean-ctx-off                   Disable all shell aliases
     lean-ctx-mode track            Track mode: full output, stats recorded (default)
-    LEAN_CTX_DEBUG=1 lean-ctx-on   Show shell hook mode-change notices
     lean-ctx-mode compress         Compress mode: all output compressed (power users)
     lean-ctx-mode off              Same as lean-ctx-off
     lean-ctx-status                Show whether compression is active

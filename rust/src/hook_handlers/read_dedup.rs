@@ -44,9 +44,6 @@ const MAX_HASH_BYTES: u64 = 16 * 1024 * 1024;
 const SESSION_TTL: Duration = Duration::from_hours(24);
 
 pub fn handle_read_dedup() {
-    if is_disabled() {
-        return;
-    }
     let Some(input) = read_stdin_with_timeout(HOOK_STDIN_TIMEOUT) else {
         return;
     };

@@ -14,7 +14,7 @@
 //!   *fully replaces* the tool input. Empty stdout is treated as passthrough.
 
 use super::file_rewrite::rewrite_candidate;
-use super::{HOOK_STDIN_TIMEOUT, is_disabled, read_stdin_with_timeout, resolve_binary};
+use super::{HOOK_STDIN_TIMEOUT, read_stdin_with_timeout, resolve_binary};
 
 /// `hook_specific_output.tool_input` fully replaces the invocation's input, so
 /// we clone the original object and swap only the field(s) we change — keeping
@@ -38,9 +38,6 @@ pub(super) fn vibe_deny_output(reason: &str) -> String {
 
 pub fn handle_vibe_pre_tool() {
     // Disabled → passthrough (empty stdout).
-    if is_disabled() {
-        return;
-    }
     let binary = resolve_binary();
     let Some(input) = read_stdin_with_timeout(HOOK_STDIN_TIMEOUT) else {
         return;

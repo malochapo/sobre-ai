@@ -60,10 +60,6 @@ use redirect::{
 #[cfg(test)]
 use search_rewrite::{rewrite_dir_list_command, rewrite_search_command};
 
-fn is_disabled() -> bool {
-    std::env::var("LEAN_CTX_DISABLED").is_ok()
-}
-
 fn is_shadow_mode_active() -> bool {
     crate::core::config::Config::load().shadow_mode
 }

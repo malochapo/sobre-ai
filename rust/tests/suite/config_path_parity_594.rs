@@ -57,7 +57,6 @@ fn config_path(sb: &Sandbox, data_dir: Option<&Path>, cwd: &Path) -> String {
         .env("HOME", &sb.home)
         .env("XDG_CONFIG_HOME", &sb.xdg_config)
         .env("XDG_DATA_HOME", &sb.xdg_data)
-        .env("LEAN_CTX_DISABLED", "1")
         .env("LEAN_CTX_ACTIVE", "1")
         .env_remove("LEAN_CTX_CONFIG_DIR")
         .env_remove("LEAN_CTX_DATA_DIR")

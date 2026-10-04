@@ -579,9 +579,6 @@ pub fn exec(command: &str) -> i32 {
     let command = crate::tools::ctx_shell::normalize_command_for_shell(command);
     let command = command.as_str();
 
-    if super::reentry::is_disabled() {
-        return exec_inherit(command, &shell, &shell_flag);
-    }
     if should_delegate_wrapped_to_shell_default(collapsed_nested) {
         return exec_shell_default(command, &shell, &shell_flag);
     }
@@ -617,7 +614,7 @@ pub fn exec(command: &str) -> i32 {
         return code;
     }
 
-    // Compression is forced (`-c` / LEAN_CTX_COMPRESS, e.g. the agent shell hook).
+    // Compression is forced (`-c`, e.g. the agent shell hook).
     // It must STILL never alter bytes destined for a file: a redirect
     // (`cmd > out`, `cmd >> out`) means the output is captured as data, not read by
     // a human or agent. Writing the compressed digest there would silently
@@ -875,19 +872,9 @@ mod exec_tests {
     }
 
     #[test]
-    fn exec_argv_passes_through_when_disabled() {
-        let _lock = crate::core::data_dir::test_env_lock();
-        crate::test_env::set_var("LEAN_CTX_DISABLED", "1");
-        let code = super::exec_argv(&["true".to_string()]);
-        crate::test_env::remove_var("LEAN_CTX_DISABLED");
-        assert_eq!(code, 0);
-    }
-
-    #[test]
     fn exec_argv_allows_ordinary_command() {
         let _lock = crate::core::data_dir::test_env_lock();
         crate::test_env::remove_var("LEAN_CTX_ACTIVE");
-        crate::test_env::remove_var("LEAN_CTX_DISABLED");
         crate::test_env::set_var("LEAN_CTX_HOOK_CHILD", "1");
 
         let code = super::exec_argv(&["true".to_string()]);

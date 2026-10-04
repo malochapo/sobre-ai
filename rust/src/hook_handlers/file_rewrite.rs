@@ -8,8 +8,8 @@
 
 use super::search_rewrite::{rewrite_dir_list_command, rewrite_search_command};
 use super::{
-    HOOK_STDIN_TIMEOUT, build_dual_allow_output, build_dual_rewrite_output, dedup, is_disabled,
-    is_shell_tool, payload, read_stdin_with_timeout, resolve_binary, shell_quote, shell_tokenize,
+    HOOK_STDIN_TIMEOUT, build_dual_allow_output, build_dual_rewrite_output, dedup, is_shell_tool,
+    payload, read_stdin_with_timeout, resolve_binary, shell_quote, shell_tokenize,
 };
 use crate::compound_lexer;
 use crate::core::debug_log::{self, Route};
@@ -18,9 +18,6 @@ use crate::rewrite_registry;
 /// Decide the rewrite hook's stdout (a rewrite or an allow-passthrough) without
 /// printing, so `handle_rewrite` can run it under the fail-open timeout (#1035).
 pub(super) fn compute_rewrite() -> String {
-    if is_disabled() {
-        return build_dual_allow_output();
-    }
     let binary = resolve_binary();
     let Some(input) = read_stdin_with_timeout(HOOK_STDIN_TIMEOUT) else {
         return build_dual_allow_output();

@@ -7,7 +7,7 @@
 //! output builders in the parent module.
 
 use super::file_rewrite::rewrite_candidate;
-use super::{HOOK_STDIN_TIMEOUT, is_disabled, is_quiet, read_stdin_with_timeout, resolve_binary};
+use super::{HOOK_STDIN_TIMEOUT, is_quiet, read_stdin_with_timeout, resolve_binary};
 
 pub(super) fn codex_rewrite_output(rewritten: &str) -> String {
     serde_json::json!({
@@ -23,10 +23,6 @@ pub(super) fn codex_rewrite_output(rewritten: &str) -> String {
 }
 
 pub fn handle_codex_pretooluse() {
-    if is_disabled() {
-        print!("{}", codex_allow_output());
-        return;
-    }
     let binary = resolve_binary();
     let Some(input) = read_stdin_with_timeout(HOOK_STDIN_TIMEOUT) else {
         print!("{}", codex_allow_output());

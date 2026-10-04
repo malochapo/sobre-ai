@@ -17,7 +17,6 @@ fn run_with_env(
 ) -> (String, String, i32) {
     let mut cmd = Command::new(lean_ctx_bin());
     cmd.args(args)
-        .env("LEAN_CTX_DISABLED", "1")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
@@ -51,7 +50,6 @@ fn run_hook_test(
 ) -> (String, String, i32) {
     let mut cmd = Command::new(lean_ctx_bin());
     cmd.args(args)
-        .env_remove("LEAN_CTX_DISABLED")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
@@ -207,7 +205,6 @@ fn agent_init_antigravity_alias() {
     let mut cmd = Command::new(lean_ctx_bin());
     cmd.args(["init", "--agent", "antigravity", "--global"])
         .env("HOME", home.to_str().unwrap())
-        .env("LEAN_CTX_DISABLED", "1")
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
 
@@ -480,12 +477,11 @@ fn agent_init_grok_writes_mcp_without_unsupported_hooks() {
 
     let home_str = home.to_string_lossy().to_string();
     #[cfg(not(windows))]
-    let env = [("HOME", home_str.as_str()), ("LEAN_CTX_DISABLED", "1")];
+    let env = [("HOME", home_str.as_str())];
     #[cfg(windows)]
     let env = [
         ("HOME", home_str.as_str()),
         ("USERPROFILE", home_str.as_str()),
-        ("LEAN_CTX_DISABLED", "1"),
     ];
 
     let (stdout, stderr, code) = run_with_env(
@@ -541,58 +537,6 @@ fn hook_rewrite_works_with_shell_override() {
                 .as_str()
                 .is_some(),
             "should have command field"
-        );
-    }
-}
-
-#[test]
-fn hook_rewrite_disabled_produces_allow_output() {
-    let input = r#"{"tool_name":"Bash","command":"git status"}"#;
-    let (stdout, _stderr, code) = run_hook_test(
-        &["hook", "rewrite"],
-        &[("LEAN_CTX_DISABLED", "1")],
-        Some(input),
-    );
-    let trimmed = stdout.trim();
-    assert!(
-        !trimmed.is_empty(),
-        "disabled hook should produce ALLOW output"
-    );
-    let v: serde_json::Value =
-        serde_json::from_str(trimmed).expect("disabled hook output should be valid JSON");
-    assert_eq!(
-        v["permission"].as_str().unwrap_or(""),
-        "allow",
-        "disabled hook must output allow, got: {stdout}"
-    );
-    assert_eq!(code, 0, "disabled hook should exit cleanly");
-}
-
-#[test]
-fn codex_pretooluse_disabled_exits_cleanly() {
-    let input =
-        r#"{"tool_name":"Bash","tool_input":{"command":"git status"},"command":"git status"}"#;
-    let (stdout, _stderr, code) = run_hook_test(
-        &["hook", "codex-pretooluse"],
-        &[("LEAN_CTX_DISABLED", "1")],
-        Some(input),
-    );
-    assert_eq!(code, 0, "disabled codex hook should not exit(2)");
-    // #809: even when disabled, the codex hook must emit valid JSON
-    // (empty stdout causes "invalid JSON" errors in Codex CLI).
-    // When disabled it emits an "allow" response.
-    if stdout.trim().is_empty() {
-        // Legacy behavior: some builds still produce empty output.
-    } else {
-        let parsed: serde_json::Value = serde_json::from_str(stdout.trim())
-            .expect("disabled codex hook output must be valid JSON");
-        let decision = parsed
-            .pointer("/hookSpecificOutput/permissionDecision")
-            .and_then(|v| v.as_str());
-        assert_eq!(
-            decision,
-            Some("allow"),
-            "disabled codex hook must allow: {stdout}"
         );
     }
 }
@@ -692,7 +636,6 @@ fn piped_output_is_not_compressed() {
     let script = r#"echo "line one"; echo "line two"; echo "line three""#.to_string();
     let output = Command::new(&bin)
         .args(["-c", &script])
-        .env("LEAN_CTX_DISABLED", "0")
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .output()
@@ -713,7 +656,6 @@ fn lean_ctx_c_preserves_output_when_piped() {
 
     let output = Command::new(&bin)
         .args(["-c", "echo MARKER_STRING_12345"])
-        .env_remove("LEAN_CTX_DISABLED")
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .output()
@@ -734,7 +676,6 @@ fn lean_ctx_c_multiline_preserves_all_lines_when_piped() {
     let cmd = "echo LINE_A && echo LINE_B && echo LINE_C";
     let output = Command::new(&bin)
         .args(["-c", cmd])
-        .env_remove("LEAN_CTX_DISABLED")
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .output()

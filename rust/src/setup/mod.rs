@@ -559,9 +559,7 @@ fn may_autoindex_cwd(cwd: &std::path::Path) -> bool {
 }
 
 fn spawn_index_build_background(root: &std::path::Path) {
-    if std::env::var("LEAN_CTX_DISABLED").is_ok()
-        || matches!(std::env::var("LEAN_CTX_QUIET"), Ok(v) if v.trim() == "1")
-    {
+    if matches!(std::env::var("LEAN_CTX_QUIET"), Ok(v) if v.trim() == "1") {
         return;
     }
     let root_str = crate::core::graph_index::normalize_project_root(&root.to_string_lossy());

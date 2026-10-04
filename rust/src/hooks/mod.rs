@@ -108,7 +108,7 @@ pub const HYBRID_AGENTS: &[&str] = &[
 /// - Hybrid: MCP + shell hooks (fallback for agents without deny support)
 /// - Mcp: MCP server only (no shell hooks available)
 ///
-/// `LEAN_CTX_DISABLED=1` or `shadow_mode = false` cap the mode at Hybrid so
+/// `shadow_mode = false` caps the mode at Hybrid so
 /// the deny-list is never injected when the user opted out (#1037).
 pub fn recommend_hook_mode(agent_key: &str) -> HookMode {
     let deny_suppressed = is_deny_suppressed();
@@ -136,11 +136,7 @@ pub fn recommend_hook_mode(agent_key: &str) -> HookMode {
 
 /// True when the user explicitly opted out of deny-list injection.
 fn is_deny_suppressed() -> bool {
-    if std::env::var("LEAN_CTX_DISABLED").is_ok() {
-        return true;
-    }
-    let cfg = crate::core::config::Config::load();
-    !cfg.shadow_mode
+    !crate::core::config::Config::load().shadow_mode
 }
 use agents::{
     install_amp_hook, install_antigravity_cli_hook, install_antigravity_hook,

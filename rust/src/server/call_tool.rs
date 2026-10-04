@@ -196,11 +196,7 @@ impl LeanCtxServer {
         let is_raw_shell = name == "ctx_shell" && {
             let arg_raw = helpers::get_bool(args, "raw").unwrap_or(false);
             let arg_bypass = helpers::get_bool(args, "bypass").unwrap_or(false);
-            arg_raw
-                || arg_bypass
-                || std::env::var("LEAN_CTX_DISABLED").is_ok()
-                || crate::core::runtime_flags::raw_enabled()
-                || inline_shell
+            arg_raw || arg_bypass || crate::core::runtime_flags::raw_enabled() || inline_shell
         };
 
         let pre_terse_len = result_text.len();

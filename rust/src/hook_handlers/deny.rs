@@ -39,10 +39,6 @@ pub fn handle_deny() {
 }
 
 fn should_allow(tool_name: &str, file_path: Option<&str>) -> bool {
-    if super::is_disabled() {
-        return true;
-    }
-
     if file_path.is_some_and(is_binary_file) {
         return true;
     }

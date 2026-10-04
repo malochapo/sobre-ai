@@ -216,9 +216,9 @@ pub fn generate_hook_powershell(binary: &str) -> String {
     let binary_escaped = binary.replace('\\', "\\\\");
     format!(
         r#"# lean-ctx shell hook — transparent CLI compression (95+ patterns)
-$_leanCtxActivation = if ($env:LEAN_CTX_SHELL_ACTIVATION) {{ $env:LEAN_CTX_SHELL_ACTIVATION }} else {{ "{baked_default}" }}
+$_leanCtxActivation = "{baked_default}"
 $_leanCtxShouldActivate = $false
-if (-not $env:LEAN_CTX_ACTIVE -and -not $env:LEAN_CTX_DISABLED -and -not $env:LEAN_CTX_NO_HOOK) {{
+if (-not $env:LEAN_CTX_ACTIVE) {{
   switch ($_leanCtxActivation) {{
     {{ $_ -in 'off','none','manual' }} {{ $_leanCtxShouldActivate = $false }}
     {{ $_ -in 'agents-only','agents_only','agentsonly' }} {{
@@ -231,7 +231,7 @@ if ($_leanCtxShouldActivate) {{
   $LeanCtxBin = "{binary_escaped}"
   function _lc {{
     $nativeCmd = Get-Command $args[0] -CommandType Application -ErrorAction SilentlyContinue
-    if ($env:LEAN_CTX_DISABLED -or $env:LEAN_CTX_NO_HOOK -or [Console]::IsOutputRedirected) {{
+    if ([Console]::IsOutputRedirected) {{
       if ($nativeCmd) {{ & $nativeCmd.Source $args[1..$args.Length] }} else {{ Write-Error "Command not found: $($args[0])" }}
       return
     }}
@@ -240,7 +240,10 @@ if ($_leanCtxShouldActivate) {{
       if ($nativeCmd) {{ & $nativeCmd.Source $args[1..$args.Length] }} else {{ Write-Error "Command not found: $($args[0])" }}
     }}
   }}
-  function lean-ctx-raw {{ $env:LEAN_CTX_RAW = '1'; & @args; Remove-Item Env:LEAN_CTX_RAW -ErrorAction SilentlyContinue }}
+  function lean-ctx-raw {{
+    $nativeCmd = Get-Command $args[0] -CommandType Application -ErrorAction SilentlyContinue
+    if ($nativeCmd) {{ & $nativeCmd.Source $args[1..$args.Length] }} else {{ Write-Error "Command not found: $($args[0])" }}
+  }}
   if (Get-Command lean-ctx -ErrorAction SilentlyContinue) {{
     function git {{ _lc git @args }}
     function cargo {{ _lc cargo @args }}
@@ -305,17 +308,7 @@ pub fn generate_hook_fish(binary: &str) -> String {
         \tset -q LEAN_CTX_AGENT; or set -q CURSOR_AGENT; or set -q CODEX_CLI_SESSION; or set -q CLAUDECODE; or set -q CODEBUDDY; or set -q GEMINI_SESSION\n\
         end\n\
         \n\
-        function _lean_ctx_notice\n\
-        \tif isatty stdout; and set -q LEAN_CTX_DEBUG\n\
-        \t\techo $argv\n\
-        \tend\n\
-        end\n\
-        \n\
         function _lc\n\
-        \tif set -q LEAN_CTX_DISABLED; or set -q LEAN_CTX_NO_HOOK\n\
-        \t\tcommand $argv\n\
-        \t\treturn\n\
-        \tend\n\
         \tif not isatty stdout; and not _lc_is_agent\n\
         \t\tcommand $argv\n\
         \t\treturn\n\
@@ -330,10 +323,6 @@ pub fn generate_hook_fish(binary: &str) -> String {
         end\n\
         \n\
         function _lc_compress\n\
-        \tif set -q LEAN_CTX_DISABLED; or set -q LEAN_CTX_NO_HOOK\n\
-        \t\tcommand $argv\n\
-        \t\treturn\n\
-        \tend\n\
         \tif not isatty stdout; and not _lc_is_agent\n\
         \t\tcommand $argv\n\
         \t\treturn\n\
@@ -353,7 +342,6 @@ pub fn generate_hook_fish(binary: &str) -> String {
         \tend\n\
         \talias k '_lc kubectl'\n\
         \tset -gx LEAN_CTX_ENABLED 1\n\
-        \t_lean_ctx_notice 'lean-ctx: ON (track mode — output unchanged, token savings recorded)'\n\
         end\n\
         \n\
         function lean-ctx-off\n\
@@ -362,7 +350,6 @@ pub fn generate_hook_fish(binary: &str) -> String {
         \tend\n\
         \tfunctions --erase k 2>/dev/null; true\n\
         \tset -gx LEAN_CTX_ENABLED 0\n\
-        \t_lean_ctx_notice 'lean-ctx: OFF'\n\
         end\n\
         \n\
         function lean-ctx-mode\n\
@@ -373,7 +360,6 @@ pub fn generate_hook_fish(binary: &str) -> String {
         \t\t\t\tend\n\
         \t\t\talias k '_lc_compress kubectl'\n\
         \t\t\tset -gx LEAN_CTX_ENABLED 1\n\
-        \t\t\t_lean_ctx_notice 'lean-ctx: COMPRESS mode (all output compressed)'\n\
         \t\tcase track\n\
         \t\t\tlean-ctx-on\n\
         \t\tcase off\n\
@@ -387,14 +373,11 @@ pub fn generate_hook_fish(binary: &str) -> String {
         end\n\
         \n\
         function lean-ctx-raw\n\
-        \tset -lx LEAN_CTX_RAW 1\n\
         \tcommand $argv\n\
         end\n\
         \n\
         function lean-ctx-status\n\
-        \tif set -q LEAN_CTX_DISABLED\n\
-        \t\tisatty stdout; and echo 'lean-ctx: DISABLED (LEAN_CTX_DISABLED is set)'\n\
-        \telse if set -q LEAN_CTX_ENABLED\n\
+        \tif test (set -q LEAN_CTX_ENABLED; and echo $LEAN_CTX_ENABLED; or echo 0) = '1'\n\
         \t\tisatty stdout; and echo 'lean-ctx: ON'\n\
         \telse\n\
         \t\tisatty stdout; and echo 'lean-ctx: OFF'\n\
@@ -402,11 +385,10 @@ pub fn generate_hook_fish(binary: &str) -> String {
         end\n\
         \n\
         function _lean_ctx_should_activate\n\
-        \tif set -q LEAN_CTX_ACTIVE; or set -q LEAN_CTX_DISABLED; or test (set -q LEAN_CTX_ENABLED; and echo $LEAN_CTX_ENABLED; or echo 1) = '0'\n\
+        \tif set -q LEAN_CTX_ACTIVE; or test (set -q LEAN_CTX_ENABLED; and echo $LEAN_CTX_ENABLED; or echo 1) = '0'\n\
         \t\treturn 1\n\
         \tend\n\
-        \tset -l _lc_mode (set -q LEAN_CTX_SHELL_ACTIVATION; and echo $LEAN_CTX_SHELL_ACTIVATION; or echo '{baked_default}')\n\
-        \tswitch $_lc_mode\n\
+        \tswitch '{baked_default}'\n\
         \t\tcase off none manual\n\
         \t\t\treturn 1\n\
         \t\tcase 'agents-only' agents_only agentsonly\n\
@@ -457,15 +439,7 @@ _lc_is_agent() {{
     [ -n "${{LEAN_CTX_AGENT:-}}" ] || [ -n "${{CURSOR_AGENT:-}}" ] || [ -n "${{CODEX_CLI_SESSION:-}}" ] || [ -n "${{CLAUDECODE:-}}" ] || [ -n "${{CODEBUDDY:-}}" ] || [ -n "${{GEMINI_SESSION:-}}" ]
 }}
 
-_lean_ctx_notice() {{
-    [ -n "${{LEAN_CTX_DEBUG:-}}" ] && [ -t 1 ] && echo "$@"
-}}
-
 _lc() {{
-    if [ -n "${{LEAN_CTX_DISABLED:-}}" ] || [ -n "${{LEAN_CTX_NO_HOOK:-}}" ]; then
-        command "$@"
-        return
-    fi
     if [ ! -t 1 ] && ! _lc_is_agent; then
         command "$@"
         return
@@ -480,10 +454,6 @@ _lc() {{
 }}
 
 _lc_compress() {{
-    if [ -n "${{LEAN_CTX_DISABLED:-}}" ] || [ -n "${{LEAN_CTX_NO_HOOK:-}}" ]; then
-        command "$@"
-        return
-    fi
     if [ ! -t 1 ] && ! _lc_is_agent; then
         command "$@"
         return
@@ -504,7 +474,6 @@ lean-ctx-on() {{
     done
     alias k='_lc kubectl'
     export LEAN_CTX_ENABLED=1
-    _lean_ctx_notice "lean-ctx: ON (track mode — output unchanged, token savings recorded)"
 }}
 
 lean-ctx-off() {{
@@ -513,7 +482,6 @@ lean-ctx-off() {{
     done
     unalias k 2>/dev/null || true
     export LEAN_CTX_ENABLED=0
-    _lean_ctx_notice "lean-ctx: OFF"
 }}
 
 lean-ctx-mode() {{
@@ -525,7 +493,6 @@ lean-ctx-mode() {{
             done
             alias k='_lc_compress kubectl'
             export LEAN_CTX_ENABLED=1
-            _lean_ctx_notice "lean-ctx: COMPRESS mode (all output compressed)"
             ;;
         track)
             lean-ctx-on
@@ -543,13 +510,11 @@ lean-ctx-mode() {{
 }}
 
 lean-ctx-raw() {{
-    LEAN_CTX_RAW=1 command "$@"
+    command "$@"
 }}
 
 lean-ctx-status() {{
-    if [ -n "${{LEAN_CTX_DISABLED:-}}" ]; then
-        [ -t 1 ] && echo "lean-ctx: DISABLED (LEAN_CTX_DISABLED is set)"
-    elif [ -n "${{LEAN_CTX_ENABLED:-}}" ]; then
+    if [ "${{LEAN_CTX_ENABLED:-0}}" = "1" ]; then
         [ -t 1 ] && echo "lean-ctx: ON"
     else
         [ -t 1 ] && echo "lean-ctx: OFF"
@@ -572,8 +537,8 @@ if [ -n "${{ZSH_VERSION:-}}" ]; then
 fi
 
 _lean_ctx_should_activate() {{
-    [ -z "${{LEAN_CTX_ACTIVE:-}}" ] && [ -z "${{LEAN_CTX_DISABLED:-}}" ] && [ "${{LEAN_CTX_ENABLED:-1}}" != "0" ] || return 1
-    case "${{LEAN_CTX_SHELL_ACTIVATION:-{baked_default}}}" in
+    [ -z "${{LEAN_CTX_ACTIVE:-}}" ] && [ "${{LEAN_CTX_ENABLED:-1}}" != "0" ] || return 1
+    case "{baked_default}" in
         off|none|manual) return 1 ;;
         agents-only|agents_only|agentsonly)
             _lc_is_agent ;;
@@ -752,8 +717,7 @@ fn lc_shim_dir() -> Option<std::path::PathBuf> {
 }
 
 /// Body of a `_lc`/`_lc_compress` PATH shim. Mirrors the hook's shell function
-/// of the same name: honor the disable switches, pass through raw for a
-/// non-TTY non-agent shell, otherwise route through the binary and fall back to
+/// of the same name: pass through raw for a non-TTY non-agent shell, otherwise route through the binary and fall back to
 /// running the command directly if the binary itself cannot exec (126/127).
 fn shim_script(name: &str, binary: &str, flag: &str) -> String {
     format!(
@@ -765,9 +729,6 @@ fn shim_script(name: &str, binary: &str, flag: &str) -> String {
          # xargs/find -exec, a pipeline's outer shell, and agent harnesses that\n\
          # snapshot+replay the shell and drop the function but keep the aliases\n\
          # that call it. Without it those contexts fail `{name}: command not found`.\n\
-         if [ -n \"${{LEAN_CTX_DISABLED:-}}\" ] || [ -n \"${{LEAN_CTX_NO_HOOK:-}}\" ]; then\n\
-         \texec \"$@\"\n\
-         fi\n\
          if [ ! -t 1 ] && [ -z \"${{LEAN_CTX_AGENT:-}}\" ] && [ -z \"${{CURSOR_AGENT:-}}\" ] && [ -z \"${{CODEX_CLI_SESSION:-}}\" ] \\\n\
          \t&& [ -z \"${{CLAUDECODE:-}}\" ] && [ -z \"${{CODEBUDDY:-}}\" ] && [ -z \"${{GEMINI_SESSION:-}}\" ]; then\n\
          \texec \"$@\"\n\
@@ -905,7 +866,6 @@ mod tests {
         assert!(s.contains("'/usr/bin/lean-ctx' -t \"$@\""), "{s}");
         assert!(s.contains("exec \"$@\""), "{s}");
         assert!(s.contains("CLAUDECODE"), "{s}");
-        assert!(s.contains("LEAN_CTX_DISABLED"), "{s}");
     }
 
     #[test]

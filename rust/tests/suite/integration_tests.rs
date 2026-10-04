@@ -58,40 +58,19 @@ fn shell_hook_compresses_echo() {
 }
 
 #[test]
-fn disabled_env_bypasses_compression() {
-    let output = Command::new(env!("CARGO_BIN_EXE_lean-ctx"))
-        .current_dir(env!("CARGO_MANIFEST_DIR"))
-        .env("LEAN_CTX_DISABLED", "1")
-        .env("LEAN_CTX_COMPRESS", "1")
-        .env("__LEAN_CTX_SKIP_EVENTS", "1")
-        .args(["-c", "echo", "passthrough test"])
-        .output()
-        .expect("failed to run lean-ctx with LEAN_CTX_DISABLED");
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(
-        stdout.contains("passthrough"),
-        "LEAN_CTX_DISABLED should pass output through unmodified"
-    );
-    assert!(
-        !stdout.contains("[lean-ctx:"),
-        "LEAN_CTX_DISABLED should not add compression markers"
-    );
-}
-
-#[test]
-fn help_shows_environment_section() {
+fn help_shows_escape_hatches() {
     let output = lean_ctx_bin()
         .arg("--help")
         .output()
         .expect("failed to run lean-ctx");
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(
-        stdout.contains("LEAN_CTX_DISABLED"),
-        "help should document LEAN_CTX_DISABLED"
+        stdout.contains("lean-ctx raw"),
+        "help should document `lean-ctx raw`"
     );
     assert!(
-        stdout.contains("LEAN_CTX_RAW"),
-        "help should document LEAN_CTX_RAW"
+        stdout.contains("lean-ctx-off"),
+        "help should document `lean-ctx-off`"
     );
 }
 
@@ -123,14 +102,13 @@ fn pipe_guard_force_compress_overrides_pipe_guard() {
     }
     let output = Command::new(env!("CARGO_BIN_EXE_lean-ctx"))
         .current_dir(env!("CARGO_MANIFEST_DIR"))
-        .env("LEAN_CTX_COMPRESS", "1")
         .env("__LEAN_CTX_SKIP_EVENTS", "1")
         .args(["-c", "echo hello world"])
         .output()
-        .expect("failed to run lean-ctx -c with LEAN_CTX_COMPRESS");
+        .expect("failed to run lean-ctx -c with piped stdout");
     assert!(
         output.status.success(),
-        "LEAN_CTX_COMPRESS should not crash even with piped stdout"
+        "`-c` should not crash even with piped stdout"
     );
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(
@@ -181,21 +159,15 @@ fn redirect_fidelity_command() -> &'static str {
 }
 
 /// `lean-ctx -c` with a *hermetic* control environment for the compression
-/// fidelity tests. A developer's shell hook exports `LEAN_CTX_RAW` /
-/// `LEAN_CTX_DISABLED` (and CI may set `LEAN_CTX_ACTIVE`) — each forces raw
-/// passthrough, which would make these tests assert nothing (the redirect test
-/// would pass vacuously). Stripping them pins the exact forced-compress path.
-/// `LEAN_CTX_WRAPPED` must go too: running `cargo test` *through* the lean-ctx
+/// fidelity tests. CI may set `LEAN_CTX_ACTIVE`; stripping it pins the exact
+/// forced-compress path. `LEAN_CTX_WRAPPED` must go too: running `cargo test` *through* the lean-ctx
 /// wrapper stamps it on every child, and the nested `lean-ctx -c` under test
 /// would then (correctly) defer to the parent instead of compressing.
 fn forced_compress_bin() -> Command {
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_lean-ctx"));
     cmd.current_dir(env!("CARGO_MANIFEST_DIR"))
-        .env_remove("LEAN_CTX_RAW")
-        .env_remove("LEAN_CTX_DISABLED")
         .env_remove("LEAN_CTX_ACTIVE")
         .env_remove("LEAN_CTX_WRAPPED")
-        .env("LEAN_CTX_COMPRESS", "1")
         .env("__LEAN_CTX_SKIP_EVENTS", "1")
         // Allowlist enforcement (non-TTY stderr ⇒ block) is out of scope here;
         // the fidelity scripts use `while` loops that are not allowlisted.
@@ -236,7 +208,7 @@ fn force_compress_redirect_to_file_is_byte_faithful() {
 
     assert_eq!(
         file_content, raw_stdout,
-        "redirect to a regular file under LEAN_CTX_COMPRESS must be byte-faithful (never compressed)"
+        "redirect to a regular file under `-c` must be byte-faithful (never compressed)"
     );
 }
 
@@ -264,7 +236,7 @@ fn force_compress_pipe_still_compresses() {
 
     assert_ne!(
         piped_stdout, raw_stdout,
-        "piped stdout under LEAN_CTX_COMPRESS should be compressed (changed) — proves the redirect guard is meaningful"
+        "piped stdout under `-c` should be compressed (changed) — proves the redirect guard is meaningful"
     );
 }
 

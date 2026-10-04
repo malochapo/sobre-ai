@@ -231,9 +231,7 @@ impl McpTool for CtxShellTool {
 
             let arg_raw = get_bool(args, "raw").unwrap_or(false);
             let arg_bypass = get_bool(args, "bypass").unwrap_or(false);
-            let env_disabled = std::env::var("LEAN_CTX_DISABLED").is_ok();
-            let env_raw = std::env::var("LEAN_CTX_RAW").is_ok();
-            let (raw, bypass) = resolve_shell_raw_flags(arg_raw, arg_bypass, env_disabled, env_raw);
+            let (raw, bypass) = (arg_raw || arg_bypass, arg_bypass);
 
             let crp_mode = ctx.crp_mode;
             let cmd_clone = command.clone();
@@ -431,18 +429,6 @@ impl McpTool for CtxShellTool {
             })
         })
     }
-}
-
-#[allow(clippy::fn_params_excessive_bools)]
-fn resolve_shell_raw_flags(
-    arg_raw: bool,
-    arg_bypass: bool,
-    env_disabled: bool,
-    env_raw: bool,
-) -> (bool, bool) {
-    let bypass = arg_bypass || env_raw;
-    let raw = arg_raw || bypass || env_disabled;
-    (raw, bypass)
 }
 
 /// A timeout notice is framework metadata, not recoverable command output. Do

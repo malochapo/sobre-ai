@@ -65,7 +65,6 @@ fn run_init(bin: &str, env: &TestEnv, agent: &str) {
     let out = base_cmd(bin, env)
         .args(["init", "--agent", agent, "--global", "--mode", "mcp"])
         .env("LEAN_CTX_ACTIVE", "1")
-        .env("LEAN_CTX_DISABLED", "1")
         .output()
         .expect("init spawn");
     assert!(

@@ -662,17 +662,6 @@ fn roundtrip_unix_path() {
 }
 
 #[test]
-fn disabled_env_caps_replace_at_hybrid() {
-    let _env = crate::core::data_dir::test_env_lock();
-    crate::test_env::set_var("LEAN_CTX_DISABLED", "1");
-    assert_eq!(recommend_hook_mode("claude"), HookMode::Hybrid);
-    assert_eq!(recommend_hook_mode("cursor"), HookMode::Hybrid);
-    assert_eq!(recommend_hook_mode("crush"), HookMode::Hybrid);
-    assert_eq!(recommend_hook_mode("unknown-agent"), HookMode::Mcp);
-    crate::test_env::remove_var("LEAN_CTX_DISABLED");
-}
-
-#[test]
 fn shadow_mode_false_caps_replace_at_hybrid() {
     let iso = crate::core::data_dir::isolated_data_dir();
     std::fs::write(iso.path().join("config.toml"), "shadow_mode = false\n").unwrap();

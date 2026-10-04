@@ -82,7 +82,6 @@ fn lean_ctx() -> Command {
     // side-effect-free (no daemon, no real HOME writes).
     cmd.env("LEAN_CTX_ACTIVE", "1");
     cmd.env("HOME", "/tmp/lean-ctx-entrypoint-test");
-    cmd.env("LEAN_CTX_DISABLED", "1");
     cmd
 }
 

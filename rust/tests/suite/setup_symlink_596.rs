@@ -66,7 +66,6 @@ fn run_init(sb: &Sandbox, agent: &str) -> std::process::Output {
         .env("HOME", &sb.home)
         .env("LEAN_CTX_DATA_DIR", &sb.data)
         .env("LEAN_CTX_ACTIVE", "1")
-        .env("LEAN_CTX_DISABLED", "1")
         .env("SHELL", "/bin/bash")
         .env("PATH", &path)
         .output()

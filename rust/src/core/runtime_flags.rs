@@ -56,11 +56,11 @@ pub fn add_allow_paths(paths: Vec<PathBuf>) {
 }
 
 pub fn raw_enabled() -> bool {
-    RAW.load(Ordering::Relaxed) || std::env::var("LEAN_CTX_RAW").is_ok()
+    RAW.load(Ordering::Relaxed)
 }
 
 pub fn compress_enabled() -> bool {
-    COMPRESS.load(Ordering::Relaxed) || std::env::var("LEAN_CTX_COMPRESS").is_ok()
+    COMPRESS.load(Ordering::Relaxed)
 }
 
 pub fn quiet_enabled() -> bool {
