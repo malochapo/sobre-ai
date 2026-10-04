@@ -80,6 +80,10 @@ pub fn run() {
                 crate::cli::embeddings_cmd::cmd_embeddings(&rest);
                 return;
             }
+            "pricing" => {
+                crate::cli::pricing_cmd::cmd_pricing(&rest);
+                return;
+            }
             "rules" => {
                 crate::cli::rules_cmd::cmd_rules(&rest);
                 return;

@@ -17,6 +17,7 @@ mod introspect_cmd;
 mod knowledge_cmd;
 mod learn_cmd;
 mod output_savings_cmd;
+pub(crate) mod pricing_cmd;
 pub(crate) mod prompt;
 mod read_cmd;
 mod repomap_cmd;

@@ -141,6 +141,7 @@ COMMANDS:
     snapshot create|list|show|verify|restore|publish|import  Context Time Machine: git-anchored, signed snapshots; replay, resume + share
     index <status|build|build-full|watch> [--force]  Codebase index utilities
     embeddings <status|provision>  Managed ONNX Runtime for semantic embeddings (official CPU build, sha256-pinned)
+    pricing <status|refresh>       Live model prices: fetched only on `refresh` (openrouter.ai, LiteLLM map)
     cep                            CEP report (compression metrics, cache, modes, trends)
     verify-cache [path] [--json]   Prove the session cache: re-read collapses to a ~13-token stub
     health [path] [--json] [--gate]  Code-health report: cognitive complexity, naming, navigability score + token tax
