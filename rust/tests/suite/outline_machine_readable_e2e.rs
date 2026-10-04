@@ -219,9 +219,8 @@ impl McpSession {
     }
 
     /// Poll `ctx_compose` without a task (the session-start overview) until the
-    /// project graph is loaded in-process. This tool returns `None` from the
-    /// autonomy pre-hook *before* the briefing flag is touched, so warming this
-    /// way never consumes the once-per-session slot.
+    /// project graph is ready. That call counts as the session briefing, so a
+    /// session warmed this way gets no further auto-context.
     fn warm_overview(&mut self) {
         for i in 0..50 {
             let overview = self.call(1000 + i, "ctx_compose", &json!({}));
@@ -256,10 +255,14 @@ fn json_first_call_is_pure_and_preserves_wakeup_briefing() {
     let sandbox = McpSandbox::new();
     sandbox.build_index();
 
+    // Warm the project graph in a throwaway session so the briefing content is
+    // ready deterministically: the overview call closes that session's
+    // briefing slot, so the assertions run in a fresh session.
+    let mut warmup = McpSession::start(&sandbox);
+    warmup.warm_overview();
+    warmup.shutdown();
+
     let mut session = McpSession::start(&sandbox);
-    // Warm the in-process graph so the briefing content is ready deterministically
-    // (without consuming the once-per-session briefing flag).
-    session.warm_overview();
 
     // Call A is json (machine-readable) and is the first *flag-eligible* tool
     // call; B and C are plain-text outlines.
@@ -306,5 +309,23 @@ fn json_first_call_is_pure_and_preserves_wakeup_briefing() {
     assert!(
         !call_c.contains("AUTO CONTEXT"),
         "briefing must fire only once per session; the third call must be clean:\n{call_c}"
+    );
+}
+
+#[test]
+fn session_overview_call_is_the_only_project_summary() {
+    let sandbox = McpSandbox::new();
+    sandbox.build_index();
+
+    let mut session = McpSession::start(&sandbox);
+    // The ready overview is the session's project summary.
+    session.warm_overview();
+    let next = session.call(2, "ctx_outline", &json!({ "path": "sample.rs" }));
+    session.shutdown();
+
+    assert!(
+        !next.contains("AUTO CONTEXT"),
+        "the overview already summarized the project; the next call must not \
+         repeat it as a briefing:\n{next}"
     );
 }

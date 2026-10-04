@@ -57,10 +57,12 @@ impl LeanCtxServer {
         // it here would burn the once-per-session slot for a briefing we then
         // throw away. Deferring keeps the briefing intact for the next call.
         // The session-start overview call already returns that briefing's
-        // content, so it defers it the same way.
-        let auto_context = if machine_readable
-            || crate::tools::autonomy::is_session_overview_call(name, args)
-        {
+        // content, so it counts as the briefing: the slot is closed and the
+        // project summary is not sent a second time on the next call.
+        let auto_context = if machine_readable {
+            None
+        } else if crate::tools::autonomy::is_session_overview_call(name, args) {
+            crate::tools::autonomy::mark_session_briefed(&self.autonomy);
             None
         } else {
             let task = {
@@ -428,10 +430,7 @@ impl LeanCtxServer {
         }
 
         if !is_raw_shell && let Some(ctx) = auto_context {
-            let ctx_tokens = crate::core::tokens::count_tokens(&ctx);
-            if ctx_tokens <= 400 {
-                result_text = format!("{ctx}\n\n{result_text}");
-            }
+            result_text = format!("{ctx}\n\n{result_text}");
         }
 
         if let Some(warning) = throttle_warning {

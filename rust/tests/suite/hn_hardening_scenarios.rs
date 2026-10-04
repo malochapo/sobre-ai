@@ -504,15 +504,16 @@ mod first_contact {
 
     #[test]
     fn scenario_token_budget_enforced() {
-        let src = crate::suite::hn_hardening_scenarios::server_dispatch_src();
-        let auto_ctx_pos = src
-            .find("let Some(ctx) = auto_context")
-            .expect("auto_context block must exist");
-        let block = &src[auto_ctx_pos..auto_ctx_pos + 300];
-
+        // The briefing is cut to its budget where it is built, not dropped at
+        // the call site.
+        let src = include_str!("../../src/tools/autonomy.rs");
         assert!(
-            block.contains("ctx_tokens <= 400"),
-            "auto_context must enforce 400 token budget: {block}"
+            src.contains("pub const BRIEFING_MAX_TOKENS: usize = 400;"),
+            "auto_context must enforce a 400 token budget"
+        );
+        assert!(
+            src.contains("Some(format_briefing(&result))"),
+            "the session briefing must go through the budget cut"
         );
     }
 
