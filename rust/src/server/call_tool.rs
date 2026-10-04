@@ -60,7 +60,6 @@ impl LeanCtxServer {
             if let Ok(mut cache) = cache_timeout {
                 crate::tools::autonomy::session_lifecycle_pre_hook(
                     &self.autonomy,
-                    name,
                     &mut cache,
                     task.as_deref(),
                     project_root.as_deref(),
@@ -207,8 +206,6 @@ impl LeanCtxServer {
         let pre_terse_len = result_text.len();
         let output_tokens = crate::core::tokens::count_tokens(&result_text) as u64;
 
-        crate::core::anomaly::record_metric("tokens_per_call", output_tokens as f64);
-
         // Context IR: record lineage for every tool call.
         if let Some(ref ir) = self.context_ir {
             let tool_duration = tool_start.elapsed();
@@ -259,15 +256,6 @@ impl LeanCtxServer {
             }
             let correction_count = detector.correction_count();
             let retrieve_count = detector.retrieve_count();
-            if correction_count > 0 {
-                crate::core::anomaly::record_metric(
-                    "correction_loop_rate",
-                    f64::from(correction_count),
-                );
-            }
-            if retrieve_count > 0 {
-                crate::core::anomaly::record_metric("ccr_retrieve_rate", f64::from(retrieve_count));
-            }
             // Auto-degrade: reduce compression when the agent keeps re-fetching what
             // we squeezed out. Correction loops (re-reads/re-runs) and CCR retrieves
             // (ctx_expand/ctx_retrieve) are two views of the same "too aggressive"
@@ -280,9 +268,6 @@ impl LeanCtxServer {
             ));
             detector.prune_corrections();
         }
-
-        // Persist anomaly detector — debounced to reduce I/O in burst sequences.
-        crate::core::anomaly::save_debounced();
 
         // #212 — per-item sensitivity floor. Enforced uniformly here (before
         // archiving + compression) so it covers both the inline result and the
@@ -403,7 +388,6 @@ impl LeanCtxServer {
             if minimal {
                 let cache_clone = self.cache.clone();
                 let autonomy_clone = self.autonomy.clone();
-                let name_owned = name.to_string();
                 tokio::spawn(async move {
                     let result = std::panic::AssertUnwindSafe(async {
                         // #807: bounded lock — the old unbounded `.write().await`
@@ -415,11 +399,7 @@ impl LeanCtxServer {
                         )
                         .await;
                         if let Ok(mut cache) = cache_timeout {
-                            crate::tools::autonomy::maybe_auto_dedup(
-                                &autonomy_clone,
-                                &mut cache,
-                                &name_owned,
-                            );
+                            crate::tools::autonomy::maybe_auto_dedup(&autonomy_clone, &mut cache);
                         } else {
                             tracing::debug!(
                                 "background auto_dedup: cache lock timeout (5s), skipping"
@@ -465,7 +445,7 @@ impl LeanCtxServer {
                     if let Some(hint) = enrich.related_hint {
                         result_text = format!("{result_text}\n{hint}");
                     }
-                    crate::tools::autonomy::maybe_auto_dedup(&self.autonomy, &mut cache, name);
+                    crate::tools::autonomy::maybe_auto_dedup(&self.autonomy, &mut cache);
                 } else {
                     tracing::warn!(
                         "post-dispatch cache lock timeout (3s) for {read_path}, skipping enrichment"

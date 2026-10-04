@@ -36,7 +36,6 @@ fn session_lifecycle_fires_once() {
 
     let _first = session_lifecycle_pre_hook(
         &state,
-        "ctx_read",
         &mut cache,
         Some("fix auth bug"),
         Some("/tmp/test-project"),
@@ -45,7 +44,6 @@ fn session_lifecycle_fires_once() {
 
     let second = session_lifecycle_pre_hook(
         &state,
-        "ctx_read",
         &mut cache,
         Some("fix auth bug"),
         Some("/tmp/test-project"),
@@ -64,14 +62,8 @@ fn session_lifecycle_skips_without_project_root() {
     let state = make_state();
     let mut cache = SessionCache::new();
 
-    let result = session_lifecycle_pre_hook(
-        &state,
-        "ctx_read",
-        &mut cache,
-        Some("fix auth bug"),
-        None,
-        CrpMode::Tdd,
-    );
+    let result =
+        session_lifecycle_pre_hook(&state, &mut cache, Some("fix auth bug"), None, CrpMode::Tdd);
 
     assert!(result.is_none(), "must skip when project_root is None");
     assert!(
@@ -101,14 +93,7 @@ fn session_lifecycle_disabled_returns_none() {
     let state = make_disabled_state();
     let mut cache = SessionCache::new();
 
-    let result = session_lifecycle_pre_hook(
-        &state,
-        "ctx_read",
-        &mut cache,
-        Some("task"),
-        None,
-        CrpMode::Tdd,
-    );
+    let result = session_lifecycle_pre_hook(&state, &mut cache, Some("task"), None, CrpMode::Tdd);
 
     assert!(result.is_none(), "disabled state must return None");
     assert!(
@@ -128,7 +113,7 @@ fn auto_dedup_fires_at_threshold() {
         cache.store(&path, &content);
     }
 
-    maybe_auto_dedup(&state, &mut cache, "ctx_read");
+    maybe_auto_dedup(&state, &mut cache);
     assert!(
         state.dedup_applied.load(Ordering::SeqCst),
         "dedup must be applied at threshold"
@@ -145,7 +130,7 @@ fn auto_dedup_skips_below_threshold() {
         cache.store(&path, &format!("content {i}"));
     }
 
-    maybe_auto_dedup(&state, &mut cache, "ctx_read");
+    maybe_auto_dedup(&state, &mut cache);
     assert!(
         !state.dedup_applied.load(Ordering::SeqCst),
         "dedup must NOT be applied below threshold"
@@ -161,7 +146,7 @@ fn auto_dedup_disabled() {
         cache.store(&format!("f{i}.rs"), &format!("c{i}"));
     }
 
-    maybe_auto_dedup(&state, &mut cache, "ctx_read");
+    maybe_auto_dedup(&state, &mut cache);
     assert!(!state.dedup_applied.load(Ordering::SeqCst));
 }
 

@@ -31,7 +31,6 @@ pub(crate) fn handle(
         let mut relevance = compute_relevance(gp, &task_files, &task_keywords);
         crate::core::git_signals::apply_boost(&mut relevance, project_root);
         crate::core::diagnostics_store::apply_boost(&mut relevance);
-        crate::core::editor_signal::apply_boost(&mut relevance);
         for r in relevance.iter().take(50) {
             if r.score < 0.1 {
                 break;
@@ -78,11 +77,9 @@ pub(crate) fn handle(
     let jail_root = Path::new(project_root);
     for p in &picked {
         let full = to_fs_path(project_root, p);
-        let Ok((jailed, warning)) = crate::core::io_boundary::jail_and_check_path(
-            "ctx_prefetch",
-            Path::new(&full),
-            jail_root,
-        ) else {
+        let Ok((jailed, warning)) =
+            crate::core::io_boundary::jail_and_check_path(Path::new(&full), jail_root)
+        else {
             continue;
         };
         if warning.is_some() {

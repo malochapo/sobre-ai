@@ -151,7 +151,7 @@ impl LeanCtxServer {
             }
         };
 
-        crate::core::io_boundary::check_secret_path_for_tool("resolve_path", &jailed)?;
+        crate::core::io_boundary::check_secret_path(&jailed)?;
 
         Ok(crate::core::pathutil::normalize_tool_path(
             &jailed.to_string_lossy().replace('\\', "/"),

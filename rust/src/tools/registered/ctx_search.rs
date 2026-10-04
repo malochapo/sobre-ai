@@ -200,9 +200,7 @@ fn handle_regex(args: &Map<String, Value>, ctx: &ToolContext) -> Result<ToolOutp
     let exclude = get_str(args, "exclude");
     let exclude_pattern = get_str(args, "exclude_pattern");
 
-    if no_gitignore
-        && let Err(e) = crate::core::io_boundary::ensure_ignore_gitignore_allowed("ctx_search")
-    {
+    if no_gitignore && let Err(e) = crate::core::io_boundary::ensure_ignore_gitignore_allowed() {
         return Ok(ToolOutput::simple(e));
     }
 

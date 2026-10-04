@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use crate::core::{events, pathjail, secret_detection};
+use crate::core::{pathjail, secret_detection};
 
 /// Reads a file without following symlinks (TOCTOU protection).
 /// Falls back to regular read on non-Unix platforms.
@@ -171,7 +171,7 @@ pub fn is_secret_like(path: &Path) -> Option<&'static str> {
     None
 }
 
-pub fn check_secret_path_for_tool(tool: &str, path: &Path) -> Result<Option<String>, String> {
+pub fn check_secret_path(path: &Path) -> Result<Option<String>, String> {
     let mode = boundary_mode_effective();
 
     let Some(reason) = is_secret_like(path) else {
@@ -182,7 +182,6 @@ pub fn check_secret_path_for_tool(tool: &str, path: &Path) -> Result<Option<Stri
         "[I/O BOUNDARY] Secret-like path detected ({reason}): {}.",
         path.display()
     );
-    events::emit_policy_violation(tool, &msg);
 
     match mode {
         BoundaryMode::Enforce => Err(format!("ERROR: {msg}")),
@@ -197,31 +196,17 @@ pub fn check_secret_path_for_tool(tool: &str, path: &Path) -> Result<Option<Stri
 }
 
 pub fn jail_and_check_path(
-    tool: &str,
     candidate: &Path,
     jail_root: &Path,
 ) -> Result<(PathBuf, Option<String>), String> {
-    let jailed = pathjail::jail_path(candidate, jail_root).map_err(|e| {
-        // Only a real jail escape is a security event. A path that simply doesn't exist
-        // (stale graph entry, removed file) is benign — emitting a policy violation for it
-        // spams the event feed and mislabels missing files as denials.
-        if !matches!(
-            e,
-            crate::core::error::PathJailError::NoExistingAncestor { .. }
-        ) {
-            let msg = format!("pathjail denied: {} ({e})", candidate.display());
-            events::emit_policy_violation(tool, &msg);
-        }
-        e.to_string()
-    })?;
-    let warning = check_secret_path_for_tool(tool, &jailed)?;
+    let jailed = pathjail::jail_path(candidate, jail_root).map_err(|e| e.to_string())?;
+    let warning = check_secret_path(&jailed)?;
     Ok((jailed, warning))
 }
 
-pub fn ensure_ignore_gitignore_allowed(tool: &str) -> Result<(), String> {
+pub fn ensure_ignore_gitignore_allowed() -> Result<(), String> {
     let msg =
         "[I/O BOUNDARY] ignore_gitignore is not supported: .gitignore'd paths are never scanned.";
-    events::emit_policy_violation(tool, msg);
     Err(format!("ERROR: {msg}"))
 }
 

@@ -152,28 +152,7 @@ impl FeedbackStore {
             "aggressive"
         };
 
-        let old_mean = bandit
-            .arms
-            .iter()
-            .find(|a| a.name == arm_name)
-            .map_or(0.5, super::bandit::BanditArm::mean);
-
         bandit.update(arm_name, success);
-
-        let new_mean = bandit
-            .arms
-            .iter()
-            .find(|a| a.name == arm_name)
-            .map_or(0.5, super::bandit::BanditArm::mean);
-
-        if (new_mean - old_mean).abs() > 0.05 {
-            crate::core::events::emit_threshold_adapted(
-                &outcome.language,
-                arm_name,
-                old_mean,
-                new_mean,
-            );
-        }
 
         if bandit.total_pulls > 0 && bandit.total_pulls.is_multiple_of(50) {
             bandit.decay_all(0.95);
@@ -236,13 +215,6 @@ impl FeedbackStore {
 
         if (old_entropy - entry.entropy).abs() > 0.01 || (old_jaccard - entry.jaccard).abs() > 0.01
         {
-            crate::core::events::emit(crate::core::events::EventKind::ThresholdShift {
-                language: language.to_string(),
-                old_entropy,
-                new_entropy: entry.entropy,
-                old_jaccard,
-                new_jaccard: entry.jaccard,
-            });
         }
     }
 

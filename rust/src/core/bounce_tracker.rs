@@ -155,17 +155,6 @@ impl BounceTracker {
                     norm_path,
                     crate::core::threshold_learning::QualitySignal::Bounce,
                 );
-                // Stigmergy (#540): a bounce marks this path as Stuck so
-                // other agents see friction here. Background: lock may block.
-                let scent_path = norm_path.to_string();
-                std::thread::spawn(move || {
-                    crate::core::scent_field::deposit(
-                        crate::core::scent_field::scent_agent_id(),
-                        crate::core::scent_field::ScentKind::Stuck,
-                        &scent_path,
-                        0.5,
-                    );
-                });
             }
         }
     }

@@ -77,11 +77,6 @@ name = "gen_rules"
 path = "src/bin/gen_rules.rs"
 required-features = ["dev-tools"]
 
-[[example]]
-name = "seed_observatory"
-path = "src/bin/seed_observatory.rs"
-required-features = ["dev-tools"]
-
 [features]
 default = [
   "tree-sitter",

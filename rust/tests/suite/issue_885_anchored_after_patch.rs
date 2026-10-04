@@ -27,7 +27,6 @@ fn ctx_for(root: &std::path::Path, file: &str) -> ToolContext {
         agent_id: None,
         ledger: None,
         client_name: None,
-        pipeline_stats: None,
         call_count: None,
         autonomy: None,
         pressure_snapshot: None,

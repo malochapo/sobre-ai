@@ -5,29 +5,11 @@ use std::path::PathBuf;
 
 use crate::core::a2a::message::{A2AMessage, MessageCategory, MessagePriority, PrivacyLevel};
 
-pub(crate) const LOGICAL_SESSION_TTL_SECONDS: u64 = 180;
-const LOGICAL_SESSION_SOURCE_MAX_BYTES: usize = 64;
-const LOGICAL_SESSION_WORKSPACE_MAX_BYTES: usize = 4096;
-const LOGICAL_SESSION_ID_MAX_BYTES: usize = 256;
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AgentRegistry {
     pub agents: Vec<AgentEntry>,
     pub scratchpad: Vec<ScratchpadEntry>,
-    #[serde(default)]
-    pub logical_sessions: Vec<LogicalSessionPresence>,
-    #[serde(default)]
-    pub logical_session_telemetry_seen: bool,
     pub updated_at: DateTime<Utc>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct LogicalSessionPresence {
-    pub source: String,
-    pub workspace: String,
-    pub session_id: String,
-    pub opened_at: DateTime<Utc>,
-    pub last_heartbeat: DateTime<Utc>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -115,8 +97,6 @@ impl AgentRegistry {
         Self {
             agents: Vec::new(),
             scratchpad: Vec::new(),
-            logical_sessions: Vec::new(),
-            logical_session_telemetry_seen: false,
             updated_at: Utc::now(),
         }
     }
@@ -158,7 +138,6 @@ impl AgentRegistry {
         });
 
         self.updated_at = Utc::now();
-        crate::core::events::emit_agent_action(&agent_id, "register", None);
         agent_id
     }
 
@@ -196,95 +175,6 @@ impl AgentRegistry {
         }
         self.updated_at = Utc::now();
     }
-    /// Records explicit logical-session presence supplied by an owning editor
-    /// integration. Tool activity is deliberately never treated as a session.
-    pub fn open_or_heartbeat_logical_session(
-        &mut self,
-        source: &str,
-        workspace: &str,
-        session_id: &str,
-    ) {
-        let now = Utc::now();
-        self.logical_session_telemetry_seen = true;
-        if let Some(session) = self.logical_sessions.iter_mut().find(|session| {
-            session.source == source
-                && session.workspace == workspace
-                && session.session_id == session_id
-        }) {
-            session.last_heartbeat = now;
-        } else {
-            self.logical_sessions.push(LogicalSessionPresence {
-                source: source.to_string(),
-                workspace: workspace.to_string(),
-                session_id: session_id.to_string(),
-                opened_at: now,
-                last_heartbeat: now,
-            });
-        }
-        self.updated_at = now;
-    }
-
-    pub fn close_logical_session(
-        &mut self,
-        source: &str,
-        workspace: &str,
-        session_id: &str,
-    ) -> bool {
-        self.logical_session_telemetry_seen = true;
-        let previous_len = self.logical_sessions.len();
-        self.logical_sessions.retain(|session| {
-            session.source != source
-                || session.workspace != workspace
-                || session.session_id != session_id
-        });
-        let removed = self.logical_sessions.len() != previous_len;
-        self.updated_at = Utc::now();
-        removed
-    }
-
-    pub fn cleanup_stale_logical_sessions(&mut self, max_age_seconds: u64) {
-        let seconds = i64::try_from(max_age_seconds).unwrap_or(i64::MAX);
-        let cutoff = Utc::now() - chrono::Duration::seconds(seconds);
-        self.logical_sessions
-            .retain(|session| session.last_heartbeat >= cutoff);
-        self.updated_at = Utc::now();
-    }
-
-    pub fn record_logical_session_presence(
-        event: &str,
-        source: &str,
-        workspace: &str,
-        session_id: &str,
-    ) -> Result<(), String> {
-        let valid_field = |value: &str, max_bytes: usize| {
-            !value.is_empty() && value.len() <= max_bytes && !value.chars().any(char::is_control)
-        };
-        if !valid_field(source, LOGICAL_SESSION_SOURCE_MAX_BYTES)
-            || !valid_field(workspace, LOGICAL_SESSION_WORKSPACE_MAX_BYTES)
-            || !valid_field(session_id, LOGICAL_SESSION_ID_MAX_BYTES)
-        {
-            return Err(
-                "presence fields are empty, too long, or contain control characters".to_string(),
-            );
-        }
-        if !matches!(event, "open" | "heartbeat" | "close") {
-            return Err("event must be open, heartbeat, or close".to_string());
-        }
-
-        mutate_persistent(|registry| {
-            registry.cleanup_stale_logical_sessions(LOGICAL_SESSION_TTL_SECONDS);
-            match event {
-                "open" | "heartbeat" => {
-                    registry.open_or_heartbeat_logical_session(source, workspace, session_id);
-                }
-                "close" => {
-                    registry.close_logical_session(source, workspace, session_id);
-                }
-                _ => unreachable!("event validated above"),
-            }
-        })
-    }
-
     pub fn list_active(&self, project_root: Option<&str>) -> Vec<&AgentEntry> {
         self.agents
             .iter()
@@ -894,97 +784,5 @@ mod presence_tests {
         assert_eq!(registry.agents[0].agent_type, "mcp");
         assert_eq!(registry.agents[0].project_root, "/new");
         assert_eq!(registry.agents[0].role.as_deref(), Some("context-engine"));
-    }
-
-    #[test]
-    fn logical_sessions_are_keyed_independently_of_transport_processes() {
-        let mut registry = AgentRegistry::new();
-        registry.register_process("mcp", Some("context-engine"), "/project", 303);
-        registry.open_or_heartbeat_logical_session("vscode", "/project", "chat-a");
-        registry.open_or_heartbeat_logical_session("vscode", "/project", "chat-b");
-        let opened_at = registry.logical_sessions[0].opened_at;
-
-        registry.open_or_heartbeat_logical_session("vscode", "/project", "chat-a");
-
-        assert_eq!(registry.agents.len(), 1);
-        assert_eq!(registry.logical_sessions.len(), 2);
-        assert_eq!(registry.logical_sessions[0].opened_at, opened_at);
-        assert!(registry.logical_session_telemetry_seen);
-        assert!(registry.close_logical_session("vscode", "/project", "chat-b"));
-        assert_eq!(registry.logical_sessions.len(), 1);
-    }
-
-    #[test]
-    fn persistent_logical_session_presence_validates_and_roundtrips() {
-        let _isolated = crate::core::data_dir::isolated_data_dir();
-
-        AgentRegistry::record_logical_session_presence(
-            "open",
-            "vscode",
-            "/project",
-            "editor-session-a",
-        )
-        .expect("open presence");
-
-        let registry = AgentRegistry::load().expect("persisted registry");
-        assert_eq!(registry.logical_sessions.len(), 1);
-        assert_eq!(registry.logical_sessions[0].session_id, "editor-session-a");
-        assert!(registry.logical_session_telemetry_seen);
-
-        assert!(
-            AgentRegistry::record_logical_session_presence(
-                "invalid",
-                "vscode",
-                "/project",
-                "editor-session-a",
-            )
-            .is_err()
-        );
-        assert!(
-            AgentRegistry::record_logical_session_presence(
-                "heartbeat",
-                "",
-                "/project",
-                "editor-session-a",
-            )
-            .is_err()
-        );
-
-        AgentRegistry::record_logical_session_presence(
-            "close",
-            "vscode",
-            "/project",
-            "editor-session-a",
-        )
-        .expect("close presence");
-        assert!(
-            AgentRegistry::load()
-                .expect("persisted registry")
-                .logical_sessions
-                .is_empty()
-        );
-    }
-
-    #[test]
-    fn logical_session_expiry_is_bounded_by_heartbeat_not_tool_activity() {
-        let mut registry = AgentRegistry::new();
-        registry.open_or_heartbeat_logical_session("vscode", "/project", "chat-a");
-        registry.logical_sessions[0].last_heartbeat = Utc::now() - chrono::Duration::seconds(181);
-
-        registry.cleanup_stale_logical_sessions(180);
-
-        assert!(registry.logical_sessions.is_empty());
-        assert!(registry.logical_session_telemetry_seen);
-    }
-
-    #[test]
-    fn legacy_registry_deserializes_without_claiming_session_telemetry() {
-        let registry: AgentRegistry = serde_json::from_str(
-            r#"{"agents":[],"scratchpad":[],"updated_at":"2026-01-01T00:00:00Z"}"#,
-        )
-        .expect("legacy registry");
-
-        assert!(registry.logical_sessions.is_empty());
-        assert!(!registry.logical_session_telemetry_seen);
     }
 }

@@ -53,7 +53,6 @@ pub(crate) fn handle(
     // Active build errors outrank everything (#499).
     crate::core::diagnostics_store::apply_boost(&mut relevance);
     // Editor focus (#500): the file the developer is looking at ranks up.
-    crate::core::editor_signal::apply_boost(&mut relevance);
 
     let mut scored: Vec<_> = relevance
         .iter()
@@ -106,7 +105,6 @@ pub(crate) fn handle(
         .iter()
         .filter_map(|c| {
             let Ok((jailed, warning)) = crate::core::io_boundary::jail_and_check_path(
-                "ctx_preload",
                 std::path::Path::new(&c.path),
                 jail_root,
             ) else {
@@ -181,7 +179,6 @@ pub(crate) fn handle(
         }
 
         let Ok((jailed, warning)) = crate::core::io_boundary::jail_and_check_path(
-            "ctx_preload",
             std::path::Path::new(&rel.path),
             jail_root,
         ) else {

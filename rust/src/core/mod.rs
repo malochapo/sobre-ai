@@ -243,7 +243,6 @@ pub mod a2a;
 pub mod agent_identity;
 pub mod agent_runtime_env;
 pub mod agents;
-pub mod autonomy_drivers;
 
 // ---------------------------------------------------------------------------
 // Domain: Adaptive & Scoring
@@ -261,7 +260,6 @@ pub mod task_relevance;
 // ---------------------------------------------------------------------------
 // Domain: Diagnostics & Quality
 // ---------------------------------------------------------------------------
-pub mod anomaly;
 pub mod benchmark;
 /// Commercial-plane billing substrate (`billing-plane-v1`): plans, entitlements,
 /// and usage metering derived from the signed savings ledger. Never gates local.
@@ -306,7 +304,6 @@ pub mod data_consolidate;
 pub mod data_dir;
 pub mod debug_log;
 pub mod diagnostics_store;
-pub mod editor_signal;
 pub mod error;
 pub mod events;
 pub mod eviction_orchestrator;
@@ -334,10 +331,8 @@ pub mod immune_detector;
 pub mod quality_benchmark;
 pub mod request_context;
 
-pub mod edit_metering;
 pub mod edit_quality;
 pub mod efficacy;
-pub mod grammar_usage;
 pub mod graph_cache;
 pub mod http_client;
 pub mod ide_permissions;
@@ -378,7 +373,6 @@ pub mod path_mode_memory;
 pub mod path_resolve;
 pub mod paths;
 pub mod pathutil;
-pub mod pipeline;
 pub mod portable_binary;
 pub mod project_hash;
 pub mod protocol;
@@ -394,7 +388,6 @@ pub mod sandbox_seatbelt;
 pub mod sanitize;
 pub mod savings_footer;
 pub mod savings_ledger;
-pub mod scent_field;
 pub mod search_delta;
 pub mod search_index;
 pub mod secret_detection;

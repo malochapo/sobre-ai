@@ -581,25 +581,6 @@ fn handle_with_options_resolved_preread(
         }
     }
 
-    // Stigmergy (#540): deposit a Hot scent for this read in the background
-    // (the field file lock may briefly block; never stall the read path). The
-    // foreign-claim hint is intentionally NOT appended to the body: it carries a
-    // relative timestamp ("claimed Nm ago"), which would make the output a
-    // non-pure function of wall-clock time and defeat provider prompt caching
-    // (#498). The deposit remains so the field still reflects active work.
-    {
-        let self_agent = crate::core::scent_field::scent_agent_id();
-        let scent_path = crate::core::pathutil::normalize_tool_path(path);
-        std::thread::spawn(move || {
-            crate::core::scent_field::deposit(
-                self_agent,
-                crate::core::scent_field::ScentKind::Hot,
-                &scent_path,
-                0.3,
-            );
-        });
-    }
-
     result
 }
 

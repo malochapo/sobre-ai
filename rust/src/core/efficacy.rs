@@ -34,8 +34,6 @@ pub struct EfficacySnapshot {
     pub litm_begin_misses: u32,
     pub litm_end_hits: u32,
     pub litm_end_misses: u32,
-    /// Cumulative rejected scent claims at capture time (#540).
-    pub claims_rejected: u64,
     /// Playbook size and net-helpful aged entries at capture time (#541).
     pub playbook_entries: usize,
     pub playbook_aged_helpful: usize,
@@ -119,7 +117,6 @@ fn current_snapshot() -> EfficacySnapshot {
         litm_begin_misses: bm,
         litm_end_hits: eh,
         litm_end_misses: em,
-        claims_rejected: crate::core::scent_field::claims_rejected_total(),
         playbook_entries: entries,
         playbook_aged_helpful: aged_helpful,
         playbook_aged_total: aged_total,
@@ -221,13 +218,6 @@ pub fn report() -> Vec<String> {
                 last.day
             ));
         }
-        let delta = last.claims_rejected.saturating_sub(first.claims_rejected);
-        if delta > 0 {
-            out.push(format!(
-                "duplicate work prevented: {delta} rejected claim(s) since {}",
-                first.day
-            ));
-        }
     }
     if let Some(last) = store.snapshots.last()
         && last.playbook_aged_total > 0
@@ -247,15 +237,14 @@ pub fn report() -> Vec<String> {
 mod tests {
     use super::*;
 
-    fn snap(day: &str, claims: u64) -> EfficacySnapshot {
+    fn snap(day: &str, entries: usize) -> EfficacySnapshot {
         EfficacySnapshot {
             day: day.to_string(),
             litm_begin_hits: 10,
             litm_begin_misses: 2,
             litm_end_hits: 5,
             litm_end_misses: 3,
-            claims_rejected: claims,
-            playbook_entries: 4,
+            playbook_entries: entries,
             playbook_aged_helpful: 3,
             playbook_aged_total: 4,
         }
@@ -267,7 +256,7 @@ mod tests {
         s.upsert(snap("2026-06-10", 1));
         s.upsert(snap("2026-06-10", 2));
         assert_eq!(s.snapshots.len(), 1);
-        assert_eq!(s.snapshots[0].claims_rejected, 2);
+        assert_eq!(s.snapshots[0].playbook_entries, 2);
         s.upsert(snap("2026-06-11", 3));
         assert_eq!(s.snapshots.len(), 2);
     }

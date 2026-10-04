@@ -3,10 +3,6 @@ use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
-use crate::core::autonomy_drivers::{
-    AutonomyDriverDecisionV1, AutonomyDriverEventV1, AutonomyDriverKindV1, AutonomyPhaseV1,
-    AutonomyVerdictV1,
-};
 use crate::core::cache::SessionCache;
 use crate::core::config::AutonomyConfig;
 use crate::core::graph_provider::GraphProvider;
@@ -68,25 +64,6 @@ fn autonomy_enabled_effective(state: &AutonomyState) -> bool {
     state.is_enabled()
 }
 
-fn record_event(
-    phase: AutonomyPhaseV1,
-    tool: &str,
-    action: Option<&str>,
-    decisions: Vec<AutonomyDriverDecisionV1>,
-) {
-    let mut store = crate::core::autonomy_drivers::AutonomyDriversV1::load();
-    let ev = AutonomyDriverEventV1 {
-        seq: 0,
-        created_at: chrono::Utc::now().to_rfc3339(),
-        phase,
-        tool: tool.to_string(),
-        action: action.map(std::string::ToString::to_string),
-        decisions,
-    };
-    store.record(ev);
-    let _ = store.save();
-}
-
 /// True for the call that is itself the session-start overview: `ctx_compose`
 /// without a `task` returns the same overview the briefing would prepend. The
 /// caller skips the pre-hook for it and marks the session as briefed (see
@@ -111,7 +88,6 @@ pub fn mark_session_briefed(state: &AutonomyState) {
 /// Auto-preloads project context on the first tool call of a session.
 pub fn session_lifecycle_pre_hook(
     state: &AutonomyState,
-    tool_name: &str,
     cache: &mut SessionCache,
     task: Option<&str>,
     project_root: Option<&str>,
@@ -140,25 +116,10 @@ pub fn session_lifecycle_pre_hook(
         return None;
     }
 
-    let mut decisions = Vec::new();
-
     if !state.config.auto_preload {
-        decisions.push(AutonomyDriverDecisionV1 {
-            driver: AutonomyDriverKindV1::Preload,
-            verdict: AutonomyVerdictV1::Skip,
-            reason_code: "disabled".to_string(),
-            reason: "auto_preload disabled by config".to_string(),
-            detail: None,
-        });
-        record_event(AutonomyPhaseV1::PreCall, tool_name, None, decisions);
         return None;
     }
 
-    let chosen_tool = if task.is_some() {
-        "ctx_preload"
-    } else {
-        "ctx_overview"
-    };
     let (result, usable) = if let Some(task_desc) = task {
         crate::tools::impl_preload::handle(cache, task_desc, Some(&root), crp_mode)
     } else {
@@ -166,17 +127,7 @@ pub fn session_lifecycle_pre_hook(
         crate::tools::impl_overview::handle(cache_readonly, None, Some(&root), crp_mode)
     };
 
-    let empty = !usable || result.trim().is_empty();
-    decisions.push(AutonomyDriverDecisionV1 {
-        driver: AutonomyDriverKindV1::Preload,
-        verdict: AutonomyVerdictV1::Run,
-        reason_code: "session_start".to_string(),
-        reason: "first tool call in session".to_string(),
-        detail: Some(format!("tool={chosen_tool} empty={empty}")),
-    });
-    record_event(AutonomyPhaseV1::PreCall, tool_name, None, decisions);
-
-    if empty {
+    if !usable || result.trim().is_empty() {
         return None;
     }
 
@@ -255,10 +206,10 @@ pub fn enrich_after_read(
     }
 
     if !minimal_overhead {
-        let mut decisions = Vec::new();
         {
+            // Warms the cache with the files likely needed next.
             let changed = vec![file_path.to_string()];
-            let out = crate::tools::impl_prefetch::handle(
+            let _ = crate::tools::impl_prefetch::handle(
                 cache,
                 &root,
                 task,
@@ -267,20 +218,6 @@ pub fn enrich_after_read(
                 Some(PREFETCH_MAX_FILES),
                 crp_mode,
             );
-            let summary = out.lines().next().unwrap_or("").trim().to_string();
-            decisions.push(AutonomyDriverDecisionV1 {
-                driver: AutonomyDriverKindV1::Prefetch,
-                verdict: AutonomyVerdictV1::Run,
-                reason_code: "after_read".to_string(),
-                reason: "bounded prefetch after ctx_read".to_string(),
-                detail: if summary.is_empty() {
-                    None
-                } else {
-                    Some(summary.clone())
-                },
-            });
-            record_event(AutonomyPhaseV1::PostRead, "ctx_read", None, decisions);
-            let _ = summary;
         }
     }
 
@@ -341,11 +278,9 @@ fn silent_preload_imports(
         } else {
             jail_root.join(&path)
         };
-        let Ok((jailed, warning)) = crate::core::io_boundary::jail_and_check_path(
-            "autonomy:silent_preload",
-            &candidate,
-            jail_root,
-        ) else {
+        let Ok((jailed, warning)) =
+            crate::core::io_boundary::jail_and_check_path(&candidate, jail_root)
+        else {
             continue;
         };
         if warning.is_some() {
@@ -370,7 +305,7 @@ fn silent_preload_imports(
 }
 
 /// Runs cache deduplication once the entry count exceeds the configured threshold.
-pub fn maybe_auto_dedup(state: &AutonomyState, cache: &mut SessionCache, trigger_tool: &str) {
+pub fn maybe_auto_dedup(state: &AutonomyState, cache: &mut SessionCache) {
     if !autonomy_enabled_effective(state) {
         return;
     }
@@ -394,21 +329,7 @@ pub fn maybe_auto_dedup(state: &AutonomyState, cache: &mut SessionCache, trigger
         return;
     }
 
-    let mut decisions = Vec::new();
-    let out = crate::tools::impl_dedup::handle_action(cache, "apply");
-    let summary = out.lines().next().unwrap_or("").trim().to_string();
-    decisions.push(AutonomyDriverDecisionV1 {
-        driver: AutonomyDriverKindV1::Dedup,
-        verdict: AutonomyVerdictV1::Run,
-        reason_code: "threshold_reached".to_string(),
-        reason: format!("cache entries >= {threshold}"),
-        detail: if summary.is_empty() {
-            None
-        } else {
-            Some(summary)
-        },
-    });
-    record_event(AutonomyPhaseV1::PostRead, trigger_tool, None, decisions);
+    let _ = crate::tools::impl_dedup::handle_action(cache, "apply");
 }
 
 /// Returns true if enough tool calls have elapsed to trigger auto-consolidation.

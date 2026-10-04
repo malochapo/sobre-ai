@@ -215,7 +215,6 @@ pub fn import_bundle_v1_into_session(
     for f in &mut imported.files_touched {
         let candidate = candidate_path(&jail_root_path, &f.path);
         if let Ok((jailed, _warning)) = crate::core::io_boundary::jail_and_check_path(
-            "ctx_session.import",
             candidate.as_path(),
             jail_root_path.as_path(),
         ) {

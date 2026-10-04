@@ -169,8 +169,6 @@ pub struct ToolContext {
     /// Client name (cursor, claude, etc.).
     pub client_name: Option<std::sync::Arc<tokio::sync::RwLock<String>>>,
     /// Pipeline stats for metrics/proof tools.
-    pub pipeline_stats:
-        Option<std::sync::Arc<tokio::sync::RwLock<crate::core::pipeline::PipelineStats>>>,
     /// Global call counter for context tools.
     pub call_count: Option<std::sync::Arc<std::sync::atomic::AtomicUsize>>,
     /// Autonomy state for search repeat detection.
@@ -203,7 +201,6 @@ impl Default for ToolContext {
             agent_id: None,
             ledger: None,
             client_name: None,
-            pipeline_stats: None,
             call_count: None,
             autonomy: None,
             pressure_snapshot: None,

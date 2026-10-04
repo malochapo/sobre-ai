@@ -130,16 +130,6 @@ pub fn record_outcome(params: &EditParams, last_mode: &str, text: &str, effect: 
     if success || not_found_failure {
         crate::core::edit_quality::record_edit_outcome(&params.path, last_mode, success);
     }
-    // Edit-efficiency channel (#1008): the str_replace baseline — output tokens
-    // actually paid reproducing `old_string`, and blind-retry round-trips.
-    // Separate from the read-gain ledger, never printed in tool output (#498).
-    if success {
-        crate::core::edit_metering::record_str_replace_success(
-            count_tokens(&params.old_string) as u64
-        );
-    } else if not_found_failure {
-        crate::core::edit_metering::record_str_replace_miss();
-    }
 }
 
 /// Applies a deferred [`CacheEffect`] to the session cache.

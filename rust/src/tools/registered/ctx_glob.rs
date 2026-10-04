@@ -43,8 +43,7 @@ impl McpTool for CtxGlobTool {
         let max = (get_int(args, "max_results").unwrap_or(200) as usize).min(500);
         let no_gitignore = get_bool(args, "ignore_gitignore").unwrap_or(false);
 
-        if no_gitignore
-            && let Err(e) = crate::core::io_boundary::ensure_ignore_gitignore_allowed("ctx_glob")
+        if no_gitignore && let Err(e) = crate::core::io_boundary::ensure_ignore_gitignore_allowed()
         {
             return Ok(ToolOutput::simple(e));
         }

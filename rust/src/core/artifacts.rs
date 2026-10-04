@@ -68,11 +68,7 @@ pub fn load_resolved(project_root: &Path) -> ResolvedArtifacts {
         }
         let candidate = resolve_candidate(project_root, raw);
 
-        let abs = match crate::core::io_boundary::jail_and_check_path(
-            "artifacts",
-            &candidate,
-            project_root,
-        ) {
+        let abs = match crate::core::io_boundary::jail_and_check_path(&candidate, project_root) {
             Ok((p, _)) => p,
             Err(e) => {
                 out.warnings
@@ -85,7 +81,6 @@ pub fn load_resolved(project_root: &Path) -> ResolvedArtifacts {
         // Artifacts tend to be indexed/shared; prefer safety over convenience.
         if let Some(reason) = crate::core::io_boundary::is_secret_like(&abs) {
             let msg = format!("artifact rejected ({name}): {raw} (secret-like path: {reason})");
-            crate::core::events::emit_policy_violation("artifacts", &msg);
             out.warnings.push(msg);
             continue;
         }

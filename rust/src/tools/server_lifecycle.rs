@@ -158,7 +158,6 @@ impl LeanCtxServer {
             ledger: Arc::new(RwLock::new(
                 crate::core::context_ledger::ContextLedger::load(),
             )),
-            pipeline_stats: Arc::new(RwLock::new(crate::core::pipeline::PipelineStats::new())),
             session_mode,
             workspace_id: if workspace_id.trim().is_empty() {
                 "default".to_string()

@@ -294,7 +294,6 @@ fn emit_feedback_event(response: &str, turn_input_tokens: u64) {
     let mut policy = crate::core::adaptive_mode_policy::AdaptiveModePolicyStore::load();
     policy.update_from_feedback(&ev);
     let _ = policy.save();
-    let _ = crate::core::llm_feedback::LlmFeedbackStore::record(ev);
 }
 
 /// CEP nudge for the MCP server to append to a tool result. Stable text in

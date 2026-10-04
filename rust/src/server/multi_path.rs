@@ -144,7 +144,6 @@ mod tests {
             agent_id: None,
             ledger: None,
             client_name: None,
-            pipeline_stats: None,
             call_count: None,
             autonomy: None,
             pressure_snapshot: None,

@@ -257,8 +257,6 @@ fn record_read_learning(
     // Anomaly detector: the same per-call metric the MCP post-dispatch records.
     // `save_debounced` writes on the first call of a fresh process (last-save
     // marker starts at 0), so the single shadow read persists before exit.
-    crate::core::anomaly::record_metric("tokens_per_call", output_tokens as f64);
-    crate::core::anomaly::save_debounced();
 }
 
 /// Compute read density through the production OCLA efficiency capability.
@@ -319,8 +317,6 @@ pub fn record_search(
 
     // Per-call anomaly metric, mirroring the MCP post-dispatch (#550). Missing it
     // left dashboard signals blind to shadow-mode (`grep` → `lean-ctx grep`) hooks.
-    crate::core::anomaly::record_metric("tokens_per_call", output_tokens as f64);
-    crate::core::anomaly::save_debounced();
 
     // Context IR lineage for shadow-mode `grep` → `lean-ctx grep` (#566). The
     // raw matched-line estimate (`observed_tokens`) is the IR input so the stored
@@ -390,18 +386,14 @@ pub fn flush_all() {
     stats::flush();
     heatmap::flush();
     crate::core::path_mode_memory::flush();
-    crate::core::grammar_usage::flush();
     crate::core::auto_mode_resolver::flush_sources();
     crate::core::edit_quality::flush();
-    crate::core::edit_metering::flush();
     crate::core::mode_predictor::ModePredictor::flush();
     crate::core::feedback::FeedbackStore::flush();
     crate::core::threshold_learning::flush();
     crate::core::litm_calibration::flush();
 }
 
-// TODO(arch): crate::tools::autonomy is still referenced here. Move AutonomyState
-// and should_auto_consolidate to core::autonomy_drivers for a clean layer boundary.
 fn maybe_consolidate(project_root: Option<&str>, calls: u32) {
     let Some(root) = project_root else { return };
     let autonomy = crate::tools::autonomy::AutonomyState::new();

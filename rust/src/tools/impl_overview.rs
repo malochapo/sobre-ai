@@ -45,7 +45,6 @@ pub(crate) fn handle(
         let mut relevance = compute_relevance(gp, &task_files, &task_keywords);
         crate::core::git_signals::apply_boost(&mut relevance, &project_root);
         crate::core::diagnostics_store::apply_boost(&mut relevance);
-        crate::core::editor_signal::apply_boost(&mut relevance);
 
         output.push(format!(
             "PROJECT OVERVIEW  {} files  task-filtered",

@@ -343,17 +343,6 @@ fn record_outcome_with(path: &str, last_mode: &str, success: bool, esc: Escalati
                 path,
                 crate::core::threshold_learning::QualitySignal::EditFail,
             );
-            // Stigmergy (#540): edit failures mark the path as Stuck ("context
-            // drifted"), the explicit anchor-miss signal called for in #1008.
-            let scent_path = norm.clone();
-            std::thread::spawn(move || {
-                crate::core::scent_field::deposit(
-                    crate::core::scent_field::scent_agent_id(),
-                    crate::core::scent_field::ScentKind::Stuck,
-                    &scent_path,
-                    1.0,
-                );
-            });
         }
     }
     maybe_flush(&mut store);

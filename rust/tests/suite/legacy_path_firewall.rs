@@ -35,7 +35,6 @@ const ALLOWLIST: &[&str] = &[
     "doctor/common.rs",
     // Group 2: pre-existing direct home-writers/readers (tracked debt).
     "core/providers/config_provider/discovery.rs",
-    "cli/dispatch/analytics/gain.rs",
 ];
 
 fn collect_rs_files(dir: &Path, out: &mut Vec<PathBuf>) {

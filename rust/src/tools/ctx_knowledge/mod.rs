@@ -195,17 +195,6 @@ fn handle_feedback(
         Err(e) => return format!("Feedback recorded but save failed: {e}"),
     };
 
-    crate::core::events::emit(crate::core::events::EventKind::KnowledgeUpdate {
-        category: cat.to_string(),
-        key: k.to_string(),
-        action: if is_up {
-            "feedback_up"
-        } else {
-            "feedback_down"
-        }
-        .to_string(),
-    });
-
     format!(
         "Feedback recorded ({dir}) for [{cat}] {k} (up={up}, down={down}, quality={quality:.2}, confidence={conf:.2}, session={session_id})"
     )

@@ -102,19 +102,6 @@ pub(in crate::cli::dispatch) fn cmd_gain(rest: &[String]) {
             "{}",
             tools::impl_gain::handle("wrapped", Some(&period), model.as_deref(), Some(limit))
         );
-    } else if rest.iter().any(|a| a == "--pipeline") {
-        let stats_path = crate::core::paths::state_dir()
-            .unwrap_or_else(|_| dirs::home_dir().unwrap_or_default().join(".lean-ctx"))
-            .join("pipeline_stats.json");
-        if let Ok(data) = std::fs::read_to_string(&stats_path) {
-            if let Ok(stats) = serde_json::from_str::<core::pipeline::PipelineStats>(&data) {
-                println!("{}", stats.format_summary());
-            } else {
-                println!("No pipeline stats available yet (corrupt data).");
-            }
-        } else {
-            println!("No pipeline stats available yet. Use MCP tools to generate data.");
-        }
     } else if rest.iter().any(|a| a == "--deep") {
         // Body first, then the extra themed sections, then the footer — so the
         // tips / Context OS panel land at the very end instead of mid-dashboard.

@@ -188,7 +188,6 @@ impl LeanCtxServer {
                 agent_id: Some(self.agent_id.clone()),
                 ledger: Some(self.ledger.clone()),
                 client_name: Some(self.client_name.clone()),
-                pipeline_stats: Some(self.pipeline_stats.clone()),
                 call_count: Some(self.call_count.clone()),
                 autonomy: Some(self.autonomy.clone()),
                 pressure_snapshot,

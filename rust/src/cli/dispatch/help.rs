@@ -127,7 +127,6 @@ COMMANDS:
     gain --by-tool [--json]        Per-tool savings breakdown (calls, tokens, USD, %)
     gain --heatmap                 Top files by tokens saved
     gain --json                    Raw JSON export of all stats
-    gain --pipeline                Pipeline compression stats
     gain --opportunity             Find missed savings in shell history (replaces discover/ghost)
     gain --raw [--json]            Plain stats output (machine-friendly)
     gain --reset                   Clear all token savings data

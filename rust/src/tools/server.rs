@@ -72,7 +72,6 @@ pub struct LeanCtxServer {
     pub autonomy: Arc<super::autonomy::AutonomyState>,
     pub loop_detector: Arc<RwLock<crate::core::loop_detection::LoopDetector>>,
     pub ledger: Arc<RwLock<crate::core::context_ledger::ContextLedger>>,
-    pub pipeline_stats: Arc<RwLock<crate::core::pipeline::PipelineStats>>,
     pub session_mode: SessionMode,
     pub workspace_id: String,
     pub channel_id: String,

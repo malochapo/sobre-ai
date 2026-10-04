@@ -182,26 +182,12 @@ pub fn entropy_compress_adaptive(
     force_keep: &[String],
 ) -> EntropyResult {
     let thresholds = super::adaptive_thresholds::adaptive_thresholds(path, content);
-    let before_lines = content.lines().count() as u32;
     let result = entropy_compress_with_thresholds(
         content,
         thresholds.bpe_entropy,
         thresholds.jaccard,
         force_keep,
     );
-    let after_lines = result.output.lines().count() as u32;
-
-    if before_lines != after_lines {
-        super::events::emit(super::events::EventKind::Compression {
-            path: path.to_string(),
-            before_lines,
-            after_lines,
-            strategy: "entropy_adaptive".to_string(),
-            kept_line_count: after_lines,
-            removed_line_count: before_lines.saturating_sub(after_lines),
-        });
-    }
-
     result
 }
 
@@ -231,7 +217,6 @@ pub fn entropy_compress_task_conditioned(
     force_keep: &[String],
 ) -> EntropyResult {
     let thresholds = super::adaptive_thresholds::adaptive_thresholds(path, content);
-    let before_lines = content.lines().count() as u32;
     let result = entropy_compress_with_task(
         content,
         thresholds.bpe_entropy,
@@ -239,17 +224,6 @@ pub fn entropy_compress_task_conditioned(
         task_keywords,
         force_keep,
     );
-    let after_lines = result.output.lines().count() as u32;
-    if before_lines != after_lines {
-        super::events::emit(super::events::EventKind::Compression {
-            path: path.to_string(),
-            before_lines,
-            after_lines,
-            strategy: "entropy_task_conditioned".to_string(),
-            kept_line_count: after_lines,
-            removed_line_count: before_lines.saturating_sub(after_lines),
-        });
-    }
     result
 }
 

@@ -108,14 +108,6 @@ pub(crate) fn consolidate_project_knowledge_with(
         let _ = s.save();
     }
 
-    if opts.emit_event {
-        crate::core::events::emit(crate::core::events::EventKind::KnowledgeUpdate {
-            category: "memory".to_string(),
-            key: "consolidation".to_string(),
-            action: "run".to_string(),
-        });
-    }
-
     Ok(report)
 }
 

@@ -99,7 +99,7 @@ pub fn cmd_read(args: &[String]) {
     // Apply the same secret-path policy in CLI mode as in MCP tools.
     // Default is warn; enforce depends on active role/policy.
     if let Ok(abs) = std::fs::canonicalize(path) {
-        match io_boundary::check_secret_path_for_tool("cli_read", &abs) {
+        match io_boundary::check_secret_path(&abs) {
             Ok(Some(w)) => eprintln!("{w}"),
             Ok(None) => {}
             Err(e) => {
@@ -110,7 +110,7 @@ pub fn cmd_read(args: &[String]) {
     } else {
         // Best-effort: still check the raw path string.
         let raw = std::path::Path::new(path);
-        match io_boundary::check_secret_path_for_tool("cli_read", raw) {
+        match io_boundary::check_secret_path(raw) {
             Ok(Some(w)) => eprintln!("{w}"),
             Ok(None) => {}
             Err(e) => {

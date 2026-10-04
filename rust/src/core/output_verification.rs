@@ -431,14 +431,6 @@ fn record_result(result: &VerificationResult) {
                 recent.drain(..excess);
             }
         }
-
-        for w in &result.warnings {
-            crate::core::events::emit_verification_warning(
-                &w.kind.to_string(),
-                &w.detail,
-                &format!("{:?}", w.severity),
-            );
-        }
     }
 }
 

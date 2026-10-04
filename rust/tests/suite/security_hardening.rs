@@ -91,8 +91,8 @@ fn resolve_path_includes_secret_check() {
         .unwrap_or(resolve_body.len());
     let resolve_body = &resolve_body[..end];
     assert!(
-        resolve_body.contains("check_secret_path_for_tool"),
-        "H2: resolve_path must call check_secret_path_for_tool"
+        resolve_body.contains("check_secret_path"),
+        "H2: resolve_path must call check_secret_path"
     );
 }
 

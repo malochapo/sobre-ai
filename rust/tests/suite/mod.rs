@@ -16,7 +16,6 @@ mod completion_coverage;
 mod compression_improvements;
 mod config_path_parity_594;
 mod conformance_suite;
-mod context_radar_perf;
 mod contracts_frozen;
 mod critical_module_integration;
 mod ctx_read_lmd_md_raw;

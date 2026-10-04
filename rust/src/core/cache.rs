@@ -514,10 +514,6 @@ impl SessionCache {
         self.stats
             .total_sent_tokens
             .fetch_add(sent_tokens, Ordering::Relaxed);
-        crate::core::events::emit_cache_hit(
-            path,
-            (entry.original_tokens as u64).saturating_sub(sent_tokens),
-        );
         Some(entry)
     }
 
@@ -722,10 +718,6 @@ impl SessionCache {
         self.stats
             .total_sent_tokens
             .fetch_add(sent, Ordering::Relaxed);
-        crate::core::events::emit_cache_hit(
-            path,
-            (entry.original_tokens as u64).saturating_sub(sent),
-        );
         Some(result)
     }
 

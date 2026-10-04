@@ -9,8 +9,7 @@ Ein **versionierter Governance-Vertrag** für Project Knowledge (Facts/Patterns/
 - **bounded** ist (keine unkontrollierte Growth/Outputs),
 - **deterministisch** ist (stable ordering + stable semantics),
 - **replayable** ist (Timeline/History bleibt interpretierbar),
-- **sicher** ist (kein secret leakage, policy-gated surfaces),
-- **auditable** ist (Writes emit events).
+- **sicher** ist (kein secret leakage, policy-gated surfaces).
 
 ## Version
 
@@ -114,7 +113,6 @@ Ordering ist deterministisch (stable sort tie-breaks), danach erfolgt Truncation
   - `action=policy` + `value=show|validate` (policy visibility + range validation)
   - `action=consolidate` (+ `dry_run=true` ⇒ Preview ohne Writes), `action=consolidate_preview`
   - `action=restore` (`store`, `query`, `limit`) ⇒ verlustfreies Undo aus dem Archiv
-  - Writes (`remember`, `pattern`, `feedback`, relations) emit **events** (`KnowledgeUpdate`)
 - CLI-Parität: `lean-ctx knowledge consolidate [--all] [--dry-run]` und
   `lean-ctx knowledge restore [--store …] [--query …] [--limit N]`
 - Relations: `rust/src/tools/ctx_knowledge_relations.rs` (bounded + deterministic outputs)
