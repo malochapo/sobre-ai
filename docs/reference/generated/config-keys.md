@@ -115,11 +115,8 @@ Controls autonomous background behaviors (preload, dedup, consolidation)
 
 ## `[boundary_policy]`
 
-Cross-project boundary and access control policies
+Cross-project knowledge sharing
 
-- `audit_cross_access` (bool, default `true`) — Log audit events when cross-project access occurs
-- `cross_project_import` (bool, default `false`) — Allow importing knowledge from other projects
-- `cross_project_search` (bool, default `false`) — Allow searching across project boundaries
 - `universal_gotchas_enabled` (bool, default `true`) — Load universal (cross-project) gotchas
 
 ## `[context]`

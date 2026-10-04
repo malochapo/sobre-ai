@@ -1,7 +1,7 @@
 //! `lean-ctx doctor --migrate-check` — v1.0 migration readiness (GL #396).
 //!
-//! The 1.0 stability release ships zero breaking changes (CONTRACTS.md freeze,
-//! GL #394) — this check *proves that for the local installation* instead of
+//! The 1.0 stability release ships zero breaking changes (contract freeze,
+//! GL #394, `core::contracts`) — this check *proves that for the local installation* instead of
 //! asking users to take it on faith. Four read-only audits:
 //!
 //! 1. config.toml parses and every key is a known schema key
@@ -258,7 +258,7 @@ fn contract_outcome() -> (Outcome, String) {
         Outcome {
             ok: true,
             line: format!(
-                "{BOLD}Contracts{RST}  {GREEN}{frozen} frozen v1 contracts in this build{RST}  {DIM}(policy: CONTRACTS.md){RST}"
+                "{BOLD}Contracts{RST}  {GREEN}{frozen} frozen v1 contracts in this build{RST}  {DIM}(docs/contracts){RST}"
             ),
         },
         format!("{frozen} frozen contracts"),

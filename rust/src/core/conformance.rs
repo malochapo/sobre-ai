@@ -108,8 +108,6 @@ impl Scorecard {
 #[must_use]
 pub fn run() -> Scorecard {
     let mut checks = Vec::new();
-    checks.extend(contract_checks());
-    checks.extend(reproducibility_checks());
     checks.extend(extension_checks());
     checks.extend(accuracy_checks());
     Scorecard { version: 1, checks }
@@ -244,27 +242,6 @@ fn accuracy_checks() -> Vec<Check> {
     }
 
     checks
-}
-
-fn contract_checks() -> Vec<Check> {
-    let present = !crate::core::contracts::versions_kv().is_empty();
-    vec![Check::from_bool(
-        "contracts",
-        "contract_versions_present",
-        present,
-        "versions_kv() is empty",
-    )]
-}
-
-fn reproducibility_checks() -> Vec<Check> {
-    let caps_stable = crate::core::server_capabilities::capabilities_value()
-        == crate::core::server_capabilities::capabilities_value();
-    vec![Check::from_bool(
-        "reproducibility",
-        "capabilities_deterministic",
-        caps_stable,
-        "capabilities document differs across builds",
-    )]
 }
 
 fn extension_checks() -> Vec<Check> {

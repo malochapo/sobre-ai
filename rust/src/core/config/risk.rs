@@ -40,7 +40,7 @@ pub fn classify(key: &str) -> Option<ConfigRisk> {
             "Secret redaction masks detected secrets. Disabling it sends them verbatim to the provider."
         }
         "boundary_policy" => {
-            "Boundary policy controls what context is allowed to leave this machine. Relaxing it widens data egress."
+            "Boundary policy controls whether gotchas learned in other projects are loaded into this one."
         }
         "proxy_require_token" => {
             "Proxy token policy controls whether provider API keys can authenticate local proxy requests without the lean-ctx Bearer token."

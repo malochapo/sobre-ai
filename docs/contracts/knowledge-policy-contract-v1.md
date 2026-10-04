@@ -12,19 +12,17 @@ Ein **versionierter Governance-Vertrag** für Project Knowledge (Facts/Patterns/
 - **sicher** ist (kein secret leakage, policy-gated surfaces),
 - **auditable** ist (Writes emit events).
 
-## Version (SSOT)
+## Version
 
-- `leanctx.contract.knowledge_policy_v1.schema_version=1`
-  - SSOT: `CONTRACTS.md`
-  - Runtime: `rust/src/core/contracts.rs`
+- v1 (dieses Dokument). Die Policy-Daten tragen keine eigene `schema_version`.
 
 ## Policy Surface
 
-### Config (global/project)
+### Config
 
 Policy wird über `Config.memory` geladen und validiert:
 
-- Runtime: `rust/src/core/config.rs` (`memory_policy_effective`)
+- Runtime: `rust/src/core/config/mod.rs` (`memory_policy_effective`)
 - Structs: `rust/src/core/memory_policy.rs`
 
 Minimaler TOML-Ausschnitt:
@@ -116,7 +114,7 @@ Ordering ist deterministisch (stable sort tie-breaks), danach erfolgt Truncation
   - `action=policy` + `value=show|validate` (policy visibility + range validation)
   - `action=consolidate` (+ `dry_run=true` ⇒ Preview ohne Writes), `action=consolidate_preview`
   - `action=restore` (`store`, `query`, `limit`) ⇒ verlustfreies Undo aus dem Archiv
-  - Writes (`remember`, `pattern`, `feedback`, relations) emit **audit events**
+  - Writes (`remember`, `pattern`, `feedback`, relations) emit **events** (`KnowledgeUpdate`)
 - CLI-Parität: `lean-ctx knowledge consolidate [--all] [--dry-run]` und
   `lean-ctx knowledge restore [--store …] [--query …] [--limit N]`
 - Relations: `rust/src/tools/ctx_knowledge_relations.rs` (bounded + deterministic outputs)

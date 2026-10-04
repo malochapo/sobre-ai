@@ -400,7 +400,6 @@ pub mod search_index;
 pub mod secret_detection;
 pub mod security_posture;
 pub mod sensitivity;
-pub mod server_capabilities;
 pub mod session_token;
 pub mod shell_gate;
 pub mod startup_guard;

@@ -18,7 +18,7 @@
 //! successes) >= 0.25`, and stops being risky only when the rate drops below
 //! `0.15` — two thresholds so one lucky edit doesn't flap the decision.
 //!
-//! Storage: `~/.lean-ctx/edit_quality.json`, atomic write (tmp+rename),
+//! Storage: `edit_quality.json` in the data dir, atomic write (tmp+rename),
 //! loaded once per process, flushed periodically like `path_mode_memory`.
 
 use std::collections::HashMap;

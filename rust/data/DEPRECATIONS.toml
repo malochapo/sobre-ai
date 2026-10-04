@@ -1,4 +1,4 @@
-# LeanCTX deprecation register (CONTRACTS.md § Deprecation policy, GL #394).
+# LeanCTX deprecation register (GL #394).
 #
 # Every deprecated surface is announced here at least 2 minor releases before
 # removal. This file is compiled into the binary: `lean-ctx doctor` warns about

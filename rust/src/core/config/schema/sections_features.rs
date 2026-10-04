@@ -368,30 +368,6 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
 
     let mut boundary = BTreeMap::new();
     boundary.insert(
-        "cross_project_search".into(),
-        key(
-            "bool",
-            serde_json::json!(cfg.boundary_policy.cross_project_search),
-            "Allow searching across project boundaries",
-        ),
-    );
-    boundary.insert(
-        "cross_project_import".into(),
-        key(
-            "bool",
-            serde_json::json!(cfg.boundary_policy.cross_project_import),
-            "Allow importing knowledge from other projects",
-        ),
-    );
-    boundary.insert(
-        "audit_cross_access".into(),
-        key(
-            "bool",
-            serde_json::json!(cfg.boundary_policy.audit_cross_access),
-            "Log audit events when cross-project access occurs",
-        ),
-    );
-    boundary.insert(
         "universal_gotchas_enabled".into(),
         key(
             "bool",
@@ -402,7 +378,7 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
     sections.insert(
         "boundary_policy".into(),
         SectionSchema {
-            description: "Cross-project boundary and access control policies".into(),
+            description: "Cross-project knowledge sharing".into(),
             keys: boundary,
         },
     );

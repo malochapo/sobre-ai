@@ -497,7 +497,7 @@ pub fn run() -> u32 {
         board.check(check);
     }
 
-    // 22) Deprecation register (CONTRACTS.md policy, GL #394): warn about
+    // 22) Deprecation register (GL #394): warn about
     // every surface this build deprecates, with replacement and removal floor.
     let deprecation_check = deprecations::deprecations_outcome();
     board.check(&deprecation_check);

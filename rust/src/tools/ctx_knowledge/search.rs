@@ -20,9 +20,6 @@ pub(crate) fn handle_search(query: Option<&str>) -> String {
 
     let knowledge_dir = data_dir.join("knowledge");
 
-    // Knowledge search stays within the current project.
-    let allow_cross_project = false;
-
     let current_project_hash = std::env::current_dir()
         .ok()
         .map(|p| crate::core::project_hash::hash_project_root(&p.to_string_lossy()));
@@ -37,43 +34,11 @@ pub(crate) fn handle_search(query: Option<&str>) -> String {
         for entry in entries.flatten() {
             let dir_name = entry.file_name().to_string_lossy().to_string();
 
-            if !allow_cross_project
-                && let Some(ref current_hash) = current_project_hash
+            // Knowledge search stays within the current project.
+            if let Some(ref current_hash) = current_project_hash
                 && &dir_name != current_hash
             {
                 continue;
-            }
-
-            if let Some(ref current_hash) = current_project_hash
-                && dir_name != *current_hash
-            {
-                let policy = crate::core::config::Config::load().boundary_policy;
-                let allowed = crate::core::memory_boundary::check_boundary(
-                    current_hash,
-                    &dir_name,
-                    &policy,
-                    &crate::core::memory_boundary::CrossProjectEventType::Search,
-                );
-                crate::core::memory_boundary::record_audit_event(
-                    &crate::core::memory_boundary::CrossProjectAuditEvent {
-                        timestamp: Utc::now().to_rfc3339(),
-                        event_type: crate::core::memory_boundary::CrossProjectEventType::Search,
-                        source_project_hash: current_hash.clone(),
-                        target_project_hash: dir_name.clone(),
-                        tool: "ctx_knowledge".to_string(),
-                        action: "search".to_string(),
-                        facts_accessed: 0,
-                        allowed,
-                        policy_reason: if allowed {
-                            "boundary_policy_allowed".to_string()
-                        } else {
-                            "boundary_policy_denied".to_string()
-                        },
-                    },
-                );
-                if !allowed {
-                    continue;
-                }
             }
 
             let knowledge_file = entry.path().join("knowledge.json");

@@ -102,7 +102,7 @@ def main() -> int:
         "Every SDK declares the `http_mcp` contract versions it speaks",
         "(`SUPPORTED_HTTP_CONTRACT_VERSIONS`); the `engine_compat` check fails when",
         "a server speaks a contract the SDK release does not support. SDK majors",
-        "follow the engine contract major (CONTRACTS.md § Versioning rules).",
+        "follow the engine contract major.",
         "",
     ]
 

@@ -1,9 +1,8 @@
 //! Doctor check for the deprecation register (GL #394).
 //!
 //! `DEPRECATIONS.toml` (repo root) is compiled into the binary, so the check
-//! reports exactly the deprecations that apply to the installed build — per
-//! CONTRACTS.md every surface is announced at least 2 minor releases before
-//! removal, and `lean-ctx doctor` is the user-facing warning channel.
+//! reports exactly the deprecations that apply to the installed build: every
+//! surface is announced at least 2 minor releases before removal, and `lean-ctx doctor` is the user-facing warning channel.
 
 use super::{BOLD, DIM, GREEN, Outcome, RST, YELLOW};
 
@@ -40,7 +39,7 @@ pub(super) fn deprecations_outcome() -> Outcome {
         Ok(reg) if reg.deprecation.is_empty() => Outcome {
             ok: true,
             line: format!(
-                "{BOLD}Deprecations{RST}  {GREEN}none active{RST}  {DIM}(register: DEPRECATIONS.toml, policy: CONTRACTS.md){RST}"
+                "{BOLD}Deprecations{RST}  {GREEN}none active{RST}  {DIM}(register: DEPRECATIONS.toml){RST}"
             ),
         },
         Ok(reg) => {
