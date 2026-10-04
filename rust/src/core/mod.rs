@@ -410,10 +410,6 @@ pub mod tool_lifecycle;
 pub mod transcript_compact;
 pub mod visualizer;
 pub mod walk_filter;
-/// WASM extension runtime (`wasm-abi-v1`): sandboxed, language-independent
-/// compressors and providers. Feature-gated behind `wasm`.
-#[cfg(feature = "wasm")]
-pub mod wasm_ext;
 pub mod web;
 pub mod workspace_config;
 pub mod wrapped;

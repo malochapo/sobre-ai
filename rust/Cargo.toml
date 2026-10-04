@@ -120,7 +120,6 @@ tree-sitter = [
   "dep:tree-sitter-nix",
   "dep:tree-sitter-powershell",
 ]
-wasm = ["dep:wasmi"]
 
 [dependencies]
 rmcp = { version = "2", features = [
@@ -247,7 +246,6 @@ zstd = "0.13"
 lsp-types = "0.97"
 fs2 = "0.4"
 unicode-width = "0.2"
-wasmi = { version = "1.1", optional = true }
 yaml_serde = "0.10.4"
 
 [lints.rust]
