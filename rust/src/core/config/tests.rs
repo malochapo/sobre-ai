@@ -576,7 +576,7 @@ mod persist_global_tests {
             reloaded.max_ram_percent, 30,
             "customized value must survive"
         );
-        assert_eq!(reloaded.compression_level, CompressionLevel::Standard);
+        assert_eq!(reloaded.compression_level, Some(0.5));
         assert_eq!(reloaded.proxy_enabled, Some(true));
     }
 

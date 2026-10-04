@@ -20,8 +20,7 @@ Top-level configuration keys
 - `bypass_hints` (enum: on | off | aggressive, default `on`) — Bypass-hint mode: when agents use native Read/Grep instead of lean-ctx tools, a hint is appended to the next tool response. on (default), off, aggressive (hint on every call, no cooldown).
 - `cache_max_tokens` (usize, default `0`) — Token budget for the in-memory ctx_read cache (0 = built-in default 500k). When exceeded, least-valuable entries are evicted immediately via RRF (recency x frequency x size) so reads never block; eviction is not deferred to the staleness TTL
 - `cache_policy` (enum(aggressive|safe|off), default `aggressive`) — Cache policy for ctx_read: aggressive (13-tok stubs), safe (map on hit), off (always disk)
-- `compression_aggressiveness` (f64, default `null`) — Global compression intensity 0.0 (lossless) – 1.0 (max), mapped onto read modes/entropy/IB. Empty = per-mode defaults
-- `compression_level` (enum: off | lite | standard | max, default `lite`) — Unified output-style level for the model's prose (not tool-output compression). lite=plain concise (default), standard/max=denser symbolic 'power modes'
+- `compression_level` (f64, default `null`) — Compression intensity 0.0 (none) – 1.0 (densest). Tunes read-mode compression continuously and picks the prose style by band: <0.2 off, <0.4 lite, <0.6 standard, <0.8 max, else raw. Empty = adaptive defaults with the lite prose style
 - `content_defined_chunking` (bool, default `false`) — Enable Rabin-Karp chunking for cache-optimal output ordering
 - `crush_verbatim_json` (bool, default `false`) — Opt-in: losslessly crush array-heavy JSON from verbatim data commands (gh api, jq, kubectl get -o json, curl). Off by default keeps them verbatim. Reshapes only when it at least halves the payload; fully reconstructible
 - `debug_log` (bool, default `false`) — Opt-in (default off): write a human-readable debug log of intercepted MCP tool calls and hook routing decisions (lean-ctx vs native, with the reason) to <state_dir>/logs/debug.log. View with `lean-ctx debug-log`
@@ -39,7 +38,6 @@ Top-level configuration keys
 - `memory_profile` (enum: low | balanced | performance, default `performance`) — Controls RAM vs feature trade-off (performance = max quality)
 - `minimal_overhead` (bool, default `true`) — Skip session/knowledge/gotcha blocks in MCP instructions
 - `no_degrade` (boolean, default `false`) — Disable all automatic read-mode degradation.
-- `output_density` (enum: normal | terse | ultra, default `normal`) — Controls how dense/compact MCP tool output is formatted
 - `passthrough_commands` (string[], default `[]`) — Commands whose output is passed through uncompressed (the command still runs normally)
 - `passthrough_urls` (string[], default `[]`) — URLs to pass through without proxy interception
 - `path_jail` (bool?, default `null`) — Filesystem path jail. null/true = enforced (tools confined to the project root + allow_paths). false = the blanket "any path" opt-out — every tool path is allowed (for containers/sandboxes where the boundary is external). Compression and secret redaction are unaffected. Flip both planes at once with `lean-ctx yolo` / `lean-ctx secure`
@@ -72,7 +70,6 @@ Top-level configuration keys
 - `slow_command_threshold_ms` (u64, default `5000`) — Commands taking longer than this (ms) are recorded in the slow log. Set to 0 to disable
 - `symbol_map_auto` (bool, default `false`) — Opt-in: α-code identifier substitution in aggressive reads (>50-file projects). Off by default — abbreviated symbols hinder editing/refactoring
 - `tee_mode` (enum: never | failures | highcompression | always, default `highcompression`) — Controls when shell output is tee'd to disk for later retrieval
-- `terse_agent` (enum: off | lite | full | ultra, default `off`) — Controls agent output verbosity via instructions injection
 - `theme` (string, default `default`) — Dashboard color theme
 
 ## `[archive]`

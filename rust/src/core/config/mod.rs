@@ -89,8 +89,6 @@ pub struct Config {
     /// (`off|minimal|full`, default `minimal`). See [`RecoveryHints`].
     #[serde(default)]
     pub recovery_hints: RecoveryHints,
-    #[serde(default)]
-    pub output_density: OutputDensity,
     pub passthrough_commands: Vec<String>,
     pub passthrough_urls: Vec<String>,
     /// Output formats that are already compact/token-oriented and must be
@@ -204,20 +202,18 @@ pub struct Config {
     /// Example: `["externals/**", "target/**", "temp/**"]`
     #[serde(default)]
     pub extra_ignore_patterns: Vec<String>,
-    /// Controls agent output verbosity via instructions injection.
-    /// Values: "off" (default), "lite", "full", "ultra".
-    #[serde(default)]
-    pub terse_agent: TerseAgent,
-    /// Unified compression level (replaces separate terse_agent + output_density).
-    /// Values: "off" (default), "lite", "standard", "max".
-    #[serde(default)]
-    pub compression_level: CompressionLevel,
-    /// Global compression intensity 0.0 (lossless) – 1.0 (max), mapped onto the
-    /// read modes / entropy / IB stages (see `core::aggressiveness`). `None`
-    /// (default) keeps each mode's built-in default. The `ctx_read`
-    /// `aggressiveness` arg overrides it per call.
-    #[serde(default)]
-    pub compression_aggressiveness: Option<f64>,
+    /// Compression intensity, `0.0` (none) to `1.0` (densest). Drives the
+    /// read-mode tuning continuously (`core::aggressiveness`) and picks the
+    /// prose style by band (`CompressionLevel::from_value`). Absent: sobre's
+    /// adaptive defaults with the `lite` prose style. The legacy names
+    /// (`"off"`, `"lite"`, `"standard"`, `"max"`, `"raw"`) are read as the
+    /// value of their band.
+    #[serde(
+        default,
+        deserialize_with = "serde_defaults::deserialize_compression_level",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub compression_level: Option<f64>,
     /// Archive configuration for zero-loss compression.
     #[serde(default)]
     pub archive: ArchiveConfig,
@@ -520,7 +516,6 @@ impl Default for Config {
         Self {
             tee_mode: TeeMode::default(),
             recovery_hints: RecoveryHints::default(),
-            output_density: OutputDensity::default(),
             passthrough_commands: Vec::new(),
             passthrough_urls: Vec::new(),
             preserve_compact_formats: serde_defaults::default_preserve_compact_formats(),
@@ -549,9 +544,7 @@ impl Default for Config {
             rules_injection: None,
             permission_inheritance: None,
             extra_ignore_patterns: Vec::new(),
-            terse_agent: TerseAgent::default(),
-            compression_level: CompressionLevel::default(),
-            compression_aggressiveness: None,
+            compression_level: None,
             archive: ArchiveConfig::default(),
             memory: MemoryPolicy::default(),
             allow_paths: Vec::new(),

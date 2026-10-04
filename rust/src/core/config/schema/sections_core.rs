@@ -26,14 +26,6 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
         ),
     );
     root.insert(
-        "output_density".into(),
-        key_enum(
-            &["normal", "terse", "ultra"],
-            "normal",
-            "Controls how dense/compact MCP tool output is formatted",
-        ),
-    );
-    root.insert(
         "passthrough_commands".into(),
         key(
             "string[]",
@@ -144,27 +136,11 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
         ),
     );
     root.insert(
-        "terse_agent".into(),
-        key_enum(
-            &["off", "lite", "full", "ultra"],
-            "off",
-            "Controls agent output verbosity via instructions injection",
-        ),
-    );
-    root.insert(
-            "compression_level".into(),
-            key_enum(
-            &["off", "lite", "standard", "max"],
-            "lite",
-            "Unified output-style level for the model's prose (not tool-output compression). lite=plain concise (default), standard/max=denser symbolic 'power modes'",
-        ),
-        );
-    root.insert(
-        "compression_aggressiveness".into(),
+        "compression_level".into(),
         key(
             "f64",
-            serde_json::json!(cfg.compression_aggressiveness),
-            "Global compression intensity 0.0 (lossless) – 1.0 (max), mapped onto read modes/entropy/IB. Empty = per-mode defaults",
+            serde_json::json!(cfg.compression_level),
+            "Compression intensity 0.0 (none) – 1.0 (densest). Tunes read-mode compression continuously and picks the prose style by band: <0.2 off, <0.4 lite, <0.6 standard, <0.8 max, else raw. Empty = adaptive defaults with the lite prose style",
         ),
     );
     root.insert(

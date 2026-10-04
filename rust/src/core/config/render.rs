@@ -134,12 +134,11 @@ fn append_key_comment(out: &mut String, key_schema: &KeySchema) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::config::CompressionLevel;
 
     fn customized() -> Config {
         let mut cfg = Config {
             max_ram_percent: 30,
-            compression_level: CompressionLevel::Standard,
+            compression_level: Some(0.5),
             theme: "neon".to_string(),
             ..Config::default()
         };
@@ -176,7 +175,7 @@ mod tests {
         let parsed: Config = toml::from_str(&render_annotated_config(&cfg, &schema)).unwrap();
 
         assert_eq!(parsed.max_ram_percent, 30);
-        assert_eq!(parsed.compression_level, CompressionLevel::Standard);
+        assert_eq!(parsed.compression_level, Some(0.5));
         assert_eq!(parsed.theme, "neon");
     }
 

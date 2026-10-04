@@ -1063,8 +1063,11 @@ fn cmd_show_effective() {
     println!("{}", box_top("Simplified (high-level)"));
     box_row(&format!(
         " compression_level   = {:10}  {}",
-        format!("{compression:?}"),
-        source_hint(cfg.compression_level != config::CompressionLevel::Off)
+        cfg.compression_level.map_or_else(
+            || format!("{compression:?}"),
+            |v| format!("{v:.2} ({compression:?})")
+        ),
+        source_hint(cfg.compression_level.is_some())
     ));
     box_row(&format!(
         " max_disk_mb         = {:10}  {}",
@@ -1217,7 +1220,7 @@ mod tests {
         let existing = "max_ram_percent = 30\ncompression_level = \"standard\"\n";
         let cfg = config_for_full_init(Some(existing)).expect("parse existing");
         assert_eq!(cfg.max_ram_percent, 30, "must keep the user's value, not 5");
-        assert_eq!(cfg.compression_level, config::CompressionLevel::Standard);
+        assert_eq!(cfg.compression_level, Some(0.5));
     }
 
     #[test]

@@ -1,4 +1,4 @@
-use lean_ctx::core::config::{CompressionLevel, Config, TerseAgent};
+use lean_ctx::core::config::{CompressionLevel, Config};
 use lean_ctx::instructions;
 use lean_ctx::tools::CrpMode;
 
@@ -42,65 +42,7 @@ fn set_compression(compression: &str) -> ConfigGuard {
     with_config(&format!("compression_level = \"{compression}\"\n"))
 }
 
-fn set_legacy_terse(terse: &str) -> ConfigGuard {
-    with_config(&format!(
-        "compression_level = \"off\"\nterse_agent = \"{terse}\"\n"
-    ))
-}
-
-// ── Legacy `terse_agent` config routes through CompressionLevel ──
-
-#[test]
-fn legacy_terse_lite_routes_to_compression_lite() {
-    let _g = set_legacy_terse("lite");
-    let text = instructions::build_instructions_for_test(CrpMode::Off);
-    assert!(
-        text.contains("OUTPUT STYLE: concise"),
-        "legacy terse lite should route to compression lite prompt"
-    );
-}
-
-#[test]
-fn legacy_terse_full_routes_to_compression_standard() {
-    let _g = set_legacy_terse("full");
-    let text = instructions::build_instructions_for_test(CrpMode::Off);
-    assert!(
-        text.contains("OUTPUT STYLE: dense"),
-        "legacy terse full should route to compression standard prompt"
-    );
-}
-
-#[test]
-fn legacy_terse_ultra_routes_to_compression_max() {
-    let _g = set_legacy_terse("ultra");
-    let text = instructions::build_instructions_for_test(CrpMode::Off);
-    assert!(
-        text.contains("OUTPUT STYLE: expert-terse"),
-        "legacy terse ultra should route to compression max prompt"
-    );
-}
-
-#[test]
-fn legacy_terse_off_no_output_style() {
-    let _g = set_legacy_terse("off");
-    let text = instructions::build_instructions_for_test(CrpMode::Off);
-    assert!(
-        !text.contains("OUTPUT STYLE"),
-        "terse off should not inject OUTPUT STYLE block"
-    );
-}
-
 // ── Unified `compression_level` config key ──
-
-#[test]
-fn compression_level_overrides_legacy_terse_agent() {
-    let _g = with_config("compression_level = \"max\"\nterse_agent = \"lite\"\n");
-    let text = instructions::build_instructions_for_test(CrpMode::Off);
-    assert!(
-        text.contains("expert-terse"),
-        "compression_level should override legacy terse_agent"
-    );
-}
 
 #[test]
 fn compression_level_lite_injects_concise() {
@@ -149,34 +91,56 @@ fn compression_level_off_no_output_style() {
 // ── Config deserialization ──
 
 #[test]
-fn terse_agent_config_deserializes() {
-    let toml = r#"
-terse_agent = "full"
-"#;
-    let config: Config = toml::from_str(toml).expect("should parse terse_agent from toml");
-    assert!(matches!(config.terse_agent, TerseAgent::Full));
-}
-
-#[test]
-fn terse_agent_config_default_off() {
-    let toml = "";
-    let config: Config = toml::from_str(toml).expect("empty toml should use defaults");
-    assert!(matches!(config.terse_agent, TerseAgent::Off));
-}
-
-#[test]
-fn compression_level_config_deserializes() {
-    let toml = r#"compression_level = "standard""#;
-    let config: Config = toml::from_str(toml).expect("should parse compression_level");
-    assert!(matches!(
-        config.compression_level,
+fn compression_level_name_reads_as_band_value() {
+    let config: Config =
+        toml::from_str(r#"compression_level = "standard""#).expect("legacy name parses");
+    assert_eq!(config.compression_level, Some(0.5));
+    assert_eq!(
+        CompressionLevel::effective(&config),
         CompressionLevel::Standard
-    ));
+    );
 }
 
 #[test]
-fn compression_level_config_default_lite() {
-    let toml = "";
-    let config: Config = toml::from_str(toml).expect("empty toml should use defaults");
-    assert!(matches!(config.compression_level, CompressionLevel::Lite));
+fn compression_level_number_is_clamped() {
+    let config: Config = toml::from_str("compression_level = 1.7").expect("number parses");
+    assert_eq!(config.compression_level, Some(1.0));
+}
+
+#[test]
+fn compression_level_unknown_name_is_a_parse_error() {
+    assert!(toml::from_str::<Config>(r#"compression_level = "huge""#).is_err());
+}
+
+#[test]
+fn compression_level_absent_means_adaptive_lite() {
+    let config: Config = toml::from_str("").expect("empty toml should use defaults");
+    assert_eq!(config.compression_level, None);
+    assert_eq!(CompressionLevel::effective(&config), CompressionLevel::Lite);
+}
+
+#[test]
+fn compression_level_bands() {
+    for (value, level) in [
+        (0.0, CompressionLevel::Off),
+        (0.19, CompressionLevel::Off),
+        (0.2, CompressionLevel::Lite),
+        (0.45, CompressionLevel::Standard),
+        (0.6, CompressionLevel::Max),
+        (0.8, CompressionLevel::Raw),
+        (1.0, CompressionLevel::Raw),
+    ] {
+        assert_eq!(CompressionLevel::from_value(value), level, "{value}");
+        assert_eq!(CompressionLevel::from_value(level.value()), level);
+    }
+}
+
+#[test]
+fn compression_level_number_selects_prose_band() {
+    let _g = with_config("compression_level = 0.65\n");
+    let text = instructions::build_instructions_for_test(CrpMode::Off);
+    assert!(
+        text.contains("OUTPUT STYLE: expert-terse"),
+        "0.65 falls in the max band"
+    );
 }

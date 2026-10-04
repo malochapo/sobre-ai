@@ -51,54 +51,6 @@ mod compression_level_tests {
     }
 
     #[test]
-    fn from_legacy_ultra_agent_maps_to_max() {
-        assert_eq!(
-            CompressionLevel::from_legacy(&TerseAgent::Ultra, &OutputDensity::Normal),
-            CompressionLevel::Max
-        );
-    }
-
-    #[test]
-    fn from_legacy_ultra_density_maps_to_max() {
-        assert_eq!(
-            CompressionLevel::from_legacy(&TerseAgent::Off, &OutputDensity::Ultra),
-            CompressionLevel::Max
-        );
-    }
-
-    #[test]
-    fn from_legacy_full_agent_maps_to_standard() {
-        assert_eq!(
-            CompressionLevel::from_legacy(&TerseAgent::Full, &OutputDensity::Normal),
-            CompressionLevel::Standard
-        );
-    }
-
-    #[test]
-    fn from_legacy_lite_agent_maps_to_lite() {
-        assert_eq!(
-            CompressionLevel::from_legacy(&TerseAgent::Lite, &OutputDensity::Normal),
-            CompressionLevel::Lite
-        );
-    }
-
-    #[test]
-    fn from_legacy_terse_density_maps_to_lite() {
-        assert_eq!(
-            CompressionLevel::from_legacy(&TerseAgent::Off, &OutputDensity::Terse),
-            CompressionLevel::Lite
-        );
-    }
-
-    #[test]
-    fn from_legacy_both_off_maps_to_off() {
-        assert_eq!(
-            CompressionLevel::from_legacy(&TerseAgent::Off, &OutputDensity::Normal),
-            CompressionLevel::Off
-        );
-    }
-
-    #[test]
     fn labels_match() {
         assert_eq!(CompressionLevel::Off.label(), "off");
         assert_eq!(CompressionLevel::Lite.label(), "lite");
@@ -119,15 +71,16 @@ mod compression_level_tests {
     }
 
     #[test]
-    fn deserialization_defaults_to_lite() {
+    fn deserialization_defaults_to_adaptive_lite() {
         let cfg: Config = toml::from_str("").unwrap();
-        assert_eq!(cfg.compression_level, CompressionLevel::Lite);
+        assert_eq!(cfg.compression_level, None);
+        assert_eq!(CompressionLevel::effective(&cfg), CompressionLevel::Lite);
     }
 
     #[test]
     fn deserialization_from_toml() {
         let cfg: Config = toml::from_str(r#"compression_level = "standard""#).unwrap();
-        assert_eq!(cfg.compression_level, CompressionLevel::Standard);
+        assert_eq!(cfg.compression_level, Some(0.5));
     }
 }
 

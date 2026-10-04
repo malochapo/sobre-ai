@@ -160,6 +160,7 @@ mod tests {
     /// reverse-parity test below has to know about them. Adding a
     /// `skip_serializing_if` field to a config struct means adding it here.
     const SERDE_OMITTED_BY_DEFAULT: &[&str] = &[
+        "compression_level",
         "cost.default_model",
         "cost.models",
         "cost.prices",

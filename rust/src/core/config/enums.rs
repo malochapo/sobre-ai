@@ -217,29 +217,42 @@ impl CompressionLevel {
         }
     }
 
-    /// Infers a `CompressionLevel` from legacy config keys for backward compatibility.
-    /// Priority: terse_agent > output_density (picks the highest implied level).
-    pub fn from_legacy(terse_agent: &TerseAgent, output_density: &OutputDensity) -> Self {
-        match (terse_agent, output_density) {
-            (TerseAgent::Ultra, _) | (_, OutputDensity::Ultra) => Self::Max,
-            (TerseAgent::Full, _) => Self::Standard,
-            (TerseAgent::Lite, _) | (_, OutputDensity::Terse) => Self::Lite,
-            _ => Self::Off,
-        }
-    }
-
-    /// Returns the effective compression level with resolution order:
-    /// 0. Session-level degrade override (set by correction-loop feedback)
-    /// 1. `compression_level` in config
-    /// 2. Legacy config fields (`terse_agent`, `output_density`)
+    /// Returns the effective prose level: a session-level degrade (set by
+    /// correction-loop feedback) wins, then the band of the configured
+    /// `compression_level`, else [`Self::Lite`].
     pub fn effective(config: &Config) -> Self {
         if let Some(degraded) = Self::session_degrade_level() {
             return degraded;
         }
-        if config.compression_level != Self::Off {
-            return config.compression_level;
+        config
+            .compression_level
+            .map_or(Self::Lite, Self::from_value)
+    }
+
+    /// The prose level for a continuous `compression_level` value: five equal
+    /// bands over `[0, 1]` (off, lite, standard, max, raw).
+    #[must_use]
+    pub fn from_value(value: f64) -> Self {
+        match value.clamp(0.0, 1.0) {
+            v if v < 0.2 => Self::Off,
+            v if v < 0.4 => Self::Lite,
+            v if v < 0.6 => Self::Standard,
+            v if v < 0.8 => Self::Max,
+            _ => Self::Raw,
         }
-        Self::from_legacy(&config.terse_agent, &config.output_density)
+    }
+
+    /// The `compression_level` value a level name stands for: `off` is 0, the
+    /// others sit in the middle of their band.
+    #[must_use]
+    pub fn value(self) -> f64 {
+        match self {
+            Self::Off => 0.0,
+            Self::Lite => 0.3,
+            Self::Standard => 0.5,
+            Self::Max => 0.7,
+            Self::Raw => 0.9,
+        }
     }
 
     /// Session-level degrade: correction loop detected, temporarily reduce compression.
@@ -304,6 +317,7 @@ impl CompressionLevel {
             "lite" => Some(Self::Lite),
             "standard" | "std" => Some(Self::Standard),
             "max" => Some(Self::Max),
+            "raw" => Some(Self::Raw),
             _ => None,
         }
     }

@@ -6,8 +6,8 @@
 //! entropy / information-bottleneck stages — it never introduces a model, so the
 //! #498 determinism contract (output = pure function of inputs) is preserved.
 //! Resolution order (see [`effective`]): explicit per-call arg >
-//! `compression_aggressiveness` in config > `None`. `None` means "use each mode's current default", i.e. the
-//! behaviour shipped before this knob existed.
+//! `compression_level` in config > `None`. `None` means "use each mode's
+//! adaptive default", the behaviour when `compression_level` is not set.
 
 /// Concrete tuning derived from one aggressiveness value. Every field is a pure
 /// function of `a`, so the same `a` always yields the same knobs (determinism).
@@ -47,9 +47,7 @@ pub fn effective(explicit: Option<f64>) -> Option<f64> {
     if let Some(a) = explicit {
         return Some(a.clamp(0.0, 1.0));
     }
-    crate::core::config::Config::load()
-        .compression_aggressiveness
-        .map(|a| a.clamp(0.0, 1.0))
+    crate::core::config::Config::load().compression_level
 }
 
 /// Stable cache-key fragment for an aggressiveness setting.
