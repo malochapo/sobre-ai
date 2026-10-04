@@ -116,7 +116,6 @@ pub mod context_overhead;
 pub mod context_overlay;
 pub mod context_radar;
 pub mod context_snapshot;
-pub mod cross_source_edges;
 pub mod cross_source_hints;
 
 /// Convenience re-export: all context-related modules.
@@ -143,7 +142,6 @@ pub mod knowledge_bridge;
 // sites listed in docs/removals.md would let this attribute go away.
 #[cfg_attr(not(feature = "embeddings"), allow(dead_code))]
 pub mod knowledge_embedding;
-pub mod knowledge_provider_extract;
 pub mod knowledge_relations;
 
 /// Convenience re-export: all knowledge-related modules.
@@ -327,7 +325,6 @@ pub mod hebbian_cache;
 pub mod hnsw;
 pub mod home;
 pub mod homeostasis;
-pub mod immune_detector;
 pub mod quality_benchmark;
 
 pub mod edit_quality;

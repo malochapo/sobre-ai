@@ -36,24 +36,12 @@ impl ContextEngine {
         }
     }
 
-    pub fn from_server(server: LeanCtxServer) -> Self {
-        Self {
-            server,
-            next_id: AtomicI64::new(1),
-        }
-    }
-
     pub fn server(&self) -> &LeanCtxServer {
         &self.server
     }
 
     pub fn manifest(&self) -> Value {
         crate::core::mcp_manifest::manifest_value()
-    }
-
-    pub async fn call_tool_value(&self, name: &str, arguments: Option<Value>) -> Result<Value> {
-        let result = self.call_tool_result(name, arguments).await?;
-        serde_json::to_value(result).map_err(|e| anyhow!("serialize CallToolResult: {e}"))
     }
 
     pub async fn call_tool_result(

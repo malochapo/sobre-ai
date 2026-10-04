@@ -40,10 +40,6 @@ pub fn build_instructions_for_test(crp_mode: CrpMode) -> String {
     crate::instructions::build_instructions_for_test(crp_mode)
 }
 
-pub fn build_claude_code_instructions_for_test() -> String {
-    crate::instructions::claude_code_instructions()
-}
-
 /// Deterministic STATIC Claude Code instructions (cold first-contact, no dynamic
 /// session/knowledge/gotcha payload) for the char-budget benchmark.
 pub fn build_claude_code_static_instructions_for_test() -> String {

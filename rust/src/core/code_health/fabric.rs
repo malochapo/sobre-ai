@@ -16,10 +16,9 @@
 
 use super::scan::ProjectHealth;
 use crate::core::bm25_index::ChunkKind;
-use crate::core::consolidation::{self, ConsolidationArtifacts, PrunePrior};
+use crate::core::consolidation::{self, ConsolidationArtifacts, ExtractedFact, PrunePrior};
 use crate::core::content_chunk::ContentChunk;
 use crate::core::graph_index::IndexEdge;
-use crate::core::knowledge_provider_extract::ExtractedFact;
 
 /// URI scheme + BM25 prune prefix for health chunks.
 const URI_SCHEME: &str = "health://";

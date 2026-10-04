@@ -2,7 +2,7 @@
 //! *and* actually active at runtime.
 //!
 //! The Cognition v2 stack (power-law decay, Hebbian eviction, global-workspace
-//! ignition, replay consolidation, FEP prefetch, immune detection, …) is only
+//! ignition, replay consolidation, FEP prefetch, …) is only
 //! useful if it is genuinely reached on the hot path — not dead code. Every
 //! subsystem calls [`tick`] at its real call site; [`flush`] persists the
 //! counters to a small JSON file so a *separate* process (`lean-ctx introspect
@@ -51,11 +51,6 @@ pub const SUBSYSTEMS: &[Subsystem] = &[
         science: "complementary learning systems",
     },
     Subsystem {
-        key: "integration_phi",
-        label: "Integration-aware Phi",
-        science: "IIT non-redundancy (MMR)",
-    },
-    Subsystem {
         key: "gwt_ignition",
         label: "Global-workspace ignition",
         science: "global workspace theory",
@@ -74,11 +69,6 @@ pub const SUBSYSTEMS: &[Subsystem] = &[
         key: "fep_prefetch",
         label: "FEP prefetch",
         science: "active inference / free energy",
-    },
-    Subsystem {
-        key: "immune_detector",
-        label: "Immune detector",
-        science: "artificial immune system",
     },
     Subsystem {
         key: "observation_synthesis",
