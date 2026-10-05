@@ -59,13 +59,10 @@ fn setup_bootstrap_doctor_status_json_smoke() {
     let tmp = tempfile::tempdir().unwrap();
     let home = tmp.path().join("home");
     std::fs::create_dir_all(&home).unwrap();
-    let data_dir = tmp.path().join("data");
-    std::fs::create_dir_all(&data_dir).unwrap();
     let bin_dir = tmp.path().join("bin");
     std::fs::create_dir_all(&bin_dir).unwrap();
 
     let home_str = home.to_string_lossy().to_string();
-    let data_str = data_dir.to_string_lossy().to_string();
 
     // Fake claude binary so we can verify `claude mcp add-json` integration.
     // It writes stdin JSON to $HOME/claude-mcp.json and exits 0.
@@ -86,14 +83,14 @@ fn setup_bootstrap_doctor_status_json_smoke() {
         );
     }
 
+    let dirs = crate::user_dirs::SeparateDirs::new(tmp.path());
+    let config_dir = dirs.config.clone();
+
     let mut envs = vec![
         ("HOME", home_str.as_str()),
-        ("LEAN_CTX_DATA_DIR", data_str.as_str()),
-        ("LEAN_CTX_CONFIG_DIR", data_str.as_str()),
-        ("LEAN_CTX_STATE_DIR", data_str.as_str()),
-        ("LEAN_CTX_CACHE_DIR", data_str.as_str()),
         ("LEAN_CTX_ACTIVE", "1"),
     ];
+    envs.extend(dirs.to_env_pairs().into_iter());
 
     #[cfg(not(windows))]
     {
@@ -125,7 +122,7 @@ fn setup_bootstrap_doctor_status_json_smoke() {
     // env.sh is Unix-only (shell script); skip assertion on Windows.
     #[cfg(not(windows))]
     {
-        let env_sh = data_dir.join("env.sh");
+        let env_sh = std::path::Path::new(&config_dir).join("env.sh");
         let env_sh_content = std::fs::read_to_string(&env_sh).expect("env.sh exists");
         assert!(
             env_sh_content.contains("lean-ctx docker self-heal"),
@@ -167,8 +164,6 @@ fn claude_config_dir_fallback_writes_dot_claude_json() {
     let tmp = tempfile::tempdir().unwrap();
     let home = tmp.path().join("home");
     std::fs::create_dir_all(&home).unwrap();
-    let data_dir = tmp.path().join("data");
-    std::fs::create_dir_all(&data_dir).unwrap();
     let bin_dir = tmp.path().join("bin");
     std::fs::create_dir_all(&bin_dir).unwrap();
 
@@ -176,7 +171,6 @@ fn claude_config_dir_fallback_writes_dot_claude_json() {
     std::fs::create_dir_all(&claude_cfg).unwrap();
 
     let home_str = home.to_string_lossy().to_string();
-    let data_str = data_dir.to_string_lossy().to_string();
     let claude_cfg_str = claude_cfg.to_string_lossy().to_string();
 
     // Fake claude that fails (forces lean-ctx to fallback to file merge/write).
@@ -191,15 +185,14 @@ fn claude_config_dir_fallback_writes_dot_claude_json() {
         write_exe(&claude_path, "#!/bin/sh\nexit 1\n");
     }
 
+    let dirs = crate::user_dirs::SeparateDirs::new(tmp.path());
+
     let mut envs = vec![
         ("HOME", home_str.as_str()),
-        ("LEAN_CTX_DATA_DIR", data_str.as_str()),
-        ("LEAN_CTX_CONFIG_DIR", data_str.as_str()),
-        ("LEAN_CTX_STATE_DIR", data_str.as_str()),
-        ("LEAN_CTX_CACHE_DIR", data_str.as_str()),
         ("LEAN_CTX_ACTIVE", "1"),
         ("CLAUDE_CONFIG_DIR", claude_cfg_str.as_str()),
     ];
+    envs.extend(dirs.to_env_pairs().into_iter());
 
     #[cfg(not(windows))]
     {
@@ -261,8 +254,6 @@ fn init_agent_preserves_agents_md_and_is_idempotent() {
     let tmp = tempfile::tempdir().unwrap();
     let home = tmp.path().join("home");
     std::fs::create_dir_all(&home).unwrap();
-    let data_dir = tmp.path().join("data");
-    std::fs::create_dir_all(&data_dir).unwrap();
     let bin_dir = tmp.path().join("bin");
     std::fs::create_dir_all(&bin_dir).unwrap();
     let project = tmp.path().join("project");
@@ -276,7 +267,6 @@ fn init_agent_preserves_agents_md_and_is_idempotent() {
     std::fs::write(&agents_path, "# My Agents\n\nDo not overwrite.\n").unwrap();
 
     let home_str = home.to_string_lossy().to_string();
-    let data_str = data_dir.to_string_lossy().to_string();
 
     // Fake claude (success) so init --agent claude prefers `claude mcp add-json`.
     let claude_path = bin_dir.join(if cfg!(windows) {
@@ -290,14 +280,13 @@ fn init_agent_preserves_agents_md_and_is_idempotent() {
         write_exe(&claude_path, "#!/bin/sh\nexit 0\n");
     }
 
+    let dirs = crate::user_dirs::SeparateDirs::new(tmp.path());
+
     let mut envs = vec![
         ("HOME", home_str.as_str()),
-        ("LEAN_CTX_DATA_DIR", data_str.as_str()),
-        ("LEAN_CTX_CONFIG_DIR", data_str.as_str()),
-        ("LEAN_CTX_STATE_DIR", data_str.as_str()),
-        ("LEAN_CTX_CACHE_DIR", data_str.as_str()),
         ("LEAN_CTX_ACTIVE", "1"),
     ];
+    envs.extend(dirs.to_env_pairs().into_iter());
     #[cfg(not(windows))]
     {
         envs.push(("SHELL", "/bin/bash"));
@@ -367,22 +356,18 @@ fn init_claude_installs_dedicated_rules_file_without_claude_md() {
     let tmp = tempfile::tempdir().unwrap();
     let home = tmp.path().join("home");
     std::fs::create_dir_all(&home).unwrap();
-    let data_dir = tmp.path().join("data");
-    std::fs::create_dir_all(&data_dir).unwrap();
     let project = tmp.path().join("project");
     std::fs::create_dir_all(&project).unwrap();
 
     let home_str = home.to_string_lossy().to_string();
-    let data_str = data_dir.to_string_lossy().to_string();
+
+    let dirs = crate::user_dirs::SeparateDirs::new(tmp.path());
 
     let mut envs = vec![
         ("HOME", home_str.as_str()),
-        ("LEAN_CTX_DATA_DIR", data_str.as_str()),
-        ("LEAN_CTX_CONFIG_DIR", data_str.as_str()),
-        ("LEAN_CTX_STATE_DIR", data_str.as_str()),
-        ("LEAN_CTX_CACHE_DIR", data_str.as_str()),
         ("LEAN_CTX_ACTIVE", "1"),
     ];
+    envs.extend(dirs.to_env_pairs().into_iter());
     #[cfg(not(windows))]
     {
         envs.push(("SHELL", "/bin/bash"));
@@ -468,23 +453,20 @@ fn init_augment_installs_lean_ctx_mcp_into_dot_augment_settings() {
     let tmp = tempfile::tempdir().unwrap();
     let home = tmp.path().join("home");
     std::fs::create_dir_all(&home).unwrap();
-    let data_dir = tmp.path().join("data");
-    std::fs::create_dir_all(&data_dir).unwrap();
     let project = tmp.path().join("project");
     std::fs::create_dir_all(&project).unwrap();
 
     let home_str = home.to_string_lossy().to_string();
-    let data_str = data_dir.to_string_lossy().to_string();
 
-    let envs = [
+    let dirs = crate::user_dirs::SeparateDirs::new(tmp.path());
+    let mut envs_vec = vec![
         ("HOME", home_str.as_str()),
-        ("LEAN_CTX_DATA_DIR", data_str.as_str()),
-        ("LEAN_CTX_CONFIG_DIR", data_str.as_str()),
-        ("LEAN_CTX_STATE_DIR", data_str.as_str()),
-        ("LEAN_CTX_CACHE_DIR", data_str.as_str()),
         ("LEAN_CTX_ACTIVE", "1"),
         ("SHELL", "/bin/bash"),
     ];
+    envs_vec.extend(dirs.to_env_pairs().into_iter());
+
+    let envs: Vec<(&str, &str)> = envs_vec;
 
     let out = Command::new(bin)
         .args(["init", "--agent", "augment", "--global", "--mode", "mcp"])

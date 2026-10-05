@@ -61,18 +61,20 @@ fn run_init(sb: &Sandbox, agent: &str) -> std::process::Output {
         sb.bin_dir.display(),
         std::env::var("PATH").unwrap_or_default()
     );
-    Command::new(env!("CARGO_BIN_EXE_lean-ctx"))
-        .args(["init", "--agent", agent, "--global", "--mode", "mcp"])
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_lean-ctx"));
+    cmd.args(["init", "--agent", agent, "--global", "--mode", "mcp"])
         .env("HOME", &sb.home)
-        .env("LEAN_CTX_DATA_DIR", &sb.data)
-        .env("LEAN_CTX_CONFIG_DIR", &sb.data)
-        .env("LEAN_CTX_STATE_DIR", &sb.data)
-        .env("LEAN_CTX_CACHE_DIR", &sb.data)
         .env("LEAN_CTX_ACTIVE", "1")
         .env("SHELL", "/bin/bash")
-        .env("PATH", &path)
-        .output()
-        .expect("spawn lean-ctx init")
+        .env("PATH", &path);
+
+    // Use separate directories for each category to properly validate separation.
+    cmd.env("LEAN_CTX_CONFIG_DIR", &sb.data);
+    cmd.env("LEAN_CTX_DATA_DIR", &sb.data);
+    cmd.env("LEAN_CTX_STATE_DIR", &sb.data);
+    cmd.env("LEAN_CTX_CACHE_DIR", &sb.data);
+
+    cmd.output().expect("spawn lean-ctx init")
 }
 
 /// `~/.claude.json` is a symlink into the user's dotfiles repo. The lean-ctx MCP
