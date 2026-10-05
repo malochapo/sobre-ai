@@ -92,7 +92,7 @@ fn load_mcp_live() -> Option<serde_json::Value> {
 #[allow(clippy::many_single_char_names)] // ANSI formatting: t=theme, r=reset, b=bold, d=dim
 pub fn format_cep_report() -> String {
     let theme = active_theme();
-    let store = crate::core::stats::load_for_display();
+    let store = crate::core::stats::load();
     let cep = &store.cep;
     let live = load_mcp_live();
     let mut out = Vec::new();

@@ -171,15 +171,10 @@ pub(super) fn remove_project_agent_files(dry_run: bool) -> bool {
 /// the marker to the end of the lean-ctx block (next heading or end of file).
 pub(super) fn remove_lean_ctx_section_from_rules(content: &str) -> String {
     // If the file has the HTML comment markers, use marker-based removal.
-    // Check both new (`START_MARK`) and old (`<!-- lean-ctx-rules-`) formats.
+    const MARKER_START: &str = crate::core::rules_canonical::START_MARK;
     const MARKER_END: &str = crate::core::rules_canonical::END_MARK;
-    for marker_start in [
-        crate::core::rules_canonical::START_MARK,
-        "<!-- lean-ctx-rules-",
-    ] {
-        if content.contains(marker_start) {
-            return remove_marked_block(content, marker_start, MARKER_END);
-        }
+    if content.contains(MARKER_START) {
+        return remove_marked_block(content, MARKER_START, MARKER_END);
     }
 
     // Otherwise, remove from `# Context Engineering Layer` heading to end of file
@@ -249,7 +244,6 @@ pub(super) fn remove_shell_hook(home: &Path, dry_run: bool) -> bool {
             continue;
         }
 
-        let is_legacy = !content.contains("# lean-ctx shell hook — end");
         let mut cleaned = remove_lean_ctx_block(&content);
         cleaned = remove_source_lines(&cleaned);
         cleaned = remove_lean_ctx_login_block(&cleaned);
@@ -267,9 +261,6 @@ pub(super) fn remove_shell_hook(home: &Path, dry_run: bool) -> bool {
                 if !dry_run {
                     println!("    Backup: {}", shorten(&bak, home));
                 }
-                if is_legacy {
-                    println!("    ⚠ Legacy hook (no end marker) — please review {short} manually");
-                }
                 removed = true;
             }
         }
@@ -281,13 +272,13 @@ pub(super) fn remove_shell_hook(home: &Path, dry_run: bool) -> bool {
         "shell-hook.fish",
         "shell-hook.ps1",
     ];
-    let lc_dir = home.join(".lean-ctx");
+    let lc_dir = crate::core::paths::config_dir().unwrap_or_else(|_| home.join(".config/lean-ctx"));
     for f in &hook_files {
         let path = lc_dir.join(f);
         if path.exists() {
             let _ = safe_remove(&path, dry_run);
             let verb = if dry_run { "Would remove" } else { "✓" };
-            println!("  {verb} Removed ~/.lean-ctx/{f}");
+            println!("  {verb} Removed {}", path.display());
             removed = true;
         }
     }
@@ -664,7 +655,7 @@ pub(super) fn remove_rules_files(home: &Path, dry_run: bool) -> bool {
     // --- Shared: surgically remove lean-ctx section, keep user content ---
     // Two marker styles exist:
     //   1. HTML comment markers: `START_MARK` … `END_MARK`
-    //   2. Old heading-based: `# Context Engineering Layer` (pre-v13)
+    //   2. Heading-based: `# Context Engineering Layer` (Kiro steering)
     const HEADING_MARKER: &str = "# Context Engineering Layer";
     const HTML_START: &str = crate::core::rules_canonical::START_MARK;
     const HTML_END: &str = crate::core::rules_canonical::END_MARK;

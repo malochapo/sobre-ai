@@ -68,10 +68,6 @@ pub fn run_setup_with_options(opts: SetupOptions) -> Result<SetupReport, String>
     let binary = resolve_portable_binary();
     let home_str = home.to_string_lossy().to_string();
 
-    // Commit to the XDG layout (and drain any residual ~/.lean-ctx) so a stray
-    // marker can never re-collapse config/data/state/cache later (GL #623).
-    crate::core::layout_pin::heal();
-
     let mut steps: Vec<SetupStepReport> = Vec::new();
 
     // Step: Shell Hook

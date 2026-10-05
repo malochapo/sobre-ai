@@ -176,72 +176,6 @@ pub fn run() -> u32 {
     };
     board.check(&stats_outcome);
 
-    let split_dirs = crate::core::data_dir::all_data_dirs_with_stats();
-    if split_dirs.len() >= 2 {
-        let dirs_str = split_dirs
-            .iter()
-            .map(|d| d.display().to_string())
-            .collect::<Vec<_>>()
-            .join(", ");
-        board.check(&Outcome {
-            ok: false,
-            line: format!(
-                "{BOLD}data dir split{RST}  {RED}stats.json found in {count} locations{RST}: {dirs_str}  {DIM}(run: lean-ctx doctor --fix to merge){RST}",
-                count = split_dirs.len(),
-            ),
-        });
-    }
-
-    // XDG layout (GH #408): a legacy/mixed single-dir install mixes config with
-    // data/state/cache, which blocks a read-only config sandbox. Scored as a
-    // failure while present (#433) — `doctor --fix` splits it into the four typed
-    // XDG dirs, after which this check disappears.
-    if let Some((src, n)) = crate::core::xdg_migrate::pending() {
-        board.check(&Outcome {
-            ok: false,
-            line: format!(
-                "{BOLD}XDG layout{RST}  {YELLOW}{n} item(s) in single dir{RST}  {DIM}{}{RST}  {DIM}(run: lean-ctx doctor --fix to split into config/data/state/cache){RST}",
-                src.display()
-            ),
-        });
-    }
-
-    // #594: a `config.toml` stranded in the data dir means the MCP server (an
-    // older `LEAN_CTX_DATA_DIR` env collapsed its layout) and the CLI were
-    // reading *different* config. Flag it; `lean-ctx init`/`update` and
-    // `doctor --fix` relocate it to the config dir so both agree again.
-    if let Some(stray) = crate::core::config_heal::pending() {
-        board.check(&Outcome {
-            ok: false,
-            line: format!(
-                "{BOLD}config location{RST}  {YELLOW}stray config.toml in the data dir{RST}  {DIM}{}{RST}  {DIM}(run: lean-ctx doctor --fix to unify CLI + MCP){RST}",
-                stray.display()
-            ),
-        });
-    }
-
-    // Layout commitment (GL #623): a pinned XDG install can no longer be
-    // hijacked by a stray ~/.lean-ctx. Surface the mode and flag a residual dir
-    // (heal reclaims it on the next start / `doctor --fix`).
-    {
-        let pinned = crate::core::layout_pin::is_xdg_pinned();
-        let residual = crate::core::xdg_migrate::residual_legacy_present();
-        let line = if pinned && residual {
-            format!(
-                "{BOLD}layout{RST}  {GREEN}xdg-pinned{RST}  {YELLOW}residual ~/.lean-ctx present{RST}  {DIM}(auto-reclaimed on next start){RST}"
-            )
-        } else if pinned {
-            format!(
-                "{BOLD}layout{RST}  {GREEN}xdg-pinned{RST}  {DIM}(~/.lean-ctx can no longer hijack this install){RST}"
-            )
-        } else {
-            format!(
-                "{BOLD}layout{RST}  {WHITE}single-dir / legacy{RST}  {DIM}(run: lean-ctx doctor --fix to commit to XDG){RST}"
-            )
-        };
-        board.check(&Outcome { ok: true, line });
-    }
-
     // 5) config.toml (missing is OK). It lives in the CONFIG dir
     // ($XDG_CONFIG_HOME/lean-ctx after a split), not the data dir — resolve it
     // through the same path as the loader so the report matches reality
@@ -572,7 +506,7 @@ pub fn run_cli(args: &[String]) -> i32 {
         println!("Usage:");
         println!("  lean-ctx doctor");
         println!(
-            "  lean-ctx doctor overhead [--json] [--gate]   Fixed context cost per session (--gate: non-zero exit when over [context] budget_tokens)"
+            "  lean-ctx doctor overhead [--json] [--gate]   Fixed context cost per session (--gate: non-zero exit when over the 8000-token budget)"
         );
         println!(
             "  lean-ctx doctor lint-context [--json]   Lint injected context for low-signal/dup lines"

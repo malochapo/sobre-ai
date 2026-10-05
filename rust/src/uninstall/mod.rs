@@ -270,10 +270,9 @@ pub(super) fn remove_marked_block(content: &str, start: &str, end: &str) -> Stri
 /// "full" uninstall left >150 MB of data + cache behind. We now resolve through the
 /// exact same [`core::paths`](crate::core::paths) functions the proxy uses,
 /// so every XDG category (config/data/state/cache, honoring `LEAN_CTX_*_DIR` and
-/// `XDG_*` overrides) is covered, plus the legacy single-dir and macOS
-/// Application Support locations for older installs.
+/// `XDG_*` overrides) is covered.
 fn data_dirs_to_remove(home: &Path) -> Vec<PathBuf> {
-    let mut dirs = vec![home.join(".lean-ctx"), home.join(".config/lean-ctx")];
+    let mut dirs = vec![home.join(".config/lean-ctx")];
 
     let push = |dirs: &mut Vec<PathBuf>, p: PathBuf| {
         if !dirs.contains(&p) {
@@ -292,14 +291,6 @@ fn data_dirs_to_remove(home: &Path) -> Vec<PathBuf> {
     .flatten()
     {
         push(&mut dirs, resolved);
-    }
-
-    // Older installs (and Windows %LOCALAPPDATA%) may have used the platform dir.
-    for platform_dir in [dirs::data_local_dir(), dirs::data_dir()]
-        .into_iter()
-        .flatten()
-    {
-        push(&mut dirs, platform_dir.join("lean-ctx"));
     }
 
     dirs
@@ -599,8 +590,6 @@ mod tests {
         let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("/home/tester"));
         let dirs = data_dirs_to_remove(&home);
 
-        // Legacy single-dir + pre-split config dir are always targeted.
-        assert!(dirs.contains(&home.join(".lean-ctx")));
         assert!(dirs.contains(&home.join(".config/lean-ctx")));
 
         // Regression guard for the macOS data/state/cache leak (#uninstall-completeness):

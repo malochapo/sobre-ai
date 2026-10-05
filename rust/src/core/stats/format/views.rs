@@ -8,7 +8,7 @@ use super::super::model::CostModel;
 /// Renders a 30-day token savings bar chart with sparkline.
 pub fn format_gain_graph() -> String {
     let theme = active_theme();
-    let store = crate::core::stats::load_for_display();
+    let store = crate::core::stats::load();
     let rst = theme::rst();
     let bold = theme::bold();
     let dim = theme::dim();
@@ -93,7 +93,7 @@ pub fn format_gain_graph() -> String {
 #[allow(clippy::many_single_char_names)]
 pub fn format_gain_daily() -> String {
     let theme = active_theme();
-    let store = crate::core::stats::load_for_display();
+    let store = crate::core::stats::load();
     let rst = theme::rst();
     let bold = theme::bold();
     let dim = theme::dim();
@@ -217,6 +217,6 @@ pub fn format_gain_daily() -> String {
 
 /// Returns the full stats store as pretty-printed JSON.
 pub fn format_gain_json() -> String {
-    let store = crate::core::stats::load_for_display();
+    let store = crate::core::stats::load();
     serde_json::to_string_pretty(&store).unwrap_or_else(|_| "{}".to_string())
 }

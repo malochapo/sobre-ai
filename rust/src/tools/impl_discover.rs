@@ -146,7 +146,7 @@ fn measured_by_family(store: &StatsStore) -> HashMap<String, (u64, u64, u64)> {
 }
 
 pub(crate) fn analyze_history(history: &[String], limit: usize) -> DiscoverResult {
-    let store = crate::core::stats::load_for_display();
+    let store = crate::core::stats::load();
     analyze_history_with_stats(history, limit, &store)
 }
 

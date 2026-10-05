@@ -181,16 +181,6 @@ pub(super) fn hook_dirs() -> Vec<std::path::PathBuf> {
     {
         dirs.push(d);
     }
-    if let Some(home) = dirs::home_dir() {
-        let legacy = home.join(".lean-ctx");
-        if !dirs.contains(&legacy) {
-            dirs.push(legacy);
-        }
-        let xdg = home.join(".config").join("lean-ctx");
-        if !dirs.contains(&xdg) {
-            dirs.push(xdg);
-        }
-    }
     dirs
 }
 

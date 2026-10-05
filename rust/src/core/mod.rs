@@ -292,13 +292,11 @@ pub mod client_capabilities;
 pub mod client_constraints;
 pub mod cloud_files;
 pub mod config;
-pub mod config_heal;
 pub mod consolidation;
 pub mod consolidation_engine;
 pub mod contextops;
 pub mod conversation;
 pub mod crash_log;
-pub mod data_consolidate;
 pub mod data_dir;
 pub mod debug_log;
 pub mod diagnostics_store;
@@ -351,7 +349,6 @@ pub mod jsonc;
 pub mod language_capabilities;
 #[cfg(target_os = "macos")]
 pub mod launchd;
-pub mod layout_pin;
 pub mod learning_sync;
 pub mod levenshtein;
 pub mod limits;
@@ -411,7 +408,6 @@ pub mod walk_filter;
 pub mod web;
 pub mod workspace_config;
 pub mod wrapped;
-pub mod xdg_migrate;
 
 // ---------------------------------------------------------------------------
 // Feature-gated modules

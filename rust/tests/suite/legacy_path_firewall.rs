@@ -7,10 +7,8 @@
 //! the typed `$XDG_*` dirs. New code MUST go through `data_dir()` / `state_dir()`
 //! / `config_dir()` / `cache_dir()` instead.
 //!
-//! This test pins the CURRENT set of files that still construct a home-based
-//! legacy path and fails if a NEW one appears, so the debt can only shrink. The
-//! allowlist is deliberately exhaustive (not a "src/core only" rule) because the
-//! real codebase still carries historical direct writers we want to track.
+//! No file constructs a home-based `~/.lean-ctx` path; this test fails if one
+//! appears.
 //!
 //! Project-local `<project>/.lean-ctx` directories (the per-repo index, sibling
 //! to `.git`) are a different, legitimate concept and are intentionally NOT
@@ -19,22 +17,8 @@
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
-/// Files allowed to construct a home-based `~/.lean-ctx` path today.
-///
-/// Group 1 — resolver / migrator / uninstaller: these MUST know the legacy
-/// location by definition. Group 2 — historical direct readers/writers (tracked
-/// debt): permitted for now, must not grow; migrate to typed `core::paths`
-/// resolvers over time and delete the entry here when done.
-const ALLOWLIST: &[&str] = &[
-    // Group 1: legitimate owners of the legacy path.
-    "core/data_dir.rs",
-    "core/paths.rs",
-    "core/xdg_migrate.rs",
-    "uninstall/agents.rs",
-    "uninstall/mod.rs",
-    "doctor/common.rs",
-    // Group 2: pre-existing direct home-writers/readers (tracked debt).
-];
+/// Files allowed to construct a home-based `~/.lean-ctx` path: none.
+const ALLOWLIST: &[&str] = &[];
 
 fn collect_rs_files(dir: &Path, out: &mut Vec<PathBuf>) {
     let Ok(entries) = std::fs::read_dir(dir) else {

@@ -17,13 +17,6 @@ pub(super) fn run_mcp_server() -> Result<()> {
 
     crate::core::startup_guard::crash_loop_backoff(crate::core::startup_guard::MCP_PROCESS_NAME);
 
-    // Commit to the XDG layout (and drain any residual ~/.lean-ctx) once per
-    // server start, so a stray marker can never re-collapse config/data/state/
-    // cache while the server runs (GL #623). Every other process honors the pin
-    // through the same resolver once it exists. Stays synchronous: everything
-    // below resolves paths through this pin, and it is a no-op once pinned.
-    crate::core::layout_pin::heal();
-
     // Concurrency hardening:
     // - Smooths "thundering herd" MCP startups (multiple agent sessions).
     // - Limits Tokio worker/blocking threads to avoid host degradation.

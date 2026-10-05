@@ -8,7 +8,6 @@ mod autonomy_tests;
 mod bazsi_reported_scenarios;
 mod claude_config_dir;
 mod codex_proxy_554;
-mod config_member_adoption;
 mod ctx_compose_scenarios;
 mod dropin_install_tests;
 mod dual_process_rehydrate;

@@ -28,8 +28,6 @@ const RST: &str = "\x1b[0m";
 pub(super) struct OverheadReport {
     pub tool_count: usize,
     pub tool_schema_tokens: usize,
-    pub lean_default_tool_count: usize,
-    pub lean_default_tool_tokens: usize,
     pub instruction_tokens: usize,
     /// Tokens of the wakeup briefing (knowledge + session memory). With the
     /// default `minimal_overhead = true` it is delivered via the AUTO CONTEXT
@@ -39,7 +37,7 @@ pub(super) struct OverheadReport {
     pub wakeup_tokens: usize,
     pub rules_files: Vec<RulesFileCost>,
     pub duplicate_clients: Vec<(String, usize)>,
-    /// Configured budget (`[context] budget_tokens`); 0 disables the check (#964).
+    /// The per-session budget (#964); 0 disables the check.
     pub budget_tokens: usize,
     /// Whether `total_tokens` exceeds a non-zero `budget_tokens` (#964).
     pub over_budget: bool,
@@ -67,7 +65,6 @@ impl OverheadReport {
 pub(super) fn measure(home: &std::path::Path, project: &std::path::Path) -> OverheadReport {
     let cfg = crate::core::config::Config::load();
     let advertised = crate::server::tool_visibility::advertised_tool_defs_default();
-    let lean_default = advertised.clone();
 
     let instructions = crate::instructions::build_instructions(crate::tools::CrpMode::effective());
 
@@ -85,8 +82,6 @@ pub(super) fn measure(home: &std::path::Path, project: &std::path::Path) -> Over
     let mut report = OverheadReport {
         tool_count: advertised.len(),
         tool_schema_tokens: advertised.iter().map(tool_tokens).sum(),
-        lean_default_tool_count: lean_default.len(),
-        lean_default_tool_tokens: lean_default.iter().map(tool_tokens).sum(),
         instruction_tokens: count_tokens(&instructions),
         wakeup_tokens: count_tokens(&wakeup),
         rules_files,
@@ -126,15 +121,6 @@ pub(super) fn run_overhead(json: bool, gate: bool) -> i32 {
         "  {BOLD}MCP tool schemas{RST}      {:>6} tok  {DIM}({} tools advertised){RST}",
         report.tool_schema_tokens, report.tool_count
     );
-    if report.tool_count > report.lean_default_tool_count {
-        let saving = report
-            .tool_schema_tokens
-            .saturating_sub(report.lean_default_tool_tokens);
-        println!(
-            "  {YELLOW}→ lean default advertises {} tools ({} tok) — `lean-ctx tools lean` saves ~{saving} tok/session{RST}",
-            report.lean_default_tool_count, report.lean_default_tool_tokens
-        );
-    }
 
     // 2. Instructions
     println!(
@@ -191,7 +177,7 @@ pub(super) fn run_overhead(json: bool, gate: bool) -> i32 {
         if report.over_budget {
             // Machine-readable so CI/log scrapers can key on a stable token (#964).
             println!(
-                "  {YELLOW}⚠ OVER_BUDGET: {total} tok > budget {} tok — trim tools/rules or raise [context] budget_tokens.{RST}",
+                "  {YELLOW}⚠ OVER_BUDGET: {total} tok > budget {} tok — trim rules files or the knowledge briefing.{RST}",
                 report.budget_tokens
             );
         } else {
@@ -231,8 +217,6 @@ mod tests {
         OverheadReport {
             tool_count: 1,
             tool_schema_tokens: schema,
-            lean_default_tool_count: 1,
-            lean_default_tool_tokens: schema,
             instruction_tokens: instr,
             wakeup_tokens: wakeup,
             rules_files: Vec::new(),

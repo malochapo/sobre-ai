@@ -26,7 +26,7 @@ pub fn format_gain_hero() -> String {
 pub fn format_gain_hero_themed(t: &Theme) -> String {
     // Aggregate across split data dirs so an MCP-server/CLI XDG split does not
     // hide savings behind a false `0` (#500).
-    let store = crate::core::stats::load_for_display();
+    let store = crate::core::stats::load();
     let rst = theme::rst();
     let bold = theme::bold();
     let dim = theme::dim();
@@ -225,7 +225,7 @@ pub fn format_gain_body() -> String {
 
 /// The standalone gain dashboard footer (contextual tip, Context OS, hints).
 pub fn format_gain_footer() -> String {
-    let store = crate::core::stats::load_for_display();
+    let store = crate::core::stats::load();
     let mut out = Vec::new();
     append_gain_footer(&mut out, &active_theme(), &store);
     out.join("\n")
@@ -234,7 +234,7 @@ pub fn format_gain_footer() -> String {
 #[allow(clippy::many_single_char_names)] // ANSI formatting: t=theme, r=reset, b=bold, d=dim
 fn gain_dashboard(t: &Theme, _tick: Option<u64>, with_footer: bool) -> String {
     // Aggregate across split data dirs (#500) — see `format_gain_hero_themed`.
-    let store = crate::core::stats::load_for_display();
+    let store = crate::core::stats::load();
     let mut out = Vec::new();
     let rst = theme::rst();
     let bold = theme::bold();
@@ -262,21 +262,6 @@ fn gain_dashboard(t: &Theme, _tick: Option<u64>, with_footer: bool) -> String {
         } else {
             String::new()
         };
-        let split_dirs = crate::core::data_dir::all_data_dirs_with_stats();
-        let split_hint = if split_dirs.len() >= 2 {
-            format!(
-                "\n{dim}⚠ Stats found in multiple locations:{rst}\
-                 \n{dim}  {}{rst}\
-                 \n{dim}Run: lean-ctx doctor{rst}",
-                split_dirs
-                    .iter()
-                    .map(|d| d.display().to_string())
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            )
-        } else {
-            String::new()
-        };
         // Cross-check the tamper-evident savings ledger (#500): if it recorded
         // events while stats.json stayed empty, the MCP server and the CLI are
         // almost certainly resolving different data dirs — name that explicitly
@@ -301,7 +286,7 @@ fn gain_dashboard(t: &Theme, _tick: Option<u64>, with_footer: bool) -> String {
              \n    2. Fully restart your AI tool so it reconnects to lean-ctx.\
              \n    3. Ask it to read a file or run a command — then check back here.\
              \n\n  {dim}Tip: track a shell command yourself with {rst}{cmd}lean-ctx -c \"git status\"{rst}\
-             \n\n  {dim}Stats path: {data_dir}{rst}{mcp_hint}{split_hint}{ledger_hint}",
+             \n\n  {dim}Stats path: {data_dir}{rst}{mcp_hint}{ledger_hint}",
             cmd = t.secondary.fg(),
         );
     }

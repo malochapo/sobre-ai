@@ -385,14 +385,6 @@ fn print_config_provenance() {
         ),
         None => println!("  config.toml:    <no config dir resolved — using defaults>"),
     }
-    println!(
-        "  layout pin:     {}",
-        if crate::core::layout_pin::is_xdg_pinned() {
-            "xdg"
-        } else {
-            "unpinned"
-        }
-    );
 
     // A present-but-unparseable file means the runtime silently runs on
     // defaults. Parse into `Config` to match exactly what `load()` rejects.

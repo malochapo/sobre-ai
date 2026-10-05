@@ -5,32 +5,22 @@
 //! data files (sessions, vectors, graphs, events, logs, caches). That violates
 //! the XDG Base Directory Spec and makes a read-only config sandbox impossible.
 //!
-//! This module introduces one typed resolver per XDG category so call-sites can
-//! migrate to the correct base over the following phases (GL #603/#604/#606/#607).
+//! This module has one typed resolver per XDG category.
 //!
-//! ## Backward compatibility (single-dir mode)
+//! ## Single-dir mode
 //!
-//! Existing installs MUST NOT split silently. `single_dir_override` returns
-//! `Some(dir)` when `LEAN_CTX_DATA_DIR` is set or a legacy/mixed install with
-//! data exists; in that case every category resolves to that one directory —
-//! byte-for-byte today's behavior. The real per-category split only applies to
-//! fresh installs (and, later, on-demand via `lean-ctx doctor --fix`).
-//!
-//! ## `data_dir()` and the fresh-install flip
-//!
-//! [`data_dir`] delegates to [`lean_ctx_data_dir`]. Config (`config.toml` +
-//! hooks) and the runtime STATE/CACHE files were migrated onto [`config_dir`],
-//! [`state_dir`] and [`cache_dir`] (GL #603/#604) so that, since GL #606, the
-//! data resolver defaults fresh installs to `$XDG_DATA_HOME/lean-ctx` without
-//! scattering config or state into the data dir. Legacy and pre-split mixed
-//! installs keep resolving every category to their existing single directory.
+//! A non-standard `LEAN_CTX_DATA_DIR` collapses every category onto that one
+//! directory (a deliberate choice, and how tests isolate themselves). Otherwise
+//! each category resolves to its XDG base: config `$XDG_CONFIG_HOME/lean-ctx`,
+//! data `$XDG_DATA_HOME/lean-ctx`, state `$XDG_STATE_HOME/lean-ctx`, cache
+//! `$XDG_CACHE_HOME/lean-ctx`.
 //!
 //! Determinism (#498): every resolver is a pure function of environment + HOME;
 //! no timestamps, counters or randomness.
 
 use std::path::{Path, PathBuf};
 
-use super::data_dir::{ensure_dir_permissions, has_data_files, lean_ctx_data_dir};
+use super::data_dir::{ensure_dir_permissions, lean_ctx_data_dir};
 
 /// Reads a directory path from `name`, treating empty/whitespace as unset.
 fn env_path(name: &str) -> Option<PathBuf> {
@@ -65,33 +55,16 @@ fn resolve(
         .unwrap_or_else(|| xdg_base_dir.join("lean-ctx"))
 }
 
-/// Returns the single directory that ALL categories must collapse onto for
-/// backward compatibility, or `None` for a fresh install that may split.
+/// The single directory every category collapses onto, or `None` for the
+/// XDG split.
 ///
-/// `Some` when an *explicit* `LEAN_CTX_DATA_DIR` points at a non-standard
-/// location (a deliberate single-dir choice: a custom dir, or `~/.lean-ctx` via
-/// env), or a legacy `~/.lean-ctx` / mixed `$XDG_CONFIG_HOME/lean-ctx` install
-/// already holds data. An empty directory does NOT trigger single-dir mode
-/// (matches [`lean_ctx_data_dir`] semantics).
-///
-/// A `LEAN_CTX_DATA_DIR` equal to the *standard* XDG data dir
-/// (`$XDG_DATA_HOME/lean-ctx`) is a DATA pin only, NOT a single-dir directive:
-/// editors used to bake that exact value into the MCP server's `env`, and
-/// honoring it as single-dir collapsed config/state/cache onto the data dir for
-/// the MCP process while the terminal CLI kept the XDG split — so the two read
-/// different `config.toml` files (#594). Falling through keeps config in
-/// `$XDG_CONFIG_HOME/lean-ctx` for both; data still resolves to the pin via
-/// [`lean_ctx_data_dir`], which consumes the env var before reaching here.
+/// `Some` only when `LEAN_CTX_DATA_DIR` points at a non-standard location. A
+/// `LEAN_CTX_DATA_DIR` equal to the standard XDG data dir
+/// (`$XDG_DATA_HOME/lean-ctx`) is a DATA pin only: editors bake that value into
+/// the MCP server's `env`, and collapsing on it would make the MCP process read
+/// a different `config.toml` than the terminal CLI (#594).
 pub(crate) fn single_dir_override() -> Option<PathBuf> {
-    if let Some(p) = env_path("LEAN_CTX_DATA_DIR")
-        && !is_standard_xdg_data_dir(&p)
-    {
-        return Some(p);
-    }
-    let home = dirs::home_dir()?;
-    let xdg_config_base = xdg_base("XDG_CONFIG_HOME", ".config").ok()?;
-    let xdg_data_base = xdg_base("XDG_DATA_HOME", ".local/share").ok();
-    single_dir_override_fs(&home, &xdg_config_base, xdg_data_base.as_deref())
+    env_path("LEAN_CTX_DATA_DIR").filter(|p| !is_standard_xdg_data_dir(p))
 }
 
 /// True when `p` is exactly the standard XDG data dir (`$XDG_DATA_HOME/lean-ctx`,
@@ -114,40 +87,6 @@ pub(crate) fn data_pin_diverges_config(pin: &Path) -> bool {
     !is_standard_xdg_data_dir(pin)
 }
 
-/// Filesystem half of [`single_dir_override`], parameterized for hermetic tests.
-fn single_dir_override_fs(
-    home: &Path,
-    xdg_config_base: &Path,
-    xdg_data_base: Option<&Path>,
-) -> Option<PathBuf> {
-    // A committed XDG install is the single source of truth: never re-collapse
-    // it onto a stray legacy/mixed data marker (GL #623). The pin lives next to
-    // the mixed probe below, so the two reads always agree on `xdg_config_base`.
-    if crate::core::layout_pin::is_xdg_pinned_in(xdg_config_base) {
-        return None;
-    }
-    let legacy = home.join(".lean-ctx");
-    if legacy.exists() && has_data_files(&legacy) {
-        return Some(legacy);
-    }
-    let mixed = xdg_config_base.join("lean-ctx");
-    if mixed.exists() && has_data_files(&mixed) {
-        // GL #623 follow-up: an already-split XDG install (real data under
-        // `$XDG_DATA_HOME/lean-ctx`) must NOT re-collapse config/state/cache/data
-        // onto the *config* dir just because a stray data marker leaked there
-        // (e.g. during an upgrade, before the layout pin is written). That would
-        // scatter stats/events/journal/sessions into `$XDG_CONFIG_HOME` and split
-        // history across two trees.
-        if let Some(data_base) = xdg_data_base
-            && has_data_files(&data_base.join("lean-ctx"))
-        {
-            return None;
-        }
-        return Some(mixed);
-    }
-    None
-}
-
 /// Shared resolver for the config/state/cache categories.
 // Under `#[cfg(test)]` the body always succeeds (returns the sandbox); the
 // fallible XDG resolution only runs in real builds.
@@ -165,7 +104,7 @@ fn category_dir(cat_env: &str, xdg_env: &str, home_fallback: &str) -> Result<Pat
         }
         // Unit tests share one per-process sandbox so stray store writes can't
         // escape to a developer's real dirs. The branch logic itself is covered
-        // by the pure `resolve` / `single_dir_override_fs` tests below.
+        // by the pure `resolve` tests below.
         let _ = (xdg_env, home_fallback);
         Ok(super::data_dir::test_sandbox_dir())
     }
@@ -184,100 +123,15 @@ pub fn config_dir() -> Result<PathBuf, String> {
     category_dir("LEAN_CTX_CONFIG_DIR", "XDG_CONFIG_HOME", ".config")
 }
 
-/// Resolve a member (a file or sub-directory) of the config dir, adopting a copy
-/// that older builds wrote under the OS-native `dirs::config_dir()` location.
-///
-/// Before #594 (A3), providers/multi-repo config resolved via
-/// `dirs::config_dir()` — on macOS `~/Library/Application Support`, a *different*
-/// base than the `$XDG_CONFIG_HOME/lean-ctx` dir used for `config.toml`, so those
-/// features silently diverged from the main config. Routing them through
-/// [`config_dir`] unifies the base; this helper performs a one-time,
-/// non-destructive adoption so a user who already had config at the old path
-/// keeps it. The canonical location always wins — an existing canonical entry is
-/// never overwritten — and adoption is skipped entirely in tests so it can never
-/// touch a developer's real `~/Library/Application Support`.
+/// A member (a file or sub-directory) of the config dir.
 pub fn config_dir_member(sub: &str) -> Result<PathBuf, String> {
-    let canonical = config_dir()?.join(sub);
-    // A config dir set explicitly — by `LEAN_CTX_CONFIG_DIR`, or by a
-    // non-standard `LEAN_CTX_DATA_DIR` that holds every category — is used
-    // exactly as given: nothing is moved into it from the OS-native location.
-    // Integration tests point it at a temp dir, and on Windows
-    // `dirs::config_dir()` ignores the environment, so adopting there would
-    // move a developer's real files.
-    #[cfg(not(test))]
-    if !config_dir_is_explicit() {
-        adopt_legacy_config_member(sub, &canonical);
-    }
-    Ok(canonical)
-}
-
-/// True when the environment, not the home-based resolution, decides the
-/// config dir: `LEAN_CTX_CONFIG_DIR`, or a non-standard `LEAN_CTX_DATA_DIR`
-/// that [`single_dir_override`] collapses every category onto.
-#[cfg(not(test))]
-fn config_dir_is_explicit() -> bool {
-    env_path("LEAN_CTX_CONFIG_DIR").is_some()
-        || env_path("LEAN_CTX_DATA_DIR").is_some_and(|p| !is_standard_xdg_data_dir(&p))
-}
-
-/// Decide whether a legacy config member should be adopted: only when the
-/// canonical entry is still absent, the legacy entry actually exists, and the two
-/// paths genuinely differ (on Linux the two bases coincide, making this a no-op).
-fn legacy_adoption_source(legacy: &Path, canonical: &Path) -> Option<PathBuf> {
-    if canonical.exists() || legacy == canonical || !legacy.exists() {
-        return None;
-    }
-    Some(legacy.to_path_buf())
-}
-
-/// Move `src` onto `dst` (file or directory). Prefers an atomic rename on the
-/// same filesystem; falls back to a recursive copy for the rare cross-device
-/// case so no config is ever left stranded. The caller guarantees `dst`'s parent
-/// exists.
-fn relocate(src: &Path, dst: &Path) -> std::io::Result<()> {
-    if std::fs::rename(src, dst).is_ok() {
-        return Ok(());
-    }
-    if src.is_dir() {
-        std::fs::create_dir_all(dst)?;
-        for entry in std::fs::read_dir(src)? {
-            let entry = entry?;
-            relocate(&entry.path(), &dst.join(entry.file_name()))?;
-        }
-        std::fs::remove_dir_all(src)?;
-    } else {
-        std::fs::copy(src, dst)?;
-        std::fs::remove_file(src)?;
-    }
-    Ok(())
-}
-
-/// One-time adoption of a legacy `dirs::config_dir()/lean-ctx/<sub>` member into
-/// the canonical config dir. Best-effort: any IO failure leaves the legacy copy
-/// in place and resolution simply proceeds against the canonical path.
-#[cfg(not(test))]
-fn adopt_legacy_config_member(sub: &str, canonical: &Path) {
-    let Some(legacy_base) = dirs::config_dir() else {
-        return;
-    };
-    let legacy = legacy_base.join("lean-ctx").join(sub);
-    let Some(src) = legacy_adoption_source(&legacy, canonical) else {
-        return;
-    };
-    if let Some(parent) = canonical.parent()
-        && std::fs::create_dir_all(parent).is_err()
-    {
-        return;
-    }
-    let _ = relocate(&src, canonical);
+    Ok(config_dir()?.join(sub))
 }
 
 /// Data directory — sessions, vectors, graphs, knowledge, archives, memory.
 ///
-/// Delegates to [`lean_ctx_data_dir`], which since GL #606 defaults fresh
-/// installs to `$XDG_DATA_HOME/lean-ctx`. Legacy `~/.lean-ctx` and pre-split
-/// mixed `$XDG_CONFIG_HOME/lean-ctx` installs (and an explicit
-/// `LEAN_CTX_DATA_DIR`) continue to resolve in place for backward compatibility.
+/// Delegates to [`lean_ctx_data_dir`]: `LEAN_CTX_DATA_DIR`, else
+/// `$XDG_DATA_HOME/lean-ctx`.
 pub fn data_dir() -> Result<PathBuf, String> {
     lean_ctx_data_dir()
 }
@@ -292,50 +146,6 @@ pub fn state_dir() -> Result<PathBuf, String> {
 /// Override: `LEAN_CTX_CACHE_DIR`; default `$XDG_CACHE_HOME/lean-ctx`.
 pub fn cache_dir() -> Result<PathBuf, String> {
     category_dir("LEAN_CTX_CACHE_DIR", "XDG_CACHE_HOME", ".cache")
-}
-
-/// Raw per-category target dir for the four XDG categories, **bypassing**
-/// single-dir back-compat and the test sandbox. Honors an explicit
-/// `LEAN_CTX_<CAT>_DIR` override, otherwise `<XDG base>/lean-ctx`.
-///
-/// `category_dir`/[`data_dir`] deliberately collapse onto one directory for a
-/// legacy/mixed install; the `doctor --fix` migration (GH #408) needs to know
-/// where each category SHOULD live *after* a split, which is what this returns.
-fn raw_category_dir(cat_env: &str, xdg_env: &str, home_fallback: &str) -> Result<PathBuf, String> {
-    if let Some(p) = env_path(cat_env) {
-        return Ok(p);
-    }
-    Ok(xdg_base(xdg_env, home_fallback)?.join("lean-ctx"))
-}
-
-/// Split target for the config category (`$XDG_CONFIG_HOME/lean-ctx`).
-pub(crate) fn config_split_target() -> Result<PathBuf, String> {
-    raw_category_dir("LEAN_CTX_CONFIG_DIR", "XDG_CONFIG_HOME", ".config")
-}
-
-/// `$XDG_CONFIG_HOME/lean-ctx` (or `~/.config/lean-ctx`) — where `config.toml`
-/// and the layout pin (`layout.toml`) live. Resolved through the XDG config base
-/// only, bypassing single-dir collapse, so the pin that governs that collapse
-/// never depends on it (GL #623). `None` only when HOME cannot be determined.
-pub(crate) fn xdg_config_lean_ctx_dir() -> Option<PathBuf> {
-    xdg_base("XDG_CONFIG_HOME", ".config")
-        .ok()
-        .map(|b| b.join("lean-ctx"))
-}
-
-/// Split target for the data category (`$XDG_DATA_HOME/lean-ctx`).
-pub(crate) fn data_split_target() -> Result<PathBuf, String> {
-    raw_category_dir("LEAN_CTX_DATA_DIR", "XDG_DATA_HOME", ".local/share")
-}
-
-/// Split target for the state category (`$XDG_STATE_HOME/lean-ctx`).
-pub(crate) fn state_split_target() -> Result<PathBuf, String> {
-    raw_category_dir("LEAN_CTX_STATE_DIR", "XDG_STATE_HOME", ".local/state")
-}
-
-/// Split target for the cache category (`$XDG_CACHE_HOME/lean-ctx`).
-pub(crate) fn cache_split_target() -> Result<PathBuf, String> {
-    raw_category_dir("LEAN_CTX_CACHE_DIR", "XDG_CACHE_HOME", ".cache")
 }
 
 #[cfg(test)]
@@ -360,153 +170,6 @@ mod tests {
     }
 
     #[test]
-    fn single_dir_fs_detects_legacy_with_data() {
-        let home = tempfile::tempdir().unwrap();
-        let xdg = tempfile::tempdir().unwrap();
-        let legacy = home.path().join(".lean-ctx");
-        std::fs::create_dir_all(&legacy).unwrap();
-        std::fs::write(legacy.join("stats.json"), "{}").unwrap();
-
-        assert_eq!(
-            single_dir_override_fs(home.path(), xdg.path(), None),
-            Some(legacy)
-        );
-    }
-
-    #[test]
-    fn single_dir_fs_detects_mixed_with_data() {
-        let home = tempfile::tempdir().unwrap();
-        let xdg = tempfile::tempdir().unwrap();
-        let mixed = xdg.path().join("lean-ctx");
-        std::fs::create_dir_all(&mixed).unwrap();
-        // A real data marker (stats.json) — NOT config.toml, which post-split
-        // lives alone in the config dir and must not trigger single-dir mode.
-        std::fs::write(mixed.join("stats.json"), "{}").unwrap();
-
-        assert_eq!(
-            single_dir_override_fs(home.path(), xdg.path(), None),
-            Some(mixed)
-        );
-    }
-
-    #[test]
-    fn single_dir_fs_ignores_config_only_dir() {
-        // GH #408: a clean post-split config dir (only config.toml + hooks) must
-        // NOT collapse the four-dir layout.
-        let home = tempfile::tempdir().unwrap();
-        let xdg = tempfile::tempdir().unwrap();
-        let mixed = xdg.path().join("lean-ctx");
-        std::fs::create_dir_all(&mixed).unwrap();
-        std::fs::write(mixed.join("config.toml"), "").unwrap();
-        std::fs::write(mixed.join("shell-hook.zsh"), "").unwrap();
-
-        assert_eq!(single_dir_override_fs(home.path(), xdg.path(), None), None);
-    }
-
-    #[test]
-    fn single_dir_fs_prefers_legacy_over_mixed() {
-        let home = tempfile::tempdir().unwrap();
-        let xdg = tempfile::tempdir().unwrap();
-        let legacy = home.path().join(".lean-ctx");
-        std::fs::create_dir_all(&legacy).unwrap();
-        std::fs::write(legacy.join("sessions"), "x").unwrap();
-        let mixed = xdg.path().join("lean-ctx");
-        std::fs::create_dir_all(&mixed).unwrap();
-        std::fs::write(mixed.join("stats.json"), "{}").unwrap();
-
-        assert_eq!(
-            single_dir_override_fs(home.path(), xdg.path(), None),
-            Some(legacy)
-        );
-    }
-
-    #[test]
-    fn xdg_pinned_install_ignores_stray_legacy_marker() {
-        // GL #623: once committed to XDG (pin in the config dir), a stray
-        // `~/.lean-ctx/stats.json` (legacy residue, restored backup, concurrent
-        // old binary) must NOT re-collapse the layout onto the legacy dir.
-        let home = tempfile::tempdir().unwrap();
-        let xdg = tempfile::tempdir().unwrap();
-        crate::core::layout_pin::write_xdg_pin_in(xdg.path()).unwrap();
-
-        let legacy = home.path().join(".lean-ctx");
-        std::fs::create_dir_all(&legacy).unwrap();
-        std::fs::write(legacy.join("stats.json"), "{}").unwrap();
-
-        assert_eq!(single_dir_override_fs(home.path(), xdg.path(), None), None);
-    }
-
-    #[test]
-    fn xdg_pinned_install_ignores_stray_mixed_marker() {
-        // GL #623: same protection for a stray data marker that lands in the
-        // mixed `$XDG_CONFIG_HOME/lean-ctx` dir after the install committed.
-        let home = tempfile::tempdir().unwrap();
-        let xdg = tempfile::tempdir().unwrap();
-        crate::core::layout_pin::write_xdg_pin_in(xdg.path()).unwrap();
-
-        let mixed = xdg.path().join("lean-ctx");
-        std::fs::write(mixed.join("stats.json"), "{}").unwrap();
-
-        assert_eq!(single_dir_override_fs(home.path(), xdg.path(), None), None);
-    }
-
-    #[test]
-    fn split_install_ignores_stray_mixed_marker_when_xdg_data_present() {
-        // Regression: an XDG-split install with real data under
-        // `$XDG_DATA_HOME/lean-ctx` must not re-collapse onto the config dir just
-        // because a stray marker leaked into `$XDG_CONFIG_HOME/lean-ctx` before
-        // the layout pin was written (the upgrade window). Without the guard this
-        // scattered stats/events/journal/sessions into the config dir and split
-        // history across two trees.
-        let home = tempfile::tempdir().unwrap();
-        let xdg_config = tempfile::tempdir().unwrap();
-        let xdg_data = tempfile::tempdir().unwrap();
-
-        let mixed = xdg_config.path().join("lean-ctx");
-        std::fs::create_dir_all(&mixed).unwrap();
-        std::fs::write(mixed.join("stats.json"), "{}").unwrap();
-
-        let data = xdg_data.path().join("lean-ctx");
-        std::fs::create_dir_all(&data).unwrap();
-        std::fs::write(data.join("stats.json"), "{}").unwrap();
-
-        assert_eq!(
-            single_dir_override_fs(home.path(), xdg_config.path(), Some(xdg_data.path())),
-            None,
-            "a populated XDG data dir must keep the config dir from collapsing"
-        );
-
-        // With no real data dir the stray marker still collapses (legacy
-        // single-dir semantics preserved).
-        let empty_data = tempfile::tempdir().unwrap();
-        assert_eq!(
-            single_dir_override_fs(home.path(), xdg_config.path(), Some(empty_data.path())),
-            Some(mixed)
-        );
-    }
-
-    #[test]
-    fn single_dir_fs_ignores_empty_dirs() {
-        let home = tempfile::tempdir().unwrap();
-        let xdg = tempfile::tempdir().unwrap();
-        std::fs::create_dir_all(home.path().join(".lean-ctx")).unwrap();
-        std::fs::create_dir_all(xdg.path().join("lean-ctx")).unwrap();
-
-        assert_eq!(single_dir_override_fs(home.path(), xdg.path(), None), None);
-    }
-
-    #[test]
-    fn single_dir_fs_ignores_non_marker_files() {
-        let home = tempfile::tempdir().unwrap();
-        let xdg = tempfile::tempdir().unwrap();
-        let mixed = xdg.path().join("lean-ctx");
-        std::fs::create_dir_all(&mixed).unwrap();
-        std::fs::write(mixed.join("random.txt"), "x").unwrap();
-
-        assert_eq!(single_dir_override_fs(home.path(), xdg.path(), None), None);
-    }
-
-    #[test]
     fn xdg_base_honors_env_then_home_fallback() {
         let _lock = crate::core::data_dir::test_env_lock();
         let tmp = tempfile::tempdir().unwrap();
@@ -518,59 +181,6 @@ mod tests {
         // Unset var → falls back to $HOME/<home_fallback>.
         let fallback = xdg_base("LEAN_CTX_NONEXISTENT_XDG_VAR", ".cache").unwrap();
         assert!(fallback.ends_with(".cache"), "got: {}", fallback.display());
-    }
-
-    #[test]
-    fn legacy_adoption_source_only_when_canonical_absent() {
-        let tmp = tempfile::tempdir().unwrap();
-        let legacy = tmp.path().join("legacy");
-        let canonical = tmp.path().join("canonical");
-
-        // Legacy missing → nothing to adopt.
-        assert_eq!(legacy_adoption_source(&legacy, &canonical), None);
-
-        // Legacy present, canonical absent → adopt the legacy copy.
-        std::fs::create_dir_all(&legacy).unwrap();
-        assert_eq!(
-            legacy_adoption_source(&legacy, &canonical),
-            Some(legacy.clone())
-        );
-
-        // Canonical present → the newer location wins, never overwrite it.
-        std::fs::create_dir_all(&canonical).unwrap();
-        assert_eq!(legacy_adoption_source(&legacy, &canonical), None);
-    }
-
-    #[test]
-    fn relocate_moves_file_then_directory() {
-        let tmp = tempfile::tempdir().unwrap();
-
-        // File: dst parent must be created by the caller (as adopt does).
-        let src_file = tmp.path().join("providers.toml");
-        std::fs::write(&src_file, "id = \"x\"\n").unwrap();
-        let dst_file = tmp.path().join("config/lean-ctx/providers.toml");
-        std::fs::create_dir_all(dst_file.parent().unwrap()).unwrap();
-        relocate(&src_file, &dst_file).unwrap();
-        assert!(!src_file.exists(), "source file must be moved, not copied");
-        assert_eq!(std::fs::read_to_string(&dst_file).unwrap(), "id = \"x\"\n");
-
-        // Directory with nested content.
-        let src_dir = tmp.path().join("personas");
-        std::fs::create_dir_all(src_dir.join("nested")).unwrap();
-        std::fs::write(src_dir.join("a.toml"), "a").unwrap();
-        std::fs::write(src_dir.join("nested/b.toml"), "b").unwrap();
-        let dst_dir = tmp.path().join("config/lean-ctx/personas");
-        std::fs::create_dir_all(dst_dir.parent().unwrap()).unwrap();
-        relocate(&src_dir, &dst_dir).unwrap();
-        assert!(!src_dir.exists(), "source dir must be moved");
-        assert_eq!(
-            std::fs::read_to_string(dst_dir.join("a.toml")).unwrap(),
-            "a"
-        );
-        assert_eq!(
-            std::fs::read_to_string(dst_dir.join("nested/b.toml")).unwrap(),
-            "b"
-        );
     }
 
     #[test]
