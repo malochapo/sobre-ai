@@ -288,7 +288,7 @@ fn ensure_target_allowed(link_path: &Path, real_target: &Path) -> Result<(), Str
          (symlink-hijack protection). To allow this location, either:\n    \
          - point the agent at the real path (set CLAUDE_CONFIG_DIR / CODEX_HOME), or\n    \
          - move the target under $HOME, or\n    \
-         - add its parent to `allow_symlink_roots` in your lean-ctx config \
+         - add its parent to `allow_paths` in your lean-ctx config \
 .",
         link_path.display(),
         real_target.display()
@@ -296,12 +296,12 @@ fn ensure_target_allowed(link_path: &Path, real_target: &Path) -> Result<(), Str
 }
 
 /// Trusted roots OUTSIDE `$HOME` the user explicitly opted into for symlinked
-/// agent configs (#596), from the `allow_symlink_roots` config key. Each entry
+/// agent configs (#596), from the `allow_paths` config key. Each entry
 /// is made absolute + canonicalized so the boundary check compares real paths;
 /// relative/empty entries are dropped.
 fn allowed_symlink_roots() -> Vec<PathBuf> {
     crate::core::config::Config::load()
-        .allow_symlink_roots
+        .allow_paths
         .into_iter()
         .map(PathBuf::from)
         .filter(|p| !p.as_os_str().is_empty() && p.is_absolute())
@@ -543,7 +543,7 @@ mod symlink_596_tests {
         let err = write_atomic(&link, "x").unwrap_err();
         assert!(err.contains("escapes $HOME"), "got: {err}");
         assert!(
-            err.contains("allow_symlink_roots"),
+            err.contains("allow_paths"),
             "error must point at the opt-in escape hatch, got: {err}"
         );
         assert_eq!(
@@ -556,7 +556,7 @@ mod symlink_596_tests {
     #[test]
     fn allows_symlink_escape_when_target_root_is_allowlisted() {
         // #596 premium: an out-of-$HOME target IS written through once its root
-        // is explicitly opted into via `allow_symlink_roots` in config.toml.
+        // is explicitly opted into via `allow_paths` in config.toml.
         let iso = crate::core::data_dir::isolated_data_dir();
         let home = tempfile::tempdir().unwrap();
         let outside = tempfile::tempdir().unwrap();
@@ -571,10 +571,7 @@ mod symlink_596_tests {
 
         std::fs::write(
             iso.path().join("config.toml"),
-            format!(
-                "allow_symlink_roots = [{:?}]\n",
-                real_outside.to_string_lossy()
-            ),
+            format!("allow_paths = [{:?}]\n", real_outside.to_string_lossy()),
         )
         .unwrap();
         write_atomic(&link, "{\"k\":1}\n").unwrap();

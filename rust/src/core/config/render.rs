@@ -143,7 +143,7 @@ mod tests {
             ..Config::default()
         };
         cfg.proxy.anthropic_upstream = Some("https://upstream.example".to_string());
-        cfg.index.exclude = vec!["vendor/**".to_string()];
+        cfg.ignore = vec!["vendor/**".to_string()];
         cfg
     }
 
@@ -195,10 +195,7 @@ mod tests {
 
         assert_eq!(first, second, "render must be deterministic (#498)");
         assert!(first.contains("# lean-ctx configuration"));
-        assert!(
-            first.contains("sandbox_level"),
-            "documented keys must appear"
-        );
+        assert!(first.contains("allow_paths"), "documented keys must appear");
         assert!(
             first.matches("# ").count() > 5,
             "rendered config must be annotated with comments"

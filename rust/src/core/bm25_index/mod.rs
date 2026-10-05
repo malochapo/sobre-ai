@@ -940,11 +940,7 @@ fn list_code_files(root: &Path) -> Vec<String> {
         .iter()
         .filter_map(|p| glob::Pattern::new(p).ok())
         .collect();
-    ignore_patterns.extend(
-        cfg.extra_ignore_patterns
-            .iter()
-            .filter_map(|p| glob::Pattern::new(p).ok()),
-    );
+    ignore_patterns.extend(cfg.ignore.iter().filter_map(|p| glob::Pattern::new(p).ok()));
 
     let mut files: Vec<String> = Vec::new();
     let mut filtered_out = 0usize;

@@ -71,9 +71,9 @@ impl IndexFileFilter {
     /// [`Self::effective`] with an already-loaded config (builders that hold
     /// one avoid a second load).
     pub fn resolve(cfg: &crate::core::config::Config) -> Self {
-        let mut include: Vec<String> = cfg.index.include.clone();
-        let mut exclude: Vec<String> = cfg.index.exclude.clone();
-        let mut respect_gitignore = cfg.index.respect_gitignore;
+        let mut include: Vec<String> = Vec::new();
+        let mut exclude: Vec<String> = cfg.ignore.clone();
+        let mut respect_gitignore = true;
 
         let guard = CLI_OVERLAY
             .read()

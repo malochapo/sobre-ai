@@ -39,7 +39,10 @@ impl Drop for ConfigGuard {
 }
 
 fn set_compression(compression: &str) -> ConfigGuard {
-    with_config(&format!("compression_level = \"{compression}\"\n"))
+    let value = CompressionLevel::from_str_label(compression)
+        .expect("known level name")
+        .value();
+    with_config(&format!("compression_level = {value}\n"))
 }
 
 // ── Unified `compression_level` config key ──
@@ -91,9 +94,8 @@ fn compression_level_off_no_output_style() {
 // ── Config deserialization ──
 
 #[test]
-fn compression_level_name_reads_as_band_value() {
-    let config: Config =
-        toml::from_str(r#"compression_level = "standard""#).expect("legacy name parses");
+fn compression_level_reads_as_band() {
+    let config: Config = toml::from_str("compression_level = 0.5").expect("number parses");
     assert_eq!(config.compression_level, Some(0.5));
     assert_eq!(
         CompressionLevel::effective(&config),
@@ -108,8 +110,8 @@ fn compression_level_number_is_clamped() {
 }
 
 #[test]
-fn compression_level_unknown_name_is_a_parse_error() {
-    assert!(toml::from_str::<Config>(r#"compression_level = "huge""#).is_err());
+fn compression_level_name_is_a_parse_error() {
+    assert!(toml::from_str::<Config>(r#"compression_level = "standard""#).is_err());
 }
 
 #[test]

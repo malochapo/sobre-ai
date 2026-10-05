@@ -1120,12 +1120,9 @@ fn make_executable(_path: &PathBuf) {}
 pub(crate) fn mcp_server_env_pairs() -> Vec<(String, String)> {
     let mut pairs = Vec::new();
 
-    let cfg = crate::core::config::Config::load();
-
     let project_root = std::env::var("LEAN_CTX_PROJECT_ROOT")
         .ok()
-        .filter(|v| !v.trim().is_empty())
-        .or_else(|| cfg.project_root.clone().filter(|v| !v.trim().is_empty()));
+        .filter(|v| !v.trim().is_empty());
     if let Some(root) = project_root {
         pairs.push(("LEAN_CTX_PROJECT_ROOT".to_string(), root));
     }

@@ -356,11 +356,7 @@ fn inject_rewrites_on_compression_change_without_version_bump() {
         format: RulesFormat::DedicatedMarkdown,
     };
 
-    std::fs::write(
-        iso.path().join("config.toml"),
-        "compression_level = \"off\"\n",
-    )
-    .unwrap();
+    std::fs::write(iso.path().join("config.toml"), "compression_level = 0.0\n").unwrap();
     assert!(matches!(
         super::write::inject_rules(&target).unwrap(),
         RulesResult::Updated
@@ -374,11 +370,7 @@ fn inject_rewrites_on_compression_change_without_version_bump() {
     ));
 
     // Switch to max → must rewrite even though RULES_VERSION is unchanged.
-    std::fs::write(
-        iso.path().join("config.toml"),
-        "compression_level = \"max\"\n",
-    )
-    .unwrap();
+    std::fs::write(iso.path().join("config.toml"), "compression_level = 0.7\n").unwrap();
     assert!(matches!(
         super::write::inject_rules(&target).unwrap(),
         RulesResult::Updated

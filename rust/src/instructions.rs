@@ -654,11 +654,7 @@ mod tests {
         let iso = crate::core::data_dir::isolated_data_dir();
         // Pin compression Off so the measured skeleton — and thus this budget —
         // is deterministic regardless of the dev's local compression_level (#498).
-        std::fs::write(
-            iso.path().join("config.toml"),
-            "compression_level = \"off\"\n",
-        )
-        .unwrap();
+        std::fs::write(iso.path().join("config.toml"), "compression_level = 0.0\n").unwrap();
         for (mode, base_budget) in [
             (CrpMode::Off, STATIC_INSTRUCTION_BUDGET_TOKENS),
             (CrpMode::Compact, STATIC_INSTRUCTION_BUDGET_TOKENS),

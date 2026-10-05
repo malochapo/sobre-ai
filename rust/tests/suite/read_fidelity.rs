@@ -18,7 +18,7 @@ fn read_output(home: &Path, file: &Path, mode: &str) -> Output {
     let data = home.join("data");
     std::fs::create_dir_all(&data).unwrap();
     // Force the densest compression so a missing guard would visibly mangle.
-    std::fs::write(data.join("config.toml"), "compression_level = \"max\"\n").unwrap();
+    std::fs::write(data.join("config.toml"), "compression_level = 0.7\n").unwrap();
     Command::new(env!("CARGO_BIN_EXE_lean-ctx"))
         .args(["read", file.to_str().unwrap(), "-m", mode, "--fresh"])
         .env("LEAN_CTX_ACTIVE", "1")

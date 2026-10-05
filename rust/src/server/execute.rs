@@ -416,21 +416,16 @@ mod tests {
     fn command_timeout_delegates_to_shell_timeout() {
         // `command_timeout` is a thin alias for `shell::exec::shell_timeout`
         // (full precedence coverage lives there). Smoke-test the delegation:
-        // heavy beats normal, and the configured per-tier ceilings apply.
+        // heavy beats normal, and the configured timeout applies.
         let iso = crate::core::data_dir::isolated_data_dir();
 
         assert!(
             command_timeout("cargo install --path .", None) > command_timeout("git status", None)
         );
 
-        std::fs::write(
-            iso.path().join("config.toml"),
-            "shell_timeout_secs = 5\nshell_heavy_timeout_secs = 5\n",
-        )
-        .unwrap();
-        assert_eq!(
-            command_timeout("cargo install --path .", None),
-            std::time::Duration::from_secs(5)
+        std::fs::write(iso.path().join("config.toml"), "shell_timeout_secs = 5\n").unwrap();
+        assert!(
+            command_timeout("cargo install --path .", None) > command_timeout("git status", None)
         );
         assert_eq!(
             command_timeout("git status", None),

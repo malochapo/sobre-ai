@@ -112,61 +112,28 @@ pub struct Config {
     /// tool-steering workflow or phase-isolated/non-caching harnesses, #361).
     #[serde(default)]
     pub rules_injection: Option<String>,
-    /// Extra glob patterns to ignore in graph/overview/preload (repo-local).
-    /// Example: `["externals/**", "target/**", "temp/**"]`
-    #[serde(default)]
-    pub extra_ignore_patterns: Vec<String>,
-    /// Compression intensity, `0.0` (none) to `1.0` (densest). Drives the
-    /// read-mode tuning continuously (`core::aggressiveness`) and picks the
+    /// Compression intensity, `0.0` (none) to `1.0` (densest), clamped. Drives
+    /// the read-mode tuning continuously (`core::aggressiveness`) and picks the
     /// prose style by band (`CompressionLevel::from_value`). Absent: sobre's
-    /// adaptive defaults with the `lite` prose style. The legacy names
-    /// (`"off"`, `"lite"`, `"standard"`, `"max"`, `"raw"`) are read as the
-    /// value of their band.
+    /// adaptive defaults with the `lite` prose style.
     #[serde(
         default,
         deserialize_with = "serde_defaults::deserialize_compression_level",
         skip_serializing_if = "Option::is_none"
     )]
     pub compression_level: Option<f64>,
-    /// Additional paths allowed by PathJail (absolute).
-    /// Useful for multi-project workspaces where the jail root is a parent directory.
+    /// Paths the tools may read and write besides the project root (absolute,
+    /// `~`/`$VAR` expanded). Each one is also searched as an extra root of a
+    /// multi-root workspace, and accepted as a target for config files written
+    /// through symlinks. `["/"]` opens the path jail entirely.
     #[serde(default)]
     pub allow_paths: Vec<String>,
-    /// Allow jailed tool access to home-level IDE config dirs (~/.cursor, VS Code,
-    /// Cline/Roo, JetBrains, …). Tri-state: `None` = not asked yet (setup prompts
-    /// once), `Some(false)` = declined, `Some(true)` = opted in. Those dirs can
-    /// expose other agents' sessions, MCP configs and credentials, so the effective
-    /// default is off. `~/.lean-ctx` (own data dir) is always allowed. The opt-in
-    /// set is registry-derived, covering every supported editor.
-    #[serde(default)]
-    pub allow_ide_config_dirs: Option<bool>,
-    /// Extra project roots for multi-root workspaces.
-    /// Tools like ctx_tree and ctx_search can scan across all roots in a single call.
-    /// These paths are automatically added to PathJail's allow-list.
-    #[serde(default)]
-    pub extra_roots: Vec<String>,
     /// Read-only roots: sibling subtrees the agent may READ but never WRITE.
-    /// Reads resolve as if they were extra_roots; every write tool (edit, refactor,
+    /// Reads resolve as if they were in `allow_paths`; every write tool (edit, refactor,
     /// handoff/session export, memory compaction) is default-denied inside these
     /// paths. Useful for reference repos mounted next to the project.
     #[serde(default)]
     pub read_only_roots: Vec<String>,
-    /// Extra trusted roots OUTSIDE `$HOME` that lean-ctx may follow when an agent
-    /// config file/dir (`~/.claude.json`, `~/.codex/config.toml`, …) is a symlink
-    /// pointing there (#596). Empty by default → the strict `$HOME`-only boundary
-    /// stays in force (a planted symlink can never redirect a config write out of
-    /// the user's home, preserving the GL#442 symlink-hijack protection). Add a
-    /// parent like `/opt/dotfiles` only for a location you own and trust. Like
-    /// `extra_roots`, security-sensitive.
-    #[serde(default)]
-    pub allow_symlink_roots: Vec<String>,
-    /// Index-time file filters (#735): include/exclude globs + gitignore
-    /// handling, applied by every index builder via `core::index_filter`.
-    #[serde(default)]
-    pub index: IndexConfig,
-    /// Disable shell hook injection (the _lc() function that wraps CLI commands).
-    #[serde(default)]
-    pub shell_hook_disabled: bool,
     /// Opt-in (#520): write a human-readable debug log of intercepted MCP tool
     /// calls and hook routing decisions (lean-ctx vs native, with reasons) to
     /// `<state_dir>/logs/debug.log`.
@@ -183,15 +150,10 @@ pub struct Config {
     /// `codebuddy`) into `~/.zshrc` / `~/.bashrc` during `onboard` / `setup`.
     /// Existing alias blocks are removed when this is toggled on (#754).
     /// Does NOT affect the shell compression hook (`_lc()`) — use
-    /// `shell_hook_disabled` for that. Orthogonal to `shell_activation` which
+    /// `shell_hook` for that. Orthogonal to `shell_activation` which
     /// controls *when* aliases activate, not *whether* they are installed.
     #[serde(default)]
     pub skip_agent_aliases: bool,
-    /// Explicit project root override. When set, lean-ctx uses this instead of auto-detection.
-    /// This prevents accidental home-directory scans when running from $HOME.
-    /// Override via LEAN_CTX_PROJECT_ROOT env var.
-    #[serde(default)]
-    pub project_root: Option<String>,
     /// Verbatim binary path/expression for generated agent-hook commands
     /// (#708). Users who sync agent settings (`~/.claude/settings.json`, …)
     /// across machines with different usernames need an env-based form like
@@ -204,46 +166,18 @@ pub struct Config {
     /// = automatic absolute-path resolution (#367).
     #[serde(default)]
     pub hook_binary: Option<String>,
-    /// Disable PathJail entirely by setting `path_jail = false` in config.toml.
-    /// Useful in container/Docker environments where the sandbox is the boundary.
-    #[serde(default)]
-    pub path_jail: Option<bool>,
-    /// Sandbox level for code execution (ctx_exec).
-    /// 0 = subprocess only (current), 1 = OS-level restriction (Seatbelt/Landlock).
-    #[serde(default)]
-    pub sandbox_level: u8,
-
-    /// Shell-security mode for ctx_shell / `lean-ctx -c` command gating (GL #788):
-    /// `enforce` (default, secure), `warn` (run checks, log violations, never
-    /// block) or `off` (skip the hard blocks entirely —
-    /// a deliberate opt-out; compression stays active). `None` resolves to
-    /// `enforce`.
-    #[serde(default)]
-    pub shell_security: Option<String>,
-
-    /// Default shell-command timeout in seconds for *normal* commands. `None`
-    /// resolves to the built-in 2-minute default; heavy builds/tests use
-    /// [`Config::shell_heavy_timeout_secs`].
+    /// Timeout in seconds for shell commands. `None` resolves to the built-in
+    /// 2-minute default. Heavy builds and tests, which sobre recognises, always
+    /// get at least the 10-minute heavy ceiling.
     #[serde(default)]
     pub shell_timeout_secs: Option<u64>,
-
-    /// Shell-command timeout in seconds for *heavy* commands (cargo build/test,
-    /// make, docker build, git commit/push, …). `None` resolves to the built-in
-    /// 10-minute ceiling.
+    /// Install the shell hook that routes common commands through sobre.
+    #[serde(default = "serde_defaults::default_true")]
+    pub shell_hook: bool,
+    /// Globs for files kept out of the index and of project walks, on top of
+    /// `.gitignore` (always respected).
     #[serde(default)]
-    pub shell_heavy_timeout_secs: Option<u64>,
-
-    /// Extra command prefixes that get the heavy timeout ceiling. Merged with
-    /// the built-in list. Useful for project-specific long-running scripts.
-    /// Example: `shell_heavy_prefixes = ["python3 ", "./scripts/"]`
-    #[serde(default)]
-    pub shell_heavy_prefixes: Vec<String>,
-    /// #814: opt-in to allow `python3 -c`, `node -e`, etc. in ctx_shell.
-    /// Default `false` — inline code is blocked because it leaves no auditable
-    /// artifact.`.
-    #[serde(default)]
-    pub shell_allow_inline_scripts: bool,
-
+    pub ignore: Vec<String>,
     /// Setup behavior: controls what gets injected during setup and updates.
     #[serde(default)]
     pub setup: SetupConfig,
@@ -258,27 +192,16 @@ impl Default for Config {
             proxy_port: None,
             rules_scope: None,
             rules_injection: None,
-            extra_ignore_patterns: Vec::new(),
             compression_level: None,
             allow_paths: Vec::new(),
-            allow_ide_config_dirs: None,
-            extra_roots: Vec::new(),
             read_only_roots: Vec::new(),
-            allow_symlink_roots: Vec::new(),
-            index: IndexConfig::default(),
-            shell_hook_disabled: false,
             debug_log: false,
             shell_activation: ShellActivation::default(),
             skip_agent_aliases: false,
-            project_root: None,
             hook_binary: None,
-            path_jail: None,
-            sandbox_level: 0,
-            shell_security: None,
             shell_timeout_secs: None,
-            shell_heavy_timeout_secs: None,
-            shell_heavy_prefixes: Vec::new(),
-            shell_allow_inline_scripts: false,
+            shell_hook: true,
+            ignore: Vec::new(),
             setup: SetupConfig::default(),
         }
     }
@@ -358,7 +281,13 @@ impl Config {
 
     /// Returns `true` if shell hook injection is disabled.
     pub fn shell_hook_disabled_effective(&self) -> bool {
-        self.shell_hook_disabled
+        !self.shell_hook
+    }
+
+    /// Whether `allow_paths` opens the path jail entirely (`"/"`).
+    #[must_use]
+    pub fn jail_open(&self) -> bool {
+        self.allow_paths.iter().any(|p| p.trim() == "/")
     }
 
     /// Returns the effective shell activation mode.
@@ -366,11 +295,10 @@ impl Config {
         ShellActivation::effective(self)
     }
 
-    /// #814: returns `true` if `ctx_shell` may accept inline interpreter scripts
-    /// (`python3 -c "..."`, `node -e "..."`, etc.).
-    /// The hard blocks still apply.
+    /// #814: whether `ctx_shell` may accept inline interpreter scripts
+    /// (`python3 -c "..."`, `node -e "..."`, etc.). No.
     pub fn shell_allow_inline_scripts_effective(&self) -> bool {
-        self.shell_allow_inline_scripts
+        false
     }
 
     /// The memory policy: [`MemoryPolicy::default`], validated.

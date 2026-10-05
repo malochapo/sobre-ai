@@ -126,7 +126,15 @@ impl ServerHandler for LeanCtxServer {
                     session.project_root = None;
                 }
             }
-            let cfg_extra = crate::core::config::Config::load().extra_roots;
+            // Allowed paths double as the extra roots of a multi-root
+            // workspace, except an open jail ("/") or another broad root.
+            let cfg_extra: Vec<String> = crate::core::config::Config::load()
+                .allow_paths
+                .into_iter()
+                .filter(|p| {
+                    !crate::core::pathutil::is_broad_or_unsafe_root(std::path::Path::new(p.trim()))
+                })
+                .collect();
             if !cfg_extra.is_empty() {
                 let existing: std::collections::HashSet<_> =
                     session.extra_roots.iter().cloned().collect();

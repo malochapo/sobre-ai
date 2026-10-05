@@ -87,12 +87,6 @@ pub fn detect_project_root_or_cwd(file_path: &str) -> String {
     {
         return env_root;
     }
-    let cfg = crate::core::config::Config::load();
-    if let Some(ref cfg_root) = cfg.project_root
-        && !cfg_root.is_empty()
-    {
-        return cfg_root.clone();
-    }
     if let Some(root) = detect_project_root(file_path) {
         return root;
     }

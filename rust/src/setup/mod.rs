@@ -452,12 +452,7 @@ pub fn run_setup_with_options(opts: SetupOptions) -> Result<SetupReport, String>
     // Project root validation: warn if no root is configured and cwd is broad
     {
         let has_env_root = std::env::var("LEAN_CTX_PROJECT_ROOT").is_ok_and(|v| !v.is_empty());
-        let cfg = crate::core::config::Config::load();
-        let has_cfg_root = cfg.project_root.as_ref().is_some_and(|v| !v.is_empty());
-        if !has_env_root
-            && !has_cfg_root
-            && let Ok(cwd) = std::env::current_dir()
-        {
+        if !has_env_root && let Ok(cwd) = std::env::current_dir() {
             let is_home = dirs::home_dir().is_some_and(|h| cwd == h);
             if is_home {
                 let mut root_step = SetupStepReport {
@@ -465,8 +460,8 @@ pub fn run_setup_with_options(opts: SetupOptions) -> Result<SetupReport, String>
                         ok: true,
                         items: Vec::new(),
                         warnings: vec![
-                            "No project_root configured. Running from $HOME can cause excessive scanning. \
-                             Set via: lean-ctx config set project_root /path/to/project".to_string()
+                            "No project root set. Running from $HOME can cause excessive scanning. \
+                             Start your agent from the project directory or set LEAN_CTX_PROJECT_ROOT.".to_string()
                         ],
                         errors: Vec::new(),
                     };
@@ -474,9 +469,7 @@ pub fn run_setup_with_options(opts: SetupOptions) -> Result<SetupReport, String>
                     name: "project_root".to_string(),
                     status: "unconfigured".to_string(),
                     path: None,
-                    note: Some(
-                        "Set LEAN_CTX_PROJECT_ROOT or add project_root to config.toml".to_string(),
-                    ),
+                    note: Some("Set LEAN_CTX_PROJECT_ROOT".to_string()),
                 });
                 steps.push(root_step);
             }
@@ -492,33 +485,6 @@ pub fn run_setup_with_options(opts: SetupOptions) -> Result<SetupReport, String>
         && crate::core::pathutil::has_project_marker(&cwd)
     {
         spawn_index_build_background(&cwd);
-    }
-
-    // IDE config access: the interactive `setup` prompts for informed consent
-    // (see run_setup). An explicit `--yes` is itself consent, so enable the
-    // registry-derived opt-in if the user has never decided. `--fix` repair runs
-    // must never silently widen the jail, so they are left untouched.
-    if opts.yes
-        && !opts.fix
-        && crate::core::config::Config::load()
-            .allow_ide_config_dirs
-            .is_none()
-    {
-        match crate::core::config::Config::update_global(|c| {
-            c.allow_ide_config_dirs = Some(true);
-        }) {
-            // --yes is consent, but say so out loud: the user should know the
-            // path jail now includes IDE config dirs, and how to revert it.
-            Ok(_) => {
-                if !opts.json {
-                    println!(
-                        "  Enabled IDE config access (allow_ide_config_dirs) — \
-                         disable: lean-ctx config set allow_ide_config_dirs false"
-                    );
-                }
-            }
-            Err(e) => tracing::warn!("could not enable IDE config access: {e}"),
-        }
     }
 
     let finished_at = Utc::now();

@@ -118,22 +118,17 @@ fn detect_jail(cfg: &Config) -> JailState {
     if cfg!(feature = "no-jail") {
         return JailState::Disabled("no-jail build feature".to_string());
     }
-    if cfg.path_jail == Some(false) {
-        return JailState::Disabled("path_jail = false".to_string());
-    }
-    // `allow_paths`/`extra_roots` containing "/" is a prefix of everything, so
-    // it grants blanket access just like `path_jail = false` (GH #392).
+    // `allow_paths` containing "/" is a prefix of everything, so it opens the
+    // jail (GH #392).
     let grants_everything = cfg
         .allow_paths
         .iter()
-        .chain(cfg.extra_roots.iter())
         .any(|raw| crate::core::pathjail::expand_user_path(raw) == Path::new("/"));
     if grants_everything {
         return JailState::Disabled("allow_paths contains \"/\"".to_string());
     }
 
-    // Remaining relaxations (env channels, IDE-config dirs) only *widen* the
-    // jail; the full-disable sources above are handled by the early returns.
+    // Remaining relaxations (multi-root workspace) only *widen* the jail; the full-disable sources above are handled by the early returns.
     let relaxed: Vec<String> = crate::core::pathjail::active_relaxations()
         .into_iter()
         .map(|r| r.source.to_string())

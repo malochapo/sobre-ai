@@ -720,7 +720,7 @@ fn scan_inner(project_root: &str) -> (ProjectIndex, HashMap<String, String>) {
         .build();
 
     let extra_ignores: Vec<glob::Pattern> = cfg
-        .extra_ignore_patterns
+        .ignore
         .iter()
         .filter_map(|p| glob::Pattern::new(p).ok())
         .collect();

@@ -282,39 +282,6 @@ fn loop_header_substitution_is_not_a_bypass() {
 // writes a private config via `isolated_data_dir`, which holds the shared test
 // lock, so the mode can never leak into another test.
 
-#[test]
-fn security_off_skips_all_gating() {
-    let iso = crate::core::data_dir::isolated_data_dir();
-    std::fs::write(iso.path().join("config.toml"), "shell_security = \"off\"\n").unwrap();
-    // `eval` is unconditionally blocked under enforce; off must let it through.
-    let eval_ok = check_shell_command("eval rm -rf /");
-    // An ordinary binary also passes under off.
-    let exotic_ok = check_shell_command("some-exotic-tool --flag");
-    assert!(eval_ok.is_ok(), "off must skip the eval block");
-    assert!(exotic_ok.is_ok(), "off must allow non-allowlisted binaries");
-}
-
-#[test]
-fn security_warn_never_blocks_while_enforce_does() {
-    let iso = crate::core::data_dir::isolated_data_dir();
-    // `eval …` is blocked in enforce mode regardless of allowlist contents.
-    let blocked = "eval danger";
-    std::fs::write(
-        iso.path().join("config.toml"),
-        "shell_security = \"enforce\"\n",
-    )
-    .unwrap();
-    let enforced = check_shell_command(blocked);
-    std::fs::write(
-        iso.path().join("config.toml"),
-        "shell_security = \"warn\"\n",
-    )
-    .unwrap();
-    let warned = check_shell_command(blocked);
-    assert!(enforced.is_err(), "enforce must block eval");
-    assert!(warned.is_ok(), "warn must run the check but never block");
-}
-
 // --- passes_enforced (hook compound classifier, #589) ---
 // The PreToolUse hook routes only gate-clean compounds into the compressing
 // `lean-ctx -c` wrap. `passes_enforced` is the side-effect-free predicate it

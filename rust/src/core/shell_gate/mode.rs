@@ -52,13 +52,10 @@ impl ShellSecurity {
         }
     }
 
-    /// Resolve the active mode: config → secure default.
+    /// The active mode: enforce. The developer's own deny list replaces the
+    /// other modes later (invariant 6).
     pub fn resolve() -> Self {
-        crate::core::config::Config::load()
-            .shell_security
-            .as_deref()
-            .and_then(Self::parse)
-            .unwrap_or_default()
+        Self::default()
     }
 }
 
@@ -104,16 +101,5 @@ mod tests {
         ] {
             assert_eq!(ShellSecurity::parse(mode.as_str()), Some(mode));
         }
-    }
-
-    #[test]
-    fn resolve_reads_config_and_tolerates_garbage() {
-        let iso = crate::core::data_dir::isolated_data_dir();
-        let cfg = iso.path().join("config.toml");
-        std::fs::write(&cfg, "shell_security = \"off\"\n").unwrap();
-        assert_eq!(ShellSecurity::resolve(), ShellSecurity::Off);
-        std::fs::write(&cfg, "shell_security = \"garbage\"\n").unwrap();
-        // Unknown config value → the default, never panics.
-        assert_eq!(ShellSecurity::resolve(), ShellSecurity::default());
     }
 }

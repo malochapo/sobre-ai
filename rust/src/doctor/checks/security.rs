@@ -46,8 +46,8 @@ pub(crate) fn shell_gate_outcome() -> Outcome {
         ),
     }
 }
-/// Reports the effective PathJail state (GH #392): which knob (if any)
-/// disabled it, and whether configured `allow_paths`/`extra_roots` entries
+/// Reports the effective PathJail state (GH #392): whether it is open, and
+/// whether configured `allow_paths` entries
 /// actually resolve — the silent failure mode behind "allow_paths has no
 /// effect" reports (unexpanded `$VAR`, typos, paths that don't exist).
 pub(crate) fn path_jail_outcome() -> Outcome {
@@ -61,20 +61,7 @@ pub(crate) fn path_jail_outcome() -> Outcome {
     }
 
     let cfg = crate::core::config::Config::load();
-    if cfg.path_jail == Some(false) {
-        return Outcome {
-            ok: true,
-            line: format!(
-                "{BOLD}Path jail{RST}  {YELLOW}disabled{RST}  {DIM}(path_jail = false in config.toml — all tool paths allowed){RST}"
-            ),
-        };
-    }
-
-    let entries: Vec<&String> = cfg
-        .allow_paths
-        .iter()
-        .chain(cfg.extra_roots.iter())
-        .collect();
+    let entries: Vec<&String> = cfg.allow_paths.iter().collect();
     let mut grants_everything = false;
     let mut dead: Vec<String> = Vec::new();
     for raw in &entries {
@@ -91,7 +78,7 @@ pub(crate) fn path_jail_outcome() -> Outcome {
         return Outcome {
             ok: true,
             line: format!(
-                "{BOLD}Path jail{RST}  {YELLOW}active, but allow_paths contains \"/\"{RST}  {DIM}(grants everything — prefer the explicit `path_jail = false`){RST}"
+                "{BOLD}Path jail{RST}  {YELLOW}open{RST}  {DIM}(allow_paths contains \"/\" — all tool paths allowed){RST}"
             ),
         };
     }
@@ -119,7 +106,7 @@ pub(crate) fn path_jail_outcome() -> Outcome {
     };
 
     // Env-channel relaxations the config view above can't see (inherited from the
-    // multi-root workspace or `allow_ide_config_dirs`). Surface them as a standing security note (GH security
+    // multi-root workspace). Surface them as a standing security note (GH security
     // audit, finding 3); no-jail / path_jail=false are handled by the early
     // returns above, so only those relaxations reach here.
     let relaxed: Vec<&str> = crate::core::pathjail::active_relaxations()

@@ -79,7 +79,7 @@ mod compression_level_tests {
 
     #[test]
     fn deserialization_from_toml() {
-        let cfg: Config = toml::from_str(r#"compression_level = "standard""#).unwrap();
+        let cfg: Config = toml::from_str("compression_level = 0.5").unwrap();
         assert_eq!(cfg.compression_level, Some(0.5));
     }
 }

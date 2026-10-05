@@ -273,7 +273,7 @@ mod tests {
     #[test]
     fn known_keys_recognise_reported_456_keys() {
         let known = ConfigSchema::generate().known_keys();
-        for key in ["allow_ide_config_dirs", "proxy"] {
+        for key in ["allow_paths", "proxy"] {
             assert!(
                 accepted(&known, key),
                 "validation must recognise '{key}' (#456)"
@@ -287,15 +287,15 @@ mod tests {
     /// `Config::default()` and it never appears in `config_derived_keys`: such a
     /// field is settable via `config set` **only** if it was hand-added to a
     /// `sections_*.rs` schema. Forgetting that is the `Unknown config key: <x>`
-    /// regression a user hit for `path_jail` before #507. Guard the whole
+    /// regression a user hit before #507. Guard the whole
     /// class so a new `Option` knob can't silently become un-settable again — if you add an `Option` scalar to
     /// `Config`, register it in `sections_*.rs` and list it here.
     #[test]
     fn option_scalar_keys_are_cli_settable() {
         let schema = ConfigSchema::generate();
         for key in [
-            "path_jail",
-            "shell_security",
+            "shell_timeout_secs",
+            "compression_level",
             "rules_scope",
             "rules_injection",
             "proxy_enabled",

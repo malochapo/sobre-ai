@@ -218,7 +218,6 @@ fn cmd_apply() {
     println!("\n[1/4] Validating config…");
     let schema = config::schema::ConfigSchema::generate();
     let known = schema.known_keys();
-    let cfg = config::Config::load();
 
     if let Some(path) = config::Config::path()
         && path.exists()
@@ -297,9 +296,6 @@ fn cmd_apply() {
 
     // 4. Summary
     println!("\n[4/4] Config applied successfully.");
-    if let Some(ref root) = cfg.project_root {
-        println!("  Project root: {root}");
-    }
 }
 
 /// Print the absolute path of the resolved global `config.toml` (one line,
@@ -1135,8 +1131,8 @@ mod tests {
 
     // Reproduces `Config::save()`'s on-disk merge without touching the real
     // config path: serialize `cfg`, then merge it onto `existing` exactly as
-    // save() does, and return the value that `sandbox_level` ends up with.
-    fn merged_sandbox_level(cfg: &config::Config, existing: &str) -> u8 {
+    // save() does, and return the value that `shell_timeout_secs` ends up with.
+    fn merged_shell_timeout(cfg: &config::Config, existing: &str) -> Option<u64> {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("config.toml");
         std::fs::write(&path, existing).unwrap();
@@ -1147,59 +1143,53 @@ mod tests {
         let written = std::fs::read_to_string(&path).unwrap();
         toml::from_str::<config::Config>(&written)
             .unwrap()
-            .sandbox_level
+            .shell_timeout_secs
     }
 
     #[test]
     fn full_init_uses_existing_values_not_defaults() {
-        let existing = "sandbox_level = 2\ncompression_level = \"standard\"\n";
+        let existing = "shell_timeout_secs = 90\ncompression_level = 0.5\n";
         let cfg = config_for_full_init(Some(existing)).expect("parse existing");
-        assert_eq!(cfg.sandbox_level, 2, "must keep the user's value, not 0");
+        assert_eq!(
+            cfg.shell_timeout_secs,
+            Some(90),
+            "must keep the user's value"
+        );
         assert_eq!(cfg.compression_level, Some(0.5));
     }
 
     #[test]
     fn full_init_falls_back_to_defaults_on_fresh_install() {
         let cfg = config_for_full_init(None).expect("default");
-        assert_eq!(cfg.sandbox_level, config::Config::default().sandbox_level);
+        assert_eq!(
+            cfg.shell_timeout_secs,
+            config::Config::default().shell_timeout_secs
+        );
         assert_eq!(
             cfg.compression_level,
             config::Config::default().compression_level
         );
         let cfg_empty = config_for_full_init(Some("   \n")).expect("blank -> default");
         assert_eq!(
-            cfg_empty.sandbox_level,
-            config::Config::default().sandbox_level
+            cfg_empty.shell_timeout_secs,
+            config::Config::default().shell_timeout_secs
         );
     }
 
     #[test]
     fn full_init_refuses_unparseable_config() {
-        assert!(config_for_full_init(Some("sandbox_level = = =")).is_err());
+        assert!(config_for_full_init(Some("shell_timeout_secs = = =")).is_err());
     }
 
     // #443 end-to-end: `config init --full` must not reset a customized value.
     #[test]
     fn full_init_preserves_value_through_save_merge() {
-        let existing = "sandbox_level = 2\n";
+        let existing = "shell_timeout_secs = 90\n";
         let cfg = config_for_full_init(Some(existing)).unwrap();
         assert_eq!(
-            merged_sandbox_level(&cfg, existing),
-            2,
+            merged_shell_timeout(&cfg, existing),
+            Some(90),
             "user value must survive `config init --full`"
-        );
-    }
-
-    // Guards the root cause: seeding the write from `Config::default()` (the old
-    // behavior) DOES reset the value — proving why `config_for_full_init` must
-    // load the existing config instead.
-    #[test]
-    fn default_seed_resets_value_root_cause_marker() {
-        let existing = "sandbox_level = 2\n";
-        assert_eq!(
-            merged_sandbox_level(&config::Config::default(), existing),
-            0,
-            "default seed resets to 0 — the #443 regression we fixed"
         );
     }
 }

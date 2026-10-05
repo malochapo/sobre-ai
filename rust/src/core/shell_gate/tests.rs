@@ -362,38 +362,6 @@ fn python3_inline_blocked_by_default() {
     assert!(result.is_err(), "python3 -c must be blocked by default");
 }
 
-/// #814: python3 -c is allowed when opt-in is enabled.
-#[test]
-fn python3_inline_allowed_with_opt_in() {
-    let iso = crate::core::data_dir::isolated_data_dir();
-    std::fs::write(
-        iso.path().join("config.toml"),
-        "shell_allow_inline_scripts = true\n",
-    )
-    .unwrap();
-    let result = super::enforce_shell_gate("python3 -c \"print(42)\"");
-    assert!(
-        result.is_ok(),
-        "python3 -c must be allowed with opt-in: {result:?}"
-    );
-}
-
-/// #814: node -e is also gated by the same opt-in.
-#[test]
-fn node_eval_allowed_with_opt_in() {
-    let iso = crate::core::data_dir::isolated_data_dir();
-    std::fs::write(
-        iso.path().join("config.toml"),
-        "shell_allow_inline_scripts = true\n",
-    )
-    .unwrap();
-    let result = super::enforce_shell_gate("node -e \"console.log(42)\"");
-    assert!(
-        result.is_ok(),
-        "node -e must be allowed with opt-in: {result:?}"
-    );
-}
-
 // --- #855: `VAR=$(cmd args…)` inside a for-loop body must not misparse a
 // word from *inside* the substitution as the base command. ---
 

@@ -246,8 +246,8 @@ pub(super) fn exec_limits(command: &str) -> (usize, std::time::Duration) {
 /// get the long ceiling instead of being killed at the 2-minute default, keeping
 /// the MCP path and the interactive hook consistent:
 ///
-/// - heavy command → config `shell_heavy_timeout_secs`, else [`HEAVY_TIMEOUT`].
-/// - normal command → config `shell_timeout_secs`, else [`DEFAULT_TIMEOUT`].
+/// - normal command → config `shell_timeout_secs`, else [`DEFAULT_TIMEOUT`];
+/// - heavy command → the larger of `shell_timeout_secs` and [`HEAVY_TIMEOUT`].
 #[must_use]
 pub(crate) fn shell_timeout(command: &str) -> std::time::Duration {
     shell_timeout_with_override(command, None)
@@ -270,16 +270,13 @@ pub(crate) fn shell_timeout_with_override(
     if let Some(ms) = override_ms.filter(|n| *n > 0) {
         return std::time::Duration::from_millis(ms.min(MAX_CALL_TIMEOUT_MS));
     }
+    let configured = config::Config::load()
+        .shell_timeout_secs
+        .map(std::time::Duration::from_secs);
     if is_heavy_command(command) {
-        if let Some(secs) = config::Config::load().shell_heavy_timeout_secs {
-            return std::time::Duration::from_secs(secs);
-        }
-        HEAVY_TIMEOUT
+        configured.map_or(HEAVY_TIMEOUT, |t| t.max(HEAVY_TIMEOUT))
     } else {
-        if let Some(secs) = config::Config::load().shell_timeout_secs {
-            return std::time::Duration::from_secs(secs);
-        }
-        DEFAULT_TIMEOUT
+        configured.unwrap_or(DEFAULT_TIMEOUT)
     }
 }
 
@@ -367,11 +364,7 @@ fn is_heavy_command(command: &str) -> bool {
         "just ",
     ];
 
-    let cfg_prefixes = config::Config::load().shell_heavy_prefixes;
-    let matches_heavy = |s: &str| {
-        HEAVY_PREFIXES.iter().any(|p| s.starts_with(p))
-            || cfg_prefixes.iter().any(|p| s.starts_with(p.as_str()))
-    };
+    let matches_heavy = |s: &str| HEAVY_PREFIXES.iter().any(|p| s.starts_with(p));
 
     if matches_heavy(&lower) {
         return true;
@@ -1166,20 +1159,18 @@ mod exec_tests {
             super::HEAVY_TIMEOUT
         );
 
-        // Per-tier config values win over the built-in constants. (Non-round
-        // second values keep the literals clippy-clean and unambiguous.)
-        std::fs::write(
-            iso.path().join("config.toml"),
-            "shell_heavy_timeout_secs = 90\nshell_timeout_secs = 30\n",
-        )
-        .unwrap();
-        assert_eq!(
-            super::shell_timeout("cargo build"),
-            std::time::Duration::from_secs(90)
-        );
+        // The configured timeout sets normal commands; heavy ones never drop
+        // below the heavy floor but follow a larger configured value.
+        std::fs::write(iso.path().join("config.toml"), "shell_timeout_secs = 30\n").unwrap();
+        assert_eq!(super::shell_timeout("cargo build"), super::HEAVY_TIMEOUT);
         assert_eq!(
             super::shell_timeout("git status"),
             std::time::Duration::from_secs(30)
+        );
+        std::fs::write(iso.path().join("config.toml"), "shell_timeout_secs = 900\n").unwrap();
+        assert_eq!(
+            super::shell_timeout("cargo build"),
+            std::time::Duration::from_mins(15)
         );
     }
 

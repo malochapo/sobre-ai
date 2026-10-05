@@ -153,30 +153,13 @@ mod loop_detection_config_tests {
 }
 
 #[cfg(test)]
-mod extra_roots_tests {
-    use super::super::*;
-
-    #[test]
-    fn default_is_empty() {
-        let cfg = Config::default();
-        assert!(cfg.extra_roots.is_empty());
-    }
-
-    #[test]
-    fn deserialization_from_toml() {
-        let cfg: Config = toml::from_str(r#"extra_roots = ["/data/store", "/test/env"]"#).unwrap();
-        assert_eq!(cfg.extra_roots, vec!["/data/store", "/test/env"]);
-    }
-}
-
-#[cfg(test)]
 mod config_load_cache_tests {
     use super::super::*;
     use crate::core::data_dir::isolated_data_dir;
 
     /// #406 regression: `Config::load()` must reflect a content change even when
     /// the file mtime is unchanged. A mtime-only cache (the old behaviour) kept a
-    /// long-lived MCP server on a stale `path_jail` while a fresh `doctor`
+    /// long-lived MCP server on a stale `allow_paths` while a fresh `doctor`
     /// process — with an empty cache — saw the new value. The cache is now keyed
     /// on a content hash, so this scenario stays live.
     #[test]
@@ -187,19 +170,18 @@ mod config_load_cache_tests {
             std::fs::create_dir_all(parent).unwrap();
         }
 
-        // Warm the cache with jail unset (default None).
+        // Warm the cache with the jail closed (default).
         std::fs::write(&path, "# initial\n").unwrap();
         let mtime0 = std::fs::metadata(&path).unwrap().modified().unwrap();
-        assert_eq!(Config::load().path_jail, None);
+        assert!(!Config::load().jail_open());
 
-        // Flip path_jail=false but restore the original mtime, so any mtime-only
+        // Open the jail but restore the original mtime, so any mtime-only
         // cache would serve the stale value (#406).
-        std::fs::write(&path, "path_jail = false\n").unwrap();
+        std::fs::write(&path, "allow_paths = [\"/\"]\n").unwrap();
         filetime::set_file_mtime(&path, filetime::FileTime::from_system_time(mtime0)).unwrap();
 
-        assert_eq!(
-            Config::load().path_jail,
-            Some(false),
+        assert!(
+            Config::load().jail_open(),
             "Config::load() must honor a content change with unchanged mtime (#406)"
         );
     }
@@ -222,11 +204,7 @@ mod persist_global_tests {
     #[test]
     fn update_global_at_preserves_customized_and_persists_change() {
         let (_dir, path) = tmp_config();
-        std::fs::write(
-            &path,
-            "proxy_port = 4444\ncompression_level = \"standard\"\n",
-        )
-        .unwrap();
+        std::fs::write(&path, "proxy_port = 4444\ncompression_level = 0.5\n").unwrap();
 
         let returned = Config::update_global_at(&path, |c| c.proxy_enabled = Some(true))
             .expect("update_global_at must succeed");
@@ -276,12 +254,15 @@ mod persist_global_tests {
         // Missing file.
         let cfg = Config::load_global_from(&path);
         assert_eq!(cfg.proxy_port, Config::default().proxy_port);
-        assert_eq!(cfg.sandbox_level, Config::default().sandbox_level);
+        assert_eq!(cfg.shell_timeout_secs, Config::default().shell_timeout_secs);
         // Empty / whitespace-only file.
         std::fs::write(&path, "   \n").unwrap();
         let cfg2 = Config::load_global_from(&path);
         assert_eq!(cfg2.proxy_port, Config::default().proxy_port);
-        assert_eq!(cfg2.sandbox_level, Config::default().sandbox_level);
+        assert_eq!(
+            cfg2.shell_timeout_secs,
+            Config::default().shell_timeout_secs
+        );
     }
 }
 
@@ -303,15 +284,12 @@ mod shell_timeout_and_writes_tests {
     fn timeout_overrides_default_to_none() {
         let cfg = Config::default();
         assert_eq!(cfg.shell_timeout_secs, None);
-        assert_eq!(cfg.shell_heavy_timeout_secs, None);
     }
 
     #[test]
     fn timeout_overrides_parse_from_toml() {
-        let cfg: Config =
-            toml::from_str("shell_timeout_secs = 90\nshell_heavy_timeout_secs = 1800").unwrap();
+        let cfg: Config = toml::from_str("shell_timeout_secs = 90").unwrap();
         assert_eq!(cfg.shell_timeout_secs, Some(90));
-        assert_eq!(cfg.shell_heavy_timeout_secs, Some(1800));
     }
 }
 
