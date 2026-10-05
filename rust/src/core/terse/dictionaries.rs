@@ -1,8 +1,7 @@
 //! Domain-specific abbreviation dictionaries for terse compression.
 //!
 //! Each dictionary provides whole-word-matching abbreviations for a specific
-//! domain (git, cargo, npm, general). Unlike the legacy ABBREVIATIONS list
-//! (18 blind substring replacements), these use word-boundary-aware matching.
+//! domain (git, cargo, npm, general), with word-boundary-aware matching.
 
 /// A single abbreviation rule: replaces `long` with `short` at word boundaries.
 pub struct Abbreviation {

@@ -29,8 +29,7 @@ impl Config {
     /// Returns the path to the global config file (`$XDG_CONFIG_HOME/lean-ctx/config.toml`).
     ///
     /// Resolves via [`crate::core::paths::config_dir`] so config lives in the
-    /// RO-safe config category. Behavior-neutral today: `config_dir()` equals the
-    /// legacy data dir for existing/single-dir installs (GH #408 / GL #602).
+    /// RO-safe config category (GH #408 / GL #602).
     pub fn path() -> Option<PathBuf> {
         crate::core::paths::config_dir()
             .ok()
@@ -41,8 +40,8 @@ impl Config {
     /// so lean-ctx is silently on built-in defaults. `None` when a config file is
     /// present (or HOME is unresolvable).
     ///
-    /// The directory is layout-dependent (XDG `~/.config/lean-ctx` vs legacy
-    /// `~/.lean-ctx` vs `$LEAN_CTX_DATA_DIR`) and an MCP client may launch the
+    /// The directory is layout-dependent (XDG `~/.config/lean-ctx` vs
+    /// `$LEAN_CTX_CONFIG_DIR` vs `$LEAN_CTX_DATA_DIR`) and an MCP client may launch the
     /// server in a sandbox/container with a different `$HOME`. An edit made to a
     /// *different* `config.toml` than this one is silently ignored; the block
     /// messages use this to say so out loud over MCP, where the stderr path is

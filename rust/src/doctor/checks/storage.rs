@@ -70,20 +70,11 @@ pub(crate) fn bm25_cache_health_outcome() -> Outcome {
         }
         total_dirs += 1;
 
-        if dir.join("bm25_index.json.quarantined").exists()
-            || dir.join("bm25_index.bin.quarantined").exists()
-            || dir.join("bm25_index.bin.zst.quarantined").exists()
-        {
+        if dir.join("bm25_index.bin.zst.quarantined").exists() {
             quarantined_count += 1;
         }
 
-        let index_path = if dir.join("bm25_index.bin.zst").exists() {
-            dir.join("bm25_index.bin.zst")
-        } else if dir.join("bm25_index.bin").exists() {
-            dir.join("bm25_index.bin")
-        } else {
-            dir.join("bm25_index.json")
-        };
+        let index_path = dir.join("bm25_index.bin.zst");
         if let Ok(meta) = std::fs::metadata(&index_path) {
             let size = meta.len();
             total_bytes += size;

@@ -1,10 +1,9 @@
-//! Legacy-path firewall — regression guard for the GH #434–#436 class.
+//! Home dot-dir firewall — regression guard for the GH #434–#436 class.
 //!
-//! Building the HOME-based legacy data dir `~/.lean-ctx` directly (e.g.
+//! Building a HOME-based `~/.lean-ctx` dir directly (e.g.
 //! `home.join(".lean-ctx")`) bypasses the XDG resolver in `core::paths` /
-//! `core::data_dir`. That is exactly the "split-brain" those issues fixed: files
-//! keep landing in `~/.lean-ctx` even though the resolver has moved everything to
-//! the typed `$XDG_*` dirs. New code MUST go through `data_dir()` / `state_dir()`
+//! `core::data_dir`, so files would land outside the typed `$XDG_*` dirs.
+//! Code MUST go through `data_dir()` / `state_dir()`
 //! / `config_dir()` / `cache_dir()` instead.
 //!
 //! No file constructs a home-based `~/.lean-ctx` path; this test fails if one
@@ -34,7 +33,7 @@ fn collect_rs_files(dir: &Path, out: &mut Vec<PathBuf>) {
     }
 }
 
-/// True when the file builds the HOME legacy dir `~/.lean-ctx` directly: some
+/// True when the file builds the HOME dot-dir `~/.lean-ctx` directly: some
 /// `join(".lean-ctx…")` is rooted at a `home` token (`home.join(".lean-ctx")`,
 /// `dirs::home_dir()…join(".lean-ctx/logs")`, `…join(".lean-ctx/agents/…")`).
 ///
@@ -51,7 +50,7 @@ fn collect_rs_files(dir: &Path, out: &mut Vec<PathBuf>) {
 /// under-counted real writers like `core::agents`). A bounded, char-boundary
 /// safe look-back keeps project-local roots (`project_root`, `root`, `cwd`,
 /// `dir`) — which carry no `home` token — out of scope by design.
-fn builds_home_legacy_path(text: &str) -> bool {
+fn builds_home_dotdir_path(text: &str) -> bool {
     const PREFIX: &str = r#"join(".lean-ctx"#;
     const LOOKBACK: usize = 160;
     let bytes = text.as_bytes();
@@ -76,7 +75,7 @@ fn builds_home_legacy_path(text: &str) -> bool {
 }
 
 #[test]
-fn no_new_home_legacy_path_construction() {
+fn no_home_dotdir_path_construction() {
     let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
     let mut files = Vec::new();
     collect_rs_files(&src, &mut files);
@@ -87,7 +86,7 @@ fn no_new_home_legacy_path_construction() {
         let Ok(text) = std::fs::read_to_string(file) else {
             continue;
         };
-        if builds_home_legacy_path(&text) {
+        if builds_home_dotdir_path(&text) {
             let rel = file
                 .strip_prefix(&src)
                 .unwrap()

@@ -7,16 +7,14 @@
 //! rehydrate path.
 //!
 //! ## On-disk layout
-//! - Facts keep their legacy global location `memory/archive/archive-*.json`
-//!   for backward compatibility (pre-#995 archives stay readable).
+//! - Facts live at the root, `memory/archive/archive-*.json`.
 //! - Every other store lives under `memory/archive/<store>/<scope>/archive-*.json`,
 //!   where `<scope>` is the per-project hash so a restore lands in the right
 //!   project.
 //!
 //! ## Format
 //! A single envelope ([`ArchiveEnvelope`]) is used for all stores. The item
-//! collection serializes as `items`; the `facts` alias keeps legacy facts
-//! archives (which used that key) deserializable.
+//! collection serializes as `items`.
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
@@ -67,7 +65,7 @@ impl MemoryStore {
         ]
     }
 
-    /// Subdirectory under `memory/archive`. Facts return `None` (legacy root).
+    /// Subdirectory under `memory/archive`. Facts return `None` (the root).
     fn subdir(self) -> Option<&'static str> {
         match self {
             MemoryStore::Facts => None,
@@ -98,8 +96,7 @@ impl Default for ArchiveConfig {
 impl ArchiveConfig {}
 
 /// Unified archive envelope for reading every store. The collection is keyed
-/// `items`; the `facts` alias keeps legacy facts archives (which used that key)
-/// deserializable.
+/// `items`.
 #[derive(Debug, Deserialize)]
 pub struct ArchiveEnvelope<T> {
     pub archived_at: DateTime<Utc>,
@@ -107,7 +104,6 @@ pub struct ArchiveEnvelope<T> {
     pub store: String,
     #[serde(default)]
     pub scope: Option<String>,
-    #[serde(rename = "items", alias = "facts")]
     pub items: Vec<T>,
 }
 
@@ -127,7 +123,7 @@ fn archive_dir(store: MemoryStore, scope: Option<&str>) -> Result<PathBuf, Strin
         .join("memory")
         .join("archive");
     let dir = match (store.subdir(), scope) {
-        (None, _) => base,                   // facts: legacy global root
+        (None, _) => base,                   // facts: the root
         (Some(sub), None) => base.join(sub), // store-global
         (Some(sub), Some(s)) => base.join(sub).join(sanitize_scope(s)),
     };
@@ -296,7 +292,7 @@ mod tests {
     }
 
     #[test]
-    fn facts_use_legacy_root_other_stores_are_scoped() {
+    fn facts_use_root_other_stores_are_scoped() {
         with_temp_data_dir(|| {
             let base = crate::core::data_dir::lean_ctx_data_dir()
                 .unwrap()
@@ -306,27 +302,6 @@ mod tests {
             assert_eq!(
                 archive_dir(MemoryStore::History, Some("h")).unwrap(),
                 base.join("history").join("h")
-            );
-        });
-    }
-
-    #[test]
-    fn legacy_facts_field_alias_still_deserializes() {
-        with_temp_data_dir(|| {
-            let dir = archive_dir(MemoryStore::Facts, None).unwrap();
-            std::fs::create_dir_all(&dir).unwrap();
-            // A pre-#995 facts archive used the `facts` key, no store/scope.
-            let legacy =
-                r#"{"archived_at":"2026-01-01T00:00:00Z","facts":[{"id":7,"label":"old"}]}"#;
-            let path = dir.join("archive-20260101-000000-000000.json");
-            std::fs::write(&path, legacy).unwrap();
-            let restored: Vec<Item> = restore_items(&path).unwrap();
-            assert_eq!(
-                restored,
-                vec![Item {
-                    id: 7,
-                    label: "old".into()
-                }]
             );
         });
     }

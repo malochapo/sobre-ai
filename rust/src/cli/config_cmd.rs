@@ -799,11 +799,7 @@ pub fn prune_bm25_caches() -> PruneResult {
         }
         result.scanned += 1;
 
-        for q_name in &[
-            "bm25_index.json.quarantined",
-            "bm25_index.bin.quarantined",
-            "bm25_index.bin.zst.quarantined",
-        ] {
+        for q_name in &["bm25_index.bin.zst.quarantined"] {
             let quarantined = dir.join(q_name);
             if quarantined.exists() {
                 if let Ok(meta) = std::fs::metadata(&quarantined) {
@@ -815,13 +811,7 @@ pub fn prune_bm25_caches() -> PruneResult {
             }
         }
 
-        let index_path = if dir.join("bm25_index.bin.zst").exists() {
-            dir.join("bm25_index.bin.zst")
-        } else if dir.join("bm25_index.bin").exists() {
-            dir.join("bm25_index.bin")
-        } else {
-            dir.join("bm25_index.json")
-        };
+        let index_path = dir.join("bm25_index.bin.zst");
         if let Ok(meta) = std::fs::metadata(&index_path)
             && meta.len() > max_bytes
         {

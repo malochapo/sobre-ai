@@ -490,8 +490,7 @@ pub(super) fn is_lean_ctx_codex_managed_entry(event_name: &str, entry: &serde_js
             "PreToolUse" => {
                 entry_obj.get("matcher").and_then(|value| value.as_str()) == Some("Bash")
                     && command.contains("lean-ctx")
-                    && (command.contains("hook rewrite")
-                        || command.contains("hook codex-pretooluse"))
+                    && command.contains("hook codex-pretooluse")
             }
             "SessionStart" => {
                 command.contains("lean-ctx") && command.contains("hook codex-session-start")

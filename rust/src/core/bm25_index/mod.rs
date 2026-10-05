@@ -627,9 +627,6 @@ impl BM25Index {
 
         std::fs::rename(&tmp, &target)?;
 
-        let _ = std::fs::remove_file(dir.join("bm25_index.bin"));
-        let _ = std::fs::remove_file(dir.join("bm25_index.json"));
-
         let _ = std::fs::write(
             dir.join("project_root.txt"),
             root.to_string_lossy().as_bytes(),
@@ -661,57 +658,6 @@ impl BM25Index {
             let data = bounded_zstd_decode(&compressed, max_decompressed)?;
             let idx: Self = postcard::from_bytes(&data).ok()?;
             return Some(idx);
-        }
-
-        let bin_path = dir.join("bm25_index.bin");
-        if bin_path.exists() {
-            let meta = std::fs::metadata(&bin_path).ok()?;
-            if meta.len() > max_bytes {
-                tracing::warn!(
-                    "[bm25] index too large ({:.1} GB, limit {:.0} MB), quarantining: {}",
-                    meta.len() as f64 / 1_073_741_824.0,
-                    max_bytes / (1024 * 1024),
-                    bin_path.display()
-                );
-                let quarantined = bin_path.with_extension("bin.quarantined");
-                let _ = std::fs::rename(&bin_path, &quarantined);
-                return None;
-            }
-            let data = std::fs::read(&bin_path).ok()?;
-            let idx: Self = postcard::from_bytes(&data).ok()?;
-            // Auto-migrate: compress legacy .bin to .bin.zst
-            if let Ok(compressed) = zstd::encode_all(data.as_slice(), ZSTD_LEVEL) {
-                let zst_tmp = zst_path.with_extension("zst.tmp");
-                if std::fs::write(&zst_tmp, &compressed).is_ok()
-                    && std::fs::rename(&zst_tmp, &zst_path).is_ok()
-                {
-                    tracing::info!(
-                        "[bm25] migrated {:.1} MB → {:.1} MB zstd",
-                        data.len() as f64 / 1_048_576.0,
-                        compressed.len() as f64 / 1_048_576.0
-                    );
-                    let _ = std::fs::remove_file(&bin_path);
-                }
-            }
-            return Some(idx);
-        }
-
-        let json_path = dir.join("bm25_index.json");
-        if json_path.exists() {
-            let meta = std::fs::metadata(&json_path).ok()?;
-            if meta.len() > max_bytes {
-                tracing::warn!(
-                    "[bm25] index too large ({:.1} GB, limit {:.0} MB), quarantining: {}",
-                    meta.len() as f64 / 1_073_741_824.0,
-                    max_bytes / (1024 * 1024),
-                    json_path.display()
-                );
-                let quarantined = json_path.with_extension("json.quarantined");
-                let _ = std::fs::rename(&json_path, &quarantined);
-                return None;
-            }
-            let data = std::fs::read_to_string(&json_path).ok()?;
-            return serde_json::from_str(&data).ok();
         }
 
         None

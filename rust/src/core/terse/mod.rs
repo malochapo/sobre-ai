@@ -1,7 +1,6 @@
 //! # Terse Compression Engine
 //!
-//! Unified, 4-layer token compression pipeline that replaces the legacy
-//! `compress_terse`/`compress_ultra` functions and the `TerseAgent` prompt system.
+//! Unified, 4-layer token compression pipeline.
 //!
 //! ## Architecture
 //!

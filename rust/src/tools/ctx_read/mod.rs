@@ -453,20 +453,6 @@ fn handle_with_options(
     .content
 }
 
-/// Detects a subagent (forked agent) execution context via `CURSOR_TASK_ID`.
-///
-/// A subagent must never be served a stub for content only the parent received.
-/// That used to be enforced by force-freshing *every* subagent read; with
-/// conversation scoping (#954/#955) the subagent instead runs under its own scope
-/// (`conversation::current_conversation_id` → `task:{id}`), so the stub gate
-/// withholds cross-agent stubs precisely while restoring the subagent's *own*
-/// cheap re-reads. The blanket force-fresh is therefore kept only as the fallback
-/// when scoping is disabled (#956).
-pub(crate) fn is_subagent_context() -> bool {
-    static IS_SUBAGENT: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *IS_SUBAGENT.get_or_init(|| std::env::var("CURSOR_TASK_ID").is_ok_and(|v| !v.is_empty()))
-}
-
 fn handle_with_options_resolved(
     cache: &mut SessionCache,
     path: &str,
@@ -489,22 +475,11 @@ fn handle_with_options_resolved_preread(
     tuning: ReadTuning<'_>,
     preread: Option<String>,
 ) -> ReadOutput {
-    let effective_fresh =
-        fresh || (is_subagent_context() && !crate::core::conversation::scope_enabled());
-
     if let Ok(mut bt) = crate::core::bounce_tracker::global().lock() {
         bt.next_seq();
     }
-    let mut result = handle_with_options_inner(
-        cache,
-        path,
-        mode,
-        effective_fresh,
-        crp_mode,
-        task,
-        tuning,
-        preread,
-    );
+    let mut result =
+        handle_with_options_inner(cache, path, mode, fresh, crp_mode, task, tuning, preread);
 
     if let Some(entry) = cache.get_mut(path) {
         entry.last_mode.clone_from(&result.resolved_mode);

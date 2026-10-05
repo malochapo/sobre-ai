@@ -95,50 +95,13 @@ fn merge_cursor_hooks(existing: &mut serde_json::Value, rewrite_cmd: &str, redir
     // redirect is safe. Uses `auto` mode for full reads (87-97% compression)
     // and `full-compact` for windowed reads (offset/limit).
     // GH #1250 was caused by an older Cursor version or misattribution.
-    ensure_pretooluse_hook(
-        pre_arr,
-        &["Read|Grep|Glob", "Read|Grep", "Grep|Glob", "Grep", "Read"],
-        "Read|Grep|Glob",
-        redirect_cmd,
-    );
+    ensure_pretooluse_hook(pre_arr, &["Read|Grep|Glob"], "Read|Grep|Glob", redirect_cmd);
 
     // Observe hooks — only essential ones (#1200). postToolUse caused
     // Cursor to append hook stdout to edited files, corrupting source code.
     let observe_cmd = rewrite_cmd.replace("hook rewrite", "hook observe");
     ensure_observe_hook(hooks_obj, "sessionStart", &observe_cmd);
     ensure_observe_hook(hooks_obj, "preCompact", &observe_cmd);
-
-    // Clean up previously installed problematic hooks
-    for stale in &[
-        "postToolUse",
-        "afterShellExecution",
-        "afterMCPExecution",
-        "beforeReadFile",
-        "afterAgentResponse",
-        "afterAgentThought",
-        "beforeSubmitPrompt",
-        "sessionEnd",
-    ] {
-        remove_observe_hook(hooks_obj, stale, &observe_cmd);
-    }
-}
-
-fn remove_observe_hook(
-    hooks_obj: &mut serde_json::Map<String, serde_json::Value>,
-    event: &str,
-    _observe_cmd: &str,
-) {
-    let Some(arr) = hooks_obj.get_mut(event).and_then(|v| v.as_array_mut()) else {
-        return;
-    };
-    arr.retain(|e| {
-        !e.get("command")
-            .and_then(|c| c.as_str())
-            .is_some_and(|c| c.contains("hook observe"))
-    });
-    if arr.is_empty() {
-        hooks_obj.remove(event);
-    }
 }
 
 pub fn install_cursor_hook(global: bool) {
@@ -415,37 +378,6 @@ mod tests {
             e.get("matcher").and_then(|m| m.as_str()) == Some("Read|Grep|Glob")
                 && e.get("command").and_then(|c| c.as_str()) == Some("/new/bin hook redirect")
         }));
-    }
-
-    #[test]
-    fn cursor_redirect_matcher_migrates_legacy_to_read_grep_glob() {
-        // Smart Read redirect re-enabled: legacy "Read|Grep" or "Grep" matcher
-        // is upgraded to "Read|Grep|Glob" with smart auto-mode compression.
-        let mut v = serde_json::json!({
-            "version": 1,
-            "hooks": {
-                "preToolUse": [
-                    { "matcher": "Grep", "command": "/old/bin hook redirect" }
-                ]
-            }
-        });
-
-        merge_cursor_hooks(&mut v, "/new/bin hook rewrite", "/new/bin hook redirect");
-
-        let pre = v
-            .pointer("/hooks/preToolUse")
-            .and_then(|x| x.as_array())
-            .unwrap();
-        let redirects: Vec<_> = pre
-            .iter()
-            .filter(|e| e.get("command").and_then(|c| c.as_str()) == Some("/new/bin hook redirect"))
-            .collect();
-        assert_eq!(redirects.len(), 1, "must migrate in place, not duplicate");
-        assert_eq!(
-            redirects[0].get("matcher").and_then(|m| m.as_str()),
-            Some("Read|Grep|Glob"),
-            "matcher must be Read|Grep|Glob (smart redirect for all)"
-        );
     }
 
     #[test]

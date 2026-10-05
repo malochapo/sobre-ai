@@ -2,31 +2,7 @@
 
 use rusqlite::Connection;
 
-fn has_column(conn: &Connection, table: &str, column: &str) -> anyhow::Result<bool> {
-    let mut stmt = conn.prepare(&format!("PRAGMA table_info({table})"))?;
-    let columns = stmt.query_map([], |row| row.get::<_, String>(1))?;
-    for name in columns {
-        if name? == column {
-            return Ok(true);
-        }
-    }
-    Ok(false)
-}
-
-/// The PropertyGraph is derived data. Replace pre-FileId code tables in place;
-/// callers rebuild them because the engine-version bump marks the graph stale.
-fn migrate_legacy_paths(conn: &Connection) -> anyhow::Result<()> {
-    if has_column(conn, "nodes", "file_path")? {
-        conn.execute_batch("DROP TABLE IF EXISTS edges; DROP TABLE nodes;")?;
-    }
-    if has_column(conn, "file_catalog", "path")? {
-        conn.execute_batch("DROP TABLE file_catalog;")?;
-    }
-    Ok(())
-}
-
 pub(super) fn initialize(conn: &Connection) -> anyhow::Result<()> {
-    migrate_legacy_paths(conn)?;
     conn.execute_batch(
         "
         PRAGMA journal_mode = WAL;
@@ -130,35 +106,5 @@ mod tests {
         assert!(tables.contains(&"file_catalog".to_string()));
         assert!(tables.contains(&"cross_source_edges".to_string()));
         assert!(tables.contains(&"paths".to_string()));
-    }
-
-    #[test]
-    fn legacy_path_schema_is_replaced() {
-        let conn = Connection::open_in_memory().unwrap();
-        conn.execute_batch(
-            "CREATE TABLE nodes (
-                id INTEGER PRIMARY KEY, kind TEXT NOT NULL,
-                name TEXT NOT NULL, file_path TEXT NOT NULL
-             );
-             CREATE TABLE edges (
-                id INTEGER PRIMARY KEY, source_id INTEGER NOT NULL,
-                target_id INTEGER NOT NULL, kind TEXT NOT NULL
-             );
-             CREATE TABLE file_catalog (path TEXT PRIMARY KEY, hash TEXT NOT NULL);
-             INSERT INTO nodes VALUES (1, 'file', 'old.rs', 'old.rs');
-             INSERT INTO file_catalog VALUES ('old.rs', 'hash');",
-        )
-        .unwrap();
-
-        initialize(&conn).unwrap();
-        initialize(&conn).unwrap();
-
-        assert!(has_column(&conn, "nodes", "file_id").unwrap());
-        assert!(!has_column(&conn, "nodes", "file_path").unwrap());
-        assert!(has_column(&conn, "file_catalog", "file_id").unwrap());
-        let nodes: i64 = conn
-            .query_row("SELECT COUNT(*) FROM nodes", [], |row| row.get(0))
-            .unwrap();
-        assert_eq!(nodes, 0);
     }
 }

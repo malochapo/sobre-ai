@@ -66,7 +66,7 @@ pub fn cmd_session_action(args: &[String]) {
             println!("{out}");
         }
         None => {
-            cmd_session_legacy();
+            cmd_session_adoption();
         }
         Some(other) => {
             eprintln!("Unknown session action: {other}");
@@ -125,7 +125,7 @@ Examples:
     );
 }
 
-fn cmd_session_legacy() {
+fn cmd_session_adoption() {
     let history = load_shell_history();
     let gain = stats::load_stats();
 

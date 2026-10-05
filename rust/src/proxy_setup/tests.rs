@@ -213,49 +213,8 @@ fn codex_env_writes_v1_suffixed_url() {
         "must not write the dead [env] OPENAI_BASE_URL form (#554), got:\n{cfg}"
     );
     assert!(
-        !cfg.contains(CODEX_CHATGPT_PROVIDER_ID),
-        "API-key mode must not install the ChatGPT-only provider, got:\n{cfg}"
-    );
-    assert!(
         !cfg.contains("chatgpt_base_url"),
         "API-key mode must not install the ChatGPT backend rail, got:\n{cfg}"
-    );
-}
-
-/// Codex CLI config: a legacy `[env] OPENAI_BASE_URL` line (which Codex never
-/// read, #554) is removed and replaced by a top-level `openai_base_url`, even
-/// when stale (missing `/v1`). The dead `[env]` table is collapsed.
-#[test]
-fn codex_env_migrates_legacy_env_entry() {
-    let dir = tempfile::tempdir().unwrap();
-    let codex_dir = dir.path().join(".codex");
-    std::fs::create_dir_all(&codex_dir).unwrap();
-    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-    let port = listener.local_addr().unwrap().port();
-    std::fs::write(
-        codex_dir.join("config.toml"),
-        format!("model = \"gpt-5.2\"\n\n[env]\nOPENAI_BASE_URL = \"http://127.0.0.1:{port}\"\n"),
-    )
-    .unwrap();
-
-    install_codex_env_at(&codex_dir, port, true);
-
-    let cfg = std::fs::read_to_string(codex_dir.join("config.toml")).unwrap();
-    assert!(
-        cfg.contains(&format!("openai_base_url = \"http://127.0.0.1:{port}/v1\"")),
-        "legacy entry must become a top-level openai_base_url (/v1), got:\n{cfg}"
-    );
-    assert!(
-        cfg.contains("model = \"gpt-5.2\""),
-        "unrelated config must be preserved"
-    );
-    assert!(
-        !cfg.contains("OPENAI_BASE_URL"),
-        "dead legacy [env] OPENAI_BASE_URL must be removed, got:\n{cfg}"
-    );
-    assert!(
-        !cfg.contains("[env]"),
-        "empty [env] table must be collapsed, got:\n{cfg}"
     );
 }
 
@@ -306,48 +265,10 @@ fn codex_env_chatgpt_mode_optout_writes_nothing() {
         "ChatGPT mode must not write any proxy base URL, got:\n{cfg}"
     );
     assert!(
-        !cfg.contains(CODEX_CHATGPT_PROVIDER_ID) && !cfg.contains("127.0.0.1"),
+        !cfg.contains("127.0.0.1"),
         "ChatGPT mode must not install the provider block or any proxy URL, got:\n{cfg}"
     );
     assert!(cfg.contains("model = \"gpt-5.5\""), "user keys preserved");
-}
-
-/// Upgrade over the removed ChatGPT-subscription routing strips every entry it
-/// wrote — provider pin, provider block and both base URLs — back to native.
-#[test]
-fn codex_chatgpt_upgrade_strips_legacy_leanctx_provider() {
-    let dir = tempfile::tempdir().unwrap();
-    let codex_dir = dir.path().join(".codex");
-    std::fs::create_dir_all(&codex_dir).unwrap();
-    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-    let port = listener.local_addr().unwrap().port();
-    // Realistic legacy layout: lean-ctx prepended its keys at the top and
-    // appended the provider block last, so user content sat in between.
-    let legacy = format!(
-        "model_provider = \"{CODEX_CHATGPT_PROVIDER_ID}\"\n\
-         openai_base_url = \"http://127.0.0.1:{port}/backend-api/codex\"\n\
-         chatgpt_base_url = \"http://127.0.0.1:{port}/backend-api\"\n\
-         model = \"gpt-5.5\"\n\n\
-         {LEGACY_CHATGPT_PROVIDER_BLOCK}"
-    );
-    std::fs::write(codex_dir.join("config.toml"), legacy).unwrap();
-
-    install_codex_env_at_mode(&codex_dir, port, true, CodexProxyMode::ChatGpt);
-
-    let cfg = std::fs::read_to_string(codex_dir.join("config.toml")).unwrap();
-    assert!(
-        !cfg.contains("openai_base_url"),
-        "backend-api openai_base_url override must be removed (breaks remote), got:\n{cfg}"
-    );
-    assert!(
-        !cfg.contains("model_provider") && !cfg.contains(CODEX_CHATGPT_PROVIDER_ID),
-        "the provider pin and its block must be removed, got:\n{cfg}"
-    );
-    assert!(
-        !cfg.contains("chatgpt_base_url"),
-        "stale ChatGPT aux/app routing must be removed, got:\n{cfg}"
-    );
-    assert!(cfg.contains("model = \"gpt-5.5\""));
 }
 
 /// `render_codex_config` is idempotent: applying it to an already-configured
@@ -360,51 +281,6 @@ fn render_codex_config_is_idempotent() {
     assert_eq!(once, twice, "render must be idempotent");
     assert!(once.starts_with("openai_base_url = \"http://127.0.0.1:4444/v1\"\n"));
     assert!(once.contains("model = \"gpt-5.5\""));
-}
-
-/// The `[model_providers.leanctx-chatgpt]` block lean-ctx wrote before #597.
-/// Kept verbatim here so the strip/auto-heal tests exercise a real legacy body
-/// even though the renderer no longer produces it.
-const LEGACY_CHATGPT_PROVIDER_BLOCK: &str = "[model_providers.leanctx-chatgpt]\n\
-     name = \"OpenAI\"\n\
-     base_url = \"http://127.0.0.1:4444/backend-api/codex\"\n\
-     requires_openai_auth = true\n\
-     supports_websockets = false\n";
-
-#[test]
-fn strip_codex_proxy_entries_preserves_nested_model_provider() {
-    let body = format!(
-        "model_provider = \"{CODEX_CHATGPT_PROVIDER_ID}\"\n\
-         openai_base_url = \"http://127.0.0.1:4444/backend-api/codex\"\n\
-         chatgpt_base_url = \"http://127.0.0.1:4444/backend-api\"\n\n\
-         {LEGACY_CHATGPT_PROVIDER_BLOCK}\n\
-         [profiles.work]\n\
-         model_provider = \"openai\"\n\
-         openai_base_url = \"http://127.0.0.1:9999/v1\"\n"
-    );
-
-    let out = strip_codex_proxy_entries(&body);
-
-    assert!(
-        !out.contains(&format!("[model_providers.{CODEX_CHATGPT_PROVIDER_ID}]")),
-        "generated provider block must be removed, got:\n{out}"
-    );
-    assert!(
-        out.contains(
-            "[profiles.work]\nmodel_provider = \"openai\"\nopenai_base_url = \"http://127.0.0.1:9999/v1\""
-        ),
-        "profile provider config must be preserved, got:\n{out}"
-    );
-}
-
-#[test]
-fn codex_proxy_cleanup_detection_ignores_plain_openai_provider() {
-    assert!(!codex_config_has_local_proxy_entry(
-        "model_provider = \"openai\"\n"
-    ));
-    assert!(codex_config_has_local_proxy_entry(&format!(
-        "model_provider = \"{CODEX_CHATGPT_PROVIDER_ID}\"\n"
-    )));
 }
 
 /// `render_codex_config` inserts the key as a *top-level* key (before the first

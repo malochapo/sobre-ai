@@ -1,7 +1,5 @@
-//! Contract guard for GH #436: a marker-free legacy `~/.lean-ctx` (e.g. runtime
-//! leftovers after `doctor --fix` already moved the data out) must NOT collapse
-//! the XDG layout. data / config / state / cache each resolve to their typed
-//! `$XDG_*` directory, never back to `~/.lean-ctx`.
+//! Contract: with no `LEAN_CTX_*_DIR` override, data / config / state / cache
+//! each resolve to their typed `$XDG_*` directory.
 //!
 //! This runs as an INTEGRATION test on purpose: the library is then compiled
 //! WITHOUT `#[cfg(test)]`, so the real (non-sandbox) resolvers execute exactly as
@@ -30,7 +28,7 @@ fn restore(key: &str, val: Option<OsString>) {
 }
 
 #[test]
-fn markerless_legacy_keeps_xdg_split_for_every_category() {
+fn every_category_resolves_to_its_xdg_dir() {
     // Serialize against any other env-mutating test in this crate.
     let _lock = lean_ctx::core::data_dir::test_env_lock();
 
@@ -41,10 +39,7 @@ fn markerless_legacy_keeps_xdg_split_for_every_category() {
     let xs = tmp.path().join("state");
     let xk = tmp.path().join("cache");
 
-    let legacy = home.join(".lean-ctx");
-    std::fs::create_dir_all(&legacy).unwrap();
-    // A runtime leftover is NOT a data marker — the resolver must ignore it.
-    std::fs::write(legacy.join("daemon.pid"), "1").unwrap();
+    std::fs::create_dir_all(&home).unwrap();
 
     let keys = [
         "HOME",
@@ -116,17 +111,4 @@ fn markerless_legacy_keeps_xdg_split_for_every_category() {
         xk.join("lean-ctx"),
         "cache must split to $XDG_CACHE_HOME"
     );
-
-    for (label, dir) in [
-        ("data", &data),
-        ("config", &config),
-        ("state", &state),
-        ("cache", &cache),
-    ] {
-        assert!(
-            !dir.starts_with(&legacy),
-            "{label} must never resolve under ~/.lean-ctx (got {})",
-            dir.display()
-        );
-    }
 }

@@ -24,10 +24,7 @@ mod tests;
 #[cfg(test)]
 mod tests_parsing;
 
-pub use enums::{
-    CompressionLevel, OutputDensity, RecoveryHints, ResponseVerbosity, SessionDegrade, TeeMode,
-    TerseAgent,
-};
+pub use enums::{CompressionLevel, RecoveryHints, ResponseVerbosity, SessionDegrade, TeeMode};
 pub use loader::last_config_parse_error;
 pub use proxy::{
     ProxyConfig, ProxyProvider, ResolvedProvider, RoutingRules, Upstreams, WireShape,

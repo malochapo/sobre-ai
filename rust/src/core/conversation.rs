@@ -50,9 +50,6 @@
 //! *permission* but not rewrite its *arguments*. So the daemon cannot prove
 //! which chat a direct `ctx_read` belongs to, and withholding under concurrency
 //! stays the correct ceiling until the host adds per-call identity.
-//!
-//! (Previously disabled with an env switch, falling back to the legacy
-//! process-scoped behavior).
 
 use std::sync::OnceLock;
 use std::sync::RwLock;
@@ -85,10 +82,6 @@ fn seen_store() -> &'static RwLock<Vec<(String, Instant)>> {
     SEEN.get_or_init(|| RwLock::new(Vec::new()))
 }
 
-pub(crate) fn scope_enabled() -> bool {
-    true
-}
-
 /// Pure core of [`subagent_scope`] — split out so the derivation is unit-testable
 /// without touching the process environment.
 fn subagent_scope_from(task_id: Option<&str>) -> Option<String> {
@@ -115,7 +108,7 @@ fn subagent_scope() -> Option<String> {
 
 /// The current conversation id, or `None` when no conversation context is
 /// available (hooks not installed, TTL expired with no prior value, or scoping
-/// disabled). `None` preserves the legacy process-scoped cache behavior.
+/// disabled). `None` keeps the process-scoped cache behavior.
 ///
 /// Answers from the `REFRESH_TTL` cache when warm, so the read hot path never
 /// stats+parses a file on every call.
@@ -143,12 +136,9 @@ enum Freshness {
 }
 
 /// Shared resolver behind [`current_conversation_id`] and its `_fresh` variant.
-/// The scope-off and subagent short-circuits are identical for both; only the
+/// The subagent short-circuit is identical for both; only the
 /// `Cached` arm consults the TTL cache before falling through to [`refresh`].
 fn resolve_conversation_id(freshness: Freshness) -> Option<String> {
-    if !scope_enabled() {
-        return None;
-    }
     // A subagent is its own scope (see `subagent_scope`) and that wins over the
     // transcript id, so a subagent never inherits the parent's delivery identity
     // — and never samples the transcript, so it can't feed the concurrency signal.
@@ -239,30 +229,16 @@ pub(crate) fn multiple_conversations_recent() -> bool {
 /// Whether a `[unchanged]` stub may be served for an entry that was delivered to
 /// `delivered`, given the `current` conversation.
 ///
-/// `current == None` (no conversation context) preserves the legacy
-/// process-scoped behavior — stub allowed — **unless** more than one conversation
+/// `current == None` (no conversation context) keeps the process-scoped
+/// behavior — stub allowed — **unless** more than one conversation
 /// has been active recently, in which case every stub is withheld because the
 /// shared id signal can't identify the caller (#1040).
 pub fn conversation_allows_stub(current: Option<&str>, delivered: Option<&str>) -> bool {
-    allows_stub(
-        scope_enabled(),
-        multiple_conversations_recent(),
-        current,
-        delivered,
-    )
+    allows_stub(multiple_conversations_recent(), current, delivered)
 }
 
 /// Pure decision core (no env / global reads) so the full matrix is unit-testable.
-fn allows_stub(
-    scope_on: bool,
-    concurrent: bool,
-    current: Option<&str>,
-    delivered: Option<&str>,
-) -> bool {
-    if !scope_on {
-        // Explicit legacy mode: one daemon == one conversation by contract.
-        return true;
-    }
+fn allows_stub(concurrent: bool, current: Option<&str>, delivered: Option<&str>) -> bool {
     if concurrent {
         // Multiple chats live: a matching id can't be trusted to name THIS caller,
         // so nothing is provably in-context — withhold every stub (#1040).
@@ -272,7 +248,7 @@ fn allows_stub(
         (Some(c), Some(d)) => c == d,
         // Known caller, unknown delivery (pre-scoping entry) → can't prove → block.
         (Some(_), None) => false,
-        // Unknown caller on a single-conversation daemon → legacy allow.
+        // Unknown caller on a single-conversation daemon → allow.
         (None, _) => true,
     }
 }
@@ -283,7 +259,7 @@ fn allows_stub(
 ///
 /// Stricter than [`conversation_allows_stub`]: a cold stub crosses a process
 /// boundary, so we serve it **only** when both sides name the *same, known*
-/// conversation. Unlike the warm path there is no "no context → legacy" escape,
+/// conversation. Unlike the warm path there is no "no context → allow" escape,
 /// because without a current conversation id we cannot prove the content is in
 /// the new process's context, and a wrong cold stub would resurrect exactly the
 /// cross-chat hazard #954 closed. Also withheld under concurrency (#1040).
@@ -305,48 +281,41 @@ mod tests {
     // process-global recency store, which other tests mutate in parallel.
 
     #[test]
-    fn no_current_context_allows_stub_legacy() {
+    fn no_current_context_allows_stub() {
         // Single-conversation daemon, scoping on: behave exactly as before.
-        assert!(allows_stub(true, false, None, None));
-        assert!(allows_stub(true, false, None, Some("conv-a")));
-    }
-
-    #[test]
-    fn scope_disabled_always_allows_stub() {
-        // Explicit opt-out → legacy process scope, even under (irrelevant) concurrency.
-        assert!(allows_stub(false, true, Some("conv-b"), Some("conv-a")));
-        assert!(allows_stub(false, true, None, None));
+        assert!(allows_stub(false, None, None));
+        assert!(allows_stub(false, None, Some("conv-a")));
     }
 
     #[test]
     fn same_conversation_allows_stub() {
-        assert!(allows_stub(true, false, Some("conv-a"), Some("conv-a")));
+        assert!(allows_stub(false, Some("conv-a"), Some("conv-a")));
     }
 
     #[test]
     fn different_conversation_blocks_stub() {
-        assert!(!allows_stub(true, false, Some("conv-b"), Some("conv-a")));
+        assert!(!allows_stub(false, Some("conv-b"), Some("conv-a")));
     }
 
     #[test]
     fn unknown_delivering_conversation_blocks_stub() {
         // Entry delivered before scoping existed → cannot prove it is in context.
-        assert!(!allows_stub(true, false, Some("conv-a"), None));
+        assert!(!allows_stub(false, Some("conv-a"), None));
     }
 
     #[test]
     fn concurrency_withholds_every_warm_stub() {
         // #1040: while >1 chat is live, even a same-id match is untrustworthy.
-        assert!(!allows_stub(true, true, Some("conv-a"), Some("conv-a")));
-        assert!(!allows_stub(true, true, None, None));
-        assert!(!allows_stub(true, true, None, Some("conv-a")));
+        assert!(!allows_stub(true, Some("conv-a"), Some("conv-a")));
+        assert!(!allows_stub(true, None, None));
+        assert!(!allows_stub(true, None, Some("conv-a")));
     }
 
     #[test]
     fn cold_stub_requires_both_known_and_matching() {
         assert!(allows_cold_stub(false, Some("c"), Some("c")));
         assert!(!allows_cold_stub(false, Some("c"), Some("d")));
-        // No "legacy" escape for the cold path: unknown either side → blocked.
+        // No "allow" escape for the cold path: unknown either side → blocked.
         assert!(!allows_cold_stub(false, None, Some("c")));
         assert!(!allows_cold_stub(false, Some("c"), None));
         assert!(!allows_cold_stub(false, None, None));
@@ -427,7 +396,7 @@ mod tests {
         // transcript conversation id, so the stub gate always withholds the
         // parent's delivery from the subagent.
         let sub = subagent_scope_from(Some("xyz")).unwrap();
-        assert!(!allows_stub(true, false, Some(&sub), Some("xyz")));
-        assert!(allows_stub(true, false, Some(&sub), Some(&sub)));
+        assert!(!allows_stub(false, Some(&sub), Some("xyz")));
+        assert!(allows_stub(false, Some(&sub), Some(&sub)));
     }
 }

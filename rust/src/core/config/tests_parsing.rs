@@ -16,36 +16,28 @@ mod compression_level_tests {
 
     #[test]
     fn to_components_off() {
-        let (ta, od, crp, tm) = CompressionLevel::Off.to_components();
-        assert_eq!(ta, TerseAgent::Off);
-        assert_eq!(od, OutputDensity::Normal);
+        let (crp, tm) = CompressionLevel::Off.to_components();
         assert_eq!(crp, "off");
         assert!(!tm);
     }
 
     #[test]
     fn to_components_lite() {
-        let (ta, od, crp, tm) = CompressionLevel::Lite.to_components();
-        assert_eq!(ta, TerseAgent::Lite);
-        assert_eq!(od, OutputDensity::Terse);
+        let (crp, tm) = CompressionLevel::Lite.to_components();
         assert_eq!(crp, "off");
         assert!(tm);
     }
 
     #[test]
     fn to_components_standard() {
-        let (ta, od, crp, tm) = CompressionLevel::Standard.to_components();
-        assert_eq!(ta, TerseAgent::Full);
-        assert_eq!(od, OutputDensity::Terse);
+        let (crp, tm) = CompressionLevel::Standard.to_components();
         assert_eq!(crp, "compact");
         assert!(tm);
     }
 
     #[test]
     fn to_components_max() {
-        let (ta, od, crp, tm) = CompressionLevel::Max.to_components();
-        assert_eq!(ta, TerseAgent::Ultra);
-        assert_eq!(od, OutputDensity::Ultra);
+        let (crp, tm) = CompressionLevel::Max.to_components();
         assert_eq!(crp, "tdd");
         assert!(tm);
     }

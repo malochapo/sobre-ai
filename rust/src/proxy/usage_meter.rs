@@ -402,11 +402,7 @@ mod tests {
     }
 
     #[test]
-    fn measured_slice_roundtrips_and_defaults_for_legacy_files() {
-        let legacy = r#"{"ts":1,"models":{"m":{"requests":1,"input_tokens":10,"output_tokens":5,"cache_read_tokens":0,"cache_write_tokens":0,"reasoning_tokens":0}}}"#;
-        let p: PersistedUsage = serde_json::from_str(legacy).expect("legacy file loads");
-        assert_eq!(p.models["m"].measured, MeasuredSlice::default());
-
+    fn measured_slice_roundtrips() {
         let mut p = PersistedUsage::default();
         let mut acc = ModelUsage::default();
         let mut m = usage("m", 100, 10, 0);

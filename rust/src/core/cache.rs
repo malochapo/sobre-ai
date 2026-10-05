@@ -179,18 +179,6 @@ pub struct StoreResult {
 }
 
 impl CacheEntry {
-    /// Computes a legacy eviction score blending recency, frequency, and size.
-    pub fn eviction_score_legacy(&self, now: Instant) -> f64 {
-        let elapsed = now
-            .checked_duration_since(self.last_access())
-            .unwrap_or_default()
-            .as_secs_f64();
-        let recency = 1.0 / (1.0 + elapsed.sqrt());
-        let frequency = (self.read_count() as f64 + 1.0).ln();
-        let size_value = (self.original_tokens as f64 + 1.0).ln();
-        recency * 0.4 + frequency * 0.3 + size_value * 0.3
-    }
-
     pub fn get_compressed(&self, mode_key: &str) -> Option<&String> {
         self.compressed_outputs.get(mode_key)
     }

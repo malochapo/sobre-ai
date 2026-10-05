@@ -60,10 +60,6 @@ pub(super) fn rules_content(
     }
 }
 
-pub fn opencode_dedicated_rules_path(home: &std::path::Path) -> PathBuf {
-    home.join(".config/opencode/rules/lean-ctx.md")
-}
-
 pub fn gemini_dedicated_rules_path(home: &std::path::Path) -> PathBuf {
     home.join(".gemini").join(GEMINI_DEDICATED_CONTEXT_FILENAME)
 }

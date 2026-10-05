@@ -164,77 +164,7 @@ impl EpisodicStore {
     pub fn load(project_hash: &str) -> Option<Self> {
         let path = Self::store_path(project_hash)?;
         let data = std::fs::read_to_string(path).ok()?;
-        let mut store: Self = serde_json::from_str(&data).ok()?;
-        if store.migrate_legacy_episodes() {
-            let _ = store.save();
-        }
-        Some(store)
-    }
-
-    /// One-time repair for episodes recorded before per-task metrics existed:
-    /// those episodes share one id per session (derived from the session
-    /// *start* date) and carry cumulative session token counters instead of
-    /// per-task deltas. Detected via duplicate ids within one session;
-    /// idempotent because rewritten ids are unique afterwards.
-    fn migrate_legacy_episodes(&mut self) -> bool {
-        use std::collections::HashSet;
-
-        let mut seen: HashSet<(String, String)> = HashSet::new();
-        let mut needs_migration = false;
-        for ep in &self.episodes {
-            if !seen.insert((ep.session_id.clone(), ep.id.clone())) {
-                needs_migration = true;
-                break;
-            }
-        }
-        if !needs_migration {
-            return false;
-        }
-
-        let mut sessions: HashSet<String> = HashSet::new();
-        for ep in &self.episodes {
-            sessions.insert(ep.session_id.clone());
-        }
-
-        for session_id in sessions {
-            let mut idx: Vec<usize> = (0..self.episodes.len())
-                .filter(|&i| self.episodes[i].session_id == session_id)
-                .collect();
-            idx.sort_by_key(|&i| self.episodes[i].timestamp);
-
-            // Cumulative counters are monotonically non-decreasing; only
-            // then is converting to deltas safe.
-            let monotonic = idx
-                .windows(2)
-                .all(|w| self.episodes[w[0]].tokens_used <= self.episodes[w[1]].tokens_used);
-
-            let mut prev_tokens: u64 = 0;
-            let mut prev_ts: Option<DateTime<Utc>> = None;
-            let mut used_ids: HashSet<String> = HashSet::new();
-            for &i in &idx {
-                let ts = self.episodes[i].timestamp;
-                let ep = &mut self.episodes[i];
-                let mut id = format!("ep-{}", ts.format("%Y%m%d-%H%M%S"));
-                let mut n = 1;
-                while !used_ids.insert(id.clone()) {
-                    n += 1;
-                    id = format!("ep-{}-{n}", ts.format("%Y%m%d-%H%M%S"));
-                }
-                ep.id = id;
-                if monotonic {
-                    let cumulative = ep.tokens_used;
-                    ep.tokens_used = cumulative.saturating_sub(prev_tokens);
-                    prev_tokens = cumulative;
-                }
-                if ep.duration_secs == 0
-                    && let Some(p) = prev_ts
-                {
-                    ep.duration_secs = (ts - p).num_seconds().max(0) as u64;
-                }
-                prev_ts = Some(ts);
-            }
-        }
-        true
+        serde_json::from_str(&data).ok()
     }
 
     pub fn load_or_create(project_hash: &str) -> Self {
@@ -605,29 +535,5 @@ mod tests {
         finalize_episode_metrics(&mut second, &store, started);
         assert_eq!(second.tokens_used, 800); // delta since first
         assert_eq!(second.duration_secs, 300);
-    }
-
-    #[test]
-    fn migrate_legacy_dedupes_ids_and_converts_tokens() {
-        let mut store = EpisodicStore::new("test");
-        let base = Utc::now() - chrono::Duration::seconds(1000);
-        for (i, cumulative) in [1000u64, 3000, 6000].iter().enumerate() {
-            let mut ep = make_episode(&format!("T{i}"), Outcome::Unknown);
-            ep.id = "ep-20260516".to_string(); // legacy colliding id
-            ep.session_id = "sess-legacy".to_string();
-            ep.tokens_used = *cumulative;
-            ep.duration_secs = 0;
-            ep.timestamp = base + chrono::Duration::seconds(i as i64 * 120);
-            store.episodes.push(ep);
-        }
-
-        assert!(store.migrate_legacy_episodes());
-        let ids: std::collections::HashSet<String> =
-            store.episodes.iter().map(|e| e.id.clone()).collect();
-        assert_eq!(ids.len(), 3, "ids must be unique after migration");
-        let tokens: Vec<u64> = store.episodes.iter().map(|e| e.tokens_used).collect();
-        assert_eq!(tokens, vec![1000, 2000, 3000]);
-        // Idempotent: unique ids → no second migration.
-        assert!(!store.migrate_legacy_episodes());
     }
 }

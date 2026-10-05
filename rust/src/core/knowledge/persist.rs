@@ -196,36 +196,6 @@ impl ProjectKnowledge {
             }
         }
 
-        let old_hash = crate::core::project_hash::hash_path_only(project_root);
-        if old_hash != hash {
-            crate::core::project_hash::migrate_if_needed(&old_hash, &hash, project_root);
-            if let Ok(content) = std::fs::read_to_string(&path)
-                && let Ok(mut k) = serde_json::from_str::<Self>(&content)
-            {
-                k.project_hash = hash;
-                let _ = k.save();
-                return Some(k);
-            }
-        }
-
-        // Migrate stores created before path normalization (issue #325): on
-        // Windows the CLI keyed its store by a backslash path, splitting it from
-        // the forward-slash MCP store. Pull any such legacy store into the
-        // canonical (normalized) location so facts converge.
-        for legacy_hash in crate::core::project_hash::legacy_unnormalized_hashes(project_root) {
-            if legacy_hash == hash {
-                continue;
-            }
-            crate::core::project_hash::migrate_if_needed(&legacy_hash, &hash, project_root);
-            if let Ok(content) = std::fs::read_to_string(&path)
-                && let Ok(mut k) = serde_json::from_str::<Self>(&content)
-            {
-                k.project_hash = hash;
-                let _ = k.save();
-                return Some(k);
-            }
-        }
-
         None
     }
 

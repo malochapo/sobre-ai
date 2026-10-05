@@ -114,56 +114,6 @@ fn copilot_user_hooks_dir() -> Option<PathBuf> {
     crate::core::home::resolve_home_dir().map(|h| h.join(".copilot").join("hooks"))
 }
 
-/// Earlier releases wrote global hooks to `~/.github/hooks/hooks.json`, which
-/// Copilot never loads. Strip our entries from that stale file; delete it when
-/// it was ours alone (a bare `{version, hooks}` skeleton with no foreign hooks).
-fn cleanup_legacy_global_hooks() {
-    let Some(home) = crate::core::home::resolve_home_dir() else {
-        return;
-    };
-    let legacy = home.join(".github").join("hooks").join("hooks.json");
-    if cleanup_legacy_global_hooks_at(&legacy) && !mcp_server_quiet_mode() {
-        eprintln!(
-            "  \x1b[2mMigrated stale ~/.github/hooks/hooks.json (not read by Copilot)\x1b[0m"
-        );
-    }
-}
-
-/// Returns `true` when the legacy file was migrated (rewritten or removed).
-fn cleanup_legacy_global_hooks_at(legacy: &std::path::Path) -> bool {
-    let Ok(content) = std::fs::read_to_string(legacy) else {
-        return false;
-    };
-    if !content.contains("lean-ctx") && !content.contains("hook rewrite") {
-        return false;
-    }
-    let Ok(mut json) = crate::core::jsonc::parse_jsonc(&content) else {
-        return false;
-    };
-    let mut foreign_left = false;
-    if let Some(hooks) = json.get_mut("hooks").and_then(|h| h.as_object_mut()) {
-        for entries in hooks.values_mut() {
-            if let Some(arr) = entries.as_array_mut() {
-                arr.retain(|e| {
-                    let s = e.to_string();
-                    !(s.contains("lean-ctx") || s.contains("hook rewrite"))
-                });
-                foreign_left |= !arr.is_empty();
-            }
-        }
-        hooks.retain(|_, v| v.as_array().is_none_or(|a| !a.is_empty()));
-    }
-    if foreign_left {
-        write_file(
-            legacy,
-            &serde_json::to_string_pretty(&json).unwrap_or_default(),
-        );
-    } else {
-        let _ = std::fs::remove_file(legacy);
-    }
-    true
-}
-
 fn install_copilot_pretooluse_hook(global: bool) {
     let binary = resolve_hook_command_binary();
 
@@ -185,7 +135,6 @@ fn install_copilot_pretooluse_hook(global: bool) {
             return;
         };
         let _ = std::fs::create_dir_all(&dir);
-        cleanup_legacy_global_hooks();
         dir.join("hooks.json")
     } else {
         let dir = PathBuf::from(".github").join("hooks");
@@ -363,66 +312,5 @@ mod tests {
             unix["powershell"],
             "& \"/usr/local/bin/lean-ctx\" hook observe"
         );
-    }
-
-    #[test]
-    fn legacy_global_hooks_file_is_deleted_when_lean_ctx_only() {
-        let tmp = tempfile::tempdir().unwrap();
-        let legacy = tmp.path().join("hooks.json");
-        let ours = serde_json::json!({
-            "version": 1,
-            "hooks": {
-                "preToolUse": [
-                    { "type": "command", "bash": "/usr/local/bin/lean-ctx hook rewrite", "timeoutSec": 15 }
-                ],
-                "postToolUse": [
-                    { "type": "command", "bash": "/usr/local/bin/lean-ctx hook observe", "timeoutSec": 5 }
-                ]
-            }
-        });
-        std::fs::write(&legacy, serde_json::to_string_pretty(&ours).unwrap()).unwrap();
-
-        assert!(cleanup_legacy_global_hooks_at(&legacy));
-        assert!(
-            !legacy.exists(),
-            "lean-ctx-only legacy file must be removed"
-        );
-    }
-
-    #[test]
-    fn legacy_global_hooks_migration_preserves_foreign_entries() {
-        let tmp = tempfile::tempdir().unwrap();
-        let legacy = tmp.path().join("hooks.json");
-        let mixed = serde_json::json!({
-            "version": 1,
-            "hooks": {
-                "preToolUse": [
-                    { "type": "command", "bash": "/usr/local/bin/lean-ctx hook rewrite", "timeoutSec": 15 },
-                    { "type": "command", "bash": "./scripts/security-check.sh", "timeoutSec": 10 }
-                ]
-            }
-        });
-        std::fs::write(&legacy, serde_json::to_string_pretty(&mixed).unwrap()).unwrap();
-
-        assert!(cleanup_legacy_global_hooks_at(&legacy));
-        let after: serde_json::Value =
-            serde_json::from_str(&std::fs::read_to_string(&legacy).unwrap()).unwrap();
-        let pre = after["hooks"]["preToolUse"].as_array().unwrap();
-        assert_eq!(pre.len(), 1, "only the foreign hook may remain");
-        assert_eq!(pre[0]["bash"], "./scripts/security-check.sh");
-    }
-
-    #[test]
-    fn legacy_cleanup_ignores_files_without_lean_ctx() {
-        let tmp = tempfile::tempdir().unwrap();
-        let legacy = tmp.path().join("hooks.json");
-        std::fs::write(
-            &legacy,
-            r#"{"version":1,"hooks":{"preToolUse":[{"type":"command","bash":"./mine.sh"}]}}"#,
-        )
-        .unwrap();
-
-        assert!(!cleanup_legacy_global_hooks_at(&legacy));
-        assert!(legacy.exists(), "foreign-only file must stay untouched");
     }
 }

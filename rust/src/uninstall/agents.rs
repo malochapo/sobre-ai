@@ -54,12 +54,7 @@ pub(super) fn remove_project_agent_files(dry_run: bool) -> bool {
     }
 
     // Dedicated lean-ctx files in project: safe to delete entirely
-    let dedicated_project_files = [
-        ".kiro/steering/lean-ctx.md",
-        ".cursor/rules/lean-ctx.mdc",
-        ".claude/rules/lean-ctx.md",
-        ".codebuddy/rules/lean-ctx.md",
-    ];
+    let dedicated_project_files = [".kiro/steering/lean-ctx.md", ".cursor/rules/lean-ctx.mdc"];
     for rel in &dedicated_project_files {
         let path = cwd.join(rel);
         if path.exists()
@@ -323,10 +318,6 @@ pub(super) fn remove_mcp_configs(home: &Path, dry_run: bool) -> bool {
         ("Windsurf", home.join(".codeium/windsurf/mcp_config.json")),
         ("Gemini CLI", home.join(".gemini/settings.json")),
         (
-            "Gemini CLI (legacy)",
-            home.join(".gemini/settings/mcp.json"),
-        ),
-        (
             "Antigravity",
             home.join(".gemini/antigravity/mcp_config.json"),
         ),
@@ -343,13 +334,8 @@ pub(super) fn remove_mcp_configs(home: &Path, dry_run: bool) -> bool {
         ("Grok", home.join(".grok/config.toml")),
         ("OpenCode", home.join(".config/opencode/opencode.json")),
         ("Qwen Code", home.join(".qwen/settings.json")),
-        ("Qwen Code (legacy)", home.join(".qwen/mcp.json")),
         ("Trae", home.join(".trae/mcp.json")),
         ("Amazon Q Developer", home.join(".aws/amazonq/default.json")),
-        (
-            "Amazon Q Developer (legacy)",
-            home.join(".aws/amazonq/mcp.json"),
-        ),
         ("JetBrains IDEs", home.join(".jb-mcp.json")),
         ("AWS Kiro", home.join(".kiro/settings/mcp.json")),
         ("Verdent", home.join(".verdent/mcp.json")),
@@ -545,10 +531,6 @@ pub(super) fn remove_rules_files(home: &Path, dry_run: bool) -> bool {
         ),
         ("Cursor", home.join(".cursor/rules/lean-ctx.mdc")),
         (
-            "Gemini CLI (legacy)",
-            home.join(".gemini/rules/lean-ctx.md"),
-        ),
-        (
             "Gemini CLI (dedicated)",
             crate::rules_inject::gemini_dedicated_rules_path(home),
         ),
@@ -565,10 +547,6 @@ pub(super) fn remove_rules_files(home: &Path, dry_run: bool) -> bool {
         ),
         ("Cline", home.join(".cline/rules/lean-ctx.md")),
         ("Roo Code", home.join(".roo/rules/lean-ctx.md")),
-        (
-            "OpenCode (legacy)",
-            home.join(".config/opencode/rules/lean-ctx.md"),
-        ),
         ("Continue", home.join(".continue/rules/lean-ctx.md")),
         ("Amp", home.join(".ampcoder/rules/lean-ctx.md")),
         ("Qwen Code", home.join(".qwen/rules/lean-ctx.md")),
@@ -590,28 +568,21 @@ pub(super) fn remove_rules_files(home: &Path, dry_run: bool) -> bool {
         ("Augment", home.join(".augment/rules/lean-ctx.md")),
         ("Qoder", home.join(".qoder/rules/lean-ctx.md")),
         ("Hermes Agent", home.join(".hermes/rules/lean-ctx.md")),
-        (
-            "OpenCode Plugin (legacy)",
-            home.join(".config/opencode/plugins/lean-ctx.ts"),
-        ),
     ];
 
     // Shared files: contain user content + lean-ctx block with markers.
     // Only remove the <!-- lean-ctx --> ... <!-- /lean-ctx --> section.
     let shared_files: Vec<(&str, PathBuf)> = vec![
         (
-            "Claude Code (legacy)",
+            "Claude Code",
             crate::core::editor_registry::claude_state_dir(home).join("CLAUDE.md"),
         ),
-        ("Claude Code (legacy home)", home.join(".claude/CLAUDE.md")),
+        ("Claude Code (home)", home.join(".claude/CLAUDE.md")),
         (
             "CodeBuddy",
             crate::core::editor_registry::codebuddy_state_dir(home).join("CODEBUDDY.md"),
         ),
-        (
-            "CodeBuddy (legacy home)",
-            home.join(".codebuddy/CODEBUDDY.md"),
-        ),
+        ("CodeBuddy (home)", home.join(".codebuddy/CODEBUDDY.md")),
         ("Gemini CLI", home.join(".gemini/GEMINI.md")),
         (
             "Codex CLI",
@@ -831,8 +802,6 @@ pub(super) fn remove_hook_files(home: &Path, dry_run: bool) -> bool {
             .join("hooks/lean-ctx-rewrite-codex.sh"),
         home.join(".codeium/windsurf/hooks/lean-ctx-rewrite.sh"),
         home.join(".codeium/windsurf/hooks/lean-ctx-redirect.sh"),
-        home.join(".github/hooks/lean-ctx-rewrite.sh"),
-        home.join(".github/hooks/lean-ctx-redirect.sh"),
         home.join(".qoder/hooks/lean-ctx-rewrite.sh"),
         home.join(".qoder/hooks/lean-ctx-redirect.sh"),
         home.join(".grok/hooks/lean-ctx.json"),
@@ -926,10 +895,6 @@ pub(super) fn remove_hook_files(home: &Path, dry_run: bool) -> bool {
         ("Windsurf", home.join(".codeium/windsurf/hooks.json")),
         ("Qoder", home.join(".qoder/settings.json")),
         ("Copilot (global)", home.join(".copilot/hooks/hooks.json")),
-        (
-            "Copilot (legacy global)",
-            home.join(".github/hooks/hooks.json"),
-        ),
         ("Gemini CLI", home.join(".gemini/settings.json")),
     ] {
         if !hj_path.exists() {

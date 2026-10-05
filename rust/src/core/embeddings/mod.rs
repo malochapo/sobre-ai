@@ -334,11 +334,8 @@ impl EmbeddingEngine {
         anyhow::bail!("Embeddings feature not enabled")
     }
 
-    /// Resolve the model directory (respects LEAN_CTX_MODELS_DIR env).
+    /// The models directory, under the cache directory.
     pub fn model_directory() -> PathBuf {
-        if let Ok(dir) = std::env::var("LEAN_CTX_MODELS_DIR") {
-            return PathBuf::from(dir);
-        }
         if let Ok(d) = crate::core::paths::cache_dir() {
             return d.join("models");
         }
@@ -831,16 +828,16 @@ mod tests {
     }
 
     #[test]
-    fn model_directory_env_override_and_availability() {
-        // Serialize env mutation: LEAN_CTX_MODELS_DIR is process-global and
+    fn model_directory_follows_cache_dir() {
+        // Serialize env mutation: LEAN_CTX_CACHE_DIR is process-global and
         // shared with `ensure_downloaded_is_offline_noop_when_model_present`.
         let _lock = crate::core::data_dir::test_env_lock();
         let unique = "/tmp/lean_ctx_test_embed_42xyz";
-        crate::test_env::set_var("LEAN_CTX_MODELS_DIR", unique);
+        crate::test_env::set_var("LEAN_CTX_CACHE_DIR", unique);
         let dir = EmbeddingEngine::model_directory();
-        assert_eq!(dir.to_string_lossy(), unique);
+        assert_eq!(dir, std::path::Path::new(unique).join("models"));
         assert!(!EmbeddingEngine::is_available());
-        crate::test_env::remove_var("LEAN_CTX_MODELS_DIR");
+        crate::test_env::remove_var("LEAN_CTX_CACHE_DIR");
     }
 
     /// #545: with a complete model cache, `ensure_downloaded` is a no-op that
@@ -851,14 +848,14 @@ mod tests {
     /// placeholder files are enough to exercise the short-circuit offline.
     #[test]
     fn ensure_downloaded_is_offline_noop_when_model_present() {
-        // Serialize env mutation (LEAN_CTX_MODELS_DIR is process-global) so a
+        // Serialize env mutation (LEAN_CTX_CACHE_DIR is process-global) so a
         // sibling env test can't clobber the dir between set_var and the checks.
         let _lock = crate::core::data_dir::test_env_lock();
         let tmp = std::env::temp_dir().join(format!("lc-embed-545-{}", std::process::id()));
-        crate::test_env::set_var("LEAN_CTX_MODELS_DIR", tmp.to_str().unwrap());
+        crate::test_env::set_var("LEAN_CTX_CACHE_DIR", tmp.to_str().unwrap());
 
         let selected = model_registry::resolve_model();
-        let model_dir = tmp.join(selected.storage_dir_name());
+        let model_dir = tmp.join("models").join(selected.storage_dir_name());
         std::fs::create_dir_all(&model_dir).unwrap();
         std::fs::write(model_dir.join(download::MODEL_FILE), b"onnx").unwrap();
         std::fs::write(model_dir.join(download::TOKENIZER_FILE), b"tokenizer").unwrap();
@@ -866,7 +863,7 @@ mod tests {
         assert!(EmbeddingEngine::is_available());
         assert!(EmbeddingEngine::ensure_downloaded().is_ok());
 
-        crate::test_env::remove_var("LEAN_CTX_MODELS_DIR");
+        crate::test_env::remove_var("LEAN_CTX_CACHE_DIR");
         std::fs::remove_dir_all(&tmp).ok();
     }
 

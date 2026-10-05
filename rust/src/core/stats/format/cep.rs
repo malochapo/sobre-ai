@@ -80,9 +80,7 @@ fn format_cep_live(lv: &serde_json::Value, t: &Theme) -> String {
 fn load_mcp_live() -> Option<serde_json::Value> {
     // Must resolve the same directory the writer uses
     // (`server_metrics::write_mcp_live_stats` → `state_dir()`). `mcp-live.json`
-    // is runtime STATE (GH #408); `state_dir()` honors `LEAN_CTX_STATE_DIR` and
-    // collapses to the legacy data dir for single-dir installs, so live CEP data
-    // is found regardless of layout (#361).
+    // is runtime STATE (GH #408); `state_dir()` honors `LEAN_CTX_STATE_DIR`.
     let path = crate::core::paths::state_dir().ok()?.join("mcp-live.json");
     let content = std::fs::read_to_string(path).ok()?;
     serde_json::from_str(&content).ok()

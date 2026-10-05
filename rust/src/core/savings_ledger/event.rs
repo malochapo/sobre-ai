@@ -44,7 +44,7 @@ pub enum MeasurementMethod {
     BaselineEstimate,
     /// Savings confirmed by provider billing reconciliation.
     ProviderReconciled,
-    /// Method not yet determined or legacy events.
+    /// Method not yet determined.
     Unknown,
 }
 
@@ -60,7 +60,7 @@ pub enum EvidenceClass {
     Statistical,
     /// Declared by operator without independent measurement.
     Declared,
-    /// No evidence attached (legacy or unknown).
+    /// No evidence attached.
     Unclassified,
 }
 
@@ -219,100 +219,9 @@ impl SavingsEvent {
         )
     }
 
-    /// v4 canonical: v3 + version field. Retained so v4-written ledgers verify.
-    pub fn canonical_content_v4(&self) -> String {
-        format!(
-            "v4|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}",
-            self.ts,
-            self.tool,
-            self.mechanism,
-            self.model_id,
-            self.tokenizer,
-            self.baseline_tokens,
-            self.actual_tokens,
-            self.saved_tokens,
-            self.bounce_adjustment,
-            micro_usd(self.unit_price_per_m_usd),
-            micro_usd(self.saved_usd),
-            self.repo_hash,
-            self.agent_id,
-            self.version,
-        )
-    }
-
-    /// v3 canonical (pre-`version`): v2 + the `mechanism` attribution field
-    /// (enterprise#19). Retained so ledgers written between the v3 fix and v4
-    /// keep verifying unchanged.
-    pub fn canonical_content_v3(&self) -> String {
-        format!(
-            "v3|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}",
-            self.ts,
-            self.tool,
-            self.mechanism,
-            self.model_id,
-            self.tokenizer,
-            self.baseline_tokens,
-            self.actual_tokens,
-            self.saved_tokens,
-            self.bounce_adjustment,
-            micro_usd(self.unit_price_per_m_usd),
-            micro_usd(self.saved_usd),
-            self.repo_hash,
-            self.agent_id,
-        )
-    }
-
-    /// v2 canonical (pre-`mechanism`): integer micro-USD money, no attribution field.
-    /// Retained so ledgers written between the v2 fix and v3 keep verifying unchanged.
-    pub fn canonical_content_v2(&self) -> String {
-        format!(
-            "v2|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}",
-            self.ts,
-            self.tool,
-            self.model_id,
-            self.tokenizer,
-            self.baseline_tokens,
-            self.actual_tokens,
-            self.saved_tokens,
-            self.bounce_adjustment,
-            micro_usd(self.unit_price_per_m_usd),
-            micro_usd(self.saved_usd),
-            self.repo_hash,
-            self.agent_id,
-        )
-    }
-
-    /// Legacy (v1) canonical: `{:.6}` of the raw `f64` money fields. Retained only so
-    /// `verify` keeps validating pre-v2 ledgers that never hit a tie value; new appends and
-    /// re-chained ledgers always use [`Self::canonical_content`].
-    pub fn canonical_content_legacy(&self) -> String {
-        format!(
-            "{}|{}|{}|{}|{}|{}|{}|{}|{:.6}|{:.6}|{}|{}",
-            self.ts,
-            self.tool,
-            self.model_id,
-            self.tokenizer,
-            self.baseline_tokens,
-            self.actual_tokens,
-            self.saved_tokens,
-            self.bounce_adjustment,
-            self.unit_price_per_m_usd,
-            self.saved_usd,
-            self.repo_hash,
-            self.agent_id,
-        )
-    }
-
-    /// True if `entry_hash` matches the current (v4) canonical hash, the v3 hash, the v2
-    /// hash, or the legacy v1 hash. Accepting all four lets `verify` validate ledgers
-    /// written under any scheme without forcing a migration (clean old ledgers stay
-    /// valid; broken-by-bug ones are repaired by `rechain`, which re-hashes under v4).
+    /// True if `entry_hash` matches the canonical hash of this entry.
     pub fn hash_matches(&self, prev_hash: &str) -> bool {
         self.entry_hash == compute_hash(prev_hash, &self.canonical_content())
-            || self.entry_hash == compute_hash(prev_hash, &self.canonical_content_v4())
-            || self.entry_hash == compute_hash(prev_hash, &self.canonical_content_v3())
-            || self.entry_hash == compute_hash(prev_hash, &self.canonical_content_v2())
-            || self.entry_hash == compute_hash(prev_hash, &self.canonical_content_legacy())
     }
 }
 
@@ -416,11 +325,11 @@ mod tests {
         assert_ne!(a, b, "chain link must depend on prev_hash");
     }
 
-    /// Regression: `saved_usd = 0.0235575` is a 6th-decimal tie that broke the legacy
-    /// `{:.6}` chain after a JSON round-trip. The v2 integer-micro-USD canonical must be
+    /// Regression: `saved_usd = 0.0235575` is a 6th-decimal tie that broke a `{:.6}`
+    /// chain after a JSON round-trip. The integer-micro-USD canonical must be
     /// stable across serialize -> deserialize so `verify` accepts an untampered entry.
     #[test]
-    fn v2_hash_is_roundtrip_stable_on_decimal_tie() {
+    fn hash_is_roundtrip_stable_on_decimal_tie() {
         let mut e = ev();
         e.saved_tokens = 9423;
         e.unit_price_per_m_usd = 2.5;
@@ -442,7 +351,7 @@ mod tests {
     /// broke the v2 chain on a fresh, untampered ledger. The tie-stable [`micro_usd`] must make
     /// append and verify agree across a JSON round-trip regardless of the computation order.
     #[test]
-    fn v2_hash_is_roundtrip_stable_on_production_order_tie() {
+    fn hash_is_roundtrip_stable_on_production_order_tie() {
         let mut e = ev();
         e.saved_tokens = 7831;
         e.unit_price_per_m_usd = 2.5;
@@ -469,76 +378,6 @@ mod tests {
     }
 
     #[test]
-    fn legacy_v1_hash_still_verifies() {
-        // An entry hashed under the old {:.6} scheme must keep validating via hash_matches,
-        // so upgrading does not invalidate clean pre-v2 ledgers.
-        let mut e = ev();
-        e.prev_hash = "genesis".into();
-        e.entry_hash = compute_hash(&e.prev_hash, &e.canonical_content_legacy());
-        assert!(e.hash_matches(&e.prev_hash), "legacy v1 hash must verify");
-    }
-
-    #[test]
-    fn v2_hash_still_verifies_and_v3_commits_mechanism() {
-        // Pre-mechanism (v2) entries — including their JSON form without the
-        // field — must keep verifying after the v3 upgrade (enterprise#19).
-        let mut e = ev();
-        e.prev_hash = "genesis".into();
-        e.entry_hash = compute_hash(&e.prev_hash, &e.canonical_content_v2());
-        assert!(e.hash_matches(&e.prev_hash), "v2 hash must verify");
-
-        let json = serde_json::to_string(&e).unwrap();
-        let stripped = json.replace(r#""mechanism":"compression","#, "");
-        let parsed: SavingsEvent = serde_json::from_str(&stripped).unwrap();
-        assert_eq!(parsed.mechanism, MECHANISM_COMPRESSION, "serde default");
-        assert!(parsed.hash_matches(&parsed.prev_hash), "v2 after roundtrip");
-
-        // v3 commits the mechanism: rewriting the attribution breaks the hash.
-        let mut v3 = ev();
-        v3.mechanism = MECHANISM_ROUTING.into();
-        v3.prev_hash = "genesis".into();
-        v3.entry_hash = compute_hash(&v3.prev_hash, &v3.canonical_content());
-        assert!(v3.hash_matches(&v3.prev_hash));
-        let mut forged = v3.clone();
-        forged.mechanism = MECHANISM_COMPRESSION.into();
-        assert!(
-            !forged.hash_matches(&forged.prev_hash),
-            "reattributing a routing saving to compression must be tamper-evident"
-        );
-    }
-
-    #[test]
-    fn v3_hash_still_verifies_and_v4_commits_version() {
-        // Pre-version (v3) entries — including their JSON form without the
-        // field — must keep verifying after the v4 upgrade (#NNN).
-        let mut e = ev();
-        e.prev_hash = "genesis".into();
-        e.entry_hash = compute_hash(&e.prev_hash, &e.canonical_content_v3());
-        assert!(e.hash_matches(&e.prev_hash), "v3 hash must verify");
-
-        let json = serde_json::to_string(&e).unwrap();
-        // `version` is the last struct field, so its JSON key is preceded by
-        // a comma, not followed by one.
-        let stripped = json.replace(r#","version":"3.9.0""#, "");
-        let parsed: SavingsEvent = serde_json::from_str(&stripped).unwrap();
-        assert_eq!(parsed.version, "", "serde default for a pre-v4 entry");
-        assert!(parsed.hash_matches(&parsed.prev_hash), "v3 after roundtrip");
-
-        // v4 commits the version: rewriting it breaks the hash.
-        let mut v4 = ev();
-        v4.version = "3.8.18".into();
-        v4.prev_hash = "genesis".into();
-        v4.entry_hash = compute_hash(&v4.prev_hash, &v4.canonical_content());
-        assert!(v4.hash_matches(&v4.prev_hash));
-        let mut forged = v4.clone();
-        forged.version = "3.9.0".into();
-        assert!(
-            !forged.hash_matches(&forged.prev_hash),
-            "rewriting which version recorded a saving must be tamper-evident"
-        );
-    }
-
-    #[test]
     fn micro_usd_quantizes_to_millionths() {
         assert_eq!(micro_usd(2.5), 2_500_000);
         assert_eq!(micro_usd(0.0), 0);
@@ -547,16 +386,6 @@ mod tests {
         // of a tie is irrelevant as long as it is reproducible).
         let tie = 9423.0 * 2.5 / 1_000_000.0;
         assert_eq!(micro_usd(tie), micro_usd(tie));
-    }
-    #[test]
-    fn v4_hash_still_verifies_after_v5_upgrade() {
-        let mut e = ev();
-        e.prev_hash = "genesis".into();
-        e.entry_hash = compute_hash(&e.prev_hash, &e.canonical_content_v4());
-        assert!(
-            e.hash_matches(&e.prev_hash),
-            "v4 hash must verify via hash_matches"
-        );
     }
 
     #[test]

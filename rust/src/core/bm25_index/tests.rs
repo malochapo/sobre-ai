@@ -483,40 +483,10 @@ fn save_load_roundtrip_uses_zstd() {
     let dir = crate::core::index_namespace::vectors_dir(root);
     let zst = dir.join("bm25_index.bin.zst");
     assert!(zst.exists(), "should write .bin.zst");
-    assert!(
-        !dir.join("bm25_index.bin").exists(),
-        ".bin should be deleted"
-    );
 
     let loaded = BM25Index::load(root).expect("load compressed index");
     assert_eq!(loaded.doc_count, index.doc_count);
     assert_eq!(loaded.chunks.len(), index.chunks.len());
-}
-
-#[test]
-fn auto_migrate_bin_to_zst() {
-    let _iso = crate::core::data_dir::isolated_data_dir();
-    let td = tempdir().expect("tempdir");
-    let root = td.path();
-
-    std::fs::write(root.join("a.rs"), "pub fn a() {}\n").expect("write");
-    let index = BM25Index::build_from_directory(root);
-
-    let dir = crate::core::index_namespace::vectors_dir(root);
-    std::fs::create_dir_all(&dir).expect("mkdir");
-    let data = postcard::to_allocvec(&index).expect("encode");
-    std::fs::write(dir.join("bm25_index.bin"), &data).expect("write bin");
-
-    let loaded = BM25Index::load(root).expect("load should auto-migrate");
-    assert_eq!(loaded.doc_count, index.doc_count);
-    assert!(
-        dir.join("bm25_index.bin.zst").exists(),
-        ".bin.zst should be created"
-    );
-    assert!(
-        !dir.join("bm25_index.bin").exists(),
-        ".bin should be removed"
-    );
 }
 
 #[test]

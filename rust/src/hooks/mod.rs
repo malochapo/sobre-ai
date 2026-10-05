@@ -226,10 +226,8 @@ fn hooks_installed_for(agent: &str, home: &std::path::Path) -> bool {
         }
         "windsurf" => file_contains_lean_ctx(&home.join(".codeium/windsurf/hooks.json")),
         "copilot" => {
-            // User-level Copilot hooks live under ~/.copilot/hooks (#381);
-            // ~/.github/hooks is the pre-#381 legacy location.
+            // User-level Copilot hooks live under ~/.copilot/hooks (#381).
             file_contains_lean_ctx(&home.join(".copilot/hooks/hooks.json"))
-                || file_contains_lean_ctx(&home.join(".github/hooks/hooks.json"))
         }
         "qoder" | "qodercli" => file_contains_lean_ctx(&home.join(".qoder/settings.json")),
         _ => false,
@@ -618,37 +616,10 @@ pub fn install_project_rules_for_agents(agents: &[&str]) {
     }
 
     if wants("claude") {
-        // GL #555: project rules files without `paths:` frontmatter load
-        // unconditionally every session and stacked on top of the global
-        // CLAUDE.md block (12k+ token memory footprints in the field). The
-        // AGENTS.md block + on-demand skill carry the same guidance, so the
-        // lean-ctx-owned copy is removed instead of refreshed.
-        let claude_rules_file = cwd.join(".claude").join("rules").join("lean-ctx.md");
-        if let Ok(existing) = std::fs::read_to_string(&claude_rules_file)
-            && existing.contains(crate::core::rules_canonical::RULES_MARKER_PREFIX)
-            && std::fs::remove_file(&claude_rules_file).is_ok()
-            && !mcp_server_quiet_mode()
-        {
-            eprintln!(
-                "Removed .claude/rules/lean-ctx.md (always-loaded duplicate; the AGENTS.md block replaces it)."
-            );
-        }
-
         install_claude_project_hooks(&cwd);
     }
 
     if wants("codebuddy") {
-        let codebuddy_rules_file = cwd.join(".codebuddy").join("rules").join("lean-ctx.md");
-        if let Ok(existing) = std::fs::read_to_string(&codebuddy_rules_file)
-            && existing.contains(crate::core::rules_canonical::RULES_MARKER_PREFIX)
-            && std::fs::remove_file(&codebuddy_rules_file).is_ok()
-            && !mcp_server_quiet_mode()
-        {
-            eprintln!(
-                "Removed .codebuddy/rules/lean-ctx.md (always-loaded duplicate; the CODEBUDDY.md block replaces it)."
-            );
-        }
-
         install_codebuddy_project_hooks(&cwd);
     }
 

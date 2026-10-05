@@ -115,10 +115,6 @@ fn read_registry_file(project_root: &Path) -> Option<(PathBuf, String)> {
     if let Ok(s) = std::fs::read_to_string(&new) {
         return Some((new, s));
     }
-    let legacy = project_root.join(".leanctxcontextartifacts.json");
-    if let Ok(s) = std::fs::read_to_string(&legacy) {
-        return Some((legacy, s));
-    }
     let socrati = project_root.join(".socraticodecontextartifacts.json");
     if let Ok(s) = std::fs::read_to_string(&socrati) {
         return Some((socrati, s));
@@ -150,16 +146,10 @@ fn normalize_rel_path(raw: &str) -> String {
 /// vault, a shared `~/notes`) can be declared directly (GL#1132) — the PathJail
 /// allow-list (`read_only_roots` / `extra_roots` / `allow_paths`)
 /// remains the security gate, so an absolute entry outside the allowed roots is
-/// still rejected. Legacy compatibility: a leading slash historically meant
-/// "project-relative" (it was stripped), so when the stripped reading matches
-/// an existing path inside the project it wins over the absolute reading.
+/// still rejected.
 fn resolve_candidate(project_root: &Path, raw: &str) -> PathBuf {
     let expanded = crate::core::pathjail::expand_user_path(raw.trim());
     if expanded.is_absolute() {
-        let legacy = project_root.join(normalize_rel_path(raw));
-        if legacy.exists() {
-            return legacy;
-        }
         return expanded;
     }
     project_root.join(normalize_rel_path(raw))
@@ -182,18 +172,6 @@ mod tests {
             PathBuf::from("/proj/docs/notes")
         );
         assert_eq!(resolve_candidate(root, "docs"), PathBuf::from("/proj/docs"));
-    }
-
-    #[test]
-    fn resolve_candidate_prefers_legacy_reading_for_existing_project_paths() {
-        let dir = tempfile::tempdir().unwrap();
-        std::fs::create_dir_all(dir.path().join("docs")).unwrap();
-        // "/docs" used to mean "<root>/docs"; that reading still wins while
-        // the project path exists.
-        assert_eq!(
-            resolve_candidate(dir.path(), "/docs"),
-            dir.path().join("docs")
-        );
     }
 
     #[test]

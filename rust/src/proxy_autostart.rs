@@ -318,9 +318,7 @@ fn install_launchagent(binary: &str, port: u16, quiet: bool) -> bool {
     if !release_proxy_port(port, quiet) {
         return false;
     }
-    // GH #439: proxy logs are STATE — resolve through the typed dir so a
-    // post-split install writes to $XDG_STATE_HOME/lean-ctx/logs instead of a
-    // re-created ~/.lean-ctx. Legacy single-dir installs still resolve here.
+    // GH #439: proxy logs are STATE — $XDG_STATE_HOME/lean-ctx/logs.
     let log_dir = crate::core::paths::state_dir()
         .unwrap_or_else(|_| std::env::temp_dir().join("lean-ctx"))
         .join("logs");

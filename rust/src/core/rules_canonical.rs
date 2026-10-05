@@ -23,11 +23,6 @@ use crate::core::config::CompressionLevel;
 /// next line (see `render`).
 pub const START_MARK: &str = "<!-- lean-ctx-rules -->";
 
-/// Prefix shared by every lean-ctx rules marker including legacy versioned
-/// formats (`<!-- lean-ctx-rules-v9 -->`). Use for substring detection when
-/// the exact constant would miss older installs.
-pub const RULES_MARKER_PREFIX: &str = "<!-- lean-ctx-rules";
-
 /// Start marker for lightweight AGENTS.md/CODEBUDDY.md/CLAUDE.md pointer
 /// blocks. These are deliberately separate from `START_MARK` / `<!-- lean-ctx-rules -->`
 /// because the pointer-only vs full-rules distinction drives duplicate detection

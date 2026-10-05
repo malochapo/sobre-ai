@@ -9,14 +9,12 @@ pub(super) fn build_rules_targets(home: &std::path::Path) -> Vec<RulesTarget> {
     // rules file without `paths:` frontmatter unconditionally at session start,
     // which duplicated the CLAUDE.md block in every session (12k+ token memory
     // footprints, GL #555). Claude guidance lives in the CLAUDE.md block
-    // (hooks/agents/claude.rs) + the on-demand skill; uninstall still removes
-    // legacy ~/.claude/rules/lean-ctx.md files from older installs.
+    // (hooks/agents/claude.rs) + the on-demand skill.
     //
     // CodeBuddy follows the exact same pattern as Claude Code: NO rules target.
     // CodeBuddy installs (and auto-loads) the CODEBUDDY.md block every session,
     // so a separate ~/.codebuddy/rules/lean-ctx.md would duplicate it (GL #555/#558).
-    // Guidance lives in the CODEBUDDY.md block + the on-demand skill; uninstall
-    // still removes legacy ~/.codebuddy/rules/lean-ctx.md files from older installs.
+    // Guidance lives in the CODEBUDDY.md block + the on-demand skill.
     vec![
         // --- Shared config files (append-only) ---
         RulesTarget {

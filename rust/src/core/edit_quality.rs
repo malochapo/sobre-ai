@@ -492,16 +492,6 @@ mod tests {
     }
 
     #[test]
-    fn store_without_anchored_field_deserializes() {
-        // Back-compat (#1008): a store written before anchored editing has no
-        // `pending_anchored_escalations` key; `#[serde(default)]` must fill it.
-        let legacy = r#"{"pairs":{},"pending_escalations":{"old.rs":42}}"#;
-        let s: EditQualityStore = serde_json::from_str(legacy).unwrap();
-        assert!(s.pending_anchored_escalations.is_empty());
-        assert!(s.pending_escalations.contains_key("old.rs"));
-    }
-
-    #[test]
     fn decay_drops_stale_pairs_and_pendings() {
         let mut s = EditQualityStore::default();
         s.record_failure("rs", "map", 1000);

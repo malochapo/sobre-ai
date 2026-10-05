@@ -355,12 +355,7 @@ fn wrapper_binary_token_parses_all_generated_forms() {
         wrapper_binary_token("#!/bin/sh\nexec \"$HOME/b in/lean-ctx\" hook rewrite\n").as_deref(),
         Some("$HOME/b in/lean-ctx")
     );
-    // Legacy unquoted native wrapper (pre-#719 installs).
-    assert_eq!(
-        wrapper_binary_token("#!/bin/sh\nexec /c/Users/B/lean-ctx.exe hook redirect\n").as_deref(),
-        Some("/c/Users/B/lean-ctx.exe")
-    );
-    // Rewrite script assignment, quoted and legacy-unquoted.
+    // Rewrite script assignment.
     assert_eq!(
         wrapper_binary_token("set -euo pipefail\nLEAN_CTX_BIN=\"$HOME/x/lean-ctx\"\n").as_deref(),
         Some("$HOME/x/lean-ctx")

@@ -135,26 +135,16 @@ pub struct BanditStore {
     pub bandits: HashMap<String, ThresholdBandit>,
 }
 
-/// Unified key format: `{domain}:{ext}:{bucket}`.
+/// Key format: `{domain}:{ext}:{bucket}`.
 ///
-/// Separates three previously conflated BanditStore consumers:
-/// - `feedback:{ext}` — compression quality per language (was `{ext}_feedback`)
-/// - `threshold:{ext}:{sm|md|lg|xl}` — adaptive threshold tuning (was `{ext}_{bucket}`)
-/// - `mode:{ext}:{sm|md|lg|xl}` — auto mode selection (was `{ext}_{bucket}`, now separate)
+/// - `feedback:{ext}` — compression quality per language
+/// - `threshold:{ext}:{sm|md|lg|xl}` — adaptive threshold tuning
+/// - `mode:{ext}:{sm|md|lg|xl}` — auto mode selection
 pub fn bandit_key(domain: &str, ext: &str, bucket: Option<&str>) -> String {
     match bucket {
         Some(b) => format!("{domain}:{ext}:{b}"),
         None => format!("{domain}:{ext}"),
     }
-}
-
-fn split_legacy_sized_key(key: &str) -> Option<(&str, &str)> {
-    for suffix in &["_sm", "_md", "_lg", "_xl"] {
-        if let Some(ext) = key.strip_suffix(suffix) {
-            return Some((ext, &suffix[1..]));
-        }
-    }
-    None
 }
 
 impl BanditStore {
@@ -166,9 +156,8 @@ impl BanditStore {
         let path = bandit_path(project_root);
         if path.exists()
             && let Ok(content) = std::fs::read_to_string(&path)
-            && let Ok(mut store) = serde_json::from_str::<BanditStore>(&content)
+            && let Ok(store) = serde_json::from_str::<BanditStore>(&content)
         {
-            store.migrate_legacy_keys();
             return store;
         }
         Self::default()
@@ -181,35 +170,6 @@ impl BanditStore {
         }
         let json = serde_json::to_string_pretty(self).map_err(|e| e.to_string())?;
         std::fs::write(path, json).map_err(|e| e.to_string())
-    }
-
-    /// Converts legacy key formats to the unified `domain:ext:bucket` scheme.
-    /// Reads old keys, writes new keys, removes old keys. Idempotent.
-    fn migrate_legacy_keys(&mut self) {
-        let old_keys: Vec<String> = self
-            .bandits
-            .keys()
-            .filter(|k| !k.contains(':'))
-            .cloned()
-            .collect();
-
-        for key in old_keys {
-            let Some(bandit) = self.bandits.remove(&key) else {
-                continue;
-            };
-
-            if let Some(ext) = key.strip_suffix("_feedback") {
-                let new_key = bandit_key("feedback", ext, None);
-                self.bandits.entry(new_key).or_insert(bandit);
-            } else if let Some((ext, bucket)) = split_legacy_sized_key(&key) {
-                let thresh_key = bandit_key("threshold", ext, Some(bucket));
-                let mode_key = bandit_key("mode", ext, Some(bucket));
-                self.bandits
-                    .entry(thresh_key)
-                    .or_insert_with(|| bandit.clone());
-                self.bandits.entry(mode_key).or_insert(bandit);
-            }
-        }
     }
 
     pub fn format_report(&self) -> String {
@@ -329,71 +289,5 @@ mod tests {
                 .bandits
                 .contains_key(&bandit_key("mode", "rs", Some("md")))
         );
-    }
-
-    #[test]
-    fn migrate_legacy_feedback_key() {
-        let mut store = BanditStore::default();
-        let mut b = ThresholdBandit {
-            total_pulls: 42,
-            ..ThresholdBandit::default()
-        };
-        b.update("aggressive", true);
-        store.bandits.insert("rs_feedback".to_string(), b);
-
-        store.migrate_legacy_keys();
-
-        assert!(
-            !store.bandits.contains_key("rs_feedback"),
-            "old key must be removed"
-        );
-        assert!(
-            store
-                .bandits
-                .contains_key(&bandit_key("feedback", "rs", None)),
-            "new key must exist"
-        );
-        assert_eq!(
-            store.bandits[&bandit_key("feedback", "rs", None)].total_pulls,
-            42
-        );
-    }
-
-    #[test]
-    fn migrate_legacy_sized_key_splits_into_threshold_and_mode() {
-        let mut store = BanditStore::default();
-        let b = ThresholdBandit {
-            total_pulls: 10,
-            ..ThresholdBandit::default()
-        };
-        store.bandits.insert("rs_md".to_string(), b);
-
-        store.migrate_legacy_keys();
-
-        assert!(
-            !store.bandits.contains_key("rs_md"),
-            "old key must be removed"
-        );
-        assert!(
-            store
-                .bandits
-                .contains_key(&bandit_key("threshold", "rs", Some("md"))),
-            "threshold key must exist"
-        );
-        assert!(
-            store
-                .bandits
-                .contains_key(&bandit_key("mode", "rs", Some("md"))),
-            "mode key must exist"
-        );
-    }
-
-    #[test]
-    fn migrate_is_idempotent() {
-        let mut store = BanditStore::default();
-        store.get_or_create(&bandit_key("feedback", "rs", None));
-        store.migrate_legacy_keys();
-        store.migrate_legacy_keys();
-        assert_eq!(store.bandits.len(), 1);
     }
 }

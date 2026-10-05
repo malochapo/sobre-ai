@@ -87,10 +87,6 @@ fn read_config_file(project_root: &Path) -> Option<(PathBuf, String)> {
     if let Ok(s) = std::fs::read_to_string(&new) {
         return Some((new, s));
     }
-    let legacy = project_root.join(".leanctx.json");
-    if let Ok(s) = std::fs::read_to_string(&legacy) {
-        return Some((legacy, s));
-    }
     let socrati = project_root.join(".socraticode.json");
     if let Ok(s) = std::fs::read_to_string(&socrati) {
         return Some((socrati, s));

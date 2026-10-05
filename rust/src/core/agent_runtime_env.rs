@@ -88,55 +88,6 @@ fn store_path() -> Option<PathBuf> {
         .map(|dir| dir.join(FILE_NAME))
 }
 
-/// Legacy location: the file historically lived in the (config-shaped) data dir.
-/// Used only to migrate existing captures into [`store_path`].
-fn legacy_store_path() -> Option<PathBuf> {
-    crate::core::data_dir::lean_ctx_data_dir()
-        .ok()
-        .map(|dir| dir.join(FILE_NAME))
-}
-
-/// Relocate a pre-#408 key file from the data dir into the state dir, and never
-/// leave captured keys behind in the config-shaped legacy location.
-///
-/// Idempotent and a no-op in single-dir mode (where state == legacy). Safe to
-/// call on every access: the existence checks make the steady state one `stat`.
-fn migrate_legacy_key_file(state_path: &Path) {
-    let Some(legacy) = legacy_store_path() else {
-        return;
-    };
-    if legacy == *state_path || !legacy.exists() {
-        return;
-    }
-    if state_path.exists() {
-        // A state-dir copy already exists; drop the stale legacy file so keys
-        // never linger in the config-shaped data dir.
-        let _ = std::fs::remove_file(&legacy);
-        return;
-    }
-    if let Some(parent) = state_path.parent() {
-        let _ = std::fs::create_dir_all(parent);
-    }
-    if std::fs::rename(&legacy, state_path).is_err() {
-        // Cross-filesystem move: copy then remove the original.
-        if std::fs::copy(&legacy, state_path).is_ok() {
-            let _ = std::fs::remove_file(&legacy);
-        } else {
-            return;
-        }
-    }
-    restrict_key_file_permissions(state_path);
-}
-
-#[cfg(unix)]
-fn restrict_key_file_permissions(path: &Path) {
-    use std::os::unix::fs::PermissionsExt;
-    let _ = std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600));
-}
-
-#[cfg(not(unix))]
-fn restrict_key_file_permissions(_path: &Path) {}
-
 fn now_secs() -> u64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -182,7 +133,6 @@ pub fn capture() {
     let Some(path) = store_path() else {
         return;
     };
-    migrate_legacy_key_file(&path);
     if let Some((existing, _)) = read_store(&path)
         && existing == vars
     {
@@ -209,7 +159,6 @@ pub fn load() -> BTreeMap<String, String> {
     let Some(path) = store_path() else {
         return BTreeMap::new();
     };
-    migrate_legacy_key_file(&path);
     let Some((vars, captured_at)) = read_store(&path) else {
         // No capture file — try probing the parent process environment (#800).
         let probed = probe_parent_env();
@@ -221,19 +170,11 @@ pub fn load() -> BTreeMap<String, String> {
     if now_secs().saturating_sub(captured_at) > TTL_SECS {
         return BTreeMap::new();
     }
-    // Defense-in-depth: a capture written by a build predating finding 2 may
-    // still hold credential-shaped vars. Drop them from the returned set, and if
-    // any were present rewrite (or delete) the file so the plaintext secret does
-    // not linger at rest — not just out of the forwarded env.
-    let cleaned: BTreeMap<String, String> = vars
-        .iter()
+    // Defense-in-depth: never forward a credential-shaped var, even from a
+    // hand-edited capture file.
+    vars.into_iter()
         .filter(|(key, _)| is_forwardable(key))
-        .map(|(key, val)| (key.clone(), val.clone()))
-        .collect();
-    if cleaned.len() != vars.len() {
-        scrub_store(&path, &cleaned, captured_at);
-    }
-    cleaned
+        .collect()
 }
 
 /// Probe the parent process's environment for forwardable agent runtime
@@ -322,20 +263,6 @@ fn persist_probed_vars(path: &Path, vars: &BTreeMap<String, String>) {
         if let Some(parent) = path.parent() {
             let _ = std::fs::create_dir_all(parent);
         }
-        let _ = crate::config_io::write_atomic(path, &json);
-    }
-}
-
-/// Rewrite the capture file with `vars` (preserving `captured_at`), or remove it
-/// entirely when nothing forwardable remains. Retroactively strips
-/// credential-shaped vars from captures written by older builds (finding 2).
-fn scrub_store(path: &Path, vars: &BTreeMap<String, String>, captured_at: u64) {
-    if vars.is_empty() {
-        let _ = std::fs::remove_file(path);
-        return;
-    }
-    let payload = serde_json::json!({ "vars": vars, "captured_at": captured_at });
-    if let Ok(json) = serde_json::to_string_pretty(&payload) {
         let _ = crate::config_io::write_atomic(path, &json);
     }
 }
@@ -469,12 +396,12 @@ mod tests {
     }
 
     #[test]
-    fn load_scrubs_legacy_credentials_from_disk() {
+    fn load_never_forwards_credentials() {
         let _iso = crate::core::data_dir::isolated_data_dir();
         let path = store_path().unwrap();
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
 
-        // Simulate a capture written by an older build: holds a real secret.
+        // A capture file holding a real secret.
         let payload = serde_json::json!({
             "vars": { "CODEX_THREAD_ID": "t", "OPENCODE_SERVER_PASSWORD": "p4ssw0rd" },
             "captured_at": now_secs()
@@ -485,16 +412,9 @@ mod tests {
 
         assert!(
             !loaded.contains_key("OPENCODE_SERVER_PASSWORD"),
-            "legacy credential must not be loaded"
+            "credential must not be loaded"
         );
         assert_eq!(loaded.get("CODEX_THREAD_ID").map(String::as_str), Some("t"));
-
-        // The plaintext secret must be scrubbed from disk, not just the env.
-        let on_disk = std::fs::read_to_string(&path).unwrap();
-        assert!(
-            !on_disk.contains("OPENCODE_SERVER_PASSWORD") && !on_disk.contains("p4ssw0rd"),
-            "secret must be removed from the capture file at rest: {on_disk}"
-        );
     }
 
     #[test]
@@ -518,62 +438,6 @@ mod tests {
         assert!(
             !path.starts_with(config.path()),
             "key file must never resolve under the config dir"
-        );
-    }
-
-    #[test]
-    fn migrates_legacy_key_file_to_state_dir() {
-        let _lock = crate::core::data_dir::test_env_lock();
-        let data = tempfile::tempdir().unwrap();
-        let state = tempfile::tempdir().unwrap();
-        crate::test_env::set_var("LEAN_CTX_DATA_DIR", data.path());
-        crate::test_env::set_var("LEAN_CTX_STATE_DIR", state.path());
-
-        let legacy = data.path().join(FILE_NAME);
-        let payload =
-            serde_json::json!({ "vars": { "GEMINI_API_KEY": "k" }, "captured_at": now_secs() });
-        std::fs::write(&legacy, serde_json::to_string_pretty(&payload).unwrap()).unwrap();
-
-        let state_path = store_path().unwrap();
-        migrate_legacy_key_file(&state_path);
-
-        let legacy_exists = legacy.exists();
-        let migrated = state_path.exists();
-        let parent_ok = state_path.parent() == Some(state.path());
-
-        crate::test_env::remove_var("LEAN_CTX_DATA_DIR");
-        crate::test_env::remove_var("LEAN_CTX_STATE_DIR");
-
-        assert!(migrated, "key file must be moved into the state dir");
-        assert!(!legacy_exists, "legacy key file must be removed after move");
-        assert!(
-            parent_ok,
-            "migrated file must sit directly in the state dir"
-        );
-    }
-
-    #[test]
-    fn removes_stale_legacy_when_state_copy_exists() {
-        let _lock = crate::core::data_dir::test_env_lock();
-        let data = tempfile::tempdir().unwrap();
-        let state = tempfile::tempdir().unwrap();
-        crate::test_env::set_var("LEAN_CTX_DATA_DIR", data.path());
-        crate::test_env::set_var("LEAN_CTX_STATE_DIR", state.path());
-
-        let legacy = data.path().join(FILE_NAME);
-        std::fs::write(&legacy, "{}").unwrap();
-        let state_path = store_path().unwrap();
-        std::fs::write(&state_path, "{}").unwrap();
-
-        migrate_legacy_key_file(&state_path);
-
-        let legacy_exists = legacy.exists();
-        crate::test_env::remove_var("LEAN_CTX_DATA_DIR");
-        crate::test_env::remove_var("LEAN_CTX_STATE_DIR");
-
-        assert!(
-            !legacy_exists,
-            "stale legacy key file must be removed when a state copy exists"
         );
     }
 }

@@ -74,37 +74,7 @@ impl RecoveryHints {
     }
 }
 
-/// Legacy: Controls agent output verbosity level injected into MCP instructions.
-/// Superseded by `CompressionLevel`. Kept for backward compatibility with old config.toml files.
-/// New setups use `compression_level` instead. See `CompressionLevel::effective()`.
-#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
-#[serde(rename_all = "lowercase")]
-pub enum TerseAgent {
-    #[default]
-    Off,
-    Lite,
-    Full,
-    Ultra,
-}
-
-impl TerseAgent {}
-
-/// Legacy: Controls how dense/compact MCP tool output is formatted.
-/// Superseded by `CompressionLevel`. Kept for backward compatibility with old config.toml files.
-/// New setups use `compression_level` instead. See `CompressionLevel::effective()`.
-#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
-#[serde(rename_all = "lowercase")]
-pub enum OutputDensity {
-    #[default]
-    Normal,
-    Terse,
-    Ultra,
-}
-
-impl OutputDensity {}
-
-/// Unified compression level that replaces the 4 separate legacy concepts:
-/// `terse_agent`, `output_density`, `terse_mode`, and `crp_mode`.
+/// Compression level of tool responses.
 ///
 /// Controls how much detail tool responses include.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
@@ -160,14 +130,13 @@ pub enum SessionDegrade {
 }
 
 impl CompressionLevel {
-    /// Decomposes the unified level into legacy component settings.
-    /// Returns (TerseAgent, OutputDensity, crp_mode_str, terse_mode_bool).
-    pub fn to_components(&self) -> (TerseAgent, OutputDensity, &'static str, bool) {
+    /// The CRP mode and whether the session is terse at this level.
+    pub fn to_components(&self) -> (&'static str, bool) {
         match self {
-            Self::Off => (TerseAgent::Off, OutputDensity::Normal, "off", false),
-            Self::Lite => (TerseAgent::Lite, OutputDensity::Terse, "off", true),
-            Self::Standard => (TerseAgent::Full, OutputDensity::Terse, "compact", true),
-            Self::Max | Self::Raw => (TerseAgent::Ultra, OutputDensity::Ultra, "tdd", true),
+            Self::Off => ("off", false),
+            Self::Lite => ("off", true),
+            Self::Standard => ("compact", true),
+            Self::Max | Self::Raw => ("tdd", true),
         }
     }
 

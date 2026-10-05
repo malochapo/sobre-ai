@@ -17,11 +17,7 @@ pub struct MaintenanceResult {
     pub archive_db_bytes_after: u64,
 }
 
-const QUARANTINED_FILES: &[&str] = &[
-    "bm25_index.json.quarantined",
-    "bm25_index.bin.quarantined",
-    "bm25_index.bin.zst.quarantined",
-];
+const QUARANTINED_FILES: &[&str] = &["bm25_index.bin.zst.quarantined"];
 
 /// Remove accumulated quarantined BM25 index files. These are dead weight: an
 /// index is only quarantined when it failed a load/size check and was replaced.
@@ -91,15 +87,15 @@ mod tests {
 
         let idx_dir = tmp.path().join("vectors").join("proj_abc");
         std::fs::create_dir_all(&idx_dir).unwrap();
-        std::fs::write(idx_dir.join("bm25_index.json.quarantined"), b"dead").unwrap();
-        std::fs::write(idx_dir.join("bm25_index.bin"), b"live").unwrap();
+        std::fs::write(idx_dir.join("bm25_index.bin.zst.quarantined"), b"dead").unwrap();
+        std::fs::write(idx_dir.join("bm25_index.bin.zst"), b"live").unwrap();
 
         let (removed, freed) = prune_quarantined_bm25();
         assert_eq!(removed, 1);
         assert!(freed >= 4);
-        assert!(!idx_dir.join("bm25_index.json.quarantined").exists());
+        assert!(!idx_dir.join("bm25_index.bin.zst.quarantined").exists());
         assert!(
-            idx_dir.join("bm25_index.bin").exists(),
+            idx_dir.join("bm25_index.bin.zst").exists(),
             "live index must be preserved"
         );
 

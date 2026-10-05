@@ -55,8 +55,7 @@ fn backup_shell_config(path: &std::path::Path) {
 
 /// Directory for config artifacts written by `init`/`setup` — shell hooks and
 /// `env.sh`. These are config files (RO-safe), so they live in [`config_dir`]
-/// (GH #408). For legacy/mixed installs `config_dir()` collapses onto the same
-/// single directory as before, so this is a no-op there.
+/// (GH #408).
 fn config_artifact_dir() -> Option<std::path::PathBuf> {
     crate::core::paths::config_dir().ok()
 }
@@ -136,7 +135,7 @@ fn upsert_source_line(rc_path: &std::path::Path, source_line: &str) {
             return;
         }
 
-        // Remove any legacy blocks and one-liner source lines, then append our canonical block.
+        // Remove our block and any one-liner source line, then append the canonical block.
         let cleaned = remove_lean_ctx_block(&existing);
         let cleaned = cleaned
             .lines()
@@ -787,10 +786,11 @@ fn print_docker_env_hints(is_zsh: bool) {
 }
 
 pub fn remove_lean_ctx_block(content: &str) -> String {
-    if content.contains("# lean-ctx shell hook — end") {
-        return remove_lean_ctx_block_by_marker(content);
+    // Without the end marker the block boundary is unknown: leave the file as is.
+    if !content.contains("# lean-ctx shell hook — end") {
+        return content.to_string();
     }
-    remove_lean_ctx_block_legacy(content)
+    remove_lean_ctx_block_by_marker(content)
 }
 
 fn remove_lean_ctx_block_by_marker(content: &str) -> String {
@@ -805,35 +805,6 @@ fn remove_lean_ctx_block_by_marker(content: &str) -> String {
         if in_block {
             if line.trim() == "# lean-ctx shell hook — end" {
                 in_block = false;
-            }
-            continue;
-        }
-        result.push_str(line);
-        result.push('\n');
-    }
-    result
-}
-
-fn remove_lean_ctx_block_legacy(content: &str) -> String {
-    let mut result = String::new();
-    let mut in_block = false;
-
-    for line in content.lines() {
-        if line.contains("lean-ctx shell hook") {
-            in_block = true;
-            continue;
-        }
-        if in_block {
-            if line.trim() == "fi" || line.trim() == "end" || line.trim().is_empty() {
-                if line.trim() == "fi" || line.trim() == "end" {
-                    in_block = false;
-                }
-                continue;
-            }
-            if !line.starts_with("alias ") && !line.starts_with('\t') && !line.starts_with("if ") {
-                in_block = false;
-                result.push_str(line);
-                result.push('\n');
             }
             continue;
         }
@@ -869,38 +840,6 @@ mod tests {
         for name in ["_lc", "_lc_compress"] {
             assert!(tmp.path().join(name).exists(), "missing shim {name}");
         }
-    }
-
-    #[test]
-    fn test_remove_lean_ctx_block_posix() {
-        let input = r#"# existing config
-export PATH="$HOME/bin:$PATH"
-
-# lean-ctx shell hook — transparent CLI compression (95+ patterns)
-if [ -z "$LEAN_CTX_ACTIVE" ]; then
-alias git='lean-ctx -c git'
-alias npm='lean-ctx -c npm'
-fi
-
-# other stuff
-export EDITOR=vim
-"#;
-        let result = remove_lean_ctx_block(input);
-        assert!(!result.contains("lean-ctx"), "block should be removed");
-        assert!(result.contains("export PATH"), "other content preserved");
-        assert!(
-            result.contains("export EDITOR"),
-            "trailing content preserved"
-        );
-    }
-
-    #[test]
-    fn test_remove_lean_ctx_block_fish() {
-        let input = "# other fish config\nset -x FOO bar\n\n# lean-ctx shell hook — transparent CLI compression (95+ patterns)\nif not set -q LEAN_CTX_ACTIVE\n\talias git 'lean-ctx -c git'\n\talias npm 'lean-ctx -c npm'\nend\n\n# more config\nset -x BAZ qux\n";
-        let result = remove_lean_ctx_block(input);
-        assert!(!result.contains("lean-ctx"), "block should be removed");
-        assert!(result.contains("set -x FOO"), "other content preserved");
-        assert!(result.contains("set -x BAZ"), "trailing content preserved");
     }
 
     #[test]

@@ -10,7 +10,7 @@ use super::*;
 /// auto-detects its per-category dirs (config/data/state/cache) at runtime, and a
 /// pinned `LEAN_CTX_DATA_DIR` would force single-dir mode and collapse
 /// config/state/cache onto the data dir. So an absent env block is healthy. A
-/// config that still carries the var (legacy install, intentional relocation)
+/// config that carries the var (intentional relocation)
 /// must point at the resolved data dir — a stale pin is genuine drift.
 pub(crate) fn pinned_data_dir_ok(env_obj: Option<&serde_json::Value>, data_dir: &str) -> bool {
     match env_obj

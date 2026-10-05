@@ -31,7 +31,7 @@ impl CrpMode {
     pub fn effective() -> Self {
         let config = crate::core::config::Config::load();
         let level = crate::core::config::CompressionLevel::effective(&config);
-        let (_, _, crp_str, _) = level.to_components();
+        let (crp_str, _) = level.to_components();
         Self::parse(crp_str).unwrap_or(Self::Off)
     }
 

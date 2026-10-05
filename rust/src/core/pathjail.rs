@@ -56,10 +56,7 @@ pub fn allow_paths_from_env_and_config() -> Vec<PathBuf> {
     // user-configured paths, virtually never under ~/Documents.
     //
     // This is also lean-ctx's own state dir (sessions, knowledge, …) — always
-    // readable even while foreign editor dirs stay jailed. On a legacy install
-    // the resolver returns `~/.lean-ctx`; on a split install it returns the XDG
-    // data dir. Going through the resolver (not a hardcoded `~/.lean-ctx` join)
-    // is what keeps `home_allow_dirs` free of the legacy-path firewall trip.
+    // readable even while foreign editor dirs stay jailed.
     if let Ok(data_dir) = crate::core::data_dir::lean_ctx_data_dir() {
         out.push(canonicalize_secure(&data_dir));
     }
@@ -438,8 +435,8 @@ pub fn jail_path_with_roots(
                  ~/.config/lean-ctx/config.toml — `lean-ctx doctor` shows the config in effect"
                 .to_string();
             // The global config the runtime reads doesn't exist → on defaults, so
-            // an `allow_paths` edit made to a config.toml elsewhere (XDG vs legacy
-            // dir, or a sandboxed/container HOME) is never seen (#540).
+            // an `allow_paths` edit made to a config.toml elsewhere (a custom
+            // config dir, or a sandboxed/container HOME) is never seen (#540).
             if let Some(missing) = crate::core::config::Config::missing_config_path() {
                 hint.push_str(&format!(
                     ". ⚠ lean-ctx reads no config file at {} (running on defaults) — an \

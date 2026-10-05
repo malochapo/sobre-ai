@@ -1,7 +1,6 @@
 //! Layer 1: Deterministic output compression.
 //!
-//! Replaces the legacy `compress_terse`/`compress_ultra` with a scoring-based
-//! approach that preserves information-dense lines and removes low-value content.
+//! A scoring-based approach that preserves information-dense lines and removes low-value content.
 
 use super::counter;
 use super::dictionaries::{self, DictLevel};

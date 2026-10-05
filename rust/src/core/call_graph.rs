@@ -685,38 +685,15 @@ impl CallGraph {
         let tmp = target.with_extension("zst.tmp");
         std::fs::write(&tmp, &compressed).map_err(|e| e.to_string())?;
         std::fs::rename(&tmp, &target).map_err(|e| e.to_string())?;
-        let _ = std::fs::remove_file(dir.join("call_graph.json"));
         Ok(())
     }
 
     pub fn load(project_root: &str) -> Option<Self> {
         let dir = call_graph_dir(project_root)?;
 
-        let zst_path = dir.join("call_graph.json.zst");
-        if zst_path.exists() {
-            let compressed = std::fs::read(&zst_path).ok()?;
-            let data = zstd::decode_all(compressed.as_slice()).ok()?;
-            let content = String::from_utf8(data).ok()?;
-            return serde_json::from_str(&content).ok();
-        }
-
-        let json_path = dir.join("call_graph.json");
-        if json_path.exists() {
-            let content = std::fs::read_to_string(&json_path).ok()?;
-            let parsed: Self = serde_json::from_str(&content).ok()?;
-            // Auto-migrate: compress legacy JSON to zstd
-            if let Ok(compressed) = zstd::encode_all(content.as_bytes(), 9) {
-                let zst_tmp = zst_path.with_extension("zst.tmp");
-                if std::fs::write(&zst_tmp, &compressed).is_ok()
-                    && std::fs::rename(&zst_tmp, &zst_path).is_ok()
-                {
-                    let _ = std::fs::remove_file(&json_path);
-                }
-            }
-            return Some(parsed);
-        }
-
-        None
+        let compressed = std::fs::read(dir.join("call_graph.json.zst")).ok()?;
+        let data = zstd::decode_all(compressed.as_slice()).ok()?;
+        serde_json::from_str(&String::from_utf8(data).ok()?).ok()
     }
 
     pub fn load_or_build(project_root: &str, inputs: &CallGraphInputs) -> Self {

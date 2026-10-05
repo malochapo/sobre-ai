@@ -100,12 +100,11 @@ fn cli_and_mcp_resolve_same_config_path_with_standard_data_pin() {
     );
 }
 
-/// Back-compat contract: a *custom* (non-standard) single-dir pin intentionally
-/// still collapses config onto it, because legacy single-dir installs depend on
-/// it. Only the standard XDG-data pin is decoupled by the #594 fix. Guarding
+/// Single-dir contract: a *custom* (non-standard) `LEAN_CTX_DATA_DIR` collapses
+/// config onto it. Only the standard XDG-data pin is decoupled by the #594 fix. Guarding
 /// this proves the fix is surgical, not a blanket "ignore LEAN_CTX_DATA_DIR".
 #[test]
-fn custom_data_dir_still_collapses_for_backcompat() {
+fn custom_data_dir_collapses_config() {
     let sb = sandbox();
 
     let cli = config_path(&sb, None, &sb.home);
@@ -115,7 +114,7 @@ fn custom_data_dir_still_collapses_for_backcompat() {
 
     assert_ne!(
         collapsed, cli,
-        "a custom single-dir pin must intentionally collapse config (back-compat)"
+        "a custom single-dir pin must collapse config"
     );
     assert_eq!(
         collapsed,

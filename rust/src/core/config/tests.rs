@@ -141,7 +141,7 @@ mod config_path_visibility_tests {
 
     // #540: `missing_config_path()` is the visible signal that the runtime
     // resolved a `config.toml` that doesn't exist — i.e. an edit landed in a
-    // different file (XDG vs legacy dir, or a sandboxed HOME). The block messages
+    // different file (a custom config dir, or a sandboxed HOME). The block messages
     // turn this into an over-MCP-visible note.
     #[test]
     fn missing_config_path_flags_absent_then_clears_when_present() {

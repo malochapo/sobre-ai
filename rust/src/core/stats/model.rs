@@ -29,8 +29,8 @@ pub struct StatsStore {
     /// Last provider turn for which active tool-result re-reads were accrued.
     #[serde(default)]
     pub last_tool_result_turn: u64,
-    /// Number of results recorded with stream-aware accounting. Zero identifies
-    /// legacy stats files whose aggregate savings need a display-time fallback.
+    /// Number of results recorded with stream-aware accounting. Zero means the
+    /// aggregate savings need a display-time fallback.
     #[serde(default)]
     pub stream_tracked_results: u64,
 }
@@ -85,7 +85,8 @@ impl StatsStore {
     }
 
     /// Stream totals through `observed_turn`, including re-reads since the last
-    /// tool result. Legacy stores fall back to measured compressible savings.
+    /// tool result. Stores without tracked tool results fall back to measured
+    /// compressible savings.
     pub(crate) fn stream_savings(&self, observed_turn: u64) -> (u64, u64) {
         if self.stream_tracked_results == 0 {
             return (self.compression_totals().saved_tokens(), 0);
@@ -310,7 +311,7 @@ mod tests {
     }
 
     #[test]
-    fn compression_totals_fall_back_for_legacy_stats() {
+    fn compression_totals_fall_back_for_untagged_commands() {
         let mut store = StatsStore::default();
         store.commands.insert(
             "ctx_read".into(),
@@ -334,7 +335,7 @@ mod tests {
     }
 
     #[test]
-    fn explicit_command_tag_overrides_legacy_inference() {
+    fn explicit_command_tag_overrides_inference() {
         let mut store = StatsStore::default();
         store.commands.insert(
             "custom_tool".into(),
@@ -401,7 +402,7 @@ mod tests {
     }
 
     #[test]
-    fn legacy_stats_fall_back_to_effective_compression() {
+    fn untracked_stats_fall_back_to_effective_compression() {
         let mut store = StatsStore::default();
         store.commands.insert(
             "ctx_read".into(),

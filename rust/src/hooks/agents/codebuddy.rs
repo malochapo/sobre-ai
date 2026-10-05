@@ -284,17 +284,7 @@ fn is_lean_ctx_command_for(hook: &serde_json::Value, action: &str) -> bool {
     if !cmd.contains("lean-ctx") {
         return false;
     }
-    if cmd.trim_end().ends_with(action) {
-        return true;
-    }
-    let legacy = if action.ends_with("rewrite") {
-        "lean-ctx-rewrite"
-    } else if action.ends_with("redirect") {
-        "lean-ctx-redirect"
-    } else {
-        return false;
-    };
-    cmd.contains(legacy)
+    cmd.trim_end().ends_with(action)
 }
 
 fn ensure_command_hook(pre_arr: &mut Vec<serde_json::Value>, matcher: &str, command: &str) {

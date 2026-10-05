@@ -77,67 +77,6 @@ fn read_effective_codex_config(path: &std::path::Path) -> String {
     toml::to_string(&base_value).unwrap_or(base)
 }
 
-/// Older versions could route a ChatGPT login through the proxy by pinning a
-/// generated `leanctx-chatgpt` provider. Any top-level remnant of that — the
-/// pin, its provider block, a local `chatgpt_base_url`, or an `openai_base_url`
-/// aimed at `/backend-api` — is stale. Per-profile entries are the user's own.
-pub(crate) fn check_codex_history_visibility(home: &std::path::Path) -> NamedCheck {
-    let path = crate::core::home::resolve_codex_config_path()
-        .unwrap_or_else(|| home.join(".codex/config.toml"));
-    let content = read_effective_codex_config(&path);
-    let (ok, detail) = match classify_codex_proxy_entries(&content) {
-        CodexProxyState::Artifact => (
-            false,
-            format!(
-                "stale lean-ctx ChatGPT-proxy entries — run `lean-ctx proxy enable` to heal ({})",
-                path.display()
-            ),
-        ),
-        CodexProxyState::Native => (
-            true,
-            "native — history visible, cloud/remote intact".to_string(),
-        ),
-    };
-    NamedCheck {
-        name: "Codex config".to_string(),
-        ok,
-        detail,
-    }
-}
-
-/// Classification of the *top-level* lean-ctx Codex proxy entries in config.toml.
-/// The API-key rail (`openai_base_url` to `/v1`) is legitimate and never matched.
-#[derive(Debug, PartialEq, Eq)]
-pub(crate) enum CodexProxyState {
-    /// No lean-ctx ChatGPT-proxy entry.
-    Native,
-    /// A remnant of the removed ChatGPT-subscription routing.
-    Artifact,
-}
-
-pub(crate) fn classify_codex_proxy_entries(config: &str) -> CodexProxyState {
-    if config
-        .lines()
-        .any(|l| l.trim_start() == "[model_providers.leanctx-chatgpt]")
-    {
-        return CodexProxyState::Artifact;
-    }
-    for t in config
-        .lines()
-        .map(str::trim_start)
-        .take_while(|t| !t.starts_with('['))
-    {
-        let local = t.contains("127.0.0.1") || t.contains("localhost");
-        if (t.starts_with("openai_base_url") && local && t.contains("/backend-api"))
-            || (t.starts_with("model_provider") && t.contains("leanctx-chatgpt"))
-            || (t.starts_with("chatgpt_base_url") && local)
-        {
-            return CodexProxyState::Artifact;
-        }
-    }
-    CodexProxyState::Native
-}
-
 pub(crate) fn check_codex_hooks_enabled(home: &std::path::Path) -> NamedCheck {
     let path = crate::core::home::resolve_codex_config_path()
         .unwrap_or_else(|| home.join(".codex/config.toml"));

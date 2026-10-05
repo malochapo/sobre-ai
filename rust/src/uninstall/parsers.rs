@@ -3,10 +3,11 @@
 // ---------------------------------------------------------------------------
 
 pub(super) fn remove_lean_ctx_block(content: &str) -> String {
-    if content.contains("# lean-ctx shell hook — end") {
-        return remove_lean_ctx_block_by_marker(content);
+    // Without the end marker the block boundary is unknown: leave the file as is.
+    if !content.contains("# lean-ctx shell hook — end") {
+        return content.to_string();
     }
-    remove_lean_ctx_block_legacy(content)
+    remove_lean_ctx_block_by_marker(content)
 }
 
 /// Removes the login-shell snippet `init_posix` adds so bash login shells source `~/.bashrc`
@@ -49,35 +50,6 @@ fn remove_lean_ctx_block_by_marker(content: &str) -> String {
         if in_block {
             if line.trim() == "# lean-ctx shell hook — end" {
                 in_block = false;
-            }
-            continue;
-        }
-        result.push_str(line);
-        result.push('\n');
-    }
-    result
-}
-
-fn remove_lean_ctx_block_legacy(content: &str) -> String {
-    let mut result = String::new();
-    let mut in_block = false;
-
-    for line in content.lines() {
-        if line.contains("lean-ctx shell hook") {
-            in_block = true;
-            continue;
-        }
-        if in_block {
-            if line.trim() == "fi" || line.trim() == "end" || line.trim().is_empty() {
-                if line.trim() == "fi" || line.trim() == "end" {
-                    in_block = false;
-                }
-                continue;
-            }
-            if !line.starts_with("alias ") && !line.starts_with('\t') && !line.starts_with("if ") {
-                in_block = false;
-                result.push_str(line);
-                result.push('\n');
             }
             continue;
         }
@@ -841,7 +813,7 @@ command = \"other\"
     fn shared_markdown_surgical_removal() {
         let input = "# My custom rules\n\nDo this and that.\n\n\
                       # Context Engineering Layer\n\
-                      <!-- lean-ctx-rules-v9 -->\n\n\
+                      <!-- lean-ctx-rules -->\n\n\
                       Use ctx_read instead of Read.\n\
                       <!-- /lean-ctx -->\n\n\
                       # Other section\n\nMore user content.\n";
@@ -870,7 +842,7 @@ command = \"other\"
     #[test]
     fn shared_markdown_only_lean_ctx() {
         let input = "# Context Engineering Layer\n\
-                      <!-- lean-ctx-rules-v9 -->\n\
+                      <!-- lean-ctx-rules -->\n\
                       content\n\
                       <!-- /lean-ctx -->\n";
 

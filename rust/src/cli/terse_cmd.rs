@@ -52,21 +52,8 @@ pub fn cmd_compression(args: &[String]) {
         println!();
         println!();
 
-        let (ta, od, crp, tm) = effective.to_components();
-        let ta_name = match ta {
-            crate::core::config::TerseAgent::Off => "off",
-            crate::core::config::TerseAgent::Lite => "lite",
-            crate::core::config::TerseAgent::Full => "full",
-            crate::core::config::TerseAgent::Ultra => "ultra",
-        };
-        let od_name = match od {
-            crate::core::config::OutputDensity::Normal => "normal",
-            crate::core::config::OutputDensity::Terse => "terse",
-            crate::core::config::OutputDensity::Ultra => "ultra",
-        };
+        let (crp, tm) = effective.to_components();
         println!("Active components:");
-        println!("  Agent prompt:    {ta_name}");
-        println!("  Output density:  {od_name}");
         println!("  CRP mode:        {crp}");
         println!("  Terse session:   {tm}");
     }

@@ -39,33 +39,20 @@ pub const SEMANTIC_DUP_THRESHOLD: f32 = 0.86;
 pub struct FactEmbedding {
     pub category: String,
     pub key: String,
-    /// Legacy full-precision vector (indices written before int8 quantization).
-    /// Migrated to `quant` transparently on load and then emptied, so it only
-    /// appears in files written by older binaries.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub embedding: Vec<f32>,
-    /// int8-quantized representation (turbovec-derived) — 4× smaller on disk and
-    /// the canonical storage for every entry written by current binaries.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub quant: Option<QuantizedVector>,
+    /// int8-quantized vector (turbovec-derived) — 4× smaller on disk than f32.
+    pub quant: QuantizedVector,
 }
 
 impl FactEmbedding {
     /// Vector width, which identifies the model that produced it.
     fn width(&self) -> usize {
-        self.quant
-            .as_ref()
-            .map_or(self.embedding.len(), |q| q.code.len())
+        self.quant.code.len()
     }
 
-    /// Similarity against a full-precision (L2-normalized) query. Scores directly
-    /// against the int8 codes when available; falls back to the legacy f32 vector
-    /// for not-yet-migrated entries.
+    /// Similarity against a full-precision (L2-normalized) query, scored
+    /// directly against the int8 codes.
     fn similarity(&self, query: &[f32]) -> f32 {
-        match &self.quant {
-            Some(q) => embedding_quant::dot_quant(query, q),
-            None => embedding_quant::dot_f32(query, &self.embedding),
-        }
+        embedding_quant::dot_quant(query, &self.quant)
     }
 }
 
@@ -84,36 +71,20 @@ impl KnowledgeEmbeddingIndex {
     }
 
     pub fn upsert(&mut self, category: &str, key: &str, embedding: &[f32]) {
-        let quant = Some(embedding_quant::quantize(embedding));
+        let quant = embedding_quant::quantize(embedding);
         if let Some(existing) = self
             .entries
             .iter_mut()
             .find(|e| e.category == category && e.key == key)
         {
             existing.quant = quant;
-            existing.embedding = Vec::new();
         } else {
             self.entries.push(FactEmbedding {
                 category: category.to_string(),
                 key: key.to_string(),
-                embedding: Vec::new(),
                 quant,
             });
         }
-    }
-
-    /// Upgrades any legacy full-precision entries to int8 in place. Returns true
-    /// if anything changed (so the caller can persist the smaller form once).
-    fn migrate_legacy_entries(&mut self) -> bool {
-        let mut changed = false;
-        for e in &mut self.entries {
-            if e.quant.is_none() && !e.embedding.is_empty() {
-                e.quant = Some(embedding_quant::quantize(&e.embedding));
-                e.embedding = Vec::new();
-                changed = true;
-            }
-        }
-        changed
     }
 
     pub fn remove(&mut self, category: &str, key: &str) {
@@ -159,13 +130,7 @@ impl KnowledgeEmbeddingIndex {
     pub fn load(project_hash: &str) -> Option<Self> {
         let path = Self::index_path(project_hash)?;
         let data = std::fs::read_to_string(path).ok()?;
-        let mut index: Self = serde_json::from_str(&data).ok()?;
-        // Pay the one-time int8 migration cost on first load by an upgraded binary,
-        // then persist so subsequent loads read the 4×-smaller form.
-        if index.migrate_legacy_entries() {
-            let _ = index.save();
-        }
-        Some(index)
+        serde_json::from_str(&data).ok()
     }
 
     pub fn save(&self) -> Result<(), String> {
@@ -687,8 +652,7 @@ mod tests {
             entries: vec![FactEmbedding {
                 category: "arch".to_string(),
                 key: "db".to_string(),
-                embedding: vec![1.0, 0.0, 0.0],
-                quant: None,
+                quant: embedding_quant::quantize(&[1.0, 0.0, 0.0]),
             }],
         };
         idx.save().expect("save");
@@ -870,11 +834,7 @@ mod tests {
         idx.upsert("arch", "db", &[0.0, 1.0, 0.0]);
         assert_eq!(idx.entries.len(), 1);
         // Stored quantized now: the dominant axis reconstructs to ~1.0.
-        let recon = idx.entries[0]
-            .quant
-            .as_ref()
-            .expect("quantized")
-            .dequantize();
+        let recon = idx.entries[0].quant.dequantize();
         assert!((recon[1] - 1.0).abs() < 1e-6);
 
         idx.upsert("arch", "cache", &[0.0, 0.0, 1.0]);

@@ -43,10 +43,6 @@ pub(crate) enum CodexProxyMode {
     ChatGpt,
 }
 
-/// Provider id older versions pinned for ChatGPT-subscription routing. Still
-/// recognised so setup strips it from existing Codex configs.
-pub(crate) const CODEX_CHATGPT_PROVIDER_ID: &str = "leanctx-chatgpt";
-
 /// Testable core of `install_codex_env`: operates on an explicit Codex config
 /// directory instead of resolving it from `CODEX_HOME` / the real home.
 #[cfg(test)]
@@ -70,8 +66,8 @@ fn install_codex_env_at_path(config_path: &Path, port: u16, quiet: bool, mode: C
     // key (openai/codex#12031).
     //
     // A ChatGPT login talks to chatgpt.com directly and is left alone; an
-    // empty `entries` still lets `render_codex_config` strip stale lean-ctx
-    // entries, including the provider pin older versions wrote.
+    // empty `entries` still lets `render_codex_config` strip a local
+    // `openai_base_url` left from API-key mode.
     let base = format!("http://127.0.0.1:{port}");
     let entries: Vec<(&str, String)> = match mode {
         CodexProxyMode::ApiKey => vec![("openai_base_url", format!("{base}/v1"))],
@@ -118,10 +114,7 @@ fn install_codex_env_at_path(config_path: &Path, port: u16, quiet: bool, mode: C
 }
 
 /// Point Codex's built-in OpenAI provider at `value` via the documented top-level
-/// `openai_base_url`/`chatgpt_base_url` keys. Removes lean-ctx's legacy local proxy
-/// entries — the dead `[env] OPENAI_BASE_URL` (#554) and the pre-#597
-/// `model_provider = leanctx-chatgpt` + `[model_providers.leanctx-chatgpt]` block
-/// (which hid Codex history) — and migrates a stale local value to the canonical
+/// `openai_base_url` key, replacing a stale local value with the canonical
 /// one. A custom *remote* `openai_base_url` the user configured is preserved and
 /// never overwritten in API-key mode (#366). Keys are emitted as top-level keys
 /// (before the first `[table]`) so Codex actually reads them.
@@ -146,9 +139,8 @@ pub(crate) fn render_codex_config(existing: &str, entries: &[(&str, String)]) ->
     }
 }
 
-/// Remove lean-ctx's own Codex proxy entries from a `config.toml` body: local
-/// top-level proxy URLs, older dead `[env]` URL lines (#554), and the generated
-/// ChatGPT provider block. Custom remote endpoints and profile tables are preserved.
+/// Remove lean-ctx's own Codex proxy entry from a `config.toml` body: a local
+/// top-level `openai_base_url`. Custom remote endpoints and tables are preserved.
 pub(crate) fn strip_codex_proxy_entries(body: &str) -> String {
     let lines: Vec<&str> = body.lines().collect();
     let mut kept: Vec<&str> = Vec::with_capacity(lines.len());
@@ -156,14 +148,6 @@ pub(crate) fn strip_codex_proxy_entries(body: &str) -> String {
     let mut i = 0;
     while i < lines.len() {
         let trimmed = lines[i].trim();
-        if is_generated_codex_chatgpt_provider_header(trimmed) {
-            i += 1;
-            while i < lines.len() && !lines[i].trim_start().starts_with('[') {
-                i += 1;
-            }
-            continue;
-        }
-
         if lines[i].trim_start().starts_with('[') {
             current_table = Some(trimmed);
             kept.push(lines[i]);
@@ -180,24 +164,7 @@ pub(crate) fn strip_codex_proxy_entries(body: &str) -> String {
         i += 1;
     }
 
-    // Drop an `[env]` header left without any keys after the removal.
-    let mut out: Vec<&str> = Vec::with_capacity(kept.len());
-    let mut i = 0;
-    while i < kept.len() {
-        let trimmed = kept[i].trim();
-        if trimmed == "[env]" {
-            let mut j = i + 1;
-            while j < kept.len() && kept[j].trim().is_empty() {
-                j += 1;
-            }
-            if j >= kept.len() || kept[j].trim_start().starts_with('[') {
-                i = j;
-                continue;
-            }
-        }
-        out.push(kept[i]);
-        i += 1;
-    }
+    let out = kept;
 
     let mut s = out.join("\n");
     while s.contains("\n\n\n") {
@@ -230,11 +197,7 @@ pub(crate) fn has_top_level_codex_config_key(
 
 pub(crate) fn should_strip_codex_proxy_entry(t: &str, current_table: Option<&str>) -> bool {
     match current_table {
-        None => {
-            is_local_codex_base_url_entry(t, &["openai_base_url", "chatgpt_base_url"])
-                || is_codex_proxy_model_provider_entry(t)
-        }
-        Some("[env]") => is_local_codex_base_url_entry(t, &["OPENAI_BASE_URL", "CHATGPT_BASE_URL"]),
+        None => is_local_codex_base_url_entry(t, &["openai_base_url"]),
         _ => false,
     }
 }
@@ -253,55 +216,11 @@ pub(crate) fn toml_assignment_key(t: &str) -> Option<&str> {
     }
 }
 
-pub(crate) fn is_codex_proxy_model_provider_entry(t: &str) -> bool {
-    is_toml_string_assignment(t, "model_provider", CODEX_CHATGPT_PROVIDER_ID)
-        || is_toml_string_assignment(t, "model_provider", "openai")
-}
-
-pub(crate) fn is_toml_string_assignment(t: &str, key: &str, value: &str) -> bool {
-    let Some((lhs, rhs)) = t.split_once('=') else {
-        return false;
-    };
-    if lhs.trim() != key {
-        return false;
-    }
-    let rhs = rhs.split('#').next().unwrap_or(rhs);
-    let normalized: String = rhs.chars().filter(|c| !c.is_whitespace()).collect();
-    normalized == format!("\"{value}\"")
-}
-
-pub(crate) fn is_generated_codex_chatgpt_provider_header(t: &str) -> bool {
-    t == format!("[model_providers.{CODEX_CHATGPT_PROVIDER_ID}]")
-}
-
 pub(crate) fn codex_config_has_local_proxy_entry(body: &str) -> bool {
-    let mut current_table: Option<&str> = None;
-    for line in body.lines() {
-        let t = line.trim_start();
-        if is_generated_codex_chatgpt_provider_header(line.trim()) {
-            return true;
-        }
-        if t.starts_with('[') {
-            current_table = Some(line.trim());
-            continue;
-        }
-        match current_table {
-            None => {
-                if is_local_codex_base_url_entry(t, &["openai_base_url", "chatgpt_base_url"])
-                    || is_toml_string_assignment(t, "model_provider", CODEX_CHATGPT_PROVIDER_ID)
-                {
-                    return true;
-                }
-            }
-            Some("[env]")
-                if is_local_codex_base_url_entry(t, &["OPENAI_BASE_URL", "CHATGPT_BASE_URL"]) =>
-            {
-                return true;
-            }
-            _ => {}
-        }
-    }
-    false
+    body.lines()
+        .map(str::trim_start)
+        .take_while(|t| !t.starts_with('['))
+        .any(|t| is_local_codex_base_url_entry(t, &["openai_base_url"]))
 }
 
 /// True when Codex will authenticate via a **ChatGPT login** (OAuth) rather than

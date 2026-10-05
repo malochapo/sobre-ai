@@ -70,11 +70,6 @@ fn install_codex_hook_config(codex_dir: &std::path::Path) -> bool {
         );
     }
 
-    let rewrite_path = codex_dir.join("hooks").join("lean-ctx-rewrite-codex.sh");
-    if rewrite_path.exists() && std::fs::remove_file(&rewrite_path).is_ok() {
-        changed = true;
-    }
-
     let config_toml_path = crate::core::home::resolve_codex_config_path()
         .unwrap_or_else(|| codex_dir.join("config.toml"));
     let config_content = std::fs::read_to_string(&config_toml_path).unwrap_or_default();
@@ -226,7 +221,7 @@ mod tests {
     }
 
     #[test]
-    fn upsert_replaces_legacy_codex_rewrite_but_keeps_custom_hooks() {
+    fn upsert_replaces_lean_ctx_hook_but_keeps_custom_hooks() {
         let mut input = json!({
             "hooks": {
                 "PreToolUse": [
@@ -234,7 +229,7 @@ mod tests {
                         "matcher": "Bash",
                         "hooks": [{
                             "type": "command",
-                            "command": "/opt/homebrew/bin/lean-ctx hook rewrite",
+                            "command": "/opt/homebrew/bin/lean-ctx hook codex-pretooluse",
                             "timeout": 15
                         }]
                     },
@@ -275,7 +270,7 @@ mod tests {
             "lean-ctx hook codex-session-start",
             "lean-ctx hook codex-pretooluse",
         );
-        assert!(changed, "legacy hooks should be migrated");
+        assert!(changed, "the stale binary path should be rewritten");
 
         let pre_tool_use = input["hooks"]["PreToolUse"]
             .as_array()

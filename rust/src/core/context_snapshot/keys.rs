@@ -12,8 +12,7 @@ use ed25519_dalek::SigningKey;
 
 pub const KEY_REL_PATH: &str = "keys/ctxpkg-ed25519.key";
 
-/// Resolves through the XDG data dir (not a hardcoded `~/.lean-ctx`) so the key
-/// follows the migrated layout and never re-creates the legacy dir (GH #436).
+/// Resolves through the XDG data dir (GH #436).
 pub fn key_path() -> Result<PathBuf, String> {
     Ok(crate::core::paths::data_dir()?.join(KEY_REL_PATH))
 }

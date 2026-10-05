@@ -194,24 +194,6 @@ fn agent_sandbox_with_subpath_is_broad() {
 // Data dir collision: direct collision check
 // ---------------------------------------------------------------------------
 
-#[test]
-fn collision_detects_when_project_lean_ctx_equals_data_dir() {
-    // The parent-of-data-dir is only a collision by construction in the
-    // legacy layout (`<parent>/.lean-ctx` == data dir). In the XDG layout
-    // (`~/.config/lean-ctx`) the parent's project dir would be
-    // `~/.config/.lean-ctx` — a different path and correctly NOT a
-    // collision, so asserting there (as CI runners do) is wrong.
-    if let Ok(data_dir) = lean_ctx::core::data_dir::lean_ctx_data_dir()
-        && data_dir.file_name().is_some_and(|n| n == ".lean-ctx")
-        && let Some(parent) = data_dir.parent()
-    {
-        assert!(
-            is_data_dir_collision(parent),
-            "parent of legacy data dir should be detected as collision"
-        );
-    }
-}
-
 // ---------------------------------------------------------------------------
 // find_project_root: CWD fallback guard
 // ---------------------------------------------------------------------------

@@ -360,31 +360,6 @@ mod tests {
         "density:0.40",
     ];
 
-    // --- Legacy predicates being replaced (kept verbatim so the equivalence
-    // tests below pin behaviour to the exact prior semantics). ---
-
-    fn legacy_is_cacheable(mode: &str) -> bool {
-        ["map", "signatures"].contains(&mode)
-    }
-
-    fn legacy_allows_raw_cap(mode: &str) -> bool {
-        !(mode.starts_with("lines:") || matches!(mode, "reference" | "diff" | "raw" | "anchored"))
-    }
-
-    fn legacy_is_lossy_summary(mode: &str) -> bool {
-        matches!(
-            mode,
-            "map" | "signatures" | "aggressive" | "entropy" | "task"
-        )
-    }
-
-    fn legacy_counts_as_compressed(mode: &str) -> bool {
-        !matches!(
-            mode,
-            "full" | "full-compact" | "diff" | "lines" | "anchored"
-        )
-    }
-
     #[test]
     fn round_trips_every_canonical_mode() {
         for mode in CANONICAL {
@@ -393,33 +368,6 @@ mod tests {
                 parsed.to_string(),
                 *mode,
                 "Display must round-trip '{mode}' byte-identically"
-            );
-        }
-    }
-
-    #[test]
-    fn classification_matches_legacy_predicates() {
-        for mode in CANONICAL {
-            let parsed: ReadMode = mode.parse().expect("canonical mode parses");
-            assert_eq!(
-                parsed.is_compressed_cacheable(),
-                legacy_is_cacheable(mode),
-                "is_compressed_cacheable diverged for '{mode}'"
-            );
-            assert_eq!(
-                parsed.allows_raw_cap(),
-                legacy_allows_raw_cap(mode),
-                "allows_raw_cap diverged for '{mode}'"
-            );
-            assert_eq!(
-                parsed.is_lossy_summary(),
-                legacy_is_lossy_summary(mode),
-                "is_lossy_summary diverged for '{mode}'"
-            );
-            assert_eq!(
-                parsed.counts_as_compressed(),
-                legacy_counts_as_compressed(mode),
-                "counts_as_compressed diverged for '{mode}'"
             );
         }
     }

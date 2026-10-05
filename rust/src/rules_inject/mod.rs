@@ -22,9 +22,7 @@ mod tests;
 mod write;
 
 pub(crate) use content::cursor_mdc_document;
-pub use content::{
-    GEMINI_DEDICATED_CONTEXT_FILENAME, gemini_dedicated_rules_path, opencode_dedicated_rules_path,
-};
+pub use content::{GEMINI_DEDICATED_CONTEXT_FILENAME, gemini_dedicated_rules_path};
 
 /// Forwarding functions — content is delegated to `core::rules_canonical`.
 pub fn canonical_rules_block() -> String {

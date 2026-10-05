@@ -46,7 +46,6 @@ pub(crate) fn integration_generic(
         }
         crate::core::editor_registry::types::ConfigType::Codex => {
             checks.push(check_codex_toml(&target.config_path, binary));
-            checks.push(check_codex_history_visibility(home));
             checks.push(check_codex_hooks_enabled(home));
             checks.push(check_codex_hooks_json(home, binary));
             checks.push(codex_desktop_note());
@@ -179,9 +178,8 @@ pub(crate) fn integration_claude(
     let hooks_dir = crate::core::editor_registry::claude_state_dir(home).join("hooks");
     checks.push(check_hook_wrapper_scripts(&hooks_dir, binary, home));
 
-    // v3 layout (GL #555, GH #396): instructions live in the CLAUDE.md block +
-    // on-demand skill; `setup` removes the legacy rules file. Same detector as
-    // the main doctor check, so the two views can never disagree again.
+    // Instructions live in the CLAUDE.md block + on-demand skill (GL #555,
+    // GH #396). Same detector as the main doctor check.
     {
         use crate::doctor::common::ClaudeInstructionsState as S;
         let state = crate::doctor::common::claude_instructions_state(home);

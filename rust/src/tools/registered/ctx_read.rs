@@ -520,17 +520,13 @@ impl CtxReadTool {
                             bt.next_seq();
                         }
 
-                        let effective_fresh = fresh
-                            || (crate::tools::ctx_read::is_subagent_context()
-                                && !crate::core::conversation::scope_enabled());
-
                         let mode_eff = mode.clone();
 
-                        if effective_fresh {
+                        if fresh {
                             cache.invalidate(&path_owned);
                         }
 
-                        if !effective_fresh {
+                        if !fresh {
                             let stale = cache.get(&path_owned).is_some_and(|e| {
                                 crate::core::cache::is_cache_entry_stale_verified(
                                     &path_owned,

@@ -1,11 +1,7 @@
 //! Typed XDG base-directory resolvers for lean-ctx (GH #408 / GL #602).
 //!
-//! Historically every lean-ctx file joined onto a single [`lean_ctx_data_dir`]
-//! rooted at `$XDG_CONFIG_HOME/lean-ctx`, mixing `config.toml` with 30+ runtime
-//! data files (sessions, vectors, graphs, events, logs, caches). That violates
-//! the XDG Base Directory Spec and makes a read-only config sandbox impossible.
-//!
-//! This module has one typed resolver per XDG category.
+//! One typed resolver per XDG category, so `config.toml` never mixes with
+//! runtime data and the config dir can stay read-only.
 //!
 //! ## Single-dir mode
 //!
@@ -44,7 +40,7 @@ fn xdg_base(env_name: &str, home_fallback: &str) -> Result<PathBuf, String> {
 }
 
 /// Pure resolution order for a category: explicit override > single-dir
-/// backward-compat > XDG split default (`<base>/lean-ctx`).
+/// > XDG split default (`<base>/lean-ctx`).
 fn resolve(
     category_override: Option<PathBuf>,
     single: Option<PathBuf>,

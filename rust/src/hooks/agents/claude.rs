@@ -320,8 +320,7 @@ fn lean_ctx_action_token(command: &str) -> &str {
 }
 
 /// True if `hook` is a lean-ctx command hook for `action`, regardless of how the binary path
-/// was rendered (bare `lean-ctx` vs an absolute path) and including the legacy script form
-/// (`…/lean-ctx-rewrite.sh`) written by pre-3.x installs.
+/// was rendered (bare `lean-ctx` vs an absolute path).
 fn is_lean_ctx_command_for(hook: &serde_json::Value, action: &str) -> bool {
     if hook.get("type").and_then(|t| t.as_str()) != Some("command") {
         return false;
@@ -332,17 +331,7 @@ fn is_lean_ctx_command_for(hook: &serde_json::Value, action: &str) -> bool {
     if !cmd.contains("lean-ctx") {
         return false;
     }
-    if cmd.trim_end().ends_with(action) {
-        return true;
-    }
-    let legacy = if action.ends_with("rewrite") {
-        "lean-ctx-rewrite"
-    } else if action.ends_with("redirect") {
-        "lean-ctx-redirect"
-    } else {
-        return false;
-    };
-    cmd.contains(legacy)
+    cmd.trim_end().ends_with(action)
 }
 
 /// Ensure exactly one lean-ctx hook for `command`'s action exists under `matcher`.
@@ -351,7 +340,7 @@ fn is_lean_ctx_command_for(hook: &serde_json::Value, action: &str) -> bool {
 /// the binary as a bare `lean-ctx` (on `PATH`) or an absolute path (off `PATH`), so the
 /// rendering flips between `install` and `update` and the exact-string compare missed the
 /// existing hook — appending a duplicate on every run. We now strip every stale lean-ctx hook
-/// for this action (any path, any matcher group, including legacy `.sh` hooks) and re-add a
+/// for this action (any path, any matcher group) and re-add a
 /// single fresh one. This is idempotent across re-runs *and* self-heals settings files already
 /// duplicated by older versions, while leaving any non-lean-ctx hooks untouched.
 fn ensure_command_hook(pre_arr: &mut Vec<serde_json::Value>, matcher: &str, command: &str) {
@@ -697,19 +686,6 @@ mod tests {
             json!({ "matcher": "Bash", "hooks": [{ "type": "command", "command": "/a/lean-ctx hook rewrite" }] }),
             json!({ "matcher": BASH, "hooks": [{ "type": "command", "command": "lean-ctx hook rewrite" }] }),
         ];
-        ensure_command_hook(&mut pre, BASH, "lean-ctx hook rewrite");
-        assert_eq!(
-            commands_for(&pre, "hook rewrite"),
-            ["lean-ctx hook rewrite"]
-        );
-    }
-
-    #[test]
-    fn migrates_legacy_script_hook() {
-        let mut pre = vec![json!({
-            "matcher": BASH,
-            "hooks": [{ "type": "command", "command": "/home/u/.claude/hooks/lean-ctx-rewrite.sh" }]
-        })];
         ensure_command_hook(&mut pre, BASH, "lean-ctx hook rewrite");
         assert_eq!(
             commands_for(&pre, "hook rewrite"),

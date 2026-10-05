@@ -639,8 +639,7 @@ fn source_content_changed_since_index(index: &ProjectIndex, root_abs: &str) -> b
 /// Delete the persisted graph-index artifacts for a project so the next scan
 /// rebuilds from scratch. Backs `graph build --force`.
 ///
-/// Since #696 C4 the property graph (`graph.db` + `graph.meta.json`) is the sole
-/// store; the legacy JSON names are still removed so upgrades clear stale files.
+/// The property graph (`graph.db` + `graph.meta.json`) is the sole store.
 pub fn purge_index(project_root: &str) {
     if let Some(dir) = ProjectIndex::index_dir(project_root) {
         for name in [
@@ -648,8 +647,6 @@ pub fn purge_index(project_root: &str) {
             "graph.db-wal",
             "graph.db-shm",
             "graph.meta.json",
-            "index.json.zst",
-            "index.json",
             "call_graph.json.zst",
         ] {
             let _ = std::fs::remove_file(dir.join(name));

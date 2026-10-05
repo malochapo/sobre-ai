@@ -1,22 +1,3 @@
-// ===== Group A: Index Scoping & Dashboard =====
-
-#[test]
-fn load_or_build_does_not_use_legacy_dot_cache() {
-    let tmp = tempfile::tempdir().unwrap();
-    let project = tmp.path().join("myproject");
-    std::fs::create_dir_all(&project).unwrap();
-    std::fs::write(project.join("main.rs"), "fn main() {}").unwrap();
-
-    let dot_dir = tmp.path().join("graphs").join("dot-legacy");
-    std::fs::create_dir_all(&dot_dir).unwrap();
-
-    let idx = lean_ctx::core::graph_index::load_or_build(project.to_str().unwrap());
-    assert!(
-        idx.project_root.contains("myproject") || idx.files.is_empty(),
-        "Should not load from a legacy '.' cache"
-    );
-}
-
 // ===== Group B: Index Status =====
 
 #[test]
