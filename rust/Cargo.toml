@@ -81,7 +81,7 @@ jemalloc = ["dep:tikv-jemallocator", "dep:tikv-jemalloc-ctl"]
 dev-tools = []
 no-jail = []
 neural = ["dep:ort", "dep:ndarray", "dep:libloading"]
-embeddings = ["dep:ort", "dep:ndarray", "dep:libloading"]
+embeddings = ["dep:ort", "dep:ndarray", "dep:libloading", "dep:tokenizers"]
 ort-cuda = ["ort?/cuda"]
 ort-webgpu = ["ort?/webgpu"]
 ort-rocm = ["ort?/rocm"]
@@ -223,6 +223,9 @@ ort = { version = "=2.0.0-rc.12", optional = true, default-features = false, fea
   "load-dynamic",
 ] }
 ndarray = { version = "0.17", optional = true }
+# Reads any HuggingFace `tokenizer.json` (WordPiece, BPE, Unigram), so every
+# embedding model tokenizes exactly as it was trained. Pure Rust regex backend.
+tokenizers = { version = "0.22", optional = true, default-features = false, features = ["fancy-regex"] }
 axum = { version = "0.8", features = ["ws"] }
 base64 = "0.22"
 hmac = "0.13"

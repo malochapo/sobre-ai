@@ -36,10 +36,10 @@ is being replaced, the answer is no.
 - **No profiles**, no presets, no modes.
 - Hard cap: **15 configuration keys.** Adding one requires removing one.
 
-The file currently has 13 keys, leaving two slots: `allow_paths`,
+The file currently has 14 keys, leaving one slot: `allow_paths`,
 `read_only_roots`, `ignore`, `passthrough_commands`, `shell_timeout_secs`,
-`shell_hook`, `hook_binary`, `compression_level`, `debug_log`, and the
-`[proxy]` table's `enabled`, `port`, `upstreams` and `routing`. Choices made
+`shell_hook`, `hook_binary`, `compression_level`, `debug_log`,
+`embedding_model`, and the `[proxy]` table's `enabled`, `port`, `upstreams` and `routing`. Choices made
 once at setup are `init` options, recorded by what `init` installs, not keys.
 The generated list is `docs/reference/generated/config-keys.md`.
 

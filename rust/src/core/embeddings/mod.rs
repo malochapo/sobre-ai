@@ -1,14 +1,14 @@
 //! Embedding engine for semantic code search.
 //!
 //! Provides dense vector embeddings for code chunks using a local ONNX model.
-//! Supports multiple models via `EmbeddingModel` registry — selected via
-//! `[embedding].model` config key (default: all-MiniLM-L6-v2).
+//! Any HuggingFace model with an ONNX export and a `tokenizer.json` works —
+//! selected via the `embedding_model` config key (default: all-MiniLM-L6-v2).
 //!
 //! Feature-gated under `embeddings` — falls back gracefully to BM25-only
 //! search when the feature or model is not available.
 //!
 //! Architecture:
-//!   Tokenizer → ONNX Model (ort) → Mean Pooling → L2 Normalize → `Vec<f32>`
+//!   Tokenizer → ONNX Model (ort) → Pooling → L2 Normalize → `Vec<f32>`
 
 pub mod download;
 pub mod model_registry;
@@ -17,8 +17,8 @@ pub mod tokenizer;
 
 use std::path::{Path, PathBuf};
 
-use model_registry::{EmbeddingModel, ModelConfig, VocabSource};
-use tokenizer::{TokenizedInput, WordPieceTokenizer};
+use model_registry::ModelMeta;
+use tokenizer::TokenizedInput;
 
 // `embed_batch` parallelises tokenization in every build (rayon is a core, non
 // optional dependency), so this import must not be feature-gated — otherwise the
@@ -28,23 +28,21 @@ use rayon::prelude::*;
 use std::sync::Mutex;
 
 pub struct EmbeddingEngine {
-    tokenizer: TokenizerKind,
     dimensions: usize,
-    max_seq_len: usize,
-    model_id: EmbeddingModel,
-    model_config: ModelConfig,
+    name: String,
+    meta: ModelMeta,
+    #[cfg(feature = "embeddings")]
+    tokenizer: tokenizer::Tokenizer,
     #[cfg(feature = "embeddings")]
     session: Mutex<ort::session::Session>,
     #[cfg(feature = "embeddings")]
     graph_inputs: GraphInputs,
     #[cfg(feature = "embeddings")]
     output_name: String,
-}
-
-/// Abstraction over different tokenizer backends.
-enum TokenizerKind {
-    WordPiece(WordPieceTokenizer),
-    HfTokenizer(tokenizer::HfTokenizerWrapper),
+    /// The output is already one vector per input (`[batch, dim]`), as in
+    /// exports with a `sentence_embedding` output or model2vec graphs.
+    #[cfg(feature = "embeddings")]
+    output_pooled: bool,
 }
 
 /// The two ONNX graph topologies we can drive (GL #452).
@@ -80,27 +78,29 @@ impl EmbeddingEngine {
     #[cfg(feature = "embeddings")]
     pub fn load(model_dir: &Path) -> anyhow::Result<Self> {
         let selected = model_registry::resolve_model();
-        Self::load_model(model_dir, selected)
+        Self::load_model(model_dir, &selected)
     }
 
     /// Load a specific embedding model from a directory.
     #[cfg(feature = "embeddings")]
-    pub fn load_model(base_dir: &Path, model_id: EmbeddingModel) -> anyhow::Result<Self> {
-        let config = model_id.config();
-        let model_dir = base_dir.join(model_id.storage_dir_name());
+    pub fn load_model(
+        base_dir: &Path,
+        model: &model_registry::EmbeddingModel,
+    ) -> anyhow::Result<Self> {
+        let name = model.name();
+        let model_dir = base_dir.join(model.storage_dir_name());
 
         // Never download here: loading happens on tool paths the user did not
         // ask to touch the network. The model arrives through an explicit
         // request (`lean-ctx embeddings provision`, `init`, `index
         // build-semantic`), which call `ensure_downloaded` first.
         anyhow::ensure!(
-            model_dir.join("model.onnx").exists()
-                && model_dir.join(config.vocab_file.filename()).exists(),
+            model_files_present(&model_dir),
             "embedding model not installed — run `lean-ctx embeddings provision`"
         );
 
-        let tokenizer = load_tokenizer(&model_dir, &config)?;
-        let model_path = model_dir.join("model.onnx");
+        let meta = ModelMeta::load(&model_dir);
+        let model_path = model_dir.join(download::MODEL_FILE);
 
         let eps = crate::core::ort_execution_providers::execution_providers();
         // Surface a loud, actionable warning when the user expected the GPU but
@@ -110,7 +110,7 @@ impl EmbeddingEngine {
         }
         let num_cpus = std::thread::available_parallelism().map_or(4, |n| n.get().max(1));
         tracing::info!(
-            model = %config.name,
+            model = %name,
             model_path = %model_path.display(),
             num_cpus,
             execution_providers = eps.len(),
@@ -150,48 +150,54 @@ impl EmbeddingEngine {
                 offsets: input_names[1].clone(),
             }
         } else {
-            let token_type_ids = if config.needs_token_type_ids {
-                if input_names.len() < 3 {
-                    anyhow::bail!(
-                        "Model {} requires token_type_ids but only has {} inputs",
-                        config.name,
-                        input_names.len()
-                    );
-                }
-                Some(input_names[2].clone())
-            } else if input_names.len() >= 3 {
-                Some(input_names[2].clone())
-            } else {
-                None
-            };
             GraphInputs::Transformer {
                 input_ids: input_names[0].clone(),
                 attention_mask: input_names[1].clone(),
-                token_type_ids,
+                token_type_ids: input_names.get(2).cloned(),
             }
         };
 
-        let output_name = session
+        // Static-embedding models are trained without [CLS]/[SEP].
+        let add_special_tokens = matches!(graph_inputs, GraphInputs::Transformer { .. });
+        let tokenizer = tokenizer::Tokenizer::from_file(
+            &model_dir.join(download::TOKENIZER_FILE),
+            meta.max_seq_len,
+            add_special_tokens,
+        )
+        .map_err(|e| anyhow::anyhow!("{name}: {e}"))?;
+
+        // Exports that end in the sentence-transformers pipeline expose the
+        // pooled, normalized vector as `sentence_embedding`: prefer it.
+        let output_names: Vec<String> = session
             .outputs()
-            .first()
+            .iter()
             .map(|o| o.name().to_string())
+            .collect();
+        let output_name = output_names
+            .iter()
+            .find(|n| *n == "sentence_embedding")
+            .or_else(|| output_names.first())
+            .cloned()
             .ok_or_else(|| anyhow::anyhow!("Model has no named outputs"))?;
 
-        let dimensions = detect_dimensions(
-            &mut session,
-            &tokenizer,
-            &graph_inputs,
-            &output_name,
-            config.max_seq_len,
-        )
-        .unwrap_or(config.dimensions);
+        let shape = probe_output_shape(&mut session, &tokenizer, &graph_inputs, &output_name)
+            .ok_or_else(|| anyhow::anyhow!("{name}: probe inference failed"))?;
+        let (dimensions, output_pooled) = match shape.as_slice() {
+            [_, dim] => (*dim, true),
+            [_, _, dim] => (*dim, false),
+            other => anyhow::bail!("{name}: unsupported output shape {other:?}"),
+        };
+        anyhow::ensure!(dimensions > 0, "{name}: zero-width output");
         tracing::debug!(dimensions, "ONNX embedding dimensions resolved");
 
         tracing::info!(
-            "Embedding engine loaded: model={}, {}d, max_seq_len={}, topology={}",
-            config.name,
-            dimensions,
-            config.max_seq_len,
+            "Embedding engine loaded: model={name}, {dimensions}d, max_seq_len={}, pooling={:?}, topology={}",
+            meta.max_seq_len,
+            if output_pooled {
+                None
+            } else {
+                Some(meta.pooling)
+            },
             match graph_inputs {
                 GraphInputs::Transformer { .. } => "transformer",
                 GraphInputs::EmbeddingBag { .. } => "embedding-bag (model2vec)",
@@ -202,11 +208,11 @@ impl EmbeddingEngine {
             session: Mutex::new(session),
             tokenizer,
             dimensions,
-            max_seq_len: config.max_seq_len,
-            model_id,
-            model_config: config,
+            name,
+            meta,
             graph_inputs,
             output_name,
+            output_pooled,
         })
     }
 
@@ -222,28 +228,14 @@ impl EmbeddingEngine {
 
     /// Generate an embedding vector for a single text (document/code).
     pub fn embed(&self, text: &str) -> anyhow::Result<Vec<f32>> {
-        let prefixed;
-        let input_text = if let Some(prefix) = &self.model_config.document_prefix {
-            prefixed = format!("{prefix}{text}");
-            &prefixed
-        } else {
-            text
-        };
-        let input = tokenize(&self.tokenizer, input_text, self.max_seq_len);
+        let input = self.encode(&with_prefix(self.meta.document_prefix.as_deref(), text))?;
         self.run_inference(&input)
     }
 
     /// Generate an embedding vector for a query string.
     /// Applies query-specific prefix if the model requires one.
     pub fn embed_query(&self, query: &str) -> anyhow::Result<Vec<f32>> {
-        let prefixed;
-        let input_text = if let Some(prefix) = &self.model_config.query_prefix {
-            prefixed = format!("{prefix}{query}");
-            &prefixed
-        } else {
-            query
-        };
-        let input = tokenize(&self.tokenizer, input_text, self.max_seq_len);
+        let input = self.encode(&with_prefix(self.meta.query_prefix.as_deref(), query))?;
         self.run_inference(&input)
     }
 
@@ -273,6 +265,7 @@ impl EmbeddingEngine {
         // Approximate tokenizer tensors plus transformer activations per input.
         // Saturating arithmetic keeps hostile custom-model dimensions harmless.
         let estimated_bytes_per_text = self
+            .meta
             .max_seq_len
             .saturating_mul(self.dimensions.max(1))
             .saturating_mul(std::mem::size_of::<f32>())
@@ -302,20 +295,10 @@ impl EmbeddingEngine {
                 );
             }
 
-            let prefixed: Vec<String> = text_chunk
-                .iter()
-                .map(|text| {
-                    if let Some(prefix) = &self.model_config.document_prefix {
-                        format!("{prefix}{text}")
-                    } else {
-                        (*text).to_owned()
-                    }
-                })
-                .collect();
-            let tokenized: Vec<TokenizedInput> = prefixed
+            let tokenized: Vec<TokenizedInput> = text_chunk
                 .par_iter()
-                .map(|text| tokenize(&self.tokenizer, text, self.max_seq_len))
-                .collect();
+                .map(|text| self.encode(&with_prefix(self.meta.document_prefix.as_deref(), text)))
+                .collect::<anyhow::Result<_>>()?;
 
             let batch_start = std::time::Instant::now();
             let batch_out = self.run_inference_batch(&tokenized)?;
@@ -337,12 +320,18 @@ impl EmbeddingEngine {
         self.dimensions
     }
 
-    pub fn model_id(&self) -> &EmbeddingModel {
-        &self.model_id
+    pub fn model_name(&self) -> &str {
+        &self.name
     }
 
-    pub fn model_name(&self) -> &str {
-        &self.model_config.name
+    #[cfg(feature = "embeddings")]
+    fn encode(&self, text: &str) -> anyhow::Result<TokenizedInput> {
+        self.tokenizer.encode(text)
+    }
+
+    #[cfg(not(feature = "embeddings"))]
+    fn encode(&self, _text: &str) -> anyhow::Result<TokenizedInput> {
+        anyhow::bail!("Embeddings feature not enabled")
     }
 
     /// Resolve the model directory (respects LEAN_CTX_MODELS_DIR env).
@@ -358,12 +347,8 @@ impl EmbeddingEngine {
 
     /// Check if the model files are present and loadable.
     pub fn is_available() -> bool {
-        let base_dir = Self::model_directory();
         let selected = model_registry::resolve_model();
-        let config = selected.config();
-        let model_dir = base_dir.join(selected.storage_dir_name());
-        model_dir.join("model.onnx").exists()
-            && model_dir.join(config.vocab_file.filename()).exists()
+        model_files_present(&Self::model_directory().join(selected.storage_dir_name()))
     }
 
     /// Ensure the selected model's files exist on disk, downloading them from
@@ -377,11 +362,9 @@ impl EmbeddingEngine {
     /// `is_available()` alone is only a file check, so the build path must call
     /// this to actually trigger the download instead of bailing (#545).
     pub fn ensure_downloaded() -> anyhow::Result<()> {
-        let base_dir = Self::model_directory();
         let selected = model_registry::resolve_model();
-        let config = selected.config();
-        let model_dir = base_dir.join(selected.storage_dir_name());
-        download::ensure_model(&model_dir, &config)?;
+        let model_dir = Self::model_directory().join(selected.storage_dir_name());
+        download::ensure_model(&model_dir, &selected)?;
         Ok(())
     }
 
@@ -432,7 +415,17 @@ impl EmbeddingEngine {
                         outputs[self.output_name.as_str()].try_extract_tensor::<f32>()?;
                     data.to_vec()
                 };
-                pooling::mean_pool(&hidden, &input.attention_mask, seq_len, self.dimensions)
+                if self.output_pooled {
+                    hidden
+                } else {
+                    pooling::pool(
+                        &hidden,
+                        &input.attention_mask,
+                        seq_len,
+                        self.dimensions,
+                        self.meta.pooling,
+                    )
+                }
             }
             GraphInputs::EmbeddingBag { input_ids, offsets } => {
                 if seq_len == 0 {
@@ -536,8 +529,20 @@ impl EmbeddingEngine {
                     data.to_vec()
                 };
 
-                let mut results =
-                    pooling::mean_pool_batch(&hidden, &per_seq_masks, max_len, self.dimensions);
+                let mut results = if self.output_pooled {
+                    hidden
+                        .chunks_exact(self.dimensions)
+                        .map(<[f32]>::to_vec)
+                        .collect()
+                } else {
+                    pooling::pool_batch(
+                        &hidden,
+                        &per_seq_masks,
+                        max_len,
+                        self.dimensions,
+                        self.meta.pooling,
+                    )
+                };
                 for emb in &mut results {
                     pooling::normalize_l2(emb);
                 }
@@ -604,46 +609,28 @@ impl EmbeddingEngine {
     }
 }
 
-/// Load the appropriate tokenizer for the model config.
-fn load_tokenizer(model_dir: &Path, config: &ModelConfig) -> anyhow::Result<TokenizerKind> {
-    match &config.vocab_file {
-        VocabSource::VocabTxt(filename) => {
-            let path = model_dir.join(filename);
-            let tok = WordPieceTokenizer::from_file(&path)?;
-            Ok(TokenizerKind::WordPiece(tok))
-        }
-        VocabSource::TokenizerJson(filename) => {
-            let path = model_dir.join(filename);
-            let tok = tokenizer::HfTokenizerWrapper::from_file(&path).map_err(|e| {
-                anyhow::anyhow!(
-                    "Failed to load tokenizer.json for {}: {e}. Custom models must ship a \
-                     HuggingFace tokenizer.json with a supported model type (WordPiece/BPE).",
-                    config.name
-                )
-            })?;
-            Ok(TokenizerKind::HfTokenizer(tok))
-        }
+/// The files a model needs before it can load.
+fn model_files_present(model_dir: &Path) -> bool {
+    model_dir.join(download::MODEL_FILE).exists()
+        && model_dir.join(download::TOKENIZER_FILE).exists()
+}
+
+fn with_prefix(prefix: Option<&str>, text: &str) -> String {
+    match prefix {
+        Some(prefix) => format!("{prefix}{text}"),
+        None => text.to_owned(),
     }
 }
 
-/// Tokenize text using whatever tokenizer backend is loaded.
-fn tokenize(tokenizer: &TokenizerKind, text: &str, max_len: usize) -> TokenizedInput {
-    match tokenizer {
-        TokenizerKind::WordPiece(wp) => wp.encode(text, max_len),
-        TokenizerKind::HfTokenizer(hf) => hf.encode(text, max_len),
-    }
-}
-
-/// Detect embedding dimensions by running a dummy inference.
+/// Shape of `output_name` for a one-input batch, from a probe inference.
 #[cfg(feature = "embeddings")]
-fn detect_dimensions(
+fn probe_output_shape(
     session: &mut ort::session::Session,
-    tokenizer: &TokenizerKind,
+    tokenizer: &tokenizer::Tokenizer,
     graph_inputs: &GraphInputs,
     output_name: &str,
-    max_seq_len: usize,
-) -> Option<usize> {
-    let dummy = tokenize(tokenizer, "test", max_seq_len.min(8));
+) -> Option<Vec<usize>> {
+    let dummy = tokenizer.encode("test").ok()?;
     let seq_len = dummy.input_ids.len();
     if seq_len == 0 {
         return None;
@@ -698,21 +685,7 @@ fn detect_dimensions(
     };
 
     let (shape, _) = outputs[output_name].try_extract_tensor::<f32>().ok()?;
-
-    match graph_inputs {
-        // Shape is [batch=1, seq_len, dim].
-        GraphInputs::Transformer { .. } => shape.last().copied().map(|s| s as usize),
-        // Already pooled: [batch=1, dim] — the last axis IS the dim, but be
-        // explicit about the rank so a surprising graph fails loudly into
-        // the config fallback instead of mis-probing.
-        GraphInputs::EmbeddingBag { .. } => {
-            if shape.len() == 2 {
-                shape.last().copied().map(|s| s as usize)
-            } else {
-                None
-            }
-        }
-    }
+    shape.iter().map(|&d| usize::try_from(d).ok()).collect()
 }
 
 /// Compute cosine similarity between two L2-normalized vectors.
@@ -885,11 +858,10 @@ mod tests {
         crate::test_env::set_var("LEAN_CTX_MODELS_DIR", tmp.to_str().unwrap());
 
         let selected = model_registry::resolve_model();
-        let config = selected.config();
         let model_dir = tmp.join(selected.storage_dir_name());
         std::fs::create_dir_all(&model_dir).unwrap();
-        std::fs::write(model_dir.join("model.onnx"), b"onnx").unwrap();
-        std::fs::write(model_dir.join(config.vocab_file.filename()), b"vocab").unwrap();
+        std::fs::write(model_dir.join(download::MODEL_FILE), b"onnx").unwrap();
+        std::fs::write(model_dir.join(download::TOKENIZER_FILE), b"tokenizer").unwrap();
 
         assert!(EmbeddingEngine::is_available());
         assert!(EmbeddingEngine::ensure_downloaded().is_ok());
@@ -973,7 +945,7 @@ mod tests {
     // initialize it first and make the assertion order-dependent/flaky.
 
     /// Live proof for GL #397: loads a real HuggingFace repo through the
-    /// `hf:org/repo@rev` scheme (download → SHA-256 lockfile → tokenizer.json →
+    /// `org/repo@rev` spec (download → SHA-256 lockfile → tokenizer.json →
     /// ONNX inference → dimension probe). Ignored by default (network + ~91MB);
     /// run explicitly:
     /// `cargo test --lib --features embeddings -- --ignored custom_hf_model_end_to_end`
@@ -981,18 +953,18 @@ mod tests {
     #[ignore = "downloads a real model from HuggingFace (~91MB)"]
     #[cfg(feature = "embeddings")]
     fn custom_hf_model_end_to_end() {
-        let model = model_registry::EmbeddingModel::from_str_name(
-            "hf:sentence-transformers/all-MiniLM-L6-v2@main",
-        )
-        .expect("valid hf: spec");
+        let model =
+            model_registry::EmbeddingModel::parse("hf:sentence-transformers/all-MiniLM-L6-v2@main")
+                .expect("valid hf: spec");
 
         let base = std::env::temp_dir().join("lean_ctx_test_custom_hf_e2e");
-        let engine = EmbeddingEngine::load_model(&base, model.clone()).expect("load custom model");
+        download::ensure_model(&base.join(model.storage_dir_name()), &model).expect("download");
+        let engine = EmbeddingEngine::load_model(&base, &model).expect("load custom model");
 
         assert_eq!(engine.dimensions(), 384, "probed dims from ONNX graph");
         assert_eq!(
             engine.model_name(),
-            "hf:sentence-transformers/all-MiniLM-L6-v2@main"
+            "sentence-transformers/all-MiniLM-L6-v2@main"
         );
 
         let v = engine.embed("fn main() { println!(\"hello\"); }").unwrap();
@@ -1025,13 +997,12 @@ mod tests {
     #[ignore = "downloads a real model from HuggingFace (~30MB)"]
     #[cfg(feature = "embeddings")]
     fn model2vec_potion_end_to_end() {
-        let model =
-            model_registry::EmbeddingModel::from_str_name("hf:minishlab/potion-base-8M@main")
-                .expect("valid hf: spec");
+        let model = model_registry::EmbeddingModel::parse("hf:minishlab/potion-base-8M@main")
+            .expect("valid hf: spec");
 
         let base = std::env::temp_dir().join("lean_ctx_test_model2vec_e2e");
-        let engine =
-            EmbeddingEngine::load_model(&base, model.clone()).expect("load model2vec model");
+        download::ensure_model(&base.join(model.storage_dir_name()), &model).expect("download");
+        let engine = EmbeddingEngine::load_model(&base, &model).expect("load model2vec model");
 
         // potion-base-8M is 256d; the probe must read it off the rank-2
         // output, not assume a [1, seq, dim] transformer shape.

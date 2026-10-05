@@ -1,61 +1,55 @@
-//! Embedding model registry — model configs, selection, and metadata.
+//! Embedding model selection and per-model metadata.
 //!
-//! Supports multiple ONNX embedding models with different dimensions,
-//! tokenizers, and download sources. Models are selected via the
-//! the `[embedding].model` key in `config.toml`
-//! (env var wins) — see [`resolve_model`].
-//!
-//! Besides the built-ins, any compatible HuggingFace repo can be loaded with
-//! `model = "hf:org/repo[@revision]"` (GL #397, upstream #328): the repo must
-//! ship an ONNX export (`onnx/model.onnx`) and a `tokenizer.json`. This custom
-//! path probes the ONNX graph for its real input/output signature, so it suits
-//! code-specialized models (e.g. `hf:jinaai/jina-embeddings-v2-base-code`) that
-//! need no hand-maintained config. See `docs/guides/custom-embeddings.md`.
+//! Every model is a HuggingFace repository that ships an ONNX export and a
+//! `tokenizer.json`. The `embedding_model` key in `config.toml` names it,
+//! either by alias (`minilm`, the default, or `nomic`) or as
+//! `org/repo[@revision]` (an optional `hf:` prefix is accepted). Pooling,
+//! query/document prompts and the sequence length come from the repo's
+//! sentence-transformers metadata, so no model needs a hand-written entry.
 
-use std::fmt;
+use std::path::Path;
 
-/// Supported embedding models.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum EmbeddingModel {
-    /// all-MiniLM-L6-v2 — generic sentence embeddings (384d, ~91MB).
-    /// Default model for backward compatibility.
-    AllMiniLmL6V2,
-    /// nomic-embed-text-v1.5 — top MTEB general-purpose (768d, ~547MB).
-    /// Matryoshka representation learning, supports dimension truncation.
-    NomicEmbedV1_5,
-    /// Any HuggingFace repo with an ONNX export + tokenizer.json
-    /// (`hf:org/repo[@revision]`, GL #397).
-    Custom(CustomModelSpec),
-}
+/// Short names for well-known models.
+const ALIASES: &[(&str, &str)] = &[
+    ("minilm", "sentence-transformers/all-MiniLM-L6-v2"),
+    ("nomic", "nomic-ai/nomic-embed-text-v1.5"),
+];
 
-/// A user-supplied HuggingFace embedding model (`hf:org/repo[@revision]`).
-#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
-pub struct CustomModelSpec {
-    /// HuggingFace repo id, e.g. `jinaai/jina-embeddings-v2-base-code`.
+/// Longest sequence fed to the model, whatever the model allows: attention
+/// cost grows with the square of the length.
+const MAX_SEQ_LEN_CAP: usize = 512;
+
+/// A HuggingFace embedding model, optionally pinned to a revision.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct EmbeddingModel {
     pub repo: String,
-    /// Optional revision pin (tag/branch/commit). `None` resolves `main` —
-    /// supply-chain-wise a pin is strongly recommended and the resolver warns
-    /// without one.
+    /// Tag, branch or commit. `None` resolves `main`.
     pub revision: Option<String>,
-    /// Embedding dimensions (`[embedding].dimensions`). When unset, the real
-    /// value is detected from a probe inference at load time; this is only the
-    /// declared fallback.
-    pub dimensions: Option<usize>,
 }
 
-impl CustomModelSpec {
-    /// Parse `org/repo[@revision]` (the part after the `hf:` scheme).
-    /// Returns `None` when the repo id is not plausibly a HuggingFace repo.
-    fn parse(s: &str) -> Option<Self> {
-        let (repo, revision) = match s.split_once('@') {
-            Some((r, rev)) => (
-                r.trim(),
-                Some(rev.trim().to_string()).filter(|v| !v.is_empty()),
-            ),
-            None => (s.trim(), None),
+impl EmbeddingModel {
+    pub fn default_model() -> Self {
+        Self::parse(ALIASES[0].0).expect("default alias is valid")
+    }
+
+    /// Parse an alias or `[hf:]org/repo[@revision]`. `None` when the value
+    /// is neither an alias nor a plausible repo id.
+    pub fn parse(value: &str) -> Option<Self> {
+        let value = value.trim();
+        if let Some((_, repo)) = ALIASES
+            .iter()
+            .find(|(alias, _)| alias.eq_ignore_ascii_case(value))
+        {
+            return Some(Self {
+                repo: (*repo).to_string(),
+                revision: None,
+            });
+        }
+        let spec = value.strip_prefix("hf:").unwrap_or(value);
+        let (repo, revision) = match spec.split_once('@') {
+            Some((repo, rev)) => (repo.trim(), Some(rev.trim()).filter(|r| !r.is_empty())),
+            None => (spec, None),
         };
-        // A HF repo id is exactly `owner/name` with no whitespace.
         let mut parts = repo.split('/');
         let (owner, name) = (parts.next()?, parts.next()?);
         if parts.next().is_some()
@@ -67,383 +61,218 @@ impl CustomModelSpec {
         }
         Some(Self {
             repo: repo.to_string(),
-            revision,
-            dimensions: None,
+            revision: revision.map(str::to_string),
         })
     }
 
-    /// Filesystem-safe storage slug, unique per repo+revision.
-    fn storage_slug(&self) -> String {
-        let mut slug = String::from("hf-");
-        for c in self.repo.chars() {
-            slug.push(match c {
-                'a'..='z' | '0'..='9' | '-' => c,
+    /// Canonical name, also stored as the index `model_id`: changing the repo
+    /// or the revision triggers a one-time re-index.
+    pub fn name(&self) -> String {
+        match &self.revision {
+            Some(rev) => format!("{}@{rev}", self.repo),
+            None => self.repo.clone(),
+        }
+    }
+
+    /// Filesystem-safe directory name, unique per repo and revision.
+    pub fn storage_dir_name(&self) -> String {
+        self.name()
+            .chars()
+            .map(|c| match c {
+                'a'..='z' | '0'..='9' | '-' | '.' => c,
                 'A'..='Z' => c.to_ascii_lowercase(),
                 _ => '-',
-            });
-        }
-        if let Some(rev) = &self.revision {
-            slug.push('-');
-            for c in rev.chars().take(16) {
-                slug.push(match c {
-                    'a'..='z' | '0'..='9' | '-' => c,
-                    'A'..='Z' => c.to_ascii_lowercase(),
-                    _ => '-',
-                });
-            }
-        }
-        slug
-    }
-}
-
-impl EmbeddingModel {
-    pub const DEFAULT: Self = Self::AllMiniLmL6V2;
-
-    pub fn config(&self) -> ModelConfig {
-        match self {
-            Self::AllMiniLmL6V2 => ModelConfig {
-                model: self.clone(),
-                name: "all-MiniLM-L6-v2".into(),
-                hf_repo: "sentence-transformers/all-MiniLM-L6-v2".into(),
-                revision: None,
-                onnx_path: "onnx/model.onnx".into(),
-                vocab_file: VocabSource::VocabTxt("vocab.txt".into()),
-                dimensions: 384,
-                max_seq_len: 256,
-                model_min_bytes: 1_000_000,
-                vocab_min_bytes: 100_000,
-                query_prefix: None,
-                document_prefix: None,
-                needs_token_type_ids: true,
-            },
-            Self::NomicEmbedV1_5 => ModelConfig {
-                model: self.clone(),
-                name: "nomic-embed-text-v1.5".into(),
-                hf_repo: "nomic-ai/nomic-embed-text-v1.5".into(),
-                revision: None,
-                onnx_path: "onnx/model.onnx".into(),
-                vocab_file: VocabSource::VocabTxt("vocab.txt".into()),
-                dimensions: 768,
-                max_seq_len: 512,
-                model_min_bytes: 100_000_000,
-                vocab_min_bytes: 100_000,
-                query_prefix: Some("search_query: ".into()),
-                document_prefix: Some("search_document: ".into()),
-                needs_token_type_ids: false,
-            },
-            Self::Custom(spec) => ModelConfig {
-                model: self.clone(),
-                // The canonical name doubles as the index `model_id`, so a
-                // repo or revision change triggers the one-shot re-index.
-                name: match &spec.revision {
-                    Some(rev) => format!("hf:{}@{rev}", spec.repo),
-                    None => format!("hf:{}", spec.repo),
-                },
-                hf_repo: spec.repo.clone(),
-                revision: spec.revision.clone(),
-                onnx_path: "onnx/model.onnx".into(),
-                // Custom repos must ship a HuggingFace tokenizer.json — the
-                // universal format (WordPiece/BPE/Unigram all serialize to it).
-                vocab_file: VocabSource::TokenizerJson("tokenizer.json".into()),
-                // Declared fallback; the probe inference at load time detects
-                // the real width (`detect_dimensions`) and wins.
-                dimensions: spec.dimensions.unwrap_or(768),
-                max_seq_len: 512,
-                model_min_bytes: 1_000_000,
-                vocab_min_bytes: 1_000,
-                query_prefix: None,
-                document_prefix: None,
-                // Probed from the ONNX graph at load time; BERT-style models
-                // with a third input still get token_type_ids wired up.
-                needs_token_type_ids: false,
-            },
-        }
+            })
+            .collect()
     }
 
-    /// Parse model name from string (env var / config file).
-    ///
-    /// Accepts the built-in aliases plus the `hf:org/repo[@revision]` scheme
-    /// for custom HuggingFace models (GL #397).
-    pub fn from_str_name(s: &str) -> Option<Self> {
-        let trimmed = s.trim();
-        if let Some(rest) = trimmed.strip_prefix("hf:") {
-            return CustomModelSpec::parse(rest).map(Self::Custom);
-        }
-        match trimmed.to_lowercase().replace('_', "-").as_str() {
-            "all-minilm-l6-v2" | "minilm" | "default" => Some(Self::AllMiniLmL6V2),
-            "nomic-embed-v1.5" | "nomic-embed-text-v1.5" | "nomic" | "nomic-embed" => {
-                Some(Self::NomicEmbedV1_5)
-            }
-            _ => None,
-        }
-    }
-
-    /// All built-in model variants (custom models are user-defined).
-    pub const ALL: &'static [Self] = &[Self::AllMiniLmL6V2, Self::NomicEmbedV1_5];
-
-    /// Unique subdirectory name for model storage isolation.
-    pub fn storage_dir_name(&self) -> String {
-        match self {
-            Self::AllMiniLmL6V2 => "all-minilm-l6-v2".to_string(),
-            Self::NomicEmbedV1_5 => "nomic-embed-v1.5".to_string(),
-            Self::Custom(spec) => spec.storage_slug(),
-        }
-    }
-}
-
-impl fmt::Display for EmbeddingModel {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&self.config().name)
-    }
-}
-
-/// Vocabulary/tokenizer source for a model.
-#[derive(Debug, Clone)]
-pub enum VocabSource {
-    /// Standard BERT vocab.txt (one token per line, WordPiece).
-    VocabTxt(String),
-    /// HuggingFace tokenizer.json (BPE/Unigram/WordPiece via JSON config).
-    TokenizerJson(String),
-}
-
-impl VocabSource {
-    pub fn filename(&self) -> &str {
-        match self {
-            Self::VocabTxt(f) | Self::TokenizerJson(f) => f,
-        }
-    }
-
-    #[cfg(test)]
-    pub fn is_wordpiece(&self) -> bool {
-        matches!(self, Self::VocabTxt(_))
-    }
-}
-
-/// Complete configuration for a single embedding model.
-#[derive(Debug, Clone)]
-pub struct ModelConfig {
-    pub model: EmbeddingModel,
-    pub name: String,
-    pub hf_repo: String,
-    /// Optional revision pin for custom models (`None` = `main`).
-    pub revision: Option<String>,
-    pub onnx_path: String,
-    pub vocab_file: VocabSource,
-    pub dimensions: usize,
-    pub max_seq_len: usize,
-    pub model_min_bytes: u64,
-    pub vocab_min_bytes: u64,
-    /// Optional prefix prepended to queries before embedding.
-    pub query_prefix: Option<String>,
-    /// Optional prefix prepended to documents/code before embedding.
-    pub document_prefix: Option<String>,
-    /// Whether the model expects token_type_ids input (BERT-style).
-    /// Some models (e.g. nomic-embed) only use input_ids + attention_mask.
-    pub needs_token_type_ids: bool,
-}
-
-impl ModelConfig {
-    fn resolve_base(&self) -> String {
+    /// Download URL of a file in the repo.
+    pub fn file_url(&self, path: &str) -> String {
         format!(
-            "https://huggingface.co/{}/resolve/{}",
-            self.hf_repo,
+            "https://huggingface.co/{}/resolve/{}/{path}",
+            self.repo,
             self.revision.as_deref().unwrap_or("main")
         )
     }
-
-    /// Full HuggingFace download URL for the ONNX model file.
-    pub fn model_url(&self) -> String {
-        format!("{}/{}", self.resolve_base(), self.onnx_path)
-    }
-
-    /// Full HuggingFace download URL for the vocabulary/tokenizer file.
-    pub fn vocab_url(&self) -> String {
-        format!("{}/{}", self.resolve_base(), self.vocab_file.filename())
-    }
 }
 
-/// The embedding model in use.
+/// The model named by `embedding_model` in `config.toml`, or the default.
 pub fn resolve_model() -> EmbeddingModel {
-    EmbeddingModel::DEFAULT
+    let configured = crate::core::config::Config::load().embedding_model;
+    let Some(value) = configured.as_deref().filter(|v| !v.trim().is_empty()) else {
+        return EmbeddingModel::default_model();
+    };
+    EmbeddingModel::parse(value).unwrap_or_else(|| {
+        tracing::warn!(
+            "embedding_model {value:?} is neither an alias ({}) nor org/repo[@revision]; \
+             using the default",
+            ALIASES
+                .iter()
+                .map(|(alias, _)| *alias)
+                .collect::<Vec<_>>()
+                .join(", ")
+        );
+        EmbeddingModel::default_model()
+    })
+}
+
+/// How per-token hidden states become one vector.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Pooling {
+    Mean,
+    Cls,
+    LastToken,
+}
+
+/// What the model expects around inference, read from its metadata files.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ModelMeta {
+    pub pooling: Pooling,
+    pub query_prefix: Option<String>,
+    pub document_prefix: Option<String>,
+    pub max_seq_len: usize,
+}
+
+/// Local names of the sentence-transformers metadata files.
+pub const POOLING_FILE: &str = "pooling_config.json";
+pub const PROMPTS_FILE: &str = "config_sentence_transformers.json";
+pub const SEQ_LEN_FILE: &str = "sentence_bert_config.json";
+
+impl ModelMeta {
+    /// Read the metadata stored next to the model. Missing or unreadable
+    /// files fall back to mean pooling, no prompts and the length cap.
+    pub fn load(model_dir: &Path) -> Self {
+        let read = |name: &str| -> Option<serde_json::Value> {
+            serde_json::from_str(&std::fs::read_to_string(model_dir.join(name)).ok()?).ok()
+        };
+        Self::from_json(
+            read(POOLING_FILE).as_ref(),
+            read(PROMPTS_FILE).as_ref(),
+            read(SEQ_LEN_FILE).as_ref(),
+        )
+    }
+
+    fn from_json(
+        pooling: Option<&serde_json::Value>,
+        prompts: Option<&serde_json::Value>,
+        seq_len: Option<&serde_json::Value>,
+    ) -> Self {
+        let flag = |key: &str| {
+            pooling
+                .and_then(|p| p.get(key))
+                .and_then(serde_json::Value::as_bool)
+                .unwrap_or(false)
+        };
+        let pooling = if flag("pooling_mode_cls_token") {
+            Pooling::Cls
+        } else if flag("pooling_mode_lasttoken") {
+            Pooling::LastToken
+        } else {
+            Pooling::Mean
+        };
+        let prompt = |keys: &[&str]| {
+            let table = prompts.and_then(|p| p.get("prompts"))?;
+            keys.iter()
+                .find_map(|k| table.get(*k).and_then(serde_json::Value::as_str))
+                .filter(|p| !p.is_empty())
+                .map(str::to_string)
+        };
+        let max_seq_len = seq_len
+            .and_then(|s| s.get("max_seq_length"))
+            .and_then(serde_json::Value::as_u64)
+            .map_or(MAX_SEQ_LEN_CAP, |n| (n as usize).clamp(1, MAX_SEQ_LEN_CAP));
+        Self {
+            pooling,
+            query_prefix: prompt(&["query", "search_query"]),
+            document_prefix: prompt(&["document", "passage", "search_document"]),
+            max_seq_len,
+        }
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
 
     #[test]
-    fn default_model_is_minilm() {
-        assert_eq!(EmbeddingModel::DEFAULT, EmbeddingModel::AllMiniLmL6V2);
+    fn aliases_resolve_to_repos() {
+        assert_eq!(
+            EmbeddingModel::default_model().repo,
+            "sentence-transformers/all-MiniLM-L6-v2"
+        );
+        assert_eq!(
+            EmbeddingModel::parse("Nomic").unwrap().repo,
+            "nomic-ai/nomic-embed-text-v1.5"
+        );
     }
 
     #[test]
-    fn from_str_name_variants() {
-        assert_eq!(
-            EmbeddingModel::from_str_name("minilm"),
-            Some(EmbeddingModel::AllMiniLmL6V2)
-        );
-        assert_eq!(
-            EmbeddingModel::from_str_name("nomic-embed-v1.5"),
-            Some(EmbeddingModel::NomicEmbedV1_5)
-        );
-        assert_eq!(
-            EmbeddingModel::from_str_name("nomic"),
-            Some(EmbeddingModel::NomicEmbedV1_5)
-        );
-        assert_eq!(
-            EmbeddingModel::from_str_name("default"),
-            Some(EmbeddingModel::AllMiniLmL6V2)
-        );
-        assert_eq!(EmbeddingModel::from_str_name("unknown"), None);
-        // The removed jina built-in must no longer resolve as an alias; it is
-        // reachable only via the explicit `hf:` custom scheme.
-        assert_eq!(EmbeddingModel::from_str_name("jina-code-v2"), None);
-        assert_eq!(EmbeddingModel::from_str_name("jina"), None);
+    fn repo_specs_parse_with_or_without_scheme() {
+        let m = EmbeddingModel::parse("hf:jinaai/jina-embeddings-v2-base-code").unwrap();
+        assert_eq!(m.repo, "jinaai/jina-embeddings-v2-base-code");
+        assert_eq!(m.revision, None);
+        let m = EmbeddingModel::parse(" BAAI/bge-small-en-v1.5@abc123 ").unwrap();
+        assert_eq!(m.repo, "BAAI/bge-small-en-v1.5");
+        assert_eq!(m.revision.as_deref(), Some("abc123"));
+        assert_eq!(m.name(), "BAAI/bge-small-en-v1.5@abc123");
     }
 
     #[test]
-    fn custom_hf_scheme_parses_repo_and_revision() {
-        let m = EmbeddingModel::from_str_name("hf:jinaai/jina-embeddings-v2-base-code").unwrap();
-        let EmbeddingModel::Custom(spec) = &m else {
-            panic!("expected custom")
-        };
-        assert_eq!(spec.repo, "jinaai/jina-embeddings-v2-base-code");
-        assert_eq!(spec.revision, None);
-
-        let m = EmbeddingModel::from_str_name("hf:org/model@abc123").unwrap();
-        let EmbeddingModel::Custom(spec) = &m else {
-            panic!("expected custom")
-        };
-        assert_eq!(spec.repo, "org/model");
-        assert_eq!(spec.revision.as_deref(), Some("abc123"));
-    }
-
-    #[test]
-    fn custom_hf_scheme_rejects_invalid_repos() {
-        for bad in [
-            "hf:",
-            "hf:no-slash",
-            "hf:too/many/slashes",
-            "hf:with space/repo",
-            "hf:/leading",
-            "hf:trailing/",
-            "hf:org/model@",
-        ] {
-            let parsed = EmbeddingModel::from_str_name(bad);
-            if bad == "hf:org/model@" {
-                // Empty revision degrades to an unpinned spec, not a reject.
-                let Some(EmbeddingModel::Custom(spec)) = parsed else {
-                    panic!("expected custom for {bad}")
-                };
-                assert_eq!(spec.revision, None);
-            } else {
-                assert_eq!(parsed, None, "{bad} should be rejected");
-            }
+    fn invalid_specs_are_rejected() {
+        for bad in ["", "unknown", "org/", "/repo", "a/b/c", "org/re po", "hf:"] {
+            assert_eq!(EmbeddingModel::parse(bad), None, "{bad:?}");
         }
     }
 
     #[test]
-    fn custom_config_urls_and_storage() {
-        let m = EmbeddingModel::from_str_name("hf:Org/My_Model@v1.2").unwrap();
-        let cfg = m.config();
+    fn storage_dirs_and_urls() {
+        let m = EmbeddingModel::parse("Org/My_Model@v1.2").unwrap();
+        assert_eq!(m.storage_dir_name(), "org-my-model-v1.2");
         assert_eq!(
-            cfg.model_url(),
+            m.file_url("onnx/model.onnx"),
             "https://huggingface.co/Org/My_Model/resolve/v1.2/onnx/model.onnx"
         );
-        assert_eq!(
-            cfg.vocab_url(),
-            "https://huggingface.co/Org/My_Model/resolve/v1.2/tokenizer.json"
+        let unpinned = EmbeddingModel::parse("org/model").unwrap();
+        assert!(
+            unpinned
+                .file_url("tokenizer.json")
+                .contains("/resolve/main/")
         );
-        assert!(!cfg.vocab_file.is_wordpiece());
-        assert_eq!(cfg.name, "hf:Org/My_Model@v1.2");
-        assert_eq!(m.storage_dir_name(), "hf-org-my-model-v1-2");
+        assert_ne!(unpinned.storage_dir_name(), m.storage_dir_name());
     }
 
     #[test]
-    fn custom_storage_slugs_differ_per_revision() {
-        let a = EmbeddingModel::from_str_name("hf:org/model@aaa").unwrap();
-        let b = EmbeddingModel::from_str_name("hf:org/model@bbb").unwrap();
-        let c = EmbeddingModel::from_str_name("hf:org/model").unwrap();
-        let slugs = [
-            a.storage_dir_name(),
-            b.storage_dir_name(),
-            c.storage_dir_name(),
-        ];
-        let unique: std::collections::HashSet<_> = slugs.iter().collect();
-        assert_eq!(unique.len(), 3);
+    fn meta_defaults_without_files() {
+        let meta = ModelMeta::from_json(None, None, None);
+        assert_eq!(meta.pooling, Pooling::Mean);
+        assert_eq!(meta.query_prefix, None);
+        assert_eq!(meta.document_prefix, None);
+        assert_eq!(meta.max_seq_len, MAX_SEQ_LEN_CAP);
     }
 
     #[test]
-    fn all_models_have_valid_configs() {
-        for model in EmbeddingModel::ALL {
-            let cfg = model.config();
-            assert!(!cfg.name.is_empty());
-            assert!(!cfg.hf_repo.is_empty());
-            assert!(cfg.dimensions > 0);
-            assert!(cfg.max_seq_len > 0);
-            assert!(cfg.model_min_bytes > 0);
-            assert!(cfg.vocab_min_bytes > 0);
-        }
+    fn meta_reads_sentence_transformers_files() {
+        let pooling = json!({"pooling_mode_cls_token": true, "pooling_mode_mean_tokens": false});
+        let prompts =
+            json!({"prompts": {"query": "search_query: ", "document": "search_document: "}});
+        let seq = json!({"max_seq_length": 256});
+        let meta = ModelMeta::from_json(Some(&pooling), Some(&prompts), Some(&seq));
+        assert_eq!(meta.pooling, Pooling::Cls);
+        assert_eq!(meta.query_prefix.as_deref(), Some("search_query: "));
+        assert_eq!(meta.document_prefix.as_deref(), Some("search_document: "));
+        assert_eq!(meta.max_seq_len, 256);
     }
 
     #[test]
-    fn model_urls_are_valid() {
-        for model in EmbeddingModel::ALL {
-            let cfg = model.config();
-            let model_url = cfg.model_url();
-            let vocab_url = cfg.vocab_url();
-            assert!(model_url.starts_with("https://huggingface.co/"));
-            assert!(vocab_url.starts_with("https://huggingface.co/"));
-            assert!(model_url.contains("resolve/main"));
-        }
-    }
-
-    #[test]
-    fn storage_dir_names_are_unique() {
-        let names: Vec<_> = EmbeddingModel::ALL
-            .iter()
-            .map(EmbeddingModel::storage_dir_name)
-            .collect();
-        let unique: std::collections::HashSet<_> = names.iter().collect();
-        assert_eq!(names.len(), unique.len());
-    }
-
-    #[test]
-    fn display_uses_model_name() {
-        assert_eq!(
-            format!("{}", EmbeddingModel::AllMiniLmL6V2),
-            "all-MiniLM-L6-v2"
-        );
-        assert_eq!(
-            format!("{}", EmbeddingModel::NomicEmbedV1_5),
-            "nomic-embed-text-v1.5"
-        );
-    }
-
-    #[test]
-    fn nomic_has_prefixes() {
-        let cfg = EmbeddingModel::NomicEmbedV1_5.config();
-        assert!(cfg.query_prefix.is_some());
-        assert!(cfg.document_prefix.is_some());
-        assert!(!cfg.needs_token_type_ids);
-    }
-
-    #[test]
-    fn builtin_models_have_valid_vocab_sources() {
-        // All current built-ins are WordPiece (vocab.txt) models. Custom HF
-        // repos use tokenizer.json, but those are user-defined, not built-ins.
-        for model in EmbeddingModel::ALL {
-            assert!(
-                model.config().vocab_file.is_wordpiece(),
-                "{model} should use WordPiece vocab.txt"
-            );
-        }
-    }
-
-    #[test]
-    fn custom_models_use_tokenizer_json() {
-        let m = EmbeddingModel::from_str_name("hf:org/model").unwrap();
-        assert!(!m.config().vocab_file.is_wordpiece());
-        assert_eq!(m.config().vocab_file.filename(), "tokenizer.json");
+    fn meta_caps_length_and_reads_last_token_pooling() {
+        let pooling = json!({"pooling_mode_lasttoken": true});
+        let prompts = json!({"prompts": {"query": "", "passage": "passage: "}});
+        let seq = json!({"max_seq_length": 8192});
+        let meta = ModelMeta::from_json(Some(&pooling), Some(&prompts), Some(&seq));
+        assert_eq!(meta.pooling, Pooling::LastToken);
+        assert_eq!(meta.query_prefix, None);
+        assert_eq!(meta.document_prefix.as_deref(), Some("passage: "));
+        assert_eq!(meta.max_seq_len, MAX_SEQ_LEN_CAP);
     }
 }

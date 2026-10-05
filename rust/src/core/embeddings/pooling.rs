@@ -3,6 +3,8 @@
 //! Converts per-token hidden states `[seq_len × dim]` into a single
 //! fixed-size embedding vector `[dim]`.
 
+use super::model_registry::Pooling;
+
 /// Mean pooling over token positions, weighted by attention mask.
 ///
 /// Takes the raw hidden state output `[1 × seq_len × dim]` flattened to a Vec,
@@ -37,28 +39,55 @@ pub fn mean_pool(
     sum
 }
 
-/// Batched mean pooling over multiple sequences in a single output tensor.
-///
-/// The model output is `[batch, max_seq_len, dim]` flattened row-major. Each
-/// sequence is mean-pooled using its own attention mask to exclude padding.
-pub fn mean_pool_batch(
+/// Pool one sequence `[seq_len × dim]` with the model's pooling strategy.
+/// Sequences are right-padded, so the last attended position is the last token.
+pub fn pool(
+    hidden_states: &[f32],
+    attention_mask: &[i32],
+    seq_len: usize,
+    dim: usize,
+    pooling: Pooling,
+) -> Vec<f32> {
+    let row = |pos: usize| {
+        hidden_states
+            .get(pos * dim..(pos + 1) * dim)
+            .map_or_else(|| vec![0.0; dim], <[f32]>::to_vec)
+    };
+    match pooling {
+        Pooling::Mean => mean_pool(hidden_states, attention_mask, seq_len, dim),
+        Pooling::Cls => row(0),
+        Pooling::LastToken => {
+            let attended = attention_mask
+                .iter()
+                .take(seq_len)
+                .filter(|&&m| m > 0)
+                .count();
+            row(attended.saturating_sub(1))
+        }
+    }
+}
+
+/// Batched pooling over one output tensor `[batch, max_seq_len, dim]`
+/// (flattened row-major); each sequence uses its own attention mask.
+pub fn pool_batch(
     hidden_states: &[f32],
     masks: &[&[i32]],
     max_seq_len: usize,
     dim: usize,
+    pooling: Pooling,
 ) -> Vec<Vec<f32>> {
     let batch = masks.len();
-    let expected_len = batch * max_seq_len * dim;
-    if hidden_states.len() < expected_len {
+    if hidden_states.len() < batch * max_seq_len * dim {
         return vec![vec![0.0; dim]; batch];
     }
-    let mut results = Vec::with_capacity(batch);
-    for (b, m) in masks.iter().enumerate().take(batch) {
-        let offset = b * max_seq_len * dim;
-        let h = &hidden_states[offset..][..max_seq_len * dim];
-        results.push(mean_pool(h, m, max_seq_len, dim));
-    }
-    results
+    masks
+        .iter()
+        .enumerate()
+        .map(|(b, m)| {
+            let h = &hidden_states[b * max_seq_len * dim..][..max_seq_len * dim];
+            pool(h, m, max_seq_len, dim, pooling)
+        })
+        .collect()
 }
 
 /// L2-normalize a vector in-place.
@@ -112,6 +141,34 @@ mod tests {
         let mask = vec![0, 0];
         let result = mean_pool(&hidden, &mask, 2, 2);
         assert!(result.iter().all(|&v| v == 0.0));
+    }
+
+    #[test]
+    fn cls_and_last_token_pick_one_row() {
+        // 3 tokens, 2 dimensions, last token is padding
+        let hidden = vec![1.0, 2.0, 3.0, 4.0, 9.0, 9.0];
+        let mask = vec![1, 1, 0];
+        assert_eq!(pool(&hidden, &mask, 3, 2, Pooling::Cls), vec![1.0, 2.0]);
+        assert_eq!(
+            pool(&hidden, &mask, 3, 2, Pooling::LastToken),
+            vec![3.0, 4.0]
+        );
+        assert_eq!(pool(&hidden, &mask, 3, 2, Pooling::Mean), vec![2.0, 3.0]);
+    }
+
+    #[test]
+    fn batch_pooling_uses_each_mask() {
+        // batch 2, max_seq_len 2, dim 1
+        let hidden = vec![1.0, 3.0, 5.0, 7.0];
+        let masks: Vec<&[i32]> = vec![&[1, 1], &[1, 0]];
+        assert_eq!(
+            pool_batch(&hidden, &masks, 2, 1, Pooling::LastToken),
+            vec![vec![3.0], vec![5.0]]
+        );
+        assert_eq!(
+            pool_batch(&hidden, &masks, 2, 1, Pooling::Mean),
+            vec![vec![2.0], vec![5.0]]
+        );
     }
 
     #[test]

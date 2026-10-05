@@ -51,6 +51,13 @@ pub struct FactEmbedding {
 }
 
 impl FactEmbedding {
+    /// Vector width, which identifies the model that produced it.
+    fn width(&self) -> usize {
+        self.quant
+            .as_ref()
+            .map_or(self.embedding.len(), |q| q.code.len())
+    }
+
     /// Similarity against a full-precision (L2-normalized) query. Scores directly
     /// against the int8 codes when available; falls back to the legacy f32 vector
     /// for not-yet-migrated entries.
@@ -123,6 +130,8 @@ impl KnowledgeEmbeddingIndex {
         let mut scored: Vec<(&FactEmbedding, f32)> = self
             .entries
             .iter()
+            // Entries from a previous model have another width: never compare.
+            .filter(|e| e.width() == query_embedding.len())
             .map(|e| {
                 let sim = e.similarity(query_embedding);
                 (e, sim)
@@ -480,6 +489,9 @@ pub fn backfill_missing(
     knowledge: &ProjectKnowledge,
     cap: usize,
 ) -> usize {
+    // After a model change, re-embed what the previous model wrote.
+    let width = engine.dimensions();
+    index.entries.retain(|e| e.width() == width);
     let missing = missing_current_facts(index, knowledge, cap);
     if missing.is_empty() {
         return 0;
@@ -559,6 +571,7 @@ fn semantic_duplicates_from_query(
         .entries
         .iter()
         .filter(|e| !(e.category == new_category && e.key == new_key))
+        .filter(|e| e.width() == query.len())
         .map(|e| (e, e.similarity(query)))
         .filter(|(_, sim)| *sim >= threshold)
         .collect();
@@ -934,6 +947,17 @@ mod tests {
         };
         let decay = recency_decay(&fact);
         assert_eq!(decay, 0.0, "100-day-old fact should have 0 recency");
+    }
+
+    #[cfg(feature = "embeddings")]
+    #[test]
+    fn semantic_search_skips_other_widths() {
+        let mut idx = KnowledgeEmbeddingIndex::new("test");
+        idx.upsert("arch", "db", &[1.0, 0.0, 0.0]);
+        idx.upsert("arch", "old", &[1.0, 0.0]);
+        let results = idx.semantic_search(&[1.0, 0.0, 0.0], 5);
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].0.key, "db");
     }
 
     #[cfg(feature = "embeddings")]

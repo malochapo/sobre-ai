@@ -153,6 +153,13 @@ pub struct Config {
     /// `.gitignore` (always respected).
     #[serde(default)]
     pub ignore: Vec<String>,
+    /// Embedding model for semantic search (`dense` builds): `minilm`
+    /// (default), `nomic`, or any HuggingFace repo shipping an ONNX export
+    /// and a `tokenizer.json`, as `org/repo[@revision]`. Pooling and
+    /// query/document prompts come from the repo's sentence-transformers
+    /// metadata. Changing it re-indexes on the next semantic search.
+    #[serde(default)]
+    pub embedding_model: Option<String>,
 }
 
 impl Default for Config {
@@ -168,6 +175,7 @@ impl Default for Config {
             shell_timeout_secs: None,
             shell_hook: true,
             ignore: Vec::new(),
+            embedding_model: None,
         }
     }
 }

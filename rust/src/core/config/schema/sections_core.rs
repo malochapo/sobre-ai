@@ -74,6 +74,14 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
         ),
     );
     root.insert(
+        "embedding_model".into(),
+        key(
+            "string?",
+            serde_json::json!(null),
+            "Embedding model for semantic search (dense builds): minilm (default), nomic, or any HuggingFace repo with an ONNX export and a tokenizer.json, as org/repo[@revision]. Pooling and query/document prompts come from the repo's sentence-transformers metadata. Changing it re-indexes on the next semantic search",
+        ),
+    );
+    root.insert(
         "shell_timeout_secs".into(),
         key(
             "u64?",

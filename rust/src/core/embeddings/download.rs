@@ -1,8 +1,8 @@
 //! Automatic model download from HuggingFace Hub.
 //!
-//! Downloads the selected ONNX embedding model and its vocabulary/tokenizer
-//! files on first use. Files are cached per-model in subdirectories under
-//! `~/.lean-ctx/models/<model-name>/` and only downloaded once.
+//! Downloads the selected ONNX embedding model, its `tokenizer.json` and its
+//! sentence-transformers metadata on explicit request. Files are cached
+//! per-model under the models directory and only downloaded once.
 //!
 //! Supply-chain integrity (GL #397): after the first successful download a
 //! `model.lock.json` records the SHA-256 of every artifact (trust-on-first-use).
@@ -13,33 +13,46 @@ use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use super::model_registry::{ModelConfig, VocabSource};
+use super::model_registry::{EmbeddingModel, POOLING_FILE, PROMPTS_FILE, SEQ_LEN_FILE};
 
 const USER_AGENT: &str = concat!("lean-ctx/", env!("CARGO_PKG_VERSION"));
 
 /// Lockfile name storing `{ filename: sha256-hex }` per model directory.
 const LOCKFILE: &str = "model.lock.json";
 
+/// Local names of the files a model needs before it can load.
+pub const MODEL_FILE: &str = "model.onnx";
+pub const TOKENIZER_FILE: &str = "tokenizer.json";
+
+/// Smallest plausible ONNX export (model2vec models are a few MB).
+const MODEL_MIN_BYTES: u64 = 1_000_000;
+const TOKENIZER_MIN_BYTES: u64 = 1_000;
+
 struct DownloadFile {
-    url: String,
-    local_name: String,
+    /// Repo paths tried in order; the first one found is saved.
+    sources: Vec<&'static str>,
+    local_name: &'static str,
     min_bytes: u64,
+    /// Metadata files are optional: a repo without them keeps the defaults.
+    required: bool,
 }
 
 /// Ensure all required model files are present, downloading if necessary.
 /// Returns the model directory path on success.
-pub fn ensure_model(model_dir: &Path, config: &ModelConfig) -> anyhow::Result<PathBuf> {
-    let files = download_files(config);
+pub fn ensure_model(model_dir: &Path, model: &EmbeddingModel) -> anyhow::Result<PathBuf> {
+    let files = download_files();
 
-    let all_present = files.iter().all(|f| model_dir.join(&f.local_name).exists());
-
-    if all_present {
+    if files
+        .iter()
+        .filter(|f| f.required)
+        .all(|f| model_dir.join(f.local_name).exists())
+    {
         return Ok(model_dir.to_path_buf());
     }
 
+    let name = model.name();
     tracing::info!(
-        "Embedding model '{}' not found, downloading to {}",
-        config.name,
+        "Embedding model '{name}' not found, downloading to {}",
         model_dir.display()
     );
     std::fs::create_dir_all(model_dir)?;
@@ -47,7 +60,7 @@ pub fn ensure_model(model_dir: &Path, config: &ModelConfig) -> anyhow::Result<Pa
     let mut lock = read_lockfile(model_dir);
 
     for file in &files {
-        let local_path = model_dir.join(&file.local_name);
+        let local_path = model_dir.join(file.local_name);
         if local_path.exists() {
             let meta = std::fs::metadata(&local_path)?;
             if meta.len() >= file.min_bytes {
@@ -62,51 +75,83 @@ pub fn ensure_model(model_dir: &Path, config: &ModelConfig) -> anyhow::Result<Pa
             );
         }
 
-        download_file(&file.url, &file.local_name, file.min_bytes, model_dir)?;
+        let mut fetched = false;
+        let mut last_err = None;
+        for source in &file.sources {
+            match download_file(
+                &model.file_url(source),
+                file.local_name,
+                file.min_bytes,
+                model_dir,
+            ) {
+                Ok(()) => {
+                    fetched = true;
+                    break;
+                }
+                Err(e) => last_err = Some(e),
+            }
+        }
+        if !fetched {
+            if file.required {
+                return Err(last_err
+                    .unwrap_or_else(|| anyhow::anyhow!("no source for {}", file.local_name))
+                    .context(format!(
+                        "model '{name}' must ship {} and tokenizer.json",
+                        file.sources.join(" or ")
+                    )));
+            }
+            tracing::debug!("{} not in '{name}', using defaults", file.local_name);
+            continue;
+        }
 
-        let actual = sha256_file(&model_dir.join(&file.local_name))?;
-        match lock.get(&file.local_name) {
+        let actual = sha256_file(&model_dir.join(file.local_name))?;
+        match lock.get(file.local_name) {
             Some(pinned) if pinned != &actual => {
-                let _ = std::fs::remove_file(model_dir.join(&file.local_name));
+                let _ = std::fs::remove_file(model_dir.join(file.local_name));
                 anyhow::bail!(
-                    "SHA-256 mismatch for {} of model '{}': pinned {pinned}, got {actual}. \
+                    "SHA-256 mismatch for {} of model '{name}': pinned {pinned}, got {actual}. \
                      Upstream content changed under the same revision — refusing the file. \
                      If this is intentional, delete {} and re-download.",
                     file.local_name,
-                    config.name,
                     model_dir.join(LOCKFILE).display()
                 );
             }
             Some(_) => {}
             None => {
-                lock.insert(file.local_name.clone(), actual);
+                lock.insert(file.local_name.to_string(), actual);
             }
         }
     }
 
     write_lockfile(model_dir, &lock)?;
-    verify_model_files(model_dir, config)?;
 
-    tracing::info!(
-        "Embedding model '{}' ready at {}",
-        config.name,
-        model_dir.display()
-    );
+    tracing::info!("Embedding model '{name}' ready at {}", model_dir.display());
     Ok(model_dir.to_path_buf())
 }
 
-fn download_files(config: &ModelConfig) -> Vec<DownloadFile> {
+fn download_files() -> Vec<DownloadFile> {
+    let required = |sources, local_name, min_bytes| DownloadFile {
+        sources,
+        local_name,
+        min_bytes,
+        required: true,
+    };
+    let optional = |source, local_name| DownloadFile {
+        sources: vec![source],
+        local_name,
+        min_bytes: 1,
+        required: false,
+    };
     vec![
-        DownloadFile {
-            url: config.model_url(),
-            local_name: "model.onnx".to_string(),
-            min_bytes: config.model_min_bytes,
-        },
-        DownloadFile {
-            url: config.vocab_url(),
-            local_name: config.vocab_file.filename().to_string(),
-            min_bytes: config.vocab_min_bytes,
-        },
+        required(
+            vec!["onnx/model.onnx", "model.onnx"],
+            MODEL_FILE,
+            MODEL_MIN_BYTES,
+        ),
+        required(vec!["tokenizer.json"], TOKENIZER_FILE, TOKENIZER_MIN_BYTES),
+        optional("1_Pooling/config.json", POOLING_FILE),
+        optional("config_sentence_transformers.json", PROMPTS_FILE),
+        optional("sentence_bert_config.json", SEQ_LEN_FILE),
     ]
 }
 
@@ -190,47 +235,6 @@ fn download_file(
     Ok(())
 }
 
-fn verify_model_files(model_dir: &Path, config: &ModelConfig) -> anyhow::Result<()> {
-    let model_path = model_dir.join("model.onnx");
-    if !model_path.exists() {
-        anyhow::bail!("Model file model.onnx missing after download");
-    }
-    let meta = std::fs::metadata(&model_path)?;
-    if meta.len() < config.model_min_bytes {
-        anyhow::bail!(
-            "Model file model.onnx is corrupt ({} bytes, expected >= {})",
-            meta.len(),
-            config.model_min_bytes
-        );
-    }
-
-    let vocab_name = config.vocab_file.filename();
-    let vocab_path = model_dir.join(vocab_name);
-    if !vocab_path.exists() {
-        anyhow::bail!("Vocab file {vocab_name} missing after download");
-    }
-    let vmeta = std::fs::metadata(&vocab_path)?;
-    if vmeta.len() < config.vocab_min_bytes {
-        anyhow::bail!(
-            "Vocab file {vocab_name} is corrupt ({} bytes, expected >= {})",
-            vmeta.len(),
-            config.vocab_min_bytes
-        );
-    }
-
-    if let VocabSource::VocabTxt(_) = config.vocab_file {
-        let content = std::fs::read_to_string(&vocab_path)?;
-        let line_count = content.lines().count();
-        if line_count < 20_000 {
-            anyhow::bail!(
-                "{vocab_name} appears corrupt ({line_count} lines, expected ~30K for BERT)"
-            );
-        }
-    }
-
-    Ok(())
-}
-
 /// Compute the SHA-256 of a file as lowercase hex (streaming, 64KB chunks).
 fn sha256_file(path: &Path) -> anyhow::Result<String> {
     use sha2::{Digest, Sha256};
@@ -269,46 +273,24 @@ fn write_lockfile(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::embeddings::model_registry::EmbeddingModel;
 
     #[test]
-    fn download_files_all_models() {
-        for model in EmbeddingModel::ALL {
-            let cfg = model.config();
-            let files = download_files(&cfg);
-            assert_eq!(
-                files.len(),
-                2,
-                "model={} should have 2 download files",
-                cfg.name
-            );
-            assert!(files[0].url.contains("model.onnx"));
-            assert!(files[0].min_bytes > 0);
-        }
-    }
-
-    #[test]
-    fn model_urls_are_https() {
-        for model in EmbeddingModel::ALL {
-            let cfg = model.config();
-            let files = download_files(&cfg);
-            for f in &files {
+    fn required_files_come_first_and_urls_are_https() {
+        let files = download_files();
+        assert_eq!(files[0].local_name, MODEL_FILE);
+        assert_eq!(files[1].local_name, TOKENIZER_FILE);
+        assert!(files[..2].iter().all(|f| f.required));
+        assert!(files[2..].iter().all(|f| !f.required));
+        let model = EmbeddingModel::parse("org/model@pin").unwrap();
+        for f in &files {
+            for source in &f.sources {
                 assert!(
-                    f.url.starts_with("https://"),
-                    "URL for {} must be HTTPS: {}",
-                    cfg.name,
-                    f.url
+                    model
+                        .file_url(source)
+                        .starts_with("https://huggingface.co/org/model/resolve/pin/")
                 );
             }
         }
-    }
-
-    #[test]
-    fn custom_model_downloads_tokenizer_json() {
-        let model = EmbeddingModel::from_str_name("hf:org/model@pin").unwrap();
-        let files = download_files(&model.config());
-        assert_eq!(files[1].local_name, "tokenizer.json");
-        assert!(files[0].url.contains("/resolve/pin/onnx/model.onnx"));
     }
 
     #[test]
@@ -344,15 +326,6 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         write_lockfile(&dir, &std::collections::BTreeMap::new()).unwrap();
         assert!(!dir.join(LOCKFILE).exists());
-        let _ = std::fs::remove_dir_all(&dir);
-    }
-
-    #[test]
-    fn verify_fails_on_empty_dir() {
-        let dir = std::env::temp_dir().join("lean_ctx_test_verify_empty_v2");
-        let _ = std::fs::create_dir_all(&dir);
-        let cfg = EmbeddingModel::AllMiniLmL6V2.config();
-        assert!(verify_model_files(&dir, &cfg).is_err());
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
