@@ -96,12 +96,34 @@ fn enable_dropin(home: &Path, rc: &str, dir: &str) {
 // ---------------------------------------------------------------------------
 
 #[test]
+fn declined_agent_aliases_stay_declined_on_rerun() {
+    with_home(|home| {
+        touch_rc(home, ".zshrc");
+
+        install_all(true, Some(false));
+        install_all(true, None);
+
+        let zshenv = std::fs::read_to_string(home.join(".zshenv")).unwrap();
+        assert!(zshenv.contains(MARKER_START));
+        let zshrc = std::fs::read_to_string(home.join(".zshrc")).unwrap();
+        assert!(
+            !zshrc.contains(ALIAS_START),
+            "a plain rerun must keep the opt-out"
+        );
+
+        install_all(true, Some(true));
+        let zshrc = std::fs::read_to_string(home.join(".zshrc")).unwrap();
+        assert!(zshrc.contains(ALIAS_START));
+    });
+}
+
+#[test]
 fn install_all_default_is_auto_inline_on_plain_layout() {
     with_home(|home| {
         touch_rc(home, ".zshrc");
         touch_rc(home, ".bashrc");
 
-        install_all(true);
+        install_all(true, None);
 
         let zshenv = std::fs::read_to_string(home.join(".zshenv")).unwrap();
         assert!(zshenv.contains(MARKER_START));
@@ -116,7 +138,7 @@ fn install_all_auto_writes_dropin_for_zshenv_when_loop_present() {
         enable_dropin(home, ".zshenv", ".zshenv.d");
         touch_rc(home, ".zshrc");
 
-        install_all_with_style(true, Style::Auto);
+        install_all_with_style(true, Style::Auto, None);
 
         let dropin = home.join(".zshenv.d").join("00-lean-ctx.zsh");
         assert!(dropin.exists(), "expected drop-in for .zshenv");
@@ -141,7 +163,7 @@ fn auto_resolves_each_slot_independently() {
         // …but zshrc does NOT — user hand-edits it.
         std::fs::write(home.join(".zshrc"), "# my plain zshrc\n").unwrap();
 
-        install_all_with_style(true, Style::Auto);
+        install_all_with_style(true, Style::Auto, None);
 
         assert!(
             home.join(".zshenv.d").join("00-lean-ctx.zsh").exists(),
@@ -170,7 +192,7 @@ fn re_running_after_chezmoi_adoption_migrates_to_dropin() {
         // everywhere.
         touch_rc(home, ".zshrc");
         touch_rc(home, ".bashrc");
-        install_all_with_style(true, Style::Inline);
+        install_all_with_style(true, Style::Inline, None);
         let inline_zshenv = std::fs::read_to_string(home.join(".zshenv")).unwrap();
         assert!(inline_zshenv.contains(MARKER_START));
 
@@ -184,7 +206,7 @@ fn re_running_after_chezmoi_adoption_migrates_to_dropin() {
         std::fs::write(home.join(".zshenv"), migrated_zshenv).unwrap();
 
         // Phase 3: lean-ctx update / re-run picks up the new layout.
-        install_all_with_style(true, Style::Auto);
+        install_all_with_style(true, Style::Auto, None);
 
         // The fenced block must be gone from .zshenv …
         let final_zshenv = std::fs::read_to_string(home.join(".zshenv")).unwrap();
@@ -204,11 +226,11 @@ fn rolling_back_to_inline_removes_dropin_file() {
     with_home(|home| {
         // Start in drop-in mode.
         enable_dropin(home, ".zshenv", ".zshenv.d");
-        install_all_with_style(true, Style::Auto);
+        install_all_with_style(true, Style::Auto, None);
         assert!(home.join(".zshenv.d").join("00-lean-ctx.zsh").exists());
 
         // User decides to force inline.
-        install_all_with_style(true, Style::Inline);
+        install_all_with_style(true, Style::Inline, None);
 
         assert!(
             !home.join(".zshenv.d").join("00-lean-ctx.zsh").exists(),
@@ -228,7 +250,7 @@ fn uninstall_removes_inline_artifacts() {
     with_home(|home| {
         touch_rc(home, ".zshrc");
         touch_rc(home, ".bashrc");
-        install_all_with_style(true, Style::Inline);
+        install_all_with_style(true, Style::Inline, None);
 
         uninstall_all(true);
 
@@ -244,7 +266,7 @@ fn uninstall_removes_dropin_artifacts() {
     with_home(|home| {
         enable_dropin(home, ".zshenv", ".zshenv.d");
         enable_dropin(home, ".zshrc", ".zshrc.d");
-        install_all_with_style(true, Style::Auto);
+        install_all_with_style(true, Style::Auto, None);
 
         assert!(home.join(".zshenv.d").join("00-lean-ctx.zsh").exists());
         assert!(home.join(".zshrc.d").join("00-lean-ctx.zsh").exists());
@@ -263,7 +285,7 @@ fn uninstall_removes_both_styles_if_both_present() {
         // Uninstall should clean both.
         enable_dropin(home, ".zshenv", ".zshenv.d");
         // First install: drop-in.
-        install_all_with_style(true, Style::Auto);
+        install_all_with_style(true, Style::Auto, None);
         // Then forcibly add an inline block too (simulating a corrupt
         // mid-migration state).
         let mut zshenv = std::fs::read_to_string(home.join(".zshenv")).unwrap();
@@ -348,7 +370,7 @@ fn migration_through_install_all_writes_backup_for_each_migrated_slot() {
         );
         std::fs::write(home.join(".zshenv"), &zshenv_with_loop).unwrap();
 
-        install_all_with_style(true, Style::Auto);
+        install_all_with_style(true, Style::Auto, None);
 
         // .zshenv migrated -> exactly one timestamped backup.
         let zshenv_baks = migration_backups_for(&home.join(".zshenv"));
@@ -378,7 +400,7 @@ fn no_backups_on_clean_install_through_install_all() {
         .unwrap();
         touch_rc(home, ".zshrc");
 
-        install_all_with_style(true, Style::Auto);
+        install_all_with_style(true, Style::Auto, None);
 
         let mut baks: Vec<_> = walkdir(home)
             .filter(|p| {
@@ -423,8 +445,8 @@ fn double_install_then_uninstall_leaves_no_trace() {
         touch_rc(home, ".zshrc");
         touch_rc(home, ".bashrc");
 
-        install_all_with_style(true, Style::Auto);
-        install_all_with_style(true, Style::Auto);
+        install_all_with_style(true, Style::Auto, None);
+        install_all_with_style(true, Style::Auto, None);
         uninstall_all(true);
 
         // .zshenv still exists (we only manage our own block); but no

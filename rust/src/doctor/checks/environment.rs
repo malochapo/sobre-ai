@@ -122,17 +122,19 @@ pub(crate) fn shell_aliases_outcome() -> Outcome {
         }
     }
 }
-pub(crate) fn skip_agent_aliases_outcome() -> Outcome {
-    let cfg = crate::core::config::Config::load();
-    if !cfg.skip_agent_aliases {
+pub(crate) fn agent_aliases_outcome() -> Outcome {
+    let declined = dirs::home_dir().is_some_and(|h| crate::shell_hook::agent_aliases_declined(&h));
+    if !declined {
         return Outcome {
             ok: true,
             line: format!("{BOLD}Agent aliases{RST}  {DIM}enabled (claude, codex, gemini){RST}"),
         };
     }
-    let warn = if cfg.shell_activation == crate::core::config::ShellActivation::AgentsOnly {
+    let warn = if crate::core::config::ShellActivation::resolve()
+        == crate::core::config::ShellActivation::AgentsOnly
+    {
         format!(
-            "  {YELLOW}hint: shell_activation=agents-only — compression still active via _lc() hook{RST}"
+            "  {YELLOW}hint: shell activation agents-only — compression still active via _lc() hook{RST}"
         )
     } else {
         String::new()
@@ -140,7 +142,7 @@ pub(crate) fn skip_agent_aliases_outcome() -> Outcome {
     Outcome {
         ok: true,
         line: format!(
-            "{BOLD}Agent aliases{RST}  {GREEN}skipped (skip_agent_aliases = true){RST}{warn}"
+            "{BOLD}Agent aliases{RST}  {GREEN}skipped (init --no-agent-aliases){RST}{warn}"
         ),
     }
 }

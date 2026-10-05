@@ -1,8 +1,6 @@
 use std::path::Path;
 
-use super::super::{
-    mcp_server_quiet_mode, resolve_binary_path, resolve_hook_command_binary, should_register_mcp,
-};
+use super::super::{mcp_server_quiet_mode, resolve_binary_path, resolve_hook_command_binary};
 use crate::core::editor_registry::{
     ConfigType, EditorTarget, WriteAction, WriteOptions, vibe_config_path,
     write_config_with_options,
@@ -19,11 +17,7 @@ pub(crate) const VIBE_HOOK_MATCH: &str = "re:(bash|read_file|grep)";
 
 /// Configure Mistral Vibe: the MCP server (exposes `ctx_*` tools) **and** the
 /// `pre_tool` hook (arg-rewrites native `bash` onto lean-ctx transparently).
-/// Both are MCP-gated — Vibe has no non-MCP surface for lean-ctx.
 pub(crate) fn install_vibe_hook() {
-    if !should_register_mcp() {
-        return;
-    }
     let home = crate::core::home::resolve_home_dir().unwrap_or_default();
     install_vibe_mcp(&home);
     install_vibe_hooks_toml(&home);

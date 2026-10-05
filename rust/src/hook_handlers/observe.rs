@@ -21,7 +21,7 @@ pub fn handle_observe() {
     // non-polluting stand-in for the (skipped) CLAUDE.md/CODEBUDDY.md/AGENTS.md block. All
     // three agents register `hook observe` on SessionStart, so this is the single
     // emit point (the Codex-specific handler stays silent in dedicated mode).
-    emit_dedicated_session_context(&input);
+    emit_session_start_nudge(&input);
 
     // Native-edit code-health notice (#1085): when the agent edits code with the
     // host's native Edit/MultiEdit tools (bypassing ctx_edit's gate), surface an
@@ -52,39 +52,26 @@ pub fn handle_observe() {
     }
 }
 
-fn emit_dedicated_session_context(input: &str) {
+fn emit_session_start_nudge(input: &str) {
     let Ok(v) = serde_json::from_str::<serde_json::Value>(input) else {
         return;
     };
     if !session_start_honours_additional_context(&v) {
         return;
     }
-    let cfg = crate::core::config::Config::load();
-
-    if cfg.dedicated_session_context_active() {
-        // Full Bare rules for dedicated-mode hosts (Claude Code, Codex, CodeBuddy)
-        // where the static rules file is skipped.
-        let summary = crate::core::rules_canonical::render(
-            true,
-            crate::core::rules_canonical::Wrapper::Bare,
-            crate::core::config::CompressionLevel::Off,
-        );
-        emit_session_start_additional_context(&summary);
-    } else {
-        // Short reinforcement nudge for shared-mode hosts (Cursor) that already
-        // have static rules but benefit from in-conversation emphasis on exclusive
-        // tools. Models weight in-conversation context above static instructions.
-        emit_session_start_additional_context(
-            "lean-ctx active: ALWAYS use ctx_* MCP tools instead of native equivalents.\n\
-             - ctx_read > native Read (cached, re-reads ~13 tokens vs full file; 10 modes incl. map/signatures)\n\
-             - ctx_search > native Grep (compact results, denied by hook)\n\
-             - ctx_shell > native Shell (95+ compression patterns)\n\
-             - ctx_glob > native Glob (denied by hook)\n\
-             - ctx_compose = orient FIRST (bundles search+read+symbols in one call)\n\
-             Native Read passes through for StrReplace internals only — never use it for exploration.\n\
-             Exclusive tools: ctx_compose, ctx_callgraph, ctx_knowledge, ctx_session.",
-        );
-    }
+    // Short reinforcement nudge for hosts that already
+    // have static rules but benefit from in-conversation emphasis on exclusive
+    // tools. Models weight in-conversation context above static instructions.
+    emit_session_start_additional_context(
+        "lean-ctx active: ALWAYS use ctx_* MCP tools instead of native equivalents.\n\
+         - ctx_read > native Read (cached, re-reads ~13 tokens vs full file; 10 modes incl. map/signatures)\n\
+         - ctx_search > native Grep (compact results, denied by hook)\n\
+         - ctx_shell > native Shell (95+ compression patterns)\n\
+         - ctx_glob > native Glob (denied by hook)\n\
+         - ctx_compose = orient FIRST (bundles search+read+symbols in one call)\n\
+         Native Read passes through for StrReplace internals only — never use it for exploration.\n\
+         Exclusive tools: ctx_compose, ctx_callgraph, ctx_knowledge, ctx_session.",
+    );
 }
 
 /// True for SessionStart payloads from hosts that honour `additionalContext`.

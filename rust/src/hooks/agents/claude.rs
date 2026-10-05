@@ -14,12 +14,7 @@ pub(crate) fn install_claude_hook_with_mode(global: bool, mode: HookMode) {
     install_claude_hook_scripts(&home);
     install_claude_hook_config(&home);
 
-    // #281: register the MCP server only when MCP updates are enabled. The hook
-    // scripts/config above and the rules below still install, so an
-    // MCP-disabled setup keeps the CLI integration without an MCP entry.
-    if matches!(mode, HookMode::Hybrid | HookMode::Mcp | HookMode::Replace)
-        && super::super::should_register_mcp()
-    {
+    if matches!(mode, HookMode::Hybrid | HookMode::Mcp | HookMode::Replace) {
         install_claude_mcp_server(&home);
     }
 
@@ -27,11 +22,7 @@ pub(crate) fn install_claude_hook_with_mode(global: bool, mode: HookMode) {
         install_claude_permissions_deny_replace(&home);
     }
 
-    let scope = crate::core::config::Config::load().rules_scope_effective();
-    if scope != crate::core::config::RulesScope::Project {
-        remove_claude_rules_file(&home);
-        install_claude_global_claude_md_for_mode(&home, mode);
-    }
+    install_claude_global_claude_md_for_mode(&home, mode);
 
     let _ = global;
 }
@@ -224,18 +215,6 @@ fn install_claude_global_claude_md_for_mode(home: &std::path::Path, mode: HookMo
     }
     let claude_md_path = claude_dir.join("CLAUDE.md");
 
-    // Neither dedicated nor off keep a lean-ctx block in the user's CLAUDE.md:
-    //  - dedicated (#343): the SessionStart hook injects the compact summary;
-    //  - off (#361): the user opted out of lean-ctx steering entirely.
-    // Strip any block a previous shared install left so switching modes is clean.
-    if matches!(
-        crate::core::config::Config::load().rules_injection_effective(),
-        crate::core::config::RulesInjection::Dedicated | crate::core::config::RulesInjection::Off
-    ) {
-        strip_claude_md_block(&claude_md_path);
-        return;
-    }
-
     let existing = std::fs::read_to_string(&claude_md_path).unwrap_or_default();
     let block = match mode {
         HookMode::Replace => CLAUDE_MD_BLOCK_CONTENT_REPLACE,
@@ -260,47 +239,6 @@ fn install_claude_global_claude_md_for_mode(home: &std::path::Path, mode: HookMo
         format!("{cleaned}\n\n{block}\n")
     };
     write_file(&claude_md_path, &updated);
-}
-
-/// Remove the lean-ctx block from `CLAUDE.md` (dedicated mode). Deletes the file
-/// entirely if it becomes empty (i.e. lean-ctx was its only content).
-fn strip_claude_md_block(claude_md_path: &std::path::Path) {
-    let Ok(existing) = std::fs::read_to_string(claude_md_path) else {
-        return;
-    };
-    if !existing.contains(CLAUDE_MD_BLOCK_START) {
-        return;
-    }
-    let cleaned = remove_all_blocks(&existing, CLAUDE_MD_BLOCK_START, CLAUDE_MD_BLOCK_END);
-    if cleaned.trim().is_empty() {
-        let _ = std::fs::remove_file(claude_md_path);
-    } else {
-        write_file(claude_md_path, &format!("{}\n", cleaned.trim_end()));
-    }
-}
-
-/// Remove the lean-ctx-owned `~/.claude/rules/lean-ctx.md` (GL #555).
-///
-/// Claude Code loads every rules file without `paths:` frontmatter
-/// unconditionally at session start (code.claude.com/docs/en/memory), so this
-/// file duplicated the CLAUDE.md block in *every* session — users reported
-/// 12k+ tokens of memory files from stacked lean-ctx instructions. The
-/// CLAUDE.md block is self-contained and detail docs live in the on-demand
-/// skill; only files carrying our rules marker are touched.
-fn remove_claude_rules_file(home: &std::path::Path) {
-    let rules_path = crate::core::editor_registry::claude_rules_dir(home).join("lean-ctx.md");
-    let Ok(existing) = std::fs::read_to_string(&rules_path) else {
-        return;
-    };
-    if existing.contains(crate::core::rules_canonical::RULES_MARKER_PREFIX)
-        && std::fs::remove_file(&rules_path).is_ok()
-        && !super::super::mcp_server_quiet_mode()
-    {
-        eprintln!(
-            "Removed {} (always-loaded duplicate; the CLAUDE.md block replaces it)",
-            rules_path.display()
-        );
-    }
 }
 
 pub(crate) fn install_claude_hook_scripts(home: &std::path::Path) {
@@ -876,37 +814,6 @@ mod tests {
     }
 
     #[test]
-    fn rules_injection_off_strips_claude_md_block() {
-        // #361: with instructions opted out, the installer must not leave a
-        // lean-ctx block in CLAUDE.md (and must strip one left by a prior install).
-        let iso = crate::core::data_dir::isolated_data_dir();
-        let tmp = tempfile::tempdir().unwrap();
-        let home = tmp.path();
-        let dir = crate::core::editor_registry::claude_state_dir(home);
-        std::fs::create_dir_all(&dir).unwrap();
-        let md = dir.join("CLAUDE.md");
-        std::fs::write(
-            &md,
-            format!("# my notes\n\n{CLAUDE_MD_BLOCK_CONTENT_MCP}\n"),
-        )
-        .unwrap();
-
-        std::fs::write(
-            iso.path().join("config.toml"),
-            "rules_injection = \"off\"\n",
-        )
-        .unwrap();
-        install_claude_global_claude_md_for_mode(home, HookMode::Mcp);
-
-        let after = std::fs::read_to_string(&md).unwrap_or_default();
-        assert!(
-            !after.contains(CLAUDE_MD_BLOCK_START),
-            "rules_injection=off must strip the CLAUDE.md block, got:\n{after}"
-        );
-        assert!(after.contains("# my notes"), "user content must survive");
-    }
-
-    #[test]
     fn claude_block_content_carries_detection_markers() {
         // GH #549 regression guard: the written block MUST contain the markers the
         // doctor + installer detect with — otherwise detection silently fails and
@@ -924,16 +831,11 @@ mod tests {
     #[test]
     fn installer_writes_single_claude_block_and_is_idempotent() {
         // GH #549: repeated installs must converge on exactly one block.
-        let iso = crate::core::data_dir::isolated_data_dir();
+        let _iso = crate::core::data_dir::isolated_data_dir();
         let tmp = tempfile::tempdir().unwrap();
         let home = tmp.path();
         let md = crate::core::editor_registry::claude_state_dir(home).join("CLAUDE.md");
 
-        std::fs::write(
-            iso.path().join("config.toml"),
-            "rules_injection = \"shared\"\n",
-        )
-        .unwrap();
         install_claude_global_claude_md_for_mode(home, HookMode::Mcp);
         install_claude_global_claude_md_for_mode(home, HookMode::Mcp);
 
@@ -948,7 +850,7 @@ mod tests {
 
     #[test]
     fn installer_heals_duplicate_claude_blocks() {
-        let iso = crate::core::data_dir::isolated_data_dir();
+        let _iso = crate::core::data_dir::isolated_data_dir();
         let tmp = tempfile::tempdir().unwrap();
         let home = tmp.path();
         let dir = crate::core::editor_registry::claude_state_dir(home);
@@ -958,11 +860,6 @@ mod tests {
         let dupes = format!("# my notes\n\n{b}\n\n{b}\n\n{b}\n");
         std::fs::write(&md, dupes).unwrap();
 
-        std::fs::write(
-            iso.path().join("config.toml"),
-            "rules_injection = \"shared\"\n",
-        )
-        .unwrap();
         install_claude_global_claude_md_for_mode(home, HookMode::Mcp);
 
         let after = std::fs::read_to_string(&md).unwrap();

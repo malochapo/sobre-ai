@@ -22,7 +22,7 @@ pub mod schema;
 mod sections;
 mod serde_defaults;
 pub mod setter;
-mod shell_activation;
+pub mod shell_activation;
 pub use render::render_annotated_config;
 pub use sections::*;
 #[cfg(test)]
@@ -31,8 +31,8 @@ mod tests;
 mod tests_parsing;
 
 pub use enums::{
-    CompressionLevel, Effort, OutputDensity, RecoveryHints, ResponseVerbosity, RulesInjection,
-    RulesScope, SessionDegrade, TeeMode, TerseAgent,
+    CompressionLevel, Effort, OutputDensity, RecoveryHints, ResponseVerbosity, SessionDegrade,
+    TeeMode, TerseAgent,
 };
 pub use loader::last_config_parse_error;
 pub use memory::{MemoryCleanup, MemoryGuardConfig, MemoryProfile, SavingsFooter};
@@ -92,18 +92,6 @@ pub struct Config {
     pub passthrough_commands: Vec<String>,
     #[serde(default)]
     pub proxy: ProxyConfig,
-    /// Controls where lean-ctx installs agent rule files.
-    /// Values: "both" (default), "global" (home-dir only), "project" (repo-local only).
-    #[serde(default)]
-    pub rules_scope: Option<String>,
-    /// Controls how rules are injected for shared-instruction-file agents.
-    /// Values: "shared" (default, marker block in CLAUDE.md/CODEBUDDY.md/AGENTS.md/GEMINI.md),
-    /// "dedicated" (never touch those files; use each agent's config-driven
-    /// auto-load: SessionStart hook / instructions[] / context.fileName, #343), or
-    /// "off" (write no rules file at all — for hosts that supply their own
-    /// tool-steering workflow or phase-isolated/non-caching harnesses, #361).
-    #[serde(default)]
-    pub rules_injection: Option<String>,
     /// Compression intensity, `0.0` (none) to `1.0` (densest), clamped. Drives
     /// the read-mode tuning continuously (`core::aggressiveness`) and picks the
     /// prose style by band (`CompressionLevel::from_value`). Absent: sobre's
@@ -131,21 +119,6 @@ pub struct Config {
     /// `<state_dir>/logs/debug.log`.
     #[serde(default)]
     pub debug_log: bool,
-    /// Controls when the shell hook auto-activates aliases.
-    /// - `agents-only`: (Default since #699) Aliases only active when an AI
-    ///   agent env var is detected — transparent in plain human terminals.
-    /// - `always`: Aliases active in every interactive shell (pre-#699 default).
-    /// - `off`: Aliases never auto-activate (user must call `lean-ctx-on` manually).
-    #[serde(default)]
-    pub shell_activation: ShellActivation,
-    /// Do not install agent CLI aliases (`claude`, `codex`, `gemini`,
-    /// `codebuddy`) into `~/.zshrc` / `~/.bashrc` during `onboard` / `setup`.
-    /// Existing alias blocks are removed when this is toggled on (#754).
-    /// Does NOT affect the shell compression hook (`_lc()`) — use
-    /// `shell_hook` for that. Orthogonal to `shell_activation` which
-    /// controls *when* aliases activate, not *whether* they are installed.
-    #[serde(default)]
-    pub skip_agent_aliases: bool,
     /// Verbatim binary path/expression for generated agent-hook commands
     /// (#708). Users who sync agent settings (`~/.claude/settings.json`, …)
     /// across machines with different usernames need an env-based form like
@@ -170,9 +143,6 @@ pub struct Config {
     /// `.gitignore` (always respected).
     #[serde(default)]
     pub ignore: Vec<String>,
-    /// Setup behavior: controls what gets injected during setup and updates.
-    #[serde(default)]
-    pub setup: SetupConfig,
 }
 
 impl Default for Config {
@@ -180,19 +150,14 @@ impl Default for Config {
         Self {
             passthrough_commands: Vec::new(),
             proxy: ProxyConfig::default(),
-            rules_scope: None,
-            rules_injection: None,
             compression_level: None,
             allow_paths: Vec::new(),
             read_only_roots: Vec::new(),
             debug_log: false,
-            shell_activation: ShellActivation::default(),
-            skip_agent_aliases: false,
             hook_binary: None,
             shell_timeout_secs: None,
             shell_hook: true,
             ignore: Vec::new(),
-            setup: SetupConfig::default(),
         }
     }
 }
@@ -202,39 +167,6 @@ impl Config {
     /// active. Off.
     pub fn crush_verbatim_json_effective(&self) -> bool {
         false
-    }
-
-    /// Returns the effective rules scope.
-    pub fn rules_scope_effective(&self) -> RulesScope {
-        let raw = self.rules_scope.clone().unwrap_or_default();
-        match raw.trim().to_lowercase().as_str() {
-            "global" => RulesScope::Global,
-            "project" => RulesScope::Project,
-            _ => RulesScope::Both,
-        }
-    }
-
-    /// Returns the effective rules injection mode. Default is `Shared`
-    /// (zero-config discovery via a CLAUDE.md/CODEBUDDY.md/AGENTS.md block).
-    pub fn rules_injection_effective(&self) -> RulesInjection {
-        let raw = self.rules_injection.clone().unwrap_or_default();
-        match raw.trim().to_lowercase().as_str() {
-            "dedicated" => RulesInjection::Dedicated,
-            "off" | "none" | "disabled" => RulesInjection::Off,
-            _ => RulesInjection::Shared,
-        }
-    }
-
-    /// True when lean-ctx should inject its rules via each agent's dedicated,
-    /// non-polluting auto-load path *and* global rules are in scope.
-    ///
-    /// Gates the Claude/Codex `SessionStart` `additionalContext` summary: it
-    /// stands in for the (now-skipped) shared CLAUDE.md/CODEBUDDY.md/AGENTS.md block, so it
-    /// only fires when injection is `Dedicated` and the scope isn't project-only.
-    #[must_use]
-    pub fn dedicated_session_context_active(&self) -> bool {
-        self.rules_injection_effective() == RulesInjection::Dedicated
-            && self.rules_scope_effective() != RulesScope::Project
     }
 
     /// Cap on the rayon index-build worker threads; `0` means "no cap" —
@@ -278,11 +210,6 @@ impl Config {
     #[must_use]
     pub fn jail_open(&self) -> bool {
         self.allow_paths.iter().any(|p| p.trim() == "/")
-    }
-
-    /// Returns the effective shell activation mode.
-    pub fn shell_activation_effective(&self) -> ShellActivation {
-        ShellActivation::effective(self)
     }
 
     /// #814: whether `ctx_shell` may accept inline interpreter scripts

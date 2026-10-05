@@ -346,8 +346,7 @@ impl LeanCtxServer {
                 .rules_tip_shown
                 .swap(true, std::sync::atomic::Ordering::Relaxed)
             {
-                let cfg = crate::core::config::Config::load();
-                if !cfg.setup.should_inject_rules() {
+                if !crate::rules_inject::rules_installed() {
                     result_text = format!(
                         "{result_text}\n\n\
                          --- tip: run 'lean-ctx init' to configure agent rules for optimal AI integration ---"

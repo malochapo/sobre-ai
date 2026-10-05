@@ -58,9 +58,6 @@ pub fn install_shell_hook(args: &[String]) {
             for name in &result.rules.already {
                 qprintln!("  ✓ {name} rules up-to-date");
             }
-            if result.mcp_skipped {
-                qprintln!("  • MCP registration skipped for {agent_name} (auto_update_mcp=false)");
-            }
             for e in &result.errors {
                 eprintln!("  ✗ {agent_name}: {e}");
             }
@@ -133,7 +130,7 @@ pub fn install_shell_hook(args: &[String]) {
     }
 
     if no_hook {
-        qprintln!("Shell hook disabled (--no-shell-hook or shell_hook_disabled config).");
+        qprintln!("Shell hook disabled (--no-shell-hook or shell_hook = false).");
         qprintln!("MCP tools remain active.");
     } else if is_powershell {
         super::shell_init::init_powershell(&binary);
@@ -229,7 +226,9 @@ pub fn cmd_init(args: &[String]) {
         "--repair",
         "--json",
         "--no-shell-hook",
+        "--agent-aliases",
         "--no-agent-aliases",
+        "--shell-activation",
         "--skip-rules",
         "--no-auto-approve",
     ];
@@ -242,8 +241,16 @@ pub fn cmd_init(args: &[String]) {
         std::process::exit(2);
     }
 
-    if args.iter().any(|a| a == "--no-agent-aliases") {
-        let _ = crate::core::config::setter::set_by_key("skip_agent_aliases", "true");
+    // Baked into the generated hook, which is where later runs read it back.
+    if let Some(i) = args.iter().position(|a| a == "--shell-activation") {
+        let Some(mode) = args
+            .get(i + 1)
+            .and_then(|v| crate::core::config::ShellActivation::parse(v))
+        else {
+            eprintln!("init: --shell-activation takes always, agents-only or off");
+            std::process::exit(2);
+        };
+        crate::core::config::ShellActivation::set_cli_override(mode);
     }
 
     // `init <shell>` prints the hook on stdout for `eval "$(sobre init zsh)"`.
@@ -299,7 +306,7 @@ pub fn cmd_init(args: &[String]) {
             let a = &args[i];
             if a.starts_with('-') {
                 forwarded.push(a.clone());
-                if matches!(a.as_str(), "--mode" | "--agent")
+                if matches!(a.as_str(), "--mode" | "--agent" | "--shell-activation")
                     && let Some(value) = args.get(i + 1)
                     && !value.starts_with('-')
                 {
@@ -328,6 +335,13 @@ pub fn cmd_init(args: &[String]) {
         no_auto_approve: args.iter().any(|a| a == "--no-auto-approve"),
         skip_rules: args.iter().any(|a| a == "--skip-rules"),
         skip_shell_hook: args.iter().any(|a| a == "--no-shell-hook"),
+        agent_aliases: if args.iter().any(|a| a == "--no-agent-aliases") {
+            Some(false)
+        } else if args.iter().any(|a| a == "--agent-aliases") {
+            Some(true)
+        } else {
+            None
+        },
         ..Default::default()
     };
     match crate::setup::run_setup_with_options(opts) {
@@ -443,7 +457,11 @@ Options:
   --global                   Write agent rules globally, not per project
   --project                  Also install project-local agent hooks
   --no-shell-hook            Skip the shell rc entirely
-  --no-agent-aliases         Do not install claude/codex/gemini aliases
+  --shell-activation <always|agents-only|off>
+                             When the shell aliases activate (default:
+                             agents-only); kept by later runs
+  --agent-aliases            Install claude/codex/gemini aliases (default)
+  --no-agent-aliases         Do not install them; kept by later runs
   --skip-rules               Do not write agent rules files
   --no-auto-approve          Do not configure auto-approve
 

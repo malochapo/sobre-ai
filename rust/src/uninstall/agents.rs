@@ -643,31 +643,6 @@ pub(super) fn remove_rules_files(home: &Path, dry_run: bool) -> bool {
 
     let mut removed = false;
 
-    // --- Dedicated-mode config registrations (#343) ---
-    // Remove the auto-load entries we may have written into agent config files
-    // (opencode.json `instructions[]`, .gemini/settings.json `context.fileName`).
-    // Always attempt regardless of the current rules_injection mode, since a prior
-    // dedicated install could have left these behind.
-    if dry_run {
-        let opencode_cfg = home.join(".config/opencode/opencode.json");
-        if fs::read_to_string(&opencode_cfg)
-            .is_ok_and(|c| c.contains("lean-ctx") && c.contains("instructions"))
-        {
-            println!("  Would remove lean-ctx instructions[] entry from OpenCode");
-            removed = true;
-        }
-        let gemini_cfg = home.join(".gemini/settings.json");
-        if fs::read_to_string(&gemini_cfg)
-            .is_ok_and(|c| c.contains(crate::rules_inject::GEMINI_DEDICATED_CONTEXT_FILENAME))
-        {
-            println!("  Would remove lean-ctx context.fileName entry from Gemini CLI");
-            removed = true;
-        }
-    } else {
-        crate::hooks::agents::unregister_opencode_instructions(home);
-        crate::hooks::agents::unregister_gemini_context_filename(home);
-    }
-
     // --- Dedicated: delete if contains lean-ctx ---
     for (name, path) in &dedicated_files {
         if !path.exists() {

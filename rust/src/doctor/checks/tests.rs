@@ -1,5 +1,4 @@
 use super::*;
-use crate::core::config::{RulesInjection, RulesScope};
 use std::path::Path;
 
 fn write(home: &Path, rel: &str, content: &str) {
@@ -8,8 +7,8 @@ fn write(home: &Path, rel: &str, content: &str) {
     std::fs::write(p, content).unwrap();
 }
 
-fn check(home: &Path, scope: RulesScope, injection: RulesInjection) -> Outcome {
-    claude_instructions_check(home, scope, injection)
+fn check(home: &Path) -> Outcome {
+    claude_instructions_check(home)
 }
 
 #[test]
@@ -120,7 +119,7 @@ fn v3_layout_block_passes() {
             crate::core::rules_canonical::AGENTS_BLOCK_END,
         ),
     );
-    let out = check(tmp.path(), RulesScope::Global, RulesInjection::Shared);
+    let out = check(tmp.path());
     assert!(out.ok, "post-setup layout must pass: {}", out.line);
     assert!(out.line.contains("CLAUDE.md block installed"));
 }
@@ -134,25 +133,15 @@ fn block_alone_passes() {
         ".claude/CLAUDE.md",
         &format!("{}\nx", crate::core::rules_canonical::AGENTS_BLOCK_START),
     );
-    let out = check(tmp.path(), RulesScope::Global, RulesInjection::Shared);
+    let out = check(tmp.path());
     assert!(out.ok, "{}", out.line);
-}
-
-#[test]
-#[serial_test::serial(claude_config_dir)]
-fn legacy_rules_file_passes() {
-    let tmp = tempfile::tempdir().unwrap();
-    write(tmp.path(), ".claude/rules/lean-ctx.md", "rules");
-    let out = check(tmp.path(), RulesScope::Global, RulesInjection::Shared);
-    assert!(out.ok, "{}", out.line);
-    assert!(out.line.contains("legacy rules file"));
 }
 
 #[test]
 #[serial_test::serial(claude_config_dir)]
 fn nothing_installed_fails_and_suggests_setup() {
     let tmp = tempfile::tempdir().unwrap();
-    let out = check(tmp.path(), RulesScope::Global, RulesInjection::Shared);
+    let out = check(tmp.path());
     assert!(!out.ok);
     assert!(
         out.line.contains("lean-ctx init"),
@@ -163,30 +152,6 @@ fn nothing_installed_fails_and_suggests_setup() {
         !out.line.contains("init --agent claude"),
         "init --agent claude no longer creates a Claude rules target"
     );
-}
-
-// `dedicated` means the SessionStart hook injects the instructions itself,
-// so there is no file on disk to look for — an empty home is the healthy
-// state, not a missing install.
-#[test]
-fn dedicated_injection_passes_without_block() {
-    let tmp = tempfile::tempdir().unwrap();
-    let out = check(tmp.path(), RulesScope::Global, RulesInjection::Dedicated);
-    assert!(out.ok, "{}", out.line);
-}
-
-#[test]
-fn project_scope_passes_without_global_files() {
-    let tmp = tempfile::tempdir().unwrap();
-    let out = check(tmp.path(), RulesScope::Project, RulesInjection::Shared);
-    assert!(out.ok, "{}", out.line);
-}
-
-#[test]
-fn injection_off_passes_without_any_files() {
-    let tmp = tempfile::tempdir().unwrap();
-    let out = check(tmp.path(), RulesScope::Global, RulesInjection::Off);
-    assert!(out.ok, "{}", out.line);
 }
 
 // --- config parity (#594): pinned-data-dir extraction ---

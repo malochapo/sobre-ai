@@ -109,8 +109,7 @@ fn claude_flags_instructions_advertising_ctx_without_mcp_registration() {
     let _lock = crate::core::data_dir::test_env_lock();
     let tmp = tempfile::tempdir().unwrap();
     let home = tmp.path();
-    // Hermetic config: the check consults rules_scope/rules_injection via
-    // Config::load(); the developer's real config must not leak in.
+    // Hermetic config: the developer's real config must not leak in.
     crate::test_env::set_var(
         "LEAN_CTX_CONFIG_DIR",
         home.join("cfg").to_string_lossy().to_string(),

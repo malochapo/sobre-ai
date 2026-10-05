@@ -23,14 +23,6 @@ pub(crate) fn install_antigravity_cli_hook() {
 }
 
 fn install_antigravity_mcp_config(home: &std::path::Path, subdir: &str) {
-    // #281: honor `[setup] auto_update_mcp = false` — skip the Antigravity MCP
-    // server entry under lock-down; the plugin hooks still install separately.
-    if !crate::core::config::Config::load()
-        .setup
-        .should_update_mcp()
-    {
-        return;
-    }
     let binary = resolve_binary_path();
     let config_path = home.join(".gemini").join(subdir).join("mcp_config.json");
 

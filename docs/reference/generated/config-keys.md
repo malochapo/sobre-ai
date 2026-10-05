@@ -17,12 +17,8 @@ Top-level configuration keys
 - `ignore` (string[], default `[]`) — Globs kept out of the index and project walks, on top of .gitignore (always respected)
 - `passthrough_commands` (string[], default `[]`) — Commands whose output is passed through uncompressed (the command still runs normally)
 - `read_only_roots` (string[], default `[]`) — Read-only sibling roots: reads allowed, writes always denied (edit/refactor/export)
-- `rules_injection` (enum: shared | dedicated | off, default `shared`) — How rules load for CLAUDE.md/AGENTS.md/GEMINI.md agents: shared block, dedicated (no shared-file edits; SessionStart hook / instructions[] / context.fileName), or off (write no rules file — for hosts that supply their own steering or phase-isolated/non-caching harnesses).
-- `rules_scope` (enum: both | global | project, default `both`) — Where agent rule files are installed.
-- `shell_activation` (enum: always | agents-only | off, default `agents-only`) — Controls when the shell hook auto-activates aliases (agents-only since #699: transparent in plain human terminals)
 - `shell_hook` (bool, default `true`) — Install the shell hook that routes common commands through sobre
 - `shell_timeout_secs` (u64?, default `null`) — Shell command timeout (seconds) for normal commands. null = built-in 2-minute default
-- `skip_agent_aliases` (bool, default `false`) — Do not install agent CLI aliases (claude, codex, gemini) into shell rc files. Existing alias blocks are removed on next setup
 
 ## `[proxy]`
 
@@ -39,11 +35,4 @@ The local API proxy: switch, port, upstream URLs and model routing
 - `upstreams.ollama` (string?, default `null`) — Upstream URL for the ollama provider (unset = its default). Writing a URL is the opt-in for a custom or plaintext host
 - `upstreams.openai` (string?, default `null`) — Upstream URL for the openai provider (unset = its default). Writing a URL is the opt-in for a custom or plaintext host
 - `upstreams.xai` (string?, default `null`) — Upstream URL for the xai provider (unset = its default). Writing a URL is the opt-in for a custom or plaintext host
-
-## `[setup]`
-
-Controls what lean-ctx injects during setup and updates. Fresh installs default to non-invasive (rules/skills off, MCP on).
-
-- `auto_inject_rules` (bool?, default `null`) — Inject agent rule files during setup/update. null=auto (inject if already present), true=always, false=never
-- `auto_update_mcp` (bool, default `true`) — Register lean-ctx MCP server in editor configs during setup/update
 

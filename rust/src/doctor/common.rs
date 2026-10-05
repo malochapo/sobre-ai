@@ -597,16 +597,8 @@ pub(super) fn proxy_live_upstreams(port: u16) -> Option<(String, String, String)
 /// which `setup` deletes since the v3 layout — GL #555).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum ClaudeInstructionsState {
-    /// rules_scope=project: global instructions are intentionally absent.
-    ProjectScope,
-    /// rules_injection=off: user opted out of instructions entirely (GH #361).
-    InjectionOff,
-    /// rules_injection=dedicated: the SessionStart hook injects.
-    Dedicated,
     /// CLAUDE.md block present.
     Block,
-    /// Legacy rules file from a pre-3.8 install (works until next setup).
-    LegacyRules,
     /// Nothing installed — Claude only sees the 2048-char-capped MCP instructions.
     Missing,
 }
@@ -617,76 +609,24 @@ impl ClaudeInstructionsState {
     }
 }
 
-pub(super) fn claude_instructions_state(
-    home: &std::path::Path,
-    scope: crate::core::config::RulesScope,
-    injection: crate::core::config::RulesInjection,
-) -> ClaudeInstructionsState {
+pub(super) fn claude_instructions_state(home: &std::path::Path) -> ClaudeInstructionsState {
     use ClaudeInstructionsState as S;
-
-    if scope == crate::core::config::RulesScope::Project {
-        return S::ProjectScope;
-    }
-    if injection == crate::core::config::RulesInjection::Off {
-        return S::InjectionOff;
-    }
-
-    if injection == crate::core::config::RulesInjection::Dedicated {
-        return S::Dedicated;
-    }
 
     let claude_md = crate::core::editor_registry::claude_state_dir(home).join("CLAUDE.md");
     let has_block = std::fs::read_to_string(&claude_md)
         .is_ok_and(|c| c.contains(crate::hooks::agents::CLAUDE_MD_BLOCK_START));
-    if has_block {
-        return S::Block;
-    }
-
-    let has_rules = crate::core::editor_registry::claude_rules_dir(home)
-        .join("lean-ctx.md")
-        .exists();
-    if has_rules {
-        return S::LegacyRules;
-    }
-
-    S::Missing
+    if has_block { S::Block } else { S::Missing }
 }
 
 /// CodeBuddy instructions state — mirrors `claude_instructions_state` since
 /// CodeBuddy uses the same CODEBUDDY.md block pattern as Claude Code.
-pub(super) fn codebuddy_instructions_state(
-    home: &std::path::Path,
-    scope: crate::core::config::RulesScope,
-    injection: crate::core::config::RulesInjection,
-) -> ClaudeInstructionsState {
+pub(super) fn codebuddy_instructions_state(home: &std::path::Path) -> ClaudeInstructionsState {
     use ClaudeInstructionsState as S;
-
-    if scope == crate::core::config::RulesScope::Project {
-        return S::ProjectScope;
-    }
-    if injection == crate::core::config::RulesInjection::Off {
-        return S::InjectionOff;
-    }
-
-    if injection == crate::core::config::RulesInjection::Dedicated {
-        return S::Dedicated;
-    }
 
     let codebuddy_md = crate::core::editor_registry::codebuddy_state_dir(home).join("CODEBUDDY.md");
     let has_block = std::fs::read_to_string(&codebuddy_md)
         .is_ok_and(|c| c.contains(crate::hooks::agents::CODEBUDDY_MD_BLOCK_START));
-    if has_block {
-        return S::Block;
-    }
-
-    let has_rules = crate::core::editor_registry::codebuddy_rules_dir(home)
-        .join("lean-ctx.md")
-        .exists();
-    if has_rules {
-        return S::LegacyRules;
-    }
-
-    S::Missing
+    if has_block { S::Block } else { S::Missing }
 }
 
 pub(super) fn claude_binary_exists() -> bool {
@@ -815,7 +755,6 @@ mod tests {
         // actually writes (delimited by `<!-- lean-ctx -->`), not the retired
         // full-rules marker — otherwise it falsely reports the block missing.
         let _lock = crate::core::data_dir::test_env_lock();
-        use crate::core::config::{RulesInjection, RulesScope};
         let tmp = tempfile::tempdir().unwrap();
         let home = tmp.path();
         let dir = crate::core::editor_registry::claude_state_dir(home);
@@ -830,8 +769,7 @@ mod tests {
         )
         .unwrap();
 
-        let state =
-            super::claude_instructions_state(home, RulesScope::Global, RulesInjection::Shared);
+        let state = super::claude_instructions_state(home);
         assert_ne!(
             state,
             super::ClaudeInstructionsState::Missing,
@@ -843,7 +781,6 @@ mod tests {
     #[test]
     fn codebuddy_instructions_state_detects_pointer_block() {
         let _lock = crate::core::data_dir::test_env_lock();
-        use crate::core::config::{RulesInjection, RulesScope};
         let tmp = tempfile::tempdir().unwrap();
         let home = tmp.path();
         let dir = crate::core::editor_registry::codebuddy_state_dir(home);
@@ -858,8 +795,7 @@ mod tests {
         )
         .unwrap();
 
-        let state =
-            super::codebuddy_instructions_state(home, RulesScope::Global, RulesInjection::Shared);
+        let state = super::codebuddy_instructions_state(home);
         assert_ne!(
             state,
             super::ClaudeInstructionsState::Missing,

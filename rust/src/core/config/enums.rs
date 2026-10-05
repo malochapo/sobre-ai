@@ -349,34 +349,6 @@ impl CompressionLevel {
     }
 }
 
-/// Where agent rule files are installed: global home dir, project-local, or both.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum RulesScope {
-    Both,
-    Global,
-    Project,
-}
-
-/// How agent rules are injected for AGENTS.md/CLAUDE.md/CODEBUDDY.md/GEMINI.md consumers.
-///
-/// - `Shared` (default): write a marker-delimited block into the user's shared
-///   instruction file (`CLAUDE.md`, `CODEBUDDY.md`, `AGENTS.md`, `GEMINI.md`) — zero-config
-///   discoverability, but touches a file the user also authors.
-/// - `Dedicated`: never write into those shared files. Instead use each agent's
-///   config-driven, fully-removable auto-load path (Claude/Codex `SessionStart`
-///   hook `additionalContext`, OpenCode `instructions[]`, Gemini
-///   `context.fileName`) plus a lean-ctx-owned rules file. See issue #343.
-/// - `Off`: never write any rules file. For hosts that already supply their own
-///   tool-steering workflow (e.g. an embedded extension) or for phase-isolated /
-///   non-caching harnesses where the injected prefix is pure re-billed overhead
-///   with no cached-re-read dividend to amortize it. See GitHub #361.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum RulesInjection {
-    Shared,
-    Dedicated,
-    Off,
-}
-
 #[cfg(test)]
 mod tests {
     use super::{CompressionLevel, SessionDegrade};

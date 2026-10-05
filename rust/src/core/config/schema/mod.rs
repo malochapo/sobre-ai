@@ -39,15 +39,6 @@ fn key(ty: &str, default: serde_json::Value, desc: &str) -> KeySchema {
     }
 }
 
-fn key_enum(values: &[&str], default: &str, desc: &str) -> KeySchema {
-    KeySchema {
-        ty: "enum".to_string(),
-        default: serde_json::Value::String(default.to_string()),
-        description: desc.to_string(),
-        values: Some(values.iter().map(ToString::to_string).collect()),
-    }
-}
-
 impl ConfigSchema {
     pub fn generate() -> Self {
         let mut sections = BTreeMap::new();
@@ -297,8 +288,6 @@ mod tests {
         for key in [
             "shell_timeout_secs",
             "compression_level",
-            "rules_scope",
-            "rules_injection",
             "proxy.enabled",
             "proxy.port",
         ] {

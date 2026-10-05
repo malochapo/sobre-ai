@@ -324,7 +324,7 @@ pub fn run() -> u32 {
     board.check(&aliases);
 
     // 7b) Agent aliases opt-out
-    let agent_aliases = skip_agent_aliases_outcome();
+    let agent_aliases = agent_aliases_outcome();
     board.check(&agent_aliases);
 
     // 8) MCP

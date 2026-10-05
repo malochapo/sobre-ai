@@ -9,11 +9,6 @@ use crate::core::editor_registry::{
 /// `mcp.servers` schema for >= 2026.6.1, legacy `mcpServers` migration and
 /// idempotent re-runs.
 pub(crate) fn install_openclaw_hook() {
-    // #281: OpenClaw is configured purely via its MCP entry, so skip entirely
-    // when MCP registration is disabled.
-    if !super::super::should_register_mcp() {
-        return;
-    }
     let binary = resolve_binary_path();
     let home = crate::core::home::resolve_home_dir().unwrap_or_default();
     let display_path = "~/.openclaw/openclaw.json";

@@ -41,64 +41,35 @@ pub(crate) fn install_hermes_hook_with_mode(global: bool, mode: HookMode) {
         config_type: crate::core::editor_registry::ConfigType::HermesYaml,
     };
 
-    // #281: honor `[setup] auto_update_mcp = false` — skip the Hermes MCP server
-    // entry under lock-down; the rules below still install.
-    let update_mcp = crate::core::config::Config::load()
-        .setup
-        .should_update_mcp();
-    match mode {
-        HookMode::Mcp | HookMode::Hybrid | HookMode::Replace if update_mcp => {
-            match crate::core::editor_registry::write_config_with_options(
-                &target,
-                &binary,
-                crate::core::editor_registry::WriteOptions {
-                    overwrite_invalid: true,
-                },
-            ) {
-                Ok(res) => match res.action {
-                    crate::core::editor_registry::WriteAction::Created => {
-                        eprintln!(
-                            "  \x1b[32m✓\x1b[0m Hermes Agent MCP configured at ~/.hermes/config.yaml"
-                        );
-                    }
-                    crate::core::editor_registry::WriteAction::Updated => {
-                        eprintln!(
-                            "  \x1b[32m✓\x1b[0m Hermes Agent MCP updated at ~/.hermes/config.yaml"
-                        );
-                    }
-                    crate::core::editor_registry::WriteAction::Already => {
-                        eprintln!("  Hermes Agent MCP already configured at ~/.hermes/config.yaml");
-                    }
-                },
-                Err(e) => {
-                    tracing::error!("Failed to configure Hermes Agent MCP: {e}");
-                }
+    match crate::core::editor_registry::write_config_with_options(
+        &target,
+        &binary,
+        crate::core::editor_registry::WriteOptions {
+            overwrite_invalid: true,
+        },
+    ) {
+        Ok(res) => match res.action {
+            crate::core::editor_registry::WriteAction::Created => {
+                eprintln!(
+                    "  \x1b[32m✓\x1b[0m Hermes Agent MCP configured at ~/.hermes/config.yaml"
+                );
             }
+            crate::core::editor_registry::WriteAction::Updated => {
+                eprintln!("  \x1b[32m✓\x1b[0m Hermes Agent MCP updated at ~/.hermes/config.yaml");
+            }
+            crate::core::editor_registry::WriteAction::Already => {
+                eprintln!("  Hermes Agent MCP already configured at ~/.hermes/config.yaml");
+            }
+        },
+        Err(e) => {
+            tracing::error!("Failed to configure Hermes Agent MCP: {e}");
         }
-        _ => {}
     }
 
-    let scope = crate::core::config::Config::load().rules_scope_effective();
-
-    match scope {
-        crate::core::config::RulesScope::Global => {
-            install_hermes_rules(&home, mode);
-        }
-        crate::core::config::RulesScope::Project => {
-            if !global {
-                install_project_hermes_rules(mode);
-                install_project_rules();
-            }
-        }
-        crate::core::config::RulesScope::Both => {
-            if global {
-                install_hermes_rules(&home, mode);
-            } else {
-                install_hermes_rules(&home, mode);
-                install_project_hermes_rules(mode);
-                install_project_rules();
-            }
-        }
+    install_hermes_rules(&home, mode);
+    if !global {
+        install_project_hermes_rules(mode);
+        install_project_rules();
     }
 }
 

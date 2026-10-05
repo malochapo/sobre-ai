@@ -138,7 +138,7 @@ mod tests {
     fn customized() -> Config {
         let mut cfg = Config {
             compression_level: Some(0.5),
-            rules_scope: Some("global".to_string()),
+            debug_log: true,
             ..Config::default()
         };
         cfg.proxy.port = Some(4444);
@@ -179,7 +179,7 @@ mod tests {
 
         assert_eq!(parsed.proxy.port, Some(4444));
         assert_eq!(parsed.compression_level, Some(0.5));
-        assert_eq!(parsed.rules_scope.as_deref(), Some("global"));
+        assert!(parsed.debug_log);
         assert_eq!(
             parsed.proxy.upstreams.get("anthropic").map(String::as_str),
             Some("https://upstream.example")

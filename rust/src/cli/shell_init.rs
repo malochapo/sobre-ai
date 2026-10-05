@@ -206,16 +206,12 @@ fn print_shell_write_error(rc_path: &std::path::Path, source_line: &str, err: &s
 }
 
 pub fn generate_hook_powershell(binary: &str) -> String {
-    let config = crate::core::config::Config::load();
-    let activation = config.shell_activation_effective();
-    let baked_default = match activation {
-        crate::core::config::ShellActivation::Always => "always",
-        crate::core::config::ShellActivation::AgentsOnly => "agents-only",
-        crate::core::config::ShellActivation::Off => "off",
-    };
+    let baked_default = crate::core::config::ShellActivation::resolve().as_str();
+    let marker = crate::core::config::shell_activation::HOOK_MARKER;
     let binary_escaped = binary.replace('\\', "\\\\");
     format!(
         r#"# lean-ctx shell hook — transparent CLI compression (95+ patterns)
+{marker}{baked_default}
 $_leanCtxActivation = "{baked_default}"
 $_leanCtxShouldActivate = $false
 if (-not $env:LEAN_CTX_ACTIVE) {{
@@ -292,16 +288,12 @@ pub fn init_powershell(binary: &str) {
 }
 
 pub fn generate_hook_fish(binary: &str) -> String {
-    let config = crate::core::config::Config::load();
-    let activation = config.shell_activation_effective();
-    let baked_default = match activation {
-        crate::core::config::ShellActivation::Always => "always",
-        crate::core::config::ShellActivation::AgentsOnly => "agents-only",
-        crate::core::config::ShellActivation::Off => "off",
-    };
+    let baked_default = crate::core::config::ShellActivation::resolve().as_str();
+    let marker = crate::core::config::shell_activation::HOOK_MARKER;
     let alias_list = crate::rewrite_registry::shell_alias_list();
     format!(
         "# lean-ctx shell hook — smart shell mode (track-by-default)\n\
+        {marker}{baked_default}\n\
         set -g _lean_ctx_cmds {alias_list}\n\
         \n\
         function _lc_is_agent\n\
@@ -423,16 +415,12 @@ pub fn init_fish(binary: &str) {
 }
 
 pub fn generate_hook_posix(binary: &str) -> String {
-    let config = crate::core::config::Config::load();
-    let activation = config.shell_activation_effective();
-    let baked_default = match activation {
-        crate::core::config::ShellActivation::Always => "always",
-        crate::core::config::ShellActivation::AgentsOnly => "agents-only",
-        crate::core::config::ShellActivation::Off => "off",
-    };
+    let baked_default = crate::core::config::ShellActivation::resolve().as_str();
+    let marker = crate::core::config::shell_activation::HOOK_MARKER;
     let alias_list = crate::rewrite_registry::shell_alias_list();
     format!(
         r#"# lean-ctx shell hook — smart shell mode (track-by-default)
+{marker}{baked_default}
 _lean_ctx_cmds=({alias_list})
 
 _lc_is_agent() {{

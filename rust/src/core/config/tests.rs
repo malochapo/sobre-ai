@@ -27,116 +27,6 @@ mod delta_explicit_tests {
 }
 
 #[cfg(test)]
-mod rules_scope_tests {
-    use super::super::*;
-
-    #[test]
-    fn default_is_both() {
-        let cfg = Config::default();
-        assert_eq!(cfg.rules_scope_effective(), RulesScope::Both);
-    }
-
-    #[test]
-    fn config_global() {
-        let cfg = Config {
-            rules_scope: Some("global".to_string()),
-            ..Default::default()
-        };
-        assert_eq!(cfg.rules_scope_effective(), RulesScope::Global);
-    }
-
-    #[test]
-    fn unknown_value_falls_back_to_both() {
-        let cfg = Config {
-            rules_scope: Some("nonsense".to_string()),
-            ..Default::default()
-        };
-        assert_eq!(cfg.rules_scope_effective(), RulesScope::Both);
-    }
-
-    #[test]
-    fn deserialization_none_by_default() {
-        let cfg: Config = toml::from_str("").unwrap();
-        assert!(cfg.rules_scope.is_none());
-        assert_eq!(cfg.rules_scope_effective(), RulesScope::Both);
-    }
-
-    #[test]
-    fn deserialization_from_toml() {
-        let cfg: Config = toml::from_str(r#"rules_scope = "project""#).unwrap();
-        assert_eq!(cfg.rules_scope.as_deref(), Some("project"));
-        assert_eq!(cfg.rules_scope_effective(), RulesScope::Project);
-    }
-}
-
-#[cfg(test)]
-mod rules_injection_tests {
-    use super::super::*;
-
-    #[test]
-    fn config_off() {
-        for raw in ["off", "none", "disabled"] {
-            let cfg = Config {
-                rules_injection: Some(raw.to_string()),
-                ..Default::default()
-            };
-            assert_eq!(
-                cfg.rules_injection_effective(),
-                RulesInjection::Off,
-                "{raw:?} should resolve to Off"
-            );
-        }
-    }
-
-    #[test]
-    fn off_disables_dedicated_session_context() {
-        let cfg = Config {
-            rules_injection: Some("off".to_string()),
-            ..Default::default()
-        };
-        assert!(!cfg.dedicated_session_context_active());
-    }
-
-    #[test]
-    fn unknown_value_falls_back_to_shared() {
-        let cfg = Config {
-            rules_injection: Some("nonsense".to_string()),
-            ..Default::default()
-        };
-        assert_eq!(cfg.rules_injection_effective(), RulesInjection::Shared);
-    }
-
-    #[test]
-    fn deserialization_from_toml() {
-        let cfg: Config = toml::from_str(r#"rules_injection = "dedicated""#).unwrap();
-        assert_eq!(cfg.rules_injection.as_deref(), Some("dedicated"));
-        assert_eq!(cfg.rules_injection_effective(), RulesInjection::Dedicated);
-    }
-
-    #[test]
-    fn dedicated_session_context_gated_by_scope() {
-        // Dedicated + non-project scope → SessionStart summary active.
-        let cfg = Config {
-            rules_injection: Some("dedicated".to_string()),
-            ..Default::default()
-        };
-        assert!(cfg.dedicated_session_context_active());
-
-        // Dedicated + project scope → global summary suppressed (project files only).
-        let cfg = Config {
-            rules_injection: Some("dedicated".to_string()),
-            rules_scope: Some("project".to_string()),
-            ..Default::default()
-        };
-        assert!(!cfg.dedicated_session_context_active());
-
-        // Shared (default) → never the SessionStart summary path.
-        let cfg = Config::default();
-        assert!(!cfg.dedicated_session_context_active());
-    }
-}
-
-#[cfg(test)]
 mod loop_detection_config_tests {
     use super::super::*;
 
@@ -224,9 +114,9 @@ mod persist_global_tests {
     #[test]
     fn load_global_from_reads_only_the_given_file() {
         let (_dir, path) = tmp_config();
-        std::fs::write(&path, "rules_scope = \"global\"\n").unwrap();
+        std::fs::write(&path, "debug_log = true\n").unwrap();
         let cfg = Config::load_global_from(&path);
-        assert_eq!(cfg.rules_scope.as_deref(), Some("global"));
+        assert!(cfg.debug_log);
     }
 
     // Subticket 4 contract: refuse to touch an unparseable config; never clobber.

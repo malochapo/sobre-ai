@@ -65,18 +65,8 @@ impl ContextOverhead {
             crate::instructions::build_instructions(crate::tools::CrpMode::effective());
         let instruction_tokens = count_tokens(&instructions);
 
-        // The rules block only rides every turn when lean-ctx actually injects it
-        // into the host instruction file. With `rules_injection = off` no file is
-        // written (the `rules_inject` injectors early-return), so it adds zero
-        // per-turn overhead — counting it would overstate the faithful-arm tax and
-        // make the net-of-injection figure pessimistic (#361).
-        let rules_block_tokens = if crate::core::config::Config::load().rules_injection_effective()
-            == crate::core::config::RulesInjection::Off
-        {
-            0
-        } else {
-            count_tokens(&crate::rules_inject::canonical_rules_block())
-        };
+        // The rules block rides every turn in the host instruction file.
+        let rules_block_tokens = count_tokens(&crate::rules_inject::canonical_rules_block());
 
         Self {
             tool_count,
@@ -186,33 +176,9 @@ mod tests {
     }
 
     #[test]
-    fn rules_injection_off_zeroes_the_rules_block() {
-        // With rules injection off, no rules file is written, so the per-turn
-        // overhead must not count the rules block (#361). The tool/instruction
-        // surface is unaffected. `isolated_data_dir` holds the env lock.
-        let iso = crate::core::data_dir::isolated_data_dir();
-        let on = ContextOverhead::measure();
-        std::fs::write(
-            iso.path().join("config.toml"),
-            "rules_injection = \"off\"\n",
-        )
-        .unwrap();
-        let off = ContextOverhead::measure();
-
-        assert!(on.rules_block_tokens > 0, "default still injects rules");
-        assert_eq!(off.rules_block_tokens, 0, "off must drop the rules block");
-        assert_eq!(
-            off.total_tokens(),
-            off.tool_schema_tokens + off.instruction_tokens,
-            "off total excludes the rules block"
-        );
-    }
-
-    #[test]
     fn minimal_arm_per_turn_prefix_stays_within_budget() {
         // The "faithful arm" (#361): minimal_overhead (no session/knowledge
-        // prefix) + rules_injection=off
-        // (no rules block) must keep the fixed per-turn prefix tiny. This is the
+        // prefix) must keep the fixed per-turn prefix tiny. This is the
         // regression guard for the "~3K tokens/turn injected" critique — if any
         // knob silently stops applying, the total balloons and this fails.
         // macOS/Linux baseline is ~1829 after three reviewed additions: the v3
@@ -227,18 +193,10 @@ mod tests {
         const MINIMAL_ARM_PREFIX_BUDGET_TOKENS: usize = 1835;
 
         let iso = crate::core::data_dir::isolated_data_dir();
-        std::fs::write(
-            iso.path().join("config.toml"),
-            "minimal_overhead = true\nrules_injection = \"off\"\n",
-        )
-        .unwrap();
+        std::fs::write(iso.path().join("config.toml"), "minimal_overhead = true\n").unwrap();
         let registered = crate::server::registry::build_registry().tool_defs().len();
         let o = ContextOverhead::measure();
 
-        assert_eq!(
-            o.rules_block_tokens, 0,
-            "rules_injection=off must zero the rules block"
-        );
         assert!(
             o.tool_count <= registered + 1,
             "the advertised surface must be the registry, got {} tools (expected ≤ {})",

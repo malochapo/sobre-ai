@@ -1,11 +1,6 @@
 use super::super::resolve_binary_path;
 
 pub(crate) fn install_jetbrains_hook() {
-    // #281: the JetBrains integration is MCP-only (a copy/paste snippet), so an
-    // MCP-disabled environment writes nothing here.
-    if !super::super::should_register_mcp() {
-        return;
-    }
     let binary = resolve_binary_path();
     let home = crate::core::home::resolve_home_dir().unwrap_or_default();
     let config_path = home.join(".jb-mcp.json");

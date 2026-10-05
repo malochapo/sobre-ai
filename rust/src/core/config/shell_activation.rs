@@ -1,8 +1,9 @@
 //! Shell activation mode — controls when lean-ctx aliases auto-activate.
+//!
+//! Chosen at `init --shell-activation <mode>` and baked into the generated
+//! shell hook, which is where it is read back: no config key.
 
-use serde::{Deserialize, Serialize};
-
-use super::Config;
+use std::sync::OnceLock;
 
 /// Controls when the shell hook auto-activates command aliases.
 ///
@@ -11,12 +12,9 @@ use super::Config;
 ///   `CODEBUDDY`, `CODEX_CLI_SESSION`, `GEMINI_SESSION`). lean-ctx exists to
 ///   save *agent* tokens — in a plain human terminal the aliases add overhead
 ///   and surface allowlist diagnostics with no benefit (GH #699).
-/// - `Always`: Aliases are active in every interactive shell — the pre-#699
-///   default, still available for `lean-ctx initped` fans who want their own
-///   shell usage tracked.
+/// - `Always`: Aliases are active in every interactive shell.
 /// - `Off`: Aliases never auto-activate. The user must call `lean-ctx-on` manually.
-#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
-#[serde(rename_all = "kebab-case")]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum ShellActivation {
     Always,
     #[default]
@@ -24,9 +22,72 @@ pub enum ShellActivation {
     Off,
 }
 
+/// Comment line every generated shell hook carries, followed by the mode.
+pub const HOOK_MARKER: &str = "# lean-ctx shell-activation: ";
+
+/// The hook files `init` writes, in the config dir.
+const HOOK_FILES: &[&str] = &[
+    "shell-hook.zsh",
+    "shell-hook.bash",
+    "shell-hook.fish",
+    "shell-hook.ps1",
+];
+
+static CLI_OVERRIDE: OnceLock<ShellActivation> = OnceLock::new();
+
 impl ShellActivation {
-    pub fn effective(config: &Config) -> Self {
-        config.shell_activation.clone()
+    #[must_use]
+    pub fn parse(s: &str) -> Option<Self> {
+        match s.trim() {
+            "always" => Some(Self::Always),
+            "agents-only" => Some(Self::AgentsOnly),
+            "off" => Some(Self::Off),
+            _ => None,
+        }
+    }
+
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Always => "always",
+            Self::AgentsOnly => "agents-only",
+            Self::Off => "off",
+        }
+    }
+
+    /// Record the mode passed to `init --shell-activation` for this process.
+    pub fn set_cli_override(mode: Self) {
+        let _ = CLI_OVERRIDE.set(mode);
+    }
+
+    /// The mode to bake into a hook: the `init` flag, else the mode the
+    /// installed hook already carries, else the default.
+    #[must_use]
+    pub fn resolve() -> Self {
+        CLI_OVERRIDE
+            .get()
+            .copied()
+            .or_else(Self::installed)
+            .unwrap_or_default()
+    }
+
+    /// The mode baked into the installed shell hook, if any.
+    #[must_use]
+    pub fn installed() -> Option<Self> {
+        let dir = crate::core::paths::config_dir().ok()?;
+        HOOK_FILES.iter().find_map(|name| {
+            let content = std::fs::read_to_string(dir.join(name)).ok()?;
+            Self::from_hook(&content)
+        })
+    }
+
+    /// The mode a generated hook carries in its [`HOOK_MARKER`] line.
+    #[must_use]
+    pub fn from_hook(content: &str) -> Option<Self> {
+        content
+            .lines()
+            .find_map(|line| line.strip_prefix(HOOK_MARKER))
+            .and_then(Self::parse)
     }
 }
 
@@ -43,13 +104,24 @@ mod tests {
     }
 
     #[test]
-    fn serde_roundtrip() {
-        let toml_str = r#"shell_activation = "agents-only""#;
-        #[derive(Deserialize)]
-        struct Wrapper {
-            shell_activation: ShellActivation,
+    fn as_str_roundtrips_through_parse() {
+        for mode in [
+            ShellActivation::Always,
+            ShellActivation::AgentsOnly,
+            ShellActivation::Off,
+        ] {
+            assert_eq!(ShellActivation::parse(mode.as_str()), Some(mode));
         }
-        let w: Wrapper = toml::from_str(toml_str).unwrap();
-        assert_eq!(w.shell_activation, ShellActivation::AgentsOnly);
+        assert_eq!(ShellActivation::parse("sometimes"), None);
+    }
+
+    #[test]
+    fn from_hook_reads_the_marker_line() {
+        let hook = format!("# lean-ctx shell hook\n{HOOK_MARKER}always\n_lc() {{ :; }}\n");
+        assert_eq!(
+            ShellActivation::from_hook(&hook),
+            Some(ShellActivation::Always)
+        );
+        assert_eq!(ShellActivation::from_hook("no marker here"), None);
     }
 }

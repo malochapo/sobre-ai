@@ -10,9 +10,6 @@ use super::*;
 #[derive(Debug, Default)]
 pub struct AgentSetupResult {
     pub mcp_ok: bool,
-    /// MCP registration was intentionally skipped because `[setup]
-    /// auto_update_mcp = false` (#281), not because it failed.
-    pub mcp_skipped: bool,
     pub rules: crate::rules_inject::InjectResult,
     pub errors: Vec<String>,
 }
@@ -31,19 +28,9 @@ pub fn setup_single_agent(
 
     crate::hooks::install_agent_hook_with_mode(agent_name, global, mode);
 
-    // #281: honor `[setup] auto_update_mcp = false` — skip MCP registration but
-    // still install the hook and rules. Locked-down environments can keep
-    // the MCP server out of agent settings without losing the CLI integration.
-    if crate::core::config::Config::load()
-        .setup
-        .should_update_mcp()
-    {
-        match configure_agent_mcp(agent_name) {
-            Ok(()) => result.mcp_ok = true,
-            Err(e) => result.errors.push(format!("MCP config: {e}")),
-        }
-    } else {
-        result.mcp_skipped = true;
+    match configure_agent_mcp(agent_name) {
+        Ok(()) => result.mcp_ok = true,
+        Err(e) => result.errors.push(format!("MCP config: {e}")),
     }
 
     result.rules = crate::rules_inject::inject_rules_for_agent(&home, agent_name);

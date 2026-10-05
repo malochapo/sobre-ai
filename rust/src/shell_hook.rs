@@ -304,11 +304,30 @@ fn strip_other_style(
     }
 }
 
-/// Public entrypoint: install with auto-detected style. Preserves the
-/// previous signature so existing callers (setup.rs, cli/shell_init.rs)
-/// don't need to change.
-pub fn install_all(quiet: bool) {
-    install_all_with_style(quiet, Style::Auto);
+/// Public entrypoint: install with auto-detected style. `agent_aliases` is
+/// the `init --agent-aliases` / `--no-agent-aliases` choice; `None` keeps what
+/// is installed (see [`agent_aliases_declined`]).
+pub fn install_all(quiet: bool, agent_aliases: Option<bool>) {
+    install_all_with_style(quiet, Style::Auto, agent_aliases);
+}
+
+/// Whether `slot`'s block is installed, inline in the rc file or as a drop-in.
+fn slot_installed(home: &Path, slot: &Slot) -> bool {
+    std::fs::read_to_string(home.join(slot.rc_file)).is_ok_and(|c| c.contains(slot.marker_start))
+        || home.join(slot.dropin_dir).join(slot.dropin_file).exists()
+}
+
+/// Agent aliases were declined (`init --no-agent-aliases`): the shell hook is
+/// installed but no alias block is. The installed files are the record of
+/// that choice; there is no config key.
+#[must_use]
+pub fn agent_aliases_declined(home: &Path) -> bool {
+    [SLOT_ZSHENV, SLOT_BASHENV]
+        .iter()
+        .any(|s| slot_installed(home, s))
+        && ![SLOT_ZSHRC, SLOT_BASHRC]
+            .iter()
+            .any(|s| slot_installed(home, s))
 }
 
 /// Explicit style entrypoint for callers that want to honour a `--style=`
@@ -317,12 +336,12 @@ pub fn install_all(quiet: bool) {
 /// Captures a single `BackupStamp` here so every migration backup
 /// produced by this invocation shares one suffix, even if the wall
 /// clock ticks over while we're walking the slots.
-pub fn install_all_with_style(quiet: bool, style: Style) {
+pub fn install_all_with_style(quiet: bool, style: Style, agent_aliases: Option<bool>) {
     let cfg = crate::core::config::Config::load();
     if cfg.shell_hook_disabled_effective() {
         if !quiet {
             eprintln!(
-                "lean-ctx: shell hook disabled (shell_hook_disabled=true). Skipping hook installation."
+                "lean-ctx: shell hook disabled (shell_hook = false). Skipping hook installation."
             );
         }
         return;
@@ -332,6 +351,9 @@ pub fn install_all_with_style(quiet: bool, style: Style) {
         tracing::error!("Cannot resolve home directory");
         return;
     };
+    // Read before the env hook below is written, so a first install counts
+    // as "not declined".
+    let aliases = agent_aliases.unwrap_or_else(|| !agent_aliases_declined(&home));
 
     let stamp = BackupStamp::now();
     if shell_available("zsh") {
@@ -340,11 +362,10 @@ pub fn install_all_with_style(quiet: bool, style: Style) {
     if shell_available("bash") {
         install_bashenv(&home, quiet, style, &stamp);
     }
-    let cfg = crate::core::config::Config::load();
-    if cfg.skip_agent_aliases {
-        remove_agent_aliases(&home, quiet);
-    } else {
+    if aliases {
         install_aliases(&home, quiet, style, &stamp);
+    } else {
+        remove_agent_aliases(&home, quiet);
     }
 }
 
@@ -501,7 +522,7 @@ fn install_aliases(home: &Path, quiet: bool, style: Style, stamp: &BackupStamp) 
 }
 
 /// Remove agent alias blocks from rc files without touching the env hook.
-/// Called when `skip_agent_aliases = true` to clean up previously installed blocks.
+/// Called on `init --no-agent-aliases` to clean up previously installed blocks.
 fn remove_agent_aliases(home: &Path, quiet: bool) {
     for slot in &[SLOT_ZSHRC, SLOT_BASHRC] {
         let rc = home.join(slot.rc_file);

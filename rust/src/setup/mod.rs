@@ -54,10 +54,11 @@ pub struct SetupOptions {
     pub no_auto_approve: bool,
     pub skip_proxy: bool,
     pub skip_rules: bool,
-    /// Explicitly request rules injection (overrides config).
-    pub force_inject_rules: bool,
     /// Leave the shell rc untouched (`init --no-shell-hook`).
     pub skip_shell_hook: bool,
+    /// `init --agent-aliases` / `--no-agent-aliases`; `None` keeps what is
+    /// installed.
+    pub agent_aliases: Option<bool>,
 }
 
 pub fn run_setup_with_options(opts: SetupOptions) -> Result<SetupReport, String> {
@@ -87,7 +88,7 @@ pub fn run_setup_with_options(opts: SetupOptions) -> Result<SetupReport, String>
         } else {
             crate::cli::install_shell_hook(&["--global".to_string()]);
         }
-        crate::shell_hook::install_all(opts.json);
+        crate::shell_hook::install_all(opts.json, opts.agent_aliases);
         #[cfg(not(windows))]
         {
             let hook_content = crate::cli::generate_hook_posix(&binary);
@@ -147,11 +148,6 @@ pub fn run_setup_with_options(opts: SetupOptions) -> Result<SetupReport, String>
     };
 
     let targets = crate::core::editor_registry::build_targets(&home);
-    // #281: honor `auto_update_mcp = false` — editors are still detected and
-    // reported, but the MCP server is never registered in their configs.
-    let update_mcp = crate::core::config::Config::load()
-        .setup
-        .should_update_mcp();
     for target in &targets {
         let short_path = shorten_path(&target.config_path.to_string_lossy(), &home_str);
         if !target.detect_path.exists() {
@@ -169,18 +165,6 @@ pub fn run_setup_with_options(opts: SetupOptions) -> Result<SetupReport, String>
         } else {
             recommend_hook_mode(&target.agent_key)
         };
-
-        if !update_mcp {
-            editor_step.items.push(SetupItem {
-                name: target.name.to_string(),
-                status: "skipped".to_string(),
-                path: Some(short_path),
-                note: Some(format!(
-                    "mode={mode}; MCP registration skipped (auto_update_mcp=false)"
-                )),
-            });
-            continue;
-        }
 
         let res = crate::core::editor_registry::write_config_with_options(
             target,
@@ -219,7 +203,7 @@ pub fn run_setup_with_options(opts: SetupOptions) -> Result<SetupReport, String>
     }
     steps.push(editor_step);
 
-    // Step: Agent rules — respect config unless explicitly forced or skipped
+    // Step: Agent rules — always, unless `--skip-rules`
     let mut rules_step = SetupStepReport {
         name: "agent_rules".to_string(),
         ok: true,
@@ -227,16 +211,7 @@ pub fn run_setup_with_options(opts: SetupOptions) -> Result<SetupReport, String>
         warnings: Vec::new(),
         errors: Vec::new(),
     };
-    let setup_cfg = crate::core::config::Config::load().setup;
-    let should_inject = if opts.skip_rules {
-        false
-    } else if opts.force_inject_rules {
-        true
-    } else if opts.yes && opts.non_interactive {
-        setup_cfg.should_inject_rules()
-    } else {
-        true
-    };
+    let should_inject = !opts.skip_rules;
 
     if should_inject {
         let rules_result = crate::rules_inject::inject_all_rules(&home);
@@ -279,16 +254,11 @@ pub fn run_setup_with_options(opts: SetupOptions) -> Result<SetupReport, String>
             rules_step.errors.push(e);
         }
     } else {
-        let reason = if opts.skip_rules {
-            "--skip-rules flag set"
-        } else {
-            "auto_inject_rules not enabled (run `lean-ctx init` or set auto_inject_rules = true)"
-        };
         rules_step.items.push(SetupItem {
             name: "agent_rules".to_string(),
             status: "skipped".to_string(),
             path: None,
-            note: Some(reason.to_string()),
+            note: Some("--skip-rules flag set".to_string()),
         });
     }
     steps.push(rules_step);
@@ -335,15 +305,9 @@ pub fn run_setup_with_options(opts: SetupOptions) -> Result<SetupReport, String>
         }
         let mode = recommend_hook_mode(&target.agent_key);
         crate::hooks::install_agent_hook_with_mode(&target.agent_key, true, mode);
-        // #281: honor `[setup] auto_update_mcp = false` — register MCP only when
-        // enabled; hooks above always install.
-        let mcp_note = if setup_cfg.should_update_mcp() {
-            match configure_agent_mcp(&target.agent_key) {
-                Ok(()) => "; MCP config updated".to_string(),
-                Err(e) => format!("; MCP config skipped: {e}"),
-            }
-        } else {
-            "; MCP registration skipped (auto_update_mcp=false)".to_string()
+        let mcp_note = match configure_agent_mcp(&target.agent_key) {
+            Ok(()) => "; MCP config updated".to_string(),
+            Err(e) => format!("; MCP config skipped: {e}"),
         };
         hooks_step.items.push(SetupItem {
             name: format!("{} hooks", target.name),

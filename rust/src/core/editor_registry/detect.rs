@@ -856,22 +856,6 @@ mod footgun_audit_tests {
     }
 
     #[test]
-    fn default_ships_the_prefer_ctx_nudge_not_a_naked_opt_in() {
-        // THE anti-footgun invariant: a fresh install must NOT ship lean-ctx as a
-        // naked opt-in MCP. The default rules-injection mode is Shared, so every
-        // host that registers ctx_* also receives the "prefer ctx_* over native"
-        // steering. A regression to Off would make the shipped default
-        // misrepresent the product on every opt-in MCP host at once.
-        let _lock = crate::core::data_dir::test_env_lock();
-        let mode = crate::core::config::Config::default().rules_injection_effective();
-        assert_eq!(
-            mode,
-            crate::core::config::RulesInjection::Shared,
-            "default rules injection must ship the nudge (Shared), never Off"
-        );
-    }
-
-    #[test]
     fn injected_nudge_steers_the_heavy_tools_to_ctx() {
         // The nudge must be substantive. With shadow_mode=true (default),
         // native tools are denied at the permission level, so the nudge

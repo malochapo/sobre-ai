@@ -44,10 +44,7 @@ pub(crate) fn install_pi_hook_with_mode(global: bool, mode: HookMode) {
         HookMode::Mcp => {}
     }
 
-    let scope = crate::core::config::Config::load().rules_scope_effective();
-    let skip_project = global || scope == crate::core::config::RulesScope::Global;
-
-    if skip_project {
+    if global {
         println!(
             "Global mode: skipping project-local AGENTS.md (use without --global in a project)."
         );

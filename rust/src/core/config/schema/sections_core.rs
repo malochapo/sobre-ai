@@ -18,25 +18,6 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
         ),
     );
     root.insert(
-        "rules_scope".into(),
-        key_enum(
-            &["both", "global", "project"],
-            "both",
-            "Where agent rule files are installed.",
-        ),
-    );
-    root.insert(
-        "rules_injection".into(),
-        key_enum(
-            &["shared", "dedicated", "off"],
-            "shared",
-            "How rules load for CLAUDE.md/AGENTS.md/GEMINI.md agents: shared block, \
-             dedicated (no shared-file edits; SessionStart hook / instructions[] / \
-             context.fileName), or off (write no rules file — for hosts that supply \
-             their own steering or phase-isolated/non-caching harnesses).",
-        ),
-    );
-    root.insert(
         "compression_level".into(),
         key(
             "f64",
@@ -82,22 +63,6 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
             "bool",
             serde_json::json!(false),
             "Opt-in (default off): write a human-readable debug log of intercepted MCP tool calls and hook routing decisions (lean-ctx vs native, with the reason) to <state_dir>/logs/debug.log. View with `lean-ctx debug-log`",
-        ),
-    );
-    root.insert(
-        "shell_activation".into(),
-        key_enum(
-            &["always", "agents-only", "off"],
-            "agents-only",
-            "Controls when the shell hook auto-activates aliases (agents-only since #699: transparent in plain human terminals)",
-        ),
-    );
-    root.insert(
-        "skip_agent_aliases".into(),
-        key(
-            "bool",
-            serde_json::json!(cfg.skip_agent_aliases),
-            "Do not install agent CLI aliases (claude, codex, gemini) into shell rc files. Existing alias blocks are removed on next setup",
         ),
     );
     root.insert(

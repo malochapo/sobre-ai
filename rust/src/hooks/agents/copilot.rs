@@ -7,20 +7,12 @@ use super::super::{
 
 pub(crate) fn install_copilot_hook(global: bool) {
     let binary = resolve_binary_path();
-    // #281: honor `[setup] auto_update_mcp = false`. The PreToolUse hook is the
-    // CLI integration and always installs; the MCP *server* registrations below
-    // are the part locked-down environments opt out of, so they are gated.
-    let update_mcp = crate::core::config::Config::load()
-        .setup
-        .should_update_mcp();
 
     if global {
         // Copilot CLI loads global MCP servers from `~/.copilot/mcp-config.json`,
         // independent of any project/repo config. Only register lean-ctx there
         // for global installs (the repo-scoped `.github/mcp.json` covers local).
-        if update_mcp {
-            write_copilot_cli_home_mcp();
-        }
+        write_copilot_cli_home_mcp();
 
         let mcp_path = crate::core::editor_registry::vscode_mcp_path();
         if mcp_path.as_os_str() == "/nonexistent" {
@@ -29,22 +21,18 @@ pub(crate) fn install_copilot_hook(global: bool) {
             }
             return;
         }
-        if update_mcp {
-            write_vscode_mcp_file(&mcp_path, &binary, "global VS Code User MCP");
-        }
+        write_vscode_mcp_file(&mcp_path, &binary, "global VS Code User MCP");
         install_copilot_pretooluse_hook(true);
     } else {
-        if update_mcp {
-            let vscode_dir = PathBuf::from(".vscode");
-            let _ = std::fs::create_dir_all(&vscode_dir);
-            let mcp_path = vscode_dir.join("mcp.json");
-            write_vscode_mcp_file(&mcp_path, &binary, ".vscode/mcp.json");
+        let vscode_dir = PathBuf::from(".vscode");
+        let _ = std::fs::create_dir_all(&vscode_dir);
+        let mcp_path = vscode_dir.join("mcp.json");
+        write_vscode_mcp_file(&mcp_path, &binary, ".vscode/mcp.json");
 
-            let github_dir = PathBuf::from(".github");
-            let _ = std::fs::create_dir_all(&github_dir);
-            let copilot_mcp = github_dir.join("mcp.json");
-            write_copilot_cli_mcp_file(&copilot_mcp, &binary, ".github/mcp.json");
-        }
+        let github_dir = PathBuf::from(".github");
+        let _ = std::fs::create_dir_all(&github_dir);
+        let copilot_mcp = github_dir.join("mcp.json");
+        write_copilot_cli_mcp_file(&copilot_mcp, &binary, ".github/mcp.json");
 
         install_copilot_pretooluse_hook(false);
     }

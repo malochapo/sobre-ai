@@ -89,16 +89,7 @@ fn build_and_persist_fix_report(
         errors: Vec::new(),
     };
     let binary = crate::core::portable_binary::resolve_portable_binary();
-    // #281: doctor --fix must not (re)register the MCP server when the user opted
-    // out via `auto_update_mcp = false`. Hooks/rules/scope repair still runs.
-    let update_mcp = crate::core::config::Config::load()
-        .setup
-        .should_update_mcp();
-    let targets = if update_mcp {
-        crate::core::editor_registry::build_targets(&home)
-    } else {
-        Vec::new()
-    };
+    let targets = crate::core::editor_registry::build_targets(&home);
     for t in &targets {
         if !t.detect_path.exists() {
             continue;
@@ -149,11 +140,7 @@ fn build_and_persist_fix_report(
             }
         }
     }
-    if !update_mcp {
-        mcp_step
-            .warnings
-            .push("MCP registration skipped (auto_update_mcp=false)".to_string());
-    } else if mcp_step.items.is_empty() {
+    if mcp_step.items.is_empty() {
         mcp_step
             .warnings
             .push("no supported AI tools detected; skipped MCP config repair".to_string());

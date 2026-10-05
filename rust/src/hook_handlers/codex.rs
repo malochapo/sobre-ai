@@ -158,12 +158,6 @@ pub fn handle_codex_session_start() {
     if is_quiet() {
         return;
     }
-    // Dedicated rules-injection mode (#343): the `hook observe` SessionStart hook
-    // injects the full rules summary as additionalContext, so stay silent here to
-    // avoid double-injecting on Codex (which fires both hooks on SessionStart).
-    if crate::core::config::Config::load().dedicated_session_context_active() {
-        return;
-    }
     emit_session_start_additional_context(CODEX_SHELL_RECOVERY_HINT);
 }
 

@@ -150,10 +150,7 @@ pub fn install_cursor_hook(global: bool) {
     install_cursor_hook_scripts(&home);
     install_cursor_hook_config(&home);
 
-    let scope = crate::core::config::Config::load().rules_scope_effective();
-    let skip_project = global || scope == crate::core::config::RulesScope::Global;
-
-    if skip_project {
+    if global {
         if !mcp_server_quiet_mode() {
             eprintln!(
                 "Global mode: skipping project-local .cursor/rules/ (use without --global in a project)."

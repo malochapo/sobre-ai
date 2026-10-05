@@ -74,7 +74,7 @@ fn shadow_shared_omits_mapping() {
 #[test]
 fn zed_rules_path_is_os_aware_and_matches_config_dir() {
     let home = std::path::Path::new("/home/tester");
-    let zed = build_rules_targets(home, crate::core::config::RulesInjection::Shared)
+    let zed = build_rules_targets(home)
         .into_iter()
         .find(|t| t.name == "Zed")
         .expect("Zed rules target must exist");
@@ -85,7 +85,7 @@ fn zed_rules_path_is_os_aware_and_matches_config_dir() {
 #[test]
 fn target_count() {
     let home = std::path::PathBuf::from("/tmp/fake_home");
-    let targets = build_rules_targets(&home, crate::core::config::RulesInjection::Shared);
+    let targets = build_rules_targets(&home);
     // Includes Grok (`~/.grok/AGENTS.md`).
     assert_eq!(targets.len(), 26);
     assert!(
@@ -100,48 +100,15 @@ fn target_count() {
         !targets.iter().any(|t| t.name == "CodeBuddy"),
         "CodeBuddy must not get a rules target"
     );
-    let dedicated = build_rules_targets(&home, crate::core::config::RulesInjection::Dedicated);
-    assert_eq!(dedicated.len(), 26);
-}
-
-#[test]
-fn dedicated_mode_swaps_shared_agents_to_dedicated_files() {
-    use crate::core::config::RulesInjection;
-    let home = std::path::Path::new("/home/tester");
-
-    let shared = build_rules_targets(home, RulesInjection::Shared);
-    let gemini_shared = shared.iter().find(|t| t.name == "Gemini CLI").unwrap();
-    let opencode_shared = shared.iter().find(|t| t.name == "OpenCode").unwrap();
-    assert!(matches!(gemini_shared.format, RulesFormat::SharedMarkdown));
-    assert!(gemini_shared.path.ends_with("GEMINI.md"));
-    assert!(matches!(
-        opencode_shared.format,
-        RulesFormat::SharedMarkdown
-    ));
-    assert!(opencode_shared.path.ends_with("AGENTS.md"));
-
-    let dedicated = build_rules_targets(home, RulesInjection::Dedicated);
-    let gemini = dedicated.iter().find(|t| t.name == "Gemini CLI").unwrap();
-    let opencode = dedicated.iter().find(|t| t.name == "OpenCode").unwrap();
-    assert!(matches!(gemini.format, RulesFormat::DedicatedMarkdown));
-    assert_eq!(gemini.path, gemini_dedicated_rules_path(home));
-    assert!(!gemini.path.ends_with("GEMINI.md"));
-    assert!(matches!(opencode.format, RulesFormat::DedicatedMarkdown));
-    assert_eq!(opencode.path, opencode_dedicated_rules_path(home));
-    assert!(!opencode.path.ends_with("AGENTS.md"));
 }
 
 #[test]
 fn rules_catalog_includes_previously_missing_agents_for_detection() {
     let home = std::path::Path::new("/home/tester");
-    let names: std::collections::HashSet<&str> = [
-        crate::core::config::RulesInjection::Shared,
-        crate::core::config::RulesInjection::Dedicated,
-    ]
-    .iter()
-    .flat_map(|inj| build_rules_targets(home, *inj))
-    .map(|t| t.name)
-    .collect();
+    let names: std::collections::HashSet<&str> = build_rules_targets(home)
+        .into_iter()
+        .map(|t| t.name)
+        .collect();
     for agent in ["OpenCode", "Zed", "Cline", "Roo Code", "Continue", "Crush"] {
         assert!(
             names.contains(agent),

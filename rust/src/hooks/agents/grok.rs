@@ -5,15 +5,9 @@
 //! with stdio servers under `[mcp_servers.<name>]`, so no unsupported hook
 //! format is installed here.
 
-use super::super::{
-    mcp_server_env_pairs, mcp_server_quiet_mode, resolve_binary_path, should_register_mcp,
-    write_file,
-};
+use super::super::{mcp_server_env_pairs, mcp_server_quiet_mode, resolve_binary_path, write_file};
 
 pub(crate) fn install_grok_mcp() {
-    if !should_register_mcp() {
-        return;
-    }
     let Some(home) = crate::core::home::resolve_home_dir() else {
         tracing::error!("Cannot resolve home directory");
         return;

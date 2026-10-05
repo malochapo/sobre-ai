@@ -52,29 +52,4 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
             keys: proxy,
         },
     );
-
-    let mut setup_keys = BTreeMap::new();
-    setup_keys.insert(
-            "auto_inject_rules".into(),
-            key(
-                "bool?",
-                serde_json::json!(null),
-                "Inject agent rule files during setup/update. null=auto (inject if already present), true=always, false=never",
-            ),
-        );
-    setup_keys.insert(
-        "auto_update_mcp".into(),
-        key(
-            "bool",
-            serde_json::json!(true),
-            "Register lean-ctx MCP server in editor configs during setup/update",
-        ),
-    );
-    sections.insert(
-            "setup".into(),
-            SectionSchema {
-                description: "Controls what lean-ctx injects during setup and updates. Fresh installs default to non-invasive (rules/skills off, MCP on).".into(),
-                keys: setup_keys,
-            },
-        );
 }

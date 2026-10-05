@@ -3,11 +3,6 @@ use super::super::{
 };
 
 pub(crate) fn install_crush_hook() {
-    // #281: only the MCP-server entry is gated; `install_crush_hook_with_mode`
-    // still installs the hybrid rules for MCP-disabled setups.
-    if !super::super::should_register_mcp() {
-        return;
-    }
     let binary = resolve_binary_path();
     let home = crate::core::home::resolve_home_dir().unwrap_or_default();
     let config_path = home.join(".config/crush/crush.json");

@@ -75,11 +75,7 @@ pub(crate) fn install_codebuddy_hook_with_mode(global: bool, mode: HookMode) {
         install_codebuddy_permissions_deny_replace(&home);
     }
 
-    let scope = crate::core::config::Config::load().rules_scope_effective();
-    if scope != crate::core::config::RulesScope::Project {
-        remove_codebuddy_rules_file(&home);
-        install_codebuddy_global_codebuddy_md_for_mode(&home, mode);
-    }
+    install_codebuddy_global_codebuddy_md_for_mode(&home, mode);
 
     let _ = global;
 }
@@ -186,18 +182,6 @@ fn install_codebuddy_global_codebuddy_md_for_mode(home: &std::path::Path, mode: 
     let _ = std::fs::create_dir_all(&codebuddy_dir);
     let codebuddy_md_path = codebuddy_dir.join("CODEBUDDY.md");
 
-    // Neither dedicated nor off keep a lean-ctx block in CODEBUDDY.md:
-    //  - dedicated (#343): the SessionStart hook injects the compact summary;
-    //  - off (#361): the user opted out of lean-ctx steering entirely.
-    // Strip any block a previous shared install left so switching modes is clean.
-    if matches!(
-        crate::core::config::Config::load().rules_injection_effective(),
-        crate::core::config::RulesInjection::Dedicated | crate::core::config::RulesInjection::Off
-    ) {
-        strip_codebuddy_md_block(&codebuddy_md_path);
-        return;
-    }
-
     let existing = std::fs::read_to_string(&codebuddy_md_path).unwrap_or_default();
     let block = match mode {
         HookMode::Replace => CODEBUDDY_MD_BLOCK_CONTENT_REPLACE,
@@ -222,43 +206,6 @@ fn install_codebuddy_global_codebuddy_md_for_mode(home: &std::path::Path, mode: 
         format!("{cleaned}\n\n{block}\n")
     };
     write_file(&codebuddy_md_path, &updated);
-}
-
-fn strip_codebuddy_md_block(codebuddy_md_path: &std::path::Path) {
-    let Ok(existing) = std::fs::read_to_string(codebuddy_md_path) else {
-        return;
-    };
-    if !existing.contains(CODEBUDDY_MD_BLOCK_START) {
-        return;
-    }
-    let cleaned = remove_all_blocks(&existing, CODEBUDDY_MD_BLOCK_START, CODEBUDDY_MD_BLOCK_END);
-    if cleaned.trim().is_empty() {
-        let _ = std::fs::remove_file(codebuddy_md_path);
-    } else {
-        write_file(codebuddy_md_path, &format!("{}\n", cleaned.trim_end()));
-    }
-}
-
-/// Remove the lean-ctx-owned `~/.codebuddy/rules/lean-ctx.md` (GL #555/#558).
-///
-/// CodeBuddy auto-loads every `~/.codebuddy/rules/*.md` file unconditionally at
-/// session start, so this file duplicated the CODEBUDDY.md block in every session.
-/// The CODEBUDDY.md block is self-contained and detail docs live in the on-demand
-/// skill; only files carrying our rules marker are touched.
-fn remove_codebuddy_rules_file(home: &std::path::Path) {
-    let rules_path = crate::core::editor_registry::codebuddy_rules_dir(home).join("lean-ctx.md");
-    let Ok(existing) = std::fs::read_to_string(&rules_path) else {
-        return;
-    };
-    if existing.contains(crate::core::rules_canonical::RULES_MARKER_PREFIX)
-        && std::fs::remove_file(&rules_path).is_ok()
-        && !super::super::mcp_server_quiet_mode()
-    {
-        eprintln!(
-            "Removed {} (always-loaded duplicate; the CODEBUDDY.md block replaces it)",
-            rules_path.display()
-        );
-    }
 }
 
 pub(crate) fn install_codebuddy_hook_scripts(home: &std::path::Path) {
@@ -633,37 +580,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn rules_injection_off_strips_codebuddy_md_block() {
-        // #361: with instructions opted out, no lean-ctx block may remain in
-        // CODEBUDDY.md (and one left by a prior install must be stripped).
-        let iso = crate::core::data_dir::isolated_data_dir();
-        let tmp = tempfile::tempdir().unwrap();
-        let home = tmp.path();
-        let dir = crate::core::editor_registry::codebuddy_state_dir(home);
-        std::fs::create_dir_all(&dir).unwrap();
-        let md = dir.join("CODEBUDDY.md");
-        std::fs::write(
-            &md,
-            format!("# my notes\n\n{CODEBUDDY_MD_BLOCK_CONTENT_MCP}\n"),
-        )
-        .unwrap();
-
-        std::fs::write(
-            iso.path().join("config.toml"),
-            "rules_injection = \"off\"\n",
-        )
-        .unwrap();
-        install_codebuddy_global_codebuddy_md_for_mode(home, HookMode::Mcp);
-
-        let after = std::fs::read_to_string(&md).unwrap_or_default();
-        assert!(
-            !after.contains(CODEBUDDY_MD_BLOCK_START),
-            "rules_injection=off must strip the CODEBUDDY.md block, got:\n{after}"
-        );
-        assert!(after.contains("# my notes"), "user content must survive");
-    }
-
-    #[test]
     fn codebuddy_block_content_carries_detection_markers() {
         // GH #549 regression guard (see claude.rs for the full rationale).
         assert!(
@@ -678,16 +594,11 @@ mod tests {
 
     #[test]
     fn installer_writes_single_codebuddy_block_and_is_idempotent() {
-        let iso = crate::core::data_dir::isolated_data_dir();
+        let _iso = crate::core::data_dir::isolated_data_dir();
         let tmp = tempfile::tempdir().unwrap();
         let home = tmp.path();
         let md = crate::core::editor_registry::codebuddy_state_dir(home).join("CODEBUDDY.md");
 
-        std::fs::write(
-            iso.path().join("config.toml"),
-            "rules_injection = \"shared\"\n",
-        )
-        .unwrap();
         install_codebuddy_global_codebuddy_md_for_mode(home, HookMode::Mcp);
         install_codebuddy_global_codebuddy_md_for_mode(home, HookMode::Mcp);
 
@@ -702,7 +613,7 @@ mod tests {
 
     #[test]
     fn installer_heals_duplicate_codebuddy_blocks() {
-        let iso = crate::core::data_dir::isolated_data_dir();
+        let _iso = crate::core::data_dir::isolated_data_dir();
         let tmp = tempfile::tempdir().unwrap();
         let home = tmp.path();
         let dir = crate::core::editor_registry::codebuddy_state_dir(home);
@@ -712,11 +623,6 @@ mod tests {
         let dupes = format!("# my notes\n\n{b}\n\n{b}\n\n{b}\n");
         std::fs::write(&md, dupes).unwrap();
 
-        std::fs::write(
-            iso.path().join("config.toml"),
-            "rules_injection = \"shared\"\n",
-        )
-        .unwrap();
         install_codebuddy_global_codebuddy_md_for_mode(home, HookMode::Mcp);
 
         let after = std::fs::read_to_string(&md).unwrap();

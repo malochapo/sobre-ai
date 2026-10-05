@@ -184,19 +184,10 @@ pub(crate) fn integration_claude(
     // the main doctor check, so the two views can never disagree again.
     {
         use crate::doctor::common::ClaudeInstructionsState as S;
-        let cfg = crate::core::config::Config::load();
-        let state = crate::doctor::common::claude_instructions_state(
-            home,
-            cfg.rules_scope_effective(),
-            cfg.rules_injection_effective(),
-        );
+        let state = crate::doctor::common::claude_instructions_state(home);
         let claude_md = crate::core::editor_registry::claude_state_dir(home).join("CLAUDE.md");
         let detail = match state {
-            S::ProjectScope => "project scope (global instructions intentionally absent)".into(),
-            S::InjectionOff => "rules injection off (intentionally not installed)".into(),
-            S::Dedicated => "dedicated injection".into(),
             S::Block => format!("{} block", claude_md.display()),
-            S::LegacyRules => "legacy rules file (migrates on next setup)".into(),
             S::Missing => "missing (run: lean-ctx init)".into(),
         };
         let advertises_ctx_tools = matches!(state, S::Block);
@@ -289,20 +280,11 @@ pub(crate) fn integration_codebuddy(
     // CodeBuddy uses the same block pattern as Claude Code.
     {
         use crate::doctor::common::ClaudeInstructionsState as S;
-        let cfg = crate::core::config::Config::load();
-        let state = crate::doctor::common::codebuddy_instructions_state(
-            home,
-            cfg.rules_scope_effective(),
-            cfg.rules_injection_effective(),
-        );
+        let state = crate::doctor::common::codebuddy_instructions_state(home);
         let codebuddy_md =
             crate::core::editor_registry::codebuddy_state_dir(home).join("CODEBUDDY.md");
         let detail = match state {
-            S::ProjectScope => "project scope (global instructions intentionally absent)".into(),
-            S::InjectionOff => "rules injection off (intentionally not installed)".into(),
-            S::Dedicated => "dedicated injection".into(),
             S::Block => format!("{} block", codebuddy_md.display()),
-            S::LegacyRules => "legacy rules file (migrates on next setup)".into(),
             S::Missing => "missing (run: lean-ctx init)".into(),
         };
         checks.push(NamedCheck {

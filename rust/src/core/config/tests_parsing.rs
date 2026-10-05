@@ -147,119 +147,23 @@ mod simplified_config_tests {
 }
 
 #[cfg(test)]
-mod setup_config_tests {
+mod root_key_tests {
     use super::super::*;
-
-    #[test]
-    fn default_is_none_for_rules() {
-        let cfg = SetupConfig::default();
-        assert!(cfg.auto_inject_rules.is_none());
-        assert!(cfg.auto_update_mcp);
-    }
-
-    #[test]
-    fn explicit_true_injects() {
-        let cfg = SetupConfig {
-            auto_inject_rules: Some(true),
-            auto_update_mcp: true,
-        };
-        assert!(cfg.should_inject_rules());
-    }
-
-    #[test]
-    fn explicit_false_skips() {
-        let cfg = SetupConfig {
-            auto_inject_rules: Some(false),
-            auto_update_mcp: true,
-        };
-        assert!(!cfg.should_inject_rules());
-    }
-
-    #[test]
-    fn deserialization_defaults_when_absent() {
-        let cfg: Config = toml::from_str("").unwrap();
-        assert!(cfg.setup.auto_inject_rules.is_none());
-        assert!(cfg.setup.auto_update_mcp);
-    }
-
-    #[test]
-    fn deserialization_from_toml() {
-        let cfg: Config = toml::from_str(
-            r"
-            [setup]
-            auto_inject_rules = true
-            auto_update_mcp = true
-            ",
-        )
-        .unwrap();
-        assert_eq!(cfg.setup.auto_inject_rules, Some(true));
-        assert!(cfg.setup.auto_update_mcp);
-    }
-
-    #[test]
-    fn deserialization_null_values() {
-        let cfg: Config = toml::from_str(
-            r"
-            [setup]
-            auto_update_mcp = false
-            ",
-        )
-        .unwrap();
-        assert!(cfg.setup.auto_inject_rules.is_none());
-        assert!(!cfg.setup.auto_update_mcp);
-    }
-
-    #[test]
-    fn should_update_mcp_reflects_flag() {
-        // #281: the predicate that gates MCP registration in setup/onboard/init
-        // must mirror the config flag exactly, so a locked-down environment can
-        // disable MCP while still getting hooks and rules.
-        let mut s = SetupConfig::default();
-        assert!(s.should_update_mcp());
-        s.auto_update_mcp = false;
-        assert!(!s.should_update_mcp());
-    }
-
-    #[test]
-    fn roundtrip_serialize_deserialize() {
-        let original = Config {
-            setup: SetupConfig {
-                auto_inject_rules: Some(true),
-                auto_update_mcp: true,
-            },
-            ..Config::default()
-        };
-        let toml_str = toml::to_string_pretty(&original).unwrap();
-        let parsed: Config = toml::from_str(&toml_str).unwrap();
-        assert_eq!(parsed.setup.auto_inject_rules, Some(true));
-        assert!(parsed.setup.auto_update_mcp);
-    }
-
-    #[test]
-    fn fresh_install_no_rules_should_not_inject() {
-        let cfg = SetupConfig::default();
-        // On a test machine without lean-ctx rules in home, None should resolve to false
-        // (rules_already_present checks real filesystem — on CI this is always false)
-        let result = cfg.should_inject_rules();
-        // We can't assert false here because the test machine might have lean-ctx installed.
-        // Instead, verify the method doesn't panic and returns a bool.
-        let _ = result;
-    }
 
     /// Regression: a stray root scalar once landed under [secret_detection]
     /// because whole-struct serialization placed it after a table. Any
     /// `Option<String>` root key is exposed to that bug; `tool_profile` and
-    /// then `profile` carried the guard and are gone, so `rules_scope` does.
+    /// then `profile` carried the guard and are gone, so `hook_binary` does.
     #[test]
     fn option_root_scalar_serializes_above_the_first_table() {
         let original = Config {
-            rules_scope: Some("global".to_string()),
+            hook_binary: Some("$HOME/.local/bin/lean-ctx".to_string()),
             ..Config::default()
         };
         let toml_str = toml::to_string_pretty(&original).unwrap();
         let pos = toml_str
-            .find("rules_scope")
-            .expect("rules_scope should be serialized");
+            .find("hook_binary")
+            .expect("hook_binary should be serialized");
         let first_table = toml_str
             .find(
                 "
@@ -268,10 +172,13 @@ mod setup_config_tests {
             .unwrap_or(toml_str.len());
         assert!(
             pos < first_table,
-            "rules_scope must be a root key, not nested under a [table]:
+            "hook_binary must be a root key, not nested under a [table]:
 {toml_str}"
         );
         let parsed: Config = toml::from_str(&toml_str).unwrap();
-        assert_eq!(parsed.rules_scope.as_deref(), Some("global"));
+        assert_eq!(
+            parsed.hook_binary.as_deref(),
+            Some("$HOME/.local/bin/lean-ctx")
+        );
     }
 }

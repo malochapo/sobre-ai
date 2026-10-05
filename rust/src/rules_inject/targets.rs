@@ -2,42 +2,9 @@
 
 use std::path::PathBuf;
 
-use super::content::{gemini_dedicated_rules_path, opencode_dedicated_rules_path};
 use super::{RulesFormat, RulesTarget};
 
-pub(super) fn build_rules_targets(
-    home: &std::path::Path,
-    injection: crate::core::config::RulesInjection,
-) -> Vec<RulesTarget> {
-    use crate::core::config::RulesInjection;
-
-    // In dedicated mode the two AGENTS.md/GEMINI.md consumers write to a
-    // lean-ctx-owned file instead of the user's shared instruction file;
-    // discovery is wired up separately via opencode.json instructions[] /
-    // .gemini/settings.json context.fileName (#343).
-    // `Off` never reaches here (the inject entry points short-circuit before
-    // building targets), but the match must stay exhaustive — treat it as the
-    // shared default layout.
-    let (gemini_path, gemini_format) = match injection {
-        RulesInjection::Dedicated => (
-            gemini_dedicated_rules_path(home),
-            RulesFormat::DedicatedMarkdown,
-        ),
-        RulesInjection::Shared | RulesInjection::Off => {
-            (home.join(".gemini/GEMINI.md"), RulesFormat::SharedMarkdown)
-        }
-    };
-    let (opencode_path, opencode_format) = match injection {
-        RulesInjection::Dedicated => (
-            opencode_dedicated_rules_path(home),
-            RulesFormat::DedicatedMarkdown,
-        ),
-        RulesInjection::Shared | RulesInjection::Off => (
-            home.join(".config/opencode/AGENTS.md"),
-            RulesFormat::SharedMarkdown,
-        ),
-    };
-
+pub(super) fn build_rules_targets(home: &std::path::Path) -> Vec<RulesTarget> {
     // NOTE: Claude Code intentionally has NO rules target. Claude loads every
     // rules file without `paths:` frontmatter unconditionally at session start,
     // which duplicated the CLAUDE.md block in every session (12k+ token memory
@@ -54,8 +21,8 @@ pub(super) fn build_rules_targets(
         // --- Shared config files (append-only) ---
         RulesTarget {
             name: "Gemini CLI",
-            path: gemini_path,
-            format: gemini_format,
+            path: home.join(".gemini/GEMINI.md"),
+            format: RulesFormat::SharedMarkdown,
         },
         RulesTarget {
             name: "VS Code",
@@ -97,8 +64,8 @@ pub(super) fn build_rules_targets(
         },
         RulesTarget {
             name: "OpenCode",
-            path: opencode_path,
-            format: opencode_format,
+            path: home.join(".config/opencode/AGENTS.md"),
+            format: RulesFormat::SharedMarkdown,
         },
         RulesTarget {
             name: "Continue",

@@ -43,7 +43,6 @@ mod lock_contention_hardening;
 mod lock_ordering_check;
 mod lsp_integration;
 mod mcp_fast_initialize_669;
-mod mcp_optout_281;
 mod outline_machine_readable_e2e;
 mod pattern_snapshots;
 mod performance_stress;
