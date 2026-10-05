@@ -89,6 +89,9 @@ fn setup_bootstrap_doctor_status_json_smoke() {
     let mut envs = vec![
         ("HOME", home_str.as_str()),
         ("LEAN_CTX_DATA_DIR", data_str.as_str()),
+        ("LEAN_CTX_CONFIG_DIR", data_str.as_str()),
+        ("LEAN_CTX_STATE_DIR", data_str.as_str()),
+        ("LEAN_CTX_CACHE_DIR", data_str.as_str()),
         ("LEAN_CTX_ACTIVE", "1"),
     ];
 
@@ -118,7 +121,7 @@ fn setup_bootstrap_doctor_status_json_smoke() {
     });
     assert_eq!(setup.schema_version, 1);
 
-    // bootstrap should create env.sh in LEAN_CTX_DATA_DIR for Docker/CI shells.
+    // bootstrap should create env.sh in the config dir for Docker/CI shells.
     // env.sh is Unix-only (shell script); skip assertion on Windows.
     #[cfg(not(windows))]
     {
@@ -191,6 +194,9 @@ fn claude_config_dir_fallback_writes_dot_claude_json() {
     let mut envs = vec![
         ("HOME", home_str.as_str()),
         ("LEAN_CTX_DATA_DIR", data_str.as_str()),
+        ("LEAN_CTX_CONFIG_DIR", data_str.as_str()),
+        ("LEAN_CTX_STATE_DIR", data_str.as_str()),
+        ("LEAN_CTX_CACHE_DIR", data_str.as_str()),
         ("LEAN_CTX_ACTIVE", "1"),
         ("CLAUDE_CONFIG_DIR", claude_cfg_str.as_str()),
     ];
@@ -287,6 +293,9 @@ fn init_agent_preserves_agents_md_and_is_idempotent() {
     let mut envs = vec![
         ("HOME", home_str.as_str()),
         ("LEAN_CTX_DATA_DIR", data_str.as_str()),
+        ("LEAN_CTX_CONFIG_DIR", data_str.as_str()),
+        ("LEAN_CTX_STATE_DIR", data_str.as_str()),
+        ("LEAN_CTX_CACHE_DIR", data_str.as_str()),
         ("LEAN_CTX_ACTIVE", "1"),
     ];
     #[cfg(not(windows))]
@@ -369,6 +378,9 @@ fn init_claude_installs_dedicated_rules_file_without_claude_md() {
     let mut envs = vec![
         ("HOME", home_str.as_str()),
         ("LEAN_CTX_DATA_DIR", data_str.as_str()),
+        ("LEAN_CTX_CONFIG_DIR", data_str.as_str()),
+        ("LEAN_CTX_STATE_DIR", data_str.as_str()),
+        ("LEAN_CTX_CACHE_DIR", data_str.as_str()),
         ("LEAN_CTX_ACTIVE", "1"),
     ];
     #[cfg(not(windows))]
@@ -467,6 +479,9 @@ fn init_augment_installs_lean_ctx_mcp_into_dot_augment_settings() {
     let envs = [
         ("HOME", home_str.as_str()),
         ("LEAN_CTX_DATA_DIR", data_str.as_str()),
+        ("LEAN_CTX_CONFIG_DIR", data_str.as_str()),
+        ("LEAN_CTX_STATE_DIR", data_str.as_str()),
+        ("LEAN_CTX_CACHE_DIR", data_str.as_str()),
         ("LEAN_CTX_ACTIVE", "1"),
         ("SHELL", "/bin/bash"),
     ];

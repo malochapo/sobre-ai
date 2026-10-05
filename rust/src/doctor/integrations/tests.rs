@@ -61,7 +61,7 @@ fn claude_flags_instructions_advertising_ctx_without_mcp_registration() {
     .unwrap();
     // No ~/.claude.json → MCP registration missing.
 
-    let status = integration_claude(home, "/usr/local/bin/lean-ctx", "/tmp/data");
+    let status = integration_claude(home, "/usr/local/bin/lean-ctx");
     let consistency = status
         .checks
         .iter()
@@ -81,7 +81,7 @@ fn claude_flags_instructions_advertising_ctx_without_mcp_registration() {
         r#"{"mcpServers":{"lean-ctx":{"command":"/usr/local/bin/lean-ctx","args":[]}}}"#,
     )
     .unwrap();
-    let healthy = integration_claude(home, "/usr/local/bin/lean-ctx", "/tmp/data");
+    let healthy = integration_claude(home, "/usr/local/bin/lean-ctx");
     assert!(
         !healthy
             .checks

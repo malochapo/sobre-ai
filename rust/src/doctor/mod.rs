@@ -212,11 +212,6 @@ pub fn run() -> u32 {
     };
     board.check(&config_outcome);
 
-    // 5a2) #594: CLI<->MCP config parity — warn if any editor MCP entry still
-    // pins a stale LEAN_CTX_DATA_DIR (which would make that editor's MCP server
-    // read a different config.toml than this CLI), and print the resolved path.
-    board.check(&config_parity_outcome());
-
     // 5b) Shell gate (effective runtime view + silent-parse-error trap, #341)
     let gate_outcome = shell_gate_outcome();
     board.check(&gate_outcome);

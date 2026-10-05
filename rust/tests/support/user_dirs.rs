@@ -6,11 +6,9 @@
 //! `~/.local/share/lean-ctx`, `~/.local/state/lean-ctx` and `~/.cache/lean-ctx`.
 //!
 //! The static below runs before `main` and points HOME and the XDG bases at a
-//! fresh per-process temp dir, plus a non-standard `LEAN_CTX_DATA_DIR`, which
-//! holds config, state and cache as well (the same isolation
-//! `.config/nextest-tmpdir.sh` gives nextest runs). A test that sets its own
-//! `LEAN_CTX_DATA_DIR` replaces it; one that removes it still resolves into
-//! the temp dir through HOME and the XDG bases.
+//! fresh per-process temp dir, so config, data, state and cache all resolve
+//! inside it. A test that sets its own `LEAN_CTX_<CATEGORY>_DIR` moves only
+//! that category.
 
 const SANDBOXED_VARS: &[(&str, &str)] = &[
     ("HOME", "home"),
@@ -18,7 +16,6 @@ const SANDBOXED_VARS: &[(&str, &str)] = &[
     ("XDG_DATA_HOME", "home/.local/share"),
     ("XDG_STATE_HOME", "home/.local/state"),
     ("XDG_CACHE_HOME", "home/.cache"),
-    ("LEAN_CTX_DATA_DIR", ".lean-ctx"),
 ];
 
 extern "C" fn sandbox_user_dirs() {

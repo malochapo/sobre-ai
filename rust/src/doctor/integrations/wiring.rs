@@ -4,25 +4,7 @@
 #[allow(clippy::wildcard_imports)]
 use super::*;
 
-/// Validates an optionally-pinned `LEAN_CTX_DATA_DIR` in an MCP server entry.
-///
-/// lean-ctx no longer pins the data dir into agent configs (GH #408): it
-/// auto-detects its per-category dirs (config/data/state/cache) at runtime, and a
-/// pinned `LEAN_CTX_DATA_DIR` would force single-dir mode and collapse
-/// config/state/cache onto the data dir. So an absent env block is healthy. A
-/// config that carries the var (intentional relocation)
-/// must point at the resolved data dir — a stale pin is genuine drift.
-pub(crate) fn pinned_data_dir_ok(env_obj: Option<&serde_json::Value>, data_dir: &str) -> bool {
-    match env_obj
-        .and_then(|env| env.get("LEAN_CTX_DATA_DIR"))
-        .and_then(|d| d.as_str())
-    {
-        Some(d) => d.trim() == data_dir.trim(),
-        None => true,
-    }
-}
-
-pub(crate) fn check_mcp_json(path: &std::path::Path, binary: &str, data_dir: &str) -> NamedCheck {
+pub(crate) fn check_mcp_json(path: &std::path::Path, binary: &str) -> NamedCheck {
     if !path.exists() {
         return NamedCheck {
             name: "MCP config".to_string(),
@@ -64,9 +46,8 @@ pub(crate) fn check_mcp_json(path: &std::path::Path, binary: &str, data_dir: &st
         .get("command")
         .and_then(|c| c.as_str())
         .is_some_and(|c| cmd_matches_expected(c, binary));
-    let env_ok = pinned_data_dir_ok(e.get("env"), data_dir);
 
-    let ok = cmd_ok && env_ok;
+    let ok = cmd_ok;
     let detail = if ok {
         format!("ok ({})", path.display())
     } else {
@@ -83,12 +64,8 @@ pub(crate) fn check_mcp_json(path: &std::path::Path, binary: &str, data_dir: &st
 /// snippet to `~/.jb-mcp.json`, which the user imports once via the IDE. The
 /// `doctor` verdict therefore verifies the snippet exists and is current, while
 /// making the required manual step explicit instead of implying auto-wiring.
-pub(crate) fn check_jetbrains_snippet(
-    path: &std::path::Path,
-    binary: &str,
-    data_dir: &str,
-) -> NamedCheck {
-    let mut c = check_mcp_json(path, binary, data_dir);
+pub(crate) fn check_jetbrains_snippet(path: &std::path::Path, binary: &str) -> NamedCheck {
+    let mut c = check_mcp_json(path, binary);
     c.name = "MCP snippet".to_string();
     if c.ok {
         c.detail = format!(

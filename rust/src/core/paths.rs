@@ -3,13 +3,10 @@
 //! One typed resolver per XDG category, so `config.toml` never mixes with
 //! runtime data and the config dir can stay read-only.
 //!
-//! ## Single-dir mode
-//!
-//! A non-standard `LEAN_CTX_DATA_DIR` collapses every category onto that one
-//! directory (a deliberate choice, and how tests isolate themselves). Otherwise
-//! each category resolves to its XDG base: config `$XDG_CONFIG_HOME/lean-ctx`,
-//! data `$XDG_DATA_HOME/lean-ctx`, state `$XDG_STATE_HOME/lean-ctx`, cache
-//! `$XDG_CACHE_HOME/lean-ctx`.
+//! Each category resolves to its own `LEAN_CTX_<CATEGORY>_DIR` override, else
+//! its XDG base: config `$XDG_CONFIG_HOME/lean-ctx`, data
+//! `$XDG_DATA_HOME/lean-ctx`, state `$XDG_STATE_HOME/lean-ctx`, cache
+//! `$XDG_CACHE_HOME/lean-ctx`. An override only ever moves its own category.
 //!
 //! Determinism (#498): every resolver is a pure function of environment + HOME;
 //! no timestamps, counters or randomness.
@@ -39,48 +36,10 @@ fn xdg_base(env_name: &str, home_fallback: &str) -> Result<PathBuf, String> {
         .ok_or_else(|| "Cannot determine home directory".to_string())
 }
 
-/// Pure resolution order for a category: explicit override > single-dir
-/// > XDG split default (`<base>/lean-ctx`).
-fn resolve(
-    category_override: Option<PathBuf>,
-    single: Option<PathBuf>,
-    xdg_base_dir: &Path,
-) -> PathBuf {
-    category_override
-        .or(single)
-        .unwrap_or_else(|| xdg_base_dir.join("lean-ctx"))
-}
-
-/// The single directory every category collapses onto, or `None` for the
-/// XDG split.
-///
-/// `Some` only when `LEAN_CTX_DATA_DIR` points at a non-standard location. A
-/// `LEAN_CTX_DATA_DIR` equal to the standard XDG data dir
-/// (`$XDG_DATA_HOME/lean-ctx`) is a DATA pin only: editors bake that value into
-/// the MCP server's `env`, and collapsing on it would make the MCP process read
-/// a different `config.toml` than the terminal CLI (#594).
-pub(crate) fn single_dir_override() -> Option<PathBuf> {
-    env_path("LEAN_CTX_DATA_DIR").filter(|p| !is_standard_xdg_data_dir(p))
-}
-
-/// True when `p` is exactly the standard XDG data dir (`$XDG_DATA_HOME/lean-ctx`,
-/// default `~/.local/share/lean-ctx`). Pure function of env + HOME (no filesystem
-/// access) so category resolution stays deterministic (#498).
-fn is_standard_xdg_data_dir(p: &Path) -> bool {
-    xdg_base("XDG_DATA_HOME", ".local/share")
-        .map(|base| base.join("lean-ctx"))
-        .is_ok_and(|standard| standard.as_path() == p)
-}
-
-/// Whether an editor-baked `LEAN_CTX_DATA_DIR` value (`pin`) would make that
-/// editor's MCP server resolve a *different* `config.toml` than the terminal
-/// CLI. Only a **non-standard** pin collapses config/state/cache onto the data
-/// dir (#594); a pin equal to the standard `$XDG_DATA_HOME/lean-ctx` is a
-/// data-only pin and keeps config parity. Pure function of `pin` + the current
-/// process' env/HOME (the terminal's view), so `doctor` can compare an editor's
-/// baked pin against the CLI's own resolution without mutating env or spawning.
-pub(crate) fn data_pin_diverges_config(pin: &Path) -> bool {
-    !is_standard_xdg_data_dir(pin)
+/// Pure resolution order for a category: explicit override > XDG default
+/// (`<base>/lean-ctx`).
+fn resolve(category_override: Option<PathBuf>, xdg_base_dir: &Path) -> PathBuf {
+    category_override.unwrap_or_else(|| xdg_base_dir.join("lean-ctx"))
 }
 
 /// Shared resolver for the config/state/cache categories.
@@ -107,7 +66,7 @@ fn category_dir(cat_env: &str, xdg_env: &str, home_fallback: &str) -> Result<Pat
     #[cfg(not(test))]
     {
         let base = xdg_base(xdg_env, home_fallback)?;
-        let dir = resolve(category_override, single_dir_override(), &base);
+        let dir = resolve(category_override, &base);
         ensure_dir_permissions(&dir);
         Ok(dir)
     }
@@ -149,20 +108,12 @@ mod tests {
     use super::*;
 
     #[test]
-    fn resolve_prefers_override_then_single_then_xdg() {
+    fn resolve_prefers_override_then_xdg() {
         let over = PathBuf::from("/over/ride");
-        let single = PathBuf::from("/single/dir");
         let base = PathBuf::from("/xdg/base");
 
-        assert_eq!(
-            resolve(Some(over.clone()), Some(single.clone()), &base),
-            over
-        );
-        assert_eq!(resolve(None, Some(single.clone()), &base), single);
-        assert_eq!(
-            resolve(None, None, &base),
-            PathBuf::from("/xdg/base/lean-ctx")
-        );
+        assert_eq!(resolve(Some(over.clone()), &base), over);
+        assert_eq!(resolve(None, &base), PathBuf::from("/xdg/base/lean-ctx"));
     }
 
     #[test]
@@ -177,54 +128,6 @@ mod tests {
         // Unset var → falls back to $HOME/<home_fallback>.
         let fallback = xdg_base("LEAN_CTX_NONEXISTENT_XDG_VAR", ".cache").unwrap();
         assert!(fallback.ends_with(".cache"), "got: {}", fallback.display());
-    }
-
-    #[test]
-    fn single_dir_override_honors_data_dir_env() {
-        let _lock = crate::core::data_dir::test_env_lock();
-        let tmp = tempfile::tempdir().unwrap();
-        crate::test_env::set_var("LEAN_CTX_DATA_DIR", tmp.path());
-        let got = single_dir_override();
-        crate::test_env::remove_var("LEAN_CTX_DATA_DIR");
-        // A custom (non-standard) data dir is a deliberate single-dir choice.
-        assert_eq!(got, Some(tmp.path().to_path_buf()));
-    }
-
-    #[test]
-    fn is_standard_xdg_data_dir_matches_xdg_data_home() {
-        let _lock = crate::core::data_dir::test_env_lock();
-        let data_home = tempfile::tempdir().unwrap();
-        crate::test_env::set_var("XDG_DATA_HOME", data_home.path());
-        let is_std = is_standard_xdg_data_dir(&data_home.path().join("lean-ctx"));
-        let is_custom = is_standard_xdg_data_dir(Path::new("/some/custom/lean-ctx"));
-        crate::test_env::remove_var("XDG_DATA_HOME");
-        assert!(is_std, "$XDG_DATA_HOME/lean-ctx is the standard data dir");
-        assert!(!is_custom, "a custom path is not the standard data dir");
-    }
-
-    #[test]
-    fn standard_data_pin_does_not_collapse_categories() {
-        // #594: an editor (MCP env) that pins LEAN_CTX_DATA_DIR to the *standard*
-        // XDG data dir must NOT drag config/state/cache along — single_dir_override
-        // must return None so they keep their own XDG bases, matching the CLI.
-        let _lock = crate::core::data_dir::test_env_lock();
-        let home = tempfile::tempdir().unwrap();
-        let xdg_config = tempfile::tempdir().unwrap();
-        let xdg_data = tempfile::tempdir().unwrap();
-        let data_pin = xdg_data.path().join("lean-ctx");
-        crate::test_env::set_var("HOME", home.path());
-        crate::test_env::set_var("XDG_CONFIG_HOME", xdg_config.path());
-        crate::test_env::set_var("XDG_DATA_HOME", xdg_data.path());
-        crate::test_env::set_var("LEAN_CTX_DATA_DIR", &data_pin);
-
-        let got = single_dir_override();
-
-        crate::test_env::remove_var("LEAN_CTX_DATA_DIR");
-        crate::test_env::remove_var("XDG_DATA_HOME");
-        crate::test_env::remove_var("XDG_CONFIG_HOME");
-        crate::test_env::remove_var("HOME");
-
-        assert_eq!(got, None);
     }
 
     #[test]

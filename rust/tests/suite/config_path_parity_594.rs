@@ -7,7 +7,7 @@
 //! `~/.local/share/lean-ctx` while the terminal CLI read it from
 //! `~/.config/lean-ctx` — the two silently diverged.
 //!
-//! The fix decoupled the *standard* XDG-data pin from config resolution. These
+//! `LEAN_CTX_DATA_DIR` now moves only the data dir, never config. These
 //! tests pin that contract end-to-end by running the real binary twice with a
 //! controlled environment (terminal vs. simulated editor-MCP) and asserting the
 //! resolved `config.toml` path is identical. `lean-ctx config path` is the
@@ -100,25 +100,16 @@ fn cli_and_mcp_resolve_same_config_path_with_standard_data_pin() {
     );
 }
 
-/// Single-dir contract: a *custom* (non-standard) `LEAN_CTX_DATA_DIR` collapses
-/// config onto it. Only the standard XDG-data pin is decoupled by the #594 fix. Guarding
-/// this proves the fix is surgical, not a blanket "ignore LEAN_CTX_DATA_DIR".
+/// A *custom* `LEAN_CTX_DATA_DIR` moves only the data dir: config stays where
+/// the CLI resolves it.
 #[test]
-fn custom_data_dir_collapses_config() {
+fn custom_data_dir_does_not_move_config() {
     let sb = sandbox();
 
     let cli = config_path(&sb, None, &sb.home);
 
     let custom = sb.home.join(".lean-ctx-custom");
-    let collapsed = config_path(&sb, Some(custom.as_path()), Path::new("/"));
+    let pinned = config_path(&sb, Some(custom.as_path()), Path::new("/"));
 
-    assert_ne!(
-        collapsed, cli,
-        "a custom single-dir pin must collapse config"
-    );
-    assert_eq!(
-        collapsed,
-        custom.join("config.toml").to_string_lossy(),
-        "a custom pin must resolve config under the custom dir"
-    );
+    assert_eq!(pinned, cli, "a data-dir pin must not move config.toml");
 }

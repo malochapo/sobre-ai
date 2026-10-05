@@ -49,7 +49,7 @@ pub(crate) fn check_zed_settings(path: &std::path::Path, binary: &str) -> NamedC
     }
 }
 
-pub(crate) fn check_vscode_mcp(path: &std::path::Path, binary: &str, data_dir: &str) -> NamedCheck {
+pub(crate) fn check_vscode_mcp(path: &std::path::Path, binary: &str) -> NamedCheck {
     if !path.exists() {
         return NamedCheck {
             name: "VS Code MCP".to_string(),
@@ -79,9 +79,8 @@ pub(crate) fn check_vscode_mcp(path: &std::path::Path, binary: &str, data_dir: &
         .get("command")
         .and_then(|c| c.as_str())
         .is_some_and(|c| cmd_matches_expected(c, binary));
-    let env_ok = pinned_data_dir_ok(e.get("env"), data_dir);
 
-    let ok = ty_ok && cmd_ok && env_ok;
+    let ok = ty_ok && cmd_ok;
     NamedCheck {
         name: "VS Code MCP".to_string(),
         ok,
@@ -93,11 +92,7 @@ pub(crate) fn check_vscode_mcp(path: &std::path::Path, binary: &str, data_dir: &
     }
 }
 
-pub(crate) fn check_augment_vscode_mcp(
-    path: &std::path::Path,
-    binary: &str,
-    data_dir: &str,
-) -> NamedCheck {
+pub(crate) fn check_augment_vscode_mcp(path: &std::path::Path, binary: &str) -> NamedCheck {
     if !path.exists() {
         return NamedCheck {
             name: "Augment VS Code MCP".to_string(),
@@ -136,7 +131,6 @@ pub(crate) fn check_augment_vscode_mcp(
         .get("command")
         .and_then(|c| c.as_str())
         .is_some_and(|c| cmd_matches_expected(c, binary));
-    let env_ok = pinned_data_dir_ok(e.get("env"), data_dir);
     // The Augment VS Code panel persists user toggles via the `disabled` flag.
     // An entry with `disabled: true` is present-but-inert, so doctor must
     // surface that as drift instead of silently passing. A missing key,
@@ -144,7 +138,7 @@ pub(crate) fn check_augment_vscode_mcp(
     // an explicit `true` counts as a user-initiated disable.
     let not_disabled = e.get("disabled").and_then(serde_json::Value::as_bool) != Some(true);
 
-    let ok = ty_ok && cmd_ok && env_ok && not_disabled;
+    let ok = ty_ok && cmd_ok && not_disabled;
     NamedCheck {
         name: "Augment VS Code MCP".to_string(),
         ok,
@@ -158,11 +152,7 @@ pub(crate) fn check_augment_vscode_mcp(
     }
 }
 
-pub(crate) fn check_copilot_cli_mcp(
-    path: &std::path::Path,
-    binary: &str,
-    data_dir: &str,
-) -> NamedCheck {
+pub(crate) fn check_copilot_cli_mcp(path: &std::path::Path, binary: &str) -> NamedCheck {
     if !path.exists() {
         return NamedCheck {
             name: "Copilot CLI MCP".to_string(),
@@ -191,9 +181,8 @@ pub(crate) fn check_copilot_cli_mcp(
         .get("command")
         .and_then(|c| c.as_str())
         .is_some_and(|c| cmd_matches_expected(c, binary));
-    let env_ok = pinned_data_dir_ok(e.get("env"), data_dir);
 
-    let ok = cmd_ok && env_ok;
+    let ok = cmd_ok;
     NamedCheck {
         name: "Copilot CLI MCP".to_string(),
         ok,
@@ -205,11 +194,7 @@ pub(crate) fn check_copilot_cli_mcp(
     }
 }
 
-pub(crate) fn check_opencode_config(
-    path: &std::path::Path,
-    binary: &str,
-    data_dir: &str,
-) -> NamedCheck {
+pub(crate) fn check_opencode_config(path: &std::path::Path, binary: &str) -> NamedCheck {
     if !path.exists() {
         return NamedCheck {
             name: "OpenCode MCP".to_string(),
@@ -240,8 +225,7 @@ pub(crate) fn check_opencode_config(
         .and_then(|a| a.first())
         .and_then(|x| x.as_str());
     let cmd_ok = cmd.is_some_and(|c| cmd_matches_expected(c, binary));
-    let env_ok = pinned_data_dir_ok(e.get("environment"), data_dir);
-    let ok = cmd_ok && env_ok;
+    let ok = cmd_ok;
     NamedCheck {
         name: "OpenCode MCP".to_string(),
         ok,
@@ -253,11 +237,7 @@ pub(crate) fn check_opencode_config(
     }
 }
 
-pub(crate) fn check_crush_config(
-    path: &std::path::Path,
-    binary: &str,
-    data_dir: &str,
-) -> NamedCheck {
+pub(crate) fn check_crush_config(path: &std::path::Path, binary: &str) -> NamedCheck {
     if !path.exists() {
         return NamedCheck {
             name: "Crush MCP".to_string(),
@@ -286,8 +266,7 @@ pub(crate) fn check_crush_config(
         .get("command")
         .and_then(|c| c.as_str())
         .is_some_and(|c| cmd_matches_expected(c, binary));
-    let env_ok = pinned_data_dir_ok(e.get("env"), data_dir);
-    let ok = cmd_ok && env_ok;
+    let ok = cmd_ok;
     NamedCheck {
         name: "Crush MCP".to_string(),
         ok,
@@ -303,11 +282,7 @@ pub(crate) fn check_crush_config(
 /// schema (2026.6.1+). A leftover top-level `mcpServers` block is flagged even
 /// when the nested entry is fine — OpenClaw's strict validator rejects the
 /// whole config over it on every hot-reload.
-pub(crate) fn check_openclaw_config(
-    path: &std::path::Path,
-    binary: &str,
-    data_dir: &str,
-) -> NamedCheck {
+pub(crate) fn check_openclaw_config(path: &std::path::Path, binary: &str) -> NamedCheck {
     let name = "OpenClaw MCP".to_string();
     if !path.exists() {
         return NamedCheck {
@@ -356,8 +331,7 @@ pub(crate) fn check_openclaw_config(
         .get("command")
         .and_then(|c| c.as_str())
         .is_some_and(|c| cmd_matches_expected(c, binary));
-    let env_ok = pinned_data_dir_ok(e.get("env"), data_dir);
-    let ok = cmd_ok && env_ok;
+    let ok = cmd_ok;
     NamedCheck {
         name,
         ok,
@@ -369,7 +343,7 @@ pub(crate) fn check_openclaw_config(
     }
 }
 
-pub(crate) fn check_amp_config(path: &std::path::Path, binary: &str, data_dir: &str) -> NamedCheck {
+pub(crate) fn check_amp_config(path: &std::path::Path, binary: &str) -> NamedCheck {
     if !path.exists() {
         return NamedCheck {
             name: "Amp MCP".to_string(),
@@ -398,8 +372,7 @@ pub(crate) fn check_amp_config(path: &std::path::Path, binary: &str, data_dir: &
         .get("command")
         .and_then(|c| c.as_str())
         .is_some_and(|c| cmd_matches_expected(c, binary));
-    let env_ok = pinned_data_dir_ok(e.get("env"), data_dir);
-    let ok = cmd_ok && env_ok;
+    let ok = cmd_ok;
     NamedCheck {
         name: "Amp MCP".to_string(),
         ok,
@@ -411,11 +384,7 @@ pub(crate) fn check_amp_config(path: &std::path::Path, binary: &str, data_dir: &
     }
 }
 
-pub(crate) fn check_hermes_yaml(
-    path: &std::path::Path,
-    binary: &str,
-    data_dir: &str,
-) -> NamedCheck {
+pub(crate) fn check_hermes_yaml(path: &std::path::Path, binary: &str) -> NamedCheck {
     if !path.exists() {
         return NamedCheck {
             name: "Hermes MCP".to_string(),
@@ -427,9 +396,7 @@ pub(crate) fn check_hermes_yaml(
     let has_mcp = content.contains("mcp_servers:") && content.contains("lean-ctx:");
     let has_cmd =
         content.contains("command:") && (content.contains(binary) || content.contains("lean-ctx"));
-    // Absent ⇒ healthy (auto-detected); present ⇒ must point at the resolved dir.
-    let has_env = !content.contains("LEAN_CTX_DATA_DIR") || content.contains(data_dir);
-    let ok = has_mcp && has_cmd && has_env;
+    let ok = has_mcp && has_cmd;
     NamedCheck {
         name: "Hermes MCP".to_string(),
         ok,

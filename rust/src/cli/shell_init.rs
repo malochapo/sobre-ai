@@ -651,8 +651,7 @@ _lc_compress() { command "$@"; }
 # Guards: container-only + no recursion + no re-entry via BASH_ENV + 60s cooldown + PID-lock
 if [ -f /.dockerenv ] || grep -qsE '/docker/|/lxc/' /proc/1/cgroup 2>/dev/null; then
   if [ -z "${LEAN_CTX_ACTIVE:-}" ] && [ -z "${_LEAN_CTX_HEAL:-}" ]; then
-    # XDG-only paths (GL #623): never touch ~/.lean-ctx, which would re-collapse
-    # a committed XDG layout. heal_ts is STATE, locks live in the DATA dir
+    # XDG-only paths (GL #623): never touch ~/.lean-ctx. heal_ts is STATE, locks live in the DATA dir
     # (matches process_guard::lock_dir defaults).
     _LEAN_CTX_STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/lean-ctx"
     _LEAN_CTX_HEAL_TS="${_LEAN_CTX_STATE_DIR}/.heal_ts"
@@ -983,8 +982,8 @@ export EDITOR=vim
             content.contains("/.dockerenv"),
             "env.sh self-heal must be gated to container environments"
         );
-        // GL #623/#627: the self-heal must never create or read ~/.lean-ctx,
-        // which would re-collapse a committed XDG layout. heal_ts → XDG state,
+        // GL #623/#627: the self-heal must never create or read ~/.lean-ctx.
+        // heal_ts → XDG state,
         // lock count → XDG data.
         assert!(
             !content.contains("$HOME/.lean-ctx") && !content.contains("${HOME}/.lean-ctx"),

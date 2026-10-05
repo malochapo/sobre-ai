@@ -1061,11 +1061,8 @@ fn make_executable(_path: &PathBuf) {}
 /// Env key/value pairs for the lean-ctx MCP server entry written into agent
 /// configs (Codex TOML + the JSON agents).
 ///
-/// Deliberately does NOT pin `LEAN_CTX_DATA_DIR`: lean-ctx auto-detects its
-/// per-category dirs (config/data/state/cache) at runtime, and pinning the data
-/// dir would set that var in the server's environment, forcing single-dir mode
-/// and collapsing config/state/cache onto the data dir — defeating the XDG split
-/// (GH #408). Emits `LEAN_CTX_PROJECT_ROOT` when known (process env first,
+/// Pins no directory: the server resolves its config/data/state/cache dirs
+/// the same way the CLI does (GH #408). Emits `LEAN_CTX_PROJECT_ROOT` when known (process env first,
 /// then config). Without it, a long-lived MCP server spawned by the agent loses
 /// the project scope captured at `init` (#403). Extra roots come from
 /// config.toml, which the server reads itself. Single source of truth so every

@@ -7,7 +7,6 @@ use super::*;
 pub(crate) fn integration_generic(
     home: &std::path::Path,
     binary: &str,
-    data_dir: &str,
     target: &crate::core::editor_registry::types::EditorTarget,
 ) -> IntegrationStatus {
     let detected = target.detect_path.exists() || target.config_path.exists();
@@ -25,7 +24,7 @@ pub(crate) fn integration_generic(
         crate::core::editor_registry::types::ConfigType::McpJson
         | crate::core::editor_registry::types::ConfigType::CommandCode
         | crate::core::editor_registry::types::ConfigType::QoderSettings => {
-            checks.push(check_mcp_json(&target.config_path, binary, data_dir));
+            checks.push(check_mcp_json(&target.config_path, binary));
             // The Antigravity CLI also installs observe hooks as a plugin under
             // ~/.gemini/config/plugins/lean-ctx (registered in import_manifest.json,
             // NOT in any settings.json — see GH #284); verify that plugin too.
@@ -35,11 +34,7 @@ pub(crate) fn integration_generic(
             }
         }
         crate::core::editor_registry::types::ConfigType::JetBrains => {
-            checks.push(check_jetbrains_snippet(
-                &target.config_path,
-                binary,
-                data_dir,
-            ));
+            checks.push(check_jetbrains_snippet(&target.config_path, binary));
         }
         crate::core::editor_registry::types::ConfigType::Zed => {
             checks.push(check_zed_settings(&target.config_path, binary));
@@ -51,36 +46,32 @@ pub(crate) fn integration_generic(
             checks.push(codex_desktop_note());
         }
         crate::core::editor_registry::types::ConfigType::VsCodeMcp => {
-            checks.push(check_vscode_mcp(&target.config_path, binary, data_dir));
+            checks.push(check_vscode_mcp(&target.config_path, binary));
         }
         crate::core::editor_registry::types::ConfigType::CopilotCli => {
-            checks.push(check_copilot_cli_mcp(&target.config_path, binary, data_dir));
+            checks.push(check_copilot_cli_mcp(&target.config_path, binary));
         }
         crate::core::editor_registry::types::ConfigType::OpenCode => {
-            checks.push(check_opencode_config(&target.config_path, binary, data_dir));
+            checks.push(check_opencode_config(&target.config_path, binary));
         }
         crate::core::editor_registry::types::ConfigType::Crush => {
-            checks.push(check_crush_config(&target.config_path, binary, data_dir));
+            checks.push(check_crush_config(&target.config_path, binary));
         }
         crate::core::editor_registry::types::ConfigType::Amp => {
-            checks.push(check_amp_config(&target.config_path, binary, data_dir));
+            checks.push(check_amp_config(&target.config_path, binary));
         }
         crate::core::editor_registry::types::ConfigType::HermesYaml => {
-            checks.push(check_hermes_yaml(&target.config_path, binary, data_dir));
+            checks.push(check_hermes_yaml(&target.config_path, binary));
         }
         crate::core::editor_registry::types::ConfigType::GeminiSettings => {
-            checks.push(check_mcp_json(&target.config_path, binary, data_dir));
+            checks.push(check_mcp_json(&target.config_path, binary));
             checks.push(check_gemini_trust_and_hooks(home, binary));
         }
         crate::core::editor_registry::types::ConfigType::AugmentVsCode => {
-            checks.push(check_augment_vscode_mcp(
-                &target.config_path,
-                binary,
-                data_dir,
-            ));
+            checks.push(check_augment_vscode_mcp(&target.config_path, binary));
         }
         crate::core::editor_registry::types::ConfigType::OpenClaw => {
-            checks.push(check_openclaw_config(&target.config_path, binary, data_dir));
+            checks.push(check_openclaw_config(&target.config_path, binary));
         }
         crate::core::editor_registry::types::ConfigType::VibeToml => {
             // Vibe uses TOML config, check if lean-ctx is in mcp_servers
@@ -112,11 +103,7 @@ pub(crate) fn integration_generic(
     }
 }
 
-pub(crate) fn integration_cursor(
-    home: &std::path::Path,
-    binary: &str,
-    data_dir: &str,
-) -> IntegrationStatus {
+pub(crate) fn integration_cursor(home: &std::path::Path, binary: &str) -> IntegrationStatus {
     let cursor_dir = home.join(".cursor");
     if !cursor_dir.exists() {
         return IntegrationStatus {
@@ -129,7 +116,7 @@ pub(crate) fn integration_cursor(
 
     let mut checks = Vec::new();
     let mcp_path = cursor_dir.join("mcp.json");
-    checks.push(check_mcp_json(&mcp_path, binary, data_dir));
+    checks.push(check_mcp_json(&mcp_path, binary));
 
     let hooks_path = cursor_dir.join("hooks.json");
     checks.push(check_cursor_hooks(&hooks_path, binary));
@@ -143,11 +130,7 @@ pub(crate) fn integration_cursor(
     }
 }
 
-pub(crate) fn integration_claude(
-    home: &std::path::Path,
-    binary: &str,
-    data_dir: &str,
-) -> IntegrationStatus {
+pub(crate) fn integration_claude(home: &std::path::Path, binary: &str) -> IntegrationStatus {
     let target = crate::core::editor_registry::build_targets(home)
         .into_iter()
         .find(|t| t.agent_key == "claude");
@@ -166,7 +149,7 @@ pub(crate) fn integration_claude(
 
     let mut checks = Vec::new();
     let mcp_path = crate::core::editor_registry::claude_mcp_json_path(home);
-    let mcp_check = check_mcp_json(&mcp_path, binary, data_dir);
+    let mcp_check = check_mcp_json(&mcp_path, binary);
     let mcp_registered = mcp_check.ok;
     checks.push(mcp_check);
 
@@ -242,11 +225,7 @@ pub(crate) fn integration_claude(
     }
 }
 
-pub(crate) fn integration_codebuddy(
-    home: &std::path::Path,
-    binary: &str,
-    data_dir: &str,
-) -> IntegrationStatus {
+pub(crate) fn integration_codebuddy(home: &std::path::Path, binary: &str) -> IntegrationStatus {
     let target = crate::core::editor_registry::build_targets(home)
         .into_iter()
         .find(|t| t.agent_key == "codebuddy");
@@ -265,7 +244,7 @@ pub(crate) fn integration_codebuddy(
 
     let mut checks = Vec::new();
     let mcp_path = crate::core::editor_registry::codebuddy_mcp_json_path(home);
-    checks.push(check_mcp_json(&mcp_path, binary, data_dir));
+    checks.push(check_mcp_json(&mcp_path, binary));
 
     let settings_path =
         crate::core::editor_registry::codebuddy_state_dir(home).join("settings.json");
