@@ -177,9 +177,8 @@ pub fn run() -> u32 {
     board.check(&stats_outcome);
 
     // 5) config.toml (missing is OK). It lives in the CONFIG dir
-    // ($XDG_CONFIG_HOME/lean-ctx after a split), not the data dir — resolve it
-    // through the same path as the loader so the report matches reality
-    // post-migration instead of pointing at the old location (#435).
+    // ($XDG_CONFIG_HOME/lean-ctx), resolved through Config::path() to match
+    // the loader's logic (#435).
     let config_path = crate::core::config::Config::path();
     let config_outcome = match &config_path {
         Some(p) => match std::fs::metadata(p) {

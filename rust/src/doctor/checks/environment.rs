@@ -37,6 +37,21 @@ pub(crate) fn compact_format_passthrough_outcome() -> Outcome {
         ),
     }
 }
+/// Check if an RC file contains lean-ctx and collect name + update needs.
+fn check_shell_rc(
+    name: &str,
+    path: std::path::PathBuf,
+    parts: &mut Vec<String>,
+    needs_update: &mut Vec<String>,
+) {
+    if rc_contains_lean_ctx(&path) {
+        parts.push(format!("{DIM}{name}{RST}"));
+        if !rc_has_pipe_guard(&path) && is_active_shell(name) {
+            needs_update.push(name.to_string());
+        }
+    }
+}
+
 pub(crate) fn shell_aliases_outcome() -> Outcome {
     let Some(home) = dirs::home_dir() else {
         return Outcome {
@@ -48,28 +63,24 @@ pub(crate) fn shell_aliases_outcome() -> Outcome {
     let mut parts = Vec::new();
     let mut needs_update = Vec::new();
 
-    let zsh = home.join(".zshrc");
-    if rc_contains_lean_ctx(&zsh) {
-        parts.push(format!("{DIM}~/.zshrc{RST}"));
-        if !rc_has_pipe_guard(&zsh) && is_active_shell("~/.zshrc") {
-            needs_update.push("~/.zshrc");
-        }
-    }
-    let bash = home.join(".bashrc");
-    if rc_contains_lean_ctx(&bash) {
-        parts.push(format!("{DIM}~/.bashrc{RST}"));
-        if !rc_has_pipe_guard(&bash) && is_active_shell("~/.bashrc") {
-            needs_update.push("~/.bashrc");
-        }
-    }
-
-    let fish = home.join(".config").join("fish").join("config.fish");
-    if rc_contains_lean_ctx(&fish) {
-        parts.push(format!("{DIM}~/.config/fish/config.fish{RST}"));
-        if !rc_has_pipe_guard(&fish) && is_active_shell("~/.config/fish/config.fish") {
-            needs_update.push("~/.config/fish/config.fish");
-        }
-    }
+    check_shell_rc(
+        "~/.zshrc",
+        home.join(".zshrc"),
+        &mut parts,
+        &mut needs_update,
+    );
+    check_shell_rc(
+        "~/.bashrc",
+        home.join(".bashrc"),
+        &mut parts,
+        &mut needs_update,
+    );
+    check_shell_rc(
+        "~/.config/fish/config.fish",
+        home.join(".config").join("fish").join("config.fish"),
+        &mut parts,
+        &mut needs_update,
+    );
 
     #[cfg(windows)]
     {
