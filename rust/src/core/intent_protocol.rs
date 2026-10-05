@@ -290,9 +290,7 @@ pub fn apply_side_effects(
         return Ok(());
     };
 
-    let policy = crate::core::config::Config::load()
-        .memory_policy_effective()
-        .map_err(|e| format!("invalid memory policy: {e}"))?;
+    let policy = crate::core::memory_policy::MemoryPolicy::default();
     // Load-modify-save under the shared lock so an intent side effect never
     // clobbers a fact a concurrent (possibly background) writer commits in
     // between (issue #326): a bare load + save would lose that update.

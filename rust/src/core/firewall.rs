@@ -33,24 +33,23 @@ pub fn is_protected_read(name: &str) -> bool {
     matches!(name, "ctx_read")
 }
 
-/// Minimum token count before firewalling.
-pub fn min_tokens() -> usize {
-    crate::core::config::ArchiveConfig::default().ephemeral_min_tokens_effective()
-}
+/// Minimum output tokens before the firewall replaces an inline tool result with
+/// a summary + retrieval ref. Outputs below this stay fully inline.
+pub const MIN_TOKENS: usize = 2000;
+
+/// Maximum output size that `ctx_shell(inline=true)` returns verbatim before the
+/// archive/firewall path takes over.
+pub const INLINE_MAX_BYTES: usize = 32 * 1024;
 
 /// Whether a result of `output_tokens` from `tool` should be firewalled.
 pub fn should_firewall(tool: &str, output_tokens: usize) -> bool {
-    crate::core::config::ArchiveConfig::default().ephemeral_effective()
-        && is_firewallable_tool(tool)
-        && output_tokens >= min_tokens()
+    is_firewallable_tool(tool) && output_tokens >= MIN_TOKENS
 }
 
 /// Whether an explicitly requested `ctx_shell(inline=true)` result fits the
-/// configured verbatim-delivery cap.
+/// verbatim-delivery cap.
 pub fn should_inline_shell(inline_requested: bool, output_bytes: usize) -> bool {
-    inline_requested
-        && output_bytes
-            <= crate::core::config::ArchiveConfig::default().inline_max_bytes_effective()
+    inline_requested && output_bytes <= INLINE_MAX_BYTES
 }
 
 /// Build the inline digest that replaces a firewalled output. Deterministic (no LLM):
@@ -158,14 +157,14 @@ mod tests {
     #[test]
     fn should_firewall_respects_tool_and_threshold() {
         // Archive + ephemeral are on, threshold 2000 tokens.
-        assert_eq!(min_tokens(), 2000);
+        assert_eq!(MIN_TOKENS, 2000);
         assert!(should_firewall("ctx_shell", 5000));
         assert!(!should_firewall("ctx_shell", 1000)); // below threshold
         assert!(!should_firewall("ctx_read", 5000)); // not firewallable
     }
 
     fn inline_cap() -> usize {
-        crate::core::config::ArchiveConfig::default().inline_max_bytes_effective()
+        INLINE_MAX_BYTES
     }
 
     #[test]

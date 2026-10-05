@@ -394,16 +394,7 @@ stale_files: {}\n",
                     |p| p.to_string_lossy().to_string(),
                 )
             });
-            let policy = match crate::core::config::Config::load().memory_policy_effective() {
-                Ok(p) => p,
-                Err(e) => {
-                    let path = crate::core::config::Config::path().map_or_else(
-                        || "~/.lean-ctx/config.toml".to_string(),
-                        |p| p.display().to_string(),
-                    );
-                    return format!("Error: invalid memory policy: {e}\nFix: edit {path}");
-                }
-            };
+            let policy = crate::core::memory_policy::MemoryPolicy::default();
             let hash = crate::core::project_hash::hash_project_root(&project_root);
             let mut store = crate::core::episodic_memory::EpisodicStore::load_or_create(&hash);
 
@@ -509,16 +500,7 @@ stale_files: {}\n",
                     |p| p.to_string_lossy().to_string(),
                 )
             });
-            let policy = match crate::core::config::Config::load().memory_policy_effective() {
-                Ok(p) => p,
-                Err(e) => {
-                    let path = crate::core::config::Config::path().map_or_else(
-                        || "~/.lean-ctx/config.toml".to_string(),
-                        |p| p.display().to_string(),
-                    );
-                    return format!("Error: invalid memory policy: {e}\nFix: edit {path}");
-                }
-            };
+            let policy = crate::core::memory_policy::MemoryPolicy::default();
             let hash = crate::core::project_hash::hash_project_root(&project_root);
             let episodes = crate::core::episodic_memory::EpisodicStore::load_or_create(&hash);
             let mut procs = crate::core::procedural_memory::ProceduralStore::load_or_create(&hash);
@@ -616,9 +598,7 @@ fn auto_record_episode(
             |p| p.to_string_lossy().to_string(),
         )
     });
-    let policy = crate::core::config::Config::load()
-        .memory_policy_effective()
-        .map_err(|e| format!("invalid memory policy: {e}"))?;
+    let policy = crate::core::memory_policy::MemoryPolicy::default();
     let hash = crate::core::project_hash::hash_project_root(&project_root);
     let mut store = crate::core::episodic_memory::EpisodicStore::load_or_create(&hash);
 

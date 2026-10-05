@@ -1,9 +1,6 @@
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
-
-use super::memory_policy::MemoryPolicy;
 
 /// Cache payload for [`Config::load_arc`]: the shared config alongside the
 /// content hash of the file it was built from, so a
@@ -12,19 +9,16 @@ type ConfigCacheSlot = Option<(Arc<Config>, Option<String>)>;
 
 mod enums;
 mod loader;
-mod memory;
 mod proxy;
 mod read_dedup;
 pub(crate) mod read_redirect;
 mod render;
 pub mod risk;
 pub mod schema;
-mod sections;
 mod serde_defaults;
 pub mod setter;
 pub mod shell_activation;
 pub use render::render_annotated_config;
-pub use sections::*;
 #[cfg(test)]
 mod tests;
 #[cfg(test)]
@@ -35,7 +29,6 @@ pub use enums::{
     TerseAgent,
 };
 pub use loader::last_config_parse_error;
-pub use memory::{MemoryCleanup, MemoryGuardConfig, MemoryProfile, SavingsFooter};
 pub use proxy::{
     ProxyConfig, ProxyProvider, ResolvedProvider, RoutingRules, Upstreams, WireShape,
     is_local_proxy_url, normalize_url, normalize_url_opt, parse_route_target, upstream_drifted,
@@ -53,13 +46,27 @@ pub fn default_bm25_max_cache_mb() -> u64 {
 /// Effective on-disk ceiling (MB) for the persisted BM25 index when nothing is
 /// explicitly configured (no `bm25_max_cache_mb`, no `max_disk_mb` budget).
 ///
-/// Deliberately decoupled from the RAM `MemoryProfile` (64/128/512 MB): this is
-/// a *disk* file, and tying it to the profile silently refused persistence on
-/// large repos under Low/Balanced, forcing a cold rebuild on every call (the
-/// perpetual "index warming" of issue #249). 512 MB compressed covers
+/// 512 MB compressed covers
 /// essentially every real repo; RAM pressure is governed separately by the
 /// eviction orchestrator (which measures real heap).
 pub const DEFAULT_BM25_PERSIST_MB: u64 = 512;
+
+/// Fixed-context budget (#964): the per-session footprint lean-ctx adds — tool
+/// schemas + MCP instructions + auto-loaded rules files + the wakeup briefing —
+/// is checked against this in `doctor overhead` and `gain`.
+pub const CONTEXT_BUDGET_TOKENS: usize = 8000;
+
+/// Proactive CCR expansion: maximum archive content injected per tool response.
+pub const PROACTIVE_EXPANSION_BUDGET_TOKENS: usize = 2000;
+/// Proactive CCR expansion: minimum normalized BM25 score for an injection.
+pub const PROACTIVE_EXPANSION_THRESHOLD: f64 = 0.6;
+/// Proactive CCR expansion: archived content older than this is ignored.
+pub const PROACTIVE_EXPANSION_MAX_AGE_SECS: u64 = 3600;
+
+/// Disk ceiling of the zero-loss compression archive (large tool outputs).
+pub const ARCHIVE_MAX_DISK_MB: u64 = 500;
+/// Retention of the compression archive.
+pub const ARCHIVE_MAX_AGE_HOURS: u64 = 48;
 
 /// Compact output formats preserved verbatim instead of recompressed (#342).
 pub const PRESERVE_COMPACT_FORMATS: &[&str] = &["toon"];
@@ -69,6 +76,9 @@ pub const GRAPH_INDEX_MAX_FILES: u64 = 15_000;
 
 /// Share of system RAM the memory guard allows lean-ctx to use.
 pub const MAX_RAM_PERCENT: u8 = 5;
+
+/// Idle time after which the session cache is cleared.
+pub const IDLE_CACHE_TTL_SECS: u64 = 3600;
 
 /// Commands slower than this get a timing note in their output.
 pub const SLOW_COMMAND_THRESHOLD_MS: u64 = 5000;
@@ -163,44 +173,6 @@ impl Default for Config {
 }
 
 impl Config {
-    /// Whether opt-in lossless JSON crushing of verbatim data commands (#936) is
-    /// active. Off.
-    pub fn crush_verbatim_json_effective(&self) -> bool {
-        false
-    }
-
-    /// Cap on the rayon index-build worker threads; `0` means "no cap" —
-    /// rayon's all-cores default is kept.
-    pub fn max_index_threads_effective(&self) -> usize {
-        0
-    }
-
-    /// Minimal overhead: on. Tool outputs carry no optional metadata blocks.
-    pub fn minimal_overhead_effective(&self) -> bool {
-        true
-    }
-
-    /// Whether the adaptive learning signals may participate in `auto` mode
-    /// resolution (#683). Off: a deterministic, I/O-light cascade.
-    pub fn auto_mode_learning_effective(&self) -> bool {
-        false
-    }
-
-    /// Whether probabilistic exploration (Thompson sampling, Boltzmann-
-    /// temperature eviction, simulated annealing) may influence decisions.
-    /// Off, so tool output stays a deterministic, byte-stable function of
-    /// (content, mode, task) — the determinism contract (#498) that lets
-    /// provider prompt caching apply.
-    pub fn is_stochastic_enabled(&self) -> bool {
-        self.auto_mode_learning_effective()
-    }
-
-    /// Whether minimal overhead applies to this MCP client: always, see
-    /// [`Self::minimal_overhead_effective`].
-    pub fn minimal_overhead_effective_for_client(&self, _client_name: &str) -> bool {
-        self.minimal_overhead_effective()
-    }
-
     /// Returns `true` if shell hook injection is disabled.
     pub fn shell_hook_disabled_effective(&self) -> bool {
         !self.shell_hook
@@ -210,83 +182,6 @@ impl Config {
     #[must_use]
     pub fn jail_open(&self) -> bool {
         self.allow_paths.iter().any(|p| p.trim() == "/")
-    }
-
-    /// #814: whether `ctx_shell` may accept inline interpreter scripts
-    /// (`python3 -c "..."`, `node -e "..."`, etc.). No.
-    pub fn shell_allow_inline_scripts_effective(&self) -> bool {
-        false
-    }
-
-    /// The memory policy: [`MemoryPolicy::default`], validated.
-    pub fn memory_policy_effective(&self) -> Result<MemoryPolicy, String> {
-        let policy = MemoryPolicy::default();
-        policy.validate()?;
-        Ok(policy)
-    }
-
-    /// Sensitivity classification: [`SensitivityConfig::default`] (off).
-    ///
-    /// [`SensitivityConfig::default`]: crate::core::sensitivity::SensitivityConfig
-    #[must_use]
-    pub fn sensitivity_effective(&self) -> crate::core::sensitivity::SensitivityConfig {
-        crate::core::sensitivity::SensitivityConfig::default()
-    }
-
-    /// Whether all automatic read-mode degradation is disabled. No.
-    pub fn no_degrade_effective(&self) -> bool {
-        false
-    }
-
-    /// Whether explicit `full`/`lines:N-M` re-reads of cached-but-changed files
-    /// are served as deltas (`mode=diff`) instead of re-emitting full content.
-    /// Yes.
-    pub fn delta_explicit_effective(&self) -> bool {
-        true
-    }
-
-    /// Fixed-context budget (tokens) (#964): the per-session footprint is
-    /// checked against this in `doctor overhead` and `gain`.
-    pub fn context_budget_tokens_effective(&self) -> usize {
-        ContextConfig::default().budget_tokens
-    }
-
-    /// Whether later tool calls may receive matching CCR context.
-    pub fn proactive_expansion_effective(&self) -> bool {
-        ContextConfig::default().proactive_expansion
-    }
-
-    /// Per-response token budget for proactive CCR expansion.
-    pub fn proactive_expansion_budget_tokens_effective(&self) -> usize {
-        ContextConfig::default().proactive_expansion_budget_tokens
-    }
-
-    /// Normalized BM25 score threshold for proactive CCR expansion.
-    pub fn proactive_expansion_threshold_effective(&self) -> f64 {
-        ContextConfig::default().proactive_expansion_threshold
-    }
-
-    /// Maximum archive age considered for proactive expansion.
-    pub fn proactive_expansion_max_age_secs_effective(&self) -> u64 {
-        ContextConfig::default().proactive_expansion_max_age_secs
-    }
-
-    /// Archive disk ceiling (MB).
-    pub fn archive_max_disk_mb_effective(&self) -> u64 {
-        ArchiveConfig::default().max_disk_mb
-    }
-
-    /// Archive retention (hours).
-    pub fn archive_max_age_hours_effective(&self) -> u64 {
-        ArchiveConfig::default().max_age_hours
-    }
-
-    /// On-disk ceiling (MB) for the persisted BM25 index. Single source of
-    /// truth for `save`/`load`, `cache prune`, and the doctor health check.
-    /// Decoupled from the RAM profile so large repos persist instead of
-    /// rebuilding forever (issue #249).
-    pub fn bm25_max_cache_mb_effective(&self) -> u64 {
-        DEFAULT_BM25_PERSIST_MB
     }
 }
 

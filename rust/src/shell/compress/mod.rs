@@ -1,6 +1,5 @@
 mod classification;
 pub(crate) mod engine;
-mod footer;
 mod passthrough;
 #[cfg(test)]
 mod tests;
@@ -8,7 +7,6 @@ mod tests;
 mod tests_engine;
 
 pub use engine::compress_if_beneficial_pub;
-pub use footer::shell_savings_footer;
 
 pub(super) use classification::is_excluded_command;
 pub(super) use engine::compress_and_measure;

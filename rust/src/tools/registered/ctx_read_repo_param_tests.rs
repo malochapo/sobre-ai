@@ -37,7 +37,6 @@ async fn repo_param_resolves_against_repo_root_no_cache_collision() {
     let ctx = ToolContext {
         project_root: dir_a.path().to_string_lossy().to_string(),
         extra_roots: Vec::new(),
-        minimal: false,
         resolved_paths: std::collections::HashMap::new(),
         crp_mode: crate::tools::CrpMode::Off,
         cache: Some(cache),
@@ -99,7 +98,6 @@ async fn repo_param_unknown_alias_errors_with_known_aliases() {
     let ctx = ToolContext {
         project_root: ".".to_string(),
         extra_roots: Vec::new(),
-        minimal: false,
         resolved_paths: std::collections::HashMap::new(),
         crp_mode: crate::tools::CrpMode::Off,
         cache: Some(cache),

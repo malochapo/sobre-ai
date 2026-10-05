@@ -4,10 +4,6 @@ use crate::core::knowledge_relations::{
     parse_node_ref,
 };
 
-fn load_policy_or_error() -> Result<crate::core::memory_policy::MemoryPolicy, String> {
-    super::knowledge_shared::load_policy_or_error()
-}
-
 fn ensure_current_fact_exists(knowledge: &ProjectKnowledge, node: &KnowledgeNodeRef) -> bool {
     knowledge
         .facts
@@ -108,10 +104,7 @@ pub fn handle_relate(
         Err(e) => return e,
     };
 
-    let policy = match load_policy_or_error() {
-        Ok(p) => p,
-        Err(e) => return e,
-    };
+    let policy = crate::core::memory_policy::MemoryPolicy::default();
 
     let knowledge = ProjectKnowledge::load_or_create(project_root);
     if !ensure_current_fact_exists(&knowledge, &from) {
@@ -229,10 +222,7 @@ pub fn handle_relations(
         None => None,
     };
 
-    let policy = match load_policy_or_error() {
-        Ok(p) => p,
-        Err(e) => return e,
-    };
+    let policy = crate::core::memory_policy::MemoryPolicy::default();
     let limit = policy.knowledge.relations_limit;
 
     let knowledge = ProjectKnowledge::load_or_create(project_root);
@@ -366,10 +356,7 @@ pub fn handle_relations_diagram(
         None => None,
     };
 
-    let policy = match load_policy_or_error() {
-        Ok(p) => p,
-        Err(e) => return e,
-    };
+    let policy = crate::core::memory_policy::MemoryPolicy::default();
     let limit = policy.knowledge.relations_limit;
 
     let knowledge = ProjectKnowledge::load_or_create(project_root);

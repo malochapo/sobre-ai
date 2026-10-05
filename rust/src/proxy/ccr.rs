@@ -84,43 +84,6 @@ pub(crate) fn persist(content: &str) -> Option<String> {
     persist_with(content, "proxy")
 }
 
-/// Persist a JSON crusher's verbatim original (#936) under the `json_` prefix and
-/// return its `{state}/tee/json_{hash}.log` handle. Used by the lossy crush stage
-/// so a dropped column is always recoverable out-of-band via [`resolve_tee`] /
-/// `ctx_expand`, never reconstructed from the (lossy) text. Shares the
-/// content-address and best-effort write contract of [`persist`], so the embedded
-/// handle stays deterministic (cache-safe).
-pub(crate) fn persist_json(content: &str) -> Option<String> {
-    persist_with(content, "json")
-}
-
-/// Persist a tabular (CSV/TSV) crusher's verbatim original (#982) under the
-/// `tbl_` prefix and return its `{state}/tee/tbl_{hash}.log` handle. Used by the
-/// lossy column-drop stage so a dropped column is always recoverable out-of-band
-/// via [`resolve_tee`] / `ctx_expand`, never reconstructed from the (lossy) text.
-/// Shares the content-address and best-effort write contract of [`persist`].
-pub(crate) fn persist_tabular(content: &str) -> Option<String> {
-    persist_with(content, "tbl")
-}
-
-/// Persist a YAML crusher's verbatim original (#985) under the `yaml_` prefix and
-/// return its `{state}/tee/yaml_{hash}.log` handle. Used by the lossy column-drop
-/// stage so a dropped column is always recoverable out-of-band via [`resolve_tee`]
-/// / `ctx_expand`, never reconstructed from the (lossy) text. Shares the
-/// content-address and best-effort write contract of [`persist`].
-pub(crate) fn persist_yaml(content: &str) -> Option<String> {
-    persist_with(content, "yaml")
-}
-
-/// Persist an HTML page's verbatim original (#1124) under the `html_` prefix
-/// and return its `{state}/tee/html_{hash}.log` handle. The extracted markdown
-/// is the compressed form; the full HTML is recoverable via [`resolve_tee`] /
-/// `ctx_expand`. Shares the content-address and best-effort write contract of
-/// [`persist`].
-pub(crate) fn persist_html(content: &str) -> Option<String> {
-    persist_with(content, "html")
-}
-
 fn persist_with(content: &str, prefix: &str) -> Option<String> {
     persist_with_min(content, prefix, MIN_TEE_BYTES)
 }
@@ -141,7 +104,7 @@ fn persist_with_min(content: &str, prefix: &str, min_bytes: usize) -> Option<Str
         // Same redaction the shell tee applies, so a recovered original can never
         // re-introduce a secret the live turn would also have masked.
         let masked = crate::core::redaction::redact_text(content);
-        let (redacted, _) = crate::core::secret_detection::scan_and_redact_from_config(&masked);
+        let (redacted, _) = crate::core::secret_detection::scan_and_redact(&masked);
         if std::fs::write(&path, redacted).is_ok() {
             #[cfg(unix)]
             {
@@ -345,101 +308,6 @@ mod tests {
         assert!(resolve_tee("proxy_nothex0000000.log").is_none());
         // Right shape but no such file in the store.
         assert!(resolve_tee("deadbeefdeadbeef").is_none());
-    }
-
-    #[test]
-    fn persist_json_is_distinct_prefix_and_resolvable() {
-        let _lock = crate::core::data_dir::test_env_lock();
-        let content = big("json crusher original");
-        let proxy = persist(&content).expect("proxy persisted");
-        let json = persist_json(&content).expect("json persisted");
-        assert!(
-            json.contains("json_"),
-            "json handle uses json_ prefix: {json}"
-        );
-        assert_ne!(
-            proxy, json,
-            "same content gets distinct files per producer prefix"
-        );
-
-        // The json_ handle resolves through the unified resolver in every form a
-        // stub / footer can carry: full path, bare file name, and bare json_id.
-        let hash = crate::core::hasher::hash_short(&content);
-        for form in [
-            json.clone(),
-            format!("json_{hash}.log"),
-            format!("json_{hash}"),
-        ] {
-            assert_eq!(
-                resolve_tee(&form)
-                    .expect("json form resolves")
-                    .to_string_lossy(),
-                json,
-                "json form {form} -> {json}"
-            );
-        }
-    }
-
-    #[test]
-    fn persist_tabular_is_distinct_prefix_and_resolvable() {
-        let _lock = crate::core::data_dir::test_env_lock();
-        let content = big("tabular crusher original");
-        let json = persist_json(&content).expect("json persisted");
-        let tbl = persist_tabular(&content).expect("tbl persisted");
-        assert!(
-            tbl.contains("tbl_"),
-            "tabular handle uses tbl_ prefix: {tbl}"
-        );
-        assert_ne!(
-            json, tbl,
-            "same content gets distinct files per producer prefix"
-        );
-
-        let hash = crate::core::hasher::hash_short(&content);
-        for form in [
-            tbl.clone(),
-            format!("tbl_{hash}.log"),
-            format!("tbl_{hash}"),
-        ] {
-            assert_eq!(
-                resolve_tee(&form)
-                    .expect("tbl form resolves")
-                    .to_string_lossy(),
-                tbl,
-                "tbl form {form} -> {tbl}"
-            );
-        }
-    }
-
-    #[test]
-    fn persist_yaml_is_distinct_prefix_and_resolvable() {
-        let _lock = crate::core::data_dir::test_env_lock();
-        let content = big("yaml crusher original");
-        let tbl = persist_tabular(&content).expect("tbl persisted");
-        let yaml = persist_yaml(&content).expect("yaml persisted");
-        assert!(
-            yaml.contains("yaml_"),
-            "yaml handle uses yaml_ prefix: {yaml}"
-        );
-        assert_ne!(
-            tbl, yaml,
-            "same content gets distinct files per producer prefix"
-        );
-
-        let hash = crate::core::hasher::hash_short(&content);
-        for form in [
-            yaml.clone(),
-            format!("yaml_{hash}.log"),
-            format!("yaml_{hash}"),
-        ] {
-            assert_eq!(
-                resolve_tee(&form)
-                    .expect("yaml form resolves")
-                    .to_string_lossy(),
-                yaml,
-                "yaml form {form} -> {yaml}"
-            );
-        }
     }
 
     #[test]

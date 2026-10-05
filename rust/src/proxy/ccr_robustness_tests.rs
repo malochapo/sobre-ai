@@ -15,7 +15,7 @@ use serde_json::json;
 
 use crate::core::data_dir::test_env_lock;
 use crate::core::hasher::hash_short;
-use crate::proxy::ccr::{MIN_TEE_BYTES, persist, persist_json, persist_tabular, resolve_tee};
+use crate::proxy::ccr::{MIN_TEE_BYTES, persist, resolve_tee};
 use crate::tools::ctx_expand;
 
 /// A verbatim original comfortably above [`MIN_TEE_BYTES`], so the persist gate
@@ -30,38 +30,29 @@ fn big(seed: &str) -> String {
     s
 }
 
-/// Gap 1 — a lossy crush must never emit a handle it cannot back: below
-/// [`MIN_TEE_BYTES`] every producer prefix returns `None`, so the caller keeps
-/// the data verbatim instead of dropping a column behind a dead handle.
+/// Gap 1 — a handle is never emitted it cannot back: below [`MIN_TEE_BYTES`]
+/// `persist` returns `None`.
 #[test]
-fn persist_below_min_tee_bytes_yields_no_handle_for_any_prefix() {
+fn persist_below_min_tee_bytes_yields_no_handle() {
     let _lock = test_env_lock();
     let small = "too small to bother persisting";
     assert!(small.len() < MIN_TEE_BYTES);
     assert!(persist(small).is_none());
-    assert!(persist_json(small).is_none());
-    assert!(persist_tabular(small).is_none());
 }
 
-/// Gap 2 — handles are content-addressed (idempotent, cache-safe #448/#498) and
-/// segregated per producer, so the new `tbl_` store never aliases `proxy_`/`json_`.
+/// Gap 2 — handles are content-addressed (idempotent, cache-safe #448/#498).
 #[test]
-fn persist_is_idempotent_content_addressed_and_prefix_segregated() {
+fn persist_is_idempotent_and_content_addressed() {
     let _lock = test_env_lock();
     let body = big("verbatim original row");
     let proxy_a = persist(&body).unwrap();
     let proxy_b = persist(&body).unwrap();
     assert_eq!(proxy_a, proxy_b, "same content -> same handle (cache-safe)");
-
-    let json = persist_json(&body).unwrap();
-    let tbl = persist_tabular(&body).unwrap();
-    assert!(proxy_a.contains("proxy_") && json.contains("json_") && tbl.contains("tbl_"));
-    assert_ne!(proxy_a, json);
-    assert_ne!(json, tbl);
-    assert_ne!(proxy_a, tbl);
-    for h in [&proxy_a, &json, &tbl] {
-        assert!(resolve_tee(h).is_some(), "handle resolves: {h}");
-    }
+    assert!(proxy_a.contains("proxy_"));
+    assert!(
+        resolve_tee(&proxy_a).is_some(),
+        "handle resolves: {proxy_a}"
+    );
 }
 
 /// Gap 3 — once the tee file is gone (24h TTL cleanup), retrieval degrades to a
@@ -136,34 +127,6 @@ fn resolve_tee_rejects_traversal_nontee_and_bad_hex_across_prefixes() {
     ] {
         assert!(resolve_tee(bad).is_none(), "must reject: {bad}");
     }
-}
-
-/// Gap 8 — end-to-end for the lossy tabular crusher (#982): the dropped
-/// high-entropy column is absent from the emitted text yet fully recoverable
-/// out-of-band through the same `ctx_expand` path the footer advertises.
-#[test]
-fn tabular_lossy_dropped_column_is_recoverable_via_ctx_expand() {
-    let _lock = test_env_lock();
-    let mut csv = String::from("status,uuid\n");
-    for i in 0..50 {
-        csv.push_str(&format!("ok,uuid-{i:08}\n"));
-    }
-    assert!(csv.len() >= MIN_TEE_BYTES);
-
-    let res = crate::core::tabular_crush::crush_text_lossy_if_beneficial(&csv, ',', 0.9)
-        .expect("lossy crush drops the high-entropy column");
-    assert!(!res.lossless, "dropping a column is lossy");
-    assert!(
-        !res.text.contains("uuid-00000042"),
-        "the dropped value is gone from the text"
-    );
-
-    let handle = persist_tabular(&csv).expect("tbl handle");
-    let out = ctx_expand::handle(&json!({ "id": handle, "search": "uuid-00000042" }));
-    assert!(
-        out.contains("uuid-00000042"),
-        "dropped datum recoverable out-of-band: {out}"
-    );
 }
 
 /// Gap 9 — the read-stub index persists only delivery *bookkeeping*, never the

@@ -18,7 +18,6 @@ impl LeanCtxServer {
         &self,
         name: &str,
         args: Option<&serde_json::Map<String, Value>>,
-        minimal: bool,
     ) -> Result<
         (
             String,
@@ -31,7 +30,7 @@ impl LeanCtxServer {
         // Invariant 3 has no universal invoker: there are no hidden tools for
         // one to reach. `ctx_call` used to sit here — dispatchable, never in
         // `tools/list`, unwrapping an inner tool name and calling it.
-        self.dispatch_inner(name, args, minimal).await
+        self.dispatch_inner(name, args).await
     }
 
     /// Dispatches a single tool via the trait-based registry.
@@ -40,7 +39,6 @@ impl LeanCtxServer {
         &self,
         name: &str,
         args: Option<&serde_json::Map<String, Value>>,
-        minimal: bool,
     ) -> Result<
         (
             String,
@@ -124,7 +122,6 @@ impl LeanCtxServer {
             let ctx = crate::server::tool_trait::ToolContext {
                 project_root,
                 extra_roots,
-                minimal,
                 resolved_paths,
                 crp_mode,
                 cache: Some(self.cache.clone()),
@@ -597,7 +594,7 @@ mod tests {
         let server = crate::tools::create_server();
 
         let err = server
-            .dispatch_tool("ctx_raed", None, false)
+            .dispatch_tool("ctx_raed", None)
             .await
             .expect_err("typo'd tool must error");
         assert!(
@@ -612,7 +609,7 @@ mod tests {
         );
 
         let err = server
-            .dispatch_tool("zzz_qqq_www", None, false)
+            .dispatch_tool("zzz_qqq_www", None)
             .await
             .expect_err("unrelated name must error");
         assert!(

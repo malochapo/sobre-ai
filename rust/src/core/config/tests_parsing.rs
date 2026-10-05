@@ -85,62 +85,6 @@ mod compression_level_tests {
 }
 
 #[cfg(test)]
-mod memory_cleanup_tests {
-    use super::super::*;
-
-    #[test]
-    fn default_is_shared() {
-        assert_eq!(MemoryCleanup::default(), MemoryCleanup::Shared);
-    }
-
-    #[test]
-    fn aggressive_ttl_is_300() {
-        assert_eq!(MemoryCleanup::Aggressive.idle_ttl_secs(), 300);
-    }
-
-    #[test]
-    fn shared_ttl_is_3600() {
-        assert_eq!(MemoryCleanup::Shared.idle_ttl_secs(), 3600);
-    }
-}
-
-#[cfg(test)]
-mod simplified_config_tests {
-    use super::super::*;
-
-    #[test]
-    fn bm25_pure_default_is_generous_not_ram_profile() {
-        // Must use the generous disk default (512), NOT the RAM-profile value (which starved large repos and
-        // caused perpetual cold rebuilds, issue #249).
-        assert_eq!(
-            Config::default().bm25_max_cache_mb_effective(),
-            DEFAULT_BM25_PERSIST_MB
-        );
-    }
-
-    #[test]
-    fn no_budget_returns_defaults() {
-        let cfg = Config::default();
-        assert_eq!(
-            cfg.archive_max_disk_mb_effective(),
-            ArchiveConfig::default().max_disk_mb
-        );
-        assert_eq!(
-            cfg.archive_max_age_hours_effective(),
-            ArchiveConfig::default().max_age_hours
-        );
-    }
-
-    #[test]
-    fn memory_limits_unchanged_when_no_budget() {
-        let cfg = Config::default();
-        let policy = cfg.memory_policy_effective().unwrap();
-        assert_eq!(policy.knowledge.max_facts, 200);
-        assert_eq!(policy.episodic.max_episodes, 500);
-    }
-}
-
-#[cfg(test)]
 mod root_key_tests {
     use super::super::*;
 

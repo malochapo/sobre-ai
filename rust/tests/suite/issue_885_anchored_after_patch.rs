@@ -18,7 +18,6 @@ fn ctx_for(root: &std::path::Path, file: &str) -> ToolContext {
     ToolContext {
         project_root: root.to_string_lossy().to_string(),
         extra_roots: Vec::new(),
-        minimal: false,
         resolved_paths,
         crp_mode: lean_ctx::tools::CrpMode::Off,
         cache: Some(cache),

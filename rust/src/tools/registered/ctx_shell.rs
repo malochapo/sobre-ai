@@ -343,7 +343,6 @@ impl McpTool for CtxShellTool {
                 let tokens = crate::core::tokens::count_tokens(&output);
                 (output, tokens, 0, String::new())
             } else {
-                let _mode_guard = crate::core::savings_footer::ModeGuard::new("shell");
                 let result =
                     crate::tools::ctx_shell::handle(&cmd_clone, &output, exit_code, crp_mode);
                 let original = crate::core::tokens::count_tokens(&output);
@@ -397,7 +396,7 @@ impl McpTool for CtxShellTool {
                 String::new()
             };
 
-            let result_out = crate::core::redaction::redact_text_if_enabled(&result_out);
+            let result_out = crate::core::redaction::redact_text(&result_out);
             // #815: exit 124 = timeout signal (from timeout(1) / lean-ctx
             // shell timeout). Make it explicit so agents don't confuse a
             // timed-out command with a successful empty result.
@@ -591,13 +590,7 @@ fn warn_shell_secret_paths(command: &str) {
 }
 
 fn redact_shell_output_secrets(output: &str) -> String {
-    if !crate::core::config::SecretDetectionConfig::default().enabled {
-        return output.to_string();
-    }
-    let (redacted, matches) = crate::core::secret_detection::scan_and_redact(
-        output,
-        &crate::core::config::SecretDetectionConfig::default(),
-    );
+    let (redacted, matches) = crate::core::secret_detection::scan_and_redact(output);
     if !matches.is_empty() {
         let names: Vec<&str> = matches.iter().map(|m| m.pattern_name).collect();
         tracing::warn!(

@@ -1,7 +1,6 @@
 use crate::core::cache::SessionCache;
 use crate::core::graph_provider::{self, GraphProvider};
 use crate::core::task_relevance::{compute_relevance, parse_task_hints};
-use crate::core::tokens::count_tokens;
 use crate::tools::CrpMode;
 
 /// Multi-resolution context overview.
@@ -226,12 +225,6 @@ pub(crate) fn handle(
             output.push(wakeup);
         }
     }
-
-    let fc = gp.file_count();
-    let original = count_tokens(&format!("{fc} files")) * fc;
-    let compressed = count_tokens(&output.join("\n"));
-    output.push(String::new());
-    output.push(crate::core::protocol::format_savings(original, compressed));
 
     (output.join("\n"), true)
 }

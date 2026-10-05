@@ -4,9 +4,6 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 use crate::core::cache::SessionCache;
-use crate::core::config::AutonomyConfig;
-use crate::core::graph_provider::GraphProvider;
-use crate::core::protocol;
 use crate::core::tokens::count_tokens;
 use crate::tools::CrpMode;
 
@@ -22,7 +19,6 @@ pub struct AutonomyState {
     pub session_initialized: AtomicBool,
     pub dedup_applied: AtomicBool,
     pub last_consolidation_unix: AtomicU64,
-    pub config: AutonomyConfig,
     /// Repeated `pattern|path` keys for search tools (see [`AutonomyState::track_search`]).
     pub search_repetition: Mutex<HashMap<String, SearchHistory>>,
     /// One-shot keys for large-output hints (`ctx_shell` bytes, `ctx_read` full tokens).
@@ -36,33 +32,24 @@ impl Default for AutonomyState {
 }
 
 impl AutonomyState {
-    /// Creates a new autonomy state with config loaded from disk.
+    /// Creates a new autonomy state.
     pub fn new() -> Self {
         Self {
             session_initialized: AtomicBool::new(false),
             dedup_applied: AtomicBool::new(false),
             last_consolidation_unix: AtomicU64::new(0),
-            config: AutonomyConfig::load(),
             search_repetition: Mutex::new(HashMap::new()),
             large_output_hints_shown: Mutex::new(HashSet::new()),
         }
     }
-
-    /// Returns true if autonomous actions are enabled in configuration.
-    pub fn is_enabled(&self) -> bool {
-        self.config.enabled
-    }
 }
 
-/// Token budget and file cap of the prefetch run after a read.
-const PREFETCH_BUDGET_TOKENS: usize = 4000;
-const PREFETCH_MAX_FILES: usize = 3;
-/// Floor of the cache-dedup threshold (`autonomy.dedup_threshold`).
-const MIN_DEDUP_THRESHOLD: usize = 8;
-
-fn autonomy_enabled_effective(state: &AutonomyState) -> bool {
-    state.is_enabled()
-}
+/// Cache entries before deduplication runs.
+const DEDUP_THRESHOLD: usize = 8;
+/// Tool calls between automatic consolidations.
+const CONSOLIDATE_EVERY_CALLS: u32 = 25;
+/// Minimum time between automatic consolidations.
+const CONSOLIDATE_COOLDOWN_SECS: u64 = 120;
 
 /// True for the call that is itself the session-start overview: `ctx_compose`
 /// without a `task` returns the same overview the briefing would prepend. The
@@ -93,10 +80,6 @@ pub fn session_lifecycle_pre_hook(
     project_root: Option<&str>,
     crp_mode: CrpMode,
 ) -> Option<String> {
-    if !autonomy_enabled_effective(state) {
-        return None;
-    }
-
     let root = match project_root {
         Some(r) if !r.is_empty() && r != "." => r.to_string(),
         _ => return None,
@@ -113,10 +96,6 @@ pub fn session_lifecycle_pre_hook(
         .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
         .is_err()
     {
-        return None;
-    }
-
-    if !state.config.auto_preload {
         return None;
     }
 
@@ -168,152 +147,14 @@ fn format_briefing(body: &str) -> String {
     wrap(&kept.join("\n"))
 }
 
-/// Appends related-file hints and silently preloads imports after a file read.
-pub fn enrich_after_read(
-    state: &AutonomyState,
-    cache: &mut SessionCache,
-    file_path: &str,
-    project_root: Option<&str>,
-    task: Option<&str>,
-    crp_mode: CrpMode,
-    minimal_overhead: bool,
-) -> EnrichResult {
-    let mut result = EnrichResult::default();
-
-    if !autonomy_enabled_effective(state) {
-        return result;
-    }
-
-    let root = match project_root {
-        Some(r) if !r.is_empty() && r != "." => r.to_string(),
-        _ => return result,
-    };
-
-    let Some(open) = crate::core::graph_provider::open_or_build(&root) else {
-        return result;
-    };
-    let provider = &open.provider;
-    if provider.file_count() == 0 {
-        return result;
-    }
-
-    if state.config.auto_related {
-        result.related_hint = build_related_hints(cache, file_path, provider);
-    }
-
-    if state.config.silent_preload {
-        silent_preload_imports(cache, file_path, provider, &root);
-    }
-
-    if !minimal_overhead {
-        {
-            // Warms the cache with the files likely needed next.
-            let changed = vec![file_path.to_string()];
-            let _ = crate::tools::impl_prefetch::handle(
-                cache,
-                &root,
-                task,
-                Some(&changed),
-                PREFETCH_BUDGET_TOKENS,
-                Some(PREFETCH_MAX_FILES),
-                crp_mode,
-            );
-        }
-    }
-
-    result
-}
-
 /// Output from post-read enrichment: optional related-file hints.
 #[derive(Default)]
 pub struct EnrichResult {
     pub related_hint: Option<String>,
 }
 
-fn build_related_hints(
-    cache: &SessionCache,
-    file_path: &str,
-    provider: &GraphProvider,
-) -> Option<String> {
-    let mut related: Vec<String> = Vec::new();
-    for path in provider
-        .dependencies(file_path)
-        .into_iter()
-        .chain(provider.dependents(file_path))
-    {
-        if related.len() >= 3 {
-            break;
-        }
-        if cache.get(&path).is_none() && !related.contains(&path) {
-            related.push(path);
-        }
-    }
-
-    if related.is_empty() {
-        return None;
-    }
-
-    let hints: Vec<String> = related.iter().map(|p| protocol::shorten_path(p)).collect();
-
-    Some(format!("[related: {}]", hints.join(", ")))
-}
-
-fn silent_preload_imports(
-    cache: &mut SessionCache,
-    file_path: &str,
-    provider: &GraphProvider,
-    project_root: &str,
-) {
-    let imports: Vec<String> = provider
-        .dependencies(file_path)
-        .into_iter()
-        .take(2)
-        .collect();
-
-    let jail_root = std::path::Path::new(project_root);
-    for path in imports {
-        let candidate = std::path::Path::new(&path);
-        let candidate = if candidate.is_absolute() {
-            candidate.to_path_buf()
-        } else {
-            jail_root.join(&path)
-        };
-        let Ok((jailed, warning)) =
-            crate::core::io_boundary::jail_and_check_path(&candidate, jail_root)
-        else {
-            continue;
-        };
-        if warning.is_some() {
-            continue;
-        }
-        let jailed_s = jailed.to_string_lossy().to_string();
-        if cache.get(&jailed_s).is_some() {
-            continue;
-        }
-        // Don't hydrate cloud placeholders during automatic import preload (#363).
-        if crate::core::cloud_files::is_cloud_placeholder(&jailed) {
-            continue;
-        }
-
-        if let Ok(content) = std::fs::read_to_string(&jailed) {
-            let tokens = count_tokens(&content);
-            if tokens < 5000 {
-                cache.store(&jailed_s, &content);
-            }
-        }
-    }
-}
-
 /// Runs cache deduplication once the entry count exceeds the configured threshold.
 pub fn maybe_auto_dedup(state: &AutonomyState, cache: &mut SessionCache) {
-    if !autonomy_enabled_effective(state) {
-        return;
-    }
-
-    if !state.config.auto_dedup {
-        return;
-    }
-
     if state
         .dedup_applied
         .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
@@ -323,7 +164,7 @@ pub fn maybe_auto_dedup(state: &AutonomyState, cache: &mut SessionCache) {
     }
 
     let entries = cache.get_all_entries();
-    let threshold = state.config.dedup_threshold.max(MIN_DEDUP_THRESHOLD).max(1);
+    let threshold = DEDUP_THRESHOLD;
     if entries.len() < threshold {
         state.dedup_applied.store(false, Ordering::SeqCst);
         return;
@@ -334,11 +175,7 @@ pub fn maybe_auto_dedup(state: &AutonomyState, cache: &mut SessionCache) {
 
 /// Returns true if enough tool calls have elapsed to trigger auto-consolidation.
 pub fn should_auto_consolidate(state: &AutonomyState, tool_calls: u32) -> bool {
-    if !state.is_enabled() || !state.config.auto_consolidate {
-        return false;
-    }
-    let every = state.config.consolidate_every_calls.max(1);
-    if !tool_calls.is_multiple_of(every) {
+    if !tool_calls.is_multiple_of(CONSOLIDATE_EVERY_CALLS) {
         return false;
     }
 
@@ -346,7 +183,7 @@ pub fn should_auto_consolidate(state: &AutonomyState, tool_calls: u32) -> bool {
         .duration_since(UNIX_EPOCH)
         .map_or(0, |d| d.as_secs());
     let last = state.last_consolidation_unix.load(Ordering::SeqCst);
-    if now.saturating_sub(last) < state.config.consolidate_cooldown_secs {
+    if now.saturating_sub(last) < CONSOLIDATE_COOLDOWN_SECS {
         return false;
     }
     state.last_consolidation_unix.store(now, Ordering::SeqCst);

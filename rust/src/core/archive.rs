@@ -49,36 +49,27 @@ fn compute_id(content: &str) -> String {
     format!("{hash:016x}")
 }
 
-pub fn is_enabled() -> bool {
-    crate::core::config::ArchiveConfig::default().enabled
-}
-
-fn threshold_chars() -> usize {
-    crate::core::config::ArchiveConfig::default().threshold_chars
-}
+/// Outputs shorter than this are never archived.
+pub const THRESHOLD_CHARS: usize = 800;
 
 fn max_age_hours() -> u64 {
-    super::config::Config::load().archive_max_age_hours_effective()
+    crate::core::config::ARCHIVE_MAX_AGE_HOURS
 }
 
-/// Effective on-disk byte budget for archived `.txt`/`.meta.json` content,
-/// derived from `[archive] max_disk_mb` (or the simplified global `max_disk_mb`)
-/// so it matches what `doctor` reports. `0` disables the size cap; the TTL still
-/// applies. This is what bounds the archive store on disk (#417).
+/// On-disk byte budget for archived `.txt`/`.meta.json` content, the same
+/// figure `doctor` reports. This is what bounds the archive store on disk (#417).
 fn max_disk_bytes() -> u64 {
-    super::config::Config::load()
-        .archive_max_disk_mb_effective()
-        .saturating_mul(1024 * 1024)
+    crate::core::config::ARCHIVE_MAX_DISK_MB.saturating_mul(1024 * 1024)
 }
 
 pub fn should_archive(content: &str) -> bool {
-    is_enabled() && content.len() >= threshold_chars()
+    content.len() >= THRESHOLD_CHARS
 }
 
 const MAX_ARCHIVE_SIZE: usize = 10 * 1024 * 1024; // 10 MB
 
 pub fn store(tool: &str, command: &str, content: &str, session_id: Option<&str>) -> Option<String> {
-    if !is_enabled() || content.is_empty() {
+    if content.is_empty() {
         return None;
     }
 

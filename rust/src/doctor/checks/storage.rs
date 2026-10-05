@@ -244,63 +244,13 @@ pub(crate) fn archive_footprint_outcome() -> Outcome {
         }
     }
 }
-pub(crate) fn memory_profile_outcome() -> Outcome {
-    let cfg = crate::core::config::Config::load();
-    let profile = crate::core::config::MemoryProfile::default();
-    // The BM25 *disk* ceiling is decoupled from the RAM profile (#249); show the
-    // real effective ceiling rather than a hardcoded per-profile figure.
-    let bm25_mb = cfg.bm25_max_cache_mb_effective();
-    let (label, detail) = match profile {
-        crate::core::config::MemoryProfile::Low => (
-            "low",
-            format!("embeddings+semantic cache disabled, BM25 disk {bm25_mb} MB"),
-        ),
-        crate::core::config::MemoryProfile::Balanced => (
-            "balanced",
-            format!("default — single embedding engine, BM25 disk {bm25_mb} MB"),
-        ),
-        crate::core::config::MemoryProfile::Performance => (
-            "performance",
-            format!("full caches, BM25 disk {bm25_mb} MB"),
-        ),
-    };
-    let source = if crate::core::config::MemoryProfile::default()
-        != crate::core::config::MemoryProfile::default()
-    {
-        "config"
-    } else {
-        "default"
-    };
+pub(crate) fn memory_outcome() -> Outcome {
+    let bm25_mb = crate::core::config::DEFAULT_BM25_PERSIST_MB;
+    let ttl_min = crate::core::config::IDLE_CACHE_TTL_SECS / 60;
     Outcome {
         ok: true,
         line: format!(
-            "{BOLD}Memory profile{RST}  {GREEN}{label}{RST}  {DIM}({source}: {detail}){RST}"
-        ),
-    }
-}
-pub(crate) fn memory_cleanup_outcome() -> Outcome {
-    let cleanup = crate::core::config::MemoryCleanup::default();
-    let (label, detail) = match cleanup {
-        crate::core::config::MemoryCleanup::Aggressive => (
-            "aggressive",
-            "cache cleared after 5 min idle, single-IDE optimized",
-        ),
-        crate::core::config::MemoryCleanup::Shared => (
-            "shared",
-            "cache retained 1 hour, multi-IDE/multi-model optimized",
-        ),
-    };
-    let source = if crate::core::config::MemoryCleanup::default()
-        != crate::core::config::MemoryCleanup::default()
-    {
-        "config"
-    } else {
-        "default"
-    };
-    Outcome {
-        ok: true,
-        line: format!(
-            "{BOLD}Memory cleanup{RST}  {GREEN}{label}{RST}  {DIM}({source}: {detail}){RST}"
+            "{BOLD}Memory{RST}  {GREEN}full caches{RST}  {DIM}(BM25 disk {bm25_mb} MB, cache kept {ttl_min} min idle){RST}"
         ),
     }
 }
@@ -389,8 +339,7 @@ pub(crate) fn capacity_warnings() -> Vec<Outcome> {
         return vec![];
     };
 
-    let cfg = crate::core::config::Config::load();
-    let policy = cfg.memory_policy_effective().unwrap_or_default();
+    let policy = crate::core::memory_policy::MemoryPolicy::default();
 
     let knowledge_dir = data_dir.join("knowledge");
     let Ok(entries) = std::fs::read_dir(&knowledge_dir) else {
@@ -523,7 +472,7 @@ pub(crate) fn capacity_warnings() -> Vec<Outcome> {
     // Global checks (not per project hash)
 
     // Archive disk usage vs limit
-    let archive_limit_bytes = cfg.archive_max_disk_mb_effective() * 1_048_576;
+    let archive_limit_bytes = crate::core::config::ARCHIVE_MAX_DISK_MB * 1_048_576;
     if archive_limit_bytes > 0 {
         let archive_used = crate::core::archive::disk_usage_bytes();
         let pct = (archive_used as f64 / archive_limit_bytes as f64 * 100.0) as u32;

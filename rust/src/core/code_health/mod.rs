@@ -31,6 +31,9 @@ pub use score::{Hotspot, NavigabilityInputs, NavigabilityScore, grade, navigabil
 
 use serde::Serialize;
 
+/// Cognitive-complexity threshold above which a function is a hotspot.
+pub const COGNITIVE_THRESHOLD: u32 = 15;
+
 /// Edit-gate behavior when an edit increases cognitive complexity.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum GateMode {

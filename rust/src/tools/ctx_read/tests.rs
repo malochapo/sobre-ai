@@ -6,7 +6,7 @@ use super::*;
 #[test]
 fn test_header_toon_format_no_brackets() {
     let content = "use std::io;\nfn main() {}\n";
-    let header = build_header("F1", "main.rs", "rs", content, 2, false);
+    let header = build_header("main.rs", "rs", content, 2, false);
     assert!(!header.contains('['));
     assert!(!header.contains(']'));
     assert!(header.contains("main.rs 2L"));
@@ -15,7 +15,7 @@ fn test_header_toon_format_no_brackets() {
 #[test]
 fn test_header_toon_deps_indented() {
     let content = "use crate::core::cache;\nuse crate::tools;\npub fn main() {}\n";
-    let header = build_header("F1", "main.rs", "rs", content, 3, true);
+    let header = build_header("main.rs", "rs", content, 3, true);
     if header.contains("deps") {
         assert!(
             header.contains("\n deps "),
@@ -32,7 +32,7 @@ fn test_header_toon_deps_indented() {
 fn test_header_toon_saves_tokens() {
     let content = "use crate::foo;\nuse crate::bar;\npub fn baz() {}\npub fn qux() {}\n";
     let old_header = "F1=main.rs [4L +] deps:[foo,bar] exports:[baz,qux]".to_string();
-    let new_header = build_header("F1", "main.rs", "rs", content, 4, true);
+    let new_header = build_header("main.rs", "rs", content, 4, true);
     let old_tokens = count_tokens(&old_header);
     let new_tokens = count_tokens(&new_header);
     assert!(
@@ -70,7 +70,6 @@ fn test_task_mode_filters_content() {
     let (result, result_tokens) = process_mode(
         &content,
         "task",
-        "F1",
         "test.rs",
         "rs",
         full_tokens,
@@ -95,7 +94,6 @@ fn test_task_mode_without_task_returns_full() {
     let (result, _sent) = process_mode(
         content,
         "task",
-        "F1",
         "test.rs",
         "rs",
         tokens,
@@ -116,7 +114,6 @@ fn test_reference_mode_one_line() {
     let (result, _sent) = process_mode(
         content,
         "reference",
-        "F1",
         "test.rs",
         "rs",
         tokens,
@@ -194,7 +191,6 @@ fn benchmark_task_conditioned_compression() {
     let (_full_output, full_tok) = process_mode(
         &content,
         "full",
-        "F1",
         "server.rs",
         "rs",
         full_tokens,
@@ -205,7 +201,6 @@ fn benchmark_task_conditioned_compression() {
     let (_task_output, task_tok) = process_mode(
         &content,
         "task",
-        "F1",
         "server.rs",
         "rs",
         full_tokens,
@@ -216,7 +211,6 @@ fn benchmark_task_conditioned_compression() {
     let (_sig_output, sig_tok) = process_mode(
         &content,
         "signatures",
-        "F1",
         "server.rs",
         "rs",
         full_tokens,
@@ -227,7 +221,6 @@ fn benchmark_task_conditioned_compression() {
     let (_ref_output, ref_tok) = process_mode(
         &content,
         "reference",
-        "F1",
         "server.rs",
         "rs",
         full_tokens,
@@ -303,7 +296,6 @@ fn map_mode_inlines_task_relevant_body() {
     let (with_task, _) = process_mode(
         content,
         "map",
-        "F1",
         "test.rs",
         "rs",
         tokens,
@@ -318,7 +310,6 @@ fn map_mode_inlines_task_relevant_body() {
     let (no_task, _) = process_mode(
         content,
         "map",
-        "F1",
         "test.rs",
         "rs",
         tokens,
@@ -345,7 +336,6 @@ fn lines_comma_multiselect_gets_hint() {
     let (out, _) = process_mode(
         &content,
         "lines:5,10-12",
-        "F1",
         "t.txt",
         "txt",
         tokens,
@@ -370,7 +360,6 @@ fn map_on_unsupported_language_carries_marker() {
     let (out, _) = process_mode(
         content,
         "map",
-        "F1",
         "notes.txt",
         "txt",
         tokens,
@@ -391,7 +380,6 @@ fn signatures_on_unsupported_language_carries_marker() {
     let (out, _) = process_mode(
         content,
         "signatures",
-        "F1",
         "notes.txt",
         "txt",
         tokens,
@@ -508,7 +496,6 @@ fn aggressiveness_is_deterministic_and_monotonic() {
         let (out, _) = process_mode_tuned(
             &content,
             "density:",
-            "F1",
             "f.txt",
             "txt",
             count_tokens(&content),
@@ -552,7 +539,6 @@ fn aggressive_json_uses_lossless_crush_core() {
     let (out, sent) = process_mode_tuned(
         &content,
         "aggressive",
-        "F1",
         "data.json",
         "json",
         original,
@@ -584,7 +570,6 @@ fn map_mode_includes_signature_line_ranges() {
     let (result, _) = process_mode(
         content,
         "map",
-        "F1",
         "lib.rs",
         "rs",
         count_tokens(content),
@@ -617,7 +602,6 @@ fn map_mode_omits_exports_already_in_api() {
     let (result, _) = process_mode(
         content,
         "map",
-        "F1",
         "lib.rs",
         "rs",
         count_tokens(content),
@@ -646,7 +630,6 @@ fn tdd_map_output_carries_symbol_legend() {
     let (result, _) = process_mode(
         content,
         "map",
-        "F1",
         "lib.rs",
         "rs",
         count_tokens(content),
@@ -662,7 +645,6 @@ fn tdd_map_output_carries_symbol_legend() {
     let (sigs, _) = process_mode(
         content,
         "signatures",
-        "F1",
         "lib.rs",
         "rs",
         count_tokens(content),
@@ -768,7 +750,6 @@ fn raw_mode_returns_exact_file_content() {
     let (output, _sent) = render::process_mode(
         content,
         "raw",
-        "F1",
         "main.rs",
         "rs",
         100,
@@ -814,7 +795,6 @@ fn verbatim_modes_preserve_decorative_comment_lines() {
         let (output, _) = render::process_mode(
             &content,
             mode,
-            "F1",
             "math.test.ts",
             "ts",
             count_tokens(&content),
@@ -884,7 +864,6 @@ fn process_mode_output_is_byte_stable_across_calls() {
             render::process_mode(
                 &content,
                 mode,
-                "F1",
                 "stable.rs",
                 "rs",
                 tokens,
@@ -920,7 +899,6 @@ fn recovery_footer_is_compressed_only() {
         render::process_mode(
             &content,
             mode,
-            "F1",
             "rec.rs",
             "rs",
             tokens,

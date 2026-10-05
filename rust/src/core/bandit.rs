@@ -12,10 +12,6 @@ pub struct BanditArm {
 }
 
 impl BanditArm {
-    fn sample(&self) -> f64 {
-        beta_sample(self.alpha, self.beta)
-    }
-
     pub fn update_from_feedback(&mut self, outcome: &crate::core::feedback::CompressionOutcome) {
         let efficiency = if outcome.tokens_original > 0 {
             outcome.tokens_saved as f64 / outcome.tokens_original as f64
@@ -99,11 +95,7 @@ impl ThresholdBandit {
     pub fn choose_arm(&mut self) -> &BanditArm {
         self.total_pulls += 1;
         crate::core::introspect::tick("field_weights_bandit");
-        let idx = if crate::core::config::Config::load().is_stochastic_enabled() {
-            self.select_arm_stochastic()
-        } else {
-            self.best_arm_idx_by_mean()
-        };
+        let idx = self.best_arm_idx_by_mean();
         &self.arms[idx]
     }
 
@@ -118,22 +110,6 @@ impl ThresholdBandit {
                     .partial_cmp(&b.mean())
                     .unwrap_or(std::cmp::Ordering::Equal)
             })
-            .map_or(0, |(i, _)| i)
-    }
-
-    /// Probabilistic arm selection (epsilon-greedy + Thompson sampling). Uses
-    /// `getrandom`, so it is NON-deterministic and must only be reached behind the
-    /// stochastic gate. Returns the chosen arm index.
-    fn select_arm_stochastic(&self) -> usize {
-        let epsilon = (0.1 / (1.0 + self.total_pulls as f64 / 100.0)).max(0.02);
-        if rng_f64() < epsilon {
-            return rng_usize(self.arms.len());
-        }
-        let samples: Vec<f64> = self.arms.iter().map(BanditArm::sample).collect();
-        samples
-            .iter()
-            .enumerate()
-            .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
             .map_or(0, |(i, _)| i)
     }
 
@@ -270,60 +246,6 @@ fn bandit_path(project_root: &str) -> std::path::PathBuf {
         .join("bandits.json")
 }
 
-fn rng_f64() -> f64 {
-    let mut bytes = [0u8; 8];
-    getrandom::fill(&mut bytes).unwrap_or(());
-    let val = u64::from_le_bytes(bytes);
-    (val >> 11) as f64 / ((1u64 << 53) as f64)
-}
-
-fn rng_usize(bound: usize) -> usize {
-    if bound == 0 {
-        return 0;
-    }
-    let mut bytes = [0u8; 8];
-    getrandom::fill(&mut bytes).unwrap_or(());
-    let val = u64::from_le_bytes(bytes);
-    (val as usize) % bound
-}
-
-fn beta_sample(alpha: f64, beta: f64) -> f64 {
-    let x = gamma_sample(alpha);
-    let y = gamma_sample(beta);
-    if x + y == 0.0 {
-        return 0.5;
-    }
-    x / (x + y)
-}
-
-#[allow(clippy::many_single_char_names)] // Marsaglia's algorithm uses standard math notation
-fn gamma_sample(shape: f64) -> f64 {
-    if shape < 1.0 {
-        let u = rng_f64().max(1e-10);
-        gamma_sample(shape + 1.0) * u.powf(1.0 / shape)
-    } else {
-        let d = shape - 1.0 / 3.0;
-        let c = 1.0 / (9.0_f64 * d).sqrt();
-        loop {
-            let x = standard_normal();
-            let v = (1.0 + c * x).powi(3);
-            if v <= 0.0 {
-                continue;
-            }
-            let u = rng_f64().max(1e-10);
-            if u < 1.0 - 0.0331 * x.powi(4) || u.ln() < 0.5 * x * x + d * (1.0 - v + v.ln()) {
-                return d * v;
-            }
-        }
-    }
-}
-
-fn standard_normal() -> f64 {
-    let u1: f64 = rng_f64().max(1e-10);
-    let u2: f64 = rng_f64();
-    (-2.0_f64 * u1.ln()).sqrt() * (2.0_f64 * std::f64::consts::PI * u2).cos()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -388,14 +310,6 @@ mod tests {
         let agg = b.arms.iter().find(|a| a.name == "aggressive").unwrap();
         let con = b.arms.iter().find(|a| a.name == "conservative").unwrap();
         assert!(agg.mean() > con.mean());
-    }
-
-    #[test]
-    fn beta_sample_in_range() {
-        for _ in 0..100 {
-            let s = beta_sample(2.0, 2.0);
-            assert!((0.0..=1.0).contains(&s), "got {s}");
-        }
     }
 
     #[test]

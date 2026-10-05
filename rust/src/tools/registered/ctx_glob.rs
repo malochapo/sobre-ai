@@ -61,7 +61,6 @@ impl McpTool for CtxGlobTool {
             );
         }
 
-        let _mode_guard = crate::core::savings_footer::ModeGuard::new("glob");
         let per_root_max = (max / resolved.roots.len()).max(5);
         let mut combined = String::new();
         let mut total_original: usize = 0;
@@ -95,8 +94,7 @@ impl McpTool for CtxGlobTool {
             }
         }
 
-        let final_out =
-            crate::core::protocol::append_savings(&combined, total_original, total_sent);
+        let final_out = combined.to_string();
         let saved = total_original.saturating_sub(total_sent);
 
         Ok(ToolOutput {
@@ -142,7 +140,7 @@ fn handle_single(
 
     let sent = crate::core::tokens::count_tokens(&result);
     let saved = original.saturating_sub(sent);
-    let final_out = crate::core::protocol::append_savings(&result, original, sent);
+    let final_out = result.to_string();
 
     Ok(ToolOutput {
         text: final_out,

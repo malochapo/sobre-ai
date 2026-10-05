@@ -56,15 +56,8 @@ pub fn graph_neighbor_ranks_for_recent_files(
     //      (behavioural, the strongest "what next" signal). Listed first so it
     //      gets the best RRF rank. Works even without a static graph (#289).
     //   2. Static graph — import/call/type proximity.
-    let coaccess = if crate::core::cooccurrence::traversal_enabled() {
-        Some(crate::core::cooccurrence::load(project_root))
-    } else {
-        None
-    };
+    let coaccess = crate::core::cooccurrence::load(project_root);
     let open = graph_provider::open_best_effort(project_root);
-    if open.is_none() && coaccess.is_none() {
-        return None;
-    }
 
     let mut seen = HashSet::<String>::new();
     let mut ranked: Vec<String> = Vec::new();
@@ -75,13 +68,11 @@ pub fn graph_neighbor_ranks_for_recent_files(
             continue;
         }
 
-        if let Some(co) = &coaccess {
-            for (path, _) in co.related(&rel_path, per_seed_limit) {
-                if seen.insert(path.clone()) {
-                    ranked.push(path);
-                    if ranked.len() >= max_ranked {
-                        break 'seeds;
-                    }
+        for (path, _) in coaccess.related(&rel_path, per_seed_limit) {
+            if seen.insert(path.clone()) {
+                ranked.push(path);
+                if ranked.len() >= max_ranked {
+                    break 'seeds;
                 }
             }
         }

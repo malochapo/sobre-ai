@@ -114,7 +114,7 @@ impl McpTool for CtxExecuteTool {
             crate::tools::ctx_execute::handle(&language, &code, intent.as_deref(), timeout)
         };
 
-        let result = crate::core::redaction::redact_text_if_enabled(&result);
+        let result = crate::core::redaction::redact_text(&result);
         Ok(ToolOutput {
             text: result,
             original_tokens: 0,

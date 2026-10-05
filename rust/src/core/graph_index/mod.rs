@@ -340,8 +340,7 @@ impl ProjectIndex {
         let Ok(entries) = std::fs::read_dir(&graphs_dir) else {
             return;
         };
-        let cfg = crate::core::config::Config::load();
-        let max_age_secs = cfg.archive_max_age_hours_effective() * 3600;
+        let max_age_secs = crate::core::config::ARCHIVE_MAX_AGE_HOURS * 3600;
 
         for entry in entries.filter_map(Result::ok) {
             let path = entry.path();
@@ -477,8 +476,7 @@ fn index_looks_stale(index: &ProjectIndex, root_abs: &str) -> bool {
     if let Ok(scan_time) =
         chrono::NaiveDateTime::parse_from_str(&index.last_scan, "%Y-%m-%d %H:%M:%S")
     {
-        let cfg = crate::core::config::Config::load();
-        let effective_hours = cfg.archive_max_age_hours_effective();
+        let effective_hours = crate::core::config::ARCHIVE_MAX_AGE_HOURS;
         let max_age = chrono::Duration::hours(effective_hours as i64);
         let now = chrono::Local::now().naive_local();
         if now.signed_duration_since(scan_time) > max_age {

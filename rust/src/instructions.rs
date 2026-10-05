@@ -34,7 +34,6 @@ pub fn build_instructions(crp_mode: CrpMode) -> String {
 #[must_use]
 pub fn build_instructions_with_client(crp_mode: CrpMode, client_name: &str) -> String {
     let cfg = crate::core::config::Config::load();
-    let minimal = cfg.minimal_overhead_effective_for_client(client_name);
     let shadow = true;
     // Cross-channel dedup: if the client auto-loads compression from its own rule
     // file, skip it here to avoid duplicate billing.
@@ -43,20 +42,18 @@ pub fn build_instructions_with_client(crp_mode: CrpMode, client_name: &str) -> S
     } else {
         CompressionLevel::effective(&cfg)
     };
-    build_full_instructions(crp_mode, client_name, minimal, level, shadow)
+    build_full_instructions(crp_mode, client_name, level, shadow)
 }
 
 /// Deterministic STATIC Claude Code instructions for the char-budget test: the
 /// cold first-contact handshake surface (skeleton + shell hint + decoder +
-/// CLAUDE.md pointer + guidance). It pins `minimal=true` (the dynamic
-/// session/knowledge/gotcha payload is governed by `INSTRUCTION_CAP_TOKENS`, not
-/// the char budget) plus `level=Off` and `shadow=false` (the default
-/// template), so the result is independent
+/// CLAUDE.md pointer + guidance). It pins `level=Off` and `shadow=false` (the
+/// default template), so the result is independent
 /// of the developer's local lean-ctx config and the assertion stays
 /// deterministic (#498) for every contributor, not just clean CI.
 #[must_use]
 pub fn claude_code_static_instructions_for_test() -> String {
-    build_full_instructions(CrpMode::Off, "", true, CompressionLevel::Off, false)
+    build_full_instructions(CrpMode::Off, "", CompressionLevel::Off, false)
 }
 
 /// Deterministic variant for tests (no session/knowledge state).
@@ -83,51 +80,6 @@ pub fn build_instructions_for_test(crp_mode: CrpMode) -> String {
         "" => format!("{base}\n\n{}", rc::INTELLIGENCE),
         crp => format!("{base}\n\n{crp}\n\n{}", rc::INTELLIGENCE),
     }
-}
-
-/// LITM calibration manifest rotation (#539).
-fn rotate_wakeup_manifest(session: &crate::core::session::SessionState, profile_name: &str) {
-    use crate::core::litm_calibration::{Position, record_outcome};
-    use crate::core::session::ManifestEntry;
-
-    let mut updated = session.clone();
-
-    for entry in &updated.wakeup_manifest {
-        if !entry.missed
-            && let Some(pos) = Position::parse(&entry.position)
-        {
-            record_outcome(&entry.profile, pos, true);
-        }
-    }
-
-    let mut manifest: Vec<ManifestEntry> = Vec::new();
-    let mut push = |key: &str, position: &str| {
-        let key = key.trim();
-        if !key.is_empty() {
-            manifest.push(ManifestEntry {
-                key: key.chars().take(80).collect(),
-                position: position.to_string(),
-                profile: profile_name.to_string(),
-                missed: false,
-            });
-        }
-    };
-
-    if let Some(ref task) = updated.task {
-        push(&task.description, "begin");
-    }
-    for d in updated.decisions.iter().rev().take(5) {
-        push(&d.summary, "begin");
-    }
-    for f in updated.findings.iter().rev().take(8) {
-        push(&f.summary, "end");
-    }
-    for n in updated.next_steps.iter().take(3) {
-        push(n, "end");
-    }
-
-    updated.wakeup_manifest = manifest;
-    let _ = updated.save();
 }
 
 /// Display path for the Claude config directory (respected by CLAUDE_CONFIG_DIR).
@@ -158,102 +110,9 @@ pub fn claude_config_dir_display() -> String {
 fn build_full_instructions(
     crp_mode: CrpMode,
     client_name: &str,
-    minimal: bool,
     level: CompressionLevel,
     shadow: bool,
 ) -> String {
-    let profile = crate::core::litm::LitmProfile::from_client_name(client_name);
-    let loaded_session = if minimal {
-        None
-    } else {
-        crate::core::session::SessionState::load_latest()
-    };
-
-    let (session_block, litm_end_block) = match loaded_session {
-        Some(ref session) => {
-            rotate_wakeup_manifest(session, profile.name);
-            let share = crate::core::litm_calibration::begin_share(profile.name);
-            let mut positioned = crate::core::litm::position_optimize_with_share(session, share);
-            // #962: hard token ceiling so the re-injected ACTIVE SESSION block can
-            // never crowd out the user's task (deterministic, generous default).
-            positioned.enforce_token_budget(crate::core::litm::active_session_budget());
-            let begin = format!(
-                "\n\n--- ACTIVE SESSION (LITM P1: begin position, profile: {}) ---\n{}\n---\n",
-                profile.name, positioned.begin_block
-            );
-            let end = if positioned.end_block.is_empty() {
-                String::new()
-            } else {
-                format!(
-                    "\n--- SESSION RESUME (post-compaction) ---\n{}\n---\n",
-                    positioned.end_block
-                )
-            };
-            (begin, end)
-        }
-        None => (String::new(), String::new()),
-    };
-
-    let project_root_for_blocks = if minimal {
-        None
-    } else {
-        loaded_session
-            .as_ref()
-            .and_then(|s| s.project_root.clone())
-            .or_else(|| {
-                std::env::current_dir()
-                    .ok()
-                    .map(|p| p.to_string_lossy().to_string())
-            })
-    };
-
-    let knowledge_block = match &project_root_for_blocks {
-        Some(root) => {
-            let knowledge = crate::core::knowledge::ProjectKnowledge::load(root);
-            match knowledge {
-                Some(k) if !k.facts.is_empty() || !k.patterns.is_empty() => {
-                    let aaak = k.format_aaak();
-                    if aaak.is_empty() {
-                        String::new()
-                    } else {
-                        format!("\n--- PROJECT MEMORY (AAAK) ---\n{}\n---\n", aaak.trim())
-                    }
-                }
-                _ => String::new(),
-            }
-        }
-        None => String::new(),
-    };
-
-    let gotcha_block = match &project_root_for_blocks {
-        Some(root) => {
-            let store = crate::core::gotcha_tracker::GotchaStore::load(root);
-            let files: Vec<String> = loaded_session
-                .as_ref()
-                .map(|s| s.files_touched.iter().map(|ft| ft.path.clone()).collect())
-                .unwrap_or_default();
-            let block = store.format_injection_block(&files);
-            if block.is_empty() {
-                String::new()
-            } else {
-                format!("\n{block}\n")
-            }
-        }
-        None => String::new(),
-    };
-
-    let health_block = match &project_root_for_blocks {
-        Some(root) => {
-            let block = crate::core::code_health::persist::format_session_block(root);
-            if block.is_empty() {
-                String::new()
-            } else {
-                format!("\n{block}\n")
-            }
-        }
-        None => String::new(),
-    };
-
     let shell_hint = build_shell_hint();
 
     // Skeleton includes tool-mapping rules + compression prompt (if level active).
@@ -302,16 +161,10 @@ fn build_full_instructions(
         {shell_hint}\n\
         {decoder_block}\n\
         Full instructions at {config_dir}/CLAUDE.md\n\
-        {session_block}\n\
-        {knowledge_block}\n\
-        {gotcha_block}\n\
-        {health_block}\n\
-        {origin}\n\
-        {litm_end_block}",
+        {origin}\n",
         decoder_block =
             crate::core::protocol::instruction_decoder_block(matches!(crp_mode, CrpMode::Tdd)),
         origin = crate::core::integrity::origin_line(),
-        litm_end_block = litm_end_block
     );
 
     // Guidance suffix: CRP mode + general output rule.

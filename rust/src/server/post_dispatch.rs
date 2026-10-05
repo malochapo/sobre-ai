@@ -93,7 +93,7 @@ impl LeanCtxServer {
             );
         }
 
-        if self.autonomy.is_enabled() {
+        {
             let (calls, project_root) = {
                 let session = self.session.read().await;
                 (session.stats.total_tool_calls, session.project_root.clone())

@@ -225,23 +225,10 @@ pub(super) fn redirect_read(tool_input: Option<&serde_json::Value>) -> String {
     let args_refs: Vec<&str> = args.iter().map(String::as_str).collect();
 
     if let Some(output) = run_with_timeout(&binary, &args_refs, REDIRECT_SUBPROCESS_TIMEOUT) {
-        // #1019: never prepend a banner to `output` — it is written to the temp
-        // file the host reads *as the file's content*, so an edit would round-trip
-        // the banner back into the real file (it corrupted config.toml). The
-        // shadow nudge rides the model-visible `additionalContext` side channel
-        // instead, and the intercept is still recorded in shadow.log.
-        //
-        // #778/#marker-contamination: NEVER append REDIRECT_SUFFIX to the temp
-        // file content. The host reads this file as if it were the real source;
-        // if the agent then copies it back (StrReplace/Edit), the marker leaks
-        // into source code. The nudge now travels via additionalContext (gated
-        // by inject_context) or not at all — the drifting detection still feeds
-        // the radar log and ctx_knowledge for non-destructive recall.
+        // #1019/#778: never add a banner or suffix to `output` — it is written to
+        // the temp file the host reads *as the file's content*, so an edit would
+        // round-trip it back into the real file.
         let final_output = output;
-        let drifting = matches!(
-            crate::core::data_dir::lean_ctx_data_dir(),
-            Ok(ref d) if crate::server::bypass_hint::model_is_drifting(d)
-        );
         if !final_output.is_empty() && std::fs::write(&temp_path, &final_output).is_ok() {
             let temp_str = temp_path.to_str().unwrap_or("");
 
@@ -256,25 +243,9 @@ pub(super) fn redirect_read(tool_input: Option<&serde_json::Value>) -> String {
                 &path,
                 "redirected to ctx_read",
             );
-            // #778: nudges only via additionalContext when inject_context is opted in
-            let note = if !inject_context_allowed() {
-                None
-            } else if shadow {
-                Some(format!(
-                    "lean-ctx shadow mode: this Read was served by ctx_read(\"{path}\", \"full\"). Call ctx_read directly for better performance."
-                ))
-            } else if drifting {
-                Some(
-                    crate::server::bypass_hint::REDIRECT_SUFFIX
-                        .trim()
-                        .to_string(),
-                )
-            } else {
-                None
-            };
             log_shadow_intercept("Read", &path);
             let _ = std::fs::write(&marker, format!("{}\n1", file_mtime_str(&path)));
-            return build_redirect_output(tool_input, path_field, temp_str, note.as_deref());
+            return build_redirect_output(tool_input, path_field, temp_str);
         }
     }
 
@@ -362,8 +333,8 @@ fn redirect_grep(tool_input: Option<&serde_json::Value>) -> String {
         REDIRECT_SUBPROCESS_TIMEOUT,
     ) {
         // #1019: the temp file is re-grepped by the host, so a banner line would
-        // be a spurious match (and skew counts). Keep `output` byte-faithful; the
-        // shadow nudge rides `additionalContext`, and shadow.log records it.
+        // be a spurious match (and skew counts). Keep `output` byte-faithful;
+        // shadow.log records the intercept.
         if !output.is_empty() && std::fs::write(&temp_path, &output).is_ok() {
             let temp_str = temp_path.to_str().unwrap_or("");
             debug_log::log_hook_decision(
@@ -373,18 +344,8 @@ fn redirect_grep(tool_input: Option<&serde_json::Value>) -> String {
                 &format!("{pattern} in {search_path}"),
                 "redirected to ctx_search",
             );
-            // #778: shadow_note only when inject_context is opted in (cache-safe)
-            let shadow_note = shadow
-                .then(|| {
-                    inject_context_allowed().then(|| {
-                        format!(
-                            "lean-ctx shadow mode: this Grep was served by ctx_search(\"{pattern}\", \"{search_path}\"). Call ctx_search directly for better performance."
-                        )
-                    })
-                })
-                .flatten();
             log_shadow_intercept("Grep", &format!("{pattern} in {search_path}"));
-            return build_redirect_output(tool_input, "path", temp_str, shadow_note.as_deref());
+            return build_redirect_output(tool_input, "path", temp_str);
         }
     }
 
@@ -546,18 +507,10 @@ fn redirect_temp_path(key: &str) -> std::path::PathBuf {
     temp_dir.join(format!("{hash:016x}.lctx"))
 }
 
-/// #778: Whether `additionalContext` injection is allowed.
-/// Default OFF — prevents prompt-cache invalidation on Anthropic models.
-/// Opt-in via `[code_health] inject_context = true`.
-fn inject_context_allowed() -> bool {
-    crate::core::config::CodeHealthConfig::default().inject_context
-}
-
 pub(super) fn build_redirect_output(
     tool_input: Option<&serde_json::Value>,
     field: &str,
     temp_path: &str,
-    shadow_note: Option<&str>,
 ) -> String {
     let updated_input = if let Some(obj) = tool_input.and_then(|v| v.as_object()) {
         let mut m = obj.clone();
@@ -571,17 +524,11 @@ pub(super) fn build_redirect_output(
     };
 
     // Claude Code / CodeBuddy hook output format (other hosts ignore it).
-    let mut hook_specific = serde_json::json!({
+    let hook_specific = serde_json::json!({
         "hookEventName": "PreToolUse",
         "permissionDecision": "allow",
         "updatedInput": updated_input.clone(),
     });
-    // #1019: the shadow nudge travels here, not inside the file content. Hosts
-    // that honor it (Claude Code / Codex) surface it as model-visible context;
-    // others ignore it. Either way the temp file the host reads stays faithful.
-    if let Some(note) = shadow_note {
-        hook_specific["additionalContext"] = serde_json::Value::String(note.to_string());
-    }
 
     serde_json::json!({
         // Grok PreToolUse decision field.

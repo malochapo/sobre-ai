@@ -21,8 +21,6 @@ fn resolve_cli_path(raw: &str) -> String {
 }
 use crate::core::tokens::count_tokens;
 
-use super::common::print_savings;
-
 /// #361 anti-inflation guarantee for the additive one-shot CLI path (the pi
 /// default an independent benchmark measured). Mirrors the MCP `cap_to_raw`
 /// invariant: a read must never cost more tokens than the raw file, so when the
@@ -127,8 +125,8 @@ pub fn cmd_read(args: &[String]) {
     if !force_fresh && mode == "full" {
         use crate::core::cli_cache::{self, CacheResult};
         match cli_cache::check_and_read(path) {
-            CacheResult::Hit { entry, file_ref } => {
-                let msg = cli_cache::format_hit(&entry, &file_ref, &short);
+            CacheResult::Hit { entry, .. } => {
+                let msg = cli_cache::format_hit(&entry, &short);
                 println!("{msg}");
                 let sent = count_tokens(&msg);
                 super::common::cli_track_read_cached(
@@ -254,8 +252,6 @@ pub fn cmd_read(args: &[String]) {
                 format!("{short} [{line_count}L]\n{structured}")
             };
 
-            let sent = count_tokens(&output_buf);
-            output_buf = protocol::append_savings(&output_buf, original_tokens, sent);
             if requested_auto {
                 output_buf = cap_cli_to_raw(output_buf, &content, original_tokens);
             }
@@ -285,7 +281,6 @@ pub fn cmd_read(args: &[String]) {
             }
             println!("{output_buf}");
             let sent = count_tokens(&output_buf);
-            print_savings(original_tokens, sent);
             super::common::cli_track_read(
                 path,
                 "signatures",
@@ -300,7 +295,6 @@ pub fn cmd_read(args: &[String]) {
             println!("{short} [{line_count}L]");
             println!("{compressed}");
             let sent = count_tokens(&compressed);
-            print_savings(original_tokens, sent);
             super::common::cli_track_read(
                 path,
                 "aggressive",
@@ -319,7 +313,6 @@ pub fn cmd_read(args: &[String]) {
             }
             println!("{}", result.output);
             let sent = count_tokens(&result.output);
-            print_savings(original_tokens, sent);
             super::common::cli_track_read(
                 path,
                 "entropy",
@@ -344,7 +337,6 @@ pub fn cmd_read(args: &[String]) {
                 format!("{short} [{line_count}L] lines:{range_str}\n{extracted}{multi_hint}");
             println!("{output}");
             let sent = count_tokens(&output);
-            print_savings(original_tokens, sent);
             super::common::cli_track_read(
                 path,
                 "lines",
@@ -422,7 +414,6 @@ pub fn cmd_diff(args: &[String]) {
         protocol::shorten_path(&args[1])
     );
     println!("{diff}");
-    print_savings(original, sent);
     crate::core::stats::record("cli_diff", original, sent);
 }
 

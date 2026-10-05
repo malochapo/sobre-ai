@@ -211,7 +211,7 @@ fn looks_like_prose(content: &str) -> bool {
     avg_len >= 40.0
 }
 
-/// Apply the prose squeeze, returning a footer-stamped result only when it
+/// Apply the prose squeeze, returning the result only when it
 /// actually saves tokens; otherwise `None` so the normal pipeline can try.
 fn squeeze_research_prose(content: &str) -> Option<String> {
     let before = count_tokens(content);
@@ -223,13 +223,7 @@ fn squeeze_research_prose(content: &str) -> Option<String> {
     if after + 2 >= before {
         return None;
     }
-    Some(crate::core::protocol::append_savings_with_info(
-        &squeezed,
-        before,
-        after,
-        Some("research"),
-        None,
-    ))
+    Some(squeezed)
 }
 
 /// Choose the prose-squeeze body. Only when the content would actually be

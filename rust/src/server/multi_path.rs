@@ -135,7 +135,6 @@ mod tests {
         ToolContext {
             project_root: "/test/project".to_string(),
             extra_roots: Vec::new(),
-            minimal: false,
             resolved_paths: std::collections::HashMap::new(),
             crp_mode: crate::tools::CrpMode::Off,
             cache: None,

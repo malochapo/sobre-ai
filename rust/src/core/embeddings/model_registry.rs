@@ -262,42 +262,8 @@ impl ModelConfig {
     }
 }
 
-/// Resolve which embedding model to use.
-/// Priority: `[embedding].model` in `config.toml` > the default model. An
-/// unrecognized name falls back to the default (with a warning).
+/// The embedding model in use.
 pub fn resolve_model() -> EmbeddingModel {
-    let embedding_cfg = crate::core::config::EmbeddingConfig::default();
-    resolve_model_from(embedding_cfg.model.as_deref(), embedding_cfg.dimensions)
-}
-
-/// Pure model resolution used by [`resolve_model`]; kept separate so it is
-/// unit-testable without touching the on-disk `config.toml`.
-fn resolve_model_from(config_val: Option<&str>, config_dims: Option<usize>) -> EmbeddingModel {
-    if let Some(name) = config_val.map(str::trim).filter(|s| !s.is_empty()) {
-        match EmbeddingModel::from_str_name(name) {
-            Some(EmbeddingModel::Custom(mut spec)) => {
-                spec.dimensions = config_dims;
-                if spec.revision.is_none() {
-                    tracing::warn!(
-                        "Custom embedding model {:?} has no revision pin — supply-chain best \
-                         practice is `hf:{}@<commit-or-tag>` so upstream pushes can never \
-                         silently change your index",
-                        spec.repo,
-                        spec.repo
-                    );
-                }
-                return EmbeddingModel::Custom(spec);
-            }
-            Some(model) => return model,
-            None => {
-                tracing::warn!(
-                    "Unknown embedding model {name:?} from [embedding].model; using {} instead \
-                     (built-ins: minilm, nomic — or hf:org/repo[@rev])",
-                    EmbeddingModel::DEFAULT
-                );
-            }
-        }
-    }
     EmbeddingModel::DEFAULT
 }
 
@@ -452,46 +418,6 @@ mod tests {
             format!("{}", EmbeddingModel::NomicEmbedV1_5),
             "nomic-embed-text-v1.5"
         );
-    }
-
-    #[test]
-    fn resolve_defaults_when_nothing_set() {
-        assert_eq!(resolve_model_from(None, None), EmbeddingModel::DEFAULT);
-        assert_eq!(
-            resolve_model_from(Some("   "), None),
-            EmbeddingModel::DEFAULT
-        );
-    }
-
-    #[test]
-    fn config_selects_model() {
-        assert_eq!(
-            resolve_model_from(Some("nomic"), None),
-            EmbeddingModel::NomicEmbedV1_5
-        );
-        assert_eq!(
-            resolve_model_from(Some("minilm"), None),
-            EmbeddingModel::AllMiniLmL6V2
-        );
-    }
-
-    #[test]
-    fn unknown_name_defaults() {
-        // Bad config value → default (never silently breaks the index).
-        assert_eq!(
-            resolve_model_from(Some("nope"), None),
-            EmbeddingModel::DEFAULT
-        );
-    }
-
-    #[test]
-    fn resolve_custom_picks_up_config_dimensions() {
-        let m = resolve_model_from(Some("hf:org/model@pin"), Some(1024));
-        let EmbeddingModel::Custom(spec) = m else {
-            panic!("expected custom")
-        };
-        assert_eq!(spec.dimensions, Some(1024));
-        assert_eq!(spec.revision.as_deref(), Some("pin"));
     }
 
     #[test]

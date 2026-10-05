@@ -274,13 +274,11 @@ fn quote_aware_token_end(input: &str) -> usize {
 /// but still follows delegation wrappers so `xargs bash -c …` / `timeout 5 sh -c …`
 /// cannot smuggle inline code past the check (GH #391).
 fn check_interpreter_eval_only(segment: &str) -> Result<(), ShellError> {
-    let inline_ok = crate::core::config::Config::load().shell_allow_inline_scripts_effective();
-    check_interpreter_inner(segment, 0, inline_ok)
+    check_interpreter_inner(segment, 0)
 }
 
 /// #823: unified interpreter-abuse walk over delegation wrappers.
-/// `inline_ok`: if true, skip eval-flag/heredoc checks (#814 opt-in).
-fn check_interpreter_inner(segment: &str, depth: usize, inline_ok: bool) -> Result<(), ShellError> {
+fn check_interpreter_inner(segment: &str, depth: usize) -> Result<(), ShellError> {
     if depth > 3 {
         return Ok(());
     }
@@ -296,7 +294,7 @@ fn check_interpreter_inner(segment: &str, depth: usize, inline_ok: bool) -> Resu
         .to_string();
 
     // Eval-flag / heredoc checks on interpreters (unless opted out via #814).
-    if INTERPRETER_COMMANDS.contains(&base.as_str()) && !inline_ok {
+    if INTERPRETER_COMMANDS.contains(&base.as_str()) {
         for tok in &tokens[1..] {
             if EVAL_FLAGS.contains(&tok.as_str()) {
                 return Err(format!(
@@ -325,7 +323,7 @@ fn check_interpreter_inner(segment: &str, depth: usize, inline_ok: bool) -> Resu
         let rest_tokens = delegated_command_tokens(&tokens[1..]);
         if !rest_tokens.is_empty() {
             let rest_str = rest_tokens.join(" ");
-            return check_interpreter_inner(&rest_str, depth + 1, inline_ok);
+            return check_interpreter_inner(&rest_str, depth + 1);
         }
     }
 

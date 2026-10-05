@@ -254,7 +254,6 @@ impl CtxReadTool {
         if !fresh
             && explicit_mode
             && (mode == "full" || mode == "full-compact" || mode.starts_with("lines:"))
-            && crate::core::config::Config::load().delta_explicit_effective()
             && let Ok(cache) = cache_lock.try_read()
         {
             let decision = crate::tools::ctx_read::resolve_explicit_delta_mode(
@@ -508,7 +507,6 @@ impl CtxReadTool {
                     enum PrepareOutcome {
                         Hit(String, String, usize, bool, Option<String>, (u64, u64)),
                         Compute {
-                            file_ref: String,
                             resolved_mode: String,
                             content: String,
                             original_tokens: usize,
@@ -521,8 +519,6 @@ impl CtxReadTool {
                         if let Ok(mut bt) = crate::core::bounce_tracker::global().lock() {
                             bt.next_seq();
                         }
-
-                        let file_ref = cache.get_file_ref(&path_owned);
 
                         let effective_fresh = fresh
                             || (crate::tools::ctx_read::is_subagent_context()
@@ -591,7 +587,7 @@ impl CtxReadTool {
                                     tuning.protect,
                                 );
                                 if let Some(hit) = cache.get_compressed(&path_owned, &ck).cloned() {
-                                    let hit = crate::core::redaction::redact_text_if_enabled(&hit);
+                                    let hit = crate::core::redaction::redact_text(&hit);
                                     let orig =
                                         cache.get(&path_owned).map_or(0, |e| e.original_tokens);
                                     let fref =
@@ -609,7 +605,6 @@ impl CtxReadTool {
                                     let c = content_opt
                                         .or_else(|| preread.as_deref().map(String::from));
                                     PrepareOutcome::Compute {
-                                        file_ref,
                                         resolved_mode: resolved,
                                         content: c.unwrap_or_default(),
                                         original_tokens: orig_tok,
@@ -619,7 +614,6 @@ impl CtxReadTool {
                                 let c =
                                     content_opt.or_else(|| preread.as_deref().map(String::from));
                                 PrepareOutcome::Compute {
-                                    file_ref,
                                     resolved_mode: resolved,
                                     content: c.unwrap_or_default(),
                                     original_tokens: orig_tok,
@@ -644,7 +638,6 @@ impl CtxReadTool {
                                 mode_eff
                             };
                             PrepareOutcome::Compute {
-                                file_ref,
                                 resolved_mode: resolved,
                                 content: raw,
                                 original_tokens: sr.original_tokens,
@@ -657,7 +650,6 @@ impl CtxReadTool {
                         return;
                     }
                     let PrepareOutcome::Compute {
-                        file_ref,
                         resolved_mode,
                         content: compute_content,
                         original_tokens,
@@ -691,11 +683,9 @@ impl CtxReadTool {
                         } else {
                             let lc = compute_content.lines().count();
                             let (out, _) = crate::tools::ctx_read::format_full_output(
-                                &file_ref,
                                 &short,
                                 ext_s,
                                 &compute_content,
-                                original_tokens,
                                 lc,
                                 task_ref,
                             );
@@ -712,7 +702,6 @@ impl CtxReadTool {
                         let (out, _) = crate::tools::ctx_read::process_mode_tuned(
                             &compute_content,
                             &resolved_mode,
-                            &file_ref,
                             &short,
                             ext_s,
                             original_tokens,
@@ -735,7 +724,7 @@ impl CtxReadTool {
                         (out, resolved_mode)
                     };
 
-                    computed = crate::core::redaction::redact_text_if_enabled(&computed);
+                    computed = crate::core::redaction::redact_text(&computed);
 
                     if cancel_flag.load(Ordering::Relaxed) {
                         return;

@@ -23,8 +23,8 @@ pub fn evaluate(old: &str, new: &str, ext: &str) -> GateOutcome {
         old,
         new,
         ext,
-        GateMode::parse(&crate::core::config::CodeHealthConfig::default().gate),
-        crate::core::config::CodeHealthConfig::default().cognitive_threshold,
+        GateMode::Warn,
+        crate::core::code_health::COGNITIVE_THRESHOLD,
     )
 }
 

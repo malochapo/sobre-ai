@@ -35,14 +35,12 @@ pub(crate) mod impl_gain;
 // Stays `pub`: driven from outside the crate by tests/serial_suite/multi_read_cap_scenarios.rs.
 pub mod impl_multi_read;
 pub(crate) mod impl_overview;
-pub(crate) mod impl_prefetch;
 pub(crate) mod impl_preload;
 // Stays `pub`: driven from outside the crate by tests/serial_suite/intensive_benchmarks.rs.
 pub(crate) mod impl_semantic_search;
 pub(crate) mod impl_smart_read;
 pub(crate) mod impl_smells;
 pub(crate) mod impl_symbol;
-pub(crate) mod knowledge_shared;
 pub(crate) mod output_format;
 pub mod registered;
 pub(crate) mod walk_guard;

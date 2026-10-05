@@ -42,7 +42,7 @@ pub fn save_tee(command: &str, output: &str) -> Option<String> {
     let path = tee_dir.join(&filename);
 
     let masked = crate::core::redaction::redact_text(output);
-    let (redacted, _) = crate::core::secret_detection::scan_and_redact_from_config(&masked);
+    let (redacted, _) = crate::core::secret_detection::scan_and_redact(&masked);
     std::fs::write(&path, redacted).ok()?;
     #[cfg(unix)]
     {

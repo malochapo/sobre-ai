@@ -32,12 +32,9 @@ pub(crate) fn handle_remember(
         derived_key.as_str()
     };
     let conf = confidence.unwrap_or(0.8);
-    let (v, _secret_matches) = crate::core::secret_detection::scan_and_redact_from_config(v);
+    let (v, _secret_matches) = crate::core::secret_detection::scan_and_redact(v);
     let v = v.as_str();
-    let policy = match load_policy_or_error() {
-        Ok(p) => p,
-        Err(e) => return e,
-    };
+    let policy = crate::core::memory_policy::MemoryPolicy::default();
     // Serialize the read-modify-write under a per-project lock so parallel
     // `remember` calls cannot clobber each other (issue #326). The closure
     // operates on the freshly (re)loaded state inside the lock. Admission (#970)
@@ -310,10 +307,7 @@ pub(crate) fn handle_recall(
     let Some(mut knowledge) = ProjectKnowledge::load(project_root) else {
         return "No knowledge stored for this project yet.".to_string();
     };
-    let policy = match load_policy_or_error() {
-        Ok(p) => p,
-        Err(e) => return e,
-    };
+    let policy = crate::core::memory_policy::MemoryPolicy::default();
 
     if let Some(raw) = as_of {
         let at = match parse_as_of(raw) {

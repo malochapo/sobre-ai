@@ -19,15 +19,3 @@ pub(super) fn default_true() -> bool {
 pub(super) fn default_bm25_max_cache_mb() -> u64 {
     128
 }
-
-pub(super) fn default_cognition_loop_interval() -> u64 {
-    3600
-}
-
-pub(super) fn default_cognition_loop_max_steps() -> u8 {
-    9
-}
-
-pub(super) fn default_cognition_synthesis_min_cluster() -> usize {
-    3
-}

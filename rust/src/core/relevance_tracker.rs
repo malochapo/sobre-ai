@@ -304,18 +304,12 @@ pub(crate) fn register_compressed(
 }
 
 /// Return a response suffix when the current request matches archived content.
-/// Configuration is read here so a running process observes config changes.
 pub(crate) fn proactive_context(query_context: &str) -> Option<String> {
-    let cfg = crate::core::config::Config::load();
-    if !cfg.proactive_expansion_effective() {
-        return None;
-    }
-
     let mut tracker = global().lock().ok()?;
     tracker.configure(
-        cfg.proactive_expansion_budget_tokens_effective(),
-        cfg.proactive_expansion_threshold_effective(),
-        cfg.proactive_expansion_max_age_secs_effective(),
+        crate::core::config::PROACTIVE_EXPANSION_BUDGET_TOKENS,
+        crate::core::config::PROACTIVE_EXPANSION_THRESHOLD,
+        crate::core::config::PROACTIVE_EXPANSION_MAX_AGE_SECS,
     );
     tracker.expand_if_relevant(query_context)
 }

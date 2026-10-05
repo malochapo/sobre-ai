@@ -2,7 +2,6 @@ use std::collections::HashMap;
 use std::sync::Mutex;
 
 use crate::core::cache::SessionCache;
-use crate::core::mode_predictor::{FileSignature, ModePredictor};
 
 /// Per-process counters of which signal decided each auto-mode resolution.
 /// Surfaced by `ctx_metrics` so the learning loops are observable (#496).
@@ -173,16 +172,9 @@ fn resolve_inner(ctx: &AutoModeContext) -> ResolvedMode {
         return resolved(&mode, "intent");
     }
 
-    // Adaptive learning signals (predictor, bandit, heatmap, adaptive policy,
-    // bounce/path memory) are opt-in (#683). Off by default, the capability
-    // guards above plus the deterministic heuristic below make `auto` a pure
-    // function of (file, task) — byte-stable for provider prompt caching (#498)
-    // and free of the per-read disk I/O these stores incur.
-    if crate::core::config::Config::load().auto_mode_learning_effective()
-        && let Some(r) = resolve_adaptive(ctx)
-    {
-        return r;
-    }
+    // The capability guards above plus the deterministic heuristic below make
+    // `auto` a pure function of (file, task) — byte-stable for provider prompt
+    // caching (#498).
 
     // Deterministic cold-read fallback. Every read that reaches here missed the
     // session cache (a warm hit returns `full`/`diff` above). `structure_first`
@@ -201,89 +193,6 @@ fn resolve_inner(ctx: &AutoModeContext) -> ResolvedMode {
         "heuristic"
     };
     resolved(&heuristic, source)
-}
-
-/// The opt-in adaptive block (#683): bounce/path memory plus the predictor /
-/// bandit / heatmap / adaptive-policy learning loop. Returns `Some` when a
-/// learning signal decides the mode, `None` to fall through to the deterministic
-/// heuristic. Only invoked when `auto_mode_learning` is enabled, so its disk I/O
-/// and non-determinism never touch the default cascade.
-fn resolve_adaptive(ctx: &AutoModeContext) -> Option<ResolvedMode> {
-    if let Ok(bt) = crate::core::bounce_tracker::global().lock()
-        && bt.should_force_full(ctx.path)
-    {
-        return Some(resolved("full", "bounce_tracker"));
-    }
-
-    // Per-path long-term memory (#496): a file that historically bounced in
-    // the majority of its reads will bounce again — compression is a proven
-    // net loss for it, across process restarts.
-    if crate::core::path_mode_memory::should_force_full(ctx.path) {
-        return Some(resolved("full", "path_bounce_memory"));
-    }
-
-    let sig = FileSignature::from_path(ctx.path, ctx.token_count);
-    let predictor = ModePredictor::new();
-    let mut predicted = predictor
-        .predict_best_mode(&sig)
-        .unwrap_or_else(|| "full".to_string());
-    if predicted == "auto" {
-        predicted = "full".to_string();
-    }
-
-    if predicted != "full"
-        && let Some(bandit_override) = bandit_explore(ctx.path, ctx.token_count)
-    {
-        predicted = bandit_override;
-    }
-
-    // Heatmap signal (#496): a frequently-read file where compression barely
-    // saves anything will likely trigger a follow-up read — step one mode more
-    // conservative. avg_compression_ratio is the historical fraction saved.
-    if predicted != "full"
-        && let Some((access_count, avg_ratio)) = crate::core::heatmap::entry_stats(ctx.path)
-        && access_count >= 5
-        && avg_ratio < 0.30
-    {
-        let conservative = match predicted.as_str() {
-            "signatures" | "aggressive" | "entropy" => "map".to_string(),
-            "map" if ctx.token_count <= 6000 => "full".to_string(),
-            other => other.to_string(),
-        };
-        if conservative != predicted {
-            return Some(resolved(&conservative, "heatmap_conservative"));
-        }
-    }
-
-    // Adaptive policy.
-    let objective = ctx.task.unwrap_or_default();
-    let chosen = crate::core::adaptive_mode_policy::AdaptiveModePolicyStore::load()
-        .choose_auto_mode(
-            (!objective.trim().is_empty()).then_some(objective),
-            &predicted,
-        );
-
-    if ctx.token_count > 2000 {
-        if (predicted == "map" || predicted == "signatures")
-            && chosen != "map"
-            && chosen != "signatures"
-        {
-            return Some(resolved(&predicted, "predictor_guard"));
-        }
-        if chosen == "full" && predicted != "full" {
-            return Some(resolved(&predicted, "predictor_override"));
-        }
-    }
-
-    if chosen != predicted {
-        return Some(resolved(&chosen, "adaptive_policy"));
-    }
-
-    if predicted != "full" {
-        return Some(resolved(&predicted, "predictor"));
-    }
-
-    None
 }
 
 /// True when the task text explicitly names this file (basename match). A real
@@ -320,31 +229,6 @@ fn intent_recommended_mode(task: Option<&str>) -> Option<String> {
         return None;
     }
     Some(mode)
-}
-
-fn bandit_explore(file_path: &str, token_count: usize) -> Option<String> {
-    let project_root =
-        crate::core::session::SessionState::load_latest().and_then(|s| s.project_root)?;
-    let ext = std::path::Path::new(file_path)
-        .extension()
-        .and_then(|e| e.to_str())
-        .unwrap_or("");
-    let bucket = match token_count {
-        0..=2000 => "sm",
-        2001..=10000 => "md",
-        10001..=50000 => "lg",
-        _ => "xl",
-    };
-    let bandit_key = crate::core::bandit::bandit_key("mode", ext, Some(bucket));
-    let mut store = crate::core::bandit::BanditStore::load(&project_root);
-    let bandit = store.get_or_create(&bandit_key);
-    // #4: deterministic argmax-of-mean by default; Thompson only under the flag.
-    let arm = bandit.choose_arm();
-    if arm.budget_ratio < 0.25 && token_count > 2000 {
-        Some("aggressive".to_string())
-    } else {
-        None
-    }
 }
 
 fn heuristic_mode(ext: &str, token_count: usize, structure_first: bool) -> String {

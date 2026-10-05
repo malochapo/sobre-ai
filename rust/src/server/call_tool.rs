@@ -133,11 +133,10 @@ impl LeanCtxServer {
             };
 
         let config = crate::core::config::Config::load_arc();
-        let minimal = config.minimal_overhead_effective();
 
         let tool_start = std::time::Instant::now();
         let (mut result_text, tool_saved_tokens, shell_outcome, content_blocks) =
-            match self.dispatch_tool(name, args, minimal).await {
+            match self.dispatch_tool(name, args).await {
                 Ok(tuple) => tuple,
                 Err(e) => {
                     if let Ok(mut detector) = tokio::time::timeout(
@@ -241,53 +240,8 @@ impl LeanCtxServer {
             detector.prune_corrections();
         }
 
-        // #212 — per-item sensitivity floor. Enforced uniformly here (before
-        // archiving + compression) so it covers both the inline result and the
-        // out-of-band copy. No-op unless `sensitivity.enabled` (default off).
-        {
-            let path_hint = helpers::get_str(args, "path");
-            let enforced = crate::core::sensitivity::enforce_text(
-                std::mem::take(&mut result_text),
-                path_hint.as_deref().map(std::path::Path::new),
-                &config.sensitivity_effective(),
-            );
-            result_text = enforced.into_text();
-        }
-
-        // Out-of-band archive + optional context firewall for large tool outputs.
-        // For firewallable tools (ctx_shell/ctx_execute/ctx_search/ctx_tree) whose output
-        // exceeds the ephemeral threshold, the full (redacted) body is stored out-of-band
-        // and the inline result is replaced by a compact digest + ctx_expand drilldown.
-        let mut firewalled = false;
-        if !(minimal || is_raw_shell) {
-            use crate::core::archive;
-            let archivable = matches!(
-                name,
-                "ctx_shell" | "ctx_read" | "ctx_execute" | "ctx_search" | "ctx_tree"
-            );
-            if archivable && archive::should_archive(&result_text) {
-                let cmd = helpers::get_str(args, "command")
-                    .or_else(|| helpers::get_str(args, "path"))
-                    .unwrap_or_default();
-                let session_id = self.session.read().await.id.clone();
-                let to_store = crate::core::redaction::redact_text_if_enabled(&result_text);
-                let tokens = crate::core::tokens::count_tokens(&to_store);
-                if let Some(id) = archive::store(name, &cmd, &to_store, Some(&session_id))
-                    && crate::core::firewall::should_firewall(name, tokens)
-                {
-                    result_text = crate::core::firewall::summarize(&to_store, &id, name, tokens);
-                    firewalled = true;
-                }
-            }
-        }
-
         let pre_compression = result_text.clone();
-        // A firewalled result is already a compact digest — re-compressing it would mangle
-        // the retrieval instructions for no benefit.
-        if !firewalled {
-            result_text =
-                post_process::compress_terse(result_text, name, args, &config, is_raw_shell);
-        }
+        result_text = post_process::compress_terse(result_text, name, args, &config, is_raw_shell);
 
         // Snapshot BEFORE any decoration (auto-context prefix, throttle/budget
         // warnings, hints): auto-findings must parse the clean tool output, or
@@ -298,7 +252,7 @@ impl LeanCtxServer {
 
         let verify_cfg = crate::core::output_verification::VerificationConfig::default();
 
-        if !is_raw_shell && !firewalled {
+        if !is_raw_shell {
             let vr = crate::core::output_verification::verify_output(
                 &pre_compression,
                 &result_text,
@@ -356,151 +310,35 @@ impl LeanCtxServer {
         }
 
         if name == "ctx_read" {
-            if minimal {
-                let cache_clone = self.cache.clone();
-                let autonomy_clone = self.autonomy.clone();
-                tokio::spawn(async move {
-                    let result = std::panic::AssertUnwindSafe(async {
-                        // #807: bounded lock — the old unbounded `.write().await`
-                        // could queue behind a long computation and then hold the
-                        // lock during dedup, cascading the stall.
-                        let cache_timeout = tokio::time::timeout(
-                            std::time::Duration::from_secs(5),
-                            cache_clone.write(),
-                        )
-                        .await;
-                        if let Ok(mut cache) = cache_timeout {
-                            crate::tools::autonomy::maybe_auto_dedup(&autonomy_clone, &mut cache);
-                        } else {
-                            tracing::debug!(
-                                "background auto_dedup: cache lock timeout (5s), skipping"
-                            );
-                        }
-                    })
-                    .catch_unwind()
-                    .await;
-                    if let Err(e) = result {
-                        let msg = e
-                            .downcast_ref::<String>()
-                            .map(String::as_str)
-                            .or_else(|| e.downcast_ref::<&str>().copied())
-                            .unwrap_or("unknown");
-                        tracing::error!("background auto_dedup panicked: {msg}");
-                    }
-                });
-            } else {
-                let read_path = self
-                    .resolve_path_or_passthrough(
-                        &helpers::get_str(args, "path").unwrap_or_default(),
+            let cache_clone = self.cache.clone();
+            let autonomy_clone = self.autonomy.clone();
+            tokio::spawn(async move {
+                let result = std::panic::AssertUnwindSafe(async {
+                    // #807: bounded lock — the old unbounded `.write().await`
+                    // could queue behind a long computation and then hold the
+                    // lock during dedup, cascading the stall.
+                    let cache_timeout = tokio::time::timeout(
+                        std::time::Duration::from_secs(5),
+                        cache_clone.write(),
                     )
                     .await;
-                let project_root = {
-                    let session = self.session.read().await;
-                    session.project_root.clone()
-                };
-
-                // Bounded cache lock for enrichment — degrade gracefully under contention
-                let enrich_timeout =
-                    tokio::time::timeout(std::time::Duration::from_secs(3), self.cache.write())
-                        .await;
-                if let Ok(mut cache) = enrich_timeout {
-                    let enrich = crate::tools::autonomy::enrich_after_read(
-                        &self.autonomy,
-                        &mut cache,
-                        &read_path,
-                        project_root.as_deref(),
-                        None,
-                        crate::tools::CrpMode::effective(),
-                        false,
-                    );
-                    if let Some(hint) = enrich.related_hint {
-                        result_text = format!("{result_text}\n{hint}");
+                    if let Ok(mut cache) = cache_timeout {
+                        crate::tools::autonomy::maybe_auto_dedup(&autonomy_clone, &mut cache);
+                    } else {
+                        tracing::debug!("background auto_dedup: cache lock timeout (5s), skipping");
                     }
-                    crate::tools::autonomy::maybe_auto_dedup(&self.autonomy, &mut cache);
-                } else {
-                    tracing::warn!(
-                        "post-dispatch cache lock timeout (3s) for {read_path}, skipping enrichment"
-                    );
+                })
+                .catch_unwind()
+                .await;
+                if let Err(e) = result {
+                    let msg = e
+                        .downcast_ref::<String>()
+                        .map(String::as_str)
+                        .or_else(|| e.downcast_ref::<&str>().copied())
+                        .unwrap_or("unknown");
+                    tracing::error!("background auto_dedup panicked: {msg}");
                 }
-
-                // Ledger update — fire-and-forget to avoid blocking concurrent reads.
-                // Only real files belong in the context ledger (GL #512): a
-                // ctx_read on "." or a directory returns an overview, not file
-                // content, and must not appear in the pressure table as a file.
-                if std::path::Path::new(&read_path).is_file() {
-                    let ledger_clone = self.ledger.clone();
-                    let session_clone = self.session.clone();
-                    let peer_clone = self.peer.clone();
-                    let read_path_owned = read_path.clone();
-                    let project_root_owned = project_root.clone();
-                    let mode_used =
-                        helpers::get_str(args, "mode").unwrap_or_else(|| "auto".to_string());
-                    let out_tok = output_tokens as usize;
-                    let sent_tok = crate::core::tokens::count_tokens(&result_text);
-                    let wants_eviction = true;
-                    tokio::spawn(async move {
-                        let result = std::panic::AssertUnwindSafe(async {
-                            let active_task = {
-                                let session = session_clone.read().await;
-                                session.task.as_ref().map(|t| t.description.clone())
-                            };
-                            let mut ledger = ledger_clone.write().await;
-                            let overlay = crate::core::context_overlay::OverlayStore::load_project(
-                                &std::path::PathBuf::from(
-                                    project_root_owned.as_deref().unwrap_or("."),
-                                ),
-                            );
-                            let gate_result = context_gate::post_dispatch_record_with_task(
-                                &read_path_owned,
-                                &mode_used,
-                                out_tok,
-                                sent_tok,
-                                &mut ledger,
-                                &overlay,
-                                active_task.as_deref(),
-                                project_root_owned.as_deref(),
-                            );
-                            drop(ledger);
-                            if wants_eviction && let Some(hint) = &gate_result.eviction_hint {
-                                tracing::debug!("deferred eviction hint: {hint}");
-                            }
-                            if let Some(hint) = &gate_result.prefetch_hint {
-                                tracing::debug!("deferred FEP prefetch hint: {hint}");
-                            }
-                            if gate_result.resource_changed
-                                && let Some(peer) = peer_clone.read().await.as_ref()
-                            {
-                                notifications::send_resource_updated(
-                                    peer,
-                                    notifications::RESOURCE_URI_SUMMARY,
-                                )
-                                .await;
-                            }
-                        })
-                        .catch_unwind()
-                        .await;
-                        if let Err(e) = result {
-                            let msg = e
-                                .downcast_ref::<String>()
-                                .map(String::as_str)
-                                .or_else(|| e.downcast_ref::<&str>().copied())
-                                .unwrap_or("unknown");
-                            tracing::error!("background post_dispatch panicked: {msg}");
-                        }
-                    });
-                }
-            }
-        }
-
-        if !minimal && !is_raw_shell && name == "ctx_shell" {
-            let cmd = helpers::get_str(args, "command").unwrap_or_default();
-
-            if let Some(file_path) = extract_file_read_from_shell(&cmd)
-                && let Ok(mut bt) = crate::core::bounce_tracker::global().lock()
-            {
-                bt.next_seq();
-                bt.record_shell_file_access(&file_path);
-            }
+            });
         }
 
         // Bypass hints are decoupled from minimal_overhead: they ride MCP
@@ -651,17 +489,7 @@ impl LeanCtxServer {
         self.persist_shared_context_os(name, action.as_deref(), args)
             .await;
 
-        let skip_checkpoint =
-            minimal || matches!(name, "ctx_session" | "ctx_knowledge" | "ctx_impact");
-
-        // Output-echo nudge (#501): when the agent keeps re-quoting delivered
-        // content, tell it once (cooldown-limited, stable text per #498).
-        if !skip_checkpoint
-            && crate::core::protocol::meta_visible()
-            && let Some(nudge) = crate::core::output_echo::take_pending_nudge()
-        {
-            result_text.push_str(&nudge);
-        }
+        let skip_checkpoint = matches!(name, "ctx_session" | "ctx_knowledge" | "ctx_impact");
 
         // #1020: tool-calls.log is now written on the dispatch path
         // (record_call_with_path / record_call_with_timing) with the real

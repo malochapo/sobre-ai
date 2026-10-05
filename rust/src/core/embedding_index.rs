@@ -109,13 +109,6 @@ pub fn build_or_update(root: &Path, bm25: &super::bm25_index::BM25Index) -> Embe
             tracing::info!("[embedding_index] build_or_update skipped: search.dense_enabled=false");
             return EmbeddingBuildOutcome::Skipped;
         }
-        let profile = crate::core::config::MemoryProfile::default();
-        if !profile.embeddings_enabled() {
-            tracing::info!(
-                "[embedding_index] build_or_update skipped: memory_profile disables embeddings"
-            );
-            return EmbeddingBuildOutcome::Skipped;
-        }
 
         // Bootstrap the model if it isn't on disk yet. `build_or_update` only
         // runs for an explicit build request (`index build` / `build-full` /

@@ -161,50 +161,6 @@ fn effective_mode() -> String {
     None::<String>.as_deref().unwrap_or("on").to_lowercase()
 }
 
-/// Returns `true` if no lean-ctx MCP calls have been seen in the last 5 minutes.
-/// Used by the redirect-suffix logic to append a nudge to `.lctx` temp files
-/// when the model appears to be drifting away from ctx_* tools.
-pub fn model_is_drifting(data_dir: &Path) -> bool {
-    let radar_path = radar_jsonl_path(data_dir);
-    if !radar_path.exists() {
-        return true;
-    }
-    let Ok(content) = std::fs::read_to_string(&radar_path) else {
-        return true;
-    };
-    let five_min_ago = now_millis().saturating_sub(5 * 60 * 1000);
-    for line in content.lines().rev() {
-        if line.is_empty() {
-            continue;
-        }
-        let event: RadarEvent = match serde_json::from_str(line) {
-            Ok(e) => e,
-            Err(_) => continue,
-        };
-        let event_ts_ms = event.ts * 1000;
-        if event_ts_ms < five_min_ago {
-            break;
-        }
-        if event.event_type == "mcp_call" {
-            let is_lctx = event
-                .tool_name
-                .as_deref()
-                .is_some_and(|t| t.starts_with("ctx_"))
-                || event
-                    .detail
-                    .as_deref()
-                    .is_some_and(|d| d.contains("lean-ctx"));
-            if is_lctx {
-                return false;
-            }
-        }
-    }
-    true
-}
-
-pub const REDIRECT_SUFFIX: &str =
-    "\n--- lean-ctx: ctx_compose bundles search+read+symbols in one call ---";
-
 fn radar_jsonl_path(data_dir: &Path) -> std::path::PathBuf {
     data_dir.join("context_radar.jsonl")
 }
@@ -365,49 +321,4 @@ mod tests {
     // ── Gate 2: cold-start fallback ─────────────────────────────
 
     // ── Gate 3: session-ID fallback ──────────────────────────────
-
-    // ── model_is_drifting ────────────────────────────────────────
-
-    #[test]
-    fn drifting_when_no_radar_file() {
-        let dir = TempDir::new().unwrap();
-        assert!(model_is_drifting(dir.path()));
-    }
-
-    #[test]
-    fn drifting_when_empty_radar() {
-        let dir = TempDir::new().unwrap();
-        std::fs::write(dir.path().join("context_radar.jsonl"), "").unwrap();
-        assert!(model_is_drifting(dir.path()));
-    }
-
-    #[test]
-    fn not_drifting_when_recent_lctx_call() {
-        let dir = TempDir::new().unwrap();
-        let now_secs = now_millis() / 1000;
-        let mut f = std::fs::File::create(dir.path().join("context_radar.jsonl")).unwrap();
-        writeln!(
-            f,
-            r#"{{"ts":{now_secs},"event_type":"mcp_call","tokens":100,"tool_name":"ctx_read"}}"#,
-        )
-        .unwrap();
-        drop(f);
-        assert!(!model_is_drifting(dir.path()));
-    }
-
-    #[test]
-    fn drifting_when_only_old_lctx_calls() {
-        let dir = TempDir::new().unwrap();
-        let old_secs = (now_millis() / 1000).saturating_sub(600);
-        let mut f = std::fs::File::create(dir.path().join("context_radar.jsonl")).unwrap();
-        writeln!(
-            f,
-            r#"{{"ts":{old_secs},"event_type":"mcp_call","tokens":100,"tool_name":"ctx_read"}}"#,
-        )
-        .unwrap();
-        drop(f);
-        assert!(model_is_drifting(dir.path()));
-    }
-
-    // ── is_enabled ───────────────────────────────────────────────
 }

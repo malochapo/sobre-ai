@@ -41,7 +41,7 @@ impl LeanCtxServer {
         workspace_id: &str,
         channel_id: &str,
     ) -> Self {
-        let ttl = { crate::core::config::MemoryCleanup::default().idle_ttl_secs() };
+        let ttl = crate::core::config::IDLE_CACHE_TTL_SECS;
 
         // Purge stale graph indices on startup to prevent serving outdated data
         crate::core::graph_index::ProjectIndex::purge_stale_indices();
@@ -146,7 +146,7 @@ impl LeanCtxServer {
             autonomy: Arc::new(autonomy::AutonomyState::new()),
             loop_detector: Arc::new(RwLock::new(
                 crate::core::loop_detection::LoopDetector::with_config(
-                    &crate::core::config::LoopDetectionConfig::default(),
+                    &crate::core::loop_detection::LoopLimits::default(),
                 ),
             )),
             ledger: Arc::new(RwLock::new(

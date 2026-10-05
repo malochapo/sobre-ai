@@ -21,9 +21,7 @@ pub fn capture_finding(project_root: &str, finding: &AutoFinding) {
     let category = classify_category(&finding.summary);
     let key = derive_key(finding);
 
-    let Ok(policy) = crate::core::config::Config::load().memory_policy_effective() else {
-        return;
-    };
+    let policy = crate::core::memory_policy::MemoryPolicy::default();
 
     // Load-modify-save under the shared in-process + cross-process lock so this
     // background capture never clobbers facts a concurrent foreground

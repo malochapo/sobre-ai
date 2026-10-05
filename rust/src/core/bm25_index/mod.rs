@@ -33,10 +33,9 @@ const DEFAULT_BM25_IGNORES: &[&str] = &[
 ];
 
 fn max_bm25_cache_bytes() -> u64 {
-    // Single source of truth: `Config::bm25_max_cache_mb_effective` (explicit
-    // config › disk-budget › generous default). Decoupled from the RAM profile so
-    // large repos persist instead of rebuilding forever (issue #249).
-    let mb = crate::core::config::Config::load().bm25_max_cache_mb_effective();
+    // Decoupled from the RAM profile so large repos persist instead of
+    // rebuilding forever (issue #249).
+    let mb = crate::core::config::DEFAULT_BM25_PERSIST_MB;
     mb * 1024 * 1024
 }
 

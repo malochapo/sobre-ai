@@ -223,7 +223,6 @@ fn handle_regex(args: &Map<String, Value>, ctx: &ToolContext) -> Result<ToolOutp
         );
     }
 
-    let _mode_guard = crate::core::savings_footer::ModeGuard::new("search");
     let per_root_max = (max / resolved.roots.len()).max(5);
     let mut combined = String::new();
     let mut total_observed: usize = 0;
@@ -276,7 +275,7 @@ fn handle_regex(args: &Map<String, Value>, ctx: &ToolContext) -> Result<ToolOutp
     // the modeled 2.5x native-grep baseline never inflates user-facing
     // numbers (GL #573). It only feeds the explicitly-estimated stats
     // series via `tool_lifecycle::record_search`.
-    let final_out = crate::core::protocol::append_savings(&combined, total_observed, total_sent);
+    let final_out = combined.to_string();
     let saved = total_observed.saturating_sub(total_sent);
     // #685: `actual_tokens` is the *sent* output, not the saving — passing
     // `saved` here recorded `actual=observed−sent` and `saved=sent` (both
@@ -484,8 +483,6 @@ fn search_single(
     exclude: Option<&str>,
     exclude_pattern: Option<&str>,
 ) -> Result<ToolOutput, ErrorData> {
-    let _mode_guard = crate::core::savings_footer::ModeGuard::new("search");
-
     let search_result = tokio::task::block_in_place(|| {
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             crate::tools::ctx_search::handle_filtered(
@@ -527,7 +524,7 @@ fn search_single(
 
     let sent = crate::core::tokens::count_tokens(&result);
     let saved = observed.saturating_sub(sent);
-    let final_out = crate::core::protocol::append_savings(&result, observed, sent);
+    let final_out = result.to_string();
     // #685: pass the *sent* output as `actual_tokens` (not `saved`); see the
     // multi-root branch above for why the previous arg was a double bug.
     crate::core::savings_ledger::record_tool_event("ctx_search", observed, sent);
@@ -581,7 +578,6 @@ fn handle_batch_queries(
     let global_max = (get_int(args, "max_results").unwrap_or(20) as usize).min(500);
     let per_query_max = (global_max / queries.len()).max(5);
 
-    let _mode_guard = crate::core::savings_footer::ModeGuard::new("search");
     let mut combined = String::new();
     let mut total_observed: usize = 0;
     let mut total_sent: usize = 0;
@@ -650,7 +646,7 @@ fn handle_batch_queries(
         combined = "No matches found for any query.".to_string();
     }
 
-    let final_out = crate::core::protocol::append_savings(&combined, total_observed, total_sent);
+    let final_out = combined.to_string();
     let saved = total_observed.saturating_sub(total_sent);
     crate::core::savings_ledger::record_tool_event("ctx_search", total_observed, total_sent);
 

@@ -22,9 +22,8 @@ static RUNNING: AtomicBool = AtomicBool::new(false);
 /// Single-flight guard for the idle replay pass (#7).
 static IDLE_REPLAY_RUNNING: AtomicBool = AtomicBool::new(false);
 
-/// Floor for the configured interval — guards against a pathological `0`/tiny
-/// value turning every dispatch into a consolidation run.
-const MIN_INTERVAL_SECS: u64 = 60;
+/// Minimum time between two background cognition runs.
+const INTERVAL_SECS: u64 = 3600;
 
 /// Default quiet gap (seconds) after which the next dispatch triggers an idle
 /// replay-consolidation pass (#7).
@@ -79,9 +78,6 @@ pub fn maybe_run(project_root: &str) {
     if crate::core::memory_guard::is_under_pressure() {
         return;
     }
-    if !crate::core::config::AutonomyConfig::default().cognition_loop_enabled {
-        return;
-    }
     let now = now_secs();
 
     // #7 Idle replay: if the agent rested before this dispatch, replay-consolidate
@@ -89,10 +85,7 @@ pub fn maybe_run(project_root: &str) {
     maybe_idle_replay(project_root, now);
     LAST_ACTIVITY_SECS.store(now, Ordering::Relaxed);
 
-    let interval = crate::core::config::AutonomyConfig::default()
-        .cognition_loop_interval_secs
-        .max(MIN_INTERVAL_SECS);
-    if !is_due(now, LAST_RUN_SECS.load(Ordering::Relaxed), interval) {
+    if !is_due(now, LAST_RUN_SECS.load(Ordering::Relaxed), INTERVAL_SECS) {
         return;
     }
     // Claim the slot before spawning so concurrent dispatches never double-fire.
@@ -102,10 +95,12 @@ pub fn maybe_run(project_root: &str) {
     LAST_RUN_SECS.store(now, Ordering::Relaxed);
 
     let root = project_root.to_string();
-    let max_steps = crate::core::config::AutonomyConfig::default().cognition_loop_max_steps;
     std::thread::spawn(move || {
         let _guard = RunningGuard;
-        let report = crate::core::cognition_loop::run_cognition_loop(&root, max_steps);
+        let report = crate::core::cognition_loop::run_cognition_loop(
+            &root,
+            crate::core::cognition_loop::MAX_STEPS,
+        );
         tracing::debug!(target: "cognition", "background cognition loop: {report}");
     });
 }

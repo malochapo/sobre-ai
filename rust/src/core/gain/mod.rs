@@ -180,8 +180,7 @@ impl GainEngine {
         // Budget awareness (#964): flag when the fixed per-turn prefix outgrows
         // the configured `[context] budget_tokens` (shared knob with `doctor
         // overhead`). 0 disables the check.
-        let injected_overhead_budget_tokens =
-            crate::core::config::Config::load().context_budget_tokens_effective() as u64;
+        let injected_overhead_budget_tokens = crate::core::config::CONTEXT_BUDGET_TOKENS as u64;
         let over_budget = injected_overhead_budget_tokens > 0
             && injected_overhead_tokens_per_turn > injected_overhead_budget_tokens;
         GainSummary {

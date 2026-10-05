@@ -34,23 +34,17 @@ pub(super) fn run_mcp_server() -> Result<()> {
     // on rayon, whose global pool otherwise grabs *every* core — so a fleet of
     // concurrent sessions still spikes the host on startup (#460). Resolve the
     // cap in three tiers:
-    //   1. an explicit `max_index_threads` config value always wins;
-    //   2. otherwise, if other lean-ctx processes are running, split the cores
-    //      fairly across the fleet so N sessions use ~one core-count of index
-    //      work between them instead of N × all-cores;
-    //   3. a lone session keeps rayon's all-cores default untouched (0 = no cap).
+    //   1. if other lean-ctx processes are running, split the cores fairly
+    //      across the fleet so N sessions use ~one core-count of index work
+    //      between them instead of N × all-cores;
+    //   2. a lone session keeps rayon's all-cores default untouched (0 = no cap).
     let index_threads = {
-        let configured = crate::core::config::Config::load().max_index_threads_effective();
-        if configured > 0 {
-            configured
+        // `find_pids_by_name` excludes us, so +1 counts this process too.
+        let concurrent = crate::ipc::process::find_pids_by_name("lean-ctx").len() + 1;
+        if concurrent > 1 {
+            herd_aware_index_threads(parallelism, concurrent)
         } else {
-            // `find_pids_by_name` excludes us, so +1 counts this process too.
-            let concurrent = crate::ipc::process::find_pids_by_name("lean-ctx").len() + 1;
-            if concurrent > 1 {
-                herd_aware_index_threads(parallelism, concurrent)
-            } else {
-                0
-            }
+            0
         }
     };
     if index_threads > 0 {
@@ -70,7 +64,6 @@ pub(super) fn run_mcp_server() -> Result<()> {
 
     let result = rt.block_on(async {
         core::logging::init_mcp_logging();
-        core::protocol::set_mcp_context(true);
 
         // Activate the plugin registry once per server process, then announce the
         // session. `notify` is a no-op unless a plugin listens for the hook.

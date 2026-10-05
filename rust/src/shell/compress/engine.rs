@@ -4,7 +4,6 @@ use crate::core::tokens::count_tokens;
 use super::classification::{
     has_structural_output, is_search_output, is_verbatim_output, looks_like_toon,
 };
-use super::footer::shell_savings_footer;
 
 pub(in crate::shell) fn compress_and_measure(
     command: &str,
@@ -58,205 +57,12 @@ pub(crate) fn compress_for_outcome(command: &str, output: &str, exit_code: i32) 
     compress_if_beneficial_with_exit(command, output, exit_code)
 }
 
-/// Opt-in (#936) lossless crush of a *verbatim* data command's JSON. Returns a
-/// savings-footer'd, fully reconstructible reshape only when `enabled` and the
-/// crush both pays (at least halves the bytes, via `crush_verbatim`) and clears
-/// the output-token floor; otherwise `None`, so the caller keeps the output
-/// verbatim. Kept pure (env read stays in the caller) so the gate is unit-tested
-/// without mutating the process environment.
-pub(crate) fn verbatim_json_crush(
-    output: &str,
-    original_tokens: usize,
-    min_output_tokens: usize,
-    enabled: bool,
-) -> Option<String> {
-    if !enabled {
-        return None;
-    }
-    let crushed = patterns::json_schema::crush_verbatim(output)?;
-    let crushed_tokens = count_tokens(&crushed);
-    (crushed_tokens >= min_output_tokens && crushed_tokens < original_tokens)
-        .then(|| shell_savings_footer(&crushed, original_tokens, crushed_tokens))
-}
-
 /// Distinct-value ratio at/above which the lossy stage drops an all-present
 /// column. Conservative: only near-unique noise (timestamps, UUIDs) is dropped,
 /// so genuinely varying-but-meaningful columns are kept.
 /// #1129: minimum token savings to justify compression overhead (tee-log pointer
 /// + potential read-back round-trip). Below this floor, verbatim is cheaper.
 const MIN_USEFUL_SAVINGS: usize = 100;
-
-const LOSSY_DROP_ENTROPY: f64 = 0.9;
-
-/// Opt-in (#936) **lossy** escalation for a verbatim data command's JSON, used
-/// only after [`verbatim_json_crush`] (lossless) did not pay. Drops near-unique
-/// high-entropy columns and — because data is then lost — persists the verbatim
-/// original to the shared CCR store, appending a `ctx_expand` handle so a dropped
-/// datum is always recoverable out-of-band (never from the text). Returns `None`
-/// unless enabled, the crush both drops a column and clears the token floor, and
-/// the original is large enough to persist. The embedded handle is content-
-/// addressed, so the rewritten output stays byte-stable across turns (#448/#498).
-pub(crate) fn verbatim_json_crush_lossy(
-    output: &str,
-    original_tokens: usize,
-    min_output_tokens: usize,
-    enabled: bool,
-) -> Option<String> {
-    if !enabled {
-        return None;
-    }
-    let res = crate::core::json_crush::crush_text_lossy_if_beneficial(output, LOSSY_DROP_ENTROPY)?;
-    let crushed_tokens = count_tokens(&res.text);
-    if crushed_tokens < min_output_tokens || crushed_tokens >= original_tokens {
-        return None;
-    }
-    // Dropped columns must be recoverable out-of-band; bail if we cannot persist
-    // (then the lossless/verbatim path keeps the data) rather than lose it.
-    let handle = crate::proxy::ccr::persist_json(output)?;
-    let body = shell_savings_footer(&res.text, original_tokens, crushed_tokens);
-    Some(format!(
-        "{body}\n[lean-ctx: high-entropy column(s) dropped — full data at {handle}, \
-         ctx_expand(id=\"{handle}\", json_path=\"…\"|search=\"…\") for a slice]"
-    ))
-}
-
-/// Try the columnar crusher with the comma then the tab delimiter, returning the
-/// first that crushes. Shell output carries no file extension, so the delimiter
-/// is inferred by trying the two common ones; the crusher self-guards (returns
-/// `None` unless the text is a genuinely redundant rectangular table).
-fn tabular_delim_crush<T>(output: &str, crush: impl Fn(&str, char) -> Option<T>) -> Option<T> {
-    [',', '\t'].into_iter().find_map(|d| crush(output, d))
-}
-
-/// Opt-in (#982) lossless crush of a *verbatim* command's delimited (CSV/TSV)
-/// output, tried after the JSON crush did not pay. Hoists constant columns via
-/// the columnar crusher — fully reconstructible, so no CCR handle is needed.
-/// Returns a footer'd reshape only when `enabled` and the crush both pays (at
-/// least halves the bytes) and clears the token floor; otherwise `None`.
-pub(crate) fn verbatim_tabular_crush(
-    output: &str,
-    original_tokens: usize,
-    min_output_tokens: usize,
-    enabled: bool,
-) -> Option<String> {
-    if !enabled {
-        return None;
-    }
-    let crushed =
-        tabular_delim_crush(output, crate::core::tabular_crush::crush_text_if_beneficial)?;
-    let crushed_tokens = count_tokens(&crushed);
-    (crushed_tokens >= min_output_tokens && crushed_tokens < original_tokens)
-        .then(|| shell_savings_footer(&crushed, original_tokens, crushed_tokens))
-}
-
-/// Opt-in (#982) **lossy** escalation for a verbatim command's CSV/TSV output,
-/// used only after [`verbatim_tabular_crush`] (lossless) did not pay. Drops
-/// near-unique high-entropy columns and — because data is then lost — persists
-/// the verbatim original to the shared CCR store, appending a `ctx_expand` handle
-/// so a dropped datum is always recoverable out-of-band (never from the text).
-/// The embedded handle is content-addressed, so the output stays byte-stable
-/// across turns (#448/#498).
-pub(crate) fn verbatim_tabular_crush_lossy(
-    output: &str,
-    original_tokens: usize,
-    min_output_tokens: usize,
-    enabled: bool,
-) -> Option<String> {
-    if !enabled {
-        return None;
-    }
-    let res = tabular_delim_crush(output, |text, delim| {
-        crate::core::tabular_crush::crush_text_lossy_if_beneficial(text, delim, LOSSY_DROP_ENTROPY)
-    })?;
-    let crushed_tokens = count_tokens(&res.text);
-    if crushed_tokens < min_output_tokens || crushed_tokens >= original_tokens {
-        return None;
-    }
-    let handle = crate::proxy::ccr::persist_tabular(output)?;
-    let body = shell_savings_footer(&res.text, original_tokens, crushed_tokens);
-    Some(format!(
-        "{body}\n[lean-ctx: high-entropy column(s) dropped — full data at {handle}, \
-         ctx_expand(id=\"{handle}\", search=\"…\") for a slice]"
-    ))
-}
-
-/// Opt-in (#985) lossless crush of a *verbatim* command's YAML output (e.g.
-/// `kubectl get -o yaml`, `helm get values`), tried after the JSON and tabular
-/// crushers did not pay. Maps the document onto the JSON value model and compacts
-/// it through the shared crusher — fully reconstructible to the parsed value, so
-/// no CCR handle is needed. The crusher self-guards (returns `None` unless the
-/// text is a genuinely structured, redundant document). Returns a footer'd
-/// reshape only when `enabled` and the crush clears both the reduction gate and
-/// the token floor; otherwise `None`.
-pub(crate) fn verbatim_yaml_crush(
-    output: &str,
-    original_tokens: usize,
-    min_output_tokens: usize,
-    enabled: bool,
-) -> Option<String> {
-    if !enabled {
-        return None;
-    }
-    let crushed = crate::core::yaml_crush::crush_text_if_beneficial(output)?;
-    let crushed_tokens = count_tokens(&crushed);
-    (crushed_tokens >= min_output_tokens && crushed_tokens < original_tokens)
-        .then(|| shell_savings_footer(&crushed, original_tokens, crushed_tokens))
-}
-
-/// Opt-in (#985) **lossy** escalation for a verbatim command's YAML output, used
-/// only after [`verbatim_yaml_crush`] (lossless) did not pay. Drops near-unique
-/// high-entropy columns and — because data is then lost — persists the verbatim
-/// original to the shared CCR store, appending a `ctx_expand` handle so a dropped
-/// datum is always recoverable out-of-band (never from the text). The embedded
-/// handle is content-addressed, so the output stays byte-stable across turns
-/// (#448/#498).
-pub(crate) fn verbatim_yaml_crush_lossy(
-    output: &str,
-    original_tokens: usize,
-    min_output_tokens: usize,
-    enabled: bool,
-) -> Option<String> {
-    if !enabled {
-        return None;
-    }
-    let res = crate::core::yaml_crush::crush_text_lossy_if_beneficial(output, LOSSY_DROP_ENTROPY)?;
-    let crushed_tokens = count_tokens(&res.text);
-    if crushed_tokens < min_output_tokens || crushed_tokens >= original_tokens {
-        return None;
-    }
-    let handle = crate::proxy::ccr::persist_yaml(output)?;
-    let body = shell_savings_footer(&res.text, original_tokens, crushed_tokens);
-    Some(format!(
-        "{body}\n[lean-ctx: high-entropy column(s) dropped — full data at {handle}, \
-         ctx_expand(id=\"{handle}\", search=\"…\") for a slice]"
-    ))
-}
-
-/// HTML content extractor (#1124): extracts article/main content from web
-/// pages and converts to clean markdown. Triggered for HTML content in the
-/// verbatim crusher ladder (curl, wget, fetch outputs). The full HTML is
-/// persisted to CCR under the `html_` prefix for recovery via `ctx_expand`.
-pub(crate) fn verbatim_html_crush(
-    output: &str,
-    original_tokens: usize,
-    min_output_tokens: usize,
-    enabled: bool,
-) -> Option<String> {
-    if !enabled {
-        return None;
-    }
-    let result = crate::core::html_crush::crush_if_beneficial(output)?;
-    let crushed_tokens = count_tokens(&result.text);
-    if crushed_tokens < min_output_tokens || crushed_tokens >= original_tokens {
-        return None;
-    }
-    let handle = crate::proxy::ccr::persist_html(output)?;
-    let body = shell_savings_footer(&result.text, original_tokens, crushed_tokens);
-    Some(format!(
-        "{body}\n[lean-ctx: HTML extracted to markdown — full page at {handle}, \
-         ctx_expand(id=\"{handle}\", search=\"…\") for a section]"
-    ))
-}
 
 pub(crate) fn compress_if_beneficial(command: &str, output: &str) -> String {
     compress_if_beneficial_with_exit(command, output, -1)
@@ -280,7 +86,7 @@ fn compress_if_beneficial_with_exit(command: &str, output: &str, exit_code: i32)
         });
         let spliced_tokens = count_tokens(&spliced);
         return if spliced_tokens < original_tokens {
-            shell_savings_footer(&spliced, original_tokens, spliced_tokens)
+            spliced
         } else {
             spliced
         };
@@ -312,7 +118,7 @@ fn compress_if_beneficial_with_exit(command: &str, output: &str, exit_code: i32)
             let original_tokens = count_tokens(output);
             let compressed_tokens = count_tokens(&compressed);
             if compressed_tokens < original_tokens {
-                return shell_savings_footer(&compressed, original_tokens, compressed_tokens);
+                return compressed;
             }
         }
         return truncate_verbatim(&base, count_tokens(&base));
@@ -338,69 +144,15 @@ fn compress_if_beneficial_with_exit(command: &str, output: &str, exit_code: i32)
     if policy == crate::shell::output_policy::OutputPolicy::Verbatim
         || policy == crate::shell::output_policy::OutputPolicy::Passthrough
     {
-        // Opt-in (#936): a verbatim *data* command emitting array-heavy JSON
-        // (gh api, jq, kubectl get -o json, curl) can be losslessly crushed —
-        // reconstructible, never a dropped datum — when it at least halves the
-        // payload. Passthrough (auth/dev servers/streaming) is never touched.
-        if policy == crate::shell::output_policy::OutputPolicy::Verbatim {
-            let enabled = cfg.crush_verbatim_json_effective();
-            // Lossless first (fully reconstructible). Only if it does not pay does
-            // the lossy stage drop high-entropy noise — and always behind a CCR
-            // handle, so a dropped datum is never irrecoverable (#936).
-            if let Some(crushed) =
-                verbatim_json_crush(output, original_tokens, min_output_tokens, enabled)
-            {
-                return crushed;
-            }
-            if let Some(crushed) =
-                verbatim_json_crush_lossy(output, original_tokens, min_output_tokens, enabled)
-            {
-                return crushed;
-            }
-            // Non-JSON delimited data (CSV/TSV): same lossless-then-lossy ladder,
-            // self-guarding so only a genuinely redundant table is ever reshaped.
-            if let Some(crushed) =
-                verbatim_tabular_crush(output, original_tokens, min_output_tokens, enabled)
-            {
-                return crushed;
-            }
-            if let Some(crushed) =
-                verbatim_tabular_crush_lossy(output, original_tokens, min_output_tokens, enabled)
-            {
-                return crushed;
-            }
-            // Structured YAML (kubectl/helm -o yaml): same lossless-then-lossy
-            // ladder, self-guarding so only a genuinely structured, redundant
-            // document is ever reshaped.
-            if let Some(crushed) =
-                verbatim_yaml_crush(output, original_tokens, min_output_tokens, enabled)
-            {
-                return crushed;
-            }
-            if let Some(crushed) =
-                verbatim_yaml_crush_lossy(output, original_tokens, min_output_tokens, enabled)
-            {
-                return crushed;
-            }
-            if let Some(crushed) =
-                verbatim_html_crush(output, original_tokens, min_output_tokens, enabled)
-            {
-                return crushed;
-            }
-        }
         return truncate_verbatim(output, original_tokens);
     }
 
     // Format-aware passthrough (#342): output already in a compact, token-oriented
-    // format the user opted to preserve (TOON by default) is kept verbatim.
+    // format (TOON) is kept verbatim.
     // Recompressing it saves little and rewrites the exact line/field shape an
     // agent relies on to validate a CLI output contract. This is output-shape
     // based, so any tool emitting the format is covered without listing commands.
-    if crate::core::config::PRESERVE_COMPACT_FORMATS
-        .iter()
-        .any(|f| f.eq_ignore_ascii_case("toon"))
-        && looks_like_toon(output)
-    {
+    if looks_like_toon(output) {
         return truncate_verbatim(output, original_tokens);
     }
 
@@ -426,7 +178,7 @@ fn compress_if_beneficial_with_exit(command: &str, output: &str, exit_code: i32)
                 && compressed_tokens < original_tokens
                 && savings >= MIN_USEFUL_SAVINGS
             {
-                return shell_savings_footer(&compressed, original_tokens, compressed_tokens);
+                return compressed;
             }
         }
         return output.to_string();
@@ -456,7 +208,7 @@ fn compress_if_beneficial_with_exit(command: &str, output: &str, exit_code: i32)
                 tracing::warn!("compression removed >95% of small output, returning original");
                 return output.to_string();
             }
-            return shell_savings_footer(&compressed, original_tokens, compressed_tokens);
+            return compressed;
         }
         if compressed_tokens < min_output_tokens {
             return output.to_string();
@@ -468,11 +220,7 @@ fn compress_if_beneficial_with_exit(command: &str, output: &str, exit_code: i32)
         if level.is_active() {
             let terse_result = crate::core::terse::pipeline::compress(output, &level, None);
             if terse_result.quality_passed && terse_result.savings_pct >= 3.0 {
-                return shell_savings_footer(
-                    &terse_result.output,
-                    terse_result.tokens_before as usize,
-                    terse_result.tokens_after as usize,
-                );
+                return terse_result.output;
             }
         }
     }
@@ -488,7 +236,7 @@ fn compress_if_beneficial_with_exit(command: &str, output: &str, exit_code: i32)
             }
         }
         if cleaned_tokens < original_tokens {
-            return shell_savings_footer(&cleaned, original_tokens, cleaned_tokens);
+            return cleaned;
         }
     }
 
@@ -788,12 +536,6 @@ fn truncate_verbatim(output: &str, original_tokens: usize) -> String {
         result.push_str(line);
         result.push('\n');
     }
-    let truncated_tokens = count_tokens(&result);
-    if crate::core::protocol::savings_footer_visible() {
-        result.push_str(&format!(
-            "[lean-ctx: {original_tokens}→{truncated_tokens} tok, verbatim truncated]"
-        ));
-    }
     result
 }
 
@@ -825,7 +567,7 @@ fn truncate_with_safety_scan(lines: &[&str], original_tokens: usize) -> Option<S
     if ct >= original_tokens {
         return None;
     }
-    Some(shell_savings_footer(&compressed, original_tokens, ct))
+    Some(compressed)
 }
 
 fn fold_repetitive_progress(output: &str) -> Option<String> {

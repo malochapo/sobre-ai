@@ -12,10 +12,6 @@ use crate::core::memory_policy::MemoryPolicy;
 use crate::core::procedural_memory::{ProceduralStore, retention_cmp};
 use crate::core::session::SessionState;
 
-pub(crate) fn load_policy_or_error() -> Result<MemoryPolicy, String> {
-    crate::tools::knowledge_shared::load_policy_or_error()
-}
-
 #[derive(Debug, Default)]
 pub(crate) struct KnowledgeConsolidationReport {
     pub session_id: Option<String>,
@@ -61,7 +57,7 @@ pub(crate) fn consolidate_project_knowledge_with(
     project_root: &str,
     opts: &ConsolidateOptions,
 ) -> Result<KnowledgeConsolidationReport, String> {
-    let policy = load_policy_or_error()?;
+    let policy = crate::core::memory_policy::MemoryPolicy::default();
     let session = if opts.import_session {
         SessionState::load_latest_for_project_root(project_root)
     } else {

@@ -7,10 +7,6 @@ macro_rules! static_regex {
     }};
 }
 
-pub fn redact_text_if_enabled(input: &str) -> String {
-    redact_text_with_excludes(input, config_exclude_patterns().as_slice())
-}
-
 /// #718: unquoted identifier or property-access chains (`SvelteKit`,
 /// `inputEnv.POCKETBASE_SUPERUSER_PASSWORD`, `serverEnv.getStripeSecretKey`,
 /// `confirmRequiredEndpointKeySchema`) are code REFERENCES to a secret, never
@@ -256,23 +252,12 @@ fn redaction_rules() -> Vec<Rule> {
 }
 
 pub fn redact_text(input: &str) -> String {
-    redact_text_with_excludes(input, &[])
-}
-
-/// #718: `redact_text` with subtractive user patterns from
-/// `[secret_detection].exclude_patterns` — a match covered by any exclude
-/// regex is kept verbatim, so known-safe naming conventions can be carved out
-/// without disabling secret detection wholesale.
-pub fn redact_text_with_excludes(input: &str, excludes: &[regex::Regex]) -> String {
     let mut out = input.to_string();
     for rule in redaction_rules() {
         out = rule
             .re
             .replace_all(&out, |caps: &regex::Captures| {
                 let whole = caps.get(0).map_or("", |m| m.as_str());
-                if excludes.iter().any(|ex| ex.is_match(whole)) {
-                    return whole.to_string();
-                }
                 if rule.guard_value
                     && let Some(value) = caps.get(2)
                     && is_benign_secret_value(value.as_str())
@@ -291,65 +276,11 @@ pub fn redact_text_with_excludes(input: &str, excludes: &[regex::Regex]) -> Stri
     out
 }
 
-/// Compile the configured `exclude_patterns` (#718). Invalid regexes are
-/// skipped — a broken exclude must never disable redaction.
-///
-/// #952: regex compilation — the expensive part of this call — used to run
-/// on every redaction call (`ctx_read`, `ctx_shell`, `ctx_execute` all funnel
-/// through `redact_text_if_enabled`) regardless of whether the config had
-/// changed. Cached here, keyed on `Arc::ptr_eq` against the config `Arc`:
-/// `Config::load_arc` returns the *same* `Arc` when the underlying config
-/// content hash is unchanged, so a real config edit is exactly what
-/// invalidates this cache too — no separate change-detection needed.
-pub fn config_exclude_patterns() -> std::sync::Arc<Vec<regex::Regex>> {
-    type Cache = Option<(
-        std::sync::Arc<crate::core::config::Config>,
-        std::sync::Arc<Vec<regex::Regex>>,
-    )>;
-    static CACHE: std::sync::Mutex<Cache> = std::sync::Mutex::new(None);
-
-    let cfg = crate::core::config::Config::load_arc();
-
-    if let Ok(guard) = CACHE.lock()
-        && let Some((cached_cfg, patterns)) = &*guard
-        && std::sync::Arc::ptr_eq(cached_cfg, &cfg)
-    {
-        return std::sync::Arc::clone(patterns);
-    }
-
-    let compiled = std::sync::Arc::new(
-        crate::core::config::SecretDetectionConfig::default()
-            .exclude_patterns
-            .iter()
-            .filter_map(|p| regex::Regex::new(p).ok())
-            .collect::<Vec<_>>(),
-    );
-
-    if let Ok(mut guard) = CACHE.lock() {
-        *guard = Some((cfg, std::sync::Arc::clone(&compiled)));
-    }
-
-    compiled
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     // --- #952: exclude_patterns compilation cache ---
-
-    #[test]
-    fn config_exclude_patterns_reuses_compiled_regexes_when_config_unchanged() {
-        // Hold the env lock: a parallel test pointing the config dir elsewhere
-        // would legitimately invalidate the cache between the two reads.
-        let _lock = crate::core::data_dir::test_env_lock();
-        let first = config_exclude_patterns();
-        let second = config_exclude_patterns();
-        assert!(
-            std::sync::Arc::ptr_eq(&first, &second),
-            "unchanged config must reuse the cached compiled patterns, not recompile"
-        );
-    }
 
     #[test]
     fn redacts_bearer_token() {
@@ -506,20 +437,6 @@ mod tests {
             !out.contains("abcdefghijklmnopqrstuvwxyzabcdef"),
             "leaked: {out}"
         );
-    }
-
-    /// #718: exclude_patterns carve matches out subtractively.
-    #[test]
-    fn exclude_patterns_skip_matching_redactions() {
-        let excludes = vec![regex::Regex::new(r"LCTX_TEST_\w+").unwrap()];
-        let input = "token=LCTX_TEST_a1b2c3d4e5";
-        assert_eq!(
-            redact_text_with_excludes(input, &excludes),
-            input,
-            "excluded match must stay verbatim"
-        );
-        // Without the exclude the same value IS redacted (digits → secret).
-        assert!(redact_text(input).contains("[REDACTED"));
     }
 
     #[test]

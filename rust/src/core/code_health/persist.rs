@@ -67,7 +67,7 @@ pub fn refresh_if_stale(root: &str, index: &ProjectIndex) {
         return;
     }
 
-    let threshold = crate::core::config::CodeHealthConfig::default().cognitive_threshold;
+    let threshold = crate::core::code_health::COGNITIVE_THRESHOLD;
     let health = scan_project(Path::new(root), threshold, None, TOP_HOTSPOTS);
 
     // Phase 3: fan the (top-N) hotspots out across BM25 / property graph /

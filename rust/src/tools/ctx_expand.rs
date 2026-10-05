@@ -451,27 +451,6 @@ mod tests {
     }
 
     #[test]
-    fn ctx_expand_retrieves_json_crush_original() {
-        let _lock = crate::core::data_dir::test_env_lock();
-        // The lossy JSON crusher persists its verbatim original under json_<hash>
-        // (#936). The dropped columns must be recoverable through the same
-        // ctx_expand path the stub/footer advertises.
-        let original = (1..=50)
-            .map(|i| format!(r#"{{"id":{i},"ts":"2026-06-22T10:00:{i:02}Z"}}"#))
-            .collect::<Vec<_>>()
-            .join("\n");
-        assert!(original.len() >= crate::proxy::ccr::MIN_TEE_BYTES);
-        let handle_path = crate::proxy::ccr::persist_json(&original).expect("json tee handle");
-        assert!(handle_path.contains("json_"), "json_ prefix: {handle_path}");
-
-        let out = handle(&json!({ "id": handle_path }));
-        assert!(
-            out.contains("2026-06-22T10:00:42Z"),
-            "dropped column recoverable: {out}"
-        );
-    }
-
-    #[test]
     fn ctx_expand_resolves_reference_store_ids() {
         // #498: `ref_`-prefixed IDs route to the in-memory reference store, not
         // the on-disk archive. Exercises the resolve-then-dispatch ladder end to

@@ -164,7 +164,6 @@ fn render_mode_full(mode: &str) -> (String, usize) {
     crate::tools::ctx_read::render::process_mode(
         ACCURACY_FIXTURE,
         mode,
-        "",
         "fixture.rs",
         "rs",
         crate::core::tokens::count_tokens(ACCURACY_FIXTURE),

@@ -1,9 +1,7 @@
 use lean_ctx::core::cache::SessionCache;
-use lean_ctx::core::config::AutonomyConfig;
 use lean_ctx::tools::CrpMode;
 use lean_ctx::tools::autonomy::{
-    AutonomyState, enrich_after_read, is_session_overview_call, maybe_auto_dedup,
-    session_lifecycle_pre_hook,
+    AutonomyState, is_session_overview_call, maybe_auto_dedup, session_lifecycle_pre_hook,
 };
 use std::sync::OnceLock;
 use std::sync::atomic::Ordering;
@@ -20,13 +18,6 @@ fn init_test_data_dir() {
 fn make_state() -> AutonomyState {
     init_test_data_dir();
     AutonomyState::new()
-}
-
-fn make_disabled_state() -> AutonomyState {
-    init_test_data_dir();
-    let mut state = AutonomyState::new();
-    state.config.enabled = false;
-    state
 }
 
 #[test]
@@ -89,20 +80,6 @@ fn session_overview_call_is_compose_without_task() {
 }
 
 #[test]
-fn session_lifecycle_disabled_returns_none() {
-    let state = make_disabled_state();
-    let mut cache = SessionCache::new();
-
-    let result = session_lifecycle_pre_hook(&state, &mut cache, Some("task"), None, CrpMode::Tdd);
-
-    assert!(result.is_none(), "disabled state must return None");
-    assert!(
-        !state.session_initialized.load(Ordering::SeqCst),
-        "flag must NOT be set when disabled"
-    );
-}
-
-#[test]
 fn auto_dedup_fires_at_threshold() {
     let state = make_state();
     let mut cache = SessionCache::new();
@@ -134,68 +111,5 @@ fn auto_dedup_skips_below_threshold() {
     assert!(
         !state.dedup_applied.load(Ordering::SeqCst),
         "dedup must NOT be applied below threshold"
-    );
-}
-
-#[test]
-fn auto_dedup_disabled() {
-    let state = make_disabled_state();
-    let mut cache = SessionCache::new();
-
-    for i in 0..10 {
-        cache.store(&format!("f{i}.rs"), &format!("c{i}"));
-    }
-
-    maybe_auto_dedup(&state, &mut cache);
-    assert!(!state.dedup_applied.load(Ordering::SeqCst));
-}
-
-#[test]
-fn config_defaults_all_enabled() {
-    let cfg = AutonomyConfig::default();
-    assert!(cfg.enabled);
-    assert!(cfg.auto_preload);
-    assert!(cfg.auto_dedup);
-    assert!(cfg.auto_related);
-    assert!(cfg.silent_preload);
-    assert_eq!(cfg.dedup_threshold, 8);
-}
-
-#[test]
-fn enrich_after_read_disabled() {
-    let state = make_disabled_state();
-    let mut cache = SessionCache::new();
-    cache.store("test.rs", "fn main() {}");
-
-    let result = enrich_after_read(
-        &state,
-        &mut cache,
-        "test.rs",
-        None,
-        None,
-        CrpMode::Tdd,
-        false,
-    );
-    assert!(result.related_hint.is_none());
-}
-
-#[test]
-fn enrich_after_read_no_index() {
-    let state = make_state();
-    let mut cache = SessionCache::new();
-    cache.store("test.rs", "fn main() {}");
-
-    let result = enrich_after_read(
-        &state,
-        &mut cache,
-        "test.rs",
-        Some("/nonexistent/path"),
-        None,
-        CrpMode::Tdd,
-        false,
-    );
-    assert!(
-        result.related_hint.is_none(),
-        "must return None when no project index exists"
     );
 }

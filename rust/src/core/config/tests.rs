@@ -5,44 +5,6 @@
 //! to the `config` module (identical to the original `super::*`).
 
 #[cfg(test)]
-mod no_degrade_tests {
-    use super::super::*;
-
-    #[test]
-    fn is_off() {
-        let cfg = Config::default();
-        assert!(!cfg.no_degrade_effective());
-    }
-}
-
-#[cfg(test)]
-mod delta_explicit_tests {
-    use super::super::*;
-
-    #[test]
-    fn is_on() {
-        let cfg = Config::default();
-        assert!(cfg.delta_explicit_effective());
-    }
-}
-
-#[cfg(test)]
-mod loop_detection_config_tests {
-    use super::super::*;
-
-    #[test]
-    fn defaults_are_reasonable() {
-        let cfg = LoopDetectionConfig::default();
-        assert_eq!(cfg.normal_threshold, 2);
-        assert_eq!(cfg.reduced_threshold, 4);
-        // 0 = blocking disabled by default (LeanCTX philosophy: always help, never block)
-        assert_eq!(cfg.blocked_threshold, 0);
-        assert_eq!(cfg.window_secs, 300);
-        assert_eq!(cfg.search_group_limit, 10);
-    }
-}
-
-#[cfg(test)]
 mod config_load_cache_tests {
     use super::super::*;
     use crate::core::data_dir::isolated_data_dir;
@@ -157,16 +119,6 @@ mod persist_global_tests {
 }
 
 #[cfg(test)]
-mod max_index_threads_tests {
-    use super::super::*;
-
-    #[test]
-    fn effective_zero_means_no_cap() {
-        assert_eq!(Config::default().max_index_threads_effective(), 0);
-    }
-}
-
-#[cfg(test)]
 mod shell_timeout_and_writes_tests {
     use super::super::*;
 
@@ -212,20 +164,5 @@ mod config_path_visibility_tests {
         if let Some(v) = saved {
             crate::test_env::set_var("LEAN_CTX_CONFIG_DIR", v);
         }
-    }
-}
-
-#[cfg(test)]
-mod context_budget_tests {
-    use super::super::*;
-
-    #[test]
-    fn default_budget_is_eight_thousand() {
-        assert_eq!(ContextConfig::default().budget_tokens, 8000);
-        let cfg = Config::default();
-        assert_eq!(cfg.context_budget_tokens_effective(), 8000);
-        assert!(cfg.proactive_expansion_effective());
-        assert_eq!(cfg.proactive_expansion_budget_tokens_effective(), 2000);
-        assert_eq!(cfg.proactive_expansion_max_age_secs_effective(), 3600);
     }
 }

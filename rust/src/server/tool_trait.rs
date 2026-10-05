@@ -149,7 +149,6 @@ pub struct ToolContext {
     /// snapshotted from the session so sync handlers can honor them without an
     /// async lock. Empty = single-root jail behaviour (#403).
     pub extra_roots: Vec<String>,
-    pub minimal: bool,
     /// Pre-resolved paths keyed by argument name (e.g. "path" -> "/abs/dir").
     pub resolved_paths: std::collections::HashMap<String, String>,
     /// CRP mode for compression-aware tools.
@@ -192,7 +191,6 @@ impl Default for ToolContext {
         Self {
             project_root: String::new(),
             extra_roots: Vec::new(),
-            minimal: false,
             resolved_paths: std::collections::HashMap::new(),
             crp_mode: crate::tools::CrpMode::Off,
             cache: None,

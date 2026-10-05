@@ -366,13 +366,9 @@ pub fn run() -> u32 {
     let archive_footprint = archive_footprint_outcome();
     board.check(&archive_footprint);
 
-    // 16) Memory profile
-    let mem_profile = memory_profile_outcome();
-    board.check(&mem_profile);
-
-    // 17) Memory cleanup
-    let mem_cleanup = memory_cleanup_outcome();
-    board.check(&mem_cleanup);
+    // 16) Memory
+    let mem = memory_outcome();
+    board.check(&mem);
 
     // 18) RAM Guardian
     let ram_outcome = ram_guardian_outcome();

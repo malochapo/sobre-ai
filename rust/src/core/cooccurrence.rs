@@ -210,16 +210,10 @@ pub fn related(project_root: &str, file: &str, top_k: usize) -> Vec<(String, f64
     load(project_root).related(file, top_k)
 }
 
-// ── Traversal-edge surface (gated, repo-relative) ──────────────────────────
+// ── Traversal-edge surface (repo-relative) ─────────────────────────────────
 //
-// These wrappers (used by ctx_read / ctx_semantic_search / the dashboard) honor
-// the `[graph] traversal_edges` config and normalize paths to the repo-relative
-// form the code graph uses, so learned edges line up with static edges (#289).
-
-/// Whether traversal (co-access) edges are enabled (`[graph] traversal_edges`).
-pub fn traversal_enabled() -> bool {
-    crate::core::config::GraphConfig::default().traversal_edges
-}
+// These wrappers (used by ctx_read / ctx_semantic_search / the dashboard)
+// normalize paths to the repo-relative form the code graph uses, so learned edges line up with static edges (#289).
 
 /// Normalize an absolute-or-relative path to the repo-relative form used as the
 /// co-access / graph key (e.g. `/repo/src/a.rs` → `src/a.rs`).
@@ -237,12 +231,8 @@ fn to_repo_rel(path: &str, project_root: &str) -> String {
 
 /// Record a *streaming* co-access: the just-touched `focus` file against the
 /// recent working set `others` (star association). Paths are normalized to
-/// repo-relative. No-op when traversal edges are disabled or there is nothing
-/// to associate. Persisted.
+/// repo-relative. No-op when there is nothing to associate. Persisted.
 pub fn record_focus_access(project_root: &str, focus: &str, others: &[String]) {
-    if !traversal_enabled() {
-        return;
-    }
     let focus_rel = to_repo_rel(focus, project_root);
     if focus_rel.is_empty() {
         return;

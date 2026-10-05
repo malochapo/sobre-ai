@@ -22,10 +22,6 @@ pub(crate) fn embedding_engine_nonblocking() -> Option<&'static EmbeddingEngine>
 
 #[cfg(feature = "embeddings")]
 pub(crate) fn embedding_engine_impl(nonblocking: bool) -> Option<&'static EmbeddingEngine> {
-    let profile = crate::core::config::MemoryProfile::default();
-    if !profile.embeddings_enabled() {
-        return None;
-    }
     if !EmbeddingEngine::is_available() {
         return None;
     }
@@ -129,10 +125,7 @@ pub(crate) fn handle_embeddings_reindex(project_root: &str) -> String {
         if ProjectKnowledge::load(project_root).is_none() {
             return "No knowledge stored for this project yet.".to_string();
         }
-        let policy = match load_policy_or_error() {
-            Ok(p) => p,
-            Err(e) => return e,
-        };
+        let policy = crate::core::memory_policy::MemoryPolicy::default();
 
         let Some(engine) = embedding_engine() else {
             return "Embeddings model not installed. Run `lean-ctx embeddings provision`, then re-run."

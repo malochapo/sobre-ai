@@ -790,7 +790,7 @@ pub fn prune_bm25_caches() -> PruneResult {
         return result;
     };
 
-    let max_bytes = crate::core::config::Config::load().bm25_max_cache_mb_effective() * 1024 * 1024;
+    let max_bytes = crate::core::config::DEFAULT_BM25_PERSIST_MB * 1024 * 1024;
 
     for entry in entries.flatten() {
         let dir = entry.path();
@@ -937,7 +937,7 @@ fn try_read_project_root_from_graph(path: &std::path::Path) -> Option<String> {
 fn cmd_show_effective() {
     let cfg = config::Config::load();
     let compression = config::CompressionLevel::effective(&cfg);
-    let policy = cfg.memory_policy_effective().unwrap_or_default();
+    let policy = crate::core::memory_policy::MemoryPolicy::default();
 
     println!("{}", box_top("Settings"));
     box_row(&format!(
@@ -954,15 +954,15 @@ fn cmd_show_effective() {
     println!("{}", box_top("Built-in limits"));
     box_row(&format!(
         " archive_max_disk_mb    = {:>6} MB",
-        cfg.archive_max_disk_mb_effective()
+        crate::core::config::ARCHIVE_MAX_DISK_MB
     ));
     box_row(&format!(
         " bm25_max_cache_mb      = {:>6} MB",
-        cfg.bm25_max_cache_mb_effective()
+        crate::core::config::DEFAULT_BM25_PERSIST_MB
     ));
     box_row(&format!(
         " archive_max_age_hours  = {:>6} h",
-        cfg.archive_max_age_hours_effective()
+        crate::core::config::ARCHIVE_MAX_AGE_HOURS
     ));
     box_row(&format!(
         " graph_index_max_files  = {:>6}",

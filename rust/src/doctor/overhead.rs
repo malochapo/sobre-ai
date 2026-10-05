@@ -63,7 +63,6 @@ impl OverheadReport {
 
 #[must_use]
 pub(super) fn measure(home: &std::path::Path, project: &std::path::Path) -> OverheadReport {
-    let cfg = crate::core::config::Config::load();
     let advertised = crate::server::tool_visibility::advertised_tool_defs_default();
 
     let instructions = crate::instructions::build_instructions(crate::tools::CrpMode::effective());
@@ -77,7 +76,7 @@ pub(super) fn measure(home: &std::path::Path, project: &std::path::Path) -> Over
     let wakeup =
         crate::tools::impl_overview::build_wakeup_briefing(&project.to_string_lossy(), None);
 
-    let budget_tokens = cfg.context_budget_tokens_effective();
+    let budget_tokens = crate::core::config::CONTEXT_BUDGET_TOKENS;
 
     let mut report = OverheadReport {
         tool_count: advertised.len(),

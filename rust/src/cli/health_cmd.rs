@@ -22,7 +22,7 @@ pub(crate) fn cmd_health(args: &[String]) -> i32 {
         .find(|a| !a.starts_with('-'))
         .map_or(".", String::as_str);
 
-    let threshold = crate::core::config::CodeHealthConfig::default().cognitive_threshold;
+    let threshold = crate::core::code_health::COGNITIVE_THRESHOLD;
     let model = crate::core::gain::model_pricing::resolve_model_for_client("cli");
 
     let health = scan_project(Path::new(root), threshold, Some(&model), TOP_HOTSPOTS);

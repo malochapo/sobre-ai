@@ -158,7 +158,7 @@ fn archive_cleanup_expired() {
 #[test]
 fn archive_should_archive_respects_threshold() {
     with_test_dir(|| {
-        let threshold = lean_ctx::core::config::ArchiveConfig::default().threshold_chars;
+        let threshold = archive::THRESHOLD_CHARS;
         assert!(!archive::should_archive("short"));
         assert!(!archive::should_archive(&"x".repeat(threshold - 1)));
         assert!(archive::should_archive(&"x".repeat(threshold)));

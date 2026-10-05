@@ -165,7 +165,6 @@ pub(crate) fn handle(
         }
     }
 
-    let mut total_estimated_saved = 0usize;
     let mut critical_count = 0usize;
     let git_signals = crate::core::git_signals::collect(&project_root);
 
@@ -250,8 +249,6 @@ pub(crate) fn handle(
                 output.push(format!("  {sig}"));
             }
         }
-
-        total_estimated_saved += file_tokens;
     }
 
     let context_files: Vec<_> = relevance
@@ -292,10 +289,8 @@ pub(crate) fn handle(
     }
 
     let preload_result = output.join("\n");
-    let preload_tokens = count_tokens(&preload_result);
-    let savings = protocol::format_savings(total_estimated_saved, preload_tokens);
 
-    let body = format!("{preload_result}\n{savings}");
+    let body = format!("{preload_result}");
     (body, true)
 }
 

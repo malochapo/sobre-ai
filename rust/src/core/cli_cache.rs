@@ -188,15 +188,8 @@ fn evict_stale(store: &mut CliCacheStore, now: u64) {
     }
 }
 
-pub fn format_hit(entry: &CliCacheEntry, file_ref: &str, short_path: &str) -> String {
-    if crate::core::protocol::savings_footer_visible() {
-        format!(
-            "{file_ref} cached {short_path} [{}L {}t] (read #{})",
-            entry.line_count, entry.original_tokens, entry.read_count
-        )
-    } else {
-        format!("cached {short_path} [{}L]", entry.line_count)
-    }
+pub fn format_hit(entry: &CliCacheEntry, short_path: &str) -> String {
+    format!("cached {short_path} [{}L]", entry.line_count)
 }
 
 #[cfg(test)]
@@ -274,7 +267,7 @@ mod tests {
             timestamp: now_secs(),
             read_count: 3,
         };
-        let output = format_hit(&entry, "F1", "test.rs");
+        let output = format_hit(&entry, "test.rs");
         assert!(output.contains("cached test.rs"));
         assert!(output.contains("42L"));
         assert!(!output.contains("F1"));

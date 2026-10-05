@@ -102,7 +102,7 @@ pub fn alignment() -> Vec<OwaspMapping> {
             lean_ctx_mitigations: vec![
                 Mitigation {
                     feature: "Memory Guard",
-                    module: "core/config/memory.rs",
+                    module: "core/memory_guard.rs",
                     description: "RAM usage caps and idle cleanup",
                 },
                 Mitigation {

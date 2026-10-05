@@ -237,8 +237,7 @@ impl SessionState {
 
     /// Records a finding (discovery or observation) in the session log.
     pub fn add_finding(&mut self, file: Option<&str>, line: Option<u32>, summary: &str) {
-        let (summary_clean, _) =
-            crate::core::secret_detection::scan_and_redact_from_config(summary);
+        let (summary_clean, _) = crate::core::secret_detection::scan_and_redact(summary);
         self.findings.push(Finding {
             file: file.map(std::string::ToString::to_string),
             line,
@@ -253,10 +252,9 @@ impl SessionState {
 
     /// Records a design or implementation decision with optional rationale.
     pub fn add_decision(&mut self, summary: &str, rationale: Option<&str>) {
-        let (summary_clean, _) =
-            crate::core::secret_detection::scan_and_redact_from_config(summary);
+        let (summary_clean, _) = crate::core::secret_detection::scan_and_redact(summary);
         let rationale_clean =
-            rationale.map(|r| crate::core::secret_detection::scan_and_redact_from_config(r).0);
+            rationale.map(|r| crate::core::secret_detection::scan_and_redact(r).0);
         self.decisions.push(Decision {
             summary: summary_clean,
             rationale: rationale_clean,

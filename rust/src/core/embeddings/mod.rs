@@ -102,33 +102,16 @@ impl EmbeddingEngine {
         let tokenizer = load_tokenizer(&model_dir, &config)?;
         let model_path = model_dir.join("model.onnx");
 
-        // Deterministic mode (#895): single CPU thread + no GPU EP makes the
-        // model's output bit-identical across machines (reproducible embeddings),
-        // at the cost of throughput. Off by default — the normal path keeps the
-        // multi-threaded, GPU-capable providers. Extractive ranking stays
-        // deterministic regardless via score quantization; this is extra hardening.
-        let deterministic = deterministic_inference();
-        let eps = if deterministic {
-            vec![ort::ep::CPU::default().build()]
-        } else {
-            crate::core::ort_execution_providers::execution_providers()
-        };
+        let eps = crate::core::ort_execution_providers::execution_providers();
         // Surface a loud, actionable warning when the user expected the GPU but
         // the CUDA runtime is unusable, so it doesn't silently crawl on CPU.
-        if !deterministic
-            && let Some(msg) = crate::core::ort_execution_providers::gpu_fallback_warning()
-        {
+        if let Some(msg) = crate::core::ort_execution_providers::gpu_fallback_warning() {
             tracing::warn!("{msg}");
         }
-        let num_cpus = if deterministic {
-            1
-        } else {
-            std::thread::available_parallelism().map_or(4, |n| n.get().max(1))
-        };
+        let num_cpus = std::thread::available_parallelism().map_or(4, |n| n.get().max(1));
         tracing::info!(
             model = %config.name,
             model_path = %model_path.display(),
-            deterministic,
             num_cpus,
             execution_providers = eps.len(),
             "Loading ONNX embedding model"
@@ -783,15 +766,6 @@ pub fn shared_engine_result() -> anyhow::Result<&'static EmbeddingEngine> {
 #[cfg(feature = "embeddings")]
 pub fn try_shared_engine() -> Option<&'static EmbeddingEngine> {
     SHARED_ENGINE.get()?.as_ref().ok()
-}
-
-/// Resolve the deterministic-inference policy (#895): `[embedding].deterministic`
-/// from config, otherwise `false`.
-#[cfg(feature = "embeddings")]
-fn deterministic_inference() -> bool {
-    crate::core::config::EmbeddingConfig::default()
-        .deterministic
-        .unwrap_or(false)
 }
 
 /// Whether this process may load the ONNX model on a **detached background
