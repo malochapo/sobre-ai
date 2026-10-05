@@ -137,12 +137,15 @@ mod tests {
 
     fn customized() -> Config {
         let mut cfg = Config {
-            proxy_port: Some(4444),
             compression_level: Some(0.5),
             rules_scope: Some("global".to_string()),
             ..Config::default()
         };
-        cfg.proxy.anthropic_upstream = Some("https://upstream.example".to_string());
+        cfg.proxy.port = Some(4444);
+        cfg.proxy.upstreams.insert(
+            "anthropic".to_string(),
+            "https://upstream.example".to_string(),
+        );
         cfg.ignore = vec!["vendor/**".to_string()];
         cfg
     }
@@ -174,11 +177,11 @@ mod tests {
 
         let parsed: Config = toml::from_str(&render_annotated_config(&cfg, &schema)).unwrap();
 
-        assert_eq!(parsed.proxy_port, Some(4444));
+        assert_eq!(parsed.proxy.port, Some(4444));
         assert_eq!(parsed.compression_level, Some(0.5));
         assert_eq!(parsed.rules_scope.as_deref(), Some("global"));
         assert_eq!(
-            parsed.proxy.anthropic_upstream.as_deref(),
+            parsed.proxy.upstreams.get("anthropic").map(String::as_str),
             Some("https://upstream.example")
         );
     }

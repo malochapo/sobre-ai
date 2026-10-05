@@ -23,9 +23,7 @@
 //! shape mismatch, unextractable query — routes nothing: the request forwards
 //! unchanged. A routing bug can cost savings, never availability.
 
-use crate::core::config::{
-    ResolvedProvider, RoutingRules, Upstreams, WireShape, parse_route_target,
-};
+use crate::core::config::{RoutingRules, Upstreams, WireShape, parse_route_target};
 
 /// What the router decided for one request. Applied by the forward path:
 /// `model` already swapped in the body by [`route_request`]; the caller
@@ -41,9 +39,6 @@ pub struct RouteDecision {
     pub provider_id: Option<String>,
     /// Override for the upstream base URL; `None` = keep the handler's.
     pub upstream_base: Option<String>,
-    /// Registry entry whose `api_key_env` credential must be injected before
-    /// the request leaves (gateway-held keys, enterprise#7).
-    pub credential: Option<ResolvedProvider>,
     /// Target's local-inference flag (shadow-rate billing): `Some` for
     /// registry targets, `None` for built-ins (URL heuristic applies).
     pub local: Option<bool>,
@@ -124,7 +119,6 @@ pub fn route_request(
         routed_from: requested,
         provider_id: resolved.provider_id,
         upstream_base: resolved.upstream_base,
-        credential: resolved.credential,
         local: resolved.local,
         xlat: resolved.xlat,
     };
@@ -136,7 +130,6 @@ pub fn route_request(
 struct ResolvedTarget {
     provider_id: Option<String>,
     upstream_base: Option<String>,
-    credential: Option<ResolvedProvider>,
     local: Option<bool>,
     xlat: bool,
 }
@@ -151,39 +144,21 @@ fn resolve_provider(
     upstreams: &Upstreams,
     xlat_ok: bool,
 ) -> Option<ResolvedTarget> {
-    let (target_shape, base_url, credential, local) = match name {
-        "anthropic" => (
-            WireShape::Anthropic,
-            upstreams.anthropic.clone(),
-            None,
-            None,
-        ),
-        "openai" => (WireShape::OpenAi, upstreams.openai.clone(), None, None),
-        "gemini" => (WireShape::Gemini, upstreams.gemini.clone(), None, None),
+    let (target_shape, base_url, local) = match name {
+        "anthropic" => (WireShape::Anthropic, upstreams.anthropic.clone(), None),
+        "openai" => (WireShape::OpenAi, upstreams.openai.clone(), None),
+        "gemini" => (WireShape::Gemini, upstreams.gemini.clone(), None),
         id => {
             let Some(p) = upstreams.provider_by_id(id) else {
-                tracing::warn!(
-                    "[proxy.routing] target provider '{id}' not in [[proxy.providers]] — passthrough"
-                );
+                tracing::warn!("[proxy.routing] unknown target provider '{id}' — passthrough");
                 return None;
             };
-            (
-                p.shape,
-                p.base_url.clone(),
-                p.api_key_env.is_some().then(|| p.clone()),
-                Some(p.local),
-            )
+            (p.shape, p.base_url.clone(), Some(p.local))
         }
     };
     let xlat = if target_shape == request_shape {
         false
-    } else if can_translate(
-        request_shape,
-        target_shape,
-        xlat_ok,
-        credential.as_ref(),
-        local,
-    ) {
+    } else if can_translate(request_shape, target_shape, xlat_ok, local) {
         true
     } else {
         tracing::warn!(
@@ -197,28 +172,25 @@ fn resolve_provider(
     Some(ResolvedTarget {
         provider_id: Some(name.to_string()),
         upstream_base: Some(base_url),
-        credential,
         local,
         xlat,
     })
 }
 
 /// Anthropic→OpenAI is the supported translation pair (enterprise#16). The
-/// upstream must be gateway-authenticated (`api_key_env`) or a local endpoint
-/// (no auth) — the caller's Anthropic credentials mean nothing to an
-/// OpenAI-shape provider.
+/// upstream must be a local endpoint (no auth) — the caller's Anthropic
+/// credentials mean nothing to an OpenAI-shape provider.
 #[cfg(feature = "shape-xlat")]
 fn can_translate(
     request_shape: WireShape,
     target_shape: WireShape,
     xlat_ok: bool,
-    credential: Option<&ResolvedProvider>,
     local: Option<bool>,
 ) -> bool {
     xlat_ok
         && request_shape == WireShape::Anthropic
         && target_shape == WireShape::OpenAi
-        && (credential.is_some() || local == Some(true))
+        && local == Some(true)
 }
 
 #[cfg(not(feature = "shape-xlat"))]
@@ -226,7 +198,6 @@ fn can_translate(
     _request_shape: WireShape,
     _target_shape: WireShape,
     _xlat_ok: bool,
-    _credential: Option<&ResolvedProvider>,
     _local: Option<bool>,
 ) -> bool {
     false
@@ -309,6 +280,7 @@ fn non_empty_prefix(text: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::config::ResolvedProvider;
     use serde_json::json;
 
     fn upstreams_with_foundry() -> Upstreams {
@@ -320,16 +292,14 @@ mod tests {
                 ResolvedProvider {
                     id: "foundry".into(),
                     shape: WireShape::OpenAi,
-                    base_url: "https://acme.services.ai.azure.com/openai".into(),
-                    api_key_env: Some("FOUNDRY_API_KEY".into()),
+                    base_url: "http://127.0.0.1:11434".into(),
                     aws_region: None,
-                    local: false,
+                    local: true,
                 },
                 ResolvedProvider {
                     id: "claudeish".into(),
                     shape: WireShape::Anthropic,
                     base_url: "https://anthropic-gw.example.com".into(),
-                    api_key_env: None,
                     aws_region: None,
                     local: false,
                 },
@@ -339,7 +309,6 @@ mod tests {
 
     fn rules(aliases: &[(&str, &str)], tiers: &[(&str, &str)]) -> RoutingRules {
         RoutingRules {
-            enabled: Some(true),
             aliases: aliases
                 .iter()
                 .map(|(k, v)| (k.to_string(), v.to_string()))
@@ -365,14 +334,8 @@ mod tests {
         assert_eq!(body["model"], "gpt-4o-mini");
         assert_eq!(d.routed_from, "acme/fast");
         assert_eq!(d.provider_id.as_deref(), Some("foundry"));
-        assert_eq!(
-            d.upstream_base.as_deref(),
-            Some("https://acme.services.ai.azure.com/openai")
-        );
-        assert!(
-            d.credential.is_some(),
-            "foundry has api_key_env — credential must be injected"
-        );
+        assert_eq!(d.upstream_base.as_deref(), Some("http://127.0.0.1:11434"));
+        assert_eq!(d.local, Some(true));
     }
 
     #[test]
@@ -390,7 +353,6 @@ mod tests {
         assert_eq!(body["model"], "claude-sonnet-4-5");
         assert_eq!(d.upstream_base, None);
         assert_eq!(d.provider_id, None);
-        assert_eq!(d.credential, None);
     }
 
     #[test]
@@ -429,7 +391,6 @@ mod tests {
         assert!(d.xlat, "decision must carry the translation flag");
         assert_eq!(body["model"], "gpt-4o-mini");
         assert_eq!(d.provider_id.as_deref(), Some("foundry"));
-        assert!(d.credential.is_some());
 
         // Within-shape decisions never set xlat.
         let mut body2 = json!({"model": "acme/fast", "messages": [{"role":"user","content":"hi"}]});
@@ -446,15 +407,14 @@ mod tests {
 
     #[cfg(feature = "shape-xlat")]
     #[test]
-    fn cross_shape_needs_gateway_credential_or_local_target() {
-        // An OpenAI-shape target without api_key_env and not local cannot be
-        // reached with the caller's Anthropic credentials → passthrough.
+    fn cross_shape_needs_local_target() {
+        // A non-local OpenAI-shape target cannot be reached with the caller's
+        // Anthropic credentials → passthrough.
         let mut upstreams = upstreams_with_foundry();
         upstreams.providers.push(ResolvedProvider {
             id: "openaiish".into(),
             shape: WireShape::OpenAi,
             base_url: "https://oai-compat.example.com".into(),
-            api_key_env: None,
             aws_region: None,
             local: false,
         });
@@ -471,7 +431,7 @@ mod tests {
         assert_eq!(d, None);
         assert_eq!(body, before);
 
-        // The same target declared local (e.g. Ollama) needs no credential.
+        // The same target when local (e.g. Ollama) needs no credential.
         upstreams.providers.last_mut().unwrap().local = true;
         let d = route_request(
             &mut body,
@@ -512,13 +472,6 @@ mod tests {
                 &rules(&[("m", "nope:x")], &[]),
                 false,
             ),
-            None
-        );
-        // enabled=false → inactive even with rules present.
-        let mut off = rules(&[("m", "foundry:x")], &[]);
-        off.enabled = Some(false);
-        assert_eq!(
-            route_request(&mut body, "OpenAI", &upstreams_with_foundry(), &off, false),
             None
         );
         assert_eq!(body, before);

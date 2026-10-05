@@ -130,8 +130,8 @@ fn print_live_upstreams_and_drift(v: &serde_json::Value, cfg: &crate::core::conf
             ));
         }
     }
-    // Registry providers (enterprise#7): Grok dual-rail and other
-    // `[[proxy.providers]]` entries only appear under `/providers/{id}/…`.
+    // The closed provider list (Grok dual-rail, Command Code, Ollama, Bedrock)
+    // only appears under `/providers/{id}/…`.
     if let Some(providers) = v.get("providers").and_then(|p| p.as_array()) {
         for p in providers {
             let id = p.get("id").and_then(|x| x.as_str()).unwrap_or("?");
@@ -167,23 +167,6 @@ fn print_live_upstreams_and_drift(v: &serde_json::Value, cfg: &crate::core::conf
     for note in notes {
         println!();
         println!("{note}");
-    }
-
-    // #590: a configured custom HTTPS upstream that is not permitted is silently
-    // ignored — the managed proxy can't see the shell's env opt-in, so it serves
-    // the provider default. Point the operator at the *persistent* config flag,
-    // which does reach the managed proxy. Suppressed once the opt-in is active
-    // (env or config), since the drift notes above then cover any remaining gap.
-    if cfg.proxy.has_custom_host_upstream() && !cfg.proxy.allows_custom_upstream() {
-        println!();
-        println!(
-            "  \x1b[33m⚠ A custom upstream host is configured but not permitted, so the proxy\x1b[0m"
-        );
-        println!(
-            "  \x1b[33m  serves the provider default. Allow it (reaches the managed proxy):\x1b[0m"
-        );
-        println!("  \x1b[33m    lean-ctx config set proxy.allow_custom_upstream true\x1b[0m");
-        println!("  \x1b[33m    lean-ctx proxy restart\x1b[0m");
     }
 }
 
@@ -273,7 +256,7 @@ pub(crate) fn cmd_proxy(rest: &[String]) {
                 let port = parse_proxy_port(rest);
                 let cfg = crate::core::config::Config::load();
                 println!("lean-ctx proxy:");
-                match cfg.proxy_enabled {
+                match cfg.proxy.enabled {
                     Some(true) => println!("  Config:  enabled"),
                     Some(false) => println!("  Config:  disabled"),
                     None => println!("  Config:  undecided (not yet configured)"),
@@ -320,7 +303,7 @@ pub(crate) fn cmd_proxy(rest: &[String]) {
                 } else {
                     println!("  Process: not running");
                 }
-                if cfg.proxy_enabled == Some(false) || cfg.proxy_enabled.is_none() {
+                if cfg.proxy.enabled == Some(false) || cfg.proxy.enabled.is_none() {
                     println!();
                     println!("  Enable: lean-ctx proxy enable");
 
@@ -341,9 +324,9 @@ pub(crate) fn cmd_proxy(rest: &[String]) {
             "enable" => {
                 let force = rest.iter().any(|a| a == "--force");
                 if let Err(e) =
-                    crate::core::config::Config::update_global(|c| c.proxy_enabled = Some(true))
+                    crate::core::config::Config::update_global(|c| c.proxy.enabled = Some(true))
                 {
-                    tracing::warn!("could not persist proxy_enabled: {e}");
+                    tracing::warn!("could not persist proxy.enabled: {e}");
                 }
 
                 let port = crate::proxy_setup::default_port();
@@ -363,9 +346,9 @@ pub(crate) fn cmd_proxy(rest: &[String]) {
             }
             "disable" => {
                 if let Err(e) =
-                    crate::core::config::Config::update_global(|c| c.proxy_enabled = Some(false))
+                    crate::core::config::Config::update_global(|c| c.proxy.enabled = Some(false))
                 {
-                    tracing::warn!("could not persist proxy_enabled: {e}");
+                    tracing::warn!("could not persist proxy.enabled: {e}");
                 }
 
                 crate::proxy_autostart::uninstall(false);

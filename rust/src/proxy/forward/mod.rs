@@ -118,15 +118,11 @@ pub async fn forward_request(
     let preserve_content_encoding = prepared.preserve_content_encoding;
     let route = prepared.route;
     let parsed = prepared.parsed;
-    // Apply the routing decision to the wire: re-target the upstream and — for
-    // registry providers holding their own key — swap the credential headers.
+    // Apply the routing decision to the wire: re-target the upstream.
     let upstream_base = route
         .as_ref()
         .and_then(|r| r.upstream_base.as_deref())
         .unwrap_or(upstream_base);
-    if let Some(provider) = route.as_ref().and_then(|r| r.credential.as_ref()) {
-        super::providers::inject_gateway_credential(provider, &mut parts.headers)?;
-    }
     if let Some(ref parsed) = parsed {
         let provider = match provider_label {
             "Anthropic" | "Bedrock" => super::introspect::Provider::Anthropic,

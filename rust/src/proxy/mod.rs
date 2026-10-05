@@ -327,7 +327,7 @@ fn log_upstream_change(old: &Upstreams, new: &Upstreams) {
     }
     if old.providers != new.providers {
         let ids: Vec<&str> = new.providers.iter().map(|p| p.id.as_str()).collect();
-        println!("  ↻ provider registry → [{}]", ids.join(", "));
+        println!("  ↻ providers → [{}]", ids.join(", "));
     }
 }
 
@@ -441,9 +441,8 @@ pub async fn start_proxy_with_token(port: u16, auth_token: Option<String>) -> an
         // Drop-in `compress(messages, model)` contract (#739): deterministic
         // messages-in / messages-out compression for SDK clients.
         .route("/v1/compress", post(compress_api::handler))
-        // Universal provider registry (`[[proxy.providers]]`, enterprise#7):
-        // `/providers/{id}/...` forwards to the registry entry with that id,
-        // speaking its declared wire shape. New provider = config, not code.
+        // `/providers/{id}/...` forwards to the provider with that id in the
+        // closed list, speaking its wire shape.
         .route("/providers/{id}/{*rest}", any(providers::handler))
         .fallback(fallback_router);
 
@@ -487,21 +486,16 @@ pub async fn start_proxy_with_token(port: u16, auth_token: Option<String>) -> an
     );
     for p in &initial_providers {
         println!(
-            "  Provider:  any  /providers/{}/... → {} ({} shape{})",
+            "  Provider:  any  /providers/{}/... → {} ({} shape)",
             p.id,
             p.base_url,
             p.shape.as_str(),
-            if p.api_key_env.is_some() {
-                ", gateway-held key"
-            } else {
-                ""
-            }
         );
     }
     if openai_upstream.starts_with("http://") && !is_local_proxy_url(&openai_upstream) {
         println!(
             "  ⚠ OpenAI upstream is plaintext HTTP to a non-loopback host \
-             (allow_insecure_http_upstream) — use only on a trusted local network"
+             — use only on a trusted local network"
         );
     }
 
@@ -629,13 +623,11 @@ async fn status_handler(State(state): State<ProxyState>) -> impl IntoResponse {
             "openai": up.openai.clone(),
             "gemini": up.gemini.clone(),
         },
-        // Universal registry (`[[proxy.providers]]`, enterprise#7). Key names
-        // only — never the key material.
+        // Closed provider list (`[proxy.upstreams]` sets the URLs).
         "providers": up.providers.iter().map(|p| serde_json::json!({
             "id": p.id,
             "shape": p.shape.as_str(),
             "base_url": p.base_url,
-            "gateway_key": p.api_key_env.is_some(),
         })).collect::<Vec<_>>(),
         "requests_total": s.requests_total.load(Relaxed),
         "requests_compressed": s.requests_compressed.load(Relaxed),
@@ -709,7 +701,7 @@ async fn proxy_auth_guard(
     }
 
     // Accept provider API keys on provider routes (host_guard runs first).
-    // Client-auth registry rails (`/providers/{id}` with api_key_env=None,
+    // Client-auth provider rails (`/providers/{id}` other than Bedrock,
     // e.g. Grok dual-rail) stay open even when require_token is set — the
     // Authorization / x-xai-token-auth header must carry the upstream session
     // and cannot also hold the lean-ctx Bearer.
@@ -811,8 +803,8 @@ fn has_provider_api_key(req: &axum::extract::Request) -> bool {
     false
 }
 
-/// `/providers/{id}/...` where the registered provider has no gateway-held
-/// key (`api_key_env = None`). These dual-rail / client-auth rails put the
+/// `/providers/{id}/...` where the proxy forwards the caller's credentials
+/// (every provider but Bedrock). These dual-rail / client-auth rails put the
 /// upstream session in Authorization or provider-specific headers.
 fn is_client_auth_registry_route(path: &str, upstreams: &Upstreams) -> bool {
     let Some(rest) = path.strip_prefix("/providers/") else {
@@ -850,12 +842,12 @@ fn is_provider_route(path: &str) -> bool {
 ///
 /// * Built-in provider routes (`/v1/*`, bare endpoints, …): only when
 ///   `require_token` is false (the default).
-/// * Client-auth registry routes (`/providers/{id}` with `api_key_env = None`,
-///   e.g. Grok dual-rail): always allowed when a provider credential is present.
+/// * Client-auth provider routes (`/providers/{id}` other than Bedrock, e.g.
+///   Grok dual-rail): always allowed when a provider credential is present.
 ///   The Authorization / `x-xai-token-auth` header must carry the upstream
-///   session and cannot also hold the lean-ctx Bearer. Gateway-held keys
-///   (`api_key_env` set) never take this path — those still need the lean-ctx
-///   token so inject cannot be abused with a forged provider header.
+///   session and cannot also hold the lean-ctx Bearer. Bedrock, which the
+///   proxy signs itself, never takes this path — it still needs the lean-ctx
+///   token so signing cannot be abused with a forged provider header.
 ///
 /// Pure (except the precomputed `client_auth_registry` flag), so the policy is
 /// unit-testable without axum middleware plumbing.

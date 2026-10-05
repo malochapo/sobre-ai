@@ -101,22 +101,6 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
         ),
     );
     root.insert(
-            "proxy_enabled".into(),
-            key(
-                "bool?",
-                serde_json::json!(null),
-                "Enable/disable the proxy layer. null = auto-detect, true = force on, false = force off",
-            ),
-        );
-    root.insert(
-        "proxy_port".into(),
-        key(
-            "u16?",
-            serde_json::json!(null),
-            "Custom proxy port (default: 4444). Useful for multi-user systems.",
-        ),
-    );
-    root.insert(
         "hook_binary".into(),
         key(
             "string?",

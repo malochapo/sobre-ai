@@ -397,7 +397,7 @@ pub fn run_setup_with_options(opts: SetupOptions) -> Result<SetupReport, String>
         });
     } else {
         let proxy_cfg = crate::core::config::Config::load();
-        if proxy_cfg.proxy_enabled == Some(true) {
+        if proxy_cfg.proxy.enabled == Some(true) {
             let proxy_port = crate::proxy_setup::default_port();
             crate::proxy_autostart::install(proxy_port, true);
             std::thread::sleep(std::time::Duration::from_millis(500));

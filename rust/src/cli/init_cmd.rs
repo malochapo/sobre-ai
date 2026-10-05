@@ -354,7 +354,7 @@ pub fn cmd_init(args: &[String]) {
 fn ask_about_proxy() {
     use std::io::Write;
 
-    if crate::core::config::Config::load().proxy_enabled.is_some() {
+    if crate::core::config::Config::load().proxy.enabled.is_some() {
         return;
     }
     if crate::shell::is_non_interactive() {
@@ -374,7 +374,7 @@ fn ask_about_proxy() {
     let _ = std::io::stdin().read_line(&mut input);
     let yes = matches!(input.trim().to_lowercase().as_str(), "y" | "yes");
 
-    if let Err(e) = crate::core::config::Config::update_global(|c| c.proxy_enabled = Some(yes)) {
+    if let Err(e) = crate::core::config::Config::update_global(|c| c.proxy.enabled = Some(yes)) {
         tracing::warn!("could not persist the proxy choice: {e}");
         return;
     }

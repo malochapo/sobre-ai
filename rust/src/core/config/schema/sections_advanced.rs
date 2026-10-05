@@ -6,52 +6,49 @@ use super::*;
 use std::collections::BTreeMap;
 
 pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
-    let cfg = crate::core::config::Config::default();
     let mut proxy = BTreeMap::new();
     proxy.insert(
-        "anthropic_upstream".into(),
+        "enabled".into(),
         key(
-            "string?",
-            serde_json::json!(cfg.proxy.anthropic_upstream),
-            "Custom upstream URL for Anthropic API proxy",
+            "bool?",
+            serde_json::json!(null),
+            "Run the local API proxy and point installed agents at it. null = not decided yet (init asks), false = never touch it",
         ),
     );
     proxy.insert(
-        "openai_upstream".into(),
+        "port".into(),
         key(
-            "string?",
-            serde_json::json!(cfg.proxy.openai_upstream),
-            "Custom upstream URL for OpenAI API proxy",
+            "u16?",
+            serde_json::json!(null),
+            "Port the proxy listens on (default: 4444)",
         ),
     );
+    for id in crate::core::config::upstream_ids() {
+        proxy.insert(
+            format!("upstreams.{id}"),
+            key(
+                "string?",
+                serde_json::json!(null),
+                &format!(
+                    "Upstream URL for the {id} provider (unset = its default{}). Writing a URL is the opt-in for a custom or plaintext host",
+                    if id == "bedrock" { "; bedrock is served only when set" } else { "" }
+                ),
+            ),
+        );
+    }
     proxy.insert(
-        "gemini_upstream".into(),
+        "routing".into(),
         key(
-            "string?",
-            serde_json::json!(cfg.proxy.gemini_upstream),
-            "Custom upstream URL for Gemini API proxy",
-        ),
-    );
-    proxy.insert(
-        "allow_insecure_http_upstream".into(),
-        key(
-            "bool",
-            serde_json::json!(cfg.proxy.allow_insecure_http_upstream.unwrap_or(false)),
-            "Allow a non-loopback plaintext http:// upstream (trusted local network only, e.g. http://host.docker.internal:2455 in front of codex-lb). Opt-in; default false",
-        ),
-    );
-    proxy.insert(
-        "allow_custom_upstream".into(),
-        key(
-            "bool",
-            serde_json::json!(cfg.proxy.allow_custom_upstream.unwrap_or(false)),
-            "Allow a custom (non-allowlisted) HTTPS upstream host, e.g. a corporate gateway in front of the provider API. Opt-in; default false. Unlike the env var, this config flag reaches the managed (service-spawned) proxy started by `proxy enable`/`restart` (#590)",
+            "table",
+            serde_json::json!({}),
+            "Model routing: [proxy.routing.aliases] maps a requested model to \"model\" or \"provider:model\"; [proxy.routing.tiers] maps fast/standard/premium to a target. Active as soon as one rule is written",
         ),
     );
     sections.insert(
         "proxy".into(),
         SectionSchema {
-            description: "Proxy upstream configuration for API routing".into(),
+            description: "The local API proxy: switch, port, upstream URLs and model routing"
+                .into(),
             keys: proxy,
         },
     );

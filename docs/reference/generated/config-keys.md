@@ -16,8 +16,6 @@ Top-level configuration keys
 - `hook_binary` (string?, default `null`) — Verbatim binary path/expression for generated agent-hook commands (e.g. $HOME/.local/bin/lean-ctx) — for settings files synced across machines with different usernames. Shell-expanded by the hook host at run time; doctor accepts it as current. Empty = automatic absolute-path resolution
 - `ignore` (string[], default `[]`) — Globs kept out of the index and project walks, on top of .gitignore (always respected)
 - `passthrough_commands` (string[], default `[]`) — Commands whose output is passed through uncompressed (the command still runs normally)
-- `proxy_enabled` (bool?, default `null`) — Enable/disable the proxy layer. null = auto-detect, true = force on, false = force off
-- `proxy_port` (u16?, default `null`) — Custom proxy port (default: 4444). Useful for multi-user systems.
 - `read_only_roots` (string[], default `[]`) — Read-only sibling roots: reads allowed, writes always denied (edit/refactor/export)
 - `rules_injection` (enum: shared | dedicated | off, default `shared`) — How rules load for CLAUDE.md/AGENTS.md/GEMINI.md agents: shared block, dedicated (no shared-file edits; SessionStart hook / instructions[] / context.fileName), or off (write no rules file — for hosts that supply their own steering or phase-isolated/non-caching harnesses).
 - `rules_scope` (enum: both | global | project, default `both`) — Where agent rule files are installed.
@@ -28,13 +26,19 @@ Top-level configuration keys
 
 ## `[proxy]`
 
-Proxy upstream configuration for API routing
+The local API proxy: switch, port, upstream URLs and model routing
 
-- `allow_custom_upstream` (bool, default `false`) — Allow a custom (non-allowlisted) HTTPS upstream host, e.g. a corporate gateway in front of the provider API. Opt-in; default false. Unlike the env var, this config flag reaches the managed (service-spawned) proxy started by `proxy enable`/`restart` (#590)
-- `allow_insecure_http_upstream` (bool, default `false`) — Allow a non-loopback plaintext http:// upstream (trusted local network only, e.g. http://host.docker.internal:2455 in front of codex-lb). Opt-in; default false
-- `anthropic_upstream` (string?, default `null`) — Custom upstream URL for Anthropic API proxy
-- `gemini_upstream` (string?, default `null`) — Custom upstream URL for Gemini API proxy
-- `openai_upstream` (string?, default `null`) — Custom upstream URL for OpenAI API proxy
+- `enabled` (bool?, default `null`) — Run the local API proxy and point installed agents at it. null = not decided yet (init asks), false = never touch it
+- `port` (u16?, default `null`) — Port the proxy listens on (default: 4444)
+- `routing` (table, default `{}`) — Model routing: [proxy.routing.aliases] maps a requested model to "model" or "provider:model"; [proxy.routing.tiers] maps fast/standard/premium to a target. Active as soon as one rule is written
+- `upstreams.anthropic` (string?, default `null`) — Upstream URL for the anthropic provider (unset = its default). Writing a URL is the opt-in for a custom or plaintext host
+- `upstreams.bedrock` (string?, default `null`) — Upstream URL for the bedrock provider (unset = its default; bedrock is served only when set). Writing a URL is the opt-in for a custom or plaintext host
+- `upstreams.commandcode` (string?, default `null`) — Upstream URL for the commandcode provider (unset = its default). Writing a URL is the opt-in for a custom or plaintext host
+- `upstreams.gemini` (string?, default `null`) — Upstream URL for the gemini provider (unset = its default). Writing a URL is the opt-in for a custom or plaintext host
+- `upstreams.grok-chat` (string?, default `null`) — Upstream URL for the grok-chat provider (unset = its default). Writing a URL is the opt-in for a custom or plaintext host
+- `upstreams.ollama` (string?, default `null`) — Upstream URL for the ollama provider (unset = its default). Writing a URL is the opt-in for a custom or plaintext host
+- `upstreams.openai` (string?, default `null`) — Upstream URL for the openai provider (unset = its default). Writing a URL is the opt-in for a custom or plaintext host
+- `upstreams.xai` (string?, default `null`) — Upstream URL for the xai provider (unset = its default). Writing a URL is the opt-in for a custom or plaintext host
 
 ## `[setup]`
 

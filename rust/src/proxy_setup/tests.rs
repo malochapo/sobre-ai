@@ -849,100 +849,6 @@ fn force_none_subscription_shell_exports_include_grok_chat() {
     );
 }
 
-// --- ensure_proxy_provider / reconcile_proxy_provider -------------------
-
-fn sample_provider(id: &str, base_url: &str) -> crate::core::config::ProviderEntry {
-    crate::core::config::ProviderEntry {
-        id: id.to_string(),
-        shape: crate::core::config::WireShape::OpenAi,
-        base_url: base_url.to_string(),
-        api_key_env: Some("XAI_API_KEY".into()),
-        aws_region: None,
-        enabled: Some(true),
-        local: None,
-    }
-}
-
-#[test]
-fn reconcile_proxy_provider_seeds_when_missing() {
-    let mut providers = vec![];
-    let action = reconcile_proxy_provider(&mut providers, "xai", XAI_UPSTREAM);
-    assert_eq!(action, ProviderEnsureAction::Seeded);
-    assert_eq!(providers.len(), 1);
-    assert_eq!(providers[0].id, "xai");
-    assert_eq!(providers[0].base_url, XAI_UPSTREAM);
-    assert_eq!(providers[0].shape, crate::core::config::WireShape::OpenAi);
-    assert!(providers[0].api_key_env.is_none());
-}
-
-#[test]
-fn reconcile_proxy_provider_noop_when_base_url_matches() {
-    let mut providers = vec![sample_provider("xai", XAI_UPSTREAM)];
-    let action = reconcile_proxy_provider(&mut providers, "xai", XAI_UPSTREAM);
-    assert_eq!(action, ProviderEnsureAction::Unchanged);
-    assert_eq!(providers.len(), 1);
-    assert_eq!(providers[0].base_url, XAI_UPSTREAM);
-    assert_eq!(providers[0].api_key_env.as_deref(), Some("XAI_API_KEY"));
-}
-
-#[test]
-fn reconcile_proxy_provider_noop_when_base_url_matches_normalized() {
-    // Trailing slash / whitespace must not trigger a rewrite.
-    let stored = format!("{XAI_UPSTREAM}/");
-    let desired = format!("  {XAI_UPSTREAM}  ");
-    let mut providers = vec![sample_provider("xai", &stored)];
-    let action = reconcile_proxy_provider(&mut providers, "xai", &desired);
-    assert_eq!(action, ProviderEnsureAction::Unchanged);
-    // base_url text left as-is when already equivalent
-    assert_eq!(providers[0].base_url, stored);
-}
-
-#[test]
-fn reconcile_proxy_provider_updates_stale_base_url() {
-    let stale = "https://old.example.com/v1";
-    let mut providers = vec![sample_provider("xai", stale)];
-    let action = reconcile_proxy_provider(&mut providers, "XAI", XAI_UPSTREAM);
-    assert_eq!(
-        action,
-        ProviderEnsureAction::Updated {
-            previous: stale.into()
-        }
-    );
-    assert_eq!(providers.len(), 1);
-    assert_eq!(providers[0].id, "xai", "preserve stored id casing");
-    assert_eq!(providers[0].base_url, XAI_UPSTREAM);
-    // Other fields must survive the repair (only base_url is rail-owned).
-    assert_eq!(providers[0].api_key_env.as_deref(), Some("XAI_API_KEY"));
-    assert_eq!(providers[0].enabled, Some(true));
-}
-
-#[test]
-fn reconcile_proxy_provider_updates_stale_grok_chat() {
-    let stale = "https://wrong-host.example/v1";
-    let mut providers = vec![sample_provider(GROK_CHAT_PROVIDER_ID, stale)];
-    let action =
-        reconcile_proxy_provider(&mut providers, GROK_CHAT_PROVIDER_ID, GROK_CHAT_UPSTREAM);
-    assert_eq!(
-        action,
-        ProviderEnsureAction::Updated {
-            previous: stale.into()
-        }
-    );
-    assert_eq!(providers[0].base_url, GROK_CHAT_UPSTREAM);
-}
-
-#[test]
-fn reconcile_proxy_provider_does_not_touch_other_ids() {
-    let mut providers = vec![
-        sample_provider("openai", "https://api.openai.com/v1"),
-        sample_provider("xai", "https://stale.example/v1"),
-    ];
-    let action = reconcile_proxy_provider(&mut providers, "xai", XAI_UPSTREAM);
-    assert!(matches!(action, ProviderEnsureAction::Updated { .. }));
-    assert_eq!(providers[0].base_url, "https://api.openai.com/v1");
-    assert_eq!(providers[1].base_url, XAI_UPSTREAM);
-}
-
 // --- Command Code rail ------------------------------------------------------
 
 #[test]
@@ -1009,18 +915,6 @@ fn commandcode_proxy_base_url_targets_registry_route() {
         commandcode_proxy_base_url(4444),
         "http://127.0.0.1:4444/providers/commandcode"
     );
-}
-
-#[test]
-fn reconcile_proxy_provider_seeds_commandcode_rail() {
-    let mut providers = vec![];
-    let action = reconcile_proxy_provider(&mut providers, "commandcode", COMMANDCODE_UPSTREAM);
-    assert_eq!(action, ProviderEnsureAction::Seeded);
-    assert_eq!(providers.len(), 1);
-    assert_eq!(providers[0].id, "commandcode");
-    assert_eq!(providers[0].base_url, COMMANDCODE_UPSTREAM);
-    assert_eq!(providers[0].shape, crate::core::config::WireShape::OpenAi);
-    assert!(providers[0].api_key_env.is_none());
 }
 
 #[test]

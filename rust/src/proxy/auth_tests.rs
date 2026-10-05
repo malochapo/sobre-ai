@@ -188,7 +188,7 @@ fn provider_key_fallback_denied_in_strict_mode_for_builtin_routes() {
 
 #[test]
 fn provider_key_fallback_allowed_for_client_auth_registry_under_require_token() {
-    // Grok dual-rail /providers/{id} with api_key_env=None: Authorization (or
+    // Grok dual-rail /providers/{id}: Authorization (or
     // x-xai-token-auth) must carry the upstream session, so provider-key
     // fallback stays open even when require_token is set.
     assert!(provider_key_fallback_allowed(true, true, true, true));

@@ -321,7 +321,7 @@ mod tests {
     fn known_keys_contains_sectioned_and_root() {
         let keys = known_keys(&ConfigSchema::generate());
         assert!(keys.contains("ignore"));
-        assert!(keys.contains("proxy.anthropic_upstream"));
+        assert!(keys.contains("proxy.upstreams.anthropic"));
         assert!(keys.iter().any(|k| !k.contains('.')), "root keys exist");
     }
 

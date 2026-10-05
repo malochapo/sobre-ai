@@ -11,7 +11,7 @@ pub(crate) fn proxy_health_outcome() -> Outcome {
     let cfg = Config::load();
     let port = crate::proxy_setup::default_port();
 
-    match cfg.proxy_enabled {
+    match cfg.proxy.enabled {
         Some(true) => {
             let reachable = {
                 use std::net::{IpAddr, Ipv4Addr, SocketAddr, TcpStream};
@@ -90,7 +90,7 @@ pub(crate) fn stale_proxy_env_outcome() -> Option<Outcome> {
     let cfg = Config::load();
     let port = crate::proxy_setup::default_port();
 
-    if cfg.proxy_enabled == Some(true) {
+    if cfg.proxy.enabled == Some(true) {
         return None;
     }
 
@@ -119,7 +119,7 @@ pub(crate) fn stale_proxy_env_outcome() -> Option<Outcome> {
         return None;
     }
 
-    let state = if cfg.proxy_enabled == Some(false) {
+    let state = if cfg.proxy.enabled == Some(false) {
         "disabled"
     } else {
         "not configured"
@@ -148,7 +148,7 @@ pub(crate) fn proxy_subscription_conflict_outcome() -> Option<Outcome> {
     let cfg = Config::load();
 
     // Only relevant when the proxy is actively enabled.
-    if cfg.proxy_enabled != Some(true) {
+    if cfg.proxy.enabled != Some(true) {
         return None;
     }
 
@@ -190,17 +190,17 @@ pub(crate) fn proxy_upstream_outcome() -> Outcome {
     let checks = [
         (
             "Anthropic",
-            "proxy.anthropic_upstream",
+            "proxy.upstreams.anthropic",
             cfg.proxy.resolve_upstream(ProxyProvider::Anthropic),
         ),
         (
             "OpenAI",
-            "proxy.openai_upstream",
+            "proxy.upstreams.openai",
             cfg.proxy.resolve_upstream(ProxyProvider::OpenAi),
         ),
         (
             "Gemini",
-            "proxy.gemini_upstream",
+            "proxy.upstreams.gemini",
             cfg.proxy.resolve_upstream(ProxyProvider::Gemini),
         ),
     ];
@@ -237,8 +237,7 @@ pub(crate) fn proxy_upstream_outcome() -> Outcome {
         if !is_default {
             custom.push(format!("{label}={resolved}"));
             // Past the loopback guard above, any `http://` is a non-loopback
-            // plaintext upstream that only resolved because the user opted in
-            // (allow_insecure_http_upstream, #440). Valid config, but worth a
+            // plaintext upstream the user wrote. Valid config, but worth a
             // standing security reminder.
             if resolved.starts_with("http://") {
                 plaintext.push(*label);
@@ -273,7 +272,7 @@ pub(crate) fn proxy_upstream_drift_outcome() -> Option<Outcome> {
     use crate::core::config::{Config, upstream_drifted};
 
     let cfg = Config::load();
-    if cfg.proxy_enabled != Some(true) {
+    if cfg.proxy.enabled != Some(true) {
         return None;
     }
     let port = crate::proxy_setup::default_port();

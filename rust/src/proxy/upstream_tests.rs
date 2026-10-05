@@ -57,7 +57,9 @@ async fn config_change_is_picked_up_live_without_restart() {
 
     // Start state: config.toml points OpenAI at a loopback upstream.
     Config::update_global(|c| {
-        c.proxy.openai_upstream = Some("http://127.0.0.1:19101".into());
+        c.proxy
+            .upstreams
+            .insert("openai".into(), "http://127.0.0.1:19101".into());
     })
     .unwrap();
     let initial = Config::load().proxy.resolve_all();
@@ -66,9 +68,11 @@ async fn config_change_is_picked_up_live_without_restart() {
     let (tx, rx) = tokio::sync::watch::channel(Arc::new(initial.clone()));
     spawn_upstream_refresh(tx, initial);
 
-    // `lean-ctx config set proxy.openai_upstream …` (same safe write path).
+    // `lean-ctx config set proxy.upstreams.openai …` (same safe write path).
     Config::update_global(|c| {
-        c.proxy.openai_upstream = Some("http://127.0.0.1:19102".into());
+        c.proxy
+            .upstreams
+            .insert("openai".into(), "http://127.0.0.1:19102".into());
     })
     .unwrap();
 

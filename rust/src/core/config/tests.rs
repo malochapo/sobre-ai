@@ -204,20 +204,20 @@ mod persist_global_tests {
     #[test]
     fn update_global_at_preserves_customized_and_persists_change() {
         let (_dir, path) = tmp_config();
-        std::fs::write(&path, "proxy_port = 4444\ncompression_level = 0.5\n").unwrap();
+        std::fs::write(&path, "compression_level = 0.5\n[proxy]\nport = 4444\n").unwrap();
 
-        let returned = Config::update_global_at(&path, |c| c.proxy_enabled = Some(true))
+        let returned = Config::update_global_at(&path, |c| c.proxy.enabled = Some(true))
             .expect("update_global_at must succeed");
-        assert_eq!(returned.proxy_enabled, Some(true));
+        assert_eq!(returned.proxy.enabled, Some(true));
 
         let reloaded: Config = toml::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
         assert_eq!(
-            reloaded.proxy_port,
+            reloaded.proxy.port,
             Some(4444),
             "customized value must survive"
         );
         assert_eq!(reloaded.compression_level, Some(0.5));
-        assert_eq!(reloaded.proxy_enabled, Some(true));
+        assert_eq!(reloaded.proxy.enabled, Some(true));
     }
 
     // load_global reads only the given file.
@@ -233,10 +233,10 @@ mod persist_global_tests {
     #[test]
     fn update_global_at_refuses_unparseable_and_leaves_file_untouched() {
         let (_dir, path) = tmp_config();
-        let corrupt = "proxy_port = = =\n";
+        let corrupt = "[proxy]\nport = = =\n";
         std::fs::write(&path, corrupt).unwrap();
 
-        let result = Config::update_global_at(&path, |c| c.proxy_enabled = Some(true));
+        let result = Config::update_global_at(&path, |c| c.proxy.enabled = Some(true));
         assert!(
             result.is_err(),
             "must refuse to modify an unparseable config"
@@ -253,12 +253,12 @@ mod persist_global_tests {
         let (_dir, path) = tmp_config();
         // Missing file.
         let cfg = Config::load_global_from(&path);
-        assert_eq!(cfg.proxy_port, Config::default().proxy_port);
+        assert_eq!(cfg.proxy.port, Config::default().proxy.port);
         assert_eq!(cfg.shell_timeout_secs, Config::default().shell_timeout_secs);
         // Empty / whitespace-only file.
         std::fs::write(&path, "   \n").unwrap();
         let cfg2 = Config::load_global_from(&path);
-        assert_eq!(cfg2.proxy_port, Config::default().proxy_port);
+        assert_eq!(cfg2.proxy.port, Config::default().proxy.port);
         assert_eq!(
             cfg2.shell_timeout_secs,
             Config::default().shell_timeout_secs

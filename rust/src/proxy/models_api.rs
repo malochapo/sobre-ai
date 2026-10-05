@@ -112,7 +112,6 @@ mod tests {
 
     fn rules(aliases: &[(&str, &str)]) -> RoutingRules {
         RoutingRules {
-            enabled: Some(true),
             aliases: aliases
                 .iter()
                 .map(|(k, v)| (k.to_string(), v.to_string()))
@@ -162,13 +161,10 @@ mod tests {
 
     #[test]
     fn inactive_routing_yields_an_honest_empty_list() {
-        // enabled but no rules → inactive; disabled with rules → inactive.
+        // No rules → inactive.
         let empty = rules(&[]);
         assert_eq!(openai_model_list(&empty)["data"], serde_json::json!([]));
-        let mut off = rules(&[("a", "b:c")]);
-        off.enabled = Some(false);
-        assert_eq!(openai_model_list(&off)["data"], serde_json::json!([]));
-        let anth = anthropic_model_list(&off);
+        let anth = anthropic_model_list(&empty);
         assert_eq!(anth["data"], serde_json::json!([]));
         assert_eq!(anth["first_id"], serde_json::Value::Null);
     }

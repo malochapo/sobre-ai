@@ -37,9 +37,9 @@ pub use enums::{
 pub use loader::last_config_parse_error;
 pub use memory::{MemoryCleanup, MemoryGuardConfig, MemoryProfile, SavingsFooter};
 pub use proxy::{
-    HistoryMode, ProseRanker, ProseRole, ProviderEntry, ProxyConfig, ProxyMode, ProxyProvider,
-    ResolvedProvider, RoutingRules, Upstreams, WireShape, is_local_proxy_url, normalize_url,
-    normalize_url_opt, parse_route_target, upstream_drifted,
+    HistoryMode, ProseRanker, ProseRole, ProxyConfig, ProxyMode, ProxyProvider, ResolvedProvider,
+    RoutingRules, Upstreams, WireShape, is_local_proxy_url, normalize_url, normalize_url_opt,
+    parse_route_target, upstream_drifted, upstream_ids,
 };
 pub use read_dedup::ReadDedup;
 pub use read_redirect::ReadRedirect;
@@ -92,14 +92,6 @@ pub struct Config {
     pub passthrough_commands: Vec<String>,
     #[serde(default)]
     pub proxy: ProxyConfig,
-    /// Whether the API proxy is enabled. Tri-state:
-    /// - None: undecided (fresh install, will prompt on interactive setup)
-    /// - Some(true): user opted in, proxy managed by lean-ctx
-    /// - Some(false): user opted out, never touch proxy or endpoints
-    #[serde(default)]
-    pub proxy_enabled: Option<bool>,
-    #[serde(default)]
-    pub proxy_port: Option<u16>,
     /// Controls where lean-ctx installs agent rule files.
     /// Values: "both" (default), "global" (home-dir only), "project" (repo-local only).
     #[serde(default)]
@@ -188,8 +180,6 @@ impl Default for Config {
         Self {
             passthrough_commands: Vec::new(),
             proxy: ProxyConfig::default(),
-            proxy_enabled: None,
-            proxy_port: None,
             rules_scope: None,
             rules_injection: None,
             compression_level: None,

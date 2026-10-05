@@ -1,63 +1,43 @@
-//! API proxy upstream overrides (`config.toml`).
+//! The `[proxy]` table: the local API proxy and where it forwards.
 
 use serde::{Deserialize, Serialize};
 
-/// API proxy upstream overrides. `None` = use provider default.
+/// The `[proxy]` table of `config.toml`.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct ProxyConfig {
-    pub anthropic_upstream: Option<String>,
-    pub openai_upstream: Option<String>,
-    pub gemini_upstream: Option<String>,
-    /// Universal provider registry (`[[proxy.providers]]`): additional upstream
-    /// providers beyond the four built-ins, declared as data — id + wire shape +
-    /// base URL — so a new OpenAI/Anthropic/Gemini/Bedrock endpoint (Azure AI
-    /// Foundry, OpenRouter, Groq, vLLM/Ollama, a corporate gateway…) is a pure
-    /// config entry, never a code change. Reachable under
-    /// `/providers/{id}/...` on the proxy and addressable by the router.
-    /// The legacy `*_upstream` fields above stay authoritative for the four
-    /// built-in provider routes (backwards compatible).
-    pub providers: Vec<ProviderEntry>,
-    /// Allow a non-loopback plaintext `http://` upstream (trusted local network
-    /// only). Opt-in; see [`ProxyConfig::allows_insecure_http_upstream`]. (#440)
-    pub allow_insecure_http_upstream: Option<bool>,
-    /// Allow a custom (non-allowlisted) **HTTPS** upstream host — e.g. a corporate
-    /// gateway in front of the provider API. Opt-in; see
-    /// [`ProxyConfig::allows_custom_upstream`]. Mirrors `allow_insecure_http_upstream`
-    /// so the long-lived managed proxy (LaunchAgent / systemd), which only reads
-    /// `config.toml`, can honor a custom upstream too (#590).
-    pub allow_custom_upstream: Option<bool>,
-    /// Active request routing (`[proxy.routing]`, enterprise#13): model aliases
-    /// and intent-tier downgrades applied in the forward path. Off by default —
-    /// an empty/absent table is a strict passthrough. See [`RoutingRules`].
+    /// Run the local API proxy and point installed agents at it.
+    /// `None` = never decided (init asks), `Some(false)` = never touch it.
+    pub enabled: Option<bool>,
+    /// Port the proxy listens on. `None` = the default port.
+    pub port: Option<u16>,
+    /// Upstream URL per provider id, for the closed list in [`PROVIDERS`]
+    /// plus the three built-ins (`anthropic`, `openai`, `gemini`). Only the
+    /// URL is configurable; writing one is the deliberate opt-in for a custom
+    /// or plaintext host. `bedrock` is served only when its URL is set.
+    pub upstreams: std::collections::BTreeMap<String, String>,
+    /// Model aliases and intent-tier targets, see [`RoutingRules`].
     pub routing: RoutingRules,
 }
 
-/// `[proxy.routing]` — the active router's rule set (enterprise#13).
+/// `[proxy.routing]` — the active router's rule set.
 ///
-/// Two mechanisms, both **within-shape** in M1 (the target must speak the same
-/// wire dialect as the request; N×M shape translation is M2):
-///
-/// - **Aliases**: exact requested-model → target. Lets an org expose stable
-///   names (`acme/fast`) or transparently swap one concrete model for another.
+/// - **Aliases**: exact requested-model → target.
 /// - **Tiers**: intent-based downgrade. The request's last user message is
 ///   classified (`intent_router`); the resulting tier (`fast|standard|premium`)
 ///   picks a target from this table. An absent tier key (or `""`) keeps the
-///   requested model — premium work is never silently downgraded unless the
-///   operator says so.
+///   requested model.
 ///
 /// A target is `"model"` (swap the model, keep the upstream) or
-/// `"provider:model"` where `provider` is a `[[proxy.providers]]` registry id
-/// or a built-in (`anthropic|openai|gemini`) — then the request is also
-/// re-targeted to that provider's upstream.
+/// `"provider:model"` where `provider` is a built-in (`anthropic|openai|gemini`)
+/// or an id of [`PROVIDERS`] — then the request is also re-targeted to that
+/// provider's upstream. Routing is on as soon as one rule is written.
 ///
 /// **Fail-open by construction:** any lookup/classification/validation miss
 /// routes nothing and forwards the request unchanged.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(default)]
 pub struct RoutingRules {
-    /// Master switch; `false`/absent = passthrough (no body rewrite at all).
-    pub enabled: Option<bool>,
     /// Exact model-name aliases: requested model → `"provider:model"` | `"model"`.
     /// BTreeMap for deterministic iteration/serialization (#498).
     pub aliases: std::collections::BTreeMap<String, String>,
@@ -70,7 +50,7 @@ impl RoutingRules {
     /// True when the router should run at all.
     #[must_use]
     pub fn is_active(&self) -> bool {
-        self.enabled.unwrap_or(false) && !(self.aliases.is_empty() && self.tiers.is_empty())
+        !(self.aliases.is_empty() && self.tiers.is_empty())
     }
 }
 
@@ -127,66 +107,72 @@ impl WireShape {
     }
 }
 
-/// One `[[proxy.providers]]` registry entry (see [`ProxyConfig::providers`]).
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ProviderEntry {
-    /// Registry id, used in the `/providers/{id}/...` route and in routing
-    /// rules. Lowercase alphanumeric plus `-`/`_`; must not shadow a built-in
-    /// provider name (`anthropic`, `openai`, `gemini`).
-    pub id: String,
-    /// Which API dialect the endpoint speaks (`anthropic|openai|gemini|bedrock`).
-    pub shape: WireShape,
-    /// Endpoint base URL. HTTPS for any non-loopback host; a declared registry
-    /// entry is itself the custom-host opt-in (no separate allowlist flag).
-    pub base_url: String,
-    /// Name of the environment variable holding the upstream API key the
-    /// gateway injects (replacing the caller's credential headers). `None` =
-    /// forward the caller's own credentials verbatim (default, loopback mode).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub api_key_env: Option<String>,
-    /// AWS region for Bedrock SigV4. Bedrock uses standard AWS credential
-    /// environment variables and rejects `api_key_env`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub aws_region: Option<String>,
-    /// Set `false` to keep the entry in config but take it out of service.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub enabled: Option<bool>,
-    /// Marks this endpoint as local inference (Ollama/vLLM/…): usage is booked
-    /// at the transparent `local_shadow_rate` instead of provider list prices
-    /// (enterprise#15/#18). Unset = derived from the URL (loopback hosts are
-    /// local). Set it explicitly when the endpoint is local but not loopback —
-    /// the containerized gateway reaching the host's Ollama
-    /// (`host.docker.internal`) or an in-cluster server (`ollama.svc.cluster.local`).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub local: Option<bool>,
+/// One provider the proxy serves under `/providers/{id}/...`. The list is
+/// closed: a new provider is a code change, only its URL is configuration.
+struct ProviderSpec {
+    id: &'static str,
+    shape: WireShape,
+    /// `None` = served only when `[proxy.upstreams]` sets a URL.
+    default_url: Option<&'static str>,
 }
 
-/// A validated, ready-to-serve registry provider (runtime view of
-/// [`ProviderEntry`], published inside [`Upstreams`]).
+/// The providers served under `/providers/{id}/...`, besides the three
+/// built-in routes (`anthropic`, `openai`, `gemini`).
+const PROVIDERS: &[ProviderSpec] = &[
+    // xAI Grok, API-key rail (`XAI_API_KEY`).
+    ProviderSpec {
+        id: "xai",
+        shape: WireShape::OpenAi,
+        default_url: Some("https://api.x.ai"),
+    },
+    // xAI Grok, subscription rail (`grok login` session).
+    ProviderSpec {
+        id: "grok-chat",
+        shape: WireShape::OpenAi,
+        default_url: Some("https://cli-chat-proxy.grok.com"),
+    },
+    ProviderSpec {
+        id: "commandcode",
+        shape: WireShape::OpenAi,
+        default_url: Some("https://api.commandcode.ai"),
+    },
+    // Local inference; billed at the local shadow rate.
+    ProviderSpec {
+        id: "ollama",
+        shape: WireShape::OpenAi,
+        default_url: Some("http://127.0.0.1:11434"),
+    },
+    // Amazon Bedrock Runtime, SigV4 with the standard AWS credential
+    // variables. The region is read from the endpoint host.
+    ProviderSpec {
+        id: "bedrock",
+        shape: WireShape::Bedrock,
+        default_url: None,
+    },
+];
+
+/// The built-in provider routes (`/v1/...`), configurable in
+/// `[proxy.upstreams]` alongside [`PROVIDERS`].
+const BUILTIN_IDS: &[&str] = &["anthropic", "openai", "gemini"];
+
+/// Every id `[proxy.upstreams]` accepts, built-ins first.
+pub fn upstream_ids() -> impl Iterator<Item = &'static str> {
+    BUILTIN_IDS
+        .iter()
+        .copied()
+        .chain(PROVIDERS.iter().map(|p| p.id))
+}
+
+/// A validated, ready-to-serve provider (published inside [`Upstreams`]).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ResolvedProvider {
     pub id: String,
     pub shape: WireShape,
     pub base_url: String,
-    pub api_key_env: Option<String>,
     /// Validated SigV4 region for Bedrock; absent for other shapes.
     pub aws_region: Option<String>,
-    /// Billed as local inference (shadow rate). Explicit `local` flag when the
-    /// entry declares one, otherwise loopback-URL derivation.
+    /// Billed as local inference (shadow rate): the URL is loopback.
     pub local: bool,
-}
-
-/// Built-in provider route names a registry entry must not shadow.
-const BUILTIN_PROVIDER_IDS: &[&str] = &["anthropic", "openai", "gemini"];
-
-/// True when `id` is usable as a registry id: non-empty, lowercase alnum plus
-/// `-`/`_` (it becomes a URL path segment), and not a built-in provider name.
-fn is_valid_provider_id(id: &str) -> bool {
-    !id.is_empty()
-        && !BUILTIN_PROVIDER_IDS.contains(&id)
-        && id
-            .chars()
-            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-' || c == '_')
 }
 
 fn valid_aws_region(region: &str) -> bool {
@@ -197,38 +183,34 @@ fn valid_aws_region(region: &str) -> bool {
             .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-')
 }
 
-fn valid_bedrock_endpoint(base_url: &str, region: &str) -> bool {
-    let Ok(url) = reqwest::Url::parse(base_url) else {
-        return false;
-    };
+/// The AWS region named by a Bedrock Runtime endpoint
+/// (`bedrock-runtime[-fips].{region}.amazonaws.com`, `.api.aws`, `.com.cn`,
+/// or a `*.bedrock-runtime.{region}.vpce.amazonaws.com` interface endpoint).
+fn bedrock_region(base_url: &str) -> Option<String> {
+    let url = reqwest::Url::parse(base_url).ok()?;
     if !matches!(url.path(), "" | "/") || url.query().is_some() || url.fragment().is_some() {
-        return false;
+        return None;
     }
-    let Some(host) = url.host_str().map(str::to_ascii_lowercase) else {
-        return false;
-    };
-    let loopback = host == "localhost"
-        || host
-            .parse::<std::net::IpAddr>()
-            .is_ok_and(|address| address.is_loopback());
-    if loopback {
-        return true;
-    }
-    let accepted = [
-        format!("bedrock-runtime.{region}.amazonaws.com"),
-        format!("bedrock-runtime.{region}.amazonaws.com.cn"),
-        format!("bedrock-runtime.{region}.api.aws"),
-        format!("bedrock-runtime-fips.{region}.amazonaws.com"),
-        format!("bedrock-runtime-fips.{region}.api.aws"),
-    ];
-    accepted.iter().any(|candidate| candidate == &host)
-        || host.ends_with(&format!(".bedrock-runtime.{region}.vpce.amazonaws.com"))
+    let host = url.host_str()?.to_ascii_lowercase();
+    let labels: Vec<&str> = host.split('.').collect();
+    let at = labels
+        .iter()
+        .position(|l| *l == "bedrock-runtime" || *l == "bedrock-runtime-fips")?;
+    let region = labels.get(at + 1)?;
+    let tail = labels[at + 2..].join(".");
+    let known_tail = matches!(
+        tail.as_str(),
+        "amazonaws.com" | "amazonaws.com.cn" | "api.aws" | "vpce.amazonaws.com"
+    );
+    (known_tail && valid_aws_region(region)).then(|| (*region).to_string())
 }
 
 impl ResolvedProvider {
+    /// Whether the proxy signs the request itself instead of forwarding the
+    /// caller's credentials: Bedrock (SigV4).
     #[must_use]
     pub fn injects_gateway_credential(&self) -> bool {
-        self.api_key_env.is_some() || self.shape == WireShape::Bedrock
+        self.shape == WireShape::Bedrock
     }
 }
 
@@ -441,77 +423,51 @@ impl ProxyConfig {
         None
     }
 
-    /// Whether a non-loopback plaintext `http://` upstream is allowed. Opt-in
-    /// only — a deliberate downgrade for a trusted local-network service such as
-    /// `http://host.docker.internal:2455` in front of codex-lb (#440).
-    /// `[proxy] allow_insecure_http_upstream` in config.toml, default `false`.
-    pub fn allows_insecure_http_upstream(&self) -> bool {
-        self.allow_insecure_http_upstream.unwrap_or(false)
+    /// The configured URL for `id`, normalized; `None` when unset or blank.
+    fn configured_upstream(&self, id: &str) -> Option<String> {
+        self.upstreams.get(id).and_then(|u| normalize_url_opt(u))
     }
 
-    /// Whether a custom (non-allowlisted) HTTPS upstream host is allowed. Opt-in
-    /// only — lifting the built-in host allowlist points the proxy at a host you
-    /// control (e.g. a corporate gateway), so it must be deliberate.
-    /// `[proxy] allow_custom_upstream` in config.toml, default `false`.
-    pub fn allows_custom_upstream(&self) -> bool {
-        self.allow_custom_upstream.unwrap_or(false)
+    /// Warn once per resolution about `[proxy.upstreams]` keys that name no
+    /// provider (a typo would otherwise be silently ignored).
+    fn warn_unknown_upstream_ids(&self) {
+        for id in self.upstreams.keys() {
+            if !upstream_ids().any(|known| known == id) {
+                tracing::warn!("[proxy.upstreams] unknown provider id '{id}' — ignored");
+            }
+        }
     }
 
-    /// True when any `*_upstream` configured in `config.toml` is a
-    /// custom HTTPS host outside the built-in allowlist — i.e. one that resolves
-    /// only with the [`Self::allows_custom_upstream`] opt-in. Plaintext-HTTP custom
-    /// hosts are governed by `allow_insecure_http_upstream` instead, so they are
-    /// excluded here. Lets `proxy enable`/`restart` persist the opt-in (so the
-    /// managed proxy honors it) and `proxy status` explain a blocked upstream,
-    /// without touching the allowlisted-host case (#590).
-    #[must_use]
-    pub fn has_custom_host_upstream(&self) -> bool {
-        [
-            self.anthropic_upstream.as_deref(),
-            self.openai_upstream.as_deref(),
-            self.gemini_upstream.as_deref(),
-        ]
-        .into_iter()
-        .flatten()
-        .filter_map(normalize_url_opt)
-        .any(|u| is_custom_upstream_host(&u))
-    }
-
-    /// `(configured value, provider default)` for one provider.
-    fn provider_spec(&self, provider: ProxyProvider) -> (Option<&str>, &'static str) {
+    /// `(configured value, provider default)` for one built-in provider.
+    fn provider_spec(&self, provider: ProxyProvider) -> (Option<String>, &'static str) {
         match provider {
             ProxyProvider::Anthropic => (
-                self.anthropic_upstream.as_deref(),
+                self.configured_upstream("anthropic"),
                 "https://api.anthropic.com",
             ),
-            ProxyProvider::OpenAi => (self.openai_upstream.as_deref(), "https://api.openai.com"),
+            ProxyProvider::OpenAi => (self.configured_upstream("openai"), "https://api.openai.com"),
             ProxyProvider::Gemini => (
-                self.gemini_upstream.as_deref(),
+                self.configured_upstream("gemini"),
                 "https://generativelanguage.googleapis.com",
             ),
         }
     }
 
-    /// Resolve one upstream: `[proxy].*_upstream` (config.toml) > provider
-    /// default.
+    /// Resolve one built-in upstream: `[proxy.upstreams]` > provider default.
     /// Returns `Err` when a value is *present but invalid* so a live reload can
     /// keep the last good value instead of silently rerouting to the default; an
     /// *absent* value resolves to the provider default (`Ok`).
     fn resolve_upstream_checked(&self, provider: ProxyProvider) -> Result<String, String> {
         let (config_val, default) = self.provider_spec(provider);
-        match config_val.and_then(normalize_url_opt) {
+        match config_val {
             None => Ok(normalize_url(default)),
-            Some(url) => validate_upstream_url(
-                &url,
-                self.allows_insecure_http_upstream(),
-                self.allows_custom_upstream(),
-            ),
+            Some(url) => validate_upstream_url(&url),
         }
     }
 
-    /// Effective upstream for a provider (config > default). An invalid
-    /// configured value falls back to the provider default (logged) — the
-    /// safe choice at startup.
+    /// Effective upstream for a built-in provider (config > default). An
+    /// invalid configured value falls back to the provider default (logged) —
+    /// the safe choice at startup.
     pub fn resolve_upstream(&self, provider: ProxyProvider) -> String {
         match self.resolve_upstream_checked(provider) {
             Ok(url) => url,
@@ -522,8 +478,9 @@ impl ProxyConfig {
         }
     }
 
-    /// Resolve all three upstreams at once.
+    /// Resolve every upstream at once.
     pub fn resolve_all(&self) -> Upstreams {
+        self.warn_unknown_upstream_ids();
         Upstreams {
             anthropic: self.resolve_upstream(ProxyProvider::Anthropic),
             openai: self.resolve_upstream(ProxyProvider::OpenAi),
@@ -532,87 +489,49 @@ impl ProxyConfig {
         }
     }
 
-    /// Validate + resolve the `[[proxy.providers]]` registry. Invalid entries
-    /// are logged and skipped (one typo must never take the proxy down or
-    /// disable the remaining registry); duplicates keep the first occurrence.
-    /// A declared registry entry is itself the deliberate custom-host opt-in,
-    /// so any HTTPS host is accepted; plaintext HTTP still requires loopback or
-    /// the explicit insecure-HTTP opt-in (same rule as the built-ins).
+    /// Resolve the providers of [`PROVIDERS`]. An invalid URL is logged and the
+    /// provider skipped: one typo must never take the proxy down.
     #[must_use]
     pub fn resolve_providers(&self) -> Vec<ResolvedProvider> {
-        let mut seen: std::collections::BTreeSet<&str> = std::collections::BTreeSet::new();
         let mut out = Vec::new();
-        for entry in &self.providers {
-            if !entry.enabled.unwrap_or(true) {
+        for spec in PROVIDERS {
+            let Some(url) = self
+                .configured_upstream(spec.id)
+                .or_else(|| spec.default_url.map(normalize_url))
+            else {
                 continue;
-            }
-            let id = entry.id.trim();
-            if !is_valid_provider_id(id) {
-                tracing::warn!(
-                    "[proxy.providers] invalid id '{id}' (lowercase alnum/-/_ only, \
-                     must not shadow a built-in provider) — entry skipped"
-                );
-                continue;
-            }
-            if !seen.insert(id) {
-                tracing::warn!("[proxy.providers] duplicate id '{id}' — keeping first entry");
-                continue;
-            }
-            match validate_upstream_url(&entry.base_url, self.allows_insecure_http_upstream(), true)
-            {
-                Ok(base_url) => {
-                    let aws_region = entry
-                        .aws_region
-                        .as_deref()
-                        .map(str::trim)
-                        .filter(|value| !value.is_empty());
-                    if entry.shape == WireShape::Bedrock {
-                        let Some(region) = aws_region.filter(|value| valid_aws_region(value))
-                        else {
-                            tracing::warn!(
-                                "[proxy.providers] Bedrock provider '{id}' requires valid aws_region — skipped"
-                            );
-                            continue;
-                        };
-                        if entry.api_key_env.is_some() || !valid_bedrock_endpoint(&base_url, region)
-                        {
-                            tracing::warn!(
-                                "[proxy.providers] Bedrock provider '{id}' has invalid credential mode or endpoint — skipped"
-                            );
-                            continue;
-                        }
-                    } else if aws_region.is_some() {
-                        tracing::warn!(
-                            "[proxy.providers] non-Bedrock provider '{id}' cannot set aws_region — skipped"
-                        );
-                        continue;
-                    }
-                    // Explicit `local` flag wins; otherwise loopback URLs are
-                    // local (host.docker.internal etc. need the explicit flag).
-                    let local = entry.local.unwrap_or_else(|| is_local_proxy_url(&base_url));
-                    out.push(ResolvedProvider {
-                        id: id.to_string(),
-                        shape: entry.shape,
-                        base_url,
-                        api_key_env: entry
-                            .api_key_env
-                            .as_deref()
-                            .map(str::trim)
-                            .filter(|v| !v.is_empty())
-                            .map(str::to_string),
-                        aws_region: aws_region.map(str::to_string),
-                        local,
-                    });
-                }
+            };
+            let base_url = match validate_upstream_url(&url) {
+                Ok(u) => u,
                 Err(e) => {
-                    tracing::warn!("[proxy.providers] '{id}' has invalid base_url — skipped: {e}");
+                    tracing::warn!("[proxy.upstreams] '{}' is invalid — skipped: {e}", spec.id);
+                    continue;
                 }
-            }
+            };
+            let aws_region = if spec.shape == WireShape::Bedrock {
+                let Some(region) = bedrock_region(&base_url) else {
+                    tracing::warn!(
+                        "[proxy.upstreams] '{}' is not a Bedrock Runtime endpoint — skipped",
+                        spec.id
+                    );
+                    continue;
+                };
+                Some(region)
+            } else {
+                None
+            };
+            out.push(ResolvedProvider {
+                id: spec.id.to_string(),
+                shape: spec.shape,
+                local: is_local_proxy_url(&base_url),
+                base_url,
+                aws_region,
+            });
         }
         out
     }
 
-    /// Re-resolve upstreams for a *running* proxy (#449). For any provider whose
+    /// Re-resolve upstreams for a *running* proxy (#449). For any built-in whose
     /// currently configured value fails validation, the last good value is
     /// kept instead of rerouting live traffic to the provider default — so a typo
     /// in config.toml can never silently redirect in-flight requests.
@@ -627,9 +546,6 @@ impl ProxyConfig {
             anthropic: keep(ProxyProvider::Anthropic, &last.anthropic),
             openai: keep(ProxyProvider::OpenAi, &last.openai),
             gemini: keep(ProxyProvider::Gemini, &last.gemini),
-            // Registry re-resolution is deterministic from config; an entry
-            // that turned invalid is dropped with a warning (see
-            // `resolve_providers`), the rest keep serving.
             providers: self.resolve_providers(),
         }
     }
@@ -643,8 +559,8 @@ pub struct Upstreams {
     pub anthropic: String,
     pub openai: String,
     pub gemini: String,
-    /// Registry providers from `[[proxy.providers]]` (universal framework),
-    /// validated and live-reloadable exactly like the built-ins.
+    /// The providers of [`PROVIDERS`], validated and live-reloadable exactly
+    /// like the built-ins.
     pub providers: Vec<ResolvedProvider>,
 }
 
@@ -693,77 +609,17 @@ pub fn normalize_url_opt(value: &str) -> Option<String> {
     }
 }
 
-const ALLOWED_UPSTREAM_HOSTS: &[&str] = &[
-    "api.anthropic.com",
-    "api.openai.com",
-    "generativelanguage.googleapis.com",
-    // xAI Grok (OpenAI-compatible). Used by auto-seeded registry providers
-    // when `lean-ctx proxy enable` wires Grok (API-key rail + subscription rail).
-    "api.x.ai",
-    "cli-chat-proxy.grok.com",
-    // Command Code gateway. Used by the auto-seeded `commandcode` registry
-    // provider when `lean-ctx proxy enable` wires Command Code.
-    "api.commandcode.ai",
-];
-
-pub(super) fn validate_upstream_url(
-    url: &str,
-    allow_insecure_http: bool,
-    allow_custom_host: bool,
-) -> Result<String, String> {
+/// Validate a configured upstream URL. Any `http://` or `https://` URL is
+/// accepted: writing it in `[proxy.upstreams]` is the deliberate choice.
+pub(super) fn validate_upstream_url(url: &str) -> Result<String, String> {
     let normalized = normalize_url(url);
-    // Loopback HTTP never leaves the machine — always allowed.
-    if is_local_proxy_url(&normalized) {
-        return Ok(normalized);
-    }
-
-    // A non-loopback plaintext `http://` upstream is reachable only through the
-    // explicit opt-in (#440). The old code rejected it on the HTTPS check *before*
-    // any override could apply. Handle it up front: the opt-in
-    // implies a deliberate custom host on a trusted local network, so it needs no
-    // separate allowlist check; otherwise give a hint that actually works.
-    if normalized.starts_with("http://") {
-        if allow_insecure_http {
-            return Ok(normalized);
-        }
-        return Err(format!(
-            "upstream URL must use HTTPS: {normalized} (for a trusted local-network HTTP \
-             upstream opt in with `[proxy] allow_insecure_http_upstream = true`)"
-        ));
-    }
-    let Some(host_segment) = normalized.strip_prefix("https://") else {
-        return Err(format!(
-            "upstream URL must start with http:// or https://: {normalized}"
-        ));
-    };
-
-    let host = host_segment.split('/').next().unwrap_or("");
-    let host_no_port = host.split(':').next().unwrap_or(host);
-    if ALLOWED_UPSTREAM_HOSTS.contains(&host_no_port) || allow_custom_host {
+    if normalized.starts_with("http://") || normalized.starts_with("https://") {
         Ok(normalized)
     } else {
         Err(format!(
-            "upstream host '{host_no_port}' not in allowlist {ALLOWED_UPSTREAM_HOSTS:?} (for a \
-             custom upstream host opt in with `[proxy] allow_custom_upstream = true`)"
+            "upstream URL must start with http:// or https://: {normalized}"
         ))
     }
-}
-
-/// True when `url` is an HTTPS upstream whose host is not in the built-in
-/// allowlist (and not loopback) — the case the `allow_custom_upstream` opt-in
-/// governs. Plaintext-HTTP custom hosts are governed by
-/// `allow_insecure_http_upstream` instead, so they are excluded here.
-fn is_custom_upstream_host(url: &str) -> bool {
-    let n = normalize_url(url);
-    if is_local_proxy_url(&n) {
-        return false;
-    }
-    let Some(host_segment) = n.strip_prefix("https://") else {
-        return false;
-    };
-    let host = host_segment.split('/').next().unwrap_or("");
-    let host_no_port = host.split(':').next().unwrap_or(host);
-    !host_no_port.is_empty() && !ALLOWED_UPSTREAM_HOSTS.contains(&host_no_port)
 }
 
 pub fn is_local_proxy_url(value: &str) -> bool {

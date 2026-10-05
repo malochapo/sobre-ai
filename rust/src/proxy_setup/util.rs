@@ -37,7 +37,7 @@ pub(crate) fn is_proxy_reachable(port: u16) -> bool {
 
 pub fn default_port() -> u16 {
     let cfg = crate::core::config::Config::load();
-    if let Some(port) = cfg.proxy_port {
+    if let Some(port) = cfg.proxy.port {
         return port;
     }
     uid_based_port()

@@ -229,6 +229,7 @@ mod tests {
                         // too, rather than looking `name` up in the section.
                         if resolve(&cfg, &path).is_none()
                             && !SERDE_OMITTED_BY_DEFAULT.contains(&path.as_str())
+                            && !path.starts_with("proxy.upstreams.")
                         {
                             orphans.push(path);
                         }
@@ -298,8 +299,8 @@ mod tests {
             "compression_level",
             "rules_scope",
             "rules_injection",
-            "proxy_enabled",
-            "proxy_port",
+            "proxy.enabled",
+            "proxy.port",
         ] {
             assert!(
                 schema.lookup(key).is_some(),

@@ -48,7 +48,7 @@ pub fn classify(key: &str) -> Option<ConfigRisk> {
         "proxy_loopback_open" => {
             "Disables ALL proxy authentication on loopback binds. Any local process can access the proxy without a token."
         }
-        "proxy.anthropic_upstream" | "proxy.openai_upstream" | "proxy.gemini_upstream" => {
+        key if key.starts_with("proxy.upstreams.") => {
             "Redirects provider traffic to a custom upstream — every request and API key for this provider will flow through it."
         }
         _ => return None,
@@ -78,9 +78,9 @@ mod tests {
             "boundary_policy",
             "proxy_require_token",
             "proxy_loopback_open",
-            "proxy.openai_upstream",
-            "proxy.anthropic_upstream",
-            "proxy.gemini_upstream",
+            "proxy.upstreams.openai",
+            "proxy.upstreams.anthropic",
+            "proxy.upstreams.gemini",
         ] {
             assert!(is_consequential(key), "{key} should be consequential");
             assert!(!classify(key).unwrap().note.is_empty());

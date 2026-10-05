@@ -75,7 +75,7 @@ pub fn cmd_config(args: &[String]) {
                     );
                     std::process::exit(1);
                 }
-                "proxy.anthropic_upstream" | "proxy.openai_upstream" | "proxy.gemini_upstream" => {
+                k if k.starts_with("proxy.upstreams.") => {
                     let effective = normalize_optional_upstream(val).unwrap_or_default();
                     (key.clone(), effective)
                 }
@@ -1002,8 +1002,9 @@ pub const SIMPLIFIED_TEMPLATE: &str = r#"# lean-ctx — Simplified Configuration
 # compression_level = 0.3
 
 # ── Proxy ────────────────────────────────────────────────────────────
-# proxy_enabled = false
-# proxy_port = 3128
+# [proxy]
+# enabled = false
+# port = 4444
 "#;
 
 fn write_simplified_config() -> Result<String, String> {

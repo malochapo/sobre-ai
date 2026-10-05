@@ -497,7 +497,7 @@ pub(super) fn spawn_proxy_if_needed() {
     use std::net::TcpStream;
 
     let cfg = core::config::Config::load();
-    if cfg.proxy_enabled != Some(true) {
+    if cfg.proxy.enabled != Some(true) {
         return;
     }
 
@@ -510,7 +510,7 @@ pub(super) fn spawn_proxy_if_needed() {
     };
 
     if !should_spawn_proxy_locally(
-        cfg.proxy_enabled == Some(true),
+        cfg.proxy.enabled == Some(true),
         managed_service_loaded,
         already_running,
     ) {

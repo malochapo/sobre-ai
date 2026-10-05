@@ -11,11 +11,10 @@
 
 use std::path::{Path, PathBuf};
 
-use super::grok::{ShellFlavor, ensure_proxy_provider};
+use super::grok::ShellFlavor;
 use super::util::{COMMANDCODE_OMITTED_NOTE, is_proxy_reachable};
 
 pub(crate) const COMMANDCODE_PROVIDER_ID: &str = "commandcode";
-pub(crate) const COMMANDCODE_UPSTREAM: &str = "https://api.commandcode.ai";
 
 /// Instructions block for Command Code MCP hosts (shadow-mode rules).
 pub(crate) const COMMANDCODE_MCP_INSTRUCTIONS: &str = "\
@@ -129,7 +128,6 @@ pub(crate) fn install_commandcode_env(home: &Path, port: u16, quiet: bool, force
         return;
     }
 
-    ensure_proxy_provider(COMMANDCODE_PROVIDER_ID, COMMANDCODE_UPSTREAM, quiet);
     if !quiet {
         let base = commandcode_proxy_base_url(port);
         println!(

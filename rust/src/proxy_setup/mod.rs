@@ -38,7 +38,7 @@ pub use util::{default_port, is_local_lean_ctx_url, proxy_timeout};
 
 pub fn install_proxy_env(home: &Path, port: u16, quiet: bool) {
     let cfg = crate::core::config::Config::load();
-    if cfg.proxy_enabled != Some(true) {
+    if cfg.proxy.enabled != Some(true) {
         if !quiet {
             println!("  Proxy env skipped (not enabled in config)");
         }
@@ -76,7 +76,7 @@ pub fn preview_proxy_cleanup(home: &Path) {
         && content.contains("ANTHROPIC_BASE_URL")
     {
         let cfg = crate::core::config::Config::load();
-        if let Some(ref upstream) = cfg.proxy.anthropic_upstream {
+        if let Some(ref upstream) = cfg.proxy.upstreams.get("anthropic").cloned() {
             println!("  Would restore ANTHROPIC_BASE_URL → {upstream} in Claude Code settings");
         } else {
             println!("  Would remove ANTHROPIC_BASE_URL from Claude Code settings");
@@ -110,7 +110,7 @@ pub fn preview_proxy_cleanup(home: &Path) {
 /// Returns the number of stale URLs cleaned up.
 pub fn cleanup_stale_proxy_env(home: &Path) -> usize {
     let cfg = crate::core::config::Config::load();
-    if cfg.proxy_enabled == Some(true) {
+    if cfg.proxy.enabled == Some(true) {
         return 0;
     }
 
@@ -128,7 +128,7 @@ pub fn cleanup_stale_proxy_env(home: &Path) -> usize {
         && is_local_lean_ctx_url(&base_url)
         && let Some(env_obj) = doc.get_mut("env").and_then(|e| e.as_object_mut())
     {
-        if let Some(ref upstream) = cfg.proxy.anthropic_upstream {
+        if let Some(ref upstream) = cfg.proxy.upstreams.get("anthropic").cloned() {
             env_obj.insert(
                 "ANTHROPIC_BASE_URL".to_string(),
                 serde_json::Value::String(upstream.clone()),
@@ -172,7 +172,7 @@ pub fn cleanup_stale_proxy_env(home: &Path) -> usize {
 
 pub fn has_stale_proxy_url(home: &Path) -> bool {
     let cfg = crate::core::config::Config::load();
-    if cfg.proxy_enabled == Some(true) {
+    if cfg.proxy.enabled == Some(true) {
         return false;
     }
 

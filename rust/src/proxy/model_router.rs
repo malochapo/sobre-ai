@@ -9,8 +9,8 @@
 //! empty target string leaves the request untouched. Premium work is never
 //! silently downgraded unless the operator explicitly configures a tier target.
 //!
-//! **Opt-in only:** requires `[proxy.routing] enabled = true` AND at least one
-//! tier entry. Without both, this module is a no-op.
+//! **Opt-in only:** requires at least one `[proxy.routing.tiers]` entry.
+//! Without one, this module is a no-op.
 //!
 //! ## Interaction with other routing mechanisms
 //!
@@ -202,7 +202,6 @@ mod tests {
 
     fn active_rules(tiers: &[(&str, &str)]) -> RoutingRules {
         RoutingRules {
-            enabled: Some(true),
             aliases: BTreeMap::new(),
             tiers: tiers
                 .iter()
@@ -232,7 +231,6 @@ mod tests {
     #[test]
     fn empty_tiers_returns_none() {
         let rules = RoutingRules {
-            enabled: Some(true),
             aliases: BTreeMap::new(),
             tiers: BTreeMap::new(),
         };

@@ -1,102 +1,27 @@
-//! Unit tests for the proxy config (split from `proxy.rs` — LOC budget).
-
 use super::*;
 
-#[test]
-fn loopback_http_is_always_allowed() {
-    assert_eq!(
-        validate_upstream_url("http://127.0.0.1:4444", false, false).unwrap(),
-        "http://127.0.0.1:4444"
-    );
-    assert_eq!(
-        validate_upstream_url("http://localhost:2455/", false, false).unwrap(),
-        "http://localhost:2455"
-    );
+fn with_upstream(id: &str, url: &str) -> ProxyConfig {
+    let mut cfg = ProxyConfig::default();
+    cfg.upstreams.insert(id.to_string(), url.to_string());
+    cfg
 }
 
 #[test]
-fn https_allowlisted_host_is_allowed() {
-    assert_eq!(
-        validate_upstream_url("https://api.openai.com", false, false).unwrap(),
-        "https://api.openai.com"
-    );
-}
-
-#[test]
-fn non_loopback_http_is_rejected_without_optin() {
-    let err = validate_upstream_url("http://host.docker.internal:2455", false, false).unwrap_err();
-    // The hint must point at the flag that actually lifts the scheme check
-    // (#440). The custom-host opt-in never bypassed the HTTPS requirement.
-    assert!(
-        err.contains("allow_insecure_http_upstream"),
-        "hint must name the working opt-in, got: {err}"
-    );
-}
-
-#[test]
-fn non_loopback_http_is_allowed_with_optin() {
-    assert_eq!(
-        validate_upstream_url("http://host.docker.internal:2455", true, false).unwrap(),
-        "http://host.docker.internal:2455"
-    );
+fn any_http_or_https_url_is_accepted() {
+    for url in [
+        "http://127.0.0.1:8080",
+        "https://api.openai.com",
+        "http://host.docker.internal:2455",
+        "https://gw.corp.example/anthropic",
+    ] {
+        assert_eq!(validate_upstream_url(url).as_deref(), Ok(url));
+    }
 }
 
 #[test]
 fn unknown_scheme_is_rejected() {
-    assert!(validate_upstream_url("ftp://example.com", true, true).is_err());
-}
-
-#[test]
-fn https_custom_host_is_rejected_without_optin() {
-    // #590: a custom HTTPS host (e.g. a corporate gateway) is blocked unless
-    // the operator opts in. The hint must name the config flag.
-    let err = validate_upstream_url("https://gw.corp.example/anthropic", false, false).unwrap_err();
-    assert!(
-        err.contains("allow_custom_upstream"),
-        "hint must name the opt-in, got: {err}"
-    );
-}
-
-#[test]
-fn https_custom_host_is_allowed_with_optin() {
-    // The opt-in (`[proxy] allow_custom_upstream`) lifts the allowlist.
-    assert_eq!(
-        validate_upstream_url("https://gw.corp.example/anthropic", false, true).unwrap(),
-        "https://gw.corp.example/anthropic"
-    );
-}
-
-#[test]
-fn config_flag_enables_custom_upstream_optin() {
-    // #590: mirrors `config_flag_enables_insecure_http_optin`. `Some(true)`
-    // resolves to true regardless of the environment, so no env mutation.
-    let cfg = ProxyConfig {
-        allow_custom_upstream: Some(true),
-        ..Default::default()
-    };
-    assert!(cfg.allows_custom_upstream());
-}
-
-#[test]
-fn has_custom_host_upstream_detects_only_custom_https() {
-    // A custom HTTPS host counts; an allowlisted host, a loopback URL, and an
-    // unset upstream do not (the http case is the insecure-http opt-in's job).
-    assert!(
-        ProxyConfig {
-            anthropic_upstream: Some("https://gw.corp.example/anthropic".into()),
-            ..Default::default()
-        }
-        .has_custom_host_upstream()
-    );
-    assert!(
-        !ProxyConfig {
-            openai_upstream: Some("https://api.openai.com".into()),
-            anthropic_upstream: Some("http://127.0.0.1:4444".into()),
-            ..Default::default()
-        }
-        .has_custom_host_upstream()
-    );
-    assert!(!ProxyConfig::default().has_custom_host_upstream());
+    assert!(validate_upstream_url("ftp://example.com").is_err());
+    assert!(validate_upstream_url("not-a-valid-url").is_err());
 }
 
 #[test]
@@ -187,63 +112,25 @@ fn verbosity_steer_is_off() {
 }
 
 #[test]
-fn config_flag_enables_insecure_http_optin() {
-    // `Some(true)` resolves to `true` regardless of the environment, so this
-    // assertion is robust without mutating process-global env vars.
-    let cfg = ProxyConfig {
-        allow_insecure_http_upstream: Some(true),
-        ..Default::default()
-    };
-    assert!(cfg.allows_insecure_http_upstream());
-}
-
-/// Loopback HTTP is an always-valid custom upstream (no allowlist / opt-in
-/// required).
-#[test]
 fn resolve_all_uses_config_then_default() {
-    let cfg = ProxyConfig {
-        openai_upstream: Some("http://127.0.0.1:19101".into()),
-        ..Default::default()
-    };
-    let up = cfg.resolve_all();
+    let up = with_upstream("openai", "http://127.0.0.1:19101").resolve_all();
     assert_eq!(up.openai, "http://127.0.0.1:19101");
     assert_eq!(up.anthropic, "https://api.anthropic.com");
     assert_eq!(up.gemini, "https://generativelanguage.googleapis.com");
 }
 
 #[test]
-fn resolve_all_honors_custom_upstream_via_config_flag() {
-    // #590: with the config opt-in, a custom HTTPS host resolves; without it,
-    // it falls back to the provider default. This is the regression guard for
-    // the reported bug.
-    let custom = ProxyConfig {
-        anthropic_upstream: Some("https://gw.corp.example/anthropic".into()),
-        allow_custom_upstream: Some(true),
-        ..Default::default()
-    };
+fn resolve_all_honors_custom_https_upstream() {
+    let cfg = with_upstream("anthropic", "https://gw.corp.example/anthropic");
     assert_eq!(
-        custom.resolve_all().anthropic,
-        "https://gw.corp.example/anthropic",
-        "config flag must let the managed proxy honor the custom upstream"
-    );
-
-    let blocked = ProxyConfig {
-        anthropic_upstream: Some("https://gw.corp.example/anthropic".into()),
-        ..Default::default()
-    };
-    assert_eq!(
-        blocked.resolve_all().anthropic,
-        "https://api.anthropic.com",
-        "without the opt-in the custom host is rejected → provider default"
+        cfg.resolve_all().anthropic,
+        "https://gw.corp.example/anthropic"
     );
 }
 
 #[test]
 fn resolve_all_normalizes_trailing_slash() {
-    let cfg = ProxyConfig {
-        openai_upstream: Some("http://127.0.0.1:19101/".into()),
-        ..Default::default()
-    };
+    let cfg = with_upstream("openai", "http://127.0.0.1:19101/");
     assert_eq!(cfg.resolve_all().openai, "http://127.0.0.1:19101");
 }
 
@@ -256,10 +143,7 @@ fn refresh_keeps_last_good_on_invalid_config() {
         gemini: "https://generativelanguage.googleapis.com".into(),
         providers: Vec::new(),
     };
-    let cfg = ProxyConfig {
-        openai_upstream: Some("not-a-valid-url".into()),
-        ..Default::default()
-    };
+    let cfg = with_upstream("openai", "not-a-valid-url");
     assert_eq!(
         cfg.refresh_upstreams(&last).openai,
         "http://127.0.0.1:19101",
@@ -275,10 +159,7 @@ fn refresh_adopts_valid_config_change() {
         gemini: "https://generativelanguage.googleapis.com".into(),
         providers: Vec::new(),
     };
-    let cfg = ProxyConfig {
-        openai_upstream: Some("http://127.0.0.1:19102".into()),
-        ..Default::default()
-    };
+    let cfg = with_upstream("openai", "http://127.0.0.1:19102");
     assert_eq!(
         cfg.refresh_upstreams(&last).openai,
         "http://127.0.0.1:19102"
@@ -301,206 +182,118 @@ fn upstream_drift_in_sync() {
     ));
 }
 
-fn entry(id: &str, shape: WireShape, base_url: &str) -> ProviderEntry {
-    ProviderEntry {
-        id: id.into(),
-        shape,
-        base_url: base_url.into(),
-        api_key_env: None,
-        aws_region: None,
-        enabled: None,
-        local: None,
+#[test]
+fn default_providers_are_the_closed_list_without_bedrock() {
+    let ids: Vec<String> = ProxyConfig::default()
+        .resolve_providers()
+        .into_iter()
+        .map(|p| p.id)
+        .collect();
+    assert_eq!(ids, ["xai", "grok-chat", "commandcode", "ollama"]);
+}
+
+#[test]
+fn ollama_is_local_and_cloud_providers_are_not() {
+    let providers = ProxyConfig::default().resolve_providers();
+    let local = |id: &str| providers.iter().find(|p| p.id == id).unwrap().local;
+    assert!(local("ollama"));
+    assert!(!local("xai"));
+}
+
+#[test]
+fn upstreams_override_a_provider_url() {
+    let cfg = with_upstream("ollama", "http://127.0.0.1:11500/");
+    let p = cfg
+        .resolve_providers()
+        .into_iter()
+        .find(|p| p.id == "ollama")
+        .unwrap();
+    assert_eq!(p.base_url, "http://127.0.0.1:11500");
+    assert_eq!(p.shape, WireShape::OpenAi);
+}
+
+#[test]
+fn invalid_provider_url_skips_only_that_provider() {
+    let ids: Vec<String> = with_upstream("xai", "not-a-url")
+        .resolve_providers()
+        .into_iter()
+        .map(|p| p.id)
+        .collect();
+    assert_eq!(ids, ["grok-chat", "commandcode", "ollama"]);
+}
+
+#[test]
+fn bedrock_is_served_when_set_with_region_from_host() {
+    let cfg = with_upstream("bedrock", "https://bedrock-runtime.eu-west-3.amazonaws.com");
+    let p = cfg
+        .resolve_providers()
+        .into_iter()
+        .find(|p| p.id == "bedrock")
+        .expect("bedrock served once its URL is set");
+    assert_eq!(p.shape, WireShape::Bedrock);
+    assert_eq!(p.aws_region.as_deref(), Some("eu-west-3"));
+    assert!(p.injects_gateway_credential());
+}
+
+#[test]
+fn bedrock_region_reads_known_endpoint_forms() {
+    for (url, region) in [
+        (
+            "https://bedrock-runtime.us-east-1.amazonaws.com",
+            Some("us-east-1"),
+        ),
+        (
+            "https://bedrock-runtime-fips.us-west-2.api.aws",
+            Some("us-west-2"),
+        ),
+        (
+            "https://bedrock-runtime.cn-north-1.amazonaws.com.cn",
+            Some("cn-north-1"),
+        ),
+        (
+            "https://vpce-1.bedrock-runtime.eu-central-1.vpce.amazonaws.com",
+            Some("eu-central-1"),
+        ),
+        ("https://bedrock-runtime.us-east-1.evil.example", None),
+        ("https://bedrock-runtime.us-east-1.amazonaws.com/path", None),
+        ("http://127.0.0.1:9000", None),
+    ] {
+        assert_eq!(bedrock_region(url).as_deref(), region, "{url}");
     }
 }
 
 #[test]
-fn provider_local_flag_explicit_beats_url_derivation() {
-    // Loopback URL → derived local; explicit flag wins in both directions
-    // (host.docker.internal is the containerized-gateway case, #15/#18).
-    let loopback = entry("ollama", WireShape::OpenAi, "http://127.0.0.1:11434");
-    let mut declared_local = entry("hostgw", WireShape::OpenAi, "https://ollama.corp.example");
-    declared_local.local = Some(true);
-    let mut declared_cloud = entry("tunnel", WireShape::OpenAi, "http://localhost:9999");
-    declared_cloud.local = Some(false);
-    let cfg = ProxyConfig {
-        providers: vec![loopback, declared_local, declared_cloud],
-        ..Default::default()
-    };
-    let resolved = cfg.resolve_providers();
-    assert_eq!(resolved.len(), 3);
-    assert!(resolved[0].local, "loopback URL derives local=true");
-    assert!(
-        resolved[1].local,
-        "explicit local=true wins over HTTPS host"
-    );
-    assert!(
-        !resolved[2].local,
-        "explicit local=false wins over loopback"
-    );
-}
-
-#[test]
-fn provider_registry_resolves_valid_entries() {
-    // enterprise#7: a new OpenAI-compatible provider is pure config. A
-    // declared HTTPS entry is its own custom-host opt-in (no extra flag).
-    let cfg = ProxyConfig {
-        providers: vec![
-            entry(
-                "foundry",
-                WireShape::OpenAi,
-                "https://acme.services.ai.azure.com/",
-            ),
-            entry("local-vllm", WireShape::OpenAi, "http://127.0.0.1:8000"),
-        ],
-        ..Default::default()
-    };
-    let resolved = cfg.resolve_providers();
-    assert_eq!(resolved.len(), 2);
-    assert_eq!(resolved[0].id, "foundry");
-    assert_eq!(resolved[0].shape, WireShape::OpenAi);
-    assert_eq!(
-        resolved[0].base_url, "https://acme.services.ai.azure.com",
-        "base_url must be normalized (trailing slash stripped)"
-    );
-    assert_eq!(resolved[1].base_url, "http://127.0.0.1:8000");
-}
-
-#[test]
-fn bedrock_provider_requires_region_matching_endpoint_and_aws_env_mode() {
-    let mut valid = entry(
-        "bedrock",
-        WireShape::Bedrock,
-        "https://bedrock-runtime.us-east-1.amazonaws.com",
-    );
-    valid.aws_region = Some("us-east-1".into());
-    let mut wrong_region = valid.clone();
-    wrong_region.id = "wrong-region".into();
-    wrong_region.aws_region = Some("eu-west-1".into());
-    let mut keyed = valid.clone();
-    keyed.id = "caller-key".into();
-    keyed.api_key_env = Some("AWS_ACCESS_KEY_ID".into());
-    let resolved = ProxyConfig {
-        providers: vec![valid, wrong_region, keyed],
-        ..Default::default()
-    }
-    .resolve_providers();
-    assert_eq!(resolved.len(), 1);
-    assert_eq!(resolved[0].shape, WireShape::Bedrock);
-    assert_eq!(resolved[0].aws_region.as_deref(), Some("us-east-1"));
-    assert!(resolved[0].injects_gateway_credential());
-}
-
-#[test]
-fn provider_registry_skips_invalid_entries_without_killing_rest() {
-    let cfg = ProxyConfig {
-        providers: vec![
-            // Shadows a built-in name → skipped.
-            entry("openai", WireShape::OpenAi, "https://evil.example"),
-            // Uppercase/slash ids are unusable as a path segment → skipped.
-            entry("Bad/Id", WireShape::OpenAi, "https://ok.example"),
-            // Non-loopback plaintext HTTP without the opt-in → skipped.
-            entry("insecure", WireShape::OpenAi, "http://gw.corp.example"),
-            // Duplicate id → first wins.
-            entry("groq", WireShape::OpenAi, "https://api.groq.com"),
-            entry("groq", WireShape::OpenAi, "https://other.example"),
-        ],
-        ..Default::default()
-    };
-    let resolved = cfg.resolve_providers();
-    assert_eq!(resolved.len(), 1, "only the first 'groq' entry survives");
-    assert_eq!(resolved[0].id, "groq");
-    assert_eq!(resolved[0].base_url, "https://api.groq.com");
-}
-
-#[test]
-fn provider_registry_respects_enabled_flag_and_trims_key_env() {
-    let mut disabled = entry("foundry", WireShape::OpenAi, "https://f.example");
-    disabled.enabled = Some(false);
-    let mut keyed = entry("router", WireShape::Anthropic, "https://r.example");
-    keyed.api_key_env = Some("  ROUTER_KEY  ".into());
-    let cfg = ProxyConfig {
-        providers: vec![disabled, keyed],
-        ..Default::default()
-    };
-    let resolved = cfg.resolve_providers();
-    assert_eq!(resolved.len(), 1);
-    assert_eq!(resolved[0].api_key_env.as_deref(), Some("ROUTER_KEY"));
-    assert_eq!(
-        Upstreams {
-            anthropic: String::new(),
-            openai: String::new(),
-            gemini: String::new(),
-            providers: resolved,
-        }
-        .provider_by_id("router")
-        .map(|p| p.shape),
-        Some(WireShape::Anthropic)
-    );
-}
-
-#[test]
-fn provider_entry_toml_round_trip() {
-    // The `[[proxy.providers]]` TOML surface: shape names are lowercase,
-    // api_key_env/enabled optional.
+fn proxy_table_toml_round_trip() {
     let toml_src = r#"
-        anthropic_upstream = "https://api.anthropic.com"
-
-        [[providers]]
-        id = "foundry"
-        shape = "openai"
-        base_url = "https://acme.services.ai.azure.com"
-        api_key_env = "FOUNDRY_API_KEY"
-
-        [[providers]]
-        id = "claude-gw"
-        shape = "anthropic"
-        base_url = "https://gw.corp.example/anthropic"
-        enabled = false
-    "#;
-    let cfg: ProxyConfig = toml::from_str(toml_src).expect("parse [[providers]]");
-    assert_eq!(cfg.providers.len(), 2);
-    assert_eq!(cfg.providers[0].shape, WireShape::OpenAi);
-    assert_eq!(
-        cfg.providers[0].api_key_env.as_deref(),
-        Some("FOUNDRY_API_KEY")
-    );
-    assert_eq!(cfg.providers[1].enabled, Some(false));
-    // Only the enabled entry resolves.
-    assert_eq!(cfg.resolve_providers().len(), 1);
-}
-
-#[test]
-fn routing_toml_round_trip() {
-    // The `[proxy.routing]` TOML surface (enterprise#13). An absent table must
-    // default to inactive.
-    let toml_src = r#"
-        [routing]
         enabled = true
+        port = 4545
+
+        [upstreams]
+        anthropic = "https://gw.corp.example/anthropic"
+        ollama = "http://127.0.0.1:11500"
 
         [routing.aliases]
-        "acme/fast" = "foundry:gpt-4o-mini"
+        "acme/fast" = "ollama:qwen3"
 
         [routing.tiers]
-        fast = "foundry:phi-4"
+        fast = "ollama:qwen3"
         premium = ""
     "#;
-    let cfg: ProxyConfig = toml::from_str(toml_src).expect("parse routing");
+    let cfg: ProxyConfig = toml::from_str(toml_src).expect("parse [proxy]");
+    assert_eq!(cfg.enabled, Some(true));
+    assert_eq!(cfg.port, Some(4545));
+    assert_eq!(
+        cfg.resolve_all().anthropic,
+        "https://gw.corp.example/anthropic"
+    );
     assert!(cfg.routing.is_active());
     assert_eq!(
         cfg.routing.aliases.get("acme/fast").map(String::as_str),
-        Some("foundry:gpt-4o-mini")
-    );
-    assert_eq!(
-        cfg.routing.tiers.get("fast").map(String::as_str),
-        Some("foundry:phi-4")
+        Some("ollama:qwen3")
     );
 
     let empty: ProxyConfig = toml::from_str("").expect("empty config");
     assert!(!empty.routing.is_active(), "absent [routing] = passthrough");
-
-    // enabled=true with no rules is still inactive (nothing to apply).
-    let enabled_only: ProxyConfig = toml::from_str("[routing]\nenabled = true").expect("parse");
-    assert!(!enabled_only.routing.is_active());
 }
 
 #[test]
