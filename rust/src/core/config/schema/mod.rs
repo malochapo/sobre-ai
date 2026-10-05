@@ -94,7 +94,7 @@ impl ConfigSchema {
 }
 
 /// Every TOML key the `Config` struct serialises to, in dot-separated form
-/// (e.g. `proxy_require_token`, `memory`, `memory.episodic`). Derived from
+/// (e.g. `allow_paths`, `proxy`, `proxy.port`). Derived from
 /// `Config::default()` so validation tracks the struct automatically (#456).
 ///
 /// Option fields that default to `None` are omitted by serde and therefore not
@@ -132,29 +132,15 @@ fn config_derived_keys() -> Vec<String> {
 mod tests {
     use super::*;
 
-    /// Sections whose Rust type is a map, not a struct: their schema keys are
-    /// *example entries* a user may add (`[lsp] go = "gopls"`), not fields. The
-    /// map is empty by default, so nothing resolves and every key would look
-    /// orphaned.
-    const MAP_TYPED_SECTIONS: &[&str] = &["lsp"];
-
     /// Fields serde omits from `Config::default()` because they carry
     /// `skip_serializing_if` and are empty by default. They are real fields —
     /// they simply cannot be observed through a serialised default — so the
     /// reverse-parity test below has to know about them. Adding a
     /// `skip_serializing_if` field to a config struct means adding it here.
-    const SERDE_OMITTED_BY_DEFAULT: &[&str] = &[
-        "compression_level",
-        "cost.default_model",
-        "cost.models",
-        "cost.prices",
-        "embedding.model",
-        "embedding.dimensions",
-        "embedding.deterministic",
-    ];
+    const SERDE_OMITTED_BY_DEFAULT: &[&str] = &["compression_level"];
 
     /// `Config::default()` as JSON rather than TOML: JSON keeps `Option::None`
-    /// as `null`, so the 21 `Option` fields that TOML drops stay visible.
+    /// as `null`, so the `Option` fields that TOML drops stay visible.
     fn config_as_json() -> serde_json::Value {
         serde_json::to_value(crate::core::config::Config::default())
             .expect("Config must serialise to JSON")
@@ -190,14 +176,6 @@ mod tests {
 
         let mut orphans: Vec<String> = Vec::new();
         for (section, sec) in &schema.sections {
-            // A section declaring no keys is a free-form map (`[ide_paths]`,
-            // `[model_context_windows]`): nothing to pair up.
-            if sec.keys.is_empty() {
-                continue;
-            }
-            if MAP_TYPED_SECTIONS.contains(&section.as_str()) {
-                continue;
-            }
             let section_value = if section == "root" {
                 Some(&cfg)
             } else {
@@ -244,9 +222,7 @@ mod tests {
     }
 
     /// #456: every field the `Config` struct actually serialises must be
-    /// accepted by validation. Before the fix, 38 real keys/sections
-    /// (`proxy_require_token`, `memory.*`, `proxy`, …) were
-    /// flagged "unknown" because the hand-written schema had drifted.
+    /// accepted by validation, or the hand-written schema has drifted.
     #[test]
     fn known_keys_cover_every_config_struct_field() {
         let known = ConfigSchema::generate().known_keys();

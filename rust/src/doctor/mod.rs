@@ -6,7 +6,6 @@ mod deprecations;
 mod fix;
 mod integrations;
 mod lint_context;
-mod migrate;
 mod overhead;
 mod report;
 mod workspace_scope;
@@ -567,7 +566,6 @@ pub fn run_cli(args: &[String]) -> i32 {
     let fix = rest.iter().any(|a| a == "--fix");
     let json = rest.iter().any(|a| a == "--json");
     let gate = rest.iter().any(|a| a == "--gate");
-    let migrate_check = rest.iter().any(|a| a == "--migrate-check");
     let help = rest.iter().any(|a| a == "--help" || a == "-h");
 
     if help {
@@ -581,7 +579,6 @@ pub fn run_cli(args: &[String]) -> i32 {
         );
         println!("  lean-ctx doctor integrations [--json]");
         println!("  lean-ctx doctor --fix [--json]");
-        println!("  lean-ctx doctor --migrate-check [--json]");
         return 0;
     }
 
@@ -591,10 +588,6 @@ pub fn run_cli(args: &[String]) -> i32 {
 
     if sub == "lint-context" {
         return lint_context::run_lint_context(json);
-    }
-
-    if migrate_check {
-        return migrate::run_migrate_check(json);
     }
 
     if sub == "integrations" {

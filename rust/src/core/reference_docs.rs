@@ -147,10 +147,12 @@ pub fn config_keys_markdown() -> String {
     out.push_str("# Appendix — Configuration Keys (generated)\n\n");
     out.push_str(DO_NOT_EDIT);
     out.push_str("\n\n");
-    out.push_str("Source of truth: `rust/src/core/config/schema.rs`.\n\n");
+    out.push_str("Source of truth: `rust/src/core/config/schema/`.\n\n");
     out.push_str(
-        "lean-ctx reads one file, `~/.lean-ctx/config.toml`. \
-         Below is every recognized key with its type and default.\n\n",
+        "sobre reads one file, `~/.config/lean-ctx/config.toml` (the directory \
+         follows `$XDG_CONFIG_HOME`, or `$LEAN_CTX_CONFIG_DIR` when set). \
+         Below is every recognized key with its type and default. \
+         `lean-ctx config init` writes the file with every key documented.\n\n",
     );
 
     // `root` first (top-level keys), then named sections alphabetically.

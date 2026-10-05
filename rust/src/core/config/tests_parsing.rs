@@ -138,12 +138,6 @@ mod simplified_config_tests {
         assert_eq!(policy.knowledge.max_facts, 200);
         assert_eq!(policy.episodic.max_episodes, 500);
     }
-
-    #[test]
-    fn simplified_template_is_valid_toml() {
-        let parsed: Result<toml::Table, _> = toml::from_str(crate::cli::SIMPLIFIED_TEMPLATE);
-        assert!(parsed.is_ok(), "Template must be valid TOML");
-    }
 }
 
 #[cfg(test)]

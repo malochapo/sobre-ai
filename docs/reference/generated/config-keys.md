@@ -2,9 +2,9 @@
 
 <!-- GENERATED FILE — do not edit by hand. Run: `cargo run --example gen_docs --features dev-tools` -->
 
-Source of truth: `rust/src/core/config/schema.rs`.
+Source of truth: `rust/src/core/config/schema/`.
 
-lean-ctx reads one file, `~/.lean-ctx/config.toml`. Below is every recognized key with its type and default.
+sobre reads one file, `~/.config/lean-ctx/config.toml` (the directory follows `$XDG_CONFIG_HOME`, or `$LEAN_CTX_CONFIG_DIR` when set). Below is every recognized key with its type and default. `lean-ctx config init` writes the file with every key documented.
 
 ## Top-level keys
 

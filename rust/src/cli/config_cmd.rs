@@ -1,5 +1,4 @@
 use crate::core::config;
-use crate::core::theme;
 
 pub fn cmd_config(args: &[String]) {
     let cfg = config::Config::load();
@@ -7,23 +6,13 @@ pub fn cmd_config(args: &[String]) {
     if args.is_empty() {
         println!("{}", cfg.show());
         println!(
-            "\nTip: this is the full config. For the few knobs most people touch, run\n     `lean-ctx config show` (high-level summary), or change one with\n     `lean-ctx config set <key> <value>`."
+            "\nChange a key with `lean-ctx config set <key> <value>`; `lean-ctx config init`\nwrites the file with every key documented."
         );
         return;
     }
 
     match args[0].as_str() {
-        "init" | "create" => {
-            let full = args.iter().any(|a| a == "--full");
-            if full {
-                init_full_config();
-            } else {
-                match write_simplified_config() {
-                    Ok(path) => println!("Created simplified config at {path}"),
-                    Err(e) => eprintln!("Error: {e}"),
-                }
-            }
-        }
+        "init" | "create" => init_config(),
         "set" => {
             if args.len() < 3 {
                 eprintln!("Usage: lean-ctx config set <key> <value>");
@@ -32,49 +21,9 @@ pub fn cmd_config(args: &[String]) {
             let key = &args[1];
             let val = &args[2];
 
-            // Special validation hooks for keys that need custom logic beyond
-            // what the schema type system can express. These either hard-fail
-            // early, or normalize the value/key that is actually persisted —
-            // the resolved (write_key, write_val) then flows through the single
-            // governed write path below so the #852 review covers every route.
+            // Upstream URLs are normalized before the single governed write
+            // path below, so the #852 review covers every route.
             let (write_key, write_val): (String, String) = match key.as_str() {
-                "theme" if theme::from_preset(val).is_none() && val != "custom" => {
-                    eprintln!(
-                        "Unknown theme '{val}'. Available: {}",
-                        theme::PRESET_NAMES.join(", ")
-                    );
-                    std::process::exit(1);
-                }
-                "tee_on_error" | "tee_mode" => {
-                    let normalized = match val.as_str() {
-                        "true" => "failures",
-                        "false" => "never",
-                        other => other,
-                    };
-                    ("tee_mode".to_string(), normalized.to_string())
-                }
-                "project_root" => {
-                    let path = std::path::Path::new(val.as_str());
-                    if !path.exists() || !path.is_dir() {
-                        eprintln!("Error: '{val}' is not an existing directory.");
-                        std::process::exit(1);
-                    }
-                    (key.clone(), val.clone())
-                }
-                "embedding.model"
-                    if crate::core::embeddings::model_registry::EmbeddingModel::from_str_name(
-                        val,
-                    )
-                    .is_none() =>
-                {
-                    eprintln!(
-                        "Unknown embedding model '{val}'. Available: minilm (default), \
-                         nomic — or hf:org/repo[@revision] for any HuggingFace repo with an \
-                         ONNX export, e.g. hf:jinaai/jina-embeddings-v2-base-code for code \
-                         (see docs/guides/custom-embeddings.md)."
-                    );
-                    std::process::exit(1);
-                }
                 k if k.starts_with("proxy.upstreams.") => {
                     let effective = normalize_optional_upstream(val).unwrap_or_default();
                     (key.clone(), effective)
@@ -156,32 +105,32 @@ fn write_config_key(key: &str, value: &str, display_key: &str, display_val: &str
     }
 }
 
-/// Resolves the [`config::Config`] that `config init --full` should persist.
+/// Resolves the [`config::Config`] that `config init` should persist.
 ///
 /// `existing_raw` is the verbatim content of the current `config.toml`. When it holds a non-empty, parseable document we
 /// return its deserialized form so every user value is retained; an empty/absent
 /// file yields defaults, and an unparseable one is surfaced as an error so the
 /// caller can refuse to clobber it.
 ///
-/// This is the regression guard for #443: `config init --full` previously wrote
+/// This is the regression guard for #443: `config init` once wrote
 /// `Config::default()`, and `Config::save()` overwrites any key present in both
 /// the incoming document and the file (see `config_io::merge_table`), which
 /// silently reset customized values like `max_ram_percent` or `compression_level`.
-fn config_for_full_init(existing_raw: Option<&str>) -> Result<config::Config, String> {
+fn config_for_init(existing_raw: Option<&str>) -> Result<config::Config, String> {
     match existing_raw.map(str::trim).filter(|raw| !raw.is_empty()) {
         Some(raw) => toml::from_str::<config::Config>(raw).map_err(|e| e.to_string()),
         None => Ok(config::Config::default()),
     }
 }
 
-/// Implements `config init --full`: (re)writes the global config as a fully
+/// Implements `config init`: (re)writes the global config as a fully
 /// annotated reference document, seeded with the user's existing values (#443).
 ///
 /// Unlike `save()` (which keeps the file minimal), this emits every key with its
 /// documentation. The body is a verbatim serialization of the resolved config,
 /// so no customized value is ever lost; an unparseable existing file is refused
-/// upstream by [`config_for_full_init`] rather than clobbered.
-fn init_full_config() {
+/// upstream by [`config_for_init`] rather than clobbered.
+fn init_config() {
     let Some(path) = config::Config::path() else {
         eprintln!("Error: cannot determine the config path");
         return;
@@ -189,7 +138,7 @@ fn init_full_config() {
 
     let existing_raw = std::fs::read_to_string(&path).ok();
 
-    let cfg = match config_for_full_init(existing_raw.as_deref()) {
+    let cfg = match config_for_init(existing_raw.as_deref()) {
         Ok(cfg) => cfg,
         Err(e) => {
             eprintln!(
@@ -204,7 +153,7 @@ fn init_full_config() {
     let rendered = config::render_annotated_config(&cfg, &schema);
 
     match crate::config_io::write_atomic_with_backup(&path, &rendered) {
-        Ok(()) => println!("Created full annotated config at {}", path.display()),
+        Ok(()) => println!("Wrote annotated config at {}", path.display()),
         Err(e) => eprintln!("Error: {e}"),
     }
 }
@@ -993,29 +942,6 @@ fn try_read_project_root_from_graph(path: &std::path::Path) -> Option<String> {
     val.get("project_root")?.as_str().map(String::from)
 }
 
-pub const SIMPLIFIED_TEMPLATE: &str = r#"# lean-ctx — Simplified Configuration
-# Full reference: https://leanctx.com/docs/configuration
-# For all settings: lean-ctx config init --full
-
-# Compression intensity, 0.0 (none) to 1.0 (densest). Leave unset for
-# sobre's adaptive defaults with the "lite" prose style.
-# compression_level = 0.3
-
-# ── Proxy ────────────────────────────────────────────────────────────
-# [proxy]
-# enabled = false
-# port = 4444
-"#;
-
-fn write_simplified_config() -> Result<String, String> {
-    let path = config::Config::path().ok_or_else(|| "Cannot determine config path".to_string())?;
-    if let Some(dir) = path.parent() {
-        std::fs::create_dir_all(dir).map_err(|e| format!("{e}"))?;
-    }
-    std::fs::write(&path, SIMPLIFIED_TEMPLATE).map_err(|e| format!("{e}"))?;
-    Ok(path.to_string_lossy().to_string())
-}
-
 fn cmd_show_effective() {
     let cfg = config::Config::load();
     let compression = config::CompressionLevel::effective(&cfg);
@@ -1148,9 +1074,9 @@ mod tests {
     }
 
     #[test]
-    fn full_init_uses_existing_values_not_defaults() {
+    fn init_uses_existing_values_not_defaults() {
         let existing = "shell_timeout_secs = 90\ncompression_level = 0.5\n";
-        let cfg = config_for_full_init(Some(existing)).expect("parse existing");
+        let cfg = config_for_init(Some(existing)).expect("parse existing");
         assert_eq!(
             cfg.shell_timeout_secs,
             Some(90),
@@ -1160,8 +1086,8 @@ mod tests {
     }
 
     #[test]
-    fn full_init_falls_back_to_defaults_on_fresh_install() {
-        let cfg = config_for_full_init(None).expect("default");
+    fn init_falls_back_to_defaults_on_fresh_install() {
+        let cfg = config_for_init(None).expect("default");
         assert_eq!(
             cfg.shell_timeout_secs,
             config::Config::default().shell_timeout_secs
@@ -1170,7 +1096,7 @@ mod tests {
             cfg.compression_level,
             config::Config::default().compression_level
         );
-        let cfg_empty = config_for_full_init(Some("   \n")).expect("blank -> default");
+        let cfg_empty = config_for_init(Some("   \n")).expect("blank -> default");
         assert_eq!(
             cfg_empty.shell_timeout_secs,
             config::Config::default().shell_timeout_secs
@@ -1178,19 +1104,19 @@ mod tests {
     }
 
     #[test]
-    fn full_init_refuses_unparseable_config() {
-        assert!(config_for_full_init(Some("shell_timeout_secs = = =")).is_err());
+    fn init_refuses_unparseable_config() {
+        assert!(config_for_init(Some("shell_timeout_secs = = =")).is_err());
     }
 
-    // #443 end-to-end: `config init --full` must not reset a customized value.
+    // #443 end-to-end: `config init` must not reset a customized value.
     #[test]
-    fn full_init_preserves_value_through_save_merge() {
+    fn init_preserves_value_through_save_merge() {
         let existing = "shell_timeout_secs = 90\n";
-        let cfg = config_for_full_init(Some(existing)).unwrap();
+        let cfg = config_for_init(Some(existing)).unwrap();
         assert_eq!(
             merged_shell_timeout(&cfg, existing),
             Some(90),
-            "user value must survive `config init --full`"
+            "user value must survive `config init`"
         );
     }
 }

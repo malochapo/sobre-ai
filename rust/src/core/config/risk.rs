@@ -17,36 +17,15 @@ pub struct ConfigRisk {
     pub note: &'static str,
 }
 
-/// Classifies a fully-qualified config key (dot-path, e.g. `secret_detection.enabled`).
+/// Classifies a fully-qualified config key (dot-path, e.g. `proxy.upstreams.openai`).
 ///
 /// Returns a [`ConfigRisk`] for keys whose change is security- or
 /// egress-relevant; `None` for everything else.
 #[must_use]
 pub fn classify(key: &str) -> Option<ConfigRisk> {
     let note = match key {
-        "path_jail" => {
-            "Path jail confines agent file access to the project root. Disabling it lets tools read and write any path on this machine."
-        }
-        "shell_security" => {
-            "Shell gating hard-blocks the constructs that hide a command from every check (eval, exec, source, command substitution at command position). Lowering it (warn/off) removes even that."
-        }
-        "sandbox_level" => {
-            "Sandbox level governs how strictly tool execution is contained. Lowering it reduces isolation."
-        }
-        "secret_detection.enabled" => {
-            "Secret detection masks API keys and .env values before they reach the LLM. Disabling it can leak credentials to the provider."
-        }
-        "secret_detection.redact" => {
-            "Secret redaction masks detected secrets. Disabling it sends them verbatim to the provider."
-        }
-        "boundary_policy" => {
-            "Boundary policy controls whether gotchas learned in other projects are loaded into this one."
-        }
-        "proxy_require_token" => {
-            "Proxy token policy controls whether provider API keys can authenticate local proxy requests without the lean-ctx Bearer token."
-        }
-        "proxy_loopback_open" => {
-            "Disables ALL proxy authentication on loopback binds. Any local process can access the proxy without a token."
+        "allow_paths" => {
+            "allow_paths widens the path jail: tools may read and write these paths too, and [\"/\"] opens it entirely."
         }
         key if key.starts_with("proxy.upstreams.") => {
             "Redirects provider traffic to a custom upstream — every request and API key for this provider will flow through it."
@@ -70,14 +49,7 @@ mod tests {
     #[test]
     fn security_keys_are_consequential() {
         for key in [
-            "path_jail",
-            "shell_security",
-            "sandbox_level",
-            "secret_detection.enabled",
-            "secret_detection.redact",
-            "boundary_policy",
-            "proxy_require_token",
-            "proxy_loopback_open",
+            "allow_paths",
             "proxy.upstreams.openai",
             "proxy.upstreams.anthropic",
             "proxy.upstreams.gemini",
