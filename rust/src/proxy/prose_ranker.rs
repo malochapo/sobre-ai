@@ -19,7 +19,6 @@ use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 use std::sync::Mutex;
 
-use crate::core::config::{Config, ProseRanker};
 use crate::core::extractive::{self, RankMode};
 use crate::core::web::distill::squeeze_prose;
 
@@ -31,18 +30,11 @@ static MEMO: Mutex<Option<HashMap<u64, String>>> = Mutex::new(None);
 
 /// Cache-safe prose squeeze for the wire. Uses extractive **centrality** ranking
 /// (query-free — never drops a sentence for being "off-topic", so it is safe on
-/// system/user instructions) when the engine is available and the configured
-/// [`ProseRanker`] allows it, else the deterministic truncating squeeze. The
-/// result is memoized per `(content, budget)` so it is byte-stable across turns.
+/// system/user instructions) when the engine is available, else the
+/// deterministic truncating squeeze. The result is memoized per
+/// `(content, budget)` so it is byte-stable across turns.
 #[must_use]
-pub fn squeeze(content: &str, budget: usize) -> String {
-    let ranker = Config::load().proxy.resolved_prose_ranker();
-    // Truncate mode never touches the engine and is already deterministic, so it
-    // needs no memo — keep that path allocation-light.
-    if ranker == ProseRanker::Truncate {
-        return squeeze_prose(content, budget);
-    }
-
+pub(crate) fn squeeze(content: &str, budget: usize) -> String {
     let key = memo_key(content, budget);
     if let Some(hit) = memo_get(key) {
         return hit;

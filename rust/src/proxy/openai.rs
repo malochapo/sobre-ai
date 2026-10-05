@@ -9,10 +9,8 @@ use serde_json::Value;
 use super::ProxyState;
 use super::forward;
 use super::tool_kind::{self, ToolResultKind};
-use super::{cache_safety, prose};
-use crate::core::config::{HistoryMode, ProseRole};
 
-pub async fn handler(
+pub(crate) async fn handler(
     State(state): State<ProxyState>,
     req: Request<Body>,
 ) -> Result<Response, StatusCode> {
@@ -36,61 +34,14 @@ pub(super) fn compress_request_body(
     let mut doc = parsed;
     let mut modified = false;
 
-    // Opt-in per-role prose aggressiveness (#710); both default `None` → no-op.
     let cfg = crate::core::config::Config::load();
-    let system_aggr = cfg.proxy.resolved_role_aggressiveness(ProseRole::System);
-    let user_aggr = cfg.proxy.resolved_role_aggressiveness(ProseRole::User);
-    let live_compress = cfg.proxy.live_compresses();
-    let mode = cfg.proxy.resolved_history_mode();
-    // #895 Track B: output-savings holdout arm, from the pristine body (before any
-    // mutation below) so it matches the arm the response meter records. Control
-    // conversations skip output-shaping but are still metered. Default 0 → Treatment.
-    let arm = super::holdout::assign(
-        &super::holdout::openai_chat_key(&doc),
-        cfg.proxy.output_holdout_fraction(),
-    );
-    // #493: in-band CCR expansion (opt-in). Splice any <lc_expand:HASH> the model
-    // echoed back into the verbatim original from the local tee store. A strict
-    // no-op when no marker is present (byte-identical body → cache-safe). Runs
-    // before the meter-only short-circuit so an explicit expand request is
-    // honored even when the proxy is otherwise byte-passthrough.
-    if cfg.proxy.ccr_inband_enabled() {
-        modified |= super::ccr::splice_inband_in_place(&mut doc);
-    }
-    // #834: cache-safe cross-provider effort control. Default off → no-op. The
-    // value is a constant, so it never perturbs the prompt-cache prefix; it sets
-    // `reasoning_effort` only on reasoning models and never overrides a
-    // client-set value.
-    if arm == super::holdout::Arm::Treatment {
-        if let Some(effort) = cfg.proxy.resolved_effort() {
-            modified |= super::effort::apply_openai_chat(&mut doc, effort);
-        }
-        // #895: cache-safe wire verbosity steer; control arm skips it (measured).
-        if cfg.proxy.verbosity_steer_enabled() {
-            modified |= super::verbosity::apply_openai_chat(&mut doc);
-        }
-    }
-    // Meter-only (#481): nothing rewrites the body, so skip all work and let
-    // forward + usage metering run against the byte-unchanged request. A pending
-    // in-band splice (`modified`) opts out: the body did change this turn.
-    if !live_compress
-        && mode == HistoryMode::Off
-        && system_aggr.is_none()
-        && user_aggr.is_none()
-        && !modified
-    {
-        let out = serde_json::to_vec(&doc).unwrap_or_default();
-        return (out, original_size, original_size);
-    }
-    let mut prose_segments: u64 = 0;
 
     if let Some(messages) = doc.get_mut("messages").and_then(|m| m.as_array_mut()) {
         let tool_names = tool_kind::openai_tool_names(messages);
 
         // OpenAI's automatic prompt caching is prefix-based like Anthropic's,
-        // so history is pruned at the same frozen, cache-aware boundary. `mode`
-        // resolved above.
-        let boundary = super::history_prune::prune_boundary(mode, messages.len());
+        // so history is pruned at the same frozen, cache-aware boundary.
+        let boundary = super::history_prune::prune_boundary(messages.len());
         // Mirror the Anthropic guard: never rewrite content behind a client
         // `cache_control` breakpoint (#448). OpenAI requests carry none, so this
         // resolves to 0 and pruning is byte-for-byte unchanged — but the code
@@ -112,8 +63,8 @@ pub(super) fn compress_request_body(
                 .map(String::as_str);
             let kind = name.map_or(ToolResultKind::Other, tool_kind::classify_tool_name);
 
-            // #481: skip live compression when globally off or tool excluded.
-            if !live_compress || name.is_some_and(|n| cfg.proxy.is_tool_live_compress_excluded(n)) {
+            // #481: skip live compression when the tool is excluded.
+            if name.is_some_and(|n| cfg.proxy.is_tool_live_compress_excluded(n)) {
                 continue;
             }
             if let Some(mut content) = msg
@@ -125,53 +76,16 @@ pub(super) fn compress_request_body(
                 modified = true;
             }
         }
-
-        // Frozen-region prose: system anchors (deterministic rewrite keeps the
-        // auto-cached prefix byte-stable, so safe at any position outside the
-        // client-cached prefix) and user turns in `[cached, boundary)`. The
-        // `assistant` and `tool` roles are never touched (passthrough). Both
-        // knobs default off, so this is inert unless an operator opts in.
-        if system_aggr.is_some() || user_aggr.is_some() {
-            for (i, msg) in messages.iter_mut().enumerate() {
-                if i < cached {
-                    continue;
-                }
-                let role = msg.get("role").and_then(|r| r.as_str()).unwrap_or("");
-                let aggr = match role {
-                    "system" | "developer" => system_aggr,
-                    "user" if i < boundary => user_aggr,
-                    _ => None,
-                };
-                if let Some(a) = aggr {
-                    prose_segments += u64::from(prose::compress_message_content(msg, a));
-                }
-            }
-        }
     }
-
-    if prose_segments > 0 {
-        modified = true;
-    }
-    cache_safety::record(prose_segments, true);
 
     // Ask OpenAI to append a final usage chunk so the proxy can meter real
     // spend. Not counted as compression (it slightly grows the body), so it
     // never inflates the savings figure.
-    maybe_inject_usage_reporting(&mut doc);
+    inject_usage_reporting(&mut doc);
 
     let out = serde_json::to_vec(&doc).unwrap_or_default();
     let compressed_size = if modified { out.len() } else { original_size };
     (out, original_size, compressed_size)
-}
-
-/// Config-gated wrapper around [`inject_usage_reporting`].
-fn maybe_inject_usage_reporting(doc: &mut Value) {
-    if crate::core::config::Config::load()
-        .proxy
-        .meters_openai_usage()
-    {
-        inject_usage_reporting(doc);
-    }
 }
 
 /// Injects `stream_options.include_usage = true` into a streamed Chat

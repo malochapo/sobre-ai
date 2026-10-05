@@ -14,7 +14,7 @@ use serde_json::Value;
 
 /// What kind of tool produced a `tool_result`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ToolResultKind {
+pub(crate) enum ToolResultKind {
     /// A file/source read — must reach the model intact (it is what gets edited).
     FileRead,
     /// Shell/command output — safe to run through the pattern compressors.
@@ -29,7 +29,7 @@ pub enum ToolResultKind {
 ///
 /// Matching is case-insensitive and substring-based so vendor prefixes
 /// (`mcp__fs__read_file`, `functions.read`) and casing variants are covered.
-pub fn classify_tool_name(name: &str) -> ToolResultKind {
+pub(crate) fn classify_tool_name(name: &str) -> ToolResultKind {
     let n = name.to_ascii_lowercase();
 
     // Order matters: a "read_file" must not be caught by a generic "file".
@@ -124,7 +124,7 @@ pub fn classify_tool_name(name: &str) -> ToolResultKind {
 /// Builds a `tool_use_id → tool_name` map from Anthropic `messages`.
 ///
 /// Scans every assistant content block of `type:"tool_use"`.
-pub fn anthropic_tool_names(messages: &[Value]) -> HashMap<String, String> {
+pub(crate) fn anthropic_tool_names(messages: &[Value]) -> HashMap<String, String> {
     let mut map = HashMap::new();
     for msg in messages {
         let Some(blocks) = msg.get("content").and_then(|c| c.as_array()) else {
@@ -147,7 +147,7 @@ pub fn anthropic_tool_names(messages: &[Value]) -> HashMap<String, String> {
 
 /// Builds a `tool_call_id → function_name` map from OpenAI Chat Completions
 /// `messages` (assistant `tool_calls[]`).
-pub fn openai_tool_names(messages: &[Value]) -> HashMap<String, String> {
+pub(crate) fn openai_tool_names(messages: &[Value]) -> HashMap<String, String> {
     let mut map = HashMap::new();
     for msg in messages {
         let Some(calls) = msg.get("tool_calls").and_then(|c| c.as_array()) else {
@@ -169,7 +169,7 @@ pub fn openai_tool_names(messages: &[Value]) -> HashMap<String, String> {
 
 /// Builds a `call_id → name` map from OpenAI Responses `input` items
 /// (`type:"function_call"`).
-pub fn responses_tool_names(input: &[Value]) -> HashMap<String, String> {
+pub(crate) fn responses_tool_names(input: &[Value]) -> HashMap<String, String> {
     let mut map = HashMap::new();
     for item in input {
         if item.get("type").and_then(|t| t.as_str()) != Some("function_call") {
@@ -191,7 +191,7 @@ pub fn responses_tool_names(input: &[Value]) -> HashMap<String, String> {
 /// File reads are always protected; unknown tools are protected only when the
 /// content heuristically looks like source code. Shell/search output is never
 /// protected here — it flows through the normal pattern compressors.
-pub fn should_protect(kind: ToolResultKind, content: &str) -> bool {
+pub(crate) fn should_protect(kind: ToolResultKind, content: &str) -> bool {
     match kind {
         ToolResultKind::FileRead => true,
         ToolResultKind::Other => looks_like_source_code(content),
@@ -213,7 +213,7 @@ pub fn should_protect(kind: ToolResultKind, content: &str) -> bool {
 /// The fix: comment lines are *neutral* (never dilute the ratio) and top-level
 /// call/closer shapes count as code even at column 0. The shell-signal veto is
 /// untouched, so genuine logs and build output are still compressed.
-pub fn looks_like_source_code(content: &str) -> bool {
+pub(crate) fn looks_like_source_code(content: &str) -> bool {
     let mut code_signals = 0usize;
     let mut shell_signals = 0usize;
     let mut considered = 0usize;

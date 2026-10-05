@@ -460,22 +460,16 @@ fn exec_direct(args: &[String]) -> i32 {
 ///
 /// Warn-only when a human runs `lean-ctx -c` at an interactive terminal (they
 /// can run the command without lean-ctx anyway, so blocking adds friction, not
-/// a boundary). `shell_security = warn` in config downgrades the gate itself.
+/// a boundary).
 fn gate_must_enforce() -> bool {
     let hook_child = crate::core::runtime_flags::hook_child_enabled();
-    gate_must_enforce_inner(hook_child, false, io::stderr().is_terminal())
+    gate_must_enforce_inner(hook_child, io::stderr().is_terminal())
 }
 
 /// Pure decision core of [`gate_must_enforce`] (unit-testable without
 /// process-global env/TTY state).
-fn gate_must_enforce_inner(hook_child: bool, warn_only: bool, stderr_is_tty: bool) -> bool {
-    if hook_child {
-        return true;
-    }
-    if warn_only {
-        return false;
-    }
-    !stderr_is_tty
+fn gate_must_enforce_inner(hook_child: bool, stderr_is_tty: bool) -> bool {
+    hook_child || !stderr_is_tty
 }
 
 /// True when this process's stdout is a **regular file** — i.e. the caller
@@ -528,8 +522,7 @@ fn gate_cli_command(command: &str) -> Option<i32> {
             eprintln!("{msg}");
             eprintln!(
                 "lean-ctx: blocked by the shell gate. Every command is allowed \
-                 except the constructs that hide the real one from inspection. \
-                 Downgrade to a warning with shell_security = warn."
+                 except the constructs that hide the real one from inspection."
             );
             return Some(126);
         }
@@ -1259,26 +1252,19 @@ mod exec_tests {
     #[test]
     fn gate_enforces_in_hook_child_mode() {
         // Hook-child wins over everything, even an interactive TTY.
-        assert!(super::gate_must_enforce_inner(true, false, true));
-        assert!(super::gate_must_enforce_inner(true, true, true));
+        assert!(super::gate_must_enforce_inner(true, true));
+        assert!(super::gate_must_enforce_inner(true, false));
     }
 
     #[test]
     fn gate_enforces_for_non_interactive_callers() {
         // Agent/script invocation: stderr is a pipe → enforce.
-        assert!(super::gate_must_enforce_inner(false, false, false));
+        assert!(super::gate_must_enforce_inner(false, false));
     }
 
     #[test]
     fn gate_warns_for_interactive_humans() {
         // Human at a TTY → warn-only (they can bypass lean-ctx anyway).
-        assert!(!super::gate_must_enforce_inner(false, false, true));
-    }
-
-    #[test]
-    fn gate_warn_only_opt_out_downgrades_non_interactive() {
-        // Warn-only opt-out (but never in hook-child mode).
-        assert!(!super::gate_must_enforce_inner(false, true, false));
-        assert!(super::gate_must_enforce_inner(true, true, false));
+        assert!(!super::gate_must_enforce_inner(false, true));
     }
 }

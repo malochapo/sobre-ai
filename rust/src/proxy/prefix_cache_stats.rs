@@ -19,42 +19,42 @@ static REPLAY_MISSES: AtomicU64 = AtomicU64::new(0);
 static STICKY_INJECTIONS: AtomicU64 = AtomicU64::new(0);
 static HEADROOM_COMPAT_REQUESTS: AtomicU64 = AtomicU64::new(0);
 
-pub fn record_hit() {
+pub(crate) fn record_hit() {
     PREFIX_HITS.fetch_add(1, Ordering::Relaxed);
 }
 
-pub fn record_miss() {
+pub(crate) fn record_miss() {
     PREFIX_MISSES.fetch_add(1, Ordering::Relaxed);
 }
 
-pub fn record_frozen_count(count: u64) {
+pub(crate) fn record_frozen_count(count: u64) {
     FROZEN_MSG_SUM.fetch_add(count, Ordering::Relaxed);
     FROZEN_MSG_COUNT.fetch_add(1, Ordering::Relaxed);
 }
 
-pub fn record_delta(original: u64, compressed: u64) {
+pub(crate) fn record_delta(original: u64, compressed: u64) {
     DELTA_BYTES_ORIGINAL.fetch_add(original, Ordering::Relaxed);
     DELTA_BYTES_COMPRESSED.fetch_add(compressed, Ordering::Relaxed);
 }
 
-pub fn record_replay_hit() {
+pub(crate) fn record_replay_hit() {
     REPLAY_HITS.fetch_add(1, Ordering::Relaxed);
 }
 
-pub fn record_replay_miss() {
+pub(crate) fn record_replay_miss() {
     REPLAY_MISSES.fetch_add(1, Ordering::Relaxed);
 }
 
-pub fn record_sticky_injection() {
+pub(crate) fn record_sticky_injection() {
     STICKY_INJECTIONS.fetch_add(1, Ordering::Relaxed);
 }
 
-pub fn record_headroom_compat() {
+pub(crate) fn record_headroom_compat() {
     HEADROOM_COMPAT_REQUESTS.fetch_add(1, Ordering::Relaxed);
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct PrefixCacheStats {
+pub(crate) struct PrefixCacheStats {
     pub hits: u64,
     pub misses: u64,
     pub hit_rate: f64,
@@ -76,7 +76,7 @@ fn alignment_score(volatile_detected: u64, requests_scanned: u64) -> u64 {
 }
 
 #[must_use]
-pub fn snapshot() -> PrefixCacheStats {
+pub(crate) fn snapshot() -> PrefixCacheStats {
     let hits = PREFIX_HITS.load(Ordering::Relaxed);
     let misses = PREFIX_MISSES.load(Ordering::Relaxed);
     let total = hits + misses;

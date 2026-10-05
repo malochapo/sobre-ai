@@ -49,37 +49,8 @@ pub(crate) fn wire_context(
         // bytes/4 — the same estimation basis the proxy stats use throughout.
         uncompressed_input_tokens: original_size as u64 / 4,
         is_local,
-        routed_from: None,    // populated by the routing hook (wave 3)
-        counterfactual: None, // populated after the probe spawn (#701)
+        routed_from: None, // populated by the routing hook (wave 3)
     })
-}
-
-/// Output-savings arm (#895) for a request body, or `None` when no holdout is
-/// active. Keyed per provider; OpenAI's Chat vs Responses bodies are
-/// distinguished by the request path so each uses the matching cohort key.
-pub(crate) fn cohort_arm(
-    parsed: &serde_json::Value,
-    provider_label: &str,
-    default_path: &str,
-) -> Option<crate::proxy::holdout::Arm> {
-    let holdout = crate::core::config::Config::load()
-        .proxy
-        .output_holdout_fraction();
-    if holdout <= 0.0 {
-        return None;
-    }
-    let key = match provider_label {
-        "Anthropic" => crate::proxy::holdout::anthropic_key(parsed),
-        "OpenAI" => {
-            if default_path.contains("responses") {
-                crate::proxy::holdout::openai_responses_key(parsed)
-            } else {
-                crate::proxy::holdout::openai_chat_key(parsed)
-            }
-        }
-        _ => crate::proxy::holdout::google_key(parsed),
-    };
-    Some(crate::proxy::holdout::assign(&key, holdout))
 }
 
 pub(crate) struct PreparedRequestBody {
@@ -144,10 +115,7 @@ pub(crate) fn prepare_request_body(
         .and_then(|r| r.upstream_base.as_deref())
         .unwrap_or(default_upstream_base);
     let wants_billed_cost =
-        crate::proxy::usage_accounting::upstream_is_openrouter(effective_upstream)
-            && crate::core::config::Config::load()
-                .proxy
-                .meters_openai_usage();
+        crate::proxy::usage_accounting::upstream_is_openrouter(effective_upstream);
     let xlat_route = route.as_ref().is_some_and(|r| r.xlat);
     // `usage.include` is a Chat-Completions-only parameter: gate on the shape
     // AND the call path so a Responses-API body never carries it.

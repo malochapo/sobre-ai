@@ -45,7 +45,7 @@ use super::compress::compress_tool_result_gateway;
 const TOKENIZER: &str = "o200k_base";
 
 #[derive(Debug, Deserialize)]
-pub struct CompressRequest {
+pub(crate) struct CompressRequest {
     pub messages: Vec<Value>,
     /// Optional, echoed into `stats.model`. Routing/pricing hint for SDK clients;
     /// the deterministic funnel itself is model-agnostic.
@@ -54,7 +54,7 @@ pub struct CompressRequest {
 }
 
 #[derive(Debug, Serialize)]
-pub struct CompressStats {
+pub(crate) struct CompressStats {
     pub original_tokens: usize,
     pub compressed_tokens: usize,
     pub saved_tokens: usize,
@@ -66,7 +66,7 @@ pub struct CompressStats {
 }
 
 #[derive(Debug, Serialize)]
-pub struct CompressResponse {
+pub(crate) struct CompressResponse {
     pub messages: Vec<Value>,
     pub stats: CompressStats,
     /// LiteLLM-guardrail telemetry aliases (#700): duplicates of
@@ -87,13 +87,13 @@ struct Totals {
 }
 
 /// Axum handler. Malformed bodies are rejected by the `Json` extractor (400).
-pub async fn handler(Json(req): Json<CompressRequest>) -> impl IntoResponse {
+pub(crate) async fn handler(Json(req): Json<CompressRequest>) -> impl IntoResponse {
     (StatusCode::OK, Json(compress_messages(req)))
 }
 
 /// Pure, deterministic core: rewrites every text payload in `messages` and
 /// reports aggregate token savings. Same input → same output bytes (#498).
-pub fn compress_messages(req: CompressRequest) -> CompressResponse {
+pub(crate) fn compress_messages(req: CompressRequest) -> CompressResponse {
     let mut messages = req.messages;
     let mut totals = Totals::default();
     for msg in &mut messages {

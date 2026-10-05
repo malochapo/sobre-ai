@@ -232,10 +232,6 @@ pub fn run() {
                 super::cmd_config(&rest);
                 return;
             }
-            "security" => {
-                super::cmd_security(&rest);
-                return;
-            }
             "introspect" => {
                 super::cmd_introspect(&rest);
                 return;

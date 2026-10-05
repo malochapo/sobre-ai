@@ -9,8 +9,6 @@ use serde_json::Value;
 use super::ProxyState;
 use super::forward;
 use super::tool_kind::{self, ToolResultKind};
-use super::{cache_safety, prose};
-use crate::core::config::{HistoryMode, ProseRole};
 
 /// Proxy handler for OpenAI's Responses API (`POST /v1/responses`).
 ///
@@ -25,7 +23,7 @@ use crate::core::config::{HistoryMode, ProseRole};
 /// they carry no `input` array, so `compress_request_body` is a no-op for them.
 ///
 /// Handles `POST /v1/responses` (and the bare `/responses`) over HTTP/SSE.
-pub async fn handler(
+pub(crate) async fn handler(
     State(state): State<ProxyState>,
     req: Request<Body>,
 ) -> Result<Response, StatusCode> {
@@ -48,7 +46,7 @@ pub async fn handler(
 /// `response.create` event per turn. Bridging the upgrade here lets the proxy be
 /// a drop-in for Codex without forcing `supports_websockets = false` (#440); the
 /// actual WS↔HTTP/SSE bridging lives in `openai_responses_ws`.
-pub async fn ws_handler(
+pub(crate) async fn ws_handler(
     State(state): State<ProxyState>,
     headers: axum::http::HeaderMap,
     ws: axum::extract::ws::WebSocketUpgrade,
@@ -61,95 +59,16 @@ pub(super) fn compress_request_body(
     original_size: usize,
 ) -> (Vec<u8>, usize, usize) {
     let mut doc = parsed;
-    let cfg = crate::core::config::Config::load();
-    let system_aggr = cfg.proxy.resolved_role_aggressiveness(ProseRole::System);
-    let user_aggr = cfg.proxy.resolved_role_aggressiveness(ProseRole::User);
-    let live_compress = cfg.proxy.live_compresses();
-    let mode = cfg.proxy.resolved_history_mode();
-    // #493: in-band CCR expansion (opt-in). Splice any <lc_expand:HASH> the model
-    // echoed back into the verbatim original from the local tee store. A strict
-    // no-op when no marker is present (byte-identical body → cache-safe). Runs
-    // before the meter-only short-circuit so an explicit expand request is
-    // honored even when the proxy is otherwise byte-passthrough.
     let mut modified = false;
-    // #895 Track B: output-savings holdout arm, from the pristine body (before any
-    // mutation below) so it matches the arm the response meter records. Control
-    // conversations skip output-shaping but are still metered. Default 0 → Treatment.
-    let arm = super::holdout::assign(
-        &super::holdout::openai_responses_key(&doc),
-        cfg.proxy.output_holdout_fraction(),
-    );
-    if cfg.proxy.ccr_inband_enabled() {
-        modified |= super::ccr::splice_inband_in_place(&mut doc);
-    }
-    // #834: cache-safe cross-provider effort control. Default off → no-op. The
-    // value is a constant, so it never perturbs the prompt-cache prefix; it sets
-    // `reasoning.effort` only on reasoning models and never overrides a
-    // client-set value.
-    if arm == super::holdout::Arm::Treatment {
-        if let Some(effort) = cfg.proxy.resolved_effort() {
-            modified |= super::effort::apply_openai_responses(&mut doc, effort);
-        }
-        // #895: cache-safe wire verbosity steer; control arm skips it (measured).
-        if cfg.proxy.verbosity_steer_enabled() {
-            modified |= super::verbosity::apply_openai_responses(&mut doc);
-        }
-    }
-    // Meter-only (#481): live compression off and history pruning off → forward
-    // the body unchanged while upstream usage metering still runs. A pending
-    // in-band splice (`modified`) opts out: the body did change this turn.
-    if !live_compress
-        && mode == HistoryMode::Off
-        && system_aggr.is_none()
-        && user_aggr.is_none()
-        && !modified
-    {
-        let out = serde_json::to_vec(&doc).unwrap_or_default();
-        return (out, original_size, original_size);
-    }
-    let mut prose_segments: u64 = 0;
-    if let Some(a) = system_aggr {
-        prose_segments += u64::from(prose::compress_string_field(&mut doc, "instructions", a));
-    }
     // Two-stage, like the Chat Completions path: (1) cache-aware prune of the
     // frozen OLD region — old file reads collapse to re-read stubs, old logs
     // head/tail summarize — then (2) compress whatever recent outputs remain.
     // Stage 1 runs first so a stubbed old output isn't needlessly re-compressed.
     modified |= prune_responses_input(&mut doc);
     modified |= compress_responses_input(&mut doc);
-    if let Some(a) = user_aggr {
-        prose_segments += u64::from(compress_responses_user_prose(&mut doc, mode, a));
-    }
-    if prose_segments > 0 {
-        modified = true;
-    }
-    cache_safety::record(prose_segments, true);
     let out = serde_json::to_vec(&doc).unwrap_or_default();
     let compressed_size = if modified { out.len() } else { original_size };
     (out, original_size, compressed_size)
-}
-
-fn compress_responses_user_prose(doc: &mut Value, mode: HistoryMode, aggressiveness: f64) -> u32 {
-    let Some(input) = doc.get_mut("input").and_then(|i| i.as_array_mut()) else {
-        return 0;
-    };
-    let boundary = super::history_prune::prune_boundary(mode, input.len());
-    if boundary == 0 {
-        return 0;
-    }
-
-    let mut segments = 0;
-    for item in input.iter_mut().take(boundary) {
-        let item_type = item
-            .get("type")
-            .and_then(|t| t.as_str())
-            .unwrap_or("message");
-        let role = item.get("role").and_then(|r| r.as_str());
-        if item_type == "message" && role == Some("user") {
-            segments += prose::compress_message_content(item, aggressiveness);
-        }
-    }
-    segments
 }
 
 /// Cache-aware history pruning for the Responses API.
@@ -167,13 +86,10 @@ fn compress_responses_user_prose(doc: &mut Value, mode: HistoryMode, aggressiven
 ///
 /// Shared with the WebSocket bridge (#440) so Codex/WS turns prune identically.
 pub(super) fn prune_responses_input(doc: &mut Value) -> bool {
-    let mode = crate::core::config::Config::load()
-        .proxy
-        .resolved_history_mode();
     let Some(input) = doc.get_mut("input").and_then(|i| i.as_array_mut()) else {
         return false;
     };
-    let boundary = super::history_prune::prune_boundary(mode, input.len());
+    let boundary = super::history_prune::prune_boundary(input.len());
     if boundary == 0 {
         return false;
     }
@@ -214,12 +130,7 @@ fn prune_output_field(output: &mut Value, kind: ToolResultKind) -> bool {
 /// output text. Cache-aware pruning of the frozen OLD region lives in
 /// [`prune_responses_input`]; this pass compresses whatever recent outputs remain.
 pub(super) fn compress_responses_input(doc: &mut Value) -> bool {
-    // #481: recent-region live compression respects the global toggle. Old-region
-    // pruning stays governed by `history_mode` in `prune_responses_input`.
     let cfg = crate::core::config::Config::load();
-    if !cfg.proxy.live_compresses() {
-        return false;
-    }
     let mut modified = false;
     if let Some(input) = doc.get_mut("input").and_then(|i| i.as_array_mut()) {
         let tool_names = tool_kind::responses_tool_names(input);
@@ -696,10 +607,7 @@ mod tests {
                 );
             }
             prev = items;
-            prev_boundary = crate::proxy::history_prune::prune_boundary(
-                crate::core::config::HistoryMode::CacheAware,
-                len,
-            );
+            prev_boundary = crate::proxy::history_prune::prune_boundary(len);
         }
     }
 

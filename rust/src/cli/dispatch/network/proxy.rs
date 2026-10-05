@@ -74,38 +74,6 @@ fn print_compression_by_upstream(v: &serde_json::Value) {
     }
 }
 
-/// Prints the provider-verified savings line (#701) when counterfactual
-/// metering has covered at least one request. Both sides of the pair were
-/// counted by Anthropic on the same request — receipts, not the bytes/4
-/// estimate above. Silent when the opt-in feature is off or no probe has
-/// answered yet (`verified_savings` is `null`).
-fn print_verified_savings(v: &serde_json::Value) {
-    let Some(vs) = v.get("verified_savings").filter(|x| x.is_object()) else {
-        return;
-    };
-    let saved = vs
-        .get("verified_saved_tokens")
-        .and_then(serde_json::Value::as_i64)
-        .unwrap_or(0);
-    let requests = vs
-        .get("requests")
-        .and_then(serde_json::Value::as_u64)
-        .unwrap_or(0);
-    let counterfactual = vs
-        .get("counterfactual_input_tokens")
-        .and_then(serde_json::Value::as_u64)
-        .unwrap_or(0);
-    #[allow(clippy::cast_precision_loss)]
-    let pct = if counterfactual > 0 {
-        saved as f64 * 100.0 / counterfactual as f64
-    } else {
-        0.0
-    };
-    println!(
-        "  Verified:    {saved} tok saved across {requests} probed req ({pct:.1}% — provider-counted, #701)"
-    );
-}
-
 /// Prints the proxy's live upstreams (from `/status`) and warns when one
 /// differs from what config.toml resolves to — the proxy keeps its last good
 /// value when an edit fails validation (#449).
@@ -288,7 +256,6 @@ pub(crate) fn cmd_proxy(rest: &[String]) {
                                 "  Compression: {}%",
                                 v["compression_ratio_pct"].as_str().unwrap_or("0.0")
                             );
-                            print_verified_savings(&v);
                             print_compression_by_upstream(&v);
                             print_live_upstreams_and_drift(&v, &cfg);
                         }

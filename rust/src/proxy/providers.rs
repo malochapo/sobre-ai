@@ -76,7 +76,7 @@ pub(super) fn is_openai_responses_path(path: &str) -> bool {
         || path.starts_with("/v1/responses/")
 }
 
-pub async fn handler(
+pub(crate) async fn handler(
     State(state): State<ProxyState>,
     Path((id, rest)): Path<(String, String)>,
     mut req: Request<Body>,
@@ -150,16 +150,12 @@ pub async fn handler(
             }
         }
         WireShape::Gemini => {
-            // Gemini carries the model in the URL path, not the body (#840).
-            let model = super::usage::gemini_model_from_path(req.uri().path());
             forward::forward_request(
                 State(state),
                 req,
                 &provider.base_url,
                 "/",
-                move |body, size| {
-                    super::google::compress_request_body(body, size, model.as_deref())
-                },
+                super::google::compress_request_body,
                 "Gemini",
                 &["application/x-ndjson"],
             )

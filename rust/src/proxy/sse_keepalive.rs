@@ -31,7 +31,9 @@ fn keepalive_interval() -> Duration {
 ///
 /// Uses `tokio::time::timeout` per chunk to detect idle periods without
 /// requiring `pin_project` or manual `Pin` implementations.
-pub fn keepalive_stream<S, E>(inner: S) -> impl Stream<Item = Result<Bytes, E>> + Send + Unpin
+pub(crate) fn keepalive_stream<S, E>(
+    inner: S,
+) -> impl Stream<Item = Result<Bytes, E>> + Send + Unpin
 where
     S: Stream<Item = Result<Bytes, E>> + Send + Unpin + 'static,
     E: Send + 'static,

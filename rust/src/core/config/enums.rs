@@ -12,52 +12,6 @@ use super::Config;
 
 static SESSION_DEGRADE_LEVEL: AtomicU8 = AtomicU8::new(0);
 
-/// Unified reasoning-effort level for the cache-safe, cross-provider effort
-/// control (#834). "Off" is represented by `Option::None`, not a variant — the
-/// feature is strictly opt-in.
-///
-/// This type only carries the operator's *intent*; the wire translation into
-/// each provider's native parameter (OpenAI `reasoning(_).effort`, Anthropic
-/// `output_config.effort`) lives in [`crate::proxy::effort`]. The value is a
-/// constant once configured, so it is identical on every request of every
-/// conversation — the provider prompt-cache prefix stays byte-stable (#448/#498)
-/// and only the model's reasoning depth changes. Per-turn effort switching is
-/// deliberately *not* supported: it would invalidate the prompt cache.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum Effort {
-    Minimal,
-    Low,
-    Medium,
-    High,
-}
-
-impl Effort {
-    /// Parse a config/env token. `off`, empty, or anything unrecognized yields
-    /// `None` (feature disabled) so a typo can never silently enable it.
-    #[must_use]
-    pub fn parse(s: &str) -> Option<Self> {
-        match s.trim().to_ascii_lowercase().as_str() {
-            "minimal" => Some(Self::Minimal),
-            "low" => Some(Self::Low),
-            "medium" => Some(Self::Medium),
-            "high" => Some(Self::High),
-            _ => None,
-        }
-    }
-
-    /// Stable lowercase label (config display, logs, `/status`).
-    #[must_use]
-    pub fn label(self) -> &'static str {
-        match self {
-            Self::Minimal => "minimal",
-            Self::Low => "low",
-            Self::Medium => "medium",
-            Self::High => "high",
-        }
-    }
-}
-
 /// Controls when shell output is tee'd to disk for later retrieval.
 ///
 /// Default is `HighCompression` (not `Failures`): a heavily compressed but

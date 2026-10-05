@@ -37,7 +37,7 @@ use crate::core::intent_engine::{self};
 /// A routing decision record, emitted for observability. Deterministic: same
 /// input → same decision (#498).
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct RoutingDecision {
+pub(crate) struct RoutingDecision {
     /// The model the client originally requested.
     pub requested_model: String,
     /// The model after routing (may be identical if no tier matched).
@@ -61,7 +61,7 @@ pub struct RoutingDecision {
 /// Returns `Some(decision)` when routing is active and classification
 /// succeeded. The caller must apply the model swap from the decision.
 /// Returns `None` when routing is inactive or the request is exempt.
-pub fn route(body: &Value, rules: &RoutingRules) -> Option<RoutingDecision> {
+pub(crate) fn route(body: &Value, rules: &RoutingRules) -> Option<RoutingDecision> {
     if !rules.is_active() || rules.tiers.is_empty() {
         return None;
     }

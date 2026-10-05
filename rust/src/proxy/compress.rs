@@ -22,7 +22,7 @@ fn research_prose_cap() -> usize {
 /// 3. Everything else (shell/build/search output) flows through the unified
 ///    `compress_if_beneficial` pipeline. A `$ ...` command hint is extracted so
 ///    the pattern engine gets the same routing as the CLI and MCP paths.
-pub fn compress_tool_result(content: &str, tool_name: Option<&str>) -> String {
+pub(crate) fn compress_tool_result(content: &str, tool_name: Option<&str>) -> String {
     let compressed = compress_inner(content, tool_name);
     attach_ccr(content, compressed, CcrAudience::Local)
 }
@@ -36,7 +36,7 @@ pub fn compress_tool_result(content: &str, tool_name: Option<&str>) -> String {
 /// Any ambient savings footer is stripped *before* the marker is attached:
 /// savings figures belong in the caller's structured `stats` (#498), while the
 /// marker is functional content that must survive as the last line.
-pub fn compress_tool_result_gateway(content: &str, tool_name: Option<&str>) -> String {
+pub(crate) fn compress_tool_result_gateway(content: &str, tool_name: Option<&str>) -> String {
     let compressed = compress_inner(content, tool_name);
     let clean = crate::core::protocol::strip_trailing_savings_footer(&compressed).to_string();
     attach_ccr(content, clean, CcrAudience::Gateway)
@@ -81,16 +81,10 @@ fn attach_ccr(original: &str, result: String, audience: CcrAudience) -> String {
         }
         Some(handle) => {
             sticky_tools::mark_ccr_active(0);
-            match ccr::inband_locator(&handle) {
-                Some(marker) => format!(
-                    "{result}\n[lean-ctx: full original elided to save tokens — echo {marker} \
-                     on your next turn to get the verbatim original spliced back inline]"
-                ),
-                None => format!(
-                    "{result}\n[lean-ctx: full original at {handle} — read it directly (no MCP), or \
-                     ctx_expand(id=\"{handle}\", head=N|search=\"…\"|json_path=\"…\") for a slice]"
-                ),
-            }
+            format!(
+                "{result}\n[lean-ctx: full original at {handle} — read it directly (no MCP), or \
+                 ctx_expand(id=\"{handle}\", head=N|search=\"…\"|json_path=\"…\") for a slice]"
+            )
         }
         None => result,
     }

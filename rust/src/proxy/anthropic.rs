@@ -11,18 +11,7 @@ use super::forward;
 use super::tool_kind::{self, ToolResultKind};
 use super::{cache_safety, prefix_cache_stats, prefix_replay, prose, sticky_tools};
 
-std::thread_local! {
-    /// Set by `forward.rs` when the current request has the `X-Headroom-Compressed` header.
-    static HEADROOM_REQUEST: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
-}
-
-/// Called from `forward.rs` to signal that this request was pre-compressed by Headroom.
-pub(super) fn set_headroom_request(val: bool) {
-    HEADROOM_REQUEST.set(val);
-}
-use crate::core::config::{HistoryMode, ProseRole};
-
-pub async fn handler(
+pub(crate) async fn handler(
     State(state): State<ProxyState>,
     req: Request<Body>,
 ) -> Result<Response, StatusCode> {
@@ -46,115 +35,19 @@ pub(super) fn compress_request_body(
     let mut doc = parsed;
     let mut modified = false;
 
-    // Opt-in per-role prose aggressiveness (#710). Both default to `None`, in
-    // which case nothing below fires and the body is byte-for-byte unchanged.
     let cfg = crate::core::config::Config::load();
-    let config_headroom = cfg.proxy.is_headroom_compat();
-    if config_headroom {
-        prefix_cache_stats::record_headroom_compat();
-    }
-    // Per-request Headroom detection: if this specific request carries the
-    // X-Headroom-Compressed header, treat it as headroom-compat even without
-    // the global config flag. The header is checked in forward.rs and the
-    // result is threaded through via a thread-local set by the caller.
-    let _headroom_compat = config_headroom || HEADROOM_REQUEST.get();
-    let system_aggr = cfg.proxy.resolved_role_aggressiveness(ProseRole::System);
-    let user_aggr = cfg.proxy.resolved_role_aggressiveness(ProseRole::User);
-    let live_compress = cfg.proxy.live_compresses();
-    let mode = cfg.proxy.resolved_history_mode();
-    // #939: active prompt-cache breakpoint injection (opt-in, Anthropic-only).
-    // Resolved up front so the meter-only short-circuit below does not skip the
-    // one mutation this mode performs — its whole point is to add a cache anchor
-    // to an otherwise byte-passthrough request.
-    let inject_breakpoint = cfg.proxy.cache_breakpoint_enabled();
-    // #940: cache-aligner volatile-field telemetry (default-on, measurement-only).
-    // Also resolved up front so a meter-only proxy still reaches the scan slot —
-    // it never mutates the body, it only records how much cache the system prompt
-    // leaks, so it ships on for every proxy (#986 premium defaults).
-    let align_volatile = cfg.proxy.cache_aligner_enabled();
-    // #974: active cache-aligner relocate (opt-in, Anthropic-only). Resolved up
-    // front like the telemetry above so a meter-only proxy still reaches the
-    // relocate slot — this is the one mutation that moves volatile fields out of
-    // the cacheable prefix.
-    let relocate_volatile = cfg.proxy.cache_align_relocate_enabled();
-    // #986: cache-economics (default-on). Resolved up front so the meter-only
-    // short-circuit below still reaches the miss-attribution slot — that
-    // telemetry only reads the cacheable prefix, it never mutates the body, and
-    // the paired net-cost gate only makes the cold-prefix repack more
-    // conservative, so both halves ship on for every proxy (#986 premium
-    // defaults).
-    let cache_economics = cfg.proxy.cache_policy_enabled();
-    // #895 Track B: output-savings holdout arm, from the pristine body (before any
-    // mutation below) so it matches the arm the response meter records. Control
-    // conversations skip output-shaping (effort + verbosity steer) but are still
-    // metered. Default holdout=0 → always Treatment (no behaviour change).
-    let arm = super::holdout::assign(
-        &super::holdout::anthropic_key(&doc),
-        cfg.proxy.output_holdout_fraction(),
-    );
-    // #493: in-band CCR expansion (opt-in). Splice any <lc_expand:HASH> the model
-    // echoed back into the verbatim original from the local tee store. A strict
-    // no-op when no marker is present (byte-identical body → cache-safe). Runs
-    // before the meter-only short-circuit so an explicit expand request is
-    // honored even when the proxy is otherwise byte-passthrough.
-    if cfg.proxy.ccr_inband_enabled() {
-        modified |= super::ccr::splice_inband_in_place(&mut doc);
-    }
-    // #834: cache-safe cross-provider effort control. Default off → no-op. The
-    // value is a constant, so it never perturbs the prompt-cache prefix; it only
-    // dials an *existing* adaptive thinking request (never enables thinking the
-    // client didn't ask for).
-    if arm == super::holdout::Arm::Treatment {
-        if let Some(effort) = cfg.proxy.resolved_effort() {
-            modified |= super::effort::apply_anthropic(&mut doc, effort);
-        }
-        // #895: cache-safe wire verbosity steer (constant suffix after the last
-        // cache_control breakpoint). Control arm skips it so the holdout measures
-        // its effect.
-        if cfg.proxy.verbosity_steer_enabled() {
-            modified |= super::verbosity::apply_anthropic(&mut doc);
-        }
-    }
-    // Meter-only (#481): live compression off, no history pruning, no prose
-    // rewriting → forward + usage metering still run, but the body is left
-    // unchanged so the provider prompt-cache prefix stays byte-stable. A pending
-    // in-band splice (`modified`) opts out: the body did change this turn.
-    if !live_compress
-        && mode == HistoryMode::Off
-        && system_aggr.is_none()
-        && user_aggr.is_none()
-        && !modified
-        && !inject_breakpoint
-        && !align_volatile
-        && !relocate_volatile
-        && !cache_economics
-    {
-        let out = serde_json::to_vec(&doc).unwrap_or_default();
-        return (out, original_size, original_size);
-    }
-    let mut prose_segments: u64 = 0;
-
-    // Length of the client's provider-cached message prefix. Needed both for
-    // cache-safe pruning below and to gate top-level system prose: if any
-    // message is client-cached, `system` (which precedes every message) is part
-    // of that cached prefix and must not be rewritten.
+    // Length of the client's provider-cached message prefix, which pruning
+    // below must not touch.
     let cached = doc
         .get("messages")
         .and_then(|m| m.as_array())
         .map_or(0, |m| super::history_prune::cached_prefix_len(m));
 
-    // #480: opt-in big-gap cold-prefix repack. When enabled AND the proxy can
-    // confidently predict (from idle time vs the provider cache TTL) that the
-    // client-cached prefix is already cold, override the normal "never touch the
-    // cached prefix" rule for THIS request and prune/compress the prefix too,
-    // re-seeding a leaner cache. Default-off; never fires without a measured idle
-    // gap past TTL × margin, so warm caches stay byte-stable (#448).
-    // #986: cache-economics miss attribution (opt-in, measurement-only). Classify
+    // #986: cache-economics miss attribution (measurement-only). Classify
     // why this turn hits or misses the provider prompt-cache (TTL lapse vs prefix
     // change) and bump the `/status` gauges. Reads the cacheable prefix only — the
     // body is never touched — so it is strictly cache-safe.
-    if cache_economics
-        && let Some(m) = doc.get("messages").and_then(|m| m.as_array())
+    if let Some(m) = doc.get("messages").and_then(|m| m.as_array())
         && let Some(outcome) = super::cache_attribution::record_request(m, cached)
     {
         match outcome {
@@ -167,60 +60,6 @@ pub(super) fn compress_request_body(
             }
         }
     }
-    // #480 repack decision, with the #986 net-cost gate folded in: when
-    // cache-economics is on, also require the prefix to be large enough to cache
-    // (`worth_repacking`). The gate is an extra AND-condition, so it can only make
-    // repacking *more* conservative; default-off proxies keep the prior value.
-    let repack = cfg.proxy.repacks_cold_prefix()
-        && doc
-            .get("messages")
-            .and_then(|m| m.as_array())
-            .is_some_and(|m| {
-                super::cold_prefix::repack_decision(m, cached)
-                    && (!cache_economics
-                        || super::cache_policy::worth_repacking(doc.get("system"), m, cached))
-            });
-    // The prefix length the rewrites below must protect: the full cached prefix
-    // normally, or 0 when we are intentionally repacking the cold prefix.
-    let protect = if repack { 0 } else { cached };
-
-    // System prose: only when nothing is client-cached and the `system` field
-    // carries no `cache_control` of its own — otherwise it anchors the cache.
-    // A cold-prefix repack (`protect == 0` with `repack`) deliberately rewrites
-    // it to re-seed a leaner cache.
-    let model_name = doc
-        .get("model")
-        .and_then(Value::as_str)
-        .unwrap_or("default")
-        .to_owned();
-    if let Some(a) = system_aggr
-        && protect == 0
-        && let Some(system) = doc.get_mut("system")
-        && (repack || !prose::value_has_cache_control(system))
-    {
-        let should_compress = if repack || cached == 0 {
-            true
-        } else {
-            let sys_tokens = prose::estimate_tokens(system) as u64;
-            let estimated_after = (sys_tokens as f64 * (1.0 - a)).max(0.0) as u64;
-            let reuse_rate = super::cache_attribution::estimated_reuse_rate();
-            let model_cost = super::cache_policy::model_cost_for(&model_name);
-            let gate = super::cache_policy::should_mutate_frozen(
-                sys_tokens,
-                estimated_after,
-                reuse_rate,
-                &model_cost,
-            );
-            matches!(gate, super::cache_policy::MutationDecision::Mutate { .. })
-        };
-        if should_compress {
-            let n = prose::compress_system_value(system, a);
-            if n > 0 {
-                prose_segments += u64::from(n);
-                modified = true;
-            }
-        }
-    }
 
     if let Some(messages) = doc.get_mut("messages").and_then(|m| m.as_array_mut()) {
         // Resolve tool-call id → tool name so file/source reads can be protected
@@ -229,15 +68,15 @@ pub(super) fn compress_request_body(
 
         // Prune at a frozen, cache-aware boundary by default: Anthropic's
         // prompt cache matches exact prefixes, so the boundary must not move
-        // every turn (see `history_prune::prune_boundary`). `mode` resolved above.
-        let boundary = super::history_prune::prune_boundary(mode, messages.len());
+        // every turn (see `history_prune::prune_boundary`).
+        let boundary = super::history_prune::prune_boundary(messages.len());
         // Never rewrite content the client has marked with `cache_control`:
         // pruning inside the already-cached prefix invalidates Anthropic's
         // prompt cache from the first changed message (#448). Pruning therefore
         // starts after the last breakpoint; with no breakpoint this is 0, i.e.
         // the previous behaviour.
         modified |=
-            super::history_prune::prune_history_range(messages, protect, boundary, &tool_names);
+            super::history_prune::prune_history_range(messages, cached, boundary, &tool_names);
 
         for msg in messages.iter_mut() {
             let role = msg.get("role").and_then(|r| r.as_str()).unwrap_or("");
@@ -258,47 +97,24 @@ pub(super) fn compress_request_body(
                         .map(String::as_str);
                     let kind = name.map_or(ToolResultKind::Other, tool_kind::classify_tool_name);
 
-                    // #481: skip live compression when globally off or when the
-                    // originating tool is on the exclusion list (Serena default).
+                    // #481: skip live compression when the originating tool is
+                    // on the exclusion list (Serena).
                     let excluded =
                         name.is_some_and(|n| cfg.proxy.is_tool_live_compress_excluded(n));
-                    if live_compress
-                        && !excluded
-                        && let Some(inner_content) = block.get_mut("content")
-                    {
+                    if !excluded && let Some(inner_content) = block.get_mut("content") {
                         modified |= compress_content_field(inner_content, name, kind);
                     }
                 }
             }
         }
-
-        // Frozen-region user prose: free-text `text` blocks of user turns in
-        // `[cached, boundary)`. Cache-safe by construction — the cached prefix
-        // and the live tail (`>= boundary`) are both left intact, and the
-        // rewrite is content-deterministic so the prefix stays byte-stable.
-        if let Some(a) = user_aggr {
-            let end = boundary.min(messages.len());
-            let start = protect.min(end);
-            for msg in &mut messages[start..end] {
-                if msg.get("role").and_then(|r| r.as_str()) == Some("user")
-                    && let Some(content) = msg.get_mut("content").and_then(|c| c.as_array_mut())
-                {
-                    prose_segments += u64::from(prose::compress_text_blocks(content, a));
-                }
-            }
-        }
     }
 
-    if prose_segments > 0 {
-        modified = true;
-    }
     // #940: cache-aligner telemetry. On an unanchored system prompt (the prefix a
     // provider would cache), count the volatile fields that would bust that cache
     // turn-to-turn. Pure measurement — runs before any breakpoint injection and
     // never mutates the body — so it is strictly cache-safe. Skipped once the
     // client has anchored the prefix itself.
-    if align_volatile
-        && cached == 0
+    if cached == 0
         && let Some(system) = doc.get("system")
         && !prose::value_has_cache_control(system)
         && let Some(text) = super::cache_aligner::system_text(system)
@@ -306,53 +122,6 @@ pub(super) fn compress_request_body(
         let scan = super::cache_aligner::scan_volatile(&text);
         cache_safety::record_volatile_system(scan.fields as u64);
     }
-    // #974: active cache-aligner relocate (Anthropic-only). After the telemetry
-    // above measured the leak on the pristine prompt, move the volatile values out
-    // of the cacheable prefix into an uncached tail block so the prefix finally
-    // caches. Gated exactly like the breakpoint below — Treatment arm, and only
-    // when the client anchored nothing of its own. The rewrite adds the
-    // `cache_control` itself, so a following #939 injection sees an anchored prefix
-    // and stays a no-op: the two compose to exactly one breakpoint on the stable
-    // block, with the volatile tail left uncached.
-    if relocate_volatile
-        && arm == super::holdout::Arm::Treatment
-        && cached == 0
-        && doc
-            .get("system")
-            .is_some_and(|s| !prose::value_has_cache_control(s))
-    {
-        let relocated = super::cache_aligner::apply_anthropic_relocate(&mut doc);
-        if relocated > 0 {
-            modified = true;
-            cache_safety::record_volatile_relocated(relocated as u64);
-        }
-    }
-    // #939: active prompt-cache breakpoint injection (Anthropic-only). When the
-    // client anchored no prefix of its own — no message `cache_control` (`cached
-    // == 0`) and no breakpoint already on `system` — add one ephemeral breakpoint
-    // to `system` so the large, stable system prompt bills later turns at the
-    // cached rate (the win a raw API client leaves on the table). Runs after every
-    // frozen-region rewrite so the marker anchors the final system bytes and the
-    // prefix it creates stays byte-stable across turns (#498). Counted on its own
-    // gauge — a pure win, never against the cache-safe ratio.
-    if inject_breakpoint
-        && cached == 0
-        && doc
-            .get("system")
-            .is_some_and(|s| !prose::value_has_cache_control(s))
-        && super::cache_breakpoint::inject_anthropic_system(&mut doc)
-    {
-        modified = true;
-        cache_safety::record_breakpoint_injected();
-    }
-    // A deliberate cold-prefix repack (#480) is the one sanctioned exception to
-    // the frozen-window rule; count it on its own gauge so it never dilutes the
-    // cache-safe ratio (which exists to catch *accidental* #448 regressions).
-    // Every other rewrite lands strictly inside the cache-safe frozen window.
-    if repack {
-        cache_safety::record_cold_repack();
-    }
-    cache_safety::record(prose_segments, true);
 
     // Sticky CCR tool injection: once a conversation has used CCR, keep
     // ctx_expand in tools[] to avoid prefix-cache-busting tool-list changes.
@@ -659,27 +428,6 @@ mod tests {
         );
     }
 
-    #[test]
-    fn verbosity_steer_is_off() {
-        // #895: the wire verbosity steer is off, so the last user turn is
-        // forwarded without the steer suffix.
-        let _iso = crate::core::data_dir::isolated_data_dir();
-        let req = serde_json::json!({
-            "model": "claude-opus-4-8",
-            "messages": [{"role": "user", "content": "Summarize the design."}]
-        });
-        let bytes = serde_json::to_vec(&req).unwrap();
-        let (out, _o, _c) = compress_request_body(req, bytes.len());
-        let v: Value = serde_json::from_slice(&out).unwrap();
-        assert!(
-            !v["messages"][0]["content"]
-                .as_str()
-                .unwrap()
-                .contains(crate::proxy::verbosity::STEER),
-            "the verbosity steer must not be applied"
-        );
-    }
-
     /// A system prompt comfortably over Anthropic's minimum cacheable size, so
     /// the #939 breakpoint gate fires.
     fn cacheable_system() -> String {
@@ -698,7 +446,7 @@ mod tests {
         });
         let bytes = serde_json::to_vec(&body).unwrap();
         let (out, _o, _c) = compress_request_body(body, bytes.len());
-        assert_eq!(out, bytes, "off must leave the request byte-identical");
+        assert_eq!(out, bytes, "the request must stay byte-identical");
     }
 
     #[test]
@@ -727,9 +475,9 @@ mod tests {
     }
 
     #[test]
-    fn cache_align_relocate_off_is_byte_unchanged() {
-        // Off → byte-identical request, preserving the cache-stable
-        // contract even with a volatile-rich system prompt.
+    fn volatile_system_prompt_is_never_rewritten() {
+        // The cache-aligner only measures: a volatile-rich system prompt
+        // leaves the request byte-identical.
         let _iso = crate::core::data_dir::isolated_data_dir();
         let body = serde_json::json!({
             "model": "claude-opus-4-8",
@@ -738,6 +486,6 @@ mod tests {
         });
         let bytes = serde_json::to_vec(&body).unwrap();
         let (out, _o, _c) = compress_request_body(body, bytes.len());
-        assert_eq!(out, bytes, "off must leave the request byte-identical");
+        assert_eq!(out, bytes, "the request must stay byte-identical");
     }
 }

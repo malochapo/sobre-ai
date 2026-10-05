@@ -188,8 +188,6 @@ COMMANDS:
     compress [--signatures]        Context compression checkpoint
     compress diff <file|-> [--shell \"cmd\"] [--json]  Preview compression: original vs emitted + token diff
     config                         Show/edit configuration (~/.lean-ctx/config.toml)
-    security [status]              Show security posture (containment + secret defense)
-    security secrets <on|off>      Toggle secret/.env redaction (separate from containment)
     tools health                   Token budget and tool-surface report
     tee [list|clear|show <file>|last] Manage output tee files (~/.lean-ctx/tee/)
     compression [off|lite|standard|max]  Set compression level (saves 25-65% tokens; alias: terse)

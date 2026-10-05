@@ -29,7 +29,7 @@ use crate::core::config::{RoutingRules, Upstreams, WireShape, parse_route_target
 /// `model` already swapped in the body by [`route_request`]; the caller
 /// re-targets the upstream and injects the registry credential if set.
 #[derive(Debug, Clone, PartialEq)]
-pub struct RouteDecision {
+pub(crate) struct RouteDecision {
     /// Model now in the body.
     pub model: String,
     /// Originally requested model (usage record `routed_from`).
@@ -62,7 +62,7 @@ const CLASSIFY_QUERY_CAP: usize = 2000;
 /// (exact messages-create path, `shape-xlat` compiled in). Subpaths like
 /// `count_tokens`/`batches` have no OpenAI equivalent and must stay
 /// within-shape.
-pub fn route_request(
+pub(crate) fn route_request(
     parsed: &mut serde_json::Value,
     provider_label: &str,
     upstreams: &Upstreams,

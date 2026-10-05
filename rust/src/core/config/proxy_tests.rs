@@ -25,93 +25,6 @@ fn unknown_scheme_is_rejected() {
 }
 
 #[test]
-fn cold_prefix_repack_is_off() {
-    // #480: off (a wrong cold guess re-bills reads as writes ~12x).
-    assert!(
-        !ProxyConfig::default().repacks_cold_prefix(),
-        "cold-prefix repack must be off"
-    );
-}
-
-#[test]
-fn ccr_inband_is_off() {
-    // #493: off (the splice mutates provider-visible content for the expand
-    // turn).
-    assert!(
-        !ProxyConfig::default().ccr_inband_enabled(),
-        "in-band CCR must be off"
-    );
-}
-
-#[test]
-fn cache_breakpoint_is_off() {
-    // #939: off (it reshapes the provider-visible system field).
-    assert!(
-        !ProxyConfig::default().cache_breakpoint_enabled(),
-        "cache-breakpoint injection must be off"
-    );
-}
-
-#[test]
-fn cache_aligner_is_on() {
-    // #986: the volatile-field scan is measurement-only and strictly
-    // cache-safe, so it is on.
-    assert!(
-        ProxyConfig::default().cache_aligner_enabled(),
-        "cache-aligner telemetry must be on (measurement-only, safe)"
-    );
-}
-
-#[test]
-fn cache_align_relocate_is_off() {
-    // #974: off (it reshapes the provider-visible system field by relocating
-    // volatile values to the tail).
-    assert!(
-        !ProxyConfig::default().cache_align_relocate_enabled(),
-        "active cache-aligner relocate must be off"
-    );
-}
-
-#[test]
-fn cache_policy_is_on() {
-    // #986: telemetry + a more-conservative repack gate are both strictly
-    // safe, so cache-economics is on.
-    assert!(
-        ProxyConfig::default().cache_policy_enabled(),
-        "cache-economics must be on (measurement + safe gate)"
-    );
-}
-
-#[test]
-fn effort_is_off() {
-    // #834: effort control is off (a strict no-op).
-    assert_eq!(
-        ProxyConfig::default().resolved_effort(),
-        None,
-        "effort control must be off"
-    );
-}
-
-#[test]
-fn prose_ranker_is_auto() {
-    // #895: the premium extractive path (with truncation fallback) is used.
-    assert_eq!(
-        ProxyConfig::default().resolved_prose_ranker(),
-        ProseRanker::Auto
-    );
-}
-
-#[test]
-fn output_holdout_is_off() {
-    assert_eq!(ProxyConfig::default().output_holdout_fraction(), 0.0);
-}
-
-#[test]
-fn verbosity_steer_is_off() {
-    assert!(!ProxyConfig::default().verbosity_steer_enabled());
-}
-
-#[test]
 fn resolve_all_uses_config_then_default() {
     let up = with_upstream("openai", "http://127.0.0.1:19101").resolve_all();
     assert_eq!(up.openai, "http://127.0.0.1:19101");
@@ -313,24 +226,6 @@ fn parse_route_target_shapes() {
 }
 
 #[test]
-fn role_aggressiveness_is_off() {
-    // A config compresses no prose, so the proxy stays byte-for-byte
-    // unchanged (#710).
-    let cfg = ProxyConfig::default();
-    assert_eq!(cfg.resolved_role_aggressiveness(ProseRole::System), None);
-    assert_eq!(cfg.resolved_role_aggressiveness(ProseRole::User), None);
-}
-
-#[test]
-fn live_compress_is_on() {
-    // #481: the proxy live-compresses tool results.
-    assert!(
-        ProxyConfig::default().live_compresses(),
-        "live_compress must be on"
-    );
-}
-
-#[test]
 fn live_compress_exclude_defaults_to_serena() {
     // #481: an unset list protects Serena's code-reading tools, which return
     // source bodies but are mis-bucketed as `Search` by name.
@@ -338,12 +233,4 @@ fn live_compress_exclude_defaults_to_serena() {
     assert!(cfg.is_tool_live_compress_excluded("mcp__serena__find_symbol"));
     assert!(cfg.is_tool_live_compress_excluded("Serena.search_for_pattern"));
     assert!(!cfg.is_tool_live_compress_excluded("ctx_shell"));
-}
-
-#[test]
-fn compress_protect_is_a_noop() {
-    // #1150: nothing is protected, so compression stays on for all.
-    let cfg = ProxyConfig::default();
-    assert!(!cfg.is_path_compress_protected("tests/golden/output.snap"));
-    assert!(cfg.compress_protect_globs().is_empty());
 }

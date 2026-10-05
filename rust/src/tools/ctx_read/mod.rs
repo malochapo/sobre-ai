@@ -789,24 +789,6 @@ fn handle_with_options_inner(
         .and_then(|e| e.to_str())
         .unwrap_or("");
 
-    // #1150: a path the operator marked "never compress" is always returned in
-    // full — exact bytes matter more than token savings for these files (golden
-    // snapshots, byte-asserted fixtures, security-sensitive configs). Every lossy
-    // mode (auto, aggressive, signatures, density, diff, …) collapses to the
-    // verbatim full read; `raw` (already verbatim) and explicit `lines:` slices
-    // are left as the user asked. The default config protects nothing, so this is
-    // a fast no-op for everyone who hasn't opted in.
-    let mode = if mode != "raw"
-        && !mode.starts_with("lines:")
-        && crate::core::config::Config::load()
-            .proxy
-            .is_path_compress_protected(path)
-    {
-        "full"
-    } else {
-        mode
-    };
-
     if fresh {
         if mode == "diff" {
             let warning = "[warning] fresh+diff is redundant — fresh invalidates cache, no diff possible. Use mode=full with fresh=true instead.";

@@ -7,6 +7,6 @@
 /// Tags attached to an authenticated request. Inserted as a request extension
 /// by the auth guard and stamped onto the usage record by the forward path.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct RequestTags {
+pub(crate) struct RequestTags {
     pub project: Option<String>,
 }

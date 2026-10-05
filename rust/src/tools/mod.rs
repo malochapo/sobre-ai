@@ -162,10 +162,10 @@ mod resolve_path_tests {
     #[cfg(not(feature = "no-jail"))]
     #[tokio::test]
     #[allow(clippy::await_holding_lock)]
-    async fn resolve_path_auto_reroots_from_agent_config_dir_without_opt_in() {
+    async fn resolve_path_auto_reroots_from_agent_config_dir() {
         // #580: the MCP server is launched from an agent/IDE config dir
         // (~/.copilot-style) and wrongly adopts it as the root. With no
-        // `allow_auto_reroot` opt-in and no trusted startup root, the first
+        // trusted startup root, the first
         // absolute path into a real project must still correct the root — an
         // agent config dir is never a real jail boundary.
         let _iso = crate::core::data_dir::isolated_data_dir();
@@ -205,7 +205,7 @@ mod resolve_path_tests {
     #[cfg(not(feature = "no-jail"))]
     #[tokio::test]
     #[allow(clippy::await_holding_lock)]
-    async fn resolve_path_auto_reroots_from_markerless_client_cwd_without_opt_in() {
+    async fn resolve_path_auto_reroots_from_markerless_client_cwd() {
         // VS Code/WSL can launch the MCP server from /mnt/c/Users while the
         // workspace lives under /mnt/d. That markerless cwd must not become a
         // permanent PathJail root when the request points at a real project.

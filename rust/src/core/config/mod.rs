@@ -31,15 +31,15 @@ mod tests;
 mod tests_parsing;
 
 pub use enums::{
-    CompressionLevel, Effort, OutputDensity, RecoveryHints, ResponseVerbosity, SessionDegrade,
-    TeeMode, TerseAgent,
+    CompressionLevel, OutputDensity, RecoveryHints, ResponseVerbosity, SessionDegrade, TeeMode,
+    TerseAgent,
 };
 pub use loader::last_config_parse_error;
 pub use memory::{MemoryCleanup, MemoryGuardConfig, MemoryProfile, SavingsFooter};
 pub use proxy::{
-    HistoryMode, ProseRanker, ProseRole, ProxyConfig, ProxyMode, ProxyProvider, ResolvedProvider,
-    RoutingRules, Upstreams, WireShape, is_local_proxy_url, normalize_url, normalize_url_opt,
-    parse_route_target, upstream_drifted, upstream_ids,
+    ProxyConfig, ProxyProvider, ResolvedProvider, RoutingRules, Upstreams, WireShape,
+    is_local_proxy_url, normalize_url, normalize_url_opt, parse_route_target, upstream_drifted,
+    upstream_ids,
 };
 pub use read_dedup::ReadDedup;
 pub use read_redirect::ReadRedirect;

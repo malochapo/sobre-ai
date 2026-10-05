@@ -277,15 +277,10 @@ fn loop_header_substitution_is_not_a_bypass() {
     assert!(!passes_enforced("for i in $(ls); do eval $i; done"));
 }
 
-// --- Shell-security mode dispatcher (GL #788) ---
-// `check_shell_command` honours `shell_security` from config.toml. Each test
-// writes a private config via `isolated_data_dir`, which holds the shared test
-// lock, so the mode can never leak into another test.
-
 // --- passes_enforced (hook compound classifier, #589) ---
 // The PreToolUse hook routes only gate-clean compounds into the compressing
 // `lean-ctx -c` wrap. `passes_enforced` is the side-effect-free predicate it
-// asks; it must answer the enforce-mode question independent of the active mode.
+// asks.
 
 #[test]
 fn passes_enforced_gates_clean_vs_sink() {
@@ -301,18 +296,6 @@ fn passes_enforced_gates_clean_vs_sink() {
         "non-allowlisted interpreter sink must not pass"
     );
     assert!(!eval_blocked, "eval is always blocked");
-}
-
-#[test]
-fn passes_enforced_is_mode_independent() {
-    let iso = crate::core::data_dir::isolated_data_dir();
-    // Even with gating turned OFF, passes_enforced answers the *enforce* question
-    // so the hook keeps a would-be-blocked sink raw instead of compressing it.
-    std::fs::write(iso.path().join("config.toml"), "shell_security = \"off\"\n").unwrap();
-    let tricky_off = passes_enforced("git log | python3 -c 'print(1)'");
-    let clean_off = passes_enforced("git log | head");
-    assert!(!tricky_off, "mode-independent: sink still fails under off");
-    assert!(clean_off, "clean pipeline passes regardless of mode");
 }
 
 // --- GH #760: path segments must not be mistaken for command names ---

@@ -70,7 +70,6 @@ pub(crate) async fn build_response(
     extra_stream_types: &[&str],
     usage_provider: crate::proxy::usage::Provider,
     url_model: Option<String>,
-    cohort: Option<crate::proxy::holdout::Arm>,
     wire: Option<Box<crate::proxy::usage::WireContext>>,
     xlat: bool,
 ) -> Result<Response, StatusCode> {
@@ -78,15 +77,9 @@ pub(crate) async fn build_response(
     let resp_headers = response.headers().clone();
 
     // Gateway-billed USD from response headers (#1189): LiteLLM's standard
-    // header plus the operator-configured one. Body-reported costs (OpenRouter
-    // usage.cost) beat this inside the scanner.
-    let extra_cost_header = crate::core::config::Config::load()
-        .proxy
-        .cost_response_header();
-    let header_cost = crate::proxy::usage_accounting::cost_from_headers(
-        &resp_headers,
-        extra_cost_header.as_deref(),
-    );
+    // header. Body-reported costs (OpenRouter usage.cost) beat this inside the
+    // scanner.
+    let header_cost = crate::proxy::usage_accounting::cost_from_headers(&resp_headers, None);
 
     let is_sse = crate::proxy::bedrock::response_is_sse(&resp_headers);
     let is_stream = is_sse
@@ -97,7 +90,6 @@ pub(crate) async fn build_response(
 
     if is_stream {
         let scanner = crate::proxy::usage::Scanner::new(usage_provider, url_model)
-            .with_cohort(cohort)
             .with_wire_context(wire)
             .with_header_cost(header_cost);
         let inner = Box::pin(response.bytes_stream());
@@ -127,7 +119,6 @@ pub(crate) async fn build_response(
 
     // Non-streaming: the whole body is one JSON object carrying `usage`.
     let mut scanner = crate::proxy::usage::Scanner::new(usage_provider, url_model)
-        .with_cohort(cohort)
         .with_wire_context(wire)
         .with_header_cost(header_cost);
     scanner.feed_body(&resp_bytes);

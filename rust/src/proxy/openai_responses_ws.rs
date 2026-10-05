@@ -64,13 +64,13 @@ const FORWARDED_UPGRADE_HEADERS: &[&str] = &[
 ];
 
 /// Upgrades a Responses WebSocket and bridges it to the HTTP/SSE upstream.
-pub fn upgrade(state: ProxyState, ws: WebSocketUpgrade, headers: &HeaderMap) -> Response {
+pub(crate) fn upgrade(state: ProxyState, ws: WebSocketUpgrade, headers: &HeaderMap) -> Response {
     let upstream = state.openai_upstream();
     upgrade_to(state, ws, headers, upstream, "/v1/responses")
 }
 
 /// Upgrades a Responses WebSocket and bridges it to a selected HTTP/SSE target.
-pub fn upgrade_to(
+pub(crate) fn upgrade_to(
     state: ProxyState,
     ws: WebSocketUpgrade,
     headers: &HeaderMap,

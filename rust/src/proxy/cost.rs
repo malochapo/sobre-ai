@@ -27,7 +27,7 @@ struct ModelAccum {
 
 /// One model's aggregated, priced savings for the `/status` endpoint.
 #[derive(Debug, Clone, Serialize, PartialEq)]
-pub struct ModelStat {
+pub(crate) struct ModelStat {
     pub model: String,
     pub requests: u64,
     pub tokens_saved: u64,
@@ -50,7 +50,12 @@ fn store() -> &'static Mutex<HashMap<String, ModelAccum>> {
 ///
 /// `model` is taken from the request body (`None`/empty buckets under
 /// `"unknown"`). Recording never blocks request handling on poisoning.
-pub fn record(model: Option<&str>, tokens_saved: u64, bytes_original: u64, bytes_compressed: u64) {
+pub(crate) fn record(
+    model: Option<&str>,
+    tokens_saved: u64,
+    bytes_original: u64,
+    bytes_compressed: u64,
+) {
     let key = model
         .map(str::trim)
         .filter(|m| !m.is_empty())
@@ -77,7 +82,7 @@ pub fn record(model: Option<&str>, tokens_saved: u64, bytes_original: u64, bytes
 }
 
 /// Returns per-model stats, priced and sorted by USD saved (descending).
-pub fn snapshot() -> Vec<ModelStat> {
+pub(crate) fn snapshot() -> Vec<ModelStat> {
     let pricing = ModelPricing::load();
     let map = store()
         .lock()

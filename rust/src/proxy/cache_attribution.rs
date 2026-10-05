@@ -28,7 +28,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use super::cold_prefix;
+use super::cache_prefix;
 
 /// Hard cap on tracked conversations so a long-lived proxy can't grow the
 /// last-prefix map without bound; the oldest entry is evicted past this.
@@ -37,7 +37,7 @@ const MAX_TRACKED: usize = 4096;
 /// The cache outcome attributed to one anchored (`cached > 0`) request, by
 /// comparing its cacheable prefix + idle time against the previous turn.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum CacheOutcome {
+pub(crate) enum CacheOutcome {
     /// First time this conversation's anchored prefix was seen — no prior turn to
     /// compare, so nothing is attributable (counts only as a baseline).
     ColdStart,
@@ -81,7 +81,12 @@ fn now_secs() -> u64 {
 /// hash, `now`/`ttl_secs` the idle clock. Pure (no globals, no I/O) so the
 /// TTL-vs-prefix decision is unit-tested independently of the live store.
 #[must_use]
-pub fn classify(prev: Option<(u64, u64)>, curr_hash: u64, now: u64, ttl_secs: u64) -> CacheOutcome {
+pub(crate) fn classify(
+    prev: Option<(u64, u64)>,
+    curr_hash: u64,
+    now: u64,
+    ttl_secs: u64,
+) -> CacheOutcome {
     match prev {
         None => CacheOutcome::ColdStart,
         Some((prev_hash, last_touch)) => {
@@ -94,25 +99,6 @@ pub fn classify(prev: Option<(u64, u64)>, curr_hash: u64, now: u64, ttl_secs: u6
             }
         }
     }
-}
-
-/// Estimated reuse count for a conversation. Returns the global warm_reuse
-/// count as a rough proxy — individual per-conversation tracking would
-/// require extending PrefixState. Global warm_reuses / total_anchored gives
-/// the average reuse rate across all conversations.
-#[must_use]
-pub fn estimated_reuse_rate() -> u32 {
-    let warm = WARM_REUSES.load(Ordering::Relaxed);
-    let total = warm
-        + COLD_STARTS.load(Ordering::Relaxed)
-        + TTL_LAPSES.load(Ordering::Relaxed)
-        + PREFIX_CHANGES.load(Ordering::Relaxed);
-    if total == 0 {
-        return 5; // conservative default: assume 5 reuses
-    }
-    // Average reuse: warm / (total - warm) capped at u32
-    let non_warm = total.saturating_sub(warm).max(1);
-    (warm / non_warm).min(u32::MAX as u64) as u32
 }
 
 fn bump(outcome: CacheOutcome) {
@@ -140,10 +126,10 @@ fn evict_oldest(map: &mut HashMap<u64, PrefixState>) {
 /// turns (`cached > 0`) are attributable; an unanchored turn returns `None`
 /// (the cache-aligner telemetry #940 covers "client never anchors"). The caller
 /// owns the opt-in gate — this only runs when `proxy.cache_policy` is enabled.
-pub fn record_request(messages: &[Value], cached: usize) -> Option<CacheOutcome> {
-    let conv_key = cold_prefix::conversation_key(messages)?;
-    let curr_hash = cold_prefix::cached_prefix_hash(messages, cached)?;
-    let ttl = cold_prefix::resolved_ttl_secs(messages, cached).unwrap_or(0);
+pub(crate) fn record_request(messages: &[Value], cached: usize) -> Option<CacheOutcome> {
+    let conv_key = cache_prefix::conversation_key(messages)?;
+    let curr_hash = cache_prefix::cached_prefix_hash(messages, cached)?;
+    let ttl = cache_prefix::resolved_ttl_secs(messages, cached).unwrap_or(0);
     let now = now_secs();
 
     let outcome = {
@@ -170,7 +156,7 @@ pub fn record_request(messages: &[Value], cached: usize) -> Option<CacheOutcome>
 
 /// Point-in-time view of the miss-attribution counters for `/status`.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
-pub struct CacheAttribution {
+pub(crate) struct CacheAttribution {
     /// First-sighting anchored turns (baseline only, not a hit or a miss).
     pub cold_starts: u64,
     /// Turns whose prefix was stable and within TTL — the cache should hit.
@@ -182,7 +168,7 @@ pub struct CacheAttribution {
 }
 
 #[must_use]
-pub fn snapshot() -> CacheAttribution {
+pub(crate) fn snapshot() -> CacheAttribution {
     CacheAttribution {
         cold_starts: COLD_STARTS.load(Ordering::Relaxed),
         warm_reuses: WARM_REUSES.load(Ordering::Relaxed),

@@ -42,7 +42,7 @@ use axum::http::request::Parts;
 use headers::should_forward_request_header;
 #[cfg(test)]
 #[allow(unused_imports)]
-pub(super) use prepare::{cohort_arm, prepare_request_body, wire_context};
+pub(super) use prepare::{prepare_request_body, wire_context};
 
 const HEADROOM_COMPRESSED_HEADER: &str = "x-headroom-compressed";
 
@@ -64,7 +64,7 @@ pub(super) fn max_body_bytes() -> usize {
     DEFAULT_MAX_BODY_MB.saturating_mul(1024 * 1024)
 }
 
-pub async fn forward_request(
+pub(crate) async fn forward_request(
     State(state): State<ProxyState>,
     req: Request<Body>,
     upstream_base: &str,
@@ -101,7 +101,6 @@ pub async fn forward_request(
         })
     };
     if is_headroom_compressed(&parts) {
-        super::anthropic::set_headroom_request(true);
         super::prefix_cache_stats::record_headroom_compat();
     }
     let prepared = prepare::prepare_request_body(
@@ -132,11 +131,6 @@ pub async fn forward_request(
         let breakdown = super::introspect::analyze_request(parsed, provider);
         state.introspect.record(breakdown);
     }
-    // #895 Track B: assign output-savings holdout from the same pristine parsed
-    // body that each provider's compressor receives. Only when active.
-    let cohort = parsed
-        .as_ref()
-        .and_then(|p| prepare::cohort_arm(p, provider_label, default_path));
     if compression_candidate {
         // Shape label drives compression/routing; stats identity may differ —
         // Grok registry routes speak OpenAI shape but meter under "Grok".
@@ -174,19 +168,6 @@ pub async fn forward_request(
         crate::proxy::codec::build_upstream_url(&parts, upstream_base, default_path)
     };
 
-    let counterfactual = if provider_label == "Anthropic" && !xlat {
-        super::counterfactual::maybe_spawn_probe(
-            &state.client,
-            &parts,
-            upstream_base,
-            parsed.as_ref(),
-            route.as_ref().map(|r| r.routed_from.as_str()),
-            compressed_size < original_size,
-        )
-    } else {
-        None
-    };
-
     let forwarded_body = super::bedrock::finalize_request(
         provider_label,
         &mut parts,
@@ -197,11 +178,7 @@ pub async fn forward_request(
     )?;
 
     if let Some(ref pre) = parsed {
-        let cfg_replay = crate::core::config::Config::load();
-        if matches!(
-            cfg_replay.proxy.resolved_proxy_mode(),
-            crate::core::config::ProxyMode::Cache
-        ) {
+        {
             let system_val = pre.get("system");
             if let Some(msgs) = pre.get("messages").and_then(|m| m.as_array()) {
                 let conv_id = super::prefix_replay::conversation_id(system_val, msgs);
@@ -261,14 +238,12 @@ pub async fn forward_request(
             wire.is_local = local;
         }
     }
-    wire.counterfactual = counterfactual;
     let wire = Some(wire);
     let mut response = transport::build_response(
         response,
         extra_stream_types,
         usage_provider,
         url_model,
-        cohort,
         wire,
         xlat,
     )

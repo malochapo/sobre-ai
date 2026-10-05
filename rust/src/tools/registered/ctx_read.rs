@@ -528,16 +528,7 @@ impl CtxReadTool {
                             || (crate::tools::ctx_read::is_subagent_context()
                                 && !crate::core::conversation::scope_enabled());
 
-                        let mode_eff = if mode != "raw"
-                            && !mode.starts_with("lines:")
-                            && crate::core::config::Config::load()
-                                .proxy
-                                .is_path_compress_protected(&path_owned)
-                        {
-                            "full".to_string()
-                        } else {
-                            mode.clone()
-                        };
+                        let mode_eff = mode.clone();
 
                         if effective_fresh {
                             cache.invalidate(&path_owned);

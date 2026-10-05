@@ -1,11 +1,10 @@
-//! Containment & security posture: shell gate, path jail, workspace
-//! trust, secret redaction, IDE permission inheritance.
+//! Containment & security: shell gate, path jail, secret redaction.
 
 use crate::doctor::{BOLD, DIM, GREEN, Outcome, RED, RST, YELLOW};
 
-/// Reports the shell gate exactly as the MCP tools enforce it — and, crucially,
-/// flags when `config.toml` fails to parse (the silent-default trap behind #341,
-/// where a `shell_security` edit appears to "do nothing" because the file never loaded).
+/// Reports the shell gate — and, crucially, flags when `config.toml` fails to
+/// parse (the silent-default trap behind #341, where an edit appears to "do
+/// nothing" because the file never loaded).
 pub(crate) fn shell_gate_outcome() -> Outcome {
     if let Some(err) = crate::core::config::last_config_parse_error() {
         let short = err.lines().next().unwrap_or("parse error");
@@ -15,28 +14,6 @@ pub(crate) fn shell_gate_outcome() -> Outcome {
                 "{BOLD}Shell gating{RST}  {RED}config.toml fails to parse → running on DEFAULTS{RST}  {DIM}({short}){RST}"
             ),
         };
-    }
-
-    // GL #788: surface a relaxed posture loudly — an unexpected `off`/`warn`
-    // silently drops the unconditional blocks, which is the only gating left.
-    match crate::core::shell_gate::ShellSecurity::resolve() {
-        crate::core::shell_gate::ShellSecurity::Off => {
-            return Outcome {
-                ok: true,
-                line: format!(
-                    "{BOLD}Shell gating{RST}  {YELLOW}off{RST}  {DIM}(shell_security=off — even the unconditional blocks are skipped){RST}"
-                ),
-            };
-        }
-        crate::core::shell_gate::ShellSecurity::Warn => {
-            return Outcome {
-                ok: true,
-                line: format!(
-                    "{BOLD}Shell gating{RST}  {YELLOW}warn-only{RST}  {DIM}(shell_security=warn — violations logged, never blocked){RST}"
-                ),
-            };
-        }
-        crate::core::shell_gate::ShellSecurity::Enforce => {}
     }
 
     Outcome {
@@ -129,8 +106,7 @@ pub(crate) fn path_jail_outcome() -> Outcome {
     }
 }
 /// Reports secret/`.env` redaction — the exfiltration-defense plane that is
-/// deliberately independent of the path jail + shell gating (#507). A user
-/// can run `lean-ctx yolo` (containment off) and still have this on, so it gets
+/// deliberately independent of the path jail + shell gating (#507), so it gets
 /// its own line: "are my API keys masked before they reach the LLM provider?".
 pub(crate) fn secret_detection_outcome() -> Outcome {
     let sd = &crate::core::config::SecretDetectionConfig::default();

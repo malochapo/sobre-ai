@@ -31,7 +31,7 @@ const CATALOG_CREATED_UNIX: i64 = 1_735_689_600;
 const CATALOG_CREATED_RFC3339: &str = "2025-01-01T00:00:00Z";
 
 /// `GET /v1/models` (and bare `/models`, normalized before routing).
-pub async fn handler(req: axum::extract::Request) -> Response {
+pub(crate) async fn handler(req: axum::extract::Request) -> Response {
     let rules = crate::core::config::Config::load().proxy.routing.clone();
     let body = if wants_anthropic_shape(&req) {
         anthropic_model_list(&rules)

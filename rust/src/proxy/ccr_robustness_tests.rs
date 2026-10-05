@@ -8,17 +8,14 @@
 //!
 //! Lives in-crate (not `rust/tests/`) because the invariants are over
 //! `pub(crate)` internals — `ccr::{persist*, resolve_tee, MIN_TEE_BYTES,
-//! inband_marker, splice_inband_in_place}` and the read-stub index — that an
+//! }` and the read-stub index — that an
 //! external integration crate cannot reach without weakening encapsulation.
 
 use serde_json::json;
 
 use crate::core::data_dir::test_env_lock;
 use crate::core::hasher::hash_short;
-use crate::proxy::ccr::{
-    MIN_TEE_BYTES, inband_marker, persist, persist_json, persist_tabular, resolve_tee,
-    splice_inband_in_place,
-};
+use crate::proxy::ccr::{MIN_TEE_BYTES, persist, persist_json, persist_tabular, resolve_tee};
 use crate::tools::ctx_expand;
 
 /// A verbatim original comfortably above [`MIN_TEE_BYTES`], so the persist gate
@@ -139,52 +136,6 @@ fn resolve_tee_rejects_traversal_nontee_and_bad_hex_across_prefixes() {
     ] {
         assert!(resolve_tee(bad).is_none(), "must reject: {bad}");
     }
-}
-
-/// Gap 6 — an in-band `<lc_expand:HASH>` marker splices on a *streaming*-shaped
-/// request just as on a non-streaming one (the `stream` flag is irrelevant to the
-/// recursive string walk).
-#[test]
-fn inband_marker_splices_on_streaming_shaped_request() {
-    let _lock = test_env_lock();
-    let body = big("historical streaming line");
-    let handle = persist(&body).unwrap();
-    let marker = inband_marker(&handle).expect("a proxy tee handle yields a marker");
-
-    let mut req = json!({
-        "stream": true,
-        "messages": [{ "role": "assistant", "content": format!("recall {marker} now") }],
-    });
-    assert!(
-        splice_inband_in_place(&mut req),
-        "a marker on a streaming request must splice"
-    );
-    let spliced = req["messages"][0]["content"].as_str().unwrap();
-    assert!(spliced.contains("historical streaming line"));
-    assert!(!spliced.contains("<lc_expand:"), "marker must be consumed");
-}
-
-/// Gap 7 — an unbacked (expired/wrong) marker is left verbatim rather than
-/// silently deleted, and a marker-less body stays byte-identical (cache-safe).
-#[test]
-fn inband_splice_keeps_unresolvable_marker_and_is_noop_without_one() {
-    let _lock = test_env_lock();
-    let mut bad = json!({ "stream": true, "t": "x <lc_expand:deadbeefdeadbeef> y" });
-    assert!(
-        !splice_inband_in_place(&mut bad),
-        "unbacked marker -> reports no change"
-    );
-    assert_eq!(
-        bad["t"].as_str().unwrap(),
-        "x <lc_expand:deadbeefdeadbeef> y",
-        "kept verbatim, not deleted"
-    );
-
-    let mut clean =
-        json!({ "stream": true, "messages": [{ "role": "user", "content": "no marker" }] });
-    let before = clean.clone();
-    assert!(!splice_inband_in_place(&mut clean));
-    assert_eq!(clean, before, "marker-less body stays byte-identical");
 }
 
 /// Gap 8 — end-to-end for the lossy tabular crusher (#982): the dropped

@@ -37,7 +37,7 @@ use serde_json::{Value, json};
 /// Completions body. `None` = not translatable (caller must fail open and
 /// forward natively).
 #[must_use]
-pub fn messages_to_chat(anthropic: &Value) -> Option<Value> {
+pub(crate) fn messages_to_chat(anthropic: &Value) -> Option<Value> {
     let model = anthropic.get("model")?.as_str()?;
     let src_messages = anthropic.get("messages")?.as_array()?;
 
@@ -270,7 +270,7 @@ fn translate_tool_choice(choice: &Value) -> Option<Value> {
 /// Translates a full OpenAI `chat.completion` body into an Anthropic message.
 /// `None` = body not recognizable (caller forwards it unchanged).
 #[must_use]
-pub fn chat_to_messages(openai: &Value) -> Option<Value> {
+pub(crate) fn chat_to_messages(openai: &Value) -> Option<Value> {
     let choice = openai.get("choices")?.as_array()?.first()?;
     let message = choice.get("message")?;
 
@@ -314,7 +314,7 @@ pub fn chat_to_messages(openai: &Value) -> Option<Value> {
 /// Maps an OpenAI error envelope (`{"error": {...}}`) to the Anthropic one
 /// (`{"type":"error","error":{...}}`) so the caller's SDK renders the message.
 #[must_use]
-pub fn error_to_anthropic(openai: &Value) -> Option<Value> {
+pub(crate) fn error_to_anthropic(openai: &Value) -> Option<Value> {
     let err = openai.get("error")?;
     let message = err.get("message").and_then(Value::as_str).unwrap_or("");
     let kind = match err.get("type").and_then(Value::as_str) {
@@ -377,7 +377,7 @@ enum OpenBlock {
 /// translated Anthropic event bytes; call [`StreamXlat::finish`] at stream end
 /// to flush the closing events if the upstream never sent `[DONE]`.
 #[derive(Default)]
-pub struct StreamXlat {
+pub(crate) struct StreamXlat {
     line_buf: Vec<u8>,
     started: bool,
     finished: bool,
@@ -392,7 +392,7 @@ const MAX_LINE_BYTES: usize = 1 << 20;
 
 impl StreamXlat {
     /// Consumes one upstream chunk, returns the translated bytes (possibly empty).
-    pub fn feed(&mut self, chunk: &[u8]) -> Vec<u8> {
+    pub(crate) fn feed(&mut self, chunk: &[u8]) -> Vec<u8> {
         let mut out = Vec::new();
         for byte in chunk {
             if *byte == b'\n' {
@@ -406,7 +406,7 @@ impl StreamXlat {
     }
 
     /// Flushes the closing events. Idempotent.
-    pub fn finish(&mut self) -> Vec<u8> {
+    pub(crate) fn finish(&mut self) -> Vec<u8> {
         let mut out = Vec::new();
         self.emit_closing(&mut out);
         out
@@ -601,7 +601,7 @@ fn emit_event(out: &mut Vec<u8>, event: &str, data: &Value) {
 /// Wraps an (already usage-teed) OpenAI SSE byte stream into the translated
 /// Anthropic SSE stream. Chunks that translate to nothing are skipped; on
 /// upstream end the closing events are flushed.
-pub fn to_anthropic_stream<S, B, E>(
+pub(crate) fn to_anthropic_stream<S, B, E>(
     inner: S,
 ) -> impl futures::Stream<Item = Result<Vec<u8>, E>> + Send + 'static
 where

@@ -38,7 +38,7 @@ pub struct RequestBreakdown {
     pub conversation_tokens: usize,
 }
 
-pub fn analyze_request(body: &Value, provider: Provider) -> RequestBreakdown {
+pub(crate) fn analyze_request(body: &Value, provider: Provider) -> RequestBreakdown {
     match provider {
         Provider::Anthropic => analyze_anthropic(body),
         Provider::OpenAi => analyze_openai(body),
@@ -778,7 +778,7 @@ pub(crate) fn token_share_basis_points(part: u64, total: u64) -> Option<u64> {
 
 /// Load persisted proxy introspection data from disk.
 /// Returns `None` if the file doesn't exist or is stale (> `max_age_secs`).
-pub fn load_persisted(max_age_secs: u64) -> Option<serde_json::Value> {
+pub(crate) fn load_persisted(max_age_secs: u64) -> Option<serde_json::Value> {
     let data_dir = crate::core::data_dir::lean_ctx_data_dir().ok()?;
     let path = data_dir.join("proxy-introspect.json");
     let content = std::fs::read_to_string(&path).ok()?;

@@ -12,7 +12,6 @@
 
 mod case_construct;
 mod heredoc;
-mod mode;
 #[cfg(test)]
 mod tests;
 #[cfg(test)]
@@ -25,34 +24,15 @@ pub(crate) use case_construct::{contains_double_semicolon, rewrite_case_construc
 pub(crate) use heredoc::heredoc_delims;
 pub use heredoc::strip_all_heredoc_bodies;
 pub(crate) use heredoc::{strip_comments, strip_quoted_heredoc_bodies};
-pub use mode::ShellSecurity;
 
-/// Checks whether a command may run, honouring the active [`ShellSecurity`] mode
-/// (GL #788). This is the single chokepoint shared by MCP `ctx_shell` and the
-/// CLI shell entrypoints, so the mode applies consistently:
-///
-/// - [`ShellSecurity::Off`] → always `Ok` (gating skipped; compression intact).
-/// - [`ShellSecurity::Warn`] → run the checks, log any violation, return `Ok`.
-/// - [`ShellSecurity::Enforce`] → block on violation (the secure default).
+/// Checks whether a command may run. This is the single chokepoint shared by
+/// MCP `ctx_shell` and the CLI shell entrypoints: every command is allowed
+/// except the unconditional blocks (invariant 6).
 pub fn check_shell_command(command: &str) -> Result<(), ShellError> {
-    match ShellSecurity::resolve() {
-        ShellSecurity::Off => Ok(()),
-        ShellSecurity::Warn => {
-            if let Err(msg) = enforce_shell_gate(command) {
-                tracing::warn!(
-                    target: "shell_security",
-                    "warn-only: would block ({})",
-                    msg.lines().next().unwrap_or("blocked")
-                );
-            }
-            Ok(())
-        }
-        ShellSecurity::Enforce => enforce_shell_gate(command),
-    }
+    enforce_shell_gate(command)
 }
 
 /// True when `command` would pass the allowlist / dangerous-pattern checks in
-/// `enforce` semantics — independent of the active [`ShellSecurity`] mode and
 /// without any logging or blocking side effects.
 ///
 /// The PreToolUse hook uses this to decide whether a compound/pipeline is safe

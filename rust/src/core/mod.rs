@@ -384,7 +384,6 @@ pub mod savings_ledger;
 pub mod search_delta;
 pub mod search_index;
 pub mod secret_detection;
-pub mod security_posture;
 pub mod sensitivity;
 pub mod session_token;
 pub mod shell_gate;

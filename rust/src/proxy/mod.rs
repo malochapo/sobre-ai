@@ -5,58 +5,52 @@
 //! request shapes (`shape-xlat`) so a Claude-shaped client can reach an
 //! OpenAI-shaped upstream such as a local Ollama.
 
-pub mod anthropic;
+pub(crate) mod anthropic;
 #[cfg(test)]
 mod auth_tests;
-pub mod bedrock;
-pub mod cache_aligner;
-pub mod cache_attribution;
-pub mod cache_breakpoint;
-pub mod cache_policy;
-pub mod cache_safety;
-pub mod ccr;
+pub(crate) mod bedrock;
+pub(crate) mod cache_aligner;
+pub(crate) mod cache_attribution;
+pub(crate) mod cache_prefix;
+pub(crate) mod cache_safety;
+pub(crate) mod ccr;
 #[cfg(test)]
 mod ccr_robustness_tests;
 mod codec;
-pub mod cold_prefix;
-pub mod compress;
-pub mod compress_api;
-pub mod cost;
-pub mod counterfactual;
-pub mod effort;
-pub mod forward;
-pub mod google;
-pub mod history_prune;
-pub mod holdout;
-pub mod introspect;
-pub mod metrics;
-pub mod model_router;
-pub mod models_api;
-pub mod openai;
-pub mod openai_responses;
-pub mod openai_responses_ws;
-pub mod output_savings;
-pub mod prefix_cache_stats;
-pub mod prefix_replay;
-pub mod prose;
-pub mod prose_ranker;
-pub mod providers;
-pub mod request_tags;
-pub mod routing;
+pub(crate) mod compress;
+pub(crate) mod compress_api;
+pub(crate) mod cost;
+pub(crate) mod forward;
+pub(crate) mod google;
+pub(crate) mod history_prune;
+pub(crate) mod introspect;
+pub(crate) mod metrics;
+pub(crate) mod model_router;
+pub(crate) mod models_api;
+pub(crate) mod openai;
+pub(crate) mod openai_responses;
+pub(crate) mod openai_responses_ws;
+pub(crate) mod output_savings;
+pub(crate) mod prefix_cache_stats;
+pub(crate) mod prefix_replay;
+pub(crate) mod prose;
+pub(crate) mod prose_ranker;
+pub(crate) mod providers;
+pub(crate) mod request_tags;
+pub(crate) mod routing;
 #[cfg(feature = "shape-xlat")]
-pub mod shape_xlat;
-pub mod sse_keepalive;
+pub(crate) mod shape_xlat;
+pub(crate) mod sse_keepalive;
 #[cfg(test)]
 mod stats_tests;
-pub mod sticky_tools;
-pub mod tool_kind;
-pub mod tool_output;
+pub(crate) mod sticky_tools;
+pub(crate) mod tool_kind;
+pub(crate) mod tool_output;
 #[cfg(test)]
 mod upstream_tests;
-pub mod usage;
-pub mod usage_accounting;
-pub mod usage_meter;
-pub mod verbosity;
+pub(crate) mod usage;
+pub(crate) mod usage_accounting;
+pub(crate) mod usage_meter;
 
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -366,9 +360,6 @@ pub async fn start_proxy_with_token(port: u16, auth_token: Option<String>) -> an
     // Live model prices (#1179): load the price list cached by
     // `lean-ctx pricing refresh`, if any. No network here.
     crate::core::gain::live_pricing::ensure_loaded();
-    // Seed the cold-prefix baselines too so a long idle gap that straddles a
-    // proxy restart is still detected and the repack can fire (#499).
-    cold_prefix::resume_from_disk();
 
     let cfg = Config::load();
     // Read once at startup — avoids a Config::load() on every proxied request.
@@ -605,10 +596,6 @@ async fn status_handler(State(state): State<ProxyState>) -> impl IntoResponse {
     // reflects config.toml hot-reloads and any start-time env override.
     let up = state.upstream_snapshot();
 
-    // Resolve the effort level fresh so /status reflects config.toml hot-reloads
-    // and env overrides, matching the upstream snapshot above (#834).
-    let active_effort = crate::core::config::Config::load().proxy.resolved_effort();
-
     let introspect_total_input = i.total_input_tokens.load(Relaxed);
     let introspect_bulk_candidates = i.total_bulk_candidate_tokens.load(Relaxed);
     let introspect_bulk_share =
@@ -616,7 +603,6 @@ async fn status_handler(State(state): State<ProxyState>) -> impl IntoResponse {
 
     let body = serde_json::json!({
         "status": "running",
-        "proxy_mode": format!("{:?}", crate::core::config::Config::load().proxy.resolved_proxy_mode()),
         "port": state.port,
         "upstreams": {
             "anthropic": up.anthropic.clone(),
@@ -633,10 +619,6 @@ async fn status_handler(State(state): State<ProxyState>) -> impl IntoResponse {
         "requests_compressed": s.requests_compressed.load(Relaxed),
         "tokens_saved": s.tokens_saved.load(Relaxed),
         "tokens_saved_estimated": true,
-        // Provider-verified savings (#701, opt-in counterfactual metering):
-        // both sides counted by Anthropic on the same request. `null` until
-        // the first probe-covered request lands.
-        "verified_savings": usage_meter::verified_savings(),
         "bytes_original": s.bytes_original.load(Relaxed),
         "bytes_compressed": s.bytes_compressed.load(Relaxed),
         "compression_ratio_pct": format!("{:.1}", s.compression_ratio()),
@@ -644,7 +626,6 @@ async fn status_handler(State(state): State<ProxyState>) -> impl IntoResponse {
         "prefix_cache": prefix_cache_stats::snapshot(),
         "cache_safety": cache_safety::snapshot(),
         "cache_attribution": cache_attribution::snapshot(),
-        "effort": effort::snapshot(active_effort),
         "per_model": cost::snapshot(),
         "spend": {
             "source": "measured",
