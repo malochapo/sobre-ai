@@ -15,3 +15,8 @@ rust/eval/testbench/** text eol=lf
 # generated docs above.
 rust/data/grammar_registry.json text eol=lf
 
+
+# The `sobre` skill is embedded with include_str! and written verbatim into
+# agent skill dirs; its YAML frontmatter must start with `---\n` on every
+# platform, so Windows checkouts must not convert it to CRLF.
+rust/skill/SKILL.md text eol=lf
