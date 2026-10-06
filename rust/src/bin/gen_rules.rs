@@ -1,12 +1,12 @@
-//! Regenerate the committed `LEAN-CTX.md` rule artifacts from the canonical
+//! Regenerate the committed `rust/LEAN-CTX.md` rule artifact from the canonical
 //! rules source (`core::rules_canonical`).
 //!
 //! Run:   `cargo run --example gen_rules --features dev-tools`
 //! Check: `cargo run --example gen_rules --features dev-tools -- --check`
 //!
 //! Bumping `RULES_VERSION` or editing a canonical section makes the checked-in
-//! `LEAN-CTX.md` / `rust/LEAN-CTX.md` stale; this writer brings them back in
-//! sync. `--check` mirrors `tests/rules_drift.rs` for a fast pre-write gate.
+//! `rust/LEAN-CTX.md` stale; this writer brings it back in sync. `--check`
+//! mirrors `tests/rules_drift.rs` for a fast pre-write gate.
 
 use std::path::{Path, PathBuf};
 

@@ -26,10 +26,10 @@ fn callgraph_expand_and_graph_require_action_inputs() {
     assert!(!callgraph.is_valid(&json!({"action":"trace","from":"a"})));
 
     let expand = validator(&CtxExpandTool);
-    assert!(expand.is_valid(&json!({"id":"F1"})));
-    assert!(expand.is_valid(&json!({"action":"list"})));
+    assert!(expand.is_valid(&json!({"id":"cargo_test_1a2b3c4d.log"})));
+    assert!(expand.is_valid(&json!({"id":"x.log","start_line":1,"end_line":9})));
     assert!(!expand.is_valid(&json!({})));
-    assert!(!expand.is_valid(&json!({"action":"search_all"})));
+    assert!(!expand.is_valid(&json!({"search":"ERROR"})));
 
     let graph = validator(&CtxGraphTool);
     assert!(graph.is_valid(&json!({"action":"status"})));

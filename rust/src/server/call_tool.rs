@@ -162,15 +162,10 @@ impl LeanCtxServer {
             return Ok(result);
         }
 
-        let inline_shell = name == "ctx_shell"
-            && crate::core::firewall::should_inline_shell(
-                helpers::get_bool(args, "inline").unwrap_or(false),
-                result_text.len(),
-            );
         let is_raw_shell = name == "ctx_shell" && {
             let arg_raw = helpers::get_bool(args, "raw").unwrap_or(false);
             let arg_bypass = helpers::get_bool(args, "bypass").unwrap_or(false);
-            arg_raw || arg_bypass || crate::core::runtime_flags::raw_enabled() || inline_shell
+            arg_raw || arg_bypass || crate::core::runtime_flags::raw_enabled()
         };
 
         let pre_terse_len = result_text.len();
@@ -422,12 +417,6 @@ impl LeanCtxServer {
 
         let current_count = self.call_count.load(std::sync::atomic::Ordering::Relaxed);
         if current_count > 0 && current_count.is_multiple_of(100) {
-            // Bound the on-disk archive between restarts: prune TTL-expired and
-            // over-budget entries off the hot path so it can't grow unbounded and
-            // starve the host of RAM via the page cache (#417).
-            std::thread::spawn(|| {
-                let _ = crate::core::archive::cleanup();
-            });
             // Self-managing memory: opportunistically consolidate knowledge in the
             // background (time-gated + single-flight inside `maybe_run`).
             if let Some(root) = self.session.read().await.project_root.clone() {
@@ -443,7 +432,7 @@ impl LeanCtxServer {
         // which break a JSON contract. This guard is the robust catch-all:
         // restore the pure body captured *before* compression and decoration.
         // Redaction + sensitivity were applied earlier so the security envelope
-        // is preserved. `ctx_outline` is not an archivable/firewallable tool, so
+        // is preserved. `ctx_outline` output is never teed, so
         // `pre_compression` is the unmodified body here; no-op otherwise.
         if machine_readable {
             result_text = pre_compression;

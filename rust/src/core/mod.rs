@@ -373,8 +373,6 @@ pub mod wrapped;
 // ---------------------------------------------------------------------------
 // Feature-gated modules
 // ---------------------------------------------------------------------------
-pub mod archive;
-pub mod archive_fts;
 pub mod artifact_index;
 pub mod artifacts;
 pub mod ast_walk;
@@ -383,7 +381,6 @@ pub mod chunks_ts;
 pub mod deep_queries;
 pub mod deps;
 pub mod editor_registry;
-pub mod firewall;
 pub mod pathjail;
 pub mod signatures;
 #[cfg(feature = "tree-sitter")]

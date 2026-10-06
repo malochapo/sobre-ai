@@ -162,11 +162,11 @@ pub const AUTO: &str = "Long shell jobs: ctx_shell(run_in_background=true), then
 /// expanding (the "too compressed" complaint). The MCP-free path ("read the shown
 /// file path with any tool") covers orgs that forbid MCP. Since v5 every injected
 /// profile (FULL + COMPACT/Bare) carries the terser [`RECOVER_COMPACT`] instead;
-/// the reactive footers in `ctx_read`/`archive`/`ctx_shell` still teach the
+/// the reactive footers in `ctx_read`/`ctx_shell` still teach the
 /// `ctx_expand` path in context.
 pub const RECOVER: &str = "RECOVER: compressed output is reversible — never re-read line-by-line. \
     Need full/exact? Read the shown file path with any tool (no MCP), or \
-    ctx_read(mode=full|raw=true); [Archived]/tee/firewall → ctx_expand(id=...).";
+    ctx_read(mode=full|raw=true); a [full output] footer → ctx_expand(id=...).";
 
 /// Terse injected variant of [`RECOVER`] (FULL + COMPACT/Bare). The cold
 /// first-contact handshake renders the COMPACT profile, so this one-liner keeps
@@ -174,8 +174,8 @@ pub const RECOVER: &str = "RECOVER: compressed output is reversible — never re
 /// `instructions.rs`); since v5 the FULL dedicated files carry it too (#578).
 /// Keeps the two primary MCP-optional paths and the "never line-by-line" rule.
 /// Must keep the `(no MCP)` clause (asserted in tests).
-pub const RECOVER_COMPACT: &str = "RECOVER: compression is reversible — read the shown path \
-    (no MCP) or ctx_read(raw=true), never re-read line-by-line.";
+pub const RECOVER_COMPACT: &str = "RECOVER: compression is reversible — ctx_expand(id) from the \
+    footer, or read the shown path (no MCP); files → ctx_read(raw=true). Never re-read line-by-line.";
 
 /// Context Engineering Protocol version reference.
 pub const CEP: &str = "CEP v1: 1.ACT FIRST 2.DELTA ONLY (Fn refs) 3.STRUCTURED (+/-/~) \

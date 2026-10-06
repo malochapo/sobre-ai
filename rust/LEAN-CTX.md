@@ -45,7 +45,7 @@ PARALLEL: fire independent tool calls in the SAME turn — ctx_compose bundles m
 
 Long shell jobs: ctx_shell(run_in_background=true), then poll job_id. ctx_session=memory; full guide: LEAN-CTX.md
 
-RECOVER: compressed output is reversible — never re-read line-by-line. Need full/exact? Read the shown file path with any tool (no MCP), or ctx_read(mode=full|raw=true); [Archived]/tee/firewall → ctx_expand(id=...).
+RECOVER: compressed output is reversible — never re-read line-by-line. Need full/exact? Read the shown file path with any tool (no MCP), or ctx_read(mode=full|raw=true); a [full output] footer → ctx_expand(id=...).
 
 CEP v1: 1.ACT FIRST 2.DELTA ONLY (Fn refs) 3.STRUCTURED (+/-/~) 4.ONE LINE PER ACTION 5.QUALITY ANCHOR
 

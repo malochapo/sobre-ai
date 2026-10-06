@@ -83,7 +83,7 @@ fn attach_ccr(original: &str, result: String, audience: CcrAudience) -> String {
             sticky_tools::mark_ccr_active(0);
             format!(
                 "{result}\n[lean-ctx: full original at {handle} — read it directly (no MCP), or \
-                 ctx_expand(id=\"{handle}\", head=N|search=\"…\"|json_path=\"…\") for a slice]"
+                 ctx_expand(id=\"{handle}\", search=\"…\"|start_line=N) for a slice]"
             )
         }
         None => result,

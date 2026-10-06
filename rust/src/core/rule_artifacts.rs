@@ -14,7 +14,7 @@ use crate::core::rules_canonical::{self, Wrapper};
 
 /// Project-relative paths of every committed dedicated-rules artifact. Add new
 /// real rule artifacts here — not docs examples or templates.
-pub const ARTIFACT_PATHS: &[&str] = &["LEAN-CTX.md", "rust/LEAN-CTX.md"];
+pub const ARTIFACT_PATHS: &[&str] = &["rust/LEAN-CTX.md"];
 
 /// Canonical body of a project `LEAN-CTX.md`: the owner banner, the long-form
 /// rules block (non-shadow, compression `Off`), and a trailing newline.

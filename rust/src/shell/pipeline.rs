@@ -143,15 +143,8 @@ pub(super) fn exec_buffered(command: &str, shell: &str, shell_flag: &str) -> i32
             let _ = io::stdout().write_all(b"\n");
         }
     }
-    // Shared tee policy (#811): same decision on CLI and MCP paths.
-    let should_tee = super::tee_policy::should_tee(
-        &crate::core::config::TeeMode::default(),
-        exit_code,
-        full_output.trim().is_empty(),
-        super::tee_policy::output_was_elided(&full_output, &compressed),
-        input_tokens,
-        output_tokens,
-    );
+    // Same rule as the MCP path: whatever compression cut is saved.
+    let should_tee = super::tee_policy::should_tee(&full_output, &compressed, false);
     if should_tee
         && let Some(path) = super::redact::save_tee(command, &full_output)
         && !matches!(std::env::var("LEAN_CTX_QUIET"), Ok(v) if v.trim() == "1")

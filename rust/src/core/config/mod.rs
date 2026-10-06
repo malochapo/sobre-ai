@@ -24,7 +24,7 @@ mod tests;
 #[cfg(test)]
 mod tests_parsing;
 
-pub use enums::{CompressionLevel, RecoveryHints, ResponseVerbosity, SessionDegrade, TeeMode};
+pub use enums::{CompressionLevel, RecoveryHints, ResponseVerbosity, SessionDegrade};
 pub use loader::last_config_parse_error;
 pub use proxy::{
     ProxyConfig, ProxyProvider, ResolvedProvider, RoutingRules, Upstreams, WireShape,
@@ -55,10 +55,8 @@ pub const PROACTIVE_EXPANSION_THRESHOLD: f64 = 0.6;
 /// Proactive CCR expansion: archived content older than this is ignored.
 pub const PROACTIVE_EXPANSION_MAX_AGE_SECS: u64 = 3600;
 
-/// Disk ceiling of the zero-loss compression archive (large tool outputs).
-pub const ARCHIVE_MAX_DISK_MB: u64 = 500;
-/// Retention of the compression archive.
-pub const ARCHIVE_MAX_AGE_HOURS: u64 = 48;
+/// Graph indexes untouched for longer than this are purged.
+pub const GRAPH_INDEX_MAX_AGE_HOURS: u64 = 48;
 
 /// Compact output formats preserved verbatim instead of recompressed (#342).
 pub const PRESERVE_COMPACT_FORMATS: &[&str] = &["toon"];

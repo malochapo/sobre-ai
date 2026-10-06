@@ -360,42 +360,6 @@ tests/test_auth.py::test_refresh PASSED
 }
 
 // =============================================================================
-// Fix F: Confidence-Signal (TeeMode::HighCompression)
-// =============================================================================
-
-mod confidence_signal {
-    use lean_ctx::core::config::TeeMode;
-
-    #[test]
-    fn scenario_tee_mode_serialization() {
-        let json = serde_json::to_string(&TeeMode::HighCompression).unwrap();
-        assert!(
-            json.contains("highcompression") || json.contains("HighCompression"),
-            "HighCompression should serialize: {json}"
-        );
-    }
-
-    #[test]
-    fn scenario_high_compression_hint_format() {
-        // Verify the hint format exists in source. The local var was renamed
-        // savings_pct -> pct in the shell-fidelity refactor (42a186a65c).
-        let src = include_str!("../../src/tools/registered/ctx_shell.rs");
-        assert!(
-            src.contains("compressed {pct:.0}%: full output at"),
-            "high compression hint must use correct format"
-        );
-    }
-
-    #[test]
-    fn scenario_threshold_is_70_percent() {
-        // The 70% tee threshold now lives in the shared tee_policy (single source
-        // of truth), not inline in ctx_shell.rs (refactor 42a186a65c).
-        let src = include_str!("../../src/shell/tee_policy.rs");
-        assert!(src.contains("> 70.0"), "threshold must be 70%");
-    }
-}
-
-// =============================================================================
 // Fix B: Auto-Degrade (CompressionLevel session override)
 // =============================================================================
 

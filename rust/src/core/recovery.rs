@@ -6,8 +6,8 @@
 //! ([`crate::core::rules_canonical::RECOVER`]) teaches the vocabulary once in the
 //! system prompt; this module is the reactive half: it resolves the effective
 //! [`RecoveryHints`] tier and owns the canonical, **non-MCP-first** phrasings so
-//! every compressed-output site (`ctx_read`, `ctx_shell` tee, archive / firewall
-//! / spill handles) renders identical, byte-stable wording.
+//! every compressed-output site (`ctx_read`, `ctx_shell` tee, spill handles)
+//! renders identical, byte-stable wording.
 //!
 //! Determinism (#498): the tier is a pure function of profile + config + env,
 //! never of per-call session state, and every phrasing is a pure function of its

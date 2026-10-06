@@ -63,7 +63,7 @@ pub(crate) fn handle(
             use crate::core::context_handles::HandleRegistry;
 
             let mut handle_reg = HandleRegistry::new();
-            output.push("▸ DIRECTLY RELEVANT (use ctx_read or ctx_expand @ref):".to_string());
+            output.push("▸ DIRECTLY RELEVANT (use ctx_read):".to_string());
             for r in &high {
                 let line_count = file_line_count(&r.path);
                 let item_id = ContextItemId::from_file(&r.path);

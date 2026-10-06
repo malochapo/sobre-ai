@@ -18,7 +18,7 @@ impl McpTool for CtxShellTool {
         tool_def(
             "ctx_shell",
             "WORKFLOW: preferred — auto-compresses output (build/test/log).\n\
-              raw=true for verbatim output; inline=true for moderately-sized verbatim output.\n\
+             raw=true for verbatim output.\n\
              [exit:N] on errors (lossless).\n\
              POLICY: every command is allowed except constructs that execute something the command text does not name (eval/exec/source, $() at command position, interpreter -c, find -exec, LD_PRELOAD=, …).\n\
              A [BLOCKED] command is permanent — do not retry it.\n\
@@ -28,7 +28,6 @@ impl McpTool for CtxShellTool {
                 "properties": {
                     "command": { "type": "string", "description": "Shell command" },
                     "raw": { "type": "boolean", "description": "Skip compression (verbatim)" },
-                    "inline": { "type": "boolean", "description": "Return verbatim output inline up to archive.inline_max_bytes; larger output uses the archive/firewall" },
                     "cwd": { "type": "string", "description": "Working dir (persists across calls)" },
                     "timeout_ms": { "type": "integer", "description": "Job lifetime in ms (max 3600000) — NOT the inline wait. A command still running at the ~110s foreground cap detaches to a pollable shell_* job and keeps running up to timeout_ms." },
                     "env": { "type": "object", "description": "Extra env vars", "additionalProperties": { "type": "string" } },
@@ -115,8 +114,8 @@ impl McpTool for CtxShellTool {
         warn_shell_secret_paths(&command);
 
         // #842: a bare `cat <file>` is better served by ctx_read — it delivers
-        // content inline instead of firewalling/archiving the output, avoiding
-        // a mandatory ctx_expand round-trip for agents with cat-muscle-memory.
+        // content inline instead of compressing it, avoiding a ctx_expand
+        // round-trip for agents with cat-muscle-memory.
         if let Some(read_path) = detect_bare_cat_file(&command)
             && let Some(cache_lock) = ctx.cache.as_ref()
             && let Some(mut cache) = crate::server::bounded_lock::write(cache_lock, "cat_redirect")
@@ -318,8 +317,7 @@ impl McpTool for CtxShellTool {
 
             let output = redact_shell_output_secrets(&raw_output);
 
-            let inline = get_bool(args, "inline").unwrap_or(false);
-            let (result_out, original, saved, tee_hint) = if raw || inline {
+            let (result_out, original, saved, tee_hint) = if raw {
                 let tokens = crate::core::tokens::count_tokens(&output);
                 (output, tokens, 0, String::new())
             } else {
@@ -329,30 +327,17 @@ impl McpTool for CtxShellTool {
                 let sent = crate::core::tokens::count_tokens(&result);
                 let saved = original.saturating_sub(sent);
 
-                // Shared tee policy (#811): identical decision to the CLI path —
-                // `Failures` keys off the real exit code, not a substring match.
-                let timeout_notice_only = is_timeout_notice_only(&output, exit_code);
+                // Same rule as the CLI path: whatever compression cut is saved,
+                // and `ctx_expand` is the one way back to it.
                 let tee_hint = if crate::shell::tee_policy::should_tee(
-                    &crate::core::config::TeeMode::default(),
-                    exit_code,
-                    output.trim().is_empty() || timeout_notice_only,
-                    crate::shell::tee_policy::output_was_elided(&output, &result),
-                    original,
-                    sent,
+                    &output,
+                    &result,
+                    is_timeout_notice_only(&output, exit_code),
                 ) {
                     crate::shell::save_tee(&cmd_clone, &output)
-                        .map(|p| {
-                            if matches!(crate::core::config::TeeMode::default(), crate::core::config::TeeMode::HighCompression)
-                            {
-                                let pct = crate::shell::tee_policy::savings_pct(original, sent);
-                                // Recovery grammar is path-first: agents without ctx_expand
-                                // can still read the saved artifact directly (#936).
-                                format!(
-                                    "\n[compressed {pct:.0}%: full output at {p} — read it directly (no MCP), or ctx_expand(id=\"{p}\", search=\"…\"|head=N|json_path=\"…\") for a slice]"
-                                )
-                            } else {
-                                format!("\n[full output: {p} — read it directly (no MCP), or ctx_expand(id=\"{p}\")]")
-                            }
+                        .and_then(|p| {
+                            let id = std::path::Path::new(&p).file_name()?.to_str()?.to_string();
+                            Some(format!("\n[full output: ctx_expand(id=\"{id}\")]"))
                         })
                         .unwrap_or_default()
                 } else {

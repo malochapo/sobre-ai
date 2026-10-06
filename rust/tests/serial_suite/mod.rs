@@ -3,7 +3,6 @@
 //! (tests/serial.rs) that runs them one at a time; see that file for how the
 //! single thread is enforced.
 
-mod archive_expand_tests;
 mod autonomy_tests;
 mod bazsi_reported_scenarios;
 mod claude_config_dir;

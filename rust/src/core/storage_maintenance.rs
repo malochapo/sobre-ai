@@ -2,9 +2,8 @@
 //!
 //! Unlike the interactive `lean-ctx cache prune` (which prints per-file output),
 //! these routines are silent (tracing only) so they can run inside the MCP
-//! daemon without corrupting the stdio protocol. They enforce the disk budget
-//! that the field had been silently exceeding (see EPIC 6 / #2364): unbounded
-//! archive FTS growth and accumulated quarantined BM25 indexes.
+//! daemon without corrupting the stdio protocol. They remove accumulated
+//! quarantined BM25 indexes (#2364).
 
 use std::path::PathBuf;
 
@@ -13,8 +12,6 @@ use std::path::PathBuf;
 pub struct MaintenanceResult {
     pub quarantined_removed: u32,
     pub bytes_freed: u64,
-    pub archive_entries_pruned: u32,
-    pub archive_db_bytes_after: u64,
 }
 
 const QUARANTINED_FILES: &[&str] = &["bm25_index.bin.zst.quarantined"];
@@ -51,27 +48,19 @@ fn prune_quarantined_bm25() -> (u32, u64) {
     (removed, freed)
 }
 
-/// Run a silent maintenance pass: prune quarantined BM25 indexes and enforce
-/// the archive FTS size cap. Safe to call from the MCP daemon.
+/// Run a silent maintenance pass: prune quarantined BM25 indexes. Safe to call
+/// from the MCP daemon.
 pub fn run_quiet() -> MaintenanceResult {
     let (quarantined_removed, bytes_freed) = prune_quarantined_bm25();
-    // Enforce the archive TTL + on-disk size budget (prunes `.txt`/`.meta.json`
-    // + FTS rows together), then backstop the DB cap. Without this the archive
-    // grew unbounded on disk and exhausted host RAM via the page cache (#417).
-    let archive_entries_pruned = crate::core::archive::cleanup();
-    let archive_db_bytes_after = crate::core::archive_fts::enforce_cap();
-    if quarantined_removed > 0 || archive_entries_pruned > 0 {
+    if quarantined_removed > 0 {
         tracing::info!(
             "storage maintenance: pruned {quarantined_removed} quarantined BM25 index file(s) \
-             (freed {bytes_freed} bytes) + {archive_entries_pruned} archive entry/entries; \
-             archive DB now {archive_db_bytes_after} bytes"
+             (freed {bytes_freed} bytes)"
         );
     }
     MaintenanceResult {
         quarantined_removed,
         bytes_freed,
-        archive_entries_pruned,
-        archive_db_bytes_after,
     }
 }
 

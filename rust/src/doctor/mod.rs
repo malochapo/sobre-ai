@@ -342,10 +342,6 @@ pub fn run() -> u32 {
         board.check(check);
     }
 
-    // 15b) Archive FTS footprint
-    let archive_footprint = archive_footprint_outcome();
-    board.check(&archive_footprint);
-
     // 16) Memory
     let mem = memory_outcome();
     board.check(&mem);

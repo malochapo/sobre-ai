@@ -91,7 +91,7 @@ pub fn hook_covered_tools_section() -> String {
     }
 
     if has("ctx_expand") {
-        lines.push("• ctx_expand — recover full text from [Archived]/compressed output".into());
+        lines.push("• ctx_expand — full output that compression cut (id from the footer)".into());
     }
 
     lines.join("\n")

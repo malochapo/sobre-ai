@@ -120,7 +120,7 @@ fn is_symbol_flood(line: &str) -> bool {
 /// which can appear when upstream compression produces content that confuses
 /// downstream summarizer models.
 ///
-/// NOT applied to protected read tools (`firewall::is_protected_read`; see
+/// NOT applied to protected read tools (`ctx_read`; see
 /// `sanitized_tool_text` in `server::dispatch`): their contract is
 /// byte-fidelity — file content is never a model artifact (#709).
 pub fn sanitize(output: &str) -> String {
