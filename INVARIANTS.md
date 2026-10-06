@@ -36,13 +36,21 @@ is being replaced, the answer is no.
   `LEAN_CTX_*` (`LEAN_CTX_CONFIG_DIR`, `LEAN_CTX_DATA_DIR`,
   `LEAN_CTX_PROXY_TOKEN`, …). Never for what the tool does.
 - **No profiles**, no presets, no modes.
+- **No settings outside the file.** No per-project files, no settings kept in
+  session state, nothing a previous run persisted that later acts as a value.
 - Hard cap: **15 configuration keys.** Adding one requires removing one.
 
-The file currently has 14 keys, leaving one slot: `allow_paths`,
+How keys are counted: a top-level field is one key, a field of `[proxy]` is
+one key, and a table that a key holds (`proxy.upstreams`, `proxy.routing`)
+counts once whatever it contains. A test (`config::schema::key_cap`) pins the
+list, so adding a key is always a visible change.
+
+The file currently has 13 keys, leaving two slots: `allow_paths`,
 `read_only_roots`, `ignore`, `passthrough_commands`, `shell_timeout_secs`,
-`shell_hook`, `hook_binary`, `compression_level`, `debug_log`,
-`embedding_model`, and the `[proxy]` table's `enabled`, `port`, `upstreams` and `routing`. Choices made
-once at setup are `init` options, recorded by what `init` installs, not keys.
+`hook_binary`, `compression_level`, `debug_log`, `embedding_model`, and the
+`[proxy]` table's `enabled`, `port`, `upstreams` and `routing`. Every key has
+one value even when the file is silent: `compression_level` defaults to 0.3,
+never to "unset". `init` takes no option beyond which agent to connect.
 The generated list is `docs/reference/generated/config-keys.md`.
 
 If a setting can be decided correctly by the tool, it is not a setting.
@@ -55,6 +63,10 @@ If a setting can be decided correctly by the tool, it is not a setting.
 There is exactly one answer to `tools/list`. It does not depend on an
 environment variable, a config key, a pinned profile, the identity of the
 calling client, a role, or a workflow state.
+
+One deliberate exception, on wording only: `compression_level` condenses the
+prose of tool descriptions, as it condenses the rest of sobre's prose. The
+set of tools, their names and their parameters never change.
 
 Corollary: no "universal invoker" tool, because there are no hidden tools for it
 to reach.
