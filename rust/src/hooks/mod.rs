@@ -128,7 +128,7 @@ use agents::{
     install_cursor_hook_scripts, install_cursor_hook_with_mode, install_gemini_deny_hook,
     install_gemini_hook, install_gemini_hook_config, install_gemini_hook_scripts, install_grok_mcp,
     install_hermes_hook_with_mode, install_jetbrains_hook, install_kiro_hook,
-    install_openclaw_hook, install_opencode_hook_with_mode, install_pi_hook_with_mode,
+    install_openclaw_hook, install_opencode_hook, install_pi_hook_with_mode,
     install_qoder_hook_with_mode, install_vibe_hook, install_windsurf_hooks,
     install_windsurf_hooks_replace, install_windsurf_rules,
 };
@@ -946,7 +946,7 @@ pub fn install_agent_hook_with_mode(agent: &str, global: bool, mode: HookMode) {
             "~/.verdent/mcp.json",
             &home.join(".verdent/mcp.json"),
         ),
-        "opencode" => install_opencode_hook_with_mode(mode),
+        "opencode" => install_opencode_hook(),
         "amp" => install_amp_hook(),
         "crush" => install_crush_hook_with_mode(mode),
         "openclaw" => install_openclaw_hook(),
