@@ -1,6 +1,5 @@
 use lean_ctx::core::config::{CompressionLevel, Config};
 use lean_ctx::instructions;
-use lean_ctx::tools::CrpMode;
 
 /// Points every lean-ctx dir at a fresh temp dir holding `config.toml` with the
 /// given contents, restoring the previous env on drop. The serial harness runs
@@ -50,7 +49,7 @@ fn set_compression(compression: &str) -> ConfigGuard {
 #[test]
 fn compression_level_lite_injects_concise() {
     let _g = set_compression("lite");
-    let text = instructions::build_instructions_for_test(CrpMode::Off);
+    let text = instructions::build_instructions();
     assert!(
         text.contains("OUTPUT STYLE: concise"),
         "compression lite should inject concise prompt"
@@ -60,7 +59,7 @@ fn compression_level_lite_injects_concise() {
 #[test]
 fn compression_level_standard_injects_dense() {
     let _g = set_compression("standard");
-    let text = instructions::build_instructions_for_test(CrpMode::Off);
+    let text = instructions::build_instructions();
     assert!(
         text.contains("OUTPUT STYLE: dense"),
         "compression standard should inject dense prompt"
@@ -74,7 +73,7 @@ fn compression_level_standard_injects_dense() {
 #[test]
 fn compression_level_max_injects_expert_terse() {
     let _g = set_compression("max");
-    let text = instructions::build_instructions_for_test(CrpMode::Off);
+    let text = instructions::build_instructions();
     assert!(
         text.contains("OUTPUT STYLE: expert-terse"),
         "compression max should inject expert-terse prompt"
@@ -84,7 +83,7 @@ fn compression_level_max_injects_expert_terse() {
 #[test]
 fn compression_level_off_no_output_style() {
     let _g = set_compression("off");
-    let text = instructions::build_instructions_for_test(CrpMode::Off);
+    let text = instructions::build_instructions();
     assert!(
         !text.contains("OUTPUT STYLE"),
         "compression off should not inject any OUTPUT STYLE block"
@@ -140,7 +139,7 @@ fn compression_level_bands() {
 #[test]
 fn compression_level_number_selects_prose_band() {
     let _g = with_config("compression_level = 0.65\n");
-    let text = instructions::build_instructions_for_test(CrpMode::Off);
+    let text = instructions::build_instructions();
     assert!(
         text.contains("OUTPUT STYLE: expert-terse"),
         "0.65 falls in the max band"

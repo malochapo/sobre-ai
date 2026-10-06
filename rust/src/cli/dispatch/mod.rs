@@ -80,10 +80,6 @@ pub fn run() {
                 crate::cli::pricing_cmd::cmd_pricing(&rest);
                 return;
             }
-            "rules" => {
-                crate::cli::rules_cmd::cmd_rules(&rest);
-                return;
-            }
             "snapshot" => {
                 crate::cli::cmd_snapshot(&rest);
                 return;
@@ -275,14 +271,6 @@ pub fn run() {
                 }
                 return;
             }
-            "harden" => {
-                super::harden::run(&rest);
-                return;
-            }
-            "export-rules" => {
-                super::export_rules::run(&rest);
-                return;
-            }
             "completions" => {
                 super::completions::run_completions(&rest);
                 return;
@@ -311,20 +299,18 @@ pub fn run() {
                 // inside the handler (#1035), so they must NOT also carry the
                 // force-exit watchdog (which would `exit(1)` with no decision and
                 // wedge the host). The remaining hooks keep the simple zombie-guard.
-                if !matches!(action, "rewrite" | "redirect" | "deny") {
+                if !matches!(action, "rewrite" | "redirect") {
                     hook_handlers::arm_watchdog(std::time::Duration::from_secs(5));
                 }
                 match action {
                     "rewrite" => hook_handlers::handle_rewrite(),
                     "redirect" => hook_handlers::handle_redirect(),
-                    "deny" => hook_handlers::handle_deny(),
                     "read-dedup" => hook_handlers::handle_read_dedup(),
                     "observe" => hook_handlers::handle_observe(),
                     "codex-pretooluse" => hook_handlers::handle_codex_pretooluse(),
-                    "codex-session-start" => hook_handlers::handle_codex_session_start(),
                     _ => {
                         eprintln!(
-                            "Usage: lean-ctx hook <rewrite|redirect|deny|read-dedup|observe|codex-pretooluse|codex-session-start>"
+                            "Usage: lean-ctx hook <rewrite|redirect|read-dedup|observe|codex-pretooluse>"
                         );
                         eprintln!(
                             "  Internal commands used by agent hooks (Claude, Cursor, Copilot, etc.)"

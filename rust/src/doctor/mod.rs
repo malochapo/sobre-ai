@@ -400,18 +400,6 @@ pub fn run() -> u32 {
         board.info(lsp_check);
     }
 
-    // Shadow mode status
-    let shadow_line = if true {
-        format!(
-            "{BOLD}Shadow mode{RST}  {GREEN}active{RST}  {DIM}(native tools denied → ctx_* mandatory){RST}"
-        )
-    } else {
-        format!(
-            "{BOLD}Shadow mode{RST}  {DIM}disabled{RST}  {DIM}(default: on — explicitly disabled via config){RST}"
-        )
-    };
-    println!("  {shadow_line}");
-
     // Tool-schema footprint (informational, not scored). There is one surface —
     // the registry — so report its size rather than a tier name. This used to
     // branch on a pinned tier and print it; #415 was already a bug where it

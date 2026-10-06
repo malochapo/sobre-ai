@@ -1,7 +1,5 @@
-use std::path::PathBuf;
-
 use super::super::{
-    HookMode, make_executable, mcp_server_quiet_mode, resolve_binary_path_for_bash,
+    make_executable, mcp_server_quiet_mode, resolve_binary_path_for_bash,
     resolve_hook_command_binary, shell_quoted_binary, write_file, write_wrapper_file,
 };
 use super::shared::install_standard_hook_scripts;
@@ -104,7 +102,7 @@ fn merge_cursor_hooks(existing: &mut serde_json::Value, rewrite_cmd: &str, redir
     ensure_observe_hook(hooks_obj, "preCompact", &observe_cmd);
 }
 
-pub fn install_cursor_hook(global: bool) {
+pub fn install_cursor_hook() {
     let Some(home) = crate::core::home::resolve_home_dir() else {
         tracing::error!("Cannot resolve home directory");
         return;
@@ -113,99 +111,9 @@ pub fn install_cursor_hook(global: bool) {
     install_cursor_hook_scripts(&home);
     install_cursor_hook_config(&home);
 
-    if global {
-        if !mcp_server_quiet_mode() {
-            eprintln!(
-                "Global mode: skipping project-local .cursor/rules/ (use without --global in a project)."
-            );
-        }
-    } else {
-        let rules_dir = PathBuf::from(".cursor").join("rules");
-        let _ = std::fs::create_dir_all(&rules_dir);
-        let rule_path = rules_dir.join("lean-ctx.mdc");
-        if rule_path.exists() {
-            if !mcp_server_quiet_mode() {
-                eprintln!("Cursor rule already exists.");
-            }
-        } else {
-            write_file(&rule_path, &cursor_mdc_content(&home));
-            if !mcp_server_quiet_mode() {
-                eprintln!("Created .cursor/rules/lean-ctx.mdc in current project.");
-            }
-        }
-    }
-
     if !mcp_server_quiet_mode() {
         eprintln!("Restart Cursor to activate.");
     }
-}
-
-pub(crate) fn install_cursor_hook_with_mode(global: bool, mode: HookMode) {
-    match mode {
-        HookMode::Mcp => install_cursor_hook(global),
-        HookMode::Hybrid => {
-            install_cursor_hook(global);
-            install_cursor_rules_for_mode(global, mode);
-        }
-        HookMode::Replace => {
-            install_cursor_hook(global);
-            install_cursor_deny_hook(global);
-            install_cursor_rules_for_mode(global, mode);
-        }
-    }
-}
-
-fn install_cursor_rules_for_mode(global: bool, mode: HookMode) {
-    let Some(home) = crate::core::home::resolve_home_dir() else {
-        return;
-    };
-    let content = cursor_mdc_content(&home);
-    let mode_name = match mode {
-        HookMode::Hybrid => "hybrid",
-        HookMode::Mcp => "mcp",
-        HookMode::Replace => "replace",
-    };
-
-    if global {
-        let global_rules_dir = home.join(".cursor").join("rules");
-        let _ = std::fs::create_dir_all(&global_rules_dir);
-        let global_path = global_rules_dir.join("lean-ctx.mdc");
-        write_file(&global_path, &content);
-        if !mcp_server_quiet_mode() {
-            eprintln!(
-                "Installed Cursor rules in {mode_name} mode at {}",
-                global_path.display()
-            );
-        }
-    } else {
-        let rules_dir = PathBuf::from(".cursor").join("rules");
-        let _ = std::fs::create_dir_all(&rules_dir);
-        let rule_path = rules_dir.join("lean-ctx.mdc");
-        write_file(&rule_path, &content);
-        if !mcp_server_quiet_mode() {
-            eprintln!("Installed Cursor rules in {mode_name} mode at .cursor/rules/lean-ctx.mdc");
-        }
-    }
-}
-
-/// The Cursor mdc document this installer writes. Config-driven (GL #1156 —
-/// previously hardcoded `shadow=false`, `CompressionLevel::Off`) and
-/// hook-aware (GL #1153): right after `install_cursor_hook_config` wrote the
-/// rewrite+redirect hooks, the coverage check selects the honest HookCovered
-/// profile; without hooks it falls back to the full Dedicated mapping.
-fn cursor_mdc_content(home: &std::path::Path) -> String {
-    let cfg = crate::core::config::Config::load();
-    let wrapper = if crate::core::rules_channel::cursor_hooks_cover_native_tools(home) {
-        crate::core::rules_canonical::Wrapper::HookCovered
-    } else {
-        crate::core::rules_canonical::Wrapper::Dedicated
-    };
-    let body = crate::core::rules_canonical::render(
-        true,
-        wrapper,
-        crate::core::config::CompressionLevel::effective(&cfg),
-    );
-    crate::rules_inject::cursor_mdc_document(&body)
 }
 
 pub(crate) fn install_cursor_hook_scripts(home: &std::path::Path) {
@@ -235,72 +143,6 @@ pub(crate) fn install_cursor_hook_scripts(home: &std::path::Path) {
         home,
     );
     make_executable(&redirect_native);
-}
-
-/// In Replace mode, swap the redirect hook for a deny hook that blocks
-/// native Read/Grep and instructs the agent to use ctx_read/ctx_search.
-pub(crate) fn install_cursor_deny_hook(_global: bool) {
-    let Some(home) = crate::core::home::resolve_home_dir() else {
-        return;
-    };
-    let binary = resolve_hook_command_binary();
-    let deny_cmd = format!("{binary} hook deny");
-
-    let hooks_json = home.join(".cursor").join("hooks.json");
-    let content = if hooks_json.exists() {
-        std::fs::read_to_string(&hooks_json).unwrap_or_default()
-    } else {
-        String::new()
-    };
-
-    let mut existing = if content.trim().is_empty() {
-        serde_json::json!({})
-    } else {
-        crate::core::jsonc::parse_jsonc(&content).unwrap_or_else(|_| serde_json::json!({}))
-    };
-
-    if !existing.is_object() {
-        existing = serde_json::json!({});
-    }
-
-    let root = existing.as_object_mut().unwrap();
-    root.insert("version".to_string(), serde_json::json!(1));
-
-    let hooks = root
-        .entry("hooks".to_string())
-        .or_insert_with(|| serde_json::json!({}));
-    if !hooks.is_object() {
-        *hooks = serde_json::json!({});
-    }
-    let hooks_obj = hooks.as_object_mut().unwrap();
-
-    let pre = hooks_obj
-        .entry("preToolUse".to_string())
-        .or_insert_with(|| serde_json::json!([]));
-    if !pre.is_array() {
-        *pre = serde_json::json!([]);
-    }
-    let pre_arr = pre.as_array_mut().unwrap();
-
-    // Read: redirect with smart compression (auto mode). Safe because
-    // StrReplace does NOT fire Read PreToolUse (edit-probe PoC 2026-07).
-    let redirect_cmd = deny_cmd.replace("hook deny", "hook redirect");
-    ensure_pretooluse_hook(pre_arr, &["Read"], "Read", &redirect_cmd);
-
-    // Grep + Glob: deny (must use ctx_search / ctx_glob instead).
-    ensure_pretooluse_hook(
-        pre_arr,
-        &["Read|Grep|Glob", "Read|Grep", "Grep", "Grep|Glob"],
-        "Grep|Glob",
-        &deny_cmd,
-    );
-
-    let formatted = serde_json::to_string_pretty(&existing).unwrap_or_default();
-    write_file(&hooks_json, &formatted);
-
-    if !mcp_server_quiet_mode() {
-        eprintln!("  \x1b[32m✓\x1b[0m Cursor deny hook installed (Replace mode)");
-    }
 }
 
 pub(crate) fn install_cursor_hook_config(home: &std::path::Path) {
@@ -377,60 +219,6 @@ mod tests {
         assert!(pre.iter().any(|e| {
             e.get("matcher").and_then(|m| m.as_str()) == Some("Read|Grep|Glob")
                 && e.get("command").and_then(|c| c.as_str()) == Some("/new/bin hook redirect")
-        }));
-    }
-
-    #[test]
-    fn replace_mode_redirects_read_and_denies_grep_glob() {
-        let mut v = serde_json::json!({
-            "version": 1,
-            "hooks": {
-                "preToolUse": [
-                    { "matcher": "Shell", "command": "/bin/lean-ctx hook rewrite" },
-                    { "matcher": "Read|Grep", "command": "/bin/lean-ctx hook redirect" }
-                ]
-            }
-        });
-
-        let deny_cmd = "/bin/lean-ctx hook deny";
-        let redirect_cmd = "/bin/lean-ctx hook redirect";
-        let pre = v
-            .pointer_mut("/hooks/preToolUse")
-            .and_then(|x| x.as_array_mut())
-            .unwrap();
-
-        // Read: redirect with smart compression (StrReplace doesn't fire Read PreToolUse)
-        ensure_pretooluse_hook(pre, &["Read"], "Read", redirect_cmd);
-        // Grep|Glob: deny
-        ensure_pretooluse_hook(
-            pre,
-            &["Read|Grep|Glob", "Read|Grep", "Grep", "Grep|Glob"],
-            "Grep|Glob",
-            deny_cmd,
-        );
-
-        let pre = v
-            .pointer("/hooks/preToolUse")
-            .and_then(|x| x.as_array())
-            .unwrap();
-
-        // Read should be redirected (smart compression via auto mode)
-        assert!(pre.iter().any(|e| {
-            e.get("matcher").and_then(|m| m.as_str()) == Some("Read")
-                && e.get("command")
-                    .and_then(|c| c.as_str())
-                    .is_some_and(|c| c.contains("redirect"))
-        }));
-        // Grep|Glob should use deny
-        assert!(pre.iter().any(|e| {
-            e.get("matcher").and_then(|m| m.as_str()) == Some("Grep|Glob")
-                && e.get("command").and_then(|c| c.as_str()) == Some("/bin/lean-ctx hook deny")
-        }));
-        // Old combined Read|Grep should be gone
-        assert!(!pre.iter().any(|e| {
-            e.get("matcher")
-                .and_then(|m| m.as_str())
-                .is_some_and(|m| m == "Read|Grep")
         }));
     }
 }

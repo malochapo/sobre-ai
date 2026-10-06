@@ -2,20 +2,16 @@
 //!
 //! Shows what a session costs BEFORE lean-ctx saves anything:
 //!  1. advertised MCP tool schemas (mirrors the live `tools/list` policy),
-//!  2. the MCP server instructions block,
-//!  3. every rules file a client auto-loads, with duplicate detection.
+//!  2. the MCP server instructions block — sobre's only guidance channel,
+//!  3. the wakeup briefing.
 //!
 //! Research context: fixed context costs both money and model attention
 //! (context degradation starts well below typical window limits), so every
 //! always-on token has to justify itself.
-//!
-//! The rules-file enumeration lives in [`crate::core::rules_overhead`] so the
-//! `lean-ctx tools health` report (#848) can reuse the exact same accounting.
 
 use std::path::PathBuf;
 
 use crate::core::context_overhead::tool_tokens;
-use crate::core::rules_overhead::{RulesFileCost, collect_rules_files, duplicate_clients};
 use crate::core::tokens::count_tokens;
 
 const DIM: &str = "\x1b[2m";
@@ -35,8 +31,6 @@ pub(super) struct OverheadReport {
     /// `false` it is injected at session start. Either way it bills once per
     /// session — its own source, not folded into `instruction_tokens` (#964).
     pub wakeup_tokens: usize,
-    pub rules_files: Vec<RulesFileCost>,
-    pub duplicate_clients: Vec<(String, usize)>,
     /// The per-session budget (#964); 0 disables the check.
     pub budget_tokens: usize,
     /// Whether `total_tokens` exceeds a non-zero `budget_tokens` (#964).
@@ -44,15 +38,8 @@ pub(super) struct OverheadReport {
 }
 
 impl OverheadReport {
-    fn rules_tokens_total(&self) -> usize {
-        self.rules_files.iter().map(|r| r.file_tokens).sum()
-    }
-
     fn total_tokens(&self) -> usize {
-        self.tool_schema_tokens
-            + self.instruction_tokens
-            + self.wakeup_tokens
-            + self.rules_tokens_total()
+        self.tool_schema_tokens + self.instruction_tokens + self.wakeup_tokens
     }
 
     /// Strictly above a non-zero budget; a budget of 0 disables the check (#964).
@@ -62,13 +49,9 @@ impl OverheadReport {
 }
 
 #[must_use]
-pub(super) fn measure(home: &std::path::Path, project: &std::path::Path) -> OverheadReport {
+pub(super) fn measure(project: &std::path::Path) -> OverheadReport {
     let advertised = crate::server::tool_visibility::advertised_tool_defs_default();
-
-    let instructions = crate::instructions::build_instructions(crate::tools::CrpMode::effective());
-
-    let rules_files = collect_rules_files(home, project);
-    let duplicates = duplicate_clients(&rules_files);
+    let instructions = crate::instructions::build_instructions();
 
     // The wakeup briefing rides session start as its own source (#964). It reads
     // live knowledge + session state, so it reflects what this install actually
@@ -83,8 +66,6 @@ pub(super) fn measure(home: &std::path::Path, project: &std::path::Path) -> Over
         tool_schema_tokens: advertised.iter().map(tool_tokens).sum(),
         instruction_tokens: count_tokens(&instructions),
         wakeup_tokens: count_tokens(&wakeup),
-        rules_files,
-        duplicate_clients: duplicates,
         budget_tokens,
         over_budget: false,
     };
@@ -95,7 +76,7 @@ pub(super) fn measure(home: &std::path::Path, project: &std::path::Path) -> Over
 pub(super) fn run_overhead(json: bool, gate: bool) -> i32 {
     let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("~"));
     let project = std::env::current_dir().unwrap_or_else(|_| home.clone());
-    let report = measure(&home, &project);
+    let report = measure(&project);
 
     // `--gate` turns a budget breach into a non-zero exit for CI (#964); without
     // it the report is purely informational regardless of the breach.
@@ -133,41 +114,6 @@ pub(super) fn run_overhead(json: bool, gate: bool) -> i32 {
         report.wakeup_tokens
     );
 
-    // 4. Rules files
-    println!(
-        "  {BOLD}Rules files{RST}           {:>6} tok  {DIM}({} auto-loaded files){RST}",
-        report.rules_tokens_total(),
-        report.rules_files.len()
-    );
-    for f in &report.rules_files {
-        let ours = if f.lean_ctx_tokens == 0 {
-            String::new()
-        } else if f.carries_full {
-            format!(", {} tok lean-ctx", f.lean_ctx_tokens)
-        } else {
-            format!(", {} tok pointer", f.lean_ctx_tokens)
-        };
-        println!(
-            "    {DIM}{:<58}{RST} {:>6} tok  {DIM}[{}{}]{RST}",
-            shorten(&f.path, 58),
-            f.file_tokens,
-            f.clients.join("+"),
-            ours
-        );
-    }
-
-    if !report.duplicate_clients.is_empty() {
-        println!();
-        for (client, n) in &report.duplicate_clients {
-            println!(
-                "  {YELLOW}⚠ {client}: {n} files contain lean-ctx rules — the same guidance is billed {n}× per session.{RST}"
-            );
-        }
-        println!(
-            "  {DIM}Fix: `lean-ctx rules dedup --apply` keeps one canonical source per client (#578).{RST}"
-        );
-    }
-
     println!();
     let total = report.total_tokens();
     let color = if report.over_budget { YELLOW } else { GREEN };
@@ -176,7 +122,7 @@ pub(super) fn run_overhead(json: bool, gate: bool) -> i32 {
         if report.over_budget {
             // Machine-readable so CI/log scrapers can key on a stable token (#964).
             println!(
-                "  {YELLOW}⚠ OVER_BUDGET: {total} tok > budget {} tok — trim rules files or the knowledge briefing.{RST}",
+                "  {YELLOW}⚠ OVER_BUDGET: {total} tok > budget {} tok — trim the knowledge briefing.{RST}",
                 report.budget_tokens
             );
         } else {
@@ -193,21 +139,6 @@ pub(super) fn run_overhead(json: bool, gate: bool) -> i32 {
     exit_code
 }
 
-fn shorten(path: &str, max: usize) -> String {
-    if path.len() <= max {
-        return path.to_string();
-    }
-    let tail: String = path
-        .chars()
-        .rev()
-        .take(max.saturating_sub(1))
-        .collect::<String>()
-        .chars()
-        .rev()
-        .collect();
-    format!("…{tail}")
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -218,8 +149,6 @@ mod tests {
             tool_schema_tokens: schema,
             instruction_tokens: instr,
             wakeup_tokens: wakeup,
-            rules_files: Vec::new(),
-            duplicate_clients: Vec::new(),
             budget_tokens: budget,
             over_budget: false,
         }

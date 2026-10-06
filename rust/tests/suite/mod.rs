@@ -57,8 +57,6 @@ mod reference_docs_drift;
 mod reranking_scenarios;
 mod retrieval_eval;
 mod ro_config_sandbox;
-mod rules_consistency;
-mod rules_template_tool_names;
 mod scientific_verification;
 mod scorecard_determinism;
 mod secret_scan_artifacts;

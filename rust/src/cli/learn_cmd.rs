@@ -10,7 +10,6 @@ pub(crate) fn cmd_learn(args: &[String]) {
     }
 
     let project_root = super::common::detect_project_root(args);
-    let apply = args.iter().any(|a| a == "--apply");
 
     let mut store = GotchaStore::load(&project_root);
     let universal = gotcha_tracker::load_universal_gotchas();
@@ -31,25 +30,6 @@ pub(crate) fn cmd_learn(args: &[String]) {
     println!("=== Learned Gotchas ({} total) ===\n", learnings.len());
     for l in &learnings {
         println!("  {l}");
-    }
-
-    if apply {
-        println!();
-        match learn::apply_learnings(&project_root, &learnings) {
-            Ok(files) if files.is_empty() => {
-                println!("No learnings written (need >=2 occurrences with >=50% confidence).");
-            }
-            Ok(files) => println!(
-                "Wrote {} learnings to {}",
-                learnings.len(),
-                files.join(" + ")
-            ),
-            Err(e) => eprintln!("Error: {e}"),
-        }
-    } else {
-        println!(
-            "\nUse `lean-ctx learn --apply` to write these to AGENTS.md (and CLAUDE.local.md if present)."
-        );
     }
 }
 

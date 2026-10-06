@@ -1,7 +1,7 @@
 use super::super::{
     ensure_codex_hooks_enabled as shared_ensure_codex_hooks_enabled, ensure_state_dir,
-    install_codex_instruction_docs, mcp_server_quiet_mode, resolve_hook_command_binary,
-    upsert_lean_ctx_codex_hook_entries, write_file,
+    mcp_server_quiet_mode, resolve_hook_command_binary, upsert_lean_ctx_codex_hook_entries,
+    write_file,
 };
 
 pub fn install_codex_hook() {
@@ -14,26 +14,14 @@ pub fn install_codex_hook() {
     }
 
     let hook_config_changed = install_codex_hook_config(&codex_dir);
-    let installed_docs = install_codex_instruction_docs(&codex_dir);
 
-    if !mcp_server_quiet_mode() {
-        if hook_config_changed {
-            eprintln!(
-                "Installed Codex-compatible SessionStart/PreToolUse hooks at {}",
-                codex_dir.display()
-            );
-        }
-        if installed_docs {
-            eprintln!("Installed Codex instructions at {}", codex_dir.display());
-        } else {
-            eprintln!("Codex AGENTS.md already configured.");
-        }
+    if hook_config_changed && !mcp_server_quiet_mode() {
+        eprintln!("Installed Codex PreToolUse hook at {}", codex_dir.display());
     }
 }
 
 fn install_codex_hook_config(codex_dir: &std::path::Path) -> bool {
     let binary = resolve_hook_command_binary();
-    let session_start_cmd = format!("{binary} hook codex-session-start");
     let pre_tool_use_cmd = format!("{binary} hook codex-pretooluse");
     let hooks_json_path = codex_dir.join("hooks.json");
 
@@ -53,7 +41,7 @@ fn install_codex_hook_config(codex_dir: &std::path::Path) -> bool {
         serde_json::json!({ "hooks": {} })
     };
 
-    if upsert_lean_ctx_codex_hook_entries(&mut root, &session_start_cmd, &pre_tool_use_cmd) {
+    if upsert_lean_ctx_codex_hook_entries(&mut root, &pre_tool_use_cmd) {
         changed = true;
     }
 
@@ -200,9 +188,8 @@ fn ensure_codex_hooks_enabled(config_content: &str) -> Option<String> {
     shared_ensure_codex_hooks_enabled(config_content)
 }
 
-// Codex deny is handled mode-aware by the codex-pretooluse handler at runtime:
-// non-rewritable Bash calls are denied in Replace mode, rewritten in Hybrid.
-// A separate deny hook is not needed (Codex PreToolUse only fires for Bash).
+// The codex-pretooluse handler rewrites compressible Bash calls and lets every
+// other call through unchanged (Codex PreToolUse only fires for Bash).
 
 #[cfg(test)]
 mod tests {
@@ -242,16 +229,6 @@ mod tests {
                         }]
                     }
                 ],
-                "SessionStart": [
-                    {
-                        "matcher": "startup|resume|clear",
-                        "hooks": [{
-                            "type": "command",
-                            "command": "lean-ctx hook codex-session-start",
-                            "timeout": 15
-                        }]
-                    }
-                ],
                 "PostToolUse": [
                     {
                         "matcher": "Bash",
@@ -265,11 +242,8 @@ mod tests {
             }
         });
 
-        let changed = upsert_lean_ctx_codex_hook_entries(
-            &mut input,
-            "lean-ctx hook codex-session-start",
-            "lean-ctx hook codex-pretooluse",
-        );
+        let changed =
+            upsert_lean_ctx_codex_hook_entries(&mut input, "lean-ctx hook codex-pretooluse");
         assert!(changed, "the stale binary path should be rewritten");
 
         let pre_tool_use = input["hooks"]["PreToolUse"]
@@ -283,10 +257,6 @@ mod tests {
         assert_eq!(
             pre_tool_use[1]["hooks"][0]["command"].as_str(),
             Some("lean-ctx hook codex-pretooluse")
-        );
-        assert_eq!(
-            input["hooks"]["SessionStart"][0]["hooks"][0]["command"].as_str(),
-            Some("lean-ctx hook codex-session-start")
         );
         assert_eq!(
             input["hooks"]["PostToolUse"][0]["hooks"][0]["command"].as_str(),
@@ -308,22 +278,6 @@ mod tests {
             !crate::hooks::support::is_lean_ctx_codex_managed_entry("PreToolUse", &custom),
             "custom Codex hooks must be preserved"
         );
-    }
-
-    #[test]
-    fn detects_managed_codex_session_start_entry() {
-        let managed = json!({
-            "matcher": "startup|resume|clear",
-            "hooks": [{
-                "type": "command",
-                "command": "/opt/homebrew/bin/lean-ctx hook codex-session-start",
-                "timeout": 15
-            }]
-        });
-        assert!(crate::hooks::support::is_lean_ctx_codex_managed_entry(
-            "SessionStart",
-            &managed
-        ));
     }
 
     #[test]
@@ -374,114 +328,6 @@ command = \"lean-ctx\"
             ensure_codex_hooks_enabled(input).expect("missing features section should be added");
 
         assert!(output.ends_with("\n[features]\nhooks = true\n"));
-    }
-
-    #[test]
-    fn codex_docs_steer_to_reliable_mcp_path_without_false_hook_claim() {
-        let tmp = std::env::temp_dir().join("lean-ctx-test-codex-desktop-note");
-        let _ = std::fs::remove_dir_all(&tmp);
-        std::fs::create_dir_all(&tmp).unwrap();
-
-        crate::hooks::support::install_codex_instruction_docs(&tmp);
-
-        let lean_ctx_md = std::fs::read_to_string(tmp.join("LEAN-CTX.md")).unwrap();
-        assert!(
-            lean_ctx_md.contains("ctx_shell") && lean_ctx_md.contains("ctx_read"),
-            "LEAN-CTX.md must steer the agent to the MCP tools"
-        );
-        // Regression guard for #350: never assert as fact that Desktop/Cloud hooks
-        // do not run — they can (gated by trust via /hooks, varies by version).
-        let normalized = lean_ctx_md.replace('\n', " ");
-        assert!(
-            !normalized.contains("hooks do not run")
-                && !normalized.contains("no automatic compression"),
-            "LEAN-CTX.md must not make the false blanket claim that Codex Desktop hooks never run (#350)"
-        );
-
-        let agents_md = std::fs::read_to_string(tmp.join("AGENTS.md")).unwrap();
-        assert!(
-            agents_md.contains("ctx_shell") && agents_md.contains("ctx_search"),
-            "AGENTS.md block must steer to the reliable MCP tools"
-        );
-        let agents_norm = agents_md.replace('\n', " ");
-        assert!(
-            !agents_norm.contains("hooks do not run"),
-            "AGENTS.md must not claim Codex hooks never run (#350)"
-        );
-
-        let _ = std::fs::remove_dir_all(&tmp);
-    }
-
-    #[test]
-    fn install_codex_docs_preserves_existing_user_instructions() {
-        let tmp = std::env::temp_dir().join("lean-ctx-test-codex-preserve");
-        let _ = std::fs::remove_dir_all(&tmp);
-        std::fs::create_dir_all(&tmp).unwrap();
-
-        let agents_md = tmp.join("AGENTS.md");
-        let user_content = "# My Custom Instructions\n\nDo not change my codebase style.\n\n## Rules\n- Always use tabs\n- No semicolons\n";
-        std::fs::write(&agents_md, user_content).unwrap();
-
-        crate::hooks::support::install_codex_instruction_docs(&tmp);
-
-        let result = std::fs::read_to_string(&agents_md).unwrap();
-        assert!(
-            result.contains("My Custom Instructions"),
-            "user content must be preserved"
-        );
-        assert!(
-            result.contains("Always use tabs"),
-            "user rules must be preserved"
-        );
-        assert!(
-            result.contains(crate::core::rules_canonical::AGENTS_BLOCK_START),
-            "lean-ctx block must be appended"
-        );
-        let expected_ref = tmp.join("LEAN-CTX.md").display().to_string();
-        assert!(
-            result.contains(&expected_ref),
-            "lean-ctx reference must use codex_dir path"
-        );
-
-        let _ = std::fs::remove_dir_all(&tmp);
-    }
-
-    #[test]
-    fn install_codex_docs_updates_only_marked_block() {
-        let tmp = std::env::temp_dir().join("lean-ctx-test-codex-marked");
-        let _ = std::fs::remove_dir_all(&tmp);
-        std::fs::create_dir_all(&tmp).unwrap();
-
-        let agents_md = tmp.join("AGENTS.md");
-        let content_with_block = format!(
-            "# My Instructions\n\nCustom rule here.\n\n{}\n## lean-ctx\n\n@OLD-LEAN-CTX.md\n{}\n\n## Other Section\nKeep this.\n",
-            crate::core::rules_canonical::AGENTS_BLOCK_START,
-            crate::core::rules_canonical::AGENTS_BLOCK_END,
-        );
-        std::fs::write(&agents_md, content_with_block).unwrap();
-
-        crate::hooks::support::install_codex_instruction_docs(&tmp);
-
-        let result = std::fs::read_to_string(&agents_md).unwrap();
-        assert!(
-            result.contains("Custom rule here."),
-            "user content before block preserved"
-        );
-        assert!(
-            result.contains("Other Section"),
-            "user content after block preserved"
-        );
-        let expected_ref = tmp.join("LEAN-CTX.md").display().to_string();
-        assert!(
-            result.contains(&expected_ref),
-            "block updated to current reference"
-        );
-        assert!(
-            !result.contains("OLD-LEAN-CTX"),
-            "old block content replaced"
-        );
-
-        let _ = std::fs::remove_dir_all(&tmp);
     }
 
     #[test]

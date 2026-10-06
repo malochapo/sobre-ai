@@ -99,42 +99,32 @@ fn cwd_looks_like_agent_dir_ignores_real_projects() {
     }
 }
 
-// GH #396: the exact post-`setup` state — the CLAUDE.md block, rules file
-// removed by setup. Must pass, not demand the retired rules file.
-//
 // `serial(claude_config_dir)`: `claude_state_dir` honours the process-global
-// `CLAUDE_CONFIG_DIR`, which the contextops sync tests set for their own
-// sandbox. Without serialization a concurrent setter makes this check read
-// the wrong `.claude` dir and flake under load (seen on release CI, #401).
+// `CLAUDE_CONFIG_DIR`; a concurrent setter would make the check read the wrong
+// `.claude` dir.
 #[test]
 #[serial_test::serial(claude_config_dir)]
-fn v3_layout_block_passes() {
+fn installed_skill_passes() {
     let tmp = tempfile::tempdir().unwrap();
     write(
         tmp.path(),
-        ".claude/CLAUDE.md",
-        &format!(
-            "{}\ncontent\n{}",
-            crate::core::rules_canonical::AGENTS_BLOCK_START,
-            crate::core::rules_canonical::AGENTS_BLOCK_END,
-        ),
+        ".claude/skills/sobre/SKILL.md",
+        crate::setup::skill::SKILL_MD,
     );
     let out = check(tmp.path());
-    assert!(out.ok, "post-setup layout must pass: {}", out.line);
-    assert!(out.line.contains("CLAUDE.md block installed"));
+    assert!(out.ok, "an installed skill must pass: {}", out.line);
 }
 
 #[test]
 #[serial_test::serial(claude_config_dir)]
-fn block_alone_passes() {
+fn outdated_skill_fails() {
     let tmp = tempfile::tempdir().unwrap();
     write(
         tmp.path(),
-        ".claude/CLAUDE.md",
-        &format!("{}\nx", crate::core::rules_canonical::AGENTS_BLOCK_START),
+        ".claude/skills/sobre/SKILL.md",
+        "an older guide",
     );
-    let out = check(tmp.path());
-    assert!(out.ok, "{}", out.line);
+    assert!(!check(tmp.path()).ok);
 }
 
 #[test]
@@ -147,9 +137,5 @@ fn nothing_installed_fails_and_suggests_setup() {
         out.line.contains("lean-ctx init"),
         "must suggest a command that actually fixes it: {}",
         out.line
-    );
-    assert!(
-        !out.line.contains("init --agent claude"),
-        "init --agent claude no longer creates a Claude rules target"
     );
 }

@@ -2,8 +2,6 @@
 pub struct ClientConstraints {
     pub id: &'static str,
     pub display_name: &'static str,
-    /// Max chars accepted by MCP `instructions` field, if documented.
-    pub mcp_instructions_max_chars: Option<usize>,
     /// Whether the client documents `autoApprove` in its MCP config schema.
     pub supports_auto_approve: bool,
 }
@@ -13,49 +11,41 @@ pub const ALL_CLIENTS: &[ClientConstraints] = &[
     ClientConstraints {
         id: "cursor",
         display_name: "Cursor",
-        mcp_instructions_max_chars: None,
         supports_auto_approve: true,
     },
     ClientConstraints {
         id: "claude-code",
         display_name: "Claude Code",
-        mcp_instructions_max_chars: Some(2048),
         supports_auto_approve: false,
     },
     ClientConstraints {
         id: "vscode-copilot",
         display_name: "VS Code / GitHub Copilot",
-        mcp_instructions_max_chars: None,
         supports_auto_approve: false,
     },
     ClientConstraints {
         id: "windsurf",
         display_name: "Windsurf",
-        mcp_instructions_max_chars: None,
         supports_auto_approve: false,
     },
     ClientConstraints {
         id: "zed",
         display_name: "Zed",
-        mcp_instructions_max_chars: None,
         supports_auto_approve: false,
     },
     ClientConstraints {
         id: "opencode",
         display_name: "OpenCode",
-        mcp_instructions_max_chars: None,
         supports_auto_approve: false,
     },
     ClientConstraints {
         id: "gemini-cli",
         display_name: "Gemini CLI",
-        mcp_instructions_max_chars: None,
         supports_auto_approve: false,
     },
     ClientConstraints {
         id: "codex",
         display_name: "Codex CLI",
-        mcp_instructions_max_chars: None,
         supports_auto_approve: false,
     },
 ];

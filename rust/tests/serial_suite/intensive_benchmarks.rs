@@ -1,8 +1,15 @@
 use lean_ctx::core::compressor::{aggressive_compress, lightweight_cleanup, safeguard_ratio};
+use lean_ctx::core::config::CompressionLevel;
 use lean_ctx::core::entropy::entropy_compress;
 use lean_ctx::core::signatures::extract_signatures;
 use lean_ctx::core::tokens::count_tokens;
 use lean_ctx::tools::CrpMode;
+
+/// The instructions with no output style, so budgets do not move with the
+/// developer's own `compression_level`.
+fn instructions_at_off(crp: CrpMode) -> String {
+    lean_ctx::instructions::render(CompressionLevel::Off, crp)
+}
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -39,9 +46,9 @@ fn measure_text(original: &str, compressed: &str) -> (usize, usize, f64) {
 
 #[test]
 fn bench_system_instructions_token_count() {
-    let instructions_off = lean_ctx::server::build_instructions_for_test(CrpMode::Off);
-    let instructions_compact = lean_ctx::server::build_instructions_for_test(CrpMode::Compact);
-    let instructions_tdd = lean_ctx::server::build_instructions_for_test(CrpMode::Tdd);
+    let instructions_off = instructions_at_off(CrpMode::Off);
+    let instructions_compact = instructions_at_off(CrpMode::Compact);
+    let instructions_tdd = instructions_at_off(CrpMode::Tdd);
 
     let tok_off = count_tokens(&instructions_off);
     let tok_compact = count_tokens(&instructions_compact);
@@ -84,25 +91,15 @@ fn bench_system_instructions_token_count() {
         "TDD instructions should be <2550 tokens, got {tok_tdd}"
     );
 
-    // The char budget governs the STATIC cold first-contact handshake
-    // instructions. A live build also appends dynamic session/knowledge/gotcha
-    // payload, but that is capped by INSTRUCTION_CAP_TOKENS (token budget), not
-    // this char budget — and it varies with whatever session is persisted on the
-    // runner. Measuring the static surface keeps the assertion deterministic
-    // (#498) instead of order/state-dependent.
-    //
-    // Budget history: 2048 → 2400 (#609), then the v5 rules diet (#578) folded
-    // the loop/paradox guidance into INTENT and shrank the COMPACT/Bare channel
-    // the cold handshake renders. 2400 stays as the ceiling (upper bound only —
-    // it catches a runaway regression, shrinking is always fine).
-    let claude_code_instr = lean_ctx::server::build_claude_code_static_instructions_for_test();
-    let claude_chars = claude_code_instr.len();
-    let claude_tokens = count_tokens(&claude_code_instr);
-    eprintln!("  Claude Code (static): {claude_tokens:>6} tokens ({claude_chars:>5} chars)");
-    assert!(
-        claude_chars <= 2400,
-        "Claude Code static instructions MUST be <=2400 chars, got {claude_chars}"
-    );
+    // Claude Code truncates server instructions at 2048 characters; the text
+    // every client gets must arrive whole there.
+    for crp in [CrpMode::Off, CrpMode::Compact, CrpMode::Tdd] {
+        let chars = instructions_at_off(crp).len();
+        assert!(
+            chars <= 2048,
+            "{crp:?} instructions are {chars} chars, over Claude Code's 2048"
+        );
+    }
     assert!(
         compact_overhead.unsigned_abs() < 300,
         "Compact mode overhead should be <300 tokens, got {compact_overhead}"
@@ -177,7 +174,7 @@ fn bench_tool_descriptions_token_count() {
 
 #[test]
 fn bench_total_input_overhead() {
-    let instructions = lean_ctx::server::build_instructions_for_test(CrpMode::Off);
+    let instructions = instructions_at_off(CrpMode::Off);
     let descs = lean_ctx::server::tool_descriptions_for_test();
     let schemas = lean_ctx::server::tool_schemas_json_for_test();
 
@@ -536,8 +533,8 @@ fn bench_rrf_eviction_empty() {
 
 #[test]
 fn bench_thinking_reduction_cues_present() {
-    let compact = lean_ctx::server::build_instructions_for_test(CrpMode::Compact);
-    let tdd = lean_ctx::server::build_instructions_for_test(CrpMode::Tdd);
+    let compact = instructions_at_off(CrpMode::Compact);
+    let tdd = instructions_at_off(CrpMode::Tdd);
 
     // #579 condensed the instruction skeleton: efficiency cues now live in the
     // one-line `CRP MODE:` suffix (lowercase), not a standalone block.
@@ -571,8 +568,8 @@ fn bench_thinking_reduction_cues_present() {
 
 #[test]
 fn bench_crp_mode_token_budgets() {
-    let compact = lean_ctx::server::build_instructions_for_test(CrpMode::Compact);
-    let tdd = lean_ctx::server::build_instructions_for_test(CrpMode::Tdd);
+    let compact = instructions_at_off(CrpMode::Compact);
+    let tdd = instructions_at_off(CrpMode::Tdd);
 
     let compact_budget_present = compact.contains("<=200 tok")
         || compact.contains("TARGET: <=200 tokens")
@@ -683,17 +680,12 @@ fn guard_tool_descriptions_not_empty() {
 
 #[test]
 fn guard_essential_instructions_present() {
-    let instr = lean_ctx::server::build_instructions_for_test(CrpMode::Off);
+    let instr = instructions_at_off(CrpMode::Off);
 
-    // #579: the static skeleton is capped at ≤400 tokens — workflow tools
-    // (ctx_overview, ctx_compress) moved to the on-demand LEAN-CTX.md doc.
-    // #496: the per-session skeleton (Bare profile) stays lean — it anchors the
-    // mandatory tool mapping + the intent playbook. The CEP protocol, AUTO hints
-    // and the LEAN-CTX.md reference now live in the dedicated rule file /
-    // CLAUDE.md (FULL profile) that the agent loads alongside, keeping the
-    // worst-case per-session MCP instructions under the 2048-char Claude cap.
     let required = vec![
-        "ALWAYS use lean-ctx ctx_* tools",
+        "native tools keep working",
+        "ctx_expand",
+        "ctx_patch",
         "ctx_read",
         "ctx_shell",
         "ctx_search",
@@ -1250,7 +1242,7 @@ fn bench_minimal_overhead_suppresses_all_meta_strings() {
     let _lock = lean_ctx::core::data_dir::test_env_lock();
     let _config = TempConfig::new();
 
-    let instructions = lean_ctx::server::build_instructions_for_test(CrpMode::Tdd);
+    let instructions = instructions_at_off(CrpMode::Tdd);
     let instr_tokens = count_tokens(&instructions);
 
     eprintln!("\n{}", "=".repeat(70));

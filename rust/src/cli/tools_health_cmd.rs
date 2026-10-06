@@ -22,7 +22,7 @@ pub(crate) fn cmd_tools_health(args: &[String]) {
 
     let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("~"));
     let project = std::env::current_dir().unwrap_or_else(|_| home.clone());
-    let report = crate::core::tool_health::compute(&home, &project);
+    let report = crate::core::tool_health::compute(&project);
 
     if json {
         match serde_json::to_string_pretty(&report) {
@@ -39,7 +39,7 @@ pub(crate) fn cmd_tools_health(args: &[String]) {
 }
 
 fn print_report(r: &ToolHealthReport, show_all: bool) {
-    println!("{BOLD}Tool & rule budget — does every token earn its place?{RST}");
+    println!("{BOLD}Tool budget — does every token earn its place?{RST}");
     println!(
         "{DIM}{} advertised tools · cross-references fixed cost with recorded usage (#848){RST}\n",
         r.advertised_tools
@@ -49,7 +49,6 @@ fn print_report(r: &ToolHealthReport, show_all: bool) {
     println!("{BOLD}Fixed cost / session{RST}");
     println!("  MCP tool schemas   {:>6} tok", r.tool_schema_tokens);
     println!("  MCP instructions   {:>6} tok", r.instruction_tokens);
-    println!("  Rules files        {:>6} tok", r.rules_tokens);
     let color = if r.fixed_total_tokens > 8000 {
         YELLOW
     } else {
@@ -144,19 +143,6 @@ fn print_report(r: &ToolHealthReport, show_all: bool) {
                 last
             );
         }
-    }
-
-    // ── Rules ─────────────────────────────────────────────────────────
-    if !r.duplicate_clients.is_empty() {
-        println!("\n{BOLD}Rules{RST}");
-        for (client, n) in &r.duplicate_clients {
-            println!(
-                "  {YELLOW}⚠ {client}: {n} files carry full lean-ctx rules — billed {n}× per session{RST}"
-            );
-        }
-        println!(
-            "  {DIM}→ `lean-ctx rules dedup --apply` keeps one canonical source per client.{RST}"
-        );
     }
 
     // ── Knowledge ─────────────────────────────────────────────────────

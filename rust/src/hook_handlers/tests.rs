@@ -442,29 +442,6 @@ fn codex_allow_output_is_empty() {
     assert!(output.is_empty());
 }
 
-/// #809: codex_deny_output with heavily escaped content is valid JSON.
-#[test]
-fn codex_deny_output_with_nested_quotes_is_valid_json() {
-    let complex_cmd = r#"lean-ctx raw 'cat file; printf "
----
-"; sed -n "55,145p" file2'"#;
-    let output = codex_deny_output(complex_cmd);
-    let parsed: serde_json::Value =
-        serde_json::from_str(&output).expect("codex_deny_output must be valid JSON");
-    assert_eq!(parsed["hookSpecificOutput"]["permissionDecision"], "deny");
-    assert!(
-        parsed["hookSpecificOutput"].get("reason").is_none(),
-        "Codex rejects unknown fields in hookSpecificOutput"
-    );
-    let reason = parsed["hookSpecificOutput"]["permissionDecisionReason"]
-        .as_str()
-        .unwrap_or("");
-    assert!(
-        reason.contains("lean-ctx raw"),
-        "deny reason must contain the command: {reason}"
-    );
-}
-
 #[test]
 fn dual_rewrite_output_carries_claude_cursor_and_copilot_fields() {
     // #551: one JSON object must satisfy Claude (hookSpecificOutput.updatedInput),
@@ -839,63 +816,6 @@ fn wrap_single_command_find_with_many_excludes() {
 }
 
 #[test]
-fn session_start_uses_codex_additional_context_channel() {
-    // #368: SessionStart guidance must travel via the documented JSON
-    // `hookSpecificOutput.additionalContext` channel, not plain stdout text.
-    let json = session_start_additional_context_json("prefer lean-ctx -c");
-    let v: serde_json::Value = serde_json::from_str(&json).expect("valid JSON on stdout");
-    assert_eq!(
-        v["hookSpecificOutput"]["hookEventName"]
-            .as_str()
-            .unwrap_or_default(),
-        "SessionStart"
-    );
-    assert_eq!(
-        v["hookSpecificOutput"]["additionalContext"]
-            .as_str()
-            .unwrap_or_default(),
-        "prefer lean-ctx -c"
-    );
-}
-
-#[test]
-fn codex_session_start_hint_teaches_the_raw_escape_hatch() {
-    // GH #625: the PreToolUse hook already auto-compresses every Bash command, so
-    // the SessionStart hint's job is to teach the *raw* escape — otherwise agents
-    // re-read the compressed view in small chunks (the shell-side "too compressed"
-    // complaint). It must state that compressed output is not exact evidence, name
-    // the concrete raw CLI (`lean-ctx raw "<exact command>"`), and forbid the
-    // chunked-read anti-pattern; the redundant "prefer `lean-ctx -c`" coaching is
-    // gone (compression is automatic).
-    let hint = CODEX_SHELL_RECOVERY_HINT;
-    assert!(
-        hint.contains("lean-ctx raw \"<exact command>\""),
-        "names the raw CLI: {hint}"
-    );
-    assert!(
-        hint.contains("is not exact evidence"),
-        "states compressed output is not exact evidence: {hint}"
-    );
-    assert!(
-        hint.contains("chunked reads"),
-        "forbids chunk-based reconstruction: {hint}"
-    );
-    assert!(
-        !hint.contains("prefer `lean-ctx -c`"),
-        "drops the redundant prefer-c coaching (auto-rewrite handles it): {hint}"
-    );
-    // The hint must survive the additionalContext JSON channel byte-for-byte.
-    let json = session_start_additional_context_json(hint);
-    let v: serde_json::Value = serde_json::from_str(&json).expect("valid JSON");
-    assert_eq!(
-        v["hookSpecificOutput"]["additionalContext"]
-            .as_str()
-            .unwrap_or_default(),
-        hint
-    );
-}
-
-#[test]
 fn is_shell_tool_matches_powershell_variants() {
     // #556: Copilot CLI's `powershell` shell tool was bypassing rewrite on
     // Windows because it was not recognised as a shell tool.
@@ -999,7 +919,7 @@ fn redirect_read_args_smart_mode_selection() {
 
 #[test]
 fn redirect_output_omits_additional_context_without_shadow() {
-    // Outside shadow mode the redirect stays silent — no side-channel note at all.
+    // The redirect stays silent — no side-channel note at all.
     let tool_input = serde_json::json!({ "path": "src/main.rs" });
     let out = build_redirect_output(Some(&tool_input), "path", "/tmp/x.lctx");
     let p: serde_json::Value = serde_json::from_str(&out).expect("valid hook JSON");

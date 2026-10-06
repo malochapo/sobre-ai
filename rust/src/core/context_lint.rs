@@ -1,5 +1,5 @@
 //! Injected-context linter (#960) — keeps lean-ctx's OWN injected context
-//! (the rules block + advertised tool descriptions) high-signal.
+//! (the MCP instructions + advertised tool descriptions) high-signal.
 //!
 //! The Nisi/WorkOS "Case" talk is the motivation: comprehensive prose and
 //! re-teaching what a competent model already knows *degrades* reasoning and
@@ -9,7 +9,7 @@
 //!
 //! Two severities:
 //! * [`Severity::Error`] — exact-duplicate rule lines and low-signal re-teaching
-//!   phrases in the rules block. These ride *every* turn, are fully under our
+//!   phrases in the MCP instructions. These ride *every* turn, are fully under our
 //!   control, and must fail the gate.
 //! * [`Severity::Warn`] — verbose or duplicated tool descriptions. Surfaced for
 //!   triage so the ~28-tool surface can be trimmed incrementally without
@@ -18,8 +18,8 @@
 use crate::core::tokens::count_tokens;
 
 /// Low-signal phrases that re-teach what a competent model already knows: they add
-/// per-turn tokens without changing behaviour, so they must never ride the rules
-/// block. Matched case-insensitively as substrings.
+/// per-turn tokens without changing behaviour, so they must never ride the
+/// instructions. Matched case-insensitively as substrings.
 const RETEACH_PATTERNS: &[&str] = &[
     "as you know",
     "please note",
@@ -50,9 +50,9 @@ pub enum Severity {
 /// The category of a lint finding.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LintKind {
-    /// Two identical content lines in the rules block.
+    /// Two identical content lines in the instructions.
     DuplicateLine,
-    /// A low-signal re-teaching phrase in the rules block.
+    /// A low-signal re-teaching phrase in the instructions.
     ReTeaching,
     /// Two tools advertise byte-identical descriptions.
     DuplicateToolDescription,
@@ -152,10 +152,10 @@ pub fn lint_tool_descriptions(tools: &[rmcp::model::Tool]) -> Vec<LintFinding> {
     findings
 }
 
-/// Lints the live injected context this install would emit (rules + tool schemas).
+/// Lints the live injected context this install would emit (instructions + tool schemas).
 #[must_use]
 pub fn lint_injected_context() -> Vec<LintFinding> {
-    let mut findings = lint_rules_text("rules", &crate::rules_inject::canonical_rules_block());
+    let mut findings = lint_rules_text("instructions", &crate::instructions::build_instructions());
     let tools = crate::server::tool_visibility::advertised_tool_defs_default();
     findings.extend(lint_tool_descriptions(&tools));
     findings

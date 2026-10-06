@@ -2,9 +2,9 @@
 //!
 //! lean-ctx compression is fully reversible, but agents only act on that if we
 //! *show* the escape hatch — otherwise they re-read compressed output
-//! line-by-line (the "too compressed" complaint). The proactive `RECOVER` rule
-//! ([`crate::core::rules_canonical::RECOVER`]) teaches the vocabulary once in the
-//! system prompt; this module is the reactive half: it resolves the effective
+//! line-by-line (the "too compressed" complaint). The `RECOVER` line of the MCP
+//! instructions ([`crate::instructions::GUIDE`]) teaches the vocabulary once;
+//! this module is the reactive half: it resolves the effective
 //! [`RecoveryHints`] tier and owns the canonical, **non-MCP-first** phrasings so
 //! every compressed-output site (`ctx_read`, `ctx_shell` tee, spill handles)
 //! renders identical, byte-stable wording.

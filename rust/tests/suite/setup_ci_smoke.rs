@@ -126,13 +126,13 @@ fn setup_bootstrap_doctor_status_json_smoke() {
         );
     }
 
-    // init --agent claude --mode mcp should prefer `claude mcp add-json` when available.
+    // init --agent claude should prefer `claude mcp add-json` when available.
     let out = Command::new(bin)
-        .args(["init", "--agent", "claude", "--global", "--mode", "mcp"])
+        .args(["init", "--agent", "claude", "--global"])
         .envs(envs.iter().copied())
         .output()
-        .expect("init --agent claude --mode mcp");
-    assert!(out.status.success(), "init --agent claude --mode mcp exit");
+        .expect("init --agent claude");
+    assert!(out.status.success(), "init --agent claude exit");
     let saved = std::fs::read_to_string(home.join("claude-mcp.json")).expect("claude-mcp.json");
     let v: serde_json::Value = serde_json::from_str(&saved).expect("claude json parse");
     assert!(
@@ -205,11 +205,11 @@ fn claude_config_dir_fallback_writes_dot_claude_json() {
     envs.push(("PATH", new_path.as_str()));
 
     let out = Command::new(bin)
-        .args(["init", "--agent", "claude", "--global", "--mode", "mcp"])
+        .args(["init", "--agent", "claude", "--global"])
         .envs(envs.iter().copied())
         .output()
-        .expect("init --agent claude --mode mcp");
-    assert!(out.status.success(), "init --agent claude --mode mcp exit");
+        .expect("init --agent claude");
+    assert!(out.status.success(), "init --agent claude exit");
 
     let cfg_path = claude_cfg.join(".claude.json");
     let content = std::fs::read_to_string(&cfg_path).expect(".claude.json exists");
@@ -244,7 +244,7 @@ fn claude_config_dir_fallback_writes_dot_claude_json() {
 }
 
 #[test]
-fn init_agent_preserves_agents_md_and_is_idempotent() {
+fn init_agent_leaves_agent_instruction_files_untouched() {
     let bin = env!("CARGO_BIN_EXE_lean-ctx");
 
     let tmp = tempfile::tempdir().unwrap();
@@ -304,38 +304,16 @@ fn init_agent_preserves_agents_md_and_is_idempotent() {
         assert!(out.status.success(), "init --agent claude exit");
     }
 
-    let agents = std::fs::read_to_string(&agents_path).unwrap();
-    assert!(agents.contains("# My Agents"), "must preserve user header");
-    assert!(
-        agents.contains("Do not overwrite."),
-        "must preserve user content"
-    );
-    // v3 (GL #555): the injected block is a compact pointer. It references
-    // LEAN-CTX.md *without* an `@` prefix on purpose — agents expand `@`
-    // imports inline at session start, which would defeat the footprint cut
-    // ("open on demand — do not auto-load").
-    assert!(
-        agents.contains("<!-- lean-ctx -->") && agents.contains("LEAN-CTX.md"),
-        "must add compact lean-ctx pointer block"
-    );
-    assert!(
-        !agents.contains("@LEAN-CTX.md"),
-        "pointer must not use @-import (inline expansion defeats #555)"
-    );
+    // sobre's only rules channel is the MCP instructions: init writes nothing
+    // into the project's own agent files, and creates none.
     assert_eq!(
-        agents.matches("<!-- lean-ctx -->").count(),
-        1,
-        "must not duplicate marker block"
+        std::fs::read_to_string(&agents_path).unwrap(),
+        "# My Agents\n\nDo not overwrite.\n",
+        "AGENTS.md must be byte-identical"
     );
-
-    let lean_ctx_md = project.join("LEAN-CTX.md");
-    let lean_ctx_content = std::fs::read_to_string(&lean_ctx_md).expect("LEAN-CTX.md exists");
-    assert!(
-        lean_ctx_content.contains("<!-- lean-ctx-rules -->")
-            && (lean_ctx_content.contains("Tool selection by intent")
-                || lean_ctx_content.contains("auto-route")),
-        "LEAN-CTX.md must contain the canonical lean-ctx ruleset"
-    );
+    for name in ["LEAN-CTX.md", "CLAUDE.md", ".cursorrules", ".windsurfrules"] {
+        assert!(!project.join(name).exists(), "init must not create {name}");
+    }
 }
 
 /// On Windows, `dirs::home_dir()` uses the Win32 API (`SHGetKnownFolderPath`)
@@ -343,7 +321,7 @@ fn init_agent_preserves_agents_md_and_is_idempotent() {
 /// control where files land. We can only verify file creation on Unix.
 #[test]
 #[cfg_attr(windows, ignore)]
-fn init_claude_installs_dedicated_rules_file_without_claude_md() {
+fn init_claude_installs_the_skill_and_no_rules_file() {
     let bin = env!("CARGO_BIN_EXE_lean-ctx");
 
     let tmp = tempfile::tempdir().unwrap();
@@ -368,63 +346,30 @@ fn init_claude_installs_dedicated_rules_file_without_claude_md() {
     }
 
     let out = Command::new(bin)
-        .args(["init", "--agent", "claude", "--global", "--mode", "mcp"])
+        .args(["init", "--agent", "claude", "--global"])
         .current_dir(&project)
         .envs(envs.iter().copied())
         .output()
-        .expect("init --agent claude --global --mode mcp");
-    assert!(
-        out.status.success(),
-        "init --agent claude --global --mode mcp exit"
-    );
+        .expect("init --agent claude --global");
+    assert!(out.status.success(), "init --agent claude --global exit");
 
-    let claude_md_path = home.join(".claude/CLAUDE.md");
-    assert!(
-        claude_md_path.exists(),
-        "must create ~/.claude/CLAUDE.md with lean-ctx block"
-    );
-    let claude_md = std::fs::read_to_string(&claude_md_path).expect("CLAUDE.md readable");
-    assert!(
-        claude_md.contains("<!-- lean-ctx -->"),
-        "CLAUDE.md must contain lean-ctx marker block"
-    );
+    let skill = std::fs::read_to_string(home.join(".claude/skills/sobre/SKILL.md"))
+        .expect("init installs the sobre skill");
+    assert!(skill.starts_with("---\nname: sobre\n"), "skill frontmatter");
 
-    // v3 (GL #555): the block is self-contained — Claude Code expands `@`
-    // imports inline at launch, so the old `@rules/lean-ctx.md` pointer
-    // silently multiplied the per-session footprint. The block itself must
-    // stay compact.
-    // v4 (GH #637 / GL #1138): MCP-aware — ctx_* guidance is conditional on
-    // the tools actually existing in the session, and native Read → Edit is
-    // documented as a guard-safe editing path (read-before-write gate).
-    // v5 (#1008 / GL #1144): edits route through anchored ctx_patch, ctx_edit
-    // is a legacy power-profile mention; v4's guard semantics stay documented.
-    // v6: block content updated; version bump propagated here.
-    // v7 (#1091): Replace-mode write guidance corrected; shared tag bumped.
     assert!(
-        claude_md.contains("lean-ctx-claude-v7"),
-        "CLAUDE.md must carry the v7 block version"
+        !home.join(".claude/CLAUDE.md").exists(),
+        "sobre writes no rules into CLAUDE.md"
     );
-    assert!(
-        claude_md.contains("ctx_patch"),
-        "v6 block must route edits to the anchored editor (#1008)"
-    );
-    assert!(
-        claude_md.contains("prior native Read"),
-        "v6 block must document Claude Code's path-keyed read-before-write gate"
-    );
-    assert!(
-        !claude_md.contains("@rules/"),
-        "v6 block must not @-import rules (inline expansion defeats #555)"
-    );
-    assert!(
-        claude_md.len() < 2048,
-        "compact block contract: CLAUDE.md footprint must stay <2 KB, got {}",
-        claude_md.len()
-    );
-
     assert!(
         !project.join("CLAUDE.md").exists(),
         "must not create project CLAUDE.md"
+    );
+    // Native tools are never denied.
+    let settings = std::fs::read_to_string(home.join(".claude/settings.json")).unwrap_or_default();
+    assert!(
+        !settings.contains("\"deny\""),
+        "settings.json denies nothing: {settings}"
     );
 }
 

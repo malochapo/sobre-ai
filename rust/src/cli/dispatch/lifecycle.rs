@@ -197,14 +197,18 @@ pub(super) fn cmd_dev_install() {
         crate::proxy_autostart::install(crate::proxy_setup::default_port(), true);
     }
 
-    // Resync agent rules after install so a RULES_VERSION bump is propagated
-    // without requiring a separate `lean-ctx init` or `init` call.
-    if crate::rules_inject::rules_installed()
-        && let Some(home) = dirs::home_dir()
-    {
-        let result = crate::rules_inject::inject_all_rules(&home);
-        if !result.updated.is_empty() {
-            eprintln!("  ✓ Rules updated: {}", result.updated.join(", "));
+    // Refresh the skill wherever one is installed, so the guide matches the
+    // binary that now answers the tool calls.
+    if let Some(home) = crate::core::home::resolve_home_dir() {
+        for agent in ["claude", "codex", "cursor", "copilot", "opencode"] {
+            let installed =
+                crate::setup::skill::skill_path(agent, &home).is_some_and(|p| p.exists());
+            if installed && !crate::setup::skill::is_current(agent, &home) {
+                match crate::setup::skill::install(agent, &home) {
+                    Ok(_) => eprintln!("  ✓ sobre skill updated for {agent}"),
+                    Err(e) => eprintln!("  ✗ sobre skill for {agent}: {e}"),
+                }
+            }
         }
     }
 }

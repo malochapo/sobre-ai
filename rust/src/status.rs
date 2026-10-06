@@ -10,7 +10,8 @@ pub struct StatusReport {
     pub doctor_compact_passed: u32,
     pub doctor_compact_total: u32,
     pub mcp_targets: Vec<McpTargetStatus>,
-    pub rules_targets: Vec<crate::rules_inject::RulesTargetStatus>,
+    /// Directories holding the installed `sobre` skill.
+    pub skills: Vec<String>,
     pub warnings: Vec<String>,
     pub errors: Vec<String>,
 }
@@ -126,7 +127,10 @@ fn build_status_report() -> Result<(StatusReport, std::path::PathBuf), String> {
         warnings.push("no supported AI tools detected".to_string());
     }
 
-    let rules_targets = crate::rules_inject::collect_rules_status(&home);
+    let skills = crate::setup::skill::installed_dirs(&home)
+        .into_iter()
+        .map(|d| d.display().to_string())
+        .collect();
 
     let path = crate::core::setup_report::status_report_path()?;
 
@@ -138,7 +142,7 @@ fn build_status_report() -> Result<(StatusReport, std::path::PathBuf), String> {
         doctor_compact_passed,
         doctor_compact_total,
         mcp_targets,
-        rules_targets,
+        skills,
         warnings,
         errors,
     };
@@ -148,9 +152,6 @@ fn build_status_report() -> Result<(StatusReport, std::path::PathBuf), String> {
 
 fn print_human(report: &StatusReport, path: &std::path::Path) {
     println!("lean-ctx status  v{}", report.version);
-    if true {
-        println!("  shadow_mode: \x1b[32mactive\x1b[0m");
-    }
     println!(
         "  doctor: {}/{}",
         report.doctor_compact_passed, report.doctor_compact_total
@@ -176,13 +177,7 @@ fn print_human(report: &StatusReport, path: &std::path::Path) {
         .count();
     println!("  mcp: {configured}/{detected} configured (detected tools)");
 
-    let rules_detected = report.rules_targets.iter().filter(|t| t.detected).count();
-    let rules_up_to_date = report
-        .rules_targets
-        .iter()
-        .filter(|t| t.detected && t.state == "up_to_date")
-        .count();
-    println!("  rules: {rules_up_to_date}/{rules_detected} up-to-date (detected tools)");
+    println!("  skill: installed for {} agent(s)", report.skills.len());
 
     if !report.warnings.is_empty() {
         println!("  warnings: {}", report.warnings.len());

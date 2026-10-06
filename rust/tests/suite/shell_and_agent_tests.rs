@@ -235,7 +235,7 @@ fn codex_pretooluse_rewrites_rewritable_bash_with_updated_input() {
 }
 
 #[test]
-fn agent_init_codex_installs_compatible_hooks_and_instructions() {
+fn agent_init_codex_installs_hooks_and_skill() {
     let tmpdir = tempfile::tempdir().expect("create tempdir");
     let home = tmpdir.path();
     let codex_dir = home.join(".codex");
@@ -254,13 +254,15 @@ fn agent_init_codex_installs_compatible_hooks_and_instructions() {
         run_with_env(&["init", "--agent", "codex", "--global"], &envs, None);
     assert_eq!(code, 0, "codex init should succeed: {stderr}");
 
+    for name in ["AGENTS.md", "LEAN-CTX.md"] {
+        assert!(
+            !codex_dir.join(name).exists(),
+            "init must not write {name}: rules travel in the MCP instructions"
+        );
+    }
     assert!(
-        codex_dir.join("AGENTS.md").exists(),
-        "AGENTS.md should exist"
-    );
-    assert!(
-        codex_dir.join("LEAN-CTX.md").exists(),
-        "LEAN-CTX.md should exist"
+        codex_dir.join("skills/sobre/SKILL.md").exists(),
+        "init installs the sobre skill for Codex"
     );
 
     let hooks: serde_json::Value =
@@ -270,9 +272,9 @@ fn agent_init_codex_installs_compatible_hooks_and_instructions() {
         hooks["hooks"]["PreToolUse"][0]["hooks"][0]["command"].as_str(),
         "hook codex-pretooluse",
     );
-    assert_hook_command_suffix(
-        hooks["hooks"]["SessionStart"][0]["hooks"][0]["command"].as_str(),
-        "hook codex-session-start",
+    assert!(
+        !hooks.to_string().contains("codex-session-start"),
+        "no session-start rules hook: rules travel in the MCP instructions"
     );
 
     let config = std::fs::read_to_string(codex_dir.join("config.toml")).unwrap_or_default();

@@ -1,13 +1,11 @@
-//! `lean-ctx tools health` — does every advertised MCP tool and injected rule
-//! earn its always-on token cost? (#848)
+//! `lean-ctx tools health` — does every advertised MCP tool earn its always-on
+//! token cost? (#848)
 //!
-//! lean-ctx ships ~80 MCP tools plus injected rules files; the thesis is "every
-//! token earns its place". This report cross-references the *fixed cost* of each
-//! advertised tool schema and rules file with *recorded usage* (the
+//! The thesis is "every token earns its place". This report cross-references
+//! the *fixed cost* of each advertised tool schema with *recorded usage* (the
 //! [`CostStore`] post-dispatch ledger) and flags "rot":
 //!
 //! * tools that cost schema tokens every session but are never called,
-//! * rules files that bill the same guidance to a client more than once,
 //! * stale knowledge facts (old and never retrieved).
 //!
 //! Deterministic and local-only: it reads existing on-disk telemetry, sorts
@@ -21,7 +19,6 @@ use serde::Serialize;
 
 use crate::core::a2a::cost_attribution::CostStore;
 use crate::core::context_overhead::tool_tokens;
-use crate::core::rules_overhead::{RulesFileCost, collect_rules_files, duplicate_clients};
 
 /// A tool whose schema costs >= this many tokens *and* is used for <1% of all
 /// calls is flagged `LowUse` — expensive surface that barely pays its way.
@@ -69,16 +66,6 @@ pub struct ToolEntry {
     pub value_per_1k_tokens: f64,
 }
 
-#[derive(Debug, Clone, Serialize)]
-pub struct RuleEntry {
-    pub path: String,
-    pub file_tokens: usize,
-    pub lean_ctx_tokens: usize,
-    pub carries_full: bool,
-    pub clients: Vec<String>,
-    pub action: String,
-}
-
 #[derive(Debug, Clone, Serialize, Default)]
 pub struct KnowledgeHealth {
     pub total_facts: usize,
@@ -92,8 +79,7 @@ pub struct ToolHealthReport {
     pub advertised_tools: usize,
     pub tool_schema_tokens: usize,
     pub instruction_tokens: usize,
-    pub rules_tokens: usize,
-    /// Tool schemas + MCP instructions + every auto-loaded rules file.
+    /// Tool schemas + MCP instructions.
     pub fixed_total_tokens: usize,
     pub has_usage_data: bool,
     pub total_recorded_calls: u64,
@@ -109,8 +95,6 @@ pub struct ToolHealthReport {
     /// Outcome signal from the latest `eval footprint` artifact (#959), if any:
     /// whether the tool-schema element as a whole earns its tokens.
     pub tools: Vec<ToolEntry>,
-    pub rules: Vec<RuleEntry>,
-    pub duplicate_clients: Vec<(String, usize)>,
     pub knowledge: KnowledgeHealth,
 }
 
@@ -167,8 +151,6 @@ fn resolve_alias(name: &str) -> Option<&'static str> {
 pub fn build_report(
     advertised: &[rmcp::model::Tool],
     usage: &CostStore,
-    rules: &[RulesFileCost],
-    duplicates: Vec<(String, usize)>,
     instruction_tokens: usize,
     knowledge: KnowledgeHealth,
 ) -> ToolHealthReport {
@@ -234,36 +216,12 @@ pub fn build_report(
         )
     };
 
-    let dup_clients: std::collections::HashSet<&str> =
-        duplicates.iter().map(|(c, _)| c.as_str()).collect();
-    let rules_out: Vec<RuleEntry> = rules
-        .iter()
-        .map(|r| {
-            let is_dup = r.carries_full && r.clients.iter().any(|c| dup_clients.contains(c));
-            let action = if is_dup {
-                "duplicate full lean-ctx source — run `lean-ctx rules dedup --apply`".to_string()
-            } else {
-                String::new()
-            };
-            RuleEntry {
-                path: r.path.clone(),
-                file_tokens: r.file_tokens,
-                lean_ctx_tokens: r.lean_ctx_tokens,
-                carries_full: r.carries_full,
-                clients: r.clients.iter().map(|c| (*c).to_string()).collect(),
-                action,
-            }
-        })
-        .collect();
-
-    let rules_tokens: usize = rules_out.iter().map(|r| r.file_tokens).sum();
-    let fixed_total_tokens = tool_schema_tokens + instruction_tokens + rules_tokens;
+    let fixed_total_tokens = tool_schema_tokens + instruction_tokens;
 
     ToolHealthReport {
         advertised_tools: tools.len(),
         tool_schema_tokens,
         instruction_tokens,
-        rules_tokens,
         fixed_total_tokens,
         has_usage_data,
         total_recorded_calls,
@@ -273,8 +231,6 @@ pub fn build_report(
         reclaimable_tokens,
         low_value_note,
         tools,
-        rules: rules_out,
-        duplicate_clients: duplicates,
         knowledge,
     }
 }
@@ -307,25 +263,16 @@ fn knowledge_health(project: &Path) -> KnowledgeHealth {
     }
 }
 
-/// Gathers real on-disk telemetry for `home`/`project` and builds the report.
+/// Gathers real on-disk telemetry for `project` and builds the report.
 #[must_use]
-pub fn compute(home: &Path, project: &Path) -> ToolHealthReport {
+pub fn compute(project: &Path) -> ToolHealthReport {
     let advertised = crate::server::tool_visibility::advertised_tool_defs_default();
     let usage = CostStore::load();
-    let rules = collect_rules_files(home, project);
-    let duplicates = duplicate_clients(&rules);
-    let instructions = crate::instructions::build_instructions(crate::tools::CrpMode::effective());
-    let instruction_tokens = crate::core::tokens::count_tokens(&instructions);
+    let instruction_tokens =
+        crate::core::tokens::count_tokens(&crate::instructions::build_instructions());
     let knowledge = knowledge_health(project);
 
-    build_report(
-        &advertised,
-        &usage,
-        &rules,
-        duplicates,
-        instruction_tokens,
-        knowledge,
-    )
+    build_report(&advertised, &usage, instruction_tokens, knowledge)
 }
 
 #[cfg(test)]
@@ -389,14 +336,7 @@ mod tests {
         let advertised = vec![tool("ctx_search"), tool("ctx_read"), tool("ctx_shell")];
         // History exists (ctx_read used), ctx_search/ctx_shell never called.
         let usage = usage_with(&[("ctx_read", 40)]);
-        let report = build_report(
-            &advertised,
-            &usage,
-            &[],
-            Vec::new(),
-            100,
-            KnowledgeHealth::default(),
-        );
+        let report = build_report(&advertised, &usage, 100, KnowledgeHealth::default());
 
         assert!(report.has_usage_data);
         assert_eq!(report.total_recorded_calls, 40);
@@ -409,11 +349,8 @@ mod tests {
         let read = report.tools.iter().find(|t| t.name == "ctx_read").unwrap();
         assert_eq!(read.status, ToolStatus::Active);
         assert!(read.last_used.is_some());
-        // Fixed total = tool schemas + instructions(100) + rules(0).
-        assert_eq!(
-            report.fixed_total_tokens,
-            report.tool_schema_tokens + 100 + report.rules_tokens
-        );
+        // Fixed total = tool schemas + instructions(100).
+        assert_eq!(report.fixed_total_tokens, report.tool_schema_tokens + 100);
     }
 
     #[test]
@@ -428,14 +365,7 @@ mod tests {
         let advertised = vec![tool("ctx_read"), tool("ctx_search"), tool("ctx_shell")];
         // History exists; ctx_search + ctx_shell never called → disable candidates.
         let usage = usage_with(&[("ctx_read", 40)]);
-        let report = build_report(
-            &advertised,
-            &usage,
-            &[],
-            Vec::new(),
-            0,
-            KnowledgeHealth::default(),
-        );
+        let report = build_report(&advertised, &usage, 0, KnowledgeHealth::default());
         assert!(
             report
                 .disable_candidates
@@ -458,49 +388,12 @@ mod tests {
         let report = build_report(
             &advertised,
             &CostStore::default(),
-            &[],
-            Vec::new(),
             0,
             KnowledgeHealth::default(),
         );
         assert!(!report.has_usage_data);
         assert_eq!(report.unused_tools, 0, "never flag rot without history");
         assert_eq!(report.tools[0].status, ToolStatus::Unknown);
-    }
-
-    #[test]
-    fn build_report_marks_duplicate_rules() {
-        let rules = vec![
-            RulesFileCost {
-                path: "a/.cursor/rules/lean-ctx.mdc".into(),
-                file_tokens: 200,
-                lean_ctx_tokens: 200,
-                carries_full: true,
-                clients: vec!["cursor"],
-            },
-            RulesFileCost {
-                path: "a/.cursorrules".into(),
-                file_tokens: 150,
-                lean_ctx_tokens: 150,
-                carries_full: true,
-                clients: vec!["cursor"],
-            },
-        ];
-        let dups = duplicate_clients(&rules);
-        let report = build_report(
-            &[],
-            &CostStore::default(),
-            &rules,
-            dups,
-            0,
-            KnowledgeHealth::default(),
-        );
-        assert_eq!(report.rules.len(), 2);
-        assert!(
-            report.rules.iter().all(|r| r.action.contains("dedup")),
-            "both cursor full sources flagged as duplicates"
-        );
-        assert_eq!(report.rules_tokens, 350);
     }
 
     #[test]
@@ -513,7 +406,7 @@ mod tests {
         // slower sibling test shifted parallel scheduling (#945).
         let _iso = crate::core::data_dir::isolated_data_dir();
         let tmp = tempfile::tempdir().unwrap();
-        let report = compute(tmp.path(), tmp.path());
+        let report = compute(tmp.path());
         let expected = crate::server::tool_visibility::advertised_tool_defs_default().len();
         assert_eq!(report.advertised_tools, expected);
         assert!(report.tool_schema_tokens > 0);
@@ -531,14 +424,7 @@ mod tests {
             ..ToolCost::default()
         };
         usage.tools.insert("ctx_shell".to_string(), tc);
-        let report = build_report(
-            &[shell_tool],
-            &usage,
-            &[],
-            Vec::new(),
-            0,
-            KnowledgeHealth::default(),
-        );
+        let report = build_report(&[shell_tool], &usage, 0, KnowledgeHealth::default());
         assert_eq!(report.tools[0].name, "shell");
         assert_eq!(
             report.tools[0].calls, 42,

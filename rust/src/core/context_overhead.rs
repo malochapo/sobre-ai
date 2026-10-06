@@ -1,11 +1,10 @@
 //! Honest accounting of the fixed per-turn context lean-ctx injects (GitHub #361).
 //!
-//! Three components ride every request and — on a provider WITHOUT prompt caching
+//! Two components ride every request and — on a provider WITHOUT prompt caching
 //! — are re-billed on every turn:
 //!  - the exposed MCP **tool schemas** (description + input schema of each tool),
-//!  - the MCP **server instructions** block, and
-//!  - the **rules block** lean-ctx writes into the host's instruction file
-//!    (`CLAUDE.md` / `AGENTS.md`).
+//!  - the MCP **server instructions** block — the only guidance sobre gives;
+//!    it writes nothing into the host's own instruction files.
 //!
 //! `lean-ctx gain` measures *compression on lean-ctx-touched reads* — its
 //! denominator is lean-ctx traffic, not the provider bill. On a phase-isolated /
@@ -27,21 +26,18 @@ pub struct ContextOverhead {
     pub tool_count: usize,
     /// Tokens for all exposed tool descriptions + input schemas.
     pub tool_schema_tokens: usize,
-    /// Tokens for the MCP server instructions block (capped at the instruction budget).
+    /// Tokens for the MCP server instructions block.
     pub instruction_tokens: usize,
-    /// Tokens for the rules block injected into the host instruction file.
-    pub rules_block_tokens: usize,
 }
 
 impl ContextOverhead {
     /// Total per-turn overhead in tokens.
     #[must_use]
     pub fn total_tokens(&self) -> usize {
-        self.tool_schema_tokens + self.instruction_tokens + self.rules_block_tokens
+        self.tool_schema_tokens + self.instruction_tokens
     }
 
-    /// Process-cached overhead. The tool surface and rules block are static and
-    /// the instruction block varies only with slow-moving session state, so a
+    /// Process-cached overhead. The tool surface and instructions are static, so a
     /// once-per-process measurement is the right tradeoff for callers that render
     /// repeatedly (the `gain` dashboard re-renders every second in `--live`) —
     /// it avoids per-tick disk I/O and re-tokenization.
@@ -61,18 +57,12 @@ impl ContextOverhead {
         let tool_count = tools.len();
         let tool_schema_tokens = tools.iter().map(tool_tokens).sum();
 
-        let instructions =
-            crate::instructions::build_instructions(crate::tools::CrpMode::effective());
-        let instruction_tokens = count_tokens(&instructions);
-
-        // The rules block rides every turn in the host instruction file.
-        let rules_block_tokens = count_tokens(&crate::rules_inject::canonical_rules_block());
+        let instruction_tokens = count_tokens(&crate::instructions::build_instructions());
 
         Self {
             tool_count,
             tool_schema_tokens,
             instruction_tokens,
-            rules_block_tokens,
         }
     }
 }
@@ -149,18 +139,16 @@ mod tests {
 
     #[test]
     fn measure_reports_nonzero_components() {
-        // Isolated (default) config: shared rules injection, no pinned profile —
-        // every component carries tokens. `isolated_data_dir` also holds the env
-        // lock, so a concurrent test toggling the knobs can't perturb this.
+        // `isolated_data_dir` also holds the env lock, so a concurrent test
+        // toggling the knobs can't perturb this.
         let _iso = crate::core::data_dir::isolated_data_dir();
         let o = ContextOverhead::measure();
         assert!(o.tool_count > 0, "must expose at least one tool");
         assert!(o.tool_schema_tokens > 0, "tool schemas carry tokens");
         assert!(o.instruction_tokens > 0, "instructions carry tokens");
-        assert!(o.rules_block_tokens > 0, "rules block carries tokens");
         assert_eq!(
             o.total_tokens(),
-            o.tool_schema_tokens + o.instruction_tokens + o.rules_block_tokens
+            o.tool_schema_tokens + o.instruction_tokens
         );
     }
 
@@ -170,9 +158,8 @@ mod tests {
             tool_count: 10,
             tool_schema_tokens: 100,
             instruction_tokens: 200,
-            rules_block_tokens: 50,
         };
-        assert_eq!(o.total_tokens(), 350);
+        assert_eq!(o.total_tokens(), 300);
     }
 
     #[test]
@@ -194,11 +181,10 @@ mod tests {
         );
         assert!(
             o.total_tokens() <= PER_TURN_PREFIX_BUDGET_TOKENS,
-            "per-turn prefix = {} tok (schemas {} + instr {} + rules {}), budget {}",
+            "per-turn prefix = {} tok (schemas {} + instr {}), budget {}",
             o.total_tokens(),
             o.tool_schema_tokens,
             o.instruction_tokens,
-            o.rules_block_tokens,
             PER_TURN_PREFIX_BUDGET_TOKENS,
         );
     }

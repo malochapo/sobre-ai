@@ -47,51 +47,6 @@ pub(super) fn lean_ctx_server_entry(binary: &str, include_auto_approve: bool) ->
     entry
 }
 
-pub(super) fn lean_ctx_server_entry_with_instructions(
-    binary: &str,
-    include_auto_approve: bool,
-    agent_key: &str,
-) -> Value {
-    let mut entry = lean_ctx_server_entry(binary, include_auto_approve);
-    let shadow = true;
-    let level =
-        crate::core::config::CompressionLevel::effective(&crate::core::config::Config::load());
-    // Hook-covered hosts (GL #1153): the static instructions snapshot must
-    // agree with the injected rule file — repeating "NEVER use native tools"
-    // to a Cursor whose hooks compress them re-creates the dissonance the
-    // HookCovered profile removes.
-    let hook_covered = crate::core::home::resolve_home_dir()
-        .is_some_and(|home| crate::core::rules_channel::client_hook_covered(agent_key, &home));
-    let instructions = if hook_covered {
-        crate::core::rules_canonical::render_hook_covered_bare(shadow, level)
-    } else {
-        crate::core::rules_canonical::render(
-            shadow,
-            crate::core::rules_canonical::Wrapper::Bare,
-            level,
-        )
-    };
-
-    let constraints = crate::core::client_constraints::by_client_id(agent_key);
-    if let Some(max_chars) = constraints.and_then(|c| c.mcp_instructions_max_chars) {
-        entry["instructions"] = serde_json::json!(truncate_instructions(&instructions, max_chars));
-    } else {
-        entry["instructions"] = serde_json::json!(&instructions);
-    }
-    entry
-}
-
-/// Cut `instructions` to a client's documented `max_chars`, never inside a
-/// UTF-8 sequence. The rendered rules contain multi-byte punctuation
-/// (em-dashes, arrows), and a raw `&s[..max]` byte slice panics when the limit
-/// lands mid-char — live crash during `setup` level 3 (GH #680).
-fn truncate_instructions(instructions: &str, max_chars: usize) -> &str {
-    if instructions.len() <= max_chars {
-        return instructions;
-    }
-    &instructions[..instructions.floor_char_boundary(max_chars)]
-}
-
 pub(super) fn supports_auto_approve(target: &EditorTarget) -> bool {
     crate::core::client_constraints::by_editor_name(target.name)
         .is_some_and(|c| c.supports_auto_approve)
@@ -262,40 +217,4 @@ pub(super) fn try_text_inject_mcp_entry(
     }
 
     None
-}
-
-#[cfg(test)]
-mod tests {
-    use super::truncate_instructions;
-
-    // GH #680 live repro: `setup` level 3 panicked with "end byte index 2048 is
-    // not a char boundary; it is inside '—'" — the Claude Code 2048-char cap
-    // landed mid em-dash. The cut must back up to the previous char boundary.
-    #[test]
-    fn truncation_never_splits_a_multibyte_char() {
-        // 2047 ASCII bytes, then '—' (3 bytes, occupying 2047..2050): the exact
-        // shape from the crash log.
-        let mut s = "a".repeat(2047);
-        s.push('—');
-        s.push_str(" trailing rules text");
-
-        let cut = truncate_instructions(&s, 2048);
-        assert_eq!(cut.len(), 2047, "must back up to the boundary before '—'");
-        assert!(cut.chars().all(|c| c == 'a'));
-    }
-
-    #[test]
-    fn truncation_is_noop_when_under_limit() {
-        assert_eq!(truncate_instructions("short — text", 2048), "short — text");
-    }
-
-    #[test]
-    fn truncation_on_boundary_keeps_full_prefix() {
-        let s = format!("{}—rest", "a".repeat(100));
-        // Limit right at the end of the em-dash (100 + 3 bytes).
-        assert_eq!(
-            truncate_instructions(&s, 103),
-            format!("{}—", "a".repeat(100))
-        );
-    }
 }

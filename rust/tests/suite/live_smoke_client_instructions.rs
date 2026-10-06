@@ -1,33 +1,16 @@
-//! Live client-wiring smoke (#578, Säule 1c).
+//! Live client-wiring smoke.
 //!
-//! Boots the REAL binary end-to-end per client, in an isolated HOME:
-//!   1. `lean-ctx init --agent <client>` installs MCP registration + rules file,
+//! Boots the REAL binary end-to-end, in an isolated HOME:
+//!   1. `lean-ctx init --agent <client>` installs the MCP registration and the
+//!      skill, and writes no rules into the agent's own files,
 //!   2. `lean-ctx mcp` is spoken to over actual stdio JSON-RPC,
-//!   3. the `initialize` response proves the cross-channel dedup contract:
-//!      covered clients (Cursor mdc / Codex instructions.md) get the one-line
-//!      SKELETON_ANCHOR, uncovered clients (Claude Code) get the full skeleton,
-//!   4. `tools/list` proves the advertised surface is exactly the lazy core.
-//!
-//! This is the CI stand-in for a manual "open Cursor/Claude/Codex and check"
-//! session — it exercises the same code paths the editors hit (per-client
-//! instructions in `server_handler::initialize`, lazy tool visibility).
+//!   3. every client gets the same `initialize` instructions — the one rules
+//!      channel — and the same `tools/list` surface.
 
 use std::io::{BufRead, BufReader, Write};
-use std::path::Path;
 use std::process::{Child, Command, Stdio};
 use std::sync::mpsc;
 use std::time::Duration;
-
-/// The one-line anchor `instructions.rs` emits for covered clients — shared
-/// prefix of both `SKELETON_ANCHOR` and `HOOK_COVERED_ANCHOR` (GL #1153).
-/// Kept as a distinctive prefix (not the full constant) so cosmetic rewording
-/// doesn't break the smoke while the contract (anchor vs full skeleton) holds.
-const ANCHOR_PREFIX: &str = "lean-ctx active —";
-/// A line only the FULL canonical skeleton carries. Shadow mode uses
-/// "auto-route" instead of "MANDATORY MAPPING", so we check for either.
-fn has_skeleton(text: &str) -> bool {
-    text.contains("MANDATORY MAPPING") || text.contains("auto-route")
-}
 
 struct TestEnv {
     _tmp: tempfile::TempDir,
@@ -63,7 +46,7 @@ fn base_cmd(bin: &str, env: &TestEnv) -> Command {
 
 fn run_init(bin: &str, env: &TestEnv, agent: &str) {
     let out = base_cmd(bin, env)
-        .args(["init", "--agent", agent, "--global", "--mode", "mcp"])
+        .args(["init", "--agent", agent, "--global"])
         .env("LEAN_CTX_ACTIVE", "1")
         .output()
         .expect("init spawn");
@@ -193,170 +176,54 @@ fn assert_full_surface(tools: &[String], client: &str) {
     windows,
     ignore = "HOME-override isolation is Unix-only (dirs::home_dir uses the Win32 API)"
 )]
-fn cursor_covered_client_gets_anchor_and_lazy_core() {
+fn every_client_gets_the_same_instructions_and_no_rules_file() {
     let bin = env!("CARGO_BIN_EXE_lean-ctx");
     let env = test_env();
 
-    run_init(bin, &env, "cursor");
-
-    // Wiring on disk: MCP registration + canonical rules file.
-    let mcp_json = std::fs::read_to_string(env.home.join(".cursor/mcp.json")).expect("mcp.json");
-    assert!(mcp_json.contains("lean-ctx"), "mcp.json must register us");
-    let mdc = std::fs::read_to_string(env.home.join(".cursor/rules/lean-ctx.mdc")).expect("mdc");
-    assert!(
-        mdc.contains("<!-- lean-ctx-rules -->"),
-        "mdc must carry the canonical rules block"
-    );
-
-    let (instructions, tools) = mcp_handshake(bin, &env, "cursor");
-
-    // Covered client → one-line anchor, NOT the full skeleton (#578).
-    assert!(
-        instructions.contains(ANCHOR_PREFIX),
-        "cursor is covered by its mdc → instructions must carry the anchor.\n{instructions}"
-    );
-    assert!(
-        !has_skeleton(&instructions),
-        "cursor instructions must NOT repeat the full skeleton.\n{instructions}"
-    );
-    assert_full_surface(&tools, "cursor");
-}
-
-#[test]
-#[cfg_attr(
-    windows,
-    ignore = "HOME-override isolation is Unix-only (dirs::home_dir uses the Win32 API)"
-)]
-fn claude_uncovered_client_gets_full_skeleton() {
-    let bin = env!("CARGO_BIN_EXE_lean-ctx");
-    let env = test_env();
-
-    run_init(bin, &env, "claude");
-
-    // CLAUDE.md carries the compact block — deliberately NOT the canonical
-    // rules (rules_channel: Claude never counts as covered).
-    let claude_md = std::fs::read_to_string(env.home.join(".claude/CLAUDE.md")).expect("CLAUDE.md");
-    assert!(claude_md.contains("<!-- lean-ctx -->"));
-
-    let (instructions, tools) = mcp_handshake(bin, &env, "claude-code");
-
-    assert!(
-        has_skeleton(&instructions),
-        "claude is NOT rules-file covered → instructions must carry the full skeleton.\n{instructions}"
-    );
-    assert!(
-        !instructions.contains(ANCHOR_PREFIX),
-        "claude must not get the covered-client anchor.\n{instructions}"
-    );
-    assert_full_surface(&tools, "claude");
-}
-
-#[test]
-#[cfg_attr(
-    windows,
-    ignore = "HOME-override isolation is Unix-only (dirs::home_dir uses the Win32 API)"
-)]
-fn codex_covered_client_gets_anchor() {
-    let bin = env!("CARGO_BIN_EXE_lean-ctx");
-    let env = test_env();
-
-    run_init(bin, &env, "codex");
-
-    // Wiring on disk: config.toml MCP entry + canonical instructions.md.
-    let config = std::fs::read_to_string(env.home.join(".codex/config.toml")).expect("config");
-    assert!(config.contains("lean-ctx"), "config.toml must register us");
-    let instr_md =
-        std::fs::read_to_string(env.home.join(".codex/instructions.md")).expect("instructions.md");
-    assert!(
-        instr_md.contains("<!-- lean-ctx-rules -->"),
-        "instructions.md must carry the canonical rules block"
-    );
-
-    let (instructions, tools) = mcp_handshake(bin, &env, "codex");
-
-    assert!(
-        instructions.contains(ANCHOR_PREFIX),
-        "codex is covered by instructions.md → anchor expected.\n{instructions}"
-    );
-    assert!(
-        !has_skeleton(&instructions),
-        "codex instructions must NOT repeat the full skeleton.\n{instructions}"
-    );
-    assert_full_surface(&tools, "codex");
-}
-
-/// Zero-config golden path: the FIRST MCP session on a fresh machine must
-/// leave the rules file behind (session-start heal), so `doctor` is green
-/// without the user ever running `lean-ctx setup`.
-///
-/// The startup-maintenance block (rules inject) is the unit under test. The
-/// maintenance runs async after initialize, so the test polls for the
-/// artifact with a deadline while the session stays open.
-#[test]
-#[cfg_attr(
-    windows,
-    ignore = "HOME-override isolation is Unix-only (dirs::home_dir uses the Win32 API)"
-)]
-fn first_session_heals_rules() {
-    let bin = env!("CARGO_BIN_EXE_lean-ctx");
-    let env = test_env();
-    // A Cursor install is just its config dir — no prior lean-ctx wiring.
-    std::fs::create_dir_all(env.home.join(".cursor")).unwrap();
-
-    let mut child: Child = Command::new(bin)
-        .arg("mcp")
-        .current_dir(&env.project)
-        .env("HOME", &env.home)
-        .env("LEAN_CTX_DATA_DIR", &env.data)
-        .env("CODEX_HOME", env.home.join(".codex"))
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .spawn()
-        .expect("mcp server spawn");
-    let mut stdin = child.stdin.take().expect("child stdin");
-    let stdout = child.stdout.take().expect("child stdout");
-    let reader = std::thread::spawn(move || {
-        // Drain stdout so the server never blocks on a full pipe.
-        for _ in BufReader::new(stdout).lines() {}
-    });
-
-    let init = serde_json::json!({
-        "jsonrpc": "2.0", "id": 1, "method": "initialize",
-        "params": {
-            "protocolVersion": "2024-11-05",
-            "capabilities": {},
-            "clientInfo": { "name": "cursor", "version": "1.0.0" }
-        }
-    });
-    writeln!(stdin, "{init}").expect("write initialize");
-
-    let rules = env.home.join(".cursor/rules/lean-ctx.mdc");
-    let deadline = std::time::Instant::now() + Duration::from_mins(1);
-    while !rules.exists() && std::time::Instant::now() < deadline {
-        std::thread::sleep(Duration::from_millis(200));
+    for agent in ["cursor", "claude", "codex"] {
+        run_init(bin, &env, agent);
     }
 
-    drop(stdin);
-    let _ = child.wait();
-    let _ = reader.join();
-
+    // Wiring on disk: MCP registrations, and no rules written anywhere.
+    let mcp_json = std::fs::read_to_string(env.home.join(".cursor/mcp.json")).expect("mcp.json");
+    assert!(mcp_json.contains("lean-ctx"), "mcp.json must register us");
     assert!(
-        rules.exists(),
-        "session-start heal must write the Cursor rules file without any setup command"
+        !mcp_json.contains("instructions"),
+        "the MCP entry carries no copy of the instructions"
     );
-}
+    let config = std::fs::read_to_string(env.home.join(".codex/config.toml")).expect("config");
+    assert!(config.contains("lean-ctx"), "config.toml must register us");
+    for rules in [
+        ".cursor/rules/lean-ctx.mdc",
+        ".claude/CLAUDE.md",
+        ".codex/instructions.md",
+        ".codex/AGENTS.md",
+        ".codex/LEAN-CTX.md",
+    ] {
+        assert!(
+            !env.home.join(rules).exists(),
+            "init must not write {rules}"
+        );
+    }
+    for name in ["AGENTS.md", "LEAN-CTX.md", "CLAUDE.md"] {
+        assert!(
+            !env.project.join(name).exists(),
+            "init must not write {name}"
+        );
+    }
 
-/// Guard the exact anchor prefix this smoke keys on: if `SKELETON_ANCHOR` in
-/// `instructions.rs` is reworded, this test points straight at the constant
-/// instead of three opaque handshake failures.
-#[test]
-fn anchor_prefix_matches_lib_constant() {
-    let src =
-        std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("src/instructions.rs"))
-            .expect("read instructions.rs");
+    let mut seen = Vec::new();
+    for client in ["cursor", "claude-code", "codex"] {
+        let (instructions, tools) = mcp_handshake(bin, &env, client);
+        assert!(
+            instructions.contains("Prefer them when they fit; native tools keep working"),
+            "{client} must get the guide.\n{instructions}"
+        );
+        assert_full_surface(&tools, client);
+        seen.push(instructions);
+    }
     assert!(
-        src.contains(ANCHOR_PREFIX),
-        "SKELETON_ANCHOR in instructions.rs no longer starts with the prefix this smoke asserts on — update both together"
+        seen.windows(2).all(|w| w[0] == w[1]),
+        "every client gets byte-identical instructions"
     );
 }

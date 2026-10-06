@@ -36,7 +36,7 @@ impl ServerHandler for LeanCtxServer {
     fn get_info(&self) -> ServerInfo {
         let capabilities = server_capabilities(true, true);
 
-        let instructions = crate::instructions::build_instructions(CrpMode::effective());
+        let instructions = crate::instructions::build_instructions();
 
         InitializeResult::new(capabilities)
             .with_server_info(Implementation::new("lean-ctx", env!("CARGO_PKG_VERSION")))
@@ -152,11 +152,6 @@ impl ServerHandler for LeanCtxServer {
                 std::time::Duration::from_mins(2),
             );
             if maintenance.is_some() {
-                if let Some(home) = dirs::home_dir() {
-                    let _ = crate::rules_inject::inject_all_rules(&home);
-                    // The on-demand SKILL.md belongs to the same steering surface
-                    // as the rules block: the session-start heal writes rules for
-                }
                 crate::hooks::refresh_installed_hooks();
                 // Prune accumulated quarantined BM25 indexes (#2364). Silent
                 // (tracing only) so it never corrupts the MCP stdio protocol.
@@ -182,8 +177,7 @@ impl ServerHandler for LeanCtxServer {
 
         crate::core::client_capabilities::set_detected(&client_caps);
 
-        let instructions =
-            crate::instructions::build_instructions_with_client(CrpMode::effective(), &name);
+        let instructions = crate::instructions::build_instructions();
 
         let capabilities = server_capabilities(client_caps.resources, client_caps.prompts);
 

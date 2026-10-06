@@ -151,11 +151,10 @@ pub(crate) fn check_codex_hooks_json(home: &std::path::Path, binary: &str) -> Na
         };
     };
     let hooks = v.get("hooks");
-    let mut saw_session_start = false;
     let mut saw_pretool = false;
     if let Some(h) = hooks {
-        for event in ["SessionStart", "PreToolUse"] {
-            if let Some(arr) = h.get(event).and_then(|x| x.as_array()) {
+        {
+            if let Some(arr) = h.get("PreToolUse").and_then(|x| x.as_array()) {
                 for entry in arr {
                     let Some(hooks_arr) = entry.get("hooks").and_then(|x| x.as_array()) else {
                         continue;
@@ -164,9 +163,6 @@ pub(crate) fn check_codex_hooks_json(home: &std::path::Path, binary: &str) -> Na
                         let Some(cmd) = he.get("command").and_then(|c| c.as_str()) else {
                             continue;
                         };
-                        if cmd.contains("hook codex-session-start") {
-                            saw_session_start = true;
-                        }
                         if cmd.contains("hook codex-pretooluse") {
                             saw_pretool = true;
                         }
@@ -175,7 +171,7 @@ pub(crate) fn check_codex_hooks_json(home: &std::path::Path, binary: &str) -> Na
             }
         }
     }
-    let entries_ok = saw_session_start && saw_pretool;
+    let entries_ok = saw_pretool;
     let stale = stale_hook_binary(&content, binary);
     let ok = entries_ok && stale.is_none();
     let detail = if !entries_ok {

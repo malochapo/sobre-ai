@@ -3,115 +3,14 @@ use std::path::PathBuf;
 pub mod agents;
 mod support;
 
-/// Controls how hooks instruct agents to access lean-ctx functionality.
-///
-/// * `Mcp` — MCP server only (extension/plugin-based agents without reliable shell).
-/// * `Hybrid` — MCP server + shell hooks for command compression (best of both).
-/// * `Replace` — Native Read/Grep/Glob/Shell are **denied**; lean-ctx MCP tools are
-///   the only path. Eliminates tool drift entirely — no agent compliance needed.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum HookMode {
-    #[default]
-    Mcp,
-    Hybrid,
-    Replace,
-}
-
-impl std::fmt::Display for HookMode {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Mcp => write!(f, "MCP"),
-            Self::Hybrid => write!(f, "Hybrid"),
-            Self::Replace => write!(f, "Replace"),
-        }
-    }
-}
-
-impl HookMode {
-    pub fn from_str_loose(s: &str) -> Option<Self> {
-        match s.to_lowercase().replace('-', "").as_str() {
-            "mcp" => Some(Self::Mcp),
-            "hybrid" => Some(Self::Hybrid),
-            "replace" => Some(Self::Replace),
-            _ => None,
-        }
-    }
-
-    /// Downgrade Replace → Hybrid; leave Hybrid/Mcp unchanged.
-    pub fn cap_at_hybrid(self) -> Self {
-        if matches!(self, Self::Replace) {
-            Self::Hybrid
-        } else {
-            self
-        }
-    }
-
-    pub fn description(&self) -> &'static str {
-        match self {
-            Self::Mcp => "MCP server only (extension/plugin-based agents without reliable shell)",
-            Self::Hybrid => "MCP server + shell hooks for command compression (best of both)",
-            Self::Replace => {
-                "Native tools denied — lean-ctx MCP is the only path (zero tool drift)"
-            }
-        }
-    }
-}
-
-/// Agents with reliable shell + hook infrastructure that support Replace mode
-/// (native tools denied, lean-ctx MCP is the only path). These agents have
-/// either `permissions.deny` support or PreToolUse deny-hook capability.
-pub const REPLACE_AGENTS: &[&str] = &[
-    "cursor",
-    "claude",
-    "claude-code",
-    "codex",
-    "windsurf",
-    "opencode",
-    "gemini",
-];
-
-/// Agents that get Hybrid mode (MCP + shell hooks) because they lack reliable
-/// deny infrastructure but do have shell hooks for command compression.
-pub const HYBRID_AGENTS: &[&str] = &[
-    "cursor",
-    "gemini",
-    "codex",
-    "claude",
-    "claude-code",
-    "opencode",
-    "windsurf",
-    "copilot",
-];
-
-/// Auto-detect the best hook mode for a given agent key.
-///
-/// Priority: Replace > Hybrid > Mcp
-/// - Replace: native tools denied, MCP-only path (zero tool drift)
-/// - Hybrid: MCP + shell hooks (fallback for agents without deny support)
-/// - Mcp: MCP server only (no shell hooks available)
-pub fn recommend_hook_mode(agent_key: &str) -> HookMode {
-    if REPLACE_AGENTS.contains(&agent_key) {
-        HookMode::Replace
-    } else if HYBRID_AGENTS.contains(&agent_key) {
-        HookMode::Hybrid
-    } else {
-        HookMode::Mcp
-    }
-}
-
 use agents::{
-    install_claude_hook_config, install_claude_hook_scripts, install_claude_hook_with_mode,
-    install_claude_permissions_deny_replace, install_claude_project_hooks, install_codex_hook,
-    install_copilot_hook, install_cursor_deny_hook, install_cursor_hook_config,
-    install_cursor_hook_scripts, install_cursor_hook_with_mode, install_gemini_deny_hook,
-    install_gemini_hook, install_gemini_hook_config, install_gemini_hook_scripts,
-    install_opencode_hook, install_windsurf_hooks, install_windsurf_hooks_replace,
-    install_windsurf_rules,
+    install_claude_hook, install_claude_hook_config, install_claude_hook_scripts,
+    install_codex_hook, install_copilot_hook, install_cursor_hook_config,
+    install_cursor_hook_scripts, install_gemini_hook, install_gemini_hook_config,
+    install_gemini_hook_scripts, install_opencode_hook, install_windsurf, install_windsurf_hooks,
 };
 use support::{
-    ensure_codex_hooks_enabled, install_codex_instruction_docs, install_named_json_server,
-    upsert_lean_ctx_codex_hook_entries,
+    ensure_codex_hooks_enabled, install_named_json_server, upsert_lean_ctx_codex_hook_entries,
 };
 
 fn mcp_server_quiet_mode() -> bool {
@@ -123,17 +22,29 @@ fn mcp_server_quiet_mode() -> bool {
 /// they always point at the current binary. Each entry is gated on a detection
 /// marker (see `hooks_installed_for`) so we never install hooks for an agent
 /// the user never configured. The `refresh_covers_every_hybrid_agent` test
-/// proves this list plus `REFRESH_EXEMPT_HYBRID_AGENTS` accounts for every
-/// Hybrid agent, so a newly added agent can never silently regress.
+/// proves this list plus `REFRESH_EXEMPT_AGENTS` accounts for every hook-capable
+/// agent, so a newly added agent can never silently regress.
 const REFRESHABLE_HOOK_AGENTS: &[&str] =
     &["claude", "cursor", "gemini", "codex", "windsurf", "copilot"];
 
-/// Hybrid agents intentionally NOT auto-refreshed, with the reason each is safe
+/// Hook-capable agents intentionally NOT auto-refreshed, with the reason each is safe
 /// to skip. Refresh runs silently (including on every MCP server start), so it
 /// must never spawn subprocesses or write project/cwd-relative files. Used by
-/// the coverage test to prove every Hybrid agent has an explicit decision.
+/// the coverage test to prove every hook-capable agent has an explicit decision.
 #[cfg(test)]
-const REFRESH_EXEMPT_HYBRID_AGENTS: &[&str] = &[
+const HOOK_CAPABLE_AGENTS: &[&str] = &[
+    "cursor",
+    "gemini",
+    "codex",
+    "claude",
+    "claude-code",
+    "opencode",
+    "windsurf",
+    "copilot",
+];
+
+#[cfg(test)]
+const REFRESH_EXEMPT_AGENTS: &[&str] = &[
     // Alias of `claude` — same global files, already refreshed via "claude".
     "claude-code",
     // MCP-config wiring only (no global binary-embedding shell-hook script to
@@ -143,8 +54,8 @@ const REFRESH_EXEMPT_HYBRID_AGENTS: &[&str] = &[
 
 /// Silently refresh all hook scripts for agents that are already configured.
 /// Called after updates and on MCP server start to ensure hooks match the
-/// current binary version. Registry-driven: every Hybrid agent with a global
-/// shell hook is covered (the rest are explicitly exempted, enforced by test).
+/// current binary version. Every hook-capable agent with a global shell hook is
+/// covered (the rest are explicitly exempted, enforced by test).
 pub fn refresh_installed_hooks() {
     let Some(home) = crate::core::home::resolve_home_dir() else {
         return;
@@ -189,40 +100,22 @@ fn hooks_installed_for(agent: &str, home: &std::path::Path) -> bool {
 
 /// Re-render the hook artifacts for an already-configured agent. Only calls
 /// narrow, subprocess-free, global installers (never the full agent setup).
-/// Mode-aware: preserves Replace-mode deny artifacts (permissions.deny, deny
-/// hooks) so an MCP server restart never downgrades Replace → Hybrid.
 fn refresh_agent_hooks(agent: &str, home: &std::path::Path) {
-    let mode = recommend_hook_mode(agent);
     match agent {
         "claude" => {
             install_claude_hook_scripts(home);
             install_claude_hook_config(home);
-            if mode == HookMode::Replace {
-                install_claude_permissions_deny_replace(home);
-            }
         }
         "cursor" => {
             install_cursor_hook_scripts(home);
             install_cursor_hook_config(home);
-            if mode == HookMode::Replace {
-                install_cursor_deny_hook(true);
-            }
         }
         "gemini" => {
             install_gemini_hook_scripts(home);
             install_gemini_hook_config(home);
-            if mode == HookMode::Replace {
-                install_gemini_deny_hook(home);
-            }
         }
         "codex" => install_codex_hook(),
-        "windsurf" => {
-            if mode == HookMode::Replace {
-                install_windsurf_hooks_replace(home);
-            } else {
-                install_windsurf_hooks(home);
-            }
-        }
+        "windsurf" => install_windsurf_hooks(home),
         "copilot" => install_copilot_hook(true),
         _ => {}
     }
@@ -463,283 +356,25 @@ const REDIRECT_SCRIPT_GENERIC: &str = r"#!/usr/bin/env bash
 exit 0
 ";
 
-/// Install project rules, optionally scoped to specific agents.
-/// If `agents` is empty, installs for all agents (legacy behavior).
-pub fn install_project_rules_for_agents(agents: &[&str]) {
-    let cwd = std::env::current_dir().unwrap_or_default();
-
-    if !is_inside_git_repo(&cwd) {
-        eprintln!(
-            "  Skipping project files: not inside a git repository.\n  \
-             Run this command from your project root to create CLAUDE.md / AGENTS.md."
-        );
-        return;
-    }
-
+/// Install everything sobre puts into an agent's own configuration: the MCP
+/// server entry, the `sobre` skill where the agent supports skills and, where
+/// the host supports them, the shell/read hooks. The same for every agent —
+/// there is no mode to choose.
+pub fn install_agent_hook(agent: &str, global: bool) {
     let home = crate::core::home::resolve_home_dir().unwrap_or_default();
-    if cwd == home {
-        eprintln!(
-            "  Skipping project files: current directory is your home folder.\n  \
-             Run this command from a project directory instead."
-        );
-        return;
-    }
-
-    let all = agents.is_empty();
-    let wants = |name: &str| all || agents.iter().any(|a| a.eq_ignore_ascii_case(name));
-
-    ensure_project_agents_integration(&cwd);
-
-    if wants("cursor") || wants("windsurf") {
-        let cursorrules = cwd.join(".cursorrules");
-        if !cursorrules.exists()
-            || !std::fs::read_to_string(&cursorrules)
-                .unwrap_or_default()
-                .contains("lean-ctx")
-        {
-            let content = cursorrules_content();
-            if cursorrules.exists() {
-                let mut existing = std::fs::read_to_string(&cursorrules).unwrap_or_default();
-                if !existing.ends_with('\n') {
-                    existing.push('\n');
-                }
-                existing.push('\n');
-                existing.push_str(&content);
-                write_file(&cursorrules, &existing);
-            } else {
-                write_file(&cursorrules, &content);
-            }
-            if !mcp_server_quiet_mode() {
-                eprintln!("Created/updated .cursorrules in project root.");
-            }
+    match crate::setup::skill::install(agent, &home) {
+        Ok(Some(path)) if !mcp_server_quiet_mode() => {
+            eprintln!("Installed the sobre skill at {}", path.display());
         }
+        Err(e) => eprintln!("Could not install the sobre skill: {e}"),
+        _ => {}
     }
-
-    if wants("claude") {
-        install_claude_project_hooks(&cwd);
-    }
-
-    if wants("copilot") || wants("vscode") {
-        ensure_copilot_instructions(&cwd);
-        ensure_vscode_instruction_files_setting(&cwd);
-    }
-}
-
-const PROJECT_LEAN_CTX_MD_MARKER: &str =
-    crate::core::rules_canonical::PROJECT_LEAN_CTX_OWNED_MARKER;
-const PROJECT_LEAN_CTX_MD: &str = "LEAN-CTX.md";
-const PROJECT_AGENTS_MD: &str = "AGENTS.md";
-// The AGENTS.md pointer block keeps its own marker pair, independent of the
-// dedicated rules-file `START_MARK`: pointer-only files must not be counted as
-// duplicate lean-ctx sources (doctor overhead, #684).
-const AGENTS_BLOCK_START: &str = crate::core::rules_canonical::AGENTS_BLOCK_START;
-const AGENTS_BLOCK_END: &str = crate::core::rules_canonical::AGENTS_BLOCK_END;
-
-fn ensure_project_agents_integration(cwd: &std::path::Path) {
-    let lean_ctx_md = cwd.join(PROJECT_LEAN_CTX_MD);
-    // Longform (#578): LEAN-CTX.md is opened on demand via the AGENTS.md
-    // pointer, never auto-loaded, so it carries the verbose teaching profile.
-    let desired = format!(
-        "{PROJECT_LEAN_CTX_MD_MARKER}\n{}\n",
-        crate::rules_inject::rules_longform_markdown()
-    );
-
-    if !lean_ctx_md.exists() {
-        write_file(&lean_ctx_md, &desired);
-    } else if std::fs::read_to_string(&lean_ctx_md)
-        .unwrap_or_default()
-        .contains(PROJECT_LEAN_CTX_MD_MARKER)
-    {
-        let current = std::fs::read_to_string(&lean_ctx_md).unwrap_or_default();
-        let version_str = format!(
-            "<!-- version: {} -->",
-            crate::core::rules_canonical::RULES_VERSION
-        );
-        if !current.contains(&version_str) {
-            write_file(&lean_ctx_md, &desired);
-        }
-    }
-
-    // No `@` import: Claude Code expands `@file` references inline at session
-    // start, so pointing at LEAN-CTX.md re-loaded the full ruleset into every
-    // session on top of this block (GL #555). The block is self-contained;
-    // the full ruleset stays in LEAN-CTX.md for on-demand reading.
-    let block = format!(
-        "{AGENTS_BLOCK_START}\n\
-## lean-ctx\n\n\
-lean-ctx is active — the MCP tools replace native equivalents.\n\
-Full rules: {PROJECT_LEAN_CTX_MD} (open on demand — do not auto-load).\n\
-{AGENTS_BLOCK_END}\n"
-    );
-
-    let agents_md = cwd.join(PROJECT_AGENTS_MD);
-    if !agents_md.exists() {
-        let content = format!("# Agent Instructions\n\n{block}");
-        write_file(&agents_md, &content);
-        if !mcp_server_quiet_mode() {
-            eprintln!("Created AGENTS.md in project root (lean-ctx reference only).");
-        }
-        return;
-    }
-
-    let existing = std::fs::read_to_string(&agents_md).unwrap_or_default();
-
-    // Marker checks are line-based (GL #1158): a prose mention of the marker
-    // (as this repo's own AGENTS.md carries) must not trigger block surgery.
-    let has_block = crate::marked_block::contains_marker_line(&existing, AGENTS_BLOCK_START);
-
-    if has_block {
-        let updated = crate::marked_block::replace_marked_block(
-            &existing,
-            AGENTS_BLOCK_START,
-            AGENTS_BLOCK_END,
-            &block,
-        );
-        if updated != existing {
-            write_file(&agents_md, &updated);
-        }
-        return;
-    }
-
-    if existing.contains("lean-ctx") && existing.contains(PROJECT_LEAN_CTX_MD) {
-        return;
-    }
-
-    let mut out = existing;
-    if !out.ends_with('\n') {
-        out.push('\n');
-    }
-    out.push('\n');
-    out.push_str(&block);
-    write_file(&agents_md, &out);
-    if !mcp_server_quiet_mode() {
-        eprintln!("Updated AGENTS.md (added lean-ctx reference block).");
-    }
-}
-
-/// #555: VS Code Copilot Chat auto-applies `.github/copilot-instructions.md` to
-/// every request, but `init --agent copilot` previously wrote only a weak
-/// AGENTS.md pointer — Claude-family models then ignored the lean-ctx tool
-/// mapping while GPT-5.x mostly followed it. Write the strong dedicated ruleset
-/// into a `<!-- lean-ctx-rules -->` marked block so it merges idempotently and
-/// never clobbers the user's own instructions.
-fn ensure_copilot_instructions(cwd: &std::path::Path) {
-    let path = cwd.join(".github").join("copilot-instructions.md");
-    let block = crate::rules_inject::rules_dedicated_markdown();
-    let start = crate::core::rules_canonical::START_MARK;
-    let end = crate::core::rules_canonical::END_MARK;
-    let owned = format!("{}\n", block.trim_end());
-
-    let existing = std::fs::read_to_string(&path).unwrap_or_default();
-    let desired = if existing.trim().is_empty() {
-        owned
-    } else if existing.contains(start) {
-        // Refresh our block; keep any surrounding user-authored content.
-        let user = crate::marked_block::remove_content(&existing, start, end);
-        if user.trim().is_empty() {
-            owned
-        } else {
-            format!("{}\n\n{}\n", user.trim_end(), block.trim_end())
-        }
-    } else {
-        // User-authored file with no lean-ctx block yet: append ours once.
-        format!("{}\n\n{}\n", existing.trim_end(), block.trim_end())
-    };
-
-    if desired == existing {
-        return;
-    }
-    if let Some(parent) = path.parent()
-        && std::fs::create_dir_all(parent).is_err()
-    {
-        return;
-    }
-    write_file(&path, &desired);
-    if !mcp_server_quiet_mode() {
-        eprintln!("Created/updated .github/copilot-instructions.md (Copilot/VS Code rules).");
-    }
-}
-
-/// #555 safety net: VS Code applies instruction files when
-/// `github.copilot.chat.codeGeneration.useInstructionFiles` is on (the default).
-/// A user or org policy may have disabled it globally, so pin it on for this
-/// project. Set only when the key is absent — an explicit user value is honoured.
-fn ensure_vscode_instruction_files_setting(cwd: &std::path::Path) {
-    const KEY: &str = "github.copilot.chat.codeGeneration.useInstructionFiles";
-    let path = cwd.join(".vscode").join("settings.json");
-
-    let existing = std::fs::read_to_string(&path).unwrap_or_default();
-    let mut json = if existing.trim().is_empty() {
-        serde_json::json!({})
-    } else {
-        match crate::core::jsonc::parse_jsonc(&existing) {
-            Ok(v) if v.is_object() => v,
-            // Never clobber an unparseable or non-object settings file.
-            _ => return,
-        }
-    };
-    let Some(obj) = json.as_object_mut() else {
-        return;
-    };
-    if obj.contains_key(KEY) {
-        return;
-    }
-    obj.insert(KEY.to_string(), serde_json::Value::Bool(true));
-
-    if let Some(parent) = path.parent()
-        && std::fs::create_dir_all(parent).is_err()
-    {
-        return;
-    }
-    let Ok(formatted) = serde_json::to_string_pretty(&json) else {
-        return;
-    };
-    if crate::config_io::write_atomic_with_backup(&path, &formatted).is_ok()
-        && !mcp_server_quiet_mode()
-    {
-        eprintln!("Set {KEY} in .vscode/settings.json.");
-    }
-}
-
-/// Compact pointer only (#578): Cursor already auto-loads the canonical full
-/// ruleset from `~/.cursor/rules/lean-ctx.mdc`, so a project `.cursorrules`
-/// that repeats it bills the same guidance twice in every session.
-pub fn cursorrules_content() -> String {
-    let start = crate::core::rules_canonical::START_MARK;
-    let end = crate::core::rules_canonical::END_MARK;
-    let version = crate::core::rules_canonical::RULES_VERSION;
-    format!(
-        "{start}\n<!-- version: {version} -->\n\n\
-# lean-ctx\n\n\
-{bullets}\n\n\
-{never}\n\
-Full rules: ~/.cursor/rules/lean-ctx.mdc (auto-loaded) \u{2014} do not duplicate here.\n\
-{end}",
-        bullets = crate::core::rules_canonical::BULLETS,
-        never = crate::core::rules_canonical::NEVER,
-    )
-}
-
-pub fn install_agent_hook_with_mode(agent: &str, global: bool, mode: HookMode) {
-    let home = crate::core::home::resolve_home_dir().unwrap_or_default();
     match agent {
-        "claude" | "claude-code" => install_claude_hook_with_mode(global, mode),
-        "cursor" => install_cursor_hook_with_mode(global, mode),
-        "gemini" => {
-            install_gemini_hook();
-            if mode == HookMode::Replace {
-                install_gemini_deny_hook(&home);
-            }
-        }
-        "codex" => {
-            install_codex_hook();
-        }
-        "windsurf" => {
-            install_windsurf_rules(global);
-            if mode == HookMode::Replace {
-                install_windsurf_hooks_replace(&home);
-            }
-        }
+        "claude" | "claude-code" => install_claude_hook(),
+        "cursor" => agents::install_cursor_hook(),
+        "gemini" => install_gemini_hook(),
+        "codex" => install_codex_hook(),
+        "windsurf" => install_windsurf(),
         "copilot" | "vscode" => install_copilot_hook(global),
         "opencode" => install_opencode_hook(),
         "zed" => {
@@ -791,19 +426,6 @@ fn ensure_state_dir(dir: &std::path::Path) -> bool {
             // Always surface — a swallowed dir failure was the #596 footgun.
             eprintln!("lean-ctx init: cannot prepare {}: {e}", dir.display());
             false
-        }
-    }
-}
-
-fn is_inside_git_repo(path: &std::path::Path) -> bool {
-    let mut p = path;
-    loop {
-        if p.join(".git").exists() {
-            return true;
-        }
-        match p.parent() {
-            Some(parent) => p = parent,
-            None => return false,
         }
     }
 }
