@@ -41,7 +41,7 @@ impl Config {
     /// present (or HOME is unresolvable).
     ///
     /// The directory is layout-dependent (XDG `~/.config/lean-ctx` vs
-    /// `$LEAN_CTX_CONFIG_DIR` vs `$LEAN_CTX_DATA_DIR`) and an MCP client may launch the
+    /// `$LEAN_CTX_CONFIG_DIR`) and an MCP client may launch the
     /// server in a sandbox/container with a different `$HOME`. An edit made to a
     /// *different* `config.toml` than this one is silently ignored; the block
     /// messages use this to say so out loud over MCP, where the stderr path is

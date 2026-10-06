@@ -275,3 +275,48 @@ mod tests {
         }
     }
 }
+
+/// INVARIANTS.md §2: at most 15 configuration keys. A key is a top-level field
+/// or a field of `[proxy]`; a table a key holds (`proxy.upstreams`,
+/// `proxy.routing`) counts once, whatever it contains. Adding a key means
+/// updating this list, which is the point: it must be a deliberate change.
+#[cfg(test)]
+mod key_cap {
+    const KEY_CAP: usize = 15;
+    const KEYS: &[&str] = &[
+        "allow_paths",
+        "compression_level",
+        "debug_log",
+        "embedding_model",
+        "hook_binary",
+        "ignore",
+        "passthrough_commands",
+        "proxy.enabled",
+        "proxy.port",
+        "proxy.routing",
+        "proxy.upstreams",
+        "read_only_roots",
+        "shell_timeout_secs",
+    ];
+
+    #[test]
+    fn config_keys_are_the_documented_set_and_under_the_cap() {
+        let mut counted: Vec<String> = super::ConfigSchema::generate()
+            .known_keys()
+            .into_iter()
+            .filter(|k| k != "proxy")
+            .map(|k| {
+                let parts: Vec<&str> = k.split('.').collect();
+                if parts[0] == "proxy" && parts.len() > 2 {
+                    format!("proxy.{}", parts[1])
+                } else {
+                    k
+                }
+            })
+            .collect();
+        counted.sort();
+        counted.dedup();
+        assert_eq!(counted, KEYS, "the configuration keys changed");
+        assert!(KEYS.len() <= KEY_CAP, "{} keys, cap {KEY_CAP}", KEYS.len());
+    }
+}

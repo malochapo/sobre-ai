@@ -2,11 +2,6 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::OnceLock;
 
-/// A config dir whose `config.toml` sets `shell_security = "warn"`. These tests
-/// exercise CLI/compression behavior, not the shell allowlist (which has its
-/// own unit tests in shell::exec). On CI stderr is not a TTY, so the gate would
-/// block test scripts (`for`/`while` loops are not allowlisted) with exit 126 —
-/// warn-only keeps the tests pinned to what they actually assert.
 /// A throwaway state dir, so the binary's event log never lands in the
 /// developer's real one.
 fn isolated_state_dir() -> &'static Path {
@@ -18,16 +13,13 @@ fn isolated_state_dir() -> &'static Path {
     })
 }
 
-fn warn_only_config_dir() -> &'static Path {
+/// An empty config dir, so the developer's own config.toml never shapes what
+/// these tests see.
+fn isolated_config_dir() -> &'static Path {
     static DIR: OnceLock<PathBuf> = OnceLock::new();
     DIR.get_or_init(|| {
-        let dir = std::env::temp_dir().join(format!(
-            "lean-ctx-it-warn-only-config-{}",
-            std::process::id()
-        ));
-        std::fs::create_dir_all(&dir).expect("create warn-only config dir");
-        std::fs::write(dir.join("config.toml"), "shell_security = \"warn\"\n")
-            .expect("write warn-only config.toml");
+        let dir = std::env::temp_dir().join(format!("lean-ctx-it-config-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("create isolated config dir");
         dir
     })
 }
@@ -37,7 +29,7 @@ fn lean_ctx_bin() -> Command {
     cmd.current_dir(env!("CARGO_MANIFEST_DIR"));
     cmd.env("LEAN_CTX_ACTIVE", "1");
     cmd.env("LEAN_CTX_STATE_DIR", isolated_state_dir());
-    cmd.env("LEAN_CTX_CONFIG_DIR", warn_only_config_dir());
+    cmd.env("LEAN_CTX_CONFIG_DIR", isolated_config_dir());
     cmd
 }
 
@@ -147,7 +139,7 @@ fn pipe_guard_multiline_output_unchanged_when_piped() {
 }
 
 // ── Redirect-to-file fidelity under FORCED compression ──────
-// Regression: the agent shell hook deliberately bypasses the `[ ! -t 1 ]` pipe
+// Regression: an agent's command hook routes through `lean-ctx -c` with no pipe
 // guard (an agent IS the consumer), so an agent running
 // `git status --short > files.txt` reached `lean-ctx -c` with stdout pointing at a
 // regular FILE and forced compression on. The compressed digest was written INTO
@@ -176,9 +168,7 @@ fn forced_compress_bin() -> Command {
         .env_remove("LEAN_CTX_ACTIVE")
         .env_remove("LEAN_CTX_WRAPPED")
         .env("LEAN_CTX_STATE_DIR", isolated_state_dir())
-        // Allowlist enforcement (non-TTY stderr ⇒ block) is out of scope here;
-        // the fidelity scripts use `while` loops that are not allowlisted.
-        .env("LEAN_CTX_CONFIG_DIR", warn_only_config_dir());
+        .env("LEAN_CTX_CONFIG_DIR", isolated_config_dir());
     cmd
 }
 
@@ -330,9 +320,7 @@ fn pipe_guard_rust_side_defense_in_depth() {
     let output = Command::new(env!("CARGO_BIN_EXE_lean-ctx"))
         .current_dir(env!("CARGO_MANIFEST_DIR"))
         .env("LEAN_CTX_STATE_DIR", isolated_state_dir())
-        // `for` + command substitution are not allowlisted; this test pins the
-        // pipe guard, not enforcement (covered by shell::exec unit tests).
-        .env("LEAN_CTX_CONFIG_DIR", warn_only_config_dir())
+        .env("LEAN_CTX_CONFIG_DIR", isolated_config_dir())
         .args(["-c", script])
         .output()
         .expect("failed to run lean-ctx -c");

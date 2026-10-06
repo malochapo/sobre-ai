@@ -243,8 +243,7 @@ fn render_multiple(
 /// Optional ` · cc=NN` suffix for a symbol header — the code-health complexity
 /// of the function being shown (#1084). Computed fresh from the already-read
 /// file content, so it's exact for *any* symbol. Over-threshold functions are
-/// flagged `(over)`. Honors the `code_health.annotate_reads` opt-out and is
-/// empty for non-functions / when tree-sitter is off.
+/// flagged `(over)`. Empty for non-functions / when tree-sitter is off.
 fn symbol_cc_note(content: &str, file: &str, name: &str, start_line: usize) -> String {
     let ext = Path::new(file)
         .extension()

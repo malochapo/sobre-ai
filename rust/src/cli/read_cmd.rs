@@ -551,9 +551,7 @@ pub fn cmd_ls(args: &[String]) {
             eprintln!(
                 "lean-ctx ls is a compressed directory tree viewer for AI context, not a drop-in ls replacement."
             );
-            eprintln!(
-                "The shell hook (lean-ctx -t ls {arg} ...) passes flags to system ls transparently.\n"
-            );
+            eprintln!("For the system ls with its flags, run: lean-ctx -c \"ls {arg} ...\"\n");
             eprintln!("Usage: lean-ctx ls [path] [--depth N] [--all] [--no-gitignore]");
             std::process::exit(1);
         } else {

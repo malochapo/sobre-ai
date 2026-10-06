@@ -47,7 +47,7 @@ pub(super) fn concise_help_text() -> String {
 {banner}
 
 GETTING STARTED:
-    lean-ctx init                  Connect every detected agent, plus the shell hook
+    lean-ctx init                  Connect every detected agent
     lean-ctx init <agent>          Connect one agent (claude, codex, copilot, cursor,
                                    gemini, opencode, windsurf, zed)
     lean-ctx doctor                Check that everything is wired up correctly
@@ -83,7 +83,7 @@ pub(super) fn print_help() {
 {banner}
 
 GETTING STARTED:
-    lean-ctx init                  Connect every detected agent, plus the shell hook
+    lean-ctx init                  Connect every detected agent
     lean-ctx init <agent>          Connect one agent
     lean-ctx doctor                Check that everything is wired up correctly
     lean-ctx gain                  See how many tokens you have saved

@@ -240,7 +240,7 @@ pub(super) fn exec_limits(command: &str) -> (usize, std::time::Duration) {
     (max_bytes, shell_timeout(command))
 }
 
-/// Resolve the timeout `ctx_shell` / the shell hook grants a command.
+/// Resolve the timeout `ctx_shell` / `lean-ctx -c` grants a command.
 ///
 /// Heavy builds/tests (cargo install/nextest/build, npm ci, git commit/push, …)
 /// get the long ceiling instead of being killed at the 2-minute default, keeping
@@ -530,7 +530,7 @@ pub fn exec(command: &str) -> i32 {
         return code;
     }
 
-    // Compression is forced (`-c`, e.g. the agent shell hook).
+    // Compression is forced (`-c`, e.g. from an agent's command hook).
     // It must STILL never alter bytes destined for a file: a redirect
     // (`cmd > out`, `cmd >> out`) means the output is captured as data, not read by
     // a human or agent. Writing the compressed digest there would silently

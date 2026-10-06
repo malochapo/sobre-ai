@@ -57,7 +57,7 @@ fn techniques_tag(techniques: &[String]) -> String {
 }
 
 /// Code-health annotations (function name → note like `cc=18`) for the
-/// over-threshold functions in `content`, honoring `[code_health].annotate_reads`.
+/// over-threshold functions in `content`.
 /// Empty when disabled, unsupported, or nothing qualifies. Deterministic
 /// (#498-safe): a pure function of content + the active threshold.
 fn health_annotations(content: &str, ext: &str) -> std::collections::HashMap<String, String> {

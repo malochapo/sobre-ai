@@ -72,7 +72,7 @@ fn category_dir(cat_env: &str, xdg_env: &str, home_fallback: &str) -> Result<Pat
     }
 }
 
-/// Config directory — `config.toml`, shell hooks, `env.sh`. RO-safe.
+/// Config directory — `config.toml`. RO-safe.
 /// Override: `LEAN_CTX_CONFIG_DIR`; default `$XDG_CONFIG_HOME/lean-ctx`.
 pub fn config_dir() -> Result<PathBuf, String> {
     category_dir("LEAN_CTX_CONFIG_DIR", "XDG_CONFIG_HOME", ".config")

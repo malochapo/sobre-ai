@@ -107,22 +107,16 @@ fn handle_policy(value: Option<&str>) -> String {
         "show" => {
             let policy = crate::core::memory_policy::MemoryPolicy::default();
 
-            let cfg_path = crate::core::config::Config::path().map_or_else(
-                || "~/.lean-ctx/config.toml".to_string(),
-                |p| p.display().to_string(),
-            );
-
             format!(
-                "Knowledge policy (effective):\n\
-                 - memory.knowledge.max_facts={}\n\
-                 - memory.knowledge.contradiction_threshold={}\n\
-                 - memory.knowledge.recall_facts_limit={}\n\
-                 - memory.knowledge.rooms_limit={}\n\
-                 - memory.knowledge.timeline_limit={}\n\
-                 - memory.knowledge.relations_limit={}\n\
-                 - memory.lifecycle.decay_rate={}\n\
-                 - memory.lifecycle.stale_days={}\n\
-                 \nConfig: {cfg_path}",
+                "Knowledge policy (built-in, not configurable):\n\
+                 - max_facts={}\n\
+                 - contradiction_threshold={}\n\
+                 - recall_facts_limit={}\n\
+                 - rooms_limit={}\n\
+                 - timeline_limit={}\n\
+                 - relations_limit={}\n\
+                 - decay_rate={}\n\
+                 - stale_days={}",
                 policy.knowledge.max_facts,
                 policy.knowledge.contradiction_threshold,
                 policy.knowledge.recall_facts_limit,

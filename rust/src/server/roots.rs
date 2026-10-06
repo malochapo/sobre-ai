@@ -134,18 +134,12 @@ pub fn valid_dir_paths_from_uris(uris: &[String]) -> Vec<String> {
 /// Detect the project root from the host's own environment
 /// (`CLAUDE_PROJECT_DIR`, set by Claude Code).
 pub fn root_from_env() -> Option<String> {
-    for var in ["CLAUDE_PROJECT_DIR"] {
-        if let Ok(val) = std::env::var(var) {
-            let trimmed = val.trim().to_string();
-            if !trimmed.is_empty()
-                && Path::new(&trimmed).is_dir()
-                && !crate::core::pathutil::is_broad_or_unsafe_root(Path::new(&trimmed))
-            {
-                return Some(trimmed);
-            }
-        }
-    }
-    None
+    let val = std::env::var("CLAUDE_PROJECT_DIR").ok()?;
+    let trimmed = val.trim().to_string();
+    (!trimmed.is_empty()
+        && Path::new(&trimmed).is_dir()
+        && !crate::core::pathutil::is_broad_or_unsafe_root(Path::new(&trimmed)))
+    .then_some(trimmed)
 }
 
 /// Split a `WORKSPACE_FOLDER_PATHS` value into individual paths.

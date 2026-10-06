@@ -21,7 +21,9 @@ Top-level fields:
 - `exported_at`: RFC3339 timestamp
 - `project`: project hashes (root + identity)
 - `session`: bounded excerpt (task, findings, decisions, files, progress,
-  next steps, evidence, stats, `terse_mode`, `compression_level`)
+  next steps, evidence, stats, `terse_mode`, `compression_level`). The last
+  two record the exporting machine's `compression_level` setting; importing a
+  bundle never applies them.
 
 ## Privacy
 

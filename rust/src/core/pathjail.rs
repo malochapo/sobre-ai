@@ -49,7 +49,7 @@ pub fn allow_paths_from_env_and_config() -> Vec<PathBuf> {
     // Read-only roots are *readable* (the whole point is read access to sibling
     // repos); writes into them are denied separately by `enforce_writable`
     // (#475). Add them to the read allow-list so reads resolve, exactly like
-    // `extra_roots`, without granting write access.
+    // session roots, without granting write access.
     out.extend(canonicalized_roots(&cfg.read_only_roots));
 
     out
@@ -120,9 +120,8 @@ pub fn register_session_read_only_root(root: &Path) -> bool {
 /// A single active relaxation of the path jail. Each one widens or disables what
 /// tools can reach beyond the project root, so it is surfaced loudly (GH security
 /// audit, finding 3): the MCP/HTTP server inherits its process env from the
-/// IDE/launchd, so `allow_paths` / `extra_roots` / `allow_ide_config_dirs`
-/// (or `path_jail = false`) silently loosens the
-/// boundary with no in-band signal otherwise.
+/// IDE/launchd, so an `allow_paths` entry silently loosens the boundary with
+/// no in-band signal otherwise.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct JailRelaxation {
     /// The knob that activated it (env var name, config key, or build feature).
@@ -409,8 +408,9 @@ pub fn jail_path_with_roots(
             // Agents otherwise get a bare rejection and shell out to work around
             // the jail; name the config keys the same way the shell-allowlist
             // block message names its key (#540, #887).
-            let mut hint = ". Fix (additive): add the directory to extra_roots or allow_paths in \
-                 ~/.config/lean-ctx/config.toml — `lean-ctx doctor` shows the config in effect"
+            let mut hint = ". Fix (additive): add the directory to allow_paths (read-write) or \
+                 read_only_roots in ~/.config/lean-ctx/config.toml — `lean-ctx doctor` shows the \
+                 config in effect"
                 .to_string();
             // The global config the runtime reads doesn't exist → on defaults, so
             // an `allow_paths` edit made to a config.toml elsewhere (a custom
@@ -708,7 +708,7 @@ mod tests {
         let err = jail_path(&other.join("b.txt"), &root).unwrap_err();
         let msg = err.to_string();
         assert!(
-            msg.contains("extra_roots") && msg.contains("allow_paths"),
+            msg.contains("read_only_roots") && msg.contains("allow_paths"),
             "agent-visible escape error should name the config keys: {msg}"
         );
     }
