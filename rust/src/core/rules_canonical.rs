@@ -34,10 +34,9 @@ pub const AGENTS_BLOCK_START: &str = "<!-- lean-ctx -->";
 pub const AGENTS_BLOCK_END: &str = "<!-- /lean-ctx -->";
 
 /// Owner banner placed as the first line of the project-level `LEAN-CTX.md`
-/// artifact (`<repo>/LEAN-CTX.md`, `rust/LEAN-CTX.md`). Marks the whole file as
-/// lean-ctx-owned so uninstall can remove it wholesale; the writer
-/// (`hooks::ensure_project_agents_integration`), the regenerator
-/// (`gen_rules` example) and the drift gate all share this one literal.
+/// written into user projects. Marks the whole file as lean-ctx-owned so
+/// uninstall can remove it wholesale; the writer
+/// (`hooks::ensure_project_agents_integration`) and uninstall share this literal.
 pub const PROJECT_LEAN_CTX_OWNED_MARKER: &str = "<!-- lean-ctx-owned: PROJECT-LEAN-CTX.md v1 -->";
 
 /// Closing marker that ends a lean-ctx rule section.
@@ -76,8 +75,7 @@ pub const COMPRESSION_BLOCK_END: &str = "<!-- /lean-ctx-compression -->";
 /// session memory requirement, ctx_callgraph/ctx_search(semantic) promoted from
 /// optional to mandatory. Fixes agents falling back to native Read+Grep for
 /// exploration on hook-covered hosts (Cursor).
-/// Bumping it forces every committed `LEAN-CTX.md` artifact to be regenerated
-/// (see `tests/rules_drift.rs`) and every injected user file to resync.
+/// Bumping it forces every injected user file to resync.
 pub const RULES_VERSION: usize = 8;
 
 /// Banner placed at the top of dedicated rule files (non-shadow only).

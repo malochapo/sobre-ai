@@ -25,7 +25,6 @@ pub mod preservation;
 pub mod protect;
 pub mod rabin_karp;
 pub mod relevance_tracker;
-pub mod rule_artifacts;
 pub mod rules_canonical;
 pub mod rules_channel;
 pub mod rules_overhead;

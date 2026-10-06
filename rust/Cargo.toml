@@ -59,11 +59,6 @@ path = "src/bin/gen_docs.rs"
 required-features = ["dev-tools"]
 
 
-[[example]]
-name = "gen_rules"
-path = "src/bin/gen_rules.rs"
-required-features = ["dev-tools"]
-
 [features]
 default = [
   "tree-sitter",
