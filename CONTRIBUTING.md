@@ -31,6 +31,11 @@ CI checks both builds. The one local gate that mirrors it is
 file size); `scripts/preflight.sh full` adds the whole test suite. The git hooks
 run the same script.
 
+On a pull request, CI runs Lint and the test suite on Linux. macOS and Windows
+run on push to `main` and on demand (Actions → CI → Run workflow): their
+minutes bill at 10x and 2x on a private repository. Run them by hand before
+merging anything platform-specific (paths, shells, file locking).
+
 `--all-targets` matters: plain `cargo check` skips `#[cfg(test)]` blocks in the
 library, so a broken test module compiles clean without it.
 
