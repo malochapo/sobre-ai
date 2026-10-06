@@ -93,8 +93,8 @@ we forked away from.
 Every release must be **smaller than or equal to** the previous one in lines of
 Rust, unless the PR states the exception explicitly and it is accepted.
 
-- Ceiling: **380,000 lines of Rust** under `rust/src`, excluding vendored code
-  **and tests** — `#[cfg(test)]` blocks and `rust/tests/`.
+- Ceiling: **200,000 lines of production Rust** under `rust/src`, excluding
+  vendored code **and tests** — `#[cfg(test)]` blocks and `rust/tests/`.
 - A PR that adds net lines must say so in its description and justify it.
 - "We might need it later" is not a justification. `git revert` exists.
 
@@ -112,28 +112,21 @@ only reliable oracle here. A budget that taxes it is aimed at the wrong thing.
 ### Where we actually stand
 
 `rust/src` is about 245,800 lines, of which about 73,000 are test code.
-**Production code: about 173,000 — some 207,000 below the ceiling.** (It was
+**Production code: about 173,000 — some 27,000 below the ceiling.** (It was
 343,328 when this section was first written, and 183,800 at the end of phase 1.)
 
-So the ceiling is met, and has been for a while without anyone knowing: the
-figure quoted above (491,554, "about 111,000 lines below where we stand") was
-counting tests on both sides. That never made the removals optional: `addons`,
-`context_package`, `plugins`, the dashboard and the config cascade went because
-invariants 1, 2 and 4 said so — not to hit a number. What it changed is that
-subtraction no longer needs to be argued from a budget it was already inside.
+### Where 200,000 comes from
 
-### Where 380,000 comes from
+The first ceiling, 380,000, came from the first estimate of what phase 1 could
+remove, made at 491,554 lines in `rust/src` — a count that included the tests
+on both sides. Once tests left the budget, that ceiling sat about 200,000 lines
+above the production code and constrained nothing.
 
-The figure is measured, not chosen. At 491,554 lines in `rust/src`, executing
-**every** removal on the table when the ceiling was set — the tool surface (47,736), `cli/` (~27,100), `proxy/` (26,683),
-`context_kernel` (16,759), `ocla` (10,297), plus `doctor`, `dashboard`,
-`addons` and `lsp` (29,002) — lands at roughly **334,000**. Reaching 180,000
-would mean cutting a further 154,000 out of `core/`, `server/`, `shell/` and
-`hooks/`: the engine itself. A ceiling nobody can reach is a ceiling everybody
-ignores.
-
-380,000 is the target for the scope we chose: the MCP context layer **plus**
-the local compressing proxy.
+200,000 is the production code measured after phase 1 and the single
+rules-channel work (about 173,000), plus some 15% of headroom: room to build
+phase 2, small enough that real growth has to displace something. It is the
+target for the scope we chose: the MCP context layer **plus** the local
+compressing proxy.
 
 ### Scope decision behind the number
 
@@ -144,7 +137,8 @@ machine and nobody else connects to it, so it sits inside invariant 4. It also
 carries `shape-xlat`, which is what lets a Claude-shaped client talk to a local
 Ollama — squarely the local-first use case.
 
-If the proxy is ever dropped, this ceiling drops with it, to 330,000.
+If the proxy is ever dropped, this ceiling drops with it, by the proxy's own
+size: to 190,000.
 
 ---
 
