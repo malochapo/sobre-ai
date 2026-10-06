@@ -128,7 +128,7 @@ pub(super) fn redirect_read(tool_input: Option<&serde_json::Value>) -> String {
     // intact; compression flows through the explicit ctx_read MCP tool instead.
     // Evaluated per hook fire (fresh Config + env), so it also covers headless
     // `claude -p` and never needs to fight the settings.json self-heal.
-    if !crate::core::config::ReadRedirect::read_redirect_enabled() {
+    if !crate::core::config::read_redirect_enabled() {
         debug_log::log_hook_decision(
             "redirect",
             "Read",

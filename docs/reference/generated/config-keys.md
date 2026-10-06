@@ -11,7 +11,7 @@ sobre reads one file, `~/.config/lean-ctx/config.toml` (the directory follows `$
 Top-level configuration keys
 
 - `allow_paths` (string[], default `[]`) — Paths the tools may read and write besides the project root; each is also searched as an extra root. ["/"] opens the path jail
-- `compression_level` (f64, default `null`) — Compression intensity 0.0 (none) – 1.0 (densest). Tunes read-mode compression continuously and picks the prose style by band: <0.2 off, <0.4 lite, <0.6 standard, <0.8 max, else raw. Empty = adaptive defaults with the lite prose style
+- `compression_level` (f64, default `0.3`) — Compression intensity 0.0 (none) – 1.0 (densest), default 0.3. Picks the prose, shell-output and CRP style by band: <0.2 off, <0.4 lite, <0.6 standard, <0.8 max, else raw. File reads choose their mode per file
 - `debug_log` (bool, default `false`) — Opt-in (default off): write a human-readable debug log of intercepted MCP tool calls and hook routing decisions (lean-ctx vs native, with the reason) to <state_dir>/logs/debug.log. View with `lean-ctx debug-log`
 - `embedding_model` (string?, default `null`) — Embedding model for semantic search (dense builds): minilm (default), nomic, or any HuggingFace repo with an ONNX export and a tokenizer.json, as org/repo[@revision]. Pooling and query/document prompts come from the repo's sentence-transformers metadata. Changing it re-indexes on the next semantic search
 - `hook_binary` (string?, default `null`) — Verbatim binary path/expression for generated agent-hook commands (e.g. $HOME/.local/bin/lean-ctx) — for settings files synced across machines with different usernames. Shell-expanded by the hook host at run time; doctor accepts it as current. Empty = automatic absolute-path resolution

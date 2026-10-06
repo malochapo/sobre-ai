@@ -55,7 +55,7 @@ pub fn handle_read_dedup() {
 /// Decide the read-dedup hook's stdout. `None` = emit nothing (passthrough, the
 /// documented PostToolUse no-op). Split from [`handle_read_dedup`] for tests.
 fn compute_read_dedup(input: &str) -> Option<String> {
-    if !crate::core::config::ReadDedup::read_dedup_enabled() {
+    if !crate::core::config::read_dedup_enabled() {
         return None;
     }
 

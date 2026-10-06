@@ -135,10 +135,9 @@ pub fn run_eval(
 pub enum SearchArm {
     /// Full default pipeline: BM25 + dense embeddings + SPLADE + RRF + rerank.
     Hybrid,
-    /// Pure lexical BM25 — the **conservative lower bound** of the lean
-    /// (`dense_enabled = false`) path, which additionally keeps graph proximity,
-    /// reranking and SPLADE on top. If pure BM25 already matches hybrid, the real
-    /// lean path is ≥ that, so flipping the default cannot regress quality.
+    /// Pure lexical BM25 — the **conservative lower bound** of the no-dense
+    /// fallback, which additionally keeps graph proximity, reranking and SPLADE
+    /// on top.
     Bm25Only,
     /// FastContext-style `ctx_explore`: a bounded multi-turn loop (BM25 anchor +
     /// static graph BFS + AST symbols) returning `path:line` citations. Reported

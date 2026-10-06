@@ -98,7 +98,6 @@ fn default_opts() -> SessionToolOptions<'static> {
         path: None,
         write: false,
         privacy: None,
-        terse: None,
     }
 }
 

@@ -137,7 +137,7 @@ mod tests {
 
     fn customized() -> Config {
         let mut cfg = Config {
-            compression_level: Some(0.5),
+            compression_level: 0.5,
             debug_log: true,
             ..Config::default()
         };
@@ -178,7 +178,7 @@ mod tests {
         let parsed: Config = toml::from_str(&render_annotated_config(&cfg, &schema)).unwrap();
 
         assert_eq!(parsed.proxy.port, Some(4444));
-        assert_eq!(parsed.compression_level, Some(0.5));
+        assert_eq!(parsed.compression_level, 0.5);
         assert!(parsed.debug_log);
         assert_eq!(
             parsed.proxy.upstreams.get("anthropic").map(String::as_str),

@@ -16,8 +16,7 @@
 //! (the background index + session-start block cover those instead).
 
 use super::payload;
-use crate::core::code_health::GateMode;
-use crate::core::code_health::gate::{self, GateOutcome};
+use crate::core::code_health::gate;
 use serde_json::Value;
 
 /// Largest post-edit file we will parse inside a hook. Above this the tree-sitter
@@ -89,24 +88,13 @@ fn resolve_root(v: &Value) -> String {
         .unwrap_or_default()
 }
 
-/// The advisory notice for a native edit, or `None` when not applicable. Loads
-/// the `[code_health]` config for mode + threshold.
+/// The advisory notice for a native edit, or `None` when not applicable.
 pub(super) fn edit_health_notice(v: &Value, root: &str) -> Option<String> {
-    notice_with(
-        v,
-        root,
-        GateMode::Warn,
-        crate::core::code_health::COGNITIVE_THRESHOLD,
-    )
+    notice_with(v, root, crate::core::code_health::COGNITIVE_THRESHOLD)
 }
 
-/// Pure-by-injection core: explicit `mode`/`threshold` so it is unit-testable
-/// without touching the on-disk config.
-fn notice_with(v: &Value, root: &str, mode: GateMode, threshold: u32) -> Option<String> {
-    if matches!(mode, GateMode::Off) {
-        return None;
-    }
-
+/// Core with an explicit `threshold`, so it is unit-testable.
+fn notice_with(v: &Value, root: &str, threshold: u32) -> Option<String> {
     let tool = payload::resolve_tool_name(v)?;
     // ctx_edit / ctx_patch already run the in-tool gate; never double-notice.
     if tool.starts_with("ctx_") || tool.starts_with("mcp__lean-ctx__") {
@@ -131,10 +119,7 @@ fn notice_with(v: &Value, root: &str, mode: GateMode, threshold: u32) -> Option<
         .and_then(|e| e.to_str())
         .unwrap_or("");
 
-    match gate::evaluate_with(&before, &after, ext, mode, threshold) {
-        GateOutcome::Allow(Some(notice)) | GateOutcome::Block(notice) => Some(notice),
-        GateOutcome::Allow(None) => None,
-    }
+    gate::evaluate_with(&before, &after, ext, threshold)
 }
 
 /// Extract the edit replacements from a tool-args object. Handles the single-edit
@@ -284,7 +269,7 @@ mod tests {
                 "new_string": DEEP,
             }
         });
-        let notice = notice_with(&v, root, GateMode::Warn, 15).expect("notice");
+        let notice = notice_with(&v, root, 15).expect("notice");
         assert!(notice.contains("[CODE HEALTH]"));
     }
 
@@ -299,25 +284,12 @@ mod tests {
             "cwd": root,
             "tool_input": { "file_path": "f.rs", "old_string": FLAT, "new_string": DEEP }
         });
-        assert!(notice_with(&v, root, GateMode::Warn, 15).is_none());
-    }
-
-    #[test]
-    fn no_notice_in_off_mode() {
-        let dir = tempfile::tempdir().unwrap();
-        let root = dir.path().to_str().unwrap();
-        std::fs::write(dir.path().join("f.rs"), format!("{DEEP}\n")).unwrap();
-        let v = json!({
-            "tool_name": "Edit",
-            "cwd": root,
-            "tool_input": { "file_path": "f.rs", "old_string": FLAT, "new_string": DEEP }
-        });
-        assert!(notice_with(&v, root, GateMode::Off, 15).is_none());
+        assert!(notice_with(&v, root, 15).is_none());
     }
 
     #[test]
     fn no_notice_for_non_edit_event() {
         let v = json!({ "tool_name": "Read", "tool_input": { "file_path": "f.rs" } });
-        assert!(notice_with(&v, "/tmp", GateMode::Warn, 15).is_none());
+        assert!(notice_with(&v, "/tmp", 15).is_none());
     }
 }

@@ -189,7 +189,7 @@ mod tests {
         // come back byte-for-byte even with the densest compression level (#404).
         let content = "\u{feff}fn run() {\n\n    // command execution pipeline\n    let command = execution();\n    return command;\n}\n";
         let cfg = Config {
-            compression_level: Some(CompressionLevel::Max.value()),
+            compression_level: CompressionLevel::Max.value(),
             ..Config::default()
         };
         let out = compress_terse(content.to_string(), "ctx_read", None, &cfg, false);

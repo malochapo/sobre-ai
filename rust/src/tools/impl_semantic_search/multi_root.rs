@@ -314,7 +314,7 @@ pub(crate) fn hybrid_results_for_root(
         ensure_embeddings(root, index, engine, &mut embed_idx)?;
 
     let backend = crate::core::dense_backend::DenseBackendKind::Local;
-    let cfg = HybridConfig::from_config();
+    let cfg = HybridConfig::default();
     let filter_fn = |p: &str| filter.matches(p);
     let filter_pred: Option<&dyn Fn(&str) -> bool> = filter
         .is_active()
@@ -450,8 +450,8 @@ pub(crate) fn path_under_search_root(path: &str, root: &Path) -> bool {
     }
 }
 
-/// BM25 + graph + rerank (+ SPLADE) ranking with no dense signal — the body of
-/// `hybrid` semantic search when `search.dense_enabled = false` (#686). Mirrors
+/// BM25 + graph + rerank (+ SPLADE) ranking with no dense signal — the
+/// cold-start fallback of `hybrid` semantic search (#512, #686). Mirrors
 /// the local dense path (`dense_backend::hybrid_results` + the SPLADE boost in
 /// `hybrid_search_mode`) step for step, but feeds `hybrid_search` a `None`
 /// engine/embeddings pair, which is the same input the pipeline already handles

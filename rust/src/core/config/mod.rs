@@ -24,15 +24,15 @@ mod tests;
 #[cfg(test)]
 mod tests_parsing;
 
-pub use enums::{CompressionLevel, RecoveryHints, ResponseVerbosity, SessionDegrade};
+pub use enums::{CompressionLevel, SessionDegrade};
 pub use loader::last_config_parse_error;
 pub use proxy::{
     ProxyConfig, ProxyProvider, ResolvedProvider, RoutingRules, Upstreams, WireShape,
     is_local_proxy_url, normalize_url, normalize_url_opt, parse_route_target, upstream_drifted,
     upstream_ids,
 };
-pub use read_dedup::ReadDedup;
-pub use read_redirect::ReadRedirect;
+pub use read_dedup::read_dedup_enabled;
+pub use read_redirect::read_redirect_enabled;
 pub use shell_activation::ShellActivation;
 
 /// Effective on-disk ceiling (MB) for the persisted BM25 index when nothing is
@@ -77,6 +77,17 @@ pub const SLOW_COMMAND_THRESHOLD_MS: u64 = 5000;
 // above the old RAM-profile caps (64/128 MB) that starved large repos.
 const _: () = assert!(DEFAULT_BM25_PERSIST_MB >= 512);
 
+/// `compression_level` when the file does not set it: the middle of the
+/// `lite` band.
+pub const DEFAULT_COMPRESSION_LEVEL: f64 = 0.3;
+
+/// Whether `v` is the default `compression_level` (so `config show` can say
+/// the value is a default, not something the file sets).
+#[must_use]
+pub fn is_default_compression_level_value(v: f64) -> bool {
+    (v - DEFAULT_COMPRESSION_LEVEL).abs() < f64::EPSILON
+}
+
 /// lean-ctx configuration, loaded from the single `config.toml`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
@@ -84,16 +95,17 @@ pub struct Config {
     pub passthrough_commands: Vec<String>,
     #[serde(default)]
     pub proxy: ProxyConfig,
-    /// Compression intensity, `0.0` (none) to `1.0` (densest), clamped. Drives
-    /// the read-mode tuning continuously (`core::aggressiveness`) and picks the
-    /// prose style by band (`CompressionLevel::from_value`). Absent: sobre's
-    /// adaptive defaults with the `lite` prose style.
+    /// Compression intensity, `0.0` (none) to `1.0` (densest), clamped;
+    /// [`DEFAULT_COMPRESSION_LEVEL`] when the file does not set it. Picks the
+    /// prose, shell-output and CRP style by band (`CompressionLevel::from_value`).
+    /// File reads choose their mode per file; a call can ask for denser reads
+    /// with its own `aggressiveness`.
     #[serde(
-        default,
+        default = "serde_defaults::default_compression_level",
         deserialize_with = "serde_defaults::deserialize_compression_level",
-        skip_serializing_if = "Option::is_none"
+        skip_serializing_if = "serde_defaults::is_default_compression_level"
     )]
-    pub compression_level: Option<f64>,
+    pub compression_level: f64,
     /// Paths the tools may read and write besides the project root (absolute,
     /// `~`/`$VAR` expanded). Each one is also searched as an extra root of a
     /// multi-root workspace, and accepted as a target for config files written
@@ -149,7 +161,7 @@ impl Default for Config {
         Self {
             passthrough_commands: Vec::new(),
             proxy: ProxyConfig::default(),
-            compression_level: None,
+            compression_level: DEFAULT_COMPRESSION_LEVEL,
             allow_paths: Vec::new(),
             read_only_roots: Vec::new(),
             debug_log: false,

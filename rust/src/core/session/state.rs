@@ -41,23 +41,12 @@ impl SessionState {
             evidence: Vec::new(),
             active_structured_intent: None,
             stats: SessionStats::default(),
-            terse_mode: false,
-            compression_level: String::new(),
             last_consolidate_ts: None,
             extra_roots: Vec::new(),
             playbook: super::playbook::Playbook::default(),
             last_semantic_query: None,
             last_flush: None,
         }
-        .with_compression_from_config()
-    }
-
-    fn with_compression_from_config(mut self) -> Self {
-        let cfg = crate::core::config::Config::load();
-        let level = crate::core::config::CompressionLevel::effective(&cfg);
-        self.compression_level = level.label().to_string();
-        self.terse_mode = level.is_active();
-        self
     }
 
     /// Bumps the version counter and marks the session as dirty.

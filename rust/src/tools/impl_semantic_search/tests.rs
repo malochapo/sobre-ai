@@ -193,17 +193,6 @@ mod determinism_tests {
     }
 }
 
-#[cfg(test)]
-mod dense_config_tests {
-    use crate::core::hybrid_search::HybridConfig;
-
-    /// #686: dense stays on by default — the flip is opt-in, no behavior change.
-    #[test]
-    fn dense_enabled_defaults_true() {
-        assert!(HybridConfig::default().dense_enabled);
-    }
-}
-
 #[cfg(all(test, feature = "embeddings"))]
 mod dense_toggle_tests {
     #[allow(clippy::wildcard_imports)]
@@ -237,7 +226,7 @@ mod dense_toggle_tests {
         ])
     }
 
-    /// #686: the dense-disabled body ranks via BM25 (+ graph + rerank + SPLADE),
+    /// #686: the no-dense fallback ranks via BM25 (+ graph + rerank + SPLADE),
     /// emits a BM25 header, finds the lexical match, and crucially never loads the
     /// embedding engine or writes `embeddings.json` — the on-disk vector footprint
     /// and embed latency disappear.
@@ -246,10 +235,7 @@ mod dense_toggle_tests {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
         let index = small_index();
-        let cfg = HybridConfig {
-            dense_enabled: false,
-            ..Default::default()
-        };
+        let cfg = HybridConfig::default();
         let filter = SearchFilter::new(None, None).unwrap();
 
         let out = bm25_graph_search(

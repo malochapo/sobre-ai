@@ -163,14 +163,6 @@ impl LeanCtxServer {
                 ));
             }
 
-            let headers_only =
-                crate::core::config::ResponseVerbosity::effective().is_headers_only();
-            let header_line = if headers_only {
-                Some(output.to_header_line(name))
-            } else {
-                None
-            };
-
             let output_token_estimate = crate::core::tokens::count_tokens(&output.text) as u32;
 
             if let Some(ref path) = output.path {
@@ -233,7 +225,7 @@ impl LeanCtxServer {
             }
 
             let saved = output.saved_tokens;
-            let raw_text = header_line.unwrap_or(output.text);
+            let raw_text = output.text;
             let final_text = sanitized_tool_text(name, raw_text);
 
             // Context immune system: scan for prompt-injection patterns in tool output.

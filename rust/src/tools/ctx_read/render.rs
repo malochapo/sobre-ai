@@ -24,8 +24,7 @@ pub(crate) struct ReadTuning<'a> {
 
 impl<'a> ReadTuning<'a> {
     /// Resolves the effective tuning from an explicit per-call aggressiveness
-    /// (falling back to the config field) and
-    /// the explicit `protect` token list.
+    /// and the explicit `protect` token list.
     pub(crate) fn resolve(explicit_aggressiveness: Option<f64>, protect: &'a [String]) -> Self {
         Self {
             aggressiveness: crate::core::aggressiveness::effective(explicit_aggressiveness),

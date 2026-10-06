@@ -139,19 +139,9 @@ pub(crate) fn integration_claude(home: &std::path::Path, binary: &str) -> Integr
     }
 
     // #637: surface the Read-redirect posture so a Claude Code user understands why
-    // native reads are (not) transparently compressed here. Purely informational —
-    // every mode is a valid choice, so it never fails the integration.
+    // native reads are not transparently compressed here. Purely informational.
     {
-        use crate::core::config::ReadRedirect;
-        let detail = match ReadRedirect::default() {
-            ReadRedirect::Auto => {
-                "auto — native Read passes through Claude Code's read-before-write guard; re-reads dedup via PostToolUse, ctx_read + Grep/Glob still compress (#637)"
-            }
-            ReadRedirect::On => {
-                "on — native Read redirected to ctx_read; can retrigger #637 here — switch to auto if native Write/Edit fails"
-            }
-            ReadRedirect::Off => "off — native Read not redirected; ctx_read compresses on request",
-        };
+        let detail = "native Read passes through Claude Code's read-before-write guard; re-reads dedup via PostToolUse, ctx_read + Grep/Glob still compress (#637)";
         checks.push(NamedCheck {
             name: "Read redirect".to_string(),
             ok: true,

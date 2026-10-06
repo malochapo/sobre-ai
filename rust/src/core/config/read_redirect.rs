@@ -5,39 +5,15 @@
 //! native Write/Edit tools, keyed on the path the harness saw read. The redirect
 //! hook swaps that path to a temp `.lctx` copy, so the guard tracks the temp and a
 //! later native Write to the real file fails with "File has not been read yet"
-//! (GH #637). On those hosts `auto` disables the Read redirect so native Read reads
+//! (GH #637). On those hosts the Read redirect is off so native Read reads
 //! the real file and the guard stays intact; compression there flows through the
 //! explicit `ctx_read` MCP tool and the (guard-safe) Grep/Glob redirect instead.
 
-use serde::{Deserialize, Serialize};
-
-/// Controls the native-Read → `ctx_read` redirect hook.
-///
-/// - `Auto`: (Default) redirect everywhere except hosts with a native
-///   read-before-write guard (Claude Code), where the path-swap would
-///   break native Write/Edit (#637).
-/// - `On`: always redirect (legacy behavior; power users on non-guard hosts).
-/// - `Off`: never redirect native Read.
-#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "kebab-case")]
-pub enum ReadRedirect {
-    #[default]
-    Auto,
-    On,
-    Off,
-}
-
-impl ReadRedirect {
-    /// Whether the native-Read redirect should rewrite the Read into a temp
-    /// `ctx_read` copy for the current process/host. `Auto` disables it on hosts
-    /// with a read-before-write guard so native Write/Edit keeps working (#637).
-    pub fn read_redirect_enabled() -> bool {
-        match Self::default() {
-            Self::On => true,
-            Self::Off => false,
-            Self::Auto => !host_has_read_before_write_guard(),
-        }
-    }
+/// Whether the native-Read redirect should rewrite the Read into a temp
+/// `ctx_read` copy for the current host: everywhere except hosts with a
+/// read-before-write guard, where native Write/Edit would break (#637).
+pub fn read_redirect_enabled() -> bool {
+    !host_has_read_before_write_guard()
 }
 
 /// True on hosts whose native Write/Edit enforce a read-before-write guard keyed on
@@ -86,11 +62,6 @@ pub(crate) fn hook_host_is_cursor() -> bool {
 mod tests {
     use super::*;
 
-    #[test]
-    fn default_is_auto() {
-        assert_eq!(ReadRedirect::default(), ReadRedirect::Auto);
-    }
-
     /// Clear every env var the guard detection reads, so tests are
     /// deterministic no matter which host runs `cargo test` (a Cursor agent
     /// shell exports `CURSOR_*` itself, GH #720).
@@ -115,7 +86,7 @@ mod tests {
         clear_host_markers();
 
         assert!(
-            ReadRedirect::read_redirect_enabled(),
+            read_redirect_enabled(),
             "auto redirects when no guard host is detected"
         );
 
@@ -123,14 +94,14 @@ mod tests {
         // one that makes the fix work in headless `claude -p`.
         crate::test_env::set_var("CLAUDE_PROJECT_DIR", "/repo");
         assert!(
-            !ReadRedirect::read_redirect_enabled(),
+            !read_redirect_enabled(),
             "auto must disable the Read redirect under Claude Code hooks (CLAUDE_PROJECT_DIR)"
         );
         crate::test_env::remove_var("CLAUDE_PROJECT_DIR");
 
         crate::test_env::set_var("CLAUDECODE", "1");
         assert!(
-            !ReadRedirect::read_redirect_enabled(),
+            !read_redirect_enabled(),
             "auto must also disable under the CLAUDECODE marker"
         );
         crate::test_env::remove_var("CLAUDECODE");
@@ -150,7 +121,7 @@ mod tests {
         crate::test_env::set_var("CURSOR_PROJECT_DIR", "/repo");
         crate::test_env::set_var("CURSOR_VERSION", "3.7.36");
         assert!(
-            ReadRedirect::read_redirect_enabled(),
+            read_redirect_enabled(),
             "Cursor markers must win over the Claude-compat variable"
         );
         assert!(!host_has_read_before_write_guard());
@@ -159,12 +130,12 @@ mod tests {
         clear_host_markers();
         crate::test_env::set_var("CLAUDE_PROJECT_DIR", "/repo");
         crate::test_env::set_var("CURSOR_AGENT", "1");
-        assert!(ReadRedirect::read_redirect_enabled());
+        assert!(read_redirect_enabled());
 
         // Without any Cursor marker the Claude guard still wins (real Claude Code).
         clear_host_markers();
         crate::test_env::set_var("CLAUDE_PROJECT_DIR", "/repo");
-        assert!(!ReadRedirect::read_redirect_enabled());
+        assert!(!read_redirect_enabled());
         clear_host_markers();
     }
 }

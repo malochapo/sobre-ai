@@ -95,7 +95,7 @@ fn compression_level_off_no_output_style() {
 #[test]
 fn compression_level_reads_as_band() {
     let config: Config = toml::from_str("compression_level = 0.5").expect("number parses");
-    assert_eq!(config.compression_level, Some(0.5));
+    assert_eq!(config.compression_level, 0.5);
     assert_eq!(
         CompressionLevel::effective(&config),
         CompressionLevel::Standard
@@ -105,7 +105,7 @@ fn compression_level_reads_as_band() {
 #[test]
 fn compression_level_number_is_clamped() {
     let config: Config = toml::from_str("compression_level = 1.7").expect("number parses");
-    assert_eq!(config.compression_level, Some(1.0));
+    assert_eq!(config.compression_level, 1.0);
 }
 
 #[test]
@@ -114,9 +114,9 @@ fn compression_level_name_is_a_parse_error() {
 }
 
 #[test]
-fn compression_level_absent_means_adaptive_lite() {
+fn compression_level_absent_means_the_default_lite() {
     let config: Config = toml::from_str("").expect("empty toml should use defaults");
-    assert_eq!(config.compression_level, None);
+    assert_eq!(config.compression_level, 0.3);
     assert_eq!(CompressionLevel::effective(&config), CompressionLevel::Lite);
 }
 

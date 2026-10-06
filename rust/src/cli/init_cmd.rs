@@ -129,11 +129,10 @@ pub fn install_shell_hook(args: &[String]) {
         qprintln!("  Restart your shell or run: source ~/{rc}");
     }
     qprintln!();
-    qprintln!("For AI tool integration: lean-ctx init --agent <tool> [--mode <mode>]");
+    qprintln!("For AI tool integration: lean-ctx init --agent <tool>");
     qprintln!(
         "  Supported: claude, codex, copilot, cursor, gemini, opencode, vscode, windsurf, zed"
     );
-    qprintln!("  Modes: mcp, hybrid, replace  (auto-detected per agent, override with --mode)");
 }
 
 pub fn install_shell_hook_quiet(args: &[String]) {
@@ -241,16 +240,15 @@ pub fn cmd_init(args: &[String]) {
         return;
     }
     if let Some(agent) = named_agent {
-        // Forward flags AND their values: `--mode` and `--agent` take one.
-        // Filtering on `starts_with('-')` alone dropped every value, so
-        // `init claude --mode mcp` silently fell back to the recommended mode.
+        // Forward flags AND their values: `--agent` and `--shell-activation`
+        // take one; filtering on `starts_with('-')` alone would drop them.
         let mut forwarded = vec!["--agent".to_string(), agent.clone()];
         let mut i = 0;
         while i < args.len() {
             let a = &args[i];
             if a.starts_with('-') {
                 forwarded.push(a.clone());
-                if matches!(a.as_str(), "--mode" | "--agent" | "--shell-activation")
+                if matches!(a.as_str(), "--agent" | "--shell-activation")
                     && let Some(value) = args.get(i + 1)
                     && !value.starts_with('-')
                 {

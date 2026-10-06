@@ -415,18 +415,9 @@ fn do_replace(
         args.content.replacen(args.old_str, args.new_str, 1)
     };
 
-    // Code-health gate: warn on (or block) cognitive-complexity drift before write.
+    // Code-health gate: an advisory notice on cognitive-complexity drift.
     let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
-    let health_notice =
-        match crate::core::code_health::gate::evaluate(args.content, &new_content, ext) {
-            crate::core::code_health::gate::GateOutcome::Block(reason) => {
-                return (
-                    format!("ERROR: code-health gate: {reason}"),
-                    CacheEffect::None,
-                );
-            }
-            crate::core::code_health::gate::GateOutcome::Allow(notice) => notice,
-        };
+    let health_notice = crate::core::code_health::gate::evaluate(args.content, &new_content, ext);
 
     // #960: a point-in-time check, not a held lock — see
     // ensure_preimage_still_matches' doc for the residual window between

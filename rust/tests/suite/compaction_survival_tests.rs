@@ -156,7 +156,6 @@ fn session_resume_action() {
             path: None,
             write: false,
             privacy: None,
-            terse: None,
         },
     );
     assert!(

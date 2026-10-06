@@ -142,10 +142,9 @@ impl ContextIrV1 {
             truncated,
             safety: ContextIrSafetyV1 {
                 redacted: true,
-                boundary_mode: Some(format!(
-                    "{:?}",
-                    crate::core::io_boundary::boundary_mode_effective()
-                )),
+                // Secret-like paths are always enforced; the label stays in
+                // the frozen v1 schema.
+                boundary_mode: Some("Enforce".to_string()),
             },
             verification: ContextIrVerificationV1 { content_md5 },
         };

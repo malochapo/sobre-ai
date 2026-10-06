@@ -60,17 +60,6 @@ pub(crate) fn strip_utf8_bom(s: String) -> String {
     }
 }
 
-/// How a secret-like path is handled. Only enforcement remains; the label is
-/// still recorded in the Context IR.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum BoundaryMode {
-    Enforce,
-}
-
-pub fn boundary_mode_effective() -> BoundaryMode {
-    BoundaryMode::Enforce
-}
-
 pub fn is_secret_like(path: &Path) -> Option<&'static str> {
     let file = path.file_name().and_then(|s| s.to_str()).unwrap_or("");
     let lower = file.to_lowercase();

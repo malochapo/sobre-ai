@@ -12,70 +12,6 @@ use super::Config;
 
 static SESSION_DEGRADE_LEVEL: AtomicU8 = AtomicU8::new(0);
 
-/// Controls the reactive recovery footer surfaced on compressed tool output
-/// (`ctx_read`, spill handles, `ctx_shell` tee).
-///
-/// The `RECOVER` line of the MCP instructions teaches the vocabulary once; this knob governs the per-output reminder that names the concrete
-/// file path / handle at point-of-need:
-/// * `Minimal` (default) — a single, non-MCP-first line on the *first* compressed
-///   view of a file/handle per session.
-/// * `Full` — the richer ladder (`mode=full` · `raw=true` · `ctx_expand`).
-/// * `Off` — suppresses the footer entirely (the proactive rule still ships, so
-///   reversibility is never undiscoverable).
-#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "lowercase")]
-pub enum RecoveryHints {
-    Off,
-    #[default]
-    Minimal,
-    Full,
-}
-
-impl RecoveryHints {
-    /// Parse a config/env token. Returns `None` for unrecognized input so a typo
-    /// falls back to the default rather than silently disabling the feature.
-    #[must_use]
-    pub fn parse(s: &str) -> Option<Self> {
-        match s.trim().to_ascii_lowercase().as_str() {
-            "off" | "none" | "false" => Some(Self::Off),
-            "minimal" | "min" | "on" | "true" => Some(Self::Minimal),
-            "full" => Some(Self::Full),
-            _ => None,
-        }
-    }
-
-    /// Stable lowercase label (config display, schema, `/status`).
-    #[must_use]
-    pub fn label(self) -> &'static str {
-        match self {
-            Self::Off => "off",
-            Self::Minimal => "minimal",
-            Self::Full => "full",
-        }
-    }
-}
-
-/// Compression level of tool responses.
-///
-/// Controls how much detail tool responses include.
-#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
-#[serde(rename_all = "snake_case")]
-pub enum ResponseVerbosity {
-    #[default]
-    Full,
-    HeadersOnly,
-}
-
-impl ResponseVerbosity {
-    pub fn effective() -> Self {
-        crate::core::config::ResponseVerbosity::default()
-    }
-
-    pub fn is_headers_only(&self) -> bool {
-        matches!(self, Self::HeadersOnly)
-    }
-}
-
 /// Each level maps to specific component settings via `to_components()`.
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "lowercase")]
@@ -122,15 +58,12 @@ impl CompressionLevel {
     }
 
     /// Returns the effective prose level: a session-level degrade (set by
-    /// correction-loop feedback) wins, then the band of the configured
-    /// `compression_level`, else [`Self::Lite`].
+    /// correction-loop feedback) wins, then the band of `compression_level`.
     pub fn effective(config: &Config) -> Self {
         if let Some(degraded) = Self::session_degrade_level() {
             return degraded;
         }
-        config
-            .compression_level
-            .map_or(Self::Lite, Self::from_value)
+        Self::from_value(config.compression_level)
     }
 
     /// The prose level for a continuous `compression_level` value: five equal

@@ -447,7 +447,7 @@ pub fn build_semantic(project_root: &str) {
                 crate::core::embedding_index::EmbeddingBuildOutcome::Skipped => {
                     finish_ok(&mut s.semantic);
                     s.semantic.note = Some(
-                        "embeddings disabled by feature flag or config (search.dense_enabled / memory_profile)"
+                        "embeddings not built into this binary (the `embeddings` feature is off)"
                             .to_string(),
                     );
                 }
