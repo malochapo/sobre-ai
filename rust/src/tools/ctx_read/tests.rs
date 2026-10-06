@@ -836,12 +836,6 @@ fn process_mode_output_is_byte_stable_across_calls() {
     // Fresh, empty data dir: session state left by parallel tests must not
     // leak into the output.
     let _iso = crate::core::data_dir::isolated_data_dir();
-    // Footer visibility must be the default (`never`) for purity: with a
-    // visible footer, the process-global session accumulator appends a
-    // `session: N saved` line every 10th call across ALL tests. Other tests
-    // leaked `LEAN_CTX_SAVINGS_FOOTER=always` here in the past — neutralize
-    // defensively while we hold the env lock.
-    crate::test_env::remove_var("LEAN_CTX_QUIET");
     let content: String = (0..120)
         .map(|i| format!("pub fn handler_{i}(x: u32) -> u32 {{ x * {i} }}"))
         .collect::<Vec<_>>()

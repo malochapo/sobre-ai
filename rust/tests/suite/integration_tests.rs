@@ -7,6 +7,17 @@ use std::sync::OnceLock;
 /// own unit tests in shell::exec). On CI stderr is not a TTY, so the gate would
 /// block test scripts (`for`/`while` loops are not allowlisted) with exit 126 —
 /// warn-only keeps the tests pinned to what they actually assert.
+/// A throwaway state dir, so the binary's event log never lands in the
+/// developer's real one.
+fn isolated_state_dir() -> &'static Path {
+    static DIR: OnceLock<PathBuf> = OnceLock::new();
+    DIR.get_or_init(|| {
+        let dir = std::env::temp_dir().join(format!("lean-ctx-it-state-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("create isolated state dir");
+        dir
+    })
+}
+
 fn warn_only_config_dir() -> &'static Path {
     static DIR: OnceLock<PathBuf> = OnceLock::new();
     DIR.get_or_init(|| {
@@ -25,7 +36,7 @@ fn lean_ctx_bin() -> Command {
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_lean-ctx"));
     cmd.current_dir(env!("CARGO_MANIFEST_DIR"));
     cmd.env("LEAN_CTX_ACTIVE", "1");
-    cmd.env("__LEAN_CTX_SKIP_EVENTS", "1");
+    cmd.env("LEAN_CTX_STATE_DIR", isolated_state_dir());
     cmd.env("LEAN_CTX_CONFIG_DIR", warn_only_config_dir());
     cmd
 }
@@ -83,7 +94,7 @@ fn pipe_guard_no_compression_when_stdout_is_piped() {
     }
     let output = Command::new(env!("CARGO_BIN_EXE_lean-ctx"))
         .current_dir(env!("CARGO_MANIFEST_DIR"))
-        .env("__LEAN_CTX_SKIP_EVENTS", "1")
+        .env("LEAN_CTX_STATE_DIR", isolated_state_dir())
         .args(["-c", "echo hello world"])
         .output()
         .expect("failed to run lean-ctx -c with piped stdout");
@@ -102,7 +113,7 @@ fn pipe_guard_force_compress_overrides_pipe_guard() {
     }
     let output = Command::new(env!("CARGO_BIN_EXE_lean-ctx"))
         .current_dir(env!("CARGO_MANIFEST_DIR"))
-        .env("__LEAN_CTX_SKIP_EVENTS", "1")
+        .env("LEAN_CTX_STATE_DIR", isolated_state_dir())
         .args(["-c", "echo hello world"])
         .output()
         .expect("failed to run lean-ctx -c with piped stdout");
@@ -125,7 +136,7 @@ fn pipe_guard_multiline_output_unchanged_when_piped() {
     let script = "echo line1; echo line2; echo line3; echo 'result: 42'";
     let output = Command::new(env!("CARGO_BIN_EXE_lean-ctx"))
         .current_dir(env!("CARGO_MANIFEST_DIR"))
-        .env("__LEAN_CTX_SKIP_EVENTS", "1")
+        .env("LEAN_CTX_STATE_DIR", isolated_state_dir())
         .args(["-c", script])
         .output()
         .expect("failed to run lean-ctx -c with multiline output");
@@ -168,7 +179,7 @@ fn forced_compress_bin() -> Command {
     cmd.current_dir(env!("CARGO_MANIFEST_DIR"))
         .env_remove("LEAN_CTX_ACTIVE")
         .env_remove("LEAN_CTX_WRAPPED")
-        .env("__LEAN_CTX_SKIP_EVENTS", "1")
+        .env("LEAN_CTX_STATE_DIR", isolated_state_dir())
         // Allowlist enforcement (non-TTY stderr ⇒ block) is out of scope here;
         // the fidelity scripts use `while` loops that are not allowlisted.
         .env("LEAN_CTX_CONFIG_DIR", warn_only_config_dir());
@@ -322,7 +333,7 @@ fn pipe_guard_rust_side_defense_in_depth() {
     let script = "for i in 1 2 3 4 5; do echo \"item_$i: $(date +%s)\"; done";
     let output = Command::new(env!("CARGO_BIN_EXE_lean-ctx"))
         .current_dir(env!("CARGO_MANIFEST_DIR"))
-        .env("__LEAN_CTX_SKIP_EVENTS", "1")
+        .env("LEAN_CTX_STATE_DIR", isolated_state_dir())
         // `for` + command substitution are not allowlisted; this test pins the
         // pipe guard, not enforcement (covered by shell::exec unit tests).
         .env("LEAN_CTX_CONFIG_DIR", warn_only_config_dir())

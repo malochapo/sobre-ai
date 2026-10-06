@@ -15,10 +15,10 @@ pub(crate) fn write_mcp_json(
 
     // Claude Code manages ~/.claude.json and may overwrite it on first start.
     // Prefer the official CLI integration when available.
-    // Skip when LEAN_CTX_QUIET=1 (bootstrap --json / setup --json) to avoid
-    // spawning `claude mcp add-json` which can stall in non-interactive CI.
+    // Skip in quiet runs (`init --json` / `--repair`) to avoid spawning
+    // `claude mcp add-json`, which can stall in non-interactive CI.
     if (target.agent_key == "claude" || target.name == "Claude Code")
-        && !matches!(std::env::var("LEAN_CTX_QUIET"), Ok(v) if v.trim() == "1")
+        && !crate::core::runtime_flags::quiet_enabled()
         && let Ok(result) = try_claude_mcp_add(&desired)
     {
         return Ok(result);

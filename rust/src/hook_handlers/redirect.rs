@@ -92,17 +92,18 @@ fn produce_redirect_output(kind: RedirectKind, tool_args: Option<&serde_json::Va
 /// StrReplace does NOT fire a Read PreToolUse (validated by edit-probe PoC).
 pub(super) fn redirect_read_args(path: &str, is_windowed: bool) -> Vec<String> {
     let mode = if is_windowed { "full-compact" } else { "auto" };
+    // `--fresh`: the output becomes the file's content for the host, so a
+    // `cached <file>` stub must never come back (#1037).
     vec![
         "read".to_string(),
         path.to_string(),
         "-m".to_string(),
         mode.to_string(),
+        "--fresh".to_string(),
     ]
 }
 
 /// Redirect Read through lean-ctx for compression + caching.
-/// Safe because `mark_hook_environment()` sets LEAN_CTX_HOOK_CHILD=1 which
-/// prevents daemon auto-start. The subprocess uses the fast local-only path.
 pub(super) fn redirect_read(tool_input: Option<&serde_json::Value>) -> String {
     // Hosts disagree on the path field: Cursor/Claude send `file_path`, some MCP
     // schemas use `path`. Resolve across all of them and remember WHICH field
@@ -563,11 +564,8 @@ pub(super) fn should_passthrough(path: &str) -> bool {
 /// compressed exploration view; this warming ensures the follow-up full
 /// read is instant instead of cold.
 ///
-/// Uses the CLI subprocess (not direct UDS) because the daemon's HTTP
-/// endpoint requires project context for PathJail.  The subprocess inherits
-/// `LEAN_CTX_HOOK_CHILD=1` which prevents daemon auto-start and uses the
-/// fast local-only path.  Completely fire-and-forget: stdout/stderr go to
-/// /dev/null, the child is not awaited, and all failures are silent.
+/// Completely fire-and-forget: stdout/stderr go to /dev/null, the child is
+/// not awaited, and all failures are silent.
 pub(super) fn warm_daemon_cache(path: &str) {
     use std::process::{Command, Stdio};
 

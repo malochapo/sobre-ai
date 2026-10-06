@@ -46,7 +46,7 @@ fn base_cmd(bin: &str, env: &TestEnv) -> Command {
 
 fn run_init(bin: &str, env: &TestEnv, agent: &str) {
     let out = base_cmd(bin, env)
-        .args(["init", "--agent", agent, "--global"])
+        .args(["init", "--agent", agent])
         .env("LEAN_CTX_ACTIVE", "1")
         .output()
         .expect("init spawn");

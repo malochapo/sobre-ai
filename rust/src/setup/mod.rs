@@ -51,7 +51,6 @@ pub struct SetupOptions {
     pub yes: bool,
     pub fix: bool,
     pub json: bool,
-    pub no_auto_approve: bool,
     pub skip_proxy: bool,
     /// Leave the shell rc untouched (`init --no-shell-hook`).
     pub skip_shell_hook: bool,
@@ -79,9 +78,9 @@ pub fn run_setup_with_options(opts: SetupOptions) -> Result<SetupReport, String>
     };
     if (!opts.non_interactive || opts.yes) && !opts.skip_shell_hook {
         if opts.json {
-            crate::cli::install_shell_hook_quiet(&["--global".to_string()]);
+            crate::cli::install_shell_hook_quiet(&[]);
         } else {
-            crate::cli::install_shell_hook(&["--global".to_string()]);
+            crate::cli::install_shell_hook(&[]);
         }
         crate::shell_hook::install_all(opts.json, opts.agent_aliases);
         #[cfg(not(windows))]
@@ -108,7 +107,7 @@ pub fn run_setup_with_options(opts: SetupOptions) -> Result<SetupReport, String>
             }
         }
         shell_step.items.push(SetupItem {
-            name: "init --global".to_string(),
+            name: "shell hook".to_string(),
             status: "ran".to_string(),
             path: None,
             note: None,
@@ -125,7 +124,7 @@ pub fn run_setup_with_options(opts: SetupOptions) -> Result<SetupReport, String>
             .push("non_interactive_without_yes: shell hook not installed (use --yes)".to_string());
         shell_step.ok = false;
         shell_step.items.push(SetupItem {
-            name: "init --global".to_string(),
+            name: "shell hook".to_string(),
             status: "skipped".to_string(),
             path: None,
             note: Some("requires --yes in --non-interactive mode".to_string()),
@@ -200,7 +199,7 @@ pub fn run_setup_with_options(opts: SetupOptions) -> Result<SetupReport, String>
         if !target.detect_path.exists() || target.agent_key.is_empty() {
             continue;
         }
-        crate::hooks::install_agent_hook(&target.agent_key, true);
+        crate::hooks::install_agent_hook(&target.agent_key);
         let mcp_note = match configure_agent_mcp(&target.agent_key) {
             Ok(()) => "; MCP config updated".to_string(),
             Err(e) => format!("; MCP config skipped: {e}"),
@@ -309,27 +308,27 @@ pub fn run_setup_with_options(opts: SetupOptions) -> Result<SetupReport, String>
     }
     steps.push(env_step);
 
-    // Project root validation: warn if no root is configured and cwd is broad
+    // Project root validation: warn when run from the home directory
     {
-        let has_env_root = std::env::var("LEAN_CTX_PROJECT_ROOT").is_ok_and(|v| !v.is_empty());
-        if !has_env_root && let Ok(cwd) = std::env::current_dir() {
+        if let Ok(cwd) = std::env::current_dir() {
             let is_home = dirs::home_dir().is_some_and(|h| cwd == h);
             if is_home {
                 let mut root_step = SetupStepReport {
-                        name: "project_root".to_string(),
-                        ok: true,
-                        items: Vec::new(),
-                        warnings: vec![
-                            "No project root set. Running from $HOME can cause excessive scanning. \
-                             Start your agent from the project directory or set LEAN_CTX_PROJECT_ROOT.".to_string()
-                        ],
-                        errors: Vec::new(),
-                    };
+                    name: "project_root".to_string(),
+                    ok: true,
+                    items: Vec::new(),
+                    warnings: vec![
+                        "No project root set. Running from $HOME can cause excessive scanning. \
+                             Start your agent from the project directory."
+                            .to_string(),
+                    ],
+                    errors: Vec::new(),
+                };
                 root_step.items.push(SetupItem {
                     name: "project_root".to_string(),
                     status: "unconfigured".to_string(),
                     path: None,
-                    note: Some("Set LEAN_CTX_PROJECT_ROOT".to_string()),
+                    note: Some("Start your agent from the project directory".to_string()),
                 });
                 steps.push(root_step);
             }
@@ -385,7 +384,7 @@ fn may_autoindex_cwd(cwd: &std::path::Path) -> bool {
 }
 
 fn spawn_index_build_background(root: &std::path::Path) {
-    if matches!(std::env::var("LEAN_CTX_QUIET"), Ok(v) if v.trim() == "1") {
+    if crate::core::runtime_flags::quiet_enabled() {
         return;
     }
     let root_str = crate::core::graph_index::normalize_project_root(&root.to_string_lossy());

@@ -67,7 +67,6 @@ fn initialize_answers_fast_and_first_call_succeeds() {
         // suite itself runs inside an IDE/agent session these carry the HOST
         // workspace and would hijack the project root (→ path-jail rejects
         // the temp file).
-        .env_remove("LEAN_CTX_PROJECT_ROOT")
         .env_remove("CLAUDE_PROJECT_DIR")
         .env_remove("WORKSPACE_FOLDER_PATHS")
         .stdin(Stdio::piped())

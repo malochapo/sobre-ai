@@ -40,8 +40,6 @@ impl Sandbox {
             .args(["uninstall", flag])
             .env("HOME", &self.home)
             .env("LEAN_CTX_DATA_DIR", &self.data)
-            .env("LEAN_CTX_HOOK_CHILD", "1")
-            .env("LEAN_CTX_QUIET", "1")
             .output()
             .expect("spawn lean-ctx uninstall")
     }

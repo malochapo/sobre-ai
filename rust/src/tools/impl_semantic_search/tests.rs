@@ -82,12 +82,10 @@ mod root_resolution_tests {
         let sub = root.join("crate_a").join("src");
         std::fs::create_dir_all(&sub).unwrap();
 
-        // Pin the project root so resolution is deterministic regardless of host
-        // config; remove the env before asserting so a failure cannot leak it.
-        crate::test_env::set_var("LEAN_CTX_PROJECT_ROOT", root.to_string_lossy().as_ref());
+        // A project marker at the root is what makes it the project root.
+        std::fs::create_dir_all(root.join(".git")).unwrap();
         let from_sub = resolve_search_root(&sub.to_string_lossy());
         let from_root = resolve_search_root(&root.to_string_lossy());
-        crate::test_env::remove_var("LEAN_CTX_PROJECT_ROOT");
 
         let (resolved, subdir) = from_sub.unwrap();
         assert_eq!(resolved, root, "subdir must promote to the project root");

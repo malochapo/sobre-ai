@@ -32,7 +32,6 @@ mod graph_export_contract;
 mod hardening_ir_traits;
 mod hn_hardening_scenarios;
 mod home_dotdir_firewall;
-mod hook_connect_only_566;
 mod http_server_streamable;
 mod init_doctor_clean;
 mod integration_tests;

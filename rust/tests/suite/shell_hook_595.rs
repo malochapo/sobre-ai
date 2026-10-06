@@ -23,9 +23,6 @@ fn run_dash_c(command: &str, home: &Path) -> Output {
     Command::new(env!("CARGO_BIN_EXE_lean-ctx"))
         .args(["-c", command])
         .env("HOME", home)
-        // Force allowlist enforcement (block = exit 126) deterministically,
-        // regardless of how the test runner's stdio is wired.
-        .env("LEAN_CTX_HOOK_CHILD", "1")
         // A `lean-ctx`-wrapped parent (e.g. the dev shell hook running the test
         // suite) would otherwise leak these and make `-c` pass through raw.
         .env_remove("LEAN_CTX_WRAPPED")

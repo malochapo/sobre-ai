@@ -147,7 +147,7 @@ pub(super) fn exec_buffered(command: &str, shell: &str, shell_flag: &str) -> i32
     let should_tee = super::tee_policy::should_tee(&full_output, &compressed, false);
     if should_tee
         && let Some(path) = super::redact::save_tee(command, &full_output)
-        && !matches!(std::env::var("LEAN_CTX_QUIET"), Ok(v) if v.trim() == "1")
+        && !crate::core::runtime_flags::quiet_enabled()
     {
         eprintln!("[lean-ctx: full output -> {path} (redacted, 24h TTL)]");
     }

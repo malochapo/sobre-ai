@@ -46,21 +46,21 @@ fn build_and_persist_fix_report(
     let before = shell_aliases_outcome();
     if before.ok {
         shell_step.items.push(SetupItem {
-            name: "init --global".to_string(),
+            name: "init".to_string(),
             status: "already".to_string(),
             path: None,
             note: None,
         });
     } else {
         if quiet {
-            crate::cli::install_shell_hook_quiet(&["--global".to_string()]);
+            crate::cli::install_shell_hook_quiet(&[]);
         } else {
-            crate::cli::install_shell_hook(&["--global".to_string()]);
+            crate::cli::install_shell_hook(&[]);
         }
         let after = shell_aliases_outcome();
         shell_step.ok = after.ok;
         shell_step.items.push(SetupItem {
-            name: "init --global".to_string(),
+            name: "init".to_string(),
             status: if after.ok {
                 "fixed".to_string()
             } else {
@@ -76,7 +76,7 @@ fn build_and_persist_fix_report(
         if !after.ok {
             shell_step
                 .warnings
-                .push("shell hook not detected after init --global".to_string());
+                .push("shell hook not detected after init".to_string());
         }
     }
     steps.push(shell_step);
@@ -175,7 +175,7 @@ fn build_and_persist_fix_report(
         if !t.detect_path.exists() || t.agent_key.trim().is_empty() {
             continue;
         }
-        crate::hooks::install_agent_hook(&t.agent_key, true);
+        crate::hooks::install_agent_hook(&t.agent_key);
         hooks_step.items.push(SetupItem {
             name: format!("{} hooks", t.name),
             status: "installed".to_string(),

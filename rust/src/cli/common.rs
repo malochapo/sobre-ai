@@ -141,11 +141,6 @@ pub(crate) fn detect_project_root(args: &[String]) -> String {
             return normalize_explicit_root(v);
         }
     }
-    if let Ok(root) = std::env::var("LEAN_CTX_PROJECT_ROOT")
-        && !root.trim().is_empty()
-    {
-        return normalize_explicit_root(&root);
-    }
     let cwd = std::env::current_dir()
         .ok()
         .map_or_else(|| ".".to_string(), |p| p.to_string_lossy().to_string());

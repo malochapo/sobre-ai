@@ -908,13 +908,13 @@ fn redirect_read_args_smart_mode_selection() {
     let windowed = redirect_read_args("/repo/src/main.rs", true);
     assert_eq!(
         windowed,
-        ["read", "/repo/src/main.rs", "-m", "full-compact"]
+        ["read", "/repo/src/main.rs", "-m", "full-compact", "--fresh"]
     );
 
     // Full reads use auto for smart compression (87-97% savings).
     // Safe on Cursor: StrReplace does NOT fire Read PreToolUse (edit-probe PoC).
     let full = redirect_read_args("/repo/src/main.rs", false);
-    assert_eq!(full, ["read", "/repo/src/main.rs", "-m", "auto"]);
+    assert_eq!(full, ["read", "/repo/src/main.rs", "-m", "auto", "--fresh"]);
 }
 
 #[test]

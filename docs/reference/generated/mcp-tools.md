@@ -127,7 +127,7 @@ Parameters: `action`*, `depth`, `path`
 
 Search code: regex(pattern, default) | semantic(query) | symbol(name|handle) | reindex | find_related(file_path,line). anchored=true enables ctx_patch refs; queries batches regex searches. Run ctx_compose FIRST.
 
-Parameters: `action`, `anchored`, `exclude`, `exclude_pattern`, `file`, `file_path`, `handle`, `include`, `kind`, `line`, `max_results`, `mode`, `name`, `path`, `paths`, `pattern`, `queries`, `query`, `top_k`
+Parameters: `action`, `anchored`, `exclude`, `exclude_pattern`, `file`, `file_path`, `handle`, `include`, `kind`, `line`, `max_results`, `mode`, `name`, `path`, `paths`, `pattern`, `queries`, `query`, `top_k`, `workspace`
 
 ## `ctx_session`
 

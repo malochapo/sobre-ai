@@ -318,10 +318,6 @@ pub fn shell_name() -> String {
 }
 
 pub(super) fn detect_shell() -> String {
-    if let Ok(shell) = std::env::var("LEAN_CTX_SHELL") {
-        return shell;
-    }
-
     if let Ok(shell) = std::env::var("SHELL") {
         let bin = std::path::Path::new(&shell)
             .file_name()
@@ -335,8 +331,7 @@ pub(super) fn detect_shell() -> String {
         // agent's execution shell. Agents emit bash/POSIX command syntax, so an
         // interactive-only shell like Nushell or Fish silently mis-runs it.
         // Honor `$SHELL` only when it is POSIX-compatible; otherwise fall back
-        // to a real POSIX shell (deterministic, agent-trained). Set
-        // `LEAN_CTX_SHELL` to force a specific shell regardless of this gate.
+        // to a real POSIX shell (deterministic, agent-trained).
         if shell_acceptable_for_exec(&shell) {
             return shell;
         }
@@ -898,9 +893,6 @@ mod posix_shell_gate_tests {
         // Serialize env mutation (set_var/remove_var are process-global).
         let _lock = crate::core::data_dir::test_env_lock();
         let saved_shell = std::env::var_os("SHELL");
-        let saved_override = std::env::var_os("LEAN_CTX_SHELL");
-
-        crate::test_env::remove_var("LEAN_CTX_SHELL");
         crate::test_env::set_var("SHELL", "/usr/bin/nu");
         let resolved = detect_shell();
         assert!(
@@ -916,17 +908,9 @@ mod posix_shell_gate_tests {
         crate::test_env::set_var("SHELL", "/bin/sh");
         assert_eq!(detect_shell(), "/bin/sh");
 
-        // LEAN_CTX_SHELL always wins, even when pointing at a non-POSIX shell.
-        crate::test_env::set_var("LEAN_CTX_SHELL", "/usr/bin/nu");
-        assert_eq!(detect_shell(), "/usr/bin/nu");
-
         match saved_shell {
             Some(v) => crate::test_env::set_var("SHELL", v),
             None => crate::test_env::remove_var("SHELL"),
-        }
-        match saved_override {
-            Some(v) => crate::test_env::set_var("LEAN_CTX_SHELL", v),
-            None => crate::test_env::remove_var("LEAN_CTX_SHELL"),
         }
     }
 }

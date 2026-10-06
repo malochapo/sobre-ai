@@ -9,7 +9,6 @@ mod windsurf;
 
 pub(super) use claude::{
     install_claude_hook, install_claude_hook_config, install_claude_hook_scripts,
-    install_claude_project_hooks,
 };
 pub use codex::install_codex_hook;
 pub(super) use copilot::install_copilot_hook;

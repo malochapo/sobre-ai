@@ -13,8 +13,6 @@ macro_rules! qprintln {
 }
 
 pub fn install_shell_hook(args: &[String]) {
-    let global = args.iter().any(|a| a == "--global" || a == "-g");
-    let project = args.iter().any(|a| a == "--project");
     let dry_run = args.iter().any(|a| a == "--dry-run");
     let no_hook = args.iter().any(|a| a == "--no-shell-hook")
         || crate::core::config::Config::load().shell_hook_disabled_effective();
@@ -26,14 +24,10 @@ pub fn install_shell_hook(args: &[String]) {
         .collect();
 
     if !agents.is_empty() {
-        let cwd = std::env::current_dir().unwrap_or_default();
         for agent_name in &agents {
-            let result = crate::setup::setup_single_agent(agent_name, global);
+            let result = crate::setup::setup_single_agent(agent_name);
             for e in &result.errors {
                 eprintln!("  ✗ {agent_name}: {e}");
-            }
-            if project {
-                crate::hooks::install_agent_project_hooks(agent_name, &cwd);
             }
         }
         qprintln!("\nRun 'lean-ctx gain' after using some commands to see your savings.");
@@ -43,9 +37,7 @@ pub fn install_shell_hook(args: &[String]) {
     let eval_shell = args
         .iter()
         .find(|a| matches!(a.as_str(), "bash" | "zsh" | "fish" | "powershell" | "pwsh"));
-    if let Some(shell) = eval_shell
-        && !global
-    {
+    if let Some(shell) = eval_shell {
         super::shell_init::print_hook_stdout(shell);
         return;
     }
@@ -129,7 +121,7 @@ pub fn install_shell_hook(args: &[String]) {
     qprintln!("  Check status:         lean-ctx-status");
     qprintln!("  Full uninstall:       lean-ctx uninstall");
     qprintln!("  Diagnose issues:      lean-ctx doctor");
-    qprintln!("  Preview changes:      lean-ctx init --global --dry-run");
+    qprintln!("  Preview changes:      lean-ctx init --dry-run");
     qprintln!();
     if is_powershell {
         qprintln!("  Restart PowerShell or run: . {rc}");
@@ -175,9 +167,6 @@ pub fn cmd_init(args: &[String]) {
     // used to perform the install).
     const KNOWN: &[&str] = &[
         "--agent",
-        "--global",
-        "-g",
-        "--project",
         "--check",
         "--dry-run",
         "--repair",
@@ -186,7 +175,6 @@ pub fn cmd_init(args: &[String]) {
         "--agent-aliases",
         "--no-agent-aliases",
         "--shell-activation",
-        "--no-auto-approve",
     ];
     if let Some(unknown) = args
         .iter()
@@ -288,7 +276,6 @@ pub fn cmd_init(args: &[String]) {
         yes: true,
         fix: true,
         json,
-        no_auto_approve: args.iter().any(|a| a == "--no-auto-approve"),
         skip_shell_hook: args.iter().any(|a| a == "--no-shell-hook"),
         agent_aliases: if args.iter().any(|a| a == "--no-agent-aliases") {
             Some(false)
@@ -408,15 +395,12 @@ Options:
   --repair                   No prompt, exits non-zero on failure (for CI)
   --json                     Machine-readable report; implies --repair
   --agent <name>             Same as the positional form, repeatable
-  --global                   Copilot/VS Code: user-level config, not this project
-  --project                  Also install project-local agent hooks
   --no-shell-hook            Skip the shell rc entirely
   --shell-activation <always|agents-only|off>
                              When the shell aliases activate (default:
                              agents-only); kept by later runs
   --agent-aliases            Install claude/codex/gemini aliases (default)
   --no-agent-aliases         Do not install them; kept by later runs
-  --no-auto-approve          Do not configure auto-approve
 
 Undo it all: sobre uninstall"
     );

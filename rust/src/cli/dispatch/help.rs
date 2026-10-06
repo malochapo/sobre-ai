@@ -149,7 +149,7 @@ MEMORY:
     compact [path]                 Compact Claude Code / Cursor transcripts
 
 SETUP AND MAINTENANCE:
-    init [--agent <name>] [--global] [--project] [--check] [--repair]
+    init [--agent <name>] [--check] [--repair]
     status [--json]                Setup and MCP status
     doctor [--fix] [--json]        Diagnostics (and repair)
     doctor integrations [--json]   Per-agent integration checks

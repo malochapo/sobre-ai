@@ -194,9 +194,6 @@ fn is_test_environment() -> bool {
         if cfg!(test) {
             return true;
         }
-        if std::env::var_os("__LEAN_CTX_SKIP_EVENTS").is_some() {
-            return true;
-        }
         std::env::current_exe().is_ok_and(|p| {
             let s = p.to_string_lossy();
             s.contains("/deps/") || s.contains("\\deps\\")

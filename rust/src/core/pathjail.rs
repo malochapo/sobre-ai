@@ -2,55 +2,25 @@ use std::path::{Path, PathBuf};
 
 use crate::core::error::PathJailError;
 
-/// `allow_paths` / `extra_roots` come from `config.toml`, where no shell ever
-/// runs — users writing `"$HOME/code"` or `"~/code"` got a literal,
+/// `allow_paths` / `read_only_roots` come from `config.toml`, where no shell
+/// ever runs — users writing `"$HOME/code"` or `"~/code"` got a literal,
 /// never-matching prefix and concluded the whole option was broken (GH #392).
-/// Unset variables are left verbatim (and warned about) so the entry fails
-/// loudly in `lean-ctx doctor` instead of silently matching something else.
+/// Only the home directory is expanded (`~`, `$HOME`, `${HOME}`): any other
+/// `$VAR` would make the jail depend on the environment of whichever process
+/// reads the file, so it stays literal.
 pub fn expand_user_path(raw: &str) -> PathBuf {
-    let mut s = raw.to_string();
-
-    if (s == "~" || s.starts_with("~/"))
-        && let Some(home) = dirs::home_dir()
-    {
-        s = format!("{}{}", home.to_string_lossy(), &s[1..]);
+    let rest = if matches!(raw, "~" | "$HOME" | "${HOME}") {
+        Some("")
+    } else {
+        ["~/", "$HOME/", "${HOME}/"]
+            .iter()
+            .find_map(|prefix| raw.strip_prefix(prefix))
+    };
+    match (rest, dirs::home_dir()) {
+        (Some(""), Some(home)) => home,
+        (Some(r), Some(home)) => home.join(r),
+        _ => PathBuf::from(raw),
     }
-
-    while let Some(start) = s.find('$') {
-        let rest = &s[start + 1..];
-        let (name, token_len) = if let Some(stripped) = rest.strip_prefix('{') {
-            match stripped.find('}') {
-                Some(end) => (stripped[..end].to_string(), end + 3),
-                None => break,
-            }
-        } else {
-            let end = rest
-                .find(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
-                .unwrap_or(rest.len());
-            (rest[..end].to_string(), end + 1)
-        };
-        if name.is_empty() {
-            break;
-        }
-        // Windows has no HOME (it is USERPROFILE): `$HOME` still means the
-        // home directory there.
-        let val = std::env::var(&name).ok().or_else(|| {
-            (name == "HOME")
-                .then(dirs::home_dir)
-                .flatten()
-                .map(|h| h.to_string_lossy().into_owned())
-        });
-        if let Some(val) = val {
-            s.replace_range(start..start + token_len, &val);
-        } else {
-            tracing::warn!(
-                "allow_paths/extra_roots entry '{raw}' references unset variable ${name} — entry will never match"
-            );
-            break;
-        }
-    }
-
-    PathBuf::from(s)
 }
 
 pub fn allow_paths_from_env_and_config() -> Vec<PathBuf> {
@@ -746,28 +716,26 @@ mod tests {
     // GH #392: config entries like "$HOME/code" or "~/code" were taken
     // literally and never matched.
     #[test]
-    fn expand_user_path_expands_tilde_and_vars() {
+    fn expand_user_path_expands_home_only() {
         let home = dirs::home_dir().expect("home dir");
-        let home_s = home.to_string_lossy().to_string();
 
         assert_eq!(expand_user_path("~"), home);
         assert_eq!(expand_user_path("~/code"), home.join("code"));
         assert_eq!(expand_user_path("$HOME/code"), home.join("code"));
         assert_eq!(expand_user_path("${HOME}/code"), home.join("code"));
-        // Multiple variables in one entry.
-        crate::test_env::set_var("LEAN_CTX_TEST_SUB", "sub");
-        assert_eq!(
-            expand_user_path("$HOME/$LEAN_CTX_TEST_SUB/x"),
-            PathBuf::from(format!("{home_s}/sub/x"))
-        );
         // Absolute paths pass through untouched.
         assert_eq!(expand_user_path("/etc"), PathBuf::from("/etc"));
     }
 
     #[test]
-    fn expand_user_path_leaves_unset_vars_verbatim() {
-        let p = expand_user_path("$LEAN_CTX_TEST_UNSET_VAR/code");
-        assert_eq!(p, PathBuf::from("$LEAN_CTX_TEST_UNSET_VAR/code"));
+    fn expand_user_path_leaves_other_vars_literal() {
+        // Any variable but HOME would make the jail depend on the reader's env.
+        crate::test_env::set_var("LEAN_CTX_TEST_SUB", "sub");
+        assert_eq!(
+            expand_user_path("$LEAN_CTX_TEST_SUB/code"),
+            PathBuf::from("$LEAN_CTX_TEST_SUB/code")
+        );
+        crate::test_env::remove_var("LEAN_CTX_TEST_SUB");
     }
 
     // GH #392: `allow_paths = ["/"]` must grant access to any absolute path —

@@ -54,8 +54,8 @@ impl Config {
         }
     }
 
-    /// Resolves the active project root (env override → session → git toplevel →
-    /// cwd), cached for the process.
+    /// Resolves the active project root (git toplevel → cwd), cached for the
+    /// process.
     pub(crate) fn find_project_root() -> Option<String> {
         static ROOT_CACHE: std::sync::OnceLock<Option<String>> = std::sync::OnceLock::new();
         ROOT_CACHE
@@ -64,30 +64,7 @@ impl Config {
     }
 
     fn find_project_root_inner() -> Option<String> {
-        if let Ok(env_root) = std::env::var("LEAN_CTX_PROJECT_ROOT")
-            && !env_root.is_empty()
-        {
-            return Some(env_root);
-        }
-
         let cwd = std::env::current_dir().ok();
-
-        if let Some(root) =
-            crate::core::session::SessionState::load_latest().and_then(|s| s.project_root)
-        {
-            let root_path = std::path::Path::new(&root);
-            let cwd_is_under_root = cwd.as_ref().is_some_and(|c| c.starts_with(root_path));
-            // Route the marker probe through the TCC-guarded helper and never
-            // adopt a ~/Documents project root from a launchd-standalone process
-            // (#356): doing so would later stat its markers and pop the macOS
-            // privacy prompt in lean-ctx's own name.
-            let has_marker = crate::core::pathutil::has_project_marker(root_path);
-
-            if (cwd_is_under_root || has_marker) && crate::core::pathutil::may_probe_path(root_path)
-            {
-                return Some(root);
-            }
-        }
 
         if let Some(ref cwd) = cwd {
             // A launchd-standalone process must not shell out to `git` (which

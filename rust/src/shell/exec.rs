@@ -453,7 +453,7 @@ fn exec_direct(args: &[String]) -> i32 {
 /// only warns.
 ///
 /// Enforced when:
-/// - hook-child mode (`LEAN_CTX_HOOK_CHILD`): lean-ctx is the agent's
+/// - hook-child mode (this process runs a hook): lean-ctx is the agent's
 ///   command-interception channel and must not be weaker than the MCP path, or
 /// - stderr is not a TTY: a non-interactive caller is an agent or script, and
 ///   agent-driven `lean-ctx -c` must enforce the same boundary as ctx_shell.
@@ -851,8 +851,6 @@ mod exec_tests {
 
     #[test]
     fn exec_argv_runs_simple_command() {
-        let _lock = crate::core::data_dir::test_env_lock();
-        crate::test_env::remove_var("LEAN_CTX_HOOK_CHILD");
         let code = super::exec_argv(&["true".to_string()]);
         assert_eq!(code, 0);
     }
@@ -861,11 +859,8 @@ mod exec_tests {
     fn exec_argv_allows_ordinary_command() {
         let _lock = crate::core::data_dir::test_env_lock();
         crate::test_env::remove_var("LEAN_CTX_ACTIVE");
-        crate::test_env::set_var("LEAN_CTX_HOOK_CHILD", "1");
 
         let code = super::exec_argv(&["true".to_string()]);
-
-        crate::test_env::remove_var("LEAN_CTX_HOOK_CHILD");
 
         assert_eq!(code, 0, "an ordinary command must run on the -t track path");
     }

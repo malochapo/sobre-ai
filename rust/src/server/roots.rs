@@ -131,10 +131,10 @@ pub fn valid_dir_paths_from_uris(uris: &[String]) -> Vec<String> {
         .collect()
 }
 
-/// Detect project root from IDE-specific environment variables.
-/// Priority: LEAN_CTX_PROJECT_ROOT > CLAUDE_PROJECT_DIR
+/// Detect the project root from the host's own environment
+/// (`CLAUDE_PROJECT_DIR`, set by Claude Code).
 pub fn root_from_env() -> Option<String> {
-    for var in ["LEAN_CTX_PROJECT_ROOT", "CLAUDE_PROJECT_DIR"] {
+    for var in ["CLAUDE_PROJECT_DIR"] {
         if let Ok(val) = std::env::var(var) {
             let trimmed = val.trim().to_string();
             if !trimmed.is_empty()
