@@ -16,8 +16,6 @@ pub const KNOWLEDGE_REHYDRATE_LIMIT: usize = 3;
 pub const PROSPECTIVE_REMINDERS_LIMIT: usize = 2;
 pub const PROSPECTIVE_REMINDER_MAX_CHARS: usize = 160;
 
-pub const INTENTS_PER_SESSION_LIMIT: usize = 50;
-
 // Property graph tools (bounded outputs, deterministic ordering)
 pub const IMPACT_AFFECTED_FILES_LIMIT: usize = 200;
 

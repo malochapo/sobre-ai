@@ -234,9 +234,9 @@ fn radar_tail_sources() -> (Vec<String>, u64) {
 }
 
 /// Hook entry point: analyze an agent response against the radar tail,
-/// persist rolling stats and emit the automatic feedback event.
+/// and persist rolling stats.
 pub fn analyze_and_record(response: &str) {
-    let (sources, turn_input_tokens) = radar_tail_sources();
+    let (sources, _) = radar_tail_sources();
     let report = analyze(response, &sources);
 
     let mut stats = load_stats();
@@ -247,53 +247,6 @@ pub fn analyze_and_record(response: &str) {
         stats.reports.drain(..excess);
     }
     save_stats(&stats);
-
-    emit_feedback_event(response, turn_input_tokens);
-}
-
-/// Automatic `LlmFeedbackEvent` (#501): the adaptive mode policy used to
-/// depend on voluntary `ctx_feedback` calls that practically never happened.
-/// Mode attribution comes from the session's `files_touched.last_mode`
-/// aggregation — a session-window approximation, honest and available.
-fn emit_feedback_event(response: &str, turn_input_tokens: u64) {
-    let output_tokens = crate::core::tokens::count_tokens(response) as u64;
-    if output_tokens == 0 {
-        return;
-    }
-
-    let session = crate::core::session::SessionState::load_latest();
-    let modes: Option<std::collections::BTreeMap<String, u64>> = session.as_ref().map(|s| {
-        let mut m = std::collections::BTreeMap::new();
-        for f in &s.files_touched {
-            if !f.last_mode.is_empty() {
-                *m.entry(f.last_mode.clone()).or_insert(0) += u64::from(f.read_count.max(1));
-            }
-        }
-        m
-    });
-    let modes = modes.filter(|m| !m.is_empty());
-
-    let model = crate::hook_handlers::load_detected_model().map(|(name, _)| name);
-
-    let ev = crate::core::llm_feedback::LlmFeedbackEvent {
-        agent_id: "output_echo_auto".to_string(),
-        intent: session
-            .as_ref()
-            .and_then(|s| s.task.as_ref())
-            .and_then(|t| t.intent.clone()),
-        model,
-        llm_input_tokens: turn_input_tokens.max(1),
-        llm_output_tokens: output_tokens,
-        latency_ms: None,
-        note: None,
-        ctx_read_last_mode: None,
-        ctx_read_modes: modes,
-        timestamp: chrono::Utc::now().to_rfc3339(),
-    };
-
-    let mut policy = crate::core::adaptive_mode_policy::AdaptiveModePolicyStore::load();
-    policy.update_from_feedback(&ev);
-    let _ = policy.save();
 }
 
 /// CEP nudge for the MCP server to append to a tool result. Stable text in

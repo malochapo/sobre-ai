@@ -29,15 +29,8 @@ impl LeanCtxServer {
         let output_md5 = helpers::hash_fast(result_text);
         let agent_id = self.agent_id.read().await.clone();
         let client_name = self.client_name.read().await.clone();
-        let mut explicit_intent: Option<(
-            crate::core::intent_protocol::IntentRecord,
-            Option<String>,
-            String,
-        )> = None;
 
         let pending_session_save = {
-            let empty_args = serde_json::Map::new();
-            let args_map = args.unwrap_or(&empty_args);
             let mut session = self.session.write().await;
             session.record_tool_receipt(
                 name,
@@ -48,21 +41,6 @@ impl LeanCtxServer {
                 Some(&client_name),
             );
 
-            if let Some(intent) = crate::core::intent_protocol::infer_from_tool_call(
-                name,
-                action,
-                args_map,
-                session.project_root.as_deref(),
-            ) {
-                let is_explicit =
-                    intent.source == crate::core::intent_protocol::IntentSource::Explicit;
-                let root = session.project_root.clone();
-                let sid = session.id.clone();
-                session.record_intent(intent.clone());
-                if is_explicit {
-                    explicit_intent = Some((intent, root, sid));
-                }
-            }
             if session.should_save() {
                 session.prepare_save().ok()
             } else {
@@ -83,14 +61,6 @@ impl LeanCtxServer {
                 // recent full deliveries survive a restart as cheap stubs (#955).
                 crate::core::read_stub_index::persist();
             });
-        }
-
-        if let Some((intent, root, session_id)) = explicit_intent {
-            let _ = crate::core::intent_protocol::apply_side_effects(
-                &intent,
-                root.as_deref(),
-                &session_id,
-            );
         }
 
         {

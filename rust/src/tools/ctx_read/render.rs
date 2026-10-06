@@ -783,7 +783,6 @@ fn render_entropy(content: &str, ctx: RenderCtx<'_>, tuning: &ReadTuning<'_>) ->
         short,
         ext,
         file_path,
-        original_tokens,
         line_count,
         task,
         ..
@@ -832,15 +831,6 @@ fn render_entropy(content: &str, ctx: RenderCtx<'_>, tuning: &ReadTuning<'_>) ->
         result.output
     );
     let sent = count_tokens(&output);
-    let compression_ratio = if original_tokens > 0 {
-        1.0 - (sent as f64 / original_tokens as f64)
-    } else {
-        0.0
-    };
-    crate::core::adaptive_thresholds::report_bandit_outcome_for_path(
-        file_path,
-        compression_ratio > 0.15,
-    );
     (
         append_compressed_hint(&format!("{output}"), file_path),
         sent,

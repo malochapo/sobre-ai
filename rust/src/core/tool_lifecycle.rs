@@ -84,11 +84,6 @@ pub fn record_file_read(
     // identical anyway.
     crate::core::savings_ledger::record_read_event(original_tokens, saved);
 
-    // Project root the learning sinks below are scoped to. Defaults to "." (the
-    // MCP path's `project_root_snapshot` fallback) so a rootless read still
-    // trains a global model rather than being dropped.
-    let mut learning_root = String::from(".");
-
     if let Some(mut session) = SessionState::load_latest() {
         session.touch_file(path, None, mode, original_tokens);
         if is_cache_hit {
@@ -108,9 +103,6 @@ pub fn record_file_read(
         }
 
         let project_root = session.project_root.clone();
-        if let Some(root) = usable_root(project_root.as_deref()) {
-            learning_root = root.to_string();
-        }
         let calls = session.stats.total_tool_calls;
 
         // Traversal edges: associate this read with the recent working set so the
@@ -133,21 +125,6 @@ pub fn record_file_read(
         ledger.record(path, mode, original_tokens, output_tokens);
         ledger.save();
     }
-
-    // Learning sinks the MCP read path runs in a background thread but the CLI
-    // path historically skipped — the mode predictor never trained, the
-    // compression feedback loop stayed blind and dashboard anomaly signals were
-    // missing for every shadow-mode (`view`/`grep` → `lean-ctx read`) hook read
-    // (#550). Run inline: a single-shot CLI process must finish them before it
-    // flushes and exits, so the off-hot-path thread the daemon uses is moot here.
-    record_read_learning(
-        path,
-        mode,
-        original_tokens,
-        output_tokens,
-        is_cache_hit,
-        &learning_root,
-    );
 
     // Context IR lineage (#566): the MCP dispatcher records provenance for every
     // tool call (`server/call_tool.rs`), but the shadow-mode hook's single-shot
@@ -177,108 +154,6 @@ pub fn record_file_read(
     if saved > 0 {
         project_read_savings(original_tokens as u64, output_tokens as u64);
     }
-}
-
-/// Replicate the MCP read path's learning side effects (`registered/ctx_read.rs`
-/// background thread) for the standalone CLI path (#550): mode-predictor
-/// training, the compression feedback outcome and the per-call anomaly metric.
-/// All three are disk-backed and therefore work from a single-shot process; the
-/// in-memory-only detectors (loop/correction) and the bounce/adaptive signals
-/// that require routing through `ctx_read::handle` are tracked separately.
-fn record_read_learning(
-    path: &str,
-    resolved_mode: &str,
-    original_tokens: usize,
-    output_tokens: usize,
-    is_cache_hit: bool,
-    project_root: &str,
-) {
-    let task_completed = crate::core::bounce_tracker::global()
-        .lock()
-        .ok()
-        .and_then(|bt| bt.bounce_rate_for_extension(path))
-        .is_none_or(|rate| rate < 0.30);
-    let saved = original_tokens.saturating_sub(output_tokens);
-
-    // Realized read density (ETPAO); `None` falls back to the plain ratio.
-    let read_density = read_density(path, original_tokens, output_tokens, task_completed);
-    // Mode predictor: train auto-mode selection on the realized compression
-    // density, exactly as the MCP background thread does.
-    let sig = crate::core::mode_predictor::FileSignature::from_path(path, original_tokens);
-    let density = read_density.unwrap_or_else(|| {
-        if output_tokens > 0 {
-            original_tokens as f64 / output_tokens as f64
-        } else {
-            1.0
-        }
-    });
-    let outcome = crate::core::mode_predictor::ModeOutcome {
-        mode: resolved_mode.to_string(),
-        tokens_in: original_tokens,
-        tokens_out: output_tokens,
-        density: density.min(1.0),
-    };
-    let mut predictor = crate::core::mode_predictor::ModePredictor::new();
-    predictor.set_project_root(project_root);
-    predictor.record(sig, outcome);
-    predictor.save();
-
-    // Compression feedback: the per-language outcome the adaptive thresholds and
-    // bounce-aware tuning learn from. `total_turns`/`total_reads` are 1 — the
-    // accurate count for this single-shot invocation, not a placeholder.
-    let ext = std::path::Path::new(path)
-        .extension()
-        .and_then(|e| e.to_str())
-        .unwrap_or("")
-        .to_string();
-    let thresholds = crate::core::adaptive_thresholds::thresholds_for_path(path);
-    let feedback_outcome = crate::core::feedback::CompressionOutcome {
-        session_id: format!("{}", std::process::id()),
-        language: ext,
-        entropy_threshold: thresholds.bpe_entropy,
-        jaccard_threshold: thresholds.jaccard,
-        total_turns: 1,
-        tokens_saved: saved as u64,
-        tokens_original: original_tokens as u64,
-        cache_hits: u32::from(is_cache_hit),
-        total_reads: 1,
-        // A compressed read only counts as task-completing when this extension
-        // is not in a high-bounce state (#593); unknown stays optimistic so the
-        // cold start matches the MCP path. 0.30 mirrors BOUNCE_RATE_THRESHOLD.
-        task_completed,
-        timestamp: chrono::Local::now().to_rfc3339(),
-    };
-    let mut store = crate::core::feedback::FeedbackStore::load();
-    store.project_root = Some(project_root.to_string());
-    store.record_outcome(feedback_outcome);
-
-    // Anomaly detector: the same per-call metric the MCP post-dispatch records.
-    // `save_debounced` writes on the first call of a fresh process (last-save
-    // marker starts at 0), so the single shadow read persists before exit.
-}
-
-/// ETPAO for the realized read: delivered tokens over original, where original
-/// is re-measured from the file whenever it is still readable — the count that
-/// reached this function may predate a terse pass. Returns `None` when no
-/// accepted outcome can produce a value.
-fn read_density(
-    path: &str,
-    original_tokens: usize,
-    output_tokens: usize,
-    task_completed: bool,
-) -> Option<f64> {
-    if !task_completed || output_tokens == 0 {
-        return None;
-    }
-    let measured = if std::path::Path::new(path).is_file()
-        && let Ok(content) = crate::core::io_boundary::read_file_lossy(path)
-    {
-        crate::core::tokens::count_tokens(&content) as u64
-    } else {
-        original_tokens as u64
-    };
-    let etpao_milli = (output_tokens as u64).saturating_mul(1000) / measured.max(1);
-    Some(etpao_milli as f64 / 1000.0)
 }
 
 /// Record a search/grep operation with full Context OS side effects.
@@ -378,13 +253,8 @@ pub fn record_shell_command(original_tokens: usize, output_tokens: usize) {
 pub fn flush_all() {
     stats::flush();
     heatmap::flush();
-    crate::core::path_mode_memory::flush();
     crate::core::auto_mode_resolver::flush_sources();
     crate::core::edit_quality::flush();
-    crate::core::mode_predictor::ModePredictor::flush();
-    crate::core::feedback::FeedbackStore::flush();
-    crate::core::threshold_learning::flush();
-    crate::core::litm_calibration::flush();
 }
 
 fn maybe_consolidate(project_root: Option<&str>, calls: u32) {
@@ -418,28 +288,8 @@ mod tests {
     // every test here takes the shared isolation lock to serialize that state
     // and keep its disk writes inside a throwaway dir.
 
-    #[test]
-    fn read_density_uses_etpao_for_accepted_reads() {
-        let result = read_density("src/main.rs", 1000, 250, true);
-        assert!(result.is_some(), "accepted read must produce ETPAO");
-        assert!(result.unwrap() > 0.0, "ETPAO must be positive");
-        assert_eq!(
-            read_density("src/main.rs", 1000, 250, false),
-            None,
-            "unaccepted read must not produce ETPAO"
-        );
-    }
-
     // An unreadable path falls back to the caller's count, so the ratio is
     // exactly delivered/original.
-    #[test]
-    fn read_density_falls_back_to_the_reported_original() {
-        assert_eq!(
-            read_density("does/not/exist.rs", 1000, 375, true),
-            Some(0.375)
-        );
-        assert_eq!(read_density("does/not/exist.rs", 1000, 0, true), None);
-    }
 
     #[test]
     fn record_file_read_does_not_panic_without_session() {
@@ -491,11 +341,10 @@ mod tests {
     }
 
     #[test]
-    fn cli_read_persists_learning_sinks_to_disk() {
-        // #550 regression: a single-shot CLI read must leave the mode predictor,
-        // compression feedback and heatmap on disk. The daemon used to be the
-        // only path that flushed them, so shadow-mode hook reads (`view`/`grep` →
-        // `lean-ctx read`) recorded nothing and `lean-ctx heatmap` stayed empty.
+    fn cli_read_persists_heatmap_to_disk() {
+        // #550 regression: a single-shot CLI read must leave the heatmap on disk.
+        // The daemon used to be the only path that flushed it, so shadow-mode hook
+        // reads (`view`/`grep` → `lean-ctx read`) recorded nothing.
         let dir = crate::core::data_dir::isolated_data_dir();
         let file = dir.path().join("sample.rs");
         std::fs::write(&file, "fn main() {\n    println!(\"hi\");\n}\n").unwrap();
@@ -512,16 +361,7 @@ mod tests {
         );
         flush_all();
 
-        let data = crate::core::data_dir::lean_ctx_data_dir().expect("data dir");
         let state = crate::core::paths::state_dir().expect("state dir");
-        assert!(
-            data.join("mode_stats.json").exists(),
-            "mode predictor must persist after a CLI read + flush"
-        );
-        assert!(
-            state.join("feedback.json").exists(),
-            "compression feedback must persist after a CLI read + flush"
-        );
         assert!(
             state.join("heatmap.json").exists(),
             "heatmap must persist after a CLI read + flush"

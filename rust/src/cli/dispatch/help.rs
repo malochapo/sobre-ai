@@ -137,7 +137,6 @@ COMMANDS:
     gain --wrapped                 Recap card (terminal)
     gain --no-cache-adjust         Report raw counts, without the cache adjustment
     graph --heatmap                Per-file heat: token count x graph connections
-    learning [status|export]       Adaptive-learning state: inspect, export
     pack --pr                      PR Context Pack (changed files, impact, tests, artifacts)
     snapshot create|list|show|verify|restore|publish|import  Context Time Machine: git-anchored, signed snapshots; replay, resume + share
     index <status|build|build-full|watch> [--force]  Codebase index utilities

@@ -833,10 +833,8 @@ fn verbatim_modes_preserve_decorative_comment_lines() {
 /// provider-side prompt caching.
 #[test]
 fn process_mode_output_is_byte_stable_across_calls() {
-    // Fresh, empty data dir (GL #556): the shared per-process test sandbox
-    // accumulates feedback/bandit/session stores from parallel tests, which
-    // feed adaptive_thresholds() and make entropy-mode output drift between
-    // two calls. Purity only holds against a stable learning state.
+    // Fresh, empty data dir: session state left by parallel tests must not
+    // leak into the output.
     let _iso = crate::core::data_dir::isolated_data_dir();
     // Footer visibility must be the default (`never`) for purity: with a
     // visible footer, the process-global session accumulator appends a

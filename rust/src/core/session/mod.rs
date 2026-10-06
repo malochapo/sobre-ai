@@ -8,8 +8,8 @@ mod types;
 
 pub use playbook::{DeltaOutcome, EntryKind, Playbook, PlaybookEntry};
 pub use types::{
-    Decision, EvidenceKind, EvidenceRecord, FileTouched, Finding, ManifestEntry, PreparedSave,
-    ProgressEntry, SessionState, SessionStats, SessionSummary, TaskInfo, TestSnapshot,
+    Decision, EvidenceKind, EvidenceRecord, FileTouched, Finding, PreparedSave, ProgressEntry,
+    SessionState, SessionStats, SessionSummary, TaskInfo, TestSnapshot,
 };
 
 #[cfg(test)]

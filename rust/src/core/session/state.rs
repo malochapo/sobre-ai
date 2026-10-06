@@ -1,7 +1,5 @@
 use chrono::Utc;
 
-use crate::core::intent_protocol::{IntentRecord, IntentSource};
-
 use super::paths::{extract_cd_target, generate_session_id};
 #[allow(clippy::wildcard_imports)]
 use super::types::*;
@@ -41,14 +39,12 @@ impl SessionState {
             progress: Vec::new(),
             next_steps: Vec::new(),
             evidence: Vec::new(),
-            intents: Vec::new(),
             active_structured_intent: None,
             stats: SessionStats::default(),
             terse_mode: false,
             compression_level: String::new(),
             last_consolidate_ts: None,
             extra_roots: Vec::new(),
-            wakeup_manifest: Vec::new(),
             playbook: super::playbook::Playbook::default(),
             last_semantic_query: None,
             last_flush: None,
@@ -321,37 +317,6 @@ impl SessionState {
         self.stats.total_tool_calls += 1;
         self.stats.total_tokens_saved += tokens_saved;
         self.stats.total_tokens_input += tokens_input;
-    }
-
-    /// Records an inferred or explicit intent, coalescing consecutive duplicates.
-    pub fn record_intent(&mut self, mut intent: IntentRecord) {
-        if intent.occurrences == 0 {
-            intent.occurrences = 1;
-        }
-
-        if let Some(last) = self.intents.last_mut()
-            && last.fingerprint() == intent.fingerprint()
-        {
-            last.occurrences = last.occurrences.saturating_add(intent.occurrences);
-            last.timestamp = intent.timestamp;
-            match intent.source {
-                IntentSource::Inferred => self.stats.intents_inferred += 1,
-                IntentSource::Explicit => self.stats.intents_explicit += 1,
-            }
-            self.increment();
-            return;
-        }
-
-        match intent.source {
-            IntentSource::Inferred => self.stats.intents_inferred += 1,
-            IntentSource::Explicit => self.stats.intents_explicit += 1,
-        }
-
-        self.intents.push(intent);
-        while self.intents.len() > crate::core::budgets::INTENTS_PER_SESSION_LIMIT {
-            self.intents.remove(0);
-        }
-        self.increment();
     }
 
     /// Appends an auditable evidence record for a tool invocation.

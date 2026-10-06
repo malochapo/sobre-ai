@@ -13,7 +13,6 @@ mod dropin_install_tests;
 mod dual_process_rehydrate;
 mod index_scoping_scenarios;
 mod intensive_benchmarks;
-mod intent_protocol_side_effects;
 mod issue_244_ledger_reset;
 mod issue_326_parallel_knowledge;
 mod memory_benchmark_suite;

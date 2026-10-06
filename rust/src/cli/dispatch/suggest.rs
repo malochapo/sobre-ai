@@ -12,7 +12,6 @@
 /// Top-level command names that have a dispatch arm, plus their real aliases.
 pub(crate) const KNOWN_COMMANDS: &[&str] = &[
     "gain",
-    "learning",
     "health",
     "rules",
     "benchmark",

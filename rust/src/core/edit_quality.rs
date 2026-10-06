@@ -336,13 +336,6 @@ fn record_outcome_with(path: &str, last_mode: &str, success: bool, esc: Escalati
                 Escalation::Full => store.set_pending_escalation(&norm, now),
                 Escalation::Anchored => store.set_pending_anchored_escalation(&norm, now),
             }
-            // Quality signal (#538): edit failures after a stale read are the
-            // strongest "the model's view was wrong" evidence we have — they also
-            // penalize the bandit arm that produced the read (#593).
-            crate::core::adaptive_thresholds::record_quality_signal(
-                path,
-                crate::core::threshold_learning::QualitySignal::EditFail,
-            );
         }
     }
     maybe_flush(&mut store);

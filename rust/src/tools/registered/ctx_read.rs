@@ -310,7 +310,7 @@ impl CtxReadTool {
         // channel overhead for the ~90% of calls that are cache hits.
         let read_timeout = std::time::Duration::from_secs(30);
         let cancelled = Arc::new(AtomicBool::new(false));
-        let (output, resolved_mode, original, is_cache_hit, file_ref, cache_stats) = {
+        let (output, resolved_mode, original, is_cache_hit, file_ref) = {
             let crp_mode = ctx.crp_mode;
             let task_ref = current_task.as_deref();
 
@@ -341,9 +341,7 @@ impl CtxReadTool {
                     let rmode = read_output.resolved_mode;
                     let orig = cache.get(path).map_or(0, |e| e.original_tokens);
                     let fref = cache.file_ref_map().get(path).cloned();
-                    let stats = cache.get_stats();
-                    let stats_snapshot = (stats.total_reads(), stats.cache_hits());
-                    break 'fast Some((content, rmode, orig, hit, fref, stats_snapshot));
+                    break 'fast Some((content, rmode, orig, hit, fref));
                 }
 
                 // Phase 2 (write lock): cache miss, changed file, or non-stub
@@ -377,9 +375,7 @@ impl CtxReadTool {
                 let rmode = read_output.resolved_mode;
                 let orig = cache.get(path).map_or(0, |e| e.original_tokens);
                 let fref = cache.file_ref_map().get(path).cloned();
-                let stats = cache.get_stats();
-                let stats_snapshot = (stats.total_reads(), stats.cache_hits());
-                Some((content, rmode, orig, hit, fref, stats_snapshot))
+                Some((content, rmode, orig, hit, fref))
             };
 
             if let Some(result) = fast_result {
@@ -411,7 +407,7 @@ impl CtxReadTool {
                                 );
                                 let _ = tx.send((
                                     format!("per-file lock contention for {path_owned} — retry in a moment"),
-                                    "error".to_string(), 0, false, None, (0, 0),
+                                    "error".to_string(), 0, false, None,
                                 ));
                                 return;
                             }
@@ -440,9 +436,7 @@ impl CtxReadTool {
                         let orig = cache.get(&path_owned).map_or(0, |e| e.original_tokens);
                         let hit = true;
                         let fref = cache.file_ref_map().get(path_owned.as_str()).cloned();
-                        let stats = cache.get_stats();
-                        let stats_snapshot = (stats.total_reads(), stats.cache_hits());
-                        let _ = tx.send((content, rmode, orig, hit, fref, stats_snapshot));
+                        let _ = tx.send((content, rmode, orig, hit, fref));
                         return;
                     }
 
@@ -491,7 +485,6 @@ impl CtxReadTool {
                                         0,
                                         false,
                                         None,
-                                        (0, 0),
                                     ));
                                     return;
                                 }
@@ -505,7 +498,7 @@ impl CtxReadTool {
                     // staleness checks, raw-content storage for new files.
                     #[allow(clippy::large_enum_variant)]
                     enum PrepareOutcome {
-                        Hit(String, String, usize, bool, Option<String>, (u64, u64)),
+                        Hit(String, String, usize, bool, Option<String>),
                         Compute {
                             resolved_mode: String,
                             content: String,
@@ -565,14 +558,12 @@ impl CtxReadTool {
                             {
                                 let orig = cache.get(&path_owned).map_or(0, |e| e.original_tokens);
                                 let fref = cache.file_ref_map().get(path_owned.as_str()).cloned();
-                                let s = cache.get_stats();
                                 PrepareOutcome::Hit(
                                     out.content,
                                     out.resolved_mode,
                                     orig,
                                     true,
                                     fref,
-                                    (s.total_reads(), s.cache_hits()),
                                 )
                             } else if crate::tools::ctx_read::is_cacheable_mode(&resolved) {
                                 let ck = crate::tools::ctx_read::compressed_cache_key(
@@ -588,15 +579,7 @@ impl CtxReadTool {
                                         cache.get(&path_owned).map_or(0, |e| e.original_tokens);
                                     let fref =
                                         cache.file_ref_map().get(path_owned.as_str()).cloned();
-                                    let s = cache.get_stats();
-                                    PrepareOutcome::Hit(
-                                        hit,
-                                        resolved,
-                                        orig,
-                                        true,
-                                        fref,
-                                        (s.total_reads(), s.cache_hits()),
-                                    )
+                                    PrepareOutcome::Hit(hit, resolved, orig, true, fref)
                                 } else {
                                     let c = content_opt
                                         .or_else(|| preread.as_deref().map(String::from));
@@ -641,8 +624,8 @@ impl CtxReadTool {
                         }
                     }; // write lock released
 
-                    if let PrepareOutcome::Hit(c, rm, orig, hit, fref, ss) = outcome {
-                        let _ = tx.send((c, rm, orig, hit, fref, ss));
+                    if let PrepareOutcome::Hit(c, rm, orig, hit, fref) = outcome {
+                        let _ = tx.send((c, rm, orig, hit, fref));
                         return;
                     }
                     let PrepareOutcome::Compute {
@@ -776,18 +759,9 @@ impl CtxReadTool {
                             }
                             let orig = cache.get(&path_owned).map_or(0, |e| e.original_tokens);
                             let fref = cache.file_ref_map().get(path_owned.as_str()).cloned();
-                            let s = cache.get_stats();
-                            let _ = tx.send((
-                                computed,
-                                rmode,
-                                orig,
-                                false,
-                                fref,
-                                (s.total_reads(), s.cache_hits()),
-                            ));
+                            let _ = tx.send((computed, rmode, orig, false, fref));
                         } else {
-                            let _ =
-                                tx.send((computed, rmode, original_tokens, false, None, (0, 0)));
+                            let _ = tx.send((computed, rmode, original_tokens, false, None));
                         }
                     }
                 });
@@ -884,9 +858,7 @@ impl CtxReadTool {
         // waiting on disk (#149).
         {
             let path_bg = path.to_string();
-            let resolved_mode_bg = resolved_mode.clone();
             let project_root_bg = project_root_snapshot.clone();
-            let (turns, hits) = cache_stats;
             // #685: model-correct verified-ledger inputs, computed off the hot path.
             // The default O200kBase model reuses the o200k `original`/`saved` below
             // (byte-identical, no clone). Only a resolved Claude/Gemini/Llama model
@@ -935,59 +907,6 @@ impl CtxReadTool {
                             &traversal_working_set,
                         );
                     }
-
-                    let sig =
-                        crate::core::mode_predictor::FileSignature::from_path(&path_bg, original);
-                    let density = if output_tokens > 0 {
-                        original as f64 / output_tokens as f64
-                    } else {
-                        1.0
-                    };
-                    let outcome = crate::core::mode_predictor::ModeOutcome {
-                        mode: resolved_mode_bg,
-                        tokens_in: original,
-                        tokens_out: output_tokens,
-                        density: density.min(1.0),
-                    };
-                    let mut predictor = crate::core::mode_predictor::ModePredictor::new();
-                    predictor.set_project_root(&project_root_bg);
-                    predictor.record(sig, outcome);
-                    predictor.save();
-
-                    let ext = std::path::Path::new(&path_bg)
-                        .extension()
-                        .and_then(|e| e.to_str())
-                        .unwrap_or("")
-                        .to_string();
-                    let thresholds =
-                        crate::core::adaptive_thresholds::thresholds_for_path(&path_bg);
-                    let feedback_outcome = crate::core::feedback::CompressionOutcome {
-                        session_id: format!("{}", std::process::id()),
-                        language: ext,
-                        entropy_threshold: thresholds.bpe_entropy,
-                        jaccard_threshold: thresholds.jaccard,
-                        total_turns: turns as u32,
-                        tokens_saved: saved as u64,
-                        tokens_original: original as u64,
-                        cache_hits: hits as u32,
-                        total_reads: turns as u32,
-                        // Real behavioral signal instead of a hardcoded success
-                        // (#593): a compressed read only counts as task-completing
-                        // when this extension is not in a high-bounce state —
-                        // compression that keeps forcing full re-reads is not
-                        // "completing" anything. Unknown (too few reads) stays
-                        // optimistic so the cold start is unchanged. 0.30 mirrors
-                        // bounce_tracker::BOUNCE_RATE_THRESHOLD.
-                        task_completed: crate::core::bounce_tracker::global()
-                            .lock()
-                            .ok()
-                            .and_then(|bt| bt.bounce_rate_for_extension(&path_bg))
-                            .is_none_or(|rate| rate < 0.30),
-                        timestamp: chrono::Local::now().to_rfc3339(),
-                    };
-                    let mut store = crate::core::feedback::FeedbackStore::load();
-                    store.project_root = Some(project_root_bg);
-                    store.record_outcome(feedback_outcome);
                 }));
             });
         }

@@ -301,9 +301,6 @@ pub(crate) fn handle_recall(
     mode: Option<&str>,
     as_of: Option<&str>,
 ) -> String {
-    if let Some(q) = query {
-        score_placement_misses(q);
-    }
     let Some(mut knowledge) = ProjectKnowledge::load(project_root) else {
         return "No knowledge stored for this project yet.".to_string();
     };
@@ -703,30 +700,6 @@ pub(crate) fn rehydrate_from_archives(
         let _ = knowledge.run_memory_lifecycle(policy);
     }
     any
-}
-
-/// LITM placement-miss hook (#539): an explicit recall whose query matches an
-/// item that the last wakeup injection already placed means the placement did
-/// not register with the model — record a miss for that position.
-fn score_placement_misses(query: &str) {
-    use crate::core::litm_calibration::{Position, key_matches, record_outcome};
-
-    let Some(mut session) = crate::core::session::SessionState::load_latest() else {
-        return;
-    };
-    let mut changed = false;
-    for entry in &mut session.wakeup_manifest {
-        if !entry.missed && key_matches(&entry.key, query) {
-            entry.missed = true;
-            changed = true;
-            if let Some(pos) = Position::parse(&entry.position) {
-                record_outcome(&entry.profile, pos, false);
-            }
-        }
-    }
-    if changed {
-        let _ = session.save();
-    }
 }
 
 #[cfg(test)]

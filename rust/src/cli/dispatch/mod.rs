@@ -55,10 +55,6 @@ pub fn run() {
                 cmd_gain(&rest);
                 return;
             }
-            "learning" => {
-                cmd_learning(&rest);
-                return;
-            }
             "conformance" => {
                 cmd_conformance(&rest);
                 return;

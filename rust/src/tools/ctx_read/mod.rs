@@ -513,34 +513,6 @@ fn handle_with_options_resolved_preread(
             result.output_tokens,
             original_tokens,
         );
-
-        // Quality signals (#538): compressed reads count as clean until a
-        // bounce proves otherwise (the bounce signal outweighs 6:1); large
-        // full reads of never-bouncing extensions are wasted compression
-        // opportunities and push the learned threshold up.
-        // SSOT via [`ReadMode`] (#528): only verbatim `full` and the `diff`
-        // delta are uncompressed. A resolved window is always the canonical
-        // `lines:N-M` (parses to `Lines` ⇒ compressed); the default of `true`
-        // for the unreachable bare `"lines"` keeps prior behaviour everywhere a
-        // real resolved mode can occur.
-        let compressed = result
-            .resolved_mode
-            .parse::<ReadMode>()
-            .map_or(true, |m| m.counts_as_compressed());
-        if compressed {
-            crate::core::adaptive_thresholds::record_quality_signal(
-                path,
-                crate::core::threshold_learning::QualitySignal::CleanCompressed,
-            );
-        } else if result.resolved_mode == "full"
-            && result.output_tokens > 2000
-            && bt.bounce_rate_for_extension(path).unwrap_or(0.0) < 0.05
-        {
-            crate::core::adaptive_thresholds::record_quality_signal(
-                path,
-                crate::core::threshold_learning::QualitySignal::WastedFull,
-            );
-        }
     }
 
     result
