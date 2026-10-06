@@ -1,11 +1,10 @@
 // Auto-split from the former monolithic writers.rs. Grouped by operation
-// (install/uninstall) + shared helpers; behavior is unchanged.
+// (install) + shared helpers; behavior is unchanged.
 
 use super::types::{ConfigType, EditorTarget};
 
 mod install;
 mod shared;
-mod uninstall;
 
 pub use shared::auto_approve_tools;
 // The router below dispatches to every install writer; a glob keeps the
@@ -51,16 +50,7 @@ pub fn write_config_with_options(
         ConfigType::VsCodeMcp => write_vscode_mcp(target, binary, opts),
         ConfigType::CopilotCli => write_copilot_cli(target, binary, opts),
         ConfigType::OpenCode => write_opencode_config(target, binary, opts),
-        ConfigType::Crush => write_crush_config(target, binary, opts),
-        ConfigType::JetBrains => write_jetbrains_config(target, binary, opts),
-        ConfigType::Amp => write_amp_config(target, binary, opts),
-        ConfigType::HermesYaml => write_hermes_yaml(target, binary, opts),
         ConfigType::GeminiSettings => write_gemini_settings(target, binary, opts),
-        ConfigType::QoderSettings => write_qoder_settings(target, binary, opts),
-        ConfigType::AugmentVsCode => write_augment_vscode(target, binary, opts),
-        ConfigType::OpenClaw => write_openclaw_config(target, binary, opts),
-        ConfigType::VibeToml => write_vibe_toml(target, binary, opts),
-        ConfigType::CommandCode => write_commandcode_config(target, binary, opts),
     }
 }
 

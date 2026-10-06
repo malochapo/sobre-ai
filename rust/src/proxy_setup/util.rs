@@ -10,13 +10,6 @@ pub(crate) const DEFAULT_PROXY_PORT: u16 = 4444;
 /// route it through the proxy.
 pub(crate) const ANTHROPIC_OMITTED_NOTE: &str = "ANTHROPIC_BASE_URL omitted: Claude Pro/Max subscription authenticates against api.anthropic.com directly (set ANTHROPIC_API_KEY to route Claude through the proxy)";
 
-/// Comment written when Grok is not routable through the proxy (no session and no API key).
-pub(crate) const GROK_OMITTED_NOTE: &str = "Grok proxy env omitted: run `grok login` (subscription) or set XAI_API_KEY to route Grok through lean-ctx";
-
-/// Comment written when Command Code is not routable through the proxy (no session and no API key).
-pub(crate) const COMMANDCODE_OMITTED_NOTE: &str =
-    "Command Code omitted (no ~/.commandcode auth — run `cmd login` or set COMMAND_CODE_API_KEY)";
-
 pub fn is_local_lean_ctx_url(url: &str) -> bool {
     url.starts_with("http://127.0.0.1:") || url.starts_with("http://localhost:")
 }

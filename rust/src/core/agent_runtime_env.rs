@@ -17,14 +17,7 @@ use std::path::{Path, PathBuf};
 
 /// Env var name prefixes identifying agent runtime/session state worth forwarding
 /// to `ctx_shell` child processes.
-pub const FORWARD_PREFIXES: &[&str] = &[
-    "CODEX_",
-    "CLAUDE_",
-    "CODEBUDDY_",
-    "OPENCODE_",
-    "HERMES_",
-    "GEMINI_",
-];
+pub const FORWARD_PREFIXES: &[&str] = &["CODEX_", "CLAUDE_", "OPENCODE_", "GEMINI_"];
 
 /// Case-insensitive name substrings that mark an env var as credential-shaped.
 ///

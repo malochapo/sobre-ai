@@ -75,7 +75,7 @@ fn capacity_hint_is_actionable_for_both_states() {
 #[test]
 fn cwd_looks_like_agent_dir_matches_both_separators() {
     for sep in ['/', '\\'] {
-        for dir in [".lmstudio", ".claude", ".codebuddy", ".codex"] {
+        for dir in [".lmstudio", ".claude", ".codex"] {
             let cwd = format!("C:{sep}Users{sep}me{sep}{dir}{sep}mcp");
             assert!(
                 cwd_looks_like_agent_dir(&cwd),

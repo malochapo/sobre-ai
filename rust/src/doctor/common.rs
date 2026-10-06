@@ -249,14 +249,6 @@ pub(super) fn mcp_config_locations(home: &std::path::Path) -> Vec<McpLocation> {
             path: crate::core::editor_registry::claude_mcp_json_path(home),
         },
         McpLocation {
-            name: "CodeBuddy",
-            display: format!(
-                "{}",
-                crate::core::editor_registry::codebuddy_mcp_json_path(home).display()
-            ),
-            path: crate::core::editor_registry::codebuddy_mcp_json_path(home),
-        },
-        McpLocation {
             name: "Windsurf",
             display: "~/.codeium/windsurf/mcp_config.json".into(),
             path: home
@@ -280,22 +272,6 @@ pub(super) fn mcp_config_locations(home: &std::path::Path) -> Vec<McpLocation> {
             display: "~/.gemini/settings.json".into(),
             path: home.join(".gemini").join("settings.json"),
         },
-        McpLocation {
-            name: "Antigravity",
-            display: "~/.gemini/antigravity/mcp_config.json".into(),
-            path: home
-                .join(".gemini")
-                .join("antigravity")
-                .join("mcp_config.json"),
-        },
-        McpLocation {
-            name: "Antigravity CLI",
-            display: "~/.gemini/antigravity-cli/mcp_config.json".into(),
-            path: home
-                .join(".gemini")
-                .join("antigravity-cli")
-                .join("mcp_config.json"),
-        },
     ];
 
     #[cfg(unix)]
@@ -307,52 +283,6 @@ pub(super) fn mcp_config_locations(home: &std::path::Path) -> Vec<McpLocation> {
             path: zed_cfg,
         });
     }
-
-    locations.push(McpLocation {
-        name: "Qwen Code",
-        display: "~/.qwen/settings.json".into(),
-        path: home.join(".qwen").join("settings.json"),
-    });
-    locations.push(McpLocation {
-        name: "Trae",
-        display: "~/.trae/mcp.json".into(),
-        path: home.join(".trae").join("mcp.json"),
-    });
-    locations.push(McpLocation {
-        name: "Amazon Q",
-        display: "~/.aws/amazonq/default.json".into(),
-        path: home.join(".aws").join("amazonq").join("default.json"),
-    });
-    locations.push(McpLocation {
-        name: "JetBrains",
-        display: "~/.jb-mcp.json".into(),
-        path: home.join(".jb-mcp.json"),
-    });
-    locations.push(McpLocation {
-        name: "AWS Kiro",
-        display: "~/.kiro/settings/mcp.json".into(),
-        path: home.join(".kiro").join("settings").join("mcp.json"),
-    });
-    locations.push(McpLocation {
-        name: "Verdent",
-        display: "~/.verdent/mcp.json".into(),
-        path: home.join(".verdent").join("mcp.json"),
-    });
-    locations.push(McpLocation {
-        name: "Crush",
-        display: "~/.config/crush/crush.json".into(),
-        path: home.join(".config").join("crush").join("crush.json"),
-    });
-    locations.push(McpLocation {
-        name: "Pi",
-        display: "~/.pi/agent/mcp.json".into(),
-        path: home.join(".pi").join("agent").join("mcp.json"),
-    });
-    locations.push(McpLocation {
-        name: "Amp",
-        display: "~/.config/amp/settings.json".into(),
-        path: home.join(".config").join("amp").join("settings.json"),
-    });
 
     {
         #[cfg(unix)]
@@ -386,13 +316,6 @@ pub(super) fn mcp_config_locations(home: &std::path::Path) -> Vec<McpLocation> {
             display: "~/Library/Application Support/Code/User/mcp.json".into(),
             path: vscode_mcp,
         });
-        // Insiders keeps a fully separate profile dir — a server registered in
-        // stable is invisible there (GH #694).
-        locations.push(McpLocation {
-            name: "VS Code Insiders",
-            display: "~/Library/Application Support/Code - Insiders/User/mcp.json".into(),
-            path: home.join("Library/Application Support/Code - Insiders/User/mcp.json"),
-        });
     }
     #[cfg(target_os = "linux")]
     {
@@ -414,17 +337,6 @@ pub(super) fn mcp_config_locations(home: &std::path::Path) -> Vec<McpLocation> {
             display: display_str,
             path: vscode_mcp,
         });
-        // When stable AND Insiders coexist the chain above resolves to stable
-        // only — surface Insiders separately so its config is not a blind
-        // spot (GH #694).
-        let insiders_user = home.join(".config/Code - Insiders/User");
-        if user_dir != insiders_user && insiders_user.exists() {
-            locations.push(McpLocation {
-                name: "VS Code Insiders",
-                display: "~/.config/Code - Insiders/User/mcp.json".into(),
-                path: insiders_user.join("mcp.json"),
-            });
-        }
     }
     #[cfg(target_os = "windows")]
     {
@@ -435,11 +347,6 @@ pub(super) fn mcp_config_locations(home: &std::path::Path) -> Vec<McpLocation> {
                 display: "%APPDATA%/Code/User/mcp.json".into(),
                 path: vscode_mcp,
             });
-            locations.push(McpLocation {
-                name: "VS Code Insiders",
-                display: "%APPDATA%/Code - Insiders/User/mcp.json".into(),
-                path: std::path::PathBuf::from(&appdata).join("Code - Insiders/User/mcp.json"),
-            });
         }
     }
 
@@ -448,33 +355,6 @@ pub(super) fn mcp_config_locations(home: &std::path::Path) -> Vec<McpLocation> {
         display: "~/.copilot/mcp-config.json".into(),
         path: home.join(".copilot/mcp-config.json"),
     });
-
-    locations.push(McpLocation {
-        name: "Hermes Agent",
-        display: "~/.hermes/config.yaml".into(),
-        path: home.join(".hermes").join("config.yaml"),
-    });
-
-    {
-        let cline_path = crate::core::editor_registry::cline_mcp_path();
-        if cline_path.to_str().is_some_and(|s| s != "/nonexistent") {
-            locations.push(McpLocation {
-                name: "Cline",
-                display: cline_path.display().to_string(),
-                path: cline_path,
-            });
-        }
-    }
-    {
-        let roo_path = crate::core::editor_registry::roo_mcp_path();
-        if roo_path.to_str().is_some_and(|s| s != "/nonexistent") {
-            locations.push(McpLocation {
-                name: "Roo Code",
-                display: roo_path.display().to_string(),
-                path: roo_path,
-            });
-        }
-    }
 
     locations
 }
@@ -608,17 +488,6 @@ pub(super) fn claude_instructions_state(home: &std::path::Path) -> ClaudeInstruc
     if has_block { S::Block } else { S::Missing }
 }
 
-/// CodeBuddy instructions state — mirrors `claude_instructions_state` since
-/// CodeBuddy uses the same CODEBUDDY.md block pattern as Claude Code.
-pub(super) fn codebuddy_instructions_state(home: &std::path::Path) -> ClaudeInstructionsState {
-    use ClaudeInstructionsState as S;
-
-    let codebuddy_md = crate::core::editor_registry::codebuddy_state_dir(home).join("CODEBUDDY.md");
-    let has_block = std::fs::read_to_string(&codebuddy_md)
-        .is_ok_and(|c| c.contains(crate::hooks::agents::CODEBUDDY_MD_BLOCK_START));
-    if has_block { S::Block } else { S::Missing }
-}
-
 pub(super) fn claude_binary_exists() -> bool {
     #[cfg(unix)]
     {
@@ -631,23 +500,6 @@ pub(super) fn claude_binary_exists() -> bool {
     {
         std::process::Command::new("where")
             .arg("claude")
-            .output()
-            .is_ok_and(|o| o.status.success())
-    }
-}
-
-pub(super) fn codebuddy_binary_exists() -> bool {
-    #[cfg(unix)]
-    {
-        std::process::Command::new("which")
-            .arg("codebuddy")
-            .output()
-            .is_ok_and(|o| o.status.success())
-    }
-    #[cfg(windows)]
-    {
-        std::process::Command::new("where")
-            .arg("codebuddy")
             .output()
             .is_ok_and(|o| o.status.success())
     }
@@ -766,31 +618,5 @@ mod tests {
             "doctor must detect the CLAUDE.md pointer block (#549)"
         );
         assert!(state.ok(), "a detected block must be a healthy state");
-    }
-
-    #[test]
-    fn codebuddy_instructions_state_detects_pointer_block() {
-        let _lock = crate::core::data_dir::test_env_lock();
-        let tmp = tempfile::tempdir().unwrap();
-        let home = tmp.path();
-        let dir = crate::core::editor_registry::codebuddy_state_dir(home);
-        std::fs::create_dir_all(&dir).unwrap();
-        std::fs::write(
-            dir.join("CODEBUDDY.md"),
-            format!(
-                "# notes\n\n{}\n## lean-ctx\n{}\n",
-                crate::hooks::agents::CODEBUDDY_MD_BLOCK_START,
-                crate::core::rules_canonical::AGENTS_BLOCK_END
-            ),
-        )
-        .unwrap();
-
-        let state = super::codebuddy_instructions_state(home);
-        assert_ne!(
-            state,
-            super::ClaudeInstructionsState::Missing,
-            "doctor must detect the CODEBUDDY.md pointer block (#549)"
-        );
-        assert!(state.ok());
     }
 }

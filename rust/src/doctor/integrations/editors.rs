@@ -1,4 +1,4 @@
-//! Per-editor integration status builders (Cursor/Claude/CodeBuddy + the
+//! Per-editor integration status builders (Cursor/Claude + the
 //! generic registry-driven path).
 
 #[allow(clippy::wildcard_imports)]
@@ -21,20 +21,8 @@ pub(crate) fn integration_generic(
 
     let mut checks = Vec::new();
     match target.config_type {
-        crate::core::editor_registry::types::ConfigType::McpJson
-        | crate::core::editor_registry::types::ConfigType::CommandCode
-        | crate::core::editor_registry::types::ConfigType::QoderSettings => {
+        crate::core::editor_registry::types::ConfigType::McpJson => {
             checks.push(check_mcp_json(&target.config_path, binary));
-            // The Antigravity CLI also installs observe hooks as a plugin under
-            // ~/.gemini/config/plugins/lean-ctx (registered in import_manifest.json,
-            // NOT in any settings.json — see GH #284); verify that plugin too.
-            if target.agent_key == "antigravity-cli" {
-                checks.push(check_antigravity_cli_hooks(home, binary));
-                checks.push(antigravity_cli_hooks_note());
-            }
-        }
-        crate::core::editor_registry::types::ConfigType::JetBrains => {
-            checks.push(check_jetbrains_snippet(&target.config_path, binary));
         }
         crate::core::editor_registry::types::ConfigType::Zed => {
             checks.push(check_zed_settings(&target.config_path, binary));
@@ -54,28 +42,9 @@ pub(crate) fn integration_generic(
         crate::core::editor_registry::types::ConfigType::OpenCode => {
             checks.push(check_opencode_config(&target.config_path, binary));
         }
-        crate::core::editor_registry::types::ConfigType::Crush => {
-            checks.push(check_crush_config(&target.config_path, binary));
-        }
-        crate::core::editor_registry::types::ConfigType::Amp => {
-            checks.push(check_amp_config(&target.config_path, binary));
-        }
-        crate::core::editor_registry::types::ConfigType::HermesYaml => {
-            checks.push(check_hermes_yaml(&target.config_path, binary));
-        }
         crate::core::editor_registry::types::ConfigType::GeminiSettings => {
             checks.push(check_mcp_json(&target.config_path, binary));
             checks.push(check_gemini_trust_and_hooks(home, binary));
-        }
-        crate::core::editor_registry::types::ConfigType::AugmentVsCode => {
-            checks.push(check_augment_vscode_mcp(&target.config_path, binary));
-        }
-        crate::core::editor_registry::types::ConfigType::OpenClaw => {
-            checks.push(check_openclaw_config(&target.config_path, binary));
-        }
-        crate::core::editor_registry::types::ConfigType::VibeToml => {
-            // Vibe uses TOML config, check if lean-ctx is in mcp_servers
-            checks.push(check_vibe_config(&target.config_path, binary));
         }
     }
 
@@ -219,61 +188,6 @@ pub(crate) fn integration_claude(home: &std::path::Path, binary: &str) -> Integr
     let ok = checks.iter().all(|c| c.ok);
     IntegrationStatus {
         name: "Claude Code".to_string(),
-        detected: true,
-        checks,
-        ok,
-    }
-}
-
-pub(crate) fn integration_codebuddy(home: &std::path::Path, binary: &str) -> IntegrationStatus {
-    let target = crate::core::editor_registry::build_targets(home)
-        .into_iter()
-        .find(|t| t.agent_key == "codebuddy");
-    let detected = target.as_ref().is_some_and(|t| t.detect_path.exists())
-        || crate::core::editor_registry::codebuddy_state_dir(home).exists()
-        || codebuddy_binary_exists();
-
-    if !detected {
-        return IntegrationStatus {
-            name: "CodeBuddy".to_string(),
-            detected: false,
-            checks: Vec::new(),
-            ok: true,
-        };
-    }
-
-    let mut checks = Vec::new();
-    let mcp_path = crate::core::editor_registry::codebuddy_mcp_json_path(home);
-    checks.push(check_mcp_json(&mcp_path, binary));
-
-    let settings_path =
-        crate::core::editor_registry::codebuddy_state_dir(home).join("settings.json");
-    checks.push(check_claude_hooks(&settings_path, binary));
-
-    // #719: wrapper staleness, same rationale as the Claude check.
-    let hooks_dir = crate::core::editor_registry::codebuddy_state_dir(home).join("hooks");
-    checks.push(check_hook_wrapper_scripts(&hooks_dir, binary, home));
-
-    // CodeBuddy uses the same block pattern as Claude Code.
-    {
-        use crate::doctor::common::ClaudeInstructionsState as S;
-        let state = crate::doctor::common::codebuddy_instructions_state(home);
-        let codebuddy_md =
-            crate::core::editor_registry::codebuddy_state_dir(home).join("CODEBUDDY.md");
-        let detail = match state {
-            S::Block => format!("{} block", codebuddy_md.display()),
-            S::Missing => "missing (run: lean-ctx init)".into(),
-        };
-        checks.push(NamedCheck {
-            name: "Instructions".to_string(),
-            ok: state.ok(),
-            detail,
-        });
-    }
-
-    let ok = checks.iter().all(|c| c.ok);
-    IntegrationStatus {
-        name: "CodeBuddy".to_string(),
         detected: true,
         checks,
         ok,

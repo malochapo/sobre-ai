@@ -225,7 +225,6 @@ pub fn normalize_tool_path(path: &str) -> String {
 pub const AGENT_CONFIG_DIRS: &[&str] = &[
     ".claude",
     ".codex",
-    ".codebuddy",
     ".copilot",
     ".cursor",
     ".windsurf",

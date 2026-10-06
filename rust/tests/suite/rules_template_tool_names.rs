@@ -1,11 +1,7 @@
 //! Parity guard: every `ctx_*` tool name shipped in an agent template must map
-//! to a real registered MCP tool.
-//!
-//! Pi's `AGENTS.md` silently carried renamed tools (`ctx_grep`/`ctx_find`/
-//! `ctx_ls` → `ctx_search`/`ctx_glob`/`ctx_tree`) because it was a static
-//! template with no test tying it back to the registry. This locks every
-//! shipped template to the canonical tool surface so future renames cannot
-//! drift unnoticed (#548).
+//! to a real registered MCP tool. A static template has no compile-time tie to
+//! the registry, so this locks every shipped template to the canonical tool
+//! surface and future renames cannot drift unnoticed (#548).
 
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
@@ -77,29 +73,6 @@ fn templates_only_reference_registered_ctx_tools() {
         "shipped agent templates reference unknown/renamed ctx_* tools:\n  {}",
         violations.join("\n  ")
     );
-}
-
-#[test]
-fn pi_template_tracks_canonical_search_glob_tree_tools() {
-    // Pi's AGENTS.md mapping table must track the canonical tool surface
-    // (rules_canonical::BULLETS): grep → ctx_search, find → ctx_glob,
-    // ls → ctx_tree. Guards both directions so the curated Pi template stays in
-    // parity with the single source of truth.
-    let pi = std::fs::read_to_string(templates_dir().join("PI_AGENTS.md"))
-        .expect("PI_AGENTS.md is readable");
-
-    for expected in ["ctx_search", "ctx_glob", "ctx_tree"] {
-        assert!(
-            pi.contains(expected),
-            "PI_AGENTS.md must reference `{expected}` (canonical tool surface)"
-        );
-    }
-    for renamed in ["ctx_grep", "ctx_find", "ctx_ls"] {
-        assert!(
-            !pi.contains(renamed),
-            "PI_AGENTS.md still references renamed tool `{renamed}`"
-        );
-    }
 }
 
 #[test]

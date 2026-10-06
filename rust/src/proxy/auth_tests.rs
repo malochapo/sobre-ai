@@ -62,29 +62,18 @@ fn is_provider_route_model_catalog() {
 
 #[test]
 fn is_provider_route_registry_providers() {
-    // enterprise#7 + Grok subscription rail: base URL is
-    // `http://127.0.0.1:4444/providers/grok-chat/v1`, so model list and chat
-    // hit `/providers/{id}/v1/...` with the client's own session/API Bearer.
-    // These must authenticate via provider-key fallback (loopback), not lean-ctx
-    // token alone — otherwise Grok's mode/model picker stays empty.
-    assert!(is_provider_route("/providers/grok-chat/v1/models"));
-    assert!(is_provider_route(
-        "/providers/grok-chat/v1/chat/completions"
-    ));
-    assert!(is_provider_route("/providers/grok-chat/v1/responses"));
-    assert!(is_provider_route("/providers/xai/v1/models"));
+    // enterprise#7: clients point their base URL at `/providers/{id}/v1`, so
+    // model list and chat hit `/providers/{id}/v1/...` with the client's own
+    // API Bearer. These must authenticate via provider-key fallback
+    // (loopback), not the lean-ctx token alone.
+    assert!(is_provider_route("/providers/ollama/v1/models"));
+    assert!(is_provider_route("/providers/ollama/v1/chat/completions"));
+    assert!(is_provider_route("/providers/ollama/v1/responses"));
     assert!(is_provider_route("/providers/foundry/v1/chat/completions"));
-    // Command Code gateway rail: base URL is
-    // `http://127.0.0.1:4444/providers/commandcode`, so the CLI hits
-    // `/providers/commandcode/alpha/...` with its own session Bearer.
-    assert!(is_provider_route("/providers/commandcode/alpha/whoami"));
-    assert!(is_provider_route(
-        "/providers/commandcode/alpha/agent/generate"
-    ));
     // Bare prefix without trailing path still matches the registry mount.
-    assert!(is_provider_route("/providers/grok-chat"));
+    assert!(is_provider_route("/providers/ollama"));
     // Unrelated paths stay closed.
-    assert!(!is_provider_route("/provider/grok-chat/v1/models"));
+    assert!(!is_provider_route("/provider/ollama/v1/models"));
     assert!(!is_provider_route("/api/providers/x"));
 }
 
@@ -167,18 +156,6 @@ fn has_provider_api_key_empty_bearer_rejected() {
             "blank/scheme-only Authorization must not authenticate: {bad:?}"
         );
     }
-}
-
-#[test]
-fn has_provider_api_key_x_xai_token_auth() {
-    // Grok subscription rail may authenticate solely via x-xai-token-auth.
-    let req = build_request(
-        &[("x-xai-token-auth", "sess-xyz")],
-        "/providers/grok-chat/v1",
-    );
-    assert!(has_provider_api_key(&req));
-    let empty = build_request(&[("x-xai-token-auth", "  ")], "/providers/grok-chat/v1");
-    assert!(!has_provider_api_key(&empty));
 }
 
 #[test]

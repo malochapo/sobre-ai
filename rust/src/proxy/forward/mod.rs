@@ -132,16 +132,9 @@ pub(crate) async fn forward_request(
         state.introspect.record(breakdown);
     }
     if compression_candidate {
-        // Shape label drives compression/routing; stats identity may differ —
-        // Grok registry routes speak OpenAI shape but meter under "Grok".
-        let registry_id = parts
-            .extensions
-            .get::<super::providers::RegistryProviderId>()
-            .map(|r| r.id.as_str());
-        let stats_label = super::providers::stats_label(registry_id, provider_label);
         state
             .stats
-            .record_provider_request(stats_label, original_size, compressed_size);
+            .record_provider_request(provider_label, original_size, compressed_size);
     }
 
     let tokens_saved = original_size.saturating_sub(compressed_size) as u64 / 4;

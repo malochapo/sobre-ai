@@ -16,9 +16,9 @@ pub fn handle_observe() {
     let Some(input) = read_stdin_with_timeout(HOOK_STDIN_TIMEOUT) else {
         return;
     };
-    // Dedicated rules-injection mode (#343): a Claude/Codex/CodeBuddy `SessionStart` hook
+    // Dedicated rules-injection mode (#343): a Claude/Codex `SessionStart` hook
     // injects the compact lean-ctx summary as `additionalContext` — the
-    // non-polluting stand-in for the (skipped) CLAUDE.md/CODEBUDDY.md/AGENTS.md block. All
+    // non-polluting stand-in for the (skipped) CLAUDE.md/AGENTS.md block. All
     // three agents register `hook observe` on SessionStart, so this is the single
     // emit point (the Codex-specific handler stays silent in dedicated mode).
     emit_session_start_nudge(&input);
@@ -80,7 +80,7 @@ fn emit_session_start_nudge(input: &str) {
 /// confirmed on the Cursor community forum as the only hook event where
 /// `additional_context` works end-to-end. The prior exclusion (#1031) is
 /// therefore removed: Cursor sessions now receive the same dedicated rules
-/// reinforcement as Claude/Codex/CodeBuddy.
+/// reinforcement as Claude/Codex.
 fn session_start_honours_additional_context(v: &serde_json::Value) -> bool {
     v.get("hook_event_name").and_then(|e| e.as_str()) == Some("SessionStart")
 }
@@ -129,7 +129,7 @@ fn parse_observe_event(input: &str) -> Option<ObserveEvent> {
         .filter(|t| !t.is_empty())
         .map(String::from);
 
-    // Claude Code / Codex / CodeBuddy carry a per-session `session_id` but no
+    // Claude Code / Codex carry a per-session `session_id` but no
     // `conversation_id`. Persisting it lets the read-cache scope a session's
     // deliveries the same way Cursor's `conversation_id` does, so a new session
     // never inherits a prior one's `[unchanged]` stubs (#1004).
@@ -491,7 +491,7 @@ pub fn load_active_transcript() -> Option<(String, Option<String>)> {
     let v: serde_json::Value = serde_json::from_str(&content).ok()?;
     let tp = v.get("transcript_path")?.as_str()?.to_string();
     // Prefer Cursor's `conversation_id`; fall back to the host `session_id`
-    // (Claude Code / Codex / CodeBuddy) so the read-cache still has a per-session
+    // (Claude Code / Codex) so the read-cache still has a per-session
     // identity to scope stubs against (#1004).
     let conv = v
         .get("conversation_id")
@@ -717,7 +717,7 @@ mod tests {
 
     #[test]
     fn session_start_honoured_for_claude_payload() {
-        // Claude/Codex/CodeBuddy: hook_event_name + session_id, no conversation_id.
+        // Claude/Codex: hook_event_name + session_id, no conversation_id.
         let v = serde_json::json!({
             "hook_event_name": "SessionStart",
             "session_id": "abc123",
@@ -743,7 +743,7 @@ mod tests {
         assert!(!session_start_honours_additional_context(&v));
     }
 
-    /// #1004: a Claude/Codex/CodeBuddy payload has no `conversation_id`, so the
+    /// #1004: a Claude/Codex payload has no `conversation_id`, so the
     /// persisted `session_id` must surface as the scope id — otherwise the read
     /// cache sees `None` and a new session inherits the prior one's stubs.
     #[test]

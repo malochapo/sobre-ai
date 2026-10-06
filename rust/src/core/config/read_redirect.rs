@@ -1,7 +1,7 @@
 //! Read-redirect control — whether the PreToolUse redirect hook rewrites a native
 //! Read into a compressed `ctx_read` temp copy.
 //!
-//! Some hosts (Claude Code / CodeBuddy) enforce a read-before-write guard on their
+//! Some hosts (Claude Code) enforce a read-before-write guard on their
 //! native Write/Edit tools, keyed on the path the harness saw read. The redirect
 //! hook swaps that path to a temp `.lctx` copy, so the guard tracks the temp and a
 //! later native Write to the real file fails with "File has not been read yet"
@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 /// Controls the native-Read → `ctx_read` redirect hook.
 ///
 /// - `Auto`: (Default) redirect everywhere except hosts with a native
-///   read-before-write guard (Claude Code / CodeBuddy), where the path-swap would
+///   read-before-write guard (Claude Code), where the path-swap would
 ///   break native Write/Edit (#637).
 /// - `On`: always redirect (legacy behavior; power users on non-guard hosts).
 /// - `Off`: never redirect native Read.
@@ -41,14 +41,14 @@ impl ReadRedirect {
 }
 
 /// True on hosts whose native Write/Edit enforce a read-before-write guard keyed on
-/// the last-read path (Claude Code and the CodeBuddy fork).
+/// the last-read path (Claude Code).
 ///
 /// This runs *inside* the PreToolUse hook subprocess, so it keys on the marker Claude
 /// Code actually exports to hooks: `CLAUDE_PROJECT_DIR` (documented, present both
 /// interactively and in headless `claude -p`). `CLAUDECODE` lives in the host's own
 /// process but is **not** propagated to hook children — verified empirically for
-/// #637 — so it cannot be the primary in-hook signal. `CLAUDECODE` / `CODEBUDDY` are
-/// kept as extra markers (other entry points, the CodeBuddy fork) at no cost.
+/// #637 — so it cannot be the primary in-hook signal. `CLAUDECODE` is kept as an
+/// extra marker (other entry points) at no cost.
 ///
 /// **Cursor exception (GH #720):** Cursor ≥ 3.7 exports `CLAUDE_PROJECT_DIR` to its
 /// hook children for Claude-compat — alongside its own `CURSOR_*` markers. Cursor
@@ -62,9 +62,7 @@ pub(crate) fn host_has_read_before_write_guard() -> bool {
     if hook_host_is_cursor() {
         return false;
     }
-    std::env::var_os("CLAUDE_PROJECT_DIR").is_some()
-        || std::env::var_os("CLAUDECODE").is_some()
-        || std::env::var_os("CODEBUDDY").is_some()
+    std::env::var_os("CLAUDE_PROJECT_DIR").is_some() || std::env::var_os("CLAUDECODE").is_some()
 }
 
 /// True when the hook subprocess was spawned by Cursor. Checks the markers Cursor
@@ -100,7 +98,6 @@ mod tests {
         for var in [
             "CLAUDE_PROJECT_DIR",
             "CLAUDECODE",
-            "CODEBUDDY",
             "CURSOR_VERSION",
             "CURSOR_PROJECT_DIR",
             "CURSOR_TRANSCRIPT_PATH",
@@ -137,13 +134,6 @@ mod tests {
             "auto must also disable under the CLAUDECODE marker"
         );
         crate::test_env::remove_var("CLAUDECODE");
-
-        crate::test_env::set_var("CODEBUDDY", "1");
-        assert!(
-            !ReadRedirect::read_redirect_enabled(),
-            "auto must disable the Read redirect under CodeBuddy (shared Claude hook contract)"
-        );
-        crate::test_env::remove_var("CODEBUDDY");
     }
 
     /// GH #720: Cursor ≥ 3.7 exports `CLAUDE_PROJECT_DIR` to hook children for

@@ -109,14 +109,6 @@ pub struct ProxyStats {
     pub anthropic: ProviderStats,
     pub openai: ProviderStats,
     pub gemini: ProviderStats,
-    /// Grok dual-rail (`/providers/grok-chat`, `/providers/xai`) — OpenAI wire
-    /// shape, separate identity so `proxy status` does not fold xAI traffic
-    /// into the OpenAI bucket.
-    pub grok: ProviderStats,
-    /// Command Code gateway rail (`/providers/commandcode`) — separate identity
-    /// so `proxy status` does not fold Command Code traffic into the wire-shape
-    /// bucket.
-    pub commandcode: ProviderStats,
 }
 
 #[derive(Default)]
@@ -139,8 +131,6 @@ impl Default for ProxyStats {
             anthropic: ProviderStats::default(),
             openai: ProviderStats::default(),
             gemini: ProviderStats::default(),
-            grok: ProviderStats::default(),
-            commandcode: ProviderStats::default(),
         }
     }
 }
@@ -196,16 +186,11 @@ impl ProxyStats {
     /// Maps a proxy `provider_label` to its per-upstream bucket. Unknown labels
     /// return `None` (still counted in the totals, never misattributed to a bucket);
     /// every real upstream — Gemini included — passes an explicit label.
-    /// `"Grok"` is the identity label for registry routes `grok-chat` / `xai`
-    /// (OpenAI wire shape; see `providers::stats_label`). `"CommandCode"` is the
-    /// identity label for the `commandcode` registry route.
     fn provider(&self, provider_label: &str) -> Option<&ProviderStats> {
         match provider_label {
             "Anthropic" => Some(&self.anthropic),
             "OpenAI" => Some(&self.openai),
             "Gemini" => Some(&self.gemini),
-            "Grok" => Some(&self.grok),
-            "CommandCode" => Some(&self.commandcode),
             _ => None,
         }
     }
@@ -215,8 +200,6 @@ impl ProxyStats {
             "anthropic": self.anthropic.summary(),
             "openai": self.openai.summary(),
             "gemini": self.gemini.summary(),
-            "grok": self.grok.summary(),
-            "commandcode": self.commandcode.summary(),
         })
     }
 }
@@ -702,10 +685,8 @@ fn attach_request_tags(req: &mut axum::extract::Request) {
 fn has_provider_api_key(req: &axum::extract::Request) -> bool {
     let headers = req.headers();
     // Provider-specific key headers: Anthropic `x-api-key`, Google
-    // `x-goog-api-key`, Azure `api-key`, Grok subscription `x-xai-token-auth`.
-    // Any non-empty value authenticates. Grok dual-rail may send only the
-    // session header (no Authorization) against `/providers/grok-chat`.
-    for key in ["x-api-key", "x-goog-api-key", "api-key", "x-xai-token-auth"] {
+    // `x-goog-api-key`, Azure `api-key`. Any non-empty value authenticates.
+    for key in ["x-api-key", "x-goog-api-key", "api-key"] {
         if headers
             .get(key)
             .and_then(|v| v.to_str().ok())
@@ -745,10 +726,9 @@ fn is_provider_route(path: &str) -> bool {
         // omits `/v1` send `GET /models` with their provider key.
         || path == "/models"
         // Universal provider registry (enterprise#7): clients point their base
-        // URL at `/providers/{id}/v1` (Grok subscription:
-        // `GROK_CLI_CHAT_PROXY_BASE_URL`, Azure Foundry, OpenRouter, …) and
+        // URL at `/providers/{id}/v1` (Azure Foundry, OpenRouter, …) and
         // authenticate with their own provider/session Bearer. Without this,
-        // model-list + chat land as lean-ctx 401s — Grok cannot select a mode.
+        // model-list + chat land as lean-ctx 401s.
         || path.starts_with("/providers/")
 }
 

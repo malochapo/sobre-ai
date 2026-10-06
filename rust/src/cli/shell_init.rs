@@ -217,7 +217,7 @@ if (-not $env:LEAN_CTX_ACTIVE) {{
   switch ($_leanCtxActivation) {{
     {{ $_ -in 'off','none','manual' }} {{ $_leanCtxShouldActivate = $false }}
     {{ $_ -in 'agents-only','agents_only','agentsonly' }} {{
-      $_leanCtxShouldActivate = $env:LEAN_CTX_AGENT -or $env:CURSOR_AGENT -or $env:CLAUDECODE -or $env:CODEBUDDY -or $env:CODEX_CLI_SESSION -or $env:GEMINI_SESSION
+      $_leanCtxShouldActivate = $env:LEAN_CTX_AGENT -or $env:CURSOR_AGENT -or $env:CLAUDECODE -or $env:CODEX_CLI_SESSION -or $env:GEMINI_SESSION
     }}
     default {{ $_leanCtxShouldActivate = $true }}
   }}
@@ -296,7 +296,7 @@ pub fn generate_hook_fish(binary: &str) -> String {
         set -g _lean_ctx_cmds {alias_list}\n\
         \n\
         function _lc_is_agent\n\
-        \tset -q LEAN_CTX_AGENT; or set -q CURSOR_AGENT; or set -q CODEX_CLI_SESSION; or set -q CLAUDECODE; or set -q CODEBUDDY; or set -q GEMINI_SESSION\n\
+        \tset -q LEAN_CTX_AGENT; or set -q CURSOR_AGENT; or set -q CODEX_CLI_SESSION; or set -q CLAUDECODE; or set -q GEMINI_SESSION\n\
         end\n\
         \n\
         function _lc\n\
@@ -423,7 +423,7 @@ pub fn generate_hook_posix(binary: &str) -> String {
 _lean_ctx_cmds=({alias_list})
 
 _lc_is_agent() {{
-    [ -n "${{LEAN_CTX_AGENT:-}}" ] || [ -n "${{CURSOR_AGENT:-}}" ] || [ -n "${{CODEX_CLI_SESSION:-}}" ] || [ -n "${{CLAUDECODE:-}}" ] || [ -n "${{CODEBUDDY:-}}" ] || [ -n "${{GEMINI_SESSION:-}}" ]
+    [ -n "${{LEAN_CTX_AGENT:-}}" ] || [ -n "${{CURSOR_AGENT:-}}" ] || [ -n "${{CODEX_CLI_SESSION:-}}" ] || [ -n "${{CLAUDECODE:-}}" ] || [ -n "${{GEMINI_SESSION:-}}" ]
 }}
 
 _lc() {{
@@ -716,7 +716,7 @@ fn shim_script(name: &str, binary: &str, flag: &str) -> String {
          # snapshot+replay the shell and drop the function but keep the aliases\n\
          # that call it. Without it those contexts fail `{name}: command not found`.\n\
          if [ ! -t 1 ] && [ -z \"${{LEAN_CTX_AGENT:-}}\" ] && [ -z \"${{CURSOR_AGENT:-}}\" ] && [ -z \"${{CODEX_CLI_SESSION:-}}\" ] \\\n\
-         \t&& [ -z \"${{CLAUDECODE:-}}\" ] && [ -z \"${{CODEBUDDY:-}}\" ] && [ -z \"${{GEMINI_SESSION:-}}\" ]; then\n\
+         \t&& [ -z \"${{CLAUDECODE:-}}\" ] && [ -z \"${{GEMINI_SESSION:-}}\" ]; then\n\
          \texec \"$@\"\n\
          fi\n\
          '{binary}' {flag} \"$@\"\n\

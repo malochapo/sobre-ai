@@ -198,7 +198,7 @@ COMMANDS:
     codesign-setup                 macOS: one-time stable signing identity (stops repeating TCC prompt, #356)
     gotchas [list|clear|export|stats] Bug Memory: view/manage auto-detected error patterns
     buddy [show|stats|ascii|json]  Token Guardian: your data-driven coding companion
-    doctor integrations [--json]   Integration health checks (Cursor/Claude Code/CodeBuddy)
+    doctor integrations [--json]   Integration health checks (Cursor/Claude Code)
     doctor [--fix] [--json]        Run diagnostics (and optionally repair)
     smells [scan|summary|rules|file] [--rule=<r>] [--path=<p>] [--json]
                                    Code smell detection (Property Graph, 8 rules)
@@ -287,10 +287,8 @@ EXAMPLES:
     lean-ctx-mode compress         Compress mode: all output compressed (power users)
     lean-ctx-mode off              Same as lean-ctx-off
     lean-ctx-status                Show whether compression is active
-    lean-ctx init --agent pi       Install Pi Coding Agent extension
-  lean-ctx init --agent grok        Configure Grok (xAI) MCP + hooks
     lean-ctx doctor                Check PATH, config, MCP, and dashboard port
-    lean-ctx doctor integrations   Premium integration checks (Cursor/Claude Code/CodeBuddy)
+    lean-ctx doctor integrations   Premium integration checks (Cursor/Claude Code)
     lean-ctx doctor --fix --json   Repair + machine-readable report
     lean-ctx status --json         Machine-readable current status
     lean-ctx session task \"implement auth\"

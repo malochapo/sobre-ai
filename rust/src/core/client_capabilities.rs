@@ -34,7 +34,7 @@ impl ClientMcpCapabilities {
         let id = identify_client(&effective);
 
         match id.as_str() {
-            "cursor" | "kiro" => Self {
+            "cursor" => Self {
                 client_id: id,
                 resources: true,
                 prompts: true,
@@ -48,7 +48,7 @@ impl ClientMcpCapabilities {
                 elicitation: true,
                 sampling: true,
             },
-            "windsurf" => Self {
+            "windsurf" | "gemini-cli" => Self {
                 client_id: id,
                 resources: false,
                 prompts: false,
@@ -72,13 +72,6 @@ impl ClientMcpCapabilities {
             "codex" => Self {
                 client_id: id,
                 resources: true,
-                prompts: false,
-                elicitation: false,
-                sampling: false,
-            },
-            "antigravity" | "gemini-cli" => Self {
-                client_id: id,
-                resources: false,
                 prompts: false,
                 elicitation: false,
                 sampling: false,
@@ -133,8 +126,6 @@ impl ClientMcpCapabilities {
 fn identify_client(lower: &str) -> String {
     if lower.contains("cursor") {
         "cursor".to_string()
-    } else if lower.contains("codebuddy") {
-        "codebuddy".to_string()
     } else if lower.contains("claude") {
         "claude-code".to_string()
     } else if lower.contains("windsurf") || lower.contains("codeium") {
@@ -147,12 +138,8 @@ fn identify_client(lower: &str) -> String {
         || lower.contains("vscode")
     {
         "vscode-copilot".to_string()
-    } else if lower.contains("kiro") {
-        "kiro".to_string()
     } else if lower.contains("codex") || lower.contains("openai") {
         "codex".to_string()
-    } else if lower.contains("antigravity") {
-        "antigravity".to_string()
     } else if lower.contains("gemini") {
         "gemini-cli".to_string()
     } else {

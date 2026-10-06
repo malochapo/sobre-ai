@@ -60,22 +60,6 @@ pub(crate) fn check_mcp_json(path: &std::path::Path, binary: &str) -> NamedCheck
     }
 }
 
-/// JetBrains AI Assistant has no auto-wiring: lean-ctx writes a ready-to-paste
-/// snippet to `~/.jb-mcp.json`, which the user imports once via the IDE. The
-/// `doctor` verdict therefore verifies the snippet exists and is current, while
-/// making the required manual step explicit instead of implying auto-wiring.
-pub(crate) fn check_jetbrains_snippet(path: &std::path::Path, binary: &str) -> NamedCheck {
-    let mut c = check_mcp_json(path, binary);
-    c.name = "MCP snippet".to_string();
-    if c.ok {
-        c.detail = format!(
-            "ready — paste into Settings → Tools → AI Assistant → MCP ({})",
-            path.display()
-        );
-    }
-    c
-}
-
 pub(crate) fn cmd_matches_expected(cmd: &str, portable: &str) -> bool {
     let cmd = cmd.trim();
     if cmd == portable.trim() {
@@ -235,19 +219,7 @@ pub(crate) fn humanize_ago(d: chrono::Duration) -> String {
 pub(crate) fn rules_path_for(name: &str, home: &std::path::Path) -> Option<std::path::PathBuf> {
     match name {
         "Windsurf" => Some(home.join(".codeium/windsurf/rules/lean-ctx.md")),
-        "Cline" => Some(home.join(".cline/rules/lean-ctx.md")),
-        "Roo Code" => Some(home.join(".roo/rules/lean-ctx.md")),
         "OpenCode" => Some(home.join(".config/opencode/AGENTS.md")),
-        "AWS Kiro" => Some(home.join(".kiro/steering/lean-ctx.md")),
-        "Verdent" => Some(home.join(".verdent/rules/lean-ctx.md")),
-        "Trae" => Some(home.join(".trae/rules/lean-ctx.md")),
-        "Qwen Code" => Some(home.join(".qwen/rules/lean-ctx.md")),
-        "Amazon Q Developer" => Some(home.join(".aws/amazonq/rules/lean-ctx.md")),
-        "JetBrains IDEs" => Some(home.join(".jb-rules/lean-ctx.md")),
-        "Antigravity" => Some(home.join(".gemini/antigravity/rules/lean-ctx.md")),
-        "Augment CLI" | "Augment (VS Code)" => Some(home.join(".augment/rules/lean-ctx.md")),
-        "Pi Coding Agent" => Some(home.join(".pi/rules/lean-ctx.md")),
-        "Crush" => Some(home.join(".config/crush/rules/lean-ctx.md")),
         _ => None,
     }
 }

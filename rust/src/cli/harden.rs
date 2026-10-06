@@ -176,7 +176,6 @@ fn discover_mcp_configs() -> Vec<PathBuf> {
     let candidates = [
         home.join(".cursor").join("mcp.json"),
         home.join(".claude.json"),
-        home.join(".codebuddy.json"),
         home.join(".codeium")
             .join("windsurf")
             .join("mcp_config.json"),

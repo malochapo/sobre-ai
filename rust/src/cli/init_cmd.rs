@@ -61,12 +61,6 @@ pub fn install_shell_hook(args: &[String]) {
             for e in &result.errors {
                 eprintln!("  ✗ {agent_name}: {e}");
             }
-            if agent_name.eq_ignore_ascii_case("hermes") {
-                qprintln!("\n  Beyond MCP, lean-ctx can be Hermes' active context engine");
-                qprintln!("  (replaces the built-in ContextCompressor). Install the plugin from");
-                qprintln!("  integrations/hermes-lean-ctx (scripts/install.sh), then set");
-                qprintln!("  context.engine: \"lean-ctx\" in ~/.hermes/config.yaml.");
-            }
             if project {
                 crate::hooks::install_agent_project_hooks(agent_name, &cwd);
             }
@@ -176,13 +170,9 @@ pub fn install_shell_hook(args: &[String]) {
     }
     qprintln!();
     qprintln!("For AI tool integration: lean-ctx init --agent <tool> [--mode <mode>]");
-    qprintln!("  Supported: aider, amazonq, amp, antigravity, antigravity-cli, augment,");
     qprintln!(
-        "    claude, cline, codex, commandcode, continue, copilot, crush, cursor, emacs, gemini,"
+        "  Supported: claude, codex, copilot, cursor, gemini, opencode, vscode, windsurf, zed"
     );
-    qprintln!("    grok, hermes, jetbrains, kiro, neovim, openclaw, opencode, pi, qoder,");
-    qprintln!("    qodercli, qoderwork, qwen, roo, sublime, trae, verdent, vscode,");
-    qprintln!("    windsurf, zed");
     qprintln!("  Modes: mcp, hybrid, replace  (auto-detected per agent, override with --mode)");
 }
 

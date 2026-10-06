@@ -252,33 +252,6 @@ jobs:
         working-directory: cookbook
         run: npm run build
 
-  pi-extension:
-    name: Pi Extension (Node)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4 # v4
-        with:
-          persist-credentials: false
-      # Fail fast if pi-lean-ctx / lean-ctx-bin drifted from the engine version,
-      # so the Pi extension can never quietly fall behind (npm skips the publish
-      # of a stale version). Runs on every push/PR — not just at release.
-      - name: Check npm package ↔ engine version coupling
-        run: python3 scripts/check-package-versions.py
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-          cache: "npm"
-          cache-dependency-path: packages/pi-lean-ctx/package-lock.json
-      - name: Install
-        working-directory: packages/pi-lean-ctx
-        run: npm ci
-      - name: Typecheck
-        working-directory: packages/pi-lean-ctx
-        run: npm run typecheck
-      - name: Test
-        working-directory: packages/pi-lean-ctx
-        run: npm test
-
   rust-sdk:
     name: Rust SDK (lean-ctx-client)
     runs-on: ubuntu-latest
@@ -358,35 +331,6 @@ jobs:
       - name: Test
         working-directory: clients/python
         run: python -m pytest -q
-
-  hermes-plugin:
-    # The Hermes context-engine plugin (integrations/hermes-lean-ctx) replaces
-    # Hermes' built-in ContextCompressor with lean-ctx. Gate: pytest (ABC
-    # conformance + tool_call/tool_result invariant + daemon-down graceful) and
-    # a benchmark smoke that proves the harness runs offline (local fallback).
-    name: Hermes Plugin (Python)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4 # v4
-        with:
-          persist-credentials: false
-      - uses: actions/setup-python@v5 # v5
-        with:
-          python-version: "3.11"
-      - name: Install test deps
-        # Runtime dep (leanctx SDK) is wired onto sys.path by the plugin
-        # conftest from clients/python — no install needed. tiktoken makes the
-        # token count match the host model exactly; without it the plugin uses
-        # its char-based fallback (also tested).
-        run: pip install pytest tiktoken
-      - name: Run plugin tests
-        working-directory: integrations/hermes-lean-ctx
-        run: python -m pytest tests/ -q
-      - name: Benchmark smoke (offline, local fallback)
-        working-directory: integrations/hermes-lean-ctx
-        # Discard port → daemon unreachable → exercises deterministic local
-        # compaction end-to-end. Competitors are auto-skipped when absent.
-        run: python benchmarks/run.py --turns 40 --needles 6 --context-length 2000 --base-url http://127.0.0.1:9 --no-write
 
   sdk-conformance:
     # GL #395: every first-party SDK must prove the full /v1 contract against
@@ -666,11 +610,9 @@ jobs:
       - build-minimal
       - fmt
       - cookbook
-      - pi-extension
       - rust-sdk
       - embed-sdk
       - python-sdk
-      - hermes-plugin
       - sdk-conformance
       - coverage
       - deny

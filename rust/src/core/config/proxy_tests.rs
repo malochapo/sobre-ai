@@ -102,15 +102,16 @@ fn default_providers_are_the_closed_list_without_bedrock() {
         .into_iter()
         .map(|p| p.id)
         .collect();
-    assert_eq!(ids, ["xai", "grok-chat", "commandcode", "ollama"]);
+    assert_eq!(ids, ["ollama"]);
 }
 
 #[test]
 fn ollama_is_local_and_cloud_providers_are_not() {
-    let providers = ProxyConfig::default().resolve_providers();
+    let providers = with_upstream("bedrock", "https://bedrock-runtime.eu-west-3.amazonaws.com")
+        .resolve_providers();
     let local = |id: &str| providers.iter().find(|p| p.id == id).unwrap().local;
     assert!(local("ollama"));
-    assert!(!local("xai"));
+    assert!(!local("bedrock"));
 }
 
 #[test]
@@ -127,12 +128,12 @@ fn upstreams_override_a_provider_url() {
 
 #[test]
 fn invalid_provider_url_skips_only_that_provider() {
-    let ids: Vec<String> = with_upstream("xai", "not-a-url")
+    let ids: Vec<String> = with_upstream("ollama", "not-a-url")
         .resolve_providers()
         .into_iter()
         .map(|p| p.id)
         .collect();
-    assert_eq!(ids, ["grok-chat", "commandcode", "ollama"]);
+    assert!(ids.is_empty(), "{ids:?}");
 }
 
 #[test]

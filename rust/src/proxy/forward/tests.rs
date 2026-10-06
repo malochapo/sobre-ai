@@ -432,39 +432,6 @@ fn forwards_streamable_http_mcp_headers() {
 }
 
 #[test]
-fn forwards_grok_cli_chat_proxy_headers() {
-    // Grok CLI → cli-chat-proxy.grok.com. Stripping these used to yield
-    // HTTP 426 Upgrade Required with client-version "(none)" on /responses.
-    for required in [
-        "x-xai-token-auth",
-        "x-models-etag",
-        "x-grok-client-version",
-        "x-grok-client-identifier",
-        "x-grok-client-mode",
-        "x-grok-client-surface",
-        "x-grok-model-override",
-        "x-grok-agent-id",
-        "x-grok-session-id",
-        "x-grok-turn-id",
-        "x-grok-conv-id",
-        "x-grok-req-id",
-        "x-grok-deployment-id",
-        "x-grok-user-id",
-        "x-grok-context-window",
-        "x-grok-max-completion-tokens",
-        "x-grok-doom-loop-check",
-        "x-grok-managed-gateway",
-    ] {
-        assert!(
-            ALLOWED_REQUEST_HEADERS.contains(&required),
-            "request header `{required}` must be on the allowlist"
-        );
-    }
-    // The internal project tag must stay off the allowlist.
-    assert!(!is_allowed_request_header("x-leanctx-project"));
-}
-
-#[test]
 fn forwards_codex_state_response_headers() {
     for required in [
         "x-codex-turn-state",
@@ -485,25 +452,6 @@ fn forwards_codex_state_response_headers() {
 }
 
 #[test]
-fn forwards_commandcode_cli_headers() {
-    // Command Code (`cmd`) gates agent calls on `x-command-code-version`.
-    // Stripping it yields 403 upgrade_required ("CLI is out of date").
-    for required in [
-        "x-command-code-version",
-        "x-cli-environment",
-        "x-oauth-token",
-        "x-oauth-provider",
-        "x-project-slug",
-        "x-taste-learning",
-        "x-taste-usage",
-        "x-oss-primary-provider",
-        "x-system-prompt-breakdown",
-        "x-cmd-zdr",
-        "x-session-id", // shared; pin so CC session stays wired
-    ] {
-        assert!(
-            ALLOWED_REQUEST_HEADERS.contains(&required),
-            "Command Code CLI header `{required}` must be on the request allowlist"
-        );
-    }
+fn internal_project_tag_is_not_forwarded() {
+    assert!(!is_allowed_request_header("x-leanctx-project"));
 }

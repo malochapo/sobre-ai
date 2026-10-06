@@ -65,7 +65,6 @@ pub const REPLACE_AGENTS: &[&str] = &[
     "cursor",
     "claude",
     "claude-code",
-    "codebuddy",
     "codex",
     "windsurf",
     "opencode",
@@ -80,25 +79,9 @@ pub const HYBRID_AGENTS: &[&str] = &[
     "codex",
     "claude",
     "claude-code",
-    "crush",
-    "hermes",
     "opencode",
-    "openclaw",
-    "pi",
-    "qoder",
-    "qodercli",
     "windsurf",
-    "amp",
-    "cline",
-    "roo",
     "copilot",
-    "kiro",
-    "qwen",
-    "trae",
-    "antigravity",
-    "antigravity-cli",
-    "amazonq",
-    "verdent",
 ];
 
 /// Auto-detect the best hook mode for a given agent key.
@@ -118,19 +101,13 @@ pub fn recommend_hook_mode(agent_key: &str) -> HookMode {
 }
 
 use agents::{
-    install_amp_hook, install_antigravity_cli_hook, install_antigravity_hook,
     install_claude_hook_config, install_claude_hook_scripts, install_claude_hook_with_mode,
-    install_claude_permissions_deny_replace, install_claude_project_hooks, install_cline_rules,
-    install_codebuddy_hook_config, install_codebuddy_hook_scripts,
-    install_codebuddy_hook_with_mode, install_codebuddy_permissions_deny_replace,
-    install_codebuddy_project_hooks, install_codex_hook, install_copilot_hook,
-    install_crush_hook_with_mode, install_cursor_deny_hook, install_cursor_hook_config,
+    install_claude_permissions_deny_replace, install_claude_project_hooks, install_codex_hook,
+    install_copilot_hook, install_cursor_deny_hook, install_cursor_hook_config,
     install_cursor_hook_scripts, install_cursor_hook_with_mode, install_gemini_deny_hook,
-    install_gemini_hook, install_gemini_hook_config, install_gemini_hook_scripts, install_grok_mcp,
-    install_hermes_hook_with_mode, install_jetbrains_hook, install_kiro_hook,
-    install_openclaw_hook, install_opencode_hook, install_pi_hook_with_mode,
-    install_qoder_hook_with_mode, install_vibe_hook, install_windsurf_hooks,
-    install_windsurf_hooks_replace, install_windsurf_rules,
+    install_gemini_hook, install_gemini_hook_config, install_gemini_hook_scripts,
+    install_opencode_hook, install_windsurf_hooks, install_windsurf_hooks_replace,
+    install_windsurf_rules,
 };
 use support::{
     ensure_codex_hooks_enabled, install_codex_instruction_docs, install_named_json_server,
@@ -148,9 +125,8 @@ fn mcp_server_quiet_mode() -> bool {
 /// the user never configured. The `refresh_covers_every_hybrid_agent` test
 /// proves this list plus `REFRESH_EXEMPT_HYBRID_AGENTS` accounts for every
 /// Hybrid agent, so a newly added agent can never silently regress.
-const REFRESHABLE_HOOK_AGENTS: &[&str] = &[
-    "claude", "cursor", "gemini", "codex", "windsurf", "copilot", "qoder", "qodercli",
-];
+const REFRESHABLE_HOOK_AGENTS: &[&str] =
+    &["claude", "cursor", "gemini", "codex", "windsurf", "copilot"];
 
 /// Hybrid agents intentionally NOT auto-refreshed, with the reason each is safe
 /// to skip. Refresh runs silently (including on every MCP server start), so it
@@ -160,26 +136,9 @@ const REFRESHABLE_HOOK_AGENTS: &[&str] = &[
 const REFRESH_EXEMPT_HYBRID_AGENTS: &[&str] = &[
     // Alias of `claude` — same global files, already refreshed via "claude".
     "claude-code",
-    // Installer shells out to `pi install` (subprocess) — unsafe on every start.
-    "pi",
-    // Write project/cwd-relative rules (.clinerules, .kiro/steering) — a silent
-    // server-start refresh must not create files in the user's working dir.
-    "cline",
-    "roo",
-    "kiro",
-    // MCP-config / rules wiring only (no global binary-embedding shell-hook
-    // script to keep current); refreshed by `setup --fix`, not on start.
-    "antigravity",
-    "antigravity-cli",
-    "amp",
-    "crush",
-    "hermes",
+    // MCP-config wiring only (no global binary-embedding shell-hook script to
+    // keep current); refreshed by `setup --fix`, not on start.
     "opencode",
-    "openclaw",
-    "qwen",
-    "trae",
-    "amazonq",
-    "verdent",
 ];
 
 /// Silently refresh all hook scripts for agents that are already configured.
@@ -205,11 +164,6 @@ fn hooks_installed_for(agent: &str, home: &std::path::Path) -> bool {
             dir.join("hooks/lean-ctx-rewrite.sh").exists()
                 || file_contains_lean_ctx(&dir.join("settings.json"))
         }
-        "codebuddy" => {
-            let dir = crate::core::editor_registry::codebuddy_state_dir(home);
-            dir.join("hooks/lean-ctx-rewrite.sh").exists()
-                || file_contains_lean_ctx(&dir.join("settings.json"))
-        }
         "cursor" => {
             home.join(".cursor/hooks/lean-ctx-rewrite.sh").exists()
                 || file_contains_lean_ctx(&home.join(".cursor/hooks.json"))
@@ -229,7 +183,6 @@ fn hooks_installed_for(agent: &str, home: &std::path::Path) -> bool {
             // User-level Copilot hooks live under ~/.copilot/hooks (#381).
             file_contains_lean_ctx(&home.join(".copilot/hooks/hooks.json"))
         }
-        "qoder" | "qodercli" => file_contains_lean_ctx(&home.join(".qoder/settings.json")),
         _ => false,
     }
 }
@@ -246,13 +199,6 @@ fn refresh_agent_hooks(agent: &str, home: &std::path::Path) {
             install_claude_hook_config(home);
             if mode == HookMode::Replace {
                 install_claude_permissions_deny_replace(home);
-            }
-        }
-        "codebuddy" => {
-            install_codebuddy_hook_scripts(home);
-            install_codebuddy_hook_config(home);
-            if mode == HookMode::Replace {
-                install_codebuddy_permissions_deny_replace(home);
             }
         }
         "cursor" => {
@@ -278,7 +224,6 @@ fn refresh_agent_hooks(agent: &str, home: &std::path::Path) {
             }
         }
         "copilot" => install_copilot_hook(true),
-        "qoder" | "qodercli" => install_qoder_hook_with_mode(mode),
         _ => {}
     }
 }
@@ -290,7 +235,7 @@ fn file_contains_lean_ctx(path: &std::path::Path) -> bool {
 /// Resolve the lean-ctx binary to an **absolute** path for generated hook
 /// commands and MCP server entries.
 ///
-/// Agent hooks (Codex, Cursor, Claude, Gemini, Antigravity, …) are executed by
+/// Agent hooks (Codex, Cursor, Claude, Gemini, …) are executed by
 /// the host under a plain non-login shell (`sh -c …`) whose `PATH` is not
 /// guaranteed to contain the install dir (e.g. `/usr/local/bin`). A bare
 /// `lean-ctx` therefore fails with exit code 127 (#367). Always emitting the
@@ -524,45 +469,6 @@ const REDIRECT_SCRIPT_GENERIC: &str = r"#!/usr/bin/env bash
 exit 0
 ";
 
-pub fn hybrid_rules_content() -> String {
-    use crate::core::rules_canonical;
-    format!(
-        "{start}\n<!-- version: {version} -->\n\n\
-# lean-ctx \u{2014} Hybrid Mode (MCP reads + CLI commands)\n\n\
-{bullets}\n\n\
-{never}\n\n\
-{end}",
-        start = rules_canonical::START_MARK,
-        version = rules_canonical::RULES_VERSION,
-        bullets = rules_canonical::BULLETS,
-        never = rules_canonical::NEVER,
-        end = rules_canonical::END_MARK,
-    )
-}
-
-pub fn replace_rules_content() -> String {
-    use crate::core::rules_canonical;
-    format!(
-        "{start}\n<!-- version: {version} -->\n\n\
-# lean-ctx \u{2014} Replace Mode (native tools denied)\n\n\
-Native Read/Grep/Glob/Bash are denied by policy. Use ONLY ctx_* MCP tools:\n\
-- ctx_read for ALL file reads (cached, 10 modes, re-reads ~13 tokens)\n\
-- ctx_shell for ALL shell commands (95+ compression patterns)\n\
-- ctx_search instead of Grep/rg (compact results)\n\
-- ctx_tree instead of ls/find (compact directory maps)\n\
-- ctx_glob instead of Glob (file pattern matching)\n\n\
-Do NOT attempt native Read, Grep, Glob, or Bash \u{2014} they will be denied.\n\n\
-{end}",
-        start = rules_canonical::START_MARK,
-        version = rules_canonical::RULES_VERSION,
-        end = rules_canonical::END_MARK,
-    )
-}
-
-pub fn install_project_rules() {
-    install_project_rules_for_agents(&[]);
-}
-
 /// Install project rules, optionally scoped to specific agents.
 /// If `agents` is empty, installs for all agents (legacy behavior).
 pub fn install_project_rules_for_agents(agents: &[&str]) {
@@ -617,29 +523,6 @@ pub fn install_project_rules_for_agents(agents: &[&str]) {
 
     if wants("claude") {
         install_claude_project_hooks(&cwd);
-    }
-
-    if wants("codebuddy") {
-        install_codebuddy_project_hooks(&cwd);
-    }
-
-    if wants("kiro") {
-        let kiro_dir = cwd.join(".kiro");
-        if kiro_dir.exists() {
-            let steering_dir = kiro_dir.join("steering");
-            let steering_file = steering_dir.join("lean-ctx.md");
-            if !steering_file.exists()
-                || !std::fs::read_to_string(&steering_file)
-                    .unwrap_or_default()
-                    .contains("lean-ctx")
-            {
-                let _ = std::fs::create_dir_all(&steering_dir);
-                write_file(&steering_file, &kiro_steering_content());
-                if !mcp_server_quiet_mode() {
-                    eprintln!("Created .kiro/steering/lean-ctx.md (Kiro steering).");
-                }
-            }
-        }
     }
 
     if wants("copilot") || wants("vscode") {
@@ -710,12 +593,6 @@ Full rules: {PROJECT_LEAN_CTX_MD} (open on demand — do not auto-load).\n\
     // Marker checks are line-based (GL #1158): a prose mention of the marker
     // (as this repo's own AGENTS.md carries) must not trigger block surgery.
     let has_block = crate::marked_block::contains_marker_line(&existing, AGENTS_BLOCK_START);
-
-    if existing.contains("CLI-first Token Optimization for Pi") && !has_block {
-        let content = format!("# Agent Instructions\n\n{block}");
-        write_file(&agents_md, &content);
-        return;
-    }
 
     if has_block {
         let updated = crate::marked_block::replace_marked_block(
@@ -849,60 +726,17 @@ Full rules: ~/.cursor/rules/lean-ctx.mdc (auto-loaded) \u{2014} do not duplicate
     )
 }
 
-pub fn kiro_steering_content() -> String {
-    use crate::core::rules_canonical;
-    format!(
-        "---\n\
-inclusion: always\n\
----\n\n\
-# Context Engineering Layer\n\n\
-{start}\n\
-<!-- version: {version} -->\n\n\
-The workspace has the `lean-ctx` MCP server installed. \
-You MUST prefer lean-ctx tools over native equivalents for token efficiency and caching.\n\n\
-{bullets}\n\n\
-{never}\n\n\
-## When to use native Kiro tools instead\n\n\
-- `fsWrite` / `fsAppend` \u{2014} always use native (lean-ctx doesn't write files)\n\
-- `strReplace` \u{2014} always use native (precise string replacement)\n\
-- `semanticRename` / `smartRelocate` \u{2014} always use native (IDE integration)\n\
-- `getDiagnostics` \u{2014} always use native (language server diagnostics)\n\
-- `deleteFile` \u{2014} always use native\n\
-- Glob \u{2014} always use native glob\n\n\
-{end}",
-        start = rules_canonical::START_MARK,
-        version = rules_canonical::RULES_VERSION,
-        bullets = rules_canonical::BULLETS,
-        never = rules_canonical::NEVER,
-        end = rules_canonical::END_MARK,
-    )
-}
 pub fn install_agent_hook_with_mode(agent: &str, global: bool, mode: HookMode) {
     let home = crate::core::home::resolve_home_dir().unwrap_or_default();
     match agent {
         "claude" | "claude-code" => install_claude_hook_with_mode(global, mode),
-        "codebuddy" => install_codebuddy_hook_with_mode(global, mode),
         "cursor" => install_cursor_hook_with_mode(global, mode),
         "gemini" => {
             install_gemini_hook();
             if mode == HookMode::Replace {
                 install_gemini_deny_hook(&home);
             }
-            // Google is transitioning Gemini CLI → Antigravity CLI (`agy`), and
-            // `gemini` setup also configures the Antigravity CLI MCP target. The
-            // hooks must follow: `agy` reads hooks only from its plugin dir
-            // (`~/.gemini/config/plugins/lean-ctx`), never from the legacy
-            // `~/.gemini/settings.json`, so install the plugin too (#284).
-            install_antigravity_cli_hook();
         }
-        "grok" | "grok-build" => install_grok_mcp(),
-        "antigravity" => install_antigravity_hook(),
-        "antigravity-cli" => install_antigravity_cli_hook(),
-        "augment" => install_mcp_json_agent(
-            "Augment CLI",
-            "~/.augment/settings.json",
-            &crate::core::editor_registry::augment_cli_settings_path(&home),
-        ),
         "codex" => {
             install_codex_hook();
         }
@@ -912,86 +746,18 @@ pub fn install_agent_hook_with_mode(agent: &str, global: bool, mode: HookMode) {
                 install_windsurf_hooks_replace(&home);
             }
         }
-        "cline" | "roo" => install_cline_rules(global),
         "copilot" | "vscode" => install_copilot_hook(global),
-        // VS Code Insiders needs no hook install of its own: the MCP entry in
-        // its separate `Code - Insiders/User/mcp.json` is written by the
-        // editor-registry writer (GH #694), and the Copilot hook layer is
-        // user-global (`~/.copilot`), already covered by copilot/vscode.
-        // Command Code has no hook surface either; shadow mode rides on the
-        // MCP entry's `instructions` field written by the same writer.
-        "vscode-insiders" | "commandcode" => {}
-        "pi" => install_pi_hook_with_mode(global, mode),
-        "qoder" | "qodercli" => install_qoder_hook_with_mode(mode),
-        "qoderwork" => install_mcp_json_agent(
-            "QoderWork",
-            "~/.qoderwork/mcp.json",
-            &home.join(".qoderwork/mcp.json"),
-        ),
-        "qwen" => install_mcp_json_agent(
-            "Qwen Code",
-            "~/.qwen/settings.json",
-            &home.join(".qwen/settings.json"),
-        ),
-        "trae" => install_mcp_json_agent("Trae", "~/.trae/mcp.json", &home.join(".trae/mcp.json")),
-        "amazonq" => install_mcp_json_agent(
-            "Amazon Q Developer",
-            "~/.aws/amazonq/default.json",
-            &home.join(".aws/amazonq/default.json"),
-        ),
-        "jetbrains" => install_jetbrains_hook(),
-        "kiro" => install_kiro_hook(),
-        "verdent" => install_mcp_json_agent(
-            "Verdent",
-            "~/.verdent/mcp.json",
-            &home.join(".verdent/mcp.json"),
-        ),
         "opencode" => install_opencode_hook(),
-        "amp" => install_amp_hook(),
-        "crush" => install_crush_hook_with_mode(mode),
-        "openclaw" => install_openclaw_hook(),
-        "hermes" => install_hermes_hook_with_mode(global, mode),
-        "vibe" => install_vibe_hook(),
         "zed" => {
             let zed_path = crate::core::editor_registry::zed_settings_path(&home);
             let binary = resolve_binary_path();
             let entry = full_server_entry(&binary);
             install_named_json_server("Zed", "settings.json", &zed_path, "context_servers", entry);
         }
-        "aider" => {
-            install_mcp_json_agent("Aider", "~/.aider/mcp.json", &home.join(".aider/mcp.json"));
-        }
-        "continue" => install_mcp_json_agent(
-            "Continue",
-            "~/.continue/mcp.json",
-            &home.join(".continue/mcp.json"),
-        ),
-        "neovim" => install_mcp_json_agent(
-            "Neovim (mcphub.nvim)",
-            "~/.config/mcphub/servers.json",
-            &home.join(".config/mcphub/servers.json"),
-        ),
-        "emacs" => install_mcp_json_agent(
-            "Emacs (mcp.el)",
-            "~/.emacs.d/mcp.json",
-            &home.join(".emacs.d/mcp.json"),
-        ),
-        "sublime" => install_mcp_json_agent(
-            "Sublime Text",
-            "~/.config/sublime-text/mcp.json",
-            &home.join(".config/sublime-text/mcp.json"),
-        ),
         _ => {
             eprintln!("Unknown agent: {agent}");
-            eprintln!("  Supported: aider, amazonq, amp, antigravity, antigravity-cli, augment,");
             eprintln!(
-                "    claude, cline, codebuddy, codex, commandcode, continue, copilot, crush, cursor, emacs, gemini, grok,"
-            );
-            eprintln!(
-                "    grok-build, hermes, jetbrains, kiro, neovim, openclaw, opencode, pi, qoder,"
-            );
-            eprintln!(
-                "    qodercli, qoderwork, qwen, roo, sublime, trae, verdent, vibe, vscode, windsurf, zed"
+                "  Supported: claude, codex, copilot, cursor, gemini, opencode, vscode, windsurf, zed"
             );
             std::process::exit(1);
         }
@@ -1001,7 +767,6 @@ pub fn install_agent_hook_with_mode(agent: &str, global: bool, mode: HookMode) {
 pub fn install_agent_project_hooks(agent: &str, cwd: &std::path::Path) {
     match agent {
         "claude" | "claude-code" => agents::install_claude_project_hooks(cwd),
-        "codebuddy" => agents::install_codebuddy_project_hooks(cwd),
         _ => {}
     }
 }

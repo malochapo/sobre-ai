@@ -86,19 +86,10 @@ fn zed_rules_path_is_os_aware_and_matches_config_dir() {
 fn target_count() {
     let home = std::path::PathBuf::from("/tmp/fake_home");
     let targets = build_rules_targets(&home);
-    // Includes Grok (`~/.grok/AGENTS.md`).
-    assert_eq!(targets.len(), 26);
-    assert!(
-        targets.iter().any(|t| t.name == "Grok"),
-        "Grok must have a rules target"
-    );
+    assert_eq!(targets.len(), 8);
     assert!(
         !targets.iter().any(|t| t.name == "Claude Code"),
         "Claude Code must not get a rules target"
-    );
-    assert!(
-        !targets.iter().any(|t| t.name == "CodeBuddy"),
-        "CodeBuddy must not get a rules target"
     );
 }
 
@@ -109,7 +100,7 @@ fn rules_catalog_includes_previously_missing_agents_for_detection() {
         .into_iter()
         .map(|t| t.name)
         .collect();
-    for agent in ["OpenCode", "Zed", "Cline", "Roo Code", "Continue", "Crush"] {
+    for agent in ["OpenCode", "Zed"] {
         assert!(
             names.contains(agent),
             "{agent} must be in the rules catalog used for presence detection (#442)"
@@ -379,22 +370,7 @@ fn match_agent_name_basic() {
     assert!(match_agent_name("claude", "Claude Code"));
     assert!(match_agent_name("vscode", "VS Code"));
     assert!(match_agent_name("copilot", "Copilot CLI"));
-    assert!(match_agent_name("kiro", "AWS Kiro"));
-    assert!(match_agent_name("pi", "Pi Coding Agent"));
-    assert!(match_agent_name("crush", "Crush"));
-    assert!(match_agent_name("amp", "Amp"));
-    assert!(match_agent_name("cline", "Cline"));
-    assert!(match_agent_name("roo", "Roo Code"));
-    assert!(match_agent_name("trae", "Trae"));
-    assert!(match_agent_name("amazonq", "Amazon Q Developer"));
-    assert!(match_agent_name("verdent", "Verdent"));
-    assert!(match_agent_name("continue", "Continue"));
-    assert!(match_agent_name("antigravity", "Antigravity"));
-    assert!(match_agent_name("codebuddy", "CodeBuddy"));
     assert!(match_agent_name("gemini", "Gemini CLI"));
-    assert!(match_agent_name("augment", "Augment"));
-    assert!(match_agent_name("openclaw", "OpenClaw"));
-    assert!(match_agent_name("qodercli", "Qoder"));
 }
 
 #[test]

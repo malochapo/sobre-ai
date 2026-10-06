@@ -119,8 +119,8 @@ pub(super) fn redirect_read(tool_input: Option<&serde_json::Value>) -> String {
         );
         return build_dual_allow_output();
     };
-    // #637: on hosts with a native read-before-write guard (Claude Code /
-    // CodeBuddy), rewriting the Read to a temp `.lctx` copy makes the guard track
+    // #637: on hosts with a native read-before-write guard (Claude Code),
+    // rewriting the Read to a temp `.lctx` copy makes the guard track
     // the temp path, so a later native Write/Edit to the real file fails with
     // "File has not been read yet". `read_redirect = auto` (default) disables the
     // Read redirect there so native Read reads the real file and the guard stays
@@ -168,7 +168,7 @@ pub(super) fn redirect_read(tool_input: Option<&serde_json::Value>) -> String {
     // stays alive so read 3, 4, ... also get compressed. This eliminates the
     // every-other-read 0% savings gap (#1048).
     //
-    // **Guard hosts** (Claude Code, CodeBuddy): native passthrough. These hosts
+    // **Guard hosts** (Claude Code): native passthrough. These hosts
     // fire an internal Read before Write that also triggers this hook; a
     // compressed response would break the edit. The PostToolUse `read_dedup`
     // handler owns dedup on these hosts instead.
@@ -523,7 +523,7 @@ pub(super) fn build_redirect_output(
         serde_json::json!({ field: temp_path })
     };
 
-    // Claude Code / CodeBuddy hook output format (other hosts ignore it).
+    // Claude Code hook output format (other hosts ignore it).
     let hook_specific = serde_json::json!({
         "hookEventName": "PreToolUse",
         "permissionDecision": "allow",
@@ -531,7 +531,7 @@ pub(super) fn build_redirect_output(
     });
 
     serde_json::json!({
-        // Grok PreToolUse decision field.
+        // Top-level PreToolUse decision field.
         "decision": "allow",
         // Cursor hook output format.
         "permission": "allow",

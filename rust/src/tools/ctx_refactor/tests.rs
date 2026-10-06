@@ -83,7 +83,10 @@ fn unknown_action_help_lists_the_available_actions() {
     for action in ["references", "symbols_overview", "replace_symbol_body"] {
         assert!(out.contains(action), "help text missing {action}: {out}");
     }
-    assert!(!out.contains("declaration"), "help still lists declaration: {out}");
+    assert!(
+        !out.contains("declaration"),
+        "help still lists declaration: {out}"
+    );
 
     let _ = std::fs::remove_dir_all(&dir);
 }

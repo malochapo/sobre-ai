@@ -10,11 +10,6 @@ pub(super) fn build_rules_targets(home: &std::path::Path) -> Vec<RulesTarget> {
     // which duplicated the CLAUDE.md block in every session (12k+ token memory
     // footprints, GL #555). Claude guidance lives in the CLAUDE.md block
     // (hooks/agents/claude.rs) + the on-demand skill.
-    //
-    // CodeBuddy follows the exact same pattern as Claude Code: NO rules target.
-    // CodeBuddy installs (and auto-loads) the CODEBUDDY.md block every session,
-    // so a separate ~/.codebuddy/rules/lean-ctx.md would duplicate it (GL #555/#558).
-    // Guidance lives in the CODEBUDDY.md block + the on-demand skill.
     vec![
         // --- Shared config files (append-only) ---
         RulesTarget {
@@ -51,84 +46,9 @@ pub(super) fn build_rules_targets(home: &std::path::Path) -> Vec<RulesTarget> {
             format: RulesFormat::DedicatedMarkdown,
         },
         RulesTarget {
-            name: "Cline",
-            path: home.join(".cline/rules/lean-ctx.md"),
-            format: RulesFormat::DedicatedMarkdown,
-        },
-        RulesTarget {
-            name: "Roo Code",
-            path: home.join(".roo/rules/lean-ctx.md"),
-            format: RulesFormat::DedicatedMarkdown,
-        },
-        RulesTarget {
             name: "OpenCode",
             path: home.join(".config/opencode/AGENTS.md"),
             format: RulesFormat::SharedMarkdown,
-        },
-        RulesTarget {
-            name: "Continue",
-            path: home.join(".continue/rules/lean-ctx.md"),
-            format: RulesFormat::DedicatedMarkdown,
-        },
-        RulesTarget {
-            name: "Amp",
-            path: home.join(".ampcoder/rules/lean-ctx.md"),
-            format: RulesFormat::DedicatedMarkdown,
-        },
-        RulesTarget {
-            name: "Qwen Code",
-            path: home.join(".qwen/rules/lean-ctx.md"),
-            format: RulesFormat::DedicatedMarkdown,
-        },
-        RulesTarget {
-            name: "Trae",
-            path: home.join(".trae/rules/lean-ctx.md"),
-            format: RulesFormat::DedicatedMarkdown,
-        },
-        RulesTarget {
-            name: "Amazon Q Developer",
-            path: home.join(".aws/amazonq/rules/lean-ctx.md"),
-            format: RulesFormat::DedicatedMarkdown,
-        },
-        RulesTarget {
-            name: "JetBrains IDEs",
-            path: home.join(".jb-rules/lean-ctx.md"),
-            format: RulesFormat::DedicatedMarkdown,
-        },
-        RulesTarget {
-            name: "Antigravity",
-            path: home.join(".gemini/antigravity/rules/lean-ctx.md"),
-            format: RulesFormat::DedicatedMarkdown,
-        },
-        RulesTarget {
-            name: "Pi Coding Agent",
-            path: home.join(".pi/rules/lean-ctx.md"),
-            format: RulesFormat::DedicatedMarkdown,
-        },
-        RulesTarget {
-            name: "AWS Kiro",
-            path: home.join(".kiro/steering/lean-ctx.md"),
-            format: RulesFormat::DedicatedMarkdown,
-        },
-        RulesTarget {
-            name: "Verdent",
-            path: home.join(".verdent/rules/lean-ctx.md"),
-            format: RulesFormat::DedicatedMarkdown,
-        },
-        RulesTarget {
-            name: "Crush",
-            path: home.join(".config/crush/rules/lean-ctx.md"),
-            format: RulesFormat::DedicatedMarkdown,
-        },
-        RulesTarget {
-            name: "Augment",
-            path: home.join(".augment/rules/lean-ctx.md"),
-            format: RulesFormat::DedicatedMarkdown,
-        },
-        RulesTarget {
-            name: "OpenClaw",
-            path: home.join(".openclaw/rules/lean-ctx.md"),
-            format: RulesFormat::DedicatedMarkdown,
         },
         RulesTarget {
             name: "Codex CLI",
@@ -136,21 +56,6 @@ pub(super) fn build_rules_targets(home: &std::path::Path) -> Vec<RulesTarget> {
                 .unwrap_or_else(|| home.join(".codex"))
                 .join("instructions.md"),
             format: RulesFormat::SharedMarkdown,
-        },
-        RulesTarget {
-            name: "Grok",
-            path: home.join(".grok/AGENTS.md"),
-            format: RulesFormat::SharedMarkdown,
-        },
-        RulesTarget {
-            name: "Hermes Agent",
-            path: home.join(".hermes/HERMES.md"),
-            format: RulesFormat::SharedMarkdown,
-        },
-        RulesTarget {
-            name: "Qoder",
-            path: home.join(".qoder/rules/lean-ctx.md"),
-            format: RulesFormat::DedicatedMarkdown,
         },
     ]
 }

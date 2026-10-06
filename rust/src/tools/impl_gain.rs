@@ -787,11 +787,10 @@ mod tests {
     }
 
     #[test]
-    fn gain_json_schema_keys_are_stable_for_jetbrains_dtos() {
+    fn gain_json_schema_keys_are_stable() {
         let _lock = crate::core::data_dir::test_env_lock();
-        // Contract with packages/jetbrains-lean-ctx dto/GainData.kt (@SerializedName).
-        // A Rust rename that drops any of these keys must fail HERE, not silently
-        // in the plugin. Keep in sync with GainDataTest.kt.
+        // `gain --json` is a machine-readable contract: a Rust rename that drops
+        // any of these keys must fail HERE, not silently in a consumer.
         let out = handle("json", None, None, Some(5));
         let v: serde_json::Value = serde_json::from_str(&out).expect("valid json");
 

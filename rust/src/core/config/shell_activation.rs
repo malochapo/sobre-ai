@@ -9,7 +9,7 @@ use std::sync::OnceLock;
 ///
 /// - `AgentsOnly`: (Default since #699) Aliases only activate when an AI agent
 ///   env var is detected (`LEAN_CTX_AGENT`, `CURSOR_AGENT`, `CLAUDECODE`,
-///   `CODEBUDDY`, `CODEX_CLI_SESSION`, `GEMINI_SESSION`). lean-ctx exists to
+///   `CODEX_CLI_SESSION`, `GEMINI_SESSION`). lean-ctx exists to
 ///   save *agent* tokens — in a plain human terminal the aliases add overhead
 ///   and surface allowlist diagnostics with no benefit (GH #699).
 /// - `Always`: Aliases are active in every interactive shell.

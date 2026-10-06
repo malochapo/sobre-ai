@@ -23,14 +23,14 @@ use crate::core::config::CompressionLevel;
 /// next line (see `render`).
 pub const START_MARK: &str = "<!-- lean-ctx-rules -->";
 
-/// Start marker for lightweight AGENTS.md/CODEBUDDY.md/CLAUDE.md pointer
+/// Start marker for lightweight AGENTS.md/CLAUDE.md pointer
 /// blocks. These are deliberately separate from `START_MARK` / `<!-- lean-ctx-rules -->`
 /// because the pointer-only vs full-rules distinction drives duplicate detection
 /// in `doctor overhead` — a pointer-only file (`is_pointer_only`) must not be
 /// counted as a second source for its client.
 pub const AGENTS_BLOCK_START: &str = "<!-- lean-ctx -->";
 
-/// End marker for AGENTS.md/CODEBUDDY.md/CLAUDE.md pointer blocks.
+/// End marker for AGENTS.md/CLAUDE.md pointer blocks.
 pub const AGENTS_BLOCK_END: &str = "<!-- /lean-ctx -->";
 
 /// Owner banner placed as the first line of the project-level `LEAN-CTX.md`

@@ -64,10 +64,6 @@ pub fn configure_agent_mcp(agent: &str) -> Result<(), String> {
         }
     }
 
-    if agent == "kiro" {
-        install_kiro_steering(&home);
-    }
-
     if (agent == "vscode" || agent == "copilot")
         && let Err(e) = crate::core::editor_registry::plan_mode::write_vscode_plan_settings()
     {
@@ -78,12 +74,6 @@ pub fn configure_agent_mcp(agent: &str) -> Result<(), String> {
             crate::core::editor_registry::plan_mode::write_claude_code_plan_permissions()
     {
         eprintln!("\x1b[33m⚠\x1b[0m  Claude Code plan mode: {e}");
-    }
-    if agent == "codebuddy"
-        && let Err(e) =
-            crate::core::editor_registry::plan_mode::write_claude_code_plan_permissions()
-    {
-        eprintln!("\x1b[33m⚠\x1b[0m  CodeBuddy plan mode: {e}");
     }
 
     if errors.is_empty() {
@@ -128,32 +118,6 @@ pub(crate) fn agent_mcp_targets(
             crate::core::editor_registry::claude_mcp_json_path(home),
             ConfigType::McpJson,
         ),
-        "codebuddy" => push(
-            &mut targets,
-            "CodeBuddy",
-            crate::core::editor_registry::codebuddy_mcp_json_path(home),
-            ConfigType::McpJson,
-        ),
-        "commandcode" => push(
-            &mut targets,
-            "Command Code",
-            home.join(".commandcode/mcp.json"),
-            ConfigType::CommandCode,
-        ),
-        "augment" => {
-            push(
-                &mut targets,
-                "Augment CLI",
-                crate::core::editor_registry::augment_cli_settings_path(home),
-                ConfigType::McpJson,
-            );
-            push(
-                &mut targets,
-                "Augment (VS Code)",
-                crate::core::editor_registry::augment_vscode_mcp_path(home),
-                ConfigType::AugmentVsCode,
-            );
-        }
         "windsurf" => push(
             &mut targets,
             "Windsurf",
@@ -167,12 +131,6 @@ pub(crate) fn agent_mcp_targets(
                 .unwrap_or_else(|| home.join(".codex/config.toml")),
             ConfigType::Codex,
         ),
-        "grok" => push(
-            &mut targets,
-            "Grok",
-            home.join(".grok/config.toml"),
-            ConfigType::Codex,
-        ),
         "gemini" => {
             push(
                 &mut targets,
@@ -180,110 +138,12 @@ pub(crate) fn agent_mcp_targets(
                 home.join(".gemini/settings.json"),
                 ConfigType::GeminiSettings,
             );
-            push(
-                &mut targets,
-                "Antigravity IDE",
-                home.join(".gemini/antigravity/mcp_config.json"),
-                ConfigType::McpJson,
-            );
-            push(
-                &mut targets,
-                "Antigravity CLI",
-                home.join(".gemini/antigravity-cli/mcp_config.json"),
-                ConfigType::McpJson,
-            );
         }
-        "antigravity" => push(
-            &mut targets,
-            "Antigravity IDE",
-            home.join(".gemini/antigravity/mcp_config.json"),
-            ConfigType::McpJson,
-        ),
-        "antigravity-cli" => push(
-            &mut targets,
-            "Antigravity CLI",
-            home.join(".gemini/antigravity-cli/mcp_config.json"),
-            ConfigType::McpJson,
-        ),
         "copilot" => push(
             &mut targets,
             "Copilot CLI",
             home.join(".copilot/mcp-config.json"),
             ConfigType::CopilotCli,
-        ),
-        "crush" => push(
-            &mut targets,
-            "Crush",
-            home.join(".config/crush/crush.json"),
-            ConfigType::Crush,
-        ),
-        "qoder" => {
-            for path in crate::core::editor_registry::qoder_all_mcp_paths(home) {
-                push(&mut targets, "Qoder", path, ConfigType::QoderSettings);
-            }
-        }
-        "qoderwork" => push(
-            &mut targets,
-            "QoderWork",
-            crate::core::editor_registry::qoderwork_mcp_path(home),
-            ConfigType::McpJson,
-        ),
-        "qodercli" => push(
-            &mut targets,
-            "Qoder CLI",
-            crate::core::editor_registry::qodercli_settings_path(home),
-            ConfigType::QoderSettings,
-        ),
-        "cline" => push(
-            &mut targets,
-            "Cline",
-            crate::core::editor_registry::cline_mcp_path(),
-            ConfigType::McpJson,
-        ),
-        "roo" => push(
-            &mut targets,
-            "Roo Code",
-            crate::core::editor_registry::roo_mcp_path(),
-            ConfigType::McpJson,
-        ),
-        "kiro" => push(
-            &mut targets,
-            "AWS Kiro",
-            home.join(".kiro/settings/mcp.json"),
-            ConfigType::McpJson,
-        ),
-        "verdent" => push(
-            &mut targets,
-            "Verdent",
-            home.join(".verdent/mcp.json"),
-            ConfigType::McpJson,
-        ),
-        // pi: deliberately no MCP target. Pi has no native MCP adapter — a
-        // ~/.pi/agent/mcp.json entry is never served and made older pi-lean-ctx
-        // versions disable their embedded bridge (GitHub #361). Pi runs through
-        // the pi-lean-ctx npm package; install_pi_hook_with_mode removes stale
-        // entries instead.
-        "pi" | "jetbrains" | "amp" | "openclaw" => {
-            // jetbrains/amp/openclaw: handled by dedicated install hooks
-            // (servers[] array / amp.mcpServers / mcp.servers).
-        }
-        "qwen" => push(
-            &mut targets,
-            "Qwen Code",
-            home.join(".qwen/settings.json"),
-            ConfigType::McpJson,
-        ),
-        "trae" => push(
-            &mut targets,
-            "Trae",
-            home.join(".trae/mcp.json"),
-            ConfigType::McpJson,
-        ),
-        "amazonq" => push(
-            &mut targets,
-            "Amazon Q Developer",
-            home.join(".aws/amazonq/default.json"),
-            ConfigType::McpJson,
         ),
         "opencode" => {
             #[cfg(windows)]
@@ -303,22 +163,10 @@ pub(crate) fn agent_mcp_targets(
                 ConfigType::OpenCode,
             );
         }
-        "hermes" => push(
-            &mut targets,
-            "Hermes Agent",
-            home.join(".hermes/config.yaml"),
-            ConfigType::HermesYaml,
-        ),
         "vscode" => push(
             &mut targets,
             "VS Code",
             crate::core::editor_registry::vscode_mcp_path(),
-            ConfigType::VsCodeMcp,
-        ),
-        "vscode-insiders" => push(
-            &mut targets,
-            "VS Code Insiders",
-            crate::core::editor_registry::vscode_insiders_mcp_path(),
             ConfigType::VsCodeMcp,
         ),
         "zed" => push(
@@ -327,87 +175,10 @@ pub(crate) fn agent_mcp_targets(
             crate::core::editor_registry::zed_settings_path(home),
             ConfigType::Zed,
         ),
-        "aider" => push(
-            &mut targets,
-            "Aider",
-            home.join(".aider/mcp.json"),
-            ConfigType::McpJson,
-        ),
-        "continue" => push(
-            &mut targets,
-            "Continue",
-            home.join(".continue/mcp.json"),
-            ConfigType::McpJson,
-        ),
-        "neovim" => push(
-            &mut targets,
-            "Neovim (mcphub.nvim)",
-            home.join(".config/mcphub/servers.json"),
-            ConfigType::McpJson,
-        ),
-        "emacs" => push(
-            &mut targets,
-            "Emacs (mcp.el)",
-            home.join(".emacs.d/mcp.json"),
-            ConfigType::McpJson,
-        ),
-        "sublime" => push(
-            &mut targets,
-            "Sublime Text",
-            home.join(".config/sublime-text/mcp.json"),
-            ConfigType::McpJson,
-        ),
         _ => {
             return Err(format!("Unknown agent '{agent}'"));
         }
     }
 
     Ok(targets)
-}
-
-#[cfg(test)]
-mod qodercli_tests {
-    use super::*;
-
-    #[test]
-    fn commandcode_agent_target_uses_command_code_schema() {
-        let home = std::path::Path::new("/home/tester");
-        let targets = agent_mcp_targets("commandcode", home).unwrap();
-
-        assert_eq!(targets.len(), 1);
-        assert_eq!(targets[0].name, "Command Code");
-        assert_eq!(targets[0].config_path, home.join(".commandcode/mcp.json"));
-        assert_eq!(targets[0].config_type, ConfigType::CommandCode);
-    }
-
-    #[test]
-    fn qodercli_agent_target_uses_settings_json() {
-        let home = std::path::Path::new("/home/tester");
-        let targets = agent_mcp_targets("qodercli", home).unwrap();
-
-        assert_eq!(targets.len(), 1);
-        assert_eq!(targets[0].name, "Qoder CLI");
-        assert_eq!(targets[0].config_path, home.join(".qoder/settings.json"));
-    }
-
-    #[test]
-    fn qodercli_agent_target_uses_qoder_settings_writer() {
-        let home = std::path::Path::new("/home/tester");
-        let targets = agent_mcp_targets("qodercli", home).unwrap();
-
-        assert_eq!(targets[0].agent_key, "qodercli");
-        assert_eq!(targets[0].config_type, ConfigType::QoderSettings);
-    }
-
-    #[test]
-    fn qodercli_agent_target_is_separate_from_qoder_ide_targets() {
-        let home = std::path::Path::new("/home/tester");
-        let cli = agent_mcp_targets("qodercli", home).unwrap();
-        let ide = agent_mcp_targets("qoder", home).unwrap();
-
-        assert!(
-            ide.iter()
-                .all(|target| target.config_path != cli[0].config_path)
-        );
-    }
 }

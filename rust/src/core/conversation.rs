@@ -7,7 +7,7 @@
 //! could be stubbed for a re-read in chat B (which never received it).
 //!
 //! Cursor's hooks write the live conversation id to `active_transcript.json`;
-//! hosts without one (Claude Code / Codex / CodeBuddy) supply a per-session
+//! hosts without one (Claude Code / Codex) supply a per-session
 //! `session_id` instead, which `load_active_transcript` returns as the scope id
 //! so a new session never inherits a prior one's stubs (#1004). Either way it
 //! carries a 2h TTL and we read it via

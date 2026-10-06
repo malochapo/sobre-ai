@@ -1,13 +1,10 @@
 //! Install / uninstall LLM-client proxy environment wiring.
 //!
-//! Submodules hold per-client setup (Claude, Codex, Grok, Pi, shell). This
+//! Submodules hold per-client setup (Claude, Codex, shell). This
 //! facade keeps the public API stable as `crate::proxy_setup::*`.
 
 mod claude;
 mod codex;
-mod commandcode;
-mod grok;
-mod pi;
 mod shell;
 mod util;
 
@@ -21,19 +18,11 @@ use crate::marked_block;
 
 use claude::{install_claude_env, install_claude_env_inner, uninstall_claude_env};
 use codex::{codex_config_has_local_proxy_entry, strip_codex_proxy_entries, uninstall_codex_env};
-use commandcode::{install_commandcode_env, uninstall_commandcode_env};
-use grok::{
-    grok_config_has_local_proxy_entry, install_grok_env, strip_grok_proxy_entries,
-    uninstall_grok_env,
-};
-use pi::{install_pi_env, uninstall_pi_env};
 use shell::install_shell_exports;
 use util::{PROXY_ENV_END, PROXY_ENV_START};
 
 pub use claude::anthropic_api_key_available;
 pub(crate) use codex::install_codex_env;
-pub(crate) use commandcode::COMMANDCODE_MCP_INSTRUCTIONS;
-pub use grok::{grok_session_auth_available, xai_api_key_available};
 pub use util::{default_port, is_local_lean_ctx_url, proxy_timeout};
 
 pub fn install_proxy_env(home: &Path, port: u16, quiet: bool) {
@@ -44,29 +33,21 @@ pub fn install_proxy_env(home: &Path, port: u16, quiet: bool) {
         }
         return;
     }
-    install_shell_exports(home, port, quiet, false);
+    install_shell_exports(home, port, quiet);
     install_claude_env(home, port, quiet);
     install_codex_env(home, port, quiet);
-    install_pi_env(home, port, quiet, false);
-    install_grok_env(home, port, quiet, false);
-    install_commandcode_env(home, port, quiet, false);
 }
 
 /// Install proxy env without config guard (used by `lean-ctx proxy enable` which has already set the flag).
 /// `force_endpoint`: if true, overrides even non-local custom endpoints.
 pub fn install_proxy_env_unchecked(home: &Path, port: u16, quiet: bool, force_endpoint: bool) {
-    // Shell exports and Grok install share `force_endpoint` so force+no-auth
-    // seeds grok-chat and still emits GROK_CLI_CHAT_PROXY_BASE_URL.
-    install_shell_exports(home, port, quiet, force_endpoint);
+    install_shell_exports(home, port, quiet);
     if force_endpoint {
         install_claude_env_inner(home, port, quiet, true);
     } else {
         install_claude_env(home, port, quiet);
     }
     install_codex_env(home, port, quiet);
-    install_pi_env(home, port, quiet, force_endpoint);
-    install_grok_env(home, port, quiet, force_endpoint);
-    install_commandcode_env(home, port, quiet, force_endpoint);
 }
 
 pub fn preview_proxy_cleanup(home: &Path) {
@@ -89,20 +70,6 @@ pub fn preview_proxy_cleanup(home: &Path) {
         && codex_config_has_local_proxy_entry(&content)
     {
         println!("  Would remove Codex proxy URL from config.toml");
-    }
-
-    let grok_path = home.join(".grok/config.toml");
-    if let Ok(content) = std::fs::read_to_string(grok_path)
-        && grok_config_has_local_proxy_entry(&content)
-    {
-        println!("  Would remove Grok proxy models_base_url from config.toml");
-    }
-
-    let cc_mcp = home.join(".commandcode/mcp.json");
-    if let Ok(content) = std::fs::read_to_string(cc_mcp)
-        && content.contains("lean-ctx")
-    {
-        println!("  Would remove lean-ctx from Command Code MCP (~/.commandcode/mcp.json)");
     }
 }
 
@@ -154,16 +121,6 @@ pub fn cleanup_stale_proxy_env(home: &Path) -> usize {
         let filtered = strip_codex_proxy_entries(&content);
         let _ = std::fs::write(&codex_path, &filtered);
         println!("  ✓ Removed stale Codex proxy URL from config.toml");
-        cleaned += 1;
-    }
-
-    let grok_path = home.join(".grok/config.toml");
-    if let Ok(content) = std::fs::read_to_string(&grok_path)
-        && grok_config_has_local_proxy_entry(&content)
-    {
-        let cleaned_toml = strip_grok_proxy_entries(&content);
-        let _ = std::fs::write(&grok_path, &cleaned_toml);
-        println!("  ✓ Removed stale Grok proxy models_base_url from config.toml");
         cleaned += 1;
     }
 
@@ -230,7 +187,4 @@ pub fn uninstall_proxy_env(home: &Path, quiet: bool) {
 
     uninstall_claude_env(home, quiet);
     uninstall_codex_env(home, quiet);
-    uninstall_pi_env(home, quiet);
-    uninstall_grok_env(home, quiet);
-    uninstall_commandcode_env(home, quiet);
 }

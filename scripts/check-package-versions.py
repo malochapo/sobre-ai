@@ -4,8 +4,8 @@
 Every npm package that *ships the engine* (as opposed to an independently
 versioned SDK, or the decoupled editor extension) MUST carry the exact engine
 version. Otherwise a release silently skips publishing the stale package (npm
-"already exists" -> continue-on-error) and `npx`/Pi users quietly fall a version
-behind — the exact drift GH issue reports about the Pi extension came from.
+"already exists" -> continue-on-error) and `npx` users quietly fall a version
+behind.
 
 This gate is the *enforced* counterpart of the DEPLOY_CHECKLIST "Version bumped
 in ALL locations" step: it fails on every push/PR (CI) and blocks the release
@@ -15,7 +15,6 @@ Source of truth:
   * engine version: rust/Cargo.toml [package] version (first `^version =`)
 
 Coupled packages (must equal the engine version):
-  * packages/pi-lean-ctx/package.json   — Pi Coding Agent extension
   * packages/lean-ctx-bin/package.json  — npx/npm binary wrapper
 
 Deliberately excluded:
@@ -37,7 +36,6 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 
 # npm packages whose version must match the engine, relative to the repo root.
 COUPLED_PACKAGES = [
-    "packages/pi-lean-ctx/package.json",
     "packages/lean-ctx-bin/package.json",
 ]
 

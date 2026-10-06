@@ -120,40 +120,6 @@ fn remove_lean_ctx_from_json_textual(content: &str) -> Option<String> {
     }
 }
 
-/// Remove a key whose value is an EMPTY object (`"key": {}`) from JSON text.
-/// Used for OpenClaw (GitHub #390): after the lean-ctx entry is removed, a
-/// leftover empty `mcpServers` object would still trip the strict 2026.6.1
-/// validator ("Unrecognized key"). Returns None when the key is absent or its
-/// object is non-empty.
-pub(super) fn remove_empty_json_object_key(content: &str, key_name: &str) -> Option<String> {
-    let bytes = content.as_bytes();
-    let key_start = find_json_key_position(bytes, key_name)?;
-
-    // Locate the value and confirm it is an empty object.
-    let key_name_end = content[key_start + 1..].find('"')? + key_start + 2;
-    let mut colon_pos = key_name_end;
-    while colon_pos < bytes.len() && bytes[colon_pos] != b':' {
-        colon_pos += 1;
-    }
-    let mut v = colon_pos + 1;
-    while v < bytes.len() && bytes[v].is_ascii_whitespace() {
-        v += 1;
-    }
-    if v >= bytes.len() || bytes[v] != b'{' {
-        return None;
-    }
-    let value_end = skip_json_value(bytes, v)?;
-    let inner = &content[v + 1..value_end - 1];
-    if !inner.trim().is_empty() {
-        return None;
-    }
-
-    let result = remove_json_entry_at(content, key_start)?;
-    crate::core::jsonc::parse_jsonc(&result)
-        .is_ok()
-        .then_some(result)
-}
-
 /// Find the byte position of a JSON key `"key_name"` that is followed by `:`.
 fn find_json_key_position(bytes: &[u8], key_name: &str) -> Option<usize> {
     let needle = format!("\"{key_name}\"");
@@ -503,49 +469,11 @@ fn remove_lean_ctx_from_json_serde(content: &str) -> Option<String> {
         modified |= ctx.remove("lean-ctx").is_some();
     }
 
-    if let Some(amp) = parsed
-        .get_mut("amp.mcpServers")
-        .and_then(|s| s.as_object_mut())
-    {
-        modified |= amp.remove("lean-ctx").is_some();
-    }
-
     if modified {
         Some(serde_json::to_string_pretty(&parsed).ok()? + "\n")
     } else {
         None
     }
-}
-
-// ---------------------------------------------------------------------------
-// YAML removal
-// ---------------------------------------------------------------------------
-
-pub(super) fn remove_lean_ctx_from_yaml(content: &str) -> String {
-    let mut out = String::with_capacity(content.len());
-    let mut skip_depth: Option<usize> = None;
-
-    for line in content.lines() {
-        if let Some(depth) = skip_depth {
-            let indent = line.len() - line.trim_start().len();
-            if indent > depth || line.trim().is_empty() {
-                continue;
-            }
-            skip_depth = None;
-        }
-
-        let trimmed = line.trim();
-        if trimmed == "lean-ctx:" || trimmed.starts_with("lean-ctx:") {
-            let indent = line.len() - line.trim_start().len();
-            skip_depth = Some(indent);
-            continue;
-        }
-
-        out.push_str(line);
-        out.push('\n');
-    }
-
-    out
 }
 
 // ---------------------------------------------------------------------------
@@ -740,71 +668,6 @@ command = \"other\"
     fn json_no_lean_ctx_returns_none() {
         let input = r#"{"mcpServers": {"other": {"command": "other"}}}"#;
         assert!(remove_lean_ctx_from_json(input).is_none());
-    }
-
-    // --- Empty-object key removal (OpenClaw #390) ---
-
-    #[test]
-    fn empty_mcp_servers_object_is_removed() {
-        let input = "{\n  \"mcpServers\": {},\n  \"mcp\": { \"servers\": {} }\n}\n";
-        let result = remove_empty_json_object_key(input, "mcpServers").expect("should remove");
-        assert!(
-            !result.contains("mcpServers"),
-            "empty legacy key must vanish: {result}"
-        );
-        assert!(result.contains("\"mcp\""), "nested schema key preserved");
-        assert!(crate::core::jsonc::parse_jsonc(&result).is_ok());
-    }
-
-    #[test]
-    fn empty_object_removal_respects_whitespace_variants() {
-        let input = "{ \"mcpServers\": {  \n  }, \"gateway\": { \"port\": 1 } }";
-        let result = remove_empty_json_object_key(input, "mcpServers").expect("should remove");
-        assert!(!result.contains("mcpServers"));
-        assert!(result.contains("gateway"));
-        assert!(crate::core::jsonc::parse_jsonc(&result).is_ok());
-    }
-
-    #[test]
-    fn non_empty_mcp_servers_object_is_kept() {
-        let input = r#"{"mcpServers": {"github": {"command": "gh-mcp"}}}"#;
-        assert!(
-            remove_empty_json_object_key(input, "mcpServers").is_none(),
-            "foreign servers must never be dropped"
-        );
-    }
-
-    #[test]
-    fn missing_key_returns_none() {
-        assert!(remove_empty_json_object_key("{}", "mcpServers").is_none());
-    }
-
-    #[test]
-    fn openclaw_uninstall_flow_leaves_no_unrecognized_keys() {
-        // Full reporter flow: nested + legacy entry, uninstall removes the
-        // lean-ctx entries, then the empty legacy container is stripped.
-        let input = r#"{
-  "mcpServers": {
-    "lean-ctx": { "command": "/usr/bin/lean-ctx" }
-  },
-  "mcp": {
-    "servers": {
-      "lean-ctx": { "command": "/usr/bin/lean-ctx" },
-      "github": { "command": "gh-mcp" }
-    }
-  }
-}
-"#;
-        let cleaned = remove_lean_ctx_from_json(input).expect("entries removed");
-        let stripped =
-            remove_empty_json_object_key(&cleaned, "mcpServers").expect("empty container removed");
-        let parsed: serde_json::Value = crate::core::jsonc::parse_jsonc(&stripped).unwrap();
-        assert!(
-            parsed.get("mcpServers").is_none(),
-            "no unrecognized key left"
-        );
-        assert_eq!(parsed["mcp"]["servers"]["github"]["command"], "gh-mcp");
-        assert!(parsed["mcp"]["servers"].get("lean-ctx").is_none());
     }
 
     // --- Shared rules (SharedMarkdown) tests ---

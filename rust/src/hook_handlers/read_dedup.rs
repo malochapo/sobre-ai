@@ -1,6 +1,6 @@
 //! PostToolUse re-read dedup for guard hosts (GL #1140, follow-up to GH #637).
 //!
-//! On Claude Code / CodeBuddy the PreToolUse Read redirect is disabled
+//! On Claude Code the PreToolUse Read redirect is disabled
 //! (`read_redirect = auto`) so the native read-before-write guard stays intact —
 //! which also forfeits the redirect's re-read dedup. This handler wins those
 //! savings back **after** the native Read ran on the real path:
@@ -640,7 +640,6 @@ mod tests {
         // No guard-host marker → auto keeps the hook passive.
         crate::test_env::remove_var("CLAUDE_PROJECT_DIR");
         crate::test_env::remove_var("CLAUDECODE");
-        crate::test_env::remove_var("CODEBUDDY");
         let dir = tempfile::tempdir().unwrap();
         let file = dir.path().join("lib.rs");
         std::fs::write(&file, big_body()).unwrap();

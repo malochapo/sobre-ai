@@ -33,31 +33,6 @@ fn refresh_sets_reference_only_hybrid_agents() {
     }
 }
 
-#[test]
-fn qodercli_is_configured_for_hybrid_hooks() {
-    assert!(HYBRID_AGENTS.contains(&"qodercli"));
-    assert!(!REPLACE_AGENTS.contains(&"qodercli"));
-}
-
-#[test]
-fn qodercli_hooks_are_eligible_for_refresh() {
-    assert!(REFRESHABLE_HOOK_AGENTS.contains(&"qodercli"));
-    assert!(!REFRESH_EXEMPT_HYBRID_AGENTS.contains(&"qodercli"));
-}
-
-#[test]
-fn qodercli_hook_detection_uses_shared_settings_file() {
-    let tmp = tempfile::tempdir().unwrap();
-    let settings = tmp.path().join(".qoder/settings.json");
-    std::fs::create_dir_all(settings.parent().unwrap()).unwrap();
-
-    std::fs::write(&settings, "{\"hooks\":{\"lean-ctx\":true}}").unwrap();
-    assert!(hooks_installed_for("qodercli", tmp.path()));
-
-    std::fs::write(&settings, "{\"hooks\":{}}").unwrap();
-    assert!(!hooks_installed_for("qodercli", tmp.path()));
-}
-
 // ── #555: .github/copilot-instructions.md ──────────────────────────────
 
 #[test]
@@ -607,9 +582,7 @@ fn claude_is_replace() {
 #[test]
 fn hybrid_fallback_agents() {
     let _env = crate::core::data_dir::test_env_lock();
-    assert_eq!(recommend_hook_mode("crush"), HookMode::Hybrid);
-    assert_eq!(recommend_hook_mode("cline"), HookMode::Hybrid);
-    assert_eq!(recommend_hook_mode("kiro"), HookMode::Hybrid);
+    assert_eq!(recommend_hook_mode("copilot"), HookMode::Hybrid);
 }
 
 #[test]

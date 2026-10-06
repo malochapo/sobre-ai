@@ -481,7 +481,7 @@ fn dual_rewrite_output_carries_claude_cursor_and_copilot_fields() {
         p["modifiedArgs"]["cwd"], "/repo",
         "modifiedArgs must preserve the other original args"
     );
-    // Claude / CodeBuddy contract.
+    // Claude contract.
     assert_eq!(p["hookSpecificOutput"]["permissionDecision"], "allow");
     assert_eq!(
         p["hookSpecificOutput"]["updatedInput"]["command"],
@@ -1017,7 +1017,6 @@ fn redirect_read_auto_passes_through_under_claude_code() {
     // (CLAUDECODE is NOT propagated to hook children, so it cannot be the signal).
     let _iso = crate::core::data_dir::isolated_data_dir();
     crate::test_env::remove_var("CLAUDECODE");
-    crate::test_env::remove_var("CODEBUDDY");
     crate::test_env::set_var("CLAUDE_PROJECT_DIR", "/repo");
 
     let tool_input = serde_json::json!({ "file_path": "/repo/src/main.rs" });

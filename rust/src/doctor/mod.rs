@@ -303,12 +303,6 @@ pub fn run() -> u32 {
         board.check(docker_check);
     }
 
-    // 11) Pi Coding Agent (optional)
-    let pi = pi_outcome();
-    if let Some(ref pi_check) = pi {
-        board.check(pi_check);
-    }
-
     // 12) Build integrity (canary / origin check)
     let integrity = crate::core::integrity::check();
     let integrity_ok = integrity.seed_ok && integrity.origin_ok;
@@ -332,12 +326,6 @@ pub fn run() -> u32 {
     let claude_truncation = claude_truncation_outcome();
     if let Some(ref ct) = claude_truncation {
         board.check(ct);
-    }
-
-    // 14a) CodeBuddy instruction truncation guard
-    let codebuddy_truncation = codebuddy_truncation_outcome();
-    if let Some(ref cbt) = codebuddy_truncation {
-        board.check(cbt);
     }
 
     // 15) BM25 cache health

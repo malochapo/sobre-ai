@@ -6,8 +6,8 @@ use chrono::Utc;
 use serde::Serialize;
 
 use super::{
-    BOLD, DIM, GREEN, RST, WHITE, YELLOW, claude_binary_exists, codebuddy_binary_exists,
-    resolve_lean_ctx_binary, tildify_home,
+    BOLD, DIM, GREEN, RST, WHITE, YELLOW, claude_binary_exists, resolve_lean_ctx_binary,
+    tildify_home,
 };
 
 #[derive(Debug, Clone, Copy)]
@@ -53,10 +53,9 @@ pub(super) fn run_integrations(opts: &IntegrationsOptions) -> i32 {
     let mut integrations = vec![
         integration_cursor(&home, &binary),
         integration_claude(&home, &binary),
-        integration_codebuddy(&home, &binary),
     ];
     for t in crate::core::editor_registry::build_targets(&home) {
-        if matches!(t.name, "Cursor" | "Claude Code" | "CodeBuddy") {
+        if matches!(t.name, "Cursor" | "Claude Code") {
             continue;
         }
         integrations.push(integration_generic(&home, &binary, &t));

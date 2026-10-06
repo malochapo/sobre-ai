@@ -35,37 +35,6 @@ pub(super) struct RegistryProviderId {
     pub local: bool,
 }
 
-/// Registry ids that share the Grok / xAI dual-rail (subscription `grok-chat`,
-/// API-key `xai`). OpenAI wire shape; separate `proxy status` bucket.
-pub(super) fn is_grok_provider_id(id: &str) -> bool {
-    matches!(
-        id.trim().to_ascii_lowercase().as_str(),
-        "grok-chat" | "xai" | "grok"
-    )
-}
-
-/// Registry ids that share the Command Code gateway rail (`commandcode`).
-/// Separate `proxy status` bucket so traffic does not fold into the wire-shape
-/// line.
-pub(super) fn is_commandcode_provider_id(id: &str) -> bool {
-    matches!(
-        id.trim().to_ascii_lowercase().as_str(),
-        "commandcode" | "command-code"
-    )
-}
-
-/// Per-upstream stats label for a registry route.
-///
-/// Wire shape stays `OpenAI`/`Anthropic`/… for compression; identity for
-/// `ProxyStats` may differ (Grok must not fold into the OpenAI line).
-pub(super) fn stats_label<'a>(registry_id: Option<&str>, shape_label: &'a str) -> &'a str {
-    match registry_id {
-        Some(id) if is_grok_provider_id(id) => "Grok",
-        Some(id) if is_commandcode_provider_id(id) => "CommandCode",
-        _ => shape_label,
-    }
-}
-
 /// True when an OpenAI-shaped registry request should use the Responses
 /// compressor (`input` / `function_call_output`) rather than Chat Completions.
 pub(super) fn is_openai_responses_path(path: &str) -> bool {
@@ -121,7 +90,7 @@ pub(crate) async fn handler(
         WireShape::OpenAi => {
             // Built-in OpenAI routes pick Chat Completions vs Responses by path
             // (`/v1/chat/completions` vs `/v1/responses`). Registry providers
-            // must do the same: Grok CLI hits `/providers/grok-chat/v1/responses`
+            // must do the same: a Responses client hits `/providers/{id}/v1/responses`
             // with `function_call_output` in `input`, which the Chat compressor
             // ignores (it only rewrites `messages`). Path already has the
             // `/providers/{id}` prefix stripped above.
@@ -179,41 +148,6 @@ pub(crate) async fn handler(
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn stats_label_maps_grok_rails_to_grok_bucket() {
-        assert_eq!(stats_label(Some("grok-chat"), "OpenAI"), "Grok");
-        assert_eq!(stats_label(Some("xai"), "OpenAI"), "Grok");
-        assert_eq!(stats_label(Some("GROK"), "OpenAI"), "Grok");
-        assert_eq!(stats_label(Some("foundry"), "OpenAI"), "OpenAI");
-        assert_eq!(stats_label(None, "OpenAI"), "OpenAI");
-        assert_eq!(stats_label(Some("local"), "OpenAI"), "OpenAI");
-    }
-
-    #[test]
-    fn is_grok_provider_id_accepts_dual_rail_ids() {
-        assert!(is_grok_provider_id("grok-chat"));
-        assert!(is_grok_provider_id("xai"));
-        assert!(is_grok_provider_id(" Grok "));
-        assert!(!is_grok_provider_id("openai"));
-        assert!(!is_grok_provider_id("foundry"));
-    }
-
-    #[test]
-    fn stats_label_maps_commandcode_rail_to_commandcode_bucket() {
-        assert_eq!(stats_label(Some("commandcode"), "OpenAI"), "CommandCode");
-        assert_eq!(stats_label(Some("command-code"), "OpenAI"), "CommandCode");
-        assert_eq!(stats_label(Some(" CommandCode "), "OpenAI"), "CommandCode");
-    }
-
-    #[test]
-    fn is_commandcode_provider_id_accepts_rail_ids() {
-        assert!(is_commandcode_provider_id("commandcode"));
-        assert!(is_commandcode_provider_id("command-code"));
-        assert!(is_commandcode_provider_id(" COMMANDCODE "));
-        assert!(!is_commandcode_provider_id("openai"));
-        assert!(!is_commandcode_provider_id("grok"));
-    }
 
     #[test]
     fn is_openai_responses_path_detects_responses_api() {

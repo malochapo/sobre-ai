@@ -15,9 +15,9 @@ jobs:
     # cannot speak its http_mcp contract version. Minor-version drift across
     # the SDK family surfaces as a warning annotation.
     #
-    # Also gates the engine-coupled npm wrappers (pi-lean-ctx, lean-ctx-bin):
-    # a stale package.json would let the publish step silently skip, shipping a
-    # release whose Pi extension / npx wrapper lags the engine.
+    # Also gates the engine-coupled npm wrapper (lean-ctx-bin): a stale
+    # package.json would let the publish step silently skip, shipping a
+    # release whose npx wrapper lags the engine.
     name: Release gates (SDK + package versions)
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -300,22 +300,6 @@ jobs:
             echo "npm already has lean-ctx-bin@${PKG_VERSION} — skipping publish."
             exit 0
           fi
-          npm publish --access public
-
-      - name: Publish pi-lean-ctx
-        working-directory: packages/pi-lean-ctx
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: |
-          set -euo pipefail
-          PKG_VERSION="$(node -p "require('./package.json').version")"
-          if npm view "pi-lean-ctx@${PKG_VERSION}" version >/dev/null 2>&1; then
-            echo "npm already has pi-lean-ctx@${PKG_VERSION} — skipping publish."
-            exit 0
-          fi
-          # prepack builds the self-contained vendor bundle (esbuild devDep),
-          # so the published package ships with zero runtime dependencies (#670).
-          npm ci
           npm publish --access public
 
   update-homebrew:

@@ -1,5 +1,5 @@
 //! E2E tests for shell detection, `LEAN_CTX_SHELL` override,
-//! agent init (incl. antigravity alias), Windows path handling,
+//! agent init, Windows path handling,
 //! and pipe-guard (stdout not a terminal → bypass lean-ctx).
 // noqa: SIZE_OK — single-responsibility E2E test module for the CLI binary.
 
@@ -195,40 +195,6 @@ fn shell_exec_quoted_args() {
 }
 
 #[test]
-fn agent_init_antigravity_alias() {
-    let tmpdir = tempfile::tempdir().expect("create tempdir");
-    let home = tmpdir.path();
-
-    let gemini_dir = home.join(".gemini");
-    std::fs::create_dir_all(&gemini_dir).unwrap();
-
-    let mut cmd = Command::new(lean_ctx_bin());
-    cmd.args(["init", "--agent", "antigravity", "--global"])
-        .env("HOME", home.to_str().unwrap())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
-
-    let output = cmd.output().expect("failed to run init");
-    let stderr = String::from_utf8_lossy(&output.stderr);
-
-    assert!(
-        !stderr.contains("Unknown agent"),
-        "antigravity should be recognized: {stderr}"
-    );
-
-    let hooks_dir = gemini_dir.join("hooks");
-    if hooks_dir.exists() {
-        let rewrite = hooks_dir.join("lean-ctx-rewrite-gemini.sh");
-        assert!(rewrite.exists(), "rewrite script should be created");
-        let content = std::fs::read_to_string(&rewrite).unwrap();
-        assert!(
-            content.contains("hookSpecificOutput"),
-            "rewrite script should contain hook output format"
-        );
-    }
-}
-
-#[test]
 fn agent_init_unknown_agent_fails() {
     let (_stdout, stderr, code) =
         run_with_env(&["init", "--agent", "nonexistent_agent"], &[], None);
@@ -314,113 +280,6 @@ fn agent_init_codex_installs_compatible_hooks_and_instructions() {
         config.contains("hooks = true"),
         "init should enable Codex hook support"
     );
-}
-
-#[test]
-fn agent_init_gemini_installs_antigravity_cli_plugin_hooks() {
-    // GH #284: `gemini` setup also configures the Antigravity CLI MCP target, so
-    // it must install the `agy` plugin hooks. `agy` reads hooks only from its
-    // plugin dir (`~/.gemini/config/plugins/lean-ctx`), never from the legacy
-    // `~/.gemini/settings.json` — so the plugin (not just MCP) must be written.
-    let tmpdir = tempfile::tempdir().expect("create tempdir");
-    let home = tmpdir.path();
-    let home_str = home.to_string_lossy().to_string();
-    #[cfg(not(windows))]
-    let envs = vec![("HOME", home_str.as_str())];
-    #[cfg(windows)]
-    let envs = vec![
-        ("HOME", home_str.as_str()),
-        ("USERPROFILE", home_str.as_str()),
-    ];
-
-    let (_stdout, stderr, code) =
-        run_with_env(&["init", "--agent", "gemini", "--global"], &envs, None);
-    assert_eq!(code, 0, "gemini init should succeed: {stderr}");
-
-    let plugin_hooks = home.join(".gemini/config/plugins/lean-ctx/hooks/hooks.json");
-    assert!(
-        plugin_hooks.exists(),
-        "gemini init must install the Antigravity CLI plugin hooks at {plugin_hooks:?}"
-    );
-    let manifest = std::fs::read_to_string(home.join(".gemini/config/import_manifest.json"))
-        .unwrap_or_default();
-    assert!(
-        manifest.contains("lean-ctx"),
-        "the plugin must be registered in import_manifest.json: {manifest}"
-    );
-}
-
-#[test]
-fn agent_init_lists_antigravity_in_supported() {
-    let (_stdout, stderr, _code) =
-        run_with_env(&["init", "--agent", "nonexistent_agent"], &[], None);
-    assert!(
-        stderr.contains("antigravity"),
-        "supported list should include antigravity: {stderr}"
-    );
-}
-
-#[test]
-fn agent_init_lists_grok_in_supported() {
-    let (_stdout, stderr, _code) =
-        run_with_env(&["init", "--agent", "nonexistent_agent"], &[], None);
-    assert!(
-        stderr.contains("grok"),
-        "supported list should include grok: {stderr}"
-    );
-}
-
-#[test]
-fn agent_init_grok_writes_mcp_without_unsupported_hooks() {
-    let tmpdir = tempfile::tempdir().expect("create tempdir");
-    let home = tmpdir.path();
-    std::fs::create_dir_all(home.join(".grok")).unwrap();
-    std::fs::write(home.join(".grok/config.toml"), "[ui]\ntheme = \"test\"\n").unwrap();
-
-    let home_str = home.to_string_lossy().to_string();
-    #[cfg(not(windows))]
-    let env = [("HOME", home_str.as_str())];
-    #[cfg(windows)]
-    let env = [
-        ("HOME", home_str.as_str()),
-        ("USERPROFILE", home_str.as_str()),
-    ];
-
-    let (stdout, stderr, code) = run_with_env(
-        &["init", "--agent", "grok", "--global", "--mode", "hybrid"],
-        &env,
-        None,
-    );
-    assert_eq!(
-        code, 0,
-        "init --agent grok should succeed\nstdout={stdout}\nstderr={stderr}"
-    );
-    assert!(
-        !stderr.contains("Unknown agent"),
-        "grok should be recognized: {stderr}"
-    );
-
-    let config = std::fs::read_to_string(home.join(".grok/config.toml")).unwrap();
-    assert!(
-        config.contains("[mcp_servers.lean-ctx]"),
-        "MCP section missing: {config}"
-    );
-
-    assert!(
-        !home.join(".grok/hooks/lean-ctx.json").exists(),
-        "Grok Build's documented integration is MCP-only; do not install an unverified hook format"
-    );
-
-    // Global rules injection uses ~/.grok/AGENTS.md when the home is detected.
-    // Under a temp HOME with only config.toml present, detection should succeed.
-    let agents_md = home.join(".grok/AGENTS.md");
-    if agents_md.exists() {
-        let body = std::fs::read_to_string(&agents_md).unwrap();
-        assert!(
-            body.contains("lean-ctx"),
-            "AGENTS.md should mention lean-ctx: {body}"
-        );
-    }
 }
 
 #[test]

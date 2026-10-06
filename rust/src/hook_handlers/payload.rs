@@ -4,7 +4,6 @@
 //! payload before reading it:
 //!
 //! - **Claude Code / Cursor**: snake_case `tool_name` + `tool_input` (object).
-//! - **Grok**: camelCase `toolName` + `toolInput` (object).
 //! - **GitHub Copilot CLI**: camelCase `toolName` + `toolArgs`, where `toolArgs`
 //!   arrives as a JSON-encoded *string* (`"{\"command\":\"ls\"}"`) rather than an
 //!   object (documented as `unknown`; see github/copilot-cli#3349). It may also
@@ -25,15 +24,11 @@ pub(crate) fn resolve_tool_name(v: &Value) -> Option<String> {
         .map(str::to_string)
 }
 
-/// Resolve the tool-arguments object from `tool_input` / `toolInput` (object),
+/// Resolve the tool-arguments object from `tool_input` (object),
 /// `toolArgs` (object), or `toolArgs` (a JSON-encoded string). Returns an owned
 /// object `Value` so callers can read nested fields uniformly.
 pub(crate) fn resolve_tool_args(v: &Value) -> Option<Value> {
-    if let Some(obj) = v
-        .get("tool_input")
-        .or_else(|| v.get("toolInput"))
-        .filter(|x| x.is_object())
-    {
+    if let Some(obj) = v.get("tool_input").filter(|x| x.is_object()) {
         return Some(obj.clone());
     }
     match v.get("toolArgs") {
@@ -111,23 +106,6 @@ mod tests {
         let v = json!({ "tool_name": "Bash", "tool_input": { "command": "cat foo" } });
         let args = resolve_tool_args(&v).expect("args");
         assert_eq!(args.get("command").and_then(Value::as_str), Some("cat foo"));
-    }
-
-    #[test]
-    fn resolves_grok_tool_input_object() {
-        let v = json!({
-            "toolName": "run_terminal_command",
-            "toolInput": { "command": "git status" }
-        });
-        assert_eq!(
-            resolve_tool_name(&v).as_deref(),
-            Some("run_terminal_command")
-        );
-        let args = resolve_tool_args(&v).expect("args");
-        assert_eq!(
-            args.get("command").and_then(Value::as_str),
-            Some("git status")
-        );
     }
 
     #[test]

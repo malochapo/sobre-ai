@@ -151,7 +151,7 @@ fn print_deny_compression_markers(tool_name: &str) {
          to recover full content before editing."
     );
     let output = serde_json::json!({
-        // Grok PreToolUse decision field.
+        // Top-level PreToolUse decision field.
         "decision": "deny",
         "reason": msg,
         "permission": "deny",
@@ -284,7 +284,7 @@ fn build_ctx_shell_hint(args: &serde_json::Map<String, serde_json::Value>) -> St
 fn print_smart_deny(tool_name: &str, payload: &str) {
     let msg = smart_deny_message(tool_name, payload);
     let output = serde_json::json!({
-        // Grok PreToolUse decision field.
+        // Top-level PreToolUse decision field.
         "decision": "deny",
         "reason": msg,
         "permission": "deny",

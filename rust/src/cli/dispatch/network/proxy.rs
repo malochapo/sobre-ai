@@ -52,8 +52,6 @@ fn print_compression_by_upstream(v: &serde_json::Value) {
         ("Anthropic", "anthropic"),
         ("OpenAI", "openai"),
         ("Gemini", "gemini"),
-        ("Grok", "grok"),
-        ("CommandCode", "commandcode"),
     ] {
         let Some(row) = per_upstream.get(key).and_then(|x| x.as_object()) else {
             continue;
@@ -98,38 +96,13 @@ fn print_live_upstreams_and_drift(v: &serde_json::Value, cfg: &crate::core::conf
             ));
         }
     }
-    // The closed provider list (Grok dual-rail, Command Code, Ollama, Bedrock)
+    // The closed provider list (Ollama, Bedrock)
     // only appears under `/providers/{id}/…`.
     if let Some(providers) = v.get("providers").and_then(|p| p.as_array()) {
         for p in providers {
             let id = p.get("id").and_then(|x| x.as_str()).unwrap_or("?");
             let base = p.get("base_url").and_then(|x| x.as_str()).unwrap_or("?");
-            let label = if id.eq_ignore_ascii_case("grok-chat")
-                || id.eq_ignore_ascii_case("xai")
-                || id.eq_ignore_ascii_case("grok")
-            {
-                "Grok"
-            } else if id.eq_ignore_ascii_case("commandcode")
-                || id.eq_ignore_ascii_case("command-code")
-            {
-                "CommandCode"
-            } else {
-                id
-            };
-            // Prefer a stable display name; still show registry id when it
-            // differs (e.g. grok-chat vs xai).
-            let canonical_id = match label {
-                "Grok" => Some("grok"),
-                "CommandCode" => Some("commandcode"),
-                _ => None,
-            };
-            if let Some(canon) = canonical_id
-                && !id.eq_ignore_ascii_case(canon)
-            {
-                println!("    {label:<10} {base}  [{id}]");
-            } else {
-                println!("    {label:<10} {base}");
-            }
+            println!("    {id:<10} {base}");
         }
     }
     for note in notes {

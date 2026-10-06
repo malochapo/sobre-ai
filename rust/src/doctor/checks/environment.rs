@@ -246,50 +246,6 @@ pub(crate) fn wsl_vscode_mcp_outcome() -> Option<Outcome> {
     })
 }
 
-pub(crate) fn pi_outcome() -> Option<Outcome> {
-    let pi_result = std::process::Command::new("pi").arg("--version").output();
-
-    match pi_result {
-        Ok(output) if output.status.success() => {
-            let version = String::from_utf8_lossy(&output.stdout).trim().to_string();
-            let has_plugin = std::process::Command::new("pi")
-                .args(["list"])
-                .output()
-                .is_ok_and(|o| {
-                    o.status.success() && String::from_utf8_lossy(&o.stdout).contains("pi-lean-ctx")
-                });
-
-            let has_mcp = dirs::home_dir()
-                .map(|h| h.join(".pi/agent/mcp.json"))
-                .and_then(|p| std::fs::read_to_string(p).ok())
-                .is_some_and(|c| c.contains("lean-ctx"));
-
-            if has_plugin && has_mcp {
-                Some(Outcome {
-                    ok: true,
-                    line: format!(
-                        "{BOLD}Pi Coding Agent{RST}  {GREEN}{version}, pi-lean-ctx + MCP configured{RST}"
-                    ),
-                })
-            } else if has_plugin {
-                Some(Outcome {
-                    ok: true,
-                    line: format!(
-                        "{BOLD}Pi Coding Agent{RST}  {GREEN}{version}, pi-lean-ctx installed{RST}  {DIM}(MCP not configured — embedded bridge active){RST}"
-                    ),
-                })
-            } else {
-                Some(Outcome {
-                    ok: false,
-                    line: format!(
-                        "{BOLD}Pi Coding Agent{RST}  {YELLOW}{version}, but pi-lean-ctx not installed{RST}  {DIM}(run: pi install npm:pi-lean-ctx){RST}"
-                    ),
-                })
-            }
-        }
-        _ => None,
-    }
-}
 pub(crate) fn plan_mode_outcomes() -> Vec<Outcome> {
     let status = crate::core::editor_registry::plan_mode::check_plan_mode_status();
     let mut results = Vec::new();
@@ -501,7 +457,7 @@ pub(crate) fn lsp_server_outcomes() -> Vec<Outcome> {
         .collect()
 }
 /// True when `cwd_str` points inside an IDE/agent config directory rather than a
-/// real project (LM Studio, Claude, CodeBuddy, Codex). Matches both POSIX (`/`)
+/// real project (LM Studio, Claude, Codex). Matches both POSIX (`/`)
 /// and Windows (`\`) separators so the warning fires on every platform.
 pub(crate) fn cwd_looks_like_agent_dir(cwd_str: &str) -> bool {
     crate::core::pathutil::is_agent_config_dir(std::path::Path::new(cwd_str))

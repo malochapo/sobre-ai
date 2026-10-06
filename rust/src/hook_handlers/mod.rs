@@ -26,10 +26,8 @@ mod redirect;
 // Search/dir-list rewriting and shell tokenization extracted to
 // `search_rewrite` submodule (#660 LOC gate).
 mod search_rewrite;
-mod vibe;
 pub(crate) use codex::emit_session_start_additional_context;
 pub use codex::{handle_codex_pretooluse, handle_codex_session_start};
-pub use vibe::handle_vibe_pre_tool;
 // Test-only re-export: only `hook_handlers::tests` (cfg(test)) reaches these
 // through this path; codex.rs's own production use of them is internal.
 #[cfg(test)]
@@ -155,7 +153,7 @@ fn read_stdin_with_timeout(timeout: Duration) -> Option<String> {
 
 fn build_dual_allow_output() -> String {
     serde_json::json!({
-        // Grok PreToolUse decision field.
+        // Top-level PreToolUse decision field.
         "decision": "allow",
         "permission": "allow",
         "hookSpecificOutput": {
@@ -179,7 +177,7 @@ fn build_dual_rewrite_output(tool_input: Option<&serde_json::Value>, rewritten: 
     };
 
     serde_json::json!({
-        // Grok PreToolUse decision field (allow with optional mutation).
+        // Top-level PreToolUse decision field (allow with optional mutation).
         "decision": "allow",
         // Cursor hook output format.
         "permission": "allow",
@@ -190,7 +188,7 @@ fn build_dual_rewrite_output(tool_input: Option<&serde_json::Value>, rewritten: 
         // unmodified even after the camelCase payload parses correctly (#551).
         "permissionDecision": "allow",
         "modifiedArgs": updated_input.clone(),
-        // Claude Code / CodeBuddy hook output format (other hosts ignore it).
+        // Claude Code hook output format (other hosts ignore it).
         "hookSpecificOutput": {
             "hookEventName": "PreToolUse",
             "permissionDecision": "allow",

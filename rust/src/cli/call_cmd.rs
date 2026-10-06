@@ -190,8 +190,7 @@ pub(crate) fn run_call(args: &[String]) -> Result<String, CallError> {
         .get(&parsed.tool)
         .ok_or_else(|| CallError::UnknownTool(parsed.tool.clone()))?;
 
-    // Handlers are synchronous (the JetBrains backend uses blocking `ureq`),
-    // so no tokio runtime is required here.
+    // Handlers are synchronous, so no tokio runtime is required here.
     let output = tool.handle(&args_map, &ctx).map_err(|e| {
         CallError::Dispatch(DispatchError::Tool {
             message: e.to_string(),

@@ -1,5 +1,5 @@
-//! Per-client instruction delivery (Claude Code / CodeBuddy 2048-char
-//! MCP caps and their CLAUDE.md/CODEBUDDY.md block layouts).
+//! Per-client instruction delivery (Claude Code 2048-char MCP cap and its
+//! CLAUDE.md block layout).
 
 #[allow(clippy::wildcard_imports)]
 use crate::doctor::common::*;
@@ -16,18 +16,6 @@ pub(crate) fn claude_truncation_outcome() -> Option<Outcome> {
     }
 
     Some(claude_instructions_check(&home))
-}
-pub(crate) fn codebuddy_truncation_outcome() -> Option<Outcome> {
-    let home = dirs::home_dir()?;
-    let codebuddy_detected = crate::core::editor_registry::codebuddy_mcp_json_path(&home).exists()
-        || crate::core::editor_registry::codebuddy_state_dir(&home).exists()
-        || codebuddy_binary_exists();
-
-    if !codebuddy_detected {
-        return None;
-    }
-
-    Some(codebuddy_instructions_check(&home))
 }
 /// Verify Claude Code receives the full lean-ctx instructions despite the
 /// 2048-char MCP instructions cap.
@@ -48,25 +36,6 @@ pub(crate) fn claude_instructions_check(home: &std::path::Path) -> Outcome {
         ),
         S::Missing => format!(
             "{BOLD}Claude Code instructions{RST}  {YELLOW}no CLAUDE.md block or rules file found — MCP instructions truncated at 2048 chars{RST}  {DIM}(run: lean-ctx init){RST}"
-        ),
-    };
-    Outcome {
-        ok: state.ok(),
-        line,
-    }
-}
-/// CodeBuddy instructions check — mirrors `claude_instructions_check` since
-/// CodeBuddy uses the same CODEBUDDY.md block pattern as Claude Code.
-pub(crate) fn codebuddy_instructions_check(home: &std::path::Path) -> Outcome {
-    use crate::doctor::common::ClaudeInstructionsState as S;
-
-    let state = crate::doctor::common::codebuddy_instructions_state(home);
-    let line = match state {
-        S::Block => format!(
-            "{BOLD}CodeBuddy instructions{RST}  {GREEN}CODEBUDDY.md block installed{RST}  {DIM}(MCP instructions capped at 2048 chars — full content via CODEBUDDY.md){RST}"
-        ),
-        S::Missing => format!(
-            "{BOLD}CodeBuddy instructions{RST}  {YELLOW}no CODEBUDDY.md block or rules file found — MCP instructions truncated at 2048 chars{RST}  {DIM}(run: lean-ctx init){RST}"
         ),
     };
     Outcome {

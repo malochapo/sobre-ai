@@ -556,28 +556,4 @@ mod tests {
         assert!(may_autoindex_cwd(&home.join("code/proj")));
         assert!(may_autoindex_cwd(std::path::Path::new("/tmp/proj")));
     }
-
-    #[test]
-    #[cfg(target_os = "macos")]
-    fn qoder_agent_targets_include_all_macos_mcp_locations() {
-        let home = std::path::Path::new("/Users/tester");
-        let targets = agent_mcp_targets("qoder", home).unwrap();
-        let paths: Vec<_> = targets.iter().map(|t| t.config_path.as_path()).collect();
-
-        assert_eq!(
-            paths,
-            vec![
-                home.join(".qoder/mcp.json").as_path(),
-                home.join("Library/Application Support/Qoder/User/mcp.json")
-                    .as_path(),
-                home.join("Library/Application Support/Qoder/SharedClientCache/mcp.json")
-                    .as_path(),
-            ]
-        );
-        assert!(
-            targets
-                .iter()
-                .all(|t| t.config_type == ConfigType::QoderSettings)
-        );
-    }
 }

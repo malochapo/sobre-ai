@@ -1,7 +1,7 @@
 //! Read-dedup control — whether the PostToolUse hook replaces a native Read's
 //! *result* with the compact re-read stub (GL #1140, follow-up to GH #637).
 //!
-//! On guard hosts (Claude Code / CodeBuddy) `read_redirect = auto` keeps the
+//! On guard hosts (Claude Code) `read_redirect = auto` keeps the
 //! PreToolUse path-swap off so the native read-before-write guard stays intact —
 //! at the cost of the Read dedup savings. `PostToolUse.updatedToolOutput` restores
 //! them guard-safely: the native Read has already run on the *real* path (guard
@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 /// Controls the PostToolUse native-Read re-read dedup.
 ///
 /// - `Auto`: (Default) dedup only on hosts with a read-before-write guard
-///   (Claude Code / CodeBuddy) — exactly where the PreToolUse redirect is off and
+///   (Claude Code) — exactly where the PreToolUse redirect is off and
 ///   the savings would otherwise be lost. Elsewhere the PreToolUse redirect
 ///   already dedups re-reads, so the PostToolUse hook stays passive.
 /// - `On`: dedup wherever the hook fires.
@@ -57,7 +57,6 @@ mod tests {
         for var in [
             "CLAUDE_PROJECT_DIR",
             "CLAUDECODE",
-            "CODEBUDDY",
             "CURSOR_VERSION",
             "CURSOR_PROJECT_DIR",
             "CURSOR_TRANSCRIPT_PATH",
@@ -86,13 +85,6 @@ mod tests {
             "auto must dedup under Claude Code hooks (CLAUDE_PROJECT_DIR)"
         );
         crate::test_env::remove_var("CLAUDE_PROJECT_DIR");
-
-        crate::test_env::set_var("CODEBUDDY", "1");
-        assert!(
-            ReadDedup::read_dedup_enabled(),
-            "auto must dedup under CodeBuddy (shared guard contract)"
-        );
-        crate::test_env::remove_var("CODEBUDDY");
 
         // GH #722: Cursor exports CLAUDE_PROJECT_DIR for Claude-compat, but is
         // NOT a guard host — the PreToolUse redirect runs there, so the

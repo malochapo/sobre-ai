@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 
 use super::parsers::{
     remove_lean_ctx_block, remove_lean_ctx_from_json, remove_lean_ctx_from_toml,
-    remove_lean_ctx_from_yaml, remove_lean_ctx_login_block,
+    remove_lean_ctx_login_block,
 };
 use super::{
     backup_before_modify, copilot_instructions_path, remove_marked_block, safe_remove, safe_write,
@@ -54,25 +54,22 @@ pub(super) fn remove_project_agent_files(dry_run: bool) -> bool {
     }
 
     // Dedicated lean-ctx files in project: safe to delete entirely
-    let dedicated_project_files = [".kiro/steering/lean-ctx.md", ".cursor/rules/lean-ctx.mdc"];
-    for rel in &dedicated_project_files {
-        let path = cwd.join(rel);
-        if path.exists()
-            && let Ok(content) = fs::read_to_string(&path)
-            && content.contains("lean-ctx")
-        {
-            let _ = safe_remove(&path, dry_run);
-            let verb = if dry_run { "Would remove" } else { "✓" };
-            println!("  {verb} Project: removed {rel}");
-            removed = true;
-        }
+    let rel = ".cursor/rules/lean-ctx.mdc";
+    let path = cwd.join(rel);
+    if path.exists()
+        && let Ok(content) = fs::read_to_string(&path)
+        && content.contains("lean-ctx")
+    {
+        let _ = safe_remove(&path, dry_run);
+        let verb = if dry_run { "Would remove" } else { "✓" };
+        println!("  {verb} Project: removed {rel}");
+        removed = true;
     }
 
     // Shared project files: surgically remove lean-ctx content, keep user content
     let shared_project_files = [
         ".cursorrules",
         ".windsurfrules",
-        ".clinerules",
         // #555: lean-ctx writes a marked block into the repo Copilot instructions.
         ".github/copilot-instructions.md",
     ];
@@ -142,25 +139,10 @@ pub(super) fn remove_project_agent_files(dry_run: bool) -> bool {
         );
     }
 
-    // Project-level .codebuddy/settings.local.json: surgically remove lean-ctx hooks
-    let codebuddy_settings = cwd.join(".codebuddy/settings.local.json");
-    if codebuddy_settings.exists()
-        && let Ok(content) = fs::read_to_string(&codebuddy_settings)
-        && content.contains("lean-ctx")
-    {
-        backup_before_modify(&codebuddy_settings, dry_run);
-        removed |= apply_hook_cleanup(
-            &codebuddy_settings,
-            "Project .codebuddy/settings.local.json",
-            &content,
-            dry_run,
-        );
-    }
-
     removed
 }
 
-/// Remove the lean-ctx section from .cursorrules / .windsurfrules / .clinerules.
+/// Remove the lean-ctx section from .cursorrules / .windsurfrules.
 /// These files have lean-ctx content appended starting with the canonical
 /// `START_MARK` comment. The content has no end marker, so we remove from
 /// the marker to the end of the lean-ctx block (next heading or end of file).
@@ -305,72 +287,21 @@ pub(super) fn remove_mcp_configs(home: &Path, dry_run: bool) -> bool {
         || PathBuf::from("/nonexistent"),
         |d| PathBuf::from(d).join(".claude.json"),
     );
-    let codebuddy_cfg_dir_json = std::env::var("CODEBUDDY_CONFIG_DIR").ok().map_or_else(
-        || PathBuf::from("/nonexistent"),
-        |d| PathBuf::from(d).join(".codebuddy.json"),
-    );
-    let mut configs: Vec<(&str, PathBuf)> = vec![
+    let configs: Vec<(&str, PathBuf)> = vec![
         ("Cursor", home.join(".cursor/mcp.json")),
         ("Claude Code (config dir)", claude_cfg_dir_json),
         ("Claude Code (home)", home.join(".claude.json")),
-        ("CodeBuddy (config dir)", codebuddy_cfg_dir_json),
-        ("CodeBuddy (home)", home.join(".codebuddy.json")),
         ("Windsurf", home.join(".codeium/windsurf/mcp_config.json")),
         ("Gemini CLI", home.join(".gemini/settings.json")),
-        (
-            "Antigravity",
-            home.join(".gemini/antigravity/mcp_config.json"),
-        ),
-        (
-            "Antigravity CLI",
-            home.join(".gemini/antigravity-cli/mcp_config.json"),
-        ),
         (
             "Codex CLI",
             crate::core::home::resolve_codex_dir()
                 .unwrap_or_else(|| home.join(".codex"))
                 .join("config.toml"),
         ),
-        ("Grok", home.join(".grok/config.toml")),
         ("OpenCode", home.join(".config/opencode/opencode.json")),
-        ("Qwen Code", home.join(".qwen/settings.json")),
-        ("Trae", home.join(".trae/mcp.json")),
-        ("Amazon Q Developer", home.join(".aws/amazonq/default.json")),
-        ("JetBrains IDEs", home.join(".jb-mcp.json")),
-        ("AWS Kiro", home.join(".kiro/settings/mcp.json")),
-        ("Verdent", home.join(".verdent/mcp.json")),
-        ("Amp", home.join(".config/amp/settings.json")),
-        ("Crush", home.join(".config/crush/crush.json")),
-        ("Pi Coding Agent", home.join(".pi/agent/mcp.json")),
-        ("Cline", crate::core::editor_registry::cline_mcp_path()),
-        ("Roo Code", crate::core::editor_registry::roo_mcp_path()),
-        ("Hermes Agent", home.join(".hermes/config.yaml")),
-        ("OpenClaw", home.join(".openclaw/openclaw.json")),
-        ("Augment CLI", home.join(".augment/settings.json")),
-        (
-            "Augment VS Code",
-            crate::core::editor_registry::augment_vscode_mcp_path(home),
-        ),
-        ("Qoder", home.join(".qoder/mcp.json")),
-        (
-            "Qoder CLI",
-            crate::core::editor_registry::qodercli_settings_path(home),
-        ),
-        ("QoderWork", home.join(".qoderwork/mcp.json")),
-        ("Aider", home.join(".aider/mcp.json")),
-        ("Continue", home.join(".continue/mcp.json")),
-        ("Neovim (mcphub)", home.join(".config/mcphub/servers.json")),
-        ("Emacs", home.join(".emacs.d/mcp.json")),
-        ("Sublime Text", home.join(".config/sublime-text/mcp.json")),
         ("Copilot CLI", home.join(".copilot/mcp-config.json")),
     ];
-
-    // Add platform-specific paths (Qoder macOS Application Support etc.)
-    for path in crate::core::editor_registry::qoder_all_mcp_paths(home) {
-        if !configs.iter().any(|(_, p)| *p == path) {
-            configs.push(("Qoder", path));
-        }
-    }
 
     let mut removed = false;
 
@@ -385,25 +316,12 @@ pub(super) fn remove_mcp_configs(home: &Path, dry_run: bool) -> bool {
             continue;
         }
 
-        let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
-        let is_yaml = ext == "yaml" || ext == "yml";
-        let is_toml = ext == "toml";
+        let is_toml = path.extension().and_then(|e| e.to_str()) == Some("toml");
 
-        let cleaned = if is_yaml {
-            Some(remove_lean_ctx_from_yaml(&content))
-        } else if is_toml {
+        let cleaned = if is_toml {
             Some(remove_lean_ctx_from_toml(&content))
         } else {
             let mut cleaned = remove_lean_ctx_from_json(&content);
-            // OpenClaw (GitHub #390): a leftover empty `mcpServers` object
-            // still fails the strict 2026.6.1 validator — drop it entirely.
-            if *name == "OpenClaw"
-                && let Some(ref c) = cleaned
-                && let Some(stripped) =
-                    super::parsers::remove_empty_json_object_key(c, "mcpServers")
-            {
-                cleaned = Some(stripped);
-            }
             // OpenCode: also clean up shadow-mode permission denies (read/grep/glob/bash)
             // that lean-ctx may have set via `apply_shadow_permissions` — they don't
             // contain "lean-ctx" so the generic JSON cleanup above won't touch them.
@@ -446,29 +364,20 @@ pub(super) fn remove_mcp_configs(home: &Path, dry_run: bool) -> bool {
         }
     }
 
-    for (vscode_path, label) in [
-        (
-            crate::core::editor_registry::vscode_mcp_path(),
-            "VS Code / Copilot",
-        ),
-        (
-            crate::core::editor_registry::vscode_insiders_mcp_path(),
-            "VS Code Insiders",
-        ),
-    ] {
-        if vscode_path.exists()
-            && let Ok(content) = fs::read_to_string(&vscode_path)
-            && content.contains("lean-ctx")
-            && let Some(cleaned) = remove_lean_ctx_from_json(&content)
-        {
-            backup_before_modify(&vscode_path, dry_run);
-            if let Err(e) = safe_write(&vscode_path, &cleaned, dry_run) {
-                tracing::warn!("Failed to update {label} config: {e}");
-            } else {
-                let verb = if dry_run { "Would update" } else { "✓" };
-                println!("  {verb} MCP config removed from {label}");
-                removed = true;
-            }
+    let vscode_path = crate::core::editor_registry::vscode_mcp_path();
+    let label = "VS Code / Copilot";
+    if vscode_path.exists()
+        && let Ok(content) = fs::read_to_string(&vscode_path)
+        && content.contains("lean-ctx")
+        && let Some(cleaned) = remove_lean_ctx_from_json(&content)
+    {
+        backup_before_modify(&vscode_path, dry_run);
+        if let Err(e) = safe_write(&vscode_path, &cleaned, dry_run) {
+            tracing::warn!("Failed to update {label} config: {e}");
+        } else {
+            let verb = if dry_run { "Would update" } else { "✓" };
+            println!("  {verb} MCP config removed from {label}");
+            removed = true;
         }
     }
 
@@ -525,10 +434,6 @@ pub(super) fn remove_rules_files(home: &Path, dry_run: bool) -> bool {
             "Claude Code",
             crate::core::editor_registry::claude_rules_dir(home).join("lean-ctx.md"),
         ),
-        (
-            "CodeBuddy",
-            crate::core::editor_registry::codebuddy_rules_dir(home).join("lean-ctx.md"),
-        ),
         ("Cursor", home.join(".cursor/rules/lean-ctx.mdc")),
         (
             "Gemini CLI (dedicated)",
@@ -545,29 +450,6 @@ pub(super) fn remove_rules_files(home: &Path, dry_run: bool) -> bool {
             "Zed",
             crate::core::editor_registry::zed_config_dir(home).join("rules/lean-ctx.md"),
         ),
-        ("Cline", home.join(".cline/rules/lean-ctx.md")),
-        ("Roo Code", home.join(".roo/rules/lean-ctx.md")),
-        ("Continue", home.join(".continue/rules/lean-ctx.md")),
-        ("Amp", home.join(".ampcoder/rules/lean-ctx.md")),
-        ("Qwen Code", home.join(".qwen/rules/lean-ctx.md")),
-        ("Trae", home.join(".trae/rules/lean-ctx.md")),
-        (
-            "Amazon Q Developer",
-            home.join(".aws/amazonq/rules/lean-ctx.md"),
-        ),
-        ("JetBrains IDEs", home.join(".jb-rules/lean-ctx.md")),
-        (
-            "Antigravity",
-            home.join(".gemini/antigravity/rules/lean-ctx.md"),
-        ),
-        ("Pi Coding Agent", home.join(".pi/rules/lean-ctx.md")),
-        ("AWS Kiro", home.join(".kiro/steering/lean-ctx.md")),
-        ("Verdent", home.join(".verdent/rules/lean-ctx.md")),
-        ("Crush", home.join(".config/crush/rules/lean-ctx.md")),
-        ("OpenClaw", home.join(".openclaw/rules/lean-ctx.md")),
-        ("Augment", home.join(".augment/rules/lean-ctx.md")),
-        ("Qoder", home.join(".qoder/rules/lean-ctx.md")),
-        ("Hermes Agent", home.join(".hermes/rules/lean-ctx.md")),
     ];
 
     // Shared files: contain user content + lean-ctx block with markers.
@@ -578,11 +460,6 @@ pub(super) fn remove_rules_files(home: &Path, dry_run: bool) -> bool {
             crate::core::editor_registry::claude_state_dir(home).join("CLAUDE.md"),
         ),
         ("Claude Code (home)", home.join(".claude/CLAUDE.md")),
-        (
-            "CodeBuddy",
-            crate::core::editor_registry::codebuddy_state_dir(home).join("CODEBUDDY.md"),
-        ),
-        ("CodeBuddy (home)", home.join(".codebuddy/CODEBUDDY.md")),
         ("Gemini CLI", home.join(".gemini/GEMINI.md")),
         (
             "Codex CLI",
@@ -599,8 +476,6 @@ pub(super) fn remove_rules_files(home: &Path, dry_run: bool) -> bool {
                 .unwrap_or_else(|| home.join(".codex"))
                 .join("AGENTS.md"),
         ),
-        ("Hermes Agent", home.join(".hermes/HERMES.md")),
-        ("Grok", home.join(".grok/AGENTS.md")),
     ];
 
     let mut removed = false;
@@ -624,10 +499,6 @@ pub(super) fn remove_rules_files(home: &Path, dry_run: bool) -> bool {
     }
 
     // --- Shared: surgically remove lean-ctx section, keep user content ---
-    // Two marker styles exist:
-    //   1. HTML comment markers: `START_MARK` … `END_MARK`
-    //   2. Heading-based: `# Context Engineering Layer` (Kiro steering)
-    const HEADING_MARKER: &str = "# Context Engineering Layer";
     const HTML_START: &str = crate::core::rules_canonical::START_MARK;
     const HTML_END: &str = crate::core::rules_canonical::END_MARK;
 
@@ -642,9 +513,7 @@ pub(super) fn remove_rules_files(home: &Path, dry_run: bool) -> bool {
             continue;
         }
 
-        let cleaned = if content.contains(HEADING_MARKER) && content.contains(HTML_END) {
-            remove_marked_block(&content, HEADING_MARKER, HTML_END)
-        } else if content.contains(HTML_START) && content.contains(HTML_END) {
+        let cleaned = if content.contains(HTML_START) && content.contains(HTML_END) {
             remove_marked_block(&content, HTML_START, HTML_END)
         } else {
             remove_lean_ctx_block_from_md(&content)
@@ -662,43 +531,6 @@ pub(super) fn remove_rules_files(home: &Path, dry_run: bool) -> bool {
             println!("  {verb} Rules removed from {name} (user content preserved)");
         }
         removed = true;
-    }
-
-    // --- Hermes Agent: block-based removal from shared HERMES.md ---
-    let hermes_md = home.join(".hermes/HERMES.md");
-    if hermes_md.exists()
-        && let Ok(content) = fs::read_to_string(&hermes_md)
-        && content.contains("lean-ctx")
-    {
-        let cleaned = remove_lean_ctx_block_from_md(&content);
-        backup_before_modify(&hermes_md, dry_run);
-        if cleaned.trim().is_empty() {
-            let _ = safe_remove(&hermes_md, dry_run);
-        } else {
-            let _ = safe_write(&hermes_md, &cleaned, dry_run);
-        }
-        let verb = if dry_run { "Would clean" } else { "✓" };
-        println!("  {verb} Rules removed from Hermes Agent");
-        removed = true;
-    }
-
-    if let Ok(cwd) = std::env::current_dir() {
-        let project_hermes = cwd.join(".hermes.md");
-        if project_hermes.exists()
-            && let Ok(content) = fs::read_to_string(&project_hermes)
-            && content.contains("lean-ctx")
-        {
-            let cleaned = remove_lean_ctx_block_from_md(&content);
-            backup_before_modify(&project_hermes, dry_run);
-            if cleaned.trim().is_empty() {
-                let _ = safe_remove(&project_hermes, dry_run);
-            } else {
-                let _ = safe_write(&project_hermes, &cleaned, dry_run);
-            }
-            let verb = if dry_run { "Would clean" } else { "✓" };
-            println!("  {verb} Rules removed from .hermes.md");
-            removed = true;
-        }
     }
 
     if !removed {
@@ -780,16 +612,11 @@ fn apply_hook_cleanup(path: &Path, label: &str, content: &str, dry_run: bool) ->
 
 pub(super) fn remove_hook_files(home: &Path, dry_run: bool) -> bool {
     let claude_hooks_dir = crate::core::editor_registry::claude_state_dir(home).join("hooks");
-    let codebuddy_hooks_dir = crate::core::editor_registry::codebuddy_state_dir(home).join("hooks");
     let hook_files: Vec<PathBuf> = vec![
         claude_hooks_dir.join("lean-ctx-rewrite.sh"),
         claude_hooks_dir.join("lean-ctx-redirect.sh"),
         claude_hooks_dir.join("lean-ctx-rewrite-native"),
         claude_hooks_dir.join("lean-ctx-redirect-native"),
-        codebuddy_hooks_dir.join("lean-ctx-rewrite.sh"),
-        codebuddy_hooks_dir.join("lean-ctx-redirect.sh"),
-        codebuddy_hooks_dir.join("lean-ctx-rewrite-native"),
-        codebuddy_hooks_dir.join("lean-ctx-redirect-native"),
         home.join(".cursor/hooks/lean-ctx-rewrite.sh"),
         home.join(".cursor/hooks/lean-ctx-redirect.sh"),
         home.join(".cursor/hooks/lean-ctx-rewrite-native"),
@@ -802,9 +629,6 @@ pub(super) fn remove_hook_files(home: &Path, dry_run: bool) -> bool {
             .join("hooks/lean-ctx-rewrite-codex.sh"),
         home.join(".codeium/windsurf/hooks/lean-ctx-rewrite.sh"),
         home.join(".codeium/windsurf/hooks/lean-ctx-redirect.sh"),
-        home.join(".qoder/hooks/lean-ctx-rewrite.sh"),
-        home.join(".qoder/hooks/lean-ctx-redirect.sh"),
-        home.join(".grok/hooks/lean-ctx.json"),
     ];
 
     let mut removed = false;
@@ -846,43 +670,6 @@ pub(super) fn remove_hook_files(home: &Path, dry_run: bool) -> bool {
         );
     }
 
-    // CodeBuddy global settings: surgically remove lean-ctx hook entries
-    for codebuddy_settings_name in ["settings.json", "settings.local.json"] {
-        let codebuddy_settings =
-            crate::core::editor_registry::codebuddy_state_dir(home).join(codebuddy_settings_name);
-        if !codebuddy_settings.exists() {
-            continue;
-        }
-        let Ok(content) = fs::read_to_string(&codebuddy_settings) else {
-            continue;
-        };
-        if !content.contains("lean-ctx") {
-            continue;
-        }
-        backup_before_modify(&codebuddy_settings, dry_run);
-        removed |= apply_hook_cleanup(
-            &codebuddy_settings,
-            &format!("CodeBuddy {codebuddy_settings_name}"),
-            &content,
-            dry_run,
-        );
-    }
-
-    // Antigravity CLI (`agy`) installs hooks as a *plugin* under
-    // ~/.gemini/config/plugins/lean-ctx (registered in import_manifest.json),
-    // not as a hooks block in any settings.json (GH #284). Remove that plugin
-    // and its manifest entry surgically.
-    let plugin_present = crate::hooks::agents::antigravity_cli_plugin_dir(home).exists();
-    if dry_run {
-        if plugin_present {
-            removed = true;
-            println!("  Would remove Antigravity CLI plugin");
-        }
-    } else if crate::hooks::agents::uninstall_antigravity_cli_plugin(home) {
-        removed = true;
-        println!("  ✓ Antigravity CLI plugin removed");
-    }
-
     // hooks.json: surgically remove lean-ctx entries instead of deleting
     for (label, hj_path) in [
         ("Cursor", home.join(".cursor/hooks.json")),
@@ -893,7 +680,6 @@ pub(super) fn remove_hook_files(home: &Path, dry_run: bool) -> bool {
                 .join("hooks.json"),
         ),
         ("Windsurf", home.join(".codeium/windsurf/hooks.json")),
-        ("Qoder", home.join(".qoder/settings.json")),
         ("Copilot (global)", home.join(".copilot/hooks/hooks.json")),
         ("Gemini CLI", home.join(".gemini/settings.json")),
     ] {

@@ -119,23 +119,6 @@ struct ProviderSpec {
 /// The providers served under `/providers/{id}/...`, besides the three
 /// built-in routes (`anthropic`, `openai`, `gemini`).
 const PROVIDERS: &[ProviderSpec] = &[
-    // xAI Grok, API-key rail (`XAI_API_KEY`).
-    ProviderSpec {
-        id: "xai",
-        shape: WireShape::OpenAi,
-        default_url: Some("https://api.x.ai"),
-    },
-    // xAI Grok, subscription rail (`grok login` session).
-    ProviderSpec {
-        id: "grok-chat",
-        shape: WireShape::OpenAi,
-        default_url: Some("https://cli-chat-proxy.grok.com"),
-    },
-    ProviderSpec {
-        id: "commandcode",
-        shape: WireShape::OpenAi,
-        default_url: Some("https://api.commandcode.ai"),
-    },
     // Local inference; billed at the local shadow rate.
     ProviderSpec {
         id: "ollama",

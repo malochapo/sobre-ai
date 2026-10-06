@@ -228,9 +228,9 @@ pub fn inject_rules_for_agent(home: &std::path::Path, agent_key: &str) -> Inject
 }
 
 /// Whether lean-ctx rules are installed for any agent: the rules targets, plus
-/// the CLAUDE.md / CODEBUDDY.md blocks (those two agents have no rules
-/// target). Rules are re-synced on update only where they are installed, so
-/// `init --skip-rules` stays in effect.
+/// the CLAUDE.md block (Claude Code has no rules target). Rules are re-synced
+/// on update only where they are installed, so `init --skip-rules` stays in
+/// effect.
 #[must_use]
 pub fn rules_installed() -> bool {
     let Some(home) = dirs::home_dir() else {
@@ -239,16 +239,8 @@ pub fn rules_installed() -> bool {
     if any_rules_marker_present(&home) {
         return true;
     }
-    let block_in = |path: std::path::PathBuf, marker: &str| {
-        std::fs::read_to_string(path).is_ok_and(|c| c.contains(marker))
-    };
-    block_in(
-        crate::core::editor_registry::claude_state_dir(&home).join("CLAUDE.md"),
-        crate::hooks::agents::CLAUDE_MD_BLOCK_START,
-    ) || block_in(
-        crate::core::editor_registry::codebuddy_state_dir(&home).join("CODEBUDDY.md"),
-        crate::hooks::agents::CODEBUDDY_MD_BLOCK_START,
-    )
+    std::fs::read_to_string(crate::core::editor_registry::claude_state_dir(&home).join("CLAUDE.md"))
+        .is_ok_and(|c| c.contains(crate::hooks::agents::CLAUDE_MD_BLOCK_START))
 }
 
 /// Returns `true` if a lean-ctx rules marker is present in *any* supported
@@ -268,29 +260,12 @@ fn match_agent_name(cli_key: &str, target_name: &str) -> bool {
         || tn.contains(&needle)
         || (needle.contains("cursor") && tn.contains("cursor"))
         || (needle.contains("claude") && tn.contains("claude"))
-        || (needle.contains("codebuddy") && tn.contains("codebuddy"))
         || (needle.contains("windsurf") && tn.contains("windsurf"))
         || (needle.contains("codex") && tn.contains("claude"))
         || (needle.contains("zed") && tn.contains("zed"))
         || (needle.contains("copilot") && tn.contains("copilot"))
-        || (needle.contains("jetbrains") && tn.contains("jetbrains"))
-        || (needle.contains("kiro") && tn.contains("kiro"))
         || (needle.contains("gemini") && tn.contains("gemini"))
         || (needle == "opencode" && tn.contains("opencode"))
-        || (needle == "cline" && tn.contains("cline"))
-        || (needle == "roo" && tn.contains("roo"))
-        || (needle == "amp" && tn.contains("amp"))
-        || (needle == "trae" && tn.contains("trae"))
-        || (needle == "amazonq" && tn.contains("amazon"))
-        || (needle == "pi" && tn.contains("pi coding"))
-        || (needle == "crush" && tn.contains("crush"))
-        || (needle == "verdent" && tn.contains("verdent"))
-        || (needle == "continue" && tn.contains("continue"))
-        || (needle == "qwen" && tn.contains("qwen"))
-        || (needle == "antigravity" && tn.contains("antigravity"))
-        || (needle == "augment" && tn.contains("augment"))
-        || (needle == "openclaw" && tn.contains("openclaw"))
-        || (needle == "grok" && tn.contains("grok"))
         || (needle == "vscode" && (tn.contains("vs code") || tn.contains("vscode")))
 }
 
