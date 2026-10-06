@@ -161,7 +161,6 @@ SETUP AND MAINTENANCE:
     proxy start [--port=4444] [--detach] | status   Local API proxy
     cache list|clear|stats         File read cache
     tee list|clear|show <file>|last  Saved full outputs (see ctx_expand)
-    filter list|validate|init      Custom compression filters
     slow-log list|clear            Slow command log
     debug-log list|tail N|clear|path  Opt-in tool-call log (config key debug_log)
     verify-cache [path] [--json]   Prove the session cache

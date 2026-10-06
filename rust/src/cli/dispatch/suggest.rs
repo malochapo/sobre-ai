@@ -31,7 +31,6 @@ pub(crate) const KNOWN_COMMANDS: &[&str] = &[
     "ls",
     "deps",
     "ghost",
-    "filter",
     "graph",
     "smells",
     "session",

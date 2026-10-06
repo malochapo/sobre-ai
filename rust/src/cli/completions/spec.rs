@@ -554,15 +554,6 @@ pub static COMMAND_TREE: &[CommandNode] = &[
         hidden: false,
     },
     CommandNode {
-        name: "filter",
-        aliases: &[],
-        description: "Filter context",
-        subcommands: &[],
-        flags: &[],
-        positional: None,
-        hidden: false,
-    },
-    CommandNode {
         name: "graph",
         aliases: &[],
         description: "Show dependency graph",

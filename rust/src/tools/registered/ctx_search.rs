@@ -83,6 +83,7 @@ impl McpTool for CtxSearchTool {
                     "max_results": { "type": "integer" },
                     "top_k": { "type": "integer" },
                     "mode": { "type": "string", "enum": ["bm25", "dense", "hybrid"] },
+                    "workspace": { "type": "boolean", "description": "semantic: also search allow_paths and read_only_roots" },
                     "file": { "type": "string" },
                     "kind": { "type": "string" },
                     "file_path": { "type": "string" },
@@ -128,7 +129,7 @@ impl McpTool for CtxSearchTool {
             SearchAction::Regex => handle_regex(args, ctx),
             SearchAction::Semantic => handle_semantic(args, ctx),
             SearchAction::Symbol => handle_symbol(args, ctx),
-            SearchAction::Reindex => handle_reindex(args, ctx),
+            SearchAction::Reindex => handle_reindex(ctx),
             SearchAction::FindRelated => handle_find_related(args, ctx),
         }
     }
@@ -159,7 +160,6 @@ const KNOWN_KEYS: &[&str] = &[
     "languages",
     "path_glob",
     "workspace",
-    "artifacts",
     "ignore_gitignore",
 ];
 
@@ -323,7 +323,6 @@ fn handle_semantic(args: &Map<String, Value>, ctx: &ToolContext) -> Result<ToolO
     let languages = get_str_array(args, "languages");
     let path_glob = get_str(args, "path_glob");
     let workspace = get_bool(args, "workspace").unwrap_or(false);
-    let artifacts = get_bool(args, "artifacts").unwrap_or(false);
     prime_bm25_cache(ctx);
 
     let result = tokio::task::block_in_place(|| {
@@ -336,7 +335,6 @@ fn handle_semantic(args: &Map<String, Value>, ctx: &ToolContext) -> Result<ToolO
             path_glob.as_deref(),
             mode.as_deref(),
             Some(workspace),
-            Some(artifacts),
         )
     });
 
@@ -404,20 +402,13 @@ fn handle_symbol(args: &Map<String, Value>, ctx: &ToolContext) -> Result<ToolOut
     })
 }
 
-/// `action=reindex` — rebuild the BM25 (or artifacts) index, routed to core.
-fn handle_reindex(args: &Map<String, Value>, ctx: &ToolContext) -> Result<ToolOutput, ErrorData> {
+/// `action=reindex` — rebuild the BM25 index, routed to core.
+fn handle_reindex(ctx: &ToolContext) -> Result<ToolOutput, ErrorData> {
     let path = resolve_path_or_root(ctx)?;
-    let workspace = get_bool(args, "workspace").unwrap_or(false);
-    let artifacts = get_bool(args, "artifacts").unwrap_or(false);
     prime_bm25_cache(ctx);
 
-    let result = tokio::task::block_in_place(|| {
-        if artifacts {
-            crate::tools::impl_semantic_search::handle_reindex_artifacts(&path, workspace)
-        } else {
-            crate::tools::impl_semantic_search::handle_reindex(&path)
-        }
-    });
+    let result =
+        tokio::task::block_in_place(|| crate::tools::impl_semantic_search::handle_reindex(&path));
 
     Ok(semantic_output(result))
 }

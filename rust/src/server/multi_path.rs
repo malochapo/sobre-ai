@@ -1,6 +1,6 @@
 use serde_json::{Map, Value};
 
-use crate::server::tool_trait::{ToolContext, get_str, get_str_array};
+use crate::server::tool_trait::{ToolContext, get_str_array};
 
 #[derive(Debug)]
 pub struct ResolvedPaths {
@@ -25,15 +25,6 @@ pub fn resolve_tool_paths(
     args: &Map<String, Value>,
     ctx: &ToolContext,
 ) -> Result<ResolvedPaths, String> {
-    if let Some(repo) = get_str(args, "repo")
-        && let Some(root) = crate::core::multi_repo::resolve_repo_root(&repo)
-    {
-        return Ok(ResolvedPaths {
-            roots: vec![root],
-            is_multi: false,
-        });
-    }
-
     if let Some(paths) = get_str_array(args, "paths")
         && !paths.is_empty()
     {

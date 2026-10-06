@@ -4,7 +4,6 @@ use std::sync::OnceLock;
 static BUNDLED_REGISTRY: &str = include_str!("../../data/model_registry.json");
 
 static PARSED_BUNDLED: OnceLock<Registry> = OnceLock::new();
-static PARSED_LOCAL: OnceLock<Option<Registry>> = OnceLock::new();
 
 #[derive(Debug, Clone)]
 struct ModelEntry {
@@ -48,17 +47,6 @@ fn parse_registry(json: &str) -> Option<Registry> {
 
 fn bundled() -> &'static Registry {
     PARSED_BUNDLED.get_or_init(|| parse_registry(BUNDLED_REGISTRY).unwrap_or_default())
-}
-
-fn local_registry() -> Option<&'static Registry> {
-    PARSED_LOCAL
-        .get_or_init(|| {
-            let data_dir = crate::core::data_dir::lean_ctx_data_dir().ok()?;
-            let path = data_dir.join("model_registry.json");
-            let content = std::fs::read_to_string(path).ok()?;
-            parse_registry(&content)
-        })
-        .as_ref()
 }
 
 /// Parse a trailing long-context marker like `[1m]` / `[1M]` / `[200k]` into
@@ -125,10 +113,9 @@ fn registry_lookup(model: &str, registry: &Registry) -> Option<usize> {
 }
 
 /// Look up context window for a model name.
-/// Layers: User Config → `[1m]`-style suffix → Local Registry → Bundled
-/// Registry → 200k default.
+/// Order: a `[1m]`-style suffix in the name → the bundled registry → 200k.
 pub fn context_window_for_model(model: &str) -> usize {
-    // Layer 2: explicit window marker in the model name itself (GH #739).
+    // Explicit window marker in the model name itself (GH #739).
     // `claude-opus-4-8[1m]` means the client runs the 1M-context variant —
     // registries would only ever know the base model's window.
     if let Some(w) = window_from_suffix(model) {
@@ -139,14 +126,7 @@ pub fn context_window_for_model(model: &str) -> usize {
     // markers still match their base entry instead of falling through.
     let base = split_window_suffix(model).map_or(model, |(base, _)| base);
 
-    // Layer 3: Local registry (auto-updated via lean-ctx update)
-    if let Some(local) = local_registry()
-        && let Some(w) = registry_lookup(base, local)
-    {
-        return w;
-    }
-
-    // Layer 4: Bundled registry (compiled into binary)
+    // Bundled registry (compiled into the binary)
     if let Some(w) = registry_lookup(base, bundled()) {
         return w;
     }

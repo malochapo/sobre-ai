@@ -177,10 +177,6 @@ pub fn run() {
                 super::cmd_ghost(&rest);
                 return;
             }
-            "filter" => {
-                super::cmd_filter(&rest);
-                return;
-            }
             "graph" => {
                 // `graph --heatmap` is the structural view: per-file heat from
                 // token count x graph connections. Distinct from

@@ -99,12 +99,6 @@ pub fn compress_output(command: &str, output: &str) -> Option<String> {
         }
     };
 
-    if let Some(engine) = crate::core::filters::FilterEngine::load()
-        && let Some(filtered) = engine.apply(command, clean_output)
-    {
-        return shorter_only(filtered, output);
-    }
-
     // VCS history (git/jj/gh/glab/hg) is owned by its dedicated compressor. Its
     // lines look log-ish (one per commit) but are NOT application logs, so the
     // generic json/log/test fallbacks would mis-summarize them — e.g. truncating

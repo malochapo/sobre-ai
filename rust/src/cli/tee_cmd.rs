@@ -122,51 +122,6 @@ pub fn cmd_tee(args: &[String]) {
     }
 }
 
-pub fn cmd_filter(args: &[String]) {
-    let action = args.first().map_or("list", std::string::String::as_str);
-    match action {
-        "list" | "ls" => {
-            if let Some(engine) = crate::core::filters::FilterEngine::load() {
-                let rules = engine.list_rules();
-                println!("Loaded {} filter rule(s):\n", rules.len());
-                for rule in &rules {
-                    println!("{rule}");
-                }
-            } else {
-                println!("No custom filters found.");
-                println!("Create one: lean-ctx filter init");
-            }
-        }
-        "validate" => {
-            let Some(path) = args.get(1) else {
-                eprintln!("Usage: lean-ctx filter validate <file.toml>");
-                std::process::exit(1);
-            };
-            match crate::core::filters::validate_filter_file(path) {
-                Ok(count) => println!("Valid: {count} rule(s) parsed successfully."),
-                Err(e) => {
-                    eprintln!("Validation failed: {e}");
-                    std::process::exit(1);
-                }
-            }
-        }
-        "init" => match crate::core::filters::create_example_filter() {
-            Ok(path) => {
-                println!("Created example filter: {path}");
-                println!("Edit it to add your custom compression rules.");
-            }
-            Err(e) => {
-                eprintln!("{e}");
-                std::process::exit(1);
-            }
-        },
-        _ => {
-            eprintln!("Usage: lean-ctx filter [list|validate <file>|init]");
-            std::process::exit(1);
-        }
-    }
-}
-
 pub fn cmd_slow_log(args: &[String]) {
     use crate::core::slow_log;
 

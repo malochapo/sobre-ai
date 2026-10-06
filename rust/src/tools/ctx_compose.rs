@@ -315,7 +315,6 @@ fn ranked_files_budgeted(task: &str, project_root: &str, crp_mode: CrpMode) -> S
                 None,
                 None,
                 Some(false),
-                Some(false),
             )
         }))
         .unwrap_or_else(|_| {
