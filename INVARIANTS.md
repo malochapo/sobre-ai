@@ -17,7 +17,7 @@ The MCP tool surface is capped at **20 tools**. There is no exception, no
 "internal" tool that doesn't count, no meta-tool that fans out to a hidden
 registry.
 
-The surface currently stands at 19, leaving one slot. That margin is
+The surface currently stands at 17, leaving three slots. That margin is
 deliberate: a cap you are already touching is a cap you will break.
 
 Adding a tool requires naming the tool it replaces, in the same PR. If nothing
@@ -109,8 +109,9 @@ only reliable oracle here. A budget that taxes it is aimed at the wrong thing.
 
 ### Where we actually stand
 
-`rust/src` is 455,488 lines, of which 112,160 are test blocks. **Production
-code: 343,328 — 36,672 below the ceiling.**
+`rust/src` is about 261,400 lines, of which about 77,600 are test code.
+**Production code: about 183,800 — some 196,000 below the ceiling.** (It was
+343,328 when this section was first written.)
 
 So the ceiling is met, and has been for a while without anyone knowing: the
 figure quoted above (491,554, "about 111,000 lines below where we stand") was
