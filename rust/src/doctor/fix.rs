@@ -96,12 +96,6 @@ fn build_and_persist_fix_report(
         }
         let short = t.config_path.to_string_lossy().to_string();
 
-        let mode = if t.agent_key.is_empty() {
-            crate::hooks::HookMode::Mcp
-        } else {
-            crate::hooks::recommend_hook_mode(&t.agent_key)
-        };
-
         let res = crate::core::editor_registry::write_config_with_options(
             t,
             &binary,
@@ -117,15 +111,11 @@ fn build_and_persist_fix_report(
                     crate::core::editor_registry::WriteAction::Updated => "updated",
                     crate::core::editor_registry::WriteAction::Already => "already",
                 };
-                let note_parts: Vec<String> = [Some(format!("mode={mode}")), r.note]
-                    .into_iter()
-                    .flatten()
-                    .collect();
                 mcp_step.items.push(SetupItem {
                     name: t.name.to_string(),
                     status: status.to_string(),
                     path: Some(short),
-                    note: Some(note_parts.join("; ")),
+                    note: r.note,
                 });
             }
             Err(e) => {
@@ -173,74 +163,6 @@ fn build_and_persist_fix_report(
     });
     steps.push(ws_scope_step);
 
-    let mut rules_step = SetupStepReport {
-        name: "agent_rules".to_string(),
-        ok: true,
-        items: Vec::new(),
-        warnings: Vec::new(),
-        errors: Vec::new(),
-    };
-    let inj = crate::rules_inject::inject_all_rules(&home);
-    if !inj.injected.is_empty() {
-        rules_step.items.push(SetupItem {
-            name: "injected".to_string(),
-            status: inj.injected.len().to_string(),
-            path: None,
-            note: Some(inj.injected.join(", ")),
-        });
-    }
-    if !inj.updated.is_empty() {
-        rules_step.items.push(SetupItem {
-            name: "updated".to_string(),
-            status: inj.updated.len().to_string(),
-            path: None,
-            note: Some(inj.updated.join(", ")),
-        });
-    }
-    if !inj.already.is_empty() {
-        rules_step.items.push(SetupItem {
-            name: "already".to_string(),
-            status: inj.already.len().to_string(),
-            path: None,
-            note: Some(inj.already.join(", ")),
-        });
-    }
-    if !inj.errors.is_empty() {
-        rules_step.ok = false;
-        rules_step.errors.extend(inj.errors.clone());
-    }
-    steps.push(rules_step);
-
-    // Rules dedup (#578): a duplicated rules block bills every session twice.
-    // Auto-heal here so `doctor --fix` (and the dashboard fix route) leave
-    // exactly one canonical carrier per client — same guarantees as the CLI
-    // command: only owned files/marked blocks, `.bak` backups for edits.
-    {
-        let mut dedup_step = SetupStepReport {
-            name: "rules_dedup".to_string(),
-            ok: true,
-            items: Vec::new(),
-            warnings: Vec::new(),
-            errors: Vec::new(),
-        };
-        let project = std::env::current_dir().unwrap_or_else(|_| home.clone());
-        for line in crate::cli::rules_dedup::auto_apply(&home, &project) {
-            let failed = line.starts_with("FAILED");
-            if failed {
-                dedup_step.warnings.push(line.clone());
-            }
-            dedup_step.items.push(SetupItem {
-                name: "dedup".to_string(),
-                status: if failed { "failed" } else { "applied" }.to_string(),
-                path: None,
-                note: Some(line),
-            });
-        }
-        if !dedup_step.items.is_empty() {
-            steps.push(dedup_step);
-        }
-    }
-
     let mut hooks_step = SetupStepReport {
         name: "agent_hooks".to_string(),
         ok: true,
@@ -253,13 +175,12 @@ fn build_and_persist_fix_report(
         if !t.detect_path.exists() || t.agent_key.trim().is_empty() {
             continue;
         }
-        let mode = crate::hooks::recommend_hook_mode(&t.agent_key);
-        crate::hooks::install_agent_hook_with_mode(&t.agent_key, true, mode);
+        crate::hooks::install_agent_hook(&t.agent_key, true);
         hooks_step.items.push(SetupItem {
             name: format!("{} hooks", t.name),
             status: "installed".to_string(),
             path: Some(t.detect_path.to_string_lossy().to_string()),
-            note: Some(format!("mode={mode}; merge-based install/repair")),
+            note: Some("merge-based install/repair".to_string()),
         });
     }
     if !hooks_step.items.is_empty() {

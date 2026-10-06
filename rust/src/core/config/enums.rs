@@ -15,8 +15,7 @@ static SESSION_DEGRADE_LEVEL: AtomicU8 = AtomicU8::new(0);
 /// Controls the reactive recovery footer surfaced on compressed tool output
 /// (`ctx_read`, spill handles, `ctx_shell` tee).
 ///
-/// The proactive `RECOVER` rule teaches the vocabulary once in the system
-/// prompt; this knob governs the per-output reminder that names the concrete
+/// The `RECOVER` line of the MCP instructions teaches the vocabulary once; this knob governs the per-output reminder that names the concrete
 /// file path / handle at point-of-need:
 /// * `Minimal` (default) — a single, non-MCP-first line on the *first* compressed
 ///   view of a file/handle per session.

@@ -105,36 +105,6 @@ fn learn_filters_low_confidence() {
 }
 
 #[test]
-fn learn_format_agents_section_has_markers() {
-    use lean_ctx::core::gotcha_tracker::learn::{Learning, format_agents_section};
-
-    let learnings = vec![Learning {
-        category: "build".into(),
-        trigger: "missing dep".into(),
-        resolution: "add to Cargo.toml".into(),
-        confidence: 0.9,
-        occurrences: 5,
-        sessions: 3,
-    }];
-
-    let section = format_agents_section(&learnings);
-    assert!(section.contains("lean-ctx-learn-start"));
-    assert!(section.contains("lean-ctx-learn-end"));
-    assert!(section.contains("missing dep"));
-}
-
-#[test]
-fn learn_format_empty_returns_empty() {
-    use lean_ctx::core::gotcha_tracker::learn::format_agents_section;
-
-    let section = format_agents_section(&[]);
-    assert!(section.is_empty());
-}
-
-// ---------------------------------------------------------------------------
-// cache CCR: get_full_content
-// ---------------------------------------------------------------------------
-#[test]
 fn cache_get_full_content_returns_stored_content() {
     use lean_ctx::core::cache::SessionCache;
 

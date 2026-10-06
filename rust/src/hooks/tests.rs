@@ -4,155 +4,27 @@
 use super::*;
 
 #[test]
-fn refresh_covers_every_hybrid_agent() {
-    // Every Hybrid agent must be in exactly one of the two sets, so a newly
-    // added agent can never silently skip the post-update hook refresh.
-    for agent in HYBRID_AGENTS {
+fn refresh_covers_every_hook_capable_agent() {
+    // Every hook-capable agent must be in exactly one of the two sets, so a
+    // newly added agent can never silently skip the post-update hook refresh.
+    for agent in HOOK_CAPABLE_AGENTS {
         let refreshed = REFRESHABLE_HOOK_AGENTS.contains(agent);
-        let exempt = REFRESH_EXEMPT_HYBRID_AGENTS.contains(agent);
+        let exempt = REFRESH_EXEMPT_AGENTS.contains(agent);
         assert!(
             refreshed ^ exempt,
-            "hybrid agent `{agent}` must be either refreshed or explicitly exempt (exactly one)"
+            "agent `{agent}` must be either refreshed or explicitly exempt (exactly one)"
         );
     }
 }
 
 #[test]
-fn refresh_sets_reference_only_hybrid_agents() {
-    for agent in REFRESHABLE_HOOK_AGENTS {
+fn refresh_sets_reference_only_hook_capable_agents() {
+    for agent in REFRESHABLE_HOOK_AGENTS.iter().chain(REFRESH_EXEMPT_AGENTS) {
         assert!(
-            HYBRID_AGENTS.contains(agent),
-            "refreshable agent `{agent}` is not a Hybrid agent"
+            HOOK_CAPABLE_AGENTS.contains(agent),
+            "`{agent}` is not a hook-capable agent (stale entry?)"
         );
     }
-    for agent in REFRESH_EXEMPT_HYBRID_AGENTS {
-        assert!(
-            HYBRID_AGENTS.contains(agent),
-            "exempt agent `{agent}` is not a Hybrid agent (stale exemption?)"
-        );
-    }
-}
-
-// ── #555: .github/copilot-instructions.md ──────────────────────────────
-
-#[test]
-fn copilot_instructions_created_with_lean_ctx_block() {
-    let _iso = crate::core::data_dir::isolated_data_dir();
-    let tmp = tempfile::tempdir().unwrap();
-    ensure_copilot_instructions(tmp.path());
-
-    let path = tmp.path().join(".github/copilot-instructions.md");
-    let content = std::fs::read_to_string(&path).expect("copilot-instructions.md created");
-    assert!(content.contains(crate::core::rules_canonical::START_MARK));
-    assert!(content.contains(crate::core::rules_canonical::END_MARK));
-    assert!(content.contains("lean-ctx"));
-}
-
-#[test]
-fn copilot_instructions_idempotent() {
-    let _iso = crate::core::data_dir::isolated_data_dir();
-    let tmp = tempfile::tempdir().unwrap();
-    let path = tmp.path().join(".github/copilot-instructions.md");
-
-    ensure_copilot_instructions(tmp.path());
-    let first = std::fs::read_to_string(&path).unwrap();
-    ensure_copilot_instructions(tmp.path());
-    let second = std::fs::read_to_string(&path).unwrap();
-
-    assert_eq!(first, second, "re-running must produce identical bytes");
-    assert_eq!(
-        first
-            .matches(crate::core::rules_canonical::START_MARK)
-            .count(),
-        1,
-        "exactly one lean-ctx block, no duplication"
-    );
-}
-
-#[test]
-fn copilot_instructions_preserve_user_content() {
-    let _iso = crate::core::data_dir::isolated_data_dir();
-    let tmp = tempfile::tempdir().unwrap();
-    let path = tmp.path().join(".github/copilot-instructions.md");
-    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-    std::fs::write(&path, "# House rules\n\nAlways write tests.\n").unwrap();
-
-    ensure_copilot_instructions(tmp.path());
-    let content = std::fs::read_to_string(&path).unwrap();
-    assert!(content.contains("# House rules"));
-    assert!(content.contains("Always write tests."));
-    assert!(content.contains(crate::core::rules_canonical::START_MARK));
-
-    // Idempotent on a user-authored file as well.
-    ensure_copilot_instructions(tmp.path());
-    let again = std::fs::read_to_string(&path).unwrap();
-    assert_eq!(content, again);
-    assert_eq!(
-        again
-            .matches(crate::core::rules_canonical::START_MARK)
-            .count(),
-        1
-    );
-}
-
-#[test]
-fn copilot_instructions_block_is_removable() {
-    // Mirrors the uninstall path: the marked block must be strippable while
-    // user content survives.
-    let _iso = crate::core::data_dir::isolated_data_dir();
-    let tmp = tempfile::tempdir().unwrap();
-    let path = tmp.path().join(".github/copilot-instructions.md");
-    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-    std::fs::write(&path, "# House rules\n\nKeep it tidy.\n").unwrap();
-    ensure_copilot_instructions(tmp.path());
-
-    let content = std::fs::read_to_string(&path).unwrap();
-    let cleaned = crate::marked_block::remove_content(
-        &content,
-        crate::core::rules_canonical::START_MARK,
-        crate::core::rules_canonical::END_MARK,
-    );
-    assert!(!cleaned.contains(crate::core::rules_canonical::START_MARK));
-    assert!(cleaned.contains("# House rules"));
-}
-
-#[test]
-fn vscode_instruction_setting_set_when_absent_and_preserves() {
-    let tmp = tempfile::tempdir().unwrap();
-    let vscode = tmp.path().join(".vscode");
-    std::fs::create_dir_all(&vscode).unwrap();
-    let settings = vscode.join("settings.json");
-    std::fs::write(&settings, "{\n  \"editor.fontSize\": 13\n}\n").unwrap();
-
-    ensure_vscode_instruction_files_setting(tmp.path());
-    let v: serde_json::Value =
-        serde_json::from_str(&std::fs::read_to_string(&settings).unwrap()).unwrap();
-    assert_eq!(v["editor.fontSize"], 13);
-    assert_eq!(
-        v["github.copilot.chat.codeGeneration.useInstructionFiles"],
-        true
-    );
-}
-
-#[test]
-fn vscode_instruction_setting_respects_explicit_user_value() {
-    let tmp = tempfile::tempdir().unwrap();
-    let vscode = tmp.path().join(".vscode");
-    std::fs::create_dir_all(&vscode).unwrap();
-    let settings = vscode.join("settings.json");
-    std::fs::write(
-        &settings,
-        "{\n  \"github.copilot.chat.codeGeneration.useInstructionFiles\": false\n}\n",
-    )
-    .unwrap();
-
-    ensure_vscode_instruction_files_setting(tmp.path());
-    let v: serde_json::Value =
-        serde_json::from_str(&std::fs::read_to_string(&settings).unwrap()).unwrap();
-    assert_eq!(
-        v["github.copilot.chat.codeGeneration.useInstructionFiles"], false,
-        "an explicit user value must not be overridden"
-    );
 }
 
 #[test]
@@ -556,42 +428,6 @@ fn rewrite_script_skips_multiline_commands() {
         compact.contains(r"grep -qF '\n'"),
         "compact rewrite script must guard against unresolved JSON \\n (#787)"
     );
-}
-
-#[test]
-fn codex_is_replace() {
-    let _env = crate::core::data_dir::test_env_lock();
-    assert_eq!(recommend_hook_mode("codex"), HookMode::Replace);
-}
-
-#[test]
-fn cursor_is_replace() {
-    let _env = crate::core::data_dir::test_env_lock();
-    assert_eq!(recommend_hook_mode("cursor"), HookMode::Replace);
-}
-
-#[test]
-fn gemini_is_replace() {
-    let _env = crate::core::data_dir::test_env_lock();
-    assert_eq!(recommend_hook_mode("gemini"), HookMode::Replace);
-}
-
-#[test]
-fn claude_is_replace() {
-    let _env = crate::core::data_dir::test_env_lock();
-    assert_eq!(recommend_hook_mode("claude"), HookMode::Replace);
-}
-
-#[test]
-fn hybrid_fallback_agents() {
-    let _env = crate::core::data_dir::test_env_lock();
-    assert_eq!(recommend_hook_mode("copilot"), HookMode::Hybrid);
-}
-
-#[test]
-fn unknown_agent_falls_back_to_mcp() {
-    let _env = crate::core::data_dir::test_env_lock();
-    assert_eq!(recommend_hook_mode("unknown-agent"), HookMode::Mcp);
 }
 
 // Drive translation only applies on Windows hosts (GH #397).

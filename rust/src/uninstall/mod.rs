@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 
 use agents::{
     remove_hook_files, remove_mcp_configs, remove_plan_mode_settings, remove_project_agent_files,
-    remove_rules_files, remove_shell_hook,
+    remove_shell_hook, remove_skills,
 };
 
 pub(super) fn backup_before_modify(path: &Path, dry_run: bool) {
@@ -37,35 +37,6 @@ pub(super) fn shorten(path: &Path, home: &Path) -> String {
         Ok(rel) => format!("~/{}", rel.display()),
         Err(_) => path.display().to_string(),
     }
-}
-
-pub(super) fn copilot_instructions_path(home: &Path) -> PathBuf {
-    #[cfg(target_os = "macos")]
-    {
-        return home.join("Library/Application Support/Code/User/github-copilot-instructions.md");
-    }
-    #[cfg(target_os = "linux")]
-    {
-        let user_dirs = [
-            home.join(".config/Code/User"),
-            home.join(".config/Code - Insiders/User"),
-            home.join(".vscode-server/data/User"),
-        ];
-        let user_dir = user_dirs
-            .iter()
-            .find(|p| p.exists())
-            .cloned()
-            .unwrap_or_else(|| user_dirs[0].clone());
-        return user_dir.join("github-copilot-instructions.md");
-    }
-    #[cfg(target_os = "windows")]
-    {
-        if let Ok(appdata) = std::env::var("APPDATA") {
-            return PathBuf::from(appdata).join("Code/User/github-copilot-instructions.md");
-        }
-    }
-    #[allow(unreachable_code)]
-    home.join(".config/Code/User/github-copilot-instructions.md")
 }
 
 /// Write `content` to `path` only if not in dry-run mode.
@@ -169,10 +140,10 @@ pub fn run(dry_run: bool, keep_config: bool, keep_binary: bool) {
 
     if keep_config {
         println!("  · Skipped: MCP configs (--keep-config)");
-        println!("  · Skipped: Rules files (--keep-config)");
+        println!("  · Skipped: skills (--keep-config)");
     } else {
         removed_any |= remove_mcp_configs(&home, dry_run);
-        removed_any |= remove_rules_files(&home, dry_run);
+        removed_any |= remove_skills(&home, dry_run);
         if !dry_run {
             try_claude_mcp_remove();
         }
@@ -227,35 +198,6 @@ pub fn run(dry_run: bool, keep_config: bool, keep_binary: bool) {
         println!("  Nothing to remove — lean-ctx was not configured.\n");
     }
 }
-
-// ---------------------------------------------------------------------------
-// Marked block removal (for AGENTS.md, SharedMarkdown)
-// ---------------------------------------------------------------------------
-
-pub(super) fn remove_marked_block(content: &str, start: &str, end: &str) -> String {
-    let s = content.find(start);
-    let e = content.find(end);
-    match (s, e) {
-        (Some(si), Some(ei)) if ei >= si => {
-            let after_end = ei + end.len();
-            let before = &content[..si];
-            let after = &content[after_end..];
-            let mut out = String::new();
-            out.push_str(before.trim_end_matches('\n'));
-            out.push('\n');
-            if !after.trim().is_empty() {
-                out.push('\n');
-                out.push_str(after.trim_start_matches('\n'));
-            }
-            out
-        }
-        _ => content.to_string(),
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Skill directories: lean-ctx SKILL.md + scripts
-// ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
 // Data directory

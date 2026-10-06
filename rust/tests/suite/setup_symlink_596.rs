@@ -62,7 +62,7 @@ fn run_init(sb: &Sandbox, agent: &str) -> std::process::Output {
         std::env::var("PATH").unwrap_or_default()
     );
     Command::new(env!("CARGO_BIN_EXE_lean-ctx"))
-        .args(["init", "--agent", agent, "--global", "--mode", "mcp"])
+        .args(["init", "--agent", agent, "--global"])
         .env("HOME", &sb.home)
         .env("LEAN_CTX_DATA_DIR", &sb.data)
         .env("LEAN_CTX_CONFIG_DIR", &sb.data)

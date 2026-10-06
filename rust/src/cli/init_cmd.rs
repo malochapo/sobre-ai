@@ -19,24 +19,6 @@ pub fn install_shell_hook(args: &[String]) {
     let no_hook = args.iter().any(|a| a == "--no-shell-hook")
         || crate::core::config::Config::load().shell_hook_disabled_effective();
 
-    let explicit_mode = args
-        .windows(2)
-        .find(|w| w[0] == "--mode")
-        .and_then(|w| crate::hooks::HookMode::from_str_loose(&w[1]));
-
-    if args.windows(2).any(|w| w[0] == "--mode")
-        && !args
-            .windows(2)
-            .any(|w| w[0] == "--mode" && crate::hooks::HookMode::from_str_loose(&w[1]).is_some())
-    {
-        let bad = args
-            .windows(2)
-            .find(|w| w[0] == "--mode")
-            .map_or("?", |w| w[1].as_str());
-        eprintln!("Unknown hook mode: '{bad}'. Valid: mcp, hybrid, replace");
-        std::process::exit(1);
-    }
-
     let agents: Vec<&str> = args
         .windows(2)
         .filter(|w| w[0] == "--agent")
@@ -46,27 +28,13 @@ pub fn install_shell_hook(args: &[String]) {
     if !agents.is_empty() {
         let cwd = std::env::current_dir().unwrap_or_default();
         for agent_name in &agents {
-            let mode =
-                explicit_mode.unwrap_or_else(|| crate::hooks::recommend_hook_mode(agent_name));
-            let result = crate::setup::setup_single_agent(agent_name, global, mode);
-            for name in &result.rules.injected {
-                qprintln!("  ✓ {name} rules injected");
-            }
-            for name in &result.rules.updated {
-                qprintln!("  ✓ {name} rules updated");
-            }
-            for name in &result.rules.already {
-                qprintln!("  ✓ {name} rules up-to-date");
-            }
+            let result = crate::setup::setup_single_agent(agent_name, global);
             for e in &result.errors {
                 eprintln!("  ✗ {agent_name}: {e}");
             }
             if project {
                 crate::hooks::install_agent_project_hooks(agent_name, &cwd);
             }
-        }
-        if !global {
-            crate::hooks::install_project_rules_for_agents(&agents);
         }
         qprintln!("\nRun 'lean-ctx gain' after using some commands to see your savings.");
         return;
@@ -210,7 +178,6 @@ pub fn cmd_init(args: &[String]) {
         "--global",
         "-g",
         "--project",
-        "--mode",
         "--check",
         "--dry-run",
         "--repair",
@@ -219,7 +186,6 @@ pub fn cmd_init(args: &[String]) {
         "--agent-aliases",
         "--no-agent-aliases",
         "--shell-activation",
-        "--skip-rules",
         "--no-auto-approve",
     ];
     if let Some(unknown) = args
@@ -323,7 +289,6 @@ pub fn cmd_init(args: &[String]) {
         fix: true,
         json,
         no_auto_approve: args.iter().any(|a| a == "--no-auto-approve"),
-        skip_rules: args.iter().any(|a| a == "--skip-rules"),
         skip_shell_hook: args.iter().any(|a| a == "--no-shell-hook"),
         agent_aliases: if args.iter().any(|a| a == "--no-agent-aliases") {
             Some(false)
@@ -443,8 +408,7 @@ Options:
   --repair                   No prompt, exits non-zero on failure (for CI)
   --json                     Machine-readable report; implies --repair
   --agent <name>             Same as the positional form, repeatable
-  --mode <mcp|hybrid|replace>  Override the per-agent hook mode
-  --global                   Write agent rules globally, not per project
+  --global                   Copilot/VS Code: user-level config, not this project
   --project                  Also install project-local agent hooks
   --no-shell-hook            Skip the shell rc entirely
   --shell-activation <always|agents-only|off>
@@ -452,7 +416,6 @@ Options:
                              agents-only); kept by later runs
   --agent-aliases            Install claude/codex/gemini aliases (default)
   --no-agent-aliases         Do not install them; kept by later runs
-  --skip-rules               Do not write agent rules files
   --no-auto-approve          Do not configure auto-approve
 
 Undo it all: sobre uninstall"

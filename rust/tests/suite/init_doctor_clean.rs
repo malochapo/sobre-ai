@@ -77,7 +77,7 @@ fn init_repair_leaves_doctor_fully_green() {
     let stdout = String::from_utf8_lossy(&doctor.stdout);
 
     // The two checks that historically dead-looped ("run: lean-ctx setup"
-    // right after init already ran): Claude plan mode + CLAUDE.md block.
+    // right after init already ran): Claude plan mode + the sobre skill.
     assert!(
         stdout.contains("permissions present"),
         "Claude plan-mode permissions must be wired by init; doctor said:\n{stdout}"

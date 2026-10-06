@@ -266,42 +266,6 @@ impl LeanCtxServer {
             result_text = format!("{result_text}\n\n{warning}");
         }
 
-        // Gated on `!machine_readable` (short-circuits before the swap) so a
-        // json-first call does not consume this once-per-session slot for a tip
-        // we would immediately discard; it then surfaces on the next call.
-        if !machine_readable
-            && !self
-                .rules_stale_checked
-                .swap(true, std::sync::atomic::Ordering::Relaxed)
-        {
-            let client = self.client_name.read().await.clone();
-            if !client.is_empty() && crate::rules_inject::check_rules_freshness(&client).is_some() {
-                // Self-heal: auto-refresh the rules on disk instead of asking
-                // the user to run setup manually (#2365). The rewrite is
-                // idempotent and cheap; run it off the async runtime.
-                let _ = tokio::task::spawn_blocking(|| {
-                    if let Some(home) = dirs::home_dir() {
-                        let _ = crate::rules_inject::inject_all_rules(&home);
-                    }
-                })
-                .await;
-                result_text = format!(
-                    "{result_text}\n\n[RULES AUTO-UPDATED] Your lean-ctx rules were written by \
-                     an older version and have been refreshed on disk. Start a new session to \
-                     load them for full compatibility."
-                );
-            } else if !self
-                .rules_tip_shown
-                .swap(true, std::sync::atomic::Ordering::Relaxed)
-                && !crate::rules_inject::rules_installed()
-            {
-                result_text = format!(
-                    "{result_text}\n\n\
-                         --- tip: run 'lean-ctx init' to configure agent rules for optimal AI integration ---"
-                );
-            }
-        }
-
         if name == "ctx_read" {
             let cache_clone = self.cache.clone();
             let autonomy_clone = self.autonomy.clone();
@@ -332,21 +296,6 @@ impl LeanCtxServer {
                     tracing::error!("background auto_dedup panicked: {msg}");
                 }
             });
-        }
-
-        // Bypass hints are decoupled from minimal_overhead: they ride MCP
-        // tool responses (which vary anyway) and don't break provider prompt
-        // caching (#498). The `bypass_hints` config key gates them independently.
-        if !is_raw_shell && bypass_hint::is_enabled() {
-            if let Ok(data_dir) = crate::core::data_dir::lean_ctx_data_dir() {
-                let session = self.session.read().await;
-                bypass_hint::set_session_id(&session.id);
-                drop(session);
-                if let Some(hint) = bypass_hint::check(&data_dir) {
-                    result_text = format!("{result_text}\n{hint}");
-                }
-            }
-            bypass_hint::record_lctx_call();
         }
 
         let finding_path_hint = helpers::get_str(args, "path");

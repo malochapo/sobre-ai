@@ -460,34 +460,6 @@ pub(super) fn proxy_live_upstreams(port: u16) -> Option<(String, String, String)
     ))
 }
 
-/// How Claude Code currently receives the full lean-ctx instructions.
-///
-/// Single source of truth for the main doctor check *and* `doctor integrations`
-/// (GH #396: both previously demanded the retired `~/.claude/rules/lean-ctx.md`,
-/// which `setup` deletes since the v3 layout — GL #555).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum ClaudeInstructionsState {
-    /// CLAUDE.md block present.
-    Block,
-    /// Nothing installed — Claude only sees the 2048-char-capped MCP instructions.
-    Missing,
-}
-
-impl ClaudeInstructionsState {
-    pub(super) fn ok(self) -> bool {
-        !matches!(self, Self::Missing)
-    }
-}
-
-pub(super) fn claude_instructions_state(home: &std::path::Path) -> ClaudeInstructionsState {
-    use ClaudeInstructionsState as S;
-
-    let claude_md = crate::core::editor_registry::claude_state_dir(home).join("CLAUDE.md");
-    let has_block = std::fs::read_to_string(&claude_md)
-        .is_ok_and(|c| c.contains(crate::hooks::agents::CLAUDE_MD_BLOCK_START));
-    if has_block { S::Block } else { S::Missing }
-}
-
 pub(super) fn claude_binary_exists() -> bool {
     #[cfg(unix)]
     {
@@ -589,34 +561,5 @@ mod tests {
                 "home leaked: {shown}"
             );
         }
-    }
-
-    #[test]
-    fn claude_instructions_state_detects_pointer_block() {
-        // GH #549: the check must recognise the pointer block the installer
-        // actually writes (delimited by `<!-- lean-ctx -->`), not the retired
-        // full-rules marker — otherwise it falsely reports the block missing.
-        let _lock = crate::core::data_dir::test_env_lock();
-        let tmp = tempfile::tempdir().unwrap();
-        let home = tmp.path();
-        let dir = crate::core::editor_registry::claude_state_dir(home);
-        std::fs::create_dir_all(&dir).unwrap();
-        std::fs::write(
-            dir.join("CLAUDE.md"),
-            format!(
-                "# notes\n\n{}\n## lean-ctx\n{}\n",
-                crate::hooks::agents::CLAUDE_MD_BLOCK_START,
-                crate::core::rules_canonical::AGENTS_BLOCK_END
-            ),
-        )
-        .unwrap();
-
-        let state = super::claude_instructions_state(home);
-        assert_ne!(
-            state,
-            super::ClaudeInstructionsState::Missing,
-            "doctor must detect the CLAUDE.md pointer block (#549)"
-        );
-        assert!(state.ok(), "a detected block must be a healthy state");
     }
 }

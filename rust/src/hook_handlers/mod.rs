@@ -13,7 +13,6 @@ const HOOK_STDIN_TIMEOUT: Duration = Duration::from_secs(3);
 const HOOK_GATING_TIMEOUT: Duration = Duration::from_secs(15);
 mod codex;
 mod dedup;
-mod deny;
 mod edit_health;
 // Command-rewrite (#660/#966 LOC gate): file-read rewrites, compound wrapping,
 // and the rewrite_candidate dispatch every rewrite entry point funnels through.
@@ -26,13 +25,7 @@ mod redirect;
 // Search/dir-list rewriting and shell tokenization extracted to
 // `search_rewrite` submodule (#660 LOC gate).
 mod search_rewrite;
-pub(crate) use codex::emit_session_start_additional_context;
-pub use codex::{handle_codex_pretooluse, handle_codex_session_start};
-// Test-only re-export: only `hook_handlers::tests` (cfg(test)) reaches these
-// through this path; codex.rs's own production use of them is internal.
-#[cfg(test)]
-pub(crate) use codex::{CODEX_SHELL_RECOVERY_HINT, session_start_additional_context_json};
-pub use deny::handle_deny;
+pub use codex::handle_codex_pretooluse;
 pub use observe::*;
 pub use read_dedup::handle_read_dedup;
 pub use search_rewrite::{shell_quote, shell_tokenize};
@@ -44,7 +37,7 @@ mod tests;
 // bare name via `use super::*`; production code calls through the owning
 // module's path instead (e.g. `file_rewrite::rewrite_candidate`).
 #[cfg(test)]
-use codex::{codex_allow_output, codex_deny_output, codex_rewrite_output};
+use codex::{codex_allow_output, codex_rewrite_output};
 #[cfg(test)]
 use file_rewrite::{
     build_rewrite_compound, is_outside_project_path, parse_head_tail_args, rewrite_candidate,
@@ -58,14 +51,7 @@ use redirect::{
 #[cfg(test)]
 use search_rewrite::{rewrite_dir_list_command, rewrite_search_command};
 
-fn is_shadow_mode_active() -> bool {
-    true
-}
-
 fn log_shadow_intercept(tool: &str, detail: &str) {
-    if !is_shadow_mode_active() {
-        return;
-    }
     let Some(data_dir) = crate::core::data_dir::lean_ctx_data_dir().ok() else {
         return;
     };
@@ -77,10 +63,6 @@ fn log_shadow_intercept(tool: &str, detail: &str) {
         .append(true)
         .open(log_path)
         .and_then(|mut f| std::io::Write::write_all(&mut f, line.as_bytes()));
-}
-
-fn is_quiet() -> bool {
-    crate::core::runtime_flags::quiet_enabled()
 }
 
 /// Mark this process as a hook child so the daemon-client never auto-starts

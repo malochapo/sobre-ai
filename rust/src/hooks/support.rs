@@ -1,5 +1,3 @@
-use std::path::Path;
-
 pub(crate) fn install_named_json_server(
     name: &str,
     display_path: &str,
@@ -79,132 +77,6 @@ fn print_named_json_server_success(name: &str, display_path: &str) {
     if !super::mcp_server_quiet_mode() {
         eprintln!("  \x1b[32m✓\x1b[0m {name} MCP configured at {display_path}");
     }
-}
-
-const CODEX_AGENTS_BLOCK_START: &str = crate::core::rules_canonical::AGENTS_BLOCK_START;
-const CODEX_AGENTS_BLOCK_END: &str = crate::core::rules_canonical::AGENTS_BLOCK_END;
-
-pub(super) fn install_codex_instruction_docs(codex_dir: &Path) -> bool {
-    let agents_path = codex_dir.join("AGENTS.md");
-    let lean_ctx_md = codex_dir.join("LEAN-CTX.md");
-    let lean_ctx_content = codex_instruction_doc_content();
-
-    let mut changed = false;
-
-    // LEAN-CTX.md (full rules) is lean-ctx-owned and fully removable — written in
-    // both modes, never the user's AGENTS.md.
-    let existing_lean_ctx = std::fs::read_to_string(&lean_ctx_md).unwrap_or_default();
-    if existing_lean_ctx != lean_ctx_content {
-        super::write_file(&lean_ctx_md, &lean_ctx_content);
-        changed = true;
-    }
-
-    let rules_path = codex_dir.join("LEAN-CTX.md");
-    let block = format!(
-        "{CODEX_AGENTS_BLOCK_START}\n## lean-ctx\n\n\
-         Prefer lean-ctx MCP tools over native equivalents for token savings.\n\n\
-         For compression you can rely on regardless of your Codex surface (CLI, Desktop, \
-         or Cloud) or Codex version, route shell commands through `ctx_shell` \
-         (or `{binary} -c \"<cmd>\"`), file reads through `ctx_read`, and code search through \
-         `ctx_search`. Hook-driven auto-compression may also be active, but the MCP/CLI tools \
-         are the path that works everywhere — otherwise large outputs (builds, `tsc`, tests, \
-         logs) can reach the model uncompressed.\n\n\
-         Full rules: `{rules}`\n{CODEX_AGENTS_BLOCK_END}\n",
-        binary = super::resolve_binary_path(),
-        rules = rules_path.display()
-    );
-
-    if !agents_path.exists() {
-        let content = format!("# Global Agent Instructions\n\n{block}");
-        super::write_file(&agents_path, &content);
-        return true;
-    }
-
-    let existing = std::fs::read_to_string(&agents_path).unwrap_or_default();
-
-    if crate::marked_block::contains_marker_line(&existing, CODEX_AGENTS_BLOCK_START) {
-        let updated = crate::marked_block::replace_marked_block(
-            &existing,
-            CODEX_AGENTS_BLOCK_START,
-            CODEX_AGENTS_BLOCK_END,
-            &block,
-        );
-        if updated != existing {
-            super::write_file(&agents_path, &updated);
-            return true;
-        }
-        return changed;
-    }
-
-    if existing.contains("lean-ctx") || existing.contains("LEAN-CTX") {
-        return changed;
-    }
-
-    let mut out = existing;
-    if !out.ends_with('\n') {
-        out.push('\n');
-    }
-    out.push('\n');
-    out.push_str(&block);
-    super::write_file(&agents_path, &out);
-    true
-}
-
-fn codex_instruction_doc_content() -> String {
-    let binary = super::resolve_binary_path();
-    let marker = crate::core::rules_canonical::START_MARK;
-    let bullets = crate::core::rules_canonical::BULLETS;
-    let never = crate::core::rules_canonical::NEVER;
-    format!(
-        r#"{marker} (Hybrid Mode)
-
-lean-ctx is available via **both** MCP tools and CLI commands.
-
-## Reliable compression on every Codex surface
-
-lean-ctx can compress automatically through Codex lifecycle hooks, but whether
-those fire depends on your Codex version and surface (CLI / Desktop / Cloud) and
-on the hooks being trusted (run `/hooks` to review). The agent usually cannot tell
-which environment it is in — so for compression that works **everywhere**, route
-work through lean-ctx explicitly:
-
-- Shell commands → call the `ctx_shell` MCP tool (or `{binary} -c "<cmd>"`).
-- File reads → call the `ctx_read` MCP tool (instead of `cat`/`head`/`tail`).
-- Code search → call the `ctx_search` MCP tool (instead of `grep`/`rg`).
-
-Running `tsc`, builds, tests, `git`, or log-heavy commands directly sends the full
-uncompressed output to the model. Routing them through `ctx_shell` saves 60-90% of
-those tokens.
-
-## MCP tools
-
-{bullets}
-
-{never}
-
-## CLI
-
-Prefix shell commands with `{binary} -c` for compressed output:
-
-```bash
-{binary} -c "tsc"          # instead of: tsc
-{binary} -c "cargo test"   # instead of: cargo test
-{binary} -c "git status"   # instead of: git status
-```
-
-Works with git, cargo, npm, pnpm, docker, kubectl, pip, ruff, go, tsc, and 95+ more.
-Use `{binary} -c --raw <cmd>` to skip compression and get full output.
-
-## Hooks across Codex surfaces
-
-- **Hook-driven auto-compression** fires once hooks are trusted via `/hooks`. Whether
-  hooks run at all depends on your Codex version and surface, and behaviour has
-  changed across releases — so do not assume it is always on.
-- **MCP tools / CLI** (`ctx_shell`, `ctx_read`, `ctx_search`, or `{binary} -c`) compress
-  on **every** surface (CLI, Desktop, Cloud) regardless of hook status — use them as
-  the reliable path described above.
-"#
-    )
 }
 
 pub(super) fn ensure_codex_hooks_enabled(config_content: &str) -> Option<String> {
@@ -394,7 +266,6 @@ fn rewrite_codex_hooks_line(line: &str) -> String {
 
 pub(super) fn upsert_lean_ctx_codex_hook_entries(
     root: &mut serde_json::Value,
-    session_start_cmd: &str,
     pre_tool_use_cmd: &str,
 ) -> bool {
     let original = root.clone();
@@ -413,15 +284,7 @@ pub(super) fn upsert_lean_ctx_codex_hook_entries(
         .expect("hooks should be object after normalization");
 
     remove_lean_ctx_codex_managed_entries(hooks_obj, "PreToolUse");
-    remove_lean_ctx_codex_managed_entries(hooks_obj, "SessionStart");
-
     push_codex_hook_entry(hooks_obj, "PreToolUse", "Bash", pre_tool_use_cmd);
-    push_codex_hook_entry(
-        hooks_obj,
-        "SessionStart",
-        "startup|resume|clear",
-        session_start_cmd,
-    );
 
     *root != original
 }
@@ -491,9 +354,6 @@ pub(super) fn is_lean_ctx_codex_managed_entry(event_name: &str, entry: &serde_js
                 entry_obj.get("matcher").and_then(|value| value.as_str()) == Some("Bash")
                     && command.contains("lean-ctx")
                     && command.contains("hook codex-pretooluse")
-            }
-            "SessionStart" => {
-                command.contains("lean-ctx") && command.contains("hook codex-session-start")
             }
             _ => false,
         }

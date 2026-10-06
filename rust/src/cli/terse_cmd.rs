@@ -25,15 +25,7 @@ pub fn cmd_compression(args: &[String]) {
             effective.label(),
             effective.description()
         );
-        let home = dirs::home_dir().unwrap_or_default();
-        let result = crate::rules_inject::inject_all_rules(&home);
-        if !result.updated.is_empty() {
-            println!(
-                "Updated {} rules file(s) with compression prompt.",
-                result.updated.len()
-            );
-        }
-        println!("Restart your agent/IDE for changes to take effect.");
+        println!("Takes effect in the next agent session (MCP instructions).");
     } else {
         let cfg = Config::load();
         let effective = CompressionLevel::effective(&cfg);

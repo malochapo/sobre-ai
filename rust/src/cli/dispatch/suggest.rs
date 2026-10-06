@@ -13,7 +13,6 @@
 pub(crate) const KNOWN_COMMANDS: &[&str] = &[
     "gain",
     "health",
-    "rules",
     "benchmark",
     "verify-cache",
     "visualize",
@@ -49,8 +48,6 @@ pub(crate) const KNOWN_COMMANDS: &[&str] = &[
     "dev-install",
     "codesign-setup",
     "doctor",
-    "harden",
-    "export-rules",
     "completions",
     "__complete",
     "gotchas",

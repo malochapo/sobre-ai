@@ -5,100 +5,11 @@ use super::parsers::{
     remove_lean_ctx_block, remove_lean_ctx_from_json, remove_lean_ctx_from_toml,
     remove_lean_ctx_login_block,
 };
-use super::{
-    backup_before_modify, copilot_instructions_path, remove_marked_block, safe_remove, safe_write,
-    shorten,
-};
+use super::{backup_before_modify, safe_remove, safe_write, shorten};
 
 pub(super) fn remove_project_agent_files(dry_run: bool) -> bool {
     let cwd = std::env::current_dir().unwrap_or_default();
-    let agents = cwd.join("AGENTS.md");
-    let lean_ctx_md = cwd.join("LEAN-CTX.md");
-
-    const START: &str = crate::core::rules_canonical::START_MARK;
-    const END: &str = crate::core::rules_canonical::END_MARK;
-    const OWNED: &str = crate::core::rules_canonical::PROJECT_LEAN_CTX_OWNED_MARKER;
-
     let mut removed = false;
-
-    // AGENTS.md: surgical marker-based removal (already correct)
-    if agents.exists()
-        && let Ok(content) = fs::read_to_string(&agents)
-        && content.contains(START)
-    {
-        let cleaned = remove_marked_block(&content, START, END);
-        if cleaned != content {
-            backup_before_modify(&agents, dry_run);
-            if let Err(e) = safe_write(&agents, &cleaned, dry_run) {
-                tracing::warn!("Failed to update project AGENTS.md: {e}");
-            } else {
-                let verb = if dry_run { "Would remove" } else { "✓" };
-                println!("  {verb} Project: removed lean-ctx block from AGENTS.md");
-                removed = true;
-            }
-        }
-    }
-
-    // LEAN-CTX.md: only delete if we own it
-    if lean_ctx_md.exists()
-        && let Ok(content) = fs::read_to_string(&lean_ctx_md)
-        && content.contains(OWNED)
-    {
-        if let Err(e) = safe_remove(&lean_ctx_md, dry_run) {
-            tracing::warn!("Failed to remove project LEAN-CTX.md: {e}");
-        } else {
-            let verb = if dry_run { "Would remove" } else { "✓" };
-            println!("  {verb} Project: removed LEAN-CTX.md");
-            removed = true;
-        }
-    }
-
-    // Dedicated lean-ctx files in project: safe to delete entirely
-    let rel = ".cursor/rules/lean-ctx.mdc";
-    let path = cwd.join(rel);
-    if path.exists()
-        && let Ok(content) = fs::read_to_string(&path)
-        && content.contains("lean-ctx")
-    {
-        let _ = safe_remove(&path, dry_run);
-        let verb = if dry_run { "Would remove" } else { "✓" };
-        println!("  {verb} Project: removed {rel}");
-        removed = true;
-    }
-
-    // Shared project files: surgically remove lean-ctx content, keep user content
-    let shared_project_files = [
-        ".cursorrules",
-        ".windsurfrules",
-        // #555: lean-ctx writes a marked block into the repo Copilot instructions.
-        ".github/copilot-instructions.md",
-    ];
-    for rel in &shared_project_files {
-        let path = cwd.join(rel);
-        if !path.exists() {
-            continue;
-        }
-        let Ok(content) = fs::read_to_string(&path) else {
-            continue;
-        };
-        if !content.contains("lean-ctx") {
-            continue;
-        }
-
-        let cleaned = remove_lean_ctx_section_from_rules(&content);
-        if cleaned.trim().is_empty() {
-            backup_before_modify(&path, dry_run);
-            let _ = safe_remove(&path, dry_run);
-            let verb = if dry_run { "Would remove" } else { "✓" };
-            println!("  {verb} Project: removed {rel}");
-        } else {
-            backup_before_modify(&path, dry_run);
-            let _ = safe_write(&path, &cleaned, dry_run);
-            let verb = if dry_run { "Would clean" } else { "✓" };
-            println!("  {verb} Project: removed lean-ctx content from {rel}");
-        }
-        removed = true;
-    }
 
     // Project-level MCP/hook JSON files: surgically remove lean-ctx entries
     for (rel, label) in [
@@ -140,48 +51,6 @@ pub(super) fn remove_project_agent_files(dry_run: bool) -> bool {
     }
 
     removed
-}
-
-/// Remove the lean-ctx section from .cursorrules / .windsurfrules.
-/// These files have lean-ctx content appended starting with the canonical
-/// `START_MARK` comment. The content has no end marker, so we remove from
-/// the marker to the end of the lean-ctx block (next heading or end of file).
-pub(super) fn remove_lean_ctx_section_from_rules(content: &str) -> String {
-    // If the file has the HTML comment markers, use marker-based removal.
-    const MARKER_START: &str = crate::core::rules_canonical::START_MARK;
-    const MARKER_END: &str = crate::core::rules_canonical::END_MARK;
-    if content.contains(MARKER_START) {
-        return remove_marked_block(content, MARKER_START, MARKER_END);
-    }
-
-    // Otherwise, remove from `# Context Engineering Layer` heading to end of file
-    // or next non-lean-ctx heading.
-    let heading = "# Context Engineering Layer";
-    let mut out = String::with_capacity(content.len());
-    let mut in_block = false;
-
-    for line in content.lines() {
-        if !in_block && line.trim() == heading {
-            in_block = true;
-            continue;
-        }
-        if in_block {
-            if line.starts_with('#') && line.trim() != heading {
-                in_block = false;
-                out.push_str(line);
-                out.push('\n');
-            }
-            continue;
-        }
-        out.push_str(line);
-        out.push('\n');
-    }
-
-    // Trim trailing whitespace added by separation
-    while out.ends_with("\n\n") {
-        out.pop();
-    }
-    out
 }
 
 // ---------------------------------------------------------------------------
@@ -321,17 +190,7 @@ pub(super) fn remove_mcp_configs(home: &Path, dry_run: bool) -> bool {
         let cleaned = if is_toml {
             Some(remove_lean_ctx_from_toml(&content))
         } else {
-            let mut cleaned = remove_lean_ctx_from_json(&content);
-            // OpenCode: also clean up shadow-mode permission denies (read/grep/glob/bash)
-            // that lean-ctx may have set via `apply_shadow_permissions` — they don't
-            // contain "lean-ctx" so the generic JSON cleanup above won't touch them.
-            if *name == "OpenCode"
-                && let Some(ref c) = cleaned
-                && let Some(stripped) = remove_shadow_permissions_from_json(c)
-            {
-                cleaned = Some(stripped);
-            }
-            cleaned
+            remove_lean_ctx_from_json(&content)
         };
 
         if let Some(cleaned) = cleaned {
@@ -424,157 +283,27 @@ pub(super) fn remove_plan_mode_settings(_home: &Path, dry_run: bool) -> bool {
 }
 
 // ---------------------------------------------------------------------------
-// Rules files removal (shared vs dedicated)
+// Skill removal
 // ---------------------------------------------------------------------------
 
-pub(super) fn remove_rules_files(home: &Path, dry_run: bool) -> bool {
-    // Dedicated files: entirely owned by lean-ctx — safe to delete
-    let dedicated_files: Vec<(&str, PathBuf)> = vec![
-        (
-            "Claude Code",
-            crate::core::editor_registry::claude_rules_dir(home).join("lean-ctx.md"),
-        ),
-        ("Cursor", home.join(".cursor/rules/lean-ctx.mdc")),
-        (
-            "Gemini CLI (dedicated)",
-            crate::rules_inject::gemini_dedicated_rules_path(home),
-        ),
-        (
-            "Codex CLI",
-            crate::core::home::resolve_codex_dir()
-                .unwrap_or_else(|| home.join(".codex"))
-                .join("LEAN-CTX.md"),
-        ),
-        ("Windsurf", home.join(".codeium/windsurf/rules/lean-ctx.md")),
-        (
-            "Zed",
-            crate::core::editor_registry::zed_config_dir(home).join("rules/lean-ctx.md"),
-        ),
-    ];
-
-    // Shared files: contain user content + lean-ctx block with markers.
-    // Only remove the <!-- lean-ctx --> ... <!-- /lean-ctx --> section.
-    let shared_files: Vec<(&str, PathBuf)> = vec![
-        (
-            "Claude Code",
-            crate::core::editor_registry::claude_state_dir(home).join("CLAUDE.md"),
-        ),
-        ("Claude Code (home)", home.join(".claude/CLAUDE.md")),
-        ("Gemini CLI", home.join(".gemini/GEMINI.md")),
-        (
-            "Codex CLI",
-            crate::core::home::resolve_codex_dir()
-                .unwrap_or_else(|| home.join(".codex"))
-                .join("instructions.md"),
-        ),
-        ("VS Code", copilot_instructions_path(home)),
-        ("Copilot CLI", home.join(".copilot/instructions.md")),
-        ("OpenCode", home.join(".config/opencode/AGENTS.md")),
-        (
-            "Codex CLI",
-            crate::core::home::resolve_codex_dir()
-                .unwrap_or_else(|| home.join(".codex"))
-                .join("AGENTS.md"),
-        ),
-    ];
-
-    let mut removed = false;
-
-    // --- Dedicated: delete if contains lean-ctx ---
-    for (name, path) in &dedicated_files {
-        if !path.exists() {
-            continue;
-        }
-        if let Ok(content) = fs::read_to_string(path)
-            && content.contains("lean-ctx")
-        {
-            if let Err(e) = safe_remove(path, dry_run) {
-                tracing::warn!("Failed to remove {name} rules: {e}");
-            } else {
-                let verb = if dry_run { "Would remove" } else { "✓" };
-                println!("  {verb} Rules removed from {name}");
-                removed = true;
-            }
-        }
-    }
-
-    // --- Shared: surgically remove lean-ctx section, keep user content ---
-    const HTML_START: &str = crate::core::rules_canonical::START_MARK;
-    const HTML_END: &str = crate::core::rules_canonical::END_MARK;
-
-    for (name, path) in &shared_files {
-        if !path.exists() {
-            continue;
-        }
-        let Ok(content) = fs::read_to_string(path) else {
-            continue;
-        };
-        if !content.contains("lean-ctx") {
-            continue;
-        }
-
-        let cleaned = if content.contains(HTML_START) && content.contains(HTML_END) {
-            remove_marked_block(&content, HTML_START, HTML_END)
+/// Delete the `sobre` skill directory from every agent that has one. The
+/// directory is sobre's alone, so it goes whole.
+pub(super) fn remove_skills(home: &Path, dry_run: bool) -> bool {
+    let dirs = crate::setup::skill::installed_dirs(home);
+    for dir in &dirs {
+        let verb = if dry_run { "Would remove" } else { "✓" };
+        if dry_run {
+            println!("  {verb} skill {}", shorten(dir, home));
+        } else if let Err(e) = fs::remove_dir_all(dir) {
+            tracing::warn!("Failed to remove {}: {e}", dir.display());
         } else {
-            remove_lean_ctx_block_from_md(&content)
-        };
-
-        if cleaned.trim().is_empty() {
-            backup_before_modify(path, dry_run);
-            let _ = safe_remove(path, dry_run);
-            let verb = if dry_run { "Would remove" } else { "✓" };
-            println!("  {verb} Rules removed from {name} (file was lean-ctx only)");
-        } else if cleaned.trim() != content.trim() {
-            backup_before_modify(path, dry_run);
-            let _ = safe_write(path, &cleaned, dry_run);
-            let verb = if dry_run { "Would clean" } else { "✓" };
-            println!("  {verb} Rules removed from {name} (user content preserved)");
+            println!("  {verb} skill {}", shorten(dir, home));
         }
-        removed = true;
     }
-
-    if !removed {
-        println!("  · No rules files found");
+    if dirs.is_empty() {
+        println!("  · No skill found");
     }
-    removed
-}
-
-fn remove_lean_ctx_block_from_md(content: &str) -> String {
-    // Detect both HTML-comment markers and old heading-based markers.
-    let start_marker = crate::core::rules_canonical::START_MARK;
-    let end_marker = crate::core::rules_canonical::END_MARK;
-    let heading = "# Context Engineering Layer";
-    let mut out = String::with_capacity(content.len());
-    let mut in_block = false;
-
-    for line in content.lines() {
-        if !in_block && (line.contains(start_marker) || line.trim() == heading) {
-            in_block = true;
-            continue;
-        }
-        if in_block {
-            if line.contains(end_marker) {
-                in_block = false;
-                continue;
-            }
-            if line.starts_with('#') && line.trim() != heading && !line.contains(start_marker) {
-                in_block = false;
-                out.push_str(line);
-                out.push('\n');
-            }
-            continue;
-        }
-        out.push_str(line);
-        out.push('\n');
-    }
-
-    while out.starts_with('\n') {
-        out.remove(0);
-    }
-    while out.ends_with("\n\n") {
-        out.pop();
-    }
-    out
+    !dirs.is_empty()
 }
 
 // ---------------------------------------------------------------------------
@@ -711,34 +440,6 @@ pub(super) enum HookCleanupResult {
     EntirelyLeanCtx,
     /// JSON parse failed; file should NOT be touched.
     ParseError,
-}
-
-/// Remove shadow-mode permission denies (read/grep/glob/bash = "deny") from
-/// an opencode.json content string. Returns `Some(cleaned)` if entries were
-/// removed, or `None` if no shadow permission entries were found.
-fn remove_shadow_permissions_from_json(content: &str) -> Option<String> {
-    let mut json: serde_json::Value = serde_json::from_str(content).ok()?;
-    let obj = json.as_object_mut()?;
-    let perms = obj.get_mut("permission")?.as_object_mut()?;
-
-    let shadow_tools = ["read", "grep", "glob", "bash"];
-    let mut changed = false;
-    for &tool in &shadow_tools {
-        if perms.get(tool).and_then(|v| v.as_str()) == Some("deny") {
-            perms.remove(tool);
-            changed = true;
-        }
-    }
-
-    if !changed {
-        return None;
-    }
-
-    if perms.is_empty() {
-        obj.remove("permission");
-    }
-
-    serde_json::to_string_pretty(&json).ok()
 }
 
 /// Check if a single string value references lean-ctx.

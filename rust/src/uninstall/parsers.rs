@@ -536,10 +536,8 @@ pub(super) fn remove_lean_ctx_from_toml(content: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::super::agents::{
-        HookCleanupResult, remove_lean_ctx_from_hooks_json, remove_lean_ctx_section_from_rules,
-    };
-    use super::super::{backup_before_modify, bak_path_for, remove_marked_block};
+    use super::super::agents::{HookCleanupResult, remove_lean_ctx_from_hooks_json};
+    use super::super::{backup_before_modify, bak_path_for};
     use super::*;
 
     // --- TOML tests ---
@@ -668,91 +666,6 @@ command = \"other\"
     fn json_no_lean_ctx_returns_none() {
         let input = r#"{"mcpServers": {"other": {"command": "other"}}}"#;
         assert!(remove_lean_ctx_from_json(input).is_none());
-    }
-
-    // --- Shared rules (SharedMarkdown) tests ---
-
-    #[test]
-    fn shared_markdown_surgical_removal() {
-        let input = "# My custom rules\n\nDo this and that.\n\n\
-                      # Context Engineering Layer\n\
-                      <!-- lean-ctx-rules -->\n\n\
-                      Use ctx_read instead of Read.\n\
-                      <!-- /lean-ctx -->\n\n\
-                      # Other section\n\nMore user content.\n";
-
-        let cleaned =
-            remove_marked_block(input, "# Context Engineering Layer", "<!-- /lean-ctx -->");
-
-        assert!(
-            !cleaned.contains("lean-ctx"),
-            "lean-ctx block should be removed"
-        );
-        assert!(
-            cleaned.contains("My custom rules"),
-            "user content before should be preserved"
-        );
-        assert!(
-            cleaned.contains("Other section"),
-            "user content after should be preserved"
-        );
-        assert!(
-            cleaned.contains("More user content"),
-            "user content after should be preserved"
-        );
-    }
-
-    #[test]
-    fn shared_markdown_only_lean_ctx() {
-        let input = "# Context Engineering Layer\n\
-                      <!-- lean-ctx-rules -->\n\
-                      content\n\
-                      <!-- /lean-ctx -->\n";
-
-        let cleaned =
-            remove_marked_block(input, "# Context Engineering Layer", "<!-- /lean-ctx -->");
-
-        assert!(
-            cleaned.trim().is_empty() || !cleaned.contains("lean-ctx"),
-            "should be empty or without lean-ctx: '{cleaned}'"
-        );
-    }
-
-    // --- Project files (.cursorrules) tests ---
-
-    #[test]
-    fn cursorrules_surgical_removal() {
-        let input = "# My project rules\n\n\
-                      Always use TypeScript.\n\n\
-                      # Context Engineering Layer\n\n\
-                      PREFER lean-ctx MCP tools over native equivalents.\n";
-
-        let cleaned = remove_lean_ctx_section_from_rules(input);
-
-        assert!(
-            !cleaned.contains("lean-ctx"),
-            "lean-ctx section should be removed"
-        );
-        assert!(
-            cleaned.contains("My project rules"),
-            "user rules should be preserved"
-        );
-        assert!(
-            cleaned.contains("Always use TypeScript"),
-            "user content should be preserved"
-        );
-    }
-
-    #[test]
-    fn cursorrules_only_lean_ctx() {
-        let input = "# Context Engineering Layer\n\n\
-                      PREFER lean-ctx MCP tools.\n";
-
-        let cleaned = remove_lean_ctx_section_from_rules(input);
-        assert!(
-            cleaned.trim().is_empty(),
-            "should be empty when only lean-ctx content: '{cleaned}'"
-        );
     }
 
     // --- hooks.json tests ---
@@ -972,24 +885,6 @@ command = \"other\"
             ),
             "should return Unchanged when no lean-ctx found"
         );
-    }
-
-    // --- Marked block tests ---
-
-    #[test]
-    fn marked_block_preserves_surrounding() {
-        let content = "before\n<!-- lean-ctx -->\nhook content\n<!-- /lean-ctx -->\nafter\n";
-        let cleaned = remove_marked_block(content, "<!-- lean-ctx -->", "<!-- /lean-ctx -->");
-        assert!(!cleaned.contains("hook content"));
-        assert!(cleaned.contains("before"));
-        assert!(cleaned.contains("after"));
-    }
-
-    #[test]
-    fn marked_block_preserves_when_missing() {
-        let content = "no hook here\n";
-        let cleaned = remove_marked_block(content, "<!-- lean-ctx -->", "<!-- /lean-ctx -->");
-        assert_eq!(cleaned, content);
     }
 
     #[test]

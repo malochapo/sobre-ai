@@ -124,19 +124,6 @@ pub(crate) fn stale_hook_binary(content: &str, binary: &str) -> Option<String> {
     refs.into_iter().next()
 }
 
-pub(crate) fn check_rules_file(path: &std::path::Path) -> NamedCheck {
-    let ok = path.exists();
-    NamedCheck {
-        name: "Rules file".to_string(),
-        ok,
-        detail: if ok {
-            path.display().to_string()
-        } else {
-            format!("missing ({})", path.display())
-        },
-    }
-}
-
 /// Cascade hook health for Windsurf (#593). `lean-ctx init` writes observe +
 /// pre_mcp_tool_use hooks into `~/.codeium/windsurf/hooks.json`; the `hook
 /// observe` command is the stable marker. A missing file is genuine drift, fixed
@@ -162,7 +149,7 @@ pub(crate) fn skill_not_applicable_note() -> NamedCheck {
     NamedCheck {
         name: "Skill".to_string(),
         ok: true,
-        detail: "N/A by design — Windsurf uses MCP + rules + Cascade hooks".to_string(),
+        detail: "N/A — Windsurf has no skills; it gets the MCP instructions".to_string(),
     }
 }
 
@@ -211,13 +198,5 @@ pub(crate) fn humanize_ago(d: chrono::Duration) -> String {
         format!("{}h ago", secs / 3600)
     } else {
         format!("{}d ago", secs / 86_400)
-    }
-}
-
-pub(crate) fn rules_path_for(name: &str, home: &std::path::Path) -> Option<std::path::PathBuf> {
-    match name {
-        "Windsurf" => Some(home.join(".codeium/windsurf/rules/lean-ctx.md")),
-        "OpenCode" => Some(home.join(".config/opencode/AGENTS.md")),
-        _ => None,
     }
 }

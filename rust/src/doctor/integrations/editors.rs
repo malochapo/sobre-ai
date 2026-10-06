@@ -48,12 +48,7 @@ pub(crate) fn integration_generic(
         }
     }
 
-    if let Some(rules_path) = rules_path_for(target.name, home) {
-        checks.push(check_rules_file(&rules_path));
-    }
-
-    // #593: Windsurf is wired through MCP + dedicated rules + Cascade hooks, but
-    // has NO on-demand skill by design. Surface a consolidated status so an empty
+    // #593: Windsurf is wired through MCP + Cascade hooks and has no skills. Surface a consolidated status so an empty
     // `watch` or a "missing skill" is not misread as a broken install, and show
     // the last real ctx_* MCP call so users can see whether Cascade actually
     // drives lean-ctx (GLM 5.2 and other weaker models often call native tools).
@@ -118,9 +113,7 @@ pub(crate) fn integration_claude(home: &std::path::Path, binary: &str) -> Integr
 
     let mut checks = Vec::new();
     let mcp_path = crate::core::editor_registry::claude_mcp_json_path(home);
-    let mcp_check = check_mcp_json(&mcp_path, binary);
-    let mcp_registered = mcp_check.ok;
-    checks.push(mcp_check);
+    checks.push(check_mcp_json(&mcp_path, binary));
 
     let settings_path = crate::core::editor_registry::claude_state_dir(home).join("settings.json");
     checks.push(check_claude_hooks(&settings_path, binary));
@@ -130,38 +123,19 @@ pub(crate) fn integration_claude(home: &std::path::Path, binary: &str) -> Integr
     let hooks_dir = crate::core::editor_registry::claude_state_dir(home).join("hooks");
     checks.push(check_hook_wrapper_scripts(&hooks_dir, binary, home));
 
-    // Instructions live in the CLAUDE.md block + on-demand skill (GL #555,
-    // GH #396). Same detector as the main doctor check.
+    // The detailed guide is the `sobre` skill; the MCP instructions carry the
+    // short version to every client.
     {
-        use crate::doctor::common::ClaudeInstructionsState as S;
-        let state = crate::doctor::common::claude_instructions_state(home);
-        let claude_md = crate::core::editor_registry::claude_state_dir(home).join("CLAUDE.md");
-        let detail = match state {
-            S::Block => format!("{} block", claude_md.display()),
-            S::Missing => "missing (run: lean-ctx init)".into(),
+        let current = crate::setup::skill::is_current("claude", home);
+        let detail = match crate::setup::skill::skill_path("claude", home) {
+            Some(p) if current => p.display().to_string(),
+            _ => "missing or outdated (run: lean-ctx init)".into(),
         };
-        let advertises_ctx_tools = matches!(state, S::Block);
         checks.push(NamedCheck {
-            name: "Instructions".to_string(),
-            ok: state.ok(),
+            name: "Skill".to_string(),
+            ok: current,
             detail,
         });
-
-        // GH #637 (second half) / GL #1139: a CLAUDE.md block that advertises
-        // ctx_* tools while no lean-ctx MCP server is registered strands the
-        // agent — it chases fallbacks (`ctx_edit`) that do not exist in the
-        // session. Surface the *combination* explicitly; the bare "MCP config"
-        // failure above does not tell the user the instructions are the hazard.
-        if advertises_ctx_tools && !mcp_registered {
-            checks.push(NamedCheck {
-                name: "Instructions/MCP consistency".to_string(),
-                ok: false,
-                detail: format!(
-                    "CLAUDE.md advertises ctx_* tools but no lean-ctx MCP server is registered in {} — run: lean-ctx init",
-                    mcp_path.display()
-                ),
-            });
-        }
     }
 
     // #637: surface the Read-redirect posture so a Claude Code user understands why

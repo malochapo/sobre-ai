@@ -3,11 +3,11 @@ use std::path::PathBuf;
 use crate::core::editor_registry::{ConfigType, EditorTarget, WriteAction, WriteOptions};
 use crate::core::portable_binary::resolve_portable_binary;
 use crate::core::setup_report::{PlatformInfo, SetupItem, SetupReport, SetupStepReport};
-use crate::hooks::{HookMode, recommend_hook_mode};
 use chrono::Utc;
 mod mcp;
 pub use mcp::*;
 mod helpers;
+pub mod skill;
 pub(crate) use helpers::*;
 
 pub fn claude_config_dir(home: &std::path::Path) -> PathBuf {
@@ -53,7 +53,6 @@ pub struct SetupOptions {
     pub json: bool,
     pub no_auto_approve: bool,
     pub skip_proxy: bool,
-    pub skip_rules: bool,
     /// Leave the shell rc untouched (`init --no-shell-hook`).
     pub skip_shell_hook: bool,
     /// `init --agent-aliases` / `--no-agent-aliases`; `None` keeps what is
@@ -156,12 +155,6 @@ pub fn run_setup_with_options(opts: SetupOptions) -> Result<SetupReport, String>
             continue;
         }
 
-        let mode = if target.agent_key.is_empty() {
-            HookMode::Mcp
-        } else {
-            recommend_hook_mode(&target.agent_key)
-        };
-
         let res = crate::core::editor_registry::write_config_with_options(
             target,
             &binary,
@@ -171,10 +164,6 @@ pub fn run_setup_with_options(opts: SetupOptions) -> Result<SetupReport, String>
         );
         match res {
             Ok(w) => {
-                let note_parts: Vec<String> = [Some(format!("mode={mode}")), w.note]
-                    .into_iter()
-                    .flatten()
-                    .collect();
                 editor_step.items.push(SetupItem {
                     name: target.name.to_string(),
                     status: match w.action {
@@ -183,7 +172,7 @@ pub fn run_setup_with_options(opts: SetupOptions) -> Result<SetupReport, String>
                         WriteAction::Already => "already".to_string(),
                     },
                     path: Some(short_path),
-                    note: Some(note_parts.join("; ")),
+                    note: w.note,
                 });
             }
             Err(e) => {
@@ -199,94 +188,6 @@ pub fn run_setup_with_options(opts: SetupOptions) -> Result<SetupReport, String>
     }
     steps.push(editor_step);
 
-    // Step: Agent rules — always, unless `--skip-rules`
-    let mut rules_step = SetupStepReport {
-        name: "agent_rules".to_string(),
-        ok: true,
-        items: Vec::new(),
-        warnings: Vec::new(),
-        errors: Vec::new(),
-    };
-    let should_inject = !opts.skip_rules;
-
-    if should_inject {
-        let rules_result = crate::rules_inject::inject_all_rules(&home);
-        for n in rules_result.injected {
-            rules_step.items.push(SetupItem {
-                name: n,
-                status: "injected".to_string(),
-                path: None,
-                note: None,
-            });
-        }
-        for n in rules_result.updated {
-            rules_step.items.push(SetupItem {
-                name: n,
-                status: "updated".to_string(),
-                path: None,
-                note: None,
-            });
-        }
-        for n in rules_result.already {
-            rules_step.items.push(SetupItem {
-                name: n,
-                status: "already".to_string(),
-                path: None,
-                note: None,
-            });
-        }
-        if !rules_result.backed_up.is_empty() {
-            for bak in &rules_result.backed_up {
-                rules_step.items.push(SetupItem {
-                    name: "backup".to_string(),
-                    status: "created".to_string(),
-                    path: Some(bak.clone()),
-                    note: Some("previous version backed up".to_string()),
-                });
-            }
-        }
-        for e in rules_result.errors {
-            rules_step.ok = false;
-            rules_step.errors.push(e);
-        }
-    } else {
-        rules_step.items.push(SetupItem {
-            name: "agent_rules".to_string(),
-            status: "skipped".to_string(),
-            path: None,
-            note: Some("--skip-rules flag set".to_string()),
-        });
-    }
-    steps.push(rules_step);
-
-    // Step: rules dedup (#578) — auto-heal duplicated lean-ctx guidance so a
-    // client never pays for the rules block twice per session. Only
-    // lean-ctx-owned files / marked blocks are touched (backups for edits);
-    // user-maintained content is left alone by `auto_apply`.
-    if should_inject {
-        let mut dedup_step = SetupStepReport {
-            name: "rules_dedup".to_string(),
-            ok: true,
-            items: Vec::new(),
-            warnings: Vec::new(),
-            errors: Vec::new(),
-        };
-        let project = std::env::current_dir().unwrap_or_else(|_| home.clone());
-        for line in crate::cli::rules_dedup::auto_apply(&home, &project) {
-            let failed = line.starts_with("FAILED");
-            if failed {
-                dedup_step.warnings.push(line.clone());
-            }
-            dedup_step.items.push(SetupItem {
-                name: "dedup".to_string(),
-                status: if failed { "failed" } else { "applied" }.to_string(),
-                path: None,
-                note: Some(line),
-            });
-        }
-        steps.push(dedup_step);
-    }
-
     // Step: Agent-specific hooks (all detected agents)
     let mut hooks_step = SetupStepReport {
         name: "agent_hooks".to_string(),
@@ -299,8 +200,7 @@ pub fn run_setup_with_options(opts: SetupOptions) -> Result<SetupReport, String>
         if !target.detect_path.exists() || target.agent_key.is_empty() {
             continue;
         }
-        let mode = recommend_hook_mode(&target.agent_key);
-        crate::hooks::install_agent_hook_with_mode(&target.agent_key, true, mode);
+        crate::hooks::install_agent_hook(&target.agent_key, true);
         let mcp_note = match configure_agent_mcp(&target.agent_key) {
             Ok(()) => "; MCP config updated".to_string(),
             Err(e) => format!("; MCP config skipped: {e}"),
@@ -310,7 +210,7 @@ pub fn run_setup_with_options(opts: SetupOptions) -> Result<SetupReport, String>
             status: "installed".to_string(),
             path: Some(target.detect_path.to_string_lossy().to_string()),
             note: Some(format!(
-                "mode={mode}; merge-based install/repair (preserves other hooks/plugins){mcp_note}"
+                "merge-based install/repair (preserves other hooks/plugins){mcp_note}"
             )),
         });
     }

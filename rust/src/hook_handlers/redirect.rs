@@ -2,11 +2,11 @@
 //!
 //! Extracted from `hook_handlers::mod` (#660/#966 LOC gate): redirects a
 //! host's native Read/Grep/Glob tool call through the equivalent lean-ctx
-//! subcommand for compression, caching, and (in shadow/harden mode) telemetry.
+//! subcommand for compression, caching, and telemetry.
 
 use super::{
-    HOOK_STDIN_TIMEOUT, build_dual_allow_output, dedup, is_shadow_mode_active,
-    log_shadow_intercept, payload, read_stdin_with_timeout, resolve_binary,
+    HOOK_STDIN_TIMEOUT, build_dual_allow_output, dedup, log_shadow_intercept, payload,
+    read_stdin_with_timeout, resolve_binary,
 };
 use crate::core::debug_log::{self, Route};
 use std::io::Read;
@@ -148,13 +148,7 @@ pub(super) fn redirect_read(tool_input: Option<&serde_json::Value>) -> String {
         return build_dual_allow_output();
     }
 
-    let shadow = is_shadow_mode_active();
-    if shadow {
-        tracing::info!(
-            "[hook redirect] {} active, redirecting Read through lean-ctx",
-            if shadow { "shadow mode" } else { "harden mode" }
-        );
-    }
+    tracing::info!("[hook redirect] redirecting Read through lean-ctx");
 
     let binary = resolve_binary();
     let temp_path = redirect_temp_path(&path);
@@ -309,19 +303,11 @@ fn redirect_grep(tool_input: Option<&serde_json::Value>) -> String {
             &format!("{pattern} in {search_path}"),
             "non-content output_mode — native passthrough (path-swap only valid for content)",
         );
-        if is_shadow_mode_active() {
-            log_shadow_intercept("Grep", &format!("{pattern} in {search_path}"));
-        }
+        log_shadow_intercept("Grep", &format!("{pattern} in {search_path}"));
         return build_dual_allow_output();
     }
 
-    let shadow = is_shadow_mode_active();
-    if shadow {
-        tracing::info!(
-            "[hook redirect] {} active, redirecting Grep through lean-ctx",
-            if shadow { "shadow mode" } else { "harden mode" }
-        );
-    }
+    tracing::info!("[hook redirect] redirecting Grep through lean-ctx");
 
     let binary = resolve_binary();
     let key = format!("grep:{pattern}:{search_path}");
@@ -359,7 +345,7 @@ fn redirect_grep(tool_input: Option<&serde_json::Value>) -> String {
     build_dual_allow_output()
 }
 
-/// Redirect Glob through lean-ctx in shadow/harden mode (#556).
+/// Warm lean-ctx's glob path for a native Glob call (#556).
 ///
 /// Glob differs from Read/Grep: its result is a list of paths matched against
 /// the filesystem, not file content, so `build_redirect_output` (which swaps a
@@ -368,17 +354,11 @@ fn redirect_grep(tool_input: Option<&serde_json::Value>) -> String {
 /// Won't-fix (#1033): a true Read/Grep-style redirect is impossible *by
 /// construction*, not merely unimplemented. The host consumes the path list
 /// directly and never re-reads a file we could substitute, so there is no
-/// redirectable result to rewrite. We therefore only act when shadow or harden
-/// mode is active — warm lean-ctx's own glob path (parity with `ctx_glob`) and
-/// record the intercept in shadow.log — then allow the native call through
-/// unchanged. Outside those modes there is nothing to gain, so we pass through
-/// immediately without spawning a subprocess.
+/// redirectable result to rewrite. We warm lean-ctx's own glob path (parity
+/// with `ctx_glob`) and record the call in shadow.log, then allow the native
+/// call through unchanged.
 fn redirect_glob(tool_input: Option<&serde_json::Value>) -> String {
     let allow = build_dual_allow_output();
-    let shadow = is_shadow_mode_active();
-    if !shadow {
-        return allow;
-    }
 
     let pattern = tool_input
         .and_then(|ti| ti.get("pattern"))
@@ -400,13 +380,10 @@ fn redirect_glob(tool_input: Option<&serde_json::Value>) -> String {
         .and_then(|p| p.as_str())
         .unwrap_or(".");
 
-    tracing::info!(
-        "[hook redirect] {} active, warming ctx_glob for {pattern}",
-        if shadow { "shadow mode" } else { "harden mode" }
-    );
+    tracing::info!("[hook redirect] warming ctx_glob for {pattern}");
 
-    // Warm lean-ctx's glob path (populates caches, parity with the ctx_glob the
-    // shadow header nudges toward); the native result is kept untouched.
+    // Warm lean-ctx's glob path (populates caches, parity with ctx_glob); the
+    // native result is kept untouched.
     let binary = resolve_binary();
     let _ = run_with_timeout(
         &binary,
@@ -419,7 +396,7 @@ fn redirect_glob(tool_input: Option<&serde_json::Value>) -> String {
         "Glob",
         Route::Native,
         &format!("{pattern} in {search_path}"),
-        "shadow/harden warm — native passthrough",
+        "glob warm — native passthrough",
     );
     log_shadow_intercept("Glob", &format!("{pattern} in {search_path}"));
     allow

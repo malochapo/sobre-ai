@@ -16,13 +16,6 @@ pub fn handle_observe() {
     let Some(input) = read_stdin_with_timeout(HOOK_STDIN_TIMEOUT) else {
         return;
     };
-    // Dedicated rules-injection mode (#343): a Claude/Codex `SessionStart` hook
-    // injects the compact lean-ctx summary as `additionalContext` — the
-    // non-polluting stand-in for the (skipped) CLAUDE.md/AGENTS.md block. All
-    // three agents register `hook observe` on SessionStart, so this is the single
-    // emit point (the Codex-specific handler stays silent in dedicated mode).
-    emit_session_start_nudge(&input);
-
     // Native-edit code-health notice (#1085): when the agent edits code with the
     // host's native Edit/MultiEdit tools (bypassing ctx_edit's gate), surface an
     // advisory complexity-regression notice via PostToolUse additionalContext.
@@ -50,39 +43,6 @@ pub fn handle_observe() {
     {
         crate::core::output_echo::analyze_and_record(text);
     }
-}
-
-fn emit_session_start_nudge(input: &str) {
-    let Ok(v) = serde_json::from_str::<serde_json::Value>(input) else {
-        return;
-    };
-    if !session_start_honours_additional_context(&v) {
-        return;
-    }
-    // Short reinforcement nudge for hosts that already
-    // have static rules but benefit from in-conversation emphasis on exclusive
-    // tools. Models weight in-conversation context above static instructions.
-    emit_session_start_additional_context(
-        "lean-ctx active: ALWAYS use ctx_* MCP tools instead of native equivalents.\n\
-         - ctx_read > native Read (cached, re-reads ~13 tokens vs full file; 10 modes incl. map/signatures)\n\
-         - ctx_search > native Grep (compact results, denied by hook)\n\
-         - ctx_shell > native Shell (95+ compression patterns)\n\
-         - ctx_glob > native Glob (denied by hook)\n\
-         - ctx_compose = orient FIRST (bundles search+read+symbols in one call)\n\
-         Native Read passes through for StrReplace internals only — never use it for exploration.\n\
-         Exclusive tools: ctx_compose, ctx_callgraph, ctx_knowledge, ctx_session.",
-    );
-}
-
-/// True for SessionStart payloads from hosts that honour `additionalContext`.
-///
-/// Cursor fixed SessionStart `additionalContext` support circa Q1 2026 —
-/// confirmed on the Cursor community forum as the only hook event where
-/// `additional_context` works end-to-end. The prior exclusion (#1031) is
-/// therefore removed: Cursor sessions now receive the same dedicated rules
-/// reinforcement as Claude/Codex.
-fn session_start_honours_additional_context(v: &serde_json::Value) -> bool {
-    v.get("hook_event_name").and_then(|e| e.as_str()) == Some("SessionStart")
 }
 
 #[derive(serde::Serialize)]
@@ -713,34 +673,6 @@ mod tests {
         });
         let event = detect_event_type(&v, 1000).unwrap();
         assert_eq!(event.event_type, "session");
-    }
-
-    #[test]
-    fn session_start_honoured_for_claude_payload() {
-        // Claude/Codex: hook_event_name + session_id, no conversation_id.
-        let v = serde_json::json!({
-            "hook_event_name": "SessionStart",
-            "session_id": "abc123",
-            "source": "startup"
-        });
-        assert!(session_start_honours_additional_context(&v));
-    }
-
-    #[test]
-    fn session_start_honoured_for_cursor_payload() {
-        // Cursor fixed SessionStart additionalContext ~Q1 2026 — now included.
-        let v = serde_json::json!({
-            "hook_event_name": "SessionStart",
-            "conversation_id": "0e1f4ed8-d858-4557-9fc5-6cbf5298eb8b",
-            "model": "claude-opus"
-        });
-        assert!(session_start_honours_additional_context(&v));
-    }
-
-    #[test]
-    fn session_start_skipped_for_non_session_event() {
-        let v = serde_json::json!({ "hook_event_name": "PreToolUse", "session_id": "x" });
-        assert!(!session_start_honours_additional_context(&v));
     }
 
     /// #1004: a Claude/Codex payload has no `conversation_id`, so the

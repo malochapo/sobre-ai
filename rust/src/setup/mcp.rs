@@ -10,30 +10,20 @@ use super::*;
 #[derive(Debug, Default)]
 pub struct AgentSetupResult {
     pub mcp_ok: bool,
-    pub rules: crate::rules_inject::InjectResult,
     pub errors: Vec<String>,
 }
 
-/// Complete per-agent setup: MCP config + global rules + hook.
+/// Complete per-agent setup: hooks + MCP config + skill.
 /// Single source of truth — called by both `init --agent` and `setup`.
-pub fn setup_single_agent(
-    agent_name: &str,
-    global: bool,
-    mode: crate::hooks::HookMode,
-) -> AgentSetupResult {
-    // Prefer HOME/USERPROFILE so tests and portable installs work on Windows
-    // (dirs::home_dir uses Known Folder API and ignores env overrides).
-    let home = crate::core::home::resolve_home_dir().unwrap_or_default();
+pub fn setup_single_agent(agent_name: &str, global: bool) -> AgentSetupResult {
     let mut result = AgentSetupResult::default();
 
-    crate::hooks::install_agent_hook_with_mode(agent_name, global, mode);
+    crate::hooks::install_agent_hook(agent_name, global);
 
     match configure_agent_mcp(agent_name) {
         Ok(()) => result.mcp_ok = true,
         Err(e) => result.errors.push(format!("MCP config: {e}")),
     }
-
-    result.rules = crate::rules_inject::inject_rules_for_agent(&home, agent_name);
 
     result
 }

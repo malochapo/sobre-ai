@@ -52,9 +52,7 @@ pub(crate) fn check_gemini_trust_and_hooks(home: &std::path::Path, binary: &str)
                     if cmd.contains("hook rewrite") && cmd_matches_expected(first, binary) {
                         saw_rewrite = true;
                     }
-                    if (cmd.contains("hook redirect") || cmd.contains("hook deny"))
-                        && cmd_matches_expected(first, binary)
-                    {
+                    if cmd.contains("hook redirect") && cmd_matches_expected(first, binary) {
                         saw_redirect_or_deny = true;
                     }
                 }
@@ -121,7 +119,7 @@ pub(crate) fn check_cursor_hooks(path: &std::path::Path, binary: &str) -> NamedC
         ) && e
             .get("command")
             .and_then(|c| c.as_str())
-            .is_some_and(|c| c.contains(" hook redirect") || c.contains(" hook deny"))
+            .is_some_and(|c| c.contains(" hook redirect"))
     });
     let entries_ok = has_rewrite && has_redirect_or_deny;
     let stale = stale_hook_binary(&content, binary);
@@ -227,8 +225,7 @@ pub(crate) fn check_claude_hooks(path: &std::path::Path, binary: &str) -> NamedC
         .cloned()
         .unwrap_or_default();
     let joined = serde_json::to_string(&pre).unwrap_or_default();
-    let entries_ok = joined.contains(" hook rewrite")
-        && (joined.contains(" hook redirect") || joined.contains(" hook deny"));
+    let entries_ok = joined.contains(" hook rewrite") && joined.contains(" hook redirect");
     let stale = stale_hook_binary(&joined, binary);
     finalize_hook_check("Hooks", path, entries_ok, stale)
 }

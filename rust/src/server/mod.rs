@@ -1,6 +1,5 @@
 pub mod background_shell;
 pub mod bounded_lock;
-pub mod bypass_hint;
 pub mod compaction_sync;
 pub mod context_gate;
 mod dispatch;
@@ -31,16 +30,6 @@ mod call_tool;
 mod post_dispatch;
 mod post_process;
 mod server_handler;
-
-pub fn build_instructions_for_test(crp_mode: CrpMode) -> String {
-    crate::instructions::build_instructions_for_test(crp_mode)
-}
-
-/// Deterministic STATIC Claude Code instructions (cold first-contact, no dynamic
-/// session/knowledge/gotcha payload) for the char-budget benchmark.
-pub fn build_claude_code_static_instructions_for_test() -> String {
-    crate::instructions::claude_code_static_instructions_for_test()
-}
 
 fn is_home_or_agent_dir(dir: &std::path::Path) -> bool {
     if let Some(home) = dirs::home_dir()
