@@ -3,9 +3,7 @@ name: Release
 on:
   push:
     tags:
-      # Only true semver release tags (v1.2.3). The digit class deliberately
-      # excludes the editor-extension tags (`vscode-v*`), which have their own
-      # workflow (publish-vscode.yml) and must NOT trigger a binary release.
+      # Only true semver release tags (v1.2.3).
       - 'v[0-9]*'
 
 permissions:
@@ -243,55 +241,6 @@ jobs:
             lean-ctx-*.tar.gz
             lean-ctx-*.zip
             SHA256SUMS
-
-  jetbrains-plugin:
-    # Build the JetBrains/IntelliJ plugin and attach it to the GitHub Release as a
-    # downloadable .zip (#418). The plugin's own workflow only runs on plugin source
-    # changes; the GITHUB_TOKEN-created release here does not trigger other workflows,
-    # so the asset must be produced from inside this release pipeline. `-Pversion`
-    # mirrors the tag so the plugin version never drifts from the engine release.
-    name: Attach JetBrains Plugin
-    needs: release
-    runs-on: ubuntu-latest
-    if: ${{ !contains(github.ref_name, '-rc') }}
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@v4 # v4
-        with:
-          persist-credentials: false
-
-      - name: Setup Java
-        uses: actions/setup-java@v5
-        with:
-          distribution: zulu
-          java-version: 21
-
-      - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@3f131e8634966bd73d06cc69884922b02e6faf92 # v6
-
-      - name: Build plugin distribution
-        working-directory: packages/jetbrains-lean-ctx
-        run: ./gradlew buildPlugin -Pversion="${GITHUB_REF_NAME#v}" --console=plain
-
-      - name: Attach plugin ZIP to release
-        env:
-          GH_TOKEN: ${{ github.token }}
-        # Gradle's rootProject.name is "lean-ctx", so buildPlugin emits
-        # build/distributions/lean-ctx-<version>.zip — indistinguishable from a
-        # source archive in the release asset list, which is why the plugin
-        # looked "missing" (#418). Re-name it to a discoverable, unambiguous
-        # asset before upload so users can actually find the JetBrains plugin.
-        run: |
-          VERSION="${GITHUB_REF_NAME#v}"
-          SRC="$(ls packages/jetbrains-lean-ctx/build/distributions/*.zip | head -1)"
-          if [ -z "$SRC" ]; then
-            echo "::error::No plugin distribution zip produced by buildPlugin" >&2
-            exit 1
-          fi
-          DEST="lean-ctx-jetbrains-plugin-${VERSION}.zip"
-          cp "$SRC" "$DEST"
-          gh release upload "${GITHUB_REF_NAME}" "$DEST" --clobber
 
   publish-crates:
     name: Publish to crates.io
