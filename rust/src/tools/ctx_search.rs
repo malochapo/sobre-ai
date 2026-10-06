@@ -486,10 +486,6 @@ pub fn handle_filtered(
     // every repeat, breaking byte-stability for provider prompt caches.
     let scope_hint = monorepo_scope_hint(&matches, dir);
 
-    if let Some(delta) = crate::core::search_delta::compute_delta(pattern, &matches) {
-        return SearchOutcome::from_observed(delta, raw_tokens_accum);
-    }
-
     if let Some(hint) = scope_hint {
         result.push_str(&hint);
     }
@@ -1114,12 +1110,35 @@ mod tests {
     }
 
     #[test]
+    fn repeating_a_search_returns_the_full_result_again() {
+        let a = tempfile::tempdir().unwrap();
+        let b = tempfile::tempdir().unwrap();
+        std::fs::write(a.path().join("x.rs"), "repeat_needle_q7\n").unwrap();
+        std::fs::write(b.path().join("y.rs"), "repeat_needle_q7\n").unwrap();
+        let run = |dir: &std::path::Path| {
+            handle(
+                "repeat_needle_q7",
+                dir.to_string_lossy().as_ref(),
+                None,
+                10,
+                CrpMode::Off,
+                true,
+                true,
+                false,
+            )
+            .text
+        };
+        let first = run(a.path());
+        assert_eq!(first, run(a.path()), "same search, same output");
+        assert!(
+            run(b.path()).contains("y.rs"),
+            "another dir is searched in full"
+        );
+    }
+
+    #[test]
     fn include_glob_filters_by_brace_expansion() {
         let dir = tempfile::tempdir().unwrap();
-        // Unique needle: the global search-delta tracker (src/core/search_delta.rs)
-        // is keyed by pattern, so sharing "needle" with sibling tests lets a
-        // parallel run mark our matches "unchanged" and drop them. A pattern
-        // unique to this test guarantees a fresh tracker key. (#flaky)
         std::fs::write(dir.path().join("a.rs"), "brace_glob_needle\n").unwrap();
         std::fs::write(dir.path().join("b.ts"), "brace_glob_needle\n").unwrap();
         std::fs::write(dir.path().join("c.py"), "brace_glob_needle\n").unwrap();

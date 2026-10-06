@@ -347,7 +347,6 @@ pub mod reference_docs;
 pub mod sandbox;
 pub mod sanitize;
 pub mod savings_ledger;
-pub mod search_delta;
 pub mod search_index;
 pub mod secret_detection;
 pub mod sensitivity;
