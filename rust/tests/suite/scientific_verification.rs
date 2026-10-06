@@ -1,10 +1,6 @@
-use lean_ctx::core::attention_model::{
-    attention_efficiency, combined_attention, positional_attention, structural_importance,
-};
 use lean_ctx::core::entropy::{
     jaccard_similarity, kolmogorov_proxy, normalized_token_entropy, shannon_entropy, token_entropy,
 };
-use lean_ctx::core::tokens::count_tokens;
 
 // ═══════════════════════════════════════════════════════════════════
 // 1. SHANNON ENTROPY — mathematical invariants
@@ -196,162 +192,17 @@ fn jaccard_triangle_inequality() {
     );
 }
 
-#[test]
-fn litm_boundary_values() {
-    let alpha = 0.90;
-    let beta = 0.50;
-    let gamma = 0.85;
-    assert!(
-        (positional_attention(0.0, alpha, beta, gamma) - alpha).abs() < f64::EPSILON,
-        "f(0) must equal α"
-    );
-    assert!(
-        (positional_attention(0.5, alpha, beta, gamma) - beta).abs() < f64::EPSILON,
-        "f(0.5) must equal β"
-    );
-    assert!(
-        (positional_attention(1.0, alpha, beta, gamma) - gamma).abs() < f64::EPSILON,
-        "f(1.0) must equal γ"
-    );
-}
-
-#[test]
-fn litm_quadratic_steeper_than_linear_near_edges() {
-    let alpha = 0.90;
-    let beta = 0.50;
-    let gamma = 0.85;
-    let at_0_1 = positional_attention(0.1, alpha, beta, gamma);
-    let at_0_25 = positional_attention(0.25, alpha, beta, gamma);
-
-    let linear_0_1 = alpha + (beta - alpha) * 0.2;
-    let linear_0_25 = alpha + (beta - alpha) * 0.5;
-    assert!(
-        at_0_1 > linear_0_1,
-        "quadratic should stay higher near edge: quad={at_0_1:.4} vs linear={linear_0_1:.4}"
-    );
-    assert!(
-        at_0_25 > linear_0_25,
-        "quadratic should stay higher at 0.25: quad={at_0_25:.4} vs linear={linear_0_25:.4}"
-    );
-}
-
-#[test]
-fn litm_monotonic_first_half() {
-    let alpha = 0.90;
-    let beta = 0.50;
-    let gamma = 0.85;
-    let mut prev = positional_attention(0.0, alpha, beta, gamma);
-    for i in 1..=10 {
-        let pos = f64::from(i) / 20.0;
-        let val = positional_attention(pos, alpha, beta, gamma);
-        assert!(
-            val <= prev + f64::EPSILON,
-            "first half should be non-increasing: f({:.2})={val:.4} > f({:.2})={prev:.4}",
-            pos,
-            pos - 0.05
-        );
-        prev = val;
-    }
-}
-
 // ═══════════════════════════════════════════════════════════════════
 // 7. COMBINED ATTENTION — geometric mean properties
 // ═══════════════════════════════════════════════════════════════════
-
-#[test]
-fn combined_attention_geometric_mean_bounded() {
-    let score = combined_attention("fn main() {", 0.5, 0.9, 0.5, 0.85);
-    assert!(
-        (0.0..=2.0).contains(&score),
-        "combined score must be bounded: {score}"
-    );
-}
-
-#[test]
-fn combined_attention_zero_for_empty() {
-    let score = combined_attention("", 0.5, 0.9, 0.5, 0.85);
-    assert!(
-        score < 0.5,
-        "empty line should have low combined attention: {score}"
-    );
-}
-
-#[test]
-fn combined_attention_error_dominates_position() {
-    let error_mid = combined_attention("error[E0433]: failed to resolve", 0.5, 0.9, 0.5, 0.85);
-    let normal_begin = combined_attention("let x = 42;", 0.0, 0.9, 0.5, 0.85);
-    assert!(
-        error_mid > normal_begin * 0.8,
-        "error in middle ({error_mid:.3}) should still score high vs normal at begin ({normal_begin:.3})"
-    );
-}
 
 // ═══════════════════════════════════════════════════════════════════
 // 8. ATTENTION EFFICIENCY — percentage bounds
 // ═══════════════════════════════════════════════════════════════════
 
-#[test]
-fn attention_efficiency_bounds() {
-    let importances = vec![0.8, 0.3, 0.3, 0.3, 0.8];
-    let eff = attention_efficiency(&importances, 0.9, 0.5, 0.85);
-    assert!(
-        (0.0..=100.0).contains(&eff),
-        "efficiency must be in [0, 100]: {eff}"
-    );
-}
-
-#[test]
-fn attention_efficiency_optimal_is_high() {
-    let optimal = vec![2.0, 0.1, 0.1, 0.1, 2.0];
-    let bad = vec![0.1, 0.1, 2.0, 2.0, 0.1];
-    let eff_opt = attention_efficiency(&optimal, 0.9, 0.5, 0.85);
-    let eff_bad = attention_efficiency(&bad, 0.9, 0.5, 0.85);
-    assert!(
-        eff_opt > eff_bad,
-        "optimal layout ({eff_opt:.1}%) must beat bad layout ({eff_bad:.1}%)"
-    );
-}
-
 // ═══════════════════════════════════════════════════════════════════
 // 9. SYMBOL MAP ROI — break-even analysis
 // ═══════════════════════════════════════════════════════════════════
-
-#[test]
-fn symbol_map_roi_positive_for_frequent_long_idents() {
-    use lean_ctx::core::symbol_map::should_register;
-    assert!(
-        should_register("authenticate_user_credentials_handler", 10, 1),
-        "very long ident (36 chars) with 10 occurrences should have positive ROI"
-    );
-}
-
-#[test]
-fn symbol_map_net_savings_correct() {
-    use lean_ctx::core::symbol_map::SymbolMap;
-
-    let ident = "authenticate_user_credentials_handler";
-    let occurrences = 15;
-    let content = std::iter::repeat_n(ident, occurrences)
-        .collect::<Vec<_>>()
-        .join(" some_code ");
-
-    let original_tokens = count_tokens(&content);
-
-    let mut map = SymbolMap::new();
-    map.register(ident);
-    let compressed = map.apply(&content);
-    let table = map.format_table();
-    let compressed_tokens = count_tokens(&compressed) + count_tokens(&table);
-
-    eprintln!(
-        "[symbol map ROI] {ident} x{occurrences}: {original_tokens} → {compressed_tokens} tokens"
-    );
-
-    assert!(
-        compressed_tokens < original_tokens,
-        "symbol map should save tokens: {compressed_tokens} < {original_tokens}"
-    );
-}
 
 // ═══════════════════════════════════════════════════════════════════
 // 10. INFORMATION BOTTLENECK — task relevance filtering
@@ -505,39 +356,6 @@ fn full_scientific_audit() {
         let j1 = jaccard_similarity("a b c", "b c d");
         let j2 = jaccard_similarity("b c d", "a b c");
         (j1 - j2).abs() < f64::EPSILON
-    });
-
-    check!("LITM f(0) = α, f(0.5) = β, f(1) = γ", {
-        let a = positional_attention(0.0, 0.9, 0.5, 0.85);
-        let b = positional_attention(0.5, 0.9, 0.5, 0.85);
-        let c = positional_attention(1.0, 0.9, 0.5, 0.85);
-        (a - 0.9).abs() < 0.01 && (b - 0.5).abs() < 0.01 && (c - 0.85).abs() < 0.01
-    });
-
-    check!("LITM U-shape: edges > middle", {
-        let begin = positional_attention(0.0, 0.9, 0.5, 0.85);
-        let mid = positional_attention(0.5, 0.9, 0.5, 0.85);
-        let end = positional_attention(1.0, 0.9, 0.5, 0.85);
-        begin > mid && end > mid
-    });
-
-    check!("LITM quadratic steeper near edges than linear", {
-        let quad_0_1 = positional_attention(0.1, 0.9, 0.5, 0.85);
-        let linear_0_1 = 0.9 + (0.5 - 0.9) * 0.2;
-        quad_0_1 > linear_0_1
-    });
-
-    check!("Geometric mean: sqrt(pos * struct) bounded", {
-        let s = combined_attention("fn main() {", 0.0, 0.9, 0.5, 0.85);
-        s > 0.0 && s < 2.0
-    });
-
-    check!("Structural importance: error > def > comment > brace", {
-        let e = structural_importance("error: failed");
-        let d = structural_importance("fn main() {");
-        let c = structural_importance("// comment");
-        let b = structural_importance("}");
-        e > d && d > c && c > b
     });
 
     check!("Safeguard ratio ∈ {original, compressed}", {

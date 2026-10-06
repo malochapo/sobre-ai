@@ -8,7 +8,6 @@ use ignore::WalkBuilder;
 use regex::RegexBuilder;
 
 use crate::core::protocol;
-use crate::core::symbol_map::{self, SymbolMap};
 use crate::core::tokens::count_tokens;
 use crate::tools::CrpMode;
 
@@ -491,26 +490,6 @@ pub fn handle_filtered(
         return SearchOutcome::from_observed(delta, raw_tokens_accum);
     }
 
-    if symbol_map::substitution_enabled() {
-        let exts = extract_extensions(include);
-        let ext_refs: Vec<&str> = exts.iter().map(String::as_str).collect();
-        let mut sym = SymbolMap::new();
-        let idents = symbol_map::extract_identifiers(&result, &ext_refs);
-        for ident in &idents {
-            sym.register(ident);
-        }
-        if sym.len() >= 3 {
-            let sym_table = sym.format_table();
-            let compressed = sym.apply(&result);
-            let original_tok = count_tokens(&result);
-            let compressed_tok = count_tokens(&compressed) + count_tokens(&sym_table);
-            let net_saving = original_tok.saturating_sub(compressed_tok);
-            if original_tok > 0 && net_saving * 100 / original_tok >= 5 {
-                result = format!("{compressed}{sym_table}");
-            }
-        }
-    }
-
     if let Some(hint) = scope_hint {
         result.push_str(&hint);
     }
@@ -682,39 +661,6 @@ fn expand_braces(pattern: &str) -> Vec<String> {
         }
     }
     out
-}
-
-/// Extract the file extensions referenced by an `include` glob, used by the
-/// symbol-substitution pass (which keyword-filters per language).
-///
-/// Only the final path component is inspected, so dots inside directory
-/// segments never leak in. Handles a single trailing extension (`*.rs` → `rs`)
-/// and brace expansion (`*.{rs,ts}` → `rs`, `ts`); a glob without an extension
-/// (`src/**/*`) yields an empty list. Unknown extensions are returned verbatim —
-/// `symbol_map::is_keyword` simply treats them as "no keywords", so no allowlist
-/// has to be kept in sync here.
-fn extract_extensions(include: Option<&str>) -> Vec<String> {
-    let Some(pattern) = include else {
-        return Vec::new();
-    };
-    let filename = pattern.rsplit('/').next().unwrap_or(pattern);
-    let Some(dot) = filename.rfind('.') else {
-        return Vec::new();
-    };
-    let ext_part = &filename[dot + 1..];
-
-    if let Some(inner) = ext_part.strip_prefix('{').and_then(|s| s.strip_suffix('}')) {
-        return inner
-            .split(',')
-            .map(|e| e.trim().to_string())
-            .filter(|e| !e.is_empty())
-            .collect();
-    }
-
-    if ext_part.is_empty() {
-        return Vec::new();
-    }
-    vec![ext_part.to_string()]
 }
 
 /// Extract file path from a grep match line, handling Windows drive letters (e.g. "C:").
@@ -1164,34 +1110,6 @@ mod tests {
         assert!(
             out.contains("special files skipped"),
             "the FIFO must be reported as a skipped special file: {out}"
-        );
-    }
-
-    #[test]
-    fn extract_extensions_handles_single_brace_and_none() {
-        assert_eq!(extract_extensions(Some("*.rs")), vec!["rs"]);
-        assert_eq!(extract_extensions(Some("src/**/*.tsx")), vec!["tsx"]);
-        assert_eq!(extract_extensions(Some("*.{rs,ts}")), vec!["rs", "ts"]);
-        assert_eq!(
-            extract_extensions(Some("*.{rs, ts , js}")),
-            vec!["rs", "ts", "js"]
-        );
-        assert_eq!(extract_extensions(None), Vec::<String>::new());
-    }
-
-    #[test]
-    fn extract_extensions_ignores_dots_in_directory_segments() {
-        // A dot in a directory name must not be mistaken for the extension.
-        assert_eq!(
-            extract_extensions(Some("config.v2/src/**/*.rs")),
-            vec!["rs"]
-        );
-        assert_eq!(extract_extensions(Some("src/v2.0/*.module.ts")), vec!["ts"]);
-        // No extension on the final component → empty.
-        assert_eq!(extract_extensions(Some("src/**/*")), Vec::<String>::new());
-        assert_eq!(
-            extract_extensions(Some("config.v2/Makefile")),
-            Vec::<String>::new()
         );
     }
 

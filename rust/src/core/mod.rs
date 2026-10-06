@@ -18,7 +18,6 @@ pub mod eval_harness;
 // sites listed in docs/removals.md would let this attribute go away.
 #[cfg_attr(not(feature = "embeddings"), allow(dead_code))]
 pub mod extractive;
-pub mod html_crush;
 pub mod json_crush;
 pub mod markdown_compact;
 pub mod output_sanitizer;
@@ -113,7 +112,6 @@ pub mod context_ledger;
 pub mod context_lint;
 pub mod context_os;
 pub mod context_overhead;
-pub mod context_overlay;
 pub mod context_radar;
 pub mod context_snapshot;
 pub mod cross_source_hints;
@@ -125,7 +123,6 @@ pub mod context {
     pub use super::context_ir;
     pub use super::context_ledger;
     pub use super::context_os;
-    pub use super::context_overlay;
 }
 
 // ---------------------------------------------------------------------------
@@ -202,18 +199,6 @@ pub mod session_domain {
     pub use super::ccp_session_bundle;
     pub use super::session;
     pub use super::session_diff;
-}
-
-// ---------------------------------------------------------------------------
-// Domain: Attention & Placement
-// ---------------------------------------------------------------------------
-pub mod attention_model;
-pub mod litm;
-
-/// Convenience re-export: all attention-related modules.
-pub mod attention {
-    pub use super::attention_model;
-    pub use super::litm;
 }
 
 // ---------------------------------------------------------------------------
@@ -373,8 +358,6 @@ pub mod redaction;
 pub mod reference_docs;
 pub mod sandbox;
 #[cfg(target_os = "linux")]
-pub mod sandbox_landlock;
-pub mod sandbox_seatbelt;
 pub mod sanitize;
 pub mod savings_ledger;
 pub mod search_delta;
@@ -385,7 +368,6 @@ pub mod session_token;
 pub mod shell_gate;
 pub mod startup_guard;
 pub mod stats;
-pub mod symbol_map;
 pub mod syntax_validate;
 pub mod task_briefing;
 /// macOS Seatbelt self-sandbox (#356): wraps launchd-owned daemon/proxy/updater

@@ -6,7 +6,6 @@ use crate::core::deps;
 use crate::core::entropy;
 use crate::core::protocol;
 use crate::core::signatures;
-use crate::core::symbol_map::{self, SymbolMap};
 use crate::core::tokens::count_tokens;
 use crate::tools::CrpMode;
 // `pub(crate)`: the conformance suite renders modes directly for its

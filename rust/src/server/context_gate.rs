@@ -1,7 +1,3 @@
-use crate::core::context_field::{ContextItemId, ContextState};
-use crate::core::context_ledger::{ContextLedger, PressureAction};
-use crate::core::context_overlay::{OverlayOp, OverlayStore};
-
 /// #843: precise, pinned reads (`diff`, `lines:N-M`, `anchored`/`anchored:N-M`)
 /// must pass through every mode-override path untouched — bounce-prevention,
 /// pressure-downgrade, and the graph/knowledge heuristics below must never
@@ -24,16 +20,6 @@ pub struct PreDispatchResult {
     pub reason: Option<&'static str>,
 }
 
-#[derive(Debug, Clone)]
-pub struct PostDispatchResult {
-    pub eviction_hint: Option<String>,
-    pub elicitation_hint: Option<String>,
-    pub resource_changed: bool,
-    /// FEP prefetch suggestion (#9): files likely needed next, from the co-access
-    /// graph. A warmup hint only — never an automatic read.
-    pub prefetch_hint: Option<String>,
-}
-
 pub fn pre_dispatch_read(
     path: &str,
     requested_mode: &str,
@@ -49,15 +35,7 @@ pub fn pre_dispatch_read(
         return no_change;
     }
 
-    if let Some(root) = project_root {
-        let overlay = OverlayStore::load_project(&std::path::PathBuf::from(root));
-        if let Some(result) = check_overlay_mode_override(path, requested_mode, &overlay) {
-            return result;
-        }
-    }
-
     // Explicit mode=full must not be downgraded by pressure or other heuristics.
-    // Only overlays (user-explicit) above can override it.
     if requested_mode == "full" {
         return no_change;
     }
@@ -138,178 +116,6 @@ pub fn pre_dispatch_read(
     no_change
 }
 
-fn check_overlay_mode_override(
-    path: &str,
-    requested_mode: &str,
-    overlay: &OverlayStore,
-) -> Option<PreDispatchResult> {
-    let item_id = ContextItemId::from_file(path);
-    let overlays = overlay.for_item(&item_id);
-
-    for ov in overlays.iter().rev() {
-        match &ov.operation {
-            OverlayOp::SetView(view) => {
-                let mode_str = view.as_str();
-                if mode_str != requested_mode {
-                    return Some(PreDispatchResult {
-                        overridden_mode: Some(mode_str.to_string()),
-                        reason: Some("overlay-set-view"),
-                    });
-                }
-            }
-            OverlayOp::Pin { .. } if requested_mode != "full" => {
-                return Some(PreDispatchResult {
-                    overridden_mode: Some("full".to_string()),
-                    reason: Some("pinned"),
-                });
-            }
-            OverlayOp::Exclude { .. } if requested_mode != "signatures" => {
-                return Some(PreDispatchResult {
-                    overridden_mode: Some("signatures".to_string()),
-                    reason: Some("excluded"),
-                });
-            }
-            _ => {}
-        }
-    }
-    None
-}
-
-#[cfg(test)]
-pub fn post_dispatch_record(
-    path: &str,
-    mode: &str,
-    original_tokens: usize,
-    sent_tokens: usize,
-    ledger: &mut ContextLedger,
-    overlay: &OverlayStore,
-) -> PostDispatchResult {
-    post_dispatch_record_with_task(
-        path,
-        mode,
-        original_tokens,
-        sent_tokens,
-        ledger,
-        overlay,
-        None,
-        None,
-    )
-}
-
-pub fn post_dispatch_record_with_task(
-    path: &str,
-    mode: &str,
-    original_tokens: usize,
-    sent_tokens: usize,
-    ledger: &mut ContextLedger,
-    overlay: &OverlayStore,
-    task: Option<&str>,
-    project_root: Option<&str>,
-) -> PostDispatchResult {
-    let prev_count = ledger.entries.len();
-    let prev_pressure = ledger.pressure().recommendation;
-
-    ledger.record_with_task(path, mode, original_tokens, sent_tokens, task);
-
-    let item_id = ContextItemId::from_file(path);
-    let state = overlay.apply_to_state(&item_id, ContextState::Included);
-
-    if state == ContextState::Excluded {
-        return PostDispatchResult {
-            eviction_hint: Some(format!("File '{path}' is excluded by overlay.")),
-            elicitation_hint: None,
-            resource_changed: true,
-            prefetch_hint: None,
-        };
-    }
-
-    let elicitation =
-        super::elicitation::check_elicitation_needed(ledger, Some(path), Some(sent_tokens))
-            .map(|s| s.format_fallback_hint());
-
-    let pressure = ledger.pressure();
-
-    // #6 Global-Workspace ignition: salience outliers are broadcast (pinned) into
-    // the working set BEFORE reinjection, so an ignited item keeps its view while
-    // the rest are downgraded under pressure. Deterministic z-score threshold.
-    let ignited = ledger.ignite_high_salience();
-
-    apply_reinjection_plan(ledger, &pressure.recommendation);
-
-    let new_entry = ledger.entries.len() != prev_count;
-    let pressure_shifted = pressure.recommendation != prev_pressure;
-    let resource_changed = new_entry || pressure_shifted || !ignited.is_empty();
-
-    if pressure.utilization > 0.9 {
-        let candidates = ledger.eviction_candidates_by_phi(3);
-        if !candidates.is_empty() {
-            // #715: emit targets the evict resolver can actually find —
-            // root-relative paths (or the full path), never display-shortened
-            // forms that used to produce "Evicted 0/N".
-            let names: Vec<_> = candidates
-                .iter()
-                .take(3)
-                .map(|p| eviction_target_display(p, project_root))
-                .collect();
-            return PostDispatchResult {
-                eviction_hint: Some(format!(
-                    "Context pressure {:.0}%. Evict: ctx_ledger(action=\"evict\", targets=\"{}\")",
-                    pressure.utilization * 100.0,
-                    names.join(", ")
-                )),
-                elicitation_hint: elicitation,
-                resource_changed,
-                // Under pressure we evict rather than prefetch — no warmup hint.
-                prefetch_hint: None,
-            };
-        }
-    }
-
-    // #9 FEP prefetch: with budget to spare, suggest the files most likely needed
-    // next (co-access graph), so the agent can warm them before the surprise of a
-    // miss. Deterministic; runs in the background post-dispatch, never in output.
-    let prefetch_hint =
-        project_root.and_then(|root| crate::core::fep_prefetch::prefetch_hint(root, path, ledger));
-
-    PostDispatchResult {
-        eviction_hint: None,
-        elicitation_hint: elicitation,
-        resource_changed,
-        prefetch_hint,
-    }
-}
-
-/// #715: a resolvable evict target for hint output — project-root-relative
-/// when the candidate lives under the root, otherwise the full canonical
-/// path. Both forms round-trip through `ContextLedger::resolve_entry`.
-fn eviction_target_display(path: &str, project_root: Option<&str>) -> String {
-    if let Some(root) = project_root.filter(|r| !r.is_empty()) {
-        let root_prefix = format!("{}/", root.trim_end_matches(['/', '\\']).replace('\\', "/"));
-        if let Some(rel) = path.strip_prefix(&root_prefix)
-            && !rel.is_empty()
-        {
-            return rel.to_string();
-        }
-    }
-    path.to_string()
-}
-
-fn apply_reinjection_plan(ledger: &mut ContextLedger, action: &PressureAction) {
-    if *action != PressureAction::ForceCompression && *action != PressureAction::EvictLeastRelevant
-    {
-        return;
-    }
-    for entry in &mut ledger.entries {
-        // #6: ignited / user-pinned items stay broadcast — never downgraded.
-        if entry.state == Some(ContextState::Pinned) {
-            continue;
-        }
-        if entry.mode == "full" {
-            entry.mode = "map".to_string();
-        }
-    }
-}
-
 fn try_load_graph(project_root: &str) -> Option<crate::core::graph_provider::OpenGraphProvider> {
     crate::core::graph_provider::open_best_effort(project_root)
 }
@@ -317,21 +123,6 @@ fn try_load_graph(project_root: &str) -> Option<crate::core::graph_provider::Ope
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn eviction_target_display_emits_resolvable_targets() {
-        // #715: root-relative when under the root, full path otherwise —
-        // never a display-shortened form the resolver cannot find.
-        assert_eq!(
-            eviction_target_display("/w/proj/src/a.rs", Some("/w/proj")),
-            "src/a.rs"
-        );
-        assert_eq!(
-            eviction_target_display("/other/b.rs", Some("/w/proj")),
-            "/other/b.rs"
-        );
-        assert_eq!(eviction_target_display("/x/c.rs", None), "/x/c.rs");
-    }
 
     #[test]
     fn pre_dispatch_passthrough_for_diff() {
@@ -461,115 +252,5 @@ mod tests {
             result.overridden_mode.is_none(),
             "pressure must not downgrade when degradation.enforce is off"
         );
-    }
-
-    #[test]
-    fn post_dispatch_reinjection_downgrades_entries() {
-        let mut ledger = ContextLedger::with_window_size(1000);
-        ledger.record("a.rs", "full", 400, 400);
-        ledger.record("b.rs", "full", 400, 400);
-        let overlay = OverlayStore::new();
-        let result = post_dispatch_record("c.rs", "full", 300, 300, &mut ledger, &overlay);
-        assert!(result.resource_changed);
-        let a_entry = ledger.entries.iter().find(|e| e.path == "a.rs").unwrap();
-        assert_eq!(a_entry.mode, "map");
-    }
-
-    #[test]
-    fn ignited_item_resists_reinjection_downgrade() {
-        // #6: a high-salience outlier ignites (pins) and keeps its full view,
-        // while the rest are downgraded to map by pressure reinjection.
-        let mut ledger = ContextLedger::with_window_size(1000);
-        for i in 0..5 {
-            ledger.record(&format!("bg{i}.rs"), "full", 250, 250);
-        }
-        ledger.record("hot.rs", "full", 250, 250);
-        // Set the salience distribution explicitly (record recomputes Phi, so we
-        // overwrite afterwards) to make ignition deterministic in the test.
-        for e in &mut ledger.entries {
-            e.phi = Some(if e.path == "hot.rs" { 0.97 } else { 0.1 });
-        }
-        let ignited = ledger.ignite_high_salience();
-        assert_eq!(ignited, vec!["hot.rs".to_string()], "outlier should ignite");
-
-        apply_reinjection_plan(&mut ledger, &PressureAction::ForceCompression);
-        let hot = ledger.entries.iter().find(|e| e.path == "hot.rs").unwrap();
-        assert_eq!(hot.mode, "full", "ignited item keeps its full view");
-        let bg = ledger.entries.iter().find(|e| e.path == "bg0.rs").unwrap();
-        assert_eq!(bg.mode, "map", "non-ignited items are downgraded");
-    }
-
-    #[test]
-    fn overlay_pin_forces_full_mode() {
-        let dir = tempfile::tempdir().expect("tmp dir");
-        let root = dir.path();
-        let mut store = OverlayStore::new();
-        let target = ContextItemId::from_file("src/important.rs");
-        store.add(crate::core::context_overlay::ContextOverlay::new(
-            target,
-            OverlayOp::Pin { verbatim: false },
-            crate::core::context_overlay::OverlayScope::Project,
-            String::new(),
-            crate::core::context_overlay::OverlayAuthor::User,
-        ));
-        store.save_project(root).unwrap();
-
-        let result = pre_dispatch_read(
-            "src/important.rs",
-            "auto",
-            None,
-            Some(root.to_str().unwrap()),
-        );
-        assert_eq!(result.overridden_mode, Some("full".to_string()));
-        assert_eq!(result.reason, Some("pinned"));
-    }
-
-    #[test]
-    fn overlay_exclude_forces_signatures_mode() {
-        let dir = tempfile::tempdir().expect("tmp dir");
-        let root = dir.path();
-        let mut store = OverlayStore::new();
-        let target = ContextItemId::from_file("src/noisy.rs");
-        store.add(crate::core::context_overlay::ContextOverlay::new(
-            target,
-            OverlayOp::Exclude {
-                reason: "noise".to_string(),
-            },
-            crate::core::context_overlay::OverlayScope::Project,
-            String::new(),
-            crate::core::context_overlay::OverlayAuthor::User,
-        ));
-        store.save_project(root).unwrap();
-
-        let result = pre_dispatch_read("src/noisy.rs", "auto", None, Some(root.to_str().unwrap()));
-        assert_eq!(result.overridden_mode, Some("signatures".to_string()));
-        assert_eq!(result.reason, Some("excluded"));
-    }
-
-    // --- pressure_downgrade unit tests (pure function) ---
-
-    // --- pre_dispatch_inner: no_degrade integration ---
-    // With no_degrade off (the default), pressure downgrade is active.
-
-    // --- estimate_read_tokens unit tests ---
-
-    #[test]
-    fn overlay_set_view_forces_specified_mode() {
-        let dir = tempfile::tempdir().expect("tmp dir");
-        let root = dir.path();
-        let mut store = OverlayStore::new();
-        let target = ContextItemId::from_file("src/big.rs");
-        store.add(crate::core::context_overlay::ContextOverlay::new(
-            target,
-            OverlayOp::SetView(crate::core::context_field::ViewKind::Map),
-            crate::core::context_overlay::OverlayScope::Project,
-            String::new(),
-            crate::core::context_overlay::OverlayAuthor::User,
-        ));
-        store.save_project(root).unwrap();
-
-        let result = pre_dispatch_read("src/big.rs", "auto", None, Some(root.to_str().unwrap()));
-        assert_eq!(result.overridden_mode, Some("map".to_string()));
-        assert_eq!(result.reason, Some("overlay-set-view"));
     }
 }

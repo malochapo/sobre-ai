@@ -771,30 +771,6 @@ fn render_aggressive(content: &str, ctx: RenderCtx<'_>) -> (String, usize) {
     let compressed = compressor::safeguard_ratio(content, &raw);
     let header = build_header(short, ext, content, line_count, true);
 
-    let mut sym = SymbolMap::new();
-    let idents = symbol_map::extract_identifiers(&compressed, &[ext]);
-    for ident in &idents {
-        sym.register(ident);
-    }
-
-    if symbol_map::substitution_enabled() && sym.len() >= 3 {
-        let sym_table = sym.format_table();
-        let sym_applied = sym.apply(&compressed);
-        let orig_tok = count_tokens(&compressed);
-        let comp_tok = count_tokens(&sym_applied) + count_tokens(&sym_table);
-        let net = orig_tok.saturating_sub(comp_tok);
-        if orig_tok > 0 && net * 100 / orig_tok >= 5 {
-            return (
-                append_compressed_hint(&format!("{header}\n{sym_applied}{sym_table}"), file_path),
-                comp_tok,
-            );
-        }
-        return (
-            append_compressed_hint(&format!("{header}\n{compressed}"), file_path),
-            orig_tok,
-        );
-    }
-
     let sent = count_tokens(&compressed);
     (
         append_compressed_hint(&format!("{header}\n{compressed}"), file_path),

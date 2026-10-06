@@ -175,16 +175,6 @@ pub fn alignment() -> Vec<OwaspMapping> {
                     description: "Subprocess isolation with env_clear and timeout",
                 },
                 Mitigation {
-                    feature: "Sandbox Level 1 (macOS)",
-                    module: "core/sandbox_seatbelt.rs",
-                    description: "OS-level Seatbelt profiles restricting filesystem and network",
-                },
-                Mitigation {
-                    feature: "Sandbox Level 1 (Linux)",
-                    module: "core/sandbox_landlock.rs",
-                    description: "Landlock LSM restricting filesystem access",
-                },
-                Mitigation {
                     feature: "Command Blocklist",
                     module: "core/shell_gate/mod.rs",
                     description: "Dangerous command patterns blocked before execution",
