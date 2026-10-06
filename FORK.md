@@ -16,8 +16,7 @@ otherwise.
   commit authored by Yves Gugger and the upstream contributors remains intact
   and attributable. `git log` is the authoritative record of what came from
   where.
-- Upstream is tracked as the `upstream` remote and is *not* merged
-  automatically. `sobre` is an independent project, not a downstream
+- Upstream is *not* merged automatically. `sobre` is an independent project, not a downstream
   distribution of lean-ctx.
 
 ## Relationship to upstream
@@ -42,11 +41,20 @@ The goal of the fork is **subtraction**, not addition. Categories removed:
 | Removed | Reason |
 |---|---|
 | Mascot, achievements, sprite and ASCII-art subsystem (`core/buddy`) | Gamification; no bearing on the tool's job |
-| Cloud server, billing, org gateway, shape translation | `sobre` is community open source with nothing to commercialise |
-| Web fetching, remote providers, multi-agent coordination | Outside the scope of a local context layer |
+| Cloud server, accounts, billing, org gateway, team server | `sobre` is community open source with nothing to commercialise |
+| Web fetching (`ctx_url_read`), LLM-backed features, multi-agent coordination | Outside the scope of a local context layer |
+| Web dashboard, background daemon and HTTP server | One local process per agent session; no listening service besides the opt-in proxy |
+| Addon marketplace, plugin system, OCLA event bus, WASM runtime | Extension machinery with no extensions to run |
+| JetBrains backend, and agents beyond eight | Support only what two maintainers can test |
+| Shared session mode | One machine, one person |
+| Learning loop (mode predictor, feedback, bandits, threshold learning) | Stores that were written but never read back |
 | The downstream packages, language SDKs and editor extensions | A distribution surface two maintainers can support |
 | Marketing, blog and email material | Not source code |
-| Multiple tool-visibility modes, tool profiles, per-client quirks | Replaced by a single fixed tool surface |
+| Multiple tool-visibility modes, tool profiles, per-client quirks, `ctx_context`, `ctx_execute` | Replaced by a single fixed surface of 17 tools |
+| 150+ configuration keys, profiles and environment overrides | One config file with 14 keys |
+| Rules files written into agent instruction files, hook modes that deny native tools, the `harden`, `rules` and `export-rules` commands | Guidance travels in one place: the MCP server instructions, plus an on-demand skill |
+| The output archive and its full-text index | `ctx_expand(id)` is the one way back to output that compression cut |
+| The contributor licence agreement | Contributions are under Apache-2.0, like the rest of the repository |
 
 The complete removal log, with measured line counts and coupling for each
 module, is maintained by the maintainers alongside the repository.

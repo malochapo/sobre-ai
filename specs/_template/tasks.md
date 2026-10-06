@@ -14,6 +14,5 @@
 
 ## Done gate
 - [ ] All EARS criteria covered by a task.
-- [ ] `cargo fmt --check && cargo clippy --all-features -- -D warnings && cargo test --all-features`
-- [ ] `scripts/preflight.sh fast` green.
+- [ ] `scripts/preflight.sh full` green (fmt, clippy on default and `dense`, rustdoc, generated docs, tests).
 - [ ] Tracking issue #<iid> status updated; spec referenced in commit(s).

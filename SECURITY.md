@@ -24,10 +24,6 @@ What it does defend against:
 
 - **Path escape.** Tool arguments resolve against the project root; a path that
   climbs out is refused.
-- **SSRF on URL reads.** `ctx_url_read` validates the target and blocks private
-  and link-local address ranges, re-validating after every redirect.
-- **Untrusted workspace config.** A project-local config file from a repository
-  you have not marked trusted cannot widen what the agent may do.
 - **Secret leakage into context.** Redaction runs before content is archived or
   returned.
 
@@ -38,11 +34,15 @@ an untrusted repository as untrusted input.
 
 ## Network
 
-The default build talks to no network service. Two things can change that, and
-both are yours to switch on:
+`sobre` makes no network request you did not ask for. These are the only ones,
+each started by you:
 
-- the local proxy, if you configure it against a provider;
-- `ctx_url_read`, when you pass it a URL.
+- the local proxy, which forwards your agent's requests to the providers you
+  configure;
+- `lean-ctx pricing refresh`, which fetches model prices;
+- `lean-ctx embeddings` and `lean-ctx index build-semantic`, which download the
+  embedding model (`dense` builds), and `lean-ctx embeddings provision`, which
+  downloads the ONNX runtime.
 
 There is no telemetry, no update check and no usage reporting. If you find code
 that contradicts this, it is a bug — report it.

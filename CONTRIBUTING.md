@@ -21,10 +21,15 @@ called.
 only the compiler decides whether it worked.
 
 ```bash
+cd rust
 cargo check --all-targets                  # the default, local-only build
 cargo check --all-targets --features dense # local embeddings + GPU providers
-cargo check --all-targets --all-features   # what CI checks
 ```
+
+CI checks both builds. The one local gate that mirrors it is
+`scripts/preflight.sh` (fmt, clippy on both builds, rustdoc, generated docs,
+file size); `scripts/preflight.sh full` adds the whole test suite. The git hooks
+run the same script.
 
 `--all-targets` matters: plain `cargo check` skips `#[cfg(test)]` blocks in the
 library, so a broken test module compiles clean without it.
@@ -42,11 +47,9 @@ Run the whole thing, not `--lib`. The library tests are the bulk of the count,
 but a good deal of behaviour is pinned by the integration suites under
 `rust/tests/`, and `--lib` never touches them.
 
-The suite is not fully green: a number of failures pre-date the fork or need
-tools that may not be on your machine (a `python` on `PATH`, for instance).
-Before claiming a change is clean, compare against a baseline run of the same
-suite on the commit you started from — the absolute count is not the signal, the
-delta is.
+The suite is green on Linux, macOS and Windows, and every pull request into
+`develop` or `main` must keep it so. A failure is a real failure: fix it, never
+skip it.
 
 ## Removing code
 

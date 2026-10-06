@@ -1,6 +1,6 @@
 # specs/ — Spec-Driven Development (SDD)
 
-lean-ctx develops non-trivial features **spec-anchored** (2026 SDD): the spec is the
+`sobre` develops non-trivial features **spec-anchored**: the spec is the
 source of truth for *intent*; code + tests enforce it. Never jump spec → code —
 review the plan, then the tasks, then implement in small, verified steps.
 
@@ -8,11 +8,10 @@ review the plan, then the tasks, then implement in small, verified steps.
 ```
 spec → plan → tasks → implement (impact-first) → verify → evidence
 ```
-See `CONTRIBUTING.md` → "Spec-driven workflow".
 
 ## Layout
 - `specs/_template/` — copy these into a new feature dir.
-- `specs/NNN-<slug>/` — one directory per feature; `NNN` = tracking issue iid.
+- `specs/NNN-<slug>/` — one directory per feature; `NNN` = the GitHub issue number.
   - `spec.md`  — problem, goal, EARS acceptance criteria, out-of-scope.
   - `plan.md`  — architecture, constraints, file structure, impact.
   - `tasks.md` — atomic, individually testable steps with verification.
@@ -20,7 +19,6 @@ See `CONTRIBUTING.md` → "Spec-driven workflow".
 ## How this relates to existing docs (no duplication)
 - `docs/contracts/*-v1.md` — **versioned runtime contracts** (SSOT for behavior).
   Unchanged; a spec may *touch* a contract but does not replace it.
-- `docs/superpowers/` — prior design notes/plans; kept as history, not migrated.
 - `specs/NNN-*` — **canonical home for new feature work** going forward.
 
 ## Conventions

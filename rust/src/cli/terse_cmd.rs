@@ -34,7 +34,7 @@ pub fn cmd_compression(args: &[String]) {
             None => println!("Compression level: adaptive ({} prose)", effective.label()),
         }
         println!();
-        println!("Usage: lean-ctx compression <0.0-1.0|off|lite|standard|max|raw>");
+        println!("Usage: lean-ctx terse <0.0-1.0|off|lite|standard|max|raw>");
         println!("       lean-ctx terse <...>  (alias)");
         println!();
         println!("  off      — {}", CompressionLevel::Off.description());

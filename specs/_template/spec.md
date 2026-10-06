@@ -22,7 +22,7 @@
 ## Verification (deterministic first)
 > How "done" is proven.
 - `cargo test -q <name>`
-- `scripts/preflight.sh fast`
+- `scripts/preflight.sh full`
 
 ## Links
 - Tracking issue: #<iid>
