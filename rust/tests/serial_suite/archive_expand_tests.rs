@@ -58,28 +58,6 @@ fn archive_retrieve_range() {
 }
 
 #[test]
-fn archive_search() {
-    with_test_dir(|| {
-        let content = "INFO: ok\nWARN: check\nERROR: fail\nINFO: done\nERROR: crash";
-        let id = archive::store("ctx_shell", "run", content, None).unwrap();
-        let result = archive::retrieve_with_search(&id, "ERROR").unwrap();
-        assert!(result.contains("2 match"), "expected 2 matches: {result}");
-        assert!(result.contains("ERROR: fail"));
-        assert!(result.contains("ERROR: crash"));
-    });
-}
-
-#[test]
-fn archive_search_no_match() {
-    with_test_dir(|| {
-        let content = "just some normal output";
-        let id = archive::store("ctx_shell", "cmd", content, None).unwrap();
-        let result = archive::retrieve_with_search(&id, "NOTFOUND").unwrap();
-        assert!(result.contains("No matches"));
-    });
-}
-
-#[test]
 fn archive_idempotent() {
     with_test_dir(|| {
         let content = "same content for idempotency test";
@@ -156,69 +134,11 @@ fn archive_cleanup_expired() {
 }
 
 #[test]
-fn archive_should_archive_respects_threshold() {
-    with_test_dir(|| {
-        let threshold = archive::THRESHOLD_CHARS;
-        assert!(!archive::should_archive("short"));
-        assert!(!archive::should_archive(&"x".repeat(threshold - 1)));
-        assert!(archive::should_archive(&"x".repeat(threshold)));
-    });
-}
-
-#[test]
 fn archive_disk_usage_starts_zero() {
     with_test_dir(|| {
         assert_eq!(archive::disk_usage_bytes(), 0);
         archive::store("ctx_shell", "test", "some content for size", None).unwrap();
         assert!(archive::disk_usage_bytes() > 0);
-    });
-}
-
-#[test]
-fn archive_retrieve_head_and_tail() {
-    with_test_dir(|| {
-        let content = (1..=30)
-            .map(|i| format!("line {i}"))
-            .collect::<Vec<_>>()
-            .join("\n");
-        let id = archive::store("ctx_shell", "run", &content, None).unwrap();
-
-        let head = archive::retrieve_head(&id, 3).unwrap();
-        assert!(head.contains("line 1") && head.contains("line 3"));
-        assert!(!head.contains("line 4"), "head leaked line 4: {head}");
-
-        let tail = archive::retrieve_tail(&id, 2).unwrap();
-        assert!(tail.contains("line 29") && tail.contains("line 30"));
-        assert!(!tail.contains("line 28"), "tail leaked line 28: {tail}");
-    });
-}
-
-#[test]
-fn archive_json_keys_object_array_and_path() {
-    with_test_dir(|| {
-        let content = r#"{"status":"ok","data":{"items":[{"id":1,"name":"a"},{"id":2,"name":"b"}]},"count":2}"#;
-        let id = archive::store("ctx_shell", "curl api", content, None).unwrap();
-
-        let root = archive::retrieve_json_keys(&id, None).unwrap();
-        assert!(root.contains("object (3 keys)"), "unexpected: {root}");
-        assert!(root.contains("status"));
-        assert!(root.contains("data"));
-        assert!(root.contains("count"));
-
-        let items = archive::retrieve_json_keys(&id, Some("data.items")).unwrap();
-        assert!(items.contains("array (2 items of object)"), "got: {items}");
-        assert!(items.contains("[0] keys: id, name"), "got: {items}");
-
-        let elem = archive::retrieve_json_keys(&id, Some("data.items.0")).unwrap();
-        assert!(elem.contains("object (2 keys)"), "got: {elem}");
-    });
-}
-
-#[test]
-fn archive_json_keys_non_json_returns_none() {
-    with_test_dir(|| {
-        let id = archive::store("ctx_shell", "ls", "not json at all\njust text", None).unwrap();
-        assert!(archive::retrieve_json_keys(&id, None).is_none());
     });
 }
 

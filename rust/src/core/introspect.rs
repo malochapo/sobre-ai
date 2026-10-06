@@ -66,11 +66,6 @@ pub const SUBSYSTEMS: &[Subsystem] = &[
         science: "sharp-wave-ripple replay",
     },
     Subsystem {
-        key: "fep_prefetch",
-        label: "FEP prefetch",
-        science: "active inference / free energy",
-    },
-    Subsystem {
         key: "observation_synthesis",
         label: "Observation synthesis",
         science: "entity-summary memory (Hindsight)",

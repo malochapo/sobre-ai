@@ -19,24 +19,6 @@ pub struct EntropyResult {
 
 impl EntropyResult {}
 
-/// Computes Shannon entropy (bits) over character frequencies in the text.
-pub fn shannon_entropy(text: &str) -> f64 {
-    if text.is_empty() {
-        return 0.0;
-    }
-    let mut freq: HashMap<char, usize> = HashMap::new();
-    let total = text.chars().count();
-
-    for c in text.chars() {
-        *freq.entry(c).or_default() += 1;
-    }
-
-    freq.values().fold(0.0_f64, |acc, &count| {
-        let p = count as f64 / total as f64;
-        acc - p * p.log2()
-    })
-}
-
 /// Shannon entropy over already-encoded BPE token IDs (o200k_base).
 pub fn token_entropy_from_ids(tokens: &[u32]) -> f64 {
     if tokens.is_empty() {
@@ -89,28 +71,6 @@ pub fn normalized_token_entropy_from_ids(tokens: &[u32]) -> f64 {
     });
     let h_max = (n_unique as f64).log2();
     h / h_max
-}
-
-/// Normalized Shannon entropy: H(X) / log₂(n) where n = number of unique symbols.
-/// Returns a value in [0, 1] where 0 = perfectly predictable, 1 = maximum entropy.
-/// This makes thresholds comparable across different alphabet sizes.
-pub fn normalized_token_entropy(text: &str) -> f64 {
-    let tokens = encode_tokens(text);
-    normalized_token_entropy_from_ids(&tokens)
-}
-
-/// Computes word-set Jaccard similarity between two strings (0.0–1.0).
-pub fn jaccard_similarity(a: &str, b: &str) -> f64 {
-    let set_a: HashSet<&str> = a.split_whitespace().collect();
-    let set_b: HashSet<&str> = b.split_whitespace().collect();
-
-    let intersection = set_a.intersection(&set_b).count();
-    let union = set_a.union(&set_b).count();
-
-    if union == 0 {
-        return 0.0;
-    }
-    intersection as f64 / union as f64
 }
 
 fn ngram_set(text: &str, n: usize) -> HashSet<Vec<String>> {
@@ -743,44 +703,6 @@ mod tests {
     }
 
     #[test]
-    fn shannon_entropy_empty_is_zero() {
-        assert_eq!(shannon_entropy(""), 0.0);
-    }
-
-    #[test]
-    fn shannon_entropy_single_char() {
-        assert_eq!(shannon_entropy("aaaa"), 0.0);
-    }
-
-    #[test]
-    fn shannon_entropy_high_for_varied_text() {
-        let varied = "abcdefghijklmnopqrstuvwxyz0123456789";
-        let uniform = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
-        assert!(
-            shannon_entropy(varied) > shannon_entropy(uniform),
-            "varied text should have higher entropy"
-        );
-    }
-
-    #[test]
-    fn jaccard_identical_is_one() {
-        let sim = jaccard_similarity("hello world", "hello world");
-        assert!((sim - 1.0).abs() < f64::EPSILON);
-    }
-
-    #[test]
-    fn jaccard_disjoint_is_zero() {
-        let sim = jaccard_similarity("abc", "xyz");
-        assert_eq!(sim, 0.0);
-    }
-
-    #[test]
-    fn jaccard_partial_overlap() {
-        let sim = jaccard_similarity("hello world", "hello rust");
-        assert!(sim > 0.0 && sim < 1.0);
-    }
-
-    #[test]
     fn entropy_compress_produces_output() {
         let content = "fn main() {\n    println!(\"hello\");\n}\n\n// comment\n// another comment\n\nfn helper() {\n    let x = 42;\n}\n";
         let result = entropy_compress(content);
@@ -806,14 +728,6 @@ mod tests {
             token_entropy(diverse) > token_entropy(repetitive),
             "diverse code should have higher BPE token entropy"
         );
-    }
-
-    #[test]
-    fn token_entropy_vs_char_entropy_differ() {
-        let code = "fn main() { println!(\"hello world\"); }";
-        let te = token_entropy(code);
-        let ce = shannon_entropy(code);
-        assert!(te != ce, "BPE and char entropy should differ for code");
     }
 
     #[test]

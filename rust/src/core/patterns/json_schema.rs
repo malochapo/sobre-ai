@@ -23,15 +23,6 @@ pub fn compress(output: &str) -> Option<String> {
     Some(schema)
 }
 
-/// Lossless crush of a verbatim data-command's JSON output (`gh api`, `jq`,
-/// `kubectl get -o json`, `curl` …). Returns `Some` only when it at least
-/// halves the payload, so an opt-in caller reshapes solely when it clearly
-/// pays — and never loses a datum. Returns `None` for non-JSON or low-redundancy
-/// output (the caller then keeps it verbatim).
-pub fn crush_verbatim(output: &str) -> Option<String> {
-    json_crush::crush_text_if_beneficial(output)
-}
-
 fn extract_schema(val: &serde_json::Value, depth: usize) -> String {
     let indent = "  ".repeat(depth);
     match val {
@@ -159,27 +150,6 @@ mod tests {
             out.contains("items, each"),
             "expected schema outline: {out}"
         );
-    }
-
-    #[test]
-    fn crush_verbatim_some_only_when_it_pays() {
-        // Redundant → reshaped (and reversible).
-        let raw = redundant_array(20);
-        let crushed = crush_verbatim(&raw).expect("redundant verbatim json is crushed");
-        assert!(crushed.len() * 2 <= raw.len());
-        let restored = json_crush::reconstruct(&crushed).unwrap();
-        assert_eq!(
-            restored,
-            serde_json::from_str::<serde_json::Value>(&raw).unwrap()
-        );
-
-        // Low redundancy → None (caller keeps it verbatim).
-        let hetero = r#"[{"id":1,"k":"aaa"},{"id":2,"k":"bbb"}]"#;
-        assert!(crush_verbatim(hetero).is_none());
-
-        // Non-JSON → None.
-        assert!(crush_verbatim("not json at all").is_none());
-        assert!(crush_verbatim("").is_none());
     }
 
     #[test]

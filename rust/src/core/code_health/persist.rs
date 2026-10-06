@@ -19,9 +19,6 @@ const HEALTH_FILE: &str = "health.json";
 /// Hotspots retained in the persisted score.
 const TOP_HOTSPOTS: usize = 10;
 
-/// Hotspots shown in the (budgeted) session-start block.
-const SESSION_HOTSPOTS: usize = 3;
-
 /// Project health persisted next to the graph index.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PersistedHealth {
@@ -87,92 +84,5 @@ pub fn refresh_if_stale(root: &str, index: &ProjectIndex) {
             let _ = std::fs::create_dir_all(parent);
         }
         let _ = std::fs::write(path, json);
-    }
-}
-
-/// Compact, deterministic session-start block. Empty when there is no persisted
-/// health or the project is clean (no hotspots), so it never adds noise.
-pub fn format_session_block(root: &str) -> String {
-    load(root)
-        .map(|h| render_session_block(&h))
-        .unwrap_or_default()
-}
-
-/// Pure renderer for the session-start block (deterministic, #498-safe). Empty
-/// when the project is clean.
-fn render_session_block(health: &PersistedHealth) -> String {
-    let s = &health.score;
-    if s.hotspots.is_empty() {
-        return String::new();
-    }
-
-    let mut out = String::from("--- CODE HEALTH (top hotspots) ---\n");
-    out.push_str(&format!(
-        "navigability {}/100 · {} fn over cc>{} · worst {}\n",
-        s.score, s.over_threshold, health.threshold, s.worst_cognitive
-    ));
-    for h in s.hotspots.iter().take(SESSION_HOTSPOTS) {
-        out.push_str(&format!(
-            "- {}:{} {} cc={}\n",
-            h.file, h.line, h.symbol, h.cognitive
-        ));
-    }
-    out.push_str("(lean-ctx health for the full report)\n---");
-    out
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::core::code_health::score::Hotspot;
-
-    fn persisted(hotspots: Vec<Hotspot>) -> PersistedHealth {
-        PersistedHealth {
-            fingerprint: "fp".into(),
-            threshold: 15,
-            naming_count: 0,
-            score: NavigabilityScore {
-                score: 70,
-                total_functions: 20,
-                over_threshold: hotspots.len(),
-                worst_cognitive: hotspots.iter().map(|h| h.cognitive).max().unwrap_or(0),
-                import_cycles: 0,
-                estimated_waste_usd: 0.0,
-                hotspots,
-            },
-        }
-    }
-
-    #[test]
-    fn session_block_empty_when_clean() {
-        assert!(render_session_block(&persisted(Vec::new())).is_empty());
-    }
-
-    #[test]
-    fn session_block_is_deterministic_and_caps_hotspots() {
-        let hs: Vec<Hotspot> = (0..5)
-            .map(|i| Hotspot {
-                file: format!("src/f{i}.rs"),
-                symbol: format!("fn{i}"),
-                line: i + 1,
-                cognitive: 30 - i as u32,
-            })
-            .collect();
-        let ph = persisted(hs);
-
-        let a = render_session_block(&ph);
-        let b = render_session_block(&ph);
-        assert_eq!(a, b, "session block must be byte-stable (#498)");
-        assert!(a.contains("navigability 70/100"));
-        // Only SESSION_HOTSPOTS lines, sorted worst-first as persisted.
-        assert_eq!(a.matches("\n- ").count(), SESSION_HOTSPOTS);
-        assert!(a.contains("src/f0.rs:1 fn0 cc=30"));
-    }
-
-    #[test]
-    fn missing_health_yields_empty_block() {
-        let tmp = tempfile::tempdir().unwrap();
-        let root = tmp.path().to_string_lossy().to_string();
-        assert!(format_session_block(&root).is_empty());
     }
 }

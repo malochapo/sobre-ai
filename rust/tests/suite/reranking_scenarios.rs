@@ -5,9 +5,7 @@
 
 use lean_ctx::core::bm25_index::ChunkKind;
 use lean_ctx::core::hybrid_search::HybridResult;
-use lean_ctx::core::search_reranking::{
-    QueryType, classify_query, rerank_pipeline, resolve_weights,
-};
+use lean_ctx::core::search_reranking::{QueryType, classify_query, rerank_pipeline};
 
 fn make_result(file: &str, symbol: &str, kind: ChunkKind, score: f64) -> HybridResult {
     HybridResult {
@@ -235,22 +233,6 @@ fn scenario_type_stubs_mild_penalty() {
 // ==========================================================================
 // Scenario 8: Architecture query classification
 // ==========================================================================
-
-#[test]
-fn scenario_architecture_query_weights() {
-    assert_eq!(
-        classify_query("how does authentication work"),
-        QueryType::Architecture
-    );
-    assert_eq!(
-        classify_query("where is the data flow"),
-        QueryType::Architecture
-    );
-
-    let (bm25_w, dense_w) = resolve_weights(QueryType::Architecture);
-    // Architecture queries should favor dense (semantic) over BM25 (lexical)
-    assert!(dense_w > bm25_w);
-}
 
 // ==========================================================================
 // Scenario 9: Mixed scenario - symbol in tests should still lose to prod definition

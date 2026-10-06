@@ -284,7 +284,6 @@ pub mod eviction_orchestrator;
 pub mod evidence;
 pub mod extension_registry;
 pub mod extractors;
-pub mod fep_prefetch;
 pub mod filters;
 pub mod gain;
 pub mod git;

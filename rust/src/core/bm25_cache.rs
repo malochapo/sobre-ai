@@ -54,36 +54,6 @@ fn ttl_secs() -> u64 {
 
 pub type SharedBm25Cache = std::sync::Arc<std::sync::Mutex<Option<Bm25CacheEntry>>>;
 
-/// Get the BM25 index from cache if available and fresh, otherwise load/build,
-/// cache it, and return. Uses Arc to avoid cloning the entire index.
-pub fn get_or_load(cache: &SharedBm25Cache, root: &Path) -> Arc<BM25Index> {
-    {
-        let guard = cache
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        if let Some(ref entry) = *guard
-            && entry.root == root
-            && entry.is_fresh()
-        {
-            return Arc::clone(&entry.index);
-        }
-    }
-
-    let index = Arc::new(BM25Index::load_or_build_fast(root));
-
-    let mut guard = cache
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
-    *guard = Some(Bm25CacheEntry {
-        root: root.to_path_buf(),
-        index: Arc::clone(&index),
-        loaded_at: Instant::now(),
-        fingerprint: index_fingerprint(root),
-    });
-
-    index
-}
-
 /// Get index from cache (fresh or stale), triggering background rebuild if stale.
 /// Returns None only if no cache entry exists at all.
 pub fn get_or_background(cache: &SharedBm25Cache, root: &Path) -> Option<Arc<BM25Index>> {
@@ -196,39 +166,6 @@ pub fn shrink_resident_to_snippet(
 mod tests {
     use super::*;
     use std::sync::Arc;
-
-    #[test]
-    fn fresh_cache_returns_same_instance() {
-        let cache: SharedBm25Cache = Arc::new(std::sync::Mutex::new(None));
-        let tmp = tempfile::tempdir().unwrap();
-        let root = tmp.path();
-        std::fs::write(root.join("main.rs"), "fn main() {}\n").unwrap();
-
-        let idx1 = get_or_load(&cache, root);
-        assert!(idx1.doc_count > 0);
-
-        let idx2 = get_or_load(&cache, root);
-        assert_eq!(idx1.doc_count, idx2.doc_count);
-    }
-
-    #[test]
-    fn different_root_invalidates() {
-        let cache: SharedBm25Cache = Arc::new(std::sync::Mutex::new(None));
-        let tmp1 = tempfile::tempdir().unwrap();
-        let tmp2 = tempfile::tempdir().unwrap();
-        std::fs::write(tmp1.path().join("a.rs"), "fn a() {}\n").unwrap();
-        std::fs::write(tmp2.path().join("b.rs"), "fn b() {}\n").unwrap();
-
-        let _ = get_or_load(&cache, tmp1.path());
-        let idx2 = get_or_load(&cache, tmp2.path());
-
-        let guard = cache
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let entry = guard.as_ref().unwrap();
-        assert_eq!(entry.root, tmp2.path());
-        assert_eq!(entry.index.doc_count, idx2.doc_count);
-    }
 
     #[test]
     fn get_or_background_returns_none_on_empty() {

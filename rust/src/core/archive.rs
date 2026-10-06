@@ -49,9 +49,6 @@ fn compute_id(content: &str) -> String {
     format!("{hash:016x}")
 }
 
-/// Outputs shorter than this are never archived.
-pub const THRESHOLD_CHARS: usize = 800;
-
 fn max_age_hours() -> u64 {
     crate::core::config::ARCHIVE_MAX_AGE_HOURS
 }
@@ -60,10 +57,6 @@ fn max_age_hours() -> u64 {
 /// figure `doctor` reports. This is what bounds the archive store on disk (#417).
 fn max_disk_bytes() -> u64 {
     crate::core::config::ARCHIVE_MAX_DISK_MB.saturating_mul(1024 * 1024)
-}
-
-pub fn should_archive(content: &str) -> bool {
-    content.len() >= THRESHOLD_CHARS
 }
 
 const MAX_ARCHIVE_SIZE: usize = 10 * 1024 * 1024; // 10 MB
@@ -216,30 +209,6 @@ pub(crate) fn format_json_keys(content: &str, path: Option<&str>, label: &str) -
 pub fn retrieve_with_range(id: &str, start: usize, end: usize) -> Option<String> {
     let content = retrieve(id)?;
     Some(format_range(&content, start, end))
-}
-
-pub fn retrieve_with_search(id: &str, pattern: &str) -> Option<String> {
-    let content = retrieve(id)?;
-    Some(format_search(&content, pattern, &format!("archive {id}")))
-}
-
-/// Retrieve the first `n` lines of an archived entry, with a line-number gutter.
-pub fn retrieve_head(id: &str, n: usize) -> Option<String> {
-    retrieve_with_range(id, 1, n)
-}
-
-/// Retrieve the last `n` lines of an archived entry, with a line-number gutter.
-pub fn retrieve_tail(id: &str, n: usize) -> Option<String> {
-    let content = retrieve(id)?;
-    let total = content.lines().count();
-    let start = if total > n { total - n + 1 } else { 1 };
-    retrieve_with_range(id, start, total)
-}
-
-/// Describe the JSON structure of an archived entry.
-pub fn retrieve_json_keys(id: &str, path: Option<&str>) -> Option<String> {
-    let content = retrieve(id)?;
-    format_json_keys(&content, path, &format!("archive {id}"))
 }
 
 pub(crate) fn json_type_hint(v: &serde_json::Value) -> String {

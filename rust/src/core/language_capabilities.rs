@@ -145,66 +145,6 @@ pub fn is_indexable_ext(ext: &str) -> bool {
     language_for_ext(ext).is_some()
 }
 
-/// Every language the property graph / code-map can index, for capability
-/// enumeration and UI hints. Keep in sync with `language_for_ext`.
-pub const ALL_LANGUAGES: &[LanguageId] = &[
-    LanguageId::Rust,
-    LanguageId::TypeScript,
-    LanguageId::JavaScript,
-    LanguageId::Python,
-    LanguageId::Go,
-    LanguageId::Java,
-    LanguageId::C,
-    LanguageId::Cpp,
-    LanguageId::Ruby,
-    LanguageId::CSharp,
-    LanguageId::Kotlin,
-    LanguageId::Swift,
-    LanguageId::Php,
-    LanguageId::Bash,
-    LanguageId::Dart,
-    LanguageId::Scala,
-    LanguageId::Elixir,
-    LanguageId::Zig,
-    LanguageId::Gdscript,
-    LanguageId::Lua,
-    LanguageId::Luau,
-    LanguageId::Vue,
-    LanguageId::Svelte,
-    LanguageId::Tscn,
-];
-
-/// Whether lean-ctx extracts call sites for a language (i.e. it can populate the
-/// call graph). Keep in sync with `deep_queries::calls::parse_call` — a language
-/// missing there yields zero call edges, which the dashboard must communicate
-/// honestly instead of suggesting an index rebuild that cannot help.
-pub fn supports_call_graph(lang: LanguageId) -> bool {
-    matches!(
-        lang,
-        LanguageId::TypeScript
-            | LanguageId::JavaScript
-            | LanguageId::Rust
-            | LanguageId::Python
-            | LanguageId::Go
-            | LanguageId::Java
-            | LanguageId::Kotlin
-            | LanguageId::Gdscript
-            | LanguageId::Lua
-            | LanguageId::Luau
-            | LanguageId::CSharp
-    )
-}
-
-/// Friendly names of every language with call-graph extraction support.
-#[cfg(test)]
-pub fn callgraph_supported_language_names() -> Vec<&'static str> {
-    ALL_LANGUAGES
-        .iter()
-        .filter(|l| supports_call_graph(**l))
-        .map(LanguageId::id_str)
-        .collect()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -232,37 +172,6 @@ mod tests {
         let c2 = capabilities(LanguageId::Rust);
         assert_eq!(c1, c2);
         assert!(c1.deps_edges);
-    }
-
-    #[test]
-    fn callgraph_support_is_consistent() {
-        // C# must be call-graph capable (issue: NINA's empty Call Graph tab).
-        assert!(supports_call_graph(LanguageId::CSharp));
-        let names = callgraph_supported_language_names();
-        assert!(names.contains(&"csharp"));
-        assert!(names.contains(&"rust"));
-        assert!(names.contains(&"typescript"));
-        // Every call-graph language is also graph-indexable, and the list is a
-        // strict subset (some graph-indexed languages have no call extraction).
-        let indexed: Vec<&str> = ALL_LANGUAGES.iter().map(LanguageId::id_str).collect();
-        for name in &names {
-            assert!(indexed.contains(name));
-        }
-        assert!(names.len() <= ALL_LANGUAGES.len());
-        // A language without call extraction must report false.
-        assert!(!supports_call_graph(LanguageId::Ruby));
-    }
-
-    #[test]
-    fn lua_luau_are_first_class_indexed() {
-        // Lua/Luau (issue #360) are graph-indexed.
-        assert_eq!(language_for_ext("lua"), Some(LanguageId::Lua));
-        assert_eq!(language_for_ext(".luau"), Some(LanguageId::Luau));
-        assert!(is_indexable_ext("lua"));
-        assert!(is_indexable_ext("luau"));
-        // They participate in symbols, import edges and the call graph.
-        assert!(supports_call_graph(LanguageId::Lua));
-        assert!(supports_call_graph(LanguageId::Luau));
     }
 
     #[test]

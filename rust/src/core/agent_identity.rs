@@ -1,4 +1,4 @@
-use ed25519_dalek::{Signature, Signer, SigningKey, Verifier, VerifyingKey};
+use ed25519_dalek::{Signer, SigningKey};
 use std::path::{Path, PathBuf};
 
 /// The agent identity every subsystem (heatmap, savings ledger, audit)
@@ -23,38 +23,12 @@ pub fn sign_bytes(agent_id: &str, data: &[u8]) -> Result<Vec<u8>, String> {
     Ok(sig.to_bytes().to_vec())
 }
 
-pub fn verify_signature(public_key_bytes: &[u8], data: &[u8], signature_bytes: &[u8]) -> bool {
-    let pk_bytes: [u8; 32] = match public_key_bytes.try_into() {
-        Ok(b) => b,
-        Err(_) => return false,
-    };
-    let Ok(verifying_key) = VerifyingKey::from_bytes(&pk_bytes) else {
-        return false;
-    };
-    let sig_bytes: [u8; 64] = match signature_bytes.try_into() {
-        Ok(b) => b,
-        Err(_) => return false,
-    };
-    let signature = Signature::from_bytes(&sig_bytes);
-    verifying_key.verify(data, &signature).is_ok()
-}
-
 pub fn hex_encode(bytes: &[u8]) -> String {
     use std::fmt::Write;
     bytes.iter().fold(String::new(), |mut s, b| {
         let _ = write!(s, "{b:02x}");
         s
     })
-}
-
-pub fn hex_decode(s: &str) -> Result<Vec<u8>, String> {
-    if !s.len().is_multiple_of(2) {
-        return Err("odd-length hex string".to_string());
-    }
-    (0..s.len())
-        .step_by(2)
-        .map(|i| u8::from_str_radix(&s[i..i + 2], 16).map_err(|e| e.to_string()))
-        .collect()
 }
 
 fn key_path(agent_id: &str) -> Result<PathBuf, String> {
@@ -100,41 +74,4 @@ fn load_key(path: &Path) -> Result<SigningKey, String> {
         .try_into()
         .map_err(|_| "invalid key file (expected 32 bytes)".to_string())?;
     Ok(SigningKey::from_bytes(&arr))
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn sign_and_verify_roundtrip() {
-        let mut seed = [0u8; 32];
-        getrandom::fill(&mut seed).unwrap();
-        let key = SigningKey::from_bytes(&seed);
-        let data = b"test payload";
-        let sig = key.sign(data);
-
-        let pub_bytes = key.verifying_key().to_bytes();
-        assert!(verify_signature(&pub_bytes, data, &sig.to_bytes()));
-    }
-
-    #[test]
-    fn verify_rejects_tampered_data() {
-        let mut seed = [0u8; 32];
-        getrandom::fill(&mut seed).unwrap();
-        let key = SigningKey::from_bytes(&seed);
-        let sig = key.sign(b"original");
-
-        let pub_bytes = key.verifying_key().to_bytes();
-        assert!(!verify_signature(&pub_bytes, b"tampered", &sig.to_bytes()));
-    }
-
-    #[test]
-    fn hex_roundtrip() {
-        let data = vec![0xde, 0xad, 0xbe, 0xef];
-        let encoded = hex_encode(&data);
-        assert_eq!(encoded, "deadbeef");
-        let decoded = hex_decode(&encoded).unwrap();
-        assert_eq!(decoded, data);
-    }
 }

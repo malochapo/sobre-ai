@@ -1,115 +1,16 @@
-use lean_ctx::core::entropy::{
-    jaccard_similarity, kolmogorov_proxy, normalized_token_entropy, shannon_entropy, token_entropy,
-};
+use lean_ctx::core::entropy::kolmogorov_proxy;
 
 // ═══════════════════════════════════════════════════════════════════
 // 1. SHANNON ENTROPY — mathematical invariants
 // ═══════════════════════════════════════════════════════════════════
 
-#[test]
-fn shannon_entropy_bounds() {
-    let text = "abcdefghijklmnop";
-    let h = shannon_entropy(text);
-    let n = text.chars().collect::<std::collections::HashSet<_>>().len() as f64;
-    assert!(h >= 0.0, "H(X) must be non-negative");
-    assert!(
-        h <= n.log2() + 0.01,
-        "H(X) must be ≤ log₂(|alphabet|) = {:.2}, got {h:.2}",
-        n.log2()
-    );
-}
-
-#[test]
-fn shannon_entropy_maximum_for_uniform() {
-    let text = "abcdefghijklmnop";
-    let h = shannon_entropy(text);
-    let n = text.chars().collect::<std::collections::HashSet<_>>().len() as f64;
-    let h_max = n.log2();
-    let ratio = h / h_max;
-    assert!(
-        ratio > 0.99,
-        "uniform distribution should yield H ≈ log₂(n): ratio={ratio:.4}"
-    );
-}
-
-#[test]
-fn shannon_entropy_zero_for_constant() {
-    assert_eq!(
-        shannon_entropy("aaaaaaa"),
-        0.0,
-        "constant string has zero entropy"
-    );
-}
-
-#[test]
-fn shannon_additivity_subadditive() {
-    let a = "abcabc";
-    let b = "xyzxyz";
-    let ab = format!("{a}{b}");
-    let h_ab = shannon_entropy(&ab);
-    let h_a = shannon_entropy(a);
-    let h_b = shannon_entropy(b);
-    assert!(
-        h_ab <= h_a + h_b + 0.5,
-        "joint entropy should be sub-additive (with tolerance): H(AB)={h_ab:.2} > H(A)+H(B)={:.2}",
-        h_a + h_b
-    );
-}
-
 // ═══════════════════════════════════════════════════════════════════
 // 2. NORMALIZED ENTROPY — must be in [0, 1]
 // ═══════════════════════════════════════════════════════════════════
 
-#[test]
-fn normalized_entropy_in_unit_interval() {
-    let cases = [
-        "fn main() { println!(\"hello world\"); }",
-        "aaaa bbbb cccc",
-        "let x = compute_something(a, b, c, d, e);",
-        "}}}}",
-    ];
-    for text in &cases {
-        let h = normalized_token_entropy(text);
-        assert!(
-            (0.0..=1.0).contains(&h),
-            "normalized entropy must be in [0,1], got {h:.4} for {text:?}",
-        );
-    }
-}
-
-#[test]
-fn normalized_entropy_monotonic_with_diversity() {
-    let low = "test test test test test test";
-    let high = "alpha beta gamma delta epsilon zeta";
-    assert!(
-        normalized_token_entropy(high) > normalized_token_entropy(low),
-        "diverse text should have higher normalized entropy"
-    );
-}
-
-#[test]
-fn normalized_entropy_zero_for_single_token() {
-    assert_eq!(
-        normalized_token_entropy("}"),
-        0.0,
-        "single token has zero normalized entropy"
-    );
-}
-
 // ═══════════════════════════════════════════════════════════════════
 // 3. TOKEN ENTROPY vs CHARACTER ENTROPY — relationship
 // ═══════════════════════════════════════════════════════════════════
-
-#[test]
-fn bpe_entropy_differs_from_char_entropy() {
-    let code = "fn validate_credentials(username: &str, password: &str) -> bool { true }";
-    let h_char = shannon_entropy(code);
-    let h_bpe = token_entropy(code);
-    assert!(
-        (h_char - h_bpe).abs() > 0.01,
-        "BPE and char entropy should differ for code: char={h_char:.3}, bpe={h_bpe:.3}"
-    );
-}
 
 // ═══════════════════════════════════════════════════════════════════
 // 4. KOLMOGOROV PROXY — mathematical properties
@@ -155,42 +56,6 @@ fn kolmogorov_invariant_under_repetition() {
 // ═══════════════════════════════════════════════════════════════════
 // 5. JACCARD SIMILARITY — metric space axioms
 // ═══════════════════════════════════════════════════════════════════
-
-#[test]
-fn jaccard_identity() {
-    let text = "hello world foo bar";
-    assert!(
-        (jaccard_similarity(text, text) - 1.0).abs() < f64::EPSILON,
-        "J(A,A) must equal 1.0"
-    );
-}
-
-#[test]
-fn jaccard_symmetry() {
-    let a = "alpha beta gamma";
-    let b = "beta gamma delta";
-    let j_ab = jaccard_similarity(a, b);
-    let j_ba = jaccard_similarity(b, a);
-    assert!(
-        (j_ab - j_ba).abs() < f64::EPSILON,
-        "J(A,B) must equal J(B,A): {j_ab} vs {j_ba}"
-    );
-}
-
-#[test]
-fn jaccard_triangle_inequality() {
-    let a = "alpha beta gamma delta";
-    let b = "beta gamma delta epsilon";
-    let c = "delta epsilon zeta eta";
-    let j_ab = jaccard_similarity(a, b);
-    let j_bc = jaccard_similarity(b, c);
-    let j_ac = jaccard_similarity(a, c);
-    assert!(
-        j_ac <= j_ab + j_bc + 0.01,
-        "triangle inequality: J(A,C)={j_ac:.3} should be ≤ J(A,B)+J(B,C)={:.3}",
-        j_ab + j_bc
-    );
-}
 
 // ═══════════════════════════════════════════════════════════════════
 // 7. COMBINED ATTENTION — geometric mean properties
@@ -303,70 +168,3 @@ fn safeguard_allows_good_compression() {
 // ═══════════════════════════════════════════════════════════════════
 // 13. INTEGRATED SCIENTIFIC AUDIT
 // ═══════════════════════════════════════════════════════════════════
-
-#[test]
-fn full_scientific_audit() {
-    eprintln!("\n{}", "═".repeat(70));
-    eprintln!("  SCIENTIFIC VERIFICATION AUDIT");
-    eprintln!("{}", "═".repeat(70));
-
-    let mut passed = 0;
-    let mut total = 0;
-
-    macro_rules! check {
-        ($name:expr_2021, $cond:expr_2021) => {
-            total += 1;
-            let ok = $cond;
-            if ok {
-                passed += 1;
-            }
-            eprintln!("  {} {}", if ok { "✓" } else { "✗" }, $name);
-            assert!(ok, "FAILED: {}", $name);
-        };
-    }
-
-    check!(
-        "Shannon H(X) ≥ 0 for all inputs",
-        shannon_entropy("test") >= 0.0 && shannon_entropy("") >= 0.0
-    );
-
-    check!("Shannon H(constant) = 0", shannon_entropy("aaaa") == 0.0);
-
-    check!("Normalized H ∈ [0,1]", {
-        let h = normalized_token_entropy("fn main() { let x = compute(); }");
-        (0.0..=1.0).contains(&h)
-    });
-
-    check!(
-        "Kolmogorov K(redundant) < K(diverse)",
-        kolmogorov_proxy(&"abc".repeat(200))
-            < kolmogorov_proxy(&(0..200).fold(String::new(), |mut s, i| {
-                use std::fmt::Write;
-                let _ = write!(s, "x{i}");
-                s
-            }))
-    );
-
-    check!(
-        "Jaccard J(A,A) = 1.0",
-        (jaccard_similarity("a b c", "a b c") - 1.0).abs() < f64::EPSILON
-    );
-
-    check!("Jaccard J(A,B) = J(B,A)", {
-        let j1 = jaccard_similarity("a b c", "b c d");
-        let j2 = jaccard_similarity("b c d", "a b c");
-        (j1 - j2).abs() < f64::EPSILON
-    });
-
-    check!("Safeguard ratio ∈ {original, compressed}", {
-        use lean_ctx::core::compressor::safeguard_ratio;
-        let o = "test ".repeat(50);
-        let c = "t ".repeat(50);
-        let r = safeguard_ratio(&o, &c);
-        r == o || r == c
-    });
-
-    eprintln!("{}", "─".repeat(70));
-    eprintln!("  RESULT: {passed}/{total} checks passed");
-    eprintln!("{}\n", "═".repeat(70));
-}

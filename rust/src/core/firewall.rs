@@ -30,18 +30,9 @@ pub fn is_protected_read(name: &str) -> bool {
     matches!(name, "ctx_read")
 }
 
-/// Minimum output tokens before the firewall replaces an inline tool result with
-/// a summary + retrieval ref. Outputs below this stay fully inline.
-pub const MIN_TOKENS: usize = 2000;
-
 /// Maximum output size that `ctx_shell(inline=true)` returns verbatim before the
 /// archive/firewall path takes over.
 pub const INLINE_MAX_BYTES: usize = 32 * 1024;
-
-/// Whether a result of `output_tokens` from `tool` should be firewalled.
-pub fn should_firewall(tool: &str, output_tokens: usize) -> bool {
-    is_firewallable_tool(tool) && output_tokens >= MIN_TOKENS
-}
 
 /// Whether an explicitly requested `ctx_shell(inline=true)` result fits the
 /// verbatim-delivery cap.
@@ -148,15 +139,6 @@ mod tests {
         }
         assert!(!is_protected_read("ctx_shell"));
         assert!(!is_protected_read("ctx_search"));
-    }
-
-    #[test]
-    fn should_firewall_respects_tool_and_threshold() {
-        // Archive + ephemeral are on, threshold 2000 tokens.
-        assert_eq!(MIN_TOKENS, 2000);
-        assert!(should_firewall("ctx_shell", 5000));
-        assert!(!should_firewall("ctx_shell", 1000)); // below threshold
-        assert!(!should_firewall("ctx_read", 5000)); // not firewallable
     }
 
     fn inline_cap() -> usize {
