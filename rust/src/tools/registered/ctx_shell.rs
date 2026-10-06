@@ -171,6 +171,8 @@ impl McpTool for CtxShellTool {
                 )
             });
 
+            let (extra_env, env_hint) = extra_env_from_args(args);
+
             {
                 let Some(mut session) =
                     crate::server::bounded_lock::write(session_lock, "ctx_shell_write")
@@ -178,16 +180,6 @@ impl McpTool for CtxShellTool {
                     tracing::debug!("[ctx_shell: session lock timeout, proceeding without update]");
                     let cmd_clone = command.clone();
                     let cwd_clone = effective_cwd.clone();
-                    let extra_env: std::collections::HashMap<String, String> = args
-                        .get("env")
-                        .and_then(|v| v.as_object())
-                        .map(|obj| {
-                            obj.iter()
-                                .filter_map(|(k, v)| v.as_str().map(|s| (k.clone(), s.to_string())))
-                                .filter(|(k, _)| !is_dangerous_env_key(k))
-                                .collect()
-                        })
-                        .unwrap_or_default();
                     let (raw_output, exit_code) = crate::server::execute::execute_command_with_env(
                         &cmd_clone, &cwd_clone, &extra_env, timeout_ms,
                     );
@@ -202,7 +194,7 @@ impl McpTool for CtxShellTool {
                     return Ok(ToolOutput {
                         shell_outcome: Some(ShellOutcome::Exit(exit_code)),
                         content_blocks: None,
-                        ..ToolOutput::simple(format!("{output}{exit_suffix}"))
+                        ..ToolOutput::simple(format!("{output}{env_hint}{exit_suffix}"))
                     });
                 };
                 // #707: a jail-accepted explicit `cwd` param is the client
@@ -242,17 +234,6 @@ impl McpTool for CtxShellTool {
                     "ctx_shell command={cmd_clone} cwd={cwd_clone}"
                 ))
             };
-
-            let extra_env: std::collections::HashMap<String, String> = args
-                .get("env")
-                .and_then(|v| v.as_object())
-                .map(|obj| {
-                    obj.iter()
-                        .filter_map(|(k, v)| v.as_str().map(|s| (k.clone(), s.to_string())))
-                        .filter(|(k, _)| !is_dangerous_env_key(k))
-                        .collect()
-                })
-                .unwrap_or_default();
 
             let auto_background = should_auto_background(&cmd_clone, timeout_ms);
             if get_bool(args, "run_in_background").unwrap_or(false) || auto_background {
@@ -406,7 +387,7 @@ impl McpTool for CtxShellTool {
             };
             let nudge = if raw { "" } else { search_tool_nudge(&command) };
             let final_out = format!(
-                "{result_out}{tee_hint}{shell_mismatch}{cwd_jail_hint}{nudge}{exit_suffix}"
+                "{result_out}{tee_hint}{shell_mismatch}{cwd_jail_hint}{env_hint}{nudge}{exit_suffix}"
             );
             let final_out = if let Some(block) = proactive_block {
                 format!("{final_out}{block}")
@@ -491,6 +472,36 @@ fn shell_mismatch_hint(command: &str, output: &str) -> String {
     } else {
         String::new()
     }
+}
+
+/// The `env` argument as a map, minus the variables ctx_shell will not set,
+/// plus a one-line note naming those (invariant 6: never decline silently).
+fn extra_env_from_args(
+    args: &Map<String, Value>,
+) -> (std::collections::HashMap<String, String>, String) {
+    let mut env = std::collections::HashMap::new();
+    let mut ignored = Vec::new();
+    if let Some(obj) = args.get("env").and_then(|v| v.as_object()) {
+        for (k, v) in obj {
+            let Some(val) = v.as_str() else { continue };
+            if is_dangerous_env_key(k) {
+                ignored.push(k.as_str());
+            } else {
+                env.insert(k.clone(), val.to_string());
+            }
+        }
+    }
+    let hint = if ignored.is_empty() {
+        String::new()
+    } else {
+        ignored.sort_unstable();
+        format!(
+            "\n[env: ignored {} \u{2014} ctx_shell does not override variables that change \
+             how commands are resolved or where the user's files live]",
+            ignored.join(", ")
+        )
+    };
+    (env, hint)
 }
 
 fn is_dangerous_env_key(key: &str) -> bool {
@@ -648,7 +659,23 @@ fn detect_bare_cat_file(command: &str) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{is_timeout_notice_only, should_auto_background};
+    use super::{extra_env_from_args, is_timeout_notice_only, should_auto_background};
+
+    #[test]
+    fn ignored_env_vars_are_named_in_the_output_hint() {
+        let args = serde_json::json!({"env": {"PATH": "/evil", "RUST_LOG": "debug", "HOME": "/x"}});
+        let (env, hint) = extra_env_from_args(args.as_object().unwrap());
+        assert_eq!(env.get("RUST_LOG").map(String::as_str), Some("debug"));
+        assert!(!env.contains_key("PATH") && !env.contains_key("HOME"));
+        assert!(hint.contains("HOME, PATH"), "got: {hint}");
+    }
+
+    #[test]
+    fn allowed_env_vars_add_no_hint() {
+        let args = serde_json::json!({"env": {"RUST_LOG": "debug"}});
+        let (_, hint) = extra_env_from_args(args.as_object().unwrap());
+        assert!(hint.is_empty());
+    }
 
     #[test]
     fn long_cargo_test_is_auto_backgrounded() {
