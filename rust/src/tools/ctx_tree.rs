@@ -47,7 +47,7 @@ pub fn handle(
 
     let raw_tokens = count_tokens(&raw_output);
 
-    (format!("{compact_output}"), raw_tokens)
+    (compact_output.clone(), raw_tokens)
 }
 
 fn generate_compact_tree(

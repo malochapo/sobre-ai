@@ -46,7 +46,7 @@ pub fn evaluate_with(
     let notice = format_gate_notice(worst, threshold);
     // Block only a genuine clean→over-threshold regression; otherwise advise.
     if matches!(mode, GateMode::Block) && worst.crosses_threshold(threshold) {
-        GateOutcome::Block(format!("{notice}"))
+        GateOutcome::Block(notice.clone())
     } else {
         GateOutcome::Allow(Some(notice))
     }

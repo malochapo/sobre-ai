@@ -81,7 +81,7 @@ impl McpTool for CtxTreeTool {
             total_sent += crate::core::tokens::count_tokens(&result);
         }
 
-        let final_out = combined.to_string();
+        let final_out = combined.clone();
         let saved = total_original.saturating_sub(total_sent);
 
         Ok(ToolOutput {
@@ -120,7 +120,7 @@ fn handle_single(
 
     let sent = crate::core::tokens::count_tokens(&result);
     let saved = original.saturating_sub(sent);
-    let final_out = result.to_string();
+    let final_out = result.clone();
 
     Ok(ToolOutput {
         text: final_out,

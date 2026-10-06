@@ -122,7 +122,8 @@ mod tests {
         // surfaces are actually in it. Removing one of these from `Frozen`
         // is itself a breaking policy change.
         let docs = contract_docs();
-        for id in ["context-ir"] {
+        {
+            let id = "context-ir";
             let entry = docs.iter().find(|d| d.id == id).expect("listed");
             assert_eq!(
                 entry.status,

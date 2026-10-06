@@ -317,15 +317,15 @@ pub fn compute(home: &Path, project: &Path) -> ToolHealthReport {
     let instructions = crate::instructions::build_instructions(crate::tools::CrpMode::effective());
     let instruction_tokens = crate::core::tokens::count_tokens(&instructions);
     let knowledge = knowledge_health(project);
-    let report = build_report(
+
+    build_report(
         &advertised,
         &usage,
         &rules,
         duplicates,
         instruction_tokens,
         knowledge,
-    );
-    report
+    )
 }
 
 #[cfg(test)]

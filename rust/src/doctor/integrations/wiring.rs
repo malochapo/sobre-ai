@@ -190,11 +190,9 @@ pub(crate) fn last_ctx_call_ago() -> Option<String> {
         .lines()
         .rev()
         .filter_map(|l| serde_json::from_str::<crate::core::events::LeanCtxEvent>(l).ok())
-        .find_map(|ev| match ev.kind {
-            crate::core::events::EventKind::ToolCall { tool, .. } if tool.starts_with("ctx_") => {
-                Some(ev.timestamp)
-            }
-            _ => None,
+        .find_map(|ev| {
+            let crate::core::events::EventKind::ToolCall { tool, .. } = ev.kind;
+            tool.starts_with("ctx_").then_some(ev.timestamp)
         })?;
     let parsed = chrono::NaiveDateTime::parse_from_str(&ts, "%Y-%m-%dT%H:%M:%S%.3f").ok()?;
     let delta = chrono::Local::now()

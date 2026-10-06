@@ -39,7 +39,9 @@ pub(crate) fn install_opencode_hook() {
     let perm_changed = apply_shadow_permissions_inplace(obj);
 
     // 2. Register MCP server (if needed and not already present)
-    let mcp_written = if !has_lean_ctx {
+    let mcp_written = if has_lean_ctx {
+        false
+    } else {
         if !file_existed {
             obj.insert(
                 "$schema".to_string(),
@@ -53,8 +55,6 @@ pub(crate) fn install_opencode_hook() {
         } else {
             false
         }
-    } else {
-        false
     };
 
     // 3. Single write if anything changed

@@ -59,10 +59,7 @@ impl SearchOutcome {
 /// FIFO/socket/device (#336) — while this deadline is the backstop for any
 /// *other* pathological case (a gigantic corpus, a stuck network mount): the
 /// tool returns partial results with a hint instead of appearing to hang.
-/// 10s.
-fn search_deadline() -> Option<Duration> {
-    Some(Duration::from_secs(10))
-}
+const SEARCH_DEADLINE: Duration = Duration::from_secs(10);
 
 /// Back-compat shim: the pre-#870 8-arg entry point. Delegates to
 /// [`handle_filtered`] with no exclude filters. New callers pass the two
@@ -261,7 +258,7 @@ pub fn handle_filtered(
     files.sort_unstable_by(|a, b| a.as_os_str().cmp(b.as_os_str()));
 
     let root_str = root.to_string_lossy();
-    let deadline = search_deadline().map(|budget| Instant::now() + budget);
+    let deadline = Some(Instant::now() + SEARCH_DEADLINE);
     for path in &files {
         if matches.len() >= max_results {
             break;
@@ -477,7 +474,7 @@ pub fn handle_filtered(
         result.push_str(&format!(
             "\n(search stopped after the {}s budget — {files_searched} files scanned; \
              refine the pattern or scope with path= for full coverage)",
-            search_deadline().map_or(0, |d| d.as_secs())
+            SEARCH_DEADLINE.as_secs()
         ));
     }
 

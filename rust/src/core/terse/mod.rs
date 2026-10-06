@@ -84,7 +84,8 @@ mod verbatim_read_tests {
 
     #[test]
     fn read_family_is_always_verbatim() {
-        for name in ["ctx_read"] {
+        {
+            let name = "ctx_read";
             // Even an intentionally-lossy mode like `signatures` is exempt: the
             // read tool applies its own structure-preserving compression and the
             // generic prose terse layer must never run on top of it (#404).

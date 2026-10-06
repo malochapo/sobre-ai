@@ -182,13 +182,13 @@ pub fn entropy_compress_adaptive(
     force_keep: &[String],
 ) -> EntropyResult {
     let thresholds = super::adaptive_thresholds::adaptive_thresholds(path, content);
-    let result = entropy_compress_with_thresholds(
+
+    entropy_compress_with_thresholds(
         content,
         thresholds.bpe_entropy,
         thresholds.jaccard,
         force_keep,
-    );
-    result
+    )
 }
 
 /// Like [`entropy_compress_adaptive`] but overrides the learned BPE-entropy
@@ -217,14 +217,14 @@ pub fn entropy_compress_task_conditioned(
     force_keep: &[String],
 ) -> EntropyResult {
     let thresholds = super::adaptive_thresholds::adaptive_thresholds(path, content);
-    let result = entropy_compress_with_task(
+
+    entropy_compress_with_task(
         content,
         thresholds.bpe_entropy,
         thresholds.jaccard,
         task_keywords,
         force_keep,
-    );
-    result
+    )
 }
 
 /// Real line embedder for the semantic redundancy filter (#544): uses the

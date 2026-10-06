@@ -123,7 +123,7 @@ pub(super) fn lean_ctx_version_from_path() -> Outcome {
     }
 }
 
-pub(super) fn rc_contains_lean_ctx(path: &PathBuf) -> bool {
+pub(super) fn rc_contains_lean_ctx(path: &std::path::Path) -> bool {
     match std::fs::read_to_string(path) {
         Ok(s) => s.contains("lean-ctx"),
         Err(_) => false,
@@ -142,7 +142,7 @@ pub(super) fn rc_references_shell_hook(content: &str) -> bool {
     content.contains("shell-hook.")
 }
 
-pub(super) fn rc_has_pipe_guard(path: &PathBuf) -> bool {
+pub(super) fn rc_has_pipe_guard(path: &std::path::Path) -> bool {
     match std::fs::read_to_string(path) {
         Ok(s) => {
             if has_pipe_guard_in_content(&s) {

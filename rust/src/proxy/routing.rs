@@ -203,15 +203,6 @@ fn can_translate(
     false
 }
 
-/// Extracts the newest user-authored text from a request body — the router's
-/// classification input. Handles the two body-addressed dialects:
-///
-/// - Anthropic Messages / OpenAI Chat: `messages[]`, last `role == "user"`,
-///   content as string or text-part array.
-/// - OpenAI Responses: `input` as string, or `input[]` items with
-///   `role == "user"` and `content[]` parts (`input_text`/`text`).
-#[allow(dead_code)]
-
 /// Provider a model name implies when the routing rules name none. Moved here
 /// with the call site: it never returns an empty string, so the routed target
 /// is always `provider:model`.

@@ -211,14 +211,13 @@ impl ServerHandler for LeanCtxServer {
             // `shell` and `ctx_call` after both left the registry, so the
             // default path (no config, no env, no pinned profile) advertised
             // their intersection — ten tools out of nineteen, with no error.
-            let tools = match self.registry {
-                Some(ref reg) => reg.tool_defs(),
-                None => {
-                    // Every production constructor sets a registry; locked by
-                    // `production_server_always_has_registry`.
-                    tracing::error!("list_tools served without a tool registry");
-                    Vec::new()
-                }
+            let tools = if let Some(ref reg) = self.registry {
+                reg.tool_defs()
+            } else {
+                // Every production constructor sets a registry; locked by
+                // `production_server_always_has_registry`.
+                tracing::error!("list_tools served without a tool registry");
+                Vec::new()
             };
 
             // Description compression is not a surface variation: the set of

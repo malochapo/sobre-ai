@@ -24,7 +24,7 @@ pub(crate) fn wire_context(
     upstream_base: &str,
     tokens_saved: u64,
     original_size: usize,
-) -> Box<crate::proxy::usage::WireContext> {
+) -> crate::proxy::usage::WireContext {
     let tags = parts
         .extensions
         .get::<crate::proxy::request_tags::RequestTags>()
@@ -42,7 +42,7 @@ pub(crate) fn wire_context(
         || crate::proxy::codec::upstream_is_local(upstream_base),
         |r| r.local,
     );
-    Box::new(crate::proxy::usage::WireContext {
+    crate::proxy::usage::WireContext {
         provider: provider.to_string(),
         project: tags.project,
         saved_tokens: tokens_saved,
@@ -50,7 +50,7 @@ pub(crate) fn wire_context(
         uncompressed_input_tokens: original_size as u64 / 4,
         is_local,
         routed_from: None, // populated by the routing hook (wave 3)
-    })
+    }
 }
 
 pub(crate) struct PreparedRequestBody {

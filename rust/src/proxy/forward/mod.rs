@@ -231,7 +231,7 @@ pub(crate) async fn forward_request(
             wire.is_local = local;
         }
     }
-    let wire = Some(wire);
+    let wire = Some(Box::new(wire));
     let mut response = transport::build_response(
         response,
         extra_stream_types,

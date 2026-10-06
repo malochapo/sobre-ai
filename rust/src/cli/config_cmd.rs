@@ -799,7 +799,8 @@ pub fn prune_bm25_caches() -> PruneResult {
         }
         result.scanned += 1;
 
-        for q_name in &["bm25_index.bin.zst.quarantined"] {
+        {
+            let q_name = &"bm25_index.bin.zst.quarantined";
             let quarantined = dir.join(q_name);
             if quarantined.exists() {
                 if let Ok(meta) = std::fs::metadata(&quarantined) {

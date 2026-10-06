@@ -40,13 +40,13 @@ pub(crate) fn compact_format_passthrough_outcome() -> Outcome {
 /// Check if an RC file contains lean-ctx and collect name + update needs.
 fn check_shell_rc(
     name: &str,
-    path: std::path::PathBuf,
+    path: &std::path::Path,
     parts: &mut Vec<String>,
     needs_update: &mut Vec<String>,
 ) {
-    if rc_contains_lean_ctx(&path) {
+    if rc_contains_lean_ctx(path) {
         parts.push(format!("{DIM}{name}{RST}"));
-        if !rc_has_pipe_guard(&path) && is_active_shell(name) {
+        if !rc_has_pipe_guard(path) && is_active_shell(name) {
             needs_update.push(name.to_string());
         }
     }
@@ -65,19 +65,19 @@ pub(crate) fn shell_aliases_outcome() -> Outcome {
 
     check_shell_rc(
         "~/.zshrc",
-        home.join(".zshrc"),
+        &home.join(".zshrc"),
         &mut parts,
         &mut needs_update,
     );
     check_shell_rc(
         "~/.bashrc",
-        home.join(".bashrc"),
+        &home.join(".bashrc"),
         &mut parts,
         &mut needs_update,
     );
     check_shell_rc(
         "~/.config/fish/config.fish",
-        home.join(".config").join("fish").join("config.fish"),
+        &home.join(".config").join("fish").join("config.fish"),
         &mut parts,
         &mut needs_update,
     );

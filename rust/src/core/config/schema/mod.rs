@@ -186,7 +186,7 @@ mod tests {
                 // A section that is a list: its schema keys describe the shape
                 // of one *entry*, not fields on `Config`. Same for any section
                 // that is not a plain object.
-                Some(v) if !v.is_object() => continue,
+                Some(v) if !v.is_object() => {}
                 Some(_) => {
                     for name in sec.keys.keys() {
                         let path = if section == "root" {

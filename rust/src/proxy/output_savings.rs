@@ -12,9 +12,9 @@ const ESTIMATE_REL_UNCERTAINTY: f64 = 0.35;
 /// Model-based output-savings estimate, ready for the CLI / dashboard to render.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct Savings {
-    pub point_pct: f64,
-    pub low_pct: f64,
-    pub high_pct: f64,
+    pub point: f64,
+    pub low: f64,
+    pub high: f64,
 }
 
 /// Computes the output-savings estimate.
@@ -32,9 +32,9 @@ pub(crate) fn current() -> Savings {
     };
     let half = point * ESTIMATE_REL_UNCERTAINTY;
     Savings {
-        point_pct: point,
-        low_pct: (point - half).max(0.0),
-        high_pct: point + half,
+        point,
+        low: (point - half).max(0.0),
+        high: point + half,
     }
 }
 
@@ -44,9 +44,9 @@ pub(crate) fn current() -> Savings {
 pub(crate) fn to_json(s: &Savings) -> serde_json::Value {
     serde_json::json!({
         "status": "estimated",
-        "point_pct": round2(s.point_pct),
-        "low_pct": round2(s.low_pct),
-        "high_pct": round2(s.high_pct),
+        "point_pct": round2(s.point),
+        "low_pct": round2(s.low),
+        "high_pct": round2(s.high),
     })
 }
 
@@ -61,8 +61,8 @@ mod tests {
     #[test]
     fn estimate_is_a_band_around_the_point() {
         let s = current();
-        assert!(s.low_pct <= s.point_pct && s.point_pct <= s.high_pct);
-        assert!(s.low_pct >= 0.0);
+        assert!(s.low <= s.point && s.point <= s.high);
+        assert!(s.low >= 0.0);
         assert_eq!(to_json(&s)["status"], "estimated");
     }
 }

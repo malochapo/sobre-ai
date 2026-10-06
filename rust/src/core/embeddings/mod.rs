@@ -330,6 +330,7 @@ impl EmbeddingEngine {
     }
 
     #[cfg(not(feature = "embeddings"))]
+    #[allow(clippy::unused_self)] // same signature as the `embeddings` build
     fn encode(&self, _text: &str) -> anyhow::Result<TokenizedInput> {
         anyhow::bail!("Embeddings feature not enabled")
     }
@@ -596,11 +597,13 @@ impl EmbeddingEngine {
     }
 
     #[cfg(not(feature = "embeddings"))]
+    #[allow(clippy::unused_self)] // same signature as the `embeddings` build
     fn run_inference(&self, _input: &TokenizedInput) -> anyhow::Result<Vec<f32>> {
         anyhow::bail!("Embeddings feature not enabled")
     }
 
     #[cfg(not(feature = "embeddings"))]
+    #[allow(clippy::unused_self)] // same signature as the `embeddings` build
     fn run_inference_batch(&self, _inputs: &[TokenizedInput]) -> anyhow::Result<Vec<Vec<f32>>> {
         anyhow::bail!("Embeddings feature not enabled")
     }

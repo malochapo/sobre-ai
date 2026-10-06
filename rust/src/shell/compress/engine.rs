@@ -80,16 +80,9 @@ fn compress_if_beneficial_with_exit(command: &str, output: &str, exit_code: i32)
     // each unprotected segment flows through the normal pipeline (footer stripped),
     // and a single savings footer is recomputed over the spliced result.
     if crate::core::protect::has_markers(output) {
-        let original_tokens = count_tokens(output);
-        let spliced = crate::core::protect::compress_preserving(output, |seg| {
+        return crate::core::protect::compress_preserving(output, |seg| {
             strip_shell_footer(&compress_if_beneficial(command, seg)).to_string()
         });
-        let spliced_tokens = count_tokens(&spliced);
-        return if spliced_tokens < original_tokens {
-            spliced
-        } else {
-            spliced
-        };
     }
 
     // CRITICAL: Never compress error output from build/check/lint tools.

@@ -46,7 +46,7 @@ pub(super) fn outline_dir(dir: &str, opts: &OutlineOpts) -> (String, usize) {
     out.push_str(crate::core::handle::USAGE_HINT);
     out.push('\n');
 
-    (format!("{out}"), total_tokens)
+    (out.clone(), total_tokens)
 }
 
 /// Walk `dir` (gitignore/vendor aware), extract + filter per file, and return

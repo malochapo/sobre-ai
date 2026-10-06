@@ -333,7 +333,7 @@ fn captured_len(buf: &Arc<Mutex<CaptureBuf>>) -> usize {
 /// Absolute ceiling on an idle-keyed (background) job, so a command that keeps
 /// emitting output forever still cannot outlive the daemon's patience (#1173).
 fn streaming_max_lifetime() -> Duration {
-    Duration::from_mins(60)
+    Duration::from_hours(1)
 }
 
 /// Command lines still alive in the timed-out child's process group, i.e. the

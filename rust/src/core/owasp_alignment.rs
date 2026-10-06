@@ -163,13 +163,11 @@ pub fn alignment() -> Vec<OwaspMapping> {
             owasp_id: "OWASP-AGENT-07",
             owasp_title: "Insecure Code Execution",
             risk_description: "Agent executes arbitrary or unsafe code without proper sandboxing",
-            lean_ctx_mitigations: vec![
-                Mitigation {
-                    feature: "Command Blocklist",
-                    module: "core/shell_gate/mod.rs",
-                    description: "Dangerous command patterns blocked before execution",
-                },
-            ],
+            lean_ctx_mitigations: vec![Mitigation {
+                feature: "Command Blocklist",
+                module: "core/shell_gate/mod.rs",
+                description: "Dangerous command patterns blocked before execution",
+            }],
             coverage: Coverage::Full,
         },
         OwaspMapping {

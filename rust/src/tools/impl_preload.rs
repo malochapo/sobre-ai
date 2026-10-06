@@ -290,7 +290,7 @@ pub(crate) fn handle(
 
     let preload_result = output.join("\n");
 
-    let body = format!("{preload_result}");
+    let body = preload_result.clone();
     (body, true)
 }
 

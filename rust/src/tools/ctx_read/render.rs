@@ -266,7 +266,7 @@ pub(crate) fn process_mode_tuned(
             let tok = count_tokens(content);
             let output = format!("{short}: {line_count} lines, {tok} tok ({ext})");
             let sent = count_tokens(&output);
-            (format!("{output}"), sent)
+            (output.clone(), sent)
         }
         mode if mode.starts_with("lines:") => {
             let range_str = &mode[6..];
@@ -310,10 +310,7 @@ pub(crate) fn process_mode_tuned(
             );
             let output = format!("{header}\n{guarded_output}");
             let sent = count_tokens(&output);
-            (
-                append_compressed_hint(&format!("{output}"), file_path),
-                sent,
-            )
+            (append_compressed_hint(&output.clone(), file_path), sent)
         }
         unknown => {
             let header = build_header(short, ext, content, line_count, true);
@@ -609,7 +606,7 @@ fn render_map(content: &str, ctx: RenderCtx<'_>) -> (String, usize) {
     {
         let output = format!("{short} {line_count}L\n{php_map}");
         let sent = count_tokens(&output);
-        let output = output.to_string();
+        let output = output.clone();
         return (append_compressed_hint(&output, file_path), sent);
     }
 
@@ -629,7 +626,7 @@ fn render_map(content: &str, ctx: RenderCtx<'_>) -> (String, usize) {
     if !structured.is_empty() {
         let mut output = format!("{short} {line_count}L\n{structured}");
         let sent = count_tokens(&output);
-        output = output.to_string();
+        output = output.clone();
         return (append_compressed_hint(&output, file_path), sent);
     }
 
@@ -721,7 +718,7 @@ fn render_aggressive(content: &str, ctx: RenderCtx<'_>) -> (String, usize) {
         let body = format!("{header}\n{crushed}");
         let sent = count_tokens(&body);
         if sent < original_tokens {
-            return (append_compressed_hint(&format!("{body}"), file_path), sent);
+            return (append_compressed_hint(&body.clone(), file_path), sent);
         }
     }
 
@@ -735,7 +732,7 @@ fn render_aggressive(content: &str, ctx: RenderCtx<'_>) -> (String, usize) {
         let body = format!("{header}\n{crushed}");
         let sent = count_tokens(&body);
         if sent < original_tokens {
-            return (append_compressed_hint(&format!("{body}"), file_path), sent);
+            return (append_compressed_hint(&body.clone(), file_path), sent);
         }
     }
 
@@ -750,7 +747,7 @@ fn render_aggressive(content: &str, ctx: RenderCtx<'_>) -> (String, usize) {
         let body = format!("{header}\n{crushed}");
         let sent = count_tokens(&body);
         if sent < original_tokens {
-            return (append_compressed_hint(&format!("{body}"), file_path), sent);
+            return (append_compressed_hint(&body.clone(), file_path), sent);
         }
     }
 
@@ -831,10 +828,7 @@ fn render_entropy(content: &str, ctx: RenderCtx<'_>, tuning: &ReadTuning<'_>) ->
         result.output
     );
     let sent = count_tokens(&output);
-    (
-        append_compressed_hint(&format!("{output}"), file_path),
-        sent,
-    )
+    (append_compressed_hint(&output.clone(), file_path), sent)
 }
 
 fn render_task_mode(content: &str, ctx: RenderCtx<'_>, tuning: &ReadTuning<'_>) -> (String, usize) {

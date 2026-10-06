@@ -421,15 +421,15 @@ fn record_result(result: &VerificationResult) {
         .fetch_add(ppm, Ordering::Relaxed);
     stats.last_info_loss_score_ppm.store(ppm, Ordering::Relaxed);
 
-    if !result.warnings.is_empty() {
-        if let Ok(mut recent) = stats.recent_warnings.lock() {
-            for w in &result.warnings {
-                recent.push(w.clone());
-            }
-            if recent.len() > 200 {
-                let excess = recent.len() - 200;
-                recent.drain(..excess);
-            }
+    if !result.warnings.is_empty()
+        && let Ok(mut recent) = stats.recent_warnings.lock()
+    {
+        for w in &result.warnings {
+            recent.push(w.clone());
+        }
+        if recent.len() > 200 {
+            let excess = recent.len() - 200;
+            recent.drain(..excess);
         }
     }
 }

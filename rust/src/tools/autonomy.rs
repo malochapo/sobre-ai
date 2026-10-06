@@ -198,9 +198,11 @@ mod tests {
 
     #[test]
     fn long_briefing_is_cut_to_the_budget_not_dropped() {
-        let body: String = (0..400)
-            .map(|i| format!("src/module_{i}/  file_{i}.rs helper_{i}.rs\n"))
-            .collect();
+        let body: String = (0..400).fold(String::new(), |mut s, i| {
+            use std::fmt::Write as _;
+            let _ = writeln!(s, "src/module_{i}/  file_{i}.rs helper_{i}.rs");
+            s
+        });
         let b = format_briefing(&body);
         assert!(
             count_tokens(&b) <= BRIEFING_MAX_TOKENS,

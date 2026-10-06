@@ -95,7 +95,7 @@ fn outline_file(path: &str, opts: &OutlineOpts) -> (String, usize) {
     outline.push('\n');
     outline.push_str(crate::core::handle::USAGE_HINT);
 
-    (format!("{outline}"), full_tokens)
+    (outline.clone(), full_tokens)
 }
 
 /// Render one signature for the text outline. Navigation modes earn their line

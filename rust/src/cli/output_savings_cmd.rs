@@ -29,7 +29,7 @@ pub(crate) fn cmd_output_savings(args: &[String]) {
 fn format_human(s: &Savings) -> String {
     format!(
         "lean-ctx — Output Tokens Saved\n\n  Estimated reduction  ~{:.0}%  (band {:.0}–{:.0}%, model-based)\n\n  This is an estimate from the terse prose style, not a measurement.",
-        s.point_pct, s.low_pct, s.high_pct
+        s.point, s.low, s.high
     )
 }
 
