@@ -12,25 +12,8 @@ use super::Config;
 
 static SESSION_DEGRADE_LEVEL: AtomicU8 = AtomicU8::new(0);
 
-/// Controls when shell output is tee'd to disk for later retrieval.
-///
-/// Default is `HighCompression` (not `Failures`): a heavily compressed but
-/// *successful* command is exactly the case where an agent later needs the raw
-/// bytes, and teeing them guarantees the MCP-free recovery path (a real file the
-/// agent can read with any tool) always exists. The archive GC (TTL + size cap)
-/// covers the extra files.
-#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
-#[serde(rename_all = "lowercase")]
-pub enum TeeMode {
-    Never,
-    Failures,
-    #[default]
-    HighCompression,
-    Always,
-}
-
 /// Controls the reactive recovery footer surfaced on compressed tool output
-/// (`ctx_read`, archive/firewall/spill handles, `ctx_shell` tee).
+/// (`ctx_read`, spill handles, `ctx_shell` tee).
 ///
 /// The proactive `RECOVER` rule teaches the vocabulary once in the system
 /// prompt; this knob governs the per-output reminder that names the concrete

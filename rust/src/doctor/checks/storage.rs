@@ -209,32 +209,6 @@ pub(crate) fn semantic_index_outcome() -> Option<Outcome> {
     };
     Some(outcome)
 }
-pub(crate) fn archive_footprint_outcome() -> Outcome {
-    let bytes = crate::core::archive_fts::db_size_bytes();
-    let cap_mb = crate::core::archive_fts::DEFAULT_MAX_DB_MB;
-    let cap_bytes = cap_mb * 1024 * 1024;
-    let mb = bytes as f64 / 1_048_576.0;
-    if bytes > cap_bytes {
-        Outcome {
-            ok: false,
-            line: format!(
-                "{BOLD}Archive FTS{RST}  {RED}{mb:.0} MB exceeds {cap_mb} MB cap{RST}  {DIM}(run: lean-ctx cache prune; auto-enforced on next session){RST}"
-            ),
-        }
-    } else if bytes > cap_bytes * 80 / 100 {
-        Outcome {
-            ok: true,
-            line: format!(
-                "{BOLD}Archive FTS{RST}  {YELLOW}{mb:.0} MB (>80% of {cap_mb} MB cap){RST}"
-            ),
-        }
-    } else {
-        Outcome {
-            ok: true,
-            line: format!("{BOLD}Archive FTS{RST}  {GREEN}{mb:.1} MB / {cap_mb} MB cap{RST}"),
-        }
-    }
-}
 pub(crate) fn memory_outcome() -> Outcome {
     let bm25_mb = crate::core::config::DEFAULT_BM25_PERSIST_MB;
     let ttl_min = crate::core::config::IDLE_CACHE_TTL_SECS / 60;
@@ -461,32 +435,6 @@ pub(crate) fn capacity_warnings() -> Vec<Outcome> {
     }
 
     // Global checks (not per project hash)
-
-    // Archive disk usage vs limit
-    let archive_limit_bytes = crate::core::config::ARCHIVE_MAX_DISK_MB * 1_048_576;
-    if archive_limit_bytes > 0 {
-        let archive_used = crate::core::archive::disk_usage_bytes();
-        let pct = (archive_used as f64 / archive_limit_bytes as f64 * 100.0) as u32;
-        if pct >= 95 {
-            results.push(Outcome {
-                ok: false,
-                line: format!(
-                    "{BOLD}Capacity [archive]{RST} {RED}CRIT: disk {}/{}MB ({pct}%){RST}",
-                    archive_used / 1_048_576,
-                    archive_limit_bytes / 1_048_576
-                ),
-            });
-        } else if pct >= 80 {
-            results.push(Outcome {
-                ok: true,
-                line: format!(
-                    "{BOLD}Capacity [archive]{RST} {YELLOW}WARN: disk {}/{}MB ({pct}%){RST}",
-                    archive_used / 1_048_576,
-                    archive_limit_bytes / 1_048_576
-                ),
-            });
-        }
-    }
 
     // Graph index file count vs limit
     let graph_max_files = crate::core::config::GRAPH_INDEX_MAX_FILES;

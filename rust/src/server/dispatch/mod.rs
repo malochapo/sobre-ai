@@ -379,7 +379,7 @@ impl LeanCtxServer {
 /// Every other tool keeps the #257 degenerate-CJK/flood cleanup, whose target
 /// is compressed/summarized output.
 fn sanitized_tool_text(name: &str, raw_text: String) -> String {
-    if crate::core::firewall::is_protected_read(name) {
+    if name == "ctx_read" {
         return raw_text;
     }
     crate::core::output_sanitizer::sanitize(&raw_text)

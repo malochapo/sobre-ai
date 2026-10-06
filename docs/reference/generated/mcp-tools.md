@@ -39,10 +39,9 @@ Parameters: `path`, `task`
 
 ## `ctx_expand`
 
-Retrieve archived tool output: see [Archived:ID] → ctx_expand id=ID (zero-loss, original preserved). head/tail/search filter lines; action=list|search_all browses/queries archives.
-ANTIPATTERN: not for project files — use ctx_read or ctx_compose.
+Full output that compression elided. A compressed output's footer names its id → ctx_expand(id=ID). Optional start_line/end_line (1-indexed, inclusive) or search (substring) return a slice. Saved outputs expire after 24h.
 
-Parameters: `action`, `end_line`, `head`, `id`, `json_keys`, `json_path`, `query`, `search`, `session_id`, `start_line`, `tail`
+Parameters: `end_line`, `id`*, `search`, `start_line`
 
 ## `ctx_glob`
 
@@ -141,13 +140,13 @@ Parameters: `action`*, `session_id`, `value`
 ## `ctx_shell`
 
 WORKFLOW: preferred — auto-compresses output (build/test/log).
-raw=true for verbatim output; inline=true for moderately-sized verbatim output.
+raw=true for verbatim output.
 [exit:N] on errors (lossless).
 POLICY: every command is allowed except constructs that execute something the command text does not name (eval/exec/source, $() at command position, interpreter -c, find -exec, LD_PRELOAD=, …).
 A [BLOCKED] command is permanent — do not retry it.
 Multi-line scripts: write them to a file, then run the file.
 
-Parameters: `background_action`, `command`, `cwd`, `env`, `inline`, `job_id`, `raw`, `run_in_background`, `timeout_ms`
+Parameters: `background_action`, `command`, `cwd`, `env`, `job_id`, `raw`, `run_in_background`, `timeout_ms`
 
 ## `ctx_tree`
 

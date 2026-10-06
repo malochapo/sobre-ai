@@ -122,8 +122,7 @@ fn reserve_event_id_block_at(
         // a trailing newline; appending directly would fuse onto that line
         // and make both records unparsable. Start a fresh line first.
         let needs_leading_newline = std::fs::read(sequence_path)
-            .ok()
-            .is_some_and(|bytes| !bytes.is_empty() && bytes.last() != Some(&b'\n'));
+            .is_ok_and(|bytes| !bytes.is_empty() && bytes.last() != Some(&b'\n'));
 
         let mut sequence = std::fs::OpenOptions::new()
             .create(true)

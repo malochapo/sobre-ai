@@ -59,11 +59,6 @@ path = "src/bin/gen_docs.rs"
 required-features = ["dev-tools"]
 
 
-[[example]]
-name = "gen_rules"
-path = "src/bin/gen_rules.rs"
-required-features = ["dev-tools"]
-
 [features]
 default = [
   "tree-sitter",
@@ -273,6 +268,8 @@ must_use_candidate = "allow"
 return_self_not_must_use = "allow"
 similar_names = "allow"
 unreadable_literal = "allow"
+# Rust 1.99: prefers assert_eq!(x, "") over assert!(x.is_empty()) in tests.
+assert_is_empty = "allow"
 
 # --- Documentation: covered by separate doc-coverage tooling ---
 missing_errors_doc = "allow"

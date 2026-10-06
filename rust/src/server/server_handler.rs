@@ -158,9 +158,8 @@ impl ServerHandler for LeanCtxServer {
                     // as the rules block: the session-start heal writes rules for
                 }
                 crate::hooks::refresh_installed_hooks();
-                // Enforce the on-disk budget: prune accumulated quarantined BM25
-                // indexes and cap the archive FTS DB (#2364). Silent (tracing
-                // only) so it never corrupts the MCP stdio protocol.
+                // Prune accumulated quarantined BM25 indexes (#2364). Silent
+                // (tracing only) so it never corrupts the MCP stdio protocol.
                 let _ = crate::core::storage_maintenance::run_quiet();
             }
             drop(maintenance);

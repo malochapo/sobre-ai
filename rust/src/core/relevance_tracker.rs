@@ -319,8 +319,7 @@ pub(crate) fn proactive_context(query_context: &str) -> Option<String> {
 pub(crate) fn proactive_context_for_path(query_context: &str, path: &str) -> Option<String> {
     if crate::core::bounce_tracker::global()
         .lock()
-        .ok()
-        .is_some_and(|tracker| tracker.should_force_full(path))
+        .is_ok_and(|tracker| tracker.should_force_full(path))
     {
         return None;
     }

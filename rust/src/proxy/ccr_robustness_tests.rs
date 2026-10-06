@@ -67,7 +67,7 @@ fn ctx_expand_is_graceful_when_tee_file_deleted_past_ttl() {
 
     let out = ctx_expand::handle(&json!({ "id": handle }));
     assert!(
-        out.contains("not found"),
+        out.contains("no saved output"),
         "graceful message expected: {out}"
     );
     assert!(
@@ -88,14 +88,14 @@ fn ctx_expand_surgical_slices_over_tee_handle() {
     assert!(body.len() >= MIN_TEE_BYTES);
     let handle = persist(&body).unwrap();
 
-    let head = ctx_expand::handle(&json!({ "id": handle, "head": 2 }));
+    let head = ctx_expand::handle(&json!({ "id": handle, "end_line": 2 }));
     assert!(head.contains("output row 001") && head.contains("output row 002"));
     assert!(
         !head.contains("output row 010"),
         "head leaked beyond 2: {head}"
     );
 
-    let tail = ctx_expand::handle(&json!({ "id": handle, "tail": 2 }));
+    let tail = ctx_expand::handle(&json!({ "id": handle, "start_line": 59 }));
     assert!(tail.contains("output row 059") && tail.contains("output row 060"));
     assert!(
         !tail.contains("output row 001"),

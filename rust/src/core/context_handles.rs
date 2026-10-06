@@ -3,7 +3,7 @@
 //! A handle is a lightweight proxy (~5-30 tokens) for a context item that
 //! would otherwise cost hundreds or thousands of tokens to include in full.
 //! Handles are rendered in a compact manifest inside the system prompt,
-//! allowing the agent to selectively expand items via `ctx_expand @ref`.
+//! allowing the agent to load only the items it needs with `ctx_read`.
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;

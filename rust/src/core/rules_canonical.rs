@@ -34,10 +34,9 @@ pub const AGENTS_BLOCK_START: &str = "<!-- lean-ctx -->";
 pub const AGENTS_BLOCK_END: &str = "<!-- /lean-ctx -->";
 
 /// Owner banner placed as the first line of the project-level `LEAN-CTX.md`
-/// artifact (`<repo>/LEAN-CTX.md`, `rust/LEAN-CTX.md`). Marks the whole file as
-/// lean-ctx-owned so uninstall can remove it wholesale; the writer
-/// (`hooks::ensure_project_agents_integration`), the regenerator
-/// (`gen_rules` example) and the drift gate all share this one literal.
+/// written into user projects. Marks the whole file as lean-ctx-owned so
+/// uninstall can remove it wholesale; the writer
+/// (`hooks::ensure_project_agents_integration`) and uninstall share this literal.
 pub const PROJECT_LEAN_CTX_OWNED_MARKER: &str = "<!-- lean-ctx-owned: PROJECT-LEAN-CTX.md v1 -->";
 
 /// Closing marker that ends a lean-ctx rule section.
@@ -76,8 +75,7 @@ pub const COMPRESSION_BLOCK_END: &str = "<!-- /lean-ctx-compression -->";
 /// session memory requirement, ctx_callgraph/ctx_search(semantic) promoted from
 /// optional to mandatory. Fixes agents falling back to native Read+Grep for
 /// exploration on hook-covered hosts (Cursor).
-/// Bumping it forces every committed `LEAN-CTX.md` artifact to be regenerated
-/// (see `tests/rules_drift.rs`) and every injected user file to resync.
+/// Bumping it forces every injected user file to resync.
 pub const RULES_VERSION: usize = 8;
 
 /// Banner placed at the top of dedicated rule files (non-shadow only).
@@ -162,11 +160,11 @@ pub const AUTO: &str = "Long shell jobs: ctx_shell(run_in_background=true), then
 /// expanding (the "too compressed" complaint). The MCP-free path ("read the shown
 /// file path with any tool") covers orgs that forbid MCP. Since v5 every injected
 /// profile (FULL + COMPACT/Bare) carries the terser [`RECOVER_COMPACT`] instead;
-/// the reactive footers in `ctx_read`/`archive`/`ctx_shell` still teach the
+/// the reactive footers in `ctx_read`/`ctx_shell` still teach the
 /// `ctx_expand` path in context.
 pub const RECOVER: &str = "RECOVER: compressed output is reversible — never re-read line-by-line. \
     Need full/exact? Read the shown file path with any tool (no MCP), or \
-    ctx_read(mode=full|raw=true); [Archived]/tee/firewall → ctx_expand(id=...).";
+    ctx_read(mode=full|raw=true); a [full output] footer → ctx_expand(id=...).";
 
 /// Terse injected variant of [`RECOVER`] (FULL + COMPACT/Bare). The cold
 /// first-contact handshake renders the COMPACT profile, so this one-liner keeps
@@ -174,8 +172,8 @@ pub const RECOVER: &str = "RECOVER: compressed output is reversible — never re
 /// `instructions.rs`); since v5 the FULL dedicated files carry it too (#578).
 /// Keeps the two primary MCP-optional paths and the "never line-by-line" rule.
 /// Must keep the `(no MCP)` clause (asserted in tests).
-pub const RECOVER_COMPACT: &str = "RECOVER: compression is reversible — read the shown path \
-    (no MCP) or ctx_read(raw=true), never re-read line-by-line.";
+pub const RECOVER_COMPACT: &str = "RECOVER: compression is reversible — ctx_expand(id) from the \
+    footer, or read the shown path (no MCP); files → ctx_read(raw=true). Never re-read line-by-line.";
 
 /// Context Engineering Protocol version reference.
 pub const CEP: &str = "CEP v1: 1.ACT FIRST 2.DELTA ONLY (Fn refs) 3.STRUCTURED (+/-/~) \

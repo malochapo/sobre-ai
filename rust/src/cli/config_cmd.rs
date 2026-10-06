@@ -720,31 +720,19 @@ pub fn cmd_cache(args: &[String]) {
         Some("prune") => {
             let bm25 = prune_bm25_caches();
             let graph = prune_graph_caches();
-            // Enforce the archive TTL + on-disk size budget alongside the index
-            // caches so a manual prune reclaims the (often largest) store too (#417).
-            let archive_before = crate::core::archive::disk_usage_bytes()
-                + crate::core::archive_fts::db_size_bytes();
-            let archive_removed = crate::core::archive::cleanup();
-            let _ = crate::core::archive_fts::enforce_cap();
-            let archive_after = crate::core::archive::disk_usage_bytes()
-                + crate::core::archive_fts::db_size_bytes();
-            let archive_freed = archive_before.saturating_sub(archive_after);
-
             // Reclaim knowledge stores whose project_root was deleted (removed
             // worktrees, thrown-away projects): they can never be written again,
             // so their per-store eviction cap can never self-heal — pure bloat (#615).
             let orphans = crate::core::knowledge::maintenance::prune_orphaned_stores();
 
-            let removed = bm25.removed + graph.removed + archive_removed + orphans.removed as u32;
-            let freed =
-                bm25.bytes_freed + graph.bytes_freed + archive_freed + orphans.reclaimed_bytes;
+            let removed = bm25.removed + graph.removed + orphans.removed as u32;
+            let freed = bm25.bytes_freed + graph.bytes_freed + orphans.reclaimed_bytes;
             println!(
-                "Pruned {} entries, freed {:.1} MB (BM25: {}, graphs: {}, archive: {}, orphaned stores: {})",
+                "Pruned {} entries, freed {:.1} MB (BM25: {}, graphs: {}, orphaned stores: {})",
                 removed,
                 freed as f64 / 1_048_576.0,
                 bm25.removed,
                 graph.removed,
-                archive_removed,
                 orphans.removed,
             );
         }
@@ -763,7 +751,7 @@ pub fn cmd_cache(args: &[String]) {
             println!("  cache reset       Reset all cache (or --project for current project only)");
             println!("  cache invalidate  Remove specific file from cache");
             println!(
-                "  cache prune       Reclaim BM25 + graph indexes, archive, and orphaned knowledge stores"
+                "  cache prune       Reclaim BM25 + graph indexes and orphaned knowledge stores"
             );
         }
     }
@@ -944,16 +932,8 @@ fn cmd_show_effective() {
     println!();
     println!("{}", box_top("Built-in limits"));
     box_row(&format!(
-        " archive_max_disk_mb    = {:>6} MB",
-        crate::core::config::ARCHIVE_MAX_DISK_MB
-    ));
-    box_row(&format!(
         " bm25_max_cache_mb      = {:>6} MB",
         crate::core::config::DEFAULT_BM25_PERSIST_MB
-    ));
-    box_row(&format!(
-        " archive_max_age_hours  = {:>6} h",
-        crate::core::config::ARCHIVE_MAX_AGE_HOURS
     ));
     box_row(&format!(
         " graph_index_max_files  = {:>6}",

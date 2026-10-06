@@ -483,7 +483,7 @@ impl SessionState {
     }
 
     /// Build a compact resume block for post-compaction injection.
-    /// Max ~500 tokens. Includes task, decisions, files, and archive references.
+    /// Max ~500 tokens. Includes task, decisions and files.
     pub fn build_resume_block(&self) -> String {
         let mut parts: Vec<String> = Vec::new();
 
@@ -552,16 +552,6 @@ impl SessionState {
                 .map(std::string::String::as_str)
                 .collect();
             parts.push(format!("Next: {}", steps.join("; ")));
-        }
-
-        let archives = crate::core::archive::list_entries(Some(&self.id));
-        if !archives.is_empty() {
-            let hints: Vec<String> = archives
-                .iter()
-                .take(5)
-                .map(|a| format!("{}({})", a.id, a.tool))
-                .collect();
-            parts.push(format!("Archives: {}", hints.join(", ")));
         }
 
         parts.push(format!(

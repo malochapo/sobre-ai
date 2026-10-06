@@ -58,7 +58,6 @@ mod reranking_scenarios;
 mod retrieval_eval;
 mod ro_config_sandbox;
 mod rules_consistency;
-mod rules_drift;
 mod rules_template_tool_names;
 mod scientific_verification;
 mod scorecard_determinism;
