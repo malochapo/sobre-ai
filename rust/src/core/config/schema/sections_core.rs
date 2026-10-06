@@ -42,14 +42,6 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
         ),
     );
     root.insert(
-        "shell_hook".into(),
-        key(
-            "bool",
-            serde_json::json!(cfg.shell_hook),
-            "Install the shell hook that routes common commands through sobre",
-        ),
-    );
-    root.insert(
         "read_only_roots".into(),
         key(
             "string[]",

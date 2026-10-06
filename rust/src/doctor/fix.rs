@@ -1,8 +1,6 @@
 use chrono::Utc;
 
-use super::{
-    DIM, RST, compact_score, display_user_path, print_compact_status, shell_aliases_outcome,
-};
+use super::{DIM, RST, compact_score, display_user_path, print_compact_status};
 
 pub(super) struct DoctorFixOptions {
     pub json: bool,
@@ -43,41 +41,26 @@ fn build_and_persist_fix_report(
         warnings: Vec::new(),
         errors: Vec::new(),
     };
-    let before = shell_aliases_outcome();
+    // sobre never edits shell files: the fix is removing a lean-ctx hook an
+    // older install left behind.
+    let before = crate::doctor::checks::legacy_shell_hook_outcome();
     if before.ok {
         shell_step.items.push(SetupItem {
-            name: "init".to_string(),
-            status: "already".to_string(),
+            name: "shell files".to_string(),
+            status: "clean".to_string(),
             path: None,
             note: None,
         });
     } else {
-        if quiet {
-            crate::cli::install_shell_hook_quiet(&[]);
-        } else {
-            crate::cli::install_shell_hook(&[]);
-        }
-        let after = shell_aliases_outcome();
+        crate::uninstall::remove_legacy_shell_hook(&home);
+        let after = crate::doctor::checks::legacy_shell_hook_outcome();
         shell_step.ok = after.ok;
         shell_step.items.push(SetupItem {
-            name: "init".to_string(),
-            status: if after.ok {
-                "fixed".to_string()
-            } else {
-                "failed".to_string()
-            },
+            name: "shell files".to_string(),
+            status: if after.ok { "fixed" } else { "failed" }.to_string(),
             path: None,
-            note: if after.ok {
-                None
-            } else {
-                Some("shell hook still not detected by doctor checks".to_string())
-            },
+            note: (!after.ok).then(|| "old shell hook still present".to_string()),
         });
-        if !after.ok {
-            shell_step
-                .warnings
-                .push("shell hook not detected after init".to_string());
-        }
     }
     steps.push(shell_step);
 

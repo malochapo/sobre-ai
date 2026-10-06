@@ -70,6 +70,12 @@ pub(super) fn safe_remove(path: &Path, dry_run: bool) -> Result<(), std::io::Err
 /// This MUST stay side-effect free: `lean-ctx uninstall --help` previously fell
 /// through to [`run`] and removed everything, so help is now short-circuited in
 /// the CLI dispatch before any removal happens.
+/// Remove a lean-ctx shell hook an older install left in the user's shell
+/// files (used by `doctor --fix`).
+pub fn remove_legacy_shell_hook(home: &Path) {
+    agents::remove_shell_hook(home, false);
+}
+
 pub fn print_help() {
     println!(
         "\

@@ -18,7 +18,6 @@ Top-level configuration keys
 - `ignore` (string[], default `[]`) — Globs kept out of the index and project walks, on top of .gitignore (always respected)
 - `passthrough_commands` (string[], default `[]`) — Commands whose output is passed through uncompressed (the command still runs normally)
 - `read_only_roots` (string[], default `[]`) — Read-only sibling roots: reads allowed, writes always denied (edit/refactor/export)
-- `shell_hook` (bool, default `true`) — Install the shell hook that routes common commands through sobre
 - `shell_timeout_secs` (u64?, default `null`) — Shell command timeout (seconds) for normal commands. null = built-in 2-minute default
 
 ## `[proxy]`

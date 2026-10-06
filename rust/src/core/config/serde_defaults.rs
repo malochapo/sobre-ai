@@ -18,7 +18,3 @@ pub(super) fn default_compression_level() -> f64 {
 pub(super) fn is_default_compression_level(v: &f64) -> bool {
     super::is_default_compression_level_value(*v)
 }
-
-pub(super) fn default_true() -> bool {
-    true
-}

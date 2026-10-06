@@ -17,7 +17,6 @@ pub mod risk;
 pub mod schema;
 mod serde_defaults;
 pub mod setter;
-pub mod shell_activation;
 pub use render::render_annotated_config;
 #[cfg(test)]
 mod tests;
@@ -33,7 +32,6 @@ pub use proxy::{
 };
 pub use read_dedup::read_dedup_enabled;
 pub use read_redirect::read_redirect_enabled;
-pub use shell_activation::ShellActivation;
 
 /// Effective on-disk ceiling (MB) for the persisted BM25 index when nothing is
 /// explicitly configured (no `bm25_max_cache_mb`, no `max_disk_mb` budget).
@@ -140,9 +138,6 @@ pub struct Config {
     /// get at least the 10-minute heavy ceiling.
     #[serde(default)]
     pub shell_timeout_secs: Option<u64>,
-    /// Install the shell hook that routes common commands through sobre.
-    #[serde(default = "serde_defaults::default_true")]
-    pub shell_hook: bool,
     /// Globs for files kept out of the index and of project walks, on top of
     /// `.gitignore` (always respected).
     #[serde(default)]
@@ -167,7 +162,6 @@ impl Default for Config {
             debug_log: false,
             hook_binary: None,
             shell_timeout_secs: None,
-            shell_hook: true,
             ignore: Vec::new(),
             embedding_model: None,
         }
@@ -175,11 +169,6 @@ impl Default for Config {
 }
 
 impl Config {
-    /// Returns `true` if shell hook injection is disabled.
-    pub fn shell_hook_disabled_effective(&self) -> bool {
-        !self.shell_hook
-    }
-
     /// Whether `allow_paths` opens the path jail entirely (`"/"`).
     #[must_use]
     pub fn jail_open(&self) -> bool {

@@ -114,15 +114,11 @@ fn setup_bootstrap_doctor_status_json_smoke() {
     });
     assert_eq!(setup.schema_version, 1);
 
-    // bootstrap should create env.sh in the config dir for Docker/CI shells.
-    // env.sh is Unix-only (shell script); skip assertion on Windows.
-    #[cfg(not(windows))]
-    {
-        let env_sh = std::path::Path::new(&dirs.config).join("env.sh");
-        let env_sh_content = std::fs::read_to_string(&env_sh).expect("env.sh exists");
+    // init never writes shell files: no env.sh, no shell-hook scripts.
+    for f in ["env.sh", "shell-hook.zsh", "shell-hook.bash"] {
         assert!(
-            env_sh_content.contains("lean-ctx docker self-heal"),
-            "env.sh missing docker self-heal snippet"
+            !std::path::Path::new(&dirs.config).join(f).exists(),
+            "init must not write {f}"
         );
     }
 

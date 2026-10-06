@@ -79,10 +79,6 @@ fn help_shows_escape_hatches() {
         stdout.contains("lean-ctx raw"),
         "help should document `lean-ctx raw`"
     );
-    assert!(
-        stdout.contains("lean-ctx-off"),
-        "help should document `lean-ctx-off`"
-    );
 }
 
 // ── Pipe Guard Tests ────────────────────────────────────────

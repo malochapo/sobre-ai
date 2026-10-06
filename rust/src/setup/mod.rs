@@ -52,11 +52,6 @@ pub struct SetupOptions {
     pub fix: bool,
     pub json: bool,
     pub skip_proxy: bool,
-    /// Leave the shell rc untouched (`init --no-shell-hook`).
-    pub skip_shell_hook: bool,
-    /// `init --agent-aliases` / `--no-agent-aliases`; `None` keeps what is
-    /// installed.
-    pub agent_aliases: Option<bool>,
 }
 
 pub fn run_setup_with_options(opts: SetupOptions) -> Result<SetupReport, String> {
@@ -67,70 +62,6 @@ pub fn run_setup_with_options(opts: SetupOptions) -> Result<SetupReport, String>
     let home_str = home.to_string_lossy().to_string();
 
     let mut steps: Vec<SetupStepReport> = Vec::new();
-
-    // Step: Shell Hook
-    let mut shell_step = SetupStepReport {
-        name: "shell_hook".to_string(),
-        ok: true,
-        items: Vec::new(),
-        warnings: Vec::new(),
-        errors: Vec::new(),
-    };
-    if (!opts.non_interactive || opts.yes) && !opts.skip_shell_hook {
-        if opts.json {
-            crate::cli::install_shell_hook_quiet(&[]);
-        } else {
-            crate::cli::install_shell_hook(&[]);
-        }
-        crate::shell_hook::install_all(opts.json, opts.agent_aliases);
-        #[cfg(not(windows))]
-        {
-            let hook_content = crate::cli::generate_hook_posix(&binary);
-            if crate::shell::is_container() {
-                crate::cli::write_env_sh_for_containers(&hook_content);
-                shell_step.items.push(SetupItem {
-                    name: "env_sh".to_string(),
-                    status: "created".to_string(),
-                    path: Some(crate::core::paths::config_dir().map_or_else(
-                        |_| "~/.config/lean-ctx/env.sh".to_string(),
-                        |d| d.join("env.sh").to_string_lossy().to_string(),
-                    )),
-                    note: Some("Docker/CI helper (BASH_ENV / CLAUDE_ENV_FILE)".to_string()),
-                });
-            } else {
-                shell_step.items.push(SetupItem {
-                    name: "env_sh".to_string(),
-                    status: "skipped".to_string(),
-                    path: None,
-                    note: Some("not a container environment".to_string()),
-                });
-            }
-        }
-        shell_step.items.push(SetupItem {
-            name: "shell hook".to_string(),
-            status: "ran".to_string(),
-            path: None,
-            note: None,
-        });
-        shell_step.items.push(SetupItem {
-            name: "universal_shell_hook".to_string(),
-            status: "installed".to_string(),
-            path: None,
-            note: Some("~/.zshenv, ~/.bashenv, agent aliases".to_string()),
-        });
-    } else {
-        shell_step
-            .warnings
-            .push("non_interactive_without_yes: shell hook not installed (use --yes)".to_string());
-        shell_step.ok = false;
-        shell_step.items.push(SetupItem {
-            name: "shell hook".to_string(),
-            status: "skipped".to_string(),
-            path: None,
-            note: Some("requires --yes in --non-interactive mode".to_string()),
-        });
-    }
-    steps.push(shell_step);
 
     // Step: Editor MCP config
     let mut editor_step = SetupStepReport {

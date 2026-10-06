@@ -160,31 +160,6 @@ pub(super) fn set_console_utf8() {
     }
 }
 
-/// Detects if the current process runs inside a Docker/container environment.
-pub fn is_container() -> bool {
-    #[cfg(unix)]
-    {
-        if std::path::Path::new("/.dockerenv").exists() {
-            return true;
-        }
-        if let Ok(cgroup) = std::fs::read_to_string("/proc/1/cgroup")
-            && (cgroup.contains("/docker/") || cgroup.contains("/lxc/"))
-        {
-            return true;
-        }
-        if let Ok(mounts) = std::fs::read_to_string("/proc/self/mountinfo")
-            && mounts.contains("/docker/containers/")
-        {
-            return true;
-        }
-        false
-    }
-    #[cfg(not(unix))]
-    {
-        false
-    }
-}
-
 /// Returns true if stdin is NOT a terminal (pipe, /dev/null, etc.)
 pub fn is_non_interactive() -> bool {
     !io::stdin().is_terminal()
