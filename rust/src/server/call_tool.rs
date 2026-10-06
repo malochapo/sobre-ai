@@ -421,26 +421,6 @@ impl LeanCtxServer {
 
         let action = helpers::get_str(args, "action");
 
-        // K-bounded staleness guard: warn if shared context has diverged.
-        const K_STALENESS_BOUND: i64 = 10;
-        if self.session_mode == crate::tools::SessionMode::Shared
-            && let Some(ref rt) = self.context_os
-        {
-            let latest = rt.bus.latest_id(&self.workspace_id, &self.channel_id);
-            let cursor = self
-                .last_seen_event_id
-                .load(std::sync::atomic::Ordering::Relaxed);
-            if cursor > 0 && latest - cursor > K_STALENESS_BOUND {
-                let gap = latest - cursor;
-                result_text = format!(
-                    "[CONTEXT STALE] {gap} events happened since your last read. \
-                         Use ctx_session(action=\"status\") to sync.\n\n{result_text}"
-                );
-            }
-            self.last_seen_event_id
-                .store(latest, std::sync::atomic::Ordering::Relaxed);
-        }
-
         self.record_receipt_and_cost(
             name,
             args,
@@ -449,45 +429,6 @@ impl LeanCtxServer {
             output_token_count,
         )
         .await;
-
-        // Context Bus: conflict detection for knowledge writes in shared mode.
-        if self.session_mode == crate::tools::SessionMode::Shared
-            && name == "ctx_knowledge"
-            && action.as_deref() == Some("remember")
-            && let Some(ref rt) = self.context_os
-        {
-            let my_agent = self.agent_id.read().await.clone();
-            let category = helpers::get_str(args, "category");
-            let key = helpers::get_str(args, "key");
-            if let (Some(cat), Some(k)) = (&category, &key) {
-                let recent = rt.bus.recent_by_kind(
-                    &self.workspace_id,
-                    &self.channel_id,
-                    "knowledge_remembered",
-                    20,
-                );
-                for ev in &recent {
-                    let p = &ev.payload;
-                    let ev_cat = p.get("category").and_then(|v| v.as_str());
-                    let ev_key = p.get("key").and_then(|v| v.as_str());
-                    let ev_actor = ev.actor.as_deref();
-                    if ev_cat == Some(cat.as_str())
-                        && ev_key == Some(k.as_str())
-                        && ev_actor != my_agent.as_deref()
-                    {
-                        let other = ev_actor.unwrap_or("unknown");
-                        result_text = format!(
-                            "[CONFLICT] Agent '{other}' recently wrote to the same knowledge key \
-                                 '{cat}/{k}'. Review before proceeding.\n\n{result_text}"
-                        );
-                        break;
-                    }
-                }
-            }
-        }
-
-        self.persist_shared_context_os(name, action.as_deref(), args)
-            .await;
 
         let skip_checkpoint = matches!(name, "ctx_session" | "ctx_knowledge" | "ctx_impact");
 

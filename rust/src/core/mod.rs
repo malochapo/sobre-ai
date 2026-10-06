@@ -110,7 +110,6 @@ pub mod context_handles;
 pub mod context_ir;
 pub mod context_ledger;
 pub mod context_lint;
-pub mod context_os;
 pub mod context_overhead;
 pub mod context_radar;
 pub mod context_snapshot;
@@ -122,7 +121,6 @@ pub mod context {
     pub use super::context_handles;
     pub use super::context_ir;
     pub use super::context_ledger;
-    pub use super::context_os;
 }
 
 // ---------------------------------------------------------------------------

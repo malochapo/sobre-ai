@@ -8,7 +8,7 @@ use crate::core::cache::SessionCache;
 use crate::core::session::SessionState;
 
 use super::autonomy;
-use super::server::{LeanCtxServer, SessionMode};
+use super::server::LeanCtxServer;
 use super::startup::detect_startup_context;
 
 impl Default for LeanCtxServer {
@@ -25,68 +25,28 @@ impl LeanCtxServer {
 
     /// Creates a new server rooted at the given project directory.
     pub fn new_with_project_root(project_root: Option<&str>) -> Self {
-        Self::new_with_startup(
-            project_root,
-            std::env::current_dir().ok().as_deref(),
-            SessionMode::Personal,
-            "default",
-            "default",
-        )
+        Self::new_with_startup(project_root, std::env::current_dir().ok().as_deref())
     }
 
-    pub(crate) fn new_with_startup(
-        project_root: Option<&str>,
-        startup_cwd: Option<&Path>,
-        session_mode: SessionMode,
-        workspace_id: &str,
-        channel_id: &str,
-    ) -> Self {
+    pub(crate) fn new_with_startup(project_root: Option<&str>, startup_cwd: Option<&Path>) -> Self {
         let ttl = crate::core::config::IDLE_CACHE_TTL_SECS;
 
         // Purge stale graph indices on startup to prevent serving outdated data
         crate::core::graph_index::ProjectIndex::purge_stale_indices();
 
         let startup = detect_startup_context(project_root, startup_cwd);
-        let (session, context_os) = match session_mode {
-            SessionMode::Personal => {
-                let mut session = if let Some(ref root) = startup.project_root {
-                    SessionState::load_latest_for_project_root(root).unwrap_or_default()
-                } else {
-                    SessionState::load_latest().unwrap_or_default()
-                };
-                if let Some(ref root) = startup.project_root {
-                    session.project_root = Some(root.clone());
-                }
-                if let Some(ref cwd) = startup.shell_cwd {
-                    session.shell_cwd = Some(cwd.clone());
-                }
-                (Arc::new(RwLock::new(session)), None)
-            }
-            SessionMode::Shared => {
-                let Some(ref root) = startup.project_root else {
-                    // Shared mode without a project root is not useful; fall back to personal.
-                    return Self::new_with_startup(
-                        project_root,
-                        startup_cwd,
-                        SessionMode::Personal,
-                        workspace_id,
-                        channel_id,
-                    );
-                };
-                let rt = crate::core::context_os::runtime();
-                let session = rt
-                    .shared_sessions
-                    .get_or_load(root, workspace_id, channel_id);
-                rt.metrics.record_session_loaded();
-                // Ensure shell_cwd is refreshed (best-effort).
-                if let Some(ref cwd) = startup.shell_cwd
-                    && let Ok(mut s) = session.try_write()
-                {
-                    s.shell_cwd = Some(cwd.clone());
-                }
-                (session, Some(rt))
-            }
+        let mut session = if let Some(ref root) = startup.project_root {
+            SessionState::load_latest_for_project_root(root).unwrap_or_default()
+        } else {
+            SessionState::load_latest().unwrap_or_default()
         };
+        if let Some(ref root) = startup.project_root {
+            session.project_root = Some(root.clone());
+        }
+        if let Some(ref cwd) = startup.shell_cwd {
+            session.shell_cwd = Some(cwd.clone());
+        }
+        let session = Arc::new(RwLock::new(session));
 
         // Indices are NOT built eagerly here. A freshly connected agent that sits
         // idle — or only uses ctx_read/ctx_shell/ctx_tree — must pay zero indexing
@@ -152,18 +112,6 @@ impl LeanCtxServer {
             ledger: Arc::new(RwLock::new(
                 crate::core::context_ledger::ContextLedger::load(),
             )),
-            session_mode,
-            workspace_id: if workspace_id.trim().is_empty() {
-                "default".to_string()
-            } else {
-                workspace_id.trim().to_string()
-            },
-            channel_id: if channel_id.trim().is_empty() {
-                "default".to_string()
-            } else {
-                channel_id.trim().to_string()
-            },
-            context_os,
             context_ir: Some(std::sync::Arc::new(tokio::sync::RwLock::new(
                 crate::core::context_ir::ContextIrV1::load(),
             ))),
@@ -172,7 +120,6 @@ impl LeanCtxServer {
             )),
             rules_stale_checked: Arc::new(std::sync::atomic::AtomicBool::new(false)),
             rules_tip_shown: Arc::new(std::sync::atomic::AtomicBool::new(false)),
-            last_seen_event_id: Arc::new(std::sync::atomic::AtomicI64::new(0)),
             startup_project_root: startup.project_root,
             startup_shell_cwd: startup.shell_cwd,
             peer: Arc::new(tokio::sync::RwLock::new(None)),

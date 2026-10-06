@@ -16,24 +16,6 @@ fn server_dispatch_src() -> String {
     )
 }
 
-#[test]
-fn lineage_filters_by_workspace() {
-    let src = include_str!("../../src/core/context_os/context_bus.rs");
-
-    let lineage_fn = src.find("fn lineage(").expect("lineage fn missing");
-    let lineage_sig = &src[lineage_fn..lineage_fn + 200];
-    assert!(
-        lineage_sig.contains("workspace_id: &str"),
-        "C2: lineage() must take workspace_id parameter"
-    );
-
-    let lineage_body = &src[lineage_fn..lineage_fn + 800];
-    assert!(
-        lineage_body.contains("AND workspace_id = ?2"),
-        "C2: lineage SQL must filter by workspace_id"
-    );
-}
-
 // ---------------------------------------------------------------------------
 // H1 — Shell CWD jail enforcement
 // ---------------------------------------------------------------------------

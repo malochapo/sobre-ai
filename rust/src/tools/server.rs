@@ -44,14 +44,6 @@ impl CrpMode {
 /// Thread-safe handle to the shared file content cache.
 pub type SharedCache = Arc<RwLock<SessionCache>>;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum SessionMode {
-    /// Traditional single-client session persistence under `~/.lean-ctx/sessions/`.
-    Personal,
-    /// Context OS mode: shared sessions + event bus for multi-client HTTP/team-server.
-    Shared,
-}
-
 /// Central MCP server state: cache, session, metrics, and autonomy runtime.
 #[derive(Clone)]
 pub struct LeanCtxServer {
@@ -67,15 +59,10 @@ pub struct LeanCtxServer {
     pub autonomy: Arc<super::autonomy::AutonomyState>,
     pub loop_detector: Arc<RwLock<crate::core::loop_detection::LoopDetector>>,
     pub ledger: Arc<RwLock<crate::core::context_ledger::ContextLedger>>,
-    pub session_mode: SessionMode,
-    pub workspace_id: String,
-    pub channel_id: String,
-    pub context_os: Option<Arc<crate::core::context_os::ContextOsRuntime>>,
     pub context_ir: Option<Arc<RwLock<crate::core::context_ir::ContextIrV1>>>,
     pub registry: Option<Arc<crate::server::registry::ToolRegistry>>,
     pub(crate) rules_stale_checked: Arc<std::sync::atomic::AtomicBool>,
     pub(crate) rules_tip_shown: Arc<std::sync::atomic::AtomicBool>,
-    pub(crate) last_seen_event_id: Arc<std::sync::atomic::AtomicI64>,
     pub(crate) startup_project_root: Option<String>,
     pub(crate) startup_shell_cwd: Option<String>,
     pub(crate) peer: Arc<RwLock<Option<Peer<RoleServer>>>>,

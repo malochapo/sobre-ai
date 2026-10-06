@@ -80,13 +80,7 @@ mod resolve_path_tests {
         let _other_value = create_git_root(&other);
         std::fs::write(other.join("b.txt"), "no").unwrap();
 
-        let server = LeanCtxServer::new_with_startup(
-            None,
-            Some(root.as_path()),
-            SessionMode::Personal,
-            "default",
-            "default",
-        );
+        let server = LeanCtxServer::new_with_startup(None, Some(root.as_path()));
         {
             let mut session = server.session.write().await;
             session.project_root = Some(stale.to_string_lossy().to_string());
@@ -122,13 +116,7 @@ mod resolve_path_tests {
         let file = dep.join("lib.go");
         std::fs::write(&file, "package lib").unwrap();
 
-        let server = LeanCtxServer::new_with_startup(
-            None,
-            Some(root.as_path()),
-            SessionMode::Personal,
-            "default",
-            "default",
-        );
+        let server = LeanCtxServer::new_with_startup(None, Some(root.as_path()));
         {
             let mut session = server.session.write().await;
             session.project_root = Some(root.to_string_lossy().to_string());
@@ -174,13 +162,7 @@ mod resolve_path_tests {
         let real_root = create_git_root(&real);
         std::fs::write(real.join("a.txt"), "ok").unwrap();
 
-        let server = LeanCtxServer::new_with_startup(
-            None,
-            None,
-            SessionMode::Personal,
-            "default",
-            "default",
-        );
+        let server = LeanCtxServer::new_with_startup(None, None);
         {
             let mut session = server.session.write().await;
             session.project_root = Some(agent.to_string_lossy().to_string());
@@ -215,13 +197,7 @@ mod resolve_path_tests {
         let real_root = create_git_root(&real);
         std::fs::write(real.join("rust.rs"), "ok").unwrap();
 
-        let server = LeanCtxServer::new_with_startup(
-            None,
-            None,
-            SessionMode::Personal,
-            "default",
-            "default",
-        );
+        let server = LeanCtxServer::new_with_startup(None, None);
         {
             let mut session = server.session.write().await;
             session.project_root = Some(client_cwd.to_string_lossy().to_string());
@@ -256,13 +232,7 @@ mod resolve_path_tests {
         std::fs::create_dir_all(&loose).unwrap();
         std::fs::write(loose.join("data.txt"), "no").unwrap();
 
-        let server = LeanCtxServer::new_with_startup(
-            None,
-            None,
-            SessionMode::Personal,
-            "default",
-            "default",
-        );
+        let server = LeanCtxServer::new_with_startup(None, None);
         {
             let mut session = server.session.write().await;
             session.project_root = Some(client_cwd.to_string_lossy().to_string());
@@ -297,13 +267,7 @@ mod resolve_path_tests {
         std::fs::create_dir_all(&loose).unwrap();
         std::fs::write(loose.join("data.txt"), "no").unwrap();
 
-        let server = LeanCtxServer::new_with_startup(
-            None,
-            None,
-            SessionMode::Personal,
-            "default",
-            "default",
-        );
+        let server = LeanCtxServer::new_with_startup(None, None);
         {
             let mut session = server.session.write().await;
             session.project_root = Some(agent.to_string_lossy().to_string());
@@ -351,13 +315,7 @@ mod resolve_path_tests {
         session_a.set_task("repo-a latest task", None);
         session_a.save().unwrap();
 
-        let server = LeanCtxServer::new_with_startup(
-            None,
-            Some(repo_b.as_path()),
-            SessionMode::Personal,
-            "default",
-            "default",
-        );
+        let server = LeanCtxServer::new_with_startup(None, Some(repo_b.as_path()));
         crate::test_env::remove_var("LEAN_CTX_DATA_DIR");
 
         let session = server.session.read().await;
@@ -393,13 +351,7 @@ mod resolve_path_tests {
         let old_id = session_a.id.clone();
         session_a.save().unwrap();
 
-        let server = LeanCtxServer::new_with_startup(
-            None,
-            Some(repo_b_src.as_path()),
-            SessionMode::Personal,
-            "default",
-            "default",
-        );
+        let server = LeanCtxServer::new_with_startup(None, Some(repo_b_src.as_path()));
         crate::test_env::remove_var("LEAN_CTX_DATA_DIR");
 
         let session = server.session.read().await;

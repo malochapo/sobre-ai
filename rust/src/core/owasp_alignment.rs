@@ -152,11 +152,6 @@ pub fn alignment() -> Vec<OwaspMapping> {
                     description: "CLI command to generate aggregated compliance reports",
                 },
                 Mitigation {
-                    feature: "Context OS Events",
-                    module: "core/context_os/context_bus.rs",
-                    description: "Append-only SQLite event log of tool calls and session \n                                  mutations, with an in-process broadcast for live readers",
-                },
-                Mitigation {
                     feature: "Proxy Metrics",
                     module: "proxy/metrics.rs",
                     description: "Atomic counters for requests, tokens saved, bytes compressed",

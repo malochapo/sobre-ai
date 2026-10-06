@@ -65,13 +65,11 @@ impl ServerHandler for LeanCtxServer {
         *self.client_name.write().await = name.clone();
         *self.peer.write().await = Some(context.peer.clone());
 
-        if self.session_mode != crate::tools::SessionMode::Shared {
-            if let Ok(data_dir) = crate::core::data_dir::lean_ctx_data_dir() {
-                let radar = data_dir.join("context_radar.jsonl");
-                if radar.exists() {
-                    let prev = data_dir.join("context_radar.prev.jsonl");
-                    let _ = std::fs::rename(&radar, &prev);
-                }
+        if let Ok(data_dir) = crate::core::data_dir::lean_ctx_data_dir() {
+            let radar = data_dir.join("context_radar.jsonl");
+            if radar.exists() {
+                let prev = data_dir.join("context_radar.prev.jsonl");
+                let _ = std::fs::rename(&radar, &prev);
             }
         }
 
@@ -144,19 +142,7 @@ impl ServerHandler for LeanCtxServer {
                     }
                 }
             }
-            if self.session_mode == crate::tools::SessionMode::Shared {
-                if let Some(ref root) = session.project_root
-                    && let Some(ref rt) = self.context_os
-                {
-                    rt.shared_sessions.persist_best_effort(
-                        root,
-                        &self.workspace_id,
-                        &self.channel_id,
-                        &session,
-                    );
-                    rt.metrics.record_session_persisted();
-                }
-            } else if let Err(e) = session.save() {
+            if let Err(e) = session.save() {
                 tracing::warn!("lean-ctx: failed to persist session state: {e}");
             }
         }

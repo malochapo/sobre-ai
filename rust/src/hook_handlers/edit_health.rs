@@ -72,20 +72,6 @@ fn persist_notice_to_knowledge(notice: &str, payload: &Value, root: &str) {
     let _ = crate::core::knowledge::ProjectKnowledge::mutate_locked(root, |pk| {
         pk.remember("code_health", &key, notice, session_id, 0.9, &policy);
     });
-
-    // Emit ContextBus event so dashboard + subscribers see it in real-time
-    crate::core::context_os::emit_event(
-        root,
-        "code_health",
-        &crate::core::context_os::ContextEventKindV1::KnowledgeRemembered,
-        Some("edit_health_hook"),
-        serde_json::json!({
-            "category": "code_health",
-            "key": key,
-            "notice": notice,
-            "file": file_path,
-        }),
-    );
 }
 
 /// Project root for path resolution: the payload `cwd` (every Claude/Cursor hook
