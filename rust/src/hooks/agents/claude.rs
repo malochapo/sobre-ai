@@ -180,7 +180,7 @@ When the `ctx_*` MCP tools are listed in this session, prefer them over native e
 - `ctx_shell` instead of `bash` / `Shell` (95+ compression patterns)
 - `ctx_search` instead of `Grep` / `rg` (compact results)
 - `ctx_tree` instead of `ls` / `find` (compact directory maps)
-- Edits: `ctx_read(mode=\"anchored\")` → `ctx_patch` (line+hash anchors, never echo old text; `op=create` for new files). `ctx_edit` (str_replace) is the legacy power-profile fallback.
+- Edits: `ctx_read(mode=\"anchored\")` → `ctx_patch` (line+hash anchors, never echo old text; `op=create` for new files).
 
 Native `Read` → `Edit`/`StrReplace` stays fully supported — the edit gate requires a
 prior native Read of the same file path. Write, Delete, Glob — use normally.

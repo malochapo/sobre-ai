@@ -23,7 +23,7 @@ pub(crate) fn batch_read(
     match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| handle_inner(args, ctx))) {
         Ok(result) => result,
         Err(_) => Err(ErrorData::internal_error(
-            "ctx_multi_read panicked while processing the batch. This is a bug — please report it.",
+            "ctx_read(paths=…) panicked while processing the batch. This is a bug — please report it.",
             None,
         )),
     }

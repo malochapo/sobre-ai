@@ -772,14 +772,6 @@ fn build_tips(store: &StatsStore) -> Vec<String> {
         tips.push("Try mode=\"signatures\" for large files — returns only the API surface.".into());
     }
 
-    if store.cep.total_cache_reads > 0
-        && store.cep.total_cache_hits as f64 / store.cep.total_cache_reads as f64 > 0.8
-    {
-        tips.push(
-            "High cache hit rate! Use ctx_compress periodically to keep context compact.".into(),
-        );
-    }
-
     if store.total_commands > 50 && store.cep.sessions == 0 {
         tips.push("Use ctx_session to track your task — enables cross-session memory.".into());
     }
@@ -792,7 +784,7 @@ fn build_tips(store: &StatsStore) -> Vec<String> {
         tips.push("Run lean-ctx gain --graph for a 30-day sparkline chart.".into());
     }
 
-    tips.push("Run ctx_overview(task) at session start for a task-aware project map.".into());
+    tips.push("Run ctx_compose(task) at session start for a task-aware project map.".into());
     tips.push("Run lean-ctx dashboard for a live web UI with all your stats.".into());
 
     tips

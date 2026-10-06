@@ -100,9 +100,6 @@ fn print_report(r: &ToolHealthReport, show_all: bool) {
                         t.name, t.schema_tokens
                     );
                 }
-                println!(
-                    "  {DIM}→ `lean-ctx tools lean` advertises only the lazy core; trimmed tools stay callable via ctx_call.{RST}"
-                );
             }
             if !low_use.is_empty() {
                 println!(

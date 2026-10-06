@@ -71,15 +71,8 @@ fn generate_prefill_hints(cache: &SessionCache) -> Vec<String> {
     for (path, entry) in &large {
         let short = crate::core::protocol::shorten_path(path);
         hints.push(format!(
-            "{short} is large ({} tok) — consider mode=signatures or aggressive",
+            "{short} is large ({} tok) — consider mode=signatures",
             entry.original_tokens
-        ));
-    }
-
-    let stale_count = entries.iter().filter(|(_, e)| e.read_count() == 1).count();
-    if stale_count > 5 {
-        hints.push(format!(
-            "{stale_count} files read only once — ctx_cache clear to free context"
         ));
     }
 

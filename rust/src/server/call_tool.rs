@@ -220,7 +220,7 @@ impl LeanCtxServer {
             } else if name == "ctx_shell" {
                 let cmd = helpers::get_str(args, "command").unwrap_or_default();
                 detector.record_shell_for_correction(&cmd);
-            } else if name == "ctx_expand" || name == "ctx_retrieve" {
+            } else if name == "ctx_expand" {
                 // CCR-learning (#941): a verbatim/original re-fetch means the inline
                 // compressed form was too lossy for this session.
                 detector.record_retrieve();
@@ -229,7 +229,7 @@ impl LeanCtxServer {
             let retrieve_count = detector.retrieve_count();
             // Auto-degrade: reduce compression when the agent keeps re-fetching what
             // we squeezed out. Correction loops (re-reads/re-runs) and CCR retrieves
-            // (ctx_expand/ctx_retrieve) are two views of the same "too aggressive"
+            // (ctx_expand) are two views of the same "too aggressive"
             // signal; degrade on the stronger of the two and clear only when neither
             // fires. The level is server state, never part of any output body (#498).
             use crate::core::config::CompressionLevel;

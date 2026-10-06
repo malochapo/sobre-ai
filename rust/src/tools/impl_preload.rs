@@ -21,7 +21,7 @@ pub(crate) fn handle(
 ) -> (String, bool) {
     if task.trim().is_empty() {
         return (
-            "ERROR: ctx_preload requires a task description".to_string(),
+            "ERROR: preload requires a task description".to_string(),
             false,
         );
     }

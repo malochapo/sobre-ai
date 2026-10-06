@@ -18,7 +18,6 @@ impl Default for LoopLimits {
         tool_total_limits.insert("ctx_read".to_string(), 100);
         tool_total_limits.insert("ctx_search".to_string(), 80);
         tool_total_limits.insert("ctx_shell".to_string(), 50);
-        tool_total_limits.insert("ctx_semantic_search".to_string(), 60);
         Self {
             normal_threshold: 2,
             reduced_threshold: 4,
@@ -30,7 +29,7 @@ impl Default for LoopLimits {
     }
 }
 
-const SEARCH_TOOLS: &[&str] = &["ctx_search", "ctx_semantic_search"];
+const SEARCH_TOOLS: &[&str] = &["ctx_search"];
 
 const SEARCH_SHELL_PREFIXES: &[&str] = &["grep ", "rg ", "find ", "fd ", "ag ", "ack "];
 
@@ -718,7 +717,6 @@ mod tests {
     #[test]
     fn is_search_tool_detection() {
         assert!(LoopDetector::is_search_tool("ctx_search"));
-        assert!(LoopDetector::is_search_tool("ctx_semantic_search"));
         assert!(!LoopDetector::is_search_tool("ctx_read"));
         assert!(!LoopDetector::is_search_tool("ctx_shell"));
     }

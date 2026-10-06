@@ -190,7 +190,7 @@ fn handle_cycles(root: &str, fmt: OutputFormat) -> String {
             }
 
             let tokens = count_tokens(&result);
-            format!("{result}[ctx_architecture cycles: {tokens} tok]")
+            format!("{result}[ctx_graph cycles: {tokens} tok]")
         }
     }
 }
@@ -247,7 +247,7 @@ fn handle_entrypoints(root: &str, fmt: OutputFormat) -> String {
             }
 
             let tokens = count_tokens(&result);
-            format!("{result}[ctx_architecture entrypoints: {tokens} tok]")
+            format!("{result}[ctx_graph entrypoints: {tokens} tok]")
         }
     }
 }

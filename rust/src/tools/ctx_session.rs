@@ -382,7 +382,7 @@ stale_files: {}\n",
         "verify" => {
             let snap = crate::core::output_verification::stats_snapshot();
             format!(
-                "DEPRECATION: action=\"verify\" is renamed to action=\"output_stats\" (ctx_verify is the full observability stack).\n{}",
+                "DEPRECATION: action=\"verify\" is renamed to action=\"output_stats\".\n{}",
                 snap.format_compact()
             )
         }

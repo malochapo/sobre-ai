@@ -37,8 +37,7 @@ pub enum TeeMode {
 /// file path / handle at point-of-need:
 /// * `Minimal` (default) — a single, non-MCP-first line on the *first* compressed
 ///   view of a file/handle per session.
-/// * `Full` — the richer ladder (`mode=full` · `raw=true` · `ctx_retrieve` ·
-///   `ctx_expand`); used by the `exploration`/`review` profiles.
+/// * `Full` — the richer ladder (`mode=full` · `raw=true` · `ctx_expand`).
 /// * `Off` — suppresses the footer entirely (the proactive rule still ships, so
 ///   reversibility is never undiscoverable).
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
@@ -205,7 +204,7 @@ impl CompressionLevel {
 
     /// Maps re-fetch *pressure* to a session-degrade decision. Pressure is the
     /// stronger of the correction-loop count (re-reads/re-runs) and the CCR
-    /// retrieve count (`ctx_expand`/`ctx_retrieve`) — two views of the same "too
+    /// retrieve count (`ctx_expand`) — two views of the same "too
     /// aggressive" signal (#941): 5+ degrades to `Off`, 3+ to `Lite`, 0 clears,
     /// and the 1–2 band leaves the current degrade untouched.
     ///
