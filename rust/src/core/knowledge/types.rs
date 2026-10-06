@@ -105,7 +105,7 @@ impl KnowledgeArchetype {
             // `data_model`/`schema` are structural (provider-extracted); they join arch.
             "architecture" | "arch" | "data_model" | "schema" => Self::Architecture,
             "decision" | "decisions" => Self::Decision,
-            // bugs/blockers (provider + auto-capture) are pitfalls → Gotcha.
+            // bugs/blockers are pitfalls → Gotcha.
             "gotcha" | "gotchas" | "known_bugs" | "known_issues" | "bug" | "bugs" | "blocker"
             | "blockers" => Self::Gotcha,
             "convention" | "conventions" | "style" => Self::Convention,

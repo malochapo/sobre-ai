@@ -3,7 +3,6 @@
 // ---------------------------------------------------------------------------
 pub mod aggressiveness;
 pub mod artifacts_exec;
-pub mod auto_capture;
 pub mod auto_findings;
 pub mod codebook;
 #[cfg(target_os = "macos")]

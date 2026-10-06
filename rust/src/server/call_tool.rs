@@ -364,27 +364,6 @@ impl LeanCtxServer {
         ) {
             let mut session = self.session.write().await;
             session.add_finding(finding.file.as_deref(), None, &finding.summary);
-            let project_root = session.project_root.clone();
-            drop(session);
-            if let Some(ref root) = project_root {
-                let f = finding.clone();
-                let r = root.clone();
-                std::thread::spawn(move || {
-                    crate::core::auto_capture::capture_finding(&r, &f);
-                });
-            }
-        }
-        if let Some(extra) = crate::core::auto_capture::extract_extra(name, &findings_source) {
-            let session = self.session.read().await;
-            let project_root = session.project_root.clone();
-            drop(session);
-            if let Some(ref root) = project_root {
-                let e = extra.clone();
-                let r = root.clone();
-                std::thread::spawn(move || {
-                    crate::core::auto_capture::capture_finding(&r, &e);
-                });
-            }
         }
 
         {
