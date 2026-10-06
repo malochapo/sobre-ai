@@ -47,7 +47,7 @@ impl AutonomyState {
 /// Cache entries before deduplication runs.
 const DEDUP_THRESHOLD: usize = 8;
 /// Tool calls between automatic consolidations.
-const CONSOLIDATE_EVERY_CALLS: u32 = 25;
+pub(crate) const CONSOLIDATE_EVERY_CALLS: u32 = 25;
 /// Minimum time between automatic consolidations.
 const CONSOLIDATE_COOLDOWN_SECS: u64 = 120;
 

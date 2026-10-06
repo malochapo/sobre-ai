@@ -257,13 +257,14 @@ pub fn flush_all() {
     crate::core::edit_quality::flush();
 }
 
+/// Every `CONSOLIDATE_EVERY_CALLS` CLI calls, fold the session into knowledge.
+/// The MCP server also applies a time cooldown held in memory; a single-shot
+/// CLI process has no such memory, so only the call-count gate applies here.
 fn maybe_consolidate(project_root: Option<&str>, calls: u32) {
     let Some(root) = project_root else { return };
-    let autonomy = crate::tools::autonomy::AutonomyState::new();
-    if crate::tools::autonomy::should_auto_consolidate(&autonomy, calls) {
-        let root = root.to_string();
+    if calls > 0 && calls.is_multiple_of(crate::tools::autonomy::CONSOLIDATE_EVERY_CALLS) {
         let _ = crate::core::consolidation_engine::consolidate_latest(
-            &root,
+            root,
             crate::core::consolidation_engine::ConsolidationBudgets::default(),
         );
     }
