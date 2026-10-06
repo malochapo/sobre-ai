@@ -48,7 +48,7 @@ the measured state of each.
 
 Invariants 1, 3, 4 and 5 hold today: 17 tools, one fixed surface, no network
 request you did not ask for, and about 174,000 lines of production Rust under a
-380,000 ceiling. Invariant 2 holds for the config file itself (14 keys), but a
+200,000 ceiling. Invariant 2 holds for the config file itself (14 keys), but a
 few per-project files and environment variables still change behaviour; removing
 them is ongoing work.
 
