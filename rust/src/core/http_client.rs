@@ -12,12 +12,6 @@ pub fn platform_tls_config() -> ureq::tls::TlsConfig {
         .build()
 }
 
-/// Builds a ureq agent from an already-assembled config (kept as a thin, nameable
-/// wrapper so call sites read uniformly alongside `platform_tls_config`).
-pub fn ureq_agent(config: ureq::config::Config) -> ureq::Agent {
-    ureq::Agent::new_with_config(config)
-}
-
 /// Agent that honors platform roots and bounds only the connection-setup phases
 /// (DNS/connect/first-byte) — a large but progressing download stays uncapped.
 pub fn ureq_agent_with_timeouts(

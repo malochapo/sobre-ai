@@ -23,14 +23,6 @@ pub fn sign_bytes(agent_id: &str, data: &[u8]) -> Result<Vec<u8>, String> {
     Ok(sig.to_bytes().to_vec())
 }
 
-/// Sign with an already-resolved keypair (no store access). Pair with
-/// [`get_or_create_keypair`] when the public key must be embedded in the
-/// payload *before* the signature is computed over it.
-#[must_use]
-pub fn sign_bytes_with(key: &SigningKey, data: &[u8]) -> Vec<u8> {
-    key.sign(data).to_bytes().to_vec()
-}
-
 pub fn verify_signature(public_key_bytes: &[u8], data: &[u8], signature_bytes: &[u8]) -> bool {
     let pk_bytes: [u8; 32] = match public_key_bytes.try_into() {
         Ok(b) => b,

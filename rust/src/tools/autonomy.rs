@@ -147,12 +147,6 @@ fn format_briefing(body: &str) -> String {
     wrap(&kept.join("\n"))
 }
 
-/// Output from post-read enrichment: optional related-file hints.
-#[derive(Default)]
-pub struct EnrichResult {
-    pub related_hint: Option<String>,
-}
-
 /// Runs cache deduplication once the entry count exceeds the configured threshold.
 pub fn maybe_auto_dedup(state: &AutonomyState, cache: &mut SessionCache) {
     if state

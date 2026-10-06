@@ -112,11 +112,6 @@ mod adaptive_batch_tests {
     }
 }
 
-/// Recorded peak RSS since process start.
-pub fn peak_rss_bytes() -> u64 {
-    PEAK_RSS.load(Ordering::Relaxed)
-}
-
 /// Snapshot of current memory state for diagnostics.
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct MemorySnapshot {

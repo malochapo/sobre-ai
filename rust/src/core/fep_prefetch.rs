@@ -49,22 +49,6 @@ pub fn prefetch_candidates(
         .collect()
 }
 
-/// Format an FEP prefetch hint for the agent, or `None` when there is nothing
-/// worth warming. Registers activity ([`crate::core::introspect`]) only when a
-/// real suggestion is produced, so `introspect cognition` reflects genuine use.
-pub fn prefetch_hint(project_root: &str, path: &str, ledger: &ContextLedger) -> Option<String> {
-    let candidates = prefetch_candidates(project_root, path, ledger);
-    if candidates.is_empty() {
-        return None;
-    }
-    crate::core::introspect::tick("fep_prefetch");
-    let names: Vec<String> = candidates
-        .iter()
-        .map(|(p, _)| crate::core::protocol::shorten_path(p))
-        .collect();
-    Some(format!("Likely next (co-accessed): {}", names.join(", ")))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

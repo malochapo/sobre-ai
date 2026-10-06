@@ -89,11 +89,6 @@ pub fn qoder_mcp_paths(home: &Path) -> Vec<PathBuf> {
     paths
 }
 
-#[cfg(not(target_os = "macos"))]
-pub fn qoder_mcp_paths(home: &Path) -> Vec<PathBuf> {
-    vec![qoder_mcp_path(home)]
-}
-
 #[allow(unreachable_code)]
 pub fn cline_mcp_path() -> PathBuf {
     #[cfg(target_os = "windows")]

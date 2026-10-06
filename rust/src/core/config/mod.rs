@@ -35,11 +35,6 @@ pub use read_dedup::ReadDedup;
 pub use read_redirect::ReadRedirect;
 pub use shell_activation::ShellActivation;
 
-/// Default BM25 cache cap from config (also used by `bm25_index` heuristics).
-pub fn default_bm25_max_cache_mb() -> u64 {
-    serde_defaults::default_bm25_max_cache_mb()
-}
-
 /// Effective on-disk ceiling (MB) for the persisted BM25 index when nothing is
 /// explicitly configured (no `bm25_max_cache_mb`, no `max_disk_mb` budget).
 ///
@@ -83,14 +78,6 @@ pub const SLOW_COMMAND_THRESHOLD_MS: u64 = 5000;
 // Compile-time regression guard (#249): the default disk ceiling must stay well
 // above the old RAM-profile caps (64/128 MB) that starved large repos.
 const _: () = assert!(DEFAULT_BM25_PERSIST_MB >= 512);
-
-/// lean-ctx tools that edit the user's source files. When
-/// `prefer_native_editor` is set (#454) these are refused at dispatch so the
-/// host's native editor handles edits instead:
-/// `ctx_patch` (anchored edits, #1008) and `ctx_refactor` (LSP rename, move,
-/// inline, safe-delete). `ctx_refactor`'s read-only actions go with it; the
-/// same lookups stay available through `ctx_search` and `ctx_callgraph`.
-pub const EDIT_TOOL_NAMES: &[&str] = &["ctx_patch", "ctx_refactor"];
 
 /// lean-ctx configuration, loaded from the single `config.toml`.
 #[derive(Debug, Clone, Serialize, Deserialize)]

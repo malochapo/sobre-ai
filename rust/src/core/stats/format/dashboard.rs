@@ -8,15 +8,6 @@ use crate::core::theme::{self, Theme};
 
 use super::super::model::{CostModel, StatsStore};
 
-pub fn format_gain() -> String {
-    format_gain_themed(&active_theme())
-}
-
-/// Renders the token savings dashboard with a specific theme.
-pub fn format_gain_themed(t: &Theme) -> String {
-    format_gain_themed_at(t, None)
-}
-
 /// Renders the concise "hero" gain output — 3 key metrics, gain score, trend, next actions.
 pub fn format_gain_hero() -> String {
     format_gain_hero_themed(&active_theme())

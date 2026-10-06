@@ -24,12 +24,6 @@ const STATS_FILE: &str = "output_echo.json";
 const MAX_REPORTS: usize = 50;
 /// Echo lines shorter than this are noise (`}`, `);`, `end`).
 const MIN_LINE_CHARS: usize = 12;
-/// Nudge when the average echo ratio of the recent window exceeds this.
-const NUDGE_THRESHOLD: f64 = 0.30;
-/// Responses considered for the nudge decision.
-const NUDGE_WINDOW: usize = 5;
-/// Minimum analyzed responses between two nudges.
-const NUDGE_COOLDOWN: usize = 20;
 /// How much of the radar tail to scan for source content (bytes).
 const RADAR_TAIL_BYTES: u64 = 262_144;
 /// Cap on source documents compared against.
@@ -247,29 +241,6 @@ pub fn analyze_and_record(response: &str) {
         stats.reports.drain(..excess);
     }
     save_stats(&stats);
-}
-
-/// CEP nudge for the MCP server to append to a tool result. Stable text in
-/// 10%-steps (prompt-cache friendly, #498), cooldown-limited. Consuming the
-/// nudge advances the cooldown marker.
-pub fn take_pending_nudge() -> Option<String> {
-    let mut stats = load_stats();
-    if stats.reports.len() < NUDGE_WINDOW {
-        return None;
-    }
-    if stats.total_analyzed.saturating_sub(stats.last_nudge_at) < NUDGE_COOLDOWN as u64 {
-        return None;
-    }
-    let avg = stats.avg_ratio(NUDGE_WINDOW);
-    if avg < NUDGE_THRESHOLD {
-        return None;
-    }
-    let rounded = ((avg * 10.0).round() * 10.0) as u32;
-    stats.last_nudge_at = stats.total_analyzed;
-    save_stats(&stats);
-    Some(format!(
-        "\n[CEP: ~{rounded}% of your recent replies echoed file content already in context — reference lines (F1:42-58) instead of re-quoting]"
-    ))
 }
 
 /// Average echo ratio over the rolling window — CEP score input.

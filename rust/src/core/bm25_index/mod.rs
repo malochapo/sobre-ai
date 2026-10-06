@@ -7,7 +7,6 @@ mod build;
 mod chunking;
 pub use chunking::*;
 mod coordinator;
-pub use coordinator::{SearchIndexBuildProgress, get_or_start_build};
 #[cfg(test)]
 mod tests;
 

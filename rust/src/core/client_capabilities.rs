@@ -177,34 +177,6 @@ pub fn current() -> ClientMcpCapabilities {
     global().lock().map(|g| g.clone()).unwrap_or_default()
 }
 
-/// Load persisted client info from disk (for cross-process use, e.g. dashboard).
-/// Returns `None` if file missing or older than `max_age_secs`.
-pub fn load_persisted(max_age_secs: u64) -> Option<ClientMcpCapabilities> {
-    let path = persisted_path()?;
-    let content = std::fs::read_to_string(&path).ok()?;
-    let val: serde_json::Value = serde_json::from_str(&content).ok()?;
-
-    let ts = val.get("ts").and_then(serde_json::Value::as_u64)?;
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map_or(0, |d| d.as_secs());
-    if now.saturating_sub(ts) > max_age_secs {
-        return None;
-    }
-
-    let client_id = val
-        .get("client_id")
-        .and_then(|v| v.as_str())
-        .unwrap_or("unknown")
-        .to_string();
-
-    if client_id == "unknown" {
-        return None;
-    }
-
-    Some(ClientMcpCapabilities::detect(&client_id))
-}
-
 fn persisted_path() -> Option<std::path::PathBuf> {
     Some(
         super::data_dir::lean_ctx_data_dir()
