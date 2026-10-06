@@ -62,7 +62,7 @@ pub fn write<T: Send + Sync + 'static>(
     write_within(lock, context, BASE_WRITE_TIMEOUT)
 }
 
-/// [`write`] with a caller-chosen base timeout. See [`read_within`].
+/// [`write()`] with a caller-chosen base timeout. See [`read_within`].
 pub fn write_within<T: Send + Sync + 'static>(
     lock: &Arc<RwLock<T>>,
     context: &str,

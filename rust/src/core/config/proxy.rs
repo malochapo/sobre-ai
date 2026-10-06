@@ -11,7 +11,7 @@ pub struct ProxyConfig {
     pub enabled: Option<bool>,
     /// Port the proxy listens on. `None` = the default port.
     pub port: Option<u16>,
-    /// Upstream URL per provider id, for the closed list in [`PROVIDERS`]
+    /// Upstream URL per provider id, for the closed list in `PROVIDERS`
     /// plus the three built-ins (`anthropic`, `openai`, `gemini`). Only the
     /// URL is configurable; writing one is the deliberate opt-in for a custom
     /// or plaintext host. `bedrock` is served only when its URL is set.
@@ -30,7 +30,7 @@ pub struct ProxyConfig {
 ///
 /// A target is `"model"` (swap the model, keep the upstream) or
 /// `"provider:model"` where `provider` is a built-in (`anthropic|openai|gemini`)
-/// or an id of [`PROVIDERS`] — then the request is also re-targeted to that
+/// or an id of `PROVIDERS` — then the request is also re-targeted to that
 /// provider's upstream. Routing is on as soon as one rule is written.
 ///
 /// **Fail-open by construction:** any lookup/classification/validation miss
@@ -135,7 +135,7 @@ const PROVIDERS: &[ProviderSpec] = &[
 ];
 
 /// The built-in provider routes (`/v1/...`), configurable in
-/// `[proxy.upstreams]` alongside [`PROVIDERS`].
+/// `[proxy.upstreams]` alongside `PROVIDERS`.
 const BUILTIN_IDS: &[&str] = &["anthropic", "openai", "gemini"];
 
 /// Every id `[proxy.upstreams]` accepts, built-ins first.
@@ -282,7 +282,7 @@ impl ProxyConfig {
         }
     }
 
-    /// Resolve the providers of [`PROVIDERS`]. An invalid URL is logged and the
+    /// Resolve the providers of `PROVIDERS`. An invalid URL is logged and the
     /// provider skipped: one typo must never take the proxy down.
     #[must_use]
     pub fn resolve_providers(&self) -> Vec<ResolvedProvider> {
@@ -352,7 +352,7 @@ pub struct Upstreams {
     pub anthropic: String,
     pub openai: String,
     pub gemini: String,
-    /// The providers of [`PROVIDERS`], validated and live-reloadable exactly
+    /// The providers of `PROVIDERS`, validated and live-reloadable exactly
     /// like the built-ins.
     pub providers: Vec<ResolvedProvider>,
 }

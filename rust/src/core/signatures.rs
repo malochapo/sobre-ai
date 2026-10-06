@@ -276,9 +276,7 @@ pub fn extract_signatures(content: &str, file_ext: &str) -> Vec<Signature> {
 }
 
 /// Like [`extract_signatures`] but also reports which backend produced the
-/// result. Does **not** touch the global backend counters, so callers that only
-/// want the label (e.g. per-file JSON outline) don't distort
-/// [`signature_backend_stats`]; the counted path stays [`extract_signatures`].
+/// result.
 pub fn extract_signatures_with_backend(
     content: &str,
     file_ext: &str,

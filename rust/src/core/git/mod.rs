@@ -1,8 +1,5 @@
-//! Native git support: remote-repo reading (cached shallow clone) and a shadow
-//! history of agent changes.
+//! Native git support: a shadow history of agent changes.
 //!
-//! * [`repo_url`] parses repository URLs into a [`repo_url::RepoRef`].
-//! * [`clone`] maintains a bounded, SSRF-guarded local clone cache.
 //! * [`shadow`] records agent edits in a git history kept *outside* the user's
 //!   own `.git`.
 //!

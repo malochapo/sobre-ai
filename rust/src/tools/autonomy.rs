@@ -1,26 +1,17 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::time::{Instant, SystemTime, UNIX_EPOCH};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::core::cache::SessionCache;
 use crate::core::tokens::count_tokens;
 use crate::tools::CrpMode;
-
-/// Per-key stats for progressive search hints (`ctx_search` / `ctx_semantic_search`).
-#[derive(Debug, Clone)]
-pub struct SearchHistory {
-    pub call_count: u32,
-    pub last_call: Instant,
-}
 
 /// Tracks autonomous action state: session init, dedup, and consolidation timing.
 pub struct AutonomyState {
     pub session_initialized: AtomicBool,
     pub dedup_applied: AtomicBool,
     pub last_consolidation_unix: AtomicU64,
-    /// Repeated `pattern|path` keys for search tools (see [`AutonomyState::track_search`]).
-    pub search_repetition: Mutex<HashMap<String, SearchHistory>>,
     /// One-shot keys for large-output hints (`ctx_shell` bytes, `ctx_read` full tokens).
     pub large_output_hints_shown: Mutex<HashSet<String>>,
 }
@@ -38,7 +29,6 @@ impl AutonomyState {
             session_initialized: AtomicBool::new(false),
             dedup_applied: AtomicBool::new(false),
             last_consolidation_unix: AtomicU64::new(0),
-            search_repetition: Mutex::new(HashMap::new()),
             large_output_hints_shown: Mutex::new(HashSet::new()),
         }
     }

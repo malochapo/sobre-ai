@@ -1,22 +1,11 @@
-//! Extractive research-compression modes for prose and transcripts.
-//!
-//! These are deterministic, heuristic distillations — no LLM in the loop — so
-//! they are cheap, reproducible, and safe to run inside a synchronous tool
-//! handler. They turn a cleaned article or transcript into the high-signal
-//! subset an agent actually needs:
-//!
-//! * [`facts_scored`] — sentences carrying factual signals (numbers, dates,
-//!   entities), each with a confidence score.
-//! * [`quotes_scored`] — the most central / query-relevant sentences, as
-//!   evidence, each with a confidence score.
-//! * [`transcript_summary`] — de-duplicated, filler-stripped spoken text.
+//! Deterministic prose distillation (no LLM in the loop): cheap, reproducible
+//! and safe inside a synchronous handler.
 
 use std::collections::HashSet;
 
 /// Line-structure-preserving prose squeeze for the proxy tool-result funnel.
 ///
-/// Unlike [`transcript_summary`] (which collapses everything into one paragraph),
-/// this keeps paragraph/heading shape and only:
+/// Keeps paragraph/heading shape and only:
 /// * collapses runs of blank lines to a single blank,
 /// * drops a line that is a near-duplicate of a recently kept line
 ///   (boilerplate / nav repeats common in scraped pages),

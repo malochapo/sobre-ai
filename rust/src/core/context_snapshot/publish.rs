@@ -154,6 +154,8 @@ mod tests {
 
     #[test]
     fn publish_then_import_roundtrips() {
+        // The timeline and signing key live under the global data dir.
+        let _iso = crate::core::data_dir::isolated_data_dir();
         let dir = tempfile::tempdir().unwrap();
         let out = dir.path().join("share.ctxsnapshot.json");
         let snap = signed_snapshot();
@@ -203,6 +205,8 @@ mod tests {
 
     #[test]
     fn publish_signs_an_unsigned_snapshot() {
+        // The timeline and signing key live under the global data dir.
+        let _iso = crate::core::data_dir::isolated_data_dir();
         let dir = tempfile::tempdir().unwrap();
         let out = dir.path().join("fresh.ctxsnapshot.json");
         let mut snap = ContextSnapshotV1::new("2026-06-28T00:00:00Z".into(), "9.9.9".into());
