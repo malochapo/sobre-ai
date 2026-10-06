@@ -46,12 +46,16 @@ the measured state of each.
 5. **A ceiling on size.** The Rust under `rust/src` stays below a fixed line
    budget, so growth has to displace something.
 
-Invariants 1 and 5 hold today. Invariant 2 does not yet — the config still
-carries far more keys than the rule allows, and reducing it is ongoing work.
+Invariants 1, 3, 4 and 5 hold today: 17 tools, one fixed surface, no network
+request you did not ask for, and about 174,000 lines of production Rust under a
+200,000 ceiling. Invariant 2 holds for the config file itself (14 keys), but a
+few per-project files and environment variables still change behaviour; removing
+them is ongoing work.
 
 ## Build
 
-Requires a recent stable Rust toolchain.
+The Rust toolchain is pinned in `rust/rust-toolchain.toml`; `rustup` installs
+it on the first build.
 
 ```bash
 cargo build --release --manifest-path rust/Cargo.toml
@@ -66,6 +70,25 @@ cargo build --release --manifest-path rust/Cargo.toml --features dense
 
 Everything under `dense` still runs on your machine — it downloads a model, not
 your code.
+
+## Use
+
+The binary is still called `lean-ctx`; renaming it is pending.
+
+```bash
+lean-ctx init            # every detected agent, plus the shell hook
+lean-ctx init claude     # one agent: claude, codex, copilot, cursor, gemini,
+                         # opencode, windsurf or zed
+lean-ctx doctor          # check the install
+lean-ctx uninstall       # remove everything init wrote
+```
+
+`init` registers the MCP server with the agent, installs its shell hooks where
+the host supports them, and installs the `sobre` skill for agents that load
+skills (Claude Code, Codex, Cursor, Copilot, OpenCode). It writes nothing into
+your own instruction files (`CLAUDE.md`, `AGENTS.md`, `.cursor/rules`, …): the
+agent learns how to use the tools from the MCP server instructions, and from the
+skill when it opens it. Native tools are never denied.
 
 ## License
 

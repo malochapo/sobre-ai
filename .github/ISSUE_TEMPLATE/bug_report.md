@@ -5,11 +5,11 @@ title: 'bug: '
 labels: bug
 ---
 
-**sobre version:** (run `sobre --version`)
+**sobre version:** (run `lean-ctx --version`)
 
 **OS:** (macOS / Linux / Windows)
 
-**AI tool:** (Cursor / Claude Code / Copilot / Crush / other)
+**AI tool:** (Claude Code / Codex / Copilot / Cursor / Gemini CLI / OpenCode / Windsurf / Zed)
 
 **What happened:**
 

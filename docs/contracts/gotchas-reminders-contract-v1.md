@@ -6,7 +6,7 @@
 
 ## Purpose
 
-Formalizes the Gotcha tracking system: structured provenance, category-specific decay, retrieval budgets, and time-bounded reminders.
+Formalizes the Gotcha tracking system: the gotcha schema, structured provenance, the store cap, and source-based confidence decay.
 
 ## Gotcha Schema
 
@@ -48,27 +48,42 @@ struct ProvenanceRef {
 
 ## GotchaPolicy
 
-Configurable via `[memory.gotcha]` in the config file (`MemoryPolicy`):
+`GotchaPolicy` (`rust/src/core/memory_policy.rs`) is part of `MemoryPolicy`.
+There is no config-file section for it: callers use `MemoryPolicy::default()`,
+so the values are fixed:
 
-```toml
-[memory.gotcha]
-max_gotchas_per_project = 100
-retrieval_budget_per_room = 10      # max gotchas returned per category
-default_decay_rate = 0.03
+| Field | Value |
+|---|---|
+| `max_gotchas_per_project` | 100 |
+| `retrieval_budget_per_room` | 10 |
+| `default_decay_rate` | 0.03 |
+| `category_decay_overrides` | empty |
 
-[memory.gotcha.category_decay_overrides]
-security = 0.005                    # security gotchas decay very slowly
-convention = 0.05                   # convention gotchas decay faster
-```
+Of these, only `max_gotchas_per_project` is read at runtime (by the doctor
+storage check). The store enforces its own constants in
+`rust/src/core/gotcha_tracker/model.rs`.
 
-## Expiration
+## Store limits and decay
 
-- `expires_at`: absolute time after which the gotcha is automatically archived
-- `decay_rate_override` per gotcha: overrides the category/default decay rate
+Fixed constants in `gotcha_tracker/model.rs` and `gotcha_tracker/mod.rs`:
 
-## Retrieval Budgets
+- **Cap**: at most 100 gotchas per project (`MAX_GOTCHAS`). When a new gotcha
+  pushes the store over the cap, gotchas are sorted by confidence and the
+  lowest-confidence ones are dropped.
+- **Decay** (`GotchaStore::apply_decay`, run when the store is loaded): for a
+  gotcha not seen for at least one day, confidence drops by
+  `source_rate * 1 / (1 + 0.1 * occurrences) * days_since_last_seen / 7`.
+  The source rate is 0.01 (promoted), 0.02 (agent-reported), 0.03
+  (cross-session correlated) or 0.05 (auto-detected).
+- **Archive threshold**: gotchas whose confidence falls below 0.15 are
+  removed from the store.
+- **Pending errors**: at most 10, each expiring after 15 minutes.
 
-`retrieval_budget_per_room` limits how many gotchas are returned per category during recall. Prevents one noisy category from dominating context.
+## Expiration fields
+
+`expires_at` and `decay_rate_override` are persisted on every gotcha
+(`#[serde(default)]`, `None` on creation). Decay and loading do not read them
+yet: decay always uses the source rate above.
 
 ## Tool Actions
 

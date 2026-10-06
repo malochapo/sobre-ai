@@ -1,15 +1,18 @@
 # sobre — Rust engine
 
-The single crate behind `sobre`: the CLI, the MCP server, the shell hook and the
-local proxy. See [../README.md](../README.md) for what the project is, and
+The single crate behind `sobre`: the CLI, the MCP server, the agent hooks and
+the local proxy. The binary is still called `lean-ctx`. See
+[../README.md](../README.md) for what the project is, and
 [../INVARIANTS.md](../INVARIANTS.md) for the rules it holds itself to.
 
 > **Not released.** Interfaces change without notice.
 
 ## Build
 
+The toolchain is pinned in `rust-toolchain.toml`.
+
 ```bash
-cargo build --release          # local-only default
+cargo build --release                    # local-only default
 cargo build --release --features dense   # + local embeddings and GPU providers
 ```
 
@@ -19,7 +22,7 @@ Feature notes:
   a plain build needs no model download and no runtime preflight. Everything it
   adds still runs on your machine.
 - `tree-sitter` (on by default) carries the AST parsers.
-- `http-server` (on by default) carries the local HTTP surface.
+- `dev-tools` enables the generators under `src/bin/`.
 - Never audit warnings under `--no-default-features`: `dead_code = "deny"`
   produces false positives when features are off.
 
@@ -27,9 +30,9 @@ Feature notes:
 
 ```bash
 cargo check --all-targets                   # what you run while editing
-cargo check --all-targets --features dense
-cargo check --all-targets --all-features    # what CI checks
+cargo check --all-targets --features dense  # CI checks both builds
 cargo test                                  # the whole suite, not --lib
+../scripts/preflight.sh full                # everything CI runs, locally
 ```
 
 `--all-targets` is not optional: plain `cargo check` skips `#[cfg(test)]` blocks
@@ -45,29 +48,31 @@ src/
 ├─ cli/               subcommands, dispatch, completion, help
 ├─ core/              the engine: cache, compression, graph, session, config
 ├─ server/            MCP server: registry, dispatch, tool visibility
-├─ tools/             the MCP tools themselves
+├─ tools/             the 17 MCP tools
+├─ instructions.rs    the MCP server instructions — the one rules channel
 ├─ shell/             shell-output compression patterns
 ├─ proxy/             local provider proxy
 ├─ hooks/             per-agent installers (Claude Code, Cursor, ...)
-├─ dashboard/         local HTTP dashboard
-└─ bin/               dev-only generators, behind `required-features`
+├─ hook_handlers/     the `lean-ctx hook ...` commands agents call
+├─ setup/             init, per-agent MCP config and the skill installer
+└─ bin/               dev-only generators, behind `dev-tools`
 
+skill/SKILL.md        the `sobre` skill, embedded in the binary
 tests/                integration suites
-data/                 bundled generated snapshots (see gen_registry)
+data/                 data compiled into the binary (deprecation register,
+                      model registry)
 ```
 
 ## Generated files
 
-`data/grammar_registry.json` is a generated snapshot, not a hand-maintained
-document. Edit it through the generator, or CI's drift check fails:
+`../docs/reference/generated/` (the tool and config-key references) is written
+by a generator, not by hand. Edit the source, then regenerate, or CI's drift
+check fails:
 
 ```bash
-cargo run --example gen_registry --features dev-tools           # rewrite
-cargo run --example gen_registry --features dev-tools -- --check # verify
+cargo run --example gen_docs --features dev-tools           # rewrite
+cargo run --example gen_docs --features dev-tools -- --check # verify
 ```
-
-A library test asserts the same property, so `cargo test` catches drift without
-waiting for CI.
 
 ## License
 

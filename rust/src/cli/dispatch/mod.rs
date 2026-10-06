@@ -559,8 +559,8 @@ mod tests {
             "must point to full reference"
         );
         assert!(
-            h.contains("lean-ctx tools"),
-            "must surface the tools profile command"
+            h.contains("lean-ctx tools health"),
+            "must surface the tool-budget report"
         );
         // Concise means concise — keep it well under the full reference.
         assert!(

@@ -35,5 +35,5 @@ pub(crate) fn resolve_path_sync(
     )
 }
 
-// #168 removed: tool descriptions no longer steer toward ctx_* over native.
-// Replacement guidance lives in AGENTS.md / CLAUDE.md rules files.
+// Tool descriptions do not steer toward ctx_* over native tools; that guidance
+// lives in one place, the MCP server instructions (`crate::instructions`).

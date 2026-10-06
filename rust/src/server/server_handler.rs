@@ -252,7 +252,7 @@ impl ServerHandler for LeanCtxServer {
             // A panic here must NOT leave the agent tool-less — that is
             // indistinguishable from "MCP totally failed" and gives the user no
             // recovery path. Fall back to the static lazy-core defs (a pure,
-            // panic-free function) so ctx_read/ctx_shell/ctx_call stay available
+            // panic-free function) so ctx_read/ctx_shell stay available
             // even if the dynamic/registry path blew up.
             tracing::error!(
                 "list_tools panicked; serving the static lazy-core tool set as a fallback"

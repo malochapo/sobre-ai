@@ -25,7 +25,7 @@ Facts are created as `ProjectOnly`.
 
 ## BoundaryPolicy
 
-The `[boundary_policy]` config section has one key:
+`BoundaryPolicy` (`rust/src/core/memory_boundary.rs`) has one field:
 
 ```rust
 struct BoundaryPolicy {
@@ -33,8 +33,11 @@ struct BoundaryPolicy {
 }
 ```
 
-When `universal_gotchas_enabled` is false, only project-scoped gotchas are
-loaded (`universal-gotchas.json` is skipped).
+There is no config section for it. `load_universal_gotchas`
+(`rust/src/core/gotcha_tracker/persist.rs`) uses `BoundaryPolicy::default()`,
+so universal gotchas (`universal-gotchas.json` in the data directory) are
+always loaded. The `false` branch, which skips that file and uses only
+project-scoped gotchas, is not reachable from configuration.
 
 ## Enforcement points
 
@@ -43,7 +46,7 @@ loaded (`universal-gotchas.json` is skipped).
 | `ctx_knowledge action=search` | Scoped to the current project hash; other projects' knowledge is skipped |
 | `ctx_knowledge action=recall` | Loads from the current project only |
 | Session `load_latest` | Scoped to the project root; no global fallback |
-| Universal gotchas | Shared by design, gated by `universal_gotchas_enabled` |
+| Universal gotchas | Shared across projects by design; always loaded (`BoundaryPolicy::default()`) |
 
 ## Migration
 

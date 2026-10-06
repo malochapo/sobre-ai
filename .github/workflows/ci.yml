@@ -19,7 +19,6 @@ env:
   CARGO_TERM_COLOR: always
   CARGO_PROFILE_DEV_DEBUG: line-tables-only
   CARGO_PROFILE_TEST_DEBUG: line-tables-only
-  LEAN_CTX_EMBEDDINGS_AUTO_DOWNLOAD: "0"
 
 jobs:
   lint:

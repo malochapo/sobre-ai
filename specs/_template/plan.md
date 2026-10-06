@@ -1,14 +1,14 @@
 # Plan: <Feature Name>  (refs #<iid>)
 
 > Implementation plan for `./spec.md`. **Review before tasks.** Draft in your
-> agent's plan mode (e.g. Cursor Plan Mode), then distill the approved approach here.
+> agent's plan mode, then distill the approved approach here.
 
 **Goal:** <from spec>
 **Architecture:** <key approach in 2–4 sentences>
 **Tech Stack:** <languages / tools / crates>
 
 ## Global Constraints
-- <invariants: files NOT to touch, security (PathJail/allowlist), determinism>
+- <invariants: files NOT to touch, security (path jail, shell deny list), determinism>
 - No mock data, no placeholders, no stubs.
 - Output determinism: no timestamps/counters in tool output bodies (#498).
 

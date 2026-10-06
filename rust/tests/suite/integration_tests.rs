@@ -38,7 +38,7 @@ fn binary_prints_help() {
         .expect("failed to run lean-ctx");
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(
-        stdout.contains("Context Runtime"),
+        stdout.contains("local context tools for coding agents"),
         "help should contain tagline"
     );
     assert!(stdout.contains("lean-ctx"), "help should mention lean-ctx");

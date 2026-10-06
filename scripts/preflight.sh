@@ -7,7 +7,6 @@
 set -euo pipefail
 
 cd "$(dirname "$0")/../rust"
-export LEAN_CTX_EMBEDDINGS_AUTO_DOWNLOAD=0
 
 step() { printf '\n▶ %s\n' "$*"; "$@"; }
 
