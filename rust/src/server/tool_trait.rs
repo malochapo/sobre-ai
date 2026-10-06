@@ -109,8 +109,7 @@ pub trait McpTool: Send + Sync {
     /// Tool name as registered in the MCP protocol (e.g. "ctx_tree").
     fn name(&self) -> &'static str;
 
-    /// MCP tool definition including JSON schema. This replaces the
-    /// corresponding entry in `granular_tool_defs()`.
+    /// MCP tool definition including JSON schema.
     fn tool_def(&self) -> Tool;
 
     /// Execute the tool. Args are the raw JSON-RPC arguments.

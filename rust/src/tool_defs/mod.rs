@@ -3,9 +3,6 @@ use std::sync::Arc;
 use rmcp::model::{Tool, ToolAnnotations};
 use serde_json::{Map, Value};
 
-mod granular;
-pub use granular::granular_tool_defs;
-
 pub fn tool_def(name: &'static str, description: &'static str, schema_value: Value) -> Tool {
     let mut schema: Map<String, Value> = match schema_value {
         Value::Object(map) => map,

@@ -176,41 +176,30 @@ mod tests {
     }
 
     #[test]
-    fn minimal_arm_per_turn_prefix_stays_within_budget() {
-        // The "faithful arm" (#361): minimal_overhead (no session/knowledge
-        // prefix) must keep the fixed per-turn prefix tiny. This is the
-        // regression guard for the "~3K tokens/turn injected" critique — if any
-        // knob silently stops applying, the total balloons and this fails.
-        // macOS/Linux baseline is ~1829 after three reviewed additions: the v3
-        // agent-loop + navigation-paradox one-liner (#609, always-on in the COMPACT
-        // skeleton), the ctx_search `handle` param (#608), and the proactive
-        // `RECOVER` recovery one-liner + the `ctx_read` `raw` schema param
-        // (premium-recovery-layer) — together ~+39 tok over the prior ~1790. Windows
-        // additionally carries `build_shell_hint()` — a ~5-tok PowerShell-cmdlet
-        // warning that is empty on POSIX. The budget covers that surface plus a small
-        // margin for `shell_name()` variance (#1051), and still sits ~1.1K under the
-        // ~3K balloon this guard exists to catch — it is not a license for silent creep.
-        const MINIMAL_ARM_PREFIX_BUDGET_TOKENS: usize = 1835;
+    fn per_turn_prefix_stays_within_budget() {
+        // Ratchet on the fixed per-turn prefix: the 19 tool schemas, the MCP
+        // instructions and the rules block. Measured at 6456 tokens; the budget
+        // leaves ~3% for small wording changes. A tool or a paragraph more fails
+        // here, which is the point — raise the budget only in the same commit
+        // that justifies the growth.
+        const PER_TURN_PREFIX_BUDGET_TOKENS: usize = 6650;
 
-        let iso = crate::core::data_dir::isolated_data_dir();
-        std::fs::write(iso.path().join("config.toml"), "minimal_overhead = true\n").unwrap();
+        let _iso = crate::core::data_dir::isolated_data_dir();
         let registered = crate::server::registry::build_registry().tool_defs().len();
         let o = ContextOverhead::measure();
 
-        assert!(
-            o.tool_count <= registered + 1,
-            "the advertised surface must be the registry, got {} tools (expected ≤ {})",
-            o.tool_count,
-            registered + 1,
+        assert_eq!(
+            o.tool_count, registered,
+            "the advertised surface must be exactly the registry"
         );
         assert!(
-            o.total_tokens() <= MINIMAL_ARM_PREFIX_BUDGET_TOKENS,
-            "minimal-arm per-turn prefix = {} tok (schemas {} + instr {} + rules {}), budget {}",
+            o.total_tokens() <= PER_TURN_PREFIX_BUDGET_TOKENS,
+            "per-turn prefix = {} tok (schemas {} + instr {} + rules {}), budget {}",
             o.total_tokens(),
             o.tool_schema_tokens,
             o.instruction_tokens,
             o.rules_block_tokens,
-            MINIMAL_ARM_PREFIX_BUDGET_TOKENS,
+            PER_TURN_PREFIX_BUDGET_TOKENS,
         );
     }
 

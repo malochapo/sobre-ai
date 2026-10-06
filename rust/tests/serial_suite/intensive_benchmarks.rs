@@ -236,108 +236,6 @@ fn bench_total_input_overhead() {
 }
 
 #[test]
-fn bench_lazy_default_vs_full_overhead() {
-    // This benchmark must be hermetic: instructions can inject session/memory blocks
-    // unless minimal overhead is enforced and the data dir is isolated.
-    let _lock = lean_ctx::core::data_dir::test_env_lock();
-    let tmp = tempfile::tempdir().expect("tempdir");
-
-    let prev_data_dir = std::env::var("LEAN_CTX_DATA_DIR").ok();
-
-    // SAFETY: serialized by `test_env_lock()`.
-    unsafe { std::env::set_var("LEAN_CTX_DATA_DIR", tmp.path()) };
-    std::fs::write(tmp.path().join("config.toml"), "minimal_overhead = true\n")
-        .expect("config.toml");
-
-    let lazy_tools = lean_ctx::server::registry::build_registry().tool_defs();
-    let full_tools = lean_ctx::tool_defs::granular_tool_defs();
-
-    let tool_tokens = |tools: &[rmcp::model::Tool]| -> (usize, usize) {
-        let desc: usize = tools
-            .iter()
-            .map(|t| {
-                t.description
-                    .as_ref()
-                    .map_or(0, |d| count_tokens(d.as_ref()))
-            })
-            .sum();
-        let schema: usize = tools
-            .iter()
-            .map(|t| count_tokens(&serde_json::to_string(&t.input_schema).unwrap_or_default()))
-            .sum();
-        (desc, schema)
-    };
-
-    let (lazy_desc_tokens, lazy_schema_tokens) = tool_tokens(&lazy_tools);
-    let lazy_total = lazy_desc_tokens + lazy_schema_tokens;
-
-    let (full_desc_tokens, full_schema_tokens) = tool_tokens(&full_tools);
-    let full_total = full_desc_tokens + full_schema_tokens;
-    let _ = (full_desc_tokens, full_schema_tokens);
-
-    let instructions = lean_ctx::server::build_instructions_for_test(CrpMode::Off);
-    let instr_tokens = count_tokens(&instructions);
-
-    let lazy_user_overhead = instr_tokens + lazy_total;
-    let full_user_overhead = instr_tokens + full_total;
-    let reduction_pct = (full_total - lazy_total) as f64 / full_total as f64 * 100.0;
-
-    eprintln!("\n{}", "=".repeat(70));
-    eprintln!("  LAZY (DEFAULT) vs FULL TOOL OVERHEAD");
-    eprintln!("{}", "=".repeat(70));
-    eprintln!(
-        "  Lazy tools:   {:>3} tools, {:>5} tokens (desc+schema)",
-        lazy_tools.len(),
-        lazy_total
-    );
-    eprintln!(
-        "  Full tools:   {:>3} tools, {:>5} tokens (desc+schema)",
-        full_tools.len(),
-        full_total
-    );
-    eprintln!("  Instructions:          {instr_tokens:>5} tokens");
-    eprintln!("  {}", "-".repeat(50));
-    eprintln!("  User overhead (LAZY DEFAULT):  {lazy_user_overhead:>5} tokens");
-    eprintln!("  User overhead (FULL opt-in):   {full_user_overhead:>5} tokens");
-    eprintln!("  Tool token reduction:          {reduction_pct:>5.1}%");
-    eprintln!("{}", "=".repeat(70));
-
-    // Lazy mode exposes exactly the curated core set. Bound it to the canonical
-    // CORE_TOOL_NAMES length so it tracks the SSOT instead of a magic number
-    // (#141: the prior `<=12` reflected a granular list that had drifted to omit
-    // one core tool).
-    assert!(
-        lazy_tools.len()
-            <= lean_ctx::server::registry::build_registry()
-                .tool_defs()
-                .len(),
-        "the advertised surface should be the registry ({}), got {}",
-        lean_ctx::server::registry::build_registry()
-            .tool_defs()
-            .len(),
-        lazy_tools.len()
-    );
-    // Real default overhead: core tools carry their full registry schemas
-    // (uncompressed) plus descriptions, matching what the live server sends
-    // (#141).
-    assert!(
-        lazy_user_overhead < 3800,
-        "Lazy default overhead should be <3800 tokens, got {lazy_user_overhead}"
-    );
-    assert!(
-        reduction_pct > 60.0,
-        "Tool token reduction should be >60%, got {reduction_pct:.1}%"
-    );
-
-    match prev_data_dir {
-        // SAFETY: serialized by `test_env_lock()`.
-        Some(v) => unsafe { std::env::set_var("LEAN_CTX_DATA_DIR", v) },
-        // SAFETY: serialized by `test_env_lock()`.
-        None => unsafe { std::env::remove_var("LEAN_CTX_DATA_DIR") },
-    }
-}
-
-#[test]
 fn bench_decoder_block_token_count() {
     let block = instruction_decoder_block(false);
     let tokens = count_tokens(&block);
@@ -1378,11 +1276,10 @@ fn generate_git_log_stat(n: usize) -> String {
 // v3.4.1 Optimization benchmarks: Token overhead + Latency
 // ---------------------------------------------------------------------------
 
-/// Points `LEAN_CTX_DATA_DIR` (which also holds `config.toml`) at a fresh temp
-/// dir for the guard's lifetime and restores the previous value on drop.
-/// Callers hold `test_env_lock()`.
+/// Points `LEAN_CTX_DATA_DIR` at a fresh temp dir for the guard's lifetime and
+/// restores the previous value on drop. Callers hold `test_env_lock()`.
 struct TempConfig {
-    dir: tempfile::TempDir,
+    _dir: tempfile::TempDir,
     prev_data_dir: Option<String>,
 }
 
@@ -1392,11 +1289,10 @@ impl TempConfig {
         let prev_data_dir = std::env::var("LEAN_CTX_DATA_DIR").ok();
         // SAFETY: serialized by `test_env_lock()`.
         unsafe { std::env::set_var("LEAN_CTX_DATA_DIR", dir.path()) };
-        Self { dir, prev_data_dir }
-    }
-
-    fn write(&self, toml: &str) {
-        std::fs::write(self.dir.path().join("config.toml"), toml).expect("config.toml");
+        Self {
+            _dir: dir,
+            prev_data_dir,
+        }
     }
 }
 
@@ -1414,7 +1310,7 @@ impl Drop for TempConfig {
 #[test]
 fn bench_minimal_overhead_suppresses_all_meta_strings() {
     // The data dir is process-global; serialize against the other instruction
-    // benchmarks (cf. bench_lazy_default_vs_full_overhead).
+    // benchmarks.
     let _lock = lean_ctx::core::data_dir::test_env_lock();
     let _config = TempConfig::new();
 
@@ -1604,73 +1500,5 @@ fn bench_session_save_semantics() {
     assert!(
         !session.should_save(),
         "should_save must be false after save"
-    );
-}
-
-#[test]
-fn bench_full_per_call_overhead_budget() {
-    // Serialize the minimal_overhead toggle below against sibling env-mutating tests.
-    let _lock = lean_ctx::core::data_dir::test_env_lock();
-    let config = TempConfig::new();
-    let lazy_tools = lean_ctx::server::registry::build_registry().tool_defs();
-    let full_tools = lean_ctx::tool_defs::granular_tool_defs();
-
-    let instructions_minimal = {
-        config.write("minimal_overhead = true\n");
-        lean_ctx::server::build_instructions_for_test(CrpMode::Tdd)
-    };
-    config.write("minimal_overhead = false\n");
-    let instructions_full = lean_ctx::server::build_instructions_for_test(CrpMode::Tdd);
-
-    let lazy_tool_tokens: usize = lazy_tools
-        .iter()
-        .map(|t| {
-            let desc = t.description.as_ref().map_or(0, |d| d.as_ref().len());
-            let schema = serde_json::to_string(&t.input_schema)
-                .unwrap_or_default()
-                .len();
-            (desc + schema) / 4
-        })
-        .sum();
-
-    let full_tool_tokens: usize = full_tools
-        .iter()
-        .map(|t| {
-            let desc = t.description.as_ref().map_or(0, |d| d.as_ref().len());
-            let schema = serde_json::to_string(&t.input_schema)
-                .unwrap_or_default()
-                .len();
-            (desc + schema) / 4
-        })
-        .sum();
-
-    let minimal_instr_tokens = count_tokens(&instructions_minimal);
-    let full_instr_tokens = count_tokens(&instructions_full);
-
-    let best_case = minimal_instr_tokens + lazy_tool_tokens;
-    let worst_case = full_instr_tokens + full_tool_tokens;
-
-    eprintln!("\n{}", "=".repeat(70));
-    eprintln!("  TOTAL PER-SESSION OVERHEAD BUDGET");
-    eprintln!("{}", "=".repeat(70));
-    eprintln!(
-        "  Best case  (lazy+minimal):  {best_case:>5} tok  ({minimal_instr_tokens} instr + {lazy_tool_tokens} tools)"
-    );
-    eprintln!(
-        "  Worst case (full+verbose):  {worst_case:>5} tok  ({full_instr_tokens} instr + {full_tool_tokens} tools)"
-    );
-    let reduction = (worst_case - best_case) as f64 / worst_case as f64 * 100.0;
-    eprintln!("  Total reduction potential:   {reduction:>5.1}%");
-    eprintln!("{}", "=".repeat(70));
-
-    // Best case = lazy core tools (full registry schemas) + minimal
-    // instructions, matching the live server's default surface (#141 SSOT).
-    assert!(
-        best_case < 4200,
-        "Best-case overhead should be <4200 tokens, got {best_case}"
-    );
-    assert!(
-        reduction > 50.0,
-        "Reduction potential should be >50%, got {reduction:.1}%"
     );
 }
