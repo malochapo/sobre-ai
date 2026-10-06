@@ -12,7 +12,6 @@ impl LeanCtxServer {
     ) -> Result<CallToolResult, ErrorData> {
         self.check_idle_expiry().await;
         self.resolve_roots_once().await;
-        elicitation::increment_call();
 
         let tool_name = request.name.as_ref().to_string();
         let tool_args = request.arguments;
