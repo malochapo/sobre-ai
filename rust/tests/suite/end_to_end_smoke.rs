@@ -302,7 +302,14 @@ mod shell_compression {
 
     #[test]
     fn shell_compresses_ls_output() {
-        let out = lean_ctx_bin().args(["-c", "ls -la"]).output().unwrap();
-        assert!(out.status.success());
+        // `ls -la` is not a PowerShell or cmd command; `dir` lists a directory
+        // under all three shells Windows may resolve to (PowerShell, cmd, Git Bash).
+        let listing = if cfg!(windows) { "dir" } else { "ls -la" };
+        let out = lean_ctx_bin().args(["-c", listing]).output().unwrap();
+        assert!(
+            out.status.success(),
+            "{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
     }
 }
