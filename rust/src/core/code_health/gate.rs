@@ -7,7 +7,6 @@
 //! config, and its notice text is deterministic (#498-safe).
 
 use super::{GateMode, cognitive_delta, format_gate_notice, worst_regression};
-use crate::core::config::Config;
 
 /// Decision of the edit-gate for one edit.
 pub enum GateOutcome {
@@ -20,13 +19,12 @@ pub enum GateOutcome {
 /// Evaluate the gate for an edit from `old`→`new` source in a file with `ext`,
 /// using the active `[code_health]` config (threshold + mode).
 pub fn evaluate(old: &str, new: &str, ext: &str) -> GateOutcome {
-    let cfg = Config::load();
     evaluate_with(
         old,
         new,
         ext,
-        GateMode::parse(&cfg.code_health.gate),
-        cfg.code_health.cognitive_threshold,
+        GateMode::Warn,
+        crate::core::code_health::COGNITIVE_THRESHOLD,
     )
 }
 
@@ -48,9 +46,7 @@ pub fn evaluate_with(
     let notice = format_gate_notice(worst, threshold);
     // Block only a genuine clean→over-threshold regression; otherwise advise.
     if matches!(mode, GateMode::Block) && worst.crosses_threshold(threshold) {
-        GateOutcome::Block(format!(
-            "{notice}\n(set [code_health] gate=\"warn\" to allow)"
-        ))
+        GateOutcome::Block(notice.clone())
     } else {
         GateOutcome::Allow(Some(notice))
     }

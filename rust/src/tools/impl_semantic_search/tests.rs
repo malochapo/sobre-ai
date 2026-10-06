@@ -129,11 +129,9 @@ mod cold_start_guard_tests {
     }
 
     #[test]
-    fn default_threshold_positive_when_env_unset() {
-        // With the env override unset the default must be a real, positive guard.
-        if std::env::var_os("LEAN_CTX_HYBRID_INLINE_EMBED_MAX").is_none() {
-            assert!(inline_embed_max_chunks() >= 1);
-        }
+    fn default_threshold_is_positive() {
+        // The inline-embed budget must be a real, positive guard.
+        assert!(inline_embed_max_chunks() >= 1);
     }
 
     #[test]
@@ -205,15 +203,6 @@ mod dense_config_tests {
     #[test]
     fn dense_enabled_defaults_true() {
         assert!(HybridConfig::default().dense_enabled);
-    }
-
-    /// #686: `[search].dense_enabled = false` parses and leaves siblings at default.
-    #[test]
-    fn dense_enabled_deserializes_false() {
-        let cfg: HybridConfig = toml::from_str("dense_enabled = false").unwrap();
-        assert!(!cfg.dense_enabled);
-        assert_eq!(cfg.bm25_candidates, 75);
-        assert_eq!(cfg.splade_weight, 0.5);
     }
 }
 

@@ -167,53 +167,6 @@ fn test_index_looks_fresh_when_all_files_exist() {
 }
 
 #[test]
-fn test_reverse_deps() {
-    let mut idx = ProjectIndex::new("/test");
-    idx.edges.push(IndexEdge {
-        from: "a.rs".to_string(),
-        to: "b.rs".to_string(),
-        kind: "import".to_string(),
-        weight: 1.0,
-    });
-    idx.edges.push(IndexEdge {
-        from: "c.rs".to_string(),
-        to: "b.rs".to_string(),
-        kind: "import".to_string(),
-        weight: 1.0,
-    });
-
-    let deps = idx.get_reverse_deps("b.rs", 1);
-    assert_eq!(deps.len(), 2);
-    assert!(deps.contains(&"a.rs".to_string()));
-    assert!(deps.contains(&"c.rs".to_string()));
-}
-
-#[test]
-fn get_forward_deps_follows_import_edges_outward() {
-    let mut idx = ProjectIndex::new("/tmp/fwd");
-    idx.edges.push(IndexEdge {
-        from: "a.rs".into(),
-        to: "b.rs".into(),
-        kind: "import".into(),
-        weight: 1.0,
-    });
-    idx.edges.push(IndexEdge {
-        from: "b.rs".into(),
-        to: "c.rs".into(),
-        kind: "import".into(),
-        weight: 1.0,
-    });
-    let deps = idx.get_forward_deps("a.rs", 2);
-    assert!(deps.contains(&"b.rs".to_string()), "got: {deps:?}");
-    assert!(deps.contains(&"c.rs".to_string()), "got: {deps:?}");
-    // reverse direction must NOT appear
-    assert!(
-        idx.get_forward_deps("c.rs", 2).is_empty(),
-        "leaf has no forward deps"
-    );
-}
-
-#[test]
 fn test_find_symbol_range_kotlin_function() {
     let content = r#"
 package com.example
@@ -237,27 +190,6 @@ class UserService {
     let (start, end) = find_symbol_range(content, &sig);
     assert_eq!(start, 5);
     assert!(end >= start);
-}
-
-#[test]
-fn test_signature_spans_override_fallback_range() {
-    let sig = signatures::Signature {
-        kind: "method",
-        name: "release".to_string(),
-        params: "id:String".to_string(),
-        return_type: "Boolean".to_string(),
-        is_async: true,
-        is_exported: true,
-        indent: 2,
-        start_line: Some(42),
-        end_line: Some(43),
-    };
-
-    let (start, end) = sig
-        .start_line
-        .zip(sig.end_line)
-        .unwrap_or_else(|| find_symbol_range("ignored", &sig));
-    assert_eq!((start, end), (42, 43));
 }
 
 #[test]
@@ -324,19 +256,6 @@ fn safe_scan_root_rejects_broad_dir() {
 }
 
 #[test]
-fn no_index_env_skips_scan() {
-    let _env = crate::core::data_dir::test_env_lock();
-    let tmp = tempdir().unwrap();
-    std::fs::write(tmp.path().join("Cargo.toml"), "").unwrap();
-    std::fs::write(tmp.path().join("main.rs"), "fn main() {}").unwrap();
-
-    crate::test_env::set_var("LEAN_CTX_NO_INDEX", "1");
-    let idx = scan(&tmp.path().to_string_lossy());
-    crate::test_env::remove_var("LEAN_CTX_NO_INDEX");
-    assert!(idx.files.is_empty(), "LEAN_CTX_NO_INDEX should skip scan");
-}
-
-#[test]
 fn stale_index_detected_by_contamination() {
     let root_s = "/home/testuser/myproject";
     let mut idx = ProjectIndex::new(root_s);
@@ -395,18 +314,15 @@ fn content_aware_staleness_detects_edits_and_additions() {
         "a just-built index must be fresh"
     );
 
-    // mtime resolution can be coarse; ensure the next writes are strictly newer.
-    std::thread::sleep(std::time::Duration::from_millis(1100));
-
     // Edit detection.
-    std::fs::write(td.path().join("a.rs"), "fn a() { let _x = 1; }\n").unwrap();
+    crate::test_env::write_newer(td.path().join("a.rs"), "fn a() { let _x = 1; }\n");
     assert!(
         index_looks_stale(&idx, &root_s),
         "an edited source file must mark the index stale"
     );
 
     // Addition detection.
-    std::fs::write(td.path().join("b.rs"), "fn b() {}\n").unwrap();
+    crate::test_env::write_newer(td.path().join("b.rs"), "fn b() {}\n");
     assert!(
         index_looks_stale(&idx, &root_s),
         "a new source file must mark the index stale"
@@ -434,11 +350,8 @@ fn touch_without_content_change_keeps_index_fresh() {
         "a just-built index must be fresh"
     );
 
-    // mtime resolution can be coarse; ensure the rewrite is strictly newer.
-    std::thread::sleep(std::time::Duration::from_millis(1100));
-
     // Rewrite identical bytes: mtime advances but the content hash is unchanged.
-    std::fs::write(td.path().join("a.rs"), "fn a() {}\n").unwrap();
+    crate::test_env::write_newer(td.path().join("a.rs"), "fn a() {}\n");
     assert!(
         !index_looks_stale(&idx, &root_s),
         "a content-identical rewrite must NOT mark the index stale"
@@ -975,24 +888,6 @@ fn scan_respects_gitignore_without_git_dir() {
         !idx.files.keys().any(|p| p.contains("bundle.js")),
         "gitignored dir must be skipped without .git; files: {:?}",
         idx.files.keys().collect::<Vec<_>>()
-    );
-}
-
-#[test]
-fn safe_scan_root_rejects_broad_dir_without_repos() {
-    let tmp = tempdir().unwrap();
-    let broad = tmp.path().join("broad");
-    std::fs::create_dir_all(&broad).unwrap();
-
-    // Create >50 subdirs but no project markers
-    for i in 0..55 {
-        std::fs::create_dir(broad.join(format!("dir-{i}"))).unwrap();
-    }
-
-    let broad_str = broad.to_string_lossy().to_string();
-    assert!(
-        !is_safe_scan_root(&broad_str),
-        "Broad dir without project markers should be rejected"
     );
 }
 

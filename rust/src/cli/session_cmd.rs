@@ -66,7 +66,7 @@ pub fn cmd_session_action(args: &[String]) {
             println!("{out}");
         }
         None => {
-            cmd_session_legacy();
+            cmd_session_adoption();
         }
         Some(other) => {
             eprintln!("Unknown session action: {other}");
@@ -125,7 +125,7 @@ Examples:
     );
 }
 
-fn cmd_session_legacy() {
+fn cmd_session_adoption() {
     let history = load_shell_history();
     let gain = stats::load_stats();
 
@@ -241,14 +241,7 @@ pub fn cmd_sessions(args: &[String]) {
         "cleanup" => {
             let days = args.get(1).and_then(|s| s.parse::<i64>().ok()).unwrap_or(7);
             let removed = SessionState::cleanup_old_sessions(days);
-            let (wf_removed, wf_freed) = crate::core::workflow::cleanup_expired();
             println!("Cleaned up {removed} session(s) older than {days} days.");
-            if wf_removed > 0 {
-                println!(
-                    "Cleaned up {wf_removed} expired workflow file(s) ({:.1} KB freed).",
-                    wf_freed as f64 / 1024.0
-                );
-            }
         }
         "delete" | "rm" => {
             let Some(id) = args.get(1) else {

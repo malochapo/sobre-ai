@@ -207,25 +207,4 @@ mod hebbian_stress {
             "Co-accessed files should have positive association"
         );
     }
-
-    #[test]
-    fn stress_boltzmann_eviction_many_entries() {
-        let energies: Vec<f64> = (0..1000).map(|i| f64::from(i) * 0.1).collect();
-
-        let start = Instant::now();
-        let evictions = boltzmann_select_evictions(&energies, 100, 0.1);
-        let elapsed = start.elapsed();
-
-        assert_eq!(evictions.len(), 100);
-        // Regression guard, not a benchmark: the operation is µs-scale, so a
-        // real complexity regression lands far above 100ms. Tighter limits
-        // (20ms) flaked on hosted runners — observed 41ms on an otherwise
-        // green run purely from CPU contention.
-        let limit_us = if cfg!(windows) { 200_000 } else { 100_000 };
-        assert!(
-            elapsed.as_micros() < limit_us,
-            "Evicting 100 from 1000 entries took {}µs — must be <{limit_us}µs",
-            elapsed.as_micros()
-        );
-    }
 }

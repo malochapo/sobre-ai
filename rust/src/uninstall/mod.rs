@@ -270,10 +270,9 @@ pub(super) fn remove_marked_block(content: &str, start: &str, end: &str) -> Stri
 /// "full" uninstall left >150 MB of data + cache behind. We now resolve through the
 /// exact same [`core::paths`](crate::core::paths) functions the proxy uses,
 /// so every XDG category (config/data/state/cache, honoring `LEAN_CTX_*_DIR` and
-/// `XDG_*` overrides) is covered, plus the legacy single-dir and macOS
-/// Application Support locations for older installs.
+/// `XDG_*` overrides) is covered.
 fn data_dirs_to_remove(home: &Path) -> Vec<PathBuf> {
-    let mut dirs = vec![home.join(".lean-ctx"), home.join(".config/lean-ctx")];
+    let mut dirs = vec![home.join(".config/lean-ctx")];
 
     let push = |dirs: &mut Vec<PathBuf>, p: PathBuf| {
         if !dirs.contains(&p) {
@@ -292,14 +291,6 @@ fn data_dirs_to_remove(home: &Path) -> Vec<PathBuf> {
     .flatten()
     {
         push(&mut dirs, resolved);
-    }
-
-    // Older installs (and Windows %LOCALAPPDATA%) may have used the platform dir.
-    for platform_dir in [dirs::data_local_dir(), dirs::data_dir()]
-        .into_iter()
-        .flatten()
-    {
-        push(&mut dirs, platform_dir.join("lean-ctx"));
     }
 
     dirs
@@ -381,50 +372,21 @@ fn scan_dirs(home: &Path) -> Vec<PathBuf> {
         home.join(".cursor"),
         home.join(".claude"),
         crate::core::editor_registry::claude_state_dir(home),
-        home.join(".codebuddy"),
-        crate::core::editor_registry::codebuddy_state_dir(home),
         crate::core::editor_registry::zed_config_dir(home),
         home.join(".gemini"),
-        home.join(".gemini/antigravity"),
-        home.join(".gemini/antigravity-cli"),
         crate::core::home::resolve_codex_dir().unwrap_or_else(|| home.join(".codex")),
         home.join(".codeium"),
         home.join(".codeium/windsurf"),
         home.join(".config/opencode"),
-        home.join(".config/amp"),
-        home.join(".config/crush"),
         home.join(".config/zed"),
-        home.join(".qwen"),
-        home.join(".trae"),
-        home.join(".aws/amazonq"),
-        home.join(".kiro"),
-        home.join(".kiro/settings"),
-        home.join(".ampcoder"),
-        home.join(".pi"),
-        home.join(".pi/agent"),
-        home.join(".hermes"),
-        home.join(".grok"),
-        home.join(".verdent"),
-        home.join(".cline"),
-        home.join(".roo"),
-        home.join(".continue"),
-        home.join(".jb-rules"),
-        home.join(".openclaw"),
-        home.join(".augment"),
-        home.join(".qoder"),
-        home.join(".qoderwork"),
-        home.join(".aider"),
-        home.join(".emacs.d"),
         home.join(".copilot"),
         home.join(".github"),
-        home.join(".config/mcphub"),
-        home.join(".config/sublime-text"),
     ];
 
     // Installers write into well-known subdirectories (hook scripts, rules
-    // files, steering docs, …). read_dir below is non-recursive, so backups in
+    // files, …). read_dir below is non-recursive, so backups in
     // those subdirectories were previously missed (GL #558).
-    const KNOWN_SUBDIRS: [&str; 6] = ["hooks", "rules", "skills", "steering", "settings", "User"];
+    const KNOWN_SUBDIRS: [&str; 5] = ["hooks", "rules", "skills", "settings", "User"];
     let mut dirs_to_scan: Vec<PathBuf> = Vec::with_capacity(base_dirs.len() * 4);
     for dir in base_dirs {
         for sub in KNOWN_SUBDIRS {
@@ -444,10 +406,6 @@ fn scan_dirs(home: &Path) -> Vec<PathBuf> {
             ".claude",
             ".claude/rules",
             ".claude/hooks",
-            ".codebuddy",
-            ".codebuddy/rules",
-            ".codebuddy/hooks",
-            ".kiro/steering",
             ".github",
             ".github/hooks",
             ".vscode",
@@ -599,8 +557,6 @@ mod tests {
         let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("/home/tester"));
         let dirs = data_dirs_to_remove(&home);
 
-        // Legacy single-dir + pre-split config dir are always targeted.
-        assert!(dirs.contains(&home.join(".lean-ctx")));
         assert!(dirs.contains(&home.join(".config/lean-ctx")));
 
         // Regression guard for the macOS data/state/cache leak (#uninstall-completeness):

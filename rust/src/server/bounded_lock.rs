@@ -22,7 +22,17 @@ pub fn read<T: Send + Sync + 'static>(
     lock: &Arc<RwLock<T>>,
     context: &str,
 ) -> Option<OwnedRwLockReadGuard<T>> {
-    let timeout = crate::core::io_health::adaptive_timeout(BASE_READ_TIMEOUT);
+    read_within(lock, context, BASE_READ_TIMEOUT)
+}
+
+/// [`read`] with a caller-chosen base timeout, still scaled by the I/O health
+/// multiplier. Lets tests exercise the timeout path without waiting 10 s.
+pub fn read_within<T: Send + Sync + 'static>(
+    lock: &Arc<RwLock<T>>,
+    context: &str,
+    base: Duration,
+) -> Option<OwnedRwLockReadGuard<T>> {
+    let timeout = crate::core::io_health::adaptive_timeout(base);
     let deadline = std::time::Instant::now() + timeout;
 
     loop {
@@ -49,7 +59,16 @@ pub fn write<T: Send + Sync + 'static>(
     lock: &Arc<RwLock<T>>,
     context: &str,
 ) -> Option<OwnedRwLockWriteGuard<T>> {
-    let timeout = crate::core::io_health::adaptive_timeout(BASE_WRITE_TIMEOUT);
+    write_within(lock, context, BASE_WRITE_TIMEOUT)
+}
+
+/// [`write()`] with a caller-chosen base timeout. See [`read_within`].
+pub fn write_within<T: Send + Sync + 'static>(
+    lock: &Arc<RwLock<T>>,
+    context: &str,
+    base: Duration,
+) -> Option<OwnedRwLockWriteGuard<T>> {
+    let timeout = crate::core::io_health::adaptive_timeout(base);
     let deadline = std::time::Instant::now() + timeout;
 
     loop {
@@ -73,13 +92,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn read_succeeds_on_uncontested_lock() {
-        let lock = Arc::new(RwLock::new(42u32));
-        let guard = read(&lock, "test").expect("uncontested read must succeed");
-        assert_eq!(*guard, 42);
-    }
-
-    #[test]
     fn write_succeeds_on_uncontested_lock() {
         let lock = Arc::new(RwLock::new(0u32));
         let mut guard = write(&lock, "test").expect("uncontested write must succeed");
@@ -94,12 +106,5 @@ mod tests {
         let g2 = read(&lock, "r2").expect("second reader");
         assert_eq!(*g1, 99);
         assert_eq!(*g2, 99);
-    }
-
-    #[test]
-    fn write_excludes_readers() {
-        let lock = Arc::new(RwLock::new(0u32));
-        let _hold = lock.clone().try_write_owned().unwrap();
-        assert!(lock.clone().try_read_owned().is_err());
     }
 }

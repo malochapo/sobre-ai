@@ -43,14 +43,13 @@ impl McpTool for CtxGlobTool {
         let max = (get_int(args, "max_results").unwrap_or(200) as usize).min(500);
         let no_gitignore = get_bool(args, "ignore_gitignore").unwrap_or(false);
 
-        if no_gitignore
-            && let Err(e) = crate::core::io_boundary::ensure_ignore_gitignore_allowed("ctx_glob")
+        if no_gitignore && let Err(e) = crate::core::io_boundary::ensure_ignore_gitignore_allowed()
         {
             return Ok(ToolOutput::simple(e));
         }
 
         let respect = !no_gitignore;
-        let allow_secret_paths = crate::core::roles::active_role().io.allow_secret_paths;
+        let allow_secret_paths = false;
 
         if !resolved.is_multi {
             return handle_single(
@@ -62,7 +61,6 @@ impl McpTool for CtxGlobTool {
             );
         }
 
-        let _mode_guard = crate::core::savings_footer::ModeGuard::new("glob");
         let per_root_max = (max / resolved.roots.len()).max(5);
         let mut combined = String::new();
         let mut total_original: usize = 0;
@@ -96,8 +94,7 @@ impl McpTool for CtxGlobTool {
             }
         }
 
-        let final_out =
-            crate::core::protocol::append_savings(&combined, total_original, total_sent);
+        let final_out = combined.clone();
         let saved = total_original.saturating_sub(total_sent);
 
         Ok(ToolOutput {
@@ -106,7 +103,6 @@ impl McpTool for CtxGlobTool {
             saved_tokens: saved,
             mode: None,
             path: None,
-            changed: false,
             shell_outcome: None,
             content_blocks: None,
         })
@@ -143,7 +139,7 @@ fn handle_single(
 
     let sent = crate::core::tokens::count_tokens(&result);
     let saved = original.saturating_sub(sent);
-    let final_out = crate::core::protocol::append_savings(&result, original, sent);
+    let final_out = result.clone();
 
     Ok(ToolOutput {
         text: final_out,
@@ -151,7 +147,6 @@ fn handle_single(
         saved_tokens: saved,
         mode: None,
         path: Some(path.to_string()),
-        changed: false,
         shell_outcome: None,
         content_blocks: None,
     })

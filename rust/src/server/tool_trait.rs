@@ -45,9 +45,6 @@ pub struct ToolOutput {
     pub mode: Option<String>,
     /// Path associated with the tool call (for record_call_with_path).
     pub path: Option<String>,
-    /// True when the tool mutated state that clients should know about
-    /// (e.g. dynamic tool categories changed).
-    pub changed: bool,
     /// Set by shell-executing tools so dispatch can populate `isError` +
     /// `structuredContent` on the MCP result (GitHub #389). `None` for tools
     /// that don't run shell commands.
@@ -65,7 +62,6 @@ impl ToolOutput {
             saved_tokens: 0,
             mode: None,
             path: None,
-            changed: false,
             shell_outcome: None,
             content_blocks: None,
         }
@@ -84,19 +80,6 @@ impl ToolOutput {
         format!("[{tool_name}: {path_str}, mode={mode_str}, {sent} tok sent, -{pct}%]")
     }
 
-    pub fn with_savings(text: String, original: usize, saved: usize) -> Self {
-        Self {
-            text,
-            original_tokens: original,
-            saved_tokens: saved,
-            mode: None,
-            path: None,
-            changed: false,
-            shell_outcome: None,
-            content_blocks: None,
-        }
-    }
-
     /// Construct a ToolOutput for image/binary content blocks.
     /// Bypasses all text processing in the dispatch pipeline.
     pub fn image(blocks: Vec<ContentBlock>, path: String) -> Self {
@@ -106,7 +89,6 @@ impl ToolOutput {
             saved_tokens: 0,
             mode: Some("image".to_string()),
             path: Some(path),
-            changed: false,
             shell_outcome: None,
             content_blocks: Some(blocks),
         }
@@ -127,8 +109,7 @@ pub trait McpTool: Send + Sync {
     /// Tool name as registered in the MCP protocol (e.g. "ctx_tree").
     fn name(&self) -> &'static str;
 
-    /// MCP tool definition including JSON schema. This replaces the
-    /// corresponding entry in `granular_tool_defs()`.
+    /// MCP tool definition including JSON schema.
     fn tool_def(&self) -> Tool;
 
     /// Execute the tool. Args are the raw JSON-RPC arguments.
@@ -162,7 +143,6 @@ pub struct ToolContext {
     /// snapshotted from the session so sync handlers can honor them without an
     /// async lock. Empty = single-root jail behaviour (#403).
     pub extra_roots: Vec<String>,
-    pub minimal: bool,
     /// Pre-resolved paths keyed by argument name (e.g. "path" -> "/abs/dir").
     pub resolved_paths: std::collections::HashMap<String, String>,
     /// CRP mode for compression-aware tools.
@@ -174,25 +154,6 @@ pub struct ToolContext {
     /// Tool call records for session-aware tools (e.g. ctx_session status).
     pub tool_calls:
         Option<std::sync::Arc<tokio::sync::RwLock<Vec<crate::core::protocol::ToolCallRecord>>>>,
-    /// Current agent identity for multi-agent tools.
-    pub agent_id: Option<std::sync::Arc<tokio::sync::RwLock<Option<String>>>>,
-    /// Active workflow run state.
-    pub workflow:
-        Option<std::sync::Arc<tokio::sync::RwLock<Option<crate::core::workflow::WorkflowRun>>>>,
-    /// Context ledger for handoff operations.
-    pub ledger:
-        Option<std::sync::Arc<tokio::sync::RwLock<crate::core::context_ledger::ContextLedger>>>,
-    /// Client name (cursor, claude, etc.).
-    pub client_name: Option<std::sync::Arc<tokio::sync::RwLock<String>>>,
-    /// Pipeline stats for metrics/proof tools.
-    pub pipeline_stats:
-        Option<std::sync::Arc<tokio::sync::RwLock<crate::core::pipeline::PipelineStats>>>,
-    /// Global call counter for context tools.
-    pub call_count: Option<std::sync::Arc<std::sync::atomic::AtomicUsize>>,
-    /// Autonomy state for search repeat detection.
-    pub autonomy: Option<std::sync::Arc<crate::tools::autonomy::AutonomyState>>,
-    /// Pre-computed context pressure snapshot for synchronous gate decisions.
-    pub pressure_snapshot: Option<crate::core::context_ledger::ContextPressure>,
     /// Errors from path resolution (PathJail rejection, secret path, etc.).
     /// Keyed by argument name (e.g. "path" -> "path escapes project root: ...").
     pub path_errors: std::collections::HashMap<String, String>,
@@ -210,20 +171,11 @@ impl Default for ToolContext {
         Self {
             project_root: String::new(),
             extra_roots: Vec::new(),
-            minimal: false,
             resolved_paths: std::collections::HashMap::new(),
             crp_mode: crate::tools::CrpMode::Off,
             cache: None,
             session: None,
             tool_calls: None,
-            agent_id: None,
-            workflow: None,
-            ledger: None,
-            client_name: None,
-            pipeline_stats: None,
-            call_count: None,
-            autonomy: None,
-            pressure_snapshot: None,
             path_errors: std::collections::HashMap::new(),
             bm25_cache: None,
             progress_sender: None,

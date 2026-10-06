@@ -21,7 +21,7 @@ pub(crate) fn handle(
 ) -> (String, bool) {
     if task.trim().is_empty() {
         return (
-            "ERROR: ctx_preload requires a task description".to_string(),
+            "ERROR: preload requires a task description".to_string(),
             false,
         );
     }
@@ -31,7 +31,9 @@ pub(crate) fn handle(
 
     let Some(open) = graph_provider::open_or_build(&project_root) else {
         return (
-            format!("[task: {task}]\nNo graph available. Use ctx_overview for project map."),
+            format!(
+                "[task: {task}]\nNo graph available. Use ctx_compose without a task for the project map."
+            ),
             false,
         );
     };
@@ -51,7 +53,6 @@ pub(crate) fn handle(
     // Active build errors outrank everything (#499).
     crate::core::diagnostics_store::apply_boost(&mut relevance);
     // Editor focus (#500): the file the developer is looking at ranks up.
-    crate::core::editor_signal::apply_boost(&mut relevance);
 
     let mut scored: Vec<_> = relevance
         .iter()
@@ -68,7 +69,7 @@ pub(crate) fn handle(
     if candidates.is_empty() {
         return (
             format!(
-                "[task: {task}]\nNo directly relevant files found. Use ctx_overview for project map."
+                "[task: {task}]\nNo directly relevant files found. Use ctx_compose without a task for the project map."
             ),
             false,
         );
@@ -83,7 +84,7 @@ pub(crate) fn handle(
     if max_score < MIN_USEFUL_SCORE {
         return (
             format!(
-                "[task: {task}]\nNo sufficiently relevant files (max score {max_score:.1} < {MIN_USEFUL_SCORE}). Use ctx_overview for project map."
+                "[task: {task}]\nNo sufficiently relevant files (max score {max_score:.1} < {MIN_USEFUL_SCORE}). Use ctx_compose without a task for the project map."
             ),
             false,
         );
@@ -104,7 +105,6 @@ pub(crate) fn handle(
         .iter()
         .filter_map(|c| {
             let Ok((jailed, warning)) = crate::core::io_boundary::jail_and_check_path(
-                "ctx_preload",
                 std::path::Path::new(&c.path),
                 jail_root,
             ) else {
@@ -165,7 +165,6 @@ pub(crate) fn handle(
         }
     }
 
-    let mut total_estimated_saved = 0usize;
     let mut critical_count = 0usize;
     let git_signals = crate::core::git_signals::collect(&project_root);
 
@@ -179,7 +178,6 @@ pub(crate) fn handle(
         }
 
         let Ok((jailed, warning)) = crate::core::io_boundary::jail_and_check_path(
-            "ctx_preload",
             std::path::Path::new(&rel.path),
             jail_root,
         ) else {
@@ -251,8 +249,6 @@ pub(crate) fn handle(
                 output.push(format!("  {sig}"));
             }
         }
-
-        total_estimated_saved += file_tokens;
     }
 
     let context_files: Vec<_> = relevance
@@ -293,10 +289,8 @@ pub(crate) fn handle(
     }
 
     let preload_result = output.join("\n");
-    let preload_tokens = count_tokens(&preload_result);
-    let savings = protocol::format_savings(total_estimated_saved, preload_tokens);
 
-    let body = format!("{preload_result}\n{savings}");
+    let body = preload_result.clone();
     (body, true)
 }
 

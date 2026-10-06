@@ -8,11 +8,9 @@
 //!   `proxy::prose`, `proxy::prose_ranker`) and `core::extractive`.
 //! - [`html_to_text`] — HTML to Markdown, used by `core::extractors`.
 //! - [`pdf`] — text extraction, used by `core::artifact_index`.
-//! - [`url_guard`] — SSRF validation, used by `core::git::clone`.
 //!
 //! The folder name is now a misnomer; the pieces belong with their callers.
 
 pub mod distill;
 pub mod html_to_text;
 pub mod pdf;
-pub mod url_guard;

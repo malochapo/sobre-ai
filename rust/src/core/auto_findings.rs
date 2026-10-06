@@ -28,7 +28,6 @@ pub fn extract(tool_name: &str, output: &str, path_hint: Option<&str>) -> Option
         "ctx_search" => extract_ctx_search(output),
         "ctx_shell" => extract_ctx_shell(output),
         "ctx_graph" => extract_ctx_graph(output),
-        "ctx_semantic_search" => extract_ctx_semantic_search(output),
         _ => None,
     }?;
 
@@ -291,42 +290,6 @@ fn extract_ctx_graph(output: &str) -> Option<AutoFinding> {
     }
 
     None
-}
-
-fn extract_ctx_semantic_search(output: &str) -> Option<AutoFinding> {
-    let lines: Vec<&str> = output.lines().collect();
-    if lines.is_empty() {
-        return None;
-    }
-
-    // Count result entries (lines starting with a score or file path)
-    let results: Vec<&&str> = lines
-        .iter()
-        .filter(|l| l.starts_with("  ") || l.contains("score:") || l.contains("→"))
-        .collect();
-
-    if results.is_empty() {
-        return None;
-    }
-
-    // Try to get query from first line
-    let query = lines
-        .first()
-        .and_then(|l| {
-            l.strip_prefix("query:")
-                .or_else(|| l.strip_prefix("Query:"))
-        })
-        .map_or("semantic search", str::trim);
-
-    let summary = truncate(
-        &format!("Semantic search `{}` — {} results", query, results.len()),
-        MAX_SUMMARY_LEN,
-    );
-
-    Some(AutoFinding {
-        file: None,
-        summary,
-    })
 }
 
 // --- Helpers ---

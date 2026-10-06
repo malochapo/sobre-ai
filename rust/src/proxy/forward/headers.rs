@@ -44,40 +44,6 @@ pub(crate) const ALLOWED_REQUEST_HEADERS: &[&str] = &[
     "cache-control",
     "x-goog-api-key",
     "x-goog-api-client",
-    // Grok CLI → cli-chat-proxy.grok.com (subscription rail). Enumerated like
-    // Codex/OpenAI above — no prefix wildcards. Missing `x-grok-client-version`
-    // makes upstream return 426 Upgrade Required with version "(none)".
-    "x-xai-token-auth",
-    "x-models-etag",
-    "x-grok-client-version",
-    "x-grok-client-identifier",
-    "x-grok-client-mode",
-    "x-grok-client-surface",
-    "x-grok-model-override",
-    "x-grok-agent-id",
-    "x-grok-session-id",
-    "x-grok-turn-id",
-    "x-grok-conv-id",
-    "x-grok-req-id",
-    "x-grok-deployment-id",
-    "x-grok-user-id",
-    "x-grok-context-window",
-    "x-grok-max-completion-tokens",
-    "x-grok-doom-loop-check",
-    "x-grok-managed-gateway",
-    // Command Code (`cmd`) CLI headers. Without `x-command-code-version`
-    // the upstream returns 403 `upgrade_required` ("CLI is out of date")
-    // even for current clients — the version gate runs before body validation.
-    "x-command-code-version",
-    "x-cli-environment",
-    "x-oauth-token",
-    "x-oauth-provider",
-    "x-project-slug",
-    "x-taste-learning",
-    "x-taste-usage",
-    "x-oss-primary-provider",
-    "x-system-prompt-breakdown",
-    "x-cmd-zdr",
     "x-session-id",
 ];
 

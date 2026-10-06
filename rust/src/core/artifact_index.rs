@@ -235,7 +235,7 @@ fn list_artifact_files(project_root: &Path) -> (Vec<String>, Vec<String>) {
 
     let cfg = crate::core::config::Config::load();
     let extra_ignores: Vec<glob::Pattern> = cfg
-        .extra_ignore_patterns
+        .ignore
         .iter()
         .filter_map(|p| glob::Pattern::new(p).ok())
         .collect();

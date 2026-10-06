@@ -79,7 +79,6 @@ impl McpTool for CtxCallgraphTool {
             saved_tokens: 0,
             mode: Some(action_normalized),
             path: None,
-            changed: false,
             shell_outcome: None,
             content_blocks: None,
         })

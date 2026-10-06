@@ -1,32 +1,8 @@
-#!/bin/bash
+#!/usr/bin/env bash
+# Formatting only — fast enough for every commit. The full gate runs on push.
 set -euo pipefail
-
 cd "$(git rev-parse --show-toplevel)/rust"
-
-if ! cargo fmt --check 2>/dev/null; then
-    echo "pre-commit: formatting check failed. Run 'cargo fmt' first."
+if ! cargo fmt --check; then
+    echo "pre-commit: run 'cargo fmt' first."
     exit 1
-fi
-
-if ! cargo clippy --all-targets -- -D warnings 2>/dev/null; then
-    echo "pre-commit: clippy check failed. Fix warnings before committing."
-    exit 1
-fi
-
-# Generated reference docs must match the tool/config definitions —
-# the CI Documentation job runs the same check and fails otherwise.
-if git diff --cached --name-only | grep -qE '^rust/src/(tools|tool_defs|core/config)'; then
-    if ! cargo run --quiet --example gen_docs --features dev-tools -- --check 2>/dev/null; then
-        echo "pre-commit: generated docs out of date. Run: cd rust && cargo run --example gen_docs --features dev-tools"
-        exit 1
-    fi
-fi
-
-# The committed testbench recording must match the fixtures + assembly/judge framing —
-# the CI Documentation job runs the same check (#611).
-if git diff --cached --name-only | grep -qE '^rust/(eval/testbench/|src/core/eval_ab/)'; then
-    if ! cargo run --quiet --example gen_testbench_recording --features dev-tools -- --check 2>/dev/null; then
-        echo "pre-commit: testbench recording out of date. Run: cd rust && cargo run --example gen_testbench_recording --features dev-tools"
-        exit 1
-    fi
 fi

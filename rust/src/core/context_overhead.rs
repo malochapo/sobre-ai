@@ -17,28 +17,8 @@
 //! Net bill impact ≈ `gross_saved_tokens − total_tokens() × turns`.
 
 use std::sync::OnceLock;
-use std::sync::atomic::{AtomicUsize, Ordering};
 
 use crate::core::tokens::count_tokens;
-
-static PROACTIVE_INJECTED_TOKENS: AtomicUsize = AtomicUsize::new(0);
-
-/// Record tokens appended as proactive context so savings reports can account
-/// for the dynamic response-side injection separately from fixed overhead.
-pub fn record_proactive_injection(tokens: usize) {
-    PROACTIVE_INJECTED_TOKENS.fetch_add(tokens, Ordering::Relaxed);
-}
-
-/// Total proactive context tokens appended by this process.
-#[must_use]
-pub fn proactive_injected_tokens() -> usize {
-    PROACTIVE_INJECTED_TOKENS.load(Ordering::Relaxed)
-}
-
-#[cfg(test)]
-fn reset_proactive_injection() {
-    PROACTIVE_INJECTED_TOKENS.store(0, Ordering::Relaxed);
-}
 
 /// A measured breakdown, in tokens, of the per-turn context lean-ctx adds.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -85,18 +65,8 @@ impl ContextOverhead {
             crate::instructions::build_instructions(crate::tools::CrpMode::effective());
         let instruction_tokens = count_tokens(&instructions);
 
-        // The rules block only rides every turn when lean-ctx actually injects it
-        // into the host instruction file. With `rules_injection = off` no file is
-        // written (the `rules_inject` injectors early-return), so it adds zero
-        // per-turn overhead — counting it would overstate the faithful-arm tax and
-        // make the net-of-injection figure pessimistic (#361).
-        let rules_block_tokens = if crate::core::config::Config::load().rules_injection_effective()
-            == crate::core::config::RulesInjection::Off
-        {
-            0
-        } else {
-            count_tokens(&crate::rules_inject::canonical_rules_block())
-        };
+        // The rules block rides every turn in the host instruction file.
+        let rules_block_tokens = count_tokens(&crate::rules_inject::canonical_rules_block());
 
         Self {
             tool_count,
@@ -130,9 +100,7 @@ fn provider_cache_hit_rate() -> f64 {
     if no_cache_adjust_active() {
         return 0.0;
     }
-    crate::core::config::Config::load()
-        .dashboard_cache_hit_rate()
-        .unwrap_or(0.75)
+    0.75
 }
 
 // #1104: `--no-cache-adjust` forces cache_rate=0 (worst-case view).
@@ -208,69 +176,30 @@ mod tests {
     }
 
     #[test]
-    fn rules_injection_off_zeroes_the_rules_block() {
-        // With rules injection off, no rules file is written, so the per-turn
-        // overhead must not count the rules block (#361). The tool/instruction
-        // surface is unaffected. `isolated_data_dir` holds the env lock.
-        let _iso = crate::core::data_dir::isolated_data_dir();
-        let on = ContextOverhead::measure();
-        crate::test_env::set_var("LEAN_CTX_RULES_INJECTION", "off");
-        let off = ContextOverhead::measure();
-        crate::test_env::remove_var("LEAN_CTX_RULES_INJECTION");
-
-        assert!(on.rules_block_tokens > 0, "default still injects rules");
-        assert_eq!(off.rules_block_tokens, 0, "off must drop the rules block");
-        assert_eq!(
-            off.total_tokens(),
-            off.tool_schema_tokens + off.instruction_tokens,
-            "off total excludes the rules block"
-        );
-    }
-
-    #[test]
-    fn minimal_arm_per_turn_prefix_stays_within_budget() {
-        // The "faithful arm" (#361): LEAN_CTX_MINIMAL (no session/knowledge
-        // prefix) + rules_injection=off
-        // (no rules block) must keep the fixed per-turn prefix tiny. This is the
-        // regression guard for the "~3K tokens/turn injected" critique — if any
-        // knob silently stops applying, the total balloons and this fails.
-        // macOS/Linux baseline is ~1829 after three reviewed additions: the v3
-        // agent-loop + navigation-paradox one-liner (#609, always-on in the COMPACT
-        // skeleton), the ctx_search `handle` param (#608), and the proactive
-        // `RECOVER` recovery one-liner + the `ctx_read` `raw` schema param
-        // (premium-recovery-layer) — together ~+39 tok over the prior ~1790. Windows
-        // additionally carries `build_shell_hint()` — a ~5-tok PowerShell-cmdlet
-        // warning that is empty on POSIX. The budget covers that surface plus a small
-        // margin for `shell_name()` variance (#1051), and still sits ~1.1K under the
-        // ~3K balloon this guard exists to catch — it is not a license for silent creep.
-        const MINIMAL_ARM_PREFIX_BUDGET_TOKENS: usize = 1835;
+    fn per_turn_prefix_stays_within_budget() {
+        // Ratchet on the fixed per-turn prefix: the 17 tool schemas, the MCP
+        // instructions and the rules block. Measured at 5543 tokens; the budget
+        // leaves ~3% for small wording changes. A tool or a paragraph more fails
+        // here, which is the point — raise the budget only in the same commit
+        // that justifies the growth.
+        const PER_TURN_PREFIX_BUDGET_TOKENS: usize = 5700;
 
         let _iso = crate::core::data_dir::isolated_data_dir();
-        crate::test_env::set_var("LEAN_CTX_MINIMAL", "1");
-        crate::test_env::set_var("LEAN_CTX_RULES_INJECTION", "off");
         let registered = crate::server::registry::build_registry().tool_defs().len();
         let o = ContextOverhead::measure();
-        crate::test_env::remove_var("LEAN_CTX_MINIMAL");
-        crate::test_env::remove_var("LEAN_CTX_RULES_INJECTION");
 
         assert_eq!(
-            o.rules_block_tokens, 0,
-            "rules_injection=off must zero the rules block"
+            o.tool_count, registered,
+            "the advertised surface must be exactly the registry"
         );
         assert!(
-            o.tool_count <= registered + 1,
-            "the advertised surface must be the registry, got {} tools (expected ≤ {})",
-            o.tool_count,
-            registered + 1,
-        );
-        assert!(
-            o.total_tokens() <= MINIMAL_ARM_PREFIX_BUDGET_TOKENS,
-            "minimal-arm per-turn prefix = {} tok (schemas {} + instr {} + rules {}), budget {}",
+            o.total_tokens() <= PER_TURN_PREFIX_BUDGET_TOKENS,
+            "per-turn prefix = {} tok (schemas {} + instr {} + rules {}), budget {}",
             o.total_tokens(),
             o.tool_schema_tokens,
             o.instruction_tokens,
             o.rules_block_tokens,
-            MINIMAL_ARM_PREFIX_BUDGET_TOKENS,
+            PER_TURN_PREFIX_BUDGET_TOKENS,
         );
     }
 
@@ -296,19 +225,5 @@ mod tests {
     #[test]
     fn net_of_injection_collapses_to_gross_without_proxy_turns() {
         assert_eq!(net_of_injection(1234, 3000, 0), (0, 1234));
-    }
-
-    #[test]
-    fn proactive_injection_counter_accumulates() {
-        reset_proactive_injection();
-        record_proactive_injection(17);
-        record_proactive_injection(5);
-        assert_eq!(proactive_injected_tokens(), 22);
-    }
-
-    #[test]
-    fn proactive_injection_counter_starts_at_zero_after_reset() {
-        reset_proactive_injection();
-        assert_eq!(proactive_injected_tokens(), 0);
     }
 }

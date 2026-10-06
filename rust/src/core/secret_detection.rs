@@ -2,8 +2,6 @@ use std::sync::OnceLock;
 
 use regex::Regex;
 
-use crate::core::config::{Config, SecretDetectionConfig};
-
 macro_rules! static_regex {
     ($pattern:expr_2021) => {{
         static RE: OnceLock<Regex> = OnceLock::new();
@@ -114,16 +112,6 @@ fn guarded_match_is_benign(caps: &regex::Captures) -> bool {
         .is_some_and(|value| crate::core::redaction::is_benign_secret_value(value.as_str()))
 }
 
-/// Compile the subtractive `exclude_patterns` from config (#718). Invalid
-/// regexes are skipped — a broken exclude must never disable detection.
-fn compile_excludes(patterns: &[String]) -> Vec<Regex> {
-    patterns.iter().filter_map(|p| Regex::new(p).ok()).collect()
-}
-
-fn excluded(excludes: &[Regex], matched: &str) -> bool {
-    excludes.iter().any(|ex| ex.is_match(matched))
-}
-
 fn make_redacted_preview(matched: &str) -> String {
     let chars: Vec<char> = matched.chars().collect();
     if chars.len() <= 6 {
@@ -134,11 +122,7 @@ fn make_redacted_preview(matched: &str) -> String {
     format!("{prefix}***{suffix}")
 }
 
-fn collect_matches(
-    content: &str,
-    custom_patterns: &[String],
-    excludes: &[Regex],
-) -> Vec<SecretMatch> {
+fn collect_matches(content: &str) -> Vec<SecretMatch> {
     let mut matches = Vec::new();
 
     let line_offsets: Vec<usize> = std::iter::once(0)
@@ -155,9 +139,6 @@ fn collect_matches(
     for &(name, regex_fn) in BUILTIN_PATTERNS {
         let re = regex_fn();
         for m in re.find_iter(content) {
-            if excluded(excludes, m.as_str()) {
-                continue;
-            }
             matches.push(SecretMatch {
                 pattern_name: name,
                 line_number: offset_to_line(m.start()),
@@ -170,7 +151,7 @@ fn collect_matches(
         let re = regex_fn();
         for caps in re.captures_iter(content) {
             let whole = caps.get(0).map_or("", |m| m.as_str());
-            if guarded_match_is_benign(&caps) || excluded(excludes, whole) {
+            if guarded_match_is_benign(&caps) {
                 continue;
             }
             let start = caps.get(0).map_or(0, |m| m.start());
@@ -182,58 +163,24 @@ fn collect_matches(
         }
     }
 
-    for pattern_str in custom_patterns {
-        if let Ok(re) = Regex::new(pattern_str) {
-            for m in re.find_iter(content) {
-                if excluded(excludes, m.as_str()) {
-                    continue;
-                }
-                matches.push(SecretMatch {
-                    pattern_name: "custom_pattern",
-                    line_number: offset_to_line(m.start()),
-                    redacted_preview: make_redacted_preview(m.as_str()),
-                });
-            }
-        }
-    }
-
     matches
 }
 
 pub fn detect_secrets(content: &str) -> Vec<SecretMatch> {
-    collect_matches(content, &[], &[])
+    collect_matches(content)
 }
 
-pub fn detect_secrets_with_custom(content: &str, custom_patterns: &[String]) -> Vec<SecretMatch> {
-    collect_matches(content, custom_patterns, &[])
-}
-
-pub fn scan_and_redact(
-    content: &str,
-    config: &SecretDetectionConfig,
-) -> (String, Vec<SecretMatch>) {
-    if !config.enabled {
-        return (content.to_string(), Vec::new());
-    }
-
-    let excludes = compile_excludes(&config.exclude_patterns);
-    let matches = collect_matches(content, &config.custom_patterns, &excludes);
-
-    if matches.is_empty() || !config.redact {
+/// Detects secrets in `content` and masks each one as `[REDACTED:<pattern>]`.
+pub fn scan_and_redact(content: &str) -> (String, Vec<SecretMatch>) {
+    let matches = collect_matches(content);
+    if matches.is_empty() {
         return (content.to_string(), matches);
     }
 
     let mut redacted = content.to_string();
     for &(name, regex_fn) in BUILTIN_PATTERNS {
-        let re = regex_fn();
-        redacted = re
-            .replace_all(&redacted, |caps: &regex::Captures| {
-                let whole = caps.get(0).map_or("", |m| m.as_str());
-                if excluded(&excludes, whole) {
-                    return whole.to_string();
-                }
-                format!("[REDACTED:{name}]")
-            })
+        redacted = regex_fn()
+            .replace_all(&redacted, format!("[REDACTED:{name}]").as_str())
             .to_string();
     }
 
@@ -242,7 +189,7 @@ pub fn scan_and_redact(
         redacted = re
             .replace_all(&redacted, |caps: &regex::Captures| {
                 let whole = caps.get(0).map_or("", |m| m.as_str());
-                if guarded_match_is_benign(caps) || excluded(&excludes, whole) {
+                if guarded_match_is_benign(caps) {
                     return whole.to_string();
                 }
                 let prefix = caps.get(1).map_or("", |m| m.as_str());
@@ -251,26 +198,7 @@ pub fn scan_and_redact(
             .to_string();
     }
 
-    for pattern_str in &config.custom_patterns {
-        if let Ok(re) = Regex::new(pattern_str) {
-            redacted = re
-                .replace_all(&redacted, |caps: &regex::Captures| {
-                    let whole = caps.get(0).map_or("", |m| m.as_str());
-                    if excluded(&excludes, whole) {
-                        return whole.to_string();
-                    }
-                    "[REDACTED:custom_pattern]".to_string()
-                })
-                .to_string();
-        }
-    }
-
     (redacted, matches)
-}
-
-pub fn scan_and_redact_from_config(content: &str) -> (String, Vec<SecretMatch>) {
-    let cfg = Config::load();
-    scan_and_redact(content, &cfg.secret_detection)
 }
 
 #[cfg(test)]
@@ -397,56 +325,11 @@ mod tests {
 
     #[test]
     fn scan_and_redact_replaces_secrets() {
-        let cfg = SecretDetectionConfig {
-            enabled: true,
-            redact: true,
-            ..Default::default()
-        };
         let input = "key = AKIAIOSFODNN7EXAMPLE";
-        let (redacted, matches) = scan_and_redact(input, &cfg);
+        let (redacted, matches) = scan_and_redact(input);
         assert!(!matches.is_empty());
         assert!(redacted.contains("[REDACTED:aws_key]"));
         assert!(!redacted.contains("AKIAIOSFODNN7EXAMPLE"));
-    }
-
-    #[test]
-    fn scan_without_redact_preserves_content() {
-        let cfg = SecretDetectionConfig {
-            enabled: true,
-            redact: false,
-            ..Default::default()
-        };
-        let input = "key = AKIAIOSFODNN7EXAMPLE";
-        let (output, matches) = scan_and_redact(input, &cfg);
-        assert!(!matches.is_empty());
-        assert_eq!(output, input);
-    }
-
-    #[test]
-    fn disabled_detection_returns_unchanged() {
-        let cfg = SecretDetectionConfig {
-            enabled: false,
-            redact: true,
-            ..Default::default()
-        };
-        let input = "key = AKIAIOSFODNN7EXAMPLE";
-        let (output, matches) = scan_and_redact(input, &cfg);
-        assert!(matches.is_empty());
-        assert_eq!(output, input);
-    }
-
-    #[test]
-    fn custom_pattern_detected() {
-        let cfg = SecretDetectionConfig {
-            enabled: true,
-            redact: true,
-            custom_patterns: vec![r"MYCORP_[A-Z]{10,}".to_string()],
-            ..Default::default()
-        };
-        let input = "value is MYCORP_ABCDEFGHIJKLMNO here";
-        let (redacted, matches) = scan_and_redact(input, &cfg);
-        assert!(matches.iter().any(|m| m.pattern_name == "custom_pattern"));
-        assert!(redacted.contains("[REDACTED:custom_pattern]"));
     }
 
     #[test]

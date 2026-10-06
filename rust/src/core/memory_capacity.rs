@@ -81,7 +81,7 @@ where
     // Persist borrowed candidates before mutating the live store. Serializing
     // references avoids requiring `T: Clone` while preserving archive order.
     let candidates: Vec<&T> = evict.iter().map(|&idx| &items[idx]).collect();
-    archive_items(store, scope, &candidates, &ArchiveConfig::from_env())?;
+    archive_items(store, scope, &candidates, &ArchiveConfig::default())?;
 
     // Order-preserving: only chosen indices are removed, so retained items keep
     // their original relative order. Reverse removal avoids index shifts.
@@ -120,14 +120,14 @@ mod tests {
     }
 
     #[test]
-    fn reclaim_target_matches_legacy_quarter_reclaim() {
-        // The pre-#995 target was `max - ceil(max/4)`. headroom 0.25 must match
-        // it exactly across a range of caps, including the awkward small ones.
-        let legacy = |max: usize| max.saturating_sub(max.div_ceil(4));
+    fn reclaim_target_quarter_headroom_is_ceil_quarter() {
+        // headroom 0.25 must reclaim exactly `ceil(max/4)` across a range of
+        // caps, including the awkward small ones.
+        let expected = |max: usize| max.saturating_sub(max.div_ceil(4));
         for max in [1usize, 2, 3, 4, 5, 6, 7, 8, 10, 100, 200, 1000] {
             assert_eq!(
                 reclaim_target(max, 0.25),
-                legacy(max),
+                expected(max),
                 "mismatch at max={max}"
             );
         }

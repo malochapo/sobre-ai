@@ -1,7 +1,7 @@
 # Gotchas/Reminders Contract v1
 
 **Status**: Stable  
-**Version**: `GOTCHAS_REMINDERS_V1_SCHEMA_VERSION = 1`  
+**Version**: 1  
 **Runtime source**: `rust/src/core/gotcha_tracker/model.rs`
 
 ## Purpose
@@ -48,7 +48,7 @@ struct ProvenanceRef {
 
 ## GotchaPolicy
 
-Configurable via `memory.gotcha` in `.lean-ctx/config.toml` or `MemoryPolicy`:
+Configurable via `[memory.gotcha]` in the config file (`MemoryPolicy`):
 
 ```toml
 [memory.gotcha]
@@ -72,11 +72,7 @@ convention = 0.05                   # convention gotchas decay faster
 
 ## Tool Actions
 
-Available via `ctx_knowledge action=gotcha`:
-- **Add**: `trigger`, `resolution`, `severity`, `category`
-- **List**: all gotchas for current project
-- **Forget**: remove by trigger
-
-## Drift Gate
-
-`rust/tests/contracts_md_up_to_date.rs` verifies that `GOTCHAS_REMINDERS_V1_SCHEMA_VERSION` in `contracts.rs` matches `CONTRACTS.md`.
+`ctx_knowledge action=gotcha` records a gotcha for the current project:
+`trigger` and `resolution` are required, `severity` and `category` optional
+(category defaults to `convention`). Recorded gotchas are recalled through the
+knowledge search.

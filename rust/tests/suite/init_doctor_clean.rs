@@ -9,23 +9,6 @@
 
 use std::process::Command;
 
-/// Stops the daemon `init` started (scoped to the test's data dir), even
-/// when an assertion panics mid-test.
-struct DaemonStop<'a> {
-    bin: &'a str,
-    envs: Vec<(String, String)>,
-}
-
-impl Drop for DaemonStop<'_> {
-    fn drop(&mut self) {
-        let _ = Command::new(self.bin)
-            .arg("stop")
-            .env_clear()
-            .envs(self.envs.iter().map(|(k, v)| (k.as_str(), v.as_str())))
-            .output();
-    }
-}
-
 #[test]
 #[cfg_attr(
     windows,
@@ -69,14 +52,8 @@ fn init_repair_leaves_doctor_fully_green() {
         ("SHELL".into(), "/bin/bash".into()),
         ("NO_COLOR".into(), "1".into()),
         ("TERM".into(), "dumb".into()),
-        // Hermetic: doctor must not try to fetch embedding models in CI.
-        ("LEAN_CTX_EMBEDDINGS_AUTO_DOWNLOAD".into(), "0".into()),
     ];
-    let _stop = DaemonStop {
-        bin,
-        envs: envs.clone(),
-    };
-
+    std::fs::create_dir_all(home.join("cfg")).unwrap();
     let init = Command::new(bin)
         .args(["init", "--repair"])
         .current_dir(&proj)

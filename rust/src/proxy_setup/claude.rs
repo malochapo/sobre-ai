@@ -85,7 +85,7 @@ pub(crate) fn uninstall_claude_env(home: &Path, quiet: bool) {
     }
 
     let cfg = Config::load();
-    if let Some(ref upstream) = cfg.proxy.anthropic_upstream {
+    if let Some(ref upstream) = cfg.proxy.upstreams.get("anthropic").cloned() {
         env_obj.insert(
             "ANTHROPIC_BASE_URL".to_string(),
             serde_json::Value::String(upstream.clone()),
@@ -145,7 +145,7 @@ pub(crate) fn install_claude_env_inner(home: &Path, port: u16, quiet: bool, forc
         if is_local_lean_ctx_url(&current_url) {
             let cfg = Config::load();
             if let Some(env_obj) = doc.get_mut("env").and_then(|e| e.as_object_mut()) {
-                if let Some(ref upstream) = cfg.proxy.anthropic_upstream {
+                if let Some(ref upstream) = cfg.proxy.upstreams.get("anthropic").cloned() {
                     env_obj.insert(
                         "ANTHROPIC_BASE_URL".to_string(),
                         serde_json::Value::String(upstream.clone()),
@@ -177,9 +177,15 @@ pub(crate) fn install_claude_env_inner(home: &Path, port: u16, quiet: bool, forc
     if let Some(upstream) = normalize_url_opt(&current_url)
         && !is_local_proxy_url(&upstream)
     {
-        if Config::load_global().proxy.anthropic_upstream.is_none()
-            && let Err(e) =
-                Config::update_global(|c| c.proxy.anthropic_upstream = Some(upstream.clone()))
+        if !Config::load_global()
+            .proxy
+            .upstreams
+            .contains_key("anthropic")
+            && let Err(e) = Config::update_global(|c| {
+                c.proxy
+                    .upstreams
+                    .insert("anthropic".to_string(), upstream.clone());
+            })
         {
             tracing::warn!("could not persist proxy upstream: {e}");
         }

@@ -57,10 +57,7 @@ fn base_cmd(bin: &str, env: &TestEnv) -> Command {
     cmd.current_dir(&env.project)
         .env("HOME", &env.home)
         .env("LEAN_CTX_DATA_DIR", &env.data)
-        .env("CODEX_HOME", env.home.join(".codex"))
-        // Skip background maintenance (rules re-inject, version check) so the
-        // server can't mutate coverage state mid-handshake.
-        .env("LEAN_CTX_HEADLESS", "1");
+        .env("CODEX_HOME", env.home.join(".codex"));
     cmd
 }
 
@@ -68,7 +65,6 @@ fn run_init(bin: &str, env: &TestEnv, agent: &str) {
     let out = base_cmd(bin, env)
         .args(["init", "--agent", agent, "--global", "--mode", "mcp"])
         .env("LEAN_CTX_ACTIVE", "1")
-        .env("LEAN_CTX_DISABLED", "1")
         .output()
         .expect("init spawn");
     assert!(
@@ -293,8 +289,7 @@ fn codex_covered_client_gets_anchor() {
 /// leave the rules file behind (session-start heal), so `doctor` is green
 /// without the user ever running `lean-ctx setup`.
 ///
-/// Unlike the other smokes this one does NOT set LEAN_CTX_HEADLESS — the
-/// startup-maintenance block (rules inject) is the unit under test. The
+/// The startup-maintenance block (rules inject) is the unit under test. The
 /// maintenance runs async after initialize, so the test polls for the
 /// artifact with a deadline while the session stays open.
 #[test]

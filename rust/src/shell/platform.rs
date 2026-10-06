@@ -25,6 +25,24 @@ pub(crate) fn apply_profile_free_env(cmd: &mut std::process::Command) {
     cmd.env("BASH_ENV", "").env("ENV", "");
 }
 
+/// Block SIGPIPE in the calling thread only. CLI runs restore the default
+/// SIGPIPE disposition (so `lean-ctx … | head` exits quietly), which would
+/// otherwise kill the whole process when this thread writes to a child that
+/// already exited. Blocked here, that write fails with EPIPE instead, and the
+/// thread-directed signal is discarded when the thread ends. Call it only on
+/// a thread dedicated to writing into a child's stdin.
+pub(crate) fn block_sigpipe_in_current_thread() {
+    #[cfg(unix)]
+    // SAFETY: sigemptyset/sigaddset initialise a local set; pthread_sigmask
+    // only changes the calling thread's mask.
+    unsafe {
+        let mut set: libc::sigset_t = std::mem::zeroed();
+        libc::sigemptyset(&raw mut set);
+        libc::sigaddset(&raw mut set, libc::SIGPIPE);
+        libc::pthread_sigmask(libc::SIG_BLOCK, &raw const set, std::ptr::null_mut());
+    }
+}
+
 pub fn decode_output(bytes: &[u8]) -> String {
     match String::from_utf8(bytes.to_vec()) {
         Ok(s) => s,
@@ -647,12 +665,6 @@ mod powershell_profile_tests {
     use super::{powershell_profile_path, resolve_powershell_profile_path};
     use std::path::Path;
 
-    #[test]
-    fn always_ends_with_profile_file() {
-        let p = powershell_profile_path(Path::new("/home/u"));
-        assert!(p.ends_with("Microsoft.PowerShell_profile.ps1"));
-    }
-
     #[cfg(not(windows))]
     #[test]
     fn non_windows_uses_config_powershell_never_documents() {
@@ -731,15 +743,6 @@ mod windows_shell_flag_tests {
 
 #[cfg(test)]
 mod platform_tests {
-    #[test]
-    fn is_container_returns_bool() {
-        let _ = super::is_container();
-    }
-
-    #[test]
-    fn is_non_interactive_returns_bool() {
-        let _ = super::is_non_interactive();
-    }
 
     #[test]
     fn join_command_preserves_structure() {

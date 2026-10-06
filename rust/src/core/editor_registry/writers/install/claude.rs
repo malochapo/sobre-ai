@@ -88,26 +88,7 @@ pub(crate) fn find_in_path(binary: &str) -> Option<std::path::PathBuf> {
 pub(crate) fn validate_claude_binary() -> Result<std::path::PathBuf, String> {
     let path = find_in_path("claude").ok_or("claude binary not found in PATH")?;
 
-    let canonical =
-        std::fs::canonicalize(&path).map_err(|e| format!("cannot resolve claude path: {e}"))?;
-
-    let canonical_str = canonical.to_string_lossy();
-    let is_trusted = canonical_str.contains("/.claude/")
-        || canonical_str.contains("\\AppData\\")
-        || canonical_str.contains("/usr/local/bin/")
-        || canonical_str.contains("/opt/homebrew/")
-        || canonical_str.contains("/nix/store/")
-        || canonical_str.contains("/.npm/")
-        || canonical_str.contains("/.nvm/")
-        || canonical_str.contains("/node_modules/.bin/")
-        || std::env::var("LEAN_CTX_TRUST_CLAUDE_PATH").is_ok();
-
-    if !is_trusted {
-        return Err(format!(
-            "claude binary resolved to untrusted path: {canonical_str} — set LEAN_CTX_TRUST_CLAUDE_PATH=1 to override"
-        ));
-    }
-    Ok(canonical)
+    std::fs::canonicalize(&path).map_err(|e| format!("cannot resolve claude path: {e}"))
 }
 
 pub(crate) fn try_claude_mcp_add(desired: &Value) -> Result<WriteResult, String> {
@@ -137,8 +118,14 @@ pub(crate) fn try_claude_mcp_add(desired: &Value) -> Result<WriteResult, String>
         .spawn()
         .map_err(|e| e.to_string())?;
 
+    // A `claude` that exits without reading stdin must not take this
+    // process down with SIGPIPE: write from a thread that blocks it.
     if let Some(mut stdin) = child.stdin.take() {
-        let _ = stdin.write_all(server_json.as_bytes());
+        let _ = std::thread::spawn(move || {
+            crate::shell::platform::block_sigpipe_in_current_thread();
+            let _ = stdin.write_all(server_json.as_bytes());
+        })
+        .join();
     }
 
     let deadline = Duration::from_secs(3);

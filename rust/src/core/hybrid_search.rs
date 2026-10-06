@@ -25,7 +25,7 @@ const DEFAULT_BM25_WEIGHT: f64 = 1.0;
 const DEFAULT_DENSE_WEIGHT: f64 = 1.0;
 
 /// Configuration for hybrid search behavior.
-/// Configurable via `[search]` in `.lean-ctx.toml`.
+/// Configurable via `[search]` in `config.toml`.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(default)]
 pub struct HybridConfig {
@@ -72,7 +72,7 @@ impl Default for HybridConfig {
 impl HybridConfig {
     /// Load from the global config, falling back to defaults.
     pub fn from_config() -> Self {
-        crate::core::config::Config::load().search
+        crate::core::hybrid_search::HybridConfig::default()
     }
 }
 

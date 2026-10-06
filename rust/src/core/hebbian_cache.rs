@@ -171,81 +171,6 @@ pub fn path_hash(path: &str) -> u64 {
 
 // ─── Boltzmann-Temperature Eviction ───────────────────────────────────────────
 
-/// Compute the "energy" (value) of a cache entry for Boltzmann eviction.
-/// Higher energy = more valuable = less likely to be evicted.
-pub struct EntryEnergy {
-    pub read_count: u32,
-    pub recency_secs: f64,
-    pub association_strength: f32,
-    pub token_size: usize,
-    pub graph_centrality: f32,
-}
-
-impl EntryEnergy {
-    /// Calculate the energy value E for this entry.
-    /// Combines multiple signals into a single scalar.
-    pub fn compute(&self) -> f64 {
-        // Recency contributes with log-decay (recent = high energy)
-        let recency_score = 1.0 / (1.0 + self.recency_secs / 60.0);
-
-        // Read frequency (diminishing returns via sqrt)
-        let freq_score = (self.read_count as f64).sqrt();
-
-        // Association boost (normalized)
-        let assoc_score = (self.association_strength as f64).min(5.0);
-
-        // Size penalty (large entries cost more to keep)
-        let size_penalty = 1.0 / (1.0 + (self.token_size as f64 / 5000.0));
-
-        // Graph centrality bonus
-        let centrality_score = self.graph_centrality as f64;
-
-        // Weighted combination
-        recency_score * 3.0
-            + freq_score * 2.0
-            + assoc_score * 1.5
-            + size_penalty * 1.0
-            + centrality_score * 1.0
-    }
-}
-
-/// Boltzmann eviction decision.
-/// Returns the indices to evict from a list of energy scores, given a temperature T.
-///
-/// Temperature T = normalized memory pressure:
-/// - T ≈ 0: almost deterministic (only lowest-energy entries evicted)
-/// - T ≈ 1: stochastic (prevents pathological thrashing)
-pub fn boltzmann_select_evictions(
-    energies: &[f64],
-    num_to_evict: usize,
-    temperature: f64,
-) -> Vec<usize> {
-    if energies.is_empty() || num_to_evict == 0 {
-        return Vec::new();
-    }
-
-    let n = energies.len().min(num_to_evict);
-    let t = temperature.max(0.01); // avoid division by zero
-
-    // Compute eviction probabilities: P(evict_i) ∝ exp(-E_i / T)
-    let max_e = energies.iter().copied().fold(f64::MIN, f64::max);
-    let probs: Vec<f64> = energies
-        .iter()
-        .map(|&e| {
-            let normalized = (e - max_e) / t.max(0.01);
-            (-normalized).exp() // lower energy → higher eviction probability
-        })
-        .collect();
-
-    // Sort by eviction probability (highest first = lowest energy first)
-    let mut indexed: Vec<(usize, f64)> = probs.into_iter().enumerate().collect();
-    indexed.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
-
-    // At low temperature, this is nearly deterministic (sorted by energy).
-    // At high temperature, the probabilities flatten out.
-    indexed.into_iter().take(n).map(|(idx, _)| idx).collect()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -275,41 +200,6 @@ mod tests {
         let a = path_hash("src/main.rs");
         let b = path_hash("src/lib.rs");
         assert_eq!(matrix.association_strength(a, &[b]), 0.0);
-    }
-
-    #[test]
-    fn boltzmann_low_temp_is_deterministic() {
-        let energies = vec![10.0, 1.0, 5.0, 0.5, 8.0];
-        let evictions = boltzmann_select_evictions(&energies, 2, 0.01);
-        // Should evict lowest-energy entries: idx 3 (0.5) and idx 1 (1.0)
-        assert!(evictions.contains(&3));
-        assert!(evictions.contains(&1));
-    }
-
-    #[test]
-    fn boltzmann_high_temp_still_picks_n() {
-        let energies = vec![10.0, 1.0, 5.0, 0.5, 8.0];
-        let evictions = boltzmann_select_evictions(&energies, 2, 100.0);
-        assert_eq!(evictions.len(), 2);
-    }
-
-    #[test]
-    fn entry_energy_compute_is_sane() {
-        let high_value = EntryEnergy {
-            read_count: 10,
-            recency_secs: 5.0,
-            association_strength: 3.0,
-            token_size: 500,
-            graph_centrality: 0.8,
-        };
-        let low_value = EntryEnergy {
-            read_count: 1,
-            recency_secs: 3600.0,
-            association_strength: 0.0,
-            token_size: 50000,
-            graph_centrality: 0.0,
-        };
-        assert!(high_value.compute() > low_value.compute());
     }
 
     #[test]

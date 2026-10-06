@@ -94,18 +94,9 @@ const fn re(command: &'static str, category: Category) -> RewriteEntry {
     RewriteEntry { command, category }
 }
 
-/// Commands eligible for PreToolUse hook rewriting (IDE hooks).
-/// Excludes `FileRead` (handled separately in hook_handlers).
-pub fn hook_prefixes() -> Vec<String> {
-    REWRITE_COMMANDS
-        .iter()
-        .filter(|e| !matches!(e.category, Category::FileRead))
-        .map(|e| format!("{} ", e.command))
-        .collect()
-}
-
 /// Commands eligible for PreToolUse hook (bare command match, no trailing space).
 /// Used for commands like `eslint`, `prettier`, `tsc` that may run without args.
+#[cfg(test)]
 pub fn hook_bare_commands() -> Vec<&'static str> {
     REWRITE_COMMANDS
         .iter()
@@ -232,22 +223,6 @@ mod tests {
     }
 
     #[test]
-    fn hook_prefixes_exclude_search_fileread_dirlist() {
-        let prefixes = hook_prefixes();
-        assert!(!prefixes.contains(&"cat ".to_string()));
-        assert!(!prefixes.contains(&"head ".to_string()));
-        assert!(!prefixes.contains(&"tail ".to_string()));
-        assert!(prefixes.contains(&"rg ".to_string()));
-        assert!(prefixes.contains(&"grep ".to_string()));
-        assert!(prefixes.contains(&"egrep ".to_string()));
-        assert!(prefixes.contains(&"fgrep ".to_string()));
-        assert!(prefixes.contains(&"ls ".to_string()));
-        assert!(prefixes.contains(&"find ".to_string()));
-        assert!(prefixes.contains(&"git ".to_string()));
-        assert!(prefixes.contains(&"cargo ".to_string()));
-    }
-
-    #[test]
     fn is_rewritable_matches() {
         assert!(is_rewritable_command("git status"));
         assert!(is_rewritable_command("cargo test --lib"));
@@ -340,32 +315,6 @@ mod tests {
         assert!(list.contains("rg"));
         assert!(list.contains(" ls ") || list.ends_with(" ls"));
         assert!(list.contains("find"));
-    }
-
-    #[test]
-    fn bash_case_pattern_valid() {
-        let pattern = bash_case_pattern();
-        assert!(pattern.contains(r"git\ *"));
-        assert!(pattern.contains(r"cargo\ *"));
-        assert!(pattern.contains(r"rg\ *"));
-        assert!(pattern.contains(r"ls\ *"));
-    }
-
-    #[test]
-    fn hook_prefixes_superset_of_bare_commands() {
-        let prefixes = hook_prefixes();
-        let bare = hook_bare_commands();
-        for cmd in &bare {
-            let with_space = format!("{cmd} ");
-            assert!(
-                prefixes.contains(&with_space),
-                "bare command '{cmd}' missing from hook_prefixes"
-            );
-        }
-        assert!(
-            !bare.contains(&"cat"),
-            "FileRead commands must not be in hook_bare_commands"
-        );
     }
 
     #[test]

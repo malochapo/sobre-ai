@@ -103,10 +103,6 @@ ANTIPATTERN: Never touches the user's repository — completely isolated shadow 
                 saved_tokens: 0,
                 mode: Some(action),
                 path: None,
-                changed: matches!(
-                    args.get("action").and_then(Value::as_str),
-                    Some("snapshot" | "restore")
-                ),
                 shell_outcome: None,
                 content_blocks: None,
             }),

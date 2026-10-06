@@ -15,21 +15,16 @@
 //! The handler body only performs async-signal-safe operations (atomic stores
 //! and, on the second signal, `libc::_exit`).
 
-use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
+use std::sync::atomic::{AtomicBool, Ordering};
 
 static CANCELLED: AtomicBool = AtomicBool::new(false);
 static HANDLER_INSTALLED: AtomicBool = AtomicBool::new(false);
-static SIGNAL_COUNT: AtomicU8 = AtomicU8::new(0);
+#[cfg(unix)]
+static SIGNAL_COUNT: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(0);
 
 /// `true` once the user has requested cancellation via Ctrl-C.
 pub fn is_cancelled() -> bool {
     CANCELLED.load(Ordering::Relaxed)
-}
-
-/// Clear the cancellation state before starting a fresh cancellable operation.
-pub fn reset() {
-    CANCELLED.store(false, Ordering::SeqCst);
-    SIGNAL_COUNT.store(0, Ordering::SeqCst);
 }
 
 #[cfg(unix)]

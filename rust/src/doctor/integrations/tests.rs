@@ -2,71 +2,6 @@
 use super::*;
 
 #[test]
-fn codex_chatgpt_proxy_artifact_detects_only_top_level_entries() {
-    use CodexProxyState::*;
-    // Incomplete ChatGPT subscription config is stale/broken.
-    assert_eq!(
-        classify_codex_proxy_entries("model_provider = \"leanctx-chatgpt\"\nmodel = \"gpt-5.5\"\n"),
-        Artifact
-    );
-    assert_eq!(
-        classify_codex_proxy_entries("model_provider = \"leanctx-chatgpt\"\n"),
-        Artifact,
-        "a provider pin without the backend rail is incomplete"
-    );
-    // backend-api override on the API-key rail breaks codex cloud/remote → artifact.
-    assert_eq!(
-        classify_codex_proxy_entries(
-            "openai_base_url = \"http://127.0.0.1:8765/backend-api/codex\"\n"
-        ),
-        Artifact
-    );
-    // Bare chatgpt_base_url is incomplete; the generated provider block is
-    // required with the top-level provider + rail.
-    assert_eq!(
-        classify_codex_proxy_entries("chatgpt_base_url = \"http://127.0.0.1:8765/backend-api/\"\n"),
-        Artifact
-    );
-    assert_eq!(
-        classify_codex_proxy_entries(
-            "model_provider = \"leanctx-chatgpt\"\nchatgpt_base_url = \"http://127.0.0.1:8765/backend-api/\"\n"
-        ),
-        Artifact,
-        "top-level pair without provider block is incomplete"
-    );
-    assert_eq!(
-        classify_codex_proxy_entries(
-            "model_provider = \"leanctx-chatgpt\"\nchatgpt_base_url = \"http://127.0.0.1:8765/backend-api/\"\n\n[model_providers.leanctx-chatgpt]\nbase_url = \"https://example.com/backend-api/codex\"\n"
-        ),
-        Artifact,
-        "provider block must target the local proxy backend"
-    );
-    assert_eq!(
-        classify_codex_proxy_entries(
-            "model_provider = \"leanctx-chatgpt\"\nchatgpt_base_url = \"http://127.0.0.1:8765/backend-api/\"\n\n[model_providers.leanctx-chatgpt]\nbase_url = \"http://127.0.0.1:8765/backend-api/codex\"\n"
-        ),
-        OptInRouted
-    );
-    // Default provider → native.
-    assert_eq!(
-        classify_codex_proxy_entries("model_provider = \"openai\"\n"),
-        Native
-    );
-    // API-key rail (/v1) is legitimate → native.
-    assert_eq!(
-        classify_codex_proxy_entries("openai_base_url = \"http://127.0.0.1:4444/v1\"\n"),
-        Native
-    );
-    // A per-profile choice is the user's own → native.
-    assert_eq!(
-        classify_codex_proxy_entries(
-            "model = \"gpt-5.5\"\n\n[profiles.proxy]\nmodel_provider = \"leanctx-chatgpt\"\n"
-        ),
-        Native
-    );
-}
-
-#[test]
 fn codex_desktop_note_is_informational_and_never_fails() {
     let note = codex_desktop_note();
     assert!(
@@ -81,25 +16,6 @@ fn codex_desktop_note_is_informational_and_never_fails() {
 }
 
 #[test]
-fn antigravity_cli_hooks_note_is_informational_and_explains_gating() {
-    let note = antigravity_cli_hooks_note();
-    assert!(
-        note.ok,
-        "the Antigravity CLI gating note is informational, never a failure"
-    );
-    assert!(
-        note.detail.contains("enable_json_hooks"),
-        "note must name the server-side flag that gates hook execution: {}",
-        note.detail
-    );
-    assert!(
-        note.detail.contains("ctx_") && note.detail.contains("regardless"),
-        "note must reassure that the MCP tools compress regardless: {}",
-        note.detail
-    );
-}
-
-#[test]
 fn claude_flags_instructions_advertising_ctx_without_mcp_registration() {
     // GH #637 (second half) / GL #1139: a CLAUDE.md block advertising ctx_*
     // tools while no lean-ctx MCP server is registered strands the agent on
@@ -108,8 +24,7 @@ fn claude_flags_instructions_advertising_ctx_without_mcp_registration() {
     let _lock = crate::core::data_dir::test_env_lock();
     let tmp = tempfile::tempdir().unwrap();
     let home = tmp.path();
-    // Hermetic config: the check consults rules_scope/rules_injection via
-    // Config::load(); the developer's real config must not leak in.
+    // Hermetic config: the developer's real config must not leak in.
     crate::test_env::set_var(
         "LEAN_CTX_CONFIG_DIR",
         home.join("cfg").to_string_lossy().to_string(),
@@ -127,7 +42,7 @@ fn claude_flags_instructions_advertising_ctx_without_mcp_registration() {
     .unwrap();
     // No ~/.claude.json → MCP registration missing.
 
-    let status = integration_claude(home, "/usr/local/bin/lean-ctx", "/tmp/data");
+    let status = integration_claude(home, "/usr/local/bin/lean-ctx");
     let consistency = status
         .checks
         .iter()
@@ -147,7 +62,7 @@ fn claude_flags_instructions_advertising_ctx_without_mcp_registration() {
         r#"{"mcpServers":{"lean-ctx":{"command":"/usr/local/bin/lean-ctx","args":[]}}}"#,
     )
     .unwrap();
-    let healthy = integration_claude(home, "/usr/local/bin/lean-ctx", "/tmp/data");
+    let healthy = integration_claude(home, "/usr/local/bin/lean-ctx");
     assert!(
         !healthy
             .checks
@@ -222,13 +137,12 @@ fn stale_hook_binary_accepts_bare_path_command() {
 /// rewrite it back to an absolute path and restart the sync ping-pong.
 #[test]
 fn stale_hook_binary_accepts_configured_portable_override() {
-    let _lock = crate::core::data_dir::test_env_lock();
-    // SAFETY: serialized by test_env_lock.
-    unsafe { std::env::set_var("LEAN_CTX_HOOK_BINARY", "$HOME/.local/bin/lean-ctx") };
+    let iso = crate::core::data_dir::isolated_data_dir();
+    let cfg = iso.path().join("config.toml");
+    std::fs::write(&cfg, "hook_binary = \"$HOME/.local/bin/lean-ctx\"\n").unwrap();
     let content = r#""$HOME/.local/bin/lean-ctx hook rewrite""#;
     assert!(stale_hook_binary(content, "/machine/abs/lean-ctx").is_none());
-    // SAFETY: serialized by test_env_lock.
-    unsafe { std::env::remove_var("LEAN_CTX_HOOK_BINARY") };
+    std::fs::remove_file(&cfg).unwrap();
 
     // Without the override the same content IS stale — the acceptance is
     // strictly opt-in.
@@ -254,56 +168,6 @@ fn finalize_hook_check_reports_drift_missing_and_stale() {
     let healthy = finalize_hook_check("Hooks", p, true, None);
     assert!(healthy.ok);
     assert!(healthy.detail.contains("ok"));
-}
-
-#[test]
-fn check_antigravity_cli_verifies_self_contained_bundle() {
-    let dir = tempfile::tempdir().expect("tempdir");
-    let home = dir.path();
-    let plugin_dir = crate::hooks::agents::antigravity_cli_plugin_dir(home);
-    std::fs::create_dir_all(plugin_dir.join("hooks")).unwrap();
-
-    std::fs::write(
-        plugin_dir.join("plugin.json"),
-        r#"{"name":"lean-ctx","version":"0.0.1"}"#,
-    )
-    .unwrap();
-    std::fs::write(
-        plugin_dir.join("hooks").join("hooks.json"),
-        r#"{"hooks":{"PostToolUse":[{"matcher":"*","hooks":[{"type":"command","command":"lean-ctx hook observe"}]}]}}"#,
-    )
-    .unwrap();
-    // The self-contained, spec-compliant piece (#284): plugin-local MCP config.
-    std::fs::write(
-        plugin_dir.join("mcp_config.json"),
-        r#"{"mcpServers":{"lean-ctx":{"command":"lean-ctx"}}}"#,
-    )
-    .unwrap();
-    let cfg_dir = crate::hooks::agents::antigravity_cli_config_dir(home);
-    std::fs::create_dir_all(&cfg_dir).unwrap();
-    std::fs::write(
-        cfg_dir.join("import_manifest.json"),
-        r#"{"imports":[{"name":"lean-ctx"}]}"#,
-    )
-    .unwrap();
-
-    let full = check_antigravity_cli_hooks(home, "lean-ctx");
-    assert!(
-        full.ok,
-        "full self-contained bundle must pass: {}",
-        full.detail
-    );
-
-    // Drop the plugin-local mcp_config.json -> the check must fail and name it
-    // (so `doctor --fix`, which re-runs the installer, knows what to repair).
-    std::fs::remove_file(plugin_dir.join("mcp_config.json")).unwrap();
-    let drift = check_antigravity_cli_hooks(home, "lean-ctx");
-    assert!(!drift.ok, "missing plugin-local mcp_config.json must fail");
-    assert!(
-        drift.detail.contains("mcp_config.json"),
-        "detail must point at the missing mcp_config.json: {}",
-        drift.detail
-    );
 }
 
 #[test]

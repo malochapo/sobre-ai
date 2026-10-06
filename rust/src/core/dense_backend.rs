@@ -24,25 +24,6 @@ pub enum DenseBackendKind {
 }
 
 impl DenseBackendKind {
-    /// Honours `LEANCTX_DENSE_BACKEND` so an explicit `local` keeps working and
-    /// anything else fails loudly instead of silently falling back.
-    ///
-    /// # Errors
-    /// When the variable names a backend this build does not have.
-    pub fn try_from_env() -> Result<Self, String> {
-        match std::env::var("LEANCTX_DENSE_BACKEND")
-            .ok()
-            .map(|v| v.trim().to_ascii_lowercase())
-            .filter(|v| !v.is_empty())
-            .as_deref()
-        {
-            None | Some("local") => Ok(Self::Local),
-            Some(other) => Err(format!(
-                "Unknown LEANCTX_DENSE_BACKEND={other:?} — sobre only has the local, in-process backend"
-            )),
-        }
-    }
-
     pub fn label(&self) -> &'static str {
         match self {
             Self::Local => "local",
@@ -245,52 +226,4 @@ fn top_k_by_similarity(
     let mut result: Vec<(usize, f32)> = heap.into_iter().map(|e| (e.1, e.0)).collect();
     result.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
     result
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    fn set_env(key: &str, value: Option<&str>) -> Option<String> {
-        let old = std::env::var(key).ok();
-        match value {
-            Some(v) => crate::test_env::set_var(key, v),
-            None => crate::test_env::remove_var(key),
-        }
-        old
-    }
-
-    fn restore_env(key: &str, old: Option<String>) {
-        match old {
-            Some(v) => crate::test_env::set_var(key, v),
-            None => crate::test_env::remove_var(key),
-        }
-    }
-
-    #[test]
-    fn dense_backend_defaults_to_local() {
-        let _g = crate::core::data_dir::test_env_lock();
-        let old_backend = set_env("LEANCTX_DENSE_BACKEND", None);
-        let old_url = set_env("LEANCTX_QDRANT_URL", None);
-        let old_pg = set_env("LEANCTX_PGVECTOR_URL", None);
-
-        let got = DenseBackendKind::try_from_env().unwrap();
-        assert_eq!(got, DenseBackendKind::Local);
-
-        restore_env("LEANCTX_DENSE_BACKEND", old_backend);
-        restore_env("LEANCTX_QDRANT_URL", old_url);
-        restore_env("LEANCTX_PGVECTOR_URL", old_pg);
-    }
-
-    #[test]
-    fn dense_backend_unknown_value_errors() {
-        let _g = crate::core::data_dir::test_env_lock();
-        let old_backend = set_env("LEANCTX_DENSE_BACKEND", Some("wat"));
-        let old_url = set_env("LEANCTX_QDRANT_URL", None);
-
-        let err = DenseBackendKind::try_from_env().unwrap_err();
-        assert!(err.contains("Unknown LEANCTX_DENSE_BACKEND"));
-
-        restore_env("LEANCTX_DENSE_BACKEND", old_backend);
-        restore_env("LEANCTX_QDRANT_URL", old_url);
-    }
 }

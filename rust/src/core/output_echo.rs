@@ -24,12 +24,6 @@ const STATS_FILE: &str = "output_echo.json";
 const MAX_REPORTS: usize = 50;
 /// Echo lines shorter than this are noise (`}`, `);`, `end`).
 const MIN_LINE_CHARS: usize = 12;
-/// Nudge when the average echo ratio of the recent window exceeds this.
-const NUDGE_THRESHOLD: f64 = 0.30;
-/// Responses considered for the nudge decision.
-const NUDGE_WINDOW: usize = 5;
-/// Minimum analyzed responses between two nudges.
-const NUDGE_COOLDOWN: usize = 20;
 /// How much of the radar tail to scan for source content (bytes).
 const RADAR_TAIL_BYTES: u64 = 262_144;
 /// Cap on source documents compared against.
@@ -60,31 +54,6 @@ impl EchoStats {
             return 0.0;
         }
         recent.iter().map(|r| r.echo_ratio).sum::<f64>() / recent.len() as f64
-    }
-
-    /// Per-day `(YYYY-MM-DD, avg_echo_ratio, samples)` over the last `days`
-    /// days, ascending by day — the dashboard's learning trend (#507).
-    /// Days are UTC, consistent with the ledger's day slices.
-    pub fn daily_trend(&self, days: u32) -> Vec<(String, f64, u64)> {
-        use std::collections::BTreeMap;
-        let cutoff = now_unix().saturating_sub(u64::from(days) * 86_400);
-        let mut by_day: BTreeMap<String, (f64, u64)> = BTreeMap::new();
-        for r in &self.reports {
-            if r.recorded_unix < cutoff {
-                continue;
-            }
-            let Some(dt) = chrono::DateTime::from_timestamp(r.recorded_unix as i64, 0) else {
-                continue;
-            };
-            let day = dt.format("%Y-%m-%d").to_string();
-            let entry = by_day.entry(day).or_default();
-            entry.0 += r.echo_ratio;
-            entry.1 += 1;
-        }
-        by_day
-            .into_iter()
-            .map(|(d, (sum, n))| (d, sum / n as f64, n))
-            .collect()
     }
 }
 
@@ -259,9 +228,9 @@ fn radar_tail_sources() -> (Vec<String>, u64) {
 }
 
 /// Hook entry point: analyze an agent response against the radar tail,
-/// persist rolling stats and emit the automatic feedback event.
+/// and persist rolling stats.
 pub fn analyze_and_record(response: &str) {
-    let (sources, turn_input_tokens) = radar_tail_sources();
+    let (sources, _) = radar_tail_sources();
     let report = analyze(response, &sources);
 
     let mut stats = load_stats();
@@ -272,77 +241,6 @@ pub fn analyze_and_record(response: &str) {
         stats.reports.drain(..excess);
     }
     save_stats(&stats);
-
-    emit_feedback_event(response, turn_input_tokens);
-}
-
-/// Automatic `LlmFeedbackEvent` (#501): the adaptive mode policy used to
-/// depend on voluntary `ctx_feedback` calls that practically never happened.
-/// Mode attribution comes from the session's `files_touched.last_mode`
-/// aggregation — a session-window approximation, honest and available.
-fn emit_feedback_event(response: &str, turn_input_tokens: u64) {
-    let output_tokens = crate::core::tokens::count_tokens(response) as u64;
-    if output_tokens == 0 {
-        return;
-    }
-
-    let session = crate::core::session::SessionState::load_latest();
-    let modes: Option<std::collections::BTreeMap<String, u64>> = session.as_ref().map(|s| {
-        let mut m = std::collections::BTreeMap::new();
-        for f in &s.files_touched {
-            if !f.last_mode.is_empty() {
-                *m.entry(f.last_mode.clone()).or_insert(0) += u64::from(f.read_count.max(1));
-            }
-        }
-        m
-    });
-    let modes = modes.filter(|m| !m.is_empty());
-
-    let model = crate::hook_handlers::load_detected_model().map(|(name, _)| name);
-
-    let ev = crate::core::llm_feedback::LlmFeedbackEvent {
-        agent_id: "output_echo_auto".to_string(),
-        intent: session
-            .as_ref()
-            .and_then(|s| s.task.as_ref())
-            .and_then(|t| t.intent.clone()),
-        model,
-        llm_input_tokens: turn_input_tokens.max(1),
-        llm_output_tokens: output_tokens,
-        latency_ms: None,
-        note: None,
-        ctx_read_last_mode: None,
-        ctx_read_modes: modes,
-        timestamp: chrono::Utc::now().to_rfc3339(),
-    };
-
-    let mut policy = crate::core::adaptive_mode_policy::AdaptiveModePolicyStore::load();
-    policy.update_from_feedback(&ev);
-    let _ = policy.save();
-    let _ = crate::core::llm_feedback::LlmFeedbackStore::record(ev);
-}
-
-/// CEP nudge for the MCP server to append to a tool result. Stable text in
-/// 10%-steps (prompt-cache friendly, #498), cooldown-limited. Consuming the
-/// nudge advances the cooldown marker.
-pub fn take_pending_nudge() -> Option<String> {
-    let mut stats = load_stats();
-    if stats.reports.len() < NUDGE_WINDOW {
-        return None;
-    }
-    if stats.total_analyzed.saturating_sub(stats.last_nudge_at) < NUDGE_COOLDOWN as u64 {
-        return None;
-    }
-    let avg = stats.avg_ratio(NUDGE_WINDOW);
-    if avg < NUDGE_THRESHOLD {
-        return None;
-    }
-    let rounded = ((avg * 10.0).round() * 10.0) as u32;
-    stats.last_nudge_at = stats.total_analyzed;
-    save_stats(&stats);
-    Some(format!(
-        "\n[CEP: ~{rounded}% of your recent replies echoed file content already in context — reference lines (F1:42-58) instead of re-quoting]"
-    ))
 }
 
 /// Average echo ratio over the rolling window — CEP score input.
@@ -383,50 +281,6 @@ mod tests {
         let report = analyze(response, &[src]);
         assert_eq!(report.code_lines, 0);
         assert!(report.echo_ratio.abs() < f64::EPSILON);
-    }
-
-    #[test]
-    fn daily_trend_groups_by_utc_day_and_averages() {
-        let now = now_unix();
-        // Anchor both "today" samples to the start of the current UTC day. A naive
-        // `now` / `now - 60` pair straddles midnight when the suite runs within 60s
-        // of a UTC day rollover, yielding a spurious third day (flaky in CI).
-        let day = now - (now % 86_400);
-        let stats = EchoStats {
-            reports: vec![
-                // Two samples on the same UTC day (today): avg of 0.2 and 0.6 = 0.4.
-                EchoReport {
-                    echo_ratio: 0.2,
-                    recorded_unix: day + 100,
-                    ..Default::default()
-                },
-                EchoReport {
-                    echo_ratio: 0.6,
-                    recorded_unix: day + 200,
-                    ..Default::default()
-                },
-                // One sample two UTC days ago.
-                EchoReport {
-                    echo_ratio: 1.0,
-                    recorded_unix: day - 2 * 86_400 + 100,
-                    ..Default::default()
-                },
-                // Outside the 14-day window — must be excluded.
-                EchoReport {
-                    echo_ratio: 1.0,
-                    recorded_unix: day - 30 * 86_400,
-                    ..Default::default()
-                },
-            ],
-            ..Default::default()
-        };
-        let trend = stats.daily_trend(14);
-        assert_eq!(trend.len(), 2, "two distinct days inside the window");
-        // Ascending by day: the older day first.
-        assert_eq!(trend[0].2, 1, "older day has one sample");
-        assert!((trend[0].1 - 1.0).abs() < f64::EPSILON);
-        assert_eq!(trend[1].2, 2, "today has two samples");
-        assert!((trend[1].1 - 0.4).abs() < 1e-9);
     }
 
     #[test]

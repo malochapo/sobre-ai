@@ -4,24 +4,12 @@
 //! - secret-like paths ([`is_secret_like`]) and detected secrets → `Secret`
 //! - Luhn-validated card numbers and mod-97-validated IBANs → `Confidential`
 
-use std::path::Path;
 use std::sync::OnceLock;
 
 use regex::Regex;
 
 use super::SensitivityLevel;
-use crate::core::{io_boundary, secret_detection};
-
-/// Classify a source path. Secret-like paths (keys, `.env`, `.ssh/…`) → `Secret`.
-/// Everything else stays `Public` — path alone is not enough to infer lower
-/// confidential levels without guessing.
-pub fn classify_path(path: &Path) -> SensitivityLevel {
-    if io_boundary::is_secret_like(path).is_some() {
-        SensitivityLevel::Secret
-    } else {
-        SensitivityLevel::Public
-    }
-}
+use crate::core::secret_detection;
 
 /// Classify free text by content.
 pub fn classify_content(content: &str) -> SensitivityLevel {
@@ -32,27 +20,6 @@ pub fn classify_content(content: &str) -> SensitivityLevel {
         return SensitivityLevel::Confidential;
     }
     SensitivityLevel::Public
-}
-
-/// Combined classification: the maximum of path- and content-derived levels.
-pub fn classify(path: Option<&Path>, content: &str) -> SensitivityLevel {
-    let from_path = path.map(classify_path).unwrap_or_default();
-    from_path.max(classify_content(content))
-}
-
-/// Redact the spans that raise sensitivity: known secrets (via the config-driven
-/// scanner) plus PII (card numbers, IBANs) the secret scanner does not cover.
-pub(super) fn redact_sensitive(text: &str) -> String {
-    // Force redaction on regardless of the global `secret_detection` toggle: a
-    // sensitivity floor must always mask, not merely detect.
-    let forced = crate::core::config::SecretDetectionConfig {
-        enabled: true,
-        redact: true,
-        ..Default::default()
-    };
-    let (secrets_masked, _) = secret_detection::scan_and_redact(text, &forced);
-    let cards_masked = redact_credit_cards(&secrets_masked);
-    redact_ibans(&cards_masked)
 }
 
 // ---- Card numbers (Luhn) ---------------------------------------------------
@@ -99,19 +66,6 @@ fn has_credit_card(content: &str) -> bool {
         .any(|m| luhn_valid(&digits_of(m.as_str())))
 }
 
-fn redact_credit_cards(text: &str) -> String {
-    card_re()
-        .replace_all(text, |caps: &regex::Captures| {
-            let m = caps.get(0).map(|x| x.as_str()).unwrap_or_default();
-            if luhn_valid(&digits_of(m)) {
-                "[REDACTED:card]".to_string()
-            } else {
-                m.to_string()
-            }
-        })
-        .into_owned()
-}
-
 // ---- IBANs (ISO 7064 mod-97) ----------------------------------------------
 
 fn iban_re() -> &'static Regex {
@@ -148,19 +102,6 @@ fn iban_valid(candidate: &str) -> bool {
 
 fn has_iban(content: &str) -> bool {
     iban_re().find_iter(content).any(|m| iban_valid(m.as_str()))
-}
-
-fn redact_ibans(text: &str) -> String {
-    iban_re()
-        .replace_all(text, |caps: &regex::Captures| {
-            let m = caps.get(0).map(|x| x.as_str()).unwrap_or_default();
-            if iban_valid(m) {
-                "[REDACTED:iban]".to_string()
-            } else {
-                m.to_string()
-            }
-        })
-        .into_owned()
 }
 
 #[cfg(test)]
@@ -214,36 +155,6 @@ mod tests {
         assert_eq!(
             classify_content("ref DE00370400440532013000"),
             SensitivityLevel::Public
-        );
-    }
-
-    #[test]
-    fn redact_masks_card_and_iban_keeps_text() {
-        let red = redact_sensitive("card 4111 1111 1111 1111 iban DE89370400440532013000 end");
-        assert!(red.contains("[REDACTED:card]"));
-        assert!(red.contains("[REDACTED:iban]"));
-        assert!(red.contains("end"));
-        assert!(!red.contains("4111 1111 1111 1111"));
-    }
-
-    #[test]
-    fn secret_like_path_is_secret() {
-        assert_eq!(
-            classify_path(Path::new("/home/u/.ssh/id_rsa")),
-            SensitivityLevel::Secret
-        );
-        assert_eq!(
-            classify_path(Path::new("src/main.rs")),
-            SensitivityLevel::Public
-        );
-    }
-
-    #[test]
-    fn classify_takes_max_of_path_and_content() {
-        // Benign content but secret path → Secret.
-        assert_eq!(
-            classify(Some(Path::new("/x/.env")), "PORT=8080"),
-            SensitivityLevel::Secret
         );
     }
 }

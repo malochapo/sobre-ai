@@ -22,8 +22,7 @@ pub fn handle_deny() {
     // #805: deny Write/Edit payloads that contain compression markers.
     // These indicate the agent is writing compressed ctx_read output to disk.
     if is_write_tool(&tool_name) {
-        if !is_compression_guard_disabled()
-            && let Some(content) = extract_write_content(&stdin_payload)
+        if let Some(content) = extract_write_content(&stdin_payload)
             && has_compression_markers(&content)
         {
             print_deny_compression_markers(&tool_name);
@@ -40,27 +39,12 @@ pub fn handle_deny() {
 }
 
 fn should_allow(tool_name: &str, file_path: Option<&str>) -> bool {
-    if super::is_disabled() {
-        return true;
-    }
-
     if file_path.is_some_and(is_binary_file) {
-        return true;
-    }
-
-    if is_replace_mode_disabled() {
         return true;
     }
 
     let _ = tool_name;
     false
-}
-
-fn is_replace_mode_disabled() -> bool {
-    matches!(
-        std::env::var("LEAN_CTX_REPLACE_MODE"),
-        Ok(v) if v.trim() == "0" || v.trim().eq_ignore_ascii_case("off")
-    )
 }
 
 fn is_binary_file(path: &str) -> bool {
@@ -118,11 +102,6 @@ fn is_write_tool(tool_name: &str) -> bool {
     )
 }
 
-fn is_compression_guard_disabled() -> bool {
-    std::env::var("LEAN_CTX_ALLOW_COMPRESSED_WRITE")
-        .is_ok_and(|v| v.trim() == "1" || v.trim().eq_ignore_ascii_case("true"))
-}
-
 fn has_compression_markers(content: &str) -> bool {
     content.contains("[lean-ctx:")
 }
@@ -169,11 +148,10 @@ fn print_deny_compression_markers(tool_name: &str) {
         "Blocked {tool_name}: payload contains lean-ctx compression markers \
          ([lean-ctx: omitted ...] or similar). Writing compressed ctx_read \
          output to disk corrupts files. Use ctx_read(raw=true) or ctx_expand \
-         to recover full content before editing. \
-         Set LEAN_CTX_ALLOW_COMPRESSED_WRITE=1 to override."
+         to recover full content before editing."
     );
     let output = serde_json::json!({
-        // Grok PreToolUse decision field.
+        // Top-level PreToolUse decision field.
         "decision": "deny",
         "reason": msg,
         "permission": "deny",
@@ -306,7 +284,7 @@ fn build_ctx_shell_hint(args: &serde_json::Map<String, serde_json::Value>) -> St
 fn print_smart_deny(tool_name: &str, payload: &str) {
     let msg = smart_deny_message(tool_name, payload);
     let output = serde_json::json!({
-        // Grok PreToolUse decision field.
+        // Top-level PreToolUse decision field.
         "decision": "deny",
         "reason": msg,
         "permission": "deny",

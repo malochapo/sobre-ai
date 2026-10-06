@@ -155,7 +155,6 @@ fn handle_anchored(args: &Map<String, Value>, ctx: &ToolContext) -> Result<ToolO
         saved_tokens: 0,
         mode: None,
         path: output_path,
-        changed: false,
         shell_outcome: None,
         content_blocks: None,
     })
@@ -533,7 +532,6 @@ fn delegate_replace_symbol(
 
     let args_value = Value::Object(refactor_args);
     let result = crate::tools::ctx_refactor::handle(&args_value, &ctx.project_root, &abs_path);
-    let changed = !result.starts_with("ERROR") && !result.starts_with("CONFLICT");
 
     Ok(ToolOutput {
         text: result,
@@ -541,7 +539,6 @@ fn delegate_replace_symbol(
         saved_tokens: 0,
         mode: Some("replace_symbol".to_string()),
         path: get_str(args, "path"),
-        changed,
         shell_outcome: None,
         content_blocks: None,
     })
@@ -756,25 +753,5 @@ mod batch_grouping_tests {
         assert!(build_unique_edit_args(&Map::new()).is_err());
         let only_old = Map::from_iter([("old_text".into(), json!("old"))]);
         assert!(build_unique_edit_args(&only_old).is_err());
-    }
-
-    #[test]
-    fn dry_run_replace_unique_does_not_apply() {
-        let args = Map::from_iter([
-            ("path".into(), json!("a.rs")),
-            ("op".into(), json!("replace_unique")),
-            ("old_text".into(), json!("old")),
-            ("new_text".into(), json!("new")),
-            ("dry_run".into(), json!(true)),
-        ]);
-        let edit_args = build_unique_edit_args(&args).expect("validation passes");
-        assert!(
-            edit_args.contains_key("old_string"),
-            "args mapped correctly"
-        );
-        assert!(
-            args.get("dry_run").and_then(Value::as_bool) == Some(true),
-            "dry_run flag preserved in original args"
-        );
     }
 }

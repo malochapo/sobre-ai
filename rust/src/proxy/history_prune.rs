@@ -2,8 +2,6 @@ use std::collections::HashMap;
 
 use serde_json::Value;
 
-use crate::core::config::HistoryMode;
-
 use super::tool_kind::{ToolResultKind, classify_tool_name, should_protect};
 
 /// Minimum number of messages at the tail that are never pruned in
@@ -18,26 +16,18 @@ const KEEP_MIN: usize = 8;
 /// invalidations but more un-pruned history between jumps.
 const STRIDE: usize = 16;
 
-/// Tail window of the legacy rolling mode (pre-cache-aware behaviour).
-const ROLLING_KEEP_RECENT: usize = 6;
-
-/// How many messages from the front of `messages` may be pruned for the given
-/// history mode.
+/// How many messages from the front of `messages` may be pruned.
 ///
-/// Cache-aware mode returns a *staircase* boundary: it is a deterministic,
+/// The boundary is a *staircase*: a deterministic,
 /// monotonically non-decreasing function of the conversation length that only
 /// advances in `STRIDE`-sized jumps. Because [`prune_history`] rewrites each
 /// message purely from its own content, every message before an
 /// already-passed boundary is frozen — re-pruning it on the next turn yields
 /// byte-identical output, so the provider prompt-cache prefix stays valid
-/// between jumps. A rolling `len - keep_recent` boundary (legacy mode) moves
-/// every turn and invalidates the cache from the moved position on.
-pub fn prune_boundary(mode: HistoryMode, len: usize) -> usize {
-    match mode {
-        HistoryMode::Off => 0,
-        HistoryMode::Rolling => len.saturating_sub(ROLLING_KEEP_RECENT),
-        HistoryMode::CacheAware => ((len.saturating_sub(KEEP_MIN)) / STRIDE) * STRIDE,
-    }
+/// between jumps. A rolling `len - keep_recent` boundary would move every turn
+/// and invalidate the cache from the moved position on.
+pub(crate) fn prune_boundary(len: usize) -> usize {
+    ((len.saturating_sub(KEEP_MIN)) / STRIDE) * STRIDE
 }
 
 /// Number of leading messages that belong to the client's provider-cached
@@ -48,7 +38,7 @@ pub fn prune_boundary(mode: HistoryMode, len: usize) -> usize {
 /// the prune boundary advances a stride (#448). Returns `0` when no
 /// `cache_control` marker is present (e.g. every OpenAI request), so pruning is
 /// unchanged there.
-pub fn cached_prefix_len(messages: &[Value]) -> usize {
+pub(crate) fn cached_prefix_len(messages: &[Value]) -> usize {
     let mut cached = 0;
     for (i, msg) in messages.iter().enumerate() {
         if message_has_cache_control(msg) {
@@ -89,7 +79,8 @@ fn message_has_cache_control(msg: &Value) -> bool {
 /// read* is replaced with an honest, actionable stub ("re-read the file") rather
 /// than a misleading first-3/last-2 excerpt of source code. Command/log output
 /// keeps the head/tail summary, which stays readable for diagnostics.
-pub fn prune_history(
+#[cfg(test)]
+pub(crate) fn prune_history(
     messages: &mut [Value],
     prune_end: usize,
     tool_names: &HashMap<String, String>,
@@ -102,7 +93,7 @@ pub fn prune_history(
 /// [`cached_prefix_len`]) so cache-aware pruning never invalidates an
 /// already-cached prompt prefix on metered rails (#448). With `prune_start = 0`
 /// this is identical to the historical `prune_history` behaviour.
-pub fn prune_history_range(
+pub(crate) fn prune_history_range(
     messages: &mut [Value],
     prune_start: usize,
     prune_end: usize,
@@ -193,7 +184,7 @@ fn summarize_anthropic_tool_result(block: &mut Value, kind: ToolResultKind) -> b
 /// `function_call_output` is absent, so we prune *in place* (file/source reads
 /// collapse to an honest re-read stub, everything else head/tail summarizes)
 /// without ever touching the conversation structure.
-pub fn prune_output_text(text: &str, kind: ToolResultKind) -> Option<String> {
+pub(crate) fn prune_output_text(text: &str, kind: ToolResultKind) -> Option<String> {
     if text.len() <= 200 {
         return None;
     }
@@ -215,14 +206,9 @@ fn summarize_or_stub(text: &str, kind: ToolResultKind) -> String {
         return match super::ccr::persist(text) {
             Some(handle) => {
                 super::sticky_tools::mark_ccr_active(0);
-                match super::ccr::inband_locator(&handle) {
-                    Some(marker) => format!(
-                        "[lean-ctx: an earlier file read ({lines} lines) was pruned from older context to save tokens. This is the version shown that turn — the file may have changed since. Echo {marker} to splice the verbatim original back inline, or re-read the file for its current contents.]"
-                    ),
-                    None => format!(
-                        "[lean-ctx: an earlier file read ({lines} lines) was pruned from older context to save tokens. This is the version shown that turn — the file may have changed since. Full original at {handle}. Re-read the file for its current contents.]"
-                    ),
-                }
+                format!(
+                    "[lean-ctx: an earlier file read ({lines} lines) was pruned from older context to save tokens. This is the version shown that turn — the file may have changed since. Full original at {handle}. Re-read the file for its current contents.]"
+                )
             }
             None => format!(
                 "[lean-ctx: an earlier file read ({lines} lines) was pruned from older context to save tokens. This was an older version — the file may have changed since. Re-read the file for its current contents.]"
@@ -243,14 +229,10 @@ fn summarize_text(text: &str) -> String {
 
     // CCR (#482): a head/tail summary drops the middle; offer a recovery handle
     // to the verbatim original (content-addressed → cache-safe, MCP-independent).
-    // In-band (#493): advertise the echo-able marker when there is no shared FS.
     let recover = super::ccr::persist(text)
         .map(|h| {
             super::sticky_tools::mark_ccr_active(0);
-            match super::ccr::inband_locator(&h) {
-                Some(marker) => format!(" · echo {marker} for the full original"),
-                None => format!(" · full at {h}"),
-            }
+            format!(" · full at {h}")
         })
         .unwrap_or_default();
 
@@ -297,7 +279,7 @@ mod tests {
     fn boundary_is_a_monotone_staircase() {
         let mut last = 0;
         for len in 0..200 {
-            let b = prune_boundary(HistoryMode::CacheAware, len);
+            let b = prune_boundary(len);
             assert!(b >= last, "boundary must never move backwards");
             assert!(
                 b == last || b == last + STRIDE,
@@ -312,21 +294,10 @@ mod tests {
     }
 
     #[test]
-    fn boundary_modes() {
-        assert_eq!(prune_boundary(HistoryMode::Off, 100), 0);
-        assert_eq!(
-            prune_boundary(HistoryMode::Rolling, 100),
-            100 - ROLLING_KEEP_RECENT
-        );
-        // Below KEEP_MIN + STRIDE nothing is pruned in cache-aware mode.
-        assert_eq!(
-            prune_boundary(HistoryMode::CacheAware, KEEP_MIN + STRIDE - 1),
-            0
-        );
-        assert_eq!(
-            prune_boundary(HistoryMode::CacheAware, KEEP_MIN + STRIDE),
-            STRIDE
-        );
+    fn boundary_steps() {
+        // Below KEEP_MIN + STRIDE nothing is pruned.
+        assert_eq!(prune_boundary(KEEP_MIN + STRIDE - 1), 0);
+        assert_eq!(prune_boundary(KEEP_MIN + STRIDE), STRIDE);
     }
 
     /// THE cache invariant: as the conversation grows turn by turn, the pruned
@@ -357,7 +328,7 @@ mod tests {
         let mut prev_boundary = 0;
         for len in 1..=80 {
             let mut messages: Vec<Value> = (0..len).map(make_msg).collect();
-            let boundary = prune_boundary(HistoryMode::CacheAware, len);
+            let boundary = prune_boundary(len);
             prune_history(&mut messages, boundary, &no_names());
 
             let pruned: Vec<String> = messages.iter().map(Value::to_string).collect();
@@ -613,7 +584,7 @@ mod tests {
         // Production guard: prune only `[cached_prefix_len .. boundary)`.
         let stubs = |pairs: usize| -> usize {
             let mut messages = anthropic_turns(pairs, true);
-            let boundary = prune_boundary(HistoryMode::CacheAware, messages.len());
+            let boundary = prune_boundary(messages.len());
             let cached = cached_prefix_len(&messages);
             prune_history_range(&mut messages, cached, boundary, &no_names());
             messages
@@ -635,7 +606,7 @@ mod tests {
         // Contrast: the unguarded boundary (`prune_start = 0`) DOES stub the
         // cached prefix at the same length — the exact churn #448 fixes.
         let mut unguarded = anthropic_turns(12, true);
-        let boundary = prune_boundary(HistoryMode::CacheAware, unguarded.len());
+        let boundary = prune_boundary(unguarded.len());
         prune_history(&mut unguarded, boundary, &no_names());
         assert!(
             unguarded.iter().any(|m| m.to_string().contains("pruned")),

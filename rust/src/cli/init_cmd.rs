@@ -58,17 +58,8 @@ pub fn install_shell_hook(args: &[String]) {
             for name in &result.rules.already {
                 qprintln!("  ✓ {name} rules up-to-date");
             }
-            if result.mcp_skipped {
-                qprintln!("  • MCP registration skipped for {agent_name} (auto_update_mcp=false)");
-            }
             for e in &result.errors {
                 eprintln!("  ✗ {agent_name}: {e}");
-            }
-            if agent_name.eq_ignore_ascii_case("hermes") {
-                qprintln!("\n  Beyond MCP, lean-ctx can be Hermes' active context engine");
-                qprintln!("  (replaces the built-in ContextCompressor). Install the plugin from");
-                qprintln!("  integrations/hermes-lean-ctx (scripts/install.sh), then set");
-                qprintln!("  context.engine: \"lean-ctx\" in ~/.hermes/config.yaml.");
             }
             if project {
                 crate::hooks::install_agent_project_hooks(agent_name, &cwd);
@@ -133,8 +124,8 @@ pub fn install_shell_hook(args: &[String]) {
     }
 
     if no_hook {
-        qprintln!("Shell hook disabled (--no-shell-hook or shell_hook_disabled config).");
-        qprintln!("MCP tools remain active. Set LEAN_CTX_NO_HOOK=1 to disable at runtime.");
+        qprintln!("Shell hook disabled (--no-shell-hook or shell_hook = false).");
+        qprintln!("MCP tools remain active.");
     } else if is_powershell {
         super::shell_init::init_powershell(&binary);
     } else {
@@ -179,13 +170,9 @@ pub fn install_shell_hook(args: &[String]) {
     }
     qprintln!();
     qprintln!("For AI tool integration: lean-ctx init --agent <tool> [--mode <mode>]");
-    qprintln!("  Supported: aider, amazonq, amp, antigravity, antigravity-cli, augment,");
     qprintln!(
-        "    claude, cline, codex, commandcode, continue, copilot, crush, cursor, emacs, gemini,"
+        "  Supported: claude, codex, copilot, cursor, gemini, opencode, vscode, windsurf, zed"
     );
-    qprintln!("    grok, hermes, jetbrains, kiro, neovim, openclaw, opencode, pi, qoder,");
-    qprintln!("    qodercli, qoderwork, qwen, roo, sublime, trae, verdent, vscode,");
-    qprintln!("    windsurf, zed");
     qprintln!("  Modes: mcp, hybrid, replace  (auto-detected per agent, override with --mode)");
 }
 
@@ -229,7 +216,9 @@ pub fn cmd_init(args: &[String]) {
         "--repair",
         "--json",
         "--no-shell-hook",
+        "--agent-aliases",
         "--no-agent-aliases",
+        "--shell-activation",
         "--skip-rules",
         "--no-auto-approve",
     ];
@@ -242,8 +231,16 @@ pub fn cmd_init(args: &[String]) {
         std::process::exit(2);
     }
 
-    if args.iter().any(|a| a == "--no-agent-aliases") {
-        let _ = crate::core::config::setter::set_by_key("skip_agent_aliases", "true");
+    // Baked into the generated hook, which is where later runs read it back.
+    if let Some(i) = args.iter().position(|a| a == "--shell-activation") {
+        let Some(mode) = args
+            .get(i + 1)
+            .and_then(|v| crate::core::config::ShellActivation::parse(v))
+        else {
+            eprintln!("init: --shell-activation takes always, agents-only or off");
+            std::process::exit(2);
+        };
+        crate::core::config::ShellActivation::set_cli_override(mode);
     }
 
     // `init <shell>` prints the hook on stdout for `eval "$(sobre init zsh)"`.
@@ -299,7 +296,7 @@ pub fn cmd_init(args: &[String]) {
             let a = &args[i];
             if a.starts_with('-') {
                 forwarded.push(a.clone());
-                if matches!(a.as_str(), "--mode" | "--agent")
+                if matches!(a.as_str(), "--mode" | "--agent" | "--shell-activation")
                     && let Some(value) = args.get(i + 1)
                     && !value.starts_with('-')
                 {
@@ -317,6 +314,7 @@ pub fn cmd_init(args: &[String]) {
     // when anything failed. CI gates on that exit code.
     if !repair && !json {
         ask_about_proxy();
+        ask_about_embeddings();
     }
 
     let opts = crate::setup::SetupOptions {
@@ -327,6 +325,13 @@ pub fn cmd_init(args: &[String]) {
         no_auto_approve: args.iter().any(|a| a == "--no-auto-approve"),
         skip_rules: args.iter().any(|a| a == "--skip-rules"),
         skip_shell_hook: args.iter().any(|a| a == "--no-shell-hook"),
+        agent_aliases: if args.iter().any(|a| a == "--no-agent-aliases") {
+            Some(false)
+        } else if args.iter().any(|a| a == "--agent-aliases") {
+            Some(true)
+        } else {
+            None
+        },
         ..Default::default()
     };
     match crate::setup::run_setup_with_options(opts) {
@@ -353,7 +358,7 @@ pub fn cmd_init(args: &[String]) {
 fn ask_about_proxy() {
     use std::io::Write;
 
-    if crate::core::config::Config::load().proxy_enabled.is_some() {
+    if crate::core::config::Config::load().proxy.enabled.is_some() {
         return;
     }
     if crate::shell::is_non_interactive() {
@@ -373,7 +378,7 @@ fn ask_about_proxy() {
     let _ = std::io::stdin().read_line(&mut input);
     let yes = matches!(input.trim().to_lowercase().as_str(), "y" | "yes");
 
-    if let Err(e) = crate::core::config::Config::update_global(|c| c.proxy_enabled = Some(yes)) {
+    if let Err(e) = crate::core::config::Config::update_global(|c| c.proxy.enabled = Some(yes)) {
         tracing::warn!("could not persist the proxy choice: {e}");
         return;
     }
@@ -387,6 +392,39 @@ fn ask_about_proxy() {
         println!("  Proxy enabled.");
     } else {
         println!("  Skipped. Turn it on later with `sobre proxy enable`.");
+    }
+}
+
+/// Semantic search needs a local model. It is downloaded only with consent:
+/// here, or later with `lean-ctx embeddings provision`. Asked only by builds
+/// that can use it, and only while the model is missing.
+fn ask_about_embeddings() {
+    #[cfg(feature = "embeddings")]
+    {
+        use std::io::Write;
+
+        if crate::core::embeddings::EmbeddingEngine::is_available()
+            || crate::shell::is_non_interactive()
+        {
+            return;
+        }
+
+        println!();
+        println!("  Semantic search runs a small embedding model on this machine.");
+        println!("  It needs the ONNX Runtime and the model (about 120 MB, one-time).");
+        println!();
+        print!("  Download them now? [y/N] ");
+        let _ = std::io::stdout().flush();
+
+        let mut input = String::new();
+        let _ = std::io::stdin().read_line(&mut input);
+        if matches!(input.trim().to_lowercase().as_str(), "y" | "yes") {
+            if let Err(e) = crate::cli::embeddings_cmd::provision(false) {
+                eprintln!("  Download failed: {e}");
+            }
+        } else {
+            println!("  Skipped. Download later with `lean-ctx embeddings provision`.");
+        }
     }
 }
 
@@ -409,7 +447,11 @@ Options:
   --global                   Write agent rules globally, not per project
   --project                  Also install project-local agent hooks
   --no-shell-hook            Skip the shell rc entirely
-  --no-agent-aliases         Do not install claude/codex/gemini aliases
+  --shell-activation <always|agents-only|off>
+                             When the shell aliases activate (default:
+                             agents-only); kept by later runs
+  --agent-aliases            Install claude/codex/gemini aliases (default)
+  --no-agent-aliases         Do not install them; kept by later runs
   --skip-rules               Do not write agent rules files
   --no-auto-approve          Do not configure auto-approve
 

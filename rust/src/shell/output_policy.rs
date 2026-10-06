@@ -15,7 +15,7 @@
 pub enum OutputPolicy {
     /// Auth flows, dev servers, interactive, streaming, installs.
     /// Output is passed through with ZERO modification, even when
-    /// `LEAN_CTX_COMPRESS=1` (force_compress) is set.
+    /// `-c` (force_compress) is set.
     Passthrough,
 
     /// API data, file content, structured queries, HTTP responses.

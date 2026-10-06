@@ -8,7 +8,7 @@ use crate::server::registry::build_registry;
 use crate::server::tool_trait::ToolContext;
 
 /// CLI-level failure — distinct from a tool's *functional* result (a tool that
-/// returns "ERROR:" / "BACKEND_REQUIRED:" text is a successful invocation and
+/// returns "ERROR:" text is a successful invocation and
 /// goes to stdout with exit 0). These variants are wrong *usage* of `call`.
 #[derive(Debug)]
 pub(crate) enum CallError {
@@ -190,8 +190,7 @@ pub(crate) fn run_call(args: &[String]) -> Result<String, CallError> {
         .get(&parsed.tool)
         .ok_or_else(|| CallError::UnknownTool(parsed.tool.clone()))?;
 
-    // Handlers are synchronous (the JetBrains backend uses blocking `ureq`),
-    // so no tokio runtime is required here.
+    // Handlers are synchronous, so no tokio runtime is required here.
     let output = tool.handle(&args_map, &ctx).map_err(|e| {
         CallError::Dispatch(DispatchError::Tool {
             message: e.to_string(),
@@ -202,7 +201,7 @@ pub(crate) fn run_call(args: &[String]) -> Result<String, CallError> {
 }
 
 /// Thin CLI wrapper: print result to stdout (exit 0, even for functional
-/// "ERROR:"/"BACKEND_REQUIRED:" output), or usage error to stderr (exit 2).
+/// "ERROR:" output), or usage error to stderr (exit 2).
 pub(crate) fn cmd_call(args: &[String]) {
     match run_call(args) {
         Ok(text) => println!("{text}"),

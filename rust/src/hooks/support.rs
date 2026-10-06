@@ -7,20 +7,6 @@ pub(crate) fn install_named_json_server(
     root_key: &str,
     entry: serde_json::Value,
 ) {
-    // #281: honor `[setup] auto_update_mcp = false`. This is the shared writer
-    // for every JSON-config agent (Aider, Continue, Qwen, Zed, Amazon Q, …), so
-    // gating it here keeps locked-down installs free of MCP server entries while
-    // their hooks/rules still install. The editor-target path is gated at its
-    // call sites; this closes the hooks-layer path missed by the first fix.
-    // The skip stays silent: init/setup/onboard/doctor already print one
-    // per-agent skip line, so re-announcing here would just double the noise.
-    if !crate::core::config::Config::load()
-        .setup
-        .should_update_mcp()
-    {
-        return;
-    }
-
     if let Some(parent) = config_path.parent() {
         let _ = std::fs::create_dir_all(parent);
     }
@@ -111,28 +97,6 @@ pub(super) fn install_codex_instruction_docs(codex_dir: &Path) -> bool {
     if existing_lean_ctx != lean_ctx_content {
         super::write_file(&lean_ctx_md, &lean_ctx_content);
         changed = true;
-    }
-
-    // Dedicated mode (#343): never touch AGENTS.md. The Codex SessionStart hook
-    // injects the compact summary; strip any block a prior shared install left.
-    if crate::core::config::Config::load().rules_injection_effective()
-        == crate::core::config::RulesInjection::Dedicated
-    {
-        if agents_path.exists()
-            && std::fs::read_to_string(&agents_path).is_ok_and(|c| {
-                crate::marked_block::contains_marker_line(&c, CODEX_AGENTS_BLOCK_START)
-            })
-        {
-            crate::marked_block::remove_from_file(
-                &agents_path,
-                CODEX_AGENTS_BLOCK_START,
-                CODEX_AGENTS_BLOCK_END,
-                true,
-                "Codex AGENTS.md lean-ctx block",
-            );
-            changed = true;
-        }
-        return changed;
     }
 
     let rules_path = codex_dir.join("LEAN-CTX.md");
@@ -526,8 +490,7 @@ pub(super) fn is_lean_ctx_codex_managed_entry(event_name: &str, entry: &serde_js
             "PreToolUse" => {
                 entry_obj.get("matcher").and_then(|value| value.as_str()) == Some("Bash")
                     && command.contains("lean-ctx")
-                    && (command.contains("hook rewrite")
-                        || command.contains("hook codex-pretooluse"))
+                    && command.contains("hook codex-pretooluse")
             }
             "SessionStart" => {
                 command.contains("lean-ctx") && command.contains("hook codex-session-start")

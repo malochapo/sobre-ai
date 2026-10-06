@@ -68,7 +68,7 @@ pub fn load_linked_projects(project_root: &Path) -> LinkedProjects {
             continue;
         }
 
-        match crate::core::io_boundary::jail_and_check_path("linkedProjects", &abs, project_root) {
+        match crate::core::io_boundary::jail_and_check_path(&abs, project_root) {
             Ok((_, _)) => out.roots.push(abs),
             Err(e) => out.warnings.push(format!(
                 "linked project rejected by pathjail: {} ({e})",
@@ -86,10 +86,6 @@ fn read_config_file(project_root: &Path) -> Option<(PathBuf, String)> {
     let new = project_root.join(".lean-ctx.json");
     if let Ok(s) = std::fs::read_to_string(&new) {
         return Some((new, s));
-    }
-    let legacy = project_root.join(".leanctx.json");
-    if let Ok(s) = std::fs::read_to_string(&legacy) {
-        return Some((legacy, s));
     }
     let socrati = project_root.join(".socraticode.json");
     if let Ok(s) = std::fs::read_to_string(&socrati) {
@@ -113,15 +109,14 @@ mod tests {
     #[cfg(not(feature = "no-jail"))]
     #[test]
     fn linked_projects_outside_root_are_rejected_without_allow_path() {
-        // Global lock (not module-local): every LEAN_CTX_ALLOW_PATH mutation
-        // process-wide serializes through test_env_lock (#695 flake report).
-        let _guard = crate::core::data_dir::test_env_lock();
+        // Private config (no `allow_paths`), serialized through the global
+        // test_env_lock that `isolated_data_dir` holds (#695 flake report).
+        let _iso = crate::core::data_dir::isolated_data_dir();
         let root = tempfile::tempdir().expect("root");
         let other = tempfile::tempdir().expect("other");
 
         write_linked_config(root.path(), other.path());
 
-        crate::test_env::remove_var("LEAN_CTX_ALLOW_PATH");
         let res = load_linked_projects(root.path());
         assert!(res.roots.is_empty());
         assert!(
@@ -135,20 +130,19 @@ mod tests {
 
     #[test]
     fn linked_projects_outside_root_are_allowed_with_allow_path() {
-        let _guard = crate::core::data_dir::test_env_lock();
+        let iso = crate::core::data_dir::isolated_data_dir();
         let root = tempfile::tempdir().expect("root");
         let other = tempfile::tempdir().expect("other");
 
         write_linked_config(root.path(), other.path());
 
-        crate::test_env::set_var(
-            "LEAN_CTX_ALLOW_PATH",
-            other.path().to_string_lossy().to_string(),
-        );
+        std::fs::write(
+            iso.path().join("config.toml"),
+            format!("allow_paths = [{:?}]\n", other.path().to_string_lossy()),
+        )
+        .unwrap();
         let res = load_linked_projects(root.path());
         assert_eq!(res.roots.len(), 1);
         assert_eq!(res.roots[0], other.path().canonicalize().expect("canon"));
-
-        crate::test_env::remove_var("LEAN_CTX_ALLOW_PATH");
     }
 }

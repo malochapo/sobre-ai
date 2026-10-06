@@ -1,56 +1,26 @@
 //! Verified Savings Ledger (G1) — the per-event, auditable counterfactual store.
 //!
-//! Local-only and on by default (set `LEAN_CTX_SAVINGS_LEDGER=off` to disable). It never
+//! Local-only and always on. It never
 //! leaves the machine; opt-in org roll-up + cryptographic signing are later phases. See
 //! `docs/business/03-verified-savings-ledger.md`.
 
 pub mod event;
-pub mod roi;
-pub mod signed_batch;
 pub mod store;
 
-#[cfg(test)]
-mod migration_tests;
-
 pub use event::{MECHANISM_CACHING, MECHANISM_COMPRESSION, MECHANISM_ROUTING, SavingsEvent};
-pub use roi::{RoiReport, roi_report};
-pub use signed_batch::{BatchVerifyResult, SignedSavingsBatchV1};
-pub use store::{LedgerSummary, VerifyResult};
+pub use store::LedgerSummary;
 
 use std::sync::OnceLock;
-
-pub mod unified;
-use crate::core::savings_ledger::unified::{FileUnifiedLedger, UnifiedLedger};
-
-fn enabled() -> bool {
-    enabled_from(std::env::var("LEAN_CTX_SAVINGS_LEDGER").ok().as_deref())
-}
-
-/// Pure opt-out logic (testable without mutating process env). Enabled unless explicitly
-/// set to a falsy value.
-fn enabled_from(value: Option<&str>) -> bool {
-    match value {
-        Some(v) => !matches!(
-            v.trim().to_lowercase().as_str(),
-            "off" | "0" | "false" | "no"
-        ),
-        None => true,
-    }
-}
 
 /// Resolved (model_key, input_price_per_m) for this process. The active model is stable
 /// within a process, so we resolve the pricing table once.
 fn model_and_price() -> &'static (String, f64) {
     static CACHE: OnceLock<(String, f64)> = OnceLock::new();
     CACHE.get_or_init(|| {
-        let resolved = std::env::var("LEAN_CTX_MODEL")
-            .or_else(|_| std::env::var("LCTX_MODEL"))
-            .ok()
-            .filter(|s| !s.trim().is_empty())
-            // No explicit model → value savings against the real model the proxy
-            // measured most, instead of the blended fallback (cross-process hint
-            // from `proxy_usage.json`). Falls back to blended when absent.
-            .or_else(crate::proxy::usage_meter::persisted_dominant_model);
+        // Value savings against the real model the proxy measured most, instead
+        // of the blended fallback (cross-process hint from `proxy_usage.json`).
+        // Falls back to blended when absent.
+        let resolved = crate::proxy::usage_meter::persisted_dominant_model();
         let quote =
             crate::core::gain::model_pricing::ModelPricing::load().quote(resolved.as_deref());
         (quote.model_key, quote.cost.input_per_m)
@@ -151,22 +121,9 @@ fn new_event(tool: &str) -> SavingsEvent {
         attribution_id: None,
         baseline_ref: None,
         price_version: None,
-        customer_approval: None,
-        settlement_status: None,
         is_first_inject: None,
         cache_read_per_m_usd: None,
         cache_write_per_m_usd: None,
-    }
-}
-
-fn append_with_unified(path: &std::path::Path, event: SavingsEvent) {
-    let Ok(event) = store::append(path, event) else {
-        return;
-    };
-    let unified = FileUnifiedLedger::from_savings_event(&event)
-        .and_then(|event| FileUnifiedLedger::from_data_dir()?.record_unified(event));
-    if let Err(error) = unified {
-        tracing::warn!(%error, "failed to dual-write unified savings event");
     }
 }
 
@@ -188,7 +145,7 @@ pub fn record_read_event(original_tokens: usize, saved_tokens: usize) {
 /// where compression saved nothing and never panics.
 pub fn record_tool_event(tool: &str, baseline_tokens: usize, actual_tokens: usize) {
     let saved = baseline_tokens.saturating_sub(actual_tokens);
-    if saved == 0 || !enabled() {
+    if saved == 0 {
         return;
     }
     let Some(path) = store::default_path() else {
@@ -201,37 +158,7 @@ pub fn record_tool_event(tool: &str, baseline_tokens: usize, actual_tokens: usiz
     event.saved_tokens = saved as u64;
     event.saved_usd = saved as f64 / 1_000_000.0 * event.unit_price_per_m_usd;
     event.confidence = Some(1.0);
-    append_with_unified(&path, event);
-}
-
-/// Like `record_tool_event` but with G8 token-stream attribution (#1191).
-/// `is_first_inject`: `true` for first read of a path (cache_write rate),
-/// `false` for subsequent reads (cache_read rate).
-pub fn record_tool_event_with_stream(
-    tool: &str,
-    baseline_tokens: usize,
-    actual_tokens: usize,
-    is_first_inject: bool,
-) {
-    let saved = baseline_tokens.saturating_sub(actual_tokens);
-    if saved == 0 || !enabled() {
-        return;
-    }
-    let Some(path) = store::default_path() else {
-        return;
-    };
-
-    let quote = crate::core::gain::model_pricing::ModelPricing::load().quote(None);
-    let mut event = new_event(tool);
-    event.baseline_tokens = baseline_tokens as u64;
-    event.actual_tokens = actual_tokens as u64;
-    event.saved_tokens = saved as u64;
-    event.saved_usd = saved as f64 / 1_000_000.0 * event.unit_price_per_m_usd;
-    event.confidence = Some(1.0);
-    event.is_first_inject = Some(is_first_inject);
-    event.cache_read_per_m_usd = Some(quote.cost.cache_read_per_m);
-    event.cache_write_per_m_usd = Some(quote.cost.cache_write_per_m);
-    append_with_unified(&path, event);
+    let _ = store::append(&path, event);
 }
 
 /// Best-effort append of a *routing* savings event (enterprise#13/#19): the gateway served
@@ -241,7 +168,7 @@ pub fn record_tool_event_with_stream(
 /// (`gain::model_pricing::routing_saving_usd`). Negative-value routes (an upgrade) are
 /// recorded too — the ledger never hides regressions. Skips only true no-ops.
 pub fn record_routing_event(requested_model: &str, serving_model: &str, input_tokens: u64) {
-    if input_tokens == 0 || requested_model == serving_model || !enabled() {
+    if input_tokens == 0 || requested_model == serving_model {
         return;
     }
     let Some(path) = store::default_path() else {
@@ -274,14 +201,14 @@ pub fn record_routing_event(requested_model: &str, serving_model: &str, input_to
     // saved_tokens stays 0: routing saves dollars at equal tokens. Token
     // savings remain the compression mechanism's dimension.
     event.saved_usd = saved_usd;
-    append_with_unified(&path, event);
+    let _ = store::append(&path, event);
 }
 
 /// Best-effort append of a *caching* savings event: provider prompt-cache reads billed
 /// below the input rate. `discount_usd` must be the measured price difference
 /// (input rate − cache-read rate) × cache-read tokens for the serving model.
 pub fn record_caching_event(model: &str, cache_read_tokens: u64, discount_usd: f64) {
-    if cache_read_tokens == 0 || discount_usd <= 0.0 || !enabled() {
+    if cache_read_tokens == 0 || discount_usd <= 0.0 {
         return;
     }
     let Some(path) = store::default_path() else {
@@ -296,14 +223,14 @@ pub fn record_caching_event(model: &str, cache_read_tokens: u64, discount_usd: f
     event.baseline_tokens = cache_read_tokens;
     event.actual_tokens = cache_read_tokens;
     event.saved_usd = discount_usd;
-    append_with_unified(&path, event);
+    let _ = store::append(&path, event);
 }
 
 /// Best-effort append of a *bounce* event (G7): a compressed read later invalidated by a
 /// full re-read, so the earlier saving was (partly) illusory. Recorded as a negative
 /// adjustment with `tool = "bounce"` so totals net out without editing the original entry.
 pub fn record_bounce_event(wasted_tokens: usize) {
-    if wasted_tokens == 0 || !enabled() {
+    if wasted_tokens == 0 {
         return;
     }
     let Some(path) = store::default_path() else {
@@ -316,7 +243,7 @@ pub fn record_bounce_event(wasted_tokens: usize) {
     event.actual_tokens = wasted;
     event.bounce_adjustment = wasted;
     event.saved_usd = -(wasted as f64 / 1_000_000.0 * event.unit_price_per_m_usd);
-    append_with_unified(&path, event);
+    let _ = store::append(&path, event);
 }
 
 /// Total bounce-adjusted tokens recorded, optionally limited to the last `days` (by event
@@ -335,28 +262,6 @@ pub fn summary() -> LedgerSummary {
         .unwrap_or_default()
 }
 
-/// Per-day `(day, bounce_events, read_events)` for the last `days` days —
-/// the dashboard's "is the system learning?" trend (#507).
-pub fn daily_bounce_trend(days: u32) -> Vec<(String, u64, u64)> {
-    store::default_path()
-        .map(|p| store::daily_bounce_trend(&p, days))
-        .unwrap_or_default()
-}
-
-/// Re-walks the hash chain and reports whether it is intact.
-pub fn verify() -> VerifyResult {
-    store::default_path().map_or_else(VerifyResult::empty, |p| store::verify(&p))
-}
-
-/// Re-hashes the ledger under the current (v2) canonical scheme, repairing a chain broken by
-/// the legacy float round-trip bug. Returns the number of re-chained events (0 if no ledger).
-pub fn rechain() -> std::io::Result<usize> {
-    match store::default_path() {
-        Some(p) if p.exists() => store::rechain(&p),
-        _ => Ok(0),
-    }
-}
-
 /// Every recorded event (for `ledger export`).
 pub fn all_events() -> Vec<SavingsEvent> {
     store::default_path()
@@ -367,17 +272,6 @@ pub fn all_events() -> Vec<SavingsEvent> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn opt_out_logic_is_correct() {
-        assert!(enabled_from(None), "enabled by default when unset");
-        assert!(enabled_from(Some("on")));
-        assert!(enabled_from(Some("1")));
-        assert!(!enabled_from(Some("off")));
-        assert!(!enabled_from(Some("0")));
-        assert!(!enabled_from(Some("false")));
-        assert!(!enabled_from(Some(" No ")), "trim + case-insensitive");
-    }
 
     #[test]
     fn repo_hash_is_truncated_hex() {
@@ -432,9 +326,6 @@ mod tests {
 
         let ledger = dir.join("savings").join("ledger.jsonl");
         let content = std::fs::read_to_string(&ledger).expect("ledger written");
-        let unified_path = dir.join("savings").join("unified_ledger.jsonl");
-        let unified_content =
-            std::fs::read_to_string(&unified_path).expect("unified ledger written");
         crate::test_env::remove_var("LEAN_CTX_DATA_DIR");
         let _ = std::fs::remove_dir_all(&dir);
 
@@ -451,19 +342,6 @@ mod tests {
         );
         assert_eq!(ev.evidence_class, Some(event::EvidenceClass::Measured));
         assert_eq!(ev.confidence, Some(1.0));
-
-        let unified: crate::core::savings_ledger::unified::UnifiedSavingsEventV2 =
-            serde_json::from_str(unified_content.lines().next().unwrap()).unwrap();
-        assert_eq!(unified.tool_name, ev.tool);
-        assert_eq!(unified.mode, ev.mechanism);
-        assert_eq!(unified.original_tokens, ev.baseline_tokens);
-        assert_eq!(unified.compressed_tokens, ev.actual_tokens);
-        assert_eq!(unified.saved_tokens, ev.saved_tokens);
-        assert_eq!(unified.content_hash, ev.repo_hash);
-        assert_eq!(unified.prev_hash, ev.prev_hash);
-        assert_eq!(unified.event_hash, ev.entry_hash);
-        assert_eq!(unified.agent_id.as_deref(), Some(ev.agent_id.as_str()));
-        assert_eq!(unified.attribution_id, ev.repo_hash);
     }
 
     /// enterprise#19: a gateway route (requested ≠ serving) lands as a

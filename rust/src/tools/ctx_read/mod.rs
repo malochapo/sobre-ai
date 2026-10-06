@@ -6,7 +6,6 @@ use crate::core::deps;
 use crate::core::entropy;
 use crate::core::protocol;
 use crate::core::signatures;
-use crate::core::symbol_map::{self, SymbolMap};
 use crate::core::tokens::count_tokens;
 use crate::tools::CrpMode;
 // `pub(crate)`: the conformance suite renders modes directly for its
@@ -158,7 +157,7 @@ pub fn read_file_lossy(path: &str) -> Result<String, std::io::Error> {
         .map_err(|e| std::io::Error::other(format!("cannot stat open file descriptor: {e}")))?;
     if meta.len() > cap as u64 {
         return Err(std::io::Error::other(format!(
-            "file too large ({} bytes, limit {} bytes via LCTX_MAX_READ_BYTES). \
+            "file too large ({} bytes, limit {} bytes). \
              Increase the limit or use a line-range read: mode=\"lines:1-100\"",
             meta.len(),
             cap
@@ -244,7 +243,6 @@ fn try_disk_anchored_window(
     mode: &str,
     fresh: bool,
     preread_is_none: bool,
-    file_ref: &str,
     short: &str,
 ) -> Option<ReadOutput> {
     if !fresh || !preread_is_none {
@@ -254,13 +252,12 @@ fn try_disk_anchored_window(
     let (start, end) = parse_disk_anchor_range(range)?;
     let window = read_line_window(path, start, end)?;
     let (out, _) = format_anchored_output_window(
-        file_ref,
         short,
         &window.body,
         window.total_lines,
         Some((window.start, window.end)),
     );
-    let out = crate::core::redaction::redact_text_if_enabled(&out);
+    let out = crate::core::redaction::redact_text(&out);
     let sent = count_tokens(&out);
     Some(ReadOutput {
         content: out,
@@ -330,11 +327,6 @@ pub fn handle(cache: &mut SessionCache, path: &str, mode: &str, crp_mode: CrpMod
     handle_with_options(cache, path, mode, false, crp_mode, None)
 }
 
-/// Like `handle`, but invalidates the cache first to force a fresh disk read.
-pub fn handle_fresh(cache: &mut SessionCache, path: &str, mode: &str, crp_mode: CrpMode) -> String {
-    handle_with_options(cache, path, mode, true, crp_mode, None)
-}
-
 /// Reads a file with task-aware filtering to prioritize task-relevant content.
 pub fn handle_with_task(
     cache: &mut SessionCache,
@@ -367,7 +359,7 @@ pub fn handle_with_task_resolved(
 
 /// Like [`handle_with_task_resolved`] but with an explicit per-call
 /// aggressiveness (the `ctx_read` `aggressiveness` arg, #714). `None` falls back
-/// to the `LEAN_CTX_AGGRESSIVENESS` env var / config field.
+/// to the config field.
 pub fn handle_with_task_resolved_tuned(
     cache: &mut SessionCache,
     path: &str,
@@ -388,32 +380,6 @@ pub fn handle_with_task_resolved_tuned(
     )
 }
 
-/// Like [`handle_with_task_resolved_tuned`] but accepts pre-read file content,
-/// avoiding disk I/O under the cache write-lock (Two-Phase Read pattern, #1098).
-#[allow(clippy::too_many_arguments)]
-pub fn handle_with_preread(
-    cache: &mut SessionCache,
-    path: &str,
-    mode: &str,
-    fresh: bool,
-    crp_mode: CrpMode,
-    task: Option<&str>,
-    aggressiveness: Option<f64>,
-    protect: &[String],
-    preread: String,
-) -> ReadOutput {
-    handle_with_options_resolved_preread(
-        cache,
-        path,
-        mode,
-        fresh,
-        crp_mode,
-        task,
-        ReadTuning::resolve(aggressiveness, protect),
-        Some(preread),
-    )
-}
-
 /// Fresh read with task-aware filtering (invalidates cache first).
 pub fn handle_fresh_with_task(
     cache: &mut SessionCache,
@@ -426,6 +392,7 @@ pub fn handle_fresh_with_task(
 }
 
 /// Fresh read with task-aware filtering, also returns the resolved mode name and pre-counted tokens.
+#[cfg(test)]
 pub fn handle_fresh_with_task_resolved(
     cache: &mut SessionCache,
     path: &str,
@@ -485,29 +452,6 @@ fn handle_with_options(
     .content
 }
 
-/// `LEAN_CTX_FORCE_FRESH=1` — an explicit operator override that always forces a
-/// cold full read, independent of conversation scoping.
-pub(crate) fn force_fresh_env() -> bool {
-    static FORCE_FRESH: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *FORCE_FRESH.get_or_init(|| {
-        std::env::var("LEAN_CTX_FORCE_FRESH").is_ok_and(|v| v == "1" || v == "true")
-    })
-}
-
-/// Detects a subagent (forked agent) execution context via `CURSOR_TASK_ID`.
-///
-/// A subagent must never be served a stub for content only the parent received.
-/// That used to be enforced by force-freshing *every* subagent read; with
-/// conversation scoping (#954/#955) the subagent instead runs under its own scope
-/// (`conversation::current_conversation_id` → `task:{id}`), so the stub gate
-/// withholds cross-agent stubs precisely while restoring the subagent's *own*
-/// cheap re-reads. The blanket force-fresh is therefore kept only as the fallback
-/// when scoping is disabled (#956).
-pub(crate) fn is_subagent_context() -> bool {
-    static IS_SUBAGENT: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *IS_SUBAGENT.get_or_init(|| std::env::var("CURSOR_TASK_ID").is_ok_and(|v| !v.is_empty()))
-}
-
 fn handle_with_options_resolved(
     cache: &mut SessionCache,
     path: &str,
@@ -530,23 +474,11 @@ fn handle_with_options_resolved_preread(
     tuning: ReadTuning<'_>,
     preread: Option<String>,
 ) -> ReadOutput {
-    let effective_fresh = fresh
-        || force_fresh_env()
-        || (is_subagent_context() && !crate::core::conversation::scope_enabled());
-
     if let Ok(mut bt) = crate::core::bounce_tracker::global().lock() {
         bt.next_seq();
     }
-    let mut result = handle_with_options_inner(
-        cache,
-        path,
-        mode,
-        effective_fresh,
-        crp_mode,
-        task,
-        tuning,
-        preread,
-    );
+    let mut result =
+        handle_with_options_inner(cache, path, mode, fresh, crp_mode, task, tuning, preread);
 
     if let Some(entry) = cache.get_mut(path) {
         entry.last_mode.clone_from(&result.resolved_mode);
@@ -581,53 +513,6 @@ fn handle_with_options_resolved_preread(
             result.output_tokens,
             original_tokens,
         );
-
-        // Quality signals (#538): compressed reads count as clean until a
-        // bounce proves otherwise (the bounce signal outweighs 6:1); large
-        // full reads of never-bouncing extensions are wasted compression
-        // opportunities and push the learned threshold up.
-        // SSOT via [`ReadMode`] (#528): only verbatim `full` and the `diff`
-        // delta are uncompressed. A resolved window is always the canonical
-        // `lines:N-M` (parses to `Lines` ⇒ compressed); the default of `true`
-        // for the unreachable bare `"lines"` keeps prior behaviour everywhere a
-        // real resolved mode can occur.
-        let compressed = result
-            .resolved_mode
-            .parse::<ReadMode>()
-            .map_or(true, |m| m.counts_as_compressed());
-        if compressed {
-            crate::core::adaptive_thresholds::record_quality_signal(
-                path,
-                crate::core::threshold_learning::QualitySignal::CleanCompressed,
-            );
-        } else if result.resolved_mode == "full"
-            && result.output_tokens > 2000
-            && bt.bounce_rate_for_extension(path).unwrap_or(0.0) < 0.05
-        {
-            crate::core::adaptive_thresholds::record_quality_signal(
-                path,
-                crate::core::threshold_learning::QualitySignal::WastedFull,
-            );
-        }
-    }
-
-    // Stigmergy (#540): deposit a Hot scent for this read in the background
-    // (the field file lock may briefly block; never stall the read path). The
-    // foreign-claim hint is intentionally NOT appended to the body: it carries a
-    // relative timestamp ("claimed Nm ago"), which would make the output a
-    // non-pure function of wall-clock time and defeat provider prompt caching
-    // (#498). The deposit remains so the field still reflects active work.
-    {
-        let self_agent = crate::core::scent_field::scent_agent_id();
-        let scent_path = crate::core::pathutil::normalize_tool_path(path);
-        std::thread::spawn(move || {
-            crate::core::scent_field::deposit(
-                self_agent,
-                crate::core::scent_field::ScentKind::Hot,
-                &scent_path,
-                0.3,
-            );
-        });
     }
 
     result
@@ -659,13 +544,7 @@ pub(crate) fn try_stub_hit_readonly_scoped(
     path: &str,
     current_conversation: Option<&str>,
 ) -> Option<ReadOutput> {
-    let no_deg = crate::core::config::Config::load().no_degrade_effective();
-    let prof = crate::core::profiles::active_profile();
-    let force_full = no_deg
-        || (prof.read.default_mode_effective() == "full"
-            && prof.compression.crp_mode_effective() == "off");
-    let policy_allows_stub =
-        crate::server::compaction_sync::effective_cache_policy() != "safe" && !force_full;
+    let policy_allows_stub = crate::server::compaction_sync::effective_cache_policy() != "safe";
     if !policy_allows_stub {
         return None;
     }
@@ -730,14 +609,8 @@ pub(crate) fn try_stub_hit_readonly_scoped(
 /// content (#513) without breaking byte-stability.
 fn render_unchanged_stub(file_ref: &str, path: &str, line_count: usize) -> ReadOutput {
     let short = protocol::shorten_path(path);
-    let out = if crate::core::protocol::meta_visible() {
-        format!(
-            "{file_ref}={short} [unchanged {line_count}L]\nUnchanged on disk. Use fresh=true to force re-read.",
-        )
-    } else {
-        format!("{file_ref}={short} [unchanged {line_count}L · fresh=true to re-read]")
-    };
-    let out = crate::core::redaction::redact_text_if_enabled(&out);
+    let out = format!("{file_ref}={short} [unchanged {line_count}L · fresh=true to re-read]");
+    let out = crate::core::redaction::redact_text(&out);
     let sent = count_tokens(&out);
     ReadOutput {
         content: out,
@@ -762,7 +635,7 @@ pub struct DeltaExplicitDecision {
 
 /// Decide whether an **explicit** `full`/`lines:N-M` re-read of a session-cached
 /// file should be served as a delta instead of re-emitting content the model
-/// already holds (the `delta_explicit` opt-in; env `LCTX_DELTA_EXPLICIT`).
+/// already holds (the `delta_explicit` opt-in).
 ///
 /// Returns the mode the read should proceed with:
 /// - **Changed on disk** (verified mtime+md5 stale) and full content is cached →
@@ -851,24 +724,6 @@ fn handle_with_options_inner(
         .and_then(|e| e.to_str())
         .unwrap_or("");
 
-    // #1150: a path the operator marked "never compress" is always returned in
-    // full — exact bytes matter more than token savings for these files (golden
-    // snapshots, byte-asserted fixtures, security-sensitive configs). Every lossy
-    // mode (auto, aggressive, signatures, density, diff, …) collapses to the
-    // verbatim full read; `raw` (already verbatim) and explicit `lines:` slices
-    // are left as the user asked. The default config protects nothing, so this is
-    // a fast no-op for everyone who hasn't opted in.
-    let mode = if mode != "raw"
-        && !mode.starts_with("lines:")
-        && crate::core::config::Config::load()
-            .proxy
-            .is_path_compress_protected(path)
-    {
-        "full"
-    } else {
-        mode
-    };
-
     if fresh {
         if mode == "diff" {
             let warning = "[warning] fresh+diff is redundant — fresh invalidates cache, no diff possible. Use mode=full with fresh=true instead.";
@@ -885,15 +740,13 @@ fn handle_with_options_inner(
     // #811: a fresh, explicitly windowed `anchored:N-M` read never needs the
     // cache (fresh always bypasses it) or the whole file in memory — try the
     // disk-streaming short-circuit first.
-    if let Some(out) =
-        try_disk_anchored_window(path, mode, fresh, preread.is_none(), &file_ref, &short)
-    {
+    if let Some(out) = try_disk_anchored_window(path, mode, fresh, preread.is_none(), &short) {
         return out;
     }
 
     if mode == "diff" {
         let (out, _) = handle_diff(cache, path, &file_ref);
-        let out = crate::core::redaction::redact_text_if_enabled(&out);
+        let out = crate::core::redaction::redact_text(&out);
         let sent = count_tokens(&out);
         return ReadOutput {
             content: out,
@@ -959,7 +812,7 @@ fn handle_with_options_inner(
                     }
                 };
                 let (out, _) = format_full_compact_output(&content);
-                let out = crate::core::redaction::redact_text_if_enabled(&out);
+                let out = crate::core::redaction::redact_text(&out);
                 let sent = count_tokens(&out);
                 return ReadOutput {
                     content: out,
@@ -969,7 +822,7 @@ fn handle_with_options_inner(
                 };
             }
             let (out, _) = handle_full_with_auto_delta(cache, path, &file_ref, &short, ext, task);
-            let out = crate::core::redaction::redact_text_if_enabled(&out);
+            let out = crate::core::redaction::redact_text(&out);
             let sent = count_tokens(&out);
             return ReadOutput {
                 content: out,
@@ -990,7 +843,7 @@ fn handle_with_options_inner(
             let compressed_hit = cache.get_compressed(path, &cache_key).cloned();
             if let Some(cached_output) = compressed_hit {
                 // get_compressed() already recorded the cache hit (stats + event)
-                let out = crate::core::redaction::redact_text_if_enabled(&cached_output);
+                let out = crate::core::redaction::redact_text(&cached_output);
                 let sent = count_tokens(&out);
                 return ReadOutput {
                     content: out,
@@ -1005,7 +858,6 @@ fn handle_with_options_inner(
             let (out, _) = process_mode_tuned(
                 &content,
                 &resolved_mode,
-                &file_ref,
                 &short,
                 ext,
                 original_tokens,
@@ -1035,7 +887,7 @@ fn handle_with_options_inner(
                 );
                 cache.set_compressed(path, &cache_key, out.clone());
             }
-            let out = crate::core::redaction::redact_text_if_enabled(&out);
+            let out = crate::core::redaction::redact_text(&out);
             let sent = count_tokens(&out);
             return ReadOutput {
                 content: out,
@@ -1083,7 +935,7 @@ fn handle_with_options_inner(
 
         if mode == "full-compact" {
             let (output, _) = format_full_compact_output(&content);
-            let output = crate::core::redaction::redact_text_if_enabled(&output);
+            let output = crate::core::redaction::redact_text(&output);
             let sent = count_tokens(&output);
             return ReadOutput {
                 content: output,
@@ -1093,15 +945,7 @@ fn handle_with_options_inner(
             };
         }
 
-        let (output, _) = format_full_output(
-            &file_ref,
-            &short,
-            ext,
-            &content,
-            store_result.original_tokens,
-            store_result.line_count,
-            task,
-        );
+        let (output, _) = format_full_output(&short, ext, &content, store_result.line_count, task);
         let framed_tokens = count_tokens(&output);
         let output = cap_to_raw(
             output,
@@ -1109,7 +953,7 @@ fn handle_with_options_inner(
             &content,
             store_result.original_tokens,
         );
-        let output = crate::core::redaction::redact_text_if_enabled(&output);
+        let output = crate::core::redaction::redact_text(&output);
         let sent = count_tokens(&output);
         return ReadOutput {
             content: output,
@@ -1130,7 +974,6 @@ fn handle_with_options_inner(
     let (output, _sent) = process_mode_tuned(
         &content,
         &resolved_mode,
-        &file_ref,
         &short,
         ext,
         store_result.original_tokens,
@@ -1165,7 +1008,7 @@ fn handle_with_options_inner(
         );
         cache.set_compressed(path, &cache_key, output.clone());
     }
-    let output = crate::core::redaction::redact_text_if_enabled(&output);
+    let output = crate::core::redaction::redact_text(&output);
     let final_tokens = count_tokens(&output);
     ReadOutput {
         content: output,
@@ -1238,22 +1081,11 @@ fn handle_full_with_auto_delta(
     ext: &str,
     task: Option<&str>,
 ) -> (String, usize) {
-    let _mode_guard = crate::core::savings_footer::ModeGuard::new("full");
     let Ok(disk_content) = read_file_lossy(path) else {
         cache.record_cache_hit(path);
         if let Some(existing) = cache.get(path) {
-            if !crate::core::protocol::meta_visible()
-                && let Some(cached) = existing.content()
-            {
-                return format_full_output(
-                    file_ref,
-                    short,
-                    ext,
-                    &cached,
-                    existing.original_tokens,
-                    existing.line_count,
-                    task,
-                );
+            if let Some(cached) = existing.content() {
+                return format_full_output(short, ext, &cached, existing.line_count, task);
             }
             let out = format!(
                 "[using cached version — file read failed]\n{file_ref}={short} cached {}t {}L",
@@ -1263,20 +1095,10 @@ fn handle_full_with_auto_delta(
             let sent = count_tokens(&out);
             return (out, sent);
         }
-        let out = if crate::core::protocol::meta_visible() && !file_ref.is_empty() {
-            format!("[file read failed and no cached version available] {file_ref}={short}")
-        } else {
-            format!("[file read failed and no cached version available] {short}")
-        };
+        let out = format!("[file read failed and no cached version available] {short}");
         let sent = count_tokens(&out);
         return (out, sent);
     };
-
-    let no_deg = crate::core::config::Config::load().no_degrade_effective();
-    let prof = crate::core::profiles::active_profile();
-    let force_full = no_deg
-        || (prof.read.default_mode_effective() == "full"
-            && prof.compression.crp_mode_effective() == "off");
 
     let old_content = cache
         .get(path)
@@ -1293,51 +1115,26 @@ fn handle_full_with_auto_delta(
         // carried over from the cache entry, so it answers "some conversation got
         // this", which is the question the gate exists to stop trusting.
         cache.mark_full_delivered(path);
-        return format_full_output(
-            file_ref,
-            short,
-            ext,
-            &disk_content,
-            store_result.original_tokens,
-            store_result.line_count,
-            task,
-        );
+        return format_full_output(short, ext, &disk_content, store_result.line_count, task);
     }
 
     let diff = compressor::diff_content(&old_content, &disk_content);
     let diff_tokens = count_tokens(&diff);
     let full_tokens = store_result.original_tokens;
 
-    if !force_full
-        && full_tokens > 0
-        && (diff_tokens as f64) < (full_tokens as f64 * AUTO_DELTA_THRESHOLD)
-    {
-        let savings = protocol::format_savings(full_tokens, diff_tokens);
-        let head = if crate::core::protocol::meta_visible() && !file_ref.is_empty() {
-            format!("{file_ref}={short}")
-        } else {
-            short.to_string()
-        };
+    if full_tokens > 0 && (diff_tokens as f64) < (full_tokens as f64 * AUTO_DELTA_THRESHOLD) {
+        let head = short.to_string();
         let out = format!(
-            "{head} [auto-delta] ∆{}L\n{diff}\n{savings}",
+            "{head} [auto-delta] ∆{}L\n{diff}",
             disk_content.lines().count()
         );
         return (out, diff_tokens);
     }
 
-    format_full_output(
-        file_ref,
-        short,
-        ext,
-        &disk_content,
-        store_result.original_tokens,
-        store_result.line_count,
-        task,
-    )
+    format_full_output(short, ext, &disk_content, store_result.line_count, task)
 }
 
 fn handle_diff(cache: &mut SessionCache, path: &str, file_ref: &str) -> (String, usize) {
-    let _mode_guard = crate::core::savings_footer::ModeGuard::new("diff");
     let short = protocol::shorten_path(path);
     let old_content = cache
         .get(path)
@@ -1351,8 +1148,6 @@ fn handle_diff(cache: &mut SessionCache, path: &str, file_ref: &str) -> (String,
             return (msg, tokens);
         }
     };
-
-    let original_tokens = count_tokens(&new_content);
 
     let diff_output = if let Some(old) = &old_content {
         compressor::diff_content(old, &new_content)
@@ -1370,11 +1165,6 @@ fn handle_diff(cache: &mut SessionCache, path: &str, file_ref: &str) -> (String,
     cache.store(path, &new_content);
 
     let sent = count_tokens(&diff_output);
-    let savings = protocol::format_savings(original_tokens, sent);
-    let head = if crate::core::protocol::meta_visible() && !file_ref.is_empty() {
-        format!("{file_ref}={short}")
-    } else {
-        short
-    };
-    (format!("{head} [diff]\n{diff_output}\n{savings}"), sent)
+    let head = short;
+    (format!("{head} [diff]\n{diff_output}"), sent)
 }

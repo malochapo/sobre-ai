@@ -7,7 +7,6 @@ use serde::Serialize;
 use std::collections::BTreeMap;
 mod sections_advanced;
 mod sections_core;
-mod sections_features;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct ConfigSchema {
@@ -29,13 +28,6 @@ pub struct KeySchema {
     pub description: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub values: Option<Vec<String>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub env_override: Option<String>,
-}
-
-fn clean_f32(v: f32) -> serde_json::Value {
-    let clean: f64 = format!("{v}").parse().unwrap_or(v as f64);
-    serde_json::json!(clean)
 }
 
 fn key(ty: &str, default: serde_json::Value, desc: &str) -> KeySchema {
@@ -44,37 +36,6 @@ fn key(ty: &str, default: serde_json::Value, desc: &str) -> KeySchema {
         default,
         description: desc.to_string(),
         values: None,
-        env_override: None,
-    }
-}
-
-fn key_enum(values: &[&str], default: &str, desc: &str) -> KeySchema {
-    KeySchema {
-        ty: "enum".to_string(),
-        default: serde_json::Value::String(default.to_string()),
-        description: desc.to_string(),
-        values: Some(values.iter().map(ToString::to_string).collect()),
-        env_override: None,
-    }
-}
-
-fn key_with_env(ty: &str, default: serde_json::Value, desc: &str, env: &str) -> KeySchema {
-    KeySchema {
-        ty: ty.to_string(),
-        default,
-        description: desc.to_string(),
-        values: None,
-        env_override: Some(env.to_string()),
-    }
-}
-
-fn key_enum_with_env(values: &[&str], default: &str, desc: &str, env: &str) -> KeySchema {
-    KeySchema {
-        ty: "enum".to_string(),
-        default: serde_json::Value::String(default.to_string()),
-        description: desc.to_string(),
-        values: Some(values.iter().map(ToString::to_string).collect()),
-        env_override: Some(env.to_string()),
     }
 }
 
@@ -82,7 +43,6 @@ impl ConfigSchema {
     pub fn generate() -> Self {
         let mut sections = BTreeMap::new();
         sections_core::build(&mut sections);
-        sections_features::build(&mut sections);
         sections_advanced::build(&mut sections);
 
         ConfigSchema {
@@ -134,7 +94,7 @@ impl ConfigSchema {
 }
 
 /// Every TOML key the `Config` struct serialises to, in dot-separated form
-/// (e.g. `proxy_require_token`, `memory`, `memory.episodic`). Derived from
+/// (e.g. `allow_paths`, `proxy`, `proxy.port`). Derived from
 /// `Config::default()` so validation tracks the struct automatically (#456).
 ///
 /// Option fields that default to `None` are omitted by serde and therefore not
@@ -172,29 +132,15 @@ fn config_derived_keys() -> Vec<String> {
 mod tests {
     use super::*;
 
-    /// Sections whose Rust type is a map, not a struct: their schema keys are
-    /// *example entries* a user may add (`[lsp] go = "gopls"`), not fields. The
-    /// map is empty by default, so nothing resolves and every key would look
-    /// orphaned.
-    const MAP_TYPED_SECTIONS: &[&str] = &["lsp"];
-
     /// Fields serde omits from `Config::default()` because they carry
     /// `skip_serializing_if` and are empty by default. They are real fields —
     /// they simply cannot be observed through a serialised default — so the
     /// reverse-parity test below has to know about them. Adding a
     /// `skip_serializing_if` field to a config struct means adding it here.
-    const SERDE_OMITTED_BY_DEFAULT: &[&str] = &[
-        "cost.default_model",
-        "cost.models",
-        "cost.prices",
-        "embedding.model",
-        "embedding.dimensions",
-        "embedding.auto_download",
-        "embedding.deterministic",
-    ];
+    const SERDE_OMITTED_BY_DEFAULT: &[&str] = &["compression_level"];
 
     /// `Config::default()` as JSON rather than TOML: JSON keeps `Option::None`
-    /// as `null`, so the 21 `Option` fields that TOML drops stay visible.
+    /// as `null`, so the `Option` fields that TOML drops stay visible.
     fn config_as_json() -> serde_json::Value {
         serde_json::to_value(crate::core::config::Config::default())
             .expect("Config must serialise to JSON")
@@ -230,14 +176,6 @@ mod tests {
 
         let mut orphans: Vec<String> = Vec::new();
         for (section, sec) in &schema.sections {
-            // A section declaring no keys is a free-form map (`[ide_paths]`,
-            // `[model_context_windows]`): nothing to pair up.
-            if sec.keys.is_empty() {
-                continue;
-            }
-            if MAP_TYPED_SECTIONS.contains(&section.as_str()) {
-                continue;
-            }
             let section_value = if section == "root" {
                 Some(&cfg)
             } else {
@@ -245,28 +183,22 @@ mod tests {
             };
             match section_value {
                 None => orphans.push(format!("[{section}] (whole section)")),
-                // `[gateway.servers]` is a `Vec<GatewayServer>`: its schema keys
-                // describe the shape of one *entry*, not fields on `Config`.
-                // Same for any section that is not a plain object.
-                Some(v) if !v.is_object() => continue,
+                // A section that is a list: its schema keys describe the shape
+                // of one *entry*, not fields on `Config`. Same for any section
+                // that is not a plain object.
+                Some(v) if !v.is_object() => {}
                 Some(_) => {
                     for name in sec.keys.keys() {
-                        // `providers.mcp_bridges.<name>.url` and friends: the
-                        // `<…>` placeholder stands for a user-chosen map key, so
-                        // the path is unresolvable by construction.
-                        if name.contains('<') {
-                            continue;
-                        }
                         let path = if section == "root" {
                             name.clone()
                         } else {
                             format!("{section}.{name}")
                         };
-                        // A key name may itself be dotted (`github.enabled`
-                        // inside `[providers]`), so resolve the whole path
-                        // rather than looking `name` up in the section object.
+                        // Resolve the whole path so a dotted key name works
+                        // too, rather than looking `name` up in the section.
                         if resolve(&cfg, &path).is_none()
                             && !SERDE_OMITTED_BY_DEFAULT.contains(&path.as_str())
+                            && !path.starts_with("proxy.upstreams.")
                         {
                             orphans.push(path);
                         }
@@ -290,9 +222,7 @@ mod tests {
     }
 
     /// #456: every field the `Config` struct actually serialises must be
-    /// accepted by validation. Before the fix, 38 real keys/sections
-    /// (`proxy_require_token`, `memory.*`, `providers.*`, `proxy`, …) were
-    /// flagged "unknown" because the hand-written schema had drifted.
+    /// accepted by validation, or the hand-written schema has drifted.
     #[test]
     fn known_keys_cover_every_config_struct_field() {
         let known = ConfigSchema::generate().known_keys();
@@ -311,13 +241,7 @@ mod tests {
     #[test]
     fn known_keys_recognise_reported_456_keys() {
         let known = ConfigSchema::generate().known_keys();
-        for key in [
-            "proxy_require_token",
-            "allow_ide_config_dirs",
-            "memory.episodic",
-            "providers.github",
-            "proxy",
-        ] {
+        for key in ["allow_paths", "proxy"] {
             assert!(
                 accepted(&known, key),
                 "validation must recognise '{key}' (#456)"
@@ -331,25 +255,17 @@ mod tests {
     /// `Config::default()` and it never appears in `config_derived_keys`: such a
     /// field is settable via `config set` **only** if it was hand-added to a
     /// `sections_*.rs` schema. Forgetting that is the `Unknown config key: <x>`
-    /// regression a user hit for `path_jail` before #507 (and
-    /// `bypass_hints` here). Guard the whole class so a new `Option` knob can't
-    /// silently become un-settable again — if you add an `Option` scalar to
+    /// regression a user hit before #507. Guard the whole
+    /// class so a new `Option` knob can't silently become un-settable again — if you add an `Option` scalar to
     /// `Config`, register it in `sections_*.rs` and list it here.
     #[test]
     fn option_scalar_keys_are_cli_settable() {
         let schema = ConfigSchema::generate();
         for key in [
-            "path_jail",
-            "bypass_hints",
-            "shell_security",
-            "cache_policy",
-            "profile",
-            "rules_scope",
-            "rules_injection",
-            "permission_inheritance",
-            "proxy_enabled",
-            "proxy_port",
-            "proxy_timeout_ms",
+            "shell_timeout_secs",
+            "compression_level",
+            "proxy.enabled",
+            "proxy.port",
         ] {
             assert!(
                 schema.lookup(key).is_some(),
@@ -357,14 +273,5 @@ mod tests {
                  add `{key}` to a sections_*.rs schema"
             );
         }
-    }
-
-    #[test]
-    fn proxy_require_token_is_cli_settable() {
-        let schema = ConfigSchema::generate();
-        assert!(
-            schema.lookup("proxy_require_token").is_some(),
-            "`lean-ctx config set proxy_require_token <bool>` must be accepted"
-        );
     }
 }

@@ -57,23 +57,6 @@ impl ToolRegistry {
         crate::tool_defs::apply_tool_annotations(defs)
     }
 
-    /// Returns tool definitions filtered by the dynamic tool state.
-    /// Only includes tools whose category is currently active.
-    pub fn active_tool_defs(&self) -> Vec<Tool> {
-        let Ok(state) = super::dynamic_tools::global().lock() else {
-            tracing::warn!("dynamic_tools mutex poisoned in active_tool_defs; returning all");
-            return self.tool_defs();
-        };
-        let mut defs: Vec<Tool> = self
-            .tools
-            .values()
-            .filter(|t| state.is_tool_active(t.name()))
-            .map(|t| t.tool_def())
-            .collect();
-        defs.sort_by(|a, b| a.name.as_ref().cmp(b.name.as_ref()));
-        crate::tool_defs::apply_tool_annotations(defs)
-    }
-
     pub fn len(&self) -> usize {
         self.tools.len()
     }
@@ -122,10 +105,8 @@ pub fn build_registry() -> ToolRegistry {
     registry.register(Box::new(registered::ctx_search::CtxSearchTool));
     registry.register(Box::new(registered::ctx_checkpoint::CtxCheckpointTool));
     registry.register(Box::new(registered::ctx_compose::CtxComposeTool));
-    registry.register(Box::new(registered::ctx_execute::CtxExecuteTool));
 
     // Utility tools (migrated from dispatch/utility_tools.rs)
-    registry.register(Box::new(registered::ctx_context::CtxContextTool));
     registry.register(Box::new(registered::ctx_graph::CtxGraphTool));
 
     // Session tools (migrated from legacy dispatch)
@@ -159,6 +140,7 @@ pub fn is_registered(name: &str) -> bool {
 /// A token is `ctx_` followed by `[a-z0-9_]`, bounded on both sides by a
 /// character that cannot continue an identifier, so `ctx_search(action=symbol)`
 /// yields `ctx_search` and nothing else.
+#[cfg(test)]
 pub fn unregistered_tool_mentions(text: &str) -> Vec<String> {
     let bytes = text.as_bytes();
     let is_ident = |b: u8| b.is_ascii_alphanumeric() || b == b'_';

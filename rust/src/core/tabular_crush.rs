@@ -9,7 +9,7 @@
 //! - **Lossless**: every *constant* column (exactly one distinct value across all
 //!   data rows) is hoisted once into `_const`; the remaining columns are kept
 //!   positionally in `_rows`, so a value never repeats more than it must. The
-//!   transform is exactly reversible via [`reconstruct`].
+//!   transform is exactly reversible via `reconstruct` (test-only).
 //! - **Lossy**: additionally *drops* near-unique high-entropy columns (recorded
 //!   in `_dropped`); the exact original is recovered out-of-band via CCR, never
 //!   from the text.
@@ -21,7 +21,7 @@
 //! (#498). The crusher never inflates: callers gate on the shared
 //! [`crate::core::json_crush::KEEP_DATA_DIVISOR`] threshold and a no-op input returns [`None`].
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 
 use serde_json::{Map, Value};
 
@@ -29,7 +29,7 @@ use crate::core::extractors::csv;
 use crate::core::json_crush::CrushResult;
 
 /// Marks a crushed-table document. Vanishingly unlikely as a real top-level CSV
-/// shape (the input is delimited text, never a JSON object), so [`reconstruct`]
+/// shape (the input is delimited text, never a JSON object), so `reconstruct` (test-only)
 /// can identify our own output unambiguously.
 const MARKER: &str = "_lc_tbl";
 /// Full header, in original column order — the source of truth for reconstructing
@@ -53,27 +53,11 @@ pub fn crush_text_if_beneficial(text: &str, delimiter: char) -> Option<String> {
     (res.lossless && beneficial(&res.text, text)).then_some(res.text)
 }
 
-/// Lossy columnar crush of `text`: drops near-unique high-entropy columns whose
-/// distinct-value ratio is `>= drop_entropy`. Returns the [`CrushResult`] only
-/// when a column was **actually dropped** (`!lossless`) AND the compact form at
-/// least halves the input ([`crate::core::json_crush::KEEP_DATA_DIVISOR`]). Because data is then lost, the
-/// caller MUST persist the verbatim original out-of-band (CCR) before emitting —
-/// the dropped columns are never reconstructible from the text. `None` for
-/// non-tabular, low-redundancy, or all-lossless input.
-pub fn crush_text_lossy_if_beneficial(
-    text: &str,
-    delimiter: char,
-    drop_entropy: f64,
-) -> Option<CrushResult> {
-    let res = crush(text, delimiter, drop_entropy.clamp(0.0, 1.0))?;
-    (!res.lossless && beneficial(&res.text, text)).then_some(res)
-}
-
 /// Tabular reshaping into the columnar JSON form carries per-cell quoting
 /// overhead the JSON crusher's array-of-objects form does not, so the columnar
 /// win (eliminating constant columns + dropping noise) is gated on a 1/4 byte
 /// reduction rather than the JSON crusher's stricter halving — still a clear,
-/// never-inflating win whose exact data stays reconstructible via [`reconstruct`].
+/// never-inflating win whose exact data stays reconstructible via `reconstruct` (test-only).
 const MIN_SAVE_RATIO_NUM: usize = 3;
 const MIN_SAVE_RATIO_DEN: usize = 4;
 
@@ -179,6 +163,7 @@ fn crush(text: &str, delimiter: char, drop_entropy: f64) -> Option<CrushResult> 
 /// lossless forms; for lossy forms the `_dropped` columns are simply absent from
 /// the header and every row (recover them via CCR). `None` if `text` is not a
 /// tabular-crush document or is internally inconsistent.
+#[cfg(test)]
 pub fn reconstruct(text: &str) -> Option<Vec<Vec<String>>> {
     let v: Value = serde_json::from_str(text).ok()?;
     let obj = v.as_object()?;
@@ -224,7 +209,7 @@ pub fn reconstruct(text: &str) -> Option<Vec<Vec<String>>> {
         if arr.len() != varying.len() {
             return None;
         }
-        let vary_vals: BTreeMap<&str, &str> = varying
+        let vary_vals: std::collections::BTreeMap<&str, &str> = varying
             .iter()
             .copied()
             .zip(arr.iter().map(|x| x.as_str().unwrap_or_default()))
@@ -333,40 +318,5 @@ mod tests {
         assert!(crush_text_if_beneficial("col\n1\n2\n3\n4", ',').is_none()); // single column
         assert!(crush_text_if_beneficial("[{\"a\":1}]", ',').is_none()); // JSON
         assert!(crush_text_if_beneficial("", ',').is_none());
-    }
-
-    #[test]
-    fn lossy_drops_high_entropy_columns_and_flags_lossy() {
-        // A near-unique `uuid` column alongside a constant `status` column.
-        let mut s = String::from("status,uuid\n");
-        for i in 0..40 {
-            s.push_str(&format!("ok,uuid-{i:08}\n"));
-        }
-        let res = crush_text_lossy_if_beneficial(&s, ',', 0.9).expect("lossy gate fires");
-        assert!(!res.lossless, "dropping a column must report lossy");
-        assert!(res.text.contains("_dropped"));
-        assert!(
-            !res.text.contains("uuid-00000000"),
-            "dropped values are gone"
-        );
-        assert!(beneficial(&res.text, &s));
-
-        // The kept columns still reconstruct; the dropped one is simply absent.
-        let restored = reconstruct(&res.text).unwrap();
-        assert_eq!(restored[0], vec!["status"]);
-        assert_eq!(restored[1], vec!["ok"]);
-
-        // drop_entropy = 1.0 disables dropping -> nothing lossy -> None.
-        assert!(crush_text_lossy_if_beneficial(&s, ',', 1.0).is_none());
-    }
-
-    #[test]
-    fn lossy_is_byte_stable() {
-        let mut s = String::from("status,uuid\n");
-        for i in 0..40 {
-            s.push_str(&format!("ok,uuid-{i:08}\n"));
-        }
-        let run = || crush_text_lossy_if_beneficial(&s, ',', 0.9).unwrap().text;
-        assert_eq!(run(), run());
     }
 }

@@ -22,12 +22,7 @@ const DEFAULT_INTERVAL_SECS: u64 = 15;
 const KEEPALIVE_BYTES: &[u8] = b": keepalive\n\n";
 
 fn keepalive_interval() -> Duration {
-    let secs = std::env::var("LEAN_CTX_PROXY_SSE_KEEPALIVE_SECS")
-        .ok()
-        .and_then(|v| v.trim().parse::<u64>().ok())
-        .filter(|s| *s > 0)
-        .unwrap_or(DEFAULT_INTERVAL_SECS);
-    Duration::from_secs(secs)
+    Duration::from_secs(DEFAULT_INTERVAL_SECS)
 }
 
 /// Wraps an upstream SSE byte stream: forwards every upstream chunk unchanged
@@ -36,7 +31,9 @@ fn keepalive_interval() -> Duration {
 ///
 /// Uses `tokio::time::timeout` per chunk to detect idle periods without
 /// requiring `pin_project` or manual `Pin` implementations.
-pub fn keepalive_stream<S, E>(inner: S) -> impl Stream<Item = Result<Bytes, E>> + Send + Unpin
+pub(crate) fn keepalive_stream<S, E>(
+    inner: S,
+) -> impl Stream<Item = Result<Bytes, E>> + Send + Unpin
 where
     S: Stream<Item = Result<Bytes, E>> + Send + Unpin + 'static,
     E: Send + 'static,

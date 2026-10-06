@@ -13,18 +13,15 @@ use super::*;
 /// Reads JSON from stdin, normalizes to `ObserveEvent`, counts tokens,
 /// appends to `context_radar.jsonl`, and exits immediately.
 pub fn handle_observe() {
-    if is_disabled() {
-        return;
-    }
     let Some(input) = read_stdin_with_timeout(HOOK_STDIN_TIMEOUT) else {
         return;
     };
-    // Dedicated rules-injection mode (#343): a Claude/Codex/CodeBuddy `SessionStart` hook
+    // Dedicated rules-injection mode (#343): a Claude/Codex `SessionStart` hook
     // injects the compact lean-ctx summary as `additionalContext` — the
-    // non-polluting stand-in for the (skipped) CLAUDE.md/CODEBUDDY.md/AGENTS.md block. All
+    // non-polluting stand-in for the (skipped) CLAUDE.md/AGENTS.md block. All
     // three agents register `hook observe` on SessionStart, so this is the single
     // emit point (the Codex-specific handler stays silent in dedicated mode).
-    emit_dedicated_session_context(&input);
+    emit_session_start_nudge(&input);
 
     // Native-edit code-health notice (#1085): when the agent edits code with the
     // host's native Edit/MultiEdit tools (bypassing ctx_edit's gate), surface an
@@ -55,39 +52,26 @@ pub fn handle_observe() {
     }
 }
 
-fn emit_dedicated_session_context(input: &str) {
+fn emit_session_start_nudge(input: &str) {
     let Ok(v) = serde_json::from_str::<serde_json::Value>(input) else {
         return;
     };
     if !session_start_honours_additional_context(&v) {
         return;
     }
-    let cfg = crate::core::config::Config::load();
-
-    if cfg.dedicated_session_context_active() {
-        // Full Bare rules for dedicated-mode hosts (Claude Code, Codex, CodeBuddy)
-        // where the static rules file is skipped.
-        let summary = crate::core::rules_canonical::render(
-            cfg.shadow_mode,
-            crate::core::rules_canonical::Wrapper::Bare,
-            crate::core::config::CompressionLevel::Off,
-        );
-        emit_session_start_additional_context(&summary);
-    } else {
-        // Short reinforcement nudge for shared-mode hosts (Cursor) that already
-        // have static rules but benefit from in-conversation emphasis on exclusive
-        // tools. Models weight in-conversation context above static instructions.
-        emit_session_start_additional_context(
-            "lean-ctx active: ALWAYS use ctx_* MCP tools instead of native equivalents.\n\
-             - ctx_read > native Read (cached, re-reads ~13 tokens vs full file; 10 modes incl. map/signatures)\n\
-             - ctx_search > native Grep (compact results, denied by hook)\n\
-             - ctx_shell > native Shell (95+ compression patterns)\n\
-             - ctx_glob > native Glob (denied by hook)\n\
-             - ctx_compose = orient FIRST (bundles search+read+symbols in one call)\n\
-             Native Read passes through for StrReplace internals only — never use it for exploration.\n\
-             Exclusive tools: ctx_compose, ctx_callgraph, ctx_knowledge, ctx_session.",
-        );
-    }
+    // Short reinforcement nudge for hosts that already
+    // have static rules but benefit from in-conversation emphasis on exclusive
+    // tools. Models weight in-conversation context above static instructions.
+    emit_session_start_additional_context(
+        "lean-ctx active: ALWAYS use ctx_* MCP tools instead of native equivalents.\n\
+         - ctx_read > native Read (cached, re-reads ~13 tokens vs full file; 10 modes incl. map/signatures)\n\
+         - ctx_search > native Grep (compact results, denied by hook)\n\
+         - ctx_shell > native Shell (95+ compression patterns)\n\
+         - ctx_glob > native Glob (denied by hook)\n\
+         - ctx_compose = orient FIRST (bundles search+read+symbols in one call)\n\
+         Native Read passes through for StrReplace internals only — never use it for exploration.\n\
+         Exclusive tools: ctx_compose, ctx_callgraph, ctx_knowledge, ctx_session.",
+    );
 }
 
 /// True for SessionStart payloads from hosts that honour `additionalContext`.
@@ -96,7 +80,7 @@ fn emit_dedicated_session_context(input: &str) {
 /// confirmed on the Cursor community forum as the only hook event where
 /// `additional_context` works end-to-end. The prior exclusion (#1031) is
 /// therefore removed: Cursor sessions now receive the same dedicated rules
-/// reinforcement as Claude/Codex/CodeBuddy.
+/// reinforcement as Claude/Codex.
 fn session_start_honours_additional_context(v: &serde_json::Value) -> bool {
     v.get("hook_event_name").and_then(|e| e.as_str()) == Some("SessionStart")
 }
@@ -145,7 +129,7 @@ fn parse_observe_event(input: &str) -> Option<ObserveEvent> {
         .filter(|t| !t.is_empty())
         .map(String::from);
 
-    // Claude Code / Codex / CodeBuddy carry a per-session `session_id` but no
+    // Claude Code / Codex carry a per-session `session_id` but no
     // `conversation_id`. Persisting it lets the read-cache scope a session's
     // deliveries the same way Cursor's `conversation_id` does, so a new session
     // never inherits a prior one's `[unchanged]` stubs (#1004).
@@ -507,7 +491,7 @@ pub fn load_active_transcript() -> Option<(String, Option<String>)> {
     let v: serde_json::Value = serde_json::from_str(&content).ok()?;
     let tp = v.get("transcript_path")?.as_str()?.to_string();
     // Prefer Cursor's `conversation_id`; fall back to the host `session_id`
-    // (Claude Code / Codex / CodeBuddy) so the read-cache still has a per-session
+    // (Claude Code / Codex) so the read-cache still has a per-session
     // identity to scope stubs against (#1004).
     let conv = v
         .get("conversation_id")
@@ -607,29 +591,6 @@ fn write_compaction_marker(data_dir: &std::path::Path, ts: u64) {
     }
     drop(f);
     let _ = std::fs::rename(&tmp_path, &marker_path);
-}
-
-/// Count the IDE-hook observe events recorded in `context_radar.jsonl`.
-///
-/// `watch` uses this to explain an empty live feed (#593): a non-zero count
-/// means IDE hooks ARE firing — lean-ctx is wired into the editor — even though
-/// no `ctx_*` MCP tool has been called yet. That distinguishes "the agent is
-/// using native tools instead of ctx_*" from "nothing is connected at all".
-/// Counts newline-delimited records; returns 0 when the file is absent.
-#[must_use]
-pub fn radar_event_count() -> usize {
-    let Ok(data_dir) = crate::core::data_dir::lean_ctx_data_dir() else {
-        return 0;
-    };
-    let Ok(file) = std::fs::File::open(data_dir.join("context_radar.jsonl")) else {
-        return 0;
-    };
-    use std::io::{BufRead, BufReader};
-    BufReader::new(file)
-        .lines()
-        .map_while(Result::ok)
-        .filter(|l| !l.trim().is_empty())
-        .count()
 }
 
 #[cfg(test)]
@@ -756,7 +717,7 @@ mod tests {
 
     #[test]
     fn session_start_honoured_for_claude_payload() {
-        // Claude/Codex/CodeBuddy: hook_event_name + session_id, no conversation_id.
+        // Claude/Codex: hook_event_name + session_id, no conversation_id.
         let v = serde_json::json!({
             "hook_event_name": "SessionStart",
             "session_id": "abc123",
@@ -782,7 +743,7 @@ mod tests {
         assert!(!session_start_honours_additional_context(&v));
     }
 
-    /// #1004: a Claude/Codex/CodeBuddy payload has no `conversation_id`, so the
+    /// #1004: a Claude/Codex payload has no `conversation_id`, so the
     /// persisted `session_id` must surface as the scope id — otherwise the read
     /// cache sees `None` and a new session inherits the prior one's stubs.
     #[test]

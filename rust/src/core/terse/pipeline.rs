@@ -74,8 +74,7 @@ pub fn compress(
     if deadline.elapsed().as_millis() < TERSE_BUDGET_MS {
         use std::sync::OnceLock;
         static CDC_ENABLED: OnceLock<bool> = OnceLock::new();
-        let cdc = *CDC_ENABLED
-            .get_or_init(|| crate::core::config::Config::load().content_defined_chunking);
+        let cdc = *CDC_ENABLED.get_or_init(|| false);
         if cdc {
             result.output = reorder_cdc_stable(&result.output);
         }

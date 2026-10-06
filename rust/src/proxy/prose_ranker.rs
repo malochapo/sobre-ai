@@ -19,7 +19,6 @@ use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 use std::sync::Mutex;
 
-use crate::core::config::{Config, ProseRanker};
 use crate::core::extractive::{self, RankMode};
 use crate::core::web::distill::squeeze_prose;
 
@@ -31,18 +30,11 @@ static MEMO: Mutex<Option<HashMap<u64, String>>> = Mutex::new(None);
 
 /// Cache-safe prose squeeze for the wire. Uses extractive **centrality** ranking
 /// (query-free — never drops a sentence for being "off-topic", so it is safe on
-/// system/user instructions) when the engine is available and the configured
-/// [`ProseRanker`] allows it, else the deterministic truncating squeeze. The
-/// result is memoized per `(content, budget)` so it is byte-stable across turns.
+/// system/user instructions) when the engine is available, else the
+/// deterministic truncating squeeze. The result is memoized per
+/// `(content, budget)` so it is byte-stable across turns.
 #[must_use]
-pub fn squeeze(content: &str, budget: usize) -> String {
-    let ranker = Config::load().proxy.resolved_prose_ranker();
-    // Truncate mode never touches the engine and is already deterministic, so it
-    // needs no memo — keep that path allocation-light.
-    if ranker == ProseRanker::Truncate {
-        return squeeze_prose(content, budget);
-    }
-
+pub(crate) fn squeeze(content: &str, budget: usize) -> String {
     let key = memo_key(content, budget);
     if let Some(hit) = memo_get(key) {
         return hit;
@@ -98,11 +90,6 @@ mod tests {
 
     #[test]
     fn squeeze_is_stable_across_calls() {
-        // Serialize with `truncate_mode_bypasses_memo_and_matches_squeeze_prose`:
-        // that test flips LEAN_CTX_PROXY_PROSE_RANKER process-wide, and a flip
-        // between our two calls would legitimately change the selected path.
-        let _lock = crate::core::data_dir::test_env_lock();
-        crate::test_env::remove_var("LEAN_CTX_PROXY_PROSE_RANKER");
         // In `cargo test` the engine is never loaded, so this exercises the
         // memoized truncate fallback — which must be byte-identical across calls.
         let text = long_unique_prose();
@@ -110,14 +97,5 @@ mod tests {
         let b = squeeze(&text, 200);
         assert_eq!(a, b, "wire squeeze must be byte-stable across turns");
         assert!(a.len() <= text.len());
-    }
-
-    #[test]
-    fn truncate_mode_bypasses_memo_and_matches_squeeze_prose() {
-        let _lock = crate::core::data_dir::test_env_lock();
-        crate::test_env::set_var("LEAN_CTX_PROXY_PROSE_RANKER", "truncate");
-        let text = long_unique_prose();
-        assert_eq!(squeeze(&text, 200), squeeze_prose(&text, 200));
-        crate::test_env::remove_var("LEAN_CTX_PROXY_PROSE_RANKER");
     }
 }

@@ -12,8 +12,7 @@ use ed25519_dalek::SigningKey;
 
 pub const KEY_REL_PATH: &str = "keys/ctxpkg-ed25519.key";
 
-/// Resolves through the XDG data dir (not a hardcoded `~/.lean-ctx`) so the key
-/// follows the migrated layout and never re-creates the legacy dir (GH #436).
+/// Resolves through the XDG data dir (GH #436).
 pub fn key_path() -> Result<PathBuf, String> {
     Ok(crate::core::paths::data_dir()?.join(KEY_REL_PATH))
 }
@@ -44,11 +43,6 @@ pub fn load_or_create() -> Result<(SigningKey, bool), String> {
             .map_err(|e| format!("chmod signing key: {e}"))?;
     }
     Ok((SigningKey::from_bytes(&seed), true))
-}
-
-/// Hex of the public verifying key — the publisher's stable identity.
-pub fn public_key_hex(key: &SigningKey) -> String {
-    hex_encode(key.verifying_key().as_bytes())
 }
 
 fn parse_seed(s: &str) -> Result<[u8; 32], String> {
@@ -91,13 +85,5 @@ mod tests {
     fn corrupt_seed_rejected() {
         assert!(parse_seed("zz").is_err());
         assert!(parse_seed(&"a".repeat(63)).is_err());
-    }
-
-    #[test]
-    fn public_key_is_stable_for_seed() {
-        let k1 = SigningKey::from_bytes(&[7u8; 32]);
-        let k2 = SigningKey::from_bytes(&[7u8; 32]);
-        assert_eq!(public_key_hex(&k1), public_key_hex(&k2));
-        assert_eq!(public_key_hex(&k1).len(), 64);
     }
 }

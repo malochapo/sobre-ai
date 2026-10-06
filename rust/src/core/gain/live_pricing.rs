@@ -16,17 +16,17 @@
 //!
 //! Either source failing is tolerated (partial refresh, fail-open); both
 //! failing keeps the previous table. USD-per-token values are converted to
-//! per-MTok [`ModelCost`] rows and cached on disk. The table is loaded into a
-//! process-wide snapshot **only when a run-mode opts in** (`ensure_loaded` /
-//! `spawn_background_refresh` from the proxy, gateway or spend CLI): plain
-//! CLI tools and the test suite keep the deterministic embedded table.
+//! per-MTok [`ModelCost`] rows and cached on disk.
+//!
+//! Fetching happens **only** on `lean-ctx pricing refresh` — sobre makes no
+//! network request the user did not ask for. The proxy loads whatever is
+//! cached (`ensure_loaded`, no network); plain CLI tools and the test suite
+//! keep the deterministic embedded table.
 //!
 //! Precedence inside [`super::model_pricing::ModelPricing::quote`]:
 //! embedded exact > **live** > heuristic > blended fallback. Live hits are
 //! [`super::model_pricing::PricingMatchKind::Live`] — current market data,
 //! not an estimate.
-//!
-//! Kill switch: `LEAN_CTX_LIVE_PRICING=off|0|false`.
 
 use std::collections::HashMap;
 use std::sync::{Arc, OnceLock, RwLock};
@@ -34,10 +34,6 @@ use std::sync::{Arc, OnceLock, RwLock};
 use serde::{Deserialize, Serialize};
 
 use super::model_pricing::ModelCost;
-
-/// Refresh cadence for the background task. Provider price changes are rare
-/// events; half a day keeps drift negligible without hammering the API.
-const REFRESH_INTERVAL_SECS: u64 = 12 * 60 * 60;
 
 /// On-disk cache file, under the lean-ctx cache directory.
 const CACHE_FILE: &str = "model-prices.json";
@@ -76,23 +72,11 @@ fn snapshot() -> &'static RwLock<Option<Arc<LivePriceTable>>> {
     SNAP.get_or_init(|| RwLock::new(None))
 }
 
-/// True unless the operator disabled live pricing.
-fn enabled() -> bool {
-    let v = std::env::var("LEAN_CTX_LIVE_PRICING").unwrap_or_default();
-    !matches!(
-        v.trim().to_ascii_lowercase().as_str(),
-        "off" | "0" | "false" | "no"
-    )
-}
-
 /// Looks a model up in the current live snapshot. `None` when the snapshot
-/// was never loaded (CLI tools, tests), the kill switch is set, or the model
-/// is genuinely unknown to the provider list.
+/// was never loaded (CLI tools, tests) or the model is genuinely unknown to
+/// the provider list.
 #[must_use]
 pub fn lookup(model: &str) -> Option<(String, ModelCost)> {
-    if !enabled() {
-        return None;
-    }
     let guard = snapshot()
         .read()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
@@ -109,9 +93,6 @@ pub fn lookup(model: &str) -> Option<(String, ModelCost)> {
 /// Returns the number of lookup keys now available. Call sites are the
 /// run-modes that *want* live prices: proxy, gateway server, spend CLI.
 pub fn ensure_loaded() -> usize {
-    if !enabled() {
-        return 0;
-    }
     {
         let guard = snapshot()
             .read()
@@ -137,12 +118,9 @@ pub fn install(table: LivePriceTable) {
 }
 
 /// `(fetched_at_unix, lookup_keys)` of the active snapshot, for status
-/// surfaces. `None` when live pricing is off or never loaded.
+/// surfaces. `None` when no table was loaded.
 #[must_use]
 pub fn status() -> Option<(u64, usize)> {
-    if !enabled() {
-        return None;
-    }
     let guard = snapshot()
         .read()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
@@ -216,7 +194,7 @@ async fn fetch_catalog(
 ///
 /// # Errors
 /// Network / decode errors propagate; the caller decides whether they matter
-/// (the background task just logs and keeps the previous table — fail-open).
+/// (`lean-ctx pricing refresh` reports them; the previous table is kept).
 pub async fn refresh_now(client: &reqwest::Client) -> anyhow::Result<usize> {
     let (openrouter, litellm) = tokio::join!(
         fetch_catalog(client, MODELS_URL, parse_openrouter_models),
@@ -260,46 +238,6 @@ pub async fn refresh_now(client: &reqwest::Client) -> anyhow::Result<usize> {
     store_cache_file(&table);
     install(table);
     Ok(len)
-}
-
-/// Loads the disk cache immediately, then keeps the table fresh in the
-/// background (first fetch runs at once when the cache is missing or older
-/// than the refresh interval). Never blocks or fails the caller; idempotent —
-/// a process embedding both proxy and gateway spawns exactly one refresher.
-pub fn spawn_background_refresh() {
-    static SPAWNED: OnceLock<()> = OnceLock::new();
-    if !enabled() {
-        return;
-    }
-    ensure_loaded();
-    if SPAWNED.set(()).is_err() {
-        return;
-    }
-    tokio::spawn(async {
-        let client = reqwest::Client::new();
-        loop {
-            let stale = {
-                let guard = snapshot()
-                    .read()
-                    .unwrap_or_else(std::sync::PoisonError::into_inner);
-                guard.as_ref().is_none_or(|t| {
-                    let now = std::time::SystemTime::now()
-                        .duration_since(std::time::UNIX_EPOCH)
-                        .map_or(0, |d| d.as_secs());
-                    now.saturating_sub(t.fetched_at) >= REFRESH_INTERVAL_SECS
-                })
-            };
-            if stale {
-                match refresh_now(&client).await {
-                    Ok(n) => tracing::info!("live model pricing refreshed ({n} lookup keys)"),
-                    Err(e) => tracing::warn!(
-                        "live model pricing refresh failed (keeping previous table): {e:#}"
-                    ),
-                }
-            }
-            tokio::time::sleep(std::time::Duration::from_secs(REFRESH_INTERVAL_SECS / 12)).await;
-        }
-    });
 }
 
 /// Canonical lookup form: lowercase, `.`→`-`, whitespace→`-`. Applied to both
@@ -687,7 +625,7 @@ mod tests {
     }
 
     #[test]
-    fn snapshot_lookup_respects_kill_switch_and_install() {
+    fn snapshot_lookup_respects_install() {
         let _lock = crate::core::data_dir::test_env_lock();
         clear_for_tests();
         assert!(
@@ -702,12 +640,6 @@ mod tests {
         let (_, cost) = lookup("deepseek/deepseek-v4-flash-20260423").expect("live hit");
         assert!((cost.input_per_m - 0.07).abs() < 1e-9);
 
-        crate::test_env::set_var("LEAN_CTX_LIVE_PRICING", "off");
-        assert!(
-            lookup("deepseek/deepseek-v4-flash").is_none(),
-            "kill switch"
-        );
-        crate::test_env::remove_var("LEAN_CTX_LIVE_PRICING");
         clear_for_tests();
     }
 }

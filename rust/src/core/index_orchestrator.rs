@@ -560,7 +560,7 @@ fn bm25_build_note(
             limit_bytes,
         }) => format!(
             "indexed {doc_count} chunks but NOT persisted to disk: compressed {:.1} MB exceeds the {:.0} MB cap. \
-             Raise it via LEAN_CTX_BM25_MAX_CACHE_MB (or bm25_max_cache_mb in config) or add extra_ignore_patterns, \
+             Add the large paths to extra_ignore_patterns, \
              then run `lean-ctx reindex`. Until then the index is rebuilt from scratch on every cold start.",
             *compressed_bytes as f64 / 1_048_576.0,
             *limit_bytes as f64 / 1_048_576.0
@@ -656,6 +656,7 @@ pub struct SlotProgress {
 }
 
 impl SlotProgress {
+    #[cfg(test)]
     pub fn is_determinate(&self) -> bool {
         self.building && self.total > 0
     }
@@ -681,10 +682,6 @@ impl ProgressView {
     /// race and the graph→BM25 handoff without waiting for search pre-warm.
     pub fn graph_bm25_active(&self) -> bool {
         self.worker_running && !(self.graph_run_done && self.bm25_run_done)
-    }
-
-    pub fn semantic_active(&self) -> bool {
-        self.semantic.building
     }
 }
 
@@ -1089,7 +1086,7 @@ mod tests {
             "must flag non-persistence: {note}"
         );
         assert!(
-            note.contains("LEAN_CTX_BM25_MAX_CACHE_MB") && note.contains("reindex"),
+            note.contains("extra_ignore_patterns") && note.contains("reindex"),
             "too-large note must carry an actionable remedy: {note}"
         );
     }

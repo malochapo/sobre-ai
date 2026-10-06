@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use crate::core::{events, pathjail, roles, secret_detection};
+use crate::core::pathjail;
 
 /// Reads a file without following symlinks (TOCTOU protection).
 /// Falls back to regular read on non-Unix platforms.
@@ -60,79 +60,15 @@ pub(crate) fn strip_utf8_bom(s: String) -> String {
     }
 }
 
-/// Result of a file read with secret scanning applied.
-pub struct ScannedRead {
-    pub content: String,
-    pub secret_matches: Vec<secret_detection::SecretMatch>,
-    pub was_redacted: bool,
-}
-
-/// Reads a file and applies secret detection/redaction per config.
-///
-/// - `enabled=true, redact=false`: returns original content + warnings in `secret_matches`
-/// - `enabled=true, redact=true`: returns redacted content + `was_redacted=true`
-/// - `enabled=false`: returns original content, no scanning
-pub fn read_file_scanned(path: &str) -> Result<ScannedRead, std::io::Error> {
-    let raw = read_file_lossy(path)?;
-    let cfg = crate::core::config::Config::load();
-    let sd = &cfg.secret_detection;
-
-    if !sd.enabled {
-        return Ok(ScannedRead {
-            content: raw,
-            secret_matches: Vec::new(),
-            was_redacted: false,
-        });
-    }
-
-    let (content, matches) = secret_detection::scan_and_redact(&raw, sd);
-
-    if !matches.is_empty() {
-        let role_name = roles::active_role_name();
-        let names: Vec<&str> = matches.iter().map(|m| m.pattern_name).collect();
-        let mut unique: Vec<&str> = names;
-        unique.sort_unstable();
-        unique.dedup();
-        let msg = format!(
-            "[SECRET DETECTION] {} secret(s) found in {}: {}",
-            matches.len(),
-            path,
-            unique.join(", ")
-        );
-        events::emit_policy_violation(&role_name, "read_file", &msg);
-        tracing::warn!("{msg}");
-    }
-
-    let was_redacted = sd.redact && !matches.is_empty();
-    Ok(ScannedRead {
-        content,
-        secret_matches: matches,
-        was_redacted,
-    })
-}
-
+/// How a secret-like path is handled. Only enforcement remains; the label is
+/// still recorded in the Context IR.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum BoundaryMode {
-    Warn,
     Enforce,
 }
 
-impl BoundaryMode {
-    fn parse(s: &str) -> Self {
-        match s.trim().to_lowercase().as_str() {
-            "enforce" | "strict" => Self::Enforce,
-            _ => Self::Warn,
-        }
-    }
-}
-
-pub fn boundary_mode_effective(role: &roles::Role) -> BoundaryMode {
-    if let Ok(v) = std::env::var("LEAN_CTX_IO_BOUNDARY_MODE")
-        && !v.trim().is_empty()
-    {
-        return BoundaryMode::parse(&v);
-    }
-    BoundaryMode::parse(&role.io.boundary_mode)
+pub fn boundary_mode_effective() -> BoundaryMode {
+    BoundaryMode::Enforce
 }
 
 pub fn is_secret_like(path: &Path) -> Option<&'static str> {
@@ -215,76 +151,31 @@ pub fn is_secret_like(path: &Path) -> Option<&'static str> {
     None
 }
 
-pub fn check_secret_path_for_tool(tool: &str, path: &Path) -> Result<Option<String>, String> {
-    let role_name = roles::active_role_name();
-    let role = roles::active_role();
-    let mode = boundary_mode_effective(&role);
-
+pub fn check_secret_path(path: &Path) -> Result<Option<String>, String> {
     let Some(reason) = is_secret_like(path) else {
         return Ok(None);
     };
 
-    if role.io.allow_secret_paths {
-        return Ok(None);
-    }
-
     let msg = format!(
-        "[I/O BOUNDARY] Secret-like path detected ({reason}): {}.\n\
-Role: {role_name}. To allow: switch role to 'admin' or set io.allow_secret_paths=true in the active role.",
+        "[I/O BOUNDARY] Secret-like path detected ({reason}): {}.",
         path.display()
     );
-    events::emit_policy_violation(&role_name, tool, &msg);
 
-    match mode {
-        BoundaryMode::Enforce => Err(format!("ERROR: {msg}")),
-        BoundaryMode::Warn => {
-            if crate::core::protocol::meta_visible() {
-                Ok(Some(format!("[BOUNDARY WARNING] {msg}")))
-            } else {
-                Ok(None)
-            }
-        }
-    }
+    Err(format!("ERROR: {msg}"))
 }
 
 pub fn jail_and_check_path(
-    tool: &str,
     candidate: &Path,
     jail_root: &Path,
 ) -> Result<(PathBuf, Option<String>), String> {
-    let role_name = roles::active_role_name();
-    let jailed = pathjail::jail_path(candidate, jail_root).map_err(|e| {
-        // Only a real jail escape is a security event. A path that simply doesn't exist
-        // (stale graph entry, removed file) is benign — emitting a policy violation for it
-        // spams the event feed and mislabels missing files as denials.
-        if !matches!(
-            e,
-            crate::core::error::PathJailError::NoExistingAncestor { .. }
-        ) {
-            let msg = format!("pathjail denied: {} ({e})", candidate.display());
-            events::emit_policy_violation(&role_name, tool, &msg);
-        }
-        e.to_string()
-    })?;
-    let warning = check_secret_path_for_tool(tool, &jailed)?;
+    let jailed = pathjail::jail_path(candidate, jail_root).map_err(|e| e.to_string())?;
+    let warning = check_secret_path(&jailed)?;
     Ok((jailed, warning))
 }
 
-pub fn ensure_ignore_gitignore_allowed(tool: &str) -> Result<(), String> {
-    let role_name = roles::active_role_name();
-    let role = roles::active_role();
-    if role.io.allow_ignore_gitignore {
-        return Ok(());
-    }
-    let msg = format!(
-        "[I/O BOUNDARY] ignore_gitignore requires explicit policy.\n\
-Role '{role_name}' does not allow scanning .gitignore'd paths. \
-An agent cannot escalate to a privileged role at runtime, so configure this where lean-ctx starts:\n\
-- set LEAN_CTX_ROLE=admin, or\n\
-- add `io.allow_ignore_gitignore = true` to a role file (~/.lean-ctx/roles/<name>.toml), then select it via LEAN_CTX_ROLE.\n\
-Docs: https://leanctx.com/docs/security/#ignore-gitignore"
-    );
-    events::emit_policy_violation(&role_name, tool, &msg);
+pub fn ensure_ignore_gitignore_allowed() -> Result<(), String> {
+    let msg =
+        "[I/O BOUNDARY] ignore_gitignore is not supported: .gitignore'd paths are never scanned.";
     Err(format!("ERROR: {msg}"))
 }
 

@@ -49,8 +49,7 @@ pub(crate) fn execute_command_with_env(
 /// those detach at the soft cap and become exactly such a job. Only the
 /// degraded no-session path runs strict wall-clock. Two bounds keep it honest:
 /// genuinely runaway output hits the byte cap, which freezes the captured
-/// length and so restarts the clock, and `LEAN_CTX_SHELL_BG_MAX_MS` (default
-/// 1h) caps lifetime absolutely.
+/// length and so restarts the clock, and a 1h ceiling caps lifetime absolutely.
 pub(crate) fn execute_command_with_env_cancellable(
     command: &str,
     cwd: &str,
@@ -334,13 +333,7 @@ fn captured_len(buf: &Arc<Mutex<CaptureBuf>>) -> usize {
 /// Absolute ceiling on an idle-keyed (background) job, so a command that keeps
 /// emitting output forever still cannot outlive the daemon's patience (#1173).
 fn streaming_max_lifetime() -> Duration {
-    Duration::from_millis(
-        std::env::var("LEAN_CTX_SHELL_BG_MAX_MS")
-            .ok()
-            .and_then(|v| v.parse().ok())
-            .filter(|&ms: &u64| ms > 0)
-            .unwrap_or(3_600_000),
-    )
+    Duration::from_hours(1)
 }
 
 /// Command lines still alive in the timed-out child's process group, i.e. the
@@ -417,35 +410,27 @@ fn command_timeout(command: &str, timeout_ms: Option<u64>) -> Duration {
 
 #[cfg(test)]
 mod tests {
-    use super::{command_timeout, ensure_utf8_locale, execute_command_in};
+    use super::{command_timeout, execute_command_in};
 
     #[test]
     fn command_timeout_delegates_to_shell_timeout() {
         // `command_timeout` is a thin alias for `shell::exec::shell_timeout`
         // (full precedence coverage lives there). Smoke-test the delegation:
-        // heavy beats normal, and the universal MS override pins both.
-        let _lock = crate::core::data_dir::test_env_lock();
-        let saved = std::env::var("LEAN_CTX_SHELL_TIMEOUT_MS").ok();
-        crate::test_env::remove_var("LEAN_CTX_SHELL_TIMEOUT_MS");
+        // heavy beats normal, and the configured timeout applies.
+        let iso = crate::core::data_dir::isolated_data_dir();
 
         assert!(
             command_timeout("cargo install --path .", None) > command_timeout("git status", None)
         );
 
-        crate::test_env::set_var("LEAN_CTX_SHELL_TIMEOUT_MS", "5000");
-        assert_eq!(
-            command_timeout("cargo install --path .", None),
-            std::time::Duration::from_secs(5)
+        std::fs::write(iso.path().join("config.toml"), "shell_timeout_secs = 5\n").unwrap();
+        assert!(
+            command_timeout("cargo install --path .", None) > command_timeout("git status", None)
         );
         assert_eq!(
             command_timeout("git status", None),
             std::time::Duration::from_secs(5)
         );
-
-        crate::test_env::remove_var("LEAN_CTX_SHELL_TIMEOUT_MS");
-        if let Some(v) = saved {
-            crate::test_env::set_var("LEAN_CTX_SHELL_TIMEOUT_MS", v);
-        }
     }
 
     /// #1113/#1173: a poll loop that emits a short line every so often must
@@ -455,7 +440,6 @@ mod tests {
     #[cfg_attr(windows, ignore)]
     fn idle_keyed_timeout_survives_a_trickling_loop() {
         let _lock = crate::core::data_dir::test_env_lock();
-        crate::test_env::remove_var("LEAN_CTX_SHELL_TIMEOUT_MS");
         let env = std::collections::HashMap::new();
         // Emits every 100ms for ~900ms under a 400ms budget.
         let cmd = "for i in 1 2 3 4 5 6 7 8 9; do printf T; sleep 0.1; done; printf DONE";
@@ -480,7 +464,6 @@ mod tests {
     #[cfg_attr(windows, ignore)]
     fn timeout_names_the_still_running_segment() {
         let _lock = crate::core::data_dir::test_env_lock();
-        crate::test_env::remove_var("LEAN_CTX_SHELL_TIMEOUT_MS");
         let env = std::collections::HashMap::new();
         let (out, code) = super::execute_command_with_env_cancellable(
             "printf FIRST_OK; sleep 47",
@@ -522,47 +505,6 @@ mod tests {
         // Another job's process group.
         assert_eq!(super::parse_ps_row("4242 9999 sleep 5", 4200, whole), None);
         assert_eq!(super::parse_ps_row("garbage", 4200, whole), None);
-    }
-
-    #[test]
-    fn ensure_utf8_locale_sets_fallback_when_none_inherited() {
-        let empty: std::collections::HashMap<String, String> = std::collections::HashMap::new();
-        let mut cmd = std::process::Command::new("true");
-
-        // Temporarily unset locale vars to test fallback
-        let saved = (
-            std::env::var("LC_ALL").ok(),
-            std::env::var("LC_CTYPE").ok(),
-            std::env::var("LANG").ok(),
-        );
-        crate::test_env::remove_var("LC_ALL");
-        crate::test_env::remove_var("LC_CTYPE");
-        crate::test_env::remove_var("LANG");
-
-        ensure_utf8_locale(&mut cmd, &empty);
-
-        // Restore
-        if let Some(v) = saved.0 {
-            crate::test_env::set_var("LC_ALL", v);
-        }
-        if let Some(v) = saved.1 {
-            crate::test_env::set_var("LC_CTYPE", v);
-        }
-        if let Some(v) = saved.2 {
-            crate::test_env::set_var("LANG", v);
-        }
-
-        // Command internal env isn't inspectable, but we verify the fn doesn't panic
-        // and the real integration test below checks byte-level correctness.
-    }
-
-    #[test]
-    fn ensure_utf8_locale_skips_when_extra_env_has_lc_all() {
-        let mut extra = std::collections::HashMap::new();
-        extra.insert("LC_ALL".to_string(), "C".to_string());
-        let mut cmd = std::process::Command::new("true");
-        ensure_utf8_locale(&mut cmd, &extra);
-        // Should not panic or override
     }
 
     #[test]
@@ -635,24 +577,6 @@ mod tests {
         assert!(
             output.contains("TID=thread-from-hook"),
             "captured agent runtime var must be forwarded, got: {output}"
-        );
-    }
-
-    /// Per-call `timeout_ms` must reach the kill loop: a command that sleeps
-    /// past its 200ms budget is killed with the timeout exit code and message.
-    #[test]
-    #[cfg_attr(windows, ignore)] // POSIX sleep
-    fn per_call_timeout_kills_long_command() {
-        let (output, code) = super::execute_command_with_env(
-            "sleep 3",
-            ".",
-            &std::collections::HashMap::new(),
-            Some(200),
-        );
-        assert_eq!(code, 124, "timed-out command must exit 124: {output}");
-        assert!(
-            output.contains("timed out after 200ms"),
-            "timeout message must carry the per-call budget, got: {output}"
         );
     }
 

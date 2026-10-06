@@ -1,58 +1,20 @@
-use std::collections::BTreeMap;
-
 // Machine-verified contract versions.
 pub const MCP_MANIFEST_SCHEMA_VERSION: u32 = 1;
-pub const CONTEXT_PROOF_V1_SCHEMA_VERSION: u32 = 1;
 pub const CONTEXT_IR_V1_SCHEMA_VERSION: u32 = 1;
-pub const INTENT_ROUTE_V1_SCHEMA_VERSION: u32 = 1;
-pub const DEGRADATION_POLICY_V1_SCHEMA_VERSION: u32 = 1;
-pub const WORKFLOW_EVIDENCE_LEDGER_V1_SCHEMA_VERSION: u32 = 1;
-pub const AUTONOMY_DRIVERS_V1_SCHEMA_VERSION: u32 = 1;
-pub const TOKENIZER_TRANSLATION_DRIVER_V1_SCHEMA_VERSION: u32 = 1;
-pub const ATTENTION_LAYOUT_DRIVER_V1_SCHEMA_VERSION: u32 = 1;
-pub const VERIFICATION_OBSERVABILITY_V1_SCHEMA_VERSION: u32 = 1;
-pub const HANDOFF_LEDGER_V1_SCHEMA_VERSION: u32 = 1;
-pub const HANDOFF_TRANSFER_BUNDLE_V1_SCHEMA_VERSION: u32 = 1;
 pub const CCP_SESSION_BUNDLE_V1_SCHEMA_VERSION: u32 = 1;
-pub const KNOWLEDGE_POLICY_V1_SCHEMA_VERSION: u32 = 1;
 pub const GRAPH_REPRODUCIBILITY_V1_SCHEMA_VERSION: u32 = 1;
-pub const A2A_SNAPSHOT_V1_SCHEMA_VERSION: u32 = 1;
-pub const MEMORY_BOUNDARY_V1_SCHEMA_VERSION: u32 = 1;
-pub const GOTCHAS_REMINDERS_V1_SCHEMA_VERSION: u32 = 1;
-pub const PROVIDER_FRAMEWORK_V1_SCHEMA_VERSION: u32 = 1;
-pub const CONTEXT_PACKAGE_V1_SCHEMA_VERSION: u32 = 1;
-pub const CONTEXT_PACKAGE_V2_SCHEMA_VERSION: u32 = 2;
 pub const CONTEXT_SNAPSHOT_V1_SCHEMA_VERSION: u32 = 1;
-
-pub const PACKAGE_EXTENSION: &str = "ctxpkg";
-pub const LEGACY_PACKAGE_EXTENSION: &str = "lctxpkg";
-pub const MAX_PACKAGE_FILE_BYTES: u64 = 10 * 1024 * 1024; // 10 MB
-
-pub fn is_package_file(path: &std::path::Path) -> bool {
-    path.extension()
-        .and_then(|e| e.to_str())
-        .is_some_and(|ext| ext == PACKAGE_EXTENSION || ext == LEGACY_PACKAGE_EXTENSION)
-}
-
-pub fn default_package_filename(name: &str, version: &str) -> String {
-    format!("{name}-{version}.{PACKAGE_EXTENSION}")
-}
-
-// Documentation-level contracts (do not have a schema field in payloads).
-pub const HTTP_MCP_CONTRACT_VERSION: u32 = 1;
-pub const TEAM_SERVER_CONTRACT_VERSION: u32 = 1;
-pub const CAPABILITIES_CONTRACT_VERSION: u32 = 1;
 
 /// Stability classification of a contract document (GL #394).
 ///
-/// The classification is normative — `tests/contracts_frozen.rs` enforces it:
+/// The classification is normative — `tests/suite/contracts_frozen.rs`
+/// enforces it:
 /// * `Frozen` — the normative surface is immutable. Any change to the doc file
 ///   fails CI; semantic evolution requires a new `-v2.md` file (the v1 file
 ///   stays in place for existing integrations).
 /// * `Stable` — additive evolution allowed (new optional fields, new sections);
-///   breaking changes still require a version bump per CONTRACTS.md rules.
-/// * `Experimental` — may change or disappear without notice; not covered by
-///   the deprecation policy.
+///   breaking changes require a version bump (a new `-vN.md` file).
+/// * `Experimental` — may change or disappear without notice.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ContractStatus {
     Frozen,
@@ -70,10 +32,9 @@ impl ContractStatus {
     }
 }
 
-/// One contract document under `docs/contracts/`, classified for the
-/// stability matrix in CONTRACTS.md and the `/v1/capabilities` response.
+/// One contract document under `docs/contracts/`.
 pub struct ContractDoc {
-    /// Short stable identifier (used in capabilities `contract_status`).
+    /// Short stable identifier.
     pub id: &'static str,
     /// File name inside `docs/contracts/` (the normative artifact).
     pub doc_file: &'static str,
@@ -81,10 +42,10 @@ pub struct ContractDoc {
     pub status: ContractStatus,
 }
 
-/// The complete classified inventory of `docs/contracts/*.md` — the single
-/// source of truth for the stability matrix. `tests/contracts_frozen.rs`
-/// asserts that every file in the directory is listed here (no contract can
-/// stay unclassified) and that frozen docs never change.
+/// The complete classified inventory of `docs/contracts/*.md`.
+/// `tests/suite/contracts_frozen.rs` asserts that every file in the directory
+/// is listed here (no contract can stay unclassified) and that frozen docs
+/// never change.
 pub fn contract_docs() -> Vec<ContractDoc> {
     use ContractStatus::{Experimental, Frozen, Stable};
     let doc = |id, doc_file, version, status| ContractDoc {
@@ -94,37 +55,11 @@ pub fn contract_docs() -> Vec<ContractDoc> {
         status,
     };
     vec![
-        // ── Frozen: externally consumed platform/transport promises ────────
+        // ── Frozen: externally consumed format ─────────────────────────────
         doc("context-ir", "context-ir-v1.md", 1, Frozen),
-        // Release promotion, offline rollback rehearsal and signing-key
-        // rotation are externally consumed fail-closed supply-chain formats.
-        // Their exact v1 semantics are immutable; evolution requires v2.
-        doc("delivery-manifest", "delivery-manifest-v1.md", 1, Frozen),
         // ── Stable: additive evolution allowed ──────────────────────────────
-        // capabilities is additive BY DESIGN: its drift test binds the doc's
-        // key list to TOP_LEVEL_KEYS, so the doc grows with every new key —
-        // freezing the file would contradict its own contract.
-        doc("capabilities", "capabilities-contract-v1.md", 1, Stable),
-        // v2 = v1 + storageQuotaBytes/roiWebhookUrl (GL #387/#388); v1 stays frozen.
-        // Offline-verifiable audit evidence ZIP (GL #425, H3 Epic A).
-        doc(
-            "settlement-evidence",
-            "settlement-evidence-v2.md",
-            2,
-            Stable,
-        ),
-        // Payload-free OSS eligibility evidence; approval/invoice authority stays private.
-        doc(
-            "attention-layout-driver",
-            "attention-layout-driver-v1.md",
-            1,
-            Stable,
-        ),
-        doc("autonomy-drivers", "autonomy-drivers-v1.md", 1, Stable),
         doc("ccp-session-bundle", "ccp-session-bundle-v1.md", 1, Stable),
         doc("conformance", "conformance-v1.md", 1, Stable),
-        doc("degradation-policy", "degradation-policy-v1.md", 1, Stable),
-        doc("extension-trust", "extension-trust-v1.md", 1, Stable),
         doc("extractors", "extractors-v1.md", 1, Stable),
         doc(
             "gotchas-reminders",
@@ -139,13 +74,6 @@ pub fn contract_docs() -> Vec<ContractDoc> {
             Stable,
         ),
         doc(
-            "handoff-transfer-bundle",
-            "handoff-transfer-bundle-v1.md",
-            1,
-            Stable,
-        ),
-        doc("intent-route", "intent-route-v1.md", 1, Stable),
-        doc(
             "knowledge-policy",
             "knowledge-policy-contract-v1.md",
             1,
@@ -157,191 +85,18 @@ pub fn contract_docs() -> Vec<ContractDoc> {
             1,
             Stable,
         ),
-        doc(
-            "provider-framework",
-            "provider-framework-contract-v1.md",
-            1,
-            Stable,
-        ),
-        doc(
-            "tokenizer-translation-driver",
-            "tokenizer-translation-driver-v1.md",
-            1,
-            Stable,
-        ),
-        doc(
-            "workflow-evidence-ledger",
-            "workflow-evidence-ledger-v1.md",
-            1,
-            Stable,
-        ),
-        doc("wrapped-permalink", "wrapped-permalink-v1.md", 1, Stable),
-        // Community addon manifest (#858): self-declared stable (v1); the format
-        // evolves additively (new optional fields), so Stable, not Frozen.
         // ── Experimental: may change without notice ─────────────────────────
-        // W0/W1 token-intelligence foundations are locally verified but do not
-        // yet claim complete hotpath adoption or externally consumed stability.
-        doc(
-            "context-candidate-admission",
-            "context-candidate-admission-v1.md",
-            1,
-            Experimental,
-        ),
-        // The committed artifact is conformance-only; external deployment use
-        // and governed attestor adoption remain deliberately unclaimed.
-        // Local Rust adapter only; external callability, authenticated approval,
-        // and recovery orchestration are deliberately not claimed by v2.
-        // 2026-06 org/cloud-plane wave — fresh surfaces, not yet consumed by
-        // external integrations; promote to Stable deliberately, not by default.
-        doc(
-            "context-policy-packs",
-            "context-policy-packs-v1.md",
-            1,
-            Experimental,
-        ),
         // Quality loop (GL #494): edit-failure feedback into mode selection.
         doc("quality-loop", "quality-loop-v1.md", 1, Experimental),
-        // Edit metering (GL #1144): anchored-vs-str_replace efficiency channel.
-        doc("edit-metering", "edit-metering-v1.md", 1, Experimental),
-        // Hosted ctxpkg registry (GL #406): fresh server surface.
         // Context Time Machine (GL #1022/#1023): git-anchored, signed temporal
-        // snapshot format — fresh surface, evolving additively until stable.
+        // snapshot format — evolving additively until stable.
         doc(
             "context-snapshot",
             "context-snapshot-v1.md",
             1,
             Experimental,
         ),
-        doc("pillar-boundaries", "pillar-boundaries-v1.md", 1, Stable),
-        // Logical editor-session telemetry is an additive local-dashboard surface;
-        // keep it experimental until multiple integrations implement the lifecycle.
-        doc(
-            "logical-session-presence",
-            "logical-session-presence-v1.md",
-            1,
-            Experimental,
-        ),
-        doc(
-            "tokenizer-calibration",
-            "tokenizer-calibration-v1.md",
-            1,
-            Experimental,
-        ),
     ]
-}
-
-/// Contract-id → stability status, exported through `/v1/capabilities` so
-/// clients can verify compatibility before relying on a surface (GL #394).
-pub fn status_kv() -> BTreeMap<&'static str, &'static str> {
-    contract_docs()
-        .into_iter()
-        .map(|d| (d.id, d.status.as_str()))
-        .collect()
-}
-
-pub fn versions_kv() -> BTreeMap<&'static str, u32> {
-    BTreeMap::from([
-        (
-            "leanctx.contract.mcp_manifest.schema_version",
-            MCP_MANIFEST_SCHEMA_VERSION,
-        ),
-        (
-            "leanctx.contract.context_proof_v1.schema_version",
-            CONTEXT_PROOF_V1_SCHEMA_VERSION,
-        ),
-        (
-            "leanctx.contract.context_ir_v1.schema_version",
-            CONTEXT_IR_V1_SCHEMA_VERSION,
-        ),
-        (
-            "leanctx.contract.intent_route_v1.schema_version",
-            INTENT_ROUTE_V1_SCHEMA_VERSION,
-        ),
-        (
-            "leanctx.contract.degradation_policy_v1.schema_version",
-            DEGRADATION_POLICY_V1_SCHEMA_VERSION,
-        ),
-        (
-            "leanctx.contract.workflow_evidence_ledger_v1.schema_version",
-            WORKFLOW_EVIDENCE_LEDGER_V1_SCHEMA_VERSION,
-        ),
-        (
-            "leanctx.contract.autonomy_drivers_v1.schema_version",
-            AUTONOMY_DRIVERS_V1_SCHEMA_VERSION,
-        ),
-        (
-            "leanctx.contract.tokenizer_translation_driver_v1.schema_version",
-            TOKENIZER_TRANSLATION_DRIVER_V1_SCHEMA_VERSION,
-        ),
-        (
-            "leanctx.contract.attention_layout_driver_v1.schema_version",
-            ATTENTION_LAYOUT_DRIVER_V1_SCHEMA_VERSION,
-        ),
-        (
-            "leanctx.contract.verification_observability_v1.schema_version",
-            VERIFICATION_OBSERVABILITY_V1_SCHEMA_VERSION,
-        ),
-        (
-            "leanctx.contract.handoff_ledger_v1.schema_version",
-            HANDOFF_LEDGER_V1_SCHEMA_VERSION,
-        ),
-        (
-            "leanctx.contract.handoff_transfer_bundle_v1.schema_version",
-            HANDOFF_TRANSFER_BUNDLE_V1_SCHEMA_VERSION,
-        ),
-        (
-            "leanctx.contract.ccp_session_bundle_v1.schema_version",
-            CCP_SESSION_BUNDLE_V1_SCHEMA_VERSION,
-        ),
-        (
-            "leanctx.contract.knowledge_policy_v1.schema_version",
-            KNOWLEDGE_POLICY_V1_SCHEMA_VERSION,
-        ),
-        (
-            "leanctx.contract.graph_reproducibility_v1.schema_version",
-            GRAPH_REPRODUCIBILITY_V1_SCHEMA_VERSION,
-        ),
-        (
-            "leanctx.contract.a2a_snapshot_v1.schema_version",
-            A2A_SNAPSHOT_V1_SCHEMA_VERSION,
-        ),
-        (
-            "leanctx.contract.memory_boundary_v1.schema_version",
-            MEMORY_BOUNDARY_V1_SCHEMA_VERSION,
-        ),
-        (
-            "leanctx.contract.gotchas_reminders_v1.schema_version",
-            GOTCHAS_REMINDERS_V1_SCHEMA_VERSION,
-        ),
-        (
-            "leanctx.contract.provider_framework_v1.schema_version",
-            PROVIDER_FRAMEWORK_V1_SCHEMA_VERSION,
-        ),
-        (
-            "leanctx.contract.context_package_v1.schema_version",
-            CONTEXT_PACKAGE_V1_SCHEMA_VERSION,
-        ),
-        (
-            "leanctx.contract.context_package_v2.schema_version",
-            CONTEXT_PACKAGE_V2_SCHEMA_VERSION,
-        ),
-        (
-            "leanctx.contract.context_snapshot_v1.schema_version",
-            CONTEXT_SNAPSHOT_V1_SCHEMA_VERSION,
-        ),
-        (
-            "leanctx.contract.http_mcp.contract_version",
-            HTTP_MCP_CONTRACT_VERSION,
-        ),
-        (
-            "leanctx.contract.team_server.contract_version",
-            TEAM_SERVER_CONTRACT_VERSION,
-        ),
-        (
-            "leanctx.contract.capabilities.contract_version",
-            CAPABILITIES_CONTRACT_VERSION,
-        ),
-    ])
 }
 
 #[cfg(test)]
@@ -367,7 +122,8 @@ mod tests {
         // surfaces are actually in it. Removing one of these from `Frozen`
         // is itself a breaking policy change.
         let docs = contract_docs();
-        for id in ["context-ir", "delivery-manifest"] {
+        {
+            let id = "context-ir";
             let entry = docs.iter().find(|d| d.id == id).expect("listed");
             assert_eq!(
                 entry.status,
@@ -375,15 +131,6 @@ mod tests {
                 "{id} must stay frozen"
             );
         }
-    }
-
-    #[test]
-    fn status_kv_matches_docs() {
-        let kv = status_kv();
-        assert_eq!(kv.len(), contract_docs().len());
-        assert_eq!(kv["context-ir"], "frozen");
-        assert_eq!(kv["context-candidate-admission"], "experimental");
-        assert_eq!(kv["quality-loop"], "experimental");
     }
 
     #[test]

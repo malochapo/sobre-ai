@@ -21,22 +21,6 @@ fn with_env_lock<T>(body: impl FnOnce() -> T) -> T {
 }
 
 #[test]
-fn is_rewritable_basic() {
-    assert!(is_rewritable("git status"));
-    assert!(is_rewritable("cargo test --lib"));
-    assert!(is_rewritable("npm run build"));
-    assert!(!is_rewritable("echo hello"));
-    assert!(!is_rewritable("cd src"));
-    assert!(!is_rewritable("cat file.rs"));
-}
-
-#[test]
-fn file_read_rewrite_cat() {
-    let r = rewrite_file_read_command("cat src/main.rs", "lean-ctx");
-    assert_eq!(r, Some("lean-ctx read src/main.rs".to_string()));
-}
-
-#[test]
 fn rewrite_skip_reason_tracks_candidate_none_branches() {
     // Every command that `rewrite_candidate` declines must get a stable,
     // human-readable reason for the #520 debug log.
@@ -497,7 +481,7 @@ fn dual_rewrite_output_carries_claude_cursor_and_copilot_fields() {
         p["modifiedArgs"]["cwd"], "/repo",
         "modifiedArgs must preserve the other original args"
     );
-    // Claude / CodeBuddy contract.
+    // Claude contract.
     assert_eq!(p["hookSpecificOutput"]["permissionDecision"], "allow");
     assert_eq!(
         p["hookSpecificOutput"]["updatedInput"]["command"],
@@ -512,7 +496,7 @@ fn redirect_output_carries_copilot_modified_args() {
     // #551: the read/grep redirect must also surface modifiedArgs so Copilot CLI
     // swaps in the lean-ctx temp-file path instead of reading the original.
     let tool_input = serde_json::json!({ "path": "src/main.rs" });
-    let out = build_redirect_output(Some(&tool_input), "path", "/tmp/x.lctx", None);
+    let out = build_redirect_output(Some(&tool_input), "path", "/tmp/x.lctx");
     let p: serde_json::Value = serde_json::from_str(&out).expect("valid hook JSON");
 
     assert_eq!(p["permissionDecision"], "allow");
@@ -538,7 +522,7 @@ fn read_redirect_resolves_and_rewrites_cursor_file_path() {
     assert_eq!(field, "file_path");
     assert_eq!(path, "/repo/src/main.rs");
 
-    let out = build_redirect_output(Some(&tool_input), field, "/tmp/x.lctx", None);
+    let out = build_redirect_output(Some(&tool_input), field, "/tmp/x.lctx");
     let p: serde_json::Value = serde_json::from_str(&out).expect("valid hook JSON");
     // The redirect rewrites file_path (what Cursor reads), not the absent `path`.
     assert_eq!(p["updated_input"]["file_path"], "/tmp/x.lctx");
@@ -660,14 +644,6 @@ fn rewrite_candidate_wraps_clean_compound() {
 }
 
 #[test]
-fn rewrite_candidate_leaves_tricky_compound_untouched() {
-    // End-to-end: a tricky compound must not be re-wrapped by the single-command
-    // `is_rewritable` fallback after the compound handler declines it (#589).
-    let result = with_env_lock(|| rewrite_candidate("git log | python3 -c 'print(1)'", "lean-ctx"));
-    assert_eq!(result, None);
-}
-
-#[test]
 fn extract_field_works() {
     let input = r#"{"tool_name":"Bash","command":"git status"}"#;
     assert_eq!(
@@ -774,24 +750,6 @@ fn unescape_json_string_roundtrips() {
     assert_eq!(super::unescape_json_string(r"a\r\nb"), "a\r\nb");
     assert_eq!(super::unescape_json_string(r"\\n"), "\\n");
     assert_eq!(super::unescape_json_string("plain"), "plain");
-}
-
-#[test]
-fn to_bash_compatible_path_windows_drive() {
-    let p = crate::hooks::to_bash_compatible_path(r"E:\packages\lean-ctx.exe");
-    assert_eq!(p, "/e/packages/lean-ctx.exe");
-}
-
-#[test]
-fn to_bash_compatible_path_backslashes() {
-    let p = crate::hooks::to_bash_compatible_path(r"C:\Users\test\bin\lean-ctx.exe");
-    assert_eq!(p, "/c/Users/test/bin/lean-ctx.exe");
-}
-
-#[test]
-fn to_bash_compatible_path_unix_unchanged() {
-    let p = crate::hooks::to_bash_compatible_path("/usr/local/bin/lean-ctx");
-    assert_eq!(p, "/usr/local/bin/lean-ctx");
 }
 
 #[test]
@@ -1040,61 +998,14 @@ fn redirect_read_args_smart_mode_selection() {
 }
 
 #[test]
-fn redirect_output_routes_shadow_note_to_additional_context() {
-    // #1019: the shadow nudge must ride the model-visible additionalContext side
-    // channel, never the temp file the host reads as content (a banner there
-    // round-tripped into config.toml on edit). updated_input / modifiedArgs keep
-    // pointing only at the faithful temp file, and no banner text leaks anywhere.
-    let tool_input = serde_json::json!({ "file_path": "/repo/src/main.rs" });
-    let note = "lean-ctx shadow mode: served by ctx_read.";
-    let out = build_redirect_output(Some(&tool_input), "file_path", "/tmp/x.lctx", Some(note));
-    let p: serde_json::Value = serde_json::from_str(&out).expect("valid hook JSON");
-
-    assert_eq!(p["hookSpecificOutput"]["additionalContext"], note);
-    assert_eq!(p["updated_input"]["file_path"], "/tmp/x.lctx");
-    assert_eq!(p["modifiedArgs"]["file_path"], "/tmp/x.lctx");
-    assert!(
-        !out.contains("shadow-mode:"),
-        "the legacy in-content banner must never reappear in redirect output"
-    );
-}
-
-#[test]
 fn redirect_output_omits_additional_context_without_shadow() {
     // Outside shadow mode the redirect stays silent — no side-channel note at all.
     let tool_input = serde_json::json!({ "path": "src/main.rs" });
-    let out = build_redirect_output(Some(&tool_input), "path", "/tmp/x.lctx", None);
+    let out = build_redirect_output(Some(&tool_input), "path", "/tmp/x.lctx");
     let p: serde_json::Value = serde_json::from_str(&out).expect("valid hook JSON");
     assert!(
         p["hookSpecificOutput"].get("additionalContext").is_none(),
         "no shadow note => no additionalContext key"
-    );
-}
-
-#[test]
-fn redirect_read_passes_through_when_disabled_by_config() {
-    // #637: read_redirect=off must make a native Read fall through untouched —
-    // the exact dual-allow response, with no path-swap to a temp copy — so the
-    // host's read-before-write guard tracks the real file and Write/Edit works.
-    let _lock = crate::core::data_dir::test_env_lock();
-    crate::test_env::remove_var("CLAUDE_PROJECT_DIR");
-    crate::test_env::remove_var("CLAUDECODE");
-    crate::test_env::remove_var("CODEBUDDY");
-    crate::test_env::set_var("LEAN_CTX_READ_REDIRECT", "off");
-
-    let tool_input = serde_json::json!({ "file_path": "/repo/src/main.rs" });
-    let out = redirect_read(Some(&tool_input));
-
-    crate::test_env::remove_var("LEAN_CTX_READ_REDIRECT");
-
-    assert_eq!(
-        out,
-        build_dual_allow_output(),
-        "disabled Read redirect must emit the plain dual-allow passthrough"
-    );
-    assert!(
-        !out.contains(".lctx") && !out.contains("updatedInput") && !out.contains("modifiedArgs"),
-        "disabled Read redirect must not rewrite the path to a temp copy: {out}"
     );
 }
 
@@ -1104,17 +1015,14 @@ fn redirect_read_auto_passes_through_under_claude_code() {
     // subprocesses — CLAUDE_PROJECT_DIR — must disable the Read path-swap out of the
     // box, no config edit. This is exactly what fixes headless `claude -p`
     // (CLAUDECODE is NOT propagated to hook children, so it cannot be the signal).
-    let _lock = crate::core::data_dir::test_env_lock();
-    crate::test_env::set_var("LEAN_CTX_READ_REDIRECT", "auto");
+    let _iso = crate::core::data_dir::isolated_data_dir();
     crate::test_env::remove_var("CLAUDECODE");
-    crate::test_env::remove_var("CODEBUDDY");
     crate::test_env::set_var("CLAUDE_PROJECT_DIR", "/repo");
 
     let tool_input = serde_json::json!({ "file_path": "/repo/src/main.rs" });
     let out = redirect_read(Some(&tool_input));
 
     crate::test_env::remove_var("CLAUDE_PROJECT_DIR");
-    crate::test_env::remove_var("LEAN_CTX_READ_REDIRECT");
 
     assert_eq!(
         out,

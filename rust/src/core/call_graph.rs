@@ -1,7 +1,6 @@
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex, OnceLock};
 
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
@@ -179,31 +178,6 @@ impl RiskLevel {
 // Background build state (singleton per process)
 // ---------------------------------------------------------------------------
 
-#[derive(Debug, Clone, Serialize)]
-pub struct BuildProgress {
-    pub status: &'static str,
-    pub files_total: usize,
-    pub files_done: usize,
-    pub edges_found: usize,
-}
-
-enum BuildState {
-    Idle,
-    Building {
-        files_total: usize,
-        files_done: Arc<AtomicUsize>,
-        edges_found: Arc<AtomicUsize>,
-    },
-    Ready(Arc<CallGraph>),
-    Failed(String),
-}
-
-static BUILD: OnceLock<Mutex<BuildState>> = OnceLock::new();
-
-fn global_state() -> &'static Mutex<BuildState> {
-    BUILD.get_or_init(|| Mutex::new(BuildState::Idle))
-}
-
 impl CallGraph {
     pub fn new(project_root: &str) -> Self {
         Self {
@@ -354,149 +328,6 @@ impl CallGraph {
     // -----------------------------------------------------------------------
     // Public API: non-blocking access for the dashboard
     // -----------------------------------------------------------------------
-
-    /// Returns the cached graph immediately, or `None` + starts a background build.
-    pub fn get_or_start_build(
-        project_root: &str,
-        inputs: Arc<CallGraphInputs>,
-    ) -> Result<Arc<CallGraph>, BuildProgress> {
-        let state = global_state();
-        let mut guard = state
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-
-        match &*guard {
-            BuildState::Ready(graph) => return Ok(Arc::clone(graph)),
-            BuildState::Building {
-                files_total,
-                files_done,
-                edges_found,
-            } => {
-                return Err(BuildProgress {
-                    status: "building",
-                    files_total: *files_total,
-                    files_done: files_done.load(Ordering::Relaxed),
-                    edges_found: edges_found.load(Ordering::Relaxed),
-                });
-            }
-            BuildState::Failed(msg) => {
-                tracing::warn!("[call_graph: previous build failed: {msg} — retrying]");
-            }
-            BuildState::Idle => {}
-        }
-
-        // Try serving from disk cache first
-        if let Some(cached) = Self::load(project_root)
-            && !cache_looks_stale(&cached, &inputs)
-        {
-            let arc = Arc::new(cached);
-            *guard = BuildState::Ready(Arc::clone(&arc));
-            return Ok(arc);
-        }
-
-        let files_total = inputs.file_paths.len();
-        let files_done = Arc::new(AtomicUsize::new(0));
-        let edges_found = Arc::new(AtomicUsize::new(0));
-
-        *guard = BuildState::Building {
-            files_total,
-            files_done: Arc::clone(&files_done),
-            edges_found: Arc::clone(&edges_found),
-        };
-        drop(guard);
-
-        let root = normalize_project_root(project_root);
-        let fd = Arc::clone(&files_done);
-        let ef = Arc::clone(&edges_found);
-
-        std::thread::spawn(move || {
-            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                let previous = CallGraph::load(&root);
-                if let Some(prev) = &previous {
-                    CallGraph::build_incremental_parallel(&inputs, prev, Some((&fd, &ef)))
-                } else {
-                    CallGraph::build_parallel(&inputs, Some((&fd, &ef)))
-                }
-            }));
-
-            match result {
-                Ok(graph) => {
-                    let _ = graph.save();
-                    let arc = Arc::new(graph);
-                    if let Ok(mut g) = global_state().lock() {
-                        *g = BuildState::Ready(Arc::clone(&arc));
-                    }
-                    tracing::info!(
-                        "[call_graph: build complete — {} files, {} edges]",
-                        arc.file_hashes.len(),
-                        arc.edges.len()
-                    );
-                }
-                Err(e) => {
-                    let msg = format!("{e:?}");
-                    tracing::error!("[call_graph: build panicked: {msg}]");
-                    if let Ok(mut g) = global_state().lock() {
-                        *g = BuildState::Failed(msg);
-                    }
-                }
-            }
-        });
-
-        Err(BuildProgress {
-            status: "building",
-            files_total,
-            files_done: 0,
-            edges_found: 0,
-        })
-    }
-
-    /// Returns current build status without starting anything.
-    pub fn build_status() -> BuildProgress {
-        let state = global_state();
-        let guard = state
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        match &*guard {
-            BuildState::Idle => BuildProgress {
-                status: "idle",
-                files_total: 0,
-                files_done: 0,
-                edges_found: 0,
-            },
-            BuildState::Building {
-                files_total,
-                files_done,
-                edges_found,
-            } => BuildProgress {
-                status: "building",
-                files_total: *files_total,
-                files_done: files_done.load(Ordering::Relaxed),
-                edges_found: edges_found.load(Ordering::Relaxed),
-            },
-            BuildState::Ready(graph) => BuildProgress {
-                status: "ready",
-                files_total: graph.file_hashes.len(),
-                files_done: graph.file_hashes.len(),
-                edges_found: graph.edges.len(),
-            },
-            BuildState::Failed(msg) => {
-                tracing::debug!("[call_graph: status check — failed: {msg}]");
-                BuildProgress {
-                    status: "error",
-                    files_total: 0,
-                    files_done: 0,
-                    edges_found: 0,
-                }
-            }
-        }
-    }
-
-    /// Force-invalidate the cached result so next request triggers a rebuild.
-    pub fn invalidate() {
-        if let Ok(mut g) = global_state().lock() {
-            *g = BuildState::Idle;
-        }
-    }
 
     // -----------------------------------------------------------------------
     // Legacy synchronous API (kept for non-dashboard callers)
@@ -726,38 +557,15 @@ impl CallGraph {
         let tmp = target.with_extension("zst.tmp");
         std::fs::write(&tmp, &compressed).map_err(|e| e.to_string())?;
         std::fs::rename(&tmp, &target).map_err(|e| e.to_string())?;
-        let _ = std::fs::remove_file(dir.join("call_graph.json"));
         Ok(())
     }
 
     pub fn load(project_root: &str) -> Option<Self> {
         let dir = call_graph_dir(project_root)?;
 
-        let zst_path = dir.join("call_graph.json.zst");
-        if zst_path.exists() {
-            let compressed = std::fs::read(&zst_path).ok()?;
-            let data = zstd::decode_all(compressed.as_slice()).ok()?;
-            let content = String::from_utf8(data).ok()?;
-            return serde_json::from_str(&content).ok();
-        }
-
-        let json_path = dir.join("call_graph.json");
-        if json_path.exists() {
-            let content = std::fs::read_to_string(&json_path).ok()?;
-            let parsed: Self = serde_json::from_str(&content).ok()?;
-            // Auto-migrate: compress legacy JSON to zstd
-            if let Ok(compressed) = zstd::encode_all(content.as_bytes(), 9) {
-                let zst_tmp = zst_path.with_extension("zst.tmp");
-                if std::fs::write(&zst_tmp, &compressed).is_ok()
-                    && std::fs::rename(&zst_tmp, &zst_path).is_ok()
-                {
-                    let _ = std::fs::remove_file(&json_path);
-                }
-            }
-            return Some(parsed);
-        }
-
-        None
+        let compressed = std::fs::read(dir.join("call_graph.json.zst")).ok()?;
+        let data = zstd::decode_all(compressed.as_slice()).ok()?;
+        serde_json::from_str(&String::from_utf8(data).ok()?).ok()
     }
 
     pub fn load_or_build(project_root: &str, inputs: &CallGraphInputs) -> Self {
@@ -772,17 +580,6 @@ impl CallGraph {
 // ---------------------------------------------------------------------------
 // Cache staleness check (fast — mtime-based, no content reads)
 // ---------------------------------------------------------------------------
-
-fn cache_looks_stale(cached: &CallGraph, inputs: &CallGraphInputs) -> bool {
-    if cached.file_hashes.len() != inputs.file_paths.len() {
-        return true;
-    }
-    let cached_files: std::collections::HashSet<&str> =
-        cached.file_hashes.keys().map(String::as_str).collect();
-    let index_files: std::collections::HashSet<&str> =
-        inputs.file_paths.iter().map(String::as_str).collect();
-    cached_files != index_files
-}
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -860,118 +657,6 @@ fn simple_hash(content: &str) -> String {
 // lexical scope and refuse to guess when a name stays ambiguous.
 // ---------------------------------------------------------------------------
 
-/// Build a `file -> imported files` adjacency from the project index's import
-/// and reexport edges, used to scope callee resolution to a caller's imports.
-pub fn build_import_adjacency(
-    inputs: &CallGraphInputs,
-) -> HashMap<String, std::collections::HashSet<String>> {
-    let mut adj: HashMap<String, std::collections::HashSet<String>> = HashMap::new();
-    for (from, to) in &inputs.import_edges {
-        adj.entry(from.clone()).or_default().insert(to.clone());
-    }
-    adj
-}
-
-/// Pick the defining file for a callee from candidate `def_files`, ranked by the
-/// caller's lexical scope (most specific first):
-///   1. the caller's own file,
-///   2. exactly one file the caller imports,
-///   3. exactly one file project-wide.
-///
-/// Returns `None` when the name stays ambiguous (never guesses).
-fn rank_callee_def_file(
-    def_files: &[&str],
-    caller_file: &str,
-    imports: &HashMap<String, std::collections::HashSet<String>>,
-) -> Option<String> {
-    if def_files.is_empty() {
-        return None;
-    }
-    if def_files.contains(&caller_file) {
-        return Some(caller_file.to_string());
-    }
-    if let Some(imported) = imports.get(caller_file) {
-        let mut in_scope = def_files.iter().filter(|f| imported.contains(**f));
-        if let Some(first) = in_scope.next()
-            && in_scope.next().is_none()
-        {
-            return Some((*first).to_string());
-        }
-    }
-    if def_files.len() == 1 {
-        return Some(def_files[0].to_string());
-    }
-    None
-}
-
-/// Resolve a single callee name to its defining file in the scope of `caller_file`.
-pub fn resolve_callee_file(
-    callee_name: &str,
-    caller_file: &str,
-    inputs: &CallGraphInputs,
-    imports: &HashMap<String, std::collections::HashSet<String>>,
-) -> Option<String> {
-    let mut def_files: Vec<&str> = inputs
-        .symbols
-        .iter()
-        .filter(|s| s.name == callee_name)
-        .map(|s| s.file.as_str())
-        .collect();
-    def_files.sort_unstable();
-    def_files.dedup();
-    rank_callee_def_file(&def_files, caller_file, imports)
-}
-
-/// Resolve callee names to a single defining file *when scope makes it
-/// unambiguous across all call sites*. Names that resolve to different files
-/// from different scopes are omitted, so callers never attribute a call to the
-/// wrong file. Keyed by callee name to match the call graph's name-keyed nodes.
-pub fn resolve_callee_files(
-    inputs: &CallGraphInputs,
-    edges: &[CallEdge],
-) -> HashMap<String, String> {
-    use std::collections::HashSet;
-
-    let imports = build_import_adjacency(inputs);
-    let callee_names: HashSet<&str> = edges.iter().map(|e| e.callee_name.as_str()).collect();
-    if callee_names.is_empty() {
-        return HashMap::new();
-    }
-
-    let mut name_files: HashMap<&str, Vec<&str>> = HashMap::new();
-    for sym in &inputs.symbols {
-        if callee_names.contains(sym.name.as_str()) {
-            name_files
-                .entry(sym.name.as_str())
-                .or_default()
-                .push(sym.file.as_str());
-        }
-    }
-    for files in name_files.values_mut() {
-        files.sort_unstable();
-        files.dedup();
-    }
-
-    let mut resolved: HashMap<&str, HashSet<String>> = HashMap::new();
-    for e in edges {
-        if let Some(defs) = name_files.get(e.callee_name.as_str())
-            && let Some(file) = rank_callee_def_file(defs, &e.caller_file, &imports)
-        {
-            resolved
-                .entry(e.callee_name.as_str())
-                .or_default()
-                .insert(file);
-        }
-    }
-
-    resolved
-        .into_iter()
-        .filter_map(|(name, files)| {
-            (files.len() == 1).then(|| (name.to_string(), files.into_iter().next().unwrap()))
-        })
-        .collect()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1030,96 +715,6 @@ mod tests {
         });
         let callees = graph.callees_of("main");
         assert_eq!(callees.len(), 2);
-    }
-
-    fn sym(name: &str, file: &str) -> SymbolSpan {
-        SymbolSpan {
-            file: file.to_string(),
-            name: name.to_string(),
-            start_line: 1,
-            end_line: 2,
-        }
-    }
-
-    #[test]
-    fn resolve_callee_file_scopes_same_named_methods() {
-        // `Run` is defined in two files (two classes). Each caller must resolve
-        // to its *own* file, never to both.
-        let inputs = CallGraphInputs {
-            project_root: "/p".to_string(),
-            symbols: vec![sym("Run", "a.rs"), sym("Run", "b.rs")],
-            ..Default::default()
-        };
-        let imports: HashMap<String, std::collections::HashSet<String>> = HashMap::new();
-
-        assert_eq!(
-            resolve_callee_file("Run", "a.rs", &inputs, &imports).as_deref(),
-            Some("a.rs")
-        );
-        assert_eq!(
-            resolve_callee_file("Run", "b.rs", &inputs, &imports).as_deref(),
-            Some("b.rs")
-        );
-        // A caller that neither defines nor imports `Run` stays ambiguous.
-        assert_eq!(resolve_callee_file("Run", "c.rs", &inputs, &imports), None);
-    }
-
-    #[test]
-    fn resolve_callee_file_prefers_imported_definition() {
-        let inputs = CallGraphInputs {
-            project_root: "/p".to_string(),
-            symbols: vec![sym("Run", "lib.rs"), sym("Run", "other.rs")],
-            ..Default::default()
-        };
-        let mut imports: HashMap<String, std::collections::HashSet<String>> = HashMap::new();
-        imports.insert(
-            "main.rs".to_string(),
-            std::collections::HashSet::from(["lib.rs".to_string()]),
-        );
-        // `main.rs` imports only `lib.rs`, so `Run` resolves there despite the
-        // global ambiguity with `other.rs`.
-        assert_eq!(
-            resolve_callee_file("Run", "main.rs", &inputs, &imports).as_deref(),
-            Some("lib.rs")
-        );
-    }
-
-    #[test]
-    fn resolve_callee_files_drops_cross_scope_ambiguity() {
-        let inputs = CallGraphInputs {
-            project_root: "/p".to_string(),
-            symbols: vec![
-                sym("Run", "a.rs"),
-                sym("Run", "b.rs"),
-                sym("Unique", "u.rs"),
-            ],
-            ..Default::default()
-        };
-        let edges = vec![
-            CallEdge {
-                caller_file: "a.rs".into(),
-                caller_symbol: "fa".into(),
-                caller_line: 1,
-                callee_name: "Run".into(),
-            },
-            CallEdge {
-                caller_file: "b.rs".into(),
-                caller_symbol: "fb".into(),
-                caller_line: 1,
-                callee_name: "Run".into(),
-            },
-            CallEdge {
-                caller_file: "x.rs".into(),
-                caller_symbol: "fx".into(),
-                caller_line: 1,
-                callee_name: "Unique".into(),
-            },
-        ];
-        let map = resolve_callee_files(&inputs, &edges);
-        // `Run` resolves to a.rs from a and b.rs from b → two files → omitted.
-        assert!(!map.contains_key("Run"));
-        // `Unique` is globally unique → resolved.
-        assert_eq!(map.get("Unique").map(String::as_str), Some("u.rs"));
     }
 
     #[test]

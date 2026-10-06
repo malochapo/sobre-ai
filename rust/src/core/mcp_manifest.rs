@@ -61,16 +61,7 @@ pub fn manifest_value() -> Value {
     let registry = crate::server::registry::build_registry();
     let granular_tools: Vec<Tool> = registry.tool_defs();
 
-    let mut unified_tools: Vec<Tool> = crate::tool_defs::unified_tool_defs();
-    unified_tools.sort_by_key(|t| t.name.clone());
-
     let granular: Vec<Value> = granular_tools
-        .into_iter()
-        .filter_map(|t| serde_json::to_value(t).ok())
-        .map(|v| normalize_tool_entry(&v))
-        .collect();
-
-    let unified: Vec<Value> = unified_tools
         .into_iter()
         .filter_map(|t| serde_json::to_value(t).ok())
         .map(|v| normalize_tool_entry(&v))
@@ -79,23 +70,14 @@ pub fn manifest_value() -> Value {
     json!({
         "schema_version": MCP_MANIFEST_SCHEMA_VERSION,
         "counts": {
-            "granular": granular.len(),
-            "unified": unified.len()
+            "granular": granular.len()
         },
         "read_modes": {
             "count": READ_MODES.len(),
             "modes": READ_MODES
         },
         "tools": {
-            "granular": granular,
-            "unified": unified
+            "granular": granular
         }
     })
-}
-
-pub fn manifest_pretty_json() -> String {
-    let mut s =
-        serde_json::to_string_pretty(&manifest_value()).unwrap_or_else(|_| "{}".to_string());
-    s.push('\n');
-    s
 }

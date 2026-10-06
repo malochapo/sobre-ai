@@ -70,26 +70,16 @@ pub(crate) async fn build_response(
     extra_stream_types: &[&str],
     usage_provider: crate::proxy::usage::Provider,
     url_model: Option<String>,
-    cohort: Option<crate::proxy::holdout::Arm>,
     wire: Option<Box<crate::proxy::usage::WireContext>>,
     xlat: bool,
-    cache: Option<&crate::proxy::cache_bridge::CacheBridge>,
-    model: Option<&str>,
-    cache_prompt_hash: &str,
 ) -> Result<Response, StatusCode> {
     let status = StatusCode::from_u16(response.status().as_u16()).unwrap_or(StatusCode::OK);
     let resp_headers = response.headers().clone();
 
     // Gateway-billed USD from response headers (#1189): LiteLLM's standard
-    // header plus the operator-configured one. Body-reported costs (OpenRouter
-    // usage.cost) beat this inside the scanner.
-    let extra_cost_header = crate::core::config::Config::load()
-        .proxy
-        .cost_response_header();
-    let header_cost = crate::proxy::usage_accounting::cost_from_headers(
-        &resp_headers,
-        extra_cost_header.as_deref(),
-    );
+    // header. Body-reported costs (OpenRouter usage.cost) beat this inside the
+    // scanner.
+    let header_cost = crate::proxy::usage_accounting::cost_from_headers(&resp_headers, None);
 
     let is_sse = crate::proxy::bedrock::response_is_sse(&resp_headers);
     let is_stream = is_sse
@@ -100,7 +90,6 @@ pub(crate) async fn build_response(
 
     if is_stream {
         let scanner = crate::proxy::usage::Scanner::new(usage_provider, url_model)
-            .with_cohort(cohort)
             .with_wire_context(wire)
             .with_header_cost(header_cost);
         let inner = Box::pin(response.bytes_stream());
@@ -130,34 +119,18 @@ pub(crate) async fn build_response(
 
     // Non-streaming: the whole body is one JSON object carrying `usage`.
     let mut scanner = crate::proxy::usage::Scanner::new(usage_provider, url_model)
-        .with_cohort(cohort)
         .with_wire_context(wire)
         .with_header_cost(header_cost);
     scanner.feed_body(&resp_bytes);
-    let measured_output_tokens = if let Some(usage) = scanner.finalize() {
-        let output_tokens = usage.output_tokens;
+    if let Some(usage) = scanner.finalize() {
         crate::proxy::usage_meter::record(&usage);
-        output_tokens
-    } else {
-        u64::try_from(resp_bytes.len().saturating_add(3)).unwrap_or(u64::MAX) / 4
-    };
+    }
 
     let resp_bytes = if xlat {
         xlat_response_bytes(&resp_bytes, status)
     } else {
         resp_bytes.to_vec()
     };
-    if let (Some(cache), Some(model)) = (cache, model) {
-        cache.record_response(
-            model,
-            cache_prompt_hash,
-            0.0,
-            0,
-            status,
-            &resp_bytes,
-            measured_output_tokens,
-        );
-    }
 
     let mut resp = Response::builder().status(status);
     for (k, v) in &resp_headers {

@@ -40,6 +40,7 @@ impl QuantizedVector {
     /// Reconstruct the approximate `f32` vector. Only needed for diagnostics /
     /// migration; the hot path scores against the codes directly via [`dot_quant`].
     #[must_use]
+    #[cfg(test)]
     pub fn dequantize(&self) -> Vec<f32> {
         self.code
             .iter()

@@ -1,4 +1,4 @@
-//! Contract-freeze CI gate (GL #394, CONTRACTS.md § Stability matrix).
+//! Contract-freeze CI gate (GL #394; stability matrix in `core::contracts`).
 //!
 //! Two invariants, enforced on every CI run:
 //!
@@ -122,7 +122,7 @@ fn frozen_contract_docs_are_immutable() {
             ),
             Some(expected) if expected != hash => panic!(
                 "FROZEN CONTRACT MODIFIED: docs/contracts/{file} changed.\n\
-                 Frozen contracts are immutable (CONTRACTS.md § Contract file rule).\n\
+                 Frozen contracts are immutable.\n\
                  → semantic change: create the next version file (e.g. -v2.md) and classify it; \
                  leave the v1 file untouched.\n\
                  → deliberate typo fix: LEANCTX_UPDATE_FROZEN_HASHES=1 cargo test --test \

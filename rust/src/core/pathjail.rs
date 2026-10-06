@@ -56,76 +56,35 @@ pub fn allow_paths_from_env_and_config() -> Vec<PathBuf> {
     // user-configured paths, virtually never under ~/Documents.
     //
     // This is also lean-ctx's own state dir (sessions, knowledge, …) — always
-    // readable even while foreign editor dirs stay jailed. On a legacy install
-    // the resolver returns `~/.lean-ctx`; on a split install it returns the XDG
-    // data dir. Going through the resolver (not a hardcoded `~/.lean-ctx` join)
-    // is what keeps `home_allow_dirs` free of the legacy-path firewall trip.
+    // readable even while foreign editor dirs stay jailed.
     if let Ok(data_dir) = crate::core::data_dir::lean_ctx_data_dir() {
         out.push(canonicalize_secure(&data_dir));
     }
 
-    if let Some(home) = dirs::home_dir() {
-        let ide_dirs_allowed = cfg.allow_ide_config_dirs.unwrap_or(false)
-            || std::env::var("LEAN_CTX_ALLOW_IDE_DIRS").is_ok_and(|v| v == "1");
-        out.extend(home_allow_dirs(&home, ide_dirs_allowed));
-    }
-
     for p in &cfg.allow_paths {
-        out.push(canonicalize_secure(&expand_user_path(p)));
-    }
-    for p in &cfg.extra_roots {
         out.push(canonicalize_secure(&expand_user_path(p)));
     }
 
     for path in crate::core::runtime_flags::allow_paths() {
         out.push(canonicalize_secure(&path));
     }
-    // Env entries are expanded too: MCP host configs pass env blocks verbatim
-    // (no shell), so "$HOME/code" arrives literally there as well.
-    let v = std::env::var("LCTX_ALLOW_PATH")
-        .or_else(|_| std::env::var("LEAN_CTX_ALLOW_PATH"))
-        .unwrap_or_default();
-    if !v.trim().is_empty() {
-        for p in std::env::split_paths(&v) {
-            out.push(canonicalize_secure(&expand_user_path(&p.to_string_lossy())));
-        }
-    }
-
-    let extra = std::env::var("LEAN_CTX_EXTRA_ROOTS").unwrap_or_default();
-    if !extra.trim().is_empty() {
-        for p in std::env::split_paths(&extra) {
-            out.push(canonicalize_secure(&expand_user_path(&p.to_string_lossy())));
-        }
-    }
-
     // Read-only roots are *readable* (the whole point is read access to sibling
     // repos); writes into them are denied separately by `enforce_writable`
     // (#475). Add them to the read allow-list so reads resolve, exactly like
     // `extra_roots`, without granting write access.
-    out.extend(canonicalized_roots(
-        &cfg.read_only_roots,
-        "LEAN_CTX_READ_ONLY_ROOTS",
-    ));
+    out.extend(canonicalized_roots(&cfg.read_only_roots));
 
     out
 }
 
-/// Canonicalize a set of config-supplied root entries plus an env override
-/// (path-list separated), expanding `~`/`$VAR` first. Shared by the read
-/// allow-list and the read-only-roots collector so both tiers parse roots
-/// identically.
-fn canonicalized_roots(config_entries: &[String], env_var: &str) -> Vec<PathBuf> {
-    let mut out = Vec::new();
-    for p in config_entries {
-        out.push(canonicalize_secure(&expand_user_path(p)));
-    }
-    let v = std::env::var(env_var).unwrap_or_default();
-    if !v.trim().is_empty() {
-        for p in std::env::split_paths(&v) {
-            out.push(canonicalize_secure(&expand_user_path(&p.to_string_lossy())));
-        }
-    }
-    out
+/// Canonicalize a set of config-supplied root entries, expanding `~`/`$VAR`
+/// first. Shared by the read allow-list and the read-only-roots collector so
+/// both tiers parse roots identically.
+fn canonicalized_roots(config_entries: &[String]) -> Vec<PathBuf> {
+    config_entries
+        .iter()
+        .map(|p| canonicalize_secure(&expand_user_path(p)))
+        .collect()
 }
 
 /// A read-only root is a sibling subtree the agent may **read** but never
@@ -134,7 +93,7 @@ fn canonicalized_roots(config_entries: &[String], env_var: &str) -> Vec<PathBuf>
 /// for everyone who hasn't opted in (#475).
 pub fn read_only_roots_from_env_and_config() -> Vec<PathBuf> {
     let cfg = crate::core::config::Config::load();
-    let mut roots = canonicalized_roots(&cfg.read_only_roots, "LEAN_CTX_READ_ONLY_ROOTS");
+    let mut roots = canonicalized_roots(&cfg.read_only_roots);
     // #899: session-scoped roots auto-detected from language caches. Consulted
     // by both the read allow-list (jail) and `is_read_only_path` (write-deny),
     // so a cache root is readable but never writable — exactly like a configured
@@ -183,8 +142,8 @@ pub fn register_session_read_only_root(root: &Path) -> bool {
 /// A single active relaxation of the path jail. Each one widens or disables what
 /// tools can reach beyond the project root, so it is surfaced loudly (GH security
 /// audit, finding 3): the MCP/HTTP server inherits its process env from the
-/// IDE/launchd, so a globally-set `LEAN_CTX_ALLOW_PATH` / `LEAN_CTX_EXTRA_ROOTS`
-/// / `LEAN_CTX_ALLOW_IDE_DIRS` (or `path_jail = false`) silently loosens the
+/// IDE/launchd, so `allow_paths` / `extra_roots` / `allow_ide_config_dirs`
+/// (or `path_jail = false`) silently loosens the
 /// boundary with no in-band signal otherwise.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct JailRelaxation {
@@ -192,10 +151,6 @@ pub struct JailRelaxation {
     pub source: &'static str,
     /// Human-readable effect of the relaxation.
     pub detail: &'static str,
-}
-
-fn env_is_set(var: &str) -> bool {
-    std::env::var(var).is_ok_and(|v| !v.trim().is_empty())
 }
 
 /// Collect every currently-active path-jail relaxation. An empty result means
@@ -212,40 +167,17 @@ pub fn active_relaxations() -> Vec<JailRelaxation> {
         });
     }
 
-    if crate::core::config::Config::load().path_jail == Some(false) {
+    if crate::core::config::Config::load().jail_open() {
         out.push(JailRelaxation {
-            source: "path_jail = false (config.toml)",
+            source: "allow_paths = [\"/\"] (config.toml)",
             detail: "path jail disabled — every tool path is allowed",
         });
     }
 
     if crate::core::runtime_flags::allow_path_enabled() {
         out.push(JailRelaxation {
-            source: "LEAN_CTX_ALLOW_PATH",
-            detail: "widens the read/write allow-list beyond the project root",
-        });
-    }
-
-    if env_is_set("LEAN_CTX_EXTRA_ROOTS") {
-        out.push(JailRelaxation {
-            source: "LEAN_CTX_EXTRA_ROOTS",
-            detail: "adds extra accessible roots beyond the project root",
-        });
-    }
-
-    let ide_env = std::env::var("LEAN_CTX_ALLOW_IDE_DIRS").is_ok_and(|v| v == "1");
-    if ide_env
-        || crate::core::config::Config::load()
-            .allow_ide_config_dirs
-            .unwrap_or(false)
-    {
-        out.push(JailRelaxation {
-            source: if ide_env {
-                "LEAN_CTX_ALLOW_IDE_DIRS=1"
-            } else {
-                "allow_ide_config_dirs = true (config.toml)"
-            },
-            detail: "exposes ~/.cursor, ~/.claude, … (other agents' sessions/credentials) to tools",
+            source: "multi-root workspace",
+            detail: "child projects of the workspace root are allowed alongside it",
         });
     }
 
@@ -314,56 +246,6 @@ pub fn enforce_writable(candidate: &Path) -> Result<(), String> {
         ));
     }
     Ok(())
-}
-
-/// Foreign editor config dirs for the jail (~/.cursor, ~/.claude, VS Code, …).
-///
-/// These expose other projects' sessions, MCP configs and credentials to any
-/// agent, so they are opt-in only (config `allow_ide_config_dirs = true` or
-/// `LEAN_CTX_ALLOW_IDE_DIRS=1`). lean-ctx's *own* state dir is intentionally NOT
-/// handled here: the caller already adds it via the sanctioned `data_dir`
-/// resolver (the legacy `~/.lean-ctx` is just one resolution of it). Keeping this
-/// a pure foreign-editor list means no legacy `~/.lean-ctx` literal is built in
-/// this module, so the legacy-path firewall (tests/legacy_path_firewall) has
-/// nothing to flag.
-fn home_allow_dirs(home: &Path, ide_dirs_allowed: bool) -> Vec<PathBuf> {
-    let mut out = Vec::new();
-    if ide_dirs_allowed {
-        let targets = crate::core::editor_registry::build_targets(home);
-        collect_ide_allow_dirs(home, &targets, &mut out);
-    }
-    out
-}
-
-/// Collect the in-home config/detect directories of every supported editor.
-///
-/// Derived from the editor registry (the single source of truth) so it covers
-/// non-dotfile layouts too — VS Code's `Library/Application Support/Code/User`,
-/// Cline/Roo globalStorage, JetBrains — and never drifts as editors are added.
-/// A config file that sits directly in `$HOME` (`~/.claude.json`,
-/// `~/.jb-mcp.json`) resolves its parent to `$HOME`; those entries are skipped
-/// so the jail is never widened to the entire home directory.
-fn collect_ide_allow_dirs(
-    home: &Path,
-    targets: &[crate::core::editor_registry::EditorTarget],
-    out: &mut Vec<PathBuf>,
-) {
-    let mut seen: std::collections::HashSet<PathBuf> = out.iter().cloned().collect();
-    for target in targets {
-        let candidates = [
-            target.config_path.parent().map(Path::to_path_buf),
-            Some(target.detect_path.clone()),
-        ];
-        for cand in candidates.into_iter().flatten() {
-            if cand.as_path() == home || !cand.starts_with(home) || !cand.is_dir() {
-                continue;
-            }
-            let resolved = canonicalize_secure(&cand);
-            if seen.insert(resolved.clone()) {
-                out.push(resolved);
-            }
-        }
-    }
 }
 
 fn is_under_prefix(path: &Path, prefix: &Path) -> bool {
@@ -492,7 +374,7 @@ pub fn jail_path_with_roots(
     #[allow(unreachable_code)]
     {
         let cfg = crate::core::config::Config::load();
-        if cfg.path_jail == Some(false) {
+        if cfg.jail_open() {
             return Ok(canonicalize_or_self(candidate));
         }
 
@@ -546,34 +428,15 @@ pub fn jail_path_with_roots(
         let allowed = allowed || is_under_prefix_windows(&base, &root);
 
         if !allowed {
-            let mut hint = if crate::core::protocol::meta_visible() {
-                let dir = candidate.parent().unwrap_or(candidate).display();
-                format!(
-                    ". Hint: set LEAN_CTX_ALLOW_PATH={dir} for read-write access \
-                     (colon-separated for multiple: /path/a:/path/b), \
-                     LEAN_CTX_READ_ONLY_ROOTS={dir} for read-only, \
-                     or add entries to allow_paths = [\"{dir}\"] or extra_roots = [\"{dir}\"] \
-                     in ~/.config/lean-ctx/config.toml"
-                )
-            } else {
-                // Agents otherwise get a bare rejection and shell out to work
-                // around the jail; name the config keys the same way the
-                // shell-allowlist block message names its key. The env-var and
-                // config-path detail above stays meta-gated (#540, #887).
-                ". Fix (additive): add the directory to extra_roots or allow_paths in \
+            // Agents otherwise get a bare rejection and shell out to work around
+            // the jail; name the config keys the same way the shell-allowlist
+            // block message names its key (#540, #887).
+            let mut hint = ". Fix (additive): add the directory to extra_roots or allow_paths in \
                  ~/.config/lean-ctx/config.toml — `lean-ctx doctor` shows the config in effect"
-                    .to_string()
-            };
-            // An untrusted workspace's project-local `allow_paths` is silently
-            // withheld; always surface that reason (the stderr warning is
-            // invisible over MCP, and the hint above is meta-gated off) (#540).
-            if let Some(notice) = crate::core::workspace_trust::untrusted_override_notice() {
-                hint.push_str(". ");
-                hint.push_str(&notice);
-            }
+                .to_string();
             // The global config the runtime reads doesn't exist → on defaults, so
-            // an `allow_paths` edit made to a config.toml elsewhere (XDG vs legacy
-            // dir, or a sandboxed/container HOME) is never seen (#540).
+            // an `allow_paths` edit made to a config.toml elsewhere (a custom
+            // config dir, or a sandboxed/container HOME) is never seen (#540).
             if let Some(missing) = crate::core::config::Config::missing_config_path() {
                 hint.push_str(&format!(
                     ". ⚠ lean-ctx reads no config file at {} (running on defaults) — an \
@@ -657,7 +520,7 @@ mod tests {
         // Hermetic config (empty data dir => jail on) so a parallel test that
         // flips `path_jail` cannot leak into this enforcement check. The guard
         // holds the global test_env_lock, which also serializes against every
-        // `LEAN_CTX_ALLOW_PATH` mutation (all of them go through that lock).
+        // allow-path mutation (all of them go through that lock).
         let _iso = crate::core::data_dir::isolated_data_dir();
         let tmp = tempfile::tempdir().unwrap();
         let root = tmp.path().join("root");
@@ -679,13 +542,13 @@ mod tests {
     /// single write choke point `enforce_writable` default-denies every write
     /// inside it — including a not-yet-existing file, which inherits the
     /// directory's read-only status. `isolated_data_dir` holds `test_env_lock`,
-    /// serialising the `LEAN_CTX_READ_ONLY_ROOTS` mutation against other tests.
+    /// serialising the `read_only_roots` config write against other tests.
     #[cfg(not(feature = "no-jail"))]
     #[test]
     fn read_only_roots_deny_writes_but_allow_reads() {
         // `isolated_data_dir` already holds `test_env_lock` for its lifetime —
         // taking it again here would self-deadlock on a non-reentrant Mutex.
-        let _iso = crate::core::data_dir::isolated_data_dir();
+        let iso = crate::core::data_dir::isolated_data_dir();
 
         let tmp = tempfile::tempdir().unwrap();
         let project = tmp.path().join("project");
@@ -697,24 +560,23 @@ mod tests {
         // Canonicalize the configured root the same (symlink-resolving) way the
         // guard does, so macOS /var → /private/var can't defeat the prefix match.
         let ro_canon = canonicalize_secure(&refrepo);
-        crate::test_env::set_var(
-            "LEAN_CTX_READ_ONLY_ROOTS",
-            ro_canon.to_string_lossy().as_ref(),
-        );
+        std::fs::write(
+            iso.path().join("config.toml"),
+            format!("read_only_roots = [{:?}]\n", ro_canon.to_string_lossy()),
+        )
+        .unwrap();
 
         let existing = refrepo.join("lib.rs");
         let new_file = refrepo.join("sub").join("new.rs");
         let proj_file = project.join("main.rs");
 
-        // Capture every decision while the env is live (it is cleared below).
+        // Capture every decision while the config is live.
         let read_existing = jail_path(&existing, &project);
         let deny_existing = enforce_writable(&existing);
         let deny_new = enforce_writable(&new_file);
         let allow_project = enforce_writable(&proj_file);
         let ro_existing = is_read_only_path(&existing);
         let ro_project = is_read_only_path(&proj_file);
-
-        crate::test_env::remove_var("LEAN_CTX_READ_ONLY_ROOTS");
 
         assert!(
             deny_existing.is_err(),
@@ -758,19 +620,19 @@ mod tests {
         let secret = outside.join("secret.txt");
         std::fs::write(&secret, "x").unwrap();
 
-        // Warm the config cache with the jail on (no path_jail key).
+        // Warm the config cache with the jail on (no allow_paths key).
         std::fs::write(&cfg_path, "# jail on\n").unwrap();
         let mtime0 = std::fs::metadata(&cfg_path).unwrap().modified().unwrap();
-        assert_eq!(crate::core::config::Config::load().path_jail, None);
+        assert!(!crate::core::config::Config::load().jail_open());
 
-        // Flip path_jail=false but restore the original mtime, so any mtime-only
+        // Open the jail but restore the original mtime, so any mtime-only
         // cache would keep serving the stale jail-on value.
-        std::fs::write(&cfg_path, "path_jail = false\n").unwrap();
+        std::fs::write(&cfg_path, "allow_paths = [\"/\"]\n").unwrap();
         filetime::set_file_mtime(&cfg_path, filetime::FileTime::from_system_time(mtime0)).unwrap();
 
         assert!(
             jail_path(&secret, &root).is_ok(),
-            "path_jail=false must take effect without a fresh process (#406)"
+            "allow_paths = [\"/\"] must take effect without a fresh process (#406)"
         );
     }
 
@@ -807,89 +669,6 @@ mod tests {
     }
 
     #[test]
-    fn ide_allow_dirs_are_registry_derived_and_skip_home() {
-        use crate::core::editor_registry::{ConfigType, EditorTarget};
-
-        let home = tempfile::tempdir().unwrap();
-        let h = home.path();
-        // VS Code keeps its config outside a dotfile dir — the old hard-coded
-        // list missed this entirely.
-        std::fs::create_dir_all(h.join("Library/Application Support/Code/User")).unwrap();
-        std::fs::create_dir_all(h.join(".cursor")).unwrap();
-
-        let targets = vec![
-            EditorTarget {
-                name: "VS Code",
-                agent_key: "vscode".into(),
-                config_path: h.join("Library/Application Support/Code/User/mcp.json"),
-                detect_path: h.join("Library/Application Support/Code"),
-                config_type: ConfigType::VsCodeMcp,
-            },
-            EditorTarget {
-                name: "Cursor",
-                agent_key: "cursor".into(),
-                config_path: h.join(".cursor/mcp.json"),
-                detect_path: h.join(".cursor"),
-                config_type: ConfigType::McpJson,
-            },
-            // A $HOME-level config file: its parent is $HOME and must be skipped.
-            EditorTarget {
-                name: "Claude Code",
-                agent_key: "claude".into(),
-                config_path: h.join(".claude.json"),
-                detect_path: h.join(".no-such-dir"),
-                config_type: ConfigType::McpJson,
-            },
-        ];
-
-        let mut out = Vec::new();
-        collect_ide_allow_dirs(h, &targets, &mut out);
-
-        assert!(
-            out.iter().any(|p| p.ends_with("Code/User")),
-            "non-dotfile VS Code dir must be covered: {out:?}"
-        );
-        assert!(out.iter().any(|p| p.ends_with(".cursor")), "{out:?}");
-        let home_canon = canonicalize_secure(h);
-        assert!(
-            !out.contains(&home_canon),
-            "must never widen the jail to $HOME: {out:?}"
-        );
-    }
-
-    // P0-10 (#422): foreign editor config dirs are opt-in. lean-ctx's own state
-    // dir is added by the caller via the data_dir root, NOT by `home_allow_dirs`,
-    // so the default home allow-list is empty and `~/.lean-ctx` (not an editor)
-    // never appears here.
-    #[test]
-    fn ide_config_dirs_are_excluded_by_default() {
-        let home = tempfile::tempdir().unwrap();
-        for d in [".lean-ctx", ".cursor", ".codex"] {
-            std::fs::create_dir_all(home.path().join(d)).unwrap();
-        }
-
-        let denied = home_allow_dirs(home.path(), false);
-        assert!(
-            denied.is_empty(),
-            "foreign editor dirs must stay jailed by default: {denied:?}"
-        );
-
-        // Opt-in exposes the editor dirs that actually exist under this home.
-        // Entries are registry-derived (foreign real-$HOME paths are filtered out
-        // by the in-home guard), so the result stays hermetic — and `~/.lean-ctx`
-        // is never added here because it is not an editor.
-        let allowed = home_allow_dirs(home.path(), true);
-        assert!(
-            allowed.iter().any(|p| p.ends_with(".cursor")),
-            "opt-in must expose editor dirs: {allowed:?}"
-        );
-        assert!(
-            !allowed.iter().any(|p| p.ends_with(".lean-ctx")),
-            "lean-ctx's own dir is covered by the data_dir root, not home_allow_dirs: {allowed:?}"
-        );
-    }
-
-    #[test]
     fn canonicalize_or_self_strips_verbatim() {
         let tmp = tempfile::tempdir().unwrap();
         let dir = tmp.path().join("project");
@@ -918,7 +697,7 @@ mod tests {
     #[test]
     fn error_message_contains_escape_info() {
         // isolated_data_dir holds the global test_env_lock, serializing this
-        // against any parallel `LEAN_CTX_ALLOW_PATH="/"` mutation.
+        // against any parallel allow-path mutation.
         let _iso = crate::core::data_dir::isolated_data_dir();
         let tmp = tempfile::tempdir().unwrap();
         let root = tmp.path().join("root");
@@ -941,8 +720,6 @@ mod tests {
     #[test]
     fn escape_error_names_config_keys_without_meta() {
         let _iso = crate::core::data_dir::isolated_data_dir();
-        crate::test_env::remove_var("LEAN_CTX_META");
-        crate::test_env::remove_var("LEAN_CTX_DIAGNOSTICS");
         let tmp = tempfile::tempdir().unwrap();
         let root = tmp.path().join("root");
         let other = tmp.path().join("other");
@@ -975,34 +752,26 @@ mod tests {
             expand_user_path("$HOME/$LEAN_CTX_TEST_SUB/x"),
             PathBuf::from(format!("{home_s}/sub/x"))
         );
-        crate::test_env::remove_var("LEAN_CTX_TEST_SUB");
         // Absolute paths pass through untouched.
         assert_eq!(expand_user_path("/etc"), PathBuf::from("/etc"));
     }
 
     #[test]
     fn expand_user_path_leaves_unset_vars_verbatim() {
-        crate::test_env::remove_var("LEAN_CTX_TEST_UNSET_VAR");
         let p = expand_user_path("$LEAN_CTX_TEST_UNSET_VAR/code");
         assert_eq!(p, PathBuf::from("$LEAN_CTX_TEST_UNSET_VAR/code"));
     }
 
-    // GH #392: `allow_paths = ["/"]` (via the same env-var channel) must grant
-    // access to any absolute path — "/" is a prefix of everything.
-    //
-    // Env-mutating tests here hold the process-global
-    // `data_dir::test_env_lock()` (directly, or via `isolated_data_dir()`
-    // which wraps it) — NOT a module-local mutex. test_env's SAFETY contract
-    // says *all* test env mutation serializes through that one lock; a local
-    // lock only serializes this module against itself, so e.g.
-    // `artifacts::external_corpus_requires_allow_list` (which holds the
-    // global lock) could observe this test's `LEAN_CTX_ALLOW_PATH="/"` and
-    // fail its jail-rejection assert (the pre-existing parallel-run flake
-    // reported in #695).
+    // GH #392: `allow_paths = ["/"]` must grant access to any absolute path —
+    // "/" is a prefix of everything.
+    // Config-mutating tests here hold the process-global
+    // `data_dir::test_env_lock()` (via `isolated_data_dir()`, which wraps it
+    // and gives them a private config.toml) — NOT a module-local mutex, so no
+    // other test can observe this test's `allow_paths = ["/"]` (#695).
     #[cfg(unix)]
     #[test]
     fn allow_path_root_slash_permits_everything() {
-        let _guard = crate::core::data_dir::test_env_lock();
+        let iso = crate::core::data_dir::isolated_data_dir();
         let tmp = tempfile::tempdir().unwrap();
         let root = tmp.path().join("root");
         let other = tmp.path().join("other");
@@ -1010,55 +779,26 @@ mod tests {
         std::fs::create_dir_all(&other).unwrap();
         std::fs::write(other.join("b.txt"), "allowed").unwrap();
 
-        crate::test_env::set_var("LEAN_CTX_ALLOW_PATH", "/");
+        std::fs::write(iso.path().join("config.toml"), "allow_paths = [\"/\"]\n").unwrap();
         let result = jail_path(&other.join("b.txt"), &root);
-        crate::test_env::remove_var("LEAN_CTX_ALLOW_PATH");
 
         assert!(result.is_ok(), "allow path '/' must permit all: {result:?}");
-    }
-
-    // Finding 3 (GH security audit): env-channel jail relaxations must be
-    // detectable so startup + doctor can surface them loudly.
-    #[test]
-    fn active_relaxations_detects_allow_path_env() {
-        let _iso = crate::core::data_dir::isolated_data_dir();
-        crate::test_env::remove_var("LEAN_CTX_EXTRA_ROOTS");
-        crate::test_env::remove_var("LEAN_CTX_ALLOW_IDE_DIRS");
-        crate::test_env::set_var("LEAN_CTX_ALLOW_PATH", "/tmp");
-
-        let relaxed = active_relaxations();
-
-        crate::test_env::remove_var("LEAN_CTX_ALLOW_PATH");
-
-        assert!(
-            relaxed.iter().any(|r| r.source == "LEAN_CTX_ALLOW_PATH"),
-            "LEAN_CTX_ALLOW_PATH must be reported as a jail relaxation: {relaxed:?}"
-        );
     }
 
     #[cfg(not(feature = "no-jail"))]
     #[test]
     fn active_relaxations_empty_when_jail_intact() {
         let _iso = crate::core::data_dir::isolated_data_dir();
-        for var in [
-            "LEAN_CTX_ALLOW_PATH",
-            "LCTX_ALLOW_PATH",
-            "LEAN_CTX_EXTRA_ROOTS",
-            "LEAN_CTX_ALLOW_IDE_DIRS",
-        ] {
-            crate::test_env::remove_var(var);
-        }
-
         assert!(
             active_relaxations().is_empty(),
-            "an intact jail (clean config, no relaxation env) must report no relaxations: {:?}",
+            "an intact jail (clean config) must report no relaxations: {:?}",
             active_relaxations()
         );
     }
 
     #[test]
-    fn allow_path_env_permits_outside_root() {
-        let _guard = crate::core::data_dir::test_env_lock();
+    fn allow_paths_config_permits_outside_root() {
+        let iso = crate::core::data_dir::isolated_data_dir();
         let tmp = tempfile::tempdir().unwrap();
         let root = tmp.path().join("root");
         let other = tmp.path().join("other");
@@ -1067,13 +807,16 @@ mod tests {
         std::fs::write(other.join("b.txt"), "allowed").unwrap();
 
         let canon = canonicalize_or_self(&other);
-        crate::test_env::set_var("LEAN_CTX_ALLOW_PATH", canon.to_string_lossy().as_ref());
+        std::fs::write(
+            iso.path().join("config.toml"),
+            format!("allow_paths = [{:?}]\n", canon.to_string_lossy()),
+        )
+        .unwrap();
         let result = jail_path(&other.join("b.txt"), &root);
-        crate::test_env::remove_var("LEAN_CTX_ALLOW_PATH");
 
         assert!(
             result.is_ok(),
-            "LEAN_CTX_ALLOW_PATH should permit access: {result:?}"
+            "allow_paths should permit access: {result:?}"
         );
     }
 
@@ -1083,7 +826,7 @@ mod tests {
         use std::os::unix::fs::symlink;
 
         // isolated_data_dir holds the global test_env_lock — no parallel test
-        // can set `LEAN_CTX_ALLOW_PATH="/"` and let this escape resolve.
+        // can configure `allow_paths = ["/"]` and let this escape resolve.
         let _iso = crate::core::data_dir::isolated_data_dir();
         let tmp = tempfile::tempdir().unwrap();
         let root = tmp.path().join("root");
@@ -1118,7 +861,7 @@ mod tests {
     /// sibling git worktree from MCP `roots/list`) must resolve, while the same
     /// path is rejected without it — and a path under *no* root is rejected even
     /// when extra roots are present. Holds both env locks so neither a parallel
-    /// `path_jail` flip nor a `LEAN_CTX_ALLOW_PATH` mutation can leak in.
+    /// `path_jail` flip nor an allow-path mutation can leak in.
     #[cfg(not(feature = "no-jail"))]
     #[test]
     fn extra_roots_permit_paths_outside_jail() {

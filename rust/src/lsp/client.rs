@@ -455,5 +455,4 @@ impl crate::lsp::backend::LspBackend for LspClient {
     ) -> Result<Option<lsp_types::WorkspaceEdit>, String> {
         LspClient::rename(self, uri, position, new_name)
     }
-    // declaration/type_hierarchy/symbols_overview/format/inspections: Default-Err (Backing A).
 }

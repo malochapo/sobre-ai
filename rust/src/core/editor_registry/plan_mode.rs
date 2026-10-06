@@ -314,8 +314,6 @@ mod tests {
 
     #[test]
     fn plan_mode_tools_are_readonly() {
-        use crate::core::capabilities::{Capability, required_capabilities};
-
         let tools = plan_mode_tools();
         assert!(tools.contains(&"ctx_read"));
         assert!(tools.contains(&"ctx_search"));
@@ -323,13 +321,7 @@ mod tests {
 
         // Every live tool that writes files or runs commands. ctx_checkpoint is
         // one: action=restore reverts files.
-        for writer in [
-            "ctx_patch",
-            "ctx_refactor",
-            "ctx_checkpoint",
-            "ctx_shell",
-            "ctx_execute",
-        ] {
+        for writer in ["ctx_patch", "ctx_refactor", "ctx_checkpoint", "ctx_shell"] {
             assert!(
                 !tools.contains(&writer),
                 "{writer} writes or executes and must not be a plan-mode tool"
@@ -337,23 +329,12 @@ mod tests {
         }
 
         // Every entry is written into client allow-lists: it must be a tool the
-        // registry serves, and the capability gate must not class it as a writer.
+        // registry serves.
         for t in tools {
             assert!(
                 crate::server::registry::is_registered(t),
                 "{t} is a plan-mode tool but not registered"
             );
-            for cap in [
-                Capability::FsWrite,
-                Capability::FsDelete,
-                Capability::ExecSandbox,
-                Capability::ExecUnrestricted,
-            ] {
-                assert!(
-                    !required_capabilities(t).contains(&cap),
-                    "{t} requires {cap:?} but is a plan-mode tool"
-                );
-            }
         }
     }
 

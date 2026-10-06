@@ -1,8 +1,0 @@
-name = "open-source"
-version = "1.0.0"
-description = "Public-repo posture: keep the secret redaction, stay permissive everywhere else, 30-day audit expectation"
-extends = "baseline"
-
-[context]
-default_read_mode = "auto"
-audit_retention_days = 30

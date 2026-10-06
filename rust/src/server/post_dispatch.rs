@@ -29,15 +29,8 @@ impl LeanCtxServer {
         let output_md5 = helpers::hash_fast(result_text);
         let agent_id = self.agent_id.read().await.clone();
         let client_name = self.client_name.read().await.clone();
-        let mut explicit_intent: Option<(
-            crate::core::intent_protocol::IntentRecord,
-            Option<String>,
-            String,
-        )> = None;
 
         let pending_session_save = {
-            let empty_args = serde_json::Map::new();
-            let args_map = args.unwrap_or(&empty_args);
             let mut session = self.session.write().await;
             session.record_tool_receipt(
                 name,
@@ -48,21 +41,6 @@ impl LeanCtxServer {
                 Some(&client_name),
             );
 
-            if let Some(intent) = crate::core::intent_protocol::infer_from_tool_call(
-                name,
-                action,
-                args_map,
-                session.project_root.as_deref(),
-            ) {
-                let is_explicit =
-                    intent.source == crate::core::intent_protocol::IntentSource::Explicit;
-                let root = session.project_root.clone();
-                let sid = session.id.clone();
-                session.record_intent(intent.clone());
-                if is_explicit {
-                    explicit_intent = Some((intent, root, sid));
-                }
-            }
             if session.should_save() {
                 session.prepare_save().ok()
             } else {
@@ -85,15 +63,7 @@ impl LeanCtxServer {
             });
         }
 
-        if let Some((intent, root, session_id)) = explicit_intent {
-            let _ = crate::core::intent_protocol::apply_side_effects(
-                &intent,
-                root.as_deref(),
-                &session_id,
-            );
-        }
-
-        if self.autonomy.is_enabled() {
+        {
             let (calls, project_root) = {
                 let session = self.session.read().await;
                 (session.stats.total_tool_calls, session.project_root.clone())
@@ -117,14 +87,6 @@ impl LeanCtxServer {
         let output_token_count_u64 = output_token_count as u64;
         let name_owned = name.to_string();
         tokio::task::spawn_blocking(move || {
-            let pricing = crate::core::gain::model_pricing::ModelPricing::load();
-            // Honors a declared model for MCP-only IDEs (`[cost.models]`/default).
-            let quote = pricing.quote_for_client(&client_name);
-            let cost_usd = quote
-                .cost
-                .estimate_usd(input_token_count, output_token_count_u64, 0, 0);
-            crate::core::budget_tracker::BudgetTracker::global().record_cost_usd(cost_usd);
-
             let mut store = crate::core::a2a::cost_attribution::CostStore::load();
             store.record_tool_call(
                 &agent_key,
@@ -136,85 +98,6 @@ impl LeanCtxServer {
             );
             if let Err(e) = store.save() {
                 tracing::warn!("lean-ctx: failed to persist cost attribution: {e}");
-            }
-        });
-    }
-
-    /// Context OS: persist the shared session snapshot and publish the matching
-    /// bus events (primary `ToolCallRecorded` plus any secondary kind). No-op
-    /// outside shared session mode. Fire-and-forget on a blocking task.
-    pub(super) async fn persist_shared_context_os(
-        &self,
-        name: &str,
-        action: Option<&str>,
-        args: Option<&serde_json::Map<String, serde_json::Value>>,
-    ) {
-        if self.session_mode != crate::tools::SessionMode::Shared {
-            return;
-        }
-        let ws = self.workspace_id.clone();
-        let ch = self.channel_id.clone();
-        let rt = self.context_os.clone();
-        let agent = self.agent_id.read().await.clone();
-        let tool = name.to_string();
-        let tool_action = action.map(str::to_string);
-        let tool_path = helpers::get_str(args, "path");
-        let tool_category = helpers::get_str(args, "category");
-        let tool_key = helpers::get_str(args, "key");
-        let session_snapshot = self.session.read().await.clone();
-        let session_task = session_snapshot.task.clone();
-        tokio::task::spawn_blocking(move || {
-            let Some(rt) = rt else {
-                return;
-            };
-            let Some(root) = session_snapshot.project_root.as_deref() else {
-                return;
-            };
-            rt.shared_sessions
-                .persist_best_effort(root, &ws, &ch, &session_snapshot);
-            rt.metrics.record_session_persisted();
-
-            let mut base_payload = serde_json::json!({
-                "tool": tool,
-                "action": tool_action,
-            });
-            if let Some(ref p) = tool_path {
-                base_payload["path"] = serde_json::Value::String(p.clone());
-            }
-            if let Some(ref c) = tool_category {
-                base_payload["category"] = serde_json::Value::String(c.clone());
-            }
-            if let Some(ref k) = tool_key {
-                base_payload["key"] = serde_json::Value::String(k.clone());
-            }
-            if let Some(ref t) = session_task {
-                base_payload["reasoning"] = serde_json::Value::String(t.description.clone());
-            }
-
-            if rt
-                .bus
-                .append(
-                    &ws,
-                    &ch,
-                    &crate::core::context_os::ContextEventKindV1::ToolCallRecorded,
-                    agent.as_deref(),
-                    base_payload.clone(),
-                )
-                .is_some()
-            {
-                rt.metrics.record_event_appended();
-                rt.metrics.record_event_broadcast();
-            }
-
-            if let Some(secondary) =
-                crate::core::context_os::secondary_event_kind(&tool, tool_action.as_deref())
-                && rt
-                    .bus
-                    .append(&ws, &ch, &secondary, agent.as_deref(), base_payload)
-                    .is_some()
-            {
-                rt.metrics.record_event_appended();
-                rt.metrics.record_event_broadcast();
             }
         });
     }

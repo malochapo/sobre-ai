@@ -50,12 +50,6 @@ impl FlatEmbeddings {
         &self.data[start..][..self.dim]
     }
 
-    /// Extract the i-th vector into an owned `Vec<f32>`.
-    #[inline]
-    pub fn get_vec(&self, i: usize) -> Vec<f32> {
-        self.get(i).to_vec()
-    }
-
     /// Build from a `Vec<Vec<f32>>` (for tests / migration).
     pub fn from_vecs(vecs: Vec<Vec<f32>>) -> Self {
         let dim = vecs.first().map_or(0, std::vec::Vec::len);

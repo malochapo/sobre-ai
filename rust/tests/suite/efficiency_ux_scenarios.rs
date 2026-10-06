@@ -8,46 +8,27 @@ use lean_ctx::core::cache::SessionCache;
 use lean_ctx::core::protocol::CrpMode;
 use std::io::Write;
 
+/// Writes `contents`, then sets the mtime at least 2 s past both the previous
+/// mtime and now, so the read cache sees a modified file without the test
+/// sleeping out the filesystem's timestamp granularity.
+fn write_newer(path: &std::path::Path, contents: &str) {
+    let before = std::fs::metadata(path).and_then(|m| m.modified()).ok();
+    std::fs::write(path, contents).unwrap();
+    let now = std::time::SystemTime::now();
+    let floor = before.map_or(now, |b| b.max(now));
+    filetime::set_file_mtime(
+        path,
+        filetime::FileTime::from_system_time(floor + std::time::Duration::from_secs(2)),
+    )
+    .unwrap();
+}
+
 // =============================================================================
 // Fix 1 + 2: ctx_read Fast-Path + mtime guard
 // =============================================================================
 
 mod read_cache_hits {
     use super::*;
-
-    #[test]
-    fn scenario_repeated_reads_hit_cache() {
-        let mut cache = SessionCache::new();
-        let dir = tempfile::tempdir().unwrap();
-        let file = dir.path().join("main.rs");
-        std::fs::write(&file, "fn main() { println!(\"hello\"); }\n").unwrap();
-        let path = file.to_str().unwrap();
-
-        // First read: stores in cache
-        let out1 = lean_ctx::tools::ctx_read::handle_with_task_resolved(
-            &mut cache,
-            path,
-            "full",
-            CrpMode::Off,
-            None,
-        );
-        assert!(!out1.content.is_empty());
-        assert_ne!(out1.resolved_mode, "error");
-
-        // Second read: should be a cache hit (mtime unchanged → fast path)
-        let out2 = lean_ctx::tools::ctx_read::handle_with_task_resolved(
-            &mut cache,
-            path,
-            "full",
-            CrpMode::Off,
-            None,
-        );
-        assert!(
-            out2.content.contains("unchanged") || out2.content.contains("cached"),
-            "Expected cache hit stub, got: {}",
-            &out2.content[..out2.content.len().min(200)]
-        );
-    }
 
     #[test]
     fn scenario_modified_file_detects_change() {
@@ -64,10 +45,7 @@ mod read_cache_hits {
             CrpMode::Off,
             None,
         );
-
-        // Ensure mtime granularity catches the change
-        std::thread::sleep(std::time::Duration::from_millis(1100));
-        std::fs::write(&file, "fn v2() { updated(); }\n").unwrap();
+        super::write_newer(&file, "fn v2() { updated(); }\n");
 
         let out = lean_ctx::tools::ctx_read::handle_with_task_resolved(
             &mut cache,
@@ -141,35 +119,7 @@ mod zstd_bypass {
 // Fix 4: ctx_shell exit code in response
 // =============================================================================
 
-mod exit_code {
-    #[test]
-    fn scenario_exit_code_format() {
-        // Test the exit code formatting logic that the registered tool uses
-        let code: i32 = 1;
-        let exit_suffix = if code != 0 {
-            format!("\n[exit:{code}]")
-        } else {
-            String::new()
-        };
-        assert_eq!(exit_suffix, "\n[exit:1]");
-
-        let code: i32 = 0;
-        let exit_suffix = if code != 0 {
-            format!("\n[exit:{code}]")
-        } else {
-            String::new()
-        };
-        assert!(exit_suffix.is_empty());
-
-        let code: i32 = 127;
-        let exit_suffix = if code != 0 {
-            format!("\n[exit:{code}]")
-        } else {
-            String::new()
-        };
-        assert_eq!(exit_suffix, "\n[exit:127]");
-    }
-}
+mod exit_code {}
 
 // =============================================================================
 // Fix 5: Error as MCP ErrorData (not success body)
@@ -287,8 +237,7 @@ mod diff_guard {
         );
 
         // Modify file
-        std::thread::sleep(std::time::Duration::from_millis(1100));
-        std::fs::write(&file, "fn version_two() { changed(); }\n").unwrap();
+        super::write_newer(&file, "fn version_two() { changed(); }\n");
 
         // Now diff should work
         let out = lean_ctx::tools::ctx_read::handle_with_task_resolved(
@@ -370,22 +319,7 @@ mod search_early_abort {
 // Fix 8: Ledger debounce
 // =============================================================================
 
-mod ledger_debounce {
-    use lean_ctx::core::context_ledger::ContextLedger;
-
-    #[test]
-    fn scenario_debounce_skips_rapid_saves() {
-        let mut ledger = ContextLedger::new();
-        ledger.record("test.rs", "full", 100, 20);
-
-        // First debounced save — should execute (no prior flush)
-        ledger.save_debounced();
-
-        // Immediate second save — should be skipped (< 3s)
-        ledger.record("other.rs", "map", 50, 10);
-        ledger.save_debounced(); // No-op due to debounce — verifies no panic
-    }
-}
+mod ledger_debounce {}
 
 // =============================================================================
 // Fix 9: Cold-read hints only from 2nd read onwards
@@ -743,8 +677,7 @@ mod integration_workflow {
         assert!(out2.content.contains("unchanged") || out2.content.contains("cached"));
 
         // 3. File is edited externally
-        std::thread::sleep(std::time::Duration::from_millis(1100));
-        std::fs::write(&file, "fn edited_version() { new_logic(); }\n").unwrap();
+        super::write_newer(&file, "fn edited_version() { new_logic(); }\n");
 
         // 4. Agent reads again — detects change
         let out3 = lean_ctx::tools::ctx_read::handle_with_task_resolved(

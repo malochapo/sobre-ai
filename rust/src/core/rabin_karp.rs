@@ -64,39 +64,6 @@ pub fn chunk(content: &str) -> Vec<Chunk> {
     chunks
 }
 
-pub fn stable_order(old_chunks: &[Chunk], new_chunks: &[Chunk]) -> Vec<usize> {
-    let old_hashes: std::collections::HashSet<u64> = old_chunks.iter().map(|c| c.hash).collect();
-
-    let mut unchanged: Vec<usize> = Vec::new();
-    let mut changed: Vec<usize> = Vec::new();
-
-    for (i, c) in new_chunks.iter().enumerate() {
-        if old_hashes.contains(&c.hash) {
-            unchanged.push(i);
-        } else {
-            changed.push(i);
-        }
-    }
-
-    unchanged.extend(changed);
-    unchanged
-}
-
-pub fn reorder_content(content: &str, old_content: &str) -> String {
-    let old_chunks = chunk(old_content);
-    let new_chunks = chunk(content);
-    let order = stable_order(&old_chunks, &new_chunks);
-
-    let mut result = String::with_capacity(content.len());
-    for &idx in &order {
-        if let Some(c) = new_chunks.get(idx) {
-            let end = (c.offset + c.length).min(content.len());
-            result.push_str(&content[c.offset..end]);
-        }
-    }
-    result
-}
-
 fn full_hash(data: &[u8]) -> u64 {
     let mut h = 0u64;
     for &b in data {
@@ -184,26 +151,6 @@ mod tests {
             stability * 100.0,
             c1.len()
         );
-    }
-
-    #[test]
-    fn stable_order_unchanged_first() {
-        let content_v1 = "fn foo() { 1 }\nfn bar() { 2 }\n".repeat(50);
-        let content_v2 = "fn foo() { 1 }\nfn bar() { 3 }\n".repeat(50);
-
-        let old = chunk(&content_v1);
-        let new = chunk(&content_v2);
-        let order = stable_order(&old, &new);
-
-        if order.len() >= 2 {
-            let first_is_unchanged = old
-                .iter()
-                .any(|o| new.get(order[0]).is_some_and(|n| n.hash == o.hash));
-            assert!(
-                first_is_unchanged || order[0] == 0,
-                "First element should be unchanged"
-            );
-        }
     }
 
     #[test]

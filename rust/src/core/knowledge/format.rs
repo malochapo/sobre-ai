@@ -119,23 +119,8 @@ impl ProjectKnowledge {
     }
 
     pub fn format_aaak(&self) -> String {
-        // #212 — pre-prompt sensitivity floor: never inject facts whose stored or
-        // freshly-classified sensitivity meets/exceeds the configured floor. The
-        // short-circuit means zero classification cost when disabled (default).
-        let sens = crate::core::config::Config::load().sensitivity_effective();
-        let current_facts: Vec<&KnowledgeFact> = self
-            .facts
-            .iter()
-            .filter(|f| f.is_current())
-            .filter(|f| {
-                !sens.enabled_effective()
-                    || !crate::core::sensitivity::floor_blocks(
-                        f.sensitivity
-                            .max(crate::core::sensitivity::classify_content(&f.value)),
-                        &sens,
-                    )
-            })
-            .collect();
+        let current_facts: Vec<&KnowledgeFact> =
+            self.facts.iter().filter(|f| f.is_current()).collect();
 
         if current_facts.is_empty() && self.patterns.is_empty() {
             return String::new();

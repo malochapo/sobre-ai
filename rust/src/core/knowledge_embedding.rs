@@ -39,26 +39,20 @@ pub const SEMANTIC_DUP_THRESHOLD: f32 = 0.86;
 pub struct FactEmbedding {
     pub category: String,
     pub key: String,
-    /// Legacy full-precision vector (indices written before int8 quantization).
-    /// Migrated to `quant` transparently on load and then emptied, so it only
-    /// appears in files written by older binaries.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub embedding: Vec<f32>,
-    /// int8-quantized representation (turbovec-derived) — 4× smaller on disk and
-    /// the canonical storage for every entry written by current binaries.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub quant: Option<QuantizedVector>,
+    /// int8-quantized vector (turbovec-derived) — 4× smaller on disk than f32.
+    pub quant: QuantizedVector,
 }
 
 impl FactEmbedding {
-    /// Similarity against a full-precision (L2-normalized) query. Scores directly
-    /// against the int8 codes when available; falls back to the legacy f32 vector
-    /// for not-yet-migrated entries.
+    /// Vector width, which identifies the model that produced it.
+    fn width(&self) -> usize {
+        self.quant.code.len()
+    }
+
+    /// Similarity against a full-precision (L2-normalized) query, scored
+    /// directly against the int8 codes.
     fn similarity(&self, query: &[f32]) -> f32 {
-        match &self.quant {
-            Some(q) => embedding_quant::dot_quant(query, q),
-            None => embedding_quant::dot_f32(query, &self.embedding),
-        }
+        embedding_quant::dot_quant(query, &self.quant)
     }
 }
 
@@ -77,36 +71,20 @@ impl KnowledgeEmbeddingIndex {
     }
 
     pub fn upsert(&mut self, category: &str, key: &str, embedding: &[f32]) {
-        let quant = Some(embedding_quant::quantize(embedding));
+        let quant = embedding_quant::quantize(embedding);
         if let Some(existing) = self
             .entries
             .iter_mut()
             .find(|e| e.category == category && e.key == key)
         {
             existing.quant = quant;
-            existing.embedding = Vec::new();
         } else {
             self.entries.push(FactEmbedding {
                 category: category.to_string(),
                 key: key.to_string(),
-                embedding: Vec::new(),
                 quant,
             });
         }
-    }
-
-    /// Upgrades any legacy full-precision entries to int8 in place. Returns true
-    /// if anything changed (so the caller can persist the smaller form once).
-    fn migrate_legacy_entries(&mut self) -> bool {
-        let mut changed = false;
-        for e in &mut self.entries {
-            if e.quant.is_none() && !e.embedding.is_empty() {
-                e.quant = Some(embedding_quant::quantize(&e.embedding));
-                e.embedding = Vec::new();
-                changed = true;
-            }
-        }
-        changed
     }
 
     pub fn remove(&mut self, category: &str, key: &str) {
@@ -123,6 +101,8 @@ impl KnowledgeEmbeddingIndex {
         let mut scored: Vec<(&FactEmbedding, f32)> = self
             .entries
             .iter()
+            // Entries from a previous model have another width: never compare.
+            .filter(|e| e.width() == query_embedding.len())
             .map(|e| {
                 let sim = e.similarity(query_embedding);
                 (e, sim)
@@ -150,13 +130,7 @@ impl KnowledgeEmbeddingIndex {
     pub fn load(project_hash: &str) -> Option<Self> {
         let path = Self::index_path(project_hash)?;
         let data = std::fs::read_to_string(path).ok()?;
-        let mut index: Self = serde_json::from_str(&data).ok()?;
-        // Pay the one-time int8 migration cost on first load by an upgraded binary,
-        // then persist so subsequent loads read the 4×-smaller form.
-        if index.migrate_legacy_entries() {
-            let _ = index.save();
-        }
-        Some(index)
+        serde_json::from_str(&data).ok()
     }
 
     pub fn save(&self) -> Result<(), String> {
@@ -480,6 +454,9 @@ pub fn backfill_missing(
     knowledge: &ProjectKnowledge,
     cap: usize,
 ) -> usize {
+    // After a model change, re-embed what the previous model wrote.
+    let width = engine.dimensions();
+    index.entries.retain(|e| e.width() == width);
     let missing = missing_current_facts(index, knowledge, cap);
     if missing.is_empty() {
         return 0;
@@ -559,6 +536,7 @@ fn semantic_duplicates_from_query(
         .entries
         .iter()
         .filter(|e| !(e.category == new_category && e.key == new_key))
+        .filter(|e| e.width() == query.len())
         .map(|e| (e, e.similarity(query)))
         .filter(|(_, sim)| *sim >= threshold)
         .collect();
@@ -602,39 +580,6 @@ fn semantic_duplicates_from_query(
         }
     }
     out
-}
-
-pub fn format_scored_facts(results: &[ScoredFact<'_>]) -> String {
-    if results.is_empty() {
-        return "No matching facts found.".to_string();
-    }
-
-    let mut output = String::new();
-    for (i, scored) in results.iter().enumerate() {
-        let f = scored.fact;
-        let stars = if f.confidence >= 0.9 {
-            "★★★★"
-        } else if f.confidence >= 0.7 {
-            "★★★"
-        } else if f.confidence >= 0.5 {
-            "★★"
-        } else {
-            "★"
-        };
-
-        if i > 0 {
-            output.push('|');
-        }
-        output.push_str(&format!(
-            "{}:{}={}{} [s:{:.0}%]",
-            f.category,
-            f.key,
-            f.value,
-            stars,
-            scored.score * 100.0
-        ));
-    }
-    output
 }
 
 #[cfg(test)]
@@ -707,8 +652,7 @@ mod tests {
             entries: vec![FactEmbedding {
                 category: "arch".to_string(),
                 key: "db".to_string(),
-                embedding: vec![1.0, 0.0, 0.0],
-                quant: None,
+                quant: embedding_quant::quantize(&[1.0, 0.0, 0.0]),
             }],
         };
         idx.save().expect("save");
@@ -890,11 +834,7 @@ mod tests {
         idx.upsert("arch", "db", &[0.0, 1.0, 0.0]);
         assert_eq!(idx.entries.len(), 1);
         // Stored quantized now: the dominant axis reconstructs to ~1.0.
-        let recon = idx.entries[0]
-            .quant
-            .as_ref()
-            .expect("quantized")
-            .dequantize();
+        let recon = idx.entries[0].quant.dequantize();
         assert!((recon[1] - 1.0).abs() < 1e-6);
 
         idx.upsert("arch", "cache", &[0.0, 0.0, 1.0]);
@@ -971,6 +911,17 @@ mod tests {
 
     #[cfg(feature = "embeddings")]
     #[test]
+    fn semantic_search_skips_other_widths() {
+        let mut idx = KnowledgeEmbeddingIndex::new("test");
+        idx.upsert("arch", "db", &[1.0, 0.0, 0.0]);
+        idx.upsert("arch", "old", &[1.0, 0.0]);
+        let results = idx.semantic_search(&[1.0, 0.0, 0.0], 5);
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].0.key, "db");
+    }
+
+    #[cfg(feature = "embeddings")]
+    #[test]
     fn semantic_search_ranking() {
         let mut idx = KnowledgeEmbeddingIndex::new("test");
         idx.upsert("arch", "db", &[1.0, 0.0, 0.0]);
@@ -981,50 +932,6 @@ mod tests {
         let results = idx.semantic_search(&query, 2);
         assert_eq!(results.len(), 2);
         assert_eq!(results[0].0.key, "db");
-    }
-
-    #[test]
-    fn format_scored_empty() {
-        assert_eq!(format_scored_facts(&[]), "No matching facts found.");
-    }
-
-    #[test]
-    fn format_scored_output() {
-        let fact = KnowledgeFact {
-            category: "arch".to_string(),
-            key: "db".to_string(),
-            value: "PostgreSQL".to_string(),
-            source_session: "s1".to_string(),
-            confidence: 0.95,
-            created_at: chrono::Utc::now(),
-            last_confirmed: chrono::Utc::now(),
-            retrieval_count: 0,
-            last_retrieved: None,
-            valid_from: None,
-            valid_until: None,
-            supersedes: None,
-            confirmation_count: 3,
-            feedback_up: 0,
-            feedback_down: 0,
-            last_feedback: None,
-            privacy: crate::core::memory_boundary::FactPrivacy::default(),
-            sensitivity: crate::core::sensitivity::SensitivityLevel::default(),
-            imported_from: None,
-            archetype: KnowledgeArchetype::default(),
-            fidelity: None,
-            revision_count: 0,
-        };
-        let scored = vec![ScoredFact {
-            fact: &fact,
-            score: 0.85,
-            semantic_score: 0.9,
-            confidence_score: 0.95,
-            recency_score: 1.0,
-        }];
-        let output = format_scored_facts(&scored);
-        assert!(output.contains("arch:db=PostgreSQL"));
-        assert!(output.contains("★★★★"));
-        assert!(output.contains("[s:85%]"));
     }
 
     #[test]

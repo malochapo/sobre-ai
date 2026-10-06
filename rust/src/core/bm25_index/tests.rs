@@ -375,10 +375,7 @@ fn shrink_resident_trims_long_bodies_keeps_short_and_flags() {
 
 #[test]
 fn shrink_resident_is_not_persisted_to_disk() {
-    let _env = crate::core::data_dir::test_env_lock();
-    let data_dir = tempdir().expect("data_dir");
-    crate::test_env::set_var("LEAN_CTX_DATA_DIR", data_dir.path());
-    crate::test_env::set_var("LEAN_CTX_BM25_MAX_CACHE_MB", "512");
+    let _iso = crate::core::data_dir::isolated_data_dir();
     let td = tempdir().expect("tempdir");
     let root = td.path();
     std::fs::write(
@@ -414,82 +411,11 @@ fn shrink_resident_is_not_persisted_to_disk() {
         .max()
         .unwrap();
     assert_eq!(max_lines, full_lines, "reload restores full content");
-
-    crate::test_env::remove_var("LEAN_CTX_BM25_MAX_CACHE_MB");
-    crate::test_env::remove_var("LEAN_CTX_DATA_DIR");
-}
-
-#[test]
-fn load_quarantines_oversized_index() {
-    let _env = crate::core::data_dir::test_env_lock();
-    let td = tempdir().expect("tempdir");
-    let root = td.path();
-    let dir = crate::core::index_namespace::vectors_dir(root);
-    std::fs::create_dir_all(&dir).expect("create vectors dir");
-
-    let index_path = dir.join("bm25_index.json");
-    crate::test_env::set_var("LEAN_CTX_BM25_MAX_CACHE_MB", "0");
-    std::fs::write(&index_path, r#"{"chunks":[]}"#).expect("write index");
-
-    let result = BM25Index::load(root);
-    assert!(result.is_none(), "oversized index should return None");
-    assert!(
-        !index_path.exists(),
-        "original index should be removed after quarantine"
-    );
-    assert!(
-        dir.join("bm25_index.json.quarantined").exists(),
-        "quarantined file should exist"
-    );
-
-    crate::test_env::remove_var("LEAN_CTX_BM25_MAX_CACHE_MB");
-}
-
-#[test]
-fn save_refuses_oversized_output() {
-    let _env = crate::core::data_dir::test_env_lock();
-    let data_dir = tempdir().expect("data_dir");
-    crate::test_env::set_var("LEAN_CTX_DATA_DIR", data_dir.path());
-    crate::test_env::set_var("LEAN_CTX_BM25_MAX_CACHE_MB", "0");
-
-    let td = tempdir().expect("tempdir");
-    let root = td.path();
-
-    let mut index = BM25Index::new();
-    index.add_chunk(CodeChunk {
-        file_path: "a.rs".into(),
-        symbol_name: "a".into(),
-        kind: ChunkKind::Function,
-        start_line: 1,
-        end_line: 1,
-        content: "fn a() {}".into(),
-        tokens: tokenize("fn a"),
-        token_count: 2,
-    });
-    index.finalize();
-
-    let outcome = index
-        .save(root)
-        .expect("save returns Ok even when refusing");
-    assert!(
-        matches!(outcome, SaveOutcome::SkippedTooLarge { .. }),
-        "oversized save must report SkippedTooLarge (not a silent success), got {outcome:?}"
-    );
-    let index_path = BM25Index::index_file_path(root);
-    assert!(
-        !index_path.exists(),
-        "save should refuse to persist oversized index"
-    );
-
-    crate::test_env::remove_var("LEAN_CTX_BM25_MAX_CACHE_MB");
 }
 
 #[test]
 fn save_reports_persisted_outcome() {
-    let _env = crate::core::data_dir::test_env_lock();
-    let data_dir = tempdir().expect("data_dir");
-    crate::test_env::set_var("LEAN_CTX_DATA_DIR", data_dir.path());
-    crate::test_env::set_var("LEAN_CTX_BM25_MAX_CACHE_MB", "512");
+    let _iso = crate::core::data_dir::isolated_data_dir();
     let td = tempdir().expect("tempdir");
     let root = td.path();
     std::fs::write(root.join("a.rs"), "pub fn alpha() {}\n").expect("write");
@@ -504,19 +430,16 @@ fn save_reports_persisted_outcome() {
             panic!("expected Persisted, got {outcome:?}")
         }
     }
-
-    crate::test_env::remove_var("LEAN_CTX_BM25_MAX_CACHE_MB");
-    crate::test_env::remove_var("LEAN_CTX_DATA_DIR");
 }
 
 #[test]
-fn persist_ceiling_honors_env_override() {
-    // The public ceiling accessor (shared with doctor) must honor an explicit
-    // override exactly, so operators can size it to their monorepo.
-    let _env = crate::core::data_dir::test_env_lock();
-    crate::test_env::set_var("LEAN_CTX_BM25_MAX_CACHE_MB", "777");
-    assert_eq!(persist_ceiling_bytes(), 777 * 1024 * 1024);
-    crate::test_env::remove_var("LEAN_CTX_BM25_MAX_CACHE_MB");
+fn persist_ceiling_is_the_disk_default() {
+    // The public ceiling accessor (shared with doctor) is the generous disk
+    // default, decoupled from the RAM profile (#249).
+    assert_eq!(
+        persist_ceiling_bytes(),
+        crate::core::config::DEFAULT_BM25_PERSIST_MB * 1024 * 1024
+    );
 }
 
 #[test]
@@ -526,7 +449,6 @@ fn save_writes_project_root_marker() {
     let root = td.path();
     std::fs::write(root.join("a.rs"), "pub fn a() {}\n").expect("write");
 
-    crate::test_env::remove_var("LEAN_CTX_BM25_MAX_CACHE_MB");
     let index = BM25Index::build_from_directory(root);
     index.save(root).expect("save");
 
@@ -539,10 +461,7 @@ fn save_writes_project_root_marker() {
 
 #[test]
 fn save_load_roundtrip_uses_zstd() {
-    let _env = crate::core::data_dir::test_env_lock();
-    let data_dir = tempdir().expect("data_dir");
-    crate::test_env::set_var("LEAN_CTX_DATA_DIR", data_dir.path());
-    crate::test_env::set_var("LEAN_CTX_BM25_MAX_CACHE_MB", "512");
+    let _iso = crate::core::data_dir::isolated_data_dir();
     let td = tempdir().expect("tempdir");
     let root = td.path();
 
@@ -564,49 +483,10 @@ fn save_load_roundtrip_uses_zstd() {
     let dir = crate::core::index_namespace::vectors_dir(root);
     let zst = dir.join("bm25_index.bin.zst");
     assert!(zst.exists(), "should write .bin.zst");
-    assert!(
-        !dir.join("bm25_index.bin").exists(),
-        ".bin should be deleted"
-    );
 
     let loaded = BM25Index::load(root).expect("load compressed index");
     assert_eq!(loaded.doc_count, index.doc_count);
     assert_eq!(loaded.chunks.len(), index.chunks.len());
-
-    crate::test_env::remove_var("LEAN_CTX_BM25_MAX_CACHE_MB");
-    crate::test_env::remove_var("LEAN_CTX_DATA_DIR");
-}
-
-#[test]
-fn auto_migrate_bin_to_zst() {
-    let _env = crate::core::data_dir::test_env_lock();
-    let data_dir = tempdir().expect("data_dir");
-    crate::test_env::set_var("LEAN_CTX_DATA_DIR", data_dir.path());
-    crate::test_env::set_var("LEAN_CTX_BM25_MAX_CACHE_MB", "512");
-    let td = tempdir().expect("tempdir");
-    let root = td.path();
-
-    std::fs::write(root.join("a.rs"), "pub fn a() {}\n").expect("write");
-    let index = BM25Index::build_from_directory(root);
-
-    let dir = crate::core::index_namespace::vectors_dir(root);
-    std::fs::create_dir_all(&dir).expect("mkdir");
-    let data = postcard::to_allocvec(&index).expect("encode");
-    std::fs::write(dir.join("bm25_index.bin"), &data).expect("write bin");
-
-    let loaded = BM25Index::load(root).expect("load should auto-migrate");
-    assert_eq!(loaded.doc_count, index.doc_count);
-    assert!(
-        dir.join("bm25_index.bin.zst").exists(),
-        ".bin.zst should be created"
-    );
-    assert!(
-        !dir.join("bm25_index.bin").exists(),
-        ".bin should be removed"
-    );
-
-    crate::test_env::remove_var("LEAN_CTX_BM25_MAX_CACHE_MB");
-    crate::test_env::remove_var("LEAN_CTX_DATA_DIR");
 }
 
 #[test]
@@ -689,36 +569,6 @@ fn list_code_files_includes_extractable_pdf() {
         !files.iter().any(|f| f == "sheet.xlsx"),
         "office binaries without an extractor stay excluded"
     );
-}
-
-#[test]
-fn list_code_files_respects_max_files_cap() {
-    let td = tempdir().expect("tempdir");
-    let root = td.path();
-
-    // Create more files than MAX_BM25_FILES wouldn't let us test easily (5000),
-    // but we can verify the cap constant exists and the function returns a bounded vec.
-    for i in 0..10 {
-        std::fs::write(
-            root.join(format!("f{i}.rs")),
-            format!("pub fn f{i}() {{}}\n"),
-        )
-        .expect("write");
-    }
-    let files = list_code_files(root);
-    assert!(
-        files.len() <= MAX_BM25_FILES,
-        "file count should not exceed MAX_BM25_FILES"
-    );
-}
-
-#[test]
-fn max_bm25_cache_bytes_reads_env() {
-    let _env = crate::core::data_dir::test_env_lock();
-    crate::test_env::set_var("LEAN_CTX_BM25_MAX_CACHE_MB", "64");
-    let bytes = max_bm25_cache_bytes();
-    assert_eq!(bytes, 64 * 1024 * 1024);
-    crate::test_env::remove_var("LEAN_CTX_BM25_MAX_CACHE_MB");
 }
 
 // ---- #933: parallel build determinism ----

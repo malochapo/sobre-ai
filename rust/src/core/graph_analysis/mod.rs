@@ -1,4 +1,4 @@
-//! Static dependency-graph analyses (God-Nodes, import cycles).
+//! Static dependency-graph analyses (God-Nodes).
 //!
 //! These run on the *real* directed dependency edges — `import` and `reexport` —
 //! and deliberately exclude the co-location heuristics (`sibling`, `cochange`)
@@ -6,14 +6,12 @@
 //! dependencies (graphify-style) instead of directory layout coincidences.
 
 mod centrality;
-mod cycles;
 mod god_nodes;
 mod surprising;
 
 pub use centrality::{
     BridgeCentrality, BridgeNode, compute_bridge_centrality, compute_bridge_nodes,
 };
-pub use cycles::{ImportCycle, find_import_cycles};
 pub use god_nodes::{GodNode, compute_god_nodes};
 pub use surprising::{SurprisingConnection, find_surprising_connections};
 

@@ -104,14 +104,6 @@ pub fn emit(path: &str, name: &str, line: usize) -> String {
 pub const USAGE_HINT: &str =
     "↳ re-target any symbol: ctx_search(action=\"symbol\", handle=\"path#name@Lstart\")";
 
-/// Whether `s` looks like a handle (carries a non-empty `path#name` core). Lets
-/// a tool accept either a bare symbol name or a handle in the same argument.
-#[must_use]
-pub fn looks_like_handle(s: &str) -> bool {
-    s.split_once('#')
-        .is_some_and(|(path, rest)| !path.is_empty() && !rest.is_empty())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -177,14 +169,5 @@ mod tests {
         let a = SymbolHandle::parse("src/a.rs#foo@L10").unwrap();
         let b = SymbolHandle::parse("src/a.rs#foo@L999").unwrap();
         assert_eq!((a.path, a.name), (b.path, b.name));
-    }
-
-    #[test]
-    fn looks_like_handle_detects_core() {
-        assert!(looks_like_handle("src/a.rs#foo@L1"));
-        assert!(looks_like_handle("src/a.rs#foo"));
-        assert!(!looks_like_handle("foo"));
-        assert!(!looks_like_handle("#foo"));
-        assert!(!looks_like_handle("src/a.rs#"));
     }
 }

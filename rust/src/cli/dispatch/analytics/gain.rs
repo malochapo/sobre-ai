@@ -102,19 +102,6 @@ pub(in crate::cli::dispatch) fn cmd_gain(rest: &[String]) {
             "{}",
             tools::impl_gain::handle("wrapped", Some(&period), model.as_deref(), Some(limit))
         );
-    } else if rest.iter().any(|a| a == "--pipeline") {
-        let stats_path = crate::core::paths::state_dir()
-            .unwrap_or_else(|_| dirs::home_dir().unwrap_or_default().join(".lean-ctx"))
-            .join("pipeline_stats.json");
-        if let Ok(data) = std::fs::read_to_string(&stats_path) {
-            if let Ok(stats) = serde_json::from_str::<core::pipeline::PipelineStats>(&data) {
-                println!("{}", stats.format_summary());
-            } else {
-                println!("No pipeline stats available yet (corrupt data).");
-            }
-        } else {
-            println!("No pipeline stats available yet. Use MCP tools to generate data.");
-        }
     } else if rest.iter().any(|a| a == "--deep") {
         // Body first, then the extra themed sections, then the footer — so the
         // tips / Context OS panel land at the very end instead of mid-dashboard.
@@ -131,7 +118,6 @@ pub(in crate::cli::dispatch) fn cmd_gain(rest: &[String]) {
     } else {
         println!("{}", core::stats::format_gain_hero());
         print_bridge_warning();
-        print_split_hint();
     }
 }
 
@@ -203,7 +189,7 @@ fn print_measured_spend_hint() {
 /// displayed total so the warning fires only for a true zero.
 fn print_bridge_warning() {
     use crate::core::gain::bridge_status::{BridgeEngagement, BridgeStatus};
-    let store = core::stats::load_for_display();
+    let store = core::stats::load();
     let saved = store
         .total_input_tokens
         .saturating_sub(store.total_output_tokens);
@@ -216,31 +202,11 @@ fn print_bridge_warning() {
     }
 }
 
-/// When stats live in more than one auto-resolved data dir, `gain` now sums them
-/// for display (#500) — but each process still *writes* to its own dir, so the
-/// split persists. Nudge toward consolidation once, non-alarmingly, since the
-/// headline is already correct. Suppressed when `LEAN_CTX_DATA_DIR` pins one dir.
-fn print_split_hint() {
-    if std::env::var_os("LEAN_CTX_DATA_DIR").is_some() {
-        return;
-    }
-    let dirs = core::data_dir::all_data_dirs_with_stats();
-    if dirs.len() >= 2 {
-        eprintln!(
-            "\n  \x1b[2m💡 Stats span {} data dirs (summed above). Consolidate them with `lean-ctx doctor`.\x1b[0m",
-            dirs.len()
-        );
-    }
-}
-
 /// `gain --opportunity` — merged discover + ghost (opportunity report).
 fn cmd_opportunity() {
     use crate::core::theme;
 
-    let t = {
-        let cfg = crate::core::config::Config::load();
-        theme::load_theme(&cfg.theme)
-    };
+    let t = { crate::core::theme::Theme::default() };
     let rst = theme::rst();
     let bold = theme::bold();
     let dim = theme::dim();
@@ -249,7 +215,7 @@ fn cmd_opportunity() {
     let history = crate::cli::common::load_shell_history();
     let result = crate::tools::impl_discover::analyze_history(&history, 10);
 
-    let store = core::stats::load_for_display();
+    let store = core::stats::load();
     let optimized_cmds = store.total_commands;
 
     if result.missed_commands.is_empty() {

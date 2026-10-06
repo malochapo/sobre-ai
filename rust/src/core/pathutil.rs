@@ -225,7 +225,6 @@ pub fn normalize_tool_path(path: &str) -> String {
 pub const AGENT_CONFIG_DIRS: &[&str] = &[
     ".claude",
     ".codex",
-    ".codebuddy",
     ".copilot",
     ".cursor",
     ".windsurf",
@@ -273,7 +272,6 @@ pub const PROJECT_MARKERS: &[&str] = &[
     "build.gradle",
     "Makefile",
     "project.godot",
-    ".lean-ctx.toml",
     ".planning",
 ];
 
@@ -431,35 +429,6 @@ pub fn has_multi_repo_children(dir: &Path) -> bool {
         .take(2)
         .count();
     count >= 2
-}
-
-/// Returns `true` if `project_root` collides with the lean-ctx data directory.
-/// This prevents project-scoped files (overlays.json, policies.json) from being
-/// written into `~/.lean-ctx/` or `~/.config/lean-ctx/`.
-pub fn is_data_dir_collision(project_root: &Path) -> bool {
-    if is_broad_or_unsafe_root(project_root) {
-        return true;
-    }
-    if let Ok(data_dir) = crate::core::data_dir::lean_ctx_data_dir() {
-        let project_lean_ctx = project_root.join(".lean-ctx");
-        if project_lean_ctx == data_dir || data_dir.starts_with(&project_lean_ctx) {
-            return true;
-        }
-    }
-    false
-}
-
-/// Returns the project-scoped `.lean-ctx/` directory if the project root is safe.
-/// Returns `Err` if the project root collides with the global data directory.
-pub fn safe_project_data_dir(project_root: &Path) -> Result<PathBuf, String> {
-    if is_data_dir_collision(project_root) {
-        return Err(format!(
-            "project root {} collides with global data directory; \
-             skipping project-scoped write",
-            project_root.display()
-        ));
-    }
-    Ok(project_root.join(".lean-ctx"))
 }
 
 #[cfg(test)]
@@ -882,21 +851,6 @@ mod tests {
             let subdir = home.join("projects").join("my-app");
             assert!(!is_broad_or_unsafe_root(&subdir));
         }
-    }
-
-    #[test]
-    fn data_dir_collision_rejects_home() {
-        if let Some(home) = dirs::home_dir() {
-            assert!(is_data_dir_collision(&home));
-        }
-    }
-
-    #[test]
-    fn data_dir_collision_allows_normal_project() {
-        let tmp = tempfile::tempdir().unwrap();
-        let project = tmp.path().join("my-project");
-        std::fs::create_dir_all(&project).unwrap();
-        assert!(!is_data_dir_collision(&project));
     }
 
     #[test]

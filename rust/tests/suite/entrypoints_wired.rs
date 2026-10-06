@@ -53,9 +53,6 @@ fn mcp_entrypoint_tools_are_advertised() {
     // The entrypoint tools that back the regressed CLI commands plus the core
     // read/search surface. If a handler exists but is not advertised here, the
     // tool is unreachable for MCP clients (the v3.4.7 "missing manifest entry").
-    // The reduced 19-tool surface. `ctx_pack`, `ctx_index`, `ctx_proof`,
-    // `ctx_verify` and `ctx_explore` were removed with the tool cut; this
-    // list had kept asserting them.
     let required = [
         "ctx_read",
         "ctx_shell",
@@ -82,7 +79,6 @@ fn lean_ctx() -> Command {
     // side-effect-free (no daemon, no real HOME writes).
     cmd.env("LEAN_CTX_ACTIVE", "1");
     cmd.env("HOME", "/tmp/lean-ctx-entrypoint-test");
-    cmd.env("LEAN_CTX_DISABLED", "1");
     cmd
 }
 

@@ -17,7 +17,7 @@ const PROXY_METRICS_FILE: &str = "proxy_metrics.json";
 /// of accuracy between flushes is immaterial for a meter.
 const PERSIST_EVERY: u64 = 4;
 
-pub fn record_request(tokens_saved: u64, bytes_compressed: u64) {
+pub(crate) fn record_request(tokens_saved: u64, bytes_compressed: u64) {
     let n = REQUESTS_TOTAL.fetch_add(1, Ordering::Relaxed) + 1;
     TOKENS_SAVED_TOTAL.fetch_add(tokens_saved, Ordering::Relaxed);
     BYTES_COMPRESSED.fetch_add(bytes_compressed, Ordering::Relaxed);
@@ -27,13 +27,13 @@ pub fn record_request(tokens_saved: u64, bytes_compressed: u64) {
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub struct ProxyMetrics {
+pub(crate) struct ProxyMetrics {
     pub requests_total: u64,
     pub tokens_saved_total: u64,
     pub bytes_compressed: u64,
 }
 
-pub fn snapshot() -> ProxyMetrics {
+pub(crate) fn snapshot() -> ProxyMetrics {
     ProxyMetrics {
         requests_total: REQUESTS_TOTAL.load(Ordering::Relaxed),
         tokens_saved_total: TOKENS_SAVED_TOTAL.load(Ordering::Relaxed),
@@ -50,7 +50,7 @@ fn metrics_path() -> Option<std::path::PathBuf> {
 /// Atomically write the current in-process totals to disk. The proxy owns these
 /// totals for its lifetime, so a plain overwrite (not an additive merge) keeps
 /// the file in lock-step with the live atomics.
-pub fn persist() {
+pub(crate) fn persist() {
     let Some(path) = metrics_path() else {
         return;
     };
@@ -65,7 +65,7 @@ pub fn persist() {
 
 /// Cross-process read of the persisted proxy totals, used by the `gain`
 /// CLI/dashboard to reconcile savings against the real number of provider turns.
-pub fn load_persisted() -> Option<ProxyMetrics> {
+pub(crate) fn load_persisted() -> Option<ProxyMetrics> {
     let path = metrics_path()?;
     let data = std::fs::read_to_string(path).ok()?;
     serde_json::from_str(&data).ok()

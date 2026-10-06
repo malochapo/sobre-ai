@@ -200,19 +200,6 @@ pub fn encode_tokens(text: &str) -> Vec<u32> {
     }
 }
 
-/// Encodes text into BPE token IDs for the specified tokenizer family.
-///
-/// Gemini correction is not applied here — this returns raw token IDs.
-pub fn encode_tokens_for(text: &str, family: TokenizerFamily) -> Vec<u32> {
-    if text.is_empty() {
-        return Vec::new();
-    }
-    match bpe_for_family(family) {
-        Some(bpe) => bpe.encode_with_special_tokens(text),
-        None => Vec::new(),
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -401,26 +388,6 @@ mod tests {
         let cl100k = count_tokens_for(text, TokenizerFamily::Cl100k);
         assert!(o200k > 0);
         assert!(cl100k > 0);
-    }
-
-    #[test]
-    fn encode_tokens_for_matches_count() {
-        let _lock = token_test_lock();
-        reset_cache();
-
-        let text = "hello world";
-        for family in [
-            TokenizerFamily::O200kBase,
-            TokenizerFamily::Cl100k,
-            TokenizerFamily::Llama,
-        ] {
-            let encoded = encode_tokens_for(text, family);
-            let raw_count = bpe_for_family(family)
-                .unwrap()
-                .encode_with_special_tokens(text)
-                .len();
-            assert_eq!(encoded.len(), raw_count, "mismatch for {family}");
-        }
     }
 
     #[test]

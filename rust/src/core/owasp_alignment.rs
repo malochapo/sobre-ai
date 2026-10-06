@@ -32,28 +32,11 @@ pub fn alignment() -> Vec<OwaspMapping> {
             owasp_id: "OWASP-AGENT-01",
             owasp_title: "Excessive Agency",
             risk_description: "Agent performs actions beyond intended scope or without proper authorization",
-            lean_ctx_mitigations: vec![
-                Mitigation {
-                    feature: "Capability System",
-                    module: "core/capabilities.rs",
-                    description: "Fine-grained capability declarations per tool (fs:read, fs:write, exec, net)",
-                },
-                Mitigation {
-                    feature: "Role Guard",
-                    module: "server/role_guard.rs",
-                    description: "5 built-in roles with tool allowlists and shell policy",
-                },
-                Mitigation {
-                    feature: "Shell Gate",
-                    module: "core/shell_gate/mod.rs",
-                    description: "Hard blocks on the constructs that hide a command from inspection (eval, exec, source, command substitution at command position)",
-                },
-                Mitigation {
-                    feature: "Context Budget",
-                    module: "core/agent_budget.rs",
-                    description: "Per-agent token budgets preventing resource exhaustion",
-                },
-            ],
+            lean_ctx_mitigations: vec![Mitigation {
+                feature: "Shell Gate",
+                module: "core/shell_gate/mod.rs",
+                description: "Hard blocks on the constructs that hide a command from inspection (eval, exec, source, command substitution at command position)",
+            }],
             coverage: Coverage::Full,
         },
         OwaspMapping {
@@ -118,19 +101,9 @@ pub fn alignment() -> Vec<OwaspMapping> {
             risk_description: "Agent overwhelms system resources or causes service disruption",
             lean_ctx_mitigations: vec![
                 Mitigation {
-                    feature: "Rate Limiter",
-                    module: "core/a2a/rate_limiter.rs",
-                    description: "Per-agent per-tool rate limiting",
-                },
-                Mitigation {
                     feature: "Memory Guard",
-                    module: "core/config/memory.rs",
+                    module: "core/memory_guard.rs",
                     description: "RAM usage caps and idle cleanup",
-                },
-                Mitigation {
-                    feature: "Budget Tracker",
-                    module: "core/agent_budget.rs",
-                    description: "Token budget enforcement with hard limits",
                 },
                 Mitigation {
                     feature: "Loop Detection",
@@ -150,11 +123,6 @@ pub fn alignment() -> Vec<OwaspMapping> {
             owasp_title: "Supply Chain Vulnerabilities",
             risk_description: "Compromised tools, plugins, or dependencies affect agent behavior",
             lean_ctx_mitigations: vec![
-                Mitigation {
-                    feature: "Signed Handoff Bundles",
-                    module: "core/handoff_transfer_bundle.rs",
-                    description: "Ed25519 signatures verify integrity and provenance of transferred data",
-                },
                 Mitigation {
                     feature: "Audit Trail",
                     module: "core/audit_trail.rs",
@@ -176,17 +144,12 @@ pub fn alignment() -> Vec<OwaspMapping> {
                 Mitigation {
                     feature: "Audit Trail",
                     module: "core/audit_trail.rs",
-                    description: "Every tool call logged with agent ID, role, input hash, output tokens",
+                    description: "Every tool call logged with agent ID, input hash, output tokens",
                 },
                 Mitigation {
                     feature: "Compliance Reports",
                     module: "cli/audit_report.rs",
                     description: "CLI command to generate aggregated compliance reports",
-                },
-                Mitigation {
-                    feature: "Context OS Events",
-                    module: "core/context_os/context_bus.rs",
-                    description: "Append-only SQLite event log of tool calls and session \n                                  mutations, with an in-process broadcast for live readers",
                 },
                 Mitigation {
                     feature: "Proxy Metrics",
@@ -200,28 +163,11 @@ pub fn alignment() -> Vec<OwaspMapping> {
             owasp_id: "OWASP-AGENT-07",
             owasp_title: "Insecure Code Execution",
             risk_description: "Agent executes arbitrary or unsafe code without proper sandboxing",
-            lean_ctx_mitigations: vec![
-                Mitigation {
-                    feature: "Sandbox Level 0",
-                    module: "core/sandbox.rs",
-                    description: "Subprocess isolation with env_clear and timeout",
-                },
-                Mitigation {
-                    feature: "Sandbox Level 1 (macOS)",
-                    module: "core/sandbox_seatbelt.rs",
-                    description: "OS-level Seatbelt profiles restricting filesystem and network",
-                },
-                Mitigation {
-                    feature: "Sandbox Level 1 (Linux)",
-                    module: "core/sandbox_landlock.rs",
-                    description: "Landlock LSM restricting filesystem access",
-                },
-                Mitigation {
-                    feature: "Command Blocklist",
-                    module: "core/shell_gate/mod.rs",
-                    description: "Dangerous command patterns blocked before execution",
-                },
-            ],
+            lean_ctx_mitigations: vec![Mitigation {
+                feature: "Command Blocklist",
+                module: "core/shell_gate/mod.rs",
+                description: "Dangerous command patterns blocked before execution",
+            }],
             coverage: Coverage::Full,
         },
         OwaspMapping {
@@ -229,16 +175,6 @@ pub fn alignment() -> Vec<OwaspMapping> {
             owasp_title: "Broken Access Control",
             risk_description: "Agent accesses resources or performs actions beyond its permissions",
             lean_ctx_mitigations: vec![
-                Mitigation {
-                    feature: "RBAC",
-                    module: "core/roles.rs",
-                    description: "5 built-in roles (viewer, coder, admin, ci, restricted) with granular policies",
-                },
-                Mitigation {
-                    feature: "Capability System",
-                    module: "core/capabilities.rs",
-                    description: "Tool-level capability requirements checked against role grants",
-                },
                 Mitigation {
                     feature: "PathJail",
                     module: "core/pathjail.rs",
@@ -280,11 +216,6 @@ pub fn alignment() -> Vec<OwaspMapping> {
             owasp_title: "Insufficient Governance",
             risk_description: "Lack of organizational policies and controls over agent behavior",
             lean_ctx_mitigations: vec![
-                Mitigation {
-                    feature: "Policy Engine",
-                    module: "core/context_policies.rs",
-                    description: "Declarative policies with agent, content, and time-based conditions",
-                },
                 Mitigation {
                     feature: "Compliance Reports",
                     module: "cli/audit_report.rs",

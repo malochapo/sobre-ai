@@ -5,15 +5,6 @@
 [workspace]
 members = [
   ".",
-  # Grammar-addon cdylibs (#690, Phase 1c) — one crate per long-tail
-  # tree-sitter grammar, built per-platform by grammar-addons.yml and
-  # dlopen'd at runtime by core::signatures_ts::grammar_loader. Add a new
-  # `crates/grammar-addons/<lang>` member (mirroring lua/) plus a matrix
-  # entry in the workflow when tiering another grammar out (scope item 1).
-  "crates/grammar-addons/lua",
-  # Standalone manual-verification harness the grammar-addon design proved
-  # out against (Phase 0 spike, #693) — not part of the release pipeline.
-  "experiments/grammar-dlopen-spike/host",
 ]
 default-members = ["."]
 
@@ -67,19 +58,10 @@ name = "gen_docs"
 path = "src/bin/gen_docs.rs"
 required-features = ["dev-tools"]
 
-[[example]]
-name = "gen_registry"
-path = "src/bin/gen_registry.rs"
-required-features = ["dev-tools"]
 
 [[example]]
 name = "gen_rules"
 path = "src/bin/gen_rules.rs"
-required-features = ["dev-tools"]
-
-[[example]]
-name = "seed_observatory"
-path = "src/bin/seed_observatory.rs"
 required-features = ["dev-tools"]
 
 [features]
@@ -99,7 +81,7 @@ jemalloc = ["dep:tikv-jemallocator", "dep:tikv-jemalloc-ctl"]
 dev-tools = []
 no-jail = []
 neural = ["dep:ort", "dep:ndarray", "dep:libloading"]
-embeddings = ["dep:ort", "dep:ndarray", "dep:libloading"]
+embeddings = ["dep:ort", "dep:ndarray", "dep:libloading", "dep:tokenizers"]
 ort-cuda = ["ort?/cuda"]
 ort-webgpu = ["ort?/webgpu"]
 ort-rocm = ["ort?/rocm"]
@@ -137,22 +119,14 @@ tree-sitter = [
   "dep:tree-sitter-solidity",
   "dep:tree-sitter-nix",
   "dep:tree-sitter-powershell",
-  "dep:tree-sitter-language",
-  "dep:libloading",
 ]
-wasm = ["dep:wasmi"]
 
 [dependencies]
 rmcp = { version = "2", features = [
   "server",
-  "client",
   "transport-io",
   "transport-streamable-http-server",
-  "transport-child-process",
-  "transport-streamable-http-client-reqwest",
 ] }
-# Header types for the gateway's downstream HTTP MCP client (already in the tree via rmcp/reqwest).
-http = "1.4"
 tiktoken-rs = "0.12"
 tokio = { version = "1.52", features = [
   "rt",
@@ -168,7 +142,6 @@ tokio = { version = "1.52", features = [
 ] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-clap = "4.5"
 subtle = "2.6"
 md-5 = "0.11"
 anyhow = "1.0"
@@ -227,10 +200,6 @@ tree-sitter-julia = { version = "0.23", optional = true }
 tree-sitter-solidity = { version = "1.2", optional = true }
 tree-sitter-nix = { version = "0.3", optional = true }
 tree-sitter-powershell = { version = "0.26", optional = true }
-# Grammar-addon loader (#690, Phase 1b): dlopen a per-platform grammar cdylib
-# and reconstruct a tree_sitter::Language from its exported LanguageFn, same
-# as the Phase 0 spike (experiments/grammar-dlopen-spike).
-tree-sitter-language = { version = "0.1", optional = true }
 libloading = { version = "0.8", optional = true }
 # Exact pin: `ort` 2.0 is still in its release-candidate phase (no stable 2.0.0
 # yet; rc.12 is the upstream-recommended production build). RCs can carry breaking
@@ -254,24 +223,10 @@ ort = { version = "=2.0.0-rc.12", optional = true, default-features = false, fea
   "load-dynamic",
 ] }
 ndarray = { version = "0.17", optional = true }
+# Reads any HuggingFace `tokenizer.json` (WordPiece, BPE, Unigram), so every
+# embedding model tokenizes exactly as it was trained. Pure Rust regex backend.
+tokenizers = { version = "0.22", optional = true, default-features = false, features = ["fancy-regex"] }
 axum = { version = "0.8", features = ["ws"] }
-# Upstream WebSocket client for the Codex ChatGPT remote-control passthrough
-# (#597): tunnels `/backend-api` WS upgrades through to wss://chatgpt.com so
-# Codex Desktop remote-control pairing works while the subscription opt-in routes
-# model turns through the proxy. Already in the tree via axum's `ws` feature.
-tokio-tungstenite = { version = "0.29", default-features = false, features = [
-  "connect",
-  "rustls-tls-webpki-roots",
-] }
-# tokio-tungstenite's rustls connector relies on the process-default
-# CryptoProvider. The tree pulls both aws-lc-rs (reqwest) and ring (lettre/ureq),
-# so rustls can't auto-pick one; we install aws-lc-rs explicitly at proxy start
-# (#597). Default features keep the aws_lc_rs provider available.
-rustls = { version = "0.23" }
-# Postgres TLS (#54/#58): Azure Database for PostgreSQL enforces TLS — the
-# usage store must speak sslmode=require. Reuses the process rustls provider.
-# Non-optional since GH #727: `kind=skills` document blobs (featureless
-# context_package core) encode zstd bodies as base64 inside the pack JSON.
 base64 = "0.22"
 hmac = "0.13"
 sha2 = "0.11"
@@ -284,7 +239,6 @@ reqwest = { version = "0.13", default-features = false, features = [
   "rustls",
   "stream",
   "json",
-  "cookies",
 ] }
 bytecount = "0.6"
 blake3 = "1.8"
@@ -295,7 +249,6 @@ zstd = "0.13"
 lsp-types = "0.97"
 fs2 = "0.4"
 unicode-width = "0.2"
-wasmi = { version = "1.1", optional = true }
 yaml_serde = "0.10.4"
 
 [lints.rust]

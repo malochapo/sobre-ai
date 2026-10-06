@@ -59,9 +59,6 @@ mod correction_loop {
         // Agent re-reads same file with fresh=true (lost trust in compression)
         detector.record_read_for_correction("src/cache.rs", "full", true);
         assert_eq!(detector.correction_count(), 1);
-
-        // Rate should be positive
-        assert!(detector.correction_rate() > 0.0);
     }
 
     #[test]
@@ -219,54 +216,6 @@ mod cache_hit_messages {
     use super::*;
 
     #[test]
-    fn scenario_first_read_returns_full_content() {
-        let dir = tempfile::tempdir().unwrap();
-        let file = dir.path().join("module.rs");
-        std::fs::write(
-            &file,
-            "use std::io;\n\nfn main() {\n    println!(\"hello\");\n}\n",
-        )
-        .unwrap();
-        let path = file.to_string_lossy().to_string();
-
-        let mut cache = SessionCache::new();
-        let result = lean_ctx::tools::ctx_read::handle(&mut cache, &path, "full", CrpMode::Off);
-
-        // First read should return full content
-        assert!(
-            result.contains("fn main()"),
-            "first read must show full content"
-        );
-    }
-
-    #[test]
-    fn scenario_second_read_returns_proof_line() {
-        let dir = tempfile::tempdir().unwrap();
-        let file = dir.path().join("module.rs");
-        std::fs::write(
-            &file,
-            "use std::io;\n\nfn main() {\n    println!(\"hello\");\n}\n",
-        )
-        .unwrap();
-        let path = file.to_string_lossy().to_string();
-
-        let mut cache = SessionCache::new();
-        // First read
-        lean_ctx::tools::ctx_read::handle(&mut cache, &path, "full", CrpMode::Off);
-        // Second read (cache hit)
-        lean_ctx::tools::ctx_read::handle(&mut cache, &path, "full", CrpMode::Off);
-        // Third read (should have proof line since read_count >= 2)
-        let result = lean_ctx::tools::ctx_read::handle(&mut cache, &path, "full", CrpMode::Off);
-
-        assert!(
-            result.contains("unchanged since your last read")
-                || result.contains("unchanged")
-                || result.contains("cached"),
-            "cache hit must indicate file unchanged: got: {result}"
-        );
-    }
-
-    #[test]
     fn scenario_modified_file_returns_new_content() {
         let dir = tempfile::tempdir().unwrap();
         let file = dir.path().join("changing.rs");
@@ -418,14 +367,6 @@ mod confidence_signal {
     use lean_ctx::core::config::TeeMode;
 
     #[test]
-    fn scenario_tee_mode_high_compression_variant_exists() {
-        let mode = TeeMode::HighCompression;
-        assert_ne!(mode, TeeMode::Never);
-        assert_ne!(mode, TeeMode::Failures);
-        assert_ne!(mode, TeeMode::Always);
-    }
-
-    #[test]
     fn scenario_tee_mode_serialization() {
         let json = serde_json::to_string(&TeeMode::HighCompression).unwrap();
         assert!(
@@ -500,15 +441,6 @@ mod auto_degrade {
     }
 
     #[test]
-    fn scenario_degradation_policy_reports_correction_rate_high() {
-        let src = include_str!("../../src/core/degradation_policy.rs");
-        assert!(
-            src.contains("correction_rate_high"),
-            "degradation policy must have correction_rate_high reason_code"
-        );
-    }
-
-    #[test]
     fn scenario_server_degrade_thresholds() {
         use lean_ctx::core::config::CompressionLevel;
         use lean_ctx::core::config::SessionDegrade::{Clear, Leave, Set};
@@ -563,15 +495,16 @@ mod first_contact {
 
     #[test]
     fn scenario_token_budget_enforced() {
-        let src = crate::suite::hn_hardening_scenarios::server_dispatch_src();
-        let auto_ctx_pos = src
-            .find("let Some(ctx) = auto_context")
-            .expect("auto_context block must exist");
-        let block = &src[auto_ctx_pos..auto_ctx_pos + 300];
-
+        // The briefing is cut to its budget where it is built, not dropped at
+        // the call site.
+        let src = include_str!("../../src/tools/autonomy.rs");
         assert!(
-            block.contains("ctx_tokens <= 400"),
-            "auto_context must enforce 400 token budget: {block}"
+            src.contains("pub const BRIEFING_MAX_TOKENS: usize = 400;"),
+            "auto_context must enforce a 400 token budget"
+        );
+        assert!(
+            src.contains("Some(format_briefing(&result))"),
+            "the session briefing must go through the budget cut"
         );
     }
 

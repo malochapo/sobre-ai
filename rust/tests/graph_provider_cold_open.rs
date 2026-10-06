@@ -14,6 +14,14 @@
 //! without `cfg!(test)`, so the background-build path that is skipped under unit
 //! `cfg!(test)` actually exists in this binary and the guarantee is real.
 
+#[path = "support/user_dirs.rs"]
+mod user_dirs;
+
+#[test]
+fn harness_sandboxes_user_dirs() {
+    user_dirs::assert_sandboxed();
+}
+
 #[test]
 fn open_or_build_returns_graph_on_first_cold_open() {
     let tmp = tempfile::tempdir().expect("tempdir");

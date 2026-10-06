@@ -14,8 +14,8 @@ use super::max_body_bytes;
 use super::xlat::translated_openai_body;
 
 /// Builds the request-side [`WireContext`](crate::proxy::usage::WireContext) stamped
-/// onto this turn's usage record: identity tags (inserted as a request
-/// extension by the auth guard, enterprise#11), the per-request compression
+/// onto this turn's usage record: the project tag (inserted as a request
+/// extension by the auth guard), the per-request compression
 /// saving, the pre-compression token estimate (baseline input, enterprise#18)
 /// and whether the serving upstream is local.
 pub(crate) fn wire_context(
@@ -24,11 +24,10 @@ pub(crate) fn wire_context(
     upstream_base: &str,
     tokens_saved: u64,
     original_size: usize,
-    lineage: Option<crate::core::request_context::RequestContext>,
-) -> Box<crate::proxy::usage::WireContext> {
+) -> crate::proxy::usage::WireContext {
     let tags = parts
         .extensions
-        .get::<crate::proxy::gateway_identity::GatewayTags>()
+        .get::<crate::proxy::request_tags::RequestTags>()
         .cloned()
         .unwrap_or_default();
     // Registry routes attribute usage to the provider identity ("foundry",
@@ -43,47 +42,15 @@ pub(crate) fn wire_context(
         || crate::proxy::codec::upstream_is_local(upstream_base),
         |r| r.local,
     );
-    Box::new(crate::proxy::usage::WireContext {
+    crate::proxy::usage::WireContext {
         provider: provider.to_string(),
-        person: tags.person,
-        team: tags.team,
         project: tags.project,
         saved_tokens: tokens_saved,
         // bytes/4 — the same estimation basis the proxy stats use throughout.
         uncompressed_input_tokens: original_size as u64 / 4,
         is_local,
-        routed_from: None,    // populated by the routing hook (wave 3)
-        counterfactual: None, // populated after the probe spawn (#701)
-        lineage,
-    })
-}
-
-/// Output-savings arm (#895) for a request body, or `None` when no holdout is
-/// active. Keyed per provider; OpenAI's Chat vs Responses bodies are
-/// distinguished by the request path so each uses the matching cohort key.
-pub(crate) fn cohort_arm(
-    parsed: &serde_json::Value,
-    provider_label: &str,
-    default_path: &str,
-) -> Option<crate::proxy::holdout::Arm> {
-    let holdout = crate::core::config::Config::load()
-        .proxy
-        .output_holdout_fraction();
-    if holdout <= 0.0 {
-        return None;
+        routed_from: None, // populated by the routing hook (wave 3)
     }
-    let key = match provider_label {
-        "Anthropic" => crate::proxy::holdout::anthropic_key(parsed),
-        "OpenAI" | "ChatGPT" => {
-            if default_path.contains("responses") {
-                crate::proxy::holdout::openai_responses_key(parsed)
-            } else {
-                crate::proxy::holdout::openai_chat_key(parsed)
-            }
-        }
-        _ => crate::proxy::holdout::google_key(parsed),
-    };
-    Some(crate::proxy::holdout::assign(&key, holdout))
 }
 
 pub(crate) struct PreparedRequestBody {
@@ -148,10 +115,7 @@ pub(crate) fn prepare_request_body(
         .and_then(|r| r.upstream_base.as_deref())
         .unwrap_or(default_upstream_base);
     let wants_billed_cost =
-        crate::proxy::usage_accounting::upstream_is_openrouter(effective_upstream)
-            && crate::core::config::Config::load()
-                .proxy
-                .meters_openai_usage();
+        crate::proxy::usage_accounting::upstream_is_openrouter(effective_upstream);
     let xlat_route = route.as_ref().is_some_and(|r| r.xlat);
     // `usage.include` is a Chat-Completions-only parameter: gate on the shape
     // AND the call path so a Responses-API body never carries it.

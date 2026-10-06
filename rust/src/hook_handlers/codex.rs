@@ -7,7 +7,7 @@
 //! output builders in the parent module.
 
 use super::file_rewrite::rewrite_candidate;
-use super::{HOOK_STDIN_TIMEOUT, is_disabled, is_quiet, read_stdin_with_timeout, resolve_binary};
+use super::{HOOK_STDIN_TIMEOUT, is_quiet, read_stdin_with_timeout, resolve_binary};
 
 pub(super) fn codex_rewrite_output(rewritten: &str) -> String {
     serde_json::json!({
@@ -23,10 +23,6 @@ pub(super) fn codex_rewrite_output(rewritten: &str) -> String {
 }
 
 pub fn handle_codex_pretooluse() {
-    if is_disabled() {
-        print!("{}", codex_allow_output());
-        return;
-    }
     let binary = resolve_binary();
     let Some(input) = read_stdin_with_timeout(HOOK_STDIN_TIMEOUT) else {
         print!("{}", codex_allow_output());
@@ -162,29 +158,8 @@ pub fn handle_codex_session_start() {
     if is_quiet() {
         return;
     }
-    // Dedicated rules-injection mode (#343): the `hook observe` SessionStart hook
-    // injects the full rules summary as additionalContext, so stay silent here to
-    // avoid double-injecting on Codex (which fires both hooks on SessionStart).
-    if crate::core::config::Config::load().dedicated_session_context_active() {
-        return;
-    }
     emit_session_start_additional_context(CODEX_SHELL_RECOVERY_HINT);
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn codex_deny_does_not_block_leanctx_cli_invocations() {
-        // #801: `lean-ctx -c '...'` must not be denied in replace mode.
-        // The deny output should only fire for truly native Bash commands.
-        let deny_msg = codex_deny_output("lean-ctx -c 'git status'");
-        // This is the deny message format — verify it exists for native commands
-        assert!(deny_msg.contains("deny"), "deny output must contain deny");
-
-        // A successful PreToolUse hook with no output allows the command.
-        let allow_msg = codex_allow_output();
-        assert!(allow_msg.is_empty(), "allow output must be empty");
-    }
-}
+mod tests {}

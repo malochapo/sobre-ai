@@ -23,44 +23,29 @@ use crate::tools::CrpMode;
 /// stages are index-backed and cheap; only semantic ranking can hit a cold
 /// `O(corpus)` BM25 build. We never let that block the agent loop: past the
 /// budget (4s, tuned for cold-start coverage #902) we return what we have and let the detached worker finish warming the
-/// resident cache for the next call. Override via `LEAN_CTX_COMPOSE_BUDGET_MS`.
+/// resident cache for the next call.
 const DEFAULT_SEMANTIC_BUDGET_MS: u64 = 4000;
 
 fn semantic_budget() -> Duration {
-    let ms = std::env::var("LEAN_CTX_COMPOSE_BUDGET_MS")
-        .ok()
-        .and_then(|v| v.parse::<u64>().ok())
-        .filter(|&v| v > 0)
-        .unwrap_or(DEFAULT_SEMANTIC_BUDGET_MS);
-    Duration::from_millis(ms)
+    Duration::from_millis(DEFAULT_SEMANTIC_BUDGET_MS)
 }
 
 /// Token budget for the inlined symbol bodies. Submodular selection fills it
 /// with the most coverage-effective, non-redundant set of symbols.
-/// Override via `LEAN_CTX_COMPOSE_SYMBOL_TOKENS`.
 const DEFAULT_SYMBOL_BUDGET_TOKENS: usize = 600;
 
 fn symbol_budget_tokens() -> usize {
-    std::env::var("LEAN_CTX_COMPOSE_SYMBOL_TOKENS")
-        .ok()
-        .and_then(|v| v.parse::<usize>().ok())
-        .filter(|&v| v > 0)
-        .unwrap_or(DEFAULT_SYMBOL_BUDGET_TOKENS)
+    DEFAULT_SYMBOL_BUDGET_TOKENS
 }
 
 /// Wall-time budget for the associative (graph spreading-activation) stage.
 /// Opening/building the graph index is `O(corpus)` on a cold repo, so — like
 /// semantic ranking — we bound it and skip the (purely additive) section on
-/// overrun while the detached worker warms the index. `LEAN_CTX_COMPOSE_GRAPH_BUDGET_MS`.
+/// overrun while the detached worker warms the index.
 const DEFAULT_GRAPH_BUDGET_MS: u64 = 1500;
 
 fn graph_budget() -> Duration {
-    let ms = std::env::var("LEAN_CTX_COMPOSE_GRAPH_BUDGET_MS")
-        .ok()
-        .and_then(|v| v.parse::<u64>().ok())
-        .filter(|&v| v > 0)
-        .unwrap_or(DEFAULT_GRAPH_BUDGET_MS);
-    Duration::from_millis(ms)
+    Duration::from_millis(DEFAULT_GRAPH_BUDGET_MS)
 }
 
 /// Per-hop activation decay and hop count for spreading activation. Small decay
@@ -400,7 +385,7 @@ pub fn handle(task: &str, project_root: &str, crp_mode: CrpMode) -> (String, usi
     }
 
     let keywords = extract_keywords(task, 6);
-    let allow_secret = crate::core::roles::active_role().io.allow_secret_paths;
+    let allow_secret = false;
 
     let mut out = String::new();
     out.push_str(&format!("TASK: {task}\n"));

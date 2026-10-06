@@ -29,7 +29,7 @@ fn rg_json_falls_through() {
         Some(expect_wrapped("rg --json pattern src/", "lean-ctx"))
     );
 }
-// --- is_shell_tool covers Gemini/Antigravity tool names ---
+// --- is_shell_tool covers Gemini tool names ---
 #[test]
 fn is_shell_tool_covers_all_ide_variants() {
     for name in [

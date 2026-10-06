@@ -16,26 +16,6 @@ pub fn handle(args: &Value, project_root: &str, abs_path: &str) -> String {
         return handle_symbol_edit(action, args, project_root);
     }
 
-    if matches!(action, "rename_preview" | "rename_apply") {
-        return handle_rename_refactor(action, args, project_root);
-    }
-
-    if matches!(action, "safe_delete_preview" | "safe_delete_apply") {
-        return handle_safe_delete_refactor(action, args, project_root);
-    }
-
-    if matches!(action, "move_preview" | "move_apply") {
-        return handle_move_refactor(action, args, project_root);
-    }
-
-    if matches!(action, "inline_preview" | "inline_apply") {
-        return handle_inline_refactor(action, args, project_root);
-    }
-
-    if action == "reformat" {
-        return handle_reformat_refactor(args, project_root);
-    }
-
     let line = args.get("line").and_then(Value::as_u64).unwrap_or(1) as u32;
     let column = args.get("column").and_then(Value::as_u64).unwrap_or(0) as u32;
     let scope = args
@@ -63,16 +43,11 @@ pub fn handle(args: &Value, project_root: &str, abs_path: &str) -> String {
         "references" => handle_references(abs_path, project_root, &uri, position, scope),
         "definition" => handle_definition(abs_path, project_root, &uri, position),
         "implementations" => handle_implementations(abs_path, project_root, &uri, position, scope),
-        "declaration" => handle_declaration(abs_path, project_root, &uri, position),
-        "type_hierarchy" => handle_type_hierarchy(args, abs_path, project_root, &uri, position),
         "symbols_overview" => handle_symbols_overview(abs_path, project_root, &uri),
-        "inspections" => handle_inspections(args, abs_path, project_root, &uri),
         _ => format!(
             "ERROR: Unknown action '{action}'. Available: rename, references, definition, \
-             implementations, declaration, type_hierarchy, symbols_overview, inspections, \
-             replace_symbol_body, insert_before_symbol, insert_after_symbol, \
-             rename_preview, rename_apply, safe_delete_preview, safe_delete_apply, \
-             move_preview, move_apply, inline_preview, inline_apply, reformat."
+             implementations, symbols_overview, replace_symbol_body, insert_before_symbol, \
+             insert_after_symbol."
         ),
     }
 }
@@ -118,16 +93,11 @@ fn handle_references(
     scope: &str,
 ) -> String {
     let result = crate::lsp::router::with_backend(file_path, project_root, |backend, _| {
-        let locs = backend.references(uri, position, scope)?;
-        Ok((locs, backend.last_truncation()))
+        backend.references(uri, position, scope)
     });
 
     match result {
-        Ok((locations, meta)) => {
-            let mut out = format_locations(&locations, project_root);
-            out.push_str(&truncation_note(locations.len(), meta));
-            out
-        }
+        Ok(locations) => format_locations(&locations, project_root),
         Err(e) => format!("ERROR: {e}"),
     }
 }
@@ -169,28 +139,7 @@ fn handle_implementations(
     scope: &str,
 ) -> String {
     let result = crate::lsp::router::with_backend(file_path, project_root, |backend, _| {
-        let locs = backend.implementations(uri, position, scope)?;
-        Ok((locs, backend.last_truncation()))
-    });
-
-    match result {
-        Ok((locations, meta)) => {
-            let mut out = format_locations(&locations, project_root);
-            out.push_str(&truncation_note(locations.len(), meta));
-            out
-        }
-        Err(e) => format!("ERROR: {e}"),
-    }
-}
-
-fn handle_declaration(
-    file_path: &str,
-    project_root: &str,
-    uri: &lsp_types::Uri,
-    position: Position,
-) -> String {
-    let result = crate::lsp::router::with_backend(file_path, project_root, |backend, _| {
-        backend.declaration(uri, position)
+        backend.implementations(uri, position, scope)
     });
 
     match result {
@@ -199,9 +148,7 @@ fn handle_declaration(
     }
 }
 
-use crate::lsp::backend::{
-    HierarchyDirection, InspectionDiag, InspectionInfo, SymbolOverviewItem, TypeHierarchyNode,
-};
+use crate::lsp::backend::SymbolOverviewItem;
 
 /// A resolved symbol location (project-relative path + 1-based inclusive line span).
 #[derive(Debug)]
@@ -211,33 +158,14 @@ pub(crate) struct Resolved {
     pub end_line: usize,
 }
 
-/// Apply a resolved edit. IDE-first: a live JetBrains backend (port file +
-/// liveness, mirroring router::select_backend) handles it via WriteCommandAction;
-/// otherwise the headless local_range_write applies the identical bytes.
+/// Apply a resolved edit through the headless range writer.
 pub(crate) fn apply_symbol_edit(
     action: &str,
-    project_root: &str,
+    _project_root: &str,
     edit: &crate::lsp::backend::RangeEdit,
 ) -> Result<crate::lsp::backend::EditResult, String> {
     use crate::lsp::backend::LspBackend;
-    use crate::lsp::port_discovery;
-
-    let mut backend: Box<dyn LspBackend> =
-        if let Some(pf) = port_discovery::read_port_file(project_root) {
-            if port_discovery::pid_alive(pf.pid) && port_discovery::health_ok(&pf) {
-                Box::new(crate::lsp::jetbrains_backend::JetBrainsHttpBackend::new(
-                    pf.port,
-                    pf.token,
-                    project_root.to_string(),
-                    pf.pid,
-                ))
-            } else {
-                Box::new(crate::lsp::edit_apply::HeadlessBackend)
-            }
-        } else {
-            Box::new(crate::lsp::edit_apply::HeadlessBackend)
-        };
-
+    let mut backend = crate::lsp::edit_apply::HeadlessBackend;
     match action {
         "replace_symbol_body" => backend.replace_symbol_body(edit),
         "insert_before_symbol" => backend.insert_before_symbol(edit),
@@ -358,102 +286,12 @@ pub(crate) fn resolve_name_path_scoped(
     }
 }
 
-/// Read the current on-disk text covered by a usage's range, jail-checking its
-/// path first. Out-of-jail / unreadable / bad range → `Err` (spec §5.4 Multi-File
-/// jail: every plugin-reported path is re-checked against `project_root`).
-pub(crate) fn usage_range_text(
-    project_root: &str,
-    u: &crate::lsp::backend::UsageSite,
-) -> Result<String, String> {
-    let abs = crate::core::path_resolve::resolve_tool_path(Some(project_root), None, &u.path)
-        .map_err(|e| format!("CONFLICT: usage path blocked by jail: {e}"))?;
-    let content =
-        std::fs::read_to_string(&abs).map_err(|e| format!("FILE_NOT_FOUND: {abs}: {e}"))?;
-    let s = crate::lsp::edit_apply::offset_of(&content, u.range.start_line, u.range.start_char)?;
-    let e = crate::lsp::edit_apply::offset_of(&content, u.range.end_line, u.range.end_char)?;
-    if e < s {
-        return Err("POSITION_OUT_OF_RANGE: end before start".to_string());
-    }
-    Ok(content[s..e].to_string())
-}
-
-/// Stateless Multi-File integrity guard (spec §5.2). BLAKE3 over the usages
-/// canonicalized by sorted `(path, range)` plus each usage's *current* on-disk
-/// text. `context` is display-only and intentionally excluded. Re-built in
-/// `rename_apply` and compared → mismatch = `CONFLICT` (TOCTOU).
-pub(crate) fn plan_hash(
-    project_root: &str,
-    usages: &[crate::lsp::backend::UsageSite],
-) -> Result<String, String> {
-    use crate::lsp::backend::TextRange0Based;
-    let mut rows: Vec<(String, TextRange0Based, String)> = Vec::with_capacity(usages.len());
-    for u in usages {
-        let text = usage_range_text(project_root, u)?;
-        rows.push((u.path.clone(), u.range, text));
-    }
-    rows.sort_by(|a, b| {
-        a.0.cmp(&b.0)
-            .then(a.1.start_line.cmp(&b.1.start_line))
-            .then(a.1.start_char.cmp(&b.1.start_char))
-            .then(a.1.end_line.cmp(&b.1.end_line))
-            .then(a.1.end_char.cmp(&b.1.end_char))
-    });
-    let mut canon = String::new();
-    for (path, r, text) in &rows {
-        canon.push_str(&format!(
-            "{path}|{}:{}-{}:{}|{text}\n",
-            r.start_line, r.start_char, r.end_line, r.end_char
-        ));
-    }
-    Ok(crate::core::hasher::hash_hex(canon.as_bytes()))
-}
-
-mod ops;
-#[allow(clippy::wildcard_imports)]
-use ops::*;
-
-fn parse_direction(args: &Value) -> HierarchyDirection {
-    match args.get("direction").and_then(Value::as_str) {
-        Some("subtypes") => HierarchyDirection::Subtypes,
-        _ => HierarchyDirection::Supertypes,
-    }
-}
-
-fn handle_type_hierarchy(
-    args: &Value,
-    file_path: &str,
-    project_root: &str,
-    uri: &lsp_types::Uri,
-    position: Position,
-) -> String {
-    let direction = parse_direction(args);
-    let result = crate::lsp::router::with_backend(file_path, project_root, |backend, _| {
-        let tree = backend.type_hierarchy(uri, position, direction)?;
-        Ok((tree, backend.last_truncation()))
-    });
-    match result {
-        Ok((tree, meta)) => {
-            let mut out = format_type_hierarchy(&tree);
-            if matches!(meta, Some(m) if m.truncated) {
-                out.push_str("\n(truncated — depth/node cap reached)\n");
-            }
-            out
-        }
-        Err(e) => format!("ERROR: {e}"),
-    }
-}
-
 fn handle_symbols_overview(file_path: &str, project_root: &str, uri: &lsp_types::Uri) -> String {
     let result = crate::lsp::router::with_backend(file_path, project_root, |backend, _| {
-        let items = backend.symbols_overview(uri)?;
-        Ok((items, backend.last_truncation()))
+        backend.symbols_overview(uri)
     });
     match result {
-        Ok((items, meta)) => {
-            let mut out = format_symbols_overview(&items);
-            out.push_str(&truncation_note(items.len(), meta));
-            out
-        }
+        Ok(items) => format_symbols_overview(&items),
         Err(e) => format!("ERROR: {e}"),
     }
 }
@@ -675,96 +513,6 @@ fn format_edit_result(
     )
 }
 
-fn handle_inspections(
-    args: &Value,
-    file_path: &str,
-    project_root: &str,
-    uri: &lsp_types::Uri,
-) -> String {
-    let mode = args.get("mode").and_then(Value::as_str).unwrap_or("run");
-    match mode {
-        "run" => {
-            let result = crate::lsp::router::with_backend(file_path, project_root, |backend, _| {
-                let diags = backend.inspections(uri)?;
-                Ok((diags, backend.last_truncation()))
-            });
-            match result {
-                Ok((diags, meta)) => {
-                    let mut out = format_inspections(&diags);
-                    out.push_str(&truncation_note(diags.len(), meta));
-                    out
-                }
-                Err(e) => format!("ERROR: {e}"),
-            }
-        }
-        "list" => {
-            let result = crate::lsp::router::with_backend(file_path, project_root, |backend, _| {
-                let items = backend.list_inspections()?;
-                Ok((items, backend.last_truncation()))
-            });
-            match result {
-                Ok((items, meta)) => {
-                    let mut out = format_inspection_list(&items);
-                    out.push_str(&truncation_note(items.len(), meta));
-                    out
-                }
-                Err(e) => format!("ERROR: {e}"),
-            }
-        }
-        other => format!("ERROR: Unknown mode '{other}' for inspections. Available: run, list."),
-    }
-}
-
-fn format_inspections(diags: &[InspectionDiag]) -> String {
-    if diags.is_empty() {
-        return "No inspection findings.".to_string();
-    }
-    let mut out = format!("{} finding(s):\n", diags.len());
-    for d in diags {
-        out.push_str(&format!(
-            "  {}:{}  {}  {}\n",
-            d.path, d.line, d.severity, d.message
-        ));
-    }
-    out
-}
-
-fn format_inspection_list(items: &[InspectionInfo]) -> String {
-    if items.is_empty() {
-        return "No inspections enabled.".to_string();
-    }
-    let mut out = format!("{} inspection(s):\n", items.len());
-    for i in items {
-        out.push_str(&format!("  {}  {}  {}\n", i.id, i.name, i.severity));
-    }
-    out
-}
-
-fn truncation_note(shown: usize, meta: Option<crate::lsp::backend::Truncation>) -> String {
-    match meta {
-        Some(m) if m.truncated => {
-            format!("\n(truncated — showing {shown} of {})\n", m.total)
-        }
-        _ => String::new(),
-    }
-}
-
-fn format_type_hierarchy(root: &TypeHierarchyNode) -> String {
-    fn walk(node: &TypeHierarchyNode, depth: usize, out: &mut String) {
-        let indent = "  ".repeat(depth);
-        out.push_str(&format!(
-            "{indent}{} ({}:{})\n",
-            node.name, node.path, node.line
-        ));
-        for child in &node.children {
-            walk(child, depth + 1, out);
-        }
-    }
-    let mut out = String::new();
-    walk(root, 0, &mut out);
-    out
-}
-
 fn format_symbols_overview(items: &[SymbolOverviewItem]) -> String {
     if items.is_empty() {
         return "No symbols found.".to_string();
@@ -863,5 +611,3 @@ fn format_workspace_edit(edit: &lsp_types::WorkspaceEdit, project_root: &str) ->
 
 #[cfg(test)]
 mod tests;
-#[cfg(test)]
-mod tests_ops;

@@ -26,9 +26,10 @@ pub(crate) fn hash_project_root(root: &str) -> String {
     format!("{:016x}", hasher.finish())
 }
 
-/// Legacy path-only hash used before v3.3.2.
-/// Kept for auto-migration from old knowledge directories.
-pub(crate) fn hash_path_only(root: &str) -> String {
+/// Path-only hash (no identity markers), the baseline the composite hash
+/// must differ from when an identity exists.
+#[cfg(test)]
+fn hash_path_only(root: &str) -> String {
     let root = crate::core::pathutil::normalize_tool_path(root);
     let mut hasher = DefaultHasher::new();
     root.hash(&mut hasher);
@@ -84,62 +85,6 @@ pub(crate) fn project_identity(root: &str) -> Option<String> {
     }
 
     None
-}
-
-/// Hashes computed from the *raw* (un-normalized) project root, as produced
-/// before issue #325 was fixed. Used purely to detect and migrate stores that
-/// were keyed by a platform-specific path separator (most importantly Windows
-/// backslash paths written by the CLI). Returns both the composite and the
-/// path-only variant. Empty when the raw path already normalizes to itself, so
-/// callers can skip migration on POSIX where no split ever occurred.
-pub(crate) fn legacy_unnormalized_hashes(root: &str) -> Vec<String> {
-    let normalized = crate::core::pathutil::normalize_tool_path(root);
-    if normalized == root {
-        return Vec::new();
-    }
-
-    let mut composite = DefaultHasher::new();
-    root.hash(&mut composite);
-    if let Some(identity) = project_identity(root) {
-        identity.hash(&mut composite);
-    }
-
-    let mut path_only = DefaultHasher::new();
-    root.hash(&mut path_only);
-
-    vec![
-        format!("{:016x}", composite.finish()),
-        format!("{:016x}", path_only.finish()),
-    ]
-}
-
-/// Copies all files from `old_hash` dir to `new_hash` dir when the composite
-/// hash differs from the legacy path-only hash.  Leaves the old directory
-/// intact so sibling projects sharing the same mount path can still migrate
-/// their own data independently.
-pub(crate) fn migrate_if_needed(old_hash: &str, new_hash: &str, project_root: &str) {
-    if old_hash == new_hash {
-        return;
-    }
-
-    let Ok(data_dir) = crate::core::data_dir::lean_ctx_data_dir() else {
-        return;
-    };
-
-    let old_dir = data_dir.join("knowledge").join(old_hash);
-    let new_dir = data_dir.join("knowledge").join(new_hash);
-
-    if !old_dir.exists() || new_dir.exists() {
-        return;
-    }
-
-    if !verify_ownership(&old_dir, project_root) {
-        return;
-    }
-
-    if let Err(e) = copy_dir_contents(&old_dir, &new_dir) {
-        tracing::error!("lean-ctx: knowledge migration failed: {e}");
-    }
 }
 
 // ---------------------------------------------------------------------------
@@ -304,38 +249,6 @@ fn extract_json_string_field(path: &Path, field: &str) -> Option<String> {
 // Migration helpers
 // ---------------------------------------------------------------------------
 
-fn verify_ownership(old_dir: &Path, project_root: &str) -> bool {
-    let knowledge_path = old_dir.join("knowledge.json");
-    let Ok(content) = std::fs::read_to_string(&knowledge_path) else {
-        return true;
-    };
-
-    let stored_root: Option<String> = serde_json::from_str::<serde_json::Value>(&content)
-        .ok()
-        .and_then(|v| v.get("project_root")?.as_str().map(String::from));
-
-    match stored_root {
-        Some(stored) if !stored.is_empty() => stored == project_root,
-        _ => true,
-    }
-}
-
-fn copy_dir_contents(src: &Path, dst: &Path) -> Result<(), String> {
-    std::fs::create_dir_all(dst).map_err(|e| e.to_string())?;
-
-    for entry in std::fs::read_dir(src).map_err(|e| e.to_string())?.flatten() {
-        let src_path = entry.path();
-        let dst_path = dst.join(entry.file_name());
-
-        if src_path.is_dir() {
-            copy_dir_contents(&src_path, &dst_path)?;
-        } else {
-            std::fs::copy(&src_path, &dst_path).map_err(|e| e.to_string())?;
-        }
-    }
-    Ok(())
-}
-
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -344,14 +257,6 @@ fn copy_dir_contents(src: &Path, dst: &Path) -> Result<(), String> {
 mod tests {
     use super::*;
     use std::fs;
-
-    #[test]
-    fn path_only_matches_legacy_behaviour() {
-        let h = hash_path_only("/workspace");
-        assert_eq!(h.len(), 16);
-        let h2 = hash_path_only("/workspace");
-        assert_eq!(h, h2);
-    }
 
     #[test]
     fn windows_slash_and_backslash_hash_identically() {
@@ -374,23 +279,6 @@ mod tests {
             hash_project_root("/home/user/project/"),
             hash_project_root("/home/user/project"),
         );
-    }
-
-    #[test]
-    fn legacy_unnormalized_hashes_empty_for_clean_posix() {
-        // POSIX paths already normalize to themselves: no split ever occurred,
-        // so there is nothing to migrate.
-        assert!(legacy_unnormalized_hashes("/home/user/project").is_empty());
-    }
-
-    #[test]
-    fn legacy_unnormalized_hashes_present_for_backslash_path() {
-        // A backslash path normalizes to a different string, so the pre-fix
-        // (raw) hashes are offered for migration.
-        let legacy = legacy_unnormalized_hashes(r"D:\repos\oref-examples");
-        assert_eq!(legacy.len(), 2, "composite + path-only raw hashes");
-        // The raw path-only hash must differ from the normalized hash.
-        assert!(!legacy.contains(&hash_project_root(r"D:\repos\oref-examples")));
     }
 
     #[test]
@@ -632,89 +520,5 @@ mod tests {
         let id_a = project_identity(dir_a.path().to_str().unwrap());
         let id_b = project_identity(dir_b.path().to_str().unwrap());
         assert_ne!(id_a, id_b);
-    }
-
-    #[test]
-    fn fallback_hash_equals_legacy_when_no_identity() {
-        let h_new = hash_project_root("/some/path/without/project");
-        let h_old = hash_path_only("/some/path/without/project");
-        assert_eq!(
-            h_new, h_old,
-            "must be backward-compatible when no identity is found"
-        );
-    }
-
-    #[test]
-    fn migration_copies_files() {
-        let tmp = tempfile::tempdir().unwrap();
-        let knowledge_base = tmp.path().join("knowledge");
-        let old_hash = "aaaa000000000000";
-        let new_hash = "bbbb111111111111";
-
-        let old_dir = knowledge_base.join(old_hash);
-        let new_dir = knowledge_base.join(new_hash);
-        fs::create_dir_all(&old_dir).unwrap();
-        fs::write(
-            old_dir.join("knowledge.json"),
-            r#"{"project_root":"/workspace"}"#,
-        )
-        .unwrap();
-        fs::write(old_dir.join("gotchas.json"), "{}").unwrap();
-
-        copy_dir_contents(&old_dir, &new_dir).unwrap();
-
-        assert!(new_dir.join("knowledge.json").exists());
-        assert!(new_dir.join("gotchas.json").exists());
-        assert!(
-            old_dir.join("knowledge.json").exists(),
-            "old dir must remain intact"
-        );
-    }
-
-    #[test]
-    fn ownership_check_rejects_foreign_data() {
-        let tmp = tempfile::tempdir().unwrap();
-        let dir = tmp.path().join("knowledge").join("hash123");
-        fs::create_dir_all(&dir).unwrap();
-        fs::write(
-            dir.join("knowledge.json"),
-            r#"{"project_root":"/other/project"}"#,
-        )
-        .unwrap();
-
-        assert!(!verify_ownership(&dir, "/workspace"));
-    }
-
-    #[test]
-    fn ownership_check_accepts_matching_root() {
-        let tmp = tempfile::tempdir().unwrap();
-        let dir = tmp.path().join("knowledge").join("hash123");
-        fs::create_dir_all(&dir).unwrap();
-        fs::write(
-            dir.join("knowledge.json"),
-            r#"{"project_root":"/workspace"}"#,
-        )
-        .unwrap();
-
-        assert!(verify_ownership(&dir, "/workspace"));
-    }
-
-    #[test]
-    fn ownership_check_accepts_empty_stored_root() {
-        let tmp = tempfile::tempdir().unwrap();
-        let dir = tmp.path().join("knowledge").join("hash123");
-        fs::create_dir_all(&dir).unwrap();
-        fs::write(dir.join("knowledge.json"), r#"{"project_root":""}"#).unwrap();
-
-        assert!(verify_ownership(&dir, "/workspace"));
-    }
-
-    #[test]
-    fn ownership_check_accepts_missing_knowledge_json() {
-        let tmp = tempfile::tempdir().unwrap();
-        let dir = tmp.path().join("knowledge").join("hash123");
-        fs::create_dir_all(&dir).unwrap();
-
-        assert!(verify_ownership(&dir, "/workspace"));
     }
 }

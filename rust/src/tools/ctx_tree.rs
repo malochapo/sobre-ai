@@ -2,7 +2,6 @@ use std::path::Path;
 
 use ignore::WalkBuilder;
 
-use crate::core::protocol;
 use crate::core::tokens::count_tokens;
 
 /// Generates a compact directory tree listing with file counts.
@@ -46,12 +45,9 @@ pub fn handle(
         return (format!("{path}/ (empty directory, depth={depth})"), 0);
     }
 
-    let _mode_guard = crate::core::savings_footer::ModeGuard::new("tree");
     let raw_tokens = count_tokens(&raw_output);
-    let compact_tokens = count_tokens(&compact_output);
-    let savings = protocol::format_savings(raw_tokens, compact_tokens);
 
-    (format!("{compact_output}\n{savings}"), raw_tokens)
+    (compact_output.clone(), raw_tokens)
 }
 
 fn generate_compact_tree(

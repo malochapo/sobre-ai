@@ -1,12 +1,11 @@
 //! Shared number/string formatting helpers for the stats views.
 
-use crate::core::theme::{self, Theme};
+use crate::core::theme::Theme;
 
 use super::super::model::{CommandStats, CostModel, DayStats};
 
 pub(super) fn active_theme() -> Theme {
-    let cfg = crate::core::config::Config::load();
-    theme::load_theme(&cfg.theme)
+    crate::core::theme::Theme::default()
 }
 
 pub(super) fn format_usd(amount: f64) -> String {
@@ -18,11 +17,8 @@ pub(super) fn format_usd(amount: f64) -> String {
 }
 
 pub(super) fn usd_estimate(tokens: u64) -> String {
-    let env_model = std::env::var("LEAN_CTX_MODEL")
-        .or_else(|_| std::env::var("LCTX_MODEL"))
-        .ok();
     let pricing = crate::core::gain::model_pricing::ModelPricing::load();
-    let quote = pricing.quote(env_model.as_deref());
+    let quote = pricing.quote(None);
     let cost = tokens as f64 * quote.cost.input_per_m / 1_000_000.0;
     format_usd(cost)
 }

@@ -1,7 +1,6 @@
 use std::path::Path;
 
 use crate::core::graph_provider::{self, FileInfo, GraphProvider, SymbolInfo};
-use crate::core::protocol;
 use crate::core::tokens::count_tokens;
 
 pub(crate) fn handle(
@@ -197,7 +196,6 @@ fn render_single(sym: &SymbolInfo, gp: &GraphProvider, project_root: &str) -> (S
         .join("\n");
 
     let full_tokens = count_tokens(&content);
-    let snippet_tokens = count_tokens(&snippet);
 
     let vis = if sym.is_exported { "+" } else { "-" };
     let cc_note = symbol_cc_note(&content, &sym.file, &sym.name, sym.start_line);
@@ -219,12 +217,7 @@ fn render_single(sym: &SymbolInfo, gp: &GraphProvider, project_root: &str) -> (S
         format!("File: {}", sym.file)
     };
 
-    let savings = protocol::format_savings(full_tokens, snippet_tokens);
-
-    (
-        format!("{header}\n{ctx}\n\n{snippet}\n{savings}"),
-        full_tokens,
-    )
+    (format!("{header}\n{ctx}\n\n{snippet}"), full_tokens)
 }
 
 fn render_multiple(
@@ -253,16 +246,14 @@ fn render_multiple(
 /// flagged `(over)`. Honors the `code_health.annotate_reads` opt-out and is
 /// empty for non-functions / when tree-sitter is off.
 fn symbol_cc_note(content: &str, file: &str, name: &str, start_line: usize) -> String {
-    let cfg = crate::core::config::Config::load();
-    if !cfg.code_health.annotate_reads {
-        return String::new();
-    }
     let ext = Path::new(file)
         .extension()
         .and_then(|e| e.to_str())
         .unwrap_or("");
     match crate::core::code_health::annotate::cognitive_for_symbol(content, ext, name, start_line) {
-        Some(cc) if cc > cfg.code_health.cognitive_threshold => format!(" · cc={cc} (over)"),
+        Some(cc) if cc > crate::core::code_health::COGNITIVE_THRESHOLD => {
+            format!(" · cc={cc} (over)")
+        }
         Some(cc) => format!(" · cc={cc}"),
         None => String::new(),
     }

@@ -1,44 +1,10 @@
 use serde_json::Value;
 
-pub fn get_str_array(
-    args: Option<&serde_json::Map<String, Value>>,
-    key: &str,
-) -> Option<Vec<String>> {
-    let val = args?.get(key)?;
-
-    // Normal path: native JSON array.
-    if let Some(arr) = val.as_array() {
-        let mut out = Vec::with_capacity(arr.len());
-        for v in arr {
-            out.push(v.as_str()?.to_string());
-        }
-        return Some(out);
-    }
-
-    // Fallback: some MCP bridges serialize arrays as JSON-encoded strings.
-    // Example: { "paths": "[\"src/main.rs\",\"src/lib.rs\"]" }
-    if let Some(s) = val.as_str()
-        && let Ok(Value::Array(arr)) = serde_json::from_str::<Value>(s)
-    {
-        let mut out = Vec::with_capacity(arr.len());
-        for v in &arr {
-            out.push(v.as_str()?.to_string());
-        }
-        return Some(out);
-    }
-
-    None
-}
-
 pub fn get_str(args: Option<&serde_json::Map<String, Value>>, key: &str) -> Option<String> {
     args?
         .get(key)?
         .as_str()
         .map(std::string::ToString::to_string)
-}
-
-pub fn get_int(args: Option<&serde_json::Map<String, Value>>, key: &str) -> Option<i64> {
-    args?.get(key)?.as_i64()
 }
 
 pub fn get_bool(args: Option<&serde_json::Map<String, Value>>, key: &str) -> Option<bool> {

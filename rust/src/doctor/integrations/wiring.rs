@@ -4,25 +4,7 @@
 #[allow(clippy::wildcard_imports)]
 use super::*;
 
-/// Validates an optionally-pinned `LEAN_CTX_DATA_DIR` in an MCP server entry.
-///
-/// lean-ctx no longer pins the data dir into agent configs (GH #408): it
-/// auto-detects its per-category dirs (config/data/state/cache) at runtime, and a
-/// pinned `LEAN_CTX_DATA_DIR` would force single-dir mode and collapse
-/// config/state/cache onto the data dir. So an absent env block is healthy. A
-/// config that still carries the var (legacy install, intentional relocation)
-/// must point at the resolved data dir — a stale pin is genuine drift.
-pub(crate) fn pinned_data_dir_ok(env_obj: Option<&serde_json::Value>, data_dir: &str) -> bool {
-    match env_obj
-        .and_then(|env| env.get("LEAN_CTX_DATA_DIR"))
-        .and_then(|d| d.as_str())
-    {
-        Some(d) => d.trim() == data_dir.trim(),
-        None => true,
-    }
-}
-
-pub(crate) fn check_mcp_json(path: &std::path::Path, binary: &str, data_dir: &str) -> NamedCheck {
+pub(crate) fn check_mcp_json(path: &std::path::Path, binary: &str) -> NamedCheck {
     if !path.exists() {
         return NamedCheck {
             name: "MCP config".to_string(),
@@ -64,9 +46,8 @@ pub(crate) fn check_mcp_json(path: &std::path::Path, binary: &str, data_dir: &st
         .get("command")
         .and_then(|c| c.as_str())
         .is_some_and(|c| cmd_matches_expected(c, binary));
-    let env_ok = pinned_data_dir_ok(e.get("env"), data_dir);
 
-    let ok = cmd_ok && env_ok;
+    let ok = cmd_ok;
     let detail = if ok {
         format!("ok ({})", path.display())
     } else {
@@ -77,26 +58,6 @@ pub(crate) fn check_mcp_json(path: &std::path::Path, binary: &str, data_dir: &st
         ok,
         detail,
     }
-}
-
-/// JetBrains AI Assistant has no auto-wiring: lean-ctx writes a ready-to-paste
-/// snippet to `~/.jb-mcp.json`, which the user imports once via the IDE. The
-/// `doctor` verdict therefore verifies the snippet exists and is current, while
-/// making the required manual step explicit instead of implying auto-wiring.
-pub(crate) fn check_jetbrains_snippet(
-    path: &std::path::Path,
-    binary: &str,
-    data_dir: &str,
-) -> NamedCheck {
-    let mut c = check_mcp_json(path, binary, data_dir);
-    c.name = "MCP snippet".to_string();
-    if c.ok {
-        c.detail = format!(
-            "ready — paste into Settings → Tools → AI Assistant → MCP ({})",
-            path.display()
-        );
-    }
-    c
 }
 
 pub(crate) fn cmd_matches_expected(cmd: &str, portable: &str) -> bool {
@@ -229,11 +190,9 @@ pub(crate) fn last_ctx_call_ago() -> Option<String> {
         .lines()
         .rev()
         .filter_map(|l| serde_json::from_str::<crate::core::events::LeanCtxEvent>(l).ok())
-        .find_map(|ev| match ev.kind {
-            crate::core::events::EventKind::ToolCall { tool, .. } if tool.starts_with("ctx_") => {
-                Some(ev.timestamp)
-            }
-            _ => None,
+        .find_map(|ev| {
+            let crate::core::events::EventKind::ToolCall { tool, .. } = ev.kind;
+            tool.starts_with("ctx_").then_some(ev.timestamp)
         })?;
     let parsed = chrono::NaiveDateTime::parse_from_str(&ts, "%Y-%m-%dT%H:%M:%S%.3f").ok()?;
     let delta = chrono::Local::now()
@@ -258,19 +217,7 @@ pub(crate) fn humanize_ago(d: chrono::Duration) -> String {
 pub(crate) fn rules_path_for(name: &str, home: &std::path::Path) -> Option<std::path::PathBuf> {
     match name {
         "Windsurf" => Some(home.join(".codeium/windsurf/rules/lean-ctx.md")),
-        "Cline" => Some(home.join(".cline/rules/lean-ctx.md")),
-        "Roo Code" => Some(home.join(".roo/rules/lean-ctx.md")),
         "OpenCode" => Some(home.join(".config/opencode/AGENTS.md")),
-        "AWS Kiro" => Some(home.join(".kiro/steering/lean-ctx.md")),
-        "Verdent" => Some(home.join(".verdent/rules/lean-ctx.md")),
-        "Trae" => Some(home.join(".trae/rules/lean-ctx.md")),
-        "Qwen Code" => Some(home.join(".qwen/rules/lean-ctx.md")),
-        "Amazon Q Developer" => Some(home.join(".aws/amazonq/rules/lean-ctx.md")),
-        "JetBrains IDEs" => Some(home.join(".jb-rules/lean-ctx.md")),
-        "Antigravity" => Some(home.join(".gemini/antigravity/rules/lean-ctx.md")),
-        "Augment CLI" | "Augment (VS Code)" => Some(home.join(".augment/rules/lean-ctx.md")),
-        "Pi Coding Agent" => Some(home.join(".pi/rules/lean-ctx.md")),
-        "Crush" => Some(home.join(".config/crush/rules/lean-ctx.md")),
         _ => None,
     }
 }

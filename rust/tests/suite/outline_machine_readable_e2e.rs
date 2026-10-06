@@ -7,7 +7,7 @@
 //! fires on the next human-facing call.
 //!
 //! Determinism: the project root is pinned via `LEAN_CTX_PROJECT_ROOT` (no
-//! async client-roots race) and the test polls `ctx_overview` — which returns
+//! async client-roots race) and the test polls `ctx_compose` (no task) — which returns
 //! the project overview *without* consuming the briefing flag — until the graph
 //! is loaded in-process. Only then does it run the discriminating sequence
 //! (json call, then two text calls), so the graph-build race cannot make this
@@ -218,18 +218,20 @@ impl McpSession {
         text_content(&resp).unwrap_or_default()
     }
 
-    /// Poll `ctx_overview` until the project graph is loaded in-process. This
-    /// tool returns `None` from the autonomy pre-hook *before* the briefing flag
-    /// is touched, so warming this way never consumes the once-per-session slot.
+    /// Poll `ctx_compose` without a task (the session-start overview) until the
+    /// project graph is ready. That call counts as the session briefing, so a
+    /// session warmed this way gets no further auto-context.
     fn warm_overview(&mut self) {
         for i in 0..50 {
-            let overview = self.call(1000 + i, "ctx_overview", &json!({}));
-            if overview.contains("PROJECT OVERVIEW") {
+            let overview = self.call(1000 + i, "ctx_compose", &json!({}));
+            // The partial overview (graph still indexing) carries the same
+            // header; only the graph-backed one counts as ready.
+            if overview.contains("PROJECT OVERVIEW") && !overview.contains("(partial") {
                 return;
             }
             std::thread::sleep(Duration::from_millis(100));
         }
-        panic!("ctx_overview never reported a ready project graph");
+        panic!("ctx_compose never reported a ready project graph");
     }
 
     fn shutdown(mut self) {
@@ -253,10 +255,14 @@ fn json_first_call_is_pure_and_preserves_wakeup_briefing() {
     let sandbox = McpSandbox::new();
     sandbox.build_index();
 
+    // Warm the project graph in a throwaway session so the briefing content is
+    // ready deterministically: the overview call closes that session's
+    // briefing slot, so the assertions run in a fresh session.
+    let mut warmup = McpSession::start(&sandbox);
+    warmup.warm_overview();
+    warmup.shutdown();
+
     let mut session = McpSession::start(&sandbox);
-    // Warm the in-process graph so the briefing content is ready deterministically
-    // (without consuming the once-per-session briefing flag).
-    session.warm_overview();
 
     // Call A is json (machine-readable) and is the first *flag-eligible* tool
     // call; B and C are plain-text outlines.
@@ -303,5 +309,23 @@ fn json_first_call_is_pure_and_preserves_wakeup_briefing() {
     assert!(
         !call_c.contains("AUTO CONTEXT"),
         "briefing must fire only once per session; the third call must be clean:\n{call_c}"
+    );
+}
+
+#[test]
+fn session_overview_call_is_the_only_project_summary() {
+    let sandbox = McpSandbox::new();
+    sandbox.build_index();
+
+    let mut session = McpSession::start(&sandbox);
+    // The ready overview is the session's project summary.
+    session.warm_overview();
+    let next = session.call(2, "ctx_outline", &json!({ "path": "sample.rs" }));
+    session.shutdown();
+
+    assert!(
+        !next.contains("AUTO CONTEXT"),
+        "the overview already summarized the project; the next call must not \
+         repeat it as a briefing:\n{next}"
     );
 }

@@ -72,9 +72,10 @@ MANAGE:
     lean-ctx status                Am I connected? (quick check)
     lean-ctx uninstall             Remove lean-ctx cleanly
 
-SAFETY (env vars):
-    LEAN_CTX_DISABLED=1            Bypass ALL compression + prevent the shell hook from loading
-    LEAN_CTX_RAW=1                 Pass output through unmodified (same as --raw)
+ESCAPE HATCHES:
+    lean-ctx raw \"command\"         Run one command with unmodified output
+    lean-ctx-off                   Turn the shell aliases off for this shell
+    shell_hook_disabled = true     (config.toml) Never install the shell hook
 
 MORE:
     lean-ctx help all              Full command reference (every subcommand)
@@ -127,7 +128,6 @@ COMMANDS:
     gain --by-tool [--json]        Per-tool savings breakdown (calls, tokens, USD, %)
     gain --heatmap                 Top files by tokens saved
     gain --json                    Raw JSON export of all stats
-    gain --pipeline                Pipeline compression stats
     gain --opportunity             Find missed savings in shell history (replaces discover/ghost)
     gain --raw [--json]            Plain stats output (machine-friendly)
     gain --reset                   Clear all token savings data
@@ -137,11 +137,11 @@ COMMANDS:
     gain --wrapped                 Recap card (terminal)
     gain --no-cache-adjust         Report raw counts, without the cache adjustment
     graph --heatmap                Per-file heat: token count x graph connections
-    learning [status|export]       Adaptive-learning state: inspect, export
     pack --pr                      PR Context Pack (changed files, impact, tests, artifacts)
     snapshot create|list|show|verify|restore|publish|import  Context Time Machine: git-anchored, signed snapshots; replay, resume + share
     index <status|build|build-full|watch> [--force]  Codebase index utilities
     embeddings <status|provision>  Managed ONNX Runtime for semantic embeddings (official CPU build, sha256-pinned)
+    pricing <status|refresh>       Live model prices: fetched only on `refresh` (openrouter.ai, LiteLLM map)
     cep                            CEP report (compression metrics, cache, modes, trends)
     verify-cache [path] [--json]   Prove the session cache: re-read collapses to a ~13-token stub
     health [path] [--json] [--gate]  Code-health report: cognitive complexity, naming, navigability score + token tax
@@ -156,7 +156,6 @@ COMMANDS:
     sessions [list|show|delete|cleanup]  Manage saved session snapshots — PLURAL; see 'session' for live memory (alias: session-store)
     benchmark run [path] [--json]  Run real benchmark on project files
     benchmark report [path]        Generate shareable Markdown report
-    benchmark compare [--output F] Head-to-head comparison vs competitors
     benchmark scorecard [--json]   Reproducible savings+recall+latency scorecard
     status [--json]                Show setup + MCP + rules status
     init [--global]                Install shell aliases (zsh/bash/fish/PowerShell)
@@ -188,11 +187,7 @@ COMMANDS:
     compress [--signatures]        Context compression checkpoint
     compress diff <file|-> [--shell \"cmd\"] [--json]  Preview compression: original vs emitted + token diff
     config                         Show/edit configuration (~/.lean-ctx/config.toml)
-    security [status]              Show security posture (containment + secret defense)
-    security secrets <on|off>      Toggle secret/.env redaction (separate from containment)
-    tools [minimal|standard|power|show|list]  How many MCP tools your agent sees
-    profile [list|show|diff|create|set|suggest]  Manage context profiles (suggest = recommend from repo)
-    theme [list|set|export|import] Customize terminal colors and themes
+    tools health                   Token budget and tool-surface report
     tee [list|clear|show <file>|last] Manage output tee files (~/.lean-ctx/tee/)
     compression [off|lite|standard|max]  Set compression level (saves 25-65% tokens; alias: terse)
     slow-log [list|clear]          Show/clear slow command log (~/.lean-ctx/slow-commands.log)
@@ -203,20 +198,16 @@ COMMANDS:
     codesign-setup                 macOS: one-time stable signing identity (stops repeating TCC prompt, #356)
     gotchas [list|clear|export|stats] Bug Memory: view/manage auto-detected error patterns
     buddy [show|stats|ascii|json]  Token Guardian: your data-driven coding companion
-    doctor integrations [--json]   Integration health checks (Cursor/Claude Code/CodeBuddy)
+    doctor integrations [--json]   Integration health checks (Cursor/Claude Code)
     doctor [--fix] [--json]        Run diagnostics (and optionally repair)
-    doctor --migrate-check         v1.0 migration readiness audit (config, deprecations, data)
     smells [scan|summary|rules|file] [--rule=<r>] [--path=<p>] [--json]
                                    Code smell detection (Property Graph, 8 rules)
     control <action> [--target=<t>] Context field manipulation (exclude/pin/priority)
     plan <task> [--budget=N]       Context planning (optimal Phi-scored context plan)
     compile [--mode=<m>] [--budget=N] Context compilation (knapsack + Boltzmann)
     visualize [--output F] [--open] Generate interactive HTML report (D3.js graph)
-    addon list|search|info|add|remove
-                                   Community addons: wire external MCP servers via the gateway
     rules sync|diff|lint|status|init
                                    ContextOps: cross-agent rules governance
-    policy list|show|validate|enforce  Context policy packs
     uninstall [--keep-config] [--keep-binary] [--dry-run]
                                    Full clean removal: stops all processes, removes hooks,
                                    MCP configs, rules, autostart, data, AND the binary itself.
@@ -257,13 +248,6 @@ READ MODES:
     diff                           Changed lines only
     lines:N-M                      Specific line ranges (e.g. lines:10-50,80)
 
-ENVIRONMENT:
-    LEAN_CTX_DISABLED=1            Bypass ALL compression + prevent shell hook from loading
-    LEAN_CTX_ENABLED=0             Prevent shell hook auto-start (lean-ctx-on still works)
-    LEAN_CTX_RAW=1                 Same as --raw for current command
-    LEAN_CTX_AUTONOMY=false        Disable autonomous features
-    LEAN_CTX_COMPRESS=1            Force compression (even for excluded commands)
-
 OPTIONS:
     --version, -V                  Show version
     --help, -h                     Show this help
@@ -300,14 +284,11 @@ EXAMPLES:
     lean-ctx-on                    Enable shell aliases in track mode (full output + stats)
     lean-ctx-off                   Disable all shell aliases
     lean-ctx-mode track            Track mode: full output, stats recorded (default)
-    LEAN_CTX_DEBUG=1 lean-ctx-on   Show shell hook mode-change notices
     lean-ctx-mode compress         Compress mode: all output compressed (power users)
     lean-ctx-mode off              Same as lean-ctx-off
     lean-ctx-status                Show whether compression is active
-    lean-ctx init --agent pi       Install Pi Coding Agent extension
-  lean-ctx init --agent grok        Configure Grok (xAI) MCP + hooks
     lean-ctx doctor                Check PATH, config, MCP, and dashboard port
-    lean-ctx doctor integrations   Premium integration checks (Cursor/Claude Code/CodeBuddy)
+    lean-ctx doctor integrations   Premium integration checks (Cursor/Claude Code)
     lean-ctx doctor --fix --json   Repair + machine-readable report
     lean-ctx status --json         Machine-readable current status
     lean-ctx session task \"implement auth\"

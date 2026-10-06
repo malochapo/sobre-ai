@@ -10,7 +10,7 @@
 //! 3. PowerShell `join_command` does not wrap full command strings with & '...'
 
 use lean_ctx::core::terse::dictionaries::{DictLevel, GIT, apply_dictionaries};
-use lean_ctx::shell::compress::{has_structural_output, is_verbatim_output};
+use lean_ctx::shell::compress::is_verbatim_output;
 use lean_ctx::shell::join_command_for;
 
 // ---------------------------------------------------------------------------
@@ -179,14 +179,6 @@ fn scenario_git_log_still_compressible() {
     );
 }
 
-#[test]
-fn scenario_git_diff_is_structural_not_verbatim_directly() {
-    assert!(
-        has_structural_output("git diff --cached"),
-        "git diff should be structural"
-    );
-}
-
 // ---------------------------------------------------------------------------
 // Scenario 3: PowerShell quoting edge cases
 // ---------------------------------------------------------------------------
@@ -226,16 +218,6 @@ fn scenario_powershell_split_args_still_quoted() {
     assert!(
         result.contains("'feat(result-sheets): add sheet'"),
         "special chars in commit message should be quoted: {result}"
-    );
-}
-
-#[test]
-fn scenario_powershell_single_simple_command_uses_call_operator() {
-    let args: Vec<String> = vec!["git".into()];
-    let result = join_command_for(&args, "-Command");
-    assert_eq!(
-        result, "& git",
-        "single simple command should use call operator"
     );
 }
 

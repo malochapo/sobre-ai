@@ -140,9 +140,7 @@ fn confirm_knowledge_overwrite(
     let Some(knowledge) = ProjectKnowledge::load(project_root) else {
         return true;
     };
-    let Ok(policy) = crate::tools::knowledge_shared::load_policy_or_error() else {
-        return true;
-    };
+    let policy = crate::core::memory_policy::MemoryPolicy::default();
     let Some(contradiction) = knowledge.check_contradiction(category, key, value, &policy) else {
         return true;
     };
@@ -420,13 +418,7 @@ fn cmd_import(args: &[String], project_root: &str) {
         return;
     }
 
-    let policy = match crate::tools::knowledge_shared::load_policy_or_error() {
-        Ok(p) => p,
-        Err(e) => {
-            eprintln!("{e}");
-            std::process::exit(1);
-        }
-    };
+    let policy = crate::core::memory_policy::MemoryPolicy::default();
 
     let session_id = cli_session_id();
     // #326/#594-A4: import under the project lock so a parallel CLI/daemon/MCP

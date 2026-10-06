@@ -592,12 +592,9 @@ fn log_source_selection(
     start: std::time::Instant,
 ) {
     let elapsed_ms = start.elapsed().as_millis();
-    if std::env::var("LCTX_DEBUG").is_ok() {
-        eprintln!(
-            "[graph_provider] source={source:?} nodes={nodes} edges={edges} resolve_ms={elapsed_ms}"
-        );
-    }
-    let _ = (source, nodes, edges, elapsed_ms);
+    tracing::debug!(
+        "[graph_provider] source={source:?} nodes={nodes} edges={edges} resolve_ms={elapsed_ms}"
+    );
 }
 
 /// Triggers a background graph build once per process when the graph is empty.

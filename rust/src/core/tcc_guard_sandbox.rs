@@ -179,8 +179,7 @@ fn sandbox_exec_usable(profile: &str) -> bool {
 /// dir than the CLI that installed it: it never sees the user's `config.toml`
 /// edits (the live-upstream reload reads an empty/foreign config) and derives a
 /// mismatched session token. Baking the exact resolved dirs into the plist makes
-/// the managed process always agree with the CLI, on every platform layout
-/// (legacy `~/.lean-ctx`, mixed, or split XDG).
+/// the managed process always agree with the CLI, whatever the layout.
 ///
 /// Returns the full `<key>EnvironmentVariables</key><dict>…</dict>` block
 /// (4-space indented, trailing newline) or an empty string when nothing resolves.

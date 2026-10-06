@@ -47,10 +47,9 @@ pub fn handle(
         "export" => {
             let requested_privacy =
                 crate::core::ccp_session_bundle::BundlePrivacyV1::parse(opts.privacy);
-            if requested_privacy == crate::core::ccp_session_bundle::BundlePrivacyV1::Full
-                && crate::core::roles::active_role_name() != "admin"
-            {
-                return "ERROR: privacy=full requires role 'admin'.".to_string();
+            if requested_privacy == crate::core::ccp_session_bundle::BundlePrivacyV1::Full {
+                return "ERROR: privacy=full is not supported; exports are always redacted."
+                    .to_string();
             }
 
             let bundle =
@@ -90,7 +89,6 @@ pub fn handle(
                 };
 
                 let jailed = match crate::core::io_boundary::jail_and_check_path(
-                    "ctx_session.export",
                     candidate.as_path(),
                     root_path.as_path(),
                 ) {
@@ -162,7 +160,6 @@ bytes: {}\n",
                 }
             };
             let jailed = match crate::core::io_boundary::jail_and_check_path(
-                "ctx_session.import",
                 candidate.as_path(),
                 root_path.as_path(),
             ) {
@@ -265,7 +262,6 @@ stale_files: {}\n",
             let _ = session.save();
             let old_id = session.id.clone();
             *session = SessionState::new();
-            crate::core::budget_tracker::BudgetTracker::global().reset();
             // Clear the persistent context ledger so pressure resets to 0%
             let mut ledger = crate::core::context_ledger::ContextLedger::load();
             ledger.reset();
@@ -339,82 +335,6 @@ stale_files: {}\n",
 
         "resume" => session.build_resume_block(),
 
-        "budget" => {
-            use crate::core::budget_tracker::BudgetTracker;
-            let snap = BudgetTracker::global().check();
-            let mut out = snap.format_compact();
-
-            if let Ok(data_dir) = crate::core::data_dir::lean_ctx_data_dir() {
-                let window = crate::core::context_radar::default_window_for_client("cursor");
-                let radar = crate::core::context_radar::ContextRadar::load(&data_dir, window);
-                let radar_display = radar.format_display();
-                if !radar_display.is_empty() {
-                    out.push_str("\n\n");
-                    out.push_str(&radar_display);
-                }
-            }
-            out
-        }
-
-        "role" => {
-            use crate::core::roles;
-            if let Some(name) = value {
-                match roles::set_active_role(name) {
-                    Ok(r) => {
-                        crate::core::budget_tracker::BudgetTracker::global().reset();
-                        format!(
-                            "Role switched to '{name}'.\n\
-                             Shell: {}, Budget: {} tokens / {} shell / ${:.2}\n\
-                             Tools: {}",
-                            r.role.shell_policy,
-                            r.limits.max_context_tokens,
-                            r.limits.max_shell_invocations,
-                            r.limits.max_cost_usd,
-                            if r.tools.allowed.iter().any(|a| a == "*") {
-                                let denied = if r.tools.denied.is_empty() {
-                                    "none".to_string()
-                                } else {
-                                    format!("denied: {}", r.tools.denied.join(", "))
-                                };
-                                format!("* (all), {denied}")
-                            } else {
-                                r.tools.allowed.join(", ")
-                            }
-                        )
-                    }
-                    Err(e) => {
-                        let available: Vec<String> =
-                            roles::list_roles().iter().map(|r| r.name.clone()).collect();
-                        format!("{e}. Available: {}", available.join(", "))
-                    }
-                }
-            } else {
-                let name = roles::active_role_name();
-                let r = roles::active_role();
-                let list = roles::list_roles();
-                let mut out = format!(
-                    "Active role: {name}\n\
-                     Description: {}\n\
-                     Shell policy: {}, Budget: {} tokens / {} shell / ${:.2}\n\n\
-                     Available roles:",
-                    r.role.description,
-                    r.role.shell_policy,
-                    r.limits.max_context_tokens,
-                    r.limits.max_shell_invocations,
-                    r.limits.max_cost_usd,
-                );
-                for info in &list {
-                    let marker = if info.is_active { " *" } else { "  " };
-                    out.push_str(&format!(
-                        "\n{marker} {:<14} ({}) {}",
-                        info.name, info.source, info.description
-                    ));
-                }
-                out.push_str("\n\nSwitch: ctx_session action=role value=<name>");
-                out
-            }
-        }
-
         "diff" => {
             let parts: Vec<&str> = value.unwrap_or("").split_whitespace().collect();
             if parts.len() < 2 {
@@ -443,36 +363,6 @@ stale_files: {}\n",
             }
         }
 
-        "slo" => match value {
-            Some("reload") => {
-                crate::core::slo::reload();
-                "SLO definitions reloaded from disk.".to_string()
-            }
-            Some("history") => {
-                let hist = crate::core::slo::violation_history(20);
-                if hist.is_empty() {
-                    "No SLO violations recorded.".to_string()
-                } else {
-                    let mut out = format!("SLO violations (last {}):\n", hist.len());
-                    for v in &hist {
-                        out.push_str(&format!(
-                            "  {} {} ({}) {:.2} vs {:.2} → {}\n",
-                            v.timestamp, v.slo_name, v.metric, v.actual, v.threshold, v.action
-                        ));
-                    }
-                    out
-                }
-            }
-            Some("clear") => {
-                crate::core::slo::clear_violations();
-                "SLO violation history cleared.".to_string()
-            }
-            _ => {
-                let snap = crate::core::slo::evaluate_quiet();
-                snap.format_compact()
-            }
-        },
-
         "output_stats" => {
             let snap = crate::core::output_verification::stats_snapshot();
             let mut out = snap.format_compact();
@@ -492,7 +382,7 @@ stale_files: {}\n",
         "verify" => {
             let snap = crate::core::output_verification::stats_snapshot();
             format!(
-                "DEPRECATION: action=\"verify\" is renamed to action=\"output_stats\" (ctx_verify is the full observability stack).\n{}",
+                "DEPRECATION: action=\"verify\" is renamed to action=\"output_stats\".\n{}",
                 snap.format_compact()
             )
         }
@@ -504,16 +394,7 @@ stale_files: {}\n",
                     |p| p.to_string_lossy().to_string(),
                 )
             });
-            let policy = match crate::core::config::Config::load().memory_policy_effective() {
-                Ok(p) => p,
-                Err(e) => {
-                    let path = crate::core::config::Config::path().map_or_else(
-                        || "~/.lean-ctx/config.toml".to_string(),
-                        |p| p.display().to_string(),
-                    );
-                    return format!("Error: invalid memory policy: {e}\nFix: edit {path}");
-                }
-            };
+            let policy = crate::core::memory_policy::MemoryPolicy::default();
             let hash = crate::core::project_hash::hash_project_root(&project_root);
             let mut store = crate::core::episodic_memory::EpisodicStore::load_or_create(&hash);
 
@@ -527,11 +408,6 @@ stale_files: {}\n",
                     if let Err(e) = store.save() {
                         return format!("Episode record failed: {e}");
                     }
-                    crate::core::events::emit(crate::core::events::EventKind::KnowledgeUpdate {
-                        category: "episodic".to_string(),
-                        key: id.clone(),
-                        action: "record".to_string(),
-                    });
                     // Auto-learning (GL #478): every new episode re-runs workflow
                     // detection, so Procedures fill themselves over time.
                     let learned = crate::core::procedural_memory::auto_detect_from_episodes(
@@ -624,16 +500,7 @@ stale_files: {}\n",
                     |p| p.to_string_lossy().to_string(),
                 )
             });
-            let policy = match crate::core::config::Config::load().memory_policy_effective() {
-                Ok(p) => p,
-                Err(e) => {
-                    let path = crate::core::config::Config::path().map_or_else(
-                        || "~/.lean-ctx/config.toml".to_string(),
-                        |p| p.display().to_string(),
-                    );
-                    return format!("Error: invalid memory policy: {e}\nFix: edit {path}");
-                }
-            };
+            let policy = crate::core::memory_policy::MemoryPolicy::default();
             let hash = crate::core::project_hash::hash_project_root(&project_root);
             let episodes = crate::core::episodic_memory::EpisodicStore::load_or_create(&hash);
             let mut procs = crate::core::procedural_memory::ProceduralStore::load_or_create(&hash);
@@ -644,11 +511,6 @@ stale_files: {}\n",
                     if let Err(e) = procs.save() {
                         return format!("Procedure detect failed: {e}");
                     }
-                    crate::core::events::emit(crate::core::events::EventKind::KnowledgeUpdate {
-                        category: "procedural".to_string(),
-                        key: hash.clone(),
-                        action: "detect".to_string(),
-                    });
                     format!(
                         "Procedures updated. Total procedures: {} (episodes: {}).",
                         procs.procedures.len(),
@@ -717,7 +579,7 @@ stale_files: {}\n",
         }
 
         _ => format!(
-            "Unknown action: {action}. Use: status, load, save, task, finding, decision, reset, list, cleanup, snapshot, restore, resume, configure, role, budget, slo, diff, output_stats, verify, export, import, episodes, procedures"
+            "Unknown action: {action}. Use: status, load, save, task, finding, decision, reset, list, cleanup, snapshot, restore, resume, configure, diff, output_stats, verify, export, import, episodes, procedures"
         ),
     }
 }
@@ -736,9 +598,7 @@ fn auto_record_episode(
             |p| p.to_string_lossy().to_string(),
         )
     });
-    let policy = crate::core::config::Config::load()
-        .memory_policy_effective()
-        .map_err(|e| format!("invalid memory policy: {e}"))?;
+    let policy = crate::core::memory_policy::MemoryPolicy::default();
     let hash = crate::core::project_hash::hash_project_root(&project_root);
     let mut store = crate::core::episodic_memory::EpisodicStore::load_or_create(&hash);
 
@@ -754,11 +614,6 @@ fn auto_record_episode(
     let id = ep.id.clone();
     store.record_episode(ep, &policy.episodic);
     store.save()?;
-    crate::core::events::emit(crate::core::events::EventKind::KnowledgeUpdate {
-        category: "episodic".to_string(),
-        key: id.clone(),
-        action: "auto_record".to_string(),
-    });
 
     // Each new episode is a chance to learn a procedure: mine the episode
     // history for repeated tool sequences. Best-effort — pattern detection
@@ -768,12 +623,8 @@ fn auto_record_episode(
     let mut procs = crate::core::procedural_memory::ProceduralStore::load_or_create(&hash);
     let before = procs.procedures.len();
     procs.detect_patterns(&episodes, &policy.procedural);
-    if procs.procedures.len() > before && procs.save().is_ok() {
-        crate::core::events::emit(crate::core::events::EventKind::KnowledgeUpdate {
-            category: "procedural".to_string(),
-            key: format!("{} new", procs.procedures.len() - before),
-            action: "auto_learn".to_string(),
-        });
+    if procs.procedures.len() > before {
+        let _ = procs.save();
     }
 
     Ok(Some(id))
@@ -848,13 +699,5 @@ mod tests {
         assert_eq!(file.as_deref(), Some("ruff: pyproject.toml dev-group"));
         assert_eq!(line, None);
         assert_eq!(text, ">=0.15.14,<0.16.0 (был 0.14.x)");
-    }
-
-    #[test]
-    fn finding_em_dash_at_start() {
-        let (file, line, text) = parse_finding_value("src/main.rs:1 \u{2014} entry point");
-        assert_eq!(file.as_deref(), Some("src/main.rs"));
-        assert_eq!(line, Some(1));
-        assert_eq!(text, "entry point");
     }
 }

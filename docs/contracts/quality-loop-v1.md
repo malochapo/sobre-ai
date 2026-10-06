@@ -2,7 +2,7 @@
 
 Status: experimental (GL #494)
 Owner: core engine
-Consumers: `auto_mode_resolver`, `ctx_edit`, `ctx_metrics`
+Consumers: `auto_mode_resolver`, `ctx_patch`
 
 ## Problem
 
@@ -15,8 +15,9 @@ compressed exactly the same way.
 
 ## Signals
 
-Edit outcomes are recorded by `ctx_edit` (both the MCP tool and the in-process
-`tools::ctx_edit::handle` path) via `core::edit_quality::record_edit_outcome`,
+Edit outcomes are recorded by the edit engine behind `ctx_patch`
+(`tools/impl_edit.rs`, via `core::edit_quality::record_edit_outcome`; anchored
+edits via `record_anchored_edit_outcome`),
 keyed by the **mode of the last lean-ctx read of that file** (session cache
 `last_mode`). Only two outcomes carry signal:
 
@@ -39,7 +40,7 @@ escalation for that path. The **next** `mode=auto` resolution of the same
 path returns `full` (resolver source: `edit_fail_escalation`), then the
 escalation is consumed. Pending escalations expire after **1 hour**.
 
-This complements the immediate in-response escalation that `ctx_edit` already
+This complements the immediate in-response escalation that the edit engine already
 appends (full content in the error message): the in-response copy serves the
 retry, the pending escalation serves the next independent read.
 
@@ -64,7 +65,7 @@ affect `py|map` or `rs|signatures`.
 
 ## Persistence
 
-`~/.lean-ctx/edit_quality.json` (respects `LEAN_CTX_DATA_DIR`), atomic
+`edit_quality.json` in the data directory (respects `LEAN_CTX_DATA_DIR`), atomic
 tmp+rename writes, flushed every 10 recordings and on server shutdown.
 
 Bounds:
@@ -78,10 +79,8 @@ Bounds:
 
 ## Observability
 
-`ctx_metrics` prints an `Edit quality (compression-correlated)` section: per
-pair fails/successes/fail-rate, the `[risky -> full]` marker, plus served and
-pending escalation counts. Auto-mode resolutions show up in the existing
-`Auto-mode sources` line as `edit_fail_escalation` and `edit_quality_penalty`.
+The store has no report surface; its effect shows in auto-mode resolution,
+where the sources `edit_fail_escalation` and `edit_quality_penalty` appear.
 
 ## Invariants
 

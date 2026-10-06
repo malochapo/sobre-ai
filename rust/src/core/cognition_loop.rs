@@ -20,6 +20,12 @@ const EDGE_STALE_DAYS: i64 = 30;
 // Observation synthesis (#802/cognition): how many facts an entity needs before it
 // earns a summary, and the digest size caps that keep the value byte-stable.
 const SYNTHESIS_MAX_MEMBERS: usize = 6;
+/// Minimum facts an entity needs before observation synthesis (#802) writes a
+/// summary.
+const SYNTHESIS_MIN_CLUSTER: usize = 3;
+/// Steps of the cognition loop run by the scheduler and `ctx_knowledge`
+/// (synthesis is step 9).
+pub const MAX_STEPS: u8 = 9;
 const SYNTHESIS_VALUE_MAX: usize = 400;
 
 #[derive(Debug, Clone, Default)]
@@ -72,11 +78,8 @@ pub fn run_cognition_loop(project_root: &str, max_steps: u8) -> CognitionLoopRep
         return report;
     }
 
-    let config = crate::core::config::Config::load();
-    let Ok(policy) = config.memory_policy_effective() else {
-        return report;
-    };
-    let synth_min_cluster = config.autonomy.cognition_synthesis_min_cluster.max(1);
+    let policy = crate::core::memory_policy::MemoryPolicy::default();
+    let synth_min_cluster = SYNTHESIS_MIN_CLUSTER;
     let can_run = |step| max_steps >= step && !crate::core::memory_guard::abort_requested();
 
     // Knowledge read-modify-write under the shared in-process + cross-process
@@ -467,8 +470,6 @@ fn step_synthesize_observations(
         members.truncate(SYNTHESIS_MAX_MEMBERS);
 
         let summary = synthesize_observation_value(&entity, &members);
-        // Optional LLM refinement (opt-in via `llm.enabled`); deterministic fallback.
-        let summary = crate::core::llm_enhance::enhance_observation(&entity, &summary);
         // An observation never out-confidences its own evidence: mean, capped.
         let mean = members.iter().map(|m| m.2).sum::<f32>() / members.len() as f32;
         knowledge.remember(

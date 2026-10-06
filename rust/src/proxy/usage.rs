@@ -22,7 +22,7 @@ use serde_json::Value;
 
 /// LLM provider whose response shape a [`Scanner`] understands.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Provider {
+pub(crate) enum Provider {
     Anthropic,
     /// Covers both Chat Completions and the Responses API (same `usage` dialects
     /// are detected by field name).
@@ -31,11 +31,11 @@ pub enum Provider {
 }
 
 impl Provider {
-    /// Maps the proxy's `provider_label` (`"Anthropic"`, `"OpenAI"`/`"ChatGPT"`, else Gemini).
-    pub fn from_label(label: &str) -> Self {
+    /// Maps the proxy's `provider_label` (`"Anthropic"`, `"OpenAI"`, else Gemini).
+    pub(crate) fn from_label(label: &str) -> Self {
         match label {
             "Anthropic" | "Bedrock" => Self::Anthropic,
-            "OpenAI" | "ChatGPT" | "Azure" => Self::OpenAi,
+            "OpenAI" | "Azure" => Self::OpenAi,
             _ => Self::Gemini,
         }
     }
@@ -46,7 +46,7 @@ impl Provider {
 /// `output_tokens` already includes reasoning/thinking tokens (they are billed at
 /// the output rate); `reasoning_tokens` is retained only for display.
 #[derive(Debug, Clone, Default, PartialEq)]
-pub struct RealUsage {
+pub(crate) struct RealUsage {
     pub model: String,
     /// Input tokens billed at the input rate (cache reads/writes excluded).
     pub input_tokens: u64,
@@ -66,31 +66,22 @@ pub struct RealUsage {
     /// The measured figure beats any price-table estimate wherever both exist.
     /// `None` for providers that report tokens only (Anthropic/OpenAI/Gemini).
     pub provider_cost_usd: Option<f64>,
-    /// Output-savings experiment arm for this turn (#895 Track B), or `None` when
-    /// no holdout is active. Stamped from the request, not parsed from the
-    /// response — it identifies whether this turn was output-shaped.
-    pub cohort: Option<super::holdout::Arm>,
-    /// Request-side gateway context (enterprise#11/#17/#18): identity tags,
-    /// compression savings and baseline inputs, stamped from the request before
+    /// Request-side context: the project tag, compression savings and baseline inputs, stamped from the request before
     /// it left for the upstream. `None` outside the forward path (e.g. tests
     /// that only parse response bodies).
     pub wire: Option<Box<WireContext>>,
 }
 
 /// Request-side context the forward path knows and the response scanner does
-/// not: who sent the request (gateway identity, enterprise#11), what the proxy
+/// not: the request's project tag, what the proxy
 /// saved on the wire, and the counterfactual-baseline inputs (enterprise#18).
 /// Travels inside [`RealUsage`] so `usage_meter::record` stays the single
 /// choke-point through which every measured turn flows.
 #[derive(Debug, Clone, Default, PartialEq)]
-pub struct WireContext {
-    /// Provider label (`Anthropic|OpenAI|ChatGPT|Gemini`) of the serving route.
+pub(crate) struct WireContext {
+    /// Provider label (`Anthropic|OpenAI|Gemini`) of the serving route.
     pub provider: String,
-    /// Person tag from the gateway key (enterprise#11).
-    pub person: Option<String>,
-    /// Team tag from the gateway key.
-    pub team: Option<String>,
-    /// Project: `x-leanctx-project` header wins over the key's default project.
+    /// Project from the `x-leanctx-project` header.
     pub project: Option<String>,
     /// Estimated tokens this request saved through wire compression
     /// (bytes/4 heuristic, same basis as the proxy stats).
@@ -104,21 +95,6 @@ pub struct WireContext {
     /// Originally requested model when the router downgraded/aliased it
     /// (enterprise#13); `None` for passthrough.
     pub routed_from: Option<String>,
-    /// Provider-counted input tokens of the ORIGINAL (uncompressed) request,
-    /// from the free `count_tokens` probe (#701). `None` when metering is off
-    /// or no probe was spawned; an empty slot at read time (probe failed or
-    /// still in flight) degrades the row to the local estimate.
-    pub counterfactual: Option<super::counterfactual::CounterfactualSlot>,
-    /// Complete, validated OCLA lineage for managed HTTP requests. `None` keeps
-    /// legacy, malformed and non-HTTP traffic explicitly unmanaged.
-    pub lineage: Option<crate::core::request_context::RequestContext>,
-}
-
-impl WireContext {
-    #[must_use]
-    pub fn ocla_request_context(&self) -> Option<&crate::core::request_context::RequestContext> {
-        self.lineage.as_ref()
-    }
 }
 
 impl RealUsage {
@@ -144,13 +120,11 @@ const MAX_LINE_BYTES: usize = 1 << 20; // 1 MiB
 /// `feed` is called with raw response chunks and keeps only the trailing partial
 /// line buffered (O(1) memory beyond one line); `finalize` returns the merged
 /// usage once the stream ends.
-pub struct Scanner {
+pub(crate) struct Scanner {
     provider: Provider,
     /// Model parsed from the request URL (Gemini puts it there, not in the body).
     url_model: Option<String>,
-    /// Output-savings arm (#895), stamped onto the usage at finalize.
-    cohort: Option<super::holdout::Arm>,
-    /// Request-side gateway context (enterprise#11/#18), stamped at finalize.
+    /// Request-side context (see [`WireContext`]), stamped at finalize.
     wire: Option<Box<WireContext>>,
     /// Billed USD from a gateway response header (#1189), stamped at finalize
     /// unless the body already reported the charge.
@@ -160,11 +134,10 @@ pub struct Scanner {
 }
 
 impl Scanner {
-    pub fn new(provider: Provider, url_model: Option<String>) -> Self {
+    pub(crate) fn new(provider: Provider, url_model: Option<String>) -> Self {
         Self {
             provider,
             url_model,
-            cohort: None,
             wire: None,
             header_cost: None,
             buf: Vec::new(),
@@ -172,34 +145,26 @@ impl Scanner {
         }
     }
 
-    /// Tags the usage this scanner produces with an output-savings arm (#895).
+    /// Attaches the request-side context (project tag, wire savings, baseline
+    /// inputs) stamped onto the usage record.
     #[must_use]
-    pub fn with_cohort(mut self, cohort: Option<super::holdout::Arm>) -> Self {
-        self.cohort = cohort;
-        self
-    }
-
-    /// Attaches the request-side gateway context (identity tags, wire savings,
-    /// baseline inputs — enterprise#11/#17/#18) stamped onto the usage record.
-    #[must_use]
-    pub fn with_wire_context(mut self, wire: Option<Box<WireContext>>) -> Self {
+    pub(crate) fn with_wire_context(mut self, wire: Option<Box<WireContext>>) -> Self {
         self.wire = wire;
         self
     }
 
     /// Attaches a billed USD figure reported by the upstream via a response
-    /// header (LiteLLM `x-litellm-response-cost`, or the operator-configured
-    /// `[proxy] cost_response_header`, #1189). Applied at finalize only when
+    /// header (LiteLLM `x-litellm-response-cost`, #1189). Applied at finalize only when
     /// the body did not already carry a measured cost — a body figure
     /// (OpenRouter `usage.cost`) is the bill itself and always wins.
     #[must_use]
-    pub fn with_header_cost(mut self, cost: Option<f64>) -> Self {
+    pub(crate) fn with_header_cost(mut self, cost: Option<f64>) -> Self {
         self.header_cost = cost.filter(|c| c.is_finite() && *c >= 0.0);
         self
     }
 
     /// Feeds a raw streaming chunk, scanning every complete line it completes.
-    pub fn feed(&mut self, chunk: &[u8]) {
+    pub(crate) fn feed(&mut self, chunk: &[u8]) {
         self.buf.extend_from_slice(chunk);
         while let Some(nl) = self.buf.iter().position(|&b| b == b'\n') {
             let mut line: Vec<u8> = self.buf.drain(..=nl).collect();
@@ -215,7 +180,7 @@ impl Scanner {
     }
 
     /// Feeds a complete non-streaming JSON response body.
-    pub fn feed_body(&mut self, body: &[u8]) {
+    pub(crate) fn feed_body(&mut self, body: &[u8]) {
         if let Ok(v) = serde_json::from_slice::<Value>(body) {
             self.absorb(&v);
         }
@@ -223,7 +188,7 @@ impl Scanner {
 
     /// Consumes the scanner, flushing any trailing partial line (a final event
     /// may arrive without a newline) and returning the merged usage if any.
-    pub fn finalize(mut self) -> Option<RealUsage> {
+    pub(crate) fn finalize(mut self) -> Option<RealUsage> {
         if !self.buf.is_empty() {
             let line = std::mem::take(&mut self.buf);
             self.scan_line(&line);
@@ -234,7 +199,6 @@ impl Scanner {
             self.usage.provider_cost_usd = self.header_cost;
         }
         if self.usage.is_meaningful() {
-            self.usage.cohort = self.cohort;
             self.usage.wire = self.wire;
             Some(self.usage)
         } else {
@@ -464,7 +428,7 @@ fn absorb_gemini(u: &mut RealUsage, v: &Value, url_model: Option<&str>) {
 
 /// Extracts the model from a Gemini request path
 /// (`/v1beta/models/{model}:generateContent`). Returns `None` for other paths.
-pub fn gemini_model_from_path(path: &str) -> Option<String> {
+pub(crate) fn gemini_model_from_path(path: &str) -> Option<String> {
     let after = path.rsplit_once("/models/").map(|(_, m)| m)?;
     let model = after.split(':').next().unwrap_or(after).trim();
     if model.is_empty() {
@@ -477,7 +441,7 @@ pub fn gemini_model_from_path(path: &str) -> Option<String> {
 /// Wraps a response byte stream so every chunk is forwarded **byte-for-byte**
 /// while a [`Scanner`] observes it; on stream end the merged usage is recorded.
 /// Memory overhead is one buffered SSE line, never the whole response.
-pub fn tee_stream<S, B, E>(
+pub(crate) fn tee_stream<S, B, E>(
     inner: S,
     scanner: Scanner,
 ) -> impl Stream<Item = Result<B, E>> + Send + 'static
@@ -561,19 +525,15 @@ mod tests {
 
     #[test]
     fn scanner_stamps_wire_context_onto_usage() {
-        // enterprise#11/#17: the request-side context must survive scanning and
+        // The request-side context must survive scanning and
         // arrive on the finalized record that usage_meter/store consume.
         let wire = Box::new(WireContext {
             provider: "Anthropic".into(),
-            person: Some("yves".into()),
-            team: None,
             project: Some("billing".into()),
             saved_tokens: 42,
             uncompressed_input_tokens: 500,
             is_local: false,
             routed_from: None,
-            counterfactual: None,
-            lineage: None,
         });
         let mut s = Scanner::new(Provider::Anthropic, None).with_wire_context(Some(wire.clone()));
         s.feed_body(

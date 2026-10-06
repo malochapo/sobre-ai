@@ -244,14 +244,10 @@ pub(super) fn exec_limits(command: &str) -> (usize, std::time::Duration) {
 ///
 /// Heavy builds/tests (cargo install/nextest/build, npm ci, git commit/push, …)
 /// get the long ceiling instead of being killed at the 2-minute default, keeping
-/// the MCP path and the interactive hook consistent. The constants are
-/// overridable so operators can pin any value. Precedence (first match wins):
+/// the MCP path and the interactive hook consistent:
 ///
-/// 1. `LEAN_CTX_SHELL_TIMEOUT_MS` — universal override, in milliseconds.
-/// 2. heavy command → `LEAN_CTX_SHELL_HEAVY_TIMEOUT_SECS` / config
-///    `shell_heavy_timeout_secs`, else [`HEAVY_TIMEOUT`].
-/// 3. normal command → `LEAN_CTX_SHELL_TIMEOUT_SECS` / config
-///    `shell_timeout_secs`, else [`DEFAULT_TIMEOUT`].
+/// - normal command → config `shell_timeout_secs`, else [`DEFAULT_TIMEOUT`];
+/// - heavy command → the larger of `shell_timeout_secs` and [`HEAVY_TIMEOUT`].
 #[must_use]
 pub(crate) fn shell_timeout(command: &str) -> std::time::Duration {
     shell_timeout_with_override(command, None)
@@ -263,44 +259,25 @@ pub(crate) fn shell_timeout(command: &str) -> std::time::Duration {
 const MAX_CALL_TIMEOUT_MS: u64 = 3_600_000; // 1 hour
 
 /// [`shell_timeout`] with an optional per-call override (ctx_shell's
-/// `timeout_ms` arg). Precedence: operator env pin (`LEAN_CTX_SHELL_TIMEOUT_MS`)
-/// > per-call override (clamped to [`MAX_CALL_TIMEOUT_MS`], zero ignored)
-/// > per-tier env/config > built-in heavy/normal ceilings.
+/// `timeout_ms` arg). Precedence: per-call override (clamped to
+/// [`MAX_CALL_TIMEOUT_MS`], zero ignored) > per-tier config > built-in
+/// heavy/normal ceilings.
 #[must_use]
 pub(crate) fn shell_timeout_with_override(
     command: &str,
     override_ms: Option<u64>,
 ) -> std::time::Duration {
-    if let Some(ms) = env_u64("LEAN_CTX_SHELL_TIMEOUT_MS") {
-        return std::time::Duration::from_millis(ms);
-    }
     if let Some(ms) = override_ms.filter(|n| *n > 0) {
         return std::time::Duration::from_millis(ms.min(MAX_CALL_TIMEOUT_MS));
     }
+    let configured = config::Config::load()
+        .shell_timeout_secs
+        .map(std::time::Duration::from_secs);
     if is_heavy_command(command) {
-        if let Some(secs) = env_u64("LEAN_CTX_SHELL_HEAVY_TIMEOUT_SECS")
-            .or_else(|| config::Config::load().shell_heavy_timeout_secs)
-        {
-            return std::time::Duration::from_secs(secs);
-        }
-        HEAVY_TIMEOUT
+        configured.map_or(HEAVY_TIMEOUT, |t| t.max(HEAVY_TIMEOUT))
     } else {
-        if let Some(secs) = env_u64("LEAN_CTX_SHELL_TIMEOUT_SECS")
-            .or_else(|| config::Config::load().shell_timeout_secs)
-        {
-            return std::time::Duration::from_secs(secs);
-        }
-        DEFAULT_TIMEOUT
+        configured.unwrap_or(DEFAULT_TIMEOUT)
     }
-}
-
-/// Parse a positive `u64` from an env var, ignoring absent/empty/zero/invalid
-/// values so the caller falls through to the next precedence tier.
-fn env_u64(var: &str) -> Option<u64> {
-    std::env::var(var)
-        .ok()
-        .and_then(|v| v.parse::<u64>().ok())
-        .filter(|n| *n > 0)
 }
 
 /// #1113: detect shell loop constructs that are intentionally long-running.
@@ -387,11 +364,7 @@ fn is_heavy_command(command: &str) -> bool {
         "just ",
     ];
 
-    let cfg_prefixes = config::Config::load().shell_heavy_prefixes;
-    let matches_heavy = |s: &str| {
-        HEAVY_PREFIXES.iter().any(|p| s.starts_with(p))
-            || cfg_prefixes.iter().any(|p| s.starts_with(p.as_str()))
-    };
+    let matches_heavy = |s: &str| HEAVY_PREFIXES.iter().any(|p| s.starts_with(p));
 
     if matches_heavy(&lower) {
         return true;
@@ -487,24 +460,16 @@ fn exec_direct(args: &[String]) -> i32 {
 ///
 /// Warn-only when a human runs `lean-ctx -c` at an interactive terminal (they
 /// can run the command without lean-ctx anyway, so blocking adds friction, not
-/// a boundary) or when `LEAN_CTX_SHELL_GATE_WARN_ONLY=1` explicitly opts out.
+/// a boundary).
 fn gate_must_enforce() -> bool {
     let hook_child = crate::core::runtime_flags::hook_child_enabled();
-    let warn_only = std::env::var("LEAN_CTX_SHELL_GATE_WARN_ONLY")
-        .is_ok_and(|v| v == "1" || v.eq_ignore_ascii_case("true"));
-    gate_must_enforce_inner(hook_child, warn_only, io::stderr().is_terminal())
+    gate_must_enforce_inner(hook_child, io::stderr().is_terminal())
 }
 
 /// Pure decision core of [`gate_must_enforce`] (unit-testable without
 /// process-global env/TTY state).
-fn gate_must_enforce_inner(hook_child: bool, warn_only: bool, stderr_is_tty: bool) -> bool {
-    if hook_child {
-        return true;
-    }
-    if warn_only {
-        return false;
-    }
-    !stderr_is_tty
+fn gate_must_enforce_inner(hook_child: bool, stderr_is_tty: bool) -> bool {
+    hook_child || !stderr_is_tty
 }
 
 /// True when this process's stdout is a **regular file** — i.e. the caller
@@ -557,9 +522,7 @@ fn gate_cli_command(command: &str) -> Option<i32> {
             eprintln!("{msg}");
             eprintln!(
                 "lean-ctx: blocked by the shell gate. Every command is allowed \
-                 except the constructs that hide the real one from inspection. \
-                 Downgrade to a warning with shell_security = warn, or \
-                 LEAN_CTX_SHELL_GATE_WARN_ONLY=1."
+                 except the constructs that hide the real one from inspection."
             );
             return Some(126);
         }
@@ -602,9 +565,6 @@ pub fn exec(command: &str) -> i32 {
     let command = crate::tools::ctx_shell::normalize_command_for_shell(command);
     let command = command.as_str();
 
-    if super::reentry::is_disabled() {
-        return exec_inherit(command, &shell, &shell_flag);
-    }
     if should_delegate_wrapped_to_shell_default(collapsed_nested) {
         return exec_shell_default(command, &shell, &shell_flag);
     }
@@ -640,7 +600,7 @@ pub fn exec(command: &str) -> i32 {
         return code;
     }
 
-    // Compression is forced (`-c` / LEAN_CTX_COMPRESS, e.g. the agent shell hook).
+    // Compression is forced (`-c`, e.g. the agent shell hook).
     // It must STILL never alter bytes destined for a file: a redirect
     // (`cmd > out`, `cmd >> out`) means the output is captured as data, not read by
     // a human or agent. Writing the compressed digest there would silently
@@ -652,7 +612,7 @@ pub fn exec(command: &str) -> i32 {
         return exec_inherit_tracked(command, &shell, &shell_flag);
     }
 
-    super::pipeline::exec_buffered(command, &shell, &shell_flag, &cfg)
+    super::pipeline::exec_buffered(command, &shell, &shell_flag)
 }
 
 fn collapse_nested_lean_ctx_exec(command: &str) -> Option<String> {
@@ -898,19 +858,9 @@ mod exec_tests {
     }
 
     #[test]
-    fn exec_argv_passes_through_when_disabled() {
-        let _lock = crate::core::data_dir::test_env_lock();
-        crate::test_env::set_var("LEAN_CTX_DISABLED", "1");
-        let code = super::exec_argv(&["true".to_string()]);
-        crate::test_env::remove_var("LEAN_CTX_DISABLED");
-        assert_eq!(code, 0);
-    }
-
-    #[test]
     fn exec_argv_allows_ordinary_command() {
         let _lock = crate::core::data_dir::test_env_lock();
         crate::test_env::remove_var("LEAN_CTX_ACTIVE");
-        crate::test_env::remove_var("LEAN_CTX_DISABLED");
         crate::test_env::set_var("LEAN_CTX_HOOK_CHILD", "1");
 
         let code = super::exec_argv(&["true".to_string()]);
@@ -1067,81 +1017,66 @@ mod exec_tests {
             elapsed < std::time::Duration::from_secs(5),
             "group kill must unblock the reader threads, took {elapsed:?}"
         );
-        // The whole group must be gone (ESRCH), not just the direct child.
-        // A brief grace period lets the kernel finish reaping.
+        // The whole group must be dead, not just the direct child.
+        // A brief grace period lets the kernel finish the kill.
         let mut group_gone = false;
         for _ in 0..50 {
-            // SAFETY: signal 0 only probes for existence.
-            if unsafe { libc::killpg(pgid, 0) } == -1 {
+            if process_group_dead(pgid) {
                 group_gone = true;
                 break;
             }
             std::thread::sleep(std::time::Duration::from_millis(20));
         }
-        assert!(group_gone, "process group {pgid} must be fully reaped");
+        assert!(group_gone, "process group {pgid} must be fully killed");
     }
 
-    /// #806: piped stdin must be forwarded to the child via Stdio::piped()
-    /// and relayed, not nulled. Tests the relay pattern: write data to child
-    /// stdin, close it (EOF), child reads and exits.
+    /// True once no live process remains in group `pgid`. The killed
+    /// grandchild is orphaned and reparented to PID 1; it stays a zombie until
+    /// PID 1 reaps it, which some container inits never do, and
+    /// `killpg(pgid, 0)` still counts a zombie. On Linux, /proc tells a dead
+    /// zombie from a survivor.
     #[cfg(unix)]
-    #[test]
-    fn stdin_relay_forwards_piped_data() {
-        use std::io::Write;
-        use std::os::unix::process::CommandExt as _;
-
-        let mut cmd = std::process::Command::new("cat");
-        cmd.stdin(std::process::Stdio::piped())
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped());
-        cmd.process_group(0);
-        let mut child = cmd.spawn().expect("failed to spawn cat");
-
-        let mut child_stdin = child.stdin.take().unwrap();
-        std::thread::spawn(move || {
-            child_stdin.write_all(b"hello from pipe\n").unwrap();
-            drop(child_stdin);
-        });
-
-        let output = child.wait_with_output().expect("wait failed");
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        assert!(
-            stdout.contains("hello from pipe"),
-            "#806: piped stdin must reach the child, got: {stdout}"
-        );
+    fn process_group_dead(pgid: libc::pid_t) -> bool {
+        // SAFETY: signal 0 only probes for existence.
+        if unsafe { libc::killpg(pgid, 0) } == -1 {
+            return true;
+        }
+        cfg!(target_os = "linux") && live_group_members(pgid).is_empty()
     }
 
-    /// #806: commands that don't read stdin must still work normally
-    /// when no data is piped (relay thread sees immediate EOF from parent).
+    /// PIDs in group `pgid` whose state is neither zombie nor dead, read from
+    /// /proc/<pid>/stat: `pid (comm) state ppid pgrp ...`.
     #[cfg(unix)]
-    #[test]
-    fn stdin_relay_no_data_does_not_hang() {
-        let start = std::time::Instant::now();
-        let mut cmd = std::process::Command::new("sh");
-        cmd.args(["-c", "echo ok"])
-            .stdin(std::process::Stdio::piped())
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped());
-        use std::os::unix::process::CommandExt as _;
-        cmd.process_group(0);
-        let mut child = cmd.spawn().unwrap();
-        // Close stdin immediately (simulates relay with empty parent pipe)
-        drop(child.stdin.take());
-        let output = child.wait_with_output().unwrap();
-        let elapsed = start.elapsed();
-        assert!(
-            elapsed < std::time::Duration::from_secs(5),
-            "must not hang when stdin is closed immediately, took {elapsed:?}"
-        );
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        assert!(stdout.contains("ok"), "command output missing: {stdout}");
+    fn live_group_members(pgid: libc::pid_t) -> Vec<libc::pid_t> {
+        let mut live = Vec::new();
+        for entry in std::fs::read_dir("/proc").expect("/proc must be readable") {
+            let Ok(entry) = entry else { continue };
+            let Ok(pid) = entry.file_name().to_string_lossy().parse::<libc::pid_t>() else {
+                continue;
+            };
+            // A process that exits between read_dir and here has no stat.
+            let Ok(stat) = std::fs::read_to_string(entry.path().join("stat")) else {
+                continue;
+            };
+            // `comm` may contain spaces and parentheses: fields resume after the last ')'.
+            let Some((_, rest)) = stat.rsplit_once(')') else {
+                continue;
+            };
+            let mut fields = rest.split_whitespace();
+            let state = fields.next();
+            let pgrp = fields.nth(1).and_then(|f| f.parse::<libc::pid_t>().ok());
+            if pgrp == Some(pgid) && !matches!(state, Some("Z" | "X")) {
+                live.push(pid);
+            }
+        }
+        live
     }
 
     #[test]
     fn heavy_commands_get_higher_byte_limits() {
         // exec_limits owns the byte ceiling; timeout resolution is covered by
-        // `shell_timeout_resolves_heavy_normal_and_env_overrides` (which is
-        // env/config-isolated, so these stay deterministic regardless of the
+        // `shell_timeout_resolves_heavy_normal_and_config_overrides` (which is
+        // config-isolated, so these stay deterministic regardless of the
         // operator's config.toml).
         for cmd in [
             "cargo build --release",
@@ -1179,19 +1114,9 @@ mod exec_tests {
     }
 
     #[test]
-    fn shell_timeout_resolves_heavy_normal_and_env_overrides() {
-        // Serialize env mutation so this never races other env-reading tests.
-        let _lock = crate::core::data_dir::test_env_lock();
-        let saved_ms = std::env::var("LEAN_CTX_SHELL_TIMEOUT_MS").ok();
-        let saved_secs = std::env::var("LEAN_CTX_SHELL_TIMEOUT_SECS").ok();
-        let saved_heavy = std::env::var("LEAN_CTX_SHELL_HEAVY_TIMEOUT_SECS").ok();
-        for v in [
-            "LEAN_CTX_SHELL_TIMEOUT_MS",
-            "LEAN_CTX_SHELL_TIMEOUT_SECS",
-            "LEAN_CTX_SHELL_HEAVY_TIMEOUT_SECS",
-        ] {
-            crate::test_env::remove_var(v);
-        }
+    fn shell_timeout_resolves_heavy_normal_and_config_overrides() {
+        // Private config dir so the operator's config.toml cannot leak in.
+        let iso = crate::core::data_dir::isolated_data_dir();
 
         // Heavy builds/tests and hook-firing git verbs get the heavy ceiling;
         // read-only verbs stay on the default. Preserves the #854 promotion.
@@ -1227,43 +1152,19 @@ mod exec_tests {
             super::HEAVY_TIMEOUT
         );
 
-        // Per-tier env overrides win over the built-in constants. (Non-round
-        // second values keep the literals clippy-clean and unambiguous.)
-        crate::test_env::set_var("LEAN_CTX_SHELL_HEAVY_TIMEOUT_SECS", "90");
-        assert_eq!(
-            super::shell_timeout("cargo build"),
-            std::time::Duration::from_secs(90)
-        );
-        crate::test_env::remove_var("LEAN_CTX_SHELL_HEAVY_TIMEOUT_SECS");
-
-        crate::test_env::set_var("LEAN_CTX_SHELL_TIMEOUT_SECS", "30");
+        // The configured timeout sets normal commands; heavy ones never drop
+        // below the heavy floor but follow a larger configured value.
+        std::fs::write(iso.path().join("config.toml"), "shell_timeout_secs = 30\n").unwrap();
+        assert_eq!(super::shell_timeout("cargo build"), super::HEAVY_TIMEOUT);
         assert_eq!(
             super::shell_timeout("git status"),
             std::time::Duration::from_secs(30)
         );
-        crate::test_env::remove_var("LEAN_CTX_SHELL_TIMEOUT_SECS");
-
-        // The universal millisecond override wins over everything.
-        crate::test_env::set_var("LEAN_CTX_SHELL_TIMEOUT_MS", "5000");
+        std::fs::write(iso.path().join("config.toml"), "shell_timeout_secs = 900\n").unwrap();
         assert_eq!(
             super::shell_timeout("cargo build"),
-            std::time::Duration::from_secs(5)
+            std::time::Duration::from_mins(15)
         );
-        assert_eq!(
-            super::shell_timeout("git status"),
-            std::time::Duration::from_secs(5)
-        );
-        crate::test_env::remove_var("LEAN_CTX_SHELL_TIMEOUT_MS");
-
-        for (var, saved) in [
-            ("LEAN_CTX_SHELL_TIMEOUT_MS", saved_ms),
-            ("LEAN_CTX_SHELL_TIMEOUT_SECS", saved_secs),
-            ("LEAN_CTX_SHELL_HEAVY_TIMEOUT_SECS", saved_heavy),
-        ] {
-            if let Some(v) = saved {
-                crate::test_env::set_var(var, v);
-            }
-        }
     }
 
     // Task runners (mise/just) wrap builds and test gates that routinely run
@@ -1272,30 +1173,15 @@ mod exec_tests {
     #[test]
     fn task_runners_get_heavy_ceiling() {
         let _lock = crate::core::data_dir::test_env_lock();
-        let saved_ms = std::env::var("LEAN_CTX_SHELL_TIMEOUT_MS").ok();
-        let saved_heavy = std::env::var("LEAN_CTX_SHELL_HEAVY_TIMEOUT_SECS").ok();
-        crate::test_env::remove_var("LEAN_CTX_SHELL_TIMEOUT_MS");
-        crate::test_env::remove_var("LEAN_CTX_SHELL_HEAVY_TIMEOUT_SECS");
 
         assert_eq!(super::shell_timeout("mise gate"), super::HEAVY_TIMEOUT);
         assert_eq!(super::shell_timeout("mise run gate"), super::HEAVY_TIMEOUT);
         assert_eq!(super::shell_timeout("just build"), super::HEAVY_TIMEOUT);
-
-        if let Some(v) = saved_ms {
-            crate::test_env::set_var("LEAN_CTX_SHELL_TIMEOUT_MS", v);
-        }
-        if let Some(v) = saved_heavy {
-            crate::test_env::set_var("LEAN_CTX_SHELL_HEAVY_TIMEOUT_SECS", v);
-        }
     }
 
     #[test]
     fn scripts_and_timeout_get_heavy_ceiling() {
         let _lock = crate::core::data_dir::test_env_lock();
-        let saved_ms = std::env::var("LEAN_CTX_SHELL_TIMEOUT_MS").ok();
-        let saved_heavy = std::env::var("LEAN_CTX_SHELL_HEAVY_TIMEOUT_SECS").ok();
-        crate::test_env::remove_var("LEAN_CTX_SHELL_TIMEOUT_MS");
-        crate::test_env::remove_var("LEAN_CTX_SHELL_HEAVY_TIMEOUT_SECS");
 
         assert_eq!(
             super::shell_timeout("python3 scripts/audit.py"),
@@ -1331,23 +1217,14 @@ mod exec_tests {
             super::shell_timeout("cd /repo && timeout 600 make"),
             super::HEAVY_TIMEOUT
         );
-
-        if let Some(v) = saved_ms {
-            crate::test_env::set_var("LEAN_CTX_SHELL_TIMEOUT_MS", v);
-        }
-        if let Some(v) = saved_heavy {
-            crate::test_env::set_var("LEAN_CTX_SHELL_HEAVY_TIMEOUT_SECS", v);
-        }
     }
 
     // Per-call `timeout_ms` (ctx_shell tool arg): explicit caller intent beats
     // the built-in tiers in both directions, absurd values clamp to the 1h
-    // ceiling, zero is ignored, and the operator's universal env pin stays top.
+    // ceiling, and zero is ignored.
     #[test]
     fn per_call_timeout_override_resolves_and_clamps() {
         let _lock = crate::core::data_dir::test_env_lock();
-        let saved_ms = std::env::var("LEAN_CTX_SHELL_TIMEOUT_MS").ok();
-        crate::test_env::remove_var("LEAN_CTX_SHELL_TIMEOUT_MS");
 
         assert_eq!(
             super::shell_timeout_with_override("git status", Some(300_000)),
@@ -1369,42 +1246,25 @@ mod exec_tests {
             super::shell_timeout_with_override("git status", None),
             super::DEFAULT_TIMEOUT
         );
-
-        crate::test_env::set_var("LEAN_CTX_SHELL_TIMEOUT_MS", "5000");
-        assert_eq!(
-            super::shell_timeout_with_override("git status", Some(300_000)),
-            std::time::Duration::from_secs(5)
-        );
-        crate::test_env::remove_var("LEAN_CTX_SHELL_TIMEOUT_MS");
-        if let Some(v) = saved_ms {
-            crate::test_env::set_var("LEAN_CTX_SHELL_TIMEOUT_MS", v);
-        }
     }
 
     // P0-1 (#413): the CLI gate must enforce for agents, warn for humans.
     #[test]
     fn gate_enforces_in_hook_child_mode() {
         // Hook-child wins over everything, even an interactive TTY.
-        assert!(super::gate_must_enforce_inner(true, false, true));
-        assert!(super::gate_must_enforce_inner(true, true, true));
+        assert!(super::gate_must_enforce_inner(true, true));
+        assert!(super::gate_must_enforce_inner(true, false));
     }
 
     #[test]
     fn gate_enforces_for_non_interactive_callers() {
         // Agent/script invocation: stderr is a pipe → enforce.
-        assert!(super::gate_must_enforce_inner(false, false, false));
+        assert!(super::gate_must_enforce_inner(false, false));
     }
 
     #[test]
     fn gate_warns_for_interactive_humans() {
         // Human at a TTY → warn-only (they can bypass lean-ctx anyway).
-        assert!(!super::gate_must_enforce_inner(false, false, true));
-    }
-
-    #[test]
-    fn gate_warn_only_opt_out_downgrades_non_interactive() {
-        // Explicit LEAN_CTX_SHELL_GATE_WARN_ONLY=1 opt-out (but never in hook-child mode).
-        assert!(!super::gate_must_enforce_inner(false, true, false));
-        assert!(super::gate_must_enforce_inner(true, true, false));
+        assert!(!super::gate_must_enforce_inner(false, true));
     }
 }

@@ -26,13 +26,6 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use serde_json::Value;
-
-/// Opening delimiter of an in-band retrieval marker: `<lc_expand:HASH>` (#493).
-const EXPAND_OPEN: &str = "<lc_expand:";
-/// Closing delimiter of an in-band retrieval marker.
-const EXPAND_CLOSE: char = '>';
-
 /// Originals smaller than this are not worth a tee file + handle; the caller
 /// keeps its plain stub. Matches the spirit of the prune length thresholds.
 pub(crate) const MIN_TEE_BYTES: usize = 512;
@@ -91,57 +84,6 @@ pub(crate) fn persist(content: &str) -> Option<String> {
     persist_with(content, "proxy")
 }
 
-/// Persist a dropped conversation message under a compact `conv_` handle.
-///
-/// Conversation messages may be short, so unlike tool-output tees this path has
-/// no minimum-size gate. The returned basename is sufficient for `ctx_expand` and
-/// avoids putting machine-specific absolute paths into provider prompts.
-#[allow(dead_code)]
-pub(crate) fn persist_conversation(content: &str) -> Option<String> {
-    let path = persist_with_min(content, "conv", 1)?;
-    Path::new(&path)
-        .file_name()
-        .and_then(|name| name.to_str())
-        .map(str::to_owned)
-}
-
-/// Persist a JSON crusher's verbatim original (#936) under the `json_` prefix and
-/// return its `{state}/tee/json_{hash}.log` handle. Used by the lossy crush stage
-/// so a dropped column is always recoverable out-of-band via [`resolve_tee`] /
-/// `ctx_expand`, never reconstructed from the (lossy) text. Shares the
-/// content-address and best-effort write contract of [`persist`], so the embedded
-/// handle stays deterministic (cache-safe).
-pub(crate) fn persist_json(content: &str) -> Option<String> {
-    persist_with(content, "json")
-}
-
-/// Persist a tabular (CSV/TSV) crusher's verbatim original (#982) under the
-/// `tbl_` prefix and return its `{state}/tee/tbl_{hash}.log` handle. Used by the
-/// lossy column-drop stage so a dropped column is always recoverable out-of-band
-/// via [`resolve_tee`] / `ctx_expand`, never reconstructed from the (lossy) text.
-/// Shares the content-address and best-effort write contract of [`persist`].
-pub(crate) fn persist_tabular(content: &str) -> Option<String> {
-    persist_with(content, "tbl")
-}
-
-/// Persist a YAML crusher's verbatim original (#985) under the `yaml_` prefix and
-/// return its `{state}/tee/yaml_{hash}.log` handle. Used by the lossy column-drop
-/// stage so a dropped column is always recoverable out-of-band via [`resolve_tee`]
-/// / `ctx_expand`, never reconstructed from the (lossy) text. Shares the
-/// content-address and best-effort write contract of [`persist`].
-pub(crate) fn persist_yaml(content: &str) -> Option<String> {
-    persist_with(content, "yaml")
-}
-
-/// Persist an HTML page's verbatim original (#1124) under the `html_` prefix
-/// and return its `{state}/tee/html_{hash}.log` handle. The extracted markdown
-/// is the compressed form; the full HTML is recoverable via [`resolve_tee`] /
-/// `ctx_expand`. Shares the content-address and best-effort write contract of
-/// [`persist`].
-pub(crate) fn persist_html(content: &str) -> Option<String> {
-    persist_with(content, "html")
-}
-
 fn persist_with(content: &str, prefix: &str) -> Option<String> {
     persist_with_min(content, prefix, MIN_TEE_BYTES)
 }
@@ -162,7 +104,7 @@ fn persist_with_min(content: &str, prefix: &str, min_bytes: usize) -> Option<Str
         // Same redaction the shell tee applies, so a recovered original can never
         // re-introduce a secret the live turn would also have masked.
         let masked = crate::core::redaction::redact_text(content);
-        let (redacted, _) = crate::core::secret_detection::scan_and_redact_from_config(&masked);
+        let (redacted, _) = crate::core::secret_detection::scan_and_redact(&masked);
         if std::fs::write(&path, redacted).is_ok() {
             #[cfg(unix)]
             {
@@ -265,43 +207,6 @@ pub(crate) fn resolve_tee(id: &str) -> Option<PathBuf> {
     path.is_file().then_some(path)
 }
 
-/// The in-band retrieval marker `<lc_expand:HASH>` for a CCR `handle` (#493).
-///
-/// `HASH` is the content hash already embedded in the tee handle, so a model can
-/// echo the marker verbatim and the proxy can recover the original via
-/// [`resolve_tee`] on the next turn. Pure (no I/O, no config) so it is trivially
-/// testable; returns `None` for a handle that is not a canonical tee path.
-pub(crate) fn inband_marker(handle: &str) -> Option<String> {
-    let name = Path::new(handle).file_name().and_then(|n| n.to_str())?;
-    let hash = name.strip_prefix("proxy_")?.strip_suffix(".log")?;
-    (hash.len() == 16 && hash.bytes().all(|b| b.is_ascii_hexdigit()))
-        .then(|| format!("{EXPAND_OPEN}{hash}{EXPAND_CLOSE}"))
-}
-
-/// The in-band marker for `handle` **only when in-band CCR is enabled** (#493),
-/// else `None`. Stub sites use this to advertise an echo-able `<lc_expand:HASH>`
-/// solely in in-band mode: a normal (shared-filesystem) deployment keeps its
-/// path handle, so the model never sees a marker the proxy would not splice.
-///
-/// Reads the (process-cached) config; the surrounding stub path already does
-/// per-message tee I/O via [`persist`], so this adds no new I/O class.
-pub(crate) fn inband_locator(handle: &str) -> Option<String> {
-    crate::core::config::Config::load()
-        .proxy
-        .ccr_inband_enabled()
-        .then(|| inband_marker(handle))
-        .flatten()
-}
-
-/// Recover the verbatim original for a 16-hex CCR `hash` from the local tee
-/// store, or `None` when the hash is malformed or the file is gone (past TTL).
-fn recover(hash: &str) -> Option<String> {
-    if hash.len() != 16 || !hash.bytes().all(|b| b.is_ascii_hexdigit()) {
-        return None;
-    }
-    std::fs::read_to_string(resolve_tee(hash)?).ok()
-}
-
 /// Length of a LiteLLM gateway retrieval hash (#702): LiteLLM's headroom
 /// guardrail scans compressed text with `hash=([a-f0-9]{24})`
 /// (BerriAI/litellm#31681), so the marker must carry exactly 24 lowercase hex.
@@ -331,86 +236,6 @@ pub(crate) fn retrieve_litellm(hash: &str) -> Option<String> {
         return None;
     }
     std::fs::read_to_string(resolve_tee(&hash[..TEE_HASH_LEN])?).ok()
-}
-
-/// Replace every `<lc_expand:HASH>` marker in `s` with the verbatim original
-/// recovered from the local tee store. Returns `Some(spliced)` only when at
-/// least one marker resolved, else `None` (so the caller leaves the string —
-/// and therefore the request bytes — untouched).
-///
-/// An unresolvable marker (bad hash, or a file dropped past the 24h TTL) is left
-/// in place verbatim: the model still sees its own marker rather than a silent
-/// deletion, and a later turn can retry once the operator restores the file.
-/// The spliced content is inserted **raw** (not `<lc_safe>`-wrapped): this runs
-/// on the recent assistant turn the model echoed the marker into, which no proxy
-/// compressor rewrites, and the proxy has no global `<lc_safe>` strip — wrapping
-/// would instead leak the markers to the provider.
-fn splice_str(s: &str) -> Option<String> {
-    if !s.contains(EXPAND_OPEN) {
-        return None;
-    }
-    let mut out = String::with_capacity(s.len());
-    let mut rest = s;
-    let mut changed = false;
-    while let Some(pos) = rest.find(EXPAND_OPEN) {
-        let after = &rest[pos + EXPAND_OPEN.len()..];
-        match after.find(EXPAND_CLOSE) {
-            Some(end) => {
-                let hash = &after[..end];
-                if let Some(original) = recover(hash) {
-                    out.push_str(&rest[..pos]);
-                    out.push_str(&original);
-                    rest = &after[end + EXPAND_CLOSE.len_utf8()..];
-                    changed = true;
-                } else {
-                    // Keep the literal marker; resume scanning past this `<` so a
-                    // later valid marker in the same string is still spliced.
-                    out.push_str(&rest[..pos + EXPAND_OPEN.len()]);
-                    rest = after;
-                }
-            }
-            // No closing `>`: nothing more can match — keep the remainder verbatim.
-            None => break,
-        }
-    }
-    out.push_str(rest);
-    changed.then_some(out)
-}
-
-/// Splice in-band `<lc_expand:HASH>` markers throughout a parsed request body
-/// (#493), replacing each with the verbatim original recovered from the local
-/// tee store. Recurses over every JSON string (object values and array items).
-///
-/// Returns `true` iff at least one marker was spliced. A request with no marker
-/// is left **byte-identical** (the function never allocates a replacement), so a
-/// marker-less turn never perturbs the provider prompt-cache prefix — the splice
-/// only ever changes the bytes the model explicitly asked to expand.
-pub(crate) fn splice_inband_in_place(value: &mut Value) -> bool {
-    match value {
-        Value::String(s) => {
-            if let Some(spliced) = splice_str(s) {
-                *s = spliced;
-                true
-            } else {
-                false
-            }
-        }
-        Value::Array(items) => {
-            let mut changed = false;
-            for item in items {
-                changed |= splice_inband_in_place(item);
-            }
-            changed
-        }
-        Value::Object(map) => {
-            let mut changed = false;
-            for (_, v) in map.iter_mut() {
-                changed |= splice_inband_in_place(v);
-            }
-            changed
-        }
-        _ => false,
-    }
 }
 
 #[cfg(test)]
@@ -450,43 +275,6 @@ mod tests {
     }
 
     #[test]
-    fn small_content_gets_no_handle() {
-        let _lock = crate::core::data_dir::test_env_lock();
-        assert!(
-            persist("too small to bother").is_none(),
-            "below MIN_TEE_BYTES there is no handle (the caller keeps its plain stub)"
-        );
-    }
-
-    #[test]
-    #[allow(clippy::case_sensitive_file_extension_comparisons)]
-    fn conversation_handle_is_compact_and_deterministic() {
-        let _lock = crate::core::data_dir::test_env_lock();
-        let a = persist_conversation("{\"role\":\"user\",\"content\":\"hello\"}")
-            .expect("conversation handle");
-        let b = persist_conversation("{\"role\":\"user\",\"content\":\"hello\"}")
-            .expect("conversation handle");
-        assert_eq!(a, b);
-        assert!(a.starts_with("conv_") && a.ends_with(".log"));
-    }
-
-    #[test]
-    fn conversation_handle_resolves_short_messages() {
-        let _lock = crate::core::data_dir::test_env_lock();
-        let handle = persist_conversation("short conversation message").expect("handle");
-        assert!(resolve_tee(&handle).is_some());
-    }
-
-    #[test]
-    fn conversation_original_is_recoverable() {
-        let _lock = crate::core::data_dir::test_env_lock();
-        let original = "{\"role\":\"tool\",\"content\":\"recover me\"}";
-        let handle = persist_conversation(original).expect("handle");
-        let path = resolve_tee(&handle).expect("resolved handle");
-        assert_eq!(std::fs::read_to_string(path).unwrap(), original);
-    }
-
-    #[test]
     fn resolve_tee_accepts_every_stub_form() {
         let _lock = crate::core::data_dir::test_env_lock();
         let content = big("resolvable tee body");
@@ -520,101 +308,6 @@ mod tests {
         assert!(resolve_tee("proxy_nothex0000000.log").is_none());
         // Right shape but no such file in the store.
         assert!(resolve_tee("deadbeefdeadbeef").is_none());
-    }
-
-    #[test]
-    fn persist_json_is_distinct_prefix_and_resolvable() {
-        let _lock = crate::core::data_dir::test_env_lock();
-        let content = big("json crusher original");
-        let proxy = persist(&content).expect("proxy persisted");
-        let json = persist_json(&content).expect("json persisted");
-        assert!(
-            json.contains("json_"),
-            "json handle uses json_ prefix: {json}"
-        );
-        assert_ne!(
-            proxy, json,
-            "same content gets distinct files per producer prefix"
-        );
-
-        // The json_ handle resolves through the unified resolver in every form a
-        // stub / footer can carry: full path, bare file name, and bare json_id.
-        let hash = crate::core::hasher::hash_short(&content);
-        for form in [
-            json.clone(),
-            format!("json_{hash}.log"),
-            format!("json_{hash}"),
-        ] {
-            assert_eq!(
-                resolve_tee(&form)
-                    .expect("json form resolves")
-                    .to_string_lossy(),
-                json,
-                "json form {form} -> {json}"
-            );
-        }
-    }
-
-    #[test]
-    fn persist_tabular_is_distinct_prefix_and_resolvable() {
-        let _lock = crate::core::data_dir::test_env_lock();
-        let content = big("tabular crusher original");
-        let json = persist_json(&content).expect("json persisted");
-        let tbl = persist_tabular(&content).expect("tbl persisted");
-        assert!(
-            tbl.contains("tbl_"),
-            "tabular handle uses tbl_ prefix: {tbl}"
-        );
-        assert_ne!(
-            json, tbl,
-            "same content gets distinct files per producer prefix"
-        );
-
-        let hash = crate::core::hasher::hash_short(&content);
-        for form in [
-            tbl.clone(),
-            format!("tbl_{hash}.log"),
-            format!("tbl_{hash}"),
-        ] {
-            assert_eq!(
-                resolve_tee(&form)
-                    .expect("tbl form resolves")
-                    .to_string_lossy(),
-                tbl,
-                "tbl form {form} -> {tbl}"
-            );
-        }
-    }
-
-    #[test]
-    fn persist_yaml_is_distinct_prefix_and_resolvable() {
-        let _lock = crate::core::data_dir::test_env_lock();
-        let content = big("yaml crusher original");
-        let tbl = persist_tabular(&content).expect("tbl persisted");
-        let yaml = persist_yaml(&content).expect("yaml persisted");
-        assert!(
-            yaml.contains("yaml_"),
-            "yaml handle uses yaml_ prefix: {yaml}"
-        );
-        assert_ne!(
-            tbl, yaml,
-            "same content gets distinct files per producer prefix"
-        );
-
-        let hash = crate::core::hasher::hash_short(&content);
-        for form in [
-            yaml.clone(),
-            format!("yaml_{hash}.log"),
-            format!("yaml_{hash}"),
-        ] {
-            assert_eq!(
-                resolve_tee(&form)
-                    .expect("yaml form resolves")
-                    .to_string_lossy(),
-                yaml,
-                "yaml form {form} -> {yaml}"
-            );
-        }
     }
 
     #[test]
@@ -710,92 +403,5 @@ mod tests {
         assert!(retrieve_litellm("../../etc/passwd00000000").is_none());
         // Right shape, unknown content.
         assert!(retrieve_litellm("0123456789abcdef01234567").is_none());
-    }
-
-    #[test]
-    fn inband_marker_is_derived_from_handle() {
-        let _lock = crate::core::data_dir::test_env_lock();
-        let content = big("inband marker body");
-        let handle = persist(&content).expect("persisted");
-        let hash = crate::core::hasher::hash_short(&content);
-        // The marker carries the same content hash the handle does, so a model can
-        // echo it and the proxy resolves it back to the very same tee file.
-        assert_eq!(inband_marker(&handle), Some(format!("<lc_expand:{hash}>")));
-        // A non-tee handle has no marker.
-        assert!(inband_marker("/tmp/not-a-tee.txt").is_none());
-    }
-
-    #[test]
-    fn splice_replaces_marker_with_verbatim_original() {
-        let _lock = crate::core::data_dir::test_env_lock();
-        let content = big("the historical verbatim line");
-        let handle = persist(&content).expect("persisted");
-        let marker = inband_marker(&handle).expect("marker");
-
-        let mut doc = serde_json::json!({
-            "messages": [{ "role": "assistant", "content": format!("recall {marker} please") }]
-        });
-        assert!(splice_inband_in_place(&mut doc), "a marker must splice");
-        let spliced = doc["messages"][0]["content"].as_str().unwrap();
-        assert!(
-            spliced.contains("the historical verbatim line"),
-            "verbatim original must be spliced in: {spliced}"
-        );
-        assert!(
-            !spliced.contains("<lc_expand:"),
-            "the marker must be consumed, not left behind"
-        );
-    }
-
-    #[test]
-    fn splice_is_byte_identical_no_op_without_marker() {
-        let _lock = crate::core::data_dir::test_env_lock();
-        let mut doc = serde_json::json!({
-            "messages": [{ "role": "user", "content": "no marker here" }],
-            "system": "plain"
-        });
-        let before = doc.clone();
-        assert!(
-            !splice_inband_in_place(&mut doc),
-            "no marker → must report no change"
-        );
-        assert_eq!(
-            doc, before,
-            "marker-less body must stay byte-identical (cache-safe)"
-        );
-    }
-
-    #[test]
-    fn splice_keeps_unresolvable_marker_verbatim() {
-        let _lock = crate::core::data_dir::test_env_lock();
-        // Right shape, but no such file in the store → leave the model's marker in
-        // place rather than silently deleting it.
-        let mut doc = serde_json::json!({ "t": "before <lc_expand:deadbeefdeadbeef> after" });
-        assert!(!splice_inband_in_place(&mut doc));
-        assert_eq!(
-            doc["t"].as_str().unwrap(),
-            "before <lc_expand:deadbeefdeadbeef> after"
-        );
-    }
-
-    #[test]
-    fn splice_recurses_and_handles_multiple_markers() {
-        let _lock = crate::core::data_dir::test_env_lock();
-        let a = big("first recovered body");
-        let b = big("second recovered body");
-        let ma = inband_marker(&persist(&a).unwrap()).unwrap();
-        let mb = inband_marker(&persist(&b).unwrap()).unwrap();
-
-        // Two markers in one nested string, plus a deeper array item.
-        let mut doc = serde_json::json!({
-            "contents": [
-                { "parts": [{ "text": format!("{ma} and {mb}") }] }
-            ]
-        });
-        assert!(splice_inband_in_place(&mut doc));
-        let text = doc["contents"][0]["parts"][0]["text"].as_str().unwrap();
-        assert!(text.contains("first recovered body"));
-        assert!(text.contains("second recovered body"));
-        assert!(!text.contains("<lc_expand:"));
     }
 }

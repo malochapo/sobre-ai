@@ -120,15 +120,6 @@ pub fn install_hint_for_language(language: &str) -> &'static str {
     "No install instructions available for this language server."
 }
 
-pub fn binary_for_language(language: &str) -> Option<&'static str> {
-    for info in KNOWN_SERVERS {
-        if info.language == language {
-            return Some(info.binary);
-        }
-    }
-    None
-}
-
 pub fn check_server_available(language: &str) -> Result<PathBuf, String> {
     let servers = default_servers();
     let config = servers

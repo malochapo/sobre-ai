@@ -32,12 +32,9 @@ pub(crate) fn handle_remember(
         derived_key.as_str()
     };
     let conf = confidence.unwrap_or(0.8);
-    let (v, _secret_matches) = crate::core::secret_detection::scan_and_redact_from_config(v);
+    let (v, _secret_matches) = crate::core::secret_detection::scan_and_redact(v);
     let v = v.as_str();
-    let policy = match load_policy_or_error() {
-        Ok(p) => p,
-        Err(e) => return e,
-    };
+    let policy = crate::core::memory_policy::MemoryPolicy::default();
     // Serialize the read-modify-write under a per-project lock so parallel
     // `remember` calls cannot clobber each other (issue #326). The closure
     // operates on the freshly (re)loaded state inside the lock. Admission (#970)
@@ -60,7 +57,7 @@ pub(crate) fn handle_remember(
         return format!(
             "Skipped [{cat}] {k}: salience {salience} below admission floor {floor}. \
              Rephrase with more signal, or lower the floor \
-             (memory.admission.min_salience / LEAN_CTX_ADMISSION_MIN_SALIENCE)."
+             (memory.admission.min_salience)."
         );
     }
 
@@ -304,16 +301,10 @@ pub(crate) fn handle_recall(
     mode: Option<&str>,
     as_of: Option<&str>,
 ) -> String {
-    if let Some(q) = query {
-        score_placement_misses(q);
-    }
     let Some(mut knowledge) = ProjectKnowledge::load(project_root) else {
         return "No knowledge stored for this project yet.".to_string();
     };
-    let policy = match load_policy_or_error() {
-        Ok(p) => p,
-        Err(e) => return e,
-    };
+    let policy = crate::core::memory_policy::MemoryPolicy::default();
 
     if let Some(raw) = as_of {
         let at = match parse_as_of(raw) {
@@ -600,7 +591,7 @@ pub(crate) fn rehydrate_from_archives(
     // so a recall miss can recover from any archive still on disk instead of only
     // the newest few that the prior fixed cap left reachable.
     let archives = crate::core::memory_lifecycle::reachable_archives(
-        &crate::core::memory_archive::ArchiveConfig::from_env(),
+        &crate::core::memory_archive::ArchiveConfig::default(),
     );
     if archives.is_empty() {
         return false;
@@ -709,30 +700,6 @@ pub(crate) fn rehydrate_from_archives(
         let _ = knowledge.run_memory_lifecycle(policy);
     }
     any
-}
-
-/// LITM placement-miss hook (#539): an explicit recall whose query matches an
-/// item that the last wakeup injection already placed means the placement did
-/// not register with the model — record a miss for that position.
-fn score_placement_misses(query: &str) {
-    use crate::core::litm_calibration::{Position, key_matches, record_outcome};
-
-    let Some(mut session) = crate::core::session::SessionState::load_latest() else {
-        return;
-    };
-    let mut changed = false;
-    for entry in &mut session.wakeup_manifest {
-        if !entry.missed && key_matches(&entry.key, query) {
-            entry.missed = true;
-            changed = true;
-            if let Some(pos) = Position::parse(&entry.position) {
-                record_outcome(&entry.profile, pos, false);
-            }
-        }
-    }
-    if changed {
-        let _ = session.save();
-    }
 }
 
 #[cfg(test)]

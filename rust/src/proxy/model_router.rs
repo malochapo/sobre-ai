@@ -9,8 +9,8 @@
 //! empty target string leaves the request untouched. Premium work is never
 //! silently downgraded unless the operator explicitly configures a tier target.
 //!
-//! **Opt-in only:** requires `[proxy.routing] enabled = true` AND at least one
-//! tier entry. Without both, this module is a no-op.
+//! **Opt-in only:** requires at least one `[proxy.routing.tiers]` entry.
+//! Without one, this module is a no-op.
 //!
 //! ## Interaction with other routing mechanisms
 //!
@@ -32,12 +32,12 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::core::config::{RoutingRules, parse_route_target};
-use crate::core::intent_engine::{self, TaskClassification};
+use crate::core::intent_engine::{self};
 
-/// A routing decision record — emitted for observability and future OCLA bus
-/// integration (P2). Deterministic: same input → same decision (#498).
+/// A routing decision record, emitted for observability. Deterministic: same
+/// input → same decision (#498).
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct RoutingDecision {
+pub(crate) struct RoutingDecision {
     /// The model the client originally requested.
     pub requested_model: String,
     /// The model after routing (may be identical if no tier matched).
@@ -61,7 +61,7 @@ pub struct RoutingDecision {
 /// Returns `Some(decision)` when routing is active and classification
 /// succeeded. The caller must apply the model swap from the decision.
 /// Returns `None` when routing is inactive or the request is exempt.
-pub fn route(body: &Value, rules: &RoutingRules) -> Option<RoutingDecision> {
+pub(crate) fn route(body: &Value, rules: &RoutingRules) -> Option<RoutingDecision> {
     if !rules.is_active() || rules.tiers.is_empty() {
         return None;
     }
@@ -111,28 +111,6 @@ pub fn route(body: &Value, rules: &RoutingRules) -> Option<RoutingDecision> {
         model_changed: requested_model != model,
         estimated_cost_ratio: cost_ratio,
     })
-}
-
-/// Applies a routing decision to a mutable request body (in-place model swap).
-pub fn apply_decision(body: &mut Value, decision: &RoutingDecision) {
-    if !decision.model_changed {
-        return;
-    }
-    if let Some(obj) = body.as_object_mut() {
-        obj.insert(
-            "model".to_string(),
-            Value::String(decision.routed_model.clone()),
-        );
-    }
-}
-
-/// Classifies a request without applying routing — for dry-run / observability.
-pub fn classify_only(body: &Value) -> Option<(TaskClassification, intent_engine::IntentRoute)> {
-    let messages = body.get("messages")?;
-    let content = extract_last_user_content(messages)?;
-    let classification = intent_engine::classify(&content);
-    let route = intent_engine::route_intent(&content, &classification);
-    Some((classification, route))
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -224,7 +202,6 @@ mod tests {
 
     fn active_rules(tiers: &[(&str, &str)]) -> RoutingRules {
         RoutingRules {
-            enabled: Some(true),
             aliases: BTreeMap::new(),
             tiers: tiers
                 .iter()
@@ -254,7 +231,6 @@ mod tests {
     #[test]
     fn empty_tiers_returns_none() {
         let rules = RoutingRules {
-            enabled: Some(true),
             aliases: BTreeMap::new(),
             tiers: BTreeMap::new(),
         };
@@ -364,40 +340,6 @@ mod tests {
     }
 
     // ─── Decision application ────────────────────────────────────────────
-
-    #[test]
-    fn apply_decision_rewrites_body() {
-        let mut body = request_body("claude-sonnet-4", "explain");
-        let decision = RoutingDecision {
-            requested_model: "claude-sonnet-4".into(),
-            routed_model: "claude-haiku-4-5".into(),
-            routed_provider: Some("anthropic".into()),
-            tier: "fast".into(),
-            confidence: 0.85,
-            reasoning: "explore(what) + low complexity -> fast".into(),
-            model_changed: true,
-            estimated_cost_ratio: Some(0.2),
-        };
-        apply_decision(&mut body, &decision);
-        assert_eq!(body["model"], "claude-haiku-4-5");
-    }
-
-    #[test]
-    fn apply_decision_noop_when_unchanged() {
-        let mut body = request_body("claude-sonnet-4", "explain");
-        let decision = RoutingDecision {
-            requested_model: "claude-sonnet-4".into(),
-            routed_model: "claude-sonnet-4".into(),
-            routed_provider: None,
-            tier: "standard".into(),
-            confidence: 0.8,
-            reasoning: "fix_bug(how) -> standard".into(),
-            model_changed: false,
-            estimated_cost_ratio: None,
-        };
-        apply_decision(&mut body, &decision);
-        assert_eq!(body["model"], "claude-sonnet-4");
-    }
 
     // ─── Cost estimation ─────────────────────────────────────────────────
 

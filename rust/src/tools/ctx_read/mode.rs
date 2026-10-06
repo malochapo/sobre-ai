@@ -15,8 +15,7 @@
 //!   same strings, so the type can be threaded through the typed decision points
 //!   without touching the string-mode MCP boundary or `render.rs` (back-compat).
 //! * the classification methods ([`ReadMode::is_compressed_cacheable`],
-//!   [`ReadMode::allows_raw_cap`], [`ReadMode::is_lossy_summary`],
-//!   [`ReadMode::counts_as_compressed`]) replace the scattered `matches!(mode,
+//!   [`ReadMode::allows_raw_cap`], [`ReadMode::is_lossy_summary`]) replace the scattered `matches!(mode,
 //!   …)` predicates, and the test module locks each one to the legacy predicate
 //!   it replaces so behaviour can never silently change.
 
@@ -304,22 +303,6 @@ impl ReadMode {
         )
     }
 
-    /// Whether a read in this mode counts as "compressed" for bounce/quality
-    /// tracking (#538). Only verbatim `full` and the `diff` delta are *not*
-    /// compressed. Replaces the inline `!matches!(mode, "full"|"diff"|"lines")`
-    /// predicate — a resolved line window is the string `"lines:N-M"`, never the
-    /// bare `"lines"`, so that arm was dead and `Lines` stays compressed here.
-    #[must_use]
-    pub(crate) fn counts_as_compressed(&self) -> bool {
-        // `anchored` is lossless (verbatim + anchors), so like `full` it must not
-        // count as a "compressed" read for bounce/quality tracking.
-        // `full-compact` only strips trailing whitespace — functionally verbatim.
-        !matches!(
-            self,
-            ReadMode::Full | ReadMode::FullCompact | ReadMode::Diff | ReadMode::Anchored(_)
-        )
-    }
-
     /// Precise, pinned reads (#843): the caller asked for an exact byte-window
     /// or delta and must get exactly that back. Context-gate overrides
     /// (bounce-prevention, pressure-downgrade, graph/knowledge heuristics)
@@ -360,31 +343,6 @@ mod tests {
         "density:0.40",
     ];
 
-    // --- Legacy predicates being replaced (kept verbatim so the equivalence
-    // tests below pin behaviour to the exact prior semantics). ---
-
-    fn legacy_is_cacheable(mode: &str) -> bool {
-        ["map", "signatures"].contains(&mode)
-    }
-
-    fn legacy_allows_raw_cap(mode: &str) -> bool {
-        !(mode.starts_with("lines:") || matches!(mode, "reference" | "diff" | "raw" | "anchored"))
-    }
-
-    fn legacy_is_lossy_summary(mode: &str) -> bool {
-        matches!(
-            mode,
-            "map" | "signatures" | "aggressive" | "entropy" | "task"
-        )
-    }
-
-    fn legacy_counts_as_compressed(mode: &str) -> bool {
-        !matches!(
-            mode,
-            "full" | "full-compact" | "diff" | "lines" | "anchored"
-        )
-    }
-
     #[test]
     fn round_trips_every_canonical_mode() {
         for mode in CANONICAL {
@@ -393,33 +351,6 @@ mod tests {
                 parsed.to_string(),
                 *mode,
                 "Display must round-trip '{mode}' byte-identically"
-            );
-        }
-    }
-
-    #[test]
-    fn classification_matches_legacy_predicates() {
-        for mode in CANONICAL {
-            let parsed: ReadMode = mode.parse().expect("canonical mode parses");
-            assert_eq!(
-                parsed.is_compressed_cacheable(),
-                legacy_is_cacheable(mode),
-                "is_compressed_cacheable diverged for '{mode}'"
-            );
-            assert_eq!(
-                parsed.allows_raw_cap(),
-                legacy_allows_raw_cap(mode),
-                "allows_raw_cap diverged for '{mode}'"
-            );
-            assert_eq!(
-                parsed.is_lossy_summary(),
-                legacy_is_lossy_summary(mode),
-                "is_lossy_summary diverged for '{mode}'"
-            );
-            assert_eq!(
-                parsed.counts_as_compressed(),
-                legacy_counts_as_compressed(mode),
-                "counts_as_compressed diverged for '{mode}'"
             );
         }
     }
@@ -537,7 +468,6 @@ mod tests {
             single.is_precise_pinned_read()
         );
         assert_eq!(multi.allows_raw_cap(), single.allows_raw_cap());
-        assert_eq!(multi.counts_as_compressed(), single.counts_as_compressed());
         assert_eq!(multi.is_lossy_summary(), single.is_lossy_summary());
         assert_eq!(
             multi.is_compressed_cacheable(),
@@ -578,10 +508,9 @@ mod tests {
     }
 
     #[test]
-    fn anchored_window_opts_out_of_raw_cap_and_compressed_count() {
+    fn anchored_window_opts_out_of_raw_cap() {
         let windowed: ReadMode = "anchored:5-10".parse().unwrap();
         assert!(!windowed.allows_raw_cap());
-        assert!(!windowed.counts_as_compressed());
     }
 
     #[test]

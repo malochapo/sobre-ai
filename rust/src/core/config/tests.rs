@@ -5,844 +5,13 @@
 //! to the `config` module (identical to the original `super::*`).
 
 #[cfg(test)]
-mod prefer_native_editor_tests {
-    use super::super::*;
-
-    fn env_clean() -> bool {
-        std::env::var("LEAN_CTX_PREFER_NATIVE_EDITOR").is_err()
-    }
-
-    #[test]
-    fn default_is_off_and_blocks_nothing() {
-        if !env_clean() {
-            return;
-        }
-        let cfg = Config::default();
-        assert!(!cfg.prefer_native_editor);
-        assert!(!cfg.prefer_native_editor_effective());
-        assert!(!cfg.edit_tool_blocked("ctx_edit"));
-    }
-
-    #[test]
-    fn enabled_blocks_only_edit_tools() {
-        if !env_clean() {
-            return;
-        }
-        let cfg = Config {
-            prefer_native_editor: true,
-            ..Default::default()
-        };
-        // #454: the dedicated edit tools are blocked; reads/search stay available.
-        assert!(cfg.edit_tool_blocked("ctx_edit"));
-        // #1008: the anchored editor honors the same preference.
-        assert!(cfg.edit_tool_blocked("ctx_patch"));
-        assert!(!cfg.edit_tool_blocked("ctx_read"));
-        assert!(!cfg.edit_tool_blocked("ctx_search"));
-        assert!(!cfg.edit_tool_blocked("ctx_refactor"));
-    }
-
-    /// Every name in `EDIT_TOOL_NAMES` must actually be blocked — the list and
-    /// the predicate must not drift apart.
-    #[test]
-    fn every_listed_edit_tool_is_blocked() {
-        if !env_clean() {
-            return;
-        }
-        let cfg = Config {
-            prefer_native_editor: true,
-            ..Default::default()
-        };
-        for name in crate::core::config::EDIT_TOOL_NAMES {
-            assert!(cfg.edit_tool_blocked(name), "{name} must be blocked");
-        }
-    }
-}
-
-#[cfg(test)]
-mod default_tool_categories_tests {
-    use super::super::*;
-
-    // --- Defaults ---
-
-    #[test]
-    fn default_returns_core_and_session() {
-        if std::env::var("LCTX_DEFAULT_CATEGORIES").is_ok() {
-            return;
-        }
-        let cfg = Config::default();
-        assert_eq!(
-            cfg.default_tool_categories_effective(),
-            vec!["core", "session"]
-        );
-    }
-
-    #[test]
-    fn default_struct_field_is_empty_vec() {
-        let cfg = Config::default();
-        assert!(cfg.default_tool_categories.is_empty());
-    }
-
-    // --- Config field overrides ---
-
-    #[test]
-    fn config_field_overrides_default() {
-        if std::env::var("LCTX_DEFAULT_CATEGORIES").is_ok() {
-            return;
-        }
-        let cfg = Config {
-            default_tool_categories: vec![
-                "core".to_string(),
-                "arch".to_string(),
-                "memory".to_string(),
-            ],
-            ..Default::default()
-        };
-        assert_eq!(
-            cfg.default_tool_categories_effective(),
-            vec!["core", "arch", "memory"]
-        );
-    }
-
-    #[test]
-    fn single_category_in_config() {
-        if std::env::var("LCTX_DEFAULT_CATEGORIES").is_ok() {
-            return;
-        }
-        let cfg = Config {
-            default_tool_categories: vec!["debug".to_string()],
-            ..Default::default()
-        };
-        assert_eq!(cfg.default_tool_categories_effective(), vec!["debug"]);
-    }
-
-    #[test]
-    fn all_six_categories_in_config() {
-        if std::env::var("LCTX_DEFAULT_CATEGORIES").is_ok() {
-            return;
-        }
-        let cfg = Config {
-            default_tool_categories: vec![
-                "core".to_string(),
-                "arch".to_string(),
-                "debug".to_string(),
-                "memory".to_string(),
-                "metrics".to_string(),
-                "session".to_string(),
-            ],
-            ..Default::default()
-        };
-        let effective = cfg.default_tool_categories_effective();
-        assert_eq!(effective.len(), 6);
-        assert!(effective.contains(&"core".to_string()));
-        assert!(effective.contains(&"metrics".to_string()));
-    }
-
-    // --- TOML deserialization ---
-
-    #[test]
-    fn deserialization_defaults_to_empty() {
-        let cfg: Config = toml::from_str("").unwrap();
-        assert!(cfg.default_tool_categories.is_empty());
-    }
-
-    #[test]
-    fn deserialization_from_toml() {
-        let cfg: Config =
-            toml::from_str(r#"default_tool_categories = ["core", "arch", "debug"]"#).unwrap();
-        assert_eq!(cfg.default_tool_categories, vec!["core", "arch", "debug"]);
-    }
-
-    #[test]
-    fn deserialization_empty_array() {
-        let cfg: Config = toml::from_str(r"default_tool_categories = []").unwrap();
-        assert!(cfg.default_tool_categories.is_empty());
-    }
-
-    #[test]
-    fn deserialization_single_entry() {
-        let cfg: Config = toml::from_str(r#"default_tool_categories = ["memory"]"#).unwrap();
-        assert_eq!(cfg.default_tool_categories, vec!["memory"]);
-    }
-
-    // --- Edge cases ---
-
-    #[test]
-    fn effective_normalizes_config_to_lowercase() {
-        if std::env::var("LCTX_DEFAULT_CATEGORIES").is_ok() {
-            return;
-        }
-        let cfg = Config {
-            default_tool_categories: vec!["ARCH".to_string(), "Debug".to_string()],
-            ..Default::default()
-        };
-        let effective = cfg.default_tool_categories_effective();
-        assert_eq!(effective, vec!["arch", "debug"]);
-    }
-}
-
-#[cfg(test)]
-mod no_degrade_tests {
-    use super::super::*;
-
-    // --- Defaults ---
-
-    #[test]
-    fn default_is_false() {
-        let cfg = Config::default();
-        assert!(!cfg.no_degrade);
-    }
-
-    #[test]
-    fn effective_false_when_unset() {
-        if std::env::var("LCTX_NO_DEGRADE").is_ok() {
-            return;
-        }
-        let cfg = Config::default();
-        assert!(!cfg.no_degrade_effective());
-    }
-
-    // --- Config field ---
-
-    #[test]
-    fn config_field_true_respected_when_no_env() {
-        if std::env::var("LCTX_NO_DEGRADE").is_ok() {
-            return;
-        }
-        let cfg = Config {
-            no_degrade: true,
-            ..Default::default()
-        };
-        assert!(cfg.no_degrade_effective());
-    }
-
-    #[test]
-    fn config_field_false_respected_when_no_env() {
-        if std::env::var("LCTX_NO_DEGRADE").is_ok() {
-            return;
-        }
-        let cfg = Config {
-            no_degrade: false,
-            ..Default::default()
-        };
-        assert!(!cfg.no_degrade_effective());
-    }
-
-    // --- TOML deserialization ---
-
-    #[test]
-    fn deserialization_true() {
-        let cfg: Config = toml::from_str("no_degrade = true").unwrap();
-        assert!(cfg.no_degrade);
-    }
-
-    #[test]
-    fn deserialization_false() {
-        let cfg: Config = toml::from_str("no_degrade = false").unwrap();
-        assert!(!cfg.no_degrade);
-    }
-
-    #[test]
-    fn deserialization_absent_defaults_false() {
-        let cfg: Config = toml::from_str("").unwrap();
-        assert!(!cfg.no_degrade);
-    }
-
-    // --- Coexistence with other config fields ---
-
-    #[test]
-    fn no_degrade_independent_of_prefer_native_editor() {
-        if std::env::var("LCTX_NO_DEGRADE").is_ok() {
-            return;
-        }
-        let cfg = Config {
-            no_degrade: true,
-            prefer_native_editor: true,
-            ..Default::default()
-        };
-        assert!(cfg.no_degrade_effective());
-        assert!(cfg.prefer_native_editor);
-    }
-
-    #[test]
-    fn no_degrade_independent_of_tool_categories() {
-        if std::env::var("LCTX_NO_DEGRADE").is_ok()
-            || std::env::var("LCTX_DEFAULT_CATEGORIES").is_ok()
-        {
-            return;
-        }
-        let cfg = Config {
-            no_degrade: true,
-            default_tool_categories: vec!["core".to_string(), "arch".to_string()],
-            ..Default::default()
-        };
-        assert!(cfg.no_degrade_effective());
-        assert_eq!(
-            cfg.default_tool_categories_effective(),
-            vec!["core", "arch"]
-        );
-    }
-}
-
-#[cfg(test)]
-mod delta_explicit_tests {
-    use super::super::*;
-
-    // --- Defaults ---
-
-    #[test]
-    fn default_is_on() {
-        // Flipped on 2026-08-27: a changed cached file comes back as a diff.
-        let cfg = Config::default();
-        assert!(cfg.delta_explicit);
-    }
-
-    #[test]
-    fn effective_follows_the_default_when_unset() {
-        // Serialize with the env-mutating sibling test below: this reads the var
-        // as a guard and again inside delta_explicit_effective(), so without the
-        // shared lock a parallel set_var between the two reads flips the result.
-        let _lock = crate::core::data_dir::test_env_lock();
-        if std::env::var("LCTX_DELTA_EXPLICIT").is_ok() {
-            return;
-        }
-        let cfg = Config::default();
-        assert!(cfg.delta_explicit_effective());
-    }
-
-    // --- Config field ---
-
-    #[test]
-    fn config_field_true_respected_when_no_env() {
-        // Serialize with the env-mutating sibling test (see effective_false_when_unset).
-        let _lock = crate::core::data_dir::test_env_lock();
-        if std::env::var("LCTX_DELTA_EXPLICIT").is_ok() {
-            return;
-        }
-        let cfg = Config {
-            delta_explicit: true,
-            ..Default::default()
-        };
-        assert!(cfg.delta_explicit_effective());
-    }
-
-    #[test]
-    fn config_field_false_respected_when_no_env() {
-        // Serialize with the env-mutating sibling test (see effective_false_when_unset).
-        let _lock = crate::core::data_dir::test_env_lock();
-        if std::env::var("LCTX_DELTA_EXPLICIT").is_ok() {
-            return;
-        }
-        let cfg = Config {
-            delta_explicit: false,
-            ..Default::default()
-        };
-        assert!(!cfg.delta_explicit_effective());
-    }
-
-    // --- Env override (both directions) ---
-
-    #[test]
-    fn env_overrides_config_field_in_both_directions() {
-        // All env mutation serializes through this lock (Rust 2024 set_var is
-        // `unsafe`; the lock is the documented soundness precondition).
-        let _lock = crate::core::data_dir::test_env_lock();
-
-        // env=1 turns the feature ON even when the config field is false.
-        crate::test_env::set_var("LCTX_DELTA_EXPLICIT", "1");
-        let off_cfg = Config {
-            delta_explicit: false,
-            ..Default::default()
-        };
-        assert!(
-            off_cfg.delta_explicit_effective(),
-            "LCTX_DELTA_EXPLICIT=1 must enable the feature over a false config field"
-        );
-
-        // env=0 forces it OFF even when the config field is true.
-        crate::test_env::set_var("LCTX_DELTA_EXPLICIT", "0");
-        let on_cfg = Config {
-            delta_explicit: true,
-            ..Default::default()
-        };
-        assert!(
-            !on_cfg.delta_explicit_effective(),
-            "LCTX_DELTA_EXPLICIT=0 must disable the feature over a true config field"
-        );
-
-        // `true`/`false` spellings are honoured too (case-insensitive).
-        crate::test_env::set_var("LCTX_DELTA_EXPLICIT", "true");
-        assert!(off_cfg.delta_explicit_effective());
-        crate::test_env::set_var("LCTX_DELTA_EXPLICIT", "FALSE");
-        assert!(!on_cfg.delta_explicit_effective());
-
-        // Restore: with the var removed the config field decides again.
-        crate::test_env::remove_var("LCTX_DELTA_EXPLICIT");
-        assert!(on_cfg.delta_explicit_effective());
-        assert!(!off_cfg.delta_explicit_effective());
-    }
-
-    // --- TOML deserialization ---
-
-    #[test]
-    fn deserialization_true() {
-        let cfg: Config = toml::from_str("delta_explicit = true").unwrap();
-        assert!(cfg.delta_explicit);
-    }
-
-    #[test]
-    fn deserialization_false() {
-        let cfg: Config = toml::from_str("delta_explicit = false").unwrap();
-        assert!(!cfg.delta_explicit);
-    }
-
-    #[test]
-    fn deserialization_absent_defaults_false() {
-        let cfg: Config = toml::from_str("").unwrap();
-        assert!(!cfg.delta_explicit);
-    }
-
-    // --- Round-trip (serialize → deserialize preserves the field) ---
-
-    #[test]
-    fn round_trip_preserves_field() {
-        let cfg = Config {
-            delta_explicit: true,
-            ..Default::default()
-        };
-        let serialized = toml::to_string(&cfg).expect("Config must serialize to TOML");
-        let restored: Config =
-            toml::from_str(&serialized).expect("serialized Config must round-trip");
-        assert!(
-            restored.delta_explicit,
-            "delta_explicit must survive a TOML serialize → deserialize round-trip"
-        );
-    }
-
-    // --- Coexistence with other config fields ---
-
-    #[test]
-    fn delta_explicit_independent_of_no_degrade() {
-        // Serialize with the env-mutating sibling tests (see effective_false_when_unset).
-        let _lock = crate::core::data_dir::test_env_lock();
-        if std::env::var("LCTX_DELTA_EXPLICIT").is_ok() || std::env::var("LCTX_NO_DEGRADE").is_ok()
-        {
-            return;
-        }
-        let cfg = Config {
-            delta_explicit: true,
-            no_degrade: true,
-            ..Default::default()
-        };
-        assert!(cfg.delta_explicit_effective());
-        assert!(cfg.no_degrade_effective());
-    }
-}
-
-#[cfg(test)]
-mod rules_scope_tests {
-    use super::super::*;
-
-    #[test]
-    fn default_is_both() {
-        let cfg = Config::default();
-        assert_eq!(cfg.rules_scope_effective(), RulesScope::Both);
-    }
-
-    #[test]
-    fn config_global() {
-        let cfg = Config {
-            rules_scope: Some("global".to_string()),
-            ..Default::default()
-        };
-        assert_eq!(cfg.rules_scope_effective(), RulesScope::Global);
-    }
-
-    #[test]
-    fn config_project() {
-        let cfg = Config {
-            rules_scope: Some("project".to_string()),
-            ..Default::default()
-        };
-        assert_eq!(cfg.rules_scope_effective(), RulesScope::Project);
-    }
-
-    #[test]
-    fn unknown_value_falls_back_to_both() {
-        let cfg = Config {
-            rules_scope: Some("nonsense".to_string()),
-            ..Default::default()
-        };
-        assert_eq!(cfg.rules_scope_effective(), RulesScope::Both);
-    }
-
-    #[test]
-    fn deserialization_none_by_default() {
-        let cfg: Config = toml::from_str("").unwrap();
-        assert!(cfg.rules_scope.is_none());
-        assert_eq!(cfg.rules_scope_effective(), RulesScope::Both);
-    }
-
-    #[test]
-    fn deserialization_from_toml() {
-        let cfg: Config = toml::from_str(r#"rules_scope = "project""#).unwrap();
-        assert_eq!(cfg.rules_scope.as_deref(), Some("project"));
-        assert_eq!(cfg.rules_scope_effective(), RulesScope::Project);
-    }
-}
-
-#[cfg(test)]
-mod rules_injection_tests {
-    use super::super::*;
-
-    #[test]
-    fn default_is_shared() {
-        let cfg = Config::default();
-        assert_eq!(cfg.rules_injection_effective(), RulesInjection::Shared);
-    }
-
-    #[test]
-    fn config_dedicated() {
-        let cfg = Config {
-            rules_injection: Some("dedicated".to_string()),
-            ..Default::default()
-        };
-        assert_eq!(cfg.rules_injection_effective(), RulesInjection::Dedicated);
-    }
-
-    #[test]
-    fn config_off() {
-        for raw in ["off", "none", "disabled"] {
-            let cfg = Config {
-                rules_injection: Some(raw.to_string()),
-                ..Default::default()
-            };
-            assert_eq!(
-                cfg.rules_injection_effective(),
-                RulesInjection::Off,
-                "{raw:?} should resolve to Off"
-            );
-        }
-    }
-
-    #[test]
-    fn off_disables_dedicated_session_context() {
-        let cfg = Config {
-            rules_injection: Some("off".to_string()),
-            ..Default::default()
-        };
-        assert!(!cfg.dedicated_session_context_active());
-    }
-
-    #[test]
-    fn unknown_value_falls_back_to_shared() {
-        let cfg = Config {
-            rules_injection: Some("nonsense".to_string()),
-            ..Default::default()
-        };
-        assert_eq!(cfg.rules_injection_effective(), RulesInjection::Shared);
-    }
-
-    #[test]
-    fn deserialization_from_toml() {
-        let cfg: Config = toml::from_str(r#"rules_injection = "dedicated""#).unwrap();
-        assert_eq!(cfg.rules_injection.as_deref(), Some("dedicated"));
-        assert_eq!(cfg.rules_injection_effective(), RulesInjection::Dedicated);
-    }
-
-    #[test]
-    fn dedicated_session_context_gated_by_scope() {
-        // Dedicated + non-project scope → SessionStart summary active.
-        let cfg = Config {
-            rules_injection: Some("dedicated".to_string()),
-            ..Default::default()
-        };
-        assert!(cfg.dedicated_session_context_active());
-
-        // Dedicated + project scope → global summary suppressed (project files only).
-        let cfg = Config {
-            rules_injection: Some("dedicated".to_string()),
-            rules_scope: Some("project".to_string()),
-            ..Default::default()
-        };
-        assert!(!cfg.dedicated_session_context_active());
-
-        // Shared (default) → never the SessionStart summary path.
-        let cfg = Config::default();
-        assert!(!cfg.dedicated_session_context_active());
-    }
-
-    #[test]
-    fn local_override_merges() {
-        let mut base = Config::default();
-        base.merge_local(r#"rules_injection = "dedicated""#, true);
-        assert_eq!(base.rules_injection_effective(), RulesInjection::Dedicated);
-    }
-}
-
-#[cfg(test)]
-mod permission_inheritance_tests {
-    use super::super::*;
-
-    #[test]
-    fn default_is_off() {
-        // Guard against a stray env var leaking into the test process.
-        if std::env::var("LEAN_CTX_PERMISSION_INHERITANCE").is_ok() {
-            return;
-        }
-        let cfg = Config::default();
-        assert_eq!(
-            cfg.permission_inheritance_effective(),
-            PermissionInheritance::Off
-        );
-    }
-
-    #[test]
-    fn config_on() {
-        if std::env::var("LEAN_CTX_PERMISSION_INHERITANCE").is_ok() {
-            return;
-        }
-        let cfg = Config {
-            permission_inheritance: Some("on".to_string()),
-            ..Default::default()
-        };
-        assert_eq!(
-            cfg.permission_inheritance_effective(),
-            PermissionInheritance::On
-        );
-    }
-
-    #[test]
-    fn unknown_value_falls_back_to_off() {
-        if std::env::var("LEAN_CTX_PERMISSION_INHERITANCE").is_ok() {
-            return;
-        }
-        let cfg = Config {
-            permission_inheritance: Some("nonsense".to_string()),
-            ..Default::default()
-        };
-        assert_eq!(
-            cfg.permission_inheritance_effective(),
-            PermissionInheritance::Off
-        );
-    }
-
-    #[test]
-    fn deserialization_from_toml() {
-        let cfg: Config = toml::from_str(r#"permission_inheritance = "on""#).unwrap();
-        assert_eq!(cfg.permission_inheritance.as_deref(), Some("on"));
-    }
-
-    #[test]
-    fn local_override_merges() {
-        if std::env::var("LEAN_CTX_PERMISSION_INHERITANCE").is_ok() {
-            return;
-        }
-        let mut base = Config::default();
-        base.merge_local(r#"permission_inheritance = "on""#, true);
-        assert_eq!(
-            base.permission_inheritance_effective(),
-            PermissionInheritance::On
-        );
-    }
-}
-
-#[cfg(test)]
-mod loop_detection_config_tests {
-    use super::super::*;
-
-    #[test]
-    fn defaults_are_reasonable() {
-        let cfg = LoopDetectionConfig::default();
-        assert_eq!(cfg.normal_threshold, 2);
-        assert_eq!(cfg.reduced_threshold, 4);
-        // 0 = blocking disabled by default (LeanCTX philosophy: always help, never block)
-        assert_eq!(cfg.blocked_threshold, 0);
-        assert_eq!(cfg.window_secs, 300);
-        assert_eq!(cfg.search_group_limit, 10);
-    }
-
-    #[test]
-    fn deserialization_defaults_when_missing() {
-        let cfg: Config = toml::from_str("").unwrap();
-        // 0 = blocking disabled by default
-        assert_eq!(cfg.loop_detection.blocked_threshold, 0);
-        assert_eq!(cfg.loop_detection.search_group_limit, 10);
-    }
-
-    #[test]
-    fn deserialization_from_toml() {
-        let cfg: Config = toml::from_str(
-            r"
-            [loop_detection]
-            normal_threshold = 1
-            reduced_threshold = 3
-            blocked_threshold = 5
-            window_secs = 120
-            search_group_limit = 8
-            ",
-        )
-        .unwrap();
-        assert_eq!(cfg.loop_detection.normal_threshold, 1);
-        assert_eq!(cfg.loop_detection.reduced_threshold, 3);
-        assert_eq!(cfg.loop_detection.blocked_threshold, 5);
-        assert_eq!(cfg.loop_detection.window_secs, 120);
-        assert_eq!(cfg.loop_detection.search_group_limit, 8);
-    }
-
-    #[test]
-    fn partial_override_keeps_defaults() {
-        let cfg: Config = toml::from_str(
-            r"
-            [loop_detection]
-            blocked_threshold = 10
-            ",
-        )
-        .unwrap();
-        assert_eq!(cfg.loop_detection.blocked_threshold, 10);
-        assert_eq!(cfg.loop_detection.normal_threshold, 2);
-        assert_eq!(cfg.loop_detection.search_group_limit, 10);
-    }
-}
-
-#[cfg(test)]
-mod extra_roots_tests {
-    use super::super::*;
-
-    #[test]
-    fn default_is_empty() {
-        let cfg = Config::default();
-        assert!(cfg.extra_roots.is_empty());
-    }
-
-    #[test]
-    fn deserialization_from_toml() {
-        let cfg: Config = toml::from_str(r#"extra_roots = ["/data/store", "/test/env"]"#).unwrap();
-        assert_eq!(cfg.extra_roots, vec!["/data/store", "/test/env"]);
-    }
-
-    #[test]
-    fn merge_extends() {
-        let mut base = Config {
-            extra_roots: vec!["/base".to_string()],
-            ..Config::default()
-        };
-        base.merge_local(r#"extra_roots = ["/local"]"#, true);
-        assert_eq!(base.extra_roots, vec!["/base", "/local"]);
-    }
-
-    #[test]
-    fn merge_local_untrusted_withholds_sensitive_keeps_comfort() {
-        // Finding 4: an untrusted workspace's security-sensitive override
-        // (path-jail widening) is withheld, but a comfort override (theme)
-        // still applies — selective gating, not a blanket block.
-        let mut base = Config::default();
-        base.merge_local(
-            "extra_roots = [\"/etc\"]
-theme = \"midnight\"
-",
-            false,
-        );
-        assert!(
-            base.extra_roots.is_empty(),
-            "path-jail widening must be withheld for untrusted workspace"
-        );
-        assert_eq!(
-            base.theme, "midnight",
-            "comfort override must still apply for untrusted workspace"
-        );
-    }
-
-    #[test]
-    fn merge_local_trusted_applies_sensitive() {
-        let mut base = Config::default();
-        base.merge_local(
-            "extra_roots = [\"/etc\"]
-",
-            true,
-        );
-        assert_eq!(base.extra_roots, vec!["/etc"]);
-    }
-
-    /// GH #833: untrusted workspace must not disable gitignore-respecting indexing.
-    #[test]
-    fn merge_local_untrusted_withholds_respect_gitignore_833() {
-        let mut base = Config::default();
-        assert!(
-            base.index.respect_gitignore,
-            "default must respect gitignore"
-        );
-        base.merge_local("[index]\nrespect_gitignore = false\n", false);
-        assert!(
-            base.index.respect_gitignore,
-            "untrusted workspace must not disable gitignore respect"
-        );
-    }
-
-    /// GH #833: trusted workspace CAN disable gitignore respect.
-    #[test]
-    fn merge_local_trusted_allows_respect_gitignore_833() {
-        let mut base = Config::default();
-        base.merge_local("[index]\nrespect_gitignore = false\n", true);
-        assert!(
-            !base.index.respect_gitignore,
-            "trusted workspace must be able to disable gitignore respect"
-        );
-    }
-
-    #[test]
-    fn merge_local_untrusted_withholds_tool_surface_overrides() {
-        // Regression: an untrusted repo's .lean-ctx.toml could silently widen
-        // the agent's tool surface (default_tool_categories was not in
-        // strip_sensitive_overrides), with no [SECURITY] warning. The
-        // The two tool-surface keys this also covered are gone.
-        let mut base = Config::default();
-        base.merge_local(
-            "default_tool_categories = [\"arch\"]
-",
-            false,
-        );
-        assert!(
-            base.default_tool_categories.is_empty(),
-            "default_tool_categories override must be withheld for untrusted workspace"
-        );
-    }
-
-    #[test]
-    fn merge_local_trusted_applies_tool_surface_overrides() {
-        let mut base = Config::default();
-        base.merge_local(
-            "default_tool_categories = [\"arch\"]
-",
-            true,
-        );
-        assert_eq!(base.default_tool_categories, vec!["arch"]);
-    }
-
-    #[test]
-    fn allow_symlink_roots_follows_extra_roots_trust_semantics() {
-        // #596 premium: the symlink write-through allowlist is security-sensitive,
-        // so an untrusted workspace's entry is withheld while a trusted one applies.
-        let mut untrusted = Config::default();
-        untrusted.merge_local(r#"allow_symlink_roots = ["/opt/dotfiles"]"#, false);
-        assert!(
-            untrusted.allow_symlink_roots.is_empty(),
-            "symlink-escape roots must be withheld for an untrusted workspace"
-        );
-
-        let mut trusted = Config::default();
-        trusted.merge_local(r#"allow_symlink_roots = ["/opt/dotfiles"]"#, true);
-        assert_eq!(trusted.allow_symlink_roots, vec!["/opt/dotfiles"]);
-    }
-}
-
-#[cfg(test)]
 mod config_load_cache_tests {
     use super::super::*;
     use crate::core::data_dir::isolated_data_dir;
 
     /// #406 regression: `Config::load()` must reflect a content change even when
     /// the file mtime is unchanged. A mtime-only cache (the old behaviour) kept a
-    /// long-lived MCP server on a stale `path_jail` while a fresh `doctor`
+    /// long-lived MCP server on a stale `allow_paths` while a fresh `doctor`
     /// process — with an empty cache — saw the new value. The cache is now keyed
     /// on a content hash, so this scenario stays live.
     #[test]
@@ -853,119 +22,27 @@ mod config_load_cache_tests {
             std::fs::create_dir_all(parent).unwrap();
         }
 
-        // Warm the cache with jail unset (default None).
+        // Warm the cache with the jail closed (default).
         std::fs::write(&path, "# initial\n").unwrap();
         let mtime0 = std::fs::metadata(&path).unwrap().modified().unwrap();
-        assert_eq!(Config::load().path_jail, None);
+        assert!(!Config::load().jail_open());
 
-        // Flip path_jail=false but restore the original mtime, so any mtime-only
+        // Open the jail but restore the original mtime, so any mtime-only
         // cache would serve the stale value (#406).
-        std::fs::write(&path, "path_jail = false\n").unwrap();
+        std::fs::write(&path, "allow_paths = [\"/\"]\n").unwrap();
         filetime::set_file_mtime(&path, filetime::FileTime::from_system_time(mtime0)).unwrap();
 
-        assert_eq!(
-            Config::load().path_jail,
-            Some(false),
+        assert!(
+            Config::load().jail_open(),
             "Config::load() must honor a content change with unchanged mtime (#406)"
         );
     }
 }
 
 #[cfg(test)]
-mod cost_config_tests {
-    use super::super::*;
-
-    #[test]
-    fn default_is_empty() {
-        let cfg = CostConfig::default();
-        assert!(cfg.default_model.is_none());
-        assert!(cfg.models.is_empty());
-        assert_eq!(cfg.model_for_client("cursor"), None);
-    }
-
-    #[test]
-    fn per_client_overrides_default() {
-        let mut models = std::collections::HashMap::new();
-        models.insert("cursor".to_string(), "claude-opus-4.5".to_string());
-        let cfg = CostConfig {
-            default_model: Some("gpt-5.4".to_string()),
-            models,
-            ..Default::default()
-        };
-        assert_eq!(
-            cfg.model_for_client("cursor").as_deref(),
-            Some("claude-opus-4.5")
-        );
-        // No entry → global default.
-        assert_eq!(cfg.model_for_client("copilot").as_deref(), Some("gpt-5.4"));
-    }
-
-    #[test]
-    fn blank_values_are_ignored() {
-        let cfg = CostConfig {
-            default_model: Some("   ".to_string()),
-            models: std::collections::HashMap::new(),
-            ..Default::default()
-        };
-        assert_eq!(cfg.model_for_client("cursor"), None);
-    }
-
-    #[test]
-    fn parses_from_toml_section() {
-        let cfg: Config = toml::from_str(
-            r#"
-[cost]
-default_model = "claude-opus-4.5"
-
-[cost.models]
-cursor = "claude-opus-4.5"
-copilot = "gpt-5.4"
-"#,
-        )
-        .unwrap();
-        assert_eq!(cfg.cost.default_model.as_deref(), Some("claude-opus-4.5"));
-        assert_eq!(
-            cfg.cost.model_for_client("copilot").as_deref(),
-            Some("gpt-5.4")
-        );
-    }
-
-    #[test]
-    fn default_config_has_empty_cost_section() {
-        let cfg = Config::default();
-        assert!(cfg.cost.default_model.is_none());
-        assert!(cfg.cost.models.is_empty());
-        assert!(cfg.cost.prices.is_empty());
-    }
-
-    #[test]
-    fn parses_price_overrides_from_toml() {
-        // #1189: negotiated enterprise rates in config.toml.
-        let cfg: Config = toml::from_str(
-            r#"
-[cost.prices."internal-llm"]
-input_per_m = 0.10
-output_per_m = 0.40
-
-[cost.prices."claude-opus-4.5"]
-input_per_m = 4.0
-"#,
-        )
-        .unwrap();
-        let internal = cfg.cost.prices.get("internal-llm").expect("row parsed");
-        assert_eq!(internal.input_per_m, Some(0.10));
-        assert_eq!(internal.output_per_m, Some(0.40));
-        assert_eq!(internal.cache_read_per_m, None);
-        let opus = cfg.cost.prices.get("claude-opus-4.5").expect("row parsed");
-        assert_eq!(opus.input_per_m, Some(4.0));
-        assert_eq!(opus.output_per_m, None);
-    }
-}
-
-#[cfg(test)]
 mod persist_global_tests {
     //! Regression tests for #443: persisting config must never reset customized
-    //! values nor leak project-local overrides into the global file.
+    //! values.
     use super::super::*;
 
     fn tmp_config() -> (tempfile::TempDir, std::path::PathBuf) {
@@ -979,64 +56,39 @@ mod persist_global_tests {
     #[test]
     fn update_global_at_preserves_customized_and_persists_change() {
         let (_dir, path) = tmp_config();
-        std::fs::write(
-            &path,
-            "max_ram_percent = 30\ncompression_level = \"standard\"\n",
-        )
-        .unwrap();
+        std::fs::write(&path, "compression_level = 0.5\n[proxy]\nport = 4444\n").unwrap();
 
-        let returned = Config::update_global_at(&path, |c| c.proxy_enabled = Some(true))
+        let returned = Config::update_global_at(&path, |c| c.proxy.enabled = Some(true))
             .expect("update_global_at must succeed");
-        assert_eq!(returned.proxy_enabled, Some(true));
+        assert_eq!(returned.proxy.enabled, Some(true));
 
         let reloaded: Config = toml::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
         assert_eq!(
-            reloaded.max_ram_percent, 30,
+            reloaded.proxy.port,
+            Some(4444),
             "customized value must survive"
         );
-        assert_eq!(reloaded.compression_level, CompressionLevel::Standard);
-        assert_eq!(reloaded.proxy_enabled, Some(true));
+        assert_eq!(reloaded.compression_level, Some(0.5));
+        assert_eq!(reloaded.proxy.enabled, Some(true));
     }
 
-    // load_global never folds in project-local overrides; it reads only the
-    // global file. update_global builds on this, so persists cannot leak.
+    // load_global reads only the given file.
     #[test]
     fn load_global_from_reads_only_the_given_file() {
         let (_dir, path) = tmp_config();
-        std::fs::write(&path, "theme = \"global-theme\"\n").unwrap();
+        std::fs::write(&path, "debug_log = true\n").unwrap();
         let cfg = Config::load_global_from(&path);
-        assert_eq!(cfg.theme, "global-theme");
-    }
-
-    // Root-cause marker: the OLD `load() (with merge_local) -> save()` pattern
-    // leaks a project-local override into the global file. This proves why
-    // persist paths must use load_global / update_global instead.
-    #[test]
-    fn merged_load_then_save_leaks_local_override_root_cause_marker() {
-        let (_dir, path) = tmp_config();
-        std::fs::write(&path, "theme = \"global-theme\"\n").unwrap();
-
-        // Simulate `Config::load()`: global file + project-local override merged.
-        let mut cfg = Config::load_global_from(&path);
-        cfg.merge_local("theme = \"project-local\"\n", true);
-        // OLD persist: write the merged struct back to the GLOBAL file.
-        cfg.save_to(&path).unwrap();
-
-        let reloaded: Config = toml::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
-        assert_eq!(
-            reloaded.theme, "project-local",
-            "OLD load+merge_local+save leaks the project-local value into global (#443)"
-        );
+        assert!(cfg.debug_log);
     }
 
     // Subticket 4 contract: refuse to touch an unparseable config; never clobber.
     #[test]
     fn update_global_at_refuses_unparseable_and_leaves_file_untouched() {
         let (_dir, path) = tmp_config();
-        let corrupt = "max_ram_percent = = =\n";
+        let corrupt = "[proxy]\nport = = =\n";
         std::fs::write(&path, corrupt).unwrap();
 
-        let result = Config::update_global_at(&path, |c| c.proxy_enabled = Some(true));
+        let result = Config::update_global_at(&path, |c| c.proxy.enabled = Some(true));
         assert!(
             result.is_err(),
             "must refuse to modify an unparseable config"
@@ -1053,54 +105,16 @@ mod persist_global_tests {
         let (_dir, path) = tmp_config();
         // Missing file.
         let cfg = Config::load_global_from(&path);
-        assert_eq!(cfg.max_ram_percent, Config::default().max_ram_percent);
+        assert_eq!(cfg.proxy.port, Config::default().proxy.port);
+        assert_eq!(cfg.shell_timeout_secs, Config::default().shell_timeout_secs);
         // Empty / whitespace-only file.
         std::fs::write(&path, "   \n").unwrap();
         let cfg2 = Config::load_global_from(&path);
-        assert_eq!(cfg2.max_ram_percent, Config::default().max_ram_percent);
-    }
-}
-
-#[cfg(test)]
-mod max_index_threads_tests {
-    use super::super::*;
-
-    #[test]
-    fn default_is_zero() {
-        assert_eq!(Config::default().max_index_threads, 0);
-    }
-
-    #[test]
-    fn absent_in_toml_defaults_to_zero() {
-        let cfg: Config = toml::from_str("").unwrap();
-        assert_eq!(cfg.max_index_threads, 0);
-    }
-
-    #[test]
-    fn parses_explicit_cap_from_toml() {
-        let cfg: Config = toml::from_str("max_index_threads = 8").unwrap();
-        assert_eq!(cfg.max_index_threads, 8);
-    }
-
-    #[test]
-    fn effective_uses_config_when_env_unset() {
-        // Only meaningful when LEANCTX_INDEX_THREADS is unset; skip otherwise.
-        if std::env::var("LEANCTX_INDEX_THREADS").is_ok() {
-            return;
-        }
-        let cfg = Config {
-            max_index_threads: 4,
-            ..Default::default()
-        };
-        assert_eq!(cfg.max_index_threads_effective(), 4);
-    }
-
-    #[test]
-    fn effective_zero_means_no_cap() {
-        if std::env::var("LEANCTX_INDEX_THREADS").is_ok() {
-            return;
-        }
-        assert_eq!(Config::default().max_index_threads_effective(), 0);
+        assert_eq!(cfg2.proxy.port, Config::default().proxy.port);
+        assert_eq!(
+            cfg2.shell_timeout_secs,
+            Config::default().shell_timeout_secs
+        );
     }
 }
 
@@ -1112,15 +126,12 @@ mod shell_timeout_and_writes_tests {
     fn timeout_overrides_default_to_none() {
         let cfg = Config::default();
         assert_eq!(cfg.shell_timeout_secs, None);
-        assert_eq!(cfg.shell_heavy_timeout_secs, None);
     }
 
     #[test]
     fn timeout_overrides_parse_from_toml() {
-        let cfg: Config =
-            toml::from_str("shell_timeout_secs = 90\nshell_heavy_timeout_secs = 1800").unwrap();
+        let cfg: Config = toml::from_str("shell_timeout_secs = 90").unwrap();
         assert_eq!(cfg.shell_timeout_secs, Some(90));
-        assert_eq!(cfg.shell_heavy_timeout_secs, Some(1800));
     }
 }
 
@@ -1130,7 +141,7 @@ mod config_path_visibility_tests {
 
     // #540: `missing_config_path()` is the visible signal that the runtime
     // resolved a `config.toml` that doesn't exist — i.e. an edit landed in a
-    // different file (XDG vs legacy dir, or a sandboxed HOME). The block messages
+    // different file (a custom config dir, or a sandboxed HOME). The block messages
     // turn this into an over-MCP-visible note.
     #[test]
     fn missing_config_path_flags_absent_then_clears_when_present() {
@@ -1153,74 +164,5 @@ mod config_path_visibility_tests {
         if let Some(v) = saved {
             crate::test_env::set_var("LEAN_CTX_CONFIG_DIR", v);
         }
-    }
-}
-
-#[cfg(test)]
-mod context_budget_tests {
-    use super::super::*;
-
-    #[test]
-    fn default_budget_is_eight_thousand() {
-        assert_eq!(ContextConfig::default().budget_tokens, 8000);
-        assert_eq!(Config::default().context.budget_tokens, 8000);
-        assert!(Config::default().context.proactive_expansion);
-        assert_eq!(
-            Config::default().context.proactive_expansion_budget_tokens,
-            2000
-        );
-        assert_eq!(
-            Config::default().context.proactive_expansion_max_age_secs,
-            3600
-        );
-    }
-
-    #[test]
-    fn effective_uses_config_field_when_no_env() {
-        let _lock = crate::core::data_dir::test_env_lock();
-        if std::env::var("LEAN_CTX_CONTEXT_BUDGET_TOKENS").is_ok() {
-            return;
-        }
-        let cfg = Config {
-            context: ContextConfig {
-                budget_tokens: 5000,
-                ..Default::default()
-            },
-            ..Default::default()
-        };
-        assert_eq!(cfg.context_budget_tokens_effective(), 5000);
-    }
-
-    #[test]
-    fn env_overrides_config_budget() {
-        let _lock = crate::core::data_dir::test_env_lock();
-        crate::test_env::set_var("LEAN_CTX_CONTEXT_BUDGET_TOKENS", "1234");
-        let cfg = Config {
-            context: ContextConfig {
-                budget_tokens: 5000,
-                ..Default::default()
-            },
-            ..Default::default()
-        };
-        assert_eq!(cfg.context_budget_tokens_effective(), 1234);
-        crate::test_env::remove_var("LEAN_CTX_CONTEXT_BUDGET_TOKENS");
-    }
-
-    #[test]
-    fn proactive_expansion_settings_are_effective() {
-        let cfg = Config {
-            context: ContextConfig {
-                proactive_expansion: false,
-                proactive_expansion_budget_tokens: 17,
-                proactive_expansion_threshold: 0.8,
-                proactive_expansion_max_age_secs: 42,
-                ..Default::default()
-            },
-            ..Default::default()
-        };
-        assert!(!cfg.proactive_expansion_effective());
-        assert_eq!(cfg.proactive_expansion_budget_tokens_effective(), 17);
-        assert_eq!(cfg.proactive_expansion_threshold_effective(), 0.8);
-        assert_eq!(cfg.proactive_expansion_max_age_secs_effective(), 42);
     }
 }

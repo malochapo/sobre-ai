@@ -55,10 +55,6 @@ pub fn run() {
                 cmd_gain(&rest);
                 return;
             }
-            "learning" => {
-                cmd_learning(&rest);
-                return;
-            }
             "conformance" => {
                 cmd_conformance(&rest);
                 return;
@@ -76,12 +72,12 @@ pub fn run() {
                 super::cmd_output_savings(&rest);
                 return;
             }
-            "policy" => {
-                crate::cli::cmd_policy(&rest);
-                return;
-            }
             "embeddings" => {
                 crate::cli::embeddings_cmd::cmd_embeddings(&rest);
+                return;
+            }
+            "pricing" => {
+                crate::cli::pricing_cmd::cmd_pricing(&rest);
                 return;
             }
             "rules" => {
@@ -125,10 +121,6 @@ pub fn run() {
             }
             "cep" => {
                 println!("{}", core::stats::format_cep_report());
-                return;
-            }
-            "provider" => {
-                cmd_provider(&rest);
                 return;
             }
             "proxy" => {
@@ -212,10 +204,6 @@ pub fn run() {
                 super::cmd_session_action(&rest);
                 return;
             }
-            "ocla" => {
-                super::cmd_ocla(&rest);
-                return;
-            }
             "knowledge" => {
                 super::cmd_knowledge(&rest);
                 return;
@@ -240,28 +228,12 @@ pub fn run() {
                 super::cmd_config(&rest);
                 return;
             }
-            "security" => {
-                super::cmd_security(&rest);
-                return;
-            }
-            "trust" => {
-                super::cmd_trust(&rest);
-                return;
-            }
-            "untrust" => {
-                super::cmd_untrust(&rest);
-                return;
-            }
             "introspect" => {
                 super::cmd_introspect(&rest);
                 return;
             }
             "cache" => {
                 super::cmd_cache(&rest);
-                return;
-            }
-            "theme" => {
-                super::cmd_theme(&rest);
                 return;
             }
             "tee" => {
@@ -278,28 +250,6 @@ pub fn run() {
             }
             "debug-log" => {
                 super::cmd_debug_log(&rest);
-                return;
-            }
-            // Editor focus ingress (#500): called by the VS Code extension on
-            // tab change; <10ms, no daemon required.
-            "editor-signal" => {
-                let file = rest
-                    .iter()
-                    .position(|a| a == "--file")
-                    .and_then(|i| rest.get(i + 1));
-                if let Some(path) = file {
-                    if let Err(e) = core::editor_signal::record_focus(path) {
-                        eprintln!("editor-signal: {e}");
-                        std::process::exit(1);
-                    }
-                } else {
-                    eprintln!("usage: lean-ctx editor-signal --file <path>");
-                    std::process::exit(2);
-                }
-                return;
-            }
-            "editor-session" => {
-                handle_editor_session(&rest);
                 return;
             }
             "restart" => {
@@ -361,7 +311,7 @@ pub fn run() {
                 // inside the handler (#1035), so they must NOT also carry the
                 // force-exit watchdog (which would `exit(1)` with no decision and
                 // wedge the host). The remaining hooks keep the simple zombie-guard.
-                if !matches!(action, "rewrite" | "redirect" | "deny" | "vibe-pre-tool") {
+                if !matches!(action, "rewrite" | "redirect" | "deny") {
                     hook_handlers::arm_watchdog(std::time::Duration::from_secs(5));
                 }
                 match action {
@@ -372,10 +322,9 @@ pub fn run() {
                     "observe" => hook_handlers::handle_observe(),
                     "codex-pretooluse" => hook_handlers::handle_codex_pretooluse(),
                     "codex-session-start" => hook_handlers::handle_codex_session_start(),
-                    "vibe-pre-tool" => hook_handlers::handle_vibe_pre_tool(),
                     _ => {
                         eprintln!(
-                            "Usage: lean-ctx hook <rewrite|redirect|deny|read-dedup|observe|codex-pretooluse|codex-session-start|vibe-pre-tool>"
+                            "Usage: lean-ctx hook <rewrite|redirect|deny|read-dedup|observe|codex-pretooluse|codex-session-start>"
                         );
                         eprintln!(
                             "  Internal commands used by agent hooks (Claude, Cursor, Copilot, etc.)"
@@ -454,34 +403,6 @@ pub fn run() {
 
     if let Err(e) = run_mcp_server() {
         tracing::error!("lean-ctx: {e}");
-        std::process::exit(1);
-    }
-}
-
-fn handle_editor_session(args: &[String]) {
-    let value_for = |flag: &str| {
-        args.iter()
-            .position(|argument| argument == flag)
-            .and_then(|index| args.get(index + 1))
-    };
-    let fields = (
-        value_for("--event"),
-        value_for("--source"),
-        value_for("--workspace"),
-        value_for("--session-id"),
-    );
-    let (Some(event), Some(source), Some(workspace), Some(session_id)) = fields else {
-        eprintln!(
-            "usage: lean-ctx editor-session --event <open|heartbeat|close> \
-             --source <editor> --workspace <path> --session-id <id>"
-        );
-        std::process::exit(2);
-    };
-
-    if let Err(error) = crate::core::agents::AgentRegistry::record_logical_session_presence(
-        event, source, workspace, session_id,
-    ) {
-        eprintln!("editor-session: {error}");
         std::process::exit(1);
     }
 }
@@ -680,37 +601,18 @@ mod tests {
     #[test]
     #[serial]
     fn worker_threads_default_clamps_low() {
-        crate::test_env::remove_var("LEAN_CTX_WORKER_THREADS");
         assert_eq!(resolve_worker_threads(1), 1);
     }
 
     #[test]
     #[serial]
     fn worker_threads_default_clamps_high() {
-        crate::test_env::remove_var("LEAN_CTX_WORKER_THREADS");
         assert_eq!(resolve_worker_threads(32), 4);
     }
 
     #[test]
     #[serial]
     fn worker_threads_default_passthrough() {
-        crate::test_env::remove_var("LEAN_CTX_WORKER_THREADS");
         assert_eq!(resolve_worker_threads(3), 3);
-    }
-
-    #[test]
-    #[serial]
-    fn worker_threads_env_override() {
-        crate::test_env::set_var("LEAN_CTX_WORKER_THREADS", "12");
-        assert_eq!(resolve_worker_threads(2), 12);
-        crate::test_env::remove_var("LEAN_CTX_WORKER_THREADS");
-    }
-
-    #[test]
-    #[serial]
-    fn worker_threads_env_invalid_falls_back() {
-        crate::test_env::set_var("LEAN_CTX_WORKER_THREADS", "not_a_number");
-        assert_eq!(resolve_worker_threads(3), 3);
-        crate::test_env::remove_var("LEAN_CTX_WORKER_THREADS");
     }
 }

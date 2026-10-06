@@ -18,7 +18,7 @@
 //! successes) >= 0.25`, and stops being risky only when the rate drops below
 //! `0.15` — two thresholds so one lucky edit doesn't flap the decision.
 //!
-//! Storage: `~/.lean-ctx/edit_quality.json`, atomic write (tmp+rename),
+//! Storage: `edit_quality.json` in the data dir, atomic write (tmp+rename),
 //! loaded once per process, flushed periodically like `path_mode_memory`.
 
 use std::collections::HashMap;
@@ -336,24 +336,6 @@ fn record_outcome_with(path: &str, last_mode: &str, success: bool, esc: Escalati
                 Escalation::Full => store.set_pending_escalation(&norm, now),
                 Escalation::Anchored => store.set_pending_anchored_escalation(&norm, now),
             }
-            // Quality signal (#538): edit failures after a stale read are the
-            // strongest "the model's view was wrong" evidence we have — they also
-            // penalize the bandit arm that produced the read (#593).
-            crate::core::adaptive_thresholds::record_quality_signal(
-                path,
-                crate::core::threshold_learning::QualitySignal::EditFail,
-            );
-            // Stigmergy (#540): edit failures mark the path as Stuck ("context
-            // drifted"), the explicit anchor-miss signal called for in #1008.
-            let scent_path = norm.clone();
-            std::thread::spawn(move || {
-                crate::core::scent_field::deposit(
-                    crate::core::scent_field::scent_agent_id(),
-                    crate::core::scent_field::ScentKind::Stuck,
-                    &scent_path,
-                    1.0,
-                );
-            });
         }
     }
     maybe_flush(&mut store);
@@ -391,37 +373,6 @@ fn consume_escalation(path: &str, anchored: bool) -> bool {
 pub fn is_risky_mode(path: &str, mode: &str) -> bool {
     let ext = ext_of(path);
     global().lock().is_ok_and(|s| s.is_risky(&ext, mode))
-}
-
-/// Snapshot for `ctx_metrics`: (risky pairs, per-pair stats, escalations served).
-pub fn metrics_snapshot() -> serde_json::Value {
-    let Ok(store) = global().lock() else {
-        return serde_json::json!({});
-    };
-    let mut pairs: Vec<serde_json::Value> = store
-        .pairs
-        .iter()
-        .map(|(key, s)| {
-            serde_json::json!({
-                "pair": key,
-                "fails": s.fails,
-                "successes": s.successes,
-                "fail_rate": (s.fail_rate() * 1000.0).round() / 1000.0,
-                "risky": s.risky,
-            })
-        })
-        .collect();
-    pairs.sort_by(|a, b| {
-        let fa = a["fail_rate"].as_f64().unwrap_or(0.0);
-        let fb = b["fail_rate"].as_f64().unwrap_or(0.0);
-        fb.partial_cmp(&fa).unwrap_or(std::cmp::Ordering::Equal)
-    });
-    serde_json::json!({
-        "pairs": pairs,
-        "pending_escalations": store.pending_escalations.len(),
-        "pending_anchored_escalations": store.pending_anchored_escalations.len(),
-        "escalations_served": store.escalations_served,
-    })
 }
 
 pub fn flush() {
@@ -531,16 +482,6 @@ mod tests {
         s.set_pending_anchored_escalation("src/x.rs", 1000);
         assert!(s.pending_escalations.is_empty());
         assert_eq!(s.pending_anchored_escalations.len(), 1);
-    }
-
-    #[test]
-    fn store_without_anchored_field_deserializes() {
-        // Back-compat (#1008): a store written before anchored editing has no
-        // `pending_anchored_escalations` key; `#[serde(default)]` must fill it.
-        let legacy = r#"{"pairs":{},"pending_escalations":{"old.rs":42}}"#;
-        let s: EditQualityStore = serde_json::from_str(legacy).unwrap();
-        assert!(s.pending_anchored_escalations.is_empty());
-        assert!(s.pending_escalations.contains_key("old.rs"));
     }
 
     #[test]

@@ -14,10 +14,10 @@ pub use model::{
     GotchaStore, PendingError, SessionErrorLog,
 };
 pub use persist::{load_universal_gotchas, save_universal_gotchas};
-pub use reflector::{ReflectionInsight, fold_into_playbook, format_ledger, reflect};
+pub use reflector::{ReflectionInsight, format_ledger, reflect};
 pub use runtime::record_shell_outcome;
 
-use chrono::{DateTime, Utc};
+use chrono::Utc;
 use detect::command_base;
 use model::{DECAY_ARCHIVE_THRESHOLD, MAX_GOTCHAS, MAX_PENDING, MAX_SESSION_LOGS, gotcha_id};
 
@@ -266,21 +266,6 @@ impl GotchaStore {
 
     // -- Promotion ----------------------------------------------------------
 
-    /// High-value gotchas eligible for promotion into durable project knowledge
-    /// (the loop-weighting bridge, #980): proven across sessions and shown to
-    /// prevent real errors. Read-only companion to [`Self::check_promotions`],
-    /// sorted by confidence so callers can take the strongest first.
-    #[must_use]
-    pub fn promotable(&self) -> Vec<&Gotcha> {
-        let mut v: Vec<&Gotcha> = self.gotchas.iter().filter(|g| g.is_promotable()).collect();
-        v.sort_by(|a, b| {
-            b.confidence
-                .partial_cmp(&a.confidence)
-                .unwrap_or(std::cmp::Ordering::Equal)
-        });
-        v
-    }
-
     pub fn check_promotions(&mut self) -> Vec<(String, String, String, f32)> {
         let mut promoted = Vec::new();
         for gotcha in &self.gotchas {
@@ -313,74 +298,11 @@ impl GotchaStore {
 
     // -- Relevance scoring --------------------------------------------------
 
-    pub fn top_relevant(&self, files_touched: &[String], limit: usize) -> Vec<&Gotcha> {
-        let mut scored: Vec<(&Gotcha, f32)> = self
-            .gotchas
-            .iter()
-            .map(|g| (g, relevance_score(g, files_touched)))
-            .filter(|(_, s)| *s > 0.5)
-            .collect();
-
-        scored.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
-        scored.into_iter().take(limit).map(|(g, _)| g).collect()
-    }
-
-    pub fn format_injection_block(&self, files_touched: &[String]) -> String {
-        let relevant = self.top_relevant(files_touched, 7);
-        if relevant.is_empty() {
-            return String::new();
-        }
-
-        let mut lines = Vec::with_capacity(relevant.len() + 2);
-        lines.push("--- PROJECT GOTCHAS (do NOT repeat these mistakes) ---".to_string());
-
-        for g in &relevant {
-            let prefix = g.severity.prefix();
-            let label = g.category.short_label();
-            let sessions = g.session_ids.len();
-            let age = format_age(g.last_seen);
-            let trigger = crate::core::sanitize::neutralize_metadata(&g.trigger);
-            let resolution = crate::core::sanitize::neutralize_metadata(&g.resolution);
-
-            let source_hint = match &g.source {
-                GotchaSource::AgentReported { .. } => ", agent-confirmed".to_string(),
-                GotchaSource::CrossSessionCorrelated { .. } => {
-                    format!(", across {sessions} sessions")
-                }
-                GotchaSource::AutoDetected { .. } => ", auto-detected".to_string(),
-                GotchaSource::Promoted { .. } => ", proven".to_string(),
-            };
-
-            let prevented = if g.prevented_count > 0 {
-                format!(", prevented {}x", g.prevented_count)
-            } else {
-                String::new()
-            };
-
-            lines.push(format!("[{prefix}{label}] {trigger}"));
-            lines.push(format!(
-                "  FIX: {} (seen {}x{}{}, {})",
-                resolution, g.occurrences, source_hint, prevented, age
-            ));
-        }
-
-        lines.push("---".to_string());
-        crate::core::sanitize::fence_content("project_gotchas", &lines.join("\n"))
-    }
-
     // -- Prevention tracking ------------------------------------------------
 
     pub fn add_universal(&mut self, gotcha: Gotcha) {
         if !self.gotchas.iter().any(|g| g.id == gotcha.id) {
             self.gotchas.push(gotcha);
-        }
-    }
-
-    pub fn mark_prevented(&mut self, gotcha_id: &str) {
-        if let Some(g) = self.gotchas.iter_mut().find(|g| g.id == gotcha_id) {
-            g.prevented_count += 1;
-            g.confidence = (g.confidence + 0.05).min(0.99);
-            self.stats.total_prevented += 1;
         }
     }
 
@@ -442,53 +364,9 @@ impl GotchaStore {
 // Relevance scoring
 // ---------------------------------------------------------------------------
 
-pub fn relevance_score(gotcha: &Gotcha, files_touched: &[String]) -> f32 {
-    let mut score: f32 = 0.0;
-
-    score += (gotcha.occurrences as f32 * gotcha.confidence).min(10.0);
-
-    let hours_ago = (Utc::now() - gotcha.last_seen).num_hours().max(0) as f32;
-    score += 5.0 * (-hours_ago / 168.0).exp();
-
-    let overlap = gotcha
-        .file_patterns
-        .iter()
-        .filter(|fp| {
-            files_touched
-                .iter()
-                .any(|ft| ft.contains(fp.as_str()) || fp.contains(ft.as_str()))
-        })
-        .count();
-    score += overlap as f32 * 3.0;
-
-    score *= gotcha.severity.multiplier();
-
-    if gotcha.session_ids.len() >= 3 {
-        score *= 1.3;
-    }
-
-    if gotcha.prevented_count > 0 {
-        score *= 1.2;
-    }
-
-    score
-}
-
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-fn format_age(dt: DateTime<Utc>) -> String {
-    let diff = Utc::now() - dt;
-    let hours = diff.num_hours();
-    if hours < 1 {
-        format!("{}m ago", diff.num_minutes().max(1))
-    } else if hours < 24 {
-        format!("{hours}h ago")
-    } else {
-        format!("{}d ago", diff.num_days())
-    }
-}
 
 fn truncate_str(s: &str, max: usize) -> String {
     if s.len() <= max {
@@ -685,47 +563,6 @@ mod tests {
     }
 
     #[test]
-    fn relevance_score_higher_for_recent() {
-        let recent = Gotcha::new(
-            GotchaCategory::Build,
-            GotchaSeverity::Critical,
-            "error A",
-            "fix A",
-            GotchaSource::AutoDetected {
-                command: "test".into(),
-                exit_code: 1,
-            },
-            "s1",
-        );
-        let mut old = recent.clone();
-        old.last_seen = Utc::now() - chrono::Duration::days(14);
-
-        let score_recent = relevance_score(&recent, &[]);
-        let score_old = relevance_score(&old, &[]);
-        assert!(score_recent > score_old);
-    }
-
-    #[test]
-    fn relevance_score_file_overlap_boost() {
-        let mut g = Gotcha::new(
-            GotchaCategory::Build,
-            GotchaSeverity::Warning,
-            "error B",
-            "fix B",
-            GotchaSource::AutoDetected {
-                command: "test".into(),
-                exit_code: 1,
-            },
-            "s1",
-        );
-        g.file_patterns = vec!["src/server.rs".to_string()];
-
-        let with_overlap = relevance_score(&g, &["src/server.rs".to_string()]);
-        let without_overlap = relevance_score(&g, &["src/other.rs".to_string()]);
-        assert!(with_overlap > without_overlap);
-    }
-
-    #[test]
     fn cross_session_boost_increases_confidence() {
         let mut store = GotchaStore::new("testhash");
         let mut g = Gotcha::new(
@@ -788,72 +625,6 @@ mod tests {
 
         g.occurrences = 2;
         assert!(!g.is_promotable());
-    }
-
-    #[test]
-    fn promotable_keeps_only_proven_and_sorts_by_confidence() {
-        // #980 loop-weighting bridge: only gotchas that cleared every threshold
-        // (incl. having prevented real errors) are eligible, strongest first.
-        let mut store = GotchaStore::new("testhash");
-        let mut strong = Gotcha::new(
-            GotchaCategory::Convention,
-            GotchaSeverity::Warning,
-            "use thiserror",
-            "derive thiserror::Error",
-            GotchaSource::AgentReported {
-                session_id: "s1".into(),
-            },
-            "s1",
-        );
-        strong.confidence = 0.92;
-        strong.occurrences = 6;
-        strong.session_ids = vec!["s1".into(), "s2".into(), "s3".into()];
-        strong.prevented_count = 3;
-
-        let mut strongest = strong.clone();
-        strongest.trigger = "always run fmt".into();
-        strongest.confidence = 0.98;
-
-        // Never prevented anything → not promotable despite high confidence.
-        let mut weak = strong.clone();
-        weak.trigger = "unproven".into();
-        weak.confidence = 0.99;
-        weak.prevented_count = 0;
-
-        store.gotchas = vec![strong, weak, strongest];
-        let promotable = store.promotable();
-        assert_eq!(promotable.len(), 2, "the unproven gotcha is excluded");
-        assert_eq!(
-            promotable[0].trigger, "always run fmt",
-            "highest confidence first"
-        );
-    }
-
-    #[test]
-    fn format_injection_block_empty() {
-        let store = GotchaStore::new("testhash");
-        assert!(store.format_injection_block(&[]).is_empty());
-    }
-
-    #[test]
-    fn format_injection_block_with_gotchas() {
-        let mut store = GotchaStore::new("testhash");
-        store.add_or_merge(Gotcha::new(
-            GotchaCategory::Build,
-            GotchaSeverity::Critical,
-            "cargo E0507",
-            "use clone",
-            GotchaSource::AutoDetected {
-                command: "cargo build".into(),
-                exit_code: 1,
-            },
-            "s1",
-        ));
-
-        let block = store.format_injection_block(&[]);
-        assert!(block.contains("PROJECT GOTCHAS"));
-        assert!(block.contains("cargo E0507"));
-        assert!(block.contains("use clone"));
     }
 
     #[test]

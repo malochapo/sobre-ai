@@ -32,19 +32,11 @@ fn normalize_key(path: &str) -> String {
 /// provides an independent safety net regardless of this budget.
 pub(crate) const DEFAULT_CACHE_MAX_TOKENS: usize = 2_000_000;
 
-/// Pure resolver for the read-cache token budget. `env` (the raw
-/// `LEAN_CTX_CACHE_MAX_TOKENS` value) wins when it parses to a positive integer,
-/// then the `configured` `[core] cache_max_tokens`, else
-/// [`DEFAULT_CACHE_MAX_TOKENS`]. A `0` (or unparseable env) in either source
-/// means "use the default". Split out so the precedence is unit-testable without
-/// touching the global env or config.
-fn resolve_cache_max_tokens(env: Option<&str>, configured: usize) -> usize {
-    if let Some(raw) = env
-        && let Ok(n) = raw.trim().parse::<usize>()
-        && n > 0
-    {
-        return n;
-    }
+/// Pure resolver for the read-cache token budget: the `configured`
+/// `cache_max_tokens` when positive, else [`DEFAULT_CACHE_MAX_TOKENS`] (`0`
+/// means "use the default"). Split out so it is unit-testable without touching
+/// the global config.
+fn resolve_cache_max_tokens(configured: usize) -> usize {
     if configured > 0 {
         configured
     } else {
@@ -52,15 +44,11 @@ fn resolve_cache_max_tokens(env: Option<&str>, configured: usize) -> usize {
     }
 }
 
-/// Resolved token budget for the read cache. `LEAN_CTX_CACHE_MAX_TOKENS` wins
-/// (env-first keeps the hot eviction path cheap for power users), then
-/// `[core] cache_max_tokens` in config.toml, else [`DEFAULT_CACHE_MAX_TOKENS`].
+/// Resolved token budget for the read cache: `cache_max_tokens` in
+/// config.toml, else [`DEFAULT_CACHE_MAX_TOKENS`].
 /// Shared with `eviction_orchestrator` so both eviction rails read one budget.
 pub(crate) fn max_cache_tokens() -> usize {
-    resolve_cache_max_tokens(
-        std::env::var("LEAN_CTX_CACHE_MAX_TOKENS").ok().as_deref(),
-        crate::core::config::Config::load().cache_max_tokens,
-    )
+    resolve_cache_max_tokens(0)
 }
 
 /// A cached file read: zstd-compressed content, hash, token count, and access metadata.
@@ -191,18 +179,6 @@ pub struct StoreResult {
 }
 
 impl CacheEntry {
-    /// Computes a legacy eviction score blending recency, frequency, and size.
-    pub fn eviction_score_legacy(&self, now: Instant) -> f64 {
-        let elapsed = now
-            .checked_duration_since(self.last_access())
-            .unwrap_or_default()
-            .as_secs_f64();
-        let recency = 1.0 / (1.0 + elapsed.sqrt());
-        let frequency = (self.read_count() as f64 + 1.0).ln();
-        let size_value = (self.original_tokens as f64 + 1.0).ln();
-        recency * 0.4 + frequency * 0.3 + size_value * 0.3
-    }
-
     pub fn get_compressed(&self, mode_key: &str) -> Option<&String> {
         self.compressed_outputs.get(mode_key)
     }
@@ -364,15 +340,6 @@ impl CacheStats {
         self.total_original_tokens()
             .saturating_sub(self.total_sent_tokens())
     }
-
-    /// Returns the savings as a percentage of total original tokens.
-    pub fn savings_percent(&self) -> f64 {
-        let original = self.total_original_tokens();
-        if original == 0 {
-            return 0.0;
-        }
-        (self.tokens_saved() as f64 / original as f64) * 100.0
-    }
 }
 
 /// A block shared across multiple files, identified by its canonical source.
@@ -418,17 +385,9 @@ impl SessionCache {
         }
     }
 
-    /// Record that `path` was accessed, strengthening its Hebbian association
-    /// with other files read in the same burst window (#3). Called on every
-    /// `store`; co-access boundaries are flushed via `flush_co_access`.
-    pub fn record_co_access(&mut self, path: &str) {
-        let key = normalize_key(path);
-        self.co_access
-            .record_access(crate::core::hebbian_cache::path_hash(&key));
-    }
-
     /// Close the current co-access burst so its associations are committed.
     /// Call at the end of a logical tool call (post-dispatch).
+    #[cfg(test)]
     pub fn flush_co_access(&mut self) {
         self.co_access.end_burst();
     }
@@ -506,33 +465,6 @@ impl SessionCache {
             .and_then(CacheEntry::content)
     }
 
-    /// Staleness-safe accessor for the *current* full content and its token
-    /// count: returns the cached copy when it is still fresh, or a fresh disk
-    /// re-read when the cached copy is stale (mtime/hash changed since it was
-    /// cached). Returns `None` when there is no cache entry, or the entry is
-    /// stale and the file can no longer be read.
-    ///
-    /// Cross-agent / retrieve paths (`ctx_retrieve`, `ctx_share`) MUST use this
-    /// instead of [`get_full_content`](Self::get_full_content): serving the raw
-    /// cached copy hands an agent a version that may no longer match disk — e.g.
-    /// a handover file edited between two agents — silently feeding it stale
-    /// context. Validation uses the entry's stored absolute `path`, because a
-    /// caller's `path` may be relative and resolve against a different CWD.
-    pub fn current_full_content(&self, path: &str) -> Option<(String, usize)> {
-        let entry = self.entries.get(&normalize_key(path))?;
-        if is_cache_entry_stale_verified(&entry.path, entry.stored_mtime, &entry.hash)
-            && let Ok(fresh) = crate::core::io_boundary::read_file_lossy(&entry.path)
-        {
-            // Cache is behind disk → serve the current bytes. If the file is now
-            // unreadable (deleted/permission), fall through to the cached copy:
-            // last-known content beats nothing, and that fall-through is not the
-            // staleness bug (it only fires when there is no current content).
-            let tokens = count_tokens(&fresh);
-            return Some((fresh, tokens));
-        }
-        Some((entry.content()?, entry.original_tokens))
-    }
-
     /// Records a cache hit, updates access stats, and emits a cache-hit event.
     ///
     /// Takes `&self`: the hit counters use interior-mutable atomics, so this
@@ -558,10 +490,6 @@ impl SessionCache {
         self.stats
             .total_sent_tokens
             .fetch_add(sent_tokens, Ordering::Relaxed);
-        crate::core::events::emit_cache_hit(
-            path,
-            (entry.original_tokens as u64).saturating_sub(sent_tokens),
-        );
         Some(entry)
     }
 
@@ -717,11 +645,6 @@ impl SessionCache {
         self.shared_blocks = blocks;
     }
 
-    /// Returns the current set of cross-file shared blocks.
-    pub fn get_shared_blocks(&self) -> &[SharedBlock] {
-        &self.shared_blocks
-    }
-
     /// Replace shared blocks in content with cross-file references.
     pub fn apply_dedup(&self, path: &str, content: &str) -> Option<String> {
         if self.shared_blocks.is_empty() {
@@ -771,10 +694,6 @@ impl SessionCache {
         self.stats
             .total_sent_tokens
             .fetch_add(sent, Ordering::Relaxed);
-        crate::core::events::emit_cache_hit(
-            path,
-            (entry.original_tokens as u64).saturating_sub(sent),
-        );
         Some(result)
     }
 
@@ -908,31 +827,6 @@ impl SessionCache {
         crate::core::cache_telemetry::record_eviction(redelivered);
     }
 
-    /// Estimates the approximate heap memory usage in bytes.
-    pub fn approximate_bytes(&self) -> usize {
-        let entries_bytes: usize = self
-            .entries
-            .values()
-            .map(|e| {
-                e.compressed_content.len()
-                    + e.hash.len()
-                    + e.path.len()
-                    + e.compressed_outputs
-                        .iter()
-                        .map(|(k, v)| k.len() + v.len())
-                        .sum::<usize>()
-                    + 128 // fixed overhead per entry
-            })
-            .sum();
-        let refs_bytes: usize = self.file_refs.iter().map(|(k, v)| k.len() + v.len()).sum();
-        let blocks_bytes: usize = self
-            .shared_blocks
-            .iter()
-            .map(|b| b.canonical_path.len() + b.canonical_ref.len() + b.content.len() + 32)
-            .sum();
-        entries_bytes + refs_bytes + blocks_bytes
-    }
-
     const MAX_SHARED_BLOCKS: usize = 100;
 
     /// Trims shared blocks to a maximum count, keeping the most recent.
@@ -976,10 +870,6 @@ pub fn is_cache_entry_stale(path: &str, cached_mtime: Option<SystemTime>) -> boo
 /// mtime check alone decides. Keeps the stub fast-path O(small-file-read).
 const VERIFY_HASH_CAP_BYTES: u64 = 8 * 1024 * 1024;
 
-fn cache_verify_enabled() -> bool {
-    std::env::var("LEAN_CTX_CACHE_VERIFY").map_or(true, |v| v != "0")
-}
-
 /// Staleness with content verification: like [`is_cache_entry_stale`], but when
 /// the mtime claims "unchanged", additionally compares the md5 of the on-disk
 /// content against the cached hash.
@@ -989,7 +879,7 @@ fn cache_verify_enabled() -> bool {
 /// be restored by tools. Serving an `[unchanged]` stub for changed content
 /// would silently mislead the agent — the worst failure mode a context layer
 /// can have. The extra disk read costs microseconds for typical source files;
-/// the stub's token savings are unaffected. Opt out: `LEAN_CTX_CACHE_VERIFY=0`.
+/// the stub's token savings are unaffected.
 ///
 /// Note: entries whose stored content differs from disk by design (e.g. secret
 /// redaction) hash differently and therefore never serve stubs — conservative
@@ -1002,7 +892,7 @@ pub fn is_cache_entry_stale_verified(
     if is_cache_entry_stale(path, cached_mtime) {
         return true;
     }
-    if cached_hash.is_empty() || !cache_verify_enabled() {
+    if cached_hash.is_empty() {
         return false;
     }
     let Ok(meta) = std::fs::metadata(path) else {
@@ -1091,73 +981,6 @@ mod tests {
         assert_eq!(stats.total_reads(), 2);
         assert_eq!(stats.cache_hits(), 1);
         assert!(stats.hit_rate() > 0.0);
-    }
-
-    #[test]
-    fn current_full_content_serves_cached_when_fresh() {
-        let dir = tempfile::tempdir().unwrap();
-        let file = dir.path().join("handover.md");
-        std::fs::write(&file, "HANDOVER V1\n").unwrap();
-        let path = file.to_str().unwrap();
-
-        let mut cache = SessionCache::new();
-        cache.store(path, "HANDOVER V1\n");
-
-        let (content, tokens) = cache.current_full_content(path).unwrap();
-        assert_eq!(content, "HANDOVER V1\n");
-        assert!(tokens > 0);
-    }
-
-    #[test]
-    fn current_full_content_rereads_when_file_changed() {
-        // Handover staleness: a file cached by agent A and then edited must not
-        // be served from the stale cache to agent B (ctx_retrieve / ctx_share).
-        let dir = tempfile::tempdir().unwrap();
-        let file = dir.path().join("handover.md");
-        std::fs::write(&file, "HANDOVER V1\n").unwrap();
-        let path = file.to_str().unwrap();
-
-        let mut cache = SessionCache::new();
-        cache.store(path, "HANDOVER V1\n");
-
-        // Simulate an edit between agents (new mtime + new content).
-        std::thread::sleep(std::time::Duration::from_millis(10));
-        std::fs::write(&file, "HANDOVER V2 CHANGED\n").unwrap();
-
-        let (content, _) = cache.current_full_content(path).unwrap();
-        assert_eq!(
-            content, "HANDOVER V2 CHANGED\n",
-            "stale cached copy must be re-read from disk, not served as-is"
-        );
-    }
-
-    #[test]
-    fn current_full_content_none_without_entry() {
-        let cache = SessionCache::new();
-        assert!(cache.current_full_content("/no/such/file.rs").is_none());
-    }
-
-    #[test]
-    fn current_full_content_falls_back_to_cache_when_file_unreadable() {
-        // Stale + now-unreadable (deleted/moved): there is no current content to
-        // serve, so the last-known cached copy is returned rather than nothing.
-        // Canonicalize the temp dir up front so the cache key is stable after the
-        // file is removed (macOS /var -> /private/var symlink).
-        let dir = tempfile::tempdir().unwrap();
-        let canon = dir.path().canonicalize().unwrap();
-        let file = canon.join("gone.md");
-        std::fs::write(&file, "ORIGINAL\n").unwrap();
-        let path = file.to_str().unwrap().to_string();
-
-        let mut cache = SessionCache::new();
-        cache.store(&path, "ORIGINAL\n");
-        std::fs::remove_file(&file).unwrap();
-
-        let (content, _) = cache.current_full_content(&path).unwrap();
-        assert_eq!(
-            content, "ORIGINAL\n",
-            "unreadable file must fall back to last-known cached content"
-        );
     }
 
     #[test]
@@ -1281,42 +1104,10 @@ mod tests {
 
     #[test]
     fn cache_budget_resolver_precedence() {
-        // env wins when positive
-        assert_eq!(resolve_cache_max_tokens(Some("250000"), 999), 250_000);
-        assert_eq!(resolve_cache_max_tokens(Some(" 80000 "), 0), 80_000);
-        // env 0 / blank / garbage falls through to config
-        assert_eq!(resolve_cache_max_tokens(Some("0"), 123_456), 123_456);
-        assert_eq!(resolve_cache_max_tokens(Some(""), 123_456), 123_456);
-        assert_eq!(resolve_cache_max_tokens(Some("lots"), 123_456), 123_456);
-        // no env → config field
-        assert_eq!(resolve_cache_max_tokens(None, 42_000), 42_000);
-        // nothing set anywhere → built-in default
-        assert_eq!(resolve_cache_max_tokens(None, 0), DEFAULT_CACHE_MAX_TOKENS);
-        assert_eq!(
-            resolve_cache_max_tokens(Some("0"), 0),
-            DEFAULT_CACHE_MAX_TOKENS
-        );
-    }
-
-    #[test]
-    fn evict_if_needed_removes_lowest_score() {
-        crate::test_env::set_var("LEAN_CTX_CACHE_MAX_TOKENS", "50");
-        let mut cache = SessionCache::new();
-        let big_content = "a]".repeat(30); // ~30 tokens
-        cache.store("/old.rs", &big_content);
-        // /old.rs now in cache with ~30 tokens
-
-        let new_content = "b ".repeat(30); // ~30 tokens incoming
-        cache.store("/new.rs", &new_content);
-        // should have evicted /old.rs to make room
-        // (total would be ~60 which exceeds 50)
-
-        // At least one should remain, total should be <= 50
-        assert!(
-            cache.total_cached_tokens() <= 60,
-            "eviction should have kicked in"
-        );
-        crate::test_env::remove_var("LEAN_CTX_CACHE_MAX_TOKENS");
+        // configured value wins when positive
+        assert_eq!(resolve_cache_max_tokens(42_000), 42_000);
+        // nothing set → built-in default
+        assert_eq!(resolve_cache_max_tokens(0), DEFAULT_CACHE_MAX_TOKENS);
     }
 
     #[test]
@@ -1331,10 +1122,7 @@ mod tests {
 
         let entry = cache.get(&p).unwrap();
         assert!(!is_cache_entry_stale(&p, entry.stored_mtime));
-
-        // Ensure mtime granularity differences don't make this flaky.
-        std::thread::sleep(Duration::from_secs(1));
-        std::fs::write(&path, "two").unwrap();
+        crate::test_env::write_newer(&path, "two");
 
         let entry = cache.get(&p).unwrap();
         assert!(is_cache_entry_stale(&p, entry.stored_mtime));

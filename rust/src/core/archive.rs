@@ -49,49 +49,20 @@ fn compute_id(content: &str) -> String {
     format!("{hash:016x}")
 }
 
-pub fn is_enabled() -> bool {
-    if let Ok(v) = std::env::var("LEAN_CTX_ARCHIVE") {
-        return !matches!(v.as_str(), "0" | "false" | "off");
-    }
-    super::config::Config::load().archive.enabled
-}
-
-fn threshold_chars() -> usize {
-    if let Ok(v) = std::env::var("LEAN_CTX_ARCHIVE_THRESHOLD")
-        && let Ok(n) = v.parse::<usize>()
-    {
-        return n;
-    }
-    super::config::Config::load().archive.threshold_chars
-}
-
 fn max_age_hours() -> u64 {
-    if let Ok(v) = std::env::var("LEAN_CTX_ARCHIVE_TTL")
-        && let Ok(n) = v.parse::<u64>()
-    {
-        return n;
-    }
-    super::config::Config::load().archive_max_age_hours_effective()
+    crate::core::config::ARCHIVE_MAX_AGE_HOURS
 }
 
-/// Effective on-disk byte budget for archived `.txt`/`.meta.json` content,
-/// derived from `[archive] max_disk_mb` (or the simplified global `max_disk_mb`)
-/// so it matches what `doctor` reports. `0` disables the size cap; the TTL still
-/// applies. This is what bounds the archive store on disk (#417).
+/// On-disk byte budget for archived `.txt`/`.meta.json` content, the same
+/// figure `doctor` reports. This is what bounds the archive store on disk (#417).
 fn max_disk_bytes() -> u64 {
-    super::config::Config::load()
-        .archive_max_disk_mb_effective()
-        .saturating_mul(1024 * 1024)
-}
-
-pub fn should_archive(content: &str) -> bool {
-    is_enabled() && content.len() >= threshold_chars()
+    crate::core::config::ARCHIVE_MAX_DISK_MB.saturating_mul(1024 * 1024)
 }
 
 const MAX_ARCHIVE_SIZE: usize = 10 * 1024 * 1024; // 10 MB
 
 pub fn store(tool: &str, command: &str, content: &str, session_id: Option<&str>) -> Option<String> {
-    if !is_enabled() || content.is_empty() {
+    if content.is_empty() {
         return None;
     }
 
@@ -238,30 +209,6 @@ pub(crate) fn format_json_keys(content: &str, path: Option<&str>, label: &str) -
 pub fn retrieve_with_range(id: &str, start: usize, end: usize) -> Option<String> {
     let content = retrieve(id)?;
     Some(format_range(&content, start, end))
-}
-
-pub fn retrieve_with_search(id: &str, pattern: &str) -> Option<String> {
-    let content = retrieve(id)?;
-    Some(format_search(&content, pattern, &format!("archive {id}")))
-}
-
-/// Retrieve the first `n` lines of an archived entry, with a line-number gutter.
-pub fn retrieve_head(id: &str, n: usize) -> Option<String> {
-    retrieve_with_range(id, 1, n)
-}
-
-/// Retrieve the last `n` lines of an archived entry, with a line-number gutter.
-pub fn retrieve_tail(id: &str, n: usize) -> Option<String> {
-    let content = retrieve(id)?;
-    let total = content.lines().count();
-    let start = if total > n { total - n + 1 } else { 1 };
-    retrieve_with_range(id, start, total)
-}
-
-/// Describe the JSON structure of an archived entry.
-pub fn retrieve_json_keys(id: &str, path: Option<&str>) -> Option<String> {
-    let content = retrieve(id)?;
-    format_json_keys(&content, path, &format!("archive {id}"))
 }
 
 pub(crate) fn json_type_hint(v: &serde_json::Value) -> String {
@@ -472,14 +419,6 @@ pub fn content_path_str(id: &str) -> String {
     content_path(id).to_string_lossy().into_owned()
 }
 
-pub fn format_hint(id: &str, size_chars: usize, size_tokens: usize) -> String {
-    // Unified, non-MCP-first recovery grammar (see [`crate::core::recovery`]): the
-    // archived blob is a real file readable with any tool, and `ctx_expand(id)`
-    // reaches the same bytes for surgical slices.
-    let clause = crate::core::recovery::handle_clause(id, Some(&content_path_str(id)));
-    format!("[Archived: {size_chars} chars ({size_tokens} tok). {clause}]")
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -496,15 +435,6 @@ mod tests {
     #[test]
     fn nonexistent_id_returns_none() {
         assert!(retrieve("nonexistent_archive_id_xyz").is_none());
-    }
-
-    #[test]
-    fn format_hint_readable() {
-        let hint = format_hint("abc123", 5000, 1200);
-        assert!(hint.contains("5000 chars"));
-        assert!(hint.contains("1200 tok"));
-        assert!(hint.contains("ctx_expand"));
-        assert!(hint.contains("abc123"));
     }
 
     fn write_test_entry(id: &str, created_at: DateTime<Utc>, content_bytes: usize) {

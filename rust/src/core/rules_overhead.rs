@@ -103,11 +103,6 @@ pub fn collect_rules_files(home: &Path, project: &Path) -> Vec<RulesFileCost> {
         &home.join(".claude/CLAUDE.md"),
         vec!["claude"],
     );
-    push_rules_file(
-        out.as_mut(),
-        &home.join(".codebuddy/CODEBUDDY.md"),
-        vec!["codebuddy"],
-    );
     push_rules_file(out.as_mut(), &home.join(".codex/AGENTS.md"), vec!["codex"]);
     push_rules_file(
         out.as_mut(),
@@ -125,7 +120,6 @@ pub fn collect_rules_files(home: &Path, project: &Path) -> Vec<RulesFileCost> {
         // other agents auto-load it.
         push_rules_file(out.as_mut(), &d.join("AGENTS.md"), vec!["cursor", "codex"]);
         push_rules_file(out.as_mut(), &d.join("CLAUDE.md"), vec!["claude"]);
-        push_rules_file(out.as_mut(), &d.join("CODEBUDDY.md"), vec!["codebuddy"]);
         push_rules_file(out.as_mut(), &d.join("GEMINI.md"), vec!["gemini"]);
 
         if d == *home {

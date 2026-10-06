@@ -2,26 +2,20 @@
 //! `super::*` resolves to the `ctx_read` module.
 
 use super::*;
-use std::time::Duration;
 
 #[test]
 fn test_header_toon_format_no_brackets() {
-    let _lock = crate::core::data_dir::test_env_lock();
-    crate::test_env::set_var("LEAN_CTX_META", "1");
     let content = "use std::io;\nfn main() {}\n";
-    let header = build_header("F1", "main.rs", "rs", content, 2, false);
+    let header = build_header("main.rs", "rs", content, 2, false);
     assert!(!header.contains('['));
     assert!(!header.contains(']'));
-    assert!(header.contains("F1=main.rs 2L"));
-    crate::test_env::remove_var("LEAN_CTX_META");
+    assert!(header.contains("main.rs 2L"));
 }
 
 #[test]
 fn test_header_toon_deps_indented() {
-    let _lock = crate::core::data_dir::test_env_lock();
-    crate::test_env::set_var("LEAN_CTX_META", "1");
     let content = "use crate::core::cache;\nuse crate::tools;\npub fn main() {}\n";
-    let header = build_header("F1", "main.rs", "rs", content, 3, true);
+    let header = build_header("main.rs", "rs", content, 3, true);
     if header.contains("deps") {
         assert!(
             header.contains("\n deps "),
@@ -32,23 +26,19 @@ fn test_header_toon_deps_indented() {
             "deps should not use bracket format"
         );
     }
-    crate::test_env::remove_var("LEAN_CTX_META");
 }
 
 #[test]
 fn test_header_toon_saves_tokens() {
-    let _lock = crate::core::data_dir::test_env_lock();
-    crate::test_env::set_var("LEAN_CTX_META", "1");
     let content = "use crate::foo;\nuse crate::bar;\npub fn baz() {}\npub fn qux() {}\n";
     let old_header = "F1=main.rs [4L +] deps:[foo,bar] exports:[baz,qux]".to_string();
-    let new_header = build_header("F1", "main.rs", "rs", content, 4, true);
+    let new_header = build_header("main.rs", "rs", content, 4, true);
     let old_tokens = count_tokens(&old_header);
     let new_tokens = count_tokens(&new_header);
     assert!(
         new_tokens <= old_tokens,
         "TOON header ({new_tokens} tok) should be <= old format ({old_tokens} tok)"
     );
-    crate::test_env::remove_var("LEAN_CTX_META");
 }
 
 #[test]
@@ -80,7 +70,6 @@ fn test_task_mode_filters_content() {
     let (result, result_tokens) = process_mode(
         &content,
         "task",
-        "F1",
         "test.rs",
         "rs",
         full_tokens,
@@ -105,7 +94,6 @@ fn test_task_mode_without_task_returns_full() {
     let (result, _sent) = process_mode(
         content,
         "task",
-        "F1",
         "test.rs",
         "rs",
         tokens,
@@ -126,7 +114,6 @@ fn test_reference_mode_one_line() {
     let (result, _sent) = process_mode(
         content,
         "reference",
-        "F1",
         "test.rs",
         "rs",
         tokens,
@@ -159,8 +146,7 @@ fn cached_lines_mode_invalidates_on_mtime_change() {
     let got1 = got1.split_once('|').map_or(got1, |(_, s)| s.trim());
     assert_eq!(got1, "one");
 
-    std::thread::sleep(Duration::from_secs(1));
-    std::fs::write(&path, "two\nsecond\n").unwrap();
+    crate::test_env::write_newer(&path, "two\nsecond\n");
 
     let r2 = handle_with_task_resolved(&mut cache, &p, "lines:1-1", CrpMode::Off, None);
     let l2: Vec<&str> = r2.content.lines().collect();
@@ -187,8 +173,7 @@ fn try_stub_hit_readonly_none_for_uncached_and_stale() {
 
     // Modify the file so the cached entry is stale → must NOT serve a stub,
     // independent of cache policy (the write path re-reads instead).
-    std::thread::sleep(Duration::from_secs(1));
-    std::fs::write(&path, "fn main() { changed(); }\n").unwrap();
+    crate::test_env::write_newer(&path, "fn main() { changed(); }\n");
     assert!(
         try_stub_hit_readonly(&cache, &p).is_none(),
         "stale file must never be served from the read-locked stub path"
@@ -206,7 +191,6 @@ fn benchmark_task_conditioned_compression() {
     let (_full_output, full_tok) = process_mode(
         &content,
         "full",
-        "F1",
         "server.rs",
         "rs",
         full_tokens,
@@ -217,7 +201,6 @@ fn benchmark_task_conditioned_compression() {
     let (_task_output, task_tok) = process_mode(
         &content,
         "task",
-        "F1",
         "server.rs",
         "rs",
         full_tokens,
@@ -228,7 +211,6 @@ fn benchmark_task_conditioned_compression() {
     let (_sig_output, sig_tok) = process_mode(
         &content,
         "signatures",
-        "F1",
         "server.rs",
         "rs",
         full_tokens,
@@ -239,7 +221,6 @@ fn benchmark_task_conditioned_compression() {
     let (_ref_output, ref_tok) = process_mode(
         &content,
         "reference",
-        "F1",
         "server.rs",
         "rs",
         full_tokens,
@@ -315,7 +296,6 @@ fn map_mode_inlines_task_relevant_body() {
     let (with_task, _) = process_mode(
         content,
         "map",
-        "F1",
         "test.rs",
         "rs",
         tokens,
@@ -330,7 +310,6 @@ fn map_mode_inlines_task_relevant_body() {
     let (no_task, _) = process_mode(
         content,
         "map",
-        "F1",
         "test.rs",
         "rs",
         tokens,
@@ -357,7 +336,6 @@ fn lines_comma_multiselect_gets_hint() {
     let (out, _) = process_mode(
         &content,
         "lines:5,10-12",
-        "F1",
         "t.txt",
         "txt",
         tokens,
@@ -382,7 +360,6 @@ fn map_on_unsupported_language_carries_marker() {
     let (out, _) = process_mode(
         content,
         "map",
-        "F1",
         "notes.txt",
         "txt",
         tokens,
@@ -403,7 +380,6 @@ fn signatures_on_unsupported_language_carries_marker() {
     let (out, _) = process_mode(
         content,
         "signatures",
-        "F1",
         "notes.txt",
         "txt",
         tokens,
@@ -504,11 +480,9 @@ fn compressed_cache_key_distinguishes_protect() {
 
 #[test]
 fn aggressiveness_is_deterministic_and_monotonic() {
-    let _lock = crate::core::data_dir::test_env_lock();
-    // Suppress the savings footer: it carries session-cumulative counters by
-    // design (state-triggered suffix), so we compare the pure compressed body.
-    crate::test_env::set_var("LEAN_CTX_SHOW_SAVINGS", "0");
-
+    let _iso = crate::core::data_dir::isolated_data_dir();
+    // The savings footer is off (it would carry session-cumulative counters),
+    // so we compare the pure compressed body.
     // Prose-y fixture with redundant low-information lines the density pass can
     // shed; enough lines that compression is meaningful.
     let mut content = String::new();
@@ -522,7 +496,6 @@ fn aggressiveness_is_deterministic_and_monotonic() {
         let (out, _) = process_mode_tuned(
             &content,
             "density:",
-            "F1",
             "f.txt",
             "txt",
             count_tokens(&content),
@@ -546,14 +519,11 @@ fn aggressiveness_is_deterministic_and_monotonic() {
         high <= low,
         "aggressiveness 0.9 ({high} tok) must not exceed 0.2 ({low} tok)"
     );
-
-    crate::test_env::remove_var("LEAN_CTX_SHOW_SAVINGS");
 }
 
 #[test]
 fn aggressive_json_uses_lossless_crush_core() {
-    let _lock = crate::core::data_dir::test_env_lock();
-    crate::test_env::set_var("LEAN_CTX_SHOW_SAVINGS", "0");
+    let _iso = crate::core::data_dir::isolated_data_dir();
 
     // A redundant array-of-objects JSON file: aggressive mode compacts it through
     // the shared json_crush core (#936) instead of generic text pruning, which
@@ -569,7 +539,6 @@ fn aggressive_json_uses_lossless_crush_core() {
     let (out, sent) = process_mode_tuned(
         &content,
         "aggressive",
-        "F1",
         "data.json",
         "json",
         original,
@@ -590,8 +559,6 @@ fn aggressive_json_uses_lossless_crush_core() {
         sent < original,
         "crush must reduce tokens ({sent} >= {original})"
     );
-
-    crate::test_env::remove_var("LEAN_CTX_SHOW_SAVINGS");
 }
 
 #[test]
@@ -603,7 +570,6 @@ fn map_mode_includes_signature_line_ranges() {
     let (result, _) = process_mode(
         content,
         "map",
-        "F1",
         "lib.rs",
         "rs",
         count_tokens(content),
@@ -636,7 +602,6 @@ fn map_mode_omits_exports_already_in_api() {
     let (result, _) = process_mode(
         content,
         "map",
-        "F1",
         "lib.rs",
         "rs",
         count_tokens(content),
@@ -665,7 +630,6 @@ fn tdd_map_output_carries_symbol_legend() {
     let (result, _) = process_mode(
         content,
         "map",
-        "F1",
         "lib.rs",
         "rs",
         count_tokens(content),
@@ -681,7 +645,6 @@ fn tdd_map_output_carries_symbol_legend() {
     let (sigs, _) = process_mode(
         content,
         "signatures",
-        "F1",
         "lib.rs",
         "rs",
         count_tokens(content),
@@ -787,7 +750,6 @@ fn raw_mode_returns_exact_file_content() {
     let (output, _sent) = render::process_mode(
         content,
         "raw",
-        "F1",
         "main.rs",
         "rs",
         100,
@@ -833,7 +795,6 @@ fn verbatim_modes_preserve_decorative_comment_lines() {
         let (output, _) = render::process_mode(
             &content,
             mode,
-            "F1",
             "math.test.ts",
             "ts",
             count_tokens(&content),
@@ -872,18 +833,14 @@ fn verbatim_modes_preserve_decorative_comment_lines() {
 /// provider-side prompt caching.
 #[test]
 fn process_mode_output_is_byte_stable_across_calls() {
-    // Fresh, empty data dir (GL #556): the shared per-process test sandbox
-    // accumulates feedback/bandit/session stores from parallel tests, which
-    // feed adaptive_thresholds() and make entropy-mode output drift between
-    // two calls. Purity only holds against a stable learning state.
+    // Fresh, empty data dir: session state left by parallel tests must not
+    // leak into the output.
     let _iso = crate::core::data_dir::isolated_data_dir();
     // Footer visibility must be the default (`never`) for purity: with a
     // visible footer, the process-global session accumulator appends a
     // `session: N saved` line every 10th call across ALL tests. Other tests
     // leaked `LEAN_CTX_SAVINGS_FOOTER=always` here in the past — neutralize
     // defensively while we hold the env lock.
-    crate::test_env::remove_var("LEAN_CTX_SAVINGS_FOOTER");
-    crate::test_env::remove_var("LEAN_CTX_SHOW_SAVINGS");
     crate::test_env::remove_var("LEAN_CTX_QUIET");
     let content: String = (0..120)
         .map(|i| format!("pub fn handler_{i}(x: u32) -> u32 {{ x * {i} }}"))
@@ -905,7 +862,6 @@ fn process_mode_output_is_byte_stable_across_calls() {
             render::process_mode(
                 &content,
                 mode,
-                "F1",
                 "stable.rs",
                 "rs",
                 tokens,
@@ -925,10 +881,10 @@ fn process_mode_output_is_byte_stable_across_calls() {
 }
 
 /// The reactive recovery footer (#premium-recovery): present on compressed views,
-/// leading with the MCP-free native path; absent from verbatim views and when the
-/// `recovery_hints` tier is `off`; and byte-stable across calls (#498).
+/// leading with the MCP-free native path; absent from verbatim views; and
+/// byte-stable across calls (#498).
 #[test]
-fn recovery_footer_is_compressed_only_and_togglable() {
+fn recovery_footer_is_compressed_only() {
     // `isolated_data_dir()` already holds `test_env_lock` for its lifetime; taking
     // the lock again here would self-deadlock (the mutex is non-reentrant).
     let _iso = crate::core::data_dir::isolated_data_dir();
@@ -941,7 +897,6 @@ fn recovery_footer_is_compressed_only_and_togglable() {
         render::process_mode(
             &content,
             mode,
-            "F1",
             "rec.rs",
             "rs",
             tokens,
@@ -952,9 +907,8 @@ fn recovery_footer_is_compressed_only_and_togglable() {
         .0
     };
 
-    // Default tier (minimal): a compressed view leads its footer with the native,
+    // Minimal tier: a compressed view leads its footer with the native,
     // MCP-free path so an agent needing the full source never reads line-by-line.
-    crate::test_env::set_var("LEAN_CTX_RECOVERY_HINTS", "minimal");
     let sigs = run("signatures");
     assert!(
         sigs.contains("read \"/tmp/rec.rs\" directly (no MCP)"),
@@ -968,36 +922,6 @@ fn recovery_footer_is_compressed_only_and_togglable() {
         !run("raw").contains("(no MCP)"),
         "raw view needs no recovery footer"
     );
-
-    // The off switch suppresses the footer cleanly.
-    crate::test_env::set_var("LEAN_CTX_RECOVERY_HINTS", "off");
-    assert!(
-        !run("signatures").contains("(no MCP)"),
-        "recovery_hints=off must drop the footer"
-    );
-    crate::test_env::remove_var("LEAN_CTX_RECOVERY_HINTS");
-}
-
-#[test]
-fn raw_mode_no_savings_footer() {
-    let _lock = crate::core::data_dir::test_env_lock();
-    let content = "x = 1\n";
-    let (output, _) = render::process_mode(
-        content,
-        "raw",
-        "F1",
-        "tiny.py",
-        "py",
-        50,
-        CrpMode::Off,
-        "/tmp/tiny.py",
-        None,
-    );
-    assert!(
-        !output.contains('\u{2500}'),
-        "raw mode must not contain savings footer box-drawing chars"
-    );
-    assert_eq!(output, content);
 }
 
 // ---------------------------------------------------------------------------
@@ -1201,53 +1125,6 @@ fn cache_hit_stub_is_byte_stable_across_rereads() {
 
 // ---------------------------------------------------------------------------
 
-#[test]
-fn compress_protect_glob_forces_full_verbatim_read() {
-    // #1150: a path matching a `compress_protect` glob is returned verbatim even
-    // when an aggressive mode is requested. Control + treatment in one test: the
-    // unprotected read strips comments, the protected read keeps every byte.
-    let _iso = crate::core::data_dir::isolated_data_dir();
-    crate::test_env::set_var("LEAN_CTX_SHOW_SAVINGS", "0");
-
-    let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("protected.rs");
-    let p = path.to_string_lossy().to_string();
-    // Large enough that aggressive compression genuinely strips the comments
-    // rather than falling back to raw via the anti-inflation cap.
-    let mut content = String::new();
-    for i in 0..60 {
-        content.push_str(&format!(
-            "// distinctive-comment-{i}\npub fn handler_{i}(x: u32) -> u32 {{ x + {i} }}\n"
-        ));
-    }
-    std::fs::write(&path, &content).unwrap();
-
-    // Control: with nothing protected, aggressive strips the comments.
-    crate::core::config::Config::update_global(|c| c.proxy.compress_protect = None).unwrap();
-    let mut cold = SessionCache::new();
-    let stripped = handle_with_task_resolved(&mut cold, &p, "aggressive", CrpMode::Off, None);
-    assert!(
-        !stripped.content.contains("// distinctive-comment-0"),
-        "control: aggressive must strip comments when the path is not protected"
-    );
-
-    // Treatment: protect *.rs → the same aggressive read returns the file in full.
-    crate::core::config::Config::update_global(|c| {
-        c.proxy.compress_protect = Some(vec!["*.rs".into()]);
-    })
-    .unwrap();
-    let mut warm = SessionCache::new();
-    let protected = handle_with_task_resolved(&mut warm, &p, "aggressive", CrpMode::Off, None);
-    assert!(
-        protected.content.contains("// distinctive-comment-0")
-            && protected.content.contains("// distinctive-comment-59"),
-        "a protected path must be returned verbatim with every comment intact"
-    );
-
-    crate::core::config::Config::update_global(|c| c.proxy.compress_protect = None).unwrap();
-    crate::test_env::remove_var("LEAN_CTX_SHOW_SAVINGS");
-}
-
 // -- Regression: GitHub Issue #775 --
 // After a full-file read is cached, a subsequent ranged read with `lines:N-M`
 // must return only the requested window — not the full file content again.
@@ -1266,7 +1143,6 @@ fn write_numbered_file(dir: &std::path::Path, name: &str, n: usize) -> String {
 #[test]
 fn gh775_full_then_ranged_returns_only_window() {
     let _iso = crate::core::data_dir::isolated_data_dir();
-    crate::test_env::set_var("LEAN_CTX_SHOW_SAVINGS", "0");
 
     let dir = tempfile::tempdir().unwrap();
     let p = write_numbered_file(dir.path(), "big.ts", 2000);
@@ -1301,46 +1177,11 @@ fn gh775_full_then_ranged_returns_only_window() {
         "ranged read must NOT contain lines outside the window:\n{}",
         &ranged.content[..ranged.content.len().min(500)]
     );
-
-    crate::test_env::remove_var("LEAN_CTX_SHOW_SAVINGS");
-}
-
-#[test]
-fn gh775_full_then_ranged_with_fresh_returns_only_window() {
-    let _iso = crate::core::data_dir::isolated_data_dir();
-    crate::test_env::set_var("LEAN_CTX_SHOW_SAVINGS", "0");
-
-    let dir = tempfile::tempdir().unwrap();
-    let p = write_numbered_file(dir.path(), "big2.ts", 2000);
-
-    let mut cache = SessionCache::new();
-
-    // 1. Full read.
-    handle_with_task_resolved(&mut cache, &p, "full", CrpMode::Off, None);
-
-    // 2. Fresh ranged read (simulates `fresh:true` in the tool args).
-    let ranged =
-        handle_fresh_with_task_resolved(&mut cache, &p, "lines:1480-1489", CrpMode::Off, None);
-    assert!(
-        ranged.content.contains("line 1480"),
-        "fresh ranged read must contain requested start line"
-    );
-    assert!(
-        ranged.content.contains("line 1489"),
-        "fresh ranged read must contain requested end line"
-    );
-    assert!(
-        !ranged.content.contains("line 1\n") && !ranged.content.contains("line 2000"),
-        "fresh ranged read must NOT contain lines outside the window"
-    );
-
-    crate::test_env::remove_var("LEAN_CTX_SHOW_SAVINGS");
 }
 
 #[test]
 fn gh775_ranged_response_starts_at_requested_line() {
     let _iso = crate::core::data_dir::isolated_data_dir();
-    crate::test_env::set_var("LEAN_CTX_SHOW_SAVINGS", "0");
 
     let dir = tempfile::tempdir().unwrap();
     let p = write_numbered_file(dir.path(), "big3.ts", 2000);
@@ -1376,14 +1217,11 @@ fn gh775_ranged_response_starts_at_requested_line() {
         "lines:500-504 must return exactly 5 lines, got {}",
         body_lines.len()
     );
-
-    crate::test_env::remove_var("LEAN_CTX_SHOW_SAVINGS");
 }
 
 #[test]
 fn gh775_cold_ranged_read_returns_only_window() {
     let _iso = crate::core::data_dir::isolated_data_dir();
-    crate::test_env::set_var("LEAN_CTX_SHOW_SAVINGS", "0");
 
     let dir = tempfile::tempdir().unwrap();
     let p = write_numbered_file(dir.path(), "cold.ts", 2000);
@@ -1404,8 +1242,6 @@ fn gh775_cold_ranged_read_returns_only_window() {
         !ranged.content.contains("line 2000"),
         "cold ranged read must NOT contain lines outside window"
     );
-
-    crate::test_env::remove_var("LEAN_CTX_SHOW_SAVINGS");
 }
 
 // ---------------------------------------------------------------------------

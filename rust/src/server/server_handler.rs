@@ -7,40 +7,28 @@
 #[allow(clippy::wildcard_imports)]
 use super::*;
 
-/// Builds the advertised MCP server capabilities.
-///
-/// `tools` is always enabled **and** always declares `listChanged`: lean-ctx
-/// emits `notifications/tools/list_changed` whenever a tool call mutates the
-/// dynamic tool set (see `dispatch::send_tools_list_changed`). The MCP spec only
-/// permits sending that notification when the matching capability was advertised
-/// — otherwise a strict client (e.g. Claude Code) treats it as a protocol
-/// violation and drops the entire tool set ("connected, but no tools"). The
+/// Builds the advertised MCP server capabilities. The tool set never changes
+/// during a session (invariant 3), so `listChanged` is not declared. The
 /// `resources`/`prompts` surfaces stay client-gated so we never advertise a
 /// surface the connected client cannot use.
 fn server_capabilities(resources: bool, prompts: bool) -> ServerCapabilities {
     match (resources, prompts) {
         (true, true) => ServerCapabilities::builder()
             .enable_tools()
-            .enable_tool_list_changed()
             .enable_resources()
             .enable_resources_subscribe()
             .enable_prompts()
             .build(),
         (true, false) => ServerCapabilities::builder()
             .enable_tools()
-            .enable_tool_list_changed()
             .enable_resources()
             .enable_resources_subscribe()
             .build(),
         (false, true) => ServerCapabilities::builder()
             .enable_tools()
-            .enable_tool_list_changed()
             .enable_prompts()
             .build(),
-        (false, false) => ServerCapabilities::builder()
-            .enable_tools()
-            .enable_tool_list_changed()
-            .build(),
+        (false, false) => ServerCapabilities::builder().enable_tools().build(),
     }
 }
 
@@ -65,14 +53,11 @@ impl ServerHandler for LeanCtxServer {
         *self.client_name.write().await = name.clone();
         *self.peer.write().await = Some(context.peer.clone());
 
-        if self.session_mode != crate::tools::SessionMode::Shared {
-            crate::core::budget_tracker::BudgetTracker::global().reset();
-            if let Ok(data_dir) = crate::core::data_dir::lean_ctx_data_dir() {
-                let radar = data_dir.join("context_radar.jsonl");
-                if radar.exists() {
-                    let prev = data_dir.join("context_radar.prev.jsonl");
-                    let _ = std::fs::rename(&radar, &prev);
-                }
+        if let Ok(data_dir) = crate::core::data_dir::lean_ctx_data_dir() {
+            let radar = data_dir.join("context_radar.jsonl");
+            if radar.exists() {
+                let prev = data_dir.join("context_radar.prev.jsonl");
+                let _ = std::fs::rename(&radar, &prev);
             }
         }
 
@@ -127,7 +112,15 @@ impl ServerHandler for LeanCtxServer {
                     session.project_root = None;
                 }
             }
-            let cfg_extra = crate::core::config::Config::load().extra_roots;
+            // Allowed paths double as the extra roots of a multi-root
+            // workspace, except an open jail ("/") or another broad root.
+            let cfg_extra: Vec<String> = crate::core::config::Config::load()
+                .allow_paths
+                .into_iter()
+                .filter(|p| {
+                    !crate::core::pathutil::is_broad_or_unsafe_root(std::path::Path::new(p.trim()))
+                })
+                .collect();
             if !cfg_extra.is_empty() {
                 let existing: std::collections::HashSet<_> =
                     session.extra_roots.iter().cloned().collect();
@@ -137,19 +130,7 @@ impl ServerHandler for LeanCtxServer {
                     }
                 }
             }
-            if self.session_mode == crate::tools::SessionMode::Shared {
-                if let Some(ref root) = session.project_root
-                    && let Some(ref rt) = self.context_os
-                {
-                    rt.shared_sessions.persist_best_effort(
-                        root,
-                        &self.workspace_id,
-                        &self.channel_id,
-                        &session,
-                    );
-                    rt.metrics.record_session_persisted();
-                }
-            } else if let Err(e) = session.save() {
+            if let Err(e) = session.save() {
                 tracing::warn!("lean-ctx: failed to persist session state: {e}");
             }
         }
@@ -159,14 +140,9 @@ impl ServerHandler for LeanCtxServer {
         // ctx_read/ctx_shell/ctx_tree must not pay a full graph + BM25 scan.
         // See `index_orchestrator::ensure_warm_for_tool`, driven from dispatch.
 
-        let agent_name = name.clone();
         let agent_root = effective_root.clone().unwrap_or_default();
         let agent_id_handle = self.agent_id.clone();
         tokio::task::spawn_blocking(move || {
-            if std::env::var("LEAN_CTX_HEADLESS").is_ok() {
-                return;
-            }
-
             // Avoid startup stampedes when multiple agent sessions initialize at once.
             // These are best-effort maintenance tasks; it's fine to skip if another
             // lean-ctx instance is already doing them.
@@ -190,26 +166,9 @@ impl ServerHandler for LeanCtxServer {
             drop(maintenance);
 
             if !agent_root.is_empty() {
-                let heuristic_role = match agent_name.to_lowercase().as_str() {
-                    n if n.contains("cursor") => Some("coder"),
-                    n if n.contains("claude") => Some("coder"),
-                    n if n.contains("codebuddy") => Some("coder"),
-                    n if n.contains("codex") => Some("coder"),
-                    n if n.contains("antigravity") || n.contains("gemini") => Some("coder"),
-                    n if n.contains("review") => Some("reviewer"),
-                    n if n.contains("test") => Some("debugger"),
-                    _ => None,
-                };
-                let env_role = std::env::var("LEAN_CTX_ROLE")
-                    .or_else(|_| std::env::var("LEAN_CTX_AGENT_ROLE"))
-                    .ok();
-                let effective_role = env_role.as_deref().or(heuristic_role).unwrap_or("coder");
-
-                let _ = crate::core::roles::set_active_role_with_source(effective_role, true);
-
                 let id = crate::core::agents::AgentRegistry::mutate_locked(|registry| {
                     registry.cleanup_stale(24);
-                    registry.register("mcp", Some(effective_role), &agent_root)
+                    registry.register("mcp", None, &agent_root)
                 })
                 .map(|(_, id)| id)
                 .ok();
@@ -221,26 +180,6 @@ impl ServerHandler for LeanCtxServer {
 
         let client_caps = crate::core::client_capabilities::ClientMcpCapabilities::detect(&name);
         tracing::info!("Client capabilities: {}", client_caps.format_summary());
-
-        {
-            let cfg = crate::core::config::Config::load();
-            let cats = cfg.default_tool_categories_effective();
-            dynamic_tools::init_from_config(&cats);
-        }
-
-        if let Some(max) = client_caps.max_tools
-            && let Ok(mut dt) = dynamic_tools::global().lock()
-        {
-            dt.set_supports_list_changed(true);
-            if max < 100 {
-                dt.unload_category(dynamic_tools::ToolCategory::Debug);
-                dt.unload_category(dynamic_tools::ToolCategory::Memory);
-            }
-        } else if client_caps.dynamic_tools
-            && let Ok(mut dt) = dynamic_tools::global().lock()
-        {
-            dt.set_supports_list_changed(true);
-        }
 
         crate::core::client_capabilities::set_detected(&client_caps);
 
@@ -272,14 +211,13 @@ impl ServerHandler for LeanCtxServer {
             // `shell` and `ctx_call` after both left the registry, so the
             // default path (no config, no env, no pinned profile) advertised
             // their intersection — ten tools out of nineteen, with no error.
-            let tools = match self.registry {
-                Some(ref reg) => reg.tool_defs(),
-                None => {
-                    // Every production constructor sets a registry; locked by
-                    // `production_server_always_has_registry`.
-                    tracing::error!("list_tools served without a tool registry");
-                    Vec::new()
-                }
+            let tools = if let Some(ref reg) = self.registry {
+                reg.tool_defs()
+            } else {
+                // Every production constructor sets a registry; locked by
+                // `production_server_always_has_registry`.
+                tracing::error!("list_tools served without a tool registry");
+                Vec::new()
             };
 
             // Description compression is not a surface variation: the set of
@@ -468,21 +406,12 @@ impl ServerHandler for LeanCtxServer {
 mod tests {
     use super::*;
 
-    /// lean-ctx emits `notifications/tools/list_changed` whenever a tool call
-    /// mutates the dynamic tool set. The capability MUST be advertised on every
-    /// client surface (resources/prompts on or off) — otherwise a strict client
-    /// such as Claude Code rejects the undeclared notification and drops the whole
-    /// tool set ("connected, but tools not registered"). Regression guard for #688.
     #[test]
-    fn server_capabilities_always_declare_tool_list_changed() {
+    fn server_capabilities_never_declare_tool_list_changed() {
         for (resources, prompts) in [(true, true), (true, false), (false, true), (false, false)] {
             let caps = server_capabilities(resources, prompts);
             let tools = caps.tools.expect("tools capability must be advertised");
-            assert_eq!(
-                tools.list_changed,
-                Some(true),
-                "listChanged must be Some(true) for (resources={resources}, prompts={prompts})"
-            );
+            assert_ne!(tools.list_changed, Some(true));
         }
     }
 

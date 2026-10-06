@@ -17,7 +17,6 @@
 //! misleading stub. A host compaction drops the whole index (the conversation's
 //! context was summarised away), mirroring `SessionCache::reset_delivery_flags`.
 //!
-//! Disabled with `LEAN_CTX_STUB_PERSIST=0`.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -161,16 +160,7 @@ fn global() -> &'static RwLock<ReadStubIndex> {
 }
 
 fn enabled() -> bool {
-    static ENABLED: OnceLock<bool> = OnceLock::new();
-    *ENABLED.get_or_init(|| {
-        !matches!(
-            std::env::var("LEAN_CTX_STUB_PERSIST")
-                .ok()
-                .as_deref()
-                .map(str::trim),
-            Some("0" | "false" | "off")
-        )
-    })
+    true
 }
 
 fn index_path_in(data_dir: &Path) -> Option<PathBuf> {

@@ -5,11 +5,9 @@
 //! the ten read modes. The number is *mapped* onto the existing density /
 //! entropy / information-bottleneck stages — it never introduces a model, so the
 //! #498 determinism contract (output = pure function of inputs) is preserved.
-//!
-//! Resolution order (see [`effective`]): explicit per-call arg > the
-//! `LEAN_CTX_AGGRESSIVENESS` env var > `[compression] compression_aggressiveness`
-//! in config > `None`. `None` means "use each mode's current default", i.e. the
-//! behaviour shipped before this knob existed.
+//! Resolution order (see [`effective`]): explicit per-call arg >
+//! `compression_level` in config > `None`. `None` means "use each mode's
+//! adaptive default", the behaviour when `compression_level` is not set.
 
 /// Concrete tuning derived from one aggressiveness value. Every field is a pure
 /// function of `a`, so the same `a` always yields the same knobs (determinism).
@@ -42,21 +40,14 @@ impl AggressivenessProfile {
 }
 
 /// Resolves the effective aggressiveness from (in priority order) an explicit
-/// per-call value, the `LEAN_CTX_AGGRESSIVENESS` env var, and the config field.
+/// per-call value and the config field.
 /// Returns `None` when nothing is set so callers keep their current defaults.
 #[must_use]
 pub fn effective(explicit: Option<f64>) -> Option<f64> {
     if let Some(a) = explicit {
         return Some(a.clamp(0.0, 1.0));
     }
-    if let Ok(v) = std::env::var("LEAN_CTX_AGGRESSIVENESS")
-        && let Ok(a) = v.trim().parse::<f64>()
-    {
-        return Some(a.clamp(0.0, 1.0));
-    }
-    crate::core::config::Config::load()
-        .compression_aggressiveness
-        .map(|a| a.clamp(0.0, 1.0))
+    crate::core::config::Config::load().compression_level
 }
 
 /// Stable cache-key fragment for an aggressiveness setting.

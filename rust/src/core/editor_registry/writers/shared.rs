@@ -22,7 +22,6 @@ pub fn auto_approve_tools() -> Vec<&'static str> {
         "ctx_tree",
         "ctx_session",
         "ctx_knowledge",
-        "ctx_context",
         "ctx_graph",
         "ctx_outline",
         "ctx_callgraph",
@@ -30,7 +29,6 @@ pub fn auto_approve_tools() -> Vec<&'static str> {
         "ctx_expand",
         "ctx_impact",
         "ctx_review",
-        "ctx_execute",
         "ctx",
     ]
 }
@@ -55,7 +53,7 @@ pub(super) fn lean_ctx_server_entry_with_instructions(
     agent_key: &str,
 ) -> Value {
     let mut entry = lean_ctx_server_entry(binary, include_auto_approve);
-    let shadow = crate::core::config::Config::load().shadow_mode;
+    let shadow = true;
     let level =
         crate::core::config::CompressionLevel::effective(&crate::core::config::Config::load());
     // Hook-covered hosts (GL #1153): the static instructions snapshot must
@@ -98,15 +96,6 @@ pub(super) fn supports_auto_approve(target: &EditorTarget) -> bool {
     crate::core::client_constraints::by_editor_name(target.name)
         .is_some_and(|c| c.supports_auto_approve)
 }
-
-/// Fixed UUIDv4-shaped id reserved for lean-ctx in Augment's VS Code MCP list.
-/// The first segment hex-encodes "lean" (6c 65 61 6e) and the last segment
-/// hex-encodes "leanct" (6c 65 61 6e 63 74) — a 6-byte ASCII tag that fits
-/// exactly in the 12-hex-char node field. The middle bytes preserve the
-/// version-4 / variant-RFC-4122 nibbles so the value parses as a valid UUID.
-/// Only stability matters — the writer uses this id to locate and update its
-/// own entry idempotently without colliding with user-added servers.
-pub(super) const LEAN_CTX_AUGMENT_VSCODE_ID: &str = "6c65616e-c747-4000-8000-6c65616e6374";
 
 pub(super) fn backup_invalid_file(path: &std::path::Path) -> Result<std::path::PathBuf, String> {
     if !path.exists() {

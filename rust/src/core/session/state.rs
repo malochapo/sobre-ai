@@ -1,7 +1,5 @@
 use chrono::Utc;
 
-use crate::core::intent_protocol::{IntentRecord, IntentSource};
-
 use super::paths::{extract_cd_target, generate_session_id};
 #[allow(clippy::wildcard_imports)]
 use super::types::*;
@@ -41,14 +39,12 @@ impl SessionState {
             progress: Vec::new(),
             next_steps: Vec::new(),
             evidence: Vec::new(),
-            intents: Vec::new(),
             active_structured_intent: None,
             stats: SessionStats::default(),
             terse_mode: false,
             compression_level: String::new(),
             last_consolidate_ts: None,
             extra_roots: Vec::new(),
-            wakeup_manifest: Vec::new(),
             playbook: super::playbook::Playbook::default(),
             last_semantic_query: None,
             last_flush: None,
@@ -237,8 +233,7 @@ impl SessionState {
 
     /// Records a finding (discovery or observation) in the session log.
     pub fn add_finding(&mut self, file: Option<&str>, line: Option<u32>, summary: &str) {
-        let (summary_clean, _) =
-            crate::core::secret_detection::scan_and_redact_from_config(summary);
+        let (summary_clean, _) = crate::core::secret_detection::scan_and_redact(summary);
         self.findings.push(Finding {
             file: file.map(std::string::ToString::to_string),
             line,
@@ -253,10 +248,9 @@ impl SessionState {
 
     /// Records a design or implementation decision with optional rationale.
     pub fn add_decision(&mut self, summary: &str, rationale: Option<&str>) {
-        let (summary_clean, _) =
-            crate::core::secret_detection::scan_and_redact_from_config(summary);
+        let (summary_clean, _) = crate::core::secret_detection::scan_and_redact(summary);
         let rationale_clean =
-            rationale.map(|r| crate::core::secret_detection::scan_and_redact_from_config(r).0);
+            rationale.map(|r| crate::core::secret_detection::scan_and_redact(r).0);
         self.decisions.push(Decision {
             summary: summary_clean,
             rationale: rationale_clean,
@@ -325,37 +319,6 @@ impl SessionState {
         self.stats.total_tokens_input += tokens_input;
     }
 
-    /// Records an inferred or explicit intent, coalescing consecutive duplicates.
-    pub fn record_intent(&mut self, mut intent: IntentRecord) {
-        if intent.occurrences == 0 {
-            intent.occurrences = 1;
-        }
-
-        if let Some(last) = self.intents.last_mut()
-            && last.fingerprint() == intent.fingerprint()
-        {
-            last.occurrences = last.occurrences.saturating_add(intent.occurrences);
-            last.timestamp = intent.timestamp;
-            match intent.source {
-                IntentSource::Inferred => self.stats.intents_inferred += 1,
-                IntentSource::Explicit => self.stats.intents_explicit += 1,
-            }
-            self.increment();
-            return;
-        }
-
-        match intent.source {
-            IntentSource::Inferred => self.stats.intents_inferred += 1,
-            IntentSource::Explicit => self.stats.intents_explicit += 1,
-        }
-
-        self.intents.push(intent);
-        while self.intents.len() > crate::core::budgets::INTENTS_PER_SESSION_LIMIT {
-            self.intents.remove(0);
-        }
-        self.increment();
-    }
-
     /// Appends an auditable evidence record for a tool invocation.
     pub fn record_tool_receipt(
         &mut self,
@@ -392,6 +355,7 @@ impl SessionState {
     }
 
     /// Appends a manual (non-tool) evidence record to the audit log.
+    #[cfg(test)]
     pub fn record_manual_evidence(&mut self, key: &str, value: Option<&str>) {
         self.evidence.push(EvidenceRecord {
             kind: EvidenceKind::Manual,
@@ -408,11 +372,6 @@ impl SessionState {
             self.evidence.remove(0);
         }
         self.increment();
-    }
-
-    /// Returns `true` if an evidence record with the given key exists.
-    pub fn has_evidence_key(&self, key: &str) -> bool {
-        self.evidence.iter().any(|e| e.key == key)
     }
 
     /// Increments the session-level cache hit counter.

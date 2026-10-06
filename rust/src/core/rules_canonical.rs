@@ -23,19 +23,14 @@ use crate::core::config::CompressionLevel;
 /// next line (see `render`).
 pub const START_MARK: &str = "<!-- lean-ctx-rules -->";
 
-/// Prefix shared by every lean-ctx rules marker including legacy versioned
-/// formats (`<!-- lean-ctx-rules-v9 -->`). Use for substring detection when
-/// the exact constant would miss older installs.
-pub const RULES_MARKER_PREFIX: &str = "<!-- lean-ctx-rules";
-
-/// Start marker for lightweight AGENTS.md/CODEBUDDY.md/CLAUDE.md pointer
+/// Start marker for lightweight AGENTS.md/CLAUDE.md pointer
 /// blocks. These are deliberately separate from `START_MARK` / `<!-- lean-ctx-rules -->`
 /// because the pointer-only vs full-rules distinction drives duplicate detection
 /// in `doctor overhead` — a pointer-only file (`is_pointer_only`) must not be
 /// counted as a second source for its client.
 pub const AGENTS_BLOCK_START: &str = "<!-- lean-ctx -->";
 
-/// End marker for AGENTS.md/CODEBUDDY.md/CLAUDE.md pointer blocks.
+/// End marker for AGENTS.md/CLAUDE.md pointer blocks.
 pub const AGENTS_BLOCK_END: &str = "<!-- /lean-ctx -->";
 
 /// Owner banner placed as the first line of the project-level `LEAN-CTX.md`
@@ -129,14 +124,6 @@ Tool selection by intent:\n\
 • Verify after edits -> ctx_shell(test/build); memory -> ctx_session / ctx_knowledge\n\
 Semantic questions -> search tools, not whole-file reads: reading more ≠ understanding more.";
 
-/// Anti-patterns that waste tokens and round-trips.
-pub const ANTI: &str = "\
-Anti-patterns — do NOT:\n\
-• Chain ctx_search -> ctx_read -> ctx_search(action=symbol) — one ctx_compose replaces all three\n\
-• Use ctx_read(mode=full) for orientation — use mode=signatures\n\
-• Use ctx_callgraph/ctx_graph for const/static/variable refs — they track call\n\
-  edges and file deps only; use ctx_search instead";
-
 /// Encourages parallel tool calls to reduce round-trips.
 pub const PARALLEL: &str = "\
 PARALLEL: fire independent tool calls in the SAME turn — ctx_compose bundles \
@@ -183,7 +170,7 @@ pub const RECOVER: &str = "RECOVER: compressed output is reversible — never re
 
 /// Terse injected variant of [`RECOVER`] (FULL + COMPACT/Bare). The cold
 /// first-contact handshake renders the COMPACT profile, so this one-liner keeps
-/// the static char/token budget (`tests/intensive_benchmarks.rs`,
+/// the static char/token budget (`tests/serial_suite/intensive_benchmarks.rs`,
 /// `instructions.rs`); since v5 the FULL dedicated files carry it too (#578).
 /// Keeps the two primary MCP-optional paths and the "never line-by-line" rule.
 /// Must keep the `(no MCP)` clause (asserted in tests).
@@ -197,20 +184,6 @@ pub const CEP: &str = "CEP v1: 1.ACT FIRST 2.DELTA ONLY (Fn refs) 3.STRUCTURED (
 /// Output style rule.
 pub const INTELLIGENCE: &str =
     "OUTPUT: never echo tool output, no narration comments, show only changed code.";
-
-/// LITM end-of-instructions preference line.
-pub const LITM_END: &str = "TOOL PREFERENCE (END): ctx_compose>chain ctx_read>Read ctx_shell>Shell \
-     ctx_search>Grep ctx_glob>Glob ctx_tree>ls | Edit/Write/Delete=native";
-
-/// Minimal rules body for shadow mode (#963). Under shadow-mode interception
-/// native Read/Grep/Shell/Glob calls are transparently routed to ctx_*, so the
-/// tool-mapping and "use ctx_* instead of native" guidance is dead weight — the
-/// enforcement happens at the call layer, not in the prompt. Only the lean-ctx
-/// tools that have *no* native trigger to intercept still need advertising.
-pub const SHADOW_MINIMAL: &str = "\
-lean-ctx shadow mode: native read/search/shell calls auto-route to ctx_* — no tool-mapping needed.\n\
-File editing → native Edit/StrReplace (lean-ctx only handles reads); if denied, use ctx_patch.\n\
-Exclusive tools (no native trigger): ctx_compose (understand code, call first), ctx_search(action=symbol) (exact symbol), ctx_search(action=semantic) (by meaning), ctx_callgraph (callers), ctx_knowledge / ctx_session (memory).";
 
 /// Hook-covered header (GL #1153): the honest replacement for the
 /// `CRITICAL`/`BULLETS`/`NEVER` mapping on hosts whose *installed hooks*
@@ -227,19 +200,6 @@ ACTUALLY EMIT the ctx_* tool call (ctx_compose first) — describing a tool is n
 WHY ctx_read > native Read: ctx_read picks the optimal mode (map/signatures/terse) \
 per file, caches for instant re-reads (~13 tokens), and compresses 26-92%. Native \
 Read through hook redirect is limited to verbatim pass-through (~5% savings).";
-
-/// The tools worth an explicit MCP call on a hook-covered host: capabilities
-/// with *no* native equivalent the hooks could intercept. Kept in sync with
-/// [`SHADOW_MINIMAL`]'s exclusive-tools line (same rationale, different cause).
-pub const HOOK_COVERED_TOOLS: &str = "\
-MANDATORY MAPPING (always use ctx_* instead of native):\n\
-• Read/cat -> ctx_read(path, mode) — cached, 10 modes, re-reads ~13 tokens\n\
-• Grep/search -> ctx_search(pattern, path) — also action=symbol|semantic for definitions/meaning\n\
-• Shell/bash -> ctx_shell(command) — 95+ compression patterns\n\
-• ctx_compose — orient in code FIRST (bundles search + read + symbols) — call before editing/debugging\n\
-• ctx_callgraph — callers, callees, blast radius — use instead of manual file reading\n\
-• ctx_session / ctx_knowledge — persistent memory — record decisions & progress after milestones\n\
-• ctx_expand — recover full text from [Archived]/compressed output";
 
 // ── Output-style compression prompts ───────────────────────────
 
@@ -515,23 +475,16 @@ mod tests {
         assert!(!BULLETS.is_empty());
         assert!(!NEVER.is_empty());
         assert!(!INTENT.is_empty());
-        assert!(!ANTI.is_empty());
         assert!(!PARALLEL.is_empty());
         assert!(!AUTO.is_empty());
         assert!(!CEP.is_empty());
         assert!(!INTELLIGENCE.is_empty());
-        assert!(!LITM_END.is_empty());
         assert!(!CRITICAL.is_empty());
     }
 
     #[test]
     fn intent_contains_ctx_compose() {
         assert!(INTENT.contains("ctx_compose"));
-    }
-
-    #[test]
-    fn anti_contains_do_not() {
-        assert!(ANTI.contains("do NOT"));
     }
 
     #[test]
@@ -1054,25 +1007,6 @@ mod tests {
         let merged = f.merged(false, Wrapper::Bare, CompressionLevel::Off);
         assert!(merged.contains("user content"));
         assert!(merged.contains(BULLETS));
-    }
-
-    #[test]
-    fn rules_file_without_section_strips_content() {
-        let content =
-            format!("header\n{START_MARK}\n<!-- version: 1 -->\n\nbody\n{END_MARK}\nfooter");
-        let f = RulesFile::parse(&content);
-        let stripped = f.without_section();
-        assert!(stripped.contains("header"));
-        assert!(stripped.contains("footer"));
-        assert!(!stripped.contains("body"));
-        assert!(!stripped.contains(START_MARK));
-    }
-
-    #[test]
-    fn rules_file_without_section_noop_when_no_content() {
-        let content = "just user text";
-        let f = RulesFile::parse(content);
-        assert_eq!(f.without_section(), content);
     }
 
     #[test]

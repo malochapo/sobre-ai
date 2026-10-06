@@ -59,7 +59,7 @@ pub(crate) fn handle(
         Bm25LoadResult::Ready(idx) => idx,
         Bm25LoadResult::Building => {
             return "BM25 index is being built in the background. \
-                    Run ctx_semantic_search again in ~30s, or use action=reindex to wait for completion."
+                    Run ctx_search(action=\"semantic\") again in ~30s, or use action=reindex to wait for completion."
                 .to_string();
         }
     };

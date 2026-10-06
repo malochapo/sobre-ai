@@ -10,7 +10,7 @@ fn add_test_marker(mut value: serde_json::Value, original_size: usize) -> (Vec<u
     (out, original_size, compressed_size)
 }
 
-// --- enterprise#11/#18: wire context (identity + baseline inputs) ---
+// --- wire context (project tag + baseline inputs) ---
 
 #[test]
 fn upstream_is_local_detects_loopback_hosts() {
@@ -38,26 +38,15 @@ fn upstream_is_local_detects_loopback_hosts() {
 }
 
 #[test]
-fn wire_context_carries_identity_tags_and_baseline() {
+fn wire_context_carries_project_tag_and_baseline() {
     let mut parts = parts_for("/v1/messages");
     parts
         .extensions
-        .insert(super::super::gateway_identity::GatewayTags {
-            person: Some("yves".into()),
-            team: Some("platform".into()),
+        .insert(super::super::request_tags::RequestTags {
             project: Some("billing".into()),
         });
-    let wire = wire_context(
-        &parts,
-        "Anthropic",
-        "https://api.anthropic.com",
-        750,
-        4000,
-        None,
-    );
+    let wire = wire_context(&parts, "Anthropic", "https://api.anthropic.com", 750, 4000);
     assert_eq!(wire.provider, "Anthropic");
-    assert_eq!(wire.person.as_deref(), Some("yves"));
-    assert_eq!(wire.team.as_deref(), Some("platform"));
     assert_eq!(wire.project.as_deref(), Some("billing"));
     assert_eq!(wire.saved_tokens, 750);
     // bytes/4 estimate, same basis as the proxy stats (enterprise#18).
@@ -77,7 +66,7 @@ fn wire_context_prefers_registry_provider_id_over_shape_label() {
             id: "local".into(),
             local: false,
         });
-    let wire = wire_context(&parts, "OpenAI", "http://127.0.0.1:11434", 0, 400, None);
+    let wire = wire_context(&parts, "OpenAI", "http://127.0.0.1:11434", 0, 400);
     assert_eq!(wire.provider, "local");
 }
 
@@ -100,7 +89,6 @@ fn wire_context_registry_local_flag_beats_url_heuristic() {
         "http://host.docker.internal:11434",
         0,
         400,
-        None,
     );
     assert!(wire.is_local, "declared local flag must win");
 
@@ -111,7 +99,7 @@ fn wire_context_registry_local_flag_beats_url_heuristic() {
             id: "tunnel".into(),
             local: false,
         });
-    let wire = wire_context(&parts, "OpenAI", "http://127.0.0.1:9999", 0, 400, None);
+    let wire = wire_context(&parts, "OpenAI", "http://127.0.0.1:9999", 0, 400);
     assert!(!wire.is_local, "declared non-local flag must win");
 }
 
@@ -137,43 +125,12 @@ fn retry_covers_exactly_not_processed_statuses() {
 
 #[test]
 fn wire_context_without_tags_still_carries_baseline() {
-    // Local solo mode: no identity, but savings + baseline are still real.
+    // No project tag, but savings + baseline are still real.
     let parts = parts_for("/v1/chat/completions");
-    let wire = wire_context(&parts, "OpenAI", "http://127.0.0.1:11434", 0, 400, None);
-    assert_eq!(wire.person, None);
+    let wire = wire_context(&parts, "OpenAI", "http://127.0.0.1:11434", 0, 400);
     assert_eq!(wire.project, None);
     assert_eq!(wire.uncompressed_input_tokens, 100);
     assert!(wire.is_local);
-}
-
-#[test]
-fn wire_context_carries_managed_lineage_without_forwarding_control_headers() {
-    let parts = Request::builder().body(()).unwrap().into_parts().0;
-    let lineage = crate::core::request_context::RequestContext {
-        request_id: "req-1".into(),
-        session_id: "session-1".into(),
-        agent_id: "agent-1".into(),
-        content_ref: "blake3:abc".into(),
-        tenant_id: None,
-        trace_id: "tr-unit".into(),
-    };
-    let wire = wire_context(
-        &parts,
-        "OpenAI",
-        "https://api.openai.com",
-        0,
-        4,
-        Some(lineage.clone()),
-    );
-    assert_eq!(wire.ocla_request_context(), Some(&lineage));
-    for header in [
-        super::super::lineage::REQUEST_ID_HEADER,
-        super::super::lineage::SESSION_ID_HEADER,
-        super::super::lineage::AGENT_ID_HEADER,
-    ] {
-        assert!(!is_allowed_request_header(header));
-        assert!(!should_forward_request_header(header, false));
-    }
 }
 
 #[test]
@@ -182,7 +139,7 @@ fn zstd_request_bodies_are_rewritten_and_reencoded() {
     let json = serde_json::to_vec(&body).unwrap();
     let encoded = encode_zstd(&json).unwrap();
     let parts = Request::builder()
-        .uri("/backend-api/codex/responses")
+        .uri("/v1/responses")
         .header(axum::http::header::CONTENT_ENCODING, "zstd")
         .body(())
         .unwrap()
@@ -217,7 +174,7 @@ fn gzip_request_bodies_are_rewritten_and_reencoded() {
     let json = serde_json::to_vec(&body).unwrap();
     let encoded = encode_gzip(&json).unwrap();
     let parts = Request::builder()
-        .uri("/backend-api/codex/responses")
+        .uri("/v1/responses")
         .header(axum::http::header::CONTENT_ENCODING, "gzip")
         .body(())
         .unwrap()
@@ -475,39 +432,6 @@ fn forwards_streamable_http_mcp_headers() {
 }
 
 #[test]
-fn forwards_grok_cli_chat_proxy_headers() {
-    // Grok CLI → cli-chat-proxy.grok.com. Stripping these used to yield
-    // HTTP 426 Upgrade Required with client-version "(none)" on /responses.
-    for required in [
-        "x-xai-token-auth",
-        "x-models-etag",
-        "x-grok-client-version",
-        "x-grok-client-identifier",
-        "x-grok-client-mode",
-        "x-grok-client-surface",
-        "x-grok-model-override",
-        "x-grok-agent-id",
-        "x-grok-session-id",
-        "x-grok-turn-id",
-        "x-grok-conv-id",
-        "x-grok-req-id",
-        "x-grok-deployment-id",
-        "x-grok-user-id",
-        "x-grok-context-window",
-        "x-grok-max-completion-tokens",
-        "x-grok-doom-loop-check",
-        "x-grok-managed-gateway",
-    ] {
-        assert!(
-            ALLOWED_REQUEST_HEADERS.contains(&required),
-            "request header `{required}` must be on the allowlist"
-        );
-    }
-    // Internal gateway tag must stay off the allowlist (enterprise#11).
-    assert!(!is_allowed_request_header("x-leanctx-project"));
-}
-
-#[test]
 fn forwards_codex_state_response_headers() {
     for required in [
         "x-codex-turn-state",
@@ -528,50 +452,6 @@ fn forwards_codex_state_response_headers() {
 }
 
 #[test]
-fn chatgpt_responses_use_openai_responses_holdout_key() {
-    let _iso = crate::core::data_dir::isolated_data_dir();
-    crate::core::config::Config::update_global(|c| {
-        c.proxy.output_holdout = Some(1.0);
-    })
-    .unwrap();
-
-    let body = serde_json::json!({
-        "model": "gpt-5",
-        "input": "same conversation",
-    });
-
-    assert_eq!(
-        cohort_arm(&body, "ChatGPT", "/backend-api/codex/responses"),
-        cohort_arm(&body, "OpenAI", "/v1/responses")
-    );
-}
-
-#[test]
-fn cache_prompt_hash_is_content_sensitive() {
-    let hash = super::super::cache_bridge::prompt_hash;
-    assert_ne!(hash(b"one"), hash(b"two"));
-}
-
-#[test]
-fn forwards_commandcode_cli_headers() {
-    // Command Code (`cmd`) gates agent calls on `x-command-code-version`.
-    // Stripping it yields 403 upgrade_required ("CLI is out of date").
-    for required in [
-        "x-command-code-version",
-        "x-cli-environment",
-        "x-oauth-token",
-        "x-oauth-provider",
-        "x-project-slug",
-        "x-taste-learning",
-        "x-taste-usage",
-        "x-oss-primary-provider",
-        "x-system-prompt-breakdown",
-        "x-cmd-zdr",
-        "x-session-id", // shared; pin so CC session stays wired
-    ] {
-        assert!(
-            ALLOWED_REQUEST_HEADERS.contains(&required),
-            "Command Code CLI header `{required}` must be on the request allowlist"
-        );
-    }
+fn internal_project_tag_is_not_forwarded() {
+    assert!(!is_allowed_request_header("x-leanctx-project"));
 }

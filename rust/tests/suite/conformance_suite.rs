@@ -22,7 +22,7 @@ fn scorecard_covers_all_categories() {
     let card = conformance::run();
     let categories: std::collections::BTreeSet<&str> =
         card.checks.iter().map(|c| c.category.as_str()).collect();
-    for expected in ["contracts", "reproducibility", "extensions"] {
+    for expected in ["accuracy", "extensions"] {
         assert!(
             categories.contains(expected),
             "scorecard missing category '{expected}'"

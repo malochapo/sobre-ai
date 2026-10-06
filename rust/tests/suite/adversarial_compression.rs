@@ -807,20 +807,6 @@ diff --git a/src/auth.rs b/src/auth.rs
 }
 
 #[test]
-fn adversarial_docker_ps_unhealthy_narrow_columns() {
-    let output = "\
-CONTAINER ID   IMAGE          COMMAND    CREATED      STATUS                    PORTS     NAMES
-abc123def456   nginx:latest   \"nginx\"    2 hours ago  Up 2 hours (unhealthy)    80/tcp    web
-789ghi012jkl   redis:7        \"redis\"    3 hours ago  Up 3 hours                6379/tcp  cache";
-
-    // docker ps is Verbatim — output preserved unmodified.
-    assert!(
-        compress_output("docker ps", output).is_none(),
-        "docker ps must be Verbatim (no compression)"
-    );
-}
-
-#[test]
 fn adversarial_docker_ps_exited_containers() {
     let output = "\
 CONTAINER ID   IMAGE          COMMAND    CREATED      STATUS                        PORTS     NAMES

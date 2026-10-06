@@ -3,8 +3,6 @@
 //! Tests that verify explicit full/lines re-reads of changed cached files
 //! are served as diffs (opt-in delta_explicit feature).
 
-use std::time::Duration;
-
 use super::handle_with_task_resolved;
 use super::resolve_explicit_delta_mode;
 use super::try_stub_hit_readonly_scoped;
@@ -109,7 +107,9 @@ Content for section {i}."
     );
     assert!(
         cache.is_full_delivered(&p),
-        "full_content_delivered must be set"
+        "full_content_delivered must be set; first read returned mode {} and:\n{}",
+        full1.resolved_mode,
+        full1.content.chars().take(300).collect::<String>()
     );
 
     // 2. Task read -- partial/filtered content. The fix clears full_content_delivered.
@@ -388,8 +388,7 @@ fn delta_explicit_changed_file_diverts_full_reread_to_diff() {
     let mut cache = primed_full_cache(&p);
 
     // File changes on disk after the first full read.
-    std::thread::sleep(Duration::from_secs(1));
-    std::fs::write(&path, "fn main() { changed(); }\n").unwrap();
+    crate::test_env::write_newer(&path, "fn main() { changed(); }\n");
 
     let decision = resolve_explicit_delta_mode(
         &cache, &p, "full", /*explicit*/ true, /*fresh*/ false, true,
@@ -434,8 +433,7 @@ fn delta_explicit_changed_lines_request_diverts_to_diff() {
 
     let cache = primed_full_cache(&p);
 
-    std::thread::sleep(Duration::from_secs(1));
-    std::fs::write(&path, "fn a() { x(); }\nfn b() {}\n").unwrap();
+    crate::test_env::write_newer(&path, "fn a() { x(); }\nfn b() {}\n");
 
     let decision = resolve_explicit_delta_mode(&cache, &p, "lines:1-1", true, false, true);
     assert_eq!(
@@ -469,12 +467,11 @@ fn delta_explicit_diff_base_is_full_cached_content_not_compressed() {
     let _ = handle_with_task_resolved(&mut cache, &p, "map", CrpMode::Off, None);
 
     // Change exactly one line on disk.
-    std::thread::sleep(Duration::from_secs(1));
     let changed = content.replace(
         "pub fn original_fn_7(x: i32) -> i32 { x + 7 }",
         "pub fn original_fn_7(x: i32) -> i32 { x + 70707 }",
     );
-    std::fs::write(&path, &changed).unwrap();
+    crate::test_env::write_newer(&path, &changed);
 
     let out = handle_with_task_resolved(&mut cache, &p, "diff", CrpMode::Off, None);
     assert!(
@@ -545,8 +542,7 @@ fn delta_explicit_off_preserves_current_behavior() {
 
     let cache = primed_full_cache(&p);
 
-    std::thread::sleep(Duration::from_secs(1));
-    std::fs::write(&path, "fn main() { changed(); }\n").unwrap();
+    crate::test_env::write_newer(&path, "fn main() { changed(); }\n");
 
     // enabled=false → the mode is never rewritten, no matter the disk state.
     let decision =
@@ -574,8 +570,7 @@ fn delta_explicit_fresh_bypasses() {
 
     let cache = primed_full_cache(&p);
 
-    std::thread::sleep(Duration::from_secs(1));
-    std::fs::write(&path, "fn main() { changed(); }\n").unwrap();
+    crate::test_env::write_newer(&path, "fn main() { changed(); }\n");
 
     // fresh=true → always bypass even with the feature on and a changed file.
     let decision = resolve_explicit_delta_mode(&cache, &p, "full", true, /*fresh*/ true, true);
@@ -616,8 +611,7 @@ fn delta_explicit_only_fires_for_explicit_mode() {
 
     let cache = primed_full_cache(&p);
 
-    std::thread::sleep(Duration::from_secs(1));
-    std::fs::write(&path, "fn main() { changed(); }\n").unwrap();
+    crate::test_env::write_newer(&path, "fn main() { changed(); }\n");
 
     // explicit_mode=false (mode was auto-resolved) → never diverted; auto-mode
     // already has its own staleness handling.
@@ -640,8 +634,7 @@ fn delta_explicit_decision_is_byte_stable() {
     std::fs::write(&path, "fn main() {}\n").unwrap();
 
     let cache = primed_full_cache(&p);
-    std::thread::sleep(Duration::from_secs(1));
-    std::fs::write(&path, "fn main() { changed(); }\n").unwrap();
+    crate::test_env::write_newer(&path, "fn main() { changed(); }\n");
 
     let d1 = resolve_explicit_delta_mode(&cache, &p, "full", true, false, true);
     let d2 = resolve_explicit_delta_mode(&cache, &p, "full", true, false, true);

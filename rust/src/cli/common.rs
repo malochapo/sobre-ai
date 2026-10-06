@@ -1,14 +1,3 @@
-pub(crate) fn print_savings(original: usize, sent: usize) {
-    let footer = crate::core::protocol::format_savings(original, sent);
-    if !footer.is_empty() {
-        println!("{footer}");
-    }
-}
-
-pub fn load_shell_history_pub() -> Vec<String> {
-    load_shell_history()
-}
-
 pub(crate) fn load_shell_history() -> Vec<String> {
     let shell = std::env::var("SHELL").unwrap_or_default();
     let Some(home) = dirs::home_dir() else {

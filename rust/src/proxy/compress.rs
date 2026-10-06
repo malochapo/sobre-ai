@@ -6,14 +6,9 @@ use crate::core::web::distill;
 /// Only oversized prose is truncated; the squeeze's main job is dedup + blank-collapse,
 /// not cutting.
 const RESEARCH_PROSE_CAP: usize = 20_000;
-const RESEARCH_PROSE_CAP_ENV: &str = "LEAN_CTX_RESEARCH_PROSE_CAP";
 
 fn research_prose_cap() -> usize {
-    std::env::var(RESEARCH_PROSE_CAP_ENV)
-        .ok()
-        .and_then(|v| v.trim().parse::<usize>().ok())
-        .filter(|cap| *cap > 0)
-        .unwrap_or(RESEARCH_PROSE_CAP)
+    RESEARCH_PROSE_CAP
 }
 
 /// Proxy compression funnel: routes a tool result to the right compressor.
@@ -27,7 +22,7 @@ fn research_prose_cap() -> usize {
 /// 3. Everything else (shell/build/search output) flows through the unified
 ///    `compress_if_beneficial` pipeline. A `$ ...` command hint is extracted so
 ///    the pattern engine gets the same routing as the CLI and MCP paths.
-pub fn compress_tool_result(content: &str, tool_name: Option<&str>) -> String {
+pub(crate) fn compress_tool_result(content: &str, tool_name: Option<&str>) -> String {
     let compressed = compress_inner(content, tool_name);
     attach_ccr(content, compressed, CcrAudience::Local)
 }
@@ -41,7 +36,7 @@ pub fn compress_tool_result(content: &str, tool_name: Option<&str>) -> String {
 /// Any ambient savings footer is stripped *before* the marker is attached:
 /// savings figures belong in the caller's structured `stats` (#498), while the
 /// marker is functional content that must survive as the last line.
-pub fn compress_tool_result_gateway(content: &str, tool_name: Option<&str>) -> String {
+pub(crate) fn compress_tool_result_gateway(content: &str, tool_name: Option<&str>) -> String {
     let compressed = compress_inner(content, tool_name);
     let clean = crate::core::protocol::strip_trailing_savings_footer(&compressed).to_string();
     attach_ccr(content, clean, CcrAudience::Gateway)
@@ -86,16 +81,10 @@ fn attach_ccr(original: &str, result: String, audience: CcrAudience) -> String {
         }
         Some(handle) => {
             sticky_tools::mark_ccr_active(0);
-            match ccr::inband_locator(&handle) {
-                Some(marker) => format!(
-                    "{result}\n[lean-ctx: full original elided to save tokens — echo {marker} \
-                     on your next turn to get the verbatim original spliced back inline]"
-                ),
-                None => format!(
-                    "{result}\n[lean-ctx: full original at {handle} — read it directly (no MCP), or \
-                     ctx_expand(id=\"{handle}\", head=N|search=\"…\"|json_path=\"…\") for a slice]"
-                ),
-            }
+            format!(
+                "{result}\n[lean-ctx: full original at {handle} — read it directly (no MCP), or \
+                 ctx_expand(id=\"{handle}\", head=N|search=\"…\"|json_path=\"…\") for a slice]"
+            )
         }
         None => result,
     }
@@ -123,10 +112,6 @@ fn compress_inner(content: &str, tool_name: Option<&str>) -> String {
         return crate::core::protect::compress_preserving(content, |seg| {
             compress_inner(seg, tool_name)
         });
-    }
-
-    if is_cited_research_output(content) {
-        return content.to_string();
     }
 
     if extract_command_hint(content).is_none()
@@ -194,12 +179,6 @@ fn output_looks_like_build_failure(content: &str) -> bool {
     NEEDLES.iter().any(|n| content.contains(n))
 }
 
-/// True when `content` is a lean-ctx web read: distilled body + citation footer
-/// (`Source: …\nSite: … · Retrieved: …`). Such output is re-compression-hostile.
-fn is_cited_research_output(content: &str) -> bool {
-    content.contains("· Retrieved: ") && content.contains("\nSource: ")
-}
-
 /// Code/shell symbols whose density cleanly separates source/logs from prose.
 const CODE_SYMBOLS: &str = "{}<>;=|\\$`";
 
@@ -232,7 +211,7 @@ fn looks_like_prose(content: &str) -> bool {
     avg_len >= 40.0
 }
 
-/// Apply the prose squeeze, returning a footer-stamped result only when it
+/// Apply the prose squeeze, returning the result only when it
 /// actually saves tokens; otherwise `None` so the normal pipeline can try.
 fn squeeze_research_prose(content: &str) -> Option<String> {
     let before = count_tokens(content);
@@ -244,13 +223,7 @@ fn squeeze_research_prose(content: &str) -> Option<String> {
     if after + 2 >= before {
         return None;
     }
-    Some(crate::core::protocol::append_savings_with_info(
-        &squeezed,
-        before,
-        after,
-        Some("research"),
-        None,
-    ))
+    Some(squeezed)
 }
 
 /// Choose the prose-squeeze body. Only when the content would actually be
@@ -321,7 +294,6 @@ fn extract_command_hint(content: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serial_test::serial;
 
     /// #980/#985: search tool results must compress without corrupting source.
     #[test]
@@ -414,16 +386,6 @@ mod tests {
     }
 
     #[test]
-    fn cited_research_output_is_preserved_verbatim() {
-        let cited = format!(
-            "Rust is a language.\n\n---\nSource: Rust — https://x.com/a\n\
-             Site: x.com · Retrieved: 2026-06-06T00:00:00Z\n{}",
-            "Extra body line that would otherwise be touched. ".repeat(20)
-        );
-        assert_eq!(compress_tool_result(&cited, Some("ctx_url_read")), cited);
-    }
-
-    #[test]
     fn prose_is_squeezed_and_deduped() {
         let para = "Rust is a multi-paradigm systems programming language that \
                     emphasizes performance, type safety, and fearless concurrency, \
@@ -434,26 +396,6 @@ mod tests {
         let out = compress_tool_result(&input, Some("web_fetch"));
         assert_eq!(out.matches("fearless concurrency").count(), 1);
         assert!(out.contains("performance, type safety"));
-    }
-
-    #[test]
-    #[serial]
-    fn research_prose_cap_env_overrides_default() {
-        let _lock = crate::core::data_dir::test_env_lock();
-        crate::test_env::set_var(RESEARCH_PROSE_CAP_ENV, "1234");
-        assert_eq!(research_prose_cap(), 1234);
-        crate::test_env::remove_var(RESEARCH_PROSE_CAP_ENV);
-    }
-
-    #[test]
-    #[serial]
-    fn research_prose_cap_env_invalid_falls_back() {
-        let _lock = crate::core::data_dir::test_env_lock();
-        for value in ["", "not_a_number", "0"] {
-            crate::test_env::set_var(RESEARCH_PROSE_CAP_ENV, value);
-            assert_eq!(research_prose_cap(), RESEARCH_PROSE_CAP);
-        }
-        crate::test_env::remove_var(RESEARCH_PROSE_CAP_ENV);
     }
 
     #[test]
@@ -618,20 +560,5 @@ mod tests {
             .join("\n");
         let out = compress_tool_result_gateway(&raw, Some("ctx_shell"));
         assert_eq!(out, raw);
-    }
-
-    #[test]
-    fn small_or_passthrough_output_gets_no_ccr_handle() {
-        let _lock = crate::core::data_dir::test_env_lock();
-        // Below the 200-char compress floor: passes through, no handle.
-        let tiny = "ok\n".repeat(10);
-        assert!(!compress_tool_result(&tiny, Some("bash")).contains("full original at"));
-        // lean-ctx tool output passes through verbatim (no handle either).
-        let raw = (1..=120)
-            .map(|i| format!("Line {i:04}: lorem ipsum dolor sit amet consectetur"))
-            .collect::<Vec<_>>()
-            .join("\n");
-        let out = compress_tool_result(&raw, Some("ctx_shell"));
-        assert_eq!(out, raw, "lean-ctx tool result must stay verbatim (no CCR)");
     }
 }

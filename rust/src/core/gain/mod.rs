@@ -21,7 +21,6 @@ pub struct GainEngine {
     pub costs: CostStore,
     pub heatmap: HeatMap,
     pub pricing: ModelPricing,
-    pub events: Vec<crate::core::events::LeanCtxEvent>,
     pub session: Option<crate::core::session::SessionState>,
 }
 
@@ -120,11 +119,10 @@ impl GainEngine {
         Self {
             // Aggregate across split data dirs so the gain score, cost view and
             // net-of-injection line agree with the hero headline (#500).
-            stats: crate::core::stats::load_for_display(),
+            stats: crate::core::stats::load(),
             costs: crate::core::a2a::cost_attribution::CostStore::load(),
             heatmap: crate::core::heatmap::HeatMap::load(),
             pricing: ModelPricing::load(),
-            events: crate::core::events::load_events_from_file(500),
             session: crate::core::session::SessionState::load_latest(),
         }
     }
@@ -182,8 +180,7 @@ impl GainEngine {
         // Budget awareness (#964): flag when the fixed per-turn prefix outgrows
         // the configured `[context] budget_tokens` (shared knob with `doctor
         // overhead`). 0 disables the check.
-        let injected_overhead_budget_tokens =
-            crate::core::config::Config::load().context_budget_tokens_effective() as u64;
+        let injected_overhead_budget_tokens = crate::core::config::CONTEXT_BUDGET_TOKENS as u64;
         let over_budget = injected_overhead_budget_tokens > 0
             && injected_overhead_tokens_per_turn > injected_overhead_budget_tokens;
         GainSummary {

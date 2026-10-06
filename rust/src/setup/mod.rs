@@ -10,10 +10,6 @@ pub use mcp::*;
 mod helpers;
 pub(crate) use helpers::*;
 
-pub fn claude_config_json_path(home: &std::path::Path) -> PathBuf {
-    crate::core::editor_registry::claude_mcp_json_path(home)
-}
-
 pub fn claude_config_dir(home: &std::path::Path) -> PathBuf {
     crate::core::editor_registry::claude_state_dir(home)
 }
@@ -58,10 +54,11 @@ pub struct SetupOptions {
     pub no_auto_approve: bool,
     pub skip_proxy: bool,
     pub skip_rules: bool,
-    /// Explicitly request rules injection (overrides config).
-    pub force_inject_rules: bool,
     /// Leave the shell rc untouched (`init --no-shell-hook`).
     pub skip_shell_hook: bool,
+    /// `init --agent-aliases` / `--no-agent-aliases`; `None` keeps what is
+    /// installed.
+    pub agent_aliases: Option<bool>,
 }
 
 pub fn run_setup_with_options(opts: SetupOptions) -> Result<SetupReport, String> {
@@ -70,10 +67,6 @@ pub fn run_setup_with_options(opts: SetupOptions) -> Result<SetupReport, String>
     let home = dirs::home_dir().ok_or_else(|| "Cannot determine home directory".to_string())?;
     let binary = resolve_portable_binary();
     let home_str = home.to_string_lossy().to_string();
-
-    // Commit to the XDG layout (and drain any residual ~/.lean-ctx) so a stray
-    // marker can never re-collapse config/data/state/cache later (GL #623).
-    crate::core::layout_pin::heal();
 
     let mut steps: Vec<SetupStepReport> = Vec::new();
 
@@ -91,7 +84,7 @@ pub fn run_setup_with_options(opts: SetupOptions) -> Result<SetupReport, String>
         } else {
             crate::cli::install_shell_hook(&["--global".to_string()]);
         }
-        crate::shell_hook::install_all(opts.json);
+        crate::shell_hook::install_all(opts.json, opts.agent_aliases);
         #[cfg(not(windows))]
         {
             let hook_content = crate::cli::generate_hook_posix(&binary);
@@ -151,11 +144,6 @@ pub fn run_setup_with_options(opts: SetupOptions) -> Result<SetupReport, String>
     };
 
     let targets = crate::core::editor_registry::build_targets(&home);
-    // #281: honor `auto_update_mcp = false` — editors are still detected and
-    // reported, but the MCP server is never registered in their configs.
-    let update_mcp = crate::core::config::Config::load()
-        .setup
-        .should_update_mcp();
     for target in &targets {
         let short_path = shorten_path(&target.config_path.to_string_lossy(), &home_str);
         if !target.detect_path.exists() {
@@ -173,18 +161,6 @@ pub fn run_setup_with_options(opts: SetupOptions) -> Result<SetupReport, String>
         } else {
             recommend_hook_mode(&target.agent_key)
         };
-
-        if !update_mcp {
-            editor_step.items.push(SetupItem {
-                name: target.name.to_string(),
-                status: "skipped".to_string(),
-                path: Some(short_path),
-                note: Some(format!(
-                    "mode={mode}; MCP registration skipped (auto_update_mcp=false)"
-                )),
-            });
-            continue;
-        }
 
         let res = crate::core::editor_registry::write_config_with_options(
             target,
@@ -223,7 +199,7 @@ pub fn run_setup_with_options(opts: SetupOptions) -> Result<SetupReport, String>
     }
     steps.push(editor_step);
 
-    // Step: Agent rules — respect config unless explicitly forced or skipped
+    // Step: Agent rules — always, unless `--skip-rules`
     let mut rules_step = SetupStepReport {
         name: "agent_rules".to_string(),
         ok: true,
@@ -231,16 +207,7 @@ pub fn run_setup_with_options(opts: SetupOptions) -> Result<SetupReport, String>
         warnings: Vec::new(),
         errors: Vec::new(),
     };
-    let setup_cfg = crate::core::config::Config::load().setup;
-    let should_inject = if opts.skip_rules {
-        false
-    } else if opts.force_inject_rules {
-        true
-    } else if opts.yes && opts.non_interactive {
-        setup_cfg.should_inject_rules()
-    } else {
-        true
-    };
+    let should_inject = !opts.skip_rules;
 
     if should_inject {
         let rules_result = crate::rules_inject::inject_all_rules(&home);
@@ -283,16 +250,11 @@ pub fn run_setup_with_options(opts: SetupOptions) -> Result<SetupReport, String>
             rules_step.errors.push(e);
         }
     } else {
-        let reason = if opts.skip_rules {
-            "--skip-rules flag set"
-        } else {
-            "auto_inject_rules not enabled (run `lean-ctx init` or set auto_inject_rules = true)"
-        };
         rules_step.items.push(SetupItem {
             name: "agent_rules".to_string(),
             status: "skipped".to_string(),
             path: None,
-            note: Some(reason.to_string()),
+            note: Some("--skip-rules flag set".to_string()),
         });
     }
     steps.push(rules_step);
@@ -339,15 +301,9 @@ pub fn run_setup_with_options(opts: SetupOptions) -> Result<SetupReport, String>
         }
         let mode = recommend_hook_mode(&target.agent_key);
         crate::hooks::install_agent_hook_with_mode(&target.agent_key, true, mode);
-        // #281: honor `[setup] auto_update_mcp = false` — register MCP only when
-        // enabled; hooks above always install.
-        let mcp_note = if setup_cfg.should_update_mcp() {
-            match configure_agent_mcp(&target.agent_key) {
-                Ok(()) => "; MCP config updated".to_string(),
-                Err(e) => format!("; MCP config skipped: {e}"),
-            }
-        } else {
-            "; MCP registration skipped (auto_update_mcp=false)".to_string()
+        let mcp_note = match configure_agent_mcp(&target.agent_key) {
+            Ok(()) => "; MCP config updated".to_string(),
+            Err(e) => format!("; MCP config skipped: {e}"),
         };
         hooks_step.items.push(SetupItem {
             name: format!("{} hooks", target.name),
@@ -401,7 +357,7 @@ pub fn run_setup_with_options(opts: SetupOptions) -> Result<SetupReport, String>
         });
     } else {
         let proxy_cfg = crate::core::config::Config::load();
-        if proxy_cfg.proxy_enabled == Some(true) {
+        if proxy_cfg.proxy.enabled == Some(true) {
             let proxy_port = crate::proxy_setup::default_port();
             crate::proxy_autostart::install(proxy_port, true);
             std::thread::sleep(std::time::Duration::from_millis(500));
@@ -456,12 +412,7 @@ pub fn run_setup_with_options(opts: SetupOptions) -> Result<SetupReport, String>
     // Project root validation: warn if no root is configured and cwd is broad
     {
         let has_env_root = std::env::var("LEAN_CTX_PROJECT_ROOT").is_ok_and(|v| !v.is_empty());
-        let cfg = crate::core::config::Config::load();
-        let has_cfg_root = cfg.project_root.as_ref().is_some_and(|v| !v.is_empty());
-        if !has_env_root
-            && !has_cfg_root
-            && let Ok(cwd) = std::env::current_dir()
-        {
+        if !has_env_root && let Ok(cwd) = std::env::current_dir() {
             let is_home = dirs::home_dir().is_some_and(|h| cwd == h);
             if is_home {
                 let mut root_step = SetupStepReport {
@@ -469,8 +420,8 @@ pub fn run_setup_with_options(opts: SetupOptions) -> Result<SetupReport, String>
                         ok: true,
                         items: Vec::new(),
                         warnings: vec![
-                            "No project_root configured. Running from $HOME can cause excessive scanning. \
-                             Set via: lean-ctx config set project_root /path/to/project".to_string()
+                            "No project root set. Running from $HOME can cause excessive scanning. \
+                             Start your agent from the project directory or set LEAN_CTX_PROJECT_ROOT.".to_string()
                         ],
                         errors: Vec::new(),
                     };
@@ -478,9 +429,7 @@ pub fn run_setup_with_options(opts: SetupOptions) -> Result<SetupReport, String>
                     name: "project_root".to_string(),
                     status: "unconfigured".to_string(),
                     path: None,
-                    note: Some(
-                        "Set LEAN_CTX_PROJECT_ROOT or add project_root to config.toml".to_string(),
-                    ),
+                    note: Some("Set LEAN_CTX_PROJECT_ROOT".to_string()),
                 });
                 steps.push(root_step);
             }
@@ -496,33 +445,6 @@ pub fn run_setup_with_options(opts: SetupOptions) -> Result<SetupReport, String>
         && crate::core::pathutil::has_project_marker(&cwd)
     {
         spawn_index_build_background(&cwd);
-    }
-
-    // IDE config access: the interactive `setup` prompts for informed consent
-    // (see run_setup). An explicit `--yes` is itself consent, so enable the
-    // registry-derived opt-in if the user has never decided. `--fix` repair runs
-    // must never silently widen the jail, so they are left untouched.
-    if opts.yes
-        && !opts.fix
-        && crate::core::config::Config::load()
-            .allow_ide_config_dirs
-            .is_none()
-    {
-        match crate::core::config::Config::update_global(|c| {
-            c.allow_ide_config_dirs = Some(true);
-        }) {
-            // --yes is consent, but say so out loud: the user should know the
-            // path jail now includes IDE config dirs, and how to revert it.
-            Ok(_) => {
-                if !opts.json {
-                    println!(
-                        "  Enabled IDE config access (allow_ide_config_dirs) — \
-                         disable: lean-ctx config set allow_ide_config_dirs false"
-                    );
-                }
-            }
-            Err(e) => tracing::warn!("could not enable IDE config access: {e}"),
-        }
     }
 
     let finished_at = Utc::now();
@@ -563,9 +485,7 @@ fn may_autoindex_cwd(cwd: &std::path::Path) -> bool {
 }
 
 fn spawn_index_build_background(root: &std::path::Path) {
-    if std::env::var("LEAN_CTX_DISABLED").is_ok()
-        || matches!(std::env::var("LEAN_CTX_QUIET"), Ok(v) if v.trim() == "1")
-    {
+    if matches!(std::env::var("LEAN_CTX_QUIET"), Ok(v) if v.trim() == "1") {
         return;
     }
     let root_str = crate::core::graph_index::normalize_project_root(&root.to_string_lossy());
@@ -635,29 +555,5 @@ mod tests {
         assert!(!may_autoindex_cwd(&home.join("Downloads/proj")));
         assert!(may_autoindex_cwd(&home.join("code/proj")));
         assert!(may_autoindex_cwd(std::path::Path::new("/tmp/proj")));
-    }
-
-    #[test]
-    #[cfg(target_os = "macos")]
-    fn qoder_agent_targets_include_all_macos_mcp_locations() {
-        let home = std::path::Path::new("/Users/tester");
-        let targets = agent_mcp_targets("qoder", home).unwrap();
-        let paths: Vec<_> = targets.iter().map(|t| t.config_path.as_path()).collect();
-
-        assert_eq!(
-            paths,
-            vec![
-                home.join(".qoder/mcp.json").as_path(),
-                home.join("Library/Application Support/Qoder/User/mcp.json")
-                    .as_path(),
-                home.join("Library/Application Support/Qoder/SharedClientCache/mcp.json")
-                    .as_path(),
-            ]
-        );
-        assert!(
-            targets
-                .iter()
-                .all(|t| t.config_type == ConfigType::QoderSettings)
-        );
     }
 }

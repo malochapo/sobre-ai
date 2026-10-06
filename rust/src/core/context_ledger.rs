@@ -1,5 +1,3 @@
-use std::collections::HashMap;
-
 use serde::{Deserialize, Serialize};
 
 use super::context_field::{
@@ -12,15 +10,6 @@ const DEFAULT_CONTEXT_WINDOW: usize = 128_000;
 /// weight on the new signal and the running history, so salience tracks recency
 /// and task changes without overreacting to one read.
 const PHI_REREAD_ALPHA: f64 = 0.5;
-
-/// Default Global-Workspace ignition threshold (#6) as a Phi z-score: an item
-/// must stand more than this many standard deviations above the mean salience to
-/// "ignite" and be broadcast (promoted to Pinned) into the global workspace.
-const GWT_IGNITION_Z: f64 = 1.5;
-/// Minimum number of scored entries before ignition can fire — below this the
-/// Phi distribution is too small to identify a meaningful outlier, so ignition
-/// is suppressed to avoid pinning everything on a cold ledger.
-const GWT_MIN_ENTRIES: usize = 4;
 
 fn ledger_path(agent_id: &str) -> Result<std::path::PathBuf, String> {
     let dir = crate::core::paths::state_dir()?;
@@ -140,29 +129,6 @@ pub enum PressureAction {
     SuggestCompression,
     ForceCompression,
     EvictLeastRelevant,
-}
-
-/// Outcome of resolving a user-supplied target against the ledger (#715).
-/// Entries store absolute canonical paths while users, hints and the
-/// dashboard supply relative paths or basenames — exact matching alone made
-/// `evict` a no-op ("Evicted 0/1").
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum LedgerResolution {
-    /// Exactly one entry matched (index into `entries`).
-    Unique(usize),
-    /// Several entries share the suffix — the matched paths, for diagnostics.
-    Ambiguous(Vec<String>),
-    NotFound,
-}
-
-/// Per-target eviction outcome (#715): carries the canonical resolved path so
-/// callers can report precisely what happened and write overlays against the
-/// path the ledger actually stores.
-#[derive(Debug, Clone)]
-pub struct EvictOutcome {
-    pub target: String,
-    pub resolved: Option<String>,
-    pub ambiguous: Vec<String>,
 }
 
 impl ContextLedger {
@@ -319,96 +285,12 @@ impl ContextLedger {
         }
     }
 
-    /// Update the Phi score for an entry.
-    pub fn update_phi(&mut self, path: &str, phi: f64) {
-        if let Some(entry) = self.entries.iter_mut().find(|e| e.path == path) {
-            entry.phi = Some(phi);
-        }
-    }
-
-    /// Set the state for an entry. Accepts partial paths and basenames via
-    /// [`Self::resolve_entry`] (#715).
+    /// Set the state of the entry recorded under exactly `path` (test hook).
+    #[cfg(test)]
     pub fn set_state(&mut self, path: &str, state: ContextState) {
-        if let LedgerResolution::Unique(idx) = self.resolve_entry(path, None) {
-            self.entries[idx].state = Some(state);
+        if let Some(e) = self.entries.iter_mut().find(|e| e.path == path) {
+            e.state = Some(state);
         }
-    }
-
-    /// Resolve a user-supplied target against the ledger (#715):
-    /// exact match → project-root-relative → unambiguous suffix at a path
-    /// component boundary. Entries are stored as normalized absolute paths
-    /// (forward slashes); targets arrive as basenames, relative paths, or
-    /// OS-native separators.
-    pub fn resolve_entry(&self, target: &str, project_root: Option<&str>) -> LedgerResolution {
-        let lex = crate::core::pathutil::normalize_tool_path_lexical(target);
-        if lex.is_empty() {
-            return LedgerResolution::NotFound;
-        }
-
-        // Stage 1 — exact: lexical form first (no FS access), then the fully
-        // canonical form (resolves symlinks, matching what `record` stored).
-        if let Some(idx) = self.entries.iter().position(|e| e.path == lex) {
-            return LedgerResolution::Unique(idx);
-        }
-        let full = crate::core::pathutil::normalize_tool_path(target);
-        if full != lex
-            && let Some(idx) = self.entries.iter().position(|e| e.path == full)
-        {
-            return LedgerResolution::Unique(idx);
-        }
-
-        // Stage 2 — relative to the project root.
-        if let Some(root) = project_root.filter(|r| !r.is_empty()) {
-            let joined = format!(
-                "{}/{}",
-                root.trim_end_matches(['/', '\\']),
-                lex.trim_start_matches('/')
-            );
-            let joined_lex = crate::core::pathutil::normalize_tool_path_lexical(&joined);
-            if let Some(idx) = self.entries.iter().position(|e| e.path == joined_lex) {
-                return LedgerResolution::Unique(idx);
-            }
-            let joined_full = crate::core::pathutil::normalize_tool_path(&joined_lex);
-            if joined_full != joined_lex
-                && let Some(idx) = self.entries.iter().position(|e| e.path == joined_full)
-            {
-                return LedgerResolution::Unique(idx);
-            }
-        }
-
-        // Stage 3 — unambiguous suffix at a component boundary ("/…"), so
-        // `main.rs` matches `src/main.rs` but never `domain.rs`.
-        let suffix = format!("/{}", lex.trim_start_matches('/'));
-        let matches: Vec<usize> = self
-            .entries
-            .iter()
-            .enumerate()
-            .filter(|(_, e)| e.path.ends_with(&suffix))
-            .map(|(idx, _)| idx)
-            .collect();
-        match matches.len() {
-            1 => LedgerResolution::Unique(matches[0]),
-            0 => LedgerResolution::NotFound,
-            _ => LedgerResolution::Ambiguous(
-                matches
-                    .iter()
-                    .map(|&idx| self.entries[idx].path.clone())
-                    .collect(),
-            ),
-        }
-    }
-
-    /// Find an entry by its ContextItemId.
-    pub fn find_by_id(&self, id: &ContextItemId) -> Option<&LedgerEntry> {
-        self.entries.iter().find(|e| e.id.as_ref() == Some(id))
-    }
-
-    /// Get all entries with a specific state.
-    pub fn items_by_state(&self, state: ContextState) -> Vec<&LedgerEntry> {
-        self.entries
-            .iter()
-            .filter(|e| e.state == Some(state))
-            .collect()
     }
 
     /// Eviction candidates ordered by Phi (lowest first), falling back to
@@ -432,55 +314,6 @@ impl ContextLedger {
             .take(self.entries.len() - keep_count)
             .map(|e| e.path.clone())
             .collect()
-    }
-
-    /// Global-Workspace ignition (#6): context items compete on salience (Phi);
-    /// any whose z-score exceeds the ignition threshold is "broadcast" — promoted
-    /// to Pinned so it survives eviction (`eviction_candidates_by_phi` already
-    /// skips Pinned) and pressure reinjection, and reaches the compiler's working
-    /// set as a pinned candidate. Deterministic: a pure threshold over the current
-    /// Phi distribution, no sampling. Returns the paths newly ignited this call.
-    pub fn ignite_high_salience(&mut self) -> Vec<String> {
-        let z_threshold = ignition_z_threshold();
-        let phis: Vec<f64> = self.entries.iter().filter_map(|e| e.phi).collect();
-        if phis.len() < GWT_MIN_ENTRIES {
-            return Vec::new();
-        }
-        let n = phis.len() as f64;
-        let mean = phis.iter().sum::<f64>() / n;
-        let var = phis.iter().map(|p| (p - mean).powi(2)).sum::<f64>() / n;
-        let std = var.sqrt();
-        if std <= f64::EPSILON {
-            return Vec::new();
-        }
-
-        let mut ignited = Vec::new();
-        for e in &mut self.entries {
-            let Some(phi) = e.phi else { continue };
-            let state = e.state.unwrap_or(ContextState::Included);
-            if matches!(state, ContextState::Excluded | ContextState::Pinned) {
-                continue;
-            }
-            if (phi - mean) / std > z_threshold {
-                e.state = Some(ContextState::Pinned);
-                ignited.push(e.path.clone());
-            }
-        }
-        if !ignited.is_empty() {
-            crate::core::introspect::tick("gwt_ignition");
-        }
-        ignited
-    }
-
-    /// Mark entries as stale if their source hash has changed.
-    pub fn mark_stale_by_hash(&mut self, path: &str, new_hash: &str) {
-        if let Some(entry) = self.entries.iter_mut().find(|e| e.path == path)
-            && let Some(ref old_hash) = entry.source_hash
-            && old_hash != new_hash
-        {
-            entry.state = Some(ContextState::Stale);
-            entry.source_hash = Some(new_hash.to_string());
-        }
     }
 
     pub fn pressure(&self) -> ContextPressure {
@@ -542,24 +375,6 @@ impl ContextLedger {
         self.total_tokens_sent as f64 / total_original as f64
     }
 
-    pub fn files_by_token_cost(&self) -> Vec<(String, usize)> {
-        let mut costs: Vec<(String, usize)> = self
-            .entries
-            .iter()
-            .map(|e| (e.path.clone(), e.sent_tokens))
-            .collect();
-        costs.sort_by_key(|b| std::cmp::Reverse(b.1));
-        costs
-    }
-
-    pub fn mode_distribution(&self) -> HashMap<String, usize> {
-        let mut dist: HashMap<String, usize> = HashMap::new();
-        for entry in &self.entries {
-            *dist.entry(entry.mode.clone()).or_insert(0) += 1;
-        }
-        dist
-    }
-
     pub fn eviction_candidates(&self, keep_count: usize) -> Vec<String> {
         if self.entries.len() <= keep_count {
             return Vec::new();
@@ -571,27 +386,6 @@ impl ContextLedger {
             .take(self.entries.len() - keep_count)
             .map(|e| e.path.clone())
             .collect()
-    }
-
-    /// Remove one entry by target. Resolves partial paths and basenames
-    /// (#715); an ambiguous target removes nothing.
-    pub fn remove(&mut self, path: &str) -> bool {
-        match self.resolve_entry(path, None) {
-            LedgerResolution::Unique(idx) => {
-                self.remove_at(idx);
-                true
-            }
-            _ => false,
-        }
-    }
-
-    fn remove_at(&mut self, idx: usize) {
-        let entry = &self.entries[idx];
-        self.total_tokens_sent = self.total_tokens_sent.saturating_sub(entry.sent_tokens);
-        self.total_tokens_saved = self
-            .total_tokens_saved
-            .saturating_sub(entry.original_tokens.saturating_sub(entry.sent_tokens));
-        self.entries.remove(idx);
     }
 
     /// Clear all entries and reset totals to zero.
@@ -607,50 +401,6 @@ impl ContextLedger {
         if pinned_count > 0 {
             tracing::info!("{pinned_count} pinned entries were also cleared");
         }
-    }
-
-    /// Remove specific paths from the ledger. Returns count of entries removed.
-    /// Targets resolve like [`Self::resolve_entry`] (#715).
-    pub fn evict_paths(&mut self, paths: &[&str]) -> usize {
-        self.evict_paths_resolved(paths, None)
-            .iter()
-            .filter(|o| o.resolved.is_some())
-            .count()
-    }
-
-    /// Eviction with full per-target diagnostics (#715): resolves each target
-    /// (exact → root-relative → unique suffix) and reports the canonical path
-    /// it removed, or the ambiguous candidates, so callers can surface WHY
-    /// nothing was evicted instead of a bare "Evicted 0/1".
-    pub fn evict_paths_resolved(
-        &mut self,
-        paths: &[&str],
-        project_root: Option<&str>,
-    ) -> Vec<EvictOutcome> {
-        paths
-            .iter()
-            .map(|target| match self.resolve_entry(target, project_root) {
-                LedgerResolution::Unique(idx) => {
-                    let resolved = self.entries[idx].path.clone();
-                    self.remove_at(idx);
-                    EvictOutcome {
-                        target: (*target).to_string(),
-                        resolved: Some(resolved),
-                        ambiguous: Vec::new(),
-                    }
-                }
-                LedgerResolution::Ambiguous(candidates) => EvictOutcome {
-                    target: (*target).to_string(),
-                    resolved: None,
-                    ambiguous: candidates,
-                },
-                LedgerResolution::NotFound => EvictOutcome {
-                    target: (*target).to_string(),
-                    resolved: None,
-                    ambiguous: Vec::new(),
-                },
-            })
-            .collect()
     }
 
     pub fn save(&self) {
@@ -795,112 +545,7 @@ impl ContextLedger {
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct ReinjectionAction {
-    pub path: String,
-    pub current_mode: String,
-    pub new_mode: String,
-    pub tokens_freed: usize,
-}
-
-#[derive(Debug, Clone)]
-pub struct ReinjectionPlan {
-    pub actions: Vec<ReinjectionAction>,
-    pub total_tokens_freed: usize,
-    pub new_utilization: f64,
-}
-
-impl ContextLedger {
-    pub fn reinjection_plan(
-        &self,
-        intent: &super::intent_engine::StructuredIntent,
-        target_utilization: f64,
-    ) -> ReinjectionPlan {
-        let current_util = self.total_tokens_sent as f64 / self.window_size as f64;
-        if current_util <= target_utilization {
-            return ReinjectionPlan {
-                actions: Vec::new(),
-                total_tokens_freed: 0,
-                new_utilization: current_util,
-            };
-        }
-
-        let tokens_to_free =
-            self.total_tokens_sent - (self.window_size as f64 * target_utilization) as usize;
-
-        let target_set: std::collections::HashSet<&str> = intent
-            .targets
-            .iter()
-            .map(std::string::String::as_str)
-            .collect();
-
-        let mut candidates: Vec<(usize, &LedgerEntry)> = self
-            .entries
-            .iter()
-            .enumerate()
-            .filter(|(_, e)| !target_set.iter().any(|t| e.path.contains(t)))
-            .collect();
-
-        candidates.sort_by(|a, b| {
-            let a_phi = a.1.phi.unwrap_or(0.0);
-            let b_phi = b.1.phi.unwrap_or(0.0);
-            a_phi
-                .partial_cmp(&b_phi)
-                .unwrap_or_else(|| a.1.timestamp.cmp(&b.1.timestamp))
-        });
-
-        let mut actions = Vec::new();
-        let mut freed = 0usize;
-
-        for (_, entry) in &candidates {
-            if freed >= tokens_to_free {
-                break;
-            }
-            if let Some((new_mode, new_tokens)) = downgrade_mode(&entry.mode, entry.sent_tokens) {
-                let saving = entry.sent_tokens.saturating_sub(new_tokens);
-                if saving > 0 {
-                    actions.push(ReinjectionAction {
-                        path: entry.path.clone(),
-                        current_mode: entry.mode.clone(),
-                        new_mode,
-                        tokens_freed: saving,
-                    });
-                    freed += saving;
-                }
-            }
-        }
-
-        let new_sent = self.total_tokens_sent.saturating_sub(freed);
-        let new_utilization = new_sent as f64 / self.window_size as f64;
-
-        ReinjectionPlan {
-            actions,
-            total_tokens_freed: freed,
-            new_utilization,
-        }
-    }
-}
-
-fn downgrade_mode(current_mode: &str, current_tokens: usize) -> Option<(String, usize)> {
-    match current_mode {
-        "full" => Some(("signatures".to_string(), current_tokens / 5)),
-        "aggressive" => Some(("signatures".to_string(), current_tokens / 3)),
-        "signatures" => Some(("map".to_string(), current_tokens / 2)),
-        "map" => Some(("reference".to_string(), current_tokens / 4)),
-        _ => None,
-    }
-}
-
-/// Resolve the Global-Workspace ignition z-score threshold (#6): the
-/// `LEAN_CTX_GWT_IGNITION_Z` env override (must be > 0) wins, else the default
-/// [`GWT_IGNITION_Z`]. Deterministic for a given environment.
-fn ignition_z_threshold() -> f64 {
-    std::env::var("LEAN_CTX_GWT_IGNITION_Z")
-        .ok()
-        .and_then(|v| v.trim().parse::<f64>().ok())
-        .filter(|v| *v > 0.0)
-        .unwrap_or(GWT_IGNITION_Z)
-}
+impl ContextLedger {}
 
 impl Default for ContextLedger {
     fn default() -> Self {
@@ -930,48 +575,38 @@ mod tests {
         assert_eq!(ledger.entries.len(), 2);
     }
 
-    #[test]
-    fn ignition_broadcasts_high_salience_outlier() {
-        // #6: an item far above the mean salience ignites and is pinned.
-        let mut ledger = ContextLedger::with_window_size(100_000);
-        for i in 0..5 {
-            ledger.record(&format!("low{i}.rs"), "map", 100, 100);
-        }
-        ledger.record("hot.rs", "full", 100, 100);
+    fn set_phi(ledger: &mut ContextLedger, path: &str, phi: f64) {
         for e in &mut ledger.entries {
-            e.phi = Some(if e.path == "hot.rs" { 0.95 } else { 0.1 });
+            if e.path == path {
+                e.phi = Some(phi);
+            }
         }
-        let ignited = ledger.ignite_high_salience();
-        assert_eq!(ignited, vec!["hot.rs".to_string()]);
-        let hot = ledger.entries.iter().find(|e| e.path == "hot.rs").unwrap();
-        assert_eq!(hot.state, Some(ContextState::Pinned));
     }
 
     #[test]
-    fn ignition_skips_small_ledger() {
-        // Below GWT_MIN_ENTRIES the distribution is too small — no ignition.
-        let mut ledger = ContextLedger::with_window_size(100_000);
-        ledger.record("a.rs", "full", 100, 100);
-        ledger.entries[0].phi = Some(0.99);
-        assert!(ledger.ignite_high_salience().is_empty());
+    fn eviction_by_phi_prefers_low_phi() {
+        let mut ledger = ContextLedger::with_window_size(10000);
+        ledger.record("high.rs", "full", 100, 100);
+        set_phi(&mut ledger, "high.rs", 0.9);
+        ledger.record("low.rs", "full", 100, 100);
+        set_phi(&mut ledger, "low.rs", 0.1);
+        let candidates = ledger.eviction_candidates_by_phi(1);
+        assert_eq!(candidates, vec!["low.rs"]);
     }
 
     #[test]
-    fn ignition_is_deterministic() {
-        // Determinism contract (#498): same Phi distribution → same ignitions.
-        let build = || {
-            let mut l = ContextLedger::with_window_size(100_000);
-            for i in 0..5 {
-                l.record(&format!("f{i}.rs"), "map", 100, 100);
-            }
-            for (i, e) in l.entries.iter_mut().enumerate() {
-                e.phi = Some(if i == 0 { 0.95 } else { 0.1 });
-            }
-            l
-        };
-        let mut a = build();
-        let mut b = build();
-        assert_eq!(a.ignite_high_salience(), b.ignite_high_salience());
+    fn eviction_by_phi_skips_pinned() {
+        let mut ledger = ContextLedger::with_window_size(10000);
+        ledger.record("pinned.rs", "full", 100, 100);
+        set_phi(&mut ledger, "pinned.rs", 0.01);
+        ledger.set_state(
+            "pinned.rs",
+            crate::core::context_field::ContextState::Pinned,
+        );
+        ledger.record("normal.rs", "full", 100, 100);
+        set_phi(&mut ledger, "normal.rs", 0.5);
+        let candidates = ledger.eviction_candidates_by_phi(1);
+        assert_eq!(candidates, vec!["normal.rs"]);
     }
 
     #[test]
@@ -1067,17 +702,6 @@ mod tests {
     }
 
     #[test]
-    fn remove_updates_totals() {
-        let mut ledger = ContextLedger::with_window_size(10000);
-        ledger.record("a.rs", "full", 500, 500);
-        ledger.record("b.rs", "full", 300, 300);
-        assert!(ledger.remove("a.rs"));
-        assert_eq!(ledger.total_tokens_sent, 300);
-        assert_eq!(ledger.entries.len(), 1);
-        assert!(!ledger.remove("nonexistent.rs"));
-    }
-
-    #[test]
     fn reset_clears_everything() {
         let mut ledger = ContextLedger::with_window_size(10000);
         ledger.record("a.rs", "full", 500, 500);
@@ -1090,101 +714,12 @@ mod tests {
     }
 
     #[test]
-    fn evict_paths_removes_matching() {
-        let mut ledger = ContextLedger::with_window_size(10000);
-        ledger.record("a.rs", "full", 500, 500);
-        ledger.record("b.rs", "full", 300, 300);
-        ledger.record("c.rs", "full", 200, 200);
-        let removed = ledger.evict_paths(&["a.rs", "c.rs", "nonexistent.rs"]);
-        assert_eq!(removed, 2);
-        assert_eq!(ledger.entries.len(), 1);
-        assert_eq!(ledger.entries[0].path, "b.rs");
-        assert_eq!(ledger.total_tokens_sent, 300);
-    }
-
-    #[test]
-    fn mode_distribution_counts() {
-        let mut ledger = ContextLedger::new();
-        ledger.record("a.rs", "full", 100, 100);
-        ledger.record("b.rs", "signatures", 100, 50);
-        ledger.record("c.rs", "full", 100, 100);
-        let dist = ledger.mode_distribution();
-        assert_eq!(dist.get("full"), Some(&2));
-        assert_eq!(dist.get("signatures"), Some(&1));
-    }
-
-    #[test]
     fn format_summary_includes_key_info() {
         let mut ledger = ContextLedger::with_window_size(10000);
         ledger.record("a.rs", "full", 500, 500);
         let summary = ledger.format_summary();
         assert!(summary.contains("500/10000"));
         assert!(summary.contains("1 files"));
-    }
-
-    #[test]
-    fn reinjection_no_action_when_low_pressure() {
-        use crate::core::intent_engine::StructuredIntent;
-
-        let mut ledger = ContextLedger::with_window_size(10000);
-        ledger.record("a.rs", "full", 100, 100);
-        let intent = StructuredIntent::from_query("fix bug in a.rs");
-        let plan = ledger.reinjection_plan(&intent, 0.7);
-        assert!(plan.actions.is_empty());
-        assert_eq!(plan.total_tokens_freed, 0);
-    }
-
-    #[test]
-    fn reinjection_downgrades_non_target_files() {
-        use crate::core::intent_engine::StructuredIntent;
-
-        let mut ledger = ContextLedger::with_window_size(1000);
-        ledger.record("src/target.rs", "full", 400, 400);
-        std::thread::sleep(std::time::Duration::from_millis(10));
-        ledger.record("src/other.rs", "full", 400, 400);
-        std::thread::sleep(std::time::Duration::from_millis(10));
-        ledger.record("src/utils.rs", "full", 200, 200);
-
-        let intent = StructuredIntent::from_query("fix bug in target.rs");
-        let plan = ledger.reinjection_plan(&intent, 0.5);
-
-        assert!(!plan.actions.is_empty());
-        assert!(
-            plan.actions.iter().all(|a| !a.path.contains("target")),
-            "should not downgrade target file"
-        );
-        assert!(plan.total_tokens_freed > 0);
-    }
-
-    #[test]
-    fn reinjection_preserves_targets() {
-        use crate::core::intent_engine::StructuredIntent;
-
-        let mut ledger = ContextLedger::with_window_size(1000);
-        ledger.record("src/auth.rs", "full", 900, 900);
-        let intent = StructuredIntent::from_query("fix bug in auth.rs");
-        let plan = ledger.reinjection_plan(&intent, 0.5);
-        assert!(
-            plan.actions.is_empty(),
-            "should not downgrade target files even under pressure"
-        );
-    }
-
-    #[test]
-    fn downgrade_mode_chain() {
-        assert_eq!(
-            downgrade_mode("full", 1000),
-            Some(("signatures".to_string(), 200))
-        );
-        assert_eq!(
-            downgrade_mode("signatures", 200),
-            Some(("map".to_string(), 100))
-        );
-        assert_eq!(
-            downgrade_mode("map", 100),
-            Some(("reference".to_string(), 25))
-        );
-        assert_eq!(downgrade_mode("reference", 25), None);
     }
 
     #[test]
@@ -1219,14 +754,6 @@ mod tests {
     }
 
     #[test]
-    fn update_phi_works() {
-        let mut ledger = ContextLedger::new();
-        ledger.record("a.rs", "full", 100, 100);
-        ledger.update_phi("a.rs", 0.85);
-        assert_eq!(ledger.entries[0].phi, Some(0.85));
-    }
-
-    #[test]
     fn set_state_works() {
         let mut ledger = ContextLedger::new();
         ledger.record("a.rs", "full", 100, 100);
@@ -1235,63 +762,6 @@ mod tests {
             ledger.entries[0].state,
             Some(crate::core::context_field::ContextState::Pinned)
         );
-    }
-
-    #[test]
-    fn items_by_state_filters() {
-        let mut ledger = ContextLedger::new();
-        ledger.record("a.rs", "full", 100, 100);
-        ledger.record("b.rs", "full", 100, 100);
-        ledger.set_state("b.rs", crate::core::context_field::ContextState::Excluded);
-        let included = ledger.items_by_state(crate::core::context_field::ContextState::Included);
-        assert_eq!(included.len(), 1);
-        assert_eq!(included[0].path, "a.rs");
-    }
-
-    #[test]
-    fn eviction_by_phi_prefers_low_phi() {
-        let mut ledger = ContextLedger::with_window_size(10000);
-        ledger.record("high.rs", "full", 100, 100);
-        ledger.update_phi("high.rs", 0.9);
-        ledger.record("low.rs", "full", 100, 100);
-        ledger.update_phi("low.rs", 0.1);
-        let candidates = ledger.eviction_candidates_by_phi(1);
-        assert_eq!(candidates, vec!["low.rs"]);
-    }
-
-    #[test]
-    fn eviction_by_phi_skips_pinned() {
-        let mut ledger = ContextLedger::with_window_size(10000);
-        ledger.record("pinned.rs", "full", 100, 100);
-        ledger.update_phi("pinned.rs", 0.01);
-        ledger.set_state(
-            "pinned.rs",
-            crate::core::context_field::ContextState::Pinned,
-        );
-        ledger.record("normal.rs", "full", 100, 100);
-        ledger.update_phi("normal.rs", 0.5);
-        let candidates = ledger.eviction_candidates_by_phi(1);
-        assert_eq!(candidates, vec!["normal.rs"]);
-    }
-
-    #[test]
-    fn mark_stale_by_hash_detects_change() {
-        let mut ledger = ContextLedger::new();
-        ledger.record("a.rs", "full", 100, 100);
-        ledger.entries[0].source_hash = Some("hash_v1".to_string());
-        ledger.mark_stale_by_hash("a.rs", "hash_v2");
-        assert_eq!(
-            ledger.entries[0].state,
-            Some(crate::core::context_field::ContextState::Stale)
-        );
-    }
-
-    #[test]
-    fn find_by_id_works() {
-        let mut ledger = ContextLedger::new();
-        ledger.record("src/lib.rs", "full", 100, 100);
-        let id = crate::core::context_field::ContextItemId::from_file("src/lib.rs");
-        assert!(ledger.find_by_id(&id).is_some());
     }
 
     #[test]
@@ -1326,130 +796,6 @@ mod tests {
     }
 
     // ── #715: target resolution (exact → root-relative → unique suffix) ──
-
-    #[test]
-    fn resolve_entry_matches_basename_suffix_uniquely() {
-        let mut ledger = ContextLedger::with_window_size(10000);
-        ledger.record("/home/user/proj/src/context_ledger.rs", "full", 500, 500);
-        ledger.record("/home/user/proj/src/other.rs", "full", 300, 300);
-
-        // The exact repro from #715: basename against absolute entries.
-        assert_eq!(
-            ledger.resolve_entry("context_ledger.rs", None),
-            LedgerResolution::Unique(0)
-        );
-        // Partial relative path.
-        assert_eq!(
-            ledger.resolve_entry("src/other.rs", None),
-            LedgerResolution::Unique(1)
-        );
-        // Component boundary: `edger.rs` must NOT suffix-match `…ledger.rs`.
-        assert_eq!(
-            ledger.resolve_entry("edger.rs", None),
-            LedgerResolution::NotFound
-        );
-    }
-
-    #[test]
-    fn resolve_entry_reports_ambiguous_suffix() {
-        let mut ledger = ContextLedger::with_window_size(10000);
-        ledger.record("/proj/a/mod.rs", "full", 100, 100);
-        ledger.record("/proj/b/mod.rs", "full", 100, 100);
-
-        match ledger.resolve_entry("mod.rs", None) {
-            LedgerResolution::Ambiguous(candidates) => {
-                assert_eq!(candidates.len(), 2);
-                assert!(candidates.contains(&"/proj/a/mod.rs".to_string()));
-            }
-            other => panic!("expected Ambiguous, got {other:?}"),
-        }
-        // A longer suffix disambiguates.
-        assert_eq!(
-            ledger.resolve_entry("a/mod.rs", None),
-            LedgerResolution::Unique(0)
-        );
-    }
-
-    #[test]
-    fn resolve_entry_prefers_project_root_relative() {
-        let mut ledger = ContextLedger::with_window_size(10000);
-        ledger.record("/work/proj/src/lib.rs", "full", 100, 100);
-        ledger.record("/elsewhere/src/lib.rs", "full", 100, 100);
-
-        // Suffix alone is ambiguous; the project root resolves it.
-        assert!(matches!(
-            ledger.resolve_entry("src/lib.rs", None),
-            LedgerResolution::Ambiguous(_)
-        ));
-        assert_eq!(
-            ledger.resolve_entry("src/lib.rs", Some("/work/proj")),
-            LedgerResolution::Unique(0)
-        );
-    }
-
-    #[test]
-    fn resolve_entry_handles_windows_separators() {
-        let mut ledger = ContextLedger::with_window_size(10000);
-        // Simulates a migrated ledger: forward-slash canonical entries.
-        ledger.entries.push(LedgerEntry {
-            path: "C:/Users/dev/proj/src/main.rs".to_string(),
-            mode: "full".to_string(),
-            original_tokens: 100,
-            sent_tokens: 100,
-            timestamp: chrono::Utc::now().timestamp(),
-            id: None,
-            kind: None,
-            source_hash: None,
-            state: None,
-            phi: None,
-            view_costs: None,
-            active_view: None,
-            provenance: None,
-            access_count: 1,
-        });
-        ledger.total_tokens_sent = 100;
-
-        // Backslash target (Windows UI / dashboard) resolves lexically.
-        assert_eq!(
-            ledger.resolve_entry("src\\main.rs", None),
-            LedgerResolution::Unique(0)
-        );
-        assert_eq!(ledger.evict_paths(&["src\\main.rs"]), 1);
-        assert!(ledger.entries.is_empty());
-    }
-
-    #[test]
-    fn evict_paths_resolved_reports_outcomes() {
-        let mut ledger = ContextLedger::with_window_size(10000);
-        ledger.record("/proj/src/gate.rs", "full", 500, 500);
-        ledger.record("/proj/a/dup.rs", "full", 100, 100);
-        ledger.record("/proj/b/dup.rs", "full", 100, 100);
-
-        let outcomes =
-            ledger.evict_paths_resolved(&["gate.rs", "dup.rs", "missing.rs"], Some("/proj"));
-        assert_eq!(
-            outcomes[0].resolved.as_deref(),
-            Some("/proj/src/gate.rs"),
-            "basename must resolve and evict"
-        );
-        assert!(outcomes[1].resolved.is_none());
-        assert_eq!(outcomes[1].ambiguous.len(), 2, "ambiguity is diagnosed");
-        assert!(outcomes[2].resolved.is_none());
-        assert!(outcomes[2].ambiguous.is_empty());
-        assert_eq!(ledger.entries.len(), 2, "only the unique match is removed");
-        assert_eq!(ledger.total_tokens_sent, 200);
-    }
-
-    #[test]
-    fn set_state_resolves_partial_paths() {
-        let mut ledger = ContextLedger::new();
-        ledger.record("/proj/src/deep/file.rs", "full", 100, 100);
-        ledger.set_state("file.rs", crate::core::context_field::ContextState::Pinned);
-        assert_eq!(
-            ledger.entries[0].state,
-            Some(crate::core::context_field::ContextState::Pinned)
-        );
-    }
 
     #[test]
     fn upsert_sets_source_hash_and_kind() {

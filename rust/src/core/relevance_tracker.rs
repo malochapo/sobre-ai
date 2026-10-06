@@ -172,11 +172,6 @@ impl RelevanceTracker {
         }
     }
 
-    /// Stop proactive expansion for one archive after a caller reports a bounce.
-    pub fn disable_handle(&mut self, handle: &str) {
-        self.disabled_handles.insert(handle.to_string());
-    }
-
     /// Find entries matching the current query context. Returns matches
     /// sorted by score (highest first), within the token budget.
     pub fn find_matches(&self, query_context: &str) -> Vec<ExpansionMatch> {
@@ -309,24 +304,14 @@ pub(crate) fn register_compressed(
 }
 
 /// Return a response suffix when the current request matches archived content.
-/// Configuration is read here so a running process observes config changes.
 pub(crate) fn proactive_context(query_context: &str) -> Option<String> {
-    let cfg = crate::core::config::Config::load();
-    if !cfg.proactive_expansion_effective() {
-        return None;
-    }
-
     let mut tracker = global().lock().ok()?;
     tracker.configure(
-        cfg.proactive_expansion_budget_tokens_effective(),
-        cfg.proactive_expansion_threshold_effective(),
-        cfg.proactive_expansion_max_age_secs_effective(),
+        crate::core::config::PROACTIVE_EXPANSION_BUDGET_TOKENS,
+        crate::core::config::PROACTIVE_EXPANSION_THRESHOLD,
+        crate::core::config::PROACTIVE_EXPANSION_MAX_AGE_SECS,
     );
-    let block = tracker.expand_if_relevant(query_context)?;
-    crate::core::context_overhead::record_proactive_injection(crate::core::tokens::count_tokens(
-        &block,
-    ));
-    Some(block)
+    tracker.expand_if_relevant(query_context)
 }
 
 /// Bounce-aware query path used by file reads. A path already pinned to full

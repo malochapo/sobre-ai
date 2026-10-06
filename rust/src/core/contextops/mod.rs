@@ -153,15 +153,6 @@ pub fn format_sync(report: &SyncReport) -> String {
 mod tests {
     use super::*;
 
-    #[test]
-    fn context_ops_has_config_false() {
-        let ops = ContextOps::new(
-            Path::new("/tmp/fake"),
-            Path::new("/tmp/nonexistent_contextops"),
-        );
-        assert!(!ops.has_config());
-    }
-
     // #548 criterion 2: `rules diff` must not require `.lean-ctx/rules.toml`.
     // `detect_drift` is now infallible and compares against the canonical rule
     // source, so a project with no rules.toml produces a (possibly empty) drift

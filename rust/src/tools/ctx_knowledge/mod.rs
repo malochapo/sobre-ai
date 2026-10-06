@@ -102,14 +102,10 @@ pub fn handle(
 
 fn handle_policy(value: Option<&str>) -> String {
     let sub = value.unwrap_or("show").trim().to_lowercase();
-    let profile = crate::core::profiles::active_profile_name();
 
     match sub.as_str() {
         "show" => {
-            let policy = match load_policy_or_error() {
-                Ok(p) => p,
-                Err(e) => return e,
-            };
+            let policy = crate::core::memory_policy::MemoryPolicy::default();
 
             let cfg_path = crate::core::config::Config::path().map_or_else(
                 || "~/.lean-ctx/config.toml".to_string(),
@@ -117,7 +113,7 @@ fn handle_policy(value: Option<&str>) -> String {
             );
 
             format!(
-                "Knowledge policy (effective, profile={profile}):\n\
+                "Knowledge policy (effective):\n\
                  - memory.knowledge.max_facts={}\n\
                  - memory.knowledge.contradiction_threshold={}\n\
                  - memory.knowledge.recall_facts_limit={}\n\
@@ -137,11 +133,7 @@ fn handle_policy(value: Option<&str>) -> String {
                 policy.lifecycle.stale_days
             )
         }
-        "validate" => match load_policy_or_error() {
-            Ok(_) => format!("OK: memory policy valid (profile={profile})"),
-            Err(e) => e,
-        },
-        _ => "Error: policy value must be show|validate".to_string(),
+        _ => "Error: policy value must be show".to_string(),
     }
 }
 
@@ -195,17 +187,6 @@ fn handle_feedback(
         Ok((_, Err(msg))) => return msg,
         Err(e) => return format!("Feedback recorded but save failed: {e}"),
     };
-
-    crate::core::events::emit(crate::core::events::EventKind::KnowledgeUpdate {
-        category: cat.to_string(),
-        key: k.to_string(),
-        action: if is_up {
-            "feedback_up"
-        } else {
-            "feedback_down"
-        }
-        .to_string(),
-    });
 
     format!(
         "Feedback recorded ({dir}) for [{cat}] {k} (up={up}, down={down}, quality={quality:.2}, confidence={conf:.2}, session={session_id})"
@@ -329,16 +310,7 @@ fn handle_pattern(
         return "Error: value (description) is required for pattern".to_string();
     };
     let exs = examples.unwrap_or_default();
-    let policy = match crate::core::config::Config::load().memory_policy_effective() {
-        Ok(p) => p,
-        Err(e) => {
-            let path = crate::core::config::Config::path().map_or_else(
-                || "~/.lean-ctx/config.toml".to_string(),
-                |p| p.display().to_string(),
-            );
-            return format!("Error: invalid memory policy: {e}\nFix: edit {path}");
-        }
-    };
+    let policy = crate::core::memory_policy::MemoryPolicy::default();
     // Read-modify-write under the cross-process lock (#326/#594).
     match ProjectKnowledge::mutate_locked(project_root, |knowledge| {
         knowledge.add_pattern(pt, desc, exs, session_id, &policy);
@@ -383,10 +355,7 @@ fn handle_status(project_root: &str) -> String {
 /// Per-layer lifecycle report (GL#445): item counts, effective policies, and
 /// the next enforcement action for every memory layer. Read-only.
 fn handle_lifecycle_report(project_root: &str) -> String {
-    let policy = match load_policy_or_error() {
-        Ok(p) => p,
-        Err(e) => return e,
-    };
+    let policy = crate::core::memory_policy::MemoryPolicy::default();
     let hash = crate::core::project_hash::hash_project_root(project_root);
 
     let mut out = String::from("=== Memory Lifecycle Report ===\n");
@@ -532,9 +501,7 @@ fn handle_health(project_root: &str) -> String {
         }
     }
 
-    let policy = crate::core::config::Config::load()
-        .memory_policy_effective()
-        .unwrap_or_default();
+    let policy = crate::core::memory_policy::MemoryPolicy::default();
     out.push_str(&format!(
         "\nPolicy: max {} facts, max {} patterns\n",
         policy.knowledge.max_facts, policy.knowledge.max_patterns
@@ -558,16 +525,7 @@ fn handle_remove(project_root: &str, category: Option<&str>, key: Option<&str>) 
     let Some(k) = key else {
         return "Error: key is required for remove".to_string();
     };
-    let policy = match crate::core::config::Config::load().memory_policy_effective() {
-        Ok(p) => p,
-        Err(e) => {
-            let path = crate::core::config::Config::path().map_or_else(
-                || "~/.lean-ctx/config.toml".to_string(),
-                |p| p.display().to_string(),
-            );
-            return format!("Error: invalid memory policy: {e}\nFix: edit {path}");
-        }
-    };
+    let policy = crate::core::memory_policy::MemoryPolicy::default();
     // Read-modify-write under the cross-process lock (#326/#594). The embedding
     // index is a separate store, so it is synced afterwards from the committed
     // knowledge — mirroring handle_remember.
@@ -702,10 +660,7 @@ pub fn handle_import(
         Ok(f) => f,
         Err(e) => return format!("Parse error: {e}"),
     };
-    let policy = match load_policy_or_error() {
-        Ok(p) => p,
-        Err(e) => return e,
-    };
+    let policy = crate::core::memory_policy::MemoryPolicy::default();
     match ProjectKnowledge::mutate_locked(project_root, |k| {
         k.import_facts(facts, merge, session_id, &policy)
     }) {
@@ -730,10 +685,7 @@ fn handle_import_okf(
         Ok(i) => i,
         Err(e) => return format!("OKF import failed: {e}"),
     };
-    let policy = match load_policy_or_error() {
-        Ok(p) => p,
-        Err(e) => return e,
-    };
+    let policy = crate::core::memory_policy::MemoryPolicy::default();
 
     let pattern_count = imp.patterns.len();
     let (knowledge, result) = match ProjectKnowledge::mutate_locked(project_root, |k| {
@@ -844,10 +796,7 @@ fn handle_timeline(project_root: &str, category: Option<&str>) -> String {
         return "No knowledge stored yet.".to_string();
     };
 
-    let policy = match load_policy_or_error() {
-        Ok(p) => p,
-        Err(e) => return e,
-    };
+    let policy = crate::core::memory_policy::MemoryPolicy::default();
 
     let Some(cat) = category else {
         return "Error: category is required for timeline".to_string();
@@ -911,10 +860,7 @@ fn handle_rooms(project_root: &str) -> String {
         return "No knowledge stored yet.".to_string();
     };
 
-    let policy = match load_policy_or_error() {
-        Ok(p) => p,
-        Err(e) => return e,
-    };
+    let policy = crate::core::memory_policy::MemoryPolicy::default();
 
     let rooms = knowledge.list_rooms();
     if rooms.is_empty() {
@@ -939,12 +885,10 @@ fn handle_rooms(project_root: &str) -> String {
 }
 
 fn handle_cognition_loop(project_root: &str) -> String {
-    let cfg = crate::core::config::Config::load().autonomy;
-    if !cfg.cognition_loop_enabled {
-        return "Cognition loop is disabled (autonomy.cognition_loop_enabled=false).".to_string();
-    }
-    let max_steps = cfg.cognition_loop_max_steps;
-    let report = crate::core::cognition_loop::run_cognition_loop(project_root, max_steps);
+    let report = crate::core::cognition_loop::run_cognition_loop(
+        project_root,
+        crate::core::cognition_loop::MAX_STEPS,
+    );
     format!("{report}")
 }
 
@@ -971,10 +915,7 @@ fn handle_bridge_pull(project_root: &str, session_id: &str) -> String {
         return "No facts available from other agents.".to_string();
     }
 
-    let policy = match load_policy_or_error() {
-        Ok(p) => p,
-        Err(e) => return e,
-    };
+    let policy = crate::core::memory_policy::MemoryPolicy::default();
 
     let mut target = knowledge;
     let mut imported = 0u32;

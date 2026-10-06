@@ -10,9 +10,6 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use rusqlite::{Connection, params};
 
 #[derive(Debug, Clone)]
-pub struct GraphQuery;
-
-#[derive(Debug, Clone)]
 pub struct ImpactResult {
     pub root_file: String,
     pub affected_files: Vec<String>,
@@ -236,46 +233,6 @@ pub fn related_files(
     results.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
     results.truncate(limit);
     Ok(results)
-}
-
-/// Graph connectivity stats for a file: incoming/outgoing edge counts by kind.
-pub fn file_connectivity(
-    conn: &Connection,
-    file_path: &str,
-) -> anyhow::Result<HashMap<String, (usize, usize)>> {
-    let mut result: HashMap<String, (usize, usize)> = HashMap::new();
-
-    let mut stmt_out = conn.prepare(
-        "SELECT e.kind, COUNT(*)
-         FROM edges e JOIN nodes n ON e.source_id = n.id
-         JOIN paths p ON p.id = n.file_id
-         WHERE p.path = ?1
-         GROUP BY e.kind",
-    )?;
-    let rows = stmt_out.query_map(params![file_path], |row| {
-        Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
-    })?;
-    for row in rows {
-        let (kind, count) = row?;
-        result.entry(kind).or_insert((0, 0)).0 = count as usize;
-    }
-
-    let mut stmt_in = conn.prepare(
-        "SELECT e.kind, COUNT(*)
-         FROM edges e JOIN nodes n ON e.target_id = n.id
-         JOIN paths p ON p.id = n.file_id
-         WHERE p.path = ?1
-         GROUP BY e.kind",
-    )?;
-    let rows = stmt_in.query_map(params![file_path], |row| {
-        Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
-    })?;
-    for row in rows {
-        let (kind, count) = row?;
-        result.entry(kind).or_insert((0, 0)).1 = count as usize;
-    }
-
-    Ok(result)
 }
 
 fn build_weighted_reverse_graph(

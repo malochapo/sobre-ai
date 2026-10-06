@@ -25,13 +25,6 @@ pub(crate) const WRAP_MARKER: &str = "LEAN_CTX_WRAPPED";
 /// command, but it no longer gates compression on its own.
 pub(crate) const ACTIVE_MARKER: &str = "LEAN_CTX_ACTIVE";
 
-/// True when `LEAN_CTX_DISABLED` forces `lean-ctx -c` / `-t` to run the
-/// command raw instead of compressing it.
-#[must_use]
-pub(crate) fn is_disabled() -> bool {
-    std::env::var("LEAN_CTX_DISABLED").is_ok()
-}
-
 /// True when a parent lean-ctx already owns this command tree. Nested explicit
 /// `lean-ctx -c` should defer to the ambient shell defaults, not force raw
 /// command bytes, so shell-hook compression can still apply when configured.
@@ -40,16 +33,15 @@ pub(crate) fn is_wrapped() -> bool {
     std::env::var(WRAP_MARKER).is_ok()
 }
 
-/// True when `lean-ctx -c` / `-t` must avoid owning compression itself: either
-/// a parent lean-ctx already owns this command tree ([`WRAP_MARKER`]) or
-/// compression is globally disabled (`LEAN_CTX_DISABLED`).
+/// True when `lean-ctx -c` / `-t` must avoid owning compression itself: a
+/// parent lean-ctx already owns this command tree ([`WRAP_MARKER`]).
 ///
 /// Deliberately does **not** consult `LEAN_CTX_ACTIVE`: that flag is only a
 /// shell-hook re-entry guard, and an agent's top-level process can inherit it,
 /// which previously suppressed compression for every command it ran (#533).
 #[must_use]
 pub(crate) fn should_pass_through() -> bool {
-    is_wrapped() || is_disabled()
+    is_wrapped()
 }
 
 /// Stamp a child command so nested lean-ctx invocations pass through and the
@@ -59,26 +51,23 @@ pub(crate) fn mark_child(cmd: &mut Command) {
     cmd.env(ACTIVE_MARKER, "1").env(WRAP_MARKER, "1");
 }
 
-/// Clear lean-ctx ownership/force markers before delegating to the user's shell
+/// Clear lean-ctx ownership markers before delegating to the user's shell
 /// defaults. This lets a nested explicit wrapper behave like typing the command
 /// in that shell: configured hooks may compress; unconfigured shells run raw.
 pub(crate) fn clear_shell_default_markers(cmd: &mut Command) {
-    cmd.env_remove(ACTIVE_MARKER)
-        .env_remove(WRAP_MARKER)
-        .env_remove("LEAN_CTX_COMPRESS");
+    cmd.env_remove(ACTIVE_MARKER).env_remove(WRAP_MARKER);
 }
 
 #[cfg(test)]
 mod tests {
     use super::{
-        ACTIVE_MARKER, WRAP_MARKER, clear_shell_default_markers, is_disabled, is_wrapped,
-        mark_child, should_pass_through,
+        ACTIVE_MARKER, WRAP_MARKER, clear_shell_default_markers, is_wrapped, mark_child,
+        should_pass_through,
     };
 
     #[test]
     fn wrap_marker_triggers_passthrough() {
         let _lock = crate::core::data_dir::test_env_lock();
-        crate::test_env::remove_var("LEAN_CTX_DISABLED");
         crate::test_env::remove_var(ACTIVE_MARKER);
         crate::test_env::set_var(WRAP_MARKER, "1");
         assert!(is_wrapped());
@@ -86,23 +75,11 @@ mod tests {
         crate::test_env::remove_var(WRAP_MARKER);
     }
 
-    #[test]
-    fn disabled_triggers_passthrough() {
-        let _lock = crate::core::data_dir::test_env_lock();
-        crate::test_env::remove_var(WRAP_MARKER);
-        crate::test_env::remove_var(ACTIVE_MARKER);
-        crate::test_env::set_var("LEAN_CTX_DISABLED", "1");
-        assert!(is_disabled());
-        assert!(should_pass_through());
-        crate::test_env::remove_var("LEAN_CTX_DISABLED");
-    }
-
     /// #533: an inherited/leaked `LEAN_CTX_ACTIVE` must NOT suppress compression.
     #[test]
     fn inherited_active_does_not_trigger_passthrough() {
         let _lock = crate::core::data_dir::test_env_lock();
         crate::test_env::remove_var(WRAP_MARKER);
-        crate::test_env::remove_var("LEAN_CTX_DISABLED");
         crate::test_env::set_var(ACTIVE_MARKER, "1");
         assert!(
             !should_pass_through(),
@@ -127,7 +104,6 @@ mod tests {
     fn clear_shell_default_markers_removes_wrapping_state() {
         let mut cmd = std::process::Command::new("true");
         mark_child(&mut cmd);
-        cmd.env("LEAN_CTX_COMPRESS", "1");
 
         clear_shell_default_markers(&mut cmd);
 
@@ -143,6 +119,5 @@ mod tests {
 
         assert_eq!(envs.get(WRAP_MARKER), Some(&None));
         assert_eq!(envs.get(ACTIVE_MARKER), Some(&None));
-        assert_eq!(envs.get("LEAN_CTX_COMPRESS"), Some(&None));
     }
 }

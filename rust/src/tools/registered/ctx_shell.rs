@@ -20,9 +20,9 @@ impl McpTool for CtxShellTool {
             "WORKFLOW: preferred — auto-compresses output (build/test/log).\n\
               raw=true for verbatim output; inline=true for moderately-sized verbatim output.\n\
              [exit:N] on errors (lossless).\n\
-             POLICY: every command is allowed except constructs that execute something the command text does not name (eval/exec/source, $() at command position, interpreter -c, find -exec, LD_PRELOAD=, …). Same gate in ctx_execute.\n\
-             A [BLOCKED] command is permanent — do not retry it here or in ctx_execute.\n\
-             ANTIPATTERN: multi-line scripts, sh/bash script.sh, $var-as-command → ctx_execute.",
+             POLICY: every command is allowed except constructs that execute something the command text does not name (eval/exec/source, $() at command position, interpreter -c, find -exec, LD_PRELOAD=, …).\n\
+             A [BLOCKED] command is permanent — do not retry it.\n\
+             Multi-line scripts: write them to a file, then run the file.",
             json!({
                 "type": "object",
                 "properties": {
@@ -30,7 +30,7 @@ impl McpTool for CtxShellTool {
                     "raw": { "type": "boolean", "description": "Skip compression (verbatim)" },
                     "inline": { "type": "boolean", "description": "Return verbatim output inline up to archive.inline_max_bytes; larger output uses the archive/firewall" },
                     "cwd": { "type": "string", "description": "Working dir (persists across calls)" },
-                    "timeout_ms": { "type": "integer", "description": "Job lifetime in ms (max 3600000) — NOT the inline wait. A command still running at the ~110s foreground cap detaches to a pollable shell_* job and keeps running up to timeout_ms. Overridden by LEAN_CTX_SHELL_TIMEOUT_MS." },
+                    "timeout_ms": { "type": "integer", "description": "Job lifetime in ms (max 3600000) — NOT the inline wait. A command still running at the ~110s foreground cap detaches to a pollable shell_* job and keeps running up to timeout_ms." },
                     "env": { "type": "object", "description": "Extra env vars", "additionalProperties": { "type": "string" } },
                     "run_in_background": { "type": "boolean", "description": "Detach immediately and return a job id. The command keeps timeout_ms; poll or cancel with background_action and job_id." },
                     "background_action": { "type": "string", "enum": ["status", "cancel"], "description": "Inspect or cancel a background ctx_shell job." },
@@ -140,7 +140,6 @@ impl McpTool for CtxShellTool {
                 saved_tokens: 0,
                 mode: Some("cat-redirect".to_string()),
                 path: Some(read_path),
-                changed: false,
                 shell_outcome: Some(ShellOutcome::Exit(0)),
                 content_blocks: None,
             });
@@ -172,6 +171,8 @@ impl McpTool for CtxShellTool {
                 )
             });
 
+            let (extra_env, env_hint) = extra_env_from_args(args);
+
             {
                 let Some(mut session) =
                     crate::server::bounded_lock::write(session_lock, "ctx_shell_write")
@@ -179,16 +180,6 @@ impl McpTool for CtxShellTool {
                     tracing::debug!("[ctx_shell: session lock timeout, proceeding without update]");
                     let cmd_clone = command.clone();
                     let cwd_clone = effective_cwd.clone();
-                    let extra_env: std::collections::HashMap<String, String> = args
-                        .get("env")
-                        .and_then(|v| v.as_object())
-                        .map(|obj| {
-                            obj.iter()
-                                .filter_map(|(k, v)| v.as_str().map(|s| (k.clone(), s.to_string())))
-                                .filter(|(k, _)| !is_dangerous_env_key(k))
-                                .collect()
-                        })
-                        .unwrap_or_default();
                     let (raw_output, exit_code) = crate::server::execute::execute_command_with_env(
                         &cmd_clone, &cwd_clone, &extra_env, timeout_ms,
                     );
@@ -203,7 +194,7 @@ impl McpTool for CtxShellTool {
                     return Ok(ToolOutput {
                         shell_outcome: Some(ShellOutcome::Exit(exit_code)),
                         content_blocks: None,
-                        ..ToolOutput::simple(format!("{output}{exit_suffix}"))
+                        ..ToolOutput::simple(format!("{output}{env_hint}{exit_suffix}"))
                     });
                 };
                 // #707: a jail-accepted explicit `cwd` param is the client
@@ -231,9 +222,7 @@ impl McpTool for CtxShellTool {
 
             let arg_raw = get_bool(args, "raw").unwrap_or(false);
             let arg_bypass = get_bool(args, "bypass").unwrap_or(false);
-            let env_disabled = std::env::var("LEAN_CTX_DISABLED").is_ok();
-            let env_raw = std::env::var("LEAN_CTX_RAW").is_ok();
-            let (raw, bypass) = resolve_shell_raw_flags(arg_raw, arg_bypass, env_disabled, env_raw);
+            let (raw, bypass) = (arg_raw || arg_bypass, arg_bypass);
 
             let crp_mode = ctx.crp_mode;
             let cmd_clone = command.clone();
@@ -245,17 +234,6 @@ impl McpTool for CtxShellTool {
                     "ctx_shell command={cmd_clone} cwd={cwd_clone}"
                 ))
             };
-
-            let extra_env: std::collections::HashMap<String, String> = args
-                .get("env")
-                .and_then(|v| v.as_object())
-                .map(|obj| {
-                    obj.iter()
-                        .filter_map(|(k, v)| v.as_str().map(|s| (k.clone(), s.to_string())))
-                        .filter(|(k, _)| !is_dangerous_env_key(k))
-                        .collect()
-                })
-                .unwrap_or_default();
 
             let auto_background = should_auto_background(&cmd_clone, timeout_ms);
             if get_bool(args, "run_in_background").unwrap_or(false) || auto_background {
@@ -285,7 +263,6 @@ impl McpTool for CtxShellTool {
             // inline wait — the host aborts at ~120s regardless — it only
             // suppressed our own detach, producing exactly the unresolvable
             // task id the cap exists to prevent. Separate knobs, one direction:
-            // `LEAN_CTX_SHELL_FG_CAP_MS` moves the cap, `timeout_ms` does not.
             let soft_cap = std::time::Duration::from_millis(foreground_soft_cap_ms());
             let progress_sender = ctx.progress_sender.clone();
             let progress_label: String = cmd_clone.chars().take(60).collect();
@@ -346,19 +323,17 @@ impl McpTool for CtxShellTool {
                 let tokens = crate::core::tokens::count_tokens(&output);
                 (output, tokens, 0, String::new())
             } else {
-                let _mode_guard = crate::core::savings_footer::ModeGuard::new("shell");
                 let result =
                     crate::tools::ctx_shell::handle(&cmd_clone, &output, exit_code, crp_mode);
                 let original = crate::core::tokens::count_tokens(&output);
                 let sent = crate::core::tokens::count_tokens(&result);
                 let saved = original.saturating_sub(sent);
 
-                let cfg = crate::core::config::Config::load();
                 // Shared tee policy (#811): identical decision to the CLI path —
                 // `Failures` keys off the real exit code, not a substring match.
                 let timeout_notice_only = is_timeout_notice_only(&output, exit_code);
                 let tee_hint = if crate::shell::tee_policy::should_tee(
-                    &cfg.tee_mode,
+                    &crate::core::config::TeeMode::default(),
                     exit_code,
                     output.trim().is_empty() || timeout_notice_only,
                     crate::shell::tee_policy::output_was_elided(&output, &result),
@@ -367,7 +342,7 @@ impl McpTool for CtxShellTool {
                 ) {
                     crate::shell::save_tee(&cmd_clone, &output)
                         .map(|p| {
-                            if matches!(cfg.tee_mode, crate::core::config::TeeMode::HighCompression)
+                            if matches!(crate::core::config::TeeMode::default(), crate::core::config::TeeMode::HighCompression)
                             {
                                 let pct = crate::shell::tee_policy::savings_pct(original, sent);
                                 // Recovery grammar is path-first: agents without ctx_expand
@@ -401,7 +376,7 @@ impl McpTool for CtxShellTool {
                 String::new()
             };
 
-            let result_out = crate::core::redaction::redact_text_if_enabled(&result_out);
+            let result_out = crate::core::redaction::redact_text(&result_out);
             // #815: exit 124 = timeout signal (from timeout(1) / lean-ctx
             // shell timeout). Make it explicit so agents don't confuse a
             // timed-out command with a successful empty result.
@@ -412,7 +387,7 @@ impl McpTool for CtxShellTool {
             };
             let nudge = if raw { "" } else { search_tool_nudge(&command) };
             let final_out = format!(
-                "{result_out}{tee_hint}{shell_mismatch}{cwd_jail_hint}{nudge}{exit_suffix}"
+                "{result_out}{tee_hint}{shell_mismatch}{cwd_jail_hint}{env_hint}{nudge}{exit_suffix}"
             );
             let final_out = if let Some(block) = proactive_block {
                 format!("{final_out}{block}")
@@ -426,24 +401,11 @@ impl McpTool for CtxShellTool {
                 saved_tokens: saved,
                 mode,
                 path: None,
-                changed: false,
                 shell_outcome: Some(ShellOutcome::Exit(exit_code)),
                 content_blocks: None,
             })
         })
     }
-}
-
-#[allow(clippy::fn_params_excessive_bools)]
-fn resolve_shell_raw_flags(
-    arg_raw: bool,
-    arg_bypass: bool,
-    env_disabled: bool,
-    env_raw: bool,
-) -> (bool, bool) {
-    let bypass = arg_bypass || env_raw;
-    let raw = arg_raw || bypass || env_disabled;
-    (raw, bypass)
 }
 
 /// A timeout notice is framework metadata, not recoverable command output. Do
@@ -510,6 +472,36 @@ fn shell_mismatch_hint(command: &str, output: &str) -> String {
     } else {
         String::new()
     }
+}
+
+/// The `env` argument as a map, minus the variables ctx_shell will not set,
+/// plus a one-line note naming those (invariant 6: never decline silently).
+fn extra_env_from_args(
+    args: &Map<String, Value>,
+) -> (std::collections::HashMap<String, String>, String) {
+    let mut env = std::collections::HashMap::new();
+    let mut ignored = Vec::new();
+    if let Some(obj) = args.get("env").and_then(|v| v.as_object()) {
+        for (k, v) in obj {
+            let Some(val) = v.as_str() else { continue };
+            if is_dangerous_env_key(k) {
+                ignored.push(k.as_str());
+            } else {
+                env.insert(k.clone(), val.to_string());
+            }
+        }
+    }
+    let hint = if ignored.is_empty() {
+        String::new()
+    } else {
+        ignored.sort_unstable();
+        format!(
+            "\n[env: ignored {} \u{2014} ctx_shell does not override variables that change \
+             how commands are resolved or where the user's files live]",
+            ignored.join(", ")
+        )
+    };
+    (env, hint)
 }
 
 fn is_dangerous_env_key(key: &str) -> bool {
@@ -607,12 +599,7 @@ fn warn_shell_secret_paths(command: &str) {
 }
 
 fn redact_shell_output_secrets(output: &str) -> String {
-    let cfg = crate::core::config::Config::load();
-    if !cfg.secret_detection.enabled {
-        return output.to_string();
-    }
-    let (redacted, matches) =
-        crate::core::secret_detection::scan_and_redact(output, &cfg.secret_detection);
+    let (redacted, matches) = crate::core::secret_detection::scan_and_redact(output);
     if !matches.is_empty() {
         let names: Vec<&str> = matches.iter().map(|m| m.pattern_name).collect();
         tracing::warn!(
@@ -638,13 +625,9 @@ fn should_auto_background(command: &str, timeout_ms: Option<u64>) -> bool {
 /// Foreground wait budget before a still-running command is detached into a
 /// pollable background job. Kept below the MCP host's ~120s tool-call abort so
 /// the caller always receives a real `shell_*` job id instead of an
-/// unresolvable task id (#1106). Override with `LEAN_CTX_SHELL_FG_CAP_MS`.
+/// unresolvable task id (#1106).
 fn foreground_soft_cap_ms() -> u64 {
-    std::env::var("LEAN_CTX_SHELL_FG_CAP_MS")
-        .ok()
-        .and_then(|v| v.parse().ok())
-        .filter(|&ms| ms > 0)
-        .unwrap_or(110_000)
+    110_000
 }
 
 /// #842: detect a bare `cat <single_file>` command (no pipes, redirects, flags).
@@ -676,7 +659,23 @@ fn detect_bare_cat_file(command: &str) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{is_timeout_notice_only, should_auto_background};
+    use super::{extra_env_from_args, is_timeout_notice_only, should_auto_background};
+
+    #[test]
+    fn ignored_env_vars_are_named_in_the_output_hint() {
+        let args = serde_json::json!({"env": {"PATH": "/evil", "RUST_LOG": "debug", "HOME": "/x"}});
+        let (env, hint) = extra_env_from_args(args.as_object().unwrap());
+        assert_eq!(env.get("RUST_LOG").map(String::as_str), Some("debug"));
+        assert!(!env.contains_key("PATH") && !env.contains_key("HOME"));
+        assert!(hint.contains("HOME, PATH"), "got: {hint}");
+    }
+
+    #[test]
+    fn allowed_env_vars_add_no_hint() {
+        let args = serde_json::json!({"env": {"RUST_LOG": "debug"}});
+        let (_, hint) = extra_env_from_args(args.as_object().unwrap());
+        assert!(hint.is_empty());
+    }
 
     #[test]
     fn long_cargo_test_is_auto_backgrounded() {

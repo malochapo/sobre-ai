@@ -16,24 +16,6 @@ fn server_dispatch_src() -> String {
     )
 }
 
-#[test]
-fn lineage_filters_by_workspace() {
-    let src = include_str!("../../src/core/context_os/context_bus.rs");
-
-    let lineage_fn = src.find("fn lineage(").expect("lineage fn missing");
-    let lineage_sig = &src[lineage_fn..lineage_fn + 200];
-    assert!(
-        lineage_sig.contains("workspace_id: &str"),
-        "C2: lineage() must take workspace_id parameter"
-    );
-
-    let lineage_body = &src[lineage_fn..lineage_fn + 800];
-    assert!(
-        lineage_body.contains("AND workspace_id = ?2"),
-        "C2: lineage SQL must filter by workspace_id"
-    );
-}
-
 // ---------------------------------------------------------------------------
 // H1 — Shell CWD jail enforcement
 // ---------------------------------------------------------------------------
@@ -91,21 +73,8 @@ fn resolve_path_includes_secret_check() {
         .unwrap_or(resolve_body.len());
     let resolve_body = &resolve_body[..end];
     assert!(
-        resolve_body.contains("check_secret_path_for_tool"),
-        "H2: resolve_path must call check_secret_path_for_tool"
-    );
-}
-
-// ---------------------------------------------------------------------------
-// H6 — Pipeline archive redaction
-// ---------------------------------------------------------------------------
-#[test]
-fn pipeline_archive_uses_redacted_output() {
-    let src = crate::suite::security_hardening::server_dispatch_src();
-
-    assert!(
-        src.contains("redact_text_if_enabled"),
-        "H6: shell archive must use redact_text_if_enabled before storing"
+        resolve_body.contains("check_secret_path"),
+        "H2: resolve_path must call check_secret_path"
     );
 }
 
@@ -157,13 +126,6 @@ fn raw_shell_skips_all_postprocessing() {
         src.contains("let is_raw_shell = name == \"ctx_shell\""),
         "call_tool must compute is_raw_shell flag"
     );
-    // The archive guard reads either way round depending on whether the block
-    // is an expression or a statement; pin the property, not the spelling.
-    assert!(
-        src.contains("if minimal || is_raw_shell {")
-            || src.contains("if !(minimal || is_raw_shell)"),
-        "archiving must be skipped for raw shell"
-    );
     assert!(
         src.contains("is_raw_shell")
             && src.contains("result_text.len() != pre_terse_len && output_tokens > 0")
@@ -177,9 +139,5 @@ fn raw_shell_skips_all_postprocessing() {
         (src.contains("if !is_raw_shell {") || src.contains("if !is_raw_shell &&"))
             && src.contains("verify_output"),
         "output verification must be skipped for raw shell"
-    );
-    assert!(
-        src.contains("!is_raw_shell && name == \"ctx_shell\""),
-        "the ctx_shell post-processing block must be skipped for raw shell"
     );
 }

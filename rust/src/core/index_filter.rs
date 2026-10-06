@@ -48,16 +48,6 @@ pub fn set_cli_overlay(
     });
 }
 
-/// True when a CLI overlay is installed. The orchestrator uses this to skip
-/// delegating the build to the daemon: the daemon would build with *its*
-/// config and could overwrite the one-off filtered result.
-pub fn cli_overlay_active() -> bool {
-    CLI_OVERLAY
-        .read()
-        .unwrap_or_else(std::sync::PoisonError::into_inner)
-        .is_some()
-}
-
 /// The resolved corpus-membership filter for one indexing run.
 #[derive(Debug)]
 pub struct IndexFileFilter {
@@ -81,9 +71,9 @@ impl IndexFileFilter {
     /// [`Self::effective`] with an already-loaded config (builders that hold
     /// one avoid a second load).
     pub fn resolve(cfg: &crate::core::config::Config) -> Self {
-        let mut include: Vec<String> = cfg.index.include.clone();
-        let mut exclude: Vec<String> = cfg.index.exclude.clone();
-        let mut respect_gitignore = cfg.index.respect_gitignore;
+        let mut include: Vec<String> = Vec::new();
+        let mut exclude: Vec<String> = cfg.ignore.clone();
+        let mut respect_gitignore = true;
 
         let guard = CLI_OVERLAY
             .read()

@@ -200,15 +200,13 @@ fn handle_regex(args: &Map<String, Value>, ctx: &ToolContext) -> Result<ToolOutp
     let exclude = get_str(args, "exclude");
     let exclude_pattern = get_str(args, "exclude_pattern");
 
-    if no_gitignore
-        && let Err(e) = crate::core::io_boundary::ensure_ignore_gitignore_allowed("ctx_search")
-    {
+    if no_gitignore && let Err(e) = crate::core::io_boundary::ensure_ignore_gitignore_allowed() {
         return Ok(ToolOutput::simple(e));
     }
 
     let crp = ctx.crp_mode;
     let respect = !no_gitignore;
-    let allow_secret_paths = crate::core::roles::active_role().io.allow_secret_paths;
+    let allow_secret_paths = false;
 
     if !resolved.is_multi {
         return search_single(
@@ -225,7 +223,6 @@ fn handle_regex(args: &Map<String, Value>, ctx: &ToolContext) -> Result<ToolOutp
         );
     }
 
-    let _mode_guard = crate::core::savings_footer::ModeGuard::new("search");
     let per_root_max = (max / resolved.roots.len()).max(5);
     let mut combined = String::new();
     let mut total_observed: usize = 0;
@@ -278,7 +275,7 @@ fn handle_regex(args: &Map<String, Value>, ctx: &ToolContext) -> Result<ToolOutp
     // the modeled 2.5x native-grep baseline never inflates user-facing
     // numbers (GL #573). It only feeds the explicitly-estimated stats
     // series via `tool_lifecycle::record_search`.
-    let final_out = crate::core::protocol::append_savings(&combined, total_observed, total_sent);
+    let final_out = combined.clone();
     let saved = total_observed.saturating_sub(total_sent);
     // #685: `actual_tokens` is the *sent* output, not the saving — passing
     // `saved` here recorded `actual=observed−sent` and `saved=sent` (both
@@ -291,7 +288,6 @@ fn handle_regex(args: &Map<String, Value>, ctx: &ToolContext) -> Result<ToolOutp
         saved_tokens: saved,
         mode: None,
         path: None,
-        changed: false,
         shell_outcome: None,
         content_blocks: None,
     })
@@ -383,7 +379,6 @@ fn handle_symbol(args: &Map<String, Value>, ctx: &ToolContext) -> Result<ToolOut
             saved_tokens: original.saturating_sub(sent),
             mode: Some("handle".to_string()),
             path: None,
-            changed: false,
             shell_outcome: None,
             content_blocks: None,
         });
@@ -404,7 +399,6 @@ fn handle_symbol(args: &Map<String, Value>, ctx: &ToolContext) -> Result<ToolOut
         saved_tokens: original.saturating_sub(sent),
         mode: kind,
         path: file,
-        changed: false,
         shell_outcome: None,
         content_blocks: None,
     })
@@ -467,7 +461,6 @@ fn semantic_output(text: String) -> ToolOutput {
         saved_tokens: 0,
         mode: Some("semantic".to_string()),
         path: None,
-        changed: false,
         shell_outcome: None,
         content_blocks: None,
     }
@@ -486,8 +479,6 @@ fn search_single(
     exclude: Option<&str>,
     exclude_pattern: Option<&str>,
 ) -> Result<ToolOutput, ErrorData> {
-    let _mode_guard = crate::core::savings_footer::ModeGuard::new("search");
-
     let search_result = tokio::task::block_in_place(|| {
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             crate::tools::ctx_search::handle_filtered(
@@ -529,7 +520,7 @@ fn search_single(
 
     let sent = crate::core::tokens::count_tokens(&result);
     let saved = observed.saturating_sub(sent);
-    let final_out = crate::core::protocol::append_savings(&result, observed, sent);
+    let final_out = result.clone();
     // #685: pass the *sent* output as `actual_tokens` (not `saved`); see the
     // multi-root branch above for why the previous arg was a double bug.
     crate::core::savings_ledger::record_tool_event("ctx_search", observed, sent);
@@ -540,7 +531,6 @@ fn search_single(
         saved_tokens: saved,
         mode: None,
         path: Some(path.to_string()),
-        changed: false,
         shell_outcome: None,
         content_blocks: None,
     })
@@ -578,12 +568,11 @@ fn handle_batch_queries(
     let anchored = get_bool(args, "anchored").unwrap_or(false);
     let crp = ctx.crp_mode;
     let respect = !no_gitignore;
-    let allow_secret_paths = crate::core::roles::active_role().io.allow_secret_paths;
+    let allow_secret_paths = false;
     let root = &resolved.roots[0];
     let global_max = (get_int(args, "max_results").unwrap_or(20) as usize).min(500);
     let per_query_max = (global_max / queries.len()).max(5);
 
-    let _mode_guard = crate::core::savings_footer::ModeGuard::new("search");
     let mut combined = String::new();
     let mut total_observed: usize = 0;
     let mut total_sent: usize = 0;
@@ -652,7 +641,7 @@ fn handle_batch_queries(
         combined = "No matches found for any query.".to_string();
     }
 
-    let final_out = crate::core::protocol::append_savings(&combined, total_observed, total_sent);
+    let final_out = combined.clone();
     let saved = total_observed.saturating_sub(total_sent);
     crate::core::savings_ledger::record_tool_event("ctx_search", total_observed, total_sent);
 
@@ -662,7 +651,6 @@ fn handle_batch_queries(
         saved_tokens: saved,
         mode: None,
         path: None,
-        changed: false,
         shell_outcome: None,
         content_blocks: None,
     })
@@ -787,21 +775,6 @@ mod tests {
         assert_eq!(ext_to_include("*.rs"), "*.rs");
         assert_eq!(ext_to_include("*.{rs,ts}"), "*.{rs,ts}");
         assert_eq!(ext_to_include("src/**/*.tsx"), "src/**/*.tsx");
-    }
-
-    #[test]
-    fn lenient_fallback_uses_unknown_string_key_as_pattern() {
-        use super::{KNOWN_KEYS, get_str};
-
-        // Simulate Gemma sending {"search_term": "fn main"} — an unknown key
-        // with a string value should be picked up by the lenient fallback.
-        let a = args(&[("search_term", json!("fn main"))]);
-        let pattern = get_str(&a, "pattern").or_else(|| {
-            a.iter()
-                .find(|(k, v)| !KNOWN_KEYS.contains(&k.as_str()) && v.is_string())
-                .and_then(|(_, v)| v.as_str().map(String::from))
-        });
-        assert_eq!(pattern, Some("fn main".to_string()));
     }
 
     #[test]

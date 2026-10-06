@@ -8,15 +8,6 @@ use crate::core::theme::{self, Theme};
 
 use super::super::model::{CostModel, StatsStore};
 
-pub fn format_gain() -> String {
-    format_gain_themed(&active_theme())
-}
-
-/// Renders the token savings dashboard with a specific theme.
-pub fn format_gain_themed(t: &Theme) -> String {
-    format_gain_themed_at(t, None)
-}
-
 /// Renders the concise "hero" gain output — 3 key metrics, gain score, trend, next actions.
 pub fn format_gain_hero() -> String {
     format_gain_hero_themed(&active_theme())
@@ -26,7 +17,7 @@ pub fn format_gain_hero() -> String {
 pub fn format_gain_hero_themed(t: &Theme) -> String {
     // Aggregate across split data dirs so an MCP-server/CLI XDG split does not
     // hide savings behind a false `0` (#500).
-    let store = crate::core::stats::load_for_display();
+    let store = crate::core::stats::load();
     let rst = theme::rst();
     let bold = theme::bold();
     let dim = theme::dim();
@@ -225,7 +216,7 @@ pub fn format_gain_body() -> String {
 
 /// The standalone gain dashboard footer (contextual tip, Context OS, hints).
 pub fn format_gain_footer() -> String {
-    let store = crate::core::stats::load_for_display();
+    let store = crate::core::stats::load();
     let mut out = Vec::new();
     append_gain_footer(&mut out, &active_theme(), &store);
     out.join("\n")
@@ -234,7 +225,7 @@ pub fn format_gain_footer() -> String {
 #[allow(clippy::many_single_char_names)] // ANSI formatting: t=theme, r=reset, b=bold, d=dim
 fn gain_dashboard(t: &Theme, _tick: Option<u64>, with_footer: bool) -> String {
     // Aggregate across split data dirs (#500) — see `format_gain_hero_themed`.
-    let store = crate::core::stats::load_for_display();
+    let store = crate::core::stats::load();
     let mut out = Vec::new();
     let rst = theme::rst();
     let bold = theme::bold();
@@ -262,21 +253,6 @@ fn gain_dashboard(t: &Theme, _tick: Option<u64>, with_footer: bool) -> String {
         } else {
             String::new()
         };
-        let split_dirs = crate::core::data_dir::all_data_dirs_with_stats();
-        let split_hint = if split_dirs.len() >= 2 {
-            format!(
-                "\n{dim}⚠ Stats found in multiple locations:{rst}\
-                 \n{dim}  {}{rst}\
-                 \n{dim}Run: lean-ctx doctor{rst}",
-                split_dirs
-                    .iter()
-                    .map(|d| d.display().to_string())
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            )
-        } else {
-            String::new()
-        };
         // Cross-check the tamper-evident savings ledger (#500): if it recorded
         // events while stats.json stayed empty, the MCP server and the CLI are
         // almost certainly resolving different data dirs — name that explicitly
@@ -301,7 +277,7 @@ fn gain_dashboard(t: &Theme, _tick: Option<u64>, with_footer: bool) -> String {
              \n    2. Fully restart your AI tool so it reconnects to lean-ctx.\
              \n    3. Ask it to read a file or run a command — then check back here.\
              \n\n  {dim}Tip: track a shell command yourself with {rst}{cmd}lean-ctx -c \"git status\"{rst}\
-             \n\n  {dim}Stats path: {data_dir}{rst}{mcp_hint}{split_hint}{ledger_hint}",
+             \n\n  {dim}Stats path: {data_dir}{rst}{mcp_hint}{ledger_hint}",
             cmd = t.secondary.fg(),
         );
     }
@@ -680,7 +656,7 @@ fn append_gain_footer(out: &mut Vec<String>, t: &Theme, store: &StatsStore) {
                         ("nodes", "")
                     }
                     crate::core::graph_provider::GraphProviderSource::GraphIndex => {
-                        let max_cfg = crate::core::config::Config::load().graph_index_max_files;
+                        let max_cfg = crate::core::config::GRAPH_INDEX_MAX_FILES;
                         if max_cfg > 0 && nc >= max_cfg as usize {
                             ("files", " (limit reached)")
                         } else {
@@ -796,14 +772,6 @@ fn build_tips(store: &StatsStore) -> Vec<String> {
         tips.push("Try mode=\"signatures\" for large files — returns only the API surface.".into());
     }
 
-    if store.cep.total_cache_reads > 0
-        && store.cep.total_cache_hits as f64 / store.cep.total_cache_reads as f64 > 0.8
-    {
-        tips.push(
-            "High cache hit rate! Use ctx_compress periodically to keep context compact.".into(),
-        );
-    }
-
     if store.total_commands > 50 && store.cep.sessions == 0 {
         tips.push("Use ctx_session to track your task — enables cross-session memory.".into());
     }
@@ -816,28 +784,8 @@ fn build_tips(store: &StatsStore) -> Vec<String> {
         tips.push("Run lean-ctx gain --graph for a 30-day sparkline chart.".into());
     }
 
-    tips.push("Run ctx_overview(task) at session start for a task-aware project map.".into());
+    tips.push("Run ctx_compose(task) at session start for a task-aware project map.".into());
     tips.push("Run lean-ctx dashboard for a live web UI with all your stats.".into());
-
-    let cfg = crate::core::config::Config::load();
-    if cfg.theme == "default" {
-        tips.push(
-            "Customize your dashboard! Try: lean-ctx theme set cyberpunk (or neon, ocean, sunset, monochrome)".into(),
-        );
-        tips.push(
-            "Want a unique look? Run lean-ctx theme list to see all available themes.".into(),
-        );
-    } else {
-        tips.push(format!(
-            "Current theme: {}. Run lean-ctx theme list to explore others.",
-            cfg.theme
-        ));
-    }
-
-    tips.push(
-        "Create a custom theme: write a TOML file and import it with lean-ctx theme import <file>"
-            .into(),
-    );
 
     tips
 }

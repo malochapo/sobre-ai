@@ -3,7 +3,6 @@ use lean_ctx::core::editor_registry::plan_mode::{
     check_plan_mode_status_for_paths, plan_mode_tools, write_claude_code_plan_permissions_to,
     write_vscode_plan_settings_to,
 };
-use lean_ctx::server::dynamic_tools::is_readonly_tool;
 use serde_json::Value;
 
 fn read_json(path: &std::path::Path) -> Value {
@@ -274,40 +273,15 @@ fn doctor_none_when_path_not_provided() {
     assert!(status.claude_configured.is_none());
 }
 
-// ── is_readonly_tool cross-check ──────────────────────────────────
+// ── plan-mode allowlist excludes write tools ──────────────────────
 
 #[test]
-fn all_plan_mode_tools_are_readonly() {
-    for tool in plan_mode_tools() {
-        assert!(
-            is_readonly_tool(tool),
-            "plan_mode_tools() contains '{tool}' which is_readonly_tool() says is NOT readonly"
-        );
-    }
-}
-
-#[test]
-fn write_tools_are_not_readonly() {
-    let write_tools = [
-        "ctx_edit",
-        "ctx_shell",
-        "ctx_compile",
-        "ctx_cache",
-        "ctx_control",
-        "ctx_fill",
-        "ctx_execute",
-        "ctx_expand",
-        "ctx_pack",
-        "ctx_feedback",
-        "ctx_prefetch",
-        "ctx_agent",
-        "ctx_handoff",
-        "ctx_workflow",
-    ];
+fn write_tools_are_not_plan_mode_tools() {
+    let write_tools = ["ctx_patch", "ctx_refactor", "ctx_shell", "ctx_checkpoint"];
     for tool in &write_tools {
         assert!(
-            !is_readonly_tool(tool),
-            "'{tool}' is a write tool but is_readonly_tool() returns true"
+            !plan_mode_tools().contains(tool),
+            "'{tool}' is a write tool but is allowed in plan mode"
         );
     }
 }

@@ -18,7 +18,6 @@
 use super::payload;
 use crate::core::code_health::GateMode;
 use crate::core::code_health::gate::{self, GateOutcome};
-use crate::core::config::Config;
 use serde_json::Value;
 
 /// Largest post-edit file we will parse inside a hook. Above this the tree-sitter
@@ -35,29 +34,16 @@ struct Replacement {
 /// Parse, evaluate, and print a PostToolUse code-health notice for a native edit.
 /// No-op for non-edit events, non-source files, or sub-threshold edits.
 ///
-/// #778: By default, notices route to `ctx_knowledge` + dashboard (non-destructive)
-/// instead of `additionalContext` stdout (which causes prompt-cache invalidation).
-/// Set `[code_health] inject_context = true` to opt into the old stdout behavior.
+/// #778: notices route to `ctx_knowledge` + dashboard (non-destructive), never
+/// to `additionalContext` stdout (which causes prompt-cache invalidation).
 pub(super) fn maybe_emit(input: &str) {
     let Ok(v) = serde_json::from_str::<Value>(input) else {
         return;
     };
     let root = resolve_root(&v);
     if let Some(notice) = edit_health_notice(&v, &root) {
-        // Always persist to non-destructive channels (#778)
         persist_notice_to_knowledge(&notice, &v, &root);
-
-        // Only inject additionalContext when explicitly opted in (cache-destructive)
-        if inject_context_enabled() {
-            emit_post_tool_use_context(&notice);
-        }
     }
-}
-
-/// Check if `additionalContext` injection is enabled (opt-in, default off).
-/// Env `LEAN_CTX_INJECT_CONTEXT=1` force-enables for debugging.
-fn inject_context_enabled() -> bool {
-    std::env::var("LEAN_CTX_INJECT_CONTEXT").is_ok() || Config::load().code_health.inject_context
 }
 
 /// Persist a health notice to `ctx_knowledge` so the agent sees it on the next
@@ -86,20 +72,6 @@ fn persist_notice_to_knowledge(notice: &str, payload: &Value, root: &str) {
     let _ = crate::core::knowledge::ProjectKnowledge::mutate_locked(root, |pk| {
         pk.remember("code_health", &key, notice, session_id, 0.9, &policy);
     });
-
-    // Emit ContextBus event so dashboard + subscribers see it in real-time
-    crate::core::context_os::emit_event(
-        root,
-        "code_health",
-        &crate::core::context_os::ContextEventKindV1::KnowledgeRemembered,
-        Some("edit_health_hook"),
-        serde_json::json!({
-            "category": "code_health",
-            "key": key,
-            "notice": notice,
-            "file": file_path,
-        }),
-    );
 }
 
 /// Project root for path resolution: the payload `cwd` (every Claude/Cursor hook
@@ -120,12 +92,11 @@ fn resolve_root(v: &Value) -> String {
 /// The advisory notice for a native edit, or `None` when not applicable. Loads
 /// the `[code_health]` config for mode + threshold.
 pub(super) fn edit_health_notice(v: &Value, root: &str) -> Option<String> {
-    let cfg = Config::load();
     notice_with(
         v,
         root,
-        GateMode::parse(&cfg.code_health.gate),
-        cfg.code_health.cognitive_threshold,
+        GateMode::Warn,
+        crate::core::code_health::COGNITIVE_THRESHOLD,
     )
 }
 
@@ -225,18 +196,6 @@ fn read_jailed(file: &str, root: &str) -> Option<String> {
     };
     crate::core::pathjail::jail_path(&abs, std::path::Path::new(root)).ok()?;
     std::fs::read_to_string(&abs).ok()
-}
-
-/// Emit a PostToolUse notice on the model-visible `additionalContext` channel
-/// (honored by Claude Code / Codex; ignored harmlessly by other hosts).
-fn emit_post_tool_use_context(notice: &str) {
-    let payload = serde_json::json!({
-        "hookSpecificOutput": {
-            "hookEventName": "PostToolUse",
-            "additionalContext": notice,
-        }
-    });
-    println!("{payload}");
 }
 
 #[cfg(test)]
@@ -360,22 +319,5 @@ mod tests {
     fn no_notice_for_non_edit_event() {
         let v = json!({ "tool_name": "Read", "tool_input": { "file_path": "f.rs" } });
         assert!(notice_with(&v, "/tmp", GateMode::Warn, 15).is_none());
-    }
-
-    #[test]
-    fn inject_context_disabled_by_default() {
-        // #778: with default config, inject_context is false → no stdout emission
-        let _lock = crate::core::data_dir::test_env_lock();
-        crate::test_env::remove_var("LEAN_CTX_INJECT_CONTEXT");
-        assert!(!inject_context_enabled());
-    }
-
-    #[test]
-    fn inject_context_enabled_via_env() {
-        // #778: env override forces injection (for debugging/opt-in)
-        let _lock = crate::core::data_dir::test_env_lock();
-        crate::test_env::set_var("LEAN_CTX_INJECT_CONTEXT", "1");
-        assert!(inject_context_enabled());
-        crate::test_env::remove_var("LEAN_CTX_INJECT_CONTEXT");
     }
 }

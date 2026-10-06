@@ -73,8 +73,8 @@ fn handle_retrieve(args: &serde_json::Value) -> String {
     // the proxy's prune / live-compression stubs (`proxy_<hash>`), the JSON
     // crusher's lossy originals (`json_<hash>`), AND every compressed shell
     // command's already-teed verbatim output (`<slug>_<8hex>.log`) all live in
-    // the shared content-addressed store and resolve here, before the reference
-    // (`ref_`) and archive (hex) stores below. The agent pulls back just the
+    // the shared content-addressed store and resolve here, before the archive
+    // (hex) store below. The agent pulls back just the
     // slice it needs (head / tail / search / json_path / range) instead of
     // re-injecting the whole original — the surgical front-end the issue calls
     // "preferred when available". Works with a plain native file read too.
@@ -82,41 +82,23 @@ fn handle_retrieve(args: &serde_json::Value) -> String {
         return expand_tee_file(&path, args);
     }
 
-    // Resolve the entry's content once, then run the shared selector ladder.
-    // Archive IDs are hex-only; reference IDs are `ref_`-prefixed — the prefix
-    // picks the exact store, so the two stores differ only in *how* content is
-    // resolved, never in *how* selectors are dispatched (#498). Resolving up
-    // front also drops the archive path's per-selector disk re-reads.
-    if id.starts_with("ref_") {
-        let Some(content) = crate::server::reference_store::resolve(id) else {
-            return format!(
-                "Reference '{id}' not found or expired (5-min TTL). \
-                 Use the HTTP proxy at /v1/references/{id} if available."
-            );
-        };
-        return dispatch_selectors(id, &content, "Reference", args);
-    }
     let Some(content) = archive::retrieve(id) else {
         return format!(
             "Archive '{id}' not found or expired. Use ctx_expand(action=\"list\") to see available archives."
         );
     };
-    dispatch_selectors(id, &content, "Archive", args)
+    dispatch_selectors(id, &content, args)
 }
 
 /// Apply the structured selector ladder (head / tail / json_keys / search /
-/// range / full) to already-resolved `content`. Resolving once and formatting
-/// in-memory lets the archive and reference stores share a single code path and
-/// the same `archive::format_*` formatters, so output is byte-identical
-/// regardless of which store backed the ID (#498). `noun` is the capitalised
-/// store name used in messages — `"Archive"` or `"Reference"`.
-fn dispatch_selectors(id: &str, content: &str, noun: &str, args: &serde_json::Value) -> String {
-    let label = format!("{} {id}", noun.to_ascii_lowercase());
+/// range / full) to the archived `content`.
+fn dispatch_selectors(id: &str, content: &str, args: &serde_json::Value) -> String {
+    let label = format!("archive {id}");
 
     if let Some(n) = args.get("head").and_then(serde_json::Value::as_u64) {
         let n = n as usize;
         return format!(
-            "{noun} {id} head {n}:\n{}",
+            "Archive {id} head {n}:\n{}",
             archive::format_range(content, 1, n)
         );
     }
@@ -125,7 +107,7 @@ fn dispatch_selectors(id: &str, content: &str, noun: &str, args: &serde_json::Va
         let total = content.lines().count();
         let start = if total > n { total - n + 1 } else { 1 };
         return format!(
-            "{noun} {id} tail {n}:\n{}",
+            "Archive {id} tail {n}:\n{}",
             archive::format_range(content, start, total)
         );
     }
@@ -136,7 +118,7 @@ fn dispatch_selectors(id: &str, content: &str, noun: &str, args: &serde_json::Va
         return match archive::format_json_keys(content, path, &label) {
             Some(out) => out,
             None => format!(
-                "{noun} '{id}' is not valid JSON. Use ctx_expand(id=\"{id}\") for raw content."
+                "Archive '{id}' is not valid JSON. Use ctx_expand(id=\"{id}\") for raw content."
             ),
         };
     }
@@ -154,14 +136,14 @@ fn dispatch_selectors(id: &str, content: &str, noun: &str, args: &serde_json::Va
         .map(|v| v as usize);
     if let (Some(s), Some(e)) = (start, end) {
         return format!(
-            "{noun} {id} lines {s}-{e}:\n{}",
+            "Archive {id} lines {s}-{e}:\n{}",
             archive::format_range(content, s, e)
         );
     }
 
     let lines = content.lines().count();
     let chars = content.len();
-    format!("{noun} {id} ({chars} chars, {lines} lines):\n{content}")
+    format!("Archive {id} ({chars} chars, {lines} lines):\n{content}")
 }
 
 /// Surgical retrieval over a CCR proxy tee file (#482). Mirrors the archive
@@ -448,76 +430,5 @@ mod tests {
         assert!(head.contains("api response row 001") && !head.contains("api response row 010"));
         let search = handle(&json!({ "id": name, "search": "row 042" }));
         assert!(search.contains("api response row 042") && !search.contains("row 001"));
-    }
-
-    #[test]
-    fn ctx_expand_retrieves_json_crush_original() {
-        let _lock = crate::core::data_dir::test_env_lock();
-        // The lossy JSON crusher persists its verbatim original under json_<hash>
-        // (#936). The dropped columns must be recoverable through the same
-        // ctx_expand path the stub/footer advertises.
-        let original = (1..=50)
-            .map(|i| format!(r#"{{"id":{i},"ts":"2026-06-22T10:00:{i:02}Z"}}"#))
-            .collect::<Vec<_>>()
-            .join("\n");
-        assert!(original.len() >= crate::proxy::ccr::MIN_TEE_BYTES);
-        let handle_path = crate::proxy::ccr::persist_json(&original).expect("json tee handle");
-        assert!(handle_path.contains("json_"), "json_ prefix: {handle_path}");
-
-        let out = handle(&json!({ "id": handle_path }));
-        assert!(
-            out.contains("2026-06-22T10:00:42Z"),
-            "dropped column recoverable: {out}"
-        );
-    }
-
-    #[test]
-    fn ctx_expand_resolves_reference_store_ids() {
-        // #498: `ref_`-prefixed IDs route to the in-memory reference store, not
-        // the on-disk archive. Exercises the resolve-then-dispatch ladder end to
-        // end through the public `handle` entry point.
-        let body = (1..=40)
-            .map(|i| format!("ref row {i}"))
-            .collect::<Vec<_>>()
-            .join("\n");
-        let id = crate::server::reference_store::store(body);
-        assert!(id.starts_with("ref_"), "store must mint a ref_ id: {id}");
-
-        let full = handle(&json!({"id": id}));
-        assert!(
-            full.contains("Reference") && full.contains("ref row 1") && full.contains("ref row 40"),
-            "full: {full}"
-        );
-
-        let head = handle(&json!({"id": id, "head": 3}));
-        assert!(head.contains("ref row 1") && head.contains("ref row 3"));
-        assert!(!head.contains("ref row 4"), "head leaked row 4: {head}");
-
-        let tail = handle(&json!({"id": id, "tail": 2}));
-        assert!(tail.contains("ref row 39") && tail.contains("ref row 40"));
-        assert!(!tail.contains("ref row 38"), "tail leaked row 38: {tail}");
-
-        let search = handle(&json!({"id": id, "search": "ref row 7"}));
-        assert!(search.contains("ref row 7") && !search.contains("ref row 1\n"));
-
-        let range = handle(&json!({"id": id, "start_line": 5, "end_line": 6}));
-        assert!(range.contains("ref row 5") && range.contains("ref row 6"));
-        assert!(!range.contains("ref row 4") && !range.contains("ref row 7"));
-    }
-
-    #[test]
-    fn ctx_expand_reference_json_keys_and_missing() {
-        let id = crate::server::reference_store::store(r#"{"a":1,"b":[1,2,3]}"#.to_string());
-        let keys = handle(&json!({"id": id, "json_keys": true}));
-        assert!(keys.contains("object (2 keys)"), "got: {keys}");
-        assert!(keys.contains("array(3)"), "got: {keys}");
-
-        // An expired/unknown ref must explain the 5-min TTL, not fall through to
-        // the archive's "not found" message.
-        let missing = handle(&json!({"id": "ref_deadbeefcafef00d"}));
-        assert!(
-            missing.contains("not found or expired") && missing.contains("5-min TTL"),
-            "got: {missing}"
-        );
     }
 }

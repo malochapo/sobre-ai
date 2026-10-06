@@ -63,28 +63,6 @@ fn quarantine_corrupt(path: &std::path::Path, err: &serde_json::Error) {
     );
 }
 
-/// Loads `stats.json` from a *specific* directory (no in-process buffer applied).
-/// Used by [`crate::core::stats::load_for_display`] to fold sibling data dirs
-/// into the displayed total when an XDG split (#408/#414/#500) spread savings
-/// across more than one tree. Missing files degrade to an empty store; corrupt
-/// files warn (#706) but are NOT quarantined here — this is a read-only peek
-/// into a sibling tree that another lean-ctx instance owns.
-pub(super) fn load_from_dir(dir: &std::path::Path) -> StatsStore {
-    match std::fs::read_to_string(dir.join("stats.json")) {
-        Ok(content) => match serde_json::from_str(&content) {
-            Ok(store) => store,
-            Err(e) => {
-                tracing::warn!(
-                    "sibling stats file {} is corrupt ({e}) — folding it in as empty",
-                    dir.join("stats.json").display()
-                );
-                StatsStore::default()
-            }
-        },
-        Err(_) => StatsStore::default(),
-    }
-}
-
 fn write_to_disk(store: &StatsStore) -> bool {
     let Some(dir) = stats_dir() else { return false };
 

@@ -10,14 +10,13 @@ This contract covers:
 
 - Property graph storage under `$LEAN_CTX_DATA_DIR/graphs/<project_hash>/graph.db`
 - Graph build + freshness semantics (`ctx_impact action=build|status`)
-- Deterministic exports from `ctx_impact` and `ctx_architecture` (incl. `format=json`)
-- Architecture proof artifacts exported via `ctx_proof`
+- Deterministic exports from `ctx_impact` and `ctx_graph action=cycles|entrypoints`
+  (incl. `format=json`)
 
-## Version (SSOT)
+## Version
 
-- `leanctx.contract.graph_reproducibility_v1.schema_version=1`
-  - SSOT: `CONTRACTS.md`
-  - Runtime: `rust/src/core/contracts.rs`
+- `schema_version=1`: `GRAPH_REPRODUCIBILITY_V1_SCHEMA_VERSION` in
+  `rust/src/core/contracts.rs`
 
 ## Build triggers & freshness
 
@@ -25,7 +24,7 @@ This contract covers:
 
 - Tools **may** auto-build the property graph when it is missing/empty:
   - `ctx_impact action=analyze` (auto-build if empty)
-  - `ctx_architecture action=overview|...` (auto-build if empty)
+  - `ctx_graph action=cycles|entrypoints` (auto-build if empty)
 
 ### Explicit rebuild
 
@@ -51,7 +50,7 @@ Rules:
 
 ## Output format (tools)
 
-Both tools accept:
+`ctx_impact` and `ctx_graph` accept:
 
 - `format=text|json` (default: `text`)
 
@@ -65,22 +64,12 @@ When `format=json`:
   - `graph` summary (exists, nodes, edges, db_path)
   - action-specific fields + `truncated` flags
 
-## Proof artifacts (architecture overview)
-
-When exporting proofs with `ctx_proof write=true`, the runtime also exports:
-
-- `architecture-overview-v1_<ts>.json`
-- `architecture-overview-v1_<ts>.html`
-
-to `.lean-ctx/proofs/` (redacted-by-default for CI attachment safety).
-
 ## Boundedness (MUST)
 
 Graph tool outputs are capped by hard budgets (see `rust/src/core/budgets.rs`) to prevent DoS/token-burn.
 
 ## Security & privacy
 
-- Graph DB + meta are written **only** under the project’s `.lean-ctx/` directory.
-- Proof artifacts are redacted before writing (same safety policy as other proof exports).
+- Graph DB + meta are written **only** under `$LEAN_CTX_DATA_DIR/graphs/<project_hash>/`.
 - No secrets must appear in graph artifacts, logs, or exports.
 

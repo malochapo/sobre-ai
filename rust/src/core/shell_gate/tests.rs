@@ -8,51 +8,6 @@ use super::*;
 
 // --- extract_base_command tests (legacy compat) ---
 
-#[test]
-fn extract_simple_command() {
-    assert_eq!(extract_base_command("git status"), "git");
-}
-
-#[test]
-fn extract_with_path() {
-    assert_eq!(extract_base_command("/usr/bin/git log"), "git");
-}
-
-#[test]
-fn extract_with_env_assignment() {
-    assert_eq!(extract_base_command("LANG=en_US git log"), "git");
-}
-
-#[test]
-fn extract_chained_commands() {
-    assert_eq!(extract_base_command("cd /tmp && ls -la"), "cd");
-}
-
-#[test]
-fn extract_piped_command() {
-    assert_eq!(extract_base_command("grep foo | wc -l"), "grep");
-}
-
-#[test]
-fn extract_semicolon_chain() {
-    assert_eq!(extract_base_command("echo hello; rm -rf /"), "echo");
-}
-
-#[test]
-fn extract_empty_command() {
-    assert_eq!(extract_base_command(""), "");
-}
-
-#[test]
-fn extract_whitespace_only() {
-    assert_eq!(extract_base_command("   "), "");
-}
-
-#[test]
-fn extract_multiple_env_vars() {
-    assert_eq!(extract_base_command("FOO=bar BAZ=qux cargo test"), "cargo");
-}
-
 // --- All-segments validation tests ---
 
 // --- GL #1160: backslash escapes outside quotes are data, not operators ---
@@ -70,11 +25,6 @@ fn escaped_semicolon_is_data() {
 // --- Multi-segment validation (the critical security improvement) ---
 
 // --- Dangerous pattern detection ---
-
-#[test]
-fn blocks_eval() {
-    assert!(!passes_enforced("eval 'rm -rf /'"));
-}
 
 // --- $() in arguments is ALLOWED (base command validated by allowlist) ---
 
@@ -408,43 +358,14 @@ fn enforce_allows_project_root_binary_path() {
 #[test]
 fn python3_inline_blocked_by_default() {
     let _lock = crate::core::data_dir::test_env_lock();
-    crate::test_env::remove_var("LEAN_CTX_SHELL_ALLOW_INLINE_SCRIPTS");
     let result = super::enforce_shell_gate("python3 -c \"print(42)\"");
     assert!(result.is_err(), "python3 -c must be blocked by default");
-}
-
-/// #814: python3 -c is allowed when opt-in is enabled.
-#[test]
-fn python3_inline_allowed_with_opt_in() {
-    let _lock = crate::core::data_dir::test_env_lock();
-    crate::test_env::set_var("LEAN_CTX_SHELL_ALLOW_INLINE_SCRIPTS", "1");
-    let result = super::enforce_shell_gate("python3 -c \"print(42)\"");
-    crate::test_env::remove_var("LEAN_CTX_SHELL_ALLOW_INLINE_SCRIPTS");
-    assert!(
-        result.is_ok(),
-        "python3 -c must be allowed with opt-in: {result:?}"
-    );
-}
-
-/// #814: node -e is also gated by the same opt-in.
-#[test]
-fn node_eval_allowed_with_opt_in() {
-    let _lock = crate::core::data_dir::test_env_lock();
-    crate::test_env::set_var("LEAN_CTX_SHELL_ALLOW_INLINE_SCRIPTS", "1");
-    let result = super::enforce_shell_gate("node -e \"console.log(42)\"");
-    crate::test_env::remove_var("LEAN_CTX_SHELL_ALLOW_INLINE_SCRIPTS");
-    assert!(
-        result.is_ok(),
-        "node -e must be allowed with opt-in: {result:?}"
-    );
 }
 
 // --- #855: `VAR=$(cmd args…)` inside a for-loop body must not misparse a
 // word from *inside* the substitution as the base command. ---
 
 // --- GH #898/#904: go list / gh run watch after VAR=$(...) ---
-
-// --- GH #888: block message mentions ctx_execute as sanctioned alternative ---
 
 // --- GH #931: unquoted-delimiter heredoc body false-positives ---
 
@@ -504,16 +425,5 @@ fn eval_still_blocked_despite_builtins() {
     assert!(
         !passes_enforced("eval 'rm -rf /'"),
         "eval must remain blocked"
-    );
-}
-
-/// #1026: redirect_block includes LEAN_CTX_NO_HOOK guard.
-#[test]
-fn redirect_block_contains_no_hook_guard() {
-    let block =
-        crate::shell_hook::test_helpers::redirect_block_for_test("ZSH_EXECUTION_STRING", "true");
-    assert!(
-        block.contains("LEAN_CTX_NO_HOOK"),
-        "redirect_block must check LEAN_CTX_NO_HOOK: {block}"
     );
 }

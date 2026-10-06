@@ -253,48 +253,6 @@ pub fn is_loaded() -> bool {
     }
 }
 
-pub fn status() {
-    #[cfg(target_os = "macos")]
-    {
-        let plist_path = launchagent_path();
-        if plist_path.exists() {
-            println!("  LaunchAgent: installed at {}", plist_path.display());
-            if crate::core::launchd::is_loaded(PLIST_LABEL) {
-                println!("  Status: loaded");
-            } else {
-                println!("  Status: not loaded (run: lean-ctx proxy start)");
-            }
-        } else {
-            println!("  LaunchAgent: not installed");
-        }
-    }
-
-    #[cfg(target_os = "linux")]
-    {
-        let service_path = systemd_path();
-        if service_path.exists() {
-            println!("  systemd user service: installed");
-            let output = std::process::Command::new("systemctl")
-                .args(["--user", "is-active", SYSTEMD_SERVICE])
-                .output();
-            match output {
-                Ok(o) => {
-                    let state = String::from_utf8_lossy(&o.stdout).trim().to_string();
-                    println!("  Status: {state}");
-                }
-                Err(_) => println!("  Status: unknown"),
-            }
-        } else {
-            println!("  systemd service: not installed");
-        }
-    }
-
-    #[cfg(not(any(target_os = "macos", target_os = "linux")))]
-    {
-        println!("  Autostart not available on this platform");
-    }
-}
-
 #[cfg(target_os = "macos")]
 fn launchagent_path() -> PathBuf {
     dirs::home_dir()
@@ -318,9 +276,7 @@ fn install_launchagent(binary: &str, port: u16, quiet: bool) -> bool {
     if !release_proxy_port(port, quiet) {
         return false;
     }
-    // GH #439: proxy logs are STATE — resolve through the typed dir so a
-    // post-split install writes to $XDG_STATE_HOME/lean-ctx/logs instead of a
-    // re-created ~/.lean-ctx. Legacy single-dir installs still resolve here.
+    // GH #439: proxy logs are STATE — $XDG_STATE_HOME/lean-ctx/logs.
     let log_dir = crate::core::paths::state_dir()
         .unwrap_or_else(|_| std::env::temp_dir().join("lean-ctx"))
         .join("logs");

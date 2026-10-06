@@ -59,13 +59,10 @@ fn setup_bootstrap_doctor_status_json_smoke() {
     let tmp = tempfile::tempdir().unwrap();
     let home = tmp.path().join("home");
     std::fs::create_dir_all(&home).unwrap();
-    let data_dir = tmp.path().join("data");
-    std::fs::create_dir_all(&data_dir).unwrap();
     let bin_dir = tmp.path().join("bin");
     std::fs::create_dir_all(&bin_dir).unwrap();
 
     let home_str = home.to_string_lossy().to_string();
-    let data_str = data_dir.to_string_lossy().to_string();
 
     // Fake claude binary so we can verify `claude mcp add-json` integration.
     // It writes stdin JSON to $HOME/claude-mcp.json and exits 0.
@@ -86,12 +83,10 @@ fn setup_bootstrap_doctor_status_json_smoke() {
         );
     }
 
-    let mut envs = vec![
-        ("HOME", home_str.as_str()),
-        ("LEAN_CTX_DATA_DIR", data_str.as_str()),
-        ("LEAN_CTX_ACTIVE", "1"),
-        ("LEAN_CTX_DISABLED", "1"),
-    ];
+    let dirs = SeparateDirs::new(tmp.path());
+
+    let mut envs = vec![("HOME", home_str.as_str()), ("LEAN_CTX_ACTIVE", "1")];
+    envs.extend(dirs.to_env_pairs());
 
     #[cfg(not(windows))]
     {
@@ -107,7 +102,6 @@ fn setup_bootstrap_doctor_status_json_smoke() {
     let sep = if cfg!(windows) { ";" } else { ":" };
     let new_path = format!("{}{sep}{}", bin_dir.to_string_lossy(), old_path);
     envs.push(("PATH", new_path.as_str()));
-    envs.push(("LEAN_CTX_TRUST_CLAUDE_PATH", "1"));
 
     // bootstrap --json returns clean JSON (SetupReport)
     let (code, out) = run_json(bin, &["init", "--repair", "--json"], &envs);
@@ -120,11 +114,11 @@ fn setup_bootstrap_doctor_status_json_smoke() {
     });
     assert_eq!(setup.schema_version, 1);
 
-    // bootstrap should create env.sh in LEAN_CTX_DATA_DIR for Docker/CI shells.
+    // bootstrap should create env.sh in the config dir for Docker/CI shells.
     // env.sh is Unix-only (shell script); skip assertion on Windows.
     #[cfg(not(windows))]
     {
-        let env_sh = data_dir.join("env.sh");
+        let env_sh = std::path::Path::new(&dirs.config).join("env.sh");
         let env_sh_content = std::fs::read_to_string(&env_sh).expect("env.sh exists");
         assert!(
             env_sh_content.contains("lean-ctx docker self-heal"),
@@ -166,8 +160,6 @@ fn claude_config_dir_fallback_writes_dot_claude_json() {
     let tmp = tempfile::tempdir().unwrap();
     let home = tmp.path().join("home");
     std::fs::create_dir_all(&home).unwrap();
-    let data_dir = tmp.path().join("data");
-    std::fs::create_dir_all(&data_dir).unwrap();
     let bin_dir = tmp.path().join("bin");
     std::fs::create_dir_all(&bin_dir).unwrap();
 
@@ -175,7 +167,6 @@ fn claude_config_dir_fallback_writes_dot_claude_json() {
     std::fs::create_dir_all(&claude_cfg).unwrap();
 
     let home_str = home.to_string_lossy().to_string();
-    let data_str = data_dir.to_string_lossy().to_string();
     let claude_cfg_str = claude_cfg.to_string_lossy().to_string();
 
     // Fake claude that fails (forces lean-ctx to fallback to file merge/write).
@@ -190,13 +181,14 @@ fn claude_config_dir_fallback_writes_dot_claude_json() {
         write_exe(&claude_path, "#!/bin/sh\nexit 1\n");
     }
 
+    let dirs = SeparateDirs::new(tmp.path());
+
     let mut envs = vec![
         ("HOME", home_str.as_str()),
-        ("LEAN_CTX_DATA_DIR", data_str.as_str()),
         ("LEAN_CTX_ACTIVE", "1"),
-        ("LEAN_CTX_DISABLED", "1"),
         ("CLAUDE_CONFIG_DIR", claude_cfg_str.as_str()),
     ];
+    envs.extend(dirs.to_env_pairs());
 
     #[cfg(not(windows))]
     {
@@ -258,8 +250,6 @@ fn init_agent_preserves_agents_md_and_is_idempotent() {
     let tmp = tempfile::tempdir().unwrap();
     let home = tmp.path().join("home");
     std::fs::create_dir_all(&home).unwrap();
-    let data_dir = tmp.path().join("data");
-    std::fs::create_dir_all(&data_dir).unwrap();
     let bin_dir = tmp.path().join("bin");
     std::fs::create_dir_all(&bin_dir).unwrap();
     let project = tmp.path().join("project");
@@ -273,7 +263,6 @@ fn init_agent_preserves_agents_md_and_is_idempotent() {
     std::fs::write(&agents_path, "# My Agents\n\nDo not overwrite.\n").unwrap();
 
     let home_str = home.to_string_lossy().to_string();
-    let data_str = data_dir.to_string_lossy().to_string();
 
     // Fake claude (success) so init --agent claude prefers `claude mcp add-json`.
     let claude_path = bin_dir.join(if cfg!(windows) {
@@ -287,12 +276,10 @@ fn init_agent_preserves_agents_md_and_is_idempotent() {
         write_exe(&claude_path, "#!/bin/sh\nexit 0\n");
     }
 
-    let mut envs = vec![
-        ("HOME", home_str.as_str()),
-        ("LEAN_CTX_DATA_DIR", data_str.as_str()),
-        ("LEAN_CTX_ACTIVE", "1"),
-        ("LEAN_CTX_DISABLED", "1"),
-    ];
+    let dirs = SeparateDirs::new(tmp.path());
+
+    let mut envs = vec![("HOME", home_str.as_str()), ("LEAN_CTX_ACTIVE", "1")];
+    envs.extend(dirs.to_env_pairs());
     #[cfg(not(windows))]
     {
         envs.push(("SHELL", "/bin/bash"));
@@ -362,20 +349,15 @@ fn init_claude_installs_dedicated_rules_file_without_claude_md() {
     let tmp = tempfile::tempdir().unwrap();
     let home = tmp.path().join("home");
     std::fs::create_dir_all(&home).unwrap();
-    let data_dir = tmp.path().join("data");
-    std::fs::create_dir_all(&data_dir).unwrap();
     let project = tmp.path().join("project");
     std::fs::create_dir_all(&project).unwrap();
 
     let home_str = home.to_string_lossy().to_string();
-    let data_str = data_dir.to_string_lossy().to_string();
 
-    let mut envs = vec![
-        ("HOME", home_str.as_str()),
-        ("LEAN_CTX_DATA_DIR", data_str.as_str()),
-        ("LEAN_CTX_ACTIVE", "1"),
-        ("LEAN_CTX_DISABLED", "1"),
-    ];
+    let dirs = SeparateDirs::new(tmp.path());
+
+    let mut envs = vec![("HOME", home_str.as_str()), ("LEAN_CTX_ACTIVE", "1")];
+    envs.extend(dirs.to_env_pairs());
     #[cfg(not(windows))]
     {
         envs.push(("SHELL", "/bin/bash"));
@@ -446,135 +428,38 @@ fn init_claude_installs_dedicated_rules_file_without_claude_md() {
     );
 }
 
-// End-to-end: `lean-ctx init --agent augment` must drive setup.rs's
-// `"augment" =>` match arm through configure_agent_mcp → the McpJson writer,
-// landing at ~/.augment/settings.json with the standard mcpServers shape.
-//
-// Same Unix-only caveat as init_claude_installs_dedicated_rules_file_without_claude_md:
-// on Windows `dirs::home_dir()` uses SHGetKnownFolderPath, not %USERPROFILE%,
-// so env-var overrides don't reach the subprocess's HOME resolution.
-#[test]
-#[cfg_attr(windows, ignore)]
-fn init_augment_installs_lean_ctx_mcp_into_dot_augment_settings() {
-    let bin = env!("CARGO_BIN_EXE_lean-ctx");
+/// One directory per LEAN_CTX_<CATEGORY>_DIR, so a file written to the wrong
+/// category is caught.
+struct SeparateDirs {
+    config: String,
+    data: String,
+    state: String,
+    cache: String,
+}
 
-    let tmp = tempfile::tempdir().unwrap();
-    let home = tmp.path().join("home");
-    std::fs::create_dir_all(&home).unwrap();
-    let data_dir = tmp.path().join("data");
-    std::fs::create_dir_all(&data_dir).unwrap();
-    let project = tmp.path().join("project");
-    std::fs::create_dir_all(&project).unwrap();
+impl SeparateDirs {
+    fn new(tmp_root: &std::path::Path) -> Self {
+        let config = tmp_root.join("config");
+        let data = tmp_root.join("data");
+        let state = tmp_root.join("state");
+        let cache = tmp_root.join("cache");
+        for d in [&config, &data, &state, &cache] {
+            std::fs::create_dir_all(d).unwrap();
+        }
+        SeparateDirs {
+            config: config.to_string_lossy().to_string(),
+            data: data.to_string_lossy().to_string(),
+            state: state.to_string_lossy().to_string(),
+            cache: cache.to_string_lossy().to_string(),
+        }
+    }
 
-    let home_str = home.to_string_lossy().to_string();
-    let data_str = data_dir.to_string_lossy().to_string();
-
-    let envs = [
-        ("HOME", home_str.as_str()),
-        ("LEAN_CTX_DATA_DIR", data_str.as_str()),
-        ("LEAN_CTX_ACTIVE", "1"),
-        ("LEAN_CTX_DISABLED", "1"),
-        ("SHELL", "/bin/bash"),
-    ];
-
-    let out = Command::new(bin)
-        .args(["init", "--agent", "augment", "--global", "--mode", "mcp"])
-        .current_dir(&project)
-        .envs(envs.iter().copied())
-        .output()
-        .expect("init --agent augment --global --mode mcp");
-    assert!(
-        out.status.success(),
-        "init --agent augment exit; stderr={}",
-        String::from_utf8_lossy(&out.stderr)
-    );
-
-    let settings_path = home.join(".augment/settings.json");
-    assert!(
-        settings_path.exists(),
-        "must create ~/.augment/settings.json"
-    );
-    let raw = std::fs::read_to_string(&settings_path).expect("settings.json readable");
-    let json: serde_json::Value = serde_json::from_str(&raw).expect("settings.json is JSON");
-    let lean_ctx = json
-        .get("mcpServers")
-        .and_then(|m| m.get("lean-ctx"))
-        .expect("mcpServers.lean-ctx must be present");
-    assert!(
-        lean_ctx.get("command").and_then(|c| c.as_str()).is_some(),
-        "lean-ctx entry must carry a command string"
-    );
-
-    // Rules injection (ticket #3): the per-agent rules file must land at
-    // ~/.augment/rules/lean-ctx.md so Auggie actually knows lean-ctx exists.
-    let rules_path = home.join(".augment/rules/lean-ctx.md");
-    assert!(
-        rules_path.exists(),
-        "must create ~/.augment/rules/lean-ctx.md"
-    );
-    let rules = std::fs::read_to_string(&rules_path).expect("rules readable");
-    assert!(
-        rules.contains("<!-- lean-ctx-rules -->") && rules.contains("<!-- version: "),
-        "rules file must carry the canonical marker + version comment"
-    );
-
-    // Ticket #2: the VS Code extension surface (augment.vscode-augment) keeps
-    // its MCP server list as a top-level JSON array in globalStorage. The
-    // exact path is OS-specific; we only assert on Linux/macOS here because
-    // those are the platforms this test runs on (Windows is #[ignore]'d).
-    #[cfg(any(target_os = "linux", target_os = "macos"))]
-    {
-        let vscode_path = {
-            #[cfg(target_os = "linux")]
-            {
-                let user_dirs = [
-                    home.join(".config/Code/User"),
-                    home.join(".config/Code - Insiders/User"),
-                    home.join(".vscode-server/data/User"),
-                ];
-                let user_dir = user_dirs
-                    .iter()
-                    .find(|p| p.exists())
-                    .cloned()
-                    .unwrap_or_else(|| user_dirs[0].clone());
-                user_dir.join(
-                    "globalStorage/augment.vscode-augment/augment-global-state/mcpServers.json",
-                )
-            }
-            #[cfg(target_os = "macos")]
-            {
-                home.join("Library/Application Support/Code/User/globalStorage/augment.vscode-augment/augment-global-state/mcpServers.json")
-            }
-        };
-        assert!(
-            vscode_path.exists(),
-            "must create augment vscode mcpServers.json at {}",
-            vscode_path.display()
-        );
-        let raw = std::fs::read_to_string(&vscode_path).expect("vscode mcpServers.json readable");
-        let arr: serde_json::Value =
-            serde_json::from_str(&raw).expect("vscode mcpServers.json is JSON");
-        let entries = arr.as_array().expect("vscode mcpServers.json is an array");
-        let lean_ctx = entries
-            .iter()
-            .find(|e| e.get("name").and_then(|n| n.as_str()) == Some("lean-ctx"))
-            .expect("array must contain a lean-ctx entry");
-        assert_eq!(
-            lean_ctx.get("type").and_then(|t| t.as_str()),
-            Some("stdio"),
-            "augment vscode entry must declare stdio transport"
-        );
-        assert!(
-            lean_ctx.get("id").and_then(|i| i.as_str()).is_some(),
-            "augment vscode entry must carry a stable id"
-        );
-        assert!(
-            lean_ctx.get("command").and_then(|c| c.as_str()).is_some(),
-            "augment vscode entry must carry a command string"
-        );
-        assert!(
-            lean_ctx.get("env").is_none(),
-            "data dir is auto-detected at runtime, not pinned into the config (GH #408)"
-        );
+    fn to_env_pairs(&self) -> Vec<(&str, &str)> {
+        vec![
+            ("LEAN_CTX_CONFIG_DIR", self.config.as_str()),
+            ("LEAN_CTX_DATA_DIR", self.data.as_str()),
+            ("LEAN_CTX_STATE_DIR", self.state.as_str()),
+            ("LEAN_CTX_CACHE_DIR", self.cache.as_str()),
+        ]
     }
 }

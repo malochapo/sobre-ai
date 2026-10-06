@@ -12,76 +12,11 @@ impl LeanCtxServer {
     ) -> Result<CallToolResult, ErrorData> {
         self.check_idle_expiry().await;
         self.resolve_roots_once().await;
-        elicitation::increment_call();
 
-        let original_name = request.name.as_ref().to_string();
-        let (resolved_name, resolved_args) = if original_name == "ctx" {
-            let sub = request
-                .arguments
-                .as_ref()
-                .and_then(|a| a.get("tool"))
-                .and_then(|v| v.as_str())
-                .map(std::string::ToString::to_string)
-                .ok_or_else(|| {
-                    ErrorData::invalid_params("'tool' is required for ctx meta-tool", None)
-                })?;
-            let tool_name = if sub.starts_with("ctx_") {
-                sub
-            } else {
-                format!("ctx_{sub}")
-            };
-            let mut args = request.arguments.unwrap_or_default();
-            args.remove("tool");
-            (tool_name, Some(args))
-        } else {
-            (original_name, request.arguments)
-        };
-        let name = resolved_name.as_str();
-        let args = resolved_args.as_ref();
-
-        if let Some(denied) = Self::guard_role_and_policy(name) {
-            return Ok(denied);
-        }
-
-        // ctx_call is a meta-dispatcher: the egress DLP and permission-
-        // inheritance gates below must inspect the INNER tool + arguments, or
-        // the universal invoker becomes a policy bypass (#1008 security pass).
-        // Role/rate/workflow gates for the inner tool already run inside the
-        // dispatch layer; these two ran only on the wrapper name before.
-        let inner_call: Option<(String, Option<serde_json::Map<String, serde_json::Value>>)> =
-            if name == "ctx_call" {
-                helpers::get_str(args, "name").map(|inner_name| {
-                    let inner_args = args
-                        .and_then(|m| m.get("arguments"))
-                        .and_then(serde_json::Value::as_object)
-                        .cloned();
-                    (inner_name, inner_args)
-                })
-            } else {
-                None
-            };
-        let (guard_name, guard_args): (&str, Option<&serde_json::Map<_, _>>) = match &inner_call {
-            Some((n, a)) => (n.as_str(), a.as_ref()),
-            None => (name, args),
-        };
-
-        if let Some(blocked) = Self::guard_egress(guard_name, guard_args) {
-            return Ok(blocked);
-        }
-
-        if let Some(blocked) = self.guard_workflow(name).await {
-            return Ok(blocked);
-        }
-
-        // #794: cost cap guard — block tool calls when session cost exceeds the
-        // configured limit. ctx_session is exempt so the agent can inspect
-        // budget status and override the cap.
-        if name != "ctx_session"
-            && let Some(cap_msg) =
-                crate::core::budget_tracker::BudgetTracker::global().cost_cap_message()
-        {
-            return Ok(CallToolResult::error(vec![ContentBlock::text(cap_msg)]));
-        }
+        let tool_name = request.name.as_ref().to_string();
+        let tool_args = request.arguments;
+        let name = tool_name.as_str();
+        let args = tool_args.as_ref();
 
         // #990: determine machine-readability *before* the once-per-session
         // decorations below. A machine-readable invocation (e.g. ctx_outline
@@ -92,36 +27,23 @@ impl LeanCtxServer {
         // dispatch — means such a call also never *consumes* a latched
         // once-per-session flag (auto-context briefing, rules tip) whose prose
         // we would then discard, so those surface on the next human-facing call.
-        //
-        // `ctx_call` is a meta-dispatcher: the contract belongs to its *inner*
-        // tool + inner arguments, not to ctx_call itself. Unwrap one level so
-        // JSON reached via the lazy `ctx_call` path (the default advertised
-        // surface, where ctx_outline is not a top-level tool) is just as
-        // byte-exact as a direct call. This also covers JSON error envelopes
-        // from the early rate-limit path, which the first-call auto-context
-        // briefing would otherwise corrupt.
-        let (mr_name, mr_args): (
-            Option<String>,
-            Option<&serde_json::Map<String, serde_json::Value>>,
-        ) = if name == "ctx_call" {
-            (
-                helpers::get_str(args, "name"),
-                args.and_then(|m| m.get("arguments"))
-                    .and_then(serde_json::Value::as_object),
-            )
-        } else {
-            (Some(name.to_string()), args)
-        };
-        let machine_readable = mr_name
-            .as_deref()
-            .and_then(|n| self.registry.as_ref().and_then(|r| r.get_arc(n)))
-            .is_some_and(|tool| tool.produces_machine_readable(mr_args));
+        let machine_readable = self
+            .registry
+            .as_ref()
+            .and_then(|r| r.get_arc(name))
+            .is_some_and(|tool| tool.produces_machine_readable(args));
 
         // Skip the session wake-up briefing for machine-readable calls: the
         // pre-hook latches `session_initialized` via compare-exchange, so calling
         // it here would burn the once-per-session slot for a briefing we then
         // throw away. Deferring keeps the briefing intact for the next call.
+        // The session-start overview call already returns that briefing's
+        // content, so it counts as the briefing: the slot is closed and the
+        // project summary is not sent a second time on the next call.
         let auto_context = if machine_readable {
+            None
+        } else if crate::tools::autonomy::is_session_overview_call(name, args) {
+            crate::tools::autonomy::mark_session_briefed(&self.autonomy);
             None
         } else {
             let task = {
@@ -137,7 +59,6 @@ impl LeanCtxServer {
             if let Ok(mut cache) = cache_timeout {
                 crate::tools::autonomy::session_lifecycle_pre_hook(
                     &self.autonomy,
-                    name,
                     &mut cache,
                     task.as_deref(),
                     project_root.as_deref(),
@@ -211,44 +132,10 @@ impl LeanCtxServer {
             };
 
         let config = crate::core::config::Config::load_arc();
-        let minimal = config.minimal_overhead_effective();
-
-        // IDE permission inheritance: when enabled, mirror the host IDE's
-        // bash/read/edit/grep permission rules onto the matching lean-ctx tool so
-        // e.g. `ctx_shell` honors a `rm *: ask` rule instead of bypassing it.
-        // Gated on the cheap effective() check so the default (off) pays no lock
-        // cost on the hot path. Checks the ctx_call-unwrapped inner tool (#1008)
-        // so the invoker cannot side-step an IDE deny.
-        if config.permission_inheritance_effective()
-            == crate::core::config::PermissionInheritance::On
-        {
-            let client_name = self.client_name.read().await.clone();
-            let project_root = self.session.read().await.project_root.clone();
-            let perm = permission_inheritance::check(
-                &client_name,
-                guard_name,
-                guard_args,
-                project_root.as_deref(),
-                &config,
-            );
-            if let Some(blocked) = permission_inheritance::into_call_tool_result(&perm) {
-                tracing::warn!(tool = guard_name, "held back by IDE permission inheritance");
-                return Ok(blocked);
-            }
-        }
-
-        if let Some(msg) = post_process::budget_exhausted_message(name) {
-            tracing::warn!(tool = name, "{msg}");
-            return Ok(CallToolResult::success(vec![ContentBlock::text(msg)]));
-        }
-
-        if is_shell_tool_name(name) {
-            crate::core::budget_tracker::BudgetTracker::global().record_shell();
-        }
 
         let tool_start = std::time::Instant::now();
         let (mut result_text, tool_saved_tokens, shell_outcome, content_blocks) =
-            match self.dispatch_tool(name, args, minimal).await {
+            match self.dispatch_tool(name, args).await {
                 Ok(tuple) => tuple,
                 Err(e) => {
                     if let Ok(mut detector) = tokio::time::timeout(
@@ -279,26 +166,15 @@ impl LeanCtxServer {
             && crate::core::firewall::should_inline_shell(
                 helpers::get_bool(args, "inline").unwrap_or(false),
                 result_text.len(),
-                &config,
             );
         let is_raw_shell = name == "ctx_shell" && {
             let arg_raw = helpers::get_bool(args, "raw").unwrap_or(false);
             let arg_bypass = helpers::get_bool(args, "bypass").unwrap_or(false);
-            arg_raw
-                || arg_bypass
-                || std::env::var("LEAN_CTX_DISABLED").is_ok()
-                || crate::core::runtime_flags::raw_enabled()
-                || inline_shell
+            arg_raw || arg_bypass || crate::core::runtime_flags::raw_enabled() || inline_shell
         };
 
         let pre_terse_len = result_text.len();
-        let output_tokens = {
-            let tokens = crate::core::tokens::count_tokens(&result_text) as u64;
-            crate::core::budget_tracker::BudgetTracker::global().record_tokens(tokens);
-            tokens
-        };
-
-        crate::core::anomaly::record_metric("tokens_per_call", output_tokens as f64);
+        let output_tokens = crate::core::tokens::count_tokens(&result_text) as u64;
 
         // Context IR: record lineage for every tool call.
         if let Some(ref ir) = self.context_ir {
@@ -343,25 +219,16 @@ impl LeanCtxServer {
             } else if name == "ctx_shell" {
                 let cmd = helpers::get_str(args, "command").unwrap_or_default();
                 detector.record_shell_for_correction(&cmd);
-            } else if name == "ctx_expand" || name == "ctx_retrieve" {
+            } else if name == "ctx_expand" {
                 // CCR-learning (#941): a verbatim/original re-fetch means the inline
                 // compressed form was too lossy for this session.
                 detector.record_retrieve();
             }
             let correction_count = detector.correction_count();
             let retrieve_count = detector.retrieve_count();
-            if correction_count > 0 {
-                crate::core::anomaly::record_metric(
-                    "correction_loop_rate",
-                    f64::from(correction_count),
-                );
-            }
-            if retrieve_count > 0 {
-                crate::core::anomaly::record_metric("ccr_retrieve_rate", f64::from(retrieve_count));
-            }
             // Auto-degrade: reduce compression when the agent keeps re-fetching what
             // we squeezed out. Correction loops (re-reads/re-runs) and CCR retrieves
-            // (ctx_expand/ctx_retrieve) are two views of the same "too aggressive"
+            // (ctx_expand) are two views of the same "too aggressive"
             // signal; degrade on the stronger of the two and clear only when neither
             // fires. The level is server state, never part of any output body (#498).
             use crate::core::config::CompressionLevel;
@@ -372,99 +239,8 @@ impl LeanCtxServer {
             detector.prune_corrections();
         }
 
-        // Persist anomaly detector — debounced to reduce I/O in burst sequences.
-        crate::core::anomaly::save_debounced();
-
-        let budget_warning = post_process::budget_warning_message();
-
-        // #212 — per-item sensitivity floor. Enforced uniformly here (before
-        // archiving + compression) so it covers both the inline result and the
-        // out-of-band copy. No-op unless `sensitivity.enabled` (default off).
-        {
-            let path_hint = helpers::get_str(args, "path");
-            let enforced = crate::core::sensitivity::enforce_text(
-                std::mem::take(&mut result_text),
-                path_hint.as_deref().map(std::path::Path::new),
-                &config.sensitivity_effective(),
-            );
-            result_text = enforced.into_text();
-        }
-
-        // #673 — context-policy-pack redaction. Applies the active pack's
-        // `[redaction]` patterns to outbound content before it reaches the model
-        // (and before the out-of-band copy below). No-op when no pack is active,
-        // so existing behavior is unchanged.
-        if crate::core::policy::runtime::is_active() {
-            let (redacted, hits) = policy_guard::redact_result(&result_text);
-            if hits > 0 {
-                tracing::debug!(redactions = hits, "context policy redaction applied");
-                result_text = redacted;
-            }
-        }
-
-        // #675 — inbound content filters (PII / classification / prompt-injection).
-        // Runs at the same outbound chokepoint as redaction, before the archive /
-        // compression below. A `block` decision replaces the content with a
-        // refusal so it never reaches the model; `redact`/`warn` rewrite/annotate.
-        // No-op unless the active pack enables a `[filters]` action.
-        if let Some(active) = crate::core::policy::runtime::active()
-            && active.filters.is_active()
-        {
-            let outcome = crate::core::input_filters::apply(&result_text, &active.filters);
-            if outcome.blocked {
-                let reason = outcome.block_reason.as_deref().unwrap_or("policy");
-                tracing::warn!(tool = name, reason, "content blocked by input filter");
-                policy_guard::audit_filter(name, &outcome.audit, true);
-                result_text = format!(
-                    "[POLICY BLOCKED] Content withheld by the active context policy pack \
-                     (input filter: {reason}). Adjust .lean-ctx/policy.toml to proceed."
-                );
-            } else {
-                if !outcome.audit.is_empty() {
-                    tracing::debug!(tool = name, "input filters applied");
-                    policy_guard::audit_filter(name, &outcome.audit, false);
-                }
-                result_text = outcome.text;
-                for warning in &outcome.warnings {
-                    result_text = format!("{result_text}\n\n[FILTER] {warning}");
-                }
-            }
-        }
-
-        // Out-of-band archive + optional context firewall for large tool outputs.
-        // For firewallable tools (ctx_shell/ctx_execute/ctx_search/ctx_tree) whose output
-        // exceeds the ephemeral threshold, the full (redacted) body is stored out-of-band
-        // and the inline result is replaced by a compact digest + ctx_expand drilldown.
-        let mut firewalled = false;
-        if !(minimal || is_raw_shell) {
-            use crate::core::archive;
-            let archivable = matches!(
-                name,
-                "ctx_shell" | "ctx_read" | "ctx_execute" | "ctx_search" | "ctx_tree"
-            );
-            if archivable && archive::should_archive(&result_text) {
-                let cmd = helpers::get_str(args, "command")
-                    .or_else(|| helpers::get_str(args, "path"))
-                    .unwrap_or_default();
-                let session_id = self.session.read().await.id.clone();
-                let to_store = crate::core::redaction::redact_text_if_enabled(&result_text);
-                let tokens = crate::core::tokens::count_tokens(&to_store);
-                if let Some(id) = archive::store(name, &cmd, &to_store, Some(&session_id))
-                    && crate::core::firewall::should_firewall(name, tokens, &config)
-                {
-                    result_text = crate::core::firewall::summarize(&to_store, &id, name, tokens);
-                    firewalled = true;
-                }
-            }
-        }
-
         let pre_compression = result_text.clone();
-        // A firewalled result is already a compact digest — re-compressing it would mangle
-        // the retrieval instructions for no benefit.
-        if !firewalled {
-            result_text =
-                post_process::compress_terse(result_text, name, args, &config, is_raw_shell);
-        }
+        result_text = post_process::compress_terse(result_text, name, args, &config, is_raw_shell);
 
         // Snapshot BEFORE any decoration (auto-context prefix, throttle/budget
         // warnings, hints): auto-findings must parse the clean tool output, or
@@ -473,11 +249,9 @@ impl LeanCtxServer {
         // and every subsequent wakeup briefing (#658).
         let findings_source = result_text.clone();
 
-        // The verification config is the only profile section this path still
-        // reads; the output hints that gated the decorations are gone.
-        let verify_cfg = crate::core::profiles::active_profile().verification;
+        let verify_cfg = crate::core::output_verification::VerificationConfig::default();
 
-        if !is_raw_shell && !firewalled {
+        if !is_raw_shell {
             let vr = crate::core::output_verification::verify_output(
                 &pre_compression,
                 &result_text,
@@ -490,18 +264,11 @@ impl LeanCtxServer {
         }
 
         if !is_raw_shell && let Some(ctx) = auto_context {
-            let ctx_tokens = crate::core::tokens::count_tokens(&ctx);
-            if ctx_tokens <= 400 {
-                result_text = format!("{ctx}\n\n{result_text}");
-            }
+            result_text = format!("{ctx}\n\n{result_text}");
         }
 
         if let Some(warning) = throttle_warning {
             result_text = format!("{result_text}\n\n{warning}");
-        }
-
-        if let Some(bw) = budget_warning {
-            result_text = format!("{result_text}\n\n{bw}");
         }
 
         // Gated on `!machine_readable` (short-circuits before the swap) so a
@@ -531,173 +298,45 @@ impl LeanCtxServer {
             } else if !self
                 .rules_tip_shown
                 .swap(true, std::sync::atomic::Ordering::Relaxed)
+                && !crate::rules_inject::rules_installed()
             {
-                let cfg = crate::core::config::Config::load();
-                if !cfg.setup.should_inject_rules() {
-                    result_text = format!(
-                        "{result_text}\n\n\
+                result_text = format!(
+                    "{result_text}\n\n\
                          --- tip: run 'lean-ctx init' to configure agent rules for optimal AI integration ---"
-                    );
-                }
+                );
             }
-        }
-
-        {
-            // Evaluate SLOs for observability (watch/dashboard), but keep tool outputs clean.
-            let _ = crate::core::slo::evaluate();
         }
 
         if name == "ctx_read" {
-            if minimal {
-                let cache_clone = self.cache.clone();
-                let autonomy_clone = self.autonomy.clone();
-                let name_owned = name.to_string();
-                tokio::spawn(async move {
-                    let result = std::panic::AssertUnwindSafe(async {
-                        // #807: bounded lock — the old unbounded `.write().await`
-                        // could queue behind a long computation and then hold the
-                        // lock during dedup, cascading the stall.
-                        let cache_timeout = tokio::time::timeout(
-                            std::time::Duration::from_secs(5),
-                            cache_clone.write(),
-                        )
-                        .await;
-                        if let Ok(mut cache) = cache_timeout {
-                            crate::tools::autonomy::maybe_auto_dedup(
-                                &autonomy_clone,
-                                &mut cache,
-                                &name_owned,
-                            );
-                        } else {
-                            tracing::debug!(
-                                "background auto_dedup: cache lock timeout (5s), skipping"
-                            );
-                        }
-                    })
-                    .catch_unwind()
-                    .await;
-                    if let Err(e) = result {
-                        let msg = e
-                            .downcast_ref::<String>()
-                            .map(String::as_str)
-                            .or_else(|| e.downcast_ref::<&str>().copied())
-                            .unwrap_or("unknown");
-                        tracing::error!("background auto_dedup panicked: {msg}");
-                    }
-                });
-            } else {
-                let read_path = self
-                    .resolve_path_or_passthrough(
-                        &helpers::get_str(args, "path").unwrap_or_default(),
+            let cache_clone = self.cache.clone();
+            let autonomy_clone = self.autonomy.clone();
+            tokio::spawn(async move {
+                let result = std::panic::AssertUnwindSafe(async {
+                    // #807: bounded lock — the old unbounded `.write().await`
+                    // could queue behind a long computation and then hold the
+                    // lock during dedup, cascading the stall.
+                    let cache_timeout = tokio::time::timeout(
+                        std::time::Duration::from_secs(5),
+                        cache_clone.write(),
                     )
                     .await;
-                let project_root = {
-                    let session = self.session.read().await;
-                    session.project_root.clone()
-                };
-
-                // Bounded cache lock for enrichment — degrade gracefully under contention
-                let enrich_timeout =
-                    tokio::time::timeout(std::time::Duration::from_secs(3), self.cache.write())
-                        .await;
-                if let Ok(mut cache) = enrich_timeout {
-                    let enrich = crate::tools::autonomy::enrich_after_read(
-                        &self.autonomy,
-                        &mut cache,
-                        &read_path,
-                        project_root.as_deref(),
-                        None,
-                        crate::tools::CrpMode::effective(),
-                        false,
-                    );
-                    if let Some(hint) = enrich.related_hint {
-                        result_text = format!("{result_text}\n{hint}");
+                    if let Ok(mut cache) = cache_timeout {
+                        crate::tools::autonomy::maybe_auto_dedup(&autonomy_clone, &mut cache);
+                    } else {
+                        tracing::debug!("background auto_dedup: cache lock timeout (5s), skipping");
                     }
-                    crate::tools::autonomy::maybe_auto_dedup(&self.autonomy, &mut cache, name);
-                } else {
-                    tracing::warn!(
-                        "post-dispatch cache lock timeout (3s) for {read_path}, skipping enrichment"
-                    );
+                })
+                .catch_unwind()
+                .await;
+                if let Err(e) = result {
+                    let msg = e
+                        .downcast_ref::<String>()
+                        .map(String::as_str)
+                        .or_else(|| e.downcast_ref::<&str>().copied())
+                        .unwrap_or("unknown");
+                    tracing::error!("background auto_dedup panicked: {msg}");
                 }
-
-                // Ledger update — fire-and-forget to avoid blocking concurrent reads.
-                // Only real files belong in the context ledger (GL #512): a
-                // ctx_read on "." or a directory returns an overview, not file
-                // content, and must not appear in the pressure table as a file.
-                if std::path::Path::new(&read_path).is_file() {
-                    let ledger_clone = self.ledger.clone();
-                    let session_clone = self.session.clone();
-                    let peer_clone = self.peer.clone();
-                    let read_path_owned = read_path.clone();
-                    let project_root_owned = project_root.clone();
-                    let mode_used =
-                        helpers::get_str(args, "mode").unwrap_or_else(|| "auto".to_string());
-                    let out_tok = output_tokens as usize;
-                    let sent_tok = crate::core::tokens::count_tokens(&result_text);
-                    let wants_eviction = true;
-                    tokio::spawn(async move {
-                        let result = std::panic::AssertUnwindSafe(async {
-                            let active_task = {
-                                let session = session_clone.read().await;
-                                session.task.as_ref().map(|t| t.description.clone())
-                            };
-                            let mut ledger = ledger_clone.write().await;
-                            let overlay = crate::core::context_overlay::OverlayStore::load_project(
-                                &std::path::PathBuf::from(
-                                    project_root_owned.as_deref().unwrap_or("."),
-                                ),
-                            );
-                            let gate_result = context_gate::post_dispatch_record_with_task(
-                                &read_path_owned,
-                                &mode_used,
-                                out_tok,
-                                sent_tok,
-                                &mut ledger,
-                                &overlay,
-                                active_task.as_deref(),
-                                project_root_owned.as_deref(),
-                            );
-                            drop(ledger);
-                            if wants_eviction && let Some(hint) = &gate_result.eviction_hint {
-                                tracing::debug!("deferred eviction hint: {hint}");
-                            }
-                            if let Some(hint) = &gate_result.prefetch_hint {
-                                tracing::debug!("deferred FEP prefetch hint: {hint}");
-                            }
-                            if gate_result.resource_changed
-                                && let Some(peer) = peer_clone.read().await.as_ref()
-                            {
-                                notifications::send_resource_updated(
-                                    peer,
-                                    notifications::RESOURCE_URI_SUMMARY,
-                                )
-                                .await;
-                            }
-                        })
-                        .catch_unwind()
-                        .await;
-                        if let Err(e) = result {
-                            let msg = e
-                                .downcast_ref::<String>()
-                                .map(String::as_str)
-                                .or_else(|| e.downcast_ref::<&str>().copied())
-                                .unwrap_or("unknown");
-                            tracing::error!("background post_dispatch panicked: {msg}");
-                        }
-                    });
-                }
-            }
-        }
-
-        if !minimal && !is_raw_shell && name == "ctx_shell" {
-            let cmd = helpers::get_str(args, "command").unwrap_or_default();
-
-            if let Some(file_path) = extract_file_read_from_shell(&cmd)
-                && let Ok(mut bt) = crate::core::bounce_tracker::global().lock()
-            {
-                bt.next_seq();
-                bt.record_shell_file_access(&file_path);
-            }
+            });
         }
 
         // Bypass hints are decoupled from minimal_overhead: they ride MCP
@@ -723,27 +362,6 @@ impl LeanCtxServer {
         ) {
             let mut session = self.session.write().await;
             session.add_finding(finding.file.as_deref(), None, &finding.summary);
-            let project_root = session.project_root.clone();
-            drop(session);
-            if let Some(ref root) = project_root {
-                let f = finding.clone();
-                let r = root.clone();
-                std::thread::spawn(move || {
-                    crate::core::auto_capture::capture_finding(&r, &f);
-                });
-            }
-        }
-        if let Some(extra) = crate::core::auto_capture::extract_extra(name, &findings_source) {
-            let session = self.session.read().await;
-            let project_root = session.project_root.clone();
-            drop(session);
-            if let Some(ref root) = project_root {
-                let e = extra.clone();
-                let r = root.clone();
-                std::thread::spawn(move || {
-                    crate::core::auto_capture::capture_finding(&r, &e);
-                });
-            }
         }
 
         {
@@ -780,26 +398,6 @@ impl LeanCtxServer {
 
         let action = helpers::get_str(args, "action");
 
-        // K-bounded staleness guard: warn if shared context has diverged.
-        const K_STALENESS_BOUND: i64 = 10;
-        if self.session_mode == crate::tools::SessionMode::Shared
-            && let Some(ref rt) = self.context_os
-        {
-            let latest = rt.bus.latest_id(&self.workspace_id, &self.channel_id);
-            let cursor = self
-                .last_seen_event_id
-                .load(std::sync::atomic::Ordering::Relaxed);
-            if cursor > 0 && latest - cursor > K_STALENESS_BOUND {
-                let gap = latest - cursor;
-                result_text = format!(
-                    "[CONTEXT STALE] {gap} events happened since your last read. \
-                         Use ctx_session(action=\"status\") to sync.\n\n{result_text}"
-                );
-            }
-            self.last_seen_event_id
-                .store(latest, std::sync::atomic::Ordering::Relaxed);
-        }
-
         self.record_receipt_and_cost(
             name,
             args,
@@ -809,68 +407,17 @@ impl LeanCtxServer {
         )
         .await;
 
-        // Context Bus: conflict detection for knowledge writes in shared mode.
-        if self.session_mode == crate::tools::SessionMode::Shared
-            && name == "ctx_knowledge"
-            && action.as_deref() == Some("remember")
-            && let Some(ref rt) = self.context_os
-        {
-            let my_agent = self.agent_id.read().await.clone();
-            let category = helpers::get_str(args, "category");
-            let key = helpers::get_str(args, "key");
-            if let (Some(cat), Some(k)) = (&category, &key) {
-                let recent = rt.bus.recent_by_kind(
-                    &self.workspace_id,
-                    &self.channel_id,
-                    "knowledge_remembered",
-                    20,
-                );
-                for ev in &recent {
-                    let p = &ev.payload;
-                    let ev_cat = p.get("category").and_then(|v| v.as_str());
-                    let ev_key = p.get("key").and_then(|v| v.as_str());
-                    let ev_actor = ev.actor.as_deref();
-                    if ev_cat == Some(cat.as_str())
-                        && ev_key == Some(k.as_str())
-                        && ev_actor != my_agent.as_deref()
-                    {
-                        let other = ev_actor.unwrap_or("unknown");
-                        result_text = format!(
-                            "[CONFLICT] Agent '{other}' recently wrote to the same knowledge key \
-                                 '{cat}/{k}'. Review before proceeding.\n\n{result_text}"
-                        );
-                        break;
-                    }
-                }
-            }
-        }
-
-        self.persist_shared_context_os(name, action.as_deref(), args)
-            .await;
-
-        let skip_checkpoint =
-            minimal || matches!(name, "ctx_session" | "ctx_knowledge" | "ctx_impact");
-
-        // Output-echo nudge (#501): when the agent keeps re-quoting delivered
-        // content, tell it once (cooldown-limited, stable text per #498).
-        if !skip_checkpoint
-            && crate::core::protocol::meta_visible()
-            && let Some(nudge) = crate::core::output_echo::take_pending_nudge()
-        {
-            result_text.push_str(&nudge);
-        }
+        let skip_checkpoint = matches!(name, "ctx_session" | "ctx_knowledge" | "ctx_impact");
 
         // #1020: tool-calls.log is now written on the dispatch path
         // (record_call_with_path / record_call_with_timing) with the real
         // original/saved/mode and the measured handler duration. The previous
         // zero-filled append here overwrote every row with `orig=0 saved=0 mode=-`.
 
-        // `increment_and_check` is the only place that advances `call_count`,
-        // which the every-100-calls maintenance below reads. It used to gate the
-        // AUTO CHECKPOINT marker too; no shipped profile ever emitted that, so
-        // only the counter survives.
+        // The only place that advances `call_count`, which the
+        // every-100-calls maintenance below reads.
         if !skip_checkpoint {
-            let _ = self.increment_and_check();
+            self.increment_call_count();
         }
 
         let current_count = self.call_count.load(std::sync::atomic::Ordering::Relaxed);
@@ -903,101 +450,6 @@ impl LeanCtxServer {
         }
 
         Ok(finalize_call_result(&result_text, shell_outcome))
-    }
-
-    fn guard_role_and_policy(name: &str) -> Option<CallToolResult> {
-        let role_check = role_guard::check_tool_access(name);
-        if let Some(denied) = role_guard::into_call_tool_result(&role_check) {
-            tracing::warn!(
-                tool = name,
-                role = %role_check.role_name,
-                "Tool blocked by role policy"
-            );
-            return Some(denied);
-        }
-
-        // #673 — context-policy-pack tool gating. Additive to the role guard:
-        // a pack's `allow_tools`/`deny_tools` are enforced here. No-op (allow)
-        // when no policy pack is active, so existing behavior is unchanged.
-        let policy_check = policy_guard::check_tool_access(name);
-        if let Some(denied) = policy_guard::into_call_tool_result(&policy_check) {
-            tracing::warn!(
-                tool = name,
-                policy = ?policy_check.policy_name,
-                "Tool blocked by context policy pack"
-            );
-            return Some(denied);
-        }
-        None
-    }
-
-    fn guard_egress(
-        guard_name: &str,
-        guard_args: Option<&serde_json::Map<String, serde_json::Value>>,
-    ) -> Option<CallToolResult> {
-        // #676 — egress / output DLP on agent writes & actions. Inspect the
-        // payload of write/action tools BEFORE dispatch so a forbidden write
-        // never touches disk and a forbidden command never runs. Only the
-        // agent's tool-driven egress is governed here (a human's own editor
-        // writes never pass through this path). No-op unless the active pack has
-        // an `[egress]` section. Payload mapping (incl. all ctx_patch bodies)
-        // lives in `core::egress::write_payload` — shared with `policy enforce`.
-        if let Some(active) = crate::core::policy::runtime::active()
-            && active.egress.is_active()
-        {
-            let target = crate::core::egress::write_payload(guard_name, guard_args);
-            if let Some((payload, kind)) = target {
-                if let Some(reason) = active.egress.check_content(&payload, &active.redaction) {
-                    tracing::warn!(tool = guard_name, %reason, "agent egress blocked by policy");
-                    policy_guard::audit_egress(guard_name, &reason);
-                    return Some(CallToolResult::success(vec![ContentBlock::text(format!(
-                        "[POLICY BLOCKED] {kind} blocked by context policy pack egress rule \
-                         ({reason}). Adjust .lean-ctx/policy.toml to proceed."
-                    ))]));
-                }
-                if let Some(max) = active.egress.max_writes_per_min
-                    && !crate::core::egress::check_rate(max)
-                {
-                    tracing::warn!(tool = guard_name, max, "agent egress rate limit exceeded");
-                    policy_guard::audit_egress(guard_name, "rate-limit");
-                    return Some(CallToolResult::success(vec![ContentBlock::text(format!(
-                        "[POLICY BLOCKED] {kind} rate limit exceeded ({max}/min) by context \
-                         policy pack. Slow agent writes/actions or adjust .lean-ctx/policy.toml."
-                    ))]));
-                }
-            }
-        }
-        None
-    }
-
-    async fn guard_workflow(&self, name: &str) -> Option<CallToolResult> {
-        if name != "ctx_workflow" {
-            let active = self.workflow.read().await.clone();
-            if let Some(run) = active {
-                if run.current == "done" || is_workflow_stale(&run) {
-                    let mut wf = self.workflow.write().await;
-                    *wf = None;
-                    let _ = crate::core::workflow::clear_active();
-                } else if !WORKFLOW_PASSTHROUGH_TOOLS.contains(&name)
-                    && let Some(state) = run.spec.state(&run.current)
-                    && let Some(allowed) = &state.allowed_tools
-                {
-                    let allowed_ok = allowed.iter().any(|t| t == name);
-                    if !allowed_ok {
-                        let mut shown = allowed.clone();
-                        shown.sort();
-                        shown.truncate(30);
-                        return Some(CallToolResult::success(vec![ContentBlock::text(format!(
-                            "Tool '{name}' blocked by workflow '{}' (state: {}). Allowed: {}. Use ctx_workflow(action=\"stop\") to exit.",
-                            run.spec.name,
-                            run.current,
-                            shown.join(", ")
-                        ))]));
-                    }
-                }
-            }
-        }
-        None
     }
 
     /// Resolve project root from MCP client roots (once per session).

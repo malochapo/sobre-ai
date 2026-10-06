@@ -95,9 +95,7 @@ fn outline_file(path: &str, opts: &OutlineOpts) -> (String, usize) {
     outline.push('\n');
     outline.push_str(crate::core::handle::USAGE_HINT);
 
-    let sent = count_tokens(&outline);
-    let savings = crate::core::protocol::format_savings(full_tokens, sent);
-    (format!("{outline}\n{savings}"), full_tokens)
+    (outline.clone(), full_tokens)
 }
 
 /// Render one signature for the text outline. Navigation modes earn their line

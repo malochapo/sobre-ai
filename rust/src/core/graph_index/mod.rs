@@ -340,8 +340,7 @@ impl ProjectIndex {
         let Ok(entries) = std::fs::read_dir(&graphs_dir) else {
             return;
         };
-        let cfg = crate::core::config::Config::load();
-        let max_age_secs = cfg.archive_max_age_hours_effective() * 3600;
+        let max_age_secs = crate::core::config::ARCHIVE_MAX_AGE_HOURS * 3600;
 
         for entry in entries.filter_map(Result::ok) {
             let path = entry.path();
@@ -393,54 +392,6 @@ impl ProjectIndex {
         self.symbols.get(key)
     }
 
-    pub fn get_reverse_deps(&self, path: &str, depth: usize) -> Vec<String> {
-        let mut result = Vec::new();
-        let mut visited = std::collections::HashSet::new();
-        let mut queue: Vec<(String, usize)> = vec![(path.to_string(), 0)];
-
-        while let Some((current, d)) = queue.pop() {
-            if d > depth || visited.contains(&current) {
-                continue;
-            }
-            visited.insert(current.clone());
-            if current != path {
-                result.push(current.clone());
-            }
-
-            for edge in &self.edges {
-                if edge.to == current && edge.kind == "import" && !visited.contains(&edge.from) {
-                    queue.push((edge.from.clone(), d + 1));
-                }
-            }
-        }
-        result
-    }
-
-    /// Forward import dependencies: files that `path` (transitively) imports.
-    /// Mirror of `get_reverse_deps` with the edge direction flipped.
-    pub fn get_forward_deps(&self, path: &str, depth: usize) -> Vec<String> {
-        let mut result = Vec::new();
-        let mut visited = std::collections::HashSet::new();
-        let mut queue: Vec<(String, usize)> = vec![(path.to_string(), 0)];
-
-        while let Some((current, d)) = queue.pop() {
-            if d > depth || visited.contains(&current) {
-                continue;
-            }
-            visited.insert(current.clone());
-            if current != path {
-                result.push(current.clone());
-            }
-
-            for edge in &self.edges {
-                if edge.from == current && edge.kind == "import" && !visited.contains(&edge.to) {
-                    queue.push((edge.to.clone(), d + 1));
-                }
-            }
-        }
-        result
-    }
-
     pub fn get_related(&self, path: &str, depth: usize) -> Vec<String> {
         let mut result = Vec::new();
         let mut visited = std::collections::HashSet::new();
@@ -472,10 +423,6 @@ impl ProjectIndex {
 /// If no valid index exists, automatically scans the project to build one.
 /// This is the primary entry point — ensures zero-config usage.
 pub fn load_or_build(project_root: &str) -> ProjectIndex {
-    if std::env::var("LEAN_CTX_NO_INDEX").is_ok() {
-        return ProjectIndex::load(project_root).unwrap_or_else(|| ProjectIndex::new(project_root));
-    }
-
     // Prefer stable absolute roots. Using "." as a cache key is fragile because
     // it depends on the process cwd and can accidentally load the wrong project.
     let root_abs = if project_root.trim().is_empty() || project_root == "." {
@@ -529,8 +476,7 @@ fn index_looks_stale(index: &ProjectIndex, root_abs: &str) -> bool {
     if let Ok(scan_time) =
         chrono::NaiveDateTime::parse_from_str(&index.last_scan, "%Y-%m-%d %H:%M:%S")
     {
-        let cfg = crate::core::config::Config::load();
-        let effective_hours = cfg.archive_max_age_hours_effective();
+        let effective_hours = crate::core::config::ARCHIVE_MAX_AGE_HOURS;
         let max_age = chrono::Duration::hours(effective_hours as i64);
         let now = chrono::Local::now().naive_local();
         if now.signed_duration_since(scan_time) > max_age {
@@ -693,8 +639,7 @@ fn source_content_changed_since_index(index: &ProjectIndex, root_abs: &str) -> b
 /// Delete the persisted graph-index artifacts for a project so the next scan
 /// rebuilds from scratch. Backs `graph build --force`.
 ///
-/// Since #696 C4 the property graph (`graph.db` + `graph.meta.json`) is the sole
-/// store; the legacy JSON names are still removed so upgrades clear stale files.
+/// The property graph (`graph.db` + `graph.meta.json`) is the sole store.
 pub fn purge_index(project_root: &str) {
     if let Some(dir) = ProjectIndex::index_dir(project_root) {
         for name in [
@@ -702,8 +647,6 @@ pub fn purge_index(project_root: &str) {
             "graph.db-wal",
             "graph.db-shm",
             "graph.meta.json",
-            "index.json.zst",
-            "index.json",
             "call_graph.json.zst",
         ] {
             let _ = std::fs::remove_file(dir.join(name));
@@ -720,11 +663,6 @@ pub fn scan_with_content_cache(project_root: &str) -> (ProjectIndex, HashMap<Str
 }
 
 fn scan_inner(project_root: &str) -> (ProjectIndex, HashMap<String, String>) {
-    if std::env::var("LEAN_CTX_NO_INDEX").is_ok() {
-        tracing::info!("[graph_index: LEAN_CTX_NO_INDEX set — skipping scan]");
-        return (ProjectIndex::new(project_root), HashMap::new());
-    }
-
     let project_root = normalize_project_root(project_root);
 
     if !is_safe_scan_root(&project_root) {
@@ -777,7 +715,7 @@ fn scan_inner(project_root: &str) -> (ProjectIndex, HashMap<String, String>) {
         .build();
 
     let extra_ignores: Vec<glob::Pattern> = cfg
-        .extra_ignore_patterns
+        .ignore
         .iter()
         .filter_map(|p| glob::Pattern::new(p).ok())
         .collect();
@@ -788,10 +726,10 @@ fn scan_inner(project_root: &str) -> (ProjectIndex, HashMap<String, String>) {
     let mut content_cache: HashMap<String, String> = HashMap::new();
     let mut content_cache_bytes: usize = 0;
     const CONTENT_CACHE_MAX_BYTES: usize = 256 * 1024 * 1024; // #790: cap at 256MB
-    let max_files = if cfg.graph_index_max_files == 0 {
+    let max_files = if crate::core::config::GRAPH_INDEX_MAX_FILES == 0 {
         usize::MAX // unlimited
     } else {
-        cfg.graph_index_max_files as usize
+        crate::core::config::GRAPH_INDEX_MAX_FILES as usize
     };
     const MAX_ENTRIES_VISITED: usize = 500_000;
     const MAX_FILE_SIZE_BYTES: u64 = 2 * 1024 * 1024; // 2 MB per file

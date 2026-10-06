@@ -1,6 +1,6 @@
 //! Workspace-scope MCP registration detection (issue #312).
 //!
-//! Editors such as VS Code, Copilot, Cursor and Cline support a project-local
+//! Editors such as VS Code, Copilot and Cursor support a project-local
 //! MCP config (e.g. `.vscode/mcp.json`) in addition to the user-global one.
 //! When lean-ctx is registered in BOTH scopes — or when a workspace config is
 //! malformed — Copilot/VS Code surface opaque runtime errors later, e.g.
@@ -25,8 +25,8 @@ struct WorkspaceLocation {
 /// workspace scope. Kept deliberately small and explicit for maintainability.
 const WORKSPACE_LOCATIONS: &[WorkspaceLocation] = &[
     WorkspaceLocation {
-        label: "VS Code / Cline",
-        user_scope_names: &["VS Code", "Cline"],
+        label: "VS Code",
+        user_scope_names: &["VS Code"],
         rel: ".vscode/mcp.json",
     },
     WorkspaceLocation {

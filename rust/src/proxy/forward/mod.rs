@@ -42,7 +42,7 @@ use axum::http::request::Parts;
 use headers::should_forward_request_header;
 #[cfg(test)]
 #[allow(unused_imports)]
-pub(super) use prepare::{cohort_arm, prepare_request_body, wire_context};
+pub(super) use prepare::{prepare_request_body, wire_context};
 
 const HEADROOM_COMPRESSED_HEADER: &str = "x-headroom-compressed";
 
@@ -57,20 +57,14 @@ pub(super) fn is_headroom_compressed(parts: &axum::http::request::Parts) -> bool
 
 /// Default request-body ceiling (MiB). A large-codebase refactor with several
 /// big files in context easily exceeds the old 10 MiB cap, which surfaced to the
-/// agent as a hard `400` mid-task. Raised and made configurable via
-/// `LEAN_CTX_PROXY_MAX_BODY_MB`.
+/// agent as a hard `400` mid-task, hence 64 MiB.
 const DEFAULT_MAX_BODY_MB: usize = 64;
 
 pub(super) fn max_body_bytes() -> usize {
-    std::env::var("LEAN_CTX_PROXY_MAX_BODY_MB")
-        .ok()
-        .and_then(|v| v.trim().parse::<usize>().ok())
-        .filter(|mb| *mb > 0)
-        .unwrap_or(DEFAULT_MAX_BODY_MB)
-        .saturating_mul(1024 * 1024)
+    DEFAULT_MAX_BODY_MB.saturating_mul(1024 * 1024)
 }
 
-pub async fn forward_request(
+pub(crate) async fn forward_request(
     State(state): State<ProxyState>,
     req: Request<Body>,
     upstream_base: &str,
@@ -85,10 +79,6 @@ pub async fn forward_request(
     let body_bytes = axum::body::to_bytes(body, body_limit)
         .await
         .map_err(|_| StatusCode::PAYLOAD_TOO_LARGE)?;
-    let mut lineage = super::lineage::from_trusted_request(&parts, &body_bytes);
-    if let Some(context) = lineage.as_mut() {
-        context.trace_id.clone_from(&trace_id);
-    }
 
     // Active router (enterprise#13): may rewrite `model` in the parsed body
     // (before compression, so exactly one serialization) and re-target the
@@ -111,7 +101,6 @@ pub async fn forward_request(
         })
     };
     if is_headroom_compressed(&parts) {
-        super::anthropic::set_headroom_request(true);
         super::prefix_cache_stats::record_headroom_compat();
     }
     let prepared = prepare::prepare_request_body(
@@ -128,40 +117,24 @@ pub async fn forward_request(
     let preserve_content_encoding = prepared.preserve_content_encoding;
     let route = prepared.route;
     let parsed = prepared.parsed;
-    // Apply the routing decision to the wire: re-target the upstream and — for
-    // registry providers holding their own key — swap the credential headers.
+    // Apply the routing decision to the wire: re-target the upstream.
     let upstream_base = route
         .as_ref()
         .and_then(|r| r.upstream_base.as_deref())
         .unwrap_or(upstream_base);
-    if let Some(provider) = route.as_ref().and_then(|r| r.credential.as_ref()) {
-        super::providers::inject_gateway_credential(provider, &mut parts.headers)?;
-    }
     if let Some(ref parsed) = parsed {
         let provider = match provider_label {
             "Anthropic" | "Bedrock" => super::introspect::Provider::Anthropic,
-            "OpenAI" | "ChatGPT" => super::introspect::Provider::OpenAi,
+            "OpenAI" => super::introspect::Provider::OpenAi,
             _ => super::introspect::Provider::Gemini,
         };
         let breakdown = super::introspect::analyze_request(parsed, provider);
         state.introspect.record(breakdown);
     }
-    // #895 Track B: assign output-savings holdout from the same pristine parsed
-    // body that each provider's compressor receives. Only when active.
-    let cohort = parsed
-        .as_ref()
-        .and_then(|p| prepare::cohort_arm(p, provider_label, default_path));
     if compression_candidate {
-        // Shape label drives compression/routing; stats identity may differ —
-        // Grok registry routes speak OpenAI shape but meter under "Grok".
-        let registry_id = parts
-            .extensions
-            .get::<super::providers::RegistryProviderId>()
-            .map(|r| r.id.as_str());
-        let stats_label = super::providers::stats_label(registry_id, provider_label);
         state
             .stats
-            .record_provider_request(stats_label, original_size, compressed_size);
+            .record_provider_request(provider_label, original_size, compressed_size);
     }
 
     let tokens_saved = original_size.saturating_sub(compressed_size) as u64 / 4;
@@ -171,17 +144,6 @@ pub async fn forward_request(
         .as_ref()
         .and_then(|v| v.get("model"))
         .and_then(|m| m.as_str());
-    let cache_prompt_hash = super::cache_bridge::prompt_hash(&body_bytes);
-    if let (Some(cache), Some(model)) = (&state.ocla_cache, model)
-        && let Some(cached) = cache.try_cache_hit(model, &cache_prompt_hash, 0.0, 0)
-    {
-        let mut response = Response::builder()
-            .status(cached.status)
-            .body(Body::from(cached.body))
-            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-        trace_id::inject_trace_id(&mut response, &trace_id);
-        return Ok(response);
-    }
     super::cost::record(
         model,
         tokens_saved,
@@ -199,19 +161,6 @@ pub async fn forward_request(
         crate::proxy::codec::build_upstream_url(&parts, upstream_base, default_path)
     };
 
-    let counterfactual = if provider_label == "Anthropic" && !xlat {
-        super::counterfactual::maybe_spawn_probe(
-            &state.client,
-            &parts,
-            upstream_base,
-            parsed.as_ref(),
-            route.as_ref().map(|r| r.routed_from.as_str()),
-            compressed_size < original_size,
-        )
-    } else {
-        None
-    };
-
     let forwarded_body = super::bedrock::finalize_request(
         provider_label,
         &mut parts,
@@ -222,11 +171,7 @@ pub async fn forward_request(
     )?;
 
     if let Some(ref pre) = parsed {
-        let cfg_replay = crate::core::config::Config::load();
-        if matches!(
-            cfg_replay.proxy.resolved_proxy_mode(),
-            crate::core::config::ProxyMode::Cache
-        ) {
+        {
             let system_val = pre.get("system");
             if let Some(msgs) = pre.get("messages").and_then(|m| m.as_array()) {
                 let conv_id = super::prefix_replay::conversation_id(system_val, msgs);
@@ -264,8 +209,8 @@ pub async fn forward_request(
         None
     };
 
-    // Gateway context (enterprise#11/#17/#18): identity tags from the auth
-    // guard + wire savings + baseline inputs, stamped onto the usage record.
+    // Request-side context: the project tag from the auth guard, wire savings
+    // and baseline inputs, stamped onto the usage record.
     // A routed request is attributed to the provider actually serving it, and
     // carries the originally requested model as routed_from (enterprise#13).
     let mut wire = prepare::wire_context(
@@ -274,7 +219,6 @@ pub async fn forward_request(
         upstream_base,
         tokens_saved,
         original_size,
-        lineage,
     );
     if let Some(route) = &route {
         wire.routed_from = Some(route.routed_from.clone());
@@ -287,19 +231,14 @@ pub async fn forward_request(
             wire.is_local = local;
         }
     }
-    wire.counterfactual = counterfactual;
-    let wire = Some(wire);
+    let wire = Some(Box::new(wire));
     let mut response = transport::build_response(
         response,
         extra_stream_types,
         usage_provider,
         url_model,
-        cohort,
         wire,
         xlat,
-        state.ocla_cache.as_deref(),
-        model,
-        &cache_prompt_hash,
     )
     .await?;
     trace_id::inject_trace_id(&mut response, &trace_id);

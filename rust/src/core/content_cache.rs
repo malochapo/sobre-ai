@@ -15,8 +15,7 @@
 //! stale. A miss simply falls back to a disk read.
 //!
 //! Bounds & safety:
-//! - Total resident bytes are capped (`LEAN_CTX_CONTENT_CACHE_MB`, default
-//!   128 MB) with approximate-LRU eviction, so a large corpus cannot grow the
+//! - Total resident bytes are capped (128 MB) with approximate-LRU eviction, so a large corpus cannot grow the
 //!   cache without limit.
 //! - Inserts are skipped while the process is under memory pressure, and the
 //!   eviction orchestrator can [`clear`] the cache on `UnloadIndices` /
@@ -29,7 +28,7 @@ use std::time::UNIX_EPOCH;
 
 use lru::LruCache;
 
-/// Default resident byte budget when `LEAN_CTX_CONTENT_CACHE_MB` is unset.
+/// Resident byte budget.
 const DEFAULT_BUDGET_MB: usize = 128;
 
 /// Identity of one file *version*. A changed mtime or size ⇒ stale ⇒ cache miss.
@@ -118,19 +117,13 @@ impl Cache {
 static CACHE: OnceLock<Mutex<Cache>> = OnceLock::new();
 
 fn budget_bytes() -> usize {
-    let mb = std::env::var("LEAN_CTX_CONTENT_CACHE_MB")
-        .ok()
-        .and_then(|v| v.trim().parse::<usize>().ok())
-        .unwrap_or(DEFAULT_BUDGET_MB);
-    mb.saturating_mul(1024 * 1024)
+    DEFAULT_BUDGET_MB.saturating_mul(1024 * 1024)
 }
 
 fn disabled() -> bool {
-    // A zero byte budget (or the explicit disable flag) turns the cache into a
-    // no-op pass-through — every `get` misses and `insert` is dropped.
-    std::env::var("LEAN_CTX_DISABLE_CONTENT_CACHE")
-        .is_ok_and(|v| v == "1" || v.eq_ignore_ascii_case("true"))
-        || budget_bytes() == 0
+    // A zero byte budget turns the cache into a no-op pass-through — every
+    // `get` misses and `insert` is dropped.
+    budget_bytes() == 0
 }
 
 fn cache() -> &'static Mutex<Cache> {
@@ -194,22 +187,6 @@ pub fn insert(path: &Path, state: FileState, content: Arc<str>) {
     }
 }
 
-/// Read a file through the cache: returns cached content on a fresh hit, else
-/// reads from disk (UTF-8), populates the cache, and returns it. `None` on a
-/// non-UTF-8/unreadable/unstatable file. Convenience for callers without their
-/// own size/special-file gating (the search-index build and `ctx_search` use
-/// the explicit [`get`]/[`insert`] pair so they keep their own skip rules).
-pub fn get_or_read(path: &Path) -> Option<Arc<str>> {
-    let state = FileState::from_path(path)?;
-    if let Some(hit) = get(path, state) {
-        return Some(hit);
-    }
-    let content = std::fs::read_to_string(path).ok()?;
-    let arc: Arc<str> = Arc::from(content);
-    insert(path, state, Arc::clone(&arc));
-    Some(arc)
-}
-
 /// Drop all entries, freeing the heap. Called by the eviction orchestrator under
 /// memory pressure; the cache simply re-warms on subsequent reads.
 pub fn clear() {
@@ -251,32 +228,6 @@ pub fn memory_usage_bytes() -> usize {
     lock().total_bytes
 }
 
-/// Observability snapshot: `(hits, misses, entries, bytes, evictions)`.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub struct CacheStats {
-    pub hits: u64,
-    pub misses: u64,
-    pub entries: usize,
-    pub bytes: usize,
-    pub inserts: u64,
-    pub evictions: u64,
-}
-
-pub fn stats() -> CacheStats {
-    if CACHE.get().is_none() {
-        return CacheStats::default();
-    }
-    let c = lock();
-    CacheStats {
-        hits: c.hits,
-        misses: c.misses,
-        entries: c.map.len(),
-        bytes: c.total_bytes,
-        inserts: c.inserts,
-        evictions: c.evictions,
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -286,8 +237,6 @@ mod tests {
     static TEST_LOCK: Mutex<()> = Mutex::new(());
 
     fn fresh_cache(budget_bytes: usize) {
-        crate::test_env::remove_var("LEAN_CTX_CONTENT_CACHE_MB");
-        crate::test_env::remove_var("LEAN_CTX_DISABLE_CONTENT_CACHE");
         let mut c = lock();
         *c = Cache::new(budget_bytes);
     }
@@ -343,77 +292,5 @@ mod tests {
             ..s1
         };
         assert!(get(&p, s_newer).is_none(), "mtime change must miss");
-    }
-
-    #[test]
-    fn get_or_read_populates_then_serves_from_cache() {
-        let _g = TEST_LOCK
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        fresh_cache(1024 * 1024);
-        let dir = tempfile::tempdir().unwrap();
-        let p = write(dir.path(), "a.rs", "hello world\n");
-
-        let before = stats();
-        let first = get_or_read(&p).unwrap();
-        assert_eq!(&*first, "hello world\n");
-        let after_first = stats();
-        assert_eq!(
-            after_first.inserts,
-            before.inserts + 1,
-            "first read inserts"
-        );
-
-        let second = get_or_read(&p).unwrap();
-        assert_eq!(&*second, "hello world\n");
-        let after_second = stats();
-        assert_eq!(
-            after_second.inserts, after_first.inserts,
-            "second read must NOT re-insert (served from cache)"
-        );
-        assert!(after_second.hits > after_first.hits, "second read is a hit");
-    }
-
-    #[test]
-    fn eviction_keeps_cache_within_budget() {
-        let _g = TEST_LOCK
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        // Budget fits ~2 small files; a third insert must evict the LRU one.
-        fresh_cache(64);
-        let dir = tempfile::tempdir().unwrap();
-        let pa = write(dir.path(), "a", "aaaaaaaaaaaaaaaaaaaaaaaaaaaa"); // 28 bytes
-        let pb = write(dir.path(), "b", "bbbbbbbbbbbbbbbbbbbbbbbbbbbb");
-        let pc = write(dir.path(), "c", "cccccccccccccccccccccccccccc");
-        let sa = FileState::from_path(&pa).unwrap();
-        let sb = FileState::from_path(&pb).unwrap();
-        let sc = FileState::from_path(&pc).unwrap();
-
-        insert(&pa, sa, Arc::from("aaaaaaaaaaaaaaaaaaaaaaaaaaaa"));
-        // Touch a so b becomes the LRU victim.
-        let _ = get(&pa, sa);
-        insert(&pb, sb, Arc::from("bbbbbbbbbbbbbbbbbbbbbbbbbbbb"));
-        let _ = get(&pa, sa);
-        insert(&pc, sc, Arc::from("cccccccccccccccccccccccccccc"));
-
-        let st = stats();
-        assert!(st.bytes <= 64, "cache must respect byte budget: {st:?}");
-        assert!(st.evictions >= 1, "an eviction must have occurred: {st:?}");
-        assert!(get(&pa, sa).is_some(), "recently-used entry must survive");
-    }
-
-    #[test]
-    fn disabled_via_zero_budget_is_passthrough() {
-        let _g = TEST_LOCK
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        fresh_cache(1024 * 1024);
-        crate::test_env::set_var("LEAN_CTX_CONTENT_CACHE_MB", "0");
-        let dir = tempfile::tempdir().unwrap();
-        let p = write(dir.path(), "a.rs", "x\n");
-        let state = FileState::from_path(&p).unwrap();
-        insert(&p, state, Arc::from("x\n"));
-        assert!(get(&p, state).is_none(), "zero-budget cache is a no-op");
-        crate::test_env::remove_var("LEAN_CTX_CONTENT_CACHE_MB");
     }
 }

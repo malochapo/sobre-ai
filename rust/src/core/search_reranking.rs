@@ -129,16 +129,6 @@ fn is_architecture_query(lower: &str) -> bool {
     ARCH_KEYWORDS.iter().any(|kw| lower.contains(kw))
 }
 
-/// Resolve BM25 vs Dense weight based on query type.
-/// Returns (bm25_weight, dense_weight).
-pub fn resolve_weights(query_type: QueryType) -> (f64, f64) {
-    match query_type {
-        QueryType::Symbol => (1.4, 0.6),
-        QueryType::NaturalLanguage => (1.0, 1.0),
-        QueryType::Architecture => (0.6, 1.4),
-    }
-}
-
 // --- Reranking Pipeline ---
 
 /// Apply the full post-RRF reranking pipeline.

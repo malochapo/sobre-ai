@@ -47,17 +47,6 @@ impl KnowledgeArchetype {
         }
     }
 
-    /// Whether this archetype is objective *evidence* (vs. *inference*). Hindsight's
-    /// central idea: evidence (the external world, structural facts) should be
-    /// treated differently from inference (decisions, preferences, synthesized
-    /// observations). Used by archetype-aware decay so evidence persists longer.
-    pub fn is_evidence(&self) -> bool {
-        matches!(
-            self,
-            Self::Architecture | Self::Dependency | Self::Convention | Self::Gotcha | Self::Fact
-        )
-    }
-
     /// Ebbinghaus stability multiplier (≥ 1.0 slows decay). Structural evidence is
     /// more durable than inference; only applied when `archetype_aware_decay` is on
     /// (default off), so the baseline tuning is unchanged.
@@ -116,7 +105,7 @@ impl KnowledgeArchetype {
             // `data_model`/`schema` are structural (provider-extracted); they join arch.
             "architecture" | "arch" | "data_model" | "schema" => Self::Architecture,
             "decision" | "decisions" => Self::Decision,
-            // bugs/blockers (provider + auto-capture) are pitfalls → Gotcha.
+            // bugs/blockers are pitfalls → Gotcha.
             "gotcha" | "gotchas" | "known_bugs" | "known_issues" | "bug" | "bugs" | "blocker"
             | "blockers" => Self::Gotcha,
             "convention" | "conventions" | "style" => Self::Convention,
@@ -300,36 +289,6 @@ mod archetype_tests {
     #[test]
     fn default_archetype_is_fact() {
         assert_eq!(KnowledgeArchetype::default(), KnowledgeArchetype::Fact);
-    }
-
-    #[test]
-    fn fidelity_structural_computation() {
-        let fact = KnowledgeFact {
-            category: "test".into(),
-            key: "k".into(),
-            value: "v".into(),
-            source_session: "sess1".into(),
-            confidence: 0.9,
-            created_at: Utc::now(),
-            last_confirmed: Utc::now(),
-            retrieval_count: 0,
-            last_retrieved: None,
-            valid_from: None,
-            valid_until: None,
-            supersedes: None,
-            confirmation_count: 3,
-            feedback_up: 2,
-            feedback_down: 0,
-            last_feedback: None,
-            privacy: FactPrivacy::default(),
-            sensitivity: SensitivityLevel::default(),
-            imported_from: None,
-            archetype: KnowledgeArchetype::default(),
-            fidelity: None,
-            revision_count: 0,
-        };
-        let fidelity = fact.compute_structural_fidelity();
-        assert!(fidelity >= 0.8);
     }
 
     #[test]

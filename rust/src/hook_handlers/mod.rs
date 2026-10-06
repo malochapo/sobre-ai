@@ -26,10 +26,8 @@ mod redirect;
 // Search/dir-list rewriting and shell tokenization extracted to
 // `search_rewrite` submodule (#660 LOC gate).
 mod search_rewrite;
-mod vibe;
 pub(crate) use codex::emit_session_start_additional_context;
 pub use codex::{handle_codex_pretooluse, handle_codex_session_start};
-pub use vibe::handle_vibe_pre_tool;
 // Test-only re-export: only `hook_handlers::tests` (cfg(test)) reaches these
 // through this path; codex.rs's own production use of them is internal.
 #[cfg(test)]
@@ -49,8 +47,8 @@ mod tests;
 use codex::{codex_allow_output, codex_deny_output, codex_rewrite_output};
 #[cfg(test)]
 use file_rewrite::{
-    build_rewrite_compound, is_outside_project_path, is_rewritable, parse_head_tail_args,
-    rewrite_candidate, rewrite_file_read_command, rewrite_skip_reason, wrap_single_command,
+    build_rewrite_compound, is_outside_project_path, parse_head_tail_args, rewrite_candidate,
+    rewrite_file_read_command, rewrite_skip_reason, wrap_single_command,
 };
 #[cfg(test)]
 use redirect::{
@@ -60,19 +58,8 @@ use redirect::{
 #[cfg(test)]
 use search_rewrite::{rewrite_dir_list_command, rewrite_search_command};
 
-fn is_disabled() -> bool {
-    std::env::var("LEAN_CTX_DISABLED").is_ok()
-}
-
-fn is_harden_active() -> bool {
-    matches!(std::env::var("LEAN_CTX_HARDEN"), Ok(v) if v.trim() == "1")
-}
-
 fn is_shadow_mode_active() -> bool {
-    if matches!(std::env::var("LEAN_CTX_SHADOW"), Ok(v) if v.trim() == "1") {
-        return true;
-    }
-    crate::core::config::Config::load().shadow_mode
+    true
 }
 
 fn log_shadow_intercept(tool: &str, detail: &str) {
@@ -166,7 +153,7 @@ fn read_stdin_with_timeout(timeout: Duration) -> Option<String> {
 
 fn build_dual_allow_output() -> String {
     serde_json::json!({
-        // Grok PreToolUse decision field.
+        // Top-level PreToolUse decision field.
         "decision": "allow",
         "permission": "allow",
         "hookSpecificOutput": {
@@ -190,7 +177,7 @@ fn build_dual_rewrite_output(tool_input: Option<&serde_json::Value>, rewritten: 
     };
 
     serde_json::json!({
-        // Grok PreToolUse decision field (allow with optional mutation).
+        // Top-level PreToolUse decision field (allow with optional mutation).
         "decision": "allow",
         // Cursor hook output format.
         "permission": "allow",
@@ -201,7 +188,7 @@ fn build_dual_rewrite_output(tool_input: Option<&serde_json::Value>, rewritten: 
         // unmodified even after the camelCase payload parses correctly (#551).
         "permissionDecision": "allow",
         "modifiedArgs": updated_input.clone(),
-        // Claude Code / CodeBuddy hook output format (other hosts ignore it).
+        // Claude Code hook output format (other hosts ignore it).
         "hookSpecificOutput": {
             "hookEventName": "PreToolUse",
             "permissionDecision": "allow",

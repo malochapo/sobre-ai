@@ -12,9 +12,7 @@
 /// Top-level command names that have a dispatch arm, plus their real aliases.
 pub(crate) const KNOWN_COMMANDS: &[&str] = &[
     "gain",
-    "learning",
     "health",
-    "policy",
     "rules",
     "benchmark",
     "verify-cache",
@@ -23,7 +21,6 @@ pub(crate) const KNOWN_COMMANDS: &[&str] = &[
     "index",
     "repomap",
     "cep",
-    "provider",
     "proxy",
     "init",
     "status",
@@ -43,10 +40,8 @@ pub(crate) const KNOWN_COMMANDS: &[&str] = &[
     "compact",
     "tools",
     "config",
-    "untrust",
     "introspect",
     "cache",
-    "theme",
     "tee",
     "terse",
     "restart",

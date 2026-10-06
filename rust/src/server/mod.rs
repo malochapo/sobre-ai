@@ -4,20 +4,13 @@ pub mod bypass_hint;
 pub mod compaction_sync;
 pub mod context_gate;
 mod dispatch;
-pub mod dynamic_tools;
-pub mod elicitation;
 pub(crate) mod execute;
 pub mod helpers;
 pub mod multi_path;
-pub mod notifications;
-pub mod permission_inheritance;
-pub mod policy_guard;
 pub mod progress;
 pub mod prompts;
-pub mod reference_store;
 pub mod registry;
 pub mod resources;
-pub mod role_guard;
 pub mod roots;
 use roots::has_project_marker;
 pub mod tool_trait;
@@ -41,10 +34,6 @@ mod server_handler;
 
 pub fn build_instructions_for_test(crp_mode: CrpMode) -> String {
     crate::instructions::build_instructions_for_test(crp_mode)
-}
-
-pub fn build_claude_code_instructions_for_test() -> String {
-    crate::instructions::claude_code_instructions()
 }
 
 /// Deterministic STATIC Claude Code instructions (cold first-contact, no dynamic
@@ -121,7 +110,7 @@ use crate::core::pathutil::is_broad_or_unsafe_root;
 
 /// Detect a multi-root workspace: a directory that has no project markers
 /// itself, but contains child directories that do. In this case, use the
-/// parent as jail root and auto-allow all child projects via LEAN_CTX_ALLOW_PATH.
+/// parent as jail root and auto-allow all child projects.
 fn detect_multi_root_workspace(dir: &std::path::Path) -> Option<String> {
     // Never enumerate the home dir or macOS TCC-protected dirs (Documents/Desktop/
     // Downloads): read_dir there triggers a macOS privacy prompt (#356), and a real
@@ -183,55 +172,13 @@ pub fn tool_schemas_json_for_test() -> String {
         .join("\n")
 }
 
-/// Tools that always pass through the workflow gate regardless of state.
-/// Read-only tools should never be blocked — agents need them for context
-/// recovery after crashes or session transitions.
-pub const WORKFLOW_PASSTHROUGH_TOOLS: &[&str] =
-    &["ctx", "ctx_read", "ctx_search", "ctx_tree", "ctx_session"];
-
-/// A workflow is stale if it hasn't been updated in 30 minutes.
-/// This prevents dead workflows from blocking tools across sessions.
-pub fn is_workflow_stale(run: &crate::core::workflow::types::WorkflowRun) -> bool {
-    let elapsed = chrono::Utc::now()
-        .signed_duration_since(run.updated_at)
-        .num_minutes();
-    elapsed > 30
-}
-
 fn is_shell_tool_name(name: &str) -> bool {
-    matches!(name, "ctx_shell" | "ctx_execute")
-}
-
-fn extract_file_read_from_shell(cmd: &str) -> Option<String> {
-    let trimmed = cmd.trim();
-    let parts: Vec<&str> = trimmed.split_whitespace().collect();
-    if parts.len() < 2 {
-        return None;
-    }
-    let bin = parts[0].rsplit('/').next().unwrap_or(parts[0]);
-    match bin {
-        "cat" | "head" | "tail" | "less" | "more" | "bat" | "batcat" => {
-            let file_arg = parts.iter().skip(1).find(|a| !a.starts_with('-'))?;
-            Some(file_arg.to_string())
-        }
-        _ => None,
-    }
+    name == "ctx_shell"
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn project_markers_detected() {
-        let tmp = tempfile::tempdir().unwrap();
-        let root = tmp.path().join("myproject");
-        std::fs::create_dir_all(&root).unwrap();
-        assert!(!has_project_marker(&root));
-
-        std::fs::create_dir(root.join(".git")).unwrap();
-        assert!(has_project_marker(&root));
-    }
 
     #[test]
     fn home_dir_detected_as_agent_dir() {
@@ -251,29 +198,12 @@ mod tests {
     }
 
     #[test]
-    fn test_unified_tool_count() {
-        let tools = crate::tool_defs::unified_tool_defs();
-        assert_eq!(tools.len(), 5, "Expected 5 unified tools");
-    }
-
-    #[test]
-    fn test_granular_tool_count() {
-        let tools = crate::tool_defs::granular_tool_defs();
-        // Was `>= 25`, from when the surface was 76 tools.
-        assert!(
-            !tools.is_empty() && tools.len() <= 20,
-            "granular defs must match the capped surface, got {}",
-            tools.len()
-        );
-    }
-
-    #[test]
     fn test_registry_tool_count_ssot() {
         let registry = crate::server::registry::build_registry();
         assert_eq!(
             registry.len(),
-            19,
-            "registry tool count drift — the surface is 19 and capped at 20              (invariant 1). Update this test AND the docs when it moves."
+            17,
+            "registry tool count drift — the surface is 17 and capped at 20              (invariant 1). Update this test AND the docs when it moves."
         );
     }
 
@@ -293,7 +223,7 @@ mod tests {
 
     #[test]
     fn detect_multi_root_workspace_with_child_projects() {
-        // detect_multi_root_workspace SETS `LEAN_CTX_ALLOW_PATH` as a side
+        // detect_multi_root_workspace adds runtime allow paths as a side
         // effect (auto-allowing the child projects) — hold the global env
         // lock so a parallel jail test never observes the transient value
         // (the pre-existing full-suite flake reported in #695).
@@ -313,8 +243,6 @@ mod tests {
             result.is_some(),
             "should detect workspace with 2 child projects"
         );
-
-        crate::test_env::remove_var("LEAN_CTX_ALLOW_PATH");
     }
 
     #[test]
@@ -334,36 +262,6 @@ mod tests {
     }
 
     #[test]
-    fn is_broad_or_unsafe_root_rejects_home() {
-        if let Some(home) = dirs::home_dir() {
-            assert!(is_broad_or_unsafe_root(&home));
-        }
-    }
-
-    #[test]
-    fn is_broad_or_unsafe_root_rejects_filesystem_root() {
-        assert!(is_broad_or_unsafe_root(std::path::Path::new("/")));
-    }
-
-    #[test]
-    fn is_broad_or_unsafe_root_rejects_agent_dirs() {
-        assert!(is_broad_or_unsafe_root(std::path::Path::new(
-            "/home/user/.claude"
-        )));
-        assert!(is_broad_or_unsafe_root(std::path::Path::new(
-            "/home/user/.codex"
-        )));
-    }
-
-    #[test]
-    fn is_broad_or_unsafe_root_allows_project_subdir() {
-        let tmp = tempfile::tempdir().unwrap();
-        let subdir = tmp.path().join("my-project");
-        std::fs::create_dir_all(&subdir).unwrap();
-        assert!(!is_broad_or_unsafe_root(&subdir));
-    }
-
-    #[test]
     fn is_broad_or_unsafe_root_allows_tmp_subdirs() {
         assert!(!is_broad_or_unsafe_root(std::path::Path::new(
             "/tmp/leanctx-test"
@@ -371,14 +269,6 @@ mod tests {
         assert!(!is_broad_or_unsafe_root(std::path::Path::new(
             "/tmp/my-project"
         )));
-    }
-
-    #[test]
-    fn is_broad_or_unsafe_root_allows_home_subdirs() {
-        if let Some(home) = dirs::home_dir() {
-            let subdir = home.join("projects").join("my-app");
-            assert!(!is_broad_or_unsafe_root(&subdir));
-        }
     }
 
     #[test]

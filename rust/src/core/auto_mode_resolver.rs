@@ -2,8 +2,6 @@ use std::collections::HashMap;
 use std::sync::Mutex;
 
 use crate::core::cache::SessionCache;
-use crate::core::context_ledger::PressureAction;
-use crate::core::mode_predictor::{FileSignature, ModePredictor};
 
 /// Per-process counters of which signal decided each auto-mode resolution.
 /// Surfaced by `ctx_metrics` so the learning loops are observable (#496).
@@ -16,19 +14,6 @@ fn count_source(source: &'static str) {
             .entry(source)
             .or_insert(0) += 1;
     }
-}
-
-/// Snapshot of auto-mode decision sources, sorted by count descending.
-pub fn source_counts() -> Vec<(&'static str, u64)> {
-    let Ok(guard) = SOURCE_COUNTS.lock() else {
-        return Vec::new();
-    };
-    let mut items: Vec<(&'static str, u64)> = guard
-        .as_ref()
-        .map(|m| m.iter().map(|(k, v)| (*k, *v)).collect())
-        .unwrap_or_default();
-    items.sort_by_key(|(_, n)| std::cmp::Reverse(*n));
-    items
 }
 
 fn sources_path() -> Option<std::path::PathBuf> {
@@ -72,6 +57,7 @@ pub fn flush_sources() {
 
 /// Cumulative auto-mode decision sources from disk (all processes, all time),
 /// sorted by count descending. Used by the dashboard's Live Signals panel.
+#[cfg(test)]
 pub fn persisted_source_counts() -> Vec<(String, u64)> {
     let Some(path) = sources_path() else {
         return Vec::new();
@@ -186,16 +172,9 @@ fn resolve_inner(ctx: &AutoModeContext) -> ResolvedMode {
         return resolved(&mode, "intent");
     }
 
-    // Adaptive learning signals (predictor, bandit, heatmap, adaptive policy,
-    // bounce/path memory) are opt-in (#683). Off by default, the capability
-    // guards above plus the deterministic heuristic below make `auto` a pure
-    // function of (file, task) — byte-stable for provider prompt caching (#498)
-    // and free of the per-read disk I/O these stores incur.
-    if crate::core::config::Config::load().auto_mode_learning_effective()
-        && let Some(r) = resolve_adaptive(ctx)
-    {
-        return r;
-    }
+    // The capability guards above plus the deterministic heuristic below make
+    // `auto` a pure function of (file, task) — byte-stable for provider prompt
+    // caching (#498).
 
     // Deterministic cold-read fallback. Every read that reaches here missed the
     // session cache (a warm hit returns `full`/`diff` above). `structure_first`
@@ -214,114 +193,6 @@ fn resolve_inner(ctx: &AutoModeContext) -> ResolvedMode {
         "heuristic"
     };
     resolved(&heuristic, source)
-}
-
-/// The opt-in adaptive block (#683): bounce/path memory plus the predictor /
-/// bandit / heatmap / adaptive-policy learning loop. Returns `Some` when a
-/// learning signal decides the mode, `None` to fall through to the deterministic
-/// heuristic. Only invoked when `auto_mode_learning` is enabled, so its disk I/O
-/// and non-determinism never touch the default cascade.
-fn resolve_adaptive(ctx: &AutoModeContext) -> Option<ResolvedMode> {
-    if let Ok(bt) = crate::core::bounce_tracker::global().lock()
-        && bt.should_force_full(ctx.path)
-    {
-        return Some(resolved("full", "bounce_tracker"));
-    }
-
-    // Per-path long-term memory (#496): a file that historically bounced in
-    // the majority of its reads will bounce again — compression is a proven
-    // net loss for it, across process restarts.
-    if crate::core::path_mode_memory::should_force_full(ctx.path) {
-        return Some(resolved("full", "path_bounce_memory"));
-    }
-
-    let sig = FileSignature::from_path(ctx.path, ctx.token_count);
-    let predictor = ModePredictor::new();
-    let mut predicted = predictor
-        .predict_best_mode(&sig)
-        .unwrap_or_else(|| "full".to_string());
-    if predicted == "auto" {
-        predicted = "full".to_string();
-    }
-
-    if predicted != "full"
-        && let Some(bandit_override) = bandit_explore(ctx.path, ctx.token_count)
-    {
-        predicted = bandit_override;
-    }
-
-    // Heatmap signal (#496): a frequently-read file where compression barely
-    // saves anything will likely trigger a follow-up read — step one mode more
-    // conservative. avg_compression_ratio is the historical fraction saved.
-    if predicted != "full"
-        && let Some((access_count, avg_ratio)) = crate::core::heatmap::entry_stats(ctx.path)
-        && access_count >= 5
-        && avg_ratio < 0.30
-    {
-        let conservative = match predicted.as_str() {
-            "signatures" | "aggressive" | "entropy" => "map".to_string(),
-            "map" if ctx.token_count <= 6000 => "full".to_string(),
-            other => other.to_string(),
-        };
-        if conservative != predicted {
-            return Some(resolved(&conservative, "heatmap_conservative"));
-        }
-    }
-
-    // Adaptive policy. This used to travel through the OCLA ConfigTuner, which
-    // called exactly this and encoded the answer into a `proposal:a->b:id`
-    // string that was parsed straight back apart here.
-    let objective = ctx.task.unwrap_or_default();
-    let chosen = crate::core::adaptive_mode_policy::AdaptiveModePolicyStore::load()
-        .choose_auto_mode(
-            (!objective.trim().is_empty()).then_some(objective),
-            &predicted,
-        );
-
-    if ctx.token_count > 2000 {
-        if (predicted == "map" || predicted == "signatures")
-            && chosen != "map"
-            && chosen != "signatures"
-        {
-            return Some(resolved(&predicted, "predictor_guard"));
-        }
-        if chosen == "full" && predicted != "full" {
-            return Some(resolved(&predicted, "predictor_override"));
-        }
-    }
-
-    if chosen != predicted {
-        return Some(resolved(&chosen, "adaptive_policy"));
-    }
-
-    if predicted != "full" {
-        return Some(resolved(&predicted, "predictor"));
-    }
-
-    None
-}
-
-/// Unified pressure downgrade table.
-/// Used by both context_gate and intent_router pressure paths.
-pub fn pressure_downgrade(requested_mode: &str, action: &PressureAction) -> Option<String> {
-    match action {
-        PressureAction::SuggestCompression => match requested_mode {
-            "auto" | "full" => Some("map".to_string()),
-            _ => None,
-        },
-        PressureAction::ForceCompression => match requested_mode {
-            "full" => Some("map".to_string()),
-            "auto" | "map" => Some("signatures".to_string()),
-            _ => None,
-        },
-        PressureAction::EvictLeastRelevant => match requested_mode {
-            "full" => Some("map".to_string()),
-            "auto" | "map" => Some("signatures".to_string()),
-            "signatures" => Some("reference".to_string()),
-            _ => None,
-        },
-        PressureAction::NoAction => None,
-    }
 }
 
 /// True when the task text explicitly names this file (basename match). A real
@@ -358,31 +229,6 @@ fn intent_recommended_mode(task: Option<&str>) -> Option<String> {
         return None;
     }
     Some(mode)
-}
-
-fn bandit_explore(file_path: &str, token_count: usize) -> Option<String> {
-    let project_root =
-        crate::core::session::SessionState::load_latest().and_then(|s| s.project_root)?;
-    let ext = std::path::Path::new(file_path)
-        .extension()
-        .and_then(|e| e.to_str())
-        .unwrap_or("");
-    let bucket = match token_count {
-        0..=2000 => "sm",
-        2001..=10000 => "md",
-        10001..=50000 => "lg",
-        _ => "xl",
-    };
-    let bandit_key = crate::core::bandit::bandit_key("mode", ext, Some(bucket));
-    let mut store = crate::core::bandit::BanditStore::load(&project_root);
-    let bandit = store.get_or_create(&bandit_key);
-    // #4: deterministic argmax-of-mean by default; Thompson only under the flag.
-    let arm = bandit.choose_arm();
-    if arm.budget_ratio < 0.25 && token_count > 2000 {
-        Some("aggressive".to_string())
-    } else {
-        None
-    }
 }
 
 fn heuristic_mode(ext: &str, token_count: usize, structure_first: bool) -> String {
@@ -501,56 +347,6 @@ fn resolved(mode: &str, source: &'static str) -> ResolvedMode {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn pressure_suggest_full_to_map() {
-        assert_eq!(
-            pressure_downgrade("full", &PressureAction::SuggestCompression),
-            Some("map".to_string())
-        );
-    }
-
-    #[test]
-    fn pressure_suggest_auto_to_map() {
-        assert_eq!(
-            pressure_downgrade("auto", &PressureAction::SuggestCompression),
-            Some("map".to_string())
-        );
-    }
-
-    #[test]
-    fn pressure_suggest_does_not_touch_signatures() {
-        assert!(pressure_downgrade("signatures", &PressureAction::SuggestCompression).is_none());
-    }
-
-    #[test]
-    fn pressure_force_full_to_map() {
-        assert_eq!(
-            pressure_downgrade("full", &PressureAction::ForceCompression),
-            Some("map".to_string())
-        );
-    }
-
-    #[test]
-    fn pressure_force_map_to_signatures() {
-        assert_eq!(
-            pressure_downgrade("map", &PressureAction::ForceCompression),
-            Some("signatures".to_string())
-        );
-    }
-
-    #[test]
-    fn pressure_evict_signatures_to_reference() {
-        assert_eq!(
-            pressure_downgrade("signatures", &PressureAction::EvictLeastRelevant),
-            Some("reference".to_string())
-        );
-    }
-
-    #[test]
-    fn pressure_noaction_returns_none() {
-        assert!(pressure_downgrade("full", &PressureAction::NoAction).is_none());
-    }
 
     #[test]
     fn flush_sources_merges_additively_into_disk_file() {
@@ -779,7 +575,6 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("lctx-amr-sf-{}", std::process::id()));
         let _ = std::fs::create_dir_all(&dir);
         crate::test_env::set_var("LEAN_CTX_DATA_DIR", dir.to_str().unwrap());
-        crate::test_env::set_var("LEAN_CTX_STRUCTURE_FIRST", "1");
 
         let suspect = AutoModeContext {
             path: "src/versioncmp.c",
@@ -799,7 +594,6 @@ mod tests {
         };
         assert_eq!(resolve(&tiny).mode, "full");
 
-        crate::test_env::remove_var("LEAN_CTX_STRUCTURE_FIRST");
         crate::test_env::remove_var("LEAN_CTX_DATA_DIR");
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -813,8 +607,6 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("lctx-amr-det-{}", std::process::id()));
         let _ = std::fs::create_dir_all(&dir);
         crate::test_env::set_var("LEAN_CTX_DATA_DIR", dir.to_str().unwrap());
-        crate::test_env::remove_var("LEAN_CTX_AUTO_MODE_LEARNING");
-        crate::test_env::remove_var("LEAN_CTX_STRUCTURE_FIRST");
 
         let ctx = AutoModeContext {
             path: "src/widget.rs",
@@ -830,17 +622,5 @@ mod tests {
 
         crate::test_env::remove_var("LEAN_CTX_DATA_DIR");
         let _ = std::fs::remove_dir_all(&dir);
-    }
-
-    /// #683: the `LEAN_CTX_AUTO_MODE_LEARNING` env var gates the adaptive block
-    /// and wins over the (default-off) config field.
-    #[test]
-    fn auto_mode_learning_env_opt_in_is_honored() {
-        let _lock = crate::core::data_dir::test_env_lock();
-        crate::test_env::set_var("LEAN_CTX_AUTO_MODE_LEARNING", "1");
-        assert!(crate::core::config::Config::default().auto_mode_learning_effective());
-        crate::test_env::set_var("LEAN_CTX_AUTO_MODE_LEARNING", "0");
-        assert!(!crate::core::config::Config::default().auto_mode_learning_effective());
-        crate::test_env::remove_var("LEAN_CTX_AUTO_MODE_LEARNING");
     }
 }

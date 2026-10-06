@@ -1,30 +1,33 @@
+use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::OnceLock;
+
+/// A config dir whose `config.toml` sets `shell_security = "warn"`. These tests
+/// exercise CLI/compression behavior, not the shell allowlist (which has its
+/// own unit tests in shell::exec). On CI stderr is not a TTY, so the gate would
+/// block test scripts (`for`/`while` loops are not allowlisted) with exit 126 —
+/// warn-only keeps the tests pinned to what they actually assert.
+fn warn_only_config_dir() -> &'static Path {
+    static DIR: OnceLock<PathBuf> = OnceLock::new();
+    DIR.get_or_init(|| {
+        let dir = std::env::temp_dir().join(format!(
+            "lean-ctx-it-warn-only-config-{}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&dir).expect("create warn-only config dir");
+        std::fs::write(dir.join("config.toml"), "shell_security = \"warn\"\n")
+            .expect("write warn-only config.toml");
+        dir
+    })
+}
 
 fn lean_ctx_bin() -> Command {
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_lean-ctx"));
     cmd.current_dir(env!("CARGO_MANIFEST_DIR"));
     cmd.env("LEAN_CTX_ACTIVE", "1");
     cmd.env("__LEAN_CTX_SKIP_EVENTS", "1");
-    // These tests exercise CLI/compression behavior, not the shell allowlist
-    // (which has its own unit tests in shell::exec). On CI stderr is not a TTY,
-    // so `allowlist_must_enforce()` would block test scripts (`for`/`while`
-    // loops are not allowlisted) with exit 126 — hermetic warn-only keeps the
-    // tests pinned to what they actually assert.
-    cmd.env("LEAN_CTX_SHELL_GATE_WARN_ONLY", "1");
+    cmd.env("LEAN_CTX_CONFIG_DIR", warn_only_config_dir());
     cmd
-}
-
-#[test]
-fn binary_prints_version() {
-    let output = lean_ctx_bin()
-        .arg("--version")
-        .output()
-        .expect("failed to run lean-ctx");
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(
-        stdout.contains("lean-ctx"),
-        "version output should contain 'lean-ctx', got: {stdout}"
-    );
 }
 
 #[test]
@@ -42,28 +45,6 @@ fn binary_prints_help() {
 }
 
 #[test]
-fn binary_read_file() {
-    let output = lean_ctx_bin()
-        .args(["read", "Cargo.toml", "-m", "signatures"])
-        .output()
-        .expect("failed to run lean-ctx");
-    assert!(output.status.success(), "read should succeed");
-}
-
-#[test]
-fn binary_config_shows_defaults() {
-    let output = lean_ctx_bin()
-        .arg("config")
-        .output()
-        .expect("failed to run lean-ctx");
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(
-        stdout.contains("checkpoint_interval"),
-        "config should show checkpoint_interval"
-    );
-}
-
-#[test]
 fn shell_hook_compresses_echo() {
     let output = lean_ctx_bin()
         .args(["-c", "echo", "hello", "world"])
@@ -77,40 +58,19 @@ fn shell_hook_compresses_echo() {
 }
 
 #[test]
-fn disabled_env_bypasses_compression() {
-    let output = Command::new(env!("CARGO_BIN_EXE_lean-ctx"))
-        .current_dir(env!("CARGO_MANIFEST_DIR"))
-        .env("LEAN_CTX_DISABLED", "1")
-        .env("LEAN_CTX_COMPRESS", "1")
-        .env("__LEAN_CTX_SKIP_EVENTS", "1")
-        .args(["-c", "echo", "passthrough test"])
-        .output()
-        .expect("failed to run lean-ctx with LEAN_CTX_DISABLED");
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(
-        stdout.contains("passthrough"),
-        "LEAN_CTX_DISABLED should pass output through unmodified"
-    );
-    assert!(
-        !stdout.contains("[lean-ctx:"),
-        "LEAN_CTX_DISABLED should not add compression markers"
-    );
-}
-
-#[test]
-fn help_shows_environment_section() {
+fn help_shows_escape_hatches() {
     let output = lean_ctx_bin()
         .arg("--help")
         .output()
         .expect("failed to run lean-ctx");
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(
-        stdout.contains("LEAN_CTX_DISABLED"),
-        "help should document LEAN_CTX_DISABLED"
+        stdout.contains("lean-ctx raw"),
+        "help should document `lean-ctx raw`"
     );
     assert!(
-        stdout.contains("LEAN_CTX_RAW"),
-        "help should document LEAN_CTX_RAW"
+        stdout.contains("lean-ctx-off"),
+        "help should document `lean-ctx-off`"
     );
 }
 
@@ -142,14 +102,13 @@ fn pipe_guard_force_compress_overrides_pipe_guard() {
     }
     let output = Command::new(env!("CARGO_BIN_EXE_lean-ctx"))
         .current_dir(env!("CARGO_MANIFEST_DIR"))
-        .env("LEAN_CTX_COMPRESS", "1")
         .env("__LEAN_CTX_SKIP_EVENTS", "1")
         .args(["-c", "echo hello world"])
         .output()
-        .expect("failed to run lean-ctx -c with LEAN_CTX_COMPRESS");
+        .expect("failed to run lean-ctx -c with piped stdout");
     assert!(
         output.status.success(),
-        "LEAN_CTX_COMPRESS should not crash even with piped stdout"
+        "`-c` should not crash even with piped stdout"
     );
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(
@@ -180,100 +139,6 @@ fn pipe_guard_multiline_output_unchanged_when_piped() {
     );
 }
 
-#[test]
-fn pipe_guard_bash_hook_script_test() {
-    if cfg!(windows) {
-        return;
-    }
-    let binary = env!("CARGO_BIN_EXE_lean-ctx");
-    let script = format!(
-        r#"
-_lc() {{
-    if [ -n "${{LEAN_CTX_DISABLED:-}}" ] || [ ! -t 1 ]; then
-        command "$@"
-        return
-    fi
-    '{binary}' -c "$@"
-}}
-# Pipe test: _lc echo should bypass lean-ctx when piped
-RESULT=$(_lc echo "pipe-guard-test-value")
-echo "CAPTURED:$RESULT"
-"#
-    );
-    let output = Command::new("bash")
-        .args(["-c", &script])
-        .output()
-        .expect("failed to run bash pipe guard test");
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(
-        stdout.contains("CAPTURED:pipe-guard-test-value"),
-        "pipe guard must bypass lean-ctx in command substitution, got: {stdout}"
-    );
-}
-
-#[test]
-fn pipe_guard_bash_hook_pipe_to_sh() {
-    if cfg!(windows) {
-        return;
-    }
-    let binary = env!("CARGO_BIN_EXE_lean-ctx");
-    let script = format!(
-        r#"
-_lc() {{
-    if [ -n "${{LEAN_CTX_DISABLED:-}}" ] || [ ! -t 1 ]; then
-        command "$@"
-        return
-    fi
-    '{binary}' -c "$@"
-}}
-# Simulate curl | sh: echo a script, pipe to sh
-_lc echo 'echo INSTALL_SUCCESS' | sh
-"#
-    );
-    let output = Command::new("bash")
-        .args(["-c", &script])
-        .output()
-        .expect("failed to run bash pipe-to-sh test");
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(
-        stdout.contains("INSTALL_SUCCESS"),
-        "piped script must execute correctly through sh, got: {stdout}"
-    );
-}
-
-#[test]
-fn pipe_guard_bash_hook_redirect_to_file() {
-    if cfg!(windows) {
-        return;
-    }
-    let binary = env!("CARGO_BIN_EXE_lean-ctx");
-    let tmp = std::env::temp_dir().join("lean-ctx-pipe-guard-test.txt");
-    let tmp_path = tmp.to_str().unwrap();
-    let script = format!(
-        r#"
-_lc() {{
-    if [ -n "${{LEAN_CTX_DISABLED:-}}" ] || [ ! -t 1 ]; then
-        command "$@"
-        return
-    fi
-    '{binary}' -c "$@"
-}}
-_lc echo "redirect-test-value" > {tmp_path}
-cat {tmp_path}
-rm -f {tmp_path}
-"#
-    );
-    let output = Command::new("bash")
-        .args(["-c", &script])
-        .output()
-        .expect("failed to run bash redirect test");
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(
-        stdout.contains("redirect-test-value"),
-        "redirected output must be raw, got: {stdout}"
-    );
-}
-
 // ── Redirect-to-file fidelity under FORCED compression ──────
 // Regression: the agent shell hook deliberately bypasses the `[ ! -t 1 ]` pipe
 // guard (an agent IS the consumer), so an agent running
@@ -294,25 +159,19 @@ fn redirect_fidelity_command() -> &'static str {
 }
 
 /// `lean-ctx -c` with a *hermetic* control environment for the compression
-/// fidelity tests. A developer's shell hook exports `LEAN_CTX_RAW` /
-/// `LEAN_CTX_DISABLED` (and CI may set `LEAN_CTX_ACTIVE`) — each forces raw
-/// passthrough, which would make these tests assert nothing (the redirect test
-/// would pass vacuously). Stripping them pins the exact forced-compress path.
-/// `LEAN_CTX_WRAPPED` must go too: running `cargo test` *through* the lean-ctx
+/// fidelity tests. CI may set `LEAN_CTX_ACTIVE`; stripping it pins the exact
+/// forced-compress path. `LEAN_CTX_WRAPPED` must go too: running `cargo test` *through* the lean-ctx
 /// wrapper stamps it on every child, and the nested `lean-ctx -c` under test
 /// would then (correctly) defer to the parent instead of compressing.
 fn forced_compress_bin() -> Command {
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_lean-ctx"));
     cmd.current_dir(env!("CARGO_MANIFEST_DIR"))
-        .env_remove("LEAN_CTX_RAW")
-        .env_remove("LEAN_CTX_DISABLED")
         .env_remove("LEAN_CTX_ACTIVE")
         .env_remove("LEAN_CTX_WRAPPED")
-        .env("LEAN_CTX_COMPRESS", "1")
         .env("__LEAN_CTX_SKIP_EVENTS", "1")
         // Allowlist enforcement (non-TTY stderr ⇒ block) is out of scope here;
         // the fidelity scripts use `while` loops that are not allowlisted.
-        .env("LEAN_CTX_SHELL_GATE_WARN_ONLY", "1");
+        .env("LEAN_CTX_CONFIG_DIR", warn_only_config_dir());
     cmd
 }
 
@@ -349,7 +208,7 @@ fn force_compress_redirect_to_file_is_byte_faithful() {
 
     assert_eq!(
         file_content, raw_stdout,
-        "redirect to a regular file under LEAN_CTX_COMPRESS must be byte-faithful (never compressed)"
+        "redirect to a regular file under `-c` must be byte-faithful (never compressed)"
     );
 }
 
@@ -377,7 +236,7 @@ fn force_compress_pipe_still_compresses() {
 
     assert_ne!(
         piped_stdout, raw_stdout,
-        "piped stdout under LEAN_CTX_COMPRESS should be compressed (changed) — proves the redirect guard is meaningful"
+        "piped stdout under `-c` should be compressed (changed) — proves the redirect guard is meaningful"
     );
 }
 
@@ -389,7 +248,12 @@ fn binary_gain_json_returns_valid_json() {
         .args(["gain", "--json"])
         .output()
         .expect("failed to run lean-ctx gain --json");
-    assert!(output.status.success(), "gain --json should succeed");
+    assert!(
+        output.status.success(),
+        "gain --json should succeed: {}\nstderr: {}",
+        output.status,
+        String::from_utf8_lossy(&output.stderr)
+    );
     let stdout = String::from_utf8_lossy(&output.stdout);
     let parsed: Result<serde_json::Value, _> = serde_json::from_str(stdout.trim());
     assert!(
@@ -461,7 +325,7 @@ fn pipe_guard_rust_side_defense_in_depth() {
         .env("__LEAN_CTX_SKIP_EVENTS", "1")
         // `for` + command substitution are not allowlisted; this test pins the
         // pipe guard, not enforcement (covered by shell::exec unit tests).
-        .env("LEAN_CTX_SHELL_GATE_WARN_ONLY", "1")
+        .env("LEAN_CTX_CONFIG_DIR", warn_only_config_dir())
         .args(["-c", script])
         .output()
         .expect("failed to run lean-ctx -c");

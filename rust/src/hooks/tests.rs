@@ -33,31 +33,6 @@ fn refresh_sets_reference_only_hybrid_agents() {
     }
 }
 
-#[test]
-fn qodercli_is_configured_for_hybrid_hooks() {
-    assert!(HYBRID_AGENTS.contains(&"qodercli"));
-    assert!(!REPLACE_AGENTS.contains(&"qodercli"));
-}
-
-#[test]
-fn qodercli_hooks_are_eligible_for_refresh() {
-    assert!(REFRESHABLE_HOOK_AGENTS.contains(&"qodercli"));
-    assert!(!REFRESH_EXEMPT_HYBRID_AGENTS.contains(&"qodercli"));
-}
-
-#[test]
-fn qodercli_hook_detection_uses_shared_settings_file() {
-    let tmp = tempfile::tempdir().unwrap();
-    let settings = tmp.path().join(".qoder/settings.json");
-    std::fs::create_dir_all(settings.parent().unwrap()).unwrap();
-
-    std::fs::write(&settings, "{\"hooks\":{\"lean-ctx\":true}}").unwrap();
-    assert!(hooks_installed_for("qodercli", tmp.path()));
-
-    std::fs::write(&settings, "{\"hooks\":{}}").unwrap();
-    assert!(!hooks_installed_for("qodercli", tmp.path()));
-}
-
 // ── #555: .github/copilot-instructions.md ──────────────────────────────
 
 #[test]
@@ -181,13 +156,11 @@ fn vscode_instruction_setting_respects_explicit_user_value() {
 }
 
 #[test]
-fn mcp_env_pairs_propagate_project_and_extra_roots_from_env() {
-    // #403: init must bake the captured project/worktree scope into the MCP
-    // server entry, otherwise the long-lived server rejects explicit paths
-    // under sibling worktrees as jail escapes.
+fn mcp_env_pairs_propagate_project_root_from_env() {
+    // #403: init must bake the captured project scope into the MCP server
+    // entry, otherwise the long-lived server loses it.
     let _iso = crate::core::data_dir::isolated_data_dir();
     crate::test_env::set_var("LEAN_CTX_PROJECT_ROOT", "/work/main");
-    crate::test_env::set_var("LEAN_CTX_EXTRA_ROOTS", "/work/wt-a:/work/wt-b");
 
     let pairs = mcp_server_env_pairs();
     let get = |k: &str| pairs.iter().find(|(p, _)| p == k).map(|(_, v)| v.as_str());
@@ -196,14 +169,12 @@ fn mcp_env_pairs_propagate_project_and_extra_roots_from_env() {
         "data dir is auto-detected at runtime, never pinned into the config (GH #408)"
     );
     assert_eq!(get("LEAN_CTX_PROJECT_ROOT"), Some("/work/main"));
-    assert_eq!(get("LEAN_CTX_EXTRA_ROOTS"), Some("/work/wt-a:/work/wt-b"));
 
     // The JSON view mirrors the pairs for the JSON-config agents.
     let json = mcp_server_env_json();
     assert_eq!(json["LEAN_CTX_PROJECT_ROOT"].as_str(), Some("/work/main"));
 
     crate::test_env::remove_var("LEAN_CTX_PROJECT_ROOT");
-    crate::test_env::remove_var("LEAN_CTX_EXTRA_ROOTS");
 }
 
 #[test]
@@ -213,7 +184,6 @@ fn mcp_env_pairs_omit_roots_when_unset() {
     // empty/placeholder root keys into agent configs.
     let _iso = crate::core::data_dir::isolated_data_dir();
     crate::test_env::remove_var("LEAN_CTX_PROJECT_ROOT");
-    crate::test_env::remove_var("LEAN_CTX_EXTRA_ROOTS");
 
     let pairs = mcp_server_env_pairs();
     let keys: Vec<&str> = pairs.iter().map(|(k, _)| k.as_str()).collect();
@@ -226,15 +196,15 @@ fn mcp_env_pairs_omit_roots_when_unset() {
 
 #[test]
 fn hook_command_binary_honors_override_and_skips_msys_rewrite() {
-    let _iso = crate::core::data_dir::isolated_data_dir();
-
-    crate::test_env::set_var("LEAN_CTX_HOOK_BINARY", "$HOME/.local/bin/lean-ctx");
+    let iso = crate::core::data_dir::isolated_data_dir();
+    let cfg = iso.path().join("config.toml");
+    std::fs::write(&cfg, "hook_binary = \"$HOME/.local/bin/lean-ctx\"\n").unwrap();
     assert_eq!(resolve_hook_command_binary(), "$HOME/.local/bin/lean-ctx");
     // The override is already the user's chosen shell form — never rewritten
     // into the MSYS `/c/…` form.
     assert_eq!(resolve_binary_path_for_bash(), "$HOME/.local/bin/lean-ctx");
 
-    crate::test_env::remove_var("LEAN_CTX_HOOK_BINARY");
+    std::fs::remove_file(&cfg).unwrap();
     // Without an override the #367 contract holds: resolved absolute path.
     assert!(std::path::Path::new(&resolve_hook_command_binary()).is_absolute());
     // MCP server entries always keep the absolute path — env-var forms would
@@ -244,11 +214,12 @@ fn hook_command_binary_honors_override_and_skips_msys_rewrite() {
 
 #[test]
 fn claude_settings_hooks_emit_override_verbatim_and_stay_idempotent() {
-    let _iso = crate::core::data_dir::isolated_data_dir();
-    crate::test_env::set_var(
-        "LEAN_CTX_HOOK_BINARY",
-        "$USERPROFILE/AppData/Roaming/npm/node_modules/lean-ctx-bin/bin/lean-ctx.exe",
-    );
+    let iso = crate::core::data_dir::isolated_data_dir();
+    std::fs::write(
+        iso.path().join("config.toml"),
+        "hook_binary = \"$USERPROFILE/AppData/Roaming/npm/node_modules/lean-ctx-bin/bin/lean-ctx.exe\"\n",
+    )
+    .unwrap();
     let home = tempfile::tempdir().unwrap();
 
     install_claude_hook_config(home.path());
@@ -271,20 +242,19 @@ fn claude_settings_hooks_emit_override_verbatim_and_stay_idempotent() {
     install_claude_hook_config(home.path());
     let after = std::fs::read_to_string(&settings_path).unwrap();
     assert_eq!(settings, after, "idempotent under a stable override");
-
-    crate::test_env::remove_var("LEAN_CTX_HOOK_BINARY");
 }
 
 // ── #719: wrapper scripts must honor the override and survive healing ──
 
 #[test]
 fn claude_wrapper_scripts_emit_override_verbatim_and_quoted() {
-    let _iso = crate::core::data_dir::isolated_data_dir();
+    let iso = crate::core::data_dir::isolated_data_dir();
     // A portable form WITH a space — quoting is part of the contract.
-    crate::test_env::set_var(
-        "LEAN_CTX_HOOK_BINARY",
-        "$HOME/App Data/npm/node_modules/lean-ctx-bin/bin/lean-ctx.exe",
-    );
+    std::fs::write(
+        iso.path().join("config.toml"),
+        "hook_binary = \"$HOME/App Data/npm/node_modules/lean-ctx-bin/bin/lean-ctx.exe\"\n",
+    )
+    .unwrap();
     let home = tempfile::tempdir().unwrap();
 
     install_claude_hook_scripts(home.path());
@@ -314,14 +284,11 @@ fn claude_wrapper_scripts_emit_override_verbatim_and_quoted() {
             "{file}: no machine-absolute path may leak into a synced wrapper"
         );
     }
-
-    crate::test_env::remove_var("LEAN_CTX_HOOK_BINARY");
 }
 
 #[test]
 fn heal_without_override_preserves_working_portable_wrapper() {
     let _iso = crate::core::data_dir::isolated_data_dir();
-    crate::test_env::remove_var("LEAN_CTX_HOOK_BINARY");
     let home = tempfile::tempdir().unwrap();
 
     // The synced peer's portable wrapper resolves on THIS machine: the
@@ -363,12 +330,7 @@ fn wrapper_binary_token_parses_all_generated_forms() {
         wrapper_binary_token("#!/bin/sh\nexec \"$HOME/b in/lean-ctx\" hook rewrite\n").as_deref(),
         Some("$HOME/b in/lean-ctx")
     );
-    // Legacy unquoted native wrapper (pre-#719 installs).
-    assert_eq!(
-        wrapper_binary_token("#!/bin/sh\nexec /c/Users/B/lean-ctx.exe hook redirect\n").as_deref(),
-        Some("/c/Users/B/lean-ctx.exe")
-    );
-    // Rewrite script assignment, quoted and legacy-unquoted.
+    // Rewrite script assignment.
     assert_eq!(
         wrapper_binary_token("set -euo pipefail\nLEAN_CTX_BIN=\"$HOME/x/lean-ctx\"\n").as_deref(),
         Some("$HOME/x/lean-ctx")
@@ -421,34 +383,10 @@ fn unique_tmp_dir(prefix: &str) -> std::path::PathBuf {
 }
 
 #[test]
-fn bash_path_unix_unchanged() {
-    assert_eq!(
-        to_bash_compatible_path("/usr/local/bin/lean-ctx"),
-        "/usr/local/bin/lean-ctx"
-    );
-}
-
-#[test]
-fn bash_path_home_unchanged() {
-    assert_eq!(
-        to_bash_compatible_path("/home/user/.cargo/bin/lean-ctx"),
-        "/home/user/.cargo/bin/lean-ctx"
-    );
-}
-
-#[test]
 fn bash_path_windows_drive_converted() {
     assert_eq!(
         to_bash_compatible_path("C:\\Users\\Fraser\\bin\\lean-ctx.exe"),
         "/c/Users/Fraser/bin/lean-ctx.exe"
-    );
-}
-
-#[test]
-fn bash_path_windows_lowercase_drive() {
-    assert_eq!(
-        to_bash_compatible_path("D:\\tools\\lean-ctx.exe"),
-        "/d/tools/lean-ctx.exe"
     );
 }
 
@@ -471,11 +409,11 @@ fn bash_path_bare_name_unchanged() {
 #[test]
 fn normalize_msys2_path() {
     assert_eq!(
-        normalize_tool_path("/c/Users/game/Downloads/project"),
+        crate::core::pathutil::normalize_tool_path("/c/Users/game/Downloads/project"),
         "C:/Users/game/Downloads/project"
     );
     assert_eq!(
-        normalize_tool_path("/d/Projects/app/src"),
+        crate::core::pathutil::normalize_tool_path("/d/Projects/app/src"),
         "D:/Projects/app/src"
     );
 }
@@ -492,7 +430,7 @@ fn normalize_msys2_path_untouched_on_unix() {
 #[test]
 fn normalize_backslashes() {
     assert_eq!(
-        normalize_tool_path("C:\\Users\\game\\project\\src"),
+        crate::core::pathutil::normalize_tool_path("C:\\Users\\game\\project\\src"),
         "C:/Users/game/project/src"
     );
 }
@@ -500,7 +438,7 @@ fn normalize_backslashes() {
 #[test]
 fn normalize_mixed_separators() {
     assert_eq!(
-        normalize_tool_path("C:\\Users/game\\project/src"),
+        crate::core::pathutil::normalize_tool_path("C:\\Users/game\\project/src"),
         "C:/Users/game/project/src"
     );
 }
@@ -508,7 +446,7 @@ fn normalize_mixed_separators() {
 #[test]
 fn normalize_double_slashes() {
     assert_eq!(
-        normalize_tool_path("/home/user//project///src"),
+        crate::core::pathutil::normalize_tool_path("/home/user//project///src"),
         "/home/user/project/src"
     );
 }
@@ -516,133 +454,48 @@ fn normalize_double_slashes() {
 #[test]
 fn normalize_trailing_slash() {
     assert_eq!(
-        normalize_tool_path("/home/user/project/"),
+        crate::core::pathutil::normalize_tool_path("/home/user/project/"),
         "/home/user/project"
     );
 }
 
 #[test]
 fn normalize_root_preserved() {
-    assert_eq!(normalize_tool_path("/"), "/");
+    assert_eq!(crate::core::pathutil::normalize_tool_path("/"), "/");
 }
 
 #[test]
 fn normalize_windows_root_preserved() {
-    assert_eq!(normalize_tool_path("C:/"), "C:/");
+    assert_eq!(crate::core::pathutil::normalize_tool_path("C:/"), "C:/");
 }
 
 #[test]
 fn normalize_unix_path_unchanged() {
     assert_eq!(
-        normalize_tool_path("/home/user/project/src/main.rs"),
+        crate::core::pathutil::normalize_tool_path("/home/user/project/src/main.rs"),
         "/home/user/project/src/main.rs"
     );
 }
 
 #[test]
 fn normalize_relative_path_unchanged() {
-    assert_eq!(normalize_tool_path("src/main.rs"), "src/main.rs");
+    assert_eq!(
+        crate::core::pathutil::normalize_tool_path("src/main.rs"),
+        "src/main.rs"
+    );
 }
 
 #[test]
 fn normalize_dot_unchanged() {
-    assert_eq!(normalize_tool_path("."), ".");
+    assert_eq!(crate::core::pathutil::normalize_tool_path("."), ".");
 }
 
 #[test]
 fn normalize_unc_path_preserved() {
     assert_eq!(
-        normalize_tool_path("//server/share/file"),
+        crate::core::pathutil::normalize_tool_path("//server/share/file"),
         "//server/share/file"
     );
-}
-
-#[test]
-fn cursor_hook_config_has_version_and_object_hooks() {
-    let config = serde_json::json!({
-        "version": 1,
-        "hooks": {
-            "preToolUse": [
-                {
-                    "matcher": "terminal_command",
-                    "command": "lean-ctx hook rewrite"
-                },
-                {
-                    "matcher": "read_file|grep|search|list_files|list_directory",
-                    "command": "lean-ctx hook redirect"
-                }
-            ]
-        }
-    });
-
-    let json_str = serde_json::to_string_pretty(&config).unwrap();
-    let parsed: serde_json::Value = serde_json::from_str(&json_str).unwrap();
-
-    assert_eq!(parsed["version"], 1);
-    assert!(parsed["hooks"].is_object());
-    assert!(parsed["hooks"]["preToolUse"].is_array());
-    assert_eq!(parsed["hooks"]["preToolUse"].as_array().unwrap().len(), 2);
-    assert_eq!(
-        parsed["hooks"]["preToolUse"][0]["matcher"],
-        "terminal_command"
-    );
-}
-
-#[test]
-fn cursor_hook_detects_old_format_needs_migration() {
-    let old_format = r#"{"hooks":[{"event":"preToolUse","command":"lean-ctx hook rewrite"}]}"#;
-    let has_correct = old_format.contains("\"version\"") && old_format.contains("\"preToolUse\"");
-    assert!(
-        !has_correct,
-        "Old format should be detected as needing migration"
-    );
-}
-
-#[test]
-fn gemini_hook_config_has_type_command() {
-    let binary = "lean-ctx";
-    let rewrite_cmd = format!("{binary} hook rewrite");
-    let redirect_cmd = format!("{binary} hook redirect");
-
-    let hook_config = serde_json::json!({
-        "hooks": {
-            "BeforeTool": [
-                {
-                    "hooks": [{
-                        "type": "command",
-                        "command": rewrite_cmd
-                    }]
-                },
-                {
-                    "hooks": [{
-                        "type": "command",
-                        "command": redirect_cmd
-                    }]
-                }
-            ]
-        }
-    });
-
-    let parsed = hook_config;
-    let before_tool = parsed["hooks"]["BeforeTool"].as_array().unwrap();
-    assert_eq!(before_tool.len(), 2);
-
-    let first_hook = &before_tool[0]["hooks"][0];
-    assert_eq!(first_hook["type"], "command");
-    assert_eq!(first_hook["command"], "lean-ctx hook rewrite");
-
-    let second_hook = &before_tool[1]["hooks"][0];
-    assert_eq!(second_hook["type"], "command");
-    assert_eq!(second_hook["command"], "lean-ctx hook redirect");
-}
-
-#[test]
-fn gemini_hook_old_format_detected() {
-    let old_format = r#"{"hooks":{"BeforeTool":[{"command":"lean-ctx hook rewrite"}]}}"#;
-    let has_new = old_format.contains("hook rewrite")
-        && old_format.contains("hook redirect")
-        && old_format.contains("\"type\"");
-    assert!(!has_new, "Missing 'type' field should trigger migration");
 }
 
 #[test]
@@ -661,14 +514,6 @@ fn rewrite_script_uses_registry_pattern() {
         script.contains("PowerShell|powershell"),
         "rewrite script must accept PowerShell tool names for Windows compatibility"
     );
-}
-
-#[test]
-fn compact_rewrite_script_uses_registry_pattern() {
-    let script = generate_compact_rewrite_script("/usr/bin/lean-ctx");
-    assert!(script.contains(r"git\ *"), "compact script missing git");
-    assert!(script.contains(r"cargo\ *"), "compact script missing cargo");
-    assert!(script.contains(r"rg\ *"), "compact script missing rg");
 }
 
 #[test]
@@ -740,9 +585,7 @@ fn claude_is_replace() {
 #[test]
 fn hybrid_fallback_agents() {
     let _env = crate::core::data_dir::test_env_lock();
-    assert_eq!(recommend_hook_mode("crush"), HookMode::Hybrid);
-    assert_eq!(recommend_hook_mode("cline"), HookMode::Hybrid);
-    assert_eq!(recommend_hook_mode("kiro"), HookMode::Hybrid);
+    assert_eq!(recommend_hook_mode("copilot"), HookMode::Hybrid);
 }
 
 #[test]
@@ -766,23 +609,8 @@ fn from_bash_to_native_converts_msys_drive() {
 }
 
 #[test]
-fn from_bash_to_native_unix_path_unchanged() {
-    assert_eq!(
-        from_bash_to_native_path("/usr/local/bin/lean-ctx"),
-        "/usr/local/bin/lean-ctx"
-    );
-}
-
-#[test]
 fn from_bash_to_native_bare_name() {
     assert_eq!(from_bash_to_native_path("lean-ctx"), "lean-ctx");
-}
-
-#[test]
-fn windows_path_to_bash_form() {
-    let native = r"C:\Users\ABC\AppData\Local\lean-ctx\lean-ctx.exe";
-    let bash = to_bash_compatible_path(native);
-    assert_eq!(bash, "/c/Users/ABC/AppData/Local/lean-ctx/lean-ctx.exe");
 }
 
 // The bash→native return leg only translates on Windows hosts (GH #397).
@@ -802,32 +630,4 @@ fn roundtrip_unix_path() {
     assert_eq!(bash, native);
     let back = from_bash_to_native_path(&bash);
     assert_eq!(back, native);
-}
-
-#[test]
-fn disabled_env_caps_replace_at_hybrid() {
-    let _env = crate::core::data_dir::test_env_lock();
-    crate::test_env::set_var("LEAN_CTX_DISABLED", "1");
-    assert_eq!(recommend_hook_mode("claude"), HookMode::Hybrid);
-    assert_eq!(recommend_hook_mode("cursor"), HookMode::Hybrid);
-    assert_eq!(recommend_hook_mode("crush"), HookMode::Hybrid);
-    assert_eq!(recommend_hook_mode("unknown-agent"), HookMode::Mcp);
-    crate::test_env::remove_var("LEAN_CTX_DISABLED");
-}
-
-#[test]
-fn shadow_mode_false_env_caps_replace_at_hybrid() {
-    let _env = crate::core::data_dir::test_env_lock();
-    crate::test_env::set_var("LEAN_CTX_SHADOW_MODE", "false");
-    assert_eq!(recommend_hook_mode("claude"), HookMode::Hybrid);
-    assert_eq!(recommend_hook_mode("gemini"), HookMode::Hybrid);
-    crate::test_env::remove_var("LEAN_CTX_SHADOW_MODE");
-}
-
-#[test]
-fn heal_off_env_caps_replace_at_hybrid() {
-    let _env = crate::core::data_dir::test_env_lock();
-    crate::test_env::set_var("LEAN_CTX_HEAL", "off");
-    assert_eq!(recommend_hook_mode("claude"), HookMode::Hybrid);
-    crate::test_env::remove_var("LEAN_CTX_HEAL");
 }

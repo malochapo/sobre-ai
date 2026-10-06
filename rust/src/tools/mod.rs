@@ -1,8 +1,6 @@
 pub mod autonomy;
 pub mod ctx_callgraph;
 pub mod ctx_compose;
-pub mod ctx_context;
-pub mod ctx_execute;
 pub mod ctx_expand;
 pub mod ctx_glob;
 pub mod ctx_graph;
@@ -26,26 +24,21 @@ pub(crate) mod edit_recovery;
 pub(crate) mod graph_meta;
 // Stays `pub`: driven from outside the crate by tests/suite/property_graph_reproducibility_contract.rs.
 pub mod impl_architecture;
-pub(crate) mod impl_compress;
 pub(crate) mod impl_dedup;
 pub(crate) mod impl_discover;
 // Stays `pub`: driven from outside the crate by tests/quality_loop_golden.rs and tests/suite/edit_reliability.rs.
 pub mod impl_edit;
 pub(crate) mod impl_explore;
 pub(crate) mod impl_gain;
-// Stays `pub`: driven from outside the crate by tests/multi_read_cap_scenarios.rs.
+// Stays `pub`: driven from outside the crate by tests/serial_suite/multi_read_cap_scenarios.rs.
 pub mod impl_multi_read;
 pub(crate) mod impl_overview;
-pub(crate) mod impl_prefetch;
 pub(crate) mod impl_preload;
-// Stays `pub`: driven from outside the crate by tests/intensive_benchmarks.rs.
-pub mod impl_response;
+// Stays `pub`: driven from outside the crate by tests/serial_suite/intensive_benchmarks.rs.
 pub(crate) mod impl_semantic_search;
-pub(crate) mod impl_share;
 pub(crate) mod impl_smart_read;
 pub(crate) mod impl_smells;
 pub(crate) mod impl_symbol;
-pub(crate) mod knowledge_shared;
 pub(crate) mod output_format;
 pub mod registered;
 pub(crate) mod walk_guard;
@@ -72,52 +65,6 @@ mod resolve_path_tests {
     #[cfg(not(feature = "no-jail"))]
     #[tokio::test]
     #[allow(clippy::await_holding_lock)]
-    async fn resolve_path_can_reroot_to_trusted_startup_root_when_session_root_is_stale() {
-        // #991: serialize via `isolated_data_dir` (holds `test_env_lock`) so the
-        // `LEAN_CTX_ALLOW_REROOT` set below cannot be removed by a sibling
-        // reroot test running in parallel (e.g. the `remove_var` in
-        // `..._without_opt_in`) between set and `resolve_path` — which would
-        // silently disable rerooting and flake this assertion. Cleaned up at the
-        // end so the opt-in never leaks to other tests.
-        let _iso = crate::core::data_dir::isolated_data_dir();
-        crate::test_env::set_var("LEAN_CTX_ALLOW_REROOT", "1");
-        let tmp = tempfile::tempdir().unwrap();
-        let stale = tmp.path().join("stale");
-        let real = tmp.path().join("real");
-        std::fs::create_dir_all(&stale).unwrap();
-        let real_root = create_git_root(&real);
-        std::fs::write(real.join("a.txt"), "ok").unwrap();
-
-        let server = LeanCtxServer::new_with_startup(
-            None,
-            Some(real.as_path()),
-            SessionMode::Personal,
-            "default",
-            "default",
-        );
-        {
-            let mut session = server.session.write().await;
-            session.project_root = Some(stale.to_string_lossy().to_string());
-            session.shell_cwd = Some(stale.to_string_lossy().to_string());
-        }
-
-        let out = server
-            .resolve_path(&real.join("a.txt").to_string_lossy())
-            .await
-            .unwrap();
-
-        assert!(out.ends_with("/a.txt"));
-
-        let session = server.session.read().await;
-        assert_eq!(session.project_root.as_deref(), Some(real_root.as_str()));
-        assert_eq!(session.shell_cwd.as_deref(), Some(real_root.as_str()));
-        drop(session);
-        crate::test_env::remove_var("LEAN_CTX_ALLOW_REROOT");
-    }
-
-    #[cfg(not(feature = "no-jail"))]
-    #[tokio::test]
-    #[allow(clippy::await_holding_lock)]
     async fn resolve_path_rejects_absolute_path_outside_trusted_startup_root() {
         // Hermetic config + serialized via test_env_lock so a parallel test that
         // flips `path_jail` cannot disable this jail-enforcement assertion (#406).
@@ -131,13 +78,7 @@ mod resolve_path_tests {
         let _other_value = create_git_root(&other);
         std::fs::write(other.join("b.txt"), "no").unwrap();
 
-        let server = LeanCtxServer::new_with_startup(
-            None,
-            Some(root.as_path()),
-            SessionMode::Personal,
-            "default",
-            "default",
-        );
+        let server = LeanCtxServer::new_with_startup(None, Some(root.as_path()));
         {
             let mut session = server.session.write().await;
             session.project_root = Some(stale.to_string_lossy().to_string());
@@ -173,13 +114,7 @@ mod resolve_path_tests {
         let file = dep.join("lib.go");
         std::fs::write(&file, "package lib").unwrap();
 
-        let server = LeanCtxServer::new_with_startup(
-            None,
-            Some(root.as_path()),
-            SessionMode::Personal,
-            "default",
-            "default",
-        );
+        let server = LeanCtxServer::new_with_startup(None, Some(root.as_path()));
         {
             let mut session = server.session.write().await;
             session.project_root = Some(root.to_string_lossy().to_string());
@@ -211,14 +146,13 @@ mod resolve_path_tests {
     #[cfg(not(feature = "no-jail"))]
     #[tokio::test]
     #[allow(clippy::await_holding_lock)]
-    async fn resolve_path_auto_reroots_from_agent_config_dir_without_opt_in() {
+    async fn resolve_path_auto_reroots_from_agent_config_dir() {
         // #580: the MCP server is launched from an agent/IDE config dir
         // (~/.copilot-style) and wrongly adopts it as the root. With no
-        // `allow_auto_reroot` opt-in and no trusted startup root, the first
+        // trusted startup root, the first
         // absolute path into a real project must still correct the root — an
         // agent config dir is never a real jail boundary.
         let _iso = crate::core::data_dir::isolated_data_dir();
-        crate::test_env::remove_var("LEAN_CTX_ALLOW_REROOT");
         let tmp = tempfile::tempdir().unwrap();
         let agent = tmp.path().join(".copilot");
         let real = tmp.path().join("repo");
@@ -226,13 +160,7 @@ mod resolve_path_tests {
         let real_root = create_git_root(&real);
         std::fs::write(real.join("a.txt"), "ok").unwrap();
 
-        let server = LeanCtxServer::new_with_startup(
-            None,
-            None,
-            SessionMode::Personal,
-            "default",
-            "default",
-        );
+        let server = LeanCtxServer::new_with_startup(None, None);
         {
             let mut session = server.session.write().await;
             session.project_root = Some(agent.to_string_lossy().to_string());
@@ -255,12 +183,11 @@ mod resolve_path_tests {
     #[cfg(not(feature = "no-jail"))]
     #[tokio::test]
     #[allow(clippy::await_holding_lock)]
-    async fn resolve_path_auto_reroots_from_markerless_client_cwd_without_opt_in() {
+    async fn resolve_path_auto_reroots_from_markerless_client_cwd() {
         // VS Code/WSL can launch the MCP server from /mnt/c/Users while the
         // workspace lives under /mnt/d. That markerless cwd must not become a
         // permanent PathJail root when the request points at a real project.
         let _iso = crate::core::data_dir::isolated_data_dir();
-        crate::test_env::remove_var("LEAN_CTX_ALLOW_REROOT");
         let tmp = tempfile::tempdir().unwrap();
         let client_cwd = tmp.path().join("Users").join("user");
         let real = tmp.path().join("workspaces").join("lean-ctx");
@@ -268,13 +195,7 @@ mod resolve_path_tests {
         let real_root = create_git_root(&real);
         std::fs::write(real.join("rust.rs"), "ok").unwrap();
 
-        let server = LeanCtxServer::new_with_startup(
-            None,
-            None,
-            SessionMode::Personal,
-            "default",
-            "default",
-        );
+        let server = LeanCtxServer::new_with_startup(None, None);
         {
             let mut session = server.session.write().await;
             session.project_root = Some(client_cwd.to_string_lossy().to_string());
@@ -302,7 +223,6 @@ mod resolve_path_tests {
         // path that derives NO project marker stays blocked and the root is
         // unchanged. Only rerooting *to a real project* is permitted.
         let _iso = crate::core::data_dir::isolated_data_dir();
-        crate::test_env::remove_var("LEAN_CTX_ALLOW_REROOT");
         let tmp = tempfile::tempdir().unwrap();
         let client_cwd = tmp.path().join("Users").join("user");
         let loose = tmp.path().join("workspaces").join("loose");
@@ -310,13 +230,7 @@ mod resolve_path_tests {
         std::fs::create_dir_all(&loose).unwrap();
         std::fs::write(loose.join("data.txt"), "no").unwrap();
 
-        let server = LeanCtxServer::new_with_startup(
-            None,
-            None,
-            SessionMode::Personal,
-            "default",
-            "default",
-        );
+        let server = LeanCtxServer::new_with_startup(None, None);
         {
             let mut session = server.session.write().await;
             session.project_root = Some(client_cwd.to_string_lossy().to_string());
@@ -344,7 +258,6 @@ mod resolve_path_tests {
         // marker). A markerless absolute path outside the jail stays blocked —
         // PathJail enforcement is unchanged, only the root *choice* is corrected.
         let _iso = crate::core::data_dir::isolated_data_dir();
-        crate::test_env::remove_var("LEAN_CTX_ALLOW_REROOT");
         let tmp = tempfile::tempdir().unwrap();
         let agent = tmp.path().join(".copilot");
         let loose = tmp.path().join("loose");
@@ -352,13 +265,7 @@ mod resolve_path_tests {
         std::fs::create_dir_all(&loose).unwrap();
         std::fs::write(loose.join("data.txt"), "no").unwrap();
 
-        let server = LeanCtxServer::new_with_startup(
-            None,
-            None,
-            SessionMode::Personal,
-            "default",
-            "default",
-        );
+        let server = LeanCtxServer::new_with_startup(None, None);
         {
             let mut session = server.session.write().await;
             session.project_root = Some(agent.to_string_lossy().to_string());
@@ -406,13 +313,7 @@ mod resolve_path_tests {
         session_a.set_task("repo-a latest task", None);
         session_a.save().unwrap();
 
-        let server = LeanCtxServer::new_with_startup(
-            None,
-            Some(repo_b.as_path()),
-            SessionMode::Personal,
-            "default",
-            "default",
-        );
+        let server = LeanCtxServer::new_with_startup(None, Some(repo_b.as_path()));
         crate::test_env::remove_var("LEAN_CTX_DATA_DIR");
 
         let session = server.session.read().await;
@@ -448,13 +349,7 @@ mod resolve_path_tests {
         let old_id = session_a.id.clone();
         session_a.save().unwrap();
 
-        let server = LeanCtxServer::new_with_startup(
-            None,
-            Some(repo_b_src.as_path()),
-            SessionMode::Personal,
-            "default",
-            "default",
-        );
+        let server = LeanCtxServer::new_with_startup(None, Some(repo_b_src.as_path()));
         crate::test_env::remove_var("LEAN_CTX_DATA_DIR");
 
         let session = server.session.read().await;

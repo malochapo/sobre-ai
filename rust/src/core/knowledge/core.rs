@@ -208,17 +208,6 @@ impl ProjectKnowledge {
 
         self.updated_at = Utc::now();
 
-        let action = if contradiction.is_some() {
-            "contradict"
-        } else {
-            "remember"
-        };
-        crate::core::events::emit(crate::core::events::EventKind::KnowledgeUpdate {
-            category: category.to_string(),
-            key: key.to_string(),
-            action: action.to_string(),
-        });
-
         contradiction
     }
 

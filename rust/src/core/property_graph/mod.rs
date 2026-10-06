@@ -20,9 +20,7 @@ pub use edge::{Edge, EdgeKind};
 pub use file_catalog::FileCatalogEntry;
 pub use meta::{PropertyGraphMetaV1, load_meta, meta_path, write_meta};
 pub use node::{Node, NodeKind};
-pub use queries::{
-    DependencyChain, GraphQuery, ImpactResult, edge_weight, file_connectivity, related_files,
-};
+pub use queries::{DependencyChain, ImpactResult, edge_weight, related_files};
 pub use sync::{mirror_index, parse_symbol_metadata, populate_from_project_index};
 
 use rusqlite::Connection;
@@ -40,26 +38,6 @@ pub fn graph_dir(project_root: &str) -> PathBuf {
         data_dir.join("graphs").join(hash)
     } else {
         Path::new(project_root).join(".lean-ctx")
-    }
-}
-
-/// Transparently migrate graph.db and graph.meta.json from the old
-/// per-project `.lean-ctx/` directory to the new `$DATA_DIR/graphs/` path.
-fn migrate_if_needed(project_root: &str, new_dir: &Path) {
-    let old_dir = Path::new(project_root).join(".lean-ctx");
-    if old_dir == new_dir {
-        return;
-    }
-    for file in &["graph.db", "graph.meta.json"] {
-        let old = old_dir.join(file);
-        let new = new_dir.join(file);
-        if old.exists()
-            && !new.exists()
-            && std::fs::rename(&old, &new).is_err()
-            && std::fs::copy(&old, &new).is_ok()
-        {
-            let _ = std::fs::remove_file(&old);
-        }
     }
 }
 
@@ -115,7 +93,6 @@ impl CodeGraph {
     pub fn open(project_root: &str) -> anyhow::Result<Self> {
         let db_dir = graph_dir(project_root);
         std::fs::create_dir_all(&db_dir)?;
-        migrate_if_needed(project_root, &db_dir);
         let db_path = db_dir.join("graph.db");
 
         // Concurrent opens race on `PRAGMA journal_mode=WAL` and the initial DDL,
@@ -226,13 +203,6 @@ impl CodeGraph {
         queries::related_files(&self.conn, file_path, limit)
     }
 
-    pub fn file_connectivity(
-        &self,
-        file_path: &str,
-    ) -> anyhow::Result<std::collections::HashMap<String, (usize, usize)>> {
-        queries::file_connectivity(&self.conn, file_path)
-    }
-
     pub fn node_count(&self) -> anyhow::Result<usize> {
         node::count(&self.conn)
     }
@@ -259,6 +229,7 @@ impl CodeGraph {
         cross_source::all(&self.conn).unwrap_or_default()
     }
 
+    #[cfg(test)]
     pub fn cross_source_edge_count(&self) -> anyhow::Result<usize> {
         cross_source::count(&self.conn)
     }
@@ -591,51 +562,6 @@ mod tests {
         assert!(dir1.to_string_lossy().contains("graphs"));
 
         crate::test_env::remove_var("LEAN_CTX_DATA_DIR");
-    }
-
-    #[test]
-    fn migration_moves_old_files() {
-        let tmp = tempfile::tempdir().unwrap();
-        let project = tmp.path().join("migtest");
-        let old_dir = project.join(".lean-ctx");
-        std::fs::create_dir_all(&old_dir).unwrap();
-        std::fs::write(old_dir.join("graph.db"), b"old-db-content").unwrap();
-        std::fs::write(old_dir.join("graph.meta.json"), b"old-meta").unwrap();
-
-        let new_dir = tmp.path().join("newloc");
-        std::fs::create_dir_all(&new_dir).unwrap();
-
-        migrate_if_needed(project.to_str().unwrap(), &new_dir);
-
-        assert!(new_dir.join("graph.db").exists());
-        assert!(new_dir.join("graph.meta.json").exists());
-        assert!(!old_dir.join("graph.db").exists());
-        assert!(!old_dir.join("graph.meta.json").exists());
-        assert_eq!(
-            std::fs::read_to_string(new_dir.join("graph.db")).unwrap(),
-            "old-db-content"
-        );
-    }
-
-    #[test]
-    fn migration_skips_when_new_exists() {
-        let tmp = tempfile::tempdir().unwrap();
-        let project = tmp.path().join("skiptest");
-        let old_dir = project.join(".lean-ctx");
-        std::fs::create_dir_all(&old_dir).unwrap();
-        std::fs::write(old_dir.join("graph.db"), b"old").unwrap();
-
-        let new_dir = tmp.path().join("newloc2");
-        std::fs::create_dir_all(&new_dir).unwrap();
-        std::fs::write(new_dir.join("graph.db"), b"already-there").unwrap();
-
-        migrate_if_needed(project.to_str().unwrap(), &new_dir);
-
-        assert_eq!(
-            std::fs::read_to_string(new_dir.join("graph.db")).unwrap(),
-            "already-there"
-        );
-        assert!(old_dir.join("graph.db").exists());
     }
 
     #[test]

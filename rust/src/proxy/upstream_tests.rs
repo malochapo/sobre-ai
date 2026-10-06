@@ -6,7 +6,6 @@ fn upstreams_with_openai(openai: &str) -> Upstreams {
     Upstreams {
         anthropic: "https://api.anthropic.com".into(),
         openai: openai.into(),
-        chatgpt: "https://chatgpt.com".into(),
         gemini: "https://generativelanguage.googleapis.com".into(),
         providers: Vec::new(),
     }
@@ -24,9 +23,7 @@ async fn proxy_state_reads_upstream_live_from_watch() {
         port: 0,
         stats: Arc::new(ProxyStats::default()),
         introspect: Arc::new(introspect::IntrospectState::default()),
-        ocla_cache: None,
         upstreams: rx,
-        chatgpt_cookies: chatgpt_cookies::shared_chatgpt_cloudflare_cookie_store(),
     };
     assert_eq!(state.openai_upstream(), "https://old.example");
 
@@ -46,7 +43,7 @@ async fn proxy_state_reads_upstream_live_from_watch() {
 /// frozen at the start-time upstream forever.
 ///
 /// The process-global env lock is intentionally held across the polling
-/// `.await`s to keep `LEAN_CTX_*` isolated for the whole test; safe because
+/// `.await`s to keep the data dir isolated for the whole test; safe because
 /// each `#[tokio::test]` owns its current-thread runtime, so this std guard
 /// only makes *other* test threads wait — it can never deadlock this one.
 #[tokio::test]
@@ -57,14 +54,12 @@ async fn config_change_is_picked_up_live_without_restart() {
     let _lock = crate::core::data_dir::test_env_lock();
     let tmp = tempfile::tempdir().unwrap();
     crate::test_env::set_var("LEAN_CTX_DATA_DIR", tmp.path());
-    // Isolate from a developer shell that exports the env override (#449),
-    // and make the reload fast + deterministic.
-    crate::test_env::remove_var("LEAN_CTX_OPENAI_UPSTREAM");
-    crate::test_env::set_var("LEAN_CTX_PROXY_RELOAD_SECS", "1");
 
     // Start state: config.toml points OpenAI at a loopback upstream.
     Config::update_global(|c| {
-        c.proxy.openai_upstream = Some("http://127.0.0.1:19101".into());
+        c.proxy
+            .upstreams
+            .insert("openai".into(), "http://127.0.0.1:19101".into());
     })
     .unwrap();
     let initial = Config::load().proxy.resolve_all();
@@ -73,9 +68,11 @@ async fn config_change_is_picked_up_live_without_restart() {
     let (tx, rx) = tokio::sync::watch::channel(Arc::new(initial.clone()));
     spawn_upstream_refresh(tx, initial);
 
-    // `lean-ctx config set proxy.openai_upstream …` (same safe write path).
+    // `lean-ctx config set proxy.upstreams.openai …` (same safe write path).
     Config::update_global(|c| {
-        c.proxy.openai_upstream = Some("http://127.0.0.1:19102".into());
+        c.proxy
+            .upstreams
+            .insert("openai".into(), "http://127.0.0.1:19102".into());
     })
     .unwrap();
 
@@ -93,6 +90,5 @@ async fn config_change_is_picked_up_live_without_restart() {
         "running proxy must serve the new config.toml upstream without a restart"
     );
 
-    crate::test_env::remove_var("LEAN_CTX_PROXY_RELOAD_SECS");
     crate::test_env::remove_var("LEAN_CTX_DATA_DIR");
 }

@@ -68,11 +68,7 @@ pub fn load_resolved(project_root: &Path) -> ResolvedArtifacts {
         }
         let candidate = resolve_candidate(project_root, raw);
 
-        let abs = match crate::core::io_boundary::jail_and_check_path(
-            "artifacts",
-            &candidate,
-            project_root,
-        ) {
+        let abs = match crate::core::io_boundary::jail_and_check_path(&candidate, project_root) {
             Ok((p, _)) => p,
             Err(e) => {
                 out.warnings
@@ -83,15 +79,8 @@ pub fn load_resolved(project_root: &Path) -> ResolvedArtifacts {
 
         // Secret-like paths are denied by default for artifacts unless explicitly allowed.
         // Artifacts tend to be indexed/shared; prefer safety over convenience.
-        let role = crate::core::roles::active_role();
-        if !role.io.allow_secret_paths
-            && let Some(reason) = crate::core::io_boundary::is_secret_like(&abs)
-        {
-            let role_name = crate::core::roles::active_role_name();
-            let msg = format!(
-                "artifact rejected ({name}): {raw} (secret-like path: {reason}; role: {role_name})"
-            );
-            crate::core::events::emit_policy_violation(&role_name, "artifacts", &msg);
+        if let Some(reason) = crate::core::io_boundary::is_secret_like(&abs) {
+            let msg = format!("artifact rejected ({name}): {raw} (secret-like path: {reason})");
             out.warnings.push(msg);
             continue;
         }
@@ -126,10 +115,6 @@ fn read_registry_file(project_root: &Path) -> Option<(PathBuf, String)> {
     if let Ok(s) = std::fs::read_to_string(&new) {
         return Some((new, s));
     }
-    let legacy = project_root.join(".leanctxcontextartifacts.json");
-    if let Ok(s) = std::fs::read_to_string(&legacy) {
-        return Some((legacy, s));
-    }
     let socrati = project_root.join(".socraticodecontextartifacts.json");
     if let Ok(s) = std::fs::read_to_string(&socrati) {
         return Some((socrati, s));
@@ -159,18 +144,12 @@ fn normalize_rel_path(raw: &str) -> String {
 ///
 /// Absolute paths and `~/…` stay absolute so external doc corpora (an Obsidian
 /// vault, a shared `~/notes`) can be declared directly (GL#1132) — the PathJail
-/// allow-list (`read_only_roots` / `extra_roots` / `LEAN_CTX_ALLOW_PATH`)
+/// allow-list (`read_only_roots` / `extra_roots` / `allow_paths`)
 /// remains the security gate, so an absolute entry outside the allowed roots is
-/// still rejected. Legacy compatibility: a leading slash historically meant
-/// "project-relative" (it was stripped), so when the stripped reading matches
-/// an existing path inside the project it wins over the absolute reading.
+/// still rejected.
 fn resolve_candidate(project_root: &Path, raw: &str) -> PathBuf {
     let expanded = crate::core::pathjail::expand_user_path(raw.trim());
     if expanded.is_absolute() {
-        let legacy = project_root.join(normalize_rel_path(raw));
-        if legacy.exists() {
-            return legacy;
-        }
         return expanded;
     }
     project_root.join(normalize_rel_path(raw))
@@ -196,18 +175,6 @@ mod tests {
     }
 
     #[test]
-    fn resolve_candidate_prefers_legacy_reading_for_existing_project_paths() {
-        let dir = tempfile::tempdir().unwrap();
-        std::fs::create_dir_all(dir.path().join("docs")).unwrap();
-        // "/docs" used to mean "<root>/docs"; that reading still wins while
-        // the project path exists.
-        assert_eq!(
-            resolve_candidate(dir.path(), "/docs"),
-            dir.path().join("docs")
-        );
-    }
-
-    #[test]
     fn resolve_candidate_keeps_external_absolute_paths() {
         let project = tempfile::tempdir().unwrap();
         let external = tempfile::tempdir().unwrap();
@@ -222,7 +189,7 @@ mod tests {
     #[cfg(not(feature = "no-jail"))]
     #[test]
     fn external_corpus_requires_allow_list() {
-        let _g = crate::core::data_dir::test_env_lock();
+        let iso = crate::core::data_dir::isolated_data_dir();
         let project = tempfile::tempdir().unwrap();
         let external = tempfile::tempdir().unwrap();
         let vault = external.path().join("vault");
@@ -243,7 +210,6 @@ mod tests {
         );
 
         // Without an allow-list entry the external path is rejected by the jail.
-        crate::test_env::remove_var("LEAN_CTX_ALLOW_PATH");
         let denied = load_resolved(project.path());
         assert!(denied.artifacts.is_empty(), "{:?}", denied.artifacts);
         assert!(
@@ -252,11 +218,14 @@ mod tests {
             denied.warnings
         );
 
-        // Allow-listing the folder (config `read_only_roots`/`extra_roots` or
-        // this env var) makes it a first-class corpus.
-        crate::test_env::set_var("LEAN_CTX_ALLOW_PATH", external.path());
+        // Allow-listing the folder (config `allow_paths`, `read_only_roots` or
+        // `extra_roots`) makes it a first-class corpus.
+        std::fs::write(
+            iso.path().join("config.toml"),
+            format!("allow_paths = [{:?}]\n", external.path().to_string_lossy()),
+        )
+        .unwrap();
         let allowed = load_resolved(project.path());
-        crate::test_env::remove_var("LEAN_CTX_ALLOW_PATH");
 
         assert_eq!(allowed.artifacts.len(), 1, "{:?}", allowed.warnings);
         let a = &allowed.artifacts[0];

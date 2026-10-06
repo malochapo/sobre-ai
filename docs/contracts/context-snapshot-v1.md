@@ -65,9 +65,8 @@ message = sha256-hex("ctxsnapshot-sign-v1:{snapshot_id}")
 signature = ed25519_sign(signing_key, message)
 ```
 
-This mirrors the `ctxpkg-sign-v1` scheme and **reuses the same publisher
-keypair** (`<data_dir>/keys/ctxpkg-ed25519.key`) so a project has one stable
-signing identity across packages and snapshots.
+The keypair lives at `<data_dir>/keys/ctxpkg-ed25519.key` (the file name
+predates snapshots and is kept so existing keys stay valid).
 
 Verification is two-fold:
 
@@ -113,4 +112,4 @@ The full CLI surface over a snapshot (each builds on this contract):
 - Publish / import: `rust/src/core/context_snapshot/publish.rs`
 - CLI surface: `rust/src/cli/snapshot_cmd.rs`
 - Schema version: `rust/src/core/contracts.rs` (`CONTEXT_SNAPSHOT_V1_SCHEMA_VERSION`)
-- Reused keypair: `rust/src/core/context_package/keys.rs`
+- Keypair: `rust/src/core/context_snapshot/keys.rs`

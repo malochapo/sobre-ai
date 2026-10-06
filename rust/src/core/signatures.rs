@@ -250,19 +250,6 @@ fn rust_impl_re() -> &'static Regex {
     static_regex!(r"^(\s*)impl\s+(?:(\w+)\s+for\s+)?(\w+)")
 }
 
-use std::sync::atomic::{AtomicU64, Ordering};
-
-static TREE_SITTER_HITS: AtomicU64 = AtomicU64::new(0);
-static REGEX_FALLBACK_HITS: AtomicU64 = AtomicU64::new(0);
-
-/// Returns (tree_sitter_hits, regex_fallback_hits) since process start.
-pub fn signature_backend_stats() -> (u64, u64) {
-    (
-        TREE_SITTER_HITS.load(Ordering::Relaxed),
-        REGEX_FALLBACK_HITS.load(Ordering::Relaxed),
-    )
-}
-
 /// Which extractor produced a signature set: the primary tree-sitter AST path
 /// ([`crate::core::signatures_ts`]) or the line-oriented regex fallback in this
 /// module. Surfaced so navigation output (`ctx_outline`) can label its backend
@@ -285,23 +272,11 @@ impl SigBackend {
 }
 
 pub fn extract_signatures(content: &str, file_ext: &str) -> Vec<Signature> {
-    let (sigs, backend) = extract_signatures_with_backend(content, file_ext);
-    let is_tree_sitter = matches!(backend, SigBackend::TreeSitter);
-    match backend {
-        SigBackend::TreeSitter => TREE_SITTER_HITS.fetch_add(1, Ordering::Relaxed),
-        SigBackend::Regex => REGEX_FALLBACK_HITS.fetch_add(1, Ordering::Relaxed),
-    };
-    // Persistent per-extension telemetry (GH #690 Phase 2): the tiering cut
-    // needs to know which grammars earn their binary bytes across sessions,
-    // which these process-lifetime atomics cannot answer.
-    crate::core::grammar_usage::record(file_ext, is_tree_sitter);
-    sigs
+    extract_signatures_with_backend(content, file_ext).0
 }
 
 /// Like [`extract_signatures`] but also reports which backend produced the
-/// result. Does **not** touch the global backend counters, so callers that only
-/// want the label (e.g. per-file JSON outline) don't distort
-/// [`signature_backend_stats`]; the counted path stays [`extract_signatures`].
+/// result.
 pub fn extract_signatures_with_backend(
     content: &str,
     file_ext: &str,
@@ -328,28 +303,6 @@ pub fn extract_signatures_with_backend(
         _ => extract_generic_signatures(content),
     };
     (sigs, SigBackend::Regex)
-}
-
-pub fn extract_file_map(path: &str, content: &str) -> String {
-    let ext = std::path::Path::new(path)
-        .extension()
-        .and_then(|e| e.to_str())
-        .unwrap_or("rs");
-    let dep_info = super::deps::extract_deps(content, ext);
-    let sigs = extract_signatures(content, ext);
-    let mut parts = Vec::new();
-    if !dep_info.imports.is_empty() {
-        parts.push(dep_info.imports.join(","));
-    }
-    let key_sigs: Vec<String> = sigs
-        .iter()
-        .filter(|s| s.is_exported || s.indent == 0)
-        .map(Signature::to_compact_located)
-        .collect();
-    if !key_sigs.is_empty() {
-        parts.push(key_sigs.join("\n"));
-    }
-    parts.join("\n")
 }
 
 fn extract_ts_signatures(content: &str) -> Vec<Signature> {

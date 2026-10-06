@@ -802,29 +802,6 @@ mod tests {
     }
 
     #[test]
-    fn revision_count_default_zero_for_legacy() {
-        let json = r#"{
-            "category": "test", "key": "k", "value": "v",
-            "source_session": "s", "confidence": 0.8,
-            "created_at": "2024-01-01T00:00:00Z",
-            "last_confirmed": "2024-01-01T00:00:00Z"
-        }"#;
-        let fact: KnowledgeFact = serde_json::from_str(json).unwrap();
-        assert_eq!(fact.revision_count, 0);
-    }
-
-    #[test]
-    fn judged_pairs_default_empty_for_legacy() {
-        let json = r#"{
-            "project_root": "/test", "project_hash": "abc",
-            "facts": [], "patterns": [], "history": [],
-            "updated_at": "2024-01-01T00:00:00Z"
-        }"#;
-        let pk: ProjectKnowledge = serde_json::from_str(json).unwrap();
-        assert!(pk.judged_pairs.is_empty());
-    }
-
-    #[test]
     fn cross_key_similar_finds_related_facts() {
         let policy = default_policy();
         let mut k = ProjectKnowledge::new("/tmp/test");

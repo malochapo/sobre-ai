@@ -22,14 +22,12 @@ mod tests;
 mod write;
 
 pub(crate) use content::cursor_mdc_document;
-pub use content::{
-    GEMINI_DEDICATED_CONTEXT_FILENAME, gemini_dedicated_rules_path, opencode_dedicated_rules_path,
-};
+pub use content::{GEMINI_DEDICATED_CONTEXT_FILENAME, gemini_dedicated_rules_path};
 
 /// Forwarding functions — content is delegated to `core::rules_canonical`.
 pub fn canonical_rules_block() -> String {
     let cfg = crate::core::config::Config::load();
-    let shadow = cfg.shadow_mode;
+    let shadow = true;
     let level = crate::core::config::CompressionLevel::effective(&cfg);
     crate::core::rules_canonical::render(
         shadow,
@@ -42,7 +40,7 @@ pub fn rules_shared_content() -> String {
 }
 pub fn rules_dedicated_markdown() -> String {
     let cfg = crate::core::config::Config::load();
-    let shadow = cfg.shadow_mode;
+    let shadow = true;
     let level = crate::core::config::CompressionLevel::effective(&cfg);
     crate::core::rules_canonical::render(
         shadow,
@@ -56,7 +54,7 @@ pub fn rules_dedicated_markdown() -> String {
 /// LONGFORM profile with the verbose teaching sections.
 pub fn rules_longform_markdown() -> String {
     let cfg = crate::core::config::Config::load();
-    let shadow = cfg.shadow_mode;
+    let shadow = true;
     let level = crate::core::config::CompressionLevel::effective(&cfg);
     crate::core::rules_canonical::render(
         shadow,
@@ -76,13 +74,12 @@ pub fn rules_longform_markdown() -> String {
 pub fn expected_blocks_by_target(
     home: &std::path::Path,
 ) -> std::collections::HashMap<String, String> {
-    let injection = crate::core::config::Config::load().rules_injection_effective();
     let cfg = crate::core::config::Config::load();
-    let shadow = cfg.shadow_mode;
+    let shadow = true;
     let level = crate::core::config::CompressionLevel::effective(&cfg);
     let shared = canonical_rules_block();
     let dedicated = rules_dedicated_markdown();
-    build_rules_targets(home, injection)
+    build_rules_targets(home)
         .into_iter()
         .map(|target| {
             let expected = match target.format {
@@ -142,15 +139,7 @@ enum RulesResult {
 }
 
 pub fn inject_all_rules(home: &std::path::Path) -> InjectResult {
-    let cfg = crate::core::config::Config::load();
-    if cfg.rules_scope_effective() == crate::core::config::RulesScope::Project {
-        return InjectResult::default();
-    }
-    if cfg.rules_injection_effective() == crate::core::config::RulesInjection::Off {
-        return InjectResult::default();
-    }
-
-    let targets = build_rules_targets(home, cfg.rules_injection_effective());
+    let targets = build_rules_targets(home);
 
     let mut result = InjectResult::default();
 
@@ -203,15 +192,7 @@ pub fn inject_all_rules(home: &std::path::Path) -> InjectResult {
 
 /// Inject global rules for a single agent (by CLI key like "opencode", "cursor", etc.).
 pub fn inject_rules_for_agent(home: &std::path::Path, agent_key: &str) -> InjectResult {
-    let cfg = crate::core::config::Config::load();
-    if cfg.rules_scope_effective() == crate::core::config::RulesScope::Project {
-        return InjectResult::default();
-    }
-    if cfg.rules_injection_effective() == crate::core::config::RulesInjection::Off {
-        return InjectResult::default();
-    }
-
-    let targets = build_rules_targets(home, cfg.rules_injection_effective());
+    let targets = build_rules_targets(home);
     let mut result = InjectResult::default();
 
     for target in &targets {
@@ -246,25 +227,30 @@ pub fn inject_rules_for_agent(home: &std::path::Path, agent_key: &str) -> Inject
     result
 }
 
+/// Whether lean-ctx rules are installed for any agent: the rules targets, plus
+/// the CLAUDE.md block (Claude Code has no rules target). Rules are re-synced
+/// on update only where they are installed, so `init --skip-rules` stays in
+/// effect.
+#[must_use]
+pub fn rules_installed() -> bool {
+    let Some(home) = dirs::home_dir() else {
+        return false;
+    };
+    if any_rules_marker_present(&home) {
+        return true;
+    }
+    std::fs::read_to_string(crate::core::editor_registry::claude_state_dir(&home).join("CLAUDE.md"))
+        .is_ok_and(|c| c.contains(crate::hooks::agents::CLAUDE_MD_BLOCK_START))
+}
+
 /// Returns `true` if a lean-ctx rules marker is present in *any* supported
 /// agent's rules file.
 #[must_use]
 pub fn any_rules_marker_present(home: &std::path::Path) -> bool {
-    use crate::core::config::RulesInjection;
-    let mut seen = std::collections::HashSet::new();
-    for injection in [RulesInjection::Shared, RulesInjection::Dedicated] {
-        for target in build_rules_targets(home, injection) {
-            if !seen.insert(target.path.clone()) {
-                continue;
-            }
-            if let Ok(content) = std::fs::read_to_string(&target.path)
-                && RulesFile::parse(&content).has_content()
-            {
-                return true;
-            }
-        }
-    }
-    false
+    build_rules_targets(home).iter().any(|target| {
+        std::fs::read_to_string(&target.path)
+            .is_ok_and(|content| RulesFile::parse(&content).has_content())
+    })
 }
 
 fn match_agent_name(cli_key: &str, target_name: &str) -> bool {
@@ -274,40 +260,19 @@ fn match_agent_name(cli_key: &str, target_name: &str) -> bool {
         || tn.contains(&needle)
         || (needle.contains("cursor") && tn.contains("cursor"))
         || (needle.contains("claude") && tn.contains("claude"))
-        || (needle.contains("codebuddy") && tn.contains("codebuddy"))
         || (needle.contains("windsurf") && tn.contains("windsurf"))
         || (needle.contains("codex") && tn.contains("claude"))
         || (needle.contains("zed") && tn.contains("zed"))
         || (needle.contains("copilot") && tn.contains("copilot"))
-        || (needle.contains("jetbrains") && tn.contains("jetbrains"))
-        || (needle.contains("kiro") && tn.contains("kiro"))
         || (needle.contains("gemini") && tn.contains("gemini"))
         || (needle == "opencode" && tn.contains("opencode"))
-        || (needle == "cline" && tn.contains("cline"))
-        || (needle == "roo" && tn.contains("roo"))
-        || (needle == "amp" && tn.contains("amp"))
-        || (needle == "trae" && tn.contains("trae"))
-        || (needle == "amazonq" && tn.contains("amazon"))
-        || (needle == "pi" && tn.contains("pi coding"))
-        || (needle == "crush" && tn.contains("crush"))
-        || (needle == "verdent" && tn.contains("verdent"))
-        || (needle == "continue" && tn.contains("continue"))
-        || (needle == "qwen" && tn.contains("qwen"))
-        || (needle == "antigravity" && tn.contains("antigravity"))
-        || (needle == "augment" && tn.contains("augment"))
-        || (needle == "openclaw" && tn.contains("openclaw"))
-        || (needle == "grok" && tn.contains("grok"))
         || (needle == "vscode" && (tn.contains("vs code") || tn.contains("vscode")))
 }
 
 /// Check if the rules file for a given MCP client is up-to-date.
 pub fn check_rules_freshness(client_name: &str) -> Option<String> {
     let home = dirs::home_dir()?;
-    let injection = crate::core::config::Config::load().rules_injection_effective();
-    if injection == crate::core::config::RulesInjection::Off {
-        return None;
-    }
-    let targets = build_rules_targets(&home, injection);
+    let targets = build_rules_targets(&home);
 
     let matched: Vec<&RulesTarget> = targets
         .iter()
@@ -339,8 +304,7 @@ pub fn check_rules_freshness(client_name: &str) -> Option<String> {
 }
 
 pub fn collect_rules_status(home: &std::path::Path) -> Vec<RulesTargetStatus> {
-    let injection = crate::core::config::Config::load().rules_injection_effective();
-    let targets = build_rules_targets(home, injection);
+    let targets = build_rules_targets(home);
     let mut out = Vec::new();
 
     for target in &targets {

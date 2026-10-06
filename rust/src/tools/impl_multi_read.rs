@@ -7,10 +7,7 @@ use crate::tools::ctx_read;
 const DEFAULT_MAX_MULTI_READ_BYTES: usize = 512 * 1024;
 
 fn max_multi_read_bytes() -> usize {
-    std::env::var("LCTX_MAX_MULTI_READ_BYTES")
-        .ok()
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(DEFAULT_MAX_MULTI_READ_BYTES)
+    DEFAULT_MAX_MULTI_READ_BYTES
 }
 
 pub fn handle_with_task_fresh(
@@ -86,7 +83,7 @@ pub fn handle_with_task_fresh(
         let skipped = n - files_read;
         format!(
             "Read {files_read}/{n} files | {total_saved} tokens saved\n\
-             ⚠ Output capped at {max_bytes} bytes (LCTX_MAX_MULTI_READ_BYTES). \
+             ⚠ Output capped at {max_bytes} bytes. \
              {skipped} file(s) skipped. Use individual ctx_read calls for remaining files."
         )
     } else if total_saved > 0 {

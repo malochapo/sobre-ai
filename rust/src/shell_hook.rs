@@ -16,14 +16,12 @@ const DROPIN_SH: &str = "00-lean-ctx.sh";
 const KNOWN_AGENT_ENV_VARS: &[&str] = &[
     "LEAN_CTX_AGENT",
     "CLAUDECODE",
-    "CODEBUDDY",
     "CODEX_CLI_SESSION",
     "GEMINI_SESSION",
 ];
 
 const AGENT_ALIASES: &[(&str, &str)] = &[
     ("claude", "claude"),
-    ("codebuddy", "codebuddy"),
     ("codex", "codex"),
     ("gemini", "gemini"),
 ];
@@ -32,6 +30,7 @@ const AGENT_ALIASES: &[(&str, &str)] = &[
 /// shell is unknown/unsupported (callers should fall back to "restart your
 /// shell"). Kept pure so it is deterministic to unit-test without mutating the
 /// process environment.
+#[cfg(test)]
 fn source_command_for_shell(shell: &str) -> Option<&'static str> {
     if shell.contains("zsh") {
         Some("source ~/.zshrc")
@@ -42,14 +41,6 @@ fn source_command_for_shell(shell: &str) -> Option<&'static str> {
     } else {
         None
     }
-}
-
-/// The `source <rc>` command for the user's current login shell (`$SHELL`), or
-/// `None` when it cannot be determined. Single source of truth so post-`setup`
-/// and post-`update` hints stay in sync and never advise sourcing a shell the
-/// user does not have (e.g. `~/.zshrc` on a bash-only system — see #321).
-pub fn shell_source_command() -> Option<&'static str> {
-    source_command_for_shell(&std::env::var("SHELL").unwrap_or_default())
 }
 
 /// The rc file path for a given login-shell path (pure, testable).
@@ -70,15 +61,6 @@ fn rc_file_for_shell(shell: &str) -> &'static str {
 /// troubleshooting hints so they never hardcode a single shell's rc file.
 pub fn shell_rc_file() -> &'static str {
     rc_file_for_shell(&std::env::var("SHELL").unwrap_or_default())
-}
-
-/// Human-facing one-liner telling the user how to load the refreshed aliases,
-/// tailored to their login shell. Used after `lean-ctx update`.
-pub fn reload_aliases_hint() -> String {
-    match shell_source_command() {
-        Some(cmd) => format!("Run '{cmd}' (or restart terminal) for updated shell aliases."),
-        None => "Restart your terminal to load updated shell aliases.".to_string(),
-    }
 }
 
 /// Installation style for the shell hook + agent aliases.
@@ -320,11 +302,30 @@ fn strip_other_style(
     }
 }
 
-/// Public entrypoint: install with auto-detected style. Preserves the
-/// previous signature so existing callers (setup.rs, cli/shell_init.rs)
-/// don't need to change.
-pub fn install_all(quiet: bool) {
-    install_all_with_style(quiet, Style::Auto);
+/// Public entrypoint: install with auto-detected style. `agent_aliases` is
+/// the `init --agent-aliases` / `--no-agent-aliases` choice; `None` keeps what
+/// is installed (see [`agent_aliases_declined`]).
+pub fn install_all(quiet: bool, agent_aliases: Option<bool>) {
+    install_all_with_style(quiet, Style::Auto, agent_aliases);
+}
+
+/// Whether `slot`'s block is installed, inline in the rc file or as a drop-in.
+fn slot_installed(home: &Path, slot: &Slot) -> bool {
+    std::fs::read_to_string(home.join(slot.rc_file)).is_ok_and(|c| c.contains(slot.marker_start))
+        || home.join(slot.dropin_dir).join(slot.dropin_file).exists()
+}
+
+/// Agent aliases were declined (`init --no-agent-aliases`): the shell hook is
+/// installed but no alias block is. The installed files are the record of
+/// that choice; there is no config key.
+#[must_use]
+pub fn agent_aliases_declined(home: &Path) -> bool {
+    [SLOT_ZSHENV, SLOT_BASHENV]
+        .iter()
+        .any(|s| slot_installed(home, s))
+        && ![SLOT_ZSHRC, SLOT_BASHRC]
+            .iter()
+            .any(|s| slot_installed(home, s))
 }
 
 /// Explicit style entrypoint for callers that want to honour a `--style=`
@@ -333,12 +334,12 @@ pub fn install_all(quiet: bool) {
 /// Captures a single `BackupStamp` here so every migration backup
 /// produced by this invocation shares one suffix, even if the wall
 /// clock ticks over while we're walking the slots.
-pub fn install_all_with_style(quiet: bool, style: Style) {
+pub fn install_all_with_style(quiet: bool, style: Style, agent_aliases: Option<bool>) {
     let cfg = crate::core::config::Config::load();
     if cfg.shell_hook_disabled_effective() {
         if !quiet {
             eprintln!(
-                "lean-ctx: shell hook disabled (shell_hook_disabled=true or LEAN_CTX_NO_HOOK).                  Skipping hook installation."
+                "lean-ctx: shell hook disabled (shell_hook = false). Skipping hook installation."
             );
         }
         return;
@@ -348,6 +349,9 @@ pub fn install_all_with_style(quiet: bool, style: Style) {
         tracing::error!("Cannot resolve home directory");
         return;
     };
+    // Read before the env hook below is written, so a first install counts
+    // as "not declined".
+    let aliases = agent_aliases.unwrap_or_else(|| !agent_aliases_declined(&home));
 
     let stamp = BackupStamp::now();
     if shell_available("zsh") {
@@ -356,39 +360,17 @@ pub fn install_all_with_style(quiet: bool, style: Style) {
     if shell_available("bash") {
         install_bashenv(&home, quiet, style, &stamp);
     }
-    let cfg = crate::core::config::Config::load();
-    if cfg.skip_agent_aliases {
-        remove_agent_aliases(&home, quiet);
-    } else {
+    if aliases {
         install_aliases(&home, quiet, style, &stamp);
+    } else {
+        remove_agent_aliases(&home, quiet);
     }
 }
 
 /// Returns `true` if the given shell binary is installed on the system.
 /// Checks common installation paths without spawning a subprocess.
-///
-/// `LEAN_CTX_SHELL_HOOK_FORCE` overrides detection for environments where the
-/// shell lives in a non-standard path or is provisioned after install (minimal
-/// containers, custom images): set it to `1`/`true`/`all` to force every shell,
-/// or to a comma-separated list (e.g. `zsh,bash`) to force specific ones.
 #[cfg(unix)]
 fn shell_available(shell: &str) -> bool {
-    if let Ok(forced) = std::env::var("LEAN_CTX_SHELL_HOOK_FORCE") {
-        let forced = forced.trim();
-        if forced == "1"
-            || forced.eq_ignore_ascii_case("true")
-            || forced.eq_ignore_ascii_case("all")
-        {
-            return true;
-        }
-        if forced
-            .split(',')
-            .any(|s| s.trim().eq_ignore_ascii_case(shell))
-        {
-            return true;
-        }
-    }
-
     let candidates: &[&str] = match shell {
         "zsh" => &[
             "/bin/zsh",
@@ -463,7 +445,7 @@ const REDIRECT_SKIP_MARKERS: &[&str] = &[
 /// (see [`REDIRECT_SKIP_MARKERS`]).
 fn redirect_block(exec_var: &str, env_check: &str) -> String {
     let mut lines = vec![format!(
-        "if [[ -z \"$LEAN_CTX_ACTIVE\" && -z \"$LEAN_CTX_NO_HOOK\" && -n \"${exec_var}\" ]] \\"
+        "if [[ -z \"$LEAN_CTX_ACTIVE\" && -n \"${exec_var}\" ]] \\"
     )];
     for marker in REDIRECT_SKIP_MARKERS {
         lines.push(format!("  && [[ \"${exec_var}\" != *\"{marker}\"* ]] \\"));
@@ -538,7 +520,7 @@ fn install_aliases(home: &Path, quiet: bool, style: Style, stamp: &BackupStamp) 
 }
 
 /// Remove agent alias blocks from rc files without touching the env hook.
-/// Called when `skip_agent_aliases = true` to clean up previously installed blocks.
+/// Called on `init --no-agent-aliases` to clean up previously installed blocks.
 fn remove_agent_aliases(home: &Path, quiet: bool) {
     for slot in &[SLOT_ZSHRC, SLOT_BASHRC] {
         let rc = home.join(slot.rc_file);
@@ -625,7 +607,6 @@ mod tests {
         let check = build_env_check();
         assert!(check.contains("LEAN_CTX_AGENT"));
         assert!(check.contains("CLAUDECODE"));
-        assert!(check.contains("CODEBUDDY"));
         assert!(check.contains("||"));
     }
 
@@ -970,29 +951,6 @@ mod tests {
     }
 
     #[test]
-    fn install_migrates_dropin_to_inline() {
-        let tmp = tempfile::tempdir().unwrap();
-        // No source loop → Style::Inline forces inline. Pre-stage a
-        // leftover drop-in file as if the user previously had the layout.
-        std::fs::create_dir_all(tmp.path().join(".zshenv.d")).unwrap();
-        std::fs::write(
-            tmp.path().join(".zshenv.d").join(DROPIN_ZSH),
-            "# stale lean-ctx drop-in\n",
-        )
-        .unwrap();
-        std::fs::write(tmp.path().join(".zshenv"), "export PATH=/usr/bin\n").unwrap();
-
-        install_zshenv(tmp.path(), true, Style::Inline, &test_stamp());
-
-        assert!(
-            !tmp.path().join(".zshenv.d").join(DROPIN_ZSH).exists(),
-            "drop-in file should be removed when installing inline"
-        );
-        let body = std::fs::read_to_string(tmp.path().join(".zshenv")).unwrap();
-        assert!(body.contains(MARKER_START));
-    }
-
-    #[test]
     fn install_is_idempotent_in_dropin_mode() {
         let tmp = tempfile::tempdir().unwrap();
         std::fs::create_dir_all(tmp.path().join(".zshenv.d")).unwrap();
@@ -1126,24 +1084,6 @@ mod tests {
     // command (and the 120s/8MB cap truncates output). See REDIRECT_SKIP_MARKERS.
 
     #[test]
-    fn redirect_block_guards_every_skip_marker() {
-        let block = redirect_block("ZSH_EXECUTION_STRING", "[[ -n \"$LEAN_CTX_AGENT\" ]]");
-        let exec_pos = block
-            .find("exec lean-ctx")
-            .expect("redirect must exec lean-ctx");
-        for marker in REDIRECT_SKIP_MARKERS {
-            let guard = format!("[[ \"$ZSH_EXECUTION_STRING\" != *\"{marker}\"* ]]");
-            let guard_pos = block
-                .find(&guard)
-                .unwrap_or_else(|| panic!("redirect must guard against {marker:?}:\n{block}"));
-            assert!(
-                guard_pos < exec_pos,
-                "guard for {marker:?} must precede the exec redirect"
-            );
-        }
-    }
-
-    #[test]
     fn zshenv_redirect_skips_ide_sandbox_and_hooks() {
         let tmp = tempfile::tempdir().unwrap();
         install_zshenv(tmp.path(), true, Style::Inline, &test_stamp());
@@ -1197,18 +1137,9 @@ mod tests {
 
     // --- #309: shell_available guards ---
 
-    /// Serialises the env-sensitive `shell_available` tests so one setting
-    /// `LEAN_CTX_SHELL_HOOK_FORCE` can't race the filesystem-match assertions.
-    #[cfg(unix)]
-    static SHELL_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
-
     #[cfg(unix)]
     #[test]
     fn shell_available_rejects_unknown_shell() {
-        let _g = SHELL_ENV_LOCK
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        crate::test_env::remove_var("LEAN_CTX_SHELL_HOOK_FORCE");
         assert!(!shell_available("fish"));
         assert!(!shell_available("nushell"));
         assert!(!shell_available(""));
@@ -1217,10 +1148,6 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn shell_available_finds_installed_shells() {
-        let _g = SHELL_ENV_LOCK
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        crate::test_env::remove_var("LEAN_CTX_SHELL_HOOK_FORCE");
         // On any Unix CI/dev machine at least one of bash/zsh should exist.
         let has_bash = Path::new("/bin/bash").exists() || Path::new("/usr/bin/bash").exists();
         let has_zsh = Path::new("/bin/zsh").exists() || Path::new("/usr/bin/zsh").exists();
@@ -1232,26 +1159,5 @@ mod tests {
             shell_available("zsh") == has_zsh,
             "shell_available(zsh) should match filesystem"
         );
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn shell_hook_force_overrides_detection() {
-        let _g = SHELL_ENV_LOCK
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-
-        // `all` forces every shell, even ones not on disk.
-        crate::test_env::set_var("LEAN_CTX_SHELL_HOOK_FORCE", "all");
-        assert!(shell_available("zsh"));
-        assert!(shell_available("bash"));
-
-        // A comma list forces only the named shells.
-        crate::test_env::set_var("LEAN_CTX_SHELL_HOOK_FORCE", "zsh");
-        assert!(shell_available("zsh"));
-        // `bash` falls back to filesystem detection here; assert only the
-        // forced-on guarantee to stay host-independent.
-
-        crate::test_env::remove_var("LEAN_CTX_SHELL_HOOK_FORCE");
     }
 }

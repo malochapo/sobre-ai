@@ -12,52 +12,6 @@ use super::Config;
 
 static SESSION_DEGRADE_LEVEL: AtomicU8 = AtomicU8::new(0);
 
-/// Unified reasoning-effort level for the cache-safe, cross-provider effort
-/// control (#834). "Off" is represented by `Option::None`, not a variant — the
-/// feature is strictly opt-in.
-///
-/// This type only carries the operator's *intent*; the wire translation into
-/// each provider's native parameter (OpenAI `reasoning(_).effort`, Anthropic
-/// `output_config.effort`) lives in [`crate::proxy::effort`]. The value is a
-/// constant once configured, so it is identical on every request of every
-/// conversation — the provider prompt-cache prefix stays byte-stable (#448/#498)
-/// and only the model's reasoning depth changes. Per-turn effort switching is
-/// deliberately *not* supported: it would invalidate the prompt cache.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum Effort {
-    Minimal,
-    Low,
-    Medium,
-    High,
-}
-
-impl Effort {
-    /// Parse a config/env token. `off`, empty, or anything unrecognized yields
-    /// `None` (feature disabled) so a typo can never silently enable it.
-    #[must_use]
-    pub fn parse(s: &str) -> Option<Self> {
-        match s.trim().to_ascii_lowercase().as_str() {
-            "minimal" => Some(Self::Minimal),
-            "low" => Some(Self::Low),
-            "medium" => Some(Self::Medium),
-            "high" => Some(Self::High),
-            _ => None,
-        }
-    }
-
-    /// Stable lowercase label (config display, logs, `/status`).
-    #[must_use]
-    pub fn label(self) -> &'static str {
-        match self {
-            Self::Minimal => "minimal",
-            Self::Low => "low",
-            Self::Medium => "medium",
-            Self::High => "high",
-        }
-    }
-}
-
 /// Controls when shell output is tee'd to disk for later retrieval.
 ///
 /// Default is `HighCompression` (not `Failures`): a heavily compressed but
@@ -83,8 +37,7 @@ pub enum TeeMode {
 /// file path / handle at point-of-need:
 /// * `Minimal` (default) — a single, non-MCP-first line on the *first* compressed
 ///   view of a file/handle per session.
-/// * `Full` — the richer ladder (`mode=full` · `raw=true` · `ctx_retrieve` ·
-///   `ctx_expand`); used by the `exploration`/`review` profiles.
+/// * `Full` — the richer ladder (`mode=full` · `raw=true` · `ctx_expand`).
 /// * `Off` — suppresses the footer entirely (the proactive rule still ships, so
 ///   reversibility is never undiscoverable).
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
@@ -109,13 +62,6 @@ impl RecoveryHints {
         }
     }
 
-    /// Reads the recovery-hint tier from `LEAN_CTX_RECOVERY_HINTS` (ops/test
-    /// override). Unset or unrecognized yields `None` (use the configured value).
-    #[must_use]
-    pub fn from_env() -> Option<Self> {
-        Self::parse(&std::env::var("LEAN_CTX_RECOVERY_HINTS").ok()?)
-    }
-
     /// Stable lowercase label (config display, schema, `/status`).
     #[must_use]
     pub fn label(self) -> &'static str {
@@ -127,64 +73,7 @@ impl RecoveryHints {
     }
 }
 
-/// Legacy: Controls agent output verbosity level injected into MCP instructions.
-/// Superseded by `CompressionLevel`. Kept for backward compatibility with old config.toml files.
-/// New setups use `compression_level` instead. See `CompressionLevel::effective()`.
-#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
-#[serde(rename_all = "lowercase")]
-pub enum TerseAgent {
-    #[default]
-    Off,
-    Lite,
-    Full,
-    Ultra,
-}
-
-impl TerseAgent {
-    /// Reads the terse-agent level from the `LEAN_CTX_TERSE_AGENT` env var.
-    pub fn from_env() -> Self {
-        match std::env::var("LEAN_CTX_TERSE_AGENT")
-            .unwrap_or_default()
-            .to_lowercase()
-            .as_str()
-        {
-            "lite" => Self::Lite,
-            "full" => Self::Full,
-            "ultra" => Self::Ultra,
-            _ => Self::Off,
-        }
-    }
-}
-
-/// Legacy: Controls how dense/compact MCP tool output is formatted.
-/// Superseded by `CompressionLevel`. Kept for backward compatibility with old config.toml files.
-/// New setups use `compression_level` instead. See `CompressionLevel::effective()`.
-#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
-#[serde(rename_all = "lowercase")]
-pub enum OutputDensity {
-    #[default]
-    Normal,
-    Terse,
-    Ultra,
-}
-
-impl OutputDensity {
-    /// Reads the output density from the `LEAN_CTX_OUTPUT_DENSITY` env var.
-    pub fn from_env() -> Self {
-        match std::env::var("LEAN_CTX_OUTPUT_DENSITY")
-            .unwrap_or_default()
-            .to_lowercase()
-            .as_str()
-        {
-            "terse" => Self::Terse,
-            "ultra" => Self::Ultra,
-            _ => Self::Normal,
-        }
-    }
-}
-
-/// Unified compression level that replaces the 4 separate legacy concepts:
-/// `terse_agent`, `output_density`, `terse_mode`, and `crp_mode`.
+/// Compression level of tool responses.
 ///
 /// Controls how much detail tool responses include.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
@@ -197,14 +86,7 @@ pub enum ResponseVerbosity {
 
 impl ResponseVerbosity {
     pub fn effective() -> Self {
-        if let Ok(v) = std::env::var("LEAN_CTX_RESPONSE_VERBOSITY") {
-            match v.trim().to_lowercase().as_str() {
-                "headers_only" | "headers" | "minimal" => return Self::HeadersOnly,
-                "full" | "" => return Self::Full,
-                _ => {}
-            }
-        }
-        Config::load().response_verbosity
+        crate::core::config::ResponseVerbosity::default()
     }
 
     pub fn is_headers_only(&self) -> bool {
@@ -247,71 +129,52 @@ pub enum SessionDegrade {
 }
 
 impl CompressionLevel {
-    /// Decomposes the unified level into legacy component settings.
-    /// Returns (TerseAgent, OutputDensity, crp_mode_str, terse_mode_bool).
-    pub fn to_components(&self) -> (TerseAgent, OutputDensity, &'static str, bool) {
+    /// The CRP mode and whether the session is terse at this level.
+    pub fn to_components(&self) -> (&'static str, bool) {
         match self {
-            Self::Off => (TerseAgent::Off, OutputDensity::Normal, "off", false),
-            Self::Lite => (TerseAgent::Lite, OutputDensity::Terse, "off", true),
-            Self::Standard => (TerseAgent::Full, OutputDensity::Terse, "compact", true),
-            Self::Max | Self::Raw => (TerseAgent::Ultra, OutputDensity::Ultra, "tdd", true),
+            Self::Off => ("off", false),
+            Self::Lite => ("off", true),
+            Self::Standard => ("compact", true),
+            Self::Max | Self::Raw => ("tdd", true),
         }
     }
 
-    /// Infers a `CompressionLevel` from legacy config keys for backward compatibility.
-    /// Priority: terse_agent > output_density (picks the highest implied level).
-    pub fn from_legacy(terse_agent: &TerseAgent, output_density: &OutputDensity) -> Self {
-        match (terse_agent, output_density) {
-            (TerseAgent::Ultra, _) | (_, OutputDensity::Ultra) => Self::Max,
-            (TerseAgent::Full, _) => Self::Standard,
-            (TerseAgent::Lite, _) | (_, OutputDensity::Terse) => Self::Lite,
-            _ => Self::Off,
-        }
-    }
-
-    /// Reads the compression level from the `LEAN_CTX_COMPRESSION` env var.
-    pub fn from_env() -> Option<Self> {
-        std::env::var("LEAN_CTX_COMPRESSION").ok().and_then(|v| {
-            match v.trim().to_lowercase().as_str() {
-                "off" => Some(Self::Off),
-                "lite" => Some(Self::Lite),
-                "standard" => Some(Self::Standard),
-                "max" => Some(Self::Max),
-                "raw" => Some(Self::Raw),
-                _ => None,
-            }
-        })
-    }
-
-    /// Returns the effective compression level with resolution order:
-    /// 0. Session-level degrade override (set by correction-loop feedback)
-    /// 1. `LEAN_CTX_COMPRESSION` env var
-    /// 2. `compression_level` in config
-    /// 3. Legacy env vars (`LEAN_CTX_TERSE_AGENT`, `LEAN_CTX_OUTPUT_DENSITY`)
-    /// 4. Legacy config fields (`terse_agent`, `output_density`)
+    /// Returns the effective prose level: a session-level degrade (set by
+    /// correction-loop feedback) wins, then the band of the configured
+    /// `compression_level`, else [`Self::Lite`].
     pub fn effective(config: &Config) -> Self {
         if let Some(degraded) = Self::session_degrade_level() {
             return degraded;
         }
-        if let Some(env_level) = Self::from_env() {
-            return env_level;
+        config
+            .compression_level
+            .map_or(Self::Lite, Self::from_value)
+    }
+
+    /// The prose level for a continuous `compression_level` value: five equal
+    /// bands over `[0, 1]` (off, lite, standard, max, raw).
+    #[must_use]
+    pub fn from_value(value: f64) -> Self {
+        match value.clamp(0.0, 1.0) {
+            v if v < 0.2 => Self::Off,
+            v if v < 0.4 => Self::Lite,
+            v if v < 0.6 => Self::Standard,
+            v if v < 0.8 => Self::Max,
+            _ => Self::Raw,
         }
-        if config.compression_level != Self::Off {
-            return config.compression_level;
+    }
+
+    /// The `compression_level` value a level name stands for: `off` is 0, the
+    /// others sit in the middle of their band.
+    #[must_use]
+    pub fn value(self) -> f64 {
+        match self {
+            Self::Off => 0.0,
+            Self::Lite => 0.3,
+            Self::Standard => 0.5,
+            Self::Max => 0.7,
+            Self::Raw => 0.9,
         }
-        let ta_env = TerseAgent::from_env();
-        let od_env = OutputDensity::from_env();
-        let ta = if ta_env == TerseAgent::Off {
-            config.terse_agent.clone()
-        } else {
-            ta_env
-        };
-        let od = if od_env == OutputDensity::Normal {
-            config.output_density.clone()
-        } else {
-            od_env
-        };
-        Self::from_legacy(&ta, &od)
     }
 
     /// Session-level degrade: correction loop detected, temporarily reduce compression.
@@ -341,7 +204,7 @@ impl CompressionLevel {
 
     /// Maps re-fetch *pressure* to a session-degrade decision. Pressure is the
     /// stronger of the correction-loop count (re-reads/re-runs) and the CCR
-    /// retrieve count (`ctx_expand`/`ctx_retrieve`) — two views of the same "too
+    /// retrieve count (`ctx_expand`) — two views of the same "too
     /// aggressive" signal (#941): 5+ degrades to `Off`, 3+ to `Lite`, 0 clears,
     /// and the 1–2 band leaves the current degrade untouched.
     ///
@@ -376,6 +239,7 @@ impl CompressionLevel {
             "lite" => Some(Self::Lite),
             "standard" | "std" => Some(Self::Standard),
             "max" => Some(Self::Max),
+            "raw" => Some(Self::Raw),
             _ => None,
         }
     }
@@ -405,51 +269,6 @@ impl CompressionLevel {
             Self::Raw => "Raw-dense compression — bullet points only, zero prose, diff-style facts",
         }
     }
-}
-
-/// Where agent rule files are installed: global home dir, project-local, or both.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum RulesScope {
-    Both,
-    Global,
-    Project,
-}
-
-/// How agent rules are injected for AGENTS.md/CLAUDE.md/CODEBUDDY.md/GEMINI.md consumers.
-///
-/// - `Shared` (default): write a marker-delimited block into the user's shared
-///   instruction file (`CLAUDE.md`, `CODEBUDDY.md`, `AGENTS.md`, `GEMINI.md`) — zero-config
-///   discoverability, but touches a file the user also authors.
-/// - `Dedicated`: never write into those shared files. Instead use each agent's
-///   config-driven, fully-removable auto-load path (Claude/Codex `SessionStart`
-///   hook `additionalContext`, OpenCode `instructions[]`, Gemini
-///   `context.fileName`) plus a lean-ctx-owned rules file. See issue #343.
-/// - `Off`: never write any rules file. For hosts that already supply their own
-///   tool-steering workflow (e.g. an embedded extension) or for phase-isolated /
-///   non-caching harnesses where the injected prefix is pure re-billed overhead
-///   with no cached-re-read dividend to amortize it. See GitHub #361.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum RulesInjection {
-    Shared,
-    Dedicated,
-    Off,
-}
-
-/// Whether lean-ctx mirrors the host IDE's tool-permission rules onto its own
-/// MCP tools ("permission inheritance").
-///
-/// - `Off` (default): lean-ctx tools are governed only by lean-ctx's own layers
-///   (role policy, shell allowlist). lean-ctx's `ctx_shell` therefore runs
-///   independently of the IDE's `bash`/`rm *` permission rules.
-/// - `On`: before dispatching, lean-ctx reads the active IDE's permission config
-///   (v1: OpenCode `opencode.json[c]`) and applies the equivalent decision to
-///   the matching lean-ctx tool — `deny` blocks, `ask` is held back (MCP cannot
-///   prompt for these tools), `allow` proceeds. Read-only; lean-ctx never writes
-///   the IDE's `permission` block.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum PermissionInheritance {
-    Off,
-    On,
 }
 
 #[cfg(test)]

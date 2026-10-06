@@ -32,13 +32,16 @@ impl ContextItemId {
     pub fn from_file(path: &str) -> Self {
         Self(format!("file:{path}"))
     }
+    #[cfg(test)]
     pub fn from_shell(command: &str) -> Self {
         let hash = crate::core::project_hash::hash_project_root(command);
         Self(format!("shell:{hash}"))
     }
+    #[cfg(test)]
     pub fn from_knowledge(category: &str, key: &str) -> Self {
         Self(format!("knowledge:{category}:{key}"))
     }
+    #[cfg(test)]
     pub fn from_memory(key: &str) -> Self {
         Self(format!("memory:{key}"))
     }
@@ -157,15 +160,6 @@ impl ViewCosts {
         self.estimates.get(view).copied().unwrap_or(0)
     }
 
-    /// Cheapest view that still provides content (excludes Handle).
-    pub fn cheapest_content_view(&self) -> Option<(ViewKind, usize)> {
-        self.estimates
-            .iter()
-            .filter(|(v, _)| **v != ViewKind::Handle)
-            .min_by_key(|&(_, &tokens)| tokens)
-            .map(|(&v, &t)| (v, t))
-    }
-
     pub fn from_full_tokens(full_tokens: usize) -> Self {
         let mut vc = Self::new();
         vc.set(ViewKind::Full, full_tokens);
@@ -245,42 +239,11 @@ impl FieldWeights {
             w_redundancy: 0.10,
         }
     }
-
-    /// Map a learned bandit arm to a FieldWeights preset (#4). The arm names are
-    /// the bandit's own (`conservative`/`balanced`/`aggressive`); unknown names
-    /// fall back to balanced. This is what makes the field weights *learned*:
-    /// feedback shifts which arm wins, which shifts the weights deterministically.
-    pub fn from_arm(arm: &crate::core::bandit::BanditArm) -> Self {
-        match arm.name.as_str() {
-            "conservative" => Self::conservative(),
-            "aggressive" => Self::aggressive(),
-            _ => Self::balanced(),
-        }
-    }
 }
 
-/// Process-wide learned FieldWeights (#4): the bandit-selected weights that
-/// [`ContextField::active`] uses, so learning flows into every Phi computation
-/// without a disk read per call. `None` until an arm has been chosen on the read
-/// path; readers then fall back to the default weights.
-static ACTIVE_WEIGHTS: std::sync::RwLock<Option<FieldWeights>> = std::sync::RwLock::new(None);
-
-/// Install the bandit-selected FieldWeights as the process-wide active weights
-/// (#4). Deterministic given the bandit posterior; called when an arm is chosen.
-pub fn set_active_weights(weights: FieldWeights) {
-    if let Ok(mut w) = ACTIVE_WEIGHTS.write() {
-        *w = Some(weights);
-    }
-}
-
-/// The current active (learned) FieldWeights, or the default when none have been
-/// installed yet. Cheap — a single `RwLock` read — so safe on the hot path.
+/// The weights every Phi computation uses.
 pub fn active_weights() -> FieldWeights {
-    ACTIVE_WEIGHTS
-        .read()
-        .ok()
-        .and_then(|w| w.clone())
-        .unwrap_or_default()
+    FieldWeights::default()
 }
 
 /// Raw signal components for a single context item before combination.
@@ -292,41 +255,6 @@ pub struct FieldSignals {
     pub history_signal: f64,
     pub token_cost_norm: f64,
     pub redundancy: f64,
-}
-
-/// Combined potential for a context item.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct FieldPotential {
-    pub signals: FieldSignals,
-    pub phi: f64,
-    pub view_costs: ViewCosts,
-    pub best_view: ViewKind,
-}
-
-/// Token budget parameters for compilation.
-#[derive(Debug, Clone, Copy)]
-pub struct TokenBudget {
-    pub total: usize,
-    pub used: usize,
-}
-
-impl TokenBudget {
-    pub fn remaining(&self) -> usize {
-        self.total.saturating_sub(self.used)
-    }
-    pub fn utilization(&self) -> f64 {
-        if self.total == 0 {
-            return 1.0;
-        }
-        self.used as f64 / self.total as f64
-    }
-    /// Temperature derived from budget pressure: high pressure = high T.
-    /// T in [0.1, 2.0]. At T=0.1 (low pressure), prefer dense views.
-    /// At T=2.0 (high pressure), prefer sparse views.
-    pub fn temperature(&self) -> f64 {
-        let u = self.utilization();
-        (0.1 + u * 1.9).clamp(0.1, 2.0)
-    }
 }
 
 /// The Context Field: computes Phi for a set of items given a task context.
@@ -345,10 +273,6 @@ impl ContextField {
         Self {
             weights: FieldWeights::default(),
         }
-    }
-
-    pub fn with_weights(weights: FieldWeights) -> Self {
-        Self { weights }
     }
 
     /// Construct a field using the process-wide learned FieldWeights (#4) when an
@@ -373,65 +297,6 @@ impl ContextField {
             - w.w_cost * signals.token_cost_norm
             - w.w_redundancy * signals.redundancy;
         phi.clamp(0.0, 1.0)
-    }
-
-    /// Select the best view for an item given the temperature (budget pressure).
-    ///
-    /// Uses Boltzmann-weighted view selection:
-    ///   P(view_v | item_i, T) = exp(-C(v) / T) / Z(i, T)
-    ///
-    /// At low temperature (relaxed budget), denser views are preferred.
-    /// At high temperature (tight budget), sparser views are preferred.
-    pub fn select_view(&self, costs: &ViewCosts, temperature: f64) -> ViewKind {
-        if costs.estimates.is_empty() {
-            return ViewKind::Full;
-        }
-
-        let t = temperature.max(0.01);
-        let max_cost = costs.estimates.values().copied().max().unwrap_or(1).max(1) as f64;
-
-        let mut best_view = ViewKind::Full;
-        let mut best_score = f64::NEG_INFINITY;
-
-        for (&view, &tokens) in &costs.estimates {
-            let normalized_cost = tokens as f64 / max_cost;
-            let density_bonus = 1.0 - (view.density_rank() as f64 / 8.0);
-            // At low T, density_bonus dominates (prefer dense/full views).
-            // At high T, the cost penalty dominates (prefer cheap/sparse views).
-            let score = density_bonus * (2.0 - t) - normalized_cost * t;
-            if score > best_score {
-                best_score = score;
-                best_view = view;
-            }
-        }
-
-        best_view
-    }
-
-    /// Compute potentials for a batch of items.
-    pub fn compute_batch(
-        &self,
-        items: &[(ContextItemId, FieldSignals, ViewCosts)],
-        budget: TokenBudget,
-    ) -> HashMap<ContextItemId, FieldPotential> {
-        let temperature = budget.temperature();
-        let mut result = HashMap::new();
-
-        for (id, signals, costs) in items {
-            let phi = self.compute_phi(signals);
-            let best_view = self.select_view(costs, temperature);
-            result.insert(
-                id.clone(),
-                FieldPotential {
-                    signals: signals.clone(),
-                    phi,
-                    view_costs: costs.clone(),
-                    best_view,
-                },
-            );
-        }
-
-        result
     }
 }
 
@@ -465,30 +330,6 @@ pub fn normalize_token_cost(tokens: usize, budget_total: usize) -> f64 {
         return 1.0;
     }
     (tokens as f64 / budget_total as f64).clamp(0.0, 1.0)
-}
-
-/// Compute efficiency ratio: Phi per token.
-/// Used by the greedy knapsack in the compiler.
-pub fn efficiency(phi: f64, tokens: usize) -> f64 {
-    if tokens == 0 {
-        return phi;
-    }
-    phi / tokens as f64
-}
-
-/// Default MMR trade-off: how much relevance (Phi) is weighted against
-/// non-redundancy during integration-aware selection (#5). 0.7 keeps relevance
-/// dominant while still penalizing near-duplicates.
-pub const MMR_LAMBDA: f64 = 0.7;
-
-/// Maximal Marginal Relevance score (#5): reward relevance (`phi`) but penalize
-/// redundancy with the already-selected set (`max_similarity`). This makes
-/// selection *integration-aware* in the IIT sense — a context package gains more
-/// from a complementary item than from a near-duplicate of one it already holds.
-/// Deterministic: a pure function of its inputs, no sampling.
-pub fn mmr_score(phi: f64, max_similarity: f64, lambda: f64) -> f64 {
-    let l = lambda.clamp(0.0, 1.0);
-    l * phi - (1.0 - l) * max_similarity.clamp(0.0, 1.0)
 }
 
 /// Compute real signals for a file path using existing scoring modules.
@@ -617,46 +458,6 @@ mod tests {
     }
 
     #[test]
-    fn view_selection_prefers_dense_at_low_temperature() {
-        let field = ContextField::new();
-        let costs = ViewCosts::from_full_tokens(5000);
-        let view = field.select_view(&costs, 0.1);
-        assert_eq!(
-            view,
-            ViewKind::Full,
-            "low temperature (relaxed budget) should prefer full view"
-        );
-    }
-
-    #[test]
-    fn view_selection_prefers_sparse_at_high_temperature() {
-        let field = ContextField::new();
-        let costs = ViewCosts::from_full_tokens(5000);
-        let view = field.select_view(&costs, 2.0);
-        assert_ne!(
-            view,
-            ViewKind::Full,
-            "high temperature (tight budget) should prefer sparser view"
-        );
-    }
-
-    #[test]
-    fn budget_temperature_scales_with_utilization() {
-        let low = TokenBudget {
-            total: 10000,
-            used: 1000,
-        };
-        let high = TokenBudget {
-            total: 10000,
-            used: 9000,
-        };
-        assert!(
-            high.temperature() > low.temperature(),
-            "higher utilization should increase temperature"
-        );
-    }
-
-    #[test]
     fn normalize_surprise_maps_range() {
         assert!((normalize_surprise(5.0) - 0.0).abs() < 0.01);
         assert!((normalize_surprise(17.0) - 1.0).abs() < 0.01);
@@ -668,73 +469,6 @@ mod tests {
         assert!((normalize_graph_proximity(0) - 1.0).abs() < f64::EPSILON);
         assert!((normalize_graph_proximity(1) - 0.5).abs() < f64::EPSILON);
         assert!(normalize_graph_proximity(10) < 0.15);
-    }
-
-    #[test]
-    fn efficiency_ratio_is_phi_per_token() {
-        let e = efficiency(0.8, 400);
-        assert!((e - 0.002).abs() < 0.0001);
-    }
-
-    #[test]
-    fn field_weights_from_arm_maps_presets() {
-        // #4: each bandit arm name maps to its distinct FieldWeights preset.
-        let mut bandit = crate::core::bandit::ThresholdBandit::default();
-        let con = FieldWeights::from_arm(&bandit.arms[0]); // conservative
-        let agg = FieldWeights::from_arm(&bandit.arms[2]); // aggressive
-        assert!(
-            con.w_relevance > agg.w_relevance,
-            "conservative trusts relevance more"
-        );
-        assert!(
-            agg.w_cost > con.w_cost,
-            "aggressive penalizes cost more (denser)"
-        );
-        let _ = bandit.choose_arm();
-    }
-
-    #[test]
-    fn learned_weights_shift_after_feedback() {
-        // #4: training the bandit toward "aggressive" makes the deterministically
-        // chosen arm map to the aggressive FieldWeights preset.
-        let mut bandit = crate::core::bandit::ThresholdBandit::default();
-        for _ in 0..20 {
-            bandit.update("aggressive", true);
-        }
-        for _ in 0..20 {
-            bandit.update("conservative", false);
-        }
-        let arm = bandit.arms[bandit.best_arm_idx_by_mean()].clone();
-        let learned = FieldWeights::from_arm(&arm);
-        let expected = FieldWeights::aggressive();
-        assert!((learned.w_cost - expected.w_cost).abs() < f64::EPSILON);
-    }
-
-    #[test]
-    fn active_weights_default_is_balanced() {
-        // With nothing installed, active_weights falls back to the default preset.
-        // (Set explicitly first to avoid cross-test global leakage, then restore.)
-        set_active_weights(FieldWeights::default());
-        let w = active_weights();
-        let d = FieldWeights::default();
-        assert!((w.w_relevance - d.w_relevance).abs() < f64::EPSILON);
-    }
-
-    #[test]
-    fn mmr_penalizes_redundancy() {
-        // #5: a redundant high-Phi item scores lower than a unique one.
-        let unique = mmr_score(0.8, 0.0, MMR_LAMBDA);
-        let redundant = mmr_score(0.8, 0.9, MMR_LAMBDA);
-        assert!(
-            unique > redundant,
-            "redundant item ({redundant}) must score below unique ({unique})"
-        );
-    }
-
-    #[test]
-    fn mmr_lambda_one_is_pure_relevance() {
-        // λ=1 ignores redundancy entirely → equals Phi.
-        assert!((mmr_score(0.6, 0.9, 1.0) - 0.6).abs() < f64::EPSILON);
     }
 
     #[test]
@@ -751,36 +485,5 @@ mod tests {
         assert_eq!(vc.get(&ViewKind::Signatures), 1000);
         assert_eq!(vc.get(&ViewKind::Map), 625);
         assert_eq!(vc.get(&ViewKind::Handle), 25);
-    }
-
-    #[test]
-    fn batch_compute_produces_results_for_all_items() {
-        let field = ContextField::new();
-        let items = vec![
-            (
-                ContextItemId::from_file("a.rs"),
-                FieldSignals {
-                    relevance: 0.8,
-                    ..Default::default()
-                },
-                ViewCosts::from_full_tokens(2000),
-            ),
-            (
-                ContextItemId::from_file("b.rs"),
-                FieldSignals {
-                    relevance: 0.3,
-                    ..Default::default()
-                },
-                ViewCosts::from_full_tokens(500),
-            ),
-        ];
-        let budget = TokenBudget {
-            total: 10000,
-            used: 2000,
-        };
-        let results = field.compute_batch(&items, budget);
-        assert_eq!(results.len(), 2);
-        assert!(results.contains_key(&ContextItemId::from_file("a.rs")));
-        assert!(results.contains_key(&ContextItemId::from_file("b.rs")));
     }
 }

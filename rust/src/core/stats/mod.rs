@@ -32,53 +32,6 @@ pub fn load() -> StatsStore {
     io::load_from_disk()
 }
 
-/// Loads stats for **display**, summing across every auto-resolved data dir that
-/// holds a `stats.json` (#500). When the MCP server process and the CLI resolve
-/// different XDG dirs — the documented #408/#414 split, common when an agent host
-/// (e.g. a containerised Hermes) launches the MCP server with a different `HOME`
-/// or `XDG_*` than the user's shell — the bulk of the savings can land in a
-/// sibling tree. Reading only the primary dir then makes `gain` report `0` while
-/// the real data sits one directory over. Folding the siblings in keeps the
-/// headline honest regardless of which process wrote where.
-///
-/// Safe by construction:
-/// - **No-op without a split** — when only the primary dir has stats (the
-///   overwhelmingly common case) the result equals [`load`].
-/// - **Respects an explicit pin** — when `LEAN_CTX_DATA_DIR` is set the user has
-///   chosen exactly one dir, so nothing is auto-merged.
-/// - **Read-only** — never writes back; recording still targets the primary dir.
-pub fn load_for_display() -> StatsStore {
-    let primary = load();
-    // An explicit override means "use exactly this dir" — never auto-merge.
-    if std::env::var_os("LEAN_CTX_DATA_DIR").is_some() {
-        return primary;
-    }
-    let primary_dir = crate::core::data_dir::lean_ctx_data_dir()
-        .ok()
-        .and_then(|p| std::fs::canonicalize(&p).ok());
-    let siblings: Vec<StatsStore> = crate::core::data_dir::all_data_dirs_with_stats()
-        .into_iter()
-        .filter(|d| std::fs::canonicalize(d).ok() != primary_dir)
-        .map(|d| io::load_from_dir(&d))
-        .collect();
-    aggregate_for_display(primary, &siblings)
-}
-
-/// Folds sibling-dir stores into the primary for display. Pure (no I/O, no
-/// globals) so the cross-dir summation is unit-testable. Reuses
-/// [`io::apply_deltas`] with a zero baseline so each sibling store is added in
-/// full (delta-from-empty == the whole store).
-fn aggregate_for_display(primary: StatsStore, siblings: &[StatsStore]) -> StatsStore {
-    let zero = StatsStore::default();
-    siblings
-        .iter()
-        .fold(primary, |acc, other| io::apply_deltas(&acc, other, &zero))
-}
-
-pub fn save(store: &StatsStore) {
-    io::locked_write(store);
-}
-
 fn maybe_flush(store: &mut StatsStore, baseline: &mut StatsStore, last_flush: &mut Instant) {
     if last_flush.elapsed().as_secs() >= FLUSH_INTERVAL_SECS
         && let Some(merged) = io::merge_and_save(store, baseline)
@@ -102,22 +55,15 @@ pub fn flush() {
     }
 }
 
-/// Debounced flush: persists at most once per FLUSH_INTERVAL_SECS.
-/// Call from post_dispatch on every tool call to bound data loss
-/// on abrupt MCP termination to at most 2 seconds of events.
-pub fn flush_if_due() {
-    let due = {
-        let guard = STATS_BUFFER
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        match guard.as_ref() {
-            Some((_, _, last_flush)) => last_flush.elapsed().as_secs() >= FLUSH_INTERVAL_SECS,
-            None => false,
-        }
-    };
-    if due {
-        flush();
-    }
+/// Integration tests only: drops the in-process buffer without saving it, so
+/// the next record or load reads the current data dir. The buffer is bound to
+/// the dir it was first loaded from, and tests sharing one process each point
+/// `LEAN_CTX_DATA_DIR` somewhere else.
+#[doc(hidden)]
+pub fn clear_buffer_for_tests() {
+    *STATS_BUFFER
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner) = None;
 }
 
 /// Adjust saved tokens after post-processing (terse, hints) changed the output size.
@@ -255,16 +201,6 @@ pub fn record_at_turn(command: &str, input_tokens: usize, output_tokens: usize, 
         *baseline = merged;
         *last_flush = Instant::now();
     }
-}
-
-pub fn reset_cep() {
-    let mut guard = STATS_BUFFER
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
-    let mut store = io::load_from_disk();
-    store.cep = CepStats::default();
-    io::locked_write(&store);
-    *guard = Some((store.clone(), store, Instant::now()));
 }
 
 pub fn reset_all() {
@@ -463,37 +399,6 @@ mod tests {
         let healthy = make_store(42, 9000, 1000);
         std::fs::write(&stats_path, serde_json::to_string(&healthy).unwrap()).unwrap();
         assert_eq!(io::load_from_disk().total_commands, 42);
-    }
-
-    #[test]
-    fn aggregate_for_display_is_noop_without_siblings() {
-        // The common case: only the primary dir has stats. Aggregation must
-        // return the primary untouched so non-split users see no change (#500).
-        let primary = make_store(7, 1000, 250);
-        let agg = aggregate_for_display(primary.clone(), &[]);
-        assert_eq!(agg.total_commands, 7);
-        assert_eq!(agg.total_input_tokens, 1000);
-        assert_eq!(agg.total_output_tokens, 250);
-    }
-
-    #[test]
-    fn aggregate_for_display_sums_split_dirs() {
-        // A data-dir split (#408/#414/#500): the CLI's primary dir is empty but
-        // the MCP server wrote its savings into a sibling tree. The displayed
-        // total must reflect both so `gain` no longer reports a false `0`.
-        let primary = make_store(0, 0, 0);
-        let mcp_dir = make_store(12, 8000, 1200);
-        let legacy_dir = make_store(3, 500, 100);
-
-        let agg = aggregate_for_display(primary, &[mcp_dir, legacy_dir]);
-
-        assert_eq!(agg.total_commands, 15, "12 (mcp) + 3 (legacy)");
-        assert_eq!(agg.total_input_tokens, 8500);
-        assert_eq!(agg.total_output_tokens, 1300);
-        let saved = agg
-            .total_input_tokens
-            .saturating_sub(agg.total_output_tokens);
-        assert_eq!(saved, 7200, "savings surface despite an empty primary dir");
     }
 
     #[test]

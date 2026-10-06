@@ -29,23 +29,29 @@ pub(crate) fn cognition_activity_outcome() -> Outcome {
 /// token-oriented format (TOON by default) is preserved verbatim instead of
 /// recompressed, so an agent's proof-of-output-shape survives intact.
 pub(crate) fn compact_format_passthrough_outcome() -> Outcome {
-    let cfg = crate::core::config::Config::load();
-    if cfg.preserve_compact_formats.is_empty() {
-        return Outcome {
-            ok: true,
-            line: format!(
-                "{BOLD}Compact-format passthrough{RST}  {YELLOW}off{RST}  {DIM}(set preserve_compact_formats to keep e.g. TOON verbatim){RST}"
-            ),
-        };
-    }
     Outcome {
         ok: true,
         line: format!(
             "{BOLD}Compact-format passthrough{RST}  {GREEN}{}{RST}  {DIM}(preserved verbatim, not recompressed){RST}",
-            cfg.preserve_compact_formats.join(", ")
+            crate::core::config::PRESERVE_COMPACT_FORMATS.join(", ")
         ),
     }
 }
+/// Check if an RC file contains lean-ctx and collect name + update needs.
+fn check_shell_rc(
+    name: &str,
+    path: &std::path::Path,
+    parts: &mut Vec<String>,
+    needs_update: &mut Vec<String>,
+) {
+    if rc_contains_lean_ctx(path) {
+        parts.push(format!("{DIM}{name}{RST}"));
+        if !rc_has_pipe_guard(path) && is_active_shell(name) {
+            needs_update.push(name.to_string());
+        }
+    }
+}
+
 pub(crate) fn shell_aliases_outcome() -> Outcome {
     let Some(home) = dirs::home_dir() else {
         return Outcome {
@@ -57,28 +63,24 @@ pub(crate) fn shell_aliases_outcome() -> Outcome {
     let mut parts = Vec::new();
     let mut needs_update = Vec::new();
 
-    let zsh = home.join(".zshrc");
-    if rc_contains_lean_ctx(&zsh) {
-        parts.push(format!("{DIM}~/.zshrc{RST}"));
-        if !rc_has_pipe_guard(&zsh) && is_active_shell("~/.zshrc") {
-            needs_update.push("~/.zshrc");
-        }
-    }
-    let bash = home.join(".bashrc");
-    if rc_contains_lean_ctx(&bash) {
-        parts.push(format!("{DIM}~/.bashrc{RST}"));
-        if !rc_has_pipe_guard(&bash) && is_active_shell("~/.bashrc") {
-            needs_update.push("~/.bashrc");
-        }
-    }
-
-    let fish = home.join(".config").join("fish").join("config.fish");
-    if rc_contains_lean_ctx(&fish) {
-        parts.push(format!("{DIM}~/.config/fish/config.fish{RST}"));
-        if !rc_has_pipe_guard(&fish) && is_active_shell("~/.config/fish/config.fish") {
-            needs_update.push("~/.config/fish/config.fish");
-        }
-    }
+    check_shell_rc(
+        "~/.zshrc",
+        &home.join(".zshrc"),
+        &mut parts,
+        &mut needs_update,
+    );
+    check_shell_rc(
+        "~/.bashrc",
+        &home.join(".bashrc"),
+        &mut parts,
+        &mut needs_update,
+    );
+    check_shell_rc(
+        "~/.config/fish/config.fish",
+        &home.join(".config").join("fish").join("config.fish"),
+        &mut parts,
+        &mut needs_update,
+    );
 
     #[cfg(windows)]
     {
@@ -93,12 +95,12 @@ pub(crate) fn shell_aliases_outcome() -> Outcome {
         if rc_contains_lean_ctx(&ps_profile) {
             parts.push(format!("{DIM}PowerShell profile{RST}"));
             if !rc_has_pipe_guard(&ps_profile) {
-                needs_update.push("PowerShell profile");
+                needs_update.push("PowerShell profile".to_string());
             }
         } else if rc_contains_lean_ctx(&ps_profile_legacy) {
             parts.push(format!("{DIM}WindowsPowerShell profile{RST}"));
             if !rc_has_pipe_guard(&ps_profile_legacy) {
-                needs_update.push("WindowsPowerShell profile");
+                needs_update.push("WindowsPowerShell profile".to_string());
             }
         }
     }
@@ -131,17 +133,19 @@ pub(crate) fn shell_aliases_outcome() -> Outcome {
         }
     }
 }
-pub(crate) fn skip_agent_aliases_outcome() -> Outcome {
-    let cfg = crate::core::config::Config::load();
-    if !cfg.skip_agent_aliases {
+pub(crate) fn agent_aliases_outcome() -> Outcome {
+    let declined = dirs::home_dir().is_some_and(|h| crate::shell_hook::agent_aliases_declined(&h));
+    if !declined {
         return Outcome {
             ok: true,
             line: format!("{BOLD}Agent aliases{RST}  {DIM}enabled (claude, codex, gemini){RST}"),
         };
     }
-    let warn = if cfg.shell_activation == crate::core::config::ShellActivation::AgentsOnly {
+    let warn = if crate::core::config::ShellActivation::resolve()
+        == crate::core::config::ShellActivation::AgentsOnly
+    {
         format!(
-            "  {YELLOW}hint: shell_activation=agents-only — compression still active via _lc() hook{RST}"
+            "  {YELLOW}hint: shell activation agents-only — compression still active via _lc() hook{RST}"
         )
     } else {
         String::new()
@@ -149,7 +153,7 @@ pub(crate) fn skip_agent_aliases_outcome() -> Outcome {
     Outcome {
         ok: true,
         line: format!(
-            "{BOLD}Agent aliases{RST}  {GREEN}skipped (skip_agent_aliases = true){RST}{warn}"
+            "{BOLD}Agent aliases{RST}  {GREEN}skipped (init --no-agent-aliases){RST}{warn}"
         ),
     }
 }
@@ -242,50 +246,6 @@ pub(crate) fn wsl_vscode_mcp_outcome() -> Option<Outcome> {
     })
 }
 
-pub(crate) fn pi_outcome() -> Option<Outcome> {
-    let pi_result = std::process::Command::new("pi").arg("--version").output();
-
-    match pi_result {
-        Ok(output) if output.status.success() => {
-            let version = String::from_utf8_lossy(&output.stdout).trim().to_string();
-            let has_plugin = std::process::Command::new("pi")
-                .args(["list"])
-                .output()
-                .is_ok_and(|o| {
-                    o.status.success() && String::from_utf8_lossy(&o.stdout).contains("pi-lean-ctx")
-                });
-
-            let has_mcp = dirs::home_dir()
-                .map(|h| h.join(".pi/agent/mcp.json"))
-                .and_then(|p| std::fs::read_to_string(p).ok())
-                .is_some_and(|c| c.contains("lean-ctx"));
-
-            if has_plugin && has_mcp {
-                Some(Outcome {
-                    ok: true,
-                    line: format!(
-                        "{BOLD}Pi Coding Agent{RST}  {GREEN}{version}, pi-lean-ctx + MCP configured{RST}"
-                    ),
-                })
-            } else if has_plugin {
-                Some(Outcome {
-                    ok: true,
-                    line: format!(
-                        "{BOLD}Pi Coding Agent{RST}  {GREEN}{version}, pi-lean-ctx installed{RST}  {DIM}(MCP not configured — embedded bridge active){RST}"
-                    ),
-                })
-            } else {
-                Some(Outcome {
-                    ok: false,
-                    line: format!(
-                        "{BOLD}Pi Coding Agent{RST}  {YELLOW}{version}, but pi-lean-ctx not installed{RST}  {DIM}(run: pi install npm:pi-lean-ctx){RST}"
-                    ),
-                })
-            }
-        }
-        _ => None,
-    }
-}
 pub(crate) fn plan_mode_outcomes() -> Vec<Outcome> {
     let status = crate::core::editor_registry::plan_mode::check_plan_mode_status();
     let mut results = Vec::new();
@@ -467,97 +427,7 @@ pub(crate) fn docker_env_outcomes() -> Vec<Outcome> {
 
     outcomes
 }
-/// GH #594 config parity: surface whether the CLI and the editor-spawned MCP
-/// server resolve the *same* `config.toml`.
-///
-/// The current MCP writers never emit an `env` block, so any editor entry that
-/// still pins `LEAN_CTX_DATA_DIR` is stale and would force that editor's MCP
-/// server into single-dir mode — reading a different config than this CLI. This
-/// complements the stray-config heal check (which catches the *symptom*, a
-/// config.toml already stranded in the data dir) by flagging the *cause* before
-/// a divergent file is ever written, and it always prints the resolved path so
-/// users can compare it against `lean-ctx config path` run inside their editor.
-/// Extract the editor-baked `LEAN_CTX_DATA_DIR` value from raw config text.
-///
-/// Works across the JSON / TOML / YAML editor configs because all three write
-/// the value as the first double-quoted token after the key on its line
-/// (`LEAN_CTX_DATA_DIR = "…"`, `"LEAN_CTX_DATA_DIR": "…"`, `LEAN_CTX_DATA_DIR: "…"`).
-/// `~/`, `$HOME` and `$XDG_DATA_HOME` are expanded so the result can be compared
-/// against the CLI's resolved standard data dir; a trailing separator is trimmed.
-pub(crate) fn pinned_data_dir(content: &str) -> Option<std::path::PathBuf> {
-    const KEY: &str = "LEAN_CTX_DATA_DIR";
-    let line = content.lines().find(|l| l.contains(KEY))?;
-    let after_key = &line[line.find(KEY)? + KEY.len()..];
-    // Skip the assignment separator (`=` for TOML, `:` for JSON/YAML). In JSON
-    // the key's own closing quote precedes the separator, so anchoring on the
-    // separator avoids mistaking that quote for the value's opening quote.
-    let after_sep = &after_key[after_key.find(['=', ':'])? + 1..];
-    let open = after_sep.find('"')? + 1;
-    let rest = &after_sep[open..];
-    let raw = rest[..rest.find('"')?].trim();
-    if raw.is_empty() {
-        return None;
-    }
-    let mut s = raw.to_string();
-    if let Ok(home) = std::env::var("HOME") {
-        s = s.replace("${HOME}", &home).replace("$HOME", &home);
-    }
-    if let Ok(xdg) = std::env::var("XDG_DATA_HOME") {
-        s = s
-            .replace("${XDG_DATA_HOME}", &xdg)
-            .replace("$XDG_DATA_HOME", &xdg);
-    }
-    let path = match s.strip_prefix("~/") {
-        Some(tail) => dirs::home_dir()?.join(tail),
-        None => std::path::PathBuf::from(s.trim_end_matches('/')),
-    };
-    Some(std::path::PathBuf::from(
-        path.to_string_lossy().trim_end_matches('/'),
-    ))
-}
 
-pub(crate) fn config_parity_outcome() -> Outcome {
-    let config_path = crate::core::config::Config::path()
-        .map_or_else(|| "<unresolved>".to_string(), |p| p.display().to_string());
-
-    // Only a *non-standard* pin actually moves the MCP server's config.toml away
-    // from the CLI's (#594). A pin equal to the standard `$XDG_DATA_HOME/lean-ctx`
-    // is data-only and keeps parity, so it must NOT be flagged (no false alarm
-    // for the value editors used to bake by default).
-    let mut divergent: Vec<String> = match dirs::home_dir() {
-        Some(home) => crate::core::editor_registry::detect::build_targets(&home)
-            .into_iter()
-            .filter(|t| {
-                std::fs::read_to_string(&t.config_path)
-                    .ok()
-                    .filter(|c| c.contains("lean-ctx"))
-                    .and_then(|c| pinned_data_dir(&c))
-                    .is_some_and(|pin| crate::core::paths::data_pin_diverges_config(&pin))
-            })
-            .map(|t| t.name.to_string())
-            .collect(),
-        None => Vec::new(),
-    };
-    divergent.sort_unstable();
-    divergent.dedup();
-
-    if divergent.is_empty() {
-        Outcome {
-            ok: true,
-            line: format!(
-                "{BOLD}config parity{RST}  {GREEN}CLI + MCP agree{RST}  {DIM}{config_path}  (verify in your editor: lean-ctx config path){RST}"
-            ),
-        }
-    } else {
-        Outcome {
-            ok: false,
-            line: format!(
-                "{BOLD}config parity{RST}  {YELLOW}{} pin a non-standard LEAN_CTX_DATA_DIR in their MCP config{RST}  {DIM}-> that editor's MCP server resolves a different config.toml than the CLI ({config_path}); run: lean-ctx init (or doctor --fix) to unify{RST}",
-                divergent.join(", ")
-            ),
-        }
-    }
-}
 pub(crate) fn lsp_server_outcomes() -> Vec<Outcome> {
     use crate::lsp::config::{KNOWN_SERVERS, find_binary_in_path};
 
@@ -587,7 +457,7 @@ pub(crate) fn lsp_server_outcomes() -> Vec<Outcome> {
         .collect()
 }
 /// True when `cwd_str` points inside an IDE/agent config directory rather than a
-/// real project (LM Studio, Claude, CodeBuddy, Codex). Matches both POSIX (`/`)
+/// real project (LM Studio, Claude, Codex). Matches both POSIX (`/`)
 /// and Windows (`\`) separators so the warning fires on every platform.
 pub(crate) fn cwd_looks_like_agent_dir(cwd_str: &str) -> bool {
     crate::core::pathutil::is_agent_config_dir(std::path::Path::new(cwd_str))

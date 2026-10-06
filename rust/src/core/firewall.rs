@@ -6,24 +6,13 @@
 //! instructions — is returned inline. This keeps the agent's context window small while
 //! preserving full, slice-addressable access to the raw output.
 //!
-//! Scope: tool *outputs* (`ctx_shell`, `ctx_execute`, `ctx_search`, `ctx_tree`). Explicit
+//! Scope: tool *outputs* (`ctx_shell`, `ctx_search`, `ctx_tree`). Explicit
 //! file reads keep their own read-mode system and are never firewalled.
-
-use crate::core::config::Config;
 
 const HEAD_LINES: usize = 20;
 const TAIL_LINES: usize = 8;
 const LONG_LINE_HEAD_CHARS: usize = 800;
 const LONG_LINE_TAIL_CHARS: usize = 300;
-
-/// Tools whose large outputs are eligible for the firewall. Explicit file reads are
-/// intentionally excluded — they have their own read-mode (`lines:`, `signatures`, …).
-pub fn is_firewallable_tool(name: &str) -> bool {
-    matches!(
-        name,
-        "ctx_shell" | "ctx_execute" | "ctx_search" | "ctx_tree"
-    )
-}
 
 /// Explicit file-read tools whose result *is* the file content the agent reads and
 /// edits against. They must always return that content inline — never a head/tail
@@ -35,22 +24,14 @@ pub fn is_protected_read(name: &str) -> bool {
     matches!(name, "ctx_read")
 }
 
-/// Effective minimum token count before firewalling (config + env override).
-pub fn min_tokens(config: &Config) -> usize {
-    config.archive.ephemeral_min_tokens_effective()
-}
-
-/// Whether a result of `output_tokens` from `tool` should be firewalled.
-pub fn should_firewall(tool: &str, output_tokens: usize, config: &Config) -> bool {
-    config.archive.ephemeral_effective()
-        && is_firewallable_tool(tool)
-        && output_tokens >= min_tokens(config)
-}
+/// Maximum output size that `ctx_shell(inline=true)` returns verbatim before the
+/// archive/firewall path takes over.
+pub const INLINE_MAX_BYTES: usize = 32 * 1024;
 
 /// Whether an explicitly requested `ctx_shell(inline=true)` result fits the
-/// configured verbatim-delivery cap.
-pub fn should_inline_shell(inline_requested: bool, output_bytes: usize, config: &Config) -> bool {
-    inline_requested && output_bytes <= config.archive.inline_max_bytes_effective()
+/// verbatim-delivery cap.
+pub fn should_inline_shell(inline_requested: bool, output_bytes: usize) -> bool {
+    inline_requested && output_bytes <= INLINE_MAX_BYTES
 }
 
 /// Build the inline digest that replaces a firewalled output. Deterministic (no LLM):
@@ -116,96 +97,24 @@ pub fn summarize(full: &str, archive_id: &str, tool: &str, output_tokens: usize)
 mod tests {
     use super::*;
 
-    #[test]
-    fn firewallable_tools_are_outputs_not_reads() {
-        assert!(is_firewallable_tool("ctx_shell"));
-        assert!(is_firewallable_tool("ctx_search"));
-        assert!(is_firewallable_tool("ctx_tree"));
-        assert!(is_firewallable_tool("ctx_execute"));
-        assert!(!is_firewallable_tool("ctx_read"));
-        assert!(!is_firewallable_tool("ctx_expand"));
-        assert!(!is_firewallable_tool("ctx_knowledge"));
-    }
-
-    #[test]
-    fn protected_reads_are_file_readers_and_never_firewallable() {
-        // Explicit reads must always return content (no firewall digest, no
-        // reference stub) so the agent can edit against the lines. `ctx_read`
-        // is the one live explicit read: it absorbed the batch read (`paths`,
-        // ex-`ctx_multi_read`), and the `ctx` fan-out resolves `tool=read` to
-        // `ctx_read` before dispatch. A protected read that is not a registered
-        // tool guards nothing, so the set is checked against the live registry.
-        let live_protected: Vec<&str> = crate::server::registry::build_registry()
-            .names()
-            .into_iter()
-            .filter(|name| is_protected_read(name))
-            .collect();
-        assert_eq!(
-            live_protected,
-            ["ctx_read"],
-            "the protected reads must be exactly the live explicit reads"
-        );
-        for read in live_protected {
-            assert!(
-                !is_firewallable_tool(read),
-                "{read} must never be firewallable"
-            );
-        }
-        assert!(!is_protected_read("ctx_shell"));
-        assert!(!is_protected_read("ctx_search"));
-    }
-
-    #[test]
-    fn should_firewall_respects_tool_and_threshold() {
-        let mut cfg = Config::default();
-        cfg.archive.enabled = true;
-        cfg.archive.ephemeral = true;
-        cfg.archive.ephemeral_min_tokens = 2000;
-        // Env can override ephemeral; clear it for a deterministic test.
-        crate::test_env::remove_var("LEAN_CTX_EPHEMERAL");
-        crate::test_env::remove_var("LEAN_CTX_EPHEMERAL_MIN_TOKENS");
-
-        assert!(should_firewall("ctx_shell", 5000, &cfg));
-        assert!(!should_firewall("ctx_shell", 1000, &cfg)); // below threshold
-        assert!(!should_firewall("ctx_read", 5000, &cfg)); // not firewallable
+    fn inline_cap() -> usize {
+        INLINE_MAX_BYTES
     }
 
     #[test]
     fn inline_shell_stays_inline_under_byte_cap() {
-        let _env_lock = crate::core::data_dir::test_env_lock();
-        let mut cfg = Config::default();
-        cfg.archive.inline_max_bytes = 1024;
-        crate::test_env::remove_var("LEAN_CTX_INLINE_MAX_BYTES");
-
-        assert!(should_inline_shell(true, 1024, &cfg));
-        assert!(should_inline_shell(true, 0, &cfg));
+        assert!(should_inline_shell(true, inline_cap()));
+        assert!(should_inline_shell(true, 0));
     }
 
     #[test]
     fn inline_shell_over_byte_cap_uses_archive_path() {
-        // Clearing the env cap only holds if no other test sets it meanwhile.
-        let _env_lock = crate::core::data_dir::test_env_lock();
-        let mut cfg = Config::default();
-        cfg.archive.inline_max_bytes = 1024;
-        crate::test_env::remove_var("LEAN_CTX_INLINE_MAX_BYTES");
-
-        assert!(!should_inline_shell(true, 1025, &cfg));
+        assert!(!should_inline_shell(true, inline_cap() + 1));
     }
 
     #[test]
-    fn inline_shell_requires_explicit_request_and_honors_env_cap() {
-        // Sets the env cap to 2048. Unlocked, that leaks into the sibling tests
-        // above, which assert the behaviour with *no* cap set.
-        let _env_lock = crate::core::data_dir::test_env_lock();
-        let mut cfg = Config::default();
-        cfg.archive.inline_max_bytes = 1024;
-        crate::test_env::set_var("LEAN_CTX_INLINE_MAX_BYTES", "2048");
-
-        assert!(!should_inline_shell(false, 1, &cfg));
-        assert!(should_inline_shell(true, 2048, &cfg));
-        assert!(!should_inline_shell(true, 2049, &cfg));
-
-        crate::test_env::remove_var("LEAN_CTX_INLINE_MAX_BYTES");
+    fn inline_shell_requires_explicit_request() {
+        assert!(!should_inline_shell(false, 1));
     }
 
     #[test]

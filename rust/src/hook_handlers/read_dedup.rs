@@ -1,6 +1,6 @@
 //! PostToolUse re-read dedup for guard hosts (GL #1140, follow-up to GH #637).
 //!
-//! On Claude Code / CodeBuddy the PreToolUse Read redirect is disabled
+//! On Claude Code the PreToolUse Read redirect is disabled
 //! (`read_redirect = auto`) so the native read-before-write guard stays intact —
 //! which also forfeits the redirect's re-read dedup. This handler wins those
 //! savings back **after** the native Read ran on the real path:
@@ -44,9 +44,6 @@ const MAX_HASH_BYTES: u64 = 16 * 1024 * 1024;
 const SESSION_TTL: Duration = Duration::from_hours(24);
 
 pub fn handle_read_dedup() {
-    if is_disabled() {
-        return;
-    }
     let Some(input) = read_stdin_with_timeout(HOOK_STDIN_TIMEOUT) else {
         return;
     };
@@ -58,7 +55,7 @@ pub fn handle_read_dedup() {
 /// Decide the read-dedup hook's stdout. `None` = emit nothing (passthrough, the
 /// documented PostToolUse no-op). Split from [`handle_read_dedup`] for tests.
 fn compute_read_dedup(input: &str) -> Option<String> {
-    if !crate::core::config::ReadDedup::read_dedup_enabled(&crate::core::config::Config::load()) {
+    if !crate::core::config::ReadDedup::read_dedup_enabled() {
         return None;
     }
 
@@ -347,22 +344,33 @@ fn sweep_stale_sessions(root: &std::path::Path) {
 mod tests {
     use super::*;
 
-    /// RAII guard that forces `read_dedup=on` for deterministic tests regardless
-    /// of host (Cursor exports its own env vars that would make Auto resolve to
-    /// disabled). Restores the environment on drop.
-    struct GuardHost;
+    /// RAII guard that makes this process look like a Claude Code guard host
+    /// (where `read_dedup = auto` dedups) for deterministic tests regardless of
+    /// host: the Cursor markers a Cursor agent shell exports itself would make
+    /// Auto resolve to disabled, so they are cleared. Holds the global test env
+    /// lock via `isolated_data_dir`; restores the environment on drop.
+    struct GuardHost {
+        _iso: crate::core::data_dir::IsolatedDataDir,
+    }
     impl GuardHost {
         fn claude() -> Self {
-            // Force dedup on — avoids depending on host_has_read_before_write_guard()
-            // which fails inside Cursor agent shells (CURSOR_* vars present).
-            crate::test_env::set_var("LEAN_CTX_READ_DEDUP", "on");
+            let iso = crate::core::data_dir::isolated_data_dir();
+            for var in [
+                "CURSOR_VERSION",
+                "CURSOR_PROJECT_DIR",
+                "CURSOR_TRANSCRIPT_PATH",
+                "CURSOR_EXTENSION_HOST_ROLE",
+                "CURSOR_AGENT",
+                "CURSOR_TRACE_ID",
+            ] {
+                crate::test_env::remove_var(var);
+            }
             crate::test_env::set_var("CLAUDE_PROJECT_DIR", "/repo");
-            GuardHost
+            GuardHost { _iso: iso }
         }
     }
     impl Drop for GuardHost {
         fn drop(&mut self) {
-            crate::test_env::remove_var("LEAN_CTX_READ_DEDUP");
             crate::test_env::remove_var("CLAUDE_PROJECT_DIR");
         }
     }
@@ -405,7 +413,6 @@ mod tests {
 
     #[test]
     fn first_read_passes_through_reread_returns_stub() {
-        let _lock = crate::core::data_dir::test_env_lock();
         let _guard = guard_env();
         let dir = tempfile::tempdir().unwrap();
         let file = dir.path().join("lib.rs");
@@ -439,7 +446,6 @@ mod tests {
 
     #[test]
     fn changed_file_passes_through_and_rearms() {
-        let _lock = crate::core::data_dir::test_env_lock();
         let _guard = guard_env();
         let dir = tempfile::tempdir().unwrap();
         let file = dir.path().join("lib.rs");
@@ -486,7 +492,6 @@ mod tests {
     fn duplicate_fire_of_same_tool_use_never_stubs() {
         // Cursor double-fires hooks (#1032): the twin of a first read must not
         // be mistaken for a re-read.
-        let _lock = crate::core::data_dir::test_env_lock();
         let _guard = guard_env();
         let dir = tempfile::tempdir().unwrap();
         let file = dir.path().join("lib.rs");
@@ -503,7 +508,6 @@ mod tests {
 
     #[test]
     fn different_window_is_a_first_read() {
-        let _lock = crate::core::data_dir::test_env_lock();
         let _guard = guard_env();
         let dir = tempfile::tempdir().unwrap();
         let file = dir.path().join("lib.rs");
@@ -538,7 +542,6 @@ mod tests {
 
     #[test]
     fn object_shape_is_mirrored_with_only_content_swapped() {
-        let _lock = crate::core::data_dir::test_env_lock();
         let _guard = guard_env();
         let dir = tempfile::tempdir().unwrap();
         let file = dir.path().join("lib.rs");
@@ -579,7 +582,6 @@ mod tests {
 
     #[test]
     fn unknown_shape_and_non_read_pass_through() {
-        let _lock = crate::core::data_dir::test_env_lock();
         let _guard = guard_env();
         let dir = tempfile::tempdir().unwrap();
         let file = dir.path().join("lib.rs");
@@ -617,7 +619,6 @@ mod tests {
 
     #[test]
     fn tiny_files_are_never_stubbed() {
-        let _lock = crate::core::data_dir::test_env_lock();
         let _guard = guard_env();
         let dir = tempfile::tempdir().unwrap();
         let file = dir.path().join("tiny.rs");
@@ -635,12 +636,10 @@ mod tests {
 
     #[test]
     fn disabled_off_guard_host_stays_passive() {
-        let _lock = crate::core::data_dir::test_env_lock();
+        let _iso = crate::core::data_dir::isolated_data_dir();
         // No guard-host marker → auto keeps the hook passive.
         crate::test_env::remove_var("CLAUDE_PROJECT_DIR");
         crate::test_env::remove_var("CLAUDECODE");
-        crate::test_env::remove_var("CODEBUDDY");
-        crate::test_env::remove_var("LEAN_CTX_READ_DEDUP");
         let dir = tempfile::tempdir().unwrap();
         let file = dir.path().join("lib.rs");
         std::fs::write(&file, big_body()).unwrap();
@@ -662,7 +661,6 @@ mod tests {
 
     #[test]
     fn purge_session_resets_reread_state() {
-        let _lock = crate::core::data_dir::test_env_lock();
         let _guard = guard_env();
         let dir = tempfile::tempdir().unwrap();
         let file = dir.path().join("lib.rs");
@@ -694,7 +692,6 @@ mod tests {
 
     #[test]
     fn content_block_array_shape_is_supported() {
-        let _lock = crate::core::data_dir::test_env_lock();
         let _guard = guard_env();
         let dir = tempfile::tempdir().unwrap();
         let file = dir.path().join("lib.rs");

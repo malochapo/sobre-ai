@@ -100,18 +100,6 @@ impl ProceduralStore {
         matches.into_iter().map(|(p, _)| p).collect()
     }
 
-    pub fn record_usage(&mut self, procedure_id: &str, success: bool) {
-        if let Some(proc) = self.procedures.iter_mut().find(|p| p.id == procedure_id) {
-            proc.times_used += 1;
-            if success {
-                proc.times_succeeded += 1;
-            }
-            proc.last_used = Utc::now();
-            proc.confidence =
-                (proc.confidence * 0.8 + if success { 0.2 } else { -0.1 }).clamp(0.0, 1.0);
-        }
-    }
-
     pub fn add_procedure(&mut self, procedure: Procedure, policy: &ProceduralPolicy) {
         if let Some(existing) = self
             .procedures
@@ -322,21 +310,6 @@ fn usage_recency(proc: &Procedure) -> f32 {
     (1.0 - days_old / 30.0).max(0.0)
 }
 
-pub fn format_suggestion(proc: &Procedure) -> String {
-    let mut output = format!(
-        "Suggested workflow: {} (confidence: {:.0}%, used {}x, success rate: {:.0}%)\n",
-        proc.name,
-        proc.confidence * 100.0,
-        proc.times_used,
-        proc.success_rate() * 100.0
-    );
-    for (i, step) in proc.steps.iter().enumerate() {
-        let opt = if step.optional { " (optional)" } else { "" };
-        output.push_str(&format!("  {}. {}{opt}\n", i + 1, step.tool));
-    }
-    output
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -416,34 +389,6 @@ mod tests {
     }
 
     #[test]
-    fn record_usage_updates_confidence() {
-        let policy = ProceduralPolicy::default();
-        let mut store = ProceduralStore::new("test");
-        store.add_procedure(
-            Procedure {
-                id: "proc-1".to_string(),
-                name: "test-workflow".to_string(),
-                description: "Test".to_string(),
-                steps: vec![],
-                activation_keywords: vec![],
-                confidence: 0.5,
-                times_used: 0,
-                times_succeeded: 0,
-                last_used: Utc::now(),
-                project_specific: false,
-                created_at: Utc::now(),
-            },
-            &policy,
-        );
-
-        store.record_usage("proc-1", true);
-        let proc = &store.procedures[0];
-        assert_eq!(proc.times_used, 1);
-        assert_eq!(proc.times_succeeded, 1);
-        assert!(proc.confidence > 0.5);
-    }
-
-    #[test]
     fn success_rate_calculation() {
         let proc = Procedure {
             id: "p".to_string(),
@@ -518,37 +463,5 @@ mod tests {
 
         crate::test_env::remove_var("LEAN_CTX_DATA_DIR");
         let _ = std::fs::remove_dir_all(&dir);
-    }
-
-    #[test]
-    fn format_suggestion_output() {
-        let proc = Procedure {
-            id: "p".to_string(),
-            name: "deploy-workflow".to_string(),
-            description: String::new(),
-            steps: vec![
-                ProcedureStep {
-                    tool: "ctx_shell".to_string(),
-                    description: "test".to_string(),
-                    optional: false,
-                },
-                ProcedureStep {
-                    tool: "ctx_shell".to_string(),
-                    description: "build".to_string(),
-                    optional: true,
-                },
-            ],
-            activation_keywords: vec![],
-            confidence: 0.85,
-            times_used: 10,
-            times_succeeded: 8,
-            last_used: Utc::now(),
-            project_specific: false,
-            created_at: Utc::now(),
-        };
-        let output = format_suggestion(&proc);
-        assert!(output.contains("deploy-workflow"));
-        assert!(output.contains("85%"));
-        assert!(output.contains("(optional)"));
     }
 }

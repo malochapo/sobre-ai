@@ -1,5 +1,3 @@
-mod provider;
-pub(crate) use provider::*;
 mod proxy;
 pub(crate) use proxy::*;
 #[cfg(test)]

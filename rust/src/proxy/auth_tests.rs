@@ -19,19 +19,6 @@ fn effective_auth_token_never_yields_empty() {
     crate::test_env::remove_var("LEAN_CTX_DATA_DIR");
 }
 
-// #597: the Codex ChatGPT WS passthrough opens a wss://chatgpt.com socket via
-// tokio-tungstenite, which needs a process-default rustls CryptoProvider. The
-// tree has both aws-lc-rs and ring, so one must be installed explicitly or the
-// handshake aborts. Guards against that regression.
-#[test]
-fn installs_default_crypto_provider_for_ws_passthrough() {
-    install_default_crypto_provider();
-    assert!(
-        rustls::crypto::CryptoProvider::get_default().is_some(),
-        "WS passthrough needs a process-default CryptoProvider"
-    );
-}
-
 #[test]
 fn is_provider_route_v1() {
     assert!(is_provider_route("/v1/chat/completions"));
@@ -57,18 +44,6 @@ fn is_provider_route_chat() {
 }
 
 #[test]
-fn is_provider_route_chatgpt_backend_api() {
-    assert!(is_provider_route("/backend-api/codex/responses"));
-    assert!(is_provider_route("/backend-api/codex/responses/resp_123"));
-    assert!(is_provider_route("/backend-api/wham/session"));
-    assert!(is_provider_route("/backend-api/ps/mcp"));
-    assert!(is_provider_route("/backend-api/codex_apps"));
-    assert!(is_provider_route("/backend-api/codex_apps/mcp"));
-    assert!(is_provider_route("/backend-api/mcp/codex_apps"));
-    assert!(is_provider_route("/backend-api/apps/codex_apps/mcp"));
-}
-
-#[test]
 fn is_provider_route_rejects_non_provider() {
     assert!(!is_provider_route("/health"));
     assert!(!is_provider_route("/api/v2/test"));
@@ -87,29 +62,18 @@ fn is_provider_route_model_catalog() {
 
 #[test]
 fn is_provider_route_registry_providers() {
-    // enterprise#7 + Grok subscription rail: base URL is
-    // `http://127.0.0.1:4444/providers/grok-chat/v1`, so model list and chat
-    // hit `/providers/{id}/v1/...` with the client's own session/API Bearer.
-    // These must authenticate via provider-key fallback (loopback), not lean-ctx
-    // token alone — otherwise Grok's mode/model picker stays empty.
-    assert!(is_provider_route("/providers/grok-chat/v1/models"));
-    assert!(is_provider_route(
-        "/providers/grok-chat/v1/chat/completions"
-    ));
-    assert!(is_provider_route("/providers/grok-chat/v1/responses"));
-    assert!(is_provider_route("/providers/xai/v1/models"));
+    // enterprise#7: clients point their base URL at `/providers/{id}/v1`, so
+    // model list and chat hit `/providers/{id}/v1/...` with the client's own
+    // API Bearer. These must authenticate via provider-key fallback
+    // (loopback), not the lean-ctx token alone.
+    assert!(is_provider_route("/providers/ollama/v1/models"));
+    assert!(is_provider_route("/providers/ollama/v1/chat/completions"));
+    assert!(is_provider_route("/providers/ollama/v1/responses"));
     assert!(is_provider_route("/providers/foundry/v1/chat/completions"));
-    // Command Code gateway rail: base URL is
-    // `http://127.0.0.1:4444/providers/commandcode`, so the CLI hits
-    // `/providers/commandcode/alpha/...` with its own session Bearer.
-    assert!(is_provider_route("/providers/commandcode/alpha/whoami"));
-    assert!(is_provider_route(
-        "/providers/commandcode/alpha/agent/generate"
-    ));
     // Bare prefix without trailing path still matches the registry mount.
-    assert!(is_provider_route("/providers/grok-chat"));
+    assert!(is_provider_route("/providers/ollama"));
     // Unrelated paths stay closed.
-    assert!(!is_provider_route("/provider/grok-chat/v1/models"));
+    assert!(!is_provider_route("/provider/ollama/v1/models"));
     assert!(!is_provider_route("/api/providers/x"));
 }
 
@@ -194,64 +158,6 @@ fn has_provider_api_key_empty_bearer_rejected() {
     }
 }
 
-// --- #334: opt-in strict proxy auth (proxy_require_token) ---
-
-#[test]
-fn provider_key_fallback_allowed_in_default_mode() {
-    // Default (require_token = false): a provider key on a provider route is
-    // sufficient. This is what lets a local AI tool authenticate with its own
-    // key and no lean-ctx Bearer token (the loopback-friendly behavior).
-    assert!(provider_key_fallback_allowed(false, true, true, false));
-}
-
-#[test]
-fn provider_key_fallback_denied_in_strict_mode_for_builtin_routes() {
-    // Strict (require_token = true): built-in /v1/* routes still require the
-    // lean-ctx Bearer — provider-key alone is not enough.
-    assert!(!provider_key_fallback_allowed(true, true, true, false));
-}
-
-#[test]
-fn provider_key_fallback_allowed_for_client_auth_registry_under_require_token() {
-    // Grok dual-rail /providers/{id} with api_key_env=None: Authorization (or
-    // x-xai-token-auth) must carry the upstream session, so provider-key
-    // fallback stays open even when require_token is set.
-    assert!(provider_key_fallback_allowed(true, true, true, true));
-    assert!(!provider_key_fallback_allowed(true, false, true, true));
-    assert!(!provider_key_fallback_allowed(true, true, false, true));
-}
-
-#[test]
-fn provider_key_fallback_requires_key_and_provider_route() {
-    // The fallback never fires without a provider key, nor off a provider
-    // route — regardless of mode.
-    assert!(!provider_key_fallback_allowed(false, false, true, false));
-    assert!(!provider_key_fallback_allowed(false, true, false, false));
-    assert!(!provider_key_fallback_allowed(true, false, true, false));
-}
-
-#[test]
-fn has_provider_api_key_x_xai_token_auth() {
-    // Grok subscription rail may authenticate solely via x-xai-token-auth.
-    let req = build_request(
-        &[("x-xai-token-auth", "sess-xyz")],
-        "/providers/grok-chat/v1",
-    );
-    assert!(has_provider_api_key(&req));
-    let empty = build_request(&[("x-xai-token-auth", "  ")], "/providers/grok-chat/v1");
-    assert!(!has_provider_api_key(&empty));
-}
-
-#[test]
-fn proxy_require_token_defaults_off() {
-    assert!(!crate::core::config::Config::default().proxy_require_token);
-}
-
-#[test]
-fn proxy_loopback_open_defaults_off() {
-    assert!(!crate::core::config::Config::default().proxy_loopback_open);
-}
-
 #[test]
 fn auth_error_response_mcp_hint() {
     let resp = auth_error_response("/mcp/sse");
@@ -270,106 +176,46 @@ fn auth_error_response_generic_hint() {
     assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
 }
 
-// --- enterprise#11: identity tags + x-leanctx-project header ---
+// --- x-leanctx-project header ---
 
 #[test]
-fn attach_gateway_tags_header_overrides_default_project() {
-    // The per-request header wins over the key's default_project: one
-    // person books work onto different projects request by request.
-    let mut req = build_request(&[("x-leanctx-project", "billing")], "/v1/messages");
-    attach_gateway_tags(
-        &mut req,
-        gateway_identity::GatewayTags {
-            person: Some("yves".into()),
-            team: Some("platform".into()),
-            project: Some("ai-gateway".into()),
-        },
-    );
-    let tags = req
-        .extensions()
-        .get::<gateway_identity::GatewayTags>()
-        .expect("tags attached");
-    assert_eq!(tags.person.as_deref(), Some("yves"));
-    assert_eq!(tags.project.as_deref(), Some("billing"));
-}
-
-#[test]
-fn attach_gateway_tags_header_works_without_key_identity() {
-    // Solo/local mode: project tagging must not require a gateway key.
+fn attach_request_tags_reads_the_project_header() {
     let mut req = build_request(&[("x-leanctx-project", "side-quest")], "/v1/messages");
-    attach_gateway_tags(&mut req, gateway_identity::GatewayTags::default());
+    attach_request_tags(&mut req);
     let tags = req
         .extensions()
-        .get::<gateway_identity::GatewayTags>()
+        .get::<request_tags::RequestTags>()
         .expect("tags attached");
-    assert_eq!(tags.person, None);
     assert_eq!(tags.project.as_deref(), Some("side-quest"));
 }
 
 #[test]
-fn attach_gateway_tags_empty_leaves_no_extension() {
-    // No identity, no header: nothing to stamp — the extension stays absent
-    // so downstream code can treat its presence as "gateway context exists".
+fn attach_request_tags_without_header_leaves_no_extension() {
     let mut req = build_request(&[], "/v1/messages");
-    attach_gateway_tags(&mut req, gateway_identity::GatewayTags::default());
+    attach_request_tags(&mut req);
     assert!(
         req.extensions()
-            .get::<gateway_identity::GatewayTags>()
+            .get::<request_tags::RequestTags>()
             .is_none()
     );
 }
 
 #[test]
-fn attach_gateway_tags_rejects_oversized_or_blank_header() {
-    // Defensive bound: a blank or absurdly long project header is ignored,
-    // the key's default project stays authoritative.
+fn attach_request_tags_ignores_blank_oversized_or_control_headers() {
+    // A blank or absurdly long project header is ignored, and control
+    // characters would poison usage rows and logs (#54/#59). HTAB is the only
+    // control byte the HTTP layer lets through — HeaderValue rejects the rest.
     let long = "p".repeat(200);
-    for bad in ["", "   ", long.as_str()] {
+    for bad in ["", "   ", long.as_str(), "bil\tling"] {
         let mut req = build_request(&[("x-leanctx-project", bad)], "/v1/messages");
-        attach_gateway_tags(
-            &mut req,
-            gateway_identity::GatewayTags {
-                person: Some("yves".into()),
-                team: None,
-                project: Some("default-proj".into()),
-            },
-        );
-        let tags = req
-            .extensions()
-            .get::<gateway_identity::GatewayTags>()
-            .expect("tags attached");
-        assert_eq!(
-            tags.project.as_deref(),
-            Some("default-proj"),
-            "bad header {bad:?} must not override"
+        attach_request_tags(&mut req);
+        assert!(
+            req.extensions()
+                .get::<request_tags::RequestTags>()
+                .is_none(),
+            "bad header {bad:?} must not tag the request"
         );
     }
-}
-
-#[test]
-fn attach_gateway_tags_rejects_control_characters() {
-    // #54/#59: control chars in the project header would poison usage rows
-    // and logs (log-injection). The tag is dropped, the key default stays.
-    // HTAB is the only control byte the HTTP layer lets through to us — the
-    // rest (`\n`, ESC, DEL, …) is rejected by HeaderValue itself.
-    let mut req = build_request(&[("x-leanctx-project", "bil\tling")], "/v1/messages");
-    attach_gateway_tags(
-        &mut req,
-        gateway_identity::GatewayTags {
-            person: Some("yves".into()),
-            team: None,
-            project: Some("default-proj".into()),
-        },
-    );
-    let tags = req
-        .extensions()
-        .get::<gateway_identity::GatewayTags>()
-        .expect("tags attached");
-    assert_eq!(
-        tags.project.as_deref(),
-        Some("default-proj"),
-        "control chars must not override"
-    );
 }
 
 #[test]
@@ -465,55 +311,25 @@ fn normalized_provider_uri_noop_for_canonical() {
     assert!(normalized_provider_uri(&uri).is_none());
 }
 
-// --- enterprise#8: gateway mode (non-loopback bind) hardening ---
+// --- DNS-rebinding guard ---
 
 #[test]
-fn resolved_bind_host_defaults_to_loopback_and_never_opens_on_typo() {
-    let _lock = crate::core::data_dir::test_env_lock();
-    crate::test_env::remove_var("LEAN_CTX_PROXY_BIND_HOST");
-    let cfg = crate::core::config::Config::default();
-    assert!(cfg.proxy_bind_host_effective().is_loopback());
-
-    // A typo in the config must narrow to loopback — never open the bind.
-    let typo = crate::core::config::Config {
-        proxy_bind_host: Some("all-interfaces-please".into()),
-        ..Default::default()
-    };
-    assert!(typo.proxy_bind_host_effective().is_loopback());
-
-    let open = crate::core::config::Config {
-        proxy_bind_host: Some("0.0.0.0".into()),
-        ..Default::default()
-    };
-    assert!(!open.proxy_bind_host_effective().is_loopback());
-}
-
-#[test]
-fn host_allowed_loopback_always_passes_and_allowlist_extends() {
-    let allowed = vec!["gateway.example.com".to_string()];
-    for h in ["127.0.0.1", "127.0.0.1:4444", "localhost:9999", "[::1]:80"] {
-        assert!(host_allowed(h, &allowed), "loopback host must pass: {h}");
+fn host_allowed_passes_only_loopback() {
+    for h in [
+        "127.0.0.1",
+        "127.0.0.1:4444",
+        "localhost:9999",
+        "[::1]:80",
+        "LOCALHOST.",
+    ] {
+        assert!(host_allowed(h), "loopback host must pass: {h}");
     }
-    assert!(host_allowed("gateway.example.com", &allowed));
-    assert!(host_allowed("Gateway.Example.COM:443", &allowed));
-    // Trailing-dot FQDN normalizes to the same allowlisted name.
-    assert!(host_allowed("gateway.example.com.:443", &allowed));
-    assert!(!host_allowed("evil.example.com", &allowed));
-    assert!(!host_allowed("gateway.example.com.evil.io", &allowed));
-    // Empty allowlist (gateway not configured) → only loopback passes.
-    assert!(!host_allowed("gateway.example.com", &[]));
-}
-
-// --- enterprise#37: proxy rate limiting ---
-
-#[tokio::test]
-async fn rate_limiter_enforces_burst_then_recovers() {
-    let limiter = RateLimiter::new(10, 3);
-    assert!(limiter.allow().await);
-    assert!(limiter.allow().await);
-    assert!(limiter.allow().await);
-    assert!(!limiter.allow().await, "burst of 3 must exhaust the bucket");
-    // 10 rps refill → one token back after ~100ms.
-    tokio::time::sleep(std::time::Duration::from_millis(150)).await;
-    assert!(limiter.allow().await, "bucket must refill at max_rps");
+    for h in [
+        "gateway.example.com",
+        "evil.example.com",
+        "127.0.0.1.evil.io",
+        "0.0.0.0",
+    ] {
+        assert!(!host_allowed(h), "non-loopback host must be refused: {h}");
+    }
 }

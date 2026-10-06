@@ -74,7 +74,7 @@ pub(crate) fn read_file_bytes_limited(
         && meta.len() > cap as u64
     {
         return Err(format!(
-            "ERROR: file too large ({} bytes, cap {} via LCTX_MAX_READ_BYTES): {}",
+            "ERROR: file too large ({} bytes, cap {}): {}",
             meta.len(),
             cap,
             path.display()
@@ -109,7 +109,7 @@ pub(crate) fn read_file_bytes_limited(
         .map_err(|e| format!("ERROR: cannot read {}: {e}", path.display()))?;
     if raw.len() > cap {
         return Err(format!(
-            "ERROR: file too large (cap {} via LCTX_MAX_READ_BYTES): {}",
+            "ERROR: file too large (cap {}): {}",
             cap,
             path.display()
         ));

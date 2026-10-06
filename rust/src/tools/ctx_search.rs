@@ -8,7 +8,6 @@ use ignore::WalkBuilder;
 use regex::RegexBuilder;
 
 use crate::core::protocol;
-use crate::core::symbol_map::{self, SymbolMap};
 use crate::core::tokens::count_tokens;
 use crate::tools::CrpMode;
 
@@ -60,15 +59,7 @@ impl SearchOutcome {
 /// FIFO/socket/device (#336) — while this deadline is the backstop for any
 /// *other* pathological case (a gigantic corpus, a stuck network mount): the
 /// tool returns partial results with a hint instead of appearing to hang.
-/// Tunable via `LEAN_CTX_SEARCH_DEADLINE_MS` (`0` disables). Default 10s.
-fn search_deadline() -> Option<Duration> {
-    const DEFAULT_MS: u64 = 10_000;
-    let ms = std::env::var("LEAN_CTX_SEARCH_DEADLINE_MS")
-        .ok()
-        .and_then(|v| v.trim().parse::<u64>().ok())
-        .unwrap_or(DEFAULT_MS);
-    (ms > 0).then(|| Duration::from_millis(ms))
-}
+const SEARCH_DEADLINE: Duration = Duration::from_secs(10);
 
 /// Back-compat shim: the pre-#870 8-arg entry point. Delegates to
 /// [`handle_filtered`] with no exclude filters. New callers pass the two
@@ -133,7 +124,7 @@ pub fn handle_filtered(
     const MAX_PATTERN_LEN: usize = 1024;
     const MAX_REGEX_SIZE: usize = 1 << 20; // 1 MiB DFA limit
 
-    let redact = crate::core::redaction::redaction_enabled_for_active_role();
+    let redact = true;
     if pattern.len() > MAX_PATTERN_LEN {
         return SearchOutcome::error(format!(
             "ERROR: pattern too long ({} > {MAX_PATTERN_LEN} chars)",
@@ -267,7 +258,7 @@ pub fn handle_filtered(
     files.sort_unstable_by(|a, b| a.as_os_str().cmp(b.as_os_str()));
 
     let root_str = root.to_string_lossy();
-    let deadline = search_deadline().map(|budget| Instant::now() + budget);
+    let deadline = Some(Instant::now() + SEARCH_DEADLINE);
     for path in &files {
         if matches.len() >= max_results {
             break;
@@ -483,7 +474,7 @@ pub fn handle_filtered(
         result.push_str(&format!(
             "\n(search stopped after the {}s budget — {files_searched} files scanned; \
              refine the pattern or scope with path= for full coverage)",
-            search_deadline().map_or(0, |d| d.as_secs())
+            SEARCH_DEADLINE.as_secs()
         ));
     }
 
@@ -491,30 +482,6 @@ pub fn handle_filtered(
     // results. A show-once AtomicBool here made the first call differ from
     // every repeat, breaking byte-stability for provider prompt caches.
     let scope_hint = monorepo_scope_hint(&matches, dir);
-
-    if let Some(delta) = crate::core::search_delta::compute_delta(pattern, &matches) {
-        return SearchOutcome::from_observed(delta, raw_tokens_accum);
-    }
-
-    if symbol_map::substitution_enabled() {
-        let exts = extract_extensions(include);
-        let ext_refs: Vec<&str> = exts.iter().map(String::as_str).collect();
-        let mut sym = SymbolMap::new();
-        let idents = symbol_map::extract_identifiers(&result, &ext_refs);
-        for ident in &idents {
-            sym.register(ident);
-        }
-        if sym.len() >= 3 {
-            let sym_table = sym.format_table();
-            let compressed = sym.apply(&result);
-            let original_tok = count_tokens(&result);
-            let compressed_tok = count_tokens(&compressed) + count_tokens(&sym_table);
-            let net_saving = original_tok.saturating_sub(compressed_tok);
-            if original_tok > 0 && net_saving * 100 / original_tok >= 5 {
-                result = format!("{compressed}{sym_table}");
-            }
-        }
-    }
 
     if let Some(hint) = scope_hint {
         result.push_str(&hint);
@@ -687,39 +654,6 @@ fn expand_braces(pattern: &str) -> Vec<String> {
         }
     }
     out
-}
-
-/// Extract the file extensions referenced by an `include` glob, used by the
-/// symbol-substitution pass (which keyword-filters per language).
-///
-/// Only the final path component is inspected, so dots inside directory
-/// segments never leak in. Handles a single trailing extension (`*.rs` → `rs`)
-/// and brace expansion (`*.{rs,ts}` → `rs`, `ts`); a glob without an extension
-/// (`src/**/*`) yields an empty list. Unknown extensions are returned verbatim —
-/// `symbol_map::is_keyword` simply treats them as "no keywords", so no allowlist
-/// has to be kept in sync here.
-fn extract_extensions(include: Option<&str>) -> Vec<String> {
-    let Some(pattern) = include else {
-        return Vec::new();
-    };
-    let filename = pattern.rsplit('/').next().unwrap_or(pattern);
-    let Some(dot) = filename.rfind('.') else {
-        return Vec::new();
-    };
-    let ext_part = &filename[dot + 1..];
-
-    if let Some(inner) = ext_part.strip_prefix('{').and_then(|s| s.strip_suffix('}')) {
-        return inner
-            .split(',')
-            .map(|e| e.trim().to_string())
-            .filter(|e| !e.is_empty())
-            .collect();
-    }
-
-    if ext_part.is_empty() {
-        return Vec::new();
-    }
-    vec![ext_part.to_string()]
 }
 
 /// Extract file path from a grep match line, handling Windows drive letters (e.g. "C:").
@@ -1002,8 +936,6 @@ mod tests {
         // corpus signature, so stale trigrams can never hide on-disk content from
         // a word-literal query — the very path that uses trigram narrowing.
         let _lock = crate::core::data_dir::test_env_lock();
-        crate::test_env::remove_var("LEAN_CTX_DISABLE_SEARCH_INDEX");
-        crate::test_env::remove_var("LEAN_CTX_SEARCH_INDEX_COALESCE_MS");
 
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join("a.rs"), "fn existing() {}\n").unwrap();
@@ -1059,7 +991,6 @@ mod tests {
     #[test]
     fn symbol_substitution_is_off_by_default() {
         let _lock = crate::core::data_dir::test_env_lock();
-        crate::test_env::remove_var("LEAN_CTX_SYMBOL_MAP");
         let dir = tempfile::tempdir().unwrap();
         let f = dir.path().join("a.rs");
         std::fs::write(
@@ -1176,55 +1107,35 @@ mod tests {
     }
 
     #[test]
-    fn search_deadline_env_override_is_respected() {
-        let _lock = crate::core::data_dir::test_env_lock();
-        crate::test_env::set_var("LEAN_CTX_SEARCH_DEADLINE_MS", "0");
-        assert!(search_deadline().is_none(), "0 must disable the deadline");
-        crate::test_env::set_var("LEAN_CTX_SEARCH_DEADLINE_MS", "250");
-        assert_eq!(search_deadline(), Some(Duration::from_millis(250)));
-        crate::test_env::remove_var("LEAN_CTX_SEARCH_DEADLINE_MS");
-        assert_eq!(
-            search_deadline(),
-            Some(Duration::from_secs(10)),
-            "default budget is 10s"
-        );
-    }
-
-    #[test]
-    fn extract_extensions_handles_single_brace_and_none() {
-        assert_eq!(extract_extensions(Some("*.rs")), vec!["rs"]);
-        assert_eq!(extract_extensions(Some("src/**/*.tsx")), vec!["tsx"]);
-        assert_eq!(extract_extensions(Some("*.{rs,ts}")), vec!["rs", "ts"]);
-        assert_eq!(
-            extract_extensions(Some("*.{rs, ts , js}")),
-            vec!["rs", "ts", "js"]
-        );
-        assert_eq!(extract_extensions(None), Vec::<String>::new());
-    }
-
-    #[test]
-    fn extract_extensions_ignores_dots_in_directory_segments() {
-        // A dot in a directory name must not be mistaken for the extension.
-        assert_eq!(
-            extract_extensions(Some("config.v2/src/**/*.rs")),
-            vec!["rs"]
-        );
-        assert_eq!(extract_extensions(Some("src/v2.0/*.module.ts")), vec!["ts"]);
-        // No extension on the final component → empty.
-        assert_eq!(extract_extensions(Some("src/**/*")), Vec::<String>::new());
-        assert_eq!(
-            extract_extensions(Some("config.v2/Makefile")),
-            Vec::<String>::new()
+    fn repeating_a_search_returns_the_full_result_again() {
+        let a = tempfile::tempdir().unwrap();
+        let b = tempfile::tempdir().unwrap();
+        std::fs::write(a.path().join("x.rs"), "repeat_needle_q7\n").unwrap();
+        std::fs::write(b.path().join("y.rs"), "repeat_needle_q7\n").unwrap();
+        let run = |dir: &std::path::Path| {
+            handle(
+                "repeat_needle_q7",
+                dir.to_string_lossy().as_ref(),
+                None,
+                10,
+                CrpMode::Off,
+                true,
+                true,
+                false,
+            )
+            .text
+        };
+        let first = run(a.path());
+        assert_eq!(first, run(a.path()), "same search, same output");
+        assert!(
+            run(b.path()).contains("y.rs"),
+            "another dir is searched in full"
         );
     }
 
     #[test]
     fn include_glob_filters_by_brace_expansion() {
         let dir = tempfile::tempdir().unwrap();
-        // Unique needle: the global search-delta tracker (src/core/search_delta.rs)
-        // is keyed by pattern, so sharing "needle" with sibling tests lets a
-        // parallel run mark our matches "unchanged" and drop them. A pattern
-        // unique to this test guarantees a fresh tracker key. (#flaky)
         std::fs::write(dir.path().join("a.rs"), "brace_glob_needle\n").unwrap();
         std::fs::write(dir.path().join("b.ts"), "brace_glob_needle\n").unwrap();
         std::fs::write(dir.path().join("c.py"), "brace_glob_needle\n").unwrap();

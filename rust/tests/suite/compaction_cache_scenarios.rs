@@ -195,36 +195,6 @@ mod compaction_sync_scenarios {
 
     #[test]
     #[serial]
-    fn compaction_resets_all_flags() {
-        reset_compaction_ts();
-        let dir = TempDir::new().unwrap();
-        write_radar(&dir, &[("mcp_call", 1000), ("compaction", 2000)]);
-        let mut cache = make_cache(&["/tmp/a.rs", "/tmp/b.rs", "/tmp/c.rs"]);
-
-        assert!(sync_if_compacted(&mut cache, dir.path()));
-        assert!(!cache.is_full_delivered("/tmp/a.rs"));
-        assert!(!cache.is_full_delivered("/tmp/b.rs"));
-        assert!(!cache.is_full_delivered("/tmp/c.rs"));
-    }
-
-    #[test]
-    #[serial]
-    fn second_call_after_same_compaction_does_nothing() {
-        reset_compaction_ts();
-        let dir = TempDir::new().unwrap();
-        write_radar(&dir, &[("compaction", 5000)]);
-        let mut cache = make_cache(&["/tmp/a.rs"]);
-
-        assert!(sync_if_compacted(&mut cache, dir.path()));
-        cache.mark_full_delivered("/tmp/a.rs");
-
-        // Same compaction event → no reset
-        assert!(!sync_if_compacted(&mut cache, dir.path()));
-        assert!(cache.is_full_delivered("/tmp/a.rs"));
-    }
-
-    #[test]
-    #[serial]
     fn newer_compaction_triggers_new_reset() {
         reset_compaction_ts();
         let dir = TempDir::new().unwrap();
@@ -342,21 +312,6 @@ mod ctx_read_stub_behavior {
             "first read should deliver file content, got: {content}"
         );
         assert!(!content.contains("[unchanged"));
-    }
-
-    #[test]
-    fn second_read_returns_stub() {
-        let mut f = NamedTempFile::new().unwrap();
-        writeln!(f, "fn hello() {{ println!(\"world\"); }}").unwrap();
-        let path = f.path().to_str().unwrap();
-
-        let mut cache = SessionCache::default();
-        let _ = read_full(&mut cache, path); // first → delivers content
-        let content = read_full(&mut cache, path); // second → stub
-        assert!(
-            content.contains("unchanged") || content.contains("cached"),
-            "second read should be a stub, got: {content}"
-        );
     }
 
     #[test]

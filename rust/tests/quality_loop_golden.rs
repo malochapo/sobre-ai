@@ -6,6 +6,14 @@
 //! Single test in its own binary: it sets `LEAN_CTX_DATA_DIR` process-wide
 //! before the edit-quality store's `OnceLock` is first touched.
 
+#[path = "support/user_dirs.rs"]
+mod user_dirs;
+
+#[test]
+fn harness_sandboxes_user_dirs() {
+    user_dirs::assert_sandboxed();
+}
+
 use lean_ctx::core::auto_mode_resolver::{AutoModeContext, resolve};
 use lean_ctx::tools::impl_edit::{EditParams, record_outcome, run_io};
 

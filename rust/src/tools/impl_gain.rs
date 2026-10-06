@@ -8,10 +8,6 @@ pub(crate) fn handle(
 ) -> String {
     let engine = GainEngine::load();
     let lim = limit.unwrap_or(10).clamp(1, 50);
-    let env_model = std::env::var("LEAN_CTX_MODEL")
-        .or_else(|_| std::env::var("LCTX_MODEL"))
-        .ok();
-    let model = model.or(env_model.as_deref());
 
     match action {
         "status" | "report" | "" => format_summary(&engine, model),
@@ -284,10 +280,8 @@ fn format_usd(amount: f64) -> String {
 
 /// Premium themed deep sections for the CLI `gain --deep` dashboard.
 pub(crate) fn format_deep_themed(model: Option<&str>, limit: usize) -> String {
-    use crate::core::theme;
     let engine = GainEngine::load();
-    let cfg = crate::core::config::Config::load();
-    let t = theme::load_theme(&cfg.theme);
+    let t = crate::core::theme::Theme::default();
     let lim = limit.clamp(1, 50);
 
     let mut out = Vec::new();
@@ -378,10 +372,7 @@ fn format_cost_themed(
     let (total_in, total_out, total_cached) = store.total_tokens();
     let total_cost = store.total_cost();
 
-    let env_model = std::env::var("LEAN_CTX_MODEL")
-        .or_else(|_| std::env::var("LCTX_MODEL"))
-        .ok();
-    let resolved_model = model.or(env_model.as_deref());
+    let resolved_model = model;
 
     out.push(String::new());
     let header = format!(
@@ -535,9 +526,7 @@ fn format_injection_methodology(t: &crate::core::theme::Theme, out: &mut Vec<Str
     let row = |s: &str| -> String { format!("  {ss}{}{ss}", pad_right(s, w)) };
 
     let overhead = crate::core::context_overhead::ContextOverhead::cached();
-    let cache_rate = crate::core::config::Config::load()
-        .dashboard_cache_hit_rate()
-        .unwrap_or(0.75);
+    let cache_rate = 0.75;
 
     out.push(String::new());
     out.push(format!(
@@ -798,11 +787,10 @@ mod tests {
     }
 
     #[test]
-    fn gain_json_schema_keys_are_stable_for_jetbrains_dtos() {
+    fn gain_json_schema_keys_are_stable() {
         let _lock = crate::core::data_dir::test_env_lock();
-        // Contract with packages/jetbrains-lean-ctx dto/GainData.kt (@SerializedName).
-        // A Rust rename that drops any of these keys must fail HERE, not silently
-        // in the plugin. Keep in sync with GainDataTest.kt.
+        // `gain --json` is a machine-readable contract: a Rust rename that drops
+        // any of these keys must fail HERE, not silently in a consumer.
         let out = handle("json", None, None, Some(5));
         let v: serde_json::Value = serde_json::from_str(&out).expect("valid json");
 

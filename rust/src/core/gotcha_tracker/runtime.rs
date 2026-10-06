@@ -155,11 +155,4 @@ mod tests {
         assert!(store.gotchas.is_empty());
         assert!(store.pending_errors.is_empty());
     }
-
-    #[test]
-    fn record_shell_outcome_skips_non_correlatable() {
-        // `ls` is not a build/test family — must be a no-op, no panic, no state.
-        record_shell_outcome("ls -la", "file1\nfile2", 0);
-        record_shell_outcome("echo hello", "hello", 0);
-    }
 }

@@ -63,7 +63,6 @@ fn initialize_answers_fast_and_first_call_succeeds() {
         .env("HOME", &env.home)
         .env("LEAN_CTX_DATA_DIR", &env.data)
         .env("CODEX_HOME", env.home.join(".codex"))
-        .env("LEAN_CTX_HEADLESS", "1")
         // Root detection must derive from the temp project's cwd. When the
         // suite itself runs inside an IDE/agent session these carry the HOST
         // workspace and would hijack the project root (→ path-jail rejects

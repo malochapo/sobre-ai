@@ -6,14 +6,12 @@
 
 mod clients;
 mod environment;
-mod providers;
 mod proxy;
 mod security;
 mod storage;
 
 pub(crate) use clients::*;
 pub(crate) use environment::*;
-pub(crate) use providers::*;
 pub(crate) use proxy::*;
 pub(crate) use security::*;
 pub(crate) use storage::*;

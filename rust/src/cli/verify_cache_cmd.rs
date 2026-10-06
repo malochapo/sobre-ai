@@ -97,28 +97,16 @@ fn run_probe(path: &str) -> ProbeOutcome {
     let mut cache = SessionCache::new();
 
     // Mirror the stub gates the *registered* ctx_read handler honours, so a
-    // config that suppresses stubbing is reported as such instead of as a
-    // confusing failure. Two independent gates disable re-read stubs:
-    //   * cache_policy `safe` (delivers a map) or `off` (the registered handler
-    //     forces `fresh=true`, always re-reading from disk), and
-    //   * forced full reads (no_degrade, or read.default_mode=full + crp=off).
-    let no_degrade = crate::core::config::Config::load().no_degrade_effective();
-    let prof = crate::core::profiles::active_profile();
-    let force_full = no_degrade
-        || (prof.read.default_mode_effective() == "full"
-            && prof.compression.crp_mode_effective() == "off");
+    // cache policy that suppresses stubbing is reported as such instead of as
+    // a confusing failure: `safe` delivers a map, `off` makes the registered
+    // handler force `fresh=true`, always re-reading from disk.
     let policy = crate::server::compaction_sync::effective_cache_policy();
-    let stub_enabled = policy != "safe" && policy != "off" && !force_full;
-    let disabled_reason = if stub_enabled {
-        None
-    } else if policy == "safe" {
+    let disabled_reason = if policy == "safe" {
         Some("cache policy is 'safe' (stubbing disabled)".to_string())
     } else if policy == "off" {
         Some("cache policy is 'off' (every read goes to disk)".to_string())
-    } else if no_degrade {
-        Some("no_degrade is enabled (full content forced)".to_string())
     } else {
-        Some("active profile forces full reads (read.default_mode=full, crp=off)".to_string())
+        None
     };
 
     let first = ctx_read::handle_with_task_resolved(&mut cache, path, "full", crp, None);
@@ -141,7 +129,7 @@ fn run_probe(path: &str) -> ProbeOutcome {
         first_tokens: first.output_tokens,
         second_tokens: second.output_tokens,
         is_stub,
-        stub_enabled,
+        stub_enabled: disabled_reason.is_none(),
         disabled_reason,
         policy: policy.to_string(),
         run_hits,
@@ -190,7 +178,6 @@ fn synthetic_probe_source() -> String {
     for i in 0..24 {
         s.push_str(&format!(
             "/// Probe function number {i}, present so the full read is unambiguous.\n\
-             pub fn probe_{i}(input: &str, factor: usize) -> HashMap<String, usize> {{\n    \
              let mut counts: HashMap<String, usize> = HashMap::new();\n    \
              for token in input.split_whitespace() {{\n        \
              *counts.entry(token.to_string()).or_insert(0) += factor + {i};\n    }}\n    \

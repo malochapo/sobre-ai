@@ -123,7 +123,7 @@ pub(super) fn lean_ctx_version_from_path() -> Outcome {
     }
 }
 
-pub(super) fn rc_contains_lean_ctx(path: &PathBuf) -> bool {
+pub(super) fn rc_contains_lean_ctx(path: &std::path::Path) -> bool {
     match std::fs::read_to_string(path) {
         Ok(s) => s.contains("lean-ctx"),
         Err(_) => false,
@@ -142,7 +142,7 @@ pub(super) fn rc_references_shell_hook(content: &str) -> bool {
     content.contains("shell-hook.")
 }
 
-pub(super) fn rc_has_pipe_guard(path: &PathBuf) -> bool {
+pub(super) fn rc_has_pipe_guard(path: &std::path::Path) -> bool {
     match std::fs::read_to_string(path) {
         Ok(s) => {
             if has_pipe_guard_in_content(&s) {
@@ -180,16 +180,6 @@ pub(super) fn hook_dirs() -> Vec<std::path::PathBuf> {
         && !dirs.contains(&d)
     {
         dirs.push(d);
-    }
-    if let Some(home) = dirs::home_dir() {
-        let legacy = home.join(".lean-ctx");
-        if !dirs.contains(&legacy) {
-            dirs.push(legacy);
-        }
-        let xdg = home.join(".config").join("lean-ctx");
-        if !dirs.contains(&xdg) {
-            dirs.push(xdg);
-        }
     }
     dirs
 }
@@ -259,14 +249,6 @@ pub(super) fn mcp_config_locations(home: &std::path::Path) -> Vec<McpLocation> {
             path: crate::core::editor_registry::claude_mcp_json_path(home),
         },
         McpLocation {
-            name: "CodeBuddy",
-            display: format!(
-                "{}",
-                crate::core::editor_registry::codebuddy_mcp_json_path(home).display()
-            ),
-            path: crate::core::editor_registry::codebuddy_mcp_json_path(home),
-        },
-        McpLocation {
             name: "Windsurf",
             display: "~/.codeium/windsurf/mcp_config.json".into(),
             path: home
@@ -290,22 +272,6 @@ pub(super) fn mcp_config_locations(home: &std::path::Path) -> Vec<McpLocation> {
             display: "~/.gemini/settings.json".into(),
             path: home.join(".gemini").join("settings.json"),
         },
-        McpLocation {
-            name: "Antigravity",
-            display: "~/.gemini/antigravity/mcp_config.json".into(),
-            path: home
-                .join(".gemini")
-                .join("antigravity")
-                .join("mcp_config.json"),
-        },
-        McpLocation {
-            name: "Antigravity CLI",
-            display: "~/.gemini/antigravity-cli/mcp_config.json".into(),
-            path: home
-                .join(".gemini")
-                .join("antigravity-cli")
-                .join("mcp_config.json"),
-        },
     ];
 
     #[cfg(unix)]
@@ -317,52 +283,6 @@ pub(super) fn mcp_config_locations(home: &std::path::Path) -> Vec<McpLocation> {
             path: zed_cfg,
         });
     }
-
-    locations.push(McpLocation {
-        name: "Qwen Code",
-        display: "~/.qwen/settings.json".into(),
-        path: home.join(".qwen").join("settings.json"),
-    });
-    locations.push(McpLocation {
-        name: "Trae",
-        display: "~/.trae/mcp.json".into(),
-        path: home.join(".trae").join("mcp.json"),
-    });
-    locations.push(McpLocation {
-        name: "Amazon Q",
-        display: "~/.aws/amazonq/default.json".into(),
-        path: home.join(".aws").join("amazonq").join("default.json"),
-    });
-    locations.push(McpLocation {
-        name: "JetBrains",
-        display: "~/.jb-mcp.json".into(),
-        path: home.join(".jb-mcp.json"),
-    });
-    locations.push(McpLocation {
-        name: "AWS Kiro",
-        display: "~/.kiro/settings/mcp.json".into(),
-        path: home.join(".kiro").join("settings").join("mcp.json"),
-    });
-    locations.push(McpLocation {
-        name: "Verdent",
-        display: "~/.verdent/mcp.json".into(),
-        path: home.join(".verdent").join("mcp.json"),
-    });
-    locations.push(McpLocation {
-        name: "Crush",
-        display: "~/.config/crush/crush.json".into(),
-        path: home.join(".config").join("crush").join("crush.json"),
-    });
-    locations.push(McpLocation {
-        name: "Pi",
-        display: "~/.pi/agent/mcp.json".into(),
-        path: home.join(".pi").join("agent").join("mcp.json"),
-    });
-    locations.push(McpLocation {
-        name: "Amp",
-        display: "~/.config/amp/settings.json".into(),
-        path: home.join(".config").join("amp").join("settings.json"),
-    });
 
     {
         #[cfg(unix)]
@@ -396,13 +316,6 @@ pub(super) fn mcp_config_locations(home: &std::path::Path) -> Vec<McpLocation> {
             display: "~/Library/Application Support/Code/User/mcp.json".into(),
             path: vscode_mcp,
         });
-        // Insiders keeps a fully separate profile dir — a server registered in
-        // stable is invisible there (GH #694).
-        locations.push(McpLocation {
-            name: "VS Code Insiders",
-            display: "~/Library/Application Support/Code - Insiders/User/mcp.json".into(),
-            path: home.join("Library/Application Support/Code - Insiders/User/mcp.json"),
-        });
     }
     #[cfg(target_os = "linux")]
     {
@@ -424,17 +337,6 @@ pub(super) fn mcp_config_locations(home: &std::path::Path) -> Vec<McpLocation> {
             display: display_str,
             path: vscode_mcp,
         });
-        // When stable AND Insiders coexist the chain above resolves to stable
-        // only — surface Insiders separately so its config is not a blind
-        // spot (GH #694).
-        let insiders_user = home.join(".config/Code - Insiders/User");
-        if user_dir != insiders_user && insiders_user.exists() {
-            locations.push(McpLocation {
-                name: "VS Code Insiders",
-                display: "~/.config/Code - Insiders/User/mcp.json".into(),
-                path: insiders_user.join("mcp.json"),
-            });
-        }
     }
     #[cfg(target_os = "windows")]
     {
@@ -445,11 +347,6 @@ pub(super) fn mcp_config_locations(home: &std::path::Path) -> Vec<McpLocation> {
                 display: "%APPDATA%/Code/User/mcp.json".into(),
                 path: vscode_mcp,
             });
-            locations.push(McpLocation {
-                name: "VS Code Insiders",
-                display: "%APPDATA%/Code - Insiders/User/mcp.json".into(),
-                path: std::path::PathBuf::from(&appdata).join("Code - Insiders/User/mcp.json"),
-            });
         }
     }
 
@@ -458,33 +355,6 @@ pub(super) fn mcp_config_locations(home: &std::path::Path) -> Vec<McpLocation> {
         display: "~/.copilot/mcp-config.json".into(),
         path: home.join(".copilot/mcp-config.json"),
     });
-
-    locations.push(McpLocation {
-        name: "Hermes Agent",
-        display: "~/.hermes/config.yaml".into(),
-        path: home.join(".hermes").join("config.yaml"),
-    });
-
-    {
-        let cline_path = crate::core::editor_registry::cline_mcp_path();
-        if cline_path.to_str().is_some_and(|s| s != "/nonexistent") {
-            locations.push(McpLocation {
-                name: "Cline",
-                display: cline_path.display().to_string(),
-                path: cline_path,
-            });
-        }
-    }
-    {
-        let roo_path = crate::core::editor_registry::roo_mcp_path();
-        if roo_path.to_str().is_some_and(|s| s != "/nonexistent") {
-            locations.push(McpLocation {
-                name: "Roo Code",
-                display: roo_path.display().to_string(),
-                path: roo_path,
-            });
-        }
-    }
 
     locations
 }
@@ -571,9 +441,9 @@ pub(super) fn proxy_auth_probe(port: u16) -> bool {
 }
 
 /// Fetches the proxy's live upstreams from the authenticated `/status` endpoint.
-/// Returns `(anthropic, openai, chatgpt, gemini)`, or `None` if unreachable or
+/// Returns `(anthropic, openai, gemini)`, or `None` if unreachable or
 /// the response lacks the `upstreams` block. Drives the #449 drift check.
-pub(super) fn proxy_live_upstreams(port: u16) -> Option<(String, String, String, String)> {
+pub(super) fn proxy_live_upstreams(port: u16) -> Option<(String, String, String)> {
     let token = crate::core::session_token::resolve_proxy_token("LEAN_CTX_PROXY_TOKEN");
     let url = format!("http://127.0.0.1:{port}/status");
     let resp = ureq::get(&url)
@@ -586,7 +456,6 @@ pub(super) fn proxy_live_upstreams(port: u16) -> Option<(String, String, String,
     Some((
         up.get("anthropic")?.as_str()?.to_string(),
         up.get("openai")?.as_str()?.to_string(),
-        up.get("chatgpt")?.as_str()?.to_string(),
         up.get("gemini")?.as_str()?.to_string(),
     ))
 }
@@ -598,16 +467,8 @@ pub(super) fn proxy_live_upstreams(port: u16) -> Option<(String, String, String,
 /// which `setup` deletes since the v3 layout — GL #555).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum ClaudeInstructionsState {
-    /// rules_scope=project: global instructions are intentionally absent.
-    ProjectScope,
-    /// rules_injection=off: user opted out of instructions entirely (GH #361).
-    InjectionOff,
-    /// rules_injection=dedicated: the SessionStart hook injects.
-    Dedicated,
     /// CLAUDE.md block present.
     Block,
-    /// Legacy rules file from a pre-3.8 install (works until next setup).
-    LegacyRules,
     /// Nothing installed — Claude only sees the 2048-char-capped MCP instructions.
     Missing,
 }
@@ -618,76 +479,13 @@ impl ClaudeInstructionsState {
     }
 }
 
-pub(super) fn claude_instructions_state(
-    home: &std::path::Path,
-    scope: crate::core::config::RulesScope,
-    injection: crate::core::config::RulesInjection,
-) -> ClaudeInstructionsState {
+pub(super) fn claude_instructions_state(home: &std::path::Path) -> ClaudeInstructionsState {
     use ClaudeInstructionsState as S;
-
-    if scope == crate::core::config::RulesScope::Project {
-        return S::ProjectScope;
-    }
-    if injection == crate::core::config::RulesInjection::Off {
-        return S::InjectionOff;
-    }
-
-    if injection == crate::core::config::RulesInjection::Dedicated {
-        return S::Dedicated;
-    }
 
     let claude_md = crate::core::editor_registry::claude_state_dir(home).join("CLAUDE.md");
     let has_block = std::fs::read_to_string(&claude_md)
         .is_ok_and(|c| c.contains(crate::hooks::agents::CLAUDE_MD_BLOCK_START));
-    if has_block {
-        return S::Block;
-    }
-
-    let has_rules = crate::core::editor_registry::claude_rules_dir(home)
-        .join("lean-ctx.md")
-        .exists();
-    if has_rules {
-        return S::LegacyRules;
-    }
-
-    S::Missing
-}
-
-/// CodeBuddy instructions state — mirrors `claude_instructions_state` since
-/// CodeBuddy uses the same CODEBUDDY.md block pattern as Claude Code.
-pub(super) fn codebuddy_instructions_state(
-    home: &std::path::Path,
-    scope: crate::core::config::RulesScope,
-    injection: crate::core::config::RulesInjection,
-) -> ClaudeInstructionsState {
-    use ClaudeInstructionsState as S;
-
-    if scope == crate::core::config::RulesScope::Project {
-        return S::ProjectScope;
-    }
-    if injection == crate::core::config::RulesInjection::Off {
-        return S::InjectionOff;
-    }
-
-    if injection == crate::core::config::RulesInjection::Dedicated {
-        return S::Dedicated;
-    }
-
-    let codebuddy_md = crate::core::editor_registry::codebuddy_state_dir(home).join("CODEBUDDY.md");
-    let has_block = std::fs::read_to_string(&codebuddy_md)
-        .is_ok_and(|c| c.contains(crate::hooks::agents::CODEBUDDY_MD_BLOCK_START));
-    if has_block {
-        return S::Block;
-    }
-
-    let has_rules = crate::core::editor_registry::codebuddy_rules_dir(home)
-        .join("lean-ctx.md")
-        .exists();
-    if has_rules {
-        return S::LegacyRules;
-    }
-
-    S::Missing
+    if has_block { S::Block } else { S::Missing }
 }
 
 pub(super) fn claude_binary_exists() -> bool {
@@ -702,23 +500,6 @@ pub(super) fn claude_binary_exists() -> bool {
     {
         std::process::Command::new("where")
             .arg("claude")
-            .output()
-            .is_ok_and(|o| o.status.success())
-    }
-}
-
-pub(super) fn codebuddy_binary_exists() -> bool {
-    #[cfg(unix)]
-    {
-        std::process::Command::new("which")
-            .arg("codebuddy")
-            .output()
-            .is_ok_and(|o| o.status.success())
-    }
-    #[cfg(windows)]
-    {
-        std::process::Command::new("where")
-            .arg("codebuddy")
             .output()
             .is_ok_and(|o| o.status.success())
     }
@@ -816,7 +597,6 @@ mod tests {
         // actually writes (delimited by `<!-- lean-ctx -->`), not the retired
         // full-rules marker — otherwise it falsely reports the block missing.
         let _lock = crate::core::data_dir::test_env_lock();
-        use crate::core::config::{RulesInjection, RulesScope};
         let tmp = tempfile::tempdir().unwrap();
         let home = tmp.path();
         let dir = crate::core::editor_registry::claude_state_dir(home);
@@ -831,41 +611,12 @@ mod tests {
         )
         .unwrap();
 
-        let state =
-            super::claude_instructions_state(home, RulesScope::Global, RulesInjection::Shared);
+        let state = super::claude_instructions_state(home);
         assert_ne!(
             state,
             super::ClaudeInstructionsState::Missing,
             "doctor must detect the CLAUDE.md pointer block (#549)"
         );
         assert!(state.ok(), "a detected block must be a healthy state");
-    }
-
-    #[test]
-    fn codebuddy_instructions_state_detects_pointer_block() {
-        let _lock = crate::core::data_dir::test_env_lock();
-        use crate::core::config::{RulesInjection, RulesScope};
-        let tmp = tempfile::tempdir().unwrap();
-        let home = tmp.path();
-        let dir = crate::core::editor_registry::codebuddy_state_dir(home);
-        std::fs::create_dir_all(&dir).unwrap();
-        std::fs::write(
-            dir.join("CODEBUDDY.md"),
-            format!(
-                "# notes\n\n{}\n## lean-ctx\n{}\n",
-                crate::hooks::agents::CODEBUDDY_MD_BLOCK_START,
-                crate::core::rules_canonical::AGENTS_BLOCK_END
-            ),
-        )
-        .unwrap();
-
-        let state =
-            super::codebuddy_instructions_state(home, RulesScope::Global, RulesInjection::Shared);
-        assert_ne!(
-            state,
-            super::ClaudeInstructionsState::Missing,
-            "doctor must detect the CODEBUDDY.md pointer block (#549)"
-        );
-        assert!(state.ok());
     }
 }

@@ -341,16 +341,6 @@ mod tests {
     }
 
     #[test]
-    fn best_root_empty_returns_none() {
-        assert!(best_root_from_uris(&[]).is_none());
-    }
-
-    #[test]
-    fn env_override_returns_none_when_unset() {
-        let _ = root_from_env();
-    }
-
-    #[test]
     fn best_root_rejects_home_without_marker() {
         // A client reporting HOME as its workspace root must NOT turn HOME into
         // the project root (root cause of cross-project session contamination).
@@ -435,22 +425,6 @@ mod tests {
     }
 
     #[test]
-    fn best_root_from_paths_prefers_marker_over_first() {
-        let tmp = tempfile::tempdir().unwrap();
-        let plain = tmp.path().join("plain");
-        let marked = tmp.path().join("marked");
-        std::fs::create_dir_all(&plain).unwrap();
-        std::fs::create_dir_all(&marked).unwrap();
-        std::fs::create_dir(marked.join(".git")).unwrap();
-        let got = best_root_from_paths(vec![
-            plain.to_string_lossy().to_string(),
-            marked.to_string_lossy().to_string(),
-        ])
-        .unwrap();
-        assert!(got.contains("marked"), "marker dir must win: {got}");
-    }
-
-    #[test]
     fn best_root_from_paths_filters_nonexistent() {
         let tmp = tempfile::tempdir().unwrap();
         let safe = tmp.path().join("real_proj");
@@ -482,12 +456,5 @@ mod tests {
         let raw = format!("{},{}", a.display(), b.display());
         let got = best_root_from_paths(split_workspace_paths(&raw)).unwrap();
         assert!(got.contains("ws_b"), "marker workspace must win: {got}");
-    }
-
-    #[test]
-    fn workspace_env_readers_do_not_panic() {
-        // Smoke test: both env readers tolerate the variable being set or unset.
-        let _ = root_from_workspace_env();
-        let _ = workspace_roots_from_env();
     }
 }

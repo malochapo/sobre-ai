@@ -48,7 +48,7 @@ impl TaskClassifier {
             | "ctx_callgraph" => TaskCategory::Exploration,
             "ctx_impact" => TaskCategory::Architecture,
             "ctx_session" | "ctx_knowledge" => TaskCategory::Knowledge,
-            "ctx_shell" | "ctx_execute" => TaskCategory::Debugging,
+            "ctx_shell" => TaskCategory::Debugging,
             _ => TaskCategory::General,
         }
     }
@@ -132,14 +132,6 @@ fn normalize(s: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn classify_git() {
-        assert_eq!(
-            TaskClassifier::classify_command_key("git status"),
-            TaskCategory::Git
-        );
-    }
 
     #[test]
     fn classify_tools() {

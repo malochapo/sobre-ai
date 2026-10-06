@@ -188,10 +188,6 @@ pub fn has_error(path: &str) -> bool {
     global().lock().is_ok_and(|s| s.has_error(path))
 }
 
-pub fn severity_for(path: &str) -> Option<Severity> {
-    global().lock().ok().and_then(|s| s.severity_for(path))
-}
-
 /// Snapshot for ranking/triage consumers: `(path, severity)` pairs.
 pub fn snapshot() -> Vec<(String, Severity)> {
     global()
@@ -390,15 +386,6 @@ fn parse_eslint(output: &str) -> Vec<Diagnostic> {
         });
     }
     out
-}
-
-/// Ranking boost per path: errors dominate, warnings hint (#499).
-pub fn relevance_boost(path: &str) -> f64 {
-    match severity_for(path) {
-        Some(Severity::Error) => 0.35,
-        Some(Severity::Warning) => 0.10,
-        None => 0.0,
-    }
 }
 
 /// Apply diagnostic boosts to a relevance ranking and re-sort.

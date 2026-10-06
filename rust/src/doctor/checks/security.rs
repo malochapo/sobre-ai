@@ -1,11 +1,10 @@
-//! Containment & security posture: shell gate, path jail, workspace
-//! trust, secret redaction, IDE permission inheritance.
+//! Containment & security: shell gate, path jail, secret redaction.
 
 use crate::doctor::{BOLD, DIM, GREEN, Outcome, RED, RST, YELLOW};
 
-/// Reports the shell gate exactly as the MCP tools enforce it — and, crucially,
-/// flags when `config.toml` fails to parse (the silent-default trap behind #341,
-/// where a `shell_security` edit appears to "do nothing" because the file never loaded).
+/// Reports the shell gate — and, crucially, flags when `config.toml` fails to
+/// parse (the silent-default trap behind #341, where an edit appears to "do
+/// nothing" because the file never loaded).
 pub(crate) fn shell_gate_outcome() -> Outcome {
     if let Some(err) = crate::core::config::last_config_parse_error() {
         let short = err.lines().next().unwrap_or("parse error");
@@ -17,28 +16,6 @@ pub(crate) fn shell_gate_outcome() -> Outcome {
         };
     }
 
-    // GL #788: surface a relaxed posture loudly — an unexpected `off`/`warn`
-    // silently drops the unconditional blocks, which is the only gating left.
-    match crate::core::shell_gate::ShellSecurity::resolve() {
-        crate::core::shell_gate::ShellSecurity::Off => {
-            return Outcome {
-                ok: true,
-                line: format!(
-                    "{BOLD}Shell gating{RST}  {YELLOW}off{RST}  {DIM}(shell_security=off — even the unconditional blocks are skipped){RST}"
-                ),
-            };
-        }
-        crate::core::shell_gate::ShellSecurity::Warn => {
-            return Outcome {
-                ok: true,
-                line: format!(
-                    "{BOLD}Shell gating{RST}  {YELLOW}warn-only{RST}  {DIM}(shell_security=warn — violations logged, never blocked){RST}"
-                ),
-            };
-        }
-        crate::core::shell_gate::ShellSecurity::Enforce => {}
-    }
-
     Outcome {
         ok: true,
         line: format!(
@@ -46,8 +23,8 @@ pub(crate) fn shell_gate_outcome() -> Outcome {
         ),
     }
 }
-/// Reports the effective PathJail state (GH #392): which knob (if any)
-/// disabled it, and whether configured `allow_paths`/`extra_roots` entries
+/// Reports the effective PathJail state (GH #392): whether it is open, and
+/// whether configured `allow_paths` entries
 /// actually resolve — the silent failure mode behind "allow_paths has no
 /// effect" reports (unexpanded `$VAR`, typos, paths that don't exist).
 pub(crate) fn path_jail_outcome() -> Outcome {
@@ -61,20 +38,7 @@ pub(crate) fn path_jail_outcome() -> Outcome {
     }
 
     let cfg = crate::core::config::Config::load();
-    if cfg.path_jail == Some(false) {
-        return Outcome {
-            ok: true,
-            line: format!(
-                "{BOLD}Path jail{RST}  {YELLOW}disabled{RST}  {DIM}(path_jail = false in config.toml — all tool paths allowed){RST}"
-            ),
-        };
-    }
-
-    let entries: Vec<&String> = cfg
-        .allow_paths
-        .iter()
-        .chain(cfg.extra_roots.iter())
-        .collect();
+    let entries: Vec<&String> = cfg.allow_paths.iter().collect();
     let mut grants_everything = false;
     let mut dead: Vec<String> = Vec::new();
     for raw in &entries {
@@ -91,7 +55,7 @@ pub(crate) fn path_jail_outcome() -> Outcome {
         return Outcome {
             ok: true,
             line: format!(
-                "{BOLD}Path jail{RST}  {YELLOW}active, but allow_paths contains \"/\"{RST}  {DIM}(grants everything — prefer the explicit `path_jail = false`){RST}"
+                "{BOLD}Path jail{RST}  {YELLOW}open{RST}  {DIM}(allow_paths contains \"/\" — all tool paths allowed){RST}"
             ),
         };
     }
@@ -119,10 +83,9 @@ pub(crate) fn path_jail_outcome() -> Outcome {
     };
 
     // Env-channel relaxations the config view above can't see (inherited from the
-    // IDE/launchd process env, e.g. LEAN_CTX_ALLOW_PATH / EXTRA_ROOTS /
-    // ALLOW_IDE_DIRS). Surface them as a standing security note (GH security
+    // multi-root workspace). Surface them as a standing security note (GH security
     // audit, finding 3); no-jail / path_jail=false are handled by the early
-    // returns above, so only the env/IDE-dir relaxations reach here.
+    // returns above, so only those relaxations reach here.
     let relaxed: Vec<&str> = crate::core::pathjail::active_relaxations()
         .iter()
         .map(|r| r.source)
@@ -142,115 +105,15 @@ pub(crate) fn path_jail_outcome() -> Outcome {
         }
     }
 }
-/// Reports project-local config trust (security audit #4): whether the active
-/// workspace's `.lean-ctx.toml` carries security-sensitive overrides and, if so,
-/// whether they are honoured (workspace trusted) or withheld (untrusted). The
-/// withheld state is the SECURE default, so it stays a yellow note — not a
-/// failure — mirroring the path-jail-relaxed line above.
-pub(crate) fn workspace_trust_outcome() -> Outcome {
-    let Some(root) = crate::core::config::Config::find_project_root() else {
-        return Outcome {
-            ok: true,
-            line: format!("{BOLD}Workspace trust{RST}  {DIM}n/a (no project root){RST}"),
-        };
-    };
-    let sensitive = std::fs::read_to_string(crate::core::config::Config::local_path(&root))
-        .ok()
-        .map(|c| crate::core::config::local_sensitive_overrides(&c))
-        .unwrap_or_default();
-
-    if sensitive.is_empty() {
-        return Outcome {
-            ok: true,
-            line: format!(
-                "{BOLD}Workspace trust{RST}  {GREEN}no project-local security overrides{RST}"
-            ),
-        };
-    }
-
-    if crate::core::workspace_trust::is_trusted(std::path::Path::new(&root)) {
-        Outcome {
-            ok: true,
-            line: format!(
-                "{BOLD}Workspace trust{RST}  {GREEN}trusted{RST}  {DIM}({} sensitive override(s) honoured: {}){RST}",
-                sensitive.len(),
-                sensitive.join(", ")
-            ),
-        }
-    } else {
-        Outcome {
-            ok: true,
-            line: format!(
-                "{BOLD}Workspace trust{RST}  {YELLOW}untrusted — {} sensitive override(s) withheld{RST}  {DIM}(run `lean-ctx trust`: {}){RST}",
-                sensitive.len(),
-                sensitive.join(", ")
-            ),
-        }
-    }
-}
 /// Reports secret/`.env` redaction — the exfiltration-defense plane that is
-/// deliberately independent of the path jail + shell gating (#507). A user
-/// can run `lean-ctx yolo` (containment off) and still have this on, so it gets
+/// deliberately independent of the path jail + shell gating (#507), so it gets
 /// its own line: "are my API keys masked before they reach the LLM provider?".
 pub(crate) fn secret_detection_outcome() -> Outcome {
-    let cfg = crate::core::config::Config::load();
-    let sd = &cfg.secret_detection;
-    if !sd.enabled {
-        return Outcome {
-            ok: true,
-            line: format!(
-                "{BOLD}Secret redaction{RST}  {YELLOW}off{RST}  {DIM}(secret_detection.enabled=false — .env/API keys can reach the provider; re-enable: lean-ctx security secrets on){RST}"
-            ),
-        };
-    }
-    if !sd.redact {
-        return Outcome {
-            ok: true,
-            line: format!(
-                "{BOLD}Secret redaction{RST}  {YELLOW}detect-only{RST}  {DIM}(secrets flagged but not masked — set secret_detection.redact=true to mask){RST}"
-            ),
-        };
-    }
-    let custom = if sd.custom_patterns.is_empty() {
-        String::new()
-    } else {
-        format!(" + {} custom pattern(s)", sd.custom_patterns.len())
-    };
     Outcome {
         ok: true,
         line: format!(
-            "{BOLD}Secret redaction{RST}  {GREEN}on{RST}  {DIM}(.env/API keys masked before the model sees them{custom}){RST}"
+            "{BOLD}Secret redaction{RST}  {GREEN}on{RST}  {DIM}(.env/API keys masked before the model sees them){RST}"
         ),
-    }
-}
-/// Reports IDE permission inheritance: when on, lean-ctx mirrors the host IDE's
-/// bash/read/edit/grep permission rules onto its own tools, so `ctx_shell` honors
-/// a `rm *: ask`/`deny` rule instead of forming a parallel, ungoverned path.
-pub(crate) fn permission_inheritance_outcome() -> Outcome {
-    use crate::core::config::{Config, PermissionInheritance};
-    let cfg = Config::load();
-    if cfg.permission_inheritance_effective() != PermissionInheritance::On {
-        return Outcome {
-            ok: true,
-            line: format!(
-                "{BOLD}Permission inheritance{RST}  {YELLOW}off{RST}  {DIM}(enable: lean-ctx config set permission_inheritance on → ctx_shell honors your IDE's bash/rm rules){RST}"
-            ),
-        };
-    }
-    let policy = dirs::home_dir()
-        .map(|home| crate::core::ide_permissions::load_opencode(&home, None))
-        .unwrap_or_default();
-    let detail = if policy.is_empty() {
-        "on, but no OpenCode permission rules found yet".to_string()
-    } else {
-        format!(
-            "mirroring {} OpenCode permission rule(s)",
-            policy.rule_count()
-        )
-    };
-    Outcome {
-        ok: true,
-        line: format!("{BOLD}Permission inheritance{RST}  {GREEN}on{RST}  {DIM}({detail}){RST}"),
     }
 }
 

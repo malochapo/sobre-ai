@@ -1,41 +1,14 @@
-use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
-use crate::core::bm25_index::{BM25Index, SearchResult};
+use crate::core::bm25_index::BM25Index;
 
 /// Default RRF parameter (controls how quickly rank decay affects fusion scores).
 const DEFAULT_RRF_K: f64 = 60.0;
 
 /// Maximum number of repo roots that can be served simultaneously.
 const MAX_ROOTS: usize = 16;
-
-/// A single search result from one repo root.
-#[derive(Debug, Clone)]
-pub struct RepoSearchResult {
-    pub repo_alias: String,
-    pub repo_path: String,
-    pub file_path: String,
-    pub symbol_name: String,
-    pub content: String,
-    pub start_line: usize,
-    pub end_line: usize,
-    pub score: f64,
-}
-
-/// A merged result after RRF fusion across multiple repos.
-#[derive(Debug, Clone)]
-pub struct FusedSearchResult {
-    pub repo_alias: String,
-    pub repo_path: String,
-    pub file_path: String,
-    pub symbol_name: String,
-    pub content: String,
-    pub start_line: usize,
-    pub end_line: usize,
-    pub rrf_score: f64,
-}
 
 /// Configuration for a single repository root in multi-repo mode.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -130,41 +103,8 @@ impl ActiveRepoRoot {
         })
     }
 
-    fn ensure_index(&mut self) {
-        if self.index.is_some() {
-            return;
-        }
-        self.index = Some(BM25Index::load_or_build(&self.path));
-    }
-
     pub fn alias(&self) -> String {
         self.config.effective_alias()
-    }
-
-    pub fn search(&mut self, query: &str, max_results: usize) -> Vec<RepoSearchResult> {
-        self.ensure_index();
-        let Some(ref index) = self.index else {
-            return Vec::new();
-        };
-
-        let results: Vec<SearchResult> = index.search(query, max_results);
-        let alias = self.alias();
-        let repo_path = self.path.to_string_lossy().to_string();
-
-        results
-            .into_iter()
-            .enumerate()
-            .map(|(rank, sr)| RepoSearchResult {
-                repo_alias: alias.clone(),
-                repo_path: repo_path.clone(),
-                file_path: sr.file_path,
-                symbol_name: sr.symbol_name,
-                content: sr.snippet,
-                start_line: sr.start_line,
-                end_line: sr.end_line,
-                score: 1.0 / (rank as f64 + 1.0),
-            })
-            .collect()
     }
 }
 
@@ -182,11 +122,6 @@ impl MultiRepoManager {
         }
     }
 
-    pub fn with_rrf_k(mut self, k: f64) -> Self {
-        self.rrf_k = k;
-        self
-    }
-
     pub fn from_config(config: &MultiRepoConfig) -> Result<Self, String> {
         let mut manager = Self::new();
         if let Some(k) = config.rrf_k {
@@ -198,6 +133,7 @@ impl MultiRepoManager {
         Ok(manager)
     }
 
+    #[cfg(test)]
     pub fn add_root(&mut self, path: &str, alias: Option<&str>) -> Result<(), String> {
         if self.roots.len() >= MAX_ROOTS {
             return Err(format!("Maximum number of roots ({MAX_ROOTS}) reached"));
@@ -229,36 +165,8 @@ impl MultiRepoManager {
         Ok(())
     }
 
-    pub fn remove_root(&mut self, path: &str) -> Result<(), String> {
-        let normalized = PathBuf::from(path)
-            .canonicalize()
-            .unwrap_or_else(|_| PathBuf::from(path));
-        let before = self.roots.len();
-        self.roots
-            .retain(|r| r.path != normalized && r.config.path != path);
-        if self.roots.len() == before {
-            return Err(format!("Root not found: {path}"));
-        }
-        Ok(())
-    }
-
-    pub fn list_roots(&self) -> Vec<RootInfo> {
-        self.roots
-            .iter()
-            .map(|r| RootInfo {
-                path: r.path.to_string_lossy().to_string(),
-                alias: r.alias(),
-                has_index: r.index.is_some(),
-            })
-            .collect()
-    }
-
-    pub fn root_count(&self) -> usize {
-        self.roots.len()
-    }
-
     /// The configured RRF constant, so external fusers (e.g. the hybrid
-    /// multi-repo search) score identically to [`Self::search`].
+    /// multi-repo search) score identically to the hybrid search.
     pub fn rrf_k(&self) -> f64 {
         self.rrf_k
     }
@@ -273,76 +181,6 @@ impl MultiRepoManager {
             r.alias() == repo || r.config.path == repo || r.path.to_string_lossy() == repo
         })
     }
-
-    /// Search across all roots (or a subset) and merge with Reciprocal Rank Fusion.
-    pub fn search(
-        &mut self,
-        query: &str,
-        max_results: usize,
-        filter_roots: Option<&[String]>,
-    ) -> Vec<FusedSearchResult> {
-        let per_root_max = (max_results * 2).max(20);
-
-        let mut all_results: HashMap<String, FusedSearchResult> = HashMap::new();
-
-        for root in &mut self.roots {
-            if let Some(filter) = filter_roots {
-                let alias = root.alias();
-                let path = root.path.to_string_lossy().to_string();
-                if !filter.iter().any(|f| f == &alias || f == &path) {
-                    continue;
-                }
-            }
-
-            let results = root.search(query, per_root_max);
-
-            for (rank, result) in results.iter().enumerate() {
-                let rrf_contribution = 1.0 / (self.rrf_k + rank as f64 + 1.0);
-                let key = format!(
-                    "{}:{}:{}",
-                    result.repo_alias, result.file_path, result.start_line
-                );
-
-                all_results
-                    .entry(key)
-                    .and_modify(|existing| {
-                        existing.rrf_score += rrf_contribution;
-                    })
-                    .or_insert_with(|| FusedSearchResult {
-                        repo_alias: result.repo_alias.clone(),
-                        repo_path: result.repo_path.clone(),
-                        file_path: result.file_path.clone(),
-                        symbol_name: result.symbol_name.clone(),
-                        content: result.content.clone(),
-                        start_line: result.start_line,
-                        end_line: result.end_line,
-                        rrf_score: rrf_contribution,
-                    });
-            }
-        }
-
-        let mut fused: Vec<FusedSearchResult> = all_results.into_values().collect();
-        fused.sort_by(|a, b| {
-            b.rrf_score
-                .partial_cmp(&a.rrf_score)
-                .unwrap_or(std::cmp::Ordering::Equal)
-        });
-        fused.truncate(max_results);
-        fused
-    }
-
-    /// Search within a specific repo root (no RRF, single-repo query).
-    pub fn search_single_repo(
-        &mut self,
-        repo: &str,
-        query: &str,
-        max_results: usize,
-    ) -> Result<Vec<RepoSearchResult>, String> {
-        let idx = self
-            .resolve_root(repo)
-            .ok_or_else(|| format!("Unknown repo: {repo}"))?;
-        Ok(self.roots[idx].search(query, max_results))
-    }
 }
 
 impl Default for MultiRepoManager {
@@ -351,19 +189,10 @@ impl Default for MultiRepoManager {
     }
 }
 
-/// Summary info about a registered root.
-#[derive(Debug, Clone, Serialize)]
-pub struct RootInfo {
-    pub path: String,
-    pub alias: String,
-    pub has_index: bool,
-}
-
 /// Returns the path to the multi-repo config file.
 ///
 /// #594: resolved through the unified config base so it matches `config.toml`
-/// (on macOS this no longer diverges to `~/Library/Application Support`); any
-/// legacy copy at the old location is adopted on first access.
+/// (on macOS this no longer diverges to `~/Library/Application Support`).
 pub fn config_file_path() -> PathBuf {
     crate::core::paths::config_dir_member("multi-repo.toml")
         .unwrap_or_else(|_| PathBuf::from("~/.config/lean-ctx/multi-repo.toml"))
@@ -379,23 +208,6 @@ pub fn global_manager() -> &'static std::sync::Mutex<MultiRepoManager> {
         let manager = MultiRepoManager::from_config(&config).unwrap_or_default();
         std::sync::Mutex::new(manager)
     })
-}
-
-/// Initialize the global manager with explicit roots (e.g. from CLI `--root` flags).
-pub fn init_with_roots(
-    roots: &[(String, Option<String>)],
-    rrf_k: Option<f64>,
-) -> Result<(), String> {
-    let mut manager = MultiRepoManager::new();
-    if let Some(k) = rrf_k {
-        manager.rrf_k = k;
-    }
-    for (path, alias) in roots {
-        manager.add_root(path, alias.as_deref())?;
-    }
-    GLOBAL_MANAGER
-        .set(std::sync::Mutex::new(manager))
-        .map_err(|_| "Multi-repo manager already initialized".to_string())
 }
 
 /// Resolve a `repo` alias/path to the actual filesystem root.
@@ -417,61 +229,6 @@ pub fn known_aliases() -> Vec<String> {
         return Vec::new();
     };
     mgr.roots.iter().map(ActiveRepoRoot::alias).collect()
-}
-
-/// Check if multi-repo mode is active (more than 1 root configured).
-pub fn is_multi_repo_active() -> bool {
-    let manager = global_manager();
-    manager.lock().is_ok_and(|mgr| mgr.is_active())
-}
-
-/// Get all configured repo root paths (for tools that need to iterate).
-pub fn all_root_paths() -> Vec<String> {
-    let manager = global_manager();
-    let Ok(mgr) = manager.lock() else {
-        return Vec::new();
-    };
-    mgr.roots
-        .iter()
-        .map(|r| r.path.to_string_lossy().to_string())
-        .collect()
-}
-
-/// Format search results for MCP output.
-pub fn format_fused_results(results: &[FusedSearchResult]) -> String {
-    if results.is_empty() {
-        return "No results found across repos.".to_string();
-    }
-
-    let mut out = String::with_capacity(results.len() * 200);
-    out.push_str(&format!(
-        "Cross-repo results ({} matches):\n\n",
-        results.len()
-    ));
-
-    for (i, result) in results.iter().enumerate() {
-        out.push_str(&format!(
-            "{}. [{}] {}:{}-{} ({})\n   RRF: {:.4}\n",
-            i + 1,
-            result.repo_alias,
-            result.file_path,
-            result.start_line,
-            result.end_line,
-            result.symbol_name,
-            result.rrf_score,
-        ));
-        let preview: String = result
-            .content
-            .lines()
-            .take(3)
-            .collect::<Vec<_>>()
-            .join("\n");
-        if !preview.is_empty() {
-            out.push_str(&format!("   {}\n", preview.replace('\n', "\n   ")));
-        }
-        out.push('\n');
-    }
-    out
 }
 
 #[cfg(test)]
@@ -555,50 +312,5 @@ path = "/home/user/frontend"
                 .is_err()
         );
         let _ = std::fs::remove_dir_all(&dir);
-    }
-
-    #[test]
-    fn rrf_fusion_basic() {
-        let manager = MultiRepoManager::new().with_rrf_k(60.0);
-        // RRF score for rank 0: 1/(60+0+1) = 1/61 ≈ 0.01639
-        let score: f64 = 1.0 / (60.0 + 0.0 + 1.0);
-        assert!((score - 0.01639).abs() < 0.001);
-
-        assert_eq!(manager.rrf_k, 60.0);
-    }
-
-    #[test]
-    fn remove_root_works() {
-        let dir = std::env::temp_dir().join("multi_repo_remove_test");
-        let _ = std::fs::create_dir_all(&dir);
-        let mut manager = MultiRepoManager::new();
-        manager
-            .add_root(&dir.to_string_lossy(), Some("removable"))
-            .unwrap();
-        assert_eq!(manager.root_count(), 1);
-        manager.remove_root(&dir.to_string_lossy()).unwrap();
-        assert_eq!(manager.root_count(), 0);
-        let _ = std::fs::remove_dir_all(&dir);
-    }
-
-    #[test]
-    fn list_roots_returns_info() {
-        let dir = std::env::temp_dir().join("multi_repo_list_test");
-        let _ = std::fs::create_dir_all(&dir);
-        let mut manager = MultiRepoManager::new();
-        manager
-            .add_root(&dir.to_string_lossy(), Some("myrepo"))
-            .unwrap();
-        let roots = manager.list_roots();
-        assert_eq!(roots.len(), 1);
-        assert_eq!(roots[0].alias, "myrepo");
-        let _ = std::fs::remove_dir_all(&dir);
-    }
-
-    #[test]
-    fn format_empty_results() {
-        let results: Vec<FusedSearchResult> = Vec::new();
-        let output = format_fused_results(&results);
-        assert!(output.contains("No results"));
     }
 }

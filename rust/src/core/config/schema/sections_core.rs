@@ -1,4 +1,4 @@
-//! Core config sections (root, ide_paths, lsp, archive, search, embedding).
+//! Core config sections.
 //! Split out of `schema/mod.rs`; `use super::*` re-imports the key-builder
 //! helpers and `SectionSchema`.
 
@@ -10,39 +10,6 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
     let cfg = crate::core::config::Config::default();
     let mut root = BTreeMap::new();
     root.insert(
-        "tee_mode".into(),
-        key_enum(
-            &["never", "failures", "highcompression", "always"],
-            "highcompression",
-            "Controls when shell output is tee'd to disk for later retrieval",
-        ),
-    );
-    root.insert(
-        "recovery_hints".into(),
-        key_enum(
-            &["off", "minimal", "full"],
-            "minimal",
-            "Verbosity of the reactive recovery footer on compressed output (path-first, MCP-optional)",
-        ),
-    );
-    root.insert(
-        "output_density".into(),
-        key_enum_with_env(
-            &["normal", "terse", "ultra"],
-            "normal",
-            "Controls how dense/compact MCP tool output is formatted",
-            "LEAN_CTX_OUTPUT_DENSITY",
-        ),
-    );
-    root.insert(
-        "checkpoint_interval".into(),
-        key(
-            "u32",
-            serde_json::json!(cfg.checkpoint_interval),
-            "Session checkpoint interval in minutes",
-        ),
-    );
-    root.insert(
         "passthrough_commands".into(),
         key(
             "string[]",
@@ -51,546 +18,75 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
         ),
     );
     root.insert(
-        "passthrough_urls".into(),
+        "compression_level".into(),
         key(
-            "string[]",
-            serde_json::json!(cfg.passthrough_urls),
-            "URLs to pass through without proxy interception",
-        ),
-    );
-    root.insert(
-            "preserve_compact_formats".into(),
-            key(
-                "string[]",
-                serde_json::json!(cfg.preserve_compact_formats),
-                "Already-compact output formats preserved verbatim instead of recompressed (e.g. [\"toon\"]). Set to [] to disable",
-            ),
-        );
-    root.insert(
-        "crush_verbatim_json".into(),
-        key_with_env(
-            "bool",
-            serde_json::json!(cfg.crush_verbatim_json),
-            "Opt-in: losslessly crush array-heavy JSON from verbatim data commands (gh api, jq, kubectl get -o json, curl). Off by default keeps them verbatim. Reshapes only when it at least halves the payload; fully reconstructible",
-            "LEAN_CTX_CRUSH_VERBATIM_JSON",
-        ),
-    );
-    root.insert("slow_command_threshold_ms".into(), key("u64", serde_json::json!(cfg.slow_command_threshold_ms), "Commands taking longer than this (ms) are recorded in the slow log. Set to 0 to disable"));
-    root.insert(
-        "theme".into(),
-        key(
-            "string",
-            serde_json::json!(cfg.theme),
-            "Dashboard color theme",
-        ),
-    );
-    root.insert(
-            "enable_wakeup_ctx".into(),
-            key(
-                "bool",
-                serde_json::json!(cfg.enable_wakeup_ctx),
-                "Append wakeup briefing (facts, session summary) to ctx_overview output. Set false to reduce context bloat when calling ctx_overview frequently.",
-            ),
-        );
-    root.insert(
-        "prefer_native_editor".into(),
-        key(
-            "bool",
-            serde_json::json!(cfg.prefer_native_editor),
-            "Disable lean-ctx edit tools (ctx_edit, ctx_patch) so the host's native editor handles edits (#454)",
-        ),
-    );
-    root.insert(
-            "default_tool_categories".into(),
-            key(
-                "string[]",
-                serde_json::json!(cfg.default_tool_categories),
-                "Tool categories active by default (core, arch, debug, memory, metrics, session). Override via LCTX_DEFAULT_CATEGORIES",
-            ),
-        );
-    root.insert(
-        "no_degrade".into(),
-        key(
-            "boolean",
-            serde_json::json!(cfg.no_degrade),
-            "Disable all automatic read-mode degradation. Override via LCTX_NO_DEGRADE=1",
-        ),
-    );
-    root.insert(
-        "delta_explicit".into(),
-        key(
-            "boolean",
-            serde_json::json!(cfg.delta_explicit),
-            "Serve explicit full/lines re-reads of changed cached files as diffs (opt-in). Override via LCTX_DELTA_EXPLICIT=1",
-        ),
-    );
-    root.insert(
-            "profile".into(),
-            key(
-                "string",
-                serde_json::json!(cfg.profile.as_deref().unwrap_or("")),
-                "Persistent profile name. Checked after LEAN_CTX_PROFILE env var. Set via: lean-ctx config set profile passthrough",
-            ),
-        );
-    root.insert(
-        "rules_scope".into(),
-        key_enum(
-            &["both", "global", "project"],
-            "both",
-            "Where agent rule files are installed. Override via LEAN_CTX_RULES_SCOPE",
-        ),
-    );
-    root.insert(
-        "rules_injection".into(),
-        key_enum(
-            &["shared", "dedicated", "off"],
-            "shared",
-            "How rules load for CLAUDE.md/AGENTS.md/GEMINI.md agents: shared block, \
-             dedicated (no shared-file edits; SessionStart hook / instructions[] / \
-             context.fileName), or off (write no rules file — for hosts that supply \
-             their own steering or phase-isolated/non-caching harnesses). Override via \
-             LEAN_CTX_RULES_INJECTION",
-        ),
-    );
-    root.insert(
-        "permission_inheritance".into(),
-        key_enum(
-            &["off", "on"],
-            "off",
-            "Mirror the host IDE's permission rules onto lean-ctx tools (v1: \
-             OpenCode). When on, ctx_shell honors your bash/rm * rules instead of \
-             bypassing them. Override via LEAN_CTX_PERMISSION_INHERITANCE",
-        ),
-    );
-    root.insert(
-        "extra_ignore_patterns".into(),
-        key(
-            "string[]",
-            serde_json::json!(cfg.extra_ignore_patterns),
-            "Extra glob patterns to ignore in graph/overview/preload",
-        ),
-    );
-    root.insert(
-        "terse_agent".into(),
-        key_enum_with_env(
-            &["off", "lite", "full", "ultra"],
-            "off",
-            "Controls agent output verbosity via instructions injection",
-            "LEAN_CTX_TERSE_AGENT",
-        ),
-    );
-    root.insert(
-            "compression_level".into(),
-            key_enum_with_env(
-                &["off", "lite", "standard", "max"],
-                "lite",
-                "Unified output-style level for the model's prose (not tool-output compression). lite=plain concise (default), standard/max=denser symbolic 'power modes'",
-                "LEAN_CTX_COMPRESSION",
-            ),
-        );
-    root.insert(
-        "compression_aggressiveness".into(),
-        key_with_env(
             "f64",
-            serde_json::json!(cfg.compression_aggressiveness),
-            "Global compression intensity 0.0 (lossless) – 1.0 (max), mapped onto read modes/entropy/IB. Empty = per-mode defaults",
-            "LEAN_CTX_AGGRESSIVENESS",
+            serde_json::json!(cfg.compression_level),
+            "Compression intensity 0.0 (none) – 1.0 (densest). Tunes read-mode compression continuously and picks the prose style by band: <0.2 off, <0.4 lite, <0.6 standard, <0.8 max, else raw. Empty = adaptive defaults with the lite prose style",
         ),
     );
     root.insert(
         "allow_paths".into(),
-        key_with_env(
+        key(
             "string[]",
             serde_json::json!(cfg.allow_paths),
-            "Additional paths allowed by PathJail (absolute)",
-            "LEAN_CTX_ALLOW_PATH",
+            "Paths the tools may read and write besides the project root; each is also searched as an extra root. [\"/\"] opens the path jail",
         ),
     );
     root.insert(
-        "allow_ide_config_dirs".into(),
-        key_with_env(
-            "bool",
-            serde_json::json!(cfg.allow_ide_config_dirs),
-            "Allow jailed ctx_* tools to read home-level IDE config dirs (registry-derived; covers all editors). Off by default — exposes other agents' sessions/credentials",
-            "LEAN_CTX_ALLOW_IDE_DIRS",
-        ),
-    );
-    root.insert(
-        "extra_roots".into(),
-        key_with_env(
+        "ignore".into(),
+        key(
             "string[]",
-            serde_json::json!(cfg.extra_roots),
-            "Extra project roots for multi-root workspaces (auto-added to PathJail allow-list)",
-            "LEAN_CTX_EXTRA_ROOTS",
+            serde_json::json!(cfg.ignore),
+            "Globs kept out of the index and project walks, on top of .gitignore (always respected)",
+        ),
+    );
+    root.insert(
+        "shell_hook".into(),
+        key(
+            "bool",
+            serde_json::json!(cfg.shell_hook),
+            "Install the shell hook that routes common commands through sobre",
         ),
     );
     root.insert(
         "read_only_roots".into(),
-        key_with_env(
+        key(
             "string[]",
             serde_json::json!(cfg.read_only_roots),
             "Read-only sibling roots: reads allowed, writes always denied (edit/refactor/export)",
-            "LEAN_CTX_READ_ONLY_ROOTS",
-        ),
-    );
-    root.insert(
-        "allow_symlink_roots".into(),
-        key_with_env(
-            "string[]",
-            serde_json::json!(cfg.allow_symlink_roots),
-            "Trusted roots OUTSIDE $HOME lean-ctx may follow when an agent config is symlinked there (#596). Empty = strict $HOME-only",
-            "LEAN_CTX_ALLOW_SYMLINK_ROOTS",
-        ),
-    );
-    root.insert(
-        "content_defined_chunking".into(),
-        key(
-            "bool",
-            serde_json::json!(false),
-            "Enable Rabin-Karp chunking for cache-optimal output ordering",
-        ),
-    );
-    root.insert(
-        "minimal_overhead".into(),
-        key_with_env(
-            "bool",
-            serde_json::json!(true),
-            "Skip session/knowledge/gotcha blocks in MCP instructions",
-            "LEAN_CTX_MINIMAL",
-        ),
-    );
-    root.insert(
-        "symbol_map_auto".into(),
-        key(
-            "bool",
-            serde_json::json!(false),
-            "Opt-in: α-code identifier substitution in aggressive reads (>50-file projects). Off by default — abbreviated symbols hinder editing/refactoring",
-        ),
-    );
-    root.insert(
-        "auto_mode_learning".into(),
-        key_with_env(
-            "bool",
-            serde_json::json!(false),
-            "Opt-in: let adaptive learning signals (predictor, bandit, heatmap, adaptive policy, bounce/path memory) influence `auto` mode. Off by default for a deterministic, I/O-light cascade (capability guards + size/task heuristic only) that keeps output byte-stable for prompt caching. Override via LEAN_CTX_AUTO_MODE_LEARNING",
-            "LEAN_CTX_AUTO_MODE_LEARNING",
-        ),
-    );
-    root.insert(
-        "auto_capture".into(),
-        key(
-            "bool",
-            serde_json::json!(true),
-            "Automatic knowledge capture from tool findings",
-        ),
-    );
-    root.insert(
-            "cache_policy".into(),
-            key_with_env(
-                "enum(aggressive|safe|off)",
-                serde_json::json!("aggressive"),
-                "Cache policy for ctx_read: aggressive (13-tok stubs), safe (map on hit), off (always disk)",
-                "LEAN_CTX_CACHE_POLICY",
-            ),
-        );
-    root.insert(
-        "bypass_hints".into(),
-        key_enum_with_env(
-            &["on", "off", "aggressive"],
-            "on",
-            "Bypass-hint mode: when agents use native Read/Grep instead of lean-ctx \
-             tools, a hint is appended to the next tool response. on (default), off, \
-             aggressive (hint on every call, no cooldown). Override via \
-             LEAN_CTX_BYPASS_HINTS",
-            "LEAN_CTX_BYPASS_HINTS",
-        ),
-    );
-    root.insert(
-        "cache_max_tokens".into(),
-        key_with_env(
-            "usize",
-            serde_json::json!(cfg.cache_max_tokens),
-            "Token budget for the in-memory ctx_read cache (0 = built-in default 500k). When exceeded, least-valuable entries are evicted immediately via RRF (recency x frequency x size) so reads never block; eviction is not deferred to the staleness TTL",
-            "LEAN_CTX_CACHE_MAX_TOKENS",
-        ),
-    );
-    root.insert(
-            "shadow_mode".into(),
-            key_with_env(
-                "bool",
-                serde_json::json!(true),
-                "Default on: denies native tools at the permission level, forcing agents to use ctx_* MCP tools for maximum compression. Disable with shadow_mode = false if you prefer native tools.",
-                "LEAN_CTX_SHADOW_MODE",
-            ),
-        );
-    root.insert(
-        "read_redirect".into(),
-        key_enum_with_env(
-            &["auto", "on", "off"],
-            "auto",
-            "Controls the native-Read → ctx_read redirect hook. auto (default): redirect everywhere except hosts with a native read-before-write guard (Claude Code / CodeBuddy), where rewriting Read to a temp copy breaks native Write/Edit (#637). on: always redirect. off: never redirect native Read (ctx_read MCP tool + Grep/Glob redirect stay active)",
-            "LEAN_CTX_READ_REDIRECT",
-        ),
-    );
-    root.insert(
-        "read_dedup".into(),
-        key_enum_with_env(
-            &["auto", "on", "off"],
-            "auto",
-            "Controls the PostToolUse native-Read re-read dedup. auto (default): replace only re-reads of unchanged files with the compact stub, and only on guard hosts (Claude Code / CodeBuddy) where the PreToolUse redirect is off — first reads stay byte-identical and the read-before-write guard is untouched. on: dedup wherever the hook fires. off: never replace a Read result",
-            "LEAN_CTX_READ_DEDUP",
         ),
     );
     root.insert(
         "debug_log".into(),
-        key_with_env(
+        key(
             "bool",
             serde_json::json!(false),
             "Opt-in (default off): write a human-readable debug log of intercepted MCP tool calls and hook routing decisions (lean-ctx vs native, with the reason) to <state_dir>/logs/debug.log. View with `lean-ctx debug-log`",
-            "LEAN_CTX_DEBUG_LOG",
-        ),
-    );
-    root.insert(
-        "shell_hook_disabled".into(),
-        key_with_env(
-            "bool",
-            serde_json::json!(false),
-            "Disable shell hook injection",
-            "LEAN_CTX_NO_HOOK",
-        ),
-    );
-    root.insert(
-        "shell_activation".into(),
-        key_enum_with_env(
-            &["always", "agents-only", "off"],
-            "agents-only",
-            "Controls when the shell hook auto-activates aliases (agents-only since #699: transparent in plain human terminals)",
-            "LEAN_CTX_SHELL_ACTIVATION",
-        ),
-    );
-    root.insert(
-        "skip_agent_aliases".into(),
-        key(
-            "bool",
-            serde_json::json!(cfg.skip_agent_aliases),
-            "Do not install agent CLI aliases (claude, codex, gemini) into shell rc files. Existing alias blocks are removed on next setup",
-        ),
-    );
-    root.insert(
-        "bm25_max_cache_mb".into(),
-        key_with_env(
-            "u64",
-            serde_json::json!(cfg.bm25_max_cache_mb),
-            "Maximum BM25 cache file size in MB",
-            "LEAN_CTX_BM25_MAX_CACHE_MB",
-        ),
-    );
-    root.insert(
-            "graph_index_max_files".into(),
-            key(
-                "u64",
-                serde_json::json!(cfg.graph_index_max_files),
-                "Maximum files in graph index. 0 = unlimited (default). Set >0 to cap for constrained systems",
-            ),
-        );
-    root.insert(
-        "memory_profile".into(),
-        key_enum_with_env(
-            &["low", "balanced", "performance"],
-            "performance",
-            "Controls RAM vs feature trade-off (performance = max quality)",
-            "LEAN_CTX_MEMORY_PROFILE",
-        ),
-    );
-    root.insert(
-        "memory_cleanup".into(),
-        key_enum_with_env(
-            &["aggressive", "shared"],
-            "aggressive",
-            "Controls how aggressively memory is freed when idle",
-            "LEAN_CTX_MEMORY_CLEANUP",
-        ),
-    );
-    root.insert(
-            "savings_footer".into(),
-            key_enum_with_env(
-                &["auto", "always", "never"],
-                "always",
-                "Controls visibility of token savings footers: always (default, show on every response), never, auto (context-dependent). Also: LEAN_CTX_SHOW_SAVINGS=1|0",
-                "LEAN_CTX_SAVINGS_FOOTER",
-            ),
-        );
-    root.insert(
-        "max_ram_percent".into(),
-        key_with_env(
-            "u8",
-            serde_json::json!(cfg.max_ram_percent),
-            "Soft process-RSS target as % of system RAM (1-50, default 5); eviction/throttling policy, not an OS hard cap",
-            "LEAN_CTX_MAX_RAM_PERCENT",
-        ),
-    );
-    root.insert(
-        "max_disk_mb".into(),
-        key_with_env(
-            "u64",
-            serde_json::json!(cfg.max_disk_mb),
-            "Simplified disk budget in MB (0 = disabled). Distributes: archive ~25%, BM25 ~10%",
-            "LEAN_CTX_MAX_DISK_MB",
-        ),
-    );
-    root.insert(
-        "max_index_threads".into(),
-        key_with_env(
-            "usize",
-            serde_json::json!(cfg.max_index_threads),
-            "Cap rayon threads for the CPU-heavy index build (0 = all cores). Bounds per-instance CPU so concurrent sessions don't saturate the host on startup",
-            "LEANCTX_INDEX_THREADS",
-        ),
-    );
-    root.insert(
-        "max_staleness_days".into(),
-        key_with_env(
-            "u32",
-            serde_json::json!(cfg.max_staleness_days),
-            "Auto-purge data older than N days (0 = disabled). Flows into archive.max_age_hours",
-            "LEAN_CTX_MAX_STALENESS_DAYS",
-        ),
-    );
-    root.insert(
-        "project_root".into(),
-        key_with_env(
-            "string?",
-            serde_json::json!(null),
-            "Explicit project root directory. Prevents accidental home-directory scans",
-            "LEAN_CTX_PROJECT_ROOT",
-        ),
-    );
-    root.insert(
-            "proxy_enabled".into(),
-            key(
-                "bool?",
-                serde_json::json!(null),
-                "Enable/disable the proxy layer. null = auto-detect, true = force on, false = force off",
-            ),
-        );
-    root.insert(
-            "proxy_port".into(),
-            key(
-                "u16?",
-                serde_json::json!(null),
-                "Custom proxy port (default: 4444). Useful for multi-user systems. Env: LEAN_CTX_PROXY_PORT",
-            ),
-        );
-    root.insert(
-            "proxy_timeout_ms".into(),
-            key(
-                "u64?",
-                serde_json::json!(null),
-                "Proxy reachability timeout in ms (default: 200). Override via LEAN_CTX_PROXY_TIMEOUT_MS",
-            ),
-        );
-    root.insert(
-        "proxy_require_token".into(),
-        key(
-            "bool",
-            serde_json::json!(cfg.proxy_require_token),
-            "Require lean-ctx Bearer token authentication and disable provider API key fallback",
-        ),
-    );
-    root.insert(
-        "proxy_loopback_open".into(),
-        key(
-            "bool",
-            serde_json::json!(cfg.proxy_loopback_open),
-            "Skip ALL proxy authentication on loopback binds. MCP/HTTP clients work without tokens. Ignored on non-loopback (gateway mode)",
-        ),
-    );
-    root.insert(
-        "response_verbosity".into(),
-        key_enum_with_env(
-            &["normal", "compact", "minimal"],
-            "normal",
-            "Controls how verbose tool responses are",
-            "LEAN_CTX_RESPONSE_VERBOSITY",
-        ),
-    );
-    root.insert(
-        "allow_auto_reroot".into(),
-        key_with_env(
-            "bool",
-            serde_json::json!(false),
-            "Allow automatic project-root re-rooting when absolute paths outside the jail are seen",
-            "LEAN_CTX_ALLOW_REROOT",
         ),
     );
     root.insert(
         "hook_binary".into(),
-        key_with_env(
+        key(
             "string?",
             serde_json::json!(null),
             "Verbatim binary path/expression for generated agent-hook commands (e.g. $HOME/.local/bin/lean-ctx) — for settings files synced across machines with different usernames. Shell-expanded by the hook host at run time; doctor accepts it as current. Empty = automatic absolute-path resolution",
-            "LEAN_CTX_HOOK_BINARY",
         ),
     );
     root.insert(
-        "path_jail".into(),
+        "embedding_model".into(),
         key(
-            "bool?",
+            "string?",
             serde_json::json!(null),
-            "Filesystem path jail. null/true = enforced (tools confined to the project root + allow_paths). false = the blanket \"any path\" opt-out — every tool path is allowed (for containers/sandboxes where the boundary is external). Compression and secret redaction are unaffected. Flip both planes at once with `lean-ctx yolo` / `lean-ctx secure`",
-        ),
-    );
-    root.insert(
-        "sandbox_level".into(),
-        key_with_env(
-            "u8",
-            serde_json::json!(0),
-            "Sandbox strictness level (0=default, 1=strict, 2=paranoid)",
-            "LEAN_CTX_SANDBOX_LEVEL",
-        ),
-    );
-    root.insert(
-        "reference_results".into(),
-        key_with_env(
-            "bool",
-            serde_json::json!(false),
-            "Store large tool outputs as references instead of inline content",
-            "LEAN_CTX_REFERENCE_RESULTS",
-        ),
-    );
-    root.insert(
-        "agent_token_budget".into(),
-        key(
-            "usize",
-            serde_json::json!(0),
-            "Default per-agent token budget. 0 = unlimited",
-        ),
-    );
-    root.insert(
-        "shell_security".into(),
-        key_with_env(
-            "string",
-            serde_json::json!("enforce"),
-            "Shell command gating: enforce (default, secure), warn (log only, never block) or off (skip the hard blocks; compression stays active)",
-            "LEAN_CTX_SHELL_SECURITY",
+            "Embedding model for semantic search (dense builds): minilm (default), nomic, or any HuggingFace repo with an ONNX export and a tokenizer.json, as org/repo[@revision]. Pooling and query/document prompts come from the repo's sentence-transformers metadata. Changing it re-indexes on the next semantic search",
         ),
     );
     root.insert(
         "shell_timeout_secs".into(),
-        key_with_env(
+        key(
             "u64?",
             serde_json::json!(null),
-            "Shell command timeout (seconds) for normal commands. null = built-in 2-minute default. LEAN_CTX_SHELL_TIMEOUT_MS overrides both tiers (in ms)",
-            "LEAN_CTX_SHELL_TIMEOUT_SECS",
-        ),
-    );
-    root.insert(
-        "shell_heavy_timeout_secs".into(),
-        key_with_env(
-            "u64?",
-            serde_json::json!(null),
-            "Shell command timeout (seconds) for heavy commands (cargo build/test, make, docker build, git commit/push). null = built-in 10-minute ceiling",
-            "LEAN_CTX_SHELL_HEAVY_TIMEOUT_SECS",
+            "Shell command timeout (seconds) for normal commands. null = built-in 2-minute default",
         ),
     );
 
@@ -599,307 +95,6 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
         SectionSchema {
             description: "Top-level configuration keys".into(),
             keys: root,
-        },
-    );
-
-    sections.insert(
-            "ide_paths".into(),
-            SectionSchema {
-                description: "Per-IDE allowed paths. Keys are agent names (cursor, codex, opencode, antigravity, etc.), values are arrays of paths to index for that agent".into(),
-                keys: BTreeMap::new(),
-            },
-        );
-
-    sections.insert(
-            "model_context_windows".into(),
-            SectionSchema {
-                description: "Per-model context-window overrides in tokens. Keys are model names (case-insensitive), values override every registry layer — use for models the bundled/local registry does not know yet. Bracketed window markers in the model name itself (e.g. `claude-opus-4-8[1m]`) are parsed automatically and need no entry here. Example: `[model_context_windows]\\n\"my-custom-model\" = 500000`".into(),
-                keys: BTreeMap::new(),
-            },
-        );
-
-    let mut lsp_keys = BTreeMap::new();
-    lsp_keys.insert(
-        "rust".into(),
-        key(
-            "string?",
-            serde_json::json!(null),
-            "Custom path to rust-analyzer binary",
-        ),
-    );
-    lsp_keys.insert(
-        "typescript".into(),
-        key(
-            "string?",
-            serde_json::json!(null),
-            "Custom path to typescript-language-server binary",
-        ),
-    );
-    lsp_keys.insert(
-        "python".into(),
-        key(
-            "string?",
-            serde_json::json!(null),
-            "Custom path to pylsp binary",
-        ),
-    );
-    lsp_keys.insert(
-        "go".into(),
-        key(
-            "string?",
-            serde_json::json!(null),
-            "Custom path to gopls binary",
-        ),
-    );
-    sections.insert(
-        "lsp".into(),
-        SectionSchema {
-            description: "LSP server binary overrides. Map language name to custom binary path"
-                .into(),
-            keys: lsp_keys,
-        },
-    );
-
-    let mut archive = BTreeMap::new();
-    archive.insert(
-        "enabled".into(),
-        key(
-            "bool",
-            serde_json::json!(cfg.archive.enabled),
-            "Enable zero-loss compression archive",
-        ),
-    );
-    archive.insert(
-        "threshold_chars".into(),
-        key(
-            "usize",
-            serde_json::json!(cfg.archive.threshold_chars),
-            "Minimum output size (chars) to trigger archiving",
-        ),
-    );
-    archive.insert(
-        "max_age_hours".into(),
-        key(
-            "u64",
-            serde_json::json!(cfg.archive.max_age_hours),
-            "Maximum age of archived entries before cleanup",
-        ),
-    );
-    archive.insert(
-        "max_disk_mb".into(),
-        key(
-            "u64",
-            serde_json::json!(cfg.archive.max_disk_mb),
-            "Maximum total disk usage for the archive",
-        ),
-    );
-    archive.insert(
-            "ephemeral".into(),
-            key("bool", serde_json::json!(cfg.archive.ephemeral), "Replace large results with summary+ref (ctx_expand to retrieve). Env: LEAN_CTX_EPHEMERAL"),
-        );
-    archive.insert(
-        "ephemeral_min_tokens".into(),
-        key("usize", serde_json::json!(cfg.archive.ephemeral_min_tokens), "Minimum output tokens before the ephemeral firewall replaces inline body with summary+ref. Env: LEAN_CTX_EPHEMERAL_MIN_TOKENS"),
-    );
-    archive.insert(
-        "inline_max_bytes".into(),
-        key("usize", serde_json::json!(cfg.archive.inline_max_bytes), "Maximum ctx_shell(inline=true) output size in bytes before archive/firewall handling. Env: LEAN_CTX_INLINE_MAX_BYTES"),
-    );
-    sections.insert(
-        "archive".into(),
-        SectionSchema {
-            description:
-                "Settings for the zero-loss compression archive (large tool outputs saved to disk)"
-                    .into(),
-            keys: archive,
-        },
-    );
-
-    let mut search = BTreeMap::new();
-    search.insert(
-        "bm25_weight".into(),
-        key(
-            "f64",
-            serde_json::json!(cfg.search.bm25_weight),
-            "BM25 lexical search weight in RRF fusion",
-        ),
-    );
-    search.insert(
-        "dense_weight".into(),
-        key(
-            "f64",
-            serde_json::json!(cfg.search.dense_weight),
-            "Dense vector search weight in RRF fusion",
-        ),
-    );
-    search.insert(
-        "bm25_candidates".into(),
-        key(
-            "usize",
-            serde_json::json!(cfg.search.bm25_candidates),
-            "Number of BM25 candidates to retrieve before fusion",
-        ),
-    );
-    search.insert(
-        "dense_candidates".into(),
-        key(
-            "usize",
-            serde_json::json!(cfg.search.dense_candidates),
-            "Number of dense candidates to retrieve before fusion",
-        ),
-    );
-    search.insert(
-        "splade_weight".into(),
-        key(
-            "f64",
-            serde_json::json!(cfg.search.splade_weight),
-            "SPLADE expansion weight (0.0 to disable)",
-        ),
-    );
-    search.insert(
-        "dense_enabled".into(),
-        key(
-            "bool",
-            serde_json::json!(cfg.search.dense_enabled),
-            "Enable the dense (embedding) retrieval path. false → hybrid search ranks with BM25 + graph + rerank (+ SPLADE) only, skipping the embedding engine and the persistent embeddings.json (lighter footprint, no embed latency). An explicit mode=dense query still forces dense.",
-        ),
-    );
-    sections.insert("search".into(), SectionSchema {
-            description: "Hybrid search weights for ctx_semantic_search (BM25 + dense vector + SPLADE + graph proximity)".into(),
-            keys: search,
-        });
-
-    let mut graph = BTreeMap::new();
-    graph.insert(
-        "traversal_edges".into(),
-        key(
-            "bool",
-            serde_json::json!(cfg.graph.traversal_edges),
-            "Learn co-access edges from real sessions (files surfaced together), surface them as decaying `co_access` graph edges, and boost recall by them. Set false for a purely static AST-only graph.",
-        ),
-    );
-    sections.insert(
-        "graph".into(),
-        SectionSchema {
-            description:
-                "Code-graph settings, including traversal (co-access) edges learned from sessions"
-                    .into(),
-            keys: graph,
-        },
-    );
-
-    let mut index = BTreeMap::new();
-    index.insert(
-        "respect_gitignore".into(),
-        key(
-            "bool",
-            serde_json::json!(cfg.index.respect_gitignore),
-            "Honor .gitignore / global gitignore / .git/info/exclude during index walks. false indexes ignored files too (the vendor-directory guard still applies). CLI override: --no-gitignore / --respect-gitignore.",
-        ),
-    );
-    index.insert(
-        "exclude".into(),
-        key(
-            "string[]",
-            serde_json::json!(cfg.index.exclude),
-            "Globs dropped from the index corpus (root-relative, forward slashes), e.g. [\"**/*.csv\", \"fixtures/**\"]. Wins over include. CLI --exclude appends per run. Excluded files produce no chunks, graph nodes, or embeddings.",
-        ),
-    );
-    index.insert(
-        "include".into(),
-        key(
-            "string[]",
-            serde_json::json!(cfg.index.include),
-            "When non-empty, ONLY matching files enter the index corpus, e.g. [\"**/*.rs\", \"**/*.ts\"]. Empty = no restriction. CLI --include replaces this set per run.",
-        ),
-    );
-    sections.insert(
-        "index".into(),
-        SectionSchema {
-            description:
-                "Index-time file filters: declare the retrieval corpus explicitly (BM25 + graph + semantic + watch share one filter layer, #735)"
-                    .into(),
-            keys: index,
-        },
-    );
-
-    let mut summaries = BTreeMap::new();
-    summaries.insert(
-        "enabled".into(),
-        key(
-            "bool",
-            serde_json::json!(cfg.summaries.enabled),
-            "Record periodic, semantically-recallable AI session summaries (what was done, files, decisions).",
-        ),
-    );
-    summaries.insert(
-        "every_n_turns".into(),
-        key(
-            "u32",
-            serde_json::json!(cfg.summaries.every_n_turns),
-            "Tool calls between automatic session summaries (gated by the auto-checkpoint cadence).",
-        ),
-    );
-    summaries.insert(
-        "max_kept".into(),
-        key(
-            "u32",
-            serde_json::json!(cfg.summaries.max_kept),
-            "Maximum session summaries kept per project (oldest pruned first).",
-        ),
-    );
-    sections.insert(
-        "summaries".into(),
-        SectionSchema {
-            description: "AI session summaries: periodic, semantically-recallable session digests"
-                .into(),
-            keys: summaries,
-        },
-    );
-
-    let mut embedding = BTreeMap::new();
-    embedding.insert(
-            "model".into(),
-            key_with_env(
-                "string",
-                serde_json::json!("minilm"),
-                "Local ONNX embedding model for ctx_semantic_search. One of: minilm (all-MiniLM-L6-v2, 384d, default), nomic (768d) — or any HuggingFace repo with an ONNX export via hf:org/repo[@revision] (e.g. hf:jinaai/jina-embeddings-v2-base-code for code). Switching models re-indexes once on the next search.",
-                "LEAN_CTX_EMBEDDING_MODEL",
-            ),
-        );
-    embedding.insert(
-        "dimensions".into(),
-        key(
-            "integer",
-            serde_json::json!(null),
-            "Declared embedding width for hf: custom models (fallback only — the real width is probed from the ONNX graph at load time). Built-in models ignore this key.",
-        ),
-    );
-    embedding.insert(
-        "auto_download".into(),
-        key_with_env(
-            "bool",
-            serde_json::json!(null),
-            "Download the embedding model in the background on first semantic need (default: allowed). Set false for air-gapped machines; semantic features then stay off until a model is provided manually.",
-            "LEAN_CTX_EMBEDDINGS_AUTO_DOWNLOAD",
-        ),
-    );
-    embedding.insert(
-        "deterministic".into(),
-        key_with_env(
-            "bool",
-            serde_json::json!(null),
-            "Pin embedding inference to a single CPU thread with no GPU provider so vectors are bit-identical across machines (default: off, multi-threaded GPU-capable path). Extractive prose ranking is already deterministic via score quantization; enable this only for cross-machine reproducibility, at a throughput cost.",
-            "LEAN_CTX_EMBEDDING_DETERMINISTIC",
-        ),
-    );
-    sections.insert(
-        "embedding".into(),
-        SectionSchema {
-            description:
-                "Semantic-embedding engine settings (model selection for ctx_semantic_search)"
-                    .into(),
-            keys: embedding,
         },
     );
 }

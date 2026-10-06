@@ -1,9 +1,35 @@
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
-use super::config::LoopDetectionConfig;
+/// Thresholds for detecting and throttling repetitive agent tool call loops.
+#[derive(Debug, Clone)]
+pub struct LoopLimits {
+    pub normal_threshold: u32,
+    pub reduced_threshold: u32,
+    pub blocked_threshold: u32,
+    pub window_secs: u64,
+    pub search_group_limit: u32,
+    pub tool_total_limits: HashMap<String, u32>,
+}
 
-const SEARCH_TOOLS: &[&str] = &["ctx_search", "ctx_semantic_search"];
+impl Default for LoopLimits {
+    fn default() -> Self {
+        let mut tool_total_limits = HashMap::new();
+        tool_total_limits.insert("ctx_read".to_string(), 100);
+        tool_total_limits.insert("ctx_search".to_string(), 80);
+        tool_total_limits.insert("ctx_shell".to_string(), 50);
+        Self {
+            normal_threshold: 2,
+            reduced_threshold: 4,
+            blocked_threshold: 0,
+            window_secs: 300,
+            search_group_limit: 10,
+            tool_total_limits,
+        }
+    }
+}
+
+const SEARCH_TOOLS: &[&str] = &["ctx_search"];
 
 const SEARCH_SHELL_PREFIXES: &[&str] = &["grep ", "rg ", "find ", "fd ", "ag ", "ack "];
 
@@ -80,12 +106,12 @@ impl Default for LoopDetector {
 impl LoopDetector {
     /// Creates a loop detector with default thresholds.
     pub fn new() -> Self {
-        Self::with_config(&LoopDetectionConfig::default())
+        Self::with_config(&LoopLimits::default())
     }
 
     /// Creates a loop detector with custom thresholds from config.
     /// Set blocked_threshold to 0 to disable blocking entirely (LeanCTX philosophy).
-    pub fn with_config(cfg: &LoopDetectionConfig) -> Self {
+    pub fn with_config(cfg: &LoopLimits) -> Self {
         Self {
             call_history: HashMap::new(),
             duplicate_counts: HashMap::new(),
@@ -123,18 +149,10 @@ impl LoopDetector {
         if let Some(&limit) = self.tool_total_limits.get(tool)
             && total_count > limit
         {
-            let msg = if crate::core::protocol::meta_visible() {
-                Some(format!(
-                    "Warning: {tool} called {total_count}x total (limit: {limit}). \
-                         Consider ctx_compress or narrowing scope."
-                ))
-            } else {
-                None
-            };
             return ThrottleResult {
                 level: ThrottleLevel::Reduced,
                 call_count: total_count,
-                message: msg,
+                message: None,
             };
         }
 
@@ -152,36 +170,17 @@ impl LoopDetector {
             };
         }
         if count > self.reduced_threshold {
-            if !crate::core::protocol::meta_visible() {
-                return ThrottleResult {
-                    level: ThrottleLevel::Reduced,
-                    call_count: count,
-                    message: None,
-                };
-            }
             return ThrottleResult {
                 level: ThrottleLevel::Reduced,
                 call_count: count,
-                message: Some(format!(
-                    "Warning: {tool} called {count}x with same args. \
-                     Results reduced. Try a different approach or narrow your scope."
-                )),
+                message: None,
             };
         }
         if count > self.normal_threshold {
-            if !crate::core::protocol::meta_visible() {
-                return ThrottleResult {
-                    level: ThrottleLevel::Reduced,
-                    call_count: count,
-                    message: None,
-                };
-            }
             return ThrottleResult {
                 level: ThrottleLevel::Reduced,
                 call_count: count,
-                message: Some(format!(
-                    "Note: {tool} called {count}x with similar args. Consider narrowing scope."
-                )),
+                message: None,
             };
         }
         ThrottleResult {
@@ -247,20 +246,10 @@ impl LoopDetector {
         }
 
         if similar_count >= self.reduced_threshold {
-            if !crate::core::protocol::meta_visible() {
-                return ThrottleResult {
-                    level: ThrottleLevel::Reduced,
-                    call_count: similar_count,
-                    message: None,
-                };
-            }
             return ThrottleResult {
                 level: ThrottleLevel::Reduced,
                 call_count: similar_count,
-                message: Some(format!(
-                    "Warning: You've searched for similar patterns {similar_count}x. \
-                     Narrow your search with the 'path' parameter or try ctx_tree first."
-                )),
+                message: None,
             };
         }
 
@@ -269,21 +258,10 @@ impl LoopDetector {
             if per_fp.level != ThrottleLevel::Normal {
                 return per_fp;
             }
-            if !crate::core::protocol::meta_visible() {
-                return ThrottleResult {
-                    level: ThrottleLevel::Reduced,
-                    call_count: search_count,
-                    message: None,
-                };
-            }
             return ThrottleResult {
                 level: ThrottleLevel::Reduced,
                 call_count: search_count,
-                message: Some(format!(
-                    "Note: {search_count} search calls in the last {}s. \
-                     Use ctx_tree to orient first, then scope searches with 'path'.",
-                    self.window.as_secs()
-                )),
+                message: None,
             };
         }
 
@@ -403,16 +381,6 @@ impl LoopDetector {
             .iter()
             .filter(|t| now.duration_since(**t) < CORRECTION_WINDOW)
             .count() as u32
-    }
-
-    /// Returns the correction rate: signals per minute within the window.
-    pub fn correction_rate(&self) -> f64 {
-        let count = self.correction_count();
-        if count == 0 {
-            return 0.0;
-        }
-        let window_mins = CORRECTION_WINDOW.as_secs_f64() / 60.0;
-        f64::from(count) / window_mins
     }
 
     /// Prunes expired correction signals and stale read/command entries.
@@ -567,8 +535,8 @@ fn canonical_json(value: &serde_json::Value) -> String {
 mod tests {
     use super::*;
 
-    fn test_config(normal: u32, reduced: u32, blocked: u32) -> LoopDetectionConfig {
-        LoopDetectionConfig {
+    fn test_config(normal: u32, reduced: u32, blocked: u32) -> LoopLimits {
+        LoopLimits {
             normal_threshold: normal,
             reduced_threshold: reduced,
             blocked_threshold: blocked,
@@ -589,23 +557,19 @@ mod tests {
 
     #[test]
     fn repeated_calls_trigger_reduced() {
-        let _lock = crate::core::data_dir::test_env_lock();
-        crate::test_env::set_var("LEAN_CTX_META", "1");
-        let cfg = LoopDetectionConfig::default();
+        let cfg = LoopLimits::default();
         let mut detector = LoopDetector::with_config(&cfg);
         for _ in 0..cfg.normal_threshold {
             detector.record_call("ctx_read", "same_fp");
         }
         let result = detector.record_call("ctx_read", "same_fp");
         assert_eq!(result.level, ThrottleLevel::Reduced);
-        assert!(result.message.is_some());
-        crate::test_env::remove_var("LEAN_CTX_META");
     }
 
     #[test]
     fn excessive_calls_get_blocked_when_enabled() {
         // Blocking must be explicitly enabled (blocked_threshold > 0)
-        let cfg = LoopDetectionConfig {
+        let cfg = LoopLimits {
             blocked_threshold: 6,
             ..Default::default()
         };
@@ -621,7 +585,7 @@ mod tests {
     #[test]
     fn blocking_disabled_by_default() {
         // Default config has blocked_threshold = 0, so blocking never happens
-        let cfg = LoopDetectionConfig::default();
+        let cfg = LoopLimits::default();
         assert_eq!(cfg.blocked_threshold, 0);
         let mut detector = LoopDetector::with_config(&cfg);
         // Even 100 calls should not block when blocking is disabled
@@ -706,7 +670,7 @@ mod tests {
     #[test]
     fn search_group_tracking_when_blocking_enabled() {
         // Blocking must be explicitly enabled for search group limits to block
-        let cfg = LoopDetectionConfig {
+        let cfg = LoopLimits {
             search_group_limit: 5,
             blocked_threshold: 6, // Enable blocking
             ..Default::default()
@@ -725,7 +689,7 @@ mod tests {
     #[test]
     fn similar_search_patterns_trigger_block_when_enabled() {
         // Blocking must be explicitly enabled
-        let cfg = LoopDetectionConfig {
+        let cfg = LoopLimits {
             blocked_threshold: 6,
             ..Default::default()
         };
@@ -753,7 +717,6 @@ mod tests {
     #[test]
     fn is_search_tool_detection() {
         assert!(LoopDetector::is_search_tool("ctx_search"));
-        assert!(LoopDetector::is_search_tool("ctx_semantic_search"));
         assert!(!LoopDetector::is_search_tool("ctx_read"));
         assert!(!LoopDetector::is_search_tool("ctx_shell"));
     }
@@ -833,20 +796,6 @@ mod tests {
     }
 
     #[test]
-    fn correction_rate_calculation() {
-        let mut detector = LoopDetector::new();
-        for i in 0..COLD_START_CALLS {
-            detector.record_shell_for_correction(&format!("init{i}"));
-        }
-        detector.record_shell_for_correction("cargo check");
-        detector.record_shell_for_correction("cargo check");
-        detector.record_shell_for_correction("cargo check");
-        // 2 corrections (first run doesn't count)
-        assert_eq!(detector.correction_count(), 2);
-        assert!(detector.correction_rate() > 0.0);
-    }
-
-    #[test]
     fn correction_cold_start_ignored() {
         let mut detector = LoopDetector::new();
         // During cold start, same-command re-runs are not counted
@@ -859,7 +808,7 @@ mod tests {
     #[test]
     fn search_block_message_has_guidance_when_blocking_enabled() {
         // Blocking must be explicitly enabled to get block messages
-        let cfg = LoopDetectionConfig {
+        let cfg = LoopLimits {
             blocked_threshold: 6,
             search_group_limit: 8,
             ..Default::default()

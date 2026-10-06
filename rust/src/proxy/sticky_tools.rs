@@ -19,7 +19,7 @@ fn active_sessions() -> &'static Mutex<HashSet<u64>> {
 }
 
 /// Mark a conversation as having used CCR.
-pub fn mark_ccr_active(conv_id: u64) {
+pub(crate) fn mark_ccr_active(conv_id: u64) {
     if let Ok(mut guard) = active_sessions().lock() {
         if guard.len() >= MAX_TRACKED
             && !guard.contains(&conv_id)
@@ -32,7 +32,7 @@ pub fn mark_ccr_active(conv_id: u64) {
 }
 
 /// Returns `true` if this conversation has ever used CCR.
-pub fn is_ccr_active(conv_id: u64) -> bool {
+pub(crate) fn is_ccr_active(conv_id: u64) -> bool {
     active_sessions().lock().is_ok_and(|g| g.contains(&conv_id))
 }
 
@@ -55,7 +55,7 @@ fn expand_tool_definition() -> Value {
 
 /// Ensure `ctx_expand` is present in the `tools` array when CCR is active.
 /// Returns `true` if the tool was injected.
-pub fn ensure_tool_present(conv_id: u64, doc: &mut Value) -> bool {
+pub(crate) fn ensure_tool_present(conv_id: u64, doc: &mut Value) -> bool {
     if !is_ccr_active(conv_id) {
         return false;
     }
@@ -95,7 +95,6 @@ mod tests {
     const INJECT: u64 = 0xAA02;
     const DEDUP: u64 = 0xAA03;
     const STABLE: u64 = 0xAA04;
-    const STICKY: u64 = 0xAA05;
 
     #[test]
     fn tool_not_injected_without_ccr() {
@@ -139,14 +138,6 @@ mod tests {
             snap1, snap2,
             "tool list must be byte-identical across turns"
         );
-    }
-
-    #[test]
-    fn sticky_survives_turn_without_markers() {
-        mark_ccr_active(STICKY);
-        assert!(is_ccr_active(STICKY));
-        let mut doc = json!({"tools": [], "messages": []});
-        assert!(ensure_tool_present(STICKY, &mut doc));
     }
 
     #[test]

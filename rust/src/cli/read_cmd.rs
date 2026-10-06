@@ -6,7 +6,6 @@ use crate::core::entropy;
 use crate::core::io_boundary;
 use crate::core::patterns::deps_cmd;
 use crate::core::protocol;
-use crate::core::roles;
 use crate::core::signatures;
 
 fn resolve_cli_path(raw: &str) -> String {
@@ -21,8 +20,6 @@ fn resolve_cli_path(raw: &str) -> String {
     raw.to_string()
 }
 use crate::core::tokens::count_tokens;
-
-use super::common::print_savings;
 
 /// #361 anti-inflation guarantee for the additive one-shot CLI path (the pi
 /// default an independent benchmark measured). Mirrors the MCP `cap_to_raw`
@@ -100,7 +97,7 @@ pub fn cmd_read(args: &[String]) {
     // Apply the same secret-path policy in CLI mode as in MCP tools.
     // Default is warn; enforce depends on active role/policy.
     if let Ok(abs) = std::fs::canonicalize(path) {
-        match io_boundary::check_secret_path_for_tool("cli_read", &abs) {
+        match io_boundary::check_secret_path(&abs) {
             Ok(Some(w)) => eprintln!("{w}"),
             Ok(None) => {}
             Err(e) => {
@@ -111,7 +108,7 @@ pub fn cmd_read(args: &[String]) {
     } else {
         // Best-effort: still check the raw path string.
         let raw = std::path::Path::new(path);
-        match io_boundary::check_secret_path_for_tool("cli_read", raw) {
+        match io_boundary::check_secret_path(raw) {
             Ok(Some(w)) => eprintln!("{w}"),
             Ok(None) => {}
             Err(e) => {
@@ -128,8 +125,8 @@ pub fn cmd_read(args: &[String]) {
     if !force_fresh && mode == "full" {
         use crate::core::cli_cache::{self, CacheResult};
         match cli_cache::check_and_read(path) {
-            CacheResult::Hit { entry, file_ref } => {
-                let msg = cli_cache::format_hit(&entry, &file_ref, &short);
+            CacheResult::Hit { entry, .. } => {
+                let msg = cli_cache::format_hit(&entry, &short);
                 println!("{msg}");
                 let sent = count_tokens(&msg);
                 super::common::cli_track_read_cached(
@@ -255,8 +252,6 @@ pub fn cmd_read(args: &[String]) {
                 format!("{short} [{line_count}L]\n{structured}")
             };
 
-            let sent = count_tokens(&output_buf);
-            output_buf = protocol::append_savings(&output_buf, original_tokens, sent);
             if requested_auto {
                 output_buf = cap_cli_to_raw(output_buf, &content, original_tokens);
             }
@@ -286,7 +281,6 @@ pub fn cmd_read(args: &[String]) {
             }
             println!("{output_buf}");
             let sent = count_tokens(&output_buf);
-            print_savings(original_tokens, sent);
             super::common::cli_track_read(
                 path,
                 "signatures",
@@ -301,7 +295,6 @@ pub fn cmd_read(args: &[String]) {
             println!("{short} [{line_count}L]");
             println!("{compressed}");
             let sent = count_tokens(&compressed);
-            print_savings(original_tokens, sent);
             super::common::cli_track_read(
                 path,
                 "aggressive",
@@ -320,7 +313,6 @@ pub fn cmd_read(args: &[String]) {
             }
             println!("{}", result.output);
             let sent = count_tokens(&result.output);
-            print_savings(original_tokens, sent);
             super::common::cli_track_read(
                 path,
                 "entropy",
@@ -345,7 +337,6 @@ pub fn cmd_read(args: &[String]) {
                 format!("{short} [{line_count}L] lines:{range_str}\n{extracted}{multi_hint}");
             println!("{output}");
             let sent = count_tokens(&output);
-            print_savings(original_tokens, sent);
             super::common::cli_track_read(
                 path,
                 "lines",
@@ -423,7 +414,6 @@ pub fn cmd_diff(args: &[String]) {
         protocol::shorten_path(&args[1])
     );
     println!("{diff}");
-    print_savings(original, sent);
     crate::core::stats::record("cli_diff", original, sent);
 }
 
@@ -448,7 +438,7 @@ pub fn cmd_grep(args: &[String]) {
         20,
         crate::tools::CrpMode::effective(),
         true,
-        roles::active_role().io.allow_secret_paths,
+        false,
         false,
     );
     let out = outcome.text;
@@ -482,13 +472,7 @@ pub fn cmd_glob(args: &[String]) {
     let abs_path = resolve_cli_path(raw_path);
     let path = abs_path.as_str();
 
-    let (out, _original) = crate::tools::ctx_glob::handle(
-        pattern,
-        path,
-        true,
-        roles::active_role().io.allow_secret_paths,
-        200,
-    );
+    let (out, _original) = crate::tools::ctx_glob::handle(pattern, path, true, false, 200);
     println!("{out}");
     crate::core::stats::record("cli_glob", 0, 0);
     if out.starts_with("ERROR:") {

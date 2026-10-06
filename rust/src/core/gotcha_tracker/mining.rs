@@ -64,6 +64,7 @@ fn signature_patterns() -> Vec<Regex> {
 
 /// Extract normalized error signatures from a single blob of text. Pure and
 /// deterministic; returns one entry per match (callers aggregate counts).
+#[cfg(test)]
 pub fn extract_error_signatures(text: &str) -> Vec<String> {
     extract_with(text, &signature_patterns())
 }

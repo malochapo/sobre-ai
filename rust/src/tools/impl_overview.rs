@@ -1,7 +1,6 @@
 use crate::core::cache::SessionCache;
 use crate::core::graph_provider::{self, GraphProvider};
 use crate::core::task_relevance::{compute_relevance, parse_task_hints};
-use crate::core::tokens::count_tokens;
 use crate::tools::CrpMode;
 
 /// Multi-resolution context overview.
@@ -45,7 +44,6 @@ pub(crate) fn handle(
         let mut relevance = compute_relevance(gp, &task_files, &task_keywords);
         crate::core::git_signals::apply_boost(&mut relevance, &project_root);
         crate::core::diagnostics_store::apply_boost(&mut relevance);
-        crate::core::editor_signal::apply_boost(&mut relevance);
 
         output.push(format!(
             "PROJECT OVERVIEW  {} files  task-filtered",
@@ -220,20 +218,13 @@ pub(crate) fn handle(
     }
     append_graph_hotspots_section(&mut output, &project_root, gp);
 
-    let cfg = crate::core::config::Config::load();
-    if cfg.enable_wakeup_ctx {
+    if true {
         let wakeup = build_wakeup_briefing(&project_root, task);
         if !wakeup.is_empty() {
             output.push(String::new());
             output.push(wakeup);
         }
     }
-
-    let fc = gp.file_count();
-    let original = count_tokens(&format!("{fc} files")) * fc;
-    let compressed = count_tokens(&output.join("\n"));
-    output.push(String::new());
-    output.push(crate::core::protocol::format_savings(original, compressed));
 
     (output.join("\n"), true)
 }
@@ -564,7 +555,7 @@ fn partial_overview(project_root: &str) -> String {
 
     out.push(
         "The full task-relevant graph view (signatures, neighbors, relevance) will be \
-         available shortly — re-run ctx_overview to get it."
+         available shortly — call ctx_compose again without a task to get it."
             .to_string(),
     );
     out.join("\n")
@@ -579,7 +570,6 @@ fn detected_markers(project_root: &str) -> Vec<String> {
         "pyproject.toml",
         "pom.xml",
         "build.gradle",
-        ".lean-ctx.toml",
     ];
     let root = std::path::Path::new(project_root);
     MARKERS

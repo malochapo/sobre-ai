@@ -64,6 +64,7 @@ impl BounceTracker {
         self.seq_counter
     }
 
+    #[cfg(test)]
     pub fn set_seq(&mut self, seq: u64) {
         self.seq_counter = seq;
     }
@@ -81,11 +82,6 @@ impl BounceTracker {
 
         if !compressed {
             self.detect_bounce(&norm, seq);
-        }
-        if self.persist {
-            // Keep the long-term majority rule honest: clean reads dilute
-            // historical bounces (#496).
-            crate::core::path_mode_memory::record_read_if_tracked(&norm);
         }
 
         let events = self.recent_reads.entry(norm).or_default();
@@ -144,27 +140,6 @@ impl BounceTracker {
 
             if self.persist {
                 crate::core::savings_ledger::record_bounce_event(wasted);
-                // Long-term per-path memory (#496): remember which exact
-                // files keep bouncing so auto-mode learns across restarts.
-                crate::core::path_mode_memory::record_bounce(norm_path);
-                // Quality signal (#538): bounces push the learned entropy
-                // threshold down for this extension (compress less) and
-                // penalize the bandit arm that produced the read (#593).
-                crate::core::adaptive_thresholds::record_quality_signal(
-                    norm_path,
-                    crate::core::threshold_learning::QualitySignal::Bounce,
-                );
-                // Stigmergy (#540): a bounce marks this path as Stuck so
-                // other agents see friction here. Background: lock may block.
-                let scent_path = norm_path.to_string();
-                std::thread::spawn(move || {
-                    crate::core::scent_field::deposit(
-                        crate::core::scent_field::scent_agent_id(),
-                        crate::core::scent_field::ScentKind::Stuck,
-                        &scent_path,
-                        0.5,
-                    );
-                });
             }
         }
     }
@@ -259,32 +234,6 @@ impl BounceTracker {
 
     pub fn adjusted_savings(&self, raw_savings: usize) -> isize {
         raw_savings as isize - self.total_wasted_tokens as isize
-    }
-
-    pub fn per_extension_json(&self) -> Vec<serde_json::Value> {
-        let mut exts: Vec<_> = self
-            .per_extension
-            .iter()
-            .filter(|(_, s)| s.total_reads > 0)
-            .collect();
-        exts.sort_by_key(|a| std::cmp::Reverse(a.1.bounces));
-        exts.iter()
-            .take(10)
-            .map(|(ext, stats)| {
-                let rate = if stats.total_reads > 0 {
-                    stats.bounces as f64 / stats.total_reads as f64
-                } else {
-                    0.0
-                };
-                serde_json::json!({
-                    "ext": ext,
-                    "reads": stats.total_reads,
-                    "bounces": stats.bounces,
-                    "wasted_tokens": stats.wasted_tokens,
-                    "rate": (rate * 1000.0).round() / 1000.0,
-                })
-            })
-            .collect()
     }
 
     pub fn format_summary(&self) -> String {

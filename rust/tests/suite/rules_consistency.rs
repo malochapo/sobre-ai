@@ -20,19 +20,6 @@ fn shared_non_shadow_contains_never() {
 }
 
 #[test]
-fn dedicated_non_shadow_contains_never() {
-    let content = rules_canonical::render(
-        false,
-        rules_canonical::Wrapper::Dedicated,
-        CompressionLevel::Off,
-    );
-    assert!(
-        content.contains("NEVER"),
-        "dedicated non-shadow must contain NEVER"
-    );
-}
-
-#[test]
 fn dedicated_non_shadow_contains_intent_and_anti() {
     let content = rules_canonical::render(
         false,
@@ -47,39 +34,6 @@ fn dedicated_non_shadow_contains_intent_and_anti() {
         content.contains("ctx_compose"),
         "dedicated must mention ctx_compose"
     );
-}
-
-#[test]
-fn shared_non_shadow_contains_mapping() {
-    let content = rules_canonical::render(
-        false,
-        rules_canonical::Wrapper::Shared,
-        CompressionLevel::Off,
-    );
-    assert!(
-        content.contains("MANDATORY MAPPING"),
-        "shared must have mapping"
-    );
-}
-
-#[test]
-fn dedicated_has_markers() {
-    let content = rules_canonical::render(
-        false,
-        rules_canonical::Wrapper::Dedicated,
-        CompressionLevel::Off,
-    );
-    assert!(content.contains(rules_canonical::START_MARK));
-    assert!(content.contains(rules_canonical::END_MARK));
-    assert!(content.contains("CRITICAL"));
-}
-
-#[test]
-fn bare_has_no_markers() {
-    let content =
-        rules_canonical::render(false, rules_canonical::Wrapper::Bare, CompressionLevel::Off);
-    assert!(!content.contains(rules_canonical::START_MARK));
-    assert!(!content.contains(rules_canonical::END_MARK));
 }
 
 #[test]

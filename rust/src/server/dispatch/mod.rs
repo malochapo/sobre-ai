@@ -4,7 +4,6 @@ use std::time::Duration;
 use rmcp::ErrorData;
 use serde_json::Value;
 
-use crate::server::helpers::get_str;
 use crate::server::tool_trait::{McpTool, ShellOutcome, ToolContext, ToolOutput};
 use crate::tools::LeanCtxServer;
 use rmcp::model::ContentBlock;
@@ -19,7 +18,6 @@ impl LeanCtxServer {
         &self,
         name: &str,
         args: Option<&serde_json::Map<String, Value>>,
-        minimal: bool,
     ) -> Result<
         (
             String,
@@ -29,49 +27,10 @@ impl LeanCtxServer {
         ),
         ErrorData,
     > {
-        fn format_rate_limited(
-            tool: &str,
-            agent_id: &str,
-            retry_after_ms: u64,
-            args: Option<&serde_json::Map<String, Value>>,
-        ) -> String {
-            let as_json = get_str(args, "format").as_deref() == Some("json");
-            if as_json {
-                serde_json::json!({
-                    "error": "rate_limited",
-                    "tool": tool,
-                    "agent_id": agent_id,
-                    "retry_after_ms": retry_after_ms,
-                })
-                .to_string()
-            } else {
-                format!("[RATE LIMITED] tool={tool} retry_after_ms={retry_after_ms}")
-            }
-        }
-
-        let agent_id = self
-            .agent_id
-            .read()
-            .await
-            .clone()
-            .unwrap_or_else(|| "unknown".to_string());
-        {
-            if let crate::core::a2a::rate_limiter::RateLimitResult::Limited { retry_after_ms } =
-                crate::core::a2a::rate_limiter::check_rate_limit(&agent_id, name)
-            {
-                return Ok((
-                    format_rate_limited(name, &agent_id, retry_after_ms, args),
-                    0,
-                    None,
-                    None,
-                ));
-            }
-        }
-
         // Invariant 3 has no universal invoker: there are no hidden tools for
         // one to reach. `ctx_call` used to sit here — dispatchable, never in
         // `tools/list`, unwrapping an inner tool name and calling it.
-        self.dispatch_inner(name, args, minimal).await
+        self.dispatch_inner(name, args).await
     }
 
     /// Dispatches a single tool via the trait-based registry.
@@ -80,7 +39,6 @@ impl LeanCtxServer {
         &self,
         name: &str,
         args: Option<&serde_json::Map<String, Value>>,
-        minimal: bool,
     ) -> Result<
         (
             String,
@@ -90,21 +48,6 @@ impl LeanCtxServer {
         ),
         ErrorData,
     > {
-        // #454: when the user prefers their host's native editor, lean-ctx edit
-        // operations are fully disabled — refused here so neither a direct call
-        // nor `ctx_call` can reach them (list_tools already hides them).
-        if crate::core::config::Config::load().edit_tool_blocked(name) {
-            return Ok((
-                format!(
-                    "[disabled] '{name}' is turned off (prefer_native_editor): use your editor's \
-                     built-in edit tool. Re-enable with `lean-ctx config set prefer_native_editor false`."
-                ),
-                0,
-                None,
-                None,
-            ));
-        }
-
         if let Some(tool) = self.registry.as_ref().and_then(|r| r.get_arc(name)) {
             let empty = serde_json::Map::new();
             let args_map = args.unwrap_or(&empty);
@@ -171,28 +114,15 @@ impl LeanCtxServer {
             }
 
             let crp_mode = crate::tools::CrpMode::effective();
-            let pressure_snapshot = {
-                let ledger = self.ledger.read().await;
-                Some(ledger.pressure())
-            };
             let extra_roots = self.session.read().await.extra_roots.clone();
             let ctx = crate::server::tool_trait::ToolContext {
                 project_root,
                 extra_roots,
-                minimal,
                 resolved_paths,
                 crp_mode,
                 cache: Some(self.cache.clone()),
                 session: Some(self.session.clone()),
                 tool_calls: Some(self.tool_calls.clone()),
-                agent_id: Some(self.agent_id.clone()),
-                workflow: Some(self.workflow.clone()),
-                ledger: Some(self.ledger.clone()),
-                client_name: Some(self.client_name.clone()),
-                pipeline_stats: Some(self.pipeline_stats.clone()),
-                call_count: Some(self.call_count.clone()),
-                autonomy: Some(self.autonomy.clone()),
-                pressure_snapshot,
                 path_errors,
                 bm25_cache: Some(self.bm25_cache.clone()),
                 progress_sender: Some(self.progress_sender.clone()),
@@ -231,12 +161,6 @@ impl LeanCtxServer {
                     output.shell_outcome,
                     output.content_blocks,
                 ));
-            }
-
-            if output.changed
-                && let Some(peer) = self.peer.read().await.as_ref()
-            {
-                super::notifications::send_tools_list_changed(peer).await;
             }
 
             let headers_only =
@@ -296,7 +220,6 @@ impl LeanCtxServer {
                 .await
                 .clone()
                 .unwrap_or_else(|| "unknown".into());
-            let role = crate::core::roles::active_role_name();
             {
                 let input_hash = crate::core::audit_trail::hash_input(args_map);
                 crate::core::audit_trail::record(crate::core::audit_trail::AuditEntryData {
@@ -305,7 +228,6 @@ impl LeanCtxServer {
                     action: None,
                     input_hash,
                     output_tokens: output_token_estimate,
-                    role: role.clone(),
                     event_type: crate::core::audit_trail::AuditEventType::ToolCall,
                 });
             }
@@ -328,40 +250,8 @@ impl LeanCtxServer {
                     action: None,
                     input_hash: String::new(),
                     output_tokens: 0,
-                    role: role.clone(),
                     event_type: crate::core::audit_trail::AuditEventType::SecurityViolation,
                 });
-            }
-
-            let reference_enabled = std::env::var("LEAN_CTX_REFERENCE_RESULTS").map_or_else(
-                |_| crate::core::config::Config::load().reference_results,
-                |v| v == "1" || v == "true",
-            );
-
-            // An explicit file read must always return its content — never a
-            // stored-reference stub — so the agent can edit against the lines. The
-            // firewall already exempts reads; the reference-results path honours the
-            // same rule via `is_protected_read` (otherwise enabling reference_results
-            // silently turns `ctx_read` into an un-editable "Output stored …" preview).
-            if reference_enabled
-                && !crate::core::firewall::is_protected_read(name)
-                && final_text.len() > REFERENCE_THRESHOLD
-            {
-                let ref_id = super::reference_store::store(final_text.clone());
-                let mut preview_end = final_text.len().min(200);
-                while preview_end > 0 && !final_text.is_char_boundary(preview_end) {
-                    preview_end -= 1;
-                }
-                let summary = format!(
-                    "[Reference: {ref_id}] Output stored ({} chars, ~{} tokens). Resolve: /v1/references/{ref_id}\nPreview: {}...",
-                    final_text.len(),
-                    final_text.len() / 4,
-                    &final_text[..preview_end]
-                );
-                // The outcome must survive the reference-store substitution —
-                // a failed shell command stays a failure even when its output
-                // is delivered out-of-band (#389).
-                return Ok((summary, saved, output.shell_outcome, None));
             }
 
             return Ok((final_text, saved, output.shell_outcome, None));
@@ -470,11 +360,10 @@ impl LeanCtxServer {
 
     /// Watchdog deadline for a single tool handler, or `None` to disable it.
     ///
-    /// `ctx_shell` / `ctx_execute` run arbitrary user commands (builds, long
-    /// test suites) and already enforce their own command timeouts, so a generic
+    /// `ctx_shell` runs arbitrary user commands (builds, long
+    /// test suites) and already enforces its own command timeout, so a generic
     /// watchdog would wrongly abort a legitimate long-running command. Every
     /// other tool is bounded so a hang can never swallow the JSON-RPC response.
-    /// Tunable via `LEAN_CTX_TOOL_TIMEOUT_SECS` (`0` disables the watchdog).
     fn handler_watchdog(name: &str) -> Option<Duration> {
         if super::is_shell_tool_name(name) {
             return None;
@@ -496,22 +385,16 @@ fn sanitized_tool_text(name: &str, raw_text: String) -> String {
     crate::core::output_sanitizer::sanitize(&raw_text)
 }
 
-/// Read the configured watchdog budget in seconds (defaults to
-/// [`DEFAULT_TOOL_TIMEOUT_SECS`]). Kept separate from the policy so the pure
+/// The watchdog budget in seconds. Kept separate from the policy so the pure
 /// `secs -> Option<Duration>` mapping stays trivially testable.
 fn read_watchdog_secs() -> u64 {
-    std::env::var("LEAN_CTX_TOOL_TIMEOUT_SECS")
-        .ok()
-        .and_then(|v| v.parse::<u64>().ok())
-        .unwrap_or(DEFAULT_TOOL_TIMEOUT_SECS)
+    DEFAULT_TOOL_TIMEOUT_SECS
 }
 
 /// Map a watchdog budget in seconds to a duration; `0` disables the watchdog.
 fn watchdog_from_secs(secs: u64) -> Option<Duration> {
     (secs > 0).then(|| Duration::from_secs(secs))
 }
-
-const REFERENCE_THRESHOLD: usize = 4000;
 
 /// Default per-tool watchdog budget (#271). Long enough that no legitimate
 /// read/search/graph call ever hits it, short enough that a hang degrades to a
@@ -566,14 +449,6 @@ mod tests {
     }
 
     #[test]
-    fn path_like_keys_has_no_duplicates() {
-        let mut seen = std::collections::HashSet::new();
-        for key in PATH_LIKE_KEYS {
-            assert!(seen.insert(*key), "duplicate PATH_LIKE_KEYS entry: {key}");
-        }
-    }
-
-    #[test]
     fn path_like_keys_includes_primary_keys() {
         for primary in &["path", "project_root", "root"] {
             assert!(
@@ -584,25 +459,10 @@ mod tests {
     }
 
     #[test]
-    fn path_like_keys_all_non_empty() {
-        for key in PATH_LIKE_KEYS {
-            assert!(!key.is_empty(), "PATH_LIKE_KEYS contains empty string");
-        }
-        assert!(
-            PATH_LIKE_KEYS.len() >= 3,
-            "PATH_LIKE_KEYS must have at least the 3 primary keys"
-        );
-    }
-
-    #[test]
     fn watchdog_disabled_for_long_running_shell_tools() {
         assert!(
             LeanCtxServer::handler_watchdog("ctx_shell").is_none(),
             "ctx_shell runs arbitrary user commands and must not be watchdog-bounded"
-        );
-        assert!(
-            LeanCtxServer::handler_watchdog("ctx_execute").is_none(),
-            "ctx_execute must not be watchdog-bounded"
         );
     }
 
@@ -684,7 +544,7 @@ mod tests {
         let server = crate::tools::create_server();
 
         let err = server
-            .dispatch_tool("ctx_raed", None, false)
+            .dispatch_tool("ctx_raed", None)
             .await
             .expect_err("typo'd tool must error");
         assert!(
@@ -699,7 +559,7 @@ mod tests {
         );
 
         let err = server
-            .dispatch_tool("zzz_qqq_www", None, false)
+            .dispatch_tool("zzz_qqq_www", None)
             .await
             .expect_err("unrelated name must error");
         assert!(

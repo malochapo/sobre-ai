@@ -147,11 +147,12 @@ pub fn config_keys_markdown() -> String {
     out.push_str("# Appendix — Configuration Keys (generated)\n\n");
     out.push_str(DO_NOT_EDIT);
     out.push_str("\n\n");
-    out.push_str("Source of truth: `rust/src/core/config/schema.rs`.\n\n");
+    out.push_str("Source of truth: `rust/src/core/config/schema/`.\n\n");
     out.push_str(
-        "lean-ctx reads `~/.lean-ctx/config.toml` (and a project `.lean-ctx.toml` overlay). \
-         Below is every recognized key with its type, default, and environment-variable \
-         override where one exists.\n\n",
+        "sobre reads one file, `~/.config/lean-ctx/config.toml` (the directory \
+         follows `$XDG_CONFIG_HOME`, or `$LEAN_CTX_CONFIG_DIR` when set). \
+         Below is every recognized key with its type and default. \
+         `lean-ctx config init` writes the file with every key documented.\n\n",
     );
 
     // `root` first (top-level keys), then named sections alphabetically.
@@ -189,15 +190,8 @@ fn render_section_keys(section: &crate::core::config::schema::SectionSchema) -> 
             ty = format!("{ty}: {}", values.join(" | "));
         }
         let default = value_to_inline(&ks.default);
-        let env = ks
-            .env_override
-            .as_ref()
-            .map(|e| format!(" — env `{e}`"))
-            .unwrap_or_default();
         let desc = ks.description.trim();
-        out.push_str(&format!(
-            "- `{key}` ({ty}, default `{default}`{env}) — {desc}\n"
-        ));
+        out.push_str(&format!("- `{key}` ({ty}, default `{default}`) — {desc}\n"));
     }
     if !out.is_empty() {
         out.push('\n');

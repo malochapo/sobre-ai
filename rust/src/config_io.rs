@@ -13,35 +13,6 @@ pub fn write_atomic_with_backup(path: &Path, content: &str) -> Result<(), String
     write_atomic_with_backup_checked(path, content, None)
 }
 
-/// Writes TOML config while preserving comments, formatting, key ordering, and
-/// any keys present on disk but absent from `new_content` (user customizations,
-/// unknown/future keys). Values from `new_content` are merged onto the existing
-/// document. Falls back to a plain atomic write when there is nothing to merge
-/// or the existing file cannot be parsed.
-pub fn write_toml_preserving(path: &Path, new_content: &str) -> Result<(), String> {
-    let merged = match std::fs::read_to_string(path) {
-        Ok(existing) if !existing.trim().is_empty() => {
-            merge_toml(&existing, new_content).unwrap_or_else(|_| new_content.to_string())
-        }
-        _ => new_content.to_string(),
-    };
-    write_atomic_with_backup(path, &merged)
-}
-
-/// Loads a TOML file into an editable document, preserving comments and
-/// formatting. Returns an empty document when the file is missing or invalid.
-pub fn load_toml_document(path: &Path) -> toml_edit::DocumentMut {
-    std::fs::read_to_string(path)
-        .ok()
-        .and_then(|c| c.parse::<toml_edit::DocumentMut>().ok())
-        .unwrap_or_default()
-}
-
-/// Persists an edited document via the atomic-with-backup path.
-pub fn write_toml_document(path: &Path, doc: &toml_edit::DocumentMut) -> Result<(), String> {
-    write_atomic_with_backup(path, &doc.to_string())
-}
-
 /// Like `write_toml_preserving`, but keeps the config minimal: keys whose value
 /// equals the type's default AND are not already present on disk are skipped,
 /// so a hand-written config is not bloated with every default key. Existing
@@ -75,6 +46,7 @@ pub fn write_toml_preserving_minimal(
 
 /// Merges `incoming` TOML values onto the `existing` document, retaining the
 /// existing document's comments, whitespace, and unknown keys.
+#[cfg(test)]
 fn merge_toml(existing: &str, incoming: &str) -> Result<String, String> {
     merge_toml_inner(existing, incoming, None)
 }
@@ -171,21 +143,6 @@ fn item_equals_default(item: &toml_edit::Item, default: Option<&toml_edit::Item>
     match default {
         Some(d) => item.to_string().trim() == d.to_string().trim(),
         None => false,
-    }
-}
-
-/// Remove stale timestamped `.bak` files left by the old backup scheme.
-/// Called once at startup to clean up the accumulated backups.
-pub fn cleanup_legacy_backups(data_dir: &Path) {
-    let Ok(entries) = std::fs::read_dir(data_dir) else {
-        return;
-    };
-    for entry in entries.flatten() {
-        let name = entry.file_name();
-        let name = name.to_string_lossy();
-        if name.contains(".lean-ctx.") && name.ends_with(".bak") {
-            let _ = std::fs::remove_file(entry.path());
-        }
     }
 }
 
@@ -331,31 +288,22 @@ fn ensure_target_allowed(link_path: &Path, real_target: &Path) -> Result<(), Str
          (symlink-hijack protection). To allow this location, either:\n    \
          - point the agent at the real path (set CLAUDE_CONFIG_DIR / CODEX_HOME), or\n    \
          - move the target under $HOME, or\n    \
-         - add its parent to `allow_symlink_roots` in your lean-ctx config \
-         (or the LEAN_CTX_ALLOW_SYMLINK_ROOTS env var).",
+         - add its parent to `allow_paths` in your lean-ctx config \
+.",
         link_path.display(),
         real_target.display()
     ))
 }
 
 /// Trusted roots OUTSIDE `$HOME` the user explicitly opted into for symlinked
-/// agent configs (#596). Sourced from the `LEAN_CTX_ALLOW_SYMLINK_ROOTS` env var
-/// (path-list separator) and the user-level `allow_symlink_roots` config key
-/// (untrusted project-local configs are stripped at load — see
-/// `strip_sensitive_overrides`). Each entry is made absolute + canonicalized so
-/// the boundary check compares real paths; relative/empty entries are dropped.
+/// agent configs (#596), from the `allow_paths` config key. Each entry
+/// is made absolute + canonicalized so the boundary check compares real paths;
+/// relative/empty entries are dropped.
 fn allowed_symlink_roots() -> Vec<PathBuf> {
-    let mut raw: Vec<PathBuf> = Vec::new();
-    if let Some(env) = std::env::var_os("LEAN_CTX_ALLOW_SYMLINK_ROOTS") {
-        raw.extend(std::env::split_paths(&env));
-    }
-    raw.extend(
-        crate::core::config::Config::load()
-            .allow_symlink_roots
-            .into_iter()
-            .map(PathBuf::from),
-    );
-    raw.into_iter()
+    crate::core::config::Config::load()
+        .allow_paths
+        .into_iter()
+        .map(PathBuf::from)
         .filter(|p| !p.as_os_str().is_empty() && p.is_absolute())
         .map(|p| crate::core::pathutil::canonicalize_secure_or_self(&p))
         .collect()
@@ -493,35 +441,6 @@ enabled = true
     }
 
     #[test]
-    fn write_toml_preserving_backs_up_and_keeps_comments() {
-        let tmp = unique_tmp("cfg_test");
-        let _ = std::fs::create_dir_all(&tmp);
-        let path = tmp.join("config.toml");
-        std::fs::write(&path, "# keep\nultra_compact = true\n").unwrap();
-
-        write_toml_preserving(&path, "ultra_compact = false\n").unwrap();
-
-        let result = std::fs::read_to_string(&path).unwrap();
-        assert!(result.contains("# keep"));
-        assert!(result.contains("ultra_compact = false"));
-        // Backup created.
-        assert!(path.with_file_name("config.toml.bak").exists());
-
-        let _ = std::fs::remove_dir_all(&tmp);
-    }
-
-    #[test]
-    fn write_toml_preserving_handles_missing_file() {
-        let tmp = unique_tmp("cfg_new");
-        let _ = std::fs::remove_dir_all(&tmp);
-        let path = tmp.join("config.toml");
-        write_toml_preserving(&path, "ultra_compact = true\n").unwrap();
-        let result = std::fs::read_to_string(&path).unwrap();
-        assert!(result.contains("ultra_compact = true"));
-        let _ = std::fs::remove_dir_all(&tmp);
-    }
-
-    #[test]
     fn minimal_mode_refuses_to_clobber_unparseable_existing() {
         // #443: a corrupt config must never be silently replaced with defaults.
         let tmp = unique_tmp("cfg_corrupt");
@@ -624,7 +543,7 @@ mod symlink_596_tests {
         let err = write_atomic(&link, "x").unwrap_err();
         assert!(err.contains("escapes $HOME"), "got: {err}");
         assert!(
-            err.contains("allow_symlink_roots"),
+            err.contains("allow_paths"),
             "error must point at the opt-in escape hatch, got: {err}"
         );
         assert_eq!(
@@ -634,29 +553,11 @@ mod symlink_596_tests {
         );
     }
 
-    /// RAII override of `LEAN_CTX_ALLOW_SYMLINK_ROOTS` (restores on drop).
-    struct AllowRootsGuard(Option<std::ffi::OsString>);
-    impl AllowRootsGuard {
-        fn set(value: &std::ffi::OsStr) -> Self {
-            let prev = std::env::var_os("LEAN_CTX_ALLOW_SYMLINK_ROOTS");
-            crate::test_env::set_var("LEAN_CTX_ALLOW_SYMLINK_ROOTS", value);
-            AllowRootsGuard(prev)
-        }
-    }
-    impl Drop for AllowRootsGuard {
-        fn drop(&mut self) {
-            match self.0.take() {
-                Some(v) => crate::test_env::set_var("LEAN_CTX_ALLOW_SYMLINK_ROOTS", v),
-                None => crate::test_env::remove_var("LEAN_CTX_ALLOW_SYMLINK_ROOTS"),
-            }
-        }
-    }
-
     #[test]
     fn allows_symlink_escape_when_target_root_is_allowlisted() {
         // #596 premium: an out-of-$HOME target IS written through once its root
-        // is explicitly opted into via LEAN_CTX_ALLOW_SYMLINK_ROOTS.
-        let _lock = crate::core::data_dir::test_env_lock();
+        // is explicitly opted into via `allow_paths` in config.toml.
+        let iso = crate::core::data_dir::isolated_data_dir();
         let home = tempfile::tempdir().unwrap();
         let outside = tempfile::tempdir().unwrap();
         let _home = HomeGuard::set(home.path());
@@ -668,7 +569,11 @@ mod symlink_596_tests {
         let link = home.path().join(".agent.json");
         symlink(&target, &link).unwrap();
 
-        let _roots = AllowRootsGuard::set(real_outside.as_os_str());
+        std::fs::write(
+            iso.path().join("config.toml"),
+            format!("allow_paths = [{:?}]\n", real_outside.to_string_lossy()),
+        )
+        .unwrap();
         write_atomic(&link, "{\"k\":1}\n").unwrap();
 
         assert_eq!(std::fs::read_to_string(&target).unwrap(), "{\"k\":1}\n");

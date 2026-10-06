@@ -29,23 +29,6 @@ pub fn get_rss_bytes() -> Option<u64> {
     }
 }
 
-/// RSS of an arbitrary process by PID, or `None` if unavailable/dead.
-pub fn get_rss_bytes_for_pid(pid: u32) -> Option<u64> {
-    #[cfg(target_os = "linux")]
-    {
-        linux_rss_for_pid(pid)
-    }
-    #[cfg(target_os = "macos")]
-    {
-        macos_rss_for_pid(pid)
-    }
-    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
-    {
-        let _ = pid;
-        None
-    }
-}
-
 /// Total physical RAM in bytes, or `None` if unavailable.
 pub fn get_system_ram_bytes() -> Option<u64> {
     #[cfg(target_os = "linux")]
@@ -65,8 +48,7 @@ pub fn get_system_ram_bytes() -> Option<u64> {
 /// Returns the RSS limit in bytes based on `max_ram_percent` config.
 pub fn rss_limit_bytes() -> Option<u64> {
     let sys_ram = get_system_ram_bytes()?;
-    let cfg = super::config::Config::load();
-    let pct = super::config::MemoryGuardConfig::effective(&cfg).max_ram_percent;
+    let pct = super::config::MAX_RAM_PERCENT;
     Some(sys_ram / 100 * u64::from(pct))
 }
 
@@ -130,11 +112,6 @@ mod adaptive_batch_tests {
     }
 }
 
-/// Recorded peak RSS since process start.
-pub fn peak_rss_bytes() -> u64 {
-    PEAK_RSS.load(Ordering::Relaxed)
-}
-
 /// Snapshot of current memory state for diagnostics.
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct MemorySnapshot {
@@ -175,13 +152,6 @@ impl MemorySnapshot {
         Self::capture_impl(get_rss_bytes()?)
     }
 
-    /// Capture memory snapshot for the **daemon** process (by PID).
-    /// Falls back to the current process if the PID is dead or unreadable.
-    pub fn capture_for_pid(pid: u32) -> Option<Self> {
-        let rss = get_rss_bytes_for_pid(pid).or_else(get_rss_bytes)?;
-        Self::capture_impl(rss)
-    }
-
     fn capture_impl(rss: u64) -> Option<Self> {
         let sys = get_system_ram_bytes()?;
         let limit = rss_limit_bytes()?;
@@ -193,9 +163,7 @@ impl MemorySnapshot {
 
         PEAK_RSS.fetch_max(rss, Ordering::Relaxed);
 
-        let cfg = super::config::Config::load();
-        let guard_cfg = super::config::MemoryGuardConfig::effective(&cfg);
-        let base = f64::from(guard_cfg.max_ram_percent);
+        let base = f64::from(super::config::MAX_RAM_PERCENT);
 
         // #790: tightened multipliers so ABORT fires earlier:
         // - Critical: 2× (was 3×) — e.g. 10% config on 64 GB → 12.8 GB (was 19.2 GB)
@@ -455,22 +423,6 @@ fn macos_rss() -> Option<u64> {
 }
 
 #[cfg(target_os = "macos")]
-fn macos_rss_for_pid(pid: u32) -> Option<u64> {
-    // Use `ps -o rss= -p <pid>` as a portable fallback.
-    // `task_for_pid` requires root/entitlements, `proc_pid_rusage` is private API.
-    let output = std::process::Command::new("ps")
-        .args(["-o", "rss=", "-p", &pid.to_string()])
-        .output()
-        .ok()?;
-    if !output.status.success() {
-        return None;
-    }
-    let text = String::from_utf8_lossy(&output.stdout);
-    let kb: u64 = text.trim().parse().ok()?;
-    Some(kb * 1024)
-}
-
-#[cfg(target_os = "macos")]
 #[allow(clippy::borrow_as_ptr, clippy::ptr_as_ptr)]
 fn macos_memsize() -> Option<u64> {
     use std::mem;
@@ -581,32 +533,5 @@ mod tests {
             !fired.load(Ordering::Relaxed),
             "eviction callback must never fire in tests"
         );
-    }
-
-    #[test]
-    fn rss_for_own_pid_matches_self() {
-        if cfg!(any(target_os = "linux", target_os = "macos")) {
-            let self_rss = get_rss_bytes().unwrap();
-            let pid_rss = get_rss_bytes_for_pid(std::process::id()).unwrap();
-            let ratio = self_rss as f64 / pid_rss as f64;
-            assert!(
-                (0.5..2.0).contains(&ratio),
-                "self RSS ({self_rss}) and pid-based RSS ({pid_rss}) should be within 2x"
-            );
-        }
-    }
-
-    #[test]
-    fn rss_for_dead_pid_returns_none() {
-        let dead_pid = 999_999_999u32;
-        assert!(get_rss_bytes_for_pid(dead_pid).is_none());
-    }
-
-    #[test]
-    fn capture_for_pid_falls_back_on_dead_pid() {
-        if cfg!(any(target_os = "linux", target_os = "macos")) {
-            let snap = MemorySnapshot::capture_for_pid(999_999_999);
-            assert!(snap.is_some(), "should fall back to self RSS");
-        }
     }
 }

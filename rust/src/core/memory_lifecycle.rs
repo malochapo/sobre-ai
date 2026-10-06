@@ -581,7 +581,7 @@ pub fn run_lifecycle(
     }
 
     // Capacity reclaim (#995): facts settle at headroom via the single capacity
-    // manager, archiving the evicted tail losslessly under the legacy facts root
+    // manager, archiving the evicted tail losslessly under the facts archive root
     // — the same path quality archival uses, so recall rehydration is uniform.
     let capacity_archived = crate::core::memory_capacity::reclaim_store(
         MemoryStore::Facts,
@@ -608,20 +608,19 @@ pub fn run_lifecycle(
     })
 }
 
-/// Archive evicted facts (lossless). Facts keep the legacy global archive root
-/// for backward compatibility; the generic multi-store archive lives in
+/// Archive evicted facts (lossless) at the archive root; the generic multi-store archive lives in
 /// [`crate::core::memory_archive`].
 pub fn archive_facts(facts: &[KnowledgeFact]) -> Result<(), String> {
     crate::core::memory_archive::archive_items(
         MemoryStore::Facts,
         None,
         facts,
-        &ArchiveConfig::from_env(),
+        &ArchiveConfig::default(),
     )
     .map(|_| ())
 }
 
-/// Restore the facts from a single archive file (legacy `facts` key supported).
+/// Restore the facts from a single archive file.
 pub fn restore_archive(archive_path: &str) -> Result<Vec<KnowledgeFact>, String> {
     crate::core::memory_archive::restore_items(std::path::Path::new(archive_path))
 }

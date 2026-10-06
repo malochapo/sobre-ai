@@ -23,13 +23,6 @@ pub(super) fn run_fix(opts: &DoctorFixOptions) -> Result<i32, String> {
     Ok(i32::from(!report.success))
 }
 
-/// Run every `doctor --fix` repair step and persist the `SetupReport`, returning
-/// it without printing anything. Shared by the CLI (`run_fix`) and the dashboard
-/// fix route (#466) so both run byte-identical repair logic.
-pub(super) fn fix_report() -> Result<crate::core::setup_report::SetupReport, String> {
-    build_and_persist_fix_report(true)
-}
-
 fn build_and_persist_fix_report(
     quiet: bool,
 ) -> Result<crate::core::setup_report::SetupReport, String> {
@@ -96,16 +89,7 @@ fn build_and_persist_fix_report(
         errors: Vec::new(),
     };
     let binary = crate::core::portable_binary::resolve_portable_binary();
-    // #281: doctor --fix must not (re)register the MCP server when the user opted
-    // out via `auto_update_mcp = false`. Hooks/rules/scope repair still runs.
-    let update_mcp = crate::core::config::Config::load()
-        .setup
-        .should_update_mcp();
-    let targets = if update_mcp {
-        crate::core::editor_registry::build_targets(&home)
-    } else {
-        Vec::new()
-    };
+    let targets = crate::core::editor_registry::build_targets(&home);
     for t in &targets {
         if !t.detect_path.exists() {
             continue;
@@ -156,11 +140,7 @@ fn build_and_persist_fix_report(
             }
         }
     }
-    if !update_mcp {
-        mcp_step
-            .warnings
-            .push("MCP registration skipped (auto_update_mcp=false)".to_string());
-    } else if mcp_step.items.is_empty() {
+    if mcp_step.items.is_empty() {
         mcp_step
             .warnings
             .push("no supported AI tools detected; skipped MCP config repair".to_string());
@@ -348,200 +328,6 @@ fn build_and_persist_fix_report(
         ),
     });
     steps.push(startup_step);
-
-    // Merge a split data layout (stats.json in two trees) into the canonical
-    // dir *before* the XDG split, so `doctor --fix` actually resolves the "data
-    // dir split" check instead of only ever splitting a single dir (GH #414).
-    let mut consolidate_step = SetupStepReport {
-        name: "data_dir_consolidate".to_string(),
-        ok: true,
-        items: Vec::new(),
-        warnings: Vec::new(),
-        errors: Vec::new(),
-    };
-    match crate::core::data_consolidate::consolidate() {
-        Some(report) => {
-            consolidate_step.items.push(SetupItem {
-                name: "merge".to_string(),
-                status: format!("merged {}", report.files_moved),
-                path: Some(report.canonical.to_string_lossy().to_string()),
-                note: Some(format!(
-                    "consolidated {} split dir(s) into the canonical data dir ({} moved, {} superseded)",
-                    report.merged_from.len(),
-                    report.files_moved,
-                    report.files_superseded
-                )),
-            });
-            if !report.errors.is_empty() {
-                consolidate_step.ok = false;
-                consolidate_step.errors.extend(report.errors.clone());
-            }
-        }
-        None => {
-            consolidate_step.items.push(SetupItem {
-                name: "merge".to_string(),
-                status: "clean".to_string(),
-                path: None,
-                note: Some("no split data dirs to consolidate".to_string()),
-            });
-        }
-    }
-    steps.push(consolidate_step);
-
-    // Split a legacy/mixed single-dir install into the typed XDG dirs (GH #408).
-    let mut xdg_step = SetupStepReport {
-        name: "xdg_layout".to_string(),
-        ok: true,
-        items: Vec::new(),
-        warnings: Vec::new(),
-        errors: Vec::new(),
-    };
-    match crate::core::xdg_migrate::migrate() {
-        Some(report) => {
-            let moved = report.moved.len();
-            let skipped = report.skipped.len();
-            let conflicts = report.conflicts.len();
-            xdg_step.items.push(SetupItem {
-                name: "split".to_string(),
-                status: if moved > 0 {
-                    format!("moved {moved}")
-                } else {
-                    "clean".to_string()
-                },
-                path: Some(report.source.to_string_lossy().to_string()),
-                note: Some(format!(
-                    "split single-dir install into XDG config/data/state/cache \
-                     ({moved} moved/merged, {skipped} duplicate(s) dropped, \
-                     {conflicts} kept as *.legacy)"
-                )),
-            });
-            if !report.errors.is_empty() {
-                xdg_step.ok = false;
-                xdg_step.errors.extend(report.errors.clone());
-            }
-        }
-        None => {
-            xdg_step.items.push(SetupItem {
-                name: "split".to_string(),
-                status: "clean".to_string(),
-                path: None,
-                note: Some("already XDG-split or fresh install — nothing to migrate".to_string()),
-            });
-        }
-    }
-    steps.push(xdg_step);
-
-    // Reclaim a residual legacy `~/.lean-ctx` that lingered after the data moved
-    // to XDG (older --fix runs, the GH #408 default flip): drain leftover reports
-    // and remove the empty dir so it stops being silently re-adopted as the data
-    // dir, and so the doctor report below lands in XDG, not legacy (#434, #436).
-    let mut reclaim_step = SetupStepReport {
-        name: "legacy_reclaim".to_string(),
-        ok: true,
-        items: Vec::new(),
-        warnings: Vec::new(),
-        errors: Vec::new(),
-    };
-    match crate::core::xdg_migrate::reclaim_legacy() {
-        Some(report) => {
-            let moved = report.moved.len();
-            reclaim_step.items.push(SetupItem {
-                name: "reclaim".to_string(),
-                status: if moved > 0 {
-                    format!("reclaimed {moved}")
-                } else {
-                    "removed".to_string()
-                },
-                path: Some(report.source.to_string_lossy().to_string()),
-                note: Some(format!(
-                    "drained {moved} leftover entr{} from ~/.lean-ctx into XDG and removed the empty dir",
-                    if moved == 1 { "y" } else { "ies" }
-                )),
-            });
-            if !report.errors.is_empty() {
-                reclaim_step.ok = false;
-                reclaim_step.errors.extend(report.errors.clone());
-            }
-        }
-        None => {
-            reclaim_step.items.push(SetupItem {
-                name: "reclaim".to_string(),
-                status: "clean".to_string(),
-                path: None,
-                note: Some("no residual ~/.lean-ctx to reclaim".to_string()),
-            });
-        }
-    }
-    steps.push(reclaim_step);
-
-    // #594: relocate a `config.toml` that an old MCP env (LEAN_CTX_DATA_DIR)
-    // stranded in the data dir, so the CLI and the MCP server resolve the same
-    // config from now on. Lossless: adopt it when canonical is empty, otherwise
-    // keep the CLI-authored config and archive the stray copy.
-    let mut config_step = SetupStepReport {
-        name: "config_unify".to_string(),
-        ok: true,
-        items: Vec::new(),
-        warnings: Vec::new(),
-        errors: Vec::new(),
-    };
-    match crate::core::config_heal::heal() {
-        Some(report) => {
-            let (status, note) = match report.action {
-                crate::core::config_heal::HealAction::Adopted => (
-                    "recovered".to_string(),
-                    "adopted a config.toml stranded in the data dir as the canonical config",
-                ),
-                crate::core::config_heal::HealAction::Superseded => (
-                    "unified".to_string(),
-                    "kept the canonical config and archived a stale data-dir copy",
-                ),
-            };
-            config_step.items.push(SetupItem {
-                name: "heal".to_string(),
-                status,
-                path: Some(report.to.to_string_lossy().to_string()),
-                note: Some(note.to_string()),
-            });
-        }
-        None => {
-            config_step.items.push(SetupItem {
-                name: "heal".to_string(),
-                status: "clean".to_string(),
-                path: None,
-                note: Some("CLI and MCP already resolve the same config".to_string()),
-            });
-        }
-    }
-    steps.push(config_step);
-
-    // Record the XDG commitment now that the install is split + the residual
-    // legacy dir is gone, so a stray `~/.lean-ctx` can never re-collapse this
-    // install again (GL #623). `ensure_pinned` is a no-op for a deliberate
-    // single-dir (`LEAN_CTX_DATA_DIR`) or an unmigrated legacy/mixed install.
-    let mut pin_step = SetupStepReport {
-        name: "layout_pin".to_string(),
-        ok: true,
-        items: Vec::new(),
-        warnings: Vec::new(),
-        errors: Vec::new(),
-    };
-    crate::core::layout_pin::ensure_pinned();
-    let pinned = crate::core::layout_pin::is_xdg_pinned();
-    pin_step.items.push(SetupItem {
-        name: "pin".to_string(),
-        status: if pinned { "xdg" } else { "single-dir" }.to_string(),
-        path: None,
-        note: Some(
-            if pinned {
-                "install committed to the XDG layout; ~/.lean-ctx can no longer hijack it"
-            } else {
-                "single-dir/legacy install — layout left in place"
-            }
-            .to_string(),
-        ),
-    });
-    steps.push(pin_step);
 
     // Prune knowledge stores whose project_root was deleted (removed git
     // worktrees, thrown-away projects). They can never be written again, so

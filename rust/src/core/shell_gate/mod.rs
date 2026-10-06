@@ -12,7 +12,6 @@
 
 mod case_construct;
 mod heredoc;
-mod mode;
 #[cfg(test)]
 mod tests;
 #[cfg(test)]
@@ -25,34 +24,15 @@ pub(crate) use case_construct::{contains_double_semicolon, rewrite_case_construc
 pub(crate) use heredoc::heredoc_delims;
 pub use heredoc::strip_all_heredoc_bodies;
 pub(crate) use heredoc::{strip_comments, strip_quoted_heredoc_bodies};
-pub use mode::ShellSecurity;
 
-/// Checks whether a command may run, honouring the active [`ShellSecurity`] mode
-/// (GL #788). This is the single chokepoint shared by MCP `ctx_shell` and the
-/// CLI shell entrypoints, so the mode applies consistently:
-///
-/// - [`ShellSecurity::Off`] → always `Ok` (gating skipped; compression intact).
-/// - [`ShellSecurity::Warn`] → run the checks, log any violation, return `Ok`.
-/// - [`ShellSecurity::Enforce`] → block on violation (the secure default).
+/// Checks whether a command may run. This is the single chokepoint shared by
+/// MCP `ctx_shell` and the CLI shell entrypoints: every command is allowed
+/// except the unconditional blocks (invariant 6).
 pub fn check_shell_command(command: &str) -> Result<(), ShellError> {
-    match ShellSecurity::resolve() {
-        ShellSecurity::Off => Ok(()),
-        ShellSecurity::Warn => {
-            if let Err(msg) = enforce_shell_gate(command) {
-                tracing::warn!(
-                    target: "shell_security",
-                    "warn-only: would block ({})",
-                    msg.lines().next().unwrap_or("blocked")
-                );
-            }
-            Ok(())
-        }
-        ShellSecurity::Enforce => enforce_shell_gate(command),
-    }
+    enforce_shell_gate(command)
 }
 
 /// True when `command` would pass the allowlist / dangerous-pattern checks in
-/// `enforce` semantics — independent of the active [`ShellSecurity`] mode and
 /// without any logging or blocking side effects.
 ///
 /// The PreToolUse hook uses this to decide whether a compound/pipeline is safe
@@ -294,13 +274,11 @@ fn quote_aware_token_end(input: &str) -> usize {
 /// but still follows delegation wrappers so `xargs bash -c …` / `timeout 5 sh -c …`
 /// cannot smuggle inline code past the check (GH #391).
 fn check_interpreter_eval_only(segment: &str) -> Result<(), ShellError> {
-    let inline_ok = crate::core::config::Config::load().shell_allow_inline_scripts_effective();
-    check_interpreter_inner(segment, 0, inline_ok)
+    check_interpreter_inner(segment, 0)
 }
 
 /// #823: unified interpreter-abuse walk over delegation wrappers.
-/// `inline_ok`: if true, skip eval-flag/heredoc checks (#814 opt-in).
-fn check_interpreter_inner(segment: &str, depth: usize, inline_ok: bool) -> Result<(), ShellError> {
+fn check_interpreter_inner(segment: &str, depth: usize) -> Result<(), ShellError> {
     if depth > 3 {
         return Ok(());
     }
@@ -316,7 +294,7 @@ fn check_interpreter_inner(segment: &str, depth: usize, inline_ok: bool) -> Resu
         .to_string();
 
     // Eval-flag / heredoc checks on interpreters (unless opted out via #814).
-    if INTERPRETER_COMMANDS.contains(&base.as_str()) && !inline_ok {
+    if INTERPRETER_COMMANDS.contains(&base.as_str()) {
         for tok in &tokens[1..] {
             if EVAL_FLAGS.contains(&tok.as_str()) {
                 return Err(format!(
@@ -345,7 +323,7 @@ fn check_interpreter_inner(segment: &str, depth: usize, inline_ok: bool) -> Resu
         let rest_tokens = delegated_command_tokens(&tokens[1..]);
         if !rest_tokens.is_empty() {
             let rest_str = rest_tokens.join(" ");
-            return check_interpreter_inner(&rest_str, depth + 1, inline_ok);
+            return check_interpreter_inner(&rest_str, depth + 1);
         }
     }
 
@@ -362,7 +340,7 @@ fn heredoc_blocked_message(base: &str) -> String {
         "[BLOCKED — DO NOT RETRY] Interpreter '{base}' with heredoc stdin is blocked. \
          Inline code in the command string leaves no auditable artifact.\n\
          Do this instead: write the code to a file, then run it —\n\
-           1. create /tmp/snippet with your code (Write/ctx_edit tool)\n\
+           1. create /tmp/snippet with your code (ctx_patch op=create)\n\
            2. {base} /tmp/snippet\n\
          This is a permanent security restriction."
     )
@@ -1185,13 +1163,4 @@ fn skip_env_assignments(segment: &str) -> &str {
 /// Public accessor for extracting all command segments.
 pub fn extract_all_commands_pub(command: &str) -> Vec<String> {
     extract_all_commands(command)
-}
-
-// Legacy compat: single-segment extraction (used by other callers)
-pub fn extract_base_command(command: &str) -> String {
-    let first_seg = split_on_operators(command)
-        .into_iter()
-        .next()
-        .unwrap_or(command);
-    extract_base_from_segment(first_seg)
 }

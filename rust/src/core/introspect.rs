@@ -2,19 +2,19 @@
 //! *and* actually active at runtime.
 //!
 //! The Cognition v2 stack (power-law decay, Hebbian eviction, global-workspace
-//! ignition, replay consolidation, FEP prefetch, immune detection, …) is only
+//! ignition, replay consolidation, FEP prefetch, …) is only
 //! useful if it is genuinely reached on the hot path — not dead code. Every
-//! subsystem calls [`tick`] at its real call site; [`flush`] persists the
-//! counters to a small JSON file so a *separate* process (`lean-ctx introspect
-//! cognition`) can report, per subsystem: wired (present in this build), active
-//! (call count > 0), last-run, and total count.
+//! subsystem calls [`tick`] at its real call site. `lean-ctx introspect
+//! cognition` reports, per subsystem: wired (present in this build), active
+//! (call count > 0), last-run, and total count, from this process's counters
+//! and a small JSON file. Nothing persists that file any more, so another
+//! process's activity is not visible.
 //!
 //! Determinism note (#498): this is diagnostic CLI output, never an MCP tool
 //! body, so wall-clock timestamps here do not affect provider prompt caching.
 
 use std::collections::HashMap;
 use std::sync::{LazyLock, Mutex};
-use std::time::Instant;
 
 use serde::{Deserialize, Serialize};
 
@@ -51,11 +51,6 @@ pub const SUBSYSTEMS: &[Subsystem] = &[
         science: "complementary learning systems",
     },
     Subsystem {
-        key: "integration_phi",
-        label: "Integration-aware Phi",
-        science: "IIT non-redundancy (MMR)",
-    },
-    Subsystem {
         key: "gwt_ignition",
         label: "Global-workspace ignition",
         science: "global workspace theory",
@@ -69,16 +64,6 @@ pub const SUBSYSTEMS: &[Subsystem] = &[
         key: "replay_consolidation",
         label: "Idle replay",
         science: "sharp-wave-ripple replay",
-    },
-    Subsystem {
-        key: "fep_prefetch",
-        label: "FEP prefetch",
-        science: "active inference / free energy",
-    },
-    Subsystem {
-        key: "immune_detector",
-        label: "Immune detector",
-        science: "artificial immune system",
     },
     Subsystem {
         key: "observation_synthesis",
@@ -106,13 +91,9 @@ struct Entry {
 #[derive(Default)]
 struct Registry {
     entries: HashMap<&'static str, Entry>,
-    last_flush: Option<Instant>,
 }
 
 static REGISTRY: LazyLock<Mutex<Registry>> = LazyLock::new(|| Mutex::new(Registry::default()));
-
-/// Minimum gap between debounced flushes, keeping `tick` cheap on the hot path.
-const FLUSH_DEBOUNCE: std::time::Duration = std::time::Duration::from_secs(2);
 
 fn now_unix() -> i64 {
     std::time::SystemTime::now()
@@ -142,53 +123,6 @@ fn read_disk() -> HashMap<String, Activity> {
         .and_then(|p| std::fs::read_to_string(p).ok())
         .and_then(|s| serde_json::from_str(&s).ok())
         .unwrap_or_default()
-}
-
-/// Persist in-memory deltas to the shared JSON file (delta-merge so multiple
-/// processes accumulate). Best-effort: failures are swallowed — diagnostics
-/// must never break the hot path.
-pub fn flush() {
-    let Ok(mut reg) = REGISTRY.lock() else {
-        return;
-    };
-    if reg.entries.values().all(|e| e.count == e.flushed) {
-        reg.last_flush = Some(Instant::now());
-        return;
-    }
-    let mut disk = read_disk();
-    for (key, e) in &mut reg.entries {
-        let delta = e.count - e.flushed;
-        if delta == 0 {
-            continue;
-        }
-        let rec = disk.entry((*key).to_string()).or_default();
-        rec.count += delta;
-        rec.last_unix = rec.last_unix.max(e.last_unix);
-        e.flushed = e.count;
-    }
-    if let Some(path) = activity_path() {
-        if let Some(parent) = path.parent() {
-            let _ = std::fs::create_dir_all(parent);
-        }
-        if let Ok(json) = serde_json::to_string_pretty(&disk) {
-            let _ = crate::config_io::write_atomic(&path, &json);
-        }
-    }
-    reg.last_flush = Some(Instant::now());
-}
-
-/// Debounced [`flush`]: persists at most once per `FLUSH_DEBOUNCE`. Safe to
-/// call from `post_dispatch` on every tool call.
-pub fn flush_if_due() {
-    let due = {
-        match REGISTRY.lock() {
-            Ok(reg) => reg.last_flush.is_none_or(|t| t.elapsed() >= FLUSH_DEBOUNCE),
-            Err(_) => false,
-        }
-    };
-    if due {
-        flush();
-    }
 }
 
 /// Snapshot of all known subsystems merged with persisted activity, for the
@@ -279,27 +213,6 @@ mod tests {
             .map(|(_, a)| a.count)
             .unwrap();
         assert!(phi >= 2, "tick should be reflected in snapshot, got {phi}");
-    }
-
-    #[test]
-    fn flush_persists_and_accumulates() {
-        let _env = crate::core::data_dir::test_env_lock();
-        let dir = tempfile::tempdir().unwrap();
-        crate::test_env::set_var("LEAN_CTX_DATA_DIR", dir.path());
-
-        tick("hebbian_cache");
-        flush();
-        let disk = read_disk();
-        assert!(disk.get("hebbian_cache").is_some_and(|a| a.count >= 1));
-
-        // A second flush of new ticks must add, not clobber.
-        tick("hebbian_cache");
-        flush();
-        let disk2 = read_disk();
-        assert!(
-            disk2.get("hebbian_cache").unwrap().count >= 2,
-            "deltas should accumulate across flushes"
-        );
     }
 
     #[test]

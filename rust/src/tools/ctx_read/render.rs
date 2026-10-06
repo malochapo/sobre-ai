@@ -24,7 +24,7 @@ pub(crate) struct ReadTuning<'a> {
 
 impl<'a> ReadTuning<'a> {
     /// Resolves the effective tuning from an explicit per-call aggressiveness
-    /// (falling back to the `LEAN_CTX_AGGRESSIVENESS` env var / config field) and
+    /// (falling back to the config field) and
     /// the explicit `protect` token list.
     pub(crate) fn resolve(explicit_aggressiveness: Option<f64>, protect: &'a [String]) -> Self {
         Self {
@@ -62,34 +62,26 @@ fn techniques_tag(techniques: &[String]) -> String {
 /// Empty when disabled, unsupported, or nothing qualifies. Deterministic
 /// (#498-safe): a pure function of content + the active threshold.
 fn health_annotations(content: &str, ext: &str) -> std::collections::HashMap<String, String> {
-    let cfg = crate::core::config::Config::load();
-    if !cfg.code_health.annotate_reads {
-        return std::collections::HashMap::new();
-    }
     let annotations = crate::core::code_health::annotate::annotations_for_file(
         content,
         ext,
-        cfg.code_health.cognitive_threshold,
+        crate::core::code_health::COGNITIVE_THRESHOLD,
     );
     crate::core::code_health::annotate::by_name(&annotations)
 }
 
 pub(crate) fn format_full_output(
-    file_ref: &str,
     short: &str,
     ext: &str,
     content: &str,
-    original_tokens: usize,
     line_count: usize,
     _task: Option<&str>,
 ) -> (String, usize) {
-    let _mode_guard = crate::core::savings_footer::ModeGuard::new("full");
-    let tokens = original_tokens;
-    let metadata = build_header(file_ref, short, ext, content, line_count, true);
+    let metadata = build_header(short, ext, content, line_count, true);
 
     let output = format!("{metadata}\n{content}");
     let sent = count_tokens(&output);
-    (protocol::append_savings(&output, tokens, sent), sent)
+    (output, sent)
 }
 
 /// Headerless, trailing-whitespace-stripped output for the Read redirect path.
@@ -99,7 +91,6 @@ pub(crate) fn format_full_output(
 /// follow-up) and trailing whitespace is stripped per line for modest
 /// compression without breaking line structure or edit round-trips.
 pub(crate) fn format_full_compact_output(content: &str) -> (String, usize) {
-    let _mode_guard = crate::core::savings_footer::ModeGuard::new("full-compact");
     let output: String = content
         .lines()
         .map(str::trim_end)
@@ -114,18 +105,15 @@ pub(crate) fn format_full_compact_output(content: &str) -> (String, usize) {
 /// stable, self-describing one-line legend so a vanilla agent can read the
 /// format without prior knowledge (GL#580 self-describing-output philosophy).
 ///
-/// #498 determinism: the output is a pure function of `(file_ref, short,
+/// #498 determinism: the output is a pure function of `(short,
 /// content, line_count)` — no savings footer, timestamps or counters — so
-/// identical re-reads stay byte-stable and provider prompt caching applies. No
-/// `append_savings`: anchors are lossless *additions*, so a savings line would
-/// always be negative and misleading.
+/// identical re-reads stay byte-stable and provider prompt caching applies.
 pub(crate) fn format_anchored_output(
-    file_ref: &str,
     short: &str,
     content: &str,
     line_count: usize,
 ) -> (String, usize) {
-    format_anchored_output_window(file_ref, short, content, line_count, None)
+    format_anchored_output_window(short, content, line_count, None)
 }
 
 /// Windowed variant of [`format_anchored_output`] (#811): when `window` is
@@ -135,24 +123,17 @@ pub(crate) fn format_anchored_output(
 /// from its true position in the file so anchors still line up with
 /// `ctx_patch`. `None` reproduces the whole-file behaviour above.
 pub(crate) fn format_anchored_output_window(
-    file_ref: &str,
     short: &str,
     body: &str,
     line_count: usize,
     window: Option<(usize, usize)>,
 ) -> (String, usize) {
-    let _mode_guard = crate::core::savings_footer::ModeGuard::new("anchored");
     let (start_line, range_suffix) = match window {
         Some((start, end)) => (start, format!(" lines:{start}-{end}")),
         None => (1, String::new()),
     };
-    let header = if crate::core::protocol::meta_visible() && !file_ref.is_empty() {
-        format!(
-            "{file_ref}={short} {line_count}L{range_suffix} [anchored: N:hh|line → edit via ctx_patch]"
-        )
-    } else {
-        format!("{short} {line_count}L{range_suffix} [anchored: N:hh|line → edit via ctx_patch]")
-    };
+    let header =
+        format!("{short} {line_count}L{range_suffix} [anchored: N:hh|line → edit via ctx_patch]");
     let annotated = crate::core::anchor::annotate(body, start_line);
     let output = format!("{header}\n{annotated}");
     let sent = count_tokens(&output);
@@ -160,18 +141,13 @@ pub(crate) fn format_anchored_output_window(
 }
 
 pub(crate) fn build_header(
-    file_ref: &str,
     short: &str,
     ext: &str,
     content: &str,
     line_count: usize,
     include_deps: bool,
 ) -> String {
-    let mut header = if crate::core::protocol::meta_visible() && !file_ref.is_empty() {
-        format!("{file_ref}={short} {line_count}L")
-    } else {
-        format!("{short} {line_count}L")
-    };
+    let mut header = format!("{short} {line_count}L");
 
     if include_deps {
         let dep_info = deps::extract_deps(content, ext);
@@ -202,7 +178,6 @@ pub(crate) fn build_header(
 pub(crate) fn process_mode(
     content: &str,
     mode: &str,
-    file_ref: &str,
     short: &str,
     ext: &str,
     original_tokens: usize,
@@ -213,7 +188,6 @@ pub(crate) fn process_mode(
     process_mode_tuned(
         content,
         mode,
-        file_ref,
         short,
         ext,
         original_tokens,
@@ -231,7 +205,6 @@ pub(crate) fn process_mode(
 pub(crate) fn process_mode_tuned(
     content: &str,
     mode: &str,
-    file_ref: &str,
     short: &str,
     ext: &str,
     original_tokens: usize,
@@ -240,10 +213,8 @@ pub(crate) fn process_mode_tuned(
     task: Option<&str>,
     tuning: ReadTuning<'_>,
 ) -> (String, usize) {
-    let _mode_guard = crate::core::savings_footer::ModeGuard::new(mode);
     let line_count = content.lines().count();
     let ctx = RenderCtx {
-        file_ref,
         short,
         ext,
         file_path,
@@ -268,7 +239,6 @@ pub(crate) fn process_mode_tuned(
             process_mode_tuned(
                 content,
                 &chosen,
-                file_ref,
                 short,
                 ext,
                 original_tokens,
@@ -278,22 +248,14 @@ pub(crate) fn process_mode_tuned(
                 tuning,
             )
         }
-        "full" => format_full_output(
-            file_ref,
-            short,
-            ext,
-            content,
-            original_tokens,
-            line_count,
-            task,
-        ),
+        "full" => format_full_output(short, ext, content, line_count, task),
         "full-compact" => format_full_compact_output(content),
-        "anchored" => format_anchored_output(file_ref, short, content, line_count),
+        "anchored" => format_anchored_output(short, content, line_count),
         mode if mode.starts_with("anchored:") => {
             let range_str = &mode[9..];
             let (start, end) = parse_anchored_range(range_str, line_count);
             let (body, start, end) = slice_window(content, start, end);
-            format_anchored_output_window(file_ref, short, &body, line_count, Some((start, end)))
+            format_anchored_output_window(short, &body, line_count, Some((start, end)))
         }
         "signatures" => render_signatures(content, ctx),
         "map" => render_map(content, ctx),
@@ -302,23 +264,14 @@ pub(crate) fn process_mode_tuned(
         "task" => render_task_mode(content, ctx, &tuning),
         "reference" => {
             let tok = count_tokens(content);
-            let output = if crate::core::protocol::meta_visible() && !file_ref.is_empty() {
-                format!("{file_ref}={short}: {line_count} lines, {tok} tok ({ext})")
-            } else {
-                format!("{short}: {line_count} lines, {tok} tok ({ext})")
-            };
+            let output = format!("{short}: {line_count} lines, {tok} tok ({ext})");
             let sent = count_tokens(&output);
-            let savings = protocol::format_savings(original_tokens, sent);
-            (format!("{output}\n{savings}"), sent)
+            (output.clone(), sent)
         }
         mode if mode.starts_with("lines:") => {
             let range_str = &mode[6..];
             let extracted = extract_line_range(content, range_str);
-            let header = if crate::core::protocol::meta_visible() && !file_ref.is_empty() {
-                format!("{file_ref}={short} {line_count}L lines:{range_str}")
-            } else {
-                format!("{short} {line_count}L lines:{range_str}")
-            };
+            let header = format!("{short} {line_count}L lines:{range_str}");
             // Comma is multi-select, not a range — a caller who meant `N-M`
             // gets stray single lines back, so say what the comma did instead
             // of letting the wrong window pass silently (limitations #7).
@@ -328,11 +281,7 @@ pub(crate) fn process_mode_tuned(
                 ""
             };
             let sent = count_tokens(&extracted);
-            let savings = protocol::format_savings(original_tokens, sent);
-            (
-                format!("{header}\n{extracted}{multi_hint}\n{savings}"),
-                sent,
-            )
+            (format!("{header}\n{extracted}{multi_hint}"), sent)
         }
         mode if mode.starts_with("density:") => {
             // SDE target-density mode: compress to a token budget instead of
@@ -356,25 +305,15 @@ pub(crate) fn process_mode_tuned(
             };
             let techs = techniques_tag(&result.techniques);
             let target_clamped = target.clamp(0.05, 1.0);
-            let header = if crate::core::protocol::meta_visible() && !file_ref.is_empty() {
-                format!(
-                    "{file_ref}={short} {line_count}L density target={target_clamped:.2} actual={actual:.2}{techs}"
-                )
-            } else {
-                format!(
-                    "{short} {line_count}L density target={target_clamped:.2} actual={actual:.2}{techs}"
-                )
-            };
+            let header = format!(
+                "{short} {line_count}L density target={target_clamped:.2} actual={actual:.2}{techs}"
+            );
             let output = format!("{header}\n{guarded_output}");
             let sent = count_tokens(&output);
-            let savings = protocol::format_savings(original_tokens, sent);
-            (
-                append_compressed_hint(&format!("{output}\n{savings}"), file_path),
-                sent,
-            )
+            (append_compressed_hint(&output.clone(), file_path), sent)
         }
         unknown => {
-            let header = build_header(file_ref, short, ext, content, line_count, true);
+            let header = build_header(short, ext, content, line_count, true);
             let out = format!(
                 "[WARNING: unknown mode '{unknown}', falling back to full]\n{header}\n{content}"
             );
@@ -575,7 +514,6 @@ mod render_tests {
 /// mode arm testable and the dispatcher a thin `match`).
 #[derive(Clone, Copy)]
 struct RenderCtx<'a> {
-    file_ref: &'a str,
     short: &'a str,
     ext: &'a str,
     file_path: &'a str,
@@ -587,11 +525,10 @@ struct RenderCtx<'a> {
 
 fn render_signatures(content: &str, ctx: RenderCtx<'_>) -> (String, usize) {
     let RenderCtx {
-        file_ref,
         short,
         ext,
         file_path,
-        original_tokens,
+        original_tokens: _,
         crp_mode,
         line_count,
         task,
@@ -599,11 +536,7 @@ fn render_signatures(content: &str, ctx: RenderCtx<'_>) -> (String, usize) {
     let sigs = signatures::extract_signatures(content, ext);
     let dep_info = deps::extract_deps(content, ext);
 
-    let mut output = if crate::core::protocol::meta_visible() && !file_ref.is_empty() {
-        format!("{file_ref}={short} {line_count}L")
-    } else {
-        format!("{short} {line_count}L")
-    };
+    let mut output = format!("{short} {line_count}L");
     if !dep_info.imports.is_empty() {
         let imports_str: Vec<&str> = dep_info
             .imports
@@ -655,22 +588,15 @@ fn render_signatures(content: &str, ctx: RenderCtx<'_>) -> (String, usize) {
         output.push_str(&format!("\n  {}", crate::core::handle::USAGE_HINT));
     }
     let sent = count_tokens(&output);
-    (
-        append_compressed_hint(
-            &protocol::append_savings(&output, original_tokens, sent),
-            file_path,
-        ),
-        sent,
-    )
+    (append_compressed_hint(&output, file_path), sent)
 }
 
 fn render_map(content: &str, ctx: RenderCtx<'_>) -> (String, usize) {
     let RenderCtx {
-        file_ref,
         short,
         ext,
         file_path,
-        original_tokens,
+        original_tokens: _,
         crp_mode,
         line_count,
         task,
@@ -678,13 +604,9 @@ fn render_map(content: &str, ctx: RenderCtx<'_>) -> (String, usize) {
     if ext == "php"
         && let Some(php_map) = crate::core::patterns::php::compress_php_map(content, short)
     {
-        let output = if crate::core::protocol::meta_visible() && !file_ref.is_empty() {
-            format!("{file_ref}={short} {line_count}L\n{php_map}")
-        } else {
-            format!("{short} {line_count}L\n{php_map}")
-        };
+        let output = format!("{short} {line_count}L\n{php_map}");
         let sent = count_tokens(&output);
-        let output = protocol::append_savings(&output, original_tokens, sent);
+        let output = output.clone();
         return (append_compressed_hint(&output, file_path), sent);
     }
 
@@ -702,24 +624,16 @@ fn render_map(content: &str, ctx: RenderCtx<'_>) -> (String, usize) {
     };
 
     if !structured.is_empty() {
-        let mut output = if crate::core::protocol::meta_visible() && !file_ref.is_empty() {
-            format!("{file_ref}={short} {line_count}L\n{structured}")
-        } else {
-            format!("{short} {line_count}L\n{structured}")
-        };
+        let mut output = format!("{short} {line_count}L\n{structured}");
         let sent = count_tokens(&output);
-        output = protocol::append_savings(&output, original_tokens, sent);
+        output = output.clone();
         return (append_compressed_hint(&output, file_path), sent);
     }
 
     let sigs = signatures::extract_signatures(content, ext);
     let dep_info = deps::extract_deps(content, ext);
 
-    let mut output = if crate::core::protocol::meta_visible() && !file_ref.is_empty() {
-        format!("{file_ref}={short} {line_count}L")
-    } else {
-        format!("{short} {line_count}L")
-    };
+    let mut output = format!("{short} {line_count}L");
 
     if !dep_info.imports.is_empty() {
         output.push_str("\n  deps: ");
@@ -780,18 +694,11 @@ fn render_map(content: &str, ctx: RenderCtx<'_>) -> (String, usize) {
     }
 
     let sent = count_tokens(&output);
-    (
-        append_compressed_hint(
-            &protocol::append_savings(&output, original_tokens, sent),
-            file_path,
-        ),
-        sent,
-    )
+    (append_compressed_hint(&output, file_path), sent)
 }
 
 fn render_aggressive(content: &str, ctx: RenderCtx<'_>) -> (String, usize) {
     let RenderCtx {
-        file_ref,
         short,
         ext,
         file_path,
@@ -807,15 +714,11 @@ fn render_aggressive(content: &str, ctx: RenderCtx<'_>) -> (String, usize) {
     if ext == "json"
         && let Some(crushed) = crate::core::json_crush::crush_text_if_beneficial(content)
     {
-        let header = build_header(file_ref, short, ext, content, line_count, true);
+        let header = build_header(short, ext, content, line_count, true);
         let body = format!("{header}\n{crushed}");
         let sent = count_tokens(&body);
         if sent < original_tokens {
-            let savings = protocol::format_savings(original_tokens, sent);
-            return (
-                append_compressed_hint(&format!("{body}\n{savings}"), file_path),
-                sent,
-            );
+            return (append_compressed_hint(&body.clone(), file_path), sent);
         }
     }
 
@@ -825,15 +728,11 @@ fn render_aggressive(content: &str, ctx: RenderCtx<'_>) -> (String, usize) {
     if let Some(delim) = compressor::tabular_delimiter(Some(ext))
         && let Some(crushed) = crate::core::tabular_crush::crush_text_if_beneficial(content, delim)
     {
-        let header = build_header(file_ref, short, ext, content, line_count, true);
+        let header = build_header(short, ext, content, line_count, true);
         let body = format!("{header}\n{crushed}");
         let sent = count_tokens(&body);
         if sent < original_tokens {
-            let savings = protocol::format_savings(original_tokens, sent);
-            return (
-                append_compressed_hint(&format!("{body}\n{savings}"), file_path),
-                sent,
-            );
+            return (append_compressed_hint(&body.clone(), file_path), sent);
         }
     }
 
@@ -844,15 +743,11 @@ fn render_aggressive(content: &str, ctx: RenderCtx<'_>) -> (String, usize) {
     if compressor::is_yaml_ext(Some(ext))
         && let Some(crushed) = crate::core::yaml_crush::crush_text_if_beneficial(content)
     {
-        let header = build_header(file_ref, short, ext, content, line_count, true);
+        let header = build_header(short, ext, content, line_count, true);
         let body = format!("{header}\n{crushed}");
         let sent = count_tokens(&body);
         if sent < original_tokens {
-            let savings = protocol::format_savings(original_tokens, sent);
-            return (
-                append_compressed_hint(&format!("{body}\n{savings}"), file_path),
-                sent,
-            );
+            return (append_compressed_hint(&body.clone(), file_path), sent);
         }
     }
 
@@ -871,52 +766,20 @@ fn render_aggressive(content: &str, ctx: RenderCtx<'_>) -> (String, usize) {
         compressor::aggressive_compress(base, Some(ext))
     };
     let compressed = compressor::safeguard_ratio(content, &raw);
-    let header = build_header(file_ref, short, ext, content, line_count, true);
-
-    let mut sym = SymbolMap::new();
-    let idents = symbol_map::extract_identifiers(&compressed, &[ext]);
-    for ident in &idents {
-        sym.register(ident);
-    }
-
-    if symbol_map::substitution_enabled() && sym.len() >= 3 {
-        let sym_table = sym.format_table();
-        let sym_applied = sym.apply(&compressed);
-        let orig_tok = count_tokens(&compressed);
-        let comp_tok = count_tokens(&sym_applied) + count_tokens(&sym_table);
-        let net = orig_tok.saturating_sub(comp_tok);
-        if orig_tok > 0 && net * 100 / orig_tok >= 5 {
-            let savings = protocol::format_savings(original_tokens, comp_tok);
-            return (
-                append_compressed_hint(
-                    &format!("{header}\n{sym_applied}{sym_table}\n{savings}"),
-                    file_path,
-                ),
-                comp_tok,
-            );
-        }
-        let savings = protocol::format_savings(original_tokens, orig_tok);
-        return (
-            append_compressed_hint(&format!("{header}\n{compressed}\n{savings}"), file_path),
-            orig_tok,
-        );
-    }
+    let header = build_header(short, ext, content, line_count, true);
 
     let sent = count_tokens(&compressed);
-    let savings = protocol::format_savings(original_tokens, sent);
     (
-        append_compressed_hint(&format!("{header}\n{compressed}\n{savings}"), file_path),
+        append_compressed_hint(&format!("{header}\n{compressed}"), file_path),
         sent,
     )
 }
 
 fn render_entropy(content: &str, ctx: RenderCtx<'_>, tuning: &ReadTuning<'_>) -> (String, usize) {
     let RenderCtx {
-        file_ref,
         short,
         ext,
         file_path,
-        original_tokens,
         line_count,
         task,
         ..
@@ -958,50 +821,36 @@ fn render_entropy(content: &str, ctx: RenderCtx<'_>, tuning: &ReadTuning<'_>) ->
         ),
     };
     let avg_h = entropy::analyze_entropy(content).avg_entropy;
-    let header = build_header(file_ref, short, ext, content, line_count, false);
+    let header = build_header(short, ext, content, line_count, false);
     let output = format!(
         "{header} H̄={avg_h:.1}{}\n{}",
         techniques_tag(&result.techniques),
         result.output
     );
     let sent = count_tokens(&output);
-    let savings = protocol::format_savings(original_tokens, sent);
-    let compression_ratio = if original_tokens > 0 {
-        1.0 - (sent as f64 / original_tokens as f64)
-    } else {
-        0.0
-    };
-    crate::core::adaptive_thresholds::report_bandit_outcome_for_path(
-        file_path,
-        compression_ratio > 0.15,
-    );
-    (
-        append_compressed_hint(&format!("{output}\n{savings}"), file_path),
-        sent,
-    )
+    (append_compressed_hint(&output.clone(), file_path), sent)
 }
 
 fn render_task_mode(content: &str, ctx: RenderCtx<'_>, tuning: &ReadTuning<'_>) -> (String, usize) {
     let RenderCtx {
-        file_ref,
         short,
         ext,
         file_path,
-        original_tokens,
+        original_tokens: _,
         line_count,
         task,
         ..
     } = ctx;
     let task_str = task.unwrap_or("");
     if task_str.is_empty() {
-        let header = build_header(file_ref, short, ext, content, line_count, true);
+        let header = build_header(short, ext, content, line_count, true);
         let out = format!("{header}\n{content}\n[task mode: no task set — returned full]");
         let sent = count_tokens(&out);
         return (out, sent);
     }
     let (_files, keywords) = crate::core::task_relevance::parse_task_hints(task_str);
     if keywords.is_empty() {
-        let header = build_header(file_ref, short, ext, content, line_count, true);
+        let header = build_header(short, ext, content, line_count, true);
         let out =
             format!("{header}\n{content}\n[task mode: no keywords extracted — returned full]");
         let sent = count_tokens(&out);
@@ -1013,7 +862,7 @@ fn render_task_mode(content: &str, ctx: RenderCtx<'_>, tuning: &ReadTuning<'_>) 
     // round-trip that the issue reported.
     const TASK_MIN_LINES: usize = 250;
     if line_count < TASK_MIN_LINES {
-        let header = build_header(file_ref, short, ext, content, line_count, true);
+        let header = build_header(short, ext, content, line_count, true);
         let out = format!(
             "{header}\n{content}\n[task mode: file below {TASK_MIN_LINES}L threshold — returned full]"
         );
@@ -1034,15 +883,10 @@ fn render_task_mode(content: &str, ctx: RenderCtx<'_>, tuning: &ReadTuning<'_>) 
         is_markdown,
     );
     let filtered_lines = filtered.lines().count();
-    let header = if crate::core::protocol::meta_visible() && !file_ref.is_empty() {
-        format!("{file_ref}={short} {line_count}L [task-filtered: {line_count}→{filtered_lines}]")
-    } else {
-        format!("{short} {line_count}L [task-filtered: {line_count}→{filtered_lines}]")
-    };
+    let header = format!("{short} {line_count}L [task-filtered: {line_count}→{filtered_lines}]");
     let sent = count_tokens(&filtered) + count_tokens(&header);
-    let savings = protocol::format_savings(original_tokens, sent);
     (
-        append_compressed_hint(&format!("{header}\n{filtered}\n{savings}"), file_path),
+        append_compressed_hint(&format!("{header}\n{filtered}"), file_path),
         sent,
     )
 }

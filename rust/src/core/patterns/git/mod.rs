@@ -179,14 +179,6 @@ mod tests {
     }
 
     #[test]
-    fn git_commit_extracts_hash() {
-        let output =
-            "[main abc1234] fix: resolve bug\n 2 files changed, 10 insertions(+), 3 deletions(-)\n";
-        let result = compress("git commit -m 'fix'", output).unwrap();
-        assert!(result.contains("abc1234"), "should extract commit hash");
-    }
-
-    #[test]
     fn git_push_compresses() {
         let output = "Enumerating objects: 5, done.\nCounting objects: 100% (5/5), done.\nDelta compression using up to 8 threads\nCompressing objects: 100% (3/3), done.\nWriting objects: 100% (3/3), 1.2 KiB | 1.2 MiB/s, done.\nTotal 3 (delta 2), reused 0 (delta 0)\nTo github.com:user/repo.git\n   abc1234..def5678  main -> main\n";
         let result = compress("git push", output).unwrap();

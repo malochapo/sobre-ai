@@ -18,16 +18,10 @@ use super::*;
 /// per-request watchdog) before degrading instead of embedding. A server that
 /// started before the on-disk dense index existed would otherwise embed the
 /// whole corpus on the first query — observed as a runaway 500%+ CPU child the
-/// 120s watchdog abandons but cannot cancel. Tunable via
-/// `LEAN_CTX_HYBRID_INLINE_EMBED_MAX`; `0` disables the guard (always embed
-/// inline — the pre-#512 behavior).
+/// 120s watchdog abandons but cannot cancel.
 #[cfg(feature = "embeddings")]
 pub(crate) fn inline_embed_max_chunks() -> usize {
-    const DEFAULT_MAX: usize = 2000;
-    std::env::var("LEAN_CTX_HYBRID_INLINE_EMBED_MAX")
-        .ok()
-        .and_then(|v| v.trim().parse::<usize>().ok())
-        .unwrap_or(DEFAULT_MAX)
+    2000
 }
 
 /// Pure budget check for the cold-start guard (#512): `max == 0` disables it,
@@ -107,10 +101,7 @@ pub(crate) fn hybrid_search_mode(
                 Err(e) => return format!("ERR: {e}"),
             };
 
-        let backend = match crate::core::dense_backend::DenseBackendKind::try_from_env() {
-            Ok(v) => v,
-            Err(e) => return format!("ERR: {e}"),
-        };
+        let backend = crate::core::dense_backend::DenseBackendKind::Local;
         let filter_fn = |p: &str| filter.matches(p);
         let filter_pred: Option<&dyn Fn(&str) -> bool> = filter
             .is_active()
@@ -237,10 +228,7 @@ pub(crate) fn dense_search_mode(
                 Err(e) => return format!("ERR: {e}"),
             };
 
-        let backend = match crate::core::dense_backend::DenseBackendKind::try_from_env() {
-            Ok(v) => v,
-            Err(e) => return format!("ERR: {e}"),
-        };
+        let backend = crate::core::dense_backend::DenseBackendKind::Local;
 
         let filter_fn = |p: &str| filter.matches(p);
         let filter_pred: Option<&dyn Fn(&str) -> bool> = filter
@@ -303,11 +291,6 @@ pub(crate) fn load_engine_and_index(
     root: &Path,
 ) -> Result<(&'static EmbeddingEngine, EmbeddingIndex), String> {
     reject_under_hard_pressure("semantic embedding load")?;
-    let cfg = crate::core::config::Config::load();
-    let profile = crate::core::config::MemoryProfile::effective(&cfg);
-    if !profile.embeddings_enabled() {
-        return Err("embeddings disabled by memory_profile=low".into());
-    }
 
     let engine = crate::core::embeddings::shared_engine()
         .ok_or_else(|| "embedding engine load failed".to_string())?;

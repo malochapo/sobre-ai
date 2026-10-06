@@ -5,48 +5,6 @@
 use crate::doctor::common::*;
 use crate::doctor::{BOLD, DIM, GREEN, Outcome, RED, RST, YELLOW};
 
-pub(crate) fn cache_safety_outcome() -> Outcome {
-    use crate::core::neural::cache_alignment::CacheAlignedOutput;
-    use crate::core::provider_cache::ProviderCacheState;
-
-    let mut issues = Vec::new();
-
-    let mut aligned = CacheAlignedOutput::new();
-    aligned.add_stable_block("test", "stable content".into(), 1);
-    aligned.add_variable_block("test_var", "variable content".into(), 1);
-    let rendered = aligned.render();
-    if rendered.find("stable content").unwrap_or(usize::MAX)
-        > rendered.find("variable content").unwrap_or(0)
-    {
-        issues.push("cache_alignment: stable blocks not ordered first");
-    }
-
-    let mut state = ProviderCacheState::new();
-    let section = crate::core::provider_cache::CacheableSection::new(
-        "doctor_test",
-        "test content".into(),
-        crate::core::provider_cache::SectionPriority::System,
-        true,
-    );
-    state.mark_sent(&section);
-    if state.needs_update(&section) {
-        issues.push("provider_cache: hash tracking broken");
-    }
-
-    if issues.is_empty() {
-        Outcome {
-            ok: true,
-            line: format!(
-                "{BOLD}Cache safety{RST}  {GREEN}cache_alignment + provider_cache operational{RST}"
-            ),
-        }
-    } else {
-        Outcome {
-            ok: false,
-            line: format!("{BOLD}Cache safety{RST}  {RED}{}{RST}", issues.join("; ")),
-        }
-    }
-}
 /// Flags a quarantined `stats.json.corrupt` (#706): the stats loader moves an
 /// unparseable display cache aside instead of silently overwriting history.
 /// Doctor surfaces the quarantine so the loss is visible and recoverable
@@ -112,20 +70,11 @@ pub(crate) fn bm25_cache_health_outcome() -> Outcome {
         }
         total_dirs += 1;
 
-        if dir.join("bm25_index.json.quarantined").exists()
-            || dir.join("bm25_index.bin.quarantined").exists()
-            || dir.join("bm25_index.bin.zst.quarantined").exists()
-        {
+        if dir.join("bm25_index.bin.zst.quarantined").exists() {
             quarantined_count += 1;
         }
 
-        let index_path = if dir.join("bm25_index.bin.zst").exists() {
-            dir.join("bm25_index.bin.zst")
-        } else if dir.join("bm25_index.bin").exists() {
-            dir.join("bm25_index.bin")
-        } else {
-            dir.join("bm25_index.json")
-        };
+        let index_path = dir.join("bm25_index.bin.zst");
         if let Ok(meta) = std::fs::metadata(&index_path) {
             let size = meta.len();
             total_bytes += size;
@@ -262,11 +211,7 @@ pub(crate) fn semantic_index_outcome() -> Option<Outcome> {
 }
 pub(crate) fn archive_footprint_outcome() -> Outcome {
     let bytes = crate::core::archive_fts::db_size_bytes();
-    let cap_mb = std::env::var("LEAN_CTX_ARCHIVE_DB_MAX_MB")
-        .ok()
-        .and_then(|v| v.trim().parse::<u64>().ok())
-        .filter(|m| *m > 0)
-        .unwrap_or(500);
+    let cap_mb = crate::core::archive_fts::DEFAULT_MAX_DB_MB;
     let cap_bytes = cap_mb * 1024 * 1024;
     let mb = bytes as f64 / 1_048_576.0;
     if bytes > cap_bytes {
@@ -290,64 +235,13 @@ pub(crate) fn archive_footprint_outcome() -> Outcome {
         }
     }
 }
-pub(crate) fn memory_profile_outcome() -> Outcome {
-    let cfg = crate::core::config::Config::load();
-    let profile = crate::core::config::MemoryProfile::effective(&cfg);
-    // The BM25 *disk* ceiling is decoupled from the RAM profile (#249); show the
-    // real effective ceiling rather than a hardcoded per-profile figure.
-    let bm25_mb = cfg.bm25_max_cache_mb_effective();
-    let (label, detail) = match profile {
-        crate::core::config::MemoryProfile::Low => (
-            "low",
-            format!("embeddings+semantic cache disabled, BM25 disk {bm25_mb} MB"),
-        ),
-        crate::core::config::MemoryProfile::Balanced => (
-            "balanced",
-            format!("default — single embedding engine, BM25 disk {bm25_mb} MB"),
-        ),
-        crate::core::config::MemoryProfile::Performance => (
-            "performance",
-            format!("full caches, BM25 disk {bm25_mb} MB"),
-        ),
-    };
-    let source = if crate::core::config::MemoryProfile::from_env().is_some() {
-        "env"
-    } else if cfg.memory_profile != crate::core::config::MemoryProfile::default() {
-        "config"
-    } else {
-        "default"
-    };
+pub(crate) fn memory_outcome() -> Outcome {
+    let bm25_mb = crate::core::config::DEFAULT_BM25_PERSIST_MB;
+    let ttl_min = crate::core::config::IDLE_CACHE_TTL_SECS / 60;
     Outcome {
         ok: true,
         line: format!(
-            "{BOLD}Memory profile{RST}  {GREEN}{label}{RST}  {DIM}({source}: {detail}){RST}"
-        ),
-    }
-}
-pub(crate) fn memory_cleanup_outcome() -> Outcome {
-    let cfg = crate::core::config::Config::load();
-    let cleanup = crate::core::config::MemoryCleanup::effective(&cfg);
-    let (label, detail) = match cleanup {
-        crate::core::config::MemoryCleanup::Aggressive => (
-            "aggressive",
-            "cache cleared after 5 min idle, single-IDE optimized",
-        ),
-        crate::core::config::MemoryCleanup::Shared => (
-            "shared",
-            "cache retained 1 hour, multi-IDE/multi-model optimized",
-        ),
-    };
-    let source = if crate::core::config::MemoryCleanup::from_env().is_some() {
-        "env"
-    } else if cfg.memory_cleanup != crate::core::config::MemoryCleanup::default() {
-        "config"
-    } else {
-        "default"
-    };
-    Outcome {
-        ok: true,
-        line: format!(
-            "{BOLD}Memory cleanup{RST}  {GREEN}{label}{RST}  {DIM}({source}: {detail}){RST}"
+            "{BOLD}Memory{RST}  {GREEN}full caches{RST}  {DIM}(BM25 disk {bm25_mb} MB, cache kept {ttl_min} min idle){RST}"
         ),
     }
 }
@@ -411,13 +305,32 @@ pub(crate) fn orphaned_knowledge_outcome() -> Outcome {
         ),
     }
 }
+/// Classify one memory store against its cap: `None` below 80% or with no
+/// cap, otherwise `(over_cap, "name: current/limit (pct%)")`. A store sitting
+/// *at* its cap is healthy: eviction (run_lifecycle) keeps it there by design.
+/// Only a store genuinely *over* cap is critical, which means eviction is not
+/// keeping up.
+pub(crate) fn capacity_level(name: &str, current: usize, limit: usize) -> Option<(bool, String)> {
+    if limit == 0 {
+        return None;
+    }
+    let pct = (current as f64 / limit as f64 * 100.0) as u32;
+    let warning = format!("{name}: {current}/{limit} ({pct}%)");
+    if pct > 100 {
+        Some((true, warning))
+    } else if pct >= 80 {
+        Some((false, warning))
+    } else {
+        None
+    }
+}
+
 pub(crate) fn capacity_warnings() -> Vec<Outcome> {
     let Ok(data_dir) = crate::core::data_dir::lean_ctx_data_dir() else {
         return vec![];
     };
 
-    let cfg = crate::core::config::Config::load();
-    let policy = cfg.memory_policy_effective().unwrap_or_default();
+    let policy = crate::core::memory_policy::MemoryPolicy::default();
 
     let knowledge_dir = data_dir.join("knowledge");
     let Ok(entries) = std::fs::read_dir(&knowledge_dir) else {
@@ -521,18 +434,9 @@ pub(crate) fn capacity_warnings() -> Vec<Outcome> {
         let mut critical = false;
 
         for (name, current, limit) in &checks {
-            if *limit == 0 {
-                continue;
-            }
-            let pct = (*current as f64 / *limit as f64 * 100.0) as u32;
-            // A store sitting *at* its cap is healthy: eviction (run_lifecycle)
-            // keeps it there by design. Only flag CRIT when it is genuinely
-            // *over* cap, which means eviction is not keeping up.
-            if pct > 100 {
-                critical = true;
-                warnings.push(format!("{name}: {current}/{limit} ({pct}%)"));
-            } else if pct >= 80 {
-                warnings.push(format!("{name}: {current}/{limit} ({pct}%)"));
+            if let Some((over_cap, warning)) = capacity_level(name, *current, *limit) {
+                critical |= over_cap;
+                warnings.push(warning);
             }
         }
 
@@ -559,7 +463,7 @@ pub(crate) fn capacity_warnings() -> Vec<Outcome> {
     // Global checks (not per project hash)
 
     // Archive disk usage vs limit
-    let archive_limit_bytes = cfg.archive_max_disk_mb_effective() * 1_048_576;
+    let archive_limit_bytes = crate::core::config::ARCHIVE_MAX_DISK_MB * 1_048_576;
     if archive_limit_bytes > 0 {
         let archive_used = crate::core::archive::disk_usage_bytes();
         let pct = (archive_used as f64 / archive_limit_bytes as f64 * 100.0) as u32;
@@ -585,7 +489,7 @@ pub(crate) fn capacity_warnings() -> Vec<Outcome> {
     }
 
     // Graph index file count vs limit
-    let graph_max_files = cfg.graph_index_max_files;
+    let graph_max_files = crate::core::config::GRAPH_INDEX_MAX_FILES;
     if graph_max_files > 0
         && let Some(session) = crate::core::session::SessionState::load_latest()
         && let Some(ref project_root) = session.project_root

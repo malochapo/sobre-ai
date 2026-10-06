@@ -1,4 +1,4 @@
-//! `lean-ctx proxy …` — proxy lifecycle, upstream stats, Codex ChatGPT opt-in.
+//! `lean-ctx proxy …` — proxy lifecycle, upstream stats.
 
 #[allow(clippy::wildcard_imports)]
 use super::*;
@@ -51,10 +51,7 @@ fn print_compression_by_upstream(v: &serde_json::Value) {
     for (label, key) in [
         ("Anthropic", "anthropic"),
         ("OpenAI", "openai"),
-        ("ChatGPT", "chatgpt"),
         ("Gemini", "gemini"),
-        ("Grok", "grok"),
-        ("CommandCode", "commandcode"),
     ] {
         let Some(row) = per_upstream.get(key).and_then(|x| x.as_object()) else {
             continue;
@@ -75,338 +72,42 @@ fn print_compression_by_upstream(v: &serde_json::Value) {
     }
 }
 
-/// Prints the provider-verified savings line (#701) when counterfactual
-/// metering has covered at least one request. Both sides of the pair were
-/// counted by Anthropic on the same request — receipts, not the bytes/4
-/// estimate above. Silent when the opt-in feature is off or no probe has
-/// answered yet (`verified_savings` is `null`).
-fn print_verified_savings(v: &serde_json::Value) {
-    let Some(vs) = v.get("verified_savings").filter(|x| x.is_object()) else {
-        return;
-    };
-    let saved = vs
-        .get("verified_saved_tokens")
-        .and_then(serde_json::Value::as_i64)
-        .unwrap_or(0);
-    let requests = vs
-        .get("requests")
-        .and_then(serde_json::Value::as_u64)
-        .unwrap_or(0);
-    let counterfactual = vs
-        .get("counterfactual_input_tokens")
-        .and_then(serde_json::Value::as_u64)
-        .unwrap_or(0);
-    #[allow(clippy::cast_precision_loss)]
-    let pct = if counterfactual > 0 {
-        saved as f64 * 100.0 / counterfactual as f64
-    } else {
-        0.0
-    };
-    println!(
-        "  Verified:    {saved} tok saved across {requests} probed req ({pct:.1}% — provider-counted, #701)"
-    );
-}
-
-/// Prints the proxy's live upstreams (from `/status`) and warns when they drift
-/// from what the operator expects. Covers both #449 cases: a shell-exported
-/// `LEAN_CTX_*_UPSTREAM` that never reached the MCP/service-spawned proxy, and a
-/// proxy started with an env override that now masks a later config.toml edit.
+/// Prints the proxy's live upstreams (from `/status`) and warns when one
+/// differs from what config.toml resolves to — the proxy keeps its last good
+/// value when an edit fails validation (#449).
 fn print_live_upstreams_and_drift(v: &serde_json::Value, cfg: &crate::core::config::Config) {
-    use crate::core::config::{
-        ProxyProvider, UpstreamDrift, diagnose_drift, env_upstream_override,
-    };
-
     let Some(up) = v.get("upstreams").and_then(|u| u.as_object()) else {
         return;
     };
-    let disk = cfg.proxy.resolve_all_disk();
+    let configured = cfg.proxy.resolve_all();
     println!("  Upstreams (live):");
     let mut notes = Vec::new();
-    for (label, key, provider, disk_val) in [
-        (
-            "Anthropic",
-            "anthropic",
-            ProxyProvider::Anthropic,
-            &disk.anthropic,
-        ),
-        ("OpenAI", "openai", ProxyProvider::OpenAi, &disk.openai),
-        ("ChatGPT", "chatgpt", ProxyProvider::ChatGpt, &disk.chatgpt),
-        ("Gemini", "gemini", ProxyProvider::Gemini, &disk.gemini),
+    for (label, key, configured_val) in [
+        ("Anthropic", "anthropic", &configured.anthropic),
+        ("OpenAI", "openai", &configured.openai),
+        ("Gemini", "gemini", &configured.gemini),
     ] {
         let live = up.get(key).and_then(|x| x.as_str()).unwrap_or("?");
         println!("    {label:<10} {live}");
-        if live == "?" {
-            continue;
-        }
-        let env = env_upstream_override(provider);
-        match diagnose_drift(env.as_deref(), disk_val, live) {
-            Some(UpstreamDrift::EnvNotApplied) => {
-                let want = env.as_deref().unwrap_or("");
-                notes.push(format!(
-                    "  \x1b[33m⚠ {label}: LEAN_CTX_{}_UPSTREAM is set in this shell ({want})\x1b[0m\n  \
-                       \x1b[33m  but the running proxy serves {live}. Environment variables do not reach\x1b[0m\n  \
-                       \x1b[33m  an MCP/service-spawned proxy (#449). Persist it — applies live:\x1b[0m\n  \
-                       \x1b[33m    lean-ctx config set proxy.{key}_upstream {want}\x1b[0m",
-                    label.to_uppercase(),
-                ));
-            }
-            Some(UpstreamDrift::ConfigNotApplied) => {
-                notes.push(format!(
-                    "  \x1b[33m⚠ {label}: proxy serves {live} but config.toml resolves to {disk_val}.\x1b[0m\n  \
-                       \x1b[33m  Apply it: lean-ctx proxy restart\x1b[0m",
-                ));
-            }
-            None => {}
+        if live != "?" && crate::core::config::upstream_drifted(configured_val, live) {
+            notes.push(format!(
+                "  \x1b[33m⚠ {label}: proxy serves {live} but config.toml resolves to {configured_val}.\x1b[0m\n  \
+                   \x1b[33m  Check proxy.{key}_upstream, then: lean-ctx proxy restart\x1b[0m",
+            ));
         }
     }
-    // Registry providers (enterprise#7): Grok dual-rail and other
-    // `[[proxy.providers]]` entries only appear under `/providers/{id}/…`.
+    // The closed provider list (Ollama, Bedrock)
+    // only appears under `/providers/{id}/…`.
     if let Some(providers) = v.get("providers").and_then(|p| p.as_array()) {
         for p in providers {
             let id = p.get("id").and_then(|x| x.as_str()).unwrap_or("?");
             let base = p.get("base_url").and_then(|x| x.as_str()).unwrap_or("?");
-            let label = if id.eq_ignore_ascii_case("grok-chat")
-                || id.eq_ignore_ascii_case("xai")
-                || id.eq_ignore_ascii_case("grok")
-            {
-                "Grok"
-            } else if id.eq_ignore_ascii_case("commandcode")
-                || id.eq_ignore_ascii_case("command-code")
-            {
-                "CommandCode"
-            } else {
-                id
-            };
-            // Prefer a stable display name; still show registry id when it
-            // differs (e.g. grok-chat vs xai).
-            let canonical_id = match label {
-                "Grok" => Some("grok"),
-                "CommandCode" => Some("commandcode"),
-                _ => None,
-            };
-            if let Some(canon) = canonical_id
-                && !id.eq_ignore_ascii_case(canon)
-            {
-                println!("    {label:<10} {base}  [{id}]");
-            } else {
-                println!("    {label:<10} {base}");
-            }
+            println!("    {id:<10} {base}");
         }
     }
     for note in notes {
         println!();
         println!("{note}");
-    }
-
-    // #590: a configured custom HTTPS upstream that is not permitted is silently
-    // ignored — the managed proxy can't see the shell's env opt-in, so it serves
-    // the provider default. Point the operator at the *persistent* config flag,
-    // which does reach the managed proxy. Suppressed once the opt-in is active
-    // (env or config), since the drift notes above then cover any remaining gap.
-    if cfg.proxy.has_custom_host_upstream() && !cfg.proxy.allows_custom_upstream() {
-        println!();
-        println!(
-            "  \x1b[33m⚠ A custom upstream host is configured but not permitted, so the proxy\x1b[0m"
-        );
-        println!(
-            "  \x1b[33m  serves the provider default. Allow it (reaches the managed proxy):\x1b[0m"
-        );
-        println!("  \x1b[33m    lean-ctx config set proxy.allow_custom_upstream true\x1b[0m");
-        println!("  \x1b[33m    lean-ctx proxy restart\x1b[0m");
-    }
-}
-
-/// Bridges the shell's `LEAN_CTX_ALLOW_CUSTOM_UPSTREAM` opt-in into `config.toml`
-/// so the managed (LaunchAgent / systemd) proxy — which only reads `config.toml`,
-/// never the shell env — honors a configured custom upstream (#590).
-///
-/// No-op unless all three hold: the env opt-in is present, a custom-host upstream
-/// is actually configured, and `[proxy] allow_custom_upstream` is not already
-/// `true` (idempotent). Returns true when it persisted the flag.
-fn bridge_custom_upstream_optin() -> bool {
-    if std::env::var("LEAN_CTX_ALLOW_CUSTOM_UPSTREAM").is_err() {
-        return false;
-    }
-    let cfg = crate::core::config::Config::load();
-    if cfg.proxy.allow_custom_upstream == Some(true) || !cfg.proxy.has_custom_host_upstream() {
-        return false;
-    }
-    match crate::core::config::Config::update_global(|c| {
-        c.proxy.allow_custom_upstream = Some(true);
-    }) {
-        Ok(_) => {
-            println!(
-                "  \x1b[32m✓\x1b[0m Custom upstream opt-in persisted: [proxy] allow_custom_upstream = true"
-            );
-            println!(
-                "  \x1b[2m  (so the managed proxy honors your custom upstream — the env var never reaches it, #590)\x1b[0m"
-            );
-            true
-        }
-        Err(e) => {
-            tracing::warn!("could not persist allow_custom_upstream: {e}");
-            false
-        }
-    }
-}
-
-/// Pure decision for [`bridge_codex_chatgpt_optin`]: persist the env opt-in only
-/// when it is present in the shell and `[proxy] codex_chatgpt_proxy` has not
-/// already enabled it (idempotent).
-pub(super) fn should_persist_codex_chatgpt_optin(env_present: bool, current: Option<bool>) -> bool {
-    env_present && current != Some(true)
-}
-
-/// Bridges the shell's `LEAN_CTX_CODEX_CHATGPT_PROXY` opt-in into `config.toml` so
-/// the managed proxy and every env-less setup pass (the LaunchAgent / systemd
-/// proxy, the lean-ctx daemon, editor integrations, `lean-ctx init`) honor it —
-/// none of them inherit the shell env (#449 / #590). Without this the foreground
-/// `proxy enable` writes Codex's local `chatgpt_base_url`, but the next env-less
-/// `install_proxy_env` pass sees the opt-in as `false` and strips it straight back
-/// to native, so a ChatGPT subscription never actually routes through the proxy
-/// (#603 / #616).
-///
-/// No-op unless the env opt-in is present and the config flag is not already
-/// `true` (idempotent). Returns true when it persisted the flag.
-fn bridge_codex_chatgpt_optin() -> bool {
-    let env_present = std::env::var("LEAN_CTX_CODEX_CHATGPT_PROXY").is_ok();
-    let current = crate::core::config::Config::load()
-        .proxy
-        .codex_chatgpt_proxy;
-    if !should_persist_codex_chatgpt_optin(env_present, current) {
-        return false;
-    }
-    match crate::core::config::Config::update_global(|c| {
-        c.proxy.codex_chatgpt_proxy = Some(true);
-    }) {
-        Ok(_) => {
-            println!(
-                "  \x1b[32m✓\x1b[0m Codex ChatGPT proxy opt-in persisted: [proxy] codex_chatgpt_proxy = true"
-            );
-            println!(
-                "  \x1b[2m  (so the managed proxy and every env-less setup pass route Codex through it — the shell env never reaches them, #603/#616)\x1b[0m"
-            );
-            true
-        }
-        Err(e) => {
-            tracing::warn!("could not persist codex_chatgpt_proxy: {e}");
-            false
-        }
-    }
-}
-
-/// Action selected by `proxy codex-chatgpt <arg>`. A bare/no-arg call reports
-/// status (read-only), never silently mutating state.
-#[derive(Debug, PartialEq, Eq)]
-pub(super) enum CodexChatgptAction {
-    On,
-    Off,
-    Status,
-    Unknown,
-}
-
-/// Pure arg → action mapping for `proxy codex-chatgpt`. `on/enable/true` and
-/// `off/disable/false` are accepted as synonyms; `status` or no arg reports state.
-pub(super) fn parse_codex_chatgpt_action(arg: Option<&str>) -> CodexChatgptAction {
-    match arg {
-        Some("on" | "enable" | "true") => CodexChatgptAction::On,
-        Some("off" | "disable" | "false") => CodexChatgptAction::Off,
-        Some("status") | None => CodexChatgptAction::Status,
-        Some(_) => CodexChatgptAction::Unknown,
-    }
-}
-
-/// `lean-ctx proxy codex-chatgpt on|off`: the durable, env-free switch for routing
-/// a Codex **ChatGPT-subscription** login through the proxy (#603/#616). It writes
-/// the opt-in straight to `config.toml` — the single source of truth the env-less
-/// managed proxy and every later setup pass read — then re-applies ONLY the Codex
-/// env so Codex's `chatgpt_base_url` is written (on) or stripped (off) right away.
-/// This is what fixes the trap where exporting `LEAN_CTX_CODEX_CHATGPT_PROXY` in a
-/// shell never reached the process that actually rewrote the Codex config.
-fn codex_chatgpt_set(on: bool, port: u16) {
-    if let Err(e) =
-        crate::core::config::Config::update_global(|c| c.proxy.codex_chatgpt_proxy = Some(on))
-    {
-        println!("\x1b[31m✗\x1b[0m Could not persist [proxy] codex_chatgpt_proxy: {e}");
-        return;
-    }
-    if on {
-        println!(
-            "\x1b[32m✓\x1b[0m Codex ChatGPT proxy routing \x1b[1menabled\x1b[0m: [proxy] codex_chatgpt_proxy = true"
-        );
-    } else {
-        println!(
-            "\x1b[32m✓\x1b[0m Codex ChatGPT proxy routing \x1b[1mdisabled\x1b[0m: [proxy] codex_chatgpt_proxy = false"
-        );
-    }
-
-    // Apply now: writes (on) or strips (off) Codex's top-level `chatgpt_base_url`.
-    let home = dirs::home_dir().unwrap_or_default();
-    crate::proxy_setup::install_codex_env(&home, port, false);
-
-    if on && !crate::proxy_setup::is_proxy_reachable(port) {
-        println!();
-        println!(
-            "  \x1b[33m⚠ Proxy not running on port {port}\x1b[0m — Codex can't route until it is up."
-        );
-        println!("    Start it:  lean-ctx proxy enable        (managed autostart service)");
-        println!("    or:        lean-ctx proxy start --port={port}");
-        println!(
-            "  \x1b[2mThe opt-in is saved, so setup writes Codex's chatgpt_base_url once the proxy is reachable.\x1b[0m"
-        );
-    }
-}
-
-/// `lean-ctx proxy codex-chatgpt status` (also the bare/no-arg form): report the
-/// resolved opt-in, its source (config vs env), whether the Codex config actually
-/// carries the proxy rail, and whether the proxy is reachable — so a user can see
-/// at a glance why Codex is or isn't routed.
-fn codex_chatgpt_status(port: u16) {
-    let cfg = crate::core::config::Config::load();
-    let effective = cfg.proxy.codex_chatgpt_proxy_enabled();
-    println!("Codex ChatGPT proxy routing:");
-    println!(
-        "  Effective: {}",
-        if effective {
-            "\x1b[32mon\x1b[0m"
-        } else {
-            "off"
-        }
-    );
-    match cfg.proxy.codex_chatgpt_proxy {
-        Some(true) => println!("  Config:    [proxy] codex_chatgpt_proxy = true"),
-        Some(false) => println!("  Config:    [proxy] codex_chatgpt_proxy = false"),
-        None => println!("  Config:    (unset → default off)"),
-    }
-    if let Ok(v) = std::env::var("LEAN_CTX_CODEX_CHATGPT_PROXY") {
-        println!("  Env:       LEAN_CTX_CODEX_CHATGPT_PROXY={v} (forces on for this process)");
-    }
-
-    let home = dirs::home_dir().unwrap_or_default();
-    let codex_cfg = crate::core::home::resolve_codex_dir()
-        .unwrap_or_else(|| home.join(".codex"))
-        .join("config.toml");
-    let routed = std::fs::read_to_string(&codex_cfg)
-        .is_ok_and(|c| c.contains("leanctx-chatgpt") || c.contains("chatgpt_base_url"));
-    println!(
-        "  Codex cfg: {}",
-        if routed {
-            "model_provider → leanctx-chatgpt (routed)"
-        } else {
-            "native (no proxy entry)"
-        }
-    );
-    println!(
-        "  Proxy:     {}",
-        if crate::proxy_setup::is_proxy_reachable(port) {
-            "running"
-        } else {
-            "not running"
-        }
-    );
-    if !effective {
-        println!();
-        println!("  Enable: lean-ctx proxy codex-chatgpt on");
     }
 }
 
@@ -415,7 +116,7 @@ pub(crate) fn cmd_proxy(rest: &[String]) {
         // `--help` anywhere must never execute the verb (GH #393).
         if wants_help(rest) {
             println!(
-                "Usage: lean-ctx proxy <start|stop|restart|status|enable|disable|cleanup|token|codex-chatgpt> [--port=4444]"
+                "Usage: lean-ctx proxy <start|stop|restart|status|enable|disable|cleanup|token> [--port=4444]"
             );
             println!();
             println!("Commands:");
@@ -431,9 +132,6 @@ pub(crate) fn cmd_proxy(rest: &[String]) {
             println!("  disable   Disable the proxy and restore the original endpoint");
             println!("  cleanup   Remove stale proxy URLs from AI tool configs");
             println!("  token     Print the current proxy Bearer token (for MCP/HTTP clients)");
-            println!(
-                "  codex-chatgpt <on|off|status>  Route a Codex ChatGPT-subscription login through the proxy"
-            );
             return;
         }
         let sub = rest.first().map_or("help", std::string::String::as_str);
@@ -470,18 +168,10 @@ pub(crate) fn cmd_proxy(rest: &[String]) {
             "restart" => {
                 let port = parse_proxy_port(rest);
                 if crate::proxy_autostart::is_installed() {
-                    // #590: persist the shell's custom-upstream opt-in to config
-                    // before the restart so the re-read picks up the custom host.
-                    bridge_custom_upstream_optin();
-                    // #603/#616: likewise persist the Codex ChatGPT-subscription
-                    // opt-in so the restarted service keeps routing Codex through
-                    // the proxy (the service never sees the shell env var).
-                    bridge_codex_chatgpt_optin();
                     // Managed service (LaunchAgent / systemd): a clean bootout +
                     // bootstrap restarts the proxy so it re-reads config.toml. It
-                    // deliberately drops any `LEAN_CTX_*_UPSTREAM` env override
-                    // (the service context has none), making config.toml the
-                    // single source of truth for the long-lived proxy (#449).
+                    // makes config.toml the single source of truth for the
+                    // long-lived proxy (#449).
                     crate::proxy_autostart::stop();
                     std::thread::sleep(std::time::Duration::from_millis(700));
                     if crate::proxy_autostart::start_on_port(port) {
@@ -507,7 +197,7 @@ pub(crate) fn cmd_proxy(rest: &[String]) {
                 let port = parse_proxy_port(rest);
                 let cfg = crate::core::config::Config::load();
                 println!("lean-ctx proxy:");
-                match cfg.proxy_enabled {
+                match cfg.proxy.enabled {
                     Some(true) => println!("  Config:  enabled"),
                     Some(false) => println!("  Config:  disabled"),
                     None => println!("  Config:  undecided (not yet configured)"),
@@ -539,7 +229,6 @@ pub(crate) fn cmd_proxy(rest: &[String]) {
                                 "  Compression: {}%",
                                 v["compression_ratio_pct"].as_str().unwrap_or("0.0")
                             );
-                            print_verified_savings(&v);
                             print_compression_by_upstream(&v);
                             print_live_upstreams_and_drift(&v, &cfg);
                         }
@@ -554,7 +243,7 @@ pub(crate) fn cmd_proxy(rest: &[String]) {
                 } else {
                     println!("  Process: not running");
                 }
-                if cfg.proxy_enabled == Some(false) || cfg.proxy_enabled.is_none() {
+                if cfg.proxy.enabled == Some(false) || cfg.proxy.enabled.is_none() {
                     println!();
                     println!("  Enable: lean-ctx proxy enable");
 
@@ -575,21 +264,10 @@ pub(crate) fn cmd_proxy(rest: &[String]) {
             "enable" => {
                 let force = rest.iter().any(|a| a == "--force");
                 if let Err(e) =
-                    crate::core::config::Config::update_global(|c| c.proxy_enabled = Some(true))
+                    crate::core::config::Config::update_global(|c| c.proxy.enabled = Some(true))
                 {
-                    tracing::warn!("could not persist proxy_enabled: {e}");
+                    tracing::warn!("could not persist proxy.enabled: {e}");
                 }
-
-                // #590: persist the shell's custom-upstream opt-in to config BEFORE
-                // the managed proxy starts, so it reads the flag on startup (the
-                // service never inherits the shell's env var).
-                bridge_custom_upstream_optin();
-                // #603/#616: same hazard for the Codex ChatGPT-subscription opt-in.
-                // The env var only reaches this foreground process; persist it so
-                // the managed proxy and every later env-less `install_proxy_env`
-                // pass route Codex through the proxy instead of stripping its
-                // `chatgpt_base_url` back to native.
-                bridge_codex_chatgpt_optin();
 
                 let port = crate::proxy_setup::default_port();
                 if !crate::proxy_autostart::install(port, false) {
@@ -608,9 +286,9 @@ pub(crate) fn cmd_proxy(rest: &[String]) {
             }
             "disable" => {
                 if let Err(e) =
-                    crate::core::config::Config::update_global(|c| c.proxy_enabled = Some(false))
+                    crate::core::config::Config::update_global(|c| c.proxy.enabled = Some(false))
                 {
-                    tracing::warn!("could not persist proxy_enabled: {e}");
+                    tracing::warn!("could not persist proxy.enabled: {e}");
                 }
 
                 crate::proxy_autostart::uninstall(false);
@@ -630,27 +308,6 @@ pub(crate) fn cmd_proxy(rest: &[String]) {
                     println!("  No stale proxy URLs found. Nothing to clean up.");
                 }
             }
-            "codex-chatgpt" => {
-                let port = parse_proxy_port(rest);
-                // Skip the verb itself and any `--port=`/`-p=` flag to find the action.
-                let action_arg = rest
-                    .get(1..)
-                    .unwrap_or_default()
-                    .iter()
-                    .find(|a| !a.starts_with("--port=") && !a.starts_with("-p="))
-                    .map(std::string::String::as_str);
-                match parse_codex_chatgpt_action(action_arg) {
-                    CodexChatgptAction::On => codex_chatgpt_set(true, port),
-                    CodexChatgptAction::Off => codex_chatgpt_set(false, port),
-                    CodexChatgptAction::Status => codex_chatgpt_status(port),
-                    CodexChatgptAction::Unknown => {
-                        println!("Unknown argument '{}'.", action_arg.unwrap_or(""));
-                        println!(
-                            "Usage: lean-ctx proxy codex-chatgpt <on|off|status> [--port=4444]"
-                        );
-                    }
-                }
-            }
             "token" => {
                 let token = crate::core::session_token::resolve_proxy_token("LEAN_CTX_PROXY_TOKEN");
                 let quiet = rest.iter().any(|a| a == "--quiet" || a == "-q");
@@ -662,7 +319,7 @@ pub(crate) fn cmd_proxy(rest: &[String]) {
             }
             _ => {
                 println!(
-                    "Usage: lean-ctx proxy <start|stop|restart|status|enable|disable|cleanup|token|codex-chatgpt> [--port=4444]"
+                    "Usage: lean-ctx proxy <start|stop|restart|status|enable|disable|cleanup|token> [--port=4444]"
                 );
             }
         }

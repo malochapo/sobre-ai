@@ -1,0 +1,115 @@
+use lean_ctx::core::cache::SessionCache;
+use lean_ctx::tools::CrpMode;
+use lean_ctx::tools::autonomy::{
+    AutonomyState, is_session_overview_call, maybe_auto_dedup, session_lifecycle_pre_hook,
+};
+use std::sync::OnceLock;
+use std::sync::atomic::Ordering;
+
+fn init_test_data_dir() {
+    static DIR: OnceLock<tempfile::TempDir> = OnceLock::new();
+    let dir = DIR.get_or_init(|| tempfile::tempdir().expect("tempdir"));
+    // SAFETY: the project's test suite always runs with `--test-threads=1`
+    // (env-race legacy — see .github/workflows/ci.yml), so no other test in
+    // this binary touches the environment concurrently.
+    unsafe { std::env::set_var("LEAN_CTX_DATA_DIR", dir.path()) };
+}
+
+fn make_state() -> AutonomyState {
+    init_test_data_dir();
+    AutonomyState::new()
+}
+
+#[test]
+fn session_lifecycle_fires_once() {
+    let state = make_state();
+    let mut cache = SessionCache::new();
+
+    let _first = session_lifecycle_pre_hook(
+        &state,
+        &mut cache,
+        Some("fix auth bug"),
+        Some("/tmp/test-project"),
+        CrpMode::Tdd,
+    );
+
+    let second = session_lifecycle_pre_hook(
+        &state,
+        &mut cache,
+        Some("fix auth bug"),
+        Some("/tmp/test-project"),
+        CrpMode::Tdd,
+    );
+
+    assert!(
+        state.session_initialized.load(Ordering::SeqCst),
+        "flag must be set after first call"
+    );
+    assert!(second.is_none(), "second call must return None");
+}
+
+#[test]
+fn session_lifecycle_skips_without_project_root() {
+    let state = make_state();
+    let mut cache = SessionCache::new();
+
+    let result =
+        session_lifecycle_pre_hook(&state, &mut cache, Some("fix auth bug"), None, CrpMode::Tdd);
+
+    assert!(result.is_none(), "must skip when project_root is None");
+    assert!(
+        !state.session_initialized.load(Ordering::SeqCst),
+        "flag must not be set without project_root"
+    );
+}
+
+#[test]
+fn session_overview_call_is_compose_without_task() {
+    let no_args = serde_json::Map::new();
+    let mut with_task = serde_json::Map::new();
+    with_task.insert("task".into(), serde_json::json!("auth flow"));
+    let mut empty_task = serde_json::Map::new();
+    empty_task.insert("task".into(), serde_json::json!(""));
+
+    assert!(is_session_overview_call("ctx_compose", None));
+    assert!(is_session_overview_call("ctx_compose", Some(&no_args)));
+    // ctx_compose routes any string task, even an empty one, to retrieval.
+    assert!(!is_session_overview_call("ctx_compose", Some(&with_task)));
+    assert!(!is_session_overview_call("ctx_compose", Some(&empty_task)));
+    assert!(!is_session_overview_call("ctx_read", None));
+}
+
+#[test]
+fn auto_dedup_fires_at_threshold() {
+    let state = make_state();
+    let mut cache = SessionCache::new();
+
+    for i in 0..8 {
+        let path = format!("test_file_{i}.rs");
+        let content = format!("fn func_{i}() {{ println!(\"hello {i}\"); }}");
+        cache.store(&path, &content);
+    }
+
+    maybe_auto_dedup(&state, &mut cache);
+    assert!(
+        state.dedup_applied.load(Ordering::SeqCst),
+        "dedup must be applied at threshold"
+    );
+}
+
+#[test]
+fn auto_dedup_skips_below_threshold() {
+    let state = make_state();
+    let mut cache = SessionCache::new();
+
+    for i in 0..3 {
+        let path = format!("test_file_{i}.rs");
+        cache.store(&path, &format!("content {i}"));
+    }
+
+    maybe_auto_dedup(&state, &mut cache);
+    assert!(
+        !state.dedup_applied.load(Ordering::SeqCst),
+        "dedup must NOT be applied below threshold"
+    );
+}

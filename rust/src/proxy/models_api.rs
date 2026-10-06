@@ -31,7 +31,7 @@ const CATALOG_CREATED_UNIX: i64 = 1_735_689_600;
 const CATALOG_CREATED_RFC3339: &str = "2025-01-01T00:00:00Z";
 
 /// `GET /v1/models` (and bare `/models`, normalized before routing).
-pub async fn handler(req: axum::extract::Request) -> Response {
+pub(crate) async fn handler(req: axum::extract::Request) -> Response {
     let rules = crate::core::config::Config::load().proxy.routing.clone();
     let body = if wants_anthropic_shape(&req) {
         anthropic_model_list(&rules)
@@ -112,7 +112,6 @@ mod tests {
 
     fn rules(aliases: &[(&str, &str)]) -> RoutingRules {
         RoutingRules {
-            enabled: Some(true),
             aliases: aliases
                 .iter()
                 .map(|(k, v)| (k.to_string(), v.to_string()))
@@ -162,13 +161,10 @@ mod tests {
 
     #[test]
     fn inactive_routing_yields_an_honest_empty_list() {
-        // enabled but no rules → inactive; disabled with rules → inactive.
+        // No rules → inactive.
         let empty = rules(&[]);
         assert_eq!(openai_model_list(&empty)["data"], serde_json::json!([]));
-        let mut off = rules(&[("a", "b:c")]);
-        off.enabled = Some(false);
-        assert_eq!(openai_model_list(&off)["data"], serde_json::json!([]));
-        let anth = anthropic_model_list(&off);
+        let anth = anthropic_model_list(&empty);
         assert_eq!(anth["data"], serde_json::json!([]));
         assert_eq!(anth["first_id"], serde_json::Value::Null);
     }

@@ -2,15 +2,7 @@ fn truncate_at_char_boundary(s: &str, max: usize) -> &str {
     &s[..s.floor_char_boundary(max)]
 }
 
-pub fn compress_with_cmd(command: &str, output: &str) -> Option<String> {
-    let cfg = crate::core::config::Config::load();
-    if !cfg.passthrough_urls.is_empty() {
-        for url in &cfg.passthrough_urls {
-            if command.contains(url.as_str()) {
-                return None;
-            }
-        }
-    }
+pub fn compress_with_cmd(_command: &str, output: &str) -> Option<String> {
     compress(output)
 }
 

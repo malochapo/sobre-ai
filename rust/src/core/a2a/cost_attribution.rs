@@ -65,12 +65,6 @@ pub struct SessionCostSnapshot {
     pub duration_secs: u64,
 }
 
-pub fn estimate_cost(model_key: Option<&str>, input: u64, output: u64, cached: u64) -> f64 {
-    let pricing = crate::core::gain::model_pricing::ModelPricing::load();
-    let quote = pricing.quote(model_key);
-    quote.cost.estimate_usd(input, output, 0, cached)
-}
-
 static COST_BUFFER: Mutex<Option<CostStore>> = Mutex::new(None);
 
 impl CostStore {
@@ -186,37 +180,6 @@ impl CostStore {
         let cached: u64 = self.agents.values().map(|a| a.total_cached_tokens).sum();
         (input, output, cached)
     }
-
-    pub fn add_session_snapshot(
-        &mut self,
-        agent_id: &str,
-        input: u64,
-        output: u64,
-        saved: u64,
-        duration_secs: u64,
-    ) {
-        let model_key = self
-            .agents
-            .get(agent_id)
-            .and_then(|a| a.model_key.as_deref())
-            .map(std::string::ToString::to_string);
-        let cost = estimate_cost(model_key.as_deref(), input, output, 0);
-        self.sessions.push(SessionCostSnapshot {
-            timestamp: Utc::now().to_rfc3339(),
-            agent_id: agent_id.to_string(),
-            model_key,
-            total_input: input,
-            total_output: output,
-            total_cached: 0,
-            total_saved: saved,
-            cost_usd: cost,
-            duration_secs,
-        });
-
-        if self.sessions.len() > 500 {
-            self.sessions.drain(0..self.sessions.len() - 500);
-        }
-    }
 }
 
 fn cost_store_path() -> Option<PathBuf> {
@@ -267,27 +230,6 @@ pub fn format_cost_report(store: &CostStore, limit: usize) -> String {
     lines.push(format!(
         "Total: {total_in} input + {total_out} output + {total_cached} cached tokens = ${total_cost:.4}"
     ));
-    if let Ok(m) = std::env::var("LEAN_CTX_MODEL").or_else(|_| std::env::var("LCTX_MODEL"))
-        && !m.trim().is_empty()
-    {
-        let pricing = crate::core::gain::model_pricing::ModelPricing::load();
-        let q = pricing.quote(Some(&m));
-        lines.push(format!(
-            "Pricing: model={} ({:?}) in=${:.2}/M out=${:.2}/M cacheR=${:.3}/M",
-            q.model_key,
-            q.match_kind,
-            q.cost.input_per_m,
-            q.cost.output_per_m,
-            q.cost.cache_read_per_m
-        ));
-        // Cached vs uncached input split (GL #573): cached tokens are
-        // billed at the cache-read rate, never at the input rate.
-        let uncached_cost = total_in as f64 / 1_000_000.0 * q.cost.input_per_m;
-        let cached_cost = total_cached as f64 / 1_000_000.0 * q.cost.cache_read_per_m;
-        lines.push(format!(
-                "Input split: uncached {total_in} tok = ${uncached_cost:.4} | cached {total_cached} tok = ${cached_cost:.4} (cache-read rate)"
-            ));
-    }
     lines.push(String::new());
 
     let top_agents = store.top_agents(limit);
@@ -339,12 +281,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn cost_estimation() {
-        let cost = estimate_cost(Some("fallback-blended"), 1000, 100, 500);
-        assert!(cost > 0.0);
-    }
-
-    #[test]
     fn record_and_query() {
         let mut store = CostStore::default();
         store.record_tool_call("agent-1", "mcp", "ctx_read", 5000, 200, 0);
@@ -374,13 +310,5 @@ mod tests {
         assert!(report.contains("Cost Attribution Report"));
         assert!(report.contains("agent-a"));
         assert!(report.contains("ctx_read"));
-    }
-
-    #[test]
-    fn session_snapshots() {
-        let mut store = CostStore::default();
-        store.add_session_snapshot("agent-a", 50000, 5000, 30000, 120);
-        assert_eq!(store.sessions.len(), 1);
-        assert!(store.sessions[0].cost_usd > 0.0);
     }
 }

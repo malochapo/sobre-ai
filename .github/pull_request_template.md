@@ -4,11 +4,8 @@ What does this PR change and why?
 
 ## Test plan
 
-- [ ] `cd rust && cargo check --all-targets`
-- [ ] `cd rust && cargo test` (the whole suite, not `--lib`; compare the failure
-      set against a baseline run on the commit you started from)
-- [ ] `cd rust && cargo clippy --all-targets --all-features -- -D warnings`
-- [ ] `cd rust && cargo fmt --check`
+- [ ] `scripts/preflight.sh full` (fmt, clippy, rustdoc, generated docs, file
+      size, then the whole test suite — the same checks CI runs)
 
 ## Notes for reviewers
 

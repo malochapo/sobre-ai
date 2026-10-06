@@ -16,7 +16,6 @@
 
 mod anchors;
 mod apply;
-mod metering;
 mod output;
 mod symbol;
 #[cfg(test)]
@@ -27,13 +26,16 @@ pub(crate) use symbol::{build_refactor_args, is_replace_symbol};
 
 use std::path::{Path, PathBuf};
 
+#[cfg(test)]
 use crate::core::cache::SessionCache;
 use crate::core::tokens::count_tokens;
 use crate::tools::edit_io::{
     default_backup_path, ensure_preimage_still_matches, read_preimage,
     write_atomic_bytes_with_permissions,
 };
-use crate::tools::impl_edit::{CacheEffect, apply_cache_effect, build_diff_evidence};
+#[cfg(test)]
+use crate::tools::impl_edit::apply_cache_effect;
+use crate::tools::impl_edit::{CacheEffect, build_diff_evidence};
 
 /// Parameters for an anchored patch: the target file and one or more anchored
 /// edit ops, plus optional guards/evidence (mirrors `EditParams` where it makes
@@ -64,6 +66,7 @@ pub fn parse_ops(
 
 /// Apply an anchored patch and the resulting cache effect in one shot (tests and
 /// in-process callers that hold the cache exclusively).
+#[cfg(test)]
 pub fn handle(cache: &mut SessionCache, params: &PatchParams) -> String {
     let last_mode = cache
         .get(&params.path)
@@ -150,9 +153,6 @@ pub fn run_io(params: &PatchParams, _last_mode: &str) -> (String, CacheEffect) {
     let edits = match apply::resolve_ops(&lines, &params.ops) {
         Ok(e) => e,
         Err(apply::ResolveError::Conflict(misses)) => {
-            // Edit-efficiency channel (#1008): a stale-anchor CONFLICT is one
-            // extra self-heal round-trip — count it, never print it (#498).
-            crate::core::edit_metering::record_anchored_conflict();
             return (
                 output::render_conflict(file_path, &lines, &misses),
                 CacheEffect::None,
@@ -162,10 +162,6 @@ pub fn run_io(params: &PatchParams, _last_mode: &str) -> (String, CacheEffect) {
             return (format!("ERROR: {msg}"), CacheEffect::None);
         }
     };
-
-    // Preimage math for the edit-efficiency channel — must run before the
-    // splice consumes the old span text.
-    let avoided_tokens = metering::avoided_output_tokens(&lines, &params.ops);
 
     let n_edits = edits.len();
     let lines_before = lines.len();
@@ -226,9 +222,6 @@ pub fn run_io(params: &PatchParams, _last_mode: &str) -> (String, CacheEffect) {
     if let Ok(mut bt) = crate::core::bounce_tracker::global().lock() {
         bt.record_edit(file_path);
     }
-
-    // Edit-efficiency channel (#1008): the span the model did NOT re-emit.
-    crate::core::edit_metering::record_anchored_success(n_edits as u64, avoided_tokens);
 
     let mut out = render_success(
         params,

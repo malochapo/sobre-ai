@@ -188,15 +188,8 @@ fn evict_stale(store: &mut CliCacheStore, now: u64) {
     }
 }
 
-pub fn format_hit(entry: &CliCacheEntry, file_ref: &str, short_path: &str) -> String {
-    if crate::core::protocol::savings_footer_visible() {
-        format!(
-            "{file_ref} cached {short_path} [{}L {}t] (read #{})",
-            entry.line_count, entry.original_tokens, entry.read_count
-        )
-    } else {
-        format!("cached {short_path} [{}L]", entry.line_count)
-    }
+pub fn format_hit(entry: &CliCacheEntry, short_path: &str) -> String {
+    format!("cached {short_path} [{}L]", entry.line_count)
 }
 
 #[cfg(test)]
@@ -265,7 +258,7 @@ mod tests {
 
     #[test]
     fn format_hit_output() {
-        let _lock = crate::core::data_dir::test_env_lock();
+        let _iso = crate::core::data_dir::isolated_data_dir();
         let entry = CliCacheEntry {
             path: "/test.rs".into(),
             hash: "abc".into(),
@@ -274,22 +267,12 @@ mod tests {
             timestamp: now_secs(),
             read_count: 3,
         };
-        crate::test_env::set_var("LEAN_CTX_SAVINGS_FOOTER", "never");
-        let output = format_hit(&entry, "F1", "test.rs");
+        let output = format_hit(&entry, "test.rs");
         assert!(output.contains("cached test.rs"));
         assert!(output.contains("42L"));
         assert!(!output.contains("F1"));
         assert!(!output.contains("500t"));
         assert!(!output.contains("read #3"));
-        crate::test_env::remove_var("LEAN_CTX_SAVINGS_FOOTER");
-    }
-
-    #[test]
-    fn stats_returns_defaults_on_empty() {
-        let s = CliCacheStore::default();
-        assert_eq!(s.total_hits, 0);
-        assert_eq!(s.total_reads, 0);
-        assert!(s.entries.is_empty());
     }
 
     #[test]

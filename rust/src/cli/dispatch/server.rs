@@ -17,18 +17,9 @@ pub(super) fn run_mcp_server() -> Result<()> {
 
     crate::core::startup_guard::crash_loop_backoff(crate::core::startup_guard::MCP_PROCESS_NAME);
 
-    // Commit to the XDG layout (and drain any residual ~/.lean-ctx) once per
-    // server start, so a stray marker can never re-collapse config/data/state/
-    // cache while the server runs (GL #623). Every other process honors the pin
-    // through the same resolver once it exists. Stays synchronous: everything
-    // below resolves paths through this pin, and it is a no-op once pinned.
-    crate::core::layout_pin::heal();
-
     // Concurrency hardening:
     // - Smooths "thundering herd" MCP startups (multiple agent sessions).
     // - Limits Tokio worker/blocking threads to avoid host degradation.
-    // - LEAN_CTX_WORKER_THREADS overrides the default for environments
-    //   with many concurrent subagents (e.g. parallel review pipelines).
     let startup_lock = crate::core::startup_guard::try_acquire_lock(
         "mcp-startup",
         std::time::Duration::from_secs(3),
@@ -43,23 +34,17 @@ pub(super) fn run_mcp_server() -> Result<()> {
     // on rayon, whose global pool otherwise grabs *every* core — so a fleet of
     // concurrent sessions still spikes the host on startup (#460). Resolve the
     // cap in three tiers:
-    //   1. an explicit `LEANCTX_INDEX_THREADS` / config value always wins;
-    //   2. otherwise, if other lean-ctx processes are running, split the cores
-    //      fairly across the fleet so N sessions use ~one core-count of index
-    //      work between them instead of N × all-cores;
-    //   3. a lone session keeps rayon's all-cores default untouched (0 = no cap).
+    //   1. if other lean-ctx processes are running, split the cores fairly
+    //      across the fleet so N sessions use ~one core-count of index work
+    //      between them instead of N × all-cores;
+    //   2. a lone session keeps rayon's all-cores default untouched (0 = no cap).
     let index_threads = {
-        let configured = crate::core::config::Config::load().max_index_threads_effective();
-        if configured > 0 {
-            configured
+        // `find_pids_by_name` excludes us, so +1 counts this process too.
+        let concurrent = crate::ipc::process::find_pids_by_name("lean-ctx").len() + 1;
+        if concurrent > 1 {
+            herd_aware_index_threads(parallelism, concurrent)
         } else {
-            // `find_pids_by_name` excludes us, so +1 counts this process too.
-            let concurrent = crate::ipc::process::find_pids_by_name("lean-ctx").len() + 1;
-            if concurrent > 1 {
-                herd_aware_index_threads(parallelism, concurrent)
-            } else {
-                0
-            }
+            0
         }
     };
     if index_threads > 0 {
@@ -79,7 +64,6 @@ pub(super) fn run_mcp_server() -> Result<()> {
 
     let result = rt.block_on(async {
         core::logging::init_mcp_logging();
-        core::protocol::set_mcp_context(true);
 
         // Activate the plugin registry once per server process, then announce the
         // session. `notify` is a no-op unless a plugin listens for the hook.
@@ -165,7 +149,6 @@ pub(super) fn run_mcp_server() -> Result<()> {
         // Single source of truth for the buffered-telemetry flush set, shared
         // with the CLI tool arms and the parent watchdog so they can't drift (#550).
         core::tool_lifecycle::flush_all();
-        core::efficacy::capture();
 
         Ok(())
     });
@@ -309,10 +292,7 @@ fn spawn_parent_watchdog() {
 }
 
 pub(super) fn resolve_worker_threads(parallelism: usize) -> usize {
-    std::env::var("LEAN_CTX_WORKER_THREADS")
-        .ok()
-        .and_then(|v| v.parse::<usize>().ok())
-        .unwrap_or_else(|| parallelism.clamp(1, 4))
+    parallelism.clamp(1, 4)
 }
 
 /// Herd-aware default for the rayon index-build thread cap when the operator

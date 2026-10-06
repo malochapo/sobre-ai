@@ -6,7 +6,6 @@ mod deprecations;
 mod fix;
 mod integrations;
 mod lint_context;
-mod migrate;
 mod overhead;
 mod report;
 mod workspace_scope;
@@ -15,17 +14,6 @@ mod workspace_scope;
 use checks::*;
 #[allow(clippy::wildcard_imports)]
 use common::*;
-
-pub use report::{HealthCheck, HealthLevel, HealthReport, health_report};
-
-/// Run `doctor --fix` and return the structured `SetupReport` without printing
-/// anything — the in-process entry point for the dashboard fix route (#466).
-///
-/// # Errors
-/// Propagates any repair-step failure (e.g. an unwritable data directory).
-pub fn run_fix_report() -> Result<crate::core::setup_report::SetupReport, String> {
-    fix::fix_report()
-}
 
 pub(super) const GREEN: &str = "\x1b[32m";
 
@@ -186,76 +174,9 @@ pub fn run() -> u32 {
     };
     board.check(&stats_outcome);
 
-    let split_dirs = crate::core::data_dir::all_data_dirs_with_stats();
-    if split_dirs.len() >= 2 {
-        let dirs_str = split_dirs
-            .iter()
-            .map(|d| d.display().to_string())
-            .collect::<Vec<_>>()
-            .join(", ");
-        board.check(&Outcome {
-            ok: false,
-            line: format!(
-                "{BOLD}data dir split{RST}  {RED}stats.json found in {count} locations{RST}: {dirs_str}  {DIM}(run: lean-ctx doctor --fix to merge){RST}",
-                count = split_dirs.len(),
-            ),
-        });
-    }
-
-    // XDG layout (GH #408): a legacy/mixed single-dir install mixes config with
-    // data/state/cache, which blocks a read-only config sandbox. Scored as a
-    // failure while present (#433) — `doctor --fix` splits it into the four typed
-    // XDG dirs, after which this check disappears.
-    if let Some((src, n)) = crate::core::xdg_migrate::pending() {
-        board.check(&Outcome {
-            ok: false,
-            line: format!(
-                "{BOLD}XDG layout{RST}  {YELLOW}{n} item(s) in single dir{RST}  {DIM}{}{RST}  {DIM}(run: lean-ctx doctor --fix to split into config/data/state/cache){RST}",
-                src.display()
-            ),
-        });
-    }
-
-    // #594: a `config.toml` stranded in the data dir means the MCP server (an
-    // older `LEAN_CTX_DATA_DIR` env collapsed its layout) and the CLI were
-    // reading *different* config. Flag it; `lean-ctx init`/`update` and
-    // `doctor --fix` relocate it to the config dir so both agree again.
-    if let Some(stray) = crate::core::config_heal::pending() {
-        board.check(&Outcome {
-            ok: false,
-            line: format!(
-                "{BOLD}config location{RST}  {YELLOW}stray config.toml in the data dir{RST}  {DIM}{}{RST}  {DIM}(run: lean-ctx doctor --fix to unify CLI + MCP){RST}",
-                stray.display()
-            ),
-        });
-    }
-
-    // Layout commitment (GL #623): a pinned XDG install can no longer be
-    // hijacked by a stray ~/.lean-ctx. Surface the mode and flag a residual dir
-    // (heal reclaims it on the next start / `doctor --fix`).
-    {
-        let pinned = crate::core::layout_pin::is_xdg_pinned();
-        let residual = crate::core::xdg_migrate::residual_legacy_present();
-        let line = if pinned && residual {
-            format!(
-                "{BOLD}layout{RST}  {GREEN}xdg-pinned{RST}  {YELLOW}residual ~/.lean-ctx present{RST}  {DIM}(auto-reclaimed on next start){RST}"
-            )
-        } else if pinned {
-            format!(
-                "{BOLD}layout{RST}  {GREEN}xdg-pinned{RST}  {DIM}(~/.lean-ctx can no longer hijack this install){RST}"
-            )
-        } else {
-            format!(
-                "{BOLD}layout{RST}  {WHITE}single-dir / legacy{RST}  {DIM}(run: lean-ctx doctor --fix to commit to XDG){RST}"
-            )
-        };
-        board.check(&Outcome { ok: true, line });
-    }
-
     // 5) config.toml (missing is OK). It lives in the CONFIG dir
-    // ($XDG_CONFIG_HOME/lean-ctx after a split), not the data dir — resolve it
-    // through the same path as the loader so the report matches reality
-    // post-migration instead of pointing at the old location (#435).
+    // ($XDG_CONFIG_HOME/lean-ctx), resolved through Config::path() to match
+    // the loader's logic (#435).
     let config_path = crate::core::config::Config::path();
     let config_outcome = match &config_path {
         Some(p) => match std::fs::metadata(p) {
@@ -288,11 +209,6 @@ pub fn run() -> u32 {
     };
     board.check(&config_outcome);
 
-    // 5a2) #594: CLI<->MCP config parity — warn if any editor MCP entry still
-    // pins a stale LEAN_CTX_DATA_DIR (which would make that editor's MCP server
-    // read a different config.toml than this CLI), and print the resolved path.
-    board.check(&config_parity_outcome());
-
     // 5b) Shell gate (effective runtime view + silent-parse-error trap, #341)
     let gate_outcome = shell_gate_outcome();
     board.check(&gate_outcome);
@@ -300,10 +216,6 @@ pub fn run() -> u32 {
     // 5b2) Path jail (effective state + dead allow_paths entries, GH #392)
     let path_jail = path_jail_outcome();
     board.check(&path_jail);
-
-    // 5b3) Workspace trust for project-local .lean-ctx.toml (security audit #4)
-    let workspace_trust = workspace_trust_outcome();
-    board.check(&workspace_trust);
 
     // 5b3b) Secret/.env redaction — the exfiltration-defense plane, independent
     // of the jail + shell gating above (#507).
@@ -328,10 +240,6 @@ pub fn run() -> u32 {
     let passthrough_outcome = compact_format_passthrough_outcome();
     board.check(&passthrough_outcome);
 
-    // 5d) IDE permission inheritance (mirror host IDE bash/rm rules onto ctx_*)
-    let perm_inherit_outcome = permission_inheritance_outcome();
-    board.check(&perm_inherit_outcome);
-
     // 6) Proxy upstreams
     let proxy_outcome = proxy_upstream_outcome();
     board.check(&proxy_outcome);
@@ -341,7 +249,7 @@ pub fn run() -> u32 {
     board.check(&aliases);
 
     // 7b) Agent aliases opt-out
-    let agent_aliases = skip_agent_aliases_outcome();
+    let agent_aliases = agent_aliases_outcome();
     board.check(&agent_aliases);
 
     // 8) MCP
@@ -377,16 +285,6 @@ pub fn run() -> u32 {
         }
     }
 
-    // Providers (advisory — presence/health varies per environment, not scored)
-    let provider_outcome = provider_outcome();
-    board.info(&provider_outcome);
-
-    // MCP Bridges (advisory)
-    let bridge_outcomes = mcp_bridge_outcomes();
-    for bridge_check in &bridge_outcomes {
-        board.info(bridge_check);
-    }
-
     // Plan mode (advisory)
     let plan_outcomes = plan_mode_outcomes();
     for plan_check in &plan_outcomes {
@@ -401,12 +299,6 @@ pub fn run() -> u32 {
     let docker_outcomes = docker_env_outcomes();
     for docker_check in &docker_outcomes {
         board.check(docker_check);
-    }
-
-    // 11) Pi Coding Agent (optional)
-    let pi = pi_outcome();
-    if let Some(ref pi_check) = pi {
-        board.check(pi_check);
     }
 
     // 12) Build integrity (canary / origin check)
@@ -428,20 +320,10 @@ pub fn run() -> u32 {
         line: integrity_line,
     });
 
-    // 13) Cache safety
-    let cache_safety = cache_safety_outcome();
-    board.check(&cache_safety);
-
     // 14) Claude Code instruction truncation guard
     let claude_truncation = claude_truncation_outcome();
     if let Some(ref ct) = claude_truncation {
         board.check(ct);
-    }
-
-    // 14a) CodeBuddy instruction truncation guard
-    let codebuddy_truncation = codebuddy_truncation_outcome();
-    if let Some(ref cbt) = codebuddy_truncation {
-        board.check(cbt);
     }
 
     // 15) BM25 cache health
@@ -464,13 +346,9 @@ pub fn run() -> u32 {
     let archive_footprint = archive_footprint_outcome();
     board.check(&archive_footprint);
 
-    // 16) Memory profile
-    let mem_profile = memory_profile_outcome();
-    board.check(&mem_profile);
-
-    // 17) Memory cleanup
-    let mem_cleanup = memory_cleanup_outcome();
-    board.check(&mem_cleanup);
+    // 16) Memory
+    let mem = memory_outcome();
+    board.check(&mem);
 
     // 18) RAM Guardian
     let ram_outcome = ram_guardian_outcome();
@@ -510,7 +388,7 @@ pub fn run() -> u32 {
         board.check(check);
     }
 
-    // 22) Deprecation register (CONTRACTS.md policy, GL #394): warn about
+    // 22) Deprecation register (GL #394): warn about
     // every surface this build deprecates, with replacement and removal floor.
     let deprecation_check = deprecations::deprecations_outcome();
     board.check(&deprecation_check);
@@ -527,8 +405,7 @@ pub fn run() -> u32 {
     }
 
     // Shadow mode status
-    let cfg = crate::core::config::Config::load();
-    let shadow_line = if cfg.shadow_mode {
+    let shadow_line = if true {
         format!(
             "{BOLD}Shadow mode{RST}  {GREEN}active{RST}  {DIM}(native tools denied → ctx_* mandatory){RST}"
         )
@@ -588,11 +465,6 @@ pub fn run() -> u32 {
     needs_attention
 }
 
-pub fn run_compact() {
-    let (passed, total) = compact_score();
-    print_compact_status(passed, total);
-}
-
 pub fn run_cli(args: &[String]) -> i32 {
     let (sub, rest) = match args.first().map(String::as_str) {
         Some("integrations") => ("integrations", &args[1..]),
@@ -604,21 +476,19 @@ pub fn run_cli(args: &[String]) -> i32 {
     let fix = rest.iter().any(|a| a == "--fix");
     let json = rest.iter().any(|a| a == "--json");
     let gate = rest.iter().any(|a| a == "--gate");
-    let migrate_check = rest.iter().any(|a| a == "--migrate-check");
     let help = rest.iter().any(|a| a == "--help" || a == "-h");
 
     if help {
         println!("Usage:");
         println!("  lean-ctx doctor");
         println!(
-            "  lean-ctx doctor overhead [--json] [--gate]   Fixed context cost per session (--gate: non-zero exit when over [context] budget_tokens)"
+            "  lean-ctx doctor overhead [--json] [--gate]   Fixed context cost per session (--gate: non-zero exit when over the 8000-token budget)"
         );
         println!(
             "  lean-ctx doctor lint-context [--json]   Lint injected context for low-signal/dup lines"
         );
         println!("  lean-ctx doctor integrations [--json]");
         println!("  lean-ctx doctor --fix [--json]");
-        println!("  lean-ctx doctor --migrate-check [--json]");
         return 0;
     }
 
@@ -628,10 +498,6 @@ pub fn run_cli(args: &[String]) -> i32 {
 
     if sub == "lint-context" {
         return lint_context::run_lint_context(json);
-    }
-
-    if migrate_check {
-        return migrate::run_migrate_check(json);
     }
 
     if sub == "integrations" {
@@ -698,32 +564,18 @@ pub(super) fn print_compact_status(passed: u32, total: u32) {
 mod tests {
     use super::is_active_shell_impl;
 
-    // Mirrors the inline classification in `checks::capacity_warnings`: a store at
-    // or below its cap is at most a WARN (healthy, eviction keeps it there); only
-    // a store *over* cap is CRIT (eviction is not keeping up).
-    fn make_capacity_check(name: &str, current: usize, limit: usize) -> Option<(bool, String)> {
-        if limit == 0 {
-            return None;
-        }
-        let pct = (current as f64 / limit as f64 * 100.0) as u32;
-        if pct > 100 {
-            Some((true, format!("{name}: {current}/{limit} ({pct}%)")))
-        } else if pct >= 80 {
-            Some((false, format!("{name}: {current}/{limit} ({pct}%)")))
-        } else {
-            None
-        }
-    }
-
+    // `checks::capacity_level`, the classification `capacity_warnings` applies
+    // to each store: at or below its cap is at most a WARN (healthy, eviction
+    // keeps it there); only a store *over* cap is CRIT.
     #[test]
     fn capacity_below_80_no_warning() {
-        assert!(make_capacity_check("facts", 100, 200).is_none());
-        assert!(make_capacity_check("facts", 159, 200).is_none());
+        assert!(super::checks::capacity_level("facts", 100, 200).is_none());
+        assert!(super::checks::capacity_level("facts", 159, 200).is_none());
     }
 
     #[test]
     fn capacity_at_80_yellow_warning() {
-        let result = make_capacity_check("facts", 160, 200);
+        let result = super::checks::capacity_level("facts", 160, 200);
         assert!(result.is_some());
         let (critical, msg) = result.unwrap();
         assert!(!critical);
@@ -733,7 +585,7 @@ mod tests {
 
     #[test]
     fn capacity_at_92_yellow_warning() {
-        let result = make_capacity_check("facts", 185, 200);
+        let result = super::checks::capacity_level("facts", 185, 200);
         assert!(result.is_some());
         let (critical, msg) = result.unwrap();
         assert!(!critical);
@@ -743,7 +595,7 @@ mod tests {
 
     #[test]
     fn capacity_at_95_is_warning_not_critical() {
-        let result = make_capacity_check("facts", 190, 200);
+        let result = super::checks::capacity_level("facts", 190, 200);
         assert!(result.is_some());
         let (critical, msg) = result.unwrap();
         assert!(!critical, "95% is full-but-healthy, not over cap");
@@ -754,7 +606,7 @@ mod tests {
     #[test]
     fn capacity_at_100_is_warning_not_critical() {
         // A store exactly at its cap is healthy — eviction keeps it there.
-        let result = make_capacity_check("facts", 200, 200);
+        let result = super::checks::capacity_level("facts", 200, 200);
         assert!(result.is_some());
         let (critical, _) = result.unwrap();
         assert!(!critical);
@@ -764,7 +616,7 @@ mod tests {
     fn capacity_over_100_is_critical() {
         // Genuinely over cap => eviction is not keeping up (regression guard for
         // the 206/200 "CRIT" that fired before lifecycle eviction was fixed).
-        let result = make_capacity_check("facts", 206, 200);
+        let result = super::checks::capacity_level("facts", 206, 200);
         assert!(result.is_some());
         let (critical, msg) = result.unwrap();
         assert!(critical);
@@ -774,40 +626,7 @@ mod tests {
 
     #[test]
     fn capacity_zero_limit_skipped() {
-        assert!(make_capacity_check("facts", 50, 0).is_none());
-    }
-
-    #[test]
-    fn bashrc_active_on_non_windows_when_shell_empty() {
-        assert!(is_active_shell_impl("~/.bashrc", "", false, false));
-    }
-
-    #[test]
-    fn bashrc_not_active_on_windows_when_shell_empty() {
-        assert!(!is_active_shell_impl("~/.bashrc", "", true, false));
-    }
-
-    #[test]
-    fn bashrc_active_when_shell_contains_bash_on_linux() {
-        assert!(is_active_shell_impl(
-            "~/.bashrc",
-            "/usr/bin/bash",
-            false,
-            false
-        ));
-    }
-
-    #[test]
-    fn bashrc_not_active_on_windows_even_with_bash_in_shell_env() {
-        // Issue #214: On Windows, Git Bash sets $SHELL globally to bash.exe.
-        // .bashrc should NOT be flagged on Windows unless actually inside bash.
-        crate::test_env::remove_var("BASH_VERSION");
-        assert!(!is_active_shell_impl(
-            "~/.bashrc",
-            "C:\\\\Program Files\\\\Git\\\\bin\\\\bash.exe",
-            true,
-            false,
-        ));
+        assert!(super::checks::capacity_level("facts", 50, 0).is_none());
     }
 
     #[test]
@@ -818,11 +637,6 @@ mod tests {
             true,
             true,
         ));
-    }
-
-    #[test]
-    fn bashrc_not_active_on_windows_powershell_with_empty_shell() {
-        assert!(!is_active_shell_impl("~/.bashrc", "", true, true));
     }
 
     #[test]

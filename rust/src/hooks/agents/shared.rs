@@ -26,8 +26,7 @@ pub(super) fn install_standard_hook_scripts(
 }
 
 pub(super) fn prepare_project_rules_path(global: bool, file_name: &str) -> Option<PathBuf> {
-    let scope = crate::core::config::Config::load().rules_scope_effective();
-    if global || scope == crate::core::config::RulesScope::Global {
+    if global {
         eprintln!(
             "Global mode: skipping project-local {file_name} (use without --global in a project)."
         );
@@ -54,7 +53,7 @@ pub(super) fn prepare_project_rules_path(global: bool, file_name: &str) -> Optio
 }
 
 /// Remove the first lean-ctx block delimited by `start`..`end` from `content`.
-/// Shared by the Claude/CodeBuddy CLAUDE.md/CODEBUDDY.md installers and `doctor`.
+/// Shared by the Claude CLAUDE.md installer and `doctor`.
 /// Markers match as whole (trimmed) lines only (GL #1158) — a prose mention of
 /// a marker must never trigger block surgery.
 pub(super) fn remove_block(content: &str, start: &str, end: &str) -> String {

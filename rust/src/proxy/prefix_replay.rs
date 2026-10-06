@@ -26,7 +26,7 @@ struct ConversationPrefix {
     count: usize,
 }
 
-pub struct AppendDelta {
+pub(crate) struct AppendDelta {
     pub prefix_bytes: Vec<u8>,
     pub delta_start: usize,
 }
@@ -45,7 +45,7 @@ fn message_hash(msg: &Value) -> u64 {
 }
 
 /// Conversation identity from system prompt + first user message.
-pub fn conversation_id(system: Option<&Value>, messages: &[Value]) -> u64 {
+pub(crate) fn conversation_id(system: Option<&Value>, messages: &[Value]) -> u64 {
     use std::hash::{Hash, Hasher};
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
     if let Some(sys) = system {
@@ -63,7 +63,7 @@ pub fn conversation_id(system: Option<&Value>, messages: &[Value]) -> u64 {
 
 /// Detect whether current messages are an append-only extension of the previous
 /// turn. Returns cached prefix bytes and delta start index if so.
-pub fn detect_append_only(conv_id: u64, messages: &[Value]) -> Option<AppendDelta> {
+pub(crate) fn detect_append_only(conv_id: u64, messages: &[Value]) -> Option<AppendDelta> {
     let guard = store().lock().ok()?;
     let prev = guard.get(&conv_id)?;
 
@@ -85,7 +85,12 @@ pub fn detect_append_only(conv_id: u64, messages: &[Value]) -> Option<AppendDelt
 }
 
 /// Record the forwarded prefix bytes after a successful upstream send.
-pub fn record_forwarded(conv_id: u64, forwarded: Vec<u8>, originals: &[Value], msg_count: usize) {
+pub(crate) fn record_forwarded(
+    conv_id: u64,
+    forwarded: Vec<u8>,
+    originals: &[Value],
+    msg_count: usize,
+) {
     let hashes: Vec<u64> = originals.iter().take(msg_count).map(message_hash).collect();
     let entry = ConversationPrefix {
         forwarded_bytes: forwarded,
@@ -106,7 +111,7 @@ pub fn record_forwarded(conv_id: u64, forwarded: Vec<u8>, originals: &[Value], m
 
 /// Overlay cached prefix bytes with fresh delta bytes, producing a valid JSON
 /// array where the prefix portion is byte-identical to the previous forward.
-pub fn overlay_prefix(prefix_bytes: &[u8], delta_messages: &[Value]) -> Option<Vec<u8>> {
+pub(crate) fn overlay_prefix(prefix_bytes: &[u8], delta_messages: &[Value]) -> Option<Vec<u8>> {
     if delta_messages.is_empty() {
         return Some(prefix_bytes.to_vec());
     }
@@ -129,7 +134,7 @@ pub fn overlay_prefix(prefix_bytes: &[u8], delta_messages: &[Value]) -> Option<V
 }
 
 #[cfg(test)]
-pub fn clear() {
+pub(crate) fn clear() {
     if let Ok(mut guard) = store().lock() {
         guard.clear();
     }

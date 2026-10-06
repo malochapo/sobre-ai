@@ -3,10 +3,9 @@
 Status: stable · EPIC 12.13 · Code: [`rust/src/core/extractors/`](../../rust/src/core/extractors/)
 
 The front-door that turns a non-code **document/data** file into clean LLM text
-plus **structure-aware** chunks. It complements `ingestion-v1` (which decides
-*whether* to index a path) by deciding *how* to read a given format. This is
-what lets the Context OS index a corpus of emails, spreadsheets, web pages, and
-reports — not just source code.
+plus **structure-aware** chunks: it decides *how* to read a given format, so
+emails, spreadsheets, web pages and reports can be indexed, not just source
+code.
 
 ## Dispatch
 
@@ -38,11 +37,8 @@ These are the same invariants the conformance suite (`conformance-v1`) enforces.
 ## Registry integration
 
 The text-based chunkers (`csv`, `json`, `eml`, `html`) register into the
-[`extension-registry-v1`](./capabilities-contract-v1.md) through the same public
-API extensions use, so they:
-
-* appear under `extensions.chunkers` in `GET /v1/capabilities`, and
-* are exercised by `lean-ctx conformance` on every build.
+extension registry (`rust/src/core/extension_registry.rs`), so they are
+exercised by `lean-ctx conformance` on every build.
 
 PDF is byte-only (binary input) and is reached via `extract()`, not the
 text→chunks registry.

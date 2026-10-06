@@ -61,14 +61,6 @@ fn local_registry() -> Option<&'static Registry> {
         .as_ref()
 }
 
-fn user_config_override(model: &str) -> Option<usize> {
-    let cfg = crate::core::config::Config::load();
-    cfg.model_context_windows
-        .get(model)
-        .or_else(|| cfg.model_context_windows.get(&model.to_lowercase()))
-        .copied()
-}
-
 /// Parse a trailing long-context marker like `[1m]` / `[1M]` / `[200k]` into
 /// its token window (GH #739). Clients append these suffixes for context-beta
 /// variants (e.g. `claude-opus-4-8[1m]`); the marker is an explicit statement
@@ -136,11 +128,6 @@ fn registry_lookup(model: &str, registry: &Registry) -> Option<usize> {
 /// Layers: User Config → `[1m]`-style suffix → Local Registry → Bundled
 /// Registry → 200k default.
 pub fn context_window_for_model(model: &str) -> usize {
-    // Layer 1: User config override ([model_context_windows] in config.toml)
-    if let Some(w) = user_config_override(model) {
-        return w;
-    }
-
     // Layer 2: explicit window marker in the model name itself (GH #739).
     // `claude-opus-4-8[1m]` means the client runs the 1M-context variant —
     // registries would only ever know the base model's window.

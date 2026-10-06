@@ -9,7 +9,9 @@
 
 use std::collections::HashMap;
 
+#[cfg(test)]
 use rusqlite::Connection;
+
 use serde::Serialize;
 
 use crate::core::graph_provider::GraphProvider;
@@ -74,18 +76,11 @@ impl CommunityResult {
 }
 
 /// Detect communities on the PropertyGraph (ids are deterministic but not
-/// remapped to a previous run). Prefer [`detect_communities_stable`] when a
-/// project root is available.
+/// remapped to a previous run).
+#[cfg(test)]
 pub fn detect_communities(conn: &Connection) -> CommunityResult {
     let graph = AdjGraph::from_property_graph(conn);
     analyze(&graph, None).1
-}
-
-/// Detect communities on the PropertyGraph with ids kept stable across rebuilds
-/// (remapped to, and persisted alongside, the project's previous assignment).
-pub fn detect_communities_stable(conn: &Connection, project_root: &str) -> CommunityResult {
-    let graph = AdjGraph::from_property_graph(conn);
-    detect_stable(&graph, project_root)
 }
 
 /// Detect communities on any [`GraphProvider`] (PropertyGraph or graph index)

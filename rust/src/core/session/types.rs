@@ -2,8 +2,6 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
-use crate::core::intent_protocol::IntentRecord;
-
 /// Persistent session state tracking task, findings, files, decisions, and stats.
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct SessionState {
@@ -24,8 +22,6 @@ pub struct SessionState {
     #[serde(default)]
     pub evidence: Vec<EvidenceRecord>,
     #[serde(default)]
-    pub intents: Vec<IntentRecord>,
-    #[serde(default)]
     pub active_structured_intent: Option<crate::core::intent_engine::StructuredIntent>,
     pub stats: SessionStats,
     /// When true, resume / compaction prompts encourage concise model replies.
@@ -41,10 +37,6 @@ pub struct SessionState {
     /// Populated from config `extra_roots` and/or MCP `roots/list`.
     #[serde(default)]
     pub extra_roots: Vec<String>,
-    /// LITM placement manifest (#539): what the last wakeup injection placed
-    /// where, so explicit re-recalls can be scored as placement misses.
-    #[serde(default)]
-    pub wakeup_manifest: Vec<ManifestEntry>,
     /// ACE delta playbook (#541): incremental, stable-ID checkpoint entries —
     /// grown by ctx_compress, never rewritten (anti context-collapse).
     #[serde(default)]
@@ -59,20 +51,6 @@ pub struct SessionState {
     /// JSONs and otherwise showed "idle" for the whole batch window.
     #[serde(skip)]
     pub(crate) last_flush: Option<std::time::Instant>,
-}
-
-/// One item placed by the wakeup/instructions builder, used for LITM
-/// placement calibration (#539).
-#[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct ManifestEntry {
-    pub key: String,
-    /// "begin" | "end"
-    pub position: String,
-    /// LITM profile name active when placed ("claude" | "gpt" | "gemini").
-    pub profile: String,
-    /// Set once this entry was re-recalled (counted as a miss).
-    #[serde(default)]
-    pub missed: bool,
 }
 
 /// Description of the current task being worked on, with optional progress tracking.
@@ -168,8 +146,6 @@ pub struct SessionStats {
     pub cache_hits: u32,
     pub files_read: u32,
     pub commands_run: u32,
-    pub intents_inferred: u32,
-    pub intents_explicit: u32,
     pub unsaved_changes: u32,
 }
 

@@ -146,7 +146,6 @@ impl CtxReadTool {
             }
         };
         let task_ref = current_task.as_deref();
-        let profile = crate::core::profiles::active_profile();
         // #513: `raw=true` is the intuitive "give me the exact bytes" escape an
         // agent reaches for. Alias it to mode="raw" (verbatim, unframed) and
         // force a fresh disk read below so a re-read never collapses to an
@@ -167,32 +166,16 @@ impl CtxReadTool {
         {
             return Err(ErrorData::invalid_params(e.user_message(), None));
         }
-        // #673 — when the caller omits `mode`, a context policy pack's
-        // `default_read_mode` (if set) takes precedence over the profile/auto
-        // selection. An explicit `mode` arg always wins; line windows below may
-        // still narrow it (it is a default, not a pin).
-        let policy_default_mode = if explicit_mode {
-            None
-        } else {
-            crate::core::policy::runtime::active()
-                .and_then(|p| p.resolved.default_read_mode.clone())
-        };
         let mut mode = if let Some(m) = explicit_mode_arg {
             m
-        } else if let Some(pd) = policy_default_mode {
-            pd
-        } else if profile.read.default_mode_effective() == "auto" {
-            if let Ok(cache) = cache_lock.try_read() {
-                crate::tools::impl_smart_read::select_mode_with_task(&cache, path, task_ref)
-            } else {
-                tracing::debug!(
-                    "cache lock contested during auto-mode selection for {path}; \
-                     falling back to full"
-                );
-                "full".to_string()
-            }
+        } else if let Ok(cache) = cache_lock.try_read() {
+            crate::tools::impl_smart_read::select_mode_with_task(&cache, path, task_ref)
         } else {
-            profile.read.default_mode_effective().to_string()
+            tracing::debug!(
+                "cache lock contested during auto-mode selection for {path}; \
+                 falling back to full"
+            );
+            "full".to_string()
         };
         let mut fresh = get_bool(args, "fresh").unwrap_or(false);
         // #513: a raw/verbatim request always reads from disk — the whole point
@@ -231,26 +214,12 @@ impl CtxReadTool {
             get_int(args, "limit"),
         );
 
-        let pressure_action = ctx.pressure_snapshot.as_ref().map(|p| &p.recommendation);
-        let resolved_agent_id = ctx.agent_id.as_ref().and_then(|a| match a.try_read() {
-            Ok(guard) => guard.clone(),
-            Err(_) => None,
-        });
-        let gate_result = crate::server::context_gate::pre_dispatch_read_for_agent(
+        let gate_result = crate::server::context_gate::pre_dispatch_read(
             path,
             &mode,
             task_ref,
             Some(&ctx.project_root),
-            pressure_action,
-            resolved_agent_id.as_deref(),
         );
-        if gate_result.budget_blocked {
-            let msg = gate_result
-                .budget_warning
-                .unwrap_or_else(|| "Agent token budget exceeded".to_string());
-            return Err(ErrorData::invalid_params(msg, None));
-        }
-        let budget_warning = gate_result.budget_warning.clone();
         // #513: an explicit raw/verbatim request is never silently downgraded by
         // the budget gate — the caller asked for exact bytes.
         let mut mode_override_note: Option<String> = None;
@@ -266,19 +235,13 @@ impl CtxReadTool {
             mode = overridden;
         }
 
-        let (mut mode, degrade_warning) = if crate::tools::ctx_read::is_instruction_file(path) {
-            ("full".to_string(), None)
-        } else if mode == "raw" {
-            // #513: raw bypasses context-pressure degradation (which would
-            // otherwise downgrade to signatures under Block), exactly like
-            // instruction files — verbatim means verbatim.
-            ("raw".to_string(), None)
+        let mut mode = if crate::tools::ctx_read::is_instruction_file(path) {
+            "full".to_string()
         } else {
-            auto_degrade_read_mode(&mode)
+            mode
         };
 
-        // Delta-aware explicit re-reads (opt-in: config `delta_explicit`, env
-        // LCTX_DELTA_EXPLICIT). Re-requesting full/lines:N-M content for a file
+        // Delta-aware explicit re-reads (opt-in: config `delta_explicit`). Re-requesting full/lines:N-M content for a file
         // this session already read re-emits content the model already holds;
         // when the file changed on disk, a diff carries the same information in
         // a fraction of the tokens, and an unchanged lines: request of a
@@ -291,7 +254,6 @@ impl CtxReadTool {
         if !fresh
             && explicit_mode
             && (mode == "full" || mode == "full-compact" || mode.starts_with("lines:"))
-            && crate::core::config::Config::load().delta_explicit_effective()
             && let Ok(cache) = cache_lock.try_read()
         {
             let decision = crate::tools::ctx_read::resolve_explicit_delta_mode(
@@ -323,7 +285,7 @@ impl CtxReadTool {
                 && meta.len() > cap
             {
                 let msg = format!(
-                    "File too large ({} bytes, limit {} bytes via LCTX_MAX_READ_BYTES). \
+                    "File too large ({} bytes, limit {} bytes). \
                      Use mode=\"lines:1-100\" or start_line+limit for partial reads, \
                      mode=\"anchored\" with start_line+limit for edit-ready windows, \
                      or increase the limit.",
@@ -348,7 +310,7 @@ impl CtxReadTool {
         // channel overhead for the ~90% of calls that are cache hits.
         let read_timeout = std::time::Duration::from_secs(30);
         let cancelled = Arc::new(AtomicBool::new(false));
-        let (output, resolved_mode, original, is_cache_hit, file_ref, cache_stats) = {
+        let (output, resolved_mode, original, is_cache_hit, file_ref) = {
             let crp_mode = ctx.crp_mode;
             let task_ref = current_task.as_deref();
 
@@ -379,9 +341,7 @@ impl CtxReadTool {
                     let rmode = read_output.resolved_mode;
                     let orig = cache.get(path).map_or(0, |e| e.original_tokens);
                     let fref = cache.file_ref_map().get(path).cloned();
-                    let stats = cache.get_stats();
-                    let stats_snapshot = (stats.total_reads(), stats.cache_hits());
-                    break 'fast Some((content, rmode, orig, hit, fref, stats_snapshot));
+                    break 'fast Some((content, rmode, orig, hit, fref));
                 }
 
                 // Phase 2 (write lock): cache miss, changed file, or non-stub
@@ -415,9 +375,7 @@ impl CtxReadTool {
                 let rmode = read_output.resolved_mode;
                 let orig = cache.get(path).map_or(0, |e| e.original_tokens);
                 let fref = cache.file_ref_map().get(path).cloned();
-                let stats = cache.get_stats();
-                let stats_snapshot = (stats.total_reads(), stats.cache_hits());
-                Some((content, rmode, orig, hit, fref, stats_snapshot))
+                Some((content, rmode, orig, hit, fref))
             };
 
             if let Some(result) = fast_result {
@@ -449,7 +407,7 @@ impl CtxReadTool {
                                 );
                                 let _ = tx.send((
                                     format!("per-file lock contention for {path_owned} — retry in a moment"),
-                                    "error".to_string(), 0, false, None, (0, 0),
+                                    "error".to_string(), 0, false, None,
                                 ));
                                 return;
                             }
@@ -478,9 +436,7 @@ impl CtxReadTool {
                         let orig = cache.get(&path_owned).map_or(0, |e| e.original_tokens);
                         let hit = true;
                         let fref = cache.file_ref_map().get(path_owned.as_str()).cloned();
-                        let stats = cache.get_stats();
-                        let stats_snapshot = (stats.total_reads(), stats.cache_hits());
-                        let _ = tx.send((content, rmode, orig, hit, fref, stats_snapshot));
+                        let _ = tx.send((content, rmode, orig, hit, fref));
                         return;
                     }
 
@@ -529,7 +485,6 @@ impl CtxReadTool {
                                         0,
                                         false,
                                         None,
-                                        (0, 0),
                                     ));
                                     return;
                                 }
@@ -543,9 +498,8 @@ impl CtxReadTool {
                     // staleness checks, raw-content storage for new files.
                     #[allow(clippy::large_enum_variant)]
                     enum PrepareOutcome {
-                        Hit(String, String, usize, bool, Option<String>, (u64, u64)),
+                        Hit(String, String, usize, bool, Option<String>),
                         Compute {
-                            file_ref: String,
                             resolved_mode: String,
                             content: String,
                             original_tokens: usize,
@@ -559,29 +513,13 @@ impl CtxReadTool {
                             bt.next_seq();
                         }
 
-                        let file_ref = cache.get_file_ref(&path_owned);
+                        let mode_eff = mode.clone();
 
-                        let effective_fresh = fresh
-                            || crate::tools::ctx_read::force_fresh_env()
-                            || (crate::tools::ctx_read::is_subagent_context()
-                                && !crate::core::conversation::scope_enabled());
-
-                        let mode_eff = if mode != "raw"
-                            && !mode.starts_with("lines:")
-                            && crate::core::config::Config::load()
-                                .proxy
-                                .is_path_compress_protected(&path_owned)
-                        {
-                            "full".to_string()
-                        } else {
-                            mode.clone()
-                        };
-
-                        if effective_fresh {
+                        if fresh {
                             cache.invalidate(&path_owned);
                         }
 
-                        if !effective_fresh {
+                        if !fresh {
                             let stale = cache.get(&path_owned).is_some_and(|e| {
                                 crate::core::cache::is_cache_entry_stale_verified(
                                     &path_owned,
@@ -620,14 +558,12 @@ impl CtxReadTool {
                             {
                                 let orig = cache.get(&path_owned).map_or(0, |e| e.original_tokens);
                                 let fref = cache.file_ref_map().get(path_owned.as_str()).cloned();
-                                let s = cache.get_stats();
                                 PrepareOutcome::Hit(
                                     out.content,
                                     out.resolved_mode,
                                     orig,
                                     true,
                                     fref,
-                                    (s.total_reads(), s.cache_hits()),
                                 )
                             } else if crate::tools::ctx_read::is_cacheable_mode(&resolved) {
                                 let ck = crate::tools::ctx_read::compressed_cache_key(
@@ -638,25 +574,16 @@ impl CtxReadTool {
                                     tuning.protect,
                                 );
                                 if let Some(hit) = cache.get_compressed(&path_owned, &ck).cloned() {
-                                    let hit = crate::core::redaction::redact_text_if_enabled(&hit);
+                                    let hit = crate::core::redaction::redact_text(&hit);
                                     let orig =
                                         cache.get(&path_owned).map_or(0, |e| e.original_tokens);
                                     let fref =
                                         cache.file_ref_map().get(path_owned.as_str()).cloned();
-                                    let s = cache.get_stats();
-                                    PrepareOutcome::Hit(
-                                        hit,
-                                        resolved,
-                                        orig,
-                                        true,
-                                        fref,
-                                        (s.total_reads(), s.cache_hits()),
-                                    )
+                                    PrepareOutcome::Hit(hit, resolved, orig, true, fref)
                                 } else {
                                     let c = content_opt
                                         .or_else(|| preread.as_deref().map(String::from));
                                     PrepareOutcome::Compute {
-                                        file_ref,
                                         resolved_mode: resolved,
                                         content: c.unwrap_or_default(),
                                         original_tokens: orig_tok,
@@ -666,7 +593,6 @@ impl CtxReadTool {
                                 let c =
                                     content_opt.or_else(|| preread.as_deref().map(String::from));
                                 PrepareOutcome::Compute {
-                                    file_ref,
                                     resolved_mode: resolved,
                                     content: c.unwrap_or_default(),
                                     original_tokens: orig_tok,
@@ -691,7 +617,6 @@ impl CtxReadTool {
                                 mode_eff
                             };
                             PrepareOutcome::Compute {
-                                file_ref,
                                 resolved_mode: resolved,
                                 content: raw,
                                 original_tokens: sr.original_tokens,
@@ -699,12 +624,11 @@ impl CtxReadTool {
                         }
                     }; // write lock released
 
-                    if let PrepareOutcome::Hit(c, rm, orig, hit, fref, ss) = outcome {
-                        let _ = tx.send((c, rm, orig, hit, fref, ss));
+                    if let PrepareOutcome::Hit(c, rm, orig, hit, fref) = outcome {
+                        let _ = tx.send((c, rm, orig, hit, fref));
                         return;
                     }
                     let PrepareOutcome::Compute {
-                        file_ref,
                         resolved_mode,
                         content: compute_content,
                         original_tokens,
@@ -738,11 +662,9 @@ impl CtxReadTool {
                         } else {
                             let lc = compute_content.lines().count();
                             let (out, _) = crate::tools::ctx_read::format_full_output(
-                                &file_ref,
                                 &short,
                                 ext_s,
                                 &compute_content,
-                                original_tokens,
                                 lc,
                                 task_ref,
                             );
@@ -759,7 +681,6 @@ impl CtxReadTool {
                         let (out, _) = crate::tools::ctx_read::process_mode_tuned(
                             &compute_content,
                             &resolved_mode,
-                            &file_ref,
                             &short,
                             ext_s,
                             original_tokens,
@@ -782,7 +703,7 @@ impl CtxReadTool {
                         (out, resolved_mode)
                     };
 
-                    computed = crate::core::redaction::redact_text_if_enabled(&computed);
+                    computed = crate::core::redaction::redact_text(&computed);
 
                     if cancel_flag.load(Ordering::Relaxed) {
                         return;
@@ -838,18 +759,9 @@ impl CtxReadTool {
                             }
                             let orig = cache.get(&path_owned).map_or(0, |e| e.original_tokens);
                             let fref = cache.file_ref_map().get(path_owned.as_str()).cloned();
-                            let s = cache.get_stats();
-                            let _ = tx.send((
-                                computed,
-                                rmode,
-                                orig,
-                                false,
-                                fref,
-                                (s.total_reads(), s.cache_hits()),
-                            ));
+                            let _ = tx.send((computed, rmode, orig, false, fref));
                         } else {
-                            let _ =
-                                tx.send((computed, rmode, original_tokens, false, None, (0, 0)));
+                            let _ = tx.send((computed, rmode, original_tokens, false, None));
                         }
                     }
                 });
@@ -946,9 +858,7 @@ impl CtxReadTool {
         // waiting on disk (#149).
         {
             let path_bg = path.to_string();
-            let resolved_mode_bg = resolved_mode.clone();
             let project_root_bg = project_root_snapshot.clone();
-            let (turns, hits) = cache_stats;
             // #685: model-correct verified-ledger inputs, computed off the hot path.
             // The default O200kBase model reuses the o200k `original`/`saved` below
             // (byte-identical, no clone). Only a resolved Claude/Gemini/Llama model
@@ -997,65 +907,8 @@ impl CtxReadTool {
                             &traversal_working_set,
                         );
                     }
-
-                    let sig =
-                        crate::core::mode_predictor::FileSignature::from_path(&path_bg, original);
-                    let density = if output_tokens > 0 {
-                        original as f64 / output_tokens as f64
-                    } else {
-                        1.0
-                    };
-                    let outcome = crate::core::mode_predictor::ModeOutcome {
-                        mode: resolved_mode_bg,
-                        tokens_in: original,
-                        tokens_out: output_tokens,
-                        density: density.min(1.0),
-                    };
-                    let mut predictor = crate::core::mode_predictor::ModePredictor::new();
-                    predictor.set_project_root(&project_root_bg);
-                    predictor.record(sig, outcome);
-                    predictor.save();
-
-                    let ext = std::path::Path::new(&path_bg)
-                        .extension()
-                        .and_then(|e| e.to_str())
-                        .unwrap_or("")
-                        .to_string();
-                    let thresholds =
-                        crate::core::adaptive_thresholds::thresholds_for_path(&path_bg);
-                    let feedback_outcome = crate::core::feedback::CompressionOutcome {
-                        session_id: format!("{}", std::process::id()),
-                        language: ext,
-                        entropy_threshold: thresholds.bpe_entropy,
-                        jaccard_threshold: thresholds.jaccard,
-                        total_turns: turns as u32,
-                        tokens_saved: saved as u64,
-                        tokens_original: original as u64,
-                        cache_hits: hits as u32,
-                        total_reads: turns as u32,
-                        // Real behavioral signal instead of a hardcoded success
-                        // (#593): a compressed read only counts as task-completing
-                        // when this extension is not in a high-bounce state —
-                        // compression that keeps forcing full re-reads is not
-                        // "completing" anything. Unknown (too few reads) stays
-                        // optimistic so the cold start is unchanged. 0.30 mirrors
-                        // bounce_tracker::BOUNCE_RATE_THRESHOLD.
-                        task_completed: crate::core::bounce_tracker::global()
-                            .lock()
-                            .ok()
-                            .and_then(|bt| bt.bounce_rate_for_extension(&path_bg))
-                            .is_none_or(|rate| rate < 0.30),
-                        timestamp: chrono::Local::now().to_rfc3339(),
-                    };
-                    let mut store = crate::core::feedback::FeedbackStore::load();
-                    store.project_root = Some(project_root_bg);
-                    store.record_outcome(feedback_outcome);
                 }));
             });
-        }
-
-        if let Some(aid) = resolved_agent_id.as_deref() {
-            crate::core::agent_budget::record_consumption(aid, output_tokens);
         }
 
         // Cross-source hints: if the property graph has cross-source edges
@@ -1085,12 +938,6 @@ impl CtxReadTool {
         };
 
         let mut warnings = Vec::new();
-        if let Some(ref w) = budget_warning {
-            warnings.push(w.as_str());
-        }
-        if let Some(ref w) = degrade_warning {
-            warnings.push(w.as_str());
-        }
         if let Some(ref w) = delta_explicit_note {
             warnings.push(w.as_str());
         }
@@ -1124,7 +971,6 @@ impl CtxReadTool {
             saved_tokens: saved,
             mode: Some(resolved_mode),
             path: Some(path.to_string()),
-            changed: false,
             shell_outcome: None,
             content_blocks: None,
         })
@@ -1214,53 +1060,6 @@ fn resolve_raw_alias(arg_raw: bool, mode_arg: Option<String>) -> Option<String> 
     } else {
         mode_arg
     }
-}
-
-fn apply_verdict(
-    mode: &str,
-    verdict: crate::core::degradation_policy::DegradationVerdictV1,
-) -> (String, bool) {
-    use crate::core::degradation_policy::DegradationVerdictV1;
-    match verdict {
-        DegradationVerdictV1::Ok => (mode.to_string(), false),
-        DegradationVerdictV1::Warn => match mode {
-            "full" => ("map".to_string(), true),
-            other => (other.to_string(), false),
-        },
-        DegradationVerdictV1::Throttle => match mode {
-            "full" | "map" => ("signatures".to_string(), true),
-            other => (other.to_string(), false),
-        },
-        DegradationVerdictV1::Block => {
-            if mode == "signatures" {
-                ("signatures".to_string(), false)
-            } else {
-                ("signatures".to_string(), true)
-            }
-        }
-    }
-}
-
-fn auto_degrade_read_mode(mode: &str) -> (String, Option<String>) {
-    if crate::core::config::Config::load().no_degrade_effective() {
-        return (mode.to_string(), None);
-    }
-    let profile = crate::core::profiles::active_profile();
-    if !profile.degradation.enforce_effective() {
-        return (mode.to_string(), None);
-    }
-    let policy = crate::core::degradation_policy::evaluate_v1_for_tool("ctx_read", None);
-    let (new_mode, degraded) = apply_verdict(mode, policy.decision.verdict);
-    let warning = if degraded {
-        Some(format!(
-            "⚠ Context pressure: mode={mode} was downgraded to mode={new_mode} \
-             (verdict: {:?}). Use start_line=1 to bypass.",
-            policy.decision.verdict
-        ))
-    } else {
-        None
-    };
-    (new_mode, warning)
 }
 
 fn extract_file_summary(output: &str, path: &str) -> String {

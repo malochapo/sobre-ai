@@ -199,8 +199,7 @@ pub(super) fn cmd_dev_install() {
 
     // Resync agent rules after install so a RULES_VERSION bump is propagated
     // without requiring a separate `lean-ctx init` or `init` call.
-    let cfg = crate::core::config::Config::load();
-    if cfg.setup.should_inject_rules()
+    if crate::rules_inject::rules_installed()
         && let Some(home) = dirs::home_dir()
     {
         let result = crate::rules_inject::inject_all_rules(&home);
@@ -497,7 +496,7 @@ pub(super) fn spawn_proxy_if_needed() {
     use std::net::TcpStream;
 
     let cfg = core::config::Config::load();
-    if cfg.proxy_enabled != Some(true) {
+    if cfg.proxy.enabled != Some(true) {
         return;
     }
 
@@ -510,7 +509,7 @@ pub(super) fn spawn_proxy_if_needed() {
     };
 
     if !should_spawn_proxy_locally(
-        cfg.proxy_enabled == Some(true),
+        cfg.proxy.enabled == Some(true),
         managed_service_loaded,
         already_running,
     ) {

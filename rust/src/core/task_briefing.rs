@@ -131,18 +131,6 @@ pub fn format_briefing(briefing: &TaskBriefing) -> String {
     parts.join("\n")
 }
 
-pub fn inject_into_instructions(base_instructions: &str, task: &str) -> String {
-    if task.trim().is_empty() {
-        return base_instructions.to_string();
-    }
-
-    let file_context: Vec<(String, usize)> = Vec::new();
-    let briefing = build_briefing(task, &file_context);
-    let briefing_block = format_briefing(&briefing);
-
-    format!("{base_instructions}\n\n{briefing_block}")
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -198,13 +186,6 @@ mod tests {
         assert!(formatted.contains("[TASK:"));
         assert!(formatted.contains("OUTPUT-HINT:"));
         assert!(formatted.contains("SCOPE:"));
-    }
-
-    #[test]
-    fn inject_empty_task_unchanged() {
-        let base = "some instructions";
-        let result = inject_into_instructions(base, "");
-        assert_eq!(result, base);
     }
 
     #[test]

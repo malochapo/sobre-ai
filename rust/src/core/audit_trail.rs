@@ -12,6 +12,8 @@ pub struct AuditEntry {
     pub action: Option<String>,
     pub input_hash: String,
     pub output_tokens: u32,
+    /// Always empty for new entries; kept because existing trails hash it.
+    #[serde(default)]
     pub role: String,
     pub event_type: AuditEventType,
     pub prev_hash: String,
@@ -47,7 +49,6 @@ pub struct AuditEntryData {
     pub action: Option<String>,
     pub input_hash: String,
     pub output_tokens: u32,
-    pub role: String,
     pub event_type: AuditEventType,
 }
 
@@ -145,7 +146,7 @@ pub fn record(data: AuditEntryData) {
         "action": data.action,
         "input_hash": data.input_hash,
         "output_tokens": data.output_tokens,
-        "role": data.role,
+        "role": "",
         "event_type": data.event_type,
     });
     let data_json = serde_json::to_string(&partial).unwrap_or_default();
@@ -162,7 +163,7 @@ pub fn record(data: AuditEntryData) {
         action: data.action,
         input_hash: data.input_hash,
         output_tokens: data.output_tokens,
-        role: data.role,
+        role: String::new(),
         event_type: data.event_type,
         prev_hash,
         entry_hash,

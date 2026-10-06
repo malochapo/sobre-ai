@@ -6,7 +6,7 @@
 //!
 //! - Release binaries stay CPU-only `load-dynamic`; nothing is bundled.
 //! - Provisioning is **explicit** (`lean-ctx embeddings provision`) — never a
-//!   silent download on first tool call. `addons.locked = true` blocks it.
+//!   silent download on first tool call.
 //! - Only the official CPU runtime is managed. GPU/NPU execution providers
 //!   remain opt-in feature builds with user-supplied runtimes.
 //!
@@ -23,7 +23,6 @@
 use std::io::Read;
 use std::path::{Path, PathBuf};
 
-use super::artifact_install::current_target_triple;
 use super::binhash::sha256_file;
 
 /// Managed ONNX Runtime version. Must satisfy `1.{ort::MINOR_VERSION}.x` of
@@ -128,11 +127,6 @@ pub fn provision(force: bool) -> Result<PathBuf, String> {
         return Ok(dest);
     }
 
-    let addons = crate::core::config::Config::load().addons;
-    if addons.locked {
-        return Err("addons.locked = true: managed artifact fetch disabled".into());
-    }
-
     let archive = archive_for(current_target_triple())?;
 
     let agent = crate::core::http_client::ureq_agent_with_timeouts(
@@ -174,7 +168,7 @@ pub fn provision(force: bool) -> Result<PathBuf, String> {
     let tmp = dest.with_extension("tmp");
     std::fs::write(&tmp, &dylib).map_err(|e| e.to_string())?;
 
-    // Same hardening as every managed in-process dylib (artifact_install):
+    // Hardening for an in-process dylib:
     // read-only on disk, ad-hoc signed on macOS, atomic rename into place.
     #[cfg(unix)]
     {
@@ -262,6 +256,26 @@ pub fn status_line() -> String {
             "managed ONNX Runtime: not installed (run  lean-ctx embeddings provision  \
              to fetch the official CPU runtime {ORT_VERSION})"
         ),
+    }
+}
+
+/// Rust target-triple key this build was compiled for — the key
+/// [`archive_for`] looks up.
+fn current_target_triple() -> &'static str {
+    if cfg!(all(target_arch = "x86_64", target_os = "windows")) {
+        "x86_64-pc-windows-msvc"
+    } else if cfg!(all(target_arch = "aarch64", target_os = "windows")) {
+        "aarch64-pc-windows-msvc"
+    } else if cfg!(all(target_arch = "x86_64", target_os = "macos")) {
+        "x86_64-apple-darwin"
+    } else if cfg!(all(target_arch = "aarch64", target_os = "macos")) {
+        "aarch64-apple-darwin"
+    } else if cfg!(all(target_arch = "x86_64", target_os = "linux")) {
+        "x86_64-unknown-linux-gnu"
+    } else if cfg!(all(target_arch = "aarch64", target_os = "linux")) {
+        "aarch64-unknown-linux-gnu"
+    } else {
+        "unknown"
     }
 }
 
@@ -370,5 +384,17 @@ mod tests {
                 .unwrap_err()
                 .contains("not found")
         );
+    }
+
+    #[test]
+    fn current_triple_is_known_on_ci_platforms() {
+        if cfg!(any(
+            target_os = "linux",
+            target_os = "macos",
+            target_os = "windows"
+        )) && cfg!(any(target_arch = "x86_64", target_arch = "aarch64"))
+        {
+            assert_ne!(current_target_triple(), "unknown");
+        }
     }
 }

@@ -184,7 +184,6 @@ mod tests {
             default: serde_json::json!(false),
             description: String::new(),
             values: None,
-            env_override: None,
         };
         assert_eq!(
             parse_value("true", &schema).unwrap(),
@@ -204,7 +203,6 @@ mod tests {
             default: serde_json::json!(0),
             description: String::new(),
             values: None,
-            env_override: None,
         };
         assert_eq!(
             parse_value("42", &schema).unwrap(),
@@ -221,7 +219,6 @@ mod tests {
             default: serde_json::json!("off"),
             description: String::new(),
             values: Some(vec!["off".into(), "lite".into(), "full".into()]),
-            env_override: None,
         };
         assert_eq!(
             parse_value("lite", &schema).unwrap(),
@@ -237,7 +234,6 @@ mod tests {
             default: serde_json::json!([]),
             description: String::new(),
             values: None,
-            env_override: None,
         };
         let result = parse_value("a, b, c", &schema).unwrap();
         let arr = result.as_array().unwrap();

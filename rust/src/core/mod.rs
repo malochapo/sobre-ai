@@ -3,7 +3,6 @@
 // ---------------------------------------------------------------------------
 pub mod aggressiveness;
 pub mod artifacts_exec;
-pub mod auto_capture;
 pub mod auto_findings;
 pub mod codebook;
 #[cfg(target_os = "macos")]
@@ -18,14 +17,11 @@ pub mod eval_harness;
 // sites listed in docs/removals.md would let this attribute go away.
 #[cfg_attr(not(feature = "embeddings"), allow(dead_code))]
 pub mod extractive;
-pub mod html_crush;
 pub mod json_crush;
 pub mod markdown_compact;
 pub mod output_sanitizer;
-pub mod policy;
 pub mod pop_pruning;
 pub mod preservation;
-pub mod process_guard;
 pub mod protect;
 pub mod rabin_karp;
 pub mod relevance_tracker;
@@ -82,7 +78,6 @@ pub mod call_graph;
 pub mod community;
 pub mod graph_analysis;
 pub mod graph_context;
-pub mod graph_coordinator;
 pub mod graph_enricher;
 pub mod graph_export;
 pub mod graph_index;
@@ -108,35 +103,22 @@ pub mod graph {
 // ---------------------------------------------------------------------------
 // Domain: Context
 // ---------------------------------------------------------------------------
-pub mod context_compiler;
-pub mod context_deficit;
 pub mod context_field;
 pub mod context_handles;
 pub mod context_ir;
 pub mod context_ledger;
 pub mod context_lint;
-pub mod context_os;
 pub mod context_overhead;
-pub mod context_overlay;
-pub mod context_policies;
-pub mod context_proof;
 pub mod context_radar;
 pub mod context_snapshot;
-pub mod cross_source_edges;
 pub mod cross_source_hints;
 
 /// Convenience re-export: all context-related modules.
 pub mod context {
-    pub use super::context_compiler;
-    pub use super::context_deficit;
     pub use super::context_field;
     pub use super::context_handles;
     pub use super::context_ir;
     pub use super::context_ledger;
-    pub use super::context_os;
-    pub use super::context_overlay;
-    pub use super::context_policies;
-    pub use super::context_proof;
 }
 
 // ---------------------------------------------------------------------------
@@ -153,7 +135,6 @@ pub mod knowledge_bridge;
 // sites listed in docs/removals.md would let this attribute go away.
 #[cfg_attr(not(feature = "embeddings"), allow(dead_code))]
 pub mod knowledge_embedding;
-pub mod knowledge_provider_extract;
 pub mod knowledge_relations;
 
 /// Convenience re-export: all knowledge-related modules.
@@ -206,31 +187,14 @@ pub mod search {
 // Domain: Session & Handoff
 // ---------------------------------------------------------------------------
 pub mod ccp_session_bundle;
-pub mod handoff_ledger;
-pub mod handoff_transfer_bundle;
 pub mod session;
 pub mod session_diff;
-pub mod session_summary;
 
 /// Convenience re-export: all session-related modules.
 pub mod session_domain {
     pub use super::ccp_session_bundle;
-    pub use super::handoff_ledger;
-    pub use super::handoff_transfer_bundle;
     pub use super::session;
     pub use super::session_diff;
-}
-
-// ---------------------------------------------------------------------------
-// Domain: Attention & Placement
-// ---------------------------------------------------------------------------
-pub mod attention_model;
-pub mod litm;
-
-/// Convenience re-export: all attention-related modules.
-pub mod attention {
-    pub use super::attention_model;
-    pub use super::litm;
 }
 
 // ---------------------------------------------------------------------------
@@ -255,93 +219,69 @@ pub mod patterns;
 // Domain: Agents & A2A
 // ---------------------------------------------------------------------------
 pub mod a2a;
-pub mod a2a_transport;
 pub mod agent_identity;
 pub mod agent_runtime_env;
 pub mod agents;
-pub mod autonomy_drivers;
 
 // ---------------------------------------------------------------------------
 // Domain: Adaptive & Scoring
 // ---------------------------------------------------------------------------
 pub mod adaptive;
-pub mod adaptive_mode_policy;
 pub mod adaptive_thresholds;
 pub mod auto_mode_resolver;
-pub mod bandit;
-pub mod litm_calibration;
-pub mod mode_predictor;
 pub mod model_registry;
 pub mod task_relevance;
 
 // ---------------------------------------------------------------------------
 // Domain: Diagnostics & Quality
 // ---------------------------------------------------------------------------
-pub mod anomaly;
 pub mod benchmark;
-pub mod benchmark_compare;
 /// Commercial-plane billing substrate (`billing-plane-v1`): plans, entitlements,
 /// and usage metering derived from the signed savings ledger. Never gates local.
 pub mod code_health;
 pub mod conformance;
 pub mod contracts;
 pub mod cyclomatic;
-pub mod degradation_policy;
 pub mod loop_detection;
 pub mod output_verification;
 pub mod quality;
 pub mod safety_needles;
 pub mod scorecard;
 pub mod setup_report;
-pub mod slo;
 pub mod slow_log;
 pub mod smells;
 pub mod surprise;
-pub mod verification_observability;
 
 // ---------------------------------------------------------------------------
 // Domain: Config & Infrastructure
 // ---------------------------------------------------------------------------
-pub mod active_inference;
-pub mod agent_budget;
 pub mod anchor;
 pub mod ann_cache;
 pub mod atomic_fs;
-pub mod attribution;
 pub mod audit_trail;
 pub mod binary_detect;
 pub mod bounce_tracker;
-pub mod budget_tracker;
 pub mod budgets;
 pub mod cache;
 pub mod cache_telemetry;
-pub mod capabilities;
 pub mod cli_cache;
 pub mod client_capabilities;
 pub mod client_constraints;
 pub mod cloud_files;
 pub mod config;
-pub mod config_heal;
 pub mod consolidation;
 pub mod consolidation_engine;
-pub mod context_capsule;
 pub mod contextops;
 pub mod conversation;
 pub mod crash_log;
-pub mod data_consolidate;
 pub mod data_dir;
 pub mod debug_log;
 pub mod diagnostics_store;
-pub mod editor_signal;
-pub mod egress;
 pub mod error;
 pub mod events;
 pub mod eviction_orchestrator;
-pub mod evidence;
 pub mod extension_registry;
 pub mod extractors;
-pub mod feedback;
-pub mod fep_prefetch;
 pub mod filters;
 pub mod gain;
 pub mod git;
@@ -357,18 +297,11 @@ pub mod hebbian_cache;
 pub mod hnsw;
 pub mod home;
 pub mod homeostasis;
-pub mod immune_detector;
-pub mod mcp_catalog;
 pub mod quality_benchmark;
-pub mod request_context;
 
-pub mod edit_metering;
 pub mod edit_quality;
-pub mod efficacy;
-pub mod grammar_usage;
 pub mod graph_cache;
 pub mod http_client;
-pub mod ide_permissions;
 pub mod import_resolver;
 pub mod index_admission;
 pub mod index_filter;
@@ -377,11 +310,9 @@ pub mod index_orchestrator;
 pub mod index_paths;
 pub mod index_progress;
 pub mod ingestion;
-pub mod input_filters;
 pub mod integrity;
 pub mod intent_engine;
 pub(crate) mod intent_lang;
-pub mod intent_protocol;
 pub mod intent_router;
 pub mod introspect;
 pub mod io_boundary;
@@ -390,12 +321,8 @@ pub mod jsonc;
 pub mod language_capabilities;
 #[cfg(target_os = "macos")]
 pub mod launchd;
-pub mod layout_pin;
-pub mod learning_sync;
 pub mod levenshtein;
 pub mod limits;
-pub mod llm_enhance;
-pub mod llm_feedback;
 pub mod logging;
 pub mod mcp_manifest;
 pub mod multi_repo;
@@ -403,43 +330,25 @@ pub mod nc_compress;
 pub mod output_echo;
 pub mod owasp_alignment;
 pub mod path_locks;
-pub mod path_mode_memory;
 pub mod path_resolve;
 pub mod paths;
 pub mod pathutil;
-pub mod pipeline;
 pub mod portable_binary;
-pub mod profiles;
 pub mod project_hash;
 pub mod protocol;
-pub mod provider_bandit;
-pub mod provider_cache;
-pub mod providers;
 pub mod read_stub_index;
 pub mod recovery;
 pub mod redaction;
 pub mod reference_docs;
-pub mod roles;
-pub mod route_extractor;
-pub mod sandbox;
-#[cfg(target_os = "linux")]
-pub mod sandbox_landlock;
-pub mod sandbox_seatbelt;
 pub mod sanitize;
-pub mod savings_footer;
 pub mod savings_ledger;
-pub mod scent_field;
-pub mod search_delta;
 pub mod search_index;
 pub mod secret_detection;
-pub mod security_posture;
 pub mod sensitivity;
-pub mod server_capabilities;
 pub mod session_token;
 pub mod shell_gate;
 pub mod startup_guard;
 pub mod stats;
-pub mod symbol_map;
 pub mod syntax_validate;
 pub mod task_briefing;
 /// macOS Seatbelt self-sandbox (#356): wraps launchd-owned daemon/proxy/updater
@@ -448,26 +357,18 @@ pub mod task_briefing;
 #[cfg(target_os = "macos")]
 pub mod tcc_guard_sandbox;
 pub mod tdd_schema;
-pub mod team_slo;
 pub mod terse;
 pub mod text_similarity;
 pub mod theme;
-pub mod threshold_learning;
 pub mod tokens;
 pub mod tool_health;
 pub mod tool_lifecycle;
 pub mod transcript_compact;
 pub mod visualizer;
 pub mod walk_filter;
-/// WASM extension runtime (`wasm-abi-v1`): sandboxed, language-independent
-/// compressors and providers. Feature-gated behind `wasm`.
-#[cfg(feature = "wasm")]
-pub mod wasm_ext;
 pub mod web;
-pub mod workflow;
 pub mod workspace_config;
 pub mod wrapped;
-pub mod xdg_migrate;
 
 // ---------------------------------------------------------------------------
 // Feature-gated modules
@@ -490,4 +391,3 @@ pub mod signatures_ts;
 pub mod storage_maintenance;
 pub mod structured_compact;
 pub mod type_ref_edges;
-pub mod workspace_trust;

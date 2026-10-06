@@ -52,10 +52,7 @@ pub struct ModelPricing {
 
 impl ModelPricing {
     pub fn load() -> Self {
-        let mut p = Self::embedded();
-        p.apply_config_overrides(&crate::core::config::Config::load().cost.prices);
-        p.apply_env_override();
-        p
+        Self::embedded()
     }
 
     pub fn embedded() -> Self {
@@ -322,18 +319,12 @@ impl ModelPricing {
     }
 
     /// Resolves a pricing model for a client/agent, then quotes it. Resolution
-    /// order: `LEAN_CTX_MODEL`/`LCTX_MODEL` env → `[cost.models]` entry →
+    /// order: `[cost.models]` entry →
     /// `[cost] default_model` → the client/agent string as a heuristic hint →
     /// blended fallback (inside [`ModelPricing::quote`]). This is what lets
     /// MCP-only IDEs (Cursor, Copilot, …) be priced with a declared model.
     pub fn quote_for_client(&self, client: &str) -> ModelQuote {
         self.quote(Some(&resolve_model_for_client(client)))
-    }
-
-    /// Back-compat alias for [`ModelPricing::quote_for_client`]; now also honors
-    /// the `[cost]` config, not just the env override.
-    pub fn quote_from_env_or_agent_type(&self, agent_type: &str) -> ModelQuote {
-        self.quote_for_client(agent_type)
     }
 
     fn heuristic_key(model: &str) -> Option<(String, PricingMatchKind)> {
@@ -429,101 +420,6 @@ impl ModelPricing {
 
         None
     }
-
-    /// Merges `[cost.prices]` operator overrides (#1189) into the table as
-    /// exact entries. Negotiated enterprise rates override embedded rows and
-    /// (via exact-match precedence) every live/heuristic price; only a
-    /// provider-measured bill beats them. Rows without any rate are ignored;
-    /// omitted fields inherit from the existing row for that key, falling back
-    /// to the blended profile — cache rates default to the input rate.
-    fn apply_config_overrides(
-        &mut self,
-        prices: &std::collections::HashMap<String, crate::core::config::PriceOverride>,
-    ) {
-        for (model, o) in prices {
-            if o.input_per_m.is_none()
-                && o.output_per_m.is_none()
-                && o.cache_write_per_m.is_none()
-                && o.cache_read_per_m.is_none()
-            {
-                continue;
-            }
-            let key = normalize(model);
-            if key.is_empty() {
-                continue;
-            }
-            let base = self.models.get(&key).copied();
-            let input = o
-                .input_per_m
-                .or(base.map(|b| b.input_per_m))
-                .unwrap_or(2.50);
-            let merged = ModelCost {
-                input_per_m: input,
-                output_per_m: o
-                    .output_per_m
-                    .or(base.map(|b| b.output_per_m))
-                    .unwrap_or(10.00),
-                cache_write_per_m: o
-                    .cache_write_per_m
-                    .or(base.map(|b| b.cache_write_per_m))
-                    .unwrap_or(input),
-                cache_read_per_m: o
-                    .cache_read_per_m
-                    .or(base.map(|b| b.cache_read_per_m))
-                    .unwrap_or(input),
-            };
-            self.models.insert(key, merged);
-        }
-    }
-
-    fn apply_env_override(&mut self) {
-        let raw = std::env::var("LEAN_CTX_MODEL_PRICING_JSON")
-            .or_else(|_| std::env::var("LCTX_MODEL_PRICING_JSON"))
-            .ok();
-        let Some(raw) = raw else { return };
-
-        let Ok(v) = serde_json::from_str::<serde_json::Value>(&raw) else {
-            return;
-        };
-        let Some(models) = v.get("models").and_then(|m| m.as_object()) else {
-            return;
-        };
-        for (k, vv) in models {
-            let Some(obj) = vv.as_object() else { continue };
-            let input_per_m = obj.get("input_per_m").and_then(serde_json::Value::as_f64);
-            let output_per_m = obj.get("output_per_m").and_then(serde_json::Value::as_f64);
-            if input_per_m.is_none() && output_per_m.is_none() {
-                continue;
-            }
-
-            let key_norm = normalize(k);
-            let base = self.models.get(&key_norm).copied().unwrap_or_else(|| {
-                self.models
-                    .get("fallback-blended")
-                    .copied()
-                    .unwrap_or(ModelCost {
-                        input_per_m: 2.50,
-                        output_per_m: 10.00,
-                        cache_write_per_m: 2.50,
-                        cache_read_per_m: 2.50,
-                    })
-            });
-
-            let merged = ModelCost {
-                input_per_m: input_per_m.unwrap_or(base.input_per_m),
-                output_per_m: output_per_m.unwrap_or(base.output_per_m),
-                cache_write_per_m: obj
-                    .get("cache_write_per_m")
-                    .and_then(serde_json::Value::as_f64)
-                    .unwrap_or(base.cache_write_per_m),
-                cache_read_per_m: obj
-                    .get("cache_read_per_m")
-                    .and_then(serde_json::Value::as_f64)
-                    .unwrap_or(base.cache_read_per_m),
-            };
-            self.models.insert(key_norm, merged);
-        }
-    }
 }
 
 fn normalize(s: &str) -> String {
@@ -550,36 +446,31 @@ fn dot_versions(s: &str) -> String {
     out
 }
 
-fn non_blank(s: &str) -> Option<String> {
-    let t = s.trim();
-    if t.is_empty() {
-        None
-    } else {
-        Some(t.to_string())
-    }
-}
-
-/// Pure model resolution: env override → configured model → client hint.
-/// Split out for deterministic testing without touching global config/env.
-fn resolve_model(client: &str, env_model: Option<&str>, configured: Option<&str>) -> String {
-    env_model
-        .and_then(non_blank)
-        .or_else(|| configured.and_then(non_blank))
-        .unwrap_or_else(|| client.to_string())
-}
-
-/// Resolves the pricing model id for a client/agent: the `LEAN_CTX_MODEL`/
-/// `LCTX_MODEL` env override wins, then the `[cost]` config
-/// (`models[client]` → `default_model`), then the client/agent string itself.
+/// The pricing model id for a client/agent: the client/agent string itself.
 /// The returned string is fed to [`ModelPricing::quote`] for the actual price.
 pub fn resolve_model_for_client(client: &str) -> String {
-    let env_model = std::env::var("LEAN_CTX_MODEL")
-        .or_else(|_| std::env::var("LCTX_MODEL"))
-        .ok();
-    let configured = crate::core::config::Config::load()
-        .cost
-        .model_for_client(client);
-    resolve_model(client, env_model.as_deref(), configured.as_deref())
+    client.to_string()
+}
+
+/// USD saved (or lost) by serving `input_tokens` on `serving` instead of the
+/// `requested` model — a rate difference on the same tokens.
+///
+/// Rescued from the deleted `core::eval_ab::routing_eval`: it is a pricing
+/// computation, not an evaluation harness, and the savings ledger is its only
+/// remaining caller. A negative result means the route was an upgrade; callers
+/// record those too rather than hiding regressions.
+#[must_use]
+pub fn routing_saving_usd(
+    pricing: &ModelPricing,
+    requested: &str,
+    serving: &str,
+    input_tokens: u64,
+) -> f64 {
+    let from = pricing.quote(Some(requested)).cost.input_per_m;
+    let to = pricing.quote(Some(serving)).cost.input_per_m;
+    #[allow(clippy::cast_precision_loss)]
+    let tokens = input_tokens as f64;
+    (from - to) / 1_000_000.0 * tokens
 }
 
 #[cfg(test)]
@@ -644,57 +535,6 @@ mod tests {
             after.match_kind,
             PricingMatchKind::Fallback,
             "no snapshot → fallback"
-        );
-    }
-
-    #[test]
-    fn config_price_overrides_are_exact_and_beat_embedded_rows() {
-        // #1189: negotiated enterprise rates. A custom model name unknown to
-        // any catalog prices exactly; an embedded row is overridden in place.
-        let mut p = ModelPricing::embedded();
-        let overrides: std::collections::HashMap<String, crate::core::config::PriceOverride> = [
-            (
-                "internal-llm".to_string(),
-                crate::core::config::PriceOverride {
-                    input_per_m: Some(0.10),
-                    output_per_m: Some(0.40),
-                    ..Default::default()
-                },
-            ),
-            (
-                "claude-opus-4.5".to_string(),
-                crate::core::config::PriceOverride {
-                    input_per_m: Some(4.00), // committed-use discount
-                    ..Default::default()
-                },
-            ),
-            (
-                "empty-row".to_string(),
-                crate::core::config::PriceOverride::default(),
-            ),
-        ]
-        .into();
-        p.apply_config_overrides(&overrides);
-
-        let custom = p.quote(Some("internal-llm"));
-        assert_eq!(custom.match_kind, PricingMatchKind::Exact);
-        assert!((custom.cost.input_per_m - 0.10).abs() < 1e-9);
-        assert!(
-            (custom.cost.cache_read_per_m - 0.10).abs() < 1e-9,
-            "omitted cache rates default to the input rate"
-        );
-
-        let discounted = p.quote(Some("claude-opus-4.5"));
-        assert!((discounted.cost.input_per_m - 4.00).abs() < 1e-9);
-        assert!(
-            (discounted.cost.output_per_m - 25.00).abs() < 1e-9,
-            "omitted fields inherit the embedded row"
-        );
-
-        assert_eq!(
-            p.quote(Some("empty-row")).match_kind,
-            PricingMatchKind::Fallback,
-            "a row without any rate is ignored"
         );
     }
 
@@ -788,44 +628,12 @@ mod tests {
     }
 
     #[test]
-    fn resolve_model_precedence() {
-        // env override wins over everything.
+    fn resolve_model_for_client_is_the_client_hint() {
+        // The client/agent string is the pricing hint.
         assert_eq!(
-            resolve_model("cursor", Some("gpt-5.4"), Some("claude-opus-4.5")),
-            "gpt-5.4"
-        );
-        // configured model used when no env override.
-        assert_eq!(
-            resolve_model("cursor", None, Some("claude-opus-4.5")),
-            "claude-opus-4.5"
-        );
-        // client/agent string is the final hint.
-        assert_eq!(
-            resolve_model("claude-haiku-4.5", None, None),
+            resolve_model_for_client("claude-haiku-4.5"),
             "claude-haiku-4.5"
         );
-        // blanks are ignored at each level.
-        assert_eq!(resolve_model("cursor", Some("  "), Some("  ")), "cursor");
+        assert_eq!(resolve_model_for_client("cursor"), "cursor");
     }
-}
-
-/// USD saved (or lost) by serving `input_tokens` on `serving` instead of the
-/// `requested` model — a rate difference on the same tokens.
-///
-/// Rescued from the deleted `core::eval_ab::routing_eval`: it is a pricing
-/// computation, not an evaluation harness, and the savings ledger is its only
-/// remaining caller. A negative result means the route was an upgrade; callers
-/// record those too rather than hiding regressions.
-#[must_use]
-pub fn routing_saving_usd(
-    pricing: &ModelPricing,
-    requested: &str,
-    serving: &str,
-    input_tokens: u64,
-) -> f64 {
-    let from = pricing.quote(Some(requested)).cost.input_per_m;
-    let to = pricing.quote(Some(serving)).cost.input_per_m;
-    #[allow(clippy::cast_precision_loss)]
-    let tokens = input_tokens as f64;
-    (from - to) / 1_000_000.0 * tokens
 }

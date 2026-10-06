@@ -31,16 +31,15 @@ Older items are pruned first when limits are exceeded.
 - Stored fields are redacted using `rust/src/core/redaction.rs` and are safe to persist.
 - Provenance fields (`command`, `pattern`) are redacted and bounded via excerpt limits.
 
-## Storage & proof export
+## Storage
 
-- Runtime store (local): `~/.lean-ctx/context_ir_v1.json`
-- Proof export: `project/.lean-ctx/proofs/context-ir-v1_<timestamp>.json` (written by `lean-ctx proof`)
+- Runtime store (local): `context_ir_v1.json` in the cache directory
+  (`rust/src/core/paths.rs` `cache_dir()`).
+- Read back by the context snapshot builder (`rust/src/core/context_snapshot/builder.rs`).
 
 ## Relevant code
 
 - Schema + store: `rust/src/core/context_ir.rs`
 - Collection points:
-  - `rust/src/server/dispatch/read_tools.rs` (`ctx_read`)
-  - `rust/src/server/dispatch/shell_tools.rs` (`ctx_shell`, `ctx_search`)
-- Proof export: `rust/src/tools/ctx_proof.rs`
-
+  - `rust/src/server/call_tool.rs` (every MCP tool call)
+  - `rust/src/core/tool_lifecycle.rs`

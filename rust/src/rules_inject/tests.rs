@@ -74,7 +74,7 @@ fn shadow_shared_omits_mapping() {
 #[test]
 fn zed_rules_path_is_os_aware_and_matches_config_dir() {
     let home = std::path::Path::new("/home/tester");
-    let zed = build_rules_targets(home, crate::core::config::RulesInjection::Shared)
+    let zed = build_rules_targets(home)
         .into_iter()
         .find(|t| t.name == "Zed")
         .expect("Zed rules target must exist");
@@ -85,64 +85,22 @@ fn zed_rules_path_is_os_aware_and_matches_config_dir() {
 #[test]
 fn target_count() {
     let home = std::path::PathBuf::from("/tmp/fake_home");
-    let targets = build_rules_targets(&home, crate::core::config::RulesInjection::Shared);
-    // Includes Grok (`~/.grok/AGENTS.md`).
-    assert_eq!(targets.len(), 26);
-    assert!(
-        targets.iter().any(|t| t.name == "Grok"),
-        "Grok must have a rules target"
-    );
+    let targets = build_rules_targets(&home);
+    assert_eq!(targets.len(), 8);
     assert!(
         !targets.iter().any(|t| t.name == "Claude Code"),
         "Claude Code must not get a rules target"
     );
-    assert!(
-        !targets.iter().any(|t| t.name == "CodeBuddy"),
-        "CodeBuddy must not get a rules target"
-    );
-    let dedicated = build_rules_targets(&home, crate::core::config::RulesInjection::Dedicated);
-    assert_eq!(dedicated.len(), 26);
-}
-
-#[test]
-fn dedicated_mode_swaps_shared_agents_to_dedicated_files() {
-    use crate::core::config::RulesInjection;
-    let home = std::path::Path::new("/home/tester");
-
-    let shared = build_rules_targets(home, RulesInjection::Shared);
-    let gemini_shared = shared.iter().find(|t| t.name == "Gemini CLI").unwrap();
-    let opencode_shared = shared.iter().find(|t| t.name == "OpenCode").unwrap();
-    assert!(matches!(gemini_shared.format, RulesFormat::SharedMarkdown));
-    assert!(gemini_shared.path.ends_with("GEMINI.md"));
-    assert!(matches!(
-        opencode_shared.format,
-        RulesFormat::SharedMarkdown
-    ));
-    assert!(opencode_shared.path.ends_with("AGENTS.md"));
-
-    let dedicated = build_rules_targets(home, RulesInjection::Dedicated);
-    let gemini = dedicated.iter().find(|t| t.name == "Gemini CLI").unwrap();
-    let opencode = dedicated.iter().find(|t| t.name == "OpenCode").unwrap();
-    assert!(matches!(gemini.format, RulesFormat::DedicatedMarkdown));
-    assert_eq!(gemini.path, gemini_dedicated_rules_path(home));
-    assert!(!gemini.path.ends_with("GEMINI.md"));
-    assert!(matches!(opencode.format, RulesFormat::DedicatedMarkdown));
-    assert_eq!(opencode.path, opencode_dedicated_rules_path(home));
-    assert!(!opencode.path.ends_with("AGENTS.md"));
 }
 
 #[test]
 fn rules_catalog_includes_previously_missing_agents_for_detection() {
     let home = std::path::Path::new("/home/tester");
-    let names: std::collections::HashSet<&str> = [
-        crate::core::config::RulesInjection::Shared,
-        crate::core::config::RulesInjection::Dedicated,
-    ]
-    .iter()
-    .flat_map(|inj| build_rules_targets(home, *inj))
-    .map(|t| t.name)
-    .collect();
-    for agent in ["OpenCode", "Zed", "Cline", "Roo Code", "Continue", "Crush"] {
+    let names: std::collections::HashSet<&str> = build_rules_targets(home)
+        .into_iter()
+        .map(|t| t.name)
+        .collect();
+    for agent in ["OpenCode", "Zed"] {
         assert!(
             names.contains(agent),
             "{agent} must be in the rules catalog used for presence detection (#442)"
@@ -284,17 +242,6 @@ fn rules_file_merged_appends_when_no_section() {
     assert!(merged.contains(START_MARK));
 }
 
-#[test]
-fn rules_file_without_section_strips_lean_ctx_block() {
-    let content = format!("header\n{START_MARK}\n<!-- version: 1 -->\n\nbody\n{END_MARK}\nfooter");
-    let file = RulesFile::parse(&content);
-    let stripped = file.without_section();
-    assert!(stripped.contains("header"));
-    assert!(stripped.contains("footer"));
-    assert!(!stripped.contains("body"));
-    assert!(!stripped.contains(START_MARK));
-}
-
 // ── Injection ────────────────────────────────────────────────
 
 #[test]
@@ -356,9 +303,8 @@ fn inject_rules_for_unknown_agent_is_empty() {
 fn inject_rewrites_on_compression_change_without_version_bump() {
     // #548: a version-only freshness check skips the rewrite when the
     // compression level changes but RULES_VERSION stays the same. Drive the real
-    // inject path through LEAN_CTX_COMPRESSION to prove the block is regenerated.
-    let _guard = crate::core::data_dir::test_env_lock();
-
+    // inject path through `compression_level` to prove the block is regenerated.
+    let iso = crate::core::data_dir::isolated_data_dir();
     let dir = std::env::temp_dir().join("lc_test_inject_compression_drift");
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
@@ -368,7 +314,7 @@ fn inject_rewrites_on_compression_change_without_version_bump() {
         format: RulesFormat::DedicatedMarkdown,
     };
 
-    crate::test_env::set_var("LEAN_CTX_COMPRESSION", "off");
+    std::fs::write(iso.path().join("config.toml"), "compression_level = 0.0\n").unwrap();
     assert!(matches!(
         super::write::inject_rules(&target).unwrap(),
         RulesResult::Updated
@@ -382,14 +328,13 @@ fn inject_rewrites_on_compression_change_without_version_bump() {
     ));
 
     // Switch to max → must rewrite even though RULES_VERSION is unchanged.
-    crate::test_env::set_var("LEAN_CTX_COMPRESSION", "max");
+    std::fs::write(iso.path().join("config.toml"), "compression_level = 0.7\n").unwrap();
     assert!(matches!(
         super::write::inject_rules(&target).unwrap(),
         RulesResult::Updated
     ));
     let max = std::fs::read_to_string(&target.path).unwrap();
 
-    crate::test_env::remove_var("LEAN_CTX_COMPRESSION");
     let _ = std::fs::remove_dir_all(&dir);
 
     assert_ne!(off, max, "compression-level change must alter the body");
@@ -425,22 +370,7 @@ fn match_agent_name_basic() {
     assert!(match_agent_name("claude", "Claude Code"));
     assert!(match_agent_name("vscode", "VS Code"));
     assert!(match_agent_name("copilot", "Copilot CLI"));
-    assert!(match_agent_name("kiro", "AWS Kiro"));
-    assert!(match_agent_name("pi", "Pi Coding Agent"));
-    assert!(match_agent_name("crush", "Crush"));
-    assert!(match_agent_name("amp", "Amp"));
-    assert!(match_agent_name("cline", "Cline"));
-    assert!(match_agent_name("roo", "Roo Code"));
-    assert!(match_agent_name("trae", "Trae"));
-    assert!(match_agent_name("amazonq", "Amazon Q Developer"));
-    assert!(match_agent_name("verdent", "Verdent"));
-    assert!(match_agent_name("continue", "Continue"));
-    assert!(match_agent_name("antigravity", "Antigravity"));
-    assert!(match_agent_name("codebuddy", "CodeBuddy"));
     assert!(match_agent_name("gemini", "Gemini CLI"));
-    assert!(match_agent_name("augment", "Augment"));
-    assert!(match_agent_name("openclaw", "OpenClaw"));
-    assert!(match_agent_name("qodercli", "Qoder"));
 }
 
 #[test]
@@ -451,17 +381,3 @@ fn match_agent_name_no_false_positives() {
 }
 
 // ── InjectResult ─────────────────────────────────────────────
-
-#[test]
-fn inject_result_tracks_backed_up_files() {
-    let result = InjectResult {
-        backed_up: vec!["/tmp/test.md.bak".to_string()],
-        ..Default::default()
-    };
-    assert_eq!(result.backed_up.len(), 1);
-    assert!(
-        std::path::Path::new(&result.backed_up[0])
-            .extension()
-            .is_some_and(|ext| ext.eq_ignore_ascii_case("bak"))
-    );
-}

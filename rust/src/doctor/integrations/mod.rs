@@ -6,8 +6,8 @@ use chrono::Utc;
 use serde::Serialize;
 
 use super::{
-    BOLD, DIM, GREEN, RST, WHITE, YELLOW, claude_binary_exists, codebuddy_binary_exists,
-    resolve_lean_ctx_binary, tildify_home,
+    BOLD, DIM, GREEN, RST, WHITE, YELLOW, claude_binary_exists, resolve_lean_ctx_binary,
+    tildify_home,
 };
 
 #[derive(Debug, Clone, Copy)]
@@ -49,20 +49,16 @@ pub(super) fn run_integrations(opts: &IntegrationsOptions) -> i32 {
         return 2;
     };
     let binary = crate::core::portable_binary::resolve_portable_binary();
-    let data_dir = crate::core::data_dir::lean_ctx_data_dir()
-        .map(|d| d.to_string_lossy().to_string())
-        .unwrap_or_default();
 
     let mut integrations = vec![
-        integration_cursor(&home, &binary, &data_dir),
-        integration_claude(&home, &binary, &data_dir),
-        integration_codebuddy(&home, &binary, &data_dir),
+        integration_cursor(&home, &binary),
+        integration_claude(&home, &binary),
     ];
     for t in crate::core::editor_registry::build_targets(&home) {
-        if matches!(t.name, "Cursor" | "Claude Code" | "CodeBuddy") {
+        if matches!(t.name, "Cursor" | "Claude Code") {
             continue;
         }
-        integrations.push(integration_generic(&home, &binary, &data_dir, &t));
+        integrations.push(integration_generic(&home, &binary, &t));
     }
     let ok = integrations.iter().all(|i| !i.detected || i.ok);
 
