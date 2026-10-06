@@ -83,7 +83,7 @@ fn setup_bootstrap_doctor_status_json_smoke() {
         );
     }
 
-    let dirs = crate::user_dirs::SeparateDirs::new(tmp.path());
+    let dirs = SeparateDirs::new(tmp.path());
 
     let mut envs = vec![("HOME", home_str.as_str()), ("LEAN_CTX_ACTIVE", "1")];
     envs.extend(dirs.to_env_pairs());
@@ -181,7 +181,7 @@ fn claude_config_dir_fallback_writes_dot_claude_json() {
         write_exe(&claude_path, "#!/bin/sh\nexit 1\n");
     }
 
-    let dirs = crate::user_dirs::SeparateDirs::new(tmp.path());
+    let dirs = SeparateDirs::new(tmp.path());
 
     let mut envs = vec![
         ("HOME", home_str.as_str()),
@@ -276,7 +276,7 @@ fn init_agent_preserves_agents_md_and_is_idempotent() {
         write_exe(&claude_path, "#!/bin/sh\nexit 0\n");
     }
 
-    let dirs = crate::user_dirs::SeparateDirs::new(tmp.path());
+    let dirs = SeparateDirs::new(tmp.path());
 
     let mut envs = vec![("HOME", home_str.as_str()), ("LEAN_CTX_ACTIVE", "1")];
     envs.extend(dirs.to_env_pairs());
@@ -354,7 +354,7 @@ fn init_claude_installs_dedicated_rules_file_without_claude_md() {
 
     let home_str = home.to_string_lossy().to_string();
 
-    let dirs = crate::user_dirs::SeparateDirs::new(tmp.path());
+    let dirs = SeparateDirs::new(tmp.path());
 
     let mut envs = vec![("HOME", home_str.as_str()), ("LEAN_CTX_ACTIVE", "1")];
     envs.extend(dirs.to_env_pairs());
@@ -448,7 +448,7 @@ fn init_augment_installs_lean_ctx_mcp_into_dot_augment_settings() {
 
     let home_str = home.to_string_lossy().to_string();
 
-    let dirs = crate::user_dirs::SeparateDirs::new(tmp.path());
+    let dirs = SeparateDirs::new(tmp.path());
     let mut envs = vec![
         ("HOME", home_str.as_str()),
         ("LEAN_CTX_ACTIVE", "1"),
@@ -555,5 +555,41 @@ fn init_augment_installs_lean_ctx_mcp_into_dot_augment_settings() {
             lean_ctx.get("env").is_none(),
             "data dir is auto-detected at runtime, not pinned into the config (GH #408)"
         );
+    }
+}
+
+/// One directory per LEAN_CTX_<CATEGORY>_DIR, so a file written to the wrong
+/// category is caught.
+struct SeparateDirs {
+    config: String,
+    data: String,
+    state: String,
+    cache: String,
+}
+
+impl SeparateDirs {
+    fn new(tmp_root: &std::path::Path) -> Self {
+        let config = tmp_root.join("config");
+        let data = tmp_root.join("data");
+        let state = tmp_root.join("state");
+        let cache = tmp_root.join("cache");
+        for d in [&config, &data, &state, &cache] {
+            std::fs::create_dir_all(d).unwrap();
+        }
+        SeparateDirs {
+            config: config.to_string_lossy().to_string(),
+            data: data.to_string_lossy().to_string(),
+            state: state.to_string_lossy().to_string(),
+            cache: cache.to_string_lossy().to_string(),
+        }
+    }
+
+    fn to_env_pairs(&self) -> Vec<(&str, &str)> {
+        vec![
+            ("LEAN_CTX_CONFIG_DIR", self.config.as_str()),
+            ("LEAN_CTX_DATA_DIR", self.data.as_str()),
+            ("LEAN_CTX_STATE_DIR", self.state.as_str()),
+            ("LEAN_CTX_CACHE_DIR", self.cache.as_str()),
+        ]
     }
 }
