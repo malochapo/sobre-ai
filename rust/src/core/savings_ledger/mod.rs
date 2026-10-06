@@ -8,7 +8,7 @@ pub mod event;
 pub mod store;
 
 pub use event::{MECHANISM_CACHING, MECHANISM_COMPRESSION, MECHANISM_ROUTING, SavingsEvent};
-pub use store::{LedgerSummary, VerifyResult};
+pub use store::LedgerSummary;
 
 use std::sync::OnceLock;
 
@@ -260,19 +260,6 @@ pub fn summary() -> LedgerSummary {
     store::default_path()
         .map(|p| store::summarize(&p))
         .unwrap_or_default()
-}
-
-/// Per-day `(day, bounce_events, read_events)` for the last `days` days —
-/// the dashboard's "is the system learning?" trend (#507).
-pub fn daily_bounce_trend(days: u32) -> Vec<(String, u64, u64)> {
-    store::default_path()
-        .map(|p| store::daily_bounce_trend(&p, days))
-        .unwrap_or_default()
-}
-
-/// Re-walks the hash chain and reports whether it is intact.
-pub fn verify() -> VerifyResult {
-    store::default_path().map_or_else(VerifyResult::empty, |p| store::verify(&p))
 }
 
 /// Every recorded event (for `ledger export`).

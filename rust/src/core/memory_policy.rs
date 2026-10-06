@@ -14,11 +14,6 @@ pub struct MemoryPolicy {
 }
 
 impl MemoryPolicy {
-    pub fn apply_overrides(&mut self, o: &MemoryPolicyOverrides) {
-        self.knowledge.apply_overrides(&o.knowledge);
-        self.lifecycle.apply_overrides(&o.lifecycle);
-    }
-
     pub fn validate(&self) -> Result<(), String> {
         self.knowledge.validate()?;
         self.episodic.validate()?;
@@ -30,38 +25,6 @@ impl MemoryPolicy {
         self.compaction.validate()?;
         Ok(())
     }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-#[serde(default)]
-pub struct MemoryPolicyOverrides {
-    pub knowledge: KnowledgePolicyOverrides,
-    pub lifecycle: LifecyclePolicyOverrides,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-#[serde(default)]
-pub struct KnowledgePolicyOverrides {
-    pub max_facts: Option<usize>,
-    pub max_patterns: Option<usize>,
-    pub max_history: Option<usize>,
-    pub contradiction_threshold: Option<f32>,
-    pub recall_facts_limit: Option<usize>,
-    pub rooms_limit: Option<usize>,
-    pub timeline_limit: Option<usize>,
-    pub relations_limit: Option<usize>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-#[serde(default)]
-pub struct LifecyclePolicyOverrides {
-    pub decay_rate: Option<f32>,
-    pub low_confidence_threshold: Option<f32>,
-    pub stale_days: Option<i64>,
-    pub similarity_threshold: Option<f32>,
-    pub forgetting_model: Option<String>,
-    pub base_stability_days: Option<f32>,
-    pub archetype_aware_decay: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -125,33 +88,6 @@ impl KnowledgePolicy {
             return Err("memory.knowledge.relations_limit must be > 0".to_string());
         }
         Ok(())
-    }
-
-    fn apply_overrides(&mut self, o: &KnowledgePolicyOverrides) {
-        if let Some(v) = o.max_facts {
-            self.max_facts = v;
-        }
-        if let Some(v) = o.max_patterns {
-            self.max_patterns = v;
-        }
-        if let Some(v) = o.max_history {
-            self.max_history = v;
-        }
-        if let Some(v) = o.contradiction_threshold {
-            self.contradiction_threshold = v;
-        }
-        if let Some(v) = o.recall_facts_limit {
-            self.recall_facts_limit = v;
-        }
-        if let Some(v) = o.rooms_limit {
-            self.rooms_limit = v;
-        }
-        if let Some(v) = o.timeline_limit {
-            self.timeline_limit = v;
-        }
-        if let Some(v) = o.relations_limit {
-            self.relations_limit = v;
-        }
     }
 }
 
@@ -299,30 +235,6 @@ impl LifecyclePolicy {
             return Err("memory.lifecycle.reclaim_headroom_pct must be in [0.0, 0.95]".to_string());
         }
         Ok(())
-    }
-
-    fn apply_overrides(&mut self, o: &LifecyclePolicyOverrides) {
-        if let Some(v) = o.decay_rate {
-            self.decay_rate = v;
-        }
-        if let Some(v) = o.low_confidence_threshold {
-            self.low_confidence_threshold = v;
-        }
-        if let Some(v) = o.stale_days {
-            self.stale_days = v;
-        }
-        if let Some(v) = o.similarity_threshold {
-            self.similarity_threshold = v;
-        }
-        if let Some(ref v) = o.forgetting_model {
-            self.forgetting_model.clone_from(v);
-        }
-        if let Some(v) = o.base_stability_days {
-            self.base_stability_days = v;
-        }
-        if let Some(v) = o.archetype_aware_decay {
-            self.archetype_aware_decay = v;
-        }
     }
 }
 

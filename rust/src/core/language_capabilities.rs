@@ -28,13 +28,6 @@ pub enum LanguageId {
     Tscn,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct LanguageCapabilities {
-    pub deps_edges: bool,
-    pub deep_queries: bool,
-    pub import_resolver: bool,
-}
-
 impl LanguageId {
     pub fn id_str(&self) -> &'static str {
         match self {
@@ -63,50 +56,6 @@ impl LanguageId {
             LanguageId::Svelte => "svelte",
             LanguageId::Tscn => "tscn",
         }
-    }
-}
-
-pub fn capabilities(lang: LanguageId) -> LanguageCapabilities {
-    match lang {
-        // tree-sitter backed (deep_queries + resolver can be meaningful)
-        LanguageId::Rust
-        | LanguageId::TypeScript
-        | LanguageId::JavaScript
-        | LanguageId::Python
-        | LanguageId::Go
-        | LanguageId::Java
-        | LanguageId::C
-        | LanguageId::Cpp
-        | LanguageId::Ruby
-        | LanguageId::CSharp
-        | LanguageId::Kotlin
-        | LanguageId::Swift
-        | LanguageId::Php
-        | LanguageId::Bash
-        | LanguageId::Dart
-        | LanguageId::Scala
-        | LanguageId::Elixir
-        | LanguageId::Zig
-        | LanguageId::Gdscript
-        | LanguageId::Lua
-        | LanguageId::Luau => LanguageCapabilities {
-            deps_edges: true,
-            deep_queries: true,
-            import_resolver: true,
-        },
-        // templating languages: we can extract deps edges, but no deep_queries/resolver.
-        LanguageId::Vue | LanguageId::Svelte => LanguageCapabilities {
-            deps_edges: true,
-            deep_queries: false,
-            import_resolver: false,
-        },
-        // Godot scenes: no symbols (not source code), but resolved Scene→Script
-        // import edges via the GDScript `res://` resolver.
-        LanguageId::Tscn => LanguageCapabilities {
-            deps_edges: true,
-            deep_queries: false,
-            import_resolver: true,
-        },
     }
 }
 
@@ -164,14 +113,6 @@ mod tests {
         assert!(is_indexable_ext("rs"));
         assert!(is_indexable_ext("vue"));
         assert!(!is_indexable_ext("md"));
-    }
-
-    #[test]
-    fn caps_are_deterministic() {
-        let c1 = capabilities(LanguageId::Rust);
-        let c2 = capabilities(LanguageId::Rust);
-        assert_eq!(c1, c2);
-        assert!(c1.deps_edges);
     }
 
     #[test]

@@ -1,7 +1,6 @@
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex, OnceLock};
 
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
@@ -179,31 +178,6 @@ impl RiskLevel {
 // Background build state (singleton per process)
 // ---------------------------------------------------------------------------
 
-#[derive(Debug, Clone, Serialize)]
-pub struct BuildProgress {
-    pub status: &'static str,
-    pub files_total: usize,
-    pub files_done: usize,
-    pub edges_found: usize,
-}
-
-enum BuildState {
-    Idle,
-    Building {
-        files_total: usize,
-        files_done: Arc<AtomicUsize>,
-        edges_found: Arc<AtomicUsize>,
-    },
-    Ready(Arc<CallGraph>),
-    Failed(String),
-}
-
-static BUILD: OnceLock<Mutex<BuildState>> = OnceLock::new();
-
-fn global_state() -> &'static Mutex<BuildState> {
-    BUILD.get_or_init(|| Mutex::new(BuildState::Idle))
-}
-
 impl CallGraph {
     pub fn new(project_root: &str) -> Self {
         Self {
@@ -354,108 +328,6 @@ impl CallGraph {
     // -----------------------------------------------------------------------
     // Public API: non-blocking access for the dashboard
     // -----------------------------------------------------------------------
-
-    /// Returns the cached graph immediately, or `None` + starts a background build.
-    pub fn get_or_start_build(
-        project_root: &str,
-        inputs: Arc<CallGraphInputs>,
-    ) -> Result<Arc<CallGraph>, BuildProgress> {
-        let state = global_state();
-        let mut guard = state
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-
-        match &*guard {
-            BuildState::Ready(graph) => return Ok(Arc::clone(graph)),
-            BuildState::Building {
-                files_total,
-                files_done,
-                edges_found,
-            } => {
-                return Err(BuildProgress {
-                    status: "building",
-                    files_total: *files_total,
-                    files_done: files_done.load(Ordering::Relaxed),
-                    edges_found: edges_found.load(Ordering::Relaxed),
-                });
-            }
-            BuildState::Failed(msg) => {
-                tracing::warn!("[call_graph: previous build failed: {msg} — retrying]");
-            }
-            BuildState::Idle => {}
-        }
-
-        // Try serving from disk cache first
-        if let Some(cached) = Self::load(project_root)
-            && !cache_looks_stale(&cached, &inputs)
-        {
-            let arc = Arc::new(cached);
-            *guard = BuildState::Ready(Arc::clone(&arc));
-            return Ok(arc);
-        }
-
-        let files_total = inputs.file_paths.len();
-        let files_done = Arc::new(AtomicUsize::new(0));
-        let edges_found = Arc::new(AtomicUsize::new(0));
-
-        *guard = BuildState::Building {
-            files_total,
-            files_done: Arc::clone(&files_done),
-            edges_found: Arc::clone(&edges_found),
-        };
-        drop(guard);
-
-        let root = normalize_project_root(project_root);
-        let fd = Arc::clone(&files_done);
-        let ef = Arc::clone(&edges_found);
-
-        std::thread::spawn(move || {
-            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                let previous = CallGraph::load(&root);
-                if let Some(prev) = &previous {
-                    CallGraph::build_incremental_parallel(&inputs, prev, Some((&fd, &ef)))
-                } else {
-                    CallGraph::build_parallel(&inputs, Some((&fd, &ef)))
-                }
-            }));
-
-            match result {
-                Ok(graph) => {
-                    let _ = graph.save();
-                    let arc = Arc::new(graph);
-                    if let Ok(mut g) = global_state().lock() {
-                        *g = BuildState::Ready(Arc::clone(&arc));
-                    }
-                    tracing::info!(
-                        "[call_graph: build complete — {} files, {} edges]",
-                        arc.file_hashes.len(),
-                        arc.edges.len()
-                    );
-                }
-                Err(e) => {
-                    let msg = format!("{e:?}");
-                    tracing::error!("[call_graph: build panicked: {msg}]");
-                    if let Ok(mut g) = global_state().lock() {
-                        *g = BuildState::Failed(msg);
-                    }
-                }
-            }
-        });
-
-        Err(BuildProgress {
-            status: "building",
-            files_total,
-            files_done: 0,
-            edges_found: 0,
-        })
-    }
-
-    /// Force-invalidate the cached result so next request triggers a rebuild.
-    pub fn invalidate() {
-        if let Ok(mut g) = global_state().lock() {
-            *g = BuildState::Idle;
-        }
-    }
 
     // -----------------------------------------------------------------------
     // Legacy synchronous API (kept for non-dashboard callers)
@@ -708,17 +580,6 @@ impl CallGraph {
 // ---------------------------------------------------------------------------
 // Cache staleness check (fast — mtime-based, no content reads)
 // ---------------------------------------------------------------------------
-
-fn cache_looks_stale(cached: &CallGraph, inputs: &CallGraphInputs) -> bool {
-    if cached.file_hashes.len() != inputs.file_paths.len() {
-        return true;
-    }
-    let cached_files: std::collections::HashSet<&str> =
-        cached.file_hashes.keys().map(String::as_str).collect();
-    let index_files: std::collections::HashSet<&str> =
-        inputs.file_paths.iter().map(String::as_str).collect();
-    cached_files != index_files
-}
 
 // ---------------------------------------------------------------------------
 // Helpers

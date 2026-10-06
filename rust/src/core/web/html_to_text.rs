@@ -38,11 +38,6 @@ pub fn parse(html: &str) -> HtmlDoc {
     }
 }
 
-/// Extract just the document `<title>` without rendering the body.
-pub fn title(html: &str) -> Option<String> {
-    extract_title(html)
-}
-
 fn utf8_len(first: u8) -> usize {
     match first {
         b if b < 0x80 => 1,

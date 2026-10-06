@@ -4,24 +4,12 @@
 //! - secret-like paths ([`is_secret_like`]) and detected secrets → `Secret`
 //! - Luhn-validated card numbers and mod-97-validated IBANs → `Confidential`
 
-use std::path::Path;
 use std::sync::OnceLock;
 
 use regex::Regex;
 
 use super::SensitivityLevel;
-use crate::core::{io_boundary, secret_detection};
-
-/// Classify a source path. Secret-like paths (keys, `.env`, `.ssh/…`) → `Secret`.
-/// Everything else stays `Public` — path alone is not enough to infer lower
-/// confidential levels without guessing.
-pub fn classify_path(path: &Path) -> SensitivityLevel {
-    if io_boundary::is_secret_like(path).is_some() {
-        SensitivityLevel::Secret
-    } else {
-        SensitivityLevel::Public
-    }
-}
+use crate::core::secret_detection;
 
 /// Classify free text by content.
 pub fn classify_content(content: &str) -> SensitivityLevel {
@@ -32,12 +20,6 @@ pub fn classify_content(content: &str) -> SensitivityLevel {
         return SensitivityLevel::Confidential;
     }
     SensitivityLevel::Public
-}
-
-/// Combined classification: the maximum of path- and content-derived levels.
-pub fn classify(path: Option<&Path>, content: &str) -> SensitivityLevel {
-    let from_path = path.map(classify_path).unwrap_or_default();
-    from_path.max(classify_content(content))
 }
 
 // ---- Card numbers (Luhn) ---------------------------------------------------
@@ -173,27 +155,6 @@ mod tests {
         assert_eq!(
             classify_content("ref DE00370400440532013000"),
             SensitivityLevel::Public
-        );
-    }
-
-    #[test]
-    fn secret_like_path_is_secret() {
-        assert_eq!(
-            classify_path(Path::new("/home/u/.ssh/id_rsa")),
-            SensitivityLevel::Secret
-        );
-        assert_eq!(
-            classify_path(Path::new("src/main.rs")),
-            SensitivityLevel::Public
-        );
-    }
-
-    #[test]
-    fn classify_takes_max_of_path_and_content() {
-        // Benign content but secret path → Secret.
-        assert_eq!(
-            classify(Some(Path::new("/x/.env")), "PORT=8080"),
-            SensitivityLevel::Secret
         );
     }
 }

@@ -35,67 +35,7 @@ mod ledger_reset {
     }
 }
 
-mod ledger_evict {
-    use lean_ctx::core::context_ledger::ContextLedger;
-
-    #[test]
-    fn evict_removes_specific_paths() {
-        let mut ledger = ContextLedger::with_window_size(10000);
-        ledger.record("keep.rs", "full", 1000, 1000);
-        ledger.record("evict_me.rs", "full", 5000, 5000);
-        ledger.record("also_evict.rs", "full", 3000, 3000);
-
-        let removed = ledger.evict_paths(&["evict_me.rs", "also_evict.rs"]);
-
-        assert_eq!(removed, 2);
-        assert_eq!(ledger.entries.len(), 1);
-        assert_eq!(ledger.entries[0].path, "keep.rs");
-        assert_eq!(ledger.total_tokens_sent, 1000);
-    }
-
-    #[test]
-    fn evict_reduces_pressure() {
-        let mut ledger = ContextLedger::with_window_size(10000);
-        ledger.record("a.rs", "full", 5000, 5000);
-        ledger.record("b.rs", "full", 5000, 5000);
-        // 10000/10000 = 100% → EvictLeastRelevant
-        assert!(ledger.pressure().utilization > 0.9);
-
-        ledger.evict_paths(&["a.rs"]);
-
-        // 5000/10000 = 50% → SuggestCompression
-        assert!(
-            ledger.pressure().utilization <= 0.5 + 0.05,
-            "pressure should drop to ~50% after eviction, got: {:.1}%",
-            ledger.pressure().utilization * 100.0,
-        );
-    }
-
-    #[test]
-    fn evict_nonexistent_path_is_noop() {
-        let mut ledger = ContextLedger::with_window_size(10000);
-        ledger.record("exists.rs", "full", 1000, 1000);
-
-        let removed = ledger.evict_paths(&["nonexistent.rs", "also_missing.rs"]);
-
-        assert_eq!(removed, 0);
-        assert_eq!(ledger.entries.len(), 1);
-        assert_eq!(ledger.total_tokens_sent, 1000);
-    }
-
-    #[test]
-    fn evict_with_mixed_existing_and_missing() {
-        let mut ledger = ContextLedger::with_window_size(10000);
-        ledger.record("a.rs", "full", 1000, 1000);
-        ledger.record("b.rs", "full", 2000, 2000);
-
-        let removed = ledger.evict_paths(&["a.rs", "missing.rs", "b.rs"]);
-
-        assert_eq!(removed, 2);
-        assert_eq!(ledger.entries.len(), 0);
-        assert_eq!(ledger.total_tokens_sent, 0);
-    }
-}
+mod ledger_evict {}
 
 mod session_reset_clears_ledger {
     use lean_ctx::core::context_ledger::{ContextLedger, PressureAction};
@@ -152,31 +92,6 @@ mod bug_reporter_scenario {
     }
 
     #[test]
-    fn evict_suggested_files_reduces_pressure() {
-        let mut ledger = ContextLedger::with_window_size(128_000);
-        for i in 0..20 {
-            let path = format!("src/module_{i}.rs");
-            ledger.record(&path, "full", 7000, 7000);
-        }
-        // 140000/128000 > 100%
-        assert!(ledger.pressure().utilization >= 0.9);
-
-        // Evict the 3 least relevant as suggested by the hint
-        let candidates = ledger.eviction_candidates_by_phi(3);
-        let to_evict: Vec<&str> = candidates.iter().take(3).map(String::as_str).collect();
-        let removed = ledger.evict_paths(&to_evict);
-
-        assert_eq!(removed, 3);
-        assert_eq!(ledger.entries.len(), 17);
-        // Pressure should have dropped significantly (3*7000 = 21000 freed)
-        let new_pressure = ledger.pressure().utilization;
-        assert!(
-            new_pressure < 1.0,
-            "pressure should drop after eviction: {new_pressure}"
-        );
-    }
-
-    #[test]
     fn session_reset_is_complete_fresh_start() {
         let mut ledger = ContextLedger::with_window_size(128_000);
         for i in 0..50 {
@@ -198,23 +113,6 @@ mod bug_reporter_scenario {
         ledger.record("new_file.rs", "full", 1000, 1000);
         assert_eq!(ledger.entries.len(), 1);
         assert_eq!(ledger.total_tokens_sent, 1000);
-    }
-
-    #[test]
-    fn evict_then_re_record_same_file_works() {
-        let mut ledger = ContextLedger::with_window_size(10000);
-        ledger.record("big.rs", "full", 8000, 8000);
-        assert!(ledger.pressure().utilization > 0.7);
-
-        ledger.evict_paths(&["big.rs"]);
-        assert_eq!(ledger.entries.len(), 0);
-        assert_eq!(ledger.total_tokens_sent, 0);
-
-        // Re-reading the file would re-add it (but with exclude overlay
-        // in the real MCP tool, only signatures mode is allowed)
-        ledger.record("big.rs", "signatures", 8000, 1600);
-        assert_eq!(ledger.entries.len(), 1);
-        assert_eq!(ledger.total_tokens_sent, 1600);
     }
 }
 
@@ -274,15 +172,5 @@ mod double_booking_fix {
         assert_eq!(ledger.entries.len(), 1);
         assert_eq!(ledger.total_tokens_sent, 3000);
         assert_eq!(ledger.total_tokens_saved, 2000);
-    }
-
-    #[test]
-    fn remove_returns_bool_correctly() {
-        let mut ledger = ContextLedger::with_window_size(10000);
-        ledger.record("exists.rs", "full", 500, 500);
-
-        assert!(ledger.remove("exists.rs"));
-        assert!(!ledger.remove("exists.rs"));
-        assert!(!ledger.remove("never_existed.rs"));
     }
 }

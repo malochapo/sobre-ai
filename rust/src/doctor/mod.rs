@@ -15,8 +15,6 @@ use checks::*;
 #[allow(clippy::wildcard_imports)]
 use common::*;
 
-pub use report::{HealthCheck, HealthLevel, HealthReport, health_report};
-
 pub(super) const GREEN: &str = "\x1b[32m";
 
 pub(super) const RED: &str = "\x1b[31m";

@@ -14,12 +14,6 @@ const TAIL_LINES: usize = 8;
 const LONG_LINE_HEAD_CHARS: usize = 800;
 const LONG_LINE_TAIL_CHARS: usize = 300;
 
-/// Tools whose large outputs are eligible for the firewall. Explicit file reads are
-/// intentionally excluded — they have their own read-mode (`lines:`, `signatures`, …).
-pub fn is_firewallable_tool(name: &str) -> bool {
-    matches!(name, "ctx_shell" | "ctx_search" | "ctx_tree")
-}
-
 /// Explicit file-read tools whose result *is* the file content the agent reads and
 /// edits against. They must always return that content inline — never a head/tail
 /// digest (firewall) nor a stored-reference stub (`reference_results`) — regardless
@@ -102,44 +96,6 @@ pub fn summarize(full: &str, archive_id: &str, tool: &str, output_tokens: usize)
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn firewallable_tools_are_outputs_not_reads() {
-        assert!(is_firewallable_tool("ctx_shell"));
-        assert!(is_firewallable_tool("ctx_search"));
-        assert!(is_firewallable_tool("ctx_tree"));
-        assert!(!is_firewallable_tool("ctx_read"));
-        assert!(!is_firewallable_tool("ctx_expand"));
-        assert!(!is_firewallable_tool("ctx_knowledge"));
-    }
-
-    #[test]
-    fn protected_reads_are_file_readers_and_never_firewallable() {
-        // Explicit reads must always return content (no firewall digest, no
-        // reference stub) so the agent can edit against the lines. `ctx_read`
-        // is the one live explicit read: it absorbed the batch read (`paths`,
-        // ex-`ctx_multi_read`), and the `ctx` fan-out resolves `tool=read` to
-        // `ctx_read` before dispatch. A protected read that is not a registered
-        // tool guards nothing, so the set is checked against the live registry.
-        let live_protected: Vec<&str> = crate::server::registry::build_registry()
-            .names()
-            .into_iter()
-            .filter(|name| is_protected_read(name))
-            .collect();
-        assert_eq!(
-            live_protected,
-            ["ctx_read"],
-            "the protected reads must be exactly the live explicit reads"
-        );
-        for read in live_protected {
-            assert!(
-                !is_firewallable_tool(read),
-                "{read} must never be firewallable"
-            );
-        }
-        assert!(!is_protected_read("ctx_shell"));
-        assert!(!is_protected_read("ctx_search"));
-    }
 
     fn inline_cap() -> usize {
         INLINE_MAX_BYTES

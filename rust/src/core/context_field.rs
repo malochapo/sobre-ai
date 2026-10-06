@@ -257,32 +257,6 @@ pub struct FieldSignals {
     pub redundancy: f64,
 }
 
-/// Token budget parameters for compilation.
-#[derive(Debug, Clone, Copy)]
-pub struct TokenBudget {
-    pub total: usize,
-    pub used: usize,
-}
-
-impl TokenBudget {
-    pub fn remaining(&self) -> usize {
-        self.total.saturating_sub(self.used)
-    }
-    pub fn utilization(&self) -> f64 {
-        if self.total == 0 {
-            return 1.0;
-        }
-        self.used as f64 / self.total as f64
-    }
-    /// Temperature derived from budget pressure: high pressure = high T.
-    /// T in [0.1, 2.0]. At T=0.1 (low pressure), prefer dense views.
-    /// At T=2.0 (high pressure), prefer sparse views.
-    pub fn temperature(&self) -> f64 {
-        let u = self.utilization();
-        (0.1 + u * 1.9).clamp(0.1, 2.0)
-    }
-}
-
 /// The Context Field: computes Phi for a set of items given a task context.
 pub struct ContextField {
     weights: FieldWeights,
@@ -356,15 +330,6 @@ pub fn normalize_token_cost(tokens: usize, budget_total: usize) -> f64 {
         return 1.0;
     }
     (tokens as f64 / budget_total as f64).clamp(0.0, 1.0)
-}
-
-/// Compute efficiency ratio: Phi per token.
-/// Used by the greedy knapsack in the compiler.
-pub fn efficiency(phi: f64, tokens: usize) -> f64 {
-    if tokens == 0 {
-        return phi;
-    }
-    phi / tokens as f64
 }
 
 /// Compute real signals for a file path using existing scoring modules.
@@ -493,22 +458,6 @@ mod tests {
     }
 
     #[test]
-    fn budget_temperature_scales_with_utilization() {
-        let low = TokenBudget {
-            total: 10000,
-            used: 1000,
-        };
-        let high = TokenBudget {
-            total: 10000,
-            used: 9000,
-        };
-        assert!(
-            high.temperature() > low.temperature(),
-            "higher utilization should increase temperature"
-        );
-    }
-
-    #[test]
     fn normalize_surprise_maps_range() {
         assert!((normalize_surprise(5.0) - 0.0).abs() < 0.01);
         assert!((normalize_surprise(17.0) - 1.0).abs() < 0.01);
@@ -520,12 +469,6 @@ mod tests {
         assert!((normalize_graph_proximity(0) - 1.0).abs() < f64::EPSILON);
         assert!((normalize_graph_proximity(1) - 0.5).abs() < f64::EPSILON);
         assert!(normalize_graph_proximity(10) < 0.15);
-    }
-
-    #[test]
-    fn efficiency_ratio_is_phi_per_token() {
-        let e = efficiency(0.8, 400);
-        assert!((e - 0.002).abs() < 0.0001);
     }
 
     #[test]

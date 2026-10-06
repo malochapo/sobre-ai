@@ -6,7 +6,7 @@ pub mod playbook;
 mod state;
 mod types;
 
-pub use playbook::{DeltaOutcome, EntryKind, Playbook, PlaybookEntry};
+pub use playbook::{EntryKind, Playbook, PlaybookEntry};
 pub use types::{
     Decision, EvidenceKind, EvidenceRecord, FileTouched, Finding, PreparedSave, ProgressEntry,
     SessionState, SessionStats, SessionSummary, TaskInfo, TestSnapshot,

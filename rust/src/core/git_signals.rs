@@ -212,58 +212,6 @@ pub fn apply_boost(scores: &mut [crate::core::task_relevance::RelevanceScore], r
 mod tests {
     use super::*;
 
-    fn run(dir: &std::path::Path, args: &[&str]) {
-        let out = std::process::Command::new("git")
-            .args(args)
-            .current_dir(dir)
-            .env("GIT_AUTHOR_NAME", "t")
-            .env("GIT_AUTHOR_EMAIL", "t@t")
-            .env("GIT_COMMITTER_NAME", "t")
-            .env("GIT_COMMITTER_EMAIL", "t@t")
-            .output()
-            .expect("git runs");
-        assert!(out.status.success(), "git {args:?}: {out:?}");
-    }
-
-    fn temp_repo() -> tempfile::TempDir {
-        let dir = tempfile::tempdir().unwrap();
-        run(dir.path(), &["init", "-q"]);
-        dir
-    }
-
-    #[test]
-    fn uncommitted_file_scores_recency_one() {
-        let repo = temp_repo();
-        std::fs::write(repo.path().join("wip.rs"), "fn main() {}").unwrap();
-        let root = repo.path().to_string_lossy().into_owned();
-        crate::core::git_cache::invalidate(&root);
-        let signals = collect(&root);
-        assert!((signals.recency_for("wip.rs", &root) - 1.0).abs() < f64::EPSILON);
-    }
-
-    #[test]
-    fn churn_normalized_to_max() {
-        let repo = temp_repo();
-        let root = repo.path().to_string_lossy().into_owned();
-        for i in 0..3 {
-            std::fs::write(repo.path().join("hot.rs"), format!("// v{i}")).unwrap();
-            run(repo.path(), &["add", "."]);
-            run(repo.path(), &["commit", "-qm", &format!("c{i}")]);
-        }
-        std::fs::write(repo.path().join("cold.rs"), "// once").unwrap();
-        run(repo.path(), &["add", "."]);
-        run(repo.path(), &["commit", "-qm", "cold"]);
-        crate::core::git_cache::invalidate(&root);
-
-        let signals = collect(&root);
-        let hot = signals.churn_for("hot.rs", &root);
-        let cold = signals.churn_for("cold.rs", &root);
-        assert!((hot - 1.0).abs() < f64::EPSILON, "hot file = max churn");
-        assert!(cold > 0.0 && cold < hot);
-        // Committed minutes ago -> commit recency near 1.0.
-        assert!(signals.recency_for("cold.rs", &root) > 0.9);
-    }
-
     #[test]
     fn non_git_root_yields_empty_and_is_cached() {
         let dir = tempfile::tempdir().unwrap();

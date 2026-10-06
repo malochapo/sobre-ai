@@ -409,11 +409,11 @@ fn bash_path_bare_name_unchanged() {
 #[test]
 fn normalize_msys2_path() {
     assert_eq!(
-        normalize_tool_path("/c/Users/game/Downloads/project"),
+        crate::core::pathutil::normalize_tool_path("/c/Users/game/Downloads/project"),
         "C:/Users/game/Downloads/project"
     );
     assert_eq!(
-        normalize_tool_path("/d/Projects/app/src"),
+        crate::core::pathutil::normalize_tool_path("/d/Projects/app/src"),
         "D:/Projects/app/src"
     );
 }
@@ -430,7 +430,7 @@ fn normalize_msys2_path_untouched_on_unix() {
 #[test]
 fn normalize_backslashes() {
     assert_eq!(
-        normalize_tool_path("C:\\Users\\game\\project\\src"),
+        crate::core::pathutil::normalize_tool_path("C:\\Users\\game\\project\\src"),
         "C:/Users/game/project/src"
     );
 }
@@ -438,7 +438,7 @@ fn normalize_backslashes() {
 #[test]
 fn normalize_mixed_separators() {
     assert_eq!(
-        normalize_tool_path("C:\\Users/game\\project/src"),
+        crate::core::pathutil::normalize_tool_path("C:\\Users/game\\project/src"),
         "C:/Users/game/project/src"
     );
 }
@@ -446,7 +446,7 @@ fn normalize_mixed_separators() {
 #[test]
 fn normalize_double_slashes() {
     assert_eq!(
-        normalize_tool_path("/home/user//project///src"),
+        crate::core::pathutil::normalize_tool_path("/home/user//project///src"),
         "/home/user/project/src"
     );
 }
@@ -454,43 +454,46 @@ fn normalize_double_slashes() {
 #[test]
 fn normalize_trailing_slash() {
     assert_eq!(
-        normalize_tool_path("/home/user/project/"),
+        crate::core::pathutil::normalize_tool_path("/home/user/project/"),
         "/home/user/project"
     );
 }
 
 #[test]
 fn normalize_root_preserved() {
-    assert_eq!(normalize_tool_path("/"), "/");
+    assert_eq!(crate::core::pathutil::normalize_tool_path("/"), "/");
 }
 
 #[test]
 fn normalize_windows_root_preserved() {
-    assert_eq!(normalize_tool_path("C:/"), "C:/");
+    assert_eq!(crate::core::pathutil::normalize_tool_path("C:/"), "C:/");
 }
 
 #[test]
 fn normalize_unix_path_unchanged() {
     assert_eq!(
-        normalize_tool_path("/home/user/project/src/main.rs"),
+        crate::core::pathutil::normalize_tool_path("/home/user/project/src/main.rs"),
         "/home/user/project/src/main.rs"
     );
 }
 
 #[test]
 fn normalize_relative_path_unchanged() {
-    assert_eq!(normalize_tool_path("src/main.rs"), "src/main.rs");
+    assert_eq!(
+        crate::core::pathutil::normalize_tool_path("src/main.rs"),
+        "src/main.rs"
+    );
 }
 
 #[test]
 fn normalize_dot_unchanged() {
-    assert_eq!(normalize_tool_path("."), ".");
+    assert_eq!(crate::core::pathutil::normalize_tool_path("."), ".");
 }
 
 #[test]
 fn normalize_unc_path_preserved() {
     assert_eq!(
-        normalize_tool_path("//server/share/file"),
+        crate::core::pathutil::normalize_tool_path("//server/share/file"),
         "//server/share/file"
     );
 }

@@ -382,12 +382,6 @@ pub fn from_bash_to_native_path(path: &str) -> String {
     crate::core::pathutil::normalize_tool_path(path)
 }
 
-/// Normalize paths from any client format to a consistent OS-native form.
-/// Delegates to `core::pathutil` so `core` crates do not depend on `hooks`.
-pub fn normalize_tool_path(path: &str) -> String {
-    crate::core::pathutil::normalize_tool_path(path)
-}
-
 pub fn generate_rewrite_script(binary: &str) -> String {
     let case_pattern = crate::rewrite_registry::bash_case_pattern();
     // #719: assignment + rewritten command carry the binary quoted, so

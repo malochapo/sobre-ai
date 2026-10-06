@@ -160,10 +160,6 @@ pub fn set_detected(caps: &ClientMcpCapabilities) {
     persist_to_disk(caps);
 }
 
-pub fn current() -> ClientMcpCapabilities {
-    global().lock().map(|g| g.clone()).unwrap_or_default()
-}
-
 fn persisted_path() -> Option<std::path::PathBuf> {
     Some(
         super::data_dir::lean_ctx_data_dir()

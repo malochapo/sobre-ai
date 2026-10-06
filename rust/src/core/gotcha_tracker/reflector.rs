@@ -98,26 +98,6 @@ pub fn reflect(store: &GotchaStore) -> Vec<ReflectionInsight> {
     insights
 }
 
-/// Fold reflection insights into a session playbook as deltas. Near-duplicates
-/// confirm the existing entry (the playbook's grow-and-refine invariant), so
-/// repeated checkpoints reinforce rather than bloat. Returns `(added, confirmed)`.
-pub fn fold_into_playbook(
-    insights: &[ReflectionInsight],
-    playbook: &mut crate::core::session::Playbook,
-    turn: u32,
-) -> (usize, usize) {
-    use crate::core::session::DeltaOutcome;
-
-    let (mut added, mut confirmed) = (0usize, 0usize);
-    for insight in insights {
-        match playbook.add_delta(insight.kind, &insight.content, turn) {
-            DeltaOutcome::Added(_) => added += 1,
-            DeltaOutcome::Confirmed(_) => confirmed += 1,
-        }
-    }
-    (added, confirmed)
-}
-
 /// Human-readable **Learning Ledger** — what lean-ctx has actually learned from
 /// real shell outcomes: proven error→fix strategies, recurring pitfalls, and the
 /// counts behind them. Honest counts only — no fabricated token-savings figures,
@@ -204,7 +184,6 @@ mod tests {
     use crate::core::gotcha_tracker::{
         ErrorEntry, FixEntry, Gotcha, GotchaCategory, GotchaSeverity, GotchaSource, SessionErrorLog,
     };
-    use crate::core::session::Playbook;
     use chrono::Utc;
 
     fn gotcha(trigger: &str, resolution: &str, occurrences: u32) -> Gotcha {
@@ -334,21 +313,5 @@ mod tests {
         let ledger = format_ledger(&store);
         assert!(ledger.contains("LEARNING LEDGER"));
         assert!(ledger.contains("No distilled insights yet"));
-    }
-
-    #[test]
-    fn fold_into_playbook_confirms_on_repeat() {
-        let insights = vec![ReflectionInsight {
-            kind: EntryKind::Strategy,
-            content: "When `cargo build` fails with E0507: clone the field".into(),
-            confidence: 0.9,
-        }];
-        let mut pb = Playbook::default();
-        assert_eq!(fold_into_playbook(&insights, &mut pb, 1), (1, 0));
-        assert_eq!(
-            fold_into_playbook(&insights, &mut pb, 2),
-            (0, 1),
-            "a second fold confirms, never duplicates"
-        );
     }
 }

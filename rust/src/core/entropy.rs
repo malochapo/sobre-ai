@@ -100,25 +100,6 @@ pub fn kolmogorov_proxy(content: &str) -> f64 {
     compressed.len() as f64 / content.len() as f64
 }
 
-/// Classification of content compressibility based on Kolmogorov proxy (gzip ratio).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum CompressibilityClass {
-    High,
-    Medium,
-    Low,
-}
-
-impl CompressibilityClass {
-    /// Returns a human-readable label with the Kolmogorov threshold range.
-    pub fn label(&self) -> &'static str {
-        match self {
-            Self::High => "high (K<0.3)",
-            Self::Medium => "medium (0.3≤K<0.6)",
-            Self::Low => "low (K≥0.6)",
-        }
-    }
-}
-
 /// Compresses content by removing low-entropy lines and deduplicating patterns.
 pub fn entropy_compress(content: &str) -> EntropyResult {
     entropy_compress_with_thresholds(content, BPE_ENTROPY_THRESHOLD, 0.7, &[])

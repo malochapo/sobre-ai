@@ -1,41 +1,14 @@
-use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
-use crate::core::bm25_index::{BM25Index, SearchResult};
+use crate::core::bm25_index::BM25Index;
 
 /// Default RRF parameter (controls how quickly rank decay affects fusion scores).
 const DEFAULT_RRF_K: f64 = 60.0;
 
 /// Maximum number of repo roots that can be served simultaneously.
 const MAX_ROOTS: usize = 16;
-
-/// A single search result from one repo root.
-#[derive(Debug, Clone)]
-pub struct RepoSearchResult {
-    pub repo_alias: String,
-    pub repo_path: String,
-    pub file_path: String,
-    pub symbol_name: String,
-    pub content: String,
-    pub start_line: usize,
-    pub end_line: usize,
-    pub score: f64,
-}
-
-/// A merged result after RRF fusion across multiple repos.
-#[derive(Debug, Clone)]
-pub struct FusedSearchResult {
-    pub repo_alias: String,
-    pub repo_path: String,
-    pub file_path: String,
-    pub symbol_name: String,
-    pub content: String,
-    pub start_line: usize,
-    pub end_line: usize,
-    pub rrf_score: f64,
-}
 
 /// Configuration for a single repository root in multi-repo mode.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -130,41 +103,8 @@ impl ActiveRepoRoot {
         })
     }
 
-    fn ensure_index(&mut self) {
-        if self.index.is_some() {
-            return;
-        }
-        self.index = Some(BM25Index::load_or_build(&self.path));
-    }
-
     pub fn alias(&self) -> String {
         self.config.effective_alias()
-    }
-
-    pub fn search(&mut self, query: &str, max_results: usize) -> Vec<RepoSearchResult> {
-        self.ensure_index();
-        let Some(ref index) = self.index else {
-            return Vec::new();
-        };
-
-        let results: Vec<SearchResult> = index.search(query, max_results);
-        let alias = self.alias();
-        let repo_path = self.path.to_string_lossy().to_string();
-
-        results
-            .into_iter()
-            .enumerate()
-            .map(|(rank, sr)| RepoSearchResult {
-                repo_alias: alias.clone(),
-                repo_path: repo_path.clone(),
-                file_path: sr.file_path,
-                symbol_name: sr.symbol_name,
-                content: sr.snippet,
-                start_line: sr.start_line,
-                end_line: sr.end_line,
-                score: 1.0 / (rank as f64 + 1.0),
-            })
-            .collect()
     }
 }
 
@@ -225,19 +165,8 @@ impl MultiRepoManager {
         Ok(())
     }
 
-    pub fn list_roots(&self) -> Vec<RootInfo> {
-        self.roots
-            .iter()
-            .map(|r| RootInfo {
-                path: r.path.to_string_lossy().to_string(),
-                alias: r.alias(),
-                has_index: r.index.is_some(),
-            })
-            .collect()
-    }
-
     /// The configured RRF constant, so external fusers (e.g. the hybrid
-    /// multi-repo search) score identically to [`Self::search`].
+    /// multi-repo search) score identically to the hybrid search.
     pub fn rrf_k(&self) -> f64 {
         self.rrf_k
     }
@@ -252,77 +181,12 @@ impl MultiRepoManager {
             r.alias() == repo || r.config.path == repo || r.path.to_string_lossy() == repo
         })
     }
-
-    /// Search across all roots (or a subset) and merge with Reciprocal Rank Fusion.
-    pub fn search(
-        &mut self,
-        query: &str,
-        max_results: usize,
-        filter_roots: Option<&[String]>,
-    ) -> Vec<FusedSearchResult> {
-        let per_root_max = (max_results * 2).max(20);
-
-        let mut all_results: HashMap<String, FusedSearchResult> = HashMap::new();
-
-        for root in &mut self.roots {
-            if let Some(filter) = filter_roots {
-                let alias = root.alias();
-                let path = root.path.to_string_lossy().to_string();
-                if !filter.iter().any(|f| f == &alias || f == &path) {
-                    continue;
-                }
-            }
-
-            let results = root.search(query, per_root_max);
-
-            for (rank, result) in results.iter().enumerate() {
-                let rrf_contribution = 1.0 / (self.rrf_k + rank as f64 + 1.0);
-                let key = format!(
-                    "{}:{}:{}",
-                    result.repo_alias, result.file_path, result.start_line
-                );
-
-                all_results
-                    .entry(key)
-                    .and_modify(|existing| {
-                        existing.rrf_score += rrf_contribution;
-                    })
-                    .or_insert_with(|| FusedSearchResult {
-                        repo_alias: result.repo_alias.clone(),
-                        repo_path: result.repo_path.clone(),
-                        file_path: result.file_path.clone(),
-                        symbol_name: result.symbol_name.clone(),
-                        content: result.content.clone(),
-                        start_line: result.start_line,
-                        end_line: result.end_line,
-                        rrf_score: rrf_contribution,
-                    });
-            }
-        }
-
-        let mut fused: Vec<FusedSearchResult> = all_results.into_values().collect();
-        fused.sort_by(|a, b| {
-            b.rrf_score
-                .partial_cmp(&a.rrf_score)
-                .unwrap_or(std::cmp::Ordering::Equal)
-        });
-        fused.truncate(max_results);
-        fused
-    }
 }
 
 impl Default for MultiRepoManager {
     fn default() -> Self {
         Self::new()
     }
-}
-
-/// Summary info about a registered root.
-#[derive(Debug, Clone, Serialize)]
-pub struct RootInfo {
-    pub path: String,
-    pub alias: String,
-    pub has_index: bool,
 }
 
 /// Returns the path to the multi-repo config file.
@@ -447,20 +311,6 @@ path = "/home/user/frontend"
                 .add_root(&dir.to_string_lossy(), Some("second"))
                 .is_err()
         );
-        let _ = std::fs::remove_dir_all(&dir);
-    }
-
-    #[test]
-    fn list_roots_returns_info() {
-        let dir = std::env::temp_dir().join("multi_repo_list_test");
-        let _ = std::fs::create_dir_all(&dir);
-        let mut manager = MultiRepoManager::new();
-        manager
-            .add_root(&dir.to_string_lossy(), Some("myrepo"))
-            .unwrap();
-        let roots = manager.list_roots();
-        assert_eq!(roots.len(), 1);
-        assert_eq!(roots[0].alias, "myrepo");
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

@@ -171,5 +171,3 @@ impl From<serde_json::Error> for LeanCtxError {
         LeanCtxError::Parse(e.to_string())
     }
 }
-
-pub type Result<T> = std::result::Result<T, LeanCtxError>;

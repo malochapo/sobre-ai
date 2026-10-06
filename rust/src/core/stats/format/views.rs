@@ -214,9 +214,3 @@ pub fn format_gain_daily() -> String {
 
     out.join("\n")
 }
-
-/// Returns the full stats store as pretty-printed JSON.
-pub fn format_gain_json() -> String {
-    let store = crate::core::stats::load();
-    serde_json::to_string_pretty(&store).unwrap_or_else(|_| "{}".to_string())
-}

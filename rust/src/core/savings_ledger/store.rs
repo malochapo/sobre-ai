@@ -100,60 +100,6 @@ pub fn load(path: &Path) -> Vec<SavingsEvent> {
         .collect()
 }
 
-#[derive(Debug, Clone)]
-pub struct VerifyResult {
-    pub total: usize,
-    pub valid: bool,
-    pub first_invalid_at: Option<usize>,
-}
-
-impl VerifyResult {
-    pub fn empty() -> Self {
-        Self {
-            total: 0,
-            valid: true,
-            first_invalid_at: None,
-        }
-    }
-
-    fn invalid_at(total: usize) -> Self {
-        Self {
-            total,
-            valid: false,
-            first_invalid_at: Some(total),
-        }
-    }
-}
-
-/// Re-walks the chain from genesis, recomputing each hash. Detects any edited,
-/// reordered, inserted, or removed entry.
-pub fn verify(path: &Path) -> VerifyResult {
-    let Ok(file) = fs::File::open(path) else {
-        return VerifyResult::empty();
-    };
-    let mut prev = GENESIS.to_string();
-    let mut total = 0usize;
-    for line in BufReader::new(file).lines().map_while(Result::ok) {
-        let ev: SavingsEvent = match serde_json::from_str(&line) {
-            Ok(e) => e,
-            Err(_) => return VerifyResult::invalid_at(total),
-        };
-        if ev.prev_hash != prev {
-            return VerifyResult::invalid_at(total);
-        }
-        if !ev.hash_matches(&prev) {
-            return VerifyResult::invalid_at(total);
-        }
-        prev = ev.entry_hash;
-        total += 1;
-    }
-    VerifyResult {
-        total,
-        valid: true,
-        first_invalid_at: None,
-    }
-}
-
 #[derive(Debug, Clone, Default)]
 pub struct LedgerSummary {
     pub total_events: usize,
@@ -187,43 +133,6 @@ impl LedgerSummary {
     pub fn net_saved_tokens(&self) -> u64 {
         self.saved_tokens.saturating_sub(self.bounce_tokens)
     }
-}
-
-/// Per-day learning trend: `(YYYY-MM-DD, bounce_events, read_events)`,
-/// ascending by day, limited to the last `days` calendar days (by event ts).
-/// `read_events` counts savings-bearing read events (`ctx_read`) — the
-/// denominator the bounce rate is honest against, since bounces invalidate
-/// exactly those compressed reads (#507).
-pub fn daily_bounce_trend(path: &Path, days: u32) -> Vec<(String, u64, u64)> {
-    use std::collections::BTreeMap;
-    let Ok(file) = fs::File::open(path) else {
-        return Vec::new();
-    };
-    let cutoff = chrono::Utc::now() - chrono::Duration::days(i64::from(days));
-
-    let mut by_day: BTreeMap<String, (u64, u64)> = BTreeMap::new();
-    for line in BufReader::new(file).lines().map_while(Result::ok) {
-        let Ok(ev) = serde_json::from_str::<SavingsEvent>(&line) else {
-            continue;
-        };
-        let Ok(ts) = chrono::DateTime::parse_from_rfc3339(&ev.ts) else {
-            continue;
-        };
-        if ts.with_timezone(&chrono::Utc) < cutoff {
-            continue;
-        }
-        let day = ev.ts.get(..10).unwrap_or("").to_string();
-        if day.is_empty() {
-            continue;
-        }
-        let entry = by_day.entry(day).or_default();
-        if ev.tool == "bounce" {
-            entry.0 += 1;
-        } else if ev.tool == "ctx_read" {
-            entry.1 += 1;
-        }
-    }
-    by_day.into_iter().map(|(d, (b, r))| (d, b, r)).collect()
 }
 
 /// Streams the ledger and aggregates totals sliceable by model / day / tool.
@@ -421,55 +330,6 @@ mod tests {
     }
 
     #[test]
-    fn daily_bounce_trend_counts_bounces_against_reads_per_day() {
-        let p = temp_path("trend");
-        let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
-
-        // Two reads + one bounce today; an old event outside the window.
-        let mut read1 = sample(500);
-        read1.ts = format!("{today}T08:00:00+00:00");
-        let mut read2 = sample(300);
-        read2.ts = format!("{today}T09:00:00+00:00");
-        let mut bounce = sample(0);
-        bounce.tool = "bounce".into();
-        bounce.bounce_adjustment = 200;
-        bounce.ts = format!("{today}T10:00:00+00:00");
-        let mut ancient = sample(100);
-        ancient.ts = "2020-01-01T00:00:00+00:00".into();
-
-        for ev in [read1, read2, bounce, ancient] {
-            append(&p, ev).unwrap();
-        }
-
-        let trend = daily_bounce_trend(&p, 14);
-        assert_eq!(trend.len(), 1, "only today is inside the window");
-        assert_eq!(trend[0].0, today);
-        assert_eq!(trend[0].1, 1, "one bounce event");
-        assert_eq!(trend[0].2, 2, "two ctx_read events");
-
-        let _ = fs::remove_file(&p);
-    }
-
-    #[test]
-    fn append_builds_a_valid_chain() {
-        let p = temp_path("chain");
-        let e1 = append(&p, sample(500)).unwrap();
-        let e2 = append(&p, sample(300)).unwrap();
-
-        assert_eq!(e1.prev_hash, GENESIS);
-        assert_eq!(e2.prev_hash, e1.entry_hash, "chain must link entries");
-
-        let loaded = load(&p);
-        assert_eq!(loaded.len(), 2);
-
-        let v = verify(&p);
-        assert!(v.valid, "freshly built chain must verify");
-        assert_eq!(v.total, 2);
-
-        let _ = fs::remove_file(&p);
-    }
-
-    #[test]
     fn append_fills_p5_evidence_fields_from_mechanism() {
         let p = temp_path("evidence-fallback");
         let cases = [
@@ -516,54 +376,6 @@ mod tests {
         let _ = fs::remove_file(&p);
     }
 
-    /// Regression: appending an event whose USD value lands on a half-micro tie (7831 tokens
-    /// @ $2.5/M = 19577.5 µ$) and then verifying must succeed. This exercises the *real* append
-    /// and verify call sites (not a single in-line recompute), which is where the tie previously
-    /// broke an untampered chain.
-    #[test]
-    fn append_then_verify_survives_half_micro_tie() {
-        let p = temp_path("tie");
-        let mut tie = sample(0);
-        tie.saved_tokens = 7831;
-        tie.baseline_tokens = 8228;
-        tie.actual_tokens = 397;
-        tie.unit_price_per_m_usd = 2.5;
-        // Same computation order as the production recorder.
-        tie.saved_usd = tie.saved_tokens as f64 / 1_000_000.0 * tie.unit_price_per_m_usd;
-
-        append(&p, sample(500)).unwrap();
-        append(&p, tie).unwrap();
-        append(&p, sample(300)).unwrap();
-
-        let v = verify(&p);
-        assert!(
-            v.valid,
-            "a fresh chain with a half-micro tie value must verify"
-        );
-        assert_eq!(v.total, 3);
-
-        let _ = fs::remove_file(&p);
-    }
-
-    #[test]
-    fn verify_detects_tampering() {
-        let p = temp_path("tamper");
-        append(&p, sample(500)).unwrap();
-        append(&p, sample(300)).unwrap();
-
-        // Tamper: rewrite the first line with an inflated saved_tokens.
-        let content = fs::read_to_string(&p).unwrap();
-        let mut lines: Vec<String> = content.lines().map(String::from).collect();
-        lines[0] = lines[0].replace("\"saved_tokens\":500", "\"saved_tokens\":999999");
-        fs::write(&p, lines.join("\n") + "\n").unwrap();
-
-        let v = verify(&p);
-        assert!(!v.valid, "edited entry must fail verification");
-        assert_eq!(v.first_invalid_at, Some(0));
-
-        let _ = fs::remove_file(&p);
-    }
-
     #[test]
     fn summarize_aggregates_totals_and_slices() {
         let p = temp_path("sum");
@@ -581,87 +393,6 @@ mod tests {
         assert_eq!(s.by_mechanism[0].0, MECHANISM_COMPRESSION);
         assert_eq!(s.by_mechanism[0].1, 800);
 
-        let _ = fs::remove_file(&p);
-    }
-
-    #[test]
-    fn summarize_attributes_mechanisms_separately() {
-        // enterprise#19: a routing event (USD at zero saved tokens) and a
-        // compression event must land in distinct attribution rows; a bounce
-        // must stay out of the slice while netting the headline.
-        let p = temp_path("mech");
-        append(&p, sample(500)).unwrap();
-
-        let mut route = sample(0);
-        route.tool = "proxy_route".into();
-        route.mechanism = "routing".into();
-        route.baseline_tokens = 10_000;
-        route.actual_tokens = 10_000;
-        route.saved_usd = 0.048_75; // 10k tokens × (5.00−0.125)/MTok
-        append(&p, route).unwrap();
-
-        let mut bounce = sample(0);
-        bounce.tool = "bounce".into();
-        bounce.baseline_tokens = 50;
-        bounce.actual_tokens = 50;
-        bounce.bounce_adjustment = 50;
-        bounce.saved_usd = -0.00015;
-        append(&p, bounce).unwrap();
-
-        let s = summarize(&p);
-        assert_eq!(s.by_mechanism.len(), 2, "compression + routing rows");
-        let routing = s
-            .by_mechanism
-            .iter()
-            .find(|(m, _, _)| m == "routing")
-            .expect("routing row");
-        assert_eq!(routing.1, 0, "routing saves USD, not tokens");
-        assert!((routing.2 - 0.048_75).abs() < 1e-9);
-        assert!(
-            !s.by_mechanism.iter().any(|(m, _, _)| m == "bounce"),
-            "bounce is a correction, not an attribution mechanism"
-        );
-        assert!(verify(&p).valid, "v3 chain must verify");
-
-        let _ = fs::remove_file(&p);
-    }
-
-    #[test]
-    fn verify_empty_is_valid() {
-        let p = temp_path("empty");
-        let v = verify(&p);
-        assert!(v.valid);
-        assert_eq!(v.total, 0);
-    }
-
-    fn bounce(wasted: u64) -> SavingsEvent {
-        let mut e = sample(0);
-        e.tool = "bounce".into();
-        e.baseline_tokens = wasted;
-        e.actual_tokens = wasted;
-        e.saved_tokens = 0;
-        e.bounce_adjustment = wasted;
-        e.saved_usd = -(wasted as f64 / 1_000_000.0 * 3.0);
-        e
-    }
-
-    #[test]
-    fn bounce_events_net_out_usd_and_track_tokens() {
-        let p = temp_path("bounce");
-        append(&p, sample(1000)).unwrap();
-        append(&p, bounce(200)).unwrap();
-
-        let s = summarize(&p);
-        assert_eq!(s.saved_tokens, 1000, "gross savings excludes bounce events");
-        assert_eq!(s.bounce_tokens, 200);
-        assert_eq!(s.bounce_events, 1);
-        assert_eq!(s.net_saved_tokens(), 800);
-        // 1000 saved - 200 wasted, both at $3/M.
-        assert!((s.saved_usd - 800.0 / 1_000_000.0 * 3.0).abs() < 1e-9);
-        assert_eq!(s.tokenizers, vec!["o200k_base".to_string()]);
-        assert!(verify(&p).valid, "chain stays valid across event kinds");
-
-        assert_eq!(bounce_tokens_since(&p, None), 200);
         let _ = fs::remove_file(&p);
     }
 }

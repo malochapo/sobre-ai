@@ -9,7 +9,7 @@
 //!   array to its dominant value (a `_defaults` block); each item then keeps
 //!   only the fields that *deviate* from the default. A field absent from an
 //!   item means "equals the default", so the transform is **exactly**
-//!   reconstructible via [`reconstruct`].
+//!   reconstructible via `reconstruct` (test-only).
 //! - [`crush_lossy`] additionally *drops* near-unique high-entropy columns
 //!   (timestamps, UUIDs — pure noise for an agent) recorded in `_dropped`. The
 //!   exact original is then recovered out-of-band via CCR, never from the text.
@@ -126,27 +126,9 @@ pub fn crush_text_if_beneficial(text: &str) -> Option<String> {
     crush_value_if_beneficial(&val, trimmed.len())
 }
 
-/// Lossy crush of `text`: drops near-unique high-entropy columns (timestamps,
-/// UUIDs — noise for an agent) whose distinct-value ratio is `>= drop_entropy`.
-/// Returns the [`CrushResult`] only when the pass **actually dropped** a column
-/// (`!lossless`, so a lossless pass would not already cover it) AND the compact
-/// form at least halves the input ([`KEEP_DATA_DIVISOR`]). Because data is lost,
-/// the caller MUST persist the verbatim original out-of-band (CCR) before
-/// emitting it — the dropped columns are never reconstructible from the text.
-/// `None` for non-JSON, low-redundancy, or all-lossless input.
-pub fn crush_text_lossy_if_beneficial(text: &str, drop_entropy: f64) -> Option<CrushResult> {
-    let trimmed = text.trim();
-    if !trimmed.starts_with('{') && !trimmed.starts_with('[') {
-        return None;
-    }
-    let val: Value = serde_json::from_str(trimmed).ok()?;
-    let res = crush_lossy(&val, &CrushOpts::lossy(drop_entropy))?;
-    (!res.lossless && res.text.len().saturating_mul(KEEP_DATA_DIVISOR) <= trimmed.len())
-        .then_some(res)
-}
-
 /// Rebuild a `Value` from crushed text. Exact for lossless forms; for lossy
 /// forms the `_dropped` columns are simply absent (recover them via CCR).
+#[cfg(test)]
 pub fn reconstruct(crushed_text: &str) -> Option<Value> {
     let v: Value = serde_json::from_str(crushed_text).ok()?;
     Some(uncrush_node(&v))
@@ -344,6 +326,7 @@ fn contains_marker(value: &Value) -> bool {
     }
 }
 
+#[cfg(test)]
 fn uncrush_node(value: &Value) -> Value {
     match value {
         Value::Object(map) => {
@@ -546,33 +529,6 @@ mod tests {
         assert!(crush_text_if_beneficial("not json").is_none());
         assert!(crush_text_if_beneficial("\"just a string\"").is_none());
         assert!(crush_text_if_beneficial("").is_none());
-    }
-
-    #[test]
-    fn lossy_gate_drops_high_entropy_columns_and_flags_lossy() {
-        // A near-unique high-entropy column (`ts`) alongside a constant one:
-        // lossless can factor the constant but the unique `ts` stays per-item, so
-        // lossless may not halve it. The lossy gate drops `ts` and reports lossy.
-        let items: Vec<Value> = (0..40)
-            .map(|i| json!({"status": "ok", "ts": format!("2026-06-22T10:00:{i:02}.{i:09}Z")}))
-            .collect();
-        let raw = serde_json::to_string(&Value::Array(items)).unwrap();
-
-        let res = crush_text_lossy_if_beneficial(&raw, 0.9).expect("lossy gate fires");
-        assert!(!res.lossless, "dropping a column must report lossy");
-        assert!(
-            res.text.contains(DROPPED_KEY),
-            "dropped columns are recorded"
-        );
-        assert!(
-            res.text.len() * KEEP_DATA_DIVISOR <= raw.len(),
-            "must at least halve"
-        );
-
-        // drop_entropy = 1.0 disables dropping -> nothing lossy -> None.
-        assert!(crush_text_lossy_if_beneficial(&raw, 1.0).is_none());
-        // Non-JSON -> None.
-        assert!(crush_text_lossy_if_beneficial("not json", 0.5).is_none());
     }
 
     #[test]

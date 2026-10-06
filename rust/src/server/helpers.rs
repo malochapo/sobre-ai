@@ -7,10 +7,6 @@ pub fn get_str(args: Option<&serde_json::Map<String, Value>>, key: &str) -> Opti
         .map(std::string::ToString::to_string)
 }
 
-pub fn get_int(args: Option<&serde_json::Map<String, Value>>, key: &str) -> Option<i64> {
-    args?.get(key)?.as_i64()
-}
-
 pub fn get_bool(args: Option<&serde_json::Map<String, Value>>, key: &str) -> Option<bool> {
     args?.get(key)?.as_bool()
 }

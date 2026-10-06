@@ -19,7 +19,7 @@
 //!
 //! The compact form is wrapped in a single-key `MARKER` envelope so it is
 //! self-identifying (re-entry safe) and exactly reversible to the parsed value via
-//! [`reconstruct`]. Output is a pure function of the input — `yaml_serde` →
+//! `reconstruct` (test-only). Output is a pure function of the input — `yaml_serde` →
 //! `serde_json::Value` → `json_crush` are all deterministic — so identical input
 //! yields byte-identical output (#498). The crusher never inflates: callers gate
 //! on the `beneficial` reduction threshold and a no-op input returns [`None`].
@@ -34,7 +34,7 @@ use crate::core::json_crush::{self, CrushOpts, CrushResult};
 
 /// Marks a crushed-YAML document. The value is the (json-crushed) payload, so the
 /// envelope is `{"_lc_yaml_crush": <doc>}`. Vanishingly unlikely as a real
-/// top-level YAML key, and checked on input so [`reconstruct`] can identify our
+/// top-level YAML key, and checked on input so `reconstruct` (test-only) can identify our
 /// own output unambiguously and a second pass is a guaranteed no-op.
 const MARKER: &str = "_lc_yaml_crush";
 
@@ -42,7 +42,7 @@ const MARKER: &str = "_lc_yaml_crush";
 /// small fixed overhead, so the win is gated on a 1/4 byte reduction (the same
 /// threshold the columnar [`crate::core::tabular_crush`] uses) rather than the
 /// JSON crusher's stricter halving — still a clear, never-inflating win whose data
-/// stays reconstructible via [`reconstruct`].
+/// stays reconstructible via `reconstruct` (test-only).
 const MIN_SAVE_RATIO_NUM: usize = 3;
 const MIN_SAVE_RATIO_DEN: usize = 4;
 
@@ -56,19 +56,6 @@ fn beneficial(compact: &str, raw: &str) -> bool {
 pub fn crush_text_if_beneficial(text: &str) -> Option<String> {
     let res = crush(text, 1.0)?;
     (res.lossless && beneficial(&res.text, text)).then_some(res.text)
-}
-
-/// Lossy crush of YAML `text`: factors constants *and* drops near-unique
-/// high-entropy columns from arrays-of-objects whose distinct-value ratio is
-/// `>= drop_entropy`. Returns the [`CrushResult`] only when a column was
-/// **actually dropped** (`!lossless`) AND the compact form clears the
-/// `beneficial` gate. Because data is then lost, the caller MUST persist the
-/// verbatim original out-of-band (CCR) before emitting — the dropped columns are
-/// never reconstructible from the text. `None` for non-YAML, low-redundancy, or
-/// all-lossless input.
-pub fn crush_text_lossy_if_beneficial(text: &str, drop_entropy: f64) -> Option<CrushResult> {
-    let res = crush(text, drop_entropy.clamp(0.0, 1.0))?;
-    (!res.lossless && beneficial(&res.text, text)).then_some(res)
 }
 
 /// Core crush. `drop_entropy < 1.0` enables lossy column dropping inside arrays.
@@ -115,6 +102,7 @@ fn crush(text: &str, drop_entropy: f64) -> Option<CrushResult> {
 /// Rebuild the parsed-document [`Value`] from a crushed envelope. Exact for
 /// lossless forms; for lossy forms the `_dropped` columns are simply absent
 /// (recover them via CCR). `None` if `text` is not a YAML-crush envelope.
+#[cfg(test)]
 pub fn reconstruct(text: &str) -> Option<Value> {
     let v: Value = serde_json::from_str(text).ok()?;
     let inner = v.as_object()?.get(MARKER)?;
@@ -201,38 +189,6 @@ mod tests {
         // The compact JSON envelope is itself valid YAML; feeding it back must not
         // re-crush (marker guard) and must not clear the gate (already compact).
         assert!(crush_text_if_beneficial(&crushed).is_none());
-    }
-
-    #[test]
-    fn lossy_drops_high_entropy_columns_and_flags_lossy() {
-        // A near-unique `uid` column alongside the constant `kind`/`namespace`.
-        let mut s = String::from("items:\n");
-        for i in 0..40 {
-            s.push_str(&format!(
-                "  - kind: Pod\n    namespace: prod\n    uid: uid-{i:08}-abcdef\n"
-            ));
-        }
-        let res = crush_text_lossy_if_beneficial(&s, 0.9).expect("lossy gate fires");
-        assert!(!res.lossless, "dropping a column must report lossy");
-        assert!(res.text.contains("_dropped"));
-        assert!(
-            !res.text.contains("uid-00000000"),
-            "dropped values are gone from the text"
-        );
-        assert!(beneficial(&res.text, &s));
-
-        // drop_entropy = 1.0 disables dropping -> nothing lossy -> None.
-        assert!(crush_text_lossy_if_beneficial(&s, 1.0).is_none());
-    }
-
-    #[test]
-    fn lossy_is_byte_stable() {
-        let mut s = String::from("items:\n");
-        for i in 0..40 {
-            s.push_str(&format!("  - kind: Pod\n    uid: uid-{i:08}-abcdef\n"));
-        }
-        let run = || crush_text_lossy_if_beneficial(&s, 0.9).unwrap().text;
-        assert_eq!(run(), run());
     }
 
     #[test]

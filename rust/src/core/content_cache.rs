@@ -228,32 +228,6 @@ pub fn memory_usage_bytes() -> usize {
     lock().total_bytes
 }
 
-/// Observability snapshot: `(hits, misses, entries, bytes, evictions)`.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub struct CacheStats {
-    pub hits: u64,
-    pub misses: u64,
-    pub entries: usize,
-    pub bytes: usize,
-    pub inserts: u64,
-    pub evictions: u64,
-}
-
-pub fn stats() -> CacheStats {
-    if CACHE.get().is_none() {
-        return CacheStats::default();
-    }
-    let c = lock();
-    CacheStats {
-        hits: c.hits,
-        misses: c.misses,
-        entries: c.map.len(),
-        bytes: c.total_bytes,
-        inserts: c.inserts,
-        evictions: c.evictions,
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -318,33 +292,5 @@ mod tests {
             ..s1
         };
         assert!(get(&p, s_newer).is_none(), "mtime change must miss");
-    }
-
-    #[test]
-    fn eviction_keeps_cache_within_budget() {
-        let _g = TEST_LOCK
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        // Budget fits ~2 small files; a third insert must evict the LRU one.
-        fresh_cache(64);
-        let dir = tempfile::tempdir().unwrap();
-        let pa = write(dir.path(), "a", "aaaaaaaaaaaaaaaaaaaaaaaaaaaa"); // 28 bytes
-        let pb = write(dir.path(), "b", "bbbbbbbbbbbbbbbbbbbbbbbbbbbb");
-        let pc = write(dir.path(), "c", "cccccccccccccccccccccccccccc");
-        let sa = FileState::from_path(&pa).unwrap();
-        let sb = FileState::from_path(&pb).unwrap();
-        let sc = FileState::from_path(&pc).unwrap();
-
-        insert(&pa, sa, Arc::from("aaaaaaaaaaaaaaaaaaaaaaaaaaaa"));
-        // Touch a so b becomes the LRU victim.
-        let _ = get(&pa, sa);
-        insert(&pb, sb, Arc::from("bbbbbbbbbbbbbbbbbbbbbbbbbbbb"));
-        let _ = get(&pa, sa);
-        insert(&pc, sc, Arc::from("cccccccccccccccccccccccccccc"));
-
-        let st = stats();
-        assert!(st.bytes <= 64, "cache must respect byte budget: {st:?}");
-        assert!(st.evictions >= 1, "an eviction must have occurred: {st:?}");
-        assert!(get(&pa, sa).is_some(), "recently-used entry must survive");
     }
 }

@@ -12,4 +12,4 @@ pub use dashboard::{
     format_gain_themed_at, gain_live,
 };
 pub(crate) use util::normalize_command;
-pub use views::{format_gain_daily, format_gain_graph, format_gain_json};
+pub use views::{format_gain_daily, format_gain_graph};

@@ -59,10 +59,6 @@ impl PageRankInput {
     }
 }
 
-pub fn compute(input: &PageRankInput, damping: f64, iterations: usize) -> HashMap<String, f64> {
-    compute_personalized(input, damping, iterations, &[])
-}
-
 /// Personalized PageRank: if `seed_files` is non-empty, teleportation bias goes
 /// to those files instead of uniform distribution. Handles dangling nodes
 /// (nodes with no outgoing edges) by redistributing their rank.
@@ -155,67 +151,10 @@ pub fn compute_personalized(
     rank
 }
 
-pub fn top_files(conn: &Connection, limit: usize) -> Vec<(String, f64)> {
-    top_files_personalized(conn, limit, &[])
-}
-
-pub fn top_files_personalized(
-    conn: &Connection,
-    limit: usize,
-    seed_files: &[String],
-) -> Vec<(String, f64)> {
-    let input = PageRankInput::from_connection(conn);
-    let ranks = compute_personalized(&input, 0.85, 50, seed_files);
-    let mut sorted: Vec<(String, f64)> = ranks.into_iter().collect();
-    sorted.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
-    sorted.truncate(limit);
-    sorted
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::core::property_graph::{CodeGraph, Edge, EdgeKind, Node};
-
-    #[test]
-    fn pagerank_basic() {
-        let g = CodeGraph::open_in_memory().unwrap();
-        let a = g.upsert_node(&Node::file("a.rs")).unwrap();
-        let b = g.upsert_node(&Node::file("b.rs")).unwrap();
-        let c = g.upsert_node(&Node::file("c.rs")).unwrap();
-
-        g.upsert_edge(&Edge::new(a, b, EdgeKind::Imports)).unwrap();
-        g.upsert_edge(&Edge::new(a, c, EdgeKind::Imports)).unwrap();
-        g.upsert_edge(&Edge::new(b, c, EdgeKind::Imports)).unwrap();
-
-        let input = PageRankInput::from_connection(g.connection());
-        let ranks = compute(&input, 0.85, 30);
-
-        assert_eq!(ranks.len(), 3);
-        let rank_c = ranks.get("c.rs").copied().unwrap_or(0.0);
-        let rank_a = ranks.get("a.rs").copied().unwrap_or(0.0);
-        assert!(
-            rank_c > rank_a,
-            "c.rs should rank higher (more incoming): c={rank_c} a={rank_a}"
-        );
-    }
-
-    #[test]
-    fn top_files_limit() {
-        let g = CodeGraph::open_in_memory().unwrap();
-        for i in 0..10 {
-            g.upsert_node(&Node::file(&format!("f{i}.rs"))).unwrap();
-        }
-        let top = top_files(g.connection(), 3);
-        assert!(top.len() <= 3);
-    }
-
-    #[test]
-    fn empty_graph() {
-        let g = CodeGraph::open_in_memory().unwrap();
-        let top = top_files(g.connection(), 10);
-        assert!(top.is_empty());
-    }
 
     #[test]
     fn personalized_pagerank_boosts_seed() {
@@ -239,18 +178,5 @@ mod tests {
             a_seeded > a_uniform,
             "seeded a.rs ({a_seeded}) should rank higher than uniform ({a_uniform})"
         );
-    }
-
-    #[test]
-    fn early_convergence() {
-        let g = CodeGraph::open_in_memory().unwrap();
-        let a = g.upsert_node(&Node::file("a.rs")).unwrap();
-        let b = g.upsert_node(&Node::file("b.rs")).unwrap();
-        g.upsert_edge(&Edge::new(a, b, EdgeKind::Imports)).unwrap();
-        g.upsert_edge(&Edge::new(b, a, EdgeKind::Imports)).unwrap();
-
-        let input = PageRankInput::from_connection(g.connection());
-        let ranks = compute(&input, 0.85, 1000);
-        assert_eq!(ranks.len(), 2);
     }
 }

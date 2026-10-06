@@ -8,7 +8,7 @@
 
 mod classify;
 
-pub use classify::{classify, classify_content, classify_path};
+pub use classify::classify_content;
 
 use serde::{Deserialize, Serialize};
 

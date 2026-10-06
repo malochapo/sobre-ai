@@ -32,10 +32,6 @@ pub fn load() -> StatsStore {
     io::load_from_disk()
 }
 
-pub fn save(store: &StatsStore) {
-    io::locked_write(store);
-}
-
 fn maybe_flush(store: &mut StatsStore, baseline: &mut StatsStore, last_flush: &mut Instant) {
     if last_flush.elapsed().as_secs() >= FLUSH_INTERVAL_SECS
         && let Some(merged) = io::merge_and_save(store, baseline)

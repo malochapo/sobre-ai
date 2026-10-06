@@ -114,13 +114,6 @@ pub fn git_log_cached(args: &[&str], cwd: &str) -> Option<String> {
     git_cached(&full_args, cwd, Duration::from_mins(1))
 }
 
-/// Invalidate all cached entries for a given directory.
-pub fn invalidate(cwd: &str) {
-    if let Ok(mut cache) = CACHE.lock() {
-        cache.entries.retain(|k, _| !k.starts_with(cwd));
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

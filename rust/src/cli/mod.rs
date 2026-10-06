@@ -32,7 +32,6 @@ mod tools_health_cmd;
 mod verify_cache_cmd;
 mod visualize_cmd;
 pub(crate) use call_cmd::cmd_call;
-pub use common::load_shell_history_pub;
 pub use config_cmd::*;
 pub(crate) use debug_log_cmd::cmd_debug_log;
 pub use dispatch::run;

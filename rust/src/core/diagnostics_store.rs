@@ -188,10 +188,6 @@ pub fn has_error(path: &str) -> bool {
     global().lock().is_ok_and(|s| s.has_error(path))
 }
 
-pub fn severity_for(path: &str) -> Option<Severity> {
-    global().lock().ok().and_then(|s| s.severity_for(path))
-}
-
 /// Snapshot for ranking/triage consumers: `(path, severity)` pairs.
 pub fn snapshot() -> Vec<(String, Severity)> {
     global()

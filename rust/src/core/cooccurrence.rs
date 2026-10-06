@@ -10,9 +10,9 @@
 //! associations fade. Over time the graph learns the project's real working
 //! paths — which the static import/AST graph cannot capture.
 //!
-//! The learned association is an additive retrieval signal: given a file the
-//! agent is looking at, [`related`] returns the files history says tend to be
-//! touched alongside it.
+//! The learned association is an additive retrieval signal: `ctx_compose` and
+//! the graph context [`load`] it to rank the files history says tend to be
+//! touched alongside the ones in focus.
 //!
 //! The store is a small per-project JSON file; reads/writes are whole-file and
 //! cheap because the graph is pruned aggressively (decay + min-weight + caps).
@@ -203,11 +203,6 @@ pub fn record_access(project_root: &str, files: &[String]) {
     let mut graph = load(project_root);
     graph.record(files);
     save(project_root, &graph);
-}
-
-/// Files historically co-accessed with `file`, strongest association first.
-pub fn related(project_root: &str, file: &str, top_k: usize) -> Vec<(String, f64)> {
-    load(project_root).related(file, top_k)
 }
 
 // ── Traversal-edge surface (repo-relative) ─────────────────────────────────

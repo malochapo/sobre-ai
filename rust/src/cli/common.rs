@@ -1,7 +1,3 @@
-pub fn load_shell_history_pub() -> Vec<String> {
-    load_shell_history()
-}
-
 pub(crate) fn load_shell_history() -> Vec<String> {
     let shell = std::env::var("SHELL").unwrap_or_default();
     let Some(home) = dirs::home_dir() else {

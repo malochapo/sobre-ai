@@ -3,8 +3,7 @@
 //! Exercises the public `core::sensitivity` API on real secret/PII vectors.
 //! All deterministic — no env, no config files, no global state.
 
-use lean_ctx::core::sensitivity::{SensitivityLevel, classify, classify_content};
-use std::path::Path;
+use lean_ctx::core::sensitivity::{SensitivityLevel, classify_content};
 
 #[test]
 fn classification_vectors_are_precise() {
@@ -21,13 +20,5 @@ fn classification_vectors_are_precise() {
     assert_eq!(
         classify_content("iban DE89370400440532013000"),
         SensitivityLevel::Confidential
-    );
-    // Secret beats path-public.
-    assert_eq!(
-        classify(
-            Some(Path::new("src/main.rs")),
-            "key = ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
-        ),
-        SensitivityLevel::Secret
     );
 }

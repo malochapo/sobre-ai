@@ -20,9 +20,7 @@ pub use edge::{Edge, EdgeKind};
 pub use file_catalog::FileCatalogEntry;
 pub use meta::{PropertyGraphMetaV1, load_meta, meta_path, write_meta};
 pub use node::{Node, NodeKind};
-pub use queries::{
-    DependencyChain, GraphQuery, ImpactResult, edge_weight, file_connectivity, related_files,
-};
+pub use queries::{DependencyChain, ImpactResult, edge_weight, related_files};
 pub use sync::{mirror_index, parse_symbol_metadata, populate_from_project_index};
 
 use rusqlite::Connection;
@@ -203,13 +201,6 @@ impl CodeGraph {
         limit: usize,
     ) -> anyhow::Result<Vec<(String, f64)>> {
         queries::related_files(&self.conn, file_path, limit)
-    }
-
-    pub fn file_connectivity(
-        &self,
-        file_path: &str,
-    ) -> anyhow::Result<std::collections::HashMap<String, (usize, usize)>> {
-        queries::file_connectivity(&self.conn, file_path)
     }
 
     pub fn node_count(&self) -> anyhow::Result<usize> {

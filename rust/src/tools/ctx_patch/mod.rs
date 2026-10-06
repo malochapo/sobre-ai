@@ -26,13 +26,16 @@ pub(crate) use symbol::{build_refactor_args, is_replace_symbol};
 
 use std::path::{Path, PathBuf};
 
+#[cfg(test)]
 use crate::core::cache::SessionCache;
 use crate::core::tokens::count_tokens;
 use crate::tools::edit_io::{
     default_backup_path, ensure_preimage_still_matches, read_preimage,
     write_atomic_bytes_with_permissions,
 };
-use crate::tools::impl_edit::{CacheEffect, apply_cache_effect, build_diff_evidence};
+#[cfg(test)]
+use crate::tools::impl_edit::apply_cache_effect;
+use crate::tools::impl_edit::{CacheEffect, build_diff_evidence};
 
 /// Parameters for an anchored patch: the target file and one or more anchored
 /// edit ops, plus optional guards/evidence (mirrors `EditParams` where it makes
@@ -63,6 +66,7 @@ pub fn parse_ops(
 
 /// Apply an anchored patch and the resulting cache effect in one shot (tests and
 /// in-process callers that hold the cache exclusively).
+#[cfg(test)]
 pub fn handle(cache: &mut SessionCache, params: &PatchParams) -> String {
     let last_mode = cache
         .get(&params.path)
