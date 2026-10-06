@@ -95,6 +95,7 @@ pub(super) fn exec_buffered(command: &str, shell: &str, shell_flag: &str) -> i32
         std::thread::Builder::new()
             .name("stdin-relay".into())
             .spawn(move || {
+                super::platform::block_sigpipe_in_current_thread();
                 let mut child_w = child_stdin;
                 let mut parent_r = io::stdin().lock();
                 let mut buf = [0u8; 8192];

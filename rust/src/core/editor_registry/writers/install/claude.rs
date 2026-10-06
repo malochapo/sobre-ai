@@ -118,8 +118,14 @@ pub(crate) fn try_claude_mcp_add(desired: &Value) -> Result<WriteResult, String>
         .spawn()
         .map_err(|e| e.to_string())?;
 
+    // A `claude` that exits without reading stdin must not take this
+    // process down with SIGPIPE: write from a thread that blocks it.
     if let Some(mut stdin) = child.stdin.take() {
-        let _ = stdin.write_all(server_json.as_bytes());
+        let _ = std::thread::spawn(move || {
+            crate::shell::platform::block_sigpipe_in_current_thread();
+            let _ = stdin.write_all(server_json.as_bytes());
+        })
+        .join();
     }
 
     let deadline = Duration::from_secs(3);
