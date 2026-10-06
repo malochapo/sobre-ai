@@ -2,9 +2,7 @@
 //!
 //! `local_range_write` is the Trait-default for `replace_symbol_body` /
 //! `insert_before_symbol` / `insert_after_symbol`: it writes a resolved range
-//! to disk atomically, so edits work without any running language server / IDE.
-//! `JetBrainsHttpBackend` overrides the Trait methods with the in-IDE HTTP path;
-//! both paths apply the *same* tree-sitter range → byte-identical result.
+//! to disk atomically, so edits work without any running language server.
 
 use crate::lsp::backend::{EditResult, RangeEdit, TextRange0Based};
 

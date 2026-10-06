@@ -127,14 +127,12 @@ Parameters: `aggressiveness`, `fresh`, `limit`, `mode`, `offset`, `path`, `paths
 
 ## `ctx_refactor`
 
-Rename, move, safe_delete, inline, read-only analyses via LSP/IDE.
+Symbol navigation and edits: rename, references, definition, implementations via the language server; symbols_overview and symbol body edits work without one.
 WORKFLOW: use action=references first to find usages before refactoring.
 ANTIPATTERN: not for symbol discovery — use ctx_search action=symbol or ctx_compose.
-Single-phase edits (replace_symbol_body, reformat) work headless via name_path.
-Two-phase ops (_preview+_apply) need JetBrains IDE (else BACKEND_REQUIRED).
-Conflicts blocked unless force=true. See `action` parameter for full list.
+Symbol edits (replace_symbol_body, insert_before_symbol, insert_after_symbol) resolve the target by name_path.
 
-Parameters: `action`*, `column`, `direction`, `end_line`, `expected_hash`, `file`, `force`, `keep_definition`, `line`, `mode`, `name_path`, `new_name`, `new_text`, `optimize_imports`, `path`, `plan_hash`, `propagate`, `scope`, `search_comments`, `search_text_occurrences`, `target_parent`, `target_path`, `text`
+Parameters: `action`*, `column`, `end_line`, `expected_hash`, `file`, `line`, `name_path`, `new_name`, `new_text`, `path`, `scope`, `text`
 
 ## `ctx_review`
 

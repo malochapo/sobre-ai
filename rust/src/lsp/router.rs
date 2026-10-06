@@ -8,8 +8,6 @@ use super::client::{LspClient, file_path_to_uri};
 use super::config::{
     LspServerConfig, check_server_available, default_servers, language_for_extension,
 };
-use super::jetbrains_backend::JetBrainsHttpBackend;
-use super::port_discovery;
 
 static BACKENDS: std::sync::LazyLock<Mutex<HashMap<String, Box<dyn LspBackend>>>> =
     std::sync::LazyLock::new(|| Mutex::new(HashMap::new()));
@@ -22,36 +20,8 @@ fn resolve_config_for_language(language: &str) -> LspServerConfig {
     })
 }
 
-/// Selects a code-intelligence backend for `language` (§4.3).
-///
-/// B-first: JetBrains if reachable, else the language server found on PATH.
-///
-/// Reachability = live port file + pid alive + `/health` ping. On any miss in
-/// "auto" mode we fall back to Backing A deterministically (one ~300ms timeout max).
+/// Starts the language server for `language` found on PATH.
 fn select_backend(language: &str, project_root: &str) -> Result<Box<dyn LspBackend>, String> {
-    let want_b = true;
-    let b_only = false;
-
-    if want_b {
-        if let Some(pf) = port_discovery::read_port_file(project_root)
-            && port_discovery::pid_alive(pf.pid)
-            && port_discovery::health_ok(&pf)
-        {
-            return Ok(Box::new(JetBrainsHttpBackend::new(
-                pf.port,
-                pf.token,
-                project_root.to_string(),
-                pf.pid,
-            )));
-        }
-        if b_only {
-            return Err(format!(
-                "LSP backend 'jetbrains' configured for '{language}' but the IDE is not reachable \
-                 (no live port file / health check failed)"
-            ));
-        }
-    }
-
     // Backing A: rust-analyzer (today's behavior).
     let config = resolve_config_for_language(language);
     if super::config::find_binary_in_path(&config.command).is_none()
@@ -62,21 +32,6 @@ fn select_backend(language: &str, project_root: &str) -> Result<Box<dyn LspBacke
     let root_uri = file_path_to_uri(project_root)?;
     let client = LspClient::start(&config, &root_uri)?;
     Ok(Box::new(client) as Box<dyn LspBackend>)
-}
-
-/// Evicts a cached backend whose liveness check (`is_stale`) failed, so the next
-/// lookup re-selects (auto → Backing A fallback; b_only → Err). Backing A never stale.
-fn evict_if_stale(
-    backends: &mut HashMap<String, Box<dyn LspBackend>>,
-    language: &str,
-    project_root: &str,
-) {
-    if backends
-        .get(language)
-        .is_some_and(|b| b.is_stale(project_root))
-    {
-        backends.remove(language);
-    }
 }
 
 pub fn with_backend<F, R>(file_path: &str, project_root: &str, f: F) -> Result<R, String>
@@ -95,9 +50,6 @@ where
     })?;
 
     let mut backends = BACKENDS.lock().map_err(|e| e.to_string())?;
-
-    // Drop a cached entry whose IDE went away / restarted before reusing it.
-    evict_if_stale(&mut backends, language, project_root);
 
     if !backends.contains_key(language) {
         let backend = select_backend(language, project_root)?;
@@ -148,61 +100,4 @@ pub(crate) fn stub_test_lock() -> std::sync::MutexGuard<'static, ()> {
     static LOCK: Mutex<()> = Mutex::new(());
     LOCK.lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    struct StaleStub(bool);
-    impl LspBackend for StaleStub {
-        fn open_file(&mut self, _u: &Uri, _l: &str, _t: &str) -> Result<(), String> {
-            Ok(())
-        }
-        fn references(
-            &mut self,
-            _u: &Uri,
-            _p: lsp_types::Position,
-            _s: &str,
-        ) -> Result<Vec<lsp_types::Location>, String> {
-            Ok(vec![])
-        }
-        fn definition(
-            &mut self,
-            _u: &Uri,
-            _p: lsp_types::Position,
-        ) -> Result<lsp_types::GotoDefinitionResponse, String> {
-            Ok(lsp_types::GotoDefinitionResponse::Array(vec![]))
-        }
-        fn implementations(
-            &mut self,
-            _u: &Uri,
-            _p: lsp_types::Position,
-            _s: &str,
-        ) -> Result<Vec<lsp_types::Location>, String> {
-            Ok(vec![])
-        }
-        fn rename(
-            &mut self,
-            _u: &Uri,
-            _p: lsp_types::Position,
-            _n: &str,
-        ) -> Result<Option<lsp_types::WorkspaceEdit>, String> {
-            Ok(None)
-        }
-        fn is_stale(&self, _project_root: &str) -> bool {
-            self.0
-        }
-    }
-
-    #[test]
-    fn evict_if_stale_removes_stale_keeps_fresh() {
-        let mut map: HashMap<String, Box<dyn LspBackend>> = HashMap::new();
-        map.insert("stale".to_string(), Box::new(StaleStub(true)));
-        map.insert("fresh".to_string(), Box::new(StaleStub(false)));
-        evict_if_stale(&mut map, "stale", "/any");
-        evict_if_stale(&mut map, "fresh", "/any");
-        assert!(!map.contains_key("stale"), "stale entry must be evicted");
-        assert!(map.contains_key("fresh"), "fresh entry must remain");
-    }
 }
