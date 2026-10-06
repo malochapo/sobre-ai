@@ -95,12 +95,12 @@ pub(crate) fn shell_aliases_outcome() -> Outcome {
         if rc_contains_lean_ctx(&ps_profile) {
             parts.push(format!("{DIM}PowerShell profile{RST}"));
             if !rc_has_pipe_guard(&ps_profile) {
-                needs_update.push("PowerShell profile");
+                needs_update.push("PowerShell profile".to_string());
             }
         } else if rc_contains_lean_ctx(&ps_profile_legacy) {
             parts.push(format!("{DIM}WindowsPowerShell profile{RST}"));
             if !rc_has_pipe_guard(&ps_profile_legacy) {
-                needs_update.push("WindowsPowerShell profile");
+                needs_update.push("WindowsPowerShell profile".to_string());
             }
         }
     }

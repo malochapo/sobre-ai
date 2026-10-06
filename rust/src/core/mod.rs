@@ -345,7 +345,6 @@ pub mod recovery;
 pub mod redaction;
 pub mod reference_docs;
 pub mod sandbox;
-#[cfg(target_os = "linux")]
 pub mod sanitize;
 pub mod savings_ledger;
 pub mod search_delta;

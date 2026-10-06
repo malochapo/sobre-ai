@@ -428,22 +428,6 @@ fn macos_rss() -> Option<u64> {
 }
 
 #[cfg(target_os = "macos")]
-fn macos_rss_for_pid(pid: u32) -> Option<u64> {
-    // Use `ps -o rss= -p <pid>` as a portable fallback.
-    // `task_for_pid` requires root/entitlements, `proc_pid_rusage` is private API.
-    let output = std::process::Command::new("ps")
-        .args(["-o", "rss=", "-p", &pid.to_string()])
-        .output()
-        .ok()?;
-    if !output.status.success() {
-        return None;
-    }
-    let text = String::from_utf8_lossy(&output.stdout);
-    let kb: u64 = text.trim().parse().ok()?;
-    Some(kb * 1024)
-}
-
-#[cfg(target_os = "macos")]
 #[allow(clippy::borrow_as_ptr, clippy::ptr_as_ptr)]
 fn macos_memsize() -> Option<u64> {
     use std::mem;
