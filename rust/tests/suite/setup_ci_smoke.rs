@@ -84,13 +84,9 @@ fn setup_bootstrap_doctor_status_json_smoke() {
     }
 
     let dirs = crate::user_dirs::SeparateDirs::new(tmp.path());
-    let config_dir = dirs.config.clone();
 
-    let mut envs = vec![
-        ("HOME", home_str.as_str()),
-        ("LEAN_CTX_ACTIVE", "1"),
-    ];
-    envs.extend(dirs.to_env_pairs().into_iter());
+    let mut envs = vec![("HOME", home_str.as_str()), ("LEAN_CTX_ACTIVE", "1")];
+    envs.extend(dirs.to_env_pairs());
 
     #[cfg(not(windows))]
     {
@@ -122,7 +118,7 @@ fn setup_bootstrap_doctor_status_json_smoke() {
     // env.sh is Unix-only (shell script); skip assertion on Windows.
     #[cfg(not(windows))]
     {
-        let env_sh = std::path::Path::new(&config_dir).join("env.sh");
+        let env_sh = std::path::Path::new(&dirs.config).join("env.sh");
         let env_sh_content = std::fs::read_to_string(&env_sh).expect("env.sh exists");
         assert!(
             env_sh_content.contains("lean-ctx docker self-heal"),
@@ -192,7 +188,7 @@ fn claude_config_dir_fallback_writes_dot_claude_json() {
         ("LEAN_CTX_ACTIVE", "1"),
         ("CLAUDE_CONFIG_DIR", claude_cfg_str.as_str()),
     ];
-    envs.extend(dirs.to_env_pairs().into_iter());
+    envs.extend(dirs.to_env_pairs());
 
     #[cfg(not(windows))]
     {
@@ -282,11 +278,8 @@ fn init_agent_preserves_agents_md_and_is_idempotent() {
 
     let dirs = crate::user_dirs::SeparateDirs::new(tmp.path());
 
-    let mut envs = vec![
-        ("HOME", home_str.as_str()),
-        ("LEAN_CTX_ACTIVE", "1"),
-    ];
-    envs.extend(dirs.to_env_pairs().into_iter());
+    let mut envs = vec![("HOME", home_str.as_str()), ("LEAN_CTX_ACTIVE", "1")];
+    envs.extend(dirs.to_env_pairs());
     #[cfg(not(windows))]
     {
         envs.push(("SHELL", "/bin/bash"));
@@ -363,11 +356,8 @@ fn init_claude_installs_dedicated_rules_file_without_claude_md() {
 
     let dirs = crate::user_dirs::SeparateDirs::new(tmp.path());
 
-    let mut envs = vec![
-        ("HOME", home_str.as_str()),
-        ("LEAN_CTX_ACTIVE", "1"),
-    ];
-    envs.extend(dirs.to_env_pairs().into_iter());
+    let mut envs = vec![("HOME", home_str.as_str()), ("LEAN_CTX_ACTIVE", "1")];
+    envs.extend(dirs.to_env_pairs());
     #[cfg(not(windows))]
     {
         envs.push(("SHELL", "/bin/bash"));
@@ -459,14 +449,12 @@ fn init_augment_installs_lean_ctx_mcp_into_dot_augment_settings() {
     let home_str = home.to_string_lossy().to_string();
 
     let dirs = crate::user_dirs::SeparateDirs::new(tmp.path());
-    let mut envs_vec = vec![
+    let mut envs = vec![
         ("HOME", home_str.as_str()),
         ("LEAN_CTX_ACTIVE", "1"),
         ("SHELL", "/bin/bash"),
     ];
-    envs_vec.extend(dirs.to_env_pairs().into_iter());
-
-    let envs: Vec<(&str, &str)> = envs_vec;
+    envs.extend(dirs.to_env_pairs());
 
     let out = Command::new(bin)
         .args(["init", "--agent", "augment", "--global", "--mode", "mcp"])

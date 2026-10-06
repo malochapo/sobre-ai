@@ -54,15 +54,15 @@ pub(crate) fn assert_sandboxed() {
 /// Separate temp directories for each LEAN_CTX_<CATEGORY>_DIR, so tests
 /// properly validate the separation of concerns between config/data/state/cache.
 pub(crate) struct SeparateDirs {
-    pub config: String,
-    pub data: String,
-    pub state: String,
-    pub cache: String,
+    pub(crate) config: String,
+    pub(crate) data: String,
+    pub(crate) state: String,
+    pub(crate) cache: String,
 }
 
 impl SeparateDirs {
     /// Create separate subdirectories inside tmp_root for each category.
-    pub fn new(tmp_root: &std::path::Path) -> Self {
+    pub(crate) fn new(tmp_root: &std::path::Path) -> Self {
         let config = tmp_root.join("config");
         let data = tmp_root.join("data");
         let state = tmp_root.join("state");
@@ -79,7 +79,7 @@ impl SeparateDirs {
     }
 
     /// Return the environment variable pairs for Command::env.
-    pub fn to_env_pairs(&self) -> Vec<(&str, &str)> {
+    pub(crate) fn to_env_pairs(&self) -> Vec<(&str, &str)> {
         vec![
             ("LEAN_CTX_CONFIG_DIR", self.config.as_str()),
             ("LEAN_CTX_DATA_DIR", self.data.as_str()),
