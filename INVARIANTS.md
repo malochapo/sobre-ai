@@ -31,8 +31,10 @@ is being replaced, the answer is no.
 - **One** config file. One location. No per-repository init, no per-agent init.
 - **No layering.** No defaults → profile → file → env → flag resolution chain.
   If a value can come from two places, it comes from one place.
-- **No environment variables that change behaviour.** `SOBRE_*` may exist for
-  paths and secrets. Never for what the tool does.
+- **No environment variables that change behaviour.** Variables may exist for
+  paths and secrets — while the binary is still `lean-ctx`, they are
+  `LEAN_CTX_*` (`LEAN_CTX_CONFIG_DIR`, `LEAN_CTX_DATA_DIR`,
+  `LEAN_CTX_PROXY_TOKEN`, …). Never for what the tool does.
 - **No profiles**, no presets, no modes.
 - Hard cap: **15 configuration keys.** Adding one requires removing one.
 
@@ -109,22 +111,21 @@ only reliable oracle here. A budget that taxes it is aimed at the wrong thing.
 
 ### Where we actually stand
 
-`rust/src` is about 261,400 lines, of which about 77,600 are test code.
-**Production code: about 183,800 — some 196,000 below the ceiling.** (It was
-343,328 when this section was first written.)
+`rust/src` is about 245,800 lines, of which about 73,000 are test code.
+**Production code: about 173,000 — some 207,000 below the ceiling.** (It was
+343,328 when this section was first written, and 183,800 at the end of phase 1.)
 
 So the ceiling is met, and has been for a while without anyone knowing: the
 figure quoted above (491,554, "about 111,000 lines below where we stand") was
-counting tests on both sides. That does not make the remaining removals
-optional. `addons`, `context_package`, `plugins`, the dashboard and the
-config cascade go because invariants 1, 2 and 4 say so — not to hit a number.
-What it changes is that subtraction no longer needs to be argued from a budget
-it was already inside.
+counting tests on both sides. That never made the removals optional: `addons`,
+`context_package`, `plugins`, the dashboard and the config cascade went because
+invariants 1, 2 and 4 said so — not to hit a number. What it changed is that
+subtraction no longer needs to be argued from a budget it was already inside.
 
 ### Where 380,000 comes from
 
 The figure is measured, not chosen. At 491,554 lines in `rust/src`, executing
-**every** removal currently on the table — the tool surface (47,736), `cli/` (~27,100), `proxy/` (26,683),
+**every** removal on the table when the ceiling was set — the tool surface (47,736), `cli/` (~27,100), `proxy/` (26,683),
 `context_kernel` (16,759), `ocla` (10,297), plus `doctor`, `dashboard`,
 `addons` and `lsp` (29,002) — lands at roughly **334,000**. Reaching 180,000
 would mean cutting a further 154,000 out of `core/`, `server/`, `shell/` and
