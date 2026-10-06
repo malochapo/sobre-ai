@@ -155,7 +155,6 @@ fn handle_anchored(args: &Map<String, Value>, ctx: &ToolContext) -> Result<ToolO
         saved_tokens: 0,
         mode: None,
         path: output_path,
-        changed: false,
         shell_outcome: None,
         content_blocks: None,
     })
@@ -533,7 +532,6 @@ fn delegate_replace_symbol(
 
     let args_value = Value::Object(refactor_args);
     let result = crate::tools::ctx_refactor::handle(&args_value, &ctx.project_root, &abs_path);
-    let changed = !result.starts_with("ERROR") && !result.starts_with("CONFLICT");
 
     Ok(ToolOutput {
         text: result,
@@ -541,7 +539,6 @@ fn delegate_replace_symbol(
         saved_tokens: 0,
         mode: Some("replace_symbol".to_string()),
         path: get_str(args, "path"),
-        changed,
         shell_outcome: None,
         content_blocks: None,
     })

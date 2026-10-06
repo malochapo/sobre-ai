@@ -251,7 +251,6 @@ fn text_output(action: &str, text: String) -> ToolOutput {
         saved_tokens: 0,
         mode: Some(action.to_string()),
         path: None,
-        changed: false,
         shell_outcome: None,
         content_blocks: None,
     }

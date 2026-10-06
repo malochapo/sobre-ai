@@ -90,7 +90,6 @@ impl McpTool for CtxTreeTool {
             saved_tokens: saved,
             mode: None,
             path: None,
-            changed: false,
             shell_outcome: None,
             content_blocks: None,
         })
@@ -129,7 +128,6 @@ fn handle_single(
         saved_tokens: saved,
         mode: None,
         path: Some(path.to_string()),
-        changed: false,
         shell_outcome: None,
         content_blocks: None,
     })

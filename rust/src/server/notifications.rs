@@ -1,7 +1,4 @@
-use rmcp::model::{
-    Notification, NotificationNoParam, ResourceUpdatedNotificationParam, ServerNotification,
-    ToolListChangedNotificationMethod,
-};
+use rmcp::model::{Notification, ResourceUpdatedNotificationParam, ServerNotification};
 use rmcp::service::{Peer, RoleServer};
 
 pub async fn send_resource_updated(peer: &Peer<RoleServer>, uri: &str) {
@@ -9,17 +6,6 @@ pub async fn send_resource_updated(peer: &Peer<RoleServer>, uri: &str) {
     let server_notif = ServerNotification::ResourceUpdatedNotification(notif);
     if let Err(e) = peer.send_notification(server_notif).await {
         tracing::debug!("Failed to send resource updated notification: {e}");
-    }
-}
-
-pub async fn send_tools_list_changed(peer: &Peer<RoleServer>) {
-    let notif = NotificationNoParam {
-        method: ToolListChangedNotificationMethod,
-        extensions: rmcp::model::Extensions::default(),
-    };
-    let server_notif = ServerNotification::ToolListChangedNotification(notif);
-    if let Err(e) = peer.send_notification(server_notif).await {
-        tracing::debug!("Failed to send tools list changed notification: {e}");
     }
 }
 

@@ -169,42 +169,6 @@ fn has_provider_api_key_empty_bearer_rejected() {
     }
 }
 
-// --- #334: opt-in strict proxy auth (proxy_require_token) ---
-
-#[test]
-fn provider_key_fallback_allowed_in_default_mode() {
-    // Default (require_token = false): a provider key on a provider route is
-    // sufficient. This is what lets a local AI tool authenticate with its own
-    // key and no lean-ctx Bearer token (the loopback-friendly behavior).
-    assert!(provider_key_fallback_allowed(false, true, true, false));
-}
-
-#[test]
-fn provider_key_fallback_denied_in_strict_mode_for_builtin_routes() {
-    // Strict (require_token = true): built-in /v1/* routes still require the
-    // lean-ctx Bearer — provider-key alone is not enough.
-    assert!(!provider_key_fallback_allowed(true, true, true, false));
-}
-
-#[test]
-fn provider_key_fallback_allowed_for_client_auth_registry_under_require_token() {
-    // Grok dual-rail /providers/{id}: Authorization (or
-    // x-xai-token-auth) must carry the upstream session, so provider-key
-    // fallback stays open even when require_token is set.
-    assert!(provider_key_fallback_allowed(true, true, true, true));
-    assert!(!provider_key_fallback_allowed(true, false, true, true));
-    assert!(!provider_key_fallback_allowed(true, true, false, true));
-}
-
-#[test]
-fn provider_key_fallback_requires_key_and_provider_route() {
-    // The fallback never fires without a provider key, nor off a provider
-    // route — regardless of mode.
-    assert!(!provider_key_fallback_allowed(false, false, true, false));
-    assert!(!provider_key_fallback_allowed(false, true, false, false));
-    assert!(!provider_key_fallback_allowed(true, false, true, false));
-}
-
 #[test]
 fn has_provider_api_key_x_xai_token_auth() {
     // Grok subscription rail may authenticate solely via x-xai-token-auth.

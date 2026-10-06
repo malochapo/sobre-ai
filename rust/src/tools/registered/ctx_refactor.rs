@@ -158,17 +158,6 @@ impl McpTool for CtxRefactorTool {
             saved_tokens: 0,
             mode: Some(action.clone()),
             path: get_str(args, "path"),
-            changed: matches!(
-                action.as_str(),
-                "replace_symbol_body"
-                    | "insert_before_symbol"
-                    | "insert_after_symbol"
-                    | "rename_apply"
-                    | "move_apply"
-                    | "safe_delete_apply"
-                    | "inline_apply"
-                    | "reformat"
-            ),
             shell_outcome: None,
             content_blocks: None,
         })

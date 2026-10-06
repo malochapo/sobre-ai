@@ -45,9 +45,6 @@ pub struct ToolOutput {
     pub mode: Option<String>,
     /// Path associated with the tool call (for record_call_with_path).
     pub path: Option<String>,
-    /// True when the tool mutated state that clients should know about
-    /// (e.g. dynamic tool categories changed).
-    pub changed: bool,
     /// Set by shell-executing tools so dispatch can populate `isError` +
     /// `structuredContent` on the MCP result (GitHub #389). `None` for tools
     /// that don't run shell commands.
@@ -65,7 +62,6 @@ impl ToolOutput {
             saved_tokens: 0,
             mode: None,
             path: None,
-            changed: false,
             shell_outcome: None,
             content_blocks: None,
         }
@@ -93,7 +89,6 @@ impl ToolOutput {
             saved_tokens: 0,
             mode: Some("image".to_string()),
             path: Some(path),
-            changed: false,
             shell_outcome: None,
             content_blocks: Some(blocks),
         }

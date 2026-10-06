@@ -11,7 +11,6 @@ pub mod multi_path;
 pub mod notifications;
 pub mod progress;
 pub mod prompts;
-pub mod reference_store;
 pub mod registry;
 pub mod resources;
 pub mod roots;

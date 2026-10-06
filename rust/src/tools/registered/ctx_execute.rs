@@ -121,7 +121,6 @@ impl McpTool for CtxExecuteTool {
             saved_tokens: 0,
             mode: Some(action),
             path: None,
-            changed: false,
             shell_outcome: Some(outcome),
             content_blocks: None,
         })

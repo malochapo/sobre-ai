@@ -7,40 +7,28 @@
 #[allow(clippy::wildcard_imports)]
 use super::*;
 
-/// Builds the advertised MCP server capabilities.
-///
-/// `tools` is always enabled **and** always declares `listChanged`: lean-ctx
-/// emits `notifications/tools/list_changed` whenever a tool call mutates the
-/// dynamic tool set (see `dispatch::send_tools_list_changed`). The MCP spec only
-/// permits sending that notification when the matching capability was advertised
-/// — otherwise a strict client (e.g. Claude Code) treats it as a protocol
-/// violation and drops the entire tool set ("connected, but no tools"). The
+/// Builds the advertised MCP server capabilities. The tool set never changes
+/// during a session (invariant 3), so `listChanged` is not declared. The
 /// `resources`/`prompts` surfaces stay client-gated so we never advertise a
 /// surface the connected client cannot use.
 fn server_capabilities(resources: bool, prompts: bool) -> ServerCapabilities {
     match (resources, prompts) {
         (true, true) => ServerCapabilities::builder()
             .enable_tools()
-            .enable_tool_list_changed()
             .enable_resources()
             .enable_resources_subscribe()
             .enable_prompts()
             .build(),
         (true, false) => ServerCapabilities::builder()
             .enable_tools()
-            .enable_tool_list_changed()
             .enable_resources()
             .enable_resources_subscribe()
             .build(),
         (false, true) => ServerCapabilities::builder()
             .enable_tools()
-            .enable_tool_list_changed()
             .enable_prompts()
             .build(),
-        (false, false) => ServerCapabilities::builder()
-            .enable_tools()
-            .enable_tool_list_changed()
-            .build(),
+        (false, false) => ServerCapabilities::builder().enable_tools().build(),
     }
 }
 
@@ -419,21 +407,12 @@ impl ServerHandler for LeanCtxServer {
 mod tests {
     use super::*;
 
-    /// lean-ctx emits `notifications/tools/list_changed` whenever a tool call
-    /// mutates the dynamic tool set. The capability MUST be advertised on every
-    /// client surface (resources/prompts on or off) — otherwise a strict client
-    /// such as Claude Code rejects the undeclared notification and drops the whole
-    /// tool set ("connected, but tools not registered"). Regression guard for #688.
     #[test]
-    fn server_capabilities_always_declare_tool_list_changed() {
+    fn server_capabilities_never_declare_tool_list_changed() {
         for (resources, prompts) in [(true, true), (true, false), (false, true), (false, false)] {
             let caps = server_capabilities(resources, prompts);
             let tools = caps.tools.expect("tools capability must be advertised");
-            assert_eq!(
-                tools.list_changed,
-                Some(true),
-                "listChanged must be Some(true) for (resources={resources}, prompts={prompts})"
-            );
+            assert_ne!(tools.list_changed, Some(true));
         }
     }
 

@@ -1052,7 +1052,6 @@ impl CtxReadTool {
             saved_tokens: saved,
             mode: Some(resolved_mode),
             path: Some(path.to_string()),
-            changed: false,
             shell_outcome: None,
             content_blocks: None,
         })

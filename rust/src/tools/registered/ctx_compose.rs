@@ -54,7 +54,6 @@ impl CtxComposeTool {
             saved_tokens: 0,
             mode: Some("overview".to_string()),
             path: None,
-            changed: false,
             shell_outcome: None,
             content_blocks: None,
         })
@@ -126,7 +125,6 @@ impl McpTool for CtxComposeTool {
             saved_tokens: 0,
             mode: Some("compose".to_string()),
             path: Some(path),
-            changed: false,
             shell_outcome: None,
             content_blocks: None,
         })

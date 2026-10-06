@@ -365,8 +365,6 @@ pub async fn start_proxy_with_token(port: u16, auth_token: Option<String>) -> an
     // Read once at startup — avoids a Config::load() on every proxied request.
     // The proxy serves this machine only: it always binds loopback.
     let bind_host = std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST);
-    let require_token = false;
-    let loopback_open = false;
     let initial = cfg.proxy.resolve_all();
 
     // The proxy reads its upstreams live from a watch channel: a background task
@@ -374,9 +372,6 @@ pub async fn start_proxy_with_token(port: u16, auth_token: Option<String>) -> an
     // so `lean-ctx config set proxy.*_upstream` (or any config.toml edit) takes
     // effect on the running proxy within seconds, without a restart (#449).
     let (upstream_tx, upstream_rx) = tokio::sync::watch::channel(Arc::new(initial.clone()));
-    // Clone before moving into ProxyState — auth guard needs live registry
-    // snapshots to decide client-auth provider fallback under require_token.
-    let auth_upstreams = upstream_rx.clone();
     spawn_upstream_refresh(upstream_tx, initial.clone());
 
     let Upstreams {
@@ -419,7 +414,6 @@ pub async fn start_proxy_with_token(port: u16, auth_token: Option<String>) -> an
             post(openai_responses::handler).get(openai_responses::ws_handler),
         )
         .route("/responses/{*rest}", any(openai_responses::handler))
-        .route("/v1/references/{id}", get(v1_resolve_reference))
         // LiteLLM headroom-guardrail CCR retrieval (#702): resolves the 24-hex
         // `hash=` marker `/v1/compress` emits back to the verbatim original.
         .route("/v1/retrieve/{hash}", get(v1_retrieve_ccr))
@@ -443,11 +437,9 @@ pub async fn start_proxy_with_token(port: u16, auth_token: Option<String>) -> an
 
     {
         let expected = auth_token.clone();
-        let upstreams = auth_upstreams;
         app = app.layer(axum::middleware::from_fn(move |req, next| {
             let expected = expected.clone();
-            let upstreams = upstreams.clone();
-            proxy_auth_guard(req, next, expected, require_token, loopback_open, upstreams)
+            proxy_auth_guard(req, next, expected)
         }));
     }
 
@@ -457,11 +449,7 @@ pub async fn start_proxy_with_token(port: u16, auth_token: Option<String>) -> an
     app = app.layer(axum::middleware::from_fn(normalize_provider_path));
 
     let addr = SocketAddr::from((bind_host, port));
-    if loopback_open {
-        println!("lean-ctx proxy listening on http://{addr} (loopback-open: auth disabled)");
-    } else {
-        println!("lean-ctx proxy listening on http://{addr} (token auth enabled)");
-    }
+    println!("lean-ctx proxy listening on http://{addr} (token auth enabled)");
     println!("  Anthropic: POST /v1/messages → {anthropic_upstream}");
     println!("  OpenAI:    POST /v1/chat/completions → {openai_upstream}");
     println!(
@@ -535,18 +523,6 @@ async fn health() -> impl IntoResponse {
         "pid": std::process::id(),
     });
     (StatusCode::OK, axum::Json(body))
-}
-
-async fn v1_resolve_reference(
-    axum::extract::Path(id): axum::extract::Path<String>,
-) -> impl IntoResponse {
-    match crate::server::reference_store::resolve(&id) {
-        Some(content) => (StatusCode::OK, content),
-        None => (
-            StatusCode::NOT_FOUND,
-            "Reference expired or not found".to_string(),
-        ),
-    }
 }
 
 /// `GET /v1/retrieve/{hash}` (#702) — LiteLLM headroom-guardrail CCR contract
@@ -652,18 +628,9 @@ async fn proxy_auth_guard(
     mut req: axum::extract::Request,
     next: axum::middleware::Next,
     expected_token: String,
-    require_token: bool,
-    loopback_open: bool,
-    upstreams: tokio::sync::watch::Receiver<Arc<Upstreams>>,
 ) -> Result<Response, Response> {
     let path = req.uri().path();
-    if path == "/health" || me_shell_path(path) {
-        return Ok(next.run(req).await);
-    }
-
-    // #755: loopback-open mode skips all auth — every local process is trusted.
-    if loopback_open {
-        attach_request_tags(&mut req);
+    if path == "/health" {
         return Ok(next.run(req).await);
     }
 
@@ -681,18 +648,9 @@ async fn proxy_auth_guard(
         return Ok(next.run(req).await);
     }
 
-    // Accept provider API keys on provider routes (host_guard runs first).
-    // Client-auth provider rails (`/providers/{id}` other than Bedrock,
-    // e.g. Grok dual-rail) stay open even when require_token is set — the
-    // Authorization / x-xai-token-auth header must carry the upstream session
-    // and cannot also hold the lean-ctx Bearer.
-    let client_auth_registry = is_client_auth_registry_route(path, &upstreams.borrow());
-    if provider_key_fallback_allowed(
-        require_token,
-        has_provider_api_key(&req),
-        is_provider_route(path),
-        client_auth_registry,
-    ) {
+    // A provider API key on a provider route is enough: a local AI tool
+    // authenticates with its own key, without the lean-ctx token.
+    if has_provider_api_key(&req) && is_provider_route(path) {
         attach_request_tags(&mut req);
         return Ok(next.run(req).await);
     }
@@ -741,13 +699,6 @@ fn attach_request_tags(req: &mut axum::extract::Request) {
     }
 }
 
-/// The personal view's static shell (`/me` + assets) renders without a key —
-/// like the admin console's login screen, every number behind it comes from
-/// the guarded `/api/me/usage`. Compiled out with the `gateway-server` feature.
-fn me_shell_path(_path: &str) -> bool {
-    false
-}
-
 fn has_provider_api_key(req: &axum::extract::Request) -> bool {
     let headers = req.headers();
     // Provider-specific key headers: Anthropic `x-api-key`, Google
@@ -784,23 +735,6 @@ fn has_provider_api_key(req: &axum::extract::Request) -> bool {
     false
 }
 
-/// `/providers/{id}/...` where the proxy forwards the caller's credentials
-/// (every provider but Bedrock). These dual-rail / client-auth rails put the
-/// upstream session in Authorization or provider-specific headers.
-fn is_client_auth_registry_route(path: &str, upstreams: &Upstreams) -> bool {
-    let Some(rest) = path.strip_prefix("/providers/") else {
-        return false;
-    };
-    let id = rest.split('/').next().unwrap_or("");
-    if id.is_empty() {
-        return false;
-    }
-    upstreams
-        .providers
-        .iter()
-        .any(|p| p.id == id && !p.injects_gateway_credential())
-}
-
 fn is_provider_route(path: &str) -> bool {
     path.starts_with("/v1/")
         || path.starts_with("/v1beta/")
@@ -816,36 +750,6 @@ fn is_provider_route(path: &str) -> bool {
         // authenticate with their own provider/session Bearer. Without this,
         // model-list + chat land as lean-ctx 401s — Grok cannot select a mode.
         || path.starts_with("/providers/")
-}
-
-/// Decides whether a request authenticates via a provider API key alone, without
-/// the lean-ctx Bearer token.
-///
-/// * Built-in provider routes (`/v1/*`, bare endpoints, …): only when
-///   `require_token` is false (the default).
-/// * Client-auth provider routes (`/providers/{id}` other than Bedrock, e.g.
-///   Grok dual-rail): always allowed when a provider credential is present.
-///   The Authorization / `x-xai-token-auth` header must carry the upstream
-///   session and cannot also hold the lean-ctx Bearer. Bedrock, which the
-///   proxy signs itself, never takes this path — it still needs the lean-ctx
-///   token so signing cannot be abused with a forged provider header.
-///
-/// Pure (except the precomputed `client_auth_registry` flag), so the policy is
-/// unit-testable without axum middleware plumbing.
-#[allow(clippy::fn_params_excessive_bools)] // deliberate pure predicate for unit tests
-fn provider_key_fallback_allowed(
-    require_token: bool,
-    has_provider_key: bool,
-    is_provider_route: bool,
-    client_auth_registry: bool,
-) -> bool {
-    if !has_provider_key || !is_provider_route {
-        return false;
-    }
-    if client_auth_registry {
-        return true;
-    }
-    !require_token
 }
 
 /// Maps a bare provider endpoint to its canonical `/v1/...` form, preserving any

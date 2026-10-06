@@ -140,7 +140,6 @@ impl McpTool for CtxShellTool {
                 saved_tokens: 0,
                 mode: Some("cat-redirect".to_string()),
                 path: Some(read_path),
-                changed: false,
                 shell_outcome: Some(ShellOutcome::Exit(0)),
                 content_blocks: None,
             });
@@ -421,7 +420,6 @@ impl McpTool for CtxShellTool {
                 saved_tokens: saved,
                 mode,
                 path: None,
-                changed: false,
                 shell_outcome: Some(ShellOutcome::Exit(exit_code)),
                 content_blocks: None,
             })

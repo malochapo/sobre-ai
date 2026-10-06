@@ -173,12 +173,6 @@ impl LeanCtxServer {
                 ));
             }
 
-            if output.changed
-                && let Some(peer) = self.peer.read().await.as_ref()
-            {
-                super::notifications::send_tools_list_changed(peer).await;
-            }
-
             let headers_only =
                 crate::core::config::ResponseVerbosity::effective().is_headers_only();
             let header_line = if headers_only {
@@ -268,34 +262,6 @@ impl LeanCtxServer {
                     output_tokens: 0,
                     event_type: crate::core::audit_trail::AuditEventType::SecurityViolation,
                 });
-            }
-
-            let reference_enabled = false;
-
-            // An explicit file read must always return its content — never a
-            // stored-reference stub — so the agent can edit against the lines. The
-            // firewall already exempts reads; the reference-results path honours the
-            // same rule via `is_protected_read` (otherwise enabling reference_results
-            // silently turns `ctx_read` into an un-editable "Output stored …" preview).
-            if reference_enabled
-                && !crate::core::firewall::is_protected_read(name)
-                && final_text.len() > REFERENCE_THRESHOLD
-            {
-                let ref_id = super::reference_store::store(final_text.clone());
-                let mut preview_end = final_text.len().min(200);
-                while preview_end > 0 && !final_text.is_char_boundary(preview_end) {
-                    preview_end -= 1;
-                }
-                let summary = format!(
-                    "[Reference: {ref_id}] Output stored ({} chars, ~{} tokens). Resolve: /v1/references/{ref_id}\nPreview: {}...",
-                    final_text.len(),
-                    final_text.len() / 4,
-                    &final_text[..preview_end]
-                );
-                // The outcome must survive the reference-store substitution —
-                // a failed shell command stays a failure even when its output
-                // is delivered out-of-band (#389).
-                return Ok((summary, saved, output.shell_outcome, None));
             }
 
             return Ok((final_text, saved, output.shell_outcome, None));
@@ -439,8 +405,6 @@ fn read_watchdog_secs() -> u64 {
 fn watchdog_from_secs(secs: u64) -> Option<Duration> {
     (secs > 0).then(|| Duration::from_secs(secs))
 }
-
-const REFERENCE_THRESHOLD: usize = 4000;
 
 /// Default per-tool watchdog budget (#271). Long enough that no legitimate
 /// read/search/graph call ever hits it, short enough that a hang degrades to a
