@@ -173,7 +173,7 @@ pub fn tool_schemas_json_for_test() -> String {
 }
 
 fn is_shell_tool_name(name: &str) -> bool {
-    matches!(name, "ctx_shell" | "ctx_execute")
+    name == "ctx_shell"
 }
 
 #[cfg(test)]
@@ -202,8 +202,8 @@ mod tests {
         let registry = crate::server::registry::build_registry();
         assert_eq!(
             registry.len(),
-            19,
-            "registry tool count drift — the surface is 19 and capped at 20              (invariant 1). Update this test AND the docs when it moves."
+            17,
+            "registry tool count drift — the surface is 17 and capped at 20              (invariant 1). Update this test AND the docs when it moves."
         );
     }
 

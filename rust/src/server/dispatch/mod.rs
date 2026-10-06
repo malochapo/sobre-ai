@@ -114,10 +114,6 @@ impl LeanCtxServer {
             }
 
             let crp_mode = crate::tools::CrpMode::effective();
-            let pressure_snapshot = {
-                let ledger = self.ledger.read().await;
-                Some(ledger.pressure())
-            };
             let extra_roots = self.session.read().await.extra_roots.clone();
             let ctx = crate::server::tool_trait::ToolContext {
                 project_root,
@@ -127,12 +123,6 @@ impl LeanCtxServer {
                 cache: Some(self.cache.clone()),
                 session: Some(self.session.clone()),
                 tool_calls: Some(self.tool_calls.clone()),
-                agent_id: Some(self.agent_id.clone()),
-                ledger: Some(self.ledger.clone()),
-                client_name: Some(self.client_name.clone()),
-                call_count: Some(self.call_count.clone()),
-                autonomy: Some(self.autonomy.clone()),
-                pressure_snapshot,
                 path_errors,
                 bm25_cache: Some(self.bm25_cache.clone()),
                 progress_sender: Some(self.progress_sender.clone()),
@@ -370,8 +360,8 @@ impl LeanCtxServer {
 
     /// Watchdog deadline for a single tool handler, or `None` to disable it.
     ///
-    /// `ctx_shell` / `ctx_execute` run arbitrary user commands (builds, long
-    /// test suites) and already enforce their own command timeouts, so a generic
+    /// `ctx_shell` runs arbitrary user commands (builds, long
+    /// test suites) and already enforces its own command timeout, so a generic
     /// watchdog would wrongly abort a legitimate long-running command. Every
     /// other tool is bounded so a hang can never swallow the JSON-RPC response.
     fn handler_watchdog(name: &str) -> Option<Duration> {
@@ -473,10 +463,6 @@ mod tests {
         assert!(
             LeanCtxServer::handler_watchdog("ctx_shell").is_none(),
             "ctx_shell runs arbitrary user commands and must not be watchdog-bounded"
-        );
-        assert!(
-            LeanCtxServer::handler_watchdog("ctx_execute").is_none(),
-            "ctx_execute must not be watchdog-bounded"
         );
     }
 

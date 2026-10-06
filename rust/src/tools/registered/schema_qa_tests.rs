@@ -5,7 +5,6 @@ use std::collections::HashSet;
 use serde_json::{Value, json};
 
 use super::ctx_callgraph::CtxCallgraphTool;
-use super::ctx_execute::CtxExecuteTool;
 use super::ctx_expand::CtxExpandTool;
 use super::ctx_graph::CtxGraphTool;
 use super::ctx_knowledge::CtxKnowledgeTool;
@@ -52,12 +51,6 @@ fn knowledge_search_and_execute_require_mode_specific_inputs() {
     assert!(search.is_valid(&json!({"action":"symbol","handle":"f.rs#f@L1"})));
     assert!(!search.is_valid(&json!({})));
     assert!(!search.is_valid(&json!({"action":"semantic"})));
-
-    let execute = validator(&CtxExecuteTool);
-    assert!(execute.is_valid(&json!({"language":"python","code":"print(1)"})));
-    assert!(execute.is_valid(&json!({"action":"file","path":"a.py"})));
-    assert!(!execute.is_valid(&json!({})));
-    assert!(!execute.is_valid(&json!({"action":"batch"})));
 }
 
 /// Collect every declared `properties` key anywhere in a schema (top level and

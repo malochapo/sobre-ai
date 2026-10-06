@@ -46,7 +46,7 @@ pub fn build_instructions_with_client(crp_mode: CrpMode, client_name: &str) -> S
 }
 
 /// Deterministic STATIC Claude Code instructions for the char-budget test: the
-/// cold first-contact handshake surface (skeleton + shell hint + decoder +
+/// cold first-contact handshake surface (skeleton + shell hint +
 /// CLAUDE.md pointer + guidance). It pins `level=Off` and `shadow=false` (the
 /// default template), so the result is independent
 /// of the developer's local lean-ctx config and the assertion stays
@@ -69,10 +69,7 @@ pub fn build_instructions_for_test(crp_mode: CrpMode) -> String {
     let base = format!(
         "{skeleton}\n\
         {shell_hint}\n\
-        {decoder_block}\n\
         {origin}",
-        decoder_block =
-            crate::core::protocol::instruction_decoder_block(matches!(crp_mode, CrpMode::Tdd)),
         origin = crate::core::integrity::origin_line(),
     );
 
@@ -159,11 +156,8 @@ fn build_full_instructions(
     let base = format!(
         "{skeleton}\n\
         {shell_hint}\n\
-        {decoder_block}\n\
         Full instructions at {config_dir}/CLAUDE.md\n\
         {origin}\n",
-        decoder_block =
-            crate::core::protocol::instruction_decoder_block(matches!(crp_mode, CrpMode::Tdd)),
         origin = crate::core::integrity::origin_line(),
     );
 

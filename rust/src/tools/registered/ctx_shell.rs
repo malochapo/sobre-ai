@@ -20,9 +20,9 @@ impl McpTool for CtxShellTool {
             "WORKFLOW: preferred — auto-compresses output (build/test/log).\n\
               raw=true for verbatim output; inline=true for moderately-sized verbatim output.\n\
              [exit:N] on errors (lossless).\n\
-             POLICY: every command is allowed except constructs that execute something the command text does not name (eval/exec/source, $() at command position, interpreter -c, find -exec, LD_PRELOAD=, …). Same gate in ctx_execute.\n\
-             A [BLOCKED] command is permanent — do not retry it here or in ctx_execute.\n\
-             ANTIPATTERN: multi-line scripts, sh/bash script.sh, $var-as-command → ctx_execute.",
+             POLICY: every command is allowed except constructs that execute something the command text does not name (eval/exec/source, $() at command position, interpreter -c, find -exec, LD_PRELOAD=, …).\n\
+             A [BLOCKED] command is permanent — do not retry it.\n\
+             Multi-line scripts: write them to a file, then run the file.",
             json!({
                 "type": "object",
                 "properties": {

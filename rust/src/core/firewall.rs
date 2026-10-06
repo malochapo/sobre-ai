@@ -6,7 +6,7 @@
 //! instructions — is returned inline. This keeps the agent's context window small while
 //! preserving full, slice-addressable access to the raw output.
 //!
-//! Scope: tool *outputs* (`ctx_shell`, `ctx_execute`, `ctx_search`, `ctx_tree`). Explicit
+//! Scope: tool *outputs* (`ctx_shell`, `ctx_search`, `ctx_tree`). Explicit
 //! file reads keep their own read-mode system and are never firewalled.
 
 const HEAD_LINES: usize = 20;
@@ -17,10 +17,7 @@ const LONG_LINE_TAIL_CHARS: usize = 300;
 /// Tools whose large outputs are eligible for the firewall. Explicit file reads are
 /// intentionally excluded — they have their own read-mode (`lines:`, `signatures`, …).
 pub fn is_firewallable_tool(name: &str) -> bool {
-    matches!(
-        name,
-        "ctx_shell" | "ctx_execute" | "ctx_search" | "ctx_tree"
-    )
+    matches!(name, "ctx_shell" | "ctx_search" | "ctx_tree")
 }
 
 /// Explicit file-read tools whose result *is* the file content the agent reads and
@@ -120,7 +117,6 @@ mod tests {
         assert!(is_firewallable_tool("ctx_shell"));
         assert!(is_firewallable_tool("ctx_search"));
         assert!(is_firewallable_tool("ctx_tree"));
-        assert!(is_firewallable_tool("ctx_execute"));
         assert!(!is_firewallable_tool("ctx_read"));
         assert!(!is_firewallable_tool("ctx_expand"));
         assert!(!is_firewallable_tool("ctx_knowledge"));

@@ -277,13 +277,7 @@ fn doctor_none_when_path_not_provided() {
 
 #[test]
 fn write_tools_are_not_plan_mode_tools() {
-    let write_tools = [
-        "ctx_patch",
-        "ctx_refactor",
-        "ctx_shell",
-        "ctx_execute",
-        "ctx_checkpoint",
-    ];
+    let write_tools = ["ctx_patch", "ctx_refactor", "ctx_shell", "ctx_checkpoint"];
     for tool in &write_tools {
         assert!(
             !plan_mode_tools().contains(tool),

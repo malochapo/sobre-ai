@@ -321,13 +321,7 @@ mod tests {
 
         // Every live tool that writes files or runs commands. ctx_checkpoint is
         // one: action=restore reverts files.
-        for writer in [
-            "ctx_patch",
-            "ctx_refactor",
-            "ctx_checkpoint",
-            "ctx_shell",
-            "ctx_execute",
-        ] {
+        for writer in ["ctx_patch", "ctx_refactor", "ctx_checkpoint", "ctx_shell"] {
             assert!(
                 !tools.contains(&writer),
                 "{writer} writes or executes and must not be a plan-mode tool"

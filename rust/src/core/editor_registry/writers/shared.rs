@@ -22,7 +22,6 @@ pub fn auto_approve_tools() -> Vec<&'static str> {
         "ctx_tree",
         "ctx_session",
         "ctx_knowledge",
-        "ctx_context",
         "ctx_graph",
         "ctx_outline",
         "ctx_callgraph",
@@ -30,7 +29,6 @@ pub fn auto_approve_tools() -> Vec<&'static str> {
         "ctx_expand",
         "ctx_impact",
         "ctx_review",
-        "ctx_execute",
         "ctx",
     ]
 }

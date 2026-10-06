@@ -154,20 +154,6 @@ pub struct ToolContext {
     /// Tool call records for session-aware tools (e.g. ctx_session status).
     pub tool_calls:
         Option<std::sync::Arc<tokio::sync::RwLock<Vec<crate::core::protocol::ToolCallRecord>>>>,
-    /// Current agent identity for multi-agent tools.
-    pub agent_id: Option<std::sync::Arc<tokio::sync::RwLock<Option<String>>>>,
-    /// Context ledger for handoff operations.
-    pub ledger:
-        Option<std::sync::Arc<tokio::sync::RwLock<crate::core::context_ledger::ContextLedger>>>,
-    /// Client name (cursor, claude, etc.).
-    pub client_name: Option<std::sync::Arc<tokio::sync::RwLock<String>>>,
-    /// Pipeline stats for metrics/proof tools.
-    /// Global call counter for context tools.
-    pub call_count: Option<std::sync::Arc<std::sync::atomic::AtomicUsize>>,
-    /// Autonomy state for search repeat detection.
-    pub autonomy: Option<std::sync::Arc<crate::tools::autonomy::AutonomyState>>,
-    /// Pre-computed context pressure snapshot for synchronous gate decisions.
-    pub pressure_snapshot: Option<crate::core::context_ledger::ContextPressure>,
     /// Errors from path resolution (PathJail rejection, secret path, etc.).
     /// Keyed by argument name (e.g. "path" -> "path escapes project root: ...").
     pub path_errors: std::collections::HashMap<String, String>,
@@ -190,12 +176,6 @@ impl Default for ToolContext {
             cache: None,
             session: None,
             tool_calls: None,
-            agent_id: None,
-            ledger: None,
-            client_name: None,
-            call_count: None,
-            autonomy: None,
-            pressure_snapshot: None,
             path_errors: std::collections::HashMap::new(),
             bm25_cache: None,
             progress_sender: None,

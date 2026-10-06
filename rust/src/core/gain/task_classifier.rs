@@ -48,7 +48,7 @@ impl TaskClassifier {
             | "ctx_callgraph" => TaskCategory::Exploration,
             "ctx_impact" => TaskCategory::Architecture,
             "ctx_session" | "ctx_knowledge" => TaskCategory::Knowledge,
-            "ctx_shell" | "ctx_execute" => TaskCategory::Debugging,
+            "ctx_shell" => TaskCategory::Debugging,
             _ => TaskCategory::General,
         }
     }

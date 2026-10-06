@@ -340,7 +340,7 @@ fn heredoc_blocked_message(base: &str) -> String {
         "[BLOCKED — DO NOT RETRY] Interpreter '{base}' with heredoc stdin is blocked. \
          Inline code in the command string leaves no auditable artifact.\n\
          Do this instead: write the code to a file, then run it —\n\
-           1. create /tmp/snippet with your code (Write/ctx_edit tool)\n\
+           1. create /tmp/snippet with your code (ctx_patch op=create)\n\
            2. {base} /tmp/snippet\n\
          This is a permanent security restriction."
     )

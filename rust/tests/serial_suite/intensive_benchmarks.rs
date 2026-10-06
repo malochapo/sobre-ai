@@ -1,6 +1,5 @@
 use lean_ctx::core::compressor::{aggressive_compress, lightweight_cleanup, safeguard_ratio};
 use lean_ctx::core::entropy::entropy_compress;
-use lean_ctx::core::protocol::instruction_decoder_block;
 use lean_ctx::core::signatures::extract_signatures;
 use lean_ctx::core::tokens::count_tokens;
 use lean_ctx::tools::CrpMode;
@@ -232,22 +231,6 @@ fn bench_total_input_overhead() {
     assert!(
         total < 18000,
         "Total input overhead should be <18000 tokens, got {total}"
-    );
-}
-
-#[test]
-fn bench_decoder_block_token_count() {
-    let block = instruction_decoder_block(false);
-    let tokens = count_tokens(&block);
-
-    eprintln!(
-        "\n  CEP Decoder Block: {} tokens ({} chars)",
-        tokens,
-        block.len()
-    );
-    assert!(
-        tokens < 300,
-        "Decoder block should be <300 tokens, got {tokens}"
     );
 }
 
@@ -695,53 +678,6 @@ fn guard_tool_descriptions_not_empty() {
     eprintln!(
         "\n  [guard] All {} tools have meaningful descriptions ✓",
         descs.len()
-    );
-}
-
-/// #905: the ctx_shell/ctx_execute relationship must be self-describing in both
-/// directions. It used to be a split — ctx_execute ran what ctx_shell blocked — and
-/// this test pinned the word "allowlist". Since invariant 6 there is no allowlist
-/// and both tools apply the same gate, so an agent told to escalate a [BLOCKED]
-/// command to ctx_execute is sent on a round trip that cannot succeed. Pin the
-/// shared gate, and forbid the allowlist claim from coming back.
-#[test]
-fn guard_shell_execute_policy_is_discoverable() {
-    let descs = lean_ctx::server::tool_descriptions_for_test();
-    let desc_of = |name: &str| -> String {
-        descs
-            .iter()
-            .find(|(n, _)| n == name)
-            .unwrap_or_else(|| panic!("tool '{name}' must be registered"))
-            .1
-            .clone()
-    };
-
-    let shell = desc_of("ctx_shell");
-    assert!(
-        shell.contains("ctx_execute"),
-        "ctx_shell must name ctx_execute as the escalation path (#905), got: '{shell}'"
-    );
-    assert!(
-        shell.contains("Same gate in ctx_execute"),
-        "ctx_shell must state that ctx_execute applies the same gate (#905), got: '{shell}'"
-    );
-    assert!(
-        !shell.to_lowercase().contains("allowlist"),
-        "ctx_shell must not claim an allowlist: there is none (invariant 6), got: '{shell}'"
-    );
-
-    let execute = desc_of("ctx_execute");
-    assert!(
-        execute.contains("shares ctx_shell's security policy"),
-        "ctx_execute must state that shell execution shares ctx_shell's policy (#1011), got: '{execute}'"
-    );
-    assert!(
-        execute.contains("ctx_shell"),
-        "ctx_execute must point one-liners back at ctx_shell (#905), got: '{execute}'"
-    );
-
-    eprintln!(
-        "\n  [guard] ctx_shell/ctx_execute shared shell policy is documented in both descriptions ✓"
     );
 }
 

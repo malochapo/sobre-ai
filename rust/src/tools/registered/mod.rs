@@ -2,8 +2,6 @@ pub(crate) mod batch_read;
 pub mod ctx_callgraph;
 pub mod ctx_checkpoint;
 pub mod ctx_compose;
-pub mod ctx_context;
-pub mod ctx_execute;
 pub mod ctx_expand;
 pub mod ctx_glob;
 pub mod ctx_graph;

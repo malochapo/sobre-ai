@@ -4,7 +4,7 @@
 
 Source of truth: `rust/src/server/registry.rs` and the tool definitions it registers.
 
-lean-ctx registers **19 MCP tools** (granular profile). Each entry below lists the tool name, what it does, and its parameters (`*` marks required).
+lean-ctx registers **17 MCP tools** (granular profile). Each entry below lists the tool name, what it does, and its parameters (`*` marks required).
 
 ## `ctx_callgraph`
 
@@ -36,26 +36,6 @@ ANTIPATTERN: Do NOT Read files whose source compose already returned — it IS t
 WORKFLOW: Fire parallel ctx_read or ctx_compose for different areas.
 
 Parameters: `path`, `task`
-
-## `ctx_context`
-
-Session context overview — cached files, seen files, session state, CRP mode.
-WORKFLOW: track context budget periodically.
-ANTIPATTERN: not for reading file content — use ctx_read or ctx_compose.
-
-Parameters: _none_
-
-## `ctx_execute`
-
-Run code in sandbox (11 languages) — use when conditionals, multi-line or cross-language transforms.
-ANTIPATTERN: for simple one-liners, prefer ctx_shell (lower overhead, auto-compressed).
-language=shell supports multi-line scripts but shares ctx_shell's security policy.
-action=code (default) for one-shot; action=batch for parallel multi-language;
-action=file to process a project file (extension auto-detects).
-Pass intent to focus large output and save tokens. Languages: javascript,
-typescript, python, shell, ruby, go, rust, php, perl, r, elixir.
-
-Parameters: `action`, `code`, `intent`, `items`, `language`, `path`, `timeout`
 
 ## `ctx_expand`
 
@@ -163,9 +143,9 @@ Parameters: `action`*, `session_id`, `value`
 WORKFLOW: preferred — auto-compresses output (build/test/log).
 raw=true for verbatim output; inline=true for moderately-sized verbatim output.
 [exit:N] on errors (lossless).
-POLICY: every command is allowed except constructs that execute something the command text does not name (eval/exec/source, $() at command position, interpreter -c, find -exec, LD_PRELOAD=, …). Same gate in ctx_execute.
-A [BLOCKED] command is permanent — do not retry it here or in ctx_execute.
-ANTIPATTERN: multi-line scripts, sh/bash script.sh, $var-as-command → ctx_execute.
+POLICY: every command is allowed except constructs that execute something the command text does not name (eval/exec/source, $() at command position, interpreter -c, find -exec, LD_PRELOAD=, …).
+A [BLOCKED] command is permanent — do not retry it.
+Multi-line scripts: write them to a file, then run the file.
 
 Parameters: `background_action`, `command`, `cwd`, `env`, `inline`, `job_id`, `raw`, `run_in_background`, `timeout_ms`
 

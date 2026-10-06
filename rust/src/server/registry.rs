@@ -105,10 +105,8 @@ pub fn build_registry() -> ToolRegistry {
     registry.register(Box::new(registered::ctx_search::CtxSearchTool));
     registry.register(Box::new(registered::ctx_checkpoint::CtxCheckpointTool));
     registry.register(Box::new(registered::ctx_compose::CtxComposeTool));
-    registry.register(Box::new(registered::ctx_execute::CtxExecuteTool));
 
     // Utility tools (migrated from dispatch/utility_tools.rs)
-    registry.register(Box::new(registered::ctx_context::CtxContextTool));
     registry.register(Box::new(registered::ctx_graph::CtxGraphTool));
 
     // Session tools (migrated from legacy dispatch)

@@ -367,8 +367,6 @@ fn python3_inline_blocked_by_default() {
 
 // --- GH #898/#904: go list / gh run watch after VAR=$(...) ---
 
-// --- GH #888: block message mentions ctx_execute as sanctioned alternative ---
-
 // --- GH #931: unquoted-delimiter heredoc body false-positives ---
 
 #[test]

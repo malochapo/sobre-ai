@@ -165,11 +165,6 @@ pub fn alignment() -> Vec<OwaspMapping> {
             risk_description: "Agent executes arbitrary or unsafe code without proper sandboxing",
             lean_ctx_mitigations: vec![
                 Mitigation {
-                    feature: "Sandbox Level 0",
-                    module: "core/sandbox.rs",
-                    description: "Subprocess isolation with env_clear and timeout",
-                },
-                Mitigation {
                     feature: "Command Blocklist",
                     module: "core/shell_gate/mod.rs",
                     description: "Dangerous command patterns blocked before execution",

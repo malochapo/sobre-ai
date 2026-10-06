@@ -24,15 +24,6 @@ impl TaskComplexity {
             }
         }
     }
-
-    pub fn encoded_suffix(&self) -> String {
-        use crate::core::protocol::encode_instructions;
-        match self {
-            TaskComplexity::Mechanical => encode_instructions("mechanical"),
-            TaskComplexity::Standard => encode_instructions("standard"),
-            TaskComplexity::Architectural => encode_instructions("architectural"),
-        }
-    }
 }
 
 pub fn classify_from_context(cache: &SessionCache) -> TaskComplexity {

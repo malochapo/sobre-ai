@@ -343,7 +343,6 @@ pub mod read_stub_index;
 pub mod recovery;
 pub mod redaction;
 pub mod reference_docs;
-pub mod sandbox;
 pub mod sanitize;
 pub mod savings_ledger;
 pub mod search_index;

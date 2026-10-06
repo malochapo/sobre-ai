@@ -26,7 +26,7 @@ pub const READONLY_TOOL_NAMES: &[&str] = &[
 ];
 
 /// Tools that may destructively modify their environment.
-pub const DESTRUCTIVE_TOOL_NAMES: &[&str] = &["ctx_shell", "ctx_execute", "ctx_patch"];
+pub const DESTRUCTIVE_TOOL_NAMES: &[&str] = &["ctx_shell", "ctx_patch"];
 
 /// Apply MCP `ToolAnnotations` (readOnlyHint, destructiveHint) to a set of
 /// tool definitions. Called by the registry before serving `tools/list`.
