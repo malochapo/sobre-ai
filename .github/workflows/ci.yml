@@ -1,11 +1,14 @@
 name: CI
 
-# Every pull request into develop or main must pass these checks.
+# Every pull request into develop or main must pass Lint and the Linux tests.
+# macOS and Windows run on push to main (before a release) and on demand
+# (workflow_dispatch): the repository is private, where their minutes bill at
+# 10x and 2x. A merge into develop does not re-run what its pull request ran.
 on:
   pull_request:
     branches: [develop, main]
   push:
-    branches: [develop]
+    branches: [main]
   workflow_dispatch:
 
 concurrency:
@@ -46,7 +49,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        os: ${{ github.event_name == 'pull_request' && fromJSON('["ubuntu-latest"]') || fromJSON('["ubuntu-latest", "macos-latest", "windows-latest"]') }}
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
