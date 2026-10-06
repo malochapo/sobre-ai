@@ -32,7 +32,15 @@ pub fn expand_user_path(raw: &str) -> PathBuf {
         if name.is_empty() {
             break;
         }
-        if let Ok(val) = std::env::var(&name) {
+        // Windows has no HOME (it is USERPROFILE): `$HOME` still means the
+        // home directory there.
+        let val = std::env::var(&name).ok().or_else(|| {
+            (name == "HOME")
+                .then(dirs::home_dir)
+                .flatten()
+                .map(|h| h.to_string_lossy().into_owned())
+        });
+        if let Some(val) = val {
             s.replace_range(start..start + token_len, &val);
         } else {
             tracing::warn!(

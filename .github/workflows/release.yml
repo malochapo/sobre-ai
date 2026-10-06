@@ -56,7 +56,7 @@ jobs:
     needs: version
     runs-on: ${{ matrix.os }}
     strategy:
-      fail-fast: true
+      fail-fast: false
       matrix:
         include:
           - { target: x86_64-unknown-linux-musl, os: ubuntu-latest }
@@ -68,18 +68,19 @@ jobs:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
-      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
-        with:
-          targets: ${{ matrix.target }}
-      - name: Install zig (Linux musl cross builds)
+      - name: Install the pinned toolchain (rust/rust-toolchain.toml)
+        working-directory: rust
+        run: |
+          rustup toolchain install
+          rustup target add ${{ matrix.target }}
+      # cargo-zigbuild >= 0.23 drops the `--fix-cortex-a53-843419` linker flag
+      # rustc passes for aarch64 musl, which zig's linker rejects.
+      - name: Install zig and cargo-zigbuild (Linux musl cross builds)
         if: runner.os == 'Linux'
         run: |
-          pip3 install -q ziglang==0.13.0
+          pip3 install -q ziglang==0.16.0
           echo "$(python3 -c 'import ziglang, os; print(os.path.dirname(ziglang.__file__))')" >> "$GITHUB_PATH"
-      - uses: taiki-e/install-action@74e87cbfa15a59692b158178d8905a61bf6fca95 # v2
-        if: runner.os == 'Linux'
-        with:
-          tool: cargo-zigbuild
+          cargo install --locked cargo-zigbuild@0.23.4
       - name: Build
         working-directory: rust
         shell: bash

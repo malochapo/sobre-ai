@@ -42,8 +42,10 @@ extern "C" fn sandbox_user_dirs() {
 #[cfg_attr(windows, unsafe(link_section = ".CRT$XCU"))]
 static SANDBOX_USER_DIRS: extern "C" fn() = sandbox_user_dirs;
 
-/// The initializer ran: HOME points into this process's sandbox.
+/// The initializer ran: HOME points into this process's sandbox. Holds the env
+/// lock so a test that temporarily repoints HOME cannot race the read.
 pub(crate) fn assert_sandboxed() {
+    let _lock = lean_ctx::core::data_dir::test_env_lock();
     let home = std::env::var("HOME").unwrap_or_default();
     assert!(
         home.contains(&format!("lean-ctx-it-{}", std::process::id())),
