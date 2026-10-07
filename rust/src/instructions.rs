@@ -7,9 +7,9 @@
 //! style appended below and the CRP suffix. The detailed guide is the `sobre`
 //! skill, which agents that support skills load on demand.
 //!
-//! The text must stay true on every host: hooks compress native shell/read
-//! calls where the host supports them, and native tools are never denied, so
-//! nothing here may claim they are.
+//! The text must stay true on every host: hooks compress native shell output
+//! where the host supports them, and native tools are never denied, so nothing
+//! here may claim they are.
 
 use crate::core::config::CompressionLevel;
 use crate::tools::CrpMode;
@@ -195,7 +195,7 @@ mod tests {
     fn teaches_every_way_back_to_exact_content() {
         // The recovery paths agents cannot discover on their own once output is
         // compressed: the expand id, a full read, and raw shell output — the
-        // last one on the CLI too, since hooks rewrite native shell calls.
+        // last one on the CLI too, since hooks compress native shell output.
         for path in [
             "ctx_expand(id)",
             "ctx_read(mode=full)",

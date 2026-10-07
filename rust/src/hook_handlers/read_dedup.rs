@@ -1,9 +1,9 @@
-//! PostToolUse re-read dedup for guard hosts (GL #1140, follow-up to GH #637).
+//! PostToolUse re-read dedup for Claude Code's native Read (GL #1140).
 //!
-//! On Claude Code the PreToolUse Read redirect is disabled
-//! (`read_redirect = auto`) so the native read-before-write guard stays intact —
-//! which also forfeits the redirect's re-read dedup. This handler wins those
-//! savings back **after** the native Read ran on the real path:
+//! sobre never redirects a native Read before it runs (that would break Claude
+//! Code's read-before-write guard, GH #637, and change what the host's Read
+//! does). This handler saves on re-reads **after** the native Read ran on the
+//! real path:
 //!
 //! - First read of a file: no output → the host keeps the byte-identical native
 //!   result (edit safety: `old_string` always comes from real content, and the
@@ -55,10 +55,6 @@ pub fn handle_read_dedup() {
 /// Decide the read-dedup hook's stdout. `None` = emit nothing (passthrough, the
 /// documented PostToolUse no-op). Split from [`handle_read_dedup`] for tests.
 fn compute_read_dedup(input: &str) -> Option<String> {
-    if !crate::core::config::read_dedup_enabled() {
-        return None;
-    }
-
     let v: serde_json::Value = serde_json::from_str(input).ok()?;
 
     // Only successful native Read results are dedupable; other tools have
@@ -344,39 +340,9 @@ fn sweep_stale_sessions(root: &std::path::Path) {
 mod tests {
     use super::*;
 
-    /// RAII guard that makes this process look like a Claude Code guard host
-    /// (where `read_dedup = auto` dedups) for deterministic tests regardless of
-    /// host: the Cursor markers a Cursor agent shell exports itself would make
-    /// Auto resolve to disabled, so they are cleared. Holds the global test env
-    /// lock via `isolated_data_dir`; restores the environment on drop.
-    struct GuardHost {
-        _iso: crate::core::data_dir::IsolatedDataDir,
-    }
-    impl GuardHost {
-        fn claude() -> Self {
-            let iso = crate::core::data_dir::isolated_data_dir();
-            for var in [
-                "CURSOR_VERSION",
-                "CURSOR_PROJECT_DIR",
-                "CURSOR_TRANSCRIPT_PATH",
-                "CURSOR_EXTENSION_HOST_ROLE",
-                "CURSOR_AGENT",
-                "CURSOR_TRACE_ID",
-            ] {
-                crate::test_env::remove_var(var);
-            }
-            crate::test_env::set_var("CLAUDE_PROJECT_DIR", "/repo");
-            GuardHost { _iso: iso }
-        }
-    }
-    impl Drop for GuardHost {
-        fn drop(&mut self) {
-            crate::test_env::remove_var("CLAUDE_PROJECT_DIR");
-        }
-    }
-
-    fn guard_env() -> GuardHost {
-        GuardHost::claude()
+    /// Isolated data dir (holds the global test env lock) for each test.
+    fn guard_env() -> crate::core::data_dir::IsolatedDataDir {
+        crate::core::data_dir::isolated_data_dir()
     }
 
     fn payload(
@@ -632,31 +598,6 @@ mod tests {
             compute_read_dedup(&p2).is_none(),
             "below MIN_DEDUP_BYTES nothing is replaced"
         );
-    }
-
-    #[test]
-    fn disabled_off_guard_host_stays_passive() {
-        let _iso = crate::core::data_dir::isolated_data_dir();
-        // No guard-host marker → auto keeps the hook passive.
-        crate::test_env::remove_var("CLAUDE_PROJECT_DIR");
-        crate::test_env::remove_var("CLAUDECODE");
-        let dir = tempfile::tempdir().unwrap();
-        let file = dir.path().join("lib.rs");
-        std::fs::write(&file, big_body()).unwrap();
-        let session = unique_session("s8");
-
-        for id in ["t1", "t2"] {
-            assert!(
-                compute_read_dedup(&payload(
-                    &session,
-                    id,
-                    &file,
-                    &serde_json::json!(big_body())
-                ))
-                .is_none(),
-                "off guard hosts the PreToolUse redirect owns dedup"
-            );
-        }
     }
 
     #[test]

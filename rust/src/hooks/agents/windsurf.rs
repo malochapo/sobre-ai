@@ -20,8 +20,6 @@ pub(crate) fn install_windsurf_hooks(home: &std::path::Path) {
     let hooks_json = home.join(".codeium").join("windsurf").join("hooks.json");
     let binary = resolve_hook_command_binary();
     let observe_cmd = format!("{binary} hook observe");
-    let rewrite_cmd = format!("{binary} hook rewrite");
-    let redirect_cmd = format!("{binary} hook redirect");
 
     let existing_content = if hooks_json.exists() {
         std::fs::read_to_string(&hooks_json).unwrap_or_default()
@@ -53,14 +51,8 @@ pub(crate) fn install_windsurf_hooks(home: &std::path::Path) {
         return;
     };
 
-    ensure_windsurf_hook_entry(hooks_obj, "pre_mcp_tool_use", &rewrite_cmd, "hook rewrite");
-    ensure_windsurf_hook_entry(
-        hooks_obj,
-        "pre_mcp_tool_use",
-        &redirect_cmd,
-        "hook redirect",
-    );
-
+    // Windsurf hooks can only block, never rewrite, so sobre installs none
+    // before a command runs; shell compression goes through `ctx_shell`.
     let observe_events = [
         "post_mcp_tool_use",
         "post_run_command",

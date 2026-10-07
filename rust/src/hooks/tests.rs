@@ -35,9 +35,6 @@ fn hook_command_binary_honors_override_and_skips_msys_rewrite() {
     let cfg = iso.path().join("config.toml");
     std::fs::write(&cfg, "hook_binary = \"$HOME/.local/bin/lean-ctx\"\n").unwrap();
     assert_eq!(resolve_hook_command_binary(), "$HOME/.local/bin/lean-ctx");
-    // The override is already the user's chosen shell form — never rewritten
-    // into the MSYS `/c/…` form.
-    assert_eq!(resolve_binary_path_for_bash(), "$HOME/.local/bin/lean-ctx");
 
     std::fs::remove_file(&cfg).unwrap();
     // Without an override the #367 contract holds: resolved absolute path.
@@ -63,7 +60,7 @@ fn claude_settings_hooks_emit_override_verbatim_and_stay_idempotent() {
     let settings = std::fs::read_to_string(&settings_path).expect("settings.json written");
     assert!(
         settings.contains(
-            "$USERPROFILE/AppData/Roaming/npm/node_modules/lean-ctx-bin/bin/lean-ctx.exe hook rewrite"
+            "$USERPROFILE/AppData/Roaming/npm/node_modules/lean-ctx-bin/bin/lean-ctx.exe hook compress"
         ),
         "hook command must carry the portable form verbatim: {settings}"
     );
@@ -77,100 +74,6 @@ fn claude_settings_hooks_emit_override_verbatim_and_stay_idempotent() {
     install_claude_hook_config(home.path());
     let after = std::fs::read_to_string(&settings_path).unwrap();
     assert_eq!(settings, after, "idempotent under a stable override");
-}
-
-// ── #719: wrapper scripts must honor the override and survive healing ──
-
-#[test]
-fn claude_wrapper_scripts_emit_override_verbatim_and_quoted() {
-    let iso = crate::core::data_dir::isolated_data_dir();
-    // A portable form WITH a space — quoting is part of the contract.
-    std::fs::write(
-        iso.path().join("config.toml"),
-        "hook_binary = \"$HOME/App Data/npm/node_modules/lean-ctx-bin/bin/lean-ctx.exe\"\n",
-    )
-    .unwrap();
-    let home = tempfile::tempdir().unwrap();
-
-    install_claude_hook_scripts(home.path());
-
-    let hooks_dir = home.path().join(".claude/hooks");
-    for (file, needle) in [
-        (
-            "lean-ctx-rewrite-native",
-            "exec \"$HOME/App Data/npm/node_modules/lean-ctx-bin/bin/lean-ctx.exe\" hook rewrite",
-        ),
-        (
-            "lean-ctx-redirect-native",
-            "exec \"$HOME/App Data/npm/node_modules/lean-ctx-bin/bin/lean-ctx.exe\" hook redirect",
-        ),
-        (
-            "lean-ctx-rewrite.sh",
-            "LEAN_CTX_BIN=\"$HOME/App Data/npm/node_modules/lean-ctx-bin/bin/lean-ctx.exe\"",
-        ),
-    ] {
-        let content = std::fs::read_to_string(hooks_dir.join(file)).expect(file);
-        assert!(
-            content.contains(needle),
-            "{file} must carry the quoted portable form, got:\n{content}"
-        );
-        assert!(
-            !content.contains(&resolve_binary_path()),
-            "{file}: no machine-absolute path may leak into a synced wrapper"
-        );
-    }
-}
-
-#[test]
-fn heal_without_override_preserves_working_portable_wrapper() {
-    let _iso = crate::core::data_dir::isolated_data_dir();
-    let home = tempfile::tempdir().unwrap();
-
-    // The synced peer's portable wrapper resolves on THIS machine: the
-    // binary it points at exists under this home.
-    let bin_dir = home.path().join(".local/bin");
-    std::fs::create_dir_all(&bin_dir).unwrap();
-    std::fs::write(bin_dir.join("lean-ctx"), "#!/bin/sh\nexit 0\n").unwrap();
-
-    let hooks_dir = home.path().join(".claude/hooks");
-    std::fs::create_dir_all(&hooks_dir).unwrap();
-    let portable = "#!/bin/sh\nexec \"$HOME/.local/bin/lean-ctx\" hook rewrite\n";
-    let wrapper = hooks_dir.join("lean-ctx-rewrite-native");
-    std::fs::write(&wrapper, portable).unwrap();
-
-    // Session heal on the machine WITHOUT the override (the #719 scenario):
-    // the working portable wrapper must survive byte-for-byte.
-    install_claude_hook_scripts(home.path());
-    assert_eq!(
-        std::fs::read_to_string(&wrapper).unwrap(),
-        portable,
-        "heal must not stamp a machine-absolute path over a working portable wrapper"
-    );
-
-    // A portable wrapper whose binary does NOT resolve here is genuinely
-    // broken — healing must replace it.
-    let broken = "#!/bin/sh\nexec \"$HOME/nonexistent/lean-ctx\" hook redirect\n";
-    let redirect = hooks_dir.join("lean-ctx-redirect-native");
-    std::fs::write(&redirect, broken).unwrap();
-    install_claude_hook_scripts(home.path());
-    let healed = std::fs::read_to_string(&redirect).unwrap();
-    assert_ne!(healed, broken, "a dead portable wrapper must be healed");
-    assert!(healed.contains(" hook redirect"));
-}
-
-#[test]
-fn wrapper_binary_token_parses_all_generated_forms() {
-    // Quoted native wrapper.
-    assert_eq!(
-        wrapper_binary_token("#!/bin/sh\nexec \"$HOME/b in/lean-ctx\" hook rewrite\n").as_deref(),
-        Some("$HOME/b in/lean-ctx")
-    );
-    // Rewrite script assignment.
-    assert_eq!(
-        wrapper_binary_token("set -euo pipefail\nLEAN_CTX_BIN=\"$HOME/x/lean-ctx\"\n").as_deref(),
-        Some("$HOME/x/lean-ctx")
-    );
-    assert_eq!(wrapper_binary_token("#!/bin/sh\nexit 0\n"), None);
 }
 
 #[test]
@@ -202,7 +105,7 @@ fn hooks_installed_for_detects_marker_content() {
     assert!(!hooks_installed_for("windsurf", &tmp));
 
     // Once it mentions lean-ctx, it is ours and must be refreshed.
-    std::fs::write(&hooks, "{\"hooks\":{\"cmd\":\"lean-ctx hook rewrite\"}}").unwrap();
+    std::fs::write(&hooks, "{\"hooks\":{\"cmd\":\"lean-ctx hook observe\"}}").unwrap();
     assert!(hooks_installed_for("windsurf", &tmp));
 
     let _ = std::fs::remove_dir_all(&tmp);
@@ -330,66 +233,6 @@ fn normalize_unc_path_preserved() {
     assert_eq!(
         crate::core::pathutil::normalize_tool_path("//server/share/file"),
         "//server/share/file"
-    );
-}
-
-#[test]
-fn rewrite_script_uses_registry_pattern() {
-    let script = generate_rewrite_script("/usr/bin/lean-ctx");
-    assert!(script.contains(r"git\ *"), "script missing git pattern");
-    assert!(script.contains(r"cargo\ *"), "script missing cargo pattern");
-    assert!(script.contains(r"npm\ *"), "script missing npm pattern");
-    assert!(script.contains(r"rg\ *"), "script missing rg pattern");
-    assert!(script.contains(r"ls\ *"), "script missing ls pattern");
-    assert!(
-        script.contains("LEAN_CTX_BIN=\"/usr/bin/lean-ctx\""),
-        "script missing binary path"
-    );
-    assert!(
-        script.contains("PowerShell|powershell"),
-        "rewrite script must accept PowerShell tool names for Windows compatibility"
-    );
-}
-
-#[test]
-fn rewrite_scripts_contain_all_registry_commands() {
-    let script = generate_rewrite_script("lean-ctx");
-    let compact = generate_compact_rewrite_script("lean-ctx");
-    for entry in crate::rewrite_registry::REWRITE_COMMANDS {
-        if matches!(entry.category, crate::rewrite_registry::Category::FileRead) {
-            continue;
-        }
-        let pattern = if entry.command.contains('-') {
-            format!("{}*", entry.command.replace('-', r"\-"))
-        } else {
-            format!(r"{}\ *", entry.command)
-        };
-        assert!(
-            script.contains(&pattern),
-            "rewrite_script missing '{}' (pattern: {})",
-            entry.command,
-            pattern
-        );
-        assert!(
-            compact.contains(&pattern),
-            "compact_rewrite_script missing '{}' (pattern: {})",
-            entry.command,
-            pattern
-        );
-    }
-}
-
-#[test]
-fn rewrite_script_skips_multiline_commands() {
-    let script = generate_rewrite_script("lean-ctx");
-    assert!(
-        script.contains(r"grep -qF '\n'"),
-        "rewrite script must guard against unresolved JSON \\n (#787)"
-    );
-    let compact = generate_compact_rewrite_script("lean-ctx");
-    assert!(
-        compact.contains(r"grep -qF '\n'"),
-        "compact rewrite script must guard against unresolved JSON \\n (#787)"
     );
 }
 

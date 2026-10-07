@@ -677,7 +677,7 @@ command = \"other\"
     "preToolUse": [
       {
         "matcher": "Shell",
-        "command": "lean-ctx hook rewrite"
+        "command": "lean-ctx hook compress"
       }
     ]
   }
@@ -702,7 +702,7 @@ command = \"other\"
     "preToolUse": [
       {
         "matcher": "Shell",
-        "command": "lean-ctx hook rewrite"
+        "command": "lean-ctx hook compress"
       }
     ]
   }
@@ -724,7 +724,7 @@ command = \"other\"
     "preToolUse": [
       {
         "matcher": "Shell",
-        "command": "lean-ctx hook rewrite"
+        "command": "lean-ctx hook compress"
       },
       {
         "matcher": "Shell",
@@ -758,7 +758,7 @@ command = \"other\"
         "hooks": [
           {
             "type": "command",
-            "command": "lean-ctx hook rewrite"
+            "command": "lean-ctx hook compress"
           }
         ]
       },
@@ -796,7 +796,7 @@ command = \"other\"
       {
         "matcher": "Bash",
         "hooks": [
-          { "type": "command", "command": "lean-ctx hook rewrite" },
+          { "type": "command", "command": "lean-ctx hook compress" },
           { "type": "command", "command": "my-custom-guard" }
         ]
       }
@@ -819,7 +819,7 @@ command = \"other\"
         let input = r#"{
   "hooks": {
     "preToolUse": [
-      { "bash": "lean-ctx hook rewrite" },
+      { "bash": "lean-ctx hook compress" },
       { "bash": "my-other-hook" }
     ]
   }
@@ -836,25 +836,19 @@ command = \"other\"
     }
 
     #[test]
-    fn hooks_json_permissions_only_not_deleted() {
+    fn hooks_json_permissions_are_left_alone() {
+        // Permissions are the user's: uninstall never edits them, even entries
+        // that name lean-ctx.
         let input = r#"{
   "permissions": {
-    "allow": [
-      "mcp__lean-ctx__ctx_read",
-      "mcp__lean-ctx__ctx_search",
-      "mcp__other-tool__do_stuff"
-    ]
+    "allow": ["mcp__lean-ctx__ctx_read"],
+    "deny": ["mcp__lean-ctx__ctx_shell"]
   }
 }"#;
-        let result = match remove_lean_ctx_from_hooks_json(input) {
-            HookCleanupResult::Cleaned(s) => s,
-            other => panic!("expected Cleaned (permissions remain), got {other:?}"),
-        };
-        assert!(!result.contains("lean-ctx"), "lean-ctx permissions removed");
-        assert!(
-            result.contains("mcp__other-tool"),
-            "other permissions preserved"
-        );
+        assert!(matches!(
+            remove_lean_ctx_from_hooks_json(input),
+            HookCleanupResult::Unchanged
+        ));
     }
 
     #[test]

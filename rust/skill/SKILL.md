@@ -69,12 +69,11 @@ history separate from the user's git, and can restore them.
 - `ctx_shell(command)` compresses build, test and log output; errors carry
   `[exit:N]` and are never dropped.
 - Long jobs: `run_in_background=true`, then poll the returned `job_id`.
-- Commands run unless the user's deny list blocks them, or they execute
-  something the command text does not name (`eval`, `interpreter -c`,
-  `find -exec`, …). A `[BLOCKED]` command is final — do not retry it.
+- sobre runs every command as given; what may run is your host's decision.
 - Multi-line scripts: write them to a file, then run the file.
-- Where the host supports hooks, native shell commands may also be rewritten
-  to `lean-ctx -c "<command>"` and come back compressed.
+- Where the host supports hooks, the output of your native shell commands may
+  come back compressed, ending with a `[sobre: …]` line that names where the
+  full output is kept.
 
 ## Getting exact content back
 

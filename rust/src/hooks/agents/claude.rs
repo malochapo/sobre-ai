@@ -1,8 +1,4 @@
-use super::super::{
-    REDIRECT_SCRIPT_CLAUDE, ensure_state_dir, generate_rewrite_script, make_executable,
-    mcp_server_quiet_mode, resolve_binary_path_for_bash, resolve_hook_command_binary,
-    shell_quoted_binary, write_file, write_wrapper_file,
-};
+use super::super::{mcp_server_quiet_mode, resolve_hook_command_binary, write_file};
 
 pub(crate) fn install_claude_hook() {
     let Some(home) = crate::core::home::resolve_home_dir() else {
@@ -10,7 +6,6 @@ pub(crate) fn install_claude_hook() {
         return;
     };
 
-    install_claude_hook_scripts(&home);
     install_claude_hook_config(&home);
     install_claude_mcp_server(&home);
 }
@@ -57,58 +52,15 @@ fn install_claude_mcp_server(home: &std::path::Path) {
     }
 }
 
-pub(crate) fn install_claude_hook_scripts(home: &std::path::Path) {
-    let hooks_dir = crate::core::editor_registry::claude_state_dir(home).join("hooks");
-    if !ensure_state_dir(&hooks_dir) {
-        return;
-    }
-
-    // #719: wrapper writes go through write_wrapper_file — a synced portable
-    // wrapper ($HOME/… that resolves here) is never re-stamped with this
-    // machine's absolute path, and the binary token is shell-quoted.
-    let rewrite_path = hooks_dir.join("lean-ctx-rewrite.sh");
-    let rewrite_script = generate_rewrite_script(&resolve_binary_path_for_bash());
-    write_wrapper_file(&rewrite_path, &rewrite_script, home);
-    make_executable(&rewrite_path);
-
-    let redirect_path = hooks_dir.join("lean-ctx-redirect.sh");
-    write_file(&redirect_path, REDIRECT_SCRIPT_CLAUDE);
-    make_executable(&redirect_path);
-
-    let rewrite_native = hooks_dir.join("lean-ctx-rewrite-native");
-    write_wrapper_file(
-        &rewrite_native,
-        &format!(
-            "#!/bin/sh\nexec {} hook rewrite\n",
-            shell_quoted_binary(&resolve_binary_path_for_bash())
-        ),
-        home,
-    );
-    make_executable(&rewrite_native);
-
-    let redirect_native = hooks_dir.join("lean-ctx-redirect-native");
-    write_wrapper_file(
-        &redirect_native,
-        &format!(
-            "#!/bin/sh\nexec {} hook redirect\n",
-            shell_quoted_binary(&resolve_binary_path_for_bash())
-        ),
-        home,
-    );
-    make_executable(&redirect_native);
-}
-
-/// The `Read|…` tool matcher shared by every Claude redirect hook (global + project).
-const REDIRECT_MATCHER: &str = "Read|read|ReadFile|read_file|View|view|Grep|grep|Search|search|ListFiles|list_files|ListDirectory|list_directory|Glob|glob";
-
 /// PostToolUse matcher for the guard-safe re-read dedup (GL #1140): Read only —
 /// the handler mirrors the Read result shape and must never see another tool's.
 const READ_DEDUP_MATCHER: &str = "Read";
 
 /// Ensure the PostToolUse `hook read-dedup` entry exists exactly once (GL #1140).
 ///
-/// Runs alongside the observe hook on PostToolUse; only read-dedup emits
-/// `updatedToolOutput`, so there is no competing-rewriter race. The handler is
+/// Runs alongside the observe hook on PostToolUse; read-dedup (Read) and
+/// compress (Bash) are the only `updatedToolOutput` writers and never see the
+/// same tool, so there is no competing-rewriter race. The handler is
 /// inert off guard hosts and for first reads (`read_dedup = auto`), so
 /// installing it unconditionally is safe.
 fn ensure_read_dedup_hook(
@@ -123,7 +75,7 @@ fn ensure_read_dedup_hook(
     }
 }
 
-/// The trailing action token of a lean-ctx hook command, e.g. `"hook rewrite"`.
+/// The trailing action token of a lean-ctx hook command, e.g. `"hook compress"`.
 ///
 /// Commands are rendered as `<binary> hook <action>`, where `<binary>` is either a bare
 /// `lean-ctx` (when it is on `PATH`) or an absolute path (when it is not). The action token
@@ -248,90 +200,66 @@ fn ensure_claude_observe_hooks(
 }
 
 pub(crate) fn install_claude_hook_config(home: &std::path::Path) {
-    let hooks_dir = crate::core::editor_registry::claude_state_dir(home).join("hooks");
     let binary = resolve_hook_command_binary();
-
-    let rewrite_cmd = format!("{binary} hook rewrite");
-    let redirect_cmd = format!("{binary} hook redirect");
+    let compress_cmd = format!("{binary} hook compress");
     let observe_cmd = format!("{binary} hook observe");
     let read_dedup_cmd = format!("{binary} hook read-dedup");
 
     let settings_path = crate::core::editor_registry::claude_state_dir(home).join("settings.json");
-    let settings_content = if settings_path.exists() {
-        std::fs::read_to_string(&settings_path).unwrap_or_default()
+    let settings_content = std::fs::read_to_string(&settings_path).unwrap_or_default();
+    let mut root = if settings_content.trim().is_empty() {
+        serde_json::json!({})
+    } else if let Ok(parsed) = crate::core::jsonc::parse_jsonc(&settings_content) {
+        parsed
     } else {
-        String::new()
+        return;
     };
+    let before = serde_json::to_string_pretty(&root).unwrap_or_default();
 
-    let bash_matcher = if cfg!(windows) {
-        "Bash|bash|PowerShell|powershell"
-    } else {
-        "Bash|bash"
-    };
-
-    let desired_pretooluse = serde_json::json!([
-        {
-            "matcher": bash_matcher,
-            "hooks": [{
-                "type": "command",
-                "command": rewrite_cmd
-            }]
-        },
-        {
-            "matcher": REDIRECT_MATCHER,
-            "hooks": [{
-                "type": "command",
-                "command": redirect_cmd
-            }]
-        }
-    ]);
-
-    if settings_content.is_empty() {
-        let mut hook_map = serde_json::Map::new();
-        hook_map.insert("PreToolUse".to_string(), desired_pretooluse);
-        ensure_claude_observe_hooks(&mut hook_map, &observe_cmd);
-        ensure_read_dedup_hook(&mut hook_map, &read_dedup_cmd);
-        let hook_entry = serde_json::json!({ "hooks": serde_json::Value::Object(hook_map) });
-        write_file(
-            &settings_path,
-            &serde_json::to_string_pretty(&hook_entry).unwrap_or_default(),
-        );
-    } else if let Ok(mut existing) = crate::core::jsonc::parse_jsonc(&settings_content) {
-        let before = serde_json::to_string_pretty(&existing).unwrap_or_default();
-        if let Some(root) = existing.as_object_mut() {
-            let hooks = root
-                .entry("hooks".to_string())
-                .or_insert_with(|| serde_json::json!({}));
-            if let Some(hooks_obj) = hooks.as_object_mut() {
-                let pre = hooks_obj
-                    .entry("PreToolUse".to_string())
-                    .or_insert_with(|| serde_json::json!([]));
-                if let Some(pre_arr) = pre.as_array_mut() {
-                    ensure_command_hook(pre_arr, bash_matcher, &rewrite_cmd);
-                    ensure_command_hook(pre_arr, REDIRECT_MATCHER, &redirect_cmd);
-                }
-                ensure_claude_observe_hooks(hooks_obj, &observe_cmd);
-                ensure_read_dedup_hook(hooks_obj, &read_dedup_cmd);
+    if let Some(root_obj) = root.as_object_mut() {
+        let hooks = root_obj
+            .entry("hooks".to_string())
+            .or_insert_with(|| serde_json::json!({}));
+        if let Some(hooks_obj) = hooks.as_object_mut() {
+            // Observe first: `ensure_command_hook` re-appends its entry, so
+            // this order is the one a re-run reproduces (idempotent file).
+            ensure_claude_observe_hooks(hooks_obj, &observe_cmd);
+            // Shell output is compressed after the command ran (PostToolUse
+            // `updatedToolOutput`); the command itself is never rewritten.
+            let post = hooks_obj
+                .entry("PostToolUse".to_string())
+                .or_insert_with(|| serde_json::json!([]));
+            if let Some(post_arr) = post.as_array_mut() {
+                ensure_command_hook(post_arr, BASH_MATCHER, &compress_cmd);
             }
+            ensure_read_dedup_hook(hooks_obj, &read_dedup_cmd);
         }
-        // Only rewrite (with backup) when the merge actually changed something, so a
-        // no-op `update` doesn't churn the user's settings.json or pile up backups.
-        let after = serde_json::to_string_pretty(&existing).unwrap_or_default();
-        if after != before {
-            write_file(&settings_path, &after);
-        }
+    }
+
+    // Only rewrite (with backup) when the merge actually changed something, so a
+    // no-op `update` doesn't churn the user's settings.json or pile up backups.
+    let after = serde_json::to_string_pretty(&root).unwrap_or_default();
+    if after != before {
+        write_file(&settings_path, &after);
     }
     if !mcp_server_quiet_mode() {
-        eprintln!("Installed Claude Code hooks at {}", hooks_dir.display());
+        eprintln!("Installed Claude Code hooks in {}", settings_path.display());
     }
 }
+
+/// The Claude Code shell tools whose output `hook compress` may shrink.
+const BASH_MATCHER: &str = if cfg!(windows) {
+    "Bash|PowerShell"
+} else {
+    "Bash"
+};
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use serde_json::json;
 
-    const BASH: &str = "Bash|bash";
+    const BASH: &str = "Bash";
 
     fn commands_for(pre: &[serde_json::Value], action: &str) -> Vec<String> {
         pre.iter()
@@ -345,12 +273,12 @@ mod tests {
     #[test]
     fn action_token_is_path_independent() {
         assert_eq!(
-            lean_ctx_action_token("lean-ctx hook rewrite"),
-            "hook rewrite"
+            lean_ctx_action_token("lean-ctx hook compress"),
+            "hook compress"
         );
         assert_eq!(
-            lean_ctx_action_token("/Users/x/.local/bin/lean-ctx hook redirect"),
-            "hook redirect"
+            lean_ctx_action_token("/Users/x/.local/bin/lean-ctx hook read-dedup"),
+            "hook read-dedup"
         );
     }
 
@@ -359,12 +287,12 @@ mod tests {
         // Installed once off PATH (absolute path), then `update` runs on PATH (bare name).
         let mut pre = vec![json!({
             "matcher": BASH,
-            "hooks": [{ "type": "command", "command": "/abs/bin/lean-ctx hook rewrite" }]
+            "hooks": [{ "type": "command", "command": "/abs/bin/lean-ctx hook compress" }]
         })];
-        ensure_command_hook(&mut pre, BASH, "lean-ctx hook rewrite");
+        ensure_command_hook(&mut pre, BASH, "lean-ctx hook compress");
         assert_eq!(
-            commands_for(&pre, "hook rewrite"),
-            ["lean-ctx hook rewrite"]
+            commands_for(&pre, "hook compress"),
+            ["lean-ctx hook compress"]
         );
     }
 
@@ -372,25 +300,25 @@ mod tests {
     fn repeated_calls_are_idempotent() {
         let mut pre = vec![];
         for _ in 0..5 {
-            ensure_command_hook(&mut pre, BASH, "lean-ctx hook rewrite");
+            ensure_command_hook(&mut pre, BASH, "lean-ctx hook compress");
         }
         assert_eq!(
-            commands_for(&pre, "hook rewrite"),
-            ["lean-ctx hook rewrite"]
+            commands_for(&pre, "hook compress"),
+            ["lean-ctx hook compress"]
         );
     }
 
     #[test]
     fn heals_preexisting_duplicates_across_groups() {
-        // Two stale rewrite hooks left by older buggy versions, different matchers/paths.
+        // Two copies of the same hook with different matchers/paths.
         let mut pre = vec![
-            json!({ "matcher": "Bash", "hooks": [{ "type": "command", "command": "/a/lean-ctx hook rewrite" }] }),
-            json!({ "matcher": BASH, "hooks": [{ "type": "command", "command": "lean-ctx hook rewrite" }] }),
+            json!({ "matcher": "Bash", "hooks": [{ "type": "command", "command": "/a/lean-ctx hook compress" }] }),
+            json!({ "matcher": BASH, "hooks": [{ "type": "command", "command": "lean-ctx hook compress" }] }),
         ];
-        ensure_command_hook(&mut pre, BASH, "lean-ctx hook rewrite");
+        ensure_command_hook(&mut pre, BASH, "lean-ctx hook compress");
         assert_eq!(
-            commands_for(&pre, "hook rewrite"),
-            ["lean-ctx hook rewrite"]
+            commands_for(&pre, "hook compress"),
+            ["lean-ctx hook compress"]
         );
     }
 
@@ -400,13 +328,13 @@ mod tests {
             "matcher": BASH,
             "hooks": [
                 { "type": "command", "command": "my-own-tool --flag" },
-                { "type": "command", "command": "/abs/lean-ctx hook rewrite" }
+                { "type": "command", "command": "/abs/lean-ctx hook compress" }
             ]
         })];
-        ensure_command_hook(&mut pre, BASH, "lean-ctx hook rewrite");
+        ensure_command_hook(&mut pre, BASH, "lean-ctx hook compress");
         assert_eq!(
-            commands_for(&pre, "hook rewrite"),
-            ["lean-ctx hook rewrite"]
+            commands_for(&pre, "hook compress"),
+            ["lean-ctx hook compress"]
         );
         let all: Vec<String> = pre
             .iter()
@@ -421,27 +349,19 @@ mod tests {
     }
 
     #[test]
-    fn rewrite_and_redirect_coexist_after_reruns() {
-        let mut pre = vec![];
-        ensure_command_hook(&mut pre, BASH, "lean-ctx hook rewrite");
-        ensure_command_hook(&mut pre, REDIRECT_MATCHER, "lean-ctx hook redirect");
-        ensure_command_hook(&mut pre, BASH, "lean-ctx hook rewrite"); // re-run (update)
+    fn compress_and_read_dedup_coexist_after_reruns() {
+        let mut post = vec![];
+        ensure_command_hook(&mut post, BASH, "lean-ctx hook compress");
+        ensure_command_hook(&mut post, READ_DEDUP_MATCHER, "lean-ctx hook read-dedup");
+        ensure_command_hook(&mut post, BASH, "lean-ctx hook compress"); // re-run (update)
         assert_eq!(
-            commands_for(&pre, "hook rewrite"),
-            ["lean-ctx hook rewrite"]
+            commands_for(&post, "hook compress"),
+            ["lean-ctx hook compress"]
         );
         assert_eq!(
-            commands_for(&pre, "hook redirect"),
-            ["lean-ctx hook redirect"]
+            commands_for(&post, "hook read-dedup"),
+            ["lean-ctx hook read-dedup"]
         );
-    }
-
-    #[test]
-    fn redirect_matcher_covers_glob() {
-        // #556: the redirect hook must see the Glob tool, so it has to be part
-        // of the redirect matcher Claude installs.
-        assert!(REDIRECT_MATCHER.contains("Glob"));
-        assert!(REDIRECT_MATCHER.contains("glob"));
     }
 
     #[test]

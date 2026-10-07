@@ -19,7 +19,6 @@ mod output_contracts_knowledge;
 mod p4_docker_claude_mcp_selfheal_eval;
 mod power_user_worksession;
 mod proxy_stale_env_scenarios;
-mod read_only_roots_e2e;
 mod savings_verification;
 mod terse_agent_tests;
 mod ticket_fixes_scenarios;

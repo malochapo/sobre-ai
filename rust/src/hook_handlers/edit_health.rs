@@ -105,7 +105,7 @@ fn notice_with(v: &Value, root: &str, threshold: u32) -> Option<String> {
     let (_field, file) = payload::resolve_path_field(Some(&args), payload::READ_PATH_FIELDS)?;
     let edits = collect_edits(&args)?;
 
-    let after = read_jailed(&file, root)?;
+    let after = read_under_root(&file, root)?;
     if after.len() > MAX_EDIT_BYTES {
         return None;
     }
@@ -170,16 +170,15 @@ fn reverse_edits(after: &str, edits: &[Replacement]) -> Option<String> {
     Some(content)
 }
 
-/// Read `file` (resolved against `root`) only if it stays inside the project
-/// jail. Returns `None` on any path/IO/jail failure (best-effort hook).
-fn read_jailed(file: &str, root: &str) -> Option<String> {
+/// Read `file`, resolved against `root`. Returns `None` on any path/IO
+/// failure (best-effort hook).
+fn read_under_root(file: &str, root: &str) -> Option<String> {
     let p = std::path::Path::new(file);
     let abs = if p.is_absolute() {
         p.to_path_buf()
     } else {
         std::path::Path::new(root).join(file)
     };
-    crate::core::pathjail::jail_path(&abs, std::path::Path::new(root)).ok()?;
     std::fs::read_to_string(&abs).ok()
 }
 

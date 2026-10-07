@@ -1,8 +1,9 @@
-use super::super::{mcp_server_quiet_mode, resolve_binary_path};
+use super::super::{mcp_server_quiet_mode, resolve_binary_path, write_file};
 
 pub(crate) fn install_opencode_hook() {
     let binary = resolve_binary_path();
     let home = crate::core::home::resolve_home_dir().unwrap_or_default();
+    install_opencode_plugin(&home, &binary);
     let config_path = home.join(".config/opencode/opencode.json");
     let display_path = "~/.config/opencode/opencode.json";
 
@@ -61,5 +62,61 @@ pub(crate) fn install_opencode_hook() {
         }
     } else if has_lean_ctx && !mcp_server_quiet_mode() {
         eprintln!("OpenCode MCP already configured at {display_path}");
+    }
+}
+
+/// `~/.config/opencode/plugins/sobre.js`: after the `bash` tool ran and
+/// succeeded, hand its output to `hook compress` and keep the reply when there
+/// is one. The command itself is never changed.
+pub(crate) fn install_opencode_plugin(home: &std::path::Path, binary: &str) {
+    let path = home.join(".config/opencode/plugins/sobre.js");
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    write_file(&path, &opencode_plugin_source(binary));
+}
+
+fn opencode_plugin_source(binary: &str) -> String {
+    let bin = serde_json::to_string(binary).unwrap_or_else(|_| "\"lean-ctx\"".to_string());
+    format!(
+        r#"// Installed by sobre. Compresses the output of a successful `bash` tool
+// call after it ran; the command itself is never changed. Compressed output
+// ends with a "[sobre: ...]" line saying so.
+import {{ spawnSync }} from "node:child_process";
+
+const BIN = {bin};
+
+export const Sobre = async () => ({{
+  "tool.execute.after": async (input, output) => {{
+    if (input.tool !== "bash" || output?.metadata?.exit !== 0) return;
+    if (typeof output.output !== "string" || output.output.length === 0) return;
+    const payload = JSON.stringify({{
+      tool_name: "bash",
+      tool_input: {{ command: input.args?.command ?? "" }},
+      output: output.output,
+    }});
+    const r = spawnSync(BIN, ["hook", "compress"], {{
+      input: payload,
+      encoding: "utf8",
+      timeout: 10000,
+    }});
+    if (r.status !== 0 || !r.stdout) return;
+    try {{
+      const reply = JSON.parse(r.stdout);
+      if (typeof reply.output === "string") output.output = reply.output;
+    }} catch {{}}
+  }},
+}});
+"#
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn plugin_embeds_the_quoted_binary() {
+        let src = super::opencode_plugin_source("/opt/my dir/lean-ctx");
+        assert!(src.contains(r#"const BIN = "/opt/my dir/lean-ctx";"#));
+        assert!(src.contains(r#"["hook", "compress"]"#));
     }
 }

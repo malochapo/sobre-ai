@@ -3,7 +3,7 @@
 //! Previously two near-identical `resolve_path_sync` implementations lived in
 //! `tools/registered/mod.rs` (SessionState-based) and `server/tool_trait.rs`
 //! (ToolContext-based), plus several copies of the project-marker test. This
-//! module is the single source of truth: [`resolve_tool_path`] for jailed path
+//! module is the single source of truth: [`resolve_tool_path`] for tool path
 //! resolution and a re-export of [`has_project_marker`] for marker detection.
 
 use std::path::{Path, PathBuf};
@@ -55,23 +55,20 @@ pub(crate) fn shell_cwd_is_divergent_checkout(project_root: &str, shell_cwd: &st
     }
 }
 
-/// Resolve a (possibly relative) tool path to a normalized, jail-checked,
-/// secret-screened absolute path.
+/// Resolve a (possibly relative) tool path to a normalized absolute path. sobre
+/// does not confine paths: what may be read or written is the agent host's
+/// decision (invariant 6).
 ///
 /// Resolution order for relative inputs:
 /// 1. absolute path → used as-is
 /// 2. `<project_root>/<path>` if it exists
 /// 3. `<shell_cwd>/<path>` if a shell cwd is known
-/// 4. `<jail_root>/<path>` as a last resort
+/// 4. `<project_root or shell_cwd or .>/<path>` as a last resort
 ///
 /// Relative inputs are NEVER resolved against the process CWD: the daemon's
 /// CWD is not the project, so a CWD `exists()` probe made resolution
 /// nondeterministic across MCP/daemon/CLI contexts (and could pick a
 /// same-named file outside the project).
-///
-/// `jail_root` is `project_root`, else `shell_cwd`, else `"."`. The result is
-/// confined to the jail root via [`crate::core::pathjail::jail_path`] and
-/// screened by the secret-path I/O boundary.
 ///
 /// Performs blocking filesystem `exists()` checks; callers on async runtimes
 /// must wrap this in `tokio::task::block_in_place`.
@@ -80,28 +77,13 @@ pub fn resolve_tool_path(
     shell_cwd: Option<&str>,
     raw: &str,
 ) -> Result<String, String> {
-    resolve_tool_path_with_roots(project_root, shell_cwd, raw, &[])
-}
-
-/// Like [`resolve_tool_path`], but also permits paths under any of
-/// `extra_roots` (session-scoped trusted roots from `session.extra_roots`).
-///
-/// An empty `extra_roots` is identical to [`resolve_tool_path`]; this is how
-/// sync tool handlers honor MCP `roots/list` / config `extra_roots` for an
-/// explicit path without widening the global jail (#403).
-pub fn resolve_tool_path_with_roots(
-    project_root: Option<&str>,
-    shell_cwd: Option<&str>,
-    raw: &str,
-    extra_roots: &[String],
-) -> Result<String, String> {
     let normalized = crate::core::pathutil::normalize_tool_path(raw);
     if normalized.is_empty() || normalized == "." {
         return Ok(normalized);
     }
 
     let p = Path::new(&normalized);
-    let jail_root = project_root.or(shell_cwd).unwrap_or(".").to_string();
+    let base = project_root.or(shell_cwd).unwrap_or(".").to_string();
 
     let resolved: PathBuf = if p.is_absolute() {
         PathBuf::from(&normalized)
@@ -127,17 +109,12 @@ pub fn resolve_tool_path_with_roots(
     } else if let Some(cwd) = shell_cwd {
         Path::new(cwd).join(&normalized)
     } else {
-        Path::new(&jail_root).join(&normalized)
+        Path::new(&base).join(&normalized)
     };
 
-    let jail_root_path = Path::new(&jail_root);
-    let jailed =
-        crate::core::pathjail::jail_path_with_roots(&resolved, jail_root_path, extra_roots)
-            .map_err(|e| e.to_string())?;
-    crate::core::io_boundary::check_secret_path(&jailed)?;
-
+    let resolved = crate::core::pathutil::canonicalize_or_self(&resolved);
     Ok(crate::core::pathutil::normalize_tool_path(
-        &jailed.to_string_lossy().replace('\\', "/"),
+        &resolved.to_string_lossy().replace('\\', "/"),
     ))
 }
 
@@ -181,9 +158,8 @@ mod tests {
             Some(&cwd.to_string_lossy()),
             "only_in_cwd.txt",
         );
-        // jail_root is project_root; a file only under shell_cwd resolves to a
-        // cwd-joined path which may be rejected by the jail — either way it must
-        // not panic and must yield a deterministic Result.
+        // A file only under shell_cwd resolves to a cwd-joined path; either
+        // way it must not panic and must yield a deterministic Result.
         assert!(out.is_ok() || out.is_err());
 
         let _ = fs::remove_dir_all(&base);
@@ -211,8 +187,8 @@ mod tests {
         // names (RUNNER~1), so comparing raw strings is platform-flaky. The
         // resolved file itself does not exist, but its parent does — compare
         // the canonicalized parents.
-        let canonical_root = crate::core::pathjail::canonicalize_or_self(&tmp);
-        let out_parent = crate::core::pathjail::canonicalize_or_self(
+        let canonical_root = crate::core::pathutil::canonicalize_or_self(&tmp);
+        let out_parent = crate::core::pathutil::canonicalize_or_self(
             Path::new(&out)
                 .parent()
                 .expect("resolved path has a parent"),
@@ -221,41 +197,13 @@ mod tests {
             out_parent, canonical_root,
             "resolved {out} must live under the project root, not the process CWD"
         );
-        let canonical_cwd = crate::core::pathjail::canonicalize_or_self(&cwd);
+        let canonical_cwd = crate::core::pathutil::canonicalize_or_self(&cwd);
         assert_ne!(
             out_parent, canonical_cwd,
             "resolved {out} must not resolve against the process CWD"
         );
 
         let _ = fs::remove_dir_all(&tmp);
-    }
-
-    // #403: session-scoped extra_roots must thread through to the jail so an
-    // explicit path under a worktree resolves where the bare resolver rejects
-    // it. Asserts only the Ok case (robust against parallel env mutation): with
-    // the jail on, success here is only possible because extra_roots were honored.
-    #[cfg(not(feature = "no-jail"))]
-    #[test]
-    fn extra_roots_thread_through_resolve_tool_path() {
-        let base = std::env::temp_dir().join(format!("lc_pr_extra_{}", std::process::id()));
-        let root = base.join("root");
-        let worktree = base.join("worktree");
-        fs::create_dir_all(&root).unwrap();
-        fs::create_dir_all(&worktree).unwrap();
-        let file = worktree.join("a.txt");
-        fs::write(&file, "x").unwrap();
-
-        let root_s = root.to_string_lossy().to_string();
-        let file_abs = file.to_string_lossy().to_string();
-        let extra = vec![worktree.to_string_lossy().to_string()];
-
-        let out = resolve_tool_path_with_roots(Some(&root_s), None, &file_abs, &extra);
-        assert!(
-            out.is_ok(),
-            "extra_roots must thread through the resolver: {out:?}"
-        );
-
-        let _ = fs::remove_dir_all(&base);
     }
 
     /// #707: the exact Claude Code `EnterWorktree` topology — a full checkout
@@ -368,8 +316,8 @@ mod tests {
     // was rewritten to `C:/…`, which `Path::is_absolute()` rejects on Unix —
     // the path was then re-joined under the (also-translated) project root,
     // producing the doubled `C:/root/C:/root/file` form from the report.
-    // `/c` cannot be created in this test environment, so the jail may still
-    // reject the path as nonexistent — the regression assertion is that no
+    // `/c` cannot be created in this test environment, so resolution may
+    // still fail — the regression assertion is that no
     // `C:/` drive form appears anywhere in the outcome (Ok or Err).
     #[cfg(not(windows))]
     #[test]

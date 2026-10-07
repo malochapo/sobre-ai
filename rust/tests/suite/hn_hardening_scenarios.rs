@@ -37,15 +37,15 @@ fn skip_terse_body(src: &str) -> String {
 // =============================================================================
 
 mod correction_loop {
-    use lean_ctx::core::loop_detection::LoopDetector;
+    use lean_ctx::core::refetch_signals::RefetchSignals;
 
     #[test]
     fn scenario_agent_rereads_same_file_fresh() {
-        let mut detector = LoopDetector::new();
+        let mut detector = RefetchSignals::default();
         // Cold start: 3 initial reads
-        detector.record_read_for_correction("src/main.rs", "full", false);
-        detector.record_read_for_correction("src/lib.rs", "full", false);
-        detector.record_read_for_correction("src/utils.rs", "full", false);
+        detector.record_read("src/main.rs", "full", false);
+        detector.record_read("src/lib.rs", "full", false);
+        detector.record_read("src/utils.rs", "full", false);
         assert_eq!(
             detector.correction_count(),
             0,
@@ -53,62 +53,62 @@ mod correction_loop {
         );
 
         // Agent reads a file normally
-        detector.record_read_for_correction("src/cache.rs", "full", false);
+        detector.record_read("src/cache.rs", "full", false);
         assert_eq!(detector.correction_count(), 0);
 
         // Agent re-reads same file with fresh=true (lost trust in compression)
-        detector.record_read_for_correction("src/cache.rs", "full", true);
+        detector.record_read("src/cache.rs", "full", true);
         assert_eq!(detector.correction_count(), 1);
     }
 
     #[test]
     fn scenario_agent_bounces_map_to_full() {
-        let mut detector = LoopDetector::new();
+        let mut detector = RefetchSignals::default();
         // Cold start
         for i in 0..3 {
-            detector.record_read_for_correction(&format!("cold{i}.rs"), "full", false);
+            detector.record_read(&format!("cold{i}.rs"), "full", false);
         }
 
         // Agent reads with map mode first (exploring)
-        detector.record_read_for_correction("src/server/mod.rs", "map", false);
+        detector.record_read("src/server/mod.rs", "map", false);
         assert_eq!(detector.correction_count(), 0);
 
         // Then immediately bounces to full (map wasn't enough)
-        detector.record_read_for_correction("src/server/mod.rs", "full", false);
+        detector.record_read("src/server/mod.rs", "full", false);
         assert_eq!(detector.correction_count(), 1);
     }
 
     #[test]
     fn scenario_agent_reruns_same_shell_command() {
-        let mut detector = LoopDetector::new();
+        let mut detector = RefetchSignals::default();
         // Cold start
         for i in 0..3 {
-            detector.record_shell_for_correction(&format!("echo init{i}"));
+            detector.record_shell(&format!("echo init{i}"));
         }
 
         // Agent runs cargo test
-        detector.record_shell_for_correction("cargo test --lib");
+        detector.record_shell("cargo test --lib");
         assert_eq!(detector.correction_count(), 0);
 
         // Agent runs same command again (didn't trust output)
-        detector.record_shell_for_correction("cargo test --lib");
+        detector.record_shell("cargo test --lib");
         assert_eq!(detector.correction_count(), 1);
 
         // Third time
-        detector.record_shell_for_correction("cargo test --lib");
+        detector.record_shell("cargo test --lib");
         assert_eq!(detector.correction_count(), 2);
     }
 
     #[test]
     fn scenario_different_commands_no_correction() {
-        let mut detector = LoopDetector::new();
+        let mut detector = RefetchSignals::default();
         for i in 0..3 {
-            detector.record_shell_for_correction(&format!("echo init{i}"));
+            detector.record_shell(&format!("echo init{i}"));
         }
 
-        detector.record_shell_for_correction("cargo build");
-        detector.record_shell_for_correction("cargo test");
-        detector.record_shell_for_correction("cargo clippy");
+        detector.record_shell("cargo build");
+        detector.record_shell("cargo test");
+        detector.record_shell("cargo clippy");
         assert_eq!(
             detector.correction_count(),
             0,
@@ -118,14 +118,14 @@ mod correction_loop {
 
     #[test]
     fn scenario_legitimate_exploration_no_false_positive() {
-        let mut detector = LoopDetector::new();
+        let mut detector = RefetchSignals::default();
         for i in 0..3 {
-            detector.record_read_for_correction(&format!("cold{i}.rs"), "full", false);
+            detector.record_read(&format!("cold{i}.rs"), "full", false);
         }
 
         // Agent explores multiple different files (legitimate workflow)
         for i in 0..10 {
-            detector.record_read_for_correction(&format!("src/file{i}.rs"), "map", false);
+            detector.record_read(&format!("src/file{i}.rs"), "map", false);
         }
         assert_eq!(
             detector.correction_count(),
@@ -136,17 +136,17 @@ mod correction_loop {
 
     #[test]
     fn scenario_prune_clears_old_signals() {
-        let mut detector = LoopDetector::new();
+        let mut detector = RefetchSignals::default();
         for i in 0..3 {
-            detector.record_shell_for_correction(&format!("echo init{i}"));
+            detector.record_shell(&format!("echo init{i}"));
         }
 
-        detector.record_shell_for_correction("cargo check");
-        detector.record_shell_for_correction("cargo check");
+        detector.record_shell("cargo check");
+        detector.record_shell("cargo check");
         assert_eq!(detector.correction_count(), 1);
 
         // Prune should work
-        detector.prune_corrections();
+        detector.prune();
         // Signal is still within window (just happened), so still 1
         assert_eq!(detector.correction_count(), 1);
     }
@@ -563,30 +563,30 @@ mod overview_descriptions {
 mod integration {
     use super::*;
     use lean_ctx::core::config::CompressionLevel;
-    use lean_ctx::core::loop_detection::LoopDetector;
+    use lean_ctx::core::refetch_signals::RefetchSignals;
 
     #[test]
     fn scenario_full_correction_loop_triggers_degrade() {
         // Simulate: agent reads file, re-reads fresh, triggers degrade
-        let mut detector = LoopDetector::new();
+        let mut detector = RefetchSignals::default();
 
         // Cold start
         for i in 0..3 {
-            detector.record_read_for_correction(&format!("cold{i}.rs"), "full", false);
+            detector.record_read(&format!("cold{i}.rs"), "full", false);
         }
 
         // Normal work
-        detector.record_read_for_correction("src/lib.rs", "full", false);
-        detector.record_read_for_correction("src/main.rs", "full", false);
+        detector.record_read("src/lib.rs", "full", false);
+        detector.record_read("src/main.rs", "full", false);
 
         // Correction spiral: agent doesn't trust output
-        detector.record_read_for_correction("src/lib.rs", "full", true);
-        detector.record_read_for_correction("src/main.rs", "full", true);
-        detector.record_shell_for_correction("cargo check");
-        detector.record_shell_for_correction("cargo check");
+        detector.record_read("src/lib.rs", "full", true);
+        detector.record_read("src/main.rs", "full", true);
+        detector.record_shell("cargo check");
+        detector.record_shell("cargo check");
         // mode bounce
-        detector.record_read_for_correction("src/config.rs", "map", false);
-        detector.record_read_for_correction("src/config.rs", "full", false);
+        detector.record_read("src/config.rs", "map", false);
+        detector.record_read("src/config.rs", "full", false);
 
         let count = detector.correction_count();
         assert!(count >= 3, "should have >= 3 corrections, got {count}");

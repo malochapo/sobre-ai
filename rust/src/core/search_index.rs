@@ -141,13 +141,23 @@ impl FileBloom {
     }
 }
 
+/// Files the corpus walk left out on purpose, so `ctx_search` can say so.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct WalkSkips {
+    /// Binary, minified, lock, map and similar files skipped by name.
+    pub by_type: u32,
+    /// Files above the per-file size cap.
+    pub too_large: u32,
+}
+
 /// RAM-resident trigram index over one project root.
 pub struct SearchIndex {
     files: Vec<PathBuf>,
     /// Candidate-narrowing structure (exact postings or compact per-file Bloom).
     narrowing: Narrowing,
     respect_gitignore: bool,
-    allow_secret_paths: bool,
+    /// Files the corpus walk left out, reported by `ctx_search`.
+    skips: WalkSkips,
     /// Signature of the on-disk corpus this index was built from — the freshness
     /// truth checked on every [`get_fresh`] (see [`corpus_signature`]).
     signature: u64,
@@ -156,7 +166,7 @@ pub struct SearchIndex {
 impl SearchIndex {
     /// Build the index by walking `root` with the exact same config and filters
     /// as `ctx_search`, so the searchable file universe is identical.
-    pub fn build(root: &str, respect_gitignore: bool, allow_secret_paths: bool) -> Option<Self> {
+    pub fn build(root: &str, respect_gitignore: bool) -> Option<Self> {
         let mut files: Vec<PathBuf> = Vec::new();
         // Per-file sorted, deduped trigrams. Same memory as the posting lists
         // would be, but grouped by file so we can materialise *either* tier
@@ -174,61 +184,56 @@ impl SearchIndex {
         let mut file_count: usize = 0;
         let mut aborted = false;
 
-        walk_index_corpus(
-            root,
-            respect_gitignore,
-            allow_secret_paths,
-            |path, state| {
-                sig_sum = sig_sum.wrapping_add(file_sig(path, state));
-                file_count += 1;
+        let skips = walk_index_corpus(root, respect_gitignore, |path, state| {
+            sig_sum = sig_sum.wrapping_add(file_sig(path, state));
+            file_count += 1;
 
-                // Read the corpus exactly once (issue #148): reuse a fresh cached
-                // copy if a prior `ctx_search`/build already read this file, else
-                // read it now and publish it so the upcoming `ctx_search` verify
-                // pass is an in-memory hit instead of a second disk read. Mirrors
-                // ctx_search: a non-UTF-8 file is never searchable, so it is skipped
-                // for trigrams (but already folded into the signature above).
-                let content: std::sync::Arc<str> = if let Some(cached) =
-                    state.and_then(|s| crate::core::content_cache::get(path, s))
-                {
-                    cached
-                } else {
-                    let Ok(text) = std::fs::read_to_string(path) else {
-                        return true;
-                    };
-                    let arc: std::sync::Arc<str> = std::sync::Arc::from(text);
-                    if let Some(s) = state {
-                        crate::core::content_cache::insert(path, s, std::sync::Arc::clone(&arc));
-                    }
-                    arc
+            // Read the corpus exactly once (issue #148): reuse a fresh cached
+            // copy if a prior `ctx_search`/build already read this file, else
+            // read it now and publish it so the upcoming `ctx_search` verify
+            // pass is an in-memory hit instead of a second disk read. Mirrors
+            // ctx_search: a non-UTF-8 file is never searchable, so it is skipped
+            // for trigrams (but already folded into the signature above).
+            let content: std::sync::Arc<str> = if let Some(cached) =
+                state.and_then(|s| crate::core::content_cache::get(path, s))
+            {
+                cached
+            } else {
+                let Ok(text) = std::fs::read_to_string(path) else {
+                    return true;
                 };
-
-                if files.len() >= MAX_FILES {
-                    aborted = true; // too large even for the Bloom tier — use the walk
-                    return false;
+                let arc: std::sync::Arc<str> = std::sync::Arc::from(text);
+                if let Some(s) = state {
+                    crate::core::content_cache::insert(path, s, std::sync::Arc::clone(&arc));
                 }
+                arc
+            };
 
-                scratch.clear();
-                let bytes = content.as_bytes();
-                if bytes.len() >= 3 {
-                    for w in bytes.windows(3) {
-                        if is_word_byte(w[0]) && is_word_byte(w[1]) && is_word_byte(w[2]) {
-                            scratch.insert(pack(w[0], w[1], w[2]));
-                        }
+            if files.len() >= MAX_FILES {
+                aborted = true; // too large even for the Bloom tier — use the walk
+                return false;
+            }
+
+            scratch.clear();
+            let bytes = content.as_bytes();
+            if bytes.len() >= 3 {
+                for w in bytes.windows(3) {
+                    if is_word_byte(w[0]) && is_word_byte(w[1]) && is_word_byte(w[2]) {
+                        scratch.insert(pack(w[0], w[1], w[2]));
                     }
                 }
-                total_entries += scratch.len();
-                if total_entries > MAX_TOTAL_ENTRIES {
-                    aborted = true; // memory guard — fall back to walk
-                    return false;
-                }
-                let mut tris: Vec<u32> = scratch.iter().copied().collect();
-                tris.sort_unstable();
-                files.push(path.to_path_buf());
-                per_file_trigrams.push(tris);
-                true
-            },
-        )?;
+            }
+            total_entries += scratch.len();
+            if total_entries > MAX_TOTAL_ENTRIES {
+                aborted = true; // memory guard — fall back to walk
+                return false;
+            }
+            let mut tris: Vec<u32> = scratch.iter().copied().collect();
+            tris.sort_unstable();
+            files.push(path.to_path_buf());
+            per_file_trigrams.push(tris);
+            true
+        })?;
 
         if aborted {
             return None;
@@ -240,13 +245,18 @@ impl SearchIndex {
             files,
             narrowing,
             respect_gitignore,
-            allow_secret_paths,
+            skips,
             signature: finalize_sig(sig_sum, file_count),
         })
     }
 
-    fn config_matches(&self, respect_gitignore: bool, allow_secret_paths: bool) -> bool {
-        self.respect_gitignore == respect_gitignore && self.allow_secret_paths == allow_secret_paths
+    /// Files the corpus walk skipped.
+    pub fn skips(&self) -> WalkSkips {
+        self.skips
+    }
+
+    fn config_matches(&self, respect_gitignore: bool) -> bool {
+        self.respect_gitignore == respect_gitignore
     }
 
     /// Candidate files for `pattern`, filtered by the `include` glob (matched
@@ -419,16 +429,12 @@ fn intersect_sorted(a: &[u32], b: &[u32]) -> Vec<u32> {
 /// semantics, depth limit, and binary/generated/secret/size/regular-file guards
 /// — invoking `visit(path, state)` for every eligible regular file with its
 /// `(mtime, size)` identity (`None` only when the platform cannot report mtime).
-/// `visit` returns `false` to stop early. Returns `None` for a missing or unsafe
+/// `visit` returns `false` to stop early. Returns the files skipped by type or
+/// size, or `None` for a missing or unsafe
 /// scan root (HOME, fs root, …), the same guard that makes the caller fall back
 /// to a direct walk. This traversal reads nothing: it is the shared spine of
 /// both [`SearchIndex::build`] and [`corpus_signature`].
-fn walk_index_corpus<F>(
-    root: &str,
-    respect_gitignore: bool,
-    allow_secret_paths: bool,
-    mut visit: F,
-) -> Option<()>
+fn walk_index_corpus<F>(root: &str, respect_gitignore: bool, mut visit: F) -> Option<WalkSkips>
 where
     F: FnMut(&Path, Option<crate::core::content_cache::FileState>) -> bool,
 {
@@ -454,6 +460,7 @@ where
         .filter_entry(crate::core::walk_filter::keep_entry)
         .build();
 
+    let mut skips = WalkSkips::default();
     for entry in walker.filter_map(std::result::Result::ok) {
         if entry.file_type().is_none_or(|ft| ft.is_dir()) {
             continue;
@@ -463,16 +470,17 @@ where
         }
         let path = entry.path();
         if is_binary_ext(path) || is_generated_file(path) {
-            continue;
-        }
-        if !allow_secret_paths && crate::core::io_boundary::is_secret_like(path).is_some() {
+            skips.by_type += 1;
             continue;
         }
         // `metadata` (stat) never opens the file, so it cannot block on a
         // FIFO/socket/device node (#336); those are filtered out here.
         let state = match std::fs::metadata(path) {
             Ok(meta) if !meta.file_type().is_file() => continue,
-            Ok(meta) if meta.len() > MAX_FILE_SIZE => continue,
+            Ok(meta) if meta.len() > MAX_FILE_SIZE => {
+                skips.too_large += 1;
+                continue;
+            }
             Ok(meta) => crate::core::content_cache::FileState::from_metadata(&meta),
             Err(_) => continue,
         };
@@ -480,7 +488,7 @@ where
             break;
         }
     }
-    Some(())
+    Some(skips)
 }
 
 /// Stable per-file contribution to the corpus signature: folds the path with its
@@ -515,19 +523,14 @@ fn finalize_sig(sum: u64, count: usize) -> u64 {
 /// additions, renames and deletions — so a stale candidate set can never
 /// silently drop a real match. `None` mirrors a non-indexable root (the caller
 /// then walks directly).
-fn corpus_signature(root: &str, respect_gitignore: bool, allow_secret_paths: bool) -> Option<u64> {
+fn corpus_signature(root: &str, respect_gitignore: bool) -> Option<u64> {
     let mut sum: u64 = 0;
     let mut count: usize = 0;
-    walk_index_corpus(
-        root,
-        respect_gitignore,
-        allow_secret_paths,
-        |path, state| {
-            sum = sum.wrapping_add(file_sig(path, state));
-            count += 1;
-            true
-        },
-    )?;
+    walk_index_corpus(root, respect_gitignore, |path, state| {
+        sum = sum.wrapping_add(file_sig(path, state));
+        count += 1;
+        true
+    })?;
     Some(finalize_sig(sum, count))
 }
 
@@ -558,11 +561,7 @@ fn cache() -> &'static Mutex<HashMap<String, CacheEntry>> {
 /// Returns a fresh resident index for `root` if one is available for the given
 /// config, otherwise spawns a background (re)build and returns `None` so the
 /// caller uses the walk fallback for this call.
-pub fn get_fresh(
-    root: &str,
-    respect_gitignore: bool,
-    allow_secret_paths: bool,
-) -> Option<Arc<SearchIndex>> {
+pub fn get_fresh(root: &str, respect_gitignore: bool) -> Option<Arc<SearchIndex>> {
     // Privileged "ignore gitignore" scans are rare and bypass the index.
     if !respect_gitignore {
         return None;
@@ -575,9 +574,7 @@ pub fn get_fresh(
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         match map.get(root) {
             Some(entry) => match &entry.index {
-                Some(idx) if idx.config_matches(respect_gitignore, allow_secret_paths) => {
-                    Some(Arc::clone(idx))
-                }
+                Some(idx) if idx.config_matches(respect_gitignore) => Some(Arc::clone(idx)),
                 _ => None,
             },
             None => None,
@@ -586,19 +583,19 @@ pub fn get_fresh(
 
     let Some(idx) = candidate else {
         // No usable index yet → build in the background, walk this call.
-        request_build(root, respect_gitignore, allow_secret_paths);
+        request_build(root, respect_gitignore);
         return None;
     };
 
     // Phase 2 (unlocked): verify the live corpus signature. Deliberately held
     // *outside* the cache mutex so a multi-millisecond stat-walk never serializes
     // other roots or concurrent searches.
-    match corpus_signature(root, respect_gitignore, allow_secret_paths) {
+    match corpus_signature(root, respect_gitignore) {
         Some(sig) if sig == idx.signature => Some(idx),
         _ => {
             // Corpus changed (or root no longer indexable): walk accurately now
             // and rebuild the index in the background for the next call.
-            request_build(root, respect_gitignore, allow_secret_paths);
+            request_build(root, respect_gitignore);
             None
         }
     }
@@ -619,7 +616,7 @@ pub fn clear_resident() {
 }
 
 /// Spawn a background (re)build for `root` unless one is already in flight.
-fn request_build(root: &str, respect_gitignore: bool, allow_secret_paths: bool) {
+fn request_build(root: &str, respect_gitignore: bool) {
     let needs_build = {
         let mut map = cache()
             .lock()
@@ -635,13 +632,13 @@ fn request_build(root: &str, respect_gitignore: bool, allow_secret_paths: bool) 
         }
     };
     if needs_build {
-        spawn_build(root.to_string(), respect_gitignore, allow_secret_paths);
+        spawn_build(root.to_string(), respect_gitignore);
     }
 }
 
 /// Ensure a resident index for `root` is built (or building) in the background.
 /// Safe to call repeatedly; deduped via the per-root `building` flag.
-pub fn ensure_background(root: &str, respect_gitignore: bool, allow_secret_paths: bool) {
+pub fn ensure_background(root: &str, respect_gitignore: bool) {
     if !respect_gitignore {
         return;
     }
@@ -656,22 +653,22 @@ pub fn ensure_background(root: &str, respect_gitignore: bool, allow_secret_paths
             entry
                 .index
                 .as_ref()
-                .is_some_and(|idx| idx.config_matches(respect_gitignore, allow_secret_paths))
+                .is_some_and(|idx| idx.config_matches(respect_gitignore))
         })
     };
     if !has_index {
-        request_build(root, respect_gitignore, allow_secret_paths);
+        request_build(root, respect_gitignore);
     }
 }
 
 /// Build the index synchronously and install it in the resident cache.
 /// Returns `true` on success. Useful for CLI prewarm and benchmarks that need a
 /// guaranteed-warm index. Respects the disable env var.
-pub fn warm_blocking(root: &str, respect_gitignore: bool, allow_secret_paths: bool) -> bool {
+pub fn warm_blocking(root: &str, respect_gitignore: bool) -> bool {
     if !respect_gitignore {
         return false;
     }
-    let Some(idx) = SearchIndex::build(root, respect_gitignore, allow_secret_paths) else {
+    let Some(idx) = SearchIndex::build(root, respect_gitignore) else {
         return false;
     };
     let mut map = cache()
@@ -715,7 +712,7 @@ enum BuildOutcome {
 /// its walk fallback, and the per-process `building` flag is cleared so the next
 /// `get_fresh` / `ensure_background` nudge retries once the holder releases. The
 /// short 200 ms wait keeps the common single-session path latency-free.
-fn build_guarded(root: &str, respect_gitignore: bool, allow_secret_paths: bool) -> BuildOutcome {
+fn build_guarded(root: &str, respect_gitignore: bool) -> BuildOutcome {
     let lock = crate::core::startup_guard::try_acquire_lock(
         &search_index_lock_name(root),
         Duration::from_millis(200),
@@ -733,11 +730,9 @@ fn build_guarded(root: &str, respect_gitignore: bool, allow_secret_paths: bool) 
         return BuildOutcome::Deferred;
     }
 
-    let built = std::panic::catch_unwind(|| {
-        SearchIndex::build(root, respect_gitignore, allow_secret_paths)
-    })
-    .ok()
-    .flatten();
+    let built = std::panic::catch_unwind(|| SearchIndex::build(root, respect_gitignore))
+        .ok()
+        .flatten();
 
     let mut map = cache()
         .lock()
@@ -753,9 +748,9 @@ fn build_guarded(root: &str, respect_gitignore: bool, allow_secret_paths: bool) 
     BuildOutcome::Built
 }
 
-fn spawn_build(root: String, respect_gitignore: bool, allow_secret_paths: bool) {
+fn spawn_build(root: String, respect_gitignore: bool) {
     std::thread::spawn(move || {
-        let _ = build_guarded(&root, respect_gitignore, allow_secret_paths);
+        let _ = build_guarded(&root, respect_gitignore);
     });
 }
 
@@ -777,7 +772,7 @@ mod tests {
         // hydrate every OneDrive placeholder (#363). The build must bail out.
         if let Some(home) = dirs::home_dir() {
             assert!(
-                SearchIndex::build(&home.to_string_lossy(), true, false).is_none(),
+                SearchIndex::build(&home.to_string_lossy(), true).is_none(),
                 "search index must never auto-build over the home directory"
             );
         }
@@ -786,7 +781,7 @@ mod tests {
     #[test]
     fn narrows_to_files_containing_literal() {
         let dir = corpus();
-        let idx = SearchIndex::build(dir.path().to_str().unwrap(), true, false).unwrap();
+        let idx = SearchIndex::build(dir.path().to_str().unwrap(), true).unwrap();
         let cands = idx.candidate_paths("handler", &[], dir.path());
         let paths = cands.into_paths();
         // a.rs and c.txt contain "handler"; b.rs must be excluded.
@@ -798,7 +793,7 @@ mod tests {
     #[test]
     fn absent_trigram_yields_empty_candidates() {
         let dir = corpus();
-        let idx = SearchIndex::build(dir.path().to_str().unwrap(), true, false).unwrap();
+        let idx = SearchIndex::build(dir.path().to_str().unwrap(), true).unwrap();
         match idx.candidate_paths("zzzqqq", &[], dir.path()) {
             CandidateSet::Narrowed(p) => assert!(p.is_empty()),
             CandidateSet::FullList(_) => panic!("pure literal should narrow"),
@@ -808,7 +803,7 @@ mod tests {
     #[test]
     fn ext_filter_restricts_candidates() {
         let dir = corpus();
-        let idx = SearchIndex::build(dir.path().to_str().unwrap(), true, false).unwrap();
+        let idx = SearchIndex::build(dir.path().to_str().unwrap(), true).unwrap();
         let paths = idx
             .candidate_paths(
                 "handler",
@@ -842,7 +837,7 @@ mod tests {
         let root = dir.path().to_str().unwrap().to_string();
         let (tx, rx) = mpsc::channel();
         std::thread::spawn(move || {
-            let built = SearchIndex::build(&root, true, false);
+            let built = SearchIndex::build(&root, true);
             let _ = tx.send(built.map(|idx| {
                 idx.candidate_paths("handler", &[], std::path::Path::new(&root))
                     .into_paths()
@@ -859,7 +854,7 @@ mod tests {
     #[test]
     fn regex_query_falls_back_to_full_list() {
         let dir = corpus();
-        let idx = SearchIndex::build(dir.path().to_str().unwrap(), true, false).unwrap();
+        let idx = SearchIndex::build(dir.path().to_str().unwrap(), true).unwrap();
         match idx.candidate_paths("fn .*\\(\\)", &[], dir.path()) {
             CandidateSet::FullList(p) => assert!(!p.is_empty()),
             CandidateSet::Narrowed(_) => panic!("metachar query must not narrow"),
@@ -869,7 +864,7 @@ mod tests {
     #[test]
     fn short_query_falls_back_to_full_list() {
         let dir = corpus();
-        let idx = SearchIndex::build(dir.path().to_str().unwrap(), true, false).unwrap();
+        let idx = SearchIndex::build(dir.path().to_str().unwrap(), true).unwrap();
         assert!(matches!(
             idx.candidate_paths("fn", &[], dir.path()),
             CandidateSet::FullList(_)
@@ -908,7 +903,7 @@ mod tests {
             std::fs::create_dir_all(p.parent().unwrap()).unwrap();
             std::fs::write(p, content).unwrap();
         }
-        let idx = SearchIndex::build(dir.path().to_str().unwrap(), true, false).unwrap();
+        let idx = SearchIndex::build(dir.path().to_str().unwrap(), true).unwrap();
 
         let full_scan = |pat: &str| -> BTreeSet<String> {
             let re = Regex::new(pat).unwrap();
@@ -1059,7 +1054,7 @@ mod tests {
             files,
             narrowing: build_narrowing(&per_file, MAX_POSTING_ENTRIES + 1),
             respect_gitignore: true,
-            allow_secret_paths: false,
+            skips: WalkSkips::default(),
             signature: 0, // freshness is not exercised by candidate_paths
         };
         assert!(
@@ -1150,7 +1145,7 @@ mod tests {
             );
         }
         assert_eq!(
-            build_guarded(&root, true, false),
+            build_guarded(&root, true),
             BuildOutcome::Built,
             "an uncontended root must build"
         );
@@ -1191,7 +1186,7 @@ mod tests {
             );
         }
         assert_eq!(
-            build_guarded(&root, true, false),
+            build_guarded(&root, true),
             BuildOutcome::Deferred,
             "a contended root must defer the proactive pre-warm"
         );
@@ -1213,43 +1208,43 @@ mod tests {
     fn corpus_signature_matches_a_freshly_built_index() {
         let dir = corpus();
         let root = dir.path().to_string_lossy().to_string();
-        let idx = SearchIndex::build(&root, true, false).expect("index builds");
-        let sig = corpus_signature(&root, true, false).expect("signature computes");
+        let idx = SearchIndex::build(&root, true).expect("index builds");
+        let sig = corpus_signature(&root, true).expect("signature computes");
         assert_eq!(
             idx.signature, sig,
             "a freshly built index must match the live corpus signature, or it \
              would be treated as permanently stale and never served"
         );
         // Re-derivation is deterministic for an unchanged corpus.
-        assert_eq!(sig, corpus_signature(&root, true, false).unwrap());
+        assert_eq!(sig, corpus_signature(&root, true).unwrap());
     }
 
     #[test]
     fn corpus_signature_changes_on_edit_add_and_delete() {
         let dir = corpus();
         let root = dir.path().to_string_lossy().to_string();
-        let base = corpus_signature(&root, true, false).unwrap();
+        let base = corpus_signature(&root, true).unwrap();
 
         std::fs::write(
             dir.path().join("a.rs"),
             "fn handler() {}\nlet x = 1;\nlet y = 2;\n",
         )
         .unwrap();
-        let after_edit = corpus_signature(&root, true, false).unwrap();
+        let after_edit = corpus_signature(&root, true).unwrap();
         assert_ne!(
             base, after_edit,
             "an in-place edit must change the signature"
         );
 
         std::fs::write(dir.path().join("d.rs"), "fn fresh() {}\n").unwrap();
-        let after_add = corpus_signature(&root, true, false).unwrap();
+        let after_add = corpus_signature(&root, true).unwrap();
         assert_ne!(
             after_edit, after_add,
             "adding a file must change the signature"
         );
 
         std::fs::remove_file(dir.path().join("b.rs")).unwrap();
-        let after_delete = corpus_signature(&root, true, false).unwrap();
+        let after_delete = corpus_signature(&root, true).unwrap();
         assert_ne!(
             after_add, after_delete,
             "deleting a file must change the signature"
@@ -1264,11 +1259,11 @@ mod tests {
 
         let dir = corpus();
         let root = dir.path().to_string_lossy().to_string();
-        assert!(warm_blocking(&root, true, false), "index warms");
+        assert!(warm_blocking(&root, true), "index warms");
 
         // Unchanged corpus → the resident index is served.
         assert!(
-            get_fresh(&root, true, false).is_some(),
+            get_fresh(&root, true).is_some(),
             "an unchanged corpus must serve the resident index"
         );
 
@@ -1280,7 +1275,7 @@ mod tests {
         )
         .unwrap();
         assert!(
-            get_fresh(&root, true, false).is_none(),
+            get_fresh(&root, true).is_none(),
             "an edited corpus must refuse the stale resident index (#624)"
         );
     }

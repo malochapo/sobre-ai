@@ -104,10 +104,8 @@ impl LeanCtxServer {
             presence_agent_id: Arc::new(RwLock::new(presence_agent_id)),
             client_name: Arc::new(RwLock::new(String::new())),
             autonomy: Arc::new(autonomy::AutonomyState::new()),
-            loop_detector: Arc::new(RwLock::new(
-                crate::core::loop_detection::LoopDetector::with_config(
-                    &crate::core::loop_detection::LoopLimits::default(),
-                ),
+            refetch_signals: Arc::new(RwLock::new(
+                crate::core::refetch_signals::RefetchSignals::default(),
             )),
             ledger: Arc::new(RwLock::new(
                 crate::core::context_ledger::ContextLedger::load(),

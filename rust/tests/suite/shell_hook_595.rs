@@ -8,10 +8,9 @@
 //! source <snapshot> 2>/dev/null || true && shopt -u extglob 2>/dev/null || true && eval '<cmd>' [< /dev/null] && pwd -P >| /tmp/claude-XXXX-cwd
 //! ```
 //!
-//! The allowlist hard-blocked the `eval` (exit 126) on EVERY call, making the
-//! Bash tool unusable. lean-ctx now looks through the wrapper and gates/runs the
-//! real command instead — while still blocking a bare `eval` the model itself
-//! chose (no host cwd snapshot), so the security boundary is unchanged.
+//! A shell gate used to hard-block that `eval` (exit 126) on every call. sobre
+//! no longer gates commands at all; these tests keep the host wrapper shapes
+//! running unchanged through `lean-ctx -c`, cwd snapshot included.
 
 use std::path::Path;
 use std::process::{Command, Output};
@@ -167,21 +166,10 @@ fn zsh_sandbox_wrapper_runs_inner_command() {
 }
 
 #[test]
-fn model_chosen_eval_without_cwd_marker_still_blocks() {
-    // SECURITY regression: an `eval` the model itself chose (no host cwd
-    // snapshot) is NOT host scaffolding and must keep hitting the allowlist's
-    // hard block. Unwrapping it would be a sandbox escape.
+fn model_chosen_eval_runs() {
+    // sobre blocks nothing: what may run is the agent host's decision.
     let tmp = tempfile::tempdir().unwrap();
-    let out = run_dash_c("eval 'echo should-not-run'", tmp.path());
-    let stderr = String::from_utf8_lossy(&out.stderr);
-
-    assert_eq!(
-        out.status.code(),
-        Some(126),
-        "a bare model-chosen eval must stay blocked; stderr: {stderr}"
-    );
-    assert!(
-        !String::from_utf8_lossy(&out.stdout).contains("should-not-run"),
-        "blocked eval must never execute its payload"
-    );
+    let out = run_dash_c("eval 'echo eval-ran'", tmp.path());
+    assert_eq!(out.status.code(), Some(0));
+    assert!(String::from_utf8_lossy(&out.stdout).contains("eval-ran"));
 }

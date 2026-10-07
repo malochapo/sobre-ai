@@ -200,10 +200,8 @@ pub fn write_atomic(path: &Path, content: &str) -> Result<(), String> {
 /// Resolve the real file to write, honoring a user-managed symlink (#596).
 ///
 /// * not a symlink (or missing) → `path` unchanged.
-/// * symlink whose resolved target stays within `$HOME` → the target (write
-///   THROUGH, preserving the symlink) — the legitimate dotfiles pattern.
-/// * symlink whose target escapes `$HOME` → refuse (preserves the GL#442
-///   symlink-hijack protection).
+/// * symlink → its resolved target (write THROUGH, preserving the symlink) —
+///   the dotfiles pattern. The link is the user's; sobre follows it.
 fn resolve_write_target(path: &Path) -> Result<PathBuf, String> {
     let Ok(meta) = path.symlink_metadata() else {
         return Ok(path.to_path_buf());
@@ -212,9 +210,7 @@ fn resolve_write_target(path: &Path) -> Result<PathBuf, String> {
         return Ok(path.to_path_buf());
     }
 
-    let real_target = resolve_symlink_target(path)?;
-    ensure_target_allowed(path, &real_target)?;
-    Ok(real_target)
+    resolve_symlink_target(path)
 }
 
 /// Read a symlink and resolve its target to an absolute path, resolving symlinks
@@ -265,56 +261,12 @@ fn canonicalize_existing_prefix(path: &Path) -> Result<PathBuf, String> {
     }
 }
 
-/// SECURITY (#596 / GL#442): a resolved symlink target must stay within `$HOME`
-/// or under one of the explicitly opted-in [`allowed_symlink_roots`]. Otherwise
-/// a planted symlink could redirect a config write to an attacker-chosen path.
-fn ensure_target_allowed(link_path: &Path, real_target: &Path) -> Result<(), String> {
-    let home = crate::core::home::resolve_home_dir()
-        .ok_or_else(|| "cannot determine $HOME to validate symlink target".to_string())?;
-    let real_home = crate::core::pathutil::canonicalize_secure_or_self(&home);
-    if real_target.starts_with(&real_home) {
-        return Ok(());
-    }
-    if allowed_symlink_roots()
-        .iter()
-        .any(|root| real_target.starts_with(root))
-    {
-        return Ok(());
-    }
-    Err(format!(
-        "refusing to write through a symlink whose target escapes $HOME:\n  \
-         {} -> {}\n  \
-         The target is outside your home directory, so lean-ctx will not follow it \
-         (symlink-hijack protection). To allow this location, either:\n    \
-         - point the agent at the real path (set CLAUDE_CONFIG_DIR / CODEX_HOME), or\n    \
-         - move the target under $HOME, or\n    \
-         - add its parent to `allow_paths` in your lean-ctx config \
-.",
-        link_path.display(),
-        real_target.display()
-    ))
-}
-
-/// Trusted roots OUTSIDE `$HOME` the user explicitly opted into for symlinked
-/// agent configs (#596), from the `allow_paths` config key. Each entry
-/// is made absolute + canonicalized so the boundary check compares real paths;
-/// relative/empty entries are dropped.
-fn allowed_symlink_roots() -> Vec<PathBuf> {
-    crate::core::config::Config::load()
-        .allow_paths
-        .into_iter()
-        .map(PathBuf::from)
-        .filter(|p| !p.as_os_str().is_empty() && p.is_absolute())
-        .map(|p| crate::core::pathutil::canonicalize_secure_or_self(&p))
-        .collect()
-}
-
 /// `create_dir_all` that tolerates a user-managed symlinked directory (#596):
 ///
 /// * regular dir / missing path → `create_dir_all`.
 /// * symlink to an existing directory → ok (no-op).
-/// * dangling symlink whose target is within `$HOME` → create the real target.
-/// * symlink to a non-directory, or a target escaping `$HOME` → clear error.
+/// * dangling symlink → create the real target.
+/// * symlink to a non-directory → clear error.
 pub fn ensure_dir(dir: &Path) -> Result<(), String> {
     match dir.symlink_metadata() {
         Ok(meta) if crate::core::pathutil::is_symlink_or_reparse(&meta) => {
@@ -325,10 +277,8 @@ pub fn ensure_dir(dir: &Path) -> Result<(), String> {
                     dir.display()
                 )),
                 Err(_) => {
-                    // Dangling symlink: create the intended target if it is in
-                    // $HOME (or an explicitly allow-listed root, #596).
+                    // Dangling symlink: create the intended target.
                     let real_target = resolve_symlink_target(dir)?;
-                    ensure_target_allowed(dir, &real_target)?;
                     std::fs::create_dir_all(&real_target).map_err(|e| {
                         format!(
                             "cannot create symlink target dir {}: {e}",
@@ -469,9 +419,8 @@ enabled = true
     }
 }
 
-/// #596: write THROUGH a user-managed symlink to its real (in-`$HOME`) target,
-/// reject targets that escape `$HOME`, and make `ensure_dir` tolerant of
-/// symlinked directories. Unix-only (POSIX symlinks + `$HOME` override).
+/// #596: write THROUGH a user-managed symlink to its real target, and make
+/// `ensure_dir` tolerant of symlinked directories. Unix-only (POSIX symlinks + `$HOME` override).
 #[cfg(all(test, unix))]
 mod symlink_596_tests {
     use super::*;
@@ -529,35 +478,9 @@ mod symlink_596_tests {
     }
 
     #[test]
-    fn refuses_symlink_whose_target_escapes_home() {
+    fn writes_through_symlink_whose_target_is_outside_home() {
+        // The link is the user's: sobre follows it wherever it points.
         let _lock = crate::core::data_dir::test_env_lock();
-        let home = tempfile::tempdir().unwrap();
-        let outside = tempfile::tempdir().unwrap();
-        let _home = HomeGuard::set(home.path());
-
-        let target = outside.path().join("escape.json");
-        std::fs::write(&target, "{}").unwrap();
-        let link = home.path().join(".agent.json");
-        symlink(&target, &link).unwrap();
-
-        let err = write_atomic(&link, "x").unwrap_err();
-        assert!(err.contains("escapes $HOME"), "got: {err}");
-        assert!(
-            err.contains("allow_paths"),
-            "error must point at the opt-in escape hatch, got: {err}"
-        );
-        assert_eq!(
-            std::fs::read_to_string(&target).unwrap(),
-            "{}",
-            "an escaping target must be left untouched"
-        );
-    }
-
-    #[test]
-    fn allows_symlink_escape_when_target_root_is_allowlisted() {
-        // #596 premium: an out-of-$HOME target IS written through once its root
-        // is explicitly opted into via `allow_paths` in config.toml.
-        let iso = crate::core::data_dir::isolated_data_dir();
         let home = tempfile::tempdir().unwrap();
         let outside = tempfile::tempdir().unwrap();
         let _home = HomeGuard::set(home.path());
@@ -569,11 +492,6 @@ mod symlink_596_tests {
         let link = home.path().join(".agent.json");
         symlink(&target, &link).unwrap();
 
-        std::fs::write(
-            iso.path().join("config.toml"),
-            format!("allow_paths = [{:?}]\n", real_outside.to_string_lossy()),
-        )
-        .unwrap();
         write_atomic(&link, "{\"k\":1}\n").unwrap();
 
         assert_eq!(std::fs::read_to_string(&target).unwrap(), "{\"k\":1}\n");

@@ -21,7 +21,7 @@ pub(crate) fn install_copilot_hook() {
         return;
     }
     write_vscode_mcp_file(&mcp_path, &binary, "global VS Code User MCP");
-    install_copilot_pretooluse_hook();
+    install_copilot_hooks();
 }
 
 /// Register lean-ctx in the Copilot CLI's global MCP config at
@@ -100,21 +100,14 @@ fn copilot_user_hooks_dir() -> Option<PathBuf> {
     crate::core::home::resolve_home_dir().map(|h| h.join(".copilot").join("hooks"))
 }
 
-fn install_copilot_pretooluse_hook() {
+/// Copilot CLI user hooks: shell output is compressed after the command ran
+/// (`postToolUse` `modifiedResult`), never rewritten before. Merged into an
+/// existing `hooks.json`: only sobre's own entries are replaced.
+fn install_copilot_hooks() {
     let binary = resolve_hook_command_binary();
-
-    let hook_config = serde_json::json!({
-        "version": 1,
-        "hooks": {
-            "preToolUse": [
-                copilot_hook_entry(&binary, "rewrite", 15),
-                copilot_hook_entry(&binary, "redirect", 5)
-            ],
-            "postToolUse": [
-                copilot_hook_entry(&binary, "observe", 5)
-            ]
-        }
-    });
+    let mut compress = copilot_hook_entry(&binary, "compress", 15);
+    compress["matcher"] = serde_json::json!("bash|powershell");
+    let observe = copilot_hook_entry(&binary, "observe", 5);
 
     let Some(dir) = copilot_user_hooks_dir() else {
         return;
@@ -122,55 +115,52 @@ fn install_copilot_pretooluse_hook() {
     let _ = std::fs::create_dir_all(&dir);
     let hook_path = dir.join("hooks.json");
 
-    let needs_write = if hook_path.exists() {
-        let content = std::fs::read_to_string(&hook_path).unwrap_or_default();
-        !content.contains("hook rewrite")
-            || content.contains("\"PreToolUse\"")
-            || !content.contains("hook observe")
-            // Pre-#381 configs carry only a `bash` command — unusable on Windows.
-            || !content.contains("\"powershell\"")
+    let content = std::fs::read_to_string(&hook_path).unwrap_or_default();
+    let mut root = if content.trim().is_empty() {
+        serde_json::json!({})
+    } else if let Ok(parsed) = crate::core::jsonc::parse_jsonc(&content) {
+        parsed
     } else {
-        true
+        return;
     };
+    let Some(obj) = root.as_object_mut() else {
+        return;
+    };
+    obj.insert("version".to_string(), serde_json::json!(1));
+    let hooks = obj
+        .entry("hooks".to_string())
+        .or_insert_with(|| serde_json::json!({}));
+    let Some(hooks_obj) = hooks.as_object_mut() else {
+        return;
+    };
+    let post = hooks_obj
+        .entry("postToolUse".to_string())
+        .or_insert_with(|| serde_json::json!([]));
+    let Some(post_arr) = post.as_array_mut() else {
+        return;
+    };
+    post_arr.retain(|e| !is_sobre_entry(e));
+    post_arr.push(compress);
+    post_arr.push(observe);
 
-    if !needs_write {
+    let formatted = serde_json::to_string_pretty(&root).unwrap_or_default();
+    if formatted == content {
         return;
     }
-
-    if hook_path.exists()
-        && let Ok(mut existing) = crate::core::jsonc::parse_jsonc(
-            &std::fs::read_to_string(&hook_path).unwrap_or_default(),
-        )
-        && let Some(obj) = existing.as_object_mut()
-    {
-        obj.insert("version".to_string(), serde_json::json!(1));
-        let hooks = obj
-            .entry("hooks".to_string())
-            .or_insert_with(|| serde_json::json!({}));
-        if let Some(hooks_obj) = hooks.as_object_mut()
-            && let Some(desired_hooks) = hook_config["hooks"].as_object()
-        {
-            for (event, entries) in desired_hooks {
-                hooks_obj.insert(event.clone(), entries.clone());
-            }
-        }
-        write_file(
-            &hook_path,
-            &serde_json::to_string_pretty(&existing).unwrap_or_default(),
-        );
-        if !mcp_server_quiet_mode() {
-            eprintln!("Updated Copilot hooks at {}", hook_path.display());
-        }
-        return;
-    }
-
-    write_file(
-        &hook_path,
-        &serde_json::to_string_pretty(&hook_config).unwrap_or_default(),
-    );
+    write_file(&hook_path, &formatted);
     if !mcp_server_quiet_mode() {
         eprintln!("Installed Copilot hooks at {}", hook_path.display());
     }
+}
+
+/// An entry this installer wrote (`… hook <action>` on the sobre binary).
+fn is_sobre_entry(entry: &serde_json::Value) -> bool {
+    ["bash", "powershell"].iter().any(|k| {
+        entry
+            .get(*k)
+            .and_then(|c| c.as_str())
+            .is_some_and(|c| c.contains("lean-ctx") && c.contains(" hook "))
+    })
 }
 
 fn server_entry(binary: &str) -> serde_json::Value {
@@ -259,16 +249,16 @@ mod tests {
         // Windows-style install path with a space — the #381 failure shape.
         let entry = copilot_hook_entry(
             r"C:\Users\Jane Doe\AppData\Local\lean-ctx.exe",
-            "rewrite",
+            "compress",
             15,
         );
         assert_eq!(
-            entry["bash"], "\"/c/Users/Jane Doe/AppData/Local/lean-ctx.exe\" hook rewrite",
+            entry["bash"], "\"/c/Users/Jane Doe/AppData/Local/lean-ctx.exe\" hook compress",
             "bash field must use a quoted MSYS-style path"
         );
         assert_eq!(
             entry["powershell"],
-            "& \"C:\\Users\\Jane Doe\\AppData\\Local\\lean-ctx.exe\" hook rewrite",
+            "& \"C:\\Users\\Jane Doe\\AppData\\Local\\lean-ctx.exe\" hook compress",
             "powershell field must invoke the quoted native path via the call operator"
         );
         assert_eq!(entry["timeoutSec"], 15);

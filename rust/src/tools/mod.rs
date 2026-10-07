@@ -62,12 +62,9 @@ mod resolve_path_tests {
         canonicalize_path(path)
     }
 
-    #[cfg(not(feature = "no-jail"))]
     #[tokio::test]
     #[allow(clippy::await_holding_lock)]
-    async fn resolve_path_rejects_absolute_path_outside_trusted_startup_root() {
-        // Hermetic config + serialized via test_env_lock so a parallel test that
-        // flips `path_jail` cannot disable this jail-enforcement assertion (#406).
+    async fn resolve_path_reads_outside_trusted_startup_root_without_rerooting() {
         let _iso = crate::core::data_dir::isolated_data_dir();
         let tmp = tempfile::tempdir().unwrap();
         let stale = tmp.path().join("stale");
@@ -85,11 +82,11 @@ mod resolve_path_tests {
             session.shell_cwd = Some(stale.to_string_lossy().to_string());
         }
 
-        let err = server
+        let out = server
             .resolve_path(&other.join("b.txt").to_string_lossy())
             .await
-            .unwrap_err();
-        assert!(err.contains("path escapes project root"));
+            .unwrap();
+        assert!(out.ends_with("/b.txt"), "got: {out}");
 
         let session = server.session.read().await;
         assert_eq!(
@@ -98,52 +95,6 @@ mod resolve_path_tests {
         );
     }
 
-    #[cfg(not(feature = "no-jail"))]
-    #[tokio::test]
-    #[allow(clippy::await_holding_lock)]
-    async fn resolve_path_auto_registers_language_cache_then_retry_succeeds() {
-        // #899: reading dependency source in a language cache (here a Go module
-        // cache outside the project) fails closed once with an auto-detect hint,
-        // then resolves on retry — no config edit, no subprocess.
-        let _iso = crate::core::data_dir::isolated_data_dir();
-        let tmp = tempfile::tempdir().unwrap();
-        let root = tmp.path().join("project");
-        create_git_root(&root);
-        let dep = tmp.path().join("go/pkg/mod/example.com/lib@v1");
-        std::fs::create_dir_all(&dep).unwrap();
-        let file = dep.join("lib.go");
-        std::fs::write(&file, "package lib").unwrap();
-
-        let server = LeanCtxServer::new_with_startup(None, Some(root.as_path()));
-        {
-            let mut session = server.session.write().await;
-            session.project_root = Some(root.to_string_lossy().to_string());
-            session.shell_cwd = Some(root.to_string_lossy().to_string());
-        }
-
-        // First read: fail-closed, with the targeted retry hint.
-        let err = server
-            .resolve_path(&file.to_string_lossy())
-            .await
-            .unwrap_err();
-        assert!(
-            err.contains("Auto-detected Go module cache"),
-            "expected auto-detect hint, got: {err}"
-        );
-        assert!(err.contains("Retry"), "hint must ask for a retry: {err}");
-
-        // Retry: the cache is now a session read-only root, so the read resolves.
-        let ok = server
-            .resolve_path(&file.to_string_lossy())
-            .await
-            .unwrap_or_else(|e| panic!("retry must resolve, got: {e}"));
-        assert!(
-            ok.ends_with("/lib.go"),
-            "retry resolves the cache file: {ok}"
-        );
-    }
-
-    #[cfg(not(feature = "no-jail"))]
     #[tokio::test]
     #[allow(clippy::await_holding_lock)]
     async fn resolve_path_auto_reroots_from_agent_config_dir() {
@@ -151,7 +102,7 @@ mod resolve_path_tests {
         // (~/.copilot-style) and wrongly adopts it as the root. With no
         // trusted startup root, the first
         // absolute path into a real project must still correct the root — an
-        // agent config dir is never a real jail boundary.
+        // agent config dir is never a real project root.
         let _iso = crate::core::data_dir::isolated_data_dir();
         let tmp = tempfile::tempdir().unwrap();
         let agent = tmp.path().join(".copilot");
@@ -173,20 +124,19 @@ mod resolve_path_tests {
             .unwrap();
         assert!(
             out.ends_with("/a.txt"),
-            "agent-dir jail must auto-correct: {out}"
+            "agent-dir root must auto-correct: {out}"
         );
 
         let session = server.session.read().await;
         assert_eq!(session.project_root.as_deref(), Some(real_root.as_str()));
     }
 
-    #[cfg(not(feature = "no-jail"))]
     #[tokio::test]
     #[allow(clippy::await_holding_lock)]
     async fn resolve_path_auto_reroots_from_markerless_client_cwd() {
         // VS Code/WSL can launch the MCP server from /mnt/c/Users while the
-        // workspace lives under /mnt/d. That markerless cwd must not become a
-        // permanent PathJail root when the request points at a real project.
+        // workspace lives under /mnt/d. That markerless cwd must not stay the
+        // root when the request points at a real project.
         let _iso = crate::core::data_dir::isolated_data_dir();
         let tmp = tempfile::tempdir().unwrap();
         let client_cwd = tmp.path().join("Users").join("user");
@@ -215,13 +165,12 @@ mod resolve_path_tests {
         assert_eq!(session.project_root.as_deref(), Some(real_root.as_str()));
     }
 
-    #[cfg(not(feature = "no-jail"))]
     #[tokio::test]
     #[allow(clippy::await_holding_lock)]
-    async fn resolve_path_markerless_root_still_blocks_markerless_escape() {
-        // #649 must not weaken PathJail: from a markerless client cwd, an absolute
-        // path that derives NO project marker stays blocked and the root is
-        // unchanged. Only rerooting *to a real project* is permitted.
+    async fn resolve_path_markerless_root_keeps_root_for_markerless_path() {
+        // #649: from a markerless client cwd, an absolute path that derives NO
+        // project marker is read as is and the root is unchanged. Only a real
+        // project becomes the new root.
         let _iso = crate::core::data_dir::isolated_data_dir();
         let tmp = tempfile::tempdir().unwrap();
         let client_cwd = tmp.path().join("Users").join("user");
@@ -237,11 +186,11 @@ mod resolve_path_tests {
             session.shell_cwd = Some(client_cwd.to_string_lossy().to_string());
         }
 
-        let err = server
+        let out = server
             .resolve_path(&loose.join("data.txt").to_string_lossy())
             .await
-            .unwrap_err();
-        assert!(err.contains("path escapes project root"), "got: {err}");
+            .unwrap();
+        assert!(out.ends_with("/data.txt"), "got: {out}");
 
         let session = server.session.read().await;
         assert_eq!(
@@ -250,13 +199,12 @@ mod resolve_path_tests {
         );
     }
 
-    #[cfg(not(feature = "no-jail"))]
     #[tokio::test]
     #[allow(clippy::await_holding_lock)]
-    async fn resolve_path_agent_dir_still_blocks_markerless_escape() {
-        // The agent-dir bypass only reroots to a *real* project (one carrying a
-        // marker). A markerless absolute path outside the jail stays blocked —
-        // PathJail enforcement is unchanged, only the root *choice* is corrected.
+    async fn resolve_path_agent_dir_keeps_root_for_markerless_path() {
+        // The agent-dir correction only reroots to a *real* project (one
+        // carrying a marker). A markerless absolute path is read as is and the
+        // root is unchanged.
         let _iso = crate::core::data_dir::isolated_data_dir();
         let tmp = tempfile::tempdir().unwrap();
         let agent = tmp.path().join(".copilot");
@@ -272,11 +220,11 @@ mod resolve_path_tests {
             session.shell_cwd = Some(agent.to_string_lossy().to_string());
         }
 
-        let err = server
+        let out = server
             .resolve_path(&loose.join("data.txt").to_string_lossy())
             .await
-            .unwrap_err();
-        assert!(err.contains("path escapes project root"), "got: {err}");
+            .unwrap();
+        assert!(out.ends_with("/data.txt"), "got: {out}");
 
         let session = server.session.read().await;
         assert_eq!(
@@ -362,12 +310,9 @@ mod resolve_path_tests {
         assert_ne!(session.id, old_id);
     }
 
-    #[cfg(not(feature = "no-jail"))]
     #[tokio::test]
     #[allow(clippy::await_holding_lock)]
-    async fn resolve_path_does_not_auto_update_when_current_root_is_real_project() {
-        // Hermetic config + serialized via test_env_lock so a parallel test that
-        // flips `path_jail` cannot disable this jail-enforcement assertion (#406).
+    async fn resolve_path_does_not_reroot_when_current_root_is_real_project() {
         let _iso = crate::core::data_dir::isolated_data_dir();
         let tmp = tempfile::tempdir().unwrap();
         let root = tmp.path().join("root");
@@ -379,11 +324,11 @@ mod resolve_path_tests {
         let root_str = root.to_string_lossy().to_string();
         let server = LeanCtxServer::new_with_project_root(Some(&root_str));
 
-        let err = server
+        let out = server
             .resolve_path(&other.join("b.txt").to_string_lossy())
             .await
-            .unwrap_err();
-        assert!(err.contains("path escapes project root"));
+            .unwrap();
+        assert!(out.ends_with("/b.txt"), "got: {out}");
 
         let session = server.session.read().await;
         assert_eq!(session.project_root.as_deref(), Some(root_value.as_str()));

@@ -1,8 +1,7 @@
 //! Explicit, in-process background jobs for `ctx_shell`.
 //!
 //! The MCP request may complete immediately, but the child keeps the exact
-//! timeout, allow-list, path-jail and process-group policy of foreground shell
-//! execution. Jobs intentionally live in the daemon: restarting it invalidates
+//! timeout and process-group policy of foreground shell execution. Jobs intentionally live in the daemon: restarting it invalidates
 //! outstanding jobs rather than silently orphaning subprocesses.
 
 use std::collections::HashMap;

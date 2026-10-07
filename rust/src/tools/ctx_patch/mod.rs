@@ -266,12 +266,6 @@ fn handle_create(params: &PatchParams, path: &Path, content: &str) -> (String, C
         );
     }
 
-    // Deny before create_dir_all can materialise a directory inside a
-    // read-only root (mirrors ctx_edit's create guard, #475).
-    if let Err(e) = crate::core::pathjail::enforce_writable(path) {
-        return (format!("ERROR: {e}"), CacheEffect::None);
-    }
-
     if let Some(parent) = path.parent()
         && !parent.exists()
         && let Err(e) = std::fs::create_dir_all(parent)

@@ -1,4 +1,3 @@
-use std::path::PathBuf;
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -11,9 +10,6 @@ pub enum LeanCtxError {
 
     #[error("parse error: {0}")]
     Parse(String),
-
-    #[error(transparent)]
-    PathJail(#[from] PathJailError),
 
     #[error("tool execution failed: {0}")]
     ToolExecution(String),
@@ -124,28 +120,6 @@ impl ShellError {
     pub fn lines(&self) -> std::str::Lines<'_> {
         self.message().lines()
     }
-}
-
-#[derive(Error, Debug)]
-pub enum PathJailError {
-    #[error("path contains null byte")]
-    NullByte,
-
-    #[error("path does not exist and has no existing ancestor: {path}")]
-    NoExistingAncestor { path: PathBuf },
-
-    #[error("path escapes project root: {path} (root: {root}){hint}")]
-    EscapesRoot {
-        path: PathBuf,
-        root: PathBuf,
-        hint: String,
-    },
-
-    #[error("post-canonicalize jail escape detected: {path} resolves to {resolved}")]
-    PostCanonicalizeEscape { path: PathBuf, resolved: PathBuf },
-
-    #[error("symlink not allowed in jailed path: {path}")]
-    Symlink { path: PathBuf },
 }
 
 impl From<String> for ConfigError {

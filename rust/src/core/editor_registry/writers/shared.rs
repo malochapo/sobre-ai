@@ -4,7 +4,6 @@
 use serde_json::Value;
 
 use super::{WriteAction, WriteResult};
-use crate::core::editor_registry::types::EditorTarget;
 
 pub(super) fn toml_quote(value: &str) -> String {
     if value.contains('\\') {
@@ -14,42 +13,16 @@ pub(super) fn toml_quote(value: &str) -> String {
     }
 }
 
-pub fn auto_approve_tools() -> Vec<&'static str> {
-    vec![
-        "ctx_read",
-        "ctx_shell",
-        "ctx_search",
-        "ctx_tree",
-        "ctx_session",
-        "ctx_knowledge",
-        "ctx_graph",
-        "ctx_outline",
-        "ctx_callgraph",
-        "ctx_refactor",
-        "ctx_expand",
-        "ctx_impact",
-        "ctx_review",
-        "ctx",
-    ]
-}
-
-pub(super) fn lean_ctx_server_entry(binary: &str, include_auto_approve: bool) -> Value {
+/// The MCP server entry sobre writes. Never an approval setting
+/// (`autoApprove`, `trust`, …): what may run without asking is the host's call.
+pub(super) fn lean_ctx_server_entry(binary: &str) -> Value {
     // No `env` block: lean-ctx auto-detects its per-category dirs (config/data/
     // state/cache) at runtime. Pinning `LEAN_CTX_DATA_DIR` here would set that var
     // in the server's environment, forcing single-dir mode and collapsing
     // config/state/cache onto the data dir — defeating the XDG split (GH #408).
-    let mut entry = serde_json::json!({
+    serde_json::json!({
         "command": binary
-    });
-    if include_auto_approve {
-        entry["autoApprove"] = serde_json::json!(auto_approve_tools());
-    }
-    entry
-}
-
-pub(super) fn supports_auto_approve(target: &EditorTarget) -> bool {
-    crate::core::client_constraints::by_editor_name(target.name)
-        .is_some_and(|c| c.supports_auto_approve)
+    })
 }
 
 pub(super) fn backup_invalid_file(path: &std::path::Path) -> Result<std::path::PathBuf, String> {

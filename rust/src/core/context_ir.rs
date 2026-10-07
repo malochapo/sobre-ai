@@ -142,9 +142,9 @@ impl ContextIrV1 {
             truncated,
             safety: ContextIrSafetyV1 {
                 redacted: true,
-                // Secret-like paths are always enforced; the label stays in
-                // the frozen v1 schema.
-                boundary_mode: Some("Enforce".to_string()),
+                // sobre enforces no path boundary; the field stays in the
+                // frozen v1 schema.
+                boundary_mode: None,
             },
             verification: ContextIrVerificationV1 { content_md5 },
         };

@@ -1,13 +1,10 @@
-use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Mutex, OnceLock};
 
 static RAW: AtomicBool = AtomicBool::new(false);
 static COMPRESS: AtomicBool = AtomicBool::new(false);
 static QUIET: AtomicBool = AtomicBool::new(false);
 static MCP_SERVER: AtomicBool = AtomicBool::new(false);
 static HOOK_CHILD: AtomicBool = AtomicBool::new(false);
-static ALLOW_PATHS: OnceLock<Mutex<Vec<PathBuf>>> = OnceLock::new();
 
 pub struct FlagGuard {
     flag: &'static AtomicBool,
@@ -45,16 +42,6 @@ pub fn scoped_quiet() -> FlagGuard {
     set_scoped(&QUIET)
 }
 
-pub fn add_allow_paths(paths: Vec<PathBuf>) {
-    if paths.is_empty() {
-        return;
-    }
-    let slot = ALLOW_PATHS.get_or_init(|| Mutex::new(Vec::new()));
-    if let Ok(mut value) = slot.lock() {
-        value.extend(paths);
-    }
-}
-
 pub fn raw_enabled() -> bool {
     RAW.load(Ordering::Relaxed)
 }
@@ -73,15 +60,4 @@ pub fn mcp_server_enabled() -> bool {
 
 pub fn hook_child_enabled() -> bool {
     HOOK_CHILD.load(Ordering::Relaxed)
-}
-
-pub fn allow_paths() -> Vec<PathBuf> {
-    ALLOW_PATHS
-        .get()
-        .and_then(|slot| slot.lock().ok().map(|value| value.clone()))
-        .unwrap_or_default()
-}
-
-pub fn allow_path_enabled() -> bool {
-    !allow_paths().is_empty()
 }

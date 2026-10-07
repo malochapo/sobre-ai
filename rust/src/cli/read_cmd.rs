@@ -3,7 +3,6 @@ use std::path::Path;
 use crate::core::compressor;
 use crate::core::deps as dep_extract;
 use crate::core::entropy;
-use crate::core::io_boundary;
 use crate::core::patterns::deps_cmd;
 use crate::core::protocol;
 use crate::core::signatures;
@@ -92,30 +91,6 @@ pub fn cmd_read(args: &[String]) {
     let requested_auto = mode == "auto";
 
     let short = protocol::shorten_path(path);
-
-    // Apply the same secret-path policy in CLI mode as in MCP tools.
-    // Default is warn; enforce depends on active role/policy.
-    if let Ok(abs) = std::fs::canonicalize(path) {
-        match io_boundary::check_secret_path(&abs) {
-            Ok(Some(w)) => eprintln!("{w}"),
-            Ok(None) => {}
-            Err(e) => {
-                eprintln!("{e}");
-                std::process::exit(1);
-            }
-        }
-    } else {
-        // Best-effort: still check the raw path string.
-        let raw = std::path::Path::new(path);
-        match io_boundary::check_secret_path(raw) {
-            Ok(Some(w)) => eprintln!("{w}"),
-            Ok(None) => {}
-            Err(e) => {
-                eprintln!("{e}");
-                std::process::exit(1);
-            }
-        }
-    }
 
     // Read latency for the Context IR lineage (#566) — the standalone path only;
     // the daemon branch above records its own IR and returns before this.
@@ -438,7 +413,6 @@ pub fn cmd_grep(args: &[String]) {
         crate::tools::CrpMode::effective(),
         true,
         false,
-        false,
     );
     let out = outcome.text;
     println!("{out}");
@@ -471,7 +445,7 @@ pub fn cmd_glob(args: &[String]) {
     let abs_path = resolve_cli_path(raw_path);
     let path = abs_path.as_str();
 
-    let (out, _original) = crate::tools::ctx_glob::handle(pattern, path, true, false, 200);
+    let (out, _original) = crate::tools::ctx_glob::handle(pattern, path, true, 200);
     println!("{out}");
     crate::core::stats::record("cli_glob", 0, 0);
     if out.starts_with("ERROR:") {

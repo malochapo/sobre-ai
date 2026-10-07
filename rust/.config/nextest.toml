@@ -26,9 +26,7 @@ test-group = 'serial-state'
 command = ['bash', '.config/nextest-tmpdir.sh']
 
 # Apply config isolation to every test: pointing LEAN_CTX_DATA_DIR at an empty
-# dir is harmless for non-jail tests (it just isolates them from the host config
-# and keeps the real ~/.lean-ctx clean) and covers all jail-dependent tests
-# (core::pathjail, core::workspace_config, …) without enumerating them.
+# dir isolates them from the host config and keeps the real ~/.lean-ctx clean.
 [[profile.default.scripts]]
 filter = 'all()'
 setup = 'tmpdir'

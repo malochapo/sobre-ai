@@ -8,7 +8,7 @@
 //! stays in each caller:
 //!
 //! * `edit_io` rejects symlinks (`reject_symlink` + `O_NOFOLLOW`) and guards
-//!   TOCTOU/read-only-roots before calling in;
+//!   TOCTOU before calling in;
 //! * `config_io` resolves a user-managed symlink to its real target (within
 //!   `$HOME`) and then writes through to it.
 

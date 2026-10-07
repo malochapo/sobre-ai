@@ -10,8 +10,7 @@ pub(crate) fn write_mcp_json(
     binary: &str,
     opts: WriteOptions,
 ) -> Result<WriteResult, String> {
-    let include_aa = supports_auto_approve(target);
-    let desired = lean_ctx_server_entry(binary, include_aa);
+    let desired = lean_ctx_server_entry(binary);
 
     // Claude Code manages ~/.claude.json and may overwrite it on first start.
     // Prefer the official CLI integration when available.

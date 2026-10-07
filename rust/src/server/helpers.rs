@@ -49,37 +49,3 @@ pub fn canonical_args_string(args: Option<&serde_json::Map<String, Value>>) -> S
     let canon = canonicalize_json(&v);
     serde_json::to_string(&canon).unwrap_or_default()
 }
-
-pub fn extract_search_pattern_from_command(command: &str) -> Option<String> {
-    let parts: Vec<&str> = command.split_whitespace().collect();
-    if parts.len() < 2 {
-        return None;
-    }
-    let cmd = parts[0];
-    if cmd == "grep" || cmd == "rg" || cmd == "ag" || cmd == "ack" {
-        for (i, part) in parts.iter().enumerate().skip(1) {
-            if !part.starts_with('-') {
-                return Some(part.to_string());
-            }
-            if (*part == "-e" || *part == "--regexp" || *part == "-m") && i + 1 < parts.len() {
-                return Some(parts[i + 1].to_string());
-            }
-        }
-    }
-    if cmd == "find" || cmd == "fd" {
-        for (i, part) in parts.iter().enumerate() {
-            if (*part == "-name" || *part == "-iname") && i + 1 < parts.len() {
-                return Some(
-                    parts[i + 1]
-                        .trim_matches('\'')
-                        .trim_matches('"')
-                        .to_string(),
-                );
-            }
-        }
-        if cmd == "fd" && parts.len() >= 2 && !parts[1].starts_with('-') {
-            return Some(parts[1].to_string());
-        }
-    }
-    None
-}

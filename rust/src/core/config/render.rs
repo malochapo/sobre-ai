@@ -198,7 +198,10 @@ mod tests {
 
         assert_eq!(first, second, "render must be deterministic (#498)");
         assert!(first.contains("# lean-ctx configuration"));
-        assert!(first.contains("allow_paths"), "documented keys must appear");
+        assert!(
+            first.contains("search_roots"),
+            "documented keys must appear"
+        );
         assert!(
             first.matches("# ").count() > 5,
             "rendered config must be annotated with comments"

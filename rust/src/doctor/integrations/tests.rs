@@ -18,7 +18,7 @@ fn codex_desktop_note_is_informational_and_never_fails() {
 #[test]
 fn hook_binary_refs_extracts_token_before_hook_keyword() {
     let content =
-        r#"{"command": "/opt/lean-ctx hook rewrite"} {"command": "/opt/lean-ctx hook redirect"}"#;
+        r#"{"command": "/opt/lean-ctx hook compress"} {"command": "/opt/lean-ctx hook observe"}"#;
     let refs = hook_binary_refs(content);
     assert_eq!(refs, vec!["/opt/lean-ctx", "/opt/lean-ctx"]);
 }
@@ -34,19 +34,19 @@ fn hook_binary_refs_handles_minified_json() {
     // token must still be extracted cleanly. Regression: the whitespace-only
     // split used to capture the entire JSON prefix as the "binary".
     let content =
-        r#"[{"hooks":[{"command":"lean-ctx hook rewrite"},{"command":"lean-ctx hook redirect"}]}]"#;
+        r#"[{"hooks":[{"command":"lean-ctx hook compress"},{"command":"lean-ctx hook observe"}]}]"#;
     assert_eq!(hook_binary_refs(content), vec!["lean-ctx", "lean-ctx"]);
 }
 
 #[test]
 fn stale_hook_binary_accepts_minified_bare_command() {
-    let content = r#"[{"hooks":[{"command":"lean-ctx hook rewrite"}]}]"#;
+    let content = r#"[{"hooks":[{"command":"lean-ctx hook compress"}]}]"#;
     assert!(stale_hook_binary(content, "/anything/lean-ctx").is_none());
 }
 
 #[test]
 fn stale_hook_binary_flags_minified_foreign_path() {
-    let content = r#"[{"hooks":[{"command":"/old/install/lean-ctx hook rewrite"}]}]"#;
+    let content = r#"[{"hooks":[{"command":"/old/install/lean-ctx hook compress"}]}]"#;
     assert_eq!(
         stale_hook_binary(content, "/current/lean-ctx").as_deref(),
         Some("/old/install/lean-ctx")
@@ -55,7 +55,7 @@ fn stale_hook_binary_flags_minified_foreign_path() {
 
 #[test]
 fn stale_hook_binary_flags_foreign_path() {
-    let content = r#""/nonexistent/old/lean-ctx hook rewrite""#;
+    let content = r#""/nonexistent/old/lean-ctx hook compress""#;
     let stale = stale_hook_binary(content, "/current/install/lean-ctx");
     assert_eq!(stale.as_deref(), Some("/nonexistent/old/lean-ctx"));
 }
@@ -63,14 +63,14 @@ fn stale_hook_binary_flags_foreign_path() {
 #[test]
 fn stale_hook_binary_accepts_current_binary() {
     let bin = "/current/install/lean-ctx";
-    let content = format!(r#""{bin} hook rewrite""#);
+    let content = format!(r#""{bin} hook compress""#);
     assert!(stale_hook_binary(&content, bin).is_none());
 }
 
 #[test]
 fn stale_hook_binary_accepts_bare_path_command() {
     // The bare `lean-ctx` PATH form is always considered current.
-    let content = r#""lean-ctx hook rewrite""#;
+    let content = r#""lean-ctx hook compress""#;
     assert!(stale_hook_binary(content, "/anything/lean-ctx").is_none());
 }
 
@@ -82,7 +82,7 @@ fn stale_hook_binary_accepts_configured_portable_override() {
     let iso = crate::core::data_dir::isolated_data_dir();
     let cfg = iso.path().join("config.toml");
     std::fs::write(&cfg, "hook_binary = \"$HOME/.local/bin/lean-ctx\"\n").unwrap();
-    let content = r#""$HOME/.local/bin/lean-ctx hook rewrite""#;
+    let content = r#""$HOME/.local/bin/lean-ctx hook compress""#;
     assert!(stale_hook_binary(content, "/machine/abs/lean-ctx").is_none());
     std::fs::remove_file(&cfg).unwrap();
 
@@ -121,8 +121,7 @@ fn check_cursor_hooks_detects_stale_binary() {
         r#"{
   "hooks": {
 "preToolUse": [
-  { "matcher": "Shell", "command": "/old/bin/lean-ctx hook rewrite" },
-  { "matcher": "Read|Grep", "command": "/old/bin/lean-ctx hook redirect" }
+  { "matcher": "Shell", "command": "/old/bin/lean-ctx hook cursor" }
 ]
   }
 }"#,
@@ -142,8 +141,7 @@ fn check_cursor_hooks_ok_for_bare_command() {
         r#"{
   "hooks": {
 "preToolUse": [
-  { "matcher": "Shell", "command": "lean-ctx hook rewrite" },
-  { "matcher": "Read|Grep", "command": "lean-ctx hook redirect" }
+  { "matcher": "Shell", "command": "lean-ctx hook cursor" }
 ]
   }
 }"#,

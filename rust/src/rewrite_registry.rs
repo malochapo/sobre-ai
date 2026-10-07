@@ -1,5 +1,6 @@
-/// Single source of truth for all commands that lean-ctx rewrites/compresses.
-/// Used by: hook_handlers (PreToolUse), hooks.rs (bash scripts), cli.rs (shell aliases).
+/// Commands sobre knows how to compress. The Cursor/Gemini pre-run hooks wrap
+/// only these in `lean-ctx -c`, and never a file read (`FileRead`), whose
+/// content must reach the agent verbatim.
 pub const REWRITE_COMMANDS: &[RewriteEntry] = &[
     // Version control
     re("git", Category::Vcs),
@@ -57,16 +58,16 @@ pub const REWRITE_COMMANDS: &[RewriteEntry] = &[
     re("zig", Category::Build),
     re("cmake", Category::Build),
     re("make", Category::Build),
-    // Search (rewritten in hooks to enforce hybrid)
+    // Search
     re("grep", Category::Search),
     re("egrep", Category::Search),
     re("fgrep", Category::Search),
     re("rg", Category::Search),
-    // File read alternatives (rewritten to lean-ctx read, not lean-ctx -c)
+    // File reads: never wrapped, never compressed after the fact
     re("cat", Category::FileRead),
     re("head", Category::FileRead),
     re("tail", Category::FileRead),
-    // Directory listing (rewritten in hooks to enforce hybrid; may fall back to `lean-ctx -c`)
+    // Directory listing
     re("ls", Category::DirList),
     re("find", Category::DirList),
 ];
@@ -94,19 +95,8 @@ const fn re(command: &'static str, category: Category) -> RewriteEntry {
     RewriteEntry { command, category }
 }
 
-/// Commands eligible for PreToolUse hook (bare command match, no trailing space).
-/// Used for commands like `eslint`, `prettier`, `tsc` that may run without args.
-#[cfg(test)]
-pub fn hook_bare_commands() -> Vec<&'static str> {
-    REWRITE_COMMANDS
-        .iter()
-        .filter(|e| !matches!(e.category, Category::FileRead))
-        .map(|e| e.command)
-        .collect()
-}
-
-/// Check if a command is a file-read alternative (cat/head/tail) that should be
-/// rewritten to `lean-ctx read` rather than `lean-ctx -c`.
+/// Check if a command is a file read (cat/head/tail), whose output sobre never
+/// wraps or compresses.
 pub fn is_file_read_command(cmd: &str) -> bool {
     REWRITE_COMMANDS
         .iter()
@@ -115,33 +105,6 @@ pub fn is_file_read_command(cmd: &str) -> bool {
             let prefix = format!("{} ", e.command);
             cmd.starts_with(&prefix) || cmd == e.command
         })
-}
-
-/// All command names for shell alias generation.
-pub fn shell_alias_commands() -> Vec<&'static str> {
-    REWRITE_COMMANDS.iter().map(|e| e.command).collect()
-}
-
-/// Generates a bash `case` pattern for rewrite scripts.
-/// e.g. `git\ *|gh\ *|cargo\ *|npm\ *|...`
-pub fn bash_case_pattern() -> String {
-    REWRITE_COMMANDS
-        .iter()
-        .filter(|e| !matches!(e.category, Category::FileRead))
-        .map(|e| {
-            if e.command.contains('-') {
-                format!("{}*", e.command.replace('-', r"\-"))
-            } else {
-                format!(r"{}\ *", e.command)
-            }
-        })
-        .collect::<Vec<_>>()
-        .join("|")
-}
-
-/// Space-separated list for shell alias arrays.
-pub fn shell_alias_list() -> String {
-    shell_alias_commands().join(" ")
 }
 
 /// Check if a command string matches a rewritable prefix (for hook handlers).
@@ -307,29 +270,6 @@ mod tests {
     }
 
     #[test]
-    fn shell_alias_list_includes_all() {
-        let list = shell_alias_list();
-        assert!(list.contains("git"));
-        assert!(list.contains("cargo"));
-        assert!(list.contains("docker-compose"));
-        assert!(list.contains("rg"));
-        assert!(list.contains(" ls ") || list.ends_with(" ls"));
-        assert!(list.contains("find"));
-    }
-
-    #[test]
-    fn shell_aliases_superset_of_hook_commands() {
-        let aliases = shell_alias_commands();
-        let hook = hook_bare_commands();
-        for cmd in &hook {
-            assert!(
-                aliases.contains(cmd),
-                "hook command '{cmd}' missing from shell_alias_commands"
-            );
-        }
-    }
-
-    #[test]
     fn all_categories_represented() {
         let categories: std::collections::HashSet<_> =
             REWRITE_COMMANDS.iter().map(|e| e.category).collect();
@@ -361,26 +301,6 @@ mod tests {
                     entry.command
                 );
             }
-        }
-    }
-
-    #[test]
-    fn bash_pattern_has_entry_for_every_hookable_command() {
-        let pattern = bash_case_pattern();
-        for entry in REWRITE_COMMANDS {
-            if matches!(entry.category, Category::FileRead) {
-                continue;
-            }
-            let escaped = if entry.command.contains('-') {
-                format!("{}*", entry.command.replace('-', r"\-"))
-            } else {
-                format!(r"{}\ *", entry.command)
-            };
-            assert!(
-                pattern.contains(&escaped),
-                "bash case pattern missing '{}'",
-                entry.command
-            );
         }
     }
 }

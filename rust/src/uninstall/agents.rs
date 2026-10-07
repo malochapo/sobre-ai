@@ -277,45 +277,6 @@ pub(super) fn remove_mcp_configs(home: &Path, dry_run: bool) -> bool {
 }
 
 // ---------------------------------------------------------------------------
-// Plan mode settings cleanup
-// ---------------------------------------------------------------------------
-
-pub(super) fn remove_plan_mode_settings(_home: &Path, dry_run: bool) -> bool {
-    let mut removed = false;
-
-    // VS Code settings.json: remove lean-ctx plan tools from additionalTools array
-    if let Some(vscode_settings) = crate::core::editor_registry::plan_mode::vscode_settings_path()
-        && vscode_settings.exists()
-        && let Ok(content) = fs::read_to_string(&vscode_settings)
-        && content.contains("lean-ctx")
-        && let Ok(mut parsed) = crate::core::jsonc::parse_jsonc(&content)
-    {
-        let mut modified = false;
-        let key = "github.copilot.chat.planAgent.additionalTools";
-        if let Some(tools) = parsed.get_mut(key).and_then(|t| t.as_array_mut()) {
-            let before = tools.len();
-            tools.retain(|t| !t.as_str().is_some_and(|s| s.contains("lean-ctx")));
-            if tools.len() < before {
-                modified = true;
-            }
-        }
-        if modified {
-            backup_before_modify(&vscode_settings, dry_run);
-            if let Ok(cleaned) = serde_json::to_string_pretty(&parsed) {
-                let _ = safe_write(&vscode_settings, &(cleaned + "\n"), dry_run);
-                let verb = if dry_run { "Would clean" } else { "✓" };
-                println!("  {verb} VS Code plan mode tools cleaned (other tools preserved)");
-                removed = true;
-            }
-        }
-    }
-
-    // Claude Code: permissions.allow cleaned via hook cleanup (already handled there)
-
-    removed
-}
-
-// ---------------------------------------------------------------------------
 // Skill removal
 // ---------------------------------------------------------------------------
 
@@ -373,25 +334,9 @@ fn apply_hook_cleanup(path: &Path, label: &str, content: &str, dry_run: bool) ->
 }
 
 pub(super) fn remove_hook_files(home: &Path, dry_run: bool) -> bool {
-    let claude_hooks_dir = crate::core::editor_registry::claude_state_dir(home).join("hooks");
-    let hook_files: Vec<PathBuf> = vec![
-        claude_hooks_dir.join("lean-ctx-rewrite.sh"),
-        claude_hooks_dir.join("lean-ctx-redirect.sh"),
-        claude_hooks_dir.join("lean-ctx-rewrite-native"),
-        claude_hooks_dir.join("lean-ctx-redirect-native"),
-        home.join(".cursor/hooks/lean-ctx-rewrite.sh"),
-        home.join(".cursor/hooks/lean-ctx-redirect.sh"),
-        home.join(".cursor/hooks/lean-ctx-rewrite-native"),
-        home.join(".cursor/hooks/lean-ctx-redirect-native"),
-        home.join(".gemini/hooks/lean-ctx-rewrite-gemini.sh"),
-        home.join(".gemini/hooks/lean-ctx-redirect-gemini.sh"),
-        home.join(".gemini/hooks/lean-ctx-hook-gemini.sh"),
-        crate::core::home::resolve_codex_dir()
-            .unwrap_or_else(|| home.join(".codex"))
-            .join("hooks/lean-ctx-rewrite-codex.sh"),
-        home.join(".codeium/windsurf/hooks/lean-ctx-rewrite.sh"),
-        home.join(".codeium/windsurf/hooks/lean-ctx-redirect.sh"),
-    ];
+    // The only hook file sobre writes; every other hook lives in a host
+    // config and is removed entry by entry below.
+    let hook_files: Vec<PathBuf> = vec![home.join(".config/opencode/plugins/sobre.js")];
 
     let mut removed = false;
     for path in &hook_files {
@@ -406,7 +351,7 @@ pub(super) fn remove_hook_files(home: &Path, dry_run: bool) -> bool {
 
     if removed {
         let verb = if dry_run { "Would remove" } else { "✓" };
-        println!("  {verb} Hook scripts removed");
+        println!("  {verb} OpenCode plugin removed");
     }
 
     // Claude Code global settings: surgically remove lean-ctx hook entries
@@ -522,21 +467,6 @@ pub(super) fn remove_lean_ctx_from_hooks_json(content: &str) -> HookCleanupResul
     };
     let mut modified = false;
 
-    // Clean permissions.allow AND permissions.deny entries like "mcp__lean-ctx__*"
-    for perm_key in ["allow", "deny"] {
-        if let Some(perms) = parsed
-            .get_mut("permissions")
-            .and_then(|p| p.get_mut(perm_key))
-            .and_then(|a| a.as_array_mut())
-        {
-            let before = perms.len();
-            perms.retain(|p| !p.as_str().is_some_and(|s| s.contains("lean-ctx")));
-            if perms.len() < before {
-                modified = true;
-            }
-        }
-    }
-
     if let Some(hooks) = parsed.get_mut("hooks").and_then(|h| h.as_object_mut()) {
         for entries in hooks.values_mut() {
             if let Some(arr) = entries.as_array_mut() {
@@ -583,21 +513,6 @@ pub(super) fn remove_lean_ctx_from_hooks_json(content: &str) -> HookCleanupResul
         hooks.retain(|_, v| v.as_array().is_none_or(|a| !a.is_empty()));
     }
 
-    // Remove empty permissions arrays and empty permissions object
-    if let Some(perms) = parsed
-        .get_mut("permissions")
-        .and_then(|p| p.as_object_mut())
-    {
-        for key in ["allow", "deny"] {
-            if perms
-                .get(key)
-                .and_then(|a| a.as_array())
-                .is_some_and(Vec::is_empty)
-            {
-                perms.remove(key);
-            }
-        }
-    }
     if parsed
         .get("permissions")
         .and_then(|p| p.as_object())

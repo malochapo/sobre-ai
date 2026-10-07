@@ -10,8 +10,6 @@ type ConfigCacheSlot = Option<(Arc<Config>, Option<String>)>;
 mod enums;
 mod loader;
 mod proxy;
-mod read_dedup;
-pub(crate) mod read_redirect;
 mod render;
 pub mod risk;
 pub mod schema;
@@ -30,8 +28,6 @@ pub use proxy::{
     is_local_proxy_url, normalize_url, normalize_url_opt, parse_route_target, upstream_drifted,
     upstream_ids,
 };
-pub use read_dedup::read_dedup_enabled;
-pub use read_redirect::read_redirect_enabled;
 
 /// Effective on-disk ceiling (MB) for the persisted BM25 index when nothing is
 /// explicitly configured (no `bm25_max_cache_mb`, no `max_disk_mb` budget).
@@ -104,18 +100,10 @@ pub struct Config {
         skip_serializing_if = "serde_defaults::is_default_compression_level"
     )]
     pub compression_level: f64,
-    /// Paths the tools may read and write besides the project root (absolute,
-    /// `~`/`$VAR` expanded). Each one is also searched as an extra root of a
-    /// multi-root workspace, and accepted as a target for config files written
-    /// through symlinks. `["/"]` opens the path jail entirely.
+    /// Extra directories searched alongside the project root, as the other
+    /// roots of a multi-root workspace (absolute, `~`/`$HOME` expanded).
     #[serde(default)]
-    pub allow_paths: Vec<String>,
-    /// Read-only roots: sibling subtrees the agent may READ but never WRITE.
-    /// Reads resolve as if they were in `allow_paths`; every write tool (edit, refactor,
-    /// handoff/session export, memory compaction) is default-denied inside these
-    /// paths. Useful for reference repos mounted next to the project.
-    #[serde(default)]
-    pub read_only_roots: Vec<String>,
+    pub search_roots: Vec<String>,
     /// Opt-in (#520): write a human-readable debug log of intercepted MCP tool
     /// calls and hook routing decisions (lean-ctx vs native, with reasons) to
     /// `<state_dir>/logs/debug.log`.
@@ -157,22 +145,13 @@ impl Default for Config {
             passthrough_commands: Vec::new(),
             proxy: ProxyConfig::default(),
             compression_level: DEFAULT_COMPRESSION_LEVEL,
-            allow_paths: Vec::new(),
-            read_only_roots: Vec::new(),
+            search_roots: Vec::new(),
             debug_log: false,
             hook_binary: None,
             shell_timeout_secs: None,
             ignore: Vec::new(),
             embedding_model: None,
         }
-    }
-}
-
-impl Config {
-    /// Whether `allow_paths` opens the path jail entirely (`"/"`).
-    #[must_use]
-    pub fn jail_open(&self) -> bool {
-        self.allow_paths.iter().any(|p| p.trim() == "/")
     }
 }
 

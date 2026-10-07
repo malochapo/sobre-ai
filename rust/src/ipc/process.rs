@@ -387,11 +387,8 @@ fn is_mcp_stdio_process(pid: u32) -> bool {
         {
             return true;
         }
-        // Hook observer/rewriter processes spawned by IDE
-        if cmd_part.contains("hook observe")
-            || cmd_part.contains("hook rewrite")
-            || cmd_part.contains("hook redirect")
-        {
+        // Hook processes spawned by an agent host (`lean-ctx hook <action>`)
+        if cmd_part.contains(" hook ") {
             return true;
         }
     }

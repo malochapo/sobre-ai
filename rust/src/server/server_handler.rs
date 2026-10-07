@@ -85,8 +85,7 @@ impl ServerHandler for LeanCtxServer {
                 session.project_root = Some(root.clone());
                 tracing::info!("Project root set to: {root}");
                 // Cursor multi-root: register sibling workspace folders as extra
-                // trusted roots so explicit cross-folder paths are not rejected
-                // by the path jail (#699).
+                // roots (#699).
                 for other in roots::workspace_roots_from_env() {
                     if &other != root && !session.extra_roots.contains(&other) {
                         session.extra_roots.push(other);
@@ -98,10 +97,10 @@ impl ServerHandler for LeanCtxServer {
                 // cwd decide on the first tool call.
                 session.project_root = None;
             }
-            // Allowed paths double as the extra roots of a multi-root
-            // workspace, except an open jail ("/") or another broad root.
+            // Search roots are the extra roots of a multi-root
+            // workspace, except a broad root ("/", $HOME).
             let cfg_extra: Vec<String> = crate::core::config::Config::load()
-                .allow_paths
+                .search_roots
                 .into_iter()
                 .filter(|p| {
                     !crate::core::pathutil::is_broad_or_unsafe_root(std::path::Path::new(p.trim()))
@@ -324,19 +323,6 @@ impl ServerHandler for LeanCtxServer {
                 .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(sender);
         }
 
-        let tool_name_for_panic = request.name.as_ref().to_string();
-        let args_fp_for_panic = request
-            .arguments
-            .as_ref()
-            .map(|a| {
-                crate::core::loop_detection::LoopDetector::fingerprint(&serde_json::Value::Object(
-                    a.clone(),
-                ))
-            })
-            .unwrap_or_default();
-
-        let loop_detector = self.loop_detector.clone();
-
         match AssertUnwindSafe(self.call_tool_guarded(request))
             .catch_unwind()
             .await
@@ -351,13 +337,6 @@ impl ServerHandler for LeanCtxServer {
                     "unknown".to_string()
                 };
                 tracing::error!("call_tool panicked: {detail}");
-
-                if let Ok(mut detector) =
-                    tokio::time::timeout(std::time::Duration::from_secs(1), loop_detector.write())
-                        .await
-                {
-                    detector.record_error_outcome(&tool_name_for_panic, &args_fp_for_panic);
-                }
 
                 Ok(CallToolResult::error(vec![ContentBlock::text(
                     "ERROR: lean-ctx internal error. The MCP server is still running. \

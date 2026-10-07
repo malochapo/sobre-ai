@@ -94,7 +94,7 @@ impl ConfigSchema {
 }
 
 /// Every TOML key the `Config` struct serialises to, in dot-separated form
-/// (e.g. `allow_paths`, `proxy`, `proxy.port`). Derived from
+/// (e.g. `search_roots`, `proxy`, `proxy.port`). Derived from
 /// `Config::default()` so validation tracks the struct automatically (#456).
 ///
 /// Option fields that default to `None` are omitted by serde and therefore not
@@ -241,7 +241,7 @@ mod tests {
     #[test]
     fn known_keys_recognise_reported_456_keys() {
         let known = ConfigSchema::generate().known_keys();
-        for key in ["allow_paths", "proxy"] {
+        for key in ["search_roots", "proxy"] {
             assert!(
                 accepted(&known, key),
                 "validation must recognise '{key}' (#456)"
@@ -284,7 +284,6 @@ mod tests {
 mod key_cap {
     const KEY_CAP: usize = 15;
     const KEYS: &[&str] = &[
-        "allow_paths",
         "compression_level",
         "debug_log",
         "embedding_model",
@@ -295,7 +294,7 @@ mod key_cap {
         "proxy.port",
         "proxy.routing",
         "proxy.upstreams",
-        "read_only_roots",
+        "search_roots",
         "shell_timeout_secs",
     ];
 

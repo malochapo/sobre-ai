@@ -20,8 +20,8 @@ impl McpTool for CtxShellTool {
             "WORKFLOW: preferred — auto-compresses output (build/test/log).\n\
              raw=true for verbatim output.\n\
              [exit:N] on errors (lossless).\n\
-             POLICY: every command is allowed except constructs that execute something the command text does not name (eval/exec/source, $() at command position, interpreter -c, find -exec, LD_PRELOAD=, …).\n\
-             A [BLOCKED] command is permanent — do not retry it.\n\
+             Runs every command as given; the agent host decides what may run.\n\
+             Sets GIT_TERMINAL_PROMPT=0, GIT_PAGER=cat, PAGER=cat, a UTF-8 locale if none, stdin=/dev/null.\n\
              Multi-line scripts: write them to a file, then run the file.",
             json!({
                 "type": "object",
@@ -103,16 +103,6 @@ impl McpTool for CtxShellTool {
             .ok_or_else(|| ErrorData::invalid_params("command is required", None))?;
         let timeout_ms = get_int(args, "timeout_ms").and_then(|n| u64::try_from(n).ok());
 
-        if let Err(msg) = crate::core::shell_gate::check_shell_command(&command) {
-            return Ok(ToolOutput {
-                shell_outcome: Some(ShellOutcome::Blocked),
-                content_blocks: None,
-                ..ToolOutput::simple(msg.to_string())
-            });
-        }
-
-        warn_shell_secret_paths(&command);
-
         // #842: a bare `cat <file>` is better served by ctx_read — it delivers
         // content inline instead of compressing it, avoiding a ctx_expand
         // round-trip for agents with cat-muscle-memory.
@@ -152,25 +142,14 @@ impl McpTool for CtxShellTool {
 
             let explicit_cwd = get_str(args, "cwd");
             let had_explicit_cwd = explicit_cwd.is_some();
-            let (effective_cwd, cwd_jail_reason) = {
+            let effective_cwd = {
                 let guard = crate::server::bounded_lock::read(session_lock, "ctx_shell_cwd");
                 match guard {
-                    Some(session) => session.effective_cwd_checked(explicit_cwd.as_deref()),
-                    None => (explicit_cwd.unwrap_or_else(|| ".".to_string()), None),
+                    Some(session) => session.effective_cwd(explicit_cwd.as_deref()),
+                    None => explicit_cwd.unwrap_or_else(|| ".".to_string()),
                 }
             };
-            // A `cwd` rejected by the project-root jail is silently replaced with
-            // the root (deliberate sandboxing). Surface that swap as a one-line
-            // hint so the caller does not mistake the run dir for the requested
-            // one (#629); appended at the end of the output like the other hints.
-            let cwd_jail_reason_was_none = cwd_jail_reason.is_none();
-            let cwd_jail_hint = cwd_jail_reason.map_or_else(String::new, |reason| {
-                format!(
-                    "\n[cwd: requested path rejected by project-root jail ({reason}) \u{2014} ran in {effective_cwd} instead]"
-                )
-            });
-
-            let (extra_env, env_hint) = extra_env_from_args(args);
+            let extra_env = extra_env_from_args(args);
 
             {
                 let Some(mut session) =
@@ -193,14 +172,14 @@ impl McpTool for CtxShellTool {
                     return Ok(ToolOutput {
                         shell_outcome: Some(ShellOutcome::Exit(exit_code)),
                         content_blocks: None,
-                        ..ToolOutput::simple(format!("{output}{env_hint}{exit_suffix}"))
+                        ..ToolOutput::simple(format!("{output}{exit_suffix}"))
                     });
                 };
-                // #707: a jail-accepted explicit `cwd` param is the client
+                // #707: an explicit `cwd` param is the client
                 // telling us where it now works (worktree switches arrive
                 // this way, not as `cd` commands) — persist it so path
                 // resolution's divergence check tracks the live checkout.
-                if had_explicit_cwd && cwd_jail_reason_was_none {
+                if had_explicit_cwd {
                     session.note_explicit_cwd(&effective_cwd);
                 }
                 session.update_shell_cwd(&command);
@@ -371,9 +350,7 @@ impl McpTool for CtxShellTool {
                 _ => format!("\n[exit:{exit_code}]"),
             };
             let nudge = if raw { "" } else { search_tool_nudge(&command) };
-            let final_out = format!(
-                "{result_out}{tee_hint}{shell_mismatch}{cwd_jail_hint}{env_hint}{nudge}{exit_suffix}"
-            );
+            let final_out = format!("{result_out}{tee_hint}{shell_mismatch}{nudge}{exit_suffix}");
             let final_out = if let Some(block) = proactive_block {
                 format!("{final_out}{block}")
             } else {
@@ -459,130 +436,18 @@ fn shell_mismatch_hint(command: &str, output: &str) -> String {
     }
 }
 
-/// The `env` argument as a map, minus the variables ctx_shell will not set,
-/// plus a one-line note naming those (invariant 6: never decline silently).
-fn extra_env_from_args(
-    args: &Map<String, Value>,
-) -> (std::collections::HashMap<String, String>, String) {
-    let mut env = std::collections::HashMap::new();
-    let mut ignored = Vec::new();
-    if let Some(obj) = args.get("env").and_then(|v| v.as_object()) {
-        for (k, v) in obj {
-            let Some(val) = v.as_str() else { continue };
-            if is_dangerous_env_key(k) {
-                ignored.push(k.as_str());
-            } else {
-                env.insert(k.clone(), val.to_string());
-            }
-        }
-    }
-    let hint = if ignored.is_empty() {
-        String::new()
-    } else {
-        ignored.sort_unstable();
-        format!(
-            "\n[env: ignored {} \u{2014} ctx_shell does not override variables that change \
-             how commands are resolved or where the user's files live]",
-            ignored.join(", ")
-        )
-    };
-    (env, hint)
+/// The `env` argument as a map. Every variable is set as given: what a
+/// command may do is the agent host's decision, not sobre's (invariant 6).
+fn extra_env_from_args(args: &Map<String, Value>) -> std::collections::HashMap<String, String> {
+    args.get("env")
+        .and_then(|v| v.as_object())
+        .map(|obj| {
+            obj.iter()
+                .filter_map(|(k, v)| v.as_str().map(|val| (k.clone(), val.to_string())))
+                .collect()
+        })
+        .unwrap_or_default()
 }
-
-fn is_dangerous_env_key(key: &str) -> bool {
-    const BLOCKED: &[&str] = &[
-        // Dynamic linker injection
-        "LD_PRELOAD",
-        "LD_LIBRARY_PATH",
-        "DYLD_INSERT_LIBRARIES",
-        "DYLD_LIBRARY_PATH",
-        "DYLD_FRAMEWORK_PATH",
-        // Shell re-entry / startup injection
-        "BASH_ENV",
-        "ENV",
-        "PROMPT_COMMAND",
-        "SHELL",
-        "IFS",
-        "CDPATH",
-        // Binary resolution hijacking
-        "PATH",
-        "GIT_EXEC_PATH",
-        "GIT_SSH",
-        "GIT_SSH_COMMAND",
-        // Identity / home directory manipulation
-        "HOME",
-        "USER",
-        "LOGNAME",
-        "XDG_CONFIG_HOME",
-        "XDG_DATA_HOME",
-        "XDG_STATE_HOME",
-        "XDG_CACHE_HOME",
-        // Language runtime search path hijacking
-        "PYTHONPATH",
-        "PYTHONSTARTUP",
-        "PYTHONHOME",
-        "NODE_PATH",
-        "NODE_OPTIONS",
-        "RUBYOPT",
-        "RUBYLIB",
-        "GEM_PATH",
-        "GEM_HOME",
-        "PERL5LIB",
-        "PERL5OPT",
-        "CLASSPATH",
-        "JAVA_HOME",
-        "CARGO_HOME",
-        "RUSTUP_HOME",
-        "GOPATH",
-        "GOROOT",
-    ];
-    let upper = key.to_uppercase();
-    if BLOCKED.contains(&upper.as_str()) {
-        return true;
-    }
-    if upper.starts_with("LD_") && upper.ends_with("_PATH") {
-        return true;
-    }
-    // Block all lean-ctx config overrides from env
-    if upper.starts_with("LEAN_CTX_") || upper.starts_with("LCTX_") {
-        return true;
-    }
-    false
-}
-
-/// Warn when shell reads secret-like paths via cat/head/tail/less/more.
-/// WARN-ONLY: command still executes, this is purely observational.
-fn warn_shell_secret_paths(command: &str) {
-    const READ_CMDS: &[&str] = &["cat", "head", "tail", "less", "more", "bat"];
-    let segments = crate::core::shell_gate::extract_all_commands_pub(command);
-    for seg in &segments {
-        let trimmed = seg.trim();
-        let tokens = crate::core::shell_gate::shell_tokenize(trimmed);
-        if tokens.is_empty() {
-            continue;
-        }
-        let base = tokens[0]
-            .rsplit('/')
-            .next()
-            .unwrap_or(&tokens[0])
-            .to_string();
-        if !READ_CMDS.contains(&base.as_str()) {
-            continue;
-        }
-        for tok in &tokens[1..] {
-            if tok.starts_with('-') {
-                continue;
-            }
-            let path = std::path::Path::new(tok.as_str());
-            if crate::core::io_boundary::is_secret_like(path).is_some() {
-                tracing::warn!(
-                    "[SECURITY] Shell reading secret-like path: {tok} (command: {base})"
-                );
-            }
-        }
-    }
-}
-
 fn redact_shell_output_secrets(output: &str) -> String {
     let (redacted, matches) = crate::core::secret_detection::scan_and_redact(output);
     if !matches.is_empty() {
@@ -647,19 +512,11 @@ mod tests {
     use super::{extra_env_from_args, is_timeout_notice_only, should_auto_background};
 
     #[test]
-    fn ignored_env_vars_are_named_in_the_output_hint() {
-        let args = serde_json::json!({"env": {"PATH": "/evil", "RUST_LOG": "debug", "HOME": "/x"}});
-        let (env, hint) = extra_env_from_args(args.as_object().unwrap());
+    fn env_vars_are_all_set_as_given() {
+        let args = serde_json::json!({"env": {"PATH": "/opt/bin", "RUST_LOG": "debug"}});
+        let env = extra_env_from_args(args.as_object().unwrap());
+        assert_eq!(env.get("PATH").map(String::as_str), Some("/opt/bin"));
         assert_eq!(env.get("RUST_LOG").map(String::as_str), Some("debug"));
-        assert!(!env.contains_key("PATH") && !env.contains_key("HOME"));
-        assert!(hint.contains("HOME, PATH"), "got: {hint}");
-    }
-
-    #[test]
-    fn allowed_env_vars_add_no_hint() {
-        let args = serde_json::json!({"env": {"RUST_LOG": "debug"}});
-        let (_, hint) = extra_env_from_args(args.as_object().unwrap());
-        assert!(hint.is_empty());
     }
 
     #[test]

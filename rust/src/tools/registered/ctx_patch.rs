@@ -256,9 +256,6 @@ fn delegated_op_call(
             let resolved = sub_ctx
                 .resolve_path_sync(&raw)
                 .map_err(|e| ErrorData::invalid_params(format!("ops[{i}]: path: {e}"), None))?;
-            sub_ctx
-                .ensure_writable(&resolved)
-                .map_err(|e| ErrorData::invalid_params(format!("ops[{i}]: {e}"), None))?;
             sub_ctx.resolved_paths.insert("path".to_string(), resolved);
         }
         // replace_symbol's `name` route resolves its own path inside
@@ -367,8 +364,6 @@ fn plan_groups(
         let resolved = ctx
             .resolve_path_sync(&raw_path)
             .map_err(|e| ErrorData::invalid_params(format!("path: {e}"), None))?;
-        ctx.ensure_writable(&resolved)
-            .map_err(|e| ErrorData::invalid_params(e, None))?;
         let sub = Map::from_iter([("ops".to_string(), Value::Array(op_objs))]);
         let ops = crate::tools::ctx_patch::parse_ops(&sub)
             .map_err(|e| ErrorData::invalid_params(e, None))?;
@@ -522,7 +517,7 @@ fn delegate_replace_symbol(
 
     // Resolve `path` at the boundary when given (the name route resolves its own
     // path inside ctx_refactor). abs_path is unused by the symbol-edit branch but
-    // we mirror ctx_refactor's wrapper to keep jail behaviour identical.
+    // we mirror ctx_refactor's wrapper to keep path resolution identical.
     let has_path = args.get("path").and_then(Value::as_str).is_some();
     let abs_path = if has_path {
         require_resolved_path(ctx, args, "path")?
@@ -601,12 +596,6 @@ fn handle_replace_all(
             "DRY RUN: {count} occurrence(s) of {find:?} would be replaced with {replace:?} in {path}"
         )));
     }
-
-    // #475: the write below goes through `config_io::write_atomic`, which has
-    // no read-only-roots choke point (the edit_io writer every other op uses
-    // does). Deny here, or replace_all rewrites files inside a read-only root.
-    ctx.ensure_writable(&path)
-        .map_err(|e| ErrorData::invalid_params(e, None))?;
 
     let file_lock = crate::core::path_locks::per_file_lock(&path);
     let _guard = file_lock

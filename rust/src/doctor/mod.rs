@@ -58,7 +58,7 @@ impl Scoreboard {
     }
 
     /// An optional/advisory line: render it but never count it toward the score
-    /// (LSP servers, "no providers configured", MCP bridges, plan-mode presence).
+    /// (LSP servers, "no providers configured", MCP bridges).
     ///
     /// Deliberately a method (not a free function) so every rendered line flows
     /// through the board and each call site has to choose `check` vs `info` — the
@@ -209,16 +209,15 @@ pub fn run() -> u32 {
     };
     board.check(&config_outcome);
 
-    // 5b) Shell gate (effective runtime view + silent-parse-error trap, #341)
-    let gate_outcome = shell_gate_outcome();
-    board.check(&gate_outcome);
+    // 5b) Silent config parse error trap (#341)
+    let parse_outcome = config_parse_outcome();
+    board.check(&parse_outcome);
 
-    // 5b2) Path jail (effective state + dead allow_paths entries, GH #392)
-    let path_jail = path_jail_outcome();
-    board.check(&path_jail);
+    // 5b2) Search roots that never resolve (GH #392)
+    let search_roots = search_roots_outcome();
+    board.check(&search_roots);
 
-    // 5b3b) Secret/.env redaction — the exfiltration-defense plane, independent
-    // of the jail + shell gating above (#507).
+    // 5b3b) Secret/.env redaction — the exfiltration-defense plane (#507).
     let secret_detection = secret_detection_outcome();
     board.check(&secret_detection);
 
@@ -279,12 +278,6 @@ pub fn run() -> u32 {
                 display_user_path(&log_path)
             );
         }
-    }
-
-    // Plan mode (advisory)
-    let plan_outcomes = plan_mode_outcomes();
-    for plan_check in &plan_outcomes {
-        board.info(plan_check);
     }
 
     // 9) Session state (project_root + shell_cwd)

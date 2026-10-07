@@ -150,28 +150,13 @@ pub(crate) fn check_codex_hooks_json(home: &std::path::Path, binary: &str) -> Na
             detail: format!("invalid JSON ({})", path.display()),
         };
     };
-    let hooks = v.get("hooks");
-    let mut saw_pretool = false;
-    if let Some(h) = hooks {
-        {
-            if let Some(arr) = h.get("PreToolUse").and_then(|x| x.as_array()) {
-                for entry in arr {
-                    let Some(hooks_arr) = entry.get("hooks").and_then(|x| x.as_array()) else {
-                        continue;
-                    };
-                    for he in hooks_arr {
-                        let Some(cmd) = he.get("command").and_then(|c| c.as_str()) else {
-                            continue;
-                        };
-                        if cmd.contains("hook codex-pretooluse") {
-                            saw_pretool = true;
-                        }
-                    }
-                }
-            }
-        }
-    }
-    let entries_ok = saw_pretool;
+    // sobre installs only observe hooks for Codex: Codex accepts a rewritten
+    // command only with an `allow` decision, which sobre never emits.
+    let entries_ok = v.get("hooks").is_some_and(|h| {
+        serde_json::to_string(h)
+            .unwrap_or_default()
+            .contains(" hook observe")
+    });
     let stale = stale_hook_binary(&content, binary);
     let ok = entries_ok && stale.is_none();
     let detail = if !entries_ok {

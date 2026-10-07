@@ -26,11 +26,11 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
         ),
     );
     root.insert(
-        "allow_paths".into(),
+        "search_roots".into(),
         key(
             "string[]",
-            serde_json::json!(cfg.allow_paths),
-            "Paths the tools may read and write besides the project root; each is also searched as an extra root. [\"/\"] opens the path jail",
+            serde_json::json!(cfg.search_roots),
+            "Extra directories searched alongside the project root, as the other roots of a multi-root workspace",
         ),
     );
     root.insert(
@@ -39,14 +39,6 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
             "string[]",
             serde_json::json!(cfg.ignore),
             "Globs kept out of the index and project walks, on top of .gitignore (always respected)",
-        ),
-    );
-    root.insert(
-        "read_only_roots".into(),
-        key(
-            "string[]",
-            serde_json::json!(cfg.read_only_roots),
-            "Read-only sibling roots: reads allowed, writes always denied (edit/refactor/export)",
         ),
     );
     root.insert(

@@ -24,7 +24,7 @@ impl McpTool for CtxGlobTool {
                     "path": { "type": "string" },
                     "paths": { "type": "array", "items": { "type": "string" } },
                     "max_results": { "type": "integer", "description": "default 200" },
-                    "ignore_gitignore": { "type": "boolean", "description": "Requires admin role" }
+                    "ignore_gitignore": { "type": "boolean", "description": "Also match .gitignore'd files" }
                 },
                 "required": ["pattern"]
             }),
@@ -43,22 +43,10 @@ impl McpTool for CtxGlobTool {
         let max = (get_int(args, "max_results").unwrap_or(200) as usize).min(500);
         let no_gitignore = get_bool(args, "ignore_gitignore").unwrap_or(false);
 
-        if no_gitignore && let Err(e) = crate::core::io_boundary::ensure_ignore_gitignore_allowed()
-        {
-            return Ok(ToolOutput::simple(e));
-        }
-
         let respect = !no_gitignore;
-        let allow_secret_paths = false;
 
         if !resolved.is_multi {
-            return handle_single(
-                &pattern,
-                &resolved.roots[0],
-                respect,
-                allow_secret_paths,
-                max,
-            );
+            return handle_single(&pattern, &resolved.roots[0], respect, max);
         }
 
         let per_root_max = (max / resolved.roots.len()).max(5);
@@ -73,13 +61,7 @@ impl McpTool for CtxGlobTool {
             // `block_in_place` here would needlessly consume blocking-pool
             // threads (the lesson from the ctx_multi_read crash, #271).
             let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                crate::tools::ctx_glob::handle(
-                    &pattern,
-                    root,
-                    respect,
-                    allow_secret_paths,
-                    per_root_max,
-                )
+                crate::tools::ctx_glob::handle(&pattern, root, respect, per_root_max)
             }));
 
             let Ok((result, original)) = result else {
@@ -113,17 +95,10 @@ fn handle_single(
     pattern: &str,
     path: &str,
     respect_gitignore: bool,
-    allow_secret_paths: bool,
     max_results: usize,
 ) -> Result<ToolOutput, ErrorData> {
     let Ok((result, original)) = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        crate::tools::ctx_glob::handle(
-            pattern,
-            path,
-            respect_gitignore,
-            allow_secret_paths,
-            max_results,
-        )
+        crate::tools::ctx_glob::handle(pattern, path, respect_gitignore, max_results)
     })) else {
         return Err(ErrorData::internal_error(
             format!(

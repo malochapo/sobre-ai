@@ -84,7 +84,7 @@ impl LeanCtxServer {
                             Ok(resolved) => {
                                 if !["path", "project_root", "root"].contains(key) {
                                     tracing::trace!(
-                                        "[pathjail] resolved non-standard path key '{key}': {raw} -> {resolved}"
+                                        "[paths] resolved non-standard path key '{key}': {raw} -> {resolved}"
                                     );
                                 }
                                 resolved_paths.insert(key.to_string(), resolved);
@@ -226,27 +226,7 @@ impl LeanCtxServer {
 
             let saved = output.saved_tokens;
             let raw_text = output.text;
-            let final_text = sanitized_tool_text(name, raw_text);
-
-            // Context immune system: scan for prompt-injection patterns in tool output.
-            let injection_signals = crate::core::output_sanitizer::detect_injection(&final_text);
-            if !injection_signals.is_empty() {
-                tracing::warn!(
-                    tool = name,
-                    signals = injection_signals.len(),
-                    "prompt-injection patterns detected in tool output"
-                );
-                crate::core::audit_trail::record(crate::core::audit_trail::AuditEntryData {
-                    agent_id: agent_id.clone(),
-                    tool: name.to_string(),
-                    action: None,
-                    input_hash: String::new(),
-                    output_tokens: 0,
-                    event_type: crate::core::audit_trail::AuditEventType::SecurityViolation,
-                });
-            }
-
-            return Ok((final_text, saved, output.shell_outcome, None));
+            return Ok((raw_text, saved, output.shell_outcome, None));
         }
 
         // Unknown tool (#712): suggest the closest registered name so a typo
@@ -364,19 +344,6 @@ impl LeanCtxServer {
     }
 }
 
-/// Last-pass degenerate-output filter — EXCEPT for protected read tools (#709):
-/// their contract is byte-fidelity. File content is never a model artifact, so
-/// a file that legitimately contains flood-like lines (`!!!!!!!!!!` in test
-/// fixtures, ASCII art) must survive a `mode=raw`/`full` read byte-for-byte.
-/// Every other tool keeps the #257 degenerate-CJK/flood cleanup, whose target
-/// is compressed/summarized output.
-fn sanitized_tool_text(name: &str, raw_text: String) -> String {
-    if name == "ctx_read" {
-        return raw_text;
-    }
-    crate::core::output_sanitizer::sanitize(&raw_text)
-}
-
 /// The watchdog budget in seconds. Kept separate from the policy so the pure
 /// `secs -> Option<Duration>` mapping stays trivially testable.
 fn read_watchdog_secs() -> u64 {
@@ -416,29 +383,6 @@ const PATH_LIKE_KEYS: &[&str] = &[
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn protected_reads_bypass_the_degenerate_output_sanitizer() {
-        // #709 follow-up: an explicit read is byte-exact even for content that
-        // *looks* like degenerate model output (fixtures full of `!!!!!!!!!!`).
-        let fixture = "ok line\n!!!!!!!!!!!!\ntail\n".to_string();
-        assert_eq!(
-            sanitized_tool_text("ctx_read", fixture.clone()),
-            fixture,
-            "ctx_read must never lose file bytes to the flood filter"
-        );
-        // Batch reads (`paths`, ex-`ctx_multi_read`) and the `ctx` fan-out's
-        // `tool=read` both reach dispatch under the name `ctx_read`, so the
-        // assertion above covers every live explicit read.
-
-        // Non-read tools keep the #257 degenerate-output cleanup.
-        let cleaned = sanitized_tool_text("ctx_shell", fixture);
-        assert!(
-            !cleaned.contains("!!!!!!!!!!"),
-            "flood line must be removed"
-        );
-        assert!(cleaned.contains("ok line") && cleaned.contains("tail"));
-    }
 
     #[test]
     fn path_like_keys_includes_primary_keys() {

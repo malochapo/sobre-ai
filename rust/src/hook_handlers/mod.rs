@@ -5,65 +5,24 @@ use std::time::Duration;
 
 const HOOK_STDIN_TIMEOUT: Duration = Duration::from_secs(3);
 
-/// Hard wall-clock budget for a command-gating hook (rewrite/redirect) to produce
-/// its decision. Sized above the worst legitimate single read path (stdin 3s +
-/// redirect subprocess 10s) so valid work always completes; a true hang — or a
-/// dead-winner dedup loser that would otherwise wait then redo the work — is
-/// bounded here and FAILS OPEN instead of wedging the host's tool call (#1035).
+/// Hard wall-clock budget for a pre-run rewrite hook. A hang FAILS OPEN — the
+/// command runs as written — instead of wedging the host's tool call (#1035).
 const HOOK_GATING_TIMEOUT: Duration = Duration::from_secs(15);
-mod codex;
+// Post-run shell output compression (Claude Code, Copilot CLI, OpenCode).
+mod compress;
 mod dedup;
 mod edit_health;
-// Command-rewrite (#660/#966 LOC gate): file-read rewrites, compound wrapping,
-// and the rewrite_candidate dispatch every rewrite entry point funnels through.
-mod file_rewrite;
+// The host's own command rules, checked before any rewrite.
+mod host_rules;
 mod observe;
 mod payload;
-// Redirect decision logic (#660/#966 LOC gate) for Read/Grep/Glob.
 mod read_dedup;
-mod redirect;
-// Search/dir-list rewriting and shell tokenization extracted to
-// `search_rewrite` submodule (#660 LOC gate).
-mod search_rewrite;
-pub use codex::handle_codex_pretooluse;
+// Pre-run `lean-ctx -c` wrapping (Cursor, Gemini CLI).
+mod rewrite;
+pub use compress::handle_compress;
 pub use observe::*;
 pub use read_dedup::handle_read_dedup;
-pub use search_rewrite::{shell_quote, shell_tokenize};
-#[cfg(test)]
-mod tests;
-
-// Test-only re-exports: `hook_handlers::tests` (and its `tests_rewrite_extras`
-// submodule) reference these private implementation functions directly by
-// bare name via `use super::*`; production code calls through the owning
-// module's path instead (e.g. `file_rewrite::rewrite_candidate`).
-#[cfg(test)]
-use codex::{codex_allow_output, codex_rewrite_output};
-#[cfg(test)]
-use file_rewrite::{
-    build_rewrite_compound, is_outside_project_path, parse_head_tail_args, rewrite_candidate,
-    rewrite_file_read_command, rewrite_skip_reason, wrap_single_command,
-};
-#[cfg(test)]
-use redirect::{
-    RedirectKind, build_redirect_output, classify_redirect, grep_content_mode, redirect_read,
-    redirect_read_args, should_passthrough, warm_daemon_cache,
-};
-#[cfg(test)]
-use search_rewrite::{rewrite_dir_list_command, rewrite_search_command};
-
-fn log_shadow_intercept(tool: &str, detail: &str) {
-    let Some(data_dir) = crate::core::data_dir::lean_ctx_data_dir().ok() else {
-        return;
-    };
-    let log_path = data_dir.join("shadow.log");
-    let ts = chrono::Local::now().format("%Y-%m-%d %H:%M:%S");
-    let line = format!("[{ts}] intercepted {tool}: {detail}\n");
-    let _ = std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(log_path)
-        .and_then(|mut f| std::io::Write::write_all(&mut f, line.as_bytes()));
-}
+pub use rewrite::{handle_cursor, handle_gemini};
 
 /// Mark this process as a hook child so the daemon-client never auto-starts
 /// the daemon from inside a hook (which would create zombie processes).
@@ -86,10 +45,10 @@ pub fn arm_watchdog(timeout: Duration) {
     });
 }
 
-/// Run a command-gating hook's decision logic under a hard wall-clock timeout and
+/// Run a pre-run rewrite hook's logic under a hard wall-clock timeout and
 /// print the result exactly once.
 ///
-/// On timeout the hook FAILS OPEN — it prints the allow/pass-through decision so a
+/// On timeout the hook FAILS OPEN — it prints the pass-through output so a
 /// slow or hung hook (a stalled subprocess, a wedged dedup wait, a saturated host)
 /// can never block the host's tool call: the command simply runs unmodified
 /// (#1035). The worker thread is abandoned on timeout (it only sends to a channel,
@@ -99,7 +58,7 @@ fn emit_gating_decision<F>(timeout: Duration, work: F)
 where
     F: FnOnce() -> String + Send + 'static,
 {
-    let out = decide_with_timeout(timeout, build_dual_allow_output(), work);
+    let out = decide_with_timeout(timeout, build_passthrough_output(), work);
     print!("{out}");
 }
 
@@ -133,58 +92,18 @@ fn read_stdin_with_timeout(timeout: Duration) -> Option<String> {
     }
 }
 
-fn build_dual_allow_output() -> String {
-    serde_json::json!({
-        // Top-level PreToolUse decision field.
-        "decision": "allow",
-        "permission": "allow",
-        "hookSpecificOutput": {
-            "hookEventName": "PreToolUse",
-            "permissionDecision": "allow"
-        }
-    })
-    .to_string()
-}
-
-fn build_dual_rewrite_output(tool_input: Option<&serde_json::Value>, rewritten: &str) -> String {
-    let updated_input = if let Some(obj) = tool_input.and_then(|v| v.as_object()) {
-        let mut m = obj.clone();
-        m.insert(
-            "command".to_string(),
-            serde_json::Value::String(rewritten.to_string()),
-        );
-        serde_json::Value::Object(m)
-    } else {
-        serde_json::json!({ "command": rewritten })
-    };
-
-    serde_json::json!({
-        // Top-level PreToolUse decision field (allow with optional mutation).
-        "decision": "allow",
-        // Cursor hook output format.
-        "permission": "allow",
-        "updated_input": updated_input.clone(),
-        // GitHub Copilot CLI preToolUse format: top-level `permissionDecision`
-        // + `modifiedArgs` (a full substitute-args object). Copilot ignores
-        // `hookSpecificOutput`, so without these fields it runs the command
-        // unmodified even after the camelCase payload parses correctly (#551).
-        "permissionDecision": "allow",
-        "modifiedArgs": updated_input.clone(),
-        // Claude Code hook output format (other hosts ignore it).
-        "hookSpecificOutput": {
-            "hookEventName": "PreToolUse",
-            "permissionDecision": "allow",
-            "updatedInput": updated_input
-        }
-    })
-    .to_string()
+/// Pass-through: no decision, no mutation. Every supported host reads `{}` as
+/// "proceed as you normally would" (Cursor requires a JSON object), so the
+/// host's own permission rules apply unchanged.
+fn build_passthrough_output() -> String {
+    "{}".to_string()
 }
 
 /// True when a host tool name denotes a shell/terminal command tool.
 ///
 /// Copilot CLI exposes `powershell` as a first-class shell tool on Windows
 /// (paired with `bash` per the CLI tool reference); without it Windows shell
-/// calls bypass rewrite (#556). Shared by `handle_rewrite` and `handle_copilot`.
+/// calls would be missed (#556).
 fn is_shell_tool(tool_name: &str) -> bool {
     matches!(
         tool_name,
@@ -215,14 +134,6 @@ fn is_shell_tool(tool_name: &str) -> bool {
     )
 }
 
-pub fn handle_rewrite() {
-    emit_gating_decision(HOOK_GATING_TIMEOUT, file_rewrite::compute_rewrite);
-}
-
-pub fn handle_redirect() {
-    emit_gating_decision(HOOK_GATING_TIMEOUT, redirect::compute_redirect);
-}
-
 /// Resolve the lean-ctx executable path for hook command emission and
 /// subprocess spawning. Always the **native** OS path: the MSYS/Git-Bash
 /// `/c/...` form breaks `CreateProcess` on Windows and cannot be run by
@@ -231,63 +142,4 @@ pub fn handle_redirect() {
 /// (MSYS `/c/...` is only needed for bash *source* lines — see `cli::shell_init`.)
 fn resolve_binary() -> String {
     crate::core::portable_binary::resolve_portable_binary()
-}
-
-#[cfg(test)]
-fn extract_json_field(input: &str, field: &str) -> Option<String> {
-    let key = format!("\"{field}\":");
-    let key_pos = input.find(&key)?;
-    let after_colon = &input[key_pos + key.len()..];
-    let trimmed = after_colon.trim_start();
-    if !trimmed.starts_with('"') {
-        return None;
-    }
-    let rest = &trimmed[1..];
-    let bytes = rest.as_bytes();
-    let mut end = 0;
-    while end < bytes.len() {
-        if bytes[end] == b'\\' && end + 1 < bytes.len() {
-            end += 2;
-            continue;
-        }
-        if bytes[end] == b'"' {
-            break;
-        }
-        end += 1;
-    }
-    if end >= bytes.len() {
-        return None;
-    }
-    let raw = &rest[..end];
-    Some(unescape_json_string(raw))
-}
-
-/// Single-pass JSON string unescaping (#787).
-///
-/// Handles \\, \", \n, \t, \r, \/ — the standard JSON escape sequences
-/// that agents actually emit in hook payloads. \uXXXX is passed through
-/// unchanged (extremely rare in shell commands, not worth the complexity).
-#[cfg(test)]
-fn unescape_json_string(s: &str) -> String {
-    let mut out = String::with_capacity(s.len());
-    let mut chars = s.chars();
-    while let Some(c) = chars.next() {
-        if c == '\\' {
-            match chars.next() {
-                Some('n') => out.push('\n'),
-                Some('t') => out.push('\t'),
-                Some('r') => out.push('\r'),
-                Some('"') => out.push('"'),
-                Some('/') => out.push('/'),
-                Some('\\') | None => out.push('\\'),
-                Some(other) => {
-                    out.push('\\');
-                    out.push(other);
-                }
-            }
-        } else {
-            out.push(c);
-        }
-    }
-    out
 }

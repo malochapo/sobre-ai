@@ -74,7 +74,6 @@ default = [
 dense = ["embeddings"]
 jemalloc = ["dep:tikv-jemallocator", "dep:tikv-jemalloc-ctl"]
 dev-tools = []
-no-jail = []
 neural = ["dep:ort", "dep:ndarray", "dep:libloading"]
 embeddings = ["dep:ort", "dep:ndarray", "dep:libloading", "dep:tokenizers"]
 ort-cuda = ["ort?/cuda"]

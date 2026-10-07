@@ -46,7 +46,6 @@ mod mcp_fast_initialize_669;
 mod outline_machine_readable_e2e;
 mod pattern_snapshots;
 mod performance_stress;
-mod plan_mode_scenarios;
 mod project_data_dir_scenarios;
 mod property_compression;
 mod property_graph_reproducibility_contract;

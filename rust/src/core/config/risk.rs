@@ -24,9 +24,6 @@ pub struct ConfigRisk {
 #[must_use]
 pub fn classify(key: &str) -> Option<ConfigRisk> {
     let note = match key {
-        "allow_paths" => {
-            "allow_paths widens the path jail: tools may read and write these paths too, and [\"/\"] opens it entirely."
-        }
         key if key.starts_with("proxy.upstreams.") => {
             "Redirects provider traffic to a custom upstream — every request and API key for this provider will flow through it."
         }
@@ -49,7 +46,6 @@ mod tests {
     #[test]
     fn security_keys_are_consequential() {
         for key in [
-            "allow_paths",
             "proxy.upstreams.openai",
             "proxy.upstreams.anthropic",
             "proxy.upstreams.gemini",

@@ -27,7 +27,7 @@ pub struct SessionState {
     /// Watermark: timestamp of last auto-consolidation to prevent duplicate knowledge entries.
     #[serde(default)]
     pub last_consolidate_ts: Option<DateTime<Utc>>,
-    /// Extra project roots for multi-root workspaces: config `allow_paths`,
+    /// Extra project roots for multi-root workspaces: config `search_roots`,
     /// the host's workspace folders and MCP `roots/list`. Rebuilt every time
     /// the server starts and never persisted, so removing a path from the
     /// config takes it away from a resumed session too.

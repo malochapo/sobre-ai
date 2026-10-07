@@ -70,67 +70,6 @@ impl LeanCtxServer {
             }
         };
 
-        let args_fp = args
-            .map(|a| {
-                crate::core::loop_detection::LoopDetector::fingerprint(&serde_json::Value::Object(
-                    a.clone(),
-                ))
-            })
-            .unwrap_or_default();
-        let throttle_result = {
-            let fp = &args_fp;
-            let detector_timeout = tokio::time::timeout(
-                std::time::Duration::from_secs(3),
-                self.loop_detector.write(),
-            )
-            .await;
-            if let Ok(mut detector) = detector_timeout {
-                let is_search = crate::core::loop_detection::LoopDetector::is_search_tool(name);
-                let is_search_shell = name == "ctx_shell" && {
-                    let cmd = args
-                        .as_ref()
-                        .and_then(|a| a.get("command"))
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("");
-                    crate::core::loop_detection::LoopDetector::is_search_shell_command(cmd)
-                };
-
-                if is_search || is_search_shell {
-                    let search_pattern = args.and_then(|a| {
-                        a.get("pattern")
-                            .or_else(|| a.get("query"))
-                            .and_then(|v| v.as_str())
-                    });
-                    let shell_pattern = if is_search_shell {
-                        args.and_then(|a| a.get("command"))
-                            .and_then(|v| v.as_str())
-                            .and_then(helpers::extract_search_pattern_from_command)
-                    } else {
-                        None
-                    };
-                    let pat = search_pattern.or(shell_pattern.as_deref());
-                    detector.record_search(name, fp, pat)
-                } else {
-                    detector.record_call(name, fp)
-                }
-            } else {
-                tracing::warn!("pre-dispatch: loop_detector write-lock timeout (3s), skipping");
-                crate::core::loop_detection::ThrottleResult::default()
-            }
-        };
-
-        if throttle_result.level == crate::core::loop_detection::ThrottleLevel::Blocked {
-            let msg = throttle_result.message.unwrap_or_default();
-            return Ok(CallToolResult::success(vec![ContentBlock::text(msg)]));
-        }
-
-        let throttle_warning =
-            if throttle_result.level == crate::core::loop_detection::ThrottleLevel::Reduced {
-                throttle_result.message.clone()
-            } else {
-                None
-            };
-
         let config = crate::core::config::Config::load_arc();
 
         let tool_start = std::time::Instant::now();
@@ -138,14 +77,6 @@ impl LeanCtxServer {
             match self.dispatch_tool(name, args).await {
                 Ok(tuple) => tuple,
                 Err(e) => {
-                    if let Ok(mut detector) = tokio::time::timeout(
-                        std::time::Duration::from_secs(1),
-                        self.loop_detector.write(),
-                    )
-                    .await
-                    {
-                        detector.record_error_outcome(name, &args_fp);
-                    }
                     crate::core::debug_log::log_mcp_error(name, args, &format!("{e:?}"));
                     return Err(e);
                 }
@@ -203,36 +134,43 @@ impl LeanCtxServer {
             ir.write().await.record(input);
         }
 
-        // Correction-loop detection: track re-reads and re-runs as quality signals.
-        {
-            let mut detector = self.loop_detector.write().await;
+        // Re-fetch feedback: re-reads, re-runs and `ctx_expand` mean the
+        // compressed form lost something. The session degrade can only lower
+        // compression below the configured level, and a change is announced.
+        let degrade_note = {
+            let mut signals = self.refetch_signals.write().await;
             if name == "ctx_read" {
                 let path = helpers::get_str(args, "path").unwrap_or_default();
                 let mode = helpers::get_str(args, "mode").unwrap_or_else(|| "auto".into());
                 let fresh = helpers::get_bool(args, "fresh").unwrap_or(false);
-                detector.record_read_for_correction(&path, &mode, fresh);
+                signals.record_read(&path, &mode, fresh);
             } else if name == "ctx_shell" {
                 let cmd = helpers::get_str(args, "command").unwrap_or_default();
-                detector.record_shell_for_correction(&cmd);
+                signals.record_shell(&cmd);
             } else if name == "ctx_expand" {
-                // CCR-learning (#941): a verbatim/original re-fetch means the inline
-                // compressed form was too lossy for this session.
-                detector.record_retrieve();
+                signals.record_retrieve();
             }
-            let correction_count = detector.correction_count();
-            let retrieve_count = detector.retrieve_count();
-            // Auto-degrade: reduce compression when the agent keeps re-fetching what
-            // we squeezed out. Correction loops (re-reads/re-runs) and CCR retrieves
-            // (ctx_expand) are two views of the same "too aggressive"
-            // signal; degrade on the stronger of the two and clear only when neither
-            // fires. The level is server state, never part of any output body (#498).
             use crate::core::config::CompressionLevel;
-            CompressionLevel::apply_degrade_action(CompressionLevel::degrade_action(
-                correction_count,
-                retrieve_count,
-            ));
-            detector.prune_corrections();
-        }
+            let changed = CompressionLevel::apply_degrade_action(
+                CompressionLevel::degrade_action(
+                    signals.correction_count(),
+                    signals.retrieve_count(),
+                ),
+                &config,
+            );
+            signals.prune();
+            changed.map(|level| {
+                format!(
+                    "[sobre: compression is now {} for this session — {}]",
+                    level.label(),
+                    if level == CompressionLevel::effective_configured(&config) {
+                        "back to the configured level"
+                    } else {
+                        "lowered after repeated re-reads, re-runs or expands"
+                    }
+                )
+            })
+        };
 
         let pre_compression = result_text.clone();
         result_text = post_process::compress_terse(result_text, name, args, &config, is_raw_shell);
@@ -262,8 +200,8 @@ impl LeanCtxServer {
             result_text = format!("{ctx}\n\n{result_text}");
         }
 
-        if let Some(warning) = throttle_warning {
-            result_text = format!("{result_text}\n\n{warning}");
+        if let Some(note) = degrade_note {
+            result_text = format!("{result_text}\n\n{note}");
         }
 
         if name == "ctx_read" {
@@ -503,8 +441,8 @@ fn roots_list_failure_is_permanent(e: &rmcp::ServiceError) -> bool {
 }
 
 /// Build the final `CallToolResult`, surfacing shell failures in MCP metadata
-/// (GitHub #389): a failing or blocked command sets `isError: true` and a
-/// `structuredContent` payload (`{"exitCode": N}` / `{"blocked": true}`), so
+/// (GitHub #389): a failing command sets `isError: true` and a
+/// `structuredContent` payload (`{"exitCode": N}`), so
 /// clients no longer have to regex-parse the `[exit:N]` text footer. The text
 /// content is identical in both cases — only the metadata changes. A non-zero
 /// exit that is *not* a failure (#1090/#1086) carries neither, because some
@@ -546,8 +484,7 @@ fn is_shell_error(outcome: crate::server::tool_trait::ShellOutcome, output: &str
             // signals the timeout to the agent.
             crate::server::execute::output_before_timeout_marker(output).is_none_or(str::is_empty)
         }
-        crate::server::tool_trait::ShellOutcome::Exit(_)
-        | crate::server::tool_trait::ShellOutcome::Blocked => true,
+        crate::server::tool_trait::ShellOutcome::Exit(_) => true,
     }
 }
 
@@ -652,20 +589,6 @@ mod shell_outcome_tests {
         assert_eq!(
             r.structured_content,
             Some(serde_json::json!({ "exitCode": -1 }))
-        );
-    }
-
-    #[test]
-    fn blocked_command_sets_is_error_and_blocked_marker() {
-        let r = finalize_call_result("[BLOCKED] nope", Some(ShellOutcome::Blocked));
-        assert_eq!(
-            r.is_error,
-            Some(true),
-            "blocked commands never ran — that is a failure"
-        );
-        assert_eq!(
-            r.structured_content,
-            Some(serde_json::json!({ "blocked": true }))
         );
     }
 

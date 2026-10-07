@@ -176,7 +176,7 @@ pub fn root_from_workspace_env() -> Option<String> {
 /// All valid, safe workspace directories from `WORKSPACE_FOLDER_PATHS`.
 ///
 /// Used to register the sibling folders of a multi-root workspace as extra
-/// trusted roots, so explicit paths into them are not rejected by the path jail.
+/// roots, so searches span them too.
 pub fn workspace_roots_from_env() -> Vec<String> {
     let Ok(raw) = std::env::var("WORKSPACE_FOLDER_PATHS") else {
         return Vec::new();
