@@ -1,5 +1,5 @@
-//! Install/environment wiring: shell hooks, MCP registration, editor
-//! surfaces, session state, container env, CWD sanity, LSP servers.
+//! Install/environment wiring: leftover shell hooks, MCP registration, editor
+//! surfaces, session state, CWD sanity, LSP servers.
 
 #[allow(clippy::wildcard_imports)]
 use crate::doctor::common::*;
@@ -37,124 +37,59 @@ pub(crate) fn compact_format_passthrough_outcome() -> Outcome {
         ),
     }
 }
-/// Check if an RC file contains lean-ctx and collect name + update needs.
-fn check_shell_rc(
-    name: &str,
-    path: &std::path::Path,
-    parts: &mut Vec<String>,
-    needs_update: &mut Vec<String>,
-) {
-    if rc_contains_lean_ctx(path) {
-        parts.push(format!("{DIM}{name}{RST}"));
-        if !rc_has_pipe_guard(path) && is_active_shell(name) {
-            needs_update.push(name.to_string());
-        }
-    }
+/// Shell files an older install may have edited (sobre itself never does).
+pub(crate) fn legacy_shell_files(home: &std::path::Path) -> Vec<std::path::PathBuf> {
+    vec![
+        home.join(".zshrc"),
+        home.join(".zshenv"),
+        home.join(".bashrc"),
+        home.join(".bashenv"),
+        home.join(".config").join("fish").join("config.fish"),
+        home.join("Documents")
+            .join("PowerShell")
+            .join("Microsoft.PowerShell_profile.ps1"),
+        home.join("Documents")
+            .join("WindowsPowerShell")
+            .join("Microsoft.PowerShell_profile.ps1"),
+    ]
 }
 
-pub(crate) fn shell_aliases_outcome() -> Outcome {
+fn has_legacy_block(path: &std::path::Path) -> bool {
+    std::fs::read_to_string(path).is_ok_and(|s| {
+        s.contains("lean-ctx shell hook")
+            || s.contains("lean-ctx agent aliases")
+            || s.contains("lean-ctx/shell-hook.")
+            || s.contains("lean-ctx\\shell-hook.")
+    })
+}
+
+/// sobre never edits shell rc files. A lean-ctx block found there is a
+/// leftover from an older install; `doctor --fix` removes it.
+pub(crate) fn legacy_shell_hook_outcome() -> Outcome {
     let Some(home) = dirs::home_dir() else {
         return Outcome {
-            ok: false,
-            line: format!("{BOLD}Shell aliases{RST}  {RED}could not resolve home directory{RST}"),
+            ok: true,
+            line: format!("{BOLD}Shell files{RST}  {DIM}home directory not resolvable{RST}"),
         };
     };
-
-    let mut parts = Vec::new();
-    let mut needs_update = Vec::new();
-
-    check_shell_rc(
-        "~/.zshrc",
-        &home.join(".zshrc"),
-        &mut parts,
-        &mut needs_update,
-    );
-    check_shell_rc(
-        "~/.bashrc",
-        &home.join(".bashrc"),
-        &mut parts,
-        &mut needs_update,
-    );
-    check_shell_rc(
-        "~/.config/fish/config.fish",
-        &home.join(".config").join("fish").join("config.fish"),
-        &mut parts,
-        &mut needs_update,
-    );
-
-    #[cfg(windows)]
-    {
-        let ps_profile = home
-            .join("Documents")
-            .join("PowerShell")
-            .join("Microsoft.PowerShell_profile.ps1");
-        let ps_profile_legacy = home
-            .join("Documents")
-            .join("WindowsPowerShell")
-            .join("Microsoft.PowerShell_profile.ps1");
-        if rc_contains_lean_ctx(&ps_profile) {
-            parts.push(format!("{DIM}PowerShell profile{RST}"));
-            if !rc_has_pipe_guard(&ps_profile) {
-                needs_update.push("PowerShell profile".to_string());
-            }
-        } else if rc_contains_lean_ctx(&ps_profile_legacy) {
-            parts.push(format!("{DIM}WindowsPowerShell profile{RST}"));
-            if !rc_has_pipe_guard(&ps_profile_legacy) {
-                needs_update.push("WindowsPowerShell profile".to_string());
-            }
-        }
-    }
-
-    if parts.is_empty() {
-        let hint = if cfg!(windows) {
-            "no \"lean-ctx\" in PowerShell profile, ~/.zshrc or ~/.bashrc"
-        } else {
-            "no \"lean-ctx\" in ~/.zshrc, ~/.bashrc, or ~/.config/fish/config.fish"
-        };
+    let found: Vec<String> = legacy_shell_files(&home)
+        .iter()
+        .filter(|p| has_legacy_block(p))
+        .map(|p| display_user_path(p))
+        .collect();
+    if found.is_empty() {
         Outcome {
-            ok: false,
-            line: format!("{BOLD}Shell aliases{RST}  {RED}{hint}{RST}"),
-        }
-    } else if !needs_update.is_empty() {
-        Outcome {
-            ok: false,
-            line: format!(
-                "{BOLD}Shell aliases{RST}  {YELLOW}outdated hook in {} — run {BOLD}lean-ctx init --global{RST}{YELLOW} to fix (pipe guard missing){RST}",
-                needs_update.join(", ")
-            ),
+            ok: true,
+            line: format!("{BOLD}Shell files{RST}  {GREEN}untouched{RST}"),
         }
     } else {
         Outcome {
-            ok: true,
+            ok: false,
             line: format!(
-                "{BOLD}Shell aliases{RST}  {GREEN}lean-ctx referenced in {}{RST}",
-                parts.join(", ")
+                "{BOLD}Shell files{RST}  {YELLOW}old lean-ctx shell hook in {} — {BOLD}lean-ctx doctor --fix{RST}{YELLOW} removes it{RST}",
+                found.join(", ")
             ),
         }
-    }
-}
-pub(crate) fn agent_aliases_outcome() -> Outcome {
-    let declined = dirs::home_dir().is_some_and(|h| crate::shell_hook::agent_aliases_declined(&h));
-    if !declined {
-        return Outcome {
-            ok: true,
-            line: format!("{BOLD}Agent aliases{RST}  {DIM}enabled (claude, codex, gemini){RST}"),
-        };
-    }
-    let warn = if crate::core::config::ShellActivation::resolve()
-        == crate::core::config::ShellActivation::AgentsOnly
-    {
-        format!(
-            "  {YELLOW}hint: shell activation agents-only — compression still active via _lc() hook{RST}"
-        )
-    } else {
-        String::new()
-    };
-    Outcome {
-        ok: true,
-        line: format!(
-            "{BOLD}Agent aliases{RST}  {GREEN}skipped (init --no-agent-aliases){RST}{warn}"
-        ),
     }
 }
 
@@ -373,61 +308,6 @@ pub(crate) fn humanize_age(age: chrono::Duration) -> String {
         format!("{}d ago", mins / (24 * 60))
     }
 }
-pub(crate) fn docker_env_outcomes() -> Vec<Outcome> {
-    if !crate::shell::is_container() {
-        return vec![];
-    }
-    let env_sh = crate::core::paths::config_dir().map_or_else(
-        |_| "/root/.lean-ctx/env.sh".to_string(),
-        |d| d.join("env.sh").to_string_lossy().to_string(),
-    );
-
-    let mut outcomes = vec![];
-
-    let shell_name = std::env::var("SHELL").unwrap_or_default();
-    let is_bash = shell_name.contains("bash") || shell_name.is_empty();
-
-    if is_bash {
-        let has_bash_env = std::env::var("BASH_ENV").is_ok();
-        outcomes.push(if has_bash_env {
-            Outcome {
-                ok: true,
-                line: format!(
-                    "{BOLD}BASH_ENV{RST}  {GREEN}set{RST}  {DIM}({}){RST}",
-                    std::env::var("BASH_ENV").unwrap_or_default()
-                ),
-            }
-        } else {
-            Outcome {
-                ok: false,
-                line: format!(
-                    "{BOLD}BASH_ENV{RST}  {RED}not set{RST}  {YELLOW}(add to Dockerfile: ENV BASH_ENV=\"{env_sh}\"){RST}"
-                ),
-            }
-        });
-    }
-
-    let has_claude_env = std::env::var("CLAUDE_ENV_FILE").is_ok();
-    outcomes.push(if has_claude_env {
-        Outcome {
-            ok: true,
-            line: format!(
-                "{BOLD}CLAUDE_ENV_FILE{RST}  {GREEN}set{RST}  {DIM}({}){RST}",
-                std::env::var("CLAUDE_ENV_FILE").unwrap_or_default()
-            ),
-        }
-    } else {
-        Outcome {
-            ok: false,
-            line: format!(
-                "{BOLD}CLAUDE_ENV_FILE{RST}  {RED}not set{RST}  {YELLOW}(for Claude Code: ENV CLAUDE_ENV_FILE=\"{env_sh}\"){RST}"
-            ),
-        }
-    });
-
-    outcomes
-}
-
 pub(crate) fn lsp_server_outcomes() -> Vec<Outcome> {
     use crate::lsp::config::{KNOWN_SERVERS, find_binary_in_path};
 
@@ -507,7 +387,7 @@ pub(crate) fn mcp_server_cwd_outcome() -> Outcome {
         Outcome {
             ok: false,
             line: format!(
-                "{BOLD}MCP server CWD{RST}  {YELLOW}no project marker found in CWD{RST}  {DIM}cwd={} — \"path escapes project root\" errors may occur for files outside this directory. Add `cwd` to your MCP client config or add `extra_roots` / `allow_paths` in config.toml{RST}",
+                "{BOLD}MCP server CWD{RST}  {YELLOW}no project marker found in CWD{RST}  {DIM}cwd={} — \"path escapes project root\" errors may occur for files outside this directory. Add `cwd` to your MCP client config or add the directory to `allow_paths` / `read_only_roots` in config.toml{RST}",
                 cwd.display()
             ),
         }

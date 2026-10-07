@@ -6,8 +6,6 @@ pub struct SessionToolOptions<'a> {
     pub path: Option<&'a str>,
     pub write: bool,
     pub privacy: Option<&'a str>,
-    /// For `action=configure`: set terse output mode when `Some`.
-    pub terse: Option<bool>,
 }
 
 pub fn handle(
@@ -302,15 +300,6 @@ stale_files: {}\n",
             format!("Cleaned up {removed} old session(s) (>7 days).")
         }
 
-        "configure" => match opts.terse {
-            Some(enabled) => {
-                session.terse_mode = enabled;
-                session.increment();
-                format!("Session configured: terse_mode={enabled}")
-            }
-            None => format!("Session config: terse_mode={}", session.terse_mode),
-        },
-
         "snapshot" => match session.save_compaction_snapshot() {
             Ok(snapshot) => {
                 format!(
@@ -579,7 +568,7 @@ stale_files: {}\n",
         }
 
         _ => format!(
-            "Unknown action: {action}. Use: status, load, save, task, finding, decision, reset, list, cleanup, snapshot, restore, resume, configure, diff, output_stats, verify, export, import, episodes, procedures"
+            "Unknown action: {action}. Use: status, load, save, task, finding, decision, reset, list, cleanup, snapshot, restore, resume, diff, output_stats, verify, export, import, episodes, procedures"
         ),
     }
 }

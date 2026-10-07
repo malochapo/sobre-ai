@@ -24,8 +24,7 @@ pub(crate) struct ReadTuning<'a> {
 
 impl<'a> ReadTuning<'a> {
     /// Resolves the effective tuning from an explicit per-call aggressiveness
-    /// (falling back to the config field) and
-    /// the explicit `protect` token list.
+    /// and the explicit `protect` token list.
     pub(crate) fn resolve(explicit_aggressiveness: Option<f64>, protect: &'a [String]) -> Self {
         Self {
             aggressiveness: crate::core::aggressiveness::effective(explicit_aggressiveness),
@@ -58,7 +57,7 @@ fn techniques_tag(techniques: &[String]) -> String {
 }
 
 /// Code-health annotations (function name → note like `cc=18`) for the
-/// over-threshold functions in `content`, honoring `[code_health].annotate_reads`.
+/// over-threshold functions in `content`.
 /// Empty when disabled, unsupported, or nothing qualifies. Deterministic
 /// (#498-safe): a pure function of content + the active threshold.
 fn health_annotations(content: &str, ext: &str) -> std::collections::HashMap<String, String> {

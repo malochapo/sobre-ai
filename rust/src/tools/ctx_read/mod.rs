@@ -109,15 +109,14 @@ pub(crate) fn compressed_cache_key(
 }
 
 /// Appends the reactive recovery footer to a compressed view, leading with the
-/// MCP-free "read the path directly" route. Tier (`off|minimal|full`) and wording
-/// are resolved centrally in [`crate::core::recovery`] so `ctx_read`, the shell
-/// tee and archive handles all speak the same grammar. Only lossy/compressed
-/// modes reach this helper, so the footer is naturally absent from `full`/`raw`.
+/// MCP-free "read the path directly" route; the wording lives in
+/// [`crate::core::recovery`]. Only lossy/compressed modes reach this helper, so
+/// the footer is naturally absent from `full`/`raw`.
 fn append_compressed_hint(output: &str, file_path: &str) -> String {
-    match crate::core::recovery::read_footer(file_path) {
-        Some(footer) => format!("{output}\n{footer}"),
-        None => output.to_string(),
-    }
+    format!(
+        "{output}\n{}",
+        crate::core::recovery::read_footer(file_path)
+    )
 }
 
 /// Reads a file as UTF-8 with lossy fallback, enforcing binary detection and max read size limit.

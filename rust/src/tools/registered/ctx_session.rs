@@ -46,7 +46,6 @@ impl McpTool for CtxSessionTool {
         let path = get_str(args, "path");
         let write = get_bool(args, "write").unwrap_or(false);
         let privacy = get_str(args, "privacy");
-        let terse = get_bool(args, "terse");
 
         let tool_calls_handle = ctx
             .tool_calls
@@ -73,7 +72,6 @@ impl McpTool for CtxSessionTool {
                 path: path.as_deref(),
                 write,
                 privacy: privacy.as_deref(),
-                terse,
             },
         );
 

@@ -1,4 +1,4 @@
-//! E2E tests for shell detection, `LEAN_CTX_SHELL` override,
+//! E2E tests for shell detection (`$SHELL`),
 //! agent init, Windows path handling,
 //! and pipe-guard (stdout not a terminal → bypass lean-ctx).
 // noqa: SIZE_OK — single-responsibility E2E test module for the CLI binary.
@@ -89,13 +89,13 @@ fn assert_hook_command_suffix(actual: Option<&str>, expected_suffix: &str) {
 }
 
 #[test]
-fn lean_ctx_shell_override_uses_specified_shell() {
+fn posix_shell_from_env_is_used() {
     if cfg!(windows) {
         return; // /bin/sh not available on Windows
     }
     let (stdout, _stderr, code) = run_with_env(
         &["-c", "echo lean_ctx_shell_works"],
-        &[("LEAN_CTX_SHELL", "/bin/sh")],
+        &[("SHELL", "/bin/sh")],
         None,
     );
     assert_eq!(code, 0, "should succeed with /bin/sh");
@@ -106,27 +106,17 @@ fn lean_ctx_shell_override_uses_specified_shell() {
 }
 
 #[test]
-fn lean_ctx_shell_override_bash() {
+fn bash_from_env_is_used() {
     if !std::path::Path::new("/bin/bash").exists() {
         return;
     }
     let (stdout, _stderr, code) = run_with_env(
         &["-c", "echo $BASH_VERSION"],
-        &[("LEAN_CTX_SHELL", "/bin/bash")],
+        &[("SHELL", "/bin/bash")],
         None,
     );
     assert_eq!(code, 0, "should succeed with /bin/bash");
     assert!(!stdout.trim().is_empty(), "BASH_VERSION should be set");
-}
-
-#[test]
-fn lean_ctx_shell_override_invalid_shell_fails() {
-    let (_stdout, _stderr, code) = run_with_env(
-        &["-c", "echo hello"],
-        &[("LEAN_CTX_SHELL", "/nonexistent/shell")],
-        None,
-    );
-    assert_ne!(code, 0, "should fail with nonexistent shell");
 }
 
 #[test]
@@ -250,8 +240,7 @@ fn agent_init_codex_installs_hooks_and_skill() {
         ("USERPROFILE", home_str.as_str()),
     ];
 
-    let (_stdout, stderr, code) =
-        run_with_env(&["init", "--agent", "codex", "--global"], &envs, None);
+    let (_stdout, stderr, code) = run_with_env(&["init", "--agent", "codex"], &envs, None);
     assert_eq!(code, 0, "codex init should succeed: {stderr}");
 
     for name in ["AGENTS.md", "LEAN-CTX.md"] {
@@ -285,13 +274,10 @@ fn agent_init_codex_installs_hooks_and_skill() {
 }
 
 #[test]
-fn hook_rewrite_works_with_shell_override() {
+fn hook_rewrite_works_with_posix_shell() {
     let input = r#"{"tool_name":"Bash","command":"git status"}"#;
-    let (stdout, _stderr, _code) = run_hook_test(
-        &["hook", "rewrite"],
-        &[("LEAN_CTX_SHELL", "/bin/sh")],
-        Some(input),
-    );
+    let (stdout, _stderr, _code) =
+        run_hook_test(&["hook", "rewrite"], &[("SHELL", "/bin/sh")], Some(input));
     if !stdout.trim().is_empty() {
         let v: serde_json::Value =
             serde_json::from_str(&stdout).expect("hook output should be valid JSON");

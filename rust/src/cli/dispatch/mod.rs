@@ -50,7 +50,6 @@ pub fn run() {
             // failure surfaces as a broken shell rather than a lost feature.
             // shell/exec.rs:684 also matches on it when collapsing nesting.
             "-c" | "exec" => handle_exec(&args, &rest),
-            "-t" | "--track" => handle_track(&args),
             "gain" => {
                 cmd_gain(&rest);
                 return;
@@ -175,10 +174,6 @@ pub fn run() {
             }
             "ghost" => {
                 super::cmd_ghost(&rest);
-                return;
-            }
-            "filter" => {
-                super::cmd_filter(&rest);
                 return;
             }
             "graph" => {
@@ -421,21 +416,6 @@ fn handle_exec(args: &[String], rest: &[String]) -> ! {
         core::runtime_flags::enable_compress();
     }
     let code = shell::exec(&command);
-    core::tool_lifecycle::flush_all();
-    std::process::exit(code);
-}
-
-fn handle_track(args: &[String]) -> ! {
-    let cmd_args = &args[2..];
-    let code = if cmd_args.len() > 1 {
-        shell::exec_argv(cmd_args)
-    } else {
-        let command = cmd_args[0].clone();
-        if crate::shell::reentry::should_pass_through() {
-            passthrough(&command);
-        }
-        shell::exec(&command)
-    };
     core::tool_lifecycle::flush_all();
     std::process::exit(code);
 }

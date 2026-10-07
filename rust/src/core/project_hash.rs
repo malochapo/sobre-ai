@@ -53,12 +53,6 @@ fn hash_path_only(root: &str) -> String {
 pub(crate) fn project_identity(root: &str) -> Option<String> {
     let root = Path::new(root);
 
-    // Explicit identity file — highest priority. Ideal for Docker containers
-    // where the mount path (/workspace) is reused across different projects.
-    // Users create `.lean-ctx-id` with a unique name to disambiguate.
-    if let Some(id) = explicit_identity_file(root) {
-        return Some(format!("explicit:{id}"));
-    }
     if let Some(url) = git_remote_url(root) {
         return Some(format!("git:{url}"));
     }
@@ -90,16 +84,6 @@ pub(crate) fn project_identity(root: &str) -> Option<String> {
 // ---------------------------------------------------------------------------
 // Identity detectors
 // ---------------------------------------------------------------------------
-
-fn explicit_identity_file(root: &Path) -> Option<String> {
-    let path = root.join(".lean-ctx-id");
-    let content = std::fs::read_to_string(path).ok()?;
-    let id = content.trim().to_string();
-    if id.is_empty() || id.len() > 256 {
-        return None;
-    }
-    Some(id)
-}
 
 fn git_remote_url(root: &Path) -> Option<String> {
     let config = root.join(".git").join("config");
@@ -483,42 +467,5 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let id = project_identity(dir.path().to_str().unwrap());
         assert!(id.is_none());
-    }
-
-    #[test]
-    fn identity_from_lean_ctx_id() {
-        let dir = tempfile::tempdir().unwrap();
-        fs::write(dir.path().join(".lean-ctx-id"), "my-docker-project\n").unwrap();
-
-        let id = project_identity(dir.path().to_str().unwrap());
-        assert_eq!(id, Some("explicit:my-docker-project".into()));
-    }
-
-    #[test]
-    fn lean_ctx_id_takes_priority_over_git() {
-        let dir = tempfile::tempdir().unwrap();
-        fs::write(dir.path().join(".lean-ctx-id"), "override-name").unwrap();
-        fs::create_dir_all(dir.path().join(".git")).unwrap();
-        fs::write(
-            dir.path().join(".git").join("config"),
-            "[remote \"origin\"]\n\turl = git@github.com:user/repo.git\n",
-        )
-        .unwrap();
-
-        let id = project_identity(dir.path().to_str().unwrap());
-        assert_eq!(id, Some("explicit:override-name".into()));
-    }
-
-    #[test]
-    fn docker_different_projects_same_path_with_lean_ctx_id() {
-        let dir_a = tempfile::tempdir().unwrap();
-        let dir_b = tempfile::tempdir().unwrap();
-
-        fs::write(dir_a.path().join(".lean-ctx-id"), "project-alpha").unwrap();
-        fs::write(dir_b.path().join(".lean-ctx-id"), "project-beta").unwrap();
-
-        let id_a = project_identity(dir_a.path().to_str().unwrap());
-        let id_b = project_identity(dir_b.path().to_str().unwrap());
-        assert_ne!(id_a, id_b);
     }
 }

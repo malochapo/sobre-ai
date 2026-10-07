@@ -22,9 +22,6 @@ fn run_glob(args: &[&str], home: &Path) -> Output {
     Command::new(env!("CARGO_BIN_EXE_lean-ctx"))
         .args(args)
         .env("HOME", home)
-        // Hook-child flag keeps the daemon from auto-starting; the command falls
-        // back to the in-process ctx_glob path, which is what we want to assert.
-        .env("LEAN_CTX_HOOK_CHILD", "1")
         .output()
         .expect("failed to spawn lean-ctx binary")
 }

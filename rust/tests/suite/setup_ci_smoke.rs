@@ -114,21 +114,17 @@ fn setup_bootstrap_doctor_status_json_smoke() {
     });
     assert_eq!(setup.schema_version, 1);
 
-    // bootstrap should create env.sh in the config dir for Docker/CI shells.
-    // env.sh is Unix-only (shell script); skip assertion on Windows.
-    #[cfg(not(windows))]
-    {
-        let env_sh = std::path::Path::new(&dirs.config).join("env.sh");
-        let env_sh_content = std::fs::read_to_string(&env_sh).expect("env.sh exists");
+    // init never writes shell files: no env.sh, no shell-hook scripts.
+    for f in ["env.sh", "shell-hook.zsh", "shell-hook.bash"] {
         assert!(
-            env_sh_content.contains("lean-ctx docker self-heal"),
-            "env.sh missing docker self-heal snippet"
+            !std::path::Path::new(&dirs.config).join(f).exists(),
+            "init must not write {f}"
         );
     }
 
     // init --agent claude should prefer `claude mcp add-json` when available.
     let out = Command::new(bin)
-        .args(["init", "--agent", "claude", "--global"])
+        .args(["init", "--agent", "claude"])
         .envs(envs.iter().copied())
         .output()
         .expect("init --agent claude");
@@ -205,7 +201,7 @@ fn claude_config_dir_fallback_writes_dot_claude_json() {
     envs.push(("PATH", new_path.as_str()));
 
     let out = Command::new(bin)
-        .args(["init", "--agent", "claude", "--global"])
+        .args(["init", "--agent", "claude"])
         .envs(envs.iter().copied())
         .output()
         .expect("init --agent claude");
@@ -346,12 +342,12 @@ fn init_claude_installs_the_skill_and_no_rules_file() {
     }
 
     let out = Command::new(bin)
-        .args(["init", "--agent", "claude", "--global"])
+        .args(["init", "--agent", "claude"])
         .current_dir(&project)
         .envs(envs.iter().copied())
         .output()
-        .expect("init --agent claude --global");
-    assert!(out.status.success(), "init --agent claude --global exit");
+        .expect("init --agent claude");
+    assert!(out.status.success(), "init --agent claude exit");
 
     let skill = std::fs::read_to_string(home.join(".claude/skills/sobre/SKILL.md"))
         .expect("init installs the sobre skill");

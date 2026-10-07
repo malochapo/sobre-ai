@@ -13,16 +13,11 @@ use lean_ctx::core::tokens::count_tokens;
 
 /// Runs `lean-ctx read <path> --mode auto` fully hermetically and returns stdout.
 ///
-/// Isolation strategy: the daemon socket lives under `dirs::data_local_dir()`
-/// (HOME-derived), so pointing `HOME`/XDG at empty temp dirs guarantees no
-/// daemon is listening there; `LEAN_CTX_HOOK_CHILD` then short-circuits the
-/// daemon client so the in-process CLI path (the code under test) runs even when
-/// the developer's real daemon is up. `LEAN_CTX_DATA_DIR` keeps stat tracking
-/// out of the real data dir.
+/// Isolation: `HOME`/XDG point at empty temp dirs and `LEAN_CTX_DATA_DIR`
+/// keeps stat tracking out of the real data dir.
 fn read_auto(bin: &str, home: &Path, data_dir: &Path, file: &Path) -> String {
     let out = Command::new(bin)
         .args(["read", file.to_str().unwrap(), "--mode", "auto"])
-        .env("LEAN_CTX_HOOK_CHILD", "1")
         .env("HOME", home)
         .env("XDG_DATA_HOME", home.join("share"))
         .env("XDG_CONFIG_HOME", home.join("config"))

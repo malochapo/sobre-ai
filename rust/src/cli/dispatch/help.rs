@@ -47,7 +47,7 @@ pub(super) fn concise_help_text() -> String {
 {banner}
 
 GETTING STARTED:
-    lean-ctx init                  Connect every detected agent, plus the shell hook
+    lean-ctx init                  Connect every detected agent
     lean-ctx init <agent>          Connect one agent (claude, codex, copilot, cursor,
                                    gemini, opencode, windsurf, zed)
     lean-ctx doctor                Check that everything is wired up correctly
@@ -67,8 +67,6 @@ MANAGE:
 
 ESCAPE HATCHES:
     lean-ctx raw \"command\"         Run one command with unmodified output
-    lean-ctx-off                   Turn the shell aliases off for this shell
-    shell_hook = false             (config.toml) Never install the shell hook
 
 MORE:
     lean-ctx help all              Full command reference (every subcommand)
@@ -85,7 +83,7 @@ pub(super) fn print_help() {
 {banner}
 
 GETTING STARTED:
-    lean-ctx init                  Connect every detected agent, plus the shell hook
+    lean-ctx init                  Connect every detected agent
     lean-ctx init <agent>          Connect one agent
     lean-ctx doctor                Check that everything is wired up correctly
     lean-ctx gain                  See how many tokens you have saved
@@ -94,7 +92,6 @@ GETTING STARTED:
 USAGE:
     lean-ctx                       Start the MCP server (stdio)
     lean-ctx mcp                   Same, explicitly
-    lean-ctx -t \"command\"          Track a command (full output + stats, no compression)
     lean-ctx -c \"command\"          Run with compressed output (used by agent hooks)
     lean-ctx -c --raw \"command\"    Run without compression
     lean-ctx raw \"command\"         Full, exact output
@@ -149,7 +146,7 @@ MEMORY:
     compact [path]                 Compact Claude Code / Cursor transcripts
 
 SETUP AND MAINTENANCE:
-    init [--agent <name>] [--global] [--project] [--check] [--repair]
+    init [--agent <name>] [--check] [--repair]
     status [--json]                Setup and MCP status
     doctor [--fix] [--json]        Diagnostics (and repair)
     doctor integrations [--json]   Per-agent integration checks
@@ -161,7 +158,6 @@ SETUP AND MAINTENANCE:
     proxy start [--port=4444] [--detach] | status   Local API proxy
     cache list|clear|stats         File read cache
     tee list|clear|show <file>|last  Saved full outputs (see ctx_expand)
-    filter list|validate|init      Custom compression filters
     slow-log list|clear            Slow command log
     debug-log list|tail N|clear|path  Opt-in tool-call log (config key debug_log)
     verify-cache [path] [--json]   Prove the session cache
@@ -200,14 +196,11 @@ OPTIONS:
     --help, -h                     Show this help
 
 TROUBLESHOOTING:
-    Commands broken?     lean-ctx-off             (fixes the current shell)
+    Something broken?    lean-ctx doctor --fix    (also removes an old shell hook)
     Permanent fix?       lean-ctx uninstall       (removes all hooks)
-    Manual fix?          Edit {rc_file}, remove the \"lean-ctx shell hook\" block
-    Binary missing?      Aliases fall back to the original commands
     Preview init?        lean-ctx init --check
 ",
         version = env!("CARGO_PKG_VERSION"),
         banner = capability_banner(),
-        rc_file = crate::shell_hook::shell_rc_file(),
     );
 }

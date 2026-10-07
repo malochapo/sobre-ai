@@ -6,7 +6,7 @@
 //! for machine-readable calls keeps the wake-up briefing intact so it still
 //! fires on the next human-facing call.
 //!
-//! Determinism: the project root is pinned via `LEAN_CTX_PROJECT_ROOT` (no
+//! Determinism: the project root is pinned via `CLAUDE_PROJECT_DIR` (no
 //! async client-roots race) and the test polls `ctx_compose` (no task) — which returns
 //! the project overview *without* consuming the briefing flag — until the graph
 //! is loaded in-process. Only then does it run the discriminating sequence
@@ -79,7 +79,7 @@ impl McpSandbox {
             std::fs::create_dir_all(d).unwrap();
         }
         std::fs::write(project.join("sample.rs"), SAMPLE_RS).unwrap();
-        // Canonicalize so `index build --root`, `LEAN_CTX_PROJECT_ROOT` and the
+        // Canonicalize so `index build --root`, `CLAUDE_PROJECT_DIR` and the
         // server's cwd resolve to the exact same path (macOS /tmp -> /private/tmp).
         let project = project.canonicalize().unwrap();
         Self {
@@ -100,16 +100,13 @@ impl McpSandbox {
             .env("LEAN_CTX_DATA_DIR", &self.data)
             .env("LEAN_CTX_STATE_DIR", &self.state)
             .env("LEAN_CTX_CACHE_DIR", &self.cache)
-            // Never talk to (or start) the developer's daemon.
-            .env("LEAN_CTX_HOOK_CHILD", "1")
-            // Resolve the project root synchronously from the env (no async
+            // Resolve the project root synchronously from the host env, as
+            // Claude Code sets it (no async
             // client-roots / cwd race) so the auto-context overview is live on
             // the very FIRST tool call. This makes the briefing-survival check
             // discriminating: the root is ready when the json call runs, so the
             // unfixed dispatch would burn the once-per-session flag right there.
-            // `LEAN_CTX_QUIET` is intentionally NOT set — it suppresses the
-            // autonomy briefing this test asserts on.
-            .env("LEAN_CTX_PROJECT_ROOT", &self.project);
+            .env("CLAUDE_PROJECT_DIR", &self.project);
         cmd
     }
 

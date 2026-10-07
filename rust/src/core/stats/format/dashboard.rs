@@ -634,7 +634,15 @@ fn append_gain_footer(out: &mut Vec<String>, t: &Theme, store: &StatsStore) {
                 "   Session: {bold}{task_disp}{rst}  {m}files={} findings={} terse={}{rst}",
                 session.files_touched.len(),
                 session.findings.len(),
-                if session.terse_mode { "on" } else { "off" },
+                if crate::core::config::CompressionLevel::effective(
+                    &crate::core::config::Config::load()
+                )
+                .is_active()
+                {
+                    "on"
+                } else {
+                    "off"
+                },
             ));
         }
 

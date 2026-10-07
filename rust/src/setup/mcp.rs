@@ -15,10 +15,10 @@ pub struct AgentSetupResult {
 
 /// Complete per-agent setup: hooks + MCP config + skill.
 /// Single source of truth — called by both `init --agent` and `setup`.
-pub fn setup_single_agent(agent_name: &str, global: bool) -> AgentSetupResult {
+pub fn setup_single_agent(agent_name: &str) -> AgentSetupResult {
     let mut result = AgentSetupResult::default();
 
-    crate::hooks::install_agent_hook(agent_name, global);
+    crate::hooks::install_agent_hook(agent_name);
 
     match configure_agent_mcp(agent_name) {
         Ok(()) => result.mcp_ok = true,

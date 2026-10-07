@@ -31,7 +31,6 @@ accessor function.
 | L34 | `GLOBAL` (capabilities) | `core/client_capabilities.rs` | `OnceLock<Mutex<ClientMcpCapabilities>>` | Client MCP capability flags |
 | L37 | `LAST_REAL` | `proxy/introspect.rs` | `Mutex<[Option<String>; 3]>` | Last 3 real (non-proxy) request paths |
 | L38 | `GLOBAL_TRACKER` | `core/bounce_tracker.rs` | `OnceLock<Mutex<BounceTracker>>` | Tracks repeated tool-call bounces |
-| L40 | `GLOBAL_MANAGER` | `core/multi_repo.rs` | `OnceLock<Mutex<MultiRepoManager>>` | Multi-repo workspace manager |
 | L41 | `KNOWLEDGE_LOCKS` | `core/knowledge/persist.rs` (fn-local) | `OnceLock<Mutex<HashMap<String, Arc<Mutex<()>>>>>` | Per-project knowledge.json read-modify-write serialization (same outer/inner pattern as L1/L2) |
 | L42 | `LAST_PARSE_ERROR` | `core/config/loader.rs` | `Mutex<Option<String>>` | Most recent global `config.toml` parse error (surfaced by doctor/diagnostics); never held together with L4 |
 | L47 | `SOURCE_COUNTS` | `core/auto_mode_resolver.rs` | `Mutex<Option<HashMap<&'static str, u64>>>` | Per-process counters of which signal decided each auto-mode resolution; surfaced by `ctx_metrics` |

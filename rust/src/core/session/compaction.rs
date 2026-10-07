@@ -145,8 +145,8 @@ impl SessionState {
 
         let mut sections: Vec<(u8, String)> = Vec::new();
 
-        let level = crate::core::config::CompressionLevel::from_str_label(&self.compression_level)
-            .unwrap_or_default();
+        let level =
+            crate::core::config::CompressionLevel::effective(&crate::core::config::Config::load());
         if let Some(tag) = session_context_tag(&level) {
             sections.push((0, tag));
         }
@@ -487,8 +487,8 @@ impl SessionState {
     pub fn build_resume_block(&self) -> String {
         let mut parts: Vec<String> = Vec::new();
 
-        let level = crate::core::config::CompressionLevel::from_str_label(&self.compression_level)
-            .unwrap_or_default();
+        let level =
+            crate::core::config::CompressionLevel::effective(&crate::core::config::Config::load());
         if let Some(hint) = resume_block_hint(&level) {
             parts.push(hint);
         }

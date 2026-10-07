@@ -276,7 +276,7 @@ fn cmd_opportunity() {
     println!("  {}", t.box_bottom(w));
     println!();
     let sec = t.secondary.fg();
-    println!("  {sec}lean-ctx init --global{rst}   {dim}Compress everything{rst}");
+    println!("  {sec}lean-ctx init{rst}            {dim}Compress everything{rst}");
     println!();
 }
 

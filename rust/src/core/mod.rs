@@ -275,7 +275,6 @@ pub mod events;
 pub mod eviction_orchestrator;
 pub mod extension_registry;
 pub mod extractors;
-pub mod filters;
 pub mod gain;
 pub mod git;
 pub mod git_cache;
@@ -318,7 +317,6 @@ pub mod levenshtein;
 pub mod limits;
 pub mod logging;
 pub mod mcp_manifest;
-pub mod multi_repo;
 pub mod nc_compress;
 pub mod output_echo;
 pub mod owasp_alignment;
@@ -360,14 +358,11 @@ pub mod transcript_compact;
 pub mod visualizer;
 pub mod walk_filter;
 pub mod web;
-pub mod workspace_config;
 pub mod wrapped;
 
 // ---------------------------------------------------------------------------
 // Feature-gated modules
 // ---------------------------------------------------------------------------
-pub mod artifact_index;
-pub mod artifacts;
 pub mod ast_walk;
 #[cfg(feature = "tree-sitter")]
 pub mod chunks_ts;

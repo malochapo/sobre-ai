@@ -117,7 +117,7 @@ pub fn install_panic_hook() {
 
         let mut msg = String::from(
             "lean-ctx: unexpected error (your command was not affected)\n\
-             \x20 Disable temporarily: lean-ctx-off\n\
+             \x20 Diagnose and repair: lean-ctx doctor --fix\n\
              \x20 Full uninstall:      lean-ctx uninstall\n",
         );
         if let Some(m) = info.payload().downcast_ref::<&str>() {

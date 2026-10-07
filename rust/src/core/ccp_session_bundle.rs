@@ -63,6 +63,10 @@ pub struct SessionExcerptV1 {
 }
 
 pub fn build_bundle_v1(session: &SessionState, privacy: BundlePrivacyV1) -> CcpSessionBundleV1 {
+    // The bundle records the exporting machine's compression style; importing
+    // never applies it (settings come from the importer's config.toml).
+    let export_level =
+        crate::core::config::CompressionLevel::effective(&crate::core::config::Config::load());
     let (project_root_hash, project_identity_hash) =
         session
             .project_root
@@ -95,8 +99,8 @@ pub fn build_bundle_v1(session: &SessionState, privacy: BundlePrivacyV1) -> CcpS
             .collect(),
         evidence: session.evidence.clone(),
         stats: session.stats.clone(),
-        terse_mode: session.terse_mode,
-        compression_level: session.compression_level.clone(),
+        terse_mode: export_level.is_active(),
+        compression_level: export_level.label().to_string(),
     };
 
     // Path minimization: prefer relative paths when project_root is known.
@@ -247,8 +251,6 @@ pub fn import_bundle_v1_into_session(
         evidence: imported.evidence.clone(),
         active_structured_intent: None,
         stats: imported.stats.clone(),
-        terse_mode: imported.terse_mode,
-        compression_level: imported.compression_level.clone(),
         last_consolidate_ts: None,
         extra_roots: Vec::new(),
         playbook: crate::core::session::Playbook::default(),

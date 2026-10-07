@@ -506,7 +506,7 @@ pub fn cmd_benchmark(args: &[String]) {
             let root = std::path::Path::new(path);
 
             let index = crate::core::bm25_index::BM25Index::build_from_directory(root);
-            let cfg = crate::core::hybrid_search::HybridConfig::from_config();
+            let cfg = crate::core::hybrid_search::HybridConfig::default();
             let queries = crate::core::eval_harness::generate_self_eval(&index, 50);
 
             if queries.is_empty() {
@@ -536,7 +536,7 @@ pub fn cmd_benchmark(args: &[String]) {
             }
 
             let index = crate::core::bm25_index::BM25Index::build_from_directory(root);
-            let cfg = crate::core::hybrid_search::HybridConfig::from_config();
+            let cfg = crate::core::hybrid_search::HybridConfig::default();
 
             let queries = match parse_flag_value(args, "--suite") {
                 Some(suite) => {
@@ -921,11 +921,10 @@ fn cmd_show_effective() {
     println!("{}", box_top("Settings"));
     box_row(&format!(
         " compression_level   = {:10}  {}",
-        cfg.compression_level.map_or_else(
-            || format!("{compression:?}"),
-            |v| format!("{v:.2} ({compression:?})")
-        ),
-        source_hint(cfg.compression_level.is_some())
+        format!("{:.2} ({compression:?})", cfg.compression_level),
+        source_hint(!crate::core::config::is_default_compression_level_value(
+            cfg.compression_level
+        ))
     ));
     println!("{}", box_bottom());
 
@@ -1045,7 +1044,7 @@ mod tests {
             Some(90),
             "must keep the user's value"
         );
-        assert_eq!(cfg.compression_level, Some(0.5));
+        assert_eq!(cfg.compression_level, 0.5);
     }
 
     #[test]

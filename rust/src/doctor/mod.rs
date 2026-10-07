@@ -244,13 +244,9 @@ pub fn run() -> u32 {
     let proxy_outcome = proxy_upstream_outcome();
     board.check(&proxy_outcome);
 
-    // 7) Shell aliases
-    let aliases = shell_aliases_outcome();
-    board.check(&aliases);
-
-    // 7b) Agent aliases opt-out
-    let agent_aliases = agent_aliases_outcome();
-    board.check(&agent_aliases);
+    // 7) Leftover shell hook from an older install
+    let shell_files = legacy_shell_hook_outcome();
+    board.check(&shell_files);
 
     // 8) MCP
     let mcp = mcp_config_outcome();
@@ -294,12 +290,6 @@ pub fn run() -> u32 {
     // 9) Session state (project_root + shell_cwd)
     let session_outcome = session_state_outcome();
     board.check(&session_outcome);
-
-    // 10) Docker env vars (optional, only in containers)
-    let docker_outcomes = docker_env_outcomes();
-    for docker_check in &docker_outcomes {
-        board.check(docker_check);
-    }
 
     // 12) Build integrity (canary / origin check)
     let integrity = crate::core::integrity::check();
@@ -525,7 +515,7 @@ pub fn compact_score() -> (u32, u32) {
     {
         passed += 1;
     }
-    if shell_aliases_outcome().ok {
+    if legacy_shell_hook_outcome().ok {
         passed += 1;
     }
     if mcp_config_outcome().ok {
@@ -546,7 +536,6 @@ pub(super) fn print_compact_status(passed: u32, total: u32) {
 
 #[cfg(test)]
 mod tests {
-    use super::is_active_shell_impl;
 
     // `checks::capacity_level`, the classification `capacity_warnings` applies
     // to each store: at or below its cap is at most a WARN (healthy, eviction
@@ -611,40 +600,5 @@ mod tests {
     #[test]
     fn capacity_zero_limit_skipped() {
         assert!(super::checks::capacity_level("facts", 50, 0).is_none());
-    }
-
-    #[test]
-    fn bashrc_not_active_on_windows_powershell_even_with_bash_in_shell() {
-        assert!(!is_active_shell_impl(
-            "~/.bashrc",
-            "C:\\\\Program Files\\\\Git\\\\bin\\\\bash.exe",
-            true,
-            true,
-        ));
-    }
-
-    #[test]
-    fn zshrc_unaffected_by_powershell_flag() {
-        assert!(is_active_shell_impl("~/.zshrc", "/bin/zsh", false, false));
-        assert!(is_active_shell_impl("~/.zshrc", "/bin/zsh", true, true));
-    }
-
-    #[test]
-    fn bashrc_not_active_on_windows_without_powershell_detection() {
-        // Windows + $SHELL=bash but NOT in actual bash session (no BASH_VERSION).
-        // This is the exact scenario from issue #214: Git Bash sets $SHELL globally.
-        crate::test_env::remove_var("BASH_VERSION");
-        assert!(!is_active_shell_impl(
-            "~/.bashrc",
-            "/usr/bin/bash",
-            true,
-            false,
-        ));
-    }
-
-    #[test]
-    fn bashrc_active_on_linux() {
-        assert!(is_active_shell_impl("~/.bashrc", "/bin/bash", false, false));
-        assert!(is_active_shell_impl("~/.bashrc", "", false, false));
     }
 }

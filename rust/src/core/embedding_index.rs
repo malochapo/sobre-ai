@@ -103,13 +103,6 @@ impl EmbeddingBuildOutcome {
 pub fn build_or_update(root: &Path, bm25: &super::bm25_index::BM25Index) -> EmbeddingBuildOutcome {
     #[cfg(feature = "embeddings")]
     {
-        // Respect the config gates so the orchestrator does not force-embed when
-        // the user explicitly opted out.
-        if !crate::core::hybrid_search::HybridConfig::default().dense_enabled {
-            tracing::info!("[embedding_index] build_or_update skipped: search.dense_enabled=false");
-            return EmbeddingBuildOutcome::Skipped;
-        }
-
         // Bootstrap the model if it isn't on disk yet. `build_or_update` only
         // runs for an explicit build request (`index build` / `build-full` /
         // `build-semantic`), so a cold machine should download the model now

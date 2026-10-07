@@ -92,25 +92,11 @@ impl ServerHandler for LeanCtxServer {
                         session.extra_roots.push(other);
                     }
                 }
-            } else if let Some(ref root) = session.project_root {
-                // A previously persisted session may carry a contaminated root
-                // (e.g. HOME from an older build or a client that reported HOME
-                // as its workspace). Drop it unless it is a real, safe project
-                // dir — otherwise PROJECT MEMORY leaks across projects.
-                let root_path = std::path::Path::new(root);
-                let root_has_marker = has_project_marker(root_path);
-                let root_str = root_path.to_string_lossy();
-                let root_suspicious = crate::core::pathutil::is_broad_or_unsafe_root(root_path)
-                    || root_str.contains("/var/folders/")
-                    || root_str.contains("/tmp/")
-                    || root_str.contains("/.lmstudio")
-                    || root_str.contains("\\AppData\\Local\\Temp")
-                    || root_str.contains("\\Temp\\")
-                    || root_str.contains("\\.lmstudio");
-                if root_suspicious && !root_has_marker {
-                    tracing::info!("Dropping suspicious persisted project root: {root}");
-                    session.project_root = None;
-                }
+            } else {
+                // No host signal: never adopt the previous session's root,
+                // which may belong to another project. MCP roots/list or the
+                // cwd decide on the first tool call.
+                session.project_root = None;
             }
             // Allowed paths double as the extra roots of a multi-root
             // workspace, except an open jail ("/") or another broad root.

@@ -84,9 +84,8 @@ pub fn cmd_read(args: &[String]) {
     // #1037: redirect/rewrite hook children pipe `-m full` output into a temp file the
     // host reads back AS the file's content, so a `cached <file> [NL]` cache-hit stub
     // corrupts the read (and round-trips the stub into the real file on the next edit).
-    // The hook env (set by `mark_hook_environment`, inherited by the subprocess) forces
-    // verbatim content on BOTH the daemon (`fresh:true`) and standalone (skip cli_cache)
-    // paths. Direct CLI/MCP reads keep caching.
+    // The redirect passes `--fresh` to force verbatim content (skip cli_cache).
+    // Direct CLI/MCP reads keep caching.
     let force_fresh = should_force_fresh(args, crate::core::runtime_flags::hook_child_enabled());
     // Whether *we* choose the mode (auto): only then do we cap framing to raw.
     // An explicit mode is a deliberate view we return verbatim (#361).
@@ -552,9 +551,7 @@ pub fn cmd_ls(args: &[String]) {
             eprintln!(
                 "lean-ctx ls is a compressed directory tree viewer for AI context, not a drop-in ls replacement."
             );
-            eprintln!(
-                "The shell hook (lean-ctx -t ls {arg} ...) passes flags to system ls transparently.\n"
-            );
+            eprintln!("For the system ls with its flags, run: lean-ctx -c \"ls {arg} ...\"\n");
             eprintln!("Usage: lean-ctx ls [path] [--depth N] [--all] [--no-gitignore]");
             std::process::exit(1);
         } else {

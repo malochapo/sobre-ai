@@ -95,7 +95,7 @@ fn is_safe_scan_root(path: &str) -> bool {
             HOME_WARN.call_once(|| {
                 tracing::warn!(
                     "[graph_index: skipping — cannot index home directory {normalized}.\n  \
-                     Run from inside a project, or set LEAN_CTX_PROJECT_ROOT=/path/to/project]"
+                     Run from inside a project.]"
                 );
             });
             return false;

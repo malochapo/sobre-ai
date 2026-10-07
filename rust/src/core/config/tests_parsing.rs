@@ -63,16 +63,16 @@ mod compression_level_tests {
     }
 
     #[test]
-    fn deserialization_defaults_to_adaptive_lite() {
+    fn deserialization_defaults_to_lite() {
         let cfg: Config = toml::from_str("").unwrap();
-        assert_eq!(cfg.compression_level, None);
+        assert_eq!(cfg.compression_level, 0.3);
         assert_eq!(CompressionLevel::effective(&cfg), CompressionLevel::Lite);
     }
 
     #[test]
     fn deserialization_from_toml() {
         let cfg: Config = toml::from_str("compression_level = 0.5").unwrap();
-        assert_eq!(cfg.compression_level, Some(0.5));
+        assert_eq!(cfg.compression_level, 0.5);
     }
 }
 

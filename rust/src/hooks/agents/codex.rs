@@ -64,11 +64,7 @@ fn install_codex_hook_config(codex_dir: &std::path::Path) -> bool {
 
     // Hybrid mode: ensure MCP server entry exists in config.toml so Codex
     // Desktop/Cloud can reach lean-ctx even without CLI hooks.
-    let mcp_updated = ensure_codex_mcp_server(
-        &config_content,
-        &binary,
-        &super::super::mcp_server_env_pairs(),
-    );
+    let mcp_updated = ensure_codex_mcp_server(&config_content, &binary);
     let hooks_updated =
         ensure_codex_hooks_enabled(mcp_updated.as_deref().unwrap_or(&config_content));
 
@@ -129,24 +125,16 @@ fn ensure_codex_observe_hooks(root: &mut serde_json::Value, observe_cmd: &str) -
     *root != original
 }
 
-/// Idempotent upsert of the `[mcp_servers.lean-ctx]` entry in Codex `config.toml`.
+/// Ensure `[mcp_servers.lean-ctx]` exists in Codex's `config.toml`.
 ///
-/// Uses a format-preserving TOML editor so existing user content/comments and an
-/// orphaned `[mcp_servers.lean-ctx.env]` (issue #189) are normalized into a
-/// single valid section instead of producing a duplicate table header.
-///
-/// `env_pairs` is injected (not read from global state) so the pure
-/// config-rewriting logic is hermetically testable; the caller passes
-/// [`crate::hooks::mcp_server_env_pairs`]. Existing `command`/`args` are left
-/// untouched to respect user customization; env keys are upserted so a stale
-/// install gains `LEAN_CTX_PROJECT_ROOT`/`LEAN_CTX_EXTRA_ROOTS` (#403). Returns
-/// `None` when nothing changed, or when the file is not valid TOML (never
-/// clobbers an unparseable user config).
-fn ensure_codex_mcp_server(
-    config_content: &str,
-    binary: &str,
-    env_pairs: &[(String, String)],
-) -> Option<String> {
+/// Existing `command`/`args` are left untouched to respect user customization.
+/// The entry carries no `env` table: older installs pinned
+/// `LEAN_CTX_PROJECT_ROOT` / `LEAN_CTX_DATA_DIR` there, and the server reads
+/// neither from its environment any more, so a stale table — including an
+/// orphaned `[mcp_servers.lean-ctx.env]` without its parent (issue #189) — is
+/// dropped. Returns `None` when nothing changed, or when the file is not valid
+/// TOML (never clobbers an unparseable user config).
+fn ensure_codex_mcp_server(config_content: &str, binary: &str) -> Option<String> {
     let mut doc = config_content.parse::<toml_edit::DocumentMut>().ok()?;
     let original = doc.to_string();
 
@@ -170,15 +158,7 @@ fn ensure_codex_mcp_server(
         lean_tbl["args"] = toml_edit::value(toml_edit::Array::new());
     }
 
-    let env = lean_tbl["env"].or_insert(toml_edit::table());
-    if let Some(env_tbl) = env.as_table_mut() {
-        for (key, val) in env_pairs {
-            let key = key.as_str();
-            if env_tbl.get(key).and_then(toml_edit::Item::as_str) != Some(val.as_str()) {
-                env_tbl[key] = toml_edit::value(val.as_str());
-            }
-        }
-    }
+    lean_tbl.remove("env");
 
     let updated = doc.to_string();
     (updated != original).then_some(updated)
@@ -197,15 +177,6 @@ mod tests {
         ensure_codex_hooks_enabled, ensure_codex_mcp_server, upsert_lean_ctx_codex_hook_entries,
     };
     use serde_json::json;
-
-    /// Minimal env block (data dir only) for the config-rewrite tests that do
-    /// not exercise project-root/extra-roots propagation.
-    fn data_dir_pairs() -> Vec<(String, String)> {
-        vec![(
-            "LEAN_CTX_DATA_DIR".to_string(),
-            "/Users/user/.lean-ctx".to_string(),
-        )]
-    }
 
     #[test]
     fn upsert_replaces_lean_ctx_hook_but_keeps_custom_hooks() {
@@ -333,8 +304,7 @@ command = \"lean-ctx\"
     #[test]
     fn ensure_mcp_server_adds_section_when_missing() {
         let input = "[features]\ncodex_hooks = true\n";
-        let result = ensure_codex_mcp_server(input, "lean-ctx", &data_dir_pairs())
-            .expect("should add MCP section");
+        let result = ensure_codex_mcp_server(input, "lean-ctx").expect("should add MCP section");
         assert!(result.contains("[mcp_servers.lean-ctx]"));
         assert!(result.contains("command = \"lean-ctx\""));
         assert!(result.contains("args = []"));
@@ -343,12 +313,11 @@ command = \"lean-ctx\"
 
     #[test]
     fn ensure_mcp_server_noop_when_already_complete() {
-        // Parent + args + an env block already carrying every desired key: the
-        // upsert must be a true no-op (no churn on every session start).
-        let input = "[mcp_servers.lean-ctx]\ncommand = \"lean-ctx\"\nargs = []\n\n\
-                     [mcp_servers.lean-ctx.env]\nLEAN_CTX_DATA_DIR = \"/Users/user/.lean-ctx\"\n";
+        // Parent + args already present: the upsert must be a true no-op (no
+        // churn on every session start).
+        let input = "[mcp_servers.lean-ctx]\ncommand = \"lean-ctx\"\nargs = []\n";
         assert!(
-            ensure_codex_mcp_server(input, "lean-ctx", &data_dir_pairs()).is_none(),
+            ensure_codex_mcp_server(input, "lean-ctx").is_none(),
             "should not modify config when MCP section already has all keys"
         );
     }
@@ -356,7 +325,7 @@ command = \"lean-ctx\"
     #[test]
     fn ensure_mcp_server_preserves_existing_sections() {
         let input = "[mcp_servers.other]\ncommand = \"other\"\n";
-        let result = ensure_codex_mcp_server(input, "/usr/bin/lean-ctx", &data_dir_pairs())
+        let result = ensure_codex_mcp_server(input, "/usr/bin/lean-ctx")
             .expect("should add lean-ctx section");
         assert!(result.contains("[mcp_servers.other]"));
         assert!(result.contains("[mcp_servers.lean-ctx]"));
@@ -364,29 +333,18 @@ command = \"lean-ctx\"
     }
 
     #[test]
-    fn ensure_mcp_server_inserts_before_orphaned_env_subtable() {
+    fn ensure_mcp_server_replaces_orphaned_env_subtable() {
         let input = "\
 [mcp_servers.lean-ctx.env]
 LEAN_CTX_DATA_DIR = \"/Users/user/.lean-ctx\"
 ";
-        let result = ensure_codex_mcp_server(input, "/usr/local/bin/lean-ctx", &data_dir_pairs())
-            .expect("should insert parent section before orphaned env");
-        let parent_pos = result
-            .find("[mcp_servers.lean-ctx]")
-            .expect("parent section must exist");
-        let env_pos = result
-            .find("[mcp_servers.lean-ctx.env]")
-            .expect("env sub-table must be preserved");
-        assert!(
-            parent_pos < env_pos,
-            "parent section must come before env sub-table"
-        );
+        let result = ensure_codex_mcp_server(input, "/usr/local/bin/lean-ctx")
+            .expect("should write the parent section");
+        assert!(result.contains("[mcp_servers.lean-ctx]"));
         assert!(result.contains("command = \"/usr/local/bin/lean-ctx\""));
-        assert!(result.contains("LEAN_CTX_DATA_DIR"));
-        assert_eq!(
-            result.matches("[mcp_servers.lean-ctx.env]").count(),
-            1,
-            "must not duplicate the env table (would be invalid TOML)"
+        assert!(
+            !result.contains("[mcp_servers.lean-ctx.env]") && !result.contains("LEAN_CTX_DATA_DIR"),
+            "a stale env pin must be dropped: {result}"
         );
     }
 
@@ -399,21 +357,11 @@ source_type = \"local\"
 [mcp_servers.lean-ctx.env]
 LEAN_CTX_DATA_DIR = \"/Users/user/.lean-ctx\"
 ";
-        let result = ensure_codex_mcp_server(input, "/usr/local/bin/lean-ctx", &data_dir_pairs())
+        let result = ensure_codex_mcp_server(input, "/usr/local/bin/lean-ctx")
             .expect("should fix orphaned config from issue #189");
         assert!(result.contains("[mcp_servers.lean-ctx]\n"));
         assert!(result.contains("command = \"/usr/local/bin/lean-ctx\""));
-        assert!(result.contains("[mcp_servers.lean-ctx.env]"));
-        assert!(result.contains("LEAN_CTX_DATA_DIR"));
-
-        let parent_pos = result.find("[mcp_servers.lean-ctx]\n").unwrap();
-        let env_pos = result.find("[mcp_servers.lean-ctx.env]").unwrap();
-        assert!(parent_pos < env_pos);
-        assert_eq!(
-            result.matches("[mcp_servers.lean-ctx.env]").count(),
-            1,
-            "issue #189 fix must merge into one env table, not duplicate it"
-        );
+        assert!(!result.contains("[mcp_servers.lean-ctx.env]"));
         // Original sibling content must survive the normalization.
         assert!(result.contains("source_type = \"local\""));
     }
@@ -422,8 +370,7 @@ LEAN_CTX_DATA_DIR = \"/Users/user/.lean-ctx\"
     fn ensure_mcp_server_quotes_windows_backslash_paths() {
         let input = "[features]\ncodex_hooks = true\n";
         let win_path = r"C:\Users\Foo\AppData\Roaming\npm\lean-ctx.cmd";
-        let result = ensure_codex_mcp_server(input, win_path, &data_dir_pairs())
-            .expect("should add MCP section");
+        let result = ensure_codex_mcp_server(input, win_path).expect("should add MCP section");
         // Quote style is the TOML editor's concern; what matters is that the
         // backslash path round-trips to exactly the same string and stays valid.
         let doc = result
@@ -442,82 +389,25 @@ LEAN_CTX_DATA_DIR = \"/Users/user/.lean-ctx\"
 [mcp_servers.lean-ctx-other]
 command = \"other\"
 ";
-        let result = ensure_codex_mcp_server(input, "lean-ctx", &data_dir_pairs())
+        let result = ensure_codex_mcp_server(input, "lean-ctx")
             .expect("should add lean-ctx section despite similarly-named section");
         assert!(result.contains("[mcp_servers.lean-ctx]\n"));
         assert!(result.contains("[mcp_servers.lean-ctx-other]"));
     }
 
     #[test]
-    fn ensure_mcp_server_writes_project_and_extra_roots() {
-        // #403: when init captured a project root + sibling worktrees, those
-        // must be propagated into the env block so the long-lived MCP server
-        // resolves explicit paths under every root.
-        let pairs = vec![
-            (
-                "LEAN_CTX_DATA_DIR".to_string(),
-                "/home/u/.lean-ctx".to_string(),
-            ),
-            (
-                "LEAN_CTX_PROJECT_ROOT".to_string(),
-                "/work/main".to_string(),
-            ),
-            (
-                "LEAN_CTX_EXTRA_ROOTS".to_string(),
-                "/work/wt-a:/work/wt-b".to_string(),
-            ),
-        ];
-        let result =
-            ensure_codex_mcp_server("", "lean-ctx", &pairs).expect("fresh config must be created");
-
-        let doc = result
-            .parse::<toml_edit::DocumentMut>()
-            .expect("output must be valid TOML");
-        let env = &doc["mcp_servers"]["lean-ctx"]["env"];
-        assert_eq!(env["LEAN_CTX_PROJECT_ROOT"].as_str(), Some("/work/main"));
-        assert_eq!(
-            env["LEAN_CTX_EXTRA_ROOTS"].as_str(),
-            Some("/work/wt-a:/work/wt-b")
-        );
-        assert_eq!(env["LEAN_CTX_DATA_DIR"].as_str(), Some("/home/u/.lean-ctx"));
-    }
-
-    #[test]
-    fn ensure_mcp_server_upserts_missing_keys_into_existing_env() {
-        // Pre-existing install (only DATA_DIR) must gain the new roots without
-        // duplicating the section, and the operation must be idempotent.
+    fn ensure_mcp_server_drops_stale_project_root_pin() {
+        // Older installs baked LEAN_CTX_PROJECT_ROOT into the entry, pinning
+        // one project for every Codex session. The upsert removes it, once.
         let input = "[mcp_servers.lean-ctx]\ncommand = \"lean-ctx\"\nargs = []\n\n\
-                     [mcp_servers.lean-ctx.env]\nLEAN_CTX_DATA_DIR = \"/home/u/.lean-ctx\"\n";
-        let pairs = vec![
-            (
-                "LEAN_CTX_DATA_DIR".to_string(),
-                "/home/u/.lean-ctx".to_string(),
-            ),
-            (
-                "LEAN_CTX_PROJECT_ROOT".to_string(),
-                "/work/main".to_string(),
-            ),
-        ];
-
-        let result = ensure_codex_mcp_server(input, "lean-ctx", &pairs)
-            .expect("should upsert the missing project root");
-        assert_eq!(
-            result.matches("[mcp_servers.lean-ctx]").count(),
-            1,
-            "must not duplicate the parent section"
-        );
-        let doc = result
-            .parse::<toml_edit::DocumentMut>()
-            .expect("output must be valid TOML");
-        assert_eq!(
-            doc["mcp_servers"]["lean-ctx"]["env"]["LEAN_CTX_PROJECT_ROOT"].as_str(),
-            Some("/work/main")
-        );
-
-        // Second pass over the upserted config is a no-op.
+                     [mcp_servers.lean-ctx.env]\nLEAN_CTX_PROJECT_ROOT = \"/work/main\"\n";
+        let result =
+            ensure_codex_mcp_server(input, "lean-ctx").expect("the stale pin must be removed");
+        assert!(!result.contains("LEAN_CTX_PROJECT_ROOT"), "{result}");
+        assert_eq!(result.matches("[mcp_servers.lean-ctx]").count(), 1);
         assert!(
-            ensure_codex_mcp_server(&result, "lean-ctx", &pairs).is_none(),
-            "upsert must be idempotent"
+            ensure_codex_mcp_server(&result, "lean-ctx").is_none(),
+            "second pass must be a no-op"
         );
     }
 }

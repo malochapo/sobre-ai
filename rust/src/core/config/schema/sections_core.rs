@@ -22,7 +22,7 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
         key(
             "f64",
             serde_json::json!(cfg.compression_level),
-            "Compression intensity 0.0 (none) – 1.0 (densest). Tunes read-mode compression continuously and picks the prose style by band: <0.2 off, <0.4 lite, <0.6 standard, <0.8 max, else raw. Empty = adaptive defaults with the lite prose style",
+            "Compression intensity 0.0 (none) – 1.0 (densest), default 0.3. Picks the prose, shell-output and CRP style by band: <0.2 off, <0.4 lite, <0.6 standard, <0.8 max, else raw. File reads choose their mode per file",
         ),
     );
     root.insert(
@@ -39,14 +39,6 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
             "string[]",
             serde_json::json!(cfg.ignore),
             "Globs kept out of the index and project walks, on top of .gitignore (always respected)",
-        ),
-    );
-    root.insert(
-        "shell_hook".into(),
-        key(
-            "bool",
-            serde_json::json!(cfg.shell_hook),
-            "Install the shell hook that routes common commands through sobre",
         ),
     );
     root.insert(

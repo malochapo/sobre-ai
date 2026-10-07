@@ -46,11 +46,10 @@ the measured state of each.
 5. **A ceiling on size.** The Rust under `rust/src` stays below a fixed line
    budget, so growth has to displace something.
 
-Invariants 1, 3, 4 and 5 hold today: 17 tools, one fixed surface, no network
-request you did not ask for, and about 174,000 lines of production Rust under a
-200,000 ceiling. Invariant 2 holds for the config file itself (14 keys), but a
-few per-project files and environment variables still change behaviour; removing
-them is ongoing work.
+Invariants 1 to 5 hold today: 17 tools, one fixed surface; one config file
+with 13 keys and no per-project files, profiles or behaviour-changing
+environment variables; no network request you did not ask for; and about
+170,000 lines of production Rust under a 200,000 ceiling.
 
 ## Build
 
@@ -76,19 +75,21 @@ your code.
 The binary is still called `lean-ctx`; renaming it is pending.
 
 ```bash
-lean-ctx init            # every detected agent, plus the shell hook
+lean-ctx init            # every detected agent
 lean-ctx init claude     # one agent: claude, codex, copilot, cursor, gemini,
                          # opencode, windsurf or zed
 lean-ctx doctor          # check the install
 lean-ctx uninstall       # remove everything init wrote
 ```
 
-`init` registers the MCP server with the agent, installs its shell hooks where
-the host supports them, and installs the `sobre` skill for agents that load
-skills (Claude Code, Codex, Cursor, Copilot, OpenCode). It writes nothing into
-your own instruction files (`CLAUDE.md`, `AGENTS.md`, `.cursor/rules`, …): the
-agent learns how to use the tools from the MCP server instructions, and from the
-skill when it opens it. Native tools are never denied.
+`init` registers the MCP server with the agent, installs the agent's own hooks
+where the host supports them (they route its shell commands through
+`lean-ctx -c`), and installs the `sobre` skill for agents that load skills
+(Claude Code, Codex, Cursor, Copilot, OpenCode). Everything goes into user-level
+configuration, never into a repository. It writes nothing into your shell rc
+files or your own instruction files (`CLAUDE.md`, `AGENTS.md`, `.cursor/rules`,
+…): the agent learns how to use the tools from the MCP server instructions, and
+from the skill when it opens it. Native tools are never denied.
 
 ## License
 

@@ -151,7 +151,6 @@ fn resolve_dynamic(kind: DynamicKind) -> Vec<Completion> {
     let items: &[&str] = match kind {
         DynamicKind::Agents => AGENT_KEYS,
         DynamicKind::Shells => &["bash", "zsh", "fish", "powershell"],
-        DynamicKind::Modes => &["mcp", "hybrid"],
         DynamicKind::ConfigKeys => &[],
         DynamicKind::TerseLevel => &["off", "lite", "standard", "max"],
     };

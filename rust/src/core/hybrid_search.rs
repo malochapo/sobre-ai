@@ -24,8 +24,7 @@ const RRF_K: f64 = 60.0;
 const DEFAULT_BM25_WEIGHT: f64 = 1.0;
 const DEFAULT_DENSE_WEIGHT: f64 = 1.0;
 
-/// Configuration for hybrid search behavior.
-/// Configurable via `[search]` in `config.toml`.
+/// Hybrid search weights and candidate counts (built-in, not configurable).
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(default)]
 pub struct HybridConfig {
@@ -36,24 +35,10 @@ pub struct HybridConfig {
     /// Weight for SPLADE expansion signal. 0.0 disables SPLADE.
     #[serde(default = "default_splade_weight")]
     pub splade_weight: f64,
-    /// Master switch for the dense (embedding) retrieval path (#686). When
-    /// `false`, the default `hybrid` semantic search skips loading the embedding
-    /// engine and building/persisting `embeddings.json` entirely, and ranks with
-    /// BM25 + graph proximity + reranking (+ SPLADE) only. This is the same
-    /// ranking the pipeline already falls back to when no embeddings are present,
-    /// so results stay coherent while the on-disk vector footprint and per-query
-    /// embed latency disappear. `true` by default (unchanged behavior); an
-    /// explicit `mode=dense` query still forces dense regardless.
-    #[serde(default = "default_dense_enabled")]
-    pub dense_enabled: bool,
 }
 
 fn default_splade_weight() -> f64 {
     0.5
-}
-
-fn default_dense_enabled() -> bool {
-    true
 }
 
 impl Default for HybridConfig {
@@ -64,15 +49,7 @@ impl Default for HybridConfig {
             bm25_candidates: 75,
             dense_candidates: 75,
             splade_weight: 0.5,
-            dense_enabled: true,
         }
-    }
-}
-
-impl HybridConfig {
-    /// Load from the global config, falling back to defaults.
-    pub fn from_config() -> Self {
-        crate::core::hybrid_search::HybridConfig::default()
     }
 }
 

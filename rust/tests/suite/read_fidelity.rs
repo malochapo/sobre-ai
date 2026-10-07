@@ -22,9 +22,6 @@ fn read_output(home: &Path, file: &Path, mode: &str) -> Output {
     Command::new(env!("CARGO_BIN_EXE_lean-ctx"))
         .args(["read", file.to_str().unwrap(), "-m", mode, "--fresh"])
         .env("LEAN_CTX_ACTIVE", "1")
-        // Suppress daemon auto-start: exercise the CLI fallback path and never
-        // talk to a developer's already-running (possibly stale) daemon build.
-        .env("LEAN_CTX_HOOK_CHILD", "1")
         .env("LEAN_CTX_DATA_DIR", &data)
         .env("HOME", home)
         .output()

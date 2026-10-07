@@ -27,43 +27,6 @@ fn refresh_sets_reference_only_hook_capable_agents() {
     }
 }
 
-#[test]
-fn mcp_env_pairs_propagate_project_root_from_env() {
-    // #403: init must bake the captured project scope into the MCP server
-    // entry, otherwise the long-lived server loses it.
-    let _iso = crate::core::data_dir::isolated_data_dir();
-    crate::test_env::set_var("LEAN_CTX_PROJECT_ROOT", "/work/main");
-
-    let pairs = mcp_server_env_pairs();
-    let get = |k: &str| pairs.iter().find(|(p, _)| p == k).map(|(_, v)| v.as_str());
-    assert!(
-        get("LEAN_CTX_DATA_DIR").is_none(),
-        "data dir is auto-detected at runtime, never pinned into the config (GH #408)"
-    );
-    assert_eq!(get("LEAN_CTX_PROJECT_ROOT"), Some("/work/main"));
-
-    // The JSON view mirrors the pairs for the JSON-config agents.
-    let json = mcp_server_env_json();
-    assert_eq!(json["LEAN_CTX_PROJECT_ROOT"].as_str(), Some("/work/main"));
-
-    crate::test_env::remove_var("LEAN_CTX_PROJECT_ROOT");
-}
-
-#[test]
-fn mcp_env_pairs_omit_roots_when_unset() {
-    // No project context configured anywhere ⇒ no env vars are emitted: the
-    // data dir is auto-detected (never pinned, GH #408) and we never write
-    // empty/placeholder root keys into agent configs.
-    let _iso = crate::core::data_dir::isolated_data_dir();
-    crate::test_env::remove_var("LEAN_CTX_PROJECT_ROOT");
-
-    let pairs = mcp_server_env_pairs();
-    let keys: Vec<&str> = pairs.iter().map(|(k, _)| k.as_str()).collect();
-    assert!(!keys.contains(&"LEAN_CTX_DATA_DIR"));
-    assert!(!keys.contains(&"LEAN_CTX_PROJECT_ROOT"));
-    assert!(!keys.contains(&"LEAN_CTX_EXTRA_ROOTS"));
-}
-
 // ── #708: portable hook-binary override for multi-machine synced configs ──
 
 #[test]

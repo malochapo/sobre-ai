@@ -188,17 +188,8 @@ pub fn run_io(params: &PatchParams, _last_mode: &str) -> (String, CacheEffect) {
         return (reason, CacheEffect::None);
     }
 
-    // Code-health gate: warn on (or block) cognitive-complexity drift before write.
-    let health_notice = match crate::core::code_health::gate::evaluate(&pre.text, &new_content, ext)
-    {
-        crate::core::code_health::gate::GateOutcome::Block(reason) => {
-            return (
-                format!("ERROR: code-health gate: {reason}"),
-                CacheEffect::None,
-            );
-        }
-        crate::core::code_health::gate::GateOutcome::Allow(notice) => notice,
-    };
+    // Code-health gate: an advisory notice on cognitive-complexity drift.
+    let health_notice = crate::core::code_health::gate::evaluate(&pre.text, &new_content, ext);
 
     // TOCTOU guard: confirm the file did not change between read and write.
     // #960: a point-in-time check, not a held lock — see

@@ -242,7 +242,7 @@ pub(crate) fn ram_guardian_outcome() -> Outcome {
         crate::core::memory_guard::PressureLevel::Normal => String::new(),
         level => {
             format!(
-                "  {YELLOW}pressure={level:?} — reduce memory_profile, provision RAM, or enforce an OS cgroup/container limit{RST}"
+                "  {YELLOW}pressure={level:?} — provision RAM or enforce an OS cgroup/container limit{RST}"
             )
         }
     };

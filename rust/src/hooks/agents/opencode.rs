@@ -13,8 +13,7 @@ pub(crate) fn install_opencode_hook() {
     let desired = serde_json::json!({
         "type": "local",
         "command": [&binary],
-        "enabled": true,
-        "environment": super::super::mcp_server_env_json()
+        "enabled": true
     });
 
     let file_existed = config_path.exists();

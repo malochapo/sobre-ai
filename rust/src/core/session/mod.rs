@@ -279,9 +279,9 @@ mod tests {
 
     #[test]
     fn compaction_snapshot_includes_compression_config_when_enabled() {
+        let iso = crate::core::data_dir::isolated_data_dir();
+        std::fs::write(iso.path().join("config.toml"), "compression_level = 0.5\n").unwrap();
         let mut session = SessionState::new();
-        session.compression_level = "standard".to_string();
-        session.terse_mode = true;
         session.set_task("x", None);
         let snapshot = session.build_compaction_snapshot();
         assert!(snapshot.contains("<config compression=\"standard\" />"));
@@ -289,9 +289,9 @@ mod tests {
 
     #[test]
     fn resume_block_prefixes_compression_hint_when_enabled() {
-        let mut session = SessionState::new();
-        session.compression_level = "lite".to_string();
-        session.terse_mode = true;
+        // The default compression_level (0.3) is the lite band.
+        let _iso = crate::core::data_dir::isolated_data_dir();
+        let session = SessionState::new();
         let block = session.build_resume_block();
         assert!(block.contains("[COMPRESSION: lite]"));
     }

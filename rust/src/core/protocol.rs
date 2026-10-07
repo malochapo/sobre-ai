@@ -79,14 +79,8 @@ fn is_project_root_marker(dir: &Path) -> bool {
 }
 
 /// Returns the project root for `file_path`, falling back to cwd if none found.
-/// Checks LEAN_CTX_PROJECT_ROOT env var and config.toml `project_root` first.
 /// Logs a warning when the fallback is a broad directory (home, root).
 pub fn detect_project_root_or_cwd(file_path: &str) -> String {
-    if let Ok(env_root) = std::env::var("LEAN_CTX_PROJECT_ROOT")
-        && !env_root.is_empty()
-    {
-        return env_root;
-    }
     if let Some(root) = detect_project_root(file_path) {
         return root;
     }
@@ -114,8 +108,7 @@ pub fn detect_project_root_or_cwd(file_path: &str) -> String {
         WARN_ONCE.call_once(|| {
             tracing::warn!(
                 "[protocol: no project detected — current directory is {fallback} which is not a project root.\n  \
-                 To fix: run from inside a project (with .git, Cargo.toml, package.json, etc.)\n  \
-                 Or set: export LEAN_CTX_PROJECT_ROOT=/path/to/your/project]"
+                 To fix: run from inside a project (with .git, Cargo.toml, package.json, etc.)]"
             );
         });
     }

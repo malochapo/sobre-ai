@@ -51,7 +51,10 @@ The goal of the fork is **subtraction**, not addition. Categories removed:
 | The downstream packages, language SDKs and editor extensions | A distribution surface two maintainers can support |
 | Marketing, blog and email material | Not source code |
 | Multiple tool-visibility modes, tool profiles, per-client quirks, `ctx_context`, `ctx_execute` | Replaced by a single fixed surface of 17 tools |
-| 150+ configuration keys, profiles and environment overrides | One config file with 14 keys |
+| 150+ configuration keys, profiles and environment overrides | One config file with 13 keys |
+| Per-project settings files (`.lean-ctx.json`, `.lean-ctx-artifacts.json`, `.lean-ctx-id`), `multi-repo.toml`, user output filters, behaviour-changing environment variables, settings kept in the session | Behaviour comes from `config.toml` alone |
+| The shell hook: rc-file aliases with `track` / `compress` / `off` modes, the `.zshenv` / `.bashenv` redirect, agent aliases, `env.sh`, `lean-ctx -t` | Agent shell commands go through the agent's own hook; sobre never edits shell files |
+| Per-repository install (`init --project`, Copilot / VS Code configs inside the repo) | Installed once, at user level |
 | Rules files written into agent instruction files, hook modes that deny native tools, the `harden`, `rules` and `export-rules` commands | Guidance travels in one place: the MCP server instructions, plus an on-demand skill |
 | The output archive and its full-text index | `ctx_expand(id)` is the one way back to output that compression cut |
 | The contributor licence agreement | Contributions are under Apache-2.0, like the rest of the repository |

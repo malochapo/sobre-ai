@@ -20,9 +20,9 @@ use std::process::Command;
 /// already owned (compression handled by the parent lean-ctx).
 pub(crate) const WRAP_MARKER: &str = "LEAN_CTX_WRAPPED";
 
-/// Legacy shell-hook re-entry guard. Still stamped on children so the shell
-/// hook (which tests `-z "$LEAN_CTX_ACTIVE"`) does not re-fire inside a wrapped
-/// command, but it no longer gates compression on its own.
+/// Legacy shell-hook re-entry guard. Still stamped on children so a shell hook
+/// left by an older install (it tests `-z "$LEAN_CTX_ACTIVE"`) does not
+/// re-fire inside a wrapped command; it no longer gates compression.
 pub(crate) const ACTIVE_MARKER: &str = "LEAN_CTX_ACTIVE";
 
 /// True when a parent lean-ctx already owns this command tree. Nested explicit

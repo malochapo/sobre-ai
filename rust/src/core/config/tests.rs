@@ -68,7 +68,7 @@ mod persist_global_tests {
             Some(4444),
             "customized value must survive"
         );
-        assert_eq!(reloaded.compression_level, Some(0.5));
+        assert_eq!(reloaded.compression_level, 0.5);
         assert_eq!(reloaded.proxy.enabled, Some(true));
     }
 

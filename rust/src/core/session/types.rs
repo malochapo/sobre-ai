@@ -24,18 +24,14 @@ pub struct SessionState {
     #[serde(default)]
     pub active_structured_intent: Option<crate::core::intent_engine::StructuredIntent>,
     pub stats: SessionStats,
-    /// When true, resume / compaction prompts encourage concise model replies.
-    #[serde(default)]
-    pub terse_mode: bool,
-    /// Unified compression level label (off/lite/standard/max).
-    #[serde(default)]
-    pub compression_level: String,
     /// Watermark: timestamp of last auto-consolidation to prevent duplicate knowledge entries.
     #[serde(default)]
     pub last_consolidate_ts: Option<DateTime<Utc>>,
-    /// Extra project roots for multi-root workspaces.
-    /// Populated from config `extra_roots` and/or MCP `roots/list`.
-    #[serde(default)]
+    /// Extra project roots for multi-root workspaces: config `allow_paths`,
+    /// the host's workspace folders and MCP `roots/list`. Rebuilt every time
+    /// the server starts and never persisted, so removing a path from the
+    /// config takes it away from a resumed session too.
+    #[serde(skip)]
     pub extra_roots: Vec<String>,
     /// ACE delta playbook (#541): incremental, stable-ID checkpoint entries —
     /// grown by ctx_compress, never rewritten (anti context-collapse).

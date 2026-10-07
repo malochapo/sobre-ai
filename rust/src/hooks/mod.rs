@@ -116,7 +116,7 @@ fn refresh_agent_hooks(agent: &str, home: &std::path::Path) {
         }
         "codex" => install_codex_hook(),
         "windsurf" => install_windsurf_hooks(home),
-        "copilot" => install_copilot_hook(true),
+        "copilot" => install_copilot_hook(),
         _ => {}
     }
 }
@@ -360,7 +360,7 @@ exit 0
 /// server entry, the `sobre` skill where the agent supports skills and, where
 /// the host supports them, the shell/read hooks. The same for every agent —
 /// there is no mode to choose.
-pub fn install_agent_hook(agent: &str, global: bool) {
+pub fn install_agent_hook(agent: &str) {
     let home = crate::core::home::resolve_home_dir().unwrap_or_default();
     match crate::setup::skill::install(agent, &home) {
         Ok(Some(path)) if !mcp_server_quiet_mode() => {
@@ -375,7 +375,7 @@ pub fn install_agent_hook(agent: &str, global: bool) {
         "gemini" => install_gemini_hook(),
         "codex" => install_codex_hook(),
         "windsurf" => install_windsurf(),
-        "copilot" | "vscode" => install_copilot_hook(global),
+        "copilot" | "vscode" => install_copilot_hook(),
         "opencode" => install_opencode_hook(),
         "zed" => {
             let zed_path = crate::core::editor_registry::zed_settings_path(&home);
@@ -390,13 +390,6 @@ pub fn install_agent_hook(agent: &str, global: bool) {
             );
             std::process::exit(1);
         }
-    }
-}
-
-pub fn install_agent_project_hooks(agent: &str, cwd: &std::path::Path) {
-    match agent {
-        "claude" | "claude-code" => agents::install_claude_project_hooks(cwd),
-        _ => {}
     }
 }
 
@@ -439,46 +432,10 @@ fn make_executable(path: &PathBuf) {
 #[cfg(not(unix))]
 fn make_executable(_path: &PathBuf) {}
 
-/// Env key/value pairs for the lean-ctx MCP server entry written into agent
-/// configs (Codex TOML + the JSON agents).
-///
-/// Pins no directory: the server resolves its config/data/state/cache dirs
-/// the same way the CLI does (GH #408). Emits `LEAN_CTX_PROJECT_ROOT` when known (process env first,
-/// then config). Without it, a long-lived MCP server spawned by the agent loses
-/// the project scope captured at `init` (#403). Extra roots come from
-/// config.toml, which the server reads itself. Single source of truth so every
-/// agent installer stays consistent.
-pub(crate) fn mcp_server_env_pairs() -> Vec<(String, String)> {
-    let mut pairs = Vec::new();
-
-    let project_root = std::env::var("LEAN_CTX_PROJECT_ROOT")
-        .ok()
-        .filter(|v| !v.trim().is_empty());
-    if let Some(root) = project_root {
-        pairs.push(("LEAN_CTX_PROJECT_ROOT".to_string(), root));
-    }
-
-    pairs
-}
-
-/// The MCP server env block as a JSON object, for the JSON-config agents.
-pub(crate) fn mcp_server_env_json() -> serde_json::Value {
-    let map: serde_json::Map<String, serde_json::Value> = mcp_server_env_pairs()
-        .into_iter()
-        .map(|(k, v)| (k, serde_json::Value::String(v)))
-        .collect();
-    serde_json::Value::Object(map)
-}
-
+/// The MCP server entry for the JSON-config agents. It carries no `env`: the
+/// server resolves its directories and project root itself.
 fn full_server_entry(binary: &str) -> serde_json::Value {
-    // No LEAN_CTX_FULL_TOOLS here: forcing the full toolset (69+ schemas,
-    // ~15k tokens of tool definitions resent every turn) made lean-ctx one of
-    // the biggest token consumers in users' sessions (GitHub #385). The server
-    // defaults to the core toolset + ctx_call/ctx_expand for on-demand access.
-    serde_json::json!({
-        "command": binary,
-        "env": mcp_server_env_json()
-    })
+    serde_json::json!({ "command": binary })
 }
 
 pub(crate) fn install_mcp_json_agent(

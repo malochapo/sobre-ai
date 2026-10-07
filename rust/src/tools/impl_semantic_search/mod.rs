@@ -20,7 +20,6 @@ pub(crate) fn handle(
     path_glob: Option<&str>,
     mode: Option<&str>,
     workspace: Option<bool>,
-    artifacts: Option<bool>,
 ) -> String {
     let (root_buf, subdir) = match resolve_search_root(path) {
         Ok(v) => v,
@@ -46,11 +45,7 @@ pub(crate) fn handle(
     let compact = crp_mode.is_tdd();
     let mode = mode.unwrap_or("bm25").to_lowercase();
     let workspace = workspace.unwrap_or(false);
-    let artifacts = artifacts.unwrap_or(false);
 
-    if artifacts {
-        return artifacts_search(query, root, top_k, compact, &filter, workspace);
-    }
     if workspace {
         return workspace_search(query, root, top_k, compact, &filter, &mode);
     }
@@ -174,42 +169,6 @@ pub(crate) fn handle_reindex(path: &str) -> String {
         "Reindexed {}: {files} files, {chunks} chunks",
         root.display()
     )
-}
-
-#[must_use]
-pub(crate) fn handle_reindex_artifacts(path: &str, workspace: bool) -> String {
-    let (root_buf, _subdir) = match resolve_search_root(path) {
-        Ok(v) => v,
-        Err(e) => return format!("ERR: {e}"),
-    };
-    let root = root_buf.as_path();
-
-    let mut roots: Vec<std::path::PathBuf> = vec![root.to_path_buf()];
-    let mut warnings: Vec<String> = Vec::new();
-
-    if workspace {
-        let linked = crate::core::workspace_config::load_linked_projects(root);
-        warnings.extend(linked.warnings);
-        roots.extend(linked.roots);
-    }
-
-    let mut total_files = 0usize;
-    let mut total_chunks = 0usize;
-    for r in roots {
-        let (idx, w) = crate::core::artifact_index::rebuild_from_scratch(&r);
-        warnings.extend(w);
-        total_files += idx.files.len();
-        total_chunks += idx.doc_count;
-    }
-
-    if warnings.is_empty() {
-        format!("Reindexed artifacts: {total_files} files, {total_chunks} chunks")
-    } else {
-        format!(
-            "Reindexed artifacts: {total_files} files, {total_chunks} chunks ({} warning(s))",
-            warnings.len()
-        )
-    }
 }
 
 /// Find chunks semantically related to a given file location.

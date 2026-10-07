@@ -73,9 +73,6 @@ fn full_cycle_never_writes_into_readonly_config_dir() {
         .env("LEAN_CTX_STATE_DIR", &state)
         .env("LEAN_CTX_CACHE_DIR", &cache)
         .env("HOME", root.path())
-        // Suppress daemon auto-start: exercise the local-only path, never talk to
-        // a developer's already-running daemon.
-        .env("LEAN_CTX_HOOK_CHILD", "1")
         // Forwardable session id → captured into the state dir (proof writes
         // land there). A credential-shaped var is also set and must NOT be
         // captured: forwarding API keys was the exfiltration risk fixed in

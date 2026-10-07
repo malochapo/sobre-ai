@@ -8,7 +8,6 @@
 pub enum DynamicKind {
     Agents,
     Shells,
-    Modes,
     ConfigKeys,
     TerseLevel,
 }
@@ -39,22 +38,13 @@ pub static COMMAND_TREE: &[CommandNode] = &[
         aliases: &[],
         description: "Initialize lean-ctx for an agent",
         subcommands: &[],
-        flags: &[
-            FlagSpec {
-                long: "--agent",
-                short: Some('a'),
-                description: "Agent name",
-                takes_value: true,
-                value_kind: Some(DynamicKind::Agents),
-            },
-            FlagSpec {
-                long: "--mode",
-                short: Some('m'),
-                description: "Integration mode",
-                takes_value: true,
-                value_kind: Some(DynamicKind::Modes),
-            },
-        ],
+        flags: &[FlagSpec {
+            long: "--agent",
+            short: Some('a'),
+            description: "Agent name",
+            takes_value: true,
+            value_kind: Some(DynamicKind::Agents),
+        }],
         positional: None,
         hidden: false,
     },
@@ -548,15 +538,6 @@ pub static COMMAND_TREE: &[CommandNode] = &[
         name: "ghost",
         aliases: &[],
         description: "Ghost context injection",
-        subcommands: &[],
-        flags: &[],
-        positional: None,
-        hidden: false,
-    },
-    CommandNode {
-        name: "filter",
-        aliases: &[],
-        description: "Filter context",
         subcommands: &[],
         flags: &[],
         positional: None,

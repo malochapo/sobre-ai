@@ -69,15 +69,7 @@ pub(crate) fn hybrid_search_mode(
 ) -> String {
     #[cfg(feature = "embeddings")]
     {
-        let cfg = HybridConfig::from_config();
-
-        // Dense disabled (#686): skip the embedding engine + index build/persist
-        // and rank with BM25 + graph proximity + reranking (+ SPLADE) only — the
-        // exact fallback the pipeline uses when embeddings are absent, so results
-        // stay coherent while the vector footprint and embed latency disappear.
-        if !cfg.dense_enabled {
-            return bm25_graph_search(query, root, index, top_k, compact, filter, &cfg);
-        }
+        let cfg = HybridConfig::default();
 
         let (engine, mut embed_idx) = match load_engine_and_index(root) {
             Ok(v) => v,
@@ -87,7 +79,7 @@ pub(crate) fn hybrid_search_mode(
         // #512: cold-start guard. Never embed a large corpus inline under the
         // request watchdog (it produces a runaway the watchdog abandons but
         // cannot cancel). Degrade to the BM25+graph path — the same coherent
-        // fallback used when dense is disabled — and tell the user to build the
+        // fallback used when embeddings are absent — and tell the user to build the
         // dense index once, out of band. Incremental embeds (few changed chunks
         // on a warm index) stay inline and fast.
         if let Some(pending) = cold_start_embed_guard(&embed_idx, index) {

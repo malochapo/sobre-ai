@@ -64,7 +64,7 @@ pub(super) fn remove_shell_hook(home: &Path, dry_run: bool) -> bool {
     if dry_run {
         println!("  Would remove shell hook dropin files (.zshenv.d, .bashenv.d)");
     } else {
-        crate::shell_hook::uninstall_all(false);
+        remove_legacy_env_hooks(home);
     }
 
     let rc_files: Vec<PathBuf> = vec![
@@ -117,6 +117,7 @@ pub(super) fn remove_shell_hook(home: &Path, dry_run: bool) -> bool {
         "shell-hook.bash",
         "shell-hook.fish",
         "shell-hook.ps1",
+        "env.sh",
     ];
     let lc_dir = crate::core::paths::config_dir().unwrap_or_else(|_| home.join(".config/lean-ctx"));
     for f in &hook_files {
@@ -134,6 +135,38 @@ pub(super) fn remove_shell_hook(home: &Path, dry_run: bool) -> bool {
     }
 
     removed
+}
+
+/// Blocks and drop-ins that older versions wrote into `~/.zshenv`,
+/// `~/.bashenv`, `~/.zshrc` and `~/.bashrc` (the non-interactive redirect and
+/// the `claude`/`codex`/`gemini` aliases). sobre no longer edits shell files;
+/// uninstall still removes what an earlier install left.
+fn remove_legacy_env_hooks(home: &Path) {
+    const HOOK: (&str, &str) = (
+        "# >>> lean-ctx shell hook >>>",
+        "# <<< lean-ctx shell hook <<<",
+    );
+    const ALIASES: (&str, &str) = (
+        "# >>> lean-ctx agent aliases >>>",
+        "# <<< lean-ctx agent aliases <<<",
+    );
+    let slots: [(&str, &str, &str, (&str, &str)); 4] = [
+        (".zshenv", ".zshenv.d", "00-lean-ctx.zsh", HOOK),
+        (".bashenv", ".bashenv.d", "00-lean-ctx.sh", HOOK),
+        (".zshrc", ".zshrc.d", "00-lean-ctx.zsh", ALIASES),
+        (".bashrc", ".bashrc.d", "00-lean-ctx.sh", ALIASES),
+    ];
+    for (rc, dropin_dir, dropin_file, (start, end)) in slots {
+        let label = format!("legacy lean-ctx block in ~/{rc}");
+        crate::marked_block::remove_from_file(&home.join(rc), start, end, false, &label);
+        let dropin = home.join(dropin_dir).join(dropin_file);
+        if dropin.exists() {
+            match fs::remove_file(&dropin) {
+                Ok(()) => println!("  Removed {label} from {}", dropin.display()),
+                Err(e) => tracing::error!("Cannot remove {}: {e}", dropin.display()),
+            }
+        }
+    }
 }
 
 fn remove_source_lines(content: &str) -> String {

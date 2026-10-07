@@ -15,7 +15,7 @@ pub fn cmd_compression(args: &[String]) {
             .or_else(|| CompressionLevel::from_str_label(a).map(CompressionLevel::value))
     });
     if let Some(value) = value {
-        if let Err(e) = Config::update_global(|cfg| cfg.compression_level = Some(value)) {
+        if let Err(e) = Config::update_global(|cfg| cfg.compression_level = value) {
             eprintln!("Error saving config: {e}");
             std::process::exit(1);
         }
@@ -29,10 +29,11 @@ pub fn cmd_compression(args: &[String]) {
     } else {
         let cfg = Config::load();
         let effective = CompressionLevel::effective(&cfg);
-        match cfg.compression_level {
-            Some(v) => println!("Compression level: {v:.2} ({})", effective.label()),
-            None => println!("Compression level: adaptive ({} prose)", effective.label()),
-        }
+        println!(
+            "Compression level: {:.2} ({})",
+            cfg.compression_level,
+            effective.label()
+        );
         println!();
         println!("Usage: lean-ctx terse <0.0-1.0|off|lite|standard|max|raw>");
         println!("       lean-ctx terse <...>  (alias)");

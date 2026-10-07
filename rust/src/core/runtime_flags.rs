@@ -65,7 +65,6 @@ pub fn compress_enabled() -> bool {
 
 pub fn quiet_enabled() -> bool {
     QUIET.load(Ordering::Relaxed)
-        || matches!(std::env::var("LEAN_CTX_QUIET"), Ok(value) if value.trim() == "1")
 }
 
 pub fn mcp_server_enabled() -> bool {
@@ -73,7 +72,7 @@ pub fn mcp_server_enabled() -> bool {
 }
 
 pub fn hook_child_enabled() -> bool {
-    HOOK_CHILD.load(Ordering::Relaxed) || std::env::var("LEAN_CTX_HOOK_CHILD").is_ok()
+    HOOK_CHILD.load(Ordering::Relaxed)
 }
 
 pub fn allow_paths() -> Vec<PathBuf> {

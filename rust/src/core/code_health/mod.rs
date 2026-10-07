@@ -34,29 +34,6 @@ use serde::Serialize;
 /// Cognitive-complexity threshold above which a function is a hotspot.
 pub const COGNITIVE_THRESHOLD: u32 = 15;
 
-/// Edit-gate behavior when an edit increases cognitive complexity.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum GateMode {
-    /// Never emit a code-health gate notice.
-    Off,
-    /// Append an advisory `[CODE HEALTH]` notice (default).
-    #[default]
-    Warn,
-    /// Refuse edits that push a clean function over the threshold.
-    Block,
-}
-
-impl GateMode {
-    /// Parse a config string; unknown values fall back to [`GateMode::Warn`].
-    pub fn parse(value: &str) -> Self {
-        match value.trim().to_ascii_lowercase().as_str() {
-            "off" | "false" | "none" | "disabled" => GateMode::Off,
-            "block" | "hard" | "error" => GateMode::Block,
-            _ => GateMode::Warn,
-        }
-    }
-}
-
 /// Combined per-file health: cognitive scores plus naming findings. This is the
 /// single entry point used by the edit-gate, read annotations, and the
 /// `ctx_quality` tool.

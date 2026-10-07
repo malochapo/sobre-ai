@@ -39,15 +39,12 @@ impl AggressivenessProfile {
     }
 }
 
-/// Resolves the effective aggressiveness from (in priority order) an explicit
-/// per-call value and the config field.
-/// Returns `None` when nothing is set so callers keep their current defaults.
+/// The effective read aggressiveness: the per-call value, clamped, or `None`
+/// so the read keeps its automatic per-file mode. `compression_level` in the
+/// config does not force read modes; it picks the prose style.
 #[must_use]
 pub fn effective(explicit: Option<f64>) -> Option<f64> {
-    if let Some(a) = explicit {
-        return Some(a.clamp(0.0, 1.0));
-    }
-    crate::core::config::Config::load().compression_level
+    explicit.map(|a| a.clamp(0.0, 1.0))
 }
 
 /// Stable cache-key fragment for an aggressiveness setting.

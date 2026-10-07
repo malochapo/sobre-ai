@@ -5,37 +5,23 @@ use super::super::{
     to_bash_compatible_path, write_file,
 };
 
-pub(crate) fn install_copilot_hook(global: bool) {
+pub(crate) fn install_copilot_hook() {
     let binary = resolve_binary_path();
 
-    if global {
-        // Copilot CLI loads global MCP servers from `~/.copilot/mcp-config.json`,
-        // independent of any project/repo config. Only register lean-ctx there
-        // for global installs (the repo-scoped `.github/mcp.json` covers local).
-        write_copilot_cli_home_mcp();
+    // Copilot CLI loads its MCP servers from `~/.copilot/mcp-config.json`, and
+    // VS Code from its User `mcp.json`. sobre installs at user level only —
+    // never into a repository.
+    write_copilot_cli_home_mcp();
 
-        let mcp_path = crate::core::editor_registry::vscode_mcp_path();
-        if mcp_path.as_os_str() == "/nonexistent" {
-            if !mcp_server_quiet_mode() {
-                eprintln!("  \x1b[2mVS Code not found — skipping global Copilot config\x1b[0m");
-            }
-            return;
+    let mcp_path = crate::core::editor_registry::vscode_mcp_path();
+    if mcp_path.as_os_str() == "/nonexistent" {
+        if !mcp_server_quiet_mode() {
+            eprintln!("  \x1b[2mVS Code not found — skipping VS Code Copilot config\x1b[0m");
         }
-        write_vscode_mcp_file(&mcp_path, &binary, "global VS Code User MCP");
-        install_copilot_pretooluse_hook(true);
-    } else {
-        let vscode_dir = PathBuf::from(".vscode");
-        let _ = std::fs::create_dir_all(&vscode_dir);
-        let mcp_path = vscode_dir.join("mcp.json");
-        write_vscode_mcp_file(&mcp_path, &binary, ".vscode/mcp.json");
-
-        let github_dir = PathBuf::from(".github");
-        let _ = std::fs::create_dir_all(&github_dir);
-        let copilot_mcp = github_dir.join("mcp.json");
-        write_copilot_cli_mcp_file(&copilot_mcp, &binary, ".github/mcp.json");
-
-        install_copilot_pretooluse_hook(false);
+        return;
     }
+    write_vscode_mcp_file(&mcp_path, &binary, "global VS Code User MCP");
+    install_copilot_pretooluse_hook();
 }
 
 /// Register lean-ctx in the Copilot CLI's global MCP config at
@@ -114,7 +100,7 @@ fn copilot_user_hooks_dir() -> Option<PathBuf> {
     crate::core::home::resolve_home_dir().map(|h| h.join(".copilot").join("hooks"))
 }
 
-fn install_copilot_pretooluse_hook(global: bool) {
+fn install_copilot_pretooluse_hook() {
     let binary = resolve_hook_command_binary();
 
     let hook_config = serde_json::json!({
@@ -130,17 +116,11 @@ fn install_copilot_pretooluse_hook(global: bool) {
         }
     });
 
-    let hook_path = if global {
-        let Some(dir) = copilot_user_hooks_dir() else {
-            return;
-        };
-        let _ = std::fs::create_dir_all(&dir);
-        dir.join("hooks.json")
-    } else {
-        let dir = PathBuf::from(".github").join("hooks");
-        let _ = std::fs::create_dir_all(&dir);
-        dir.join("hooks.json")
+    let Some(dir) = copilot_user_hooks_dir() else {
+        return;
     };
+    let _ = std::fs::create_dir_all(&dir);
+    let hook_path = dir.join("hooks.json");
 
     let needs_write = if hook_path.exists() {
         let content = std::fs::read_to_string(&hook_path).unwrap_or_default();
@@ -197,24 +177,13 @@ fn server_entry(binary: &str) -> serde_json::Value {
     serde_json::json!({
         "type": "stdio",
         "command": binary,
-        "args": [],
-        "env": super::super::mcp_server_env_json()
+        "args": []
     })
 }
 
 /// VS Code uses `"servers"` as the top-level key (not `"mcpServers"`).
 fn write_vscode_mcp_file(mcp_path: &PathBuf, binary: &str, label: &str) {
     write_mcp_config(mcp_path, binary, label, "servers", server_entry(binary));
-}
-
-/// Copilot CLI uses `"mcpServers"` as the top-level key in `.github/mcp.json`.
-fn write_copilot_cli_mcp_file(mcp_path: &PathBuf, binary: &str, label: &str) {
-    let entry = serde_json::json!({
-        "command": binary,
-        "args": [],
-        "env": super::super::mcp_server_env_json()
-    });
-    write_mcp_config(mcp_path, binary, label, "mcpServers", entry);
 }
 
 fn write_mcp_config(

@@ -4,7 +4,7 @@ use super::engine::Completion;
 
 /// Generate a zsh completion script that delegates to `lean-ctx __complete`.
 pub(super) fn zsh_script() -> String {
-    r#"#compdef lean-ctx lctx _lc _lc_compress
+    r#"#compdef lean-ctx
 
 _lean-ctx() {
     local -a completions
@@ -16,9 +16,6 @@ _lean-ctx() {
 }
 
 compdef _lean-ctx lean-ctx 2>/dev/null
-compdef _lean-ctx lctx 2>/dev/null
-compdef _lean-ctx _lc 2>/dev/null
-compdef _lean-ctx _lc_compress 2>/dev/null
 "#
     .to_string()
 }
@@ -32,9 +29,6 @@ pub(super) fn bash_script() -> String {
 }
 
 complete -F _lean_ctx_complete lean-ctx
-complete -F _lean_ctx_complete lctx
-complete -F _lean_ctx_complete _lc
-complete -F _lean_ctx_complete _lc_compress
 "#
     .to_string()
 }
@@ -50,9 +44,6 @@ pub(super) fn fish_script() -> String {
 end
 
 complete -c lean-ctx -f -a '(__lean_ctx_complete)'
-complete -c lctx -f -a '(__lean_ctx_complete)'
-complete -c _lc -f -a '(__lean_ctx_complete)'
-complete -c _lc_compress -f -a '(__lean_ctx_complete)'
 "
     .to_string()
 }

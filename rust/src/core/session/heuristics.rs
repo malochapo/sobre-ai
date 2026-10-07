@@ -23,22 +23,6 @@ pub(crate) fn normalize_loaded_session(mut session: SessionState) -> SessionStat
         }
     }
 
-    if session.compression_level.is_empty() {
-        if session.terse_mode {
-            session.compression_level = "lite".to_string();
-        } else {
-            // Do NOT call Config::load() here — this function is called during
-            // Config::load() → find_project_root() → SessionState::load_latest(),
-            // so it would re-enter Config::load() and deadlock on its OnceLock (#301).
-            session.compression_level = "off".to_string();
-        }
-    } else if !session.terse_mode {
-        let level =
-            crate::core::config::CompressionLevel::from_str_label(&session.compression_level)
-                .unwrap_or_default();
-        session.terse_mode = level.is_active();
-    }
-
     session
 }
 

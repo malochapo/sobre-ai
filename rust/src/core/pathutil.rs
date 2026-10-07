@@ -368,9 +368,11 @@ pub fn is_under_tcc_protected_dir(path: &Path) -> bool {
 pub fn process_is_tcc_standalone() -> bool {
     #[cfg(target_os = "macos")]
     {
-        // Deliberately uncached: getppid is a cheap syscall, the env override
-        // must stay testable within one process, and a daemonizing fork could
-        // change the answer after startup.
+        // Deliberately uncached: getppid is a cheap syscall, the test override
+        // must stay switchable within one process, and a daemonizing fork could
+        // change the answer after startup. The env override exists for tests
+        // only; the shipped binary never reads it.
+        #[cfg(test)]
         if let Ok(v) = std::env::var("LEAN_CTX_TCC_STANDALONE") {
             match v.trim() {
                 "1" | "true" => return true,

@@ -240,7 +240,7 @@ pub(super) fn exec_limits(command: &str) -> (usize, std::time::Duration) {
     (max_bytes, shell_timeout(command))
 }
 
-/// Resolve the timeout `ctx_shell` / the shell hook grants a command.
+/// Resolve the timeout `ctx_shell` / `lean-ctx -c` grants a command.
 ///
 /// Heavy builds/tests (cargo install/nextest/build, npm ci, git commit/push, …)
 /// get the long ceiling instead of being killed at the 2-minute default, keeping
@@ -380,80 +380,11 @@ fn is_heavy_command(command: &str) -> bool {
     !final_cmd.is_empty() && matches_heavy(final_cmd)
 }
 
-/// Execute a command from pre-split argv without going through `sh -c`.
-/// Used by `-t` mode when the shell hook passes `"$@"` — arguments are
-/// already correctly split by the user's shell, so re-serializing them
-/// into a string and re-parsing via `sh -c` would risk mangling complex
-/// quoted arguments (em-dashes, `#`, nested quotes, etc.).
-pub fn exec_argv(args: &[String]) -> i32 {
-    if args.is_empty() {
-        return 127;
-    }
-
-    // Quote-safe join used only for the gate/policy *checks*; execution
-    // below still consumes the pre-split argv verbatim (the whole reason `-t`
-    // avoids `sh -c`). Joining first means a single argv element such as
-    // `git status; rm -rf /` is checked as ONE quoted token, never re-parsed.
-    let joined = super::platform::join_command(args);
-
-    // #595: unwrap a host command wrapper (eval + cwd snapshot) before any
-    // checks so the real command — not the wrapper — is gated and run. The `-t`
-    // path cannot exec a compound argv, so route the rebuild through `exec`.
-    if let Some(u) = super::agent_wrapper::unwrap_agent_wrapper(&joined) {
-        return exec(&u.rebuild());
-    }
-
-    // The `-t` track path is the agent's default shell hook
-    // (`_lc() { lean-ctx -t "$@" }`), so it MUST enforce the same gate
-    // boundary as `-c` (see `exec`). Previously it skipped the check entirely,
-    // letting every aliased multi-arg invocation (`_lc git …`) bypass the
-    // restriction that `lean-ctx -c` enforces (GH security audit, finding 1).
-    if let Some(code) = gate_cli_command(&joined) {
-        return code;
-    }
-
-    if super::reentry::should_pass_through() {
-        return exec_direct(args);
-    }
-
-    let cfg = config::Config::load();
-    let policy = super::output_policy::classify(&joined, &cfg.passthrough_commands);
-
-    if policy.is_protected() {
-        let code = exec_direct(args);
-        crate::core::tool_lifecycle::record_shell_command(0, 0);
-        return code;
-    }
-
-    let code = exec_direct(args);
-    crate::core::tool_lifecycle::record_shell_command(0, 0);
-    code
-}
-
-fn exec_direct(args: &[String]) -> i32 {
-    let mut cmd = Command::new(&args[0]);
-    cmd.args(&args[1..])
-        .stdin(Stdio::inherit())
-        .stdout(Stdio::inherit())
-        .stderr(Stdio::inherit());
-    super::reentry::mark_child(&mut cmd);
-    super::platform::apply_utf8_locale(&mut cmd);
-    let status = cmd.status();
-
-    match status {
-        Ok(s) => s.code().unwrap_or(1),
-        Err(e) => {
-            tracing::error!("lean-ctx: failed to execute: {e}");
-            127
-        }
-    }
-}
-
 /// Decides whether a gate violation on the CLI path blocks (exit 126) or
 /// only warns.
 ///
 /// Enforced when:
-/// - hook-child mode (`LEAN_CTX_HOOK_CHILD`): lean-ctx is the agent's
+/// - hook-child mode (this process runs a hook): lean-ctx is the agent's
 ///   command-interception channel and must not be weaker than the MCP path, or
 /// - stderr is not a TTY: a non-interactive caller is an agent or script, and
 ///   agent-driven `lean-ctx -c` must enforce the same boundary as ctx_shell.
@@ -509,9 +440,8 @@ fn stdout_is_regular_file() -> bool {
     }
 }
 
-/// Shared shell gate for the CLI entrypoints — `-c` (via [`exec`]) and
-/// `-t` (via [`exec_argv`]). Both must apply the SAME boundary so the track path
-/// (the default shell hook) cannot be weaker than the compress path.
+/// Shell gate for the CLI entrypoint `-c` (via [`exec`]), the same boundary
+/// as `ctx_shell`.
 ///
 /// Returns `Some(126)` when the command is blocked and the caller must return
 /// that exit code; `None` when execution may proceed (allowed, or warn-only for
@@ -600,7 +530,7 @@ pub fn exec(command: &str) -> i32 {
         return code;
     }
 
-    // Compression is forced (`-c`, e.g. the agent shell hook).
+    // Compression is forced (`-c`, e.g. from an agent's command hook).
     // It must STILL never alter bytes destined for a file: a redirect
     // (`cmd > out`, `cmd >> out`) means the output is captured as data, not read by
     // a human or agent. Writing the compressed digest there would silently
@@ -812,62 +742,6 @@ mod exec_tests {
     fn combine_streams_single_stream_is_unchanged() {
         assert_eq!(super::combine_streams("only stdout", "", 1), "only stdout");
         assert_eq!(super::combine_streams("", "only stderr", 1), "only stderr");
-    }
-
-    #[test]
-    fn exec_direct_runs_true() {
-        let code = super::exec_direct(&["true".to_string()]);
-        assert_eq!(code, 0);
-    }
-
-    #[test]
-    fn exec_direct_runs_false() {
-        let code = super::exec_direct(&["false".to_string()]);
-        assert_ne!(code, 0);
-    }
-
-    #[test]
-    fn exec_direct_preserves_args_with_special_chars() {
-        let code = super::exec_direct(&[
-            "echo".to_string(),
-            "hello world".to_string(),
-            "it's here".to_string(),
-            "a \"quoted\" thing".to_string(),
-        ]);
-        assert_eq!(code, 0);
-    }
-
-    #[test]
-    fn exec_direct_nonexistent_returns_127() {
-        let code = super::exec_direct(&["__nonexistent_binary_12345__".to_string()]);
-        assert_eq!(code, 127);
-    }
-
-    #[test]
-    fn exec_argv_empty_returns_127() {
-        let code = super::exec_argv(&[]);
-        assert_eq!(code, 127);
-    }
-
-    #[test]
-    fn exec_argv_runs_simple_command() {
-        let _lock = crate::core::data_dir::test_env_lock();
-        crate::test_env::remove_var("LEAN_CTX_HOOK_CHILD");
-        let code = super::exec_argv(&["true".to_string()]);
-        assert_eq!(code, 0);
-    }
-
-    #[test]
-    fn exec_argv_allows_ordinary_command() {
-        let _lock = crate::core::data_dir::test_env_lock();
-        crate::test_env::remove_var("LEAN_CTX_ACTIVE");
-        crate::test_env::set_var("LEAN_CTX_HOOK_CHILD", "1");
-
-        let code = super::exec_argv(&["true".to_string()]);
-
-        crate::test_env::remove_var("LEAN_CTX_HOOK_CHILD");
-
-        assert_eq!(code, 0, "an ordinary command must run on the -t track path");
     }
 
     #[test]
