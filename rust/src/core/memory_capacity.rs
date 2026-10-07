@@ -207,7 +207,7 @@ mod tests {
         with_temp_data_dir(|| {
             let mut items: Vec<Item> = (0..20).map(|rank| Item { rank }).collect();
             let archived = reclaim_store(
-                MemoryStore::Procedures,
+                MemoryStore::Patterns,
                 Some("p"),
                 &mut items,
                 10,

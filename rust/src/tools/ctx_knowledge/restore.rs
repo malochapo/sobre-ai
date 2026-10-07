@@ -1,6 +1,6 @@
 //! Explicit cross-store restore from the lossless memory archive (#995 Phase 6).
 //!
-//! Every capacity reclaim (facts, history, procedures, patterns) archives the
+//! Every capacity reclaim (facts, history, patterns) archives the
 //! evicted tail under `memory/archive/<store>/` before dropping it. This module
 //! reads those archives back and merges the matching items into the live stores —
 //! the user-facing "undo" for an over-eager reclaim, surfaced as
@@ -12,7 +12,6 @@
 
 use crate::core::knowledge::ProjectKnowledge;
 use crate::core::memory_archive::{ArchiveConfig, MemoryStore, reachable_archives, restore_items};
-use crate::core::procedural_memory::ProceduralStore;
 
 /// Default cap on how many items a single restore call rehydrates, across all
 /// requested stores. Generous enough to undo a normal reclaim, bounded so a
@@ -220,48 +219,7 @@ fn restore_patterns(
     }
 }
 
-/// Restore archived procedures (dedup by id) into the procedural store.
-fn restore_procedures(
-    hash: &str,
-    cfg: &ArchiveConfig,
-    query: Option<&str>,
-    remaining: &mut usize,
-) -> Result<StoreRestore, String> {
-    let cands = collect::<crate::core::procedural_memory::Procedure, _>(
-        MemoryStore::Procedures,
-        Some(hash),
-        cfg,
-        query,
-        |p| format!("{} {}", p.name, p.description),
-    );
-    let matched = cands.len();
-    let mut store = ProceduralStore::load(hash).unwrap_or_else(|| ProceduralStore::new(hash));
-    let mut restored = 0;
-    for p in cands {
-        if *remaining == 0 {
-            break;
-        }
-        if store.procedures.iter().any(|e| e.id == p.id) {
-            continue;
-        }
-        store.procedures.push(p);
-        restored += 1;
-        *remaining -= 1;
-    }
-    if restored > 0 {
-        store
-            .save()
-            .map_err(|e| format!("Procedure restore failed: {e}"))?;
-    }
-    Ok(StoreRestore {
-        store: MemoryStore::Procedures,
-        matched,
-        restored,
-    })
-}
-
-/// Restore archived items into the live stores. Facts/history/patterns share one
-/// locked knowledge write; procedures persist to their own store.
+/// Restore archived items into the live stores, in one locked knowledge write.
 pub(crate) fn run_restore(
     project_root: &str,
     opts: &RestoreOptions,
@@ -271,13 +229,13 @@ pub(crate) fn run_restore(
     let want = |s: MemoryStore| opts.stores.contains(&s);
 
     let mut per_store: Vec<StoreRestore> = Vec::new();
-    let mut remaining = opts.limit;
+    let remaining = opts.limit;
 
     let knowledge_wanted =
         want(MemoryStore::Facts) || want(MemoryStore::History) || want(MemoryStore::Patterns);
 
     if knowledge_wanted {
-        let (_k, (results, rem)) = ProjectKnowledge::mutate_locked(project_root, |knowledge| {
+        let (_k, (results, _rem)) = ProjectKnowledge::mutate_locked(project_root, |knowledge| {
             let hash = knowledge.project_hash.clone();
             let mut local = Vec::new();
             let mut rem = remaining;
@@ -305,17 +263,6 @@ pub(crate) fn run_restore(
             (local, rem)
         })?;
         per_store.extend(results);
-        remaining = rem;
-    }
-
-    if want(MemoryStore::Procedures) && remaining > 0 {
-        let hash = ProjectKnowledge::new(project_root).project_hash;
-        per_store.push(restore_procedures(
-            &hash,
-            &cfg,
-            query.as_deref(),
-            &mut remaining,
-        )?);
     }
 
     Ok(RestoreReport {
@@ -362,7 +309,6 @@ mod tests {
     use crate::core::knowledge::ProjectKnowledge;
     use crate::core::memory_archive::archive_items;
     use crate::core::memory_policy::MemoryPolicy;
-    use crate::core::procedural_memory::Procedure;
     use chrono::Utc;
 
     /// Sandbox the data dir and hand the closure a fresh project root inside it.
@@ -396,22 +342,6 @@ mod tests {
         .unwrap();
         k.facts.clear();
         k.save().unwrap();
-    }
-
-    fn make_proc(id: &str) -> Procedure {
-        Procedure {
-            id: id.into(),
-            name: format!("proc {id}"),
-            description: "restore test procedure".into(),
-            steps: Vec::new(),
-            activation_keywords: Vec::new(),
-            confidence: 0.8,
-            times_used: 1,
-            times_succeeded: 1,
-            last_used: Utc::now(),
-            project_specific: true,
-            created_at: Utc::now(),
-        }
     }
 
     #[test]
@@ -545,30 +475,6 @@ mod tests {
                 format_restore_report(&report),
                 format_restore_report(&report)
             );
-        });
-    }
-
-    #[test]
-    fn restore_procedures_round_trip_is_idempotent() {
-        with_sandbox(|root| {
-            let hash = ProjectKnowledge::new(&root).project_hash;
-            archive_items(
-                MemoryStore::Procedures,
-                Some(&hash),
-                &[make_proc("p1"), make_proc("p2")],
-                &ArchiveConfig::default(),
-            )
-            .unwrap();
-
-            let opts = RestoreOptions::new(Some(MemoryStore::Procedures), None, 50);
-            let report = run_restore(&root, &opts).unwrap();
-            assert_eq!(report.total_restored(), 2);
-
-            let store = ProceduralStore::load(&hash).unwrap();
-            assert_eq!(store.procedures.len(), 2);
-
-            let again = run_restore(&root, &opts).unwrap();
-            assert_eq!(again.total_restored(), 0);
         });
     }
 

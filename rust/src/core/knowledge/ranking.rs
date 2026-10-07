@@ -1,6 +1,6 @@
 use chrono::Utc;
 
-use super::types::{JudgedPair, KnowledgeFact};
+use super::types::KnowledgeFact;
 
 pub(super) fn confidence_stars(confidence: f32) -> &'static str {
     if confidence >= 0.95 {
@@ -161,7 +161,6 @@ pub fn find_cross_key_similar(
     new_key: &str,
     new_value: &str,
     all_facts: &[KnowledgeFact],
-    judged_pairs: &[JudgedPair],
     limit: usize,
 ) -> Vec<SimilarFact> {
     let composite_key = format!("{new_category}/{new_key}");
@@ -173,14 +172,6 @@ pub fn find_cross_key_similar(
         }
         let other_key = format!("{}/{}", f.category, f.key);
         if other_key == composite_key {
-            continue;
-        }
-
-        let already_judged = judged_pairs.iter().any(|jp| {
-            (jp.key_a == composite_key && jp.key_b == other_key)
-                || (jp.key_a == other_key && jp.key_b == composite_key)
-        });
-        if already_judged {
             continue;
         }
 

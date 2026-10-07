@@ -147,7 +147,6 @@ fn session_resume_action() {
     let mut session = make_session_with_data();
     let result = lean_ctx::tools::ctx_session::handle(
         &mut session,
-        &[],
         "resume",
         None,
         None,

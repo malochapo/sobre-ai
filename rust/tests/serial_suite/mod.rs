@@ -22,4 +22,3 @@ mod proxy_stale_env_scenarios;
 mod savings_verification;
 mod terse_agent_tests;
 mod ticket_fixes_scenarios;
-mod wiring_memory_persistence;

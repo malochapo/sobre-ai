@@ -113,14 +113,7 @@ pub(crate) fn handle_remember(
     let similar = if merged {
         Vec::new()
     } else {
-        crate::core::knowledge::find_cross_key_similar(
-            cat,
-            k,
-            v,
-            &knowledge.facts,
-            &knowledge.judged_pairs,
-            3,
-        )
+        crate::core::knowledge::find_cross_key_similar(cat, k, v, &knowledge.facts, 3)
     };
     if !similar.is_empty() {
         result.push_str(&format!("\n\nSIMILAR FACTS ({} found):", similar.len()));
@@ -324,19 +317,14 @@ pub(crate) fn handle_recall(
             if rehydrated {
                 let (facts2, total2) = knowledge.recall_by_category_for_output(cat, limit);
                 if !facts2.is_empty() && total2 > 0 {
-                    let out2 = format_facts_with_annotations(
-                        &facts2,
-                        total2,
-                        Some(cat),
-                        &knowledge.judged_pairs,
-                    );
+                    let out2 = format_facts_with_annotations(&facts2, total2, Some(cat));
                     save_knowledge_deferred(knowledge, project_root);
                     return out2;
                 }
             }
             return format!("No facts in category '{cat}'.");
         }
-        let out = format_facts_with_annotations(&facts, total, Some(cat), &knowledge.judged_pairs);
+        let out = format_facts_with_annotations(&facts, total, Some(cat));
         save_knowledge_deferred(knowledge, project_root);
         return out;
     }
@@ -420,19 +408,14 @@ pub(crate) fn handle_recall(
             if rehydrated {
                 let (facts2, total2) = knowledge.recall_for_output(q, limit);
                 if !facts2.is_empty() && total2 > 0 {
-                    let out2 = format_facts_with_annotations(
-                        &facts2,
-                        total2,
-                        None,
-                        &knowledge.judged_pairs,
-                    );
+                    let out2 = format_facts_with_annotations(&facts2, total2, None);
                     save_knowledge_deferred(knowledge, project_root);
                     return out2;
                 }
             }
             return format!("No facts matching '{q}'.");
         }
-        let out = format_facts_with_annotations(&facts, total, None, &knowledge.judged_pairs);
+        let out = format_facts_with_annotations(&facts, total, None);
         save_knowledge_deferred(knowledge, project_root);
         return out;
     }

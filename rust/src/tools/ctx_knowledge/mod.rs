@@ -3,7 +3,6 @@ use chrono::Utc;
 #[cfg(feature = "embeddings")]
 use crate::core::embeddings::EmbeddingEngine;
 
-use crate::core::consolidation_engine::ConsolidateOptions;
 use crate::core::knowledge::ProjectKnowledge;
 use crate::core::memory_policy::MemoryPolicy;
 use crate::core::session::SessionState;
@@ -80,7 +79,6 @@ pub fn handle(
         "remove" => handle_remove(project_root, category, key),
         "export" => handle_export(project_root),
         "consolidate" => handle_consolidate(project_root),
-        "consolidate_preview" => handle_consolidate_preview(project_root),
         "restore" => handle_restore(project_root, category, query, None),
         "timeline" => handle_timeline(project_root, category),
         "rooms" => handle_rooms(project_root),
@@ -89,13 +87,8 @@ pub fn handle(
         "embeddings_status" => handle_embeddings_status(project_root),
         "embeddings_reset" => handle_embeddings_reset(project_root),
         "embeddings_reindex" => handle_embeddings_reindex(project_root),
-        "judge" => handle_judge(project_root, category, key, value, query),
-        "cognition_loop" => handle_cognition_loop(project_root),
-        "bridge_publish" => handle_bridge_publish(project_root, session_id),
-        "bridge_pull" => handle_bridge_pull(project_root, session_id),
-        "bridge_status" => handle_bridge_status(project_root),
         _ => format!(
-            "Unknown action: {action}. Use: policy, remember, recall, pattern, feedback, judge, relate, unrelate, relations, relations_diagram, status, health, lifecycle_report, remove, export, consolidate, consolidate_preview, restore, timeline, rooms, search, wakeup, embeddings_status, embeddings_reset, embeddings_reindex, cognition_loop, bridge_publish, bridge_pull, bridge_status"
+            "Unknown action: {action}. Use: policy, remember, recall, pattern, feedback, relate, unrelate, relations, relations_diagram, status, health, lifecycle_report, remove, export, consolidate, restore, timeline, rooms, search, wakeup, embeddings_status, embeddings_reset, embeddings_reindex"
         ),
     }
 }
@@ -187,109 +180,6 @@ fn handle_feedback(
     )
 }
 
-fn handle_judge(
-    project_root: &str,
-    category: Option<&str>,
-    key: Option<&str>,
-    value: Option<&str>,
-    query: Option<&str>,
-) -> String {
-    let source = match (category, key) {
-        (Some(cat), Some(k)) => format!("{cat}/{k}"),
-        _ => {
-            if let Some(k) = key.or(category) {
-                if k.contains('/') {
-                    k.to_string()
-                } else {
-                    return "Error: judge requires key as 'category/key' (source fact)".to_string();
-                }
-            } else {
-                return "Error: judge requires category+key (source fact) and value (target 'category/key')"
-                    .to_string();
-            }
-        }
-    };
-
-    let Some(target) = value else {
-        return "Error: judge requires value as target 'category/key'".to_string();
-    };
-    let target = target.trim().to_string();
-    if !target.contains('/') {
-        return "Error: target must be 'category/key' format".to_string();
-    }
-
-    let verdict = query.unwrap_or("compatible").trim().to_lowercase();
-    if !matches!(verdict.as_str(), "supersedes" | "compatible" | "unrelated") {
-        return format!("Error: verdict must be supersedes|compatible|unrelated, got '{verdict}'");
-    }
-
-    // Read-modify-write under the cross-process lock (#326/#594).
-    let result = ProjectKnowledge::mutate_locked(project_root, |knowledge| {
-        let source_exists = {
-            let parts: Vec<&str> = source.splitn(2, '/').collect();
-            parts.len() == 2
-                && knowledge
-                    .facts
-                    .iter()
-                    .any(|f| f.category == parts[0] && f.key == parts[1] && f.is_current())
-        };
-        if !source_exists {
-            return Err(format!("Error: no current fact found for '{source}'"));
-        }
-
-        let target_parts: Vec<&str> = target.splitn(2, '/').collect();
-        if target_parts.len() != 2 {
-            return Err(format!("Error: invalid target format '{target}'"));
-        }
-        let (tcat, tkey) = (target_parts[0], target_parts[1]);
-
-        let target_exists = knowledge
-            .facts
-            .iter()
-            .any(|f| f.category == tcat && f.key == tkey && f.is_current());
-        if !target_exists {
-            return Err(format!("Error: no current fact found for '{target}'"));
-        }
-
-        if verdict == "supersedes" {
-            let now = Utc::now();
-            if let Some(tf) = knowledge
-                .facts
-                .iter_mut()
-                .find(|f| f.category == tcat && f.key == tkey && f.is_current())
-            {
-                tf.valid_until = Some(now);
-                tf.valid_from = tf.valid_from.or(Some(tf.created_at));
-            }
-        }
-
-        knowledge
-            .judged_pairs
-            .push(crate::core::knowledge::JudgedPair {
-                key_a: source.clone(),
-                key_b: target.clone(),
-                verdict: verdict.clone(),
-                judged_at: Utc::now(),
-            });
-        Ok(())
-    });
-
-    match result {
-        Ok((_, Ok(()))) => {}
-        Ok((_, Err(msg))) => return msg,
-        Err(e) => return format!("Error: judge save failed: {e}"),
-    }
-
-    let action_desc = match verdict.as_str() {
-        "supersedes" => format!("{source} supersedes {target} (target archived)"),
-        "compatible" => format!("{source} ↔ {target} (compatible, suppressed from future similar)"),
-        "unrelated" => format!("{source} ≠ {target} (unrelated, suppressed from future similar)"),
-        _ => unreachable!(),
-    };
-
-    format!("Judged: {action_desc}")
-}
-
 fn handle_pattern(
     project_root: &str,
     pattern_type: Option<&str>,
@@ -350,6 +240,7 @@ fn handle_status(project_root: &str) -> String {
 /// the next enforcement action for every memory layer. Read-only.
 fn handle_lifecycle_report(project_root: &str) -> String {
     let policy = crate::core::memory_policy::MemoryPolicy::default();
+    #[cfg(feature = "embeddings")]
     let hash = crate::core::project_hash::hash_project_root(project_root);
 
     let mut out = String::from("=== Memory Lifecycle Report ===\n");
@@ -380,28 +271,6 @@ fn handle_lifecycle_report(project_root: &str) -> String {
         archives.len()
     ));
 
-    // Episodic layer (session episodes).
-    {
-        let store = crate::core::episodic_memory::EpisodicStore::load_or_create(&hash);
-        let cap = policy.episodic.max_episodes;
-        out.push_str(&format!(
-            "episodic    {} episode(s) (cap {cap}, {} actions/episode max)\n",
-            store.episodes.len(),
-            policy.episodic.max_actions_per_episode,
-        ));
-    }
-
-    // Procedural layer (learned action sequences).
-    {
-        let store = crate::core::procedural_memory::ProceduralStore::load_or_create(&hash);
-        out.push_str(&format!(
-            "procedural  {} procedure(s) (cap {}, learned at >={} repetitions)\n",
-            store.procedures.len(),
-            policy.procedural.max_procedures,
-            policy.procedural.min_repetitions,
-        ));
-    }
-
     // Embeddings layer (semantic index over knowledge facts).
     #[cfg(feature = "embeddings")]
     {
@@ -415,7 +284,7 @@ fn handle_lifecycle_report(project_root: &str) -> String {
     out.push_str("embeddings  (feature disabled in this build)\n");
 
     out.push_str(
-        "\nLayer boundaries: session = working memory (now) | knowledge/episodic/procedural = long-term (ETL via consolidate) | providers = external (read-through)\n",
+        "\nLayer boundaries: session = working memory (now) | knowledge = long-term (ETL via consolidate) | providers = external (read-through)\n",
     );
     out
 }
@@ -745,17 +614,6 @@ fn handle_consolidate(project_root: &str) -> String {
     }
 }
 
-/// Dry-run consolidate: preview imports + reclaim with zero writes (#995).
-fn handle_consolidate_preview(project_root: &str) -> String {
-    match consolidate_project_knowledge_with(
-        project_root,
-        &ConsolidateOptions::manual().into_dry_run(),
-    ) {
-        Ok(report) => format_consolidation_report(&report),
-        Err(e) => e,
-    }
-}
-
 /// Explicit cross-store restore from archive (#995 Phase 6). `store` selects a
 /// single store (all when `None`); `query` filters by substring; `limit` caps
 /// the total restored (default [`DEFAULT_RESTORE_LIMIT`]).
@@ -769,7 +627,7 @@ fn handle_restore(
         Some(s) => match crate::core::memory_archive::MemoryStore::parse(s) {
             Some(ms) => Some(ms),
             None => {
-                return format!("Unknown store: {s}. Use: facts, history, procedures, patterns");
+                return format!("Unknown store: {s}. Use: facts, history, patterns");
             }
         },
         None => None,
@@ -876,83 +734,6 @@ fn handle_rooms(project_root: &str) -> String {
         out.push_str(&format!("  [{cat}] {count} fact(s)\n"));
     }
     out
-}
-
-fn handle_cognition_loop(project_root: &str) -> String {
-    let report = crate::core::cognition_loop::run_cognition_loop(
-        project_root,
-        crate::core::cognition_loop::MAX_STEPS,
-    );
-    format!("{report}")
-}
-
-fn handle_bridge_publish(project_root: &str, session_id: &str) -> String {
-    let knowledge = ProjectKnowledge::load_or_create(project_root);
-    let mut bridge =
-        crate::core::knowledge_bridge::KnowledgeBridge::load_or_create(&knowledge.project_hash);
-    let count = bridge.publish(session_id, &knowledge.facts);
-    match bridge.save() {
-        Ok(()) => format!(
-            "Published {count} fact(s) to bridge (total: {}, agent: {session_id})",
-            bridge.shared_facts.len()
-        ),
-        Err(e) => format!("Published {count} fact(s) but save failed: {e}"),
-    }
-}
-
-fn handle_bridge_pull(project_root: &str, session_id: &str) -> String {
-    let knowledge = ProjectKnowledge::load_or_create(project_root);
-    let bridge =
-        crate::core::knowledge_bridge::KnowledgeBridge::load_or_create(&knowledge.project_hash);
-    let entries = bridge.pull(session_id);
-    if entries.is_empty() {
-        return "No facts available from other agents.".to_string();
-    }
-
-    let policy = crate::core::memory_policy::MemoryPolicy::default();
-
-    let mut target = knowledge;
-    let mut imported = 0u32;
-    for entry in &entries {
-        let fact = crate::core::knowledge_bridge::KnowledgeBridge::entry_to_fact(entry);
-        let existing = target
-            .facts
-            .iter()
-            .any(|f| f.is_current() && f.category == fact.category && f.key == fact.key);
-        if !existing {
-            target.remember(
-                &fact.category,
-                &fact.key,
-                &fact.value,
-                session_id,
-                fact.confidence,
-                &policy,
-            );
-            imported += 1;
-        }
-    }
-
-    if imported == 0 {
-        return format!(
-            "Bridge has {} fact(s) from other agents, but all already exist locally.",
-            entries.len()
-        );
-    }
-
-    match target.save() {
-        Ok(()) => format!(
-            "Pulled {imported}/{} fact(s) from bridge into local knowledge.",
-            entries.len()
-        ),
-        Err(e) => format!("Pulled {imported} fact(s) but save failed: {e}"),
-    }
-}
-
-fn handle_bridge_status(project_root: &str) -> String {
-    let knowledge = ProjectKnowledge::load_or_create(project_root);
-    let bridge =
-        crate::core::knowledge_bridge::KnowledgeBridge::load_or_create(&knowledge.project_hash);
-    bridge.summary()
 }
 
 fn handle_wakeup(project_root: &str) -> String {

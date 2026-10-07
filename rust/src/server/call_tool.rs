@@ -175,13 +175,6 @@ impl LeanCtxServer {
         let pre_compression = result_text.clone();
         result_text = post_process::compress_terse(result_text, name, args, &config, is_raw_shell);
 
-        // Snapshot BEFORE any decoration (auto-context prefix, throttle/budget
-        // warnings, hints): auto-findings must parse the clean tool output, or
-        // the injected "--- AUTO CONTEXT ---" header itself becomes a junk
-        // finding ("Read ---") that pollutes the session, the knowledge store,
-        // and every subsequent wakeup briefing (#658).
-        let findings_source = result_text.clone();
-
         let verify_cfg = crate::core::output_verification::VerificationConfig::default();
 
         if !is_raw_shell {
@@ -236,16 +229,6 @@ impl LeanCtxServer {
             });
         }
 
-        let finding_path_hint = helpers::get_str(args, "path");
-        if let Some(finding) = crate::core::auto_findings::extract(
-            name,
-            &findings_source,
-            finding_path_hint.as_deref(),
-        ) {
-            let mut session = self.session.write().await;
-            session.add_finding(finding.file.as_deref(), None, &finding.summary);
-        }
-
         {
             let tool_name = name.to_string();
             let summary = result_text.lines().next().unwrap_or("").to_string();
@@ -296,19 +279,9 @@ impl LeanCtxServer {
         // original/saved/mode and the measured handler duration. The previous
         // zero-filled append here overwrote every row with `orig=0 saved=0 mode=-`.
 
-        // The only place that advances `call_count`, which the
-        // every-100-calls maintenance below reads.
+        // The only place that advances `call_count`.
         if !skip_checkpoint {
             self.increment_call_count();
-        }
-
-        let current_count = self.call_count.load(std::sync::atomic::Ordering::Relaxed);
-        if current_count > 0 && current_count.is_multiple_of(100) {
-            // Self-managing memory: opportunistically consolidate knowledge in the
-            // background (time-gated + single-flight inside `maybe_run`).
-            if let Some(root) = self.session.read().await.project_root.clone() {
-                crate::core::cognition_scheduler::maybe_run(&root);
-            }
         }
 
         // #990: a machine-readable invocation (e.g. ctx_outline format=json) must

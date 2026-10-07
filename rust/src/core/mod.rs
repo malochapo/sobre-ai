@@ -42,7 +42,6 @@ pub mod compression {
 // ---------------------------------------------------------------------------
 // Domain: Memory
 // ---------------------------------------------------------------------------
-pub mod episodic_memory;
 pub mod interrupt;
 pub mod memory_archive;
 pub mod memory_boundary;
@@ -51,16 +50,13 @@ pub mod memory_guard;
 pub mod memory_lifecycle;
 pub mod memory_policy;
 pub mod memory_salience;
-pub mod procedural_memory;
 pub mod prospective_memory;
 
 /// Convenience re-export: all memory-related modules.
 pub mod memory {
-    pub use super::episodic_memory;
     pub use super::memory_boundary;
     pub use super::memory_lifecycle;
     pub use super::memory_policy;
-    pub use super::procedural_memory;
     pub use super::prospective_memory;
 }
 
@@ -117,10 +113,7 @@ pub mod context {
 // ---------------------------------------------------------------------------
 // Domain: Knowledge
 // ---------------------------------------------------------------------------
-pub mod cognition_loop;
-pub mod cognition_scheduler;
 pub mod knowledge;
-pub mod knowledge_bridge;
 // Without `embeddings` the engine still compiles these modules — their
 // entry points are internally cfg-gated and fall back — but their helpers
 // go uncalled. That is honest unused code, not dead code, so it is silenced
@@ -132,9 +125,7 @@ pub mod knowledge_relations;
 
 /// Convenience re-export: all knowledge-related modules.
 pub mod knowledge_domain {
-    pub use super::cognition_loop;
     pub use super::knowledge;
-    pub use super::knowledge_bridge;
     pub use super::knowledge_embedding;
     pub use super::knowledge_relations;
 }

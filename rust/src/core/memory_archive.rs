@@ -1,6 +1,6 @@
 //! Multi-store, lossless memory archive (#995 Phase 1).
 //!
-//! Every memory store — facts, history, procedures, patterns — archives the
+//! Every memory store — facts, history, patterns — archives the
 //! items it evicts here *before* dropping them, so capacity management is never
 //! lossy and anything reclaimed can be restored. This is the single archive
 //! subsystem behind [`crate::core::memory_capacity`] and the recall-miss
@@ -26,12 +26,11 @@ const DEFAULT_MAX_ARCHIVE_FILES: usize = 16;
 
 /// Which memory store an archive belongs to. Drives the on-disk path only — the
 /// archive is generic over the item type, so this stays decoupled from the
-/// concrete fact/insight/procedure/pattern structs.
+/// concrete fact/insight/pattern structs.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MemoryStore {
     Facts,
     History,
-    Procedures,
     Patterns,
 }
 
@@ -40,7 +39,6 @@ impl MemoryStore {
         match self {
             MemoryStore::Facts => "facts",
             MemoryStore::History => "history",
-            MemoryStore::Procedures => "procedures",
             MemoryStore::Patterns => "patterns",
         }
     }
@@ -49,18 +47,16 @@ impl MemoryStore {
         match s.trim().to_lowercase().as_str() {
             "facts" | "fact" => Some(MemoryStore::Facts),
             "history" | "insights" => Some(MemoryStore::History),
-            "procedures" | "procedure" | "procs" => Some(MemoryStore::Procedures),
             "patterns" | "pattern" => Some(MemoryStore::Patterns),
             _ => None,
         }
     }
 
     /// All stores, for cross-store iteration (restore, reporting).
-    pub fn all() -> [MemoryStore; 4] {
+    pub fn all() -> [MemoryStore; 3] {
         [
             MemoryStore::Facts,
             MemoryStore::History,
-            MemoryStore::Procedures,
             MemoryStore::Patterns,
         ]
     }

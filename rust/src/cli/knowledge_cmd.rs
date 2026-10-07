@@ -482,7 +482,7 @@ fn cmd_restore(args: &[String], project_root: &str) {
     let store = match store.as_deref() {
         Some(s) => {
             let Some(ms) = crate::core::memory_archive::MemoryStore::parse(s) else {
-                eprintln!("Unknown store: {s}. Use: facts, history, procedures, patterns");
+                eprintln!("Unknown store: {s}. Use: facts, history, patterns");
                 std::process::exit(1);
             };
             Some(ms)
@@ -620,7 +620,7 @@ Usage:
   lean-ctx knowledge import <path|dir> [--merge replace|append|skip-existing] [--dry-run]
   lean-ctx knowledge remove --category <cat> --key <key>
   lean-ctx knowledge consolidate [--all] [--dry-run]
-  lean-ctx knowledge restore [--store facts|history|procedures|patterns] [--query <text>] [--limit N]
+  lean-ctx knowledge restore [--store facts|history|patterns] [--query <text>] [--limit N]
   lean-ctx knowledge status
   lean-ctx knowledge health
   lean-ctx knowledge lifecycle

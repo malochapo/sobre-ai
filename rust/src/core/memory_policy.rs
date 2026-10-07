@@ -1,11 +1,8 @@
-use serde::{Deserialize, Serialize};
+//! Built-in memory limits. Not configurable: every caller uses `MemoryPolicy::default()`.
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-#[serde(default)]
+#[derive(Debug, Clone, Default)]
 pub struct MemoryPolicy {
     pub knowledge: KnowledgePolicy,
-    pub episodic: EpisodicPolicy,
-    pub procedural: ProceduralPolicy,
     pub lifecycle: LifecyclePolicy,
     pub embeddings: EmbeddingsPolicy,
     pub gotcha: GotchaPolicy,
@@ -13,22 +10,7 @@ pub struct MemoryPolicy {
     pub compaction: CompactionPolicy,
 }
 
-impl MemoryPolicy {
-    pub fn validate(&self) -> Result<(), String> {
-        self.knowledge.validate()?;
-        self.episodic.validate()?;
-        self.procedural.validate()?;
-        self.lifecycle.validate()?;
-        self.embeddings.validate()?;
-        self.gotcha.validate()?;
-        self.admission.validate()?;
-        self.compaction.validate()?;
-        Ok(())
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(default)]
+#[derive(Debug, Clone)]
 pub struct KnowledgePolicy {
     pub max_facts: usize,
     pub max_patterns: usize,
@@ -59,113 +41,7 @@ impl Default for KnowledgePolicy {
     }
 }
 
-impl KnowledgePolicy {
-    fn validate(&self) -> Result<(), String> {
-        if self.max_facts == 0 {
-            return Err("memory.knowledge.max_facts must be > 0".to_string());
-        }
-        if self.max_patterns == 0 {
-            return Err("memory.knowledge.max_patterns must be > 0".to_string());
-        }
-        if self.max_history == 0 {
-            return Err("memory.knowledge.max_history must be > 0".to_string());
-        }
-        if !(0.0..=1.0).contains(&self.contradiction_threshold) {
-            return Err(
-                "memory.knowledge.contradiction_threshold must be in [0.0, 1.0]".to_string(),
-            );
-        }
-        if self.recall_facts_limit == 0 {
-            return Err("memory.knowledge.recall_facts_limit must be > 0".to_string());
-        }
-        if self.rooms_limit == 0 {
-            return Err("memory.knowledge.rooms_limit must be > 0".to_string());
-        }
-        if self.timeline_limit == 0 {
-            return Err("memory.knowledge.timeline_limit must be > 0".to_string());
-        }
-        if self.relations_limit == 0 {
-            return Err("memory.knowledge.relations_limit must be > 0".to_string());
-        }
-        Ok(())
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(default)]
-pub struct EpisodicPolicy {
-    pub max_episodes: usize,
-    pub max_actions_per_episode: usize,
-    pub summary_max_chars: usize,
-}
-
-impl Default for EpisodicPolicy {
-    fn default() -> Self {
-        Self {
-            max_episodes: 500,
-            max_actions_per_episode: 50,
-            summary_max_chars: 200,
-        }
-    }
-}
-
-impl EpisodicPolicy {
-    fn validate(&self) -> Result<(), String> {
-        if self.max_episodes == 0 {
-            return Err("memory.episodic.max_episodes must be > 0".to_string());
-        }
-        if self.max_actions_per_episode == 0 {
-            return Err("memory.episodic.max_actions_per_episode must be > 0".to_string());
-        }
-        if self.summary_max_chars < 40 {
-            return Err("memory.episodic.summary_max_chars must be >= 40".to_string());
-        }
-        Ok(())
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(default)]
-pub struct ProceduralPolicy {
-    pub min_repetitions: usize,
-    pub min_sequence_len: usize,
-    pub max_procedures: usize,
-    pub max_window_size: usize,
-}
-
-impl Default for ProceduralPolicy {
-    fn default() -> Self {
-        Self {
-            min_repetitions: 3,
-            min_sequence_len: 2,
-            max_procedures: 100,
-            max_window_size: 10,
-        }
-    }
-}
-
-impl ProceduralPolicy {
-    fn validate(&self) -> Result<(), String> {
-        if self.min_repetitions == 0 {
-            return Err("memory.procedural.min_repetitions must be > 0".to_string());
-        }
-        if self.min_sequence_len < 2 {
-            return Err("memory.procedural.min_sequence_len must be >= 2".to_string());
-        }
-        if self.max_procedures == 0 {
-            return Err("memory.procedural.max_procedures must be > 0".to_string());
-        }
-        if self.max_window_size < self.min_sequence_len {
-            return Err(
-                "memory.procedural.max_window_size must be >= min_sequence_len".to_string(),
-            );
-        }
-        Ok(())
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(default)]
+#[derive(Debug, Clone)]
 pub struct LifecyclePolicy {
     pub decay_rate: f32,
     pub low_confidence_threshold: f32,
@@ -212,34 +88,7 @@ impl Default for LifecyclePolicy {
     }
 }
 
-impl LifecyclePolicy {
-    fn validate(&self) -> Result<(), String> {
-        if !(0.0..=1.0).contains(&self.decay_rate) {
-            return Err("memory.lifecycle.decay_rate must be in [0.0, 1.0]".to_string());
-        }
-        if !(0.0..=1.0).contains(&self.low_confidence_threshold) {
-            return Err(
-                "memory.lifecycle.low_confidence_threshold must be in [0.0, 1.0]".to_string(),
-            );
-        }
-        if self.stale_days < 0 {
-            return Err("memory.lifecycle.stale_days must be >= 0".to_string());
-        }
-        if !(0.0..=1.0).contains(&self.similarity_threshold) {
-            return Err("memory.lifecycle.similarity_threshold must be in [0.0, 1.0]".to_string());
-        }
-        if self.base_stability_days <= 0.0 {
-            return Err("memory.lifecycle.base_stability_days must be > 0".to_string());
-        }
-        if !(0.0..=0.95).contains(&self.reclaim_headroom_pct) {
-            return Err("memory.lifecycle.reclaim_headroom_pct must be in [0.0, 0.95]".to_string());
-        }
-        Ok(())
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(default)]
+#[derive(Debug, Clone)]
 pub struct EmbeddingsPolicy {
     pub max_facts: usize,
 }
@@ -250,19 +99,9 @@ impl Default for EmbeddingsPolicy {
     }
 }
 
-impl EmbeddingsPolicy {
-    fn validate(&self) -> Result<(), String> {
-        if self.max_facts == 0 {
-            return Err("memory.embeddings.max_facts must be > 0".to_string());
-        }
-        Ok(())
-    }
-}
-
 use std::collections::HashMap;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(default)]
+#[derive(Debug, Clone)]
 pub struct GotchaPolicy {
     pub max_gotchas_per_project: usize,
     pub retrieval_budget_per_room: usize,
@@ -281,28 +120,12 @@ impl Default for GotchaPolicy {
     }
 }
 
-impl GotchaPolicy {
-    fn validate(&self) -> Result<(), String> {
-        if self.max_gotchas_per_project == 0 {
-            return Err("memory.gotcha.max_gotchas_per_project must be > 0".to_string());
-        }
-        if self.retrieval_budget_per_room == 0 {
-            return Err("memory.gotcha.retrieval_budget_per_room must be > 0".to_string());
-        }
-        if !(0.0..=1.0).contains(&self.default_decay_rate) {
-            return Err("memory.gotcha.default_decay_rate must be 0.0-1.0".to_string());
-        }
-        Ok(())
-    }
-}
-
 /// Write-time admission control for the knowledge store (#970). The cap +
 /// importance-eviction is a backstop *after* the fact is written; admission is
 /// the boundary *before* it, so a capped store fills with signal, not noise.
 /// Applied only to direct `ctx_knowledge remember` (the agent-facing path);
 /// internal restorers (archive rehydrate, cognition auto-promotion) bypass it.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(default)]
+#[derive(Debug, Clone)]
 pub struct AdmissionPolicy {
     /// Master switch for write-time admission. When off, every `remember`
     /// inserts as before (legacy behavior).
@@ -329,15 +152,6 @@ impl Default for AdmissionPolicy {
     }
 }
 
-impl AdmissionPolicy {
-    fn validate(&self) -> Result<(), String> {
-        if !(0.0..=1.0).contains(&self.auto_merge_similarity) {
-            return Err("memory.admission.auto_merge_similarity must be in [0.0, 1.0]".to_string());
-        }
-        Ok(())
-    }
-}
-
 /// Cluster compaction (#971): the background cognition loop collapses piles of
 /// low-value, mutually-similar facts into a single recoverable digest, so a busy
 /// store's live fact count actually *drops* instead of churning at its cap. It is
@@ -345,8 +159,7 @@ impl AdmissionPolicy {
 /// (`<= max_confirmations`), never-frequently/recently-retrieved facts in a
 /// cluster of at least `min_cluster` qualify — and lossless, since the originals
 /// are archived and rehydrate on recall.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(default)]
+#[derive(Debug, Clone)]
 pub struct CompactionPolicy {
     /// Master switch for cluster compaction in the cognition loop.
     pub enabled: bool,
@@ -375,30 +188,9 @@ impl Default for CompactionPolicy {
     }
 }
 
-impl CompactionPolicy {
-    fn validate(&self) -> Result<(), String> {
-        if self.min_cluster < 2 {
-            return Err("memory.compaction.min_cluster must be >= 2".to_string());
-        }
-        if !(0.0..=1.0).contains(&self.similarity) {
-            return Err("memory.compaction.similarity must be in [0.0, 1.0]".to_string());
-        }
-        if !(0.0..=1.0).contains(&self.max_confidence) {
-            return Err("memory.compaction.max_confidence must be in [0.0, 1.0]".to_string());
-        }
-        Ok(())
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn default_policy_is_valid() {
-        let p = MemoryPolicy::default();
-        p.validate().expect("default policy must be valid");
-    }
 
     #[test]
     fn memory_discipline_defaults_are_premium() {
@@ -413,31 +205,5 @@ mod tests {
             Some(90),
             "conservative recoverable prune default"
         );
-    }
-
-    #[test]
-    fn validate_rejects_invalid_compaction() {
-        let mut p = MemoryPolicy::default();
-        p.compaction.min_cluster = 1;
-        assert!(p.validate().is_err());
-
-        let mut p = MemoryPolicy::default();
-        p.admission.auto_merge_similarity = 1.5;
-        assert!(p.validate().is_err());
-    }
-
-    #[test]
-    fn validate_rejects_invalid_values() {
-        let mut p = MemoryPolicy::default();
-        p.knowledge.max_facts = 0;
-        assert!(p.validate().is_err());
-
-        let mut p = MemoryPolicy::default();
-        p.lifecycle.decay_rate = 2.0;
-        assert!(p.validate().is_err());
-
-        let mut p = MemoryPolicy::default();
-        p.procedural.min_sequence_len = 1;
-        assert!(p.validate().is_err());
     }
 }

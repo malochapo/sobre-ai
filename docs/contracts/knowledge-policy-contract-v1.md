@@ -5,7 +5,7 @@ GitLab: `#2317`
 ## Purpose
 
 A versioned governance contract for project knowledge (facts, patterns,
-history, procedures, relations) that is:
+history, relations) that is:
 
 - **bounded**: stores and outputs have fixed caps,
 - **deterministic**: stable ordering and stable semantics,
@@ -52,9 +52,8 @@ from unit tests, which assert that the defaults are valid.
 | `reclaim_headroom_pct` | 0.25 (a full store settles at 75%) |
 | `reclaim_enabled` | true |
 
-`MemoryPolicy` also holds episodic, procedural (`max_procedures = 100`),
-embeddings, gotcha, admission and compaction sub-policies; their defaults are
-in the same file.
+`MemoryPolicy` also holds embeddings, gotcha, admission and compaction
+sub-policies; their defaults are in the same file. None of it is configurable.
 
 ## Semantics (MUST)
 
@@ -98,7 +97,7 @@ Confidence decay, consolidation and compaction are deterministic and bounded
 
 ### Lossless eviction (MUST, #995)
 
-- **No hard drop.** Every store (facts, history, procedures, patterns) evicts
+- **No hard drop.** Every store (facts, history, patterns) evicts
   only through the capacity manager
   (`rust/src/core/memory_capacity.rs::reclaim_store`). The evicted tail is
   archived **before** removal and can be restored. Facts are archived at
@@ -111,8 +110,7 @@ Confidence decay, consolidation and compaction are deterministic and bounded
   settles the store at `reclaim_target`, so there is no churn on every write.
 - **`reclaim_enabled`.** It is true. When false, `reclaim_store` does nothing.
 - **Retention ranking** per store is deterministic (stable sort tie-breaks):
-  facts by `is_current` then output ranking, history and patterns newest first,
-  procedures by `procedural_memory::retention_cmp`.
+  facts by `is_current` then output ranking, history and patterns newest first.
 - **Archive reachability.** `ArchiveConfig::default()` sets both `max_files`
   and `rehydrate_reach` to 16, so every retained archive is reachable for
   recall and restore.
@@ -123,9 +121,8 @@ Confidence decay, consolidation and compaction are deterministic and bounded
   registered in `rust/src/tools/registered/ctx_knowledge.rs`
   - `action=policy` with `value=show` (the default): prints the effective
     knowledge and lifecycle values. Any other `value` returns an error.
-  - `action=consolidate` (with `dry_run=true` ⇒ preview without writes),
-    `action=consolidate_preview`
-  - `action=restore` (`store` = `facts|history|procedures|patterns`, `query`,
+  - `action=consolidate` (with `dry_run=true` ⇒ preview without writes)
+  - `action=restore` (`store` = `facts|history|patterns`, `query`,
     `limit`, default 50) ⇒ lossless undo from the archive
 - CLI (`rust/src/cli/knowledge_cmd.rs`):
   `lean-ctx knowledge consolidate [--all] [--dry-run]` and

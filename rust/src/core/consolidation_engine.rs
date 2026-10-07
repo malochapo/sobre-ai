@@ -67,7 +67,7 @@ pub struct ConsolidateOptions {
     pub incremental: bool,
     /// Run the fact lifecycle (decay / dedup / quality + capacity) after import.
     pub run_lifecycle: bool,
-    /// Run the lossless capacity reclaim for history / procedures / patterns.
+    /// Run the lossless capacity reclaim for history / patterns.
     pub reclaim_stores: bool,
     /// Emit a `KnowledgeUpdate` event after a successful (non-dry) run.
     pub emit_event: bool,
