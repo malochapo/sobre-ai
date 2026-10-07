@@ -1,6 +1,6 @@
-//! Containment & security: config parsing, path jail, secret redaction.
+//! Config parsing, search roots, secret redaction.
 
-use crate::doctor::{BOLD, DIM, GREEN, Outcome, RED, RST, YELLOW};
+use crate::doctor::{BOLD, DIM, GREEN, Outcome, RED, RST};
 
 /// Flags when `config.toml` fails to parse (the silent-default trap behind
 /// #341, where an edit appears to "do nothing" because the file never loaded).
@@ -20,91 +20,40 @@ pub(crate) fn config_parse_outcome() -> Outcome {
     }
 }
 
-/// Reports the effective PathJail state (GH #392): whether it is open, and
-/// whether configured `allow_paths` entries
-/// actually resolve — the silent failure mode behind "allow_paths has no
-/// effect" reports (unexpanded `$VAR`, typos, paths that don't exist).
-pub(crate) fn path_jail_outcome() -> Outcome {
-    if cfg!(feature = "no-jail") {
-        return Outcome {
-            ok: true,
-            line: format!(
-                "{BOLD}Path jail{RST}  {YELLOW}disabled at compile time{RST}  {DIM}(built with the no-jail feature){RST}"
-            ),
-        };
-    }
-
+/// Reports configured `search_roots` that never resolve (GH #392): an
+/// unexpanded `$VAR`, a typo or a missing directory is otherwise silent.
+pub(crate) fn search_roots_outcome() -> Outcome {
     let cfg = crate::core::config::Config::load();
-    let entries: Vec<&String> = cfg.allow_paths.iter().collect();
-    let mut grants_everything = false;
-    let mut dead: Vec<String> = Vec::new();
-    for raw in &entries {
-        let expanded = crate::core::pathjail::expand_user_path(raw);
-        if expanded == std::path::Path::new("/") {
-            grants_everything = true;
-        }
-        if !expanded.exists() {
-            dead.push((*raw).clone());
-        }
-    }
-
-    if grants_everything {
-        return Outcome {
-            ok: true,
-            line: format!(
-                "{BOLD}Path jail{RST}  {YELLOW}open{RST}  {DIM}(allow_paths contains \"/\" — all tool paths allowed){RST}"
-            ),
-        };
-    }
+    let dead: Vec<&String> = cfg
+        .search_roots
+        .iter()
+        .filter(|raw| !crate::core::pathutil::expand_user_path(raw).is_dir())
+        .collect();
     if !dead.is_empty() {
         return Outcome {
             ok: false,
             line: format!(
-                "{BOLD}Path jail{RST}  {RED}{} allow_paths entr{} never match{RST}  {DIM}({} — unset $VAR or missing path){RST}",
+                "{BOLD}Search roots{RST}  {RED}{} entr{} never searched{RST}  {DIM}({} — unset $VAR or missing directory){RST}",
                 dead.len(),
-                if dead.len() == 1 {
-                    "y will"
-                } else {
-                    "ies will"
-                },
-                dead.join(", ")
+                if dead.len() == 1 { "y is" } else { "ies are" },
+                dead.iter()
+                    .map(|d| d.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ")
             ),
         };
     }
-    let detail = if entries.is_empty() {
-        let cfg = crate::core::config::Config::path()
-            .map_or_else(|| "config.toml".to_string(), |p| p.display().to_string());
-        format!("project root only; extend via allow_paths in {cfg}")
-    } else {
-        format!("project root + {} configured allow path(s)", entries.len())
+    let detail = match cfg.search_roots.len() {
+        0 => "project root only".to_string(),
+        n => format!("project root + {n} search root(s)"),
     };
-
-    // Env-channel relaxations the config view above can't see (inherited from the
-    // multi-root workspace). Surface them as a standing security note (GH security
-    // audit, finding 3); no-jail / path_jail=false are handled by the early
-    // returns above, so only those relaxations reach here.
-    let relaxed: Vec<&str> = crate::core::pathjail::active_relaxations()
-        .iter()
-        .map(|r| r.source)
-        .collect();
-    if relaxed.is_empty() {
-        Outcome {
-            ok: true,
-            line: format!("{BOLD}Path jail{RST}  {GREEN}active{RST}  {DIM}({detail}){RST}"),
-        }
-    } else {
-        Outcome {
-            ok: true,
-            line: format!(
-                "{BOLD}Path jail{RST}  {GREEN}active{RST} {YELLOW}but relaxed via {}{RST}  {DIM}({detail}; relaxations widen access beyond the project root){RST}",
-                relaxed.join(", ")
-            ),
-        }
+    Outcome {
+        ok: true,
+        line: format!("{BOLD}Search roots{RST}  {GREEN}ok{RST}  {DIM}({detail}){RST}"),
     }
 }
-/// Reports secret/`.env` redaction — the exfiltration-defense plane that is
-/// deliberately independent of the path jail + shell gating (#507), so it gets
-/// its own line: "are my API keys masked before they reach the LLM provider?".
+
+/// Reports secret/`.env` redaction (#507), on its own line: "are my API keys masked before they reach the LLM provider?".
 pub(crate) fn secret_detection_outcome() -> Outcome {
     Outcome {
         ok: true,

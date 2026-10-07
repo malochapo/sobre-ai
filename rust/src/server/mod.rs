@@ -23,7 +23,6 @@ use rmcp::model::{
     InitializeResult, ListToolsResult, PaginatedRequestParams, ServerCapabilities, ServerInfo,
 };
 use rmcp::service::{RequestContext, RoleServer};
-use std::path::PathBuf;
 
 use crate::tools::{CrpMode, LeanCtxServer};
 mod call_tool;
@@ -99,7 +98,7 @@ use crate::core::pathutil::is_broad_or_unsafe_root;
 
 /// Detect a multi-root workspace: a directory that has no project markers
 /// itself, but contains child directories that do. In this case, use the
-/// parent as jail root and auto-allow all child projects.
+/// parent as the project root.
 fn detect_multi_root_workspace(dir: &std::path::Path) -> Option<String> {
     // Never enumerate the home dir or macOS TCC-protected dirs (Documents/Desktop/
     // Downloads): read_dir there triggers a macOS privacy prompt (#356), and a real
@@ -119,11 +118,8 @@ fn detect_multi_root_workspace(dir: &std::path::Path) -> Option<String> {
     }
 
     if child_projects.len() >= 2 {
-        crate::core::runtime_flags::add_allow_paths(
-            child_projects.iter().map(PathBuf::from).collect(),
-        );
         tracing::info!(
-            "Multi-root workspace detected at {}: auto-allowing {} child projects",
+            "Multi-root workspace detected at {}: {} child projects",
             dir.display(),
             child_projects.len()
         );
@@ -212,11 +208,6 @@ mod tests {
 
     #[test]
     fn detect_multi_root_workspace_with_child_projects() {
-        // detect_multi_root_workspace adds runtime allow paths as a side
-        // effect (auto-allowing the child projects) — hold the global env
-        // lock so a parallel jail test never observes the transient value
-        // (the pre-existing full-suite flake reported in #695).
-        let _guard = crate::core::data_dir::test_env_lock();
         let tmp = tempfile::tempdir().unwrap();
         let workspace = tmp.path().join("workspace");
         std::fs::create_dir_all(&workspace).unwrap();

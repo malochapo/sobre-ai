@@ -26,7 +26,7 @@ const VENV_DIR_NAMES: &[&str] = &[".venv", "venv"];
 /// Resolve an explicitly requested Windows directory junction before handing it
 /// to `ignore::WalkBuilder`. The walker can treat a reparse-point root as a
 /// leaf, while normal file reads transparently follow it (#1003). Canonicalizing
-/// only the already-jailed root preserves the rule that nested links are never
+/// only the already-resolved root preserves the rule that nested links are never
 /// followed and strips Windows' verbatim prefix for `ignore` compatibility.
 pub fn explicit_walk_root(root: &std::path::Path) -> std::path::PathBuf {
     #[cfg(windows)]

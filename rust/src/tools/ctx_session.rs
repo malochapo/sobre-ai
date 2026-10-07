@@ -86,23 +86,11 @@ pub fn handle(
                         ))
                 };
 
-                let jailed = match crate::core::io_boundary::jail_and_check_path(
-                    candidate.as_path(),
-                    root_path.as_path(),
-                ) {
-                    Ok((p, _warning)) => p,
-                    Err(e) => return e,
-                };
-
-                // Read-only-roots choke point (#475): export must not write a
-                // bundle into a read-only root even when the jail allows reads.
-                if let Err(e) = crate::core::pathjail::enforce_writable(&jailed) {
+                if let Err(e) = crate::core::ccp_session_bundle::write_bundle_v1(&candidate, &json)
+                {
                     return format!("Export write failed: {e}");
                 }
-                if let Err(e) = crate::core::ccp_session_bundle::write_bundle_v1(&jailed, &json) {
-                    return format!("Export write failed: {e}");
-                }
-                written = Some(jailed.to_string_lossy().to_string());
+                written = Some(candidate.to_string_lossy().to_string());
             }
 
             match format {
@@ -157,15 +145,9 @@ bytes: {}\n",
                     root_path.join(p)
                 }
             };
-            let jailed = match crate::core::io_boundary::jail_and_check_path(
-                candidate.as_path(),
-                root_path.as_path(),
-            ) {
-                Ok((p, _warning)) => p,
-                Err(e) => return e,
-            };
+            let path = candidate;
 
-            let bundle = match crate::core::ccp_session_bundle::read_bundle_v1(&jailed) {
+            let bundle = match crate::core::ccp_session_bundle::read_bundle_v1(&path) {
                 Ok(b) => b,
                 Err(e) => return format!("Import failed: {e}"),
             };

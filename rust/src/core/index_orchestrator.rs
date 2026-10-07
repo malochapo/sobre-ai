@@ -185,7 +185,7 @@ pub fn ensure_warm_for_tool(project_root: &str, tool: &str) -> bool {
         WarmNeed::Search => {
             // The search index has its own TTL + background-rebuild dedup, so it
             // is safe (and cheap) to nudge on every `ctx_search`.
-            crate::core::search_index::ensure_background(project_root, true, false);
+            crate::core::search_index::ensure_background(project_root, true);
             false
         }
         WarmNeed::Heavy => {
@@ -373,7 +373,7 @@ fn run_build_worker(root: &str) {
     run_memory_bounded_phases(
         build_graph,
         build_bm25,
-        || crate::core::search_index::ensure_background(root, true, false),
+        || crate::core::search_index::ensure_background(root, true),
         || {
             crate::core::content_cache::clear();
             crate::core::memory_guard::force_purge();

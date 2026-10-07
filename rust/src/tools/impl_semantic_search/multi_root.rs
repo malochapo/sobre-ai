@@ -13,15 +13,14 @@ use super::*;
 
 pub(crate) const WORKSPACE_RRF_K: f64 = 60.0;
 
-/// The roots a workspace search spans: the project, plus every `allow_paths`
-/// and `read_only_roots` directory from the config — the same set the path
-/// jail already lets the agent read. Missing directories are skipped.
+/// The roots a workspace search spans: the project, plus every `search_roots`
+/// directory from the config. Missing directories are skipped.
 pub(crate) fn workspace_roots(root: &Path) -> Vec<std::path::PathBuf> {
     let cfg = crate::core::config::Config::load();
     let mut roots = vec![root.to_path_buf()];
-    for entry in cfg.allow_paths.iter().chain(&cfg.read_only_roots) {
-        let p = crate::core::pathjail::canonicalize_or_self(
-            &crate::core::pathjail::expand_user_path(entry),
+    for entry in &cfg.search_roots {
+        let p = crate::core::pathutil::canonicalize_or_self(
+            &crate::core::pathutil::expand_user_path(entry),
         );
         if p.is_dir() {
             roots.push(p);

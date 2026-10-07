@@ -74,10 +74,6 @@ pub(super) fn run_mcp_server() -> Result<()> {
             env!("CARGO_PKG_VERSION")
         );
 
-        // Surface any path-jail relaxation inherited from the IDE/launchd env or
-        // config, so a loosened boundary is never silent (GH security audit, #3).
-        core::pathjail::warn_if_relaxed();
-
         // Orphan watchdog: if our parent process dies (IDE crashed/closed without
         // closing stdin), we exit cleanly instead of hanging forever.
         spawn_parent_watchdog();

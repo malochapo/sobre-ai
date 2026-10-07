@@ -2,8 +2,7 @@
 //!
 //! Assigns a [`SensitivityLevel`] to context items (knowledge facts, file
 //! paths) from path + content signals, stored with each fact. Only
-//! high-precision signals raise a level: secret-like paths and detected secrets
-//! → `Secret`; Luhn-validated card numbers and IBANs → `Confidential`. No
+//! high-precision signals raise a level: detected secrets → `Secret`; Luhn-validated card numbers and IBANs → `Confidential`. No
 //! speculative heuristics.
 
 mod classify;

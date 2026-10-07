@@ -14,9 +14,9 @@ impl LeanCtxServer {
         }
         let p = std::path::Path::new(&normalized);
 
-        let (resolved, jail_root, extra_roots) = {
+        let (resolved, root) = {
             let session = self.session.read().await;
-            let jail_root = session
+            let root = session
                 .project_root
                 .as_deref()
                 .or(session.shell_cwd.as_deref())
@@ -54,92 +54,43 @@ impl LeanCtxServer {
                 } else if let Some(ref cwd) = session.shell_cwd {
                     std::path::Path::new(cwd).join(&normalized)
                 } else {
-                    std::path::Path::new(&jail_root).join(&normalized)
+                    std::path::Path::new(&root).join(&normalized)
                 }
             } else if let Some(ref cwd) = session.shell_cwd {
                 std::path::Path::new(cwd).join(&normalized)
             } else {
-                std::path::Path::new(&jail_root).join(&normalized)
+                std::path::Path::new(&root).join(&normalized)
             };
 
-            // Session-scoped trusted roots (MCP roots/list, config allow_paths,
-            // git worktrees) must widen the jail for an explicit path (#403).
-            (resolved, jail_root, session.extra_roots.clone())
+            (resolved, root)
         };
 
-        let jail_root_path = std::path::Path::new(&jail_root);
-        let jailed = match crate::core::pathjail::jail_path_with_roots(
-            &resolved,
-            jail_root_path,
-            &extra_roots,
-        ) {
-            Ok(p) => p,
-            Err(e) => {
-                // #899: the rejected path is dependency source in a language
-                // cache (Go module cache, cargo registry, site-packages,
-                // node_modules, …). Register its root as a session-scoped
-                // read-only root and ask the agent to retry — the next resolve
-                // sees it in the read allow-list. Stays fail-closed: this first
-                // call still errors, and writes into the cache remain denied.
-                if let Some((label, cache_root)) =
-                    crate::core::pathjail::detect_language_cache_root(&resolved)
-                    && crate::core::pathjail::register_session_read_only_root(&cache_root)
-                {
-                    return Err(format!(
-                        "Auto-detected {label} at {} — added as a read-only root for this \
-                         session. Retry the read.",
-                        cache_root.display()
-                    ));
-                }
-                if p.is_absolute() {
-                    if let Some(new_root) = maybe_derive_project_root_from_absolute(&resolved) {
-                        let candidate_under_jail = resolved.starts_with(jail_root_path);
-                        // #580/#649: when the MCP server was launched from an
-                        // agent/IDE config dir (e.g. ~/.copilot) or a markerless
-                        // client cwd (e.g. WSL VS Code starting in /mnt/c/Users),
-                        // that jail is not a real project boundary. The derived
-                        // root already carries a project marker, so correcting to
-                        // it is a root fix, not a jail weakening. A real
-                        // project root keeps the jail.
-                        let allow_reroot = !candidate_under_jail
-                            && (is_suspicious_root(jail_root_path)
-                                || (self.startup_project_root.is_none()
-                                    && !has_project_marker(jail_root_path)));
-
-                        if allow_reroot {
-                            let mut session = self.session.write().await;
-                            let new_root_str = new_root.to_string_lossy().to_string();
-                            session.project_root = Some(new_root_str.clone());
-                            session.shell_cwd = self
-                                .startup_shell_cwd
-                                .as_ref()
-                                .filter(|cwd| std::path::Path::new(cwd).starts_with(&new_root))
-                                .cloned()
-                                .or_else(|| Some(new_root_str.clone()));
-                            let _ = session.save();
-
-                            crate::core::pathjail::jail_path_with_roots(
-                                &resolved,
-                                &new_root,
-                                &extra_roots,
-                            )
-                            .map_err(|e| e.to_string())?
-                        } else {
-                            return Err(e.to_string());
-                        }
-                    } else {
-                        return Err(e.to_string());
-                    }
-                } else {
-                    return Err(e.to_string());
-                }
-            }
-        };
-
-        crate::core::io_boundary::check_secret_path(&jailed)?;
+        // sobre does not confine paths: the agent host decides what may be
+        // read or written (invariant 6). An absolute path outside a root that
+        // is not a real project (an agent config dir, a markerless client cwd)
+        // re-roots the session on the project that path belongs to (#580/#649).
+        let root_path = std::path::Path::new(&root);
+        if p.is_absolute()
+            && !resolved.starts_with(root_path)
+            && (is_suspicious_root(root_path)
+                || (self.startup_project_root.is_none() && !has_project_marker(root_path)))
+            && let Some(new_root) = maybe_derive_project_root_from_absolute(&resolved)
+        {
+            let mut session = self.session.write().await;
+            let new_root_str = new_root.to_string_lossy().to_string();
+            session.project_root = Some(new_root_str.clone());
+            session.shell_cwd = self
+                .startup_shell_cwd
+                .as_ref()
+                .filter(|cwd| std::path::Path::new(cwd).starts_with(&new_root))
+                .cloned()
+                .or_else(|| Some(new_root_str.clone()));
+            let _ = session.save();
+        }
+        let resolved = crate::core::pathutil::canonicalize_or_self(&resolved);
 
         Ok(crate::core::pathutil::normalize_tool_path(
-            &jailed.to_string_lossy().replace('\\', "/"),
+            &resolved.to_string_lossy().replace('\\', "/"),
         ))
     }
 

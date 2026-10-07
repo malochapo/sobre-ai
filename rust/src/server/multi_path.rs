@@ -18,8 +18,7 @@ pub struct ResolvedPaths {
 /// 4. Fallback to `"."` (project root)
 ///
 /// Returns `Err` when an **explicit** `path`/`paths` argument was supplied but
-/// could not be resolved (outside the project root, secret-screened, or
-/// non-existent). Silently falling back to the project root in that case made
+/// could not be resolved. Silently falling back to the project root in that case made
 /// `ctx_tree path=/outside/repo` return the whole project tree (#401).
 pub fn resolve_tool_paths(
     args: &Map<String, Value>,
@@ -38,8 +37,7 @@ pub fn resolve_tool_paths(
         // The caller explicitly listed paths but none resolved — surface
         // the failure instead of scanning the project root (#401).
         return Err(format!(
-            "none of the requested paths could be resolved — they may not exist or are \
-                 outside the project root: {}",
+            "none of the requested paths could be resolved: {}",
             paths.join(", ")
         ));
     }
@@ -57,38 +55,25 @@ pub fn resolve_tool_paths(
         }
         // An explicit path the dispatcher could not resolve lands in
         // `path_errors`. Do NOT fall back to the project root — return the
-        // resolution error so the agent learns the path is out of scope
-        // rather than silently receiving an unrelated tree (#401).
+        // resolution error rather than silently an unrelated tree (#401).
         if let Some(detail) = ctx.path_error(key) {
             return Err(detail.to_string());
         }
     }
 
     if let Some(session_lock) = ctx.session.as_ref() {
-        let (extra, jail_root) = tokio::task::block_in_place(|| {
+        let extra = tokio::task::block_in_place(|| {
             let rt = tokio::runtime::Handle::current();
-            rt.block_on(async {
-                let session = session_lock.read().await;
-                let root = session
-                    .project_root
-                    .clone()
-                    .unwrap_or_else(|| ".".to_string());
-                (session.extra_roots.clone(), root)
-            })
+            rt.block_on(async { session_lock.read().await.extra_roots.clone() })
         });
         if !extra.is_empty() {
-            let jail = std::path::Path::new(&jail_root);
             let mut roots = vec![ctx.project_root.clone()];
-            for r in &extra {
-                let p = std::path::Path::new(r);
-                if !p.is_dir() {
-                    continue;
-                }
-                match crate::core::pathjail::jail_path(p, jail) {
-                    Ok(_) => roots.push(r.clone()),
-                    Err(e) => tracing::warn!("extra_root rejected by PathJail: {e}"),
-                }
-            }
+            roots.extend(
+                extra
+                    .iter()
+                    .filter(|r| std::path::Path::new(r).is_dir())
+                    .cloned(),
+            );
             if roots.len() > 1 {
                 return Ok(ResolvedPaths {
                     is_multi: true,
@@ -169,8 +154,8 @@ mod tests {
         assert!(!result.is_multi);
     }
 
-    // #401: an explicit `path` the dispatcher could not resolve (out of jail,
-    // secret-screened, non-existent) must surface the error — NOT silently
+    // #401: an explicit `path` the dispatcher could not resolve must surface
+    // the error — NOT silently
     // fall back to the project root and return an unrelated tree.
     #[test]
     fn explicit_unresolvable_path_errors_instead_of_root_fallback() {
@@ -181,34 +166,21 @@ mod tests {
         );
         let mut ctx = test_ctx();
         // Dispatcher could not resolve it → recorded in path_errors, absent
-        // from resolved_paths (exactly what the daemon does for out-of-jail).
-        ctx.path_errors.insert(
-            "path".to_string(),
-            "path escapes project root: /home/jules/.claude/skills/mpm-config \
-             (root: /test/project)"
-                .to_string(),
-        );
+        // from resolved_paths.
+        ctx.path_errors
+            .insert("path".to_string(), "path contains a null byte".to_string());
         let err = resolve_tool_paths(&args, &ctx)
-            .expect_err("out-of-jail explicit path must be an error");
+            .expect_err("an unresolvable explicit path must be an error");
         assert!(
-            err.contains("escapes project root"),
-            "error must explain the path is out of scope: {err}"
+            err.contains("null byte"),
+            "error must carry the resolution failure: {err}"
         );
     }
 
-    // #401: an explicit `paths` array where nothing resolves must error too.
-    //
-    // Uses *real* directories so the PathJail decision is deterministic across
-    // platforms. Canonicalizing non-existent paths is OS-dependent — the first
-    // version of this test fed bogus absolute paths against a non-existent root
-    // and passed on macOS while letting them through on Linux CI.
-    //
-    // Asserts a jail-enforcement invariant, so it only holds when the jail is
-    // compiled in. Under `--features no-jail` (pulled in by `--all-features`) the
-    // jail is intentionally disabled and out-of-root paths resolve, so skip it.
-    #[cfg(not(feature = "no-jail"))]
+    // An explicit `paths` entry outside the project root resolves: sobre
+    // does not decide what the agent may read (INVARIANTS.md §6).
     #[test]
-    fn explicit_unresolvable_paths_array_errors() {
+    fn explicit_paths_outside_root_resolve() {
         let base = tempfile::tempdir().unwrap();
         let root = base.path().join("project");
         let outside = base.path().join("outside");
@@ -223,11 +195,8 @@ mod tests {
             "paths".to_string(),
             json!([outside.to_string_lossy().into_owned()]),
         );
-        let err = resolve_tool_paths(&args, &ctx)
-            .expect_err("a path outside the project root must be an error");
-        assert!(
-            err.contains("none of the requested paths"),
-            "error must report the unresolved paths: {err}"
-        );
+        let resolved = resolve_tool_paths(&args, &ctx).expect("outside path resolves");
+        assert_eq!(resolved.roots.len(), 1);
+        assert!(!resolved.is_multi);
     }
 }

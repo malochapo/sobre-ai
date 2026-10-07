@@ -17,68 +17,6 @@ fn server_dispatch_src() -> String {
 }
 
 // ---------------------------------------------------------------------------
-// H1 — Shell CWD jail enforcement
-// ---------------------------------------------------------------------------
-#[test]
-fn effective_cwd_calls_jail() {
-    let src = include_str!("../../src/core/session/state.rs");
-
-    // `effective_cwd` must not bypass the jail: it delegates to the checked
-    // variant, which is the single enforcement point (#629/#633 refactor).
-    let ecwd_fn = src
-        .find("fn effective_cwd(")
-        .expect("effective_cwd missing");
-    let ecwd_body = &src[ecwd_fn..ecwd_fn + 500];
-    assert!(
-        ecwd_body.contains("effective_cwd_checked("),
-        "H1: effective_cwd must delegate to effective_cwd_checked"
-    );
-
-    // The checked variant enforces the project-root jail for an explicit cwd.
-    let checked_fn = src
-        .find("fn effective_cwd_checked(")
-        .expect("effective_cwd_checked missing");
-    let checked_body = &src[checked_fn..checked_fn + 500];
-    assert!(
-        checked_body.contains("jail_cwd(cwd, root)"),
-        "H1: effective_cwd_checked must call jail_cwd for explicit cwd"
-    );
-}
-
-#[test]
-fn update_shell_cwd_calls_jail_path() {
-    let src = include_str!("../../src/core/session/state.rs");
-
-    let uscwd_fn = src
-        .find("fn update_shell_cwd(")
-        .expect("update_shell_cwd missing");
-    let uscwd_body = &src[uscwd_fn..uscwd_fn + 600];
-    assert!(
-        uscwd_body.contains("jail_path("),
-        "H1: update_shell_cwd must jail_path check before storing"
-    );
-}
-
-// ---------------------------------------------------------------------------
-// H2 — MCP ctx_read path has secret check
-// ---------------------------------------------------------------------------
-#[test]
-fn resolve_path_includes_secret_check() {
-    let src = include_str!("../../src/tools/server_paths.rs");
-
-    let resolve_fn = src.find("fn resolve_path(").expect("resolve_path missing");
-    let resolve_body = &src[resolve_fn..];
-    let end = resolve_body
-        .find("fn resolve_path_or_passthrough")
-        .unwrap_or(resolve_body.len());
-    let resolve_body = &resolve_body[..end];
-    assert!(
-        resolve_body.contains("check_secret_path"),
-        "H2: resolve_path must call check_secret_path"
-    );
-}
-
-// ---------------------------------------------------------------------------
 // M2 — ReDoS guard in ctx_search
 // ---------------------------------------------------------------------------
 #[test]

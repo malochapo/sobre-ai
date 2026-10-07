@@ -68,7 +68,7 @@ fn measure<F: FnMut() -> String>(mut run: F) -> (f64, f64, f64, usize) {
 }
 
 fn bench_walk(corpus: &str, pattern: &str) -> (f64, f64, f64, usize) {
-    measure(|| ctx_search::handle(pattern, corpus, None, 20, CrpMode::Off, true, false, false).text)
+    measure(|| ctx_search::handle(pattern, corpus, None, 20, CrpMode::Off, true, false).text)
 }
 
 fn main() {
@@ -106,7 +106,7 @@ fn main() {
     // --- Resident index path: warm synchronously, then measure ---
     // SAFETY: single-threaded bench `main()`; runs before any worker threads start.
     unsafe { std::env::remove_var("LEAN_CTX_DISABLE_SEARCH_INDEX") };
-    let warmed = lean_ctx::core::search_index::warm_blocking(&corpus_str, true, false);
+    let warmed = lean_ctx::core::search_index::warm_blocking(&corpus_str, true);
     println!("\n## Resident index path (warm={warmed})\n");
     println!("| query | p50 ms | p95 ms | p99 ms | resp tokens |");
     println!("|---|---|---|---|---|");
@@ -125,7 +125,7 @@ fn main() {
 /// Extracts the set of `file:line` match lines from a search response so the
 /// walk path and index path can be compared for recall parity.
 fn match_lines(corpus: &str, pattern: &str) -> std::collections::BTreeSet<String> {
-    let out = ctx_search::handle(pattern, corpus, None, 500, CrpMode::Off, true, false, false).text;
+    let out = ctx_search::handle(pattern, corpus, None, 500, CrpMode::Off, true, false).text;
     out.lines()
         .filter(|l| l.contains(".rs:") || l.contains(".txt:"))
         .map(str::to_string)

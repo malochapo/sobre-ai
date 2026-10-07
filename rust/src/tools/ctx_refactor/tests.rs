@@ -1,14 +1,17 @@
 use serde_json::json;
 
-/// §4.5: inner handle MUST use the (already jailed) abs_path it is given,
+/// §4.5: inner handle MUST use the (already resolved) abs_path it is given,
 /// never re-derive a path from raw args. A raw "../escape.rs" must never
 /// reach the filesystem layer; only the provided abs_path does.
 #[test]
 fn inner_handle_uses_provided_abs_path_not_raw_args() {
     let args = json!({"action": "references", "path": "../escape.rs", "line": 1, "column": 0});
-    let out = super::handle(&args, "/proj", "/proj/jailed.rs");
-    // open_file fails reading the (nonexistent) jailed file → error names abs_path.
-    assert!(out.contains("/proj/jailed.rs"), "abs_path not used: {out}");
+    let out = super::handle(&args, "/proj", "/proj/resolved.rs");
+    // open_file fails reading the (nonexistent) resolved file → error names abs_path.
+    assert!(
+        out.contains("/proj/resolved.rs"),
+        "abs_path not used: {out}"
+    );
     assert!(
         !out.contains("../escape.rs"),
         "raw path leaked to fs layer: {out}"
@@ -421,15 +424,11 @@ fn handle_replace_symbol_body_conflict_on_stale_hash() {
     );
 }
 
-// Jail rejection only happens when the jail is compiled in. `--all-features`
-// pulls in `no-jail` (jail disabled), so skip there like the move/resolve jail
-// assertions below.
-
 /// #803: when `name_path` resolves to a file that differs from the caller's
 /// explicit `path`, the edit must be rejected with WORKTREE_MISMATCH instead
 /// of silently writing to the wrong checkout. Simulates the real scenario
 /// where a git worktree lives INSIDE the project root (e.g.
-/// `/repo/.claude/worktrees/wt/`) so the path jail does not block it.
+/// `/repo/.claude/worktrees/wt/`).
 #[test]
 #[ignore = "requires pre-built symbol index; flaky under parallel cargo test"]
 fn handle_replace_symbol_worktree_mismatch_blocks_write() {

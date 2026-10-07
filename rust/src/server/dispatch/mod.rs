@@ -84,7 +84,7 @@ impl LeanCtxServer {
                             Ok(resolved) => {
                                 if !["path", "project_root", "root"].contains(key) {
                                     tracing::trace!(
-                                        "[pathjail] resolved non-standard path key '{key}': {raw} -> {resolved}"
+                                        "[paths] resolved non-standard path key '{key}': {raw} -> {resolved}"
                                     );
                                 }
                                 resolved_paths.insert(key.to_string(), resolved);

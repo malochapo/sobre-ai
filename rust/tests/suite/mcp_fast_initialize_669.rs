@@ -65,8 +65,7 @@ fn initialize_answers_fast_and_first_call_succeeds() {
         .env("CODEX_HOME", env.home.join(".codex"))
         // Root detection must derive from the temp project's cwd. When the
         // suite itself runs inside an IDE/agent session these carry the HOST
-        // workspace and would hijack the project root (→ path-jail rejects
-        // the temp file).
+        // workspace and would hijack the project root.
         .env_remove("CLAUDE_PROJECT_DIR")
         .env_remove("WORKSPACE_FOLDER_PATHS")
         .stdin(Stdio::piped())

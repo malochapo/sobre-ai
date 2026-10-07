@@ -72,7 +72,6 @@ pub fn handle(
     max_results: usize,
     crp_mode: CrpMode,
     respect_gitignore: bool,
-    allow_secret_paths: bool,
     anchored: bool,
 ) -> SearchOutcome {
     handle_filtered(
@@ -82,7 +81,6 @@ pub fn handle(
         max_results,
         crp_mode,
         respect_gitignore,
-        allow_secret_paths,
         anchored,
         None,
         None,
@@ -106,7 +104,6 @@ pub fn handle_filtered(
     max_results: usize,
     _crp_mode: CrpMode,
     respect_gitignore: bool,
-    allow_secret_paths: bool,
     anchored: bool,
     exclude: Option<&str>,
     exclude_pattern: Option<&str>,
@@ -166,7 +163,6 @@ pub fn handle_filtered(
     let mut files_searched = 0u32;
     let mut files_skipped_size = 0u32;
     let mut files_skipped_encoding = 0u32;
-    let mut files_skipped_boundary = 0u32;
     let mut files_skipped_special = 0u32;
     let mut deadline_hit = false;
     // Set when any hit gained an `∈name@Lstart` enclosing tag, so the
@@ -179,8 +175,7 @@ pub fn handle_filtered(
     // are still verified line-by-line with the same regex — so results are
     // identical. Missing/stale index → returns None and triggers a background
     // (re)build; this call uses the walk fallback.
-    let used_index = if let Some(idx) =
-        crate::core::search_index::get_fresh(dir, respect_gitignore, allow_secret_paths)
+    let used_index = if let Some(idx) = crate::core::search_index::get_fresh(dir, respect_gitignore)
     {
         files = idx
             .candidate_paths(pattern, &include_patterns, root)
@@ -221,11 +216,6 @@ pub fn handle_filtered(
             let path = entry.path();
 
             if is_binary_ext(path) || is_generated_file(path) {
-                continue;
-            }
-
-            if !allow_secret_paths && crate::core::io_boundary::is_secret_like(path).is_some() {
-                files_skipped_boundary += 1;
                 continue;
             }
 
@@ -393,11 +383,6 @@ pub fn handle_filtered(
                 " ({files_skipped_encoding} files skipped: binary/encoding)"
             ));
         }
-        if files_skipped_boundary > 0 {
-            msg.push_str(&format!(
-                " ({files_skipped_boundary} secret-like files skipped by boundary policy)"
-            ));
-        }
         if files_skipped_special > 0 {
             msg.push_str(&format!(
                 " ({files_skipped_special} special files skipped: not regular files)"
@@ -458,11 +443,6 @@ pub fn handle_filtered(
     if files_skipped_encoding > 0 {
         result.push_str(&format!(
             "\n({files_skipped_encoding} files skipped: binary/encoding)"
-        ));
-    }
-    if files_skipped_boundary > 0 {
-        result.push_str(&format!(
-            "\n({files_skipped_boundary} secret-like files skipped by boundary policy)"
         ));
     }
     if files_skipped_special > 0 {
@@ -605,7 +585,7 @@ const MAX_INCLUDE_GLOBS: usize = 64;
 /// included when it matches *any* of the returned patterns. An empty vec means
 /// "no filter": `include` was `None`, or every expansion failed to parse.
 ///
-/// Bare globs without a `/` (e.g. `pathjail.rs`, `*.rs`) are auto-prefixed
+/// Bare globs without a `/` (e.g. `pathutil.rs`, `*.rs`) are auto-prefixed
 /// with `**/` to match at any directory depth — matching `rg --glob` and
 /// `git grep` behaviour. Globs that already contain `/` are used as-is, so
 /// `src/**/*.rs` only matches under `src/`.
@@ -726,19 +706,7 @@ mod tests {
             .unwrap();
         }
         let root = dir.path().to_string_lossy().into_owned();
-        let run = || {
-            handle(
-                "target",
-                &root,
-                Some("*.rs"),
-                20,
-                CrpMode::Off,
-                true,
-                true,
-                false,
-            )
-            .text
-        };
+        let run = || handle("target", &root, Some("*.rs"), 20, CrpMode::Off, true, false).text;
         assert_eq!(run(), run(), "search output must be deterministic");
     }
 
@@ -751,17 +719,7 @@ mod tests {
         std::fs::write(dir.path().join("a.rs"), "let needle = 1;\nother\n").unwrap();
         let root = dir.path().to_string_lossy().into_owned();
 
-        let plain = handle(
-            "needle",
-            &root,
-            Some("*.rs"),
-            10,
-            CrpMode::Off,
-            true,
-            true,
-            false,
-        )
-        .text;
+        let plain = handle("needle", &root, Some("*.rs"), 10, CrpMode::Off, true, false).text;
         assert!(
             !plain.contains("[anchored:"),
             "default must carry no legend"
@@ -771,17 +729,7 @@ mod tests {
             "default keeps path:line content: {plain}"
         );
 
-        let anchored = handle(
-            "needle",
-            &root,
-            Some("*.rs"),
-            10,
-            CrpMode::Off,
-            true,
-            true,
-            true,
-        )
-        .text;
+        let anchored = handle("needle", &root, Some("*.rs"), 10, CrpMode::Off, true, true).text;
         let hh = crate::core::anchor::line_hash("let needle = 1;");
         assert!(anchored.contains("[anchored: path:line:hh → edit via ctx_patch]"));
         assert!(
@@ -807,7 +755,6 @@ mod tests {
             Some("*.rs"),
             10,
             CrpMode::Off,
-            true,
             true,
             false,
         )
@@ -835,7 +782,6 @@ mod tests {
             10,
             CrpMode::Off,
             true,
-            true,
             false,
         )
         .text;
@@ -856,7 +802,6 @@ mod tests {
             Some("*.txt"),
             10,
             CrpMode::Off,
-            true,
             true,
             false,
         )
@@ -900,21 +845,11 @@ mod tests {
         // Synchronously warm the resident trigram index (also populates the
         // shared content cache for these paths).
         assert!(
-            crate::core::search_index::warm_blocking(&root, true, false),
+            crate::core::search_index::warm_blocking(&root, true),
             "index should warm for a small clean corpus"
         );
 
-        let out = handle(
-            "authenticate",
-            &root,
-            None,
-            10,
-            CrpMode::Off,
-            true,
-            false,
-            false,
-        )
-        .text;
+        let out = handle("authenticate", &root, None, 10, CrpMode::Off, true, false).text;
         assert!(
             out.contains("a.rs"),
             "warm-index + cache search must find the match: {out}"
@@ -943,7 +878,7 @@ mod tests {
         let root = dir.path().to_string_lossy().to_string();
 
         assert!(
-            crate::core::search_index::warm_blocking(&root, true, false),
+            crate::core::search_index::warm_blocking(&root, true),
             "index should warm for a small clean corpus"
         );
 
@@ -956,7 +891,6 @@ mod tests {
             10,
             CrpMode::Off,
             true,
-            false,
             false,
         )
         .text;
@@ -978,7 +912,6 @@ mod tests {
             10,
             CrpMode::Off,
             true,
-            false,
             false,
         )
         .text;
@@ -1006,7 +939,6 @@ mod tests {
             10,
             CrpMode::Off,
             true,
-            true,
             false,
         )
         .text;
@@ -1022,37 +954,6 @@ mod tests {
         assert!(
             out.contains("longIdentifierAlpha"),
             "identifiers should appear raw by default: {out}"
-        );
-    }
-
-    #[test]
-    fn secret_like_files_are_skipped_by_default() {
-        let dir = tempfile::tempdir().unwrap();
-        let secret = dir.path().join("key.pem");
-        let ok = dir.path().join("ok.txt");
-        std::fs::write(&secret, "match\n").unwrap();
-        std::fs::write(&ok, "match\n").unwrap();
-
-        let out = handle(
-            "match",
-            dir.path().to_string_lossy().as_ref(),
-            None,
-            10,
-            CrpMode::Off,
-            true,
-            false,
-            false,
-        )
-        .text;
-
-        assert!(out.contains("ok.txt:"), "expected ok.txt match, got: {out}");
-        assert!(
-            !out.contains("key.pem:"),
-            "secret-like file should be skipped, got: {out}"
-        );
-        assert!(
-            out.contains("secret-like files skipped"),
-            "expected boundary skip note, got: {out}"
         );
     }
 
@@ -1085,7 +986,6 @@ mod tests {
                 None,
                 10,
                 CrpMode::Off,
-                true,
                 true,
                 false,
             )
@@ -1120,7 +1020,6 @@ mod tests {
                 10,
                 CrpMode::Off,
                 true,
-                true,
                 false,
             )
             .text
@@ -1146,7 +1045,6 @@ mod tests {
             Some("*.{rs,ts}"),
             10,
             CrpMode::Off,
-            true,
             true,
             false,
         )
@@ -1174,7 +1072,6 @@ mod tests {
             10,
             CrpMode::Off,
             true,
-            true,
             false,
         )
         .text;
@@ -1193,7 +1090,6 @@ mod tests {
             Some("file.rs"),
             10,
             CrpMode::Off,
-            true,
             true,
             false,
         )
@@ -1218,7 +1114,6 @@ mod tests {
             Some("src/**/*.rs"),
             10,
             CrpMode::Off,
-            true,
             true,
             false,
         )
@@ -1248,7 +1143,6 @@ mod tests {
             10,
             CrpMode::Off,
             true,
-            true,
             false,
             Some("*_test.rs"),
             None,
@@ -1267,7 +1161,6 @@ mod tests {
             Some("app.rs"),
             10,
             CrpMode::Off,
-            true,
             true,
             false,
             None,
@@ -1291,7 +1184,6 @@ mod tests {
             10,
             CrpMode::Off,
             true,
-            true,
             false,
             None,
             Some("([unclosed"),
@@ -1311,7 +1203,6 @@ mod tests {
             None,
             10,
             CrpMode::Off,
-            true,
             true,
             false,
         )

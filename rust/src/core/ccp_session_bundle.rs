@@ -208,26 +208,18 @@ pub fn import_bundle_v1_into_session(
         imported.project_root = Some(root.to_string());
     }
 
-    // Mark stale file paths if missing or outside jail.
-    let jail_root = imported.project_root.clone().unwrap_or_else(|| {
+    // Mark stale file paths if missing.
+    let root = imported.project_root.clone().unwrap_or_else(|| {
         std::env::current_dir()
             .map_or_else(|_| ".".to_string(), |p| p.to_string_lossy().to_string())
     });
-    let jail_root_path = PathBuf::from(&jail_root);
+    let root_path = PathBuf::from(&root);
 
     let mut stale = 0u32;
     for f in &mut imported.files_touched {
-        let candidate = candidate_path(&jail_root_path, &f.path);
-        if let Ok((jailed, _warning)) = crate::core::io_boundary::jail_and_check_path(
-            candidate.as_path(),
-            jail_root_path.as_path(),
-        ) {
-            if jailed.exists() {
-                f.stale = false;
-            } else {
-                f.stale = true;
-                stale += 1;
-            }
+        let candidate = candidate_path(&root_path, &f.path);
+        if candidate.exists() {
+            f.stale = false;
         } else {
             f.stale = true;
             stale += 1;
@@ -321,13 +313,9 @@ fn strip_root_prefix(root: &str, path: &str) -> Option<String> {
     }
 }
 
-fn candidate_path(jail_root: &Path, stored_path: &str) -> PathBuf {
+fn candidate_path(root: &Path, stored_path: &str) -> PathBuf {
     let p = PathBuf::from(stored_path);
-    if p.is_absolute() {
-        p
-    } else {
-        jail_root.join(p)
-    }
+    if p.is_absolute() { p } else { root.join(p) }
 }
 
 #[cfg(test)]

@@ -1,34 +1,5 @@
 // Integration tests for modules identified as critical during the architecture audit.
-// Covers: pathjail, degradation_policy, gotcha_tracker/learn, cache CCR.
-
-// ---------------------------------------------------------------------------
-// pathjail: security-critical path containment
-// ---------------------------------------------------------------------------
-#[cfg(not(feature = "no-jail"))]
-#[test]
-fn pathjail_blocks_traversal() {
-    use lean_ctx::core::pathjail;
-
-    let jail = std::env::current_dir().unwrap();
-    let escaped = jail.join("../../etc/passwd");
-
-    let result = pathjail::jail_path(&escaped, &jail);
-    assert!(
-        result.is_err(),
-        "traversal path must be rejected by jail_path"
-    );
-}
-
-#[test]
-fn pathjail_allows_safe_path() {
-    use lean_ctx::core::pathjail;
-
-    let jail = std::env::current_dir().unwrap();
-    let safe = jail.join("src/main.rs");
-
-    let result = pathjail::jail_path(&safe, &jail);
-    assert!(result.is_ok(), "path inside jail must be allowed");
-}
+// Covers: degradation_policy, gotcha_tracker/learn, cache CCR.
 
 // ---------------------------------------------------------------------------
 // gotcha_tracker/learn: extract learnings from resolved gotchas

@@ -30,14 +30,6 @@ pub fn handle(args: &Value, project_root: &str, abs_path: &str) -> String {
 
     let position = Position::new(line.saturating_sub(1), column);
 
-    // #475: the IDE symbol `rename` rewrites the target file in place; deny when
-    // it sits inside a read-only root (the other read actions below never write).
-    if action == "rename"
-        && let Some(e) = deny_if_read_only(abs_path)
-    {
-        return e;
-    }
-
     match action {
         "rename" => handle_rename(args, abs_path, project_root, &uri, position),
         "references" => handle_references(abs_path, project_root, &uri, position, scope),
@@ -50,17 +42,6 @@ pub fn handle(args: &Value, project_root: &str, abs_path: &str) -> String {
              insert_after_symbol."
         ),
     }
-}
-
-/// #475 read-only-roots default-deny for refactor writes. Returns an early
-/// `ERROR: …` string when `abs_path` resolves inside a configured read-only
-/// root, `None` otherwise. Two-phase `*_preview` actions only read and are
-/// never gated; every apply / symbol-edit / reformat / rename path routes its
-/// resolved target(s) through this before any IDE or headless write.
-fn deny_if_read_only(abs_path: &str) -> Option<String> {
-    crate::core::pathjail::enforce_writable(std::path::Path::new(abs_path))
-        .err()
-        .map(|e| format!("ERROR: {e}"))
 }
 
 fn handle_rename(
@@ -316,7 +297,7 @@ fn handle_symbol_edit(action: &str, args: &Value, project_root: &str) -> String 
                         &r.rel_path,
                     ) {
                         Ok(p) => p,
-                        Err(e) => return format!("ERROR: path blocked by jail: {e}"),
+                        Err(e) => return format!("ERROR: {e}"),
                     };
                     let caller_abs = match crate::core::path_resolve::resolve_tool_path(
                         Some(project_root),
@@ -324,7 +305,7 @@ fn handle_symbol_edit(action: &str, args: &Value, project_root: &str) -> String 
                         caller_path,
                     ) {
                         Ok(p) => p,
-                        Err(e) => return format!("ERROR: path blocked by jail: {e}"),
+                        Err(e) => return format!("ERROR: {e}"),
                     };
                     let resolved_real = std::fs::canonicalize(&resolved_abs)
                         .unwrap_or_else(|_| std::path::PathBuf::from(&resolved_abs));
@@ -365,12 +346,8 @@ fn handle_symbol_edit(action: &str, args: &Value, project_root: &str) -> String 
     let abs_path =
         match crate::core::path_resolve::resolve_tool_path(Some(project_root), None, &rel_path) {
             Ok(p) => p,
-            Err(e) => return format!("ERROR: path blocked by jail: {e}"),
+            Err(e) => return format!("ERROR: {e}"),
         };
-    // #475: replace/insert symbol edits always write; deny inside a read-only root.
-    if let Some(e) = deny_if_read_only(&abs_path) {
-        return e;
-    }
 
     let content = match std::fs::read_to_string(&abs_path) {
         Ok(c) => c,

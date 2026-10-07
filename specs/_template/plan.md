@@ -8,7 +8,7 @@
 **Tech Stack:** <languages / tools / crates>
 
 ## Global Constraints
-- <invariants: files NOT to touch, security (path jail, shell deny list), determinism>
+- <invariants: files NOT to touch, determinism>
 - No mock data, no placeholders, no stubs.
 - Output determinism: no timestamps/counters in tool output bodies (#498).
 

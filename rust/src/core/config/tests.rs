@@ -11,7 +11,7 @@ mod config_load_cache_tests {
 
     /// #406 regression: `Config::load()` must reflect a content change even when
     /// the file mtime is unchanged. A mtime-only cache (the old behaviour) kept a
-    /// long-lived MCP server on a stale `allow_paths` while a fresh `doctor`
+    /// long-lived MCP server on a stale `search_roots` while a fresh `doctor`
     /// process — with an empty cache — saw the new value. The cache is now keyed
     /// on a content hash, so this scenario stays live.
     #[test]
@@ -22,18 +22,18 @@ mod config_load_cache_tests {
             std::fs::create_dir_all(parent).unwrap();
         }
 
-        // Warm the cache with the jail closed (default).
+        // Warm the cache with no search roots (default).
         std::fs::write(&path, "# initial\n").unwrap();
         let mtime0 = std::fs::metadata(&path).unwrap().modified().unwrap();
-        assert!(!Config::load().jail_open());
+        assert!(Config::load().search_roots.is_empty());
 
-        // Open the jail but restore the original mtime, so any mtime-only
+        // Add a root but restore the original mtime, so any mtime-only
         // cache would serve the stale value (#406).
-        std::fs::write(&path, "allow_paths = [\"/\"]\n").unwrap();
+        std::fs::write(&path, "search_roots = [\"/srv\"]\n").unwrap();
         filetime::set_file_mtime(&path, filetime::FileTime::from_system_time(mtime0)).unwrap();
 
         assert!(
-            Config::load().jail_open(),
+            Config::load().search_roots == ["/srv"],
             "Config::load() must honor a content change with unchanged mtime (#406)"
         );
     }

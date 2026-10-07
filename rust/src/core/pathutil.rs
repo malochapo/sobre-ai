@@ -14,10 +14,8 @@ pub fn safe_canonicalize(path: &Path) -> std::io::Result<PathBuf> {
     // matching, path normalization, scan-root checks) all funnel through here,
     // so guarding the sink protects them centrally instead of one opt-in check
     // per call site. Return the path unchanged (lexical) rather than touching
-    // the filesystem. Security boundaries (PathJail) deliberately bypass this
-    // guard via `canonicalize_secure` — they only resolve paths the client
-    // explicitly asked to access, where a prompt is legitimate, and must keep
-    // resolving symlinks to detect jail escapes.
+    // the filesystem. `canonicalize_secure` deliberately bypasses this guard
+    // for paths the user explicitly configured, where a prompt is legitimate.
     if !may_probe_path(path) {
         return Ok(path.to_path_buf());
     }
@@ -38,9 +36,9 @@ pub fn safe_canonicalize_or_self(path: &Path) -> PathBuf {
 }
 
 /// SECURITY canonicalize: always resolves symlinks, even under ~/Documents in a
-/// launchd-standalone process. PathJail relies on this to detect symlink jail
-/// escapes (#356 must never weaken the security boundary). A standalone process
-/// only reaches here for a path the client *explicitly* asked to access, where a
+/// launchd-standalone process. Config writes rely on this to follow a
+/// user-managed symlink to its real target. A standalone process
+/// only reaches here for a path the user *explicitly* configured, where a
 /// one-time TCC prompt is legitimate — unlike the self-initiated heuristic
 /// probes that [`safe_canonicalize`] suppresses.
 pub fn canonicalize_secure(path: &Path) -> std::io::Result<PathBuf> {
@@ -60,13 +58,6 @@ pub fn canonicalize_secure_or_self(path: &Path) -> PathBuf {
 /// Heuristic variant — honours the #356 TCC guard (see [`safe_canonicalize`]).
 pub fn safe_canonicalize_bounded(path: &Path, timeout_ms: u64) -> PathBuf {
     canonicalize_bounded_with(path, timeout_ms, safe_canonicalize_or_self)
-}
-
-/// SECURITY variant of [`safe_canonicalize_bounded`] — bypasses the #356 TCC
-/// guard so PathJail keeps resolving symlinks to detect jail escapes. See
-/// [`canonicalize_secure`] for why a prompt here (explicit request) is legitimate.
-pub fn canonicalize_secure_bounded(path: &Path, timeout_ms: u64) -> PathBuf {
-    canonicalize_bounded_with(path, timeout_ms, canonicalize_secure_or_self)
 }
 
 /// Shared timeout machinery for the bounded canonicalizers. `resolve` selects
@@ -218,7 +209,7 @@ pub fn normalize_tool_path(path: &str) -> String {
 
 /// Agent/IDE CLI config or sandbox directories some clients launch their MCP
 /// server from, but which are never a user's project root. Adopting one as the
-/// project root jails every real repository path out — the root cause of #580
+/// project root mis-roots every real repository path — the root cause of #580
 /// (GitHub Copilot CLI launches from `~/.copilot`; Cursor, Windsurf, Gemini CLI
 /// and LM Studio behave similarly). This is the canonical set: every "is this an
 /// agent dir?" check across the codebase delegates here so the list never drifts.
@@ -293,7 +284,7 @@ pub fn has_project_marker(dir: &Path) -> bool {
 ///
 /// Security boundaries must use this instead of `FileType::is_symlink`:
 /// Rust's `is_symlink()` reports `false` for NTFS junctions, which redirect
-/// exactly like directory symlinks and would otherwise bypass jail/TOCTOU
+/// exactly like directory symlinks and would otherwise slip past symlink
 /// checks on Windows (GL#442).
 pub fn is_symlink_or_reparse(meta: &std::fs::Metadata) -> bool {
     if meta.file_type().is_symlink() {
@@ -433,9 +424,58 @@ pub fn has_multi_repo_children(dir: &Path) -> bool {
     count >= 2
 }
 
+/// Heuristic canonicalize — honours the #356 TCC guard, so it never pops a
+/// privacy prompt on its own initiative.
+pub fn canonicalize_or_self(path: &Path) -> PathBuf {
+    safe_canonicalize_bounded(path, 2000)
+}
+
+/// `search_roots` come from `config.toml`, where no shell ever runs — users
+/// writing `"$HOME/code"` or `"~/code"` got a literal, never-matching path
+/// (GH #392). Only the home directory is expanded (`~`, `$HOME`, `${HOME}`):
+/// any other `$VAR` would depend on the environment of whichever process
+/// reads the file, so it stays literal.
+pub fn expand_user_path(raw: &str) -> PathBuf {
+    let rest = if matches!(raw, "~" | "$HOME" | "${HOME}") {
+        Some("")
+    } else {
+        ["~/", "$HOME/", "${HOME}/"]
+            .iter()
+            .find_map(|prefix| raw.strip_prefix(prefix))
+    };
+    match (rest, dirs::home_dir()) {
+        (Some(""), Some(home)) => home,
+        (Some(r), Some(home)) => home.join(r),
+        _ => PathBuf::from(raw),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn expand_user_path_expands_home_only() {
+        let home = dirs::home_dir().expect("home dir");
+
+        assert_eq!(expand_user_path("~"), home);
+        assert_eq!(expand_user_path("~/code"), home.join("code"));
+        assert_eq!(expand_user_path("$HOME/code"), home.join("code"));
+        assert_eq!(expand_user_path("${HOME}/code"), home.join("code"));
+        // Absolute paths pass through untouched.
+        assert_eq!(expand_user_path("/etc"), PathBuf::from("/etc"));
+    }
+
+    #[test]
+    fn expand_user_path_leaves_other_vars_literal() {
+        // Any variable but HOME would make the path depend on the reader's env.
+        crate::test_env::set_var("LEAN_CTX_TEST_SUB", "sub");
+        assert_eq!(
+            expand_user_path("$LEAN_CTX_TEST_SUB/code"),
+            PathBuf::from("$LEAN_CTX_TEST_SUB/code")
+        );
+        crate::test_env::remove_var("LEAN_CTX_TEST_SUB");
+    }
 
     #[test]
     fn strip_regular_verbatim() {
@@ -582,11 +622,11 @@ mod tests {
     #[test]
     #[cfg(target_os = "macos")]
     #[serial_test::serial]
-    fn canonicalize_secure_bypasses_tcc_guard_for_pathjail() {
+    fn canonicalize_secure_bypasses_tcc_guard() {
         let _env_lock = crate::core::data_dir::test_env_lock();
-        // SECURITY counterpart to the test above (#356): PathJail must keep
-        // resolving symlinks even when standalone under ~/Documents, so the jail
-        // can detect escapes. `canonicalize_secure` therefore must NOT honour the
+        // Counterpart to the test above (#356): following a user-managed
+        // symlink must keep working when standalone under ~/Documents.
+        // `canonicalize_secure` therefore must NOT honour the
         // guard — it always touches the filesystem. We prove that by feeding a
         // missing ~/Documents path while standalone: the guarded path returns
         // Ok(lexical) (no stat), while the secure path Errs (it did stat).
@@ -599,8 +639,8 @@ mod tests {
         // Guarded sink short-circuits (no fs access).
         assert_eq!(safe_canonicalize(&missing).unwrap(), missing);
         // Security sink ignores the guard and actually stats -> Err on a missing
-        // path. If this ever returns Ok(lexical), the jail's symlink-escape
-        // detection has silently regressed under ~/Documents.
+        // path. If this ever returns Ok(lexical), symlink resolution has
+        // silently regressed under ~/Documents.
         assert!(
             canonicalize_secure(&missing).is_err(),
             "canonicalize_secure must bypass the TCC guard and touch the filesystem"

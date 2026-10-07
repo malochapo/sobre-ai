@@ -90,7 +90,7 @@ fn file_ref(key: &str, store: &CliCacheStore) -> String {
 }
 
 pub fn check_and_read(path: &str) -> CacheResult {
-    let Ok(content) = crate::core::io_boundary::read_file_lossy(path) else {
+    let Ok(content) = crate::core::text_read::read_file_lossy(path) else {
         return CacheResult::Miss {
             content: String::new(),
         };

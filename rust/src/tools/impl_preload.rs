@@ -27,7 +27,7 @@ pub(crate) fn handle(
     }
 
     let project_root = path.map_or_else(|| ".".to_string(), std::string::ToString::to_string);
-    let jail_root = std::path::Path::new(&project_root);
+    let root = std::path::Path::new(&project_root);
 
     let Some(open) = graph_provider::open_or_build(&project_root) else {
         return (
@@ -104,20 +104,12 @@ pub(crate) fn handle(
     let file_context: Vec<(String, usize)> = candidates
         .iter()
         .filter_map(|c| {
-            let Ok((jailed, warning)) = crate::core::io_boundary::jail_and_check_path(
-                std::path::Path::new(&c.path),
-                jail_root,
-            ) else {
-                return None;
-            };
-            if warning.is_some() {
-                return None;
-            }
+            let path = root.join(&c.path);
             // Don't hydrate cloud placeholders during automatic preload (#363).
-            if crate::core::cloud_files::is_cloud_placeholder(&jailed) {
+            if crate::core::cloud_files::is_cloud_placeholder(&path) {
                 return None;
             }
-            std::fs::read_to_string(&jailed)
+            std::fs::read_to_string(&path)
                 .ok()
                 .map(|content| (c.path.clone(), content.lines().count()))
         })
@@ -177,27 +169,19 @@ pub(crate) fn handle(
             break;
         }
 
-        let Ok((jailed, warning)) = crate::core::io_boundary::jail_and_check_path(
-            std::path::Path::new(&rel.path),
-            jail_root,
-        ) else {
-            continue;
-        };
-        if warning.is_some() {
-            continue;
-        }
+        let path = root.join(&rel.path);
 
-        let jailed_s = jailed.to_string_lossy().to_string();
-        let Ok(content) = std::fs::read_to_string(&jailed) else {
+        let path_s = path.to_string_lossy().to_string();
+        let Ok(content) = std::fs::read_to_string(&path) else {
             continue;
         };
 
-        let file_ref = cache.get_file_ref(&jailed_s);
-        let short = protocol::shorten_path(&jailed_s);
+        let file_ref = cache.get_file_ref(&path_s);
+        let short = protocol::shorten_path(&path_s);
         let line_count = content.lines().count();
         let file_tokens = count_tokens(&content);
 
-        let _ = cache.store(&jailed_s, &content);
+        let _ = cache.store(&path_s, &content);
 
         let mode = budget_to_mode(*token_budget, file_tokens);
 

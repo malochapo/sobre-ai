@@ -4,13 +4,13 @@
 //! *exact same* TOCTOU-safe read→verify→atomic-write path instead of growing a
 //! second, drifting copy of this security-critical code:
 //!
-//! * symlink rejection (`reject_symlink` + `O_NOFOLLOW`),
+//! * symlink rejection (`reject_symlink` + `O_NOFOLLOW`): an atomic rename
+//!   would otherwise replace the link with a plain file,
 //! * read-size cap + UTF-8 validation,
 //! * whole-file preimage fingerprint (size + mtime + BLAKE3) for the TOCTOU
 //!   guard ([`ensure_preimage_still_matches`]),
 //! * permission-preserving crash-atomic `rename`, with the read-only-directory
-//!   in-place fallback (#459),
-//! * the read-only-roots write choke point (#475).
+//!   in-place fallback (#459).
 //!
 //! One implementation = one audited boundary. `ctx_edit` (`str_replace`) and
 //! `ctx_patch` (anchored) both apply through these functions, so a fix here
@@ -47,16 +47,16 @@ pub(crate) fn system_time_to_millis(t: SystemTime) -> u64 {
         .map_or(0, |d| d.as_millis() as u64)
 }
 
-/// Rejects symlinks at `path` (TOCTOU protection, same boundary as
-/// `core::io_boundary::read_file_nofollow`): a symlink planted inside the jail
-/// after the jail check could otherwise read or overwrite files outside it.
+/// Rejects symlinks at `path`: the crash-atomic `rename` would replace the
+/// link itself with a plain file. Tool paths are canonicalized before they get
+/// here, so this only fires when the target could not be resolved.
 pub(crate) fn reject_symlink(path: &Path) -> Result<(), String> {
     if let Ok(meta) = std::fs::symlink_metadata(path) {
         // Windows: also covers NTFS junctions/reparse points (GL#442).
         if crate::core::pathutil::is_symlink_or_reparse(&meta) {
             return Err(format!(
-                "ERROR: {} is a symlink — refusing to edit through it (TOCTOU protection). \
-                 Edit the symlink target directly via its real path.",
+                "ERROR: {} is a symlink — editing it would replace the link with a plain file. \
+                 Edit the symlink target via its real path.",
                 path.display()
             ));
         }
@@ -94,7 +94,7 @@ pub(crate) fn read_file_bytes_limited(
         #[cfg(unix)]
         if e.raw_os_error() == Some(libc::ELOOP) {
             return format!(
-                "ERROR: {} is a symlink — refusing to edit through it (TOCTOU protection).",
+                "ERROR: {} is a symlink — editing it would replace the link with a plain file.",
                 path.display()
             );
         }
@@ -212,17 +212,10 @@ pub(crate) fn write_atomic_bytes_with_permissions(
     bytes: &[u8],
     permissions: Option<&std::fs::Permissions>,
 ) -> Result<(), String> {
-    // Read-only-roots choke point (#475). Every edit write — replace, create,
-    // and the pre-edit backup — funnels here, including a backup whose raw
-    // `backup_path` bypasses the dispatch jail, so this single guard makes the
-    // whole tool default-deny inside a read-only root before any byte is written
-    // or temp/dir created.
-    crate::core::pathjail::enforce_writable(path)?;
-
     // The rename below would *replace* a symlink at `path` (safe), but the edit
     // pipeline read through this path moments ago — a symlink here means the
     // read/write pair straddles two different files. Reject for consistency
-    // with the read-side O_NOFOLLOW boundary.
+    // with the read side.
     reject_symlink(path)?;
 
     if let Some(parent) = path.parent() {

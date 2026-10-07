@@ -154,9 +154,6 @@ fn build_range_diff(path: &str, old: &str, new: &str) -> String {
 
 fn write_file_atomic(path: &str, content: &str) -> Result<(), String> {
     let p = std::path::Path::new(path);
-    // Read-only-roots choke point (#475): headless ctx_refactor symbol edits
-    // funnel through here — default-deny inside a read-only root.
-    crate::core::pathjail::enforce_writable(p)?;
     let parent = p
         .parent()
         .ok_or_else(|| "invalid path (no parent directory)".to_string())?;
@@ -275,44 +272,6 @@ mod tests {
         assert!(res.applied);
         assert_eq!(std::fs::read_to_string(&p).unwrap(), "aaa\nNEW\nccc\n");
         assert_eq!(res.edited_text, "NEW");
-    }
-
-    /// #475: the headless symbol-edit write path (`write_file_atomic`) must
-    /// default-deny inside a read-only root, leaving the file untouched.
-    #[cfg(not(feature = "no-jail"))]
-    #[test]
-    fn local_range_write_denied_in_read_only_root() {
-        let iso = crate::core::data_dir::isolated_data_dir();
-        let dir = tempfile::tempdir().unwrap();
-        let ro = dir.path().join("refrepo");
-        std::fs::create_dir_all(&ro).unwrap();
-        let path = ro.join("Foo.txt");
-        std::fs::write(&path, "aaa\nBODY\nccc\n").unwrap();
-
-        let ro_canon = crate::core::pathjail::canonicalize_or_self(&ro);
-        std::fs::write(
-            iso.path().join("config.toml"),
-            format!("read_only_roots = [{:?}]\n", ro_canon.to_string_lossy()),
-        )
-        .unwrap();
-        let r = TextRange0Based {
-            start_line: 1,
-            start_char: 0,
-            end_line: 1,
-            end_char: 4,
-        };
-        let res = local_range_write(&edit(&path.to_string_lossy(), r, "NEW", None));
-
-        let err = res.expect_err("write into a read-only root must be denied");
-        assert!(
-            err.contains("read-only"),
-            "error must name the read-only tier: {err}"
-        );
-        assert_eq!(
-            std::fs::read_to_string(&path).unwrap(),
-            "aaa\nBODY\nccc\n",
-            "the file must be left untouched"
-        );
     }
 
     #[test]

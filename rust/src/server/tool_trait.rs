@@ -121,9 +121,9 @@ pub trait McpTool: Send + Sync {
 #[derive(Clone)]
 pub struct ToolContext {
     pub project_root: String,
-    /// Session-scoped trusted roots (MCP `roots/list`, config `extra_roots`),
+    /// Session-scoped extra roots (MCP `roots/list`, config `search_roots`),
     /// snapshotted from the session so sync handlers can honor them without an
-    /// async lock. Empty = single-root jail behaviour (#403).
+    /// async lock. Empty = single root (#403).
     pub extra_roots: Vec<String>,
     /// Pre-resolved paths keyed by argument name (e.g. "path" -> "/abs/dir").
     pub resolved_paths: std::collections::HashMap<String, String>,
@@ -176,27 +176,10 @@ impl ToolContext {
     }
 
     /// Sync path resolution using `project_root` + session `extra_roots`. Thin
-    /// wrapper over [`crate::core::path_resolve::resolve_tool_path_with_roots`]
+    /// wrapper over [`crate::core::path_resolve::resolve_tool_path`]
     /// for sync tool handlers.
     pub fn resolve_path_sync(&self, path: &str) -> Result<String, String> {
-        crate::core::path_resolve::resolve_tool_path_with_roots(
-            Some(&self.project_root),
-            None,
-            path,
-            &self.extra_roots,
-        )
-    }
-
-    /// Default-deny write gate for the read-only tier (#475). Write-capable tool
-    /// handlers must call this with an already-resolved absolute path before
-    /// touching the filesystem; it errors if the path is inside a configured
-    /// `read_only_roots` subtree. A no-op (always `Ok`) when no read-only roots
-    /// are configured, so non-users pay nothing. Thin wrapper over the single
-    /// choke point [`crate::core::pathjail::enforce_writable`] — the low-level
-    /// atomic writers call the same function, so this is the ergonomic,
-    /// early-error layer, not the only line of defence.
-    pub fn ensure_writable(&self, resolved_path: &str) -> Result<(), String> {
-        crate::core::pathjail::enforce_writable(std::path::Path::new(resolved_path))
+        crate::core::path_resolve::resolve_tool_path(Some(&self.project_root), None, path)
     }
 }
 
@@ -292,18 +275,16 @@ mod tests {
     }
 
     #[test]
-    fn require_resolved_path_surfaces_jail_error() {
+    fn require_resolved_path_surfaces_resolution_error() {
         let mut ctx = empty_ctx();
-        ctx.path_errors.insert(
-            "path".to_string(),
-            "path escapes project root /project".to_string(),
-        );
+        ctx.path_errors
+            .insert("path".to_string(), "path contains a null byte".to_string());
         let args: Map<String, Value> = Map::new();
         let result = require_resolved_path(&ctx, &args, "path");
         assert!(result.is_err());
         let err = result.unwrap_err();
         let msg = format!("{err:?}");
-        assert!(msg.contains("escapes project root"), "got: {msg}");
+        assert!(msg.contains("null byte"), "got: {msg}");
     }
 
     #[test]

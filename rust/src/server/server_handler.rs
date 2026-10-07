@@ -85,8 +85,7 @@ impl ServerHandler for LeanCtxServer {
                 session.project_root = Some(root.clone());
                 tracing::info!("Project root set to: {root}");
                 // Cursor multi-root: register sibling workspace folders as extra
-                // trusted roots so explicit cross-folder paths are not rejected
-                // by the path jail (#699).
+                // roots (#699).
                 for other in roots::workspace_roots_from_env() {
                     if &other != root && !session.extra_roots.contains(&other) {
                         session.extra_roots.push(other);
@@ -98,10 +97,10 @@ impl ServerHandler for LeanCtxServer {
                 // cwd decide on the first tool call.
                 session.project_root = None;
             }
-            // Allowed paths double as the extra roots of a multi-root
-            // workspace, except an open jail ("/") or another broad root.
+            // Search roots are the extra roots of a multi-root
+            // workspace, except a broad root ("/", $HOME).
             let cfg_extra: Vec<String> = crate::core::config::Config::load()
-                .allow_paths
+                .search_roots
                 .into_iter()
                 .filter(|p| {
                     !crate::core::pathutil::is_broad_or_unsafe_root(std::path::Path::new(p.trim()))

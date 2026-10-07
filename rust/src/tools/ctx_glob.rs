@@ -25,7 +25,6 @@ pub fn handle(
     pattern: &str,
     dir: &str,
     respect_gitignore: bool,
-    allow_secret_paths: bool,
     max_results: usize,
 ) -> (String, usize) {
     let requested_root = Path::new(dir);
@@ -89,12 +88,6 @@ pub fn handle(
         let path = entry.path();
         files_walked += 1;
 
-        // Never surface secret-like paths (.env, keys, …) unless the active role
-        // explicitly allows it.
-        if !allow_secret_paths && crate::core::io_boundary::is_secret_like(path).is_some() {
-            continue;
-        }
-
         let rel_path = path.strip_prefix(root).unwrap_or(path);
         let rel_str = rel_path.to_string_lossy();
 
@@ -141,7 +134,7 @@ mod tests {
         std::fs::write(dir.path().join("a.txt"), "content").unwrap();
         std::fs::write(dir.path().join("c.rs"), "content").unwrap();
 
-        let (out, _) = handle("*.txt", &dir.path().to_string_lossy(), true, true, 100);
+        let (out, _) = handle("*.txt", &dir.path().to_string_lossy(), true, 100);
 
         let lines: Vec<&str> = out
             .lines()
@@ -159,7 +152,7 @@ mod tests {
     fn glob_refuses_home_directory_root() {
         // #356 class: never walk the whole home dir (macOS TCC prompts).
         let home = dirs::home_dir().expect("home dir in test env");
-        let (out, tokens) = handle("*.txt", home.to_string_lossy().as_ref(), true, true, 10);
+        let (out, tokens) = handle("*.txt", home.to_string_lossy().as_ref(), true, 10);
         assert!(
             out.starts_with("ERROR:") && out.contains("refusing to scan"),
             "home root must be refused: {out}"
@@ -173,7 +166,7 @@ mod tests {
         std::fs::create_dir(dir.path().join("subdir")).unwrap();
         std::fs::write(dir.path().join("file.txt"), "content").unwrap();
 
-        let (out, _) = handle("**/*.txt", &dir.path().to_string_lossy(), true, true, 100);
+        let (out, _) = handle("**/*.txt", &dir.path().to_string_lossy(), true, 100);
 
         assert!(out.contains("file.txt"));
         assert!(!out.contains("subdir"));
@@ -186,7 +179,7 @@ mod tests {
         std::fs::write(dir.path().join("nested").join("deep.rs"), "fn x() {}").unwrap();
         std::fs::write(dir.path().join("top.rs"), "fn y() {}").unwrap();
 
-        let (out, _) = handle("**/*.rs", &dir.path().to_string_lossy(), true, true, 100);
+        let (out, _) = handle("**/*.rs", &dir.path().to_string_lossy(), true, 100);
 
         assert!(
             out.contains("deep.rs"),
@@ -206,7 +199,7 @@ mod tests {
         std::fs::write(dir.path().join("ignored.rs"), "fn a() {}").unwrap();
         std::fs::write(dir.path().join("kept.rs"), "fn b() {}").unwrap();
 
-        let (respected, _) = handle("**/*.rs", &dir.path().to_string_lossy(), true, true, 100);
+        let (respected, _) = handle("**/*.rs", &dir.path().to_string_lossy(), true, 100);
         assert!(respected.contains("kept.rs"));
         assert!(
             !respected.contains("ignored.rs"),
@@ -214,14 +207,14 @@ mod tests {
         );
 
         // With gitignore disabled, the ignored file reappears.
-        let (unrespected, _) = handle("**/*.rs", &dir.path().to_string_lossy(), false, true, 100);
+        let (unrespected, _) = handle("**/*.rs", &dir.path().to_string_lossy(), false, 100);
         assert!(unrespected.contains("ignored.rs"));
     }
 
     #[test]
     fn glob_invalid_pattern_returns_error() {
         let dir = tempfile::tempdir().unwrap();
-        let (out, _) = handle("[invalid", &dir.path().to_string_lossy(), true, true, 100);
+        let (out, _) = handle("[invalid", &dir.path().to_string_lossy(), true, 100);
 
         assert!(out.starts_with("ERROR:"));
         assert!(out.contains("invalid glob pattern"));
@@ -229,7 +222,7 @@ mod tests {
 
     #[test]
     fn glob_nonexistent_dir_returns_error() {
-        let (out, _) = handle("*.txt", "/nonexistent/path", true, true, 100);
+        let (out, _) = handle("*.txt", "/nonexistent/path", true, 100);
 
         assert!(out.starts_with("ERROR:"));
         assert!(out.contains("does not exist"));
@@ -242,7 +235,7 @@ mod tests {
             std::fs::write(dir.path().join(format!("file{i}.txt")), "content").unwrap();
         }
 
-        let (out, _) = handle("*.txt", &dir.path().to_string_lossy(), true, true, 5);
+        let (out, _) = handle("*.txt", &dir.path().to_string_lossy(), true, 5);
 
         let file_lines: Vec<&str> = out
             .lines()
@@ -268,7 +261,7 @@ mod tests {
         if symlink_dir(&target, &link).is_err() {
             return;
         }
-        let (out, _) = handle("**/*.rs", &link.to_string_lossy(), true, true, 20);
+        let (out, _) = handle("**/*.rs", &link.to_string_lossy(), true, 20);
         assert!(
             out.contains("visible.rs"),
             "junction root must be traversed: {out}"

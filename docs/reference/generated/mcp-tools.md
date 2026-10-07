@@ -142,8 +142,8 @@ Parameters: `action`*, `session_id`, `value`
 WORKFLOW: preferred — auto-compresses output (build/test/log).
 raw=true for verbatim output.
 [exit:N] on errors (lossless).
-POLICY: every command is allowed except constructs that execute something the command text does not name (eval/exec/source, $() at command position, interpreter -c, find -exec, LD_PRELOAD=, …).
-A [BLOCKED] command is permanent — do not retry it.
+Runs every command as given; the agent host decides what may run.
+Sets GIT_TERMINAL_PROMPT=0, GIT_PAGER=cat, PAGER=cat, a UTF-8 locale if none, stdin=/dev/null.
 Multi-line scripts: write them to a file, then run the file.
 
 Parameters: `background_action`, `command`, `cwd`, `env`, `job_id`, `raw`, `run_in_background`, `timeout_ms`

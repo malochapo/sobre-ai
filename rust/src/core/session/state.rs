@@ -374,66 +374,40 @@ impl SessionState {
     }
 
     /// Returns the effective working directory for shell commands.
-    /// Priority: explicit cwd arg > session shell_cwd > project_root > process cwd.
-    /// Explicit CWD and stored shell_cwd are jail-checked against the project root
-    /// to prevent MCP clients from escaping the workspace.
+    /// Priority: explicit cwd arg (relative to the project root) > session
+    /// shell_cwd > project_root > process cwd. sobre does not confine it: the
+    /// agent host decides where commands may run (invariant 6).
     pub fn effective_cwd(&self, explicit_cwd: Option<&str>) -> String {
-        self.effective_cwd_checked(explicit_cwd).0
-    }
-
-    /// Like [`Self::effective_cwd`], but also reports *why* an explicit `cwd`
-    /// request was rejected by the project-root jail and silently replaced with
-    /// the project root (#629).
-    ///
-    /// The jail itself is deliberate sandboxing (it stops MCP clients escaping
-    /// the workspace) and must stay — the only gap was that the substitution was
-    /// silent, so a caller running `pwd && ls` in what they think is dir A
-    /// actually ran in the project root with no indication why. Callers that
-    /// surface output to a human/agent (e.g. `ctx_shell`) use the returned
-    /// `Option<String>` reason to append a one-line hint instead of letting the
-    /// swap pass unnoticed; `effective_cwd` keeps the original lossless behaviour.
-    pub fn effective_cwd_checked(&self, explicit_cwd: Option<&str>) -> (String, Option<String>) {
-        let root = self.project_root.as_deref().unwrap_or(".");
         if let Some(cwd) = explicit_cwd
             && !cwd.is_empty()
             && cwd != "."
         {
-            return Self::jail_cwd(cwd, root);
+            let p = std::path::Path::new(cwd);
+            let abs = if p.is_absolute() {
+                p.to_path_buf()
+            } else {
+                std::path::Path::new(self.project_root.as_deref().unwrap_or(".")).join(p)
+            };
+            return crate::core::pathutil::safe_canonicalize_or_self(&abs)
+                .to_string_lossy()
+                .to_string();
         }
         if let Some(ref cwd) = self.shell_cwd {
-            return (cwd.clone(), None);
+            return cwd.clone();
         }
         if let Some(ref r) = self.project_root {
-            return (r.clone(), None);
+            return r.clone();
         }
-        (
-            std::env::current_dir()
-                .map_or_else(|_| ".".to_string(), |p| p.to_string_lossy().to_string()),
-            None,
-        )
+        std::env::current_dir()
+            .map_or_else(|_| ".".to_string(), |p| p.to_string_lossy().to_string())
     }
 
-    /// Verifies that `candidate` is within the project jail.
-    ///
-    /// Falls back to `fallback_root` if the candidate escapes, returning the
-    /// jail-rejection reason as the second tuple element so callers can surface
-    /// it instead of silently substituting the root (#629). `None` means the
-    /// candidate was accepted as-is.
-    fn jail_cwd(candidate: &str, fallback_root: &str) -> (String, Option<String>) {
-        let p = std::path::Path::new(candidate);
-        match crate::core::pathjail::jail_path(p, std::path::Path::new(fallback_root)) {
-            Ok(jailed) => (jailed.to_string_lossy().to_string(), None),
-            Err(reason) => (fallback_root.to_string(), Some(reason.to_string())),
-        }
-    }
-
-    /// Persist an explicit, jail-accepted `cwd` argument as the live shell
+    /// Persist an explicit `cwd` argument as the live shell
     /// cwd (#707). `update_shell_cwd` only tracks `cd` inside the command
     /// text, but clients that switch checkouts mid-session (Claude Code
     /// after `EnterWorktree`) pass the new directory as the `cwd` *param* of
     /// every subsequent call — without persisting it, the worktree-divergence
-    /// detection in path resolution never sees the switch. Callers must pass
-    /// a cwd that already passed the project-root jail.
+    /// detection in path resolution never sees the switch.
     pub fn note_explicit_cwd(&mut self, cwd: &str) {
         let path = std::path::Path::new(cwd);
         if path.is_absolute() && path.is_dir() {
@@ -448,24 +422,16 @@ impl SessionState {
     /// Updates shell_cwd by detecting `cd` in the command.
     /// Handles: `cd /abs/path`, `cd rel/path` (relative to current cwd),
     /// `cd ..`, and chained commands like `cd foo && ...`.
-    /// The new CWD is jail-checked against the project root.
     pub fn update_shell_cwd(&mut self, command: &str) {
         let base = self.effective_cwd(None);
         if let Some(new_cwd) = extract_cd_target(command, &base) {
             let path = std::path::Path::new(&new_cwd);
             if path.exists() && path.is_dir() {
-                let canonical = crate::core::pathutil::safe_canonicalize_or_self(path)
-                    .to_string_lossy()
-                    .to_string();
-                let root = self.project_root.as_deref().unwrap_or(".");
-                if crate::core::pathjail::jail_path(
-                    std::path::Path::new(&canonical),
-                    std::path::Path::new(root),
-                )
-                .is_ok()
-                {
-                    self.shell_cwd = Some(canonical);
-                }
+                self.shell_cwd = Some(
+                    crate::core::pathutil::safe_canonicalize_or_self(path)
+                        .to_string_lossy()
+                        .to_string(),
+                );
             }
         }
     }

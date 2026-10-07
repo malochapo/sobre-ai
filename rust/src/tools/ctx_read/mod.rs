@@ -120,32 +120,10 @@ fn append_compressed_hint(output: &str, file_path: &str) -> String {
 }
 
 /// Reads a file as UTF-8 with lossy fallback, enforcing binary detection and max read size limit.
-/// Defense-in-depth: verifies that the canonical path stays within the process's project root
-/// (if determinable) even though callers SHOULD have already jail-checked the path.
 pub fn read_file_lossy(path: &str) -> Result<String, std::io::Error> {
     if crate::core::binary_detect::is_binary_file(path) {
         let msg = crate::core::binary_detect::binary_file_message(path);
         return Err(std::io::Error::other(msg));
-    }
-
-    {
-        let canonical =
-            crate::core::pathutil::safe_canonicalize_bounded(std::path::Path::new(path), 2000);
-        if let Ok(cwd) = std::env::current_dir() {
-            let root = crate::core::pathutil::safe_canonicalize_bounded(&cwd, 2000);
-            if !canonical.starts_with(&root) {
-                let allow = crate::core::pathjail::allow_paths_from_env_and_config();
-                let data_dir_ok = crate::core::data_dir::lean_ctx_data_dir()
-                    .is_ok_and(|d| canonical.starts_with(d));
-                let tmp_ok = canonical.starts_with(std::env::temp_dir());
-                if !allow.iter().any(|a| canonical.starts_with(a)) && !data_dir_ok && !tmp_ok {
-                    tracing::warn!(
-                        "defense-in-depth: path may escape project root: {}",
-                        canonical.display()
-                    );
-                }
-            }
-        }
     }
 
     let cap = crate::core::limits::max_read_bytes();
@@ -170,7 +148,7 @@ pub fn read_file_lossy(path: &str) -> Result<String, std::io::Error> {
         Ok(s) => s,
         Err(e) => String::from_utf8_lossy(e.as_bytes()).into_owned(),
     };
-    Ok(crate::core::io_boundary::strip_utf8_bom(s))
+    Ok(crate::core::text_read::strip_utf8_bom(s))
 }
 
 /// A streamed line-window read (#811): only the requested span's raw lines,
@@ -268,13 +246,12 @@ fn try_disk_anchored_window(
 
 /// Opens a file, retrying once after a brief pause on NotFound.
 /// Works around overlay/FUSE stat-cache races in container runtimes (Docker, Codex).
-/// Uses O_NOFOLLOW on Unix for TOCTOU symlink protection.
 fn open_with_retry(path: &str) -> Result<std::fs::File, std::io::Error> {
-    match open_nofollow(path) {
+    match std::fs::File::open(path) {
         Ok(f) => Ok(f),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
             std::thread::sleep(std::time::Duration::from_millis(50));
-            open_nofollow(path).map_err(|e| {
+            std::fs::File::open(path).map_err(|e| {
                 if e.kind() == std::io::ErrorKind::NotFound {
                     std::io::Error::other(format!(
                         "file not found: {path} — verify the path with ctx_tree or ctx_search"
@@ -286,39 +263,6 @@ fn open_with_retry(path: &str) -> Result<std::fs::File, std::io::Error> {
         }
         Err(e) => Err(e),
     }
-}
-
-#[cfg(unix)]
-fn open_nofollow(path: &str) -> Result<std::fs::File, std::io::Error> {
-    use std::os::unix::fs::OpenOptionsExt;
-    use std::path::Path;
-
-    let p = Path::new(path);
-    // Canonicalize the parent directory (resolving symlinks in the directory path)
-    // but apply O_NOFOLLOW only to the final file component. This prevents
-    // symlink-following attacks on the target file while allowing legitimate
-    // directory symlinks (e.g., /tmp → /private/tmp on macOS).
-    if let (Some(parent), Some(filename)) = (p.parent(), p.file_name())
-        && parent.exists()
-    {
-        let canonical_parent = crate::core::pathutil::safe_canonicalize_bounded(parent, 2000);
-        let canonical_path = canonical_parent.join(filename);
-        return std::fs::OpenOptions::new()
-            .read(true)
-            .custom_flags(libc::O_NOFOLLOW)
-            .open(&canonical_path);
-    }
-
-    // Fallback: direct open with O_NOFOLLOW
-    std::fs::OpenOptions::new()
-        .read(true)
-        .custom_flags(libc::O_NOFOLLOW)
-        .open(path)
-}
-
-#[cfg(not(unix))]
-fn open_nofollow(path: &str) -> Result<std::fs::File, std::io::Error> {
-    std::fs::File::open(path)
 }
 
 /// Reads a file through the cache and applies the requested compression mode.

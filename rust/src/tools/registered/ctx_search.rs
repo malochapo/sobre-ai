@@ -83,7 +83,7 @@ impl McpTool for CtxSearchTool {
                     "max_results": { "type": "integer" },
                     "top_k": { "type": "integer" },
                     "mode": { "type": "string", "enum": ["bm25", "dense", "hybrid"] },
-                    "workspace": { "type": "boolean", "description": "semantic: also search allow_paths and read_only_roots" },
+                    "workspace": { "type": "boolean", "description": "semantic: also search the configured search_roots" },
                     "file": { "type": "string" },
                     "kind": { "type": "string" },
                     "file_path": { "type": "string" },
@@ -200,13 +200,8 @@ fn handle_regex(args: &Map<String, Value>, ctx: &ToolContext) -> Result<ToolOutp
     let exclude = get_str(args, "exclude");
     let exclude_pattern = get_str(args, "exclude_pattern");
 
-    if no_gitignore && let Err(e) = crate::core::io_boundary::ensure_ignore_gitignore_allowed() {
-        return Ok(ToolOutput::simple(e));
-    }
-
     let crp = ctx.crp_mode;
     let respect = !no_gitignore;
-    let allow_secret_paths = false;
 
     if !resolved.is_multi {
         return search_single(
@@ -216,7 +211,6 @@ fn handle_regex(args: &Map<String, Value>, ctx: &ToolContext) -> Result<ToolOutp
             max,
             crp,
             respect,
-            allow_secret_paths,
             anchored,
             exclude.as_deref(),
             exclude_pattern.as_deref(),
@@ -238,7 +232,6 @@ fn handle_regex(args: &Map<String, Value>, ctx: &ToolContext) -> Result<ToolOutp
                     per_root_max,
                     crp,
                     respect,
-                    allow_secret_paths,
                     anchored,
                     exclude.as_deref(),
                     exclude_pattern.as_deref(),
@@ -293,7 +286,7 @@ fn handle_regex(args: &Map<String, Value>, ctx: &ToolContext) -> Result<ToolOutp
     })
 }
 
-/// Resolve the `path` arg to a jailed path, falling back to the project root —
+/// Resolve the `path` arg, falling back to the project root —
 /// the same precedence the former standalone semantic-search tool used.
 fn resolve_path_or_root(ctx: &ToolContext) -> Result<String, ErrorData> {
     if let Some(p) = ctx.resolved_path("path") {
@@ -465,7 +458,6 @@ fn search_single(
     max: usize,
     crp: crate::tools::CrpMode,
     respect_gitignore: bool,
-    allow_secret_paths: bool,
     anchored: bool,
     exclude: Option<&str>,
     exclude_pattern: Option<&str>,
@@ -479,7 +471,6 @@ fn search_single(
                 max,
                 crp,
                 respect_gitignore,
-                allow_secret_paths,
                 anchored,
                 exclude,
                 exclude_pattern,
@@ -559,7 +550,6 @@ fn handle_batch_queries(
     let anchored = get_bool(args, "anchored").unwrap_or(false);
     let crp = ctx.crp_mode;
     let respect = !no_gitignore;
-    let allow_secret_paths = false;
     let root = &resolved.roots[0];
     let global_max = (get_int(args, "max_results").unwrap_or(20) as usize).min(500);
     let per_query_max = (global_max / queries.len()).max(5);
@@ -597,7 +587,6 @@ fn handle_batch_queries(
                     per_query_max,
                     crp,
                     respect,
-                    allow_secret_paths,
                     anchored,
                     exclude.as_deref(),
                     exclude_pattern.as_deref(),

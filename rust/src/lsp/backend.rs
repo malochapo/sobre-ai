@@ -26,7 +26,7 @@ pub struct TextRange0Based {
 /// happened in `ctx_refactor`; the backend only ever sees an absolute path + range.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RangeEdit {
-    /// Absolute, jail-checked path of the file to edit.
+    /// Absolute, resolved path of the file to edit.
     pub abs_path: String,
     /// Project-relative path.
     pub rel_path: String,

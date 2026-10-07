@@ -151,16 +151,6 @@ pub(crate) fn render_by_handle(handle: &str, project_root: &str) -> (String, usi
 fn render_single(sym: &SymbolInfo, gp: &GraphProvider, project_root: &str) -> (String, usize) {
     let abs_path = resolve_file_path(&sym.file, project_root);
 
-    if let Err(e) = crate::core::pathjail::jail_path(
-        std::path::Path::new(&abs_path),
-        std::path::Path::new(project_root),
-    ) {
-        return (
-            format!("Symbol '{}': path blocked by jail: {e}", sym.name),
-            0,
-        );
-    }
-
     let Ok(content) = std::fs::read_to_string(&abs_path) else {
         return (
             format!(
