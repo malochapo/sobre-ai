@@ -70,10 +70,6 @@ pub fn run() {
                 crate::cli::pricing_cmd::cmd_pricing(&rest);
                 return;
             }
-            "snapshot" => {
-                crate::cli::cmd_snapshot(&rest);
-                return;
-            }
             // Distinct from `eval ab`: that measures answer-quality
             // non-regression, this produces the reproducible savings + recall +
             // latency scorecard the CI publishes as an artifact.
@@ -189,10 +185,6 @@ pub fn run() {
             }
             "config" => {
                 super::cmd_config(&rest);
-                return;
-            }
-            "introspect" => {
-                super::cmd_introspect(&rest);
                 return;
             }
             "cache" => {

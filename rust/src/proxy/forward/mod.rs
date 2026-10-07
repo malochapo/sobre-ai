@@ -105,15 +105,6 @@ pub(crate) async fn forward_request(
         .as_ref()
         .and_then(|r| r.upstream_base.as_deref())
         .unwrap_or(upstream_base);
-    if let Some(ref parsed) = parsed {
-        let provider = match provider_label {
-            "Anthropic" | "Bedrock" => super::introspect::Provider::Anthropic,
-            "OpenAI" => super::introspect::Provider::OpenAi,
-            _ => super::introspect::Provider::Gemini,
-        };
-        let breakdown = super::introspect::analyze_request(parsed, provider);
-        state.introspect.record(breakdown);
-    }
     // Cross-shape route (enterprise#16): the body now speaks OpenAI Chat
     // Completions — address the matching endpoint instead of the caller's
     // `/v1/messages` path, and scan the response with the OpenAI parser.

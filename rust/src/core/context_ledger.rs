@@ -196,7 +196,6 @@ impl ContextLedger {
                 Some(old) => PHI_REREAD_ALPHA * phi + (1.0 - PHI_REREAD_ALPHA) * old,
                 None => phi,
             });
-            crate::core::introspect::tick("phi_recompute");
         } else {
             self.entries.push(LedgerEntry {
                 path: path.clone(),

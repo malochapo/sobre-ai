@@ -98,7 +98,6 @@ pub mod context_ledger;
 pub mod context_lint;
 pub mod context_overhead;
 pub mod context_radar;
-pub mod context_snapshot;
 pub mod cross_source_hints;
 
 /// Convenience re-export: all context-related modules.
@@ -283,7 +282,6 @@ pub mod ingestion;
 pub mod intent_engine;
 pub(crate) mod intent_lang;
 pub mod intent_router;
-pub mod introspect;
 pub mod io_health;
 pub mod jsonc;
 pub mod language_capabilities;

@@ -213,9 +213,6 @@ pub fn apply_confidence_decay(facts: &mut [KnowledgeFact], config: &LifecycleCon
         }
     }
 
-    if count > 0 && config.forgetting_model == ForgettingModel::Ebbinghaus {
-        crate::core::introspect::tick("power_law_decay");
-    }
     count
 }
 

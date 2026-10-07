@@ -18,7 +18,6 @@ pub(crate) mod compress_api;
 pub(crate) mod forward;
 pub(crate) mod google;
 pub(crate) mod history_prune;
-pub(crate) mod introspect;
 pub(crate) mod model_router;
 pub(crate) mod models_api;
 pub(crate) mod openai;
@@ -58,7 +57,6 @@ use axum::{
 pub struct ProxyState {
     pub client: reqwest::Client,
     pub port: u16,
-    pub introspect: Arc<introspect::IntrospectState>,
     /// Live provider upstreams, refreshed from config.toml without a proxy
     /// restart (#449). Read per request via [`ProxyState::openai_upstream`] etc.
     pub upstreams: tokio::sync::watch::Receiver<Arc<Upstreams>>,
@@ -206,7 +204,6 @@ pub async fn start_proxy_with_token(port: u16, auth_token: Option<String>) -> an
     let state = ProxyState {
         client,
         port,
-        introspect: Arc::new(introspect::IntrospectState::default()),
         upstreams: upstream_rx,
     };
 
@@ -374,25 +371,10 @@ async fn v1_retrieve_ccr(
 }
 
 async fn status_handler(State(state): State<ProxyState>) -> impl IntoResponse {
-    use std::sync::atomic::Ordering::Relaxed;
-    let i = &state.introspect;
-
-    let last_breakdown = i
-        .last_breakdown
-        .lock()
-        .ok()
-        .and_then(|guard| guard.as_ref().map(|b| serde_json::to_value(b).ok()))
-        .flatten();
-
     // Live upstreams the proxy is forwarding to right now (#449). This is the
     // single source of truth for "where is my traffic actually going" — it
     // reflects config.toml hot-reloads and any start-time env override.
     let up = state.upstream_snapshot();
-
-    let introspect_total_input = i.total_input_tokens.load(Relaxed);
-    let introspect_bulk_candidates = i.total_bulk_candidate_tokens.load(Relaxed);
-    let introspect_bulk_share =
-        introspect::token_share_basis_points(introspect_bulk_candidates, introspect_total_input);
 
     // Usage (calls, tokens, cost, savings) is in the usage ledger, which
     // `lean-ctx gain` reads; this endpoint only says where traffic goes.
@@ -410,15 +392,6 @@ async fn status_handler(State(state): State<ProxyState>) -> impl IntoResponse {
             "shape": p.shape.as_str(),
             "base_url": p.base_url,
         })).collect::<Vec<_>>(),
-        "introspect": {
-            "total_requests_analyzed": i.total_requests.load(Relaxed),
-            "total_input_tokens": introspect_total_input,
-            "total_system_prompt_tokens": i.total_system_prompt_tokens.load(Relaxed),
-            "total_bulk_candidate_tokens": introspect_bulk_candidates,
-            "bulk_candidate_share_basis_points": introspect_bulk_share,
-            "vision_encoding_decision_gate_met": introspect_bulk_share.is_some_and(|share| share >= 2_000),
-            "last_breakdown": last_breakdown,
-        }
     });
     (StatusCode::OK, axum::Json(body))
 }
