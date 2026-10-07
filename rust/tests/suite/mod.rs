@@ -28,7 +28,6 @@ mod engine_call;
 mod entrypoints_wired;
 mod eval_harness_integration;
 mod glob_cli_556;
-mod graph_export_contract;
 mod hardening_ir_traits;
 mod hn_hardening_scenarios;
 mod home_dotdir_firewall;

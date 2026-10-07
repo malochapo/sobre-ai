@@ -105,6 +105,7 @@ pub(super) fn upsert(conn: &Connection, edge: &Edge) -> anyhow::Result<()> {
     Ok(())
 }
 
+#[cfg(test)]
 pub(super) fn from_node(conn: &Connection, node_id: i64) -> anyhow::Result<Vec<Edge>> {
     let mut stmt = conn.prepare(
         "SELECT id, source_id, target_id, kind, metadata
@@ -125,6 +126,7 @@ pub(super) fn from_node(conn: &Connection, node_id: i64) -> anyhow::Result<Vec<E
     Ok(edges)
 }
 
+#[cfg(test)]
 pub(super) fn to_node(conn: &Connection, node_id: i64) -> anyhow::Result<Vec<Edge>> {
     let mut stmt = conn.prepare(
         "SELECT id, source_id, target_id, kind, metadata

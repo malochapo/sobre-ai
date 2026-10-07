@@ -53,11 +53,10 @@ Parameters: `ignore_gitignore`, `max_results`, `path`, `paths`, `pattern`*
 ## `ctx_graph`
 
 File-level dependency graph queries.
-action=symbol path="file.rs::fnName" returns the DEFINITION (not usages — use ctx_search for references). neighbors=imports±direction, impact=reverse-dep blast radius, path from→to=dependency chain, diff since=HEAD~1=git change impact, diagram kind=deps|calls (Mermaid),
-cycles=dependency cycles, entrypoints=files with no dependents.
+action=symbol path="file.rs::fnName" returns the DEFINITION (not usages — use ctx_search for references). neighbors=imports±direction, impact=reverse-dep blast radius, path from→to=dependency chain, diagram kind=deps|calls (Mermaid).
 For understanding code use ctx_compose FIRST.
 
-Parameters: `action`*, `depth`, `format`, `kind`, `path`, `project_root`, `since`, `to`
+Parameters: `action`*, `depth`, `format`, `kind`, `path`, `project_root`, `to`
 
 ## `ctx_impact`
 

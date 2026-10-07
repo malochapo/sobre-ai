@@ -10,8 +10,7 @@ This contract covers:
 
 - Property graph storage under `$LEAN_CTX_DATA_DIR/graphs/<project_hash>/graph.db`
 - Graph build + freshness semantics (`ctx_impact action=build|status`)
-- Deterministic exports from `ctx_impact` and `ctx_graph action=cycles|entrypoints`
-  (incl. `format=json`)
+- Deterministic outputs from `ctx_impact` and `ctx_graph` (incl. `format=json`)
 
 ## Version
 
@@ -24,7 +23,6 @@ This contract covers:
 
 - Tools **may** auto-build the property graph when it is missing/empty:
   - `ctx_impact action=analyze` (auto-build if empty)
-  - `ctx_graph action=cycles|entrypoints` (auto-build if empty)
 
 ### Explicit rebuild
 

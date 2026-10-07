@@ -18,8 +18,7 @@
 //! - `else` / `else if` do **not** add a nesting level (handled via the
 //!   `alternative` field), so else-if chains stay roughly linear.
 //!
-//! Nested function bodies are scored independently (mirrors
-//! [`crate::core::cyclomatic`]). The traversal uses the heap-stack walk pattern
+//! Nested function bodies are scored independently. The traversal uses the heap-stack walk pattern
 //! to stay safe on pathologically deep trees (#378).
 
 use serde::Serialize;

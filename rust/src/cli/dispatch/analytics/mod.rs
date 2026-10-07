@@ -6,7 +6,7 @@ mod gain;
 mod graph;
 
 pub(in crate::cli::dispatch) use gain::cmd_gain;
-pub(in crate::cli::dispatch) use graph::{cmd_compact, cmd_graph, cmd_smells};
+pub(in crate::cli::dispatch) use graph::{cmd_compact, cmd_graph};
 
 use crate::core;
 

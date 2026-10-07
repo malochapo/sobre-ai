@@ -22,7 +22,6 @@ pub static malloc_conf: &[u8] = b"background_thread:true,dirty_decay_ms:1000,muz
 pub mod compound_lexer;
 pub mod core;
 pub mod engine;
-pub mod heatmap;
 pub mod hook_handlers;
 pub mod hooks;
 pub mod instructions;

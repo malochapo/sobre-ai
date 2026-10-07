@@ -68,12 +68,29 @@ fn graph_target_key_normalizes_windows_styles() {
     assert_eq!(target, expected);
 }
 
+/// Symbols no `calls`, `type_ref` or `imports` edge points at: what a
+/// dead-code check would report, and what the builder's reference edges must
+/// keep small.
+#[cfg(feature = "embeddings")]
+fn unreferenced_symbols(graph: &crate::core::property_graph::CodeGraph) -> Vec<String> {
+    let mut stmt = graph
+        .connection()
+        .prepare(
+            "SELECT n.name FROM nodes n WHERE n.kind = 'symbol' AND n.id NOT IN \
+             (SELECT DISTINCT target_id FROM edges WHERE kind IN ('calls', 'type_ref', 'imports'))",
+        )
+        .expect("prepare");
+    stmt.query_map([], |r| r.get(0))
+        .expect("query")
+        .map_while(Result::ok)
+        .collect()
+}
+
 /// End-to-end regression for GH #365: build the property graph from real
 /// Python sources and assert that a class which is imported + instantiated
-/// cross-file is NOT reported as `dead_code`. This exercises the *builder*
-/// (symbol-level `Calls` edge for class instantiation), not just the SQL
-/// rule covered by the synthetic test in `core::smells`. The unused class
-/// must still be flagged so the test cannot pass vacuously.
+/// cross-file has an incoming reference edge (symbol-level `Calls` edge for
+/// class instantiation). The unused class must stay unreferenced so the test
+/// cannot pass vacuously.
 #[cfg(feature = "embeddings")]
 #[test]
 fn dead_code_builder_does_not_flag_instantiated_python_class() {
@@ -106,12 +123,7 @@ fn dead_code_builder_does_not_flag_instantiated_python_class() {
 
     let graph =
         crate::core::property_graph::CodeGraph::open(&root_str).expect("open property graph");
-    let findings = crate::core::smells::scan_rule(
-        graph.connection(),
-        "dead_code",
-        &crate::core::smells::SmellConfig::default(),
-    );
-    let dead: Vec<String> = findings.iter().filter_map(|f| f.symbol.clone()).collect();
+    let dead = unreferenced_symbols(&graph);
 
     assert!(
         !dead.iter().any(|s| s == "Engine"),
@@ -209,12 +221,7 @@ fn csharp_same_namespace_type_use_is_not_a_leaf() {
     // (DI) was flagged `dead_code` because nothing ever *called* it. The
     // symbol-level TypeRef edge must clear it; the genuinely unreferenced
     // Logger keeps the rule honest.
-    let findings = crate::core::smells::scan_rule(
-        graph.connection(),
-        "dead_code",
-        &crate::core::smells::SmellConfig::default(),
-    );
-    let dead: Vec<String> = findings.iter().filter_map(|f| f.symbol.clone()).collect();
+    let dead = unreferenced_symbols(&graph);
     assert!(
         !dead.iter().any(|s| s == "Engine"),
         "type-consumed class `Engine` must not be dead_code; findings: {dead:?}"

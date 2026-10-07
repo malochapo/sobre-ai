@@ -64,28 +64,17 @@ pub mod memory {
 // Domain: Graph
 // ---------------------------------------------------------------------------
 pub mod call_graph;
-pub mod community;
-pub mod graph_analysis;
 pub mod graph_context;
-pub mod graph_enricher;
-pub mod graph_export;
 pub mod graph_index;
-pub mod graph_parity;
 pub mod graph_provider;
-pub mod pagerank;
 pub mod property_graph;
-pub mod repomap;
 
 /// Convenience re-export: all graph-related modules.
 pub mod graph {
     pub use super::call_graph;
-    pub use super::community;
     pub use super::graph_context;
-    pub use super::graph_enricher;
-    pub use super::graph_export;
     pub use super::graph_index;
     pub use super::graph_provider;
-    pub use super::pagerank;
     pub use super::property_graph;
 }
 
@@ -217,7 +206,6 @@ pub mod benchmark;
 pub mod code_health;
 pub mod conformance;
 pub mod contracts;
-pub mod cyclomatic;
 pub mod output_verification;
 pub mod quality;
 pub mod refetch_signals;
@@ -225,7 +213,6 @@ pub mod safety_needles;
 pub mod scorecard;
 pub mod setup_report;
 pub mod slow_log;
-pub mod smells;
 pub mod surprise;
 
 // ---------------------------------------------------------------------------

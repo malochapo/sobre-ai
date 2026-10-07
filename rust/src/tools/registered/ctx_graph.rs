@@ -19,15 +19,14 @@ impl McpTool for CtxGraphTool {
              action=symbol path=\"file.rs::fnName\" returns the DEFINITION (not usages — \
              use ctx_search for references). neighbors=imports±direction, \
              impact=reverse-dep blast radius, path from→to=dependency chain, \
-             diff since=HEAD~1=git change impact, diagram kind=deps|calls (Mermaid),\n\
-             cycles=dependency cycles, entrypoints=files with no dependents.\n\
+             diagram kind=deps|calls (Mermaid).\n\
              For understanding code use ctx_compose FIRST.",
             json!({
                 "type": "object",
                 "properties": {
                     "action": {
                         "type": "string",
-                        "description": "build|related|symbol|impact|status|enrich|context|diagram|neighbors|path|explain|diff|cycles|entrypoints"
+                        "description": "build|related|symbol|impact|status|diagram|neighbors|path"
                     },
                     "path": {
                         "type": "string",
@@ -37,12 +36,11 @@ impl McpTool for CtxGraphTool {
                     "depth": { "type": "integer" },
                     "kind": { "type": "string", "description": "diagram: deps|calls" },
                     "format": { "type": "string", "description": "text|json" },
-                    "since": { "type": "string", "description": "Git ref (default HEAD~1)" },
                     "project_root": { "type": "string" }
                 },
                 "required": ["action"],
                 "allOf": [
-                    { "if": { "properties": { "action": { "enum": ["related", "symbol", "impact", "neighbors", "explain", "path"] } }, "required": ["action"] }, "then": { "required": ["path"] } },
+                    { "if": { "properties": { "action": { "enum": ["related", "symbol", "impact", "neighbors", "path"] } }, "required": ["action"] }, "then": { "required": ["path"] } },
                     { "if": { "properties": { "action": { "const": "path" } }, "required": ["action"] }, "then": { "required": ["path", "to"] } }
                 ]
             }),
@@ -83,8 +81,6 @@ impl McpTool for CtxGraphTool {
         let depth = get_usize(args, "depth").map(|d| d.min(64));
         let kind = get_str(args, "kind");
         let format = get_str(args, "format");
-        // `since` is a git ref, not a filesystem path — read it raw (no PathJail).
-        let since = get_str(args, "since");
         let to = if let Some(p) = ctx.resolved_path("to") {
             Some(p.to_string())
         } else if let Some(err) = ctx
@@ -115,7 +111,6 @@ impl McpTool for CtxGraphTool {
             kind.as_deref(),
             to.as_deref(),
             format.as_deref(),
-            since.as_deref(),
         );
 
         Ok(ToolOutput {

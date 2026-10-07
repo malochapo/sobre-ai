@@ -42,51 +42,7 @@ pub fn handle(
         "build" => handle_build(root, fmt),
         "update" => handle_update(root, fmt),
         "status" => handle_status(root, fmt),
-        "parity" => handle_parity(root, fmt),
-        _ => "Unknown action. Use: analyze, diff, chain, build, status, update, parity".to_string(),
-    }
-}
-
-/// Shadow-mode parity proof (#682.3): build an in-memory PropertyGraph from the
-/// current graph_index and quantify whether PG reproduces everything the
-/// facade exposes (symbols, edges, dependencies) before any backend flip.
-fn handle_parity(root: &str, fmt: OutputFormat) -> String {
-    // Compare the *fresh extractor* output (a real graph_index scan, built
-    // in-memory from the file walk + signature extraction) against a
-    // PropertyGraph populated from it — the genuine "mirror is lossless"
-    // invariant. Loading the persisted index would be circular since #696 C4
-    // (it is itself materialized from the PG), yielding a meaningless trivially
-    // lossless result, so always rescan to keep this a real proof.
-    let index = crate::core::graph_index::scan_with_content_cache(root).0;
-
-    let report = match crate::core::graph_parity::compare(&index) {
-        Ok(r) => r,
-        Err(e) => return format!("Parity comparison failed: {e}"),
-    };
-
-    match fmt {
-        OutputFormat::Json => {
-            let v = json!({
-                "tool": "ctx_impact",
-                "action": "parity",
-                "lossless": report.is_lossless(),
-                "files": report.files,
-                "symbols": { "gi": report.symbol_count_gi, "pg": report.symbol_count_pg,
-                             "matched": report.symbols_matched, "checked": report.symbols_checked },
-                "edges": { "gi": report.edge_count_gi, "pg": report.edge_count_pg,
-                           "superset": report.edge_pairs_lossless },
-                "dependencies": { "lossless": report.dependencies_lossless,
-                                  "checked": report.files_checked, "extra": report.dependencies_extra },
-                "dependents": { "lossless": report.dependents_lossless, "checked": report.files_checked },
-                "divergences": report.divergences,
-            });
-            serde_json::to_string_pretty(&v).unwrap_or_else(|_| "{}".to_string())
-        }
-        OutputFormat::Text => {
-            let body = crate::core::graph_parity::format_report(&report);
-            let tokens = count_tokens(&body);
-            format!("{body}\n[ctx_impact parity: {tokens} tok]")
-        }
+        _ => "Unknown action. Use: analyze, diff, chain, build, status, update".to_string(),
     }
 }
 

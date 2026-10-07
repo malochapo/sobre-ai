@@ -16,7 +16,6 @@ pub fn handle(
     kind: Option<&str>,
     to: Option<&str>,
     format: Option<&str>,
-    since: Option<&str>,
 ) -> String {
     match action {
         "build" => handle_build(root),
@@ -24,22 +23,13 @@ pub fn handle(
         "symbol" => handle_symbol(path, root, cache, crp_mode),
         "impact" => handle_impact(path, root),
         "status" => handle_status(root),
-        "enrich" => handle_enrich(root),
-        "context" => handle_context_query(path, root),
         "diagram" => crate::tools::ctx_graph_diagram::handle(path, depth, kind, root),
         "neighbors" => crate::tools::ctx_graph_primitives::neighbors(path, root, depth, format),
         "path" => crate::tools::ctx_graph_primitives::shortest_path(path, to, root, format),
-        "explain" => crate::tools::ctx_graph_primitives::explain(path, root, format),
-        "diff" => crate::tools::ctx_graph_diff::diff(since, root, format),
-        // Two analyses the graph already supports and nothing else exposes.
-        // `entrypoints` — files with no dependents — is the primitive dead-code
-        // detection is built on, so it belongs on the graph tool rather than in
-        // a module only the CLI can reach.
-        "cycles" => crate::tools::impl_architecture::handle("cycles", root, format),
-        "entrypoints" => crate::tools::impl_architecture::handle("entrypoints", root, format),
-        _ => "Unknown action. Use: build, related, symbol, impact, status, enrich, context, \
-diagram, neighbors, path, explain, diff, cycles, entrypoints"
-            .to_string(),
+        _ => {
+            "Unknown action. Use: build, related, symbol, impact, status, diagram, neighbors, path"
+                .to_string()
+        }
     }
 }
 
@@ -490,187 +480,6 @@ fn handle_status(root: &str) -> String {
     )
 }
 
-fn resolve_node_name(graph: &crate::core::property_graph::CodeGraph, node_id: i64) -> String {
-    let conn = graph.connection();
-    conn.query_row(
-        "SELECT name FROM nodes WHERE id = ?1",
-        rusqlite::params![node_id],
-        |row| row.get::<_, String>(0),
-    )
-    .unwrap_or_else(|_| format!("node#{node_id}"))
-}
-
-fn handle_enrich(root: &str) -> String {
-    let graph = match crate::core::property_graph::CodeGraph::open(root) {
-        Ok(g) => g,
-        Err(e) => return format!("Failed to open graph: {e}"),
-    };
-
-    match crate::core::graph_enricher::enrich_graph(&graph, Path::new(root), 500) {
-        Ok(stats) => {
-            let node_count = graph.node_count().unwrap_or(0);
-            let edge_count = graph.edge_count().unwrap_or(0);
-            format!(
-                "Graph enriched.\n{}\nTotal: {node_count} nodes, {edge_count} edges",
-                stats.format_summary()
-            )
-        }
-        Err(e) => format!("Enrichment failed: {e}"),
-    }
-}
-
-fn handle_context_query(query: Option<&str>, root: &str) -> String {
-    let Some(query) = query else {
-        return "Usage: ctx_graph action=context path=\"<query or file path>\"".to_string();
-    };
-
-    let graph = match crate::core::property_graph::CodeGraph::open(root) {
-        Ok(g) => g,
-        Err(e) => return format!("Failed to open graph: {e}"),
-    };
-
-    let gp = graph_provider::open_or_build(root);
-    let mut result = Vec::new();
-
-    if let Ok(Some(node)) = graph.get_node_by_path(query) {
-        result.push(format!("## Context for `{query}`\n"));
-
-        if let Some(node_id) = node.id {
-            let edges_out = graph.edges_from(node_id).unwrap_or_default();
-            let edges_in = graph.edges_to(node_id).unwrap_or_default();
-
-            let mut tests: Vec<String> = Vec::new();
-            let mut commits: Vec<String> = Vec::new();
-            let mut knowledge: Vec<String> = Vec::new();
-            let mut imports: Vec<String> = Vec::new();
-            let mut dependents: Vec<String> = Vec::new();
-
-            for edge in &edges_out {
-                let target = resolve_node_name(&graph, edge.target_id);
-                match edge.kind {
-                    crate::core::property_graph::EdgeKind::TestedBy => tests.push(target),
-                    crate::core::property_graph::EdgeKind::ChangedIn => commits.push(target),
-                    crate::core::property_graph::EdgeKind::MentionedIn => {
-                        knowledge.push(target);
-                    }
-                    crate::core::property_graph::EdgeKind::Imports => imports.push(target),
-                    _ => {}
-                }
-            }
-
-            for edge in &edges_in {
-                let source = resolve_node_name(&graph, edge.source_id);
-                if edge.kind == crate::core::property_graph::EdgeKind::Imports {
-                    dependents.push(source);
-                }
-            }
-
-            if !tests.is_empty() {
-                result.push(format!("**Tests ({}):** {}", tests.len(), tests.join(", ")));
-            }
-            if !commits.is_empty() {
-                result.push(format!(
-                    "**Recent commits ({}):** {}",
-                    commits.len(),
-                    commits
-                        .iter()
-                        .take(5)
-                        .cloned()
-                        .collect::<Vec<_>>()
-                        .join(", ")
-                ));
-            }
-            if !knowledge.is_empty() {
-                result.push(format!(
-                    "**Knowledge ({}):** {}",
-                    knowledge.len(),
-                    knowledge.join(", ")
-                ));
-            }
-            if !imports.is_empty() {
-                result.push(format!(
-                    "**Imports ({}):** {}",
-                    imports.len(),
-                    imports
-                        .iter()
-                        .take(10)
-                        .cloned()
-                        .collect::<Vec<_>>()
-                        .join(", ")
-                ));
-            }
-            if !dependents.is_empty() {
-                result.push(format!(
-                    "**Depended on by ({}):** {}",
-                    dependents.len(),
-                    dependents
-                        .iter()
-                        .take(10)
-                        .cloned()
-                        .collect::<Vec<_>>()
-                        .join(", ")
-                ));
-            }
-
-            if let Ok(impact) = graph.impact_analysis(query, 3)
-                && !impact.affected_files.is_empty()
-            {
-                result.push(format!(
-                    "**Impact radius:** {} files within 3 hops",
-                    impact.affected_files.len()
-                ));
-            }
-        }
-    } else {
-        result.push(format!("## Search: `{query}`\n"));
-
-        // Symbol names (e.g. GDScript `_ready`, or any function/type) live in the
-        // GraphIndex, not the PropertyGraph node table, so resolve them here — a
-        // bare concept query should return hits instead of "nothing found" (#314).
-        let mut symbols = gp
-            .as_ref()
-            .map(|o| o.provider.find_symbols(query, None, None))
-            .unwrap_or_default();
-        let q_lower = query.to_lowercase();
-        symbols.sort_by(|a, b| {
-            (a.name.to_lowercase() != q_lower)
-                .cmp(&(b.name.to_lowercase() != q_lower))
-                .then_with(|| a.file.cmp(&b.file))
-                .then_with(|| a.start_line.cmp(&b.start_line))
-        });
-        if !symbols.is_empty() {
-            result.push(format!("**Symbols ({}):**", symbols.len()));
-            for s in symbols.iter().take(15) {
-                result.push(format!(
-                    "  - {}::{} ({}, {}:{})",
-                    crate::core::protocol::shorten_path(&s.file),
-                    s.name,
-                    s.kind,
-                    s.start_line,
-                    s.end_line
-                ));
-            }
-        }
-
-        let related = gp
-            .as_ref()
-            .map(|o| o.provider.related(query, 2))
-            .unwrap_or_default();
-        if !related.is_empty() {
-            result.push(format!("**Related files ({}):**", related.len()));
-            for f in related.iter().take(15) {
-                result.push(format!("  - {f}"));
-            }
-        }
-
-        if symbols.is_empty() && related.is_empty() {
-            result.push("No matching nodes found in graph.".to_string());
-        }
-    }
-
-    result.join("\n")
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -788,20 +597,6 @@ mod gdscript_p0_tests {
         );
 
         (tmp, proj.to_string_lossy().to_string())
-    }
-
-    #[test]
-    fn context_resolves_gdscript_symbol() {
-        let _lock = crate::core::data_dir::test_env_lock();
-        let (_tmp, root) = godot_fixture();
-        let _ = handle_build(&root);
-        let out = handle_context_query(Some("_ready"), &root);
-        assert!(
-            out.contains("_ready"),
-            "context should surface _ready symbols: {out}"
-        );
-        assert!(!out.contains("No matching nodes found"), "got: {out}");
-        crate::test_env::remove_var("LEAN_CTX_DATA_DIR");
     }
 
     #[test]
