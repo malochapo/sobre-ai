@@ -20,16 +20,29 @@ fn make_state() -> AutonomyState {
     AutonomyState::new()
 }
 
+/// A project with one source file and its graph built, as a graph tool would
+/// leave it.
+fn project_with_graph() -> tempfile::TempDir {
+    let dir = tempfile::tempdir().expect("project dir");
+    std::fs::write(dir.path().join("Cargo.toml"), "[package]\nname = \"p\"\n").unwrap();
+    std::fs::create_dir_all(dir.path().join("src")).unwrap();
+    std::fs::write(dir.path().join("src/main.rs"), "fn main() {}\n").unwrap();
+    lean_ctx::core::graph_index::scan(&dir.path().to_string_lossy());
+    dir
+}
+
 #[test]
 fn session_lifecycle_fires_once() {
     let state = make_state();
     let mut cache = SessionCache::new();
+    let project = project_with_graph();
+    let root = project.path().to_string_lossy().to_string();
 
     let _first = session_lifecycle_pre_hook(
         &state,
         &mut cache,
         Some("fix auth bug"),
-        Some("/tmp/test-project"),
+        Some(&root),
         CrpMode::Tdd,
     );
 
@@ -37,7 +50,7 @@ fn session_lifecycle_fires_once() {
         &state,
         &mut cache,
         Some("fix auth bug"),
-        Some("/tmp/test-project"),
+        Some(&root),
         CrpMode::Tdd,
     );
 
@@ -46,6 +59,37 @@ fn session_lifecycle_fires_once() {
         "flag must be set after first call"
     );
     assert!(second.is_none(), "second call must return None");
+}
+
+#[test]
+fn session_lifecycle_waits_for_a_graph_and_builds_none() {
+    let state = make_state();
+    let mut cache = SessionCache::new();
+    let project = tempfile::tempdir().expect("project dir");
+    std::fs::write(
+        project.path().join("Cargo.toml"),
+        "[package]\nname = \"p\"\n",
+    )
+    .unwrap();
+    let root = project.path().to_string_lossy().to_string();
+
+    let result = session_lifecycle_pre_hook(
+        &state,
+        &mut cache,
+        Some("fix auth bug"),
+        Some(&root),
+        CrpMode::Tdd,
+    );
+
+    assert!(result.is_none(), "no briefing without a graph");
+    assert!(
+        !state.session_initialized.load(Ordering::SeqCst),
+        "the session stays eligible until a graph exists"
+    );
+    assert!(
+        lean_ctx::core::graph_provider::open_best_effort(&root).is_none(),
+        "the briefing must not build a graph"
+    );
 }
 
 #[test]

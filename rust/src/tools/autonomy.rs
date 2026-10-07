@@ -62,7 +62,8 @@ pub fn mark_session_briefed(state: &AutonomyState) {
     state.session_initialized.store(true, Ordering::SeqCst);
 }
 
-/// Auto-preloads project context on the first tool call of a session.
+/// Auto-preloads project context on the first tool call of a session, once the
+/// project graph exists.
 pub fn session_lifecycle_pre_hook(
     state: &AutonomyState,
     cache: &mut SessionCache,
@@ -74,6 +75,11 @@ pub fn session_lifecycle_pre_hook(
         Some(r) if !r.is_empty() && r != "." => r.to_string(),
         _ => return None,
     };
+
+    // The briefing summarises the project graph; it never builds one. Until a
+    // graph or search tool has built it, the session stays eligible and the
+    // check is repeated on the next call.
+    crate::core::graph_provider::open_best_effort(&root)?;
 
     // Keep the session eligible for a later retry: do not claim initialization
     // while the guardian is asking opportunistic work to back off.

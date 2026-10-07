@@ -771,7 +771,6 @@ impl CtxReadTool {
         let saved = original.saturating_sub(output_tokens);
 
         // Session updates (bounded lock — 10s timeout, read already succeeded)
-        let mut ensured_root: Option<String> = None;
         let mut traversal_working_set: Vec<String> = Vec::new();
         let project_root_snapshot;
         {
@@ -814,8 +813,7 @@ impl CtxReadTool {
                     .is_none_or(|r| r.trim().is_empty());
                 if root_missing && let Some(root) = crate::core::protocol::detect_project_root(path)
                 {
-                    session.project_root = Some(root.clone());
-                    ensured_root = Some(root);
+                    session.project_root = Some(root);
                 }
                 project_root_snapshot = session
                     .project_root
@@ -827,10 +825,6 @@ impl CtxReadTool {
                 );
                 project_root_snapshot = ctx.project_root.clone();
             }
-        }
-
-        if let Some(root) = ensured_root.as_deref() {
-            crate::core::index_orchestrator::ensure_all_background(root);
         }
 
         // The co-access edge is a side effect that never influences this

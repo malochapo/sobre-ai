@@ -192,8 +192,7 @@ impl McpTool for CtxShellTool {
                     if let Some(root) = crate::core::protocol::detect_project_root(&effective_cwd)
                         && home.as_deref() != Some(root.as_str())
                     {
-                        session.project_root = Some(root.clone());
-                        crate::core::index_orchestrator::ensure_all_background(&root);
+                        session.project_root = Some(root);
                     }
                 }
             }

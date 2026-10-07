@@ -564,17 +564,12 @@ fn open_existing(project_root: &str) -> (Option<OpenGraphProvider>, bool) {
     (None, needs_build)
 }
 
-/// Open an already-built graph, kicking off a one-shot background build when the
-/// property graph is not fully populated so the *next* call is fast. Returns
-/// `None` on this call when nothing is ready yet. Best-effort callers
-/// (dashboards, context gate, stats, `ctx_graph`) use this; callers that need a
-/// graph *right now* use [`open_or_build`], which builds synchronously instead.
+/// Open an already-built graph, or `None` when there is none yet. Never builds:
+/// callers whose answer only improves with a graph (the `ctx_read` context
+/// gate, search ranking, compaction, `ctx_graph status`) use this; tools that
+/// need one to answer at all use [`open_or_build`].
 pub fn open_best_effort(project_root: &str) -> Option<OpenGraphProvider> {
-    let (existing, needs_build) = open_existing(project_root);
-    if needs_build {
-        trigger_lazy_graph_build(project_root);
-    }
-    existing
+    open_existing(project_root).0
 }
 
 fn log_source_selection(
