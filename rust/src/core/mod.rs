@@ -94,7 +94,6 @@ pub mod graph {
 // ---------------------------------------------------------------------------
 pub mod context_field;
 pub mod context_handles;
-pub mod context_ir;
 pub mod context_ledger;
 pub mod context_lint;
 pub mod context_overhead;
@@ -106,7 +105,6 @@ pub mod cross_source_hints;
 pub mod context {
     pub use super::context_field;
     pub use super::context_handles;
-    pub use super::context_ir;
     pub use super::context_ledger;
 }
 
@@ -149,7 +147,6 @@ pub mod embedding_quant;
 // sites listed in docs/removals.md would let this attribute go away.
 #[cfg_attr(not(feature = "embeddings"), allow(dead_code))]
 pub mod embeddings;
-pub mod energy;
 pub mod hybrid_search;
 pub mod search_reranking;
 pub mod splade_retrieval;
@@ -202,8 +199,6 @@ pub mod patterns;
 // ---------------------------------------------------------------------------
 // Domain: Agents & A2A
 // ---------------------------------------------------------------------------
-pub mod a2a;
-pub mod agent_identity;
 pub mod agent_runtime_env;
 pub mod agents;
 
@@ -220,8 +215,6 @@ pub mod task_relevance;
 // Domain: Diagnostics & Quality
 // ---------------------------------------------------------------------------
 pub mod benchmark;
-/// Commercial-plane billing substrate (`billing-plane-v1`): plans, entitlements,
-/// and usage metering derived from the signed savings ledger. Never gates local.
 pub mod code_health;
 pub mod conformance;
 pub mod contracts;
@@ -242,12 +235,10 @@ pub mod surprise;
 pub mod anchor;
 pub mod ann_cache;
 pub mod atomic_fs;
-pub mod audit_trail;
 pub mod binary_detect;
 pub mod bounce_tracker;
 pub mod budgets;
 pub mod cache;
-pub mod cache_telemetry;
 pub mod cli_cache;
 pub mod client_capabilities;
 pub mod cloud_files;
@@ -260,11 +251,9 @@ pub mod data_dir;
 pub mod debug_log;
 pub mod diagnostics_store;
 pub mod error;
-pub mod events;
 pub mod eviction_orchestrator;
 pub mod extension_registry;
 pub mod extractors;
-pub mod gain;
 pub mod git;
 pub mod git_cache;
 pub mod git_signals;
@@ -273,11 +262,11 @@ pub mod godot;
 pub mod gotcha_tracker;
 pub mod handle;
 pub mod hasher;
-pub mod heatmap;
 pub mod hebbian_cache;
 pub mod hnsw;
 pub mod home;
 pub mod homeostasis;
+pub mod pricing;
 pub mod quality_benchmark;
 
 pub mod edit_quality;
@@ -305,7 +294,6 @@ pub mod limits;
 pub mod logging;
 pub mod mcp_manifest;
 pub mod nc_compress;
-pub mod output_echo;
 pub mod path_locks;
 pub mod path_resolve;
 pub mod paths;
@@ -318,13 +306,11 @@ pub mod recovery;
 pub mod redaction;
 pub mod reference_docs;
 pub mod sanitize;
-pub mod savings_ledger;
 pub mod search_index;
 pub mod secret_detection;
 pub mod sensitivity;
 pub mod session_token;
 pub mod startup_guard;
-pub mod stats;
 pub mod syntax_validate;
 pub mod task_briefing;
 /// macOS Seatbelt self-sandbox (#356): wraps launchd-owned daemon/proxy/updater
@@ -338,13 +324,12 @@ pub mod text_read;
 pub mod text_similarity;
 pub mod theme;
 pub mod tokens;
-pub mod tool_health;
 pub mod tool_lifecycle;
 pub mod transcript_compact;
+pub mod usage;
 pub mod visualizer;
 pub mod walk_filter;
 pub mod web;
-pub mod wrapped;
 
 // ---------------------------------------------------------------------------
 // Feature-gated modules

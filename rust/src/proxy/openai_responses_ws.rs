@@ -161,9 +161,12 @@ async fn run_turn(
     } else {
         original_size
     };
-    state
-        .stats
-        .record_provider_request("OpenAI", original_size, compressed_size);
+    if compressed_size < original_size {
+        super::forward::prepare::record_compression_off_path(
+            text.as_bytes().to_vec(),
+            payload.clone(),
+        );
+    }
 
     let url = format!("{upstream}{path}");
     let mut req = state

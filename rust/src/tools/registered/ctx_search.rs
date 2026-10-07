@@ -264,16 +264,10 @@ fn handle_regex(args: &Map<String, Value>, ctx: &ToolContext) -> Result<ToolOutp
         combined = "No matches found across any root.".to_string();
     }
 
-    // Dashboard, footer and verified ledger all use *observed* tokens —
-    // the modeled 2.5x native-grep baseline never inflates user-facing
-    // numbers (GL #573). It only feeds the explicitly-estimated stats
-    // series via `tool_lifecycle::record_search`.
+    // Savings use *observed* tokens: the modeled 2.5x native-grep baseline
+    // never inflates user-facing numbers (GL #573).
     let final_out = combined.clone();
     let saved = total_observed.saturating_sub(total_sent);
-    // #685: `actual_tokens` is the *sent* output, not the saving — passing
-    // `saved` here recorded `actual=observed−sent` and `saved=sent` (both
-    // wrong). Align with cli_grep/cli_shell, which pass the output count.
-    crate::core::savings_ledger::record_tool_event("ctx_search", total_observed, total_sent);
 
     Ok(ToolOutput {
         text: final_out,
@@ -493,7 +487,7 @@ fn search_single(
     };
     let result = outcome.text;
     // Observed tokens only — the modeled native-grep baseline stays out of
-    // dashboard/footer/ledger (GL #573); see the multi-root branch above.
+    // the savings (GL #573); see the multi-root branch above.
     let observed = outcome.observed_tokens;
 
     if result.starts_with("ERROR:") {
@@ -503,9 +497,6 @@ fn search_single(
     let sent = crate::core::tokens::count_tokens(&result);
     let saved = observed.saturating_sub(sent);
     let final_out = result.clone();
-    // #685: pass the *sent* output as `actual_tokens` (not `saved`); see the
-    // multi-root branch above for why the previous arg was a double bug.
-    crate::core::savings_ledger::record_tool_event("ctx_search", observed, sent);
 
     Ok(ToolOutput {
         text: final_out,
@@ -623,7 +614,6 @@ fn handle_batch_queries(
 
     let final_out = combined.clone();
     let saved = total_observed.saturating_sub(total_sent);
-    crate::core::savings_ledger::record_tool_event("ctx_search", total_observed, total_sent);
 
     Ok(ToolOutput {
         text: final_out,

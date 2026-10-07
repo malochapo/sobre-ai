@@ -527,7 +527,7 @@ fn build_digest(members: &[&KnowledgeFact], now: DateTime<Utc>) -> KnowledgeFact
         hasher.update(b"\n");
         hasher.update(f.key.as_bytes());
     }
-    let hash = crate::core::agent_identity::hex_encode(&hasher.finalize());
+    let hash = crate::core::hasher::hex_encode(&hasher.finalize());
     let key = format!("digest-{}", &hash[..8]);
 
     let sensitivity = crate::core::sensitivity::classify_content(&value);

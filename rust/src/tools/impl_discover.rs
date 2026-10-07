@@ -1,11 +1,11 @@
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 
-use crate::core::stats::StatsStore;
+use crate::core::usage::ToolTotals;
 use crate::shell::output_policy::{OutputPolicy, classify};
 
 /// Command families with a dedicated lean-ctx compressor, used to *recognise*
 /// compressible commands in shell history (the savings numbers themselves come
-/// from real measured `core::stats`, never from this table). `base` is the
+/// from the usage ledger, never from this table). `base` is the
 /// `normalize_command` base name; keep roughly in sync with the dispatch in
 /// `core::patterns::try_specific_pattern`.
 const COMPRESSIBLE_FAMILIES: &[(&str, &str)] = &[
@@ -106,7 +106,6 @@ pub(crate) struct DiscoverResult {
     pub already_optimized: u32,
     pub missed_commands: Vec<MissedCommand>,
     pub potential_tokens: usize,
-    pub potential_usd: f64,
 }
 
 pub(crate) struct MissedCommand {
@@ -132,22 +131,26 @@ fn describe(base: &str) -> Option<&'static str> {
         .map(|(_, d)| *d)
 }
 
-/// Aggregated real measurements per command family from `core::stats`:
-/// base → (input_tokens, output_tokens, count).
-fn measured_by_family(store: &StatsStore) -> HashMap<String, (u64, u64, u64)> {
+/// Measured compressions per command family, from the usage ledger's
+/// per-tool totals: base → (original_tokens, sent_tokens, count).
+fn measured_by_family(by_tool: &BTreeMap<String, ToolTotals>) -> HashMap<String, (u64, u64, u64)> {
     let mut by_base: HashMap<String, (u64, u64, u64)> = HashMap::new();
-    for (key, s) in &store.commands {
+    for (key, t) in by_tool {
         let entry = by_base.entry(base_of(key).to_string()).or_default();
-        entry.0 = entry.0.saturating_add(s.input_tokens);
-        entry.1 = entry.1.saturating_add(s.output_tokens);
-        entry.2 = entry.2.saturating_add(s.count);
+        entry.0 = entry.0.saturating_add(t.original);
+        entry.1 = entry.1.saturating_add(t.sent);
+        entry.2 = entry.2.saturating_add(t.events);
     }
     by_base
 }
 
 pub(crate) fn analyze_history(history: &[String], limit: usize) -> DiscoverResult {
-    let store = crate::core::stats::load();
-    analyze_history_with_stats(history, limit, &store)
+    let summary = crate::core::usage::summarize(
+        &crate::core::usage::load(),
+        crate::core::usage::Period::All,
+        &crate::core::pricing::ModelPricing::load(),
+    );
+    analyze_history_with_stats(history, limit, &summary.by_tool)
 }
 
 /// Core analysis with the measured-stats source injected (testable, pure aside
@@ -155,13 +158,13 @@ pub(crate) fn analyze_history(history: &[String], limit: usize) -> DiscoverResul
 fn analyze_history_with_stats(
     history: &[String],
     limit: usize,
-    store: &StatsStore,
+    by_tool: &BTreeMap<String, ToolTotals>,
 ) -> DiscoverResult {
     let mut missed: HashMap<String, u32> = HashMap::new();
     let mut already_optimized = 0u32;
     let mut total_commands = 0u32;
 
-    let measured = measured_by_family(store);
+    let measured = measured_by_family(by_tool);
 
     for cmd in history {
         let trimmed = cmd.trim();
@@ -188,7 +191,6 @@ fn analyze_history_with_stats(
     let mut sorted: Vec<_> = missed.into_iter().collect();
     sorted.sort_by_key(|x| std::cmp::Reverse(x.1));
 
-    let price_per_tok = crate::core::stats::DEFAULT_INPUT_PRICE_PER_M / 1_000_000.0;
     let mut potential_tokens = 0usize;
 
     let missed_commands: Vec<MissedCommand> = sorted
@@ -218,21 +220,20 @@ fn analyze_history_with_stats(
         })
         .collect();
 
-    let potential_usd = potential_tokens as f64 * price_per_tok;
-
     DiscoverResult {
         total_commands,
         already_optimized,
         missed_commands,
         potential_tokens,
-        potential_usd,
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeMap;
+
     use super::analyze_history_with_stats;
-    use crate::core::stats::{CommandStats, StatsStore};
+    use crate::core::usage::ToolTotals;
 
     fn history() -> Vec<String> {
         vec![
@@ -245,30 +246,27 @@ mod tests {
         ]
     }
 
-    fn stats_with(entries: &[(&str, u64, u64, u64)]) -> StatsStore {
-        let mut s = StatsStore::default();
-        for (key, count, input, output) in entries {
-            s.commands.insert(
-                (*key).to_string(),
-                CommandStats {
-                    count: *count,
-                    input_tokens: *input,
-                    output_tokens: *output,
-                },
-            );
-            s.total_commands += count;
-            s.total_input_tokens += input;
-            s.total_output_tokens += output;
-        }
-        s
+    fn stats_with(entries: &[(&str, u64, u64, u64)]) -> BTreeMap<String, ToolTotals> {
+        entries
+            .iter()
+            .map(|(key, count, original, sent)| {
+                (
+                    (*key).to_string(),
+                    ToolTotals {
+                        events: *count,
+                        original: *original,
+                        sent: *sent,
+                    },
+                )
+            })
+            .collect()
     }
 
     #[test]
     fn no_measured_data_yields_zero_potential_and_no_fabrication() {
         // Empty stats: detection still works, but NO token figure is invented.
-        let r = analyze_history_with_stats(&history(), 20, &StatsStore::default());
+        let r = analyze_history_with_stats(&history(), 20, &BTreeMap::new());
         assert_eq!(r.potential_tokens, 0, "must not fabricate tokens");
-        assert_eq!(r.potential_usd, 0.0, "must not fabricate dollars");
         // git (2) + cargo (2) recognised; vim ignored; lean-ctx already-optimized.
         assert_eq!(r.already_optimized, 1);
         assert!(
@@ -281,7 +279,7 @@ mod tests {
     #[test]
     fn measured_family_projects_real_savings() {
         // git measured at 90% savings (1000 in -> 100 out over 2 runs => 500 avg in).
-        let store = stats_with(&[("git status", 2, 1000, 100)]);
+        let store = stats_with(&[("git", 2, 1000, 100)]);
         let r = analyze_history_with_stats(&history(), 20, &store);
         let git = r
             .missed_commands
@@ -307,7 +305,7 @@ mod tests {
             .into_iter()
             .map(String::from)
             .collect();
-        let r = analyze_history_with_stats(&hist, 20, &StatsStore::default());
+        let r = analyze_history_with_stats(&hist, 20, &BTreeMap::new());
         for fam in ["dbt", "trivy", "pulumi", "jj"] {
             assert!(
                 r.missed_commands.iter().any(|m| m.prefix == fam),

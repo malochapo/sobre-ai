@@ -250,7 +250,6 @@ impl ContextLedger {
             relevance: 1.0,
             surprise: 0.5,
             graph_proximity: 0.0,
-            history_signal: 0.0,
             token_cost_norm,
             redundancy: 0.0,
         };

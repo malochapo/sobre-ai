@@ -102,38 +102,6 @@ impl LeanCtxServer {
         let pre_terse_len = result_text.len();
         let output_tokens = crate::core::tokens::count_tokens(&result_text) as u64;
 
-        // Context IR: record lineage for every tool call.
-        if let Some(ref ir) = self.context_ir {
-            let tool_duration = tool_start.elapsed();
-            let source_kind = post_process::context_ir_source_kind(name);
-            let ir_path = helpers::get_str(args, "path");
-            let ir_command = helpers::get_str(args, "command");
-            let ir_mode = helpers::get_str(args, "mode");
-            let excerpt = if result_text.len() > 200 {
-                let mut end = 200;
-                while !result_text.is_char_boundary(end) && end > 0 {
-                    end -= 1;
-                }
-                &result_text[..end]
-            } else {
-                &result_text
-            };
-            let input = crate::core::context_ir::RecordIrInput {
-                kind: source_kind,
-                tool: name,
-                client_name: None,
-                agent_id: None,
-                path: ir_path.as_deref(),
-                command: ir_command.as_deref(),
-                pattern: ir_mode.as_deref(),
-                input_tokens: pre_terse_len / 4,
-                output_tokens: output_tokens as usize,
-                duration: tool_duration,
-                content_excerpt: excerpt,
-            };
-            ir.write().await.record(input);
-        }
-
         // Re-fetch feedback: re-reads, re-runs and `ctx_expand` mean the
         // compressed form lost something. The session degrade can only lower
         // compression below the configured level, and a change is announced.
@@ -251,33 +219,23 @@ impl LeanCtxServer {
             });
         }
 
-        // OPT-4: dispatch/mod.rs records savings before terse/hints run; this
-        // finalizes the real sent-token count and corrects persistent stats.
-        let output_token_count = post_process::finalize_token_count_and_adjust(
+        let output_token_count =
+            post_process::final_token_count(&result_text, pre_terse_len, output_tokens);
+        // The tool's own savings plus whatever terse removed afterwards: the
+        // original is the pre-terse count plus what the tool already saved.
+        crate::core::usage::record_compression(
+            crate::core::usage::Surface::Mcp,
             name,
-            &result_text,
-            pre_terse_len,
-            output_tokens,
-            tool_saved_tokens,
+            usize::try_from(output_tokens).unwrap_or(usize::MAX) + tool_saved_tokens,
+            output_token_count,
         );
 
         let action = helpers::get_str(args, "action");
 
-        self.record_receipt_and_cost(
-            name,
-            args,
-            action.as_deref(),
-            &result_text,
-            output_token_count,
-        )
-        .await;
+        self.record_receipt(name, args, action.as_deref(), &result_text)
+            .await;
 
         let skip_checkpoint = matches!(name, "ctx_session" | "ctx_knowledge" | "ctx_impact");
-
-        // #1020: tool-calls.log is now written on the dispatch path
-        // (record_call_with_path / record_call_with_timing) with the real
-        // original/saved/mode and the measured handler duration. The previous
-        // zero-filled append here overwrote every row with `orig=0 saved=0 mode=-`.
 
         // The only place that advances `call_count`.
         if !skip_checkpoint {

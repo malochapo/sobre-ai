@@ -29,7 +29,6 @@ pub(crate) mod impl_discover;
 // Stays `pub`: driven from outside the crate by tests/quality_loop_golden.rs and tests/suite/edit_reliability.rs.
 pub mod impl_edit;
 pub(crate) mod impl_explore;
-pub(crate) mod impl_gain;
 // Stays `pub`: driven from outside the crate by tests/serial_suite/multi_read_cap_scenarios.rs.
 pub mod impl_multi_read;
 pub(crate) mod impl_overview;

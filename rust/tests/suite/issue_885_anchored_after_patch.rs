@@ -22,7 +22,6 @@ fn ctx_for(root: &std::path::Path, file: &str) -> ToolContext {
         crp_mode: lean_ctx::tools::CrpMode::Off,
         cache: Some(cache),
         session: Some(session),
-        tool_calls: None,
         path_errors: std::collections::HashMap::new(),
         bm25_cache: None,
         progress_sender: None,

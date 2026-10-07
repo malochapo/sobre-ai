@@ -5,7 +5,7 @@
 //! cache, which the proxy and `gain` read from then on. Nothing else fetches
 //! prices: no background refresh, no download at proxy start.
 
-use crate::core::gain::live_pricing;
+use crate::core::pricing::live;
 
 pub(crate) fn cmd_pricing(rest: &[String]) {
     match rest.first().map(String::as_str) {
@@ -21,7 +21,7 @@ pub(crate) fn cmd_pricing(rest: &[String]) {
                     std::process::exit(1);
                 }
             };
-            match runtime.block_on(live_pricing::refresh_now(&reqwest::Client::new())) {
+            match runtime.block_on(live::refresh_now(&reqwest::Client::new())) {
                 Ok(n) => println!("Cached {n} model price entries."),
                 Err(e) => {
                     eprintln!("Price refresh failed: {e:#}");
@@ -30,8 +30,8 @@ pub(crate) fn cmd_pricing(rest: &[String]) {
             }
         }
         Some("status") | None => {
-            live_pricing::ensure_loaded();
-            match live_pricing::status() {
+            live::ensure_loaded();
+            match live::status() {
                 Some((fetched_at, n)) => {
                     let age_h = std::time::SystemTime::now()
                         .duration_since(std::time::UNIX_EPOCH)

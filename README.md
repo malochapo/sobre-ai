@@ -49,7 +49,7 @@ the measured state of each.
 Invariants 1 to 5 hold today: 17 tools, one fixed surface; one config file
 with 12 keys and no per-project files, profiles or behaviour-changing
 environment variables; no network request you did not ask for; and about
-170,000 lines of production Rust under a 200,000 ceiling.
+150,000 lines of production Rust under a 200,000 ceiling.
 
 ## Build
 
@@ -102,6 +102,26 @@ Everything goes into user-level configuration, never into a repository. `init`
 writes nothing into your shell rc files or your own instruction files
 (`CLAUDE.md`, `AGENTS.md`, `.cursor/rules`, …): the agent learns how to use the
 tools from the MCP server instructions, and from the skill when it opens it.
+
+## Measuring
+
+Every compression sobre makes, on every path, is appended to one local file,
+`usage.jsonl`, in the OpenTelemetry log format
+([contract](docs/contracts/usage-ledger-v1.md)). Nothing sends it anywhere.
+`lean-ctx gain` reads it:
+
+```bash
+lean-ctx gain                  # tokens saved, value, sobre's own overhead
+lean-ctx gain --by-tool        # per tool or command
+lean-ctx gain --daily          # per day
+```
+
+Tokens saved are measured. What they are worth in money is only measured when
+the optional proxy (`lean-ctx proxy start`) sits between the agent and its
+provider: it records each call's real usage and, when the provider reports it,
+the real charge. Without the proxy, `gain` prices saved tokens at a model's
+input rate and says it is an estimate. The proxy works only with API keys; a
+subscription login (Claude Pro or Max) cannot go through it.
 
 ## License
 

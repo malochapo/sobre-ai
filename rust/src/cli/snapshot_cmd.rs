@@ -341,18 +341,6 @@ fn render_summary(s: &ContextSnapshotV1) -> String {
         _ => "(no git anchor)".to_string(),
     };
     let _ = writeln!(out, "  git      {git}");
-    let _ = writeln!(
-        out,
-        "  roi      saved {} tok, {:.1}% compression",
-        s.roi.tokens_saved,
-        s.roi.compression_rate * 100.0
-    );
-    let _ = writeln!(
-        out,
-        "  lineage  {} items (recorded {})",
-        s.lineage.items.len(),
-        s.lineage.items_recorded
-    );
     let _ = writeln!(out, "  ledger   {} items", s.ledger.items.len());
     if let Some(task) = s.session.as_ref().and_then(|sess| sess.task.as_deref()) {
         let _ = writeln!(out, "  task     {task}");

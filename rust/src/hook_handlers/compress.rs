@@ -133,8 +133,12 @@ fn compress_text(cmd: &str, text: &str) -> Option<(String, usize, usize)> {
         return None;
     }
     let compressed = crate::core::redaction::redact_text(&compressed);
-    crate::core::stats::record("hook_shell", before, after);
-    crate::core::stats::flush();
+    crate::core::usage::record_compression(
+        crate::core::usage::Surface::Hook,
+        crate::core::tool_lifecycle::program_name(cmd),
+        before,
+        after,
+    );
     Some((compressed, before, after))
 }
 

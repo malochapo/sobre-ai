@@ -133,9 +133,6 @@ pub struct ToolContext {
     pub cache: Option<crate::tools::SharedCache>,
     /// Shared session handle for tools that need session access.
     pub session: Option<std::sync::Arc<tokio::sync::RwLock<crate::core::session::SessionState>>>,
-    /// Tool call records for session-aware tools (e.g. ctx_session status).
-    pub tool_calls:
-        Option<std::sync::Arc<tokio::sync::RwLock<Vec<crate::core::protocol::ToolCallRecord>>>>,
     /// Errors from path resolution (PathJail rejection, secret path, etc.).
     /// Keyed by argument name (e.g. "path" -> "path escapes project root: ...").
     pub path_errors: std::collections::HashMap<String, String>,
@@ -157,7 +154,6 @@ impl Default for ToolContext {
             crp_mode: crate::tools::CrpMode::Off,
             cache: None,
             session: None,
-            tool_calls: None,
             path_errors: std::collections::HashMap::new(),
             bm25_cache: None,
             progress_sender: None,

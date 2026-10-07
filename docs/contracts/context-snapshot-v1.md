@@ -4,9 +4,8 @@ GitLab: `#1022` (epic) · `#1023` (this contract) · Status: **experimental**
 
 A Context Snapshot is a **git-anchored, signed, point-in-time record of the
 context-layer state** — the foundational artifact of the *Context Time Machine*.
-It captures *what* the model saw (lineage, from Context IR), *why* it saw it
-(ledger Φ-scores + item states), *at what token ROI*, and *which session*
-produced it. Snapshots chain over time into an append-only timeline you can
+It captures *why* each item was in the window (ledger Φ-scores + item states)
+and *which session* produced it. Snapshots chain over time into an append-only timeline you can
 rewind, reproduce, resume, or share.
 
 A snapshot is a **distilled, typed, signed projection** of the live stores — it
@@ -37,17 +36,9 @@ Top-level fields of `ContextSnapshotV1`:
 - `lean_ctx_version`: producing CLI version
 - `git`: `{ commit, branch, dirty }` — the git anchor
 - `project`: `{ root_hash, identity_hash }` — hashes only, never raw paths
-- `roi`: `{ input_tokens, output_tokens, tokens_saved, compression_rate }`
-- `lineage`: `{ items_recorded, items[] }` — distilled Context IR slice
 - `ledger`: `{ window_size, total_tokens_sent, total_tokens_saved, items[] }`
 - `session`: optional `{ session_id, task, decisions[], files_touched[], progress_pct }`
 - `signature`: optional `{ algorithm, public_key, value }` (ed25519, `null` until signed)
-
-### `lineage.items[]`
-
-`{ seq, kind, tool, path, input_tokens, output_tokens, compression_ratio, content_hash }`
-where `kind ∈ { read, shell, search, provider, other }` and `content_hash` is a
-BLAKE3 verification handle of the recorded excerpt.
 
 ### `ledger.items[]`
 
@@ -78,7 +69,6 @@ malformed signature material (bad hex / wrong length / unknown algorithm) errors
 
 ## Boundedness
 
-- `MAX_SNAPSHOT_LINEAGE_ITEMS = 128`
 - `MAX_SNAPSHOT_LEDGER_ITEMS = 256`
 - `MAX_SNAPSHOT_SESSION_LIST = 64` (decisions and files each)
 

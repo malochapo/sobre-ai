@@ -1,5 +1,11 @@
+pub mod live;
+
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+
+/// Input price, USD per million tokens, for estimates that have no model to
+/// price (the blended fallback's input rate).
+pub const DEFAULT_INPUT_PRICE_PER_M: f64 = 2.50;
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct ModelCost {
@@ -283,7 +289,7 @@ impl ModelPricing {
         // embedded table doesn't know — checked BEFORE any family heuristic so
         // a new model is never priced by its older, differently-priced kin.
         // No-op unless a run-mode loaded the snapshot (proxy/gateway/spend).
-        if let Some((k, cost)) = super::live_pricing::lookup(raw) {
+        if let Some((k, cost)) = live::lookup(raw) {
             return ModelQuote {
                 model_key: k,
                 cost,
@@ -316,15 +322,6 @@ impl ModelPricing {
             cost,
             match_kind: PricingMatchKind::Fallback,
         }
-    }
-
-    /// Resolves a pricing model for a client/agent, then quotes it. Resolution
-    /// order: `[cost.models]` entry →
-    /// `[cost] default_model` → the client/agent string as a heuristic hint →
-    /// blended fallback (inside [`ModelPricing::quote`]). This is what lets
-    /// MCP-only IDEs (Cursor, Copilot, …) be priced with a declared model.
-    pub fn quote_for_client(&self, client: &str) -> ModelQuote {
-        self.quote(Some(&resolve_model_for_client(client)))
     }
 
     fn heuristic_key(model: &str) -> Option<(String, PricingMatchKind)> {
@@ -446,33 +443,6 @@ fn dot_versions(s: &str) -> String {
     out
 }
 
-/// The pricing model id for a client/agent: the client/agent string itself.
-/// The returned string is fed to [`ModelPricing::quote`] for the actual price.
-pub fn resolve_model_for_client(client: &str) -> String {
-    client.to_string()
-}
-
-/// USD saved (or lost) by serving `input_tokens` on `serving` instead of the
-/// `requested` model — a rate difference on the same tokens.
-///
-/// Rescued from the deleted `core::eval_ab::routing_eval`: it is a pricing
-/// computation, not an evaluation harness, and the savings ledger is its only
-/// remaining caller. A negative result means the route was an upgrade; callers
-/// record those too rather than hiding regressions.
-#[must_use]
-pub fn routing_saving_usd(
-    pricing: &ModelPricing,
-    requested: &str,
-    serving: &str,
-    input_tokens: u64,
-) -> f64 {
-    let from = pricing.quote(Some(requested)).cost.input_per_m;
-    let to = pricing.quote(Some(serving)).cost.input_per_m;
-    #[allow(clippy::cast_precision_loss)]
-    let tokens = input_tokens as f64;
-    (from - to) / 1_000_000.0 * tokens
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -489,7 +459,7 @@ mod tests {
         // #1179: a live-listed model must be priced from the live table (Live),
         // never from a family heuristic; embedded exact matches keep priority.
         let _lock = crate::core::data_dir::test_env_lock();
-        crate::core::gain::live_pricing::install(crate::core::gain::live_pricing::LivePriceTable {
+        crate::core::pricing::live::install(crate::core::pricing::live::LivePriceTable {
             fetched_at: 1,
             models: [
                 (
@@ -529,7 +499,7 @@ mod tests {
         assert_eq!(exact.match_kind, PricingMatchKind::Exact);
         assert!((exact.cost.input_per_m - 3.00).abs() < f64::EPSILON);
 
-        crate::core::gain::live_pricing::clear_for_tests();
+        crate::core::pricing::live::clear_for_tests();
         let after = p.quote(Some("zzz-test/live-only-model"));
         assert_eq!(
             after.match_kind,
@@ -625,15 +595,5 @@ mod tests {
             );
             assert_ne!(q.match_kind, PricingMatchKind::Fallback, "for {name}");
         }
-    }
-
-    #[test]
-    fn resolve_model_for_client_is_the_client_hint() {
-        // The client/agent string is the pricing hint.
-        assert_eq!(
-            resolve_model_for_client("claude-haiku-4.5"),
-            "claude-haiku-4.5"
-        );
-        assert_eq!(resolve_model_for_client("cursor"), "cursor");
     }
 }

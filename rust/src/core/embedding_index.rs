@@ -491,7 +491,7 @@ fn index_dir(root: &Path) -> PathBuf {
 fn hash_content(content: &str) -> String {
     let mut hasher = Md5::new();
     hasher.update(content.as_bytes());
-    crate::core::agent_identity::hex_encode(&hasher.finalize())
+    crate::core::hasher::hex_encode(&hasher.finalize())
 }
 
 fn compute_file_hashes(chunks: &[CodeChunk]) -> HashMap<String, String> {
@@ -524,7 +524,7 @@ fn compute_file_hashes(chunks: &[CodeChunk]) -> HashMap<String, String> {
         }
         out.insert(
             file.to_string(),
-            crate::core::agent_identity::hex_encode(&hasher.finalize()),
+            crate::core::hasher::hex_encode(&hasher.finalize()),
         );
     }
     out

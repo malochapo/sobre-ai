@@ -96,7 +96,6 @@ impl LeanCtxServer {
         Self {
             cache,
             session,
-            tool_calls: Arc::new(RwLock::new(Vec::new())),
             call_count: Arc::new(AtomicUsize::new(0)),
             cache_ttl_secs: ttl,
             last_call: Arc::new(RwLock::new(Instant::now())),
@@ -110,9 +109,6 @@ impl LeanCtxServer {
             ledger: Arc::new(RwLock::new(
                 crate::core::context_ledger::ContextLedger::load(),
             )),
-            context_ir: Some(std::sync::Arc::new(tokio::sync::RwLock::new(
-                crate::core::context_ir::ContextIrV1::load(),
-            ))),
             registry: Some(std::sync::Arc::new(
                 crate::server::registry::build_registry(),
             )),
@@ -140,16 +136,14 @@ impl LeanCtxServer {
                 let _ = session.save();
             }
             let mut cache = self.cache.write().await;
-            let redelivered = cache.count_full_delivered();
             let count = cache.clear();
-            crate::core::cache_telemetry::record_idle(redelivered as u64);
             // The persisted stub index outlives the warm-cache clear, so a
             // same-conversation re-read after idle still collapses to the stub
             // via the cold fallback (#955). Flush it now for durability.
             crate::core::read_stub_index::persist();
             if count > 0 {
                 tracing::info!(
-                    "Cache auto-cleared after {}s idle ({count} file(s), {redelivered} forced re-delivery)",
+                    "Cache auto-cleared after {}s idle ({count} file(s))",
                     self.cache_ttl_secs
                 );
             }
@@ -178,13 +172,6 @@ impl LeanCtxServer {
             let mut session = self.session.write().await;
             let _ = session.save();
         }
-        // Persist buffered stats (incl. CEP cache-hit/session counters) before
-        // the process exits. Short bridge sessions — e.g. a phase-isolated
-        // benchmark harness that spawns a fresh server per phase — may never
-        // reach the 30s live-stats flush cadence, which left
-        // `cep.sessions`/`total_cache_hits` at 0 in stats.json despite real
-        // cache hits (#361).
-        crate::core::stats::flush();
         // Flush the persistent stub index (#955) so an unchanged re-read survives
         // this restart as a cheap stub instead of a full re-delivery.
         crate::core::read_stub_index::persist();

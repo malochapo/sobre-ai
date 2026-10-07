@@ -9,40 +9,28 @@ pub(crate) mod anthropic;
 #[cfg(test)]
 mod auth_tests;
 pub(crate) mod bedrock;
-pub(crate) mod cache_aligner;
-pub(crate) mod cache_attribution;
-pub(crate) mod cache_prefix;
-pub(crate) mod cache_safety;
 pub(crate) mod ccr;
 #[cfg(test)]
 mod ccr_robustness_tests;
 mod codec;
 pub(crate) mod compress;
 pub(crate) mod compress_api;
-pub(crate) mod cost;
 pub(crate) mod forward;
 pub(crate) mod google;
 pub(crate) mod history_prune;
 pub(crate) mod introspect;
-pub(crate) mod metrics;
 pub(crate) mod model_router;
 pub(crate) mod models_api;
 pub(crate) mod openai;
 pub(crate) mod openai_responses;
 pub(crate) mod openai_responses_ws;
-pub(crate) mod output_savings;
-pub(crate) mod prefix_cache_stats;
 pub(crate) mod prefix_replay;
-pub(crate) mod prose;
 pub(crate) mod prose_ranker;
 pub(crate) mod providers;
-pub(crate) mod request_tags;
 pub(crate) mod routing;
 #[cfg(feature = "shape-xlat")]
 pub(crate) mod shape_xlat;
 pub(crate) mod sse_keepalive;
-#[cfg(test)]
-mod stats_tests;
 pub(crate) mod sticky_tools;
 pub(crate) mod tool_kind;
 pub(crate) mod tool_output;
@@ -54,7 +42,6 @@ pub(crate) mod usage_meter;
 
 use std::net::SocketAddr;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, Ordering};
 
 use crate::core::config::Upstreams;
 
@@ -71,7 +58,6 @@ use axum::{
 pub struct ProxyState {
     pub client: reqwest::Client,
     pub port: u16,
-    pub stats: Arc<ProxyStats>,
     pub introspect: Arc<introspect::IntrospectState>,
     /// Live provider upstreams, refreshed from config.toml without a proxy
     /// restart (#449). Read per request via [`ProxyState::openai_upstream`] etc.
@@ -97,150 +83,6 @@ impl ProxyState {
     /// Current Gemini upstream (live).
     pub fn gemini_upstream(&self) -> String {
         self.upstreams.borrow().gemini.clone()
-    }
-}
-
-pub struct ProxyStats {
-    pub requests_total: AtomicU64,
-    pub requests_compressed: AtomicU64,
-    pub tokens_saved: AtomicU64,
-    pub bytes_original: AtomicU64,
-    pub bytes_compressed: AtomicU64,
-    pub anthropic: ProviderStats,
-    pub openai: ProviderStats,
-    pub gemini: ProviderStats,
-}
-
-#[derive(Default)]
-pub struct ProviderStats {
-    pub requests_total: AtomicU64,
-    pub requests_compressed: AtomicU64,
-    pub tokens_saved: AtomicU64,
-    pub bytes_original: AtomicU64,
-    pub bytes_compressed: AtomicU64,
-}
-
-impl Default for ProxyStats {
-    fn default() -> Self {
-        Self {
-            requests_total: AtomicU64::new(0),
-            requests_compressed: AtomicU64::new(0),
-            tokens_saved: AtomicU64::new(0),
-            bytes_original: AtomicU64::new(0),
-            bytes_compressed: AtomicU64::new(0),
-            anthropic: ProviderStats::default(),
-            openai: ProviderStats::default(),
-            gemini: ProviderStats::default(),
-        }
-    }
-}
-
-impl ProxyStats {
-    pub fn record_request(&self, original: usize, compressed: usize) {
-        self.record_totals(original, compressed);
-    }
-
-    pub fn record_provider_request(
-        &self,
-        provider_label: &str,
-        original: usize,
-        compressed: usize,
-    ) {
-        let (effective_compressed, saved_tokens, compressed_request) =
-            self.record_totals(original, compressed);
-
-        if let Some(provider) = self.provider(provider_label) {
-            provider.record(
-                original,
-                effective_compressed,
-                compressed_request,
-                saved_tokens,
-            );
-        }
-    }
-
-    fn record_totals(&self, original: usize, compressed: usize) -> (usize, u64, bool) {
-        self.requests_total.fetch_add(1, Ordering::Relaxed);
-        self.bytes_original
-            .fetch_add(original as u64, Ordering::Relaxed);
-        let effective_compressed = compressed.min(original);
-        self.bytes_compressed
-            .fetch_add(effective_compressed as u64, Ordering::Relaxed);
-        if compressed < original {
-            self.requests_compressed.fetch_add(1, Ordering::Relaxed);
-        }
-        let saved_tokens = (original.saturating_sub(effective_compressed) / 4) as u64;
-        self.tokens_saved.fetch_add(saved_tokens, Ordering::Relaxed);
-        (effective_compressed, saved_tokens, compressed < original)
-    }
-
-    pub fn compression_ratio(&self) -> f64 {
-        let original = self.bytes_original.load(Ordering::Relaxed);
-        if original == 0 {
-            return 0.0;
-        }
-        let compressed = self.bytes_compressed.load(Ordering::Relaxed);
-        (1.0 - compressed as f64 / original as f64) * 100.0
-    }
-
-    /// Maps a proxy `provider_label` to its per-upstream bucket. Unknown labels
-    /// return `None` (still counted in the totals, never misattributed to a bucket);
-    /// every real upstream — Gemini included — passes an explicit label.
-    fn provider(&self, provider_label: &str) -> Option<&ProviderStats> {
-        match provider_label {
-            "Anthropic" => Some(&self.anthropic),
-            "OpenAI" => Some(&self.openai),
-            "Gemini" => Some(&self.gemini),
-            _ => None,
-        }
-    }
-
-    pub fn provider_summary(&self) -> serde_json::Value {
-        serde_json::json!({
-            "anthropic": self.anthropic.summary(),
-            "openai": self.openai.summary(),
-            "gemini": self.gemini.summary(),
-        })
-    }
-}
-
-impl ProviderStats {
-    fn record(
-        &self,
-        original: usize,
-        effective_compressed: usize,
-        compressed_request: bool,
-        saved_tokens: u64,
-    ) {
-        self.requests_total.fetch_add(1, Ordering::Relaxed);
-        if compressed_request {
-            self.requests_compressed.fetch_add(1, Ordering::Relaxed);
-        }
-        self.tokens_saved.fetch_add(saved_tokens, Ordering::Relaxed);
-        self.bytes_original
-            .fetch_add(original as u64, Ordering::Relaxed);
-        self.bytes_compressed
-            .fetch_add(effective_compressed as u64, Ordering::Relaxed);
-    }
-
-    fn compression_ratio(&self) -> f64 {
-        let original = self.bytes_original.load(Ordering::Relaxed);
-        if original == 0 {
-            return 0.0;
-        }
-        let compressed = self.bytes_compressed.load(Ordering::Relaxed);
-        (1.0 - compressed as f64 / original as f64) * 100.0
-    }
-
-    fn summary(&self) -> serde_json::Value {
-        serde_json::json!({
-            "requests_total": self.requests_total.load(Ordering::Relaxed),
-            "requests_compressed": self.requests_compressed.load(Ordering::Relaxed),
-            "tokens_saved": self.tokens_saved.load(Ordering::Relaxed),
-            "bytes_original": self.bytes_original.load(Ordering::Relaxed),
-            "bytes_compressed": self.bytes_compressed.load(Ordering::Relaxed),
-            "compression_ratio_pct": format!("{:.1}", self.compression_ratio()),
-        })
     }
 }
 
@@ -337,12 +179,9 @@ pub async fn start_proxy_with_token(port: u16, auth_token: Option<String>) -> an
         .read_timeout(std::time::Duration::from_secs(read_idle_timeout_secs()))
         .build()?;
 
-    // Seed the measured-spend meter from disk so a proxy restart never zeroes
-    // the user's cumulative real provider bill.
-    usage_meter::resume_from_disk();
     // Live model prices (#1179): load the price list cached by
     // `lean-ctx pricing refresh`, if any. No network here.
-    crate::core::gain::live_pricing::ensure_loaded();
+    crate::core::pricing::live::ensure_loaded();
 
     let cfg = Config::load();
     // Read once at startup — avoids a Config::load() on every proxied request.
@@ -367,7 +206,6 @@ pub async fn start_proxy_with_token(port: u16, auth_token: Option<String>) -> an
     let state = ProxyState {
         client,
         port,
-        stats: Arc::new(ProxyStats::default()),
         introspect: Arc::new(introspect::IntrospectState::default()),
         upstreams: upstream_rx,
     };
@@ -537,7 +375,6 @@ async fn v1_retrieve_ccr(
 
 async fn status_handler(State(state): State<ProxyState>) -> impl IntoResponse {
     use std::sync::atomic::Ordering::Relaxed;
-    let s = &state.stats;
     let i = &state.introspect;
 
     let last_breakdown = i
@@ -546,9 +383,6 @@ async fn status_handler(State(state): State<ProxyState>) -> impl IntoResponse {
         .ok()
         .and_then(|guard| guard.as_ref().map(|b| serde_json::to_value(b).ok()))
         .flatten();
-
-    let spend = usage_meter::snapshot();
-    let spend_total: f64 = spend.iter().map(|m| m.cost_usd).sum();
 
     // Live upstreams the proxy is forwarding to right now (#449). This is the
     // single source of truth for "where is my traffic actually going" — it
@@ -560,6 +394,8 @@ async fn status_handler(State(state): State<ProxyState>) -> impl IntoResponse {
     let introspect_bulk_share =
         introspect::token_share_basis_points(introspect_bulk_candidates, introspect_total_input);
 
+    // Usage (calls, tokens, cost, savings) is in the usage ledger, which
+    // `lean-ctx gain` reads; this endpoint only says where traffic goes.
     let body = serde_json::json!({
         "status": "running",
         "port": state.port,
@@ -574,25 +410,6 @@ async fn status_handler(State(state): State<ProxyState>) -> impl IntoResponse {
             "shape": p.shape.as_str(),
             "base_url": p.base_url,
         })).collect::<Vec<_>>(),
-        "requests_total": s.requests_total.load(Relaxed),
-        "requests_compressed": s.requests_compressed.load(Relaxed),
-        "tokens_saved": s.tokens_saved.load(Relaxed),
-        "tokens_saved_estimated": true,
-        "bytes_original": s.bytes_original.load(Relaxed),
-        "bytes_compressed": s.bytes_compressed.load(Relaxed),
-        "compression_ratio_pct": format!("{:.1}", s.compression_ratio()),
-        "per_upstream": s.provider_summary(),
-        "prefix_cache": prefix_cache_stats::snapshot(),
-        "cache_safety": cache_safety::snapshot(),
-        "cache_attribution": cache_attribution::snapshot(),
-        "per_model": cost::snapshot(),
-        "spend": {
-            "source": "measured",
-            "total_usd": spend_total,
-            "per_model": spend,
-            "note": "Actual provider bill: real model + billed tokens (incl. cache reads/writes & reasoning) read from upstream responses for proxy-routed clients."
-        },
-        "note": "Savings are request-side (tokens removed before forwarding); they do not subtract any re-reads the agent performs. Token figures are estimates; USD uses the shared model price table.",
         "introspect": {
             "total_requests_analyzed": i.total_requests.load(Relaxed),
             "total_input_tokens": introspect_total_input,
@@ -608,7 +425,7 @@ async fn status_handler(State(state): State<ProxyState>) -> impl IntoResponse {
 
 #[allow(clippy::result_large_err)]
 async fn proxy_auth_guard(
-    mut req: axum::extract::Request,
+    req: axum::extract::Request,
     next: axum::middleware::Next,
     expected_token: String,
 ) -> Result<Response, Response> {
@@ -627,14 +444,12 @@ async fn proxy_auth_guard(
     if let Some(token) = bearer.as_deref()
         && constant_time_eq(token.as_bytes(), expected_token.as_bytes())
     {
-        attach_request_tags(&mut req);
         return Ok(next.run(req).await);
     }
 
     // A provider API key on a provider route is enough: a local AI tool
     // authenticates with its own key, without the lean-ctx token.
     if has_provider_api_key(&req) && is_provider_route(path) {
-        attach_request_tags(&mut req);
         return Ok(next.run(req).await);
     }
 
@@ -660,26 +475,6 @@ fn auth_error_response(path: &str) -> Response {
     });
 
     (StatusCode::UNAUTHORIZED, axum::Json(body)).into_response()
-}
-
-/// Tags an authenticated request with the project named in the
-/// `x-leanctx-project` header, read by `forward.rs::wire_context`. The header
-/// is internal: it is not on `ALLOWED_REQUEST_HEADERS`, so it never reaches
-/// the upstream.
-fn attach_request_tags(req: &mut axum::extract::Request) {
-    let mut tags = request_tags::RequestTags::default();
-    if let Some(project) = req
-        .headers()
-        .get("x-leanctx-project")
-        .and_then(|v| v.to_str().ok())
-        .map(str::trim)
-        .filter(|p| !p.is_empty() && p.len() <= 128 && !p.chars().any(char::is_control))
-    {
-        tags.project = Some(project.to_string());
-    }
-    if tags.project.is_some() {
-        req.extensions_mut().insert(tags);
-    }
 }
 
 fn has_provider_api_key(req: &axum::extract::Request) -> bool {

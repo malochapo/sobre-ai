@@ -153,11 +153,11 @@ pub(crate) fn skill_not_applicable_note() -> NamedCheck {
     }
 }
 
-/// Most recent real `ctx_*` MCP tool call from the event log ("12m ago" /
+/// Most recent `ctx_*` MCP tool call from the usage ledger ("12m ago" /
 /// "never"). #593: the clearest signal of whether the agent actually drives
 /// lean-ctx through MCP — an empty `watch` plus "never" means the agent is using
 /// native tools instead of `ctx_*`, not that lean-ctx is broken. Never fails
-/// (informational), and reads the live event log so it is naturally dynamic.
+/// (informational), and reads the live ledger so it is naturally dynamic.
 pub(crate) fn last_ctx_call_check() -> NamedCheck {
     let detail = match last_ctx_call_ago() {
         Some(ago) => format!("{ago} (most recent ctx_* MCP call)"),
@@ -171,21 +171,15 @@ pub(crate) fn last_ctx_call_check() -> NamedCheck {
 }
 
 pub(crate) fn last_ctx_call_ago() -> Option<String> {
-    let path = crate::core::paths::state_dir().ok()?.join("events.jsonl");
-    let content = std::fs::read_to_string(&path).ok()?;
-    let ts = content
-        .lines()
+    use chrono::TimeZone;
+    let last = crate::core::usage::load()
+        .into_iter()
         .rev()
-        .filter_map(|l| serde_json::from_str::<crate::core::events::LeanCtxEvent>(l).ok())
-        .find_map(|ev| {
-            let crate::core::events::EventKind::ToolCall { tool, .. } = ev.kind;
-            tool.starts_with("ctx_").then_some(ev.timestamp)
-        })?;
-    let parsed = chrono::NaiveDateTime::parse_from_str(&ts, "%Y-%m-%dT%H:%M:%S%.3f").ok()?;
-    let delta = chrono::Local::now()
-        .naive_local()
-        .signed_duration_since(parsed);
-    Some(humanize_ago(delta))
+        .find(|ev| ev.str("sobre.surface") == Some("mcp"))?;
+    let at = chrono::Local
+        .timestamp_opt(i64::try_from(last.unix_secs()).ok()?, 0)
+        .single()?;
+    Some(humanize_ago(chrono::Local::now().signed_duration_since(at)))
 }
 
 pub(crate) fn humanize_ago(d: chrono::Duration) -> String {

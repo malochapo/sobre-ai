@@ -159,7 +159,7 @@ bytes: {}\n",
                     use md5::{Digest, Md5};
                     let mut h = Md5::new();
                     h.update(s.as_bytes());
-                    crate::core::agent_identity::hex_encode(&h.finalize())
+                    crate::core::hasher::hex_encode(&h.finalize())
                 });
 
             let mut warning: Option<String> = None;
@@ -315,21 +315,7 @@ stale_files: {}\n",
             }
         }
 
-        "output_stats" => {
-            let snap = crate::core::output_verification::stats_snapshot();
-            let mut out = snap.format_compact();
-            // Agent-output echo summary (#501).
-            let echo = crate::core::output_echo::load_stats();
-            if !echo.reports.is_empty() {
-                out.push_str(&format!(
-                    "\nOutput echo: {:.0}% avg over last {} replies ({} analyzed total)",
-                    echo.avg_ratio(50) * 100.0,
-                    echo.reports.len(),
-                    echo.total_analyzed
-                ));
-            }
-            out
-        }
+        "output_stats" => crate::core::output_verification::stats_snapshot().format_compact(),
 
         "verify" => {
             let snap = crate::core::output_verification::stats_snapshot();

@@ -1,15 +1,14 @@
 //! Context Field Theory (CFT) -- unified potential function for context items.
 //!
-//! Combines information-theoretic, graph-based, and history signals into a
+//! Combines information-theoretic and graph-based signals into a
 //! single scalar potential Phi(i,t) per context item, enabling principled
 //! budget allocation and view selection.
 //!
 //! Scientific basis:
-//!   Phi(i,t) = w_R*R + w_S*S + w_G*G + w_H*H - w_C*C - w_D*D
-//! where R = task relevance (heat diffusion + PageRank),
+//!   Phi(i,t) = w_R*R + w_S*S + w_G*G - w_C*C - w_D*D
+//! where R = task relevance (keyword overlap with the task),
 //!       S = surprise (cross-entropy with Zipfian prior),
 //!       G = graph proximity (weighted BFS distance),
-//!       H = history signal (bandit feedback),
 //!       C = token cost for the active view,
 //!       D = redundancy with already-selected items (Jaccard).
 
@@ -190,7 +189,6 @@ pub struct FieldWeights {
     pub w_relevance: f64,
     pub w_surprise: f64,
     pub w_graph: f64,
-    pub w_history: f64,
     pub w_cost: f64,
     pub w_redundancy: f64,
 }
@@ -201,7 +199,6 @@ impl Default for FieldWeights {
             w_relevance: 0.35,
             w_surprise: 0.15,
             w_graph: 0.20,
-            w_history: 0.10,
             w_cost: 0.10,
             w_redundancy: 0.10,
         }
@@ -209,14 +206,13 @@ impl Default for FieldWeights {
 }
 
 impl FieldWeights {
-    /// Stability-leaning preset (#4): trusts relevance/history, applies a light
+    /// Stability-leaning preset (#4): trusts relevance, applies a light
     /// cost penalty. Selected when the `conservative` bandit arm wins.
     pub fn conservative() -> Self {
         Self {
             w_relevance: 0.45,
             w_surprise: 0.10,
             w_graph: 0.20,
-            w_history: 0.15,
             w_cost: 0.05,
             w_redundancy: 0.05,
         }
@@ -234,7 +230,6 @@ impl FieldWeights {
             w_relevance: 0.30,
             w_surprise: 0.20,
             w_graph: 0.15,
-            w_history: 0.05,
             w_cost: 0.20,
             w_redundancy: 0.10,
         }
@@ -252,7 +247,6 @@ pub struct FieldSignals {
     pub relevance: f64,
     pub surprise: f64,
     pub graph_proximity: f64,
-    pub history_signal: f64,
     pub token_cost_norm: f64,
     pub redundancy: f64,
 }
@@ -293,7 +287,6 @@ impl ContextField {
         let phi = w.w_relevance * signals.relevance
             + w.w_surprise * signals.surprise
             + w.w_graph * signals.graph_proximity
-            + w.w_history * signals.history_signal
             - w.w_cost * signals.token_cost_norm
             - w.w_redundancy * signals.redundancy;
         phi.clamp(0.0, 1.0)
@@ -333,8 +326,8 @@ pub fn normalize_token_cost(tokens: usize, budget_total: usize) -> f64 {
 }
 
 /// Compute real signals for a file path using existing scoring modules.
-/// Bridges CFT with the information-theoretic, graph-based, and history
-/// subsystems already in lean-ctx.
+/// Bridges CFT with the information-theoretic and graph-based subsystems
+/// already in lean-ctx.
 pub fn compute_signals_for_path(
     path: &str,
     task: Option<&str>,
@@ -344,10 +337,8 @@ pub fn compute_signals_for_path(
 ) -> (FieldSignals, ViewCosts) {
     let mut signals = FieldSignals::default();
 
-    let heatmap = super::heatmap::HeatMap::load();
-    let heat_entry = heatmap.entries.get(path);
-
-    // R(i,t): Task relevance via keyword overlap + heatmap frequency
+    // R(i,t): Task relevance via keyword overlap. Without a task there is no
+    // relevance signal.
     if let Some(task_desc) = task {
         let (_, keywords) = super::task_relevance::parse_task_hints(task_desc);
         let path_lower = path.to_lowercase();
@@ -356,11 +347,7 @@ pub fn compute_signals_for_path(
             .filter(|kw| path_lower.contains(&kw.to_lowercase()))
             .count();
         let keyword_score = (keyword_hits as f64 * 0.3).min(1.0);
-        let freq_score = heat_entry.map_or(0.0, |e| (e.access_count as f64 / 10.0).min(1.0));
-        signals.relevance = normalize_relevance(keyword_score + freq_score, 2.0);
-    } else {
-        let freq = heat_entry.map_or(0.0, |e| e.access_count as f64);
-        signals.relevance = normalize_relevance(freq, 10.0);
+        signals.relevance = normalize_relevance(keyword_score, 1.0);
     }
 
     // S(i): Surprise from cross-entropy with Zipfian prior
@@ -373,10 +360,6 @@ pub fn compute_signals_for_path(
     // (property graph queries require a Connection not available here)
     let depth = path.matches('/').count();
     signals.graph_proximity = normalize_graph_proximity(depth);
-
-    // H(i): History signal from heatmap access count
-    let access_count = heat_entry.map_or(0, |e| e.access_count);
-    signals.history_signal = (access_count as f64 / 20.0).min(1.0);
 
     // C(i,v): Normalized token cost relative to budget
     signals.token_cost_norm = normalize_token_cost(full_tokens, budget_total);
@@ -449,7 +432,6 @@ mod tests {
             relevance: 1.0,
             surprise: 1.0,
             graph_proximity: 1.0,
-            history_signal: 1.0,
             token_cost_norm: 0.0,
             redundancy: 0.0,
         });

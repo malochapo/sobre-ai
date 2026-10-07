@@ -16,7 +16,7 @@ pub fn lean_ctx_data_dir() -> Result<PathBuf, String> {
     }
 
     // Test sandbox (GL #512): without this, any unit test that triggers a
-    // store write (stats, savings ledger, context ledger, heatmap, ...)
+    // store write (usage ledger, context ledger, sessions, ...)
     // silently pollutes the developer's real data dir — bounce events from
     // test fixtures showed up as "today 61%" on the user dashboard. Tests that
     // set LEAN_CTX_DATA_DIR keep full control (handled above); everyone else

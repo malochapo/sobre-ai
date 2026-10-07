@@ -34,15 +34,6 @@ pub fn handle_observe() {
         super::read_dedup::purge_session(session_id);
     }
     append_radar_event(&event);
-
-    // Output-echo analysis (#501): measure how much of the agent's reply
-    // re-quotes content lean-ctx already delivered, and feed the adaptive
-    // mode policy with an automatic feedback event.
-    if event.event_type == "agent_response"
-        && let Some(text) = event.content.as_deref()
-    {
-        crate::core::output_echo::analyze_and_record(text);
-    }
 }
 
 #[derive(serde::Serialize)]
@@ -115,8 +106,8 @@ fn parse_observe_event(input: &str) -> Option<ObserveEvent> {
 fn detect_event_type(v: &serde_json::Value, ts: u64) -> Option<ObserveEvent> {
     // GitHub Copilot CLI postToolUse: camelCase `toolName` + `toolArgs`
     // (JSON-encoded string) + `toolResult`. None of the snake_case branches
-    // below match this shape, so without a dedicated arm Copilot telemetry
-    // (heatmap, token savings, radar) is silently dropped (#551).
+    // below match this shape, so without a dedicated arm Copilot events
+    // (the context radar) are silently dropped (#551).
     if let Some(result) = v.get("toolResult") {
         let tool = super::payload::resolve_tool_name(v).unwrap_or_else(|| "unknown".to_string());
         let args = super::payload::resolve_tool_args(v);

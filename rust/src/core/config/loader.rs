@@ -54,53 +54,6 @@ impl Config {
         }
     }
 
-    /// Resolves the active project root (git toplevel → cwd), cached for the
-    /// process.
-    pub(crate) fn find_project_root() -> Option<String> {
-        static ROOT_CACHE: std::sync::OnceLock<Option<String>> = std::sync::OnceLock::new();
-        ROOT_CACHE
-            .get_or_init(Self::find_project_root_inner)
-            .clone()
-    }
-
-    fn find_project_root_inner() -> Option<String> {
-        let cwd = std::env::current_dir().ok();
-
-        if let Some(ref cwd) = cwd {
-            // A launchd-standalone process must not shell out to `git` (which
-            // stats the working tree) or adopt cwd as the project root when cwd
-            // is under a TCC-protected dir (#356).
-            let may_probe_cwd = crate::core::pathutil::may_probe_path(cwd);
-            let git_root = if may_probe_cwd {
-                std::process::Command::new("git")
-                    .args(["rev-parse", "--show-toplevel"])
-                    .current_dir(cwd)
-                    .stdout(std::process::Stdio::piped())
-                    .stderr(std::process::Stdio::null())
-                    .output()
-                    .ok()
-                    .and_then(|o| {
-                        if o.status.success() {
-                            String::from_utf8(o.stdout)
-                                .ok()
-                                .map(|s| s.trim().to_string())
-                        } else {
-                            None
-                        }
-                    })
-            } else {
-                None
-            };
-            if let Some(root) = git_root {
-                return Some(root);
-            }
-            if may_probe_cwd && !crate::core::pathutil::is_broad_or_unsafe_root(cwd) {
-                return Some(cwd.to_string_lossy().to_string());
-            }
-        }
-        None
-    }
-
     /// Loads the config file, cached.
     ///
     /// The cache is keyed on a **content hash** of the file, not its mtime.

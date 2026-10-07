@@ -5,36 +5,6 @@
 use crate::doctor::common::*;
 use crate::doctor::{BOLD, DIM, GREEN, Outcome, RED, RST, YELLOW};
 
-/// Flags a quarantined `stats.json.corrupt` (#706): the stats loader moves an
-/// unparseable display cache aside instead of silently overwriting history.
-/// Doctor surfaces the quarantine so the loss is visible and recoverable
-/// (the savings ledger remains the source of truth for a rebuild).
-pub(crate) fn stats_quarantine_outcome() -> Outcome {
-    let Ok(data_dir) = crate::core::data_dir::lean_ctx_data_dir() else {
-        return Outcome {
-            ok: true,
-            line: format!("{BOLD}Stats store{RST}  {DIM}skipped (no data dir){RST}"),
-        };
-    };
-    let quarantine = data_dir.join("stats.json.corrupt");
-    if quarantine.exists() {
-        Outcome {
-            ok: false,
-            line: format!(
-                "{BOLD}Stats store{RST}  {YELLOW}corrupt stats.json was quarantined at {} — \
-                 history before the corruption is inside; inspect/merge it, then delete the \
-                 file to clear this warning{RST}",
-                quarantine.display()
-            ),
-        }
-    } else {
-        Outcome {
-            ok: true,
-            line: format!("{BOLD}Stats store{RST}  {GREEN}no quarantined corruption{RST}"),
-        }
-    }
-}
-
 pub(crate) fn bm25_cache_health_outcome() -> Outcome {
     let Ok(data_dir) = crate::core::data_dir::lean_ctx_data_dir() else {
         return Outcome {

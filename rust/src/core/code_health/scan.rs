@@ -79,7 +79,7 @@ pub fn scan_project(
             .then_with(|| a.line.cmp(&b.line))
     });
 
-    let input_price_per_m = crate::core::gain::model_pricing::ModelPricing::load()
+    let input_price_per_m = crate::core::pricing::ModelPricing::load()
         .quote(model)
         .cost
         .input_per_m;

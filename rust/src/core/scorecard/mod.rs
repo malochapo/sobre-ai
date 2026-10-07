@@ -136,7 +136,7 @@ pub fn run_scorecard() -> std::io::Result<Scorecard> {
     let determinism_digest = Scorecard::compute_digest(&scenarios);
     Ok(Scorecard {
         schema_version: 1,
-        tokenizer: crate::core::tokens::counting_family_label(),
+        tokenizer: crate::core::tokens::COUNTING_TOKENIZER.to_string(),
         determinism_digest,
         scenarios,
         aggregate,

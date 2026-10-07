@@ -15,23 +15,12 @@ pub(crate) const MAX_FILE_SIZE: u64 = 512_000;
 pub(crate) const MAX_WALK_DEPTH: usize = 20;
 const MAX_MATCH_LINE_WIDTH: usize = 150;
 
-/// Modeled baseline for the *estimated* savings series (GL #479 D1): a native
-/// agent grep tool ships matches with surrounding context lines, per-file
-/// headers and line numbers, which is roughly 2.5x the tokens of the bare
-/// match lines lean-ctx observes. This factor is a documented model
-/// assumption — it feeds `stats.json` ("estimated") only. The signed savings
-/// ledger ("verified") records `observed_tokens` without any factor applied.
-pub const NATIVE_GREP_BASELINE_FACTOR: f64 = 2.5;
-
-/// Result of a search: the rendered output plus both baseline figures.
+/// Result of a search: the rendered output and the size of what it replaced.
 pub struct SearchOutcome {
     /// Rendered, compressed search output.
     pub text: String,
-    /// Modeled native-tool baseline (`observed_tokens` x [`NATIVE_GREP_BASELINE_FACTOR`]).
-    /// Feeds the estimated stats series.
-    pub modeled_baseline: usize,
-    /// Tokens actually measured in the raw match lines — no model applied.
-    /// Feeds the verified savings ledger.
+    /// Tokens measured in the raw match lines, the original the usage ledger
+    /// compares the output against.
     pub observed_tokens: usize,
 }
 
@@ -39,16 +28,13 @@ impl SearchOutcome {
     fn error(text: String) -> Self {
         Self {
             text,
-            modeled_baseline: 0,
             observed_tokens: 0,
         }
     }
 
     fn from_observed(text: String, observed_tokens: usize) -> Self {
-        let modeled = (observed_tokens as f64 * NATIVE_GREP_BASELINE_FACTOR).ceil() as usize;
         Self {
             text,
-            modeled_baseline: modeled.max(observed_tokens),
             observed_tokens,
         }
     }

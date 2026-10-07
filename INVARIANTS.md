@@ -123,9 +123,10 @@ only reliable oracle here. A budget that taxes it is aimed at the wrong thing.
 
 ### Where we actually stand
 
-`rust/src` is about 245,800 lines, of which about 73,000 are test code.
-**Production code: about 173,000 — some 27,000 below the ceiling.** (It was
-343,328 when this section was first written, and 183,800 at the end of phase 1.)
+`rust/src` is about 209,100 lines, of which about 60,800 are test code.
+**Production code: about 148,400 — some 51,600 below the ceiling.** (It was
+343,328 when this section was first written, 183,800 at the end of phase 1, and
+about 173,000 after the single rules channel.)
 
 ### Where 200,000 comes from
 

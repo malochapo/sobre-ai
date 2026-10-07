@@ -4,6 +4,15 @@
 //! hash function. BLAKE3 runs at 8+ GB/s (vs MD5 ~3 GB/s) and produces
 //! collision-resistant 256-bit digests.
 
+/// Lowercase hex of arbitrary bytes (a digest another hasher produced).
+pub fn hex_encode(bytes: &[u8]) -> String {
+    use std::fmt::Write;
+    bytes.iter().fold(String::new(), |mut s, b| {
+        let _ = write!(s, "{b:02x}");
+        s
+    })
+}
+
 /// Return a hex-encoded BLAKE3 hash of the input bytes.
 #[inline]
 pub fn hash_hex(data: &[u8]) -> String {

@@ -30,7 +30,7 @@ pub fn sha256_file(path: &Path) -> Result<String, String> {
         }
         hasher.update(&buf[..n]);
     }
-    Ok(crate::core::agent_identity::hex_encode(&hasher.finalize()))
+    Ok(crate::core::hasher::hex_encode(&hasher.finalize()))
 }
 
 #[cfg(test)]

@@ -15,7 +15,7 @@ pub(crate) fn namespace_hash(project_root: &Path) -> String {
     let seed = namespace_seed(project_root);
     let mut hasher = Md5::new();
     hasher.update(seed.as_bytes());
-    crate::core::agent_identity::hex_encode(&hasher.finalize())
+    crate::core::hasher::hex_encode(&hasher.finalize())
 }
 
 fn namespace_seed(project_root: &Path) -> String {

@@ -115,7 +115,6 @@ mod tests {
             crp_mode: crate::tools::CrpMode::Off,
             cache: None,
             session: None,
-            tool_calls: None,
             path_errors: std::collections::HashMap::new(),
             bm25_cache: None,
             progress_sender: None,

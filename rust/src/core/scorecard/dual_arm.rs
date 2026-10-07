@@ -39,7 +39,7 @@
 use serde::Serialize;
 
 use crate::core::benchmark::{self, FileMeasurement};
-use crate::core::gain::model_pricing::{ModelCost, ModelPricing};
+use crate::core::pricing::{ModelCost, ModelPricing};
 
 /// Models priced in the scorecard, spanning cache-priced and non-caching tiers
 /// so the matrix shows both the strict win and the break-even floor.
@@ -248,7 +248,7 @@ fn run_for_dir(scenario: &str, root: &std::path::Path) -> DualArmScorecard {
 
     DualArmScorecard {
         schema_version: 1,
-        tokenizer: crate::core::tokens::counting_family_label(),
+        tokenizer: crate::core::tokens::COUNTING_TOKENIZER.to_string(),
         scenario: scenario.to_string(),
         turns: turns.len(),
         total_raw_input_tokens: tokens.arm_a_input,

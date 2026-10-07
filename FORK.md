@@ -49,6 +49,7 @@ The goal of the fork is **subtraction**, not addition. Categories removed:
 | Shared session mode | One machine, one person |
 | Learning loop (mode predictor, feedback, bandits, threshold learning) | Stores that were written but never read back |
 | Cognition loop, knowledge bridge, episodic and procedural memory, findings recorded automatically from tool output | Background or hidden writers the agent never asked for; memory holds only what the agent remembers |
+| About twenty usage stores (stats, savings ledger, cost attribution, heatmap, event log, audit trail, Context IR, proxy counters) and the views built on them (Wrapped, energy, CEP score, `tools health`, `output-savings`, `audit`) | One local usage ledger in the OpenTelemetry log format; `gain` computes every figure from it |
 | The downstream packages, language SDKs and editor extensions | A distribution surface two maintainers can support |
 | Marketing, blog and email material | Not source code |
 | Multiple tool-visibility modes, tool profiles, per-client quirks, `ctx_context`, `ctx_execute` | Replaced by a single fixed surface of 17 tools |

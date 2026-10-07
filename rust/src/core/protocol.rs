@@ -21,17 +21,6 @@ impl CrpMode {
     }
 }
 
-/// Recorded metrics for a single MCP tool invocation.
-#[derive(Clone, Debug)]
-pub struct ToolCallRecord {
-    pub tool: String,
-    pub original_tokens: usize,
-    pub saved_tokens: usize,
-    pub mode: Option<String>,
-    pub duration_ms: u64,
-    pub timestamp: String,
-}
-
 /// Finds the outermost project root by walking up from `file_path`.
 /// For monorepos with nested `.git` dirs (e.g. `mono/backend/.git` + `mono/frontend/.git`),
 /// returns the outermost ancestor containing `.git`, a workspace marker, or a known

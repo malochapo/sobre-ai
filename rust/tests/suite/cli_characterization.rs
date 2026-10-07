@@ -132,6 +132,20 @@ fn gain_json_exits_zero() {
 }
 
 #[test]
+fn gain_breakdowns_exit_zero() {
+    for flag in ["--by-tool", "--daily", "--period=7d"] {
+        let out = run(&["gain", flag]);
+        assert_eq!(exit_code(&out), 0, "gain {flag}: {}", stderr(&out));
+    }
+}
+
+#[test]
+fn gain_rejects_an_unknown_period() {
+    let out = run(&["gain", "--period=week"]);
+    assert_eq!(exit_code(&out), 2, "stderr: {}", stderr(&out));
+}
+
+#[test]
 fn gain_reset_exits_zero() {
     let out = run(&["gain", "--reset"]);
     assert_eq!(exit_code(&out), 0, "stderr: {}", stderr(&out));
@@ -146,20 +160,6 @@ fn config_show_exits_zero() {
 #[test]
 fn config_no_args_exits_zero() {
     let out = run(&["config"]);
-    assert_eq!(exit_code(&out), 0, "stderr: {}", stderr(&out));
-}
-
-#[test]
-fn cep_exits_zero() {
-    let out = run(&["cep"]);
-    assert_eq!(exit_code(&out), 0, "stderr: {}", stderr(&out));
-}
-
-#[test]
-fn wrapped_exits_zero() {
-    // `wrapped` was folded into `gain --wrapped`; the standalone command now
-    // prints a removal hint and exits non-zero. Characterize the replacement.
-    let out = run(&["gain", "--wrapped"]);
     assert_eq!(exit_code(&out), 0, "stderr: {}", stderr(&out));
 }
 
@@ -361,13 +361,6 @@ fn raw_no_args_prints_usage() {
         err.contains("Usage") && err.contains("raw"),
         "raw without args should show usage: {err}"
     );
-}
-
-#[test]
-fn audit_exits_zero() {
-    let out = run(&["audit"]);
-    assert_eq!(exit_code(&out), 0, "stderr: {}", stderr(&out));
-    assert!(!stdout(&out).is_empty(), "audit should produce output");
 }
 
 // ═══════════════════════════════════════════════════════════════════

@@ -1,5 +1,4 @@
 use crate::core::session::SessionState;
-use crate::core::stats;
 use crate::tools::ctx_session::{self, SessionToolOptions};
 
 use super::common::{format_tokens_cli, load_shell_history};
@@ -113,7 +112,11 @@ Examples:
 
 fn cmd_session_adoption() {
     let history = load_shell_history();
-    let gain = stats::load_stats();
+    let usage = crate::core::usage::summarize(
+        &crate::core::usage::load(),
+        crate::core::usage::Period::All,
+        &crate::core::pricing::ModelPricing::load(),
+    );
 
     let compressible_commands = [
         "git ",
@@ -165,8 +168,8 @@ fn cmd_session_adoption() {
 
     println!("lean-ctx session statistics\n");
     println!("Adoption:    {pct}% ({via_hook}/{total} compressible commands)");
-    println!("Saved:       {} tokens total", gain.total_saved);
-    println!("Calls:       {} compressed", gain.total_calls);
+    println!("Saved:       {} tokens total", usage.net_saved_tokens());
+    println!("Calls:       {} compressed", usage.compression.events);
 
     if total > via_hook {
         let missed = total - via_hook;
