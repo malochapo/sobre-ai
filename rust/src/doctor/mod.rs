@@ -280,12 +280,6 @@ pub fn run() -> u32 {
         }
     }
 
-    // Plan mode (advisory)
-    let plan_outcomes = plan_mode_outcomes();
-    for plan_check in &plan_outcomes {
-        board.info(plan_check);
-    }
-
     // 9) Session state (project_root + shell_cwd)
     let session_outcome = session_state_outcome();
     board.check(&session_outcome);

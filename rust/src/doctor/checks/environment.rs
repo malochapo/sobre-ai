@@ -181,46 +181,6 @@ pub(crate) fn wsl_vscode_mcp_outcome() -> Option<Outcome> {
     })
 }
 
-pub(crate) fn plan_mode_outcomes() -> Vec<Outcome> {
-    let status = crate::core::editor_registry::plan_mode::check_plan_mode_status();
-    let mut results = Vec::new();
-
-    if let Some(configured) = status.vscode_configured {
-        if configured {
-            results.push(Outcome {
-                ok: true,
-                line: format!(
-                    "{BOLD}Plan mode{RST}  VS Code  {GREEN}planAgent tools configured{RST}"
-                ),
-            });
-        } else {
-            results.push(Outcome {
-                ok: false,
-                line: format!(
-                    "{BOLD}Plan mode{RST}  VS Code  {YELLOW}not configured{RST}  {DIM}(run: lean-ctx init){RST}"
-                ),
-            });
-        }
-    }
-
-    if let Some(configured) = status.claude_configured {
-        if configured {
-            results.push(Outcome {
-                ok: true,
-                line: format!("{BOLD}Plan mode{RST}  Claude Code  {GREEN}permissions present{RST}"),
-            });
-        } else {
-            results.push(Outcome {
-                ok: false,
-                line: format!(
-                    "{BOLD}Plan mode{RST}  Claude Code  {YELLOW}not configured{RST}  {DIM}(run: lean-ctx init){RST}"
-                ),
-            });
-        }
-    }
-
-    results
-}
 pub(crate) fn session_state_outcome() -> Outcome {
     use crate::core::session::SessionState;
 

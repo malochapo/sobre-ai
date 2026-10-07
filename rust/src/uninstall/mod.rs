@@ -6,8 +6,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use agents::{
-    remove_hook_files, remove_mcp_configs, remove_plan_mode_settings, remove_project_agent_files,
-    remove_shell_hook, remove_skills,
+    remove_hook_files, remove_mcp_configs, remove_project_agent_files, remove_shell_hook,
+    remove_skills,
 };
 
 pub(super) fn backup_before_modify(path: &Path, dry_run: bool) {
@@ -156,7 +156,6 @@ pub fn run(dry_run: bool, keep_config: bool, keep_binary: bool) {
     }
 
     removed_any |= remove_hook_files(&home, dry_run);
-    removed_any |= remove_plan_mode_settings(&home, dry_run);
     removed_any |= remove_project_agent_files(dry_run);
 
     if dry_run {
