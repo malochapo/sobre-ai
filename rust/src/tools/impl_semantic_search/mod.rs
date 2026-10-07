@@ -3,11 +3,51 @@ use std::path::Path;
 use crate::core::bm25_index::{BM25Index, format_search_results};
 #[cfg(feature = "embeddings")]
 use crate::core::embedding_index::EmbeddingIndex;
-#[cfg(feature = "embeddings")]
-use crate::core::embeddings::EmbeddingEngine;
-#[cfg(feature = "embeddings")]
-use crate::core::hybrid_search::HybridResult;
 use crate::tools::CrpMode;
+
+/// The ranking a semantic search uses. Dense and hybrid exist only in builds
+/// with the `embeddings` feature; asking for them elsewhere is an error, never
+/// a quiet BM25 answer.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum SearchMode {
+    Bm25,
+    #[cfg(feature = "embeddings")]
+    Dense,
+    #[cfg(feature = "embeddings")]
+    Hybrid,
+}
+
+impl SearchMode {
+    /// `None` is BM25.
+    pub(crate) fn parse(mode: Option<&str>) -> Result<Self, String> {
+        let Some(mode) = mode.map(|m| m.trim().to_ascii_lowercase()) else {
+            return Ok(Self::Bm25);
+        };
+        match mode.as_str() {
+            "bm25" => Ok(Self::Bm25),
+            #[cfg(feature = "embeddings")]
+            "dense" => Ok(Self::Dense),
+            #[cfg(feature = "embeddings")]
+            "hybrid" => Ok(Self::Hybrid),
+            #[cfg(not(feature = "embeddings"))]
+            "dense" | "hybrid" => Err(format!(
+                "mode={mode} needs local embeddings, which this build does not include \
+                 (build with --features dense). Use mode=bm25."
+            )),
+            _ => Err(format!("unknown mode '{mode}'. Use bm25, dense or hybrid.")),
+        }
+    }
+
+    pub(crate) fn as_str(self) -> &'static str {
+        match self {
+            Self::Bm25 => "bm25",
+            #[cfg(feature = "embeddings")]
+            Self::Dense => "dense",
+            #[cfg(feature = "embeddings")]
+            Self::Hybrid => "hybrid",
+        }
+    }
+}
 
 /// Performs semantic code search using BM25, dense embeddings, or hybrid ranking.
 #[allow(clippy::too_many_arguments)]
@@ -43,11 +83,13 @@ pub(crate) fn handle(
     };
 
     let compact = crp_mode.is_tdd();
-    let mode = mode.unwrap_or("bm25").to_lowercase();
-    let workspace = workspace.unwrap_or(false);
+    let mode = match SearchMode::parse(mode) {
+        Ok(m) => m,
+        Err(e) => return format!("ERR: {e}"),
+    };
 
-    if workspace {
-        return workspace_search(query, root, top_k, compact, &filter, &mode);
+    if workspace.unwrap_or(false) {
+        return workspace_search(query, root, top_k, compact, &filter, mode);
     }
 
     let index = match load_or_refresh_bm25(root) {
@@ -62,8 +104,8 @@ pub(crate) fn handle(
         return "No code files found to index.".to_string();
     }
 
-    match mode.as_str() {
-        "bm25" => {
+    match mode {
+        SearchMode::Bm25 => {
             let mut results = index.search(query, filtered_candidate_k(top_k, filter.is_active()));
             if filter.is_active() {
                 results.retain(|x| filter.matches(&x.file_path));
@@ -86,13 +128,18 @@ pub(crate) fn handle(
             };
             format!("{header}{}", format_search_results(&results, compact))
         }
-        "dense" => {
-            let out = dense_search_mode(query, root, &index, top_k, compact, &filter);
-            shrink_resident_after_embedding(root, index);
-            out
-        }
-        _ => {
-            let out = hybrid_search_mode(query, root, &index, top_k, compact, &filter);
+        #[cfg(feature = "embeddings")]
+        SearchMode::Dense | SearchMode::Hybrid => {
+            let ranked = if mode == SearchMode::Dense {
+                dense_ranked(query, root, &index, top_k, &filter)
+            } else {
+                let cfg = crate::core::hybrid_search::HybridConfig::default();
+                hybrid_ranked(query, root, &index, top_k, &filter, &cfg)
+            };
+            let out = match ranked {
+                Ok(r) => render_ranked(mode, query, &index, top_k, compact, &r),
+                Err(e) => format!("ERR: {e}"),
+            };
             shrink_resident_after_embedding(root, index);
             out
         }
@@ -108,8 +155,8 @@ pub(crate) fn handle(
 /// rendered (`bm25_index::search`, `dense_backend`, `hybrid_search`). Only fires
 /// when embeddings are actually built (feature-gated); a BM25-only fallback build
 /// must keep full bodies for a later real embedding pass.
+#[cfg(feature = "embeddings")]
 fn shrink_resident_after_embedding(root: &Path, index: std::sync::Arc<BM25Index>) {
-    #[cfg(feature = "embeddings")]
     {
         // Release our clone so the cache is the sole Arc owner; otherwise the
         // in-place trim is skipped and retried on the next search.
@@ -124,28 +171,6 @@ fn shrink_resident_after_embedding(root: &Path, index: std::sync::Arc<BM25Index>
             }
         }
     }
-    #[cfg(not(feature = "embeddings"))]
-    {
-        let _ = (root, index);
-    }
-}
-
-#[cfg(feature = "embeddings")]
-fn bm25_hits(
-    index: &BM25Index,
-    query: &str,
-    top_k: usize,
-    filter: &SearchFilter,
-) -> Vec<HybridResult> {
-    let mut results = index.search(query, filtered_candidate_k(top_k, filter.is_active()));
-    if filter.is_active() {
-        results.retain(|x| filter.matches(&x.file_path));
-    }
-    results.truncate(top_k);
-    results
-        .into_iter()
-        .map(HybridResult::from_bm25_public)
-        .collect()
 }
 
 /// Rebuilds the BM25 search index for the given directory from scratch.
@@ -209,10 +234,9 @@ pub(crate) fn handle_find_related(
     let source_start = source_chunk.start_line;
 
     let compact = crp_mode != CrpMode::Off;
+    let (engine, results) = related_chunks(&query_text, root, &index, top_k + 5, compact);
 
-    let results = find_related_internal(&query_text, root, &index, top_k + 5, compact);
-
-    let mut lines: Vec<String> = results
+    let lines: Vec<String> = results
         .into_iter()
         .filter(|l| !l.contains(&format!("{source_file}:{source_start}-")))
         .take(top_k)
@@ -220,29 +244,51 @@ pub(crate) fn handle_find_related(
 
     let header = if compact {
         format!(
-            "find_related({file_path}:{line}) → {} results\n",
+            "find_related({file_path}:{line},{engine}) → {} results\n",
             lines.len()
         )
     } else {
-        format!("Find related to {file_path}:{line} (semantic similarity)\n")
+        format!("Find related to {file_path}:{line} ({engine} search on the chunk's text)\n")
     };
-
-    lines.insert(0, header);
-    lines.join("")
+    format!("{header}{}", lines.join(""))
 }
 
-fn find_related_internal(
-    query: &str,
+/// Rank chunks against `text`, one line each. Hybrid when this build has
+/// embeddings, BM25 otherwise; returns which one ran.
+fn related_chunks(
+    text: &str,
     root: &Path,
     index: &BM25Index,
     top_k: usize,
     compact: bool,
-) -> Vec<String> {
+) -> (&'static str, Vec<String>) {
     let Ok(filter) = SearchFilter::new(None, None) else {
-        return vec!["ERR: filter init failed\n".to_string()];
+        return ("bm25", Vec::new());
     };
-    let output = hybrid_search_mode(query, root, index, top_k, compact, &filter);
-    output.lines().map(|l| format!("{l}\n")).collect()
+    #[cfg(feature = "embeddings")]
+    {
+        let cfg = crate::core::hybrid_search::HybridConfig::default();
+        match hybrid_ranked(text, root, index, top_k, &filter, &cfg) {
+            Ok(r) => {
+                let engine = if r.degraded.is_some() {
+                    "bm25+graph, dense index not built"
+                } else {
+                    "hybrid"
+                };
+                let body = crate::core::hybrid_search::format_hybrid_results(&r.results, compact);
+                (engine, body.lines().map(|l| format!("{l}\n")).collect())
+            }
+            Err(e) => ("hybrid", vec![format!("ERR: {e}\n")]),
+        }
+    }
+    #[cfg(not(feature = "embeddings"))]
+    {
+        let _ = root;
+        let mut results = index.search(text, filtered_candidate_k(top_k, filter.is_active()));
+        results.truncate(top_k);
+        let body = format_search_results(&results, compact);
+        ("bm25", body.lines().map(|l| format!("{l}\n")).collect())
+    }
 }
 
 fn truncate_query(q: &str, max: usize) -> &str {
@@ -255,42 +301,15 @@ fn truncate_query(q: &str, max: usize) -> &str {
     }
 }
 
-/// Public wrapper for eval harness: load embedding engine + index.
-#[cfg(feature = "embeddings")]
-pub(crate) fn load_engine_and_index_pub(
-    root: &Path,
-) -> Result<(&'static EmbeddingEngine, EmbeddingIndex), String> {
-    load_engine_and_index(root)
-}
-
-/// Public wrapper for eval harness: prepare embeddings for a project.
-#[cfg(feature = "embeddings")]
-pub(crate) fn ensure_embeddings_for_eval(
-    root: &Path,
-    index: &BM25Index,
-    engine: &EmbeddingEngine,
-    embed_idx: &mut EmbeddingIndex,
-) -> Result<AlignedEmbeddings, String> {
-    ensure_embeddings(root, index, engine, embed_idx)
-}
-
-/// Public wrapper for eval harness: apply SPLADE boosting.
-#[cfg(feature = "embeddings")]
-pub(crate) fn boost_with_splade_pub(
-    results: &mut [HybridResult],
-    splade: &[crate::core::splade_retrieval::SpladeResult],
-    weight: f64,
-) {
-    boost_with_splade(results, splade, weight);
-}
-
 mod bm25_store;
+#[cfg(feature = "embeddings")]
 mod dense;
 pub(crate) mod multi_root;
 mod scope;
 
 pub(crate) use bm25_store::*;
 pub(crate) use bm25_store::{get_thread_cache, set_thread_cache};
+#[cfg(feature = "embeddings")]
 pub(crate) use dense::*;
 pub(crate) use multi_root::*;
 pub(crate) use scope::*;

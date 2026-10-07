@@ -20,9 +20,13 @@
 //! Runtime ≥ 1.24); a version-lockstep test below fails the build if the
 //! crate is bumped without updating this table.
 
+#[cfg(feature = "embeddings")]
 use std::io::Read;
-use std::path::{Path, PathBuf};
+#[cfg(feature = "embeddings")]
+use std::path::Path;
+use std::path::PathBuf;
 
+#[cfg(feature = "embeddings")]
 use super::binhash::sha256_file;
 
 /// Managed ONNX Runtime version. Must satisfy `1.{ort::MINOR_VERSION}.x` of
@@ -30,6 +34,7 @@ use super::binhash::sha256_file;
 /// `embeddings` feature is on).
 pub const ORT_VERSION: &str = "1.24.4";
 
+#[cfg(feature = "embeddings")]
 /// One platform's official CPU runtime archive.
 #[derive(Debug)]
 struct OrtArchive {
@@ -41,6 +46,7 @@ struct OrtArchive {
     member: &'static str,
 }
 
+#[cfg(feature = "embeddings")]
 /// Official CPU archives for `ORT_VERSION`, keyed by Rust target triple.
 /// macOS x86_64 is absent upstream (Microsoft ships arm64-only since 1.24) —
 /// `archive_for` returns a descriptive error pointing at Homebrew.
@@ -117,6 +123,7 @@ pub fn managed_dylib_path() -> Option<PathBuf> {
     path.is_file().then_some(path)
 }
 
+#[cfg(feature = "embeddings")]
 /// Download, verify and install the managed CPU ONNX Runtime for this
 /// platform. Explicit consent flow: only the `embeddings provision` CLI (and
 /// doctor's suggestion text) reach this. Idempotent — an existing install
@@ -196,6 +203,7 @@ pub fn provision(force: bool) -> Result<PathBuf, String> {
 /// URL suffix, matching the official asset naming).
 // The URLs are our own pinned lowercase constants, not user paths — a
 // case-insensitive Path::extension dance would only obscure that.
+#[cfg(feature = "embeddings")]
 #[allow(clippy::case_sensitive_file_extension_comparisons)]
 fn extract_member(bytes: &[u8], url: &str, member: &str) -> Result<Vec<u8>, String> {
     if url.ends_with(".tgz") || url.ends_with(".tar.gz") {
@@ -207,6 +215,7 @@ fn extract_member(bytes: &[u8], url: &str, member: &str) -> Result<Vec<u8>, Stri
     }
 }
 
+#[cfg(feature = "embeddings")]
 fn extract_tgz_member(bytes: &[u8], member: &str) -> Result<Vec<u8>, String> {
     let gz = flate2::read::GzDecoder::new(bytes);
     let mut tar = tar::Archive::new(gz);
@@ -229,6 +238,7 @@ fn extract_tgz_member(bytes: &[u8], member: &str) -> Result<Vec<u8>, String> {
     Err(format!("`{member}` not found in archive"))
 }
 
+#[cfg(feature = "embeddings")]
 fn extract_zip_member(bytes: &[u8], member: &str) -> Result<Vec<u8>, String> {
     let cursor = std::io::Cursor::new(bytes);
     let mut zip = zip::ZipArchive::new(cursor).map_err(|e| format!("zip open failed: {e}"))?;
@@ -241,6 +251,7 @@ fn extract_zip_member(bytes: &[u8], member: &str) -> Result<Vec<u8>, String> {
     Ok(out)
 }
 
+#[cfg(feature = "embeddings")]
 fn sha256_bytes(bytes: &[u8]) -> String {
     use sha2::{Digest, Sha256};
     let mut hasher = Sha256::new();
@@ -259,6 +270,7 @@ pub fn status_line() -> String {
     }
 }
 
+#[cfg(feature = "embeddings")]
 /// Rust target-triple key this build was compiled for — the key
 /// [`archive_for`] looks up.
 fn current_target_triple() -> &'static str {
@@ -279,7 +291,7 @@ fn current_target_triple() -> &'static str {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "embeddings"))]
 mod tests {
     use super::*;
 

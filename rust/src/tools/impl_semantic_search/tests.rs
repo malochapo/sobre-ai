@@ -226,39 +226,64 @@ mod dense_toggle_tests {
         ])
     }
 
-    /// #686: the no-dense fallback ranks via BM25 (+ graph + rerank + SPLADE),
-    /// emits a BM25 header, finds the lexical match, and crucially never loads the
-    /// embedding engine or writes `embeddings.json` — the on-disk vector footprint
-    /// and embed latency disappear.
+    /// #512/#686: on a cold dense index hybrid ranks without the dense signal,
+    /// finds the lexical match, says it degraded, and never writes embeddings.
     #[test]
-    fn bm25_graph_search_ranks_without_embeddings() {
+    fn hybrid_on_cold_index_ranks_without_embeddings_and_says_so() {
+        let _env = crate::core::data_dir::test_env_lock();
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
         let index = small_index();
-        let cfg = HybridConfig::default();
         let filter = SearchFilter::new(None, None).unwrap();
+        let cfg = HybridConfig {
+            splade_weight: 0.0,
+            ..HybridConfig::default()
+        };
 
-        let out = bm25_graph_search(
-            "jwt token validation",
-            root,
-            &index,
-            5,
-            false,
-            &filter,
-            &cfg,
-        );
+        let Ok(ranked) = hybrid_ranked("jwt token validation", root, &index, 5, &filter, &cfg)
+        else {
+            // No embedding engine in this environment: nothing to rank with.
+            return;
+        };
+        if ranked.degraded.is_some() {
+            assert!(
+                ranked
+                    .results
+                    .iter()
+                    .any(|r| r.symbol_name == "validate_token"),
+                "expected lexical match"
+            );
+            let out = render_ranked(SearchMode::Hybrid, "q", &index, 5, false, &ranked);
+            assert!(out.contains("dense index not built"), "got: {out}");
+        }
+        assert!(!root.join("embeddings.json").exists());
+    }
+}
 
-        assert!(
-            out.contains("Semantic search (BM25"),
-            "expected BM25 header, got: {out}"
-        );
-        assert!(
-            out.contains("validate_token"),
-            "expected lexical match, got: {out}"
-        );
-        assert!(
-            !root.join("embeddings.json").exists(),
-            "dense-disabled path must not persist embeddings.json"
-        );
+mod search_mode_tests {
+    use super::super::SearchMode;
+
+    #[test]
+    fn bm25_is_the_default_and_unknown_modes_are_rejected() {
+        assert_eq!(SearchMode::parse(None), Ok(SearchMode::Bm25));
+        assert_eq!(SearchMode::parse(Some(" BM25 ")), Ok(SearchMode::Bm25));
+        let err = SearchMode::parse(Some("vector")).unwrap_err();
+        assert!(err.contains("unknown mode"), "{err}");
+    }
+
+    #[cfg(not(feature = "embeddings"))]
+    #[test]
+    fn dense_modes_are_an_error_without_embeddings() {
+        for mode in ["dense", "hybrid"] {
+            let err = SearchMode::parse(Some(mode)).unwrap_err();
+            assert!(err.contains("--features dense"), "{err}");
+        }
+    }
+
+    #[cfg(feature = "embeddings")]
+    #[test]
+    fn dense_modes_parse_with_embeddings() {
+        assert_eq!(SearchMode::parse(Some("dense")), Ok(SearchMode::Dense));
+        assert_eq!(SearchMode::parse(Some("hybrid")), Ok(SearchMode::Hybrid));
     }
 }

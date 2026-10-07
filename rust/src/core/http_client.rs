@@ -1,3 +1,4 @@
+#[cfg(feature = "embeddings")]
 use std::time::Duration;
 
 /// Shared TLS config for every ureq client so OS/enterprise root CAs are honored
@@ -12,6 +13,7 @@ pub fn platform_tls_config() -> ureq::tls::TlsConfig {
         .build()
 }
 
+#[cfg(feature = "embeddings")]
 /// Agent that honors platform roots and bounds only the connection-setup phases
 /// (DNS/connect/first-byte) — a large but progressing download stays uncapped.
 pub fn ureq_agent_with_timeouts(

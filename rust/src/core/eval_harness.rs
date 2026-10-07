@@ -249,6 +249,8 @@ fn bm25_only_search(index: &BM25Index, query: &str, config: &HybridConfig) -> Ve
         .collect()
 }
 
+/// The production hybrid pipeline with `config`. An error when the dense
+/// signal is missing, so the arm is reported as BM25, not as hybrid.
 #[cfg(feature = "embeddings")]
 fn try_hybrid_search(
     project_root: &Path,
@@ -256,48 +258,14 @@ fn try_hybrid_search(
     index: &BM25Index,
     config: &HybridConfig,
 ) -> Result<Vec<String>, String> {
-    use crate::core::dense_backend;
-    use crate::tools::impl_semantic_search;
+    use crate::tools::impl_semantic_search::{SearchFilter, hybrid_ranked};
 
-    let (engine, mut embed_idx) = impl_semantic_search::load_engine_and_index_pub(project_root)?;
-
-    let (aligned, _coverage, changed_files) = impl_semantic_search::ensure_embeddings_for_eval(
-        project_root,
-        index,
-        engine,
-        &mut embed_idx,
-    )?;
-
-    let backend = dense_backend::DenseBackendKind::Local;
-    let candidate_k = config.bm25_candidates.max(config.dense_candidates);
-
-    let mut results = dense_backend::hybrid_results(
-        backend,
-        project_root,
-        index,
-        engine,
-        &aligned,
-        &changed_files,
-        query,
-        candidate_k,
-        config,
-        None,
-        None,
-    )?;
-
-    if config.splade_weight > 0.0 {
-        let splade = crate::core::splade_retrieval::hybrid_retrieve(query, index, candidate_k);
-        if !splade.is_empty() {
-            impl_semantic_search::boost_with_splade_pub(
-                &mut results,
-                &splade,
-                config.splade_weight,
-            );
-        }
+    let filter = SearchFilter::new(None, None)?;
+    let ranked = hybrid_ranked(query, project_root, index, 10, &filter, config)?;
+    if let Some(note) = ranked.degraded {
+        return Err(note);
     }
-
-    results.truncate(10);
-    Ok(results.iter().map(|r| r.file_path.clone()).collect())
+    Ok(ranked.results.into_iter().map(|r| r.file_path).collect())
 }
 
 /// Generate self-eval queries from an indexed codebase.

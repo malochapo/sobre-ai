@@ -40,9 +40,11 @@ each started by you:
 - the local proxy, which forwards your agent's requests to the providers you
   configure;
 - `lean-ctx pricing refresh`, which fetches model prices;
-- `lean-ctx embeddings` and `lean-ctx index build-semantic`, which download the
-  embedding model (`dense` builds), and `lean-ctx embeddings provision`, which
-  downloads the ONNX runtime.
+- in builds with `--features dense` only: `lean-ctx embeddings provision`,
+  which downloads the ONNX runtime and the embedding model, and
+  `lean-ctx index build-semantic` / `build-full`, which download the model if
+  it is missing. A search never downloads anything; without the model it says
+  so. Builds without embeddings download neither.
 
 There is no telemetry, no update check and no usage reporting. If you find code
 that contradicts this, it is a bug — report it.
