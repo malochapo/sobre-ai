@@ -45,12 +45,12 @@ one key, and a table that a key holds (`proxy.upstreams`, `proxy.routing`)
 counts once whatever it contains. A test (`config::schema::key_cap`) pins the
 list, so adding a key is always a visible change.
 
-The file currently has 13 keys, leaving two slots: `allow_paths`,
-`read_only_roots`, `ignore`, `passthrough_commands`, `shell_timeout_secs`,
-`hook_binary`, `compression_level`, `debug_log`, `embedding_model`, and the
-`[proxy]` table's `enabled`, `port`, `upstreams` and `routing`. Every key has
-one value even when the file is silent: `compression_level` defaults to 0.3,
-never to "unset". `init` takes no option beyond which agent to connect.
+The file currently has 12 keys, leaving three slots: `search_roots`, `ignore`,
+`passthrough_commands`, `shell_timeout_secs`, `hook_binary`,
+`compression_level`, `debug_log`, `embedding_model`, and the `[proxy]` table's
+`enabled`, `port`, `upstreams` and `routing`. Every key has one value even when
+the file is silent: `compression_level` defaults to 0.3, never to "unset".
+`init` takes no option beyond which agent to connect.
 The generated list is `docs/reference/generated/config-keys.md`.
 
 If a setting can be decided correctly by the tool, it is not a setting.
@@ -154,40 +154,44 @@ size: to 190,000.
 
 ---
 
-## 6. Permissive by default; the developer decides what to forbid
+## 6. The agent host is in control
 
-**`sobre` allows every shell command by default. Restrictions are an explicit
-deny list the user writes, never an allow list they must maintain.**
+**`sobre` never decides what may run, be read or be written: no allow list, no
+deny list, no block. What the agent host already governs is neither reproduced
+nor bypassed by `sobre`.**
 
-The tool it forks from ships a curated allow list of 242 executables, plus a
-second list of cloud CLIs held back because "a coding agent that can run
-`terraform apply` by default is an incident waiting to happen". That design
-assumes the user needs protecting from their own agent. `sobre` assumes the
-opposite: it is for developers who know what they are running.
-
-The reasoning is not bravado, it is accounting. **An agent without `sobre` runs
-those commands anyway** — the shell is right there. Gating them here buys no
-safety; it only moves where the friction lands, and costs a data table someone
-has to review forever. And the cloud CLIs specifically are *useful* to an agent
-doing diagnosis: reading a cluster's state is most of the work.
-
-A developer working against production is responsible for blocking what must
-not run there, in that project. That is their call, not a default we make for
-everyone.
+Agent hosts — Claude Code, Copilot, Cursor, Codex, Gemini CLI — ship their own
+control: permission rules, approval prompts, auto modes, classifiers. They are
+better placed to decide than a context tool sitting beside them, and a second
+gate can only disagree with the first. The tool `sobre` forks from shipped such a
+gate: a curated allow list of shell commands, a path jail, refusals of
+secret-looking files, a throttle on repeated calls, and approval settings written
+into the host's configuration. Each one either duplicated the host's decision or
+overrode it. `sobre` keeps none of them.
 
 What follows from this:
 
-- No default allow list. Shipping one recreates the maintenance we forked away
-  from, and the "empty list" path already exists in the engine.
-- Blocks are opt-in, explicit, and few. What remains unconditional is what a
-  deny list cannot express — inline interpreter evaluation and the shell
-  builtins that hide a command from inspection.
-- **No hidden behaviour.** `sobre` does not silently refuse, silently rewrite,
-  or silently substitute. If it declines something, it says so and says why.
+- **No gate of its own.** No command filter, no path confinement, no read-only
+  roots, no refusal of files by name, no throttling of repeated calls. A command
+  runs as the agent wrote it; a path is read or written where the agent pointed.
+- **Nothing written into the host's permissions.** No allow rules, no
+  `autoApprove`, no `trust`, no plan-mode settings. A hook never returns an
+  approval or a denial: it either says nothing or, where the host allows it,
+  replaces a result or rewrites a command.
+- **No transformation that escapes the host's rules.** Output is compressed
+  after the host ran the command wherever the host supports it. Where only a
+  rewrite is possible, a command is wrapped only when every host rule `sobre`
+  can read treats the original and the wrapped form alike; otherwise it runs as
+  written.
+- **Nothing hidden.** When `sobre` changes something — compresses or condenses
+  output, lowers compression for a session, skips files in a search — it says so
+  in the output, and the full original stays reachable.
 
-`sobre` is therefore more dangerous than a tool that says no by default — and
-exactly as dangerous as the terminal the developer already has open. That is
-the intended position.
+Masking secrets in `sobre`'s own output (`[REDACTED:…]`) stays: it governs what
+`sobre` shows, not what the agent may do.
+
+`sobre` is therefore exactly as permissive, and exactly as strict, as the host
+it runs in. That is the intended position.
 
 ## Process rules (not invariants, but not optional either)
 
