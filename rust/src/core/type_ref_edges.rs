@@ -303,16 +303,13 @@ pub fn cross_file_type_edges(files: &[FileAnalysis]) -> Vec<(String, String)> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::deep_queries::{TypeDef, TypeDefKind, TypeUse};
+    use crate::core::deep_queries::{TypeDef, TypeUse};
 
     fn type_def(name: &str, namespace: Option<&str>, line: usize, end: usize) -> TypeDef {
         TypeDef {
             name: name.to_string(),
-            kind: TypeDefKind::Class,
             line,
             end_line: end,
-            is_exported: true,
-            generics: Vec::new(),
             namespace: namespace.map(str::to_string),
         }
     }

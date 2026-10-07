@@ -167,8 +167,7 @@ impl ContextLedger {
         let path = crate::core::pathutil::normalize_tool_path(path);
         let item_id = ContextItemId::from_file(&path);
 
-        let phi =
-            Self::compute_real_phi(&path, sent_tokens, original_tokens, self.window_size, task);
+        let phi = Self::compute_real_phi(&path, original_tokens, self.window_size, task);
 
         if let Some(existing) = self.entries.iter_mut().find(|e| e.path == path) {
             self.total_tokens_sent -= existing.sent_tokens;
@@ -220,7 +219,6 @@ impl ContextLedger {
 
     fn compute_real_phi(
         path: &str,
-        sent_tokens: usize,
         original_tokens: usize,
         window_size: usize,
         task: Option<&str>,
@@ -229,29 +227,6 @@ impl ContextLedger {
 
         let (signals, _costs) =
             compute_signals_for_path(path, task, None, window_size, original_tokens);
-        // #4: use the learned (bandit-selected) field weights when available.
-        let phi = ContextField::active().compute_phi(&signals);
-        if phi > 0.0 {
-            return phi;
-        }
-
-        Self::compute_lightweight_phi(sent_tokens, window_size)
-    }
-
-    fn compute_lightweight_phi(sent_tokens: usize, window_size: usize) -> f64 {
-        use crate::core::context_field::{ContextField, FieldSignals};
-        let token_cost_norm = if window_size > 0 {
-            (sent_tokens as f64 / window_size as f64).min(1.0)
-        } else {
-            0.0
-        };
-        let signals = FieldSignals {
-            relevance: 1.0,
-            surprise: 0.5,
-            graph_proximity: 0.0,
-            token_cost_norm,
-            redundancy: 0.0,
-        };
         ContextField::active().compute_phi(&signals)
     }
 

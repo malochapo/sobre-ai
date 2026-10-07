@@ -37,7 +37,7 @@ pub(crate) fn handle(
             false,
         );
     };
-    let gp = &open.provider;
+    let gp = &open;
 
     let session_intent =
         crate::core::session::SessionState::load_latest().and_then(|s| s.active_structured_intent);

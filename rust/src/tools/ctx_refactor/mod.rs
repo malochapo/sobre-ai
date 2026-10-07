@@ -207,7 +207,7 @@ pub(crate) fn resolve_name_path_scoped(
     use crate::core::graph_provider;
     let open = graph_provider::open_or_build(project_root)
         .ok_or_else(|| "NO_SYMBOL: no symbol index available".to_string())?;
-    let gp = &open.provider;
+    let gp = &open;
 
     let segments: Vec<&str> = name_path.split('/').filter(|s| !s.is_empty()).collect();
     let leaf = *segments

@@ -161,10 +161,6 @@ impl CodeGraph {
         node::get_by_symbol(&self.conn, name, file_path)
     }
 
-    pub fn remove_file_nodes(&self, file_path: &str) -> anyhow::Result<()> {
-        node::remove_by_file(&self.conn, file_path)
-    }
-
     #[cfg(test)]
     pub fn edges_from(&self, node_id: i64) -> anyhow::Result<Vec<Edge>> {
         edge::from_node(&self.conn, node_id)
@@ -177,10 +173,6 @@ impl CodeGraph {
 
     pub fn dependents(&self, file_path: &str) -> anyhow::Result<Vec<String>> {
         queries::dependents(&self.conn, file_path)
-    }
-
-    pub fn dependencies(&self, file_path: &str) -> anyhow::Result<Vec<String>> {
-        queries::dependencies(&self.conn, file_path)
     }
 
     pub fn impact_analysis(
@@ -243,14 +235,6 @@ impl CodeGraph {
     /// hotspots never persist as stale hints. Returns the number removed.
     pub fn delete_cross_source_edges_by_kind(&self, kind: &str) -> anyhow::Result<usize> {
         cross_source::delete_by_kind(&self.conn, kind)
-    }
-
-    pub fn clear(&self) -> anyhow::Result<()> {
-        self.conn.execute_batch(
-            "DELETE FROM edges; DELETE FROM nodes; DELETE FROM file_catalog; DELETE FROM paths; \
-             DELETE FROM cross_source_edges;",
-        )?;
-        Ok(())
     }
 
     /// Clear only the code graph (nodes, edges, file catalog), preserving
@@ -375,23 +359,6 @@ mod tests {
     }
 
     #[test]
-    fn dependencies_query() {
-        let g = test_graph();
-
-        let main = g.upsert_node(&Node::file("src/main.rs")).unwrap();
-        let lib = g.upsert_node(&Node::file("src/lib.rs")).unwrap();
-        let config = g.upsert_node(&Node::file("src/config.rs")).unwrap();
-
-        g.upsert_edge(&Edge::new(main, lib, EdgeKind::Imports))
-            .unwrap();
-        g.upsert_edge(&Edge::new(main, config, EdgeKind::Imports))
-            .unwrap();
-
-        let deps = g.dependencies("src/main.rs").unwrap();
-        assert_eq!(deps.len(), 2);
-    }
-
-    #[test]
     #[allow(clippy::many_single_char_names)] // graph test nodes: a, b, c, d, e
     fn impact_analysis_depth() {
         let g = test_graph();
@@ -422,25 +389,6 @@ mod tests {
         let id2 = g.upsert_node(&Node::file("src/main.rs")).unwrap();
         assert_eq!(id1, id2);
         assert_eq!(g.node_count().unwrap(), 1);
-    }
-
-    #[test]
-    fn remove_file_cascades() {
-        let g = test_graph();
-
-        let a = g.upsert_node(&Node::file("src/a.rs")).unwrap();
-        let b = g.upsert_node(&Node::file("src/b.rs")).unwrap();
-        let sym = g
-            .upsert_node(&Node::symbol("MyStruct", "src/a.rs", NodeKind::Symbol))
-            .unwrap();
-
-        g.upsert_edge(&Edge::new(a, b, EdgeKind::Imports)).unwrap();
-        g.upsert_edge(&Edge::new(sym, b, EdgeKind::Calls)).unwrap();
-
-        g.remove_file_nodes("src/a.rs").unwrap();
-
-        assert!(g.get_node_by_path("src/a.rs").unwrap().is_none());
-        assert_eq!(g.edge_count().unwrap(), 0);
     }
 
     #[test]
@@ -475,58 +423,68 @@ mod tests {
     }
 
     #[test]
-    fn multi_edge_dependents() {
+    fn dependents_follow_references_not_heuristics() {
         let g = test_graph();
 
         let a = g.upsert_node(&Node::file("src/a.rs")).unwrap();
         let b = g.upsert_node(&Node::file("src/b.rs")).unwrap();
         let c = g.upsert_node(&Node::file("src/c.rs")).unwrap();
+        let peer = g.upsert_node(&Node::file("src/d.rs")).unwrap();
 
         g.upsert_edge(&Edge::new(b, a, EdgeKind::Imports)).unwrap();
-        g.upsert_edge(&Edge::new(c, a, EdgeKind::Calls)).unwrap();
+        g.upsert_edge(&Edge::new(c, a, EdgeKind::TypeRef)).unwrap();
+        g.upsert_edge(&Edge::new(peer, a, EdgeKind::Cochange))
+            .unwrap();
+        g.upsert_edge(&Edge::new(a, peer, EdgeKind::Sibling))
+            .unwrap();
 
-        let deps = g.dependents("src/a.rs").unwrap();
-        assert_eq!(deps.len(), 2);
-        assert!(deps.contains(&"src/b.rs".to_string()));
-        assert!(deps.contains(&"src/c.rs".to_string()));
+        assert_eq!(
+            g.dependents("src/a.rs").unwrap(),
+            vec!["src/b.rs".to_string(), "src/c.rs".to_string()]
+        );
+        assert!(
+            g.dependency_chain("src/d.rs", "src/a.rs")
+                .unwrap()
+                .is_none()
+        );
     }
 
     #[test]
-    fn multi_edge_impact_analysis() {
+    fn impact_follows_references_transitively() {
         let g = test_graph();
 
         let a = g.upsert_node(&Node::file("a.rs")).unwrap();
         let b = g.upsert_node(&Node::file("b.rs")).unwrap();
         let c = g.upsert_node(&Node::file("c.rs")).unwrap();
+        let peer = g.upsert_node(&Node::file("d.rs")).unwrap();
 
         g.upsert_edge(&Edge::new(b, a, EdgeKind::Imports)).unwrap();
-        g.upsert_edge(&Edge::new(c, b, EdgeKind::Calls)).unwrap();
+        g.upsert_edge(&Edge::new(c, b, EdgeKind::Module)).unwrap();
+        g.upsert_edge(&Edge::new(peer, a, EdgeKind::Cochange))
+            .unwrap();
 
-        let impact = g.impact_analysis("a.rs", 10).unwrap();
-        assert!(impact.affected_files.contains(&"b.rs".to_string()));
-        assert!(impact.affected_files.contains(&"c.rs".to_string()));
+        let mut affected = g.impact_analysis("a.rs", 10).unwrap().affected_files;
+        affected.sort();
+        assert_eq!(affected, vec!["b.rs".to_string(), "c.rs".to_string()]);
     }
 
     #[test]
-    fn related_files_scored() {
+    fn related_files_adds_heuristics_ranked_by_weight() {
         let g = test_graph();
 
         let a = g.upsert_node(&Node::file("a.rs")).unwrap();
         let b = g.upsert_node(&Node::file("b.rs")).unwrap();
         let c = g.upsert_node(&Node::file("c.rs")).unwrap();
+        let peer = g.upsert_node(&Node::file("d.rs")).unwrap();
 
         g.upsert_edge(&Edge::new(a, b, EdgeKind::Imports)).unwrap();
-        g.upsert_edge(&Edge::new(a, b, EdgeKind::Calls)).unwrap();
         g.upsert_edge(&Edge::new(a, c, EdgeKind::TypeRef)).unwrap();
+        g.upsert_edge(&Edge::new(peer, a, EdgeKind::Cochange))
+            .unwrap();
 
         let related = g.related_files("a.rs", 10).unwrap();
-        assert_eq!(related.len(), 2);
-        let b_score = related.iter().find(|(p, _)| p == "b.rs").unwrap().1;
-        let c_score = related.iter().find(|(p, _)| p == "c.rs").unwrap().1;
-        assert!(
-            b_score > c_score,
-            "b.rs has imports+calls, should rank higher than c.rs with type_ref"
-        );
+        let order: Vec<&str> = related.iter().map(|(p, _)| p.as_str()).collect();
+        assert_eq!(order, vec!["b.rs", "c.rs", "d.rs"]);
     }
 
     #[test]

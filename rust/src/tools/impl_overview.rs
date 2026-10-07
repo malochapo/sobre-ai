@@ -28,7 +28,7 @@ pub(crate) fn handle(
         crate::core::index_orchestrator::ensure_all_background(&project_root);
         return (partial_overview(&project_root), false);
     };
-    let gp = &open.provider;
+    let gp = &open;
 
     let (task_files, task_keywords) = if let Some(task_desc) = task {
         parse_task_hints(task_desc)

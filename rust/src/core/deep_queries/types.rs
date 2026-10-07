@@ -31,11 +31,8 @@ pub struct CallSite {
 #[derive(Debug, Clone)]
 pub struct TypeDef {
     pub name: String,
-    pub kind: TypeDefKind,
     pub line: usize,
     pub end_line: usize,
-    pub is_exported: bool,
-    pub generics: Vec<String>,
     /// Declaring namespace, when the language makes it cheaply derivable from
     /// the AST. Currently only filled for C# (block- and file-scoped); other
     /// languages leave it `None`. Drives namespace-aware type resolution in
@@ -53,20 +50,6 @@ pub struct ExtMethodDef {
     pub name: String,
     pub line: usize,
     pub end_line: usize,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum TypeDefKind {
-    Class,
-    Interface,
-    TypeAlias,
-    Enum,
-    Struct,
-    Trait,
-    Protocol,
-    Record,
-    Annotation,
-    Union,
 }
 
 /// A *usage* of a named type (field/parameter/property/return type, base

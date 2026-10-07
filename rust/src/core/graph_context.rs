@@ -18,7 +18,7 @@ fn related_files_scored_for_path(
         .strip_prefix(project_root)
         .unwrap_or(file_path)
         .trim_start_matches('/');
-    let scored = provider.provider.related_files_scored(rel_path, limit);
+    let scored = provider.related_files_scored(rel_path, limit);
     if scored.is_empty() {
         return None;
     }
@@ -78,10 +78,7 @@ pub fn graph_neighbor_ranks_for_recent_files(
         }
 
         if let Some(open) = &open {
-            for (path, _) in open
-                .provider
-                .related_files_scored(&rel_path, per_seed_limit)
-            {
+            for (path, _) in open.related_files_scored(&rel_path, per_seed_limit) {
                 if seen.insert(path.clone()) {
                     ranked.push(path);
                     if ranked.len() >= max_ranked {

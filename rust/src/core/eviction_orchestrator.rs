@@ -72,7 +72,6 @@ pub fn on_memory_pressure(level: memory_guard::PressureLevel) {
         super::content_cache::clear();
         super::ann_cache::clear();
         super::search_index::clear_resident();
-        super::graph_cache::invalidate(None);
     }
 }
 
@@ -172,12 +171,11 @@ impl EvictionOrchestrator {
                 let ann_freed = super::ann_cache::memory_usage_bytes();
                 super::ann_cache::clear();
                 super::search_index::clear_resident();
-                super::graph_cache::invalidate(None);
                 let trimmed = self.try_write_cache(SessionCache::trim_compressed_outputs);
                 memory_guard::jemalloc_purge();
                 tracing::info!(
                     "[eviction] unloaded indices (bm25={:.1}MB + content={:.1}MB + ann={:.1}MB freed, \
-                     search/graph residents dropped, {trimmed} outputs trimmed)",
+                     search residents dropped, {trimmed} outputs trimmed)",
                     bm25_bytes as f64 / 1_048_576.0,
                     content_freed as f64 / 1_048_576.0,
                     ann_freed as f64 / 1_048_576.0,
@@ -201,11 +199,10 @@ impl EvictionOrchestrator {
                 // #685: emergency must reach every resident structure.
                 super::ann_cache::clear();
                 super::search_index::clear_resident();
-                super::graph_cache::invalidate(None);
                 memory_guard::jemalloc_purge();
                 tracing::warn!(
                     "[eviction] EMERGENCY: cleared {cleared} cache entries + unloaded all indices \
-                     (bm25, content, ann, search, graph)"
+                     (bm25, content, ann, search)"
                 );
                 true
             }

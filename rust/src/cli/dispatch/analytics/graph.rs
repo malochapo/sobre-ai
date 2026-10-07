@@ -42,12 +42,6 @@ pub(in crate::cli::dispatch) fn cmd_graph(rest: &[String]) {
                 index.files.len(),
                 index.edges.len()
             );
-            if force {
-                // A forced rebuild must also drop cached *derivations* of the
-                // old index/source, or ctx_read keeps serving pre-rebuild
-                // map/signatures (#420).
-                core::graph_cache::invalidate(Some(&root));
-            }
         }
         "related" | "impact" | "symbol" | "status" | "neighbors" => {
             let path_arg = if sub == "status" {

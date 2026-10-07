@@ -18,7 +18,7 @@ pub(crate) fn handle(
             0,
         );
     };
-    let gp = &open.provider;
+    let gp = &open;
 
     let matches = gp.find_symbols(name, file, kind);
 
@@ -64,7 +64,7 @@ pub(crate) fn best_symbol_snippet_for_task(
     project_root: &str,
 ) -> Option<(String, usize)> {
     let open = graph_provider::open_or_build(project_root)?;
-    let gp = &open.provider;
+    let gp = &open;
     let candidates = gp.find_symbols(name, None, None);
     let scores: Vec<usize> = candidates
         .iter()
@@ -134,7 +134,7 @@ pub(crate) fn render_by_handle(handle: &str, project_root: &str) -> (String, usi
             0,
         );
     };
-    let gp = &open.provider;
+    let gp = &open;
     match gp.find_symbol_by_handle(&parsed) {
         Some(sym) => render_single(&sym, gp, project_root),
         None => (
@@ -300,7 +300,7 @@ mod tests {
                 is_exported: true,
             },
         );
-        GraphProvider::GraphIndex(index)
+        GraphProvider::from_index(&index)
     }
 
     #[test]
@@ -354,7 +354,7 @@ mod tests {
                 is_exported: true,
             },
         );
-        let gp = GraphProvider::GraphIndex(idx);
+        let gp = GraphProvider::from_index(&idx);
         let sym = gp
             .find_symbols("Config", None, None)
             .into_iter()

@@ -6,7 +6,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use serde::Serialize;
 
 use crate::core::bm25_index::BM25Index;
-use crate::core::graph_index::{self, ProjectIndex};
+use crate::core::graph_index;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum State {
@@ -299,10 +299,8 @@ fn run_build_worker(root: &str) {
         );
         guard.report(0, 0);
         let graph_result = std::panic::catch_unwind(|| {
+            // The scan writes the graph itself.
             let (idx, _cache) = graph_index::scan_with_content_cache(&graph_root);
-            if let Err(e) = idx.save() {
-                tracing::warn!("[index_orchestrator: graph save failed: {e}]");
-            }
             crate::core::code_health::persist::refresh_if_stale(&graph_root, &idx);
         });
         drop(guard);
@@ -635,12 +633,6 @@ pub fn bm25_summary(project_root: &str) -> Bm25Summary {
         note: c.note.clone(),
         last_error: c.last_error.clone(),
     }
-}
-
-pub fn try_load_graph_index(project_root: &str) -> Option<ProjectIndex> {
-    // Resident cache: avoids re-materializing the index from the property graph
-    // (SQLite query) on every graph-touching query. Returns an in-memory clone.
-    crate::core::graph_cache::get_cached(project_root).map(|arc| (*arc).clone())
 }
 
 pub fn try_load_bm25_index(project_root: &str) -> Option<BM25Index> {

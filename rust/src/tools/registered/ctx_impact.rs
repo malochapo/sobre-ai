@@ -23,8 +23,8 @@ impl McpTool for CtxImpactTool {
                 "properties": {
                     "action": {
                         "type": "string",
-                        "enum": ["analyze", "diff", "chain", "build", "update", "status"],
-                        "description": "analyze|diff|chain|build|update|status"
+                        "enum": ["analyze", "diff", "chain", "build", "status"],
+                        "description": "analyze|diff|chain|build|status"
                     },
                     "path": {
                         "type": "string",

@@ -68,85 +68,13 @@ fn graph_target_key_normalizes_windows_styles() {
     assert_eq!(target, expected);
 }
 
-/// Symbols no `calls`, `type_ref` or `imports` edge points at: what a
-/// dead-code check would report, and what the builder's reference edges must
-/// keep small.
-#[cfg(feature = "embeddings")]
-fn unreferenced_symbols(graph: &crate::core::property_graph::CodeGraph) -> Vec<String> {
-    let mut stmt = graph
-        .connection()
-        .prepare(
-            "SELECT n.name FROM nodes n WHERE n.kind = 'symbol' AND n.id NOT IN \
-             (SELECT DISTINCT target_id FROM edges WHERE kind IN ('calls', 'type_ref', 'imports'))",
-        )
-        .expect("prepare");
-    stmt.query_map([], |r| r.get(0))
-        .expect("query")
-        .map_while(Result::ok)
-        .collect()
-}
-
-/// End-to-end regression for GH #365: build the property graph from real
-/// Python sources and assert that a class which is imported + instantiated
-/// cross-file has an incoming reference edge (symbol-level `Calls` edge for
-/// class instantiation). The unused class must stay unreferenced so the test
-/// cannot pass vacuously.
-#[cfg(feature = "embeddings")]
-#[test]
-fn dead_code_builder_does_not_flag_instantiated_python_class() {
-    // The property-graph DB path is derived from `LEAN_CTX_DATA_DIR`
-    // (`graph_dir`), so a concurrent test that mutates that env var between
-    // our `build` and `open` would point them at different directories and
-    // yield an empty graph. Serialize on the shared lock that every other
-    // data-dir-mutating test already uses.
-    let _env = crate::core::data_dir::test_env_lock();
-    let tmp = tempfile::tempdir().expect("tempdir");
-    let root = tmp.path();
-    std::fs::create_dir_all(root.join("models")).unwrap();
-    std::fs::write(
-        root.join("models/engine.py"),
-        "class Engine:\n    def __init__(self, power):\n        self.power = power\n\n\n\
-             class Pipeline:\n    def __init__(self, cfg):\n        self.cfg = cfg\n\n\n\
-             class UnusedOrphan:\n    pass\n",
-    )
-    .unwrap();
-    std::fs::write(
-        root.join("app.py"),
-        "from models.engine import Engine, Pipeline\n\n\
-             engine = Engine(power=100)\npipeline = Pipeline(cfg={})\n",
-    )
-    .unwrap();
-
-    let root_str = root.to_string_lossy().to_string();
-    let out = handle("build", None, &root_str, None, Some("text"));
-    assert!(!out.contains("ERROR"), "graph build failed: {out}");
-
-    let graph =
-        crate::core::property_graph::CodeGraph::open(&root_str).expect("open property graph");
-    let dead = unreferenced_symbols(&graph);
-
-    assert!(
-        !dead.iter().any(|s| s == "Engine"),
-        "instantiated class `Engine` must not be dead_code; findings: {dead:?}"
-    );
-    assert!(
-        !dead.iter().any(|s| s == "Pipeline"),
-        "instantiated class `Pipeline` must not be dead_code; findings: {dead:?}"
-    );
-    assert!(
-        dead.iter().any(|s| s == "UnusedOrphan"),
-        "never-referenced class `UnusedOrphan` should still be flagged (non-vacuous); \
-             findings: {dead:?}"
-    );
-}
-
 /// End-to-end regression for GH #398: C# files in the same namespace use
 /// each other's types **without any `using` directive**, and dependency
 /// injection means the type is often never `new`-ed by its consumer. With
 /// import- and call-edges only, the consumed class is a false-negative
 /// leaf node. Type-usage edges (`TypeRef`) must connect consumer -> definer
 /// so impact analysis reports the real blast radius.
-#[cfg(feature = "embeddings")]
+#[cfg(feature = "tree-sitter")]
 #[test]
 fn csharp_same_namespace_type_use_is_not_a_leaf() {
     let _env = crate::core::data_dir::test_env_lock();
@@ -216,83 +144,6 @@ fn csharp_same_namespace_type_use_is_not_a_leaf() {
         "unrelated file must NOT be affected; got: {:?}",
         impact.affected_files
     );
-
-    // Same root cause, second symptom: a class consumed only as a type
-    // (DI) was flagged `dead_code` because nothing ever *called* it. The
-    // symbol-level TypeRef edge must clear it; the genuinely unreferenced
-    // Logger keeps the rule honest.
-    let dead = unreferenced_symbols(&graph);
-    assert!(
-        !dead.iter().any(|s| s == "Engine"),
-        "type-consumed class `Engine` must not be dead_code; findings: {dead:?}"
-    );
-    assert!(
-        dead.iter().any(|s| s == "Logger"),
-        "never-referenced class `Logger` should still be flagged (non-vacuous); \
-             findings: {dead:?}"
-    );
-}
-
-/// GH #398 end-to-end regression for the wipe every prior fix missed:
-/// `ctx_impact` builds precise `type_ref` edges, but a routine background
-/// reindex (`graph_index::scan` -> `ProjectIndex::save` -> `mirror_index`)
-/// clears the PropertyGraph and repopulates it from graph_index. Before the
-/// fix, graph_index emitted no type-usage edges, so the C# same-namespace
-/// consumer was silently dropped to a false-negative leaf right after the
-/// first dashboard/daemon reindex. The mirror must now preserve the blast
-/// radius. Gated on `tree-sitter`: needs the C# grammar, not embeddings.
-#[cfg(feature = "tree-sitter")]
-#[test]
-fn csharp_blast_radius_survives_background_reindex() {
-    let _env = crate::core::data_dir::test_env_lock();
-    let tmp = tempfile::tempdir().expect("tempdir");
-    let root = tmp.path();
-    // A project marker so graph_index accepts the root as safe to scan.
-    std::fs::create_dir_all(root.join(".git")).unwrap();
-    std::fs::create_dir_all(root.join("Models")).unwrap();
-    std::fs::create_dir_all(root.join("Services")).unwrap();
-
-    std::fs::write(
-        root.join("Models/Engine.cs"),
-        "namespace App.Core;\n\n\
-             public class Engine\n{\n    public int Power { get; set; }\n}\n",
-    )
-    .unwrap();
-    // DI-style consumer: field + ctor param, no `using`, no `new Engine()`.
-    std::fs::write(
-        root.join("Services/Motor.cs"),
-        "namespace App.Core;\n\n\
-             public class Motor\n{\n    private readonly Engine _engine;\n\n\
-             \x20   public Motor(Engine engine)\n    {\n        _engine = engine;\n    }\n}\n",
-    )
-    .unwrap();
-
-    let root_str = root.to_string_lossy().to_string();
-
-    // 1) ctx_impact's own builder writes the type_ref edges.
-    let out = handle("build", None, &root_str, None, Some("text"));
-    assert!(!out.contains("ERROR"), "graph build failed: {out}");
-
-    // 2) A background reindex mirrors graph_index over the PropertyGraph,
-    //    clearing it first — exactly what the daemon / dashboard / ctx_graph
-    //    trigger via ProjectIndex::save(). If the mirror dropped type_ref the
-    //    consumer would vanish; an aborted (empty) scan would clear the graph
-    //    entirely. Either failure mode makes the assertion below fail loudly.
-    let _ = crate::core::graph_index::scan(&root_str);
-
-    // 3) The blast radius must survive the mirror (the actual GH #398 bug).
-    let graph =
-        crate::core::property_graph::CodeGraph::open(&root_str).expect("open property graph");
-    let impact = graph
-        .impact_analysis("Models/Engine.cs", 5)
-        .expect("impact analysis");
-    assert!(
-        impact
-            .affected_files
-            .contains(&"Services/Motor.cs".to_string()),
-        "same-namespace consumer must survive a background reindex; got: {:?}",
-        impact.affected_files
-    );
 }
 
 /// GH #398 bug class (Go): files in the same package (== same directory) use
@@ -301,7 +152,7 @@ fn csharp_blast_radius_survives_background_reindex() {
 /// not even a structural impact edge. The directory-scoped `type_ref` edge
 /// must connect consumer -> definer, while a same-directory file that does
 /// *not* use the type stays out (precision the package edge cannot give).
-#[cfg(feature = "embeddings")]
+#[cfg(feature = "tree-sitter")]
 #[test]
 fn go_same_package_type_use_is_not_a_leaf() {
     let _env = crate::core::data_dir::test_env_lock();
@@ -353,57 +204,12 @@ fn go_same_package_type_use_is_not_a_leaf() {
     );
 }
 
-/// GH #398 bug class (Go), mirror path: the durable `graph_index` ->
-/// PropertyGraph mirror must reproduce the Go same-package `type_ref` edge so
-/// a background reindex cannot wipe the blast radius (the original #398 wipe,
-/// now guarded for Go too). Gated on `tree-sitter`: needs the Go grammar.
-#[cfg(feature = "tree-sitter")]
-#[test]
-fn go_blast_radius_survives_background_reindex() {
-    let _env = crate::core::data_dir::test_env_lock();
-    let tmp = tempfile::tempdir().expect("tempdir");
-    let root = tmp.path();
-    std::fs::create_dir_all(root.join(".git")).unwrap();
-    std::fs::create_dir_all(root.join("core")).unwrap();
-
-    std::fs::write(
-        root.join("core/engine.go"),
-        "package core\n\ntype Engine struct {\n\tPower int\n}\n",
-    )
-    .unwrap();
-    std::fs::write(
-        root.join("core/motor.go"),
-        "package core\n\ntype Motor struct {\n\tengine Engine\n}\n",
-    )
-    .unwrap();
-
-    let root_str = root.to_string_lossy().to_string();
-
-    let out = handle("build", None, &root_str, None, Some("text"));
-    assert!(!out.contains("ERROR"), "graph build failed: {out}");
-
-    // Background reindex: clears the PropertyGraph and repopulates from
-    // graph_index. The mirror must re-emit the Go type_ref edge.
-    let _ = crate::core::graph_index::scan(&root_str);
-
-    let graph =
-        crate::core::property_graph::CodeGraph::open(&root_str).expect("open property graph");
-    let impact = graph
-        .impact_analysis("core/engine.go", 5)
-        .expect("impact analysis");
-    assert!(
-        impact.affected_files.contains(&"core/motor.go".to_string()),
-        "Go same-package consumer must survive a background reindex; got: {:?}",
-        impact.affected_files
-    );
-}
-
 /// GH #398 bug class (Kotlin): same-*package* types need no import, and the
 /// package is independent of the directory. A consumer in a different
 /// directory but the same package must land in the blast radius (proving
 /// package-, not directory-based resolution), while a different-package file
 /// stays out.
-#[cfg(feature = "embeddings")]
+#[cfg(feature = "tree-sitter")]
 #[test]
 fn kotlin_same_package_type_use_is_not_a_leaf() {
     let _env = crate::core::data_dir::test_env_lock();
@@ -465,7 +271,7 @@ fn kotlin_same_package_type_use_is_not_a_leaf() {
 /// engine version 0 (simulating a pre-`type_ref` build), and assert the next
 /// query self-heals: it rebuilds, surfaces the consumer, and re-stamps the
 /// current engine version.
-#[cfg(feature = "embeddings")]
+#[cfg(feature = "tree-sitter")]
 #[test]
 fn stale_engine_graph_is_rebuilt_before_query() {
     let _env = crate::core::data_dir::test_env_lock();
@@ -532,11 +338,6 @@ fn stale_engine_graph_is_rebuilt_before_query() {
 /// file that consumes types only through static calls, enum values or
 /// attributes — no `using`, no `new`, no field/param of that type — must
 /// still land in the blast radius of the defining file.
-///
-/// Gated on `tree-sitter` (not `embeddings`) on purpose: the existing #398
-/// e2e tests only run under `embeddings`, leaving the
-/// `index_graph_file_minimal` builder path untested. This test exercises
-/// both builder paths (it runs whenever the C# grammar is available).
 #[cfg(feature = "tree-sitter")]
 #[test]
 fn csharp_expression_position_type_use_is_not_a_leaf() {
@@ -628,8 +429,7 @@ fn csharp_expression_position_type_use_is_not_a_leaf() {
 /// `value.WordCount()` makes the consuming file depend on the file that
 /// *defines* the extension — the receiver is an instance and the definer's
 /// type name is never written, so neither import- nor type-usage edges
-/// connect them. Only a method-host edge does. Gated on `tree-sitter` so
-/// both builder paths (embeddings + minimal) are exercised.
+/// connect them. Only a method-host edge does.
 #[cfg(feature = "tree-sitter")]
 #[test]
 fn csharp_extension_method_host_is_in_blast_radius() {

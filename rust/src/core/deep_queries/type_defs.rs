@@ -1,10 +1,10 @@
-//! Type definition, export, and generics extraction from AST nodes.
+//! Type definition and export extraction from AST nodes.
 
 #[cfg(feature = "tree-sitter")]
 use tree_sitter::Node;
 
 #[cfg(feature = "tree-sitter")]
-use super::types::{TypeDef, TypeDefKind};
+use super::types::TypeDef;
 #[cfg(feature = "tree-sitter")]
 use super::{find_child_by_kind, node_text};
 
@@ -15,21 +15,18 @@ use super::{find_child_by_kind, node_text};
 #[cfg(feature = "tree-sitter")]
 pub(super) fn extract_types(root: Node, src: &str, ext: &str) -> Vec<TypeDef> {
     let mut types = Vec::new();
-    // Pre-order walk carrying the inherited `exported` flag, using a heap stack
-    // instead of native recursion so a deep AST cannot overflow the worker
+    // Pre-order walk using a heap stack instead of native recursion so a deep AST cannot overflow the worker
     // thread (#378 SIGABRT). Children are reversed so they pop left-to-right.
-    let mut stack = vec![(root, false)];
-    while let Some((node, parent_exported)) = stack.pop() {
-        let exported = parent_exported || is_exported_node(node, src, ext);
-
-        if let Some(td) = match_type_def(node, src, ext, exported) {
+    let mut stack = vec![root];
+    while let Some(node) = stack.pop() {
+        if let Some(td) = match_type_def(node, src, ext) {
             types.push(td);
         }
 
         let mark = stack.len();
         let mut cursor = node.walk();
         for child in node.children(&mut cursor) {
-            stack.push((child, exported));
+            stack.push(child);
         }
         stack[mark..].reverse();
     }
@@ -37,8 +34,8 @@ pub(super) fn extract_types(root: Node, src: &str, ext: &str) -> Vec<TypeDef> {
 }
 
 #[cfg(feature = "tree-sitter")]
-fn match_type_def(node: Node, src: &str, ext: &str, parent_exported: bool) -> Option<TypeDef> {
-    let (name, kind) = match ext {
+fn match_type_def(node: Node, src: &str, ext: &str) -> Option<TypeDef> {
+    let name = match ext {
         "ts" | "tsx" | "js" | "jsx" => match_type_def_ts(node, src)?,
         "rs" => match_type_def_rust(node, src)?,
         "py" => match_type_def_python(node, src)?,
@@ -51,8 +48,6 @@ fn match_type_def(node: Node, src: &str, ext: &str, parent_exported: bool) -> Op
         _ => return None,
     };
 
-    let is_exported = parent_exported || is_exported_node(node, src, ext);
-    let generics = extract_generics(node, src);
     // Namespace is derived from the AST for C# and Kotlin (both carry an
     // explicit package/namespace declaration). Go's package is the file's
     // directory and is injected path-side in `type_ref_edges`; all other
@@ -65,11 +60,8 @@ fn match_type_def(node: Node, src: &str, ext: &str, parent_exported: bool) -> Op
 
     Some(TypeDef {
         name,
-        kind,
         line: node.start_position().row + 1,
         end_line: node.end_position().row + 1,
-        is_exported,
-        generics,
         namespace,
     })
 }
@@ -142,202 +134,116 @@ fn kotlin_namespace_for(node: Node, src: &str) -> Option<String> {
 }
 
 #[cfg(feature = "tree-sitter")]
-fn match_type_def_ts(node: Node, src: &str) -> Option<(String, TypeDefKind)> {
-    match node.kind() {
+fn match_type_def_ts(node: Node, src: &str) -> Option<String> {
+    let name = match node.kind() {
         "class_declaration" | "abstract_class_declaration" => {
-            let name = find_child_by_kind(node, "type_identifier")
-                .or_else(|| find_child_by_kind(node, "identifier"))?;
-            Some((node_text(name, src).to_string(), TypeDefKind::Class))
+            find_child_by_kind(node, "type_identifier")
+                .or_else(|| find_child_by_kind(node, "identifier"))?
         }
-        "interface_declaration" => {
-            let name = find_child_by_kind(node, "type_identifier")?;
-            Some((node_text(name, src).to_string(), TypeDefKind::Interface))
+        "interface_declaration" | "type_alias_declaration" => {
+            find_child_by_kind(node, "type_identifier")?
         }
-        "type_alias_declaration" => {
-            let name = find_child_by_kind(node, "type_identifier")?;
-            let text = node_text(node, src);
-            let kind = if text.contains(" | ") {
-                TypeDefKind::Union
-            } else {
-                TypeDefKind::TypeAlias
-            };
-            Some((node_text(name, src).to_string(), kind))
-        }
-        "enum_declaration" => {
-            let name = find_child_by_kind(node, "identifier")?;
-            Some((node_text(name, src).to_string(), TypeDefKind::Enum))
-        }
-        _ => None,
-    }
-}
-
-#[cfg(feature = "tree-sitter")]
-fn match_type_def_rust(node: Node, src: &str) -> Option<(String, TypeDefKind)> {
-    match node.kind() {
-        "struct_item" => {
-            let name = find_child_by_kind(node, "type_identifier")?;
-            Some((node_text(name, src).to_string(), TypeDefKind::Struct))
-        }
-        "enum_item" => {
-            let name = find_child_by_kind(node, "type_identifier")?;
-            Some((node_text(name, src).to_string(), TypeDefKind::Enum))
-        }
-        "trait_item" => {
-            let name = find_child_by_kind(node, "type_identifier")?;
-            Some((node_text(name, src).to_string(), TypeDefKind::Trait))
-        }
-        "type_item" => {
-            let name = find_child_by_kind(node, "type_identifier")?;
-            Some((node_text(name, src).to_string(), TypeDefKind::TypeAlias))
-        }
-        _ => None,
-    }
-}
-
-#[cfg(feature = "tree-sitter")]
-fn match_type_def_python(node: Node, src: &str) -> Option<(String, TypeDefKind)> {
-    if node.kind() == "class_definition" {
-        let name = find_child_by_kind(node, "identifier")?;
-        let text = node_text(node, src);
-        let kind = if text.contains("Protocol") {
-            TypeDefKind::Protocol
-        } else if text.contains("TypedDict") || text.contains("@dataclass") {
-            TypeDefKind::Struct
-        } else if text.contains("Enum") {
-            TypeDefKind::Enum
-        } else {
-            TypeDefKind::Class
-        };
-        Some((node_text(name, src).to_string(), kind))
-    } else {
-        None
-    }
-}
-
-#[cfg(feature = "tree-sitter")]
-fn match_type_def_go(node: Node, src: &str) -> Option<(String, TypeDefKind)> {
-    if node.kind() == "type_spec" {
-        let name = find_child_by_kind(node, "type_identifier")?;
-        let count = node.child_count();
-        let type_body = node.child((count.saturating_sub(1)) as u32)?;
-        let kind = match type_body.kind() {
-            "struct_type" => TypeDefKind::Struct,
-            "interface_type" => TypeDefKind::Interface,
-            _ => TypeDefKind::TypeAlias,
-        };
-        Some((node_text(name, src).to_string(), kind))
-    } else {
-        None
-    }
-}
-
-#[cfg(feature = "tree-sitter")]
-fn match_type_def_java(node: Node, src: &str) -> Option<(String, TypeDefKind)> {
-    match node.kind() {
-        "class_declaration" => {
-            let name = find_child_by_kind(node, "identifier")?;
-            Some((node_text(name, src).to_string(), TypeDefKind::Class))
-        }
-        "interface_declaration" => {
-            let name = find_child_by_kind(node, "identifier")?;
-            Some((node_text(name, src).to_string(), TypeDefKind::Interface))
-        }
-        "enum_declaration" => {
-            let name = find_child_by_kind(node, "identifier")?;
-            Some((node_text(name, src).to_string(), TypeDefKind::Enum))
-        }
-        "record_declaration" => {
-            let name = find_child_by_kind(node, "identifier")?;
-            Some((node_text(name, src).to_string(), TypeDefKind::Record))
-        }
-        "annotation_type_declaration" => {
-            let name = find_child_by_kind(node, "identifier")?;
-            Some((node_text(name, src).to_string(), TypeDefKind::Annotation))
-        }
-        _ => None,
-    }
-}
-
-#[cfg(feature = "tree-sitter")]
-fn match_type_def_kotlin(node: Node, src: &str) -> Option<(String, TypeDefKind)> {
-    match node.kind() {
-        "class_declaration" => {
-            let name = node
-                .child_by_field_name("name")
-                .or_else(|| find_child_by_kind(node, "identifier"))?;
-            let text = node_text(node, src);
-            let kind = if text.contains("interface") {
-                TypeDefKind::Interface
-            } else if text.contains("enum class") {
-                TypeDefKind::Enum
-            } else {
-                TypeDefKind::Class
-            };
-            Some((node_text(name, src).to_string(), kind))
-        }
-        "object_declaration" => {
-            let name = node
-                .child_by_field_name("name")
-                .or_else(|| find_child_by_kind(node, "identifier"))?;
-            Some((node_text(name, src).to_string(), TypeDefKind::Class))
-        }
-        "type_alias" => {
-            let name = node
-                .child_by_field_name("type")
-                .or_else(|| find_child_by_kind(node, "identifier"))?;
-            Some((node_text(name, src).to_string(), TypeDefKind::TypeAlias))
-        }
-        _ => None,
-    }
-}
-
-#[cfg(feature = "tree-sitter")]
-fn match_type_def_csharp(node: Node, src: &str) -> Option<(String, TypeDefKind)> {
-    let kind = match node.kind() {
-        "class_declaration" => TypeDefKind::Class,
-        "interface_declaration" => TypeDefKind::Interface,
-        "struct_declaration" => TypeDefKind::Struct,
-        "enum_declaration" => TypeDefKind::Enum,
-        "record_declaration" => TypeDefKind::Record,
+        "enum_declaration" => find_child_by_kind(node, "identifier")?,
         _ => return None,
     };
+    Some(node_text(name, src).to_string())
+}
+
+#[cfg(feature = "tree-sitter")]
+fn match_type_def_rust(node: Node, src: &str) -> Option<String> {
+    match node.kind() {
+        "struct_item" | "enum_item" | "trait_item" | "type_item" => {
+            let name = find_child_by_kind(node, "type_identifier")?;
+            Some(node_text(name, src).to_string())
+        }
+        _ => None,
+    }
+}
+
+#[cfg(feature = "tree-sitter")]
+fn match_type_def_python(node: Node, src: &str) -> Option<String> {
+    if node.kind() != "class_definition" {
+        return None;
+    }
+    let name = find_child_by_kind(node, "identifier")?;
+    Some(node_text(name, src).to_string())
+}
+
+#[cfg(feature = "tree-sitter")]
+fn match_type_def_go(node: Node, src: &str) -> Option<String> {
+    if node.kind() != "type_spec" {
+        return None;
+    }
+    let name = find_child_by_kind(node, "type_identifier")?;
+    Some(node_text(name, src).to_string())
+}
+
+#[cfg(feature = "tree-sitter")]
+fn match_type_def_java(node: Node, src: &str) -> Option<String> {
+    match node.kind() {
+        "class_declaration"
+        | "interface_declaration"
+        | "enum_declaration"
+        | "record_declaration"
+        | "annotation_type_declaration" => {
+            let name = find_child_by_kind(node, "identifier")?;
+            Some(node_text(name, src).to_string())
+        }
+        _ => None,
+    }
+}
+
+#[cfg(feature = "tree-sitter")]
+fn match_type_def_kotlin(node: Node, src: &str) -> Option<String> {
+    let field = match node.kind() {
+        "class_declaration" | "object_declaration" => "name",
+        "type_alias" => "type",
+        _ => return None,
+    };
+    let name = node
+        .child_by_field_name(field)
+        .or_else(|| find_child_by_kind(node, "identifier"))?;
+    Some(node_text(name, src).to_string())
+}
+
+#[cfg(feature = "tree-sitter")]
+fn match_type_def_csharp(node: Node, src: &str) -> Option<String> {
+    if !matches!(
+        node.kind(),
+        "class_declaration"
+            | "interface_declaration"
+            | "struct_declaration"
+            | "enum_declaration"
+            | "record_declaration"
+    ) {
+        return None;
+    }
     // Every C# type declaration exposes its identifier via the `name` field.
     let name = node
         .child_by_field_name("name")
         .or_else(|| find_child_by_kind(node, "identifier"))?;
-    Some((node_text(name, src).to_string(), kind))
+    Some(node_text(name, src).to_string())
 }
 
-/// Luau type aliases: `type X = …` and `export type X = …`. A `|` in the body
-/// marks a union; everything else is a plain alias.
+/// Luau type aliases: `type X = …` and `export type X = …`.
 #[cfg(feature = "tree-sitter")]
-fn match_type_def_luau(node: Node, src: &str) -> Option<(String, TypeDefKind)> {
-    if node.kind() == "type_definition" {
-        let name = node
-            .child_by_field_name("name")
-            .or_else(|| find_child_by_kind(node, "identifier"))?;
-        let kind = if node_text(node, src).contains('|') {
-            TypeDefKind::Union
-        } else {
-            TypeDefKind::TypeAlias
-        };
-        Some((node_text(name, src).to_string(), kind))
-    } else {
-        None
+fn match_type_def_luau(node: Node, src: &str) -> Option<String> {
+    if node.kind() != "type_definition" {
+        return None;
     }
+    let name = node
+        .child_by_field_name("name")
+        .or_else(|| find_child_by_kind(node, "identifier"))?;
+    Some(node_text(name, src).to_string())
 }
 
 #[cfg(feature = "tree-sitter")]
-fn match_type_def_gdscript(node: Node, src: &str) -> Option<(String, TypeDefKind)> {
+fn match_type_def_gdscript(node: Node, src: &str) -> Option<String> {
     match node.kind() {
         // `class_name X` (script-level global) and inner `class X:` both define a class.
-        "class_name_statement" | "class_definition" => {
+        "class_name_statement" | "class_definition" | "enum_definition" => {
             let name = find_child_by_kind(node, "name")?;
-            Some((node_text(name, src).to_string(), TypeDefKind::Class))
-        }
-        "enum_definition" => {
-            let name = find_child_by_kind(node, "name")?;
-            Some((node_text(name, src).to_string(), TypeDefKind::Enum))
+            Some(node_text(name, src).to_string())
         }
         _ => None,
     }
@@ -441,27 +347,5 @@ fn kotlin_declaration_exported(node: Node, src: &str) -> bool {
         !node_text(modifiers, src).contains("private")
     } else {
         !node_text(node, src).contains("private")
-    }
-}
-
-#[cfg(feature = "tree-sitter")]
-fn extract_generics(node: Node, src: &str) -> Vec<String> {
-    let tp = find_child_by_kind(node, "type_parameters")
-        .or_else(|| find_child_by_kind(node, "type_parameter_list"));
-    match tp {
-        Some(params) => {
-            let mut result = Vec::new();
-            let mut cursor = params.walk();
-            for child in params.children(&mut cursor) {
-                if child.kind() == "type_parameter"
-                    || child.kind() == "type_identifier"
-                    || child.kind() == "identifier"
-                {
-                    result.push(node_text(child, src).to_string());
-                }
-            }
-            result
-        }
-        None => Vec::new(),
     }
 }

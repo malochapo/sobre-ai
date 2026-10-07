@@ -710,7 +710,8 @@ func _ready():\n\tvar level = load(\"res://scenes/Main.tscn\")\n";
     );
 
     // AC2: `graph related scenes/Main.tscn` surfaces the importing script.
-    let related = index.get_related("scenes/Main.tscn", 2);
+    let related = crate::core::graph_provider::GraphProvider::from_index(&index)
+        .related("scenes/Main.tscn", 2);
     assert!(
         related.contains(&"main.gd".to_string()),
         "graph related <scene> should surface the importer, got {related:?}"
@@ -765,7 +766,8 @@ local function run()\n\treturn util.add(1, 2)\nend\n";
     );
 
     // `graph related lib/util.lua` surfaces the importer.
-    let related = index.get_related("lib/util.lua", 2);
+    let related =
+        crate::core::graph_provider::GraphProvider::from_index(&index).related("lib/util.lua", 2);
     assert!(
         related.contains(&"main.lua".to_string()),
         "graph related should surface the importer, got {related:?}"
