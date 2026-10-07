@@ -422,8 +422,8 @@ fn codex_rewrite_output_uses_native_updated_input_contract() {
 
 /// An unchanged PreToolUse call is allowed by a successful hook with no stdout.
 #[test]
-fn codex_allow_output_is_empty() {
-    let output = codex_allow_output();
+fn codex_passthrough_output_is_empty() {
+    let output = codex_passthrough_output();
     assert!(output.is_empty());
 }
 
@@ -913,7 +913,7 @@ fn redirect_read_auto_passes_through_under_claude_code() {
 
     assert_eq!(
         out,
-        build_dual_allow_output(),
+        build_passthrough_output(),
         "auto must disable the Read redirect under Claude Code hooks (#637)"
     );
     assert!(

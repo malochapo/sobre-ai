@@ -28,19 +28,6 @@ pub struct AuditEntry {
 #[serde(rename_all = "snake_case")]
 pub enum AuditEventType {
     ToolCall,
-    ToolDenied,
-    PathJailViolation,
-    BudgetExceeded,
-    CrossProjectAccess,
-    RateLimited,
-    SecurityViolation,
-    RoleChanged,
-    SecretDetected,
-    // Agent identity lifecycle (GL #433) — additive OCP Part 4 evolution.
-    AgentRegistered,
-    AgentSuspended,
-    AgentResumed,
-    AgentDecommissioned,
 }
 
 pub struct AuditEntryData {

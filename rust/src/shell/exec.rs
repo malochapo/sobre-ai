@@ -429,8 +429,6 @@ pub fn exec(command: &str) -> i32 {
     };
 
     let (shell, shell_flag) = super::platform::shell_and_flag();
-    let command = crate::tools::ctx_shell::normalize_command_for_shell(command);
-    let command = command.as_str();
 
     if should_delegate_wrapped_to_shell_default(collapsed_nested) {
         return exec_shell_default(command, &shell, &shell_flag);

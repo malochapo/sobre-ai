@@ -5,7 +5,7 @@
 //! subcommand for compression, caching, and telemetry.
 
 use super::{
-    HOOK_STDIN_TIMEOUT, build_dual_allow_output, dedup, log_shadow_intercept, payload,
+    HOOK_STDIN_TIMEOUT, build_passthrough_output, dedup, log_shadow_intercept, payload,
     read_stdin_with_timeout, resolve_binary,
 };
 use crate::core::debug_log::{self, Route};
@@ -40,12 +40,12 @@ pub(super) fn classify_redirect(tool_name: &str) -> RedirectKind {
 /// printing, so `handle_redirect` can run it under the fail-open timeout (#1035).
 pub(super) fn compute_redirect() -> String {
     let Some(input) = read_stdin_with_timeout(HOOK_STDIN_TIMEOUT) else {
-        return build_dual_allow_output();
+        return build_passthrough_output();
     };
 
     let Ok(v) = serde_json::from_str::<serde_json::Value>(&input) else {
         tracing::warn!("[hook redirect] invalid JSON payload, allowing passthrough");
-        return build_dual_allow_output();
+        return build_passthrough_output();
     };
 
     // Normalise host payload shapes (snake_case vs Copilot CLI camelCase, #551).
@@ -54,7 +54,7 @@ pub(super) fn compute_redirect() -> String {
 
     let kind = classify_redirect(&tool_name);
     if matches!(kind, RedirectKind::None) {
-        return build_dual_allow_output();
+        return build_passthrough_output();
     }
 
     // #1032: Cursor fires preToolUse twice (two processes, identical payload), so a
@@ -79,7 +79,7 @@ fn produce_redirect_output(kind: RedirectKind, tool_args: Option<&serde_json::Va
         RedirectKind::Read => redirect_read(tool_args),
         RedirectKind::Grep => redirect_grep(tool_args),
         RedirectKind::Glob => redirect_glob(tool_args),
-        RedirectKind::None => build_dual_allow_output(),
+        RedirectKind::None => build_passthrough_output(),
     }
 }
 
@@ -118,7 +118,7 @@ pub(super) fn redirect_read(tool_input: Option<&serde_json::Value>) -> String {
             "<none>",
             "no path in tool input",
         );
-        return build_dual_allow_output();
+        return build_passthrough_output();
     };
     // #637: on hosts with a native read-before-write guard (Claude Code),
     // rewriting the Read to a temp `.lctx` copy makes the guard track
@@ -136,7 +136,7 @@ pub(super) fn redirect_read(tool_input: Option<&serde_json::Value>) -> String {
             &path,
             "read redirect disabled (host guard/config)",
         );
-        return build_dual_allow_output();
+        return build_passthrough_output();
     }
     if should_passthrough(&path) {
         debug_log::log_hook_decision(
@@ -146,7 +146,7 @@ pub(super) fn redirect_read(tool_input: Option<&serde_json::Value>) -> String {
             &path,
             "passthrough path (sensitive/binary/excluded)",
         );
-        return build_dual_allow_output();
+        return build_passthrough_output();
     }
 
     tracing::info!("[hook redirect] redirecting Read through lean-ctx");
@@ -198,7 +198,7 @@ pub(super) fn redirect_read(tool_input: Option<&serde_json::Value>) -> String {
                         "re-read passthrough (guard host, edit-safe)",
                     );
                     let _ = std::fs::remove_file(&marker);
-                    return build_dual_allow_output();
+                    return build_passthrough_output();
                 }
             } else {
                 debug_log::log_hook_decision(
@@ -251,7 +251,7 @@ pub(super) fn redirect_read(tool_input: Option<&serde_json::Value>) -> String {
         &path,
         "lean-ctx read produced no output",
     );
-    build_dual_allow_output()
+    build_passthrough_output()
 }
 
 /// Redirect Grep through lean-ctx for compressed results.
@@ -293,7 +293,7 @@ fn redirect_grep(tool_input: Option<&serde_json::Value>) -> String {
             "<none>",
             "no pattern in tool input",
         );
-        return build_dual_allow_output();
+        return build_passthrough_output();
     }
 
     if !grep_content_mode(tool_input) {
@@ -305,7 +305,7 @@ fn redirect_grep(tool_input: Option<&serde_json::Value>) -> String {
             "non-content output_mode — native passthrough (path-swap only valid for content)",
         );
         log_shadow_intercept("Grep", &format!("{pattern} in {search_path}"));
-        return build_dual_allow_output();
+        return build_passthrough_output();
     }
 
     tracing::info!("[hook redirect] redirecting Grep through lean-ctx");
@@ -343,7 +343,7 @@ fn redirect_grep(tool_input: Option<&serde_json::Value>) -> String {
         &format!("{pattern} in {search_path}"),
         "lean-ctx grep produced no output",
     );
-    build_dual_allow_output()
+    build_passthrough_output()
 }
 
 /// Warm lean-ctx's glob path for a native Glob call (#556).
@@ -359,7 +359,7 @@ fn redirect_grep(tool_input: Option<&serde_json::Value>) -> String {
 /// with `ctx_glob`) and record the call in shadow.log, then allow the native
 /// call through unchanged.
 fn redirect_glob(tool_input: Option<&serde_json::Value>) -> String {
-    let allow = build_dual_allow_output();
+    let allow = build_passthrough_output();
 
     let pattern = tool_input
         .and_then(|ti| ti.get("pattern"))

@@ -164,6 +164,7 @@ pub fn handle_filtered(
     let mut files_skipped_size = 0u32;
     let mut files_skipped_encoding = 0u32;
     let mut files_skipped_special = 0u32;
+    let mut files_skipped_type = 0u32;
     let mut deadline_hit = false;
     // Set when any hit gained an `∈name@Lstart` enclosing tag, so the
     // self-describing legend is emitted only when it is actually needed (#580).
@@ -180,6 +181,9 @@ pub fn handle_filtered(
         files = idx
             .candidate_paths(pattern, &include_patterns, root)
             .into_paths();
+        let skips = idx.skips();
+        files_skipped_type += skips.by_type;
+        files_skipped_size += skips.too_large;
         true
     } else {
         false
@@ -215,7 +219,9 @@ pub fn handle_filtered(
 
             let path = entry.path();
 
-            if is_binary_ext(path) || is_generated_file(path) {
+            // An explicitly requested file is always searched.
+            if path != root && (is_binary_ext(path) || is_generated_file(path)) {
+                files_skipped_type += 1;
                 continue;
             }
 
@@ -388,6 +394,13 @@ pub fn handle_filtered(
                 " ({files_skipped_special} special files skipped: not regular files)"
             ));
         }
+        if files_skipped_type > 0 {
+            msg.push_str(&format!(" ({})", type_skip_note(files_skipped_type)));
+        }
+        msg.push_str(
+            " (not searched: hidden files, symlinks, .gitignore'd paths and node_modules; \
+             ignore_gitignore=true includes the last two)",
+        );
         if deadline_hit {
             msg.push_str(
                 " (search stopped at the time budget — refine the pattern or scope with path=)",
@@ -450,6 +463,9 @@ pub fn handle_filtered(
             "\n({files_skipped_special} special files skipped: not regular files)"
         ));
     }
+    if files_skipped_type > 0 {
+        result.push_str(&format!("\n({})", type_skip_note(files_skipped_type)));
+    }
     if deadline_hit {
         result.push_str(&format!(
             "\n(search stopped after the {}s budget — {files_searched} files scanned; \
@@ -468,6 +484,13 @@ pub fn handle_filtered(
     }
 
     SearchOutcome::from_observed(result, raw_tokens_accum)
+}
+
+fn type_skip_note(count: u32) -> String {
+    format!(
+        "{count} files skipped by type: binary, minified, .lock, .map, .d.ts and similar; \
+         pass path=<file> to search one"
+    )
 }
 
 pub(crate) fn is_binary_ext(path: &Path) -> bool {
@@ -955,6 +978,44 @@ mod tests {
             out.contains("longIdentifierAlpha"),
             "identifiers should appear raw by default: {out}"
         );
+    }
+
+    #[test]
+    fn type_skips_are_announced_and_explicit_files_searched() {
+        let dir = tempfile::tempdir().unwrap();
+        let min = dir.path().join("app.min.js");
+        std::fs::write(&min, "needle\n").unwrap();
+        std::fs::write(dir.path().join("ok.txt"), "needle\n").unwrap();
+
+        let out = handle(
+            "needle",
+            dir.path().to_string_lossy().as_ref(),
+            None,
+            10,
+            CrpMode::Off,
+            true,
+            false,
+        )
+        .text;
+        assert!(out.contains("ok.txt"), "got: {out}");
+        assert!(!out.contains("app.min.js:"), "got: {out}");
+        assert!(out.contains("1 files skipped by type"), "got: {out}");
+
+        let out = handle(
+            "needle",
+            min.to_string_lossy().as_ref(),
+            None,
+            10,
+            CrpMode::Off,
+            true,
+            false,
+        )
+        .text;
+        assert!(
+            out.contains("needle"),
+            "explicit file must be searched: {out}"
+        );
+        assert!(!out.contains("0 matches"), "got: {out}");
     }
 
     #[test]

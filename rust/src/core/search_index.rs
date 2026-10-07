@@ -141,12 +141,23 @@ impl FileBloom {
     }
 }
 
+/// Files the corpus walk left out on purpose, so `ctx_search` can say so.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct WalkSkips {
+    /// Binary, minified, lock, map and similar files skipped by name.
+    pub by_type: u32,
+    /// Files above the per-file size cap.
+    pub too_large: u32,
+}
+
 /// RAM-resident trigram index over one project root.
 pub struct SearchIndex {
     files: Vec<PathBuf>,
     /// Candidate-narrowing structure (exact postings or compact per-file Bloom).
     narrowing: Narrowing,
     respect_gitignore: bool,
+    /// Files the corpus walk left out, reported by `ctx_search`.
+    skips: WalkSkips,
     /// Signature of the on-disk corpus this index was built from — the freshness
     /// truth checked on every [`get_fresh`] (see [`corpus_signature`]).
     signature: u64,
@@ -173,7 +184,7 @@ impl SearchIndex {
         let mut file_count: usize = 0;
         let mut aborted = false;
 
-        walk_index_corpus(root, respect_gitignore, |path, state| {
+        let skips = walk_index_corpus(root, respect_gitignore, |path, state| {
             sig_sum = sig_sum.wrapping_add(file_sig(path, state));
             file_count += 1;
 
@@ -234,8 +245,14 @@ impl SearchIndex {
             files,
             narrowing,
             respect_gitignore,
+            skips,
             signature: finalize_sig(sig_sum, file_count),
         })
+    }
+
+    /// Files the corpus walk skipped.
+    pub fn skips(&self) -> WalkSkips {
+        self.skips
     }
 
     fn config_matches(&self, respect_gitignore: bool) -> bool {
@@ -412,11 +429,12 @@ fn intersect_sorted(a: &[u32], b: &[u32]) -> Vec<u32> {
 /// semantics, depth limit, and binary/generated/secret/size/regular-file guards
 /// — invoking `visit(path, state)` for every eligible regular file with its
 /// `(mtime, size)` identity (`None` only when the platform cannot report mtime).
-/// `visit` returns `false` to stop early. Returns `None` for a missing or unsafe
+/// `visit` returns `false` to stop early. Returns the files skipped by type or
+/// size, or `None` for a missing or unsafe
 /// scan root (HOME, fs root, …), the same guard that makes the caller fall back
 /// to a direct walk. This traversal reads nothing: it is the shared spine of
 /// both [`SearchIndex::build`] and [`corpus_signature`].
-fn walk_index_corpus<F>(root: &str, respect_gitignore: bool, mut visit: F) -> Option<()>
+fn walk_index_corpus<F>(root: &str, respect_gitignore: bool, mut visit: F) -> Option<WalkSkips>
 where
     F: FnMut(&Path, Option<crate::core::content_cache::FileState>) -> bool,
 {
@@ -442,6 +460,7 @@ where
         .filter_entry(crate::core::walk_filter::keep_entry)
         .build();
 
+    let mut skips = WalkSkips::default();
     for entry in walker.filter_map(std::result::Result::ok) {
         if entry.file_type().is_none_or(|ft| ft.is_dir()) {
             continue;
@@ -451,13 +470,17 @@ where
         }
         let path = entry.path();
         if is_binary_ext(path) || is_generated_file(path) {
+            skips.by_type += 1;
             continue;
         }
         // `metadata` (stat) never opens the file, so it cannot block on a
         // FIFO/socket/device node (#336); those are filtered out here.
         let state = match std::fs::metadata(path) {
             Ok(meta) if !meta.file_type().is_file() => continue,
-            Ok(meta) if meta.len() > MAX_FILE_SIZE => continue,
+            Ok(meta) if meta.len() > MAX_FILE_SIZE => {
+                skips.too_large += 1;
+                continue;
+            }
             Ok(meta) => crate::core::content_cache::FileState::from_metadata(&meta),
             Err(_) => continue,
         };
@@ -465,7 +488,7 @@ where
             break;
         }
     }
-    Some(())
+    Some(skips)
 }
 
 /// Stable per-file contribution to the corpus signature: folds the path with its
@@ -1031,6 +1054,7 @@ mod tests {
             files,
             narrowing: build_narrowing(&per_file, MAX_POSTING_ENTRIES + 1),
             respect_gitignore: true,
+            skips: WalkSkips::default(),
             signature: 0, // freshness is not exercised by candidate_paths
         };
         assert!(

@@ -13,7 +13,8 @@ use super::Config;
 static SESSION_DEGRADE_LEVEL: AtomicU8 = AtomicU8::new(0);
 
 /// Each level maps to specific component settings via `to_components()`.
-#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq)]
+/// Variants are declared from least to most compressed, so `<` compares them.
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
 #[serde(rename_all = "lowercase")]
 pub enum CompressionLevel {
     Off,
@@ -57,13 +58,22 @@ impl CompressionLevel {
         }
     }
 
-    /// Returns the effective prose level: a session-level degrade (set by
-    /// correction-loop feedback) wins, then the band of `compression_level`.
+    /// Returns the effective prose level: the band of `compression_level`,
+    /// lowered by a session degrade (re-fetch feedback) but never raised.
     pub fn effective(config: &Config) -> Self {
-        if let Some(degraded) = Self::session_degrade_level() {
-            return degraded;
-        }
+        Self::capped(
+            Self::from_value(config.compression_level),
+            Self::session_degrade_level(),
+        )
+    }
+
+    /// The level `compression_level` alone selects, ignoring any degrade.
+    pub fn effective_configured(config: &Config) -> Self {
         Self::from_value(config.compression_level)
+    }
+
+    fn capped(configured: Self, degraded: Option<Self>) -> Self {
+        degraded.map_or(configured, |d| d.min(configured))
     }
 
     /// The prose level for a continuous `compression_level` value: five equal
@@ -92,7 +102,7 @@ impl CompressionLevel {
         }
     }
 
-    /// Session-level degrade: correction loop detected, temporarily reduce compression.
+    /// Session-level degrade: re-fetches detected, temporarily reduce compression.
     /// 0 = no override, 1 = Off, 2 = Lite
     pub fn session_degrade_level() -> Option<Self> {
         match SESSION_DEGRADE_LEVEL.load(std::sync::atomic::Ordering::Relaxed) {
@@ -102,7 +112,7 @@ impl CompressionLevel {
         }
     }
 
-    /// Sets a session-level compression degrade (called by correction loop detection).
+    /// Sets a session-level compression degrade (called on re-fetch pressure).
     pub fn set_session_degrade(level: &Self) {
         let val = match level {
             Self::Off => 1u8,
@@ -139,13 +149,18 @@ impl CompressionLevel {
         }
     }
 
-    /// Applies a [`SessionDegrade`] decision to the process-global session state.
-    pub fn apply_degrade_action(action: SessionDegrade) {
+    /// Applies a [`SessionDegrade`] decision to the process-global session
+    /// state. Returns the effective level when it changed, so the caller can
+    /// say so in the tool output.
+    pub fn apply_degrade_action(action: SessionDegrade, config: &Config) -> Option<Self> {
+        let before = Self::effective(config);
         match action {
             SessionDegrade::Set(level) => Self::set_session_degrade(&level),
             SessionDegrade::Clear => Self::clear_session_degrade(),
             SessionDegrade::Leave => {}
         }
+        let after = Self::effective(config);
+        (after != before).then_some(after)
     }
 
     pub fn from_str_label(s: &str) -> Option<Self> {
@@ -207,5 +222,13 @@ mod tests {
         assert_eq!(CompressionLevel::degrade_action(0, 0), Clear);
         assert_eq!(CompressionLevel::degrade_action(2, 1), Leave);
         assert_eq!(CompressionLevel::degrade_action(1, 2), Leave);
+    }
+
+    #[test]
+    fn degrade_lowers_but_never_raises_the_configured_level() {
+        use CompressionLevel::{Lite, Max, Off};
+        assert_eq!(CompressionLevel::capped(Max, Some(Lite)), Lite);
+        assert_eq!(CompressionLevel::capped(Off, Some(Lite)), Off);
+        assert_eq!(CompressionLevel::capped(Max, None), Max);
     }
 }

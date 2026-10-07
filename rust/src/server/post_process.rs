@@ -54,7 +54,8 @@ fn skip_terse(name: &str, args: Option<&Map<String, Value>>, is_raw_shell: bool)
 
 /// Apply the session terse-compression stage. Returns the (possibly) compressed
 /// text; the original is returned untouched when compression is inactive, must
-/// be skipped, or fails the quality/savings gate.
+/// be skipped, or fails the quality/savings gate. Condensed output ends with a
+/// one-line label, so the agent knows it is not reading the tool's raw text.
 pub(super) fn compress_terse(
     text: String,
     name: &str,
@@ -71,7 +72,12 @@ pub(super) fn compress_terse(
     }
     let terse_result = crate::core::terse::pipeline::compress(&text, &compression, None);
     if terse_result.quality_passed && terse_result.savings_pct >= 3.0 {
-        terse_result.output
+        format!(
+            "{}\n[sobre: condensed at compression {}, {:.0}% smaller]",
+            terse_result.output.trim_end(),
+            compression.label(),
+            terse_result.savings_pct
+        )
     } else {
         text
     }
@@ -196,6 +202,28 @@ mod tests {
         assert_eq!(
             out, content,
             "ctx_read output must be byte-identical (#404)"
+        );
+    }
+
+    #[test]
+    fn condensed_output_is_labelled() {
+        // Pretty-printed JSON always compacts (the json-compact layer).
+        let text = format!(
+            "{{\n{}\n}}\n",
+            (0..40)
+                .map(|i| format!("    \"key_{i}\": \"value number {i}\""))
+                .collect::<Vec<_>>()
+                .join(",\n")
+        );
+        let cfg = Config {
+            compression_level: CompressionLevel::Max.value(),
+            ..Config::default()
+        };
+        let out = compress_terse(text.clone(), "ctx_search", None, &cfg, false);
+        assert_ne!(out, text, "this input is expected to condense");
+        assert!(
+            out.ends_with("% smaller]"),
+            "condensed output must carry its label: {out}"
         );
     }
 

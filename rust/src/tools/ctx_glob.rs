@@ -80,7 +80,7 @@ pub fn handle(
         if entry.file_type().is_none_or(|ft| ft.is_dir()) {
             continue;
         }
-        // Skip symlinks — never follow them out of the search root.
+        // Symlinks are not followed (the `rg --files` default).
         if entry.file_type().is_some_and(|ft| ft.is_symlink()) {
             continue;
         }
@@ -100,7 +100,11 @@ pub fn handle(
 
     if matches.is_empty() {
         return (
-            format!("0 files matched '{pattern}' in {files_walked} files walked"),
+            format!(
+                "0 files matched '{pattern}' in {files_walked} files walked (not walked: \
+                 hidden files, symlinks, .gitignore'd paths and node_modules; \
+                 ignore_gitignore=true includes the last two)"
+            ),
             0,
         );
     }

@@ -8,7 +8,7 @@
 
 use super::search_rewrite::{rewrite_dir_list_command, rewrite_search_command};
 use super::{
-    HOOK_STDIN_TIMEOUT, build_dual_allow_output, build_dual_rewrite_output, dedup, is_shell_tool,
+    HOOK_STDIN_TIMEOUT, build_dual_rewrite_output, build_passthrough_output, dedup, is_shell_tool,
     payload, read_stdin_with_timeout, resolve_binary, shell_quote, shell_tokenize,
 };
 use crate::compound_lexer;
@@ -20,28 +20,28 @@ use crate::rewrite_registry;
 pub(super) fn compute_rewrite() -> String {
     let binary = resolve_binary();
     let Some(input) = read_stdin_with_timeout(HOOK_STDIN_TIMEOUT) else {
-        return build_dual_allow_output();
+        return build_passthrough_output();
     };
 
     let Ok(v) = serde_json::from_str::<serde_json::Value>(&input) else {
         tracing::warn!("[hook rewrite] invalid JSON payload, allowing passthrough");
-        return build_dual_allow_output();
+        return build_passthrough_output();
     };
 
     // Resolve across host shapes: Claude/Cursor send snake_case `tool_name` +
     // `tool_input`; Copilot CLI sends camelCase `toolName` + `toolArgs` (a
     // JSON-encoded string). Before #551 only the snake_case path was read.
     let Some(tool_name) = payload::resolve_tool_name(&v) else {
-        return build_dual_allow_output();
+        return build_passthrough_output();
     };
 
     if !is_shell_tool(&tool_name) {
-        return build_dual_allow_output();
+        return build_passthrough_output();
     }
 
     let tool_args = payload::resolve_tool_args(&v);
     let Some(cmd) = payload::resolve_command(&v, tool_args.as_ref()) else {
-        return build_dual_allow_output();
+        return build_passthrough_output();
     };
 
     // #1032: Cursor fires preToolUse twice. Dedup on a PID-independent key (tool +
@@ -65,7 +65,7 @@ pub(super) fn compute_rewrite() -> String {
                 &cmd,
                 rewrite_skip_reason(&cmd),
             );
-            build_dual_allow_output()
+            build_passthrough_output()
         }
     })
 }

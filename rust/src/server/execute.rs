@@ -59,14 +59,13 @@ pub(crate) fn execute_command_with_env_cancellable(
     idle_keyed: bool,
 ) -> (String, i32) {
     let (shell, flag) = crate::shell::shell_and_flag();
-    let normalized_cmd = crate::tools::ctx_shell::normalize_command_for_shell(command);
     let dir = std::path::Path::new(cwd);
     let mut cmd = std::process::Command::new(&shell);
     if cfg!(windows) && crate::shell::platform::is_powershell(&shell) {
         cmd.args(["-NoProfile", "-ExecutionPolicy", "Bypass"]);
     }
     cmd.arg(&flag)
-        .arg(&normalized_cmd)
+        .arg(command)
         .env("GIT_TERMINAL_PROMPT", "0")
         .stdin(Stdio::null());
     crate::shell::reentry::mark_child(&mut cmd);
@@ -162,7 +161,7 @@ pub(crate) fn execute_command_with_env_cancellable(
                     start.elapsed()
                 };
                 if idle_for >= timeout || hard_deadline.is_some_and(|d| Instant::now() >= d) {
-                    still_running = running_segments(&child, &normalized_cmd);
+                    still_running = running_segments(&child, command);
                     kill_timed_out_child(&mut child);
                     let _ = child.wait();
                     break (124, true, false);

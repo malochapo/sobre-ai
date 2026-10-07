@@ -37,7 +37,7 @@ mod tests;
 // bare name via `use super::*`; production code calls through the owning
 // module's path instead (e.g. `file_rewrite::rewrite_candidate`).
 #[cfg(test)]
-use codex::{codex_allow_output, codex_rewrite_output};
+use codex::{codex_passthrough_output, codex_rewrite_output};
 #[cfg(test)]
 use file_rewrite::{
     build_rewrite_compound, is_outside_project_path, parse_head_tail_args, rewrite_candidate,
@@ -89,7 +89,7 @@ pub fn arm_watchdog(timeout: Duration) {
 /// Run a command-gating hook's decision logic under a hard wall-clock timeout and
 /// print the result exactly once.
 ///
-/// On timeout the hook FAILS OPEN — it prints the allow/pass-through decision so a
+/// On timeout the hook FAILS OPEN — it prints the pass-through output so a
 /// slow or hung hook (a stalled subprocess, a wedged dedup wait, a saturated host)
 /// can never block the host's tool call: the command simply runs unmodified
 /// (#1035). The worker thread is abandoned on timeout (it only sends to a channel,
@@ -99,7 +99,7 @@ fn emit_gating_decision<F>(timeout: Duration, work: F)
 where
     F: FnOnce() -> String + Send + 'static,
 {
-    let out = decide_with_timeout(timeout, build_dual_allow_output(), work);
+    let out = decide_with_timeout(timeout, build_passthrough_output(), work);
     print!("{out}");
 }
 
@@ -133,17 +133,11 @@ fn read_stdin_with_timeout(timeout: Duration) -> Option<String> {
     }
 }
 
-fn build_dual_allow_output() -> String {
-    serde_json::json!({
-        // Top-level PreToolUse decision field.
-        "decision": "allow",
-        "permission": "allow",
-        "hookSpecificOutput": {
-            "hookEventName": "PreToolUse",
-            "permissionDecision": "allow"
-        }
-    })
-    .to_string()
+/// Pass-through: no decision, no mutation. Every supported host reads `{}` as
+/// "proceed as you normally would" (Cursor requires a JSON object), so the
+/// host's own permission rules apply unchanged.
+fn build_passthrough_output() -> String {
+    "{}".to_string()
 }
 
 fn build_dual_rewrite_output(tool_input: Option<&serde_json::Value>, rewritten: &str) -> String {
