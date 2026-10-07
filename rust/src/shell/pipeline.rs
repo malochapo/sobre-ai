@@ -14,45 +14,19 @@ pub(super) fn exec_buffered(command: &str, shell: &str, shell_flag: &str) -> i32
 
     let mut cmd = Command::new(shell);
 
-    #[cfg(windows)]
-    let ps_tmp_path: Option<tempfile::TempPath>;
+    // PowerShell runs the command inline (`-Command`), which the execution
+    // policy does not govern, so no policy override is needed.
     #[cfg(windows)]
     {
         if super::platform::is_powershell(shell) {
-            let ps_script = format!(
-                "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; {}",
-                command
-            );
-            match tempfile::Builder::new()
-                .prefix("lean-ctx-ps-")
-                .suffix(".ps1")
-                .tempfile()
-            {
-                Ok(tmp) => {
-                    let tmp_path = tmp.into_temp_path();
-                    let _ = std::fs::write(&tmp_path, &ps_script);
-                    cmd.args([
-                        "-NoProfile",
-                        "-ExecutionPolicy",
-                        "Bypass",
-                        "-File",
-                        &tmp_path.to_string_lossy(),
-                    ]);
-                    ps_tmp_path = Some(tmp_path);
-                }
-                Err(e) => {
-                    tracing::warn!(
-                        "lean-ctx: temp script unavailable ({e}); running PowerShell inline"
-                    );
-                    cmd.arg(shell_flag);
-                    cmd.arg(command);
-                    ps_tmp_path = None;
-                }
-            }
+            cmd.arg("-NoProfile");
+            cmd.arg(shell_flag);
+            cmd.arg(format!(
+                "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; {command}"
+            ));
         } else {
             cmd.arg(shell_flag);
             cmd.arg(command);
-            ps_tmp_path = None;
         }
     }
     #[cfg(not(windows))]
@@ -82,10 +56,6 @@ pub(super) fn exec_buffered(command: &str, shell: &str, shell_flag: &str) -> i32
         Ok(c) => c,
         Err(e) => {
             tracing::error!("lean-ctx: failed to execute: {e}");
-            #[cfg(windows)]
-            if let Some(ref tmp) = ps_tmp_path {
-                let _ = std::fs::remove_file(tmp);
-            }
             return 127;
         }
     };
@@ -143,23 +113,25 @@ pub(super) fn exec_buffered(command: &str, shell: &str, shell_flag: &str) -> i32
             let _ = io::stdout().write_all(b"\n");
         }
     }
-    // Same rule as the MCP path: whatever compression cut is saved.
-    let should_tee = super::tee_policy::should_tee(&full_output, &compressed, false);
-    if should_tee
-        && let Some(path) = super::redact::save_tee(command, &full_output)
-        && !crate::core::runtime_flags::quiet_enabled()
-    {
-        eprintln!("[lean-ctx: full output -> {path} (redacted, 24h TTL)]");
+    // Same rule as the MCP path: whatever compression cut is saved, and a
+    // compressed output always says so (on stderr, so stdout stays the
+    // command's own).
+    if compressed.trim_end() != full_output.trim_end() {
+        let kept = if super::tee_policy::should_tee(&full_output, &compressed, false) {
+            super::redact::save_tee(command, &full_output)
+                .map(|p| format!("; full output: {p} (redacted, 24h)"))
+                .unwrap_or_default()
+        } else {
+            String::new()
+        };
+        if !crate::core::runtime_flags::quiet_enabled() {
+            eprintln!("[sobre: output compressed, {input_tokens} → {output_tokens} tokens{kept}]");
+        }
     }
 
     let threshold = crate::core::config::SLOW_COMMAND_THRESHOLD_MS;
     if threshold > 0 && duration_ms >= threshold as u128 {
         slow_log::record(command, duration_ms, exit_code);
-    }
-
-    #[cfg(windows)]
-    if let Some(ref tmp) = ps_tmp_path {
-        let _ = std::fs::remove_file(tmp);
     }
 
     exit_code

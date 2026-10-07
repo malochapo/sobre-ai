@@ -1,36 +1,14 @@
-use super::super::{
-    make_executable, mcp_server_quiet_mode, resolve_binary_path_for_bash,
-    resolve_hook_command_binary, shell_quoted_binary, write_file, write_wrapper_file,
-};
-use super::shared::install_standard_hook_scripts;
+use super::super::{mcp_server_quiet_mode, resolve_hook_command_binary, write_file};
 
-fn ensure_pretooluse_hook(
-    pre: &mut Vec<serde_json::Value>,
-    matcher_variants: &[&str],
-    desired_matcher: &str,
-    desired_command: &str,
-) {
-    if let Some(existing) = pre.iter_mut().find(|v| {
-        v.get("matcher")
-            .and_then(|m| m.as_str())
-            .is_some_and(|m| matcher_variants.contains(&m))
-    }) {
-        if let Some(obj) = existing.as_object_mut() {
-            obj.insert(
-                "matcher".to_string(),
-                serde_json::Value::String(desired_matcher.to_string()),
-            );
-            obj.insert(
-                "command".to_string(),
-                serde_json::Value::String(desired_command.to_string()),
-            );
-        }
-        return;
-    }
-    pre.push(serde_json::json!({
-        "matcher": desired_matcher,
-        "command": desired_command
-    }));
+/// Keep exactly one sobre `preToolUse` entry for `matcher`; other entries,
+/// including the user's own hooks on the same matcher, are left alone.
+fn ensure_pretooluse_hook(pre: &mut Vec<serde_json::Value>, matcher: &str, command: &str) {
+    pre.retain(|e| {
+        !e.get("command")
+            .and_then(|c| c.as_str())
+            .is_some_and(|c| c.contains("lean-ctx") && c.contains(" hook "))
+    });
+    pre.push(serde_json::json!({ "matcher": matcher, "command": command }));
 }
 
 fn ensure_observe_hook(
@@ -57,7 +35,7 @@ fn ensure_observe_hook(
     }
 }
 
-fn merge_cursor_hooks(existing: &mut serde_json::Value, rewrite_cmd: &str, redirect_cmd: &str) {
+fn merge_cursor_hooks(existing: &mut serde_json::Value, binary: &str) {
     if !existing.is_object() {
         *existing = serde_json::json!({});
     }
@@ -76,7 +54,9 @@ fn merge_cursor_hooks(existing: &mut serde_json::Value, rewrite_cmd: &str, redir
         return;
     };
 
-    // PreToolUse hooks (rewrite + redirect)
+    // Cursor cannot replace a shell command's output after it ran, so the
+    // command is wrapped in `lean-ctx -c` before it runs — only when Cursor's
+    // own rules treat both forms alike, and with no permission decision.
     let pre = hooks_obj
         .entry("preToolUse".to_string())
         .or_insert_with(|| serde_json::json!([]));
@@ -86,18 +66,11 @@ fn merge_cursor_hooks(existing: &mut serde_json::Value, rewrite_cmd: &str, redir
     let Some(pre_arr) = pre.as_array_mut() else {
         return;
     };
-
-    ensure_pretooluse_hook(pre_arr, &["Shell"], "Shell", rewrite_cmd);
-    // Smart Read redirect re-enabled: edit-probe PoC (2026-07) proved that
-    // StrReplace does NOT fire a Read PreToolUse — only "Write" — so Read
-    // redirect is safe. Uses `auto` mode for full reads (87-97% compression)
-    // and `full-compact` for windowed reads (offset/limit).
-    // GH #1250 was caused by an older Cursor version or misattribution.
-    ensure_pretooluse_hook(pre_arr, &["Read|Grep|Glob"], "Read|Grep|Glob", redirect_cmd);
+    ensure_pretooluse_hook(pre_arr, "Shell", &format!("{binary} hook cursor"));
 
     // Observe hooks — only essential ones (#1200). postToolUse caused
     // Cursor to append hook stdout to edited files, corrupting source code.
-    let observe_cmd = rewrite_cmd.replace("hook rewrite", "hook observe");
+    let observe_cmd = format!("{binary} hook observe");
     ensure_observe_hook(hooks_obj, "sessionStart", &observe_cmd);
     ensure_observe_hook(hooks_obj, "preCompact", &observe_cmd);
 }
@@ -108,7 +81,6 @@ pub fn install_cursor_hook() {
         return;
     };
 
-    install_cursor_hook_scripts(&home);
     install_cursor_hook_config(&home);
 
     if !mcp_server_quiet_mode() {
@@ -116,40 +88,8 @@ pub fn install_cursor_hook() {
     }
 }
 
-pub(crate) fn install_cursor_hook_scripts(home: &std::path::Path) {
-    let hooks_dir = home.join(".cursor").join("hooks");
-    install_standard_hook_scripts(
-        &hooks_dir,
-        home,
-        "lean-ctx-rewrite.sh",
-        "lean-ctx-redirect.sh",
-    );
-
-    // #719: quoted + heal-safe like the Claude wrappers; bash-compatible path
-    // because these are `#!/bin/sh` scripts.
-    let native_binary = shell_quoted_binary(&resolve_binary_path_for_bash());
-    let rewrite_native = hooks_dir.join("lean-ctx-rewrite-native");
-    write_wrapper_file(
-        &rewrite_native,
-        &format!("#!/bin/sh\nexec {native_binary} hook rewrite\n"),
-        home,
-    );
-    make_executable(&rewrite_native);
-
-    let redirect_native = hooks_dir.join("lean-ctx-redirect-native");
-    write_wrapper_file(
-        &redirect_native,
-        &format!("#!/bin/sh\nexec {native_binary} hook redirect\n"),
-        home,
-    );
-    make_executable(&redirect_native);
-}
-
 pub(crate) fn install_cursor_hook_config(home: &std::path::Path) {
     let binary = resolve_hook_command_binary();
-    let rewrite_cmd = format!("{binary} hook rewrite");
-    let redirect_cmd = format!("{binary} hook redirect");
-
     let hooks_json = home.join(".cursor").join("hooks.json");
 
     let content = if hooks_json.exists() {
@@ -169,7 +109,7 @@ pub(crate) fn install_cursor_hook_config(home: &std::path::Path) {
     }
 
     // Merge-based: preserve other hooks/plugins. Only upsert lean-ctx entries.
-    merge_cursor_hooks(&mut existing, &rewrite_cmd, &redirect_cmd);
+    merge_cursor_hooks(&mut existing, &binary);
 
     let formatted = serde_json::to_string_pretty(&existing).unwrap_or_default();
     write_file(&hooks_json, &formatted);
@@ -189,7 +129,8 @@ mod tests {
             "version": 1,
             "hooks": {
                 "preToolUse": [
-                    { "matcher": "Shell", "command": "/old/bin hook rewrite" },
+                    { "matcher": "Shell", "command": "/old/lean-ctx hook cursor" },
+                    { "matcher": "Shell", "command": "my-own-check" },
                     { "matcher": "Other", "command": "do-something" }
                 ],
                 "postToolUse": [
@@ -199,26 +140,22 @@ mod tests {
             "otherKey": { "x": 1 }
         });
 
-        merge_cursor_hooks(&mut v, "/new/bin hook rewrite", "/new/bin hook redirect");
+        merge_cursor_hooks(&mut v, "/new/lean-ctx");
+        merge_cursor_hooks(&mut v, "/new/lean-ctx"); // re-run is idempotent
 
         assert!(v.get("otherKey").is_some());
         assert!(v.pointer("/hooks/postToolUse").is_some());
-
         let pre = v
             .pointer("/hooks/preToolUse")
             .and_then(|x| x.as_array())
             .unwrap();
-        assert!(
-            pre.iter()
-                .any(|e| e.get("matcher").and_then(|m| m.as_str()) == Some("Other"))
+        let commands: Vec<&str> = pre
+            .iter()
+            .filter_map(|e| e.get("command").and_then(|c| c.as_str()))
+            .collect();
+        assert_eq!(
+            commands,
+            ["my-own-check", "do-something", "/new/lean-ctx hook cursor"]
         );
-        assert!(pre.iter().any(|e| {
-            e.get("matcher").and_then(|m| m.as_str()) == Some("Shell")
-                && e.get("command").and_then(|c| c.as_str()) == Some("/new/bin hook rewrite")
-        }));
-        assert!(pre.iter().any(|e| {
-            e.get("matcher").and_then(|m| m.as_str()) == Some("Read|Grep|Glob")
-                && e.get("command").and_then(|c| c.as_str()) == Some("/new/bin hook redirect")
-        }));
     }
 }

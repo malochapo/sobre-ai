@@ -334,25 +334,9 @@ fn apply_hook_cleanup(path: &Path, label: &str, content: &str, dry_run: bool) ->
 }
 
 pub(super) fn remove_hook_files(home: &Path, dry_run: bool) -> bool {
-    let claude_hooks_dir = crate::core::editor_registry::claude_state_dir(home).join("hooks");
-    let hook_files: Vec<PathBuf> = vec![
-        claude_hooks_dir.join("lean-ctx-rewrite.sh"),
-        claude_hooks_dir.join("lean-ctx-redirect.sh"),
-        claude_hooks_dir.join("lean-ctx-rewrite-native"),
-        claude_hooks_dir.join("lean-ctx-redirect-native"),
-        home.join(".cursor/hooks/lean-ctx-rewrite.sh"),
-        home.join(".cursor/hooks/lean-ctx-redirect.sh"),
-        home.join(".cursor/hooks/lean-ctx-rewrite-native"),
-        home.join(".cursor/hooks/lean-ctx-redirect-native"),
-        home.join(".gemini/hooks/lean-ctx-rewrite-gemini.sh"),
-        home.join(".gemini/hooks/lean-ctx-redirect-gemini.sh"),
-        home.join(".gemini/hooks/lean-ctx-hook-gemini.sh"),
-        crate::core::home::resolve_codex_dir()
-            .unwrap_or_else(|| home.join(".codex"))
-            .join("hooks/lean-ctx-rewrite-codex.sh"),
-        home.join(".codeium/windsurf/hooks/lean-ctx-rewrite.sh"),
-        home.join(".codeium/windsurf/hooks/lean-ctx-redirect.sh"),
-    ];
+    // The only hook file sobre writes; every other hook lives in a host
+    // config and is removed entry by entry below.
+    let hook_files: Vec<PathBuf> = vec![home.join(".config/opencode/plugins/sobre.js")];
 
     let mut removed = false;
     for path in &hook_files {
@@ -367,7 +351,7 @@ pub(super) fn remove_hook_files(home: &Path, dry_run: bool) -> bool {
 
     if removed {
         let verb = if dry_run { "Would remove" } else { "✓" };
-        println!("  {verb} Hook scripts removed");
+        println!("  {verb} OpenCode plugin removed");
     }
 
     // Claude Code global settings: surgically remove lean-ctx hook entries

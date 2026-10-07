@@ -6,7 +6,6 @@ use super::types::{ConfigType, EditorTarget};
 mod install;
 mod shared;
 
-pub use shared::auto_approve_tools;
 // The router below dispatches to every install writer; a glob keeps the
 // dispatch table readable and lets the test module reach them via `super::*`.
 #[allow(clippy::wildcard_imports)]

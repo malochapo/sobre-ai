@@ -677,7 +677,7 @@ command = \"other\"
     "preToolUse": [
       {
         "matcher": "Shell",
-        "command": "lean-ctx hook rewrite"
+        "command": "lean-ctx hook compress"
       }
     ]
   }
@@ -702,7 +702,7 @@ command = \"other\"
     "preToolUse": [
       {
         "matcher": "Shell",
-        "command": "lean-ctx hook rewrite"
+        "command": "lean-ctx hook compress"
       }
     ]
   }
@@ -724,7 +724,7 @@ command = \"other\"
     "preToolUse": [
       {
         "matcher": "Shell",
-        "command": "lean-ctx hook rewrite"
+        "command": "lean-ctx hook compress"
       },
       {
         "matcher": "Shell",
@@ -758,7 +758,7 @@ command = \"other\"
         "hooks": [
           {
             "type": "command",
-            "command": "lean-ctx hook rewrite"
+            "command": "lean-ctx hook compress"
           }
         ]
       },
@@ -796,7 +796,7 @@ command = \"other\"
       {
         "matcher": "Bash",
         "hooks": [
-          { "type": "command", "command": "lean-ctx hook rewrite" },
+          { "type": "command", "command": "lean-ctx hook compress" },
           { "type": "command", "command": "my-custom-guard" }
         ]
       }
@@ -819,7 +819,7 @@ command = \"other\"
         let input = r#"{
   "hooks": {
     "preToolUse": [
-      { "bash": "lean-ctx hook rewrite" },
+      { "bash": "lean-ctx hook compress" },
       { "bash": "my-other-hook" }
     ]
   }

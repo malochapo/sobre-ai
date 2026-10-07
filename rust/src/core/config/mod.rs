@@ -10,8 +10,6 @@ type ConfigCacheSlot = Option<(Arc<Config>, Option<String>)>;
 mod enums;
 mod loader;
 mod proxy;
-mod read_dedup;
-pub(crate) mod read_redirect;
 mod render;
 pub mod risk;
 pub mod schema;
@@ -30,8 +28,6 @@ pub use proxy::{
     is_local_proxy_url, normalize_url, normalize_url_opt, parse_route_target, upstream_drifted,
     upstream_ids,
 };
-pub use read_dedup::read_dedup_enabled;
-pub use read_redirect::read_redirect_enabled;
 
 /// Effective on-disk ceiling (MB) for the persisted BM25 index when nothing is
 /// explicitly configured (no `bm25_max_cache_mb`, no `max_disk_mb` budget).

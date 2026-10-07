@@ -47,7 +47,7 @@ the measured state of each.
    budget, so growth has to displace something.
 
 Invariants 1 to 5 hold today: 17 tools, one fixed surface; one config file
-with 13 keys and no per-project files, profiles or behaviour-changing
+with 12 keys and no per-project files, profiles or behaviour-changing
 environment variables; no network request you did not ask for; and about
 170,000 lines of production Rust under a 200,000 ceiling.
 
@@ -82,14 +82,26 @@ lean-ctx doctor          # check the install
 lean-ctx uninstall       # remove everything init wrote
 ```
 
-`init` registers the MCP server with the agent, installs the agent's own hooks
-where the host supports them (they route its shell commands through
-`lean-ctx -c`), and installs the `sobre` skill for agents that load skills
-(Claude Code, Codex, Cursor, Copilot, OpenCode). Everything goes into user-level
-configuration, never into a repository. It writes nothing into your shell rc
-files or your own instruction files (`CLAUDE.md`, `AGENTS.md`, `.cursor/rules`,
-…): the agent learns how to use the tools from the MCP server instructions, and
-from the skill when it opens it. Native tools are never denied.
+`init` registers the MCP server with the agent and installs the `sobre` skill
+for agents that load skills (Claude Code, Codex, Cursor, Copilot, OpenCode).
+Where the host allows it, it also adds a hook that compresses the output of the
+agent's own shell commands:
+
+| Agent | Shell output compression |
+|---|---|
+| Claude Code, Copilot CLI, OpenCode | After the command ran: the output the model sees is replaced by a compressed copy. The command itself is never changed. |
+| Cursor, Gemini CLI | Before the command runs: a single known command (`git`, `cargo`, `npm`, …) is wrapped in `lean-ctx -c`, only when none of the host's own command rules tells the two forms apart. |
+| Codex, VS Code, Windsurf | None: these hosts would need sobre to approve the command, or can only block it. Use the `ctx_shell` tool. |
+
+Compressed output always ends with a `[sobre: …]` line that says so and where
+the full output was kept. sobre never approves, denies or blocks anything: what
+may run, be read or be written is the agent host's decision, and `init` writes
+no approval setting into its configuration.
+
+Everything goes into user-level configuration, never into a repository. `init`
+writes nothing into your shell rc files or your own instruction files
+(`CLAUDE.md`, `AGENTS.md`, `.cursor/rules`, …): the agent learns how to use the
+tools from the MCP server instructions, and from the skill when it opens it.
 
 ## License
 

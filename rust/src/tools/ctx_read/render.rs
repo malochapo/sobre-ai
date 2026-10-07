@@ -83,12 +83,11 @@ pub(crate) fn format_full_output(
     (output, sent)
 }
 
-/// Headerless, trailing-whitespace-stripped output for the Read redirect path.
+/// Headerless, trailing-whitespace-stripped output (`full-compact` mode).
 ///
-/// The hook redirect writes this into a temp file the host reads *as* the real
-/// file's content. No framing header (fixes offset/limit correctness, #1021
-/// follow-up) and trailing whitespace is stripped per line for modest
-/// compression without breaking line structure or edit round-trips.
+/// No framing header (offset/limit stay correct, #1021 follow-up) and trailing
+/// whitespace is stripped per line for modest compression without breaking
+/// line structure or edit round-trips.
 pub(crate) fn format_full_compact_output(content: &str) -> (String, usize) {
     let output: String = content
         .lines()

@@ -62,7 +62,7 @@ pub(crate) fn execute_command_with_env_cancellable(
     let dir = std::path::Path::new(cwd);
     let mut cmd = std::process::Command::new(&shell);
     if cfg!(windows) && crate::shell::platform::is_powershell(&shell) {
-        cmd.args(["-NoProfile", "-ExecutionPolicy", "Bypass"]);
+        cmd.arg("-NoProfile");
     }
     cmd.arg(&flag)
         .arg(command)

@@ -8,10 +8,7 @@ pub(crate) fn write_gemini_settings(
     binary: &str,
     opts: WriteOptions,
 ) -> Result<WriteResult, String> {
-    let entry = serde_json::json!({
-        "command": binary,
-        "trust": true,
-    });
+    let entry = serde_json::json!({ "command": binary });
 
     if target.config_path.exists() {
         let content = std::fs::read_to_string(&target.config_path).map_err(|e| e.to_string())?;

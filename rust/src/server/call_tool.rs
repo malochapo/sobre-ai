@@ -441,8 +441,8 @@ fn roots_list_failure_is_permanent(e: &rmcp::ServiceError) -> bool {
 }
 
 /// Build the final `CallToolResult`, surfacing shell failures in MCP metadata
-/// (GitHub #389): a failing or blocked command sets `isError: true` and a
-/// `structuredContent` payload (`{"exitCode": N}` / `{"blocked": true}`), so
+/// (GitHub #389): a failing command sets `isError: true` and a
+/// `structuredContent` payload (`{"exitCode": N}`), so
 /// clients no longer have to regex-parse the `[exit:N]` text footer. The text
 /// content is identical in both cases — only the metadata changes. A non-zero
 /// exit that is *not* a failure (#1090/#1086) carries neither, because some

@@ -42,12 +42,9 @@ pub fn run() {
 
         match args[1].as_str() {
             // `-c` is not a human-facing alias of `exec` — it is the wire form
-            // the installed shell shim and the hook rewriter emit. Both build
-            // `<binary> -c "<command>"`: cli/shell_init.rs writes it into the
-            // user's rc, hook_handlers/file_rewrite.rs into every agent command
-            // it rewrites. Removing it makes every hooked command exit 1, and
-            // the shim only falls back to the real command on 126/127, so the
-            // failure surfaces as a broken shell rather than a lost feature.
+            // the Cursor/Gemini pre-run hooks emit (`<binary> -c '<command>'`,
+            // hook_handlers/rewrite.rs). Removing it makes every wrapped
+            // command fail.
             // shell/exec.rs:684 also matches on it when collapsing nesting.
             "-c" | "exec" => handle_exec(&args, &rest),
             "gain" => {
@@ -290,26 +287,24 @@ pub fn run() {
                 // MCP server process never receives. Bridge them for ctx_shell (#370).
                 core::agent_runtime_env::capture();
                 let action = rest.first().map_or("help", std::string::String::as_str);
-                // Gating hooks (rewrite/redirect) self-bound their work and FAIL OPEN
-                // inside the handler (#1035), so they must NOT also carry the
-                // force-exit watchdog (which would `exit(1)` with no decision and
-                // wedge the host). The remaining hooks keep the simple zombie-guard.
-                if !matches!(action, "rewrite" | "redirect") {
+                // Rewrite hooks self-bound their work and FAIL OPEN inside the
+                // handler (#1035), so they must NOT also carry the force-exit
+                // watchdog (which would `exit(1)` with no reply and wedge the
+                // host). The remaining hooks keep the simple zombie-guard.
+                if !matches!(action, "cursor" | "gemini") {
                     hook_handlers::arm_watchdog(std::time::Duration::from_secs(5));
                 }
                 match action {
-                    "rewrite" => hook_handlers::handle_rewrite(),
-                    "redirect" => hook_handlers::handle_redirect(),
+                    "compress" => hook_handlers::handle_compress(),
+                    "cursor" => hook_handlers::handle_cursor(),
+                    "gemini" => hook_handlers::handle_gemini(),
                     "read-dedup" => hook_handlers::handle_read_dedup(),
                     "observe" => hook_handlers::handle_observe(),
-                    "codex-pretooluse" => hook_handlers::handle_codex_pretooluse(),
                     _ => {
                         eprintln!(
-                            "Usage: lean-ctx hook <rewrite|redirect|read-dedup|observe|codex-pretooluse>"
+                            "Usage: lean-ctx hook <compress|cursor|gemini|read-dedup|observe>"
                         );
-                        eprintln!(
-                            "  Internal commands used by agent hooks (Claude, Cursor, Copilot, etc.)"
-                        );
+                        eprintln!("  Internal commands used by agent hooks");
                         std::process::exit(1);
                     }
                 }

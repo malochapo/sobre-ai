@@ -1,7 +1,6 @@
 use super::super::{
     ensure_codex_hooks_enabled as shared_ensure_codex_hooks_enabled, ensure_state_dir,
-    mcp_server_quiet_mode, resolve_hook_command_binary, upsert_lean_ctx_codex_hook_entries,
-    write_file,
+    mcp_server_quiet_mode, resolve_hook_command_binary, write_file,
 };
 
 pub fn install_codex_hook() {
@@ -16,13 +15,12 @@ pub fn install_codex_hook() {
     let hook_config_changed = install_codex_hook_config(&codex_dir);
 
     if hook_config_changed && !mcp_server_quiet_mode() {
-        eprintln!("Installed Codex PreToolUse hook at {}", codex_dir.display());
+        eprintln!("Installed Codex hooks at {}", codex_dir.display());
     }
 }
 
 fn install_codex_hook_config(codex_dir: &std::path::Path) -> bool {
     let binary = resolve_hook_command_binary();
-    let pre_tool_use_cmd = format!("{binary} hook codex-pretooluse");
     let hooks_json_path = codex_dir.join("hooks.json");
 
     let mut changed = false;
@@ -41,11 +39,9 @@ fn install_codex_hook_config(codex_dir: &std::path::Path) -> bool {
         serde_json::json!({ "hooks": {} })
     };
 
-    if upsert_lean_ctx_codex_hook_entries(&mut root, &pre_tool_use_cmd) {
-        changed = true;
-    }
-
-    // Observe hooks for context awareness
+    // No PreToolUse: Codex only accepts a rewritten command together with an
+    // `allow` decision, which sobre never emits. Shell compression goes
+    // through `ctx_shell`. Observe hooks for context awareness:
     let observe_cmd = format!("{binary} hook observe");
     if ensure_codex_observe_hooks(&mut root, &observe_cmd) {
         changed = true;
@@ -168,88 +164,9 @@ fn ensure_codex_hooks_enabled(config_content: &str) -> Option<String> {
     shared_ensure_codex_hooks_enabled(config_content)
 }
 
-// The codex-pretooluse handler rewrites compressible Bash calls and lets every
-// other call through unchanged (Codex PreToolUse only fires for Bash).
-
 #[cfg(test)]
 mod tests {
-    use super::{
-        ensure_codex_hooks_enabled, ensure_codex_mcp_server, upsert_lean_ctx_codex_hook_entries,
-    };
-    use serde_json::json;
-
-    #[test]
-    fn upsert_replaces_lean_ctx_hook_but_keeps_custom_hooks() {
-        let mut input = json!({
-            "hooks": {
-                "PreToolUse": [
-                    {
-                        "matcher": "Bash",
-                        "hooks": [{
-                            "type": "command",
-                            "command": "/opt/homebrew/bin/lean-ctx hook codex-pretooluse",
-                            "timeout": 15
-                        }]
-                    },
-                    {
-                        "matcher": "Bash",
-                        "hooks": [{
-                            "type": "command",
-                            "command": "echo keep-me",
-                            "timeout": 5
-                        }]
-                    }
-                ],
-                "PostToolUse": [
-                    {
-                        "matcher": "Bash",
-                        "hooks": [{
-                            "type": "command",
-                            "command": "echo keep-post",
-                            "timeout": 5
-                        }]
-                    }
-                ]
-            }
-        });
-
-        let changed =
-            upsert_lean_ctx_codex_hook_entries(&mut input, "lean-ctx hook codex-pretooluse");
-        assert!(changed, "the stale binary path should be rewritten");
-
-        let pre_tool_use = input["hooks"]["PreToolUse"]
-            .as_array()
-            .expect("PreToolUse array should remain");
-        assert_eq!(pre_tool_use.len(), 2, "custom hook should be preserved");
-        assert_eq!(
-            pre_tool_use[0]["hooks"][0]["command"].as_str(),
-            Some("echo keep-me")
-        );
-        assert_eq!(
-            pre_tool_use[1]["hooks"][0]["command"].as_str(),
-            Some("lean-ctx hook codex-pretooluse")
-        );
-        assert_eq!(
-            input["hooks"]["PostToolUse"][0]["hooks"][0]["command"].as_str(),
-            Some("echo keep-post")
-        );
-    }
-
-    #[test]
-    fn ignores_non_lean_ctx_codex_entries() {
-        let custom = json!({
-            "matcher": "Bash",
-            "hooks": [{
-                "type": "command",
-                "command": "echo keep-me",
-                "timeout": 5
-            }]
-        });
-        assert!(
-            !crate::hooks::support::is_lean_ctx_codex_managed_entry("PreToolUse", &custom),
-            "custom Codex hooks must be preserved"
-        );
-    }
+    use super::{ensure_codex_hooks_enabled, ensure_codex_mcp_server};
 
     #[test]
     fn ensure_codex_hooks_enabled_updates_existing_features_flag() {

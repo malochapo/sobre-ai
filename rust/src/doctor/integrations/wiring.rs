@@ -87,8 +87,8 @@ pub(crate) fn cmd_matches_expected(cmd: &str, portable: &str) -> bool {
 
 /// Collect the `lean-ctx` binary tokens that appear immediately before a
 /// ` hook ` invocation inside a hook config file. Managed hook commands look
-/// like `"<binary> hook rewrite"` / `"<binary> hook redirect"` /
-/// `"<binary> hook codex-pretooluse"`, so the token directly preceding a
+/// like `"<binary> hook compress"` / `"<binary> hook observe"`, so the token
+/// directly preceding a
 /// ` hook ` delimiter is the binary the hook will execute.
 pub(crate) fn hook_binary_refs(content: &str) -> Vec<String> {
     let pieces: Vec<&str> = content.split(" hook ").collect();

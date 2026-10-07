@@ -14,7 +14,7 @@ fn target(name: &'static str, path: PathBuf, ty: ConfigType) -> EditorTarget {
 }
 
 #[test]
-fn mcp_json_upserts_and_preserves_other_servers_without_auto_approve() {
+fn mcp_json_upserts_and_preserves_other_servers_without_approval_settings() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("mcp.json");
     std::fs::write(
@@ -34,36 +34,6 @@ fn mcp_json_upserts_and_preserves_other_servers_without_auto_approve() {
         "/new/path/lean-ctx"
     );
     assert!(json["mcpServers"]["lean-ctx"].get("autoApprove").is_none());
-}
-
-#[test]
-fn mcp_json_upserts_and_preserves_other_servers_with_auto_approve_for_cursor() {
-    let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("mcp.json");
-    std::fs::write(
-            &path,
-            r#"{ "mcpServers": { "other": { "command": "other-bin" }, "lean-ctx": { "command": "/old/path/lean-ctx", "autoApprove": [] } } }"#,
-        )
-        .unwrap();
-
-    let t = target("Cursor", path.clone(), ConfigType::McpJson);
-    let res = write_mcp_json(&t, "/new/path/lean-ctx", WriteOptions::default()).unwrap();
-    assert_eq!(res.action, WriteAction::Updated);
-
-    let json: Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
-    assert_eq!(json["mcpServers"]["other"]["command"], "other-bin");
-    assert_eq!(
-        json["mcpServers"]["lean-ctx"]["command"],
-        "/new/path/lean-ctx"
-    );
-    assert!(json["mcpServers"]["lean-ctx"]["autoApprove"].is_array());
-    assert!(
-        json["mcpServers"]["lean-ctx"]["autoApprove"]
-            .as_array()
-            .unwrap()
-            .len()
-            > 5
-    );
 }
 
 #[test]
@@ -228,24 +198,6 @@ approval_mode = \"approve\"
         1,
         "parent section preserved exactly once"
     );
-}
-
-#[test]
-fn auto_approve_contains_core_tools() {
-    let tools = auto_approve_tools();
-    assert!(tools.contains(&"ctx_read"));
-    assert!(tools.contains(&"ctx_shell"));
-    assert!(tools.contains(&"ctx_search"));
-    assert!(tools.contains(&"ctx_session"));
-    assert!(tools.contains(&"ctx"));
-    // autoApprove is written into client configs: a name the registry does not
-    // serve is an approval for a tool that answers "Unknown tool".
-    for t in &tools {
-        assert!(
-            *t == "ctx" || crate::server::registry::is_registered(t),
-            "{t} is auto-approved but not registered"
-        );
-    }
 }
 
 #[test]

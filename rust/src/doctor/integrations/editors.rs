@@ -44,7 +44,7 @@ pub(crate) fn integration_generic(
         }
         crate::core::editor_registry::types::ConfigType::GeminiSettings => {
             checks.push(check_mcp_json(&target.config_path, binary));
-            checks.push(check_gemini_trust_and_hooks(home, binary));
+            checks.push(check_gemini_hooks(home, binary));
         }
     }
 
@@ -117,11 +117,6 @@ pub(crate) fn integration_claude(home: &std::path::Path, binary: &str) -> Integr
 
     let settings_path = crate::core::editor_registry::claude_state_dir(home).join("settings.json");
     checks.push(check_claude_hooks(&settings_path, binary));
-
-    // #719: the generated wrapper scripts can carry a stale machine-absolute
-    // binary even when settings.json is healthy (synced multi-machine setups).
-    let hooks_dir = crate::core::editor_registry::claude_state_dir(home).join("hooks");
-    checks.push(check_hook_wrapper_scripts(&hooks_dir, binary, home));
 
     // The detailed guide is the `sobre` skill; the MCP instructions carry the
     // short version to every client.

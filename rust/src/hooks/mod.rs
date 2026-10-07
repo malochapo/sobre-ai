@@ -1,17 +1,12 @@
-use std::path::PathBuf;
-
 pub mod agents;
 mod support;
 
 use agents::{
-    install_claude_hook, install_claude_hook_config, install_claude_hook_scripts,
-    install_codex_hook, install_copilot_hook, install_cursor_hook_config,
-    install_cursor_hook_scripts, install_gemini_hook, install_gemini_hook_config,
-    install_gemini_hook_scripts, install_opencode_hook, install_windsurf, install_windsurf_hooks,
+    install_claude_hook, install_claude_hook_config, install_codex_hook, install_copilot_hook,
+    install_cursor_hook_config, install_gemini_hook, install_gemini_hook_config,
+    install_opencode_hook, install_opencode_plugin, install_windsurf, install_windsurf_hooks,
 };
-use support::{
-    ensure_codex_hooks_enabled, install_named_json_server, upsert_lean_ctx_codex_hook_entries,
-};
+use support::{ensure_codex_hooks_enabled, install_named_json_server};
 
 fn mcp_server_quiet_mode() -> bool {
     crate::core::runtime_flags::mcp_server_enabled() || crate::core::runtime_flags::quiet_enabled()
@@ -24,8 +19,9 @@ fn mcp_server_quiet_mode() -> bool {
 /// the user never configured. The `refresh_covers_every_hybrid_agent` test
 /// proves this list plus `REFRESH_EXEMPT_AGENTS` accounts for every hook-capable
 /// agent, so a newly added agent can never silently regress.
-const REFRESHABLE_HOOK_AGENTS: &[&str] =
-    &["claude", "cursor", "gemini", "codex", "windsurf", "copilot"];
+const REFRESHABLE_HOOK_AGENTS: &[&str] = &[
+    "claude", "cursor", "gemini", "codex", "windsurf", "copilot", "opencode",
+];
 
 /// Hook-capable agents intentionally NOT auto-refreshed, with the reason each is safe
 /// to skip. Refresh runs silently (including on every MCP server start), so it
@@ -47,9 +43,6 @@ const HOOK_CAPABLE_AGENTS: &[&str] = &[
 const REFRESH_EXEMPT_AGENTS: &[&str] = &[
     // Alias of `claude` — same global files, already refreshed via "claude".
     "claude-code",
-    // MCP-config wiring only (no global binary-embedding shell-hook script to
-    // keep current); refreshed by `setup --fix`, not on start.
-    "opencode",
 ];
 
 /// Silently refresh all hook scripts for agents that are already configured.
@@ -71,29 +64,20 @@ pub fn refresh_installed_hooks() {
 fn hooks_installed_for(agent: &str, home: &std::path::Path) -> bool {
     match agent {
         "claude" => {
-            let dir = crate::setup::claude_config_dir(home);
-            dir.join("hooks/lean-ctx-rewrite.sh").exists()
-                || file_contains_lean_ctx(&dir.join("settings.json"))
+            file_contains_lean_ctx(&crate::setup::claude_config_dir(home).join("settings.json"))
         }
-        "cursor" => {
-            home.join(".cursor/hooks/lean-ctx-rewrite.sh").exists()
-                || file_contains_lean_ctx(&home.join(".cursor/hooks.json"))
-        }
-        "gemini" => {
-            home.join(".gemini/hooks/lean-ctx-rewrite-gemini.sh")
-                .exists()
-                || home.join(".gemini/hooks/lean-ctx-hook-gemini.sh").exists()
-        }
+        "cursor" => file_contains_lean_ctx(&home.join(".cursor/hooks.json")),
+        "gemini" => file_contains_lean_ctx(&home.join(".gemini/settings.json")),
         "codex" => {
             let dir = crate::core::home::resolve_codex_dir().unwrap_or_else(|| home.join(".codex"));
-            dir.join("hooks/lean-ctx-rewrite-codex.sh").exists()
-                || file_contains_lean_ctx(&dir.join("hooks.json"))
+            file_contains_lean_ctx(&dir.join("hooks.json"))
         }
         "windsurf" => file_contains_lean_ctx(&home.join(".codeium/windsurf/hooks.json")),
         "copilot" => {
             // User-level Copilot hooks live under ~/.copilot/hooks (#381).
             file_contains_lean_ctx(&home.join(".copilot/hooks/hooks.json"))
         }
+        "opencode" => home.join(".config/opencode/plugins/sobre.js").exists(),
         _ => false,
     }
 }
@@ -102,18 +86,10 @@ fn hooks_installed_for(agent: &str, home: &std::path::Path) -> bool {
 /// narrow, subprocess-free, global installers (never the full agent setup).
 fn refresh_agent_hooks(agent: &str, home: &std::path::Path) {
     match agent {
-        "claude" => {
-            install_claude_hook_scripts(home);
-            install_claude_hook_config(home);
-        }
-        "cursor" => {
-            install_cursor_hook_scripts(home);
-            install_cursor_hook_config(home);
-        }
-        "gemini" => {
-            install_gemini_hook_scripts(home);
-            install_gemini_hook_config(home);
-        }
+        "claude" => install_claude_hook_config(home),
+        "cursor" => install_cursor_hook_config(home),
+        "gemini" => install_gemini_hook_config(home),
+        "opencode" => install_opencode_plugin(home, &resolve_binary_path()),
         "codex" => install_codex_hook(),
         "windsurf" => install_windsurf_hooks(home),
         "copilot" => install_copilot_hook(),
@@ -144,8 +120,8 @@ fn resolve_binary_path() -> String {
     crate::core::portable_binary::resolve_portable_binary()
 }
 
-/// Binary token for **shell-executed** hook commands (`<binary> hook rewrite`
-/// in Claude/Cursor/Gemini/… hook configs and generated `#!/bin/sh` scripts).
+/// Binary token for **shell-executed** hook commands (`<binary> hook compress`
+/// and the like in Claude/Cursor/Gemini/… hook configs).
 ///
 /// Portable override (#708): the
 /// `hook_binary`, is emitted **verbatim** — for settings files synced across
@@ -159,101 +135,6 @@ fn resolve_hook_command_binary() -> String {
         return portable;
     }
     resolve_binary_path()
-}
-
-fn resolve_binary_path_for_bash() -> String {
-    if let Some(portable) = crate::core::portable_binary::hook_binary_override() {
-        return portable;
-    }
-    to_bash_compatible_path(&resolve_binary_path())
-}
-
-/// Shell-quotes a binary token for generated `#!/bin/sh` wrappers and
-/// `LEAN_CTX_BIN=` assignments (#719). Double quotes keep `$HOME`-style
-/// portable overrides (#708) expanding at execution time while paths with
-/// spaces survive word splitting (npm installs under
-/// `C:\Users\First Last\AppData\…`). `"` and `` ` `` are escaped; `$` stays
-/// active on purpose — portable forms rely on it.
-pub(crate) fn shell_quoted_binary(binary: &str) -> String {
-    let escaped = binary.replace('"', "\\\"").replace('`', "\\`");
-    format!("\"{escaped}\"")
-}
-
-/// #719: true when an existing generated wrapper references a portable binary
-/// form (`$HOME/…`, `${HOME}/…`, `%USERPROFILE%\…`) that resolves to an
-/// existing binary on THIS machine. Such a wrapper is healthy and must not be
-/// re-stamped with a machine-absolute path: on multi-machine synced setups
-/// (Dropbox'd `~/.claude`, different usernames) a heal on the machine WITHOUT
-/// the portable override would otherwise bake its absolute path into the
-/// wrapper, and every new session on the peer machine dies mid tool call with
-/// no surfaced error.
-fn wrapper_is_portable_and_working(path: &std::path::Path, home: &std::path::Path) -> bool {
-    std::fs::read_to_string(path)
-        .is_ok_and(|content| wrapper_content_is_portable_and_working(&content, home))
-}
-
-pub(crate) fn wrapper_content_is_portable_and_working(
-    content: &str,
-    home: &std::path::Path,
-) -> bool {
-    let Some(token) = wrapper_binary_token(content) else {
-        return false;
-    };
-    if !(token.contains("$HOME") || token.contains("${HOME}") || token.contains("%USERPROFILE%")) {
-        return false;
-    }
-    let home_s = home.to_string_lossy();
-    let expanded = token
-        .replace("${HOME}", &home_s)
-        .replace("$HOME", &home_s)
-        .replace("%USERPROFILE%", &home_s);
-    std::path::Path::new(&from_bash_to_native_path(&expanded)).exists()
-}
-
-/// Extracts the binary token from a generated wrapper script: the
-/// `LEAN_CTX_BIN=` assignment (rewrite scripts) or the `exec <binary> hook …`
-/// line (native wrappers) — quoted or bare.
-pub(crate) fn wrapper_binary_token(content: &str) -> Option<String> {
-    for line in content.lines() {
-        let t = line.trim();
-        if let Some(rest) = t.strip_prefix("LEAN_CTX_BIN=") {
-            let rest = rest.trim();
-            let tok = rest
-                .strip_prefix('"')
-                .map_or(rest, |r| r.split('"').next().unwrap_or_default());
-            if !tok.is_empty() {
-                return Some(tok.to_string());
-            }
-        }
-        if let Some(rest) = t.strip_prefix("exec ") {
-            let rest = rest.trim();
-            let tok = match rest.strip_prefix('"') {
-                Some(r) => r.split('"').next().unwrap_or_default().to_string(),
-                None => rest
-                    .split_whitespace()
-                    .next()
-                    .unwrap_or_default()
-                    .to_string(),
-            };
-            if !tok.is_empty() {
-                return Some(tok);
-            }
-        }
-    }
-    None
-}
-
-/// Writes a generated hook wrapper unless the portable override is unset AND
-/// the existing file already carries a working portable reference (#719) —
-/// healing must never replace a synced portable wrapper with a
-/// machine-absolute path.
-fn write_wrapper_file(path: &std::path::Path, content: &str, home: &std::path::Path) {
-    if crate::core::portable_binary::hook_binary_override().is_none()
-        && wrapper_is_portable_and_working(path, home)
-    {
-        return;
-    }
-    write_file(path, content);
 }
 
 pub fn to_bash_compatible_path(path: &str) -> String {
@@ -274,87 +155,6 @@ pub fn to_bash_compatible_path(path: &str) -> String {
 pub fn from_bash_to_native_path(path: &str) -> String {
     crate::core::pathutil::normalize_tool_path(path)
 }
-
-pub fn generate_rewrite_script(binary: &str) -> String {
-    let case_pattern = crate::rewrite_registry::bash_case_pattern();
-    // #719: assignment + rewritten command carry the binary quoted, so
-    // portable `$HOME/…` overrides expand at exec time and paths with spaces
-    // survive word splitting.
-    let quoted_binary = shell_quoted_binary(binary);
-    format!(
-        r#"#!/usr/bin/env bash
-# lean-ctx PreToolUse hook — rewrites bash commands to lean-ctx equivalents
-set -euo pipefail
-
-LEAN_CTX_BIN={quoted_binary}
-
-INPUT=$(cat)
-TOOL=$(echo "$INPUT" | grep -oE '"tool_name":"([^"\\]|\\.)*"' | head -1 | sed 's/^"tool_name":"//;s/"$//' | sed 's/\\"/"/g;s/\\\\/\\/g')
-
-case "$TOOL" in
-  Bash|bash|PowerShell|powershell) ;;
-  *) exit 0 ;;
-esac
-
-CMD=$(echo "$INPUT" | grep -oE '"command":"([^"\\]|\\.)*"' | head -1 | sed 's/^"command":"//;s/"$//' | sed 's/\\"/"/g;s/\\\\/\\/g')
-
-if [ -z "$CMD" ] || echo "$CMD" | grep -qE "^(lean-ctx |\"?$LEAN_CTX_BIN\"? )"; then
-  exit 0
-fi
-
-# Skip multi-line commands: the grep/sed extraction above does not decode
-# JSON \n into real newlines, so lean-ctx -c would receive fused lines (#787).
-if printf '%s' "$CMD" | grep -qF '\n'; then exit 0; fi
-
-case "$CMD" in
-  {case_pattern})
-    # Shell-escape then JSON-escape (two passes)
-    SHELL_ESC=$(printf '%s' "$CMD" | sed 's/\\/\\\\/g;s/"/\\"/g')
-    REWRITE="\"$LEAN_CTX_BIN\" -c \"$SHELL_ESC\""
-    JSON_CMD=$(printf '%s' "$REWRITE" | sed 's/\\/\\\\/g;s/"/\\"/g')
-    printf '{{"hookSpecificOutput":{{"hookEventName":"PreToolUse","permissionDecision":"allow","updatedInput":{{"command":"%s"}}}}}}' "$JSON_CMD"
-    ;;
-  *) exit 0 ;;
-esac
-"#
-    )
-}
-
-pub fn generate_compact_rewrite_script(binary: &str) -> String {
-    let case_pattern = crate::rewrite_registry::bash_case_pattern();
-    let quoted_binary = shell_quoted_binary(binary);
-    format!(
-        r#"#!/usr/bin/env bash
-# lean-ctx hook — rewrites shell commands
-set -euo pipefail
-LEAN_CTX_BIN={quoted_binary}
-INPUT=$(cat)
-CMD=$(echo "$INPUT" | grep -oE '"command":"([^"\\]|\\.)*"' | head -1 | sed 's/^"command":"//;s/"$//' | sed 's/\\"/"/g;s/\\\\/\\/g' 2>/dev/null || echo "")
-if [ -z "$CMD" ] || echo "$CMD" | grep -qE "^(lean-ctx |\"?$LEAN_CTX_BIN\"? )"; then exit 0; fi
-if printf '%s' "$CMD" | grep -qF '\n'; then exit 0; fi
-case "$CMD" in
-  {case_pattern})
-    SHELL_ESC=$(printf '%s' "$CMD" | sed 's/\\/\\\\/g;s/"/\\"/g')
-    REWRITE="\"$LEAN_CTX_BIN\" -c \"$SHELL_ESC\""
-    JSON_CMD=$(printf '%s' "$REWRITE" | sed 's/\\/\\\\/g;s/"/\\"/g')
-    printf '{{"hookSpecificOutput":{{"hookEventName":"PreToolUse","permissionDecision":"allow","updatedInput":{{"command":"%s"}}}}}}' "$JSON_CMD" ;;
-  *) exit 0 ;;
-esac
-"#
-    )
-}
-
-const REDIRECT_SCRIPT_CLAUDE: &str = r"#!/usr/bin/env bash
-# lean-ctx PreToolUse hook — all native tools pass through
-# Read/Grep/ListFiles are allowed so Edit (which requires native Read) works.
-# The MCP instructions guide the AI to prefer ctx_read/ctx_search/ctx_tree.
-exit 0
-";
-
-const REDIRECT_SCRIPT_GENERIC: &str = r"#!/usr/bin/env bash
-# lean-ctx hook — all native tools pass through
-exit 0
-";
 
 /// Install everything sobre puts into an agent's own configuration: the MCP
 /// server entry, the `sobre` skill where the agent supports skills and, where
@@ -422,15 +222,6 @@ fn ensure_state_dir(dir: &std::path::Path) -> bool {
         }
     }
 }
-
-#[cfg(unix)]
-fn make_executable(path: &PathBuf) {
-    use std::os::unix::fs::PermissionsExt;
-    let _ = std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755));
-}
-
-#[cfg(not(unix))]
-fn make_executable(_path: &PathBuf) {}
 
 /// The MCP server entry for the JSON-config agents. It carries no `env`: the
 /// server resolves its directories and project root itself.
