@@ -220,10 +220,6 @@ pub fn run() -> u32 {
         board.check(&managed_ort);
     }
 
-    // 5b4) Cognition v2 activation (science subsystems wired + active)
-    let cognition = cognition_activity_outcome();
-    board.check(&cognition);
-
     // 5c) Compact-format passthrough (preserve already-compact TOON output, #342)
     let passthrough_outcome = compact_format_passthrough_outcome();
     board.check(&passthrough_outcome);

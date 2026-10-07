@@ -2,7 +2,6 @@
 pub const MCP_MANIFEST_SCHEMA_VERSION: u32 = 1;
 pub const CCP_SESSION_BUNDLE_V1_SCHEMA_VERSION: u32 = 1;
 pub const GRAPH_REPRODUCIBILITY_V1_SCHEMA_VERSION: u32 = 1;
-pub const CONTEXT_SNAPSHOT_V1_SCHEMA_VERSION: u32 = 1;
 
 /// Stability classification of a contract document (GL #394).
 ///
@@ -87,14 +86,6 @@ pub fn contract_docs() -> Vec<ContractDoc> {
         // ── Experimental: may change without notice ─────────────────────────
         // Quality loop (GL #494): edit-failure feedback into mode selection.
         doc("quality-loop", "quality-loop-v1.md", 1, Experimental),
-        // Context Time Machine (GL #1022/#1023): git-anchored, signed temporal
-        // snapshot format — evolving additively until stable.
-        doc(
-            "context-snapshot",
-            "context-snapshot-v1.md",
-            1,
-            Experimental,
-        ),
     ]
 }
 

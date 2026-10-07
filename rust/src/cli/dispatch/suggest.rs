@@ -35,7 +35,6 @@ pub(crate) const KNOWN_COMMANDS: &[&str] = &[
     "knowledge",
     "compact",
     "config",
-    "introspect",
     "cache",
     "tee",
     "terse",

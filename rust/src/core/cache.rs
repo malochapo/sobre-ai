@@ -415,9 +415,6 @@ impl SessionCache {
                 out.insert(k.clone(), f64::from(strength) * HEBBIAN_PROTECT_WEIGHT);
             }
         }
-        if !out.is_empty() {
-            crate::core::introspect::tick("hebbian_cache");
-        }
         out
     }
 

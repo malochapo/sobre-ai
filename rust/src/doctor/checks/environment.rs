@@ -5,26 +5,6 @@
 use crate::doctor::common::*;
 use crate::doctor::{BOLD, DIM, GREEN, Outcome, RED, RST, YELLOW};
 
-/// Cognition v2 activation: how many science-backed subsystems have actually
-/// fired on this install. Proves the stack is wired (not dead code) without
-/// needing external instrumentation — `lean-ctx introspect cognition` drills in.
-pub(crate) fn cognition_activity_outcome() -> Outcome {
-    let snap = crate::core::introspect::snapshot();
-    let total = snap.len();
-    let active = snap.iter().filter(|(_, a)| a.count > 0).count();
-    // Before any tool calls have run nothing has fired yet — neutral, not a
-    // failure. Always pass; the value is the visibility, not a gate.
-    let line = if active == 0 {
-        format!(
-            "{BOLD}Cognition{RST}  {DIM}no activity recorded yet{RST}  {DIM}(inspect: lean-ctx introspect cognition){RST}"
-        )
-    } else {
-        format!(
-            "{BOLD}Cognition{RST}  {GREEN}{active}/{total} subsystems active{RST}  {DIM}(details: lean-ctx introspect cognition){RST}"
-        )
-    };
-    Outcome { ok: true, line }
-}
 /// Reports the format-aware passthrough (#342): output already in a compact,
 /// token-oriented format (TOON by default) is preserved verbatim instead of
 /// recompressed, so an agent's proof-of-output-shape survives intact.

@@ -6,9 +6,8 @@
 //! Only the URL is configuration (`[proxy.upstreams]`).
 //!
 //! Shape ≠ identity: the proxy understands four wire dialects (the shapes) and
-//! several provider identities map onto them. Compression, introspection and
-//! usage metering all run exactly as they do for the built-in routes of the
-//! same shape. The caller's own credentials are forwarded verbatim, except for
+//! several provider identities map onto them. Compression and usage metering
+//! run exactly as they do for the built-in routes of the same shape. The caller's own credentials are forwarded verbatim, except for
 //! Bedrock, which the proxy signs with SigV4.
 
 use axum::{

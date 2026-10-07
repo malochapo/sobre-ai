@@ -131,7 +131,6 @@ MEMORY:
     knowledge remember|recall|search|export|import|remove|status  Project facts
     gotchas list|clear|export|stats  Auto-detected error patterns
     learn [--mine <dir>]           Show learned gotchas (read-only)
-    snapshot create|list|show|verify|restore|publish|import  Signed context snapshots
     compact [path]                 Compact Claude Code / Cursor transcripts
 
 SETUP AND MAINTENANCE:
@@ -151,7 +150,6 @@ SETUP AND MAINTENANCE:
     verify-cache [path] [--json]   Prove the session cache
     conformance [--json]           Conformance scorecard (non-zero exit on failure)
     audit                          Audit-trail report with hash-chain check
-    introspect                     Which subsystems are active at runtime
     completions <shell>            Shell completion script
     stop | restart                 Stop or restart lean-ctx processes
     dev-install                    Build, install atomically, restart (development)
