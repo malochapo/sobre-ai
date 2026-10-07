@@ -8,28 +8,37 @@
 
 use crate::core::artifacts_exec::ort_provision;
 
-/// Download everything local embeddings need: the official ONNX Runtime and,
-/// in an embedding-enabled build, the configured model. The one place either
-/// is fetched outside an explicit `index build-semantic`.
+/// Download everything local embeddings need: the official ONNX Runtime and
+/// the configured model. The one place either is fetched outside an explicit
+/// `index build-semantic`. A build without embeddings downloads nothing.
 pub(crate) fn provision(force: bool) -> Result<(), String> {
-    println!(
-        "Fetching the official ONNX Runtime {} (CPU) from microsoft/onnxruntime…",
-        ort_provision::ORT_VERSION
-    );
-    let path = ort_provision::provision(force)?;
-    println!("Installed: {}", path.display());
+    #[cfg(not(feature = "embeddings"))]
+    {
+        let _ = force;
+        Err(
+            "this build has no local embeddings (built without --features dense), \
+             so there is nothing to download"
+                .to_string(),
+        )
+    }
     #[cfg(feature = "embeddings")]
     {
+        println!(
+            "Fetching the official ONNX Runtime {} (CPU) from microsoft/onnxruntime…",
+            ort_provision::ORT_VERSION
+        );
+        let path = ort_provision::provision(force)?;
+        println!("Installed: {}", path.display());
         println!("Fetching the embedding model from HuggingFace…");
         crate::core::embeddings::EmbeddingEngine::ensure_downloaded()
             .map_err(|e| format!("model download failed: {e}"))?;
         println!("Model installed.");
+        println!(
+            "Embeddings now work — semantic search picks this runtime up automatically \
+             (ORT_DYLIB_PATH still overrides it)."
+        );
+        Ok(())
     }
-    println!(
-        "Embeddings now work — semantic search picks this runtime up automatically \
-         (ORT_DYLIB_PATH still overrides it)."
-    );
-    Ok(())
 }
 
 pub(crate) fn cmd_embeddings(rest: &[String]) {

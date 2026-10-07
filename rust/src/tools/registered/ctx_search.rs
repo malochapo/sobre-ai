@@ -58,65 +58,74 @@ impl McpTool for CtxSearchTool {
     }
 
     fn tool_def(&self) -> Tool {
+        let mut schema = json!({
+            "type": "object",
+            "properties": {
+                "action": {
+                    "type": "string",
+                    "enum": ["regex", "semantic", "symbol", "reindex", "find_related"]
+                },
+                "pattern": { "type": "string" },
+                "query": { "type": "string" },
+                "name": { "type": "string" },
+                "handle": { "type": "string" },
+                "path": { "type": "string" },
+                "paths": { "type": "array", "items": { "type": "string" } },
+                "include": { "type": "string", "description": "Glob, e.g. *.rs" },
+                "exclude": { "type": "string" },
+                "exclude_pattern": { "type": "string" },
+                "anchored": { "type": "boolean" },
+                "max_results": { "type": "integer" },
+                "top_k": { "type": "integer" },
+                "workspace": { "type": "boolean", "description": "semantic: also search the configured search_roots" },
+                "file": { "type": "string" },
+                "kind": { "type": "string" },
+                "file_path": { "type": "string" },
+                "line": { "type": "integer" },
+                "queries": {
+                    "type": "array",
+                    "items": { "type": "object" }
+                }
+            },
+            "oneOf": [
+                {
+                    "properties": { "action": { "enum": ["regex"] } },
+                    "anyOf": [{ "required": ["pattern"] }, { "required": ["queries"] }]
+                },
+                {
+                    "properties": { "action": { "const": "semantic" } },
+                    "required": ["action", "query"]
+                },
+                {
+                    "properties": { "action": { "const": "symbol" } },
+                    "required": ["action"],
+                    "anyOf": [{ "required": ["name"] }, { "required": ["handle"] }]
+                },
+                {
+                    "properties": { "action": { "const": "reindex" } },
+                    "required": ["action"]
+                },
+                {
+                    "properties": { "action": { "const": "find_related" } },
+                    "required": ["action", "file_path", "line"]
+                }
+            ]
+        });
+        // Dense and hybrid ranking exist only in builds with local embeddings;
+        // elsewhere the schema does not offer them.
+        if cfg!(feature = "embeddings") {
+            schema["properties"]["mode"] = json!({
+                "type": "string",
+                "enum": ["bm25", "dense", "hybrid"],
+                "description": "semantic ranking (default bm25)"
+            });
+        }
         tool_def(
             "ctx_search",
             "Search code: regex(pattern, default) | semantic(query) | symbol(name|handle) | \
              reindex | find_related(file_path,line). anchored=true enables ctx_patch refs; \
              queries batches regex searches. Run ctx_compose FIRST.",
-            json!({
-                "type": "object",
-                "properties": {
-                    "action": {
-                        "type": "string",
-                        "enum": ["regex", "semantic", "symbol", "reindex", "find_related"]
-                    },
-                    "pattern": { "type": "string" },
-                    "query": { "type": "string" },
-                    "name": { "type": "string" },
-                    "handle": { "type": "string" },
-                    "path": { "type": "string" },
-                    "paths": { "type": "array", "items": { "type": "string" } },
-                    "include": { "type": "string", "description": "Glob, e.g. *.rs" },
-                    "exclude": { "type": "string" },
-                    "exclude_pattern": { "type": "string" },
-                    "anchored": { "type": "boolean" },
-                    "max_results": { "type": "integer" },
-                    "top_k": { "type": "integer" },
-                    "mode": { "type": "string", "enum": ["bm25", "dense", "hybrid"] },
-                    "workspace": { "type": "boolean", "description": "semantic: also search the configured search_roots" },
-                    "file": { "type": "string" },
-                    "kind": { "type": "string" },
-                    "file_path": { "type": "string" },
-                    "line": { "type": "integer" },
-                    "queries": {
-                        "type": "array",
-                        "items": { "type": "object" }
-                    }
-                },
-                "oneOf": [
-                    {
-                        "properties": { "action": { "enum": ["regex"] } },
-                        "anyOf": [{ "required": ["pattern"] }, { "required": ["queries"] }]
-                    },
-                    {
-                        "properties": { "action": { "const": "semantic" } },
-                        "required": ["action", "query"]
-                    },
-                    {
-                        "properties": { "action": { "const": "symbol" } },
-                        "required": ["action"],
-                        "anyOf": [{ "required": ["name"] }, { "required": ["handle"] }]
-                    },
-                    {
-                        "properties": { "action": { "const": "reindex" } },
-                        "required": ["action"]
-                    },
-                    {
-                        "properties": { "action": { "const": "find_related" } },
-                        "required": ["action", "file_path", "line"]
-                    }
-                ]
-            }),
+            schema,
         )
     }
 

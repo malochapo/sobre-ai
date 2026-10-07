@@ -331,6 +331,9 @@ pub(crate) fn handle_recall(
 
     if let Some(q) = query {
         let mode = mode.unwrap_or("auto").trim().to_lowercase();
+        // Whether an embedding index answered (it may still find nothing).
+        #[cfg_attr(not(feature = "embeddings"), allow(unused_mut))]
+        let mut embedded = false;
         #[cfg(feature = "embeddings")]
         {
             // Use non-blocking engine access for auto/hybrid: never block recall
@@ -345,6 +348,7 @@ pub(crate) fn handle_recall(
                     &knowledge.project_hash,
                 )
             {
+                embedded = true;
                 let limit = policy.knowledge.recall_facts_limit;
                 if mode == "semantic" {
                     let scored = crate::core::knowledge_embedding::semantic_recall_semantic_only(
@@ -395,8 +399,12 @@ pub(crate) fn handle_recall(
             }
         }
 
-        if mode == "semantic" {
-            return "Semantic recall requires embeddings. Run ctx_knowledge(action=\"embeddings_reindex\") and ensure embeddings are enabled.".to_string();
+        if !embedded && (mode == "semantic" || mode == "hybrid") {
+            return format!(
+                "mode={mode} recall needs embeddings: a build with --features dense and a \
+                 built index (ctx_knowledge action=\"embeddings_reindex\"). Use mode=auto \
+                 for lexical recall."
+            );
         }
 
         let limit = policy.knowledge.recall_facts_limit;

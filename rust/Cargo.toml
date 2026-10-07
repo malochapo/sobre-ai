@@ -68,7 +68,14 @@ default = [
 dense = ["embeddings"]
 jemalloc = ["dep:tikv-jemallocator", "dep:tikv-jemalloc-ctl"]
 dev-tools = []
-embeddings = ["dep:ort", "dep:ndarray", "dep:libloading", "dep:tokenizers"]
+embeddings = [
+    "dep:ort",
+    "dep:ndarray",
+    "dep:libloading",
+    "dep:tokenizers",
+    "dep:tar",
+    "dep:zip",
+]
 ort-cuda = ["ort?/cuda"]
 ort-webgpu = ["ort?/webgpu"]
 ort-rocm = ["ort?/rocm"]
@@ -167,8 +174,8 @@ ureq = { version = "3.3", features = ["platform-verifier"] }
 # PDF → text extraction for ctx_url_read (research context layer).
 # 0.12 pulls lopdf >=0.42 (RUSTSEC-2026-0187: stack overflow on deeply nested PDFs).
 pdf-extract = "0.12"
-tar = "0.4"
-zip = "8.6"
+tar = { version = "0.4", optional = true }
+zip = { version = "8.6", optional = true }
 tree-sitter-bash = { version = "0.25", optional = true }
 tree-sitter-scala = { version = "0.26", optional = true }
 tree-sitter-elixir = { version = "0.3", optional = true }

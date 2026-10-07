@@ -4,7 +4,7 @@
 //! On re-index, only files whose hash has changed get re-embedded,
 //! avoiding expensive model inference for unchanged code.
 //!
-//! Storage format: `~/.lean-ctx/vectors/<project_hash>/embeddings.bin` (postcard)
+//! Storage: `<data_dir>/vectors/<project_hash>/embeddings.bin` (postcard).
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -93,7 +93,7 @@ impl EmbeddingBuildOutcome {
 /// Called by the index orchestrator during `build-full` / `build` after the BM25
 /// index is ready.  This is a *background-friendly* operation: it runs the ONNX
 /// model incrementally (only chunks whose content hash changed) and persists
-/// `embeddings.bin` (postcard) so subsequent `ctx_semantic_search` calls find a warm cache.
+/// `embeddings.bin` (postcard) so later `ctx_search` dense/hybrid calls find a warm cache.
 ///
 /// Returns [`EmbeddingBuildOutcome`] — the orchestrator uses this to set the
 /// semantic component state without aborting the overall index build.
