@@ -195,12 +195,12 @@ pub mod session_domain {
 // ---------------------------------------------------------------------------
 pub mod neural;
 // ORT runtime glue links against the `ort` crate, which is only pulled in by the
-// `embeddings` or `neural` features. On platforms ORT does not support (e.g.
-// FreeBSD, see #586) these features are disabled, so the modules must be gated
+// `embeddings` feature. On platforms ORT does not support (e.g.
+// FreeBSD, see #586) it is disabled, so the modules must be gated
 // to keep the build clean without them.
-#[cfg(any(feature = "embeddings", feature = "neural"))]
+#[cfg(feature = "embeddings")]
 pub mod ort_environment;
-#[cfg(any(feature = "embeddings", feature = "neural"))]
+#[cfg(feature = "embeddings")]
 pub mod ort_execution_providers;
 
 // ---------------------------------------------------------------------------
@@ -300,7 +300,6 @@ pub mod index_orchestrator;
 pub mod index_paths;
 pub mod index_progress;
 pub mod ingestion;
-pub mod integrity;
 pub mod intent_engine;
 pub(crate) mod intent_lang;
 pub mod intent_router;

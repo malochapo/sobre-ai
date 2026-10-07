@@ -253,13 +253,13 @@ impl EmbeddingEngine {
         // deliberately happen inside the loop: retaining those buffers for the
         // entire corpus used to defeat the mini-batch cap under large indexes.
         let configured_batch_size: usize = {
-            #[cfg(any(feature = "embeddings", feature = "neural"))]
+            #[cfg(feature = "embeddings")]
             if crate::core::ort_execution_providers::gpu_active() {
                 256
             } else {
                 64
             }
-            #[cfg(not(any(feature = "embeddings", feature = "neural")))]
+            #[cfg(not(feature = "embeddings"))]
             64
         };
         // Approximate tokenizer tensors plus transformer activations per input.

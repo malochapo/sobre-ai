@@ -77,7 +77,6 @@ fn lean_ctx() -> Command {
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_lean-ctx"));
     // Mirror cli_characterization.rs: sandbox the binary so subcommands are
     // side-effect-free (no daemon, no real HOME writes).
-    cmd.env("LEAN_CTX_ACTIVE", "1");
     cmd.env("HOME", "/tmp/lean-ctx-entrypoint-test");
     cmd
 }

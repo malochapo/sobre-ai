@@ -1,4 +1,4 @@
-//! Install/environment wiring: leftover shell hooks, MCP registration, editor
+//! Install/environment wiring: MCP registration, editor
 //! surfaces, session state, CWD sanity, LSP servers.
 
 #[allow(clippy::wildcard_imports)]
@@ -37,62 +37,6 @@ pub(crate) fn compact_format_passthrough_outcome() -> Outcome {
         ),
     }
 }
-/// Shell files an older install may have edited (sobre itself never does).
-pub(crate) fn legacy_shell_files(home: &std::path::Path) -> Vec<std::path::PathBuf> {
-    vec![
-        home.join(".zshrc"),
-        home.join(".zshenv"),
-        home.join(".bashrc"),
-        home.join(".bashenv"),
-        home.join(".config").join("fish").join("config.fish"),
-        home.join("Documents")
-            .join("PowerShell")
-            .join("Microsoft.PowerShell_profile.ps1"),
-        home.join("Documents")
-            .join("WindowsPowerShell")
-            .join("Microsoft.PowerShell_profile.ps1"),
-    ]
-}
-
-fn has_legacy_block(path: &std::path::Path) -> bool {
-    std::fs::read_to_string(path).is_ok_and(|s| {
-        s.contains("lean-ctx shell hook")
-            || s.contains("lean-ctx agent aliases")
-            || s.contains("lean-ctx/shell-hook.")
-            || s.contains("lean-ctx\\shell-hook.")
-    })
-}
-
-/// sobre never edits shell rc files. A lean-ctx block found there is a
-/// leftover from an older install; `doctor --fix` removes it.
-pub(crate) fn legacy_shell_hook_outcome() -> Outcome {
-    let Some(home) = dirs::home_dir() else {
-        return Outcome {
-            ok: true,
-            line: format!("{BOLD}Shell files{RST}  {DIM}home directory not resolvable{RST}"),
-        };
-    };
-    let found: Vec<String> = legacy_shell_files(&home)
-        .iter()
-        .filter(|p| has_legacy_block(p))
-        .map(|p| display_user_path(p))
-        .collect();
-    if found.is_empty() {
-        Outcome {
-            ok: true,
-            line: format!("{BOLD}Shell files{RST}  {GREEN}untouched{RST}"),
-        }
-    } else {
-        Outcome {
-            ok: false,
-            line: format!(
-                "{BOLD}Shell files{RST}  {YELLOW}old lean-ctx shell hook in {} — {BOLD}lean-ctx doctor --fix{RST}{YELLOW} removes it{RST}",
-                found.join(", ")
-            ),
-        }
-    }
-}
-
 pub(crate) fn mcp_config_outcome() -> Outcome {
     let Some(home) = dirs::home_dir() else {
         return Outcome {

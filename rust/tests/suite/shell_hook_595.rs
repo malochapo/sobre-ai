@@ -25,7 +25,6 @@ fn run_dash_c(command: &str, home: &Path) -> Output {
         // A `lean-ctx`-wrapped parent (e.g. the dev shell hook running the test
         // suite) would otherwise leak these and make `-c` pass through raw.
         .env_remove("LEAN_CTX_WRAPPED")
-        .env_remove("LEAN_CTX_ACTIVE")
         .output()
         .expect("failed to spawn lean-ctx binary")
 }

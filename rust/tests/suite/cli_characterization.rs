@@ -9,7 +9,6 @@ use std::{
 
 fn lean_ctx() -> Command {
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_lean-ctx"));
-    cmd.env("LEAN_CTX_ACTIVE", "1");
     cmd.env("HOME", "/tmp/lean-ctx-cli-test");
     cmd
 }

@@ -21,7 +21,6 @@ fn read_output(home: &Path, file: &Path, mode: &str) -> Output {
     std::fs::write(data.join("config.toml"), "compression_level = 0.7\n").unwrap();
     Command::new(env!("CARGO_BIN_EXE_lean-ctx"))
         .args(["read", file.to_str().unwrap(), "-m", mode, "--fresh"])
-        .env("LEAN_CTX_ACTIVE", "1")
         .env("LEAN_CTX_DATA_DIR", &data)
         .env("HOME", home)
         .output()

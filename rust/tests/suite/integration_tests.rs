@@ -27,7 +27,6 @@ fn isolated_config_dir() -> &'static Path {
 fn lean_ctx_bin() -> Command {
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_lean-ctx"));
     cmd.current_dir(env!("CARGO_MANIFEST_DIR"));
-    cmd.env("LEAN_CTX_ACTIVE", "1");
     cmd.env("LEAN_CTX_STATE_DIR", isolated_state_dir());
     cmd.env("LEAN_CTX_CONFIG_DIR", isolated_config_dir());
     cmd
@@ -158,14 +157,12 @@ fn redirect_fidelity_command() -> &'static str {
 }
 
 /// `lean-ctx -c` with a *hermetic* control environment for the compression
-/// fidelity tests. CI may set `LEAN_CTX_ACTIVE`; stripping it pins the exact
-/// forced-compress path. `LEAN_CTX_WRAPPED` must go too: running `cargo test` *through* the lean-ctx
+/// fidelity tests. `LEAN_CTX_WRAPPED` must go: running `cargo test` *through* the lean-ctx
 /// wrapper stamps it on every child, and the nested `lean-ctx -c` under test
 /// would then (correctly) defer to the parent instead of compressing.
 fn forced_compress_bin() -> Command {
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_lean-ctx"));
     cmd.current_dir(env!("CARGO_MANIFEST_DIR"))
-        .env_remove("LEAN_CTX_ACTIVE")
         .env_remove("LEAN_CTX_WRAPPED")
         .env("LEAN_CTX_STATE_DIR", isolated_state_dir())
         .env("LEAN_CTX_CONFIG_DIR", isolated_config_dir());

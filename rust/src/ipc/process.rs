@@ -192,8 +192,8 @@ pub fn force_kill(pid: u32) -> Result<()> {
 /// member of its own process group.
 ///
 /// The ancestor chain matters whenever `lean-ctx stop`/`dev-install` runs
-/// *under* lean-ctx itself — the shell hook routes commands through a
-/// `lean-ctx -c` wrapper, so the process tree is
+/// *under* lean-ctx itself — a `lean-ctx -c` wrapper (Cursor/Gemini hooks)
+/// can be the parent, so the process tree is
 /// `lean-ctx -c … → sh → lean-ctx dev-install`. Excluding only `getpid()`
 /// SIGTERMed the wrapper parent, which took the whole pipeline down mid-run
 /// (exit 143) before autostart was re-enabled (#714).

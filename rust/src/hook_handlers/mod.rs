@@ -139,7 +139,6 @@ fn is_shell_tool(tool_name: &str) -> bool {
 /// `/c/...` form breaks `CreateProcess` on Windows and cannot be run by
 /// PowerShell or cmd (#518). Native `C:/...` runs in PowerShell, cmd *and*
 /// Git Bash, so it is the correct universal form for executed commands.
-/// (MSYS `/c/...` is only needed for bash *source* lines — see `cli::shell_init`.)
 fn resolve_binary() -> String {
     crate::core::portable_binary::resolve_portable_binary()
 }

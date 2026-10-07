@@ -47,7 +47,7 @@ const REFRESH_EXEMPT_AGENTS: &[&str] = &[
 
 /// Silently refresh all hook scripts for agents that are already configured.
 /// Called after updates and on MCP server start to ensure hooks match the
-/// current binary version. Every hook-capable agent with a global shell hook is
+/// current binary version. Every hook-capable agent with a global hook is
 /// covered (the rest are explicitly exempted, enforced by test).
 pub fn refresh_installed_hooks() {
     let Some(home) = crate::core::home::resolve_home_dir() else {
