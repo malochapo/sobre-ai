@@ -97,10 +97,6 @@ pub(crate) fn cmd_index(args: &[String]) {
                 eprintln!("  BM25 error: {err}");
             }
 
-            // The property graph was already mirrored from the graph_index
-            // extractor inside ensure_all_background above (#682.2).
-            eprintln!("property graph mirrored from graph_index during index build");
-
             // Build semantic (dense embedding) index on top of the fresh BM25.
             wait_semantic_progress(&project_root);
             let sem = crate::core::index_orchestrator::semantic_summary(&project_root);
@@ -116,26 +112,19 @@ pub(crate) fn cmd_index(args: &[String]) {
                     }
                 }
             }
-
-            // build-full is an explicit "make everything fresh": drop the
-            // in-process graph cache so ctx_read re-derives map/signatures
-            // instead of serving pre-rebuild output (#420).
-            crate::core::graph_cache::invalidate(Some(&project_root));
         }
         Some("build-graph") => {
-            // #682.1: mirror the proven graph_index extractor into the property
-            // graph (complete symbols + file_catalog).
             match crate::core::graph_provider::build_property_graph(&project_root) {
                 Ok(()) => match crate::core::property_graph::CodeGraph::open(&project_root) {
                     Ok(g) => println!(
-                        "property graph built from graph_index: {} nodes, {} edges, {} files",
+                        "graph built: {} nodes, {} edges, {} files",
                         g.node_count().unwrap_or(0),
                         g.edge_count().unwrap_or(0),
                         g.file_catalog_count().unwrap_or(0),
                     ),
-                    Err(_) => println!("property graph built from graph_index"),
+                    Err(_) => println!("graph built"),
                 },
-                Err(e) => eprintln!("property graph build failed: {e}"),
+                Err(e) => eprintln!("graph build failed: {e}"),
             }
         }
         Some("build-semantic") => {

@@ -256,7 +256,6 @@ pub mod pricing;
 pub mod quality_benchmark;
 
 pub mod edit_quality;
-pub mod graph_cache;
 pub mod http_client;
 pub mod import_resolver;
 pub mod index_admission;

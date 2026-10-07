@@ -97,7 +97,7 @@ fn handle_related(path: Option<&str>, root: &str) -> String {
 
     let rel_target = graph_index::graph_relative_key(target, root);
 
-    let related = open.provider.related(&rel_target, 2);
+    let related = open.related(&rel_target, 2);
     if related.is_empty() {
         return format!(
             "No related files found for {}",
@@ -136,16 +136,14 @@ fn handle_symbol(
     // (and every other language) symbols are reachable without a file qualifier
     // (#314).
     let Some((file_part, symbol_name)) = spec.split_once("::") else {
-        return resolve_bare_symbol(&open.provider, spec, root, cache, crp_mode);
+        return resolve_bare_symbol(&open, spec, root, cache, crp_mode);
     };
 
     let rel_file = graph_index::graph_relative_key(file_part, root);
 
     let key = format!("{rel_file}::{symbol_name}");
-    let Some(symbol) = open.provider.get_symbol(&key) else {
-        let available = open
-            .provider
-            .find_symbols(symbol_name, Some(&rel_file), None);
+    let Some(symbol) = open.get_symbol(&key) else {
+        let available = open.find_symbols(symbol_name, Some(&rel_file), None);
         if available.is_empty() {
             return format!(
                 "Symbol '{symbol_name}' not found in {rel_file}. Run ctx_graph action='build' to update the index."
@@ -377,7 +375,7 @@ fn handle_impact(path: Option<&str>, root: &str) -> String {
     let Some(open) = graph_provider::open_or_build(root) else {
         return "No graph index found. Run ctx_graph with action='build' first.".to_string();
     };
-    let gp = &open.provider;
+    let gp = &open;
 
     let rel_target = graph_index::graph_relative_key(target, root);
     let module_prefixes = file_path_to_module_prefixes(&rel_target, root, gp);
@@ -445,7 +443,7 @@ fn handle_status(root: &str) -> String {
     let Some(open) = graph_provider::open_best_effort(root) else {
         return "No graph index. Run ctx_graph action='build' to create one.".to_string();
     };
-    let gp = &open.provider;
+    let gp = &open;
 
     let file_paths = gp.file_paths();
     let mut by_lang: HashMap<String, usize> = HashMap::new();
@@ -467,11 +465,10 @@ fn handle_status(root: &str) -> String {
         .join(" ");
 
     format!(
-        "Graph: {} files, {} symbols, {} edges ({:?}) | {} tok total\nLast scan: {}\nLanguages: {lang_summary}\nStored: {}",
+        "Graph: {} files, {} symbols, {} edges | {} tok total\nLast scan: {}\nLanguages: {lang_summary}\nStored: {}",
         gp.file_count(),
         gp.symbol_count(),
         gp.edge_count().unwrap_or(0),
-        open.source,
         total_tokens,
         gp.last_scan(),
         GraphProvider::index_dir(root)
@@ -511,7 +508,7 @@ mod tests {
     #[test]
     fn test_file_path_to_module_prefixes_rust() {
         let gp =
-            GraphProvider::GraphIndex(crate::core::graph_index::ProjectIndex::new("/nonexistent"));
+            GraphProvider::from_index(&crate::core::graph_index::ProjectIndex::new("/nonexistent"));
         let prefixes = file_path_to_module_prefixes("src/core/cache.rs", "/nonexistent", &gp);
         assert!(prefixes.contains(&"crate::core::cache".to_string()));
         assert!(prefixes.contains(&"core::cache".to_string()));
@@ -520,7 +517,7 @@ mod tests {
     #[test]
     fn test_file_path_to_module_prefixes_mod_rs() {
         let gp =
-            GraphProvider::GraphIndex(crate::core::graph_index::ProjectIndex::new("/nonexistent"));
+            GraphProvider::from_index(&crate::core::graph_index::ProjectIndex::new("/nonexistent"));
         let prefixes = file_path_to_module_prefixes("src/core/mod.rs", "/nonexistent", &gp);
         assert!(prefixes.contains(&"crate::core".to_string()));
         assert!(!prefixes.iter().any(|p| p.contains("mod")));
@@ -531,7 +528,7 @@ mod tests {
         // GDScript import edges store the resolved project-relative path, so the
         // path itself must be among the prefixes `graph impact` matches on (#314).
         let gp =
-            GraphProvider::GraphIndex(crate::core::graph_index::ProjectIndex::new("/nonexistent"));
+            GraphProvider::from_index(&crate::core::graph_index::ProjectIndex::new("/nonexistent"));
         let prefixes = file_path_to_module_prefixes("actors/Player.gd", "/nonexistent", &gp);
         assert!(
             prefixes.contains(&"actors/Player.gd".to_string()),

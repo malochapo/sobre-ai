@@ -67,7 +67,7 @@ pub fn pre_dispatch_read(
     if let Some(root) = project_root
         && let Some(open) = try_load_graph(root)
     {
-        let gp = &open.provider;
+        let gp = &open;
         let related = gp.related(path, 1);
         if let Some(task_str) = task {
             let intent = crate::core::intent_engine::StructuredIntent::from_query(task_str);
@@ -116,7 +116,7 @@ pub fn pre_dispatch_read(
     no_change
 }
 
-fn try_load_graph(project_root: &str) -> Option<crate::core::graph_provider::OpenGraphProvider> {
+fn try_load_graph(project_root: &str) -> Option<crate::core::graph_provider::GraphProvider> {
     crate::core::graph_provider::open_best_effort(project_root)
 }
 

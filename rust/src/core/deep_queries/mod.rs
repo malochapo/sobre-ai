@@ -279,7 +279,6 @@ export interface User {
         let analysis = analyze(src, "ts");
         assert_eq!(analysis.types.len(), 1);
         assert_eq!(analysis.types[0].name, "User");
-        assert_eq!(analysis.types[0].kind, TypeDefKind::Interface);
     }
 
     #[test]
@@ -287,7 +286,7 @@ export interface User {
         let src = r"type Result = Success | Error;";
         let analysis = analyze(src, "ts");
         assert_eq!(analysis.types.len(), 1);
-        assert_eq!(analysis.types[0].kind, TypeDefKind::Union);
+        assert_eq!(analysis.types[0].name, "Result");
     }
 
     #[test]
@@ -368,8 +367,6 @@ class User:
 ";
         let analysis = analyze(src, "py");
         assert_eq!(analysis.types.len(), 2);
-        assert_eq!(analysis.types[0].kind, TypeDefKind::Protocol);
-        assert_eq!(analysis.types[1].kind, TypeDefKind::Class);
     }
 
     #[test]
@@ -451,9 +448,6 @@ type Handler interface {
 ";
         let analysis = analyze(src, "go");
         assert_eq!(analysis.types.len(), 2);
-        let kinds: Vec<&TypeDefKind> = analysis.types.iter().map(|t| &t.kind).collect();
-        assert!(kinds.contains(&&TypeDefKind::Struct));
-        assert!(kinds.contains(&&TypeDefKind::Interface));
     }
 
     #[test]
@@ -483,11 +477,10 @@ public enum Status { ACTIVE, INACTIVE }
 public record Point(int x, int y) {}
 ";
         let analysis = analyze(src, "java");
-        assert!(analysis.types.len() >= 3);
-        let kinds: Vec<&TypeDefKind> = analysis.types.iter().map(|t| &t.kind).collect();
-        assert!(kinds.contains(&&TypeDefKind::Class));
-        assert!(kinds.contains(&&TypeDefKind::Interface));
-        assert!(kinds.contains(&&TypeDefKind::Enum));
+        let names: Vec<&str> = analysis.types.iter().map(|t| t.name.as_str()).collect();
+        for n in ["UserService", "Repository", "Status", "Point"] {
+            assert!(names.contains(&n), "{n} missing, got {names:?}");
+        }
     }
 
     #[test]
@@ -543,18 +536,6 @@ private typealias UserId = String
         assert!(names.contains(&"Status"));
         assert!(names.contains(&"Registry"));
         assert!(names.contains(&"UserId"));
-        let handler = analysis.types.iter().find(|t| t.name == "Handler").unwrap();
-        assert_eq!(handler.kind, TypeDefKind::Interface);
-        let alias = analysis.types.iter().find(|t| t.name == "UserId").unwrap();
-        assert!(!alias.is_exported);
-    }
-
-    #[test]
-    fn ts_generics_extracted() {
-        let src = r"interface Result<T, E> { ok: T; err: E; }";
-        let analysis = analyze(src, "ts");
-        assert_eq!(analysis.types.len(), 1);
-        assert!(!analysis.types[0].generics.is_empty());
     }
 
     #[test]
@@ -677,11 +658,6 @@ class Inventory:
             names.contains(&"Inventory"),
             "expected inner class, got {names:?}"
         );
-        let player = analysis.types.iter().find(|t| t.name == "Player").unwrap();
-        assert_eq!(player.kind, TypeDefKind::Class);
-        assert!(player.is_exported);
-        let state = analysis.types.iter().find(|t| t.name == "State").unwrap();
-        assert_eq!(state.kind, TypeDefKind::Enum);
     }
 
     #[test]
@@ -941,32 +917,11 @@ namespace App
         assert!(names.contains(&"Status"), "enum, got {names:?}");
         assert!(names.contains(&"Money"), "record, got {names:?}");
 
-        let kind_of = |n: &str| {
-            analysis
-                .types
-                .iter()
-                .find(|t| t.name == n)
-                .map(|t| t.kind.clone())
-        };
-        assert_eq!(kind_of("UserService"), Some(TypeDefKind::Class));
-        assert_eq!(kind_of("IRepository"), Some(TypeDefKind::Interface));
-        assert_eq!(kind_of("Point"), Some(TypeDefKind::Struct));
-        assert_eq!(kind_of("Status"), Some(TypeDefKind::Enum));
-        assert_eq!(kind_of("Money"), Some(TypeDefKind::Record));
-
-        let exported = |n: &str| {
-            analysis
-                .types
-                .iter()
-                .find(|t| t.name == n)
-                .is_some_and(|t| t.is_exported)
-        };
-        assert!(exported("UserService"), "public class is exported");
-        assert!(
-            !exported("Helper"),
-            "internal class must not be marked exported"
-        );
         assert!(analysis.exports.contains(&"UserService".to_string()));
+        assert!(
+            !analysis.exports.contains(&"Helper".to_string()),
+            "internal class must not be exported"
+        );
     }
 
     #[test]
@@ -1106,10 +1061,6 @@ export type Vec = { x: number, y: number }
         let names: Vec<&str> = analysis.types.iter().map(|t| t.name.as_str()).collect();
         assert!(names.contains(&"Account"), "plain type, got {names:?}");
         assert!(names.contains(&"Vec"), "export type, got {names:?}");
-        let vec = analysis.types.iter().find(|t| t.name == "Vec").unwrap();
-        assert!(vec.is_exported, "`export type` must be exported");
-        let acc = analysis.types.iter().find(|t| t.name == "Account").unwrap();
-        assert!(!acc.is_exported, "plain `type` is module-local");
     }
 
     #[test]

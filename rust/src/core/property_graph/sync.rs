@@ -20,16 +20,12 @@ use std::path::Path;
 use std::time::{Duration, Instant};
 
 /// Map a graph_index edge-kind string onto a property-graph [`EdgeKind`].
-///
-/// `import` → `Imports` and `reexport` → `Module` keep both inside
-/// `STRUCTURAL_EDGE_KINDS` (so dependency/impact queries see them) while
-/// preserving the distinction graph_index draws between the two. Other kinds
-/// (`calls`, `exports`, `module`, `cochange`, `sibling`, …) round-trip through
-/// [`EdgeKind::parse`].
-fn map_edge_kind(kind: &str) -> EdgeKind {
+/// `import` → `Imports` and `reexport` → `Module`; the other kinds share their
+/// spelling. `None` for a kind the graph does not model.
+fn map_edge_kind(kind: &str) -> Option<EdgeKind> {
     match kind {
-        "import" => EdgeKind::Imports,
-        "reexport" => EdgeKind::Module,
+        "import" => Some(EdgeKind::Imports),
+        "reexport" => Some(EdgeKind::Module),
         other => EdgeKind::parse(other),
     }
 }
@@ -125,22 +121,21 @@ pub(crate) fn populate_from_project_index(
     // 3) Edges → structural edges between file nodes. `upsert_node` is
     //    idempotent, so re-resolving endpoint ids is safe and cheap.
     for e in &index.edges {
+        let Some(kind) = map_edge_kind(&e.kind) else {
+            tracing::warn!("[graph mirror: unknown edge kind {}]", e.kind);
+            continue;
+        };
         let from_id = graph.upsert_node(&Node::file(&e.from))?;
         let to_id = graph.upsert_node(&Node::file(&e.to))?;
-        graph.upsert_edge(&Edge::new(from_id, to_id, map_edge_kind(&e.kind)))?;
+        graph.upsert_edge(&Edge::new(from_id, to_id, kind))?;
     }
 
     tx.commit()?;
     Ok(())
 }
 
-/// Reliable, reusable PG build entry (#682.2): open the project's graph store,
-/// populate it from `index`, and stamp `graph.meta.json`.
-///
-/// Used by both the index orchestrator (with the index it just scanned) and the
-/// `graph_provider` builder (after a load-or-scan), so the property graph is
-/// built by the same worker that builds the JSON index — no dedicated
-/// fire-and-forget thread that dies in short-lived processes.
+/// Open the project's graph store, populate it from `index`, and stamp
+/// `graph.meta.json`. Called once per scan, by `ProjectIndex::save`.
 pub fn mirror_index(project_root: &str, index: &ProjectIndex) -> anyhow::Result<()> {
     let t0 = Instant::now();
     let graph = CodeGraph::open(project_root)?;
@@ -193,7 +188,6 @@ fn git_is_dirty(root: &Path) -> bool {
 mod tests {
     use super::*;
     use crate::core::graph_index::{FileEntry, IndexEdge, SymbolEntry};
-    use crate::core::graph_provider::GraphProvider;
 
     fn file_entry(path: &str) -> FileEntry {
         FileEntry {
@@ -259,40 +253,6 @@ mod tests {
         assert_eq!(pg.symbol_count().unwrap(), 2, "both symbols mirrored");
         assert!(pg.node_count().unwrap() >= 3 + 2, "file + symbol nodes");
         assert!(pg.edge_count().unwrap() >= 2, "import edges mirrored");
-    }
-
-    #[test]
-    fn facade_parity_property_graph_equals_graph_index() {
-        let pg = CodeGraph::open_in_memory().unwrap();
-        let idx = fixture_index();
-        populate_from_project_index(&pg, &idx).unwrap();
-
-        let gi = GraphProvider::GraphIndex(fixture_index());
-        let pgp = GraphProvider::PropertyGraph(pg);
-
-        assert_eq!(pgp.file_count(), gi.file_count());
-        assert_eq!(pgp.file_paths(), gi.file_paths());
-        assert_eq!(pgp.symbol_count(), gi.symbol_count());
-
-        // structural dependencies (import edges) must agree exactly
-        let mut pg_dep = pgp.dependencies("src/a.rs");
-        let mut gi_dep = gi.dependencies("src/a.rs");
-        pg_dep.sort();
-        gi_dep.sort();
-        assert_eq!(pg_dep, gi_dep, "dependencies must match");
-
-        let mut pg_rdep = pgp.dependents("src/b.rs");
-        let mut gi_rdep = gi.dependents("src/b.rs");
-        pg_rdep.sort();
-        gi_rdep.sort();
-        assert_eq!(pg_rdep, gi_rdep, "dependents must match");
-
-        let pg_sym = pgp.get_symbol("src/a.rs::run").expect("pg symbol");
-        let gi_sym = gi.get_symbol("src/a.rs::run").expect("gi symbol");
-        assert_eq!(pg_sym.name, gi_sym.name);
-        assert_eq!(pg_sym.file, gi_sym.file);
-        assert_eq!(pg_sym.start_line, gi_sym.start_line);
-        assert_eq!(pg_sym.end_line, gi_sym.end_line);
     }
 
     #[test]

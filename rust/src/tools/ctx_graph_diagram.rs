@@ -25,7 +25,7 @@ fn render_dep_graph(file: Option<&str>, depth: usize, project_root: &str) -> Str
     let Some(open) = graph_provider::open_or_build(project_root) else {
         return "No dependency edges found in project index.".to_string();
     };
-    let all_edges = open.provider.edges();
+    let all_edges = open.edges();
 
     if all_edges.is_empty() {
         return "No dependency edges found in project index.".to_string();

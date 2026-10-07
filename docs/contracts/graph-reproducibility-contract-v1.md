@@ -26,9 +26,19 @@ This contract covers:
 
 ### Explicit rebuild
 
-- `ctx_impact action=build` is the authoritative rebuild:
-  - Clears and rebuilds `graph.db` (in `$LEAN_CTX_DATA_DIR/graphs/<project_hash>/`)
-  - Writes `graph.meta.json` alongside the database
+- `ctx_impact action=build` rescans the project and rewrites `graph.db` (in
+  `$LEAN_CTX_DATA_DIR/graphs/<project_hash>/`) and `graph.meta.json` alongside
+  it. Files whose content hash is unchanged are reused, so the result equals a
+  build from scratch.
+- There is one extractor: `ctx_impact build`, `ctx_graph build` and
+  `lean-ctx graph build` all run the same scan.
+
+### Edge semantics
+
+- Dependencies, dependents, impact and chains follow code references only:
+  imports, module declarations and re-exports, and type uses.
+- `related` also follows two heuristics: files changed together in git and
+  files in the same directory.
 
 ### Freshness check
 

@@ -23,7 +23,6 @@ accessor function.
 | L7 | `STATS_BUFFER` | `core/stats/mod.rs` | `Mutex<Option<(StatsStore, StatsStore, Instant)>>` | Token-savings statistics |
 | L8 | `COST_BUFFER` | `core/a2a/cost_attribution.rs` | `Mutex<Option<CostStore>>` | A2A cost tracking |
 | L17 | `FILE_LOCKS` | `core/path_locks.rs` (fn-local in `per_file_lock`) | `OnceLock<Mutex<HashMap<String, Arc<Mutex<()>>>>>` | Per-file serialization of reads and edits for concurrent subagents |
-| L19 | `CACHE` (graph) | `core/graph_cache.rs` | `OnceLock<Mutex<HashMap<String, Entry>>>` | Resident materialized graph-index cache |
 | L20 | `RECENT` | `core/auto_findings.rs` | `Mutex<Vec<RecentEntry>>` | Recent auto-finding entries |
 | L22 | `BACKENDS` | `lsp/router.rs` | `LazyLock<Mutex<HashMap<String, Box<dyn LspBackend>>>>` | Per-language language-server client registry; on a miss the client is started from the built-in server table while the lock is held. Independent leaf lock |
 | L27 | `CACHE` (git) | `core/git_cache.rs` | `LazyLock<Mutex<GitCache>>` | Cached git metadata (branch, status) |

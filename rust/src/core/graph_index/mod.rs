@@ -305,20 +305,16 @@ impl ProjectIndex {
             .map(|d| d.join("graphs").join(hash))
     }
 
-    /// Reconstruct the index from the property graph — the sole persistence
-    /// store since #696 C4. The PG is a parity-proven lossless superset of the
-    /// former JSON index, so this is a faithful round-trip (see
-    /// `graph_provider::materialize_project_index` + its round-trip test).
+    /// Reconstruct the index from the property graph, its only store (see
+    /// `graph_provider::materialize_project_index` and its round-trip test).
     /// `None` when the graph has not been built yet (empty file catalog).
     pub fn load(project_root: &str) -> Option<Self> {
         let graph = crate::core::property_graph::CodeGraph::open(project_root).ok()?;
         if graph.file_catalog_count().unwrap_or(0) == 0 {
             return None;
         }
-        let provider = crate::core::graph_provider::GraphProvider::PropertyGraph(graph);
-        let mut index = provider.materialize_project_index(project_root);
-        index.rebuild_interner();
-        Some(index)
+        let provider = crate::core::graph_provider::GraphProvider::new(graph, project_root);
+        Some(provider.materialize_project_index())
     }
 
     /// Persist the index by mirroring it into the property graph (the sole store
@@ -386,36 +382,6 @@ impl ProjectIndex {
 
     pub fn edge_count(&self) -> usize {
         self.edges.len()
-    }
-
-    pub fn get_symbol(&self, key: &str) -> Option<&SymbolEntry> {
-        self.symbols.get(key)
-    }
-
-    pub fn get_related(&self, path: &str, depth: usize) -> Vec<String> {
-        let mut result = Vec::new();
-        let mut visited = std::collections::HashSet::new();
-        let mut queue: Vec<(String, usize)> = vec![(path.to_string(), 0)];
-
-        while let Some((current, d)) = queue.pop() {
-            if d > depth || visited.contains(&current) {
-                continue;
-            }
-            visited.insert(current.clone());
-            if current != path {
-                result.push(current.clone());
-            }
-
-            for edge in &self.edges {
-                if edge.from == current && !visited.contains(&edge.to) {
-                    queue.push((edge.to.clone(), d + 1));
-                }
-                if edge.to == current && !visited.contains(&edge.from) {
-                    queue.push((edge.from.clone(), d + 1));
-                }
-            }
-        }
-        result
     }
 }
 

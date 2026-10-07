@@ -266,7 +266,7 @@ fn reconstruct(prev: &HashMap<String, String>, from: &str, to: &str) -> Vec<Stri
     chain
 }
 
-fn open_graph(root: &str) -> Result<graph_provider::OpenGraphProvider, String> {
+fn open_graph(root: &str) -> Result<graph_provider::GraphProvider, String> {
     graph_provider::open_or_build(root)
         .ok_or_else(|| "No graph index found. Run ctx_graph with action='build' first.".to_string())
 }
@@ -290,7 +290,7 @@ pub fn neighbors(
         Ok(o) => o,
         Err(e) => return e,
     };
-    let gp = &open.provider;
+    let gp = &open;
     let adj = Adj::build(&gp.edges(), &gp.file_paths());
     let node = match adj.resolve(input, root) {
         Ok(n) => n,
@@ -398,7 +398,7 @@ pub fn shortest_path(
         Ok(o) => o,
         Err(e) => return e,
     };
-    let gp = &open.provider;
+    let gp = &open;
     let adj = Adj::build(&gp.edges(), &gp.file_paths());
     let na = match adj.resolve(a, root) {
         Ok(n) => n,

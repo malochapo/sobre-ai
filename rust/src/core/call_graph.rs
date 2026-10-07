@@ -59,7 +59,7 @@ impl CallGraphInputs {
     /// behaviour of building from an empty index.
     pub fn open(project_root: &str) -> Self {
         match crate::core::graph_provider::open_or_build(project_root) {
-            Some(open) => Self::from_provider(project_root, &open.provider),
+            Some(open) => Self::from_provider(project_root, &open),
             None => Self {
                 project_root: normalize_project_root(project_root),
                 ..Default::default()

@@ -75,6 +75,7 @@ impl Node {
         }
     }
 
+    #[cfg(test)]
     pub fn with_lines(mut self, start: usize, end: usize) -> Self {
         self.line_start = Some(start);
         self.line_end = Some(end);
@@ -162,22 +163,6 @@ pub(super) fn get_by_symbol(
         )
         .optional()?;
     Ok(result)
-}
-
-pub(super) fn remove_by_file(conn: &Connection, file_path: &str) -> anyhow::Result<()> {
-    conn.execute(
-        "DELETE FROM edges WHERE source_id IN (
-             SELECT n.id FROM nodes n JOIN paths p ON p.id = n.file_id WHERE p.path = ?1
-         ) OR target_id IN (
-             SELECT n.id FROM nodes n JOIN paths p ON p.id = n.file_id WHERE p.path = ?1
-         )",
-        params![file_path],
-    )?;
-    conn.execute(
-        "DELETE FROM nodes WHERE file_id = (SELECT id FROM paths WHERE path = ?1)",
-        params![file_path],
-    )?;
-    Ok(())
 }
 
 pub(super) fn find_symbols(

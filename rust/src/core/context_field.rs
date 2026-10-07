@@ -1,14 +1,9 @@
-//! Context Field Theory (CFT) -- unified potential function for context items.
+//! A scalar score Phi(i,t) per context item, used to rank and evict items in
+//! the context ledger.
 //!
-//! Combines information-theoretic and graph-based signals into a
-//! single scalar potential Phi(i,t) per context item, enabling principled
-//! budget allocation and view selection.
-//!
-//! Scientific basis:
-//!   Phi(i,t) = w_R*R + w_S*S + w_G*G - w_C*C - w_D*D
+//!   Phi(i,t) = w_R*R + w_S*S - w_C*C - w_D*D
 //! where R = task relevance (keyword overlap with the task),
 //!       S = surprise (cross-entropy with Zipfian prior),
-//!       G = graph proximity (weighted BFS distance),
 //!       C = token cost for the active view,
 //!       D = redundancy with already-selected items (Jaccard).
 
@@ -183,12 +178,10 @@ pub struct Provenance {
 // ---------------------------------------------------------------------------
 
 /// Weights for the potential function components.
-/// Adapted via Thompson Sampling (bandit.rs) over time.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FieldWeights {
     pub w_relevance: f64,
     pub w_surprise: f64,
-    pub w_graph: f64,
     pub w_cost: f64,
     pub w_redundancy: f64,
 }
@@ -198,39 +191,7 @@ impl Default for FieldWeights {
         Self {
             w_relevance: 0.35,
             w_surprise: 0.15,
-            w_graph: 0.20,
             w_cost: 0.10,
-            w_redundancy: 0.10,
-        }
-    }
-}
-
-impl FieldWeights {
-    /// Stability-leaning preset (#4): trusts relevance, applies a light
-    /// cost penalty. Selected when the `conservative` bandit arm wins.
-    pub fn conservative() -> Self {
-        Self {
-            w_relevance: 0.45,
-            w_surprise: 0.10,
-            w_graph: 0.20,
-            w_cost: 0.05,
-            w_redundancy: 0.05,
-        }
-    }
-
-    /// The default balanced preset (#4); the `balanced` arm maps here.
-    pub fn balanced() -> Self {
-        Self::default()
-    }
-
-    /// Compression-leaning preset (#4): heavier cost/surprise weighting so dense
-    /// items are favored under pressure. Selected when `aggressive` wins.
-    pub fn aggressive() -> Self {
-        Self {
-            w_relevance: 0.30,
-            w_surprise: 0.20,
-            w_graph: 0.15,
-            w_cost: 0.20,
             w_redundancy: 0.10,
         }
     }
@@ -246,7 +207,6 @@ pub fn active_weights() -> FieldWeights {
 pub struct FieldSignals {
     pub relevance: f64,
     pub surprise: f64,
-    pub graph_proximity: f64,
     pub token_cost_norm: f64,
     pub redundancy: f64,
 }
@@ -269,9 +229,7 @@ impl ContextField {
         }
     }
 
-    /// Construct a field using the process-wide learned FieldWeights (#4) when an
-    /// arm has been selected, else the defaults. Cheap (a `RwLock` read), so it is
-    /// safe to call on the per-read Phi hot path.
+    /// The field with the weights every Phi computation uses.
     pub fn active() -> Self {
         Self {
             weights: active_weights(),
@@ -284,9 +242,7 @@ impl ContextField {
     /// The cost and redundancy terms are subtracted (penalty).
     pub fn compute_phi(&self, signals: &FieldSignals) -> f64 {
         let w = &self.weights;
-        let phi = w.w_relevance * signals.relevance
-            + w.w_surprise * signals.surprise
-            + w.w_graph * signals.graph_proximity
+        let phi = w.w_relevance * signals.relevance + w.w_surprise * signals.surprise
             - w.w_cost * signals.token_cost_norm
             - w.w_redundancy * signals.redundancy;
         phi.clamp(0.0, 1.0)
@@ -311,12 +267,6 @@ pub fn normalize_surprise(surprise: f64) -> f64 {
     ((surprise - 5.0) / 12.0).clamp(0.0, 1.0)
 }
 
-/// Normalize graph proximity (inverse of distance) to [0, 1].
-/// Distance 0 = same file = 1.0, distance N = 1/(1+N).
-pub fn normalize_graph_proximity(distance: usize) -> f64 {
-    1.0 / (1.0 + distance as f64)
-}
-
 /// Normalize token cost relative to budget.
 pub fn normalize_token_cost(tokens: usize, budget_total: usize) -> f64 {
     if budget_total == 0 {
@@ -325,9 +275,8 @@ pub fn normalize_token_cost(tokens: usize, budget_total: usize) -> f64 {
     (tokens as f64 / budget_total as f64).clamp(0.0, 1.0)
 }
 
-/// Compute real signals for a file path using existing scoring modules.
-/// Bridges CFT with the information-theoretic and graph-based subsystems
-/// already in lean-ctx.
+/// Compute the signals for a file path: task relevance from the path, surprise
+/// from the content, and token cost against the budget.
 pub fn compute_signals_for_path(
     path: &str,
     task: Option<&str>,
@@ -355,11 +304,6 @@ pub fn compute_signals_for_path(
         let surprise_val = super::surprise::line_surprise(content);
         signals.surprise = normalize_surprise(surprise_val);
     }
-
-    // G(i,t): Graph proximity heuristic from path depth
-    // (property graph queries require a Connection not available here)
-    let depth = path.matches('/').count();
-    signals.graph_proximity = normalize_graph_proximity(depth);
 
     // C(i,v): Normalized token cost relative to budget
     signals.token_cost_norm = normalize_token_cost(full_tokens, budget_total);
@@ -431,7 +375,6 @@ mod tests {
         let phi = field.compute_phi(&FieldSignals {
             relevance: 1.0,
             surprise: 1.0,
-            graph_proximity: 1.0,
             token_cost_norm: 0.0,
             redundancy: 0.0,
         });
@@ -444,13 +387,6 @@ mod tests {
         assert!((normalize_surprise(5.0) - 0.0).abs() < 0.01);
         assert!((normalize_surprise(17.0) - 1.0).abs() < 0.01);
         assert!((normalize_surprise(11.0) - 0.5).abs() < 0.01);
-    }
-
-    #[test]
-    fn normalize_graph_proximity_inverse_distance() {
-        assert!((normalize_graph_proximity(0) - 1.0).abs() < f64::EPSILON);
-        assert!((normalize_graph_proximity(1) - 0.5).abs() < f64::EPSILON);
-        assert!(normalize_graph_proximity(10) < 0.15);
     }
 
     #[test]

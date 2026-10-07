@@ -65,7 +65,7 @@ fn build_associative_block(project_root: &str, keywords: &[String]) -> String {
     let Some(open) = graph_provider::open_or_build(project_root) else {
         return String::new();
     };
-    let gp = &open.provider;
+    let gp = &open;
 
     // Seeds: distinct files the keywords resolve to via symbol lookup.
     let mut seed_files: Vec<String> = Vec::new();

@@ -103,7 +103,6 @@ pub fn overview_from_index(abs_path: &str) -> Vec<crate::lsp::backend::SymbolOve
         .strip_prefix(&project_root)
         .map_or(abs_path, |s| s.trim_start_matches('/'));
     let mut items: Vec<_> = open
-        .provider
         .find_symbols("", Some(rel), None)
         .into_iter()
         .map(|s| crate::lsp::backend::SymbolOverviewItem {

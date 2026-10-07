@@ -1,10 +1,8 @@
-use std::path::Path;
-use std::sync::atomic::{AtomicBool, Ordering};
+//! The one way tools read the code graph: the SQLite property graph that
+//! `graph_index::scan` builds and mirrors (see `property_graph::sync`).
 
 use super::graph_index::{self, ProjectIndex};
 use super::property_graph::CodeGraph;
-
-static GRAPH_BUILD_TRIGGERED: AtomicBool = AtomicBool::new(false);
 
 #[derive(Debug, Clone)]
 pub struct SymbolInfo {
@@ -16,13 +14,10 @@ pub struct SymbolInfo {
     pub is_exported: bool,
 }
 
-/// Normalize a property-graph edge-kind string back to the graph_index spelling
-/// when materializing a [`ProjectIndex`]. The mirror maps graph_index `import` →
-/// `EdgeKind::Imports`, which serializes as the plural `imports`; the legacy
-/// dependency consumers (`graph_index` BFS, the facade's index-backed
-/// `dependencies`/`dependents`, `ctx_graph`) filter on the singular `import`, so
-/// reverse exactly that one rename. All other kinds already share their spelling
-/// across both stores (#696 C1).
+/// Normalize a property-graph edge-kind string back to the graph_index spelling.
+/// The mirror maps graph_index `import` → `EdgeKind::Imports`, which serializes
+/// as the plural `imports`; consumers filter on the singular `import`, so
+/// reverse exactly that one rename.
 fn index_edge_kind(pg_kind: &str) -> String {
     match pg_kind {
         "imports" => "import".to_string(),
@@ -40,11 +35,11 @@ fn line_distance(start: usize, target: Option<usize>) -> usize {
     }
 }
 
-/// Convert a property-graph symbol [`Node`] into a backend-agnostic
-/// [`SymbolInfo`], recovering the precise source `kind` and export flag from the
-/// node metadata (the `Node` itself only carries a coarse `NodeKind`). Single
-/// source of truth for the three facade methods that surface PG symbols, so a
-/// materialized `ProjectIndex` is lossless (#696 C1).
+/// Convert a property-graph symbol [`Node`] into a [`SymbolInfo`], recovering
+/// the precise source `kind` and export flag from the node metadata (the `Node`
+/// itself only carries a coarse `NodeKind`).
+///
+/// [`Node`]: super::property_graph::Node
 fn symbol_info_from_node(n: super::property_graph::Node) -> SymbolInfo {
     let (meta_kind, meta_exported) =
         super::property_graph::parse_symbol_metadata(n.metadata.as_deref());
@@ -77,87 +72,76 @@ pub struct FileInfo {
     pub summary: String,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum GraphProviderSource {
-    PropertyGraph,
-    GraphIndex,
-}
-
-pub enum GraphProvider {
-    PropertyGraph(CodeGraph),
-    GraphIndex(ProjectIndex),
-}
-
-pub struct OpenGraphProvider {
-    pub source: GraphProviderSource,
-    pub provider: GraphProvider,
+/// An opened, built code graph.
+pub struct GraphProvider {
+    graph: CodeGraph,
+    project_root: String,
 }
 
 impl GraphProvider {
+    pub(crate) fn new(graph: CodeGraph, project_root: &str) -> Self {
+        Self {
+            graph,
+            project_root: project_root.to_string(),
+        }
+    }
+
+    /// A provider over an in-memory graph holding `index`.
+    #[cfg(test)]
+    pub(crate) fn from_index(index: &ProjectIndex) -> Self {
+        let graph = CodeGraph::open_in_memory().expect("in-memory graph");
+        super::property_graph::populate_from_project_index(&graph, index).expect("populate");
+        Self::new(graph, &index.project_root)
+    }
+
     pub fn edge_count(&self) -> Option<usize> {
-        match self {
-            GraphProvider::PropertyGraph(g) => g.edge_count().ok(),
-            GraphProvider::GraphIndex(i) => Some(i.edge_count()),
-        }
+        self.graph.edge_count().ok()
     }
 
-    pub fn dependencies(&self, file_path: &str) -> Vec<String> {
-        match self {
-            GraphProvider::PropertyGraph(g) => g.dependencies(file_path).unwrap_or_default(),
-            GraphProvider::GraphIndex(i) => i
-                .edges
-                .iter()
-                .filter(|e| e.kind == "import" && e.from == file_path)
-                .map(|e| e.to.clone())
-                .collect(),
-        }
-    }
-
+    /// Files that reference `file_path`.
     pub fn dependents(&self, file_path: &str) -> Vec<String> {
-        match self {
-            GraphProvider::PropertyGraph(g) => g.dependents(file_path).unwrap_or_default(),
-            GraphProvider::GraphIndex(i) => i
-                .edges
-                .iter()
-                .filter(|e| e.kind == "import" && e.to == file_path)
-                .map(|e| e.from.clone())
-                .collect(),
-        }
+        self.graph.dependents(file_path).unwrap_or_default()
     }
 
+    /// Files within `depth` hops of `file_path` over references and
+    /// heuristics (co-change, same directory), in either direction.
     pub fn related(&self, file_path: &str, depth: usize) -> Vec<String> {
-        match self {
-            GraphProvider::PropertyGraph(g) => g
-                .impact_analysis(file_path, depth)
-                .map(|r| r.affected_files)
-                .unwrap_or_default(),
-            GraphProvider::GraphIndex(i) => i.get_related(file_path, depth),
+        const PER_HOP: usize = 50;
+        let mut seen = std::collections::HashSet::from([file_path.to_string()]);
+        let mut out = Vec::new();
+        let mut frontier = vec![file_path.to_string()];
+        for _ in 0..depth {
+            let mut next = Vec::new();
+            for f in &frontier {
+                for (p, _) in self.related_files_scored(f, PER_HOP) {
+                    if seen.insert(p.clone()) {
+                        out.push(p.clone());
+                        next.push(p);
+                    }
+                }
+            }
+            frontier = next;
         }
+        out
+    }
+
+    /// Direct neighbors over references and heuristics, strongest first.
+    pub fn related_files_scored(&self, file_path: &str, limit: usize) -> Vec<(String, f64)> {
+        self.graph
+            .related_files(file_path, limit)
+            .unwrap_or_default()
     }
 
     pub fn file_paths(&self) -> Vec<String> {
-        match self {
-            GraphProvider::PropertyGraph(g) => g.file_catalog_paths().unwrap_or_default(),
-            GraphProvider::GraphIndex(i) => {
-                let mut paths: Vec<String> = i.files.keys().cloned().collect();
-                paths.sort();
-                paths
-            }
-        }
+        self.graph.file_catalog_paths().unwrap_or_default()
     }
 
     pub fn file_count(&self) -> usize {
-        match self {
-            GraphProvider::PropertyGraph(g) => g.file_catalog_count().unwrap_or(0),
-            GraphProvider::GraphIndex(i) => i.files.len(),
-        }
+        self.graph.file_catalog_count().unwrap_or(0)
     }
 
     pub fn symbol_count(&self) -> usize {
-        match self {
-            GraphProvider::PropertyGraph(g) => g.symbol_count().unwrap_or(0),
-            GraphProvider::GraphIndex(i) => i.symbols.len(),
-        }
+        self.graph.symbol_count().unwrap_or(0)
     }
 
     pub fn find_symbols(
@@ -166,111 +150,52 @@ impl GraphProvider {
         file_filter: Option<&str>,
         kind_filter: Option<&str>,
     ) -> Vec<SymbolInfo> {
-        match self {
-            GraphProvider::PropertyGraph(g) => g
-                // Kind is filtered AFTER mapping, not in SQL: the PG `nodes.kind`
-                // column is the coarse `NodeKind` (every code symbol is `"symbol"`),
-                // while the precise source kind (`struct`, `fn`, …) lives in metadata
-                // and is recovered by `symbol_info_from_node`. Passing `kind_filter`
-                // to the SQL query matched it against `"symbol"` and dropped every
-                // hit — an exported struct queried with kind="struct" came back empty
-                // (#889). ponytail: the SQL LIMIT 100 caps candidates pre-kind-filter,
-                // fine until a name substring has >100 cross-kind matches.
-                .find_symbols(name, file_filter, None)
-                .unwrap_or_default()
-                .into_iter()
-                .map(symbol_info_from_node)
-                .filter(|s| kind_filter.is_none_or(|k| s.kind == k))
-                .collect(),
-            GraphProvider::GraphIndex(i) => {
-                let name_lower = name.to_lowercase();
-                i.symbols
-                    .values()
-                    .filter(|s| s.name.to_lowercase().contains(&name_lower))
-                    .filter(|s| file_filter.is_none_or(|f| s.file.contains(f)))
-                    .filter(|s| kind_filter.is_none_or(|k| s.kind == k))
-                    .take(100)
-                    .map(|s| SymbolInfo {
-                        name: s.name.clone(),
-                        file: s.file.clone(),
-                        kind: s.kind.clone(),
-                        start_line: s.start_line,
-                        end_line: s.end_line,
-                        is_exported: s.is_exported,
-                    })
-                    .collect()
-            }
-        }
+        // Kind is filtered after mapping, not in SQL: the `nodes.kind` column is
+        // the coarse `NodeKind` (every code symbol is `"symbol"`), while the
+        // precise source kind (`struct`, `fn`, …) lives in metadata (#889).
+        self.graph
+            .find_symbols(name, file_filter, None)
+            .unwrap_or_default()
+            .into_iter()
+            .map(symbol_info_from_node)
+            .filter(|s| kind_filter.is_none_or(|k| s.kind == k))
+            .collect()
     }
 
-    /// Every symbol with its file + line span (unfiltered). Backend-agnostic
-    /// equivalent of iterating `ProjectIndex::symbols` — used by the call-graph
-    /// builder to attribute call sites to their enclosing symbol.
+    /// Every symbol with its file + line span (unfiltered). Used by the
+    /// call-graph builder to attribute call sites to their enclosing symbol.
     pub fn all_symbols(&self) -> Vec<SymbolInfo> {
-        match self {
-            GraphProvider::PropertyGraph(g) => g
-                .all_symbols()
-                .unwrap_or_default()
-                .into_iter()
-                .map(symbol_info_from_node)
-                .collect(),
-            GraphProvider::GraphIndex(i) => i
-                .symbols
-                .values()
-                .map(|s| SymbolInfo {
-                    name: s.name.clone(),
-                    file: s.file.clone(),
-                    kind: s.kind.clone(),
-                    start_line: s.start_line,
-                    end_line: s.end_line,
-                    is_exported: s.is_exported,
-                })
-                .collect(),
-        }
+        self.graph
+            .all_symbols()
+            .unwrap_or_default()
+            .into_iter()
+            .map(symbol_info_from_node)
+            .collect()
     }
 
     pub fn get_symbol(&self, key: &str) -> Option<SymbolInfo> {
-        match self {
-            GraphProvider::PropertyGraph(g) => {
-                // Keys are `rel_path::sym_name` (graph_index, see `mod.rs`). A
-                // file path never contains `::`, but a symbol name does for trait
-                // impls (`std::fmt::Display for T`). Split on the FIRST `::` so
-                // those names round-trip — `rsplitn` mangled them (#682.3).
-                let parts: Vec<&str> = key.splitn(2, "::").collect();
-                if parts.len() != 2 {
-                    return None;
-                }
-                let (file_path, sym_name) = (parts[0], parts[1]);
-                g.get_node_by_symbol(sym_name, file_path)
-                    .ok()
-                    .flatten()
-                    .map(symbol_info_from_node)
-            }
-            GraphProvider::GraphIndex(i) => i.get_symbol(key).map(|s| SymbolInfo {
-                name: s.name.clone(),
-                file: s.file.clone(),
-                kind: s.kind.clone(),
-                start_line: s.start_line,
-                end_line: s.end_line,
-                is_exported: s.is_exported,
-            }),
-        }
+        // Keys are `rel_path::sym_name`. A file path never contains `::`, but a
+        // symbol name does for trait impls (`std::fmt::Display for T`), so split
+        // on the first `::`.
+        let (file_path, sym_name) = key.split_once("::")?;
+        self.graph
+            .get_node_by_symbol(sym_name, file_path)
+            .ok()
+            .flatten()
+            .map(symbol_info_from_node)
     }
 
     /// Resolve a stable [`SymbolHandle`](crate::core::handle::SymbolHandle) to
     /// its current [`SymbolInfo`], robust to line drift. Resolution order:
     ///
-    /// 1. Exact `(path, name)` — the unique `{file}::{name}` index key, so the
-    ///    common case is a single `O(1)` lookup that ignores the `@Lline` hint
-    ///    entirely (the symbol may have moved since the handle was emitted).
+    /// 1. Exact `(path, name)`, ignoring the `@Lline` hint (the symbol may have
+    ///    moved since the handle was emitted).
     /// 2. Otherwise, same-file candidates whose name matches exactly or by its
     ///    unqualified tail (`Config::load` ↔ `load`), ranked by exact-name
     ///    first, then nearest line to the handle hint, then lowest line, then
     ///    name — a total, deterministic order (#498).
     ///
-    /// Returns `None` only when no symbol in that file plausibly matches. The
-    /// `@Lline` is never a hard requirement, so this is strictly more robust
-    /// than a brittle line-only reference.
+    /// Returns `None` only when no symbol in that file plausibly matches.
     pub fn find_symbol_by_handle(
         &self,
         handle: &crate::core::handle::SymbolHandle,
@@ -291,9 +216,6 @@ impl GraphProvider {
             .filter(|s| s.file == handle.path)
             .filter(|s| s.name == handle.name || s.name.rsplit("::").next() == Some(tail))
             .collect();
-        if candidates.is_empty() {
-            return None;
-        }
         candidates.sort_by(|a, b| {
             let exact_a = u8::from(a.name != handle.name);
             let exact_b = u8::from(b.name != handle.name);
@@ -309,35 +231,19 @@ impl GraphProvider {
         candidates.into_iter().next()
     }
 
+    /// Every file edge, kinds in the graph_index spelling (`import`, …).
     pub fn edges(&self) -> Vec<EdgeInfo> {
-        match self {
-            // Normalize the raw property-graph edge-kind vocabulary back to the
-            // graph_index vocabulary every consumer speaks (notably `imports` →
-            // `import`, queried by impact/overview via `edges_by_kind("import")`).
-            // Without this the facade leaks `EdgeKind::as_str()` plurals and PG
-            // vs legacy backends would answer the same query differently (#696).
-            GraphProvider::PropertyGraph(g) => g
-                .all_edges_flat()
-                .unwrap_or_default()
-                .into_iter()
-                .map(|(from, to, kind, weight)| EdgeInfo {
-                    from,
-                    to,
-                    kind: index_edge_kind(&kind),
-                    weight,
-                })
-                .collect(),
-            GraphProvider::GraphIndex(i) => i
-                .edges
-                .iter()
-                .map(|e| EdgeInfo {
-                    from: e.from.clone(),
-                    to: e.to.clone(),
-                    kind: e.kind.clone(),
-                    weight: e.weight as f64,
-                })
-                .collect(),
-        }
+        self.graph
+            .all_edges_flat()
+            .unwrap_or_default()
+            .into_iter()
+            .map(|(from, to, kind, weight)| EdgeInfo {
+                from,
+                to,
+                kind: index_edge_kind(&kind),
+                weight,
+            })
+            .collect()
     }
 
     pub fn edges_by_kind(&self, kind: &str) -> Vec<EdgeInfo> {
@@ -347,87 +253,52 @@ impl GraphProvider {
             .collect()
     }
 
-    /// Every catalogued file as [`FileInfo`]. Backend-agnostic equivalent of
-    /// iterating `ProjectIndex::files` — used by stats/bootstrap consumers that
-    /// need per-file language + token counts, not just paths.
+    /// Every catalogued file as [`FileInfo`].
     pub fn file_entries(&self) -> Vec<FileInfo> {
-        match self {
-            GraphProvider::PropertyGraph(_) => self
-                .file_paths()
-                .into_iter()
-                .filter_map(|p| self.get_file_entry(&p))
-                .collect(),
-            GraphProvider::GraphIndex(i) => i
-                .files
-                .values()
-                .map(|e| FileInfo {
-                    path: e.path.clone(),
-                    hash: e.hash.clone(),
-                    language: e.language.clone(),
-                    line_count: e.line_count,
-                    token_count: e.token_count,
-                    exports: e.exports.clone(),
-                    summary: e.summary.clone(),
-                })
-                .collect(),
-        }
+        self.file_paths()
+            .into_iter()
+            .filter_map(|p| self.get_file_entry(&p))
+            .collect()
     }
 
     pub fn get_file_entry(&self, path: &str) -> Option<FileInfo> {
-        match self {
-            GraphProvider::PropertyGraph(g) => {
-                g.get_file_catalog(path).ok().flatten().map(|e| FileInfo {
-                    path: e.path,
-                    hash: e.hash,
-                    language: e.language,
-                    line_count: e.line_count,
-                    token_count: e.token_count,
-                    exports: e.exports,
-                    summary: e.summary,
-                })
-            }
-            GraphProvider::GraphIndex(i) => i.files.get(path).map(|e| FileInfo {
-                path: e.path.clone(),
-                hash: e.hash.clone(),
-                language: e.language.clone(),
+        self.graph
+            .get_file_catalog(path)
+            .ok()
+            .flatten()
+            .map(|e| FileInfo {
+                path: e.path,
+                hash: e.hash,
+                language: e.language,
                 line_count: e.line_count,
                 token_count: e.token_count,
-                exports: e.exports.clone(),
-                summary: e.summary.clone(),
-            }),
-        }
+                exports: e.exports,
+                summary: e.summary,
+            })
     }
 
+    /// When the graph was built, local time, or empty when unknown.
     pub fn last_scan(&self) -> String {
-        match self {
-            GraphProvider::PropertyGraph(_) => String::new(),
-            GraphProvider::GraphIndex(i) => i.last_scan.clone(),
-        }
+        super::property_graph::load_meta(&self.project_root)
+            .and_then(|m| chrono::DateTime::parse_from_rfc3339(&m.built_at).ok())
+            .map(|dt| {
+                dt.with_timezone(&chrono::Local)
+                    .format("%Y-%m-%d %H:%M:%S")
+                    .to_string()
+            })
+            .unwrap_or_default()
     }
 
-    /// Reconstruct a full [`ProjectIndex`] from this provider — the inverse of
-    /// the graph_index→PG mirror (`populate_from_project_index`).
-    /// Lets the
-    /// remaining legacy `ProjectIndex` consumers be sourced from the
-    /// PropertyGraph (parity-proven lossless, #682.3) so the redundant JSON
-    /// store can be retired (#696 phase C). For the GraphIndex backend it clones
-    /// the index it already holds.
-    pub fn materialize_project_index(&self, project_root: &str) -> ProjectIndex {
-        if let GraphProvider::GraphIndex(i) = self {
-            return i.clone();
-        }
-        let mut idx = ProjectIndex::new(project_root);
-        // Stamp `last_scan` from the graph's build time (graph.meta.json) so the
-        // TTL staleness check reflects the real build age, not this
-        // materialization moment (#696 C4). Content-based staleness still keys
-        // off the meta file's mtime independently.
-        if let Some(meta) = super::property_graph::load_meta(project_root)
-            && let Ok(dt) = chrono::DateTime::parse_from_rfc3339(&meta.built_at)
-        {
-            idx.last_scan = dt
-                .with_timezone(&chrono::Local)
-                .format("%Y-%m-%d %H:%M:%S")
-                .to_string();
+    /// Reconstruct a [`ProjectIndex`] from the graph — the inverse of the mirror
+    /// (`populate_from_project_index`). `graph_index` uses it to reuse unchanged
+    /// files on a rescan.
+    pub fn materialize_project_index(&self) -> ProjectIndex {
+        let mut idx = ProjectIndex::new(&self.project_root);
+        // Stamp `last_scan` from the build time so the TTL staleness check
+        // reflects the real build age, not this materialization moment.
+        let built = self.last_scan();
+        if !built.is_empty() {
+            idx.last_scan = built;
         }
         for f in self.file_entries() {
             idx.files.insert(
@@ -458,8 +329,6 @@ impl GraphProvider {
             );
         }
         for e in self.edges() {
-            // `edges()` already normalizes PG kinds to the graph_index
-            // vocabulary, so `e.kind` is ready to store verbatim.
             idx.edges.push(graph_index::IndexEdge {
                 from: e.from,
                 to: e.to,
@@ -474,253 +343,70 @@ impl GraphProvider {
     pub fn index_dir(project_root: &str) -> Option<std::path::PathBuf> {
         graph_index::ProjectIndex::index_dir(project_root)
     }
-
-    /// Scored related files using multi-edge weights.
-    /// Falls back to unscored deps/dependents for GraphIndex backend.
-    pub fn related_files_scored(&self, file_path: &str, limit: usize) -> Vec<(String, f64)> {
-        match self {
-            GraphProvider::PropertyGraph(g) => {
-                g.related_files(file_path, limit).unwrap_or_default()
-            }
-            GraphProvider::GraphIndex(_) => {
-                let mut result: Vec<(String, f64)> = Vec::new();
-                for dep in self.dependencies(file_path) {
-                    result.push((dep, 1.0));
-                }
-                for dep in self.dependents(file_path) {
-                    if !result.iter().any(|(p, _)| *p == dep) {
-                        result.push((dep, 0.5));
-                    }
-                }
-                result.truncate(limit);
-                result
-            }
-        }
-    }
 }
 
-/// Open whichever graph is already populated on disk, **without** triggering any
-/// build, plus a flag telling the caller the property graph still wants a
-/// (re)build. Prefers a fully-populated PropertyGraph and falls back to the
-/// in-memory graph_index extractor while the PG is not yet populated (first run
-/// or just after a rebuild), flagging `needs_build` so the caller can warm the
-/// PG for the next call (#696 phase D: the `legacy` backend escape hatch was
-/// retired once PG-only persistence proved lossless in #682.3).
-fn open_existing(project_root: &str) -> (Option<OpenGraphProvider>, bool) {
-    let t0 = std::time::Instant::now();
-
-    let mut pg_provider = None;
-    let mut pg_populated = false;
-    if let Ok(pg) = CodeGraph::open(project_root) {
-        let nodes = pg.node_count().unwrap_or(0);
-        let edges = pg.edge_count().unwrap_or(0);
-        let file_cat = pg.file_catalog_count().unwrap_or(0);
-        pg_populated = nodes > 0 && edges > 0 && file_cat > 0;
-        if pg_populated {
-            log_source_selection(GraphProviderSource::PropertyGraph, nodes, edges, t0);
-            return (
-                Some(OpenGraphProvider {
-                    source: GraphProviderSource::PropertyGraph,
-                    provider: GraphProvider::PropertyGraph(pg),
-                }),
-                false,
-            );
-        }
-        if nodes > 0 && file_cat > 0 {
-            pg_provider = Some(pg);
-        }
-    }
-
-    // PG is not fully populated: a (re)build would help the next call.
-    let needs_build = !pg_populated;
-
-    if let Some(idx) = super::index_orchestrator::try_load_graph_index(project_root) {
-        let files = idx.files.len();
-        let edges = idx.edges.len();
-        if !idx.edges.is_empty() || !idx.files.is_empty() {
-            log_source_selection(GraphProviderSource::GraphIndex, files, edges, t0);
-            return (
-                Some(OpenGraphProvider {
-                    source: GraphProviderSource::GraphIndex,
-                    provider: GraphProvider::GraphIndex(idx),
-                }),
-                needs_build,
-            );
-        }
-    }
-
-    if let Some(pg) = pg_provider {
-        let nodes = pg.node_count().unwrap_or(0);
-        log_source_selection(GraphProviderSource::PropertyGraph, nodes, 0, t0);
-        return (
-            Some(OpenGraphProvider {
-                source: GraphProviderSource::PropertyGraph,
-                provider: GraphProvider::PropertyGraph(pg),
-            }),
-            needs_build,
-        );
-    }
-
-    (None, needs_build)
-}
-
-/// Open an already-built graph, or `None` when there is none yet. Never builds:
+/// Open the built graph, or `None` when there is none yet. Never builds:
 /// callers whose answer only improves with a graph (the `ctx_read` context
 /// gate, search ranking, compaction, `ctx_graph status`) use this; tools that
 /// need one to answer at all use [`open_or_build`].
-pub fn open_best_effort(project_root: &str) -> Option<OpenGraphProvider> {
-    open_existing(project_root).0
+pub fn open_best_effort(project_root: &str) -> Option<GraphProvider> {
+    let graph = CodeGraph::open(project_root).ok()?;
+    if graph.file_catalog_count().unwrap_or(0) == 0 {
+        return None;
+    }
+    Some(GraphProvider::new(graph, project_root))
 }
 
-fn log_source_selection(
-    source: GraphProviderSource,
-    nodes: usize,
-    edges: usize,
-    start: std::time::Instant,
-) {
-    let elapsed_ms = start.elapsed().as_millis();
-    tracing::debug!(
-        "[graph_provider] source={source:?} nodes={nodes} edges={edges} resolve_ms={elapsed_ms}"
-    );
-}
-
-/// Triggers a background graph build once per process when the graph is empty.
-fn trigger_lazy_graph_build(project_root: &str) {
-    // Unit tests rewrite the process-global `LEAN_CTX_DATA_DIR` per test (each uses
-    // its own tempdir). A detached, fire-and-forget build thread reads that global
-    // mid-flight and runs concurrently with the otherwise-serial (`--test-threads=1`)
-    // test bodies — the one source of graph-state concurrency in the suite, and the
-    // root of an intermittent macOS-only flake where a freshly-built index appeared
-    // empty to the asserting test. `open_or_build` has a synchronous fallback that
-    // fully covers tests, so skip the background build under `cfg!(test)`. Production
-    // (and integration tests, which run the lib normally) are unaffected.
-    if cfg!(test) {
-        return;
-    }
-    if GRAPH_BUILD_TRIGGERED.swap(true, Ordering::SeqCst) {
-        return;
-    }
-    let root = Path::new(project_root);
-    // Both probes are TCC-guarded (#356): a non-existent/non-dir path has no
-    // markers, and a launchd-standalone process never stats under ~/Documents.
-    let is_project = crate::core::pathutil::has_project_marker(root)
-        || crate::core::pathutil::has_multi_repo_children(root);
-    if !is_project {
-        return;
-    }
-    // #682.2: build via the same reliable worker that builds the JSON index
-    // (which now mirrors into PG, backend-gated), instead of a dedicated
-    // fire-and-forget thread that silently died in short-lived processes.
-    super::index_orchestrator::ensure_all_background(project_root);
-}
-
-/// Build the property graph from the proven graph_index extractor (#682.1).
-///
-/// Loads the current [`ProjectIndex`] (or scans if absent) and mirrors it into
-/// the SQLite store — files + `file_catalog`, symbols, and structural edges —
-/// then stamps `graph.meta.json`. Sourcing PG from the mature extractor
-/// guarantees PG ⊇ graph_index (so a later backend flip cannot lose data) and
-/// populates the `file_catalog` that the `pg_populated` gate requires.
-///
-/// Synchronous and self-contained in `core` (no `tools` dependency), so callers
-/// can build reliably without the fire-and-forget caveat of the lazy trigger.
+/// Scan the project and write the graph, synchronously.
 pub fn build_property_graph(project_root: &str) -> anyhow::Result<()> {
-    let index = super::index_orchestrator::try_load_graph_index(project_root)
-        .filter(|i| !i.files.is_empty())
-        .unwrap_or_else(|| graph_index::scan_with_content_cache(project_root).0);
-    super::property_graph::mirror_index(project_root, &index)
+    let index = graph_index::scan(project_root);
+    anyhow::ensure!(!index.files.is_empty(), "no indexable files found");
+    Ok(())
 }
 
-/// Maximum time `open_or_build` will wait for a synchronous graph build before
-/// falling back to "graph unavailable" (#1018). Prevents blocking-pool
-/// exhaustion on large repos with cold indices, especially on Windows with AV.
+/// Maximum time `open_or_build` waits for a build (#1018). The build keeps
+/// running past it and writes the graph when done.
 const BUILD_TIMEOUT_SECS: u64 = 30;
 
-/// Serialization gate: only one synchronous graph build at a time. Concurrent
-/// callers that cannot acquire the gate return immediately with `None` rather
-/// than queueing (which would exhaust the blocking pool). The background indexer
-/// picks up the build for them asynchronously.
+/// Only one synchronous build at a time; a caller that finds one running
+/// returns `None` instead of queueing.
 static BUILD_GATE: std::sync::LazyLock<std::sync::Mutex<()>> =
     std::sync::LazyLock::new(|| std::sync::Mutex::new(()));
 
-pub fn open_or_build(project_root: &str) -> Option<OpenGraphProvider> {
-    if let (Some(p), _) = open_existing(project_root) {
+/// Open the graph, building it first when there is none. `None` when the build
+/// is already running elsewhere, timed out, or found no files.
+pub fn open_or_build(project_root: &str) -> Option<GraphProvider> {
+    if let Some(p) = open_best_effort(project_root) {
         return Some(p);
     }
 
-    // Try to acquire the build gate without blocking. If another tool call is
-    // already building the graph, don't queue — trigger background build and
-    // return None so the caller gets a graceful "index building" message.
     let Ok(_gate) = BUILD_GATE.try_lock() else {
-        tracing::info!(
-            "open_or_build: another build in progress for {project_root}; returning None"
-        );
-        trigger_lazy_graph_build(project_root);
+        tracing::info!("open_or_build: another build in progress for {project_root}");
         return None;
     };
 
-    // Run the potentially-slow `load_or_build` under a timeout thread so we
-    // don't block the calling tool handler for unbounded time (#1018).
     let root_owned = project_root.to_string();
     let (tx, rx) = std::sync::mpsc::sync_channel(1);
     std::thread::spawn(move || {
-        let idx = super::graph_index::load_or_build(&root_owned);
-        let _ = tx.send(idx);
+        let idx = graph_index::load_or_build(&root_owned);
+        let _ = tx.send(idx.files.is_empty());
     });
 
-    let timeout = std::time::Duration::from_secs(BUILD_TIMEOUT_SECS);
-    match rx.recv_timeout(timeout) {
-        Ok(idx) if !idx.files.is_empty() => Some(OpenGraphProvider {
-            source: GraphProviderSource::GraphIndex,
-            provider: GraphProvider::GraphIndex(idx),
-        }),
-        Ok(_) => None,
+    match rx.recv_timeout(std::time::Duration::from_secs(BUILD_TIMEOUT_SECS)) {
+        Ok(false) => open_best_effort(project_root),
+        Ok(true) => None,
         Err(_) => {
             tracing::warn!(
-                "open_or_build: graph build timed out after {BUILD_TIMEOUT_SECS}s for {project_root}; \
-                 triggering background build"
+                "open_or_build: graph build still running after {BUILD_TIMEOUT_SECS}s for {project_root}"
             );
-            trigger_lazy_graph_build(project_root);
             None
         }
     }
 }
+
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn best_effort_prefers_graph_index_when_property_graph_empty() {
-        let _lock = crate::core::data_dir::test_env_lock();
-        let tmp = tempfile::tempdir().expect("tempdir");
-        let data = tmp.path().join("data");
-        std::fs::create_dir_all(&data).expect("mkdir data");
-        crate::test_env::set_var("LEAN_CTX_DATA_DIR", data.to_string_lossy().to_string());
-
-        let project_root = tmp.path().join("proj");
-        std::fs::create_dir_all(&project_root).expect("mkdir proj");
-        let root = project_root.to_string_lossy().to_string();
-
-        let mut idx = ProjectIndex::new(&root);
-        idx.files.insert(
-            "src/main.rs".to_string(),
-            super::super::graph_index::FileEntry {
-                path: "src/main.rs".to_string(),
-                hash: "h".to_string(),
-                language: "rs".to_string(),
-                line_count: 1,
-                token_count: 1,
-                exports: vec![],
-                summary: String::new(),
-            },
-        );
-        idx.save().expect("save index");
-
-        let open = open_best_effort(&root).expect("open");
-        assert_eq!(open.source, GraphProviderSource::GraphIndex);
-
-        crate::test_env::remove_var("LEAN_CTX_DATA_DIR");
-    }
 
     #[test]
     fn best_effort_none_when_no_graphs() {
@@ -773,7 +459,7 @@ mod tests {
                 },
             );
         }
-        GraphProvider::GraphIndex(idx)
+        GraphProvider::from_index(&idx)
     }
 
     #[test]
@@ -828,7 +514,7 @@ mod tests {
                 .with_metadata(r#"{"kind":"struct","exported":true}"#),
         )
         .unwrap();
-        let gp = GraphProvider::PropertyGraph(pg);
+        let gp = GraphProvider::new(pg, "/test");
 
         let hits = gp.find_symbols("State", None, Some("struct"));
         assert_eq!(
@@ -843,77 +529,6 @@ mod tests {
         assert!(gp.find_symbols("State", None, Some("fn")).is_empty());
     }
 
-    #[test]
-    fn parity_dependencies_both_stores_agree() {
-        use super::super::graph_index::{FileEntry, IndexEdge};
-        use super::super::property_graph::{Edge, EdgeKind, Node};
-
-        let pg = CodeGraph::open_in_memory().unwrap();
-        let a_id = pg.upsert_node(&Node::file("src/a.rs")).unwrap();
-        let b_id = pg.upsert_node(&Node::file("src/b.rs")).unwrap();
-        let c_id = pg.upsert_node(&Node::file("src/c.rs")).unwrap();
-        pg.upsert_edge(&Edge::new(a_id, b_id, EdgeKind::Imports))
-            .unwrap();
-        pg.upsert_edge(&Edge::new(a_id, c_id, EdgeKind::Imports))
-            .unwrap();
-
-        let mut idx = ProjectIndex::new("/test");
-        for name in &["src/a.rs", "src/b.rs", "src/c.rs"] {
-            idx.files.insert(
-                name.to_string(),
-                FileEntry {
-                    path: name.to_string(),
-                    hash: "h".into(),
-                    language: "rs".into(),
-                    line_count: 1,
-                    token_count: 1,
-                    exports: vec![],
-                    summary: String::new(),
-                },
-            );
-        }
-        idx.edges.push(IndexEdge {
-            from: "src/a.rs".into(),
-            to: "src/b.rs".into(),
-            kind: "import".into(),
-            weight: 1.0,
-        });
-        idx.edges.push(IndexEdge {
-            from: "src/a.rs".into(),
-            to: "src/c.rs".into(),
-            kind: "import".into(),
-            weight: 1.0,
-        });
-
-        let pg_deps = GraphProvider::PropertyGraph(pg);
-        let gi_deps = GraphProvider::GraphIndex(idx);
-
-        let mut pg_result = pg_deps.dependencies("src/a.rs");
-        let mut gi_result = gi_deps.dependencies("src/a.rs");
-        pg_result.sort();
-        gi_result.sort();
-
-        assert_eq!(
-            pg_result, gi_result,
-            "Import edges must match between PG and GraphIndex"
-        );
-
-        let mut pg_dependents = pg_deps.dependents("src/b.rs");
-        let mut gi_dependents = gi_deps.dependents("src/b.rs");
-        pg_dependents.sort();
-        gi_dependents.sort();
-        assert_eq!(
-            pg_dependents, gi_dependents,
-            "Dependents must match between PG and GraphIndex"
-        );
-    }
-
-    /// Round-trip guard for #696 C1: graph_index → PG (mirror) → graph_index
-    /// (materialize) must preserve files (full catalog), symbols (incl. the
-    /// precise `kind` + `is_exported`, which live in node metadata) and import
-    /// edges. Proves the PropertyGraph can be the sole source for the remaining
-    /// legacy `ProjectIndex` consumers — the prerequisite for retiring the JSON
-    /// store.
     #[test]
     fn materialize_project_index_round_trips_losslessly() {
         use super::super::graph_index::{FileEntry, IndexEdge, SymbolEntry};
@@ -977,8 +592,8 @@ mod tests {
 
         let pg = CodeGraph::open_in_memory().unwrap();
         populate_from_project_index(&pg, &a).unwrap();
-        let provider = GraphProvider::PropertyGraph(pg);
-        let b = provider.materialize_project_index("/test");
+        let provider = GraphProvider::new(pg, "/test");
+        let b = provider.materialize_project_index();
 
         // Files: inventory + every catalog field survive.
         let mut a_files: Vec<&String> = a.files.keys().collect();

@@ -172,7 +172,7 @@ fn covered_terms(text: &str, terms: &[String]) -> HashSet<String> {
 fn build_adjacency(project_root: &str) -> BTreeMap<String, BTreeSet<String>> {
     let mut adj: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
     if let Some(open) = graph_provider::open_or_build(project_root) {
-        for e in open.provider.edges() {
+        for e in open.edges() {
             let from = rel_path(&e.from, project_root);
             let to = rel_path(&e.to, project_root);
             if from == to {
@@ -190,7 +190,7 @@ fn symbol_candidates(project_root: &str, keywords: &[String], terms: &[String]) 
     let Some(open) = graph_provider::open_or_build(project_root) else {
         return Vec::new();
     };
-    let gp = &open.provider;
+    let gp = &open;
     let mut out: Vec<Candidate> = Vec::new();
     for kw in keywords.iter().take(MAX_KEYWORDS) {
         let mut syms = gp.find_symbols(kw, None, None);
