@@ -164,43 +164,6 @@ approval_mode = \"approve\"
 }
 
 #[test]
-fn upsert_codex_toml_strips_stale_env_subtable() {
-    // #594: an older lean-ctx pinned LEAN_CTX_DATA_DIR in a `.env` subtable,
-    // which collapsed config onto the data dir for the MCP server. Re-running
-    // setup/update must drop it so the CLI and MCP resolve the same config.
-    let input = "\
-[mcp_servers.lean-ctx]
-command = \"/old/lean-ctx\"
-args = []
-
-[mcp_servers.lean-ctx.env]
-LEAN_CTX_DATA_DIR = \"/home/user/.local/share/lean-ctx\"
-
-[mcp_servers.lean-ctx.tools.ctx_read]
-approval_mode = \"approve\"
-";
-    let updated = upsert_codex_toml(input, "/new/lean-ctx");
-    assert!(
-        !updated.contains("LEAN_CTX_DATA_DIR"),
-        "stale env pin must be stripped:\n{updated}"
-    );
-    assert!(
-        !updated.contains("[mcp_servers.lean-ctx.env]"),
-        "emptied env sub-table must be removed:\n{updated}"
-    );
-    assert!(updated.contains("command = \"/new/lean-ctx\""));
-    assert!(
-        updated.contains("[mcp_servers.lean-ctx.tools.ctx_read]"),
-        "unrelated tool sub-tables must be preserved:\n{updated}"
-    );
-    assert_eq!(
-        updated.matches("[mcp_servers.lean-ctx]").count(),
-        1,
-        "parent section preserved exactly once"
-    );
-}
-
-#[test]
 fn windsurf_config_omits_auto_approve() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("mcp_config.json");

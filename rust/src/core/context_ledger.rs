@@ -506,19 +506,8 @@ impl ContextLedger {
         if let Some((_model, window)) = crate::hook_handlers::load_detected_model() {
             ledger.window_size = window;
         }
-        // #715 migration: older Windows builds persisted `\`-separated paths;
-        // resolution and dedup assume the forward-slash canonical form.
-        // Lexical only — no FS access on persisted paths (TCC, #356).
-        let mut migrated = false;
-        for entry in &mut ledger.entries {
-            let normalized = crate::core::pathutil::normalize_tool_path_lexical(&entry.path);
-            if normalized != entry.path {
-                entry.path = normalized;
-                migrated = true;
-            }
-        }
         let pruned = ledger.prune();
-        if pruned > 0 || migrated {
+        if pruned > 0 {
             ledger.save_for_agent(agent_id);
         }
         ledger

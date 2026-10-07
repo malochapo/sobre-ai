@@ -1,7 +1,3 @@
-# Workspace root. The SDK (Track A) is an opt-in member; `default-members` keeps
-# every existing `cargo build`/`test`/`clippy`/`publish` scoped to the engine
-# crate exactly as before — build the SDK explicitly with `-p lean-ctx-sdk` or
-# the whole workspace with `--workspace`.
 [workspace]
 members = [
   ".",
@@ -13,10 +9,9 @@ name = "lean-ctx"
 version = "3.9.12"
 edition = "2024"
 autobins = false
-description = "Context Runtime for AI Agents with CCP. 71 MCP tools, 10 read modes, 95+ compression patterns, cross-session memory (CCP), persistent AI knowledge with temporal facts + contradiction detection, multi-agent context sharing, LITM-aware positioning, AAAK compact format, adaptive compression with Thompson Sampling bandits. Supports 24+ AI tools. Reduces LLM token consumption by up to 99%."
+description = "sobre: a local context layer for AI coding agents — 17 MCP tools that read, search and run commands with compressed, labelled output, plus cross-session memory. Runs entirely on your machine."
 license = "Apache-2.0"
-repository = "https://github.com/yvgude/lean-ctx"
-homepage = "https://leanctx.com"
+repository = "https://github.com/malochapo/sobre-ai"
 readme = "README.md"
 keywords = ["mcp", "llm", "tokens", "compression", "ai"]
 categories = ["command-line-utilities", "development-tools"]
@@ -62,7 +57,6 @@ required-features = ["dev-tools"]
 [features]
 default = [
   "tree-sitter",
-  "secure-update",
   "jemalloc",
 ]
 
@@ -74,7 +68,6 @@ default = [
 dense = ["embeddings"]
 jemalloc = ["dep:tikv-jemallocator", "dep:tikv-jemalloc-ctl"]
 dev-tools = []
-neural = ["dep:ort", "dep:ndarray", "dep:libloading"]
 embeddings = ["dep:ort", "dep:ndarray", "dep:libloading", "dep:tokenizers"]
 ort-cuda = ["ort?/cuda"]
 ort-webgpu = ["ort?/webgpu"]
@@ -82,8 +75,6 @@ ort-rocm = ["ort?/rocm"]
 ort-directml = ["ort?/directml"]
 ort-coreml = ["ort?/coreml"]
 shape-xlat = []
-secure-update = []
-experimental = []
 tree-sitter = [
   "dep:tree-sitter",
   "dep:tree-sitter-rust",

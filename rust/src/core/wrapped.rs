@@ -240,7 +240,7 @@ impl WrappedReport {
 
         out.push(format!("  {}", t.box_bottom(w)));
         out.push(format!(
-            "    {dim}\"Your AI saw only what mattered.\"{rst}   {accent}leanctx.com{rst}",
+            "    {dim}\"Your AI saw only what mattered.\"{rst}   {accent}sobre{rst}",
             accent = t.accent.fg(),
         ));
         let est_marker = if self.pricing_estimated {
@@ -408,7 +408,7 @@ mod tests {
     #[test]
     fn wrapped_ascii_includes_brand_and_metrics() {
         let out = sample().format_ascii();
-        assert!(out.contains("leanctx.com"), "missing brand footer:\n{out}");
+        assert!(out.contains("sobre"), "missing brand footer:\n{out}");
         assert!(out.contains("Wrapped"));
         assert!(out.contains("tokens saved"));
         assert!(out.contains("compression"));

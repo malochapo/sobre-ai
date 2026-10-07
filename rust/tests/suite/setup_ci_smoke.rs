@@ -85,7 +85,7 @@ fn setup_bootstrap_doctor_status_json_smoke() {
 
     let dirs = SeparateDirs::new(tmp.path());
 
-    let mut envs = vec![("HOME", home_str.as_str()), ("LEAN_CTX_ACTIVE", "1")];
+    let mut envs = vec![("HOME", home_str.as_str())];
     envs.extend(dirs.to_env_pairs());
 
     #[cfg(not(windows))]
@@ -181,7 +181,6 @@ fn claude_config_dir_fallback_writes_dot_claude_json() {
 
     let mut envs = vec![
         ("HOME", home_str.as_str()),
-        ("LEAN_CTX_ACTIVE", "1"),
         ("CLAUDE_CONFIG_DIR", claude_cfg_str.as_str()),
     ];
     envs.extend(dirs.to_env_pairs());
@@ -274,7 +273,7 @@ fn init_agent_leaves_agent_instruction_files_untouched() {
 
     let dirs = SeparateDirs::new(tmp.path());
 
-    let mut envs = vec![("HOME", home_str.as_str()), ("LEAN_CTX_ACTIVE", "1")];
+    let mut envs = vec![("HOME", home_str.as_str())];
     envs.extend(dirs.to_env_pairs());
     #[cfg(not(windows))]
     {
@@ -330,7 +329,7 @@ fn init_claude_installs_the_skill_and_no_rules_file() {
 
     let dirs = SeparateDirs::new(tmp.path());
 
-    let mut envs = vec![("HOME", home_str.as_str()), ("LEAN_CTX_ACTIVE", "1")];
+    let mut envs = vec![("HOME", home_str.as_str())];
     envs.extend(dirs.to_env_pairs());
     #[cfg(not(windows))]
     {

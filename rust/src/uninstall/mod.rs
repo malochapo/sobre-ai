@@ -5,10 +5,7 @@ mod parsers;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use agents::{
-    remove_hook_files, remove_mcp_configs, remove_project_agent_files, remove_shell_hook,
-    remove_skills,
-};
+use agents::{remove_hook_files, remove_mcp_configs, remove_skills};
 
 pub(super) fn backup_before_modify(path: &Path, dry_run: bool) {
     if dry_run {
@@ -65,17 +62,6 @@ pub(super) fn safe_remove(path: &Path, dry_run: bool) -> Result<(), std::io::Err
 // Help
 // ---------------------------------------------------------------------------
 
-/// Print usage for `lean-ctx uninstall`.
-///
-/// This MUST stay side-effect free: `lean-ctx uninstall --help` previously fell
-/// through to [`run`] and removed everything, so help is now short-circuited in
-/// the CLI dispatch before any removal happens.
-/// Remove a lean-ctx shell hook an older install left in the user's shell
-/// files (used by `doctor --fix`).
-pub fn remove_legacy_shell_hook(home: &Path) {
-    agents::remove_shell_hook(home, false);
-}
-
 pub fn print_help() {
     println!(
         "\
@@ -92,9 +78,9 @@ OPTIONS:
 
 WHAT IT REMOVES:
     • Running processes (proxy) and autostart entries
-    • Shell hooks and proxy environment from your shell rc files
-    • MCP server configs and rules from every detected AI tool/IDE
-    • Skill directories and project integration files
+    • The proxy environment from your shell rc files (if the proxy was enabled)
+    • MCP server configs and hooks from every detected AI tool/IDE
+    • Skill directories
     • The data directory and the lean-ctx binary
 
     Modified files are backed up as <file>.lean-ctx.bak before removal.
@@ -137,7 +123,6 @@ pub fn run(dry_run: bool, keep_config: bool, keep_binary: bool) {
 
     let mut removed_any = false;
 
-    removed_any |= remove_shell_hook(&home, dry_run);
     if dry_run {
         crate::proxy_setup::preview_proxy_cleanup(&home);
     } else {
@@ -156,7 +141,6 @@ pub fn run(dry_run: bool, keep_config: bool, keep_binary: bool) {
     }
 
     removed_any |= remove_hook_files(&home, dry_run);
-    removed_any |= remove_project_agent_files(dry_run);
 
     if dry_run {
         println!("  Would remove proxy autostart (LaunchAgent/systemd)");
@@ -195,7 +179,7 @@ pub fn run(dry_run: bool, keep_config: bool, keep_binary: bool) {
             );
         } else {
             println!(
-                "  lean-ctx fully removed. Restart your shell to drop stale aliases.\n  \
+                "  lean-ctx fully removed.\n  \
                  Verify with: command -v lean-ctx   # should print nothing\n"
             );
         }

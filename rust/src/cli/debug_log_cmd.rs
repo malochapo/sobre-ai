@@ -1,5 +1,5 @@
 //! `lean-ctx debug-log` — view or clear the opt-in tool-activity debug log
-//! (#520). The log itself is written by the MCP server and the shell hooks when
+//! (#520). The log itself is written by the MCP server and the agent hooks when
 //! `debug_log` is enabled.
 
 use crate::core::debug_log;

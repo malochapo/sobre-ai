@@ -243,10 +243,6 @@ pub fn run() -> u32 {
     let proxy_outcome = proxy_upstream_outcome();
     board.check(&proxy_outcome);
 
-    // 7) Leftover shell hook from an older install
-    let shell_files = legacy_shell_hook_outcome();
-    board.check(&shell_files);
-
     // 8) MCP
     let mcp = mcp_config_outcome();
     board.check(&mcp);
@@ -283,25 +279,6 @@ pub fn run() -> u32 {
     // 9) Session state (project_root + shell_cwd)
     let session_outcome = session_state_outcome();
     board.check(&session_outcome);
-
-    // 12) Build integrity (canary / origin check)
-    let integrity = crate::core::integrity::check();
-    let integrity_ok = integrity.seed_ok && integrity.origin_ok;
-    let integrity_line = if integrity_ok {
-        format!(
-            "{BOLD}Build origin{RST}  {GREEN}official{RST}  {DIM}{}{RST}",
-            integrity.repo
-        )
-    } else {
-        format!(
-            "{BOLD}Build origin{RST}  {RED}MODIFIED REDISTRIBUTION{RST}  {YELLOW}pkg={}, repo={}{RST}",
-            integrity.pkg_name, integrity.repo
-        )
-    };
-    board.check(&Outcome {
-        ok: integrity_ok,
-        line: integrity_line,
-    });
 
     // 14) Claude Code instruction truncation guard
     let claude_truncation = claude_truncation_outcome();
@@ -422,7 +399,7 @@ pub fn run() -> u32 {
         println!("  {GREEN}Everything looks good.{RST}");
     }
     println!("  {DIM}LSP servers are optional enhancements (not counted in score){RST}");
-    println!("  {DIM}{}{RST}", crate::core::integrity::origin_line());
+    println!("  {DIM}lean-ctx {}{RST}", env!("CARGO_PKG_VERSION"));
 
     // Refresh the cached latest-version in the background and, if the running
     // binary is behind, nudge toward the fast self-updater right where a
@@ -506,9 +483,6 @@ pub fn compact_score() -> (u32, u32) {
         .and_then(|p| std::fs::metadata(p).ok())
         .is_some_and(|m| m.is_file())
     {
-        passed += 1;
-    }
-    if legacy_shell_hook_outcome().ok {
         passed += 1;
     }
     if mcp_config_outcome().ok {

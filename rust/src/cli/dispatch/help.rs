@@ -196,7 +196,7 @@ OPTIONS:
     --help, -h                     Show this help
 
 TROUBLESHOOTING:
-    Something broken?    lean-ctx doctor --fix    (also removes an old shell hook)
+    Something broken?    lean-ctx doctor --fix
     Permanent fix?       lean-ctx uninstall       (removes all hooks)
     Preview init?        lean-ctx init --check
 ",

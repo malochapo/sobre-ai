@@ -8,7 +8,6 @@ use std::process::Command;
 fn lean_ctx_bin() -> Command {
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_lean-ctx"));
     cmd.current_dir(env!("CARGO_MANIFEST_DIR"));
-    cmd.env("LEAN_CTX_ACTIVE", "1");
     cmd
 }
 

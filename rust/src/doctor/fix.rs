@@ -34,36 +34,6 @@ fn build_and_persist_fix_report(
 
     let mut steps: Vec<SetupStepReport> = Vec::new();
 
-    let mut shell_step = SetupStepReport {
-        name: "shell_hook".to_string(),
-        ok: true,
-        items: Vec::new(),
-        warnings: Vec::new(),
-        errors: Vec::new(),
-    };
-    // sobre never edits shell files: the fix is removing a lean-ctx hook an
-    // older install left behind.
-    let before = crate::doctor::checks::legacy_shell_hook_outcome();
-    if before.ok {
-        shell_step.items.push(SetupItem {
-            name: "shell files".to_string(),
-            status: "clean".to_string(),
-            path: None,
-            note: None,
-        });
-    } else {
-        crate::uninstall::remove_legacy_shell_hook(&home);
-        let after = crate::doctor::checks::legacy_shell_hook_outcome();
-        shell_step.ok = after.ok;
-        shell_step.items.push(SetupItem {
-            name: "shell files".to_string(),
-            status: if after.ok { "fixed" } else { "failed" }.to_string(),
-            path: None,
-            note: (!after.ok).then(|| "old shell hook still present".to_string()),
-        });
-    }
-    steps.push(shell_step);
-
     let mut mcp_step = SetupStepReport {
         name: "mcp_config".to_string(),
         ok: true,

@@ -326,7 +326,7 @@ pub fn run() {
             // `raw` runs the command with its output passed through unchanged.
             "raw" => handle_raw(&args, &rest),
             "--version" | "-V" => {
-                println!("{}", core::integrity::origin_line());
+                println!("lean-ctx {}", env!("CARGO_PKG_VERSION"));
                 return;
             }
             "help" => {
