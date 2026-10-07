@@ -102,8 +102,11 @@ pub(crate) fn workspace_search(
 }
 
 /// One root's ranking in `mode`, plus a note when hybrid ran without its
-/// dense signal. Only the dense arms read `root`.
-#[cfg_attr(not(feature = "embeddings"), allow(unused_variables))]
+/// dense signal. Only the dense arms read `root` or can fail.
+#[cfg_attr(
+    not(feature = "embeddings"),
+    allow(unused_variables, clippy::unnecessary_wraps)
+)]
 fn root_results(
     mode: SearchMode,
     query: &str,
