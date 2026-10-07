@@ -328,10 +328,7 @@ pub fn run() {
                 uninstall::run(dry_run, keep_config, keep_binary);
                 return;
             }
-            // `raw` is the primary name; `bypass` is kept as a back-compat alias.
-            // The old "bypass" wording read to a model like a *security* bypass,
-            // but this only skips compression — the shell allowlist and path jail
-            // still apply (GH security audit, finding 5).
+            // `raw` runs the command with its output passed through unchanged.
             "raw" => handle_raw(&args, &rest),
             "--version" | "-V" => {
                 println!("{}", core::integrity::origin_line());
@@ -423,10 +420,7 @@ fn handle_exec(args: &[String], rest: &[String]) -> ! {
 fn handle_raw(args: &[String], rest: &[String]) -> ! {
     if rest.is_empty() {
         eprintln!("Usage: lean-ctx raw \"command\"");
-        eprintln!(
-            "Runs the command with output passed through unchanged (no compression). \
-             The shell gate still applies."
-        );
+        eprintln!("Runs the command with output passed through unchanged (no compression).");
         std::process::exit(1);
     }
     let command = if rest.len() == 1 {

@@ -380,29 +380,6 @@ fn is_heavy_command(command: &str) -> bool {
     !final_cmd.is_empty() && matches_heavy(final_cmd)
 }
 
-/// Decides whether a gate violation on the CLI path blocks (exit 126) or
-/// only warns.
-///
-/// Enforced when:
-/// - hook-child mode (this process runs a hook): lean-ctx is the agent's
-///   command-interception channel and must not be weaker than the MCP path, or
-/// - stderr is not a TTY: a non-interactive caller is an agent or script, and
-///   agent-driven `lean-ctx -c` must enforce the same boundary as ctx_shell.
-///
-/// Warn-only when a human runs `lean-ctx -c` at an interactive terminal (they
-/// can run the command without lean-ctx anyway, so blocking adds friction, not
-/// a boundary).
-fn gate_must_enforce() -> bool {
-    let hook_child = crate::core::runtime_flags::hook_child_enabled();
-    gate_must_enforce_inner(hook_child, io::stderr().is_terminal())
-}
-
-/// Pure decision core of [`gate_must_enforce`] (unit-testable without
-/// process-global env/TTY state).
-fn gate_must_enforce_inner(hook_child: bool, stderr_is_tty: bool) -> bool {
-    hook_child || !stderr_is_tty
-}
-
 /// True when this process's stdout is a **regular file** — i.e. the caller
 /// redirected output to a file (`cmd > out`, `cmd >> out`).
 ///
@@ -440,45 +417,9 @@ fn stdout_is_regular_file() -> bool {
     }
 }
 
-/// Shell gate for the CLI entrypoint `-c` (via [`exec`]), the same boundary
-/// as `ctx_shell`.
-///
-/// Returns `Some(126)` when the command is blocked and the caller must return
-/// that exit code; `None` when execution may proceed (allowed, or warn-only for
-/// an interactive human — see [`gate_must_enforce`]).
-fn gate_cli_command(command: &str) -> Option<i32> {
-    if let Err(msg) = crate::core::shell_gate::check_shell_command(command) {
-        if gate_must_enforce() {
-            eprintln!("{msg}");
-            eprintln!(
-                "lean-ctx: blocked by the shell gate. Every command is allowed \
-                 except the constructs that hide the real one from inspection."
-            );
-            return Some(126);
-        }
-        // Diagnostic, not user feedback: an interactive human at a TTY can run
-        // the command without lean-ctx anyway, and surfacing a WARN in their
-        // plain terminal is exactly the confusion GH #699 reported. Keep the
-        // warning for non-TTY callers (agents that opted into warn-only).
-        if io::stderr().is_terminal() {
-            tracing::debug!("[CLI] Command would be blocked in MCP mode: {msg}");
-        } else {
-            tracing::warn!("[CLI] Command would be blocked in MCP mode: {msg}");
-        }
-    }
-    None
-}
-
 pub fn exec(command: &str) -> i32 {
-    // #595: when the agent wraps its command in host scaffolding
-    // (`… && eval '<cmd>' … && pwd -P >| …-cwd`), look through it so the gate
-    // and compression act on the REAL command, not the wrapper — whose `eval` the
-    // gate would otherwise hard-block on every single call. The cwd snapshot
-    // is preserved so the host keeps tracking the working directory.
-    let unwrapped = super::agent_wrapper::unwrap_agent_wrapper(command).map(|u| u.rebuild());
     let mut collapsed_nested = false;
     let collapsed;
-    let command = unwrapped.as_deref().unwrap_or(command);
     let command = if let Some(c) = collapse_nested_lean_ctx_exec(command) {
         collapsed_nested = true;
         collapsed = c;
@@ -486,10 +427,6 @@ pub fn exec(command: &str) -> i32 {
     } else {
         command
     };
-
-    if let Some(code) = gate_cli_command(command) {
-        return code;
-    }
 
     let (shell, shell_flag) = super::platform::shell_and_flag();
     let command = crate::tools::ctx_shell::normalize_command_for_shell(command);
@@ -1120,25 +1057,5 @@ mod exec_tests {
             super::shell_timeout_with_override("git status", None),
             super::DEFAULT_TIMEOUT
         );
-    }
-
-    // P0-1 (#413): the CLI gate must enforce for agents, warn for humans.
-    #[test]
-    fn gate_enforces_in_hook_child_mode() {
-        // Hook-child wins over everything, even an interactive TTY.
-        assert!(super::gate_must_enforce_inner(true, true));
-        assert!(super::gate_must_enforce_inner(true, false));
-    }
-
-    #[test]
-    fn gate_enforces_for_non_interactive_callers() {
-        // Agent/script invocation: stderr is a pipe → enforce.
-        assert!(super::gate_must_enforce_inner(false, false));
-    }
-
-    #[test]
-    fn gate_warns_for_interactive_humans() {
-        // Human at a TTY → warn-only (they can bypass lean-ctx anyway).
-        assert!(!super::gate_must_enforce_inner(false, true));
     }
 }

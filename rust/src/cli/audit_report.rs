@@ -50,8 +50,5 @@ pub fn generate_report() -> String {
         ));
     }
 
-    report.push_str("\n\n");
-    report.push_str(&crate::core::owasp_alignment::summary());
-
     report
 }

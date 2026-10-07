@@ -43,21 +43,6 @@ fn rewrite_skip_reason_tracks_candidate_none_branches() {
         rewrite_skip_reason(unknown),
         "not a known read/search/list command"
     );
-
-    // A compound whose sink the gate refuses (here `python3 -c`) is left raw for
-    // the agent shell — the rewrite must not newly block it (#589).
-    let tricky = "git log | python3 -c 'print(1)'";
-    let (declined, reason) = with_env_lock(|| {
-        (
-            rewrite_candidate(tricky, binary).is_none(),
-            rewrite_skip_reason(tricky),
-        )
-    });
-    assert!(declined, "tricky compound sink must not be rewritten");
-    assert_eq!(
-        reason,
-        "compound pipes/chains into a gate-blocked or interpreter sink — left raw for the agent shell"
-    );
 }
 
 #[test]
@@ -518,8 +503,7 @@ fn read_redirect_resolves_and_rewrites_cursor_file_path() {
 // A gate-clean compound is wrapped ENTIRELY in one `lean-ctx -c "…"`: the
 // pipe/chain runs inside lean-ctx's profile-free shell (fixes the Windows
 // `_lc: command not found`) and only the FINAL output is compressed (fixes the
-// left-of-pipe corruption). Tricky sinks (gate-blocked / interpreter-eval)
-// are declined and left raw for the agent's shell (compat-first, no new block).
+// left-of-pipe corruption).
 
 #[test]
 fn compound_rewrite_and_chain() {
@@ -585,23 +569,6 @@ fn compound_skips_already_rewritten() {
     // `lean-ctx -c "…"`; the whole compound is left untouched.
     let result =
         with_env_lock(|| build_rewrite_compound("lean-ctx -c git status && git diff", "lean-ctx"));
-    assert_eq!(result, None);
-}
-
-#[test]
-fn compound_tricky_interpreter_sink_left_raw() {
-    // Piping into `python3 -c` (gate-blocked) must NOT be wrapped — wrapping
-    // would newly subject the interpreter to the gate and block a command the
-    // agent's shell ran fine before (#589, compat-first).
-    let result =
-        with_env_lock(|| build_rewrite_compound("git log | python3 -c 'print(1)'", "lean-ctx"));
-    assert_eq!(result, None);
-}
-
-#[test]
-fn compound_tricky_chain_sink_left_raw() {
-    let result =
-        with_env_lock(|| build_rewrite_compound("cargo test && python3 -c 'print(1)'", "lean-ctx"));
     assert_eq!(result, None);
 }
 

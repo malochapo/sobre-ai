@@ -78,8 +78,6 @@ pub(super) fn rewrite_skip_reason(cmd: &str) -> &'static str {
         "already a lean-ctx command"
     } else if cmd.contains("<<") {
         "heredoc cannot be rewritten safely"
-    } else if is_compound(cmd) && !crate::core::shell_gate::passes_enforced(cmd) {
-        "compound pipes/chains into a gate-blocked or interpreter sink — left raw for the agent shell"
     } else {
         "not a known read/search/list command"
     }
@@ -375,11 +373,5 @@ pub(super) fn build_rewrite_compound(cmd: &str, binary: &str) -> Option<String> 
         return None;
     }
 
-    // Wrap-whole only when the entire compound would pass the shell gate;
-    // otherwise a tricky sink would be newly blocked (see doc above).
-    if crate::core::shell_gate::passes_enforced(cmd) {
-        Some(wrap_single_command(cmd, binary))
-    } else {
-        None
-    }
+    Some(wrap_single_command(cmd, binary))
 }

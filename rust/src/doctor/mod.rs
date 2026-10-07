@@ -209,16 +209,15 @@ pub fn run() -> u32 {
     };
     board.check(&config_outcome);
 
-    // 5b) Shell gate (effective runtime view + silent-parse-error trap, #341)
-    let gate_outcome = shell_gate_outcome();
-    board.check(&gate_outcome);
+    // 5b) Silent config parse error trap (#341)
+    let parse_outcome = config_parse_outcome();
+    board.check(&parse_outcome);
 
     // 5b2) Path jail (effective state + dead allow_paths entries, GH #392)
     let path_jail = path_jail_outcome();
     board.check(&path_jail);
 
-    // 5b3b) Secret/.env redaction — the exfiltration-defense plane, independent
-    // of the jail + shell gating above (#507).
+    // 5b3b) Secret/.env redaction — the exfiltration-defense plane (#507).
     let secret_detection = secret_detection_outcome();
     board.check(&secret_detection);
 

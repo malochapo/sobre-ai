@@ -10,9 +10,6 @@ use serde_json::{Map, Value};
 pub enum ShellOutcome {
     /// The command ran; carries its real exit code (0 = success).
     Exit(i32),
-    /// The command never ran (allowlist/validation rejection, or a
-    /// precondition failure such as an unreadable/oversized input file).
-    Blocked,
 }
 
 impl ShellOutcome {
@@ -20,19 +17,17 @@ impl ShellOutcome {
     pub fn is_error(self) -> bool {
         match self {
             ShellOutcome::Exit(code) => code != 0,
-            ShellOutcome::Blocked => true,
         }
     }
 
     /// Structured payload for `CallToolResult.structuredContent`, so guards
-    /// can read `exitCode`/`blocked` instead of parsing output text. Success
+    /// can read `exitCode` instead of parsing output text. Success
     /// (exit 0) intentionally returns `None` — the happy path stays
     /// token-neutral for clients that render structured content.
     pub fn structured(self) -> Option<serde_json::Value> {
         match self {
             ShellOutcome::Exit(0) => None,
             ShellOutcome::Exit(code) => Some(serde_json::json!({ "exitCode": code })),
-            ShellOutcome::Blocked => Some(serde_json::json!({ "blocked": true })),
         }
     }
 }

@@ -546,8 +546,7 @@ fn is_shell_error(outcome: crate::server::tool_trait::ShellOutcome, output: &str
             // signals the timeout to the agent.
             crate::server::execute::output_before_timeout_marker(output).is_none_or(str::is_empty)
         }
-        crate::server::tool_trait::ShellOutcome::Exit(_)
-        | crate::server::tool_trait::ShellOutcome::Blocked => true,
+        crate::server::tool_trait::ShellOutcome::Exit(_) => true,
     }
 }
 
@@ -652,20 +651,6 @@ mod shell_outcome_tests {
         assert_eq!(
             r.structured_content,
             Some(serde_json::json!({ "exitCode": -1 }))
-        );
-    }
-
-    #[test]
-    fn blocked_command_sets_is_error_and_blocked_marker() {
-        let r = finalize_call_result("[BLOCKED] nope", Some(ShellOutcome::Blocked));
-        assert_eq!(
-            r.is_error,
-            Some(true),
-            "blocked commands never ran — that is a failure"
-        );
-        assert_eq!(
-            r.structured_content,
-            Some(serde_json::json!({ "blocked": true }))
         );
     }
 

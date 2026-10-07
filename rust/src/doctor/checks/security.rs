@@ -1,28 +1,25 @@
-//! Containment & security: shell gate, path jail, secret redaction.
+//! Containment & security: config parsing, path jail, secret redaction.
 
 use crate::doctor::{BOLD, DIM, GREEN, Outcome, RED, RST, YELLOW};
 
-/// Reports the shell gate — and, crucially, flags when `config.toml` fails to
-/// parse (the silent-default trap behind #341, where an edit appears to "do
-/// nothing" because the file never loaded).
-pub(crate) fn shell_gate_outcome() -> Outcome {
+/// Flags when `config.toml` fails to parse (the silent-default trap behind
+/// #341, where an edit appears to "do nothing" because the file never loaded).
+pub(crate) fn config_parse_outcome() -> Outcome {
     if let Some(err) = crate::core::config::last_config_parse_error() {
         let short = err.lines().next().unwrap_or("parse error");
         return Outcome {
             ok: false,
             line: format!(
-                "{BOLD}Shell gating{RST}  {RED}config.toml fails to parse → running on DEFAULTS{RST}  {DIM}({short}){RST}"
+                "{BOLD}Config file{RST}  {RED}config.toml fails to parse → running on DEFAULTS{RST}  {DIM}({short}){RST}"
             ),
         };
     }
-
     Outcome {
         ok: true,
-        line: format!(
-            "{BOLD}Shell gating{RST}  {GREEN}enforce{RST}  {DIM}(every command allowed; eval/exec/source and interpreter-eval blocked){RST}"
-        ),
+        line: format!("{BOLD}Config file{RST}  {GREEN}parses{RST}"),
     }
 }
+
 /// Reports the effective PathJail state (GH #392): whether it is open, and
 /// whether configured `allow_paths` entries
 /// actually resolve — the silent failure mode behind "allow_paths has no
