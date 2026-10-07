@@ -91,7 +91,10 @@ fn json_str(s: &str) -> String {
 /// All writes run inside a single transaction — without it, SQLite fsyncs per
 /// statement, which on a real repo (thousands of symbols) is pathologically
 /// slow.
-pub fn populate_from_project_index(graph: &CodeGraph, index: &ProjectIndex) -> anyhow::Result<()> {
+pub(crate) fn populate_from_project_index(
+    graph: &CodeGraph,
+    index: &ProjectIndex,
+) -> anyhow::Result<()> {
     graph.clear_code_graph()?;
 
     let tx = graph.connection().unchecked_transaction()?;
@@ -132,7 +135,7 @@ pub fn populate_from_project_index(graph: &CodeGraph, index: &ProjectIndex) -> a
 }
 
 /// Reliable, reusable PG build entry (#682.2): open the project's graph store,
-/// [`populate_from_project_index`] from `index`, and stamp `graph.meta.json`.
+/// populate it from `index`, and stamp `graph.meta.json`.
 ///
 /// Used by both the index orchestrator (with the index it just scanned) and the
 /// `graph_provider` builder (after a load-or-scan), so the property graph is

@@ -38,7 +38,8 @@ impl GitOutput {
     }
 }
 
-/// `true` if a `git` binary is callable.
+/// `true` if a `git` binary is callable (tests skip when it is not).
+#[cfg(test)]
 pub fn git_available() -> bool {
     Command::new("git")
         .arg("--version")

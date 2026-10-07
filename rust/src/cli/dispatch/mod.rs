@@ -92,10 +92,6 @@ pub fn run() {
                 crate::cli::cmd_index(&rest);
                 return;
             }
-            "repomap" => {
-                crate::cli::cmd_repomap(&rest);
-                return;
-            }
             "proxy" => {
                 cmd_proxy(&rest);
                 return;
@@ -154,17 +150,7 @@ pub fn run() {
                 return;
             }
             "graph" => {
-                // `graph --heatmap` is the structural view: per-file heat from
-                // token count x graph connections.
-                if rest.iter().any(|a| a == "--heatmap") {
-                    crate::heatmap::cmd_heatmap(&rest);
-                    return;
-                }
                 cmd_graph(&rest);
-                return;
-            }
-            "smells" => {
-                cmd_smells(&rest);
                 return;
             }
             "session" => {

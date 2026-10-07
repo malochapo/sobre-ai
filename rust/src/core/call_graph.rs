@@ -67,36 +67,6 @@ impl CallGraphInputs {
         }
     }
 
-    /// Bridge for callers that already hold a freshly-scanned
-    /// [`ProjectIndex`](super::graph_index::ProjectIndex)
-    /// (repomap, dashboard coordinator) and want call-graph inputs consistent
-    /// with *that* scan rather than a possibly-lagging PropertyGraph. Removed in
-    /// #696 Phase D once those callers move to the facade/extractor wholesale.
-    pub fn from_project_index(index: &super::graph_index::ProjectIndex) -> Self {
-        let symbols = index
-            .symbols
-            .values()
-            .map(|s| SymbolSpan {
-                file: s.file.clone(),
-                name: s.name.clone(),
-                start_line: s.start_line,
-                end_line: s.end_line,
-            })
-            .collect();
-        let import_edges = index
-            .edges
-            .iter()
-            .filter(|e| e.kind == "import" || e.kind == "reexport")
-            .map(|e| (e.from.clone(), e.to.clone()))
-            .collect();
-        Self {
-            project_root: index.project_root.clone(),
-            file_paths: index.files.keys().cloned().collect(),
-            symbols,
-            import_edges,
-        }
-    }
-
     /// Materialize the builder inputs from a [`GraphProvider`] facade.
     pub fn from_provider(project_root: &str, provider: &GraphProvider) -> Self {
         let symbols = provider

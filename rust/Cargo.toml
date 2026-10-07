@@ -341,10 +341,6 @@ name = "compression"
 harness = false
 
 [[bench]]
-name = "graph_export"
-harness = false
-
-[[bench]]
 name = "efficiency"
 harness = false
 

@@ -1,15 +1,12 @@
-//! Graph primitives for `ctx_graph`: `neighbors`, `path` (shortest path) and
-//! `explain`. These are graphify-style traversal/inspection helpers that work on
-//! the same file-level graph the dashboard renders (`GraphProvider::edges`), so
-//! the MCP answers and the visual graph always agree.
+//! Graph primitives for `ctx_graph`: `neighbors` and `path` (shortest path),
+//! traversal helpers over the file-level graph (`GraphProvider::edges`).
 //!
-//! All three accept `format="json"` for machine consumption; otherwise they emit
+//! Both accept `format="json"` for machine consumption; otherwise they emit
 //! compact, token-light text with a `[ctx_graph <action>: N tok]` footer like the
 //! other actions.
 
 use std::collections::{HashMap, HashSet, VecDeque};
 
-use crate::core::graph_analysis::edge_confidence;
 use crate::core::graph_index;
 use crate::core::graph_provider::{self, EdgeInfo};
 use crate::core::protocol::shorten_path;
@@ -477,163 +474,24 @@ pub fn shortest_path(
     format!("{out}[ctx_graph path: {tokens} tok]")
 }
 
-/// `ctx_graph action=explain` — why a file matters: degree, community, bridge
-/// score, god-node rank and its most important couplings. Reuses the same
-/// analyses the dashboard shows.
-pub fn explain(path: Option<&str>, root: &str, format: Option<&str>) -> String {
-    let Some(input) = path else {
-        return "path is required for 'explain' action".to_string();
-    };
-    let open = match open_graph(root) {
-        Ok(o) => o,
-        Err(e) => return e,
-    };
-    let gp = &open.provider;
-    let edges = gp.edges();
-    let adj = Adj::build(&edges, &gp.file_paths());
-    let node = match adj.resolve(input, root) {
-        Ok(n) => n,
-        Err(e) => return e,
-    };
-
-    let community = crate::core::community::detect_communities_for_provider(gp, root);
-    let community_map = community.assignment_min_size(2);
-    let god = crate::core::graph_analysis::compute_god_nodes(&edges, usize::MAX);
-    let bridges = crate::core::graph_analysis::compute_bridge_nodes(&edges, usize::MAX);
-    let surprising = crate::core::graph_analysis::find_surprising_connections(
-        &edges,
-        &community_map,
-        usize::MAX,
-    );
-
-    let god_entry = god.iter().enumerate().find(|(_, g)| g.path == node);
-    let (dep_in, dep_out, dep_degree) =
-        god_entry.map_or((0, 0, 0), |(_, g)| (g.in_degree, g.out_degree, g.degree));
-    let god_rank = god_entry.map(|(i, _)| i + 1);
-    let bridge_entry = bridges.iter().enumerate().find(|(_, b)| b.path == node);
-    let community_id = community_map.get(&node).copied();
-    let community_info =
-        community_id.and_then(|id| community.communities.iter().find(|c| c.id == id));
-    let surprising_here: Vec<_> = surprising
-        .iter()
-        .filter(|s| s.from == node || s.to == node)
-        .take(8)
-        .collect();
-
-    let out_all = adj.outgoing(&node);
-    let inc_all = adj.incoming(&node);
-
-    if is_json(format) {
-        let val = serde_json::json!({
-            "node": node,
-            "dependency_degree": { "in": dep_in, "out": dep_out, "total": dep_degree },
-            "god_node_rank": god_rank,
-            "is_god_node": god_rank.is_some_and(|r| r <= 12),
-            "bridge": bridge_entry.map(|(i, b)| serde_json::json!({
-                "rank": i + 1, "betweenness": round3(b.betweenness),
-            })),
-            "community": community_info.map(|c| serde_json::json!({
-                "id": c.id, "files": c.files.len(),
-                "cohesion": round3(c.cohesion),
-                "internal_edges": c.internal_edges, "external_edges": c.external_edges,
-            })),
-            "neighbors_all_kinds": { "out": out_all.len(), "in": inc_all.len() },
-            "surprising_connections": surprising_here.iter().map(|s| serde_json::json!({
-                "from": s.from, "to": s.to, "score": round3(s.score),
-                "cross_community": s.cross_community,
-            })).collect::<Vec<_>>(),
-        });
-        return serde_json::to_string_pretty(&val).unwrap_or_else(|_| "{}".to_string());
+/// Confidence that an edge represents a *real* relationship, in `0.0..=1.0`.
+///
+/// Explicit code references (`import`/`reexport`) are certain; structural
+/// `module` grouping is fairly reliable; the co-location/co-change heuristics
+/// are weaker and scale with their observed `weight` (how often two files
+/// changed together).
+fn edge_confidence(kind: &str, weight: f64) -> f64 {
+    match kind {
+        "import" => 1.0,
+        "reexport" => 0.95,
+        "module" => 0.6,
+        // More co-changes ⇒ more confidence, with diminishing returns.
+        "cochange" => (0.30 + weight.max(0.0).ln_1p() * 0.18).clamp(0.30, 0.85),
+        // Learned co-access (files opened together in real sessions, #289).
+        "co_access" => (0.35 + weight.max(0.0).ln_1p() * 0.16).clamp(0.35, 0.80),
+        "sibling" => 0.25,
+        _ => 0.5,
     }
-
-    let mut out = format!("Why {} matters\n\n", shorten_path(&node));
-    out.push_str(&format!(
-        "Dependency degree: {dep_degree} (in {dep_in} · out {dep_out})\n"
-    ));
-    match god_rank {
-        Some(r) if r <= 12 => {
-            out.push_str(&format!("God-node: yes — rank #{r} (most connected)\n"));
-        }
-        Some(r) => out.push_str(&format!("God-node rank: #{r}\n")),
-        None => out.push_str("God-node: no dependency edges\n"),
-    }
-    match bridge_entry {
-        Some((i, b)) => out.push_str(&format!(
-            "Bridge (betweenness): {:.2} — rank #{} (sits on many shortest paths)\n",
-            b.betweenness,
-            i + 1
-        )),
-        None => out.push_str("Bridge: not on critical paths\n"),
-    }
-    match community_info {
-        Some(c) => out.push_str(&format!(
-            "Community: #{} — {} files, cohesion {:.2} (internal {} / external {})\n",
-            c.id,
-            c.files.len(),
-            c.cohesion,
-            c.internal_edges,
-            c.external_edges
-        )),
-        None => out.push_str("Community: isolated (no module ≥2 files)\n"),
-    }
-    out.push_str(&format!(
-        "Total neighbors (all edge kinds): {} (out {} · in {})\n",
-        out_all.len() + inc_all.len(),
-        out_all.len(),
-        inc_all.len()
-    ));
-
-    let top_dependents: Vec<&String> = inc_all
-        .iter()
-        .filter(|n| crate::core::graph_analysis::is_dependency_kind(&n.kind))
-        .map(|n| &n.node)
-        .take(8)
-        .collect();
-    if !top_dependents.is_empty() {
-        out.push_str(&format!(
-            "\nTop dependents (fan-in, {}):\n",
-            top_dependents.len()
-        ));
-        for d in &top_dependents {
-            out.push_str(&format!("  {}\n", shorten_path(d)));
-        }
-    }
-    let top_deps: Vec<&String> = out_all
-        .iter()
-        .filter(|n| crate::core::graph_analysis::is_dependency_kind(&n.kind))
-        .map(|n| &n.node)
-        .take(8)
-        .collect();
-    if !top_deps.is_empty() {
-        out.push_str(&format!(
-            "\nTop dependencies (fan-out, {}):\n",
-            top_deps.len()
-        ));
-        for d in &top_deps {
-            out.push_str(&format!("  {}\n", shorten_path(d)));
-        }
-    }
-    if !surprising_here.is_empty() {
-        out.push_str(&format!(
-            "\nSurprising connections ({}):\n",
-            surprising_here.len()
-        ));
-        for s in &surprising_here {
-            let other = if s.from == node { &s.to } else { &s.from };
-            out.push_str(&format!(
-                "  {} (score {:.2}{})\n",
-                shorten_path(other),
-                s.score,
-                if s.cross_community {
-                    ", cross-community"
-                } else {
-                    ""
-                }
-            ));
-        }
-    }
-    let tokens = count_tokens(&out);
-    format!("{out}[ctx_graph explain: {tokens} tok]")
 }
 
 fn round3(v: f64) -> f64 {

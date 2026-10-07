@@ -48,14 +48,6 @@ export const b = () => c();
         assert_eq!(status_v["action"], "status");
         assert_ne!(status_v["freshness"], "empty");
 
-        // Entrypoints (ctx_graph action=entrypoints): a.ts has no dependents.
-        let arch = lean_ctx::tools::impl_architecture::handle("entrypoints", &root_s, Some("json"));
-        let arch_v = parse_json(&arch);
-        assert_eq!(arch_v["tool"], "ctx_graph");
-        assert_eq!(arch_v["action"], "entrypoints");
-        assert_eq!(arch_v["entrypoints_total"], 1);
-        assert_eq!(arch_v["entrypoints"][0]["file"], "src/a.ts");
-
         // Dependency chain should be deterministic.
         let chain = lean_ctx::tools::ctx_impact::handle(
             "chain",

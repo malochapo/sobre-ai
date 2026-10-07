@@ -18,6 +18,3 @@ pub const PROSPECTIVE_REMINDER_MAX_CHARS: usize = 160;
 
 // Property graph tools (bounded outputs, deterministic ordering)
 pub const IMPACT_AFFECTED_FILES_LIMIT: usize = 200;
-
-pub const ARCHITECTURE_ENTRYPOINTS_LIMIT: usize = 50;
-pub const ARCHITECTURE_CYCLES_LIMIT: usize = 20;

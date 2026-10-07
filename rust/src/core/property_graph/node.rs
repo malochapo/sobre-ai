@@ -44,7 +44,6 @@ impl NodeKind {
 
 #[derive(Debug, Clone)]
 pub struct Node {
-    pub id: Option<i64>,
     pub kind: NodeKind,
     pub name: String,
     pub file_path: String,
@@ -56,7 +55,6 @@ pub struct Node {
 impl Node {
     pub fn file(path: &str) -> Self {
         Self {
-            id: None,
             kind: NodeKind::File,
             name: path.to_string(),
             file_path: path.to_string(),
@@ -68,7 +66,6 @@ impl Node {
 
     pub fn symbol(name: &str, file_path: &str, kind: NodeKind) -> Self {
         Self {
-            id: None,
             kind,
             name: name.to_string(),
             file_path: file_path.to_string(),
@@ -84,57 +81,10 @@ impl Node {
         self
     }
 
+    #[cfg(test)]
     pub fn with_metadata(mut self, meta: &str) -> Self {
         self.metadata = Some(meta.to_string());
         self
-    }
-
-    pub fn commit(hash: &str, message: &str) -> Self {
-        Self {
-            id: None,
-            kind: NodeKind::Commit,
-            name: hash.to_string(),
-            file_path: String::new(),
-            line_start: None,
-            line_end: None,
-            metadata: Some(message.to_string()),
-        }
-    }
-
-    pub fn test(path: &str, test_name: &str) -> Self {
-        Self {
-            id: None,
-            kind: NodeKind::Test,
-            name: test_name.to_string(),
-            file_path: path.to_string(),
-            line_start: None,
-            line_end: None,
-            metadata: None,
-        }
-    }
-
-    pub fn knowledge(id: &str, summary: &str) -> Self {
-        Self {
-            id: None,
-            kind: NodeKind::Knowledge,
-            name: id.to_string(),
-            file_path: String::new(),
-            line_start: None,
-            line_end: None,
-            metadata: Some(summary.to_string()),
-        }
-    }
-
-    pub fn issue(id: &str, title: &str) -> Self {
-        Self {
-            id: None,
-            kind: NodeKind::Issue,
-            name: id.to_string(),
-            file_path: String::new(),
-            line_start: None,
-            line_end: None,
-            metadata: Some(title.to_string()),
-        }
     }
 }
 
@@ -175,7 +125,6 @@ pub(super) fn get_by_path(conn: &Connection, file_path: &str) -> anyhow::Result<
             params![file_path],
             |row| {
                 Ok(Node {
-                    id: Some(row.get(0)?),
                     kind: NodeKind::parse(&row.get::<_, String>(1)?),
                     name: row.get(2)?,
                     file_path: row.get(3)?,
@@ -202,7 +151,6 @@ pub(super) fn get_by_symbol(
             params![name, file_path],
             |row| {
                 Ok(Node {
-                    id: Some(row.get(0)?),
                     kind: NodeKind::parse(&row.get::<_, String>(1)?),
                     name: row.get(2)?,
                     file_path: row.get(3)?,
@@ -271,7 +219,6 @@ pub(super) fn find_symbols(
 
     let rows = stmt.query_map(refs.as_slice(), |row| {
         Ok(Node {
-            id: Some(row.get(0)?),
             kind: NodeKind::parse(&row.get::<_, String>(1)?),
             name: row.get(2)?,
             file_path: row.get(3)?,
@@ -325,7 +272,6 @@ pub(super) fn all_symbols(conn: &Connection) -> anyhow::Result<Vec<Node>> {
     )?;
     let rows = stmt.query_map([], |row| {
         Ok(Node {
-            id: Some(row.get(0)?),
             kind: NodeKind::parse(&row.get::<_, String>(1)?),
             name: row.get(2)?,
             file_path: row.get(3)?,

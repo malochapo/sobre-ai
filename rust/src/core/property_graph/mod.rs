@@ -13,7 +13,6 @@ mod node;
 mod path_id;
 mod queries;
 mod schema;
-pub mod snapshot;
 mod sync;
 
 pub use edge::{Edge, EdgeKind};
@@ -21,7 +20,9 @@ pub use file_catalog::FileCatalogEntry;
 pub use meta::{PropertyGraphMetaV1, load_meta, meta_path, write_meta};
 pub use node::{Node, NodeKind};
 pub use queries::{DependencyChain, ImpactResult, edge_weight, related_files};
-pub use sync::{mirror_index, parse_symbol_metadata, populate_from_project_index};
+#[cfg(test)]
+pub(crate) use sync::populate_from_project_index;
+pub use sync::{mirror_index, parse_symbol_metadata};
 
 use rusqlite::Connection;
 use std::path::{Path, PathBuf};
@@ -126,6 +127,7 @@ impl CodeGraph {
         })
     }
 
+    #[cfg(test)]
     pub fn open_in_memory() -> anyhow::Result<Self> {
         let conn = Connection::open_in_memory()?;
         schema::initialize(&conn)?;
@@ -163,10 +165,12 @@ impl CodeGraph {
         node::remove_by_file(&self.conn, file_path)
     }
 
+    #[cfg(test)]
     pub fn edges_from(&self, node_id: i64) -> anyhow::Result<Vec<Edge>> {
         edge::from_node(&self.conn, node_id)
     }
 
+    #[cfg(test)]
     pub fn edges_to(&self, node_id: i64) -> anyhow::Result<Vec<Edge>> {
         edge::to_node(&self.conn, node_id)
     }

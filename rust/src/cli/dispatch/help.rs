@@ -114,14 +114,11 @@ FILES AND SEARCH:
     find <pattern> [path]          Find files with compressed output
     ls [path]                      Directory listing with compression
     deps [path]                    Project dependencies
-    repomap [--max-tokens N] [--limit N] [--json]  Ranked repository map
     call <tool> [args]             Call one MCP tool from the command line
 
 PROJECT ANALYSIS:
-    graph build|status|related|impact|symbol|context   Project graph queries
-    graph --heatmap                Per-file heat: tokens x graph connections
+    graph build|status|related|impact|symbol|neighbors|path   Project graph queries
     index status|build|build-full|watch [--force]       Codebase index
-    smells scan|summary|rules|file [--rule=<r>] [--path=<p>] [--json]
     health [path] [--json] [--gate]  Code health: complexity, naming, token tax
     visualize [--output F] [--open]  Interactive HTML graph report
 
