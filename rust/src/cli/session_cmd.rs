@@ -11,58 +11,45 @@ pub fn cmd_session_action(args: &[String]) {
         Some("task") => {
             let desc = args.get(1).map_or("(no description)", String::as_str);
             let mut session = load_or_create_session();
-            let out =
-                ctx_session::handle(&mut session, &[], "task", Some(desc), None, default_opts());
+            let out = ctx_session::handle(&mut session, "task", Some(desc), None, default_opts());
             let _ = session.save();
             println!("{out}");
         }
         Some("finding") => {
             let summary = args.get(1).map_or("(no summary)", String::as_str);
             let mut session = load_or_create_session();
-            let out = ctx_session::handle(
-                &mut session,
-                &[],
-                "finding",
-                Some(summary),
-                None,
-                default_opts(),
-            );
+            let out =
+                ctx_session::handle(&mut session, "finding", Some(summary), None, default_opts());
             let _ = session.save();
             println!("{out}");
         }
         Some("save") => {
             let mut session = load_or_create_session();
-            let out = ctx_session::handle(&mut session, &[], "save", None, None, default_opts());
+            let out = ctx_session::handle(&mut session, "save", None, None, default_opts());
             println!("{out}");
         }
         Some("load") => {
             let id = args.get(1).map(String::as_str);
             let mut session = SessionState::new();
-            let out = ctx_session::handle(&mut session, &[], "load", None, id, default_opts());
+            let out = ctx_session::handle(&mut session, "load", None, id, default_opts());
             println!("{out}");
         }
         Some("status") => {
             let mut session = load_or_create_session();
-            let out = ctx_session::handle(&mut session, &[], "status", None, None, default_opts());
+            let out = ctx_session::handle(&mut session, "status", None, None, default_opts());
             println!("{out}");
         }
         Some("decision") => {
             let desc = args.get(1).map_or("(no description)", String::as_str);
             let mut session = load_or_create_session();
-            let out = ctx_session::handle(
-                &mut session,
-                &[],
-                "decision",
-                Some(desc),
-                None,
-                default_opts(),
-            );
+            let out =
+                ctx_session::handle(&mut session, "decision", Some(desc), None, default_opts());
             let _ = session.save();
             println!("{out}");
         }
         Some("reset" | "new") => {
             let mut session = load_or_create_session();
-            let out = ctx_session::handle(&mut session, &[], "reset", None, None, default_opts());
+            let out = ctx_session::handle(&mut session, "reset", None, None, default_opts());
             println!("{out}");
         }
         None => {

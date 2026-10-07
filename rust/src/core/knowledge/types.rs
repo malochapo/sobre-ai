@@ -144,16 +144,6 @@ pub struct ProjectKnowledge {
     pub patterns: Vec<ProjectPattern>,
     pub history: Vec<ConsolidatedInsight>,
     pub updated_at: DateTime<Utc>,
-    #[serde(default)]
-    pub judged_pairs: Vec<JudgedPair>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct JudgedPair {
-    pub key_a: String,
-    pub key_b: String,
-    pub verdict: String,
-    pub judged_at: DateTime<Utc>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -517,7 +517,7 @@ pub fn find_semantic_duplicates(
 /// Engine-free core of [`find_semantic_duplicates`]: scans an in-memory index
 /// for entries whose cosine similarity to a precomputed query embedding clears
 /// `threshold`, maps them back to current facts, and excludes the incoming
-/// fact's own key, non-current facts, and pairs the agent already judged. Pure
+/// fact's own key and non-current facts. Pure
 /// and deterministic so the dedup logic is unit-testable with raw vectors.
 fn semantic_duplicates_from_query(
     index: &KnowledgeEmbeddingIndex,
@@ -529,8 +529,6 @@ fn semantic_duplicates_from_query(
     limit: usize,
 ) -> Vec<crate::core::knowledge::SimilarFact> {
     use crate::core::knowledge::SimilarFact;
-
-    let composite_key = format!("{new_category}/{new_key}");
 
     let mut scored: Vec<(&FactEmbedding, f32)> = index
         .entries
@@ -549,14 +547,6 @@ fn semantic_duplicates_from_query(
 
     let mut out: Vec<SimilarFact> = Vec::new();
     for (entry, sim) in scored {
-        let other_key = format!("{}/{}", entry.category, entry.key);
-        let already_judged = knowledge.judged_pairs.iter().any(|jp| {
-            (jp.key_a == composite_key && jp.key_b == other_key)
-                || (jp.key_a == other_key && jp.key_b == composite_key)
-        });
-        if already_judged {
-            continue;
-        }
         let Some(fact) = knowledge
             .facts
             .iter()
@@ -992,17 +982,8 @@ mod tests {
         let self_hits = semantic_duplicates_from_query(&idx, &kn, "arch", "db", &query, 0.86, 3);
         assert!(self_hits.is_empty(), "a fact is never its own duplicate");
 
-        // A different key matches — until the pair has been judged.
+        // A different key matches.
         let other = semantic_duplicates_from_query(&idx, &kn, "arch", "database", &query, 0.86, 3);
         assert_eq!(other.len(), 1);
-
-        kn.judged_pairs.push(crate::core::knowledge::JudgedPair {
-            key_a: "arch/database".to_string(),
-            key_b: "arch/db".to_string(),
-            verdict: "unrelated".to_string(),
-            judged_at: chrono::Utc::now(),
-        });
-        let judged = semantic_duplicates_from_query(&idx, &kn, "arch", "database", &query, 0.86, 3);
-        assert!(judged.is_empty(), "already-judged pairs are not re-flagged");
     }
 }

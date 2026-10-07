@@ -47,15 +47,6 @@ impl McpTool for CtxSessionTool {
         let write = get_bool(args, "write").unwrap_or(false);
         let privacy = get_str(args, "privacy");
 
-        let tool_calls_handle = ctx
-            .tool_calls
-            .as_ref()
-            .ok_or_else(|| ErrorData::internal_error("tool_calls not available", None))?;
-        let call_durations: Vec<(String, u64)> = {
-            let tc = tool_calls_handle.blocking_read();
-            tc.iter().map(|c| (c.tool.clone(), c.duration_ms)).collect()
-        };
-
         let session_handle = ctx
             .session
             .as_ref()
@@ -63,7 +54,6 @@ impl McpTool for CtxSessionTool {
         let mut session = session_handle.blocking_write();
         let result = crate::tools::ctx_session::handle(
             &mut session,
-            &call_durations,
             &action,
             value.as_deref(),
             sid.as_deref(),

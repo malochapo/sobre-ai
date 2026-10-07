@@ -210,7 +210,6 @@ pub(crate) fn format_facts_with_annotations(
     facts: &[crate::core::knowledge::KnowledgeFact],
     total: usize,
     category: Option<&str>,
-    judged_pairs: &[crate::core::knowledge::JudgedPair],
 ) -> String {
     // Preserve the caller's order: recall_for_output / recall_by_category_for_output
     // already rank facts (balanced observation tier #802, exact-match precedence,
@@ -250,17 +249,6 @@ pub(crate) fn format_facts_with_annotations(
             f.last_confirmed.format("%Y-%m-%d"),
             f.confirmation_count
         ));
-
-        if !judged_pairs.is_empty() {
-            let composite = format!("{}/{}", f.category, f.key);
-            for jp in judged_pairs {
-                if jp.key_a == composite {
-                    out.push_str(&format!("    ↳ {} {}\n", jp.verdict, jp.key_b));
-                } else if jp.key_b == composite && jp.verdict == "supersedes" {
-                    out.push_str(&format!("    ↳ superseded by {}\n", jp.key_a));
-                }
-            }
-        }
     }
     out
 }
@@ -319,14 +307,13 @@ mod tests {
             .cloned()
             .expect("gotcha present");
 
-        let out =
-            super::format_facts_with_annotations(&[obs.clone(), gotcha.clone()], 2, None, &[]);
+        let out = super::format_facts_with_annotations(&[obs.clone(), gotcha.clone()], 2, None);
         assert!(
             out.find("[observation/").unwrap() < out.find("[gotcha/").unwrap(),
             "observation ranked first by recall must stay first in the rendered output"
         );
 
-        let out_rev = super::format_facts_with_annotations(&[gotcha, obs], 2, None, &[]);
+        let out_rev = super::format_facts_with_annotations(&[gotcha, obs], 2, None);
         assert!(
             out_rev.find("[gotcha/").unwrap() < out_rev.find("[observation/").unwrap(),
             "formatter must preserve caller order, never impose its own salience sort"

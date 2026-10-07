@@ -48,7 +48,6 @@ impl ProjectKnowledge {
             patterns: Vec::new(),
             history: Vec::new(),
             updated_at: Utc::now(),
-            judged_pairs: Vec::new(),
         }
     }
 

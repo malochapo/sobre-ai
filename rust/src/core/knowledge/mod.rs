@@ -828,7 +828,6 @@ mod tests {
             "auth",
             "JWT RS256 token based authentication with Redis session store",
             &k.facts,
-            &k.judged_pairs,
             3,
         );
         assert!(!similar.is_empty(), "should find session-model as similar");
@@ -843,48 +842,8 @@ mod tests {
         let mut k = ProjectKnowledge::new("/tmp/test");
         k.remember("arch", "db", "PostgreSQL 16", "s1", 0.9, &policy);
 
-        let similar =
-            find_cross_key_similar("arch", "db", "PostgreSQL 16", &k.facts, &k.judged_pairs, 3);
+        let similar = find_cross_key_similar("arch", "db", "PostgreSQL 16", &k.facts, 3);
         assert!(similar.is_empty());
-    }
-
-    #[test]
-    fn cross_key_similar_excludes_judged_pairs() {
-        let policy = default_policy();
-        let mut k = ProjectKnowledge::new("/tmp/test");
-        k.remember(
-            "architecture",
-            "auth",
-            "JWT RS256 token based authentication with Redis",
-            "s1",
-            0.9,
-            &policy,
-        );
-        k.remember(
-            "decision",
-            "session-model",
-            "JWT token authentication stored in Redis",
-            "s1",
-            0.85,
-            &policy,
-        );
-
-        k.judged_pairs.push(JudgedPair {
-            key_a: "architecture/auth".into(),
-            key_b: "decision/session-model".into(),
-            verdict: "compatible".into(),
-            judged_at: Utc::now(),
-        });
-
-        let similar = find_cross_key_similar(
-            "architecture",
-            "auth",
-            "JWT RS256 token based authentication with Redis",
-            &k.facts,
-            &k.judged_pairs,
-            3,
-        );
-        assert!(similar.is_empty(), "judged pairs should be excluded");
     }
 
     #[test]
@@ -901,42 +860,8 @@ mod tests {
         );
         k.remember("deploy", "host", "AWS us-east-1 region", "s1", 0.8, &policy);
 
-        let similar = find_cross_key_similar(
-            "arch",
-            "db",
-            "PostgreSQL 16 with pgvector",
-            &k.facts,
-            &k.judged_pairs,
-            3,
-        );
+        let similar =
+            find_cross_key_similar("arch", "db", "PostgreSQL 16 with pgvector", &k.facts, 3);
         assert!(similar.is_empty(), "unrelated facts should not match");
-    }
-
-    #[test]
-    fn judge_supersedes_archives_target() {
-        let policy = default_policy();
-        let mut k = ProjectKnowledge::new("/tmp/test");
-        k.remember("architecture", "auth", "JWT RS256", "s1", 0.9, &policy);
-        k.remember("decision", "session", "JWT tokens", "s1", 0.85, &policy);
-
-        assert!(k.facts.iter().all(KnowledgeFact::is_current));
-
-        if let Some(tf) = k
-            .facts
-            .iter_mut()
-            .find(|f| f.category == "decision" && f.key == "session" && f.is_current())
-        {
-            tf.valid_until = Some(Utc::now());
-        }
-        k.judged_pairs.push(JudgedPair {
-            key_a: "architecture/auth".into(),
-            key_b: "decision/session".into(),
-            verdict: "supersedes".into(),
-            judged_at: Utc::now(),
-        });
-
-        let cur: Vec<_> = k.facts.iter().filter(|f| f.is_current()).collect();
-        assert_eq!(cur.len(), 1);
-        assert_eq!(cur[0].category, "architecture");
     }
 }

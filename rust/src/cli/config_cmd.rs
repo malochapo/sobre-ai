@@ -947,14 +947,6 @@ fn cmd_show_effective() {
         " memory.knowledge.max_patterns  = {:>6}",
         policy.knowledge.max_patterns
     ));
-    box_row(&format!(
-        " memory.episodic.max_episodes   = {:>6}",
-        policy.episodic.max_episodes
-    ));
-    box_row(&format!(
-        " memory.procedural.max_procedures = {:>4}",
-        policy.procedural.max_procedures
-    ));
     println!("{}", box_bottom());
 }
 
