@@ -1,6 +1,5 @@
 // Machine-verified contract versions.
 pub const MCP_MANIFEST_SCHEMA_VERSION: u32 = 1;
-pub const CONTEXT_IR_V1_SCHEMA_VERSION: u32 = 1;
 pub const CCP_SESSION_BUNDLE_V1_SCHEMA_VERSION: u32 = 1;
 pub const GRAPH_REPRODUCIBILITY_V1_SCHEMA_VERSION: u32 = 1;
 pub const CONTEXT_SNAPSHOT_V1_SCHEMA_VERSION: u32 = 1;
@@ -56,7 +55,7 @@ pub fn contract_docs() -> Vec<ContractDoc> {
     };
     vec![
         // ── Frozen: externally consumed format ─────────────────────────────
-        doc("context-ir", "context-ir-v1.md", 1, Frozen),
+        doc("usage-ledger", "usage-ledger-v1.md", 1, Frozen),
         // ── Stable: additive evolution allowed ──────────────────────────────
         doc("ccp-session-bundle", "ccp-session-bundle-v1.md", 1, Stable),
         doc("conformance", "conformance-v1.md", 1, Stable),
@@ -123,7 +122,7 @@ mod tests {
         // is itself a breaking policy change.
         let docs = contract_docs();
         {
-            let id = "context-ir";
+            let id = "usage-ledger";
             let entry = docs.iter().find(|d| d.id == id).expect("listed");
             assert_eq!(
                 entry.status,

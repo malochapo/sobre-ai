@@ -21,7 +21,6 @@ async fn proxy_state_reads_upstream_live_from_watch() {
     let state = ProxyState {
         client: reqwest::Client::new(),
         port: 0,
-        stats: Arc::new(ProxyStats::default()),
         introspect: Arc::new(introspect::IntrospectState::default()),
         upstreams: rx,
     };

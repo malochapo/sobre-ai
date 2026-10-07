@@ -38,8 +38,8 @@ pub struct BounceTracker {
     total_bounces: u64,
     total_wasted_tokens: usize,
     /// When true (only for the process-global tracker), detected bounces are appended to
-    /// the persistent savings ledger so a fresh `gain` process sees historical bounce.
-    /// Local trackers in unit tests leave this `false` to avoid touching the real ledger.
+    /// the usage ledger, where `gain` subtracts them from the savings. Local trackers
+    /// in unit tests leave this `false` to avoid touching the real ledger.
     persist: bool,
 }
 
@@ -139,7 +139,7 @@ impl BounceTracker {
             }
 
             if self.persist {
-                crate::core::savings_ledger::record_bounce_event(wasted);
+                crate::core::usage::record_bounce("read", wasted);
             }
         }
     }
@@ -228,10 +228,6 @@ impl BounceTracker {
         self.total_bounces
     }
 
-    pub fn total_wasted_tokens(&self) -> usize {
-        self.total_wasted_tokens
-    }
-
     pub fn adjusted_savings(&self, raw_savings: usize) -> isize {
         raw_savings as isize - self.total_wasted_tokens as isize
     }
@@ -269,12 +265,9 @@ static GLOBAL_TRACKER: OnceLock<Mutex<BounceTracker>> = OnceLock::new();
 
 pub fn global() -> &'static Mutex<BounceTracker> {
     GLOBAL_TRACKER.get_or_init(|| {
-        // Seed from the persistent ledger so every process (including a fresh `gain`)
-        // accounts for historical bounce, then mark this tracker as the persisting one.
-        let summary = crate::core::savings_ledger::summary();
+        // The process-wide tracker is the one that records bounces in the
+        // usage ledger; its totals cover this process only.
         let mut bt = BounceTracker::new();
-        bt.total_wasted_tokens = summary.bounce_tokens as usize;
-        bt.total_bounces = summary.bounce_events as u64;
         bt.persist = true;
         Mutex::new(bt)
     })
@@ -290,7 +283,7 @@ mod tests {
         bt.seq_counter = 1;
         bt.record_read("src/main.rs", "full", 500, 500);
         assert_eq!(bt.total_bounces(), 0);
-        assert_eq!(bt.total_wasted_tokens(), 0);
+        assert_eq!(bt.total_wasted_tokens, 0);
     }
 
     #[test]
@@ -301,7 +294,7 @@ mod tests {
         bt.seq_counter = 2;
         bt.record_read("src/main.rs", "full", 500, 500);
         assert_eq!(bt.total_bounces(), 1);
-        assert_eq!(bt.total_wasted_tokens(), 50);
+        assert_eq!(bt.total_wasted_tokens, 50);
     }
 
     #[test]
@@ -322,7 +315,7 @@ mod tests {
         bt.seq_counter = 3;
         bt.record_shell_file_access("config.yml");
         assert_eq!(bt.total_bounces(), 1);
-        assert_eq!(bt.total_wasted_tokens(), 30);
+        assert_eq!(bt.total_wasted_tokens, 30);
     }
 
     #[test]
@@ -330,7 +323,7 @@ mod tests {
         let mut bt = BounceTracker::new();
         bt.record_expansion(Some("src/main.rs"), 125);
         assert_eq!(bt.total_bounces(), 1);
-        assert_eq!(bt.total_wasted_tokens(), 125);
+        assert_eq!(bt.total_wasted_tokens, 125);
     }
 
     #[test]

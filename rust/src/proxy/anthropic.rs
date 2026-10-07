@@ -9,7 +9,7 @@ use serde_json::Value;
 use super::ProxyState;
 use super::forward;
 use super::tool_kind::{self, ToolResultKind};
-use super::{cache_safety, prefix_cache_stats, prefix_replay, prose, sticky_tools};
+use super::{prefix_replay, sticky_tools};
 
 pub(crate) async fn handler(
     State(state): State<ProxyState>,
@@ -42,24 +42,6 @@ pub(super) fn compress_request_body(
         .get("messages")
         .and_then(|m| m.as_array())
         .map_or(0, |m| super::history_prune::cached_prefix_len(m));
-
-    // #986: cache-economics miss attribution (measurement-only). Classify
-    // why this turn hits or misses the provider prompt-cache (TTL lapse vs prefix
-    // change) and bump the `/status` gauges. Reads the cacheable prefix only — the
-    // body is never touched — so it is strictly cache-safe.
-    if let Some(m) = doc.get("messages").and_then(|m| m.as_array())
-        && let Some(outcome) = super::cache_attribution::record_request(m, cached)
-    {
-        match outcome {
-            super::cache_attribution::CacheOutcome::WarmReuse => {
-                prefix_cache_stats::record_hit();
-            }
-            super::cache_attribution::CacheOutcome::ColdStart => {}
-            _ => {
-                prefix_cache_stats::record_miss();
-            }
-        }
-    }
 
     if let Some(messages) = doc.get_mut("messages").and_then(|m| m.as_array_mut()) {
         // Resolve tool-call id → tool name so file/source reads can be protected
@@ -109,20 +91,6 @@ pub(super) fn compress_request_body(
         }
     }
 
-    // #940: cache-aligner telemetry. On an unanchored system prompt (the prefix a
-    // provider would cache), count the volatile fields that would bust that cache
-    // turn-to-turn. Pure measurement — runs before any breakpoint injection and
-    // never mutates the body — so it is strictly cache-safe. Skipped once the
-    // client has anchored the prefix itself.
-    if cached == 0
-        && let Some(system) = doc.get("system")
-        && !prose::value_has_cache_control(system)
-        && let Some(text) = super::cache_aligner::system_text(system)
-    {
-        let scan = super::cache_aligner::scan_volatile(&text);
-        cache_safety::record_volatile_system(scan.fields as u64);
-    }
-
     // Sticky CCR tool injection: once a conversation has used CCR, keep
     // ctx_expand in tools[] to avoid prefix-cache-busting tool-list changes.
     let system_val = doc.get("system");
@@ -131,11 +99,8 @@ pub(super) fn compress_request_body(
         let conv_id = prefix_replay::conversation_id(system_val, msgs);
         if sticky_tools::ensure_tool_present(conv_id, &mut doc) {
             modified = true;
-            prefix_cache_stats::record_sticky_injection();
         }
     }
-
-    prefix_cache_stats::record_frozen_count(cached as u64);
 
     // Prefix replay: if this is an append-only turn, overlay the cached
     // forwarded prefix bytes with the fresh delta for byte-identical prefix.
@@ -145,20 +110,9 @@ pub(super) fn compress_request_body(
         let conv_id = prefix_replay::conversation_id(system_val_replay, msgs);
         if let Some(delta) = prefix_replay::detect_append_only(conv_id, msgs) {
             let delta_msgs = &msgs[delta.delta_start..];
-            if let Some(replayed) = prefix_replay::overlay_prefix(&delta.prefix_bytes, delta_msgs) {
-                prefix_cache_stats::record_replay_hit();
-                let original_bytes = serde_json::to_vec(&doc).unwrap_or_default();
-                prefix_cache_stats::record_delta(
-                    original_bytes.len() as u64,
-                    replayed.len() as u64,
-                );
-                replayed
-            } else {
-                prefix_cache_stats::record_replay_miss();
-                serde_json::to_vec(&doc).unwrap_or_default()
-            }
+            prefix_replay::overlay_prefix(&delta.prefix_bytes, delta_msgs)
+                .unwrap_or_else(|| serde_json::to_vec(&doc).unwrap_or_default())
         } else {
-            prefix_cache_stats::record_replay_miss();
             serde_json::to_vec(&doc).unwrap_or_default()
         }
     } else {

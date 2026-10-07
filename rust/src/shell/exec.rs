@@ -461,7 +461,7 @@ pub fn exec(command: &str) -> i32 {
             return exec_inherit_tracked(command, &shell, &shell_flag);
         }
         let code = exec_inherit(command, &shell, &shell_flag);
-        crate::core::tool_lifecycle::record_shell_command(0, 0);
+        crate::core::tool_lifecycle::record_shell_command(command, 0, 0);
         return code;
     }
 
@@ -629,7 +629,7 @@ fn exec_shell_default(command: &str, shell: &str, shell_flag: &str) -> i32 {
 
 fn exec_inherit_tracked(command: &str, shell: &str, shell_flag: &str) -> i32 {
     let code = exec_inherit(command, shell, shell_flag);
-    crate::core::tool_lifecycle::record_shell_command(0, 0);
+    crate::core::tool_lifecycle::record_shell_command(command, 0, 0);
     code
 }
 

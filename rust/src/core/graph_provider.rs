@@ -94,13 +94,6 @@ pub struct OpenGraphProvider {
 }
 
 impl GraphProvider {
-    pub fn node_count(&self) -> Option<usize> {
-        match self {
-            GraphProvider::PropertyGraph(g) => g.node_count().ok(),
-            GraphProvider::GraphIndex(i) => Some(i.file_count()),
-        }
-    }
-
     pub fn edge_count(&self) -> Option<usize> {
         match self {
             GraphProvider::PropertyGraph(g) => g.edge_count().ok(),

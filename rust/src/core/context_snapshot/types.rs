@@ -1,9 +1,8 @@
 //! `CONTEXT_SNAPSHOT_V1` data model (GL #1023).
 //!
 //! A Context Snapshot is a **git-anchored, signed, point-in-time record of the
-//! context-layer state**: what the model saw (lineage, from Context IR), why it
-//! saw it (ledger Φ-scores + item states), at what token ROI, and which session
-//! produced it. Snapshots chain over time via [`ContextSnapshotV1::parent_id`],
+//! context-layer state**: why each item was in the window (ledger Φ-scores +
+//! item states) and which session produced it. Snapshots chain over time via [`ContextSnapshotV1::parent_id`],
 //! forming the append-only timeline that powers the Context Time Machine.
 //!
 //! The format is intentionally a *distilled* projection of the live stores — it
@@ -13,10 +12,6 @@
 use serde::{Deserialize, Serialize};
 
 use crate::core::contracts::CONTEXT_SNAPSHOT_V1_SCHEMA_VERSION;
-
-/// Maximum number of lineage items embedded in a snapshot (mirrors the live IR
-/// ring buffer cap so a snapshot can hold the full retained lineage).
-pub const MAX_SNAPSHOT_LINEAGE_ITEMS: usize = 128;
 
 /// Maximum number of ledger items embedded in a snapshot.
 pub const MAX_SNAPSHOT_LEDGER_ITEMS: usize = 256;
@@ -47,10 +42,6 @@ pub struct ContextSnapshotV1 {
     pub git: GitAnchorV1,
     /// Project identity hashes (root + remote identity), never raw paths.
     pub project: SnapshotProjectV1,
-    /// Token return-on-investment at snapshot time.
-    pub roi: SnapshotRoiV1,
-    /// Distilled lineage slice (what entered context), from Context IR.
-    pub lineage: SnapshotLineageV1,
     /// Distilled ledger slice (Φ-scores + item states), from the Context Ledger.
     pub ledger: SnapshotLedgerV1,
     /// Optional session slice (task / decisions / progress).
@@ -73,8 +64,6 @@ impl ContextSnapshotV1 {
             lean_ctx_version,
             git: GitAnchorV1::default(),
             project: SnapshotProjectV1::default(),
-            roi: SnapshotRoiV1::default(),
-            lineage: SnapshotLineageV1::default(),
             ledger: SnapshotLedgerV1::default(),
             session: None,
             signature: None,
@@ -100,41 +89,6 @@ pub struct SnapshotProjectV1 {
     pub root_hash: Option<String>,
     /// Hash of the project's remote/git identity (stable across clones).
     pub identity_hash: Option<String>,
-}
-
-/// Token return-on-investment captured at snapshot time.
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
-pub struct SnapshotRoiV1 {
-    pub input_tokens: u64,
-    pub output_tokens: u64,
-    pub tokens_saved: u64,
-    /// `tokens_saved / (input_tokens + tokens_saved)`, in `[0.0, 1.0]`; `0.0`
-    /// when the denominator is zero.
-    pub compression_rate: f64,
-}
-
-/// Distilled lineage slice — what entered the context window, from Context IR.
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
-pub struct SnapshotLineageV1 {
-    /// Total items the IR has ever recorded (may exceed `items.len()`).
-    pub items_recorded: u64,
-    /// Bounded, most-recent lineage items (≤ [`MAX_SNAPSHOT_LINEAGE_ITEMS`]).
-    pub items: Vec<SnapshotLineageItemV1>,
-}
-
-/// One lineage entry: a tool call that contributed to the context window.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct SnapshotLineageItemV1 {
-    pub seq: u64,
-    /// Source kind: `read` | `shell` | `search` | `provider` | `other`.
-    pub kind: String,
-    pub tool: String,
-    pub path: Option<String>,
-    pub input_tokens: u64,
-    pub output_tokens: u64,
-    pub compression_ratio: f64,
-    /// BLAKE3 of the recorded content excerpt (verification handle).
-    pub content_hash: Option<String>,
 }
 
 /// Distilled ledger slice — why each item was in the window, with its Φ-score.

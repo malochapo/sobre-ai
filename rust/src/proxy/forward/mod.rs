@@ -13,7 +13,7 @@ use super::ProxyState;
 mod xlat;
 
 mod headers;
-mod prepare;
+pub(crate) mod prepare;
 mod trace_id;
 mod transport;
 
@@ -43,17 +43,6 @@ use headers::should_forward_request_header;
 #[cfg(test)]
 #[allow(unused_imports)]
 pub(super) use prepare::{prepare_request_body, wire_context};
-
-const HEADROOM_COMPRESSED_HEADER: &str = "x-headroom-compressed";
-
-/// Check whether an incoming request was already compressed by Headroom.
-pub(super) fn is_headroom_compressed(parts: &axum::http::request::Parts) -> bool {
-    parts
-        .headers
-        .get(HEADROOM_COMPRESSED_HEADER)
-        .and_then(|v| v.to_str().ok())
-        .is_some_and(|v| !v.is_empty() && v != "0" && !v.eq_ignore_ascii_case("false"))
-}
 
 /// Default request-body ceiling (MiB). A large-codebase refactor with several
 /// big files in context easily exceeds the old 10 MiB cap, which surfaced to the
@@ -100,9 +89,6 @@ pub(crate) async fn forward_request(
             super::routing::route_request(parsed, provider_label, up, &routing_rules, xlat_ok)
         })
     };
-    if is_headroom_compressed(&parts) {
-        super::prefix_cache_stats::record_headroom_compat();
-    }
     let prepared = prepare::prepare_request_body(
         &parts,
         &body_bytes,
@@ -111,9 +97,6 @@ pub(crate) async fn forward_request(
         upstream_base,
         provider_label == "OpenAI",
     )?;
-    let original_size = prepared.original_size;
-    let compressed_size = prepared.compressed_size;
-    let compression_candidate = prepared.compression_candidate;
     let preserve_content_encoding = prepared.preserve_content_encoding;
     let route = prepared.route;
     let parsed = prepared.parsed;
@@ -131,26 +114,6 @@ pub(crate) async fn forward_request(
         let breakdown = super::introspect::analyze_request(parsed, provider);
         state.introspect.record(breakdown);
     }
-    if compression_candidate {
-        state
-            .stats
-            .record_provider_request(provider_label, original_size, compressed_size);
-    }
-
-    let tokens_saved = original_size.saturating_sub(compressed_size) as u64 / 4;
-    super::metrics::record_request(tokens_saved, compressed_size as u64);
-
-    let model = parsed
-        .as_ref()
-        .and_then(|v| v.get("model"))
-        .and_then(|m| m.as_str());
-    super::cost::record(
-        model,
-        tokens_saved,
-        original_size as u64,
-        compressed_size as u64,
-    );
-
     // Cross-shape route (enterprise#16): the body now speaks OpenAI Chat
     // Completions — address the matching endpoint instead of the caller's
     // `/v1/messages` path, and scan the response with the OpenAI parser.
@@ -209,17 +172,10 @@ pub(crate) async fn forward_request(
         None
     };
 
-    // Request-side context: the project tag from the auth guard, wire savings
-    // and baseline inputs, stamped onto the usage record.
-    // A routed request is attributed to the provider actually serving it, and
-    // carries the originally requested model as routed_from (enterprise#13).
-    let mut wire = prepare::wire_context(
-        &parts,
-        provider_label,
-        upstream_base,
-        tokens_saved,
-        original_size,
-    );
+    // Request-side context stamped onto the usage record. A routed request
+    // is attributed to the provider actually serving it, and carries the
+    // originally requested model as routed_from (enterprise#13).
+    let mut wire = prepare::wire_context(&parts, provider_label, upstream_base);
     if let Some(route) = &route {
         wire.routed_from = Some(route.routed_from.clone());
         if let Some(id) = &route.provider_id {

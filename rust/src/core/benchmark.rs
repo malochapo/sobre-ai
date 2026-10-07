@@ -11,7 +11,7 @@ use crate::core::preservation;
 use crate::core::signatures;
 use crate::core::tokens::count_tokens;
 
-const COST_PER_TOKEN: f64 = crate::core::stats::DEFAULT_INPUT_PRICE_PER_M / 1_000_000.0;
+const COST_PER_TOKEN: f64 = crate::core::pricing::DEFAULT_INPUT_PRICE_PER_M / 1_000_000.0;
 const MAX_FILE_SIZE: u64 = 100 * 1024;
 const MAX_FILES: usize = 50;
 fn cache_hit_tokens() -> usize {

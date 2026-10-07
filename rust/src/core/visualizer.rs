@@ -1,12 +1,13 @@
 //! Data collection and HTML rendering for the interactive visualizer.
 //!
-//! Gathers graph, knowledge, heatmap (token savings), and session data
+//! Gathers graph, knowledge, per-file token savings (from the context
+//! ledger), and session data
 //! from the current project, then renders a self-contained HTML report
 //! with embedded D3.js.
 
 use serde::Serialize;
 
-use crate::core::heatmap::HeatMap;
+use crate::core::context_ledger::ContextLedger;
 use crate::core::knowledge::{KnowledgeFact, ProjectKnowledge};
 use crate::core::property_graph::CodeGraph;
 use crate::core::session::{SessionState, SessionStats};
@@ -203,23 +204,31 @@ fn collect_knowledge(project_root: &str) -> Vec<KnowledgeEntry> {
 }
 
 fn collect_savings() -> SavingsData {
-    let hm = HeatMap::load();
-    let top = hm.top_files(500);
+    let ledger = ContextLedger::load();
+    let mut entries: Vec<_> = ledger.entries.iter().collect();
+    entries.sort_by_key(|e| std::cmp::Reverse(e.original_tokens.saturating_sub(e.sent_tokens)));
 
     let mut total_original = 0u64;
     let mut total_saved = 0u64;
 
-    let files: Vec<FileSavingsEntry> = top
+    let files: Vec<FileSavingsEntry> = entries
         .into_iter()
+        .take(500)
         .map(|e| {
-            total_original += e.total_original_tokens;
-            total_saved += e.total_tokens_saved;
+            let original = e.original_tokens as u64;
+            let saved = original.saturating_sub(e.sent_tokens as u64);
+            total_original += original;
+            total_saved += saved;
             FileSavingsEntry {
                 path: e.path.clone(),
                 access_count: e.access_count,
-                original_tokens: e.total_original_tokens,
-                saved_tokens: e.total_tokens_saved,
-                compression_ratio: e.avg_compression_ratio,
+                original_tokens: original,
+                saved_tokens: saved,
+                compression_ratio: if original > 0 {
+                    saved as f32 / original as f32
+                } else {
+                    0.0
+                },
             }
         })
         .collect();

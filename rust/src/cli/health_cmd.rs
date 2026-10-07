@@ -23,7 +23,11 @@ pub(crate) fn cmd_health(args: &[String]) -> i32 {
         .map_or(".", String::as_str);
 
     let threshold = crate::core::code_health::COGNITIVE_THRESHOLD;
-    let model = crate::core::gain::model_pricing::resolve_model_for_client("cli");
+    // No agent model is known here: the token tax is priced at the blended
+    // fallback rate, and the report names it.
+    let model = crate::core::pricing::ModelPricing::load()
+        .quote(None)
+        .model_key;
 
     let health = scan_project(Path::new(root), threshold, Some(&model), TOP_HOTSPOTS);
 

@@ -13,16 +13,15 @@ use super::*;
 
 impl LeanCtxServer {
     /// Record the tool receipt, infer/apply intent, persist the session when due,
-    /// trigger auto-consolidation, and attribute token cost. All work is either
+    /// and trigger auto-consolidation. All work is either
     /// synchronous bookkeeping under the session lock or fire-and-forget blocking
     /// tasks; nothing here feeds back into the tool output.
-    pub(super) async fn record_receipt_and_cost(
+    pub(super) async fn record_receipt(
         &self,
         name: &str,
         args: Option<&serde_json::Map<String, serde_json::Value>>,
         action: Option<&str>,
         result_text: &str,
-        output_token_count: usize,
     ) {
         let input = helpers::canonical_args_string(args);
         let input_md5 = helpers::hash_fast(&input);
@@ -49,14 +48,8 @@ impl LeanCtxServer {
         };
 
         if let Some(prepared) = pending_session_save {
-            let ir_clone = self.context_ir.clone();
             tokio::task::spawn_blocking(move || {
                 let _ = prepared.write_to_disk();
-                if let Some(ir) = ir_clone
-                    && let Ok(ir_guard) = ir.try_read()
-                {
-                    ir_guard.save();
-                }
                 // Flush the persistent stub index on the same batch cadence so
                 // recent full deliveries survive a restart as cheap stubs (#955).
                 crate::core::read_stub_index::persist();
@@ -81,24 +74,5 @@ impl LeanCtxServer {
                 });
             }
         }
-
-        let agent_key = agent_id.unwrap_or_else(|| "unknown".to_string());
-        let input_token_count = crate::core::tokens::count_tokens(&input) as u64;
-        let output_token_count_u64 = output_token_count as u64;
-        let name_owned = name.to_string();
-        tokio::task::spawn_blocking(move || {
-            let mut store = crate::core::a2a::cost_attribution::CostStore::load();
-            store.record_tool_call(
-                &agent_key,
-                &client_name,
-                &name_owned.clone(),
-                input_token_count,
-                output_token_count_u64,
-                0,
-            );
-            if let Err(e) = store.save() {
-                tracing::warn!("lean-ctx: failed to persist cost attribution: {e}");
-            }
-        });
     }
 }

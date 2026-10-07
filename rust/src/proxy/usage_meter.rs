@@ -1,450 +1,48 @@
-//! Measured per-model spend meter.
+//! Hands each measured LLM call to the usage ledger.
 //!
-//! [`record`] aggregates the real provider usage extracted by [`super::usage`]
-//! into per-model token sums, prices them with the shared
-//! [`ModelPricing`] table, and
-//! persists the totals to `proxy_usage.json` so the dashboard, CLI and the
-//! savings ledger (which run in *other* processes) can read the user's real
-//! provider bill.
-//!
-//! Unlike [`super::metrics`] (which resets per proxy lifetime), this meter is a
-//! lifetime-cumulative spend counter: [`resume_from_disk`] seeds the in-memory
-//! totals on proxy startup so a restart never zeroes the user's measured spend.
+//! [`super::usage`] parses what the provider reported; this module maps it onto
+//! a [`crate::core::usage::LlmCall`]. Pricing happens when the ledger is read.
 
-use std::collections::HashMap;
-use std::sync::{Mutex, OnceLock};
-
-use serde::{Deserialize, Serialize};
-
-use crate::core::gain::model_pricing::ModelPricing;
-
-/// Cumulative real token counts for one model. Cost is derived at read time so a
-/// pricing-table change re-values historical usage consistently.
-#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
-pub(crate) struct ModelUsage {
-    pub requests: u64,
-    pub input_tokens: u64,
-    pub output_tokens: u64,
-    pub cache_read_tokens: u64,
-    pub cache_write_tokens: u64,
-    pub reasoning_tokens: u64,
-    /// The turns whose response carried the provider's own USD charge
-    /// (OpenRouter usage accounting, #1179). Their tokens are *inside* the
-    /// totals above; pricing subtracts this slice and books its measured USD
-    /// instead of a table estimate. `serde(default)` keeps older files loadable.
-    #[serde(default)]
-    pub measured: MeasuredSlice,
-}
-
-/// Token/cost sums of the turns that reported a measured provider charge.
-#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq)]
-pub(crate) struct MeasuredSlice {
-    pub requests: u64,
-    pub input_tokens: u64,
-    pub output_tokens: u64,
-    pub cache_read_tokens: u64,
-    pub cache_write_tokens: u64,
-    /// Sum of provider-reported USD for those turns — the bill, not a table.
-    pub cost_usd: f64,
-}
-
-impl MeasuredSlice {
-    fn merge(&mut self, other: &Self) {
-        self.requests += other.requests;
-        self.input_tokens += other.input_tokens;
-        self.output_tokens += other.output_tokens;
-        self.cache_read_tokens += other.cache_read_tokens;
-        self.cache_write_tokens += other.cache_write_tokens;
-        self.cost_usd += other.cost_usd;
-    }
-}
-
-impl ModelUsage {
-    fn add(&mut self, u: &super::usage::RealUsage) {
-        self.requests += 1;
-        self.input_tokens += u.input_tokens;
-        self.output_tokens += u.output_tokens;
-        self.cache_read_tokens += u.cache_read_tokens;
-        self.cache_write_tokens += u.cache_write_tokens;
-        self.reasoning_tokens += u.reasoning_tokens;
-        if let Some(cost) = u.provider_cost_usd {
-            self.measured.merge(&MeasuredSlice {
-                requests: 1,
-                input_tokens: u.input_tokens,
-                output_tokens: u.output_tokens,
-                cache_read_tokens: u.cache_read_tokens,
-                cache_write_tokens: u.cache_write_tokens,
-                cost_usd: cost,
-            });
-        }
-    }
-
-    fn billable_tokens(&self) -> u64 {
-        self.input_tokens + self.output_tokens + self.cache_read_tokens + self.cache_write_tokens
-    }
-}
-
-/// One model's measured, priced spend for `/status` and the dashboard.
-#[derive(Debug, Clone, Serialize, PartialEq)]
-pub(crate) struct ModelSpend {
-    pub model: String,
-    pub requests: u64,
-    pub input_tokens: u64,
-    pub output_tokens: u64,
-    pub cache_read_tokens: u64,
-    pub cache_write_tokens: u64,
-    pub reasoning_tokens: u64,
-    pub cost_usd: f64,
-    /// Share of `cost_usd` the provider itself reported (OpenRouter usage
-    /// accounting, #1179) — a bill, not a table estimate.
-    pub measured_cost_usd: f64,
-    /// Requests covered by that provider-reported cost.
-    pub measured_requests: u64,
-    /// True when part of the cost had to be priced from a heuristic/fallback
-    /// match — never set by measured or exactly-priced spend.
-    pub pricing_estimated: bool,
-}
-
-/// On-disk shape of the measured spend totals.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub(crate) struct PersistedUsage {
-    pub ts: u64,
-    pub models: HashMap<String, ModelUsage>,
-}
-
-/// Distinct-model bucket cap. `record` keys on the raw response model string, so
-/// overflow folds into "unknown" to keep the map bounded (real model names < ~50).
-const MAX_TRACKED_MODELS: usize = 256;
-
-const PROXY_USAGE_FILE: &str = "proxy_usage.json";
-
-fn store() -> &'static Mutex<HashMap<String, ModelUsage>> {
-    static STORE: OnceLock<Mutex<HashMap<String, ModelUsage>>> = OnceLock::new();
-    STORE.get_or_init(|| Mutex::new(HashMap::new()))
-}
-
-/// Seeds the in-memory totals from `proxy_usage.json`. Call once on proxy
-/// startup so measured spend is cumulative across restarts. Idempotent-ish: it
-/// merges the persisted totals into whatever is in memory (normally empty).
-pub(crate) fn resume_from_disk() {
-    let Some(persisted) = load_persisted() else {
-        return;
-    };
-    let mut map = store()
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
-    for (model, usage) in persisted.models {
-        let acc = map.entry(model).or_default();
-        acc.requests += usage.requests;
-        acc.input_tokens += usage.input_tokens;
-        acc.output_tokens += usage.output_tokens;
-        acc.cache_read_tokens += usage.cache_read_tokens;
-        acc.cache_write_tokens += usage.cache_write_tokens;
-        acc.reasoning_tokens += usage.reasoning_tokens;
-        acc.measured.merge(&usage.measured);
-    }
-}
-
-/// Records one turn's measured usage against its model bucket and persists.
+/// Records one upstream call the proxy forwarded.
 pub(crate) fn record(u: &super::usage::RealUsage) {
-    // Mechanism attribution into the local savings ledger (enterprise#19).
-    // Routing: the gateway served a cheaper model than requested — value the
-    // rate delta on the measured input tokens. Caching: provider prompt-cache
-    // reads billed below the input rate. Both best-effort, never blocking.
-    if let Some(wire) = u.wire.as_deref()
-        && let Some(routed_from) = wire.routed_from.as_deref()
-    {
-        crate::core::savings_ledger::record_routing_event(routed_from, &u.model, u.input_tokens);
-    }
-    if u.cache_read_tokens > 0 {
-        let cost = crate::core::gain::model_pricing::ModelPricing::load()
-            .quote(Some(&u.model))
-            .cost;
-        #[allow(clippy::cast_precision_loss)]
-        let discount_usd =
-            (cost.input_per_m - cost.cache_read_per_m) / 1_000_000.0 * u.cache_read_tokens as f64;
-        crate::core::savings_ledger::record_caching_event(
-            &u.model,
-            u.cache_read_tokens,
-            discount_usd,
-        );
-    }
-
-    let key = normalize_key(&u.model);
-    {
-        let mut map = store()
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let key = if !map.contains_key(&key) && map.len() >= MAX_TRACKED_MODELS {
-            "unknown".to_string()
-        } else {
-            key
-        };
-        map.entry(key).or_default().add(u);
-    }
-    persist();
-}
-
-fn normalize_key(model: &str) -> String {
-    let m = model.trim();
-    if m.is_empty() {
-        "unknown".to_string()
-    } else {
-        m.to_string()
-    }
-}
-
-/// Live per-model measured spend, priced and sorted by USD descending.
-pub(crate) fn snapshot() -> Vec<ModelSpend> {
-    let map = store()
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
-    price_models(&map)
-}
-
-/// Prices a model usage map into sorted [`ModelSpend`] rows. Pure: shared by the
-/// in-memory snapshot and the cross-process [`persisted_snapshot`].
-pub(crate) fn price_models(map: &HashMap<String, ModelUsage>) -> Vec<ModelSpend> {
-    let pricing = ModelPricing::load();
-    let mut rows: Vec<ModelSpend> = map
-        .iter()
-        .map(|(model, usage)| price_one(&pricing, model, usage))
-        .collect();
-    rows.sort_by(|a, b| {
-        b.cost_usd
-            .partial_cmp(&a.cost_usd)
-            .unwrap_or(std::cmp::Ordering::Equal)
+    let wire = u.wire.as_deref();
+    crate::core::usage::record_llm_call(&crate::core::usage::LlmCall {
+        provider: wire.map_or_else(String::new, |w| provider_name(&w.provider)),
+        request_model: wire
+            .and_then(|w| w.routed_from.clone())
+            .unwrap_or_else(|| u.model.clone()),
+        response_model: u.model.clone(),
+        // The GenAI conventions count cache reads and writes inside input.
+        input_tokens: u.input_tokens + u.cache_read_tokens + u.cache_write_tokens,
+        output_tokens: u.output_tokens,
+        cache_read_tokens: u.cache_read_tokens,
+        cache_write_tokens: u.cache_write_tokens,
+        cost_usd: u.provider_cost_usd,
+        local: wire.is_some_and(|w| w.is_local),
     });
-    rows
 }
 
-fn price_one(pricing: &ModelPricing, model: &str, usage: &ModelUsage) -> ModelSpend {
-    let quote = pricing.quote(Some(model));
-    // Measured-first (#1179): turns whose response carried the provider's own
-    // USD charge book that exact amount; only the remainder is table-priced.
-    let m = &usage.measured;
-    let derived_cost = quote.cost.estimate_usd(
-        usage.input_tokens.saturating_sub(m.input_tokens),
-        usage.output_tokens.saturating_sub(m.output_tokens),
-        usage
-            .cache_write_tokens
-            .saturating_sub(m.cache_write_tokens),
-        usage.cache_read_tokens.saturating_sub(m.cache_read_tokens),
-    );
-    let derived_requests = usage.requests.saturating_sub(m.requests);
-    ModelSpend {
-        model: model.to_string(),
-        requests: usage.requests,
-        input_tokens: usage.input_tokens,
-        output_tokens: usage.output_tokens,
-        cache_read_tokens: usage.cache_read_tokens,
-        cache_write_tokens: usage.cache_write_tokens,
-        reasoning_tokens: usage.reasoning_tokens,
-        cost_usd: m.cost_usd + derived_cost,
-        measured_cost_usd: m.cost_usd,
-        measured_requests: m.requests,
-        // Fully measured spend is never an estimate, whatever the table says.
-        pricing_estimated: quote.match_kind.is_estimated() && derived_requests > 0,
+/// The proxy's provider label as a GenAI `gen_ai.provider.name` value. Registry
+/// providers keep their own id.
+fn provider_name(label: &str) -> String {
+    match label {
+        "Anthropic" => "anthropic".to_string(),
+        "OpenAI" => "openai".to_string(),
+        "Azure" => "azure.ai.openai".to_string(),
+        "Bedrock" => "aws.bedrock".to_string(),
+        "Gemini" | "Google" => "gcp.gemini".to_string(),
+        other => other.to_lowercase(),
     }
-}
-
-fn usage_path() -> Option<std::path::PathBuf> {
-    crate::core::data_dir::lean_ctx_data_dir()
-        .ok()
-        .map(|d| d.join(PROXY_USAGE_FILE))
-}
-
-/// Atomically writes the current in-memory totals to disk.
-fn persist() {
-    let Some(path) = usage_path() else {
-        return;
-    };
-    let models = {
-        let map = store()
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        map.clone()
-    };
-    let payload = PersistedUsage {
-        ts: std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_secs(),
-        models,
-    };
-    let Ok(json) = serde_json::to_string(&payload) else {
-        return;
-    };
-    let tmp = path.with_extension("json.tmp");
-    if std::fs::write(&tmp, json).is_ok() {
-        let _ = std::fs::rename(&tmp, &path);
-    }
-}
-
-/// Cross-process read of the persisted measured spend (dashboard / CLI / ledger).
-pub(crate) fn load_persisted() -> Option<PersistedUsage> {
-    let path = usage_path()?;
-    let data = std::fs::read_to_string(path).ok()?;
-    serde_json::from_str(&data).ok()
-}
-
-/// Cross-process priced spend rows, read from disk.
-pub(crate) fn persisted_snapshot() -> Vec<ModelSpend> {
-    load_persisted()
-        .map(|p| price_models(&p.models))
-        .unwrap_or_default()
-}
-
-/// The model carrying the most measured tokens (excludes the "unknown" bucket).
-/// Used to value savings against the real dominant model when no explicit model
-/// is configured.
-pub(crate) fn persisted_dominant_model() -> Option<String> {
-    let persisted = load_persisted()?;
-    persisted
-        .models
-        .iter()
-        .filter(|(m, _)| m.as_str() != "unknown" && !m.trim().is_empty())
-        .max_by_key(|(_, u)| u.billable_tokens())
-        .filter(|(_, u)| u.billable_tokens() > 0)
-        .map(|(m, _)| m.clone())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn usage(
-        model: &str,
-        input: u64,
-        output: u64,
-        cache_read: u64,
-    ) -> super::super::usage::RealUsage {
-        super::super::usage::RealUsage {
-            model: model.to_string(),
-            input_tokens: input,
-            output_tokens: output,
-            cache_read_tokens: cache_read,
-            ..Default::default()
-        }
-    }
-
     #[test]
-    fn prices_known_model_with_cache_split() {
-        let mut map = HashMap::new();
-        let mut acc = ModelUsage::default();
-        acc.add(&usage("claude-sonnet-4.5", 1_000_000, 1_000_000, 1_000_000));
-        map.insert("claude-sonnet-4.5".to_string(), acc);
-
-        let rows = price_models(&map);
-        assert_eq!(rows.len(), 1);
-        let row = &rows[0];
-        // input 3.00 + output 15.00 + cache_read 0.30 (per 1M) = 18.30.
-        assert!(
-            (row.cost_usd - 18.30).abs() < 1e-6,
-            "cost was {}",
-            row.cost_usd
-        );
-        assert!(!row.pricing_estimated, "exact model match");
-        assert_eq!(row.requests, 1);
-    }
-
-    #[test]
-    fn unknown_model_prices_with_fallback_and_is_estimated() {
-        let mut map = HashMap::new();
-        let mut acc = ModelUsage::default();
-        acc.add(&usage("some-novel-model-xyz", 1_000_000, 0, 0));
-        map.insert("some-novel-model-xyz".to_string(), acc);
-
-        let rows = price_models(&map);
-        assert!(rows[0].pricing_estimated, "fallback pricing is estimated");
-        assert!(rows[0].cost_usd > 0.0);
-    }
-
-    /// #1179: turns carrying the provider's own charge book that USD; only the
-    /// remaining (unmeasured) turns are table-priced — and a fully measured
-    /// model is never flagged as estimated, even when the table has no entry.
-    /// (Model name chosen to never hit the embedded or live price tables.)
-    #[test]
-    fn measured_provider_cost_replaces_table_estimate() {
-        const MODEL: &str = "vendor/unlisted-model-20990101";
-        let mut acc = ModelUsage::default();
-        let mut measured = usage(MODEL, 431_600, 22_700, 126_700);
-        measured.provider_cost_usd = Some(0.05);
-        acc.add(&measured);
-
-        let mut map = HashMap::new();
-        map.insert(MODEL.to_string(), acc.clone());
-        let row = &price_models(&map)[0];
-        assert!(
-            (row.cost_usd - 0.05).abs() < 1e-12,
-            "the bill, not the table"
-        );
-        assert!((row.measured_cost_usd - 0.05).abs() < 1e-12);
-        assert_eq!(row.measured_requests, 1);
-        assert!(
-            !row.pricing_estimated,
-            "fully measured spend is not an estimate"
-        );
-
-        // A second, unmeasured turn on the same model: its tokens are priced
-        // from the table ON TOP of the measured USD, never double-counted
-        // (10k tokens at the $2.50/M blended fallback ≈ $0.025).
-        acc.add(&usage(MODEL, 10_000, 0, 0));
-        let mut map = HashMap::new();
-        map.insert(MODEL.to_string(), acc);
-        let row = &price_models(&map)[0];
-        assert!(row.cost_usd > 0.05, "unmeasured remainder adds table cost");
-        assert!(row.cost_usd < 0.2, "measured slice must not be re-priced");
-        assert!(
-            row.pricing_estimated,
-            "unmeasured remainder is heuristically priced"
-        );
-    }
-
-    #[test]
-    fn measured_slice_roundtrips() {
-        let mut p = PersistedUsage::default();
-        let mut acc = ModelUsage::default();
-        let mut m = usage("m", 100, 10, 0);
-        m.provider_cost_usd = Some(0.5);
-        acc.add(&m);
-        p.models.insert("m".into(), acc);
-        let back: PersistedUsage =
-            serde_json::from_str(&serde_json::to_string(&p).unwrap()).unwrap();
-        assert_eq!(back.models["m"].measured.requests, 1);
-        assert!((back.models["m"].measured.cost_usd - 0.5).abs() < 1e-12);
-    }
-
-    #[test]
-    fn dominant_model_picks_highest_token_real_model() {
-        let mut models = HashMap::new();
-        models.insert("claude-haiku-4.5".to_string(), {
-            let mut u = ModelUsage::default();
-            u.add(&usage("claude-haiku-4.5", 100, 100, 0));
-            u
-        });
-        models.insert("claude-opus-4.5".to_string(), {
-            let mut u = ModelUsage::default();
-            u.add(&usage("claude-opus-4.5", 10_000, 10_000, 0));
-            u
-        });
-        models.insert("unknown".to_string(), {
-            let mut u = ModelUsage::default();
-            u.add(&usage("unknown", 999_999, 0, 0));
-            u
-        });
-        let dominant = models
-            .iter()
-            .filter(|(m, _)| m.as_str() != "unknown")
-            .max_by_key(|(_, u)| u.billable_tokens())
-            .map(|(m, _)| m.clone());
-        assert_eq!(dominant.as_deref(), Some("claude-opus-4.5"));
-    }
-
-    #[test]
-    fn empty_model_buckets_as_unknown() {
-        assert_eq!(normalize_key("  "), "unknown");
-        assert_eq!(normalize_key(""), "unknown");
-        assert_eq!(normalize_key("gpt-5.4"), "gpt-5.4");
+    fn provider_labels_map_to_semconv_names() {
+        assert_eq!(provider_name("Anthropic"), "anthropic");
+        assert_eq!(provider_name("Bedrock"), "aws.bedrock");
+        assert_eq!(provider_name("foundry"), "foundry");
     }
 }

@@ -6,8 +6,7 @@
 //! and every agent surface (see the Code Health Engine plan).
 //!
 //! Naming note: this is distinct from [`crate::core::quality`] (compression
-//! fidelity) and from [`crate::core::gain`]'s usage-quality component; this
-//! module scores the *source code's* navigability.
+//! fidelity); this module scores the *source code's* navigability.
 
 pub mod annotate;
 #[cfg(feature = "tree-sitter")]

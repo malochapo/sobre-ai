@@ -92,10 +92,6 @@ pub fn cmd_read(args: &[String]) {
 
     let short = protocol::shorten_path(path);
 
-    // Read latency for the Context IR lineage (#566) — the standalone path only;
-    // the daemon branch above records its own IR and returns before this.
-    let read_start = std::time::Instant::now();
-
     if !force_fresh && mode == "full" {
         use crate::core::cli_cache::{self, CacheResult};
         match cli_cache::check_and_read(path) {
@@ -103,14 +99,7 @@ pub fn cmd_read(args: &[String]) {
                 let msg = cli_cache::format_hit(&entry, &short);
                 println!("{msg}");
                 let sent = count_tokens(&msg);
-                super::common::cli_track_read_cached(
-                    path,
-                    "full",
-                    entry.original_tokens,
-                    sent,
-                    &msg,
-                    read_start.elapsed(),
-                );
+                super::common::cli_track_read_cached(path, "full", entry.original_tokens, sent);
                 return;
             }
             CacheResult::Miss { content } if content.is_empty() => {
@@ -124,14 +113,7 @@ pub fn cmd_read(args: &[String]) {
                 let output = cap_cli_to_raw(framed, &content, raw_tokens);
                 println!("{output}");
                 let sent = count_tokens(&output);
-                super::common::cli_track_read(
-                    path,
-                    "full",
-                    raw_tokens,
-                    sent,
-                    &output,
-                    read_start.elapsed(),
-                );
+                super::common::cli_track_read(path, "full", raw_tokens, sent);
                 return;
             }
         }
@@ -231,14 +213,7 @@ pub fn cmd_read(args: &[String]) {
             }
             let sent = count_tokens(&output_buf);
             println!("{output_buf}");
-            super::common::cli_track_read(
-                path,
-                "map",
-                original_tokens,
-                sent,
-                &output_buf,
-                read_start.elapsed(),
-            );
+            super::common::cli_track_read(path, "map", original_tokens, sent);
         }
         "signatures" => {
             let sigs = signatures::extract_signatures(&content, ext);
@@ -255,28 +230,14 @@ pub fn cmd_read(args: &[String]) {
             }
             println!("{output_buf}");
             let sent = count_tokens(&output_buf);
-            super::common::cli_track_read(
-                path,
-                "signatures",
-                original_tokens,
-                sent,
-                &output_buf,
-                read_start.elapsed(),
-            );
+            super::common::cli_track_read(path, "signatures", original_tokens, sent);
         }
         "aggressive" => {
             let compressed = compressor::aggressive_compress(&content, Some(ext));
             println!("{short} [{line_count}L]");
             println!("{compressed}");
             let sent = count_tokens(&compressed);
-            super::common::cli_track_read(
-                path,
-                "aggressive",
-                original_tokens,
-                sent,
-                &compressed,
-                read_start.elapsed(),
-            );
+            super::common::cli_track_read(path, "aggressive", original_tokens, sent);
         }
         "entropy" => {
             let result = entropy::entropy_compress(&content);
@@ -287,14 +248,7 @@ pub fn cmd_read(args: &[String]) {
             }
             println!("{}", result.output);
             let sent = count_tokens(&result.output);
-            super::common::cli_track_read(
-                path,
-                "entropy",
-                original_tokens,
-                sent,
-                &result.output,
-                read_start.elapsed(),
-            );
+            super::common::cli_track_read(path, "entropy", original_tokens, sent);
         }
         m if m.starts_with("lines:") => {
             // The CLI used to drop the window and print the whole file — a
@@ -311,14 +265,7 @@ pub fn cmd_read(args: &[String]) {
                 format!("{short} [{line_count}L] lines:{range_str}\n{extracted}{multi_hint}");
             println!("{output}");
             let sent = count_tokens(&output);
-            super::common::cli_track_read(
-                path,
-                "lines",
-                original_tokens,
-                sent,
-                &output,
-                read_start.elapsed(),
-            );
+            super::common::cli_track_read(path, "lines", original_tokens, sent);
         }
         _ => {
             // `full` and any unrecognized mode land here. These are
@@ -344,14 +291,7 @@ pub fn cmd_read(args: &[String]) {
             let output = cap_cli_to_raw(output, &content, original_tokens);
             println!("{output}");
             let sent = count_tokens(&output);
-            super::common::cli_track_read(
-                path,
-                "full",
-                original_tokens,
-                sent,
-                &output,
-                read_start.elapsed(),
-            );
+            super::common::cli_track_read(path, "full", original_tokens, sent);
         }
     }
 }
@@ -388,7 +328,12 @@ pub fn cmd_diff(args: &[String]) {
         protocol::shorten_path(&args[1])
     );
     println!("{diff}");
-    crate::core::stats::record("cli_diff", original, sent);
+    crate::core::usage::record_compression(
+        crate::core::usage::Surface::Cli,
+        "diff",
+        original,
+        sent,
+    );
 }
 
 pub fn cmd_grep(args: &[String]) {
@@ -402,9 +347,6 @@ pub fn cmd_grep(args: &[String]) {
     let abs_path = resolve_cli_path(raw_path);
     let path = abs_path.as_str();
 
-    // Search latency for the Context IR lineage (#566), standalone path only.
-    let search_start = std::time::Instant::now();
-
     let outcome = crate::tools::ctx_search::handle(
         pattern,
         path,
@@ -416,16 +358,8 @@ pub fn cmd_grep(args: &[String]) {
     );
     let out = outcome.text;
     println!("{out}");
-    super::common::cli_track_search(
-        outcome.modeled_baseline,
-        outcome.observed_tokens,
-        count_tokens(&out),
-        pattern,
-        path,
-        &out,
-        search_start.elapsed(),
-    );
-    if outcome.modeled_baseline == 0 && out.trim_start().starts_with("0 matches") {
+    super::common::cli_track_search(outcome.observed_tokens, count_tokens(&out));
+    if outcome.observed_tokens == 0 && out.trim_start().starts_with("0 matches") {
         std::process::exit(1);
     }
 }
@@ -447,7 +381,6 @@ pub fn cmd_glob(args: &[String]) {
 
     let (out, _original) = crate::tools::ctx_glob::handle(pattern, path, true, 200);
     println!("{out}");
-    crate::core::stats::record("cli_glob", 0, 0);
     if out.starts_with("ERROR:") {
         std::process::exit(1);
     }
@@ -494,8 +427,6 @@ pub fn cmd_find(args: &[String]) {
             found = true;
         }
     }
-
-    crate::core::stats::record("cli_find", 0, 0);
 
     if !found {
         std::process::exit(1);
@@ -548,7 +479,6 @@ pub fn cmd_deps(args: &[String]) {
 
     if let Some(result) = deps_cmd::detect_and_compress(path) {
         println!("{result}");
-        crate::core::stats::record("cli_deps", 0, 0);
     } else {
         eprintln!("No dependency file found in {path}");
         std::process::exit(1);

@@ -122,7 +122,6 @@ impl LeanCtxServer {
                 crp_mode,
                 cache: Some(self.cache.clone()),
                 session: Some(self.session.clone()),
-                tool_calls: Some(self.tool_calls.clone()),
                 path_errors,
                 bm25_cache: Some(self.bm25_cache.clone()),
                 progress_sender: Some(self.progress_sender.clone()),
@@ -135,26 +134,11 @@ impl LeanCtxServer {
             // would crash with "Cannot read properties of undefined (reading
             // 'invoke')". `spawn_blocking` keeps the core workers free and lets
             // the watchdog always return a response.
-            let handler_started = std::time::Instant::now();
             let output = self.run_tool_handler(name, tool, args_map, ctx).await?;
-            let handler_ms = handler_started.elapsed().as_millis() as u64;
 
             // Image/binary content blocks bypass all text processing.
             if output.content_blocks.is_some() {
-                if let Some(ref path) = output.path {
-                    self.record_call_with_path(
-                        name,
-                        0,
-                        0,
-                        Some("image".to_string()),
-                        Some(path),
-                        handler_ms,
-                    )
-                    .await;
-                } else {
-                    self.record_call_with_timing(name, 0, 0, Some("image".to_string()), handler_ms)
-                        .await;
-                }
+                self.record_call(name, 0, 0).await;
                 return Ok((
                     String::new(),
                     0,
@@ -162,8 +146,6 @@ impl LeanCtxServer {
                     output.content_blocks,
                 ));
             }
-
-            let output_token_estimate = crate::core::tokens::count_tokens(&output.text) as u32;
 
             if let Some(ref path) = output.path {
                 {
@@ -186,43 +168,9 @@ impl LeanCtxServer {
                         ledger.save_debounced();
                     }
                 }
-                self.record_call_with_path(
-                    name,
-                    output.original_tokens,
-                    output.saved_tokens,
-                    output.mode,
-                    Some(path),
-                    handler_ms,
-                )
-                .await;
-            } else {
-                self.record_call_with_timing(
-                    name,
-                    output.original_tokens,
-                    output.saved_tokens,
-                    output.mode,
-                    handler_ms,
-                )
-                .await;
             }
-
-            let agent_id = self
-                .agent_id
-                .read()
-                .await
-                .clone()
-                .unwrap_or_else(|| "unknown".into());
-            {
-                let input_hash = crate::core::audit_trail::hash_input(args_map);
-                crate::core::audit_trail::record(crate::core::audit_trail::AuditEntryData {
-                    agent_id: agent_id.clone(),
-                    tool: name.to_string(),
-                    action: None,
-                    input_hash,
-                    output_tokens: output_token_estimate,
-                    event_type: crate::core::audit_trail::AuditEventType::ToolCall,
-                });
-            }
+            self.record_call(name, output.original_tokens, output.saved_tokens)
+                .await;
 
             let saved = output.saved_tokens;
             let raw_text = output.text;

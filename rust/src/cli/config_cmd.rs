@@ -667,47 +667,6 @@ pub fn cmd_cache(args: &[String]) {
             println!("  Reads:     {reads}");
             println!("  Hits:      {hits}");
             println!("  Hit Rate:  {rate}%");
-
-            if let Ok(dir) = crate::core::paths::state_dir() {
-                let live_path = dir.join("mcp-live.json");
-                if let Ok(content) = std::fs::read_to_string(&live_path) {
-                    if let Ok(val) = serde_json::from_str::<serde_json::Value>(&content) {
-                        let mcp_reads = val
-                            .get("total_reads")
-                            .and_then(serde_json::Value::as_u64)
-                            .unwrap_or(0);
-                        let mcp_hits = val
-                            .get("cache_hits")
-                            .and_then(serde_json::Value::as_u64)
-                            .unwrap_or(0);
-                        let mcp_saved = val
-                            .get("tokens_saved")
-                            .and_then(serde_json::Value::as_u64)
-                            .unwrap_or(0);
-                        let mcp_rate = if mcp_reads > 0 {
-                            (mcp_hits as f64 / mcp_reads as f64 * 100.0).round() as u32
-                        } else {
-                            0
-                        };
-                        let updated = val
-                            .get("updated_at")
-                            .and_then(serde_json::Value::as_str)
-                            .unwrap_or("unknown");
-                        println!();
-                        println!("MCP Session Cache (ctx_read via AI editor):");
-                        println!("  Reads:         {mcp_reads}");
-                        println!("  Hits:          {mcp_hits}");
-                        println!("  Hit Rate:      {mcp_rate}%");
-                        println!("  Tokens Saved:  {mcp_saved}");
-                        println!("  Last Updated:  {updated}");
-                    }
-                } else {
-                    println!();
-                    println!(
-                        "MCP Session Cache: no data yet (start a session with your AI editor)"
-                    );
-                }
-            }
         }
         Some("invalidate") => {
             if args.len() < 2 {

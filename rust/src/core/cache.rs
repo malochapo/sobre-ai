@@ -326,15 +326,6 @@ impl CacheStats {
         self.files_tracked.load(Ordering::Relaxed)
     }
 
-    /// Returns the cache hit rate as a percentage (0–100).
-    pub fn hit_rate(&self) -> f64 {
-        let total = self.total_reads();
-        if total == 0 {
-            return 0.0;
-        }
-        (self.cache_hits() as f64 / total as f64) * 100.0
-    }
-
     /// Returns the total number of tokens saved by cache hits.
     pub fn tokens_saved(&self) -> u64 {
         self.total_original_tokens()
@@ -607,7 +598,6 @@ impl SessionCache {
         scores.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
 
         let mut freed = 0usize;
-        let mut redelivered = 0u64;
         let target = (current + incoming_tokens).saturating_sub(max_tokens);
 
         for (path, _score) in &scores {
@@ -616,13 +606,9 @@ impl SessionCache {
             }
             if let Some(entry) = self.entries.remove(path) {
                 freed += entry.original_tokens;
-                if entry.full_content_delivered {
-                    redelivered += 1;
-                }
                 self.file_refs.remove(path);
             }
         }
-        crate::core::cache_telemetry::record_eviction(redelivered);
     }
 
     /// Returns all cached entries as (path, entry) pairs.
@@ -749,16 +735,6 @@ impl SessionCache {
             .is_some_and(|e| e.full_content_delivered)
     }
 
-    /// Counts entries that have full content delivered — i.e. those that would
-    /// serve a cheap `[unchanged]` stub and therefore force a full re-delivery
-    /// if dropped. Used by re-delivery telemetry at clear/eviction sites.
-    pub fn count_full_delivered(&self) -> usize {
-        self.entries
-            .values()
-            .filter(|e| e.full_content_delivered)
-            .count()
-    }
-
     /// Removes all compressed output variants (map, signatures, etc.) from every entry,
     /// keeping the full zstd-compressed content intact. Returns the number of entries trimmed.
     pub fn trim_compressed_outputs(&mut self) -> usize {
@@ -782,18 +758,10 @@ impl SessionCache {
             .map(|(k, _)| k.clone())
             .collect();
         let count = to_remove.len();
-        let mut redelivered = 0u64;
         for key in &to_remove {
-            if self
-                .entries
-                .remove(key)
-                .is_some_and(|e| e.full_content_delivered)
-            {
-                redelivered += 1;
-            }
+            self.entries.remove(key);
             self.file_refs.remove(key);
         }
-        crate::core::cache_telemetry::record_eviction(redelivered);
         count
     }
 
@@ -810,7 +778,6 @@ impl SessionCache {
         scores.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
 
         let mut freed = 0usize;
-        let mut redelivered = 0u64;
         let target_free = current.saturating_sub(target_tokens);
         for (path, _score) in &scores {
             if freed >= target_free {
@@ -818,13 +785,9 @@ impl SessionCache {
             }
             if let Some(entry) = self.entries.remove(path) {
                 freed += entry.original_tokens;
-                if entry.full_content_delivered {
-                    redelivered += 1;
-                }
                 self.file_refs.remove(path);
             }
         }
-        crate::core::cache_telemetry::record_eviction(redelivered);
     }
 
     const MAX_SHARED_BLOCKS: usize = 100;
@@ -912,7 +875,7 @@ pub fn is_cache_entry_stale_verified(
 fn compute_md5(content: &str) -> String {
     let mut hasher = Md5::new();
     hasher.update(content.as_bytes());
-    crate::core::agent_identity::hex_encode(&hasher.finalize())
+    crate::core::hasher::hex_encode(&hasher.finalize())
 }
 
 #[cfg(test)]
@@ -980,7 +943,6 @@ mod tests {
         let stats = cache.get_stats();
         assert_eq!(stats.total_reads(), 2);
         assert_eq!(stats.cache_hits(), 1);
-        assert!(stats.hit_rate() > 0.0);
     }
 
     #[test]

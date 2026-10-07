@@ -517,7 +517,6 @@ pub(crate) fn try_stub_hit_readonly_scoped(
             current_conversation,
             delivered_conv.as_deref(),
         ) {
-            crate::core::cache_telemetry::record_conversation_mismatch();
             return None;
         }
         cache.record_cache_hit(path);
@@ -537,7 +536,6 @@ pub(crate) fn try_stub_hit_readonly_scoped(
         current_conversation,
         rec.delivered_conversation.as_deref(),
     ) {
-        crate::core::cache_telemetry::record_conversation_mismatch();
         return None;
     }
     Some(render_unchanged_stub(&rec.file_ref, path, rec.line_count))
@@ -982,8 +980,6 @@ pub(crate) fn cap_to_raw(
     raw_tokens: usize,
 ) -> String {
     if raw_tokens > 0 && framed_tokens > raw_tokens {
-        let prevented = (framed_tokens - raw_tokens) as u64;
-        crate::core::cache_telemetry::record_raw_cap(prevented);
         raw_content.to_string()
     } else {
         framed

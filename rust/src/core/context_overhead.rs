@@ -6,16 +6,10 @@
 //!  - the MCP **server instructions** block — the only guidance sobre gives;
 //!    it writes nothing into the host's own instruction files.
 //!
-//! `lean-ctx gain` measures *compression on lean-ctx-touched reads* — its
-//! denominator is lean-ctx traffic, not the provider bill. On a phase-isolated /
-//! non-caching workload (separate process per phase, no provider cache) the
-//! cached-re-read lever has no surface, so the headline can read net-positive
-//! while the bill moved net-negative. Surfacing this overhead — and stating the
-//! denominator — keeps the meter honest.
-//!
-//! Net bill impact ≈ `gross_saved_tokens − total_tokens() × turns`.
-
-use std::sync::OnceLock;
+//! `lean-ctx gain` shows this figure next to the savings: the savings count
+//! tokens removed from tool output, while this prefix is added to every
+//! request. With the proxy in the path, the prefix is already inside the real
+//! cost the provider reported.
 
 use crate::core::tokens::count_tokens;
 
@@ -35,16 +29,6 @@ impl ContextOverhead {
     #[must_use]
     pub fn total_tokens(&self) -> usize {
         self.tool_schema_tokens + self.instruction_tokens
-    }
-
-    /// Process-cached overhead. The tool surface and instructions are static, so a
-    /// once-per-process measurement is the right tradeoff for callers that render
-    /// repeatedly (the `gain` dashboard re-renders every second in `--live`) —
-    /// it avoids per-tick disk I/O and re-tokenization.
-    #[must_use]
-    pub fn cached() -> Self {
-        static CACHE: OnceLock<ContextOverhead> = OnceLock::new();
-        *CACHE.get_or_init(Self::measure)
     }
 
     /// Measure the overhead for the currently-configured MCP surface. Uses the
@@ -76,61 +60,6 @@ pub fn tool_tokens(t: &rmcp::model::Tool) -> usize {
         .map_or(0, |d| count_tokens(d.as_ref()));
     let schema = count_tokens(&serde_json::to_string(&t.input_schema).unwrap_or_default());
     desc + schema
-}
-
-/// Estimated per-turn overhead of native IDE tools (Read, Grep, Shell, Glob,
-/// Write, StrReplace) — lean-ctx replaces these 1:1, so only the delta above
-/// this baseline is attributable lean-ctx overhead.
-pub(crate) const NATIVE_BASELINE_TOKENS_PER_TURN: u64 = 2400;
-
-/// Conservative provider prompt-cache hit rate. Anthropic achieves ~90% on
-/// stable prefixes (#498), OpenAI ~50%. Default 75% cross-provider estimate.
-/// Returns 0.0 when `--no-cache-adjust` is active (#1104).
-fn provider_cache_hit_rate() -> f64 {
-    if no_cache_adjust_active() {
-        return 0.0;
-    }
-    0.75
-}
-
-// #1104: `--no-cache-adjust` forces cache_rate=0 (worst-case view).
-std::thread_local! {
-    static NO_CACHE_ADJUST: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
-}
-
-pub fn set_no_cache_adjust(v: bool) {
-    NO_CACHE_ADJUST.with(|c| c.set(v));
-}
-
-fn no_cache_adjust_active() -> bool {
-    NO_CACHE_ADJUST.with(std::cell::Cell::get)
-}
-
-/// Net-of-injection reconciliation with baseline + cache corrections (#1104).
-///
-/// Two fixes over the original `saved - overhead × turns`:
-/// 1. **Baseline**: native tools also inject ~2,400 tok/turn of schemas — only
-///    the delta above that is lean-ctx's fault.
-/// 2. **Cache**: stable prefixes are cached by providers (Anthropic 90%,
-///    OpenAI 50%) — effective cost is `delta × (1 - cache_rate)`.
-#[must_use]
-pub fn net_of_injection(tokens_saved: u64, overhead_per_turn: u64, turns: u64) -> (u64, i64) {
-    let delta = overhead_per_turn.saturating_sub(NATIVE_BASELINE_TOKENS_PER_TURN);
-    let cache_rate = provider_cache_hit_rate();
-    let effective_per_turn = (delta as f64 * (1.0 - cache_rate)) as u64;
-    let total = effective_per_turn.saturating_mul(turns);
-    let net = tokens_saved as i64 - total as i64;
-    (total, net)
-}
-
-/// Provider turns (requests) the proxy actually observed carrying the injected
-/// prefix. The proxy is the only component that sees every provider turn, so its
-/// persisted request count is the honest multiplier for the per-turn injection
-/// tax. `0` when the proxy is not in the request path — we never guess turns we
-/// did not see, so [`net_of_injection`] then collapses to the gross savings.
-#[must_use]
-pub fn observed_turns() -> u64 {
-    crate::proxy::metrics::load_persisted().map_or(0, |m| m.requests_total)
 }
 
 #[cfg(test)]
@@ -187,29 +116,5 @@ mod tests {
             o.instruction_tokens,
             PER_TURN_PREFIX_BUDGET_TOKENS,
         );
-    }
-
-    #[test]
-    fn net_of_injection_subtracts_delta_above_baseline() {
-        // 3400 tok/turn - 2400 baseline = 1000 delta.
-        // With 75% cache: effective = 1000 * 0.25 = 250/turn.
-        // 8 turns: total = 2000, net = 10000 - 2000 = 8000.
-        let (total, net) = net_of_injection(10000, 3400, 8);
-        assert!(
-            total < 3000,
-            "cache + baseline must reduce tax, got {total}"
-        );
-        assert!(net > 7000, "net must reflect reduced tax, got {net}");
-    }
-
-    #[test]
-    fn net_of_injection_below_baseline_means_zero_tax() {
-        // 2000 tok/turn < 2400 baseline → delta = 0 → no tax at all.
-        assert_eq!(net_of_injection(5000, 2000, 100), (0, 5000));
-    }
-
-    #[test]
-    fn net_of_injection_collapses_to_gross_without_proxy_turns() {
-        assert_eq!(net_of_injection(1234, 3000, 0), (0, 1234));
     }
 }

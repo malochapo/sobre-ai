@@ -7,21 +7,6 @@ use crate::core::cache::SessionCache;
 use crate::core::session::SessionState;
 use rmcp::service::{Peer, RoleServer};
 
-pub(super) struct CepComputedStats {
-    pub(super) cep_score: u32,
-    pub(super) cache_util: u32,
-    pub(super) mode_diversity: u32,
-    pub(super) compression_rate: u32,
-    pub(super) total_original: u64,
-    pub(super) total_compressed: u64,
-    pub(super) total_saved: u64,
-    pub(super) mode_counts: std::collections::HashMap<String, u64>,
-    pub(super) complexity: String,
-    pub(super) cache_hits: u64,
-    pub(super) total_reads: u64,
-    pub(super) tool_call_count: u64,
-}
-
 pub use crate::core::protocol::CrpMode;
 // CrpMode is now defined in core::protocol to avoid reverse-dependency.
 // Re-exported here for backward compatibility.
@@ -49,7 +34,6 @@ pub type SharedCache = Arc<RwLock<SessionCache>>;
 pub struct LeanCtxServer {
     pub cache: SharedCache,
     pub session: Arc<RwLock<SessionState>>,
-    pub tool_calls: Arc<RwLock<Vec<ToolCallRecord>>>,
     pub call_count: Arc<AtomicUsize>,
     pub cache_ttl_secs: u64,
     pub last_call: Arc<RwLock<Instant>>,
@@ -59,7 +43,6 @@ pub struct LeanCtxServer {
     pub autonomy: Arc<super::autonomy::AutonomyState>,
     pub refetch_signals: Arc<RwLock<crate::core::refetch_signals::RefetchSignals>>,
     pub ledger: Arc<RwLock<crate::core::context_ledger::ContextLedger>>,
-    pub context_ir: Option<Arc<RwLock<crate::core::context_ir::ContextIrV1>>>,
     pub registry: Option<Arc<crate::server::registry::ToolRegistry>>,
     pub(crate) startup_project_root: Option<String>,
     pub(crate) startup_shell_cwd: Option<String>,
@@ -73,5 +56,3 @@ pub struct LeanCtxServer {
     pub(crate) _eviction_target: Arc<crate::core::eviction_orchestrator::EvictionOrchestrator>,
     pub(crate) progress_sender: crate::server::progress::SharedProgressSender,
 }
-
-pub use crate::core::protocol::ToolCallRecord;

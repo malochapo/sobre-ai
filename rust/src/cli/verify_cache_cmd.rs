@@ -60,9 +60,6 @@ struct ProbeOutcome {
     /// Cache hits / total reads observed during this run.
     run_hits: u64,
     run_reads: u64,
-    /// Persistent CEP session count + cross-call hit ratio (context, not asserted).
-    cep_sessions: u64,
-    cep_hit_ratio: f64,
 }
 
 impl ProbeOutcome {
@@ -118,13 +115,6 @@ fn run_probe(path: &str) -> ProbeOutcome {
     let run_reads = stats.total_reads();
     let run_hits = stats.cache_hits();
 
-    let cep = crate::core::stats::load().cep;
-    let cep_hit_ratio = if cep.total_cache_reads > 0 {
-        (cep.total_cache_hits as f64 / cep.total_cache_reads as f64) * 100.0
-    } else {
-        0.0
-    };
-
     ProbeOutcome {
         first_tokens: first.output_tokens,
         second_tokens: second.output_tokens,
@@ -134,8 +124,6 @@ fn run_probe(path: &str) -> ProbeOutcome {
         policy: policy.to_string(),
         run_hits,
         run_reads,
-        cep_sessions: cep.sessions,
-        cep_hit_ratio,
     }
 }
 
@@ -214,10 +202,6 @@ fn print_human(path: &str, o: &ProbeOutcome) {
     );
     println!("  Re-read savings:    {:.0}%", o.saved_pct());
     println!("  Cache hits (run):   {}/{}", o.run_hits, o.run_reads);
-    println!(
-        "  CEP sessions:       {} ({:.0}% cross-call hit ratio)",
-        o.cep_sessions, o.cep_hit_ratio
-    );
 
     if o.passed() {
         println!(
@@ -259,8 +243,6 @@ fn print_json(path: &str, o: &ProbeOutcome) {
         "reread_saved_pct": (o.saved_pct() * 10.0).round() / 10.0,
         "run_cache_hits": o.run_hits,
         "run_cache_reads": o.run_reads,
-        "cep_sessions": o.cep_sessions,
-        "cep_hit_ratio_pct": (o.cep_hit_ratio * 10.0).round() / 10.0,
     });
     println!(
         "{}",
@@ -282,8 +264,6 @@ mod tests {
             policy: "default".into(),
             run_hits: 1,
             run_reads: 2,
-            cep_sessions: 0,
-            cep_hit_ratio: 0.0,
         }
     }
 

@@ -1,5 +1,4 @@
 use crate::core::cache::SessionCache;
-use crate::core::heatmap;
 use crate::core::tokens::count_tokens;
 use crate::tools::CrpMode;
 use crate::tools::ctx_read;
@@ -44,27 +43,6 @@ pub fn handle_with_task_fresh(
         };
         let original = cache.get(path).map_or(0, |e| e.original_tokens);
         let sent = count_tokens(&chunk);
-        heatmap::record_file_access(path, original, original.saturating_sub(sent));
-        // Verified ledger (#685): model-correct counts. The default O200kBase model
-        // reuses the o200k counts above (same BPE + cache key → zero extra work); a
-        // resolved Claude/Gemini/Llama model re-tokenizes the raw source (from the
-        // cache) and the sent chunk so savings match the provider's billing units.
-        {
-            use crate::core::savings_ledger as ledger;
-            let (lbase, lsaved) =
-                if ledger::ledger_family() == crate::core::tokens::TokenizerFamily::O200kBase {
-                    (original, original.saturating_sub(sent))
-                } else if let Some(raw) = cache
-                    .get(path)
-                    .and_then(crate::core::cache::CacheEntry::content)
-                {
-                    let lo = ledger::count_for_ledger(&raw);
-                    (lo, lo.saturating_sub(ledger::count_for_ledger(&chunk)))
-                } else {
-                    (original, original.saturating_sub(sent))
-                };
-            ledger::record_read_event(lbase, lsaved);
-        }
         total_original = total_original.saturating_add(original);
         total_saved = total_saved.saturating_add(original.saturating_sub(sent));
 

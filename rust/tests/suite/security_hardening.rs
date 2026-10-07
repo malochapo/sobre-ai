@@ -66,9 +66,11 @@ fn raw_shell_skips_all_postprocessing() {
     );
     assert!(
         src.contains("is_raw_shell")
-            && src.contains("result_text.len() != pre_terse_len && output_tokens > 0")
+            && src.contains(
+                "post_process::final_token_count(&result_text, pre_terse_len, output_tokens)"
+            )
             && src.contains("skip_terse"),
-        "skip_terse must include is_raw_shell; post-terse stats must guard on terse delta"
+        "skip_terse must include is_raw_shell; the sent count must be taken after terse"
     );
     // The verify_output guard may AND extra predicates after !is_raw_shell
     // (e.g. !firewalled), so accept both the bare guard and the extended form

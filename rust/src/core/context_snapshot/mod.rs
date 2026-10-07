@@ -5,9 +5,7 @@
 //! stores at a point in time:
 //!
 //! - **git anchor** — commit / branch / dirty state ([`GitAnchorV1`])
-//! - **lineage** — what entered the window, from Context IR ([`SnapshotLineageV1`])
 //! - **ledger** — why it was there, with Φ-scores ([`SnapshotLedgerV1`])
-//! - **ROI** — token savings at that moment ([`SnapshotRoiV1`])
 //! - **session** — the task/decisions behind it ([`SnapshotSessionV1`])
 //!
 //! Snapshots chain via [`ContextSnapshotV1::parent_id`] into an append-only
@@ -36,9 +34,9 @@ pub use timeline::{
     TimelineEntry, head_id, load_entries, read_snapshot, resolve_id, snapshots_dir, write_snapshot,
 };
 pub use types::{
-    ContextSnapshotV1, GitAnchorV1, MAX_SNAPSHOT_LEDGER_ITEMS, MAX_SNAPSHOT_LINEAGE_ITEMS,
-    MAX_SNAPSHOT_SESSION_LIST, SnapshotLedgerItemV1, SnapshotLedgerV1, SnapshotLineageItemV1,
-    SnapshotLineageV1, SnapshotProjectV1, SnapshotRoiV1, SnapshotSessionV1, SnapshotSignatureV1,
+    ContextSnapshotV1, GitAnchorV1, MAX_SNAPSHOT_LEDGER_ITEMS, MAX_SNAPSHOT_SESSION_LIST,
+    SnapshotLedgerItemV1, SnapshotLedgerV1, SnapshotProjectV1, SnapshotSessionV1,
+    SnapshotSignatureV1,
 };
 
 #[cfg(test)]
@@ -62,25 +60,6 @@ mod tests {
             project: SnapshotProjectV1 {
                 root_hash: Some("r".repeat(64)),
                 identity_hash: Some("i".repeat(64)),
-            },
-            roi: SnapshotRoiV1 {
-                input_tokens: 1000,
-                output_tokens: 200,
-                tokens_saved: 800,
-                compression_rate: 0.444_44,
-            },
-            lineage: SnapshotLineageV1 {
-                items_recorded: 42,
-                items: vec![SnapshotLineageItemV1 {
-                    seq: 1,
-                    kind: "read".into(),
-                    tool: "ctx_read".into(),
-                    path: Some("src/main.rs".into()),
-                    input_tokens: 500,
-                    output_tokens: 13,
-                    compression_ratio: 0.974,
-                    content_hash: Some("c".repeat(64)),
-                }],
             },
             ledger: SnapshotLedgerV1 {
                 window_size: 8000,
@@ -123,7 +102,6 @@ mod tests {
         assert_eq!(snap.schema_version, CONTEXT_SNAPSHOT_V1_SCHEMA_VERSION);
         assert!(snap.snapshot_id.is_empty());
         assert!(snap.signature.is_none());
-        assert!(snap.lineage.items.is_empty());
         assert!(snap.ledger.items.is_empty());
     }
 

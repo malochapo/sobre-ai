@@ -14,37 +14,20 @@ pub(crate) fn cmd_ghost(args: &[String]) {
     let discover = crate::tools::impl_discover::analyze_history(&history, 20);
 
     let session = crate::core::session::SessionState::load_latest();
-    let store = crate::core::stats::load();
 
-    let unoptimized_tokens = discover.potential_tokens;
-    let _unoptimized_usd = discover.potential_usd;
-
-    // Redundant reads: every cache hit is a re-read lean-ctx served from cache
-    // instead of re-sending the file. Value it at the user's *measured* average
-    // read size (from the heatmap), never a guessed constant. No heatmap data
-    // yet => 0, so we never invent a figure.
-    let redundant_reads = store.cep.total_cache_hits as usize;
-    let avg_read_tokens = crate::core::heatmap::HeatMap::load()
-        .avg_original_tokens_per_access()
-        .unwrap_or(0) as usize;
-    let redundant_tokens = redundant_reads.saturating_mul(avg_read_tokens);
-
-    // NOTE: the former "oversized contexts" category was dropped — it was a
-    // fabricated wasted_original/3 heuristic applied to realized (not wasted)
-    // compression savings. The JSON keeps `truncated_contexts: 0` for schema
-    // stability; there is no honest data source to revive it.
-    let total_ghost = unoptimized_tokens + redundant_tokens;
+    // Plain-shell runs of commands lean-ctx compresses, valued at the savings
+    // the usage ledger measured for that command family. No measurement, no
+    // figure.
+    let total_ghost = discover.potential_tokens;
     let total_usd =
-        total_ghost as f64 * crate::core::stats::DEFAULT_INPUT_PRICE_PER_M / 1_000_000.0;
+        total_ghost as f64 * crate::core::pricing::DEFAULT_INPUT_PRICE_PER_M / 1_000_000.0;
     let monthly_usd = total_usd * 30.0;
 
     if json {
         let obj = serde_json::json!({
             "ghost_tokens": total_ghost,
             "breakdown": {
-                "unoptimized_shells": unoptimized_tokens,
-                "redundant_reads": redundant_tokens,
-                "truncated_contexts": 0,
+                "unoptimized_shells": total_ghost,
             },
             "estimated_usd": total_usd,
             "monthly_usd": monthly_usd,
@@ -92,17 +75,10 @@ pub(crate) fn cmd_ghost(args: &[String]) {
     );
     println!();
 
-    if unoptimized_tokens > 0 {
-        let missed_count: u32 = discover.missed_commands.iter().map(|m| m.count).sum();
-        println!(
-            "  {dim}  Unoptimized shells:{rst}  {white}{unoptimized_tokens:>8}{rst} {dim}({missed_count} cmds without lean-ctx){rst}"
-        );
-    }
-    if redundant_tokens > 0 {
-        println!(
-            "  {dim}  Redundant reads:{rst}     {white}{redundant_tokens:>8}{rst} {dim}({redundant_reads} cache hits = wasted re-reads){rst}"
-        );
-    }
+    let missed_count: u32 = discover.missed_commands.iter().map(|m| m.count).sum();
+    println!(
+        "  {dim}  Unoptimized shells:{rst}  {white}{total_ghost:>8}{rst} {dim}({missed_count} cmds without lean-ctx){rst}"
+    );
     println!();
     println!("  {bold}Monthly savings potential:{rst} {green}${monthly_usd:.2}{rst}");
 
@@ -110,8 +86,13 @@ pub(crate) fn cmd_ghost(args: &[String]) {
         println!();
         println!("  {bold}Top unoptimized commands:{rst}");
         for m in discover.missed_commands.iter().take(5) {
+            let est = if m.estimated_tokens > 0 {
+                format!(" ~{} tokens", m.estimated_tokens)
+            } else {
+                String::new()
+            };
             println!(
-                "    {dim}{:>4}x{rst}  {white}{:<12}{rst} {dim}{}{rst}",
+                "    {dim}{:>4}x{rst}  {white}{:<12}{rst} {dim}{}{est}{rst}",
                 m.count, m.prefix, m.description
             );
         }

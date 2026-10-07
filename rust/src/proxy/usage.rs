@@ -14,7 +14,7 @@
 //! - Gemini: every chunk carries `usageMetadata`; the last one has the totals.
 //!
 //! [`RealUsage`] normalizes every provider onto the four billable buckets that
-//! [`crate::core::gain::model_pricing::ModelCost::estimate_usd`] prices:
+//! [`crate::core::pricing::ModelCost::estimate_usd`] prices:
 //! uncached input, output (incl. reasoning/thoughts), cache-read, cache-write.
 
 use futures::{Stream, StreamExt};
@@ -73,24 +73,14 @@ pub(crate) struct RealUsage {
 }
 
 /// Request-side context the forward path knows and the response scanner does
-/// not: the request's project tag, what the proxy
-/// saved on the wire, and the counterfactual-baseline inputs (enterprise#18).
-/// Travels inside [`RealUsage`] so `usage_meter::record` stays the single
+/// not. Travels inside [`RealUsage`] so `usage_meter::record` stays the single
 /// choke-point through which every measured turn flows.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub(crate) struct WireContext {
-    /// Provider label (`Anthropic|OpenAI|Gemini`) of the serving route.
+    /// Provider label (`Anthropic|OpenAI|Gemini`) or registry id of the
+    /// serving route.
     pub provider: String,
-    /// Project from the `x-leanctx-project` header.
-    pub project: Option<String>,
-    /// Estimated tokens this request saved through wire compression
-    /// (bytes/4 heuristic, same basis as the proxy stats).
-    pub saved_tokens: u64,
-    /// Estimated request tokens BEFORE lean-ctx compression (bytes/4) — the
-    /// SEE-attribution input of the avoided-cost baseline (enterprise#18).
-    pub uncompressed_input_tokens: u64,
-    /// True when the serving upstream is a local/loopback endpoint — billed via
-    /// the transparent `local_shadow_rate`, never 0 (enterprise#15/#18).
+    /// True when the serving upstream is a local/loopback endpoint: no bill.
     pub is_local: bool,
     /// Originally requested model when the router downgraded/aliased it
     /// (enterprise#13); `None` for passthrough.
@@ -529,9 +519,6 @@ mod tests {
         // arrive on the finalized record that usage_meter/store consume.
         let wire = Box::new(WireContext {
             provider: "Anthropic".into(),
-            project: Some("billing".into()),
-            saved_tokens: 42,
-            uncompressed_input_tokens: 500,
             is_local: false,
             routed_from: None,
         });

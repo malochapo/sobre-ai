@@ -42,7 +42,7 @@ impl TimelineEntry {
             created_at: s.created_at.clone(),
             git_commit: s.git.commit.clone(),
             git_branch: s.git.branch.clone(),
-            tokens_saved: s.roi.tokens_saved,
+            tokens_saved: s.ledger.total_tokens_saved as u64,
             signed: s.signature.is_some(),
         }
     }

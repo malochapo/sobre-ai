@@ -1,6 +1,6 @@
 //! CLI handler for `lean-ctx visualize`.
 //!
-//! Collects graph, knowledge, heatmap, and session data from the current
+//! Collects graph, knowledge, per-file savings and session data from the current
 //! project, renders a self-contained HTML report, and optionally opens it
 //! in the default browser.
 

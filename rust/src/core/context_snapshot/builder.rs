@@ -11,16 +11,14 @@ use std::path::Path;
 use std::time::Duration;
 
 use crate::core::context_field::ContextState;
-use crate::core::context_ir::{ContextIrSourceKindV1, ContextIrTotalsV1, ContextIrV1};
 use crate::core::context_ledger::ContextLedger;
 use crate::core::session::SessionState;
 
 use super::digest::finalize_id;
 use super::signing::sign_snapshot;
 use super::types::{
-    ContextSnapshotV1, GitAnchorV1, MAX_SNAPSHOT_LEDGER_ITEMS, MAX_SNAPSHOT_LINEAGE_ITEMS,
-    MAX_SNAPSHOT_SESSION_LIST, SnapshotLedgerItemV1, SnapshotLedgerV1, SnapshotLineageItemV1,
-    SnapshotLineageV1, SnapshotProjectV1, SnapshotRoiV1, SnapshotSessionV1,
+    ContextSnapshotV1, GitAnchorV1, MAX_SNAPSHOT_LEDGER_ITEMS, MAX_SNAPSHOT_SESSION_LIST,
+    SnapshotLedgerItemV1, SnapshotLedgerV1, SnapshotProjectV1, SnapshotSessionV1,
 };
 
 /// Inputs for building a snapshot.
@@ -40,10 +38,6 @@ pub fn build(opts: &SnapshotOptions) -> Result<ContextSnapshotV1, String> {
     );
     snap.git = git_anchor(&opts.project_root);
     snap.project = project_slice(&opts.project_root);
-
-    let ir = ContextIrV1::load();
-    snap.roi = roi_from_totals(&ir.totals);
-    snap.lineage = lineage_from_ir(&ir);
 
     snap.ledger = ledger_slice(&ContextLedger::load());
     snap.session =
@@ -68,42 +62,6 @@ pub fn create(opts: &SnapshotOptions) -> Result<ContextSnapshotV1, String> {
 }
 
 // --- pure projections -------------------------------------------------------
-
-fn roi_from_totals(t: &ContextIrTotalsV1) -> SnapshotRoiV1 {
-    let denom = t.input_tokens + t.tokens_saved;
-    let compression_rate = if denom == 0 {
-        0.0
-    } else {
-        t.tokens_saved as f64 / denom as f64
-    };
-    SnapshotRoiV1 {
-        input_tokens: t.input_tokens,
-        output_tokens: t.output_tokens,
-        tokens_saved: t.tokens_saved,
-        compression_rate,
-    }
-}
-
-fn lineage_from_ir(ir: &ContextIrV1) -> SnapshotLineageV1 {
-    let start = ir.items.len().saturating_sub(MAX_SNAPSHOT_LINEAGE_ITEMS);
-    let items = ir.items[start..]
-        .iter()
-        .map(|it| SnapshotLineageItemV1 {
-            seq: it.seq,
-            kind: kind_str(&it.source.kind).to_string(),
-            tool: it.source.tool.clone(),
-            path: it.source.path.clone(),
-            input_tokens: it.input_tokens as u64,
-            output_tokens: it.output_tokens as u64,
-            compression_ratio: it.compression_ratio,
-            content_hash: it.verification.content_md5.clone(),
-        })
-        .collect();
-    SnapshotLineageV1 {
-        items_recorded: ir.totals.items_recorded,
-        items,
-    }
-}
 
 fn ledger_slice(led: &ContextLedger) -> SnapshotLedgerV1 {
     let start = led.entries.len().saturating_sub(MAX_SNAPSHOT_LEDGER_ITEMS);
@@ -184,16 +142,6 @@ fn git_str(root: &Path, args: &[&str]) -> Option<String> {
         .filter(|s| !s.is_empty())
 }
 
-fn kind_str(k: &ContextIrSourceKindV1) -> &'static str {
-    match k {
-        ContextIrSourceKindV1::Read => "read",
-        ContextIrSourceKindV1::Shell => "shell",
-        ContextIrSourceKindV1::Search => "search",
-        ContextIrSourceKindV1::Provider => "provider",
-        ContextIrSourceKindV1::Other => "other",
-    }
-}
-
 fn state_str(s: ContextState) -> &'static str {
     match s {
         ContextState::Candidate => "candidate",
@@ -208,74 +156,7 @@ fn state_str(s: ContextState) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::context_ir::{
-        ContextIrItemV1, ContextIrSafetyV1, ContextIrSourceV1, ContextIrVerificationV1,
-    };
     use crate::core::session::{Decision, FileTouched, TaskInfo};
-
-    fn ir_item(seq: u64, kind: ContextIrSourceKindV1, path: &str) -> ContextIrItemV1 {
-        ContextIrItemV1 {
-            seq,
-            created_at: "2026-06-28T00:00:00Z".into(),
-            source: ContextIrSourceV1 {
-                kind,
-                tool: "ctx_read".into(),
-                path: Some(path.into()),
-                ..Default::default()
-            },
-            input_tokens: 500,
-            output_tokens: 13,
-            duration_us: 0,
-            compression_ratio: 0.974,
-            content_excerpt: String::new(),
-            truncated: false,
-            safety: ContextIrSafetyV1::default(),
-            verification: ContextIrVerificationV1 {
-                content_md5: Some("c".repeat(64)),
-            },
-        }
-    }
-
-    #[test]
-    fn roi_handles_zero_and_normal() {
-        let zero = roi_from_totals(&ContextIrTotalsV1::default());
-        assert_eq!(zero.compression_rate, 0.0);
-
-        let t = ContextIrTotalsV1 {
-            items_recorded: 3,
-            input_tokens: 200,
-            output_tokens: 50,
-            tokens_saved: 600,
-        };
-        let roi = roi_from_totals(&t);
-        assert_eq!(roi.tokens_saved, 600);
-        assert!(
-            (roi.compression_rate - 0.75).abs() < 1e-9,
-            "600/(200+600)=0.75"
-        );
-    }
-
-    #[test]
-    fn lineage_maps_fields_and_bounds_to_cap() {
-        let mut ir = ContextIrV1::new();
-        ir.totals.items_recorded = 999;
-        for seq in 0..(MAX_SNAPSHOT_LINEAGE_ITEMS as u64 + 10) {
-            ir.items
-                .push(ir_item(seq, ContextIrSourceKindV1::Read, "src/a.rs"));
-        }
-        let slice = lineage_from_ir(&ir);
-        assert_eq!(slice.items_recorded, 999);
-        assert_eq!(slice.items.len(), MAX_SNAPSHOT_LINEAGE_ITEMS);
-        // The cap keeps the most recent items (tail of the IR ring).
-        assert_eq!(
-            slice.items.last().unwrap().seq,
-            MAX_SNAPSHOT_LINEAGE_ITEMS as u64 + 9
-        );
-        let first = &slice.items[0];
-        assert_eq!(first.kind, "read");
-        assert_eq!(first.tool, "ctx_read");
-        assert_eq!(first.path.as_deref(), Some("src/a.rs"));
-    }
 
     #[test]
     fn session_slice_projects_task_and_lists() {
@@ -336,8 +217,7 @@ mod tests {
     }
 
     #[test]
-    fn kind_and_state_strings_are_snake_case() {
-        assert_eq!(kind_str(&ContextIrSourceKindV1::Provider), "provider");
+    fn state_strings_are_snake_case() {
         assert_eq!(state_str(ContextState::Shadowed), "shadowed");
     }
 }

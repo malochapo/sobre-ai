@@ -1,6 +1,6 @@
 //! Live model prices from public provider catalogs (#1179, universal #1189).
 //!
-//! The embedded table in [`super::model_pricing`] can only ever know the
+//! The embedded table in [`super`] can only ever know the
 //! models that existed at release time; anything newer used to fall into a
 //! family heuristic and could be priced an order of magnitude off (a tester's
 //! DeepSeek V4 Flash was billed at 2025 V3 list prices — ~15× too high).
@@ -23,9 +23,9 @@
 //! cached (`ensure_loaded`, no network); plain CLI tools and the test suite
 //! keep the deterministic embedded table.
 //!
-//! Precedence inside [`super::model_pricing::ModelPricing::quote`]:
+//! Precedence inside [`super::ModelPricing::quote`]:
 //! embedded exact > **live** > heuristic > blended fallback. Live hits are
-//! [`super::model_pricing::PricingMatchKind::Live`] — current market data,
+//! [`super::PricingMatchKind::Live`] — current market data,
 //! not an estimate.
 
 use std::collections::HashMap;
@@ -33,7 +33,7 @@ use std::sync::{Arc, OnceLock, RwLock};
 
 use serde::{Deserialize, Serialize};
 
-use super::model_pricing::ModelCost;
+use super::ModelCost;
 
 /// On-disk cache file, under the lean-ctx cache directory.
 const CACHE_FILE: &str = "model-prices.json";

@@ -176,48 +176,6 @@ fn auth_error_response_generic_hint() {
     assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
 }
 
-// --- x-leanctx-project header ---
-
-#[test]
-fn attach_request_tags_reads_the_project_header() {
-    let mut req = build_request(&[("x-leanctx-project", "side-quest")], "/v1/messages");
-    attach_request_tags(&mut req);
-    let tags = req
-        .extensions()
-        .get::<request_tags::RequestTags>()
-        .expect("tags attached");
-    assert_eq!(tags.project.as_deref(), Some("side-quest"));
-}
-
-#[test]
-fn attach_request_tags_without_header_leaves_no_extension() {
-    let mut req = build_request(&[], "/v1/messages");
-    attach_request_tags(&mut req);
-    assert!(
-        req.extensions()
-            .get::<request_tags::RequestTags>()
-            .is_none()
-    );
-}
-
-#[test]
-fn attach_request_tags_ignores_blank_oversized_or_control_headers() {
-    // A blank or absurdly long project header is ignored, and control
-    // characters would poison usage rows and logs (#54/#59). HTAB is the only
-    // control byte the HTTP layer lets through — HeaderValue rejects the rest.
-    let long = "p".repeat(200);
-    for bad in ["", "   ", long.as_str(), "bil\tling"] {
-        let mut req = build_request(&[("x-leanctx-project", bad)], "/v1/messages");
-        attach_request_tags(&mut req);
-        assert!(
-            req.extensions()
-                .get::<request_tags::RequestTags>()
-                .is_none(),
-            "bad header {bad:?} must not tag the request"
-        );
-    }
-}
-
 #[test]
 fn x_leanctx_project_never_forwarded_upstream() {
     // Internal gateway header: it must NOT be on the upstream allowlist,

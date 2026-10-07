@@ -184,12 +184,13 @@ mod double_compression_guard {
             "skip_terse must skip verbatim reads (read family) to avoid re-compressing them"
         );
 
-        // The double-counting guard for already-saving tools moved to the
-        // post-terse stats correction: savings are only recomputed when terse
-        // actually changed the text and output tokens were recorded.
+        // Usage is recorded once, after terse, from the final sent count: the
+        // tool's own savings and terse's are never counted twice.
         assert!(
-            src.contains("result_text.len() != pre_terse_len && output_tokens > 0"),
-            "post-terse stats correction must guard on terse length delta and output_tokens"
+            src.contains(
+                "post_process::final_token_count(&result_text, pre_terse_len, output_tokens)"
+            ),
+            "the sent count must be taken after terse"
         );
     }
 
@@ -649,11 +650,11 @@ mod integration {
             "terse compression must be gated by an early skip_terse() return"
         );
 
-        // 3. The post-terse stats correction runs only when terse changed the
-        // text and output tokens were recorded, avoiding double-counting.
+        // 3. Usage is recorded once, after terse, with the tool's savings
+        // added back onto the pre-terse count.
         assert!(
-            src.contains("result_text.len() != pre_terse_len && output_tokens > 0"),
-            "post-terse stats correction must guard on terse length delta and output_tokens"
+            src.contains("crate::core::usage::record_compression("),
+            "call_tool must record the call in the usage ledger"
         );
     }
 }

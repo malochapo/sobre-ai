@@ -7,8 +7,7 @@ use anyhow::{Context, Result, bail};
 use serde::{Deserialize, Serialize};
 
 use crate::core::bounce_tracker::BounceTracker;
-use crate::core::gain::model_pricing::{ModelPricing, PricingMatchKind};
-use crate::core::stats::{StatsStore, classify_command};
+use crate::core::pricing::{ModelPricing, PricingMatchKind};
 
 const REPLAY_KIND: &str = "lean-ctx.quality-benchmark.v1";
 const MAX_REPLAY_BYTES: u64 = 16 * 1024 * 1024;
@@ -98,7 +97,8 @@ struct ArmSamples {
     successes: u64,
     turns: Vec<f64>,
     costs: Vec<f64>,
-    stats: StatsStore,
+    tool_calls: u64,
+    saved_tokens: u64,
     bounce: BounceTracker,
 }
 
@@ -199,7 +199,7 @@ pub fn replay(suite: &ReplaySuite) -> Result<ReplayReport> {
 fn record_arm(
     samples: &mut ArmSamples,
     arm: &RecordedArm,
-    cost: crate::core::gain::model_pricing::ModelCost,
+    cost: crate::core::pricing::ModelCost,
 ) -> f64 {
     samples.successes += u64::from(arm.success);
     samples.turns.push(arm.turns as f64);
@@ -211,24 +211,10 @@ fn record_arm(
     );
     samples.costs.push(usd);
     for call in &arm.tool_calls {
-        samples.stats.total_commands = samples.stats.total_commands.saturating_add(1);
-        samples.stats.total_input_tokens = samples
-            .stats
-            .total_input_tokens
-            .saturating_add(call.original_tokens);
-        samples.stats.total_output_tokens = samples
-            .stats
-            .total_output_tokens
-            .saturating_add(call.delivered_tokens);
-        let entry = samples.stats.commands.entry(call.name.clone()).or_default();
-        entry.count = entry.count.saturating_add(1);
-        entry.input_tokens = entry.input_tokens.saturating_add(call.original_tokens);
-        entry.output_tokens = entry.output_tokens.saturating_add(call.delivered_tokens);
-        samples
-            .stats
-            .command_classes
-            .entry(call.name.clone())
-            .or_insert_with(|| classify_command(&call.name));
+        samples.tool_calls = samples.tool_calls.saturating_add(1);
+        samples.saved_tokens = samples
+            .saved_tokens
+            .saturating_add(call.original_tokens.saturating_sub(call.delivered_tokens));
 
         samples.bounce.next_seq();
         if call.name == "ctx_expand" {
@@ -243,9 +229,8 @@ fn record_arm(
 
 fn summarize(samples: &ArmSamples) -> ArmSummary {
     let sessions = samples.turns.len() as u64;
-    let tool_calls = samples.stats.total_commands;
+    let tool_calls = samples.tool_calls;
     let expansions = samples.bounce.total_bounces();
-    let compression = samples.stats.compression_totals();
     ArmSummary {
         successes: samples.successes,
         sessions,
@@ -258,7 +243,7 @@ fn summarize(samples: &ArmSamples) -> ArmSummary {
         total_cost_usd: samples.costs.iter().sum(),
         mean_cost_usd: mean(&samples.costs),
         cost_ci: mean_ci(&samples.costs),
-        compression_saved_tokens: compression.saved_tokens(),
+        compression_saved_tokens: samples.saved_tokens,
     }
 }
 

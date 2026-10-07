@@ -22,18 +22,11 @@ pub(crate) fn wire_context(
     parts: &Parts,
     provider_label: &str,
     upstream_base: &str,
-    tokens_saved: u64,
-    original_size: usize,
 ) -> crate::proxy::usage::WireContext {
-    let tags = parts
-        .extensions
-        .get::<crate::proxy::request_tags::RequestTags>()
-        .cloned()
-        .unwrap_or_default();
     // Registry routes attribute usage to the provider identity ("foundry",
     // "local"), not the wire-shape label ("OpenAI") — shape ≠ identity. The
-    // entry's resolved local flag rides along (shadow-rate billing for
-    // non-loopback local endpoints, e.g. host.docker.internal).
+    // entry's resolved local flag rides along (non-loopback local endpoints,
+    // e.g. host.docker.internal).
     let registry = parts
         .extensions
         .get::<crate::proxy::providers::RegistryProviderId>();
@@ -44,21 +37,30 @@ pub(crate) fn wire_context(
     );
     crate::proxy::usage::WireContext {
         provider: provider.to_string(),
-        project: tags.project,
-        saved_tokens: tokens_saved,
-        // bytes/4 — the same estimation basis the proxy stats use throughout.
-        uncompressed_input_tokens: original_size as u64 / 4,
         is_local,
         routed_from: None, // populated by the routing hook (wave 3)
     }
 }
 
+/// Records the proxy's compression of one request in the usage ledger.
+///
+/// Both bodies are tokenized whole, which takes too long to do before
+/// forwarding, so it runs on its own thread and the request does not wait.
+pub(crate) fn record_compression_off_path(before: Vec<u8>, after: Vec<u8>) {
+    std::thread::spawn(move || {
+        let count = |b: &[u8]| crate::core::tokens::count_tokens(&String::from_utf8_lossy(b));
+        crate::core::usage::record_compression(
+            crate::core::usage::Surface::Proxy,
+            "request",
+            count(&before),
+            count(&after),
+        );
+    });
+}
+
 pub(crate) struct PreparedRequestBody {
     pub(crate) body: Vec<u8>,
     pub(crate) parsed: Option<serde_json::Value>,
-    pub(crate) original_size: usize,
-    pub(crate) compressed_size: usize,
-    pub(crate) compression_candidate: bool,
     pub(crate) preserve_content_encoding: bool,
     /// Routing decision applied to the body (enterprise#13); `None` = passthrough.
     pub(crate) route: Option<crate::proxy::routing::RouteDecision>,
@@ -81,9 +83,6 @@ pub(crate) fn prepare_request_body(
             return Ok(PreparedRequestBody {
                 body: body_bytes.to_vec(),
                 parsed: None,
-                original_size: body_bytes.len(),
-                compressed_size: body_bytes.len(),
-                compression_candidate: false,
                 preserve_content_encoding: true,
                 route: None,
             });
@@ -94,9 +93,6 @@ pub(crate) fn prepare_request_body(
         return Ok(PreparedRequestBody {
             body: body_bytes.to_vec(),
             parsed: None,
-            original_size: body_bytes.len(),
-            compressed_size: body_bytes.len(),
-            compression_candidate: false,
             preserve_content_encoding: encoding != RequestBodyEncoding::Identity,
             route: None,
         });
@@ -151,6 +147,11 @@ pub(crate) fn prepare_request_body(
             }
             compress_body(parsed.clone(), original_size)
         };
+    // A translated body changes shape, not just size: only same-shape bodies
+    // are compared.
+    if compressed_size < original_size && !route.as_ref().is_some_and(|r| r.xlat) {
+        record_compression_off_path(decoded.to_vec(), logical_body.clone());
+    }
     let body = match encoding {
         RequestBodyEncoding::Identity => logical_body,
         RequestBodyEncoding::Gzip => encode_gzip(&logical_body)?,
@@ -161,9 +162,6 @@ pub(crate) fn prepare_request_body(
     Ok(PreparedRequestBody {
         body,
         parsed: Some(parsed),
-        original_size,
-        compressed_size,
-        compression_candidate: true,
         preserve_content_encoding: encoding != RequestBodyEncoding::Identity,
         route,
     })

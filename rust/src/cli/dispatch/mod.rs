@@ -62,12 +62,6 @@ pub fn run() {
                 }
                 return;
             }
-            "output-savings" => {
-                // #895 Track B: measured (A/B holdout) or estimated output-token
-                // reduction. Local + free, like `roi`.
-                super::cmd_output_savings(&rest);
-                return;
-            }
             "embeddings" => {
                 crate::cli::embeddings_cmd::cmd_embeddings(&rest);
                 return;
@@ -98,21 +92,12 @@ pub fn run() {
                 super::cmd_visualize(&rest);
                 return;
             }
-            "audit" => {
-                println!("{}", crate::cli::audit_report::generate_report());
-                return;
-            }
             "index" => {
                 crate::cli::cmd_index(&rest);
                 return;
             }
             "repomap" => {
                 crate::cli::cmd_repomap(&rest);
-                core::stats::flush();
-                return;
-            }
-            "cep" => {
-                println!("{}", core::stats::format_cep_report());
                 return;
             }
             "proxy" => {
@@ -151,7 +136,6 @@ pub fn run() {
             }
             "glob" => {
                 super::cmd_glob(&rest);
-                core::stats::flush();
                 return;
             }
             "find" => {
@@ -175,8 +159,7 @@ pub fn run() {
             }
             "graph" => {
                 // `graph --heatmap` is the structural view: per-file heat from
-                // token count x graph connections. Distinct from
-                // `gain --heatmap`, which ranks files by tokens saved.
+                // token count x graph connections.
                 if rest.iter().any(|a| a == "--heatmap") {
                     crate::heatmap::cmd_heatmap(&rest);
                     return;
@@ -202,14 +185,6 @@ pub fn run() {
             }
             "compact" => {
                 cmd_compact(&rest);
-                return;
-            }
-            "tools" => {
-                // `tools health` is the token-budget / rot report (#848).
-                // `tools <profile>` used to switch how many tools the agent
-                // saw; there is one surface now (invariant 3), so the switch
-                // is gone and only the report remains.
-                super::cmd_tools_health(&rest);
                 return;
             }
             "config" => {
@@ -528,8 +503,8 @@ mod tests {
             "must point to full reference"
         );
         assert!(
-            h.contains("lean-ctx tools health"),
-            "must surface the tool-budget report"
+            h.contains("lean-ctx gain"),
+            "must surface the savings report"
         );
         // Concise means concise — keep it well under the full reference.
         assert!(

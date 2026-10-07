@@ -245,7 +245,7 @@ fn sha256_bytes(bytes: &[u8]) -> String {
     use sha2::{Digest, Sha256};
     let mut hasher = Sha256::new();
     hasher.update(bytes);
-    crate::core::agent_identity::hex_encode(&hasher.finalize())
+    crate::core::hasher::hex_encode(&hasher.finalize())
 }
 
 /// One-line status for doctor / `embeddings status`.

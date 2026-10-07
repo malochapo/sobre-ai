@@ -675,7 +675,6 @@ pub struct IntrospectState {
     pub total_input_tokens: AtomicU64,
     pub total_bulk_candidate_tokens: AtomicU64,
     pub total_requests: AtomicU64,
-    last_persist_epoch: AtomicU64,
 }
 
 impl Default for IntrospectState {
@@ -686,7 +685,6 @@ impl Default for IntrospectState {
             total_input_tokens: AtomicU64::new(0),
             total_bulk_candidate_tokens: AtomicU64::new(0),
             total_requests: AtomicU64::new(0),
-            last_persist_epoch: AtomicU64::new(0),
         }
     }
 }
@@ -709,63 +707,6 @@ impl IntrospectState {
         if let Ok(mut last) = self.last_breakdown.lock() {
             *last = Some(breakdown);
         }
-        self.maybe_persist();
-    }
-
-    fn maybe_persist(&self) {
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_secs();
-        let prev = self.last_persist_epoch.load(Ordering::Relaxed);
-        if now <= prev {
-            return;
-        }
-        if self
-            .last_persist_epoch
-            .compare_exchange(prev, now, Ordering::AcqRel, Ordering::Relaxed)
-            .is_err()
-        {
-            return;
-        }
-        self.persist(now);
-    }
-
-    fn persist(&self, ts: u64) {
-        let Ok(data_dir) = crate::core::data_dir::lean_ctx_data_dir() else {
-            return;
-        };
-        let breakdown_val = self
-            .last_breakdown
-            .lock()
-            .ok()
-            .and_then(|guard| guard.as_ref().map(|b| serde_json::to_value(b).ok()))
-            .flatten();
-        let total_input_tokens = self.total_input_tokens.load(Ordering::Relaxed);
-        let total_bulk_candidate_tokens = self.total_bulk_candidate_tokens.load(Ordering::Relaxed);
-        let bulk_share_bps =
-            token_share_basis_points(total_bulk_candidate_tokens, total_input_tokens);
-        let payload = serde_json::json!({
-            "ts": ts,
-            "proxy_active": true,
-            "last_breakdown": breakdown_val,
-            "cumulative": {
-                "total_requests": self.total_requests.load(Ordering::Relaxed),
-                "total_input_tokens": total_input_tokens,
-                "total_system_prompt_tokens": self.total_system_prompt_tokens.load(Ordering::Relaxed),
-                "total_bulk_candidate_tokens": total_bulk_candidate_tokens,
-                "bulk_candidate_share_basis_points": bulk_share_bps,
-                "vision_encoding_decision_gate_met": bulk_share_bps.is_some_and(|share| share >= 2_000),
-            }
-        });
-
-        let target = data_dir.join("proxy-introspect.json");
-        let tmp = data_dir.join("proxy-introspect.json.tmp");
-        if let Ok(json) = serde_json::to_string_pretty(&payload)
-            && std::fs::write(&tmp, &json).is_ok()
-        {
-            let _ = std::fs::rename(&tmp, &target);
-        }
     }
 }
 
@@ -774,28 +715,6 @@ pub(crate) fn token_share_basis_points(part: u64, total: u64) -> Option<u64> {
         let basis_points = u128::from(part) * 10_000 / u128::from(total);
         u64::try_from(basis_points).unwrap_or(u64::MAX)
     })
-}
-
-/// Load persisted proxy introspection data from disk.
-/// Returns `None` if the file doesn't exist or is stale (> `max_age_secs`).
-pub(crate) fn load_persisted(max_age_secs: u64) -> Option<serde_json::Value> {
-    let data_dir = crate::core::data_dir::lean_ctx_data_dir().ok()?;
-    let path = data_dir.join("proxy-introspect.json");
-    let content = std::fs::read_to_string(&path).ok()?;
-    let val: serde_json::Value = serde_json::from_str(&content).ok()?;
-
-    let ts = val
-        .get("ts")
-        .and_then(serde_json::Value::as_u64)
-        .unwrap_or(0);
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs();
-    if now.saturating_sub(ts) > max_age_secs {
-        return None;
-    }
-    Some(val)
 }
 
 #[cfg(test)]

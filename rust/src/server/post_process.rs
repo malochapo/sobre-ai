@@ -10,19 +10,6 @@
 use serde_json::{Map, Value};
 
 use crate::core::config::{CompressionLevel, Config};
-use crate::core::context_ir::ContextIrSourceKindV1;
-
-/// Map a tool name to the Context-IR source kind recorded for lineage.
-pub(super) fn context_ir_source_kind(name: &str) -> ContextIrSourceKindV1 {
-    match name {
-        n if n.contains("read") || n.contains("multi_read") || n.contains("smart_read") => {
-            ContextIrSourceKindV1::Read
-        }
-        "ctx_shell" => ContextIrSourceKindV1::Shell,
-        "ctx_search" => ContextIrSourceKindV1::Search,
-        _ => ContextIrSourceKindV1::Other,
-    }
-}
 
 /// Whether the terse compression stage must be skipped for this call (raw shell,
 /// any read-family output, edit evidence, or structural shell output).
@@ -83,72 +70,23 @@ pub(super) fn compress_terse(
     }
 }
 
-/// Final output token count plus persistent-stats correction (OPT-4): the
-/// dispatcher records savings before terse/hints run, so once post-processing
-/// changes the text we recompute the real sent-token count and adjust the saved
-/// total to reflect what the model actually receives. Returns the final count.
-pub(super) fn finalize_token_count_and_adjust(
-    name: &str,
+/// Final sent-token count: the cached pre-terse count when post-processing
+/// left the text unchanged, a recount otherwise.
+pub(super) fn final_token_count(
     result_text: &str,
     pre_terse_len: usize,
     output_tokens: u64,
-    tool_saved_tokens: usize,
 ) -> usize {
-    #[allow(clippy::cast_possible_truncation)]
-    let output_token_count = if result_text.len() == pre_terse_len {
-        output_tokens as usize
+    if result_text.len() == pre_terse_len {
+        usize::try_from(output_tokens).unwrap_or(usize::MAX)
     } else {
         crate::core::tokens::count_tokens(result_text)
-    };
-
-    if result_text.len() != pre_terse_len && output_tokens > 0 {
-        let delta = terse_savings_delta(
-            output_tokens as usize,
-            output_token_count,
-            tool_saved_tokens,
-        );
-        if delta != 0 {
-            crate::core::stats::adjust_savings(name, delta);
-        }
     }
-    output_token_count
-}
-
-/// Signed OPT-4 correction added to persistent saved-tokens once terse
-/// post-processing shrinks the payload. `original` is reconstructed from
-/// `pre_sent` — the *pre-terse* token count — so the delta captures terse's
-/// actual reduction. Reconstructing from the post-terse count instead collapses
-/// `actual_savings` to `pre_savings`, making the delta always 0, so terse
-/// savings are never recorded. Returns 0 when there is nothing to adjust.
-fn terse_savings_delta(pre_sent: usize, actual_sent: usize, pre_savings: usize) -> i64 {
-    let original = pre_sent + pre_savings;
-    let actual_savings = original.saturating_sub(actual_sent);
-    pre_savings as i64 - actual_savings as i64
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn context_ir_source_kind_maps_tools() {
-        assert!(matches!(
-            context_ir_source_kind("ctx_read"),
-            ContextIrSourceKindV1::Read
-        ));
-        assert!(matches!(
-            context_ir_source_kind("ctx_shell"),
-            ContextIrSourceKindV1::Shell
-        ));
-        assert!(matches!(
-            context_ir_source_kind("ctx_search"),
-            ContextIrSourceKindV1::Search
-        ));
-        assert!(matches!(
-            context_ir_source_kind("ctx_knowledge"),
-            ContextIrSourceKindV1::Other
-        ));
-    }
 
     #[test]
     fn skip_terse_for_raw_shell_and_reads() {
@@ -228,30 +166,8 @@ mod tests {
     }
 
     #[test]
-    fn finalize_token_count_uses_cached_count_when_unchanged() {
-        // When the text length is unchanged from pre-terse, the cached token
-        // count is returned verbatim (no recount, no stats adjustment).
+    fn final_token_count_uses_cached_count_when_unchanged() {
         let text = "hello world";
-        let n = finalize_token_count_and_adjust("ctx_shell", text, text.len(), 42, 0);
-        assert_eq!(n, 42);
-    }
-
-    #[test]
-    fn terse_delta_reconstructs_from_pre_terse_count() {
-        // Terse shrank 100 pre-terse tokens to 60 sent; the handler had already
-        // reported 20 saved. The true original is 120, so real savings are 60 and
-        // we must add the extra 40 (delta = 20 - 60 = -40). Reconstructing from the
-        // post-terse count (60) — the original bug — would give original = 80,
-        // actual_savings = 20, delta = 0: the terse reduction is silently lost.
-        assert_eq!(terse_savings_delta(100, 60, 20), -40);
-        // Regression guard: feeding the post-terse count as `pre_sent` yields the
-        // tautological no-op the fix removed.
-        assert_eq!(terse_savings_delta(60, 60, 20), 0);
-        // No handler savings (ctx_compose/ctx_search/…) still yields a correction
-        // when terse trims output — the case the old `tool_saved_tokens > 0` gate
-        // dropped entirely.
-        assert_eq!(terse_savings_delta(100, 70, 0), -30);
-        // Nothing to correct when terse did not change the count.
-        assert_eq!(terse_savings_delta(80, 80, 0), 0);
+        assert_eq!(final_token_count(text, text.len(), 42), 42);
     }
 }

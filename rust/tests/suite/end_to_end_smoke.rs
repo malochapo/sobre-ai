@@ -185,7 +185,7 @@ mod contract_gates {
     #[test]
     fn committed_contract_docs_are_valid() {
         let manifest_dir = env!("CARGO_MANIFEST_DIR");
-        let committed = vec!["context-ir-v1.md"];
+        let committed = vec!["usage-ledger-v1.md"];
 
         for name in &committed {
             let path = format!("{manifest_dir}/../docs/contracts/{name}");

@@ -131,48 +131,37 @@ pub fn run() -> u32 {
     };
     board.check(&dir_outcome);
 
-    // 4) stats.json + size
-    let stats_path = lean_dir.as_ref().map(|d| d.join("stats.json"));
-    let stats_outcome = match stats_path.as_ref().and_then(|p| std::fs::metadata(p).ok()) {
-        Some(m) if m.is_file() => {
-            let size = m.len();
-            let path_display = if let Some(p) = stats_path.as_ref() {
-                p.display().to_string()
-            } else {
-                String::new()
-            };
-            Outcome {
-                ok: true,
-                line: format!(
-                    "{BOLD}stats.json{RST}  {GREEN}exists{RST}  {WHITE}{size} bytes{RST}  {DIM}{path_display}{RST}",
-                ),
-            }
-        }
-        Some(_m) => {
-            let path_display = if let Some(p) = stats_path.as_ref() {
-                p.display().to_string()
-            } else {
-                String::new()
-            };
-            Outcome {
-                ok: false,
-                line: format!(
-                    "{BOLD}stats.json{RST}  {RED}not a file{RST}  {DIM}{path_display}{RST}",
-                ),
-            }
-        }
+    // 4) usage ledger + size (missing is OK: it appears with the first
+    // compression)
+    let usage_path = lean_dir.as_ref().map(|d| d.join("usage.jsonl"));
+    let shown = usage_path
+        .as_ref()
+        .map(|p| p.display().to_string())
+        .unwrap_or_default();
+    let usage_outcome = match usage_path.as_ref().and_then(|p| std::fs::metadata(p).ok()) {
+        Some(m) if m.is_file() => Outcome {
+            ok: true,
+            line: format!(
+                "{BOLD}usage.jsonl{RST}  {GREEN}exists{RST}  {WHITE}{} bytes{RST}  {DIM}{shown}{RST}",
+                m.len()
+            ),
+        },
+        Some(_) => Outcome {
+            ok: false,
+            line: format!("{BOLD}usage.jsonl{RST}  {RED}not a file{RST}  {DIM}{shown}{RST}"),
+        },
         None => Outcome {
             ok: true,
-            line: match &stats_path {
-                Some(p) => format!(
-                    "{BOLD}stats.json{RST}  {YELLOW}not yet created{RST}  {DIM}(will appear after first use) {}{RST}",
-                    p.display()
-                ),
-                None => format!("{BOLD}stats.json{RST}  {RED}could not resolve path{RST}"),
+            line: if usage_path.is_some() {
+                format!(
+                    "{BOLD}usage.jsonl{RST}  {YELLOW}not yet created{RST}  {DIM}(appears with the first compression) {shown}{RST}"
+                )
+            } else {
+                format!("{BOLD}usage.jsonl{RST}  {RED}could not resolve path{RST}")
             },
         },
     };
-    board.check(&stats_outcome);
+    board.check(&usage_outcome);
 
     // 5) config.toml (missing is OK). It lives in the CONFIG dir
     // ($XDG_CONFIG_HOME/lean-ctx), resolved through Config::path() to match
@@ -290,11 +279,6 @@ pub fn run() -> u32 {
     let bm25_health = bm25_cache_health_outcome();
     board.check(&bm25_health);
 
-    // 15-pre) Quarantined corrupt stats.json (#706): the loader preserved a
-    // display cache it could not parse — surface it instead of losing history.
-    let stats_quarantine = stats_quarantine_outcome();
-    board.check(&stats_quarantine);
-
     // 15a) Semantic index runtime status (state/timing/persistence) for the
     // active project — surfaces a stuck "warming" index (issue #249).
     let semantic_index = semantic_index_outcome();
@@ -368,20 +352,6 @@ pub fn run() -> u32 {
     println!(
         "  {BOLD}Tools{RST}  {WHITE}{advertised} advertised{RST}  \
          {DIM}one surface, every client{RST}"
-    );
-
-    // Session cache health (#361): answer "is the cache actually engaging?"
-    // without external instrumentation. CEP sessions + the cross-call hit ratio
-    // come from the persistent stats store; `verify-cache` proves it live.
-    let cep = &crate::core::stats::load().cep;
-    let hit_ratio = if cep.total_cache_reads > 0 {
-        (cep.total_cache_hits as f64 / cep.total_cache_reads as f64) * 100.0
-    } else {
-        0.0
-    };
-    println!(
-        "  {BOLD}Session cache{RST}  {WHITE}{} sessions{RST}  {DIM}{}/{} reads cached ({hit_ratio:.0}% hit) · prove: lean-ctx verify-cache{RST}",
-        cep.sessions, cep.total_cache_hits, cep.total_cache_reads
     );
 
     // The board counted exactly what it rendered — the displayed ✓/✗ list and
@@ -479,7 +449,7 @@ pub fn compact_score() -> (u32, u32) {
     }
     if lean_dir
         .as_ref()
-        .map(|d| d.join("stats.json"))
+        .map(|d| d.join("usage.jsonl"))
         .and_then(|p| std::fs::metadata(p).ok())
         .is_some_and(|m| m.is_file())
     {

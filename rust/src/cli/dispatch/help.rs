@@ -58,8 +58,6 @@ EVERYDAY COMMANDS:
     lean-ctx raw \"command\"         Same, but full uncompressed output
     lean-ctx read <file>           Read a file with compression
     lean-ctx grep <pattern>        Search with compressed output
-    lean-ctx tools health          Token budget of the tool surface (unused tools,
-                                   stale knowledge)
 
 MANAGE:
     lean-ctx status                Am I connected? (quick check)
@@ -98,23 +96,14 @@ USAGE:
     lean-ctx exec \"command\"        Same as -c
 
 SAVINGS:
-    gain                           Savings dashboard (colors, bars, sparklines, USD)
-    gain --live                    Refresh every second in place
-    gain --deep                    Cost, tasks, agents and heatmap combined
-    gain --graph                   30-day savings chart
-    gain --daily                   Day-by-day table with USD
-    gain --score                   Gain score breakdown
-    gain --cost                    Agent cost attribution (estimated)
-    gain --measured [--json]       Provider bill measured by the proxy
-    gain --tasks | --agents | --by-tool | --heatmap   Breakdowns
-    gain --opportunity             Missed savings in your shell history
-    gain --wrapped                 Recap card (terminal)
-    gain --json | --raw            Machine-readable output
-    gain --reset                   Clear all savings data
-    gain --model=<m> --period=<week|month|all> --limit=<N> --no-cache-adjust
-    output-savings [--json]        Output-token reduction
-    ghost [--json]                 Hidden token waste
-    cep                            Compression metrics, cache, modes, trends
+    gain                           Tokens saved, real cost (with the proxy), overhead
+    gain --by-tool [--limit=N]     Savings per tool or command
+    gain --daily                   Saved tokens and real cost per day
+    gain --json                    Machine-readable output
+    gain --period=<all|today|Nd>   Period to cover (default all)
+    gain --model=<m>               Price saved tokens at this model's rate
+    gain --reset                   Clear the usage ledger
+    ghost [--json]                 Compressible commands run without lean-ctx
     benchmark run|report|scorecard Benchmarks on your own project
 
 FILES AND SEARCH:
@@ -152,7 +141,6 @@ SETUP AND MAINTENANCE:
     doctor integrations [--json]   Per-agent integration checks
     config                         Show or edit the config file
     terse [0.0-1.0|off|lite|standard|max|raw]  Set compression_level
-    tools health                   Tool-surface token budget
     embeddings status|provision    Local ONNX runtime for semantic search
     pricing status|refresh         Model prices (fetched only on refresh)
     proxy start [--port=4444] [--detach] | status   Local API proxy
