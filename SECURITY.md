@@ -44,7 +44,9 @@ each started by you:
   which downloads the ONNX runtime and the embedding model, and
   `lean-ctx index build-semantic` / `build-full`, which download the model if
   it is missing. A search never downloads anything; without the model it says
-  so. Builds without embeddings download neither.
+  so. Builds without embeddings download neither. The `minilm` and `nomic`
+  aliases are pinned to a HuggingFace commit; a model named as `org/repo`
+  without `@revision` follows that repo's `main` branch.
 
 There is no telemetry, no update check and no usage reporting. If you find code
 that contradicts this, it is a bug — report it.
