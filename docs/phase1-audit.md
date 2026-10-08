@@ -52,7 +52,7 @@ The lots run in this order:
 | A | The user's machine: `uninstall`, `init`, agent integration | done (#31) |
 | B | The MCP tools: bugs, incomplete features, drift; decisions 1–4 and 6 | done (#32, #33, #34, #35, #36, #37) |
 | C | The CLI and the proxy | done (#38, #39) |
-| R | Tool names `ctx_*` → `sobre_*` (decision 9) | done (#PR_R) |
+| R | Tool names `ctx_*` → `sobre_*` (decision 9) | done (#40) |
 | D | Dead code, stale files, stale comments, duplicates; decision 7 | open |
 | F | Release: publish a `dense` binary (decision 8) | open |
 | E | Documentation and install path, written last so it describes the final behaviour | open |
@@ -687,7 +687,7 @@ proxy, help, `sobre call`).
 
 ## Lot R — tool names
 
-Fixed: #PR_R. The lots done before this one keep the `ctx_*` names they were
+Fixed: #40. The lots done before this one keep the `ctx_*` names they were
 written with; the lots after it use the new names.
 
 - [x] **R1 Rename the MCP tools from `ctx_*` to `sobre_*` (decision 9).**
