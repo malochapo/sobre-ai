@@ -46,7 +46,9 @@ fn knowledge_search_and_execute_require_mode_specific_inputs() {
     let knowledge = validator(&CtxKnowledgeTool);
     assert!(knowledge.is_valid(&json!({"action":"remember","category":"decision","value":"v"})));
     assert!(knowledge.is_valid(&json!({"action":"recall"})));
-    assert!(!knowledge.is_valid(&json!({"action":"remember","value":"v"})));
+    // B19: `value` alone is the documented form; the value is what is required.
+    assert!(knowledge.is_valid(&json!({"action":"remember","value":"v"})));
+    assert!(!knowledge.is_valid(&json!({"action":"remember","category":"decision"})));
     assert!(!knowledge.is_valid(&json!({"action":"gotcha","trigger":"t"})));
 
     let search = validator(&CtxSearchTool);
