@@ -92,7 +92,7 @@ pub(crate) fn cmd_proxy(rest: &[String]) {
             println!("  enable    Enable the proxy: config flag, autostart service, agent wiring");
             println!("  disable   Disable the proxy and restore the original endpoint");
             println!("  cleanup   Remove stale proxy URLs from AI tool configs");
-            println!("  token     Print the current proxy Bearer token (for MCP/HTTP clients)");
+            println!("  token     Print the current proxy Bearer token (for HTTP clients)");
             return;
         }
         let sub = rest.first().map_or("help", std::string::String::as_str);
@@ -204,13 +204,15 @@ pub(crate) fn cmd_proxy(rest: &[String]) {
                     println!("  Enable: lean-ctx proxy enable");
 
                     let home = dirs::home_dir().unwrap_or_default();
-                    if crate::proxy_setup::has_stale_proxy_url(&home) {
+                    let stale = crate::proxy_setup::stale_proxy_agents(&home);
+                    if !stale.is_empty() {
                         println!();
                         println!(
-                            "  \x1b[33m⚠ WARNING: Claude Code ANTHROPIC_BASE_URL points to the local proxy,\x1b[0m"
+                            "  \x1b[33m⚠ WARNING: {} still point(s) to the local proxy,\x1b[0m",
+                            stale.join(", ")
                         );
                         println!(
-                            "  \x1b[33m  but proxy is not enabled. This causes 401 auth failures.\x1b[0m"
+                            "  \x1b[33m  but proxy is not enabled, so those requests fail.\x1b[0m"
                         );
                         println!("  Fix:  lean-ctx proxy cleanup   (remove stale URL)");
                         println!("        lean-ctx proxy enable    (enable the proxy)");

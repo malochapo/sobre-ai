@@ -256,20 +256,6 @@ fn forwards_chatgpt_codex_oauth_headers() {
 }
 
 #[test]
-fn forwards_streamable_http_mcp_headers() {
-    for required in ["mcp-session-id", "last-event-id"] {
-        assert!(
-            ALLOWED_REQUEST_HEADERS.contains(&required),
-            "request header `{required}` must be forwarded upstream"
-        );
-    }
-    assert!(
-        is_forwarded_response_header("mcp-session-id"),
-        "MCP session id response header must be forwarded downstream"
-    );
-}
-
-#[test]
 fn forwards_codex_state_response_headers() {
     for required in [
         "x-codex-turn-state",

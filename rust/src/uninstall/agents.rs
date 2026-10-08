@@ -25,7 +25,10 @@ pub(super) fn remove_mcp_configs(home: &Path, dry_run: bool) -> bool {
                 .unwrap_or_else(|| home.join(".codex"))
                 .join("config.toml"),
         ),
-        ("OpenCode", home.join(".config/opencode/opencode.json")),
+        (
+            "OpenCode",
+            crate::core::editor_registry::opencode_config_path(home),
+        ),
         ("Copilot CLI", home.join(".copilot/mcp-config.json")),
     ];
 

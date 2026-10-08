@@ -123,24 +123,12 @@ pub(crate) fn agent_mcp_targets(
             home.join(".copilot/mcp-config.json"),
             ConfigType::CopilotCli,
         ),
-        "opencode" => {
-            #[cfg(windows)]
-            let opencode_path = if let Ok(appdata) = std::env::var("APPDATA") {
-                std::path::PathBuf::from(appdata)
-                    .join("opencode")
-                    .join("opencode.json")
-            } else {
-                home.join(".config/opencode/opencode.json")
-            };
-            #[cfg(not(windows))]
-            let opencode_path = home.join(".config/opencode/opencode.json");
-            push(
-                &mut targets,
-                "OpenCode",
-                opencode_path,
-                ConfigType::OpenCode,
-            );
-        }
+        "opencode" => push(
+            &mut targets,
+            "OpenCode",
+            crate::core::editor_registry::opencode_config_path(home),
+            ConfigType::OpenCode,
+        ),
         "vscode" => push(
             &mut targets,
             "VS Code",

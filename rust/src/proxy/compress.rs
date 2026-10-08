@@ -24,33 +24,36 @@ fn research_prose_cap() -> usize {
 ///    the pattern engine gets the same routing as the CLI and MCP paths.
 ///
 /// A rewritten result always ends with a `[sobre: …]` line (see [`label`]).
+/// Text below [`ccr::MIN_TEE_BYTES`] is never rewritten: its original would
+/// not be kept.
 pub(crate) fn compress_tool_result(content: &str, tool_name: Option<&str>) -> String {
+    if content.len() < ccr::MIN_TEE_BYTES {
+        return content.to_string();
+    }
     let compressed = compress_inner(content, tool_name);
     label(content, compressed)
 }
 
 /// Ends a rewritten tool result with the line that says so (#482): the token
-/// counts and, when the original is kept in the content-addressed tee store,
-/// where to read it. Both are pure functions of the content, so the rewritten
-/// result is byte-stable across turns and never invalidates the provider cache
-/// prefix (#448). A rewrite that is not smaller once labeled is dropped and
-/// the original kept.
+/// counts and where the original is kept in the content-addressed tee store.
+/// Both are pure functions of the content, so the rewritten result is
+/// byte-stable across turns and never invalidates the provider cache prefix
+/// (#448). The original is kept as is when it cannot be stored, or when the
+/// labeled rewrite is not smaller.
 fn label(original: &str, result: String) -> String {
     if result == original {
         return result;
     }
+    let Some(handle) = ccr::persist(original) else {
+        return original.to_string();
+    };
     let before = count_tokens(original);
     let after = count_tokens(&result);
-    let kept = ccr::persist(original)
-        .map(|handle| {
-            let name = std::path::Path::new(&handle)
-                .file_name()
-                .map_or_else(|| handle.clone(), |n| n.to_string_lossy().into_owned());
-            format!("; full original at {handle}, or ctx_expand(id=\"{name}\") for a slice")
-        })
-        .unwrap_or_default();
+    let name = std::path::Path::new(&handle)
+        .file_name()
+        .map_or_else(|| handle.clone(), |n| n.to_string_lossy().into_owned());
     let labeled = format!(
-        "{}\n[sobre: compressed by the proxy, {before} → {after} tokens{kept}]",
+        "{}\n[sobre: compressed by the proxy, {before} → {after} tokens; full original at {handle}, or ctx_expand(id=\"{name}\") for a slice]",
         result.trim_end()
     );
     if labeled.len() < original.len() {
@@ -276,6 +279,23 @@ mod tests {
                 "the terse dictionary rewrote `{keyword}` out of a search result:\n{out}"
             );
         }
+    }
+
+    /// Invariant 6: a rewrite keeps the original, and text below
+    /// [`ccr::MIN_TEE_BYTES`] is not kept, so it is never rewritten.
+    #[test]
+    fn text_too_small_to_keep_is_never_rewritten() {
+        let mut small = String::from("$ cargo build\n");
+        for _ in 0..12 {
+            small.push_str("src/a.rs:1:1: warning: unused\n");
+        }
+        assert!(small.len() < ccr::MIN_TEE_BYTES);
+        assert_ne!(
+            compress_inner(&small, Some("bash")),
+            small,
+            "the engine alone would rewrite it"
+        );
+        assert_eq!(compress_tool_result(&small, Some("bash")), small);
     }
 
     #[test]

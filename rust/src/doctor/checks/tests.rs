@@ -180,3 +180,39 @@ fn unknown_config_keys_flags_typos_only() {
     );
     assert!(unknown_config_keys(&rendered).is_empty(), "{rendered}");
 }
+
+#[test]
+fn local_model_upstream_passes_and_only_the_proxy_itself_fails() {
+    let with_anthropic = |url: &str| {
+        let mut proxy = crate::core::config::ProxyConfig::default();
+        proxy.upstreams.insert("anthropic".into(), url.into());
+        proxy
+    };
+
+    // Ollama on loopback, as the README documents it.
+    let ollama = proxy::upstream_outcome(&with_anthropic("http://127.0.0.1:11434"), 4444);
+    assert!(ollama.ok, "{}", ollama.line);
+    assert!(
+        ollama.line.contains("Anthropic=http://127.0.0.1:11434"),
+        "{}",
+        ollama.line
+    );
+    assert!(
+        !ollama.line.contains("plaintext"),
+        "loopback is not a network hop: {}",
+        ollama.line
+    );
+
+    for own in ["http://127.0.0.1:4444", "http://localhost:4444/v1"] {
+        let looped = proxy::upstream_outcome(&with_anthropic(own), 4444);
+        assert!(!looped.ok, "{own}: {}", looped.line);
+        assert!(looped.line.contains("proxy itself"), "{}", looped.line);
+    }
+
+    let remote = proxy::upstream_outcome(&with_anthropic("http://10.0.0.5:8080"), 4444);
+    assert!(
+        remote.ok && remote.line.contains("plaintext"),
+        "{}",
+        remote.line
+    );
+}

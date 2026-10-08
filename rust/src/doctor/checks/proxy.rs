@@ -80,57 +80,29 @@ pub(crate) fn proxy_health_outcome() -> Outcome {
         },
     }
 }
-/// Detects stale `ANTHROPIC_BASE_URL` in Claude Code settings pointing to the local
-/// lean-ctx proxy when the proxy is not enabled. Returns `None` when no mismatch exists
-/// (no check needed), `Some(Outcome)` when a stale URL is found.
+/// Detects agent configurations (Claude Code, Codex, OpenCode) that still
+/// point at the local proxy while the proxy is not enabled. Returns `None`
+/// when there are none.
 pub(crate) fn stale_proxy_env_outcome() -> Option<Outcome> {
     use crate::core::config::Config;
 
     let home = dirs::home_dir()?;
-    let cfg = Config::load();
-    let port = crate::proxy_setup::default_port();
-
-    if cfg.proxy.enabled == Some(true) {
+    let stale = crate::proxy_setup::stale_proxy_agents(&home);
+    if stale.is_empty() {
         return None;
     }
-
-    let settings_dir = crate::core::editor_registry::claude_state_dir(&home);
-    let settings_path = settings_dir.join("settings.json");
-    let content = std::fs::read_to_string(&settings_path).ok()?;
-    let doc: serde_json::Value = crate::core::jsonc::parse_jsonc(&content).ok()?;
-
-    let base_url = doc
-        .get("env")
-        .and_then(|e| e.get("ANTHROPIC_BASE_URL"))
-        .and_then(|v| v.as_str())
-        .unwrap_or("");
-
-    if base_url.is_empty() {
-        return None;
-    }
-
-    let local_proxy = format!("http://127.0.0.1:{port}");
-    let is_local = base_url == local_proxy
-        || base_url == format!("http://localhost:{port}")
-        || base_url.starts_with("http://127.0.0.1:")
-        || base_url.starts_with("http://localhost:");
-
-    if !is_local {
-        return None;
-    }
-
-    let state = if cfg.proxy.enabled == Some(false) {
+    let state = if Config::load().proxy.enabled == Some(false) {
         "disabled"
     } else {
         "not configured"
     };
+    let agents = stale.join(", ");
 
     Some(Outcome {
         ok: false,
         line: format!(
-            "{BOLD}Proxy env{RST}  {RED}ANTHROPIC_BASE_URL → {base_url} but proxy is {state}{RST}\n\
-             {DIM}         Claude Code routes API traffic to lean-ctx, but lean-ctx proxy is {state}.{RST}\n\
-             {DIM}         This causes 401 auth failures. Fix:{RST}\n\
+            "{BOLD}Proxy env{RST}  {RED}{agents} → local proxy, but proxy is {state}{RST}\n\
+             {DIM}         Their API requests go to a proxy that is {state} and fail. Fix:{RST}\n\
              {YELLOW}           lean-ctx proxy cleanup    {DIM}(remove stale URL){RST}\n\
              {YELLOW}           lean-ctx proxy enable     {DIM}(enable the proxy){RST}"
         ),
@@ -184,30 +156,44 @@ pub(crate) fn proxy_subscription_conflict_outcome() -> Option<Outcome> {
     })
 }
 pub(crate) fn proxy_upstream_outcome() -> Outcome {
-    use crate::core::config::{Config, ProxyProvider, is_local_proxy_url};
+    let cfg = crate::core::config::Config::load();
+    upstream_outcome(&cfg.proxy, crate::proxy_setup::default_port())
+}
 
-    let cfg = Config::load();
+/// The upstream check for `proxy`, served on `proxy_port`. Only an upstream
+/// that is the proxy's own address fails; a loopback URL on another port is a
+/// local model server, such as Ollama on `http://127.0.0.1:11434`.
+pub(super) fn upstream_outcome(
+    proxy: &crate::core::config::ProxyConfig,
+    proxy_port: u16,
+) -> Outcome {
+    use crate::core::config::{ProxyProvider, is_local_proxy_url};
+
     let checks = [
         (
             "Anthropic",
             "proxy.upstreams.anthropic",
-            cfg.proxy.resolve_upstream(ProxyProvider::Anthropic),
+            proxy.resolve_upstream(ProxyProvider::Anthropic),
         ),
         (
             "OpenAI",
             "proxy.upstreams.openai",
-            cfg.proxy.resolve_upstream(ProxyProvider::OpenAi),
+            proxy.resolve_upstream(ProxyProvider::OpenAi),
         ),
     ];
 
     let mut custom = Vec::new();
     let mut plaintext = Vec::new();
     for (label, key, resolved) in &checks {
-        if is_local_proxy_url(resolved) {
+        let loopback = is_local_proxy_url(resolved);
+        let port = resolved
+            .rsplit_once(':')
+            .and_then(|(_, rest)| rest.split('/').next()?.parse::<u16>().ok());
+        if loopback && port == Some(proxy_port) {
             return Outcome {
                 ok: false,
                 line: format!(
-                    "{BOLD}Proxy upstream{RST}  {RED}{label} upstream points back to local proxy{RST}  {YELLOW}run: lean-ctx config set {key} <url>{RST}"
+                    "{BOLD}Proxy upstream{RST}  {RED}{label} upstream points back to the proxy itself{RST}  {YELLOW}run: lean-ctx config set {key} <url>{RST}"
                 ),
             };
         }
@@ -228,10 +214,9 @@ pub(crate) fn proxy_upstream_outcome() -> Outcome {
         );
         if !is_default {
             custom.push(format!("{label}={resolved}"));
-            // Past the loopback guard above, any `http://` is a non-loopback
-            // plaintext upstream the user wrote. Valid config, but worth a
-            // standing security reminder.
-            if resolved.starts_with("http://") {
+            // Plaintext to another machine: valid config, but worth a
+            // standing security reminder. Loopback never leaves the machine.
+            if resolved.starts_with("http://") && !loopback {
                 plaintext.push(*label);
             }
         }

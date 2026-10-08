@@ -71,7 +71,7 @@ pub fn preview_proxy_cleanup(home: &Path) {
         println!("  Would remove Codex proxy URL from config.toml");
     }
 
-    if has_proxy_base_url(home, default_port()) {
+    if has_proxy_base_url(home) {
         println!("  Would remove the proxy base URLs from OpenCode's opencode.json");
     }
 }
@@ -127,39 +127,52 @@ pub fn cleanup_stale_proxy_env(home: &Path) -> usize {
         cleaned += 1;
     }
 
-    if uninstall_opencode_env(home, default_port(), false) {
+    if uninstall_opencode_env(home, false) {
         cleaned += 1;
     }
 
     cleaned
 }
 
-pub fn has_stale_proxy_url(home: &Path) -> bool {
+/// The agents whose configuration still points at the local proxy although
+/// the proxy is not enabled: what [`cleanup_stale_proxy_env`] repairs.
+pub fn stale_proxy_agents(home: &Path) -> Vec<&'static str> {
     let cfg = crate::core::config::Config::load();
     if cfg.proxy.enabled == Some(true) {
-        return false;
+        return Vec::new();
     }
 
-    let settings_dir = crate::core::editor_registry::claude_state_dir(home);
-    let settings_path = settings_dir.join("settings.json");
-    let Ok(content) = std::fs::read_to_string(&settings_path) else {
-        return false;
-    };
-    let Ok(doc) = crate::core::jsonc::parse_jsonc(&content) else {
-        return false;
-    };
+    let mut stale = Vec::new();
+    let settings_path = crate::core::editor_registry::claude_state_dir(home).join("settings.json");
+    if std::fs::read_to_string(&settings_path)
+        .ok()
+        .and_then(|content| crate::core::jsonc::parse_jsonc(&content).ok())
+        .is_some_and(|doc| {
+            doc.get("env")
+                .and_then(|e| e.get("ANTHROPIC_BASE_URL"))
+                .and_then(|v| v.as_str())
+                .is_some_and(is_local_lean_ctx_url)
+        })
+    {
+        stale.push("Claude Code");
+    }
 
-    let base_url = doc
-        .get("env")
-        .and_then(|e| e.get("ANTHROPIC_BASE_URL"))
-        .and_then(|v| v.as_str())
-        .unwrap_or("");
+    let codex_path = crate::core::home::resolve_codex_config_path()
+        .unwrap_or_else(|| home.join(".codex/config.toml"));
+    if std::fs::read_to_string(codex_path)
+        .is_ok_and(|content| codex_config_has_local_proxy_entry(&content))
+    {
+        stale.push("Codex");
+    }
 
-    is_local_lean_ctx_url(base_url)
+    if has_proxy_base_url(home) {
+        stale.push("OpenCode");
+    }
+    stale
 }
 
 pub fn uninstall_proxy_env(home: &Path, quiet: bool) {
     uninstall_claude_env(home, quiet);
     uninstall_codex_env(home, quiet);
-    uninstall_opencode_env(home, default_port(), quiet);
+    uninstall_opencode_env(home, quiet);
 }

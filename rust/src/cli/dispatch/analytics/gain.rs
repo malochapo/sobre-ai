@@ -129,7 +129,7 @@ fn print_summary(s: &Summary, quote: &ModelQuote, period: &str) {
     println!();
     if s.llm_calls > 0 {
         let counterfactual = s.real_cost_usd + saved_usd;
-        println!("{bold}Cost{rst} {dim}(measured by the proxy){rst}");
+        println!("{bold}Cost{rst} {dim}(tokens measured by the proxy, priced from the table){rst}");
         println!("  LLM calls     {}", s.llm_calls);
         let table_priced = s.llm_calls - s.local_calls;
         let mut sources = vec![format!("{table_priced} from the price table")];

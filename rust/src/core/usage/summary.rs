@@ -3,9 +3,9 @@
 //! Two figures, kept apart because they are not equally certain:
 //!
 //! - **Real cost**: the sum over the LLM calls the proxy forwarded. Each call
-//!   is priced by what the provider charged when the response says, otherwise
-//!   by the price table on the tokens the provider reported. Without the proxy
-//!   there are no calls and no real cost.
+//!   is priced by the price table on the tokens the provider reported, and is
+//!   free when the upstream is local. Without the proxy there are no calls and
+//!   no real cost.
 //! - **Saved tokens**: the sum over compressions of tokens removed, minus the
 //!   tokens bounces re-sent. A compression that sent more than it read (a
 //!   search whose output frames its matches) counts against the total. Priced once at the model's uncached input rate,
@@ -129,8 +129,8 @@ impl Summary {
     }
 }
 
-/// Aggregates `events` over `period`. `pricing` prices calls whose cost the
-/// provider did not report.
+/// Aggregates `events` over `period`. `pricing` prices each call that did
+/// not go to a local upstream.
 #[must_use]
 pub fn summarize(events: &[Event], period: Period, pricing: &ModelPricing) -> Summary {
     let since = period.since_unix();

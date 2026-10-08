@@ -39,8 +39,6 @@ pub(crate) const ALLOWED_REQUEST_HEADERS: &[&str] = &[
     "x-codex-window-id",
     "x-openai-memgen-request",
     "x-responsesapi-include-timing-metrics",
-    "mcp-session-id",
-    "last-event-id",
     "cache-control",
     "x-session-id",
 ];
@@ -57,7 +55,6 @@ pub(crate) fn should_forward_request_header(name: &str, preserve_content_encodin
 pub(crate) const FORWARDED_HEADERS: &[&str] = &[
     "content-type",
     "content-encoding",
-    "mcp-session-id",
     "x-request-id",
     "x-oai-request-id",
     "cf-ray",

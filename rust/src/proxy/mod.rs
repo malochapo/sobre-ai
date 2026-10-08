@@ -172,7 +172,33 @@ pub async fn start_proxy_with_token(port: u16, auth_token: Option<String>) -> an
         port,
         upstreams: upstream_rx,
     };
+    let app = app(state, auth_token);
 
+    let addr = SocketAddr::from((bind_host, port));
+    println!("lean-ctx proxy listening on http://{addr} (token auth enabled)");
+    println!("  Anthropic: POST /v1/messages → {anthropic_upstream}");
+    println!("  OpenAI:    POST /v1/chat/completions → {openai_upstream}");
+    println!(
+        "  OpenAI:    POST /v1/responses → {openai_upstream}  (bare /responses also accepted)"
+    );
+    if openai_upstream.starts_with("http://") && !is_local_proxy_url(&openai_upstream) {
+        println!(
+            "  ⚠ OpenAI upstream is plaintext HTTP to a non-loopback host \
+             — use only on a trusted local network"
+        );
+    }
+
+    let listener = tokio::net::TcpListener::bind(addr).await?;
+    axum::serve(listener, app)
+        .with_graceful_shutdown(shutdown_signal())
+        .await?;
+
+    println!("lean-ctx proxy shut down cleanly.");
+    Ok(())
+}
+
+/// Every route and middleware of the proxy over `state`, behind `auth_token`.
+fn app(state: ProxyState, auth_token: String) -> Router {
     let app = Router::new()
         .route("/health", get(health))
         .route("/status", get(status_handler))
@@ -203,44 +229,18 @@ pub async fn start_proxy_with_token(port: u16, auth_token: Option<String>) -> an
         .route("/models/{*rest}", get(models_handler))
         .fallback(fallback);
 
-    let mut app = app
+    let app = app
         .layer(axum::middleware::from_fn(host_guard))
-        .with_state(state);
-
-    {
-        let expected = auth_token.clone();
-        app = app.layer(axum::middleware::from_fn(move |req, next| {
-            let expected = expected.clone();
+        .with_state(state)
+        .layer(axum::middleware::from_fn(move |req, next| {
+            let expected = auth_token.clone();
             proxy_auth_guard(req, next, expected)
         }));
-    }
 
     // Outermost layer (runs first): normalize bare provider endpoints to their
     // canonical `/v1/...` form so auth, routing and upstream forwarding all agree,
     // regardless of whether the client's base URL includes `/v1` (#353).
-    app = app.layer(axum::middleware::from_fn(normalize_provider_path));
-
-    let addr = SocketAddr::from((bind_host, port));
-    println!("lean-ctx proxy listening on http://{addr} (token auth enabled)");
-    println!("  Anthropic: POST /v1/messages → {anthropic_upstream}");
-    println!("  OpenAI:    POST /v1/chat/completions → {openai_upstream}");
-    println!(
-        "  OpenAI:    POST /v1/responses → {openai_upstream}  (bare /responses also accepted)"
-    );
-    if openai_upstream.starts_with("http://") && !is_local_proxy_url(&openai_upstream) {
-        println!(
-            "  ⚠ OpenAI upstream is plaintext HTTP to a non-loopback host \
-             — use only on a trusted local network"
-        );
-    }
-
-    let listener = tokio::net::TcpListener::bind(addr).await?;
-    axum::serve(listener, app)
-        .with_graceful_shutdown(shutdown_signal())
-        .await?;
-
-    println!("lean-ctx proxy shut down cleanly.");
-    Ok(())
+    app.layer(axum::middleware::from_fn(normalize_provider_path))
 }
 
 async fn shutdown_signal() {

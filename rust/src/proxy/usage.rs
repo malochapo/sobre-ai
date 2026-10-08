@@ -47,9 +47,6 @@ impl Provider {
 }
 
 /// One LLM turn's real, provider-reported usage, normalized to billable buckets.
-///
-/// `output_tokens` already includes reasoning/thinking tokens (they are billed at
-/// the output rate); `reasoning_tokens` is retained only for display.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub(crate) struct RealUsage {
     pub model: String,
@@ -62,8 +59,6 @@ pub(crate) struct RealUsage {
     /// Input tokens written to the prompt cache (Anthropic + OpenRouter models
     /// with explicit cache-write pricing; 0 elsewhere).
     pub cache_write_tokens: u64,
-    /// Reasoning/thinking subset of `output_tokens` (display only).
-    pub reasoning_tokens: u64,
     /// Request-side context, stamped from the request before it left for the
     /// upstream. `None` outside the forward path (e.g. tests that only parse
     /// response bodies).
@@ -279,12 +274,6 @@ fn absorb_openai(u: &mut RealUsage, v: &Value) {
         .and_then(|d| d.get("cache_write_tokens"))
         .and_then(Value::as_u64)
         .unwrap_or(0);
-    let reasoning = usage
-        .get("output_tokens_details")
-        .or_else(|| usage.get("completion_tokens_details"))
-        .and_then(|d| d.get("reasoning_tokens"))
-        .and_then(Value::as_u64)
-        .unwrap_or(0);
 
     if total_input == 0 && total_output == 0 {
         return;
@@ -298,7 +287,6 @@ fn absorb_openai(u: &mut RealUsage, v: &Value) {
     u.cache_read_tokens = cached;
     u.cache_write_tokens = cache_write;
     u.output_tokens = total_output;
-    u.reasoning_tokens = reasoning;
 }
 
 /// Wraps a response byte stream so every chunk is forwarded **byte-for-byte**
@@ -412,7 +400,6 @@ mod tests {
         assert_eq!(u.input_tokens, 1000); // 1289 - 289 cached
         assert_eq!(u.cache_read_tokens, 289);
         assert_eq!(u.output_tokens, 685);
-        assert_eq!(u.reasoning_tokens, 640);
     }
 
     #[test]
