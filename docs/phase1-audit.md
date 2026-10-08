@@ -50,7 +50,7 @@ The lots run in this order:
 | Lot | Scope | Status |
 |---|---|---|
 | A | The user's machine: `uninstall`, `init`, agent integration | done (#31) |
-| B | The MCP tools: bugs, incomplete features, drift; decisions 1–4 and 6 | in progress (#32, #33, #34, #35) |
+| B | The MCP tools: bugs, incomplete features, drift; decisions 1–4 and 6 | done except B23, which waits on decision 5 (#32, #33, #34, #35, #36) |
 | C | The CLI and the proxy | open |
 | R | Tool names `ctx_*` → `sobre_*` (decision 9) | open |
 | D | Dead code, stale files, stale comments, duplicates; decision 7 | open |
@@ -241,7 +241,8 @@ Fixed in #31. How the fixes work:
 Fixed so far: #32 (paths, `ctx_read`, hidden read state), #33 (what the
 agent receives: prefixes, markers, footers, prompts and resources), #34
 (edits), #35 (graph: `ctx_impact` merged into `ctx_graph`, `ctx_review`
-repaired).
+repaired), #36 (errors, knowledge, sessions, the edit-quality store and
+the edit_health hook). Only B23 is left, waiting on decision 5.
 
 ### Bugs
 
@@ -365,7 +366,7 @@ repaired).
     lines are 10, 16 and 15.
 - [x] **B18 `ctx_graph callees symbol=main` merges Rust's and Python's
   `main`**, with no warning about the ambiguity.
-- [ ] **B19 `ctx_knowledge remember` rejects the documented form.**
+- [x] **B19 `ctx_knowledge remember` rejects the documented form.**
   - `{"action":"remember","value":"…"}` (and the same with `content` or
     `key`) returns "Error: category is required for remember", with
     exit 0.
@@ -451,6 +452,15 @@ repaired).
   walk `ctx_impact` had: project-relative paths, `depth` (default 5), and a
   type name resolved to its file.
 
+### Found while fixing (the rest)
+
+- [x] **B64 The `edit_health` hook computed a notice nobody saw.** Its only
+  output was the `ctx_knowledge` write that decision 4 removes, so the
+  whole hook is gone.
+- [x] **B65 `ctx_session export write=true` wrote into the project**
+  (`<project>/.sobre/session_bundles/`). The default is now the data
+  directory; a `path=` still writes where it says.
+
 ### Incomplete features
 
 - [ ] **B23 `ctx_refactor`** (decision 5, open).
@@ -501,13 +511,13 @@ repaired).
     "empty" (`:24`).
   - Caller tracking looks up callers of a function named after the file
     stem (`:36`).
-- [ ] **B26 The `ctx_checkpoint` diff is cut at about 8,000 tokens**, with
+- [x] **B26 The `ctx_checkpoint` diff is cut at about 8,000 tokens**, with
   no way to get the rest (`ctx_checkpoint.rs:137-149`).
-- [ ] **B27 `ctx_knowledge` export and import paths are wrong.**
+- [x] **B27 `ctx_knowledge` export and import paths are wrong.**
   - The JSON export ignores `path` (`ctx_knowledge/mod.rs:80`).
   - Import and the OKF export resolve the raw path against the process cwd
     (`registered/ctx_knowledge.rs:197-204`).
-- [ ] **B28 `ctx_session` export and import are not in the schema.**
+- [x] **B28 `ctx_session` export and import are not in the schema.**
   - The handler reads `path`, `format`, `write` and `privacy`
     (`registered/ctx_session.rs:45-48`), but the schema does not declare
     them.
@@ -515,7 +525,7 @@ repaired).
   - Both arms of `match privacy` are identical
     (`ccp_session_bundle.rs:107-116`), and `privacy=full` is rejected
     (`tools/ctx_session.rs:44-50`).
-- [ ] **B29 Errors come back as success.**
+- [x] **B29 Errors come back as success.**
   - There is no `isError` in `ctx_refactor`, `ctx_expand`, `ctx_graph`,
     `ctx_impact`, `ctx_review`, `ctx_knowledge`, `ctx_outline`,
     `ctx_patch` CONFLICT, or the semantic search `ERR:` results
@@ -540,12 +550,12 @@ repaired).
   - `ctx_impact`'s descriptions are wrong too: "diff compares git refs"
     (it compares the working tree with HEAD) and "chain traces from→to"
     (the call is `path="a->b"`).
-- [ ] **B32 Stop persisting `edit_quality.json` (decision 3).**
+- [x] **B32 Stop persisting `edit_quality.json` (decision 3).**
   - `edit_quality.rs:21-37` changes how `mode=auto` resolves on later
     runs (`docs/contracts/quality-loop-v1.md:135-157`).
   - `escalations_served` is written and never read.
   - FORK.md:50 says the learning loop was removed.
-- [ ] **B33 Remove the `ctx_knowledge` writes from the `edit_health` hook
+- [x] **B33 Remove the `ctx_knowledge` writes from the `edit_health` hook
   (decision 4).**
   - Its module doc says notices go to `additionalContext`, while the
     function doc says they never do.
@@ -592,7 +602,7 @@ repaired).
     cached copy (see B20).
 - [x] **B41 `ctx_search queries[]` searches only `roots[0]`**
   (`ctx_search.rs:542`).
-- [ ] **B42 `ctx_search` is annotated read-only and idempotent**
+- [x] **B42 `ctx_search` is annotated read-only and idempotent**
   (`tool_defs/mod.rs:18`), though `reindex` writes and the semantic action
   saves the session.
 - [x] **B43 A client that declares the roots capability but never answers
@@ -601,7 +611,7 @@ repaired).
 
 ### Small issues
 
-- [ ] **B44 Stale texts.**
+- [x] **B44 Stale texts.**
   - "lower the floor (memory.admission.min_salience)" (`remember.rs:60`;
     `min_salience` is always 0).
   - "Increase the limit" (`ctx_read/mod.rs:129`).
@@ -610,7 +620,7 @@ repaired).
   - "IDE-first" (`ctx_refactor/mod.rs`).
   - ~~"read-only-roots deny" (`ctx_patch/mod.rs:14`).~~ Removed (#34).
   - "operator env pin" (`execute.rs:404`).
-- [ ] **B45 `ctx_shell background_action=cancel` answers
+- [x] **B45 `ctx_shell background_action=cancel` answers
   `[background:X running]`** (`background_shell.rs:237-246`).
 - [x] **B46 The first semantic search after `action=reindex` serves the old
   index.** `bm25_cache::get_or_background` serves the stale copy while it

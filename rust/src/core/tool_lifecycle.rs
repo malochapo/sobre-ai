@@ -62,7 +62,6 @@ pub(crate) fn program_name(command: &str) -> &str {
 /// The usage ledger needs no flush: every event is appended as it happens.
 pub fn flush_all() {
     crate::core::auto_mode_resolver::flush_sources();
-    crate::core::edit_quality::flush();
 }
 
 #[cfg(test)]

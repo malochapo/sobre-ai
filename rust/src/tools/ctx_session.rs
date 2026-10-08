@@ -5,7 +5,6 @@ pub struct SessionToolOptions<'a> {
     pub format: Option<&'a str>,
     pub path: Option<&'a str>,
     pub write: bool,
-    pub privacy: Option<&'a str>,
 }
 
 pub fn handle(
@@ -47,15 +46,7 @@ pub fn handle(
         },
 
         "export" => {
-            let requested_privacy =
-                crate::core::ccp_session_bundle::BundlePrivacyV1::parse(opts.privacy);
-            if requested_privacy == crate::core::ccp_session_bundle::BundlePrivacyV1::Full {
-                return "ERROR: privacy=full is not supported; exports are always redacted."
-                    .to_string();
-            }
-
-            let bundle =
-                crate::core::ccp_session_bundle::build_bundle_v1(session, requested_privacy);
+            let bundle = crate::core::ccp_session_bundle::build_bundle_v1(session);
             let json = match crate::core::ccp_session_bundle::serialize_bundle_v1_pretty(&bundle) {
                 Ok(s) => s,
                 Err(e) => return e,
@@ -81,18 +72,21 @@ pub fn handle(
                         root_path.join(p)
                     }
                 } else {
-                    root_path
-                        .join(".sobre")
-                        .join("session_bundles")
-                        .join(format!(
-                            "ccp-session-bundle-v1_{}_{}.json",
-                            bundle.session.id, ts
-                        ))
+                    // Nothing is written into the project unasked: the
+                    // default location is the data directory.
+                    let Ok(data_dir) = crate::core::data_dir::sobre_data_dir() else {
+                        return "ERROR: no data directory to write the bundle to; pass path="
+                            .to_string();
+                    };
+                    data_dir.join("exports").join("sessions").join(format!(
+                        "ccp-session-bundle-v1_{}_{}.json",
+                        bundle.session.id, ts
+                    ))
                 };
 
                 if let Err(e) = crate::core::ccp_session_bundle::write_bundle_v1(&candidate, &json)
                 {
-                    return format!("Export write failed: {e}");
+                    return format!("ERROR: export write failed: {e}");
                 }
                 written = Some(candidate.to_string_lossy().to_string());
             }
@@ -153,7 +147,7 @@ bytes: {}\n",
 
             let bundle = match crate::core::ccp_session_bundle::read_bundle_v1(&path) {
                 Ok(b) => b,
-                Err(e) => return format!("Import failed: {e}"),
+                Err(e) => return format!("ERROR: import failed: {e}"),
             };
 
             // Replayability hint: compare project identity hashes (best-effort).
@@ -228,14 +222,11 @@ stale_files: {}\n",
             let _ = session.save();
             let old_id = session.id.clone();
             *session = SessionState::new();
-            // Clear the persistent context ledger so pressure resets to 0%
+            // The context ledger belongs to the session it was built in.
             let mut ledger = crate::core::context_ledger::ContextLedger::load();
             ledger.reset();
             ledger.save();
-            format!(
-                "Session reset. Previous: {old_id}. New: {}. Ledger cleared (0% pressure).",
-                session.id
-            )
+            format!("Session reset. Previous: {old_id}. New: {}.", session.id)
         }
 
         "list" => {

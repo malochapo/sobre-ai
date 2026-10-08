@@ -284,7 +284,7 @@ pub fn neighbors(
     format: Option<&str>,
 ) -> String {
     let Some(input) = path else {
-        return "path is required for 'neighbors' action".to_string();
+        return "ERROR: path is required for 'neighbors' action".to_string();
     };
     let open = match open_graph(root) {
         Ok(o) => o,
@@ -392,7 +392,7 @@ pub fn shortest_path(
     format: Option<&str>,
 ) -> String {
     let (Some(a), Some(b)) = (from, to) else {
-        return "Both 'path' (from) and 'to' are required for 'path' action".to_string();
+        return "ERROR: both 'path' (from) and 'to' are required for 'path' action".to_string();
     };
     let open = match open_graph(root) {
         Ok(o) => o,

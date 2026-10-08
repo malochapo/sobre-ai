@@ -7,6 +7,9 @@ use chrono::Utc;
 
 use crate::core::knowledge::{AdmissionResult, sort_fact_for_output};
 
+/// Where `remember` files a fact given without a category.
+pub(crate) const DEFAULT_CATEGORY: &str = "general";
+
 pub(crate) fn handle_remember(
     project_root: &str,
     category: Option<&str>,
@@ -15,9 +18,9 @@ pub(crate) fn handle_remember(
     session_id: &str,
     confidence: Option<f32>,
 ) -> String {
-    let Some(cat) = category else {
-        return "Error: category is required for remember".to_string();
-    };
+    // The documented form is `value` alone: an uncategorised fact goes to
+    // `general` (B19).
+    let cat = category.unwrap_or(DEFAULT_CATEGORY);
     let Some(v) = value else {
         return "Error: value is required for remember".to_string();
     };
@@ -56,8 +59,7 @@ pub(crate) fn handle_remember(
     if let AdmissionResult::RejectedLowSalience { salience, floor } = admission {
         return format!(
             "Skipped [{cat}] {k}: salience {salience} below admission floor {floor}. \
-             Rephrase with more signal, or lower the floor \
-             (memory.admission.min_salience)."
+             Rephrase with more signal."
         );
     }
 
@@ -732,6 +734,26 @@ mod tests {
             "derived key expected in: {out}"
         );
         assert!(!out.starts_with("Error"), "must not error: {out}");
+    }
+
+    /// B19: the documented form, `value` alone, is accepted and filed under
+    /// the default category.
+    #[test]
+    fn remember_with_value_only_uses_the_default_category() {
+        let _dir = crate::core::data_dir::isolated_data_dir();
+        let out = handle_remember(
+            "/tmp/test-remember-value-only",
+            None,
+            None,
+            Some("the release binary is built with --features dense"),
+            "s1",
+            None,
+        );
+        assert!(!out.starts_with("Error"), "must not error: {out}");
+        assert!(
+            out.contains("[general]"),
+            "default category expected: {out}"
+        );
     }
 
     #[test]

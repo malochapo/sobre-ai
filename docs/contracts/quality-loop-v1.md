@@ -83,14 +83,13 @@ affect `py|map` or `rs|signatures`.
 
 ## Persistence
 
-`edit_quality.json` in the data directory (respects `SOBRE_DATA_DIR`), atomic
-tmp+rename writes, flushed every 10 recordings and on server shutdown.
+None. The store lives in memory for the life of the process: one run's edits
+never change how a later run reads.
 
 Bounds:
 
 | Limit | Value |
 |---|---|
-| Pair decay (no failure) | 30 days |
 | Escalation TTL | 1 hour |
 | Max pairs | 200 (oldest-failure evicted) |
 | Max pending escalations | 100 per escalation kind (oldest evicted) |

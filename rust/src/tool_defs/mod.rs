@@ -14,11 +14,11 @@ pub fn tool_def(name: &'static str, description: &'static str, schema_value: Val
 
 /// Tools that never mutate their environment (files, indexes, session state).
 /// MCP clients (Cursor, Claude Desktop) may use `readOnlyHint` to allow these
-/// tools in restricted/readonly subagent contexts.
+/// tools in restricted/readonly subagent contexts. `ctx_search` is not one:
+/// `action=reindex` rewrites the search index.
 pub const READONLY_TOOL_NAMES: &[&str] = &[
     "ctx_read",
     "ctx_compose",
-    "ctx_search",
     "ctx_tree",
     "ctx_glob",
     "ctx_expand",

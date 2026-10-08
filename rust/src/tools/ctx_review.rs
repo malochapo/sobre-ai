@@ -22,7 +22,7 @@ pub fn handle(action: &str, path: Option<&str>, root: &str, depth: Option<usize>
 
 fn handle_review(path: Option<&str>, root: &str, depth: usize) -> String {
     let Some(target) = path else {
-        return "path is required for 'review' action".to_string();
+        return "ERROR: path is required for 'review' action".to_string();
     };
     let output = review_sections(target, root, depth).join("\n");
     let tok = count_tokens(&output);
@@ -154,7 +154,7 @@ fn handle_diff_review(diff_input: Option<&str>, root: &str) -> String {
 
 fn handle_checklist(path: Option<&str>, root: &str, depth: usize) -> String {
     let Some(target) = path else {
-        return "path is required for 'checklist' action".to_string();
+        return "ERROR: path is required for 'checklist' action".to_string();
     };
 
     let mut questions = Vec::new();

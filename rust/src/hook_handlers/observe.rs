@@ -13,11 +13,6 @@ pub fn handle_observe() {
     let Some(input) = read_stdin_with_timeout(HOOK_STDIN_TIMEOUT) else {
         return;
     };
-    // Native-edit code-health notice (#1085): when the agent edits code with the
-    // host's native Edit/MultiEdit tools (bypassing ctx_edit's gate), surface an
-    // advisory complexity-regression notice via PostToolUse additionalContext.
-    super::edit_health::maybe_emit(&input);
-
     let Ok(v) = serde_json::from_str::<serde_json::Value>(&input) else {
         return;
     };

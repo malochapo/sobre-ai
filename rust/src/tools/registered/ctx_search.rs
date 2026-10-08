@@ -57,6 +57,12 @@ impl McpTool for CtxSearchTool {
         "ctx_search"
     }
 
+    /// Errors, conflicts and unknown actions start with `ERROR`, `CONFLICT`
+    /// or `Unknown action` (B29).
+    fn text_reports_failures(&self) -> bool {
+        true
+    }
+
     fn tool_def(&self) -> Tool {
         let mut schema = json!({
             "type": "object",

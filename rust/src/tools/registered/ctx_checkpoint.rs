@@ -21,6 +21,12 @@ impl McpTool for CtxCheckpointTool {
         "ctx_checkpoint"
     }
 
+    /// Errors, conflicts and unknown actions start with `ERROR`, `CONFLICT`
+    /// or `Unknown action` (B29).
+    fn text_reports_failures(&self) -> bool {
+        true
+    }
+
     fn tool_def(&self) -> Tool {
         tool_def(
             "ctx_checkpoint",
@@ -145,7 +151,17 @@ fn budget(content: &str, max_tokens: usize) -> String {
     let ratio = max_tokens as f64 / tokens as f64;
     let keep = ((content.chars().count() as f64 * ratio) as usize).max(1);
     let truncated: String = content.chars().take(keep).collect();
-    format!("{truncated}\n\n…[diff truncated to ~{max_tokens} tokens]")
+    // The whole diff is saved like a compressed shell output, so the cut
+    // part stays reachable (B26).
+    let rest = crate::shell::save_tee("ctx_checkpoint diff", content)
+        .and_then(|p| {
+            let id = std::path::Path::new(&p).file_name()?.to_str()?.to_string();
+            Some(format!(
+                "[sobre: diff cut at ~{max_tokens} tokens; full diff at {p}, or ctx_expand(id=\"{id}\")]"
+            ))
+        })
+        .unwrap_or_else(|| format!("[sobre: diff cut at ~{max_tokens} tokens]"));
+    format!("{truncated}\n\n{rest}")
 }
 
 #[cfg(test)]
@@ -178,6 +194,21 @@ mod tests {
         assert!(out.contains("2 checkpoint(s)"));
         assert!(out.contains("- a1 ·"));
         assert!(out.contains("- b2 ·"));
+    }
+
+    #[test]
+    fn a_cut_diff_points_to_the_whole_diff() {
+        let _dir = crate::core::data_dir::isolated_data_dir();
+        let diff = (0..400).fold(String::new(), |mut acc, i| {
+            use std::fmt::Write as _;
+            let _ = writeln!(acc, "+line {i} of the change");
+            acc
+        });
+        let out = budget(&diff, 50);
+        assert!(out.contains("ctx_expand(id="), "{out}");
+        let id = out.rsplit("id=\"").next().unwrap().trim_end_matches("\")]");
+        let full = crate::tools::ctx_expand::handle(&serde_json::json!({ "id": id }));
+        assert!(full.contains("+line 399 of the change"), "{full}");
     }
 
     #[test]
