@@ -131,7 +131,7 @@ pub(crate) fn managed_ort_outcome() -> Option<Outcome> {
             )
         } else {
             format!(
-                "{BOLD}Managed ONNX Runtime{RST}  {RED}unreadable{RST}  {DIM}({} — fix: lean-ctx embeddings provision --force){RST}",
+                "{BOLD}Managed ONNX Runtime{RST}  {RED}unreadable{RST}  {DIM}({} — fix: sobre embeddings provision --force){RST}",
                 path.display()
             )
         },

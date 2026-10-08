@@ -22,7 +22,7 @@ fn jsonrpc_call(tool: &str, arguments: &serde_json::Value) -> String {
 }
 
 async fn call_tool_json(
-    svc: &StreamableHttpService<lean_ctx::tools::LeanCtxServer, LocalSessionManager>,
+    svc: &StreamableHttpService<sobre::tools::SobreServer, LocalSessionManager>,
     tool: &str,
     arguments: serde_json::Value,
 ) -> serde_json::Value {
@@ -67,10 +67,10 @@ async fn wait_until(mut cond: impl FnMut() -> bool) -> bool {
 #[allow(clippy::await_holding_lock)]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn memory_benchmark_suite_persists_core_artifacts() {
-    let _lock = lean_ctx::core::data_dir::test_env_lock();
+    let _lock = sobre::core::data_dir::test_env_lock();
     let data_dir = tempfile::tempdir().expect("data dir");
     // SAFETY: serialized by `test_env_lock()`.
-    unsafe { std::env::set_var("LEAN_CTX_DATA_DIR", data_dir.path()) };
+    unsafe { std::env::set_var("SOBRE_DATA_DIR", data_dir.path()) };
 
     let dir = tempfile::tempdir().expect("project dir");
     // Ensure project-root detection can anchor on a marker.
@@ -78,9 +78,9 @@ async fn memory_benchmark_suite_persists_core_artifacts() {
     let file_path = dir.path().join("a.txt");
     std::fs::write(&file_path, "hello\n").expect("write file");
 
-    let root = lean_ctx::core::pathutil::safe_canonicalize_or_self(dir.path());
+    let root = sobre::core::pathutil::safe_canonicalize_or_self(dir.path());
     let root_str = root.to_string_lossy().to_string();
-    let base = lean_ctx::tools::LeanCtxServer::new_with_project_root(Some(&root_str));
+    let base = sobre::tools::SobreServer::new_with_project_root(Some(&root_str));
 
     let service_factory = move || Ok(base.clone());
     let cfg = StreamableHttpServerConfig::default()
@@ -154,7 +154,7 @@ async fn memory_benchmark_suite_persists_core_artifacts() {
 
     // 3) Assert artifacts exist on disk. Persistence runs on a background thread,
     //    so poll with a bounded timeout rather than asserting immediately (#215).
-    let knowledge = lean_ctx::core::knowledge::ProjectKnowledge::load_or_create(&root_str);
+    let knowledge = sobre::core::knowledge::ProjectKnowledge::load_or_create(&root_str);
     let knowledge_dir = data_dir
         .path()
         .join("knowledge")
@@ -170,7 +170,7 @@ async fn memory_benchmark_suite_persists_core_artifacts() {
     );
 
     let edge_present = wait_until(|| {
-        lean_ctx::core::knowledge_relations::KnowledgeRelationGraph::load(&knowledge.project_hash)
+        sobre::core::knowledge_relations::KnowledgeRelationGraph::load(&knowledge.project_hash)
             .is_some_and(|graph| {
                 graph.edges.iter().any(|e| {
                     e.from.category == "arch"
@@ -184,5 +184,5 @@ async fn memory_benchmark_suite_persists_core_artifacts() {
     assert!(edge_present, "expected at least one relation edge");
 
     // SAFETY: serialized by `test_env_lock()`.
-    unsafe { std::env::remove_var("LEAN_CTX_DATA_DIR") };
+    unsafe { std::env::remove_var("SOBRE_DATA_DIR") };
 }

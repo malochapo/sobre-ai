@@ -169,9 +169,9 @@ pub(crate) fn read_preimage(
 /// it to [`write_atomic_bytes_with_permissions`] afterward; nothing guards
 /// that gap. An external editor writing to `path` between this check
 /// succeeding and the temp+rename completing is not detected, and its write
-/// is silently overwritten. Acceptable for lean-ctx's single-writer-daemon
+/// is silently overwritten. Acceptable for sobre's single-writer-daemon
 /// model — the MCP server is the only intended writer of files it edits — but
-/// a real gap if an external editor (or a second lean-ctx instance) writes to
+/// a real gap if an external editor (or a second sobre instance) writes to
 /// the same file concurrently. Closing it fully would need a held file lock
 /// (e.g. `flock`) spanning check-through-rename, more machinery than the
 /// mono-writer case warrants today.
@@ -204,7 +204,7 @@ pub(crate) fn default_backup_path(path: &Path) -> Option<PathBuf> {
     let nanos = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_or(0, |d| d.as_nanos());
-    Some(parent.join(format!("{filename}.lean-ctx.bak.{pid}.{nanos}")))
+    Some(parent.join(format!("{filename}.sobre.bak.{pid}.{nanos}")))
 }
 
 pub(crate) fn write_atomic_bytes_with_permissions(

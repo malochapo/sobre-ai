@@ -10,7 +10,7 @@ pub(crate) fn install_gemini_hook() {
 
 /// Gemini CLI hooks in `~/.gemini/settings.json`. Gemini cannot replace a shell
 /// command's output after it ran, so `BeforeTool` wraps the command in
-/// `lean-ctx -c` — only when Gemini's own rules treat both forms alike, and
+/// `sobre -c` — only when Gemini's own rules treat both forms alike, and
 /// with no decision. Merged: only sobre's own entries are replaced.
 pub(crate) fn install_gemini_hook_config(home: &std::path::Path) {
     let binary = resolve_hook_command_binary();
@@ -96,7 +96,7 @@ fn is_sobre_group(group: &serde_json::Value) -> bool {
             hooks.iter().any(|h| {
                 h.get("command")
                     .and_then(|c| c.as_str())
-                    .is_some_and(|c| c.contains("lean-ctx") && c.contains(" hook "))
+                    .is_some_and(|c| c.contains("sobre") && c.contains(" hook "))
             })
         })
 }
@@ -115,18 +115,15 @@ mod tests {
                 ]
             }
         });
-        merge_gemini_hooks(&mut v, "/bin/lean-ctx");
-        merge_gemini_hooks(&mut v, "/bin/lean-ctx");
+        merge_gemini_hooks(&mut v, "/bin/sobre");
+        merge_gemini_hooks(&mut v, "/bin/sobre");
 
         assert_eq!(v["theme"], "dark");
         let before = v["hooks"]["BeforeTool"].as_array().unwrap();
         assert_eq!(before.len(), 2);
         assert_eq!(before[0]["hooks"][0]["command"], "my-check");
         assert_eq!(before[1]["matcher"], "run_shell_command");
-        assert_eq!(
-            before[1]["hooks"][0]["command"],
-            "/bin/lean-ctx hook gemini"
-        );
+        assert_eq!(before[1]["hooks"][0]["command"], "/bin/sobre hook gemini");
         assert_eq!(v["hooks"]["AfterTool"].as_array().unwrap().len(), 1);
     }
 }

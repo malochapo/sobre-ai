@@ -91,7 +91,7 @@ impl KnowledgeRelationGraph {
     }
 
     pub fn path(project_hash: &str) -> Result<PathBuf, String> {
-        let dir = crate::core::data_dir::lean_ctx_data_dir()?
+        let dir = crate::core::data_dir::sobre_data_dir()?
             .join("knowledge")
             .join(project_hash);
         Ok(dir.join("relations.json"))

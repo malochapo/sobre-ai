@@ -39,9 +39,9 @@ each started by you:
 
 - the local proxy, which forwards your agent's requests to the providers you
   configure;
-- in builds with `--features dense` only: `lean-ctx embeddings provision`
-  (or saying yes when `lean-ctx init` offers it), which downloads the ONNX
-  runtime and the embedding model. Neither `lean-ctx index build` nor a search
+- in builds with `--features dense` only: `sobre embeddings provision`
+  (or saying yes when `sobre init` offers it), which downloads the ONNX
+  runtime and the embedding model. Neither `sobre index build` nor a search
   ever downloads anything; without the model they say so. Builds without
   embeddings download neither. The `minilm` and `nomic`
   aliases are pinned to a HuggingFace commit; a model named as `org/repo`

@@ -98,7 +98,7 @@ fn build_and_persist_fix_report(
         warnings: Vec::new(),
         errors: Vec::new(),
     };
-    let user_scope_mcp_locations = super::lean_ctx_mcp_location_names(&home);
+    let user_scope_mcp_locations = super::sobre_mcp_location_names(&home);
     let ws_fixed = super::workspace_scope::fix_workspace_dual_scope(&user_scope_mcp_locations);
     ws_scope_step.items.push(SetupItem {
         name: "dual_scope_dedup".to_string(),
@@ -109,7 +109,7 @@ fn build_and_persist_fix_report(
         },
         path: None,
         note: if ws_fixed > 0 {
-            Some("removed lean-ctx from workspace-scope (user-scope preferred)".to_string())
+            Some("removed sobre from workspace-scope (user-scope preferred)".to_string())
         } else {
             None
         },
@@ -297,7 +297,7 @@ pub(super) fn prune_bm25_caches() -> PruneResult {
         removed: 0,
         bytes_freed: 0,
     };
-    let Ok(data_dir) = crate::core::data_dir::lean_ctx_data_dir() else {
+    let Ok(data_dir) = crate::core::data_dir::sobre_data_dir() else {
         return result;
     };
     let Ok(entries) = std::fs::read_dir(data_dir.join("vectors")) else {
@@ -343,7 +343,7 @@ pub(super) fn prune_graph_caches() -> PruneResult {
         removed: 0,
         bytes_freed: 0,
     };
-    let Ok(data_dir) = crate::core::data_dir::lean_ctx_data_dir() else {
+    let Ok(data_dir) = crate::core::data_dir::sobre_data_dir() else {
         return result;
     };
     let Ok(entries) = std::fs::read_dir(data_dir.join("graphs")) else {

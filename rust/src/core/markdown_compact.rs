@@ -244,7 +244,7 @@ fn flush_omission(out: &mut String, omitted: &mut usize) {
     if *omitted == 0 {
         return;
     }
-    let _ = writeln!(out, "... [lean-ctx: omitted {omitted} lines]");
+    let _ = writeln!(out, "... [sobre: omitted {omitted} lines]");
     *omitted = 0;
 }
 
@@ -330,7 +330,7 @@ fn score_line(
         || line.contains("BLOCKING")
         || line.contains("WARNING")
         || line.contains("ctx_")
-        || line.contains("lean-ctx")
+        || line.contains("sobre")
     {
         score += 10.0;
     }
@@ -406,7 +406,7 @@ mod tests {
         assert!(compacted.contains("## Safety"));
         assert!(compacted.contains("ctx_read"));
         assert!(compacted.contains("MUST preserve"));
-        assert!(compacted.contains("[lean-ctx: omitted"));
+        assert!(compacted.contains("[sobre: omitted"));
     }
 
     #[test]
@@ -432,7 +432,7 @@ mod tests {
             assert!(compacted.contains(&format!("Section {section} overview line.")));
             assert!(compacted.contains(&format!("BLOCKING section {section}")));
         }
-        assert!(compacted.contains("[lean-ctx: omitted"));
+        assert!(compacted.contains("[sobre: omitted"));
     }
 
     #[test]
@@ -474,9 +474,7 @@ mod tests {
             doc.push_str(filler);
         }
         doc.push_str("Run the exact `ctx_read` command below:\n\n");
-        doc.push_str(
-            "```bash\nlean-ctx read src/lib.rs\n\nlean-ctx search \"ctx_read\" src/\n```\n",
-        );
+        doc.push_str("```bash\nsobre read src/lib.rs\n\nsobre search \"ctx_read\" src/\n```\n");
         for _ in 0..30 {
             doc.push_str(filler);
         }
@@ -491,7 +489,7 @@ mod tests {
                 in_fence = !in_fence;
             } else if in_fence {
                 assert!(
-                    !line.starts_with("... [lean-ctx:"),
+                    !line.starts_with("... [sobre:"),
                     "omission marker inside a fenced block:\n{compacted}"
                 );
             }
@@ -500,10 +498,11 @@ mod tests {
 
         // This block is high-signal, so it must survive whole — including its
         // blank interior line (kept fences are verbatim).
-        assert!(compacted.contains(
-            "```bash\nlean-ctx read src/lib.rs\n\nlean-ctx search \"ctx_read\" src/\n```"
-        ));
-        assert!(compacted.contains("[lean-ctx: omitted"));
+        assert!(
+            compacted
+                .contains("```bash\nsobre read src/lib.rs\n\nsobre search \"ctx_read\" src/\n```")
+        );
+        assert!(compacted.contains("[sobre: omitted"));
     }
 
     #[test]

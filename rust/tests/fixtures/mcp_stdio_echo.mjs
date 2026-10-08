@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Minimal MCP stdio server fixture for the lean-ctx gateway E2E test (#1077).
+// Minimal MCP stdio server fixture for the sobre gateway E2E test (#1077).
 //
 // Speaks newline-delimited JSON-RPC 2.0 over stdin/stdout — the MCP stdio wire
 // protocol — implementing just enough to exercise the gateway's real spawn path:

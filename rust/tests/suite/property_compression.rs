@@ -1,7 +1,7 @@
-use lean_ctx::core::compressor::safeguard_ratio;
-use lean_ctx::core::patterns::compress_output;
-use lean_ctx::core::tokens::count_tokens;
 use proptest::prelude::*;
+use sobre::core::compressor::safeguard_ratio;
+use sobre::core::patterns::compress_output;
+use sobre::core::tokens::count_tokens;
 
 proptest! {
     #[test]

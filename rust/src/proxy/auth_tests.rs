@@ -8,7 +8,7 @@ use super::*;
 fn effective_auth_token_never_yields_empty() {
     let _env = crate::core::data_dir::test_env_lock();
     let tmp = tempfile::tempdir().unwrap();
-    crate::test_env::set_var("LEAN_CTX_DATA_DIR", tmp.path());
+    crate::test_env::set_var("SOBRE_DATA_DIR", tmp.path());
 
     assert_eq!(effective_auth_token(Some("tok".into())), "tok");
     let auto = effective_auth_token(None);
@@ -16,7 +16,7 @@ fn effective_auth_token_never_yields_empty() {
     let blank = effective_auth_token(Some("   ".into()));
     assert!(!blank.trim().is_empty(), "blank tokens must be replaced");
 
-    crate::test_env::remove_var("LEAN_CTX_DATA_DIR");
+    crate::test_env::remove_var("SOBRE_DATA_DIR");
 }
 
 #[test]
@@ -148,10 +148,10 @@ fn auth_error_response_generic_hint() {
 }
 
 #[test]
-fn x_leanctx_project_never_forwarded_upstream() {
+fn x_sobre_project_never_forwarded_upstream() {
     // Internal gateway header: it must NOT be on the upstream allowlist,
     // otherwise org-internal project names leak to the provider.
-    assert!(!forward::is_allowed_request_header("x-leanctx-project"));
+    assert!(!forward::is_allowed_request_header("x-sobre-project"));
 }
 
 // --- #353: bare provider endpoints (OpenCode / @ai-sdk/openai) ---

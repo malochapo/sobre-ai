@@ -4,10 +4,10 @@
 //! Dotfiles users symlink their agent config (`~/.claude.json`,
 //! `~/.codex/config.toml`, …) into a managed repo. The `[Critical] symlink
 //! hijack protection` added to `config_io::write_atomic` then hard-blocked
-//! every write *through* such a symlink, so `lean-ctx init`/`setup` could no
+//! every write *through* such a symlink, so `sobre init`/`setup` could no
 //! longer register the MCP server or write agent config.
 //!
-//! lean-ctx now writes THROUGH a user-managed symlink to its real target
+//! sobre now writes THROUGH a user-managed symlink to its real target
 //! (as long as the target stays within `$HOME`), preserving the symlink. These
 //! tests pin that behaviour with real symlinks against an isolated `$HOME`.
 //!
@@ -61,20 +61,20 @@ fn run_init(sb: &Sandbox, agent: &str) -> std::process::Output {
         sb.bin_dir.display(),
         std::env::var("PATH").unwrap_or_default()
     );
-    Command::new(env!("CARGO_BIN_EXE_lean-ctx"))
+    Command::new(env!("CARGO_BIN_EXE_sobre"))
         .args(["init", "--agent", agent])
         .env("HOME", &sb.home)
-        .env("LEAN_CTX_DATA_DIR", &sb.data)
-        .env("LEAN_CTX_CONFIG_DIR", &sb.data)
-        .env("LEAN_CTX_STATE_DIR", &sb.data)
-        .env("LEAN_CTX_CACHE_DIR", &sb.data)
+        .env("SOBRE_DATA_DIR", &sb.data)
+        .env("SOBRE_CONFIG_DIR", &sb.data)
+        .env("SOBRE_STATE_DIR", &sb.data)
+        .env("SOBRE_CACHE_DIR", &sb.data)
         .env("SHELL", "/bin/bash")
         .env("PATH", &path)
         .output()
-        .expect("spawn lean-ctx init")
+        .expect("spawn sobre init")
 }
 
-/// `~/.claude.json` is a symlink into the user's dotfiles repo. The lean-ctx MCP
+/// `~/.claude.json` is a symlink into the user's dotfiles repo. The sobre MCP
 /// entry must be written THROUGH the symlink into the real file, and the symlink
 /// must survive (not be replaced by a regular file).
 #[test]
@@ -86,7 +86,7 @@ fn claude_json_symlink_is_written_through() {
     let link = sb.home.join(".claude.json");
     symlink(&dotfile, &link).unwrap();
 
-    // Fake `claude` that fails so lean-ctx falls back to the file-merge/write
+    // Fake `claude` that fails so sobre falls back to the file-merge/write
     // path (where the symlink guard lives) instead of `claude mcp add-json`.
     write_exe(&sb.bin_dir.join("claude"), "#!/bin/sh\nexit 1\n");
 
@@ -105,13 +105,13 @@ fn claude_json_symlink_is_written_through() {
 
     let written = std::fs::read_to_string(&dotfile).unwrap();
     assert!(
-        written.contains("mcpServers") && written.contains("lean-ctx"),
-        "lean-ctx MCP entry must be written THROUGH the symlink into the dotfile; got:\n{written}"
+        written.contains("mcpServers") && written.contains("sobre"),
+        "sobre MCP entry must be written THROUGH the symlink into the dotfile; got:\n{written}"
     );
 }
 
 /// `~/.codex/config.toml` is a symlink into the dotfiles repo (the classic
-/// "symlinked codex folder" setup). lean-ctx must merge its MCP server into the
+/// "symlinked codex folder" setup). sobre must merge its MCP server into the
 /// real target while preserving the user's existing content and the symlink.
 #[test]
 fn codex_config_symlink_is_written_through() {
@@ -144,7 +144,7 @@ fn codex_config_symlink_is_written_through() {
 
     let written = std::fs::read_to_string(&dotfile).unwrap();
     assert!(
-        written.contains("mcp_servers.lean-ctx") || written.contains("lean-ctx"),
-        "lean-ctx MCP entry must be written THROUGH the symlink into the dotfile; got:\n{written}"
+        written.contains("mcp_servers.sobre") || written.contains("sobre"),
+        "sobre MCP entry must be written THROUGH the symlink into the dotfile; got:\n{written}"
     );
 }

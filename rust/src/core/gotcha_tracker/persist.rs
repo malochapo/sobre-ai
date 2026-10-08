@@ -11,7 +11,7 @@ impl GotchaStore {
             store.apply_decay();
             store.cross_session_boost();
             // #451 shell-ding: keep persisted pending errors so a fail→fix that
-            // spans two `lean-ctx -c` processes still correlates — but drop
+            // spans two `sobre -c` processes still correlates — but drop
             // expired ones (15-min TTL) and bound to the most recent MAX_PENDING
             // so a stale file can never grow unbounded or resurrect old errors.
             store.pending_errors.retain(|p| !p.is_expired());
@@ -38,7 +38,7 @@ impl GotchaStore {
 }
 
 fn gotcha_path(project_hash: &str) -> PathBuf {
-    crate::core::data_dir::lean_ctx_data_dir()
+    crate::core::data_dir::sobre_data_dir()
         .unwrap_or_else(|_| PathBuf::from("."))
         .join("knowledge")
         .join(project_hash)
@@ -51,11 +51,11 @@ mod tests {
 
     #[test]
     fn pending_errors_persist_across_load_for_cross_process_correlation() {
-        // #451 shell-ding: in `lean-ctx -c` mode every command is its own
+        // #451 shell-ding: in `sobre -c` mode every command is its own
         // process, so the fix correlation can only work if pending errors are
         // persisted. Simulate process 1 (failing build) → process 2 (green run).
         let _iso = crate::core::data_dir::isolated_data_dir();
-        let root = "/tmp/lean-ctx-gotcha-persist-test-xyzzy";
+        let root = "/tmp/sobre-gotcha-persist-test-xyzzy";
 
         let mut p1 = GotchaStore::load(root);
         assert!(p1.learn_from_shell(

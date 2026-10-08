@@ -72,14 +72,13 @@ your code.
 
 ## Use
 
-The binary is still called `lean-ctx`; renaming it is pending.
 
 ```bash
-lean-ctx init            # every detected agent
-lean-ctx init claude     # one agent: claude, codex, copilot, cursor, gemini,
-                         # opencode, windsurf or zed
-lean-ctx doctor          # check the install
-lean-ctx uninstall       # remove everything init wrote
+sobre init            # every detected agent
+sobre init claude     # one agent: claude, codex, copilot, cursor, gemini,
+                      # opencode, windsurf or zed
+sobre doctor          # check the install
+sobre uninstall       # remove everything init wrote
 ```
 
 `init` registers the MCP server with the agent and installs the `sobre` skill
@@ -90,7 +89,7 @@ agent's own shell commands:
 | Agent | Shell output compression |
 |---|---|
 | Claude Code, Copilot CLI, OpenCode | After the command ran: the output the model sees is replaced by a compressed copy. The command itself is never changed. |
-| Cursor, Gemini CLI | Before the command runs: a single known command (`git`, `cargo`, `npm`, …) is wrapped in `lean-ctx -c`, only when none of the host's own command rules tells the two forms apart. |
+| Cursor, Gemini CLI | Before the command runs: a single known command (`git`, `cargo`, `npm`, …) is wrapped in `sobre -c`, only when none of the host's own command rules tells the two forms apart. |
 | Codex, VS Code, Windsurf | None: these hosts would need sobre to approve the command, or can only block it. Use the `ctx_shell` tool. |
 
 Compressed output always ends with a `[sobre: …]` line that says so and where
@@ -108,12 +107,12 @@ tools from the MCP server instructions, and from the skill when it opens it.
 Every compression sobre makes, on every path, is appended to one local file,
 `usage.jsonl`, in the OpenTelemetry log format
 ([contract](docs/contracts/usage-ledger-v1.md)). Nothing sends it anywhere.
-`lean-ctx gain` reads it:
+`sobre gain` reads it:
 
 ```bash
-lean-ctx gain                  # tokens saved, value, sobre's own overhead
-lean-ctx gain --by-tool        # per tool or command
-lean-ctx gain --daily          # per day
+sobre gain                  # tokens saved, value, sobre's own overhead
+sobre gain --by-tool        # per tool or command
+sobre gain --daily          # per day
 ```
 
 Tokens saved are measured. What they are worth in money is only measured when
@@ -123,7 +122,7 @@ prices saved tokens at a model's input rate and says it is an estimate.
 
 ## Proxy
 
-`lean-ctx proxy enable` starts a local proxy on `127.0.0.1` and points the
+`sobre proxy enable` starts a local proxy on `127.0.0.1` and points the
 agents that can use it at it, each through its own configuration: Claude Code
 (`settings.json`), Codex (`config.toml`) and OpenCode (`opencode.json`). It
 forwards Anthropic Messages and OpenAI Chat Completions and Responses traffic,

@@ -243,7 +243,7 @@ pub fn ensure_all_background(project_root: &str) {
     // generous stack as defense-in-depth against deep-recursion overflow (the
     // #378 SIGABRT class) and a name so it is identifiable in crash dumps.
     let spawned = std::thread::Builder::new()
-        .name("leanctx-index".to_string())
+        .name("sobre-index".to_string())
         .stack_size(INDEXER_STACK_BYTES)
         .spawn(indexer);
     if spawned.is_err() {
@@ -508,7 +508,7 @@ pub fn ensure_extra_roots_background(primary_root: &str, extra_roots: &[String])
     // every root; the guardian check between roots stops the queue as soon as
     // pressure appears.
     let spawned = std::thread::Builder::new()
-        .name("leanctx-extra-roots".to_string())
+        .name("sobre-extra-roots".to_string())
         .stack_size(INDEXER_STACK_BYTES)
         .spawn(move || {
             for root in queue {
@@ -551,7 +551,7 @@ fn bm25_build_note(
         }) => format!(
             "indexed {doc_count} chunks but NOT persisted to disk: compressed {:.1} MB exceeds the {:.0} MB cap. \
              Add the large paths to `ignore` in config.toml, \
-             then run `lean-ctx index build`. Until then the index is rebuilt from scratch on every cold start.",
+             then run `sobre index build`. Until then the index is rebuilt from scratch on every cold start.",
             *compressed_bytes as f64 / 1_048_576.0,
             *limit_bytes as f64 / 1_048_576.0
         ),
@@ -1064,7 +1064,7 @@ mod tests {
             "must flag non-persistence: {note}"
         );
         assert!(
-            note.contains("`ignore`") && note.contains("lean-ctx index build"),
+            note.contains("`ignore`") && note.contains("sobre index build"),
             "too-large note must carry an actionable remedy: {note}"
         );
     }

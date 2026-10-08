@@ -1,17 +1,17 @@
-//! Post-dispatch side-effect stages for `LeanCtxServer::call_tool_guarded`
+//! Post-dispatch side-effect stages for `SobreServer::call_tool_guarded`
 //! (issue #144).
 //!
 //! These blocks run *after* a tool produced its (already post-processed) output
 //! and perform pure side effects — they never mutate the text returned to the
 //! model. They are tightly coupled to `&self` (locks, peers, spawned tasks), so
-//! they live as thin `LeanCtxServer` methods rather than free functions. Moving
+//! they live as thin `SobreServer` methods rather than free functions. Moving
 //! them out of the guarded path keeps that function a readable orchestrator;
 //! behaviour, ordering and await points are identical to the inlined versions.
 
 #[allow(clippy::wildcard_imports)]
 use super::*;
 
-impl LeanCtxServer {
+impl SobreServer {
     /// Record the tool receipt, infer/apply intent, persist the session when due,
     /// and trigger auto-consolidation. All work is either
     /// synchronous bookkeeping under the session lock or fire-and-forget blocking

@@ -3,7 +3,7 @@
 //! `SGLang`, ...). Community-reported failure that motivated this gate
 //! (`OpenCode` on Windows → OpenAI):
 //!
-//!   Invalid schema for function 'lean-ctx_ctx_expand': None is not of type 'array'
+//!   Invalid schema for function 'sobre_ctx_expand': None is not of type 'array'
 //!
 //! Strict backends require an explicit `required` array on every object
 //! schema that declares `properties`, and an `items` definition on every
@@ -50,7 +50,7 @@ fn check_schema(tool: &str, node: &Value, path: &str, errors: &mut Vec<String>) 
 
 #[test]
 fn all_tool_schemas_survive_strict_validators() {
-    let registry = lean_ctx::server::registry::build_registry();
+    let registry = sobre::server::registry::build_registry();
     let tools = registry.tool_defs();
     // Upstream asserted `>= 60`. Invariant 1 caps the surface at twenty, so the
     // sanity check becomes the invariant itself: wired, and within the ceiling.

@@ -3,7 +3,7 @@
 // and actionable eviction hints.
 
 mod ledger_reset {
-    use lean_ctx::core::context_ledger::{ContextLedger, PressureAction};
+    use sobre::core::context_ledger::{ContextLedger, PressureAction};
 
     #[test]
     fn reset_clears_all_entries_and_totals() {
@@ -38,7 +38,7 @@ mod ledger_reset {
 mod ledger_evict {}
 
 mod session_reset_clears_ledger {
-    use lean_ctx::core::context_ledger::{ContextLedger, PressureAction};
+    use sobre::core::context_ledger::{ContextLedger, PressureAction};
 
     #[test]
     fn fresh_ledger_has_zero_pressure() {
@@ -66,7 +66,7 @@ mod session_reset_clears_ledger {
 }
 
 mod bug_reporter_scenario {
-    use lean_ctx::core::context_ledger::{ContextLedger, PressureAction};
+    use sobre::core::context_ledger::{ContextLedger, PressureAction};
 
     #[test]
     fn exact_reporter_scenario_66_entries_high_pressure() {
@@ -117,16 +117,16 @@ mod bug_reporter_scenario {
 }
 
 mod file_locking {
-    use lean_ctx::core::context_ledger::ContextLedger;
+    use sobre::core::context_ledger::ContextLedger;
 
     #[test]
     fn save_and_load_roundtrip_with_locking() {
-        let dir = std::env::temp_dir().join(format!("lean_ctx_test_lock_{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("sobre_test_lock_{}", std::process::id()));
         let _ = std::fs::create_dir_all(&dir);
         // SAFETY: the project's test suite always runs with `--test-threads=1`
         // (env-race legacy — see .github/workflows/ci.yml), so no other test in
         // this binary touches the environment concurrently.
-        unsafe { std::env::set_var("LEAN_CTX_DATA_DIR", dir.to_str().unwrap()) };
+        unsafe { std::env::set_var("SOBRE_DATA_DIR", dir.to_str().unwrap()) };
 
         let mut ledger = ContextLedger::with_window_size(50000);
         ledger.record("test.rs", "full", 1000, 1000);
@@ -142,12 +142,12 @@ mod file_locking {
         // SAFETY: the project's test suite always runs with `--test-threads=1`
         // (env-race legacy — see .github/workflows/ci.yml), so no other test in
         // this binary touches the environment concurrently.
-        unsafe { std::env::remove_var("LEAN_CTX_DATA_DIR") };
+        unsafe { std::env::remove_var("SOBRE_DATA_DIR") };
     }
 }
 
 mod double_booking_fix {
-    use lean_ctx::core::context_ledger::ContextLedger;
+    use sobre::core::context_ledger::ContextLedger;
 
     #[test]
     fn single_record_produces_correct_totals() {

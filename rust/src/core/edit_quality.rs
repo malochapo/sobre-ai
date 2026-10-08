@@ -252,7 +252,7 @@ impl EditQualityStore {
 }
 
 fn store_path() -> PathBuf {
-    crate::core::data_dir::lean_ctx_data_dir()
+    crate::core::data_dir::sobre_data_dir()
         .unwrap_or_else(|_| PathBuf::from("."))
         .join(STORE_FILE)
 }
@@ -277,7 +277,7 @@ fn ext_of(path: &str) -> String {
 
 /// Process-global: record the outcome of an edit, correlated with the mode of
 /// the last read of that file. `last_mode` must be the recorded read mode
-/// (empty = file was never read through lean-ctx → no signal, skipped).
+/// (empty = file was never read through sobre → no signal, skipped).
 /// Compression-correlated failures additionally arm the one-shot per-path
 /// escalation so the next auto read of `path` resolves to `full`.
 pub fn record_edit_outcome(path: &str, last_mode: &str, success: bool) {

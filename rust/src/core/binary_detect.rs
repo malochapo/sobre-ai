@@ -218,7 +218,7 @@ pub fn binary_file_message(path: &str) -> String {
     let label = file_type_label(path);
     format!(
         "Binary file detected (.{ext}, {label}). \
-         lean-ctx cannot read binary files as text. \
+         sobre cannot read binary files as text. \
          Use a specialized tool for this file type."
     )
 }
@@ -259,7 +259,7 @@ mod tests {
 
     #[test]
     fn null_byte_detection() {
-        let dir = std::env::temp_dir().join("lean_ctx_binary_test");
+        let dir = std::env::temp_dir().join("sobre_binary_test");
         std::fs::create_dir_all(&dir).ok();
 
         let bin_path = dir.join("test.bin");

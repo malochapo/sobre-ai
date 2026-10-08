@@ -1,6 +1,6 @@
 //! Native-edit code-health notice (#1085).
 //!
-//! The Phase-4 edit-gate guards lean-ctx's own `ctx_edit`/`ctx_patch`. When an
+//! The Phase-4 edit-gate guards sobre's own `ctx_edit`/`ctx_patch`. When an
 //! agent edits code with the host's NATIVE Edit/MultiEdit tools the gate is
 //! bypassed — this closes that gap. It runs inside the PostToolUse `observe`
 //! handler (the only edit-covering hook registered for every host, matcher
@@ -97,7 +97,7 @@ pub(super) fn edit_health_notice(v: &Value, root: &str) -> Option<String> {
 fn notice_with(v: &Value, root: &str, threshold: u32) -> Option<String> {
     let tool = payload::resolve_tool_name(v)?;
     // ctx_edit / ctx_patch already run the in-tool gate; never double-notice.
-    if tool.starts_with("ctx_") || tool.starts_with("mcp__lean-ctx__") {
+    if tool.starts_with("ctx_") || tool.starts_with("mcp__sobre__") {
         return None;
     }
 

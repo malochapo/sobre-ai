@@ -1,7 +1,7 @@
 //! Scenario tests for GitHub Issue #256:
 //! Stale `ANTHROPIC_BASE_URL` detection and cleanup when proxy is not enabled.
 //!
-//! Each test uses an isolated temp dir for both `LEAN_CTX_DATA_DIR` (data dir)
+//! Each test uses an isolated temp dir for both `SOBRE_DATA_DIR` (data dir)
 //! and `CLAUDE_CONFIG_DIR` (Claude Code settings) to avoid interference
 //! with the host system's real dirs.
 
@@ -17,7 +17,7 @@ impl TestEnv {
         let data_dir = home.join("data");
         std::fs::create_dir_all(&data_dir).unwrap();
         // SAFETY: `#[serial]` (serial_test) ensures no other test in this binary runs concurrently.
-        unsafe { std::env::set_var("LEAN_CTX_DATA_DIR", &data_dir) };
+        unsafe { std::env::set_var("SOBRE_DATA_DIR", &data_dir) };
         // SAFETY: `#[serial]` (serial_test) ensures no other test in this binary runs concurrently.
         unsafe { std::env::set_var("CLAUDE_CONFIG_DIR", home.join(".claude")) };
         // SAFETY: `#[serial]` (serial_test) ensures no other test in this binary runs concurrently.
@@ -41,7 +41,7 @@ impl TestEnv {
 impl Drop for TestEnv {
     fn drop(&mut self) {
         // SAFETY: `#[serial]` (serial_test) ensures no other test in this binary runs concurrently.
-        unsafe { std::env::remove_var("LEAN_CTX_DATA_DIR") };
+        unsafe { std::env::remove_var("SOBRE_DATA_DIR") };
         // SAFETY: `#[serial]` (serial_test) ensures no other test in this binary runs concurrently.
         unsafe { std::env::remove_var("CLAUDE_CONFIG_DIR") };
         // SAFETY: `#[serial]` (serial_test) ensures no other test in this binary runs concurrently.
@@ -50,22 +50,22 @@ impl Drop for TestEnv {
 }
 
 // ---------------------------------------------------------------------------
-// Scenario 1: is_local_lean_ctx_url correctly identifies local proxy URLs
+// Scenario 1: is_local_sobre_url correctly identifies local proxy URLs
 // ---------------------------------------------------------------------------
 
 #[test]
 fn scenario_local_url_detection() {
-    use lean_ctx::proxy_setup::is_local_lean_ctx_url;
+    use sobre::proxy_setup::is_local_sobre_url;
 
-    assert!(is_local_lean_ctx_url("http://127.0.0.1:4444"));
-    assert!(is_local_lean_ctx_url("http://localhost:4444"));
-    assert!(is_local_lean_ctx_url("http://127.0.0.1:5555"));
-    assert!(is_local_lean_ctx_url("http://localhost:3333"));
+    assert!(is_local_sobre_url("http://127.0.0.1:4444"));
+    assert!(is_local_sobre_url("http://localhost:4444"));
+    assert!(is_local_sobre_url("http://127.0.0.1:5555"));
+    assert!(is_local_sobre_url("http://localhost:3333"));
 
-    assert!(!is_local_lean_ctx_url("https://api.anthropic.com"));
-    assert!(!is_local_lean_ctx_url("https://proxy.company.com:4444"));
-    assert!(!is_local_lean_ctx_url(""));
-    assert!(!is_local_lean_ctx_url("http://192.168.1.1:4444"));
+    assert!(!is_local_sobre_url("https://api.anthropic.com"));
+    assert!(!is_local_sobre_url("https://proxy.company.com:4444"));
+    assert!(!is_local_sobre_url(""));
+    assert!(!is_local_sobre_url("http://192.168.1.1:4444"));
 }
 
 // ---------------------------------------------------------------------------
@@ -78,7 +78,7 @@ fn scenario_cleanup_removes_stale_url() {
     let env = TestEnv::new();
     env.set_claude_settings(r#"{"env": {"ANTHROPIC_BASE_URL": "http://127.0.0.1:4444"}}"#);
 
-    let cleaned = lean_ctx::proxy_setup::cleanup_stale_proxy_env(&env.home);
+    let cleaned = sobre::proxy_setup::cleanup_stale_proxy_env(&env.home);
     assert!(cleaned > 0, "should have cleaned stale URL");
 
     let doc = env.read_claude_settings();
@@ -99,7 +99,7 @@ fn scenario_cleanup_noop_when_no_stale_url() {
     let env = TestEnv::new();
     env.set_claude_settings(r#"{"env": {"SOME_OTHER_VAR": "value"}}"#);
 
-    let cleaned = lean_ctx::proxy_setup::cleanup_stale_proxy_env(&env.home);
+    let cleaned = sobre::proxy_setup::cleanup_stale_proxy_env(&env.home);
     assert_eq!(cleaned, 0, "nothing to clean");
 }
 
@@ -113,7 +113,7 @@ fn scenario_cleanup_preserves_remote_url() {
     let env = TestEnv::new();
     env.set_claude_settings(r#"{"env": {"ANTHROPIC_BASE_URL": "https://api.anthropic.com"}}"#);
 
-    let cleaned = lean_ctx::proxy_setup::cleanup_stale_proxy_env(&env.home);
+    let cleaned = sobre::proxy_setup::cleanup_stale_proxy_env(&env.home);
     assert_eq!(cleaned, 0, "should not touch remote URL");
 
     let doc = env.read_claude_settings();
@@ -136,7 +136,7 @@ fn scenario_cleanup_preserves_remote_url() {
 #[serial_test::serial]
 fn scenario_cleanup_missing_settings_file() {
     let env = TestEnv::new();
-    let cleaned = lean_ctx::proxy_setup::cleanup_stale_proxy_env(&env.home);
+    let cleaned = sobre::proxy_setup::cleanup_stale_proxy_env(&env.home);
     assert_eq!(cleaned, 0, "should handle missing file gracefully");
 }
 
@@ -150,7 +150,7 @@ fn scenario_cleanup_malformed_json() {
     let env = TestEnv::new();
     env.set_claude_settings("this is not json {{{");
 
-    let cleaned = lean_ctx::proxy_setup::cleanup_stale_proxy_env(&env.home);
+    let cleaned = sobre::proxy_setup::cleanup_stale_proxy_env(&env.home);
     assert_eq!(cleaned, 0, "should handle malformed JSON gracefully");
 }
 
@@ -164,7 +164,7 @@ fn scenario_cleanup_empty_env_object() {
     let env = TestEnv::new();
     env.set_claude_settings(r#"{"env": {}}"#);
 
-    let cleaned = lean_ctx::proxy_setup::cleanup_stale_proxy_env(&env.home);
+    let cleaned = sobre::proxy_setup::cleanup_stale_proxy_env(&env.home);
     assert_eq!(cleaned, 0, "nothing to clean with empty env");
 }
 
@@ -178,7 +178,7 @@ fn scenario_cleanup_localhost_variant() {
     let env = TestEnv::new();
     env.set_claude_settings(r#"{"env": {"ANTHROPIC_BASE_URL": "http://localhost:4444"}}"#);
 
-    let cleaned = lean_ctx::proxy_setup::cleanup_stale_proxy_env(&env.home);
+    let cleaned = sobre::proxy_setup::cleanup_stale_proxy_env(&env.home);
     assert!(cleaned > 0, "should clean localhost variant too");
 }
 
@@ -194,7 +194,7 @@ fn scenario_cleanup_preserves_other_env_vars() {
         r#"{"env": {"ANTHROPIC_BASE_URL": "http://127.0.0.1:4444", "OTHER_VAR": "keep_me"}, "hooks": {"PreToolUse": []}}"#,
     );
 
-    let cleaned = lean_ctx::proxy_setup::cleanup_stale_proxy_env(&env.home);
+    let cleaned = sobre::proxy_setup::cleanup_stale_proxy_env(&env.home);
     assert!(cleaned > 0);
 
     let doc = env.read_claude_settings();
@@ -215,7 +215,7 @@ fn scenario_cleanup_preserves_other_env_vars() {
 #[test]
 #[serial_test::serial]
 fn scenario_has_stale_url_detection() {
-    use lean_ctx::proxy_setup::stale_proxy_agents;
+    use sobre::proxy_setup::stale_proxy_agents;
 
     let env = TestEnv::new();
 
@@ -266,7 +266,7 @@ fn scenario_cleanup_non_default_port() {
     let env = TestEnv::new();
     env.set_claude_settings(r#"{"env": {"ANTHROPIC_BASE_URL": "http://127.0.0.1:5555"}}"#);
 
-    let cleaned = lean_ctx::proxy_setup::cleanup_stale_proxy_env(&env.home);
+    let cleaned = sobre::proxy_setup::cleanup_stale_proxy_env(&env.home);
     assert!(cleaned > 0, "should clean non-default port too");
 }
 
@@ -280,7 +280,7 @@ fn scenario_install_guard_prevents_writing_when_disabled() {
     let env = TestEnv::new();
     env.set_claude_settings(r"{}");
 
-    lean_ctx::proxy_setup::install_proxy_env(&env.home, 4444, true);
+    sobre::proxy_setup::install_proxy_env(&env.home, 4444, true);
 
     let doc = env.read_claude_settings();
     let has_url = doc

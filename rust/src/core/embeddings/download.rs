@@ -15,7 +15,7 @@ use std::time::Duration;
 
 use super::model_registry::{EmbeddingModel, POOLING_FILE, PROMPTS_FILE, SEQ_LEN_FILE};
 
-const USER_AGENT: &str = concat!("lean-ctx/", env!("CARGO_PKG_VERSION"));
+const USER_AGENT: &str = concat!("sobre/", env!("CARGO_PKG_VERSION"));
 
 /// Lockfile name storing `{ filename: sha256-hex }` per model directory.
 const LOCKFILE: &str = "model.lock.json";
@@ -295,7 +295,7 @@ mod tests {
 
     #[test]
     fn sha256_and_lockfile_roundtrip() {
-        let dir = std::env::temp_dir().join("lean_ctx_test_lockfile_v1");
+        let dir = std::env::temp_dir().join("sobre_test_lockfile_v1");
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
 
@@ -321,7 +321,7 @@ mod tests {
 
     #[test]
     fn empty_lockfile_is_not_written() {
-        let dir = std::env::temp_dir().join("lean_ctx_test_lockfile_empty_v1");
+        let dir = std::env::temp_dir().join("sobre_test_lockfile_empty_v1");
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         write_lockfile(&dir, &std::collections::BTreeMap::new()).unwrap();

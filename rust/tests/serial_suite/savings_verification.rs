@@ -1,5 +1,5 @@
-use lean_ctx::core::patterns::git;
-use lean_ctx::core::tokens::count_tokens;
+use sobre::core::patterns::git;
+use sobre::core::tokens::count_tokens;
 
 fn measure_compression(command: &str, output: &str) -> (usize, usize, f64) {
     let original = count_tokens(output);
@@ -294,9 +294,9 @@ fn generate_git_log_stat(n: usize) -> String {
 /// and verify that "original" and "saved" are fair comparisons.
 #[test]
 fn audit_full_savings_pipeline() {
-    use lean_ctx::core::cache::SessionCache;
-    use lean_ctx::core::tokens::count_tokens;
-    use lean_ctx::tools::CrpMode;
+    use sobre::core::cache::SessionCache;
+    use sobre::core::tokens::count_tokens;
+    use sobre::tools::CrpMode;
 
     eprintln!("\n{}", "=".repeat(70));
     eprintln!("  FULL SAVINGS PIPELINE AUDIT");
@@ -309,12 +309,8 @@ fn audit_full_savings_pipeline() {
         let tmp = std::env::temp_dir().join("audit_test_file.rs");
         std::fs::write(&tmp, content).unwrap();
 
-        let output = lean_ctx::tools::ctx_read::handle(
-            &mut cache,
-            tmp.to_str().unwrap(),
-            "full",
-            CrpMode::Off,
-        );
+        let output =
+            sobre::tools::ctx_read::handle(&mut cache, tmp.to_str().unwrap(), "full", CrpMode::Off);
         let file_tokens = count_tokens(content);
         let output_tokens = count_tokens(&output);
         let saved = file_tokens.saturating_sub(output_tokens);
@@ -334,12 +330,8 @@ fn audit_full_savings_pipeline() {
         );
 
         // 2. ctx_read — second read (cache hit): massive savings
-        let output2 = lean_ctx::tools::ctx_read::handle(
-            &mut cache,
-            tmp.to_str().unwrap(),
-            "full",
-            CrpMode::Off,
-        );
+        let output2 =
+            sobre::tools::ctx_read::handle(&mut cache, tmp.to_str().unwrap(), "full", CrpMode::Off);
         let output2_tokens = count_tokens(&output2);
         let is_cache_hit =
             output2.is_empty() || output2.contains("unchanged") || output2.contains("cached");
@@ -386,7 +378,7 @@ fn audit_full_savings_pipeline() {
         let tmp = std::env::temp_dir().join("audit_test_sigs.rs");
         std::fs::write(&tmp, &content).unwrap();
 
-        let output = lean_ctx::tools::ctx_read::handle(
+        let output = sobre::tools::ctx_read::handle(
             &mut cache,
             tmp.to_str().unwrap(),
             "signatures",
@@ -421,7 +413,7 @@ fn audit_full_savings_pipeline() {
     // 4. ctx_tree — fair comparison (same depth)
     {
         let dir = env!("CARGO_MANIFEST_DIR");
-        let (output, raw_tokens) = lean_ctx::tools::ctx_tree::handle(dir, 2, false, true);
+        let (output, raw_tokens) = sobre::tools::ctx_tree::handle(dir, 2, false, true);
         let compact_tokens = count_tokens(&output);
         let savings = raw_tokens.saturating_sub(compact_tokens);
         let ratio = if raw_tokens > 0 {
@@ -449,7 +441,7 @@ fn audit_full_savings_pipeline() {
     {
         let raw_output = generate_git_log_patch(10);
         let original = count_tokens(&raw_output);
-        let compressed = lean_ctx::core::patterns::git::compress("git log -p", &raw_output)
+        let compressed = sobre::core::patterns::git::compress("git log -p", &raw_output)
             .unwrap_or_else(|| raw_output.clone());
         let compressed_tokens = count_tokens(&compressed);
         let saved = original.saturating_sub(compressed_tokens);

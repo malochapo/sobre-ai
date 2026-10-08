@@ -2,12 +2,12 @@
 //! must keep windowing after the same file is edited via `ctx_patch`.
 use std::sync::Arc;
 
-use lean_ctx::core::cache::SessionCache;
-use lean_ctx::core::session::SessionState;
-use lean_ctx::server::tool_trait::{McpTool, ToolContext};
-use lean_ctx::tools::registered::ctx_patch::CtxPatchTool;
-use lean_ctx::tools::registered::ctx_read::CtxReadTool;
 use serde_json::json;
+use sobre::core::cache::SessionCache;
+use sobre::core::session::SessionState;
+use sobre::server::tool_trait::{McpTool, ToolContext};
+use sobre::tools::registered::ctx_patch::CtxPatchTool;
+use sobre::tools::registered::ctx_read::CtxReadTool;
 use tokio::sync::RwLock;
 
 fn ctx_for(root: &std::path::Path, file: &str) -> ToolContext {
@@ -19,7 +19,7 @@ fn ctx_for(root: &std::path::Path, file: &str) -> ToolContext {
         project_root: root.to_string_lossy().to_string(),
         extra_roots: Vec::new(),
         resolved_paths,
-        crp_mode: lean_ctx::tools::CrpMode::Off,
+        crp_mode: sobre::tools::CrpMode::Off,
         cache: Some(cache),
         session: Some(session),
         path_errors: std::collections::HashMap::new(),

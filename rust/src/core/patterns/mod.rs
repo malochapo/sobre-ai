@@ -660,7 +660,7 @@ mod tests {
 
     #[test]
     fn routes_cargo_commands() {
-        let output = "   Compiling lean-ctx v2.1.1\n    Finished `release` profile [optimized] target(s) in 30.5s";
+        let output = "   Compiling sobre v2.1.1\n    Finished `release` profile [optimized] target(s) in 30.5s";
         assert!(compress_output("cargo build --release", output).is_some());
     }
 

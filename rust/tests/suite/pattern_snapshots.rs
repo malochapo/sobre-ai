@@ -5,7 +5,7 @@
 //!
 //! Run `cargo insta review` after intentional pattern changes to accept new snapshots.
 
-use lean_ctx::core::patterns::{compress_output, try_specific_pattern};
+use sobre::core::patterns::{compress_output, try_specific_pattern};
 
 fn assert_pattern(name: &str, cmd: &str, output: &str) {
     let result = try_specific_pattern(cmd, output);

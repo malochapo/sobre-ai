@@ -1,7 +1,7 @@
 //! Parallel, deterministic BM25 index construction (#933).
 //!
 //! The full directory build was a sequential parse + tokenize loop over every
-//! file that pinned a single core for ~2.85 s on the lean-ctx repo. Fanning that
+//! file that pinned a single core for ~2.85 s on the sobre repo. Fanning that
 //! work across a rayon pool brings it down to ~0.69 s (~4x), measured.
 //!
 //! The per-file work — tree-sitter chunking + tokenization — is pure and

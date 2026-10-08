@@ -59,7 +59,7 @@ fn install_codex_hook_config(codex_dir: &std::path::Path) -> bool {
     let config_content = std::fs::read_to_string(&config_toml_path).unwrap_or_default();
 
     // Hybrid mode: ensure MCP server entry exists in config.toml so Codex
-    // Desktop/Cloud can reach lean-ctx even without CLI hooks.
+    // Desktop/Cloud can reach sobre even without CLI hooks.
     let mcp_updated = ensure_codex_mcp_server(&config_content, &binary);
     let hooks_updated =
         ensure_codex_hooks_enabled(mcp_updated.as_deref().unwrap_or(&config_content));
@@ -121,7 +121,7 @@ fn ensure_codex_observe_hooks(root: &mut serde_json::Value, observe_cmd: &str) -
     *root != original
 }
 
-/// Ensure `[mcp_servers.lean-ctx]` exists in Codex's `config.toml`.
+/// Ensure `[mcp_servers.sobre]` exists in Codex's `config.toml`.
 ///
 /// Existing `command`/`args` are left untouched to respect user customization.
 /// Returns `None` when nothing changed, or when the file is not valid TOML
@@ -136,8 +136,8 @@ fn ensure_codex_mcp_server(config_content: &str, binary: &str) -> Option<String>
         t.set_implicit(true);
     }
 
-    // `[mcp_servers.lean-ctx]` is explicit so its own header is always rendered.
-    let lean = servers["lean-ctx"].or_insert(toml_edit::table());
+    // `[mcp_servers.sobre]` is explicit so its own header is always rendered.
+    let lean = servers["sobre"].or_insert(toml_edit::table());
     let lean_tbl = lean.as_table_mut()?;
     lean_tbl.set_implicit(false);
 
@@ -209,8 +209,8 @@ hooks = false
     #[test]
     fn ensure_codex_hooks_enabled_adds_features_section_when_missing() {
         let input = "\
-[mcp_servers.lean-ctx]
-command = \"lean-ctx\"
+[mcp_servers.sobre]
+command = \"sobre\"
 ";
 
         let output =
@@ -222,9 +222,9 @@ command = \"lean-ctx\"
     #[test]
     fn ensure_mcp_server_adds_section_when_missing() {
         let input = "[features]\ncodex_hooks = true\n";
-        let result = ensure_codex_mcp_server(input, "lean-ctx").expect("should add MCP section");
-        assert!(result.contains("[mcp_servers.lean-ctx]"));
-        assert!(result.contains("command = \"lean-ctx\""));
+        let result = ensure_codex_mcp_server(input, "sobre").expect("should add MCP section");
+        assert!(result.contains("[mcp_servers.sobre]"));
+        assert!(result.contains("command = \"sobre\""));
         assert!(result.contains("args = []"));
         assert!(result.contains("[features]\ncodex_hooks = true\n"));
     }
@@ -233,9 +233,9 @@ command = \"lean-ctx\"
     fn ensure_mcp_server_noop_when_already_complete() {
         // Parent + args already present: the upsert must be a true no-op (no
         // churn on every session start).
-        let input = "[mcp_servers.lean-ctx]\ncommand = \"lean-ctx\"\nargs = []\n";
+        let input = "[mcp_servers.sobre]\ncommand = \"sobre\"\nargs = []\n";
         assert!(
-            ensure_codex_mcp_server(input, "lean-ctx").is_none(),
+            ensure_codex_mcp_server(input, "sobre").is_none(),
             "should not modify config when MCP section already has all keys"
         );
     }
@@ -243,17 +243,17 @@ command = \"lean-ctx\"
     #[test]
     fn ensure_mcp_server_preserves_existing_sections() {
         let input = "[mcp_servers.other]\ncommand = \"other\"\n";
-        let result = ensure_codex_mcp_server(input, "/usr/bin/lean-ctx")
-            .expect("should add lean-ctx section");
+        let result =
+            ensure_codex_mcp_server(input, "/usr/bin/sobre").expect("should add sobre section");
         assert!(result.contains("[mcp_servers.other]"));
-        assert!(result.contains("[mcp_servers.lean-ctx]"));
-        assert!(result.contains("command = \"/usr/bin/lean-ctx\""));
+        assert!(result.contains("[mcp_servers.sobre]"));
+        assert!(result.contains("command = \"/usr/bin/sobre\""));
     }
 
     #[test]
     fn ensure_mcp_server_quotes_windows_backslash_paths() {
         let input = "[features]\ncodex_hooks = true\n";
-        let win_path = r"C:\Users\Foo\AppData\Roaming\npm\lean-ctx.cmd";
+        let win_path = r"C:\Users\Foo\AppData\Roaming\npm\sobre.cmd";
         let result = ensure_codex_mcp_server(input, win_path).expect("should add MCP section");
         // Quote style is the TOML editor's concern; what matters is that the
         // backslash path round-trips to exactly the same string and stays valid.
@@ -261,7 +261,7 @@ command = \"lean-ctx\"
             .parse::<toml_edit::DocumentMut>()
             .expect("output must be valid TOML");
         assert_eq!(
-            doc["mcp_servers"]["lean-ctx"]["command"].as_str(),
+            doc["mcp_servers"]["sobre"]["command"].as_str(),
             Some(win_path),
             "Windows backslash path must round-trip exactly: {result}"
         );
@@ -270,12 +270,12 @@ command = \"lean-ctx\"
     #[test]
     fn ensure_mcp_server_does_not_match_similarly_named_section() {
         let input = "\
-[mcp_servers.lean-ctx-other]
+[mcp_servers.sobre-other]
 command = \"other\"
 ";
-        let result = ensure_codex_mcp_server(input, "lean-ctx")
-            .expect("should add lean-ctx section despite similarly-named section");
-        assert!(result.contains("[mcp_servers.lean-ctx]\n"));
-        assert!(result.contains("[mcp_servers.lean-ctx-other]"));
+        let result = ensure_codex_mcp_server(input, "sobre")
+            .expect("should add sobre section despite similarly-named section");
+        assert!(result.contains("[mcp_servers.sobre]\n"));
+        assert!(result.contains("[mcp_servers.sobre-other]"));
     }
 }

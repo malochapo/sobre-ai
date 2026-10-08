@@ -272,7 +272,7 @@ mod tests {
     #[test]
     fn string_output_mirrors_engine_and_shrinks() {
         // tee path depends on the data dir; serialize env access so a parallel
-        // test never swaps LEAN_CTX_DATA_DIR between the two compressions (#498).
+        // test never swaps SOBRE_DATA_DIR between the two compressions (#498).
         let _lock = crate::core::data_dir::test_env_lock();
         let raw = long_git_status();
         let expected = compress_tool_result(&raw, None);
@@ -302,7 +302,7 @@ mod tests {
     #[test]
     fn array_output_text_is_compressed() {
         // tee path depends on the data dir; serialize env access so a parallel
-        // test never swaps LEAN_CTX_DATA_DIR between the two compressions (#498).
+        // test never swaps SOBRE_DATA_DIR between the two compressions (#498).
         let _lock = crate::core::data_dir::test_env_lock();
         let raw = long_git_status();
         let expected = compress_tool_result(&raw, None);

@@ -100,14 +100,14 @@ mod tests {
     fn with_temp_data_dir<T>(f: impl FnOnce() -> T) -> T {
         let _lock = crate::core::data_dir::test_env_lock();
         let dir = std::env::temp_dir().join(format!(
-            "lctx-capacity-{}-{}",
+            "sobre-capacity-{}-{}",
             std::process::id(),
             Utc::now().timestamp_nanos_opt().unwrap_or(0)
         ));
         let _ = std::fs::create_dir_all(&dir);
-        crate::test_env::set_var("LEAN_CTX_DATA_DIR", dir.to_str().unwrap());
+        crate::test_env::set_var("SOBRE_DATA_DIR", dir.to_str().unwrap());
         let out = f();
-        crate::test_env::remove_var("LEAN_CTX_DATA_DIR");
+        crate::test_env::remove_var("SOBRE_DATA_DIR");
         let _ = std::fs::remove_dir_all(&dir);
         out
     }
@@ -201,12 +201,12 @@ mod tests {
     fn reclaim_store_preserves_items_when_archive_persistence_fails() {
         let _lock = crate::core::data_dir::test_env_lock();
         let path = std::env::temp_dir().join(format!(
-            "lctx-capacity-file-{}-{}",
+            "sobre-capacity-file-{}-{}",
             std::process::id(),
             Utc::now().timestamp_nanos_opt().unwrap_or(0)
         ));
         std::fs::write(&path, b"not a directory").expect("create blocking file");
-        crate::test_env::set_var("LEAN_CTX_DATA_DIR", path.to_str().unwrap());
+        crate::test_env::set_var("SOBRE_DATA_DIR", path.to_str().unwrap());
 
         let mut items: Vec<Item> = (0..8).map(|rank| Item { rank }).collect();
         let original = items.clone();
@@ -219,7 +219,7 @@ mod tests {
             |a, b| a.rank.cmp(&b.rank),
         );
 
-        crate::test_env::remove_var("LEAN_CTX_DATA_DIR");
+        crate::test_env::remove_var("SOBRE_DATA_DIR");
         let _ = std::fs::remove_file(path);
         assert!(result.is_err(), "archive persistence must fail");
         assert_eq!(items, original, "failed reclaim must not mutate live items");

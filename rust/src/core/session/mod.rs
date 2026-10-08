@@ -35,14 +35,14 @@ mod tests {
     #[serial_test::serial]
     fn normalize_session_skips_marker_probe_for_real_roots() {
         // Both guards are needed: `#[serial]` and `test_env_lock` are separate
-        // mutexes, and the `LEAN_CTX_TCC_STANDALONE` this test relies on is read
+        // mutexes, and the `SOBRE_TCC_STANDALONE` this test relies on is read
         // by every path normalization, including in tests that take only the lock.
         let _env_lock = crate::core::data_dir::test_env_lock();
         // A session whose project_root is a plausible real project must not be
         // marker-probed at load time when the process is TCC-standalone: the
         // probe itself would trip the privacy prompt (#356). The repair
         // heuristic only ever fires for agent/temp roots.
-        crate::test_env::set_var("LEAN_CTX_TCC_STANDALONE", "1");
+        crate::test_env::set_var("SOBRE_TCC_STANDALONE", "1");
         let mut session = SessionState::new();
         let docs_root = dirs::home_dir()
             .unwrap_or_default()
@@ -54,7 +54,7 @@ mod tests {
         let normalized = super::heuristics::normalize_loaded_session(session);
         // Root is not an agent/temp dir → kept as-is, no probe needed.
         assert_eq!(normalized.project_root.as_deref(), Some(docs_root.as_str()));
-        crate::test_env::remove_var("LEAN_CTX_TCC_STANDALONE");
+        crate::test_env::remove_var("SOBRE_TCC_STANDALONE");
     }
 
     /// #707: an explicit `cwd` param must persist as the live
@@ -130,7 +130,7 @@ mod tests {
 
     #[test]
     fn effective_cwd_explicit_takes_priority() {
-        let tmp = std::env::temp_dir().join("lean-ctx-test-cwd-explicit");
+        let tmp = std::env::temp_dir().join("sobre-test-cwd-explicit");
         let sub = tmp.join("sub");
         let _ = std::fs::create_dir_all(&sub);
         let root_canon = crate::core::pathutil::safe_canonicalize_or_self(&tmp)

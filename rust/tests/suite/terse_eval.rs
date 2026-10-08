@@ -7,8 +7,8 @@
 //!
 //! Metrics per arm: token count, savings %, quality preservation score.
 
-use lean_ctx::core::config::CompressionLevel;
-use lean_ctx::core::terse;
+use sobre::core::config::CompressionLevel;
+use sobre::core::terse;
 
 /// A single test sample with category and content.
 struct Sample {

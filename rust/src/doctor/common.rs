@@ -70,10 +70,10 @@ pub(super) fn print_check(outcome: &Outcome) {
 pub(super) fn path_in_path_env() -> bool {
     if let Ok(path) = std::env::var("PATH") {
         for dir in std::env::split_paths(&path) {
-            if dir.join("lean-ctx").is_file() {
+            if dir.join("sobre").is_file() {
                 return true;
             }
-            if cfg!(windows) && dir.join("lean-ctx.exe").is_file() {
+            if cfg!(windows) && dir.join("sobre.exe").is_file() {
                 return true;
             }
         }
@@ -81,16 +81,16 @@ pub(super) fn path_in_path_env() -> bool {
     false
 }
 
-pub(super) fn resolve_lean_ctx_binary() -> Option<PathBuf> {
+pub(super) fn resolve_sobre_binary() -> Option<PathBuf> {
     if let Ok(path) = std::env::var("PATH") {
         for dir in std::env::split_paths(&path) {
             if cfg!(windows) {
-                let exe = dir.join("lean-ctx.exe");
+                let exe = dir.join("sobre.exe");
                 if exe.is_file() {
                     return Some(exe);
                 }
             } else {
-                let bin = dir.join("lean-ctx");
+                let bin = dir.join("sobre");
                 if bin.is_file() {
                     return Some(bin);
                 }
@@ -100,11 +100,11 @@ pub(super) fn resolve_lean_ctx_binary() -> Option<PathBuf> {
     None
 }
 
-pub(super) fn lean_ctx_version_from_path() -> Outcome {
-    let resolved = resolve_lean_ctx_binary();
+pub(super) fn sobre_version_from_path() -> Outcome {
+    let resolved = resolve_sobre_binary();
     let bin = resolved
         .clone()
-        .unwrap_or_else(|| std::env::current_exe().unwrap_or_else(|_| "lean-ctx".into()));
+        .unwrap_or_else(|| std::env::current_exe().unwrap_or_else(|_| "sobre".into()));
 
     let v = env!("CARGO_PKG_VERSION");
     let note = match std::env::current_exe() {
@@ -113,7 +113,7 @@ pub(super) fn lean_ctx_version_from_path() -> Outcome {
     };
     Outcome {
         ok: true,
-        line: format!("{BOLD}lean-ctx version{RST}  {WHITE}lean-ctx {v}{RST}  {note}"),
+        line: format!("{BOLD}sobre version{RST}  {WHITE}sobre {v}{RST}  {note}"),
     }
 }
 
@@ -234,7 +234,7 @@ pub(super) fn mcp_config_locations(home: &std::path::Path) -> Vec<McpLocation> {
     locations
 }
 
-pub(super) fn has_lean_ctx_mcp_entry(content: &str) -> bool {
+pub(super) fn has_sobre_mcp_entry(content: &str) -> bool {
     // Parse as JSONC: editor config files (VS Code settings.json / mcp.json,
     // Cursor, Windsurf, …) commonly contain comments and trailing commas which
     // strict JSON rejects. See issue #311.
@@ -245,32 +245,32 @@ pub(super) fn has_lean_ctx_mcp_entry(content: &str) -> bool {
         //   context_servers  — Zed settings.json
         for key in ["mcpServers", "servers", "context_servers"] {
             if let Some(servers) = json.get(key).and_then(|v| v.as_object())
-                && servers.contains_key("lean-ctx")
+                && servers.contains_key("sobre")
             {
                 return true;
             }
         }
-        // mcp.lean-ctx — OpenCode's schema (https://opencode.ai/config.json)
+        // mcp.sobre — OpenCode's schema (https://opencode.ai/config.json)
         // nests servers DIRECTLY under "mcp", no "servers" level (GH #686).
         if let Some(servers) = json.get("mcp").and_then(|v| v.as_object())
-            && servers.contains_key("lean-ctx")
+            && servers.contains_key("sobre")
         {
             return true;
         }
-        // Parsed cleanly but no lean-ctx entry under any known key.
+        // Parsed cleanly but no sobre entry under any known key.
         return false;
     }
     // Unparseable even as JSONC: fall back to a substring heuristic.
-    content.contains("lean-ctx")
+    content.contains("sobre")
 }
 
-pub(super) fn lean_ctx_mcp_location_names(
+pub(super) fn sobre_mcp_location_names(
     home: &std::path::Path,
 ) -> std::collections::BTreeSet<&'static str> {
     let mut names = std::collections::BTreeSet::new();
     for loc in mcp_config_locations(home) {
         if let Ok(content) = std::fs::read_to_string(&loc.path)
-            && has_lean_ctx_mcp_entry(&content)
+            && has_sobre_mcp_entry(&content)
         {
             names.insert(loc.name);
         }
@@ -283,7 +283,7 @@ pub(super) fn proxy_auth_probe(port: u16) -> bool {
     use std::net::{IpAddr, Ipv4Addr, SocketAddr, TcpStream};
 
     let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port);
-    let token = crate::core::session_token::resolve_proxy_token("LEAN_CTX_PROXY_TOKEN");
+    let token = crate::core::session_token::resolve_proxy_token("SOBRE_PROXY_TOKEN");
 
     let Ok(mut stream) = TcpStream::connect_timeout(&addr, crate::proxy_setup::proxy_timeout())
     else {
@@ -310,7 +310,7 @@ pub(super) fn proxy_auth_probe(port: u16) -> bool {
 /// Returns `(anthropic, openai)`, or `None` if unreachable or
 /// the response lacks the `upstreams` block. Drives the #449 drift check.
 pub(super) fn proxy_live_upstreams(port: u16) -> Option<(String, String)> {
-    let token = crate::core::session_token::resolve_proxy_token("LEAN_CTX_PROXY_TOKEN");
+    let token = crate::core::session_token::resolve_proxy_token("SOBRE_PROXY_TOKEN");
     let url = format!("http://127.0.0.1:{port}/status");
     let resp = ureq::get(&url)
         .header("Authorization", &format!("Bearer {token}"))
@@ -344,33 +344,33 @@ pub(super) fn claude_binary_exists() -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{display_user_path, has_lean_ctx_mcp_entry, tildify_home};
+    use super::{display_user_path, has_sobre_mcp_entry, tildify_home};
     use std::path::Path;
 
     // GH #686: OpenCode's schema (https://opencode.ai/config.json) nests
-    // servers DIRECTLY under "mcp" — `mcp.lean-ctx`, no "servers" level.
+    // servers DIRECTLY under "mcp" — `mcp.sobre`, no "servers" level.
     #[test]
     fn opencode_direct_mcp_child_is_recognized() {
         let opencode = r#"{
             "$schema": "https://opencode.ai/config.json",
             "mcp": {
-                "lean-ctx": { "command": ["/usr/bin/lean-ctx"], "enabled": true, "type": "local" }
+                "sobre": { "command": ["/usr/bin/sobre"], "enabled": true, "type": "local" }
             }
         }"#;
-        assert!(has_lean_ctx_mcp_entry(opencode));
+        assert!(has_sobre_mcp_entry(opencode));
     }
 
     #[test]
     fn mcp_servers_form_recognized() {
-        let flat = r#"{ "mcpServers": { "lean-ctx": { "command": "lean-ctx" } } }"#;
-        assert!(has_lean_ctx_mcp_entry(flat));
+        let flat = r#"{ "mcpServers": { "sobre": { "command": "sobre" } } }"#;
+        assert!(has_sobre_mcp_entry(flat));
     }
 
     #[test]
     fn unrelated_mcp_children_are_not_a_match() {
         // A different server directly under "mcp" must not count as ours.
         let other = r#"{ "mcp": { "some-other-server": { "command": "x" } } }"#;
-        assert!(!has_lean_ctx_mcp_entry(other));
+        assert!(!has_sobre_mcp_entry(other));
     }
 
     #[test]
@@ -385,8 +385,8 @@ mod tests {
     #[test]
     fn display_user_path_leaves_non_home_paths() {
         assert_eq!(
-            display_user_path(Path::new("/opt/leanctx/bin")),
-            "/opt/leanctx/bin"
+            display_user_path(Path::new("/opt/sobre/bin")),
+            "/opt/sobre/bin"
         );
     }
 

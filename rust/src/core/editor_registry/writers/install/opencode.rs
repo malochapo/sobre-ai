@@ -23,7 +23,7 @@ pub(crate) fn write_opencode_config(
                     &target.config_path,
                     &content,
                     "mcp",
-                    "lean-ctx",
+                    "sobre",
                     &desired,
                     opts.overwrite_invalid,
                 );
@@ -37,14 +37,14 @@ pub(crate) fn write_opencode_config(
             .as_object_mut()
             .ok_or_else(|| "\"mcp\" must be an object".to_string())?;
 
-        let existing = mcp_obj.get("lean-ctx").cloned();
+        let existing = mcp_obj.get("sobre").cloned();
         if existing.as_ref() == Some(&desired) {
             return Ok(WriteResult {
                 action: WriteAction::Already,
                 note: None,
             });
         }
-        mcp_obj.insert("lean-ctx".to_string(), desired);
+        mcp_obj.insert("sobre".to_string(), desired);
 
         let formatted = serde_json::to_string_pretty(&json).map_err(|e| e.to_string())?;
         crate::config_io::write_atomic_with_backup(&target.config_path, &formatted)?;
@@ -64,7 +64,7 @@ pub(crate) fn write_opencode_fresh(
 ) -> Result<WriteResult, String> {
     let content = serde_json::to_string_pretty(&serde_json::json!({
         "$schema": "https://opencode.ai/config.json",
-        "mcp": { "lean-ctx": { "type": "local", "command": [binary], "enabled": true } }
+        "mcp": { "sobre": { "type": "local", "command": [binary], "enabled": true } }
     }))
     .map_err(|e| e.to_string())?;
     crate::config_io::write_atomic_with_backup(path, &content)?;

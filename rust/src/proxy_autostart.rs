@@ -6,9 +6,9 @@ use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 #[cfg(target_os = "macos")]
-const PLIST_LABEL: &str = "com.leanctx.proxy";
+const PLIST_LABEL: &str = "com.sobre.proxy";
 #[cfg(target_os = "linux")]
-const SYSTEMD_SERVICE: &str = "lean-ctx-proxy";
+const SYSTEMD_SERVICE: &str = "sobre-proxy";
 
 #[cfg(any(target_os = "macos", target_os = "linux", test))]
 fn proxy_pid_from_health(body: &str) -> Option<u32> {
@@ -21,11 +21,11 @@ fn proxy_pid_from_health(body: &str) -> Option<u32> {
 }
 
 #[cfg(any(target_os = "macos", target_os = "linux", test))]
-fn health_identifies_lean_ctx_proxy(body: &str) -> bool {
+fn health_identifies_sobre_proxy(body: &str) -> bool {
     serde_json::from_str::<serde_json::Value>(body)
         .ok()
         .and_then(|health| health.get("service")?.as_str().map(str::to_owned))
-        .is_some_and(|service| service == "lean-ctx-proxy")
+        .is_some_and(|service| service == "sobre-proxy")
 }
 
 #[cfg(any(target_os = "macos", target_os = "linux"))]
@@ -45,13 +45,13 @@ fn proxy_pid_on_port(port: u16) -> Option<u32> {
         .ok()?;
     let body = response.into_body().read_to_string().ok()?;
     let pid = proxy_pid_from_health(&body)?;
-    health_identifies_lean_ctx_proxy(&body).then_some(pid)
+    health_identifies_sobre_proxy(&body).then_some(pid)
 }
 
 /// Stop a proxy already owning `port` before a managed service is started.
 ///
 /// Returns `false` when the listener cannot be positively identified as a
-/// lean-ctx proxy or when it does not release the port. Managed startup must
+/// sobre proxy or when it does not release the port. Managed startup must
 /// fail closed in either case; otherwise launchd/systemd would enter a restart
 /// loop on `EADDRINUSE`.
 #[cfg(any(target_os = "macos", target_os = "linux"))]
@@ -115,7 +115,7 @@ pub fn install(port: u16, quiet: bool) -> bool {
     let binary = find_binary();
     if binary.is_empty() {
         if !quiet {
-            tracing::error!("Cannot find lean-ctx binary for autostart");
+            tracing::error!("Cannot find sobre binary for autostart");
         }
         return false;
     }
@@ -134,7 +134,7 @@ pub fn install(port: u16, quiet: bool) -> bool {
     {
         let _ = (&binary, quiet);
         println!("  Autostart not supported on this platform");
-        println!("  Run manually: lean-ctx proxy start --port={port}");
+        println!("  Run manually: sobre proxy start --port={port}");
         false
     }
 }
@@ -270,9 +270,9 @@ fn install_launchagent(binary: &str, port: u16, quiet: bool) -> bool {
     if !release_proxy_port(port, quiet) {
         return false;
     }
-    // GH #439: proxy logs are STATE — $XDG_STATE_HOME/lean-ctx/logs.
+    // GH #439: proxy logs are STATE — $XDG_STATE_HOME/sobre/logs.
     let log_dir = crate::core::paths::state_dir()
-        .unwrap_or_else(|_| std::env::temp_dir().join("lean-ctx"))
+        .unwrap_or_else(|_| std::env::temp_dir().join("sobre"))
         .join("logs");
     let _ = std::fs::create_dir_all(&log_dir);
 
@@ -377,7 +377,7 @@ fn install_systemd(binary: &str, port: u16, quiet: bool) -> bool {
 
     let unit = format!(
         r"[Unit]
-Description=lean-ctx API Proxy
+Description=sobre API Proxy
 After=network.target
 StartLimitIntervalSec=300
 StartLimitBurst=5
@@ -457,7 +457,7 @@ pub fn find_binary() -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{health_identifies_lean_ctx_proxy, proxy_pid_from_health};
+    use super::{health_identifies_sobre_proxy, proxy_pid_from_health};
     #[cfg(any(target_os = "macos", target_os = "linux"))]
     use super::{port_is_open, release_proxy_port};
     #[cfg(any(target_os = "macos", target_os = "linux"))]
@@ -478,10 +478,10 @@ mod tests {
         assert_eq!(proxy_pid_from_health(r#"{"status":"ok","pid":0}"#), None);
         assert_eq!(proxy_pid_from_health(r#"{"status":"ok"}"#), None);
         assert_eq!(proxy_pid_from_health("not json"), None);
-        assert!(health_identifies_lean_ctx_proxy(
-            r#"{"status":"ok","service":"lean-ctx-proxy","pid":4242}"#
+        assert!(health_identifies_sobre_proxy(
+            r#"{"status":"ok","service":"sobre-proxy","pid":4242}"#
         ));
-        assert!(!health_identifies_lean_ctx_proxy(
+        assert!(!health_identifies_sobre_proxy(
             r#"{"status":"ok","pid":4242}"#
         ));
     }
@@ -539,7 +539,7 @@ mod tests {
                 "proxy_autostart::tests::managed_handoff_test_child",
                 "--nocapture",
             ])
-            .env("LEAN_CTX_HANDOFF_TEST_PORT", port.to_string())
+            .env("SOBRE_HANDOFF_TEST_PORT", port.to_string())
             .spawn()
             .unwrap();
         let mut child = ChildGuard(child);
@@ -562,7 +562,7 @@ mod tests {
     #[ignore = "helper process for managed_handoff_stops_identified_proxy_and_releases_port"]
     #[cfg(unix)]
     fn managed_handoff_test_child() {
-        let port: u16 = std::env::var("LEAN_CTX_HANDOFF_TEST_PORT")
+        let port: u16 = std::env::var("SOBRE_HANDOFF_TEST_PORT")
             .unwrap()
             .parse()
             .unwrap();
@@ -575,7 +575,7 @@ mod tests {
             let mut request = [0_u8; 512];
             if stream.read(&mut request).unwrap_or(0) > 0 {
                 let body = format!(
-                    r#"{{"status":"ok","service":"lean-ctx-proxy","pid":{}}}"#,
+                    r#"{{"status":"ok","service":"sobre-proxy","pid":{}}}"#,
                     std::process::id()
                 );
                 write!(

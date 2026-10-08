@@ -311,7 +311,7 @@ mod tests {
 
     #[test]
     fn no_false_positive_on_success() {
-        let output = "Compiling lean-ctx v2.17.2\nFinished release target(s) in 30s";
+        let output = "Compiling sobre v2.17.2\nFinished release target(s) in 30s";
         let result = detect_error_pattern(output, "cargo build --release", 0);
         assert!(result.is_none());
     }

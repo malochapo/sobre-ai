@@ -46,5 +46,5 @@ pub struct SetupItem {
 }
 
 pub fn doctor_report_path() -> Result<PathBuf, String> {
-    Ok(crate::core::data_dir::lean_ctx_data_dir()?.join("doctor/latest.json"))
+    Ok(crate::core::data_dir::sobre_data_dir()?.join("doctor/latest.json"))
 }

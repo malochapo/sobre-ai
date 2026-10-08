@@ -132,7 +132,7 @@ mod tests {
 
     #[test]
     fn compacts_pretty_object_losslessly() {
-        let pretty = "{\n  \"name\": \"lean-ctx\",\n  \"version\": 3,\n  \"tags\": [\n    \"a\",\n    \"b\"\n  ]\n}";
+        let pretty = "{\n  \"name\": \"sobre\",\n  \"version\": 3,\n  \"tags\": [\n    \"a\",\n    \"b\"\n  ]\n}";
         let out = compact_json(pretty).expect("should compact");
         assert!(out.len() < pretty.len());
         assert_eq!(parse(&out), parse(pretty), "value must be identical");

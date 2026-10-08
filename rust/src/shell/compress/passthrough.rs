@@ -1,6 +1,6 @@
 pub(super) const BUILTIN_PASSTHROUGH: &[&str] = &[
-    // lean-ctx itself — never compress our own output
-    "lean-ctx",
+    // sobre itself — never compress our own output
+    "sobre",
     // JS/TS dev servers & watchers
     "turbo",
     "nx serve",

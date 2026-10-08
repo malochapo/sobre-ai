@@ -4,17 +4,17 @@
 
 use std::process::{Command, Output};
 
-fn lean_ctx() -> Command {
-    let mut cmd = Command::new(env!("CARGO_BIN_EXE_lean-ctx"));
-    cmd.env("HOME", "/tmp/lean-ctx-cli-test");
+fn sobre() -> Command {
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_sobre"));
+    cmd.env("HOME", "/tmp/sobre-cli-test");
     cmd
 }
 
 fn run(args: &[&str]) -> Output {
-    lean_ctx()
+    sobre()
         .args(args)
         .output()
-        .expect("failed to spawn lean-ctx binary")
+        .expect("failed to spawn sobre binary")
 }
 
 fn stdout(out: &Output) -> String {
@@ -38,14 +38,14 @@ fn version_flag_exits_zero_and_prints_version() {
     let out = run(&["--version"]);
     assert_eq!(exit_code(&out), 0, "stderr: {}", stderr(&out));
     let s = stdout(&out);
-    assert!(s.contains("lean-ctx"), "expected 'lean-ctx' in: {s}");
+    assert!(s.contains("sobre"), "expected 'sobre' in: {s}");
 }
 
 #[test]
 fn version_short_flag() {
     let out = run(&["-V"]);
     assert_eq!(exit_code(&out), 0);
-    assert!(stdout(&out).contains("lean-ctx"));
+    assert!(stdout(&out).contains("sobre"));
 }
 
 #[test]
@@ -54,7 +54,7 @@ fn help_flag_exits_zero_and_lists_commands() {
     assert_eq!(exit_code(&out), 0);
     let s = stdout(&out);
     assert!(
-        s.contains("COMMANDS") || s.contains("Usage") || s.contains("lean-ctx"),
+        s.contains("COMMANDS") || s.contains("Usage") || s.contains("sobre"),
         "help must show usage info; got: {}",
         &s[..s.len().min(200)]
     );
@@ -222,7 +222,7 @@ fn hook_no_args_prints_usage() {
     assert_ne!(exit_code(&out), 0);
     let err = stderr(&out);
     assert!(
-        err.contains("Usage") || err.contains("lean-ctx hook"),
+        err.contains("Usage") || err.contains("sobre hook"),
         "hook without subcommand should show usage"
     );
 }
@@ -307,7 +307,7 @@ fn uninstall_dry_run_exits_zero() {
     assert_eq!(exit_code(&out), 0, "stderr: {}", stderr(&out));
     let s = stdout(&out);
     assert!(
-        s.contains("dry") || s.contains("Would") || s.contains("lean-ctx") || !s.is_empty(),
+        s.contains("dry") || s.contains("Would") || s.contains("sobre") || !s.is_empty(),
         "uninstall --dry-run should describe what it would do"
     );
 }

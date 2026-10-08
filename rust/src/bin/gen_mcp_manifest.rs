@@ -30,8 +30,8 @@ fn main() {
         }
     }
 
-    let out_path = out.unwrap_or_else(lean_ctx::core::mcp_manifest::default_manifest_path);
-    let expected = lean_ctx::core::mcp_manifest::manifest_value();
+    let out_path = out.unwrap_or_else(sobre::core::mcp_manifest::default_manifest_path);
+    let expected = sobre::core::mcp_manifest::manifest_value();
 
     if check_only {
         let on_disk = std::fs::read_to_string(&out_path).unwrap_or_default();

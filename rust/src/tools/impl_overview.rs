@@ -631,7 +631,7 @@ mod tests {
         let _lock = crate::core::data_dir::test_env_lock();
         let tmp = tempfile::tempdir().expect("tempdir");
         let data = tempfile::tempdir().expect("data dir");
-        crate::test_env::set_var("LEAN_CTX_DATA_DIR", data.path().to_str().unwrap());
+        crate::test_env::set_var("SOBRE_DATA_DIR", data.path().to_str().unwrap());
 
         let root = tmp.path();
         std::fs::write(root.join("Cargo.toml"), "[package]\nname = \"demo\"\n").unwrap();
@@ -677,6 +677,6 @@ mod tests {
             "overview header must show persisted call edges, got:\n{out}"
         );
 
-        crate::test_env::remove_var("LEAN_CTX_DATA_DIR");
+        crate::test_env::remove_var("SOBRE_DATA_DIR");
     }
 }

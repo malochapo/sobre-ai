@@ -209,7 +209,7 @@ impl Default for AgentRegistry {
 }
 
 fn agents_dir() -> Result<PathBuf, String> {
-    let dir = crate::core::data_dir::lean_ctx_data_dir()?;
+    let dir = crate::core::data_dir::sobre_data_dir()?;
     Ok(dir.join("agents"))
 }
 

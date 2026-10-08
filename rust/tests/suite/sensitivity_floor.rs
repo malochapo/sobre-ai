@@ -3,7 +3,7 @@
 //! Exercises the public `core::sensitivity` API on real secret/PII vectors.
 //! All deterministic — no env, no config files, no global state.
 
-use lean_ctx::core::sensitivity::{SensitivityLevel, classify_content};
+use sobre::core::sensitivity::{SensitivityLevel, classify_content};
 
 #[test]
 fn classification_vectors_are_precise() {

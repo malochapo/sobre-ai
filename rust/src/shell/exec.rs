@@ -102,7 +102,7 @@ pub(super) fn wait_with_limits(
 
     if timed_out || stdout_truncated {
         let notice = format!(
-            "\n[lean-ctx: output truncated at {} MB / {}s limit]\n",
+            "\n[sobre: output truncated at {} MB / {}s limit]\n",
             max_bytes / (1024 * 1024),
             timeout.as_secs()
         );
@@ -110,7 +110,7 @@ pub(super) fn wait_with_limits(
     }
     if stderr_truncated {
         let notice = format!(
-            "\n[lean-ctx: stderr truncated at {} KB limit]\n",
+            "\n[sobre: stderr truncated at {} KB limit]\n",
             STDERR_LIMIT / 1024
         );
         stderr_buf.extend_from_slice(notice.as_bytes());
@@ -165,11 +165,11 @@ fn synthetic_failure_status() -> std::process::ExitStatus {
 }
 
 #[cfg(test)]
-mod nested_lean_ctx_exec_tests {
+mod nested_sobre_exec_tests {
     #[test]
     fn collapses_single_nested_c() {
         assert_eq!(
-            super::collapse_nested_lean_ctx_exec("lean-ctx -c 'git status'").as_deref(),
+            super::collapse_nested_sobre_exec("sobre -c 'git status'").as_deref(),
             Some("git status")
         );
     }
@@ -177,8 +177,7 @@ mod nested_lean_ctx_exec_tests {
     #[test]
     fn collapses_repeated_nested_c() {
         assert_eq!(
-            super::collapse_nested_lean_ctx_exec("lean-ctx -c 'lean-ctx -c \"git status\"'")
-                .as_deref(),
+            super::collapse_nested_sobre_exec("sobre -c 'sobre -c \"git status\"'").as_deref(),
             Some("git status")
         );
     }
@@ -186,13 +185,12 @@ mod nested_lean_ctx_exec_tests {
     #[test]
     fn preserves_inner_shell_quoting() {
         assert_eq!(
-            super::collapse_nested_lean_ctx_exec("lean-ctx -c \"git commit -m 'hello world'\"")
+            super::collapse_nested_sobre_exec("sobre -c \"git commit -m 'hello world'\"")
                 .as_deref(),
             Some("git commit -m 'hello world'")
         );
         assert_eq!(
-            super::collapse_nested_lean_ctx_exec("lean-ctx -c git commit -m 'hello world'")
-                .as_deref(),
+            super::collapse_nested_sobre_exec("sobre -c git commit -m 'hello world'").as_deref(),
             Some("git commit -m 'hello world'")
         );
     }
@@ -200,15 +198,14 @@ mod nested_lean_ctx_exec_tests {
     #[test]
     fn collapses_wrapper_given_by_path() {
         assert_eq!(
-            super::collapse_nested_lean_ctx_exec("/usr/local/bin/lean-ctx -c 'git status'")
-                .as_deref(),
+            super::collapse_nested_sobre_exec("/usr/local/bin/sobre -c 'git status'").as_deref(),
             Some("git status")
         );
     }
 
     #[test]
     fn leaves_non_wrappers_alone() {
-        assert!(super::collapse_nested_lean_ctx_exec("git status").is_none());
+        assert!(super::collapse_nested_sobre_exec("git status").is_none());
     }
 
     #[test]
@@ -240,7 +237,7 @@ pub(super) fn exec_limits(command: &str) -> (usize, std::time::Duration) {
     (max_bytes, shell_timeout(command))
 }
 
-/// Resolve the timeout `ctx_shell` / `lean-ctx -c` grants a command.
+/// Resolve the timeout `ctx_shell` / `sobre -c` grants a command.
 ///
 /// Heavy builds/tests (cargo install/nextest/build, npm ci, git commit/push, …)
 /// get the long ceiling instead of being killed at the 2-minute default, keeping
@@ -420,7 +417,7 @@ fn stdout_is_regular_file() -> bool {
 pub fn exec(command: &str) -> i32 {
     let mut collapsed_nested = false;
     let collapsed;
-    let command = if let Some(c) = collapse_nested_lean_ctx_exec(command) {
+    let command = if let Some(c) = collapse_nested_sobre_exec(command) {
         collapsed_nested = true;
         collapsed = c;
         collapsed.as_str()
@@ -480,11 +477,11 @@ pub fn exec(command: &str) -> i32 {
     super::pipeline::exec_buffered(command, &shell, &shell_flag)
 }
 
-fn collapse_nested_lean_ctx_exec(command: &str) -> Option<String> {
+fn collapse_nested_sobre_exec(command: &str) -> Option<String> {
     let mut current = command.trim().to_string();
     let mut changed = false;
 
-    while let Some(next) = strip_one_lean_ctx_exec(&current) {
+    while let Some(next) = strip_one_sobre_exec(&current) {
         if next == current {
             break;
         }
@@ -496,15 +493,15 @@ fn collapse_nested_lean_ctx_exec(command: &str) -> Option<String> {
 }
 
 fn should_delegate_wrapped_to_shell_default(collapsed_nested: bool) -> bool {
-    // After collapsing `lean-ctx -c "lean-ctx -c ..."` the current process is the
+    // After collapsing `sobre -c "sobre -c ..."` the current process is the
     // one compression pass that would otherwise be owned by the shell default.
     // Delegating again would drop back to raw execution or re-enter the hook.
     super::reentry::is_wrapped() && !collapsed_nested
 }
 
-fn strip_one_lean_ctx_exec(command: &str) -> Option<String> {
+fn strip_one_sobre_exec(command: &str) -> Option<String> {
     let words = split_simple_shell_words(command)?;
-    if words.len() < 3 || !is_lean_ctx_bin(&words[0].value) {
+    if words.len() < 3 || !is_sobre_bin(&words[0].value) {
         return None;
     }
     if words[1].value != "-c" {
@@ -525,11 +522,11 @@ fn strip_one_lean_ctx_exec(command: &str) -> Option<String> {
     }
 }
 
-fn is_lean_ctx_bin(word: &str) -> bool {
+fn is_sobre_bin(word: &str) -> bool {
     std::path::Path::new(word)
         .file_name()
         .and_then(|name| name.to_str())
-        .is_some_and(|name| name == "lean-ctx" || name == "lean-ctx.exe")
+        .is_some_and(|name| name == "sobre" || name == "sobre.exe")
 }
 
 struct SimpleShellWord {
@@ -600,7 +597,7 @@ fn exec_inherit(command: &str, shell: &str, shell_flag: &str) -> i32 {
     match status {
         Ok(s) => s.code().unwrap_or(1),
         Err(e) => {
-            tracing::error!("lean-ctx: failed to execute: {e}");
+            tracing::error!("sobre: failed to execute: {e}");
             127
         }
     }
@@ -621,7 +618,7 @@ fn exec_shell_default(command: &str, shell: &str, shell_flag: &str) -> i32 {
     match status {
         Ok(s) => s.code().unwrap_or(1),
         Err(e) => {
-            eprintln!("lean-ctx: failed to execute '{command}': {e}");
+            eprintln!("sobre: failed to execute '{command}': {e}");
             127
         }
     }
@@ -711,7 +708,7 @@ mod exec_tests {
             super::wait_with_limits(child, 1024, std::time::Duration::from_secs(10), false);
         let stdout = String::from_utf8_lossy(&output.stdout);
         assert!(
-            stdout.contains("[lean-ctx: output truncated"),
+            stdout.contains("[sobre: output truncated"),
             "expected truncation notice, got len={}: ...{}",
             stdout.len(),
             &stdout[stdout.len().saturating_sub(80)..]
@@ -747,7 +744,7 @@ mod exec_tests {
         );
         let stderr = String::from_utf8_lossy(&output.stderr);
         assert!(
-            stderr.contains("[lean-ctx: stderr truncated"),
+            stderr.contains("[sobre: stderr truncated"),
             "expected stderr truncation notice, got len={}: ...{}",
             stderr.len(),
             &stderr[stderr.len().saturating_sub(80)..]
@@ -772,7 +769,7 @@ mod exec_tests {
             "truncation should kill promptly, took {elapsed:?} (timeout was 20s)"
         );
         let stdout = String::from_utf8_lossy(&output.stdout);
-        assert!(stdout.contains("[lean-ctx: output truncated"));
+        assert!(stdout.contains("[sobre: output truncated"));
     }
 
     #[test]
@@ -794,7 +791,7 @@ mod exec_tests {
             "timeout should kill quickly, took {elapsed:?}"
         );
         let stdout = String::from_utf8_lossy(&output.stdout);
-        assert!(stdout.contains("[lean-ctx: output truncated"));
+        assert!(stdout.contains("[sobre: output truncated"));
     }
 
     /// GH #720: killing only the direct child (a shell) on timeout leaves its

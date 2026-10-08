@@ -1,6 +1,6 @@
-//! `lean-ctx doctor overhead` — honest fixed-cost accounting (#572).
+//! `sobre doctor overhead` — honest fixed-cost accounting (#572).
 //!
-//! Shows what a session costs BEFORE lean-ctx saves anything:
+//! Shows what a session costs BEFORE sobre saves anything:
 //!  1. advertised MCP tool schemas (mirrors the live `tools/list` policy),
 //!  2. the MCP server instructions block — sobre's only guidance channel,
 //!  3. the wakeup briefing.

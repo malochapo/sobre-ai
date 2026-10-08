@@ -25,7 +25,7 @@ async fn bounded_read_returns_none_when_write_held() {
     let start = Instant::now();
     let result = tokio::task::spawn_blocking({
         let lock = lock.clone();
-        move || lean_ctx::server::bounded_lock::read_within(&lock, "test:write_held", TEST_BASE)
+        move || sobre::server::bounded_lock::read_within(&lock, "test:write_held", TEST_BASE)
     })
     .await
     .unwrap();
@@ -52,7 +52,7 @@ async fn bounded_write_returns_none_when_read_held() {
     let start = Instant::now();
     let result = tokio::task::spawn_blocking({
         let lock = lock.clone();
-        move || lean_ctx::server::bounded_lock::write_within(&lock, "test:read_held", TEST_BASE)
+        move || sobre::server::bounded_lock::write_within(&lock, "test:read_held", TEST_BASE)
     })
     .await
     .unwrap();
@@ -79,7 +79,7 @@ async fn bounded_read_succeeds_when_free() {
 
     let result = tokio::task::spawn_blocking({
         let lock = lock.clone();
-        move || lean_ctx::server::bounded_lock::read(&lock, "test:free")
+        move || sobre::server::bounded_lock::read(&lock, "test:free")
     })
     .await
     .unwrap();
@@ -94,7 +94,7 @@ async fn bounded_write_succeeds_when_free() {
 
     let result = tokio::task::spawn_blocking({
         let lock = lock.clone();
-        move || lean_ctx::server::bounded_lock::write(&lock, "test:free_write")
+        move || sobre::server::bounded_lock::write(&lock, "test:free_write")
     })
     .await
     .unwrap();
@@ -111,7 +111,7 @@ async fn bounded_write_succeeds_when_free() {
 
 #[test]
 fn freeze_counter_escalates_to_degraded() {
-    use lean_ctx::core::io_health;
+    use sobre::core::io_health;
 
     // Record multiple freezes to trigger degraded mode
     for _ in 0..5 {
@@ -140,17 +140,17 @@ fn freeze_counter_escalates_to_degraded() {
 
 #[test]
 fn local_paths_not_slow() {
-    use lean_ctx::core::io_health;
+    use sobre::core::io_health;
 
     assert!(!io_health::is_slow_mount("/home/user/project/src/main.rs"));
     assert!(!io_health::is_slow_mount("/tmp/test.txt"));
-    assert!(!io_health::is_slow_mount("/usr/local/bin/lean-ctx"));
+    assert!(!io_health::is_slow_mount("/usr/local/bin/sobre"));
     assert!(!io_health::is_slow_mount("/var/log/syslog"));
 }
 
 #[test]
 fn mnt_paths_slow_only_on_wsl() {
-    use lean_ctx::core::io_health;
+    use sobre::core::io_health;
 
     let result = io_health::is_slow_mount("/mnt/c/Users/test/project");
     if io_health::is_wsl() {
@@ -170,7 +170,7 @@ fn mnt_paths_slow_only_on_wsl() {
 fn canonicalize_bounded_handles_nonexistent_path() {
     let path = std::path::Path::new("/this/path/absolutely/does/not/exist/xyzzy123");
     let start = Instant::now();
-    let result = lean_ctx::core::pathutil::safe_canonicalize_bounded(path, 2000);
+    let result = sobre::core::pathutil::safe_canonicalize_bounded(path, 2000);
     let elapsed = start.elapsed();
 
     // Should return the original path (since it doesn't exist)
@@ -186,7 +186,7 @@ fn canonicalize_bounded_handles_nonexistent_path() {
 fn canonicalize_bounded_resolves_existing_path() {
     let tmp = std::env::temp_dir();
     let start = Instant::now();
-    let result = lean_ctx::core::pathutil::safe_canonicalize_bounded(&tmp, 2000);
+    let result = sobre::core::pathutil::safe_canonicalize_bounded(&tmp, 2000);
     let elapsed = start.elapsed();
 
     assert!(result.exists(), "resolved path should exist: {result:?}");
@@ -208,7 +208,7 @@ async fn concurrent_bounded_reads_dont_deadlock() {
     for i in 0..10 {
         let lock = lock.clone();
         handles.push(tokio::task::spawn_blocking(move || {
-            let guard = lean_ctx::server::bounded_lock::read(&lock, &format!("concurrent:{i}"));
+            let guard = sobre::server::bounded_lock::read(&lock, &format!("concurrent:{i}"));
             guard.map(|g| g.len())
         }));
     }
@@ -232,7 +232,7 @@ async fn mixed_read_write_with_timeout_doesnt_deadlock() {
     // Spawn writer that holds lock for 2s
     let lock_clone = lock.clone();
     handles.push(tokio::task::spawn_blocking(move || {
-        if let Some(mut guard) = lean_ctx::server::bounded_lock::write(&lock_clone, "slow_writer") {
+        if let Some(mut guard) = sobre::server::bounded_lock::write(&lock_clone, "slow_writer") {
             *guard += 1;
             std::thread::sleep(Duration::from_secs(2));
         }
@@ -246,7 +246,7 @@ async fn mixed_read_write_with_timeout_doesnt_deadlock() {
     for i in 0..3 {
         let lock_clone = lock.clone();
         handles.push(tokio::task::spawn_blocking(move || {
-            let result = lean_ctx::server::bounded_lock::read(&lock_clone, &format!("reader:{i}"));
+            let result = sobre::server::bounded_lock::read(&lock_clone, &format!("reader:{i}"));
             if result.is_some() {
                 "read ok"
             } else {
@@ -272,7 +272,7 @@ async fn mixed_read_write_with_timeout_doesnt_deadlock() {
 
 #[test]
 fn proxy_default_port_returns_valid_port() {
-    let port = lean_ctx::proxy_setup::default_port();
+    let port = sobre::proxy_setup::default_port();
     assert!(port >= 4444, "port should be >= 4444, got {port}");
     assert!(port < 6000, "port should be < 6000, got {port}");
 }

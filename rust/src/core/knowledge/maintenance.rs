@@ -7,7 +7,7 @@
 //! is pure accumulated bloat. This module finds and prunes those orphaned
 //! stores.
 //!
-//! Pruning is only ever invoked from the explicit `lean-ctx doctor --fix` path;
+//! Pruning is only ever invoked from the explicit `sobre doctor --fix` path;
 //! the background lifecycle must never delete a store, since a missing root can
 //! also mean a temporarily-unmounted drive rather than a deleted project.
 
@@ -34,7 +34,7 @@ pub struct PruneReport {
 /// ones. See [`find_orphaned_stores_in`] for the detection rules.
 #[must_use]
 pub fn find_orphaned_stores() -> Vec<OrphanedStore> {
-    match crate::core::data_dir::lean_ctx_data_dir() {
+    match crate::core::data_dir::sobre_data_dir() {
         Ok(data_dir) => find_orphaned_stores_in(&data_dir),
         Err(_) => Vec::new(),
     }
@@ -43,7 +43,7 @@ pub fn find_orphaned_stores() -> Vec<OrphanedStore> {
 /// Remove every orphaned store under the real data dir. Best-effort.
 #[must_use]
 pub fn prune_orphaned_stores() -> PruneReport {
-    match crate::core::data_dir::lean_ctx_data_dir() {
+    match crate::core::data_dir::sobre_data_dir() {
         Ok(data_dir) => prune_orphaned_stores_in(&data_dir),
         Err(_) => PruneReport::default(),
     }

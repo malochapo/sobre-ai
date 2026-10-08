@@ -10,7 +10,7 @@ pub(crate) fn write_mcp_json(
     binary: &str,
     opts: WriteOptions,
 ) -> Result<WriteResult, String> {
-    let desired = lean_ctx_server_entry(binary);
+    let desired = sobre_server_entry(binary);
 
     // Claude Code manages ~/.claude.json and may overwrite it on first start.
     // Prefer the official CLI integration when available.
@@ -32,7 +32,7 @@ pub(crate) fn write_mcp_json(
                     &target.config_path,
                     &content,
                     "mcpServers",
-                    "lean-ctx",
+                    "sobre",
                     &desired,
                     opts.overwrite_invalid,
                 );
@@ -49,14 +49,14 @@ pub(crate) fn write_mcp_json(
             .as_object_mut()
             .ok_or_else(|| "\"mcpServers\" must be an object".to_string())?;
 
-        let existing = servers_obj.get("lean-ctx").cloned();
+        let existing = servers_obj.get("sobre").cloned();
         if existing.as_ref() == Some(&desired) {
             return Ok(WriteResult {
                 action: WriteAction::Already,
                 note: None,
             });
         }
-        servers_obj.insert("lean-ctx".to_string(), desired);
+        servers_obj.insert("sobre".to_string(), desired);
 
         let formatted = serde_json::to_string_pretty(&json).map_err(|e| e.to_string())?;
         crate::config_io::write_atomic_with_backup(&target.config_path, &formatted)?;
@@ -96,13 +96,13 @@ pub(crate) fn try_claude_mcp_add(desired: &Value) -> Result<WriteResult, String>
     let mut cmd = if cfg!(windows) {
         let mut c = Command::new("cmd");
         c.args([
-            "/C", "claude", "mcp", "add-json", "--scope", "user", "lean-ctx",
+            "/C", "claude", "mcp", "add-json", "--scope", "user", "sobre",
         ]);
         c
     } else {
         let claude_path = validate_claude_binary()?;
         let mut c = Command::new(claude_path);
-        c.args(["mcp", "add-json", "--scope", "user", "lean-ctx"]);
+        c.args(["mcp", "add-json", "--scope", "user", "sobre"]);
         c
     };
 
@@ -156,7 +156,7 @@ pub(crate) fn write_mcp_json_fresh(
     note: Option<String>,
 ) -> Result<WriteResult, String> {
     let content = serde_json::to_string_pretty(&serde_json::json!({
-        "mcpServers": { "lean-ctx": desired }
+        "mcpServers": { "sobre": desired }
     }))
     .map_err(|e| e.to_string())?;
     crate::config_io::write_atomic_with_backup(path, &content)?;

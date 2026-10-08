@@ -2,26 +2,26 @@
 // JSON removal — textual approach preserving comments and formatting
 // ---------------------------------------------------------------------------
 
-pub(super) fn remove_lean_ctx_from_json(content: &str) -> Option<String> {
+pub(super) fn remove_sobre_from_json(content: &str) -> Option<String> {
     // Try textual removal first (preserves comments, formatting, key order)
-    if let Some(result) = remove_lean_ctx_from_json_textual(content) {
+    if let Some(result) = remove_sobre_from_json_textual(content) {
         return Some(result);
     }
 
     // Fallback to serde-based approach for edge cases
-    remove_lean_ctx_from_json_serde(content)
+    remove_sobre_from_json_serde(content)
 }
 
-/// Textual JSON key removal: finds `"lean-ctx"` key-value pairs and removes
+/// Textual JSON key removal: finds `"sobre"` key-value pairs and removes
 /// them from the raw text without re-serializing. Preserves JSONC comments,
 /// formatting, trailing commas, and key ordering.
-fn remove_lean_ctx_from_json_textual(content: &str) -> Option<String> {
+fn remove_sobre_from_json_textual(content: &str) -> Option<String> {
     let mut result = content.to_string();
     let mut modified = false;
 
-    // Repeatedly find and remove "lean-ctx" entries until none remain.
+    // Repeatedly find and remove "sobre" entries until none remain.
     // Each iteration rescans because positions shift after removal.
-    while let Some(key_start) = find_json_key_position(result.as_bytes(), "lean-ctx") {
+    while let Some(key_start) = find_json_key_position(result.as_bytes(), "sobre") {
         let Some(new_result) = remove_json_entry_at(&result, key_start) else {
             break;
         };
@@ -278,20 +278,20 @@ fn skip_json_value(bytes: &[u8], start: usize) -> Option<usize> {
 }
 
 /// Fallback: serde-based JSON removal (destroys comments/formatting).
-fn remove_lean_ctx_from_json_serde(content: &str) -> Option<String> {
+fn remove_sobre_from_json_serde(content: &str) -> Option<String> {
     let mut parsed: serde_json::Value = crate::core::jsonc::parse_jsonc(content).ok()?;
     let mut modified = false;
 
     if let Some(servers) = parsed.get_mut("mcpServers").and_then(|s| s.as_object_mut()) {
-        modified |= servers.remove("lean-ctx").is_some();
+        modified |= servers.remove("sobre").is_some();
     }
 
     if let Some(servers) = parsed.get_mut("servers").and_then(|s| s.as_object_mut()) {
-        modified |= servers.remove("lean-ctx").is_some();
+        modified |= servers.remove("sobre").is_some();
     }
 
     if let Some(mcp) = parsed.get_mut("mcp").and_then(|s| s.as_object_mut()) {
-        modified |= mcp.remove("lean-ctx").is_some();
+        modified |= mcp.remove("sobre").is_some();
     }
 
     // Zed uses `context_servers` instead of `mcpServers`
@@ -299,7 +299,7 @@ fn remove_lean_ctx_from_json_serde(content: &str) -> Option<String> {
         .get_mut("context_servers")
         .and_then(|s| s.as_object_mut())
     {
-        modified |= ctx.remove("lean-ctx").is_some();
+        modified |= ctx.remove("sobre").is_some();
     }
 
     if modified {
@@ -313,7 +313,7 @@ fn remove_lean_ctx_from_json_serde(content: &str) -> Option<String> {
 // TOML removal
 // ---------------------------------------------------------------------------
 
-pub(super) fn remove_lean_ctx_from_toml(content: &str) -> String {
+pub(super) fn remove_sobre_from_toml(content: &str) -> String {
     let mut out = String::with_capacity(content.len());
     let mut skip = false;
     let mut in_features = false;
@@ -323,10 +323,10 @@ pub(super) fn remove_lean_ctx_from_toml(content: &str) -> String {
 
         if trimmed.starts_with('[') && trimmed.ends_with(']') {
             let section = trimmed.trim_start_matches('[').trim_end_matches(']').trim();
-            if section == "mcp_servers.lean-ctx"
-                || section == "mcp_servers.\"lean-ctx\""
-                || section.starts_with("mcp_servers.lean-ctx.")
-                || section.starts_with("mcp_servers.\"lean-ctx\".")
+            if section == "mcp_servers.sobre"
+                || section == "mcp_servers.\"sobre\""
+                || section.starts_with("mcp_servers.sobre.")
+                || section.starts_with("mcp_servers.\"sobre\".")
             {
                 skip = true;
                 continue;
@@ -369,7 +369,7 @@ pub(super) fn remove_lean_ctx_from_toml(content: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::super::agents::{HookCleanupResult, remove_lean_ctx_from_hooks_json};
+    use super::super::agents::{HookCleanupResult, remove_sobre_from_hooks_json};
     use super::super::{backup_before_modify, bak_path_for};
     use super::*;
 
@@ -381,18 +381,15 @@ mod tests {
 [features]
 hooks = true
 
-[mcp_servers.lean-ctx]
-command = \"/usr/local/bin/lean-ctx\"
+[mcp_servers.sobre]
+command = \"/usr/local/bin/sobre\"
 args = []
 
 [mcp_servers.other-tool]
 command = \"/usr/bin/other\"
 ";
-        let result = remove_lean_ctx_from_toml(input);
-        assert!(
-            !result.contains("lean-ctx"),
-            "lean-ctx section should be removed"
-        );
+        let result = remove_sobre_from_toml(input);
+        assert!(!result.contains("sobre"), "sobre section should be removed");
         assert!(
             result.contains("[mcp_servers.other-tool]"),
             "other sections should be preserved"
@@ -412,7 +409,7 @@ codex_hooks = true
 [tools.other]
 hooks = true
 ";
-        let result = remove_lean_ctx_from_toml(input);
+        let result = remove_sobre_from_toml(input);
         assert!(result.contains("codex_hooks = false"), "{result}");
         assert!(
             result.contains("[tools.other]\nhooks = true"),
@@ -421,12 +418,12 @@ hooks = true
     }
 
     #[test]
-    fn remove_toml_only_lean_ctx() {
+    fn remove_toml_only_sobre() {
         let input = "\
-[mcp_servers.lean-ctx]
-command = \"lean-ctx\"
+[mcp_servers.sobre]
+command = \"sobre\"
 ";
-        let result = remove_lean_ctx_from_toml(input);
+        let result = remove_sobre_from_toml(input);
         assert!(
             result.trim().is_empty(),
             "should produce empty output: {result}"
@@ -434,12 +431,12 @@ command = \"lean-ctx\"
     }
 
     #[test]
-    fn remove_toml_no_lean_ctx() {
+    fn remove_toml_no_sobre() {
         let input = "\
 [mcp_servers.other]
 command = \"other\"
 ";
-        let result = remove_lean_ctx_from_toml(input);
+        let result = remove_sobre_from_toml(input);
         assert!(
             result.contains("[mcp_servers.other]"),
             "other content should be preserved"
@@ -455,15 +452,15 @@ command = \"other\"
     "other-tool": {
       "command": "other"
     },
-    "lean-ctx": {
-      "command": "/usr/bin/lean-ctx",
+    "sobre": {
+      "command": "/usr/bin/sobre",
       "args": []
     }
   }
 }
 "#;
-        let result = remove_lean_ctx_from_json(input).expect("should find lean-ctx");
-        assert!(!result.contains("lean-ctx"), "lean-ctx should be removed");
+        let result = remove_sobre_from_json(input).expect("should find sobre");
+        assert!(!result.contains("sobre"), "sobre should be removed");
         assert!(
             result.contains("other-tool"),
             "other-tool should be preserved"
@@ -480,8 +477,8 @@ command = \"other\"
         let input = r#"{
   // This is a user comment
   "mcpServers": {
-    "lean-ctx": {
-      "command": "lean-ctx"
+    "sobre": {
+      "command": "sobre"
     },
     "my-tool": {
       "command": "my-tool"
@@ -489,8 +486,8 @@ command = \"other\"
   }
 }
 "#;
-        let result = remove_lean_ctx_from_json(input).expect("should find lean-ctx");
-        assert!(!result.contains("lean-ctx"), "lean-ctx should be removed");
+        let result = remove_sobre_from_json(input).expect("should find sobre");
+        assert!(!result.contains("sobre"), "sobre should be removed");
         assert!(
             result.contains("// This is a user comment"),
             "comment should be preserved: {result}"
@@ -499,51 +496,51 @@ command = \"other\"
     }
 
     #[test]
-    fn json_textual_only_lean_ctx() {
+    fn json_textual_only_sobre() {
         let input = r#"{
   "mcpServers": {
-    "lean-ctx": {
-      "command": "lean-ctx"
+    "sobre": {
+      "command": "sobre"
     }
   }
 }
 "#;
-        let result = remove_lean_ctx_from_json(input).expect("should find lean-ctx");
-        assert!(!result.contains("lean-ctx"), "lean-ctx should be removed");
+        let result = remove_sobre_from_json(input).expect("should find sobre");
+        assert!(!result.contains("sobre"), "sobre should be removed");
     }
 
     #[test]
-    fn json_no_lean_ctx_returns_none() {
+    fn json_no_sobre_returns_none() {
         let input = r#"{"mcpServers": {"other": {"command": "other"}}}"#;
-        assert!(remove_lean_ctx_from_json(input).is_none());
+        assert!(remove_sobre_from_json(input).is_none());
     }
 
     // --- hooks.json tests ---
 
     #[test]
-    fn hooks_json_entirely_lean_ctx_no_other_keys() {
+    fn hooks_json_entirely_sobre_no_other_keys() {
         let input = r#"{
   "hooks": {
     "preToolUse": [
       {
         "matcher": "Shell",
-        "command": "lean-ctx hook compress"
+        "command": "sobre hook compress"
       }
     ]
   }
 }"#;
         assert!(
             matches!(
-                remove_lean_ctx_from_hooks_json(input),
-                HookCleanupResult::EntirelyLeanCtx
+                remove_sobre_from_hooks_json(input),
+                HookCleanupResult::EntirelySobre
             ),
-            "should return EntirelyLeanCtx when all hooks are lean-ctx and no other keys"
+            "should return EntirelySobre when all hooks are sobre and no other keys"
         );
     }
 
     #[test]
-    fn hooks_json_version_only_boilerplate_is_entirely_lean_ctx() {
-        // `version` / `$schema` are installer boilerplate: once the lean-ctx
+    fn hooks_json_version_only_boilerplate_is_entirely_sobre() {
+        // `version` / `$schema` are installer boilerplate: once the sobre
         // hooks are gone, `{"hooks": {}, "version": 1}` carries no user
         // content and must be deleted instead of left behind (GL #558).
         let input = r#"{
@@ -552,17 +549,17 @@ command = \"other\"
     "preToolUse": [
       {
         "matcher": "Shell",
-        "command": "lean-ctx hook compress"
+        "command": "sobre hook compress"
       }
     ]
   }
 }"#;
         assert!(
             matches!(
-                remove_lean_ctx_from_hooks_json(input),
-                HookCleanupResult::EntirelyLeanCtx
+                remove_sobre_from_hooks_json(input),
+                HookCleanupResult::EntirelySobre
             ),
-            "version-only leftovers should be EntirelyLeanCtx"
+            "version-only leftovers should be EntirelySobre"
         );
     }
 
@@ -574,7 +571,7 @@ command = \"other\"
     "preToolUse": [
       {
         "matcher": "Shell",
-        "command": "lean-ctx hook compress"
+        "command": "sobre hook compress"
       },
       {
         "matcher": "Shell",
@@ -583,7 +580,7 @@ command = \"other\"
     ]
   }
 }"#;
-        let result = match remove_lean_ctx_from_hooks_json(input) {
+        let result = match remove_sobre_from_hooks_json(input) {
             HookCleanupResult::Cleaned(s) => s,
             other => panic!("expected Cleaned, got {other:?}"),
         };
@@ -591,7 +588,7 @@ command = \"other\"
             result.contains("version"),
             "version key should be preserved alongside user hooks"
         );
-        assert!(!result.contains("lean-ctx"), "lean-ctx should be removed");
+        assert!(!result.contains("sobre"), "sobre should be removed");
         assert!(
             result.contains("my-other-tool"),
             "user hooks should survive"
@@ -608,7 +605,7 @@ command = \"other\"
         "hooks": [
           {
             "type": "command",
-            "command": "lean-ctx hook compress"
+            "command": "sobre hook compress"
           }
         ]
       },
@@ -624,17 +621,14 @@ command = \"other\"
     ]
   }
 }"#;
-        let result = match remove_lean_ctx_from_hooks_json(input) {
+        let result = match remove_sobre_from_hooks_json(input) {
             HookCleanupResult::Cleaned(s) => s,
             other => panic!("expected Cleaned, got {other:?}"),
         };
-        assert!(
-            !result.contains("lean-ctx"),
-            "lean-ctx nested entry removed"
-        );
+        assert!(!result.contains("sobre"), "sobre nested entry removed");
         assert!(
             result.contains("my-other-tool"),
-            "non-lean-ctx entries preserved"
+            "non-sobre entries preserved"
         );
     }
 
@@ -646,18 +640,18 @@ command = \"other\"
       {
         "matcher": "Bash",
         "hooks": [
-          { "type": "command", "command": "lean-ctx hook compress" },
+          { "type": "command", "command": "sobre hook compress" },
           { "type": "command", "command": "my-custom-guard" }
         ]
       }
     ]
   }
 }"#;
-        let result = match remove_lean_ctx_from_hooks_json(input) {
+        let result = match remove_sobre_from_hooks_json(input) {
             HookCleanupResult::Cleaned(s) => s,
             other => panic!("expected Cleaned, got {other:?}"),
         };
-        assert!(!result.contains("lean-ctx"), "lean-ctx sub-hook removed");
+        assert!(!result.contains("sobre"), "sobre sub-hook removed");
         assert!(
             result.contains("my-custom-guard"),
             "user sub-hook in same group preserved"
@@ -669,16 +663,16 @@ command = \"other\"
         let input = r#"{
   "hooks": {
     "preToolUse": [
-      { "bash": "lean-ctx hook compress" },
+      { "bash": "sobre hook compress" },
       { "bash": "my-other-hook" }
     ]
   }
 }"#;
-        let result = match remove_lean_ctx_from_hooks_json(input) {
+        let result = match remove_sobre_from_hooks_json(input) {
             HookCleanupResult::Cleaned(s) => s,
             other => panic!("expected Cleaned, got {other:?}"),
         };
-        assert!(!result.contains("lean-ctx"), "lean-ctx bash entry removed");
+        assert!(!result.contains("sobre"), "sobre bash entry removed");
         assert!(
             result.contains("my-other-hook"),
             "other bash hook preserved"
@@ -688,15 +682,15 @@ command = \"other\"
     #[test]
     fn hooks_json_permissions_are_left_alone() {
         // Permissions are the user's: uninstall never edits them, even entries
-        // that name lean-ctx.
+        // that name sobre.
         let input = r#"{
   "permissions": {
-    "allow": ["mcp__lean-ctx__ctx_read"],
-    "deny": ["mcp__lean-ctx__ctx_shell"]
+    "allow": ["mcp__sobre__ctx_read"],
+    "deny": ["mcp__sobre__ctx_shell"]
   }
 }"#;
         assert!(matches!(
-            remove_lean_ctx_from_hooks_json(input),
+            remove_sobre_from_hooks_json(input),
             HookCleanupResult::Unchanged
         ));
     }
@@ -706,7 +700,7 @@ command = \"other\"
         let input = "{ this is not valid JSON at all !!!";
         assert!(
             matches!(
-                remove_lean_ctx_from_hooks_json(input),
+                remove_sobre_from_hooks_json(input),
                 HookCleanupResult::ParseError
             ),
             "parse errors should return ParseError, not delete the file"
@@ -714,7 +708,7 @@ command = \"other\"
     }
 
     #[test]
-    fn hooks_json_no_lean_ctx_returns_unchanged() {
+    fn hooks_json_no_sobre_returns_unchanged() {
         let input = r#"{
   "hooks": {
     "preToolUse": [
@@ -724,10 +718,10 @@ command = \"other\"
 }"#;
         assert!(
             matches!(
-                remove_lean_ctx_from_hooks_json(input),
+                remove_sobre_from_hooks_json(input),
                 HookCleanupResult::Unchanged
             ),
-            "should return Unchanged when no lean-ctx found"
+            "should return Unchanged when no sobre found"
         );
     }
 

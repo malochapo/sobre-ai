@@ -30,8 +30,8 @@ fn main() {
         }
     }
 
-    let out_path = out.unwrap_or_else(lean_ctx::core::tdd_schema::default_tdd_schema_path);
-    let expected = lean_ctx::core::tdd_schema::tdd_schema_value();
+    let out_path = out.unwrap_or_else(sobre::core::tdd_schema::default_tdd_schema_path);
+    let expected = sobre::core::tdd_schema::tdd_schema_value();
 
     if check_only {
         let on_disk = std::fs::read_to_string(&out_path).unwrap_or_default();
@@ -66,7 +66,7 @@ fn main() {
 }
 
 fn write_if_changed(path: &Path, content: &str) -> Result<(), String> {
-    lean_ctx::core::tdd_schema::write_if_changed(path, content)
+    sobre::core::tdd_schema::write_if_changed(path, content)
 }
 
 fn print_help() {

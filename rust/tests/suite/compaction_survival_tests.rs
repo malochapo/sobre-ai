@@ -1,14 +1,14 @@
-use lean_ctx::core::session::SessionState;
+use sobre::core::session::SessionState;
 
 fn make_session_with_data() -> SessionState {
     let mut session = SessionState::default();
     session.id = "test-session-compaction".to_string();
     session.project_root = Some("/home/user/myproject".to_string());
-    session.task = Some(lean_ctx::core::session::TaskInfo {
+    session.task = Some(sobre::core::session::TaskInfo {
         description: "Implement auth module".to_string(),
         intent: None,
     });
-    session.decisions.push(lean_ctx::core::session::Decision {
+    session.decisions.push(sobre::core::session::Decision {
         summary: "Use JWT for auth".to_string(),
         rationale: None,
         timestamp: chrono::Utc::now(),
@@ -91,7 +91,7 @@ fn resume_block_with_files() {
     let mut session = make_session_with_data();
     session
         .files_touched
-        .push(lean_ctx::core::session::FileTouched {
+        .push(sobre::core::session::FileTouched {
             path: "src/auth.rs".to_string(),
             file_ref: None,
             read_count: 1,
@@ -104,7 +104,7 @@ fn resume_block_with_files() {
         });
     session
         .files_touched
-        .push(lean_ctx::core::session::FileTouched {
+        .push(sobre::core::session::FileTouched {
             path: "src/main.rs".to_string(),
             file_ref: None,
             read_count: 1,
@@ -129,12 +129,12 @@ fn resume_block_with_files() {
 #[test]
 fn session_resume_action() {
     let mut session = make_session_with_data();
-    let result = lean_ctx::tools::ctx_session::handle(
+    let result = sobre::tools::ctx_session::handle(
         &mut session,
         "resume",
         None,
         None,
-        lean_ctx::tools::ctx_session::SessionToolOptions {
+        sobre::tools::ctx_session::SessionToolOptions {
             format: None,
             path: None,
             write: false,

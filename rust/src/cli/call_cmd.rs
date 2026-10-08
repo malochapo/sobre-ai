@@ -28,7 +28,7 @@ impl std::fmt::Display for CallError {
         match self {
             CallError::Usage(m) => write!(
                 f,
-                "error: {m}\nusage: lean-ctx call <tool> --project-root <path> --json '<json>' [--json-file <path>]"
+                "error: {m}\nusage: sobre call <tool> --project-root <path> --json '<json>' [--json-file <path>]"
             ),
             CallError::UnknownTool(t) => write!(f, "error: unknown tool '{t}'"),
             CallError::BadJson(m) => write!(f, "error: invalid --json: {m}"),
@@ -51,7 +51,7 @@ impl CallError {
     }
 }
 
-/// Parsed CLI invocation for `lean-ctx call`.
+/// Parsed CLI invocation for `sobre call`.
 struct CallArgs {
     tool: String,
     project_root: String,
@@ -304,7 +304,7 @@ mod tests {
 
     #[test]
     fn happy_path_dispatches_to_real_tool() {
-        let dir = std::env::temp_dir().join(format!("leanctx-call-test-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("sobre-call-test-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let marker = dir.join("MARKER_FILE.txt");
         std::fs::write(&marker, b"x").unwrap();

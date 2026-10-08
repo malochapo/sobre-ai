@@ -61,22 +61,22 @@ pub fn refresh_installed_hooks() {
     }
 }
 
-/// True when `agent` already has lean-ctx hook artifacts on disk (global only).
+/// True when `agent` already has sobre hook artifacts on disk (global only).
 fn hooks_installed_for(agent: &str, home: &std::path::Path) -> bool {
     match agent {
         "claude" => {
-            file_contains_lean_ctx(&crate::setup::claude_config_dir(home).join("settings.json"))
+            file_contains_sobre(&crate::setup::claude_config_dir(home).join("settings.json"))
         }
-        "cursor" => file_contains_lean_ctx(&home.join(".cursor/hooks.json")),
-        "gemini" => file_contains_lean_ctx(&home.join(".gemini/settings.json")),
+        "cursor" => file_contains_sobre(&home.join(".cursor/hooks.json")),
+        "gemini" => file_contains_sobre(&home.join(".gemini/settings.json")),
         "codex" => {
             let dir = crate::core::home::resolve_codex_dir().unwrap_or_else(|| home.join(".codex"));
-            file_contains_lean_ctx(&dir.join("hooks.json"))
+            file_contains_sobre(&dir.join("hooks.json"))
         }
-        "windsurf" => file_contains_lean_ctx(&home.join(".codeium/windsurf/hooks.json")),
+        "windsurf" => file_contains_sobre(&home.join(".codeium/windsurf/hooks.json")),
         "copilot" => {
             // User-level Copilot hooks live under ~/.copilot/hooks (#381).
-            file_contains_lean_ctx(&home.join(".copilot/hooks/hooks.json"))
+            file_contains_sobre(&home.join(".copilot/hooks/hooks.json"))
         }
         "opencode" => home.join(".config/opencode/plugins/sobre.js").exists(),
         _ => false,
@@ -98,17 +98,17 @@ fn refresh_agent_hooks(agent: &str, home: &std::path::Path) {
     }
 }
 
-fn file_contains_lean_ctx(path: &std::path::Path) -> bool {
-    std::fs::read_to_string(path).is_ok_and(|c| c.contains("lean-ctx"))
+fn file_contains_sobre(path: &std::path::Path) -> bool {
+    std::fs::read_to_string(path).is_ok_and(|c| c.contains("sobre"))
 }
 
-/// Resolve the lean-ctx binary to an **absolute** path for generated hook
+/// Resolve the sobre binary to an **absolute** path for generated hook
 /// commands and MCP server entries.
 ///
 /// Agent hooks (Codex, Cursor, Claude, Gemini, …) are executed by
 /// the host under a plain non-login shell (`sh -c …`) whose `PATH` is not
 /// guaranteed to contain the install dir (e.g. `/usr/local/bin`). A bare
-/// `lean-ctx` therefore fails with exit code 127 (#367). Always emitting the
+/// `sobre` therefore fails with exit code 127 (#367). Always emitting the
 /// resolved absolute path makes hook execution deterministic and matches what
 /// MCP setup (`setup/mcp.rs`) and `doctor` already do.
 ///
@@ -125,7 +125,7 @@ fn resolve_binary_path() -> String {
 ///
 /// Portable override (#708): the
 /// `hook_binary`, is emitted **verbatim** — for settings files synced across
-/// machines with different usernames (`$HOME/.local/bin/lean-ctx`). Hook
+/// machines with different usernames (`$HOME/.local/bin/sobre`). Hook
 /// hosts run these commands through a shell, so the variable expands at
 /// execution time; `doctor` accepts the override as current, so
 /// `init`/`--fix` stop rewriting synced files. MCP registrations
@@ -217,7 +217,7 @@ fn ensure_state_dir(dir: &std::path::Path) -> bool {
         Ok(()) => true,
         Err(e) => {
             // Always surface — a swallowed dir failure was the #596 footgun.
-            eprintln!("lean-ctx init: cannot prepare {}: {e}", dir.display());
+            eprintln!("sobre init: cannot prepare {}: {e}", dir.display());
             false
         }
     }

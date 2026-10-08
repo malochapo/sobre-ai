@@ -1,4 +1,4 @@
-//! Contract: with no `LEAN_CTX_*_DIR` override, data / config / state / cache
+//! Contract: with no `SOBRE_*_DIR` override, data / config / state / cache
 //! each resolve to their typed `$XDG_*` directory.
 //!
 //! This runs as an INTEGRATION test on purpose: the library is then compiled
@@ -30,7 +30,7 @@ fn restore(key: &str, val: Option<OsString>) {
 #[test]
 fn every_category_resolves_to_its_xdg_dir() {
     // Serialize against any other env-mutating test in this crate.
-    let _lock = lean_ctx::core::data_dir::test_env_lock();
+    let _lock = sobre::core::data_dir::test_env_lock();
 
     let tmp = tempfile::tempdir().unwrap();
     let home = tmp.path().join("home");
@@ -47,10 +47,10 @@ fn every_category_resolves_to_its_xdg_dir() {
         "XDG_DATA_HOME",
         "XDG_STATE_HOME",
         "XDG_CACHE_HOME",
-        "LEAN_CTX_DATA_DIR",
-        "LEAN_CTX_CONFIG_DIR",
-        "LEAN_CTX_STATE_DIR",
-        "LEAN_CTX_CACHE_DIR",
+        "SOBRE_DATA_DIR",
+        "SOBRE_CONFIG_DIR",
+        "SOBRE_STATE_DIR",
+        "SOBRE_CACHE_DIR",
     ];
     let saved: Vec<(&str, Option<OsString>)> =
         keys.iter().map(|k| (*k, std::env::var_os(k))).collect();
@@ -66,19 +66,19 @@ fn every_category_resolves_to_its_xdg_dir() {
     // SAFETY: serialized by `test_env_lock()`.
     unsafe { std::env::set_var("XDG_CACHE_HOME", &xk) };
     for k in [
-        "LEAN_CTX_DATA_DIR",
-        "LEAN_CTX_CONFIG_DIR",
-        "LEAN_CTX_STATE_DIR",
-        "LEAN_CTX_CACHE_DIR",
+        "SOBRE_DATA_DIR",
+        "SOBRE_CONFIG_DIR",
+        "SOBRE_STATE_DIR",
+        "SOBRE_CACHE_DIR",
     ] {
         // SAFETY: serialized by `test_env_lock()`.
         unsafe { std::env::remove_var(k) };
     }
 
-    let data = lean_ctx::core::paths::data_dir();
-    let config = lean_ctx::core::paths::config_dir();
-    let state = lean_ctx::core::paths::state_dir();
-    let cache = lean_ctx::core::paths::cache_dir();
+    let data = sobre::core::paths::data_dir();
+    let config = sobre::core::paths::config_dir();
+    let state = sobre::core::paths::state_dir();
+    let cache = sobre::core::paths::cache_dir();
 
     // Restore the environment before asserting so a failure can't leak into
     // sibling tests sharing this process.
@@ -91,24 +91,20 @@ fn every_category_resolves_to_its_xdg_dir() {
     let state = state.expect("state dir resolves");
     let cache = cache.expect("cache dir resolves");
 
-    assert_eq!(
-        data,
-        xd.join("lean-ctx"),
-        "data must split to $XDG_DATA_HOME"
-    );
+    assert_eq!(data, xd.join("sobre"), "data must split to $XDG_DATA_HOME");
     assert_eq!(
         config,
-        xc.join("lean-ctx"),
+        xc.join("sobre"),
         "config must split to $XDG_CONFIG_HOME"
     );
     assert_eq!(
         state,
-        xs.join("lean-ctx"),
+        xs.join("sobre"),
         "state must split to $XDG_STATE_HOME"
     );
     assert_eq!(
         cache,
-        xk.join("lean-ctx"),
+        xk.join("sobre"),
         "cache must split to $XDG_CACHE_HOME"
     );
 }

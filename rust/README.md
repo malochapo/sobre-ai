@@ -1,7 +1,7 @@
 # sobre — Rust engine
 
 The single crate behind `sobre`: the CLI, the MCP server, the agent hooks and
-the local proxy. The binary is still called `lean-ctx`. See
+the local proxy. The binary is still called `sobre`. See
 [../README.md](../README.md) for what the project is, and
 [../INVARIANTS.md](../INVARIANTS.md) for the rules it holds itself to.
 
@@ -53,7 +53,7 @@ src/
 ├─ shell/             shell-output compression patterns
 ├─ proxy/             local provider proxy
 ├─ hooks/             per-agent installers (Claude Code, Cursor, ...)
-├─ hook_handlers/     the `lean-ctx hook ...` commands agents call
+├─ hook_handlers/     the `sobre hook ...` commands agents call
 ├─ setup/             init, per-agent MCP config and the skill installer
 └─ bin/               dev-only generators, behind `dev-tools`
 

@@ -9,7 +9,7 @@ use std::time::Instant;
 
 mod bm25_performance {
     use super::*;
-    use lean_ctx::core::bm25_index::BM25Index;
+    use sobre::core::bm25_index::BM25Index;
 
     #[test]
     fn stress_bm25_large_corpus() {
@@ -65,8 +65,8 @@ mod bm25_performance {
 
 mod hnsw_stress {
     use super::*;
-    use lean_ctx::core::hnsw::FlatEmbeddings;
-    use lean_ctx::core::hnsw::brute_force_topk;
+    use sobre::core::hnsw::FlatEmbeddings;
+    use sobre::core::hnsw::brute_force_topk;
 
     fn random_vec(dim: usize, seed: u64) -> Vec<f32> {
         let mut v = Vec::with_capacity(dim);
@@ -123,7 +123,7 @@ mod hnsw_stress {
 
 mod homeostasis_stress {
     use super::*;
-    use lean_ctx::core::homeostasis::*;
+    use sobre::core::homeostasis::*;
 
     #[test]
     fn stress_rapid_pressure_oscillations() {
@@ -173,7 +173,7 @@ mod homeostasis_stress {
 
 mod hebbian_stress {
     use super::*;
-    use lean_ctx::core::hebbian_cache::*;
+    use sobre::core::hebbian_cache::*;
 
     #[test]
     fn stress_large_file_set() {

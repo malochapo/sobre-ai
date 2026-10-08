@@ -2,11 +2,11 @@
 //! ops[] batch, applied in order against the post-state of preceding ops.
 use std::sync::Arc;
 
-use lean_ctx::core::cache::SessionCache;
-use lean_ctx::core::session::SessionState;
-use lean_ctx::server::tool_trait::{McpTool, ToolContext};
-use lean_ctx::tools::registered::ctx_patch::CtxPatchTool;
 use serde_json::json;
+use sobre::core::cache::SessionCache;
+use sobre::core::session::SessionState;
+use sobre::server::tool_trait::{McpTool, ToolContext};
+use sobre::tools::registered::ctx_patch::CtxPatchTool;
 use tokio::sync::RwLock;
 
 fn ctx_for(root: &std::path::Path) -> ToolContext {
@@ -81,7 +81,7 @@ async fn mixed_anchored_and_replace_unique_apply_in_order() {
     let p = path.to_string_lossy().to_string();
     let ctx = ctx_for(dir.path());
 
-    let h1 = lean_ctx::core::anchor::line_hash("l1");
+    let h1 = sobre::core::anchor::line_hash("l1");
     // Anchored run flushes before the delegated op: replace_unique's old_text
     // is the text the anchored edit just wrote.
     let args = json!({

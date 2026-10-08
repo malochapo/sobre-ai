@@ -7,7 +7,7 @@
 //! entries with stable IDs that are never rewritten — only appended, bumped
 //! (dedup-confirm), voted on, and locally evicted.
 //!
-//! lean-ctx wires this into `ctx_compress`: every checkpoint distills the
+//! sobre wires this into `ctx_compress`: every checkpoint distills the
 //! session into playbook deltas instead of re-summarizing prior summaries.
 //! Renders are ordered by stable ID, so unchanged prefixes stay prefix-cache
 //! friendly across checkpoints.

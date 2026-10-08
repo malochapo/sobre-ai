@@ -68,13 +68,13 @@ fn compress_inner(content: &str, tool_name: Option<&str>) -> String {
         return content.to_string();
     }
 
-    // #479: lean-ctx's own MCP tools already applied their compression policy at
+    // #479: sobre's own MCP tools already applied their compression policy at
     // the tool boundary — honouring `raw=true`/`bypass`, `<lc_safe>` spans and
     // the configured aggressiveness. Their `raw` intent lives in the originating
     // `tool_use` input, which is invisible here, so re-compressing on the wire
     // would silently undo an explicit `raw=true` and double-compress everything
     // else. Pass results from `ctx_*` tools through untouched.
-    if tool_name.is_some_and(is_lean_ctx_tool) {
+    if tool_name.is_some_and(is_sobre_tool) {
         return content.to_string();
     }
 
@@ -199,15 +199,15 @@ fn squeeze_research_prose(content: &str) -> Option<String> {
     Some(squeezed)
 }
 
-/// True when `name` refers to one of lean-ctx's own `ctx_*` MCP tools, whose
+/// True when `name` refers to one of sobre's own `ctx_*` MCP tools, whose
 /// results are already compressed at the tool boundary and must not be touched
 /// again by the proxy (#479).
 ///
 /// Clients namespace MCP tools differently, so a plain `starts_with("ctx_")`
 /// misses the real-world callers: Claude Code (the reporter's setup) sends
-/// `mcp__lean-ctx__ctx_shell`, others use `lean-ctx:ctx_read`. Strip the client
+/// `mcp__sobre__ctx_shell`, others use `sobre:ctx_read`. Strip the client
 /// prefix down to the bare tool segment before matching.
-fn is_lean_ctx_tool(name: &str) -> bool {
+fn is_sobre_tool(name: &str) -> bool {
     let bare = name
         .rsplit("__")
         .next()
@@ -327,7 +327,7 @@ mod tests {
     }
 
     #[test]
-    fn lean_ctx_tool_results_pass_through_verbatim() {
+    fn sobre_tool_results_pass_through_verbatim() {
         // A ctx_shell result the tool already produced (raw=true, or its own
         // compression). The proxy must NOT re-compress / re-truncate it — that
         // was the #479 defect where `raw=true` was silently undone on the wire.
@@ -337,13 +337,13 @@ mod tests {
             .join("\n");
         assert!(raw.len() > 200);
         // Bare names AND the namespaced forms real MCP clients emit (Claude Code
-        // `mcp__lean-ctx__ctx_shell`, colon-style `lean-ctx:ctx_read`).
+        // `mcp__sobre__ctx_shell`, colon-style `sobre:ctx_read`).
         for tool in [
             "ctx_shell",
             "ctx_read",
             "ctx_search",
-            "mcp__lean-ctx__ctx_shell",
-            "lean-ctx:ctx_read",
+            "mcp__sobre__ctx_shell",
+            "sobre:ctx_read",
         ] {
             assert_eq!(
                 compress_tool_result(&raw, Some(tool)),
@@ -352,7 +352,7 @@ mod tests {
             );
         }
         // A foreign tool with identical output is still compressed: the proxy
-        // keeps adding value for non-lean-ctx tools.
+        // keeps adding value for non-sobre tools.
         assert_ne!(
             compress_tool_result(&raw, Some("bash")),
             raw,

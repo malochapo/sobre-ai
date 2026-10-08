@@ -2,7 +2,7 @@
 
 use serde_json::json;
 
-fn setup_project() -> (tempfile::TempDir, lean_ctx::engine::ContextEngine) {
+fn setup_project() -> (tempfile::TempDir, sobre::engine::ContextEngine) {
     let dir = tempfile::tempdir().expect("tempdir");
     let project = dir.path().join("project");
     std::fs::create_dir_all(&project).expect("create project");
@@ -87,10 +87,10 @@ edition = "2021"
     std::fs::create_dir_all(&data_dir).expect("create data dir");
     // SAFETY: serialized by `test_env_lock()`.
     unsafe {
-        std::env::set_var("LEAN_CTX_DATA_DIR", data_dir.to_string_lossy().to_string());
+        std::env::set_var("SOBRE_DATA_DIR", data_dir.to_string_lossy().to_string());
     }
 
-    let engine = lean_ctx::engine::ContextEngine::with_project_root(&project);
+    let engine = sobre::engine::ContextEngine::with_project_root(&project);
     (dir, engine)
 }
 
@@ -98,7 +98,7 @@ edition = "2021"
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn phase1_tree_depth() {
-    let _lock = lean_ctx::core::data_dir::test_env_lock();
+    let _lock = sobre::core::data_dir::test_env_lock();
     let (_dir, engine) = setup_project();
 
     let tree = engine
@@ -113,7 +113,7 @@ async fn phase1_tree_depth() {
 
     // SAFETY: serialized by `test_env_lock()`.
     unsafe {
-        std::env::remove_var("LEAN_CTX_DATA_DIR");
+        std::env::remove_var("SOBRE_DATA_DIR");
     }
 }
 
@@ -121,7 +121,7 @@ async fn phase1_tree_depth() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn phase2_read_full_and_cache_stub() {
-    let _lock = lean_ctx::core::data_dir::test_env_lock();
+    let _lock = sobre::core::data_dir::test_env_lock();
     let (_dir, engine) = setup_project();
 
     let project = _dir.path().join("project");
@@ -149,13 +149,13 @@ async fn phase2_read_full_and_cache_stub() {
 
     // SAFETY: serialized by `test_env_lock()`.
     unsafe {
-        std::env::remove_var("LEAN_CTX_DATA_DIR");
+        std::env::remove_var("SOBRE_DATA_DIR");
     }
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn phase2_read_signatures() {
-    let _lock = lean_ctx::core::data_dir::test_env_lock();
+    let _lock = sobre::core::data_dir::test_env_lock();
     let (_dir, engine) = setup_project();
 
     let project = _dir.path().join("project");
@@ -175,13 +175,13 @@ async fn phase2_read_signatures() {
 
     // SAFETY: serialized by `test_env_lock()`.
     unsafe {
-        std::env::remove_var("LEAN_CTX_DATA_DIR");
+        std::env::remove_var("SOBRE_DATA_DIR");
     }
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn phase2_read_map() {
-    let _lock = lean_ctx::core::data_dir::test_env_lock();
+    let _lock = sobre::core::data_dir::test_env_lock();
     let (_dir, engine) = setup_project();
 
     let project = _dir.path().join("project");
@@ -195,13 +195,13 @@ async fn phase2_read_map() {
 
     // SAFETY: serialized by `test_env_lock()`.
     unsafe {
-        std::env::remove_var("LEAN_CTX_DATA_DIR");
+        std::env::remove_var("SOBRE_DATA_DIR");
     }
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn phase2_read_lines_range() {
-    let _lock = lean_ctx::core::data_dir::test_env_lock();
+    let _lock = sobre::core::data_dir::test_env_lock();
     let (_dir, engine) = setup_project();
 
     let project = _dir.path().join("project");
@@ -221,13 +221,13 @@ async fn phase2_read_lines_range() {
 
     // SAFETY: serialized by `test_env_lock()`.
     unsafe {
-        std::env::remove_var("LEAN_CTX_DATA_DIR");
+        std::env::remove_var("SOBRE_DATA_DIR");
     }
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn phase2_read_auto() {
-    let _lock = lean_ctx::core::data_dir::test_env_lock();
+    let _lock = sobre::core::data_dir::test_env_lock();
     let (_dir, engine) = setup_project();
 
     let project = _dir.path().join("project");
@@ -241,13 +241,13 @@ async fn phase2_read_auto() {
 
     // SAFETY: serialized by `test_env_lock()`.
     unsafe {
-        std::env::remove_var("LEAN_CTX_DATA_DIR");
+        std::env::remove_var("SOBRE_DATA_DIR");
     }
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn phase2_read_aggressive() {
-    let _lock = lean_ctx::core::data_dir::test_env_lock();
+    let _lock = sobre::core::data_dir::test_env_lock();
     let (_dir, engine) = setup_project();
 
     let project = _dir.path().join("project");
@@ -267,13 +267,13 @@ async fn phase2_read_aggressive() {
 
     // SAFETY: serialized by `test_env_lock()`.
     unsafe {
-        std::env::remove_var("LEAN_CTX_DATA_DIR");
+        std::env::remove_var("SOBRE_DATA_DIR");
     }
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn phase2_read_diff_after_edit() {
-    let _lock = lean_ctx::core::data_dir::test_env_lock();
+    let _lock = sobre::core::data_dir::test_env_lock();
     let (_dir, engine) = setup_project();
 
     let project = _dir.path().join("project");
@@ -302,7 +302,7 @@ async fn phase2_read_diff_after_edit() {
 
     // SAFETY: serialized by `test_env_lock()`.
     unsafe {
-        std::env::remove_var("LEAN_CTX_DATA_DIR");
+        std::env::remove_var("SOBRE_DATA_DIR");
     }
 }
 
@@ -310,7 +310,7 @@ async fn phase2_read_diff_after_edit() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn phase3_search_regex() {
-    let _lock = lean_ctx::core::data_dir::test_env_lock();
+    let _lock = sobre::core::data_dir::test_env_lock();
     let (_dir, engine) = setup_project();
 
     let out = engine
@@ -324,13 +324,13 @@ async fn phase3_search_regex() {
 
     // SAFETY: serialized by `test_env_lock()`.
     unsafe {
-        std::env::remove_var("LEAN_CTX_DATA_DIR");
+        std::env::remove_var("SOBRE_DATA_DIR");
     }
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn phase3_search_with_path_filter() {
-    let _lock = lean_ctx::core::data_dir::test_env_lock();
+    let _lock = sobre::core::data_dir::test_env_lock();
     let (_dir, engine) = setup_project();
 
     let out = engine
@@ -347,7 +347,7 @@ async fn phase3_search_with_path_filter() {
 
     // SAFETY: serialized by `test_env_lock()`.
     unsafe {
-        std::env::remove_var("LEAN_CTX_DATA_DIR");
+        std::env::remove_var("SOBRE_DATA_DIR");
     }
 }
 
@@ -355,7 +355,7 @@ async fn phase3_search_with_path_filter() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn phase4_shell_echo() {
-    let _lock = lean_ctx::core::data_dir::test_env_lock();
+    let _lock = sobre::core::data_dir::test_env_lock();
     let (_dir, engine) = setup_project();
 
     let out = engine
@@ -372,13 +372,13 @@ async fn phase4_shell_echo() {
 
     // SAFETY: serialized by `test_env_lock()`.
     unsafe {
-        std::env::remove_var("LEAN_CTX_DATA_DIR");
+        std::env::remove_var("SOBRE_DATA_DIR");
     }
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn phase4_shell_raw_mode() {
-    let _lock = lean_ctx::core::data_dir::test_env_lock();
+    let _lock = sobre::core::data_dir::test_env_lock();
     let (_dir, engine) = setup_project();
 
     let out = engine
@@ -395,7 +395,7 @@ async fn phase4_shell_raw_mode() {
 
     // SAFETY: serialized by `test_env_lock()`.
     unsafe {
-        std::env::remove_var("LEAN_CTX_DATA_DIR");
+        std::env::remove_var("SOBRE_DATA_DIR");
     }
 }
 
@@ -407,7 +407,7 @@ async fn phase4_shell_raw_mode() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn phase7_knowledge_remember_and_recall() {
-    let _lock = lean_ctx::core::data_dir::test_env_lock();
+    let _lock = sobre::core::data_dir::test_env_lock();
     let (_dir, engine) = setup_project();
 
     let remember = engine
@@ -438,13 +438,13 @@ async fn phase7_knowledge_remember_and_recall() {
 
     // SAFETY: serialized by `test_env_lock()`.
     unsafe {
-        std::env::remove_var("LEAN_CTX_DATA_DIR");
+        std::env::remove_var("SOBRE_DATA_DIR");
     }
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn phase7_knowledge_timeline_and_rooms() {
-    let _lock = lean_ctx::core::data_dir::test_env_lock();
+    let _lock = sobre::core::data_dir::test_env_lock();
     let (_dir, engine) = setup_project();
 
     let _ = engine
@@ -480,13 +480,13 @@ async fn phase7_knowledge_timeline_and_rooms() {
 
     // SAFETY: serialized by `test_env_lock()`.
     unsafe {
-        std::env::remove_var("LEAN_CTX_DATA_DIR");
+        std::env::remove_var("SOBRE_DATA_DIR");
     }
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn phase7_session_finding_and_decision() {
-    let _lock = lean_ctx::core::data_dir::test_env_lock();
+    let _lock = sobre::core::data_dir::test_env_lock();
     let (_dir, engine) = setup_project();
 
     let finding = engine
@@ -515,7 +515,7 @@ async fn phase7_session_finding_and_decision() {
 
     // SAFETY: serialized by `test_env_lock()`.
     unsafe {
-        std::env::remove_var("LEAN_CTX_DATA_DIR");
+        std::env::remove_var("SOBRE_DATA_DIR");
     }
 }
 
@@ -525,7 +525,7 @@ async fn phase7_session_finding_and_decision() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn phase9_session_save() {
-    let _lock = lean_ctx::core::data_dir::test_env_lock();
+    let _lock = sobre::core::data_dir::test_env_lock();
     let (_dir, engine) = setup_project();
 
     let _ = engine
@@ -544,6 +544,6 @@ async fn phase9_session_save() {
 
     // SAFETY: serialized by `test_env_lock()`.
     unsafe {
-        std::env::remove_var("LEAN_CTX_DATA_DIR");
+        std::env::remove_var("SOBRE_DATA_DIR");
     }
 }

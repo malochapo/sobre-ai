@@ -484,13 +484,13 @@ mod tests {
     #[test]
     fn test_edge_matches_file_crate_prefix() {
         let prefixes = vec![
-            "lean_ctx::core::cache".to_string(),
+            "sobre::core::cache".to_string(),
             "crate::core::cache".to_string(),
             "super::core::cache".to_string(),
             "core::cache".to_string(),
         ];
         assert!(edge_matches_file(
-            "lean_ctx::core::cache::SessionCache",
+            "sobre::core::cache::SessionCache",
             &prefixes
         ));
         assert!(edge_matches_file(
@@ -498,10 +498,7 @@ mod tests {
             &prefixes
         ));
         assert!(edge_matches_file("crate::core::cache", &prefixes));
-        assert!(!edge_matches_file(
-            "lean_ctx::core::config::Config",
-            &prefixes
-        ));
+        assert!(!edge_matches_file("sobre::core::config::Config", &prefixes));
         assert!(!edge_matches_file("crate::core::cached_reader", &prefixes));
     }
 
@@ -563,7 +560,7 @@ mod gdscript_p0_tests {
         let tmp = tempfile::tempdir().expect("tempdir");
         let data = tmp.path().join("data");
         std::fs::create_dir_all(&data).unwrap();
-        crate::test_env::set_var("LEAN_CTX_DATA_DIR", data.to_string_lossy().to_string());
+        crate::test_env::set_var("SOBRE_DATA_DIR", data.to_string_lossy().to_string());
 
         let proj = tmp.path().join("game");
         std::fs::create_dir_all(&proj).unwrap();
@@ -610,7 +607,7 @@ mod gdscript_p0_tests {
             out.contains("Enemy.gd"),
             "Base.gd dependents should include Enemy: {out}"
         );
-        crate::test_env::remove_var("LEAN_CTX_DATA_DIR");
+        crate::test_env::remove_var("SOBRE_DATA_DIR");
     }
 
     #[test]
@@ -630,6 +627,6 @@ mod gdscript_p0_tests {
         assert!(out.contains("_ready"), "bare symbol should resolve: {out}");
         assert!(!out.contains("Invalid symbol spec"), "got: {out}");
         assert!(!out.to_lowercase().contains("not found"), "got: {out}");
-        crate::test_env::remove_var("LEAN_CTX_DATA_DIR");
+        crate::test_env::remove_var("SOBRE_DATA_DIR");
     }
 }

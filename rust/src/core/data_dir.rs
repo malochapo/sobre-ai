@@ -1,12 +1,12 @@
 use std::path::PathBuf;
 
-/// Resolve the lean-ctx data directory.
+/// Resolve the sobre data directory.
 ///
-/// `LEAN_CTX_DATA_DIR` when set, else `$XDG_DATA_HOME/lean-ctx` (default
-/// `~/.local/share/lean-ctx`), so the config dir holds only config and stays
+/// `SOBRE_DATA_DIR` when set, else `$XDG_DATA_HOME/sobre` (default
+/// `~/.local/share/sobre`), so the config dir holds only config and stays
 /// RO-sandbox-safe.
-pub fn lean_ctx_data_dir() -> Result<PathBuf, String> {
-    if let Ok(dir) = std::env::var("LEAN_CTX_DATA_DIR") {
+pub fn sobre_data_dir() -> Result<PathBuf, String> {
+    if let Ok(dir) = std::env::var("SOBRE_DATA_DIR") {
         let trimmed = dir.trim();
         if !trimmed.is_empty() {
             let p = PathBuf::from(trimmed);
@@ -19,7 +19,7 @@ pub fn lean_ctx_data_dir() -> Result<PathBuf, String> {
     // store write (usage ledger, context ledger, sessions, ...)
     // silently pollutes the developer's real data dir — bounce events from
     // test fixtures showed up as "today 61%" on the user dashboard. Tests that
-    // set LEAN_CTX_DATA_DIR keep full control (handled above); everyone else
+    // set SOBRE_DATA_DIR keep full control (handled above); everyone else
     // lands in a per-process temp dir and physically cannot touch real data.
     #[cfg(test)]
     {
@@ -42,14 +42,14 @@ pub(crate) fn test_sandbox_dir() -> PathBuf {
     static TEST_SANDBOX: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
     TEST_SANDBOX
         .get_or_init(|| {
-            let d = std::env::temp_dir().join(format!("lean-ctx-testdata-{}", std::process::id()));
+            let d = std::env::temp_dir().join(format!("sobre-testdata-{}", std::process::id()));
             let _ = std::fs::create_dir_all(&d);
             d
         })
         .clone()
 }
 
-/// Home-based resolution: `$XDG_DATA_HOME/lean-ctx`. Split out so it stays
+/// Home-based resolution: `$XDG_DATA_HOME/sobre`. Split out so it stays
 /// unit-testable despite the test sandbox above.
 #[cfg_attr(test, allow(dead_code))]
 fn resolve_home_data_dir() -> Result<PathBuf, String> {
@@ -58,7 +58,7 @@ fn resolve_home_data_dir() -> Result<PathBuf, String> {
         .ok()
         .filter(|s| !s.trim().is_empty())
         .map_or_else(|| home.join(".local").join("share"), PathBuf::from);
-    let data_dir = xdg_data.join("lean-ctx");
+    let data_dir = xdg_data.join("sobre");
     ensure_dir_permissions(&data_dir);
     Ok(data_dir)
 }
@@ -84,7 +84,7 @@ pub fn test_env_lock() -> std::sync::MutexGuard<'static, ()> {
 }
 
 /// RAII data-dir isolation for tests (GL #556): holds `test_env_lock` for
-/// the guard's lifetime, points `LEAN_CTX_DATA_DIR` at a fresh temp dir and
+/// the guard's lifetime, points `SOBRE_DATA_DIR` at a fresh temp dir and
 /// restores the env on drop — even on panic, so a failing test cannot leak
 /// the override into others. Use this instead of hand-rolled
 /// `set_var`/`remove_var` pairs whenever a test needs an empty, private
@@ -107,10 +107,10 @@ impl IsolatedDataDir {
 /// categories (config/data/state/cache) collapse onto it in tests (GH #408).
 #[cfg(test)]
 const ISOLATED_ENV_VARS: &[&str] = &[
-    "LEAN_CTX_DATA_DIR",
-    "LEAN_CTX_CONFIG_DIR",
-    "LEAN_CTX_STATE_DIR",
-    "LEAN_CTX_CACHE_DIR",
+    "SOBRE_DATA_DIR",
+    "SOBRE_CONFIG_DIR",
+    "SOBRE_STATE_DIR",
+    "SOBRE_CACHE_DIR",
 ];
 
 #[cfg(test)]
@@ -140,33 +140,33 @@ mod tests {
 
     #[test]
     fn data_defaults_to_xdg_data_home() {
-        // DATA resolves to $XDG_DATA_HOME/lean-ctx (not the config dir).
+        // DATA resolves to $XDG_DATA_HOME/sobre (not the config dir).
         let _lock = test_env_lock();
         let xdg_config = tempfile::tempdir().unwrap();
         let xdg_data = tempfile::tempdir().unwrap();
-        crate::test_env::set_var("LEAN_CTX_DATA_DIR", "");
+        crate::test_env::set_var("SOBRE_DATA_DIR", "");
         crate::test_env::set_var("XDG_CONFIG_HOME", xdg_config.path());
         crate::test_env::set_var("XDG_DATA_HOME", xdg_data.path());
 
         let result = resolve_home_data_dir().unwrap();
 
-        crate::test_env::remove_var("LEAN_CTX_DATA_DIR");
+        crate::test_env::remove_var("SOBRE_DATA_DIR");
         crate::test_env::remove_var("XDG_CONFIG_HOME");
         crate::test_env::remove_var("XDG_DATA_HOME");
 
-        assert_eq!(result, xdg_data.path().join("lean-ctx"));
+        assert_eq!(result, xdg_data.path().join("sobre"));
     }
 
     #[test]
-    fn lean_ctx_data_dir_env_override() {
+    fn sobre_data_dir_env_override() {
         let _lock = test_env_lock();
         let dir = std::env::temp_dir().join("test_data_dir_env");
         let _ = std::fs::remove_dir_all(&dir);
         let _ = std::fs::create_dir_all(&dir);
-        crate::test_env::set_var("LEAN_CTX_DATA_DIR", dir.to_str().unwrap());
-        let result = lean_ctx_data_dir().unwrap();
+        crate::test_env::set_var("SOBRE_DATA_DIR", dir.to_str().unwrap());
+        let result = sobre_data_dir().unwrap();
         assert_eq!(result, dir);
-        crate::test_env::remove_var("LEAN_CTX_DATA_DIR");
+        crate::test_env::remove_var("SOBRE_DATA_DIR");
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

@@ -27,9 +27,7 @@ pub fn sync_if_compacted(cache: &mut SessionCache, data_dir: &Path) -> bool {
     // crash window can't resurrect a pre-compaction stub.
     crate::core::read_stub_index::reset_in_dir(data_dir);
     if reset_count > 0 {
-        eprintln!(
-            "[lean-ctx] compaction detected — reset {reset_count} delivery flags for re-read"
-        );
+        eprintln!("[sobre] compaction detected — reset {reset_count} delivery flags for re-read");
     }
 
     std::thread::spawn(|| {

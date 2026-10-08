@@ -5,10 +5,10 @@ use rmcp::ErrorData;
 use serde_json::Value;
 
 use crate::server::tool_trait::{McpTool, ShellOutcome, ToolContext, ToolOutput};
-use crate::tools::LeanCtxServer;
+use crate::tools::SobreServer;
 use rmcp::model::ContentBlock;
 
-impl LeanCtxServer {
+impl SobreServer {
     /// Returns (output_text, saved_tokens, shell_outcome, content_blocks).
     /// saved_tokens > 0 indicates the tool already applied internal compression
     /// (shell engine, cache deltas, etc.). shell_outcome is `Some` for
@@ -345,7 +345,7 @@ mod tests {
     #[test]
     fn watchdog_disabled_for_long_running_shell_tools() {
         assert!(
-            LeanCtxServer::handler_watchdog("ctx_shell").is_none(),
+            SobreServer::handler_watchdog("ctx_shell").is_none(),
             "ctx_shell runs arbitrary user commands and must not be watchdog-bounded"
         );
     }
@@ -385,7 +385,7 @@ mod tests {
         });
         let start = std::time::Instant::now();
         let result =
-            LeanCtxServer::watchdog_join("mock", join, Some(Duration::from_millis(200))).await;
+            SobreServer::watchdog_join("mock", join, Some(Duration::from_millis(200))).await;
         let elapsed = start.elapsed();
         stop.store(true, Ordering::Relaxed);
         assert!(result.is_err(), "hung handler must surface as an error");
@@ -398,14 +398,14 @@ mod tests {
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn watchdog_passes_through_fast_handler() {
         let join = tokio::task::spawn_blocking(|| Ok(ToolOutput::simple("ok".to_string())));
-        let result = LeanCtxServer::watchdog_join("mock", join, Some(Duration::from_secs(5))).await;
+        let result = SobreServer::watchdog_join("mock", join, Some(Duration::from_secs(5))).await;
         assert_eq!(result.unwrap().text, "ok");
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn watchdog_none_awaits_handler_to_completion() {
         let join = tokio::task::spawn_blocking(|| Ok(ToolOutput::simple("ok".to_string())));
-        let result = LeanCtxServer::watchdog_join("ctx_shell", join, None).await;
+        let result = SobreServer::watchdog_join("ctx_shell", join, None).await;
         assert_eq!(result.unwrap().text, "ok");
     }
 
@@ -413,7 +413,7 @@ mod tests {
     async fn handler_panic_becomes_error_not_crash() {
         let join: tokio::task::JoinHandle<Result<ToolOutput, ErrorData>> =
             tokio::task::spawn_blocking(|| panic!("simulated handler panic"));
-        let result = LeanCtxServer::watchdog_join("mock", join, Some(Duration::from_secs(5))).await;
+        let result = SobreServer::watchdog_join("mock", join, Some(Duration::from_secs(5))).await;
         assert!(
             result.is_err(),
             "a handler panic must surface as an error; the server process survives"

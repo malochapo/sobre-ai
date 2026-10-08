@@ -1,4 +1,4 @@
-//! `lean-ctx proxy …` — proxy lifecycle and live upstreams.
+//! `sobre proxy …` — proxy lifecycle and live upstreams.
 
 #[allow(clippy::wildcard_imports)]
 use super::*;
@@ -62,7 +62,7 @@ fn print_live_upstreams_and_drift(v: &serde_json::Value, cfg: &crate::core::conf
         if live != "?" && crate::core::config::upstream_drifted(configured_val, live) {
             notes.push(format!(
                 "  \x1b[33m⚠ {label}: proxy serves {live} but config.toml resolves to {configured_val}.\x1b[0m\n  \
-                   \x1b[33m  Check proxy.upstreams.{key}, then: lean-ctx proxy restart\x1b[0m",
+                   \x1b[33m  Check proxy.upstreams.{key}, then: sobre proxy restart\x1b[0m",
             ));
         }
     }
@@ -77,7 +77,7 @@ pub(crate) fn cmd_proxy(rest: &[String]) {
         // `--help` anywhere must never execute the verb (GH #393).
         if wants_help(rest) {
             println!(
-                "Usage: lean-ctx proxy <start|stop|restart|status|enable|disable|cleanup|token> [--port=4444]"
+                "Usage: sobre proxy <start|stop|restart|status|enable|disable|cleanup|token> [--port=4444]"
             );
             println!();
             println!("Commands:");
@@ -143,7 +143,7 @@ pub(crate) fn cmd_proxy(rest: &[String]) {
                     std::thread::sleep(std::time::Duration::from_millis(700));
                     if crate::proxy_autostart::start_on_port(port) {
                         println!("\x1b[32m✓\x1b[0m Proxy restarted (managed service).");
-                        println!("  Verify active upstreams: lean-ctx proxy status");
+                        println!("  Verify active upstreams: sobre proxy status");
                     } else {
                         eprintln!(
                             "\x1b[31m✗\x1b[0m Managed proxy restart failed; port {port} was not transferred."
@@ -154,13 +154,13 @@ pub(crate) fn cmd_proxy(rest: &[String]) {
                     start_detached(port);
                 } else {
                     println!("No proxy running on port {port}.");
-                    println!("  Start it: lean-ctx proxy start --port={port}");
+                    println!("  Start it: sobre proxy start --port={port}");
                 }
             }
             "status" => {
                 let port = parse_proxy_port(rest);
                 let cfg = crate::core::config::Config::load();
-                println!("lean-ctx proxy:");
+                println!("sobre proxy:");
                 match cfg.proxy.enabled {
                     Some(true) => println!("  Config:  enabled"),
                     Some(false) => println!("  Config:  disabled"),
@@ -172,14 +172,14 @@ pub(crate) fn cmd_proxy(rest: &[String]) {
                 // managed proxy still holds an old session token (#449). The live
                 // upstreams come from the authenticated /status; if that 401s
                 // while /health is up, we still report it as running and point at
-                // `proxy restart`. Usage and savings are in `lean-ctx gain`.
+                // `proxy restart`. Usage and savings are in `sobre gain`.
                 let alive = ureq::get(&format!("http://127.0.0.1:{port}/health"))
                     .call()
                     .is_ok();
                 if alive {
                     println!("  Process: running");
                     let token =
-                        crate::core::session_token::resolve_proxy_token("LEAN_CTX_PROXY_TOKEN");
+                        crate::core::session_token::resolve_proxy_token("SOBRE_PROXY_TOKEN");
                     let status = ureq::get(&format!("http://127.0.0.1:{port}/status"))
                         .header("Authorization", &format!("Bearer {token}"))
                         .call();
@@ -193,7 +193,7 @@ pub(crate) fn cmd_proxy(rest: &[String]) {
                             "  \x1b[33m⚠ Live details unavailable: the running proxy rejects this\x1b[0m"
                         );
                         println!(
-                            "  \x1b[33m  shell's session token. Re-sync it: lean-ctx proxy restart\x1b[0m"
+                            "  \x1b[33m  shell's session token. Re-sync it: sobre proxy restart\x1b[0m"
                         );
                     }
                 } else {
@@ -201,7 +201,7 @@ pub(crate) fn cmd_proxy(rest: &[String]) {
                 }
                 if cfg.proxy.enabled == Some(false) || cfg.proxy.enabled.is_none() {
                     println!();
-                    println!("  Enable: lean-ctx proxy enable");
+                    println!("  Enable: sobre proxy enable");
 
                     let home = dirs::home_dir().unwrap_or_default();
                     let stale = crate::proxy_setup::stale_proxy_agents(&home);
@@ -214,8 +214,8 @@ pub(crate) fn cmd_proxy(rest: &[String]) {
                         println!(
                             "  \x1b[33m  but proxy is not enabled, so those requests fail.\x1b[0m"
                         );
-                        println!("  Fix:  lean-ctx proxy cleanup   (remove stale URL)");
-                        println!("        lean-ctx proxy enable    (enable the proxy)");
+                        println!("  Fix:  sobre proxy cleanup   (remove stale URL)");
+                        println!("        sobre proxy enable    (enable the proxy)");
                     }
                 }
             }
@@ -254,7 +254,7 @@ pub(crate) fn cmd_proxy(rest: &[String]) {
                 crate::proxy_setup::uninstall_proxy_env(&home, false);
 
                 println!("\x1b[32m✓\x1b[0m Proxy disabled. Original endpoint restored.");
-                println!("  Re-enable anytime: lean-ctx proxy enable");
+                println!("  Re-enable anytime: sobre proxy enable");
             }
             "cleanup" => {
                 let home = dirs::home_dir().unwrap_or_default();
@@ -267,7 +267,7 @@ pub(crate) fn cmd_proxy(rest: &[String]) {
                 }
             }
             "token" => {
-                let token = crate::core::session_token::resolve_proxy_token("LEAN_CTX_PROXY_TOKEN");
+                let token = crate::core::session_token::resolve_proxy_token("SOBRE_PROXY_TOKEN");
                 let quiet = rest.iter().any(|a| a == "--quiet" || a == "-q");
                 if quiet {
                     print!("{token}");
@@ -277,19 +277,19 @@ pub(crate) fn cmd_proxy(rest: &[String]) {
             }
             _ => {
                 println!(
-                    "Usage: lean-ctx proxy <start|stop|restart|status|enable|disable|cleanup|token> [--port=4444]"
+                    "Usage: sobre proxy <start|stop|restart|status|enable|disable|cleanup|token> [--port=4444]"
                 );
             }
         }
     }
-    /// Fork a child process running `lean-ctx proxy start --port=N` with
+    /// Fork a child process running `sobre proxy start --port=N` with
     /// stdout/stderr redirected to a log file, then exit the parent immediately.
-    /// The child's PID is written to the proxy PID file so `lean-ctx proxy stop`
+    /// The child's PID is written to the proxy PID file so `sobre proxy stop`
     /// can find and kill it (#758).
     fn start_detached(port: u16) {
-        let exe = std::env::current_exe().unwrap_or_else(|_| "lean-ctx".into());
-        let log_dir = crate::core::paths::state_dir()
-            .unwrap_or_else(|_| std::env::temp_dir().join("lean-ctx"));
+        let exe = std::env::current_exe().unwrap_or_else(|_| "sobre".into());
+        let log_dir =
+            crate::core::paths::state_dir().unwrap_or_else(|_| std::env::temp_dir().join("sobre"));
         let _ = std::fs::create_dir_all(&log_dir);
         let log_path = log_dir.join("proxy.log");
         let log_file = std::fs::OpenOptions::new()
@@ -317,7 +317,7 @@ pub(crate) fn cmd_proxy(rest: &[String]) {
                     child.id()
                 );
                 println!("  Logs: {}", log_path.display());
-                println!("  Stop: lean-ctx proxy stop --port={port}");
+                println!("  Stop: sobre proxy stop --port={port}");
             }
             Err(e) => {
                 eprintln!("Failed to start detached proxy: {e}");

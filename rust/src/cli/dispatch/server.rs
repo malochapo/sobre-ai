@@ -34,13 +34,13 @@ pub(super) fn run_mcp_server() -> Result<()> {
     // on rayon, whose global pool otherwise grabs *every* core — so a fleet of
     // concurrent sessions still spikes the host on startup (#460). Resolve the
     // cap in three tiers:
-    //   1. if other lean-ctx processes are running, split the cores fairly
+    //   1. if other sobre processes are running, split the cores fairly
     //      across the fleet so N sessions use ~one core-count of index work
     //      between them instead of N × all-cores;
     //   2. a lone session keeps rayon's all-cores default untouched (0 = no cap).
     let index_threads = {
         // `find_pids_by_name` excludes us, so +1 counts this process too.
-        let concurrent = crate::ipc::process::find_pids_by_name("lean-ctx").len() + 1;
+        let concurrent = crate::ipc::process::find_pids_by_name("sobre").len() + 1;
         if concurrent > 1 {
             herd_aware_index_threads(parallelism, concurrent)
         } else {
@@ -69,10 +69,7 @@ pub(super) fn run_mcp_server() -> Result<()> {
         // session. `notify` is a no-op unless a plugin listens for the hook.
         // Stays ahead of serve(): a plugin may hook the very first tool call.
 
-        tracing::info!(
-            "lean-ctx v{} MCP server starting",
-            env!("CARGO_PKG_VERSION")
-        );
+        tracing::info!("sobre v{} MCP server starting", env!("CARGO_PKG_VERSION"));
 
         // Orphan watchdog: if our parent process dies (IDE crashed/closed without
         // closing stdin), we exit cleanly instead of hanging forever.
@@ -86,7 +83,7 @@ pub(super) fn run_mcp_server() -> Result<()> {
         // with the handshake, instead of in front of it.
         let _housekeeping = tokio::task::spawn_blocking(|| {
             // Kill orphan MCP processes whose parent IDE died (one `ps` per
-            // lean-ctx pid). Auto-start the proxy so the dashboard gets exact
+            // sobre pid). Auto-start the proxy so the dashboard gets exact
             // token data. Then the throttled (24h), opt-in publish of the
             // savings recap — silent + detached, never touches stdout.
             cleanup_orphan_mcp_processes();
@@ -171,12 +168,12 @@ fn shutdown_runtime_bounded(rt: tokio::runtime::Runtime) {
 }
 
 /// Kill orphan MCP server processes whose parent (IDE) has died.
-/// These are lean-ctx stdio processes reparented to PID 1 (init).
+/// These are sobre stdio processes reparented to PID 1 (init).
 fn cleanup_orphan_mcp_processes() {
     #[cfg(unix)]
     {
         let my_pid = std::process::id();
-        let pids = crate::ipc::process::find_pids_by_name("lean-ctx");
+        let pids = crate::ipc::process::find_pids_by_name("sobre");
         for pid in pids {
             if pid == my_pid {
                 continue;
@@ -222,7 +219,7 @@ fn is_orphan_mcp_ps_line(line: &str) -> bool {
     let Some(exe) = parts.next() else {
         return false;
     };
-    if !is_lean_ctx_executable(exe) {
+    if !is_sobre_executable(exe) {
         return false;
     }
 
@@ -245,8 +242,8 @@ fn split_ppid_and_command(line: &str) -> Option<(&str, &str)> {
 }
 
 #[cfg(unix)]
-fn is_lean_ctx_executable(value: &str) -> bool {
-    value == "lean-ctx" || value.ends_with("/lean-ctx")
+fn is_sobre_executable(value: &str) -> bool {
+    value == "sobre" || value.ends_with("/sobre")
 }
 
 /// Spawns a background thread that monitors the parent process.
@@ -294,13 +291,13 @@ pub(super) fn resolve_worker_threads(parallelism: usize) -> usize {
 /// Herd-aware default for the rayon index-build thread cap when the operator
 /// has not set one explicitly (#460).
 ///
-/// Splits the machine's cores fairly across the lean-ctx processes alive right
+/// Splits the machine's cores fairly across the sobre processes alive right
 /// now, so a single session indexes at full speed while a fleet of `concurrent`
 /// sessions collectively stays near *one* core-count of index work instead of
 /// `concurrent × all-cores` — the thundering herd the issue describes. Always
 /// returns at least 1 (rayon rejects a zero-thread pool).
 ///
-/// `cores`: available parallelism. `concurrent`: lean-ctx processes alive
+/// `cores`: available parallelism. `concurrent`: sobre processes alive
 /// including this one (caller guarantees ≥ 1).
 pub(super) fn herd_aware_index_threads(cores: usize, concurrent: usize) -> usize {
     let cores = cores.max(1);
@@ -386,24 +383,24 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn orphan_mcp_cleanup_matches_only_stdio_mcp_processes() {
-        assert!(is_orphan_mcp_ps_line("1 /Users/me/.local/bin/lean-ctx"));
-        assert!(is_orphan_mcp_ps_line("1 /opt/homebrew/bin/lean-ctx mcp"));
+        assert!(is_orphan_mcp_ps_line("1 /Users/me/.local/bin/sobre"));
+        assert!(is_orphan_mcp_ps_line("1 /opt/homebrew/bin/sobre mcp"));
         assert!(is_orphan_mcp_ps_line(
-            "1 /opt/homebrew/bin/lean-ctx (deleted) mcp"
+            "1 /opt/homebrew/bin/sobre (deleted) mcp"
         ));
 
-        assert!(!is_orphan_mcp_ps_line("99 /Users/me/.local/bin/lean-ctx"));
+        assert!(!is_orphan_mcp_ps_line("99 /Users/me/.local/bin/sobre"));
         assert!(!is_orphan_mcp_ps_line(
-            "1 /Users/me/.local/bin/lean-ctx proxy start --port=4444"
+            "1 /Users/me/.local/bin/sobre proxy start --port=4444"
         ));
         assert!(!is_orphan_mcp_ps_line(
-            "1 /Users/me/.local/bin/lean-ctx serve --port=8080"
+            "1 /Users/me/.local/bin/sobre serve --port=8080"
         ));
         assert!(!is_orphan_mcp_ps_line(
-            "1 /Users/me/.local/bin/lean-ctx daemon start"
+            "1 /Users/me/.local/bin/sobre daemon start"
         ));
         assert!(!is_orphan_mcp_ps_line(
-            "1 /usr/bin/sandbox-exec -f /tmp/seatbelt.sb /Users/me/.local/bin/lean-ctx proxy start --port=4444"
+            "1 /usr/bin/sandbox-exec -f /tmp/seatbelt.sb /Users/me/.local/bin/sobre proxy start --port=4444"
         ));
     }
 }

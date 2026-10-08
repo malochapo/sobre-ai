@@ -24,7 +24,7 @@ pub(crate) fn write_codex_config(
     }
 
     let content = format!(
-        "[mcp_servers.lean-ctx]\ncommand = {}\nargs = []\n",
+        "[mcp_servers.sobre]\ncommand = {}\nargs = []\n",
         toml_quote(binary)
     );
     crate::config_io::write_atomic_with_backup(&target.config_path, &content)?;
@@ -52,7 +52,7 @@ pub(crate) fn upsert_codex_toml(existing: &str, binary: &str) -> String {
                 out.push_str("args = []\n");
                 wrote_args = true;
             }
-            in_section = trimmed == "[mcp_servers.lean-ctx]";
+            in_section = trimmed == "[mcp_servers.sobre]";
             if in_section {
                 saw_section = true;
             }
@@ -91,7 +91,7 @@ pub(crate) fn upsert_codex_toml(existing: &str, binary: &str) -> String {
     if !out.ends_with('\n') {
         out.push('\n');
     }
-    out.push_str("\n[mcp_servers.lean-ctx]\n");
+    out.push_str("\n[mcp_servers.sobre]\n");
     out.push_str(&format!("command = {}\n", toml_quote(binary)));
     out.push_str("args = []\n");
     out

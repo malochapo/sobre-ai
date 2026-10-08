@@ -10,14 +10,14 @@
 //!    matches the committed snapshot `docs/contracts/frozen-hashes.json`. A
 //!    drifting hash means someone edited a frozen artifact: semantic changes
 //!    must land as a new `-v2.md` file instead. Deliberate typo fixes update
-//!    the snapshot via `LEANCTX_UPDATE_FROZEN_HASHES=1 cargo test --test
+//!    the snapshot via `SOBRE_UPDATE_FROZEN_HASHES=1 cargo test --test
 //!    main suite::contracts_frozen` and must be justified in the PR.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-use lean_ctx::core::contracts::{ContractStatus, contract_docs};
 use sha2::{Digest, Sha256};
+use sobre::core::contracts::{ContractStatus, contract_docs};
 
 fn contracts_dir() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../docs/contracts")
@@ -97,7 +97,7 @@ fn frozen_contract_docs_are_immutable() {
     assert!(!current.is_empty(), "freeze gate without frozen contracts");
 
     let snap_path = snapshot_path();
-    if std::env::var_os("LEANCTX_UPDATE_FROZEN_HASHES").is_some() {
+    if std::env::var_os("SOBRE_UPDATE_FROZEN_HASHES").is_some() {
         let json = serde_json::to_string_pretty(&current).expect("serialize snapshot");
         std::fs::write(&snap_path, json + "\n").expect("write snapshot");
         eprintln!("frozen-hashes.json regenerated — justify this in the PR");
@@ -108,7 +108,7 @@ fn frozen_contract_docs_are_immutable() {
         serde_json::from_str(&std::fs::read_to_string(&snap_path).unwrap_or_else(|e| {
             panic!(
                 "missing {} — generate it once via \
-                 LEANCTX_UPDATE_FROZEN_HASHES=1 cargo test --test main suite::contracts_frozen ({e})",
+                 SOBRE_UPDATE_FROZEN_HASHES=1 cargo test --test main suite::contracts_frozen ({e})",
                 snap_path.display()
             )
         }))
@@ -118,14 +118,14 @@ fn frozen_contract_docs_are_immutable() {
         match snapshot.get(file) {
             None => panic!(
                 "{file} is frozen but missing from frozen-hashes.json — \
-                 regenerate via LEANCTX_UPDATE_FROZEN_HASHES=1 cargo test --test main suite::contracts_frozen"
+                 regenerate via SOBRE_UPDATE_FROZEN_HASHES=1 cargo test --test main suite::contracts_frozen"
             ),
             Some(expected) if expected != hash => panic!(
                 "FROZEN CONTRACT MODIFIED: docs/contracts/{file} changed.\n\
                  Frozen contracts are immutable.\n\
                  → semantic change: create the next version file (e.g. -v2.md) and classify it; \
                  leave the v1 file untouched.\n\
-                 → deliberate typo fix: LEANCTX_UPDATE_FROZEN_HASHES=1 cargo test --test \
+                 → deliberate typo fix: SOBRE_UPDATE_FROZEN_HASHES=1 cargo test --test \
                  main suite::contracts_frozen, and justify the edit in the PR."
             ),
             Some(_) => {}

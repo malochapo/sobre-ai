@@ -128,7 +128,7 @@ fn compute_read_dedup(input: &str) -> Option<String> {
     debug_log::log_hook_decision(
         "read-dedup",
         "Read",
-        Route::LeanCtx,
+        Route::Sobre,
         &path,
         "re-read of unchanged file → dedup stub",
     );
@@ -252,7 +252,7 @@ fn replace_slot(
 /// file or editing it changes the hash and the next Read delivers full content.
 fn render_dedup_stub(path: &str, line_count: usize) -> String {
     format!(
-        "{path} [unchanged {line_count}L · lean-ctx read-dedup]\nUnchanged since your last Read in this session — the full line-numbered content is already in this conversation above. It will be re-delivered automatically once the file changes on disk."
+        "{path} [unchanged {line_count}L · sobre read-dedup]\nUnchanged since your last Read in this session — the full line-numbered content is already in this conversation above. It will be re-delivered automatically once the file changes on disk."
     )
 }
 
@@ -265,7 +265,7 @@ fn hash_file(path: &str) -> Option<String> {
     Some(blake3::hash(&bytes).to_hex().to_string())
 }
 
-/// `<tmp>/lean-ctx-hook/rd/<session-hash>/<read-key>.rdx`, creating the session
+/// `<tmp>/sobre-hook/rd/<session-hash>/<read-key>.rdx`, creating the session
 /// dir. Session-scoped so [`purge_session`] and the TTL sweep stay O(1) dirs.
 fn record_path(
     session_id: &str,
@@ -284,7 +284,7 @@ fn record_path(
 }
 
 fn read_dedup_root() -> Option<std::path::PathBuf> {
-    let dir = std::env::temp_dir().join("lean-ctx-hook").join("rd");
+    let dir = std::env::temp_dir().join("sobre-hook").join("rd");
     std::fs::create_dir_all(&dir).ok()?;
     #[cfg(unix)]
     {

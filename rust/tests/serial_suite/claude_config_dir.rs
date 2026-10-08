@@ -28,7 +28,7 @@ fn claude_skill_defaults_to_dot_claude() {
     let home = std::path::Path::new("/h");
     with_claude_config_dir(None, || {
         assert_eq!(
-            lean_ctx::setup::skill::skill_path("claude", home),
+            sobre::setup::skill::skill_path("claude", home),
             Some(home.join(".claude/skills/sobre/SKILL.md"))
         );
     });
@@ -40,7 +40,7 @@ fn claude_skill_follows_claude_config_dir() {
     let home = std::path::Path::new("/h");
     with_claude_config_dir(Some("/elsewhere/claude"), || {
         assert_eq!(
-            lean_ctx::setup::skill::skill_path("claude", home),
+            sobre::setup::skill::skill_path("claude", home),
             Some(std::path::PathBuf::from(
                 "/elsewhere/claude/skills/sobre/SKILL.md"
             ))
@@ -54,7 +54,7 @@ fn instructions_never_point_at_a_claude_file() {
     // The MCP instructions are the only rules channel; they must not send
     // agents looking for a CLAUDE.md that sobre no longer writes.
     with_claude_config_dir(Some("~/.arc/claude"), || {
-        let instr = lean_ctx::instructions::build_instructions();
+        let instr = sobre::instructions::build_instructions();
         assert!(!instr.contains("CLAUDE.md"), "{instr}");
         assert!(!instr.contains(".arc/claude"), "{instr}");
     });

@@ -17,7 +17,7 @@ mod host_rules;
 mod observe;
 mod payload;
 mod read_dedup;
-// Pre-run `lean-ctx -c` wrapping (Cursor, Gemini CLI).
+// Pre-run `sobre -c` wrapping (Cursor, Gemini CLI).
 mod rewrite;
 pub use compress::handle_compress;
 pub use observe::*;
@@ -32,7 +32,7 @@ pub fn arm_watchdog(timeout: Duration) {
     std::thread::spawn(move || {
         std::thread::sleep(timeout);
         eprintln!(
-            "[lean-ctx hook] watchdog timeout after {}s — force exit",
+            "[sobre hook] watchdog timeout after {}s — force exit",
             timeout.as_secs()
         );
         std::process::exit(1);
@@ -128,7 +128,7 @@ fn is_shell_tool(tool_name: &str) -> bool {
     )
 }
 
-/// Resolve the lean-ctx executable path for hook command emission and
+/// Resolve the sobre executable path for hook command emission and
 /// subprocess spawning. Always the **native** OS path: the MSYS/Git-Bash
 /// `/c/...` form breaks `CreateProcess` on Windows and cannot be run by
 /// PowerShell or cmd (#518). Native `C:/...` runs in PowerShell, cmd *and*

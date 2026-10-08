@@ -4,8 +4,8 @@
 //! full `handle()` path (semantic ranking + exact match + symbol body) and the
 //! H1 hardening: the semantic stage must never stall the call beyond its budget.
 
-use lean_ctx::tools::CrpMode;
-use lean_ctx::tools::ctx_compose;
+use sobre::tools::CrpMode;
+use sobre::tools::ctx_compose;
 
 fn write_corpus() -> tempfile::TempDir {
     let dir = tempfile::tempdir().unwrap();
@@ -106,7 +106,7 @@ fn compose_disambiguates_same_named_symbol_by_task_keywords() {
     // fixture explicitly so this scenario verifies disambiguation rather than
     // depending on whether a prior test happened to warm the index.
     assert!(
-        !lean_ctx::core::graph_index::scan(&dir.path().to_string_lossy())
+        !sobre::core::graph_index::scan(&dir.path().to_string_lossy())
             .files
             .is_empty(),
         "ambiguous-symbol corpus graph must build"

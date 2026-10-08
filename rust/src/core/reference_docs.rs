@@ -70,7 +70,7 @@ pub fn mcp_tools_markdown() -> String {
         "Source of truth: `rust/src/server/registry.rs` and the tool definitions it registers.\n\n",
     );
     out.push_str(&format!(
-        "lean-ctx registers **{} MCP tools**. Each entry below lists the tool name, what it \
+        "sobre registers **{} MCP tools**. Each entry below lists the tool name, what it \
          does, and its parameters (`*` marks required).\n\n",
         tools.len()
     ));
@@ -149,10 +149,10 @@ pub fn config_keys_markdown() -> String {
     out.push_str("\n\n");
     out.push_str("Source of truth: `rust/src/core/config/schema/`.\n\n");
     out.push_str(
-        "sobre reads one file, `~/.config/lean-ctx/config.toml` (the directory \
-         follows `$XDG_CONFIG_HOME`, or `$LEAN_CTX_CONFIG_DIR` when set). \
+        "sobre reads one file, `~/.config/sobre/config.toml` (the directory \
+         follows `$XDG_CONFIG_HOME`, or `$SOBRE_CONFIG_DIR` when set). \
          Below is every recognized key with its type and default. \
-         `lean-ctx config init` writes the file with every key documented.\n\n",
+         `sobre config init` writes the file with every key documented.\n\n",
     );
 
     // `root` first (top-level keys), then named sections alphabetically.

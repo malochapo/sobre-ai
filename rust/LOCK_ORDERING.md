@@ -63,7 +63,7 @@ Locks declared inside `#[cfg(test)]` items are test-only and are not listed here
 
 ## 2. Arc-wrapped Session Locks (per-MCP-session, `tokio::sync::RwLock`)
 
-Fields of `LeanCtxServer` in `tools/server.rs`:
+Fields of `SobreServer` in `tools/server.rs`:
 
 | Field | Type | Purpose |
 |-------|------|---------|
@@ -174,7 +174,7 @@ Each is acquired in isolation:
 
 ### Session Locks
 
-Session-scoped locks on `LeanCtxServer` are logically independent:
+Session-scoped locks on `SobreServer` are logically independent:
 
 - Acquire at most **one session lock per tool handler** at a time, except the sequences
   documented above (per-file lock → cache lock; cache lock released → session lock in the edit

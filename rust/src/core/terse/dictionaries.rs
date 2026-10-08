@@ -331,7 +331,7 @@ mod tests {
 
     #[test]
     fn full_dict_includes_domain() {
-        let r = apply_dictionaries("Compiling lean-ctx", DictLevel::Full);
+        let r = apply_dictionaries("Compiling sobre", DictLevel::Full);
         assert!(r.contains("CC"), "cargo abbreviation should apply: {r}");
     }
 

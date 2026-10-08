@@ -19,7 +19,7 @@ pub(crate) fn write_vscode_mcp(
                     &target.config_path,
                     &content,
                     "servers",
-                    "lean-ctx",
+                    "sobre",
                     &desired,
                     opts.overwrite_invalid,
                 );
@@ -36,14 +36,14 @@ pub(crate) fn write_vscode_mcp(
             .as_object_mut()
             .ok_or_else(|| "\"servers\" must be an object".to_string())?;
 
-        let existing = servers_obj.get("lean-ctx").cloned();
+        let existing = servers_obj.get("sobre").cloned();
         if existing.as_ref() == Some(&desired) {
             return Ok(WriteResult {
                 action: WriteAction::Already,
                 note: None,
             });
         }
-        servers_obj.insert("lean-ctx".to_string(), desired);
+        servers_obj.insert("sobre".to_string(), desired);
 
         let formatted = serde_json::to_string_pretty(&json).map_err(|e| e.to_string())?;
         crate::config_io::write_atomic_with_backup(&target.config_path, &formatted)?;
@@ -62,7 +62,7 @@ pub(crate) fn write_vscode_mcp_fresh(
     note: Option<String>,
 ) -> Result<WriteResult, String> {
     let content = serde_json::to_string_pretty(&serde_json::json!({
-        "servers": { "lean-ctx": { "type": "stdio", "command": binary, "args": [] } }
+        "servers": { "sobre": { "type": "stdio", "command": binary, "args": [] } }
     }))
     .map_err(|e| e.to_string())?;
     crate::config_io::write_atomic_with_backup(path, &content)?;

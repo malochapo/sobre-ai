@@ -25,7 +25,7 @@
 //!   mtime, size)`, and every [`get_fresh`] re-derives it via a stat-only walk
 //!   that shares the build's exact filter path. The resident index is served
 //!   only when the signature matches live disk — so an edit, *even through a
-//!   tool lean-ctx never observes* (native editors, `git checkout`), is
+//!   tool sobre never observes* (native editors, `git checkout`), is
 //!   reflected on the very next search instead of lingering for a TTL window.
 //!   A push-based fs-watcher (zero per-lookup cost) is a possible future
 //!   optimization on top of this correctness gate.
@@ -519,7 +519,7 @@ fn finalize_sig(sum: u64, count: usize) -> u64 {
 
 /// Cheap, stat-only signature of the *current* on-disk corpus for `root`.
 /// Compared against [`SearchIndex::signature`] in [`get_fresh`] to detect any
-/// change — content edits (including via tools lean-ctx never observes),
+/// change — content edits (including via tools sobre never observes),
 /// additions, renames and deletions — so a stale candidate set can never
 /// silently drop a real match. `None` mirrors a non-indexable root (the caller
 /// then walks directly).
@@ -1080,23 +1080,23 @@ mod tests {
         }
     }
 
-    /// A scoped override of `LEAN_CTX_DATA_DIR`, restored on drop, so the
+    /// A scoped override of `SOBRE_DATA_DIR`, restored on drop, so the
     /// cross-process lock files land in an isolated temp dir during tests.
     struct DataDirGuard {
         prev: Option<String>,
     }
     impl DataDirGuard {
         fn set(path: &std::path::Path) -> Self {
-            let prev = std::env::var("LEAN_CTX_DATA_DIR").ok();
-            crate::test_env::set_var("LEAN_CTX_DATA_DIR", path);
+            let prev = std::env::var("SOBRE_DATA_DIR").ok();
+            crate::test_env::set_var("SOBRE_DATA_DIR", path);
             Self { prev }
         }
     }
     impl Drop for DataDirGuard {
         fn drop(&mut self) {
             match self.prev.as_deref() {
-                Some(v) => crate::test_env::set_var("LEAN_CTX_DATA_DIR", v),
-                None => crate::test_env::remove_var("LEAN_CTX_DATA_DIR"),
+                Some(v) => crate::test_env::set_var("SOBRE_DATA_DIR", v),
+                None => crate::test_env::remove_var("SOBRE_DATA_DIR"),
             }
         }
     }

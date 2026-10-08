@@ -162,7 +162,7 @@ pub fn set_detected(caps: &ClientMcpCapabilities) {
 
 fn persisted_path() -> Option<std::path::PathBuf> {
     Some(
-        super::data_dir::lean_ctx_data_dir()
+        super::data_dir::sobre_data_dir()
             .ok()?
             .join("client-id.json"),
     )

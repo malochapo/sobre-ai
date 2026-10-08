@@ -387,7 +387,7 @@ fn safe_scan_root_rejects_cloud_sync_roots() {
 #[serial_test::serial]
 fn safe_scan_root_refused_for_standalone_under_documents() {
     // Both guards are needed: `#[serial]` and `test_env_lock` are separate
-    // mutexes, and `LEAN_CTX_TCC_STANDALONE` is read by every path
+    // mutexes, and `SOBRE_TCC_STANDALONE` is read by every path
     // normalization, including in tests that take only the lock.
     let _env_lock = crate::core::data_dir::test_env_lock();
     // #356: a launchd-standalone process (daemon/proxy, ppid 1) must refuse to
@@ -400,13 +400,13 @@ fn safe_scan_root_refused_for_standalone_under_documents() {
     let doc_proj = home.join("Documents/some-project");
     let doc_proj_str = doc_proj.to_string_lossy().to_string();
 
-    crate::test_env::set_var("LEAN_CTX_TCC_STANDALONE", "1");
+    crate::test_env::set_var("SOBRE_TCC_STANDALONE", "1");
     assert!(
         !is_safe_scan_root(&doc_proj_str),
         "standalone process must refuse ~/Documents scan roots"
     );
     assert!(!is_safe_scan_root_public(&doc_proj_str));
-    crate::test_env::remove_var("LEAN_CTX_TCC_STANDALONE");
+    crate::test_env::remove_var("SOBRE_TCC_STANDALONE");
 }
 
 #[test]
@@ -769,7 +769,7 @@ fn tscn_scene_indexed_with_script_edges() {
     // #316: a real on-disk Godot project. The `.tscn` scene is indexed as a
     // graph node, its `[ext_resource]` script becomes a Scene→Script import
     // edge, and GDScript member symbols (`@export var`) surface in the graph.
-    // Acquire the env lock (scan reads LEAN_CTX_DATA_DIR) but do not mutate it,
+    // Acquire the env lock (scan reads SOBRE_DATA_DIR) but do not mutate it,
     // so we never race data-dir-sensitive tests.
     let _env = crate::core::data_dir::test_env_lock();
     let td = tempdir().expect("tempdir");

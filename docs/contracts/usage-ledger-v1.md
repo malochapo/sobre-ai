@@ -1,21 +1,21 @@
 # Usage ledger v1
 
 The usage ledger is the one record of what sobre compressed and, when the proxy
-is in the path, of what each LLM call cost. Every path writes to it; `lean-ctx
+is in the path, of what each LLM call cost. Every path writes to it; `sobre
 gain` reads it. Nothing is aggregated on write: every total is computed from
 the file when it is read.
 
 ## Location
 
-`<data_dir>/usage.jsonl`, where `<data_dir>` is `LEAN_CTX_DATA_DIR` when set,
-else `$XDG_DATA_HOME/lean-ctx` (default `~/.local/share/lean-ctx`).
+`<data_dir>/usage.jsonl`, where `<data_dir>` is `SOBRE_DATA_DIR` when set,
+else `$XDG_DATA_HOME/sobre` (default `~/.local/share/sobre`).
 
 Append-only, one record per line. Each append is a single write under an
 advisory file lock, so the MCP server, hooks, CLI commands and the proxy (all
 separate processes) can write concurrently. A reader skips any line it cannot
 parse, such as a line cut short by a crash.
 
-`lean-ctx gain --reset` deletes the file.
+`sobre gain --reset` deletes the file.
 
 ## Record format
 
@@ -53,7 +53,7 @@ to compress (`original = 0`) is not recorded.
 
 | Attribute | Type | Meaning |
 |---|---|---|
-| `sobre.surface` | string | `mcp`, `shell` (`lean-ctx -c`), `hook` or `proxy` |
+| `sobre.surface` | string | `mcp`, `shell` (`sobre -c`), `hook` or `proxy` |
 | `sobre.tool` | string | MCP tool name, shell program name (`cargo`, `git`), hook name, or `request` for the proxy |
 | `sobre.tokens.original` | int | Tokens before compression |
 | `sobre.tokens.sent` | int | Tokens actually sent to the model |

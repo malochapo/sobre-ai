@@ -18,7 +18,7 @@ use super::hnsw::{AnnIndex, FlatEmbeddings, brute_force_topk};
 
 /// Minimum corpus size before an HNSW graph is worth building and caching.
 /// Below this, exact SIMD brute force is faster *and* exact (no recall loss).
-/// At 2500, a medium codebase (~7k chunks for lean-ctx itself) enters the
+/// At 2500, a medium codebase (~7k chunks for sobre itself) enters the
 /// HNSW path and gets sub-linear dense search; brute force remains the default
 /// for smaller projects where it is both simpler and just as fast.
 pub const ANN_MIN_VECTORS: usize = 2_500;

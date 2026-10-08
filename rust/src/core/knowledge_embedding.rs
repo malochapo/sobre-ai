@@ -113,7 +113,7 @@ impl KnowledgeEmbeddingIndex {
     }
 
     fn index_path(project_hash: &str) -> Option<PathBuf> {
-        let dir = crate::core::data_dir::lean_ctx_data_dir()
+        let dir = crate::core::data_dir::sobre_data_dir()
             .ok()?
             .join("knowledge")
             .join(project_hash);
@@ -579,10 +579,7 @@ mod tests {
     fn reset_removes_index_file() {
         let _lock = crate::core::data_dir::test_env_lock();
         let tmp = tempfile::tempdir().expect("tempdir");
-        crate::test_env::set_var(
-            "LEAN_CTX_DATA_DIR",
-            tmp.path().to_string_lossy().to_string(),
-        );
+        crate::test_env::set_var("SOBRE_DATA_DIR", tmp.path().to_string_lossy().to_string());
 
         let idx = KnowledgeEmbeddingIndex {
             project_hash: "projhash".to_string(),
@@ -598,7 +595,7 @@ mod tests {
         reset("projhash").expect("reset");
         assert!(KnowledgeEmbeddingIndex::load("projhash").is_none());
 
-        crate::test_env::remove_var("LEAN_CTX_DATA_DIR");
+        crate::test_env::remove_var("SOBRE_DATA_DIR");
     }
 
     #[test]
@@ -611,10 +608,7 @@ mod tests {
         // is needed) and asserts every concurrently-stored embedding survives.
         let _lock = crate::core::data_dir::test_env_lock();
         let tmp = tempfile::tempdir().expect("tempdir");
-        crate::test_env::set_var(
-            "LEAN_CTX_DATA_DIR",
-            tmp.path().to_string_lossy().to_string(),
-        );
+        crate::test_env::set_var("SOBRE_DATA_DIR", tmp.path().to_string_lossy().to_string());
 
         let project = tmp.path().join("proj");
         std::fs::create_dir_all(&project).expect("mkdir");
@@ -662,7 +656,7 @@ mod tests {
             idx.entries.len()
         );
 
-        crate::test_env::remove_var("LEAN_CTX_DATA_DIR");
+        crate::test_env::remove_var("SOBRE_DATA_DIR");
     }
 
     #[test]

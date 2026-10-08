@@ -1,6 +1,6 @@
-use lean_ctx::core::compressor::aggressive_compress;
-use lean_ctx::core::tokens::count_tokens;
-use lean_ctx::shell::compress::compress_if_beneficial_pub;
+use sobre::core::compressor::aggressive_compress;
+use sobre::core::tokens::count_tokens;
+use sobre::shell::compress::compress_if_beneficial_pub;
 
 #[test]
 fn markdown_aggressive_keeps_headings_and_saves_tokens() {
@@ -156,14 +156,14 @@ fn plain_txt_without_headings_is_not_structurally_compacted() {
 
     let compressed = aggressive_compress(&doc, Some("txt"));
     assert!(
-        !compressed.contains("[lean-ctx: omitted"),
+        !compressed.contains("[sobre: omitted"),
         "txt without headings must not be structurally compacted: {compressed}"
     );
 
     // The same content as `.md` (heading added) opts in.
     let md = format!("# Notes\n\n{doc}");
     let compacted = aggressive_compress(&md, Some("md"));
-    assert!(compacted.contains("[lean-ctx: omitted"));
+    assert!(compacted.contains("[sobre: omitted"));
 }
 
 #[test]
@@ -172,7 +172,7 @@ fn markdown_compaction_never_splits_code_fences() {
     for i in 0..40 {
         doc.push_str(&format!("Filler prose sentence number {i} for volume.\n"));
     }
-    doc.push_str("```bash\nlean-ctx read src/lib.rs\n\nlean-ctx search \"ctx_read\" src/\n```\n");
+    doc.push_str("```bash\nsobre read src/lib.rs\n\nsobre search \"ctx_read\" src/\n```\n");
     for i in 0..40 {
         doc.push_str(&format!("More filler prose sentence number {i}.\n"));
     }
@@ -189,7 +189,7 @@ fn markdown_compaction_never_splits_code_fences() {
             in_fence = !in_fence;
         } else if in_fence {
             assert!(
-                !line.starts_with("... [lean-ctx:"),
+                !line.starts_with("... [sobre:"),
                 "omission marker inside a fenced block: {compressed}"
             );
         }

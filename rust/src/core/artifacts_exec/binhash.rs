@@ -7,7 +7,7 @@
 //!
 //! SHA-256 (not the engine's internal BLAKE3) is deliberate — an author pins the
 //! value an ordinary `sha256sum my-mcp` / `shasum -a 256 my-mcp` prints, so the
-//! pin is reproducible without lean-ctx.
+//! pin is reproducible without sobre.
 
 use std::io::Read;
 use std::path::Path;
@@ -41,7 +41,7 @@ mod tests {
     /// A unique scratch dir per test (PID + label) so parallel tests never share
     /// — and clean up — the same directory.
     fn tmp(label: &str) -> PathBuf {
-        std::env::temp_dir().join(format!("leanctx-binhash-{}-{label}", std::process::id()))
+        std::env::temp_dir().join(format!("sobre-binhash-{}-{label}", std::process::id()))
     }
 
     #[test]

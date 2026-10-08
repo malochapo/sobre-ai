@@ -1,4 +1,4 @@
-use lean_ctx::core::entropy::kolmogorov_proxy;
+use sobre::core::entropy::kolmogorov_proxy;
 
 // ═══════════════════════════════════════════════════════════════════
 // 1. SHANNON ENTROPY — mathematical invariants
@@ -75,7 +75,7 @@ fn kolmogorov_invariant_under_repetition() {
 
 #[test]
 fn ib_filter_preserves_task_relevant_lines() {
-    use lean_ctx::core::task_relevance::information_bottleneck_filter;
+    use sobre::core::task_relevance::information_bottleneck_filter;
 
     let mut lines = Vec::new();
     for i in 0..100 {
@@ -103,7 +103,7 @@ fn ib_filter_preserves_task_relevant_lines() {
 
 #[test]
 fn ib_filter_reduces_more_for_repetitive_content() {
-    use lean_ctx::core::task_relevance::{adaptive_ib_budget, information_bottleneck_filter};
+    use sobre::core::task_relevance::{adaptive_ib_budget, information_bottleneck_filter};
 
     let repetitive = "let x = compute(a);\n".repeat(100);
     let diverse = (0..100).fold(String::new(), |mut s, i| {
@@ -139,7 +139,7 @@ fn ib_filter_reduces_more_for_repetitive_content() {
 
 #[test]
 fn safeguard_prevents_over_compression() {
-    use lean_ctx::core::compressor::safeguard_ratio;
+    use sobre::core::compressor::safeguard_ratio;
     let original = "fn main() {\n".repeat(50);
     let over_compressed = "x";
     let result = safeguard_ratio(&original, over_compressed);
@@ -151,7 +151,7 @@ fn safeguard_prevents_over_compression() {
 
 #[test]
 fn safeguard_allows_good_compression() {
-    use lean_ctx::core::compressor::safeguard_ratio;
+    use sobre::core::compressor::safeguard_ratio;
     let original = "fn main() {\n    let x = compute();\n    println!(x);\n}\n".repeat(10);
     let compressed = "fn main() { let x = compute(); println!(x); }\n".repeat(10);
     let result = safeguard_ratio(&original, &compressed);

@@ -17,7 +17,7 @@ fn count_source(source: &'static str) {
 }
 
 fn sources_path() -> Option<std::path::PathBuf> {
-    crate::core::data_dir::lean_ctx_data_dir()
+    crate::core::data_dir::sobre_data_dir()
         .ok()
         .map(|d| d.join("auto_mode_sources.json"))
 }
@@ -342,9 +342,9 @@ mod tests {
     #[test]
     fn flush_sources_merges_additively_into_disk_file() {
         let _lock = crate::core::data_dir::test_env_lock();
-        let dir = std::env::temp_dir().join(format!("lctx-amr-flush-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("sobre-amr-flush-{}", std::process::id()));
         let _ = std::fs::create_dir_all(&dir);
-        crate::test_env::set_var("LEAN_CTX_DATA_DIR", dir.to_str().unwrap());
+        crate::test_env::set_var("SOBRE_DATA_DIR", dir.to_str().unwrap());
         let _ = std::fs::remove_file(dir.join("auto_mode_sources.json"));
 
         // Unique test-only keys: parallel resolve() tests count real sources
@@ -371,7 +371,7 @@ mod tests {
         );
         assert_eq!(get("test_flush_beta"), 1);
 
-        crate::test_env::remove_var("LEAN_CTX_DATA_DIR");
+        crate::test_env::remove_var("SOBRE_DATA_DIR");
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -504,9 +504,9 @@ mod tests {
     #[test]
     fn task_suspect_file_overrides_intent() {
         let _lock = crate::core::data_dir::test_env_lock();
-        let dir = std::env::temp_dir().join(format!("lctx-amr-suspect-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("sobre-amr-suspect-{}", std::process::id()));
         let _ = std::fs::create_dir_all(&dir);
-        crate::test_env::set_var("LEAN_CTX_DATA_DIR", dir.to_str().unwrap());
+        crate::test_env::set_var("SOBRE_DATA_DIR", dir.to_str().unwrap());
 
         // An explore-style task that would otherwise map (cf.
         // intent_explore_returns_map) — but it names the file, so the suspect
@@ -521,7 +521,7 @@ mod tests {
         assert_eq!(result.mode, "full");
         assert_eq!(result.source, "task_suspect_file");
 
-        crate::test_env::remove_var("LEAN_CTX_DATA_DIR");
+        crate::test_env::remove_var("SOBRE_DATA_DIR");
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -554,9 +554,9 @@ mod tests {
     #[test]
     fn structure_first_resolve_bugfix_cold_read() {
         let _lock = crate::core::data_dir::test_env_lock();
-        let dir = std::env::temp_dir().join(format!("lctx-amr-sf-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("sobre-amr-sf-{}", std::process::id()));
         let _ = std::fs::create_dir_all(&dir);
-        crate::test_env::set_var("LEAN_CTX_DATA_DIR", dir.to_str().unwrap());
+        crate::test_env::set_var("SOBRE_DATA_DIR", dir.to_str().unwrap());
 
         let suspect = AutoModeContext {
             path: "src/versioncmp.c",
@@ -576,7 +576,7 @@ mod tests {
         };
         assert_eq!(resolve(&tiny).mode, "full");
 
-        crate::test_env::remove_var("LEAN_CTX_DATA_DIR");
+        crate::test_env::remove_var("SOBRE_DATA_DIR");
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -586,9 +586,9 @@ mod tests {
     #[test]
     fn learning_off_by_default_is_deterministic() {
         let _lock = crate::core::data_dir::test_env_lock();
-        let dir = std::env::temp_dir().join(format!("lctx-amr-det-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("sobre-amr-det-{}", std::process::id()));
         let _ = std::fs::create_dir_all(&dir);
-        crate::test_env::set_var("LEAN_CTX_DATA_DIR", dir.to_str().unwrap());
+        crate::test_env::set_var("SOBRE_DATA_DIR", dir.to_str().unwrap());
 
         let ctx = AutoModeContext {
             path: "src/widget.rs",
@@ -602,7 +602,7 @@ mod tests {
         assert_eq!(a.source, "structure_first");
         assert_eq!((a.mode, a.source), (b.mode, b.source));
 
-        crate::test_env::remove_var("LEAN_CTX_DATA_DIR");
+        crate::test_env::remove_var("SOBRE_DATA_DIR");
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

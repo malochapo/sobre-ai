@@ -3,7 +3,7 @@
 //!
 //! `std::env::set_var` / `std::env::remove_var` became `unsafe` in Rust 2024
 //! because they are not thread-safe: a concurrent environment read from another
-//! thread is undefined behaviour. lean-ctx's tests serialize every environment
+//! thread is undefined behaviour. sobre's tests serialize every environment
 //! mutation through [`crate::core::data_dir::test_env_lock`], so the precondition
 //! holds and the call is sound. Centralising the `unsafe` here documents that
 //! invariant exactly once instead of at hundreds of call sites, while keeping

@@ -1,7 +1,7 @@
 //! Edit-time code-health gate — shared by `ctx_edit`, `ctx_patch`, and the
 //! native-edit hook.
 //!
-//! Drift prevention is the lever lean-ctx has that a post-hoc scanner does not:
+//! Drift prevention is the lever sobre has that a post-hoc scanner does not:
 //! it sits *in the edit path*, so it can flag a complexity regression at the
 //! moment it is introduced. The gate is advisory: it never blocks a write. Its
 //! notice text is deterministic (#498-safe).

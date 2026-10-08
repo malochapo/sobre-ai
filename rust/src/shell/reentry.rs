@@ -1,32 +1,32 @@
-//! Re-entrancy marker that stops nested `lean-ctx` invocations from
+//! Re-entrancy marker that stops nested `sobre` invocations from
 //! double-compressing.
 //!
-//! [`WRAP_MARKER`] (`LEAN_CTX_WRAPPED`) is set ONLY by lean-ctx on the children
-//! it spawns, so its presence reliably means "a parent lean-ctx already owns
-//! compression of this command tree" and a nested `lean-ctx -c` must pass
-//! through. Because lean-ctx is the only writer, an agent cannot trigger it by
+//! [`WRAP_MARKER`] (`SOBRE_WRAPPED`) is set ONLY by sobre on the children
+//! it spawns, so its presence reliably means "a parent sobre already owns
+//! compression of this command tree" and a nested `sobre -c` must pass
+//! through. Because sobre is the only writer, an agent cannot trigger it by
 //! leaking an env var (GH #533).
 
 use std::process::Command;
 
-/// Env var lean-ctx stamps on every child it spawns to mark the command tree as
-/// already owned (compression handled by the parent lean-ctx).
-pub(crate) const WRAP_MARKER: &str = "LEAN_CTX_WRAPPED";
+/// Env var sobre stamps on every child it spawns to mark the command tree as
+/// already owned (compression handled by the parent sobre).
+pub(crate) const WRAP_MARKER: &str = "SOBRE_WRAPPED";
 
-/// True when a parent lean-ctx already owns this command tree.
+/// True when a parent sobre already owns this command tree.
 #[must_use]
 pub(crate) fn is_wrapped() -> bool {
     std::env::var(WRAP_MARKER).is_ok()
 }
 
-/// True when `lean-ctx -c` must avoid owning compression itself: a parent
-/// lean-ctx already owns this command tree ([`WRAP_MARKER`]).
+/// True when `sobre -c` must avoid owning compression itself: a parent
+/// sobre already owns this command tree ([`WRAP_MARKER`]).
 #[must_use]
 pub(crate) fn should_pass_through() -> bool {
     is_wrapped()
 }
 
-/// Stamp a child command so nested lean-ctx invocations pass through.
+/// Stamp a child command so nested sobre invocations pass through.
 pub(crate) fn mark_child(cmd: &mut Command) {
     cmd.env(WRAP_MARKER, "1");
 }

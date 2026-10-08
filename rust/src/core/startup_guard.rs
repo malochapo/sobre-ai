@@ -9,7 +9,7 @@ pub const CRASH_LOOP_MAX_BACKOFF_SECS: u64 = 30;
 pub const MCP_PROCESS_NAME: &str = "mcp-server";
 
 pub fn crash_loop_log_path(process_name: &str) -> Option<PathBuf> {
-    crate::core::data_dir::lean_ctx_data_dir()
+    crate::core::data_dir::sobre_data_dir()
         .ok()
         .map(|dir| dir.join(format!(".{}-starts.log", sanitize_lock_name(process_name))))
 }
@@ -85,7 +85,7 @@ pub fn try_acquire_lock(
     timeout: Duration,
     stale_after: Duration,
 ) -> Option<StartupLockGuard> {
-    let dir = crate::core::data_dir::lean_ctx_data_dir().ok()?;
+    let dir = crate::core::data_dir::sobre_data_dir().ok()?;
     let _ = std::fs::create_dir_all(&dir);
 
     let name = sanitize_lock_name(name);
@@ -126,7 +126,7 @@ pub fn try_acquire_lock(
 /// Records each startup timestamp; if too many happen within the window, sleeps
 /// with exponential backoff to break the loop and avoid host degradation.
 pub fn crash_loop_backoff(process_name: &str) {
-    let Some(dir) = crate::core::data_dir::lean_ctx_data_dir().ok() else {
+    let Some(dir) = crate::core::data_dir::sobre_data_dir().ok() else {
         return;
     };
     let _ = std::fs::create_dir_all(&dir);
@@ -158,7 +158,7 @@ pub fn crash_loop_backoff(process_name: &str) {
         let backoff_secs =
             (2u64.saturating_pow(restarts_over as u32)).min(CRASH_LOOP_MAX_BACKOFF_SECS);
         let msg = format!(
-            "lean-ctx: crash-loop protection — {process_name} started {} times in {CRASH_LOOP_WINDOW_SECS}s, \
+            "sobre: crash-loop protection — {process_name} started {} times in {CRASH_LOOP_WINDOW_SECS}s, \
              waiting {backoff_secs}s before accepting connections. \
              If your IDE is slow to initialize, this is normal.",
             recent.len()
@@ -171,7 +171,7 @@ pub fn crash_loop_backoff(process_name: &str) {
 
 /// Clears the crash-loop history file, resetting any active backoff.
 pub fn reset_crash_loop(process_name: &str) {
-    let Some(dir) = crate::core::data_dir::lean_ctx_data_dir().ok() else {
+    let Some(dir) = crate::core::data_dir::sobre_data_dir().ok() else {
         return;
     };
     let ts_path = dir.join(format!(".{}-starts.log", sanitize_lock_name(process_name)));
@@ -208,7 +208,7 @@ mod tests {
     fn lock_acquire_and_release() {
         let _env = crate::core::data_dir::test_env_lock();
         let dir = tempfile::tempdir().unwrap();
-        let _guard = EnvVarGuard::set("LEAN_CTX_DATA_DIR", dir.path());
+        let _guard = EnvVarGuard::set("SOBRE_DATA_DIR", dir.path());
 
         let g = try_acquire_lock(
             "unit-test",
@@ -228,7 +228,7 @@ mod tests {
     fn lock_times_out_while_held() {
         let _env = crate::core::data_dir::test_env_lock();
         let dir = tempfile::tempdir().unwrap();
-        let _guard = EnvVarGuard::set("LEAN_CTX_DATA_DIR", dir.path());
+        let _guard = EnvVarGuard::set("SOBRE_DATA_DIR", dir.path());
 
         let g1 = try_acquire_lock(
             "unit-test-2",
@@ -256,7 +256,7 @@ mod tests {
     fn dead_owner_lock_is_reclaimed_immediately() {
         let _env = crate::core::data_dir::test_env_lock();
         let dir = tempfile::tempdir().unwrap();
-        let _guard = EnvVarGuard::set("LEAN_CTX_DATA_DIR", dir.path());
+        let _guard = EnvVarGuard::set("SOBRE_DATA_DIR", dir.path());
 
         // Pre-seed a held lock owned by a PID that cannot be alive.
         let lock_path = dir.path().join(".dead-owner.lock");
@@ -298,7 +298,7 @@ mod tests {
     fn crash_loop_backoff_under_threshold_no_sleep() {
         let _env = crate::core::data_dir::test_env_lock();
         let dir = tempfile::tempdir().unwrap();
-        let _guard = EnvVarGuard::set("LEAN_CTX_DATA_DIR", dir.path());
+        let _guard = EnvVarGuard::set("SOBRE_DATA_DIR", dir.path());
 
         let start = std::time::Instant::now();
         for _ in 0..CRASH_LOOP_THRESHOLD {
@@ -315,7 +315,7 @@ mod tests {
     fn reset_crash_loop_clears_history() {
         let _env = crate::core::data_dir::test_env_lock();
         let dir = tempfile::tempdir().unwrap();
-        let _guard = EnvVarGuard::set("LEAN_CTX_DATA_DIR", dir.path());
+        let _guard = EnvVarGuard::set("SOBRE_DATA_DIR", dir.path());
 
         for _ in 0..5 {
             crash_loop_backoff("test-reset");
@@ -334,7 +334,7 @@ mod tests {
     fn reset_crash_loop_nonexistent_is_noop() {
         let _env = crate::core::data_dir::test_env_lock();
         let dir = tempfile::tempdir().unwrap();
-        let _guard = EnvVarGuard::set("LEAN_CTX_DATA_DIR", dir.path());
+        let _guard = EnvVarGuard::set("SOBRE_DATA_DIR", dir.path());
 
         reset_crash_loop("never-existed");
     }
@@ -347,7 +347,7 @@ mod tests {
     fn handshake_reset_keeps_healthy_restarts_below_threshold() {
         let _env = crate::core::data_dir::test_env_lock();
         let dir = tempfile::tempdir().unwrap();
-        let _guard = EnvVarGuard::set("LEAN_CTX_DATA_DIR", dir.path());
+        let _guard = EnvVarGuard::set("SOBRE_DATA_DIR", dir.path());
 
         let start = std::time::Instant::now();
         // Two full rounds of "threshold-many starts, then one handshake":
@@ -369,7 +369,7 @@ mod tests {
     fn crash_loop_log_only_keeps_recent_entries() {
         let _env = crate::core::data_dir::test_env_lock();
         let dir = tempfile::tempdir().unwrap();
-        let _guard = EnvVarGuard::set("LEAN_CTX_DATA_DIR", dir.path());
+        let _guard = EnvVarGuard::set("SOBRE_DATA_DIR", dir.path());
 
         let log_path = dir.path().join(".test-prune-starts.log");
         let old_ts = 1000u64;

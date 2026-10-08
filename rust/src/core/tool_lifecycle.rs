@@ -1,4 +1,4 @@
-//! Shared tool lifecycle — gives the `lean-ctx -c` shell wrapper the session,
+//! Shared tool lifecycle — gives the `sobre -c` shell wrapper the session,
 //! usage and consolidation side effects the MCP server applies inline, by
 //! loading and saving state from disk.
 

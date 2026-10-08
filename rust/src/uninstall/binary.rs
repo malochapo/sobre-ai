@@ -1,6 +1,6 @@
-//! Process teardown + binary removal for `lean-ctx uninstall`.
+//! Process teardown + binary removal for `sobre uninstall`.
 //!
-//! A "proper" uninstall must (1) stop every lean-ctx process so nothing respawns or
+//! A "proper" uninstall must (1) stop every sobre process so nothing respawns or
 //! holds the data dir we are about to delete, and (2) remove the installed binary itself
 //! — not merely print a `rm` hint. Both steps are best-effort and never abort the rest of
 //! the uninstall.
@@ -10,23 +10,23 @@ use std::path::{Path, PathBuf};
 
 use super::shorten;
 
-/// Stops the proxy and any stray lean-ctx processes, without ever exiting the process —
+/// Stops the proxy and any stray sobre processes, without ever exiting the process —
 /// the uninstall must keep going. The current process and IDE-owned MCP servers are
 /// excluded by `find_killable_pids`.
 pub(super) fn stop_processes(dry_run: bool) {
     if dry_run {
-        println!("  Would stop the proxy and any running lean-ctx processes");
+        println!("  Would stop the proxy and any running sobre processes");
         return;
     }
 
-    println!("  Stopping lean-ctx processes…");
+    println!("  Stopping sobre processes…");
 
     crate::proxy_autostart::stop();
 
-    crate::ipc::process::kill_all_by_name("lean-ctx");
+    crate::ipc::process::kill_all_by_name("sobre");
     std::thread::sleep(std::time::Duration::from_millis(500));
 
-    let remaining = crate::ipc::process::find_killable_pids("lean-ctx");
+    let remaining = crate::ipc::process::find_killable_pids("sobre");
     for &pid in &remaining {
         let _ = crate::ipc::process::force_kill(pid);
     }
@@ -61,8 +61,8 @@ fn classify(path: &Path) -> Disposition {
 /// Standard locations the binary may live in, plus the currently running executable.
 fn candidate_paths(home: &Path) -> Vec<PathBuf> {
     let mut out = vec![
-        home.join(".local/bin/lean-ctx"),
-        PathBuf::from("/usr/local/bin/lean-ctx"),
+        home.join(".local/bin/sobre"),
+        PathBuf::from("/usr/local/bin/sobre"),
     ];
     if let Ok(exe) = std::env::current_exe() {
         out.push(exe);
@@ -133,7 +133,7 @@ pub(super) fn remove_binaries(home: &Path, dry_run: bool, keep_binary: bool) -> 
     }
 
     if cargo_hint {
-        println!("  · Installed via cargo — finish with: cargo uninstall lean-ctx");
+        println!("  · Installed via cargo — finish with: cargo uninstall sobre");
     }
     if !removed && !cargo_hint {
         println!("  · No managed binary found on standard paths");
@@ -148,11 +148,11 @@ mod tests {
     #[test]
     fn dev_builds_are_never_removed() {
         assert!(matches!(
-            classify(Path::new("/home/u/lean-ctx/rust/target/release/lean-ctx")),
+            classify(Path::new("/home/u/sobre/rust/target/release/sobre")),
             Disposition::DevBuild
         ));
         assert!(matches!(
-            classify(Path::new("/home/u/proj/target/debug/lean-ctx")),
+            classify(Path::new("/home/u/proj/target/debug/sobre")),
             Disposition::DevBuild
         ));
     }
@@ -160,7 +160,7 @@ mod tests {
     #[test]
     fn package_managers_are_deferred() {
         assert!(matches!(
-            classify(Path::new("/home/u/.cargo/bin/lean-ctx")),
+            classify(Path::new("/home/u/.cargo/bin/sobre")),
             Disposition::Cargo
         ));
     }
@@ -168,11 +168,11 @@ mod tests {
     #[test]
     fn managed_install_dirs_are_removable() {
         assert!(matches!(
-            classify(Path::new("/home/u/.local/bin/lean-ctx")),
+            classify(Path::new("/home/u/.local/bin/sobre")),
             Disposition::Remove
         ));
         assert!(matches!(
-            classify(Path::new("/usr/local/bin/lean-ctx")),
+            classify(Path::new("/usr/local/bin/sobre")),
             Disposition::Remove
         ));
     }

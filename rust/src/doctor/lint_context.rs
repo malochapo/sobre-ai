@@ -1,6 +1,6 @@
-//! `lean-ctx doctor lint-context` (#960) — surfaces the injected-context linter.
+//! `sobre doctor lint-context` (#960) — surfaces the injected-context linter.
 //!
-//! Reports low-signal / duplicate lines in lean-ctx's own injected context (rules
+//! Reports low-signal / duplicate lines in sobre's own injected context (rules
 //! block + advertised tool descriptions). Exits non-zero when an Error-level
 //! finding is present, so it doubles as a CI gate alongside the `cargo test` guard.
 

@@ -1,4 +1,4 @@
-use super::server::LeanCtxServer;
+use super::server::SobreServer;
 
 #[derive(Clone, Debug, Default)]
 pub(super) struct StartupContext {
@@ -6,9 +6,9 @@ pub(super) struct StartupContext {
     pub(super) shell_cwd: Option<String>,
 }
 
-/// Creates a new `LeanCtxServer` with default configuration.
-pub fn create_server() -> LeanCtxServer {
-    LeanCtxServer::new()
+/// Creates a new `SobreServer` with default configuration.
+pub fn create_server() -> SobreServer {
+    SobreServer::new()
 }
 
 pub(super) fn has_project_marker(dir: &std::path::Path) -> bool {

@@ -718,7 +718,7 @@ mod tests {
         // #2: Phi must track time-variant salience, not freeze on first read.
         let _env = crate::core::data_dir::test_env_lock();
         let dir = tempfile::tempdir().unwrap();
-        crate::test_env::set_var("LEAN_CTX_DATA_DIR", dir.path());
+        crate::test_env::set_var("SOBRE_DATA_DIR", dir.path());
 
         let mut ledger = ContextLedger::with_window_size(100_000);
         // First read carries a task whose keyword matches the path → relevance up.

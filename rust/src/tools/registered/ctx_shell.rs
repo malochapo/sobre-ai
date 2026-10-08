@@ -340,7 +340,7 @@ impl McpTool for CtxShellTool {
             };
 
             let result_out = crate::core::redaction::redact_text(&result_out);
-            // #815: exit 124 = timeout signal (from timeout(1) / lean-ctx
+            // #815: exit 124 = timeout signal (from timeout(1) / sobre
             // shell timeout). Make it explicit so agents don't confuse a
             // timed-out command with a successful empty result.
             let exit_suffix = match exit_code {

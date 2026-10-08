@@ -18,7 +18,7 @@
 #[test]
 fn zed_target_exists_with_correct_paths() {
     let home = dirs::home_dir().unwrap_or_default();
-    let targets = lean_ctx::core::editor_registry::detect::build_targets(&home);
+    let targets = sobre::core::editor_registry::detect::build_targets(&home);
     let zed = targets
         .iter()
         .find(|t| t.name == "Zed")
@@ -35,14 +35,14 @@ fn zed_target_exists_with_correct_paths() {
 // ──────────────────────────────────────────────────────────
 // Scenario Group 3: Crash loop backoff resilience (#288)
 // User: IDE restarts several times quickly on slow machine,
-// lean-ctx should not block for too long.
+// sobre should not block for too long.
 // ──────────────────────────────────────────────────────────
 
 #[test]
 fn crash_loop_constants_are_resilient_for_slow_ides() {
-    let threshold = lean_ctx::core::startup_guard::CRASH_LOOP_THRESHOLD;
-    let window = lean_ctx::core::startup_guard::CRASH_LOOP_WINDOW_SECS;
-    let backoff = lean_ctx::core::startup_guard::CRASH_LOOP_MAX_BACKOFF_SECS;
+    let threshold = sobre::core::startup_guard::CRASH_LOOP_THRESHOLD;
+    let window = sobre::core::startup_guard::CRASH_LOOP_WINDOW_SECS;
+    let backoff = sobre::core::startup_guard::CRASH_LOOP_MAX_BACKOFF_SECS;
     assert!(
         threshold >= 8,
         "Threshold too low: slow IDEs may restart MCP 5-7 times normally"
@@ -53,20 +53,20 @@ fn crash_loop_constants_are_resilient_for_slow_ides() {
     );
     assert!(
         backoff <= 30,
-        "Max backoff too aggressive: users will think lean-ctx is broken"
+        "Max backoff too aggressive: users will think sobre is broken"
     );
 }
 
 #[test]
 fn crash_loop_scenario_normal_ide_startup() {
-    let _env = lean_ctx::core::data_dir::test_env_lock();
+    let _env = sobre::core::data_dir::test_env_lock();
     let dir = tempfile::tempdir().unwrap();
     // SAFETY: serialized by `test_env_lock()`.
-    unsafe { std::env::set_var("LEAN_CTX_DATA_DIR", dir.path()) };
+    unsafe { std::env::set_var("SOBRE_DATA_DIR", dir.path()) };
 
     let start = std::time::Instant::now();
     for _ in 0..7 {
-        lean_ctx::core::startup_guard::crash_loop_backoff("scenario-normal");
+        sobre::core::startup_guard::crash_loop_backoff("scenario-normal");
     }
     let elapsed = start.elapsed();
     assert!(
@@ -75,34 +75,34 @@ fn crash_loop_scenario_normal_ide_startup() {
     );
 
     // SAFETY: serialized by `test_env_lock()`.
-    unsafe { std::env::remove_var("LEAN_CTX_DATA_DIR") };
+    unsafe { std::env::remove_var("SOBRE_DATA_DIR") };
 }
 
 #[test]
 fn crash_loop_reset_allows_fresh_start() {
-    let _env = lean_ctx::core::data_dir::test_env_lock();
+    let _env = sobre::core::data_dir::test_env_lock();
     let dir = tempfile::tempdir().unwrap();
     // SAFETY: serialized by `test_env_lock()`.
-    unsafe { std::env::set_var("LEAN_CTX_DATA_DIR", dir.path()) };
+    unsafe { std::env::set_var("SOBRE_DATA_DIR", dir.path()) };
 
     for _ in 0..7 {
-        lean_ctx::core::startup_guard::crash_loop_backoff("scenario-reset");
+        sobre::core::startup_guard::crash_loop_backoff("scenario-reset");
     }
 
-    lean_ctx::core::startup_guard::reset_crash_loop("scenario-reset");
+    sobre::core::startup_guard::reset_crash_loop("scenario-reset");
 
     let log_path = dir.path().join(".scenario-reset-starts.log");
     assert!(!log_path.exists(), "reset should remove the crash log file");
 
     let start = std::time::Instant::now();
-    lean_ctx::core::startup_guard::crash_loop_backoff("scenario-reset");
+    sobre::core::startup_guard::crash_loop_backoff("scenario-reset");
     assert!(
         start.elapsed() < std::time::Duration::from_millis(100),
         "after reset, first call should be instant"
     );
 
     // SAFETY: serialized by `test_env_lock()`.
-    unsafe { std::env::remove_var("LEAN_CTX_DATA_DIR") };
+    unsafe { std::env::remove_var("SOBRE_DATA_DIR") };
 }
 
 // ──────────────────────────────────────────────────────────
@@ -117,7 +117,7 @@ fn jsonc_cyrillic_comments_preserved() {
   // Привет мир — настройки
   "key": "значение"
 }"#;
-    let v = lean_ctx::core::jsonc::parse_jsonc(input).unwrap();
+    let v = sobre::core::jsonc::parse_jsonc(input).unwrap();
     assert_eq!(v["key"], "значение");
 }
 
@@ -128,7 +128,7 @@ fn jsonc_cjk_values_preserved() {
   /* 日本語のコメント */
   "path": "文档/项目"
 }"#;
-    let v = lean_ctx::core::jsonc::parse_jsonc(input).unwrap();
+    let v = sobre::core::jsonc::parse_jsonc(input).unwrap();
     assert_eq!(v["name"], "テストプロジェクト");
     assert_eq!(v["path"], "文档/项目");
 }
@@ -140,7 +140,7 @@ fn jsonc_emoji_in_values_and_comments() {
   "emoji_key": "value 🎉",
   "path": "/home/user/📦project"
 }"#;
-    let v = lean_ctx::core::jsonc::parse_jsonc(input).unwrap();
+    let v = sobre::core::jsonc::parse_jsonc(input).unwrap();
     assert_eq!(v["emoji_key"], "value 🎉");
     assert_eq!(v["path"], "/home/user/📦project");
 }
@@ -156,7 +156,7 @@ fn jsonc_mixed_multibyte_stress() {
   "emoji": "🔥🚀✨",
   "url": "https://example.com/документация"
 }"#;
-    let v = lean_ctx::core::jsonc::parse_jsonc(input).unwrap();
+    let v = sobre::core::jsonc::parse_jsonc(input).unwrap();
     assert_eq!(v["ru"], "ошибка");
     assert_eq!(v["ja"], "設定ファイル");
     assert_eq!(v["emoji"], "🔥🚀✨");
@@ -171,13 +171,13 @@ fn jsonc_block_comment_with_multibyte() {
      кириллицей */
   "status": "ок"
 }"#;
-    let v = lean_ctx::core::jsonc::parse_jsonc(input).unwrap();
+    let v = sobre::core::jsonc::parse_jsonc(input).unwrap();
     assert_eq!(v["status"], "ок");
 }
 
 // ──────────────────────────────────────────────────────────
 // Scenario Group 7: ls -lah human-readable size passthrough
-// User: runs `ls -lah` and lean-ctx compresses the output.
+// User: runs `ls -lah` and sobre compresses the output.
 // Human-readable sizes (4.0K, 1.2M) should pass through,
 // not be re-formatted as "0B".
 // ──────────────────────────────────────────────────────────
@@ -191,7 +191,7 @@ fn ls_lah_human_readable_sizes_passthrough() {
         -rw-r--r--  1 user staff 2.5G May 20 10:00 huge.bin\n";
 
     let result =
-        lean_ctx::core::patterns::ls::compress(output).expect("should compress ls -lah output");
+        sobre::core::patterns::ls::compress(output).expect("should compress ls -lah output");
     assert!(
         result.contains("4.0K"),
         "4.0K should pass through: {result}"
@@ -220,8 +220,7 @@ fn ls_l_raw_sizes_converted() {
         drwxr-xr-x  5 user staff   160 May 20 10:00 src\n\
         drwxr-xr-x  3 user staff    96 May 20 10:00 tests\n";
 
-    let result =
-        lean_ctx::core::patterns::ls::compress(output).expect("should compress ls -l output");
+    let result = sobre::core::patterns::ls::compress(output).expect("should compress ls -l output");
     assert!(result.contains("4.0K"), "4096 should become 4.0K: {result}");
     assert!(
         result.contains("12.0K"),
@@ -239,8 +238,7 @@ fn ls_mixed_suffix_variants() {
         -rw-r--r--  1 user staff 1.2M May 20 10:00 data.bin\n\
         drwxr-xr-x  5 user staff  160 May 20 10:00 src\n";
 
-    let result =
-        lean_ctx::core::patterns::ls::compress(output).expect("should compress mixed sizes");
+    let result = sobre::core::patterns::ls::compress(output).expect("should compress mixed sizes");
     assert!(result.contains("15K"), "15K should pass through: {result}");
     assert!(
         result.contains("3.5T"),
@@ -308,8 +306,8 @@ fn hash_fast_with_real_world_cyrillic_plan_file() {
         content.push_str("Дополнительная строка с кириллицей для тестирования. ");
     }
 
-    let h1 = lean_ctx::server::helpers::hash_fast(&content);
-    let h2 = lean_ctx::server::helpers::hash_fast(&content);
+    let h1 = sobre::server::helpers::hash_fast(&content);
+    let h2 = sobre::server::helpers::hash_fast(&content);
     assert_eq!(h1, h2, "hash must be deterministic");
     assert!(!h1.is_empty());
 }
@@ -322,15 +320,15 @@ fn hash_fast_with_real_world_cyrillic_plan_file() {
 
 #[test]
 fn crash_loop_reset_uses_same_name_as_backoff() {
-    let _env = lean_ctx::core::data_dir::test_env_lock();
+    let _env = sobre::core::data_dir::test_env_lock();
     let dir = tempfile::tempdir().unwrap();
     // SAFETY: serialized by `test_env_lock()`.
-    unsafe { std::env::set_var("LEAN_CTX_DATA_DIR", dir.path()) };
+    unsafe { std::env::set_var("SOBRE_DATA_DIR", dir.path()) };
 
-    let name = lean_ctx::core::startup_guard::MCP_PROCESS_NAME;
+    let name = sobre::core::startup_guard::MCP_PROCESS_NAME;
 
     for _ in 0..5 {
-        lean_ctx::core::startup_guard::crash_loop_backoff(name);
+        sobre::core::startup_guard::crash_loop_backoff(name);
     }
 
     let log_path = dir.path().join(format!(".{name}-starts.log"));
@@ -339,14 +337,14 @@ fn crash_loop_reset_uses_same_name_as_backoff() {
         "crash log should exist after backoff calls"
     );
 
-    lean_ctx::core::startup_guard::reset_crash_loop(name);
+    sobre::core::startup_guard::reset_crash_loop(name);
     assert!(
         !log_path.exists(),
         "reset_crash_loop with same name must delete the log"
     );
 
     // SAFETY: serialized by `test_env_lock()`.
-    unsafe { std::env::remove_var("LEAN_CTX_DATA_DIR") };
+    unsafe { std::env::remove_var("SOBRE_DATA_DIR") };
 }
 
 #[test]
@@ -360,7 +358,7 @@ fn hash_fast_with_mixed_scripts_at_4096_boundary() {
         s.push('x');
     }
 
-    let hash = lean_ctx::server::helpers::hash_fast(&s);
+    let hash = sobre::server::helpers::hash_fast(&s);
     assert!(!hash.is_empty(), "must handle CJK at 4096 boundary");
 }
 
@@ -372,10 +370,10 @@ fn hash_fast_with_mixed_scripts_at_4096_boundary() {
 fn uninstall_bak_path_generation() {
     use std::path::Path;
     let p = Path::new("/home/user/.cursor/settings.json");
-    let bak = lean_ctx::uninstall::bak_path_for(p);
+    let bak = sobre::uninstall::bak_path_for(p);
     assert!(
-        bak.to_string_lossy().ends_with(".lean-ctx.bak"),
-        "Backup must use .lean-ctx.bak suffix"
+        bak.to_string_lossy().ends_with(".sobre.bak"),
+        "Backup must use .sobre.bak suffix"
     );
     assert!(
         bak.to_string_lossy().contains("settings.json"),
@@ -389,7 +387,7 @@ fn uninstall_bak_path_generation() {
 
 #[test]
 fn grep_parser_handles_windows_drive_letter() {
-    use lean_ctx::core::patterns::grep::compress;
+    use sobre::core::patterns::grep::compress;
     let mut input = String::new();
     for i in 1..=10 {
         input.push_str(&format!(
@@ -407,7 +405,7 @@ fn grep_parser_handles_windows_drive_letter() {
 
 #[test]
 fn grep_parser_handles_unix_paths() {
-    use lean_ctx::core::patterns::grep::compress;
+    use sobre::core::patterns::grep::compress;
     let mut input = String::new();
     for i in 1..=10 {
         input.push_str(&format!("src/main.rs:{i}:fn handler_{i}() {{}}\n"));
@@ -422,7 +420,7 @@ fn grep_parser_handles_unix_paths() {
 
 #[test]
 fn grep_parser_handles_relative_dotslash() {
-    use lean_ctx::core::patterns::grep::compress;
+    use sobre::core::patterns::grep::compress;
     let mut input = String::new();
     for i in 1..=10 {
         input.push_str(&format!("./src/app.ts:{i}:export const val_{i} = {i};\n"));

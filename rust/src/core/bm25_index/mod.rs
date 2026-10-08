@@ -307,7 +307,7 @@ impl BM25Index {
         // #933: parallel fast path for the common case. The per-file parse +
         // tokenize work is pure and thread-safe, so we fan it across a rayon pool
         // and merge sequentially in file order — measured 2.85 s → 0.69 s (~4x) on
-        // the lean-ctx repo. Under memory pressure (or for tiny corpora, where pool
+        // the sobre repo. Under memory pressure (or for tiny corpora, where pool
         // setup is not worth it) we fall back to the sequential build, which carries
         // the incremental early-break. #685 adds admission control: a corpus whose
         // estimated peak would blow past the guardian's hard threshold degrades to

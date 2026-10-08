@@ -1,7 +1,7 @@
 //! Risk classification for `config set` governance (#852).
 //!
 //! Most config keys are routine (cache sizes, density, theme) and are written
-//! without friction. A small set, however, changes lean-ctx's *security posture*
+//! without friction. A small set, however, changes sobre's *security posture*
 //! (containment, secret redaction) or *network routing / data egress* (upstream
 //! redirects). Flipping one of those silently can weaken the user's machine or
 //! leak credentials to a provider, so `config set` shows a before→after review

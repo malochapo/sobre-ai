@@ -5,14 +5,14 @@ use std::process::Command;
 
 // ─── helpers ───────────────────────────────────────────────────────
 
-fn lean_ctx_bin() -> Command {
-    let mut cmd = Command::new(env!("CARGO_BIN_EXE_lean-ctx"));
+fn sobre_bin() -> Command {
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_sobre"));
     cmd.current_dir(env!("CARGO_MANIFEST_DIR"));
     cmd
 }
 
 mod session_features {
-    use lean_ctx::core::session::{
+    use sobre::core::session::{
         Decision, EvidenceKind, EvidenceRecord, FileTouched, Finding, SessionState, TaskInfo,
     };
 
@@ -88,7 +88,7 @@ mod cli_commands {
 
     #[test]
     fn cli_help() {
-        let out = lean_ctx_bin().arg("--help").output().unwrap();
+        let out = sobre_bin().arg("--help").output().unwrap();
         assert!(out.status.success());
         let stdout = String::from_utf8_lossy(&out.stdout);
         assert!(stdout.contains("local context tools for coding agents"));
@@ -96,7 +96,7 @@ mod cli_commands {
 
     #[test]
     fn cli_config() {
-        let out = lean_ctx_bin().arg("config").output().unwrap();
+        let out = sobre_bin().arg("config").output().unwrap();
         assert!(out.status.success());
         let stdout = String::from_utf8_lossy(&out.stdout);
         assert!(stdout.contains("passthrough_commands"));
@@ -104,7 +104,7 @@ mod cli_commands {
 
     #[test]
     fn cli_shell_echo() {
-        let out = lean_ctx_bin().args(["-c", "echo hello"]).output().unwrap();
+        let out = sobre_bin().args(["-c", "echo hello"]).output().unwrap();
         assert!(out.status.success());
         let stdout = String::from_utf8_lossy(&out.stdout);
         assert!(stdout.contains("hello"));
@@ -112,14 +112,12 @@ mod cli_commands {
 
     #[test]
     fn cli_doctor() {
-        let out = lean_ctx_bin().arg("doctor").output().unwrap();
+        let out = sobre_bin().arg("doctor").output().unwrap();
         let stdout = String::from_utf8_lossy(&out.stdout);
         let stderr = String::from_utf8_lossy(&out.stderr);
         let combined = format!("{stdout}{stderr}");
         assert!(
-            combined.contains("lean-ctx")
-                || combined.contains("doctor")
-                || combined.contains("check"),
+            combined.contains("sobre") || combined.contains("doctor") || combined.contains("check"),
             "doctor must produce diagnostic output"
         );
     }
@@ -145,8 +143,8 @@ mod contract_gates {
 }
 
 mod knowledge_system {
-    use lean_ctx::core::knowledge::ProjectKnowledge;
-    use lean_ctx::core::memory_policy::MemoryPolicy;
+    use sobre::core::knowledge::ProjectKnowledge;
+    use sobre::core::memory_policy::MemoryPolicy;
 
     #[test]
     fn remember_recall_roundtrip() {
@@ -232,14 +230,14 @@ mod shell_compression {
 
     #[test]
     fn shell_compresses_git_status() {
-        let out = lean_ctx_bin().args(["-c", "git status"]).output().unwrap();
+        let out = sobre_bin().args(["-c", "git status"]).output().unwrap();
         assert!(out.status.success());
     }
 
     #[test]
     fn shell_compresses_cargo_build_output() {
-        let out = lean_ctx_bin()
-            .args(["-c", "echo 'Compiling lean-ctx v3.4.7\n   Compiling serde v1.0.0\n   Compiling tokio v1.0.0\n   Finished dev [unoptimized + debuginfo] target(s) in 5.00s'"])
+        let out = sobre_bin()
+            .args(["-c", "echo 'Compiling sobre v3.4.7\n   Compiling serde v1.0.0\n   Compiling tokio v1.0.0\n   Finished dev [unoptimized + debuginfo] target(s) in 5.00s'"])
             .output().unwrap();
         assert!(out.status.success());
     }
@@ -249,7 +247,7 @@ mod shell_compression {
         // `ls -la` is not a PowerShell or cmd command; `dir` lists a directory
         // under all three shells Windows may resolve to (PowerShell, cmd, Git Bash).
         let listing = if cfg!(windows) { "dir" } else { "ls -la" };
-        let out = lean_ctx_bin().args(["-c", listing]).output().unwrap();
+        let out = sobre_bin().args(["-c", listing]).output().unwrap();
         assert!(
             out.status.success(),
             "{}",

@@ -1,7 +1,7 @@
 //! Security hardening tests — validates all Critical and High fixes from the
 //! bank-readiness audit (2026-05-08).
 
-/// Reads the full `LeanCtxServer` dispatch source across its split submodules
+/// Reads the full `SobreServer` dispatch source across its split submodules
 /// (`mod.rs`, `call_tool.rs`, `server_handler.rs`, plus the extracted
 /// `post_process.rs` / `post_dispatch.rs` stages) so that the security-invariant
 /// checks below stay robust to internal module structure.

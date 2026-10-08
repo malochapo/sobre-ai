@@ -4,7 +4,7 @@
 //! files *with* inline bodies, replacing the typical search → read → outline →
 //! read chain (3-5 calls) with one.
 //!
-//! lean-ctx already has the building blocks as separate tools; this composes
+//! sobre already has the building blocks as separate tools; this composes
 //! them into one response for a natural-language task:
 //!   1. extracted keywords,
 //!   2. semantically ranked files (BM25 / hybrid),
@@ -351,7 +351,7 @@ fn deferred_ranking_note(project_root: &str) -> String {
                 .unwrap_or_else(|| "unknown error".to_string());
             format!(
                 "(semantic ranking unavailable — index build FAILED: {why}. {exact}. \
-                 Inspect with `lean-ctx index status` / `lean-ctx doctor`, then `lean-ctx index build`)"
+                 Inspect with `sobre index status` / `sobre doctor`, then `sobre index build`)"
             )
         }
         "building" => {

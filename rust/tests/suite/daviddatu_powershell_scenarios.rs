@@ -1,6 +1,6 @@
 //! Scenario tests for the bug reported by daviddatu_:
 //!
-//! lean-ctx was rewriting `git commit` to `git cmt` via the terse abbreviation
+//! sobre was rewriting `git commit` to `git cmt` via the terse abbreviation
 //! dictionary, and PowerShell quoting was wrapping full command strings in
 //! single quotes when passed as a single argument.
 //!
@@ -9,9 +9,9 @@
 //! 2. Git write-commands (commit/push/pull/merge/rebase) are verbatim (no compression)
 //! 3. PowerShell `join_command` does not wrap full command strings with & '...'
 
-use lean_ctx::core::terse::dictionaries::{DictLevel, GIT, apply_dictionaries};
-use lean_ctx::shell::compress::is_verbatim_output;
-use lean_ctx::shell::join_command_for;
+use sobre::core::terse::dictionaries::{DictLevel, GIT, apply_dictionaries};
+use sobre::shell::compress::is_verbatim_output;
+use sobre::shell::join_command_for;
 
 // ---------------------------------------------------------------------------
 // Scenario 1: Terse dictionary must never abbreviate git subcommands
@@ -244,7 +244,7 @@ fn scenario_powershell_parentheses_in_message_quoted() {
 fn scenario_compress_if_beneficial_skips_git_commit_output() {
     let command = "git commit -m \"feat: add feature\"";
     let output = "[main abc1234] feat: add feature\n 1 file changed, 5 insertions(+)\n";
-    let result = lean_ctx::shell::compress::compress_if_beneficial_pub(command, output);
+    let result = sobre::shell::compress::compress_if_beneficial_pub(command, output);
     assert_eq!(
         result.trim(),
         output.trim(),
@@ -256,7 +256,7 @@ fn scenario_compress_if_beneficial_skips_git_commit_output() {
 fn scenario_compress_if_beneficial_skips_git_push_output() {
     let command = "git push origin main";
     let output = "Everything up-to-date\n";
-    let result = lean_ctx::shell::compress::compress_if_beneficial_pub(command, output);
+    let result = sobre::shell::compress::compress_if_beneficial_pub(command, output);
     assert_eq!(
         result.trim(),
         output.trim(),
@@ -305,7 +305,7 @@ fn scenario_compress_if_beneficial_still_compresses_git_status() {
         "no changes added to commit (use \"git add\" and/or \"git commit -a\")",
     ];
     let output = lines.join("\n") + "\n";
-    let result = lean_ctx::shell::compress::compress_if_beneficial_pub(command, &output);
+    let result = sobre::shell::compress::compress_if_beneficial_pub(command, &output);
     assert!(
         result.len() < output.len(),
         "git status should still be compressed (was {} → {} bytes)",

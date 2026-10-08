@@ -42,12 +42,12 @@ pub(crate) fn cold_start_embed_guard(
 /// by the hybrid fallback and the dense fail-fast so the guidance never drifts.
 pub(crate) fn dense_build_hint(pending: usize, compact: bool) -> String {
     if compact {
-        format!("[dense not built: {pending} chunks pending — run: lean-ctx index build]")
+        format!("[dense not built: {pending} chunks pending — run: sobre index build]")
     } else {
         format!(
-            "[lean-ctx: dense index not built ({pending} chunks would embed inline). \
+            "[sobre: dense index not built ({pending} chunks would embed inline). \
              Build it once — no per-query embed, no cold-start hang: \
-             lean-ctx index build]"
+             sobre index build]"
         )
     }
 }

@@ -1,6 +1,6 @@
 //! Recovery-hint policy + grammar.
 //!
-//! lean-ctx compression is fully reversible, but agents only act on that if we
+//! sobre compression is fully reversible, but agents only act on that if we
 //! *show* the escape hatch — otherwise they re-read compressed output
 //! line-by-line (the "too compressed" complaint). The `RECOVER` line of the MCP
 //! instructions ([`crate::instructions::GUIDE`]) teaches the vocabulary once;
@@ -16,7 +16,7 @@
 
 /// The compressed-view header published verbatim in `tdd_schema`.
 pub const COMPACT_VIEW_HEADER: &str =
-    "[lean-ctx: compact view — nothing lost, full source on request]";
+    "[sobre: compact view — nothing lost, full source on request]";
 
 /// Footer appended to a compressed `ctx_read` view: one line that leads with the
 /// MCP-free path ("read the file directly") so orgs that forbid MCP still have a
@@ -24,7 +24,7 @@ pub const COMPACT_VIEW_HEADER: &str =
 #[must_use]
 pub fn read_footer(file_path: &str) -> String {
     format!(
-        "[lean-ctx] full source: read \"{file_path}\" directly (no MCP)  ·  or ctx_read(\"{file_path}\", mode=\"full\")"
+        "[sobre] full source: read \"{file_path}\" directly (no MCP)  ·  or ctx_read(\"{file_path}\", mode=\"full\")"
     )
 }
 

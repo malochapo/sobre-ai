@@ -49,7 +49,7 @@ async fn config_change_is_picked_up_live_without_restart() {
 
     let _lock = crate::core::data_dir::test_env_lock();
     let tmp = tempfile::tempdir().unwrap();
-    crate::test_env::set_var("LEAN_CTX_DATA_DIR", tmp.path());
+    crate::test_env::set_var("SOBRE_DATA_DIR", tmp.path());
 
     // Start state: config.toml points OpenAI at a loopback upstream.
     Config::update_global(|c| {
@@ -64,7 +64,7 @@ async fn config_change_is_picked_up_live_without_restart() {
     let (tx, rx) = tokio::sync::watch::channel(Arc::new(initial.clone()));
     spawn_upstream_refresh(tx, initial);
 
-    // `lean-ctx config set proxy.upstreams.openai …` (same safe write path).
+    // `sobre config set proxy.upstreams.openai …` (same safe write path).
     Config::update_global(|c| {
         c.proxy
             .upstreams
@@ -86,7 +86,7 @@ async fn config_change_is_picked_up_live_without_restart() {
         "running proxy must serve the new config.toml upstream without a restart"
     );
 
-    crate::test_env::remove_var("LEAN_CTX_DATA_DIR");
+    crate::test_env::remove_var("SOBRE_DATA_DIR");
 }
 
 /// A loopback upstream that answers every request with its name, the path it

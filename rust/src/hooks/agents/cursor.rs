@@ -6,7 +6,7 @@ fn ensure_pretooluse_hook(pre: &mut Vec<serde_json::Value>, matcher: &str, comma
     pre.retain(|e| {
         !e.get("command")
             .and_then(|c| c.as_str())
-            .is_some_and(|c| c.contains("lean-ctx") && c.contains(" hook "))
+            .is_some_and(|c| c.contains("sobre") && c.contains(" hook "))
     });
     pre.push(serde_json::json!({ "matcher": matcher, "command": command }));
 }
@@ -55,7 +55,7 @@ fn merge_cursor_hooks(existing: &mut serde_json::Value, binary: &str) {
     };
 
     // Cursor cannot replace a shell command's output after it ran, so the
-    // command is wrapped in `lean-ctx -c` before it runs — only when Cursor's
+    // command is wrapped in `sobre -c` before it runs — only when Cursor's
     // own rules treat both forms alike, and with no permission decision.
     let pre = hooks_obj
         .entry("preToolUse".to_string())
@@ -108,7 +108,7 @@ pub(crate) fn install_cursor_hook_config(home: &std::path::Path) {
         existing = serde_json::json!({});
     }
 
-    // Merge-based: preserve other hooks/plugins. Only upsert lean-ctx entries.
+    // Merge-based: preserve other hooks/plugins. Only upsert sobre entries.
     merge_cursor_hooks(&mut existing, &binary);
 
     let formatted = serde_json::to_string_pretty(&existing).unwrap_or_default();
@@ -129,7 +129,7 @@ mod tests {
             "version": 1,
             "hooks": {
                 "preToolUse": [
-                    { "matcher": "Shell", "command": "/old/lean-ctx hook cursor" },
+                    { "matcher": "Shell", "command": "/old/sobre hook cursor" },
                     { "matcher": "Shell", "command": "my-own-check" },
                     { "matcher": "Other", "command": "do-something" }
                 ],
@@ -140,8 +140,8 @@ mod tests {
             "otherKey": { "x": 1 }
         });
 
-        merge_cursor_hooks(&mut v, "/new/lean-ctx");
-        merge_cursor_hooks(&mut v, "/new/lean-ctx"); // re-run is idempotent
+        merge_cursor_hooks(&mut v, "/new/sobre");
+        merge_cursor_hooks(&mut v, "/new/sobre"); // re-run is idempotent
 
         assert!(v.get("otherKey").is_some());
         assert!(v.pointer("/hooks/postToolUse").is_some());
@@ -155,7 +155,7 @@ mod tests {
             .collect();
         assert_eq!(
             commands,
-            ["my-own-check", "do-something", "/new/lean-ctx hook cursor"]
+            ["my-own-check", "do-something", "/new/sobre hook cursor"]
         );
     }
 }

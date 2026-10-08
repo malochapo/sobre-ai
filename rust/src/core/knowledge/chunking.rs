@@ -16,7 +16,7 @@ use crate::core::text_similarity::token_jaccard;
 /// Theta capacity: clusters never grow beyond this many facts (7 = 4±1 max).
 const MAX_CLUSTER_SIZE: usize = 6;
 /// Minimum blended similarity to join an existing cluster. Calibrated so
-/// same-category alone qualifies (categories are lean-ctx "rooms" = topics),
+/// same-category alone qualifies (categories are sobre "rooms" = topics),
 /// while cross-category joins need a strong lexical/path signal.
 const JOIN_THRESHOLD: f64 = 0.3;
 
@@ -257,7 +257,7 @@ mod tests {
                 "launchagent",
                 "keepalive respawns the proxy",
             ),
-            fact("infrastructure", "postgres", "cloud user is leanctx_cloud"),
+            fact("infrastructure", "postgres", "cloud user is sobre_cloud"),
             fact(
                 "infrastructure",
                 "traefik",

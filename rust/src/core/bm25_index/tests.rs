@@ -775,13 +775,13 @@ fn rebuild_incremental_dispatches_parallel_and_matches_sequential() {
 /// CI build-time regression gate for the parallel incremental rebuild
 /// (#581, locking in #933). Off by default — wall-clock timing is meaningless
 /// under the concurrent local / nextest runner — so it no-ops unless the CI job
-/// sets `LEAN_CTX_PERF_GATE=1` and runs it on a quiet, single-threaded runner.
+/// sets `SOBRE_PERF_GATE=1` and runs it on a quiet, single-threaded runner.
 /// Asserts the parallel rebuild is not slower than the sequential one
 /// (best-of-3, generous noise slack) and stays under a catastrophic-blowup
 /// ceiling, without depending on a specific core count.
 #[test]
 fn parallel_incremental_rebuild_perf_gate() {
-    if std::env::var("LEAN_CTX_PERF_GATE").as_deref() != Ok("1") {
+    if std::env::var("SOBRE_PERF_GATE").as_deref() != Ok("1") {
         return; // CI-only gate; no-op elsewhere to avoid timing flakes
     }
 

@@ -225,7 +225,7 @@ pub struct GotchaStore {
     pub error_log: Vec<SessionErrorLog>,
     pub updated_at: DateTime<Utc>,
 
-    // Persisted (#451 shell-ding): a fail→fix spanning two `lean-ctx -c`
+    // Persisted (#451 shell-ding): a fail→fix spanning two `sobre -c`
     // invocations is two separate processes, so the in-memory active store
     // cannot bridge them. Persisting pending errors lets the later process load
     // and correlate the fix. Bounded by MAX_PENDING + a 15-min TTL (pruned on

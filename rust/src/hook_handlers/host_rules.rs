@@ -1,7 +1,7 @@
 //! The host's own command rules, read so a rewrite never changes how the host
 //! treats a command (INVARIANTS.md §5).
 //!
-//! Cursor and Gemini CLI get `cmd` rewritten to `lean-ctx -c 'cmd'` before it
+//! Cursor and Gemini CLI get `cmd` rewritten to `sobre -c 'cmd'` before it
 //! runs. That is only acceptable when the host would treat both strings the
 //! same way: a deny or ask rule that catches `git push` must not be dodged by
 //! the wrapper, and an allow rule must not start covering it either. The check
@@ -251,7 +251,7 @@ fn wildcard_matches(text: &str, pattern: &str) -> bool {
 mod tests {
     use super::*;
 
-    const WRAPPED: &str = "lean-ctx -c 'git push origin main'";
+    const WRAPPED: &str = "sobre -c 'git push origin main'";
     const ORIGINAL: &str = "git push origin main";
 
     #[test]
@@ -288,7 +288,7 @@ mod tests {
 
     #[test]
     fn a_rule_naming_the_wrapper_blocks_the_rewrite() {
-        let rules = [Rule::Pattern("lean-ctx".into())];
+        let rules = [Rule::Pattern("sobre".into())];
         assert!(!rules_agree(&rules, ORIGINAL, WRAPPED));
     }
 

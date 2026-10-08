@@ -69,7 +69,7 @@ mod resolve_path_tests {
         let _other_value = create_git_root(&other);
         std::fs::write(other.join("b.txt"), "no").unwrap();
 
-        let server = LeanCtxServer::new_with_startup(None, Some(root.as_path()));
+        let server = SobreServer::new_with_startup(None, Some(root.as_path()));
         {
             let mut session = server.session.write().await;
             session.project_root = Some(stale.to_string_lossy().to_string());
@@ -105,7 +105,7 @@ mod resolve_path_tests {
         let real_root = create_git_root(&real);
         std::fs::write(real.join("a.txt"), "ok").unwrap();
 
-        let server = LeanCtxServer::new_with_startup(None, None);
+        let server = SobreServer::new_with_startup(None, None);
         {
             let mut session = server.session.write().await;
             session.project_root = Some(agent.to_string_lossy().to_string());
@@ -134,12 +134,12 @@ mod resolve_path_tests {
         let _iso = crate::core::data_dir::isolated_data_dir();
         let tmp = tempfile::tempdir().unwrap();
         let client_cwd = tmp.path().join("Users").join("user");
-        let real = tmp.path().join("workspaces").join("lean-ctx");
+        let real = tmp.path().join("workspaces").join("sobre");
         std::fs::create_dir_all(&client_cwd).unwrap();
         let real_root = create_git_root(&real);
         std::fs::write(real.join("rust.rs"), "ok").unwrap();
 
-        let server = LeanCtxServer::new_with_startup(None, None);
+        let server = SobreServer::new_with_startup(None, None);
         {
             let mut session = server.session.write().await;
             session.project_root = Some(client_cwd.to_string_lossy().to_string());
@@ -173,7 +173,7 @@ mod resolve_path_tests {
         std::fs::create_dir_all(&loose).unwrap();
         std::fs::write(loose.join("data.txt"), "no").unwrap();
 
-        let server = LeanCtxServer::new_with_startup(None, None);
+        let server = SobreServer::new_with_startup(None, None);
         {
             let mut session = server.session.write().await;
             session.project_root = Some(client_cwd.to_string_lossy().to_string());
@@ -207,7 +207,7 @@ mod resolve_path_tests {
         std::fs::create_dir_all(&loose).unwrap();
         std::fs::write(loose.join("data.txt"), "no").unwrap();
 
-        let server = LeanCtxServer::new_with_startup(None, None);
+        let server = SobreServer::new_with_startup(None, None);
         {
             let mut session = server.session.write().await;
             session.project_root = Some(agent.to_string_lossy().to_string());
@@ -234,7 +234,7 @@ mod resolve_path_tests {
         let _data = tempfile::tempdir().unwrap();
         let _tmp = tempfile::tempdir().unwrap();
 
-        crate::test_env::set_var("LEAN_CTX_DATA_DIR", _data.path());
+        crate::test_env::set_var("SOBRE_DATA_DIR", _data.path());
 
         let repo_a = _tmp.path().join("repo-a");
         let repo_b = _tmp.path().join("repo-b");
@@ -255,8 +255,8 @@ mod resolve_path_tests {
         session_a.set_task("repo-a latest task", None);
         session_a.save().unwrap();
 
-        let server = LeanCtxServer::new_with_startup(None, Some(repo_b.as_path()));
-        crate::test_env::remove_var("LEAN_CTX_DATA_DIR");
+        let server = SobreServer::new_with_startup(None, Some(repo_b.as_path()));
+        crate::test_env::remove_var("SOBRE_DATA_DIR");
 
         let session = server.session.read().await;
         assert_eq!(session.project_root.as_deref(), Some(root_b.as_str()));
@@ -274,7 +274,7 @@ mod resolve_path_tests {
         let _data = tempfile::tempdir().unwrap();
         let _tmp = tempfile::tempdir().unwrap();
 
-        crate::test_env::set_var("LEAN_CTX_DATA_DIR", _data.path());
+        crate::test_env::set_var("SOBRE_DATA_DIR", _data.path());
 
         let repo_a = _tmp.path().join("repo-a");
         let repo_b = _tmp.path().join("repo-b");
@@ -291,8 +291,8 @@ mod resolve_path_tests {
         let old_id = session_a.id.clone();
         session_a.save().unwrap();
 
-        let server = LeanCtxServer::new_with_startup(None, Some(repo_b_src.as_path()));
-        crate::test_env::remove_var("LEAN_CTX_DATA_DIR");
+        let server = SobreServer::new_with_startup(None, Some(repo_b_src.as_path()));
+        crate::test_env::remove_var("SOBRE_DATA_DIR");
 
         let session = server.session.read().await;
         assert_eq!(session.project_root.as_deref(), Some(root_b.as_str()));
@@ -316,7 +316,7 @@ mod resolve_path_tests {
         std::fs::write(other.join("b.txt"), "no").unwrap();
 
         let root_str = root.to_string_lossy().to_string();
-        let server = LeanCtxServer::new_with_project_root(Some(&root_str));
+        let server = SobreServer::new_with_project_root(Some(&root_str));
 
         let out = server
             .resolve_path(&other.join("b.txt").to_string_lossy())
@@ -348,7 +348,7 @@ mod resolve_path_tests {
         std::fs::write(repo.join("src/lib.rs"), "stale").unwrap();
         std::fs::write(wt.join("src/lib.rs"), "fresh").unwrap();
 
-        let server = LeanCtxServer::new_with_project_root(Some(&root_value));
+        let server = SobreServer::new_with_project_root(Some(&root_value));
         {
             // The worktree switch as ctx_shell's cwd tracking records it.
             let mut session = server.session.write().await;

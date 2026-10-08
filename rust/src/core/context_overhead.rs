@@ -1,4 +1,4 @@
-//! Honest accounting of the fixed per-turn context lean-ctx injects (GitHub #361).
+//! Honest accounting of the fixed per-turn context sobre injects (GitHub #361).
 //!
 //! Two components ride every request and — on a provider WITHOUT prompt caching
 //! — are re-billed on every turn:
@@ -6,14 +6,14 @@
 //!  - the MCP **server instructions** block — the only guidance sobre gives;
 //!    it writes nothing into the host's own instruction files.
 //!
-//! `lean-ctx gain` shows this figure next to the savings: the savings count
+//! `sobre gain` shows this figure next to the savings: the savings count
 //! tokens removed from tool output, while this prefix is added to every
 //! request. With the proxy in the path, the prefix is already inside the real
 //! cost the provider reported.
 
 use crate::core::tokens::count_tokens;
 
-/// A measured breakdown, in tokens, of the per-turn context lean-ctx adds.
+/// A measured breakdown, in tokens, of the per-turn context sobre adds.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct ContextOverhead {
     /// Number of MCP tools exposed (the schema-bearing surface).

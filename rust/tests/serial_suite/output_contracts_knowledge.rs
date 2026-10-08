@@ -1,17 +1,17 @@
 use std::path::Path;
 
-use lean_ctx::core::knowledge::ProjectKnowledge;
-use lean_ctx::core::memory_policy::MemoryPolicy;
+use sobre::core::knowledge::ProjectKnowledge;
+use sobre::core::memory_policy::MemoryPolicy;
 
 #[test]
 fn ctx_knowledge_recall_is_budgeted_and_deterministic() {
-    let _g = lean_ctx::core::data_dir::test_env_lock();
+    let _g = sobre::core::data_dir::test_env_lock();
     let tmp = tempfile::tempdir().expect("tempdir");
     let data_dir = tmp.path().join("data");
     std::fs::create_dir_all(&data_dir).expect("create data dir");
 
     // SAFETY: serialized by `test_env_lock()`.
-    unsafe { std::env::set_var("LEAN_CTX_DATA_DIR", data_dir.to_string_lossy().to_string()) };
+    unsafe { std::env::set_var("SOBRE_DATA_DIR", data_dir.to_string_lossy().to_string()) };
 
     let project_root = tmp.path().join("proj");
     std::fs::create_dir_all(&project_root).expect("create project root");
@@ -31,7 +31,7 @@ fn ctx_knowledge_recall_is_budgeted_and_deterministic() {
     }
     knowledge.save().expect("save knowledge");
 
-    let out1 = lean_ctx::tools::ctx_knowledge::handle(
+    let out1 = sobre::tools::ctx_knowledge::handle(
         &project_root_str,
         "recall",
         Some("architecture"),
@@ -45,7 +45,7 @@ fn ctx_knowledge_recall_is_budgeted_and_deterministic() {
         None,
         None,
     );
-    let out2 = lean_ctx::tools::ctx_knowledge::handle(
+    let out2 = sobre::tools::ctx_knowledge::handle(
         &project_root_str,
         "recall",
         Some("architecture"),
@@ -73,18 +73,18 @@ fn ctx_knowledge_recall_is_budgeted_and_deterministic() {
     assert!(fact_lines <= 10, "must not exceed recall budget");
 
     // SAFETY: serialized by `test_env_lock()`.
-    unsafe { std::env::remove_var("LEAN_CTX_DATA_DIR") };
+    unsafe { std::env::remove_var("SOBRE_DATA_DIR") };
 }
 
 #[test]
 fn ctx_knowledge_export_is_file_backed_not_json_stdout() {
-    let _g = lean_ctx::core::data_dir::test_env_lock();
+    let _g = sobre::core::data_dir::test_env_lock();
     let tmp = tempfile::tempdir().expect("tempdir");
     let data_dir = tmp.path().join("data");
     std::fs::create_dir_all(&data_dir).expect("create data dir");
 
     // SAFETY: serialized by `test_env_lock()`.
-    unsafe { std::env::set_var("LEAN_CTX_DATA_DIR", data_dir.to_string_lossy().to_string()) };
+    unsafe { std::env::set_var("SOBRE_DATA_DIR", data_dir.to_string_lossy().to_string()) };
 
     let project_root = tmp.path().join("proj");
     std::fs::create_dir_all(&project_root).expect("create project root");
@@ -95,7 +95,7 @@ fn ctx_knowledge_export_is_file_backed_not_json_stdout() {
     knowledge.remember("arch", "db", "MySQL", "s1", 0.8, &policy);
     knowledge.save().expect("save knowledge");
 
-    let out = lean_ctx::tools::ctx_knowledge::handle(
+    let out = sobre::tools::ctx_knowledge::handle(
         &project_root_str,
         "export",
         None,
@@ -126,18 +126,18 @@ fn ctx_knowledge_export_is_file_backed_not_json_stdout() {
     assert!(Path::new(path_str).exists(), "export file must exist");
 
     // SAFETY: serialized by `test_env_lock()`.
-    unsafe { std::env::remove_var("LEAN_CTX_DATA_DIR") };
+    unsafe { std::env::remove_var("SOBRE_DATA_DIR") };
 }
 
 #[test]
 fn ctx_knowledge_feedback_persists_and_affects_quality_score() {
-    let _g = lean_ctx::core::data_dir::test_env_lock();
+    let _g = sobre::core::data_dir::test_env_lock();
     let tmp = tempfile::tempdir().expect("tempdir");
     let data_dir = tmp.path().join("data");
     std::fs::create_dir_all(&data_dir).expect("create data dir");
 
     // SAFETY: serialized by `test_env_lock()`.
-    unsafe { std::env::set_var("LEAN_CTX_DATA_DIR", data_dir.to_string_lossy().to_string()) };
+    unsafe { std::env::set_var("SOBRE_DATA_DIR", data_dir.to_string_lossy().to_string()) };
 
     let project_root = tmp.path().join("proj");
     std::fs::create_dir_all(&project_root).expect("create project root");
@@ -156,7 +156,7 @@ fn ctx_knowledge_feedback_persists_and_affects_quality_score() {
         .expect("fact exists");
     let before_score = before_fact.quality_score();
 
-    let out = lean_ctx::tools::ctx_knowledge::handle(
+    let out = sobre::tools::ctx_knowledge::handle(
         &project_root_str,
         "feedback",
         Some("arch"),
@@ -191,18 +191,18 @@ fn ctx_knowledge_feedback_persists_and_affects_quality_score() {
     );
 
     // SAFETY: serialized by `test_env_lock()`.
-    unsafe { std::env::remove_var("LEAN_CTX_DATA_DIR") };
+    unsafe { std::env::remove_var("SOBRE_DATA_DIR") };
 }
 
 #[test]
 fn ctx_knowledge_relations_persist_and_render() {
-    let _g = lean_ctx::core::data_dir::test_env_lock();
+    let _g = sobre::core::data_dir::test_env_lock();
     let tmp = tempfile::tempdir().expect("tempdir");
     let data_dir = tmp.path().join("data");
     std::fs::create_dir_all(&data_dir).expect("create data dir");
 
     // SAFETY: serialized by `test_env_lock()`.
-    unsafe { std::env::set_var("LEAN_CTX_DATA_DIR", data_dir.to_string_lossy().to_string()) };
+    unsafe { std::env::set_var("SOBRE_DATA_DIR", data_dir.to_string_lossy().to_string()) };
 
     let project_root = tmp.path().join("proj");
     std::fs::create_dir_all(&project_root).expect("create project root");
@@ -214,7 +214,7 @@ fn ctx_knowledge_relations_persist_and_render() {
     knowledge.remember("arch", "cache", "Redis", "s1", 0.9, &policy);
     knowledge.save().expect("save knowledge");
 
-    let out = lean_ctx::tools::ctx_knowledge::handle(
+    let out = sobre::tools::ctx_knowledge::handle(
         &project_root_str,
         "relate",
         Some("arch"),
@@ -232,7 +232,7 @@ fn ctx_knowledge_relations_persist_and_render() {
 
     let loaded = ProjectKnowledge::load_or_create(&project_root_str);
     let graph =
-        lean_ctx::core::knowledge_relations::KnowledgeRelationGraph::load(&loaded.project_hash)
+        sobre::core::knowledge_relations::KnowledgeRelationGraph::load(&loaded.project_hash)
             .expect("relations graph should exist");
     assert!(
         graph.edges.iter().any(|e| {
@@ -240,12 +240,12 @@ fn ctx_knowledge_relations_persist_and_render() {
                 && e.from.key == "db"
                 && e.to.category == "arch"
                 && e.to.key == "cache"
-                && e.kind == lean_ctx::core::knowledge_relations::KnowledgeEdgeKind::DependsOn
+                && e.kind == sobre::core::knowledge_relations::KnowledgeEdgeKind::DependsOn
         }),
         "expected depends_on edge in relations graph"
     );
 
-    let list = lean_ctx::tools::ctx_knowledge::handle(
+    let list = sobre::tools::ctx_knowledge::handle(
         &project_root_str,
         "relations",
         Some("arch"),
@@ -264,7 +264,7 @@ fn ctx_knowledge_relations_persist_and_render() {
         "relations must include the edge: {list}"
     );
 
-    let diagram = lean_ctx::tools::ctx_knowledge::handle(
+    let diagram = sobre::tools::ctx_knowledge::handle(
         &project_root_str,
         "relations_diagram",
         Some("arch"),
@@ -283,7 +283,7 @@ fn ctx_knowledge_relations_persist_and_render() {
         "relations_diagram must return mermaid: {diagram}"
     );
 
-    let out2 = lean_ctx::tools::ctx_knowledge::handle(
+    let out2 = sobre::tools::ctx_knowledge::handle(
         &project_root_str,
         "unrelate",
         Some("arch"),
@@ -303,17 +303,17 @@ fn ctx_knowledge_relations_persist_and_render() {
     );
 
     // SAFETY: serialized by `test_env_lock()`.
-    unsafe { std::env::remove_var("LEAN_CTX_DATA_DIR") };
+    unsafe { std::env::remove_var("SOBRE_DATA_DIR") };
 }
 
 #[test]
 fn ctx_knowledge_lifecycle_report_covers_all_layers() {
-    let _g = lean_ctx::core::data_dir::test_env_lock();
+    let _g = sobre::core::data_dir::test_env_lock();
     let tmp = tempfile::tempdir().expect("tempdir");
     let data_dir = tmp.path().join("data");
     std::fs::create_dir_all(&data_dir).expect("create data dir");
     // SAFETY: serialized by `test_env_lock()`.
-    unsafe { std::env::set_var("LEAN_CTX_DATA_DIR", data_dir.to_string_lossy().to_string()) };
+    unsafe { std::env::set_var("SOBRE_DATA_DIR", data_dir.to_string_lossy().to_string()) };
 
     let project_root = tmp.path().join("proj");
     std::fs::create_dir_all(&project_root).expect("create project root");
@@ -324,7 +324,7 @@ fn ctx_knowledge_lifecycle_report_covers_all_layers() {
     knowledge.remember("architecture", "auth", "JWT RS256", "s1", 0.9, &policy);
     knowledge.save().expect("save knowledge");
 
-    let out = lean_ctx::tools::ctx_knowledge::handle(
+    let out = sobre::tools::ctx_knowledge::handle(
         &project_root_str,
         "lifecycle_report",
         None,
@@ -355,17 +355,17 @@ fn ctx_knowledge_lifecycle_report_covers_all_layers() {
     );
 
     // SAFETY: serialized by `test_env_lock()`.
-    unsafe { std::env::remove_var("LEAN_CTX_DATA_DIR") };
+    unsafe { std::env::remove_var("SOBRE_DATA_DIR") };
 }
 
 #[test]
 fn ctx_knowledge_recall_as_of_time_travels() {
-    let _g = lean_ctx::core::data_dir::test_env_lock();
+    let _g = sobre::core::data_dir::test_env_lock();
     let tmp = tempfile::tempdir().expect("tempdir");
     let data_dir = tmp.path().join("data");
     std::fs::create_dir_all(&data_dir).expect("create data dir");
     // SAFETY: serialized by `test_env_lock()`.
-    unsafe { std::env::set_var("LEAN_CTX_DATA_DIR", data_dir.to_string_lossy().to_string()) };
+    unsafe { std::env::set_var("SOBRE_DATA_DIR", data_dir.to_string_lossy().to_string()) };
 
     let project_root = tmp.path().join("proj");
     std::fs::create_dir_all(&project_root).expect("create project root");
@@ -380,7 +380,7 @@ fn ctx_knowledge_recall_as_of_time_travels() {
     knowledge.remember("arch", "db", "MySQL", "s2", 0.9, &policy);
     knowledge.save().expect("save knowledge");
 
-    let past = lean_ctx::tools::ctx_knowledge::handle(
+    let past = sobre::tools::ctx_knowledge::handle(
         &project_root_str,
         "recall",
         None,
@@ -399,7 +399,7 @@ fn ctx_knowledge_recall_as_of_time_travels() {
         "as_of recall must return the value valid at that time: {past}"
     );
 
-    let invalid = lean_ctx::tools::ctx_knowledge::handle(
+    let invalid = sobre::tools::ctx_knowledge::handle(
         &project_root_str,
         "recall",
         None,
@@ -419,5 +419,5 @@ fn ctx_knowledge_recall_as_of_time_travels() {
     );
 
     // SAFETY: serialized by `test_env_lock()`.
-    unsafe { std::env::remove_var("LEAN_CTX_DATA_DIR") };
+    unsafe { std::env::remove_var("SOBRE_DATA_DIR") };
 }

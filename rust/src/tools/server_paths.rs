@@ -1,9 +1,9 @@
-use super::server::LeanCtxServer;
+use super::server::SobreServer;
 use super::startup::{
     has_project_marker, is_suspicious_root, maybe_derive_project_root_from_absolute,
 };
 
-impl LeanCtxServer {
+impl SobreServer {
     /// Resolves a (possibly relative) tool path against the session's project_root.
     /// Absolute paths and "." are returned as-is. Relative paths like "src/main.rs"
     /// are joined with project_root so tools work regardless of the server's cwd.

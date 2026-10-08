@@ -1,6 +1,6 @@
 use std::process::Command;
 
-use lean_ctx::core::setup_report::SetupReport;
+use sobre::core::setup_report::SetupReport;
 
 fn run_json(bin: &str, args: &[&str], envs: &[(&str, &str)]) -> (i32, String) {
     let mut cmd = Command::new(bin);
@@ -53,7 +53,7 @@ fn write_exe(path: &std::path::Path, content: &str) {
     ignore = "Windows handle inheritance causes subprocess hangs in CI"
 )]
 fn setup_bootstrap_doctor_json_smoke() {
-    let bin = env!("CARGO_BIN_EXE_lean-ctx");
+    let bin = env!("CARGO_BIN_EXE_sobre");
 
     let tmp = tempfile::tempdir().unwrap();
     let home = tmp.path().join("home");
@@ -149,7 +149,7 @@ fn setup_bootstrap_doctor_json_smoke() {
         .expect("doctor");
     let stdout = String::from_utf8_lossy(&out.stdout);
     assert!(
-        stdout.contains(&format!("lean-ctx {}", env!("CARGO_PKG_VERSION"))),
+        stdout.contains(&format!("sobre {}", env!("CARGO_PKG_VERSION"))),
         "doctor must show the version: {stdout}"
     );
     assert!(
@@ -160,7 +160,7 @@ fn setup_bootstrap_doctor_json_smoke() {
 
 #[test]
 fn claude_config_dir_fallback_writes_dot_claude_json() {
-    let bin = env!("CARGO_BIN_EXE_lean-ctx");
+    let bin = env!("CARGO_BIN_EXE_sobre");
 
     let tmp = tempfile::tempdir().unwrap();
     let home = tmp.path().join("home");
@@ -174,7 +174,7 @@ fn claude_config_dir_fallback_writes_dot_claude_json() {
     let home_str = home.to_string_lossy().to_string();
     let claude_cfg_str = claude_cfg.to_string_lossy().to_string();
 
-    // Fake claude that fails (forces lean-ctx to fallback to file merge/write).
+    // Fake claude that fails (forces sobre to fallback to file merge/write).
     let claude_path = bin_dir.join(if cfg!(windows) {
         "claude.cmd"
     } else {
@@ -221,11 +221,11 @@ fn claude_config_dir_fallback_writes_dot_claude_json() {
         content.contains("\"mcpServers\""),
         "must contain mcpServers"
     );
-    assert!(content.contains("lean-ctx"), "must contain lean-ctx entry");
+    assert!(content.contains("sobre"), "must contain sobre entry");
 
     // `doctor` is a health gate (#1046): it exits non-zero whenever *any* check
     // needs attention, and this sandbox legitimately fails several unrelated
-    // ones (no lean-ctx on PATH, no shell profile, a fake `claude` that exits 1)
+    // ones (no sobre on PATH, no shell profile, a fake `claude` that exits 1)
     // — the same reason the bootstrap smoke test tolerates a non-zero code. The
     // contract under test is the `.claude.json` fallback *detection*, which is
     // printed to stdout regardless of the gate, so assert on the report and only
@@ -242,14 +242,14 @@ fn claude_config_dir_fallback_writes_dot_claude_json() {
     );
     let stdout = String::from_utf8_lossy(&out.stdout);
     assert!(
-        stdout.contains("MCP config") && stdout.contains("lean-ctx found"),
-        "doctor should report lean-ctx found in MCP config; got:\n{stdout}"
+        stdout.contains("MCP config") && stdout.contains("sobre found"),
+        "doctor should report sobre found in MCP config; got:\n{stdout}"
     );
 }
 
 #[test]
 fn init_agent_leaves_agent_instruction_files_untouched() {
-    let bin = env!("CARGO_BIN_EXE_lean-ctx");
+    let bin = env!("CARGO_BIN_EXE_sobre");
 
     let tmp = tempfile::tempdir().unwrap();
     let home = tmp.path().join("home");
@@ -315,7 +315,7 @@ fn init_agent_leaves_agent_instruction_files_untouched() {
         "# My Agents\n\nDo not overwrite.\n",
         "AGENTS.md must be byte-identical"
     );
-    for name in ["LEAN-CTX.md", "CLAUDE.md", ".cursorrules", ".windsurfrules"] {
+    for name in ["SOBRE.md", "CLAUDE.md", ".cursorrules", ".windsurfrules"] {
         assert!(!project.join(name).exists(), "init must not create {name}");
     }
 }
@@ -326,7 +326,7 @@ fn init_agent_leaves_agent_instruction_files_untouched() {
 #[test]
 #[cfg_attr(windows, ignore)]
 fn init_claude_installs_the_skill_and_no_rules_file() {
-    let bin = env!("CARGO_BIN_EXE_lean-ctx");
+    let bin = env!("CARGO_BIN_EXE_sobre");
 
     let tmp = tempfile::tempdir().unwrap();
     let home = tmp.path().join("home");
@@ -377,7 +377,7 @@ fn init_claude_installs_the_skill_and_no_rules_file() {
     );
 }
 
-/// One directory per LEAN_CTX_<CATEGORY>_DIR, so a file written to the wrong
+/// One directory per SOBRE_<CATEGORY>_DIR, so a file written to the wrong
 /// category is caught.
 struct SeparateDirs {
     config: String,
@@ -405,10 +405,10 @@ impl SeparateDirs {
 
     fn to_env_pairs(&self) -> Vec<(&str, &str)> {
         vec![
-            ("LEAN_CTX_CONFIG_DIR", self.config.as_str()),
-            ("LEAN_CTX_DATA_DIR", self.data.as_str()),
-            ("LEAN_CTX_STATE_DIR", self.state.as_str()),
-            ("LEAN_CTX_CACHE_DIR", self.cache.as_str()),
+            ("SOBRE_CONFIG_DIR", self.config.as_str()),
+            ("SOBRE_DATA_DIR", self.data.as_str()),
+            ("SOBRE_STATE_DIR", self.state.as_str()),
+            ("SOBRE_CACHE_DIR", self.cache.as_str()),
         ]
     }
 }

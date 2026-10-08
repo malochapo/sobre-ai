@@ -53,7 +53,7 @@ fn test_env() -> TestEnv {
     ignore = "HOME-override isolation is Unix-only (dirs::home_dir uses the Win32 API)"
 )]
 fn initialize_answers_fast_and_first_call_succeeds() {
-    let bin = env!("CARGO_BIN_EXE_lean-ctx");
+    let bin = env!("CARGO_BIN_EXE_sobre");
     let env = test_env();
 
     let spawn_at = Instant::now();
@@ -61,7 +61,7 @@ fn initialize_answers_fast_and_first_call_succeeds() {
         .arg("mcp")
         .current_dir(&env.project)
         .env("HOME", &env.home)
-        .env("LEAN_CTX_DATA_DIR", &env.data)
+        .env("SOBRE_DATA_DIR", &env.data)
         .env("CODEX_HOME", env.home.join(".codex"))
         // Root detection must derive from the temp project's cwd. When the
         // suite itself runs inside an IDE/agent session these carry the HOST

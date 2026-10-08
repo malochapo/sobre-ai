@@ -40,7 +40,7 @@ const FILE_NAME: &str = "usage.jsonl";
 pub enum Surface {
     /// An MCP tool call (`ctx_read`, `ctx_shell`, …).
     Mcp,
-    /// The `lean-ctx -c` shell wrapper.
+    /// The `sobre -c` shell wrapper.
     Shell,
     /// A host hook (post-tool compression, read dedup).
     Hook,
@@ -82,7 +82,7 @@ pub struct LlmCall {
 /// Path of the ledger, creating the data directory if needed.
 #[must_use]
 pub fn path() -> Option<PathBuf> {
-    let dir = crate::core::data_dir::lean_ctx_data_dir().ok()?;
+    let dir = crate::core::data_dir::sobre_data_dir().ok()?;
     std::fs::create_dir_all(&dir).ok()?;
     Some(dir.join(FILE_NAME))
 }

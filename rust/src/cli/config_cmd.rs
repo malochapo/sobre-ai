@@ -5,13 +5,13 @@ pub fn cmd_config(args: &[String]) {
         None | Some("show") => {
             println!("{}", config::Config::load().show());
             println!(
-                "\nChange a key with `lean-ctx config set <key> <value>`; `lean-ctx config init`\nwrites the file with every key documented. `lean-ctx doctor` flags unknown keys."
+                "\nChange a key with `sobre config set <key> <value>`; `sobre config init`\nwrites the file with every key documented. `sobre doctor` flags unknown keys."
             );
         }
         Some("init") => init_config(),
         Some("set") => {
             if args.len() < 3 {
-                eprintln!("Usage: lean-ctx config set <key> <value>");
+                eprintln!("Usage: sobre config set <key> <value>");
                 std::process::exit(1);
             }
             let key = &args[1];
@@ -31,7 +31,7 @@ pub fn cmd_config(args: &[String]) {
         }
         Some("path") => cmd_config_path(),
         _ => {
-            eprintln!("Usage: lean-ctx config [show|set <key> <value>|path|init]");
+            eprintln!("Usage: sobre config [show|set <key> <value>|path|init]");
             std::process::exit(1);
         }
     }
@@ -121,7 +121,7 @@ fn init_config() {
         Err(e) => {
             eprintln!(
                 "Error: refusing to overwrite an unparseable config.toml ({e}).\n  \
-                 Fix it manually or run `lean-ctx doctor --fix`, then retry."
+                 Fix it manually or run `sobre doctor --fix`, then retry."
             );
             return;
         }
@@ -140,7 +140,7 @@ fn init_config() {
 /// scriptable).
 ///
 /// This is the canonical way to verify that the CLI and the MCP server resolve
-/// the *same* config file (GH #594): run `lean-ctx config path` in a terminal
+/// the *same* config file (GH #594): run `sobre config path` in a terminal
 /// and from the editor's MCP context, then compare. Output is the bare path so
 /// it can be diffed/captured in scripts and tests; it exits non-zero only when
 /// no config directory can be resolved at all.

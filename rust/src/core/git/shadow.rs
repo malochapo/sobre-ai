@@ -65,7 +65,7 @@ pub fn snapshot(project: &Path, message: &str) -> Result<Checkpoint, String> {
     git(&["add", "-A"], project, Duration::from_mins(2), &env)?.ok_stdout()?;
 
     let msg = if message.trim().is_empty() {
-        "lean-ctx checkpoint"
+        "sobre checkpoint"
     } else {
         message
     };
@@ -190,10 +190,10 @@ fn base_env(git_dir: &Path, work_tree: &Path) -> Vec<(String, String)> {
             "GIT_WORK_TREE".into(),
             work_tree.to_string_lossy().into_owned(),
         ),
-        ("GIT_AUTHOR_NAME".into(), "lean-ctx".into()),
-        ("GIT_AUTHOR_EMAIL".into(), "agent@lean-ctx.local".into()),
-        ("GIT_COMMITTER_NAME".into(), "lean-ctx".into()),
-        ("GIT_COMMITTER_EMAIL".into(), "agent@lean-ctx.local".into()),
+        ("GIT_AUTHOR_NAME".into(), "sobre".into()),
+        ("GIT_AUTHOR_EMAIL".into(), "agent@sobre.local".into()),
+        ("GIT_COMMITTER_NAME".into(), "sobre".into()),
+        ("GIT_COMMITTER_EMAIL".into(), "agent@sobre.local".into()),
     ]
 }
 
@@ -249,7 +249,7 @@ fn count_changed(project: &Path, env: &[(String, String)], sha: &str) -> usize {
 
 fn shadow_git_dir(project: &Path) -> Result<PathBuf, String> {
     let hash = project_hash(project);
-    Ok(crate::core::data_dir::lean_ctx_data_dir()?
+    Ok(crate::core::data_dir::sobre_data_dir()?
         .join("shadow")
         .join(hash)
         .join("git"))
@@ -268,12 +268,9 @@ fn project_hash(project: &Path) -> String {
 }
 
 fn write_excludes(git_dir: &Path) -> Result<PathBuf, String> {
-    let path = git_dir
-        .parent()
-        .unwrap_or(git_dir)
-        .join("lean-ctx-excludes");
+    let path = git_dir.parent().unwrap_or(git_dir).join("sobre-excludes");
     let defaults = "\
-# lean-ctx shadow-history excludes (keeps snapshots lean even without a project .gitignore)
+# sobre shadow-history excludes (keeps snapshots lean even without a project .gitignore)
 .git/
 target/
 node_modules/
@@ -318,7 +315,7 @@ mod tests {
         }
         let _lock = crate::core::data_dir::test_env_lock();
         let data = temp_project("data");
-        crate::test_env::set_var("LEAN_CTX_DATA_DIR", &data);
+        crate::test_env::set_var("SOBRE_DATA_DIR", &data);
         let project = temp_project("proj");
 
         std::fs::write(project.join("a.txt"), "v1\n").unwrap();
@@ -350,7 +347,7 @@ mod tests {
             "shadow history must not touch the user's project .git"
         );
 
-        crate::test_env::remove_var("LEAN_CTX_DATA_DIR");
+        crate::test_env::remove_var("SOBRE_DATA_DIR");
         let _ = std::fs::remove_dir_all(&data);
         let _ = std::fs::remove_dir_all(&project);
     }

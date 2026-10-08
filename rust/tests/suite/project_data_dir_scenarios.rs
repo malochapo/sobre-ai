@@ -5,7 +5,7 @@
 
 use std::path::Path;
 
-use lean_ctx::core::pathutil::is_broad_or_unsafe_root;
+use sobre::core::pathutil::is_broad_or_unsafe_root;
 
 // ---------------------------------------------------------------------------
 // is_broad_or_unsafe_root

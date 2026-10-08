@@ -19,7 +19,7 @@ pub(crate) fn write_gemini_settings(
                     &target.config_path,
                     &content,
                     "mcpServers",
-                    "lean-ctx",
+                    "sobre",
                     &entry,
                     opts.overwrite_invalid,
                 );
@@ -35,14 +35,14 @@ pub(crate) fn write_gemini_settings(
             .as_object_mut()
             .ok_or_else(|| "\"mcpServers\" must be an object".to_string())?;
 
-        let existing = servers_obj.get("lean-ctx").cloned();
+        let existing = servers_obj.get("sobre").cloned();
         if existing.as_ref() == Some(&entry) {
             return Ok(WriteResult {
                 action: WriteAction::Already,
                 note: None,
             });
         }
-        servers_obj.insert("lean-ctx".to_string(), entry);
+        servers_obj.insert("sobre".to_string(), entry);
 
         let formatted = serde_json::to_string_pretty(&json).map_err(|e| e.to_string())?;
         crate::config_io::write_atomic_with_backup(&target.config_path, &formatted)?;
@@ -52,7 +52,7 @@ pub(crate) fn write_gemini_settings(
         });
     }
 
-    let config = serde_json::json!({ "mcpServers": { "lean-ctx": entry } });
+    let config = serde_json::json!({ "mcpServers": { "sobre": entry } });
     let formatted = serde_json::to_string_pretty(&config).map_err(|e| e.to_string())?;
     crate::config_io::write_atomic_with_backup(&target.config_path, &formatted)?;
     Ok(WriteResult {

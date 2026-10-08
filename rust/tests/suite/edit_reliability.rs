@@ -34,10 +34,10 @@
 use std::fs;
 use std::path::Path;
 
-use lean_ctx::core::anchor::{annotate, line_hash};
-use lean_ctx::core::tokens::count_tokens;
-use lean_ctx::tools::ctx_patch::{self, AnchorOp, PatchParams};
-use lean_ctx::tools::impl_edit::{self, CacheEffect, EditParams};
+use sobre::core::anchor::{annotate, line_hash};
+use sobre::core::tokens::count_tokens;
+use sobre::tools::ctx_patch::{self, AnchorOp, PatchParams};
+use sobre::tools::impl_edit::{self, CacheEffect, EditParams};
 
 /// One language's two source variants plus the lines that carry the mechanical
 /// bug. Sources are complete, syntactically valid units so the `ctx_patch`

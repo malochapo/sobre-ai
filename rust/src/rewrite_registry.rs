@@ -1,5 +1,5 @@
 /// Commands sobre knows how to compress. The Cursor/Gemini pre-run hooks wrap
-/// only these in `lean-ctx -c`, and never a file read (`FileRead`), whose
+/// only these in `sobre -c`, and never a file read (`FileRead`), whose
 /// content must reach the agent verbatim.
 pub const REWRITE_COMMANDS: &[RewriteEntry] = &[
     // Version control

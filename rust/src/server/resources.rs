@@ -1,10 +1,10 @@
 use rmcp::model::{Resource, ResourceContents};
 
-const URI_SUMMARY: &str = "lean-ctx://context/summary";
-const URI_PINNED: &str = "lean-ctx://context/pinned";
-const URI_PRESSURE: &str = "lean-ctx://context/pressure";
-const URI_PLAN: &str = "lean-ctx://context/plan";
-const URI_BOUNCE: &str = "lean-ctx://context/bounce";
+const URI_SUMMARY: &str = "sobre://context/summary";
+const URI_PINNED: &str = "sobre://context/pinned";
+const URI_PRESSURE: &str = "sobre://context/pressure";
+const URI_PLAN: &str = "sobre://context/plan";
+const URI_BOUNCE: &str = "sobre://context/bounce";
 
 pub fn list_resources() -> Vec<Resource> {
     vec![
@@ -166,7 +166,7 @@ mod tests {
     #[test]
     fn read_unknown_uri_returns_none() {
         let ledger = crate::core::context_ledger::ContextLedger::new();
-        let result = read_resource("lean-ctx://unknown", &ledger);
+        let result = read_resource("sobre://unknown", &ledger);
         assert!(result.is_none());
     }
 

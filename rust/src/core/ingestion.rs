@@ -2,7 +2,7 @@
 //!
 //! Decides what reaches the index — BM25, semantic, knowledge — **independent of
 //! code-ness**. Historically only files passing `is_code_file` were indexed,
-//! which locked lean-ctx to source repositories. Intake is now driven by a
+//! which locked sobre to source repositories. Intake is now driven by a
 //! content-*kind* classification (extension fast-path + a bounded binary sniff),
 //! so any text corpus (docs, data, transcripts, logs) is ingestible while
 //! genuine binaries are excluded. Code repositories behave exactly as before:

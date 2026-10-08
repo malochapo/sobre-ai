@@ -35,7 +35,7 @@ pub use proxy::{
 /// eviction orchestrator (which measures real heap).
 pub const DEFAULT_BM25_PERSIST_MB: u64 = 512;
 
-/// Fixed-context budget (#964): the per-session footprint lean-ctx adds — tool
+/// Fixed-context budget (#964): the per-session footprint sobre adds — tool
 /// schemas + MCP instructions + auto-loaded rules files + the wakeup briefing —
 /// is checked against this in `doctor overhead` and `gain`.
 pub const CONTEXT_BUDGET_TOKENS: usize = 8000;
@@ -56,7 +56,7 @@ pub const PRESERVE_COMPACT_FORMATS: &[&str] = &["toon"];
 /// Cap on files the graph index scans, bounding its RAM (#790).
 pub const GRAPH_INDEX_MAX_FILES: u64 = 15_000;
 
-/// Share of system RAM the memory guard allows lean-ctx to use.
+/// Share of system RAM the memory guard allows sobre to use.
 pub const MAX_RAM_PERCENT: u8 = 5;
 
 /// Idle time after which the session cache is cleared.
@@ -73,7 +73,7 @@ pub fn is_default_compression_level_value(v: f64) -> bool {
     (v - DEFAULT_COMPRESSION_LEVEL).abs() < f64::EPSILON
 }
 
-/// lean-ctx configuration, loaded from the single `config.toml`.
+/// sobre configuration, loaded from the single `config.toml`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Config {
@@ -96,14 +96,14 @@ pub struct Config {
     #[serde(default)]
     pub search_roots: Vec<String>,
     /// Opt-in (#520): write a human-readable debug log of intercepted MCP tool
-    /// calls and hook routing decisions (lean-ctx vs native, with reasons) to
+    /// calls and hook routing decisions (sobre vs native, with reasons) to
     /// `<state_dir>/logs/debug.log`.
     #[serde(default)]
     pub debug_log: bool,
     /// Verbatim binary path/expression for generated agent-hook commands
     /// (#708). Users who sync agent settings (`~/.claude/settings.json`, …)
     /// across machines with different usernames need an env-based form like
-    /// `$HOME/.local/bin/lean-ctx` — agent hosts run hook commands through a
+    /// `$HOME/.local/bin/sobre` — agent hosts run hook commands through a
     /// shell, which expands it. When set, every hook writer emits the value verbatim instead of
     /// the machine-absolute exe path, so `init`/`doctor --fix` stop
     /// rewriting synced files into sync ping-pong. Autostart plists/services
@@ -151,30 +151,27 @@ impl Config {
     /// cache), applies `f`, then writes minimally. Refuses (returns `Err`) when
     /// the file exists but is unparseable, so a typo can never clobber a
     /// customized config (#443). Returns the saved `Config`.
-    pub fn update_global<F>(f: F) -> std::result::Result<Self, super::error::LeanCtxError>
+    pub fn update_global<F>(f: F) -> std::result::Result<Self, super::error::SobreError>
     where
         F: FnOnce(&mut Self),
     {
         let path = Self::path().ok_or_else(|| {
-            super::error::LeanCtxError::Config("cannot determine home directory".into())
+            super::error::SobreError::Config("cannot determine home directory".into())
         })?;
         Self::update_global_at(&path, f)
     }
 
     /// Path-parameterized core of [`Config::update_global`] (unit-testable).
-    fn update_global_at<F>(
-        path: &Path,
-        f: F,
-    ) -> std::result::Result<Self, super::error::LeanCtxError>
+    fn update_global_at<F>(path: &Path, f: F) -> std::result::Result<Self, super::error::SobreError>
     where
         F: FnOnce(&mut Self),
     {
         let mut cfg = match std::fs::read_to_string(path) {
             Ok(raw) if !raw.trim().is_empty() => toml::from_str::<Self>(&raw).map_err(|e| {
-                super::error::LeanCtxError::Config(
+                super::error::SobreError::Config(
                     format!(
                         "refusing to modify an unparseable config.toml ({e}); fix it \
-                     manually or run `lean-ctx doctor --fix`, then retry"
+                     manually or run `sobre doctor --fix`, then retry"
                     )
                     .into(),
                 )
@@ -191,29 +188,29 @@ impl Config {
     /// Preserves user comments, formatting, and unknown keys, keeps the file
     /// minimal (defaults that were never set on disk stay implicit), and writes
     /// atomically with a `.bak` backup so customizations are always recoverable.
-    pub fn save(&self) -> std::result::Result<(), super::error::LeanCtxError> {
+    pub fn save(&self) -> std::result::Result<(), super::error::SobreError> {
         let path = Self::path().ok_or_else(|| {
-            super::error::LeanCtxError::Config("cannot determine home directory".into())
+            super::error::SobreError::Config("cannot determine home directory".into())
         })?;
         self.save_to(&path)
     }
 
     /// Path-parameterized core of [`Config::save`] (unit-testable).
-    fn save_to(&self, path: &Path) -> std::result::Result<(), super::error::LeanCtxError> {
+    fn save_to(&self, path: &Path) -> std::result::Result<(), super::error::SobreError> {
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;
         }
         let content = toml::to_string_pretty(self)
-            .map_err(|e| super::error::LeanCtxError::Config(e.to_string().into()))?;
+            .map_err(|e| super::error::SobreError::Config(e.to_string().into()))?;
         // Baseline = what loading an empty config yields. This honors serde's
         // field-level `#[serde(default)]` (which can diverge from the struct's
         // `Default` impl), so minimal mode skips exactly the keys that a fresh
         // load would produce — no spurious lines on save.
         let baseline = toml::from_str::<Self>("").unwrap_or_else(|_| Self::default());
         let defaults = toml::to_string_pretty(&baseline)
-            .map_err(|e| super::error::LeanCtxError::Config(e.to_string().into()))?;
+            .map_err(|e| super::error::SobreError::Config(e.to_string().into()))?;
         crate::config_io::write_toml_preserving_minimal(path, &content, &defaults)
-            .map_err(|e| super::error::LeanCtxError::Config(e.into()))?;
+            .map_err(|e| super::error::SobreError::Config(e.into()))?;
         Ok(())
     }
 

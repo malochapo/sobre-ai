@@ -16,7 +16,7 @@ of a similar file would be compressed the same way.
 ## Signals
 
 Edit outcomes are recorded by the two edit engines behind `ctx_patch`, keyed
-by the **mode of the last lean-ctx read of that file** (session cache
+by the **mode of the last sobre read of that file** (session cache
 `last_mode`):
 
 - string replacement (`op=replace_unique`): `tools/impl_edit.rs`
@@ -36,7 +36,7 @@ Only these outcomes carry signal:
 Explicitly **not** recorded (no compression signal): file creation
 (`ctx_patch op=create`; a new file has no recorded read mode), empty or identical `old_string`/`new_string`,
 preimage/TOCTOU mismatches, missing files, already-applied edits, structural
-errors in anchored ops, and files never read through lean-ctx (`last_mode`
+errors in anchored ops, and files never read through sobre (`last_mode`
 empty).
 
 ## Feedback rules
@@ -83,7 +83,7 @@ affect `py|map` or `rs|signatures`.
 
 ## Persistence
 
-`edit_quality.json` in the data directory (respects `LEAN_CTX_DATA_DIR`), atomic
+`edit_quality.json` in the data directory (respects `SOBRE_DATA_DIR`), atomic
 tmp+rename writes, flushed every 10 recordings and on server shutdown.
 
 Bounds:

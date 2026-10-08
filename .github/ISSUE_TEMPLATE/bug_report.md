@@ -5,7 +5,7 @@ title: 'bug: '
 labels: bug
 ---
 
-**sobre version:** (run `lean-ctx --version`)
+**sobre version:** (run `sobre --version`)
 
 **OS:** (macOS / Linux / Windows)
 

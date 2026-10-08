@@ -23,7 +23,7 @@ pub(crate) fn check_codex_toml(path: &std::path::Path, binary: &str) -> NamedChe
     };
     let cmd = v
         .get("mcp_servers")
-        .and_then(|t| t.get("lean-ctx"))
+        .and_then(|t| t.get("sobre"))
         .and_then(|t| t.get("command"))
         .and_then(|c| c.as_str());
     let ok = cmd.is_some_and(|c| cmd_matches_expected(c, binary));
@@ -116,12 +116,12 @@ pub(crate) fn check_codex_hooks_enabled(home: &std::path::Path) -> NamedCheck {
     }
 }
 
-/// Informational note (always `ok`): lean-ctx's transparent shell/file
+/// Informational note (always `ok`): sobre's transparent shell/file
 /// compression is hook-driven, and whether Codex lifecycle hooks fire depends on
 /// the surface (CLI / Desktop / Cloud), the Codex version, and whether the hooks
 /// are trusted (`/hooks`). Rather than asserting any one surface "can't" run hooks
 /// (it varies and changes across Codex releases), this note points at the reliable
-/// path: the lean-ctx MCP tools (`ctx_shell`/`ctx_read`/`ctx_search`) compress on
+/// path: the sobre MCP tools (`ctx_shell`/`ctx_read`/`ctx_search`) compress on
 /// every surface. Guidance only — it never fails.
 pub(crate) fn codex_desktop_note() -> NamedCheck {
     NamedCheck {
@@ -162,7 +162,7 @@ pub(crate) fn check_codex_hooks_json(home: &std::path::Path, binary: &str) -> Na
     let detail = if !entries_ok {
         format!("missing managed entries ({})", path.display())
     } else if let Some(old) = stale {
-        format!("stale binary {old} — run lean-ctx init --repair")
+        format!("stale binary {old} — run sobre init --repair")
     } else {
         format!("ok ({})", path.display())
     };

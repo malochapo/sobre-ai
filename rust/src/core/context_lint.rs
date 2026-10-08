@@ -1,4 +1,4 @@
-//! Injected-context linter (#960) — keeps lean-ctx's OWN injected context
+//! Injected-context linter (#960) — keeps sobre's OWN injected context
 //! (the MCP instructions + advertised tool descriptions) high-signal.
 //!
 //! The Nisi/WorkOS "Case" talk is the motivation: comprehensive prose and
@@ -202,7 +202,7 @@ mod tests {
     #[test]
     fn structural_lines_are_skipped() {
         // Markers, blanks and headers must not be flagged even if repeated.
-        let text = "<!-- lean-ctx-rules -->\n\n# header\n<!-- lean-ctx-rules -->\n\n# header";
+        let text = "<!-- sobre-rules -->\n\n# header\n<!-- sobre-rules -->\n\n# header";
         assert_eq!(error_count(&lint_rules_text("t", text)), 0);
     }
 

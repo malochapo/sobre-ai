@@ -1,6 +1,6 @@
 //! Layer 4: MCP tool description compression.
 //!
-//! Compresses lean-ctx's 56+ tool descriptions to reduce the token overhead
+//! Compresses sobre's 56+ tool descriptions to reduce the token overhead
 //! of the initial `tools/list` response. Two modes:
 //! - Terse: Natural-language descriptions shortened via abbreviations
 //! - Lazy: Only tool name + 1-line summary, full description on-demand

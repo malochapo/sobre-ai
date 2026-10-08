@@ -315,16 +315,16 @@ mod tests {
     fn with_sandbox<T>(f: impl FnOnce(String) -> T) -> T {
         let _lock = crate::core::data_dir::test_env_lock();
         let dir = std::env::temp_dir().join(format!(
-            "lctx-restore-{}-{}",
+            "sobre-restore-{}-{}",
             std::process::id(),
             Utc::now().timestamp_nanos_opt().unwrap_or(0)
         ));
         let _ = std::fs::create_dir_all(&dir);
-        crate::test_env::set_var("LEAN_CTX_DATA_DIR", dir.to_str().unwrap());
+        crate::test_env::set_var("SOBRE_DATA_DIR", dir.to_str().unwrap());
         let root = dir.join("proj").to_string_lossy().to_string();
         let _ = std::fs::create_dir_all(&root);
         let out = f(root);
-        crate::test_env::remove_var("LEAN_CTX_DATA_DIR");
+        crate::test_env::remove_var("SOBRE_DATA_DIR");
         let _ = std::fs::remove_dir_all(&dir);
         out
     }

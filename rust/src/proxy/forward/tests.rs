@@ -4,7 +4,7 @@ fn parts_for(uri: &str) -> Parts {
 }
 
 fn add_test_marker(mut value: serde_json::Value, original_size: usize) -> (Vec<u8>, usize, usize) {
-    value["lean_ctx_touched"] = serde_json::Value::Bool(true);
+    value["sobre_touched"] = serde_json::Value::Bool(true);
     let out = serde_json::to_vec(&value).unwrap();
     let compressed_size = out.len();
     (out, original_size, compressed_size)
@@ -77,7 +77,7 @@ fn zstd_request_bodies_are_rewritten_and_reencoded() {
 
     let decoded = zstd::decode_all(prepared.body.as_slice()).unwrap();
     let parsed: serde_json::Value = serde_json::from_slice(&decoded).unwrap();
-    assert_eq!(parsed["lean_ctx_touched"], true);
+    assert_eq!(parsed["sobre_touched"], true);
     assert_eq!(parsed["model"], "gpt-5");
 }
 
@@ -100,7 +100,7 @@ fn gzip_request_bodies_are_rewritten_and_reencoded() {
 
     let decoded = decode_gzip_bounded(&prepared.body, max_body_bytes()).unwrap();
     let parsed: serde_json::Value = serde_json::from_slice(&decoded).unwrap();
-    assert_eq!(parsed["lean_ctx_touched"], true);
+    assert_eq!(parsed["sobre_touched"], true);
     assert_eq!(parsed["model"], "gpt-5");
 }
 
@@ -277,5 +277,5 @@ fn forwards_codex_state_response_headers() {
 
 #[test]
 fn internal_project_tag_is_not_forwarded() {
-    assert!(!is_allowed_request_header("x-leanctx-project"));
+    assert!(!is_allowed_request_header("x-sobre-project"));
 }

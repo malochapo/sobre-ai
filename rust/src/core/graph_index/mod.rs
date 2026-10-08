@@ -286,7 +286,7 @@ impl ProjectIndex {
     pub fn index_dir(project_root: &str) -> Option<std::path::PathBuf> {
         let normalized = normalize_project_root(project_root);
         let hash = crate::core::project_hash::hash_project_root(&normalized);
-        crate::core::data_dir::lean_ctx_data_dir()
+        crate::core::data_dir::sobre_data_dir()
             .ok()
             .map(|d| d.join("graphs").join(hash))
     }
@@ -314,7 +314,7 @@ impl ProjectIndex {
     /// Remove all cached graph indices that are older than max_age_hours.
     /// Called on server startup to prevent stale data from persisting.
     pub fn purge_stale_indices() {
-        let Ok(data_dir) = crate::core::data_dir::lean_ctx_data_dir() else {
+        let Ok(data_dir) = crate::core::data_dir::sobre_data_dir() else {
             return;
         };
         let graphs_dir = data_dir.join("graphs");
@@ -584,7 +584,7 @@ fn source_content_changed_since_index(index: &ProjectIndex, root_abs: &str) -> b
 }
 
 /// Delete the persisted graph-index artifacts for a project so the next scan
-/// rebuilds from scratch. Backs `lean-ctx index build --force`.
+/// rebuilds from scratch. Backs `sobre index build --force`.
 ///
 /// The property graph (`graph.db` + `graph.meta.json`) is the sole store.
 pub fn purge_index(project_root: &str) {

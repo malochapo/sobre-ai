@@ -51,7 +51,7 @@ pub(crate) fn integration_generic(
     // #593: Windsurf is wired through MCP + Cascade hooks and has no skills. Surface a consolidated status so an empty
     // `watch` or a "missing skill" is not misread as a broken install, and show
     // the last real ctx_* MCP call so users can see whether Cascade actually
-    // drives lean-ctx (GLM 5.2 and other weaker models often call native tools).
+    // drives sobre (GLM 5.2 and other weaker models often call native tools).
     if target.name == "Windsurf" {
         checks.push(check_windsurf_hooks(home));
         checks.push(skill_not_applicable_note());
@@ -124,7 +124,7 @@ pub(crate) fn integration_claude(home: &std::path::Path, binary: &str) -> Integr
         let current = crate::setup::skill::is_current("claude", home);
         let detail = match crate::setup::skill::skill_path("claude", home) {
             Some(p) if current => p.display().to_string(),
-            _ => "missing or outdated (run: lean-ctx init)".into(),
+            _ => "missing or outdated (run: sobre init)".into(),
         };
         checks.push(NamedCheck {
             name: "Skill".to_string(),

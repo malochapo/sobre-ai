@@ -92,7 +92,7 @@ fn install_codex_env_at_path(config_path: &Path, port: u16, quiet: bool, mode: C
     if updated == existing {
         if !quiet {
             if entries.is_empty() {
-                println!("  Codex ChatGPT login — config left native (no lean-ctx proxy entries)");
+                println!("  Codex ChatGPT login — config left native (no sobre proxy entries)");
             } else {
                 println!("  Codex CLI proxy env already configured");
             }
@@ -107,7 +107,7 @@ fn install_codex_env_at_path(config_path: &Path, port: u16, quiet: bool, mode: C
                 println!("  Configured openai_base_url in Codex CLI config");
             }
             CodexProxyMode::ChatGpt => println!(
-                "  Codex ChatGPT login — removed stale lean-ctx proxy entries (Codex now talks directly to ChatGPT)"
+                "  Codex ChatGPT login — removed stale sobre proxy entries (Codex now talks directly to ChatGPT)"
             ),
         }
     }
@@ -139,7 +139,7 @@ pub(crate) fn render_codex_config(existing: &str, entries: &[(&str, String)]) ->
     }
 }
 
-/// Remove lean-ctx's own Codex proxy entry from a `config.toml` body: a local
+/// Remove sobre's own Codex proxy entry from a `config.toml` body: a local
 /// top-level `openai_base_url`. Custom remote endpoints and tables are preserved.
 pub(crate) fn strip_codex_proxy_entries(body: &str) -> String {
     let lines: Vec<&str> = body.lines().collect();

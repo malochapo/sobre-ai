@@ -1,15 +1,15 @@
 //! Home dot-dir firewall — regression guard for the GH #434–#436 class.
 //!
-//! Building a HOME-based `~/.lean-ctx` dir directly (e.g.
-//! `home.join(".lean-ctx")`) bypasses the XDG resolver in `core::paths` /
+//! Building a HOME-based `~/.sobre` dir directly (e.g.
+//! `home.join(".sobre")`) bypasses the XDG resolver in `core::paths` /
 //! `core::data_dir`, so files would land outside the typed `$XDG_*` dirs.
 //! Code MUST go through `data_dir()` / `state_dir()`
 //! / `config_dir()` / `cache_dir()` instead.
 //!
-//! No file constructs a home-based `~/.lean-ctx` path; this test fails if one
+//! No file constructs a home-based `~/.sobre` path; this test fails if one
 //! appears.
 //!
-//! Project-local `<project>/.lean-ctx` directories (the per-repo index, sibling
+//! Project-local `<project>/.sobre` directories (the per-repo index, sibling
 //! to `.git`) are a different, legitimate concept and are intentionally NOT
 //! flagged — only joins rooted at the user HOME are matched.
 
@@ -30,13 +30,13 @@ fn collect_rs_files(dir: &Path, out: &mut Vec<PathBuf>) {
     }
 }
 
-/// True when the file builds the HOME dot-dir `~/.lean-ctx` directly: some
-/// `join(".lean-ctx…")` is rooted at a `home` token (`home.join(".lean-ctx")`,
-/// `dirs::home_dir()…join(".lean-ctx/logs")`, `…join(".lean-ctx/agents/…")`).
+/// True when the file builds the HOME dot-dir `~/.sobre` directly: some
+/// `join(".sobre…")` is rooted at a `home` token (`home.join(".sobre")`,
+/// `dirs::home_dir()…join(".sobre/logs")`, `…join(".sobre/agents/…")`).
 ///
-/// Both the bare dir (`join(".lean-ctx")`) and any subpath join
-/// (`join(".lean-ctx/logs")`, `join(".lean-ctx/agents/tasks.json")`) are
-/// matched: the byte right after `.lean-ctx` must be `"` or `/`, so other names
+/// Both the bare dir (`join(".sobre")`) and any subpath join
+/// (`join(".sobre/logs")`, `join(".sobre/agents/tasks.json")`) are
+/// matched: the byte right after `.sobre` must be `"` or `/`, so other names
 /// that merely share the prefix (followed by `.` / `-`) stay out of scope.
 ///
 /// The scan spans lines on purpose — the join is frequently chained on its own
@@ -45,7 +45,7 @@ fn collect_rs_files(dir: &Path, out: &mut Vec<PathBuf>) {
 /// (`project_root`, `root`, `cwd`, `dir`) — which carry no `home` token — out
 /// of scope by design.
 fn builds_home_dotdir_path(text: &str) -> bool {
-    const PREFIX: &str = r#"join(".lean-ctx"#;
+    const PREFIX: &str = r#"join(".sobre"#;
     const LOOKBACK: usize = 160;
     let bytes = text.as_bytes();
     let mut search_from = 0;
@@ -91,7 +91,7 @@ fn no_home_dotdir_path_construction() {
 
     assert!(
         offenders.is_empty(),
-        "Home-based `~/.lean-ctx` path construction detected.\n\
+        "Home-based `~/.sobre` path construction detected.\n\
          Use core::paths (data_dir/state_dir/config_dir/cache_dir) instead.\n\
          Offending file(s):\n  {}",
         offenders

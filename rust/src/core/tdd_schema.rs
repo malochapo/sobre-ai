@@ -10,7 +10,7 @@ pub fn default_tdd_schema_path() -> PathBuf {
 pub fn tdd_schema_value() -> Value {
     json!({
         "schema_version": 1,
-        "format": "lean-ctx-tdd",
+        "format": "sobre-tdd",
         "crp": {
             "modes": [
                 {
@@ -60,7 +60,7 @@ pub fn tdd_schema_value() -> Value {
                 "Stable ordering for ledgers and reports."
             ],
             "local_first": [
-                "All files stored under LEAN_CTX_DATA_DIR by default.",
+                "All files stored under SOBRE_DATA_DIR by default.",
                 "No raw prompts stored."
             ]
         }

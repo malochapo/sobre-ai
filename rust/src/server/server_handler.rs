@@ -1,7 +1,7 @@
-//! `rmcp::ServerHandler` trait implementation for [`LeanCtxServer`].
+//! `rmcp::ServerHandler` trait implementation for [`SobreServer`].
 //!
 //! Split out of `server/mod.rs`; `use super::*` re-imports the parent module’s
-//! aliases and sibling submodules. Methods attach to `LeanCtxServer` regardless
+//! aliases and sibling submodules. Methods attach to `SobreServer` regardless
 //! of which module the impl block lives in.
 
 #[allow(clippy::wildcard_imports)]
@@ -32,14 +32,14 @@ fn server_capabilities(resources: bool, prompts: bool) -> ServerCapabilities {
     }
 }
 
-impl ServerHandler for LeanCtxServer {
+impl ServerHandler for SobreServer {
     fn get_info(&self) -> ServerInfo {
         let capabilities = server_capabilities(true, true);
 
         let instructions = crate::instructions::build_instructions();
 
         InitializeResult::new(capabilities)
-            .with_server_info(Implementation::new("lean-ctx", env!("CARGO_PKG_VERSION")))
+            .with_server_info(Implementation::new("sobre", env!("CARGO_PKG_VERSION")))
             .with_instructions(instructions)
     }
 
@@ -108,7 +108,7 @@ impl ServerHandler for LeanCtxServer {
                 }
             }
             if let Err(e) = session.save() {
-                tracing::warn!("lean-ctx: failed to persist session state: {e}");
+                tracing::warn!("sobre: failed to persist session state: {e}");
             }
         }
 
@@ -122,7 +122,7 @@ impl ServerHandler for LeanCtxServer {
         tokio::task::spawn_blocking(move || {
             // Avoid startup stampedes when multiple agent sessions initialize at once.
             // These are best-effort maintenance tasks; it's fine to skip if another
-            // lean-ctx instance is already doing them.
+            // sobre instance is already doing them.
             let maintenance = crate::core::startup_guard::try_acquire_lock(
                 "startup-maintenance",
                 std::time::Duration::from_secs(2),
@@ -159,7 +159,7 @@ impl ServerHandler for LeanCtxServer {
         let capabilities = server_capabilities(client_caps.resources, client_caps.prompts);
 
         Ok(InitializeResult::new(capabilities)
-            .with_server_info(Implementation::new("lean-ctx", env!("CARGO_PKG_VERSION")))
+            .with_server_info(Implementation::new("sobre", env!("CARGO_PKG_VERSION")))
             .with_instructions(instructions))
     }
 
@@ -331,7 +331,7 @@ impl ServerHandler for LeanCtxServer {
                 tracing::error!("call_tool panicked: {detail}");
 
                 Ok(CallToolResult::error(vec![ContentBlock::text(
-                    "ERROR: lean-ctx internal error. The MCP server is still running. \
+                    "ERROR: sobre internal error. The MCP server is still running. \
                      Please retry or use a different approach."
                         .to_string(),
                 )]))

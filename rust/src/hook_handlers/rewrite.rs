@@ -1,4 +1,4 @@
-//! `hook cursor` / `hook gemini`: wrap a shell command in `lean-ctx -c` before
+//! `hook cursor` / `hook gemini`: wrap a shell command in `sobre -c` before
 //! the host runs it, for hosts that cannot replace a command's output after
 //! the fact.
 //!
@@ -56,7 +56,7 @@ fn compute(host: Host) -> String {
         let binary = resolve_binary();
         match rewrite_for(host, &cmd, &binary, &cwd) {
             Some(wrapped) => {
-                debug_log::log_hook_decision("rewrite", &tool, Route::LeanCtx, &cmd, "wrapped");
+                debug_log::log_hook_decision("rewrite", &tool, Route::Sobre, &cmd, "wrapped");
                 reply(host, args.as_ref(), &wrapped)
             }
             None => build_passthrough_output(),
@@ -88,7 +88,7 @@ fn rewrite_for(host: Host, cmd: &str, binary: &str, cwd: &Path) -> Option<String
 pub(super) fn candidate(cmd: &str, binary: &str) -> Option<String> {
     let cmd = cmd.trim();
     if cmd.is_empty()
-        || cmd.starts_with("lean-ctx ")
+        || cmd.starts_with("sobre ")
         || cmd.starts_with(&format!("{binary} "))
         || cmd.contains('\n')
         || cmd.contains("<<")
@@ -139,17 +139,17 @@ fn reply(host: Host, args: Option<&Value>, wrapped: &str) -> String {
 mod tests {
     use super::*;
 
-    const BIN: &str = "lean-ctx";
+    const BIN: &str = "sobre";
 
     #[test]
     fn single_known_commands_are_wrapped_whole() {
         assert_eq!(
             candidate("git status", BIN).as_deref(),
-            Some("lean-ctx -c 'git status'")
+            Some("sobre -c 'git status'")
         );
         assert_eq!(
             candidate("cargo test --lib", BIN).as_deref(),
-            Some("lean-ctx -c 'cargo test --lib'")
+            Some("sobre -c 'cargo test --lib'")
         );
     }
 
@@ -164,7 +164,7 @@ mod tests {
             "cat src/main.rs",
             "head -n 5 a.txt",
             "rm -rf target",
-            "lean-ctx -c 'git status'",
+            "sobre -c 'git status'",
             "",
         ] {
             assert_eq!(candidate(cmd, BIN), None, "{cmd}");
@@ -174,17 +174,17 @@ mod tests {
     #[test]
     fn replies_carry_no_permission_decision() {
         let args = json!({ "command": "git status", "cwd": "/repo" });
-        let cursor = reply(Host::Cursor, Some(&args), "lean-ctx -c 'git status'");
+        let cursor = reply(Host::Cursor, Some(&args), "sobre -c 'git status'");
         let v: Value = serde_json::from_str(&cursor).unwrap();
-        assert_eq!(v["updated_input"]["command"], "lean-ctx -c 'git status'");
+        assert_eq!(v["updated_input"]["command"], "sobre -c 'git status'");
         assert_eq!(v["updated_input"]["cwd"], "/repo");
         assert!(!cursor.contains("permission") && !cursor.contains("allow"));
 
-        let gemini = reply(Host::Gemini, None, "lean-ctx -c 'git status'");
+        let gemini = reply(Host::Gemini, None, "sobre -c 'git status'");
         let v: Value = serde_json::from_str(&gemini).unwrap();
         assert_eq!(
             v["hookSpecificOutput"]["tool_input"]["command"],
-            "lean-ctx -c 'git status'"
+            "sobre -c 'git status'"
         );
         assert!(!gemini.contains("decision"));
     }
