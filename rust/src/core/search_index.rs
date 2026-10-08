@@ -188,7 +188,7 @@ impl SearchIndex {
             sig_sum = sig_sum.wrapping_add(file_sig(path, state));
             file_count += 1;
 
-            // Read the corpus exactly once (issue #148): reuse a fresh cached
+            // Read the corpus exactly once: reuse a fresh cached
             // copy if a prior `sobre_search`/build already read this file, else
             // read it now and publish it so the upcoming `sobre_search` verify
             // pass is an in-memory hit instead of a second disk read. Mirrors
@@ -445,7 +445,7 @@ where
     // Never auto-index a broad/unsafe root (HOME, filesystem root, a dir with
     // dozens of unrelated subtrees). Mirrors the graph/BM25 guard and stops a
     // walk of the whole home directory — which on Windows would hydrate OneDrive
-    // placeholders (#363).
+    // placeholders.
     if !crate::core::graph_index::is_safe_scan_root_public(root) {
         return None;
     }
@@ -474,7 +474,7 @@ where
             continue;
         }
         // `metadata` (stat) never opens the file, so it cannot block on a
-        // FIFO/socket/device node (#336); those are filtered out here.
+        // FIFO/socket/device node; those are filtered out here.
         let state = match std::fs::metadata(path) {
             Ok(meta) if !meta.file_type().is_file() => continue,
             Ok(meta) if meta.len() > MAX_FILE_SIZE => {
@@ -601,7 +601,7 @@ pub fn get_fresh(root: &str, respect_gitignore: bool) -> Option<Arc<SearchIndex>
     }
 }
 
-/// Drop every resident trigram index (#685 eviction hook). In-flight builds
+/// Drop every resident trigram index (eviction hook). In-flight builds
 /// keep their `building` flag (the entry is reset, not the build thread), so
 /// a running build still installs its result; subsequent searches fall back
 /// to the walk path until the next `ensure_background` rebuilds. Correctness
@@ -704,7 +704,7 @@ enum BuildOutcome {
     Deferred,
 }
 
-/// Build the resident index under a cross-process herd guard (#460).
+/// Build the resident index under a cross-process herd guard.
 ///
 /// The trigram index is RAM-resident (not shareable on disk), so on lock
 /// contention we *defer* the proactive pre-warm instead of running a second
@@ -770,7 +770,7 @@ mod tests {
     #[test]
     fn build_refuses_to_index_home_directory() {
         // Auto-indexing HOME would walk the entire home tree and, on Windows,
-        // hydrate every OneDrive placeholder (#363). The build must bail out.
+        // hydrate every OneDrive placeholder. The build must bail out.
         if let Some(home) = dirs::home_dir() {
             assert!(
                 SearchIndex::build(&home.to_string_lossy(), true).is_none(),
@@ -821,7 +821,7 @@ mod tests {
     fn build_skips_named_pipe_without_hanging() {
         use std::sync::mpsc;
         use std::time::Duration;
-        // #336: the background index build read every file, so a FIFO in the
+        // The background index build read every file, so a FIFO in the
         // corpus blocked the build thread forever. It must be skipped while the
         // regular files are still indexed, and the build must return.
         let dir = corpus();
@@ -1168,7 +1168,7 @@ mod tests {
         let root = dir.path().to_string_lossy().to_string();
         // Pre-hold the cross-process lock with *this* (alive) PID and a fresh
         // mtime, so neither the dead-owner nor the staleness reclaim can take it
-        // — exactly the "another session is already building" state from #460.
+        // — exactly the "another session is already building" state.
         let lock_path = data
             .path()
             .join(format!(".{}.lock", search_index_lock_name(&root)));

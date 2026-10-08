@@ -9,9 +9,8 @@ use crate::tool_defs::tool_def;
 
 pub struct SobreSearchTool;
 
-/// Which search engine a `sobre_search` call routes to (#509). One tool, many
-/// engines — replacing the former `sobre_search`/`ctx_semantic_search`/`ctx_symbol`
-/// trio with a single, less ambiguous entry point.
+/// Which search engine a `sobre_search` call routes to. One tool, many
+/// engines.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum SearchAction {
     Regex,
@@ -23,7 +22,7 @@ enum SearchAction {
 
 impl SearchAction {
     /// An explicit `action` wins; otherwise the engine is inferred from which
-    /// field the caller set, so pre-#509 call sites (`pattern`/`query`/`name`)
+    /// field the caller set, so older call sites (`pattern`/`query`/`name`)
     /// keep working unchanged. Unknown `action` values fall through to inference.
     fn resolve(args: &Map<String, Value>) -> Self {
         if let Some(a) = get_str(args, "action") {
@@ -179,7 +178,7 @@ const KNOWN_KEYS: &[&str] = &[
 
 /// `action=regex` (default) — exact-pattern search over one or more roots.
 fn handle_regex(args: &Map<String, Value>, ctx: &ToolContext) -> Result<ToolOutput, ErrorData> {
-    // #871: batch mode — `queries: [{pattern, include?, exclude?}]` runs multiple
+    // Batch mode — `queries: [{pattern, include?, exclude?}]` runs multiple
     // searches in one round-trip with grouped output.
     if let Some(Value::Array(queries)) = args.get("queries") {
         return handle_batch_queries(queries, args, ctx);
@@ -204,9 +203,9 @@ fn handle_regex(args: &Map<String, Value>, ctx: &ToolContext) -> Result<ToolOutp
     let include = get_str(args, "include");
     let max = (get_int(args, "max_results").unwrap_or(20) as usize).min(500);
     let no_gitignore = get_bool(args, "ignore_gitignore").unwrap_or(false);
-    // #1008: opt-in N:hh line anchors on each hit for direct sobre_patch edits.
+    // Opt-in N:hh line anchors on each hit for direct sobre_patch edits.
     let anchored = get_bool(args, "anchored").unwrap_or(false);
-    // #870: negative filters — `exclude` (path glob, complement of `include`)
+    // Negative filters — `exclude` (path glob, complement of `include`)
     // and `exclude_pattern` (regex dropping matching result lines, grep -v).
     let exclude = get_str(args, "exclude");
     let exclude_pattern = get_str(args, "exclude_pattern");
@@ -276,7 +275,7 @@ fn handle_regex(args: &Map<String, Value>, ctx: &ToolContext) -> Result<ToolOutp
     }
 
     // Savings use *observed* tokens: the modeled 2.5x native-grep baseline
-    // never inflates user-facing numbers (GL #573).
+    // never inflates user-facing numbers.
     let final_out = combined.clone();
     let saved = total_observed.saturating_sub(total_sent);
 
@@ -339,7 +338,7 @@ fn handle_semantic(args: &Map<String, Value>, ctx: &ToolContext) -> Result<ToolO
     Ok(semantic_output(result))
 }
 
-/// #1108: when `path` or `file` is an absolute path under a different project,
+/// When `path` or `file` is an absolute path under a different project,
 /// resolve that project's root for the graph lookup. Falls back to the session
 /// project_root when no cross-project path is given.
 fn resolve_symbol_root(args: &Map<String, Value>, session_root: &str) -> String {
@@ -361,9 +360,9 @@ fn resolve_symbol_root(args: &Map<String, Value>, session_root: &str) -> String 
 
 /// `action=symbol` — one symbol's body. A `handle` (`path#name@Lline`) resolves
 /// deterministically (exact, no fuzzy/disambiguation); otherwise `name` runs the
-/// fuzzy lookup. Both route to the shared `ctx_symbol` core.
+/// fuzzy lookup. Both route to the shared symbol lookup.
 fn handle_symbol(args: &Map<String, Value>, ctx: &ToolContext) -> Result<ToolOutput, ErrorData> {
-    // #1108: resolve graph root from `path` when given, instead of always
+    // Resolve graph root from `path` when given, instead of always
     // using the sticky session project_root. This enables cross-repo symbol
     // lookup in multi-project MCP sessions.
     let effective_root = resolve_symbol_root(args, &ctx.project_root);
@@ -501,7 +500,7 @@ fn search_single(
     };
     let result = outcome.text;
     // Observed tokens only — the modeled native-grep baseline stays out of
-    // the savings (GL #573); see the multi-root branch above.
+    // the savings; see the multi-root branch above.
     let observed = outcome.observed_tokens;
 
     if result.starts_with("ERROR:") {
@@ -523,7 +522,7 @@ fn search_single(
     })
 }
 
-/// #871: batch multi-query — runs each query independently and groups output.
+/// Batch multi-query — runs each query independently and groups output.
 fn handle_batch_queries(
     queries: &[Value],
     args: &Map<String, Value>,
@@ -663,7 +662,7 @@ mod tests {
 
     #[test]
     fn explicit_action_selects_engine() {
-        // #509: an explicit action always wins, including synonyms.
+        // An explicit action always wins, including synonyms.
         assert_eq!(
             SearchAction::resolve(&args(&[("action", json!("semantic"))])),
             SearchAction::Semantic
@@ -688,7 +687,7 @@ mod tests {
 
     #[test]
     fn action_inferred_from_fields_for_backward_compat() {
-        // Pre-#509 call sites set only one of these fields and no action.
+        // Older call sites set only one of these fields and no action.
         assert_eq!(
             SearchAction::resolve(&args(&[("pattern", json!("fn .*"))])),
             SearchAction::Regex

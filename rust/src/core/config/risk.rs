@@ -1,12 +1,9 @@
-//! Risk classification for `config set` governance (#852).
+//! Risk classification for `config set` governance.
 //!
-//! Most config keys are routine (cache sizes, density, theme) and are written
-//! without friction. A small set, however, changes sobre's *security posture*
-//! (containment, secret redaction) or *network routing / data egress* (upstream
-//! redirects). Flipping one of those silently can weaken the user's machine or
+//! Most config keys are routine and are written without friction. The proxy
+//! upstreams change *network routing / data egress*: flipping one silently can
 //! leak credentials to a provider, so `config set` shows a before→after review
-//! and requires confirmation (or `--yes`) before applying — mirroring the
-//! existing `yolo` / `secure` confirmation pattern.
+//! and requires confirmation (or `--yes`) before applying.
 //!
 //! This is a deterministic, local-only lookup: no telemetry, no heuristics.
 

@@ -22,7 +22,7 @@ pub enum IngestKind {
     /// Other UTF-8 text (unknown extension but verified textual).
     Text,
     /// Auto-generated content excluded from every index regardless of its
-    /// (often textual) extension — currently dependency lockfiles (#585).
+    /// (often textual) extension — currently dependency lockfiles.
     Generated,
     /// Not ingestible as text (images, media, archives, binary documents).
     Binary,
@@ -112,7 +112,7 @@ const SNIFF_BYTES: usize = 8192;
 /// Detection is by file *name*, independent of directory depth (so a monorepo's
 /// `frontend/package-lock.json` is caught too) and of extension: `*.lock` /
 /// `*.lockb` (Cargo, yarn, bun, poetry, Gemfile, flake, …) plus the JSON/YAML
-/// npm/pnpm lockfiles that would otherwise ingest as structured data (#585).
+/// npm/pnpm lockfiles that would otherwise ingest as structured data.
 fn is_generated_lockfile(path: &Path) -> bool {
     let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
     if matches!(
@@ -137,7 +137,7 @@ fn is_generated_lockfile(path: &Path) -> bool {
 #[must_use]
 pub fn classify_path(path: &Path) -> IngestKind {
     // Auto-generated lockfiles are excluded before any extension routing — their
-    // .json/.yaml variants would otherwise pass as ingestible data (#585).
+    // .json/.yaml variants would otherwise pass as ingestible data.
     if is_generated_lockfile(path) {
         return IngestKind::Generated;
     }

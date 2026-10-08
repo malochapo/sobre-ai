@@ -10,7 +10,7 @@ impl GotchaStore {
         {
             store.apply_decay();
             store.cross_session_boost();
-            // #451 shell-ding: keep persisted pending errors so a fail→fix that
+            // Shell-ding: keep persisted pending errors so a fail→fix that
             // spans two `sobre -c` processes still correlates — but drop
             // expired ones (15-min TTL) and bound to the most recent MAX_PENDING
             // so a stale file can never grow unbounded or resurrect old errors.
@@ -51,7 +51,7 @@ mod tests {
 
     #[test]
     fn pending_errors_persist_across_load_for_cross_process_correlation() {
-        // #451 shell-ding: in `sobre -c` mode every command is its own
+        // Shell-ding: in `sobre -c` mode every command is its own
         // process, so the fix correlation can only work if pending errors are
         // persisted. Simulate process 1 (failing build) → process 2 (green run).
         let _iso = crate::core::data_dir::isolated_data_dir();

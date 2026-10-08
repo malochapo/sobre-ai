@@ -299,7 +299,7 @@ fn resolve_name_path_ambiguous_trait_impls() {
     crate::test_env::remove_var("SOBRE_DATA_DIR");
 }
 
-/// #845: file_scope narrows ambiguous symbols to a single file.
+/// File_scope narrows ambiguous symbols to a single file.
 #[test]
 fn file_scope_disambiguates_ambiguous_symbol() {
     // Private data dir under the global env lock: serializes this test against
@@ -434,7 +434,7 @@ fn handle_replace_symbol_body_conflict_on_stale_hash() {
     );
 }
 
-/// #803: with an explicit `path`, `name_path` is looked up in that file only,
+/// With an explicit `path`, `name_path` is looked up in that file only,
 /// so a symbol the index knows from another checkout is never the target.
 /// Simulates a git worktree INSIDE the project root
 /// (`/repo/.claude/worktrees/wt/`): the edit fails and neither file changes.

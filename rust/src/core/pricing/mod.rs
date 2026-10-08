@@ -184,8 +184,7 @@ impl ModelPricing {
 
         // Azure AI Foundry serverless (Global Standard) — source:
         // https://azure.microsoft.com/en-us/pricing/details/ai-foundry-models/
-        // (July 2026). The cheap-OSS tier the gateway router downgrades to
-        // (enterprise#14); wrong/missing prices here would overstate savings.
+        // (July 2026). Wrong/missing prices here would overstate savings.
         // Foundry publishes no separate cache price → cache = input rate
         // (same convention as Gemini above).
         models.insert(

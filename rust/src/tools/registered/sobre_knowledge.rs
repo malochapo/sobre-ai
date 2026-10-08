@@ -90,7 +90,7 @@ action=consolidate imports latest session if present, runs lifecycle, then frees
         let category = get_str(args, "category");
         let key = get_str(args, "key");
         // `content` is the wording our own workflow docs use for remember;
-        // accept it as an alias so agents following those docs succeed (#658).
+        // accept it as an alias so agents following those docs succeed.
         let value = get_str(args, "value").or_else(|| get_str(args, "content"));
         let query = get_str(args, "query");
         let mode = get_str(args, "mode");
@@ -152,7 +152,7 @@ action=consolidate imports latest session if present, runs lifecycle, then frees
             return Ok(text_output(&action, msg));
         }
 
-        // Restore (#995 Phase 6): explicit cross-store undo from archive. Handled
+        // Restore (Phase 6): explicit cross-store undo from archive. Handled
         // inline (like `gotcha`) so `store`/`limit` can be passed without widening
         // the shared `handle()` signature.
         if action == "restore" {

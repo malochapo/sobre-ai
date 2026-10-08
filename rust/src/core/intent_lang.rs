@@ -1,4 +1,4 @@
-//! Multilingual building blocks for intent classification (#591).
+//! Multilingual building blocks for intent classification.
 //!
 //! `intent_engine::PHRASE_RULES` only understands English keywords, so
 //! non-English tasks ("räum die Funktion auf") used to fall back to

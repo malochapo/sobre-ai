@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 /// only the exact directory it is handed and never walks up. A search launched
 /// from — or pointed at — a subdirectory therefore hashes to a different,
 /// usually empty namespace and returns zero hits, even though the real index
-/// sits one directory up (#948). Promoting the search path the same way the
+/// sits one directory up. Promoting the search path the same way the
 /// build does makes both agree. A genuinely requested subdirectory is kept as a
 /// result-scope filter (second tuple field) rather than becoming its own
 /// namespace.
@@ -49,7 +49,7 @@ pub(crate) struct SearchFilter {
     path_glob: Option<glob::Pattern>,
     /// Relative directory prefix (forward slashes, no trailing slash) the caller
     /// scoped the search to. Set when a subdirectory was requested but promoted
-    /// to the project root for the index namespace (#948), so results stay
+    /// to the project root for the index namespace, so results stay
     /// restricted to that subtree without a separate (empty) index.
     subdir: Option<String>,
 }

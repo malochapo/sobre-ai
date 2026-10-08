@@ -1,4 +1,4 @@
-//! Runtime validation of published action-conditional tool schemas (#1008).
+//! Runtime validation of published action-conditional tool schemas.
 
 use std::collections::HashSet;
 
@@ -92,7 +92,7 @@ fn collect_required(node: &Value, out: &mut Vec<String>) {
     }
 }
 
-/// Generic schema-integrity guard (#1020): once per-op requirements live in the
+/// Generic schema-integrity guard: once per-op requirements live in the
 /// schema (as `if`/`then` conditionals) rather than only in imperative parser
 /// code, the schema IS the source of truth — and requiring a param the schema
 /// never declares is a self-contradiction a client hits before the handler runs.
@@ -127,7 +127,7 @@ fn every_required_param_is_a_declared_property() {
     );
 }
 
-/// The sharp sobre_patch schema (#1020) encodes per-op required params, so a
+/// The sharp sobre_patch schema encodes per-op required params, so a
 /// client knows before calling that `replace_lines` needs `new_text` — not the
 /// retired `new_body`. Exercise the conditionals directly.
 #[test]

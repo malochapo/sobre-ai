@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 
 use crate::core::cache::SessionCache;
 use crate::core::tokens::count_tokens;
-// Shared TOCTOU-safe read→verify→atomic-write primitives (epic #1008): the same
+// Shared TOCTOU-safe read→verify→atomic-write primitives: the same
 // audited boundary `sobre_patch` (anchored editing) builds on, so a fix protects
 // both tools. `verify_expected_preimage` stays here — it is `sobre_edit`-specific
 // (keyed on `EditParams`).
@@ -73,7 +73,7 @@ fn verify_expected_preimage(pre: &FilePreimage, params: &EditParams) -> Result<(
 }
 
 /// Bounded, secret-redacted unified diff for edit evidence. `pub(crate)` so the
-/// anchored editor (`sobre_patch`) reuses the identical evidence format (#1008).
+/// anchored editor (`sobre_patch`) reuses the identical evidence format.
 pub fn build_diff_evidence(old: &str, new: &str, label: &str, max_lines: usize) -> String {
     let diff = similar::TextDiff::from_lines(old, new)
         .unified_diff()
@@ -81,7 +81,7 @@ pub fn build_diff_evidence(old: &str, new: &str, label: &str, max_lines: usize) 
         .header(label, label)
         .to_string();
     // Single source of truth for secret masking — `core::redaction` carries the
-    // GH #430 non-secret-literal guard (type annotations, `undefined`, …) and
+    // non-secret-literal guard (type annotations, `undefined`, …) and
     // does not leak the value of generic long secrets like this duplicate once
     // did. Keeping a second regex set here only invites drift.
     let diff = crate::core::redaction::redact_text(&diff);
@@ -103,7 +103,7 @@ pub fn build_diff_evidence(old: &str, new: &str, label: &str, max_lines: usize) 
 /// Decoupling the cache mutation from the I/O lets the MCP layer perform the
 /// (slow) file read/replace/write while holding only a cheap per-file lock, then
 /// touch the shared cache for a sub-millisecond instant — instead of holding the
-/// global cache write-lock across all disk I/O (the root cause of issue #320).
+/// global cache write-lock across all disk I/O (the root cause of a contention bug).
 pub enum CacheEffect {
     /// No cache change required (e.g. the edit failed before writing).
     None,
@@ -114,7 +114,7 @@ pub enum CacheEffect {
     StoreFull(String),
 }
 
-/// Quality loop (#494): classify the edit result and feed it into
+/// Quality loop: classify the edit result and feed it into
 /// [`crate::core::edit_quality`]. Only two outcomes carry a compression
 /// signal: a clean replacement (success) and an `old_string` miss
 /// (failure — the body the agent quoted wasn't what's on disk). Parameter
@@ -174,7 +174,7 @@ pub fn run_io(params: &EditParams, last_mode: &str) -> (String, CacheEffect) {
         Ok(p) => p,
         Err(e) => {
             // File missing? Tell the agent whether it moved or the path is
-            // wrong, instead of a bare "cannot open" (#331 point 3).
+            // wrong, instead of a bare "cannot open" (point 3).
             if !path.exists() {
                 let hint = crate::tools::edit_recovery::moved_or_deleted_hint(path);
                 return (format!("{e}{hint}"), CacheEffect::None);
@@ -436,7 +436,7 @@ fn do_replace(
     let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
     let health_notice = crate::core::code_health::gate::evaluate(args.content, &new_content, ext);
 
-    // #960: a point-in-time check, not a held lock — see
+    // A point-in-time check, not a held lock — see
     // ensure_preimage_still_matches' doc for the residual window between
     // this check and the write below.
     if let Err(e) = ensure_preimage_still_matches(path, &pre.fp, cap) {
@@ -558,7 +558,7 @@ fn handle_create(file_path: &str, content: &str, params: &EditParams) -> (String
         if let Err(e) = verify_expected_preimage(&pre, params) {
             return (e, CacheEffect::None);
         }
-        // #960: a point-in-time check, not a held lock — see
+        // A point-in-time check, not a held lock — see
         // ensure_preimage_still_matches' doc for the residual window between
         // this check and the write below.
         if let Err(e) = ensure_preimage_still_matches(path, &pre.fp, cap) {
@@ -760,7 +760,7 @@ mod tests {
         assert!(path.exists());
     }
 
-    // GH #459: parent dir read-only, file inode writable (the bind-mount
+    // Parent dir read-only, file inode writable (the bind-mount
     // sandbox shape). The atomic tempfile + rename needs *directory* write
     // permission and fails; the in-place fallback overwrites the existing inode
     // and succeeds. Skipped under root, which bypasses the directory permission
@@ -793,7 +793,7 @@ mod tests {
         assert_eq!(std::fs::read(&path).unwrap(), b"world");
     }
 
-    // GH #459 end-to-end: the full sobre_edit flow (read -> preimage -> write)
+    // End-to-end: the full sobre_edit flow (read -> preimage -> write)
     // must succeed when the parent dir is read-only but the file is writable.
     #[cfg(unix)]
     #[test]
@@ -999,7 +999,7 @@ mod tests {
         );
     }
 
-    /// Issue #320: run_io performs the full edit without any cache handle, so the
+    /// Run_io performs the full edit without any cache handle, so the
     /// MCP layer can avoid holding the global cache write-lock across disk I/O.
     /// A successful edit reports an Invalidate effect.
     #[test]
@@ -1029,7 +1029,7 @@ mod tests {
         );
     }
 
-    /// Issue #320: concurrent edits to *different* files must all succeed without
+    /// Concurrent edits to *different* files must all succeed without
     /// serializing on any shared lock — run_io takes no cache, so there is nothing
     /// global to contend on.
     #[test]
@@ -1201,7 +1201,7 @@ mod tests {
         assert!(text.contains("b.rs"), "got: {text}");
     }
 
-    // P0-6 (#418): a symlink at the edit path is rejected: the atomic rename
+    // P0-6: a symlink at the edit path is rejected: the atomic rename
     // would otherwise replace the link with a plain file.
     #[cfg(unix)]
     #[test]
@@ -1222,7 +1222,7 @@ mod tests {
         assert_eq!(std::fs::read_to_string(&real).unwrap(), "fn old() {}\n");
     }
 
-    // P0-6 (#418): the write side must also reject a symlink destination
+    // P0-6: the write side must also reject a symlink destination
     // (defense in depth for create-mode and backup paths).
     #[cfg(unix)]
     #[test]

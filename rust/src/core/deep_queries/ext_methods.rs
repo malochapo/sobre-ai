@@ -1,4 +1,4 @@
-//! C# extension-method extraction (GH #398 follow-up).
+//! C# extension-method extraction (follow-up).
 //!
 //! An extension method (`public static T Foo(this X x, …)`) is invoked as if
 //! it were an instance method (`value.Foo()`). The call site therefore names

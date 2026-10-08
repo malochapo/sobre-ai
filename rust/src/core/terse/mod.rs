@@ -33,7 +33,7 @@ pub mod scoring;
 const READ_FAMILY: &[&str] = &["sobre_read"];
 
 /// Whether a tool's output must be returned verbatim and so must never pass
-/// through the prose terse pipeline (#404).
+/// through the prose terse pipeline.
 ///
 /// Returns true for any read-family tool — those already apply their own
 /// mode-aware, structure-preserving compression, and a `full`/`lines:` read
@@ -88,7 +88,7 @@ mod verbatim_read_tests {
             let name = "sobre_read";
             // Even an intentionally-lossy mode like `signatures` is exempt: the
             // read tool applies its own structure-preserving compression and the
-            // generic prose terse layer must never run on top of it (#404).
+            // generic prose terse layer must never run on top of it.
             assert!(is_verbatim_read(name, Some("signatures")), "{name}");
             assert!(is_verbatim_read(name, None), "{name}");
         }

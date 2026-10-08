@@ -1,4 +1,4 @@
-//! Explicit cross-store restore from the lossless memory archive (#995 Phase 6).
+//! Explicit cross-store restore from the lossless memory archive (Phase 6).
 //!
 //! Every capacity reclaim (facts, history, patterns) archives the
 //! evicted tail under `memory/archive/<store>/` before dropping it. This module
@@ -271,7 +271,7 @@ pub(crate) fn run_restore(
     })
 }
 
-/// Deterministic, human-readable restore summary (no timestamps — #498).
+/// Deterministic, human-readable restore summary (no timestamps).
 pub(crate) fn format_restore_report(report: &RestoreReport) -> String {
     let total = report.total_restored();
     let scope = match &report.query {
@@ -460,7 +460,7 @@ mod tests {
 
     #[test]
     fn restore_report_is_deterministic() {
-        // #498: report bodies must be byte-stable for prompt caching — no
+        // Report bodies must be byte-stable for prompt caching — no
         // timestamps, counters or run-dependent ordering in the rendered text.
         with_sandbox(|root| {
             let policy = MemoryPolicy::default();

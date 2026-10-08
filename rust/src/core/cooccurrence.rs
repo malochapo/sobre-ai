@@ -207,8 +207,7 @@ pub fn record_access(project_root: &str, files: &[String]) {
 
 // ── Traversal-edge surface (repo-relative) ─────────────────────────────────
 //
-// These wrappers (used by sobre_read / ctx_semantic_search / the dashboard)
-// normalize paths to the repo-relative form the code graph uses, so learned edges line up with static edges (#289).
+// These wrappers (used by sobre_read and sobre_compose) normalize paths to the repo-relative form the code graph uses, so learned edges line up with static edges.
 
 /// Normalize an absolute-or-relative path to the repo-relative form used as the
 /// co-access / graph key (e.g. `/repo/src/a.rs` → `src/a.rs`).

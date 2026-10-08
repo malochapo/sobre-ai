@@ -152,7 +152,7 @@ impl GraphProvider {
     ) -> Vec<SymbolInfo> {
         // Kind is filtered after mapping, not in SQL: the `nodes.kind` column is
         // the coarse `NodeKind` (every code symbol is `"symbol"`), while the
-        // precise source kind (`struct`, `fn`, …) lives in metadata (#889).
+        // precise source kind (`struct`, `fn`, …) lives in metadata.
         self.graph
             .find_symbols(name, file_filter, None)
             .unwrap_or_default()
@@ -193,7 +193,7 @@ impl GraphProvider {
     /// 2. Otherwise, same-file candidates whose name matches exactly or by its
     ///    unqualified tail (`Config::load` ↔ `load`), ranked by exact-name
     ///    first, then nearest line to the handle hint, then lowest line, then
-    ///    name — a total, deterministic order (#498).
+    ///    name — a total, deterministic order.
     ///
     /// Returns `None` only when no symbol in that file plausibly matches.
     pub fn find_symbol_by_handle(
@@ -356,7 +356,7 @@ pub fn open_best_effort(project_root: &str) -> Option<GraphProvider> {
     Some(GraphProvider::new(graph, project_root))
 }
 
-/// Maximum time `open_or_build` waits for a build (#1018). The build keeps
+/// Maximum time `open_or_build` waits for a build. The build keeps
 /// running past it and writes the graph when done.
 const BUILD_TIMEOUT_SECS: u64 = 30;
 
@@ -494,7 +494,7 @@ mod tests {
 
     #[test]
     fn pg_kind_filter_matches_precise_metadata_kind() {
-        // #889: a PG symbol's coarse `nodes.kind` is always `"symbol"`; the
+        // A PG symbol's coarse `nodes.kind` is always `"symbol"`; the
         // source kind (`struct`) lives in metadata. Filtering by kind="struct"
         // must still find it (previously matched the coarse column → empty).
         use super::super::property_graph::{Node, NodeKind};

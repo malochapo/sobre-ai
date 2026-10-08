@@ -1,5 +1,5 @@
 fn main() {
-    // #356: before anything touches the filesystem, a launchd-standalone
+    // Before anything touches the filesystem, a launchd-standalone
     // process not launched through the seatbelt-wrapped LaunchAgent (e.g. a
     // detached proxy re-parented to launchd before reaching `main`) re-execs
     // itself under the deny-~/Documents seatbelt. No-op for terminal/editor
@@ -9,7 +9,7 @@ fn main() {
     #[cfg(target_os = "macos")]
     sobre::core::tcc_guard_sandbox::reexec_under_seatbelt_if_needed();
 
-    // Crash log + stderr message for every panic in any thread (#378
+    // Crash log + stderr message for every panic in any thread (for
     // diagnosability: stderr is lost for daemon/LaunchAgent processes,
     // <data dir>/logs/crash.log is not).
     sobre::core::crash_log::install_panic_hook();

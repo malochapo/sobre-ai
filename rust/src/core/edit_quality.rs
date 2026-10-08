@@ -1,4 +1,4 @@
-//! Quality loop v1 (#494): compression-caused edit failures feed back into
+//! Quality loop v1: compression-caused edit failures feed back into
 //! mode selection.
 //!
 //! `BounceTracker`/`path_mode_memory` close the loop for *re-read* bounces,
@@ -75,7 +75,7 @@ pub struct EditQualityStore {
     pub pending_escalations: HashMap<String, u64>,
     /// Normalized path -> unix time of an anchored-edit (`sobre_patch`) staleness
     /// miss. The next auto read of that path resolves to `anchored` (not `full`),
-    /// so the model gets fresh line anchors to retry by reference (#1008).
+    /// so the model gets fresh line anchors to retry by reference.
     pub pending_anchored_escalations: HashMap<String, u64>,
 }
 
@@ -193,7 +193,7 @@ pub fn record_edit_outcome(path: &str, last_mode: &str, success: bool) {
 
 /// Like [`record_edit_outcome`], but a failure is a `sobre_patch` anchor-staleness
 /// miss: the recovery is a *fresh anchored read* (the model edits by reference),
-/// so the next auto read escalates to `anchored` instead of `full` (#1008).
+/// so the next auto read escalates to `anchored` instead of `full`.
 pub fn record_anchored_edit_outcome(path: &str, last_mode: &str, success: bool) {
     record_outcome_with(path, last_mode, success, Escalation::Anchored);
 }
@@ -339,7 +339,7 @@ mod tests {
 
     #[test]
     fn anchored_escalation_is_independent_and_one_shot() {
-        // #1008: the anchored map is separate from the `full` map — arming one
+        // The anchored map is separate from the `full` map — arming one
         // must never consume the other, so str_replace and sobre_patch recoveries
         // don't cross-talk.
         let mut s = EditQualityStore::default();

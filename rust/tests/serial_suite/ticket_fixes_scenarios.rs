@@ -1,18 +1,11 @@
-// Integration tests for all ticket fixes:
-// - #271: Crash hardening (catch_unwind, unwrap elimination)
-// - #288: Crash loop backoff resilience
-// - #289: Daemon autostart lifecycle
-// - Proxy opt-in (bootstrap/repair respect config)
-// - Loop detector error-awareness
+// Integration tests for past fixes:
+// - Zed auto-detect
+// - Crash loop backoff resilience
 // - JSONC UTF-8 safety
 // - ls -lah human-readable size passthrough
-// - PowerShell -NoProfile
-// - Uninstall: .bak cleanup, XDG dirs, project-local files
-// - Windows drive-colon grep parsing
-// - Shell-tokenizer for hook rewrites
 
 // ──────────────────────────────────────────────────────────
-// Scenario Group 2: Zed auto-detect (#247)
+// Scenario Group 2: Zed auto-detect
 // ──────────────────────────────────────────────────────────
 
 #[test]
@@ -33,7 +26,7 @@ fn zed_target_exists_with_correct_paths() {
 }
 
 // ──────────────────────────────────────────────────────────
-// Scenario Group 3: Crash loop backoff resilience (#288)
+// Scenario Group 3: Crash loop backoff resilience
 // User: IDE restarts several times quickly on slow machine,
 // sobre should not block for too long.
 // ──────────────────────────────────────────────────────────

@@ -15,7 +15,7 @@ pub fn handle(
     opts: SessionToolOptions<'_>,
 ) -> String {
     match action {
-        // "show" is the natural synonym agents reach for first (#658).
+        // "show" is the natural synonym agents reach for first.
         "status" | "show" => session.format_compact(),
 
         "load" => {

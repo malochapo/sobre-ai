@@ -11,7 +11,7 @@ use crate::core::hybrid_search::{HybridConfig, HybridResult, format_hybrid_resul
 #[allow(clippy::wildcard_imports)]
 use super::*;
 
-/// #512: max chunks the hybrid/dense path will embed *inline* (under the
+/// Max chunks the hybrid/dense path will embed *inline* (under the
 /// per-request watchdog) before degrading instead of embedding. A server that
 /// started before the on-disk dense index existed would otherwise embed the
 /// whole corpus on the first query — observed as a runaway 500%+ CPU child the
@@ -20,14 +20,14 @@ pub(crate) fn inline_embed_max_chunks() -> usize {
     2000
 }
 
-/// Pure budget check for the cold-start guard (#512): `max == 0` disables it,
+/// Pure budget check for the cold-start guard: `max == 0` disables it,
 /// and the budget is inclusive (`pending == max` still embeds inline).
 pub(crate) fn exceeds_inline_embed_budget(pending: usize, max: usize) -> bool {
     max > 0 && pending > max
 }
 
 /// Decide whether this call would trigger a large inline embed the watchdog
-/// cannot safely bound (#512). Returns the pending-chunk count when the call
+/// cannot safely bound. Returns the pending-chunk count when the call
 /// should degrade instead of embedding inline; `None` keeps the normal path
 /// (warm index, or an incremental embed of only a few changed chunks).
 pub(crate) fn cold_start_embed_guard(
@@ -71,7 +71,7 @@ fn filter_pred(filter: &SearchFilter) -> impl Fn(&str) -> bool + '_ {
 /// search (one root, workspace, `find_related`, the eval harness) goes through
 /// here.
 ///
-/// On a cold dense index (#512) it never embeds the whole corpus inline: it
+/// On a cold dense index it never embeds the whole corpus inline: it
 /// ranks without the dense signal and says so in [`Ranked::degraded`].
 pub(crate) fn hybrid_ranked(
     query: &str,

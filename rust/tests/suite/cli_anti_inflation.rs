@@ -1,4 +1,4 @@
-//! End-to-end anti-inflation guarantee for reads (#361). This exercises the
+//! End-to-end anti-inflation guarantee for reads. This exercises the
 //! SHIPPED binary end-to-end (`sobre call sobre_read`: resolver → frame → cap
 //! → print) and proves that an `auto` read can never emit more tokens than the
 //! bare file. It complements the in-process `cap_to_raw` unit tests.

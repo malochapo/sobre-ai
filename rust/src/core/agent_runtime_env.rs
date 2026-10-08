@@ -2,8 +2,8 @@
 //!
 //! The sobre MCP server is a long-lived child of the agent host. Some agents
 //! (notably Codex) expose runtime/session variables such as `CODEX_THREAD_ID`
-//! only in the *native agent shell* environment, not in the MCP server process
-//! (#370). `sobre_shell` runs inside the MCP server, so it cannot forward those
+//! only in the *native agent shell* environment, not in the MCP server process.
+//! `sobre_shell` runs inside the MCP server, so it cannot forward those
 //! variables by reading its own `std::env`.
 //!
 //! Short-lived sobre processes that *do* run inside the agent environment —
@@ -68,7 +68,7 @@ pub fn is_forwardable(key: &str) -> bool {
         && !is_credential_shaped(key)
 }
 
-/// Canonical capture-file location: the STATE dir (GH #408 / GL #605).
+/// Canonical capture-file location: the STATE dir.
 ///
 /// This file holds captured agent **session/thread identifiers** (e.g.
 /// `CODEX_THREAD_ID`); credential-shaped vars are filtered out by
@@ -144,7 +144,7 @@ pub fn capture() {
 /// Load captured agent runtime variables, honoring the freshness TTL.
 ///
 /// When no valid capture exists, falls back to probing the parent process's
-/// environment (#800). This covers the case where the sobre MCP server was
+/// environment. This covers the case where the sobre MCP server was
 /// spawned by an agent that sets runtime vars only in native shell commands
 /// (e.g. Codex with CODEX_THREAD_ID) without going through `sobre -c` first.
 #[must_use]
@@ -153,7 +153,7 @@ pub fn load() -> BTreeMap<String, String> {
         return BTreeMap::new();
     };
     let Some((vars, captured_at)) = read_store(&path) else {
-        // No capture file — try probing the parent process environment (#800).
+        // No capture file — try probing the parent process environment.
         let probed = probe_parent_env();
         if !probed.is_empty() {
             persist_probed_vars(&path, &probed);
@@ -171,7 +171,7 @@ pub fn load() -> BTreeMap<String, String> {
 }
 
 /// Probe the parent process's environment for forwardable agent runtime
-/// variables (#800). On Linux reads `/proc/<ppid>/environ`; on macOS uses
+/// variables. On Linux reads `/proc/<ppid>/environ`; on macOS uses
 /// `ps eww`. Returns only non-credential forwardable vars.
 fn probe_parent_env() -> BTreeMap<String, String> {
     let ppid = parent_pid();

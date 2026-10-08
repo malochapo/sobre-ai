@@ -42,11 +42,11 @@ pub struct LifecycleConfig {
     /// and feedback modulation.
     pub base_stability_days: f32,
     /// Archive facts untouched for this many days that were **never** retrieved —
-    /// dead weight that costs injection tokens regardless of confidence (#962).
+    /// dead weight that costs injection tokens regardless of confidence.
     /// `None` disables it (the `LifecycleConfig` default); the production policy
     /// sets it. Reversible: pruned facts go to the archive.
     pub prune_unretrieved_after_days: Option<i64>,
-    /// Proactive headroom on a capacity reclaim (#995): when a store reaches its
+    /// Proactive headroom on a capacity reclaim: when a store reaches its
     /// cap, drop down to `reclaim_target(max_facts, reclaim_headroom_pct)` so it
     /// settles with working room instead of churning at the cap. `0.25` = 75%.
     pub reclaim_headroom_pct: f32,
@@ -69,8 +69,7 @@ impl Default for LifecycleConfig {
 impl LifecycleConfig {
     /// Map the persisted [`crate::core::memory_policy::MemoryPolicy`] to the
     /// runtime lifecycle config. The single mapping site, so adding a knob
-    /// touches exactly one place (previously duplicated across the lifecycle and
-    /// cognition callers).
+    /// touches exactly one place.
     pub fn from_policy(policy: &crate::core::memory_policy::MemoryPolicy) -> Self {
         Self {
             max_facts: policy.knowledge.max_facts,
@@ -92,7 +91,7 @@ pub struct LifecycleReport {
     pub compacted_count: usize,
     /// Of `archived_count`, how many facts were evicted purely for capacity
     /// (the proactive reclaim) versus quality (low-confidence/stale/unretrieved).
-    /// Lets callers report per-store capacity reclaim distinctly (#995).
+    /// Lets callers report per-store capacity reclaim distinctly.
     pub capacity_archived: usize,
     pub remaining_facts: usize,
 }
@@ -142,7 +141,7 @@ pub fn apply_confidence_decay(facts: &mut [KnowledgeFact], config: &LifecycleCon
     count
 }
 
-/// Ebbinghaus retention `R = exp(-Δt / S)` (#1). Stability `S` grows with the
+/// Ebbinghaus retention `R = exp(-Δt / S)`. Stability `S` grows with the
 /// spacing effect (each prior retrieval) and net feedback; `Δt` is time since
 /// the memory was last reinforced (confirmed *or* retrieved). Multiplicative so
 /// confidence approaches the floor smoothly and never overshoots. Deterministic.
@@ -241,7 +240,7 @@ pub fn compact(
             continue;
         }
 
-        // Real pruning (#962): a single-confirmation fact untouched for the
+        // Real pruning: a single-confirmation fact untouched for the
         // configured horizon that was *never* retrieved is dead weight even at
         // high confidence — archive it. Gated on `confirmation_count <= 1` so
         // repeatedly-confirmed (structurally important) facts are always kept.
@@ -292,7 +291,7 @@ pub fn run_lifecycle(
         let _ = archive_facts(&archived);
     }
 
-    // Capacity reclaim (#995): facts settle at headroom via the single capacity
+    // Capacity reclaim: facts settle at headroom via the single capacity
     // manager, archiving the evicted tail losslessly under the facts archive root
     // — the same path quality archival uses, so recall rehydration is uniform.
     let capacity_archived = crate::core::memory_capacity::reclaim_store(
@@ -480,7 +479,7 @@ mod tests {
 
     #[test]
     fn spacing_effect_protects_frequently_retrieved() {
-        // #1: under the Ebbinghaus curve, a fact retrieved many times must decay
+        // Under the Ebbinghaus curve, a fact retrieved many times must decay
         // slower than an identical never-retrieved fact of the same age.
         let config = LifecycleConfig::default();
         let rarely = make_old_fact("arch", "rare", "x", 0.9, 20);
@@ -498,7 +497,7 @@ mod tests {
 
     #[test]
     fn ebbinghaus_decay_is_deterministic() {
-        // Determinism contract (#498): same input → same output, no RNG.
+        // Determinism contract: same input → same output, no RNG.
         let config = LifecycleConfig::default();
         let mut a = vec![make_old_fact("arch", "k", "v", 0.8, 15)];
         let mut b = a.clone();
@@ -548,7 +547,7 @@ mod tests {
 
     #[test]
     fn compact_is_quality_only_and_ignores_capacity() {
-        // Post-#995: capacity reclaim moved out of `compact` into the single
+        // Capacity reclaim moved out of `compact` into the single
         // capacity manager (driven by `run_lifecycle`). A store full of healthy,
         // current, high-confidence facts is a *capacity* concern, so `compact`
         // (quality only) must leave it untouched.
@@ -616,7 +615,7 @@ mod tests {
 
     #[test]
     fn prune_unretrieved_archives_old_never_retrieved_facts() {
-        // Opt-in (#962): a 60-day-old, high-confidence, never-retrieved,
+        // Opt-in: a 60-day-old, high-confidence, never-retrieved,
         // single-confirmation fact is dead weight and must be archived even
         // though its confidence is well above the low-confidence floor.
         let config = LifecycleConfig {

@@ -182,12 +182,11 @@ impl ProjectKnowledge {
     }
 
     /// Write-time admission gate for the agent-facing `sobre_knowledge remember`
-    /// path (#970). Unlike [`Self::remember`] (which every internal restorer also
+    /// path. Unlike [`Self::remember`] (which every internal restorer also
     /// calls), this enforces the [`crate::core::memory_policy::AdmissionPolicy`]:
-    /// near-duplicates are merged instead of inserted, and low-salience noise is
-    /// kept out of the capped store — so eviction never has to drop a good fact to
-    /// make room for a paraphrase. Internal callers (archive rehydrate, cognition
-    /// auto-promotion) keep using [`Self::remember`] and are never gated.
+    /// near-duplicates are merged instead of inserted, so eviction never has to
+    /// drop a good fact to make room for a paraphrase. Internal callers (archive
+    /// rehydrate) keep using [`Self::remember`] and are never gated.
     pub fn remember_admitted(
         &mut self,
         category: &str,
@@ -298,7 +297,7 @@ impl ProjectKnowledge {
             created_at: Utc::now(),
         });
 
-        // Lossless capacity reclaim (#995): keep the newest patterns and archive
+        // Lossless capacity reclaim: keep the newest patterns and archive
         // the rest. The previous `truncate` kept the *oldest* patterns (it dropped
         // the just-pushed one once at the cap) and lost them permanently.
         if let Err(error) = crate::core::memory_capacity::reclaim_store(

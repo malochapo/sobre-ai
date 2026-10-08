@@ -134,7 +134,7 @@ pub fn compress(output: &str) -> Option<String> {
         if !has_multiple_blocks && formatted.len() > 30 {
             // Single oversized block: keep head + tail with an explicit omission
             // marker. The previous "last 15 unique lines" tail-only cut dropped
-            // the leading lines *silently* (#479) — indistinguishable from real
+            // the leading lines *silently* — indistinguishable from real
             // output — so the model never knew context was lost.
             push_bounded(&mut parts, &formatted, 5, 10);
         } else if has_multiple_blocks && formatted.len() > 20 {
@@ -151,7 +151,7 @@ pub fn compress(output: &str) -> Option<String> {
 
 /// Append a bounded `head` + `[N lines omitted]` marker + `tail` slice of
 /// `formatted` to `parts`. Shared by the single- and multi-block truncation
-/// paths so neither can drop lines silently (#479): the omission is always
+/// paths so neither can drop lines silently: the omission is always
 /// stated explicitly. Outputs verbatim when nothing needs omitting.
 fn push_bounded(parts: &mut Vec<String>, formatted: &[String], head: usize, tail: usize) {
     if formatted.len() <= head + tail {
@@ -188,7 +188,7 @@ mod tests {
     #[test]
     fn single_block_truncation_is_not_silent() {
         // One oversized block (no separators) of distinct lines. The old path
-        // kept only the last 15 lines with no marker (#479) — the leading lines
+        // kept only the last 15 lines with no marker — the leading lines
         // vanished silently. The omission must now be explicit, with head + tail
         // context preserved.
         let output = (1..=120)

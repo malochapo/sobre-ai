@@ -15,8 +15,8 @@ pub(crate) fn apply_utf8_locale(cmd: &mut std::process::Command) {
 }
 
 /// Neutralizes inherited startup-file hooks so a non-login/non-interactive
-/// `sh -c` / `bash -c` cannot be hijacked into sourcing a profile or rc file
-/// (#451). sobre runs the system POSIX shell profile-free and deterministic;
+/// `sh -c` / `bash -c` cannot be hijacked into sourcing a profile or rc file.
+/// sobre runs the system POSIX shell profile-free and deterministic;
 /// a stray inherited `BASH_ENV` (read by bash even for `bash -c`) or `ENV`
 /// pointing at e.g. an `exec nu` snippet would otherwise silently replace the
 /// shell. Cleared to empty so the expansion names no file. No-op in effect for
@@ -62,7 +62,7 @@ pub fn decode_output(bytes: &[u8]) -> String {
 ///
 /// CLI tools like `git`, `cargo`, and `npm` use `\r` to draw in-place progress
 /// updates. When stdout is captured (not a TTY), these bytes survive as literal
-/// `\r` characters and produce glued-together lines (#1140). This function
+/// `\r` characters and produce glued-together lines. This function
 /// emulates terminal behaviour: for each line, only the content after the last
 /// `\r` is kept.
 pub fn resolve_carriage_returns(s: &str) -> String {
@@ -226,7 +226,7 @@ pub(super) fn detect_shell() -> String {
         if bin == "sobre" {
             return find_real_shell();
         }
-        // #451: `$SHELL` is the user's *interactive* shell preference, not the
+        // `$SHELL` is the user's *interactive* shell preference, not the
         // agent's execution shell. Agents emit bash/POSIX command syntax, so an
         // interactive-only shell like Nushell or Fish silently mis-runs it.
         // Honor `$SHELL` only when it is POSIX-compatible; otherwise fall back
@@ -243,7 +243,7 @@ pub(super) fn detect_shell() -> String {
 /// Whether a `$SHELL` value may be auto-selected as the command-execution shell.
 ///
 /// On Unix this rejects non-POSIX interactive shells (Nushell, Fish, Elvish,
-/// xonsh, PowerShell) so sobre never feeds them bash/POSIX syntax (#451). On
+/// xonsh, PowerShell) so sobre never feeds them bash/POSIX syntax. On
 /// Windows the intended shells *are* PowerShell/cmd, so any `$SHELL` is honored
 /// (the POSIX gate would wrongly reject them).
 #[cfg(unix)]
@@ -259,7 +259,7 @@ fn shell_acceptable_for_exec(_shell: &str) -> bool {
 /// `true` if `shell`'s basename is a POSIX-compatible shell that can run
 /// agent-authored bash/POSIX commands. Excludes interactive-only shells
 /// (`nu`, `fish`, `elvish`, `xonsh`) and non-POSIX shells (`pwsh`,
-/// `powershell`, `cmd`) where that syntax fails (#451).
+/// `powershell`, `cmd`) where that syntax fails.
 #[cfg(unix)]
 fn is_posix_compatible_shell(shell: &str) -> bool {
     let name = std::path::Path::new(shell)
@@ -657,7 +657,7 @@ mod platform_tests {
         );
     }
 
-    // #451: a non-interactive `bash -c` sources $BASH_ENV. sobre must run
+    // A non-interactive `bash -c` sources $BASH_ENV. sobre must run
     // profile-free, so `apply_profile_free_env` has to neutralize an inherited
     // BASH_ENV before it can pull in a contaminating startup file.
     #[cfg(unix)]
@@ -716,7 +716,7 @@ mod posix_shell_gate_tests {
 
     #[test]
     fn rejects_interactive_and_nonposix_shells() {
-        // #451: agent bash/POSIX syntax fails in these — never auto-select them.
+        // Agent bash/POSIX syntax fails in these — never auto-select them.
         for s in [
             "/usr/bin/nu",
             "/opt/homebrew/bin/nu",

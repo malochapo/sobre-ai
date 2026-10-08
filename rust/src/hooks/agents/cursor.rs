@@ -68,7 +68,7 @@ fn merge_cursor_hooks(existing: &mut serde_json::Value, binary: &str) {
     };
     ensure_pretooluse_hook(pre_arr, "Shell", &format!("{binary} hook cursor"));
 
-    // Observe hooks — only essential ones (#1200). postToolUse caused
+    // Observe hooks — only essential ones. postToolUse caused
     // Cursor to append hook stdout to edited files, corrupting source code.
     let observe_cmd = format!("{binary} hook observe");
     ensure_observe_hook(hooks_obj, "sessionStart", &observe_cmd);

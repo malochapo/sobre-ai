@@ -22,7 +22,7 @@ const LEGEND_WRAPPER_OVERHEAD: isize = 9;
 /// A repeated-token candidate, tracked with its first-occurrence position so
 /// selection and numbering never depend on `HashMap` iteration order (which
 /// varies per-process) — required for byte-stable output across runs so
-/// providers can prompt-cache on it (#498).
+/// providers can prompt-cache on it.
 struct Candidate<'a> {
     token: &'a str,
     count: usize,
@@ -163,7 +163,7 @@ mod tests {
         );
     }
 
-    /// #498: two candidates with an identical savings score (same length,
+    /// Two candidates with an identical savings score (same length,
     /// same repeat count) must still get a byte-stable @D0/@D1 assignment —
     /// the first one to appear in the text, not whichever a HashMap's
     /// randomized iteration order happens to visit first.
@@ -179,7 +179,7 @@ mod tests {
         );
     }
 
-    /// #498: same input compressed repeatedly must yield byte-identical
+    /// Same input compressed repeatedly must yield byte-identical
     /// output — the determinism/prompt-cache guarantee the maintainer asked
     /// for, same pattern as the existing guards in `sobre_read`/`shell::redact`.
     #[test]

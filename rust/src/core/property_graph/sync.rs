@@ -1,6 +1,6 @@
 //! Mirror a `graph_index` [`ProjectIndex`] into the SQLite property graph.
 //!
-//! The "one extractor → one store" path (#682.1): the mature graph_index
+//! The "one extractor → one store" path: the mature graph_index
 //! extractor produces the [`ProjectIndex`] (files, symbols, edges); this mirrors
 //! it faithfully into the scalable SQLite store so the property graph carries
 //! identical data — including a populated `file_catalog`, which the provider
@@ -44,7 +44,7 @@ fn symbol_metadata(kind: &str, is_exported: bool) -> String {
 /// flag from a symbol node's metadata JSON. The property-graph `Node` only
 /// models a coarse `NodeKind`, so the precise graph_index kind (`function`,
 /// `struct`, …) and export flag live in this metadata blob — the provider
-/// facade must read them back to surface a lossless symbol (#696 C1). Returns
+/// facade must read them back to surface a lossless symbol (C1). Returns
 /// `(None, None)` for absent/malformed metadata so callers can fall back.
 pub fn parse_symbol_metadata(meta: Option<&str>) -> (Option<String>, Option<bool>) {
     let Some(raw) = meta else {

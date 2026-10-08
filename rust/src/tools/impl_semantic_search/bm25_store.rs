@@ -57,7 +57,7 @@ pub(crate) fn load_or_refresh_bm25(root: &Path) -> Bm25LoadResult {
     // disk) instead of doing an unbounded synchronous build in the MCP handler.
     // Wait briefly so small/medium repos still return Ready on the first call;
     // larger repos return Building and the agent retries against the warm cache
-    // once the worker has persisted the index (#150).
+    // once the worker has persisted the index.
     crate::core::index_orchestrator::ensure_all_background(&root_str);
 
     let deadline = std::time::Instant::now() + bm25_cold_build_budget();

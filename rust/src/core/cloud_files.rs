@@ -3,7 +3,7 @@
 //!
 //! Such files keep their *contents* in the cloud; merely opening or reading one
 //! forces the OS to download ("hydrate") it — slow, bandwidth-/quota-hungry, and
-//! on Windows it triggers OneDrive sync warnings (#363). sobre must never
+//! on Windows it triggers OneDrive sync warnings. sobre must never
 //! hydrate files just to index them in the background, so every directory scan
 //! prunes placeholders via [`keep_entry`]. Detection is metadata-only (file
 //! attributes / stat flags) and therefore never triggers a download.

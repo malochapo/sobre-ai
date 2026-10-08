@@ -1,4 +1,4 @@
-//! Per-item sensitivity model (#212).
+//! Per-item sensitivity model.
 //!
 //! Assigns a [`SensitivityLevel`] to context items (knowledge facts, file
 //! paths) from path + content signals, stored with each fact. Only

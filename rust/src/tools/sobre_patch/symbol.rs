@@ -1,6 +1,5 @@
 //! `replace_symbol` op: replace a whole symbol body by name (or path+line),
-//! delegating to the LSP/IDE-aware `sobre_refactor::replace_symbol_body` (epic
-//! #1008, plan Säule 2).
+//! delegating to the LSP/IDE-aware `sobre_refactor::replace_symbol_body`.
 //!
 //! sobre_patch's line-anchored ops are great for surgical line edits but a model
 //! that wants to rewrite an entire function shouldn't have to enumerate every
@@ -26,7 +25,7 @@ pub(crate) fn is_replace_symbol(args: &Map<String, Value>) -> bool {
 ///
 /// Field mapping: `name`/`name_path` → `name_path`; `new_text` → `new_text`;
 /// `path`+`line`(+`end_line`) and `expected_hash` pass through. `new_text` is the
-/// single replacement-field name across every sobre_patch op (#1020).
+/// single replacement-field name across every sobre_patch op.
 pub(crate) fn build_refactor_args(args: &Map<String, Value>) -> Result<Map<String, Value>, String> {
     let new_text = str_field(args, "new_text").ok_or_else(|| {
         "replace_symbol requires 'new_text' (the full replacement declaration)".to_string()

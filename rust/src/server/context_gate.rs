@@ -1,4 +1,4 @@
-/// #843: precise, pinned reads (`diff`, `lines:N-M`, `anchored`/`anchored:N-M`)
+/// Precise, pinned reads (`diff`, `lines:N-M`, `anchored`/`anchored:N-M`)
 /// must pass through every mode-override path untouched — bounce-prevention,
 /// pressure-downgrade, and the graph/knowledge heuristics below must never
 /// silently reinterpret one of these to e.g. `full`, which would discard the
@@ -132,7 +132,7 @@ mod tests {
 
     #[test]
     fn pre_dispatch_passthrough_for_anchored_window() {
-        // #843: a windowed anchored:N-M read must keep its hash anchors —
+        // A windowed anchored:N-M read must keep its hash anchors —
         // bounce-prevention, pressure-downgrade, etc. must not clobber it to
         // "full" and silently drop the window.
         {
@@ -166,7 +166,7 @@ mod tests {
 
     #[test]
     fn pre_dispatch_passthrough_for_lines_multi_select() {
-        // #971: `lines:A-B,C-D` is a precise pinned window exactly like
+        // `lines:A-B,C-D` is a precise pinned window exactly like
         // `lines:A-B`, but it parsed as Malformed, so `is_precise_pinned_mode`
         // reported "not pinned" and bounce-prevention rewrote an 8-line request
         // into a full-file read. Exercises the edit-forced branch, which is what

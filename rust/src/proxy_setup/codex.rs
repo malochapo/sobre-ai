@@ -116,7 +116,7 @@ fn install_codex_env_at_path(config_path: &Path, port: u16, quiet: bool, mode: C
 /// Point Codex's built-in OpenAI provider at `value` via the documented top-level
 /// `openai_base_url` key, replacing a stale local value with the canonical
 /// one. A custom *remote* `openai_base_url` the user configured is preserved and
-/// never overwritten in API-key mode (#366). Keys are emitted as top-level keys
+/// never overwritten in API-key mode. Keys are emitted as top-level keys
 /// (before the first `[table]`) so Codex actually reads them.
 pub(crate) fn render_codex_config(existing: &str, entries: &[(&str, String)]) -> String {
     let cleaned = strip_codex_proxy_entries(existing);

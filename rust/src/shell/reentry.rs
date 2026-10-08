@@ -5,7 +5,7 @@
 //! it spawns, so its presence reliably means "a parent sobre already owns
 //! compression of this command tree" and a nested `sobre -c` must pass
 //! through. Because sobre is the only writer, an agent cannot trigger it by
-//! leaking an env var (GH #533).
+//! leaking an env var.
 
 use std::process::Command;
 

@@ -1,4 +1,4 @@
-//! Golden test for the quality loop v1 (GL #494): an edit failure after a
+//! Golden test for the quality loop v1: an edit failure after a
 //! compressed read must escalate the next auto read of that file to `full`,
 //! and repeated failures must make the (ext × mode) pair risky so *other*
 //! files of the same type stop being compressed with the failing mode.
@@ -84,7 +84,7 @@ fn edit_fail_after_map_read_escalates_and_penalizes() {
     let other_ctx = AutoModeContext {
         path: &other_path,
         // > 6000 tokens so the deterministic size heuristic resolves a code file
-        // to `map` (#683 raised the map floor from 3000 → 6000). Only a non-full
+        // to `map` (raised the map floor from 3000 → 6000). Only a non-full
         // base mode can be escalated to `full` by the risky (rs × map) penalty.
         token_count: 7000,
         task: None,

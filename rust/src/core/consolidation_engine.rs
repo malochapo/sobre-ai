@@ -1,4 +1,4 @@
-//! Canonical session→knowledge consolidation (#995 Phase 4).
+//! Canonical session→knowledge consolidation (Phase 4).
 //!
 //! One session-import core (`import_session_into`) and one option set
 //! ([`ConsolidateOptions`]) back every consolidation driver — the CLI/MCP
@@ -212,7 +212,7 @@ pub(crate) fn import_session_into(
 
 /// Stable knowledge key for a session finding: `file[:line]` when located, else a
 /// content slug. Content-based (never index-based), so re-imports upsert the same
-/// fact and the output stays deterministic across runs (#498).
+/// fact and the output stays deterministic across runs.
 pub(crate) fn finding_key(f: &Finding) -> String {
     match (&f.file, f.line) {
         (Some(file), Some(line)) => format!("{file}:{line}"),

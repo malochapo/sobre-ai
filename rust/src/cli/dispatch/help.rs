@@ -1,5 +1,4 @@
-// Auto-split from the former monolithic dispatch.rs. run() (the command
-// match) stays in mod.rs; standalone helpers grouped by concern.
+//! The `sobre help` text.
 
 /// Short, friendly orientation shown when a human runs bare `sobre` in a
 /// terminal (where the silent stdio MCP server would otherwise just hang). One

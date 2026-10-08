@@ -220,7 +220,7 @@ fn resolve_one(
         "scala" | "sc" => resolve_scala(imp, ctx),
         "ex" | "exs" => resolve_elixir(imp, file_path, ctx),
         // `.tscn` ext_resource paths are `res://` references — identical shape to
-        // a GDScript `preload`, so the GDScript resolver handles them. (#316)
+        // a GDScript `preload`, so the GDScript resolver handles them.
         "gd" | "tscn" => resolve_gd(imp, file_path, ctx),
         "lua" | "luau" => resolve_lua(imp, file_path, ctx),
         _ => (None, true),

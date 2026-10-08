@@ -14,7 +14,7 @@ pub(super) fn compress_add(output: &str) -> String {
     }
     // Only `add '<path>'` verbose lines are files; anything else in the output
     // (hook chatter, a chained `git commit`'s summary) must not be counted as
-    // one — a summary may only state numbers parsed from the output (#2 in the
+    // one — a summary may only state numbers parsed from the output (in the
     // limitations audit: "ok (+7 files)" for a 1-file commit).
     let added = lines
         .iter()

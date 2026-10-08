@@ -123,7 +123,7 @@ fn proxy_table_toml_round_trip() {
 
 #[test]
 fn live_compress_exclude_defaults_to_serena() {
-    // #481: an unset list protects Serena's code-reading tools, which return
+    // An unset list protects Serena's code-reading tools, which return
     // source bodies but are mis-bucketed as `Search` by name.
     let cfg = ProxyConfig::default();
     assert!(cfg.is_tool_live_compress_excluded("mcp__serena__find_symbol"));

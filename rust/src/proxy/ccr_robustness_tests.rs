@@ -1,6 +1,6 @@
-//! CCR robustness regression suite (#983) — guards the content-addressed
+//! CCR robustness regression suite — guards the content-addressed
 //! recovery path against the classes of bug that bit comparable context layers
-//! (Headroom #1023/#1209/#1236/#389/#1141/#1182/#709/#1450): a lossy rewrite
+//! (found in Headroom): a lossy rewrite
 //! that drops a handle it cannot back, a retrieval after the tee file is gone
 //! past its TTL, an in-band splice on a streaming request, the tee store
 //! colliding with the read-stub bookkeeping, and the cold-stub index resurrecting
@@ -40,7 +40,7 @@ fn persist_below_min_tee_bytes_yields_no_handle() {
     assert!(persist(small).is_none());
 }
 
-/// Gap 2 — handles are content-addressed (idempotent, cache-safe #448/#498).
+/// Gap 2 — handles are content-addressed (idempotent, cache-safe, deterministic).
 #[test]
 fn persist_is_idempotent_and_content_addressed() {
     let _lock = test_env_lock();
@@ -112,7 +112,7 @@ fn sobre_expand_surgical_slices_over_tee_handle() {
 
 /// Gap 5 — the tee resolver rejects path traversal, malformed hex, foreign
 /// prefixes and a reference-store id, so a crafted handle can never escape the
-/// store or alias another store (store separation + #936 ladder).
+/// store or alias another store (store separation + ladder).
 #[test]
 fn resolve_tee_rejects_traversal_nontee_and_bad_hex_across_prefixes() {
     let _lock = test_env_lock();
@@ -130,8 +130,8 @@ fn resolve_tee_rejects_traversal_nontee_and_bad_hex_across_prefixes() {
 }
 
 /// Gap 9 — the read-stub index persists only delivery *bookkeeping*, never the
-/// file content, and that bookkeeping survives a simulated daemon restart so a
-/// re-read collapses to the cheap `[unchanged]` stub (#955).
+/// file content, and that bookkeeping survives a simulated MCP restart so a
+/// re-read collapses to the cheap `[unchanged]` stub.
 #[test]
 #[serial_test::serial(stub_index)]
 fn read_stub_bookkeeping_survives_restart_without_storing_content() {

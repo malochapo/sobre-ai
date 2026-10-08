@@ -43,7 +43,7 @@ pub(super) fn compress_request_body(
         // so history is pruned at the same frozen, cache-aware boundary.
         let boundary = super::history_prune::prune_boundary(messages.len());
         // Mirror the Anthropic guard: never rewrite content behind a client
-        // `cache_control` breakpoint (#448). OpenAI requests carry none, so this
+        // `cache_control` breakpoint. OpenAI requests carry none, so this
         // resolves to 0 and pruning is byte-for-byte unchanged — but the code
         // path stays uniform across providers.
         let cached = super::history_prune::cached_prefix_len(messages);
@@ -63,7 +63,7 @@ pub(super) fn compress_request_body(
                 .map(String::as_str);
             let kind = name.map_or(ToolResultKind::Other, tool_kind::classify_tool_name);
 
-            // #481: skip live compression when the tool is excluded.
+            // Skip live compression when the tool is excluded.
             if name.is_some_and(|n| cfg.proxy.is_tool_live_compress_excluded(n)) {
                 continue;
             }
@@ -175,7 +175,7 @@ mod tests {
 
     #[test]
     fn system_and_assistant_prose_pass_through_verbatim() {
-        // #710: role aggressiveness is off, so prose is never rewritten.
+        // Role aggressiveness is off, so prose is never rewritten.
         let _iso = crate::core::data_dir::isolated_data_dir();
 
         let prose = big_prose();
@@ -225,7 +225,7 @@ mod tests {
 
     #[test]
     fn effort_control_is_off_and_a_noop() {
-        // #834 end-to-end through the Chat Completions request path.
+        // End-to-end through the Chat Completions request path.
         let _iso = crate::core::data_dir::isolated_data_dir();
         let body = serde_json::json!({
             "model": "gpt-5.5", "messages": [{"role": "user", "content": "hi"}]

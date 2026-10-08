@@ -184,7 +184,7 @@ fn container_matches_ancestor(name: &str, ancestor: &str) -> bool {
 /// Resolve a `name_path` (`Class/method` or bare `name`) to a single symbol via
 /// the tree-sitter index (spec v2a §3/§5.3). Disambiguates a qualified path by
 /// enclosing-range containment (ancestor symbol's line span contains the leaf's).
-/// #845: `file_scope` (a project-relative path) narrows candidates to that
+/// `file_scope` (a project-relative path) narrows candidates to that
 /// file, preventing AMBIGUOUS_SYMBOL for common names like `Dispose`.
 pub(crate) fn resolve_name_path_scoped(
     name_path: &str,
@@ -373,7 +373,7 @@ fn handle_symbol_edit(action: &str, args: &Value, project_root: &str) -> String 
         expected_hash,
     };
 
-    // 4) Pre-write syntax gate (#836): reject edits that would break a cleanly
+    // 4) Pre-write syntax gate: reject edits that would break a cleanly
     //    parsing file. Build the hypothetical new content and check it.
     let ext = std::path::Path::new(&edit.abs_path)
         .extension()
@@ -422,7 +422,7 @@ fn format_edit_result(
     } else {
         res.diff.clone()
     };
-    // #803: include absolute path so callers can verify the write target
+    // Include absolute path so callers can verify the write target
     format!(
         "{action} applied {abs_path} (L{}:{}-L{}:{}):\n{}",
         r.start_line + 1,

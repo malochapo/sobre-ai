@@ -1,4 +1,4 @@
-//! `sobre doctor overhead` — honest fixed-cost accounting (#572).
+//! `sobre doctor overhead` — honest fixed-cost accounting.
 //!
 //! Shows what a session costs BEFORE sobre saves anything:
 //!  1. advertised MCP tool schemas (mirrors the live `tools/list` policy),
@@ -19,9 +19,9 @@ pub(super) struct OverheadReport {
     pub tool_count: usize,
     pub tool_schema_tokens: usize,
     pub instruction_tokens: usize,
-    /// The per-session budget (#964); 0 disables the check.
+    /// The per-session budget; 0 disables the check.
     pub budget_tokens: usize,
-    /// Whether `total_tokens` exceeds a non-zero `budget_tokens` (#964).
+    /// Whether `total_tokens` exceeds a non-zero `budget_tokens`.
     pub over_budget: bool,
 }
 
@@ -30,7 +30,7 @@ impl OverheadReport {
         self.tool_schema_tokens + self.instruction_tokens
     }
 
-    /// Strictly above a non-zero budget; a budget of 0 disables the check (#964).
+    /// Strictly above a non-zero budget; a budget of 0 disables the check.
     fn is_over_budget(&self) -> bool {
         self.budget_tokens > 0 && self.total_tokens() > self.budget_tokens
     }
@@ -56,7 +56,7 @@ pub(super) fn measure() -> OverheadReport {
 pub(super) fn run_overhead(json: bool, gate: bool) -> i32 {
     let report = measure();
 
-    // `--gate` turns a budget breach into a non-zero exit for CI (#964); without
+    // `--gate` turns a budget breach into a non-zero exit for CI; without
     // it the report is purely informational regardless of the breach.
     let exit_code = i32::from(gate && report.over_budget);
 
@@ -93,7 +93,7 @@ pub(super) fn run_overhead(json: bool, gate: bool) -> i32 {
     crate::outln!("  {BOLD}Total fixed cost{RST}      {color}{total:>6} tok / session{RST}");
     if report.budget_tokens > 0 {
         if report.over_budget {
-            // Machine-readable so CI/log scrapers can key on a stable token (#964).
+            // Machine-readable so CI/log scrapers can key on a stable token.
             crate::outln!(
                 "  {YELLOW}⚠ OVER_BUDGET: {total} tok > budget {} tok {RST}",
                 report.budget_tokens

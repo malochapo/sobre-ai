@@ -44,7 +44,7 @@ pub fn persist_ceiling_bytes() -> u64 {
 
 /// Outcome of persisting a BM25 index to disk. Distinguishes a real write from a
 /// size-capped refusal so callers never mistake "refused to persist" for
-/// success (the bug behind the perpetual "index warming" report, issue #249).
+/// success (the bug behind the perpetual "index warming" report).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SaveOutcome {
     /// Written to disk. Carries the compressed (zstd) size in bytes.
@@ -303,12 +303,12 @@ impl BM25Index {
         }
         let files = list_code_files(root);
 
-        // #933: parallel fast path for the common case. The per-file parse +
+        // Parallel fast path for the common case. The per-file parse +
         // tokenize work is pure and thread-safe, so we fan it across a rayon pool
         // and merge sequentially in file order — measured 2.85 s → 0.69 s (~4x) on
         // the sobre repo. Under memory pressure (or for tiny corpora, where pool
         // setup is not worth it) we fall back to the sequential build, which carries
-        // the incremental early-break. #685 adds admission control: a corpus whose
+        // the incremental early-break. Admission control: a corpus whose
         // estimated peak would blow past the guardian's hard threshold degrades to
         // the sequential build up front instead of OOMing mid-fan-out. Both paths
         // produce an identical index (see `build` module + determinism tests).
@@ -354,14 +354,14 @@ impl BM25Index {
         let old_by_file = Self::group_prev_chunks_by_file(prev);
         let files = list_code_files(root);
 
-        // #581: mirror `build()`'s dispatch. The edit loop is the hottest path in
+        // Mirror `build`'s dispatch. The edit loop is the hottest path in
         // daily use, and its serial cost is dominated by re-tokenizing the *many
         // unchanged* files' reused chunks — not the few changed ones. So the
         // parallel path fans the entire tokenization (changed files via
         // `prepare_file`, unchanged via re-`prepare_chunk`) across the rayon pool
         // and merges sequentially in file order. The sequential path keeps the
         // per-file memory-pressure early-break and serves small corpora / pressure.
-        // #685: oversized corpora degrade to sequential via admission control.
+        // Oversized corpora degrade to sequential via admission control.
         // Both produce an identical index (see determinism tests).
         if files.len() >= build::PARALLEL_MIN_FILES
             && !crate::core::memory_guard::is_under_pressure()
@@ -470,7 +470,7 @@ impl BM25Index {
             postings.push((idx, 1.0));
         }
 
-        // #790: truncate content to snippet AFTER tokenization — full text was
+        // Truncate content to snippet AFTER tokenization — full text was
         // used for BM25 scoring above; stored content is only for result display.
         const SNIPPET_LINES: usize = 10;
         if chunk.content.lines().nth(SNIPPET_LINES).is_some() {
@@ -584,7 +584,7 @@ impl BM25Index {
         let dir = index_dir(root);
         std::fs::create_dir_all(&dir)?;
 
-        // #790: stream postcard → zstd → file to avoid holding the full
+        // Stream postcard → zstd → file to avoid holding the full
         // serialized buffer in memory. Temp-file + rename for atomicity.
         let target = dir.join("bm25_index.bin.zst");
         let tmp = dir.join("bm25_index.bin.zst.tmp");
@@ -800,7 +800,7 @@ fn index_dir(root: &Path) -> PathBuf {
 
 fn list_code_files(root: &Path) -> Vec<String> {
     let cfg = crate::core::config::Config::load();
-    // #735: the declared corpus filter (config `ignore`) decides
+    // The declared corpus filter (config `ignore`) decides
     // membership before anything is chunked; the semantic index chunks this
     // corpus, so it inherits the same universe.
     let filter = crate::core::index_filter::IndexFileFilter::resolve(&cfg);

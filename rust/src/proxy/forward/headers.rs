@@ -6,7 +6,7 @@
 /// `openai-project` (and `openai-organization`) must be forwarded: OpenCode and
 /// the OpenAI SDK send the project scope via this header for project-scoped API
 /// keys when calling the Responses API (`/responses`). Dropping it makes OpenAI
-/// reject the request with `Missing scopes: api.responses.write` (#366).
+/// reject the request with `Missing scopes: api.responses.write`.
 pub(crate) const ALLOWED_REQUEST_HEADERS: &[&str] = &[
     "authorization",
     "x-api-key",

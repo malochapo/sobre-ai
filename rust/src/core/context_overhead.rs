@@ -1,4 +1,4 @@
-//! Honest accounting of the fixed per-turn context sobre injects (GitHub #361).
+//! Honest accounting of the fixed per-turn context sobre injects.
 //!
 //! Two components ride every request and — on a provider WITHOUT prompt caching
 //! — are re-billed on every turn:
@@ -34,7 +34,7 @@ impl ContextOverhead {
     /// Measure the overhead for the currently-configured MCP surface. Uses the
     /// same advertisement policy as the live `tools/list` handler (the registry
     /// with description compression), so the number reflects what this install
-    /// actually advertises (#572).
+    /// actually advertises.
     #[must_use]
     pub fn measure() -> Self {
         let tools = crate::server::tool_visibility::advertised_tool_defs_default();

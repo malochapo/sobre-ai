@@ -91,7 +91,7 @@ mod resolve_path_tests {
     #[tokio::test]
     #[allow(clippy::await_holding_lock)]
     async fn resolve_path_auto_reroots_from_agent_config_dir() {
-        // #580: the MCP server is launched from an agent/IDE config dir
+        // The MCP server is launched from an agent/IDE config dir
         // (~/.copilot-style) and wrongly adopts it as the root. With no
         // trusted startup root, the first
         // absolute path into a real project must still correct the root — an
@@ -161,7 +161,7 @@ mod resolve_path_tests {
     #[tokio::test]
     #[allow(clippy::await_holding_lock)]
     async fn resolve_path_markerless_root_keeps_root_for_markerless_path() {
-        // #649: from a markerless client cwd, an absolute path that derives NO
+        // From a markerless client cwd, an absolute path that derives NO
         // project marker is read as is and the root is unchanged. Only a real
         // project becomes the new root.
         let _iso = crate::core::data_dir::isolated_data_dir();
@@ -327,7 +327,7 @@ mod resolve_path_tests {
         assert_eq!(session.project_root.as_deref(), Some(root_value.as_str()));
     }
 
-    // #707: a mid-session worktree switch moves shell_cwd into a nested linked
+    // A mid-session worktree switch moves shell_cwd into a nested linked
     // worktree (own `.git` *file*) while project_root stays at initialize-time.
     // The path `src/lib.rs` deliberately also exists relative to the test
     // process CWD (`rust/`): the server's `p.exists()` probe used to

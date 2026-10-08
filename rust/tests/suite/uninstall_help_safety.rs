@@ -1,4 +1,4 @@
-//! #476: `sobre uninstall --help` (and `-h`) must print usage and remove
+//! `sobre uninstall --help` (and `-h`) must print usage and remove
 //! NOTHING. Previously the `uninstall` dispatch arm ignored `--help`, so the
 //! flag fell through to a real, irreversible uninstall.
 //!

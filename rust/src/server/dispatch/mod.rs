@@ -12,8 +12,8 @@ impl SobreServer {
     /// Returns (output_text, saved_tokens, shell_outcome, content_blocks).
     /// saved_tokens > 0 indicates the tool already applied internal compression
     /// (shell engine, cache deltas, etc.). shell_outcome is `Some` for
-    /// shell-executing tools so the caller can populate MCP error metadata
-    /// (#389). content_blocks carries image/binary MCP blocks when present.
+    /// shell-executing tools so the caller can populate MCP error metadata.
+    /// content_blocks carries image/binary MCP blocks when present.
     pub(super) async fn dispatch_tool(
         &self,
         name: &str,
@@ -36,7 +36,7 @@ impl SobreServer {
                 session.project_root.clone().unwrap_or_default()
             };
 
-            // Lazy, demand-driven index warming (#152): only tools that actually
+            // Lazy, demand-driven index warming: only tools that actually
             // need a prebuilt index trigger a (background, once-per-root) scan.
             // The first heavy pre-warm also warms any configured extra roots once.
             if !project_root.is_empty()
@@ -111,7 +111,7 @@ impl SobreServer {
                 progress_sender: progress,
             };
             // Run the (synchronous) handler on the dedicated blocking pool under
-            // a watchdog deadline (#271). `block_in_place` would pin one of the
+            // a watchdog deadline. `block_in_place` would pin one of the
             // few core workers and — being synchronous — cannot be interrupted
             // by `tokio::time::timeout` from the same task, so a hung handler
             // would silently swallow the JSON-RPC response and the MCP client
@@ -168,7 +168,7 @@ impl SobreServer {
             return Ok((raw_text, saved, output.shell_outcome, None));
         }
 
-        // Unknown tool (#712): suggest the closest registered name so a typo
+        // Unknown tool: suggest the closest registered name so a typo
         // (`sobre_raed`) costs the agent a hint instead of a blind retry.
         let suggestion = crate::core::levenshtein::closest(name, self.registry.names())
             .map(|s| format!(" — did you mean '{s}'?"))
@@ -180,7 +180,7 @@ impl SobreServer {
     }
 
     /// Execute a (synchronous) tool handler on the blocking pool under a
-    /// watchdog deadline (#271).
+    /// watchdog deadline.
     ///
     /// The handler is `Send + 'static` (it owns an `Arc<dyn McpTool>`, a cloned
     /// arg map and the `ToolContext`), so it runs via `spawn_blocking` on the
@@ -205,7 +205,7 @@ impl SobreServer {
     ///
     /// On timeout the join handle is **aborted** — the blocking-pool thread
     /// receives a cancellation signal so it does not permanently leak a pool
-    /// slot (#1018). A clean error is always returned so the MCP client gets a
+    /// slot. A clean error is always returned so the MCP client gets a
     /// JSON-RPC reply. A handler panic is isolated and surfaced as an error too.
     async fn watchdog_join(
         name: &str,
@@ -221,7 +221,7 @@ impl SobreServer {
                 // The JoinHandle was moved into `select!` — when this branch
                 // wins, Tokio drops the handle which sets the task's cancelled
                 // flag. For `spawn_blocking` this means the thread will be
-                // reclaimed once it returns (#1018).
+                // reclaimed once it returns.
                 crate::core::io_health::record_freeze();
                 tracing::error!(
                     tool = name,
@@ -291,7 +291,7 @@ fn watchdog_from_secs(secs: u64) -> Option<Duration> {
     (secs > 0).then(|| Duration::from_secs(secs))
 }
 
-/// Default per-tool watchdog budget (#271). Long enough that no legitimate
+/// Default per-tool watchdog budget. Long enough that no legitimate
 /// read/search/graph call ever hits it, short enough that a hang degrades to a
 /// clean error instead of a dropped request.
 const DEFAULT_TOOL_TIMEOUT_SECS: u64 = 120;
@@ -358,7 +358,7 @@ mod tests {
     async fn watchdog_returns_error_on_hung_handler() {
         use std::sync::atomic::{AtomicBool, Ordering};
         // A hung handler must surface as a clean error (not a dropped request),
-        // which is the core #271 guarantee. The stop flag lets the simulated
+        // which is the core guarantee. The stop flag lets the simulated
         // hang exit promptly after the assertion so the runtime shuts down fast.
         let stop = std::sync::Arc::new(AtomicBool::new(false));
         let stop_in = stop.clone();
@@ -408,7 +408,7 @@ mod tests {
         );
     }
 
-    /// #712: a typo'd tool name must return a "did you mean" hint from the
+    /// A typo'd tool name must return a "did you mean" hint from the
     /// live registry instead of a bare unknown-tool error; a name nowhere
     /// near any registered tool must stay suggestion-free.
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

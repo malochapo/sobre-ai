@@ -274,7 +274,7 @@ pub fn format_search_results(results: &[SearchResult], compact: bool) -> String 
     for (i, r) in results.iter().enumerate() {
         let is_external = r.file_path.contains("://");
         // Forward-slash normalize local paths so Windows backslashes are never
-        // dropped/escape-mangled by client render layers (issue #324). External
+        // dropped/escape-mangled by client render layers. External
         // URIs (provider results, e.g. `github://`) are left untouched.
         let normalized;
         let file_path: &str = if is_external {

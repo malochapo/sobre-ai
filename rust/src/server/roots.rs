@@ -15,8 +15,8 @@ pub fn uri_to_path(uri: &str) -> Option<String> {
     // Windows `file:///C:/path` URIs strip to `/C:/path`, which is NOT an
     // absolute Windows path (no drive prefix at the start) and would be rejected
     // below — so on Windows+Cursor every workspace root failed to parse and the
-    // session fell back to the home dir as project root (GL discussion #273:
-    // "MCP root misconfigured (resolves to C:/Users/<user>)"). Drop the single
+    // session fell back to the home dir as project root
+    // ("MCP root misconfigured (resolves to C:/Users/<user>)"). Drop the single
     // leading slash before the drive letter so it parses as `C:/path`. POSIX
     // paths keep their leading slash (on Unix `/C:/x` is a legitimate path).
     #[cfg(windows)]
@@ -165,8 +165,8 @@ fn split_workspace_paths(raw: &str) -> Vec<String> {
 /// Cursor declares the MCP `roots` capability but does NOT implement
 /// `roots/list` (it answers `-32601 Method not found`) and launches stdio MCP
 /// servers with `cwd = /`. Without this signal the project root falls back to an
-/// unsafe directory and relative tool paths resolve against the wrong tree
-/// (#699). This variable is the Cursor-sanctioned way to learn the active
+/// unsafe directory and relative tool paths resolve against the wrong tree.
+/// This variable is the Cursor-sanctioned way to learn the active
 /// workspace folder(s). The same broad/unsafe-root guards as MCP roots apply.
 pub fn root_from_workspace_env() -> Option<String> {
     let raw = std::env::var("WORKSPACE_FOLDER_PATHS").ok()?;
@@ -227,7 +227,7 @@ mod tests {
 
     #[test]
     fn detects_leading_slash_windows_drive() {
-        // GL #273: the `/C:/…` shape (from a Windows `file:///C:/…` URI) must be
+        // The `/C:/…` shape (from a Windows `file:///C:/…` URI) must be
         // recognised so the leading slash can be stripped. Runs on every
         // platform so Linux CI guards the logic the Windows-only wiring uses.
         assert!(has_leading_slash_drive("/C:/Users/dev"));
@@ -244,7 +244,7 @@ mod tests {
     #[cfg(windows)]
     #[test]
     fn parse_file_uri_windows_drive_strips_leading_slash() {
-        // GL #273: Cursor on Windows reports roots as `file:///C:/…`; these must
+        // Cursor on Windows reports roots as `file:///C:/…`; these must
         // parse to an absolute `C:/` path instead of being rejected (which left
         // the session falling back to the home dir as project root).
         let got = uri_to_path("file:///C:/Users/dev/project").expect("windows drive uri");

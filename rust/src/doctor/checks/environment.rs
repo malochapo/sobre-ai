@@ -71,7 +71,7 @@ pub(crate) fn mcp_config_outcome() -> Outcome {
         }
     }
 }
-/// WSL2 + VS Code (GH #669): VS Code's start-on-demand MCP lifecycle has a
+/// WSL2 + VS Code: VS Code's start-on-demand MCP lifecycle has a
 /// known client-side race — the first tool call of a fresh conversation can
 /// fire against cached tool metadata before the server's implementation is
 /// bound, failing with `Cannot read properties of undefined (reading 'invoke')`
@@ -109,7 +109,7 @@ pub(crate) fn session_state_outcome() -> Outcome {
             }
         }
         // No session for THIS cwd — but sessions for other workspaces may be
-        // live (GH #694: doctor run from a shell whose cwd is not one of the
+        // live (doctor run from a shell whose cwd is not one of the
         // open project roots claimed "no active session" and looked broken).
         // Surface the recent sessions with their roots instead of denying
         // their existence.
@@ -131,7 +131,7 @@ pub(crate) fn session_state_outcome() -> Outcome {
 }
 
 /// Renders "recent: root1 (2h ago), root2 (5m ago)" for the newest sessions
-/// across ALL workspaces (multi-window setups, GH #694). `None` when no
+/// across ALL workspaces (multi-window setups). `None` when no
 /// session exists at all.
 fn recent_sessions_line(now: chrono::DateTime<chrono::Utc>) -> Option<String> {
     format_recent_sessions(crate::core::session::SessionState::list_sessions(), now)

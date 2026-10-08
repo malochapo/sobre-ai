@@ -1,4 +1,4 @@
-//! Type-safe `sobre_read` modes (#528 / #509 Phase 2).
+//! Type-safe `sobre_read` modes (Phase 2).
 //!
 //! Historically the read mode travelled through the whole pipeline as a bare
 //! `&str` (`"full"`, `"map"`, `"lines:5-10"`, `"density:0.40"`, …) and the
@@ -35,7 +35,7 @@ pub(crate) struct LineRange {
 
 impl LineRange {
     /// Window `start..=end`. `start` is clamped to ≥ 1 to mirror the handler's
-    /// historical `start.max(1)` behaviour (#253).
+    /// historical `start.max(1)` behaviour.
     #[must_use]
     pub(crate) fn new(start: u32, end: u32) -> Self {
         Self {
@@ -69,7 +69,7 @@ pub(crate) enum ReadMode {
     /// original line structure while saving framing overhead.
     FullCompact,
     /// Verbatim + per-line `N:hh|` hash anchors, edit-ready for `sobre_patch`
-    /// (epic #1008) — `"anchored"`, or windowed as `"anchored:N-M"` (#811) so a
+    /// — `"anchored"`, or windowed as `"anchored:N-M"` so a
     /// bounded anchored read never has to materialize/anchor the whole file.
     Anchored(Option<LineRange>),
     /// Exact bytes, no framing — `"raw"`.
@@ -92,7 +92,7 @@ pub(crate) enum ReadMode {
     Diff,
     /// Line window — `"lines:start-end"`.
     Lines(LineRange),
-    /// Comma multi-select — `"lines:5,10-20"` (#971).
+    /// Comma multi-select — `"lines:5,10-20"`.
     ///
     /// The parts are validated but kept verbatim rather than re-derived into
     /// `Vec<LineRange>`. The window semantics live in
@@ -125,7 +125,7 @@ impl fmt::Display for ParseModeError {
 }
 
 impl ParseModeError {
-    /// Actionable, caller-facing message for a rejected mode string (#1209).
+    /// Actionable, caller-facing message for a rejected mode string.
     ///
     /// `Display` states *what* is wrong; this also says *what to type instead* —
     /// critical for the `lines:N:M` colon-typo trap, where a second colon reads
@@ -156,8 +156,7 @@ impl ParseModeError {
 
 impl std::error::Error for ParseModeError {}
 
-/// Validate a comma multi-select payload (`"5,10-20"`) and return it verbatim
-/// (#971).
+/// Validate a comma multi-select payload (`"5,10-20"`) and return it verbatim.
 ///
 /// Each part must be a bare line `N` or a span `N-M`, so garbage still fails
 /// exactly as it does for a single range. Before this existed, a comma payload
@@ -182,7 +181,7 @@ fn parse_line_multi(payload: &str) -> Result<String, ParseModeError> {
 /// Parse the payload of a line-range mode (`"5-10"`, `"5-999999"`, or a bare
 /// `"5"` meaning "from line N to EOF"). `whole` is the full original mode string
 /// (`"lines:…"` or `"anchored:…"`) so a rejection names the mode the caller
-/// actually typed — #1209: an `anchored:` typo must not be reported as `lines:`.
+/// actually typed — an `anchored:` typo must not be reported as `lines:`.
 fn parse_line_range(payload: &str, whole: &str) -> Result<LineRange, ParseModeError> {
     let malformed = || ParseModeError::Malformed(whole.to_string());
     if let Some((a, b)) = payload.split_once('-') {
@@ -215,7 +214,7 @@ impl FromStr for ReadMode {
             "diff" => ReadMode::Diff,
             other => {
                 if let Some(payload) = other.strip_prefix("lines:") {
-                    // #971: a comma payload is a multi-select, not a span.
+                    // A comma payload is a multi-select, not a span.
                     if payload.contains(',') {
                         ReadMode::LinesMulti(parse_line_multi(payload)?)
                     } else {
@@ -270,7 +269,7 @@ impl ReadMode {
         matches!(self, ReadMode::Map | ReadMode::Signatures)
     }
 
-    /// Whole-file views the `#361` anti-inflation raw cap applies to. Selection
+    /// Whole-file views the anti-inflation raw cap applies to. Selection
     /// and delta views (`lines:`, `reference`, `diff`, `raw`) have view-specific
     /// semantics and are never capped. Replaces `mode_allows_raw_cap`.
     #[must_use]
@@ -284,7 +283,7 @@ impl ReadMode {
                 | ReadMode::Raw
                 // Anchored carries per-line anchors the agent edits against;
                 // collapsing to bare bytes on a small file would strip them and
-                // defeat the mode, so it opts out of the #361 raw cap.
+                // defeat the mode, so it opts out of the raw cap.
                 | ReadMode::Anchored(_)
         )
     }
@@ -304,7 +303,7 @@ impl ReadMode {
         )
     }
 
-    /// Precise, pinned reads (#843): the caller asked for an exact byte-window
+    /// Precise, pinned reads: the caller asked for an exact byte-window
     /// or delta and must get exactly that back. Context-gate overrides
     /// (bounce-prevention, pressure-downgrade, graph/knowledge heuristics)
     /// must never silently reinterpret one of these to e.g. `full` — that
@@ -386,7 +385,7 @@ mod tests {
 
     #[test]
     fn user_message_names_the_dash_form_for_colon_typo() {
-        // #1209: the `lines:44:48` colon typo must yield an actionable message
+        // The `lines:44:48` colon typo must yield an actionable message
         // naming the dash form, not a silent empty window or full-file bounce.
         let err = "lines:44:48".parse::<ReadMode>().unwrap_err();
         let msg = err.user_message();
@@ -423,11 +422,11 @@ mod tests {
         );
     }
 
-    // --- #971: comma multi-select ---
+    // --- comma multi-select ---
 
     #[test]
     fn comma_multi_select_parses() {
-        // The exact payload from #971, plus the form the tool description
+        // The exact payload, plus the form the tool description
         // documents (`lines:5,10-20`) — both used to be Malformed.
         assert_eq!(
             "lines:620-622,1214-1218".parse::<ReadMode>().unwrap(),
@@ -449,9 +448,9 @@ mod tests {
 
     #[test]
     fn comma_multi_select_is_pinned_and_never_capped() {
-        // The #971 regression in one place: an unparseable mode was treated as
+        // The regression in one place: an unparseable mode was treated as
         // not-pinned, which let bounce-prevention rewrite the window to `full`,
-        // and opted it into the #361 raw cap that `lines:` must never get. Both
+        // and opted it into the raw cap that `lines:` must never get. Both
         // must hold for the comma form exactly as for `lines:N-M`.
         let multi: ReadMode = "lines:620-622,1214-1218".parse().unwrap();
         assert!(
@@ -517,7 +516,7 @@ mod tests {
     #[test]
     fn density_display_normalizes_to_two_decimals() {
         // Parsing is lenient; Display normalizes to the handler's `{:.2}` form so
-        // identical reads stay byte-stable (#498 determinism).
+        // identical reads stay byte-stable (determinism).
         let parsed: ReadMode = "density:0.5".parse().unwrap();
         assert_eq!(parsed, ReadMode::Density(0.5));
         assert_eq!(parsed.to_string(), "density:0.50");

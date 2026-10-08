@@ -339,7 +339,7 @@ mod tests {
         reset_crash_loop("never-existed");
     }
 
-    /// GH #694 multi-window scenario: every healthy server resets the start
+    /// Multi-window scenario: every healthy server resets the start
     /// history after its completed handshake, so N windows × M client retries
     /// can never accumulate into a fake crash loop whose pre-handshake backoff
     /// would then *cause* the client timeouts it exists to prevent.

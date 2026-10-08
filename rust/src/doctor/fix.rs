@@ -88,7 +88,7 @@ fn build_and_persist_fix_report(
     }
     steps.push(agents_step);
 
-    // Resolve workspace/user dual-scope conflicts (issue #338)
+    // Resolve workspace/user dual-scope conflicts
     let mut ws_scope_step = SetupStepReport {
         name: "workspace_scope".to_string(),
         ok: true,
@@ -181,8 +181,8 @@ fn build_and_persist_fix_report(
 
     // Prune knowledge stores whose project_root was deleted (removed git
     // worktrees, thrown-away projects). They can never be written again, so
-    // their per-store eviction cap can never self-heal — pure accumulated bloat
-    // (GH #615). Only the explicit --fix path deletes; the background lifecycle
+    // their per-store eviction cap can never self-heal — pure accumulated bloat.
+    // Only the explicit --fix path deletes; the background lifecycle
     // never does, since a missing root can also be a temporarily-unmounted drive.
     let mut orphan_step = SetupStepReport {
         name: "orphaned_knowledge".to_string(),

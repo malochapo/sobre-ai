@@ -53,7 +53,7 @@ pub(super) fn compress_request_body(
         let boundary = super::history_prune::prune_boundary(messages.len());
         // Never rewrite content the client has marked with `cache_control`:
         // pruning inside the already-cached prefix invalidates Anthropic's
-        // prompt cache from the first changed message (#448). Pruning therefore
+        // prompt cache from the first changed message. Pruning therefore
         // starts after the last breakpoint; with no breakpoint this is 0, i.e.
         // the previous behaviour.
         modified |=
@@ -78,7 +78,7 @@ pub(super) fn compress_request_body(
                         .map(String::as_str);
                     let kind = name.map_or(ToolResultKind::Other, tool_kind::classify_tool_name);
 
-                    // #481: skip live compression when the originating tool is
+                    // Skip live compression when the originating tool is
                     // on the exclusion list (Serena).
                     let excluded =
                         name.is_some_and(|n| cfg.proxy.is_tool_live_compress_excluded(n));
@@ -220,7 +220,7 @@ mod tests {
         // tee path depends on the data dir; serialize env access so a parallel
         // test never swaps SOBRE_DATA_DIR between the two compressions.
         let _lock = crate::core::data_dir::test_env_lock();
-        // #498: the proxy rewrite must be a pure function of the body so the
+        // The proxy rewrite must be a pure function of the body so the
         // provider prompt-cache prefix stays byte-identical across turns.
         let bytes = serde_json::to_vec(&forge_log_body("Bash")).unwrap();
         let a = compress_request_body(serde_json::from_slice(&bytes).unwrap(), bytes.len()).0;
@@ -238,7 +238,7 @@ mod tests {
 
     #[test]
     fn prose_passes_through_verbatim() {
-        // #710: role aggressiveness is off, so system, user and assistant prose
+        // Role aggressiveness is off, so system, user and assistant prose
         // all reach the provider unchanged.
         let _iso = crate::core::data_dir::isolated_data_dir();
         let prose = big_prose();
@@ -337,7 +337,7 @@ mod tests {
 
     #[test]
     fn effort_control_is_off() {
-        // #834: effort control is off, so even a request that asked for
+        // Effort control is off, so even a request that asked for
         // adaptive thinking gets no `output_config` added.
         let _iso = crate::core::data_dir::isolated_data_dir();
         let adaptive = serde_json::json!({
@@ -356,7 +356,7 @@ mod tests {
     }
 
     /// A system prompt comfortably over Anthropic's minimum cacheable size, so
-    /// the #939 breakpoint gate fires.
+    /// the breakpoint gate fires.
     fn cacheable_system() -> String {
         "You are a careful, senior software engineer who writes maintainable code. ".repeat(400)
     }
@@ -378,7 +378,7 @@ mod tests {
 
     #[test]
     fn cache_aligner_measures_without_mutating_body() {
-        // #940: the volatile-field scan is telemetry-only — it is on and must leave
+        // The volatile-field scan is telemetry-only — it is on and must leave
         // the request byte-identical (measurement, not a rewrite), even on a
         // volatile-field-rich system prompt.
         let _iso = crate::core::data_dir::isolated_data_dir();
@@ -396,7 +396,7 @@ mod tests {
     }
 
     /// A cacheable-size system prompt that carries one volatile field (a date),
-    /// so the #974 relocate has something to move and clears the size floor.
+    /// so the relocate has something to move and clears the size floor.
     fn cacheable_system_with_date() -> String {
         format!("Today is 2026-06-27. {}", cacheable_system())
     }

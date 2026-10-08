@@ -25,13 +25,12 @@ pub struct SessionState {
     /// config takes it away from a resumed session too.
     #[serde(skip)]
     pub extra_roots: Vec<String>,
-    /// ACE delta playbook (#541): incremental, stable-ID checkpoint entries —
-    /// grown by ctx_compress, never rewritten (anti context-collapse).
+    /// ACE delta playbook: incremental, stable-ID checkpoint entries —
+    /// appended to, never rewritten (anti context-collapse).
     pub playbook: super::playbook::Playbook,
-    /// #717: in-memory timestamp of the last flush to disk. Backs the
+    /// In-memory timestamp of the last flush to disk. Backs the
     /// time-based save trigger so a slow trickle of changes (below the
-    /// 5-change batch) still reaches disk — the dashboard reads session
-    /// JSONs and otherwise showed "idle" for the whole batch window.
+    /// 5-change batch) still reaches disk.
     #[serde(skip)]
     pub(crate) last_flush: Option<std::time::Instant>,
 }
@@ -136,7 +135,7 @@ pub struct SessionSummary {
     pub task: Option<String>,
     pub tool_calls: u32,
     pub tokens_saved: u64,
-    /// Project root the session belongs to (GH #694): lets multi-window
+    /// Project root the session belongs to: lets multi-window
     /// setups see which workspace each session serves.
     pub project_root: Option<String>,
 }

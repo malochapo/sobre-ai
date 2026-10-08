@@ -5,7 +5,7 @@ use serde_json::{Map, Value};
 
 use crate::server::tool_trait::{ToolContext, ToolOutput, get_bool, get_str, get_str_array};
 
-/// Batch read behind `sobre_read(paths=…)` (#509): reads multiple files in one
+/// Batch read behind `sobre_read(paths=…)`: reads multiple files in one
 /// call.
 ///
 /// Panic guard (mirrors sobre_read): a panic in tree-sitter / compression must
@@ -73,7 +73,7 @@ fn handle_inner(args: &Map<String, Value>, ctx: &ToolContext) -> Result<ToolOutp
     // `bounded_lock` uses `Handle::block_on` directly — NOT a nested
     // `block_in_place` — because the dispatch layer already wraps this handler in
     // `block_in_place`. The previous nested `block_in_place` calls could exhaust the
-    // 32-thread blocking pool under concurrent reads and freeze the server (#271).
+    // 32-thread blocking pool under concurrent reads and freeze the server.
     let (paths, current_task, skipped) = {
         let Some(session) = crate::server::bounded_lock::read(session_lock, "batch_read:session")
         else {
@@ -115,7 +115,7 @@ fn handle_inner(args: &Map<String, Value>, ctx: &ToolContext) -> Result<ToolOutp
 
     // Default to auto and let sobre_read resolve the optimal mode per file.
     // Previously this forced auto→full, which is exactly the "everything comes
-    // back as full" complaint (#421): batch reads must honour auto like single
+    // back as full" complaint: batch reads must honour auto like single
     // sobre_read does.
     let mode = get_str(args, "mode").unwrap_or_else(|| "auto".to_string());
     let fresh = get_bool(args, "fresh").unwrap_or(false);

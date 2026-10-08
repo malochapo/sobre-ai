@@ -123,7 +123,7 @@ fn is_broad_directory(path: &str) -> bool {
 /// slashes. Forward slashes are valid path separators on Windows, and unlike
 /// backslashes they are never misinterpreted as escape sequences by the JSON,
 /// markdown, or terminal layers of MCP clients — which corrupted Windows paths
-/// in tool output (e.g. `C:\Users\…` rendered as `CUsers…`). See issue #324.
+/// in tool output (e.g. `C:\Users\…` rendered as `CUsers…`).
 pub fn display_path(path: &str) -> String {
     path.replace('\\', "/")
 }
@@ -162,7 +162,7 @@ mod tests {
 
     #[test]
     fn display_path_normalizes_windows_separators() {
-        // Issue #324: backslashes were dropped/escaped by client render layers.
+        // Backslashes were dropped/escaped by client render layers.
         assert_eq!(
             display_path(r"C:\Users\zir\AppData\Local\Temp\win-build-log.txt"),
             "C:/Users/zir/AppData/Local/Temp/win-build-log.txt"

@@ -4,8 +4,7 @@
 //! Higher score = easier for an agent to navigate = lower token cost. The score
 //! is a pure function of aggregated structural inputs (how many functions exceed
 //! the cognitive threshold, the worst offender, import cycles) so it is
-//! deterministic and unit-testable. All surfaces (watch, dashboard,
-//! `ctx_metrics`, `ctx_quality`) read this one score.
+//! deterministic and unit-testable.
 
 use serde::{Deserialize, Serialize};
 

@@ -64,7 +64,7 @@ impl RefetchSignals {
         self.recent_commands.insert(key, now);
     }
 
-    /// Records one `sobre_expand` of compressed output (#941).
+    /// Records one `sobre_expand` of compressed output.
     pub fn record_retrieve(&mut self) {
         self.retrieves.push(Instant::now());
     }

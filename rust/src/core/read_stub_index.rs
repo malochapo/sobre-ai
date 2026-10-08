@@ -1,12 +1,12 @@
-//! Persistent, conversation-scoped index of fully-delivered file reads (#955).
+//! Persistent, conversation-scoped index of fully-delivered file reads.
 //!
 //! The in-memory [`SessionCache`](crate::core::cache::SessionCache) is wiped on
-//! every daemon restart (and emptied by the idle-TTL clear), so a re-read of an
+//! every MCP restart (and emptied by the idle-TTL clear), so a re-read of an
 //! unchanged file afterwards re-delivers the whole body. This index persists the
 //! *minimal bookkeeping* needed to serve the `[unchanged]` stub — **never the
 //! content** — so a re-read in the SAME conversation collapses to the cheap stub
 //! even across a restart. Content is always re-read from disk; only delivery
-//! bookkeeping persists, so tool-output determinism (#498) is untouched.
+//! bookkeeping persists, so tool-output determinism is untouched.
 //!
 //! ## Correctness
 //! A cold stub (served when the live cache has no entry) is gated harder than a

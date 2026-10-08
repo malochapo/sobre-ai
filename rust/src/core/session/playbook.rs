@@ -1,4 +1,4 @@
-//! Incremental delta playbook for checkpoints (#541, EFF-4 — ACE principle).
+//! Incremental delta playbook for checkpoints (the ACE principle).
 //!
 //! ACE (Agentic Context Engineering, 2510.04618) showed that monolithic
 //! checkpoint rewrites cause *brevity bias* (repeated summarization loses
@@ -7,8 +7,6 @@
 //! entries with stable IDs that are never rewritten — only appended, bumped
 //! (dedup-confirm), voted on, and locally evicted.
 //!
-//! sobre wires this into `ctx_compress`: every checkpoint distills the
-//! session into playbook deltas instead of re-summarizing prior summaries.
 //! Renders are ordered by stable ID, so unchanged prefixes stay prefix-cache
 //! friendly across checkpoints.
 

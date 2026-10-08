@@ -1,4 +1,4 @@
-//! `sobre doctor lint-context` (#960) — surfaces the injected-context linter.
+//! `sobre doctor lint-context` — surfaces the injected-context linter.
 //!
 //! Reports low-signal / duplicate lines in sobre's own injected context (rules
 //! block + advertised tool descriptions). Exits non-zero when an Error-level

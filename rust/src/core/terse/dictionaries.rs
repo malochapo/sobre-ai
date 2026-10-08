@@ -11,7 +11,7 @@ pub struct Abbreviation {
 
 /// Empty — all 60 single-English-word rules tokenize identically to their
 /// abbreviations under BPE (1 tok -> 1 tok), so they saved zero tokens while
-/// corrupting source code, file paths, and search results (#973, #980, #981).
+/// corrupting source code, file paths, and search results.
 /// Phrase-level rules (multi-word) are the ones that yield real savings and
 /// live in the domain dictionaries (GIT, CARGO, NPM).
 pub const GENERAL: &[Abbreviation] = &[];
@@ -176,7 +176,7 @@ fn is_word_boundary(b: u8) -> bool {
     !b.is_ascii_alphanumeric() && b != b'-' && b != b'_' && b != b'\'' && b != b'"'
 }
 
-/// #973: true when `[match_start..match_end)` sits inside a file-path token —
+/// True when `[match_start..match_end)` sits inside a file-path token —
 /// the surrounding whitespace-delimited word contains `/` or `\`.  Dictionary
 /// substitutions inside paths emit non-existent paths (`environment.rs` →
 /// `env.rs`).
@@ -195,13 +195,13 @@ fn is_inside_path(text: &[u8], match_start: usize, match_end: usize) -> bool {
 
 /// Whole-word replacement — **case-sensitive**, path-aware, non-ASCII safe.
 ///
-/// #981 fix: matching was case-insensitive, collapsing `context.Context` into
+/// Fix: matching was case-insensitive, collapsing `context.Context` into
 /// `ctx.ctx`.  Now matches the exact case of the pattern only.  All byte
 /// offsets come from a single string (the original text), eliminating the
 /// lowercased-copy divergence that panicked on non-ASCII input (ß→ss changes
 /// byte length).
 ///
-/// #973 fix: matches inside file-path tokens (containing `/` or `\`) are
+/// Fix: matches inside file-path tokens (containing `/` or `\`) are
 /// skipped so `src/environment.rs` is never rewritten to `src/env.rs`.
 pub(crate) fn replace_whole_word(text: &str, pattern: &str, replacement: &str) -> String {
     if pattern.is_empty() || !text.contains(pattern) {
@@ -267,7 +267,7 @@ mod tests {
         assert_eq!(r, "fn(arg)");
     }
 
-    // #981: case-sensitive matching — `Context` ≠ `context`.
+    // Case-sensitive matching — `Context` ≠ `context`.
     #[test]
     fn case_sensitive_preserves_different_casing() {
         assert_eq!(
@@ -277,7 +277,7 @@ mod tests {
         );
     }
 
-    // #981: non-ASCII must not panic.
+    // Non-ASCII must not panic.
     #[test]
     fn non_ascii_input_does_not_panic() {
         let r = replace_whole_word("die Größe der function", "function", "fn");
@@ -290,7 +290,7 @@ mod tests {
         assert_eq!(r, "Ströme und Flüsse");
     }
 
-    // #973: file paths must never be rewritten.
+    // File paths must never be rewritten.
     #[test]
     fn path_words_are_never_abbreviated() {
         assert_eq!(
@@ -397,7 +397,7 @@ mod tests {
         );
     }
 
-    // #973: paths in realistic shell output survive dictionary application.
+    // Paths in realistic shell output survive dictionary application.
     #[test]
     fn dict_preserves_file_paths_in_shell_output() {
         let text = "warning: unused variable in src/configuration/environment.rs:42";

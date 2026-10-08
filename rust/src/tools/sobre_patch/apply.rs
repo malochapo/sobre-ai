@@ -1,4 +1,4 @@
-//! Pure line-model engine for anchored edits (epic #1008): split → validate
+//! Pure line-model engine for anchored edits: split → validate
 //! anchors against a single preimage → reject overlaps → splice bottom-up.
 //!
 //! Everything here is a pure function of `(content, ops)` so it is exhaustively
@@ -75,7 +75,7 @@ fn split_new_text(s: &str) -> Vec<String> {
         .collect()
 }
 
-/// #812: when a line's content no longer matches its anchor because an
+/// When a line's content no longer matches its anchor because an
 /// earlier edit — possibly a prior *separate* `sobre_patch` call earlier in the
 /// same session, not necessarily this batch — shifted it, look for the same
 /// content elsewhere in the file before giving up. Only redirects on an
@@ -101,7 +101,7 @@ fn find_unique_shifted_line(lines: &[String], hash: &str) -> Option<usize> {
 /// elsewhere moved it, but its own content is untouched), look for a position
 /// where BOTH the start and end anchors still match at the *original* span
 /// length (`end_line - start_line`) elsewhere in the file. Same unambiguous-
-/// match-only philosophy as #812 — 0 or 2+ candidate positions fall through to
+/// match-only philosophy as single-line anchors — 0 or 2+ candidate positions fall through to
 /// a normal stale-anchor conflict rather than guessing. Only the two endpoints
 /// are re-checked (not every line in between), matching how the initial
 /// anchor check itself only validates the span's boundaries.
@@ -200,7 +200,7 @@ pub(crate) fn resolve_ops(
                     return Err(ResolveError::Invalid(e));
                 }
                 let span_len = end_line - start_line;
-                // #1114: empty hash = "no conflict check requested". This
+                // Empty hash = "no conflict check requested". This
                 // makes replace_lines usable without mode=anchored output.
                 let start_ok = start_hash.is_empty()
                     || lines
@@ -583,7 +583,7 @@ mod tests {
 
     #[test]
     fn op_input_order_does_not_change_result() {
-        // Determinism (#498): a batch validated against one preimage must be a
+        // Determinism: a batch validated against one preimage must be a
         // pure function of the *set* of ops — input order is irrelevant because
         // application is sorted bottom-up. Guards against accidental
         // order-sensitivity creeping into resolve/apply.
@@ -651,7 +651,7 @@ mod tests {
 
     #[test]
     fn set_line_recovers_when_content_shifted_to_a_different_unique_line() {
-        // #812: the anchor for "target" was captured when it was line 2 (e.g.
+        // The anchor for "target" was captured when it was line 2 (e.g.
         // from an earlier, separate sobre_patch call that has since inserted a
         // line above it). It now lives at line 3 unchanged — the edit should
         // land there instead of hard-failing.
@@ -712,7 +712,7 @@ mod tests {
 
     #[test]
     fn replace_lines_recovers_when_span_shifted_to_a_different_unique_position() {
-        // Extends #812 to two-endpoint spans: "start"/"end" were originally
+        // Extends unique matching to two-endpoint spans: "start"/"end" were originally
         // lines 1-2 (from an earlier, separate sobre_patch call that has since
         // inserted a line above them). They now live at lines 3-4 unchanged —
         // the edit should land there instead of hard-failing.

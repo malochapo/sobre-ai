@@ -6,14 +6,12 @@ use rmcp::model::Tool;
 use super::tool_trait::McpTool;
 
 /// Central registry mapping tool names to their trait-based handlers.
-/// Every tool is trait-based and resolved here; the earlier
-/// match-cascade dispatch has been fully retired.
 ///
 /// Handlers are stored behind `Arc` (not `Box`) so the dispatch layer can hand
 /// an owned, `'static` handle to `tokio::task::spawn_blocking`. That lets a
 /// blocking handler run on the dedicated blocking pool under a watchdog
 /// deadline instead of pinning a scarce core worker via `block_in_place`
-/// (#271 — a hung handler must never swallow the JSON-RPC response).
+/// (a hung handler must never swallow the JSON-RPC response).
 pub struct ToolRegistry {
     tools: HashMap<&'static str, Arc<dyn McpTool>>,
 }
@@ -34,7 +32,7 @@ impl ToolRegistry {
     ///
     /// The returned `Arc` can be moved into `spawn_blocking`, so the dispatch
     /// layer can execute the (synchronous) handler off the async core workers
-    /// under a watchdog (#271).
+    /// under a watchdog.
     pub fn get_arc(&self, name: &str) -> Option<Arc<dyn McpTool>> {
         self.tools.get(name).cloned()
     }
@@ -82,7 +80,7 @@ pub fn tool_count() -> usize {
 }
 
 /// Register all trait-based tools. Called once during server startup.
-/// New tools are added here as their `McpTool` implementation lands.
+/// Adding a tool means removing one (invariant 1: twenty at most).
 pub fn build_registry() -> ToolRegistry {
     let mut registry = ToolRegistry::new();
 
@@ -99,11 +97,7 @@ pub fn build_registry() -> ToolRegistry {
     registry.register(Box::new(registered::sobre_search::SobreSearchTool));
     registry.register(Box::new(registered::sobre_checkpoint::SobreCheckpointTool));
     registry.register(Box::new(registered::sobre_compose::SobreComposeTool));
-
-    // Utility tools (migrated from dispatch/utility_tools.rs)
     registry.register(Box::new(registered::sobre_graph::SobreGraphTool));
-
-    // Session tools (migrated from legacy dispatch)
     registry.register(Box::new(registered::sobre_session::SobreSessionTool));
     registry.register(Box::new(registered::sobre_knowledge::SobreKnowledgeTool));
 

@@ -1,4 +1,4 @@
-//! Contract-freeze CI gate (GL #394; stability matrix in `core::contracts`).
+//! Contract-freeze CI gate (stability matrix in `core::contracts`).
 //!
 //! Two invariants, enforced on every CI run:
 //!

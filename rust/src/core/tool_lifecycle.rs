@@ -6,7 +6,7 @@ use crate::core::session::SessionState;
 use crate::core::usage::{self, Surface};
 
 /// How many recently-touched files form the "working set" a new read is
-/// associated with for traversal (co-access) edges (#289). Small, so the signal
+/// associated with for traversal (co-access) edges. Small, so the signal
 /// stays local to what the agent is actively juggling.
 const TRAVERSAL_WINDOW: usize = 6;
 
@@ -58,10 +58,8 @@ pub(crate) fn program_name(command: &str) -> &str {
 mod tests {
     use super::*;
 
-    // The record_* paths now drive process-global telemetry sinks (mode
-    // predictor buffer, anomaly singleton) and read the data-dir env (#550), so
-    // every test here takes the shared isolation lock to serialize that state
-    // and keep its disk writes inside a throwaway dir.
+    // The record_* paths read the data-dir env, so every test here takes the
+    // shared isolation lock and keeps its disk writes inside a throwaway dir.
 
     // An unreadable path falls back to the caller's count, so the ratio is
     // exactly delivered/original.

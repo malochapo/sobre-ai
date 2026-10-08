@@ -15,10 +15,9 @@ pub fn sobre_data_dir() -> Result<PathBuf, String> {
         }
     }
 
-    // Test sandbox (GL #512): without this, any unit test that triggers a
+    // Test sandbox: without this, any unit test that triggers a
     // store write (usage ledger, context ledger, sessions, ...)
-    // silently pollutes the developer's real data dir — bounce events from
-    // test fixtures showed up as "today 61%" on the user dashboard. Tests that
+    // silently pollutes the developer's real data dir. Tests that
     // set SOBRE_DATA_DIR keep full control (handled above); everyone else
     // lands in a per-process temp dir and physically cannot touch real data.
     #[cfg(test)]
@@ -34,7 +33,7 @@ pub fn sobre_data_dir() -> Result<PathBuf, String> {
 
 /// Per-process temp sandbox used as the default data dir under `#[cfg(test)]`,
 /// so any store write from a test fixture lands in a throwaway dir instead of
-/// the developer's real data dir (GL #512). Tests that need an *empty*,
+/// the developer's real data dir. Tests that need an *empty*,
 /// private dir should use [`isolated_data_dir`] instead (the shared sandbox is
 /// not empty: parallel tests write into it).
 #[cfg(test)]
@@ -83,7 +82,7 @@ pub fn test_env_lock() -> std::sync::MutexGuard<'static, ()> {
         .unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
-/// RAII data-dir isolation for tests (GL #556): holds `test_env_lock` for
+/// RAII data-dir isolation for tests: holds `test_env_lock` for
 /// the guard's lifetime, points `SOBRE_DATA_DIR` at a fresh temp dir and
 /// restores the env on drop — even on panic, so a failing test cannot leak
 /// the override into others. Use this instead of hand-rolled
@@ -104,7 +103,7 @@ impl IsolatedDataDir {
 }
 
 /// Category env vars pointed at the isolated temp dir so all four XDG
-/// categories (config/data/state/cache) collapse onto it in tests (GH #408).
+/// categories (config/data/state/cache) collapse onto it in tests.
 #[cfg(test)]
 const ISOLATED_ENV_VARS: &[&str] = &[
     "SOBRE_DATA_DIR",

@@ -53,11 +53,10 @@ pub mod cross_source_hints;
 // Domain: Knowledge
 // ---------------------------------------------------------------------------
 pub mod knowledge;
-// Without `embeddings` the engine still compiles these modules — their
+// Without `dense` the engine still compiles these modules — their
 // entry points are internally cfg-gated and fall back — but their helpers
 // go uncalled. That is honest unused code, not dead code, so it is silenced
-// only in that configuration. TODO: proper cfg hygiene across the 21 call
-// sites listed in docs/removals.md would let this attribute go away.
+// only in that configuration.
 #[cfg_attr(not(feature = "dense"), allow(dead_code))]
 pub mod knowledge_embedding;
 pub mod knowledge_relations;
@@ -74,11 +73,10 @@ pub mod cooccurrence;
 pub mod dense_backend;
 pub mod embedding_index;
 pub mod embedding_quant;
-// Without `embeddings` the engine still compiles these modules — their
+// Without `dense` the engine still compiles these modules — their
 // entry points are internally cfg-gated and fall back — but their helpers
 // go uncalled. That is honest unused code, not dead code, so it is silenced
-// only in that configuration. TODO: proper cfg hygiene across the 21 call
-// sites listed in docs/removals.md would let this attribute go away.
+// only in that configuration.
 #[cfg_attr(not(feature = "dense"), allow(dead_code))]
 pub mod embeddings;
 pub mod hybrid_search;
@@ -99,7 +97,7 @@ pub mod session_diff;
 pub mod neural;
 // ORT runtime glue links against the `ort` crate, which is only pulled in by the
 // `dense` feature. On platforms ORT does not support (e.g.
-// FreeBSD, see #586) it is disabled, so the modules must be gated
+// FreeBSD) it is disabled, so the modules must be gated
 // to keep the build clean without them.
 #[cfg(feature = "dense")]
 pub mod ort_environment;
@@ -112,7 +110,7 @@ pub mod ort_execution_providers;
 pub mod patterns;
 
 // ---------------------------------------------------------------------------
-// Domain: Agents & A2A
+// Domain: Agents
 // ---------------------------------------------------------------------------
 pub mod agent_runtime_env;
 pub mod agents;
@@ -215,7 +213,7 @@ pub mod session_token;
 pub mod startup_guard;
 pub mod syntax_validate;
 pub mod task_briefing;
-/// macOS Seatbelt self-sandbox (#356): wraps the launchd-owned proxy in a
+/// macOS Seatbelt self-sandbox: wraps the launchd-owned proxy in a
 /// `sandbox-exec` profile that denies `~/Documents`/`~/Desktop`/`~/Downloads`,
 /// so the TCC privacy prompt can never appear.
 #[cfg(target_os = "macos")]

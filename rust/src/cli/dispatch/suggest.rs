@@ -25,7 +25,7 @@ pub(crate) const KNOWN_COMMANDS: &[&str] = &[
 
 /// Returns the closest known command to `input`, or `None` when nothing is
 /// near enough to suggest with confidence. Distance + budget live in the
-/// shared [`crate::core::levenshtein`] helper (#712), so CLI commands, config
+/// shared [`crate::core::levenshtein`] helper, so CLI commands, config
 /// keys and MCP tool names all suggest with identical semantics.
 pub(super) fn closest_command(input: &str) -> Option<&'static str> {
     crate::core::levenshtein::closest(input, KNOWN_COMMANDS.iter().copied())

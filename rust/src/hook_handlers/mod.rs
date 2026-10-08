@@ -6,7 +6,7 @@ use std::time::Duration;
 const HOOK_STDIN_TIMEOUT: Duration = Duration::from_secs(3);
 
 /// Hard wall-clock budget for a pre-run rewrite hook. A hang FAILS OPEN — the
-/// command runs as written — instead of wedging the host's tool call (#1035).
+/// command runs as written — instead of wedging the host's tool call.
 const HOOK_GATING_TIMEOUT: Duration = Duration::from_secs(15);
 // Post-run shell output compression (Claude Code, Copilot CLI, OpenCode).
 mod compress;
@@ -43,8 +43,8 @@ pub fn arm_watchdog(timeout: Duration) {
 ///
 /// On timeout the hook FAILS OPEN — it prints the pass-through output so a
 /// slow or hung hook (a stalled subprocess, a wedged dedup wait, a saturated host)
-/// can never block the host's tool call: the command simply runs unmodified
-/// (#1035). The worker thread is abandoned on timeout (it only sends to a channel,
+/// can never block the host's tool call: the command simply runs unmodified.
+/// The worker thread is abandoned on timeout (it only sends to a channel,
 /// never prints, and dies with the process), so there is no double-output race —
 /// `emit_gating_decision` is the single writer to stdout.
 fn emit_gating_decision<F>(timeout: Duration, work: F)
@@ -58,8 +58,7 @@ where
 /// Run `work` under a hard wall-clock timeout, returning `fallback` if it does not
 /// finish in time. Split from [`emit_gating_decision`]'s printing so the fail-open
 /// behavior is unit-testable. The worker only sends to a channel (it never prints)
-/// and is abandoned on timeout, so it can never double-write the host's stdout
-/// (#1035).
+/// and is abandoned on timeout, so it can never double-write the host's stdout.
 fn decide_with_timeout<F>(timeout: Duration, fallback: String, work: F) -> String
 where
     F: FnOnce() -> String + Send + 'static,
@@ -96,7 +95,7 @@ fn build_passthrough_output() -> String {
 ///
 /// Copilot CLI exposes `powershell` as a first-class shell tool on Windows
 /// (paired with `bash` per the CLI tool reference); without it Windows shell
-/// calls would be missed (#556).
+/// calls would be missed.
 fn is_shell_tool(tool_name: &str) -> bool {
     matches!(
         tool_name,
@@ -130,7 +129,7 @@ fn is_shell_tool(tool_name: &str) -> bool {
 /// Resolve the sobre executable path for hook command emission and
 /// subprocess spawning. Always the **native** OS path: the MSYS/Git-Bash
 /// `/c/...` form breaks `CreateProcess` on Windows and cannot be run by
-/// PowerShell or cmd (#518). Native `C:/...` runs in PowerShell, cmd *and*
+/// PowerShell or cmd. Native `C:/...` runs in PowerShell, cmd *and*
 /// Git Bash, so it is the correct universal form for executed commands.
 fn resolve_binary() -> String {
     crate::core::portable_binary::resolve_portable_binary()

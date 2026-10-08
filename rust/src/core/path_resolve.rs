@@ -21,7 +21,7 @@ pub use crate::core::pathutil::has_project_marker;
 /// Deliberately `.git`-only, NOT [`has_project_marker`]: markers like
 /// `Cargo.toml` exist in nested monorepo subdirectories (`rust/Cargo.toml`
 /// in this very repo), so using them here would make a plain `cd rust/` look
-/// like a checkout switch (#707).
+/// like a checkout switch.
 fn nearest_git_boundary(start: &Path) -> Option<PathBuf> {
     let start = crate::core::pathutil::safe_canonicalize_or_self(start);
     let mut cur: Option<&Path> = Some(start.as_path());
@@ -35,7 +35,7 @@ fn nearest_git_boundary(start: &Path) -> Option<PathBuf> {
 }
 
 /// True when `shell_cwd` lives in a DIFFERENT git checkout than
-/// `project_root` (#707): both sides resolve to a `.git` boundary and the
+/// `project_root`: both sides resolve to a `.git` boundary and the
 /// boundaries differ. This is the worktree signal — Claude Code's
 /// `EnterWorktree` nests a full checkout (own `.git` *file*) under
 /// `<repo>/.claude/worktrees/<name>/`, so a same-named relative path exists
@@ -68,9 +68,9 @@ pub(crate) fn shell_cwd_is_divergent_checkout(project_root: &str, shell_cwd: &st
 /// 3. `<shell_cwd>/<path>` if a shell cwd is known
 /// 4. `<project_root or shell_cwd or .>/<path>` as a last resort
 ///
-/// Relative inputs are NEVER resolved against the process CWD: the daemon's
+/// Relative inputs are NEVER resolved against the process CWD: the MCP server's
 /// CWD is not the project, so a CWD `exists()` probe made resolution
-/// nondeterministic across MCP/daemon/CLI contexts (and could pick a
+/// nondeterministic across MCP/CLI contexts (and could pick a
 /// same-named file outside the project).
 ///
 /// Performs blocking filesystem `exists()` checks; callers on async runtimes
@@ -99,7 +99,7 @@ pub fn resolve_tool_path(
     let resolved: PathBuf = if p.is_absolute() {
         PathBuf::from(&normalized)
     } else if let Some(root) = project_root {
-        // #707: a live shell_cwd inside a DIFFERENT git checkout (a worktree
+        // A live shell_cwd inside a DIFFERENT git checkout (a worktree
         // switched into mid-session) outranks the stale project_root — even
         // when `<project_root>/<path>` exists, because in a worktree it
         // almost always does (full checkout, same layout, stale content).
@@ -188,7 +188,7 @@ mod tests {
         let _ = fs::remove_dir_all(&base);
     }
 
-    // P0-3 (#415): a relative path that happens to exist in the *process CWD*
+    // P0-3: a relative path that happens to exist in the *process CWD*
     // must NOT short-circuit resolution. `Cargo.toml` exists in the package
     // root (cargo test's CWD) but not in this empty project root — before the
     // fix the CWD probe returned it as-is, now it must resolve into the root.
@@ -229,7 +229,7 @@ mod tests {
         let _ = fs::remove_dir_all(&tmp);
     }
 
-    /// #707: the exact Claude Code `EnterWorktree` topology — a full checkout
+    /// The exact Claude Code `EnterWorktree` topology — a full checkout
     /// with its own `.git` FILE nested under `<repo>/.claude/worktrees/<n>/`.
     /// The same relative path exists in both trees; the live shell_cwd
     /// (worktree) must win over the stale project_root copy.
@@ -273,7 +273,7 @@ mod tests {
         let _ = fs::remove_dir_all(&base);
     }
 
-    /// #707 regression guard from the report: `cd rust/` inside the SAME
+    /// Regression guard from the report: `cd rust/` inside the SAME
     /// checkout (nested `Cargo.toml`, no own `.git`) must NOT count as a
     /// divergent checkout — project_root resolution stays authoritative.
     #[test]
@@ -305,7 +305,7 @@ mod tests {
         let _ = fs::remove_dir_all(&base);
     }
 
-    /// #707: divergence needs a `.git` boundary on BOTH sides — a cwd with no
+    /// Divergence needs a `.git` boundary on BOTH sides — a cwd with no
     /// git upward (scratch dir) gives no signal and must not divert.
     #[test]
     fn gitless_shell_cwd_gives_no_divergence_signal() {
@@ -335,7 +335,7 @@ mod tests {
         let _ = fs::remove_dir_all(&tmp);
     }
 
-    // GH #397: on Unix an absolute path under a single-letter root (`/c/…`)
+    // On Unix an absolute path under a single-letter root (`/c/…`)
     // was rewritten to `C:/…`, which `Path::is_absolute()` rejects on Unix —
     // the path was then re-joined under the (also-translated) project root,
     // producing the doubled `C:/root/C:/root/file` form from the report.

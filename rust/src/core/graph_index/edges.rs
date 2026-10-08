@@ -13,7 +13,7 @@ pub(crate) fn build_edges_cached(
     // git object store, whereas the import/deep-analysis pass below is CPU bound.
     // Spawn git up front so its ~1s overlaps that CPU work, then consume its
     // output when the co-change layer is built. The output is a pure function of
-    // repo state, so overlapping it does not change the result (#934).
+    // repo state, so overlapping it does not change the result.
     let cochange_git = spawn_cochange_git(&index.project_root);
 
     build_edges_with_cache(index, content_cache);
@@ -46,7 +46,7 @@ fn build_edges_with_cache(index: &mut ProjectIndex, content_cache: &HashMap<Stri
     // so only the Cow overhead) + resolved-import strings + DeepAnalysis.
     // Heavier than scan because deep_queries::analyze is O(n_imports).
     const EDGE_EST_TRANSIENT_PER_FILE: u64 = 320 * 1024;
-    // #790: flush edges into index.edges after each batch instead of
+    // Flush edges into index.edges after each batch instead of
     // accumulating all FileEdges in a Vec. Only type_inputs (C#/Java/Go/Kotlin)
     // are retained across batches for the cross-file type_ref pass.
     let mut type_inputs: Vec<(String, String, crate::core::deep_queries::DeepAnalysis)> =
@@ -93,7 +93,7 @@ fn build_edges_with_cache(index: &mut ProjectIndex, content_cache: &HashMap<Stri
         crate::core::memory_guard::jemalloc_purge();
     }
 
-    // Cross-file type-reference edges for C#/Java same-namespace usage (GH #398).
+    // Cross-file type-reference edges for C#/Java same-namespace usage.
     // Emitted in the durable graph_index -> PropertyGraph mirror so a background
     // reindex preserves the impact blast radius instead of clearing it; shares
     // its resolution with the impact builder via `type_ref_edges`.
@@ -181,7 +181,7 @@ fn resolve_file_edges(
     // Godot scenes carry their dependencies in `[ext_resource]` headers, not in
     // source-code import statements, so they bypass tree-sitter analysis and use
     // the dedicated PackedScene parser. `res://` paths resolve via the GDScript
-    // resolver. (#316)
+    // resolver.
     let (resolve_ext, imports) = if ext == "tscn" {
         (
             "tscn",
@@ -209,7 +209,7 @@ fn resolve_file_edges(
         let analysis_content = content;
 
         let analysis = crate::core::deep_queries::analyze(&analysis_content, resolve_ext);
-        // C#/Java/Go/Kotlin need the full analysis for type_ref edges (GH #398);
+        // C#/Java/Go/Kotlin need the full analysis for type_ref edges;
         // every other language uses only the resolved import list. Go/Kotlin still
         // get their import edges from `imports` too.
         if matches!(resolve_ext, "cs" | "java" | "go" | "kt" | "kts") {
@@ -272,7 +272,7 @@ fn build_implicit_edges_with_cache(
                 );
             }
             // Go same-package dependencies are now precise `type_ref` edges
-            // (GH #398 bug class); the old coarse one-edge-per-file `package`
+            // (bug class); the old coarse one-edge-per-file `package`
             // heuristic mislabelled them as top-weight `imports` in the mirror
             // and polluted the impact blast radius, so it is gone — unused
             // orphans fall to the standard low-weight sibling rescue instead.
@@ -468,7 +468,7 @@ fn collect_barrel_edges_cached(
 /// Spawn the co-change `git log` as a detached child so it runs concurrently with
 /// the CPU-bound edge passes. Returns `None` when git is unavailable; the caller
 /// then skips the co-change layer (same as a failed invocation). See
-/// [`build_edges_cached`] for the overlap rationale (#934).
+/// [`build_edges_cached`] for the overlap rationale.
 fn spawn_cochange_git(project_root: &str) -> Option<std::process::Child> {
     std::process::Command::new("git")
         .args([

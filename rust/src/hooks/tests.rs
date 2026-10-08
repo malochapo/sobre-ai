@@ -3,7 +3,7 @@
 #[allow(clippy::wildcard_imports)]
 use super::*;
 
-// ── #708: portable hook-binary override for multi-machine synced configs ──
+// ── portable hook-binary override for multi-machine synced configs ──
 
 #[test]
 fn hook_command_binary_honors_override_and_skips_msys_rewrite() {
@@ -13,7 +13,7 @@ fn hook_command_binary_honors_override_and_skips_msys_rewrite() {
     assert_eq!(resolve_hook_command_binary(), "$HOME/.local/bin/sobre");
 
     std::fs::remove_file(&cfg).unwrap();
-    // Without an override the #367 contract holds: resolved absolute path.
+    // Without an override the contract holds: resolved absolute path.
     assert!(std::path::Path::new(&resolve_hook_command_binary()).is_absolute());
     // MCP server entries always keep the absolute path — env-var forms would
     // break hosts that spawn the command without a shell.
@@ -45,7 +45,7 @@ fn claude_settings_hooks_emit_override_verbatim_and_stay_idempotent() {
         "no machine-absolute path may leak into the synced settings.json"
     );
 
-    // Re-running with the same override is a no-op — the sync ping-pong #708
+    // Re-running with the same override is a no-op — the sync ping-pong
     // reported came from exactly this rewrite cycle.
     install_claude_hook_config(home.path()).unwrap();
     let after = std::fs::read_to_string(&settings_path).unwrap();
@@ -74,7 +74,7 @@ fn bash_path_bare_name_unchanged() {
 }
 
 // MSYS2 drive mapping applies on Windows hosts only — on Linux/macOS
-// /c/… is a literal directory and must pass through (GH #397).
+// /c/… is a literal directory and must pass through.
 #[cfg(windows)]
 #[test]
 fn normalize_msys2_path() {
@@ -168,7 +168,7 @@ fn normalize_unc_path_preserved() {
     );
 }
 
-// Drive translation only applies on Windows hosts (GH #397).
+// Drive translation only applies on Windows hosts.
 #[cfg(windows)]
 #[test]
 fn from_bash_to_native_converts_msys_drive() {
@@ -187,7 +187,7 @@ fn from_bash_to_native_bare_name() {
     assert_eq!(from_bash_to_native_path("sobre"), "sobre");
 }
 
-// The bash→native return leg only translates on Windows hosts (GH #397).
+// The bash→native return leg only translates on Windows hosts.
 #[cfg(windows)]
 #[test]
 fn roundtrip_windows_path() {

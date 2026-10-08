@@ -1,10 +1,10 @@
 use super::super::resolve_hook_command_binary;
 
-/// PostToolUse matcher for the guard-safe re-read dedup (GL #1140): Read only —
+/// PostToolUse matcher for the guard-safe re-read dedup: Read only —
 /// the handler mirrors the Read result shape and must never see another tool's.
 const READ_DEDUP_MATCHER: &str = "Read";
 
-/// Ensure the PostToolUse `hook read-dedup` entry exists exactly once (GL #1140).
+/// Ensure the PostToolUse `hook read-dedup` entry exists exactly once.
 ///
 /// Runs alongside the observe hook on PostToolUse; read-dedup (Read) and
 /// compress (Bash) are the only `updatedToolOutput` writers and never see the
@@ -275,7 +275,7 @@ mod tests {
 
     #[test]
     fn read_dedup_hook_installs_once_alongside_observe() {
-        // GL #1140: the PostToolUse array carries observe (matcher .*) AND
+        // The PostToolUse array carries observe (matcher .*) AND
         // read-dedup (matcher Read); repeated installs must not duplicate either.
         let mut hooks_obj = serde_json::Map::new();
         ensure_claude_observe_hooks(&mut hooks_obj, "sobre hook observe");

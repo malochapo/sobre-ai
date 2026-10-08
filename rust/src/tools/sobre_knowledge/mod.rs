@@ -144,8 +144,8 @@ fn handle_feedback(
         return "Error: feedback value must be up|down (+1|-1)".to_string();
     }
 
-    // Read-modify-write under the cross-process lock (#326/#594) so concurrent
-    // CLI/daemon/MCP feedback never clobbers each other.
+    // Read-modify-write under the cross-process lock so concurrent
+    // CLI/MCP feedback never clobbers each other.
     let outcome = ProjectKnowledge::mutate_locked(project_root, |knowledge| {
         let Some(f) = knowledge
             .facts
@@ -195,7 +195,7 @@ fn handle_pattern(
     };
     let exs = examples.unwrap_or_default();
     let policy = crate::core::memory_policy::MemoryPolicy::default();
-    // Read-modify-write under the cross-process lock (#326/#594).
+    // Read-modify-write under the cross-process lock.
     match ProjectKnowledge::mutate_locked(project_root, |knowledge| {
         knowledge.add_pattern(pt, desc, exs, session_id, &policy);
     }) {
@@ -236,7 +236,7 @@ fn handle_status(project_root: &str) -> String {
     out
 }
 
-/// Per-layer lifecycle report (GL#445): item counts, effective policies, and
+/// Per-layer lifecycle report: item counts, effective policies, and
 /// the next enforcement action for every memory layer. Read-only.
 fn handle_lifecycle_report(project_root: &str) -> String {
     let policy = crate::core::memory_policy::MemoryPolicy::default();
@@ -389,7 +389,7 @@ fn handle_remove(project_root: &str, category: Option<&str>, key: Option<&str>) 
         return "Error: key is required for remove".to_string();
     };
     let policy = crate::core::memory_policy::MemoryPolicy::default();
-    // Read-modify-write under the cross-process lock (#326/#594). The embedding
+    // Read-modify-write under the cross-process lock. The embedding
     // index is a separate store, so it is synced afterwards from the committed
     // knowledge — mirroring handle_remember.
     let (knowledge, removed) = match ProjectKnowledge::mutate_locked(project_root, |knowledge| {
@@ -412,7 +412,7 @@ fn handle_remove(project_root: &str, category: Option<&str>, key: Option<&str>) 
     {
         // Serialize the embedding side-car under the same per-project lock as
         // the fact removal and compact against fresh on-disk knowledge, so a
-        // concurrent `remember` cannot clobber it (issue #412).
+        // concurrent `remember` cannot clobber it.
         ProjectKnowledge::with_project_lock(project_root, || {
             if let Some(mut idx) = crate::core::knowledge_embedding::KnowledgeEmbeddingIndex::load(
                 &knowledge.project_hash,
@@ -617,7 +617,7 @@ fn handle_consolidate(project_root: &str) -> String {
     }
 }
 
-/// Explicit cross-store restore from archive (#995 Phase 6). `store` selects a
+/// Explicit cross-store restore from archive (Phase 6). `store` selects a
 /// single store (all when `None`); `query` filters by substring; `limit` caps
 /// the total restored (default [`DEFAULT_RESTORE_LIMIT`]).
 fn handle_restore(

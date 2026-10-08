@@ -16,7 +16,7 @@ use super::{find_child_by_kind, node_text};
 pub(super) fn extract_types(root: Node, src: &str, ext: &str) -> Vec<TypeDef> {
     let mut types = Vec::new();
     // Pre-order walk using a heap stack instead of native recursion so a deep AST cannot overflow the worker
-    // thread (#378 SIGABRT). Children are reversed so they pop left-to-right.
+    // thread (SIGABRT). Children are reversed so they pop left-to-right.
     let mut stack = vec![root];
     while let Some(node) = stack.pop() {
         if let Some(td) = match_type_def(node, src, ext) {

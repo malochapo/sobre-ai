@@ -20,7 +20,7 @@ impl McpTool for SobrePatchTool {
         true
     }
 
-    // Schema diet (#576 pattern): the advertised surface carries only the
+    // Schema diet (pattern): the advertised surface carries only the
     // functional teaching (anchor source, op routing, batch atomicity).
     // Handler-only params stay supported but unadvertised: expected_md5,
     // backup, backup_path, validate_syntax, evidence, diff_max_lines,
@@ -51,7 +51,7 @@ impl McpTool for SobrePatchTool {
                     "dry_run": { "type": "boolean" },
                     "ops": { "type": "array", "items": { "type": "object" } }
                 },
-                // Per-op required params encoded as the source of truth (#1020):
+                // Per-op required params encoded as the source of truth:
                 // a client reading the schema knows which fields an op needs
                 // BEFORE calling. Each `if` requires `op` so it stays dormant for
                 // batch calls (which carry `op` inside ops[], not at top level).
@@ -82,7 +82,7 @@ impl McpTool for SobrePatchTool {
         ctx: &ToolContext,
     ) -> Result<ToolOutput, ErrorData> {
         // replace_symbol is a whole-symbol rewrite — delegate to the LSP/IDE-aware
-        // sobre_refactor so there is one symbol-edit implementation (epic #1008).
+        // sobre_refactor so there is one symbol-edit implementation.
         if crate::tools::sobre_patch::is_replace_symbol(args) {
             return delegate_replace_symbol(args, ctx);
         }
@@ -91,12 +91,12 @@ impl McpTool for SobrePatchTool {
             return delegate_replace_unique(args, ctx);
         }
 
-        // #825: replace_all short-circuits before anchor parsing.
+        // Replace_all short-circuits before anchor parsing.
         if get_str(args, "op").as_deref() == Some("replace_all") {
             return handle_replace_all(args, ctx);
         }
 
-        // #1088: replace_unique/replace_symbol are allowed inside ops[]. Split
+        // Replace_unique/replace_symbol are allowed inside ops[]. Split
         // the batch into runs: each delegated op reuses its single-op write
         // path; consecutive anchored ops keep shared-preimage batch semantics.
         if let Some(arr) = args.get("ops").and_then(Value::as_array)
@@ -111,7 +111,7 @@ impl McpTool for SobrePatchTool {
 
 /// Anchored pipeline: a single anchored op or an ops[] batch of anchored edits
 /// (grouped per file, batch-atomic per file). Split out of `handle` so the
-/// mixed-batch path (#1088) can reuse it per anchored run.
+/// mixed-batch path can reuse it per anchored run.
 fn handle_anchored(args: &Map<String, Value>, ctx: &ToolContext) -> Result<ToolOutput, ErrorData> {
     let dry_run = get_bool(args, "dry_run").unwrap_or(false);
     let expected_md5 = get_str(args, "expected_md5");
@@ -125,7 +125,7 @@ fn handle_anchored(args: &Map<String, Value>, ctx: &ToolContext) -> Result<ToolO
     let allow_lossy_utf8 = get_bool(args, "allow_lossy_utf8").unwrap_or(false);
     let validate_syntax = get_bool(args, "validate_syntax").unwrap_or(true);
 
-    // #1005: a batch (`ops[]`) groups its ops by each op's own `path`, so a
+    // A batch (`ops[]`) groups its ops by each op's own `path`, so a
     // batch may span files and needs no top-level `path`. A single op still
     // requires the top-level `path`.
     let groups = plan_groups(args, ctx)?;
@@ -162,14 +162,14 @@ fn handle_anchored(args: &Map<String, Value>, ctx: &ToolContext) -> Result<ToolO
 }
 
 /// `Some(op)` when a batch op must be dispatched through its own single-op
-/// write path rather than the anchored pipeline (#1088).
+/// write path rather than the anchored pipeline.
 fn delegated_op_kind(v: &Value) -> Option<&str> {
     v.get("op")
         .and_then(Value::as_str)
         .filter(|k| matches!(*k, "replace_unique" | "replace_symbol"))
 }
 
-/// #1088: an ops[] batch containing replace_unique/replace_symbol. Ops apply
+/// An ops[] batch containing replace_unique/replace_symbol. Ops apply
 /// strictly in the order given, as if issued as separate calls: consecutive
 /// anchored ops flush as one shared-preimage batch; each delegated op is
 /// dispatched through the same delegate as its top-level form, evaluated
@@ -232,7 +232,7 @@ fn flush_anchored_run(
 /// Build the (args, ctx) for one delegated batch op: the op object inherits the
 /// batch's top-level `path`/`dry_run` when it doesn't set its own, and the op's
 /// path is resolved into a per-op ctx — the dispatch layer only pre-resolves
-/// the top-level `path`, which may differ or be absent (#1088).
+/// the top-level `path`, which may differ or be absent.
 fn delegated_op_call(
     args: &Map<String, Value>,
     op: &Map<String, Value>,
@@ -272,7 +272,7 @@ fn delegated_op_call(
     Ok((sub, sub_ctx))
 }
 
-/// One-shot content-anchored edit (#1010). Delegate to sobre_edit's audited
+/// One-shot content-anchored edit. Delegate to sobre_edit's audited
 /// unique-replacement path so ambiguity checks, TOCTOU guards, atomic writes,
 /// cache invalidation, evidence and session tracking remain single-sourced.
 fn delegate_replace_unique(
@@ -328,7 +328,7 @@ fn validate_cross_file_options(
 /// Build the per-file work list. A single op targets the top-level `path`
 /// (still required). A batch (`ops[]`) groups its ops by each op's own `path`,
 /// falling back to the top-level `path`, so a batch may span files without a
-/// top-level `path` (#1005).
+/// top-level `path`.
 fn plan_groups(
     args: &Map<String, Value>,
     ctx: &ToolContext,
@@ -401,7 +401,7 @@ fn group_ops_by_path(
 /// Apply one file's anchored patch: acquire the per-file lock, run the I/O off
 /// the global cache lock, then fold the resulting cache effect and session mark.
 /// Returns the rendered patch/CONFLICT text. Shared by the single-op and the
-/// per-file batch paths (#1005).
+/// per-file batch paths.
 fn apply_one(
     ctx: &ToolContext,
     params: &crate::tools::sobre_patch::PatchParams,
@@ -416,7 +416,7 @@ fn apply_one(
 
         // Serialize edits to the SAME file via the shared per-file lock (the same
         // registry sobre_edit/sobre_read use), so anchored and str_replace edits of
-        // one file never interleave (issue #320). Correctness across processes
+        // one file never interleave. Correctness across processes
         // still rests on the TOCTOU preimage guard + atomic rename.
         let file_lock = crate::core::path_locks::per_file_lock(&path);
         let _file_guard = {
@@ -519,7 +519,7 @@ fn delegate_replace_symbol(
     })
 }
 
-/// #879: resolve `find`/`replace` for replace_all, failing *closed* on the
+/// Resolve `find`/`replace` for replace_all, failing *closed* on the
 /// destructive path. Historically a missing `replace` defaulted to "" — so a
 /// typo'd replacement key (`new_string=`/`new_text=` carried over from the other
 /// ops) meant "delete every match" and still reported success. Now: reject
@@ -551,7 +551,7 @@ fn resolve_find_replace(args: &Map<String, Value>) -> Result<(String, String), S
     Ok((find, replace))
 }
 
-/// #825: Bulk literal find-and-replace — no anchors needed. It goes through
+/// Bulk literal find-and-replace — no anchors needed. It goes through
 /// the same edit path as `replace_unique`: per-file lock, preimage guard,
 /// permission-preserving atomic write, session and cache bookkeeping.
 fn handle_replace_all(
@@ -625,7 +625,7 @@ mod batch_grouping_tests {
     use super::*;
     use serde_json::json;
 
-    /// #1005: a batch spanning two files groups ops per file, preserving the
+    /// A batch spanning two files groups ops per file, preserving the
     /// first-seen file order — no top-level `path` needed.
     #[test]
     fn groups_ops_across_files_preserving_order() {

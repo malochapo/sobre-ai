@@ -3,7 +3,7 @@ use crate::tools::CrpMode;
 /// Compresses shell command output using the unified compression pipeline.
 /// Delegates to the same exit-code-aware logic used by the CLI, so a failed
 /// command (`exit_code != 0`) is preserved verbatim and successful output is
-/// compressed consistently (passthrough_commands, structural routing, terse). #810.
+/// compressed consistently (passthrough_commands, structural routing, terse).
 pub fn handle(command: &str, output: &str, exit_code: i32, _crp_mode: CrpMode) -> String {
     crate::shell::compress::engine::compress_for_outcome(command, output, exit_code)
 }

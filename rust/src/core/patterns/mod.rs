@@ -185,7 +185,7 @@ fn shorter_only(compressed: String, original: &str) -> Option<String> {
 type PatternMatcher = fn(&str) -> bool;
 type PatternHandler = fn(&str, &str) -> Option<String>;
 
-/// Ordered prefix → compressor dispatch table (#660 CC reduction): first
+/// Ordered prefix → compressor dispatch table (CC reduction): first
 /// matching entry wins, mirroring the previous `if c.starts_with(..) { return
 /// ...; }` cascade exactly — including that a matched entry's `None` is
 /// final, never falls through to a later entry. Registering a new CLI tool
@@ -509,7 +509,7 @@ const PATTERNS: &[(PatternMatcher, PatternHandler)] = &[
         },
         |c, output| cmake::compress(c, output),
     ),
-    // --- data domain (#657) ---
+    // --- data domain ---
     (
         |c| c == "dbt" || c.starts_with("dbt "),
         |c, output| dbt::compress(c, output),
@@ -526,7 +526,7 @@ const PATTERNS: &[(PatternMatcher, PatternHandler)] = &[
         |c| c.starts_with("spark-submit") || c.starts_with("spark-sql") || c.starts_with("pyspark"),
         |c, output| spark::compress(c, output),
     ),
-    // --- ai domain (#658) ---
+    // --- ai domain ---
     (
         |c| c == "ollama" || c.starts_with("ollama "),
         |c, output| ollama::compress(c, output),
@@ -535,7 +535,7 @@ const PATTERNS: &[(PatternMatcher, PatternHandler)] = &[
         |c| c.starts_with("mlflow "),
         |c, output| mlflow::compress(c, output),
     ),
-    // --- security / supply-chain (#659) ---
+    // --- security / supply-chain ---
     (
         |c| c.starts_with("semgrep "),
         |c, output| semgrep::compress(c, output),
@@ -560,7 +560,7 @@ const PATTERNS: &[(PatternMatcher, PatternHandler)] = &[
         |c| c.starts_with("swiftlint"),
         |c, output| swiftlint::compress(c, output),
     ),
-    // --- vcs / toolchain (#660) ---
+    // --- vcs / toolchain ---
     (
         |c| c == "jj" || c.starts_with("jj "),
         |c, output| jj::compress(c, output),
@@ -577,7 +577,7 @@ const PATTERNS: &[(PatternMatcher, PatternHandler)] = &[
         |c| c.starts_with("gem "),
         |c, output| gem::compress(c, output),
     ),
-    // --- edge / infra (#661) ---
+    // --- edge / infra ---
     (
         |c| c == "pulumi" || c.starts_with("pulumi "),
         |c, output| pulumi::compress(c, output),
@@ -605,7 +605,7 @@ const PATTERNS: &[(PatternMatcher, PatternHandler)] = &[
     ),
 ];
 
-/// A grep-family search command, bare or with arguments (#980, #985).
+/// A grep-family search command, bare or with arguments.
 ///
 /// The bare form matters: `proxy::compress::infer_command` synthesises `grep`
 /// (no arguments) from tool names like `search_files`. The old `starts_with("grep ")`

@@ -747,7 +747,7 @@ Plan: 1 to add, 0 to change, 1 to destroy.";
     );
 }
 
-// ===== Issue #149: TheDecipherist security review — additional adversarial tests =====
+// ===== TheDecipherist security review — additional adversarial tests =====
 
 #[test]
 fn adversarial_git_show_preserves_diff_content() {
@@ -899,7 +899,7 @@ fn adversarial_shell_hook_preserves_errors_in_truncation() {
     );
 }
 
-// --- gh CLI security regression tests (issue #149 follow-up) ---
+// --- gh CLI security regression tests (follow-up) ---
 
 #[test]
 fn adversarial_gh_pr_diff_passes_through_verbatim() {

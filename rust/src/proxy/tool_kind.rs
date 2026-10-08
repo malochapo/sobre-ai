@@ -53,7 +53,7 @@ pub(crate) fn classify_tool_name(name: &str) -> ToolResultKind {
         "read_many", // Gemini CLI `read_many_files`
         "read_files",
         "str_replace_editor", // view sub-mode returns file content
-        "sobre_patch",        // #818: diff previews are code — never abbreviate
+        "sobre_patch",        // diff previews are code — never abbreviate
         "sobre_refactor",     // symbol edits return code diffs
     ];
     if FILE_READ.iter().any(|k| n.contains(k)) {
@@ -204,7 +204,7 @@ pub(crate) fn should_protect(kind: ToolResultKind, content: &str) -> bool {
 /// dominate and shell/log signals are essentially absent, so genuine logs and
 /// build output are still compressed. Used only when the tool name is unknown.
 ///
-/// GH #628: the previous version under-counted real source — a decorative
+/// The previous version under-counted real source — a decorative
 /// separator comment (`// ————`, `// ====`) and the call-shaped scaffolding of a
 /// test file (`describe(…) {`, `});`) scored as non-code, so a genuine source
 /// read routed through an unrecognized tool was lossy-compressed and silently
@@ -227,7 +227,7 @@ pub(crate) fn looks_like_source_code(content: &str) -> bool {
         // Comment lines are part of source but carry no compress-vs-keep signal
         // on their own, and a decorative separator (`// ————`, `// ====`) or a
         // doc-block continuation (` * @param`) must never *dilute* the code ratio
-        // — that false-negative is what let the proxy strip those lines (#628).
+        // — that false-negative is what let the proxy strip those lines.
         // Treat C-style comments as neutral: skip without counting. `#` is
         // deliberately excluded (ambiguous with shell prompts / log levels /
         // Python) so genuine shell output is still detected and compressed.
@@ -271,7 +271,7 @@ pub(crate) fn looks_like_source_code(content: &str) -> bool {
         // Top-level declarations, call statements and block closers carry code
         // punctuation even at column 0 (`describe("x", () => {`, `});`), so the
         // bare `is_indented && has_code_punct` test missed them — the exact
-        // test-DSL shape (`describe`/`it`/`expect`) behind the #628 false-negative.
+        // test-DSL shape (`describe`/`it`/`expect`) behind the false-negative.
         // A call/closer *shape* with code punctuation is a strong code signal
         // regardless of indentation.
         let is_call_or_closer = (trimmed.contains('(') && trimmed.contains(')'))
@@ -441,7 +441,7 @@ mod tests {
         assert!(!looks_like_source_code(prose));
     }
 
-    /// Regression for GH #628: a real test file whose only "non-code-shaped"
+    /// Regression: a real test file whose only "non-code-shaped"
     /// lines are decorative separator comments must be recognized as source, so
     /// the proxy protects it (when routed through an unrecognized tool) instead
     /// of lossy-compressing it and silently dropping the `// ————` separators —
@@ -507,7 +507,7 @@ mod tests {
         assert!(!looks_like_source_code(log));
     }
 
-    /// #818: sobre_patch and sobre_refactor must be classified as FileRead
+    /// Sobre_patch and sobre_refactor must be classified as FileRead
     /// so their diff previews are never abbreviation-compressed.
     #[test]
     fn sobre_patch_and_refactor_classified_as_file_read() {
@@ -518,7 +518,7 @@ mod tests {
         );
     }
 
-    /// #818: diff preview with - /+ prefixes must be protected.
+    /// Diff preview with - /+ prefixes must be protected.
     #[test]
     fn diff_preview_is_protected_when_kind_is_file_read() {
         let diff = "--- src/main.rs\n\

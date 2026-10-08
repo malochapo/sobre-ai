@@ -1,4 +1,4 @@
-//! Content-addressed recovery (CCR) for the proxy's lossy rewrites (#482).
+//! Content-addressed recovery (CCR) for the proxy's lossy rewrites.
 //!
 //! When the proxy prunes an old `tool_result` from conversation history, the
 //! lossy stub used to say *"re-read the file"* — which is stale-unsafe by
@@ -13,7 +13,7 @@
 //! stub. Retrieval is MCP-independent: the agent reads the path with its native
 //! file read; no sobre tool has to be attached.
 //!
-//! ## Cache-safety (#448)
+//! ## Cache-safety
 //! The handle is the file path, and the path is a pure function of the content
 //! hash ([`crate::core::hasher::hash_short`]). For a fixed pruned message the
 //! handle is therefore byte-identical on every later turn, so the provider
@@ -140,7 +140,7 @@ fn is_shell_tee_name(name: &str) -> bool {
 
 /// Resolve a retrieval `id` back to a file in the shared `{state}/tee/` store.
 /// Accepts every handle form a stub or footer can carry, with a fixed precedence
-/// so the forms can never collide (#936):
+/// so the forms can never collide:
 ///
 /// 1. **Proxy form** — `proxy_<16hex>(.log)`: the proxy history-prune and live
 ///    compression stubs.

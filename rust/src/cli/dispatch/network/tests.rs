@@ -6,7 +6,7 @@ fn args(list: &[&str]) -> Vec<String> {
     list.iter().map(|s| (*s).to_string()).collect()
 }
 
-// GH #393: `daemon enable --help` executed instead of showing help.
+// `proxy enable --help` executed instead of showing help.
 // The guard must catch help flags at any position, for any verb.
 #[test]
 fn help_flag_detected_after_verb() {

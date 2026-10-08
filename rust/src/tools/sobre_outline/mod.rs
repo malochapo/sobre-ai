@@ -7,9 +7,8 @@
 //! - a `match`/`kind`-filtered slice → focused detail.
 //!
 //! Output can be the compact text outline (default) or deterministic JSON
-//! (`format=json`, byte-stable per #498) that labels the extraction `backend`
+//! (`format=json`, byte-stable) that labels the extraction `backend`
 //! per file, so the "syntax-aware" claim is verifiable rather than asserted
-//! (gitlab #981).
 
 mod dir;
 mod json;
@@ -88,7 +87,7 @@ fn outline_file(path: &str, opts: &OutlineOpts) -> (String, usize) {
             outline = format!("{legend}\n{outline}");
         }
     }
-    // Located symbols are addressable as stable handles (#607): one self-
+    // Located symbols are addressable as stable handles: one self-
     // describing hint, not a per-line handle that would just repeat name+span.
     outline.push('\n');
     outline.push_str(crate::core::handle::USAGE_HINT);

@@ -132,8 +132,7 @@ fn handle_symbol(
     };
 
     // Bare symbol name (no `::`): resolve against the symbol table so GDScript
-    // (and every other language) symbols are reachable without a file qualifier
-    // (#314).
+    // (and every other language) symbols are reachable without a file qualifier.
     let Some((file_part, symbol_name)) = spec.split_once("::") else {
         return resolve_bare_symbol(&open, spec, root, cache, crp_mode);
     };
@@ -173,7 +172,7 @@ fn handle_symbol(
 
 /// Resolve a bare symbol name (no `<file>::` qualifier) against the symbol table.
 /// One unambiguous hit renders the snippet; otherwise the candidates are listed
-/// so the caller can disambiguate with `<file>::<symbol>` (#314).
+/// so the caller can disambiguate with `<file>::<symbol>`.
 fn resolve_bare_symbol(
     provider: &GraphProvider,
     name: &str,
@@ -311,7 +310,7 @@ fn handle_status(root: &str) -> String {
     )
 }
 
-/// End-to-end GDScript graph coverage on a real Godot fixture (#314): four `.gd`
+/// End-to-end GDScript graph coverage on a real Godot fixture: four `.gd`
 /// scripts with `_ready` definitions and `res://` import edges, exercised through
 /// the public graph actions (context / impact / bare symbol).
 #[cfg(test)]
@@ -394,7 +393,7 @@ mod gdscript_p0_tests {
             crate::tools::CrpMode::Off,
         );
         // Four `_ready` defs → a disambiguation list (or a snippet), never the
-        // pre-#314 "Invalid symbol spec" / "not found" errors.
+        // the old "Invalid symbol spec" / "not found" errors.
         assert!(out.contains("_ready"), "bare symbol should resolve: {out}");
         assert!(!out.contains("Invalid symbol spec"), "got: {out}");
         assert!(!out.to_lowercase().contains("not found"), "got: {out}");

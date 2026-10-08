@@ -1,4 +1,4 @@
-//! `sobre_patch` — hash-anchored editing (epic #1008).
+//! `sobre_patch` — hash-anchored editing.
 //!
 //! "Edit by reference, not by reproduction": the model edits lines by their
 //! `(line, hash)` anchor (from `sobre_read(mode="anchored")`) instead of quoting
@@ -6,7 +6,7 @@
 //! file; on drift the edit is rejected with fresh anchors — except a
 //! single-line anchor (`set_line`/`insert_after`) whose content moved intact
 //! to exactly one other line (e.g. an earlier, separate edit shifted it):
-//! that's resolved automatically rather than failing (#812). Multiple edits
+//! that's resolved automatically rather than failing. Multiple edits
 //! in one call are **batch-atomic** — all validated against the same
 //! preimage and applied all-or-nothing, bottom-up.
 //!
@@ -50,7 +50,7 @@ pub struct PatchParams {
     pub evidence: bool,
     pub diff_max_lines: usize,
     pub allow_lossy_utf8: bool,
-    /// Post-edit tree-sitter gate (#1008): reject a write that turns a cleanly
+    /// Post-edit tree-sitter gate: reject a write that turns a cleanly
     /// parsing file into a broken one. Default `true`; set `false` to override
     /// (e.g. intentionally writing an incomplete snippet).
     pub validate_syntax: bool,
@@ -79,7 +79,7 @@ pub fn handle(cache: &mut SessionCache, params: &PatchParams) -> String {
     text
 }
 
-/// Quality loop (#494/#1008): a clean anchored edit is a success signal for the
+/// Quality loop: a clean anchored edit is a success signal for the
 /// read mode that produced the anchors; a stale-anchor `CONFLICT` is a failure
 /// signal (the view the model edited against had drifted) that arms a one-shot
 /// escalation of the next auto read to `anchored` — fresh line anchors to retry
@@ -140,7 +140,7 @@ pub fn run_io(params: &PatchParams, _last_mode: &str) -> (String, CacheEffect) {
         );
     }
 
-    // BOM parity with `sobre_read` (GH #683 follow-up): the read side strips a
+    // BOM parity with `sobre_read` (follow-up): the read side strips a
     // UTF-8 BOM before hashing line 1, so anchors must be validated against
     // the BOM-less body — otherwise every line-1 edit of a BOM file conflicts
     // forever. The BOM itself is preserved on write (prepended below); it is
@@ -181,7 +181,7 @@ pub fn run_io(params: &PatchParams, _last_mode: &str) -> (String, CacheEffect) {
         .and_then(|e| e.to_str())
         .unwrap_or("");
 
-    // Post-edit syntax gate (#1008): block a clean → broken regression before any
+    // Post-edit syntax gate: block a clean → broken regression before any
     // write. Pure (no I/O), so it runs before the TOCTOU re-read.
     if params.validate_syntax
         && let Some(reason) = crate::core::syntax_validate::gate_edit(ext, &pre.text, &new_content)
@@ -205,7 +205,7 @@ pub fn run_io(params: &PatchParams, _last_mode: &str) -> (String, CacheEffect) {
     let health_notice = crate::core::code_health::gate::evaluate(&pre.text, &new_content, ext);
 
     // TOCTOU guard: confirm the file did not change between read and write.
-    // #960: a point-in-time check, not a held lock — see
+    // A point-in-time check, not a held lock — see
     // ensure_preimage_still_matches' doc for the residual window between
     // this check and the write below.
     if let Err(e) = ensure_preimage_still_matches(path, &pre.fp, cap) {

@@ -56,7 +56,7 @@ pub fn graph_neighbor_ranks_for_recent_files(
     // Two neighbour sources, blended per seed:
     //   1. Traversal (co-access) — files the agent actually opened *together*
     //      (behavioural, the strongest "what next" signal). Listed first so it
-    //      gets the best RRF rank. Works even without a static graph (#289).
+    //      gets the best RRF rank. Works even without a static graph.
     //   2. Static graph — import/call/type proximity.
     let coaccess = crate::core::cooccurrence::load(project_root);
     let open = graph_provider::open_best_effort(project_root);

@@ -1,4 +1,4 @@
-//! Scenario tests for the bug reported by daviddatu_:
+//! Scenario tests for a PowerShell bug:
 //!
 //! sobre was rewriting `git commit` to `git cmt` via the terse abbreviation
 //! dictionary, and PowerShell quoting was wrapping full command strings in
@@ -267,7 +267,7 @@ fn scenario_compress_if_beneficial_skips_git_push_output() {
 #[test]
 fn scenario_compress_if_beneficial_still_compresses_git_status() {
     let command = "git status";
-    // Output must exceed the 200-token verbatim floor (#1129).
+    // Output must exceed the 200-token verbatim floor.
     let lines = vec![
         "On branch feature/large-refactor",
         "Your branch is ahead of 'origin/feature/large-refactor' by 3 commits.",

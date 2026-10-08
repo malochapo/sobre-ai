@@ -1,10 +1,10 @@
 //! Single 0.0–1.0 compression-intensity knob.
 //!
-//! TTC-style UX parity: callers (the `sobre_read` tool, the proxy, the CLI) can
+//! Callers (the `sobre_read` tool, the proxy, the CLI) can
 //! express "how hard should I compress?" as one number instead of picking among
 //! the ten read modes. The number is *mapped* onto the existing density /
 //! entropy / information-bottleneck stages — it never introduces a model, so the
-//! #498 determinism contract (output = pure function of inputs) is preserved.
+//! determinism contract (output = pure function of inputs) is preserved.
 //! Resolution order (see [`effective`]): explicit per-call arg >
 //! `compression_level` in config > `None`. `None` means "use each mode's
 //! adaptive default", the behaviour when `compression_level` is not set.
@@ -50,7 +50,7 @@ pub fn effective(explicit: Option<f64>) -> Option<f64> {
 /// Stable cache-key fragment for an aggressiveness setting.
 ///
 /// Buckets to 1/20 (0.05 steps) so float jitter does not fragment the cache,
-/// while distinct settings still get distinct keys (#498). `None` → empty
+/// while distinct settings still get distinct keys. `None` → empty
 /// string so today's keys are unchanged when the knob is unset.
 #[must_use]
 pub fn cache_fragment(a: Option<f64>) -> String {

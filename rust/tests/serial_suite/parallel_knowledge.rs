@@ -1,4 +1,4 @@
-// Integration tests for Issue #326: parallel MCP `remember` calls clobbered
+// Integration tests: parallel MCP `remember` calls clobbered
 // each other (lost updates) and could leave `knowledge.json` with trailing
 // JSON garbage. The fix serializes the read-modify-write under a per-project
 // lock and writes the file atomically (temp + rename).

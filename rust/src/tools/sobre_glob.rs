@@ -49,7 +49,7 @@ pub fn handle(
     let mut files_walked = 0u32;
 
     // Vendor dirs (node_modules, …) follow the gitignore toggle: explicitly
-    // disabling gitignore is the escape hatch to look inside them (#400).
+    // disabling gitignore is the escape hatch to look inside them.
     let walker = WalkBuilder::new(root)
         .hidden(true)
         .git_ignore(respect_gitignore)

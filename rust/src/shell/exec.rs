@@ -15,7 +15,7 @@ use crate::core::config;
 /// only the direct child (a shell) leaves orphaned grandchildren holding the
 /// stdout/stderr pipe write ends — the reader threads then never see EOF and
 /// the join below blocks forever, wedging the caller *despite* the timeout
-/// having fired (GH #720: an orphaned `rg` kept a Cursor shell session dead
+/// having fired (an orphaned `rg` kept a Cursor shell session dead
 /// for hours).
 pub(super) fn wait_with_limits(
     mut child: Child,
@@ -126,7 +126,7 @@ pub(super) fn wait_with_limits(
 }
 
 /// Kill a timed-out child — and, when it owns a process group, every
-/// descendant in that group (GH #720). SIGKILL to the negative pgid reaps
+/// descendant in that group. SIGKILL to the negative pgid reaps
 /// shells' grandchildren so the captured pipes actually close.
 fn kill_child(child: &mut Child, kill_group: bool) {
     #[cfg(unix)]
@@ -277,7 +277,7 @@ pub(crate) fn shell_timeout_with_override(
     }
 }
 
-/// #1113: detect shell loop constructs that are intentionally long-running.
+/// Detect shell loop constructs that are intentionally long-running.
 /// Matches `while true`, `while :`, `while sleep`, `for … in`, and similar
 /// patterns used for poll loops and background monitors.
 fn is_loop_command(lower: &str) -> bool {
@@ -290,7 +290,7 @@ fn is_loop_command(lower: &str) -> bool {
 fn is_heavy_command(command: &str) -> bool {
     let cmd = command.trim();
     let lower = cmd.to_lowercase();
-    // #1113: shell loops (`while true; do ... done`, `for i in ...`) are
+    // Shell loops (`while true; do ... done`, `for i in ...`) are
     // intentionally long-running poll/monitor scripts. Killing them at 120s
     // breaks CI watchers and background monitors.
     if is_loop_command(&lower) {
@@ -623,12 +623,12 @@ fn exec_inherit_tracked(command: &str, shell: &str, shell_flag: &str) -> i32 {
 
 /// Label inserted between stdout and stderr of a FAILED command so the agent can
 /// attribute the error to the right stream instead of guessing — and never has to
-/// re-run the command raw just to locate the failure. See #809 / #812.
+/// re-run the command raw just to locate the failure.
 pub(crate) const STDERR_LABEL: &str = "--- stderr ---";
 
 /// Join captured stdout and stderr for display/recovery. On failure (non-zero
 /// exit) with both streams present, a labeled delimiter separates them; success
-/// output keeps the plain `stdout\nstderr` shape (determinism, #498).
+/// output keeps the plain `stdout\nstderr` shape (determinism).
 pub(crate) fn combine_streams(stdout: &str, stderr: &str, exit_code: i32) -> String {
     match (stdout.is_empty(), stderr.is_empty()) {
         (_, true) => stdout.to_string(),
@@ -785,7 +785,7 @@ mod exec_tests {
         assert!(stdout.contains("[sobre: output truncated"));
     }
 
-    /// GH #720: killing only the direct child (a shell) on timeout leaves its
+    /// Killing only the direct child (a shell) on timeout leaves its
     /// grandchildren alive holding the stdout pipe — the reader threads never
     /// see EOF and `wait_with_limits` blocks forever even though the timeout
     /// fired. With the child in its own process group and a group kill, the
@@ -882,7 +882,7 @@ mod exec_tests {
             "npm run build",
             "docker build -t myapp .",
             // Git verbs that fire build/test hooks (pre-commit clippy, pre-push
-            // preflight) must not be killed at the default ceiling (#854).
+            // preflight) must not be killed at the default ceiling.
             "git commit --amend --no-edit",
             "git push -u origin HEAD",
             // Agents prefix with `cd /path && ...` — heavy detection must
@@ -916,7 +916,7 @@ mod exec_tests {
         let iso = crate::core::data_dir::isolated_data_dir();
 
         // Heavy builds/tests and hook-firing git verbs get the heavy ceiling;
-        // read-only verbs stay on the default. Preserves the #854 promotion.
+        // read-only verbs stay on the default. Preserves the promotion.
         assert_eq!(
             super::shell_timeout("cargo install --path ."),
             super::HEAVY_TIMEOUT

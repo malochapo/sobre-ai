@@ -86,7 +86,7 @@ impl SessionState {
         })
         .map_err(|e| e.to_string())?;
         self.stats.unsaved_changes = 0;
-        // #717: arm the time-based flush window.
+        // Arm the time-based flush window.
         self.last_flush = Some(std::time::Instant::now());
         Ok(PreparedSave {
             dir,
@@ -107,7 +107,7 @@ impl SessionState {
     /// first session. The correct project session is loaded later from the MCP
     /// `roots` handshake (`load_latest_for_project_root`).
     ///
-    /// Also refuses to scope to a broad/unsafe cwd (e.g. the MCP daemon's HOME),
+    /// Also refuses to scope to a broad/unsafe cwd (e.g. the MCP server's HOME),
     /// which would otherwise resurrect the contaminated "HOME mega-session".
     pub fn load_latest() -> Option<Self> {
         let cwd = std::env::current_dir().ok()?;
@@ -127,10 +127,10 @@ impl SessionState {
     /// Loads every saved session that belongs to a project root.
     pub fn all_for_project_root(project_root: &str) -> Vec<Self> {
         // Broad roots ("/", HOME, agent sandboxes) never own a session. Bail out
-        // BEFORE scanning: the daemon boots with cwd "/" and previously walked
+        // BEFORE scanning: the MCP server boots with cwd "/" and previously walked
         // every stored session here, stat-ing each session's project_root /
         // shell_cwd. For roots under ~/Documents that probe popped the macOS
-        // TCC prompt in sobre's name on every launchd (re)start (#356) —
+        // TCC prompt in sobre's name on every launchd (re)start —
         // and `shell_cwd.starts_with("/")` could even leak an arbitrary
         // project's session into the broad-root context.
         if crate::core::pathutil::is_broad_or_unsafe_root(std::path::Path::new(project_root)) {

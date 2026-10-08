@@ -1,5 +1,5 @@
-//! Scenario tests for an issue reported by `BazsiBazsi`: the cache-hit
-//! message was misleading when a subagent had cached the file.
+//! Scenario tests: the cache-hit message was misleading when a subagent had
+//! cached the file.
 
 use sobre::core::protocol::CrpMode;
 use std::io::Write;
@@ -15,7 +15,7 @@ fn scenario_cache_hit_message_format() {
     use sobre::core::cache::SessionCache;
 
     let mut cache = SessionCache::new();
-    let dir = std::env::temp_dir().join("sobre_bazsi_cache_test");
+    let dir = std::env::temp_dir().join("sobre_subagent_cache_test");
     let _ = std::fs::create_dir_all(&dir);
     let file_path = dir.join("test_file.py");
     {

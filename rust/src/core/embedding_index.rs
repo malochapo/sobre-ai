@@ -293,7 +293,7 @@ impl EmbeddingIndex {
     /// Number of `chunks` a re-embed pass would have to embed right now — i.e.
     /// the chunks belonging to files flagged by [`Self::files_needing_update`].
     ///
-    /// Used by the hybrid/dense cold-start guard (#512): on a server that came
+    /// Used by the hybrid/dense cold-start guard: on a server that came
     /// up before the on-disk index existed, the first query would otherwise embed
     /// the *entire* corpus inline under the request watchdog, producing a runaway
     /// the watchdog abandons but cannot cancel. Counting the pending chunks up

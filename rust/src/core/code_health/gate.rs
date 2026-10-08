@@ -4,7 +4,7 @@
 //! Drift prevention is the lever sobre has that a post-hoc scanner does not:
 //! it sits *in the edit path*, so it can flag a complexity regression at the
 //! moment it is introduced. The gate is advisory: it never blocks a write. Its
-//! notice text is deterministic (#498-safe).
+//! notice text is deterministic.
 
 use super::{cognitive_delta, format_gate_notice, worst_regression};
 

@@ -3,7 +3,7 @@
 //! Both the config installer ([`crate::config_io`]) and the edit tools
 //! (`crate::tools::edit_io`) need the same durable write dance: a
 //! same-directory temp file + `rename`, with an in-place-overwrite fallback when
-//! the directory is read-only but the file inode is writable (#459). Only the
+//! the directory is read-only but the file inode is writable. Only the
 //! *mechanism* lives here — one audited implementation. The differing *policy*
 //! stays in each caller:
 //!
@@ -38,7 +38,7 @@ pub(crate) fn try_atomic_write(
         .ok_or_else(|| invalid_input("invalid path (no filename)"))?
         .to_string_lossy();
 
-    // #958: sweep this directory for temps orphaned by a previous crash
+    // Sweep this directory for temps orphaned by a previous crash
     // between temp-file creation and rename — the only place these were
     // ever cleaned up before was the rename error path, so a hard crash
     // left them behind for good with no separate startup pass to catch
@@ -66,7 +66,7 @@ pub(crate) fn try_atomic_write(
         let _ = std::fs::set_permissions(&tmp, perms.clone());
     }
 
-    // #956: on Windows, `rename` fails outright if `path` already exists, so
+    // On Windows, `rename` fails outright if `path` already exists, so
     // this used to `remove_file(path)` first and rename second — two
     // non-atomic syscalls. A reader landing in that window sees ENOENT for a
     // file that "exists", and a process that dies after the remove but
@@ -128,7 +128,7 @@ fn fsync_dir(dir: &Path) {
 }
 
 /// Removes `.{filename}.sobre.tmp.{pid}.{nanos}` leftovers in `parent` from
-/// a crash between temp-file creation and rename (#958).
+/// a crash between temp-file creation and rename.
 fn cleanup_orphaned_temps(parent: &Path, filename: &str) {
     const STALE_AGE: std::time::Duration = std::time::Duration::from_hours(1);
     let prefix = format!(".{filename}.sobre.tmp.");
@@ -212,7 +212,7 @@ pub(crate) fn is_readonly_dir_error(e: &std::io::Error) -> bool {
     }
 }
 
-/// Atomic write with the read-only-directory in-place fallback (#459). Tries the
+/// Atomic write with the read-only-directory in-place fallback. Tries the
 /// crash-atomic temp+rename first; if that fails because the *directory* is
 /// read-only/permission-denied but an existing file inode is writable, overwrite
 /// it in place. `permissions`, when given, is applied to the written file.
@@ -261,7 +261,7 @@ mod tests {
         }
     }
 
-    // --- #958: orphaned-temp sweep ---
+    // --- orphaned-temp sweep ---
 
     #[test]
     fn cleanup_orphaned_temps_removes_dead_pid_leftovers() {

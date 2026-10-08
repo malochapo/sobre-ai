@@ -12,7 +12,7 @@ pub(crate) fn embedding_engine() -> Option<&'static EmbeddingEngine> {
 }
 
 /// Non-blocking: returns engine only if already loaded. Never blocks the
-/// calling path — but kicks off a one-time background load (#551) so the first
+/// calling path — but kicks off a one-time background load so the first
 /// semantic need activates the engine for later calls. Nothing is downloaded:
 /// the model must already be installed.
 #[cfg(feature = "dense")]
@@ -36,14 +36,14 @@ pub(crate) fn embedding_engine_impl(nonblocking: bool) -> Option<&'static Embedd
     }
 }
 
-/// One-time background engine activation (#551): warms the shared engine from
+/// One-time background engine activation: warms the shared engine from
 /// the installed model, so non-blocking callers start succeeding without any
 /// hot path ever waiting. Policy gates (memory profile, model present) are
 /// checked by the caller.
 #[cfg(feature = "dense")]
 fn ensure_engine_background() {
     use std::sync::atomic::{AtomicBool, Ordering};
-    // Never spawn a detached model load in a short-lived process (#519): a
+    // Never spawn a detached model load in a short-lived process: a
     // loader thread still running when the process returns from `main` races
     // libonnxruntime's static-destructor teardown → SIGSEGV in onnx::OpSchema.
     // This also keeps the process-global shared engine untouched in tests
@@ -134,7 +134,7 @@ pub(crate) fn handle_embeddings_reindex(project_root: &str) -> String {
 
         // Rebuild + save under the per-project lock, reloading knowledge inside
         // it so a `remember` committed mid-reindex is included rather than
-        // clobbered by a stale-snapshot rebuild (issue #412). The model is
+        // clobbered by a stale-snapshot rebuild. The model is
         // fetched above, outside the lock, so its load never blocks writers.
         ProjectKnowledge::with_project_lock(project_root, || {
             let knowledge = ProjectKnowledge::load_or_create(project_root);

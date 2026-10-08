@@ -150,7 +150,7 @@ fn install_redirects_claude_when_api_key_present() {
     );
 }
 
-/// Codex CLI config: a fresh install writes the `/v1`-suffixed proxy URL (#366).
+/// Codex CLI config: a fresh install writes the `/v1`-suffixed proxy URL.
 #[test]
 fn codex_env_writes_v1_suffixed_url() {
     let dir = tempfile::tempdir().unwrap();

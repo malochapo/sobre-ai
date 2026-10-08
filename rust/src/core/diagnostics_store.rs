@@ -1,4 +1,4 @@
-//! Active compiler/linter diagnostics as a context-priority signal (#499).
+//! Active compiler/linter diagnostics as a context-priority signal.
 //!
 //! When `cargo`/`tsc`/`eslint` fail, the files they point at are the most
 //! task-relevant files in the project — the agent will read them next to fix

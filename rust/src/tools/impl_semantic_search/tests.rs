@@ -73,7 +73,7 @@ mod root_resolution_tests {
 
     #[test]
     fn resolve_search_root_promotes_subdir_to_project_root() {
-        // #948: the index namespace is keyed on the project root; a subdir search
+        // The index namespace is keyed on the project root; a subdir search
         // must resolve to that same root (and keep the subdir as a scope) instead
         // of hashing to a different, empty namespace.
         let _lock = crate::core::data_dir::test_env_lock();
@@ -109,7 +109,7 @@ mod cold_start_guard_tests {
 
     #[test]
     fn budget_zero_disables_guard() {
-        // 0 = "always embed inline" (pre-#512 behavior), regardless of size.
+        // 0 = "always embed inline" (the earlier behavior), regardless of size.
         assert!(!exceeds_inline_embed_budget(1_000_000, 0));
     }
 
@@ -226,7 +226,7 @@ mod dense_toggle_tests {
         ])
     }
 
-    /// #512/#686: on a cold dense index hybrid ranks without the dense signal,
+    /// On a cold dense index hybrid ranks without the dense signal,
     /// finds the lexical match, says it degraded, and never writes embeddings.
     #[test]
     fn hybrid_on_cold_index_ranks_without_embeddings_and_says_so() {

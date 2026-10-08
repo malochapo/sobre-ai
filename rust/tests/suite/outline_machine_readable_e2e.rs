@@ -1,4 +1,4 @@
-//! #990 e2e — machine-readable purity, and no unrequested text.
+//! E2e — machine-readable purity, and no unrequested text.
 //!
 //! `sobre_outline format=json` must return byte-exact, parseable JSON with no
 //! prose decoration, and no call — first or later — carries text the agent

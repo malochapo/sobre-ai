@@ -7,9 +7,8 @@ use crate::core::cache::SessionCache;
 use crate::core::session::SessionState;
 use rmcp::service::{Peer, RoleServer};
 
+// Defined in core::protocol, which tools must not depend back on.
 pub use crate::core::protocol::CrpMode;
-// CrpMode is now defined in core::protocol to avoid reverse-dependency.
-// Re-exported here for backward compatibility.
 
 impl CrpMode {
     /// Effective CRP mode, derived from CompressionLevel.
@@ -49,7 +48,7 @@ pub struct SobreServer {
     pub(crate) peer: Arc<RwLock<Option<Peer<RoleServer>>>>,
     pub(crate) has_client_roots: Arc<std::sync::atomic::AtomicBool>,
     pub(crate) roots_resolved: Arc<std::sync::atomic::AtomicBool>,
-    /// Failed `roots/list` attempts (GH #694): transient failures re-arm
+    /// Failed `roots/list` attempts: transient failures re-arm
     /// `roots_resolved` until a small budget is exhausted.
     pub(crate) roots_list_attempts: Arc<std::sync::atomic::AtomicU32>,
     pub(crate) bm25_cache: Arc<std::sync::Mutex<Option<crate::core::bm25_cache::Bm25CacheEntry>>>,

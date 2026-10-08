@@ -1,4 +1,4 @@
-//! Deterministic JSON outline (gitlab #981). Byte-stable per #498: fixed field
+//! Deterministic JSON outline. Byte-stable: fixed field
 //! order (serde struct order), files pre-sorted by the directory walker, symbols
 //! in source order, no timestamps/counters. Each file carries the extraction
 //! `backend` (`tree-sitter` | `regex`) so the syntax-aware claim is verifiable.

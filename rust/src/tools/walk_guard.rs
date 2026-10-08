@@ -5,8 +5,8 @@
 //! The MCP server is often spawned with `cwd == $HOME` (Cursor starts
 //! user-level servers from the home directory), so that root can be the whole
 //! home directory. Walking it stats everything under `~/Library`, `~/Desktop`,
-//! … (a macOS TCC privacy prompt each, the #356 class) and hydrates cloud
-//! placeholders on Windows (#363). A path the agent names is always walked:
+//! … (a macOS TCC privacy prompt each, the class) and hydrates cloud
+//! placeholders on Windows. A path the agent names is always walked:
 //! that choice is the agent's (invariant 5).
 
 /// Returns an actionable `ERROR:` message when `dir` must not be walked,

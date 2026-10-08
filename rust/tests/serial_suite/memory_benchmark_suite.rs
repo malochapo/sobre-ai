@@ -51,8 +51,8 @@ async fn call_tool_json(
 
 /// Poll `cond` up to ~10s. The memory stores are persisted on a background
 /// thread (the consolidation pipeline), so asserting immediately after a tool
-/// call returns raced the writer and made this test flaky under full-suite load
-/// (#215). Polling keeps the assertion strict (it still fails if the artifact
+/// call returns raced the writer and made this test flaky under full-suite load.
+/// Polling keeps the assertion strict (it still fails if the artifact
 /// never lands) while tolerating scheduling latency.
 async fn wait_until(mut cond: impl FnMut() -> bool) -> bool {
     for _ in 0..200 {
@@ -153,7 +153,7 @@ async fn memory_benchmark_suite_persists_core_artifacts() {
     .await;
 
     // 3) Assert artifacts exist on disk. Persistence runs on a background thread,
-    //    so poll with a bounded timeout rather than asserting immediately (#215).
+    //    so poll with a bounded timeout rather than asserting immediately.
     let knowledge = sobre::core::knowledge::ProjectKnowledge::load_or_create(&root_str);
     let knowledge_dir = data_dir
         .path()

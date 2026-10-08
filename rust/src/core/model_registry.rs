@@ -50,7 +50,7 @@ fn bundled() -> &'static Registry {
 }
 
 /// Parse a trailing long-context marker like `[1m]` / `[1M]` / `[200k]` into
-/// its token window (GH #739). Clients append these suffixes for context-beta
+/// its token window. Clients append these suffixes for context-beta
 /// variants (e.g. `claude-opus-4-8[1m]`); the marker is an explicit statement
 /// of the window, so it wins over any registry entry for the base model.
 fn window_from_suffix(model: &str) -> Option<usize> {
@@ -115,7 +115,7 @@ fn registry_lookup(model: &str, registry: &Registry) -> Option<usize> {
 /// Look up context window for a model name.
 /// Order: a `[1m]`-style suffix in the name → the bundled registry → 200k.
 pub fn context_window_for_model(model: &str) -> usize {
-    // Explicit window marker in the model name itself (GH #739).
+    // Explicit window marker in the model name itself.
     // `claude-opus-4-8[1m]` means the client runs the 1M-context variant —
     // registries would only ever know the base model's window.
     if let Some(w) = window_from_suffix(model) {
@@ -186,7 +186,7 @@ mod tests {
 
     #[test]
     fn long_context_suffix_wins_over_registry() {
-        // GH #739: the [1m] marker is the client's explicit window statement.
+        // The [1m] marker is the client's explicit window statement.
         assert_eq!(context_window_for_model("claude-opus-4-8[1m]"), 1_000_000);
         assert_eq!(context_window_for_model("claude-opus-4-8[1M]"), 1_000_000);
         assert_eq!(context_window_for_model("some-future-model[200k]"), 200_000);

@@ -102,7 +102,7 @@ mod tests {
 
     #[test]
     fn lazy_mode_single_line_omits_docs_suffix() {
-        // A description that already fits on one line is kept verbatim (#680).
+        // A description that already fits on one line is kept verbatim.
         let desc = "Directory tree (replaces ls/find). Compact maps.";
         let result = compress_description("sobre_tree", desc, DescriptionMode::Lazy);
         assert_eq!(result, desc, "single-line lazy desc must be verbatim");

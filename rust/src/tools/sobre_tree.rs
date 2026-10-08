@@ -62,7 +62,7 @@ fn generate_compact_tree(
     let mut entries: Vec<Entry> = Vec::new();
 
     // Vendor dirs (node_modules, …) follow the gitignore toggle: explicitly
-    // disabling gitignore is the escape hatch to look inside them (#400).
+    // disabling gitignore is the escape hatch to look inside them.
     let walker = WalkBuilder::new(root)
         .hidden(!show_hidden)
         .git_ignore(respect_gitignore)
@@ -211,7 +211,7 @@ mod tests {
 
     #[test]
     fn tree_hides_node_modules_by_default_even_without_git() {
-        // #400: vendor dirs are pruned by default; respect_gitignore=false is
+        // Vendor dirs are pruned by default; respect_gitignore=false is
         // the explicit escape hatch to look inside them.
         let tmp = tempfile::tempdir().expect("tempdir");
         std::fs::create_dir_all(tmp.path().join("node_modules/react")).expect("mkdir");

@@ -1,4 +1,4 @@
-//! Post-edit syntax gate (#1008): a tree-sitter parse check used to reject an
+//! Post-edit syntax gate: a tree-sitter parse check used to reject an
 //! edit that turns a *cleanly parsing* file into a broken one.
 //!
 //! Principle (plan Säule 3): only the *clean → broken* transition is a real
@@ -77,7 +77,7 @@ fn first_error_line(node: tree_sitter::Node) -> Option<usize> {
     None
 }
 
-/// The post-edit gate decision (#1008). Returns `Some(reason)` only for the
+/// The post-edit gate decision. Returns `Some(reason)` only for the
 /// clean → broken regression — the single case worth blocking — and `None`
 /// (allow the write) for every other situation:
 /// unsupported language, tree-sitter off, an already-broken pre-edit file, or a

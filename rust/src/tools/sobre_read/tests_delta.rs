@@ -67,7 +67,7 @@ fn auto_reread_of_fully_delivered_file_serves_unchanged_stub() {
     );
 }
 
-/// Regression #841: a full->task->full sequence must NOT serve the [unchanged]
+/// Regression: a full->task->full sequence must NOT serve the [unchanged]
 /// stub on the third read. The task read delivers partial content, so the
 /// model's most recent view is NOT the full file -- re-delivering is mandatory.
 #[test]
@@ -142,7 +142,7 @@ Content for section {i}."
     );
 }
 
-/// Regression #841 complement: full->full (no mode change) must still serve
+/// Regression, complement: full->full (no mode change) must still serve
 /// the cheap [unchanged] stub -- the fix must not break the happy path.
 #[test]
 fn full_reread_still_serves_stub_when_no_mode_change() {
@@ -184,7 +184,7 @@ fn full_reread_still_serves_stub_when_no_mode_change() {
 }
 
 // ---------------------------------------------------------------------------
-// Conversation scoping (#954): the `[unchanged]` stub is only valid for a
+// Conversation scoping: the `[unchanged]` stub is only valid for a
 // re-read from the *same* conversation that received the full content. The
 // current conversation is injected via `try_stub_hit_readonly_scoped` so these
 // assertions are deterministic regardless of the host's `active_transcript.json`.
@@ -230,7 +230,7 @@ fn conversation_scoped_stub_withheld_for_other_conversation() {
     );
 }
 
-/// #1128: the full-read fallback must never mint a stub of its own. The gate
+/// The full-read fallback must never mint a stub of its own. The gate
 /// above is the single decision point, so once a read reaches
 /// `handle_full_with_auto_delta` it owes the caller content — regardless of what
 /// an earlier (possibly foreign) conversation was delivered.
@@ -272,7 +272,7 @@ fn conversation_scoped_stub_served_when_no_context() {
 }
 
 // ---------------------------------------------------------------------------
-// Persistent cold stub (#955): after a daemon restart / idle clear the live
+// Persistent cold stub: after a MCP restart / idle clear the live
 // cache is empty, so an unchanged re-read must be served from the persisted
 // index — but only for the SAME known conversation and an unchanged file. The
 // record is forged directly (modelling one that outlived the restart) and the
@@ -309,7 +309,7 @@ fn cold_fallback_serves_stub_for_same_conversation_after_restart() {
     std::fs::write(&path, "fn main() { let x = 1; }\n").unwrap();
 
     seed_cold_record(&p, "conv-a");
-    // Empty cache models a fresh daemon: the warm path misses, cold fallback fires.
+    // Empty cache models a fresh MCP server: the warm path misses, cold fallback fires.
     let cold = SessionCache::new();
     let out = try_stub_hit_readonly_scoped(&cold, &p, Some("conv-a"));
     crate::core::read_stub_index::clear_for_test();
@@ -348,7 +348,7 @@ fn cold_fallback_withheld_without_conversation_context() {
     seed_cold_record(&p, "conv-a");
     let cold = SessionCache::new();
     // Unlike the WARM path, an absent conversation cannot prove the content is in
-    // the new process's context → no cold stub (the stricter gate keeps #954's
+    // the new process's context → no cold stub (the stricter gate keeps the
     // cross-chat hazard closed across restarts).
     let out = try_stub_hit_readonly_scoped(&cold, &p, None);
     crate::core::read_stub_index::clear_for_test();
@@ -597,7 +597,7 @@ fn delta_explicit_only_fires_for_explicit_mode() {
 
 #[test]
 fn delta_explicit_decision_is_byte_stable() {
-    // #498 determinism: the resolver's note carries no timestamp/counter, so
+    // Determinism: the resolver's note carries no timestamp/counter, so
     // repeated calls on the same changed-file state are byte-identical.
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("changed.rs");

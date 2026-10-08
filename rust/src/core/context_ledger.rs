@@ -6,7 +6,7 @@ use super::context_field::{
 
 const DEFAULT_CONTEXT_WINDOW: usize = 128_000;
 
-/// EMA weight for the freshly computed Phi on a re-read (#2). 0.5 keeps equal
+/// EMA weight for the freshly computed Phi on a re-read. 0.5 keeps equal
 /// weight on the new signal and the running history, so salience tracks recency
 /// and task changes without overreacting to one read.
 const PHI_REREAD_ALPHA: f64 = 0.5;
@@ -159,7 +159,7 @@ impl ContextLedger {
             if existing.state == Some(ContextState::Candidate) {
                 existing.state = Some(ContextState::Included);
             }
-            // #2 Sticky-Phi fix: salience is time-variant (recency, task match,
+            // Sticky-Phi fix: salience is time-variant (recency, task match,
             // access frequency all changed since the first read), so recompute
             // Phi on every re-read instead of freezing the first value. Blend
             // with the prior score via a fixed-alpha EMA — deterministic, and
@@ -279,19 +279,17 @@ impl ContextLedger {
         // Pinned/stale entries reduce eviction flexibility, so they nudge
         // pressure upward — but the nudge must stay bounded. Without a cap, a
         // long session where many entries end up Pinned (e.g. via GWT
-        // ignition, #6) can alone drive utilization to 100% regardless of
+        // ignition) can alone drive utilization to 100% regardless of
         // actual token usage.
         const MAX_STATE_PRESSURE: f64 = 0.2;
         let effective_utilization =
             (utilization + (pinned_pressure + stale_penalty).min(MAX_STATE_PRESSURE)).min(1.0);
 
-        // `remaining_tokens` is a literal token-budget figure consumed by
-        // dashboards and the deficit-suggestion auto-loader
-        // (`context_deficit.rs`) as "how much room is actually left" — it
-        // must track real usage, not the heuristic-boosted
-        // `effective_utilization`, or a heavily-pinned/stale session reports
-        // 0 remaining (and silently starves auto-loading) while tokens of
-        // real headroom are still free.
+        // `remaining_tokens` is a literal token-budget figure ("how much room
+        // is actually left") — it must track real usage, not the
+        // heuristic-boosted `effective_utilization`, or a heavily-pinned/stale
+        // session reports 0 remaining while tokens of real headroom are still
+        // free.
         let remaining = self.window_size.saturating_sub(self.total_tokens_sent);
 
         let recommendation = if effective_utilization > 0.9 {
@@ -401,10 +399,10 @@ impl ContextLedger {
         self.entries.sort_by_key(|e| std::cmp::Reverse(e.timestamp));
         self.entries.retain(|e| {
             // Lexical key only: entries were normalized when written, and the
-            // full variant would `realpath` every persisted path — the daemon
+            // full variant would `realpath` every persisted path — the MCP server
             // runs this at boot (ContextLedger::load → prune) and stat-ing
             // stored paths under ~/Documents from a launchd process pops the
-            // macOS TCC prompt (#356).
+            // macOS TCC prompt.
             let key = crate::core::pathutil::normalize_tool_path_lexical(&e.path);
             seen.insert(key)
         });
@@ -692,7 +690,7 @@ mod tests {
 
     #[test]
     fn phi_recomputed_on_reread_not_sticky() {
-        // #2: Phi must track time-variant salience, not freeze on first read.
+        // Phi must track time-variant salience, not freeze on first read.
         let _env = crate::core::data_dir::test_env_lock();
         let dir = tempfile::tempdir().unwrap();
         crate::test_env::set_var("SOBRE_DATA_DIR", dir.path());
@@ -721,7 +719,7 @@ mod tests {
         );
     }
 
-    // ── #715: target resolution (exact → root-relative → unique suffix) ──
+    // ── target resolution (exact → root-relative → unique suffix) ──
 
     #[test]
     fn upsert_sets_source_hash_and_kind() {

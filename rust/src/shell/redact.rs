@@ -10,7 +10,7 @@ pub fn save_tee(command: &str, output: &str) -> Option<String> {
     let tee_dir = crate::core::paths::state_dir().ok()?.join("tee");
     std::fs::create_dir_all(&tee_dir).ok()?;
 
-    // #950: cleanup is an O(N) read_dir + per-file metadata() scan of the
+    // Cleanup is an O(N) read_dir + per-file metadata scan of the
     // whole tee directory. Running it on every save_tee (i.e. every
     // compressed shell call) means its cost scales with directory size on
     // every single invocation under heavy shell activity. Entries already
@@ -116,7 +116,7 @@ pub(crate) fn cleanup_old_tee_logs(tee_dir: &std::path::Path) {
 mod tests {
     use super::*;
 
-    // --- #950: tee cleanup throttle ---
+    // --- tee cleanup throttle ---
 
     #[test]
     fn cleanup_throttle_gates_by_interval() {

@@ -1,10 +1,9 @@
-//! Efficiency benchmark harness (Phase 0 of the efficiency epic).
+//! Efficiency benchmark harness.
 //!
 //! Custom harness (no criterion, matching the other `harness = false` benches):
 //! prints a markdown latency + token report for `sobre_search` on a synthetic
-//! corpus. From Phase 1 on it also measures the resident line-search index so
-//! the walk-vs-index speedup is visible in a single run (no "before" git state
-//! needed).
+//! corpus, with and without the resident line-search index, so the
+//! walk-vs-index speedup is visible in a single run.
 //!
 //! Run:    cargo bench --bench efficiency
 //! Tune:   `BENCH_FILES=5000` cargo bench --bench efficiency

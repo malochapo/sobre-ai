@@ -1,5 +1,4 @@
-//! Composable post-processing stages for `SobreServer::call_tool_guarded`
-//! (issue #144).
+//! Composable post-processing stages for `SobreServer::call_tool_guarded`.
 //!
 //! `call_tool_guarded` historically inlined a ~1000-line pre/post-dispatch
 //! pipeline. The self-contained, side-effect-isolated *stages* live here as
@@ -85,7 +84,7 @@ mod tests {
             assert!(!skip_terse(tool, None, false), "{tool} is condensable");
         }
         // Content the agent acts on stays as the tool returned it: file text,
-        // the original sobre_expand returns, edit evidence (#382), search hits,
+        // the original sobre_expand returns, edit evidence, search hits,
         // signatures, diffs and paths.
         for tool in [
             "sobre_read",
@@ -113,7 +112,7 @@ mod tests {
     fn compress_terse_keeps_reads_byte_identical() {
         // Content laced with terse triggers (dictionary words, blank lines and a
         // UTF-8 BOM) that the prose pipeline would otherwise mangle. A read must
-        // come back byte-for-byte even with the densest compression level (#404).
+        // come back byte-for-byte even with the densest compression level.
         let content = "\u{feff}fn run() {\n\n    // command execution pipeline\n    let command = execution();\n    return command;\n}\n";
         let cfg = Config {
             compression_level: 0.7,

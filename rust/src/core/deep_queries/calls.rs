@@ -20,7 +20,7 @@ pub(super) fn extract_calls(root: Node, src: &str, ext: &str) -> Vec<CallSite> {
         // Rust: calls written inside macro bodies (`println!("{}", greet(x))`,
         // `assert_eq!(foo(), 1)`) are token trees to tree-sitter, not
         // `call_expression`s — a file whose calls all sit inside macros used to
-        // produce ZERO call edges (#658). Recover them at the token level.
+        // produce ZERO call edges. Recover them at the token level.
         if ext == "rs"
             && let Some(call) = parse_macro_interior_call(node, src)
         {
@@ -270,7 +270,7 @@ fn parse_call_gd(node: Node, src: &str) -> Option<CallSite> {
                 .and_then(|p| p.child(0))
                 .map(|r| node_text(r, src).to_string());
             // `X.new()` instantiates class `X`; attribute the reference to the
-            // class so it registers in the call graph / dead-code analysis (#365).
+            // class so it registers in the call graph / dead-code analysis.
             if method == "new"
                 && let Some(class) = receiver
             {

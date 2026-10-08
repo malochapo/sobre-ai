@@ -4,7 +4,7 @@ use serde_json::{Map, Value};
 
 /// Outcome of a call, carried alongside the rendered text so the MCP dispatch
 /// layer can surface failures in protocol metadata (`isError`) instead of only
-/// in the text (GitHub #389: clients had no programmatic way to detect
+/// in the text (clients had no programmatic way to detect
 /// failures and resorted to fragile regex matching).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ShellOutcome {
@@ -44,7 +44,7 @@ pub struct ToolOutput {
     /// Path associated with the tool call (for record_call_with_path).
     pub path: Option<String>,
     /// Set by shell-executing tools so dispatch can populate `isError` +
-    /// `structuredContent` on the MCP result (GitHub #389). `None` for tools
+    /// `structuredContent` on the MCP result. `None` for tools
     /// that don't run shell commands.
     pub shell_outcome: Option<ShellOutcome>,
     /// Override content blocks for non-text responses (e.g. images).
@@ -83,10 +83,6 @@ impl ToolOutput {
 /// Trait for a self-contained MCP tool. Each tool provides its own schema
 /// definition and handler, eliminating the possibility of schema/handler drift.
 ///
-/// This trait is the plugin interface for LcpTools: any implementation can be
-/// registered at runtime via `ToolRegistry::register()`. Future plugin system
-/// will load implementations from shared libraries or subprocess bridges.
-///
 /// Handlers are synchronous because all existing tool handlers are sync.
 /// The async boundary (cache locks, session reads) is handled by the dispatch
 /// layer before calling `handle`.
@@ -108,7 +104,7 @@ pub trait McpTool: Send + Sync {
     /// (auto-context briefing, verify footer, hints, checkpoints) and terse
     /// compression for this call, returning the pure body.
     /// Keyed on `args` because most tools emit machine-readable output only for
-    /// an opt-in format flag (e.g. `format=json`); defaults to `false` (#990).
+    /// an opt-in format flag (e.g. `format=json`); defaults to `false`.
     fn produces_machine_readable(&self, _args: Option<&Map<String, Value>>) -> bool {
         false
     }
@@ -156,18 +152,18 @@ fn is_section_label(line: &str) -> bool {
 /// handlers. Extended with shared server state for tools that need
 /// cache/session access.
 ///
-/// `Clone` exists for per-op delegation (#1088): a batch op with its own
+/// `Clone` exists for per-op delegation: a batch op with its own
 /// `path` clones the ctx and swaps in that op's resolved path.
 #[derive(Clone)]
 pub struct ToolContext {
     pub project_root: String,
     /// The session's shell cwd (where `sobre_shell` last ran), snapshotted like
     /// `extra_roots`: relative paths fall back to it, and a cwd in another git
-    /// checkout outranks `project_root` (#707).
+    /// checkout outranks `project_root`.
     pub shell_cwd: Option<String>,
     /// Session-scoped extra roots (MCP `roots/list`, config `search_roots`),
     /// snapshotted from the session so sync handlers can honor them without an
-    /// async lock. Empty = single root (#403).
+    /// async lock. Empty = single root.
     pub extra_roots: Vec<String>,
     /// Pre-resolved paths keyed by argument name (e.g. "path" -> "/abs/dir").
     pub resolved_paths: std::collections::HashMap<String, String>,
@@ -177,8 +173,7 @@ pub struct ToolContext {
     pub cache: Option<crate::tools::SharedCache>,
     /// Shared session handle for tools that need session access.
     pub session: Option<std::sync::Arc<tokio::sync::RwLock<crate::core::session::SessionState>>>,
-    /// Errors from path resolution (PathJail rejection, secret path, etc.).
-    /// Keyed by argument name (e.g. "path" -> "path escapes project root: ...").
+    /// Errors from path resolution, keyed by argument name.
     pub path_errors: std::collections::HashMap<String, String>,
     /// Shared in-memory BM25 index cache for semantic search.
     pub bm25_cache: Option<crate::core::bm25_cache::SharedBm25Cache>,
@@ -228,7 +223,7 @@ impl ToolContext {
 // ── Arg extraction helpers (mirror server/helpers.rs for standalone use) ──
 
 /// Extract a resolved path from context with differentiated error messages.
-/// Returns descriptive errors for: missing param, PathJail rejection, wrong type.
+/// Returns descriptive errors for: missing param, unresolvable path, wrong type.
 pub fn require_resolved_path(
     ctx: &ToolContext,
     args: &Map<String, Value>,

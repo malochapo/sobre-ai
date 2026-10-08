@@ -71,7 +71,7 @@ pub fn worst_regression(deltas: &[CognitiveDelta], threshold: u32) -> Option<&Co
         })
 }
 
-/// Deterministic one-line edit-gate notice. No timestamps/counters → #498-safe.
+/// Deterministic one-line edit-gate notice. No timestamps/counters
 pub fn format_gate_notice(delta: &CognitiveDelta, threshold: u32) -> String {
     format!(
         "[CODE HEALTH] fn {}: cognitive {}->{} (+{}, >{}) — consider extracting helpers",

@@ -110,7 +110,7 @@ impl EvictionOrchestrator {
             ctrl.evaluate(effective_tokens)
         };
 
-        // #685: the homeostasis controller reasons over *cache-token*
+        // The homeostasis controller reasons over *cache-token*
         // utilization, but RSS pressure can come from structures the token
         // heuristic cannot see (ANN/HNSW graph, resident trigram + graph
         // indices, transient build state). At Hard/Critical RSS the guard's
@@ -164,7 +164,7 @@ impl EvictionOrchestrator {
                 }
                 let content_freed = super::content_cache::memory_usage_bytes();
                 super::content_cache::clear();
-                // #685: the ANN/HNSW graph, resident trigram indices and the
+                // The ANN/HNSW graph, resident trigram indices and the
                 // materialized graph indexes were invisible to eviction — on
                 // embedding-heavy sessions they dominated RSS while the
                 // guardian could only trim the (small) session cache.
@@ -196,7 +196,7 @@ impl EvictionOrchestrator {
                 let cleared = self.try_write_cache(SessionCache::clear);
                 super::bm25_cache::unload(&self.bm25_cache);
                 super::content_cache::clear();
-                // #685: emergency must reach every resident structure.
+                // Emergency must reach every resident structure.
                 super::ann_cache::clear();
                 super::search_index::clear_resident();
                 memory_guard::jemalloc_purge();
@@ -233,10 +233,10 @@ impl EvictionOrchestrator {
     }
 }
 
-/// RSS floor (#685): guarantee a minimum eviction strength for a given guard
+/// RSS floor: guarantee a minimum eviction strength for a given guard
 /// pressure level, regardless of the token-based homeostasis verdict. Token
 /// utilization measures only the session cache; the structures that actually
-/// blew up in #685 (HNSW graph, resident indices, build transients) are
+/// blew up memory (HNSW graph, resident indices, build transients) are
 /// invisible to it — Hard/Critical RSS must always at least unload indices.
 fn floor_action_for_rss(
     level: memory_guard::PressureLevel,
@@ -279,7 +279,7 @@ mod tests {
 
     #[test]
     fn registry_fans_out_and_prunes_dropped_targets() {
-        // #685/#975-class: on_pressure(Critical) floors to EmergencyDrop, which
+        // on_pressure(Critical) floors to EmergencyDrop, which
         // clears the process-wide ann_cache — hold its cross-module test lock
         // so a concurrent ann_cache test can't observe a wiped cache mid-assertion.
         let _ann_lock = crate::core::ann_cache::test_lock();
@@ -365,7 +365,7 @@ mod tests {
     #[test]
     fn rss_floor_escalates_weak_actions_under_hard_pressure() {
         // Session cache nearly empty → controller says None; Hard RSS must
-        // still unload indices (#685: token heuristic blind to index RAM).
+        // still unload indices (the token heuristic is blind to index RAM).
         let floored =
             floor_action_for_rss(memory_guard::PressureLevel::Hard, HomeostasisAction::None);
         assert_eq!(floored, HomeostasisAction::UnloadIndices);

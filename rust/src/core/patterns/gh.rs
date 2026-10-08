@@ -193,7 +193,7 @@ fn compress_issue_list(output: &str) -> String {
 }
 
 fn compress_issue_view(output: &str) -> String {
-    // #884: an issue's body is the payload; the metadata fields above it are
+    // An issue's body is the payload; the metadata fields above it are
     // boilerplate. Head-only truncation (`compact_output`) dropped the body
     // wholesale on any issue longer than the field block, forcing a second
     // `--json body` call. Keep head AND tail so the body survives.
@@ -229,7 +229,7 @@ fn compress_run_list(output: &str) -> String {
 }
 
 fn compress_run_view(output: &str) -> String {
-    // #884: a run's failure summary lives at the tail — head-only truncation hid
+    // A run's failure summary lives at the tail — head-only truncation hid
     // exactly the part the agent came for. Keep head AND tail.
     compact_head_tail(output, 40, 40)
 }
@@ -267,7 +267,7 @@ fn compact_output(text: &str, max: usize) -> String {
     )
 }
 
-/// Head+tail compaction (#884): keep the first `head` and last `tail` non-empty
+/// Head+tail compaction: keep the first `head` and last `tail` non-empty
 /// lines, eliding only the middle. Unlike [`compact_output`] (head-only), this
 /// never drops the tail — used for single-record `view` output whose payload (an
 /// issue/PR body, a run's failure summary) follows the metadata header.
@@ -291,7 +291,7 @@ mod tests {
     #[test]
     fn issue_view_keeps_body_not_just_metadata() {
         // gh issue view: a metadata field block then the body. Head-only
-        // truncation (`compact_output(_, 15)`) dropped the body entirely (#884).
+        // truncation (`compact_output(_, 15)`) dropped the body entirely.
         let mut out = String::new();
         for f in [
             "title:\tSomething broke",

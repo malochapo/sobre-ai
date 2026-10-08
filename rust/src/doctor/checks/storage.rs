@@ -106,7 +106,7 @@ pub(crate) fn bm25_cache_health_outcome() -> Outcome {
 /// it is idle/building/ready/failed, how long the last build took, and — crucially
 /// — *why* it might be stuck (e.g. "indexed but NOT persisted: too large").
 ///
-/// This answers issue #249: users had no way to tell whether the semantic index
+/// Users otherwise had no way to tell whether the semantic index
 /// was working, how fast it was, or why it kept "warming up" forever.
 pub(crate) fn semantic_index_outcome() -> Option<Outcome> {
     let session = crate::core::session::SessionState::load_latest()?;
@@ -182,7 +182,7 @@ pub(crate) fn semantic_index_outcome() -> Option<Outcome> {
 /// Reports knowledge stores whose `project_root` was deleted (removed git
 /// worktrees, thrown-away projects). Such a store can never be written again, so
 /// its eviction cap can never self-heal — it is pure accumulated bloat. This is
-/// informational (never a hard failure); `sobre doctor --fix` reclaims it (#615).
+/// informational (never a hard failure); `sobre doctor --fix` reclaims it.
 pub(crate) fn orphaned_knowledge_outcome() -> Outcome {
     let orphans = crate::core::knowledge::maintenance::find_orphaned_stores();
     if orphans.is_empty() {
@@ -318,7 +318,7 @@ pub(crate) fn capacity_warnings() -> Vec<Outcome> {
                     warnings.join(", ")
                 ),
             });
-            // Actionable guidance (#972). A store *at* its cap is healthy by
+            // Actionable guidance. A store *at* its cap is healthy by
             // design — eviction keeps it there; only *over* cap means curation is
             // falling behind. Point the operator at the right lever either way.
             results.push(Outcome {
@@ -369,7 +369,7 @@ pub(crate) fn capacity_warnings() -> Vec<Outcome> {
 
     results
 }
-/// Actionable next-step for a memory capacity warning (#972). Separated from the
+/// Actionable next-step for a memory capacity warning. Separated from the
 /// on-disk capacity scan so the messaging is unit-tested directly: a store *at*
 /// its cap is healthy (eviction holds it there), while *over* cap means curation
 /// is behind and the operator should compact it.

@@ -13,7 +13,7 @@ pub(crate) fn hash_project_root(root: &str) -> String {
     // Windows the MCP server reports forward slashes (`D:/repo`) while the CLI
     // reports backslashes (`D:\repo`); without normalization these hash to two
     // different project stores and facts written via one are invisible to the
-    // other (issue #325). `normalize_tool_path` is a no-op for clean POSIX
+    // other. `normalize_tool_path` is a no-op for clean POSIX
     // paths, so non-Windows hashes are unaffected.
     let root = crate::core::pathutil::normalize_tool_path(root);
     let mut hasher = DefaultHasher::new();
@@ -240,7 +240,7 @@ mod tests {
 
     #[test]
     fn windows_slash_and_backslash_hash_identically() {
-        // Issue #325: the MCP server reports forward slashes while the CLI
+        // The MCP server reports forward slashes while the CLI
         // reports backslashes for the same Windows directory. Both must resolve
         // to the same project hash so the knowledge store is not split.
         assert_eq!(

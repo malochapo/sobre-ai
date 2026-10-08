@@ -5,10 +5,10 @@
 //! and feeds two consumers:
 //! - the cognition loop's auto-promotion gate (only promote findings above a
 //!   floor), and
-//! - the write-time admission floor (#970) that keeps low-signal facts out of a
+//! - the write-time admission floor that keeps low-signal facts out of a
 //!   capped store.
 //!
-//! Pure and total so it never perturbs output determinism (#498): the same text
+//! Pure and total so it never perturbs output determinism: the same text
 //! always scores the same value, independent of process state.
 
 /// Boost table: substrings that mark a finding as high-signal (errors, security,

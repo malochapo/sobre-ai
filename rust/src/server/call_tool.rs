@@ -22,7 +22,7 @@ impl SobreServer {
         let name = tool_name.as_str();
         let args = tool_args.as_ref();
 
-        // #990: a machine-readable invocation (e.g. sobre_outline format=json)
+        // A machine-readable invocation (e.g. sobre_outline format=json)
         // must reach the client byte-exact and parseable, so every prose
         // decoration and terse compression is suppressed and the pure
         // pre-decoration body is restored at the end (see the
@@ -124,7 +124,7 @@ impl SobreServer {
             let autonomy_clone = self.autonomy.clone();
             tokio::spawn(async move {
                 let result = std::panic::AssertUnwindSafe(async {
-                    // #807: bounded lock — the old unbounded `.write().await`
+                    // Bounded lock — the old unbounded `.write.await`
                     // could queue behind a long computation and then hold the
                     // lock during dedup, cascading the stall.
                     let cache_timeout = tokio::time::timeout(
@@ -154,7 +154,7 @@ impl SobreServer {
         {
             let tool_name = name.to_string();
             let summary = result_text.lines().next().unwrap_or("").to_string();
-            // #520 opt-in debug log: a full per-call record (tool, args, result
+            // Opt-in debug log: a full per-call record (tool, args, result
             // preview, savings, wall time). Captured here and written off the hot
             // path in the existing journal thread; no-op unless `debug_log` is on.
             let dbg_args = args.cloned();
@@ -196,7 +196,7 @@ impl SobreServer {
             self.increment_call_count();
         }
 
-        // #990: a machine-readable invocation (e.g. sobre_outline format=json) must
+        // A machine-readable invocation (e.g. sobre_outline format=json) must
         // return a byte-exact, parseable payload. The state-consuming briefings
         // are already skipped above (so their once-per-session flags survive),
         // but other steps still append recomputed prose (verify footer, throttle
@@ -315,15 +315,15 @@ impl SobreServer {
         session.project_root = Some(new_root);
         let _ = session.save();
         drop(session);
-        // Indices warm lazily on first use of a tool that needs them (#152) —
+        // Indices warm lazily on first use of a tool that needs them —
         // the dispatch path for this very call handles it via
         // `index_orchestrator::ensure_warm_for_tool`, so no eager scan here.
     }
 }
 
-/// Classifies a failed `roots/list` call (GH #694). `-32601 Method not found`
+/// Classifies a failed `roots/list` call. `-32601 Method not found`
 /// means the client declared the roots capability but does not implement the
-/// request (Cursor's documented behavior, #699) — retrying can never succeed.
+/// request (Cursor's documented behavior) — retrying can never succeed.
 /// Everything else (timeout, transport hiccup while an IDE window is still
 /// starting up) is transient and worth a bounded retry on a later tool call.
 fn roots_list_failure_is_permanent(e: &rmcp::ServiceError) -> bool {
@@ -335,12 +335,12 @@ fn roots_list_failure_is_permanent(e: &rmcp::ServiceError) -> bool {
 }
 
 /// Build the final `CallToolResult`, surfacing shell failures in MCP metadata
-/// (GitHub #389): a failing command sets `isError: true` and a
+///: a failing command sets `isError: true` and a
 /// `structuredContent` payload (`{"exitCode": N}`), so
 /// clients no longer have to regex-parse the `[exit:N]` text footer. The text
 /// content is identical in both cases — only the metadata changes. A non-zero
-/// exit that is *not* a failure (#1090/#1086) carries neither, because some
-/// clients render `structuredContent` in place of the text (#1127).
+/// exit that is *not* a failure carries neither, because some
+/// clients render `structuredContent` in place of the text.
 fn finalize_call_result(
     result_text: &str,
     shell_outcome: Option<crate::server::tool_trait::ShellOutcome>,
@@ -349,10 +349,10 @@ fn finalize_call_result(
     if let Some(outcome) = shell_outcome
         && is_shell_error(outcome, result_text)
     {
-        // #1127: clients that understand `structuredContent` render it *instead
+        // Clients that understand `structuredContent` render it *instead
         // of* the text block on a non-error result, so attaching it to a benign
-        // non-zero exit (exit 1 with output per #1090, exit 124 with partial
-        // output per #1086) hid the command output completely — `ls /nope` came
+        // non-zero exit (exit 1 with output, exit 124 with partial
+        // output) hid the command output completely — `ls /nope` came
         // back as a bare `{"exitCode":1}`. Only errors, whose text the client
         // surfaces separately, carry the structured payload.
         result.is_error = Some(true);
@@ -361,8 +361,8 @@ fn finalize_call_result(
     result
 }
 
-/// #1090: exit 1 with non-empty stdout is not an error for grep/diff/test.
-/// #1086/#1089: exit 124 (timeout) with captured partial output is returned
+/// Exit 1 with non-empty stdout is not an error for grep/diff/test.
+/// Exit 124 (timeout) with captured partial output is returned
 /// as a success with a timeout marker, not as an error. The partial output is
 /// often enough to answer the question; treating it as a failure causes the
 /// client to retry the entire pipeline.
@@ -418,7 +418,7 @@ mod shell_outcome_tests {
 
     #[test]
     fn nonzero_exit_with_output_is_not_error() {
-        // #1090: exit 1 with command output (before [exit:] footer) is NOT
+        // Exit 1 with command output (before [exit:] footer) is NOT
         // a tool error — grep/diff/test exit 1 with results is normal.
         let r = finalize_call_result("boom\n[exit:1]", Some(ShellOutcome::Exit(1)));
         assert_ne!(
@@ -426,7 +426,7 @@ mod shell_outcome_tests {
             Some(true),
             "exit 1 with output must NOT set isError (#1090)"
         );
-        // #1127: and it must carry no structuredContent either — clients that
+        // And it must carry no structuredContent either — clients that
         // prefer it would render `{"exitCode":1}` and drop the output.
         assert!(
             r.structured_content.is_none(),
@@ -437,7 +437,7 @@ mod shell_outcome_tests {
 
     #[test]
     fn stderr_only_failure_keeps_its_text() {
-        // #1127: `ls /nonexistent` writes only to stderr and exits 1. The text
+        // `ls /nonexistent` writes only to stderr and exits 1. The text
         // block is the sole carrier of the diagnostic, so it must survive.
         let text = "ls: /nonexistent-path-xyz: No such file or directory\n[exit:1]";
         let r = finalize_call_result(text, Some(ShellOutcome::Exit(1)));
@@ -448,7 +448,7 @@ mod shell_outcome_tests {
 
     #[test]
     fn timeout_with_partial_output_keeps_its_text() {
-        // #1086/#1127: same shape for exit 124 — partial output is a success
+        // Same shape for exit 124 — partial output is a success
         // result, so structuredContent must not displace it.
         let text = "line one\nERROR: command timed out after 5000ms";
         let r = finalize_call_result(text, Some(ShellOutcome::Exit(124)));
@@ -507,7 +507,7 @@ mod shell_outcome_tests {
 mod roots_retry_tests {
     use super::roots_list_failure_is_permanent;
 
-    /// Cursor's pattern (#699): roots capability declared, `roots/list`
+    /// Cursor's pattern: roots capability declared, `roots/list`
     /// answered with `-32601` — retrying is pointless and must stop.
     #[test]
     fn method_not_found_is_permanent() {
@@ -519,7 +519,7 @@ mod roots_retry_tests {
         assert!(roots_list_failure_is_permanent(&err));
     }
 
-    /// The VS Code multi-window pattern (GH #694): the second window's client
+    /// The VS Code multi-window pattern: the second window's client
     /// is still starting up, `roots/list` times out or the transport hiccups —
     /// these must stay retryable so root detection recovers.
     #[test]

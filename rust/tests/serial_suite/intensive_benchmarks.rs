@@ -93,39 +93,16 @@ fn bench_tool_descriptions_token_count() {
     eprintln!("  {:<25} {:>8}", "TOTAL", total);
     eprintln!("{}", "=".repeat(70));
 
-    // Budget = the real registry tool surface (single source of truth, #141):
-    // every tool with its full `McpTool::tool_def()` description — exactly what
-    // the live server advertises in full mode. Set with deliberate headroom over
-    // the current actual so adding a tool or two never blocks CI; only raise it
-    // again on a material jump in the surface, not on routine additions (#290).
-    // Raised 3000 -> 4000 for the #496 tool-profile reorg: a material jump that
-    // enriches per-tool profile metadata on the full opt-in surface. The default
-    // surface stays small (see `bench_lazy_default_vs_full_overhead`).
-    // Raised 4000 -> 5200 for #505 (@omar-mohamed-khallaf): the power tier now
-    // carries the same first-line-dense, workflow-first treatment as the other
-    // tiers (actual ~4872), with headroom for a tool or two per #290.
-    // Raised 5200 -> 5600 for #510 (@omar-mohamed-khallaf): the optimized tools
-    // schema adds explicit WORKFLOW:/ANTIPATTERN: intent lines across the surface
-    // (actual ~5498). Validated by the output-quality gate (eval A/B: NO
-    // REGRESSION, Δ +0.039) — the richer intents earn their tokens. The per-
-    // request cost is unchanged (core surface stays at ~2272, see
-    // `core_tool_surface_stays_within_budget`); this full-surface total only
-    // applies in opt-in full mode. Cutting it further is #509 (reduce tool
-    // COUNT), not trimming these eval-validated descriptions.
-    // Raised 5600 -> 6000 for #982: registering ctx_compare (78 -> 79 tools)
-    // pushed the actual to ~5630, over the previous 5600 ceiling whose headroom
-    // had shrunk below one tool. Per #290 the ceiling must carry "a tool or two"
-    // of slack over the actual, so 6000 (actual ~5630) restores that buffer.
+    // Budget = the registry's tool surface: every tool's full description,
+    // exactly what `tools/list` sends. Set with headroom over the actual;
+    // raise it only for a material jump, not for a routine edit.
     assert!(
         total < 6000,
         "Total tool description tokens should be <6000, got {total}"
     );
 
     for (name, desc) in &descriptions {
-        // Every tool — including the ctx_call invoker — stays within a tight
-        // per-tool description budget. ctx_call no longer embeds the full
-        // non-core catalog; agents discover callable tools via ctx_discover_tools
-        // (#680), so no tool is exempt from this ceiling.
+        // Every tool stays within a tight per-tool description budget.
         let t = count_tokens(desc);
         assert!(
             t < 160,
@@ -160,33 +137,8 @@ fn bench_total_input_overhead() {
     );
     eprintln!("{}", "=".repeat(70));
 
-    // Full tool surface (registry SSOT incl. full property schemas) — the
-    // worst-case opt-in overhead. The default lazy surface is far smaller; see
-    // `bench_lazy_default_vs_full_overhead` (#141). Set with deliberate headroom
-    // over the current actual so routine tool additions do not trip CI (#290).
-    // Raised 12000 -> 13000 for the #496 tool-profile reorg (material jump in
-    // the full opt-in surface); the lazy default users actually pay is unaffected.
-    // Raised 13000 -> 14000 for #510 (@omar-mohamed-khallaf): the optimized tools
-    // schema enriches per-parameter descriptions + WORKFLOW/ANTIPATTERN intents
-    // (actual ~13707: instr ~457 + desc ~5498 + schemas ~7752). Output-quality
-    // gate confirms NO REGRESSION (eval A/B Δ +0.039). The lazy default surface
-    // (bench_lazy_default_vs_full_overhead) is unaffected; cutting the full-
-    // surface total is #509 (reduce tool COUNT).
-    // Raised 14000 -> 15000 for #982: registering ctx_compare (78 -> 79 tools)
-    // lifted the actual to ~14205 (instr ~440 + desc ~5630 + schemas ~8135), over
-    // the previous 14000 ceiling whose headroom had shrunk below one tool. Per
-    // #290 the ceiling must carry "a tool or two" of slack over the actual, so
-    // 15000 (actual ~14205) restores that buffer.
-    // Raised 15000 -> 16000 for #1082: registering ctx_quality (80 -> 81 tools)
-    // lifted the actual to ~15116 (instr ~502 + desc ~5905 + schemas ~8709), over
-    // the previous 15000 ceiling. Per #290 the ceiling must carry "a tool or two"
-    // of slack over the actual, so 16000 (actual ~15116, ~2 tools headroom)
-    // restores that buffer.
-    // Raised 16000 -> 18000 for #1020: per-action schema conditionals across 23
-    // tools added ~1300 tok to the full profile (actual ~17293). Default profile
-    // is unaffected (conditionals only on non-default-advertised tools).
-    // The lazy default surface users actually pay is unaffected
-    // (bench_lazy_default_vs_full_overhead).
+    // Everything a session pays before its first call: instructions, tool
+    // descriptions and schemas. Set with headroom over the actual.
     assert!(
         total < 18000,
         "Total input overhead should be <18000 tokens, got {total}"
@@ -209,7 +161,7 @@ fn bench_git_all_commands() {
         (
             "git commit -m 'feat'",
             generate_git_commit_with_hooks(30),
-            0.0, // verbatim: git write-commands are never compressed (daviddatu_ fix)
+            0.0, // verbatim: git write-commands are never compressed
         ),
         ("git push origin main", generate_git_push(), 0.0), // verbatim
     ];

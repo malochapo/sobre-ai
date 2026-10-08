@@ -99,7 +99,7 @@ use crate::core::pathutil::is_broad_or_unsafe_root;
 /// parent as the project root.
 fn detect_multi_root_workspace(dir: &std::path::Path) -> Option<String> {
     // Never enumerate the home dir or macOS TCC-protected dirs (Documents/Desktop/
-    // Downloads): read_dir there triggers a macOS privacy prompt (#356), and a real
+    // Downloads): read_dir there triggers a macOS privacy prompt, and a real
     // project under them is already handled upstream via has_project_marker.
     if crate::core::pathutil::is_tcc_sensitive_home_dir(dir) {
         return None;

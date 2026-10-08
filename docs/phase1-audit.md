@@ -53,7 +53,7 @@ The lots run in this order:
 | B | The MCP tools: bugs, incomplete features, drift; decisions 1–4 and 6 | done (#32, #33, #34, #35, #36, #37) |
 | C | The CLI and the proxy | done (#38, #39) |
 | R | Tool names `ctx_*` → `sobre_*` (decision 9) | done (#40) |
-| D | Dead code, stale files, stale comments, duplicates; decision 7 | in progress (#41, #42, #43) |
+| D | Dead code, stale files, stale comments, duplicates; decision 7 | in progress (#41, #42, #43, #PR_DD) |
 | F | Release: publish a `dense` binary (decision 8) | open |
 | E | Documentation and install path, written last so it describes the final behaviour | open |
 
@@ -699,7 +699,7 @@ written with; the lots after it use the new names.
 
 Fixed so far: #41 (dead code, write-only stores, decision 7), #42
 (constant settings, test-only code, dead modules), #43 (Cargo, stale files,
-contracts).
+contracts), #PR_DD (comments).
 
 ### Code that compiles but never does anything
 
@@ -916,13 +916,16 @@ contracts).
 
 ### Comments
 
-- [ ] **D15 Upstream references.**
+- [x] **D15 Upstream references.**
   - 1,409 comment lines in 311 files cite upstream issue numbers
     (`GL #1140`, `(#271)`, `GH #669`…).
   - 14 test files are named after upstream issues or reporters
     (`bazsi_reported_scenarios.rs`, `daviddatu_powershell_scenarios.rs`,
     `issue_1088_*`, `*_476/554/594/595/596/669`, `p4_docker_*`).
-- [ ] **D16 Comments about code that no longer exists.**
+  - Done: about 1,400 comment lines lose their references (scripted for
+    the unambiguous cases, by hand for the rest), and the 13 test files are
+    named after what they test.
+- [x] **D16 Comments about code that no longer exists.**
   - `cli/dispatch/server.rs:1-2,68-70,86-88,142,396-401`, and
     `help.rs:1-2`.
   - `doctor/mod.rs:214-216,338-342`.
@@ -973,6 +976,20 @@ contracts).
     `LOCK_ORDERING.md:33`, and tests (`index_orchestrator.rs:1030`,
     `terse/mod.rs:102`, `intensive_benchmarks.rs`,
     `hn_hardening_scenarios.rs`, `sobre_read_lmd_md_raw.rs:6`).
+
+  - Done, plus a sweep of the names of removed subsystems (dashboard,
+    daemon, addons, gateway router, plugin system, cognition loop) in
+    comments; the managed ONNX Runtime now lives in
+    `<data_dir>/onnxruntime/<version>/` instead of under `addons/bin/`.
+
+- [ ] **D19 Found while fixing D16: more dead code.**
+  - `consolidation_engine`: only `ConsolidateOptions::manual()` is ever
+    built. `scheduled()`, `incremental_auto()`, `consolidate_latest`,
+    `ConsolidationBudgets` and `ConsolidationOutcome` have no caller, so
+    the budgets, the salience floor and the incremental watermark in
+    `sobre_knowledge/consolidate.rs` never run.
+  - The session `Playbook` is rendered at compaction but nothing ever adds
+    an entry.
 
 ### Duplicates
 

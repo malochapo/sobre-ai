@@ -14,7 +14,7 @@ use crate::tools::CrpMode;
 /// This implements lazy evaluation for context: start with the overview,
 /// then zoom into specific files as needed.
 /// Returns the rendered overview plus whether it is the complete graph-backed
-/// view (#1134). `false` means the partial, still-indexing fallback — callers
+/// view. `false` means the partial, still-indexing fallback — callers
 /// must take it from here rather than pattern-matching the body text.
 pub(crate) fn handle(
     _cache: &SessionCache,
@@ -165,7 +165,7 @@ pub(crate) fn handle(
         } else {
             format!("  scanned {scan_age}")
         };
-        // #658 F6: the header counts file-level (import/type_ref) edges; the
+        // F6: the header counts file-level (import/type_ref) edges; the
         // function-level call graph is a separate artifact. When one has been
         // built (the sobre_graph call actions persist it lazily), surface it too —
         // otherwise a single-file project reads "0 edges" while it has call edges.
@@ -498,7 +498,7 @@ fn file_line_count(path: &str) -> usize {
 }
 
 /// Builds an immediately-useful overview while the knowledge graph is still
-/// being indexed in the background (#2365). Instead of only telling the user to
+/// being indexed in the background. Instead of only telling the user to
 /// "try again in 1-2 minutes", we return what is already available: a shallow
 /// directory tree, the detected project markers, and persistent project
 /// knowledge — plus a note that the richer graph-based view will follow.
@@ -607,7 +607,7 @@ mod tests {
         assert!(s.is_char_boundary(start));
     }
 
-    /// #658 F6: when a persisted call graph exists, the overview header must
+    /// F6: when a persisted call graph exists, the overview header must
     /// surface its edge count — a single-file project has 0 file-level edges
     /// but may well have call edges, and the two surfaces must not contradict.
     #[test]

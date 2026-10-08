@@ -22,7 +22,7 @@ use crate::tools::CrpMode;
 /// Wall-time budget for the semantic-ranking stage. The exact-match and symbol
 /// stages are index-backed and cheap; only semantic ranking can hit a cold
 /// `O(corpus)` BM25 build. We never let that block the agent loop: past the
-/// budget (4s, tuned for cold-start coverage #902) we return what we have and let the detached worker finish warming the
+/// budget (4s, tuned for cold-start coverage) we return what we have and let the detached worker finish warming the
 /// resident cache for the next call.
 const DEFAULT_SEMANTIC_BUDGET_MS: u64 = 4000;
 
@@ -122,7 +122,7 @@ fn build_associative_block(project_root: &str, keywords: &[String]) -> String {
     let mut s = String::from("\n## Related (associative: import/call graph + learned co-access)\n");
     for (file, activation) in ranked {
         // Forward-slash normalize so Windows backslash paths are never escape-
-        // mangled by client render layers (issue #324).
+        // mangled by client render layers.
         let file = crate::core::protocol::display_path(&file);
         s.push_str(&format!("- {file} (activation {activation:.2})\n"));
     }
@@ -337,7 +337,7 @@ fn ranked_files_budgeted(task: &str, project_root: &str, crp_mode: CrpMode) -> S
 /// The old message always promised ranking would be "instant on the next call".
 /// That is a lie when the index build *failed* or the index is too large to
 /// persist — in those cases every call rebuilds and the promise never comes
-/// true (issue #249: "keeps saying it's warming up … but it never happens").
+/// true ("keeps saying it's warming up … but it never happens").
 /// We now read the real orchestrator state and tell the agent exactly what is
 /// happening and what to do about it.
 fn deferred_ranking_note(project_root: &str) -> String {
@@ -596,7 +596,7 @@ mod tests {
     #[test]
     fn deferred_note_for_idle_index_is_optimistic_but_honest() {
         // Unknown project → orchestrator state is idle. The note must NOT promise
-        // "instant on the next call" (the dishonest wording from #249); it should
+        // "instant on the next call" (the dishonest wording); it should
         // explain the index is warming and will be fast once cached.
         let tmp = tempfile::tempdir().unwrap();
         let note = deferred_ranking_note(tmp.path().to_string_lossy().as_ref());

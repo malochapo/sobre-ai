@@ -1,5 +1,5 @@
 //! End-to-end tests for `sobre_patch` through the real read→guard→atomic-write
-//! path (epic #1008). The pure line-model is tested in `apply.rs`; here we
+//! path. The pure line-model is tested in `apply.rs`; here we
 //! verify on-disk behaviour, staleness rejection and batch atomicity.
 
 use super::*;
@@ -58,7 +58,7 @@ fn set_line_applies_and_invalidates() {
     );
 }
 
-// BOM parity (GH #683 follow-up): `sobre_read` strips the UTF-8 BOM, so the
+// BOM parity (follow-up): `sobre_read` strips the UTF-8 BOM, so the
 // anchor hash the model holds for line 1 of a BOM file is over the BOM-less
 // text. The edit side must validate against the same view — and preserve the
 // BOM on disk — or every line-1 edit of a BOM file conflicts forever.
@@ -237,7 +237,7 @@ fn batch_atomic_applies_all_valid_edits_bottom_up() {
 
 #[test]
 fn batch_application_is_byte_deterministic() {
-    // Determinism (#498): the same batch on byte-identical inputs must produce a
+    // Determinism: the same batch on byte-identical inputs must produce a
     // byte-identical result on disk — the core guarantee that makes anchored
     // edits independently verifiable and replayable.
     let original = "fn a() {}\nfn b() {}\nfn c() {}\nfn d() {}\n";

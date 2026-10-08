@@ -7,13 +7,13 @@ macro_rules! static_regex {
     }};
 }
 
-/// #718: unquoted identifier or property-access chains (`SvelteKit`,
+/// Unquoted identifier or property-access chains (`SvelteKit`,
 /// `inputEnv.POCKETBASE_SUPERUSER_PASSWORD`, `serverEnv.getStripeSecretKey`,
 /// `confirmRequiredEndpointKeySchema`) are code REFERENCES to a secret, never
 /// the literal value — the value lives in a gitignored `.env`. Digits make a
 /// token secret-shaped (base64/hex), so any digit keeps the redaction
 /// (conservative: `password=hunter2` stays covered).
-/// #827: detect pure numeric values — integers, floats, scientific notation.
+/// Detect pure numeric values — integers, floats, scientific notation.
 /// These are never secrets even when the key contains `token` or `key`.
 fn looks_like_number(v: &str) -> bool {
     if v.is_empty() {
@@ -29,7 +29,7 @@ fn looks_like_number(v: &str) -> bool {
             .all(|c| c.is_ascii_digit() || c == '.' || c == 'e' || c == 'E' || c == '+' || c == '-')
 }
 
-/// #827: env-variable reference patterns that should not be redacted.
+/// Env-variable reference patterns that should not be redacted.
 /// Matches: `os.environ/NAME`, `os.getenv("NAME")`, `process.env.NAME`,
 /// `inputEnv.NAME`, `${NAME}`, `$NAME`, `%NAME%` (Windows).
 fn is_env_reference(v: &str) -> bool {
@@ -71,7 +71,7 @@ fn is_identifier_reference(value: &str) -> bool {
     if v.is_empty() || v.starts_with('"') || v.starts_with('\'') || v.starts_with('`') {
         return false;
     }
-    // #827: env-variable reference patterns are not secrets.
+    // Env-variable reference patterns are not secrets.
     // `os.environ/MY_SERVICE_API_KEY`, `process.env.NAME`, `${VAR}`, `$VAR`.
     if is_env_reference(v) {
         return true;
@@ -86,7 +86,7 @@ fn is_identifier_reference(value: &str) -> bool {
     })
 }
 
-/// #718: obvious placeholder/example values (`ghp_change_me`, `your_key_here`,
+/// Obvious placeholder/example values (`ghp_change_me`, `your_key_here`,
 /// `<insert-token>`) are documentation, not secrets — `.env.example` files
 /// must survive sobre_read verbatim.
 fn is_placeholder_value(value: &str) -> bool {
@@ -118,13 +118,13 @@ fn is_placeholder_value(value: &str) -> bool {
 
 /// Right-hand sides that look like `key: value` but are obviously not secrets:
 /// TypeScript type annotations and language literals. Redacting these corrupts
-/// source files read through `sobre_read` (GH #430), so the key/value rules skip
+/// source files read through `sobre_read`, so the key/value rules skip
 /// them. Compared case-insensitively after trimming surrounding quotes.
 fn is_non_secret_literal(value: &str) -> bool {
     let v = value
         .trim()
         .trim_matches(|c| c == '"' || c == '\'' || c == '`');
-    // #827: pure numbers (integer, float, scientific notation) are never secrets.
+    // Pure numbers (integer, float, scientific notation) are never secrets.
     // `input_cost_per_token: 1.4e-06` must not be redacted.
     if looks_like_number(v) {
         return true;
@@ -132,7 +132,7 @@ fn is_non_secret_literal(value: &str) -> bool {
     // Type expressions are never flat secret tokens: real keys/tokens are drawn
     // from `[A-Za-z0-9+/=_-]`, whereas type annotations carry angle brackets,
     // unions, arrays or call/object syntax. `password: Promise<string>` and
-    // `apiKey: Record<string, unknown>` must survive sobre_read verbatim (GH #430).
+    // `apiKey: Record<string, unknown>` must survive sobre_read verbatim.
     if v.contains(['<', '>', '|', '(', ')', '[', ']', '{', '}']) {
         return true;
     }
@@ -167,11 +167,11 @@ struct Rule {
     /// the match is left untouched if that value is a non-secret literal
     /// (`password: undefined`), an identifier reference
     /// (`serverEnv.getStripeSecretKey`) or a placeholder (`ghp_change_me`) —
-    /// see `is_benign_secret_value` (GH #430, #718).
+    /// see `is_benign_secret_value`.
     guard_value: bool,
 }
 
-/// Combined benign-value check for key/value secret rules (#430 + #718):
+/// Combined benign-value check for key/value secret rules:
 /// language literals and type annotations, unquoted identifier/property
 /// references, and documentation placeholders are never redacted. Quoted
 /// string values stay protected — they ARE literal values.
@@ -182,7 +182,7 @@ pub(crate) fn is_benign_secret_value(value: &str) -> bool {
         || is_placeholder_value(value)
 }
 
-/// #1095: when the regex `key=` consumes one `=` from `==`, the captured
+/// When the regex `key=` consumes one `=` from `==`, the captured
 /// "value" is a bare `=` (or `==`, `!=`). A comparison operator is never
 /// a secret; redacting it corrupts source semantics.
 fn is_comparison_operator_residue(value: &str) -> bool {
@@ -193,7 +193,7 @@ fn is_comparison_operator_residue(value: &str) -> bool {
 /// The single source of truth for secret patterns. `shell::redact` delegates
 /// here so the two layers can never drift apart again.
 ///
-/// #718 word boundaries: the key/value alternations start with
+/// Word boundaries: the key/value alternations start with
 /// `(?:^|[^a-z0-9])` (consumed into the kept prefix — the regex crate has no
 /// lookbehind) so camelCase subwords (`superuserPassword`,
 /// `getStripeSecretKey`) never trigger a rule, while SNAKE_CASE env names
@@ -211,7 +211,7 @@ fn redaction_rules() -> Vec<Rule> {
             guard_value: false,
         },
         // Key/value secrets: group 1 = predecessor + `name=`/`name: ` prefix
-        // (kept), group 2 = the value (redacted unless benign — GH #430/#718).
+        // (kept), group 2 = the value (redacted unless benign).
         Rule {
             label: "API key param",
             re: static_regex!(
@@ -239,7 +239,7 @@ fn redaction_rules() -> Vec<Rule> {
             guard_value: false,
         },
         // Group 1 = prefix (kept), group 2 = the 32+ char value. Guarded since
-        // #718: 32-char identifiers like `confirmRequiredEndpointKeySchema`
+        // 32-char identifiers like `confirmRequiredEndpointKeySchema`
         // are references, not secrets.
         Rule {
             label: "Generic long secret",
@@ -263,7 +263,7 @@ pub fn redact_text(input: &str) -> String {
                     && is_benign_secret_value(value.as_str())
                 {
                     // Not a secret (identifier reference, literal, placeholder)
-                    // — keep verbatim (#430, #718).
+                    // — keep verbatim.
                     return whole.to_string();
                 }
                 match caps.get(1) {
@@ -280,7 +280,7 @@ pub fn redact_text(input: &str) -> String {
 mod tests {
     use super::*;
 
-    // --- #952: exclude_patterns compilation cache ---
+    // --- exclude_patterns compilation cache ---
 
     #[test]
     fn redacts_bearer_token() {
@@ -308,7 +308,7 @@ mod tests {
         assert!(!out.contains("hunter2"));
     }
 
-    /// GH #430: TypeScript type annotations and language literals must NOT be
+    /// TypeScript type annotations and language literals must NOT be
     /// redacted — over-eager masking corrupted source files read via sobre_read.
     #[test]
     fn keeps_non_secret_literals() {
@@ -325,7 +325,7 @@ mod tests {
         }
     }
 
-    /// GH #430: TS type annotations (generics, unions, arrays, function/object
+    /// TS type annotations (generics, unions, arrays, function/object
     /// types) carry angle brackets / brackets that real secret tokens never do,
     /// so they must survive verbatim even when the key looks sensitive.
     #[test]
@@ -374,7 +374,7 @@ mod tests {
         assert!(!out.contains("abcdefghijklmnopqrstuvwxyz"));
     }
 
-    // ── #718: benign identifier references, prose and placeholders ──
+    // ── benign identifier references, prose and placeholders ──
 
     /// Repro 1: prose that mentions a keyword must not have the following
     /// word redacted — "token: SvelteKit's…" is documentation, not a secret.
@@ -419,7 +419,7 @@ mod tests {
     }
 
     /// The flip side: real secret-shaped values must STILL be redacted after
-    /// the #718 guards.
+    /// the guards.
     #[test]
     fn still_redacts_real_secret_values() {
         // Digit-bearing value after a snake_case env name.
@@ -453,7 +453,7 @@ mod tests {
         assert!(!is_placeholder_value("A1b2C3d4E5f6G7h8"));
     }
 
-    /// GH #827: scientific notation and plain numbers after keys containing
+    /// Scientific notation and plain numbers after keys containing
     /// `token` must not be redacted — these are pricing/cost fields.
     #[test]
     fn keeps_numeric_values_827() {
@@ -477,7 +477,7 @@ mod tests {
         }
     }
 
-    /// GH #827: env-variable references must not be redacted — they are
+    /// Env-variable references must not be redacted — they are
     /// pointers to secrets, not the secrets themselves.
     #[test]
     fn keeps_env_references_827() {
@@ -507,7 +507,7 @@ mod tests {
         }
     }
 
-    /// GH #827: real secrets must STILL be redacted (regression guard).
+    /// Real secrets must STILL be redacted (regression guard).
     #[test]
     fn still_redacts_real_secrets_827() {
         for input in [
@@ -523,7 +523,7 @@ mod tests {
         }
     }
 
-    /// GH #1095: `token == ""` in Go source must not be redacted — the regex
+    /// `token == ""` in Go source must not be redacted — the regex
     /// consumes the first `=` leaving group 2 = `=` (comparison residue).
     #[test]
     fn keeps_comparison_operators_in_source() {

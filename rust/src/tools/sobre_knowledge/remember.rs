@@ -26,7 +26,7 @@ pub(crate) fn handle_remember(
     };
     // `key` is optional: agents (and our own injected instructions) commonly
     // call remember with just category+content. Derive a deterministic slug
-    // from the value so the call succeeds instead of erroring (#658).
+    // from the value so the call succeeds instead of erroring.
     let derived_key;
     let k = if let Some(k) = key {
         k
@@ -39,8 +39,8 @@ pub(crate) fn handle_remember(
     let v = v.as_str();
     let policy = crate::core::memory_policy::MemoryPolicy::default();
     // Serialize the read-modify-write under a per-project lock so parallel
-    // `remember` calls cannot clobber each other (issue #326). The closure
-    // operates on the freshly (re)loaded state inside the lock. Admission (#970)
+    // `remember` calls cannot clobber each other. The closure
+    // operates on the freshly (re)loaded state inside the lock. Admission
     // is enforced here, on the agent-facing path.
     let (knowledge, admission) = match ProjectKnowledge::mutate_locked(project_root, |kn| {
         let r = kn.remember_admitted(cat, k, v, session_id, conf, &policy);
@@ -147,8 +147,7 @@ pub(crate) fn handle_remember(
             // snapshot. The side-car write previously ran lock-free against a
             // stale snapshot, so parallel `remember` calls clobbered each
             // other's vectors and pruned just-stored embeddings — semantic
-            // recall then returned far fewer hits than facts stored (issue #412,
-            // a #326 follow-up).
+            // recall then returned far fewer hits than facts stored.
             let (warn, semantic) = ProjectKnowledge::with_project_lock(project_root, || {
                 let mut idx = crate::core::knowledge_embedding::KnowledgeEmbeddingIndex::load(
                     &knowledge.project_hash,
@@ -249,7 +248,7 @@ pub(crate) fn handle_remember(
 
 /// Deterministic key slug from a fact's value: the first four words,
 /// lowercased, non-alphanumerics collapsed to single dashes, capped at 48
-/// bytes. A pure function of the content (no timestamps/counters, #498) so
+/// bytes. A pure function of the content (no timestamps/counters) so
 /// repeated remembers of the same value merge into the same key.
 pub(crate) fn derive_key_from_value(value: &str) -> String {
     let words: Vec<&str> = value.split_whitespace().take(4).collect();
@@ -419,7 +418,7 @@ pub(crate) fn handle_recall(
     }
 
     // Bare recall (no query, no category): show the most recent current facts
-    // instead of erroring — "what do we know?" is the natural first call (#658).
+    // instead of erroring — "what do we know?" is the natural first call.
     let limit = policy.knowledge.recall_facts_limit;
     let mut current: Vec<&crate::core::knowledge::KnowledgeFact> =
         knowledge.facts.iter().filter(|f| f.is_current()).collect();
@@ -533,7 +532,7 @@ fn recall_as_of(
 ///
 /// The save is reconciled against the latest on-disk state *under the shared
 /// lock* so it never clobbers facts a concurrent writer committed after
-/// `knowledge` was snapshotted (issue #326): a bare `knowledge.save()` here was
+/// `knowledge` was snapshotted: a bare `knowledge.save` here was
 /// a blind overwrite and could drop a just-`remember`ed fact. Recall only
 /// rehydrates archived facts and bumps retrieval metadata — it never removes or
 /// supersedes — so re-adding any current snapshot fact missing from the fresh
@@ -568,7 +567,7 @@ pub(crate) fn rehydrate_from_archives(
     session_id: &str,
     policy: &MemoryPolicy,
 ) -> bool {
-    // Scan every *retained* archive (#995): the reach now aligns with retention,
+    // Scan every *retained* archive: the reach now aligns with retention,
     // so a recall miss can recover from any archive still on disk instead of only
     // the newest few that the prior fixed cap left reachable.
     let archives = crate::core::memory_lifecycle::reachable_archives(
