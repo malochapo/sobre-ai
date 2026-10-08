@@ -14,7 +14,6 @@ use crate::core::signatures;
 mod edges;
 pub(crate) use edges::*;
 #[allow(unreachable_pub)]
-pub(crate) mod file_id;
 #[cfg(test)]
 mod tests;
 
@@ -226,9 +225,6 @@ pub struct ProjectIndex {
     pub files: HashMap<String, FileEntry>,
     pub edges: Vec<IndexEdge>,
     pub symbols: HashMap<String, SymbolEntry>,
-    /// Graph-local path interner: one owned allocation per distinct file path.
-    /// Populated during scan; used for O(1) path→id lookups in queries.
-    pub(crate) interner: file_id::PathInterner,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -268,19 +264,7 @@ impl ProjectIndex {
             files: HashMap::new(),
             edges: Vec::new(),
             symbols: HashMap::new(),
-            interner: file_id::PathInterner::new(),
         }
-    }
-
-    /// Rebuild the interner from the current `files` keys. Called after a scan
-    /// and after materialization from the property graph, where `interner` is
-    /// absent.
-    pub(crate) fn rebuild_interner(&mut self) {
-        let mut interner = file_id::PathInterner::with_capacity(self.files.len());
-        for key in self.files.keys() {
-            interner.intern(key);
-        }
-        self.interner = interner;
     }
 
     pub fn index_dir(project_root: &str) -> Option<std::path::PathBuf> {
@@ -839,7 +823,6 @@ fn scan_inner(project_root: &str) -> (ProjectIndex, HashMap<String, String>) {
         crate::core::memory_guard::jemalloc_purge();
     }
 
-    index.rebuild_interner();
     build_edges_cached(&mut index, &content_cache);
 
     if let Err(e) = index.save() {

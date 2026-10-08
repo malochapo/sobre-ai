@@ -103,15 +103,6 @@ pub(crate) fn persist(content: &str) -> Option<String> {
             }
         }
     }
-    if path.is_file() {
-        crate::core::relevance_tracker::register_compressed(
-            handle.clone(),
-            content,
-            "proxy",
-            crate::core::tokens::count_tokens(content),
-            0,
-        );
-    }
     Some(handle)
 }
 

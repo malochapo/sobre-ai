@@ -57,8 +57,6 @@ fn derived_supersedes_edges(
                     last_seen: None,
                     count: 0,
                     source_session: f.source_session.clone(),
-                    strength: 0.5,
-                    decay_rate: 0.02,
                 });
             }
         } else if f.supersedes.as_deref() == Some(&focus_id) {
@@ -70,8 +68,6 @@ fn derived_supersedes_edges(
                 last_seen: None,
                 count: 0,
                 source_session: f.source_session.clone(),
-                strength: 0.5,
-                decay_rate: 0.02,
             });
         }
     }

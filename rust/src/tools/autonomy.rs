@@ -1,5 +1,3 @@
-use std::collections::HashSet;
-use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use crate::core::cache::SessionCache;
@@ -7,8 +5,6 @@ use crate::core::cache::SessionCache;
 /// Tracks the one-shot cache deduplication.
 pub struct AutonomyState {
     pub dedup_applied: AtomicBool,
-    /// One-shot keys for large-output hints (`sobre_shell` bytes, `sobre_read` full tokens).
-    pub large_output_hints_shown: Mutex<HashSet<String>>,
 }
 
 impl Default for AutonomyState {
@@ -22,7 +18,6 @@ impl AutonomyState {
     pub fn new() -> Self {
         Self {
             dedup_applied: AtomicBool::new(false),
-            large_output_hints_shown: Mutex::new(HashSet::new()),
         }
     }
 }
@@ -47,5 +42,5 @@ pub fn maybe_auto_dedup(state: &AutonomyState, cache: &mut SessionCache) {
         return;
     }
 
-    let _ = crate::tools::impl_dedup::handle_action(cache, "apply");
+    crate::tools::impl_dedup::apply(cache);
 }

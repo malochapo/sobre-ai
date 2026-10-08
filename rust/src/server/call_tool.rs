@@ -59,7 +59,7 @@ impl SobreServer {
         let is_raw_shell = name == "sobre_shell" && {
             let arg_raw = helpers::get_bool(args, "raw").unwrap_or(false);
             let arg_bypass = helpers::get_bool(args, "bypass").unwrap_or(false);
-            arg_raw || arg_bypass || crate::core::runtime_flags::raw_enabled()
+            arg_raw || arg_bypass
         };
 
         let pre_terse_len = result_text.len();

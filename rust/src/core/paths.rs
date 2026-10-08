@@ -78,11 +78,6 @@ pub fn config_dir() -> Result<PathBuf, String> {
     category_dir("SOBRE_CONFIG_DIR", "XDG_CONFIG_HOME", ".config")
 }
 
-/// A member (a file or sub-directory) of the config dir.
-pub fn config_dir_member(sub: &str) -> Result<PathBuf, String> {
-    Ok(config_dir()?.join(sub))
-}
-
 /// Data directory — sessions, vectors, graphs, knowledge, archives, memory.
 ///
 /// Delegates to [`sobre_data_dir`]: `SOBRE_DATA_DIR`, else

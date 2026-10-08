@@ -11,24 +11,8 @@ const DEFAULT_CONTEXT_WINDOW: usize = 128_000;
 /// and task changes without overreacting to one read.
 const PHI_REREAD_ALPHA: f64 = 0.5;
 
-fn ledger_path(agent_id: &str) -> Result<std::path::PathBuf, String> {
-    let dir = crate::core::paths::state_dir()?;
-    if agent_id == "default" {
-        Ok(dir.join("context_ledger.json"))
-    } else {
-        let ledger_dir = dir.join("ledger");
-        let safe_id: String = agent_id
-            .chars()
-            .map(|c| {
-                if c.is_alphanumeric() || c == '-' || c == '_' {
-                    c
-                } else {
-                    '_'
-                }
-            })
-            .collect();
-        Ok(ledger_dir.join(format!("{safe_id}.json")))
-    }
+fn ledger_path() -> Result<std::path::PathBuf, String> {
+    Ok(crate::core::paths::state_dir()?.join("context_ledger.json"))
 }
 
 fn atomic_write_json(path: &std::path::Path, data: &str) {
@@ -364,7 +348,15 @@ impl ContextLedger {
     }
 
     pub fn save(&self) {
-        self.save_for_agent("default");
+        if let Ok(path) = ledger_path() {
+            if let Some(parent) = path.parent() {
+                let _ = std::fs::create_dir_all(parent);
+            }
+            let _lock = acquire_ledger_lock(&path);
+            if let Ok(json) = serde_json::to_string(self) {
+                atomic_write_json(&path, &json);
+            }
+        }
     }
 
     /// Debounced save: only flushes to disk if >=3s since last save.
@@ -378,18 +370,6 @@ impl ContextLedger {
         }
         self.save();
         self.last_flush = Some(now);
-    }
-
-    pub fn save_for_agent(&self, agent_id: &str) {
-        if let Ok(path) = ledger_path(agent_id) {
-            if let Some(parent) = path.parent() {
-                let _ = std::fs::create_dir_all(parent);
-            }
-            let _lock = acquire_ledger_lock(&path);
-            if let Ok(json) = serde_json::to_string(self) {
-                atomic_write_json(&path, &json);
-            }
-        }
     }
 
     const MAX_LEDGER_ENTRIES: usize = 200;
@@ -451,11 +431,7 @@ impl ContextLedger {
     }
 
     pub fn load() -> Self {
-        Self::load_for_agent("default")
-    }
-
-    pub fn load_for_agent(agent_id: &str) -> Self {
-        let mut ledger: Self = ledger_path(agent_id)
+        let mut ledger: Self = ledger_path()
             .ok()
             .and_then(|p| {
                 let _lock = acquire_ledger_lock(&p);
@@ -468,7 +444,7 @@ impl ContextLedger {
         }
         let pruned = ledger.prune();
         if pruned > 0 {
-            ledger.save_for_agent(agent_id);
+            ledger.save();
         }
         ledger
     }

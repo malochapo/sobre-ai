@@ -428,7 +428,7 @@ impl BM25Index {
             }
             let content = if crate::core::extractors::is_binary_document(&abs) {
                 match std::fs::read(&abs) {
-                    Ok(bytes) => crate::core::extractors::extract(&abs, &bytes).text,
+                    Ok(bytes) => crate::core::extractors::text(&bytes),
                     Err(_) => continue,
                 }
             } else {
@@ -659,25 +659,11 @@ impl BM25Index {
     }
 
     pub fn load_or_build(root: &Path) -> Self {
-        Self::load_or_build_inner(root, false)
-    }
-
-    /// Like `load_or_build` but uses a fast sentinel-sampling staleness check
-    /// that skips the expensive full directory walk for new-file detection.
-    pub fn load_or_build_fast(root: &Path) -> Self {
-        Self::load_or_build_inner(root, true)
-    }
-
-    fn load_or_build_inner(root: &Path, fast_stale: bool) -> Self {
         if !is_safe_bm25_root(root) {
             return Self::default();
         }
         if let Some(idx) = Self::load(root) {
-            let stale = if fast_stale {
-                bm25_index_looks_stale_fast(&idx, root)
-            } else {
-                bm25_index_looks_stale(&idx, root)
-            };
+            let stale = bm25_index_looks_stale(&idx, root);
             if !stale {
                 return idx;
             }
@@ -741,16 +727,6 @@ fn is_safe_bm25_root(root: &Path) -> bool {
 }
 
 fn bm25_index_looks_stale(index: &BM25Index, root: &Path) -> bool {
-    bm25_index_looks_stale_inner(index, root, false)
-}
-
-/// Fast staleness check: samples a subset of tracked files and skips the
-/// expensive `list_code_files()` walk for new-file detection.
-pub fn bm25_index_looks_stale_fast(index: &BM25Index, root: &Path) -> bool {
-    bm25_index_looks_stale_inner(index, root, true)
-}
-
-fn bm25_index_looks_stale_inner(index: &BM25Index, root: &Path, fast: bool) -> bool {
     if index.chunks.is_empty() {
         return false;
     }
@@ -766,31 +742,6 @@ fn bm25_index_looks_stale_inner(index: &BM25Index, root: &Path, fast: bool) -> b
                 continue;
             }
             if !root.join(rel).exists() {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    if fast {
-        let sample_size = index.files.len().min(SENTINEL_SAMPLE_SIZE);
-        let step = if index.files.len() > sample_size {
-            index.files.len() / sample_size
-        } else {
-            1
-        };
-        for (i, (rel, old_state)) in index.files.iter().enumerate() {
-            if i % step != 0 {
-                continue;
-            }
-            let abs = root.join(rel);
-            if !abs.exists() {
-                return true;
-            }
-            let Some(cur) = IndexedFileState::from_path(&abs) else {
-                return true;
-            };
-            if &cur != old_state {
                 return true;
             }
         }
@@ -818,8 +769,6 @@ fn bm25_index_looks_stale_inner(index: &BM25Index, root: &Path, fast: bool) -> b
 
     false
 }
-
-const SENTINEL_SAMPLE_SIZE: usize = 10;
 
 fn bounded_zstd_decode(compressed: &[u8], max_bytes: u64) -> Option<Vec<u8>> {
     use std::io::Read;
