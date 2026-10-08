@@ -53,7 +53,7 @@ The lots run in this order:
 | B | The MCP tools: bugs, incomplete features, drift; decisions 1–4 and 6 | done (#32, #33, #34, #35, #36, #37) |
 | C | The CLI and the proxy | done (#38, #39) |
 | R | Tool names `ctx_*` → `sobre_*` (decision 9) | done (#40) |
-| D | Dead code, stale files, stale comments, duplicates; decision 7 | in progress (#41, #42, #43, #PR_DD) |
+| D | Dead code, stale files, stale comments, duplicates; decision 7 | in progress (#41, #42, #43, #44) |
 | F | Release: publish a `dense` binary (decision 8) | open |
 | E | Documentation and install path, written last so it describes the final behaviour | open |
 
@@ -699,7 +699,7 @@ written with; the lots after it use the new names.
 
 Fixed so far: #41 (dead code, write-only stores, decision 7), #42
 (constant settings, test-only code, dead modules), #43 (Cargo, stale files,
-contracts), #PR_DD (comments).
+contracts), #44 (comments).
 
 ### Code that compiles but never does anything
 
