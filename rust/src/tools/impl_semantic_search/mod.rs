@@ -1,19 +1,19 @@
 use std::path::Path;
 
 use crate::core::bm25_index::{BM25Index, format_search_results};
-#[cfg(feature = "embeddings")]
+#[cfg(feature = "dense")]
 use crate::core::embedding_index::EmbeddingIndex;
 use crate::tools::CrpMode;
 
 /// The ranking a semantic search uses. Dense and hybrid exist only in builds
-/// with the `embeddings` feature; asking for them elsewhere is an error, never
+/// with the `dense` feature; asking for them elsewhere is an error, never
 /// a quiet BM25 answer.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum SearchMode {
     Bm25,
-    #[cfg(feature = "embeddings")]
+    #[cfg(feature = "dense")]
     Dense,
-    #[cfg(feature = "embeddings")]
+    #[cfg(feature = "dense")]
     Hybrid,
 }
 
@@ -25,11 +25,11 @@ impl SearchMode {
         };
         match mode.as_str() {
             "bm25" => Ok(Self::Bm25),
-            #[cfg(feature = "embeddings")]
+            #[cfg(feature = "dense")]
             "dense" => Ok(Self::Dense),
-            #[cfg(feature = "embeddings")]
+            #[cfg(feature = "dense")]
             "hybrid" => Ok(Self::Hybrid),
-            #[cfg(not(feature = "embeddings"))]
+            #[cfg(not(feature = "dense"))]
             "dense" | "hybrid" => Err(format!(
                 "mode={mode} needs local embeddings, which this build does not include \
                  (build with --features dense). Use mode=bm25."
@@ -41,9 +41,9 @@ impl SearchMode {
     pub(crate) fn as_str(self) -> &'static str {
         match self {
             Self::Bm25 => "bm25",
-            #[cfg(feature = "embeddings")]
+            #[cfg(feature = "dense")]
             Self::Dense => "dense",
-            #[cfg(feature = "embeddings")]
+            #[cfg(feature = "dense")]
             Self::Hybrid => "hybrid",
         }
     }
@@ -118,7 +118,7 @@ pub(crate) fn handle(
             };
             format!("{header}{}", format_search_results(&results, compact))
         }
-        #[cfg(feature = "embeddings")]
+        #[cfg(feature = "dense")]
         SearchMode::Dense | SearchMode::Hybrid => {
             let ranked = if mode == SearchMode::Dense {
                 dense_ranked(query, root, &index, top_k, &filter)
@@ -145,7 +145,7 @@ pub(crate) fn handle(
 /// rendered (`bm25_index::search`, `dense_backend`, `hybrid_search`). Only fires
 /// when embeddings are actually built (feature-gated); a BM25-only fallback build
 /// must keep full bodies for a later real embedding pass.
-#[cfg(feature = "embeddings")]
+#[cfg(feature = "dense")]
 fn shrink_resident_after_embedding(root: &Path, index: std::sync::Arc<BM25Index>) {
     {
         // Release our clone so the cache is the sole Arc owner; otherwise the
@@ -257,7 +257,7 @@ fn related_chunks(
     let Ok(filter) = SearchFilter::new(None, None) else {
         return ("bm25", Vec::new());
     };
-    #[cfg(feature = "embeddings")]
+    #[cfg(feature = "dense")]
     {
         let cfg = crate::core::hybrid_search::HybridConfig::default();
         match hybrid_ranked(text, root, index, top_k, &filter, &cfg) {
@@ -273,7 +273,7 @@ fn related_chunks(
             Err(e) => ("hybrid", vec![format!("ERR: {e}\n")]),
         }
     }
-    #[cfg(not(feature = "embeddings"))]
+    #[cfg(not(feature = "dense"))]
     {
         let _ = root;
         let mut results = index.search(text, filtered_candidate_k(top_k, filter.is_active()));
@@ -294,14 +294,14 @@ fn truncate_query(q: &str, max: usize) -> &str {
 }
 
 mod bm25_store;
-#[cfg(feature = "embeddings")]
+#[cfg(feature = "dense")]
 mod dense;
 pub(crate) mod multi_root;
 mod scope;
 
 pub(crate) use bm25_store::*;
 pub(crate) use bm25_store::{get_thread_cache, set_thread_cache};
-#[cfg(feature = "embeddings")]
+#[cfg(feature = "dense")]
 pub(crate) use dense::*;
 pub(crate) use multi_root::*;
 pub(crate) use scope::*;

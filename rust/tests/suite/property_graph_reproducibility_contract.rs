@@ -1,4 +1,4 @@
-#[cfg(feature = "embeddings")]
+#[cfg(feature = "dense")]
 mod tests {
     use serde_json::Value;
 

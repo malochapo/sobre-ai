@@ -1,6 +1,6 @@
 # Quality Loop v1 — Edit-Outcome Feedback into Mode Selection
 
-Status: experimental (GL #494)
+Status: experimental
 Owner: core engine
 Consumers: `auto_mode_resolver`, `sobre_patch`
 
@@ -8,7 +8,7 @@ Consumers: `auto_mode_resolver`, `sobre_patch`
 
 `BounceTracker` closes the feedback loop for *re-read* bounces (compressed
 read → full re-read). It does not cover edits that fail because the file was
-last read in a compressed mode: the agent quotes an `old_string` from a
+last read in a compressed mode: the agent quotes an `old_text` from a
 `map`/`signatures` rendering whose body was never in context, or edits against
 line anchors that have since drifted. Without a separate signal, the next read
 of a similar file would be compressed the same way.
@@ -30,11 +30,11 @@ Only these outcomes carry signal:
 | Outcome | Condition | Recorded as |
 |---|---|---|
 | Success | edit applied (`CacheEffect::Invalidate`) | success for `(ext, last_mode)` |
-| Compression-correlated failure | string replacement: `old_string` not found (auto-escalation `CacheEffect::StoreFull`, or plain miss after a `full` read as baseline) | failure for `(ext, last_mode)` |
+| Compression-correlated failure | string replacement: `old_text` not found (auto-escalation `CacheEffect::StoreFull`, or plain miss after a `full` read as baseline) | failure for `(ext, last_mode)` |
 | Stale-anchor failure | anchored op returns `CONFLICT:` (the anchors the model edited against had drifted) | failure for `(ext, last_mode)` |
 
 Explicitly **not** recorded (no compression signal): file creation
-(`sobre_patch op=create`; a new file has no recorded read mode), empty or identical `old_string`/`new_string`,
+(`sobre_patch op=create`; a new file has no recorded read mode), empty or identical `old_text`/`new_text`,
 preimage/TOCTOU mismatches, missing files, already-applied edits, structural
 errors in anchored ops, and files never read through sobre (`last_mode`
 empty).
@@ -51,7 +51,7 @@ escalations (`core/edit_quality.rs`), checked first in
 | Failure | Arms (when last mode ≠ target) | Next `mode=auto` resolution | Resolver source |
 |---|---|---|---|
 | Stale `sobre_patch` anchor (`CONFLICT:`) | anchored escalation | `anchored` (fresh line anchors, so the agent retries by reference) | `anchored_edit_fail_escalation` |
-| `old_string` not found | full escalation | `full` | `edit_fail_escalation` |
+| `old_text` not found | full escalation | `full` | `edit_fail_escalation` |
 
 The anchored escalation is checked before the full one. Each escalation is
 consumed by the resolution that uses it, and pending escalations expire after

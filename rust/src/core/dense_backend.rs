@@ -1,14 +1,14 @@
 // Every consumer of these is behind `embeddings`, so gate the imports the same
 // way: a default build must stay warning-free, and a `--features dense` build
 // must still compile.
-#[cfg(feature = "embeddings")]
+#[cfg(feature = "dense")]
 use std::path::Path;
 
-#[cfg(feature = "embeddings")]
+#[cfg(feature = "dense")]
 use crate::core::bm25_index::BM25Index;
-#[cfg(feature = "embeddings")]
+#[cfg(feature = "dense")]
 use crate::core::hnsw::FlatEmbeddings;
-#[cfg(feature = "embeddings")]
+#[cfg(feature = "dense")]
 use crate::core::hybrid_search::{DenseSearchResult, HybridConfig, HybridResult};
 
 /// Which dense backend served a query.
@@ -31,7 +31,7 @@ impl DenseBackendKind {
     }
 }
 
-#[cfg(feature = "embeddings")]
+#[cfg(feature = "dense")]
 #[allow(clippy::too_many_arguments)]
 pub fn dense_results_as_hybrid(
     backend: DenseBackendKind,
@@ -74,7 +74,7 @@ pub fn dense_results_as_hybrid(
         .collect())
 }
 
-#[cfg(feature = "embeddings")]
+#[cfg(feature = "dense")]
 #[allow(clippy::too_many_arguments)]
 pub fn hybrid_results(
     backend: DenseBackendKind,
@@ -110,7 +110,7 @@ pub fn hybrid_results(
     }
 }
 
-#[cfg(feature = "embeddings")]
+#[cfg(feature = "dense")]
 #[allow(clippy::too_many_arguments)]
 fn dense_results(
     backend: DenseBackendKind,
@@ -131,7 +131,7 @@ fn dense_results(
     }
 }
 
-#[cfg(feature = "embeddings")]
+#[cfg(feature = "dense")]
 fn dense_results_local(
     index: &BM25Index,
     engine: &crate::core::embeddings::EmbeddingEngine,
@@ -175,7 +175,7 @@ fn dense_results_local(
 ///
 /// Uses sequential memory access (one dereference) via `FlatEmbeddings::get`,
 /// unlike the old `Arc<[Vec<f32>]>` layout which had two-level indirection.
-#[cfg(feature = "embeddings")]
+#[cfg(feature = "dense")]
 fn top_k_by_similarity(
     query: &[f32],
     embeddings: &FlatEmbeddings,

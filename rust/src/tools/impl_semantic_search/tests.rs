@@ -102,7 +102,7 @@ mod root_resolution_tests {
     }
 }
 
-#[cfg(all(test, feature = "embeddings"))]
+#[cfg(all(test, feature = "dense"))]
 mod cold_start_guard_tests {
     #[allow(clippy::wildcard_imports)]
     use super::super::*;
@@ -193,7 +193,7 @@ mod determinism_tests {
     }
 }
 
-#[cfg(all(test, feature = "embeddings"))]
+#[cfg(all(test, feature = "dense"))]
 mod dense_toggle_tests {
     #[allow(clippy::wildcard_imports)]
     use super::super::*;
@@ -271,7 +271,7 @@ mod search_mode_tests {
         assert!(err.contains("unknown mode"), "{err}");
     }
 
-    #[cfg(not(feature = "embeddings"))]
+    #[cfg(not(feature = "dense"))]
     #[test]
     fn dense_modes_are_an_error_without_embeddings() {
         for mode in ["dense", "hybrid"] {
@@ -280,7 +280,7 @@ mod search_mode_tests {
         }
     }
 
-    #[cfg(feature = "embeddings")]
+    #[cfg(feature = "dense")]
     #[test]
     fn dense_modes_parse_with_embeddings() {
         assert_eq!(SearchMode::parse(Some("dense")), Ok(SearchMode::Dense));

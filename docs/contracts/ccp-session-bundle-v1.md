@@ -1,7 +1,5 @@
 # CCP Session Bundle v1 (CcpSessionBundleV1)
 
-GitLab: `#2316`
-
 CCP session bundles standardise **export/import** of session excerpts for
 replayability: task, findings, decisions, evidence (tool receipts and manual
 keys).
@@ -33,7 +31,7 @@ through `redaction::redact_text`. There is no unredacted export.
 
 `sobre_session action=export` returns the bundle. With `path=` it also writes
 it there; with `write=true` and no `path`, under
-`$SOBRE_DATA_DIR/exports/sessions/`. Nothing is written into the project
+`<data_dir>/exports/sessions/`. Nothing is written into the project
 unless `path=` points there.
 
 ## Import semantics

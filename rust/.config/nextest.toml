@@ -13,13 +13,12 @@ retries = 2
 # that setup removes and recreates. Its pre-main initializer only serializes
 # within one process — but nextest runs each test in its own process, so tests
 # in that binary would still race on shared paths. Pinning them to a
-# max-threads=1 group serializes them for real (retries below stays as a net
-# for load-induced flakiness like the in-memory http_server tests).
+# max-threads=1 group serializes them for real.
 [test-groups]
 serial-state = { max-threads = 1 }
 
 [[profile.default.overrides]]
-filter = 'binary(serial) | test(/^http_server::tests::/)'
+filter = 'binary(serial)'
 test-group = 'serial-state'
 
 [scripts.setup.tmpdir]

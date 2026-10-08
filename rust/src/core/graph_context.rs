@@ -4,7 +4,7 @@
 //! compactor uses the CSV form. A budgeted `GraphContext` block also lived
 //! here, gated on a profile output-hint no shipped profile ever set.
 
-#[cfg(feature = "embeddings")]
+#[cfg(feature = "dense")]
 use std::collections::{HashMap, HashSet};
 
 use super::graph_provider;
@@ -42,7 +42,7 @@ pub fn build_related_paths_csv(
     )
 }
 
-#[cfg(feature = "embeddings")]
+#[cfg(feature = "dense")]
 /// Repo-relative paths (same style as BM25 chunks / property graph) ranked for RRF graph proximity.
 ///
 /// `recent_repo_paths` should be ordered **most recently touched first**. Neighbors from earlier
@@ -104,7 +104,7 @@ pub fn graph_neighbor_ranks_for_recent_files(
     }
 }
 
-#[cfg(feature = "embeddings")]
+#[cfg(feature = "dense")]
 fn normalize_repo_rel_path(path: &str, project_root: &str) -> String {
     let p = path.replace('\\', "/");
     let root = project_root.trim_end_matches('/').replace('\\', "/");

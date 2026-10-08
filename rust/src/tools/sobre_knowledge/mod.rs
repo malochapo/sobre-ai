@@ -1,6 +1,6 @@
 use chrono::Utc;
 
-#[cfg(feature = "embeddings")]
+#[cfg(feature = "dense")]
 use crate::core::embeddings::EmbeddingEngine;
 
 use crate::core::knowledge::ProjectKnowledge;
@@ -240,7 +240,7 @@ fn handle_status(project_root: &str) -> String {
 /// the next enforcement action for every memory layer. Read-only.
 fn handle_lifecycle_report(project_root: &str) -> String {
     let policy = crate::core::memory_policy::MemoryPolicy::default();
-    #[cfg(feature = "embeddings")]
+    #[cfg(feature = "dense")]
     let hash = crate::core::project_hash::hash_project_root(project_root);
 
     let mut out = String::from("=== Memory Lifecycle Report ===\n");
@@ -272,7 +272,7 @@ fn handle_lifecycle_report(project_root: &str) -> String {
     ));
 
     // Embeddings layer (semantic index over knowledge facts).
-    #[cfg(feature = "embeddings")]
+    #[cfg(feature = "dense")]
     {
         let n = crate::core::knowledge_embedding::KnowledgeEmbeddingIndex::load(&hash)
             .map_or(0, |idx| idx.entries.len());
@@ -280,7 +280,7 @@ fn handle_lifecycle_report(project_root: &str) -> String {
             "embeddings  {n} vector(s); compacted against knowledge on remember\n"
         ));
     }
-    #[cfg(not(feature = "embeddings"))]
+    #[cfg(not(feature = "dense"))]
     out.push_str("embeddings  (feature disabled in this build)\n");
 
     out.push_str(
@@ -408,7 +408,7 @@ fn handle_remove(project_root: &str, category: Option<&str>, key: Option<&str>) 
         return format!("No fact found: [{cat}] {k}");
     }
 
-    #[cfg(feature = "embeddings")]
+    #[cfg(feature = "dense")]
     {
         // Serialize the embedding side-car under the same per-project lock as
         // the fact removal and compact against fresh on-disk knowledge, so a
@@ -427,7 +427,7 @@ fn handle_remove(project_root: &str, category: Option<&str>, key: Option<&str>) 
             }
         });
     }
-    #[cfg(not(feature = "embeddings"))]
+    #[cfg(not(feature = "dense"))]
     let _ = &knowledge;
 
     format!("Removed [{cat}] {k}")

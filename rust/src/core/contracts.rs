@@ -3,13 +3,13 @@ pub const MCP_MANIFEST_SCHEMA_VERSION: u32 = 1;
 pub const CCP_SESSION_BUNDLE_V1_SCHEMA_VERSION: u32 = 1;
 pub const GRAPH_REPRODUCIBILITY_V1_SCHEMA_VERSION: u32 = 1;
 
-/// Stability classification of a contract document (GL #394).
+/// Stability classification of a contract document.
 ///
 /// The classification is normative — `tests/suite/contracts_frozen.rs`
 /// enforces it:
 /// * `Frozen` — the normative surface is immutable. Any change to the doc file
 ///   fails CI; semantic evolution requires a new `-v2.md` file (the v1 file
-///   stays in place for existing integrations).
+///   stays in place).
 /// * `Stable` — additive evolution allowed (new optional fields, new sections);
 ///   breaking changes require a version bump (a new `-vN.md` file).
 /// * `Experimental` — may change or disappear without notice.
@@ -57,7 +57,7 @@ pub fn contract_docs() -> Vec<ContractDoc> {
         status,
     };
     vec![
-        // ── Frozen: externally consumed format ─────────────────────────────
+        // ── Frozen: the usage ledger's on-disk format ─────────────────────
         doc("usage-ledger", "usage-ledger-v1.md", 1, Frozen),
         // ── Stable: additive evolution allowed ──────────────────────────────
         doc("ccp-session-bundle", "ccp-session-bundle-v1.md", 1, Stable),
@@ -86,7 +86,7 @@ pub fn contract_docs() -> Vec<ContractDoc> {
             Stable,
         ),
         // ── Experimental: may change without notice ─────────────────────────
-        // Quality loop (GL #494): edit-failure feedback into mode selection.
+        // Quality loop: edit-failure feedback into mode selection.
         doc("quality-loop", "quality-loop-v1.md", 1, Experimental),
     ]
 }
@@ -110,9 +110,8 @@ mod tests {
 
     #[test]
     fn frozen_set_covers_the_platform_promises() {
-        // The freeze (GL #394) is only meaningful if the externally consumed
-        // surfaces are actually in it. Removing one of these from `Frozen`
-        // is itself a breaking policy change.
+        // The usage ledger's on-disk format is the frozen contract. Taking it
+        // out of `Frozen` is itself a policy change.
         let docs = contract_docs();
         {
             let id = "usage-ledger";

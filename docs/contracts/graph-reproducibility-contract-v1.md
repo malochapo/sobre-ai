@@ -1,14 +1,12 @@
 # Graph Reproducibility Contract v1
 
-GitLab: `#2318`
-
 ## Goal
 
 Make graph-driven tooling **reproducible** (CI/proofs), **deterministic** (stable ordering), **bounded** (output caps), and **safe-by-default**.
 
 This contract covers:
 
-- Property graph storage under `$SOBRE_DATA_DIR/graphs/<project_hash>/graph.db`
+- Property graph storage under `<data_dir>/graphs/<project_hash>/graph.db`
 - Graph build + freshness semantics (`sobre_graph action=build|status`)
 - Deterministic outputs from `sobre_graph` (incl. `format=json`)
 
@@ -28,7 +26,7 @@ This contract covers:
 ### Explicit rebuild
 
 - `sobre_graph action=build` rescans the project and rewrites `graph.db` (in
-  `$SOBRE_DATA_DIR/graphs/<project_hash>/`) and `graph.meta.json` alongside
+  `<data_dir>/graphs/<project_hash>/`) and `graph.meta.json` alongside
   it. Files whose content hash is unchanged are reused, so the result equals a
   build from scratch.
 - There is one extractor: `sobre_graph build` and `sobre index build` run the
@@ -81,6 +79,6 @@ are not budgeted.
 
 ## Security & privacy
 
-- Graph DB + meta are written **only** under `$SOBRE_DATA_DIR/graphs/<project_hash>/`.
+- Graph DB + meta are written **only** under `<data_dir>/graphs/<project_hash>/`.
 - No secrets must appear in graph artifacts, logs, or exports.
 

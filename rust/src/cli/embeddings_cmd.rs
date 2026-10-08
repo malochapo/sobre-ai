@@ -12,7 +12,7 @@ use crate::core::artifacts_exec::ort_provision;
 /// the configured model. The one place either is fetched; `index build` uses
 /// what is installed. A build without embeddings downloads nothing.
 pub(crate) fn provision(force: bool) -> Result<(), String> {
-    #[cfg(not(feature = "embeddings"))]
+    #[cfg(not(feature = "dense"))]
     {
         let _ = force;
         Err(
@@ -21,7 +21,7 @@ pub(crate) fn provision(force: bool) -> Result<(), String> {
                 .to_string(),
         )
     }
-    #[cfg(feature = "embeddings")]
+    #[cfg(feature = "dense")]
     {
         println!(
             "Fetching the official ONNX Runtime {} (CPU) from microsoft/onnxruntime…",
@@ -51,25 +51,25 @@ pub(crate) fn cmd_embeddings(rest: &[String]) {
         }
         Some("status") | None => {
             println!("{}", ort_provision::status_line());
-            #[cfg(feature = "embeddings")]
+            #[cfg(feature = "dense")]
             println!(
                 "This build requires ONNX Runtime >= 1.{}.x (ort api level).",
                 ort::MINOR_VERSION
             );
-            #[cfg(not(feature = "embeddings"))]
+            #[cfg(not(feature = "dense"))]
             println!(
-                "This build was compiled without the `embeddings` feature — the managed \
+                "This build was compiled without the `dense` feature — the managed \
                  runtime is only used by embedding-enabled builds."
             );
             if let Ok(p) = std::env::var("ORT_DYLIB_PATH") {
                 println!("ORT_DYLIB_PATH override active: {p}");
             }
-            #[cfg(feature = "embeddings")]
+            #[cfg(feature = "dense")]
             println!(
                 "{}",
                 crate::core::ort_execution_providers::execution_provider_status()
             );
-            #[cfg(feature = "embeddings")]
+            #[cfg(feature = "dense")]
             println!(
                 "{}",
                 crate::core::ort_execution_providers::execution_provider_help()

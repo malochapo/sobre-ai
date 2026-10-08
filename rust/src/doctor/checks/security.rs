@@ -106,7 +106,7 @@ pub(crate) fn search_roots_outcome() -> Outcome {
 /// opt-in — a missing optional runtime is not a finding, the provision hint
 /// lives in the embeddings CLI and the resolver error).
 pub(crate) fn managed_ort_outcome() -> Option<Outcome> {
-    if !cfg!(feature = "embeddings") {
+    if !cfg!(feature = "dense") {
         return None;
     }
     let path = crate::core::artifacts_exec::ort_provision::managed_dylib_path()?;

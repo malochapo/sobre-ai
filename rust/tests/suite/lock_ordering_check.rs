@@ -144,3 +144,36 @@ fn all_static_locks_documented() {
         undocumented.join("\n")
     );
 }
+
+/// The other direction: every row of the static-lock tables names a file that
+/// exists and still declares that lock, so a removed lock cannot stay
+/// documented.
+#[test]
+fn documented_locks_exist() {
+    let src_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+    let doc = load_lock_ordering_doc();
+    let mut stale = Vec::new();
+    for line in doc.lines() {
+        let cells: Vec<&str> = line.split('|').map(str::trim).collect();
+        // | L1 | `LOCK` | `file.rs` … | type | purpose |
+        if cells.len() < 4 || !(cells[1].starts_with('L') || cells[1].starts_with('E')) {
+            continue;
+        }
+        if !cells[1][1..].chars().all(|c| c.is_ascii_digit()) {
+            continue;
+        }
+        let lock = cells[2].split('`').nth(1).unwrap_or("");
+        let lock = lock.rsplit("::").next().unwrap_or(lock);
+        let file = cells[3].split('`').nth(1).unwrap_or("");
+        match std::fs::read_to_string(src_dir.join(file)) {
+            Ok(content) if content.contains(lock) => {}
+            Ok(_) => stale.push(format!("  {} {lock}: not in {file}", cells[1])),
+            Err(_) => stale.push(format!("  {} {lock}: {file} does not exist", cells[1])),
+        }
+    }
+    assert!(
+        stale.is_empty(),
+        "LOCK_ORDERING.md documents locks the code no longer has:\n{}",
+        stale.join("\n")
+    );
+}

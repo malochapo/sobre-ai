@@ -1,7 +1,5 @@
 # Knowledge Policy Contract v1
 
-GitLab: `#2317`
-
 ## Purpose
 
 A versioned governance contract for project knowledge (facts, patterns,
@@ -21,8 +19,6 @@ history, relations) that is:
 The policy is `MemoryPolicy` (`rust/src/core/memory_policy.rs`). Every caller
 uses `MemoryPolicy::default()`: there is no config-file section and no
 environment override for it, so the values below are fixed.
-`MemoryPolicy::validate()` defines the valid value ranges; it is called only
-from unit tests, which assert that the defaults are valid.
 
 ### Knowledge (`KnowledgePolicy`)
 
@@ -45,7 +41,6 @@ from unit tests, which assert that the defaults are valid.
 | `stale_days` | 30 |
 | `similarity_threshold` | 0.85 |
 | `base_stability_days` | 90.0 |
-| `archetype_aware_decay` | false |
 | `prune_unretrieved_after_days` | 90 |
 | `reclaim_headroom_pct` | 0.25 (a full store settles at 75%) |
 

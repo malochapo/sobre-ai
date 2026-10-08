@@ -1,4 +1,3 @@
 {
-    "git.ignoreLimitWarning": true,
-    "npm.autoDetect": "off"
+    "git.ignoreLimitWarning": true
 }

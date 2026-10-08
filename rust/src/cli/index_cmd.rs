@@ -72,13 +72,13 @@ fn build(project_root: &str, force: bool) {
         eprintln!("  BM25 error: {err}");
     }
 
-    #[cfg(feature = "embeddings")]
+    #[cfg(feature = "dense")]
     build_dense(project_root);
 }
 
 /// The dense (embedding) index, on top of the fresh BM25 index. Uses the
 /// model `sobre embeddings provision` installed; never downloads it.
-#[cfg(feature = "embeddings")]
+#[cfg(feature = "dense")]
 fn build_dense(project_root: &str) {
     crate::core::interrupt::install_ctrlc_handler();
     wait_semantic_progress(project_root);
@@ -118,7 +118,7 @@ fn wait_graph_bm25_progress(project_root: &str) {
 
 /// Build the dense index on a worker thread while showing progress, and wait
 /// for it to finish: the worker stops when this process exits.
-#[cfg(feature = "embeddings")]
+#[cfg(feature = "dense")]
 fn wait_semantic_progress(project_root: &str) {
     let root = project_root.to_string();
     let handle = std::thread::spawn(move || {
@@ -153,7 +153,7 @@ fn apply_graph_bm25_progress(
     }
 }
 
-#[cfg(feature = "embeddings")]
+#[cfg(feature = "dense")]
 fn apply_semantic_progress(
     progress: &mut ProgressIndicator,
     view: &crate::core::index_orchestrator::ProgressView,

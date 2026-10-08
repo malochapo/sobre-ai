@@ -181,9 +181,8 @@ fn try_stub_hit_readonly_none_for_uncached_and_stale() {
 }
 
 #[test]
-#[cfg_attr(tarpaulin, ignore)]
 fn benchmark_task_conditioned_compression() {
-    // Keep this reasonably small so CI coverage instrumentation stays fast.
+    // Keep this reasonably small so the test stays fast.
     let content = generate_benchmark_code(300);
     let full_tokens = count_tokens(&content);
     let task = Some("fix authentication in validate_token");

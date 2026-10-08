@@ -58,7 +58,7 @@ pub mod knowledge;
 // go uncalled. That is honest unused code, not dead code, so it is silenced
 // only in that configuration. TODO: proper cfg hygiene across the 21 call
 // sites listed in docs/removals.md would let this attribute go away.
-#[cfg_attr(not(feature = "embeddings"), allow(dead_code))]
+#[cfg_attr(not(feature = "dense"), allow(dead_code))]
 pub mod knowledge_embedding;
 pub mod knowledge_relations;
 
@@ -79,7 +79,7 @@ pub mod embedding_quant;
 // go uncalled. That is honest unused code, not dead code, so it is silenced
 // only in that configuration. TODO: proper cfg hygiene across the 21 call
 // sites listed in docs/removals.md would let this attribute go away.
-#[cfg_attr(not(feature = "embeddings"), allow(dead_code))]
+#[cfg_attr(not(feature = "dense"), allow(dead_code))]
 pub mod embeddings;
 pub mod hybrid_search;
 pub mod search_reranking;
@@ -98,12 +98,12 @@ pub mod session_diff;
 // ---------------------------------------------------------------------------
 pub mod neural;
 // ORT runtime glue links against the `ort` crate, which is only pulled in by the
-// `embeddings` feature. On platforms ORT does not support (e.g.
+// `dense` feature. On platforms ORT does not support (e.g.
 // FreeBSD, see #586) it is disabled, so the modules must be gated
 // to keep the build clean without them.
-#[cfg(feature = "embeddings")]
+#[cfg(feature = "dense")]
 pub mod ort_environment;
-#[cfg(feature = "embeddings")]
+#[cfg(feature = "dense")]
 pub mod ort_execution_providers;
 
 // ---------------------------------------------------------------------------
@@ -220,7 +220,6 @@ pub mod task_briefing;
 /// so the TCC privacy prompt can never appear.
 #[cfg(target_os = "macos")]
 pub mod tcc_guard_sandbox;
-pub mod tdd_schema;
 pub mod terse;
 pub mod text_similarity;
 pub mod theme;

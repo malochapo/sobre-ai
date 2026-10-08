@@ -120,7 +120,7 @@ fn ask_about_proxy() {
 /// here, or later with `sobre embeddings provision`. Asked only by builds
 /// that can use it, and only while the model is missing.
 fn ask_about_embeddings() {
-    #[cfg(feature = "embeddings")]
+    #[cfg(feature = "dense")]
     {
         use std::io::Write;
 

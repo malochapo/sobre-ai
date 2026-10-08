@@ -104,7 +104,7 @@ pub(crate) fn workspace_search(
 /// One root's ranking in `mode`, plus a note when hybrid ran without its
 /// dense signal. Only the dense arms read `root` or can fail.
 #[cfg_attr(
-    not(feature = "embeddings"),
+    not(feature = "dense"),
     allow(unused_variables, clippy::unnecessary_wraps)
 )]
 fn root_results(
@@ -129,11 +129,11 @@ fn root_results(
                 None,
             ))
         }
-        #[cfg(feature = "embeddings")]
+        #[cfg(feature = "dense")]
         SearchMode::Dense => {
             dense_ranked(query, root, index, top_k, filter).map(|r| (r.results, None))
         }
-        #[cfg(feature = "embeddings")]
+        #[cfg(feature = "dense")]
         SearchMode::Hybrid => {
             let cfg = crate::core::hybrid_search::HybridConfig::default();
             hybrid_ranked(query, root, index, top_k, filter, &cfg).map(|r| (r.results, r.degraded))
@@ -181,7 +181,7 @@ pub(crate) fn rrf_merge_hybrid(
     out
 }
 /// Boost existing hybrid results with SPLADE expansion scores.
-#[cfg(feature = "embeddings")]
+#[cfg(feature = "dense")]
 pub(crate) fn boost_with_splade(
     results: &mut [HybridResult],
     splade: &[crate::core::splade_retrieval::SpladeResult],
@@ -214,7 +214,7 @@ pub(crate) fn boost_with_splade(
 /// Symbols with higher cognitive complexity (handle, dispatch, orchestration
 /// functions) are more likely edit targets than small leaf helpers sharing
 /// vocabulary with the query.
-#[cfg(feature = "embeddings")]
+#[cfg(feature = "dense")]
 pub(crate) fn boost_with_complexity(results: &mut [HybridResult], project_root: &str, weight: f64) {
     if weight <= 0.0 || results.is_empty() {
         return;
@@ -244,7 +244,7 @@ pub(crate) fn label_for_root(root: &Path) -> String {
         .unwrap_or_else(|| root.to_string_lossy().to_string())
 }
 
-#[cfg(feature = "embeddings")]
+#[cfg(feature = "dense")]
 pub(crate) fn graph_rrf_ranks_for_search_root(
     root: &Path,
 ) -> Option<std::collections::HashMap<String, usize>> {
@@ -271,7 +271,7 @@ pub(crate) fn graph_rrf_ranks_for_search_root(
     crate::core::graph_context::graph_neighbor_ranks_for_recent_files(&root_s, &recent, 40, 120)
 }
 
-#[cfg(feature = "embeddings")]
+#[cfg(feature = "dense")]
 pub(crate) fn path_under_search_root(path: &str, root: &Path) -> bool {
     let p = std::path::Path::new(path);
     if p.is_absolute() {

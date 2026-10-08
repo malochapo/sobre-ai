@@ -53,7 +53,7 @@ The lots run in this order:
 | B | The MCP tools: bugs, incomplete features, drift; decisions 1–4 and 6 | done (#32, #33, #34, #35, #36, #37) |
 | C | The CLI and the proxy | done (#38, #39) |
 | R | Tool names `ctx_*` → `sobre_*` (decision 9) | done (#40) |
-| D | Dead code, stale files, stale comments, duplicates; decision 7 | in progress (#41, #42) |
+| D | Dead code, stale files, stale comments, duplicates; decision 7 | in progress (#41, #42, #PR_DC) |
 | F | Release: publish a `dense` binary (decision 8) | open |
 | E | Documentation and install path, written last so it describes the final behaviour | open |
 
@@ -698,7 +698,8 @@ written with; the lots after it use the new names.
 ## Lot D — dead code and cleanup
 
 Fixed so far: #41 (dead code, write-only stores, decision 7), #42
-(constant settings, test-only code, dead modules).
+(constant settings, test-only code, dead modules), #PR_DC (Cargo, stale files,
+contracts).
 
 ### Code that compiles but never does anything
 
@@ -839,7 +840,7 @@ Fixed so far: #41 (dead code, write-only stores, decision 7), #42
 
 ### Cargo
 
-- [ ] **D12 Cargo.toml.**
+- [x] **D12 Cargo.toml.**
   - The dev-dependency `wat` is unused.
   - The examples `gen_mcp_manifest` and `gen_tdd_schema` write to a
     `website/generated/` that never existed. `core/tdd_schema.rs` and
@@ -858,10 +859,15 @@ Fixed so far: #41 (dead code, write-only stores, decision 7), #42
     `ort-directml`, `ort-coreml`) are enabled by nothing, so the GPU code is
     never compiled. Keep them as opt-in for source builds, or drop them;
     fix the claims either way (E2).
+  - Done: `embeddings` is gone, `dense` is the feature the code checks; each
+    GPU feature has provider code in `ort_execution_providers.rs`, so they
+    stay as source-build opt-ins and now turn on `dense` themselves. Also:
+    `default` listed `jemalloc` twice, the description said 16 tools, and
+    the `tarpaulin` cfg had no coverage run behind it.
 
 ### Stale repository files
 
-- [ ] **D13 Files.**
+- [x] **D13 Files.**
   - `rust/LOCK_ORDERING.md`:
     - rows L3, L7, L8, L53 and L63 point at files that do not exist;
     - L20 and L47 are stale;
@@ -892,7 +898,11 @@ Fixed so far: #41 (dead code, write-only stores, decision 7), #42
     - `.vscode/settings.json` has `npm.autoDetect`;
     - about 72 vendored test files in `crates/vendor/rmcp/tests` are never
       built.
-- [ ] **D14 Stale contracts** (`docs/contracts/`).
+  - Done, plus: `lock_ordering_check.rs` now also checks doc → code (every
+    row names a file that still declares the lock); the vendored rmcp also
+    loses its dev-dependencies and a `build.rs` that set `core.hooksPath`
+    in a directory that does not exist.
+- [x] **D14 Stale contracts** (`docs/contracts/`).
   - `knowledge-policy-contract-v1.md:24` cites a
     `MemoryPolicy::validate()` that does not exist.
   - The gotchas contract documents the dead `GotchaPolicy` fields.

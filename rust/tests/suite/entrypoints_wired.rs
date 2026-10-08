@@ -9,10 +9,10 @@
 //! 2. CLI — top-level subcommands route to their handler instead of falling
 //!    through to the global help (the exact `pack`/`index` regression).
 //!
-//! Dispatch on the MCP side is registry-driven (`registry.get_arc(name)`), so the
-//! manifest↔registry drift is already covered by `mcp_manifest_up_to_date.rs` and
-//! `granular_defs_match_registry`. This gate adds the *advertised entrypoint* and
-//! *CLI wiring* dimensions those tests do not cover.
+//! Dispatch on the MCP side is registry-driven (`registry.get_arc(name)`), and
+//! the generated tool reference is checked against the registry by
+//! `reference_docs_drift`. This gate adds the *advertised entrypoint* and *CLI
+//! wiring* dimensions.
 
 use std::process::Command;
 
@@ -66,9 +66,8 @@ fn mcp_entrypoint_tools_are_advertised() {
     for tool in required {
         assert!(
             names.contains(tool),
-            "entrypoint tool '{tool}' is not advertised in the manifest.\n\
-             Register it in the tool registry and regenerate:\n  \
-             cargo run --example gen_mcp_manifest --features dev-tools"
+            "entrypoint tool '{tool}' is not advertised in the manifest: \
+             register it in the tool registry"
         );
     }
 }
