@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 use std::path::Path;
-use std::sync::atomic::{AtomicUsize, Ordering};
 
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
@@ -39,17 +38,14 @@ pub struct SymbolSpan {
 }
 
 /// Everything the call-graph builder reads, sourced from the [`GraphProvider`]
-/// facade (PropertyGraph). Replaces the former direct `ProjectIndex`
-/// dependency (#696): the file inventory, the symbol table (for enclosing-symbol
-/// attribution) and the import/reexport adjacency (for scope-aware callee
-/// resolution). Source content itself is still read fresh from disk per file.
+/// facade (PropertyGraph): the file inventory and the symbol table (for
+/// enclosing-symbol attribution). Source content itself is read fresh from
+/// disk per file.
 #[derive(Debug, Clone, Default)]
 pub struct CallGraphInputs {
     pub project_root: String,
     pub file_paths: Vec<String>,
     pub symbols: Vec<SymbolSpan>,
-    /// `(from, to)` pairs for `import`/`reexport` edges only.
-    pub import_edges: Vec<(String, String)>,
 }
 
 impl CallGraphInputs {
@@ -78,17 +74,10 @@ impl CallGraphInputs {
                 end_line: s.end_line,
             })
             .collect();
-        let import_edges = provider
-            .edges()
-            .into_iter()
-            .filter(|e| e.kind == "import" || e.kind == "reexport")
-            .map(|e| (e.from, e.to))
-            .collect();
         Self {
             project_root: normalize_project_root(project_root),
             file_paths: provider.file_paths(),
             symbols,
-            import_edges,
         }
     }
 }
@@ -115,38 +104,6 @@ enum BfsDirection {
     Callees,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum RiskLevel {
-    Low,
-    Medium,
-    High,
-    Critical,
-}
-
-impl RiskLevel {
-    pub fn from_caller_count(count: usize) -> Self {
-        match count {
-            0..=1 => Self::Low,
-            2..=4 => Self::Medium,
-            5..=10 => Self::High,
-            _ => Self::Critical,
-        }
-    }
-
-    pub fn label(self) -> &'static str {
-        match self {
-            Self::Low => "LOW",
-            Self::Medium => "MEDIUM",
-            Self::High => "HIGH",
-            Self::Critical => "CRITICAL",
-        }
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Background build state (singleton per process)
-// ---------------------------------------------------------------------------
-
 impl CallGraph {
     pub fn new(project_root: &str) -> Self {
         Self {
@@ -156,78 +113,9 @@ impl CallGraph {
         }
     }
 
-    // -----------------------------------------------------------------------
-    // Parallel build — processes files via rayon thread pool
-    // -----------------------------------------------------------------------
-
-    pub fn build_parallel(
-        inputs: &CallGraphInputs,
-        progress: Option<(&AtomicUsize, &AtomicUsize)>,
-    ) -> Self {
-        let project_root = &inputs.project_root;
-        let symbols_by_file = group_symbols_by_file_owned(inputs);
-        let file_keys: Vec<String> = inputs.file_paths.clone();
-
-        let results: Vec<(String, String, Vec<CallEdge>)> = file_keys
-            .par_iter()
-            .filter_map(|rel_path| {
-                let abs_path = resolve_path(rel_path, project_root);
-                let content = std::fs::read_to_string(&abs_path).ok()?;
-                let hash = simple_hash(&content);
-
-                let ext = Path::new(rel_path)
-                    .extension()
-                    .and_then(|e| e.to_str())
-                    .unwrap_or("");
-
-                let analysis = deep_queries::analyze(&content, ext);
-                let file_symbols = symbols_by_file.get(rel_path.as_str());
-
-                let edges: Vec<CallEdge> = analysis
-                    .calls
-                    .iter()
-                    .map(|call| {
-                        let caller_sym = find_enclosing_symbol_owned(file_symbols, call.line + 1);
-                        CallEdge {
-                            caller_file: rel_path.clone(),
-                            caller_symbol: caller_sym,
-                            caller_line: call.line + 1,
-                            callee_name: call.callee.clone(),
-                        }
-                    })
-                    .collect();
-
-                if let Some((done, edge_count)) = progress {
-                    done.fetch_add(1, Ordering::Relaxed);
-                    edge_count.fetch_add(edges.len(), Ordering::Relaxed);
-                }
-
-                Some((rel_path.clone(), hash, edges))
-            })
-            .collect();
-
-        let mut graph = Self::new(project_root);
-        let edge_capacity: usize = results.iter().map(|(_, _, e)| e.len()).sum();
-        graph.edges.reserve(edge_capacity);
-        graph.file_hashes.reserve(results.len());
-
-        for (path, hash, edges) in results {
-            graph.file_hashes.insert(path, hash);
-            graph.edges.extend(edges);
-        }
-
-        graph
-    }
-
-    // -----------------------------------------------------------------------
-    // Incremental parallel build — only re-analyzes changed files
-    // -----------------------------------------------------------------------
-
-    pub fn build_incremental_parallel(
-        inputs: &CallGraphInputs,
-        previous: &CallGraph,
-        progress: Option<(&AtomicUsize, &AtomicUsize)>,
-    ) -> Self {
+    /// Build the graph for `inputs`, re-analyzing only the files whose content
+    /// hash differs from `previous` and reusing its edges for the others.
+    fn build_incremental(inputs: &CallGraphInputs, previous: &CallGraph) -> Self {
         let project_root = &inputs.project_root;
         let symbols_by_file = group_symbols_by_file_owned(inputs);
         let file_keys: Vec<String> = inputs.file_paths.clone();
@@ -272,11 +160,6 @@ impl CallGraph {
                         .unwrap_or_default()
                 };
 
-                if let Some((done, edge_count)) = progress {
-                    done.fetch_add(1, Ordering::Relaxed);
-                    edge_count.fetch_add(edges.len(), Ordering::Relaxed);
-                }
-
                 Some((rel_path.clone(), hash, edges))
             })
             .collect();
@@ -292,22 +175,6 @@ impl CallGraph {
         }
 
         graph
-    }
-
-    // -----------------------------------------------------------------------
-    // Public API: non-blocking access for the dashboard
-    // -----------------------------------------------------------------------
-
-    // -----------------------------------------------------------------------
-    // Legacy synchronous API (kept for non-dashboard callers)
-    // -----------------------------------------------------------------------
-
-    pub fn build(inputs: &CallGraphInputs) -> Self {
-        Self::build_parallel(inputs, None)
-    }
-
-    pub fn build_incremental(inputs: &CallGraphInputs, previous: &CallGraph) -> Self {
-        Self::build_incremental_parallel(inputs, previous, None)
     }
 
     pub fn callers_of(&self, symbol: &str) -> Vec<&CallEdge> {
@@ -399,8 +266,6 @@ impl CallGraph {
         result
     }
 
-    /// Find shortest call path from `from` to `to` using BFS.
-    /// Returns None if no path exists (searched up to depth 10).
     /// Find shortest call path from `from` to `to` using BFS.
     /// Returns None if no path exists (searched up to depth 10).
     pub fn find_call_path(&self, from: &str, to: &str) -> Option<Vec<PathHop>> {
@@ -506,16 +371,6 @@ impl CallGraph {
         path
     }
 
-    /// Count unique transitive callers up to `max_depth`.
-    pub fn transitive_caller_count(&self, symbol: &str, max_depth: usize) -> usize {
-        let nodes = self.bfs_callers(symbol, max_depth);
-        let mut unique: std::collections::HashSet<String> = std::collections::HashSet::new();
-        for node in &nodes {
-            unique.insert(node.symbol.to_lowercase());
-        }
-        unique.len()
-    }
-
     pub fn save(&self) -> Result<(), String> {
         let dir = call_graph_dir(&self.project_root)
             .ok_or_else(|| "Cannot determine home directory".to_string())?;
@@ -537,18 +392,13 @@ impl CallGraph {
         serde_json::from_str(&String::from_utf8(data).ok()?).ok()
     }
 
+    /// Bring the persisted graph up to date with `inputs`; every file is
+    /// analyzed when nothing is persisted yet.
     pub fn load_or_build(project_root: &str, inputs: &CallGraphInputs) -> Self {
-        if let Some(previous) = Self::load(project_root) {
-            Self::build_incremental(inputs, &previous)
-        } else {
-            Self::build(inputs)
-        }
+        let previous = Self::load(project_root).unwrap_or_else(|| Self::new(project_root));
+        Self::build_incremental(inputs, &previous)
     }
 }
-
-// ---------------------------------------------------------------------------
-// Cache staleness check (fast — mtime-based, no content reads)
-// ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -616,15 +466,6 @@ fn simple_hash(content: &str) -> String {
     content.hash(&mut hasher);
     format!("{:x}", hasher.finish())
 }
-
-// ---------------------------------------------------------------------------
-// Scope-aware callee resolution (#321)
-//
-// Call edges store callees as bare names, so attributing `Run`/`Get`/`Handle`
-// to a file by name alone links every same-named symbol (false positives).
-// These helpers resolve a callee to its defining file using the caller's
-// lexical scope and refuse to guess when a name stays ambiguous.
-// ---------------------------------------------------------------------------
 
 #[cfg(test)]
 mod tests {
@@ -819,40 +660,6 @@ mod tests {
         let path = graph.find_call_path("fn_a", "fn_a");
         assert!(path.is_some());
         assert_eq!(path.unwrap().len(), 1);
-    }
-
-    #[test]
-    fn transitive_caller_count_returns_unique() {
-        let mut graph = CallGraph::new("/tmp");
-        // x -> target, y -> target, z -> x (so z is transitive caller of target)
-        graph.edges.push(CallEdge {
-            caller_file: "x.rs".into(),
-            caller_symbol: "x".into(),
-            caller_line: 1,
-            callee_name: "target".into(),
-        });
-        graph.edges.push(CallEdge {
-            caller_file: "y.rs".into(),
-            caller_symbol: "y".into(),
-            caller_line: 2,
-            callee_name: "target".into(),
-        });
-        graph.edges.push(CallEdge {
-            caller_file: "z.rs".into(),
-            caller_symbol: "z".into(),
-            caller_line: 3,
-            callee_name: "x".into(),
-        });
-        assert_eq!(graph.transitive_caller_count("target", 5), 3);
-    }
-
-    #[test]
-    fn risk_level_classification() {
-        assert_eq!(RiskLevel::from_caller_count(0), RiskLevel::Low);
-        assert_eq!(RiskLevel::from_caller_count(1), RiskLevel::Low);
-        assert_eq!(RiskLevel::from_caller_count(3), RiskLevel::Medium);
-        assert_eq!(RiskLevel::from_caller_count(7), RiskLevel::High);
-        assert_eq!(RiskLevel::from_caller_count(15), RiskLevel::Critical);
     }
 
     #[test]

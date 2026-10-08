@@ -45,8 +45,11 @@ Re-reading an unchanged file returns a short stub (~13 tokens); pass
 - `ctx_search(action="symbol", name=...)` — a definition by name.
 - `ctx_search(action="semantic", query=...)` — by meaning ("where are retries handled").
 - `ctx_glob(pattern)` — files by name.
-- `ctx_callgraph(action="callers"|"callees", symbol=...)` — call sites.
-- `ctx_graph` / `ctx_impact` — file dependencies and blast radius.
+- `ctx_graph(action="callers"|"callees", symbol=...)` — call sites;
+  `ctx_graph(action="trace", symbol=..., to=...)` — the call chain between two
+  functions.
+- `ctx_graph(action="impact"|"neighbors"|"path", path=...)` / `ctx_impact` —
+  file dependencies and blast radius.
 
 A question about meaning goes to search, not to whole-file reads: reading more
 is not understanding more.

@@ -55,7 +55,6 @@ pub(crate) fn classify_tool_name(name: &str) -> ToolResultKind {
         "str_replace_editor", // view sub-mode returns file content
         "ctx_patch",          // #818: diff previews are code — never abbreviate
         "ctx_refactor",       // symbol edits return code diffs
-        "ctx_callgraph",      // callers/callees contain source snippets
     ];
     if FILE_READ.iter().any(|k| n.contains(k)) {
         return ToolResultKind::FileRead;
@@ -514,10 +513,6 @@ mod tests {
     fn ctx_patch_and_refactor_classified_as_file_read() {
         assert_eq!(classify_tool_name("ctx_patch"), ToolResultKind::FileRead);
         assert_eq!(classify_tool_name("ctx_refactor"), ToolResultKind::FileRead);
-        assert_eq!(
-            classify_tool_name("ctx_callgraph"),
-            ToolResultKind::FileRead
-        );
     }
 
     /// #818: diff preview with - /+ prefixes must be protected.

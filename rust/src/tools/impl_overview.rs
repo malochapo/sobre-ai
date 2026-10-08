@@ -167,8 +167,8 @@ pub(crate) fn handle(
         };
         // #658 F6: the header counts file-level (import/type_ref) edges; the
         // function-level call graph is a separate artifact. When one has been
-        // built (ctx_callgraph persists lazily), surface it too — otherwise a
-        // single-file project reads "0 edges" while callgraph clearly has some.
+        // built (the ctx_graph call actions persist it lazily), surface it too —
+        // otherwise a single-file project reads "0 edges" while it has call edges.
         let call_edges =
             crate::core::call_graph::CallGraph::load(&project_root).map_or(0, |g| g.edges.len());
         let call_info = if call_edges > 0 {

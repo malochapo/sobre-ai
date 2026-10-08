@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 
-use crate::core::call_graph::{CallGraph, CallGraphInputs};
 use crate::core::graph_provider::{self, EdgeInfo};
 
 const DEFAULT_MAX_NODES: usize = 30;
@@ -115,12 +114,10 @@ fn bfs_reachable_files(
 }
 
 fn render_call_graph(file: Option<&str>, _depth: usize, project_root: &str) -> String {
-    let inputs = CallGraphInputs::open(project_root);
-    let call_graph = CallGraph::load_or_build(project_root, &inputs);
-    let _ = call_graph.save();
+    let call_graph = crate::tools::ctx_graph_calls::load(project_root);
 
     if call_graph.edges.is_empty() {
-        return "No call edges found. Run ctx_callgraph first to build the call graph.".to_string();
+        return "No call edges found.".to_string();
     }
 
     let edges: Vec<_> = if let Some(focus) = file {

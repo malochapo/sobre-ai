@@ -27,10 +27,9 @@ pub fn handle(
         "diagram" => crate::tools::ctx_graph_diagram::handle(path, depth, kind, root),
         "neighbors" => crate::tools::ctx_graph_primitives::neighbors(path, root, depth, format),
         "path" => crate::tools::ctx_graph_primitives::shortest_path(path, to, root, format),
-        _ => {
-            "Unknown action. Use: build, related, symbol, impact, status, diagram, neighbors, path"
-                .to_string()
-        }
+        _ => "Unknown action. Use: build, status, related, symbol, impact, neighbors, path, \
+              diagram, callers, callees, trace"
+            .to_string(),
     }
 }
 

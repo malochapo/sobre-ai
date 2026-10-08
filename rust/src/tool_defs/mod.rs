@@ -21,7 +21,6 @@ pub const READONLY_TOOL_NAMES: &[&str] = &[
     "ctx_search",
     "ctx_tree",
     "ctx_glob",
-    "ctx_callgraph",
     "ctx_expand",
 ];
 

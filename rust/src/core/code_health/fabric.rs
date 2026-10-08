@@ -53,9 +53,10 @@ fn item_id(file: &str, symbol: &str) -> String {
 ///     (`score.hotspots`) — the searchable/recallable set, kept small so the
 ///     index and memory don't bloat.
 ///   - **Property-graph edges** cover *every* over-threshold function (capped at
-///     `MAX_PG_HOTSPOT_EDGES`), so `ctx_symbol`/`ctx_callgraph` can annotate
-///     any hotspot symbol with its cc. Edges are one cheap row each and survive
-///     the code-graph mirror (`clear_code_graph` preserves cross-source edges).
+///     `MAX_PG_HOTSPOT_EDGES`), so `ctx_read` hints and the dense-search
+///     complexity boost can see any hotspot symbol's cc. Edges are one cheap row
+///     each and survive the code-graph mirror (`clear_code_graph` preserves
+///     cross-source edges).
 ///
 /// Order follows the (pre-sorted) score and a stable worst-first sort, so
 /// repeated builds are byte-identical (#498).
@@ -138,6 +139,7 @@ fn pg_hotspots(health: &ProjectHealth) -> Vec<super::Hotspot> {
 /// Returns the highest cc among same-named hotspots, or `None` when the symbol
 /// is not a recorded hotspot or the graph is unavailable. Best-effort + cheap:
 /// one SQLite read, no parsing.
+#[cfg(feature = "embeddings")]
 pub fn hotspot_cc(root: &str, symbol: &str) -> Option<u32> {
     let pg = crate::core::property_graph::CodeGraph::open(root).ok()?;
     pg.all_cross_source_edges()
@@ -372,10 +374,11 @@ mod tests {
     }
 
     /// `hotspot_cc` recovers a symbol's complexity from the persisted edges —
-    /// the lookup `ctx_callgraph risk` uses.
+    /// the lookup the dense-search complexity boost uses.
     // `apply` writes into stores the sibling tests in this module also touch,
     // so a parallel run reads back another test's state. Serialized rather than
     // ignored: the assertion itself is meaningful.
+    #[cfg(feature = "embeddings")]
     #[test]
     #[serial_test::serial(code_health_fabric)]
     fn hotspot_cc_reads_back_persisted_edge() {

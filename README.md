@@ -46,7 +46,7 @@ the measured state of each.
 5. **A ceiling on size.** The Rust under `rust/src` stays below a fixed line
    budget, so growth has to displace something.
 
-Invariants 1 to 5 hold today: 17 tools, one fixed surface; one config file
+Invariants 1 to 5 hold today: 16 tools, one fixed surface; one config file
 with 12 keys and no per-project files, profiles or behaviour-changing
 environment variables; no network request you did not ask for; and about
 150,000 lines of production Rust under a 200,000 ceiling.
