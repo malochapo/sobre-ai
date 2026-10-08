@@ -179,6 +179,8 @@ pub(crate) fn handle_reindex(path: &str) -> String {
     let files = idx.files.len();
     let chunks = idx.doc_count;
     let _ = idx.save(root);
+    // The next search must use this index, not the one resident before it.
+    bm25_store::store_in_thread_cache(root, &std::sync::Arc::new(idx));
 
     format!(
         "Reindexed {}: {files} files, {chunks} chunks",

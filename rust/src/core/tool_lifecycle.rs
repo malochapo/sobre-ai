@@ -43,13 +43,7 @@ pub fn record_shell_command(command: &str, original_tokens: usize, output_tokens
 
     if let Some(mut session) = SessionState::load_latest() {
         session.record_command();
-        let project_root = session.project_root.clone();
-        let calls = session.stats.total_tool_calls;
         let _ = session.save();
-
-        if original_tokens > 0 {
-            maybe_consolidate(project_root.as_deref(), calls);
-        }
     }
 }
 
@@ -69,19 +63,6 @@ pub(crate) fn program_name(command: &str) -> &str {
 pub fn flush_all() {
     crate::core::auto_mode_resolver::flush_sources();
     crate::core::edit_quality::flush();
-}
-
-/// Every `CONSOLIDATE_EVERY_CALLS` CLI calls, fold the session into knowledge.
-/// The MCP server also applies a time cooldown held in memory; a single-shot
-/// CLI process has no such memory, so only the call-count gate applies here.
-fn maybe_consolidate(project_root: Option<&str>, calls: u32) {
-    let Some(root) = project_root else { return };
-    if calls > 0 && calls.is_multiple_of(crate::tools::autonomy::CONSOLIDATE_EVERY_CALLS) {
-        let _ = crate::core::consolidation_engine::consolidate_latest(
-            root,
-            crate::core::consolidation_engine::ConsolidationBudgets::default(),
-        );
-    }
 }
 
 #[cfg(test)]

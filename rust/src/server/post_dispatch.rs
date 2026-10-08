@@ -55,24 +55,5 @@ impl SobreServer {
                 crate::core::read_stub_index::persist();
             });
         }
-
-        {
-            let (calls, project_root) = {
-                let session = self.session.read().await;
-                (session.stats.total_tool_calls, session.project_root.clone())
-            };
-
-            if let Some(root) = project_root
-                && crate::tools::autonomy::should_auto_consolidate(&self.autonomy, calls)
-            {
-                let root_clone = root.clone();
-                tokio::task::spawn_blocking(move || {
-                    let _ = crate::core::consolidation_engine::consolidate_latest(
-                        &root_clone,
-                        crate::core::consolidation_engine::ConsolidationBudgets::default(),
-                    );
-                });
-            }
-        }
     }
 }

@@ -208,7 +208,6 @@ pub mod binary_detect;
 pub mod bounce_tracker;
 pub mod budgets;
 pub mod cache;
-pub mod client_capabilities;
 pub mod cloud_files;
 pub mod config;
 pub mod consolidation;

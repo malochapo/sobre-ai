@@ -5,10 +5,14 @@
 #[allow(clippy::wildcard_imports)]
 use super::*;
 
+/// How long the first tool call waits for the client's `roots/list` answer.
+const ROOTS_LIST_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
+
 impl SobreServer {
     pub(crate) async fn call_tool_guarded(
         &self,
         request: CallToolRequestParams,
+        progress: Option<crate::server::progress::ProgressSender>,
     ) -> Result<CallToolResult, ErrorData> {
         self.check_idle_expiry().await;
         self.resolve_roots_once().await;
@@ -18,63 +22,22 @@ impl SobreServer {
         let name = tool_name.as_str();
         let args = tool_args.as_ref();
 
-        // #990: determine machine-readability *before* the once-per-session
-        // decorations below. A machine-readable invocation (e.g. ctx_outline
-        // format=json) must reach the client byte-exact and parseable, so every
-        // prose decoration and terse compression is suppressed and the pure
-        // pre-decoration body is restored at the end (see the `machine_readable`
-        // guard near the end of this function). Computing it here — not after
-        // dispatch — means such a call also never *consumes* a latched
-        // once-per-session flag (auto-context briefing, rules tip) whose prose
-        // we would then discard, so those surface on the next human-facing call.
+        // #990: a machine-readable invocation (e.g. ctx_outline format=json)
+        // must reach the client byte-exact and parseable, so every prose
+        // decoration and terse compression is suppressed and the pure
+        // pre-decoration body is restored at the end (see the
+        // `machine_readable` guard near the end of this function).
         let machine_readable = self
             .registry
             .as_ref()
             .and_then(|r| r.get_arc(name))
             .is_some_and(|tool| tool.produces_machine_readable(args));
 
-        // Skip the session wake-up briefing for machine-readable calls: the
-        // pre-hook latches `session_initialized` via compare-exchange, so calling
-        // it here would burn the once-per-session slot for a briefing we then
-        // throw away. Deferring keeps the briefing intact for the next call.
-        // The session-start overview call already returns that briefing's
-        // content, so it counts as the briefing: the slot is closed and the
-        // project summary is not sent a second time on the next call.
-        let auto_context = if machine_readable {
-            None
-        } else if crate::tools::autonomy::is_session_overview_call(name, args) {
-            crate::tools::autonomy::mark_session_briefed(&self.autonomy);
-            None
-        } else {
-            let task = {
-                let session = self.session.read().await;
-                session.task.as_ref().map(|t| t.description.clone())
-            };
-            let project_root = {
-                let session = self.session.read().await;
-                session.project_root.clone()
-            };
-            let cache_timeout =
-                tokio::time::timeout(std::time::Duration::from_secs(5), self.cache.write()).await;
-            if let Ok(mut cache) = cache_timeout {
-                crate::tools::autonomy::session_lifecycle_pre_hook(
-                    &self.autonomy,
-                    &mut cache,
-                    task.as_deref(),
-                    project_root.as_deref(),
-                    CrpMode::effective(),
-                )
-            } else {
-                tracing::warn!("pre-dispatch: cache write-lock timeout (5s), skipping autonomy");
-                None
-            }
-        };
-
         let config = crate::core::config::Config::load_arc();
 
         let tool_start = std::time::Instant::now();
         let (mut result_text, tool_saved_tokens, shell_outcome, content_blocks) =
-            match self.dispatch_tool(name, args).await {
+            match self.dispatch_tool(name, args, progress).await {
                 Ok(tuple) => tuple,
                 Err(e) => {
                     crate::core::debug_log::log_mcp_error(name, args, &format!("{e:?}"));
@@ -143,17 +106,14 @@ impl SobreServer {
         let pre_compression = result_text.clone();
         result_text = post_process::compress_terse(result_text, name, args, &config, is_raw_shell);
 
-        if !is_raw_shell {
-            let vr =
-                crate::core::output_verification::verify_output(&pre_compression, &result_text);
-            if !vr.warnings.is_empty() {
-                let msg = format!("[VERIFY] {}", vr.format_compact());
-                result_text = format!("{result_text}\n\n{msg}");
-            }
-        }
-
-        if !is_raw_shell && let Some(ctx) = auto_context {
-            result_text = format!("{ctx}\n\n{result_text}");
+        // A condensed text that lost a path, an identifier or structure is
+        // not sent: the agent gets the tool's own output instead.
+        if result_text != pre_compression
+            && !crate::core::output_verification::verify_output(&pre_compression, &result_text)
+                .warnings
+                .is_empty()
+        {
+            result_text.clone_from(&pre_compression);
         }
 
         if let Some(note) = degrade_note {
@@ -273,9 +233,18 @@ impl SobreServer {
         let Some(peer) = peer_guard.as_ref() else {
             return;
         };
-        let list_result = match peer.list_roots().await {
-            Ok(r) => r,
-            Err(e) => {
+        // A client that declares roots but never answers must not hold the
+        // first tool call: past the deadline, the session keeps its root.
+        let list_result = match tokio::time::timeout(ROOTS_LIST_TIMEOUT, peer.list_roots()).await {
+            Err(_) => {
+                tracing::warn!(
+                    "roots/list: no answer within {}s — giving up",
+                    ROOTS_LIST_TIMEOUT.as_secs()
+                );
+                return;
+            }
+            Ok(Ok(r)) => r,
+            Ok(Err(e)) => {
                 let permanent = roots_list_failure_is_permanent(&e);
                 const MAX_ATTEMPTS: u32 = 3;
                 let attempts = self.roots_list_attempts.fetch_add(1, Ordering::Relaxed) + 1;

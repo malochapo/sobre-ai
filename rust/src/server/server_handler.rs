@@ -7,34 +7,15 @@
 #[allow(clippy::wildcard_imports)]
 use super::*;
 
-/// Builds the advertised MCP server capabilities. The tool set never changes
-/// during a session (invariant 3), so `listChanged` is not declared. The
-/// `resources`/`prompts` surfaces stay client-gated so we never advertise a
-/// surface the connected client cannot use.
-fn server_capabilities(resources: bool, prompts: bool) -> ServerCapabilities {
-    match (resources, prompts) {
-        (true, true) => ServerCapabilities::builder()
-            .enable_tools()
-            .enable_resources()
-            .enable_resources_subscribe()
-            .enable_prompts()
-            .build(),
-        (true, false) => ServerCapabilities::builder()
-            .enable_tools()
-            .enable_resources()
-            .enable_resources_subscribe()
-            .build(),
-        (false, true) => ServerCapabilities::builder()
-            .enable_tools()
-            .enable_prompts()
-            .build(),
-        (false, false) => ServerCapabilities::builder().enable_tools().build(),
-    }
+/// The advertised MCP server capabilities: tools only. The tool set never
+/// changes during a session (invariant 3), so `listChanged` is not declared.
+fn server_capabilities() -> ServerCapabilities {
+    ServerCapabilities::builder().enable_tools().build()
 }
 
 impl ServerHandler for SobreServer {
     fn get_info(&self) -> ServerInfo {
-        let capabilities = server_capabilities(true, true);
+        let capabilities = server_capabilities();
 
         let instructions = crate::instructions::build_instructions();
 
@@ -148,14 +129,9 @@ impl ServerHandler for SobreServer {
             }
         });
 
-        let client_caps = crate::core::client_capabilities::ClientMcpCapabilities::detect(&name);
-        tracing::info!("Client capabilities: {}", client_caps.format_summary());
-
-        crate::core::client_capabilities::set_detected(&client_caps);
-
         let instructions = crate::instructions::build_instructions();
 
-        let capabilities = server_capabilities(client_caps.resources, client_caps.prompts);
+        let capabilities = server_capabilities();
 
         Ok(InitializeResult::new(capabilities)
             .with_server_info(Implementation::new("sobre", env!("CARGO_PKG_VERSION")))
@@ -194,7 +170,7 @@ impl ServerHandler for SobreServer {
             // what the product is for.
             let tools = {
                 let cfg = crate::core::config::Config::load();
-                let level = crate::core::config::CompressionLevel::effective(&cfg);
+                let level = crate::core::config::CompressionLevel::effective_configured(&cfg);
                 let mode =
                     crate::core::terse::mcp_compress::DescriptionMode::from_compression_level(
                         &level,
@@ -244,56 +220,6 @@ impl ServerHandler for SobreServer {
         })
     }
 
-    fn list_prompts(
-        &self,
-        _request: Option<PaginatedRequestParams>,
-        _context: RequestContext<RoleServer>,
-    ) -> impl Future<Output = Result<rmcp::model::ListPromptsResult, ErrorData>> {
-        std::future::ready(Ok(rmcp::model::ListPromptsResult::with_all_items(
-            prompts::list_prompts(),
-        )))
-    }
-
-    async fn get_prompt(
-        &self,
-        request: rmcp::model::GetPromptRequestParams,
-        _context: RequestContext<RoleServer>,
-    ) -> Result<rmcp::model::GetPromptResult, ErrorData> {
-        let ledger = self.ledger.read().await;
-        match prompts::get_prompt(&request, &ledger) {
-            Some(result) => Ok(result),
-            None => Err(ErrorData::invalid_params(
-                format!("Unknown prompt: {}", request.name),
-                None,
-            )),
-        }
-    }
-
-    fn list_resources(
-        &self,
-        _request: Option<PaginatedRequestParams>,
-        _context: RequestContext<RoleServer>,
-    ) -> impl Future<Output = Result<rmcp::model::ListResourcesResult, rmcp::ErrorData>> {
-        std::future::ready(Ok(rmcp::model::ListResourcesResult::with_all_items(
-            resources::list_resources(),
-        )))
-    }
-
-    async fn read_resource(
-        &self,
-        request: rmcp::model::ReadResourceRequestParams,
-        _context: RequestContext<RoleServer>,
-    ) -> Result<rmcp::model::ReadResourceResult, rmcp::ErrorData> {
-        let ledger = self.ledger.read().await;
-        match resources::read_resource(&request.uri, &ledger) {
-            Some(contents) => Ok(rmcp::model::ReadResourceResult::new(contents)),
-            None => Err(rmcp::ErrorData::resource_not_found(
-                format!("Unknown resource: {}", request.uri),
-                None,
-            )),
-        }
-    }
-
     async fn call_tool(
         &self,
         request: CallToolRequestParams,
@@ -301,20 +227,14 @@ impl ServerHandler for SobreServer {
     ) -> Result<CallToolResult, ErrorData> {
         use std::panic::AssertUnwindSafe;
 
-        let progress_token = request
+        // Progress belongs to this request: its token, its peer.
+        let progress = request
             .meta
             .as_ref()
-            .and_then(rmcp::model::Meta::get_progress_token);
-        if let Some(ref token) = progress_token {
-            let sender =
-                crate::server::progress::ProgressSender::new(context.peer.clone(), token.clone());
-            *self
-                .progress_sender
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(sender);
-        }
+            .and_then(rmcp::model::Meta::get_progress_token)
+            .map(|token| crate::server::progress::ProgressSender::new(context.peer.clone(), token));
 
-        match AssertUnwindSafe(self.call_tool_guarded(request))
+        match AssertUnwindSafe(self.call_tool_guarded(request, progress))
             .catch_unwind()
             .await
         {
@@ -357,11 +277,10 @@ mod tests {
 
     #[test]
     fn server_capabilities_never_declare_tool_list_changed() {
-        for (resources, prompts) in [(true, true), (true, false), (false, true), (false, false)] {
-            let caps = server_capabilities(resources, prompts);
-            let tools = caps.tools.expect("tools capability must be advertised");
-            assert_ne!(tools.list_changed, Some(true));
-        }
+        let caps = server_capabilities();
+        let tools = caps.tools.expect("tools capability must be advertised");
+        assert_ne!(tools.list_changed, Some(true));
+        assert!(caps.resources.is_none() && caps.prompts.is_none());
     }
 
     /// The `list_tools` panic guard serves the registry, so an internal panic

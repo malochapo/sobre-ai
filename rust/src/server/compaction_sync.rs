@@ -30,15 +30,6 @@ pub fn sync_if_compacted(cache: &mut SessionCache, data_dir: &Path) -> bool {
         eprintln!("[sobre] compaction detected — reset {reset_count} delivery flags for re-read");
     }
 
-    std::thread::spawn(|| {
-        if let Some(session) = crate::core::session::SessionState::load_latest()
-            && let Some(ref root) = session.project_root
-            && (!session.findings.is_empty() || !session.decisions.is_empty())
-        {
-            crate::tools::startup::auto_consolidate_knowledge(root);
-        }
-    });
-
     true
 }
 

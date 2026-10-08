@@ -119,7 +119,6 @@ impl SobreServer {
             roots_resolved: Arc::new(std::sync::atomic::AtomicBool::new(false)),
             roots_list_attempts: Arc::new(std::sync::atomic::AtomicU32::new(0)),
             bm25_cache,
-            progress_sender: Arc::new(std::sync::Mutex::new(None)),
             _eviction_target: eviction_target,
         }
     }
@@ -157,16 +156,6 @@ impl SobreServer {
             && let Err(error) = crate::core::agents::AgentRegistry::finish_persistent(&agent_id)
         {
             tracing::warn!("sobre: failed to finish MCP agent presence: {error}");
-        }
-        {
-            let session = self.session.read().await;
-            let has_insights = !session.findings.is_empty() || !session.decisions.is_empty();
-            let root = session.project_root.clone();
-            drop(session);
-
-            if has_insights && let Some(ref root) = root {
-                crate::tools::startup::auto_consolidate_knowledge(root);
-            }
         }
         {
             let mut session = self.session.write().await;

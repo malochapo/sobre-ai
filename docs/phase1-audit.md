@@ -50,7 +50,7 @@ The lots run in this order:
 | Lot | Scope | Status |
 |---|---|---|
 | A | The user's machine: `uninstall`, `init`, agent integration | done (#31) |
-| B | The MCP tools: bugs, incomplete features, drift; decisions 1–4 and 6 | in progress (#32) |
+| B | The MCP tools: bugs, incomplete features, drift; decisions 1–4 and 6 | in progress (#32, #33) |
 | C | The CLI and the proxy | open |
 | R | Tool names `ctx_*` → `sobre_*` (decision 9) | open |
 | D | Dead code, stale files, stale comments, duplicates; decision 7 | open |
@@ -238,7 +238,8 @@ Fixed in #31. How the fixes work:
 
 ## Lot B — the MCP tools
 
-Fixed so far: #32 (paths, `ctx_read`, hidden read state).
+Fixed so far: #32 (paths, `ctx_read`, hidden read state), #33 (what the
+agent receives: prefixes, markers, footers, prompts and resources).
 
 ### Bugs
 
@@ -289,13 +290,13 @@ Fixed so far: #32 (paths, `ctx_read`, hidden read state).
     `read_file_lossy(..).unwrap_or_default()`, then
     `cache.store(path, "")`.
   - Fix: return the same error as the fast path.
-- [ ] **B6 `ctx_expand` output is itself terse-compressed**
+- [x] **B6 `ctx_expand` output is itself terse-compressed**
   (`server/post_process.rs:32-40`).
   - `skip_terse` exempts only `ctx_read`, `ctx_patch` and raw shell
     (`core/terse/mod.rs:33`).
   - This breaks invariant 5: the original must stay reachable.
   - Fix: add `ctx_expand` to the verbatim set.
-- [ ] **B7 Re-running a command overwrites the earlier saved output.**
+- [x] **B7 Re-running a command overwrites the earlier saved output.**
   - The tee file name comes from the command text (e.g.
     `tee/python3_gen_py_1_3f13142d.log`).
   - The first run's footer path and `ctx_expand` id then point at the
@@ -320,7 +321,7 @@ Fixed so far: #32 (paths, `ctx_read`, hidden read state).
     temp name `.{f}.sobre.v2a.tmp.{pid}`, then renames, with no per-file
     lock.
   - Fix: use `edit_io` and `path_locks`.
-- [ ] **B11 Remove the AUTO CONTEXT prefix (decision 2).**
+- [x] **B11 Remove the AUTO CONTEXT prefix (decision 2).**
   - The first tool call of every MCP session gets about 1.2 KB of
     unrequested text: `--- AUTO CONTEXT --- [TASK:…] OUTPUT-HINT …
     CRITICAL: F1=…` (`server/call_tool.rs:43-94,155`).
@@ -337,11 +338,11 @@ Fixed so far: #32 (paths, `ctx_read`, hidden read state).
   - An already-delivered file returns "[unchanged … fresh=true to
     re-read]", but `ctx_shell` has no `fresh` parameter.
   - `raw=true` is ignored.
-- [ ] **B13 The MCP prompts are wrong** (`server/prompts.rs`).
+- [x] **B13 The MCP prompts are wrong** (`server/prompts.rs`).
   - `context-budget` tells the agent to call
     `ctx_session(action="budget")`, which does not exist (`:92`).
   - `context-focus` claims to set the task intent but sets nothing.
-- [ ] **B14 The progress-notification sender is never cleared**
+- [x] **B14 The progress-notification sender is never cleared**
   (`server/server_handler.rs:309-316`).
   - Concurrent requests overwrite it.
   - `ctx_shell.rs:244-262` sends progress on a stale token.
@@ -398,13 +399,32 @@ Fixed so far: #32 (paths, `ctx_read`, hidden read state).
 - [x] **B51 Semantic search stored its last query in the cwd's latest
   session**, and later compressed reads used it as relevance keywords.
   Removed.
-- [ ] **B52 Compaction consolidates knowledge from the cwd's latest session**
+- [x] **B52 Compaction consolidates knowledge from the cwd's latest session**
   (`server/compaction_sync.rs:34`), behind the agent's back.
 - [x] **B53 The anti-inflation cap replaced a lossy view with the whole file
   silently** (#361). The file now comes with one line saying so.
 - [x] **B54 `is_instruction_file` matched any path containing `/skills/`**,
   so `src/skills/mod.rs` counted as one. Only markdown under `skills/`
   counts now.
+
+### Found while fixing (what the agent receives)
+
+- [x] **B55 Knowledge was consolidated behind the agent's back.** After
+  every 15th shell command (`tool_lifecycle.rs`), after every compaction,
+  at shutdown and at startup, sobre merged the cwd's latest session into
+  `ctx_knowledge`. All four are removed; knowledge changes only when the
+  agent calls `ctx_knowledge`.
+- [x] **B56 A condensed output that failed verification was sent anyway**
+  with a `[VERIFY] WARN(…)` line. The agent now gets the tool's own output
+  instead.
+- [x] **B57 Client capabilities were guessed from the client's name** and
+  written to `client-id.json`, which nothing read. Removed with the prompts
+  and resources (this also covers the `client_capabilities.rs` parts of D4
+  and D7).
+- [x] **B58 Terse compression ran on every tool but `ctx_read`, `ctx_patch`
+  and raw shell**, so code from `ctx_search`, `ctx_compose`, `ctx_expand`
+  or a symbol body could lose lines. It now runs only on prose and shell
+  output: `ctx_shell`, `ctx_knowledge` and `ctx_session`.
 
 ### Incomplete features
 
@@ -477,7 +497,7 @@ Fixed so far: #32 (paths, `ctx_read`, hidden read state).
     (`impl_semantic_search/mod.rs:64,82,88`).
   - Unknown actions in `ctx_graph`, `ctx_knowledge` and `ctx_session`, and a
     missing path in `ctx_outline`, also succeed.
-- [ ] **B30 Resources and prompts are served but not advertised.**
+- [x] **B30 Resources and prompts are served but not advertised.**
   - The server answers `resources/list` (5) and `prompts/list` (3), but
     `initialize` advertises only tools.
   - The `sobre://context/pinned` resource always says "No pinned items"
@@ -506,11 +526,11 @@ Fixed so far: #32 (paths, `ctx_read`, hidden read state).
     function doc says they never do.
   - It mentions "Phase-4 edit-gate… ctx_edit", the dashboard and
     ContextBus (`hook_handlers/edit_health.rs:3,36-37,48-50`).
-- [ ] **B34 Internal markers reach the agent.** Examples:
+- [x] **B34 Internal markers reach the agent.** Examples:
   `‹‹‹LCTX_PROJECT_KNOWLEDGE_<hash>›››` (ctx_knowledge status,
   ctx_compose), `[VERIFY] WARN(truncated_block=1) loss=14.3%` and
   `AGENTS:mcp-29069-67c9b934(context-engine)` (ctx_compose).
-- [ ] **B35 The MCP instructions contradict themselves.**
+- [x] **B35 The MCP instructions contradict themselves.**
   - They give both "OUTPUT STYLE: dense … ≤200 tokens" and "CRP: compact
     … <=200 tok; trust tool outputs".
   - "trust tool outputs" contradicts the RECOVER line.
@@ -550,7 +570,7 @@ Fixed so far: #32 (paths, `ctx_read`, hidden read state).
 - [ ] **B42 `ctx_search` is annotated read-only and idempotent**
   (`tool_defs/mod.rs:18`), though `reindex` writes and the semantic action
   saves the session.
-- [ ] **B43 A client that declares the roots capability but never answers
+- [x] **B43 A client that declares the roots capability but never answers
   `roots/list` hangs the first `tools/call`** for over 30 s. There is no
   server-side timeout.
 
@@ -567,15 +587,15 @@ Fixed so far: #32 (paths, `ctx_read`, hidden read state).
   - "operator env pin" (`execute.rs:404`).
 - [ ] **B45 `ctx_shell background_action=cancel` answers
   `[background:X running]`** (`background_shell.rs:237-246`).
-- [ ] **B46 The first semantic search after `action=reindex` serves the old
+- [x] **B46 The first semantic search after `action=reindex` serves the old
   index.** `bm25_cache::get_or_background` serves the stale copy while it
   rebuilds (`impl_semantic_search/mod.rs:178`).
-- [ ] **B47 Terse compression may drop low-scoring source lines** from
+- [x] **B47 Terse compression may drop low-scoring source lines** from
   `ctx_search anchored=true`, `ctx_compose` and symbol-body output (not
   verified).
-- [ ] **B48 Footers differ.** Seen: `[sobre] full source:`,
+- [x] **B48 Footers differ.** Seen: `[sobre] full source:`,
   `[full output: ctx_expand(id=…)]`, and the README's `[sobre: …]`.
-- [ ] **B49 Wrong match count:** "4 matches in 8 files", where 8 is the
+- [x] **B49 Wrong match count:** "4 matches in 8 files", where 8 is the
   number of files searched.
 
 ## Lot C — the CLI and the proxy
@@ -686,7 +706,8 @@ Fixed so far: #32 (paths, `ctx_read`, hidden read state).
     with `"apply"`.
   - `context_ledger.rs:14-32`: the per-agent ledger path, since
     `agent_id` is always `"default"`.
-  - `client_capabilities.rs:29`: the hint branch of `detect_with_hint`.
+  - ~~`client_capabilities.rs:29`: the hint branch of `detect_with_hint`.~~
+    Removed (B57).
   - `bm25_index/mod.rs:667` `load_or_build_fast` (zero callers), hence
     `bm25_index_looks_stale_fast` (`:749`), the fast branch (`:775-810`)
     and `SENTINEL_SAMPLE_SIZE` (`:822`).
@@ -705,9 +726,9 @@ Fixed so far: #32 (paths, `ctx_read`, hidden read state).
 - [ ] **D7 Write-only stores.**
   - `graph_index/mod.rs:231` `ProjectIndex.interner` is rebuilt on every
     scan and never read. Delete it with `file_id.rs`.
-  - In `client_capabilities.rs:150-189`, `GLOBAL` is never read,
+  - ~~In `client_capabilities.rs:150-189`, `GLOBAL` is never read,
     `client-id.json` is written and never read, and `tier()` with the
-    elicitation/sampling fields only feeds a log line.
+    elicitation/sampling fields only feeds a log line.~~ Removed (B57).
   - `auto_mode_resolver.rs:8-56`: `SOURCE_COUNTS` is flushed to
     `auto_mode_sources.json` on every exit (`tool_lifecycle.rs:70`), and
     its only reader is `#[cfg(test)]`.

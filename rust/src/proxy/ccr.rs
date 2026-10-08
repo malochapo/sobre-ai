@@ -37,7 +37,7 @@ const CLEANUP_INTERVAL_SECS: u64 = 600;
 
 /// Length of the content hash in a proxy tee name ([`hash_short`]).
 const TEE_HASH_LEN: usize = 16;
-/// Length of the command hash in a shell tee name (`shell::redact::save_tee`).
+/// Length of the hash in a shell tee name (`shell::redact::save_tee`).
 const SHELL_TEE_HASH_LEN: usize = 8;
 
 /// Deterministic tee path for `content`:

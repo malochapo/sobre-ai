@@ -4,7 +4,7 @@
 //! sobre writes no rules into the agent's own files (CLAUDE.md, AGENTS.md,
 //! `.cursor/rules`, …). Every client gets this same text on `initialize`, and
 //! the only setting that changes it is `compression_level`: it picks the output
-//! style appended below and the CRP suffix. The detailed guide is the `sobre`
+//! style appended below. The detailed guide is the `sobre`
 //! skill, which agents that support skills load on demand.
 //!
 //! The text must stay true on every host: hooks compress native shell output
@@ -12,10 +12,9 @@
 //! here may claim they are.
 
 use crate::core::config::CompressionLevel;
-use crate::tools::CrpMode;
 
 /// Claude Code truncates a server's instructions at 2048 characters; the
-/// longest combination (`Raw` style + TDD suffix) must fit under it.
+/// longest style (`Raw`) must fit under it.
 const MAX_INSTRUCTION_CHARS: usize = 2048;
 
 /// What every client is told, whatever its level.
@@ -57,39 +56,27 @@ pub fn compression_text(level: CompressionLevel) -> &'static str {
     }
 }
 
-fn crp_suffix(crp_mode: CrpMode) -> &'static str {
-    match crp_mode {
-        CrpMode::Off => "",
-        CrpMode::Compact => {
-            "CRP: compact — omit filler; abbreviate fn,cfg,impl,deps,req,res; \
-             diff lines (+/-) only; <=200 tok; trust tool outputs."
-        }
-        CrpMode::Tdd => {
-            "CRP: tdd — max density; Fn refs + diff lines only \
-             (+F1:42 | -F1:10-15 | ~F1:42 old->new); <=150 tok; zero narration."
-        }
-    }
-}
-
-/// The instructions for the configured `compression_level`.
+/// The instructions for the configured `compression_level`. A session's
+/// temporary lowering of compression changes tool output only, never this
+/// text (invariant 3: one tools/list, one set of instructions).
 #[must_use]
 pub fn build_instructions() -> String {
-    let level = CompressionLevel::effective(&crate::core::config::Config::load());
-    render(level, CrpMode::effective())
+    render(CompressionLevel::effective_configured(
+        &crate::core::config::Config::load(),
+    ))
 }
 
-/// The instructions for an explicit level and CRP mode.
+/// The instructions for an explicit level.
 #[must_use]
-pub fn render(level: CompressionLevel, crp_mode: CrpMode) -> String {
+pub fn render(level: CompressionLevel) -> String {
     let mut parts = vec![GUIDE.to_string()];
     let shell = shell_hint();
     if !shell.is_empty() {
         parts.push(shell);
     }
-    for extra in [compression_text(level), crp_suffix(crp_mode)] {
-        if !extra.is_empty() {
-            parts.push(extra.to_string());
-        }
+    let style = compression_text(level);
+    if !style.is_empty() {
+        parts.push(style.to_string());
     }
     let out = parts.join("\n");
     if out.len() <= MAX_INSTRUCTION_CHARS {
@@ -124,34 +111,34 @@ mod tests {
         CompressionLevel::Max,
         CompressionLevel::Raw,
     ];
-    const CRP_MODES: [CrpMode; 3] = [CrpMode::Off, CrpMode::Compact, CrpMode::Tdd];
-
     #[test]
-    fn every_combination_fits_claude_codes_limit_untruncated() {
+    fn every_level_fits_claude_codes_limit_untruncated() {
         for level in LEVELS {
-            for crp in CRP_MODES {
-                let out = render(level, crp);
-                let full = [GUIDE, compression_text(level), crp_suffix(crp)]
-                    .into_iter()
-                    .filter(|s| !s.is_empty())
-                    .map(str::len)
-                    .sum::<usize>();
-                assert!(
-                    full + 64 <= MAX_INSTRUCTION_CHARS,
-                    "{level:?}/{crp:?}: {full} chars leaves no room under {MAX_INSTRUCTION_CHARS}"
-                );
-                assert!(out.contains(compression_text(level)));
-                assert!(out.contains(crp_suffix(crp)));
-            }
+            let out = render(level);
+            let full = GUIDE.len() + compression_text(level).len();
+            assert!(
+                full + 64 <= MAX_INSTRUCTION_CHARS,
+                "{level:?}: {full} chars leaves no room under {MAX_INSTRUCTION_CHARS}"
+            );
+            assert!(out.contains(compression_text(level)));
         }
     }
 
     #[test]
     fn only_the_level_changes_the_text() {
-        let off = render(CompressionLevel::Off, CrpMode::Off);
+        let off = render(CompressionLevel::Off);
         assert_eq!(off, GUIDE.to_string() + &shell_hint_line());
-        let lite = render(CompressionLevel::Lite, CrpMode::Off);
+        let lite = render(CompressionLevel::Lite);
         assert!(lite.starts_with(GUIDE) && lite.contains("OUTPUT STYLE: concise"));
+        // One writing-style line, no second prompt that repeats or contradicts it.
+        for level in LEVELS {
+            let text = render(level);
+            assert!(!text.contains("CRP:"), "{level:?}");
+            assert!(
+                !text.to_lowercase().contains("trust tool outputs"),
+                "{level:?}"
+            );
+        }
     }
 
     fn shell_hint_line() -> String {

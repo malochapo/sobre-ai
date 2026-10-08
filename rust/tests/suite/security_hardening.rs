@@ -72,12 +72,10 @@ fn raw_shell_skips_all_postprocessing() {
             && src.contains("skip_terse"),
         "skip_terse must include is_raw_shell; the sent count must be taken after terse"
     );
-    // The verify_output guard may AND extra predicates after !is_raw_shell
-    // (e.g. !firewalled), so accept both the bare guard and the extended form
-    // rather than pinning a brittle exact literal.
+    // Verification only runs on text terse changed, and terse never touches
+    // raw shell output.
     assert!(
-        (src.contains("if !is_raw_shell {") || src.contains("if !is_raw_shell &&"))
-            && src.contains("verify_output"),
-        "output verification must be skipped for raw shell"
+        src.contains("result_text != pre_compression") && src.contains("verify_output"),
+        "output verification must only run on condensed text"
     );
 }

@@ -218,12 +218,10 @@ pub(crate) fn handle(
     }
     append_graph_hotspots_section(&mut output, &project_root, gp);
 
-    if true {
-        let wakeup = build_wakeup_briefing(&project_root, task);
-        if !wakeup.is_empty() {
-            output.push(String::new());
-            output.push(wakeup);
-        }
+    let wakeup = build_wakeup_briefing(&project_root, task);
+    if !wakeup.is_empty() {
+        output.push(String::new());
+        output.push(wakeup);
     }
 
     (output.join("\n"), true)
@@ -375,24 +373,6 @@ pub(crate) fn build_wakeup_briefing(project_root: &str, task: Option<&str>) -> S
         for r in crate::core::prospective_memory::reminders_for_task(project_root, t) {
             parts.push(r);
         }
-    }
-
-    // Prune dead/stale agents before listing so the briefing never shows ghosts
-    // from crashed or exited MCP processes (#419). `ctx_agent list` and the
-    // dashboard already do this; the wake-up briefing must too. Scope to the
-    // current project root — the briefing is about peers on *this* project.
-    let registry = crate::core::agents::AgentRegistry::mutate_locked(|registry| {
-        registry.cleanup_stale(24);
-    })
-    .map(|(registry, ())| registry)
-    .unwrap_or_default();
-    let active_agents = registry.list_active(Some(project_root));
-    if !active_agents.is_empty() {
-        let agents: Vec<String> = active_agents
-            .iter()
-            .map(|a| format!("{}({})", a.agent_id, a.role.as_deref().unwrap_or("-")))
-            .collect();
-        parts.push(format!("AGENTS:{}", agents.join(",")));
     }
 
     if parts.is_empty() {

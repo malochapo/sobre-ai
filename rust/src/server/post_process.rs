@@ -11,29 +11,20 @@ use serde_json::{Map, Value};
 
 use crate::core::config::{CompressionLevel, Config};
 
-/// Whether the terse compression stage must be skipped for this call (raw shell,
-/// any read-family output, edit evidence, or structural shell output).
-///
-/// Read-family tools return file content the agent reads and *edits against*. The
-/// prose terse pipeline (dictionary `return`→`ret`, `string`→`str`, … plus
-/// line-score filtering) corrupts source and drops repeated lines, turning a
-/// `mode="full"` read — whose contract is "guaranteed complete content" — into a
-/// lossy, un-editable digest. The read tools already apply their own mode-aware,
-/// structure-preserving compression (map/signatures/aggressive), so the generic
-/// terse layer must never post-process their output. Previously this only skipped
-/// when the read had *already saved* tokens, so verbatim `full`/`lines:` reads
-/// (0 savings) were silently dictionary-mangled and de-duplicated.
-///
-/// `ctx_patch` is exempt for the same reason (#382): its `evidence (diff)` block
-/// (anchored ops and the `replace_unique` delegate to the edit handler alike)
-/// embeds verbatim source lines that must stay byte-accurate — agents treat the
-/// evidence as proof of what was written. The rest of its output (status line,
-/// pre/postimage hashes) is already minimal, so terse has nothing to gain.
+/// The tools whose text the terse stage may condense: prose about what was
+/// recorded (`ctx_knowledge`, `ctx_session`) and shell output, whose original
+/// stays reachable through the footer's `ctx_expand` id. Every other tool
+/// returns content the agent acts on — file text, search hits, signatures,
+/// diffs, paths, the original `ctx_expand` returns — where the dictionary and
+/// line-dropping layers would change what the agent reads.
+const TERSE_TOOLS: [&str; 3] = ["ctx_shell", "ctx_knowledge", "ctx_session"];
+
+/// Whether the terse stage must leave this call's output alone: any tool not
+/// in [`TERSE_TOOLS`], raw shell, and shell output with structure
+/// (`git diff`, tables) that line scoring would break.
 fn skip_terse(name: &str, args: Option<&Map<String, Value>>, is_raw_shell: bool) -> bool {
-    let mode = crate::server::helpers::get_str(args, "mode");
-    is_raw_shell
-        || crate::core::terse::is_verbatim_read(name, mode.as_deref())
-        || name == "ctx_patch"
+    !TERSE_TOOLS.contains(&name)
+        || is_raw_shell
         || (name == "ctx_shell"
             && crate::server::helpers::get_str(args, "command")
                 .is_some_and(|c| crate::shell::compress::has_structural_output(&c)))
@@ -89,41 +80,30 @@ mod tests {
     use super::*;
 
     #[test]
-    fn skip_terse_for_raw_shell_and_reads() {
+    fn terse_reaches_only_prose_and_shell_output() {
+        for tool in ["ctx_shell", "ctx_knowledge", "ctx_session"] {
+            assert!(!skip_terse(tool, None, false), "{tool} is condensable");
+        }
+        // Content the agent acts on stays as the tool returned it: file text,
+        // the original ctx_expand returns, edit evidence (#382), search hits,
+        // signatures, diffs and paths.
+        for tool in [
+            "ctx_read",
+            "ctx_expand",
+            "ctx_patch",
+            "ctx_search",
+            "ctx_outline",
+            "ctx_compose",
+            "ctx_refactor",
+            "ctx_checkpoint",
+            "ctx_review",
+            "ctx_tree",
+            "ctx_glob",
+            "ctx_graph",
+        ] {
+            assert!(skip_terse(tool, None, false), "{tool} must stay verbatim");
+        }
         assert!(skip_terse("ctx_shell", None, true), "raw shell skips terse");
-        // Reads always skip terse — even a verbatim `full` read that saved 0 tokens —
-        // so file content stays byte-faithful for editing (no `return`→`ret` mangling,
-        // no de-dup of repeated lines).
-        assert!(
-            skip_terse("ctx_read", None, false),
-            "full/verbatim read (0 savings) must still skip terse"
-        );
-        assert!(
-            !skip_terse("ctx_search", None, false),
-            "ordinary tool output is eligible for terse"
-        );
-        // #382: ctx_patch embeds verbatim source in its evidence diff (anchored
-        // ops and the replace_unique delegate alike) — the terse dictionary
-        // (`return`→`ret`) and line-score filtering corrupted it into a false
-        // "the edit went wrong" signal for agents.
-        assert!(
-            skip_terse("ctx_patch", None, false),
-            "edit evidence must stay byte-accurate"
-        );
-    }
-
-    #[test]
-    fn skip_terse_mode_based_guard_protects_verbatim() {
-        use serde_json::json;
-        let full_args = json!({"mode": "full"}).as_object().unwrap().clone();
-        let lines_args = json!({"mode": "lines:1-20"}).as_object().unwrap().clone();
-        let map_args = json!({"mode": "map"}).as_object().unwrap().clone();
-        // Defense in depth: a non-read tool requesting a verbatim mode is still
-        // protected, so a future read path is byte-exact before it is named (#404).
-        assert!(skip_terse("ctx_future_reader", Some(&full_args), false));
-        assert!(skip_terse("ctx_x", Some(&lines_args), false));
-        // A non-read tool with a lossy/structured mode stays terse-eligible.
-        assert!(!skip_terse("ctx_search", Some(&map_args), false));
     }
 
     #[test]
@@ -157,7 +137,7 @@ mod tests {
             compression_level: 0.7,
             ..Config::default()
         };
-        let out = compress_terse(text.clone(), "ctx_search", None, &cfg, false);
+        let out = compress_terse(text.clone(), "ctx_shell", None, &cfg, false);
         assert_ne!(out, text, "this input is expected to condense");
         assert!(
             out.ends_with("% smaller]"),
