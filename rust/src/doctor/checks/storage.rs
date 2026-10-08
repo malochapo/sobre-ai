@@ -179,54 +179,6 @@ pub(crate) fn semantic_index_outcome() -> Option<Outcome> {
     };
     Some(outcome)
 }
-pub(crate) fn memory_outcome() -> Outcome {
-    let bm25_mb = crate::core::config::DEFAULT_BM25_PERSIST_MB;
-    let ttl_min = crate::core::config::IDLE_CACHE_TTL_SECS / 60;
-    Outcome {
-        ok: true,
-        line: format!(
-            "{BOLD}Memory{RST}  {GREEN}full caches{RST}  {DIM}(BM25 disk {bm25_mb} MB, cache kept {ttl_min} min idle){RST}"
-        ),
-    }
-}
-pub(crate) fn ram_guardian_outcome() -> Outcome {
-    // This process: sobre has no long-lived daemon whose RSS to measure instead.
-    let snap = crate::core::memory_guard::MemorySnapshot::capture();
-    let Some(snap) = snap else {
-        return Outcome {
-            ok: true,
-            line: format!(
-                "{BOLD}RAM Guardian{RST}  {YELLOW}not available{RST}  {DIM}(platform unsupported){RST}"
-            ),
-        };
-    };
-    let allocator = if cfg!(all(feature = "jemalloc", not(windows))) {
-        "jemalloc"
-    } else {
-        "system"
-    };
-    let source = "self";
-    let ok = snap.pressure_level == crate::core::memory_guard::PressureLevel::Normal;
-    let color = if ok { GREEN } else { RED };
-    let pressure_hint = match snap.pressure_level {
-        crate::core::memory_guard::PressureLevel::Normal => String::new(),
-        level => {
-            format!(
-                "  {YELLOW}pressure={level:?} — provision RAM or enforce an OS cgroup/container limit{RST}"
-            )
-        }
-    };
-    Outcome {
-        ok,
-        line: format!(
-            "{BOLD}RAM Guardian{RST}  {color}{:.0} MB{RST} / {:.1} GB system ({:.1}%)  {DIM}limit: {:.0} MB ({allocator}, {source}){RST}{pressure_hint}",
-            snap.rss_bytes as f64 / 1_048_576.0,
-            snap.system_ram_bytes as f64 / 1_073_741_824.0,
-            snap.rss_percent,
-            snap.rss_limit_bytes as f64 / 1_048_576.0,
-        ),
-    }
-}
 /// Reports knowledge stores whose `project_root` was deleted (removed git
 /// worktrees, thrown-away projects). Such a store can never be written again, so
 /// its eviction cap can never self-heal — it is pure accumulated bloat. This is

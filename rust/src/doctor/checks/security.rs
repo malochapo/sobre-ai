@@ -101,16 +101,6 @@ pub(crate) fn search_roots_outcome() -> Outcome {
     }
 }
 
-/// Reports secret/`.env` redaction (#507), on its own line: "are my API keys masked before they reach the LLM provider?".
-pub(crate) fn secret_detection_outcome() -> Outcome {
-    Outcome {
-        ok: true,
-        line: format!(
-            "{BOLD}Secret redaction{RST}  {GREEN}on{RST}  {DIM}(.env/API keys masked before the model sees them){RST}"
-        ),
-    }
-}
-
 /// Managed ONNX Runtime state (GH #732). Only rendered on embedding-enabled
 /// builds; `None` when the runtime is simply not provisioned (embeddings are
 /// opt-in — a missing optional runtime is not a finding, the provision hint
@@ -120,7 +110,7 @@ pub(crate) fn managed_ort_outcome() -> Option<Outcome> {
         return None;
     }
     let path = crate::core::artifacts_exec::ort_provision::managed_dylib_path()?;
-    let ok = crate::core::artifacts_exec::binhash::sha256_file(&path).is_ok();
+    let ok = std::fs::File::open(&path).is_ok();
     Some(Outcome {
         ok,
         line: if ok {

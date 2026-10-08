@@ -20,7 +20,7 @@ pub fn cmd_init(args: &[String]) {
         .iter()
         .find(|a| a.starts_with('-') && !KNOWN.contains(&a.as_str()))
     {
-        eprintln!("init: unknown flag '{unknown}'\n");
+        crate::errln!("init: unknown flag '{unknown}'\n");
         print_init_help();
         std::process::exit(2);
     }
@@ -33,7 +33,7 @@ pub fn cmd_init(args: &[String]) {
             Some(key) if !named.contains(&key) => named.push(key),
             Some(_) => {}
             None => {
-                eprintln!("init: unknown agent '{arg}'\n");
+                crate::errln!("init: unknown agent '{arg}'\n");
                 print_init_help();
                 std::process::exit(2);
             }
@@ -53,7 +53,7 @@ pub fn cmd_init(args: &[String]) {
     }
 
     if !json {
-        println!(
+        crate::outln!(
             "\nsobre init{}\n",
             if check {
                 " --check (nothing is written)"
@@ -64,7 +64,7 @@ pub fn cmd_init(args: &[String]) {
     }
     let report = crate::setup::run_init(&named, check);
     if json {
-        println!(
+        crate::outln!(
             "{}",
             serde_json::to_string_pretty(&report).unwrap_or_else(|_| "{}".to_string())
         );
@@ -86,12 +86,12 @@ fn ask_about_proxy() {
         return;
     }
 
-    println!();
-    println!("  The local proxy routes LLM requests through sobre, which buys");
-    println!("  extra tool-result compression and a record of the tokens each");
-    println!("  call was billed. Everything else — MCP tools, the agent hooks,");
-    println!("  gain tracking — works without it.");
-    println!();
+    crate::outln!();
+    crate::outln!("  The local proxy routes LLM requests through sobre, which buys");
+    crate::outln!("  extra tool-result compression and a record of the tokens each");
+    crate::outln!("  call was billed. Everything else — MCP tools, the agent hooks,");
+    crate::outln!("  gain tracking — works without it.");
+    crate::outln!();
     print!("  Enable the local proxy? [y/N] ");
     let _ = std::io::stdout().flush();
 
@@ -110,9 +110,9 @@ fn ask_about_proxy() {
         if let Some(home) = dirs::home_dir() {
             crate::proxy_setup::install_proxy_env(&home, port, false);
         }
-        println!("  Proxy enabled.");
+        crate::outln!("  Proxy enabled.");
     } else {
-        println!("  Skipped. Turn it on later with `sobre proxy enable`.");
+        crate::outln!("  Skipped. Turn it on later with `sobre proxy enable`.");
     }
 }
 
@@ -130,10 +130,10 @@ fn ask_about_embeddings() {
             return;
         }
 
-        println!();
-        println!("  Semantic search runs a small embedding model on this machine.");
-        println!("  It needs the ONNX Runtime and the model (about 120 MB, one-time).");
-        println!();
+        crate::outln!();
+        crate::outln!("  Semantic search runs a small embedding model on this machine.");
+        crate::outln!("  It needs the ONNX Runtime and the model (about 120 MB, one-time).");
+        crate::outln!();
         print!("  Download them now? [y/N] ");
         let _ = std::io::stdout().flush();
 
@@ -141,16 +141,16 @@ fn ask_about_embeddings() {
         let _ = std::io::stdin().read_line(&mut input);
         if matches!(input.trim().to_lowercase().as_str(), "y" | "yes") {
             if let Err(e) = crate::cli::embeddings_cmd::provision(false) {
-                eprintln!("  Download failed: {e}");
+                crate::errln!("  Download failed: {e}");
             }
         } else {
-            println!("  Skipped. Download later with `sobre embeddings provision`.");
+            crate::outln!("  Skipped. Download later with `sobre embeddings provision`.");
         }
     }
 }
 
 fn print_init_help() {
-    println!(
+    crate::outln!(
         "Usage: sobre init [<agent>...] [options]
 
   sobre init                 Connect every installed agent: its MCP entry,

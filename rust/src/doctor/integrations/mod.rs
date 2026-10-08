@@ -44,7 +44,7 @@ pub(crate) struct NamedCheck {
 
 pub(super) fn run_integrations(opts: &IntegrationsOptions) -> i32 {
     let Some(home) = dirs::home_dir() else {
-        eprintln!("Cannot determine home directory");
+        crate::errln!("Cannot determine home directory");
         return 2;
     };
     let binary = crate::core::portable_binary::resolve_portable_binary();
@@ -71,13 +71,13 @@ pub(super) fn run_integrations(opts: &IntegrationsOptions) -> i32 {
     };
 
     if opts.json {
-        println!(
+        crate::outln!(
             "{}",
             serde_json::to_string_pretty(&report).unwrap_or_else(|_| "{}".to_string())
         );
     } else {
-        println!();
-        println!("  {BOLD}{WHITE}Integration health:{RST}");
+        crate::outln!();
+        crate::outln!("  {BOLD}{WHITE}Integration health:{RST}");
         for i in &report.integrations {
             if !i.detected {
                 continue;
@@ -87,14 +87,14 @@ pub(super) fn run_integrations(opts: &IntegrationsOptions) -> i32 {
             } else {
                 format!("{YELLOW}✗{RST}")
             };
-            println!("  {mark}  {BOLD}{}{RST}", i.name);
+            crate::outln!("  {mark}  {BOLD}{}{RST}", i.name);
             for c in &i.checks {
                 let m = if c.ok {
                     format!("{GREEN}✓{RST}")
                 } else {
                     format!("{YELLOW}✗{RST}")
                 };
-                println!(
+                crate::outln!(
                     "       {m}  {}  {DIM}{}{RST}",
                     c.name,
                     tildify_home(&c.detail)
@@ -102,8 +102,8 @@ pub(super) fn run_integrations(opts: &IntegrationsOptions) -> i32 {
             }
         }
         if !report.ok {
-            println!();
-            println!(
+            crate::outln!();
+            crate::outln!(
                 "  {YELLOW}Repair:{RST} run {BOLD}{}{RST}",
                 report.repair_command
             );

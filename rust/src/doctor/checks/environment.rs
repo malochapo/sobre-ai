@@ -5,18 +5,6 @@
 use crate::doctor::common::*;
 use crate::doctor::{BOLD, DIM, GREEN, Outcome, RED, RST, YELLOW};
 
-/// Reports the format-aware passthrough (#342): output already in a compact,
-/// token-oriented format (TOON by default) is preserved verbatim instead of
-/// recompressed, so an agent's proof-of-output-shape survives intact.
-pub(crate) fn compact_format_passthrough_outcome() -> Outcome {
-    Outcome {
-        ok: true,
-        line: format!(
-            "{BOLD}Compact-format passthrough{RST}  {GREEN}{}{RST}  {DIM}(preserved verbatim, not recompressed){RST}",
-            crate::core::config::PRESERVE_COMPACT_FORMATS.join(", ")
-        ),
-    }
-}
 pub(crate) fn mcp_config_outcome() -> Outcome {
     let Some(home) = dirs::home_dir() else {
         return Outcome {
@@ -219,61 +207,4 @@ pub(crate) fn lsp_server_outcomes() -> Vec<Outcome> {
             }
         })
         .collect()
-}
-/// True when `cwd_str` points inside an IDE/agent config directory rather than a
-/// real project (LM Studio, Claude, Codex). Matches both POSIX (`/`)
-/// and Windows (`\`) separators so the warning fires on every platform.
-pub(crate) fn cwd_looks_like_agent_dir(cwd_str: &str) -> bool {
-    crate::core::pathutil::is_agent_config_dir(std::path::Path::new(cwd_str))
-}
-
-/// Warn if sobre is running as an MCP server from a directory that lacks
-/// a project marker and looks like an IDE/agent tool directory (e.g. .lmstudio,
-/// .claude). This usually means the MCP client launched the process from the
-/// wrong CWD, causing "path escapes project root" errors for every tool call.
-pub(crate) fn mcp_server_cwd_outcome() -> Outcome {
-    let is_mcp = crate::core::runtime_flags::mcp_server_enabled();
-    if !is_mcp {
-        return Outcome {
-            ok: true,
-            line: format!("{BOLD}MCP server CWD{RST}  {DIM}(not running as MCP server){RST}"),
-        };
-    }
-
-    let Ok(cwd) = std::env::current_dir() else {
-        return Outcome {
-            ok: true,
-            line: format!("{BOLD}MCP server CWD{RST}  {YELLOW}could not resolve{RST}"),
-        };
-    };
-
-    let has_marker = crate::core::pathutil::has_project_marker(&cwd);
-    let cwd_str = cwd.to_string_lossy();
-    let suspicious = cwd_looks_like_agent_dir(&cwd_str);
-
-    if has_marker {
-        Outcome {
-            ok: true,
-            line: format!(
-                "{BOLD}MCP server CWD{RST}  {GREEN}under project root{RST}  {DIM}{}{RST}",
-                cwd.display()
-            ),
-        }
-    } else if suspicious {
-        Outcome {
-            ok: false,
-            line: format!(
-                "{BOLD}MCP server CWD{RST}  {YELLOW}launched from an IDE/agent config dir{RST}  {DIM}sobre was launched from {}, which is not a project root. It auto-corrects to your real project on the first absolute path (#580); for relative paths to resolve immediately, set `cwd` in your MCP client config to your project directory.{RST}",
-                cwd.display()
-            ),
-        }
-    } else {
-        Outcome {
-            ok: false,
-            line: format!(
-                "{BOLD}MCP server CWD{RST}  {YELLOW}no project marker found in CWD{RST}  {DIM}cwd={} — relative paths resolve against this directory. Add `cwd` to your MCP client config{RST}",
-                cwd.display()
-            ),
-        }
-    }
 }

@@ -96,7 +96,7 @@ impl Config {
                 Err(e) => {
                     record_parse_error(Some(format!("{e}")));
                     tracing::warn!("config parse error in {}: {e}", path.display());
-                    eprintln!(
+                    crate::errln!(
                         "\x1b[33m[sobre] WARNING: config parse error in {}: {e}\n  \
                          Using defaults. Run `sobre doctor --fix` to repair.\x1b[0m",
                         path.display()

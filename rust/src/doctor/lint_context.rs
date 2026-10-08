@@ -30,17 +30,17 @@ pub(super) fn run_lint_context(json: bool) -> i32 {
             })
             .collect();
         let out = serde_json::json!({ "findings": rows, "error_count": errors });
-        println!("{}", serde_json::to_string_pretty(&out).unwrap_or_default());
+        crate::outln!("{}", serde_json::to_string_pretty(&out).unwrap_or_default());
         return i32::from(errors > 0);
     }
 
-    println!("{BOLD}Injected-context lint{RST}");
-    println!(
+    crate::outln!("{BOLD}Injected-context lint{RST}");
+    crate::outln!(
         "{DIM}Every injected line must earn its tokens: when/why + the non-obvious gotcha.{RST}\n"
     );
 
     if findings.is_empty() {
-        println!("  {GREEN}✓ no findings — injected context is high-signal{RST}");
+        crate::outln!("  {GREEN}✓ no findings — injected context is high-signal{RST}");
         return 0;
     }
 
@@ -49,13 +49,13 @@ pub(super) fn run_lint_context(json: bool) -> i32 {
             Severity::Error => ("ERROR", RED),
             Severity::Warn => (" WARN", YELLOW),
         };
-        println!("  {color}{tag}{RST} {DIM}{}{RST}  {}", f.source, f.detail);
+        crate::outln!("  {color}{tag}{RST} {DIM}{}{RST}  {}", f.source, f.detail);
     }
-    println!();
+    crate::outln!();
     if errors > 0 {
-        println!("  {RED}{errors} error finding(s) — these gate CI{RST}");
+        crate::outln!("  {RED}{errors} error finding(s) — these gate CI{RST}");
     } else {
-        println!(
+        crate::outln!(
             "  {GREEN}✓ no gating errors{RST} {DIM}({} warning(s)){RST}",
             findings.len()
         );

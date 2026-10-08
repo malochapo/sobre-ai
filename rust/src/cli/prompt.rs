@@ -35,7 +35,7 @@ pub(crate) fn confirm(prompt: &str, assume_yes: bool) -> bool {
         return true;
     }
     if !std::io::stdin().is_terminal() {
-        eprintln!(
+        crate::errln!(
             "{YELLOW}Refusing to apply a consequential change non-interactively.{RST} Re-run with {BOLD}--yes{RST} to confirm."
         );
         return false;

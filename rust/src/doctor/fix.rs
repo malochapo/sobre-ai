@@ -10,12 +10,12 @@ pub(super) fn run_fix(opts: &DoctorFixOptions) -> Result<i32, String> {
     let report = build_and_persist_fix_report(opts.json)?;
     if opts.json {
         let json_text = serde_json::to_string_pretty(&report).map_err(|e| e.to_string())?;
-        println!("{json_text}");
+        crate::outln!("{json_text}");
     } else {
         let (passed, total) = compact_score();
         print_compact_status(passed, total);
         if let Ok(path) = crate::core::setup_report::doctor_report_path() {
-            println!("  {DIM}report saved:{RST} {}", display_user_path(&path));
+            crate::outln!("  {DIM}report saved:{RST} {}", display_user_path(&path));
         }
     }
     Ok(i32::from(!report.success))
