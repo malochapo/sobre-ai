@@ -45,9 +45,7 @@ fn proxy_pid_on_port(port: u16) -> Option<u32> {
         .ok()?;
     let body = response.into_body().read_to_string().ok()?;
     let pid = proxy_pid_from_health(&body)?;
-    (health_identifies_lean_ctx_proxy(&body)
-        || crate::ipc::process::find_pids_by_name("lean-ctx").contains(&pid))
-    .then_some(pid)
+    health_identifies_lean_ctx_proxy(&body).then_some(pid)
 }
 
 /// Stop a proxy already owning `port` before a managed service is started.

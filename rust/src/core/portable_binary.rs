@@ -82,9 +82,8 @@ fn choose_binary_path(current_exe: Option<&str>, which_raw: Option<&str>) -> Str
     "lean-ctx".to_string()
 }
 
-/// On Windows, `where lean-ctx` returns multiple lines (e.g. `lean-ctx` and
-/// `lean-ctx.cmd`). Pick the `.cmd`/`.exe` variant if available, otherwise
-/// the first line.
+/// On Windows, `where lean-ctx` can return multiple lines. Pick the `.exe`
+/// variant if available, otherwise the first line.
 fn pick_best_binary_line(raw: &str) -> String {
     let lines: Vec<&str> = raw
         .lines()
@@ -95,13 +94,13 @@ fn pick_best_binary_line(raw: &str) -> String {
         return lines.first().unwrap_or(&"lean-ctx").to_string();
     }
     if cfg!(windows)
-        && let Some(cmd) = lines.iter().find(|l| {
-            std::path::Path::new(*l).extension().is_some_and(|ext| {
-                ext.eq_ignore_ascii_case("cmd") || ext.eq_ignore_ascii_case("exe")
-            })
+        && let Some(exe) = lines.iter().find(|l| {
+            std::path::Path::new(*l)
+                .extension()
+                .is_some_and(|ext| ext.eq_ignore_ascii_case("exe"))
         })
     {
-        return cmd.to_string();
+        return exe.to_string();
     }
     lines[0].to_string()
 }

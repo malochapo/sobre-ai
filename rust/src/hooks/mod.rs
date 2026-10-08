@@ -109,8 +109,7 @@ fn file_contains_lean_ctx(path: &std::path::Path) -> bool {
 /// guaranteed to contain the install dir (e.g. `/usr/local/bin`). A bare
 /// `lean-ctx` therefore fails with exit code 127 (#367). Always emitting the
 /// resolved absolute path makes hook execution deterministic and matches what
-/// MCP setup (`setup/mcp.rs`) and `doctor` already do. Existing configs with a
-/// bare command are rewritten on the next `lean-ctx init` / `doctor` run.
+/// MCP setup (`setup/mcp.rs`) and `doctor` already do.
 ///
 /// Kept strictly absolute — also used for MCP server `command` fields, which
 /// hosts spawn **directly** (no shell), so `$HOME/...` forms would break
@@ -128,7 +127,7 @@ fn resolve_binary_path() -> String {
 /// machines with different usernames (`$HOME/.local/bin/lean-ctx`). Hook
 /// hosts run these commands through a shell, so the variable expands at
 /// execution time; `doctor` accepts the override as current, so
-/// `init`/`--fix`/`update` stop rewriting synced files. MCP registrations
+/// `init`/`--fix` stop rewriting synced files. MCP registrations
 /// and autostart units keep the absolute path (no shell there).
 fn resolve_hook_command_binary() -> String {
     if let Some(portable) = crate::core::portable_binary::hook_binary_override() {

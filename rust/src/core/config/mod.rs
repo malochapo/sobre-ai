@@ -109,7 +109,7 @@ pub struct Config {
     /// across machines with different usernames need an env-based form like
     /// `$HOME/.local/bin/lean-ctx` — agent hosts run hook commands through a
     /// shell, which expands it. When set, every hook writer emits the value verbatim instead of
-    /// the machine-absolute exe path, so `init`/`doctor --fix`/`update` stop
+    /// the machine-absolute exe path, so `init`/`doctor --fix` stop
     /// rewriting synced files into sync ping-pong. Autostart plists/services
     /// and daemon spawns are NOT affected — launchd/systemd do not expand
     /// shell variables, so those keep the real absolute path. Empty (default)

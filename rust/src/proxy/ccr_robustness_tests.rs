@@ -110,9 +110,9 @@ fn ctx_expand_surgical_slices_over_tee_handle() {
     assert!(!range.contains("output row 004") && !range.contains("output row 007"));
 }
 
-/// Gap 5 — the tee resolver rejects path traversal, malformed hex (across every
-/// prefix incl. the new `tbl_`) and a reference-store id, so a crafted handle can
-/// never escape the store or alias another store (store separation + #936 ladder).
+/// Gap 5 — the tee resolver rejects path traversal, malformed hex, foreign
+/// prefixes and a reference-store id, so a crafted handle can never escape the
+/// store or alias another store (store separation + #936 ladder).
 #[test]
 fn resolve_tee_rejects_traversal_nontee_and_bad_hex_across_prefixes() {
     let _lock = test_env_lock();

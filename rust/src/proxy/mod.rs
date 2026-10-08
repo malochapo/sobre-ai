@@ -189,7 +189,7 @@ pub async fn start_proxy_with_token(port: u16, auth_token: Option<String>) -> an
 
     // The proxy reads its upstreams live from a watch channel: a background task
     // re-resolves them from config.toml on an interval and publishes any change,
-    // so `lean-ctx config set proxy.*_upstream` (or any config.toml edit) takes
+    // so `lean-ctx config set proxy.upstreams.<id>` (or any config.toml edit) takes
     // effect on the running proxy within seconds, without a restart (#449).
     let (upstream_tx, upstream_rx) = tokio::sync::watch::channel(Arc::new(initial.clone()));
     spawn_upstream_refresh(upstream_tx, initial.clone());

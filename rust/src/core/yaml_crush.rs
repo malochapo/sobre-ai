@@ -25,8 +25,7 @@
 //! on the `beneficial` reduction threshold and a no-op input returns [`None`].
 //!
 //! Exact original *bytes* (comments, key order, formatting) are recovered
-//! out-of-band — a `full`/`raw` re-read on the read path, or a CCR handle
-//! (`crate::proxy::ccr::persist_yaml`) when a lossy pass drops data.
+//! out-of-band by a `full`/`raw` re-read on the read path.
 
 use serde_json::{Map, Value};
 

@@ -76,7 +76,7 @@ impl ProbeOutcome {
 }
 
 /// Run the real two-read probe against `path` using an in-process cache — the
-/// same `SessionCache` + `ctx_read` path the Pi bridge / daemon serve.
+/// same `SessionCache` + `ctx_read` path the MCP server serves.
 fn run_probe(path: &str) -> ProbeOutcome {
     let crp = CrpMode::effective();
     let mut cache = SessionCache::new();
@@ -175,10 +175,6 @@ fn print_human(path: &str, o: &ProbeOutcome) {
             "\n  FAIL — expected a ~13-token stub on re-read, got {} tokens. The session \
              cache is not collapsing unchanged re-reads.",
             o.second_tokens
-        );
-        println!(
-            "  On Pi, ensure the embedded MCP bridge is on (LEAN_CTX_PI_ENABLE_MCP=1) so reads \
-             share one cache."
         );
     }
 }

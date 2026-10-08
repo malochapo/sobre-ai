@@ -304,7 +304,7 @@ pub fn run_setup_with_options(opts: SetupOptions) -> Result<SetupReport, String>
 
 /// #356: decide whether a setup refresh may auto-index `cwd`. Returns `false`
 /// for any cwd inside a macOS TCC-protected home dir (`~/Documents`, `~/Desktop`,
-/// `~/Downloads`) so a `lean-ctx update` run from a project there never stats
+/// `~/Downloads`) so a setup refresh run from a project there never stats
 /// marker files in it. That stat pops the macOS privacy prompt when lean-ctx is
 /// its own TCC responsible process, and a maintenance refresh has no need to
 /// trigger it — the graph builds on the next real tool use anyway. On non-macOS
@@ -372,7 +372,7 @@ fn which_ionice_available() -> bool {
 mod tests {
     use super::*;
 
-    // #356: a setup refresh (e.g. via `lean-ctx update`) must not auto-index a
+    // #356: a setup refresh must not auto-index a
     // cwd inside a TCC-protected home dir, or it stats marker files there and
     // pops the macOS privacy prompt. Projects elsewhere index normally.
     #[test]

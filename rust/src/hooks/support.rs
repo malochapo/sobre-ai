@@ -86,7 +86,8 @@ pub(super) fn ensure_codex_hooks_enabled(config_content: &str) -> Option<String>
 
     let mut changed =
         rewrite_existing_codex_hooks_assignment(&mut lines, layout.features_codex_index);
-    changed |= clear_stray_codex_hooks_assignments(&mut lines, &layout.stray_codex_indices);
+    changed |=
+        clear_duplicate_feature_hooks_assignments(&mut lines, &layout.duplicate_feature_indices);
 
     if layout.features_codex_index.is_none() {
         insert_codex_hooks_assignment(&mut lines, layout.features_insert_index);
@@ -99,7 +100,7 @@ pub(super) fn ensure_codex_hooks_enabled(config_content: &str) -> Option<String>
 struct CodexHooksLayout {
     features_insert_index: Option<usize>,
     features_codex_index: Option<usize>,
-    stray_codex_indices: Vec<usize>,
+    duplicate_feature_indices: Vec<usize>,
 }
 
 fn config_newline(config_content: &str) -> &'static str {
@@ -120,7 +121,7 @@ fn config_lines(config_content: &str) -> Vec<String> {
 fn inspect_codex_hooks_layout(lines: &[String]) -> CodexHooksLayout {
     let mut features_codex_index = None;
     let mut features_insert_index = None;
-    let mut stray_codex_indices = Vec::new();
+    let mut duplicate_feature_indices = Vec::new();
     let mut current_section: Option<&str> = None;
 
     for (idx, line) in lines.iter().enumerate() {
@@ -133,25 +134,26 @@ fn inspect_codex_hooks_layout(lines: &[String]) -> CodexHooksLayout {
             continue;
         }
 
-        if current_section == Some("features") {
-            features_insert_index = Some(idx + 1);
+        if current_section != Some("features") {
+            continue;
         }
+        features_insert_index = Some(idx + 1);
 
         if !is_codex_hooks_assignment(trimmed) {
             continue;
         }
 
-        if current_section == Some("features") && features_codex_index.is_none() {
+        if features_codex_index.is_none() {
             features_codex_index = Some(idx);
         } else {
-            stray_codex_indices.push(idx);
+            duplicate_feature_indices.push(idx);
         }
     }
 
     CodexHooksLayout {
         features_insert_index,
         features_codex_index,
-        stray_codex_indices,
+        duplicate_feature_indices,
     }
 }
 
@@ -169,7 +171,7 @@ fn rewrite_existing_codex_hooks_assignment(lines: &mut [String], index: Option<u
     true
 }
 
-fn clear_stray_codex_hooks_assignments(lines: &mut [String], indices: &[usize]) -> bool {
+fn clear_duplicate_feature_hooks_assignments(lines: &mut [String], indices: &[usize]) -> bool {
     let mut changed = false;
     for &idx in indices {
         if !lines[idx].is_empty() {

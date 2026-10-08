@@ -247,13 +247,13 @@ mod tests {
         let mut table = toml::Table::new();
         set_nested(
             &mut table,
-            "proxy.anthropic_upstream",
+            "proxy.upstreams.anthropic",
             toml::Value::String("https://example.com".into()),
         )
         .unwrap();
-        let proxy = table["proxy"].as_table().unwrap();
+        let upstreams = table["proxy"]["upstreams"].as_table().unwrap();
         assert_eq!(
-            proxy["anthropic_upstream"].as_str().unwrap(),
+            upstreams["anthropic"].as_str().unwrap(),
             "https://example.com"
         );
     }

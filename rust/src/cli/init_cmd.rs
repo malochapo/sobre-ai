@@ -54,12 +54,6 @@ fn install_agents(args: &[String]) {
 
 /// `sobre init` — connect sobre to this machine.
 ///
-/// Replaces what used to be five commands: `setup` (a twelve-step wizard),
-/// `onboard` (the same thing with no questions), `bootstrap` (the same again
-/// with a CI exit code), `install` (an alias of two of those) and `wrap`
-/// (per-agent). They differed by interactivity and exit code, never by what
-/// they installed.
-///
 /// One question is still asked, and only one: the proxy sees every request,
 /// so turning it on is a real decision. Everything else takes a safe default
 /// and is changed afterwards through `sobre config`.
@@ -70,8 +64,7 @@ pub fn cmd_init(args: &[String]) {
     }
 
     // An unknown flag must never fall through to a run that rewrites the
-    // shell rc and agent configs (the #476 class of bug: `install --help`
-    // used to perform the install).
+    // shell rc and agent configs (#476).
     const KNOWN: &[&str] = &["--agent", "--check", "--dry-run", "--repair", "--json"];
     if let Some(unknown) = args
         .iter()
@@ -82,8 +75,7 @@ pub fn cmd_init(args: &[String]) {
         std::process::exit(2);
     }
 
-    // `init --agent X` or `init <agent>`: `init <agent>` is what `wrap <agent>`
-    // was.
+    // `init --agent X` or `init <agent>`.
     // The registry is the list of agents sobre knows how to configure, so it
     // also answers "is this positional an agent name?".
     let known_agents: Vec<String> = dirs::home_dir()

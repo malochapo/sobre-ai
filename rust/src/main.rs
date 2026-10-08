@@ -11,7 +11,7 @@ fn main() {
 
     // Crash log + stderr message for every panic in any thread (#378
     // diagnosability: stderr is lost for daemon/LaunchAgent processes,
-    // ~/.lean-ctx/logs/crash.log is not).
+    // <data dir>/logs/crash.log is not).
     lean_ctx::core::crash_log::install_panic_hook();
 
     // Prevent SIGABRT on uncaught panics (e.g. during MCP startup bursts).

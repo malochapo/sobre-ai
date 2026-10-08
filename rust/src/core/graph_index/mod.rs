@@ -312,7 +312,7 @@ impl ProjectIndex {
     }
 
     /// Remove all cached graph indices that are older than max_age_hours.
-    /// Called on startup/update to prevent stale data from persisting.
+    /// Called on server startup to prevent stale data from persisting.
     pub fn purge_stale_indices() {
         let Ok(data_dir) = crate::core::data_dir::lean_ctx_data_dir() else {
             return;

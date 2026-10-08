@@ -73,9 +73,7 @@ pub(super) fn path_in_path_env() -> bool {
             if dir.join("lean-ctx").is_file() {
                 return true;
             }
-            if cfg!(windows)
-                && (dir.join("lean-ctx.exe").is_file() || dir.join("lean-ctx.cmd").is_file())
-            {
+            if cfg!(windows) && dir.join("lean-ctx.exe").is_file() {
                 return true;
             }
         }
@@ -90,10 +88,6 @@ pub(super) fn resolve_lean_ctx_binary() -> Option<PathBuf> {
                 let exe = dir.join("lean-ctx.exe");
                 if exe.is_file() {
                     return Some(exe);
-                }
-                let cmd = dir.join("lean-ctx.cmd");
-                if cmd.is_file() {
-                    return Some(cmd);
                 }
             } else {
                 let bin = dir.join("lean-ctx");
@@ -271,15 +265,6 @@ pub(super) fn has_lean_ctx_mcp_entry(content: &str) -> bool {
                 return true;
             }
         }
-        // mcp.servers.lean-ctx (some multi-level configs)
-        if let Some(servers) = json
-            .get("mcp")
-            .and_then(|v| v.get("servers"))
-            .and_then(|v| v.as_object())
-            && servers.contains_key("lean-ctx")
-        {
-            return true;
-        }
         // mcp.lean-ctx — OpenCode's schema (https://opencode.ai/config.json)
         // nests servers DIRECTLY under "mcp", no "servers" level (GH #686).
         if let Some(servers) = json.get("mcp").and_then(|v| v.as_object())
@@ -379,9 +364,7 @@ mod tests {
     use std::path::Path;
 
     // GH #686: OpenCode's schema (https://opencode.ai/config.json) nests
-    // servers DIRECTLY under "mcp" — `mcp.lean-ctx`, no "servers" level. The
-    // doctor used to only walk `mcp.servers.lean-ctx` and reported a working
-    // install as missing.
+    // servers DIRECTLY under "mcp" — `mcp.lean-ctx`, no "servers" level.
     #[test]
     fn opencode_direct_mcp_child_is_recognized() {
         let opencode = r#"{
@@ -394,9 +377,7 @@ mod tests {
     }
 
     #[test]
-    fn mcp_servers_nested_form_still_recognized() {
-        let nested = r#"{ "mcp": { "servers": { "lean-ctx": { "command": "lean-ctx" } } } }"#;
-        assert!(has_lean_ctx_mcp_entry(nested));
+    fn mcp_servers_form_recognized() {
         let flat = r#"{ "mcpServers": { "lean-ctx": { "command": "lean-ctx" } } }"#;
         assert!(has_lean_ctx_mcp_entry(flat));
     }

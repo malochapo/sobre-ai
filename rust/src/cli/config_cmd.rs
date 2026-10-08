@@ -890,20 +890,20 @@ fn cmd_show_effective() {
     println!();
     println!("{}", box_top("Built-in limits"));
     box_row(&format!(
-        " bm25_max_cache_mb      = {:>6} MB",
+        " BM25 index cap          {:>6} MB",
         crate::core::config::DEFAULT_BM25_PERSIST_MB
     ));
     box_row(&format!(
-        " graph_index_max_files  = {:>6}",
+        " graph index file cap    {:>6}",
         crate::core::config::GRAPH_INDEX_MAX_FILES
     ));
     box_row("");
     box_row(&format!(
-        " memory.knowledge.max_facts     = {:>6}",
+        " knowledge facts cap     {:>6}",
         policy.knowledge.max_facts
     ));
     box_row(&format!(
-        " memory.knowledge.max_patterns  = {:>6}",
+        " knowledge patterns cap  {:>6}",
         policy.knowledge.max_patterns
     ));
     println!("{}", box_bottom());

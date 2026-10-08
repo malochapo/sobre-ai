@@ -11,7 +11,7 @@ pub fn cmd_tee(args: &[String]) {
     match action {
         "list" | "ls" => {
             if !tee_dir.exists() {
-                println!("No tee logs found (~/.lean-ctx/tee/ does not exist)");
+                println!("No tee logs found ({} does not exist)", tee_dir.display());
                 return;
             }
             let mut entries: Vec<_> = std::fs::read_dir(&tee_dir)

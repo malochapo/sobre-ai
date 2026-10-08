@@ -67,7 +67,7 @@ pub(crate) fn cmd_index(args: &[String]) {
             let bm25_path = crate::core::bm25_index::BM25Index::index_file_path(root);
             let _ = std::fs::remove_file(&bm25_path);
             // #696 C4: purge the property graph (graph.db + wal/shm + meta) and
-            // any retired JSON/call-graph artifacts so the rebuild starts clean.
+            // the call-graph cache so the rebuild starts clean.
             crate::core::graph_index::purge_index(&project_root);
             // Purge old embeddings so the full rebuild starts from scratch and
             // does not re-use stale vectors from a different model or project
@@ -76,10 +76,6 @@ pub(crate) fn cmd_index(args: &[String]) {
             let embedding_bin = vectors_dir.join("embeddings.bin");
             if embedding_bin.exists() {
                 let _ = std::fs::remove_file(&embedding_bin);
-            }
-            let embedding_json = vectors_dir.join("embeddings.json");
-            if embedding_json.exists() {
-                let _ = std::fs::remove_file(&embedding_json);
             }
             crate::core::index_orchestrator::ensure_all_background(&project_root);
 

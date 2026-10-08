@@ -361,11 +361,6 @@ pub fn run() -> u32 {
     println!("  {DIM}LSP servers are optional enhancements (not counted in score){RST}");
     println!("  {DIM}lean-ctx {}{RST}", env!("CARGO_PKG_VERSION"));
 
-    // Refresh the cached latest-version in the background and, if the running
-    // binary is behind, nudge toward the fast self-updater right where a
-    // confused user looks when something seems off (the "stuck updating"
-    // report). Notify-only — never auto-installs.
-
     needs_attention
 }
 

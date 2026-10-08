@@ -179,23 +179,16 @@ pub(super) fn remove_hook_files(home: &Path, dry_run: bool) -> bool {
     }
 
     // Claude Code global settings: surgically remove lean-ctx hook entries
-    // Both settings.json and settings.local.json can contain hooks
-    for claude_settings_name in ["settings.json", "settings.local.json"] {
-        let claude_settings =
-            crate::core::editor_registry::claude_state_dir(home).join(claude_settings_name);
-        if !claude_settings.exists() {
-            continue;
-        }
-        let Ok(content) = fs::read_to_string(&claude_settings) else {
-            continue;
-        };
-        if !content.contains("lean-ctx") {
-            continue;
-        }
+    let claude_settings =
+        crate::core::editor_registry::claude_state_dir(home).join("settings.json");
+    if claude_settings.exists()
+        && let Ok(content) = fs::read_to_string(&claude_settings)
+        && content.contains("lean-ctx")
+    {
         backup_before_modify(&claude_settings, dry_run);
         removed |= apply_hook_cleanup(
             &claude_settings,
-            &format!("Claude Code {claude_settings_name}"),
+            "Claude Code settings.json",
             &content,
             dry_run,
         );
@@ -335,14 +328,6 @@ pub(super) fn remove_lean_ctx_from_hooks_json(content: &str) -> HookCleanupResul
     // Remove empty event arrays after cleanup
     if let Some(hooks) = parsed.get_mut("hooks").and_then(|h| h.as_object_mut()) {
         hooks.retain(|_, v| v.as_array().is_none_or(|a| !a.is_empty()));
-    }
-
-    if parsed
-        .get("permissions")
-        .and_then(|p| p.as_object())
-        .is_some_and(serde_json::Map::is_empty)
-    {
-        parsed.as_object_mut().map(|o| o.remove("permissions"));
     }
 
     // Check if any meaningful content remains. `version` / `$schema` are

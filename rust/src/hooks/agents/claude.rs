@@ -61,8 +61,8 @@ const READ_DEDUP_MATCHER: &str = "Read";
 /// Runs alongside the observe hook on PostToolUse; read-dedup (Read) and
 /// compress (Bash) are the only `updatedToolOutput` writers and never see the
 /// same tool, so there is no competing-rewriter race. The handler is
-/// inert off guard hosts and for first reads (`read_dedup = auto`), so
-/// installing it unconditionally is safe.
+/// inert off guard hosts and for first reads, so installing it
+/// unconditionally is safe.
 fn ensure_read_dedup_hook(
     hooks_obj: &mut serde_json::Map<String, serde_json::Value>,
     read_dedup_cmd: &str,
@@ -104,13 +104,9 @@ fn is_lean_ctx_command_for(hook: &serde_json::Value, action: &str) -> bool {
 
 /// Ensure exactly one lean-ctx hook for `command`'s action exists under `matcher`.
 ///
-/// Earlier versions deduped on the *full* command string, but `resolve_binary_path()` renders
-/// the binary as a bare `lean-ctx` (on `PATH`) or an absolute path (off `PATH`), so the
-/// rendering flips between `install` and `update` and the exact-string compare missed the
-/// existing hook — appending a duplicate on every run. We now strip every stale lean-ctx hook
-/// for this action (any path, any matcher group) and re-add a
-/// single fresh one. This is idempotent across re-runs *and* self-heals settings files already
-/// duplicated by older versions, while leaving any non-lean-ctx hooks untouched.
+/// A lean-ctx hook is recognised by its action token, whatever its binary path or matcher
+/// group: every one for this action is stripped and a single fresh one re-added, so re-runs
+/// stay idempotent when the binary path changes. Non-lean-ctx hooks are left untouched.
 fn ensure_command_hook(pre_arr: &mut Vec<serde_json::Value>, matcher: &str, command: &str) {
     let action = lean_ctx_action_token(command);
 
@@ -237,7 +233,7 @@ pub(crate) fn install_claude_hook_config(home: &std::path::Path) {
     }
 
     // Only rewrite (with backup) when the merge actually changed something, so a
-    // no-op `update` doesn't churn the user's settings.json or pile up backups.
+    // no-op re-run doesn't churn the user's settings.json or pile up backups.
     let after = serde_json::to_string_pretty(&root).unwrap_or_default();
     if after != before {
         write_file(&settings_path, &after);
@@ -284,7 +280,7 @@ mod tests {
 
     #[test]
     fn path_flip_refreshes_instead_of_duplicating() {
-        // Installed once off PATH (absolute path), then `update` runs on PATH (bare name).
+        // Installed once off PATH (absolute path), then re-run on PATH (bare name).
         let mut pre = vec![json!({
             "matcher": BASH,
             "hooks": [{ "type": "command", "command": "/abs/bin/lean-ctx hook compress" }]
@@ -353,7 +349,7 @@ mod tests {
         let mut post = vec![];
         ensure_command_hook(&mut post, BASH, "lean-ctx hook compress");
         ensure_command_hook(&mut post, READ_DEDUP_MATCHER, "lean-ctx hook read-dedup");
-        ensure_command_hook(&mut post, BASH, "lean-ctx hook compress"); // re-run (update)
+        ensure_command_hook(&mut post, BASH, "lean-ctx hook compress"); // re-run
         assert_eq!(
             commands_for(&post, "hook compress"),
             ["lean-ctx hook compress"]

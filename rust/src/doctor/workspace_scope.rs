@@ -189,12 +189,10 @@ pub(super) fn fix_workspace_dual_scope(user_scope_mcp_locations: &BTreeSet<&'sta
 
 /// Remove lean-ctx server entries from a parsed JSON value.
 fn remove_lean_ctx_from_json(json: &mut serde_json::Value) -> bool {
-    let containers = ["servers", "mcpServers", "mcp.servers"];
+    let containers = ["servers", "mcpServers"];
     let mut removed = false;
     for key in containers {
-        if let Some(map) = navigate_mut(json, key)
-            && let Some(obj) = map.as_object_mut()
-        {
+        if let Some(obj) = json.get_mut(key).and_then(|m| m.as_object_mut()) {
             if obj.remove("lean-ctx").is_some() {
                 removed = true;
             }
@@ -204,18 +202,6 @@ fn remove_lean_ctx_from_json(json: &mut serde_json::Value) -> bool {
         }
     }
     removed
-}
-
-fn navigate_mut<'a>(
-    json: &'a mut serde_json::Value,
-    dotted: &str,
-) -> Option<&'a mut serde_json::Value> {
-    let parts: Vec<&str> = dotted.split('.').collect();
-    let mut current = json;
-    for part in parts {
-        current = current.get_mut(part)?;
-    }
-    Some(current)
 }
 
 #[cfg(test)]
