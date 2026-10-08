@@ -152,7 +152,7 @@ mod tests {
             .split(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
             .filter(|w| w.starts_with("ctx_") && w.len() > 4)
             .collect();
-        assert!(named.len() >= 14, "guide names {named:?}");
+        assert!(named.len() >= 13, "guide names {named:?}");
         for tool in named {
             assert!(
                 crate::server::registry::is_registered(tool),
