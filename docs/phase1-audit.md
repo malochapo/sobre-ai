@@ -51,7 +51,7 @@ The lots run in this order:
 |---|---|---|
 | A | The user's machine: `uninstall`, `init`, agent integration | done (#31) |
 | B | The MCP tools: bugs, incomplete features, drift; decisions 1–4 and 6 | done (#32, #33, #34, #35, #36, #37) |
-| C | The CLI and the proxy | done (#38, #PR_CB) |
+| C | The CLI and the proxy | done (#38, #39) |
 | R | Tool names `ctx_*` → `sobre_*` (decision 9) | open |
 | D | Dead code, stale files, stale comments, duplicates; decision 7 | open |
 | F | Release: publish a `dense` binary (decision 8) | open |
@@ -617,7 +617,7 @@ the edit_health hook), #37 (`ctx_refactor`, decision 5).
 
 ## Lot C — the CLI and the proxy
 
-Fixed so far: #38 (doctor, colours, overhead), #PR_CB (arguments, config,
+Fixed so far: #38 (doctor, colours, overhead), #39 (arguments, config,
 proxy, help, `sobre call`).
 
 - [x] **C1 `proxy start --port <N>` (with a space) is ignored** and the
