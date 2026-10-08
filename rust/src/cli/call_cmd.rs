@@ -28,12 +28,15 @@ impl std::fmt::Display for CallError {
         match self {
             CallError::Usage(m) => write!(
                 f,
-                "error: {m}\nusage: sobre call <tool> --project-root <path> --json '<json>' [--json-file <path>]"
+                "error: {m}\nusage: sobre call <tool> [--project-root <path>] --json '<json>' [--json-file <path>]"
             ),
             CallError::UnknownTool(t) => write!(f, "error: unknown tool '{t}'"),
             CallError::BadJson(m) => write!(f, "error: invalid --json: {m}"),
             CallError::UnsafeRoot(p) => {
-                write!(f, "error: refusing broad/unsafe --project-root '{p}'")
+                write!(
+                    f,
+                    "error: refusing broad/unsafe project root '{p}' (pass --project-root)"
+                )
             }
             CallError::Dispatch(e) => write!(f, "error: {e}"),
         }
@@ -109,8 +112,19 @@ fn parse_args(args: &[String]) -> Result<CallArgs, CallError> {
     }
 
     let tool = tool.ok_or_else(|| CallError::Usage("missing <tool>".into()))?;
-    let project_root =
-        project_root.ok_or_else(|| CallError::Usage("missing --project-root".into()))?;
+    // Without the flag, the project around the current directory, as for the
+    // other commands; a relative root (`.`) is made absolute first, so the
+    // broad-root check sees the real directory (C8).
+    let project_root = match project_root {
+        Some(p) => {
+            let path = Path::new(&p);
+            let abs = std::path::absolute(path).unwrap_or_else(|_| path.to_path_buf());
+            crate::core::pathutil::safe_canonicalize_or_self(&abs)
+                .to_string_lossy()
+                .into_owned()
+        }
+        None => crate::cli::common::detect_project_root(&[]),
+    };
 
     let json = match (json, json_file) {
         (Some(_), Some(_)) => {
@@ -291,15 +305,27 @@ mod tests {
         assert!(matches!(err, CallError::UnsafeRoot(_)), "got {err:?}");
     }
 
+    /// C8: no `--project-root` means the project around the current
+    /// directory, and `.` is the current directory made absolute.
     #[test]
-    fn missing_project_root_is_usage_error() {
-        let args = vec![
+    fn project_root_defaults_to_cwd_and_dot_is_absolute() {
+        let cwd = std::env::current_dir().unwrap();
+        let bare = parse_args(&["ctx_tree".to_string()]).unwrap();
+        assert!(cwd.starts_with(&bare.project_root), "{}", bare.project_root);
+        let dot = parse_args(&[
             "ctx_tree".to_string(),
-            "--json".to_string(),
-            "{}".to_string(),
-        ];
-        let err = run_call(&args).expect_err("expected usage error");
-        assert!(matches!(err, CallError::Usage(_)), "got {err:?}");
+            "--project-root".to_string(),
+            ".".to_string(),
+        ])
+        .unwrap();
+        assert!(
+            Path::new(&dot.project_root).is_absolute(),
+            "{}",
+            dot.project_root
+        );
+        assert!(!crate::core::pathutil::is_broad_or_unsafe_root(Path::new(
+            &dot.project_root
+        )));
     }
 
     #[test]

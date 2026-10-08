@@ -18,7 +18,7 @@ pub(crate) fn cmd_index(args: &[String]) {
             }
         }
         Some("build") => build(&project_root, args.iter().any(|a| a == "--force")),
-        _ => {
+        other => {
             eprintln!(
                 "Usage: sobre index <build|status> [--root <path>]\n\
                    sobre index build            graph + BM25 indexes, and the dense index\n\
@@ -27,6 +27,10 @@ pub(crate) fn cmd_index(args: &[String]) {
                    sobre index status [--json]  what is built\n\
                  Leave files out of every index with `ignore` in config.toml."
             );
+            // `sobre index` alone asks for the usage; anything else is a mistake.
+            if other.is_some() {
+                std::process::exit(2);
+            }
         }
     }
 }

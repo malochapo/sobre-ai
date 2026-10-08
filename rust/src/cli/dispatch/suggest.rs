@@ -40,6 +40,7 @@ mod tests {
         assert_eq!(closest_command("doctr"), Some("doctor"));
         assert_eq!(closest_command("indx"), Some("index"));
         assert_eq!(closest_command("doctro"), Some("doctor"));
+        assert_eq!(closest_command("inti"), Some("init"));
     }
 
     #[test]

@@ -62,23 +62,31 @@ async fn proxy_serves_health_and_enforces_auth() {
     );
 
     // Codex opens the Responses API as a WebSocket first. The refusal must be
-    // 426 on both spellings: anything else costs retries or fails the turn.
+    // 426 on both spellings, with or without a token, and name the protocol to
+    // use: anything else costs retries or fails the turn.
     for path in ["/v1/responses", "/responses"] {
-        let ws = client
-            .get(format!("{base}{path}"))
-            .bearer_auth(&token)
-            .header("connection", "Upgrade")
-            .header("upgrade", "websocket")
-            .header("sec-websocket-version", "13")
-            .header("sec-websocket-key", "dGhlIHNhbXBsZSBub25jZQ==")
-            .send()
-            .await
-            .expect("request to proxy");
-        assert_eq!(
-            ws.status(),
-            reqwest::StatusCode::UPGRADE_REQUIRED,
-            "GET {path} must answer 426"
-        );
+        for with_token in [true, false] {
+            let mut req = client
+                .get(format!("{base}{path}"))
+                .header("connection", "Upgrade")
+                .header("upgrade", "websocket")
+                .header("sec-websocket-version", "13")
+                .header("sec-websocket-key", "dGhlIHNhbXBsZSBub25jZQ==");
+            if with_token {
+                req = req.bearer_auth(&token);
+            }
+            let ws = req.send().await.expect("request to proxy");
+            assert_eq!(
+                ws.status(),
+                reqwest::StatusCode::UPGRADE_REQUIRED,
+                "GET {path} (token: {with_token}) must answer 426"
+            );
+            assert_eq!(
+                ws.headers().get("upgrade").and_then(|v| v.to_str().ok()),
+                Some("HTTP/1.1"),
+                "a 426 names the protocol to use"
+            );
+        }
     }
 
     // Gemini is not served.

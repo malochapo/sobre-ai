@@ -306,9 +306,13 @@ async fn models_handler(
 
 /// `GET /v1/responses`: the WebSocket transport Codex tries first. A 426
 /// makes Codex fall back to HTTP for the rest of the session at once, where a
-/// 404 or 405 costs seconds of retries and a 400 fails the turn.
-async fn responses_websocket_refused() -> StatusCode {
-    StatusCode::UPGRADE_REQUIRED
+/// 404 or 405 costs seconds of retries and a 400 fails the turn. A 426 must
+/// name the protocol to use (RFC 9110 §15.5.22): plain HTTP/1.1.
+async fn responses_websocket_refused() -> impl IntoResponse {
+    (
+        StatusCode::UPGRADE_REQUIRED,
+        [(axum::http::header::UPGRADE, "HTTP/1.1")],
+    )
 }
 
 async fn status_handler(State(state): State<ProxyState>) -> impl IntoResponse {
@@ -337,7 +341,10 @@ async fn proxy_auth_guard(
     expected_token: String,
 ) -> Result<Response, Response> {
     let path = req.uri().path();
-    if path == "/health" {
+    // The WebSocket refusal answers the same 426 with or without a token: it
+    // forwards nothing.
+    let websocket_refusal = req.method() == axum::http::Method::GET && path == "/v1/responses";
+    if path == "/health" || websocket_refusal {
         return Ok(next.run(req).await);
     }
 
