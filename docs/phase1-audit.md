@@ -51,7 +51,7 @@ The lots run in this order:
 |---|---|---|
 | A | The user's machine: `uninstall`, `init`, agent integration | done (#31) |
 | B | The MCP tools: bugs, incomplete features, drift; decisions 1–4 and 6 | done (#32, #33, #34, #35, #36, #37) |
-| C | The CLI and the proxy | open |
+| C | The CLI and the proxy | in progress (#38) |
 | R | Tool names `ctx_*` → `sobre_*` (decision 9) | open |
 | D | Dead code, stale files, stale comments, duplicates; decision 7 | open |
 | F | Release: publish a `dense` binary (decision 8) | open |
@@ -617,10 +617,12 @@ the edit_health hook), #37 (`ctx_refactor`, decision 5).
 
 ## Lot C — the CLI and the proxy
 
+Fixed so far: #38 (doctor, colours, overhead).
+
 - [ ] **C1 `proxy start --port <N>` (with a space) is ignored** and the
   proxy listens on 4444. Only `--port=N` works; `stop` and `status` have the
   same problem.
-- [ ] **C2 `doctor --json` prints the coloured human report.**
+- [x] **C2 `doctor --json` prints the coloured human report.**
   - The flag is only read with `--fix` or a subcommand
     (`doctor/mod.rs:451-455`).
   - Help advertises `doctor [--fix] [--json]`.
@@ -634,9 +636,9 @@ the edit_health hook), #37 (`ctx_refactor`, decision 5).
 - [ ] **C4 Usage errors exit 0.** Seen with `index bogus`, `proxy bogus`,
   `sobre -c` with no command, and `gain --bogus`. `gain --model=nonexistent`
   falls back silently.
-- [ ] **C5 Colours ignore `NO_COLOR` and non-TTY output** in doctor, init,
+- [x] **C5 Colours ignore `NO_COLOR` and non-TTY output** in doctor, init,
   config, proxy and the MCP stderr logs.
-- [ ] **C6 The health score contradicts itself.**
+- [x] **C6 The health score contradicts itself.**
   - `doctor --fix` and `init --json` say "3/4 passed" (a missing
     `usage.jsonl` counts as a failure), while `doctor` says 20/20.
   - Four checks cannot fail but count toward the score:
@@ -649,7 +651,7 @@ the edit_health hook), #37 (`ctx_refactor`, decision 5).
     because doctor never runs inside the MCP server.
   - `checks/security.rs:123` computes a SHA-256 only to test that the
     binary is readable.
-- [ ] **C7 Overhead figures disagree:** `gain` says 4.6K, while `doctor`
+- [x] **C7 Overhead figures disagree:** `gain` says 4.6K, while `doctor`
   overhead says 4,944.
 - [ ] **C8 `sobre call` needs `--project-root` even inside a repo, and
   rejects `--project-root .`** as "refusing broad/unsafe"

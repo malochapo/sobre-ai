@@ -9,6 +9,7 @@ pub fn init_logging() {
     let _ = tracing_subscriber::fmt()
         .with_env_filter(EnvFilter::new(filter))
         .with_writer(std::io::stderr)
+        .with_ansi(crate::core::theme::stderr_color())
         .try_init();
 }
 
@@ -20,5 +21,6 @@ pub fn init_mcp_logging() {
     let _ = tracing_subscriber::fmt()
         .with_env_filter(EnvFilter::new(filter))
         .with_writer(std::io::stderr)
+        .with_ansi(crate::core::theme::stderr_color())
         .try_init();
 }

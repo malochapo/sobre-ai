@@ -64,7 +64,7 @@ pub(super) fn print_check(outcome: &Outcome) {
     } else {
         format!("{RED}✗{RST}")
     };
-    println!("  {mark}  {}", tildify_home(&outcome.line));
+    crate::outln!("  {mark}  {}", tildify_home(&outcome.line));
 }
 
 pub(super) fn path_in_path_env() -> bool {

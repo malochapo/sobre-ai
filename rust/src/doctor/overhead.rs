@@ -8,9 +8,6 @@
 //! (context degradation starts well below typical window limits), so every
 //! always-on token has to justify itself.
 
-use crate::core::context_overhead::tool_tokens;
-use crate::core::tokens::count_tokens;
-
 const DIM: &str = "\x1b[2m";
 const BOLD: &str = "\x1b[1m";
 const GREEN: &str = "\x1b[32m";
@@ -39,17 +36,16 @@ impl OverheadReport {
     }
 }
 
+/// The same measurement `sobre gain` reports, so the two never disagree.
 #[must_use]
 pub(super) fn measure() -> OverheadReport {
-    let advertised = crate::server::tool_visibility::advertised_tool_defs_default();
-    let instructions = crate::instructions::build_instructions();
-
+    let measured = crate::core::context_overhead::ContextOverhead::measure();
     let budget_tokens = crate::core::config::CONTEXT_BUDGET_TOKENS;
 
     let mut report = OverheadReport {
-        tool_count: advertised.len(),
-        tool_schema_tokens: advertised.iter().map(tool_tokens).sum(),
-        instruction_tokens: count_tokens(&instructions),
+        tool_count: measured.tool_count,
+        tool_schema_tokens: measured.tool_schema_tokens,
+        instruction_tokens: measured.instruction_tokens,
         budget_tokens,
         over_budget: false,
     };
@@ -66,49 +62,51 @@ pub(super) fn run_overhead(json: bool, gate: bool) -> i32 {
 
     if json {
         match serde_json::to_string_pretty(&report) {
-            Ok(s) => println!("{s}"),
+            Ok(s) => crate::outln!("{s}"),
             Err(e) => {
-                eprintln!("doctor overhead: JSON serialization failed: {e}");
+                crate::errln!("doctor overhead: JSON serialization failed: {e}");
                 return 2;
             }
         }
         return exit_code;
     }
 
-    println!("{BOLD}Fixed context overhead per session{RST}");
-    println!("{DIM}What every session pays before any compression saves a token.{RST}\n");
+    crate::outln!("{BOLD}Fixed context overhead per session{RST}");
+    crate::outln!("{DIM}What every session pays before any compression saves a token.{RST}\n");
 
     // 1. Tool schemas
-    println!(
+    crate::outln!(
         "  {BOLD}MCP tool schemas{RST}      {:>6} tok  {DIM}({} tools advertised){RST}",
-        report.tool_schema_tokens, report.tool_count
+        report.tool_schema_tokens,
+        report.tool_count
     );
 
     // 2. Instructions
-    println!(
+    crate::outln!(
         "  {BOLD}MCP instructions{RST}      {:>6} tok",
         report.instruction_tokens
     );
 
-    println!();
+    crate::outln!();
     let total = report.total_tokens();
     let color = if report.over_budget { YELLOW } else { GREEN };
-    println!("  {BOLD}Total fixed cost{RST}      {color}{total:>6} tok / session{RST}");
+    crate::outln!("  {BOLD}Total fixed cost{RST}      {color}{total:>6} tok / session{RST}");
     if report.budget_tokens > 0 {
         if report.over_budget {
             // Machine-readable so CI/log scrapers can key on a stable token (#964).
-            println!(
+            crate::outln!(
                 "  {YELLOW}⚠ OVER_BUDGET: {total} tok > budget {} tok {RST}",
                 report.budget_tokens
             );
         } else {
-            println!(
+            crate::outln!(
                 "  {DIM}Within budget ({} / {} tok).{RST}",
-                total, report.budget_tokens
+                total,
+                report.budget_tokens
             );
         }
     }
-    println!(
+    crate::outln!(
         "  {DIM}With provider prompt caching, repeated turns re-bill this at ~10% — but only if the prefix stays byte-stable.{RST}"
     );
 

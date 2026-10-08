@@ -73,12 +73,12 @@ fn capacity_hint_is_actionable_for_both_states() {
 }
 
 #[test]
-fn cwd_looks_like_agent_dir_matches_both_separators() {
+fn agent_config_dir_matches_both_separators() {
     for sep in ['/', '\\'] {
         for dir in [".lmstudio", ".claude", ".codex"] {
             let cwd = format!("C:{sep}Users{sep}me{sep}{dir}{sep}mcp");
             assert!(
-                cwd_looks_like_agent_dir(&cwd),
+                crate::core::pathutil::is_agent_config_dir(std::path::Path::new(&cwd)),
                 "expected {cwd} to be flagged as an agent dir"
             );
         }
@@ -86,14 +86,14 @@ fn cwd_looks_like_agent_dir_matches_both_separators() {
 }
 
 #[test]
-fn cwd_looks_like_agent_dir_ignores_real_projects() {
+fn agent_config_dir_ignores_real_projects() {
     for cwd in [
         "/home/me/work/myproj",
         "/Users/me/code/sobre",
         "C:\\src\\app",
     ] {
         assert!(
-            !cwd_looks_like_agent_dir(cwd),
+            !crate::core::pathutil::is_agent_config_dir(std::path::Path::new(cwd)),
             "{cwd} is a real project and must not be flagged"
         );
     }
