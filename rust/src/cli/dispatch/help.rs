@@ -49,7 +49,7 @@ pub(super) fn concise_help_text() -> String {
 GETTING STARTED:
     sobre init                  Connect every detected agent
     sobre init <agent>          Connect one agent (claude, codex, copilot, cursor,
-                                   gemini, opencode, windsurf, zed)
+                                   gemini, opencode, vscode, windsurf, zed)
     sobre doctor                Check that everything is wired up correctly
     sobre gain                  See how many tokens you have saved
 
@@ -60,7 +60,7 @@ EVERYDAY COMMANDS:
 
 MANAGE:
     sobre config                Show or edit the config file
-    sobre uninstall             Remove everything init wrote
+    sobre uninstall             Remove sobre: agent entries, data and binary
 
 MORE:
     sobre help all              Full command reference (every subcommand)
@@ -139,7 +139,7 @@ OPTIONS:
 
 TROUBLESHOOTING:
     Something broken?    sobre doctor --fix
-    Permanent fix?       sobre uninstall       (removes all hooks)
+    Remove sobre?        sobre uninstall --dry-run   (lists what it would remove)
     Preview init?        sobre init --check
 ",
         version = env!("CARGO_PKG_VERSION"),

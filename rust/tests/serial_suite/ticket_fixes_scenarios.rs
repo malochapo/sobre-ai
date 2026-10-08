@@ -370,7 +370,7 @@ fn hash_fast_with_mixed_scripts_at_4096_boundary() {
 fn uninstall_bak_path_generation() {
     use std::path::Path;
     let p = Path::new("/home/user/.cursor/settings.json");
-    let bak = sobre::uninstall::bak_path_for(p);
+    let bak = sobre::config_io::backup_path_for(p);
     assert!(
         bak.to_string_lossy().ends_with(".sobre.bak"),
         "Backup must use .sobre.bak suffix"

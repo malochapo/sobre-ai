@@ -178,7 +178,7 @@ fn agent_init_unknown_agent_fails() {
         run_with_env(&["init", "--agent", "nonexistent_agent"], &[], None);
     assert_ne!(code, 0, "unknown agent should fail");
     assert!(
-        stderr.contains("Unknown agent"),
+        stderr.contains("unknown agent"),
         "should say unknown: {stderr}"
     );
 }

@@ -118,8 +118,7 @@ pub fn cleanup_stale_proxy_env(home: &Path) -> usize {
             }
             println!("  ✓ Removed stale ANTHROPIC_BASE_URL from Claude Code settings");
         }
-        let out = serde_json::to_string_pretty(&doc).unwrap_or_default();
-        let _ = std::fs::write(&settings_path, out + "\n");
+        let _ = crate::config_io::write_json_cleanup(&settings_path, &content, &doc);
         cleaned += 1;
     }
 

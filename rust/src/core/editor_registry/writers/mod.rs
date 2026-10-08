@@ -1,16 +1,12 @@
-// Auto-split from the former monolithic writers.rs. Grouped by operation
-// (install) + shared helpers; behavior is unchanged.
+//! Writes sobre's MCP server entry into each agent's config. One writer per
+//! agent config: hooks and skills are installed elsewhere, and nothing else
+//! writes this entry.
+
+use serde_json::Value;
 
 use super::types::{ConfigType, EditorTarget};
 
-mod install;
-mod shared;
-
-// The router below dispatches to every install writer; a glob keeps the
-// dispatch table readable and lets the test module reach them via `super::*`.
-#[allow(clippy::wildcard_imports)]
-use install::*;
-
+/// What a write did to the agent's config.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WriteAction {
     Created,
@@ -18,38 +14,234 @@ pub enum WriteAction {
     Already,
 }
 
-#[derive(Debug, Clone, Copy, Default)]
-pub struct WriteOptions {
-    pub overwrite_invalid: bool,
+/// Puts sobre's MCP server entry into `target`'s config, replacing an older
+/// one. Other servers and settings are kept as the user wrote them.
+pub fn write_config(target: &EditorTarget, binary: &str) -> Result<WriteAction, String> {
+    if target.config_type == ConfigType::Codex {
+        return write_codex_config(&target.config_path, binary);
+    }
+    let (container, entry) = json_entry(target.config_type, binary);
+    if matches!(target.agent_key.as_str(), "claude" | "claude-code") {
+        // The Claude CLI may store the entry in its own shape; the command is
+        // what has to match.
+        let current = current_entry(&target.config_path, container);
+        if current.as_ref().and_then(|c| c.get("command")) == entry.get("command") {
+            return Ok(WriteAction::Already);
+        }
+        if let Some(action) = try_claude_mcp_add(&target.config_path, &entry) {
+            return Ok(action);
+        }
+    }
+    upsert_json_entry(&target.config_path, container, entry)
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct WriteResult {
-    pub action: WriteAction,
-    pub note: Option<String>,
+/// The key holding MCP servers in the host's JSON config, and sobre's entry
+/// in the shape that host expects. Never an approval setting (`autoApprove`,
+/// `trust`, …): what may run without asking is the host's call.
+fn json_entry(config_type: ConfigType, binary: &str) -> (&'static str, Value) {
+    match config_type {
+        ConfigType::McpJson | ConfigType::GeminiSettings => {
+            ("mcpServers", serde_json::json!({ "command": binary }))
+        }
+        ConfigType::Zed => (
+            "context_servers",
+            serde_json::json!({ "command": binary, "args": [], "env": {} }),
+        ),
+        ConfigType::VsCodeMcp => (
+            "servers",
+            serde_json::json!({ "type": "stdio", "command": binary, "args": [] }),
+        ),
+        ConfigType::CopilotCli => (
+            "mcpServers",
+            serde_json::json!({
+                "type": "local",
+                "command": binary,
+                "args": ["mcp"],
+                "tools": ["*"]
+            }),
+        ),
+        ConfigType::OpenCode => (
+            "mcp",
+            serde_json::json!({ "type": "local", "command": [binary], "enabled": true }),
+        ),
+        ConfigType::Codex => unreachable!("Codex is TOML"),
+    }
 }
 
-pub fn write_config(target: &EditorTarget, binary: &str) -> Result<WriteResult, String> {
-    write_config_with_options(target, binary, WriteOptions::default())
+fn current_entry(path: &std::path::Path, container: &str) -> Option<Value> {
+    let content = std::fs::read_to_string(path).ok()?;
+    crate::core::jsonc::parse_jsonc(&content)
+        .ok()?
+        .get(container)?
+        .get("sobre")
+        .cloned()
 }
 
-pub fn write_config_with_options(
-    target: &EditorTarget,
-    binary: &str,
-    opts: WriteOptions,
-) -> Result<WriteResult, String> {
-    if let Some(parent) = target.config_path.parent() {
-        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+fn upsert_json_entry(
+    path: &std::path::Path,
+    container: &str,
+    entry: Value,
+) -> Result<WriteAction, String> {
+    let existed = path.exists();
+    if current_entry(path, container).as_ref() == Some(&entry) {
+        return Ok(WriteAction::Already);
+    }
+    let mut container_is_object = true;
+    crate::config_io::edit_json(path, |root| {
+        let servers = root
+            .entry(container)
+            .or_insert_with(|| Value::Object(serde_json::Map::new()));
+        match servers.as_object_mut() {
+            Some(servers) => {
+                servers.insert("sobre".to_string(), entry);
+            }
+            None => container_is_object = false,
+        }
+    })?;
+    if !container_is_object {
+        return Err(format!(
+            "\"{container}\" in {} is not an object; left unchanged",
+            path.display()
+        ));
+    }
+    Ok(if existed {
+        WriteAction::Updated
+    } else {
+        WriteAction::Created
+    })
+}
+
+/// Sets `[mcp_servers.sobre]` in Codex's `config.toml`, keeping every other
+/// table, key and comment as written.
+fn write_codex_config(path: &std::path::Path, binary: &str) -> Result<WriteAction, String> {
+    let existed = path.exists();
+    let content = std::fs::read_to_string(path).unwrap_or_default();
+    let updated = upsert_codex_toml(&content, binary)
+        .map_err(|e| format!("{} is not valid TOML ({e}); left unchanged", path.display()))?;
+    if updated == content {
+        return Ok(WriteAction::Already);
+    }
+    crate::config_io::write_atomic_with_backup(path, &updated)?;
+    Ok(if existed {
+        WriteAction::Updated
+    } else {
+        WriteAction::Created
+    })
+}
+
+pub(crate) fn upsert_codex_toml(existing: &str, binary: &str) -> Result<String, String> {
+    let mut doc = existing
+        .parse::<toml_edit::DocumentMut>()
+        .map_err(|e| e.to_string())?;
+    // `[mcp_servers]` stays implicit so no bare parent header is emitted.
+    let servers = doc["mcp_servers"].or_insert(toml_edit::table());
+    let servers = servers.as_table_mut().ok_or("mcp_servers is not a table")?;
+    servers.set_implicit(true);
+    let sobre = servers["sobre"].or_insert(toml_edit::table());
+    let sobre = sobre
+        .as_table_mut()
+        .ok_or("mcp_servers.sobre is not a table")?;
+    sobre.set_implicit(false);
+    let command_matches = sobre.get("command").and_then(|c| c.as_str()) == Some(binary);
+    if !command_matches {
+        sobre["command"] = toml_edit::value(binary);
+    }
+    let args_empty = sobre
+        .get("args")
+        .and_then(|a| a.as_array())
+        .is_some_and(toml_edit::Array::is_empty);
+    if !args_empty {
+        sobre["args"] = toml_edit::value(toml_edit::Array::new());
+    }
+    Ok(doc.to_string())
+}
+
+pub(crate) fn find_in_path(binary: &str) -> Option<std::path::PathBuf> {
+    let path_var = std::env::var("PATH").ok()?;
+    for dir in std::env::split_paths(&path_var) {
+        let candidate = dir.join(binary);
+        if candidate.is_file() {
+            return Some(candidate);
+        }
+    }
+    None
+}
+
+pub(crate) fn validate_claude_binary() -> Result<std::path::PathBuf, String> {
+    let path = find_in_path("claude").ok_or("claude binary not found in PATH")?;
+    std::fs::canonicalize(&path).map_err(|e| format!("cannot resolve claude path: {e}"))
+}
+
+/// Registers sobre through `claude mcp add-json` when the Claude CLI is on
+/// PATH: Claude Code rewrites `~/.claude.json` while it runs, and its own CLI
+/// is the write it will not undo. `None` when the CLI is missing or fails,
+/// and always under `init --check` and in quiet runs (`--json`, `--repair`),
+/// where a spawned CLI could stall; the caller then edits the file itself.
+fn try_claude_mcp_add(config_path: &std::path::Path, desired: &Value) -> Option<WriteAction> {
+    use std::io::Write;
+    use std::process::{Command, Stdio};
+    use std::time::{Duration, Instant};
+
+    if crate::config_io::journal::dry_run() || crate::core::runtime_flags::quiet_enabled() {
+        return None;
+    }
+    let server_json = serde_json::to_string(desired).ok()?;
+    let existed = config_path.exists();
+
+    let mut cmd = if cfg!(windows) {
+        let mut c = Command::new("cmd");
+        c.args([
+            "/C", "claude", "mcp", "add-json", "--scope", "user", "sobre",
+        ]);
+        c
+    } else {
+        let mut c = Command::new(validate_claude_binary().ok()?);
+        c.args(["mcp", "add-json", "--scope", "user", "sobre"]);
+        c
+    };
+
+    let mut child = cmd
+        .stdin(Stdio::piped())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .ok()?;
+
+    // A `claude` that exits without reading stdin must not take this
+    // process down with SIGPIPE: write from a thread that blocks it.
+    if let Some(mut stdin) = child.stdin.take() {
+        let _ = std::thread::spawn(move || {
+            crate::shell::platform::block_sigpipe_in_current_thread();
+            let _ = stdin.write_all(server_json.as_bytes());
+        })
+        .join();
     }
 
-    match target.config_type {
-        ConfigType::McpJson => write_mcp_json(target, binary, opts),
-        ConfigType::Zed => write_zed_config(target, binary, opts),
-        ConfigType::Codex => write_codex_config(target, binary),
-        ConfigType::VsCodeMcp => write_vscode_mcp(target, binary, opts),
-        ConfigType::CopilotCli => write_copilot_cli(target, binary, opts),
-        ConfigType::OpenCode => write_opencode_config(target, binary, opts),
-        ConfigType::GeminiSettings => write_gemini_settings(target, binary, opts),
+    let deadline = Duration::from_secs(3);
+    let start = Instant::now();
+    loop {
+        match child.try_wait() {
+            Ok(Some(status)) if status.success() => {
+                let change = if existed {
+                    crate::config_io::journal::Change::Updated
+                } else {
+                    crate::config_io::journal::Change::Created
+                };
+                crate::config_io::journal::record(config_path, change);
+                return Some(if existed {
+                    WriteAction::Updated
+                } else {
+                    WriteAction::Created
+                });
+            }
+            Ok(Some(_)) | Err(_) => return None,
+            Ok(None) if start.elapsed() > deadline => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return None;
+            }
+            Ok(None) => std::thread::sleep(Duration::from_millis(20)),
+        }
     }
 }
 

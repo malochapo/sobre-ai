@@ -54,7 +54,7 @@ pub fn install(agent: &str, home: &Path) -> Result<Option<PathBuf>, String> {
     if let Some(dir) = path.parent() {
         crate::config_io::ensure_dir(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
     }
-    std::fs::write(&path, SKILL_MD).map_err(|e| format!("{}: {e}", path.display()))?;
+    crate::config_io::write_owned(&path, SKILL_MD)?;
     Ok(Some(path))
 }
 

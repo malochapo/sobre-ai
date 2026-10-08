@@ -122,6 +122,9 @@ fn setup_bootstrap_doctor_json_smoke() {
     }
 
     // init --agent claude should prefer `claude mcp add-json` when available.
+    // The `--json` run above wrote the entry itself (no CLI in quiet runs);
+    // without it, the entry is missing again and the CLI is used.
+    let _ = std::fs::remove_file(home.join(".claude.json"));
     let out = Command::new(bin)
         .args(["init", "--agent", "claude"])
         .envs(envs.iter().copied())

@@ -34,7 +34,7 @@ Taken on 2026-10-08.
 | 2 | The AUTO CONTEXT prefix on the first call of a session | Remove it. |
 | 3 | `edit_quality.json`, which carries state from one run to the next and changes what `mode=auto` resolves to | Stop persisting it (invariant 2). |
 | 4 | The `edit_health` hook writing `ctx_knowledge` facts the agent never asked for | Remove those writes (invariant 5). |
-| 5 | `ctx_refactor`: `file` and `scope` are ignored, `rename` only previews, `symbols_overview` needs an LSP | **Open.** First find out what each was meant to do. |
+| 5 | `ctx_refactor`: `file` and `scope` are ignored, `rename` only previews, `symbols_overview` needs an LSP | **Open.** What each was meant to do is under B23. |
 | 6 | `ctx_review`, whose heuristics are broken | Repair it. |
 | 7 | The non-PDF extractors (about 2,100 lines that never run) | Remove them. |
 | 8 | Release binaries are built without `dense` | Publish a `dense` binary as well. |
@@ -49,7 +49,7 @@ The lots run in this order:
 
 | Lot | Scope | Status |
 |---|---|---|
-| A | The user's machine: `uninstall`, `init`, agent integration | open |
+| A | The user's machine: `uninstall`, `init`, agent integration | done (#PR) |
 | B | The MCP tools: bugs, incomplete features, drift; decisions 1–4 and 6 | open |
 | C | The CLI and the proxy | open |
 | R | Tool names `ctx_*` → `sobre_*` (decision 9) | open |
@@ -115,7 +115,37 @@ documented:
 
 ## Lot A — the user's machine
 
-- [ ] **A1 `uninstall` kills processes that are not sobre's.**
+Fixed in #PR. How the fixes work:
+
+- **One writer per file.** Each agent's MCP entry is written in one place
+  (`editor_registry::write_config`). Hooks and skills are written by
+  `hooks::install_agent_hook`. Claude Code's entry used to be written three
+  times; Codex, Copilot, OpenCode, Windsurf and Zed twice.
+- **In-place edits.** Every JSON(C) config is edited through
+  `config_io::edit_json` and `core::jsonc::rewrite_preserving`, built on a
+  JSONC CST (`jsonc-parser`). Comments, key order, trailing commas and
+  formatting stay. Codex's TOML goes through `toml_edit`.
+- **Backups.**
+  - The first edit of an existing file keeps `<file>.sobre.bak`, the file as
+    the user had it.
+  - When removing sobre's entries gives back exactly that content,
+    `uninstall` restores the backup byte for byte; otherwise it removes only
+    sobre's entries.
+  - A file that existed before sobre is never deleted.
+  - An unparseable file is left alone and reported. Text injection into
+    broken JSON is gone.
+- **Journal.** `init` records every file it writes. That record gives the
+  per-agent report, and lets `init --check` run the real code with writes
+  turned off.
+- **Round trip, verified.** A sandbox HOME with a JSONC Zed config, Claude
+  settings holding user hooks, a Codex `[features] hooks = true`, and two
+  decoy processes went through `init`, `init` again, `uninstall`:
+  - the second `init` changed nothing;
+  - doctor scored 20/20;
+  - the decoys survived;
+  - the HOME came back byte-identical.
+
+- [x] **A1 `uninstall` kills processes that are not sobre's.**
   - It runs `pgrep -x sobre` and `pgrep -f '/sobre(\s|$)'` across the whole
     machine with no user or HOME filter, then SIGTERM and SIGKILL
     (`uninstall/binary.rs:16-38`, `ipc/process.rs`).
@@ -126,7 +156,7 @@ documented:
     exist (`dashboard`, `daemon`, `stop`).
   - Fix: only signal processes of the current user whose executable is the
     binary being removed.
-- [ ] **A2 `uninstall` turns off the user's Codex hooks.**
+- [x] **A2 `uninstall` turns off the user's Codex hooks.**
   - A user had `[features] hooks=true` and a Stop hook. After `init codex`
     and `uninstall` they had `hooks=false`, while the output said "user
     settings preserved".
@@ -134,7 +164,7 @@ documented:
     `[features] hooks=false` behind.
   - Fix: restore the value found before `init`, or remove the key if `init`
     added it.
-- [ ] **A3 `uninstall` does more than the documentation and help say.**
+- [x] **A3 `uninstall` does more than the documentation and help say.**
   - It deletes the config, data, state and cache directories: usage,
     sessions, knowledge, checkpoints and indexes
     (`uninstall/mod.rs:155,199-246`).
@@ -148,7 +178,7 @@ documented:
     works for a crates.io release.
   - Fix: make the behaviour match one clear statement, and say which data
     goes.
-- [ ] **A4 `uninstall` leaves debris.** Compared with HOME before `init`, it
+- [x] **A4 `uninstall` leaves debris.** Compared with HOME before `init`, it
   leaves:
   - empty files that `init` created: `~/.cursor/mcp.json`,
     `~/.codeium/windsurf/mcp_config.json`, `~/.copilot/mcp-config.json`,
@@ -161,17 +191,17 @@ documented:
     `~/.config/zed/settings.json.bak` (only `*.sobre.bak` is cleaned);
   - an empty `~/.local/state`;
   - a `.claude.json` rewritten with a `}  },` formatting artefact.
-- [ ] **A5 `init` reformats the user's config files.**
+- [x] **A5 `init` reformats the user's config files.**
   - It strips comments and trailing commas from Zed's `settings.json`; they
     survive only in the `.bak`.
   - It sorts keys alphabetically in `.claude.json`,
     `.claude/settings.json` and Gemini's settings.
   - Fix: edit in place and keep the key order and comments.
-- [ ] **A6 `init` writes the VS Code config when VS Code is not detected.**
+- [x] **A6 `init` writes the VS Code config when VS Code is not detected.**
   - It writes `~/.config/Code/User/mcp.json` anyway.
   - `init vscode` is accepted (not in help) and also installs the Copilot
     CLI files.
-- [ ] **A7 `init` output is unclear.**
+- [x] **A7 `init` output is unclear.**
   - Everything goes to stderr.
   - There is no summary of detected and undetected agents, and no line
     about the Claude Code MCP entry.
@@ -181,21 +211,30 @@ documented:
   - With no agent detected it prints nothing and exits 0.
   - `--json` reports "Zed hooks: installed" (Zed gets no hooks), and its
     "Claude Code hooks" entry points at `~/.claude.json`.
-- [ ] **A8 `init --check` previews nothing useful**
+- [x] **A8 `init --check` previews nothing useful**
   (`cli/init_cmd.rs:23-39`, help at `:269`).
   - It prints "Would connect: every detected agent", the data dir and the
     binary path.
   - It detects no agents and lists no files.
-- [ ] **A9 `uninstall --dry-run` wording is broken.**
+- [x] **A9 `uninstall --dry-run` wording is broken.**
   - Examples: "Would update MCP config removed from Cursor", "Would Cursor
     removed", "Would remove OpenCode plugin removed".
   - The config dir is called "data directory".
   - It prints "Removed 6 empty installer director(y/ies)".
-- [ ] **A10 Gemini hook reply drops fields.**
+- [x] **A10 Gemini hook reply drops fields.**
   - The reply is `{"hookSpecificOutput":{"tool_input":{"command":…}}}`: it
     drops `description` and `dir_path`. The Cursor reply keeps them.
   - This breaks the call if Gemini replaces `tool_input` wholesale (not
     confirmed).
+
+- [x] **A11 The MCP server rewrote the agents' hook configs on every
+  start.** `refresh_installed_hooks` ran at server start. Removed: `init` and
+  `doctor --fix` re-render hooks when the binary moves.
+- [x] **A12 `init` started a background `index build` of the cwd** when the
+  cwd held a project marker. Removed: indexes build on first use.
+- [x] **A13 Agent writes forced mode 0600 on the user's configs**
+  (`config_io::write_atomic`). An existing file now keeps its mode; a new
+  file is owner-only.
 
 ## Lot B — the MCP tools
 
@@ -348,6 +387,25 @@ documented:
 ### Incomplete features
 
 - [ ] **B23 `ctx_refactor`** (decision 5, open).
+  - **Origin.** All four parts predate the fork. They worked only through
+    the JetBrains plugin, which was removed.
+  - **`file`** was meant to scope `name_path` lookup to one file, to stop
+    AMBIGUOUS_SYMBOL on common names. It never worked for the three edits
+    that remain.
+    - Fix: scope by `path`, moving the filter into the SQL query, which
+      today applies it after a `LIMIT 100`.
+  - **`scope`** was `project` or `all` (libraries and SDK). Only the IDE knew
+    it; LSP has no such notion.
+  - **`rename`** never applied an edit, even upstream. Applying one needs
+    the server to have finished indexing; rust-analyzer answers before.
+  - **`symbols_overview`** was meant to list symbols from the index without
+    a server. It still starts one (up to 60 s) before answering, and
+    `ctx_outline` already does the job better.
+  - **Recommendation:**
+    - make `file` work through `path`;
+    - drop `scope`;
+    - label `rename` a preview;
+    - drop `symbols_overview` in favour of `ctx_outline`.
   - The `file` parameter is advertised (`registered/ctx_refactor.rs:41`)
     but never read: `handle_symbol_edit` uses the unscoped
     `resolve_name_path` (`ctx_refactor/mod.rs:286`), and

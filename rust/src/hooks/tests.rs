@@ -1,31 +1,7 @@
-//! Tests for hook installation, path bridging and MCP registration.
+//! Tests for hook installation and path bridging.
 
 #[allow(clippy::wildcard_imports)]
 use super::*;
-
-#[test]
-fn refresh_covers_every_hook_capable_agent() {
-    // Every hook-capable agent must be in exactly one of the two sets, so a
-    // newly added agent can never silently skip the post-update hook refresh.
-    for agent in HOOK_CAPABLE_AGENTS {
-        let refreshed = REFRESHABLE_HOOK_AGENTS.contains(agent);
-        let exempt = REFRESH_EXEMPT_AGENTS.contains(agent);
-        assert!(
-            refreshed ^ exempt,
-            "agent `{agent}` must be either refreshed or explicitly exempt (exactly one)"
-        );
-    }
-}
-
-#[test]
-fn refresh_sets_reference_only_hook_capable_agents() {
-    for agent in REFRESHABLE_HOOK_AGENTS.iter().chain(REFRESH_EXEMPT_AGENTS) {
-        assert!(
-            HOOK_CAPABLE_AGENTS.contains(agent),
-            "`{agent}` is not a hook-capable agent (stale entry?)"
-        );
-    }
-}
 
 // ── #708: portable hook-binary override for multi-machine synced configs ──
 
@@ -54,7 +30,7 @@ fn claude_settings_hooks_emit_override_verbatim_and_stay_idempotent() {
     .unwrap();
     let home = tempfile::tempdir().unwrap();
 
-    install_claude_hook_config(home.path());
+    install_claude_hook_config(home.path()).unwrap();
 
     let settings_path = home.path().join(".claude/settings.json");
     let settings = std::fs::read_to_string(&settings_path).expect("settings.json written");
@@ -71,53 +47,9 @@ fn claude_settings_hooks_emit_override_verbatim_and_stay_idempotent() {
 
     // Re-running with the same override is a no-op — the sync ping-pong #708
     // reported came from exactly this rewrite cycle.
-    install_claude_hook_config(home.path());
+    install_claude_hook_config(home.path()).unwrap();
     let after = std::fs::read_to_string(&settings_path).unwrap();
     assert_eq!(settings, after, "idempotent under a stable override");
-}
-
-#[test]
-fn hooks_installed_for_is_false_without_artifacts() {
-    let tmp = unique_tmp_dir("sobre_refresh_empty");
-    for agent in REFRESHABLE_HOOK_AGENTS {
-        // `codex` resolves its dir via the global CODEX_HOME-aware resolver
-        // (not the passed home), so it cannot be isolated to a temp dir here;
-        // its detection is exercised by the marker-content test instead.
-        if *agent == "codex" {
-            continue;
-        }
-        assert!(
-            !hooks_installed_for(agent, &tmp),
-            "`{agent}` should not be detected as installed in an empty home"
-        );
-    }
-    let _ = std::fs::remove_dir_all(&tmp);
-}
-
-#[test]
-fn hooks_installed_for_detects_marker_content() {
-    let tmp = unique_tmp_dir("sobre_refresh_marker");
-    let hooks = tmp.join(".codeium/windsurf/hooks.json");
-    std::fs::create_dir_all(hooks.parent().unwrap()).unwrap();
-
-    // A foreign hooks.json must not trigger a refresh.
-    std::fs::write(&hooks, "{\"hooks\":{}}").unwrap();
-    assert!(!hooks_installed_for("windsurf", &tmp));
-
-    // Once it mentions sobre, it is ours and must be refreshed.
-    std::fs::write(&hooks, "{\"hooks\":{\"cmd\":\"sobre hook observe\"}}").unwrap();
-    assert!(hooks_installed_for("windsurf", &tmp));
-
-    let _ = std::fs::remove_dir_all(&tmp);
-}
-
-fn unique_tmp_dir(prefix: &str) -> std::path::PathBuf {
-    let nanos = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map_or(0, |d| d.as_nanos());
-    let dir = std::env::temp_dir().join(format!("{prefix}_{}_{nanos}", std::process::id()));
-    std::fs::create_dir_all(&dir).unwrap();
-    dir
 }
 
 #[test]

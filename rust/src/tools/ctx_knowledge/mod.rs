@@ -453,7 +453,7 @@ fn handle_export(project_root: &str) -> String {
     match serde_json::to_string_pretty(&knowledge) {
         Ok(mut json) => {
             json.push('\n');
-            match crate::config_io::write_atomic_with_backup(&path, &json) {
+            match crate::config_io::write_atomic(&path, &json) {
                 Ok(()) => format!(
                     "Export saved: {} (active facts: {}, patterns: {}, history: {})",
                     path.display(),

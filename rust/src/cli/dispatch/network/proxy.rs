@@ -11,36 +11,17 @@ fn parse_proxy_port(rest: &[String]) -> u16 {
         .unwrap_or_else(crate::proxy_setup::default_port)
 }
 
-/// Stops a standalone/foreground proxy by reading its PID from `/health` and
-/// terminating it (graceful, then force). Returns true if a proxy was reachable
-/// on `port`, false if nothing was listening. Shared by `stop` and `restart`.
+/// Stops a standalone/foreground proxy identified by its `/health` answer.
+/// Returns true if a sobre proxy was answering on `port`. Shared by `stop` and
+/// `restart`.
 fn stop_proxy_process(port: u16) -> bool {
-    let health_url = format!("http://127.0.0.1:{port}/health");
-    let Ok(resp) = ureq::get(&health_url).call() else {
-        return false;
-    };
-    let pid = resp.into_body().read_to_string().ok().and_then(|body| {
-        body.split("pid\":")
-            .nth(1)
-            .and_then(|s| s.split([',', '}']).next())
-            .and_then(|s| s.trim().parse::<u32>().ok())
-    });
-    match pid {
+    match crate::proxy_autostart::stop_proxy_on_port(port) {
         Some(pid) => {
-            let _ = crate::ipc::process::terminate_gracefully(pid);
-            std::thread::sleep(std::time::Duration::from_millis(500));
-            if crate::ipc::process::is_alive(pid) {
-                let _ = crate::ipc::process::force_kill(pid);
-            }
             println!("Proxy on port {port} stopped (PID {pid}).");
+            true
         }
-        None => {
-            println!(
-                "Proxy on port {port} is running but /health gave no PID; stop the process that owns the port."
-            );
-        }
+        None => false,
     }
-    true
 }
 
 /// Prints the proxy's live upstreams (from `/status`) and warns when one
