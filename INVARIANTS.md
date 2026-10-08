@@ -17,7 +17,7 @@ The MCP tool surface is capped at **20 tools**. There is no exception, no
 "internal" tool that doesn't count, no meta-tool that fans out to a hidden
 registry.
 
-The surface currently stands at 17, leaving three slots. That margin is
+The surface currently stands at 16, leaving four slots. That margin is
 deliberate: a cap you are already touching is a cap you will break.
 
 Adding a tool requires naming the tool it replaces, in the same PR. If nothing
@@ -41,14 +41,14 @@ is being replaced, the answer is no.
 - Hard cap: **15 configuration keys.** Adding one requires removing one.
 
 How keys are counted: a top-level field is one key, a field of `[proxy]` is
-one key, and a table that a key holds (`proxy.upstreams`, `proxy.routing`)
-counts once whatever it contains. A test (`config::schema::key_cap`) pins the
+one key, and a table that a key holds (`proxy.upstreams`) counts once
+whatever it contains. A test (`config::schema::key_cap`) pins the
 list, so adding a key is always a visible change.
 
-The file currently has 12 keys, leaving three slots: `search_roots`, `ignore`,
+The file currently has 11 keys, leaving four slots: `search_roots`, `ignore`,
 `passthrough_commands`, `shell_timeout_secs`, `hook_binary`,
 `compression_level`, `debug_log`, `embedding_model`, and the `[proxy]` table's
-`enabled`, `port`, `upstreams` and `routing`. Every key has one value even when
+`enabled`, `port` and `upstreams`. Every key has one value even when
 the file is silent: `compression_level` defaults to 0.3, never to "unset".
 `init` takes no option beyond which agent to connect.
 The generated list is `docs/reference/generated/config-keys.md`.
@@ -123,10 +123,11 @@ only reliable oracle here. A budget that taxes it is aimed at the wrong thing.
 
 ### Where we actually stand
 
-`rust/src` is about 209,100 lines, of which about 60,800 are test code.
-**Production code: about 148,400 — some 51,600 below the ceiling.** (It was
-343,328 when this section was first written, 183,800 at the end of phase 1, and
-about 173,000 after the single rules channel.)
+`rust/src` is about 169,600 lines, of which about 51,500 are test code.
+**Production code: about 118,100 — some 81,900 below the ceiling.** (It was
+343,328 when this section was first written, 183,800 at the end of phase 1,
+about 173,000 after the single rules channel, and about 148,400 before the
+phase-1 decisions on the CLI, the proxy and the call graph.)
 
 ### Where 200,000 comes from
 
@@ -146,12 +147,14 @@ compressing proxy.
 `proxy/` stays. It is the only part of the system that acts on *all* traffic
 rather than on the tools an agent chooses to call, and it is what makes the
 token claim true rather than aspirational. It runs entirely on the user's
-machine and nobody else connects to it, so it sits inside invariant 4. It also
-carries `shape-xlat`, which is what lets a Claude-shaped client talk to a local
-Ollama — squarely the local-first use case.
+machine and nobody else connects to it, so it sits inside invariant 4. It
+speaks the two dialects the supported agents use, Anthropic Messages and
+OpenAI Responses/Chat, and translates neither. A Claude-shaped client reaches a
+local Ollama by pointing `proxy.upstreams.anthropic` at it, because Ollama
+serves the Anthropic Messages API itself — squarely the local-first use case.
 
 If the proxy is ever dropped, this ceiling drops with it, by the proxy's own
-size: to 190,000.
+size (about 4,200 lines): to 196,000.
 
 ---
 
