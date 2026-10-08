@@ -412,7 +412,7 @@ where
 /// The BM25 index must already exist on disk — this function loads it and runs
 /// `embedding_index::build_or_update`. Updates the in-memory semantic component
 /// state on completion.
-#[cfg(feature = "embeddings")]
+#[cfg(feature = "dense")]
 pub fn build_semantic(project_root: &str) {
     let state = entry_for(project_root);
     let root = Path::new(project_root);
@@ -571,7 +571,7 @@ pub struct Bm25Summary {
 }
 
 /// Lightweight snapshot of the semantic (dense embedding) component.
-#[cfg(feature = "embeddings")]
+#[cfg(feature = "dense")]
 #[derive(Debug, Clone)]
 pub struct SemanticSummary {
     pub state: &'static str,
@@ -597,7 +597,7 @@ fn component_elapsed_and_state(c: &Component) -> (&'static str, Option<u64>) {
     (state, elapsed_ms)
 }
 
-#[cfg(feature = "embeddings")]
+#[cfg(feature = "dense")]
 pub fn semantic_summary(project_root: &str) -> SemanticSummary {
     let entry = entry_for(project_root);
     let s = entry
@@ -775,7 +775,7 @@ struct StatusResponse<'a> {
     graph_index: ComponentStatus<'a>,
     bm25_index: ComponentStatus<'a>,
     /// Dense embedding index built after BM25.  "idle" means the ONNX model
-    /// has not been downloaded yet or the embeddings feature was not compiled
+    /// has not been downloaded yet or the dense feature was not compiled
     /// in; "ready" means embeddings are persisted and search will use them.
     semantic_index: ComponentStatus<'a>,
     disk: DiskStatusAll,

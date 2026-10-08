@@ -141,7 +141,7 @@ fn pg_hotspots(health: &ProjectHealth) -> Vec<super::Hotspot> {
 /// one SQLite read, no parsing. Its one caller, the dense-search complexity
 /// boost, exists only with `embeddings`; the function is not gated so its test
 /// runs in the default build.
-#[cfg_attr(not(feature = "embeddings"), allow(dead_code))]
+#[cfg_attr(not(feature = "dense"), allow(dead_code))]
 pub fn hotspot_cc(root: &str, symbol: &str) -> Option<u32> {
     let pg = crate::core::property_graph::CodeGraph::open(root).ok()?;
     pg.all_cross_source_edges()

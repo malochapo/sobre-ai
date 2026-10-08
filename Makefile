@@ -1,4 +1,4 @@
-.PHONY: setup-hooks install dev test preflight preflight-fast help
+.PHONY: setup-hooks install dev preflight preflight-fast help
 
 # ── Setup ─────────────────────────────────────────────────
 
@@ -17,9 +17,6 @@ dev: ## Quick debug build + copy to ~/.local/bin
 	@mkdir -p "$$HOME/.local/bin"
 	cp rust/target/debug/sobre "$$HOME/.local/bin/sobre"
 	@echo "Dev installed: $$(sobre --version)"
-
-test: ## Run all Rust tests + clippy
-	cd rust && cargo test && cargo clippy
 
 # ── CI gates ─────────────────────────────────────────────
 # CI runs scripts/preflight.sh too, so green here means green there.

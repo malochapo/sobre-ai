@@ -121,7 +121,7 @@ pub(crate) fn handle_remember(
         );
     }
 
-    #[cfg(feature = "embeddings")]
+    #[cfg(feature = "dense")]
     {
         // The (category, key, value) actually persisted — drives the side-car so
         // a merge refreshes the *target* fact's vector, not a row never inserted.
@@ -322,9 +322,9 @@ pub(crate) fn handle_recall(
     if let Some(q) = query {
         let mode = mode.unwrap_or("auto").trim().to_lowercase();
         // Whether an embedding index answered (it may still find nothing).
-        #[cfg_attr(not(feature = "embeddings"), allow(unused_mut))]
+        #[cfg_attr(not(feature = "dense"), allow(unused_mut))]
         let mut embedded = false;
-        #[cfg(feature = "embeddings")]
+        #[cfg(feature = "dense")]
         {
             // Use non-blocking engine access for auto/hybrid: never block recall
             // waiting for model load. Only explicit "semantic" mode may block.

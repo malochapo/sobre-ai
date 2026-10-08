@@ -2,11 +2,11 @@
 //! Split out of `sobre_knowledge/mod.rs`; `use super::*` re-imports parent items.
 
 // Everything in this file that needs the parent's items is `embeddings`-gated.
-#[cfg(feature = "embeddings")]
+#[cfg(feature = "dense")]
 #[allow(clippy::wildcard_imports)]
 use super::*;
 
-#[cfg(feature = "embeddings")]
+#[cfg(feature = "dense")]
 pub(crate) fn embedding_engine() -> Option<&'static EmbeddingEngine> {
     embedding_engine_impl(false)
 }
@@ -15,12 +15,12 @@ pub(crate) fn embedding_engine() -> Option<&'static EmbeddingEngine> {
 /// calling path — but kicks off a one-time background load (#551) so the first
 /// semantic need activates the engine for later calls. Nothing is downloaded:
 /// the model must already be installed.
-#[cfg(feature = "embeddings")]
+#[cfg(feature = "dense")]
 pub(crate) fn embedding_engine_nonblocking() -> Option<&'static EmbeddingEngine> {
     embedding_engine_impl(true)
 }
 
-#[cfg(feature = "embeddings")]
+#[cfg(feature = "dense")]
 pub(crate) fn embedding_engine_impl(nonblocking: bool) -> Option<&'static EmbeddingEngine> {
     if !EmbeddingEngine::is_available() {
         return None;
@@ -40,7 +40,7 @@ pub(crate) fn embedding_engine_impl(nonblocking: bool) -> Option<&'static Embedd
 /// the installed model, so non-blocking callers start succeeding without any
 /// hot path ever waiting. Policy gates (memory profile, model present) are
 /// checked by the caller.
-#[cfg(feature = "embeddings")]
+#[cfg(feature = "dense")]
 fn ensure_engine_background() {
     use std::sync::atomic::{AtomicBool, Ordering};
     // Never spawn a detached model load in a short-lived process (#519): a
@@ -67,7 +67,7 @@ fn ensure_engine_background() {
 }
 
 pub(crate) fn handle_embeddings_status(project_root: &str) -> String {
-    #[cfg(feature = "embeddings")]
+    #[cfg(feature = "dense")]
     {
         let knowledge = ProjectKnowledge::load_or_create(project_root);
         let model_available = EmbeddingEngine::is_available();
@@ -96,15 +96,15 @@ pub(crate) fn handle_embeddings_status(project_root: &str) -> String {
             entries
         )
     }
-    #[cfg(not(feature = "embeddings"))]
+    #[cfg(not(feature = "dense"))]
     {
         let _ = project_root;
-        "ERR: embeddings feature not enabled".to_string()
+        "ERR: dense feature not enabled".to_string()
     }
 }
 
 pub(crate) fn handle_embeddings_reset(project_root: &str) -> String {
-    #[cfg(feature = "embeddings")]
+    #[cfg(feature = "dense")]
     {
         let knowledge = ProjectKnowledge::load_or_create(project_root);
         match crate::core::knowledge_embedding::reset(&knowledge.project_hash) {
@@ -112,15 +112,15 @@ pub(crate) fn handle_embeddings_reset(project_root: &str) -> String {
             Err(e) => format!("Embeddings reset failed: {e}"),
         }
     }
-    #[cfg(not(feature = "embeddings"))]
+    #[cfg(not(feature = "dense"))]
     {
         let _ = project_root;
-        "ERR: embeddings feature not enabled".to_string()
+        "ERR: dense feature not enabled".to_string()
     }
 }
 
 pub(crate) fn handle_embeddings_reindex(project_root: &str) -> String {
-    #[cfg(feature = "embeddings")]
+    #[cfg(feature = "dense")]
     {
         if ProjectKnowledge::load(project_root).is_none() {
             return "No knowledge stored for this project yet.".to_string();
@@ -178,9 +178,9 @@ pub(crate) fn handle_embeddings_reindex(project_root: &str) -> String {
             }
         })
     }
-    #[cfg(not(feature = "embeddings"))]
+    #[cfg(not(feature = "dense"))]
     {
         let _ = project_root;
-        "ERR: embeddings feature not enabled".to_string()
+        "ERR: dense feature not enabled".to_string()
     }
 }

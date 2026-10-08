@@ -119,7 +119,7 @@ impl McpTool for SobreSearchTool {
         });
         // Dense and hybrid ranking exist only in builds with local embeddings;
         // elsewhere the schema does not offer them.
-        if cfg!(feature = "embeddings") {
+        if cfg!(feature = "dense") {
             schema["properties"]["mode"] = json!({
                 "type": "string",
                 "enum": ["bm25", "dense", "hybrid"],

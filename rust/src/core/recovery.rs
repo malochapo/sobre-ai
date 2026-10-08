@@ -14,10 +14,6 @@
 //! recovery action itself) drops it — rather than by fragile session state that
 //! would break the byte-stability guards.
 
-/// The compressed-view header published verbatim in `tdd_schema`.
-pub const COMPACT_VIEW_HEADER: &str =
-    "[sobre: compact view — nothing lost, full source on request]";
-
 /// Footer appended to a compressed `sobre_read` view: one line that leads with the
 /// MCP-free path ("read the file directly") so orgs that forbid MCP still have a
 /// route, then the `sobre_read` shortcut.

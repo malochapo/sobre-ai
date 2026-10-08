@@ -56,7 +56,7 @@ impl EmbeddingEntry {
 }
 
 /// Outcome of a `build_or_update` call from the index orchestrator.
-#[cfg(feature = "embeddings")]
+#[cfg(feature = "dense")]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum EmbeddingBuildOutcome {
     /// Embeddings were built or already up-to-date.
@@ -77,7 +77,7 @@ pub enum EmbeddingBuildOutcome {
 ///
 /// Returns [`EmbeddingBuildOutcome`] — the orchestrator uses this to set the
 /// semantic component state without aborting the overall index build.
-#[cfg(feature = "embeddings")]
+#[cfg(feature = "dense")]
 pub fn build_or_update(root: &Path, bm25: &super::bm25_index::BM25Index) -> EmbeddingBuildOutcome {
     {
         // Never download here: `index build` also runs in the background

@@ -92,7 +92,7 @@ pub(crate) fn handle_search(project_root: &str, query: Option<&str>) -> String {
     out
 }
 
-#[cfg(feature = "embeddings")]
+#[cfg(feature = "dense")]
 pub(crate) struct SemanticHit {
     pub(crate) category: String,
     pub(crate) key: String,
@@ -102,7 +102,7 @@ pub(crate) struct SemanticHit {
     pub(crate) confidence_score: f32,
 }
 
-#[cfg(feature = "embeddings")]
+#[cfg(feature = "dense")]
 pub(crate) fn apply_retrieval_signals_from_hits(
     knowledge: &mut ProjectKnowledge,
     hits: &[SemanticHit],
@@ -122,7 +122,7 @@ pub(crate) fn apply_retrieval_signals_from_hits(
     }
 }
 
-#[cfg(feature = "embeddings")]
+#[cfg(feature = "dense")]
 pub(crate) fn format_semantic_facts(query: &str, hits: &[SemanticHit]) -> String {
     if hits.is_empty() {
         return format!("No facts matching '{query}'.");

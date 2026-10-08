@@ -9,13 +9,13 @@ name = "sobre"
 version = "0.1.0"
 edition = "2024"
 autobins = false
-description = "sobre: a local context layer for AI coding agents — 16 MCP tools that read, search and run commands with compressed, labelled output, plus cross-session memory. Runs entirely on your machine."
+description = "sobre: a local context layer for AI coding agents — 15 MCP tools that read, search and run commands with compressed, labelled output, plus cross-session memory. Runs entirely on your machine."
 license = "Apache-2.0"
 repository = "https://github.com/malochapo/sobre-ai"
 readme = "README.md"
 keywords = ["mcp", "llm", "tokens", "compression", "ai"]
 categories = ["command-line-utilities", "development-tools"]
-exclude = ["examples/", "tests/", "crates/"]
+exclude = ["tests/", "crates/"]
 
 [package.metadata.binstall]
 bin-dir = "{ bin }{ binary-ext }"
@@ -39,16 +39,6 @@ path = "src/main.rs"
 test = false
 
 [[example]]
-name = "gen_mcp_manifest"
-path = "src/bin/gen_mcp_manifest.rs"
-required-features = ["dev-tools"]
-
-[[example]]
-name = "gen_tdd_schema"
-path = "src/bin/gen_tdd_schema.rs"
-required-features = ["dev-tools"]
-
-[[example]]
 name = "gen_docs"
 path = "src/bin/gen_docs.rs"
 required-features = ["dev-tools"]
@@ -60,18 +50,11 @@ default = [
   "jemalloc",
 ]
 
-# Local dense retrieval: ONNX embeddings + in-process HNSW, with the optional
-# GPU execution providers below. Opt-in rather than default so `cargo install
-# sobre` needs no model download and no ORT runtime preflight before the tool
-# is useful. Invariant: everything under `dense` runs on the user's machine —
-# no external service.
-dense = ["embeddings"]
-jemalloc = ["dep:tikv-jemallocator", "dep:tikv-jemalloc-ctl"]
-dev-tools = []
-# Helpers only the integration tests and benches call. Enabled for them by
-# the self dev-dependency below; never part of a release build.
-test-support = []
-embeddings = [
+# Local dense retrieval: ONNX embeddings + in-process HNSW. Opt-in rather
+# than default so `cargo install sobre` needs no model download and no ORT
+# runtime preflight before the tool is useful. Invariant: everything under
+# `dense` runs on the user's machine — no external service.
+dense = [
     "dep:ort",
     "dep:ndarray",
     "dep:libloading",
@@ -79,11 +62,18 @@ embeddings = [
     "dep:tar",
     "dep:zip",
 ]
-ort-cuda = ["ort?/cuda"]
-ort-webgpu = ["ort?/webgpu"]
-ort-rocm = ["ort?/rocm"]
-ort-directml = ["ort?/directml"]
-ort-coreml = ["ort?/coreml"]
+# Dense retrieval on a GPU, for source builds (`--features ort-cuda` …).
+# Each one turns on `dense`.
+ort-cuda = ["dense", "ort/cuda"]
+ort-webgpu = ["dense", "ort/webgpu"]
+ort-rocm = ["dense", "ort/rocm"]
+ort-directml = ["dense", "ort/directml"]
+ort-coreml = ["dense", "ort/coreml"]
+jemalloc = ["dep:tikv-jemallocator", "dep:tikv-jemalloc-ctl"]
+dev-tools = []
+# Helpers only the integration tests and benches call. Enabled for them by
+# the self dev-dependency below; never part of a release build.
+test-support = []
 tree-sitter = [
   "dep:tree-sitter",
   "dep:tree-sitter-rust",
@@ -132,7 +122,6 @@ tokio = { version = "1.52", features = [
   "sync",
   "time",
   "signal",
-  "process",
 ] }
 serde = { version = "1.0", features = ["derive"] }
 # preserve_order: agent configs are edited in place, and their keys must keep
@@ -233,7 +222,6 @@ getrandom = "0.4"
 reqwest = { version = "0.13", default-features = false, features = [
   "rustls",
   "stream",
-  "json",
 ] }
 bytecount = "0.6"
 blake3 = "1.8"
@@ -247,15 +235,9 @@ yaml_serde = "0.10.4"
 
 [lints.rust]
 unreachable_pub = "warn"
-# sobre: dead code is an error, not a warning. Upstream accumulated ~15k lines
-# of never-referenced modules partly because `pub mod` in a library crate is
-# public API, so rustc never lints it, and partly because a module-level
-# `#![allow(dead_code)]` silenced a 900-line island in proxy/. Flip to "warn"
-# if a green build proves too noisy — but flip it back.
+# Dead code is an error. It only catches private items: `pub` items of a
+# library are public API, which rustc never reports as unused.
 dead_code = "deny"
-# CI coverage (cargo-tarpaulin) injects `--cfg tarpaulin`; declare it to avoid
-# `-D unexpected_cfgs` failures when using `cfg_attr(tarpaulin, ...)`.
-unexpected_cfgs = { level = "warn", check-cfg = ["cfg(tarpaulin)"] }
 
 [lints.clippy]
 pedantic = { level = "warn", priority = -1 }
@@ -282,11 +264,13 @@ cast_sign_loss = "allow"
 cast_possible_wrap = "allow"
 cast_lossless = "allow"
 
-# --- Performance: format_push_string would require 276 refactors for minimal gain ---
+# --- Performance: `push_str(&format!(…))` is common and cheap enough here ---
 format_push_string = "allow"
 
-# --- Struct design: Config/StatsStore legitimately use many bools ---
+# --- Struct design: option and parameter structs (ConsolidateOptions,
+# PatchParams, EditParams, ProjectBuild) are made of flags ---
 struct_excessive_bools = "allow"
+
 
 # --- Float: intentional comparisons in stats/benchmarks ---
 float_cmp = "allow"
@@ -344,7 +328,6 @@ jsonschema = { version = "0.46", default-features = false }
 proptest = "1.11"
 serial_test = "3.5"
 tempfile = "3.27"
-wat = "1.252"
 sobre = { path = ".", features = ["test-support"] }
 
 [[bench]]

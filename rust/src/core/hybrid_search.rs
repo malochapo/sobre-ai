@@ -9,27 +9,27 @@
 //! Reference: Cormack, Clarke & Buettcher (2009), "Reciprocal Rank Fusion
 //! outperforms Condorcet and individual Rank Learning Methods"
 
-#[cfg(any(test, feature = "embeddings"))]
+#[cfg(any(test, feature = "dense"))]
 use std::collections::HashMap;
 
 use super::bm25_index::{BM25Index, ChunkKind, SearchResult};
 
-#[cfg(feature = "embeddings")]
+#[cfg(feature = "dense")]
 use super::embeddings::EmbeddingEngine;
-#[cfg(feature = "embeddings")]
+#[cfg(feature = "dense")]
 use super::hnsw::FlatEmbeddings;
 
-#[cfg(any(test, feature = "embeddings"))]
+#[cfg(any(test, feature = "dense"))]
 const RRF_K: f64 = 60.0;
 
 /// Default weights for standard RRF: equal contribution per ranking (`Σ weight/(k+r)` with weight=1).
-#[cfg(any(test, feature = "embeddings"))]
+#[cfg(any(test, feature = "dense"))]
 const DEFAULT_BM25_WEIGHT: f64 = 1.0;
-#[cfg(any(test, feature = "embeddings"))]
+#[cfg(any(test, feature = "dense"))]
 const DEFAULT_DENSE_WEIGHT: f64 = 1.0;
 
 /// Hybrid search weights and candidate counts (built-in, not configurable).
-#[cfg(any(test, feature = "embeddings"))]
+#[cfg(any(test, feature = "dense"))]
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(default)]
 pub struct HybridConfig {
@@ -42,12 +42,12 @@ pub struct HybridConfig {
     pub splade_weight: f64,
 }
 
-#[cfg(any(test, feature = "embeddings"))]
+#[cfg(any(test, feature = "dense"))]
 fn default_splade_weight() -> f64 {
     0.5
 }
 
-#[cfg(any(test, feature = "embeddings"))]
+#[cfg(any(test, feature = "dense"))]
 impl Default for HybridConfig {
     fn default() -> Self {
         Self {
@@ -64,7 +64,7 @@ impl Default for HybridConfig {
 ///
 /// `graph_file_ranks`: optional repo-relative file path → rank (0-based) for neighbors of
 /// recently touched session files; each matching result gets an extra `1/(k+r)` term.
-#[cfg(any(test, feature = "embeddings"))]
+#[cfg(any(test, feature = "dense"))]
 pub fn reciprocal_rank_fusion(
     bm25_results: &[SearchResult],
     dense_results: &[DenseSearchResult],
@@ -139,7 +139,7 @@ pub fn reciprocal_rank_fusion(
 
 /// Run hybrid search: BM25 + dense retrieval with RRF fusion + post-RRF reranking.
 /// Falls back to BM25-only if embedding engine is not available.
-#[cfg(feature = "embeddings")]
+#[cfg(feature = "dense")]
 pub fn hybrid_search(
     query: &str,
     index: &BM25Index,
@@ -197,7 +197,7 @@ pub fn hybrid_search(
     results
 }
 
-#[cfg(not(feature = "embeddings"))]
+#[cfg(not(feature = "dense"))]
 pub fn hybrid_search(query: &str, index: &BM25Index, top_k: usize) -> Vec<HybridResult> {
     let candidate_count = (top_k * 5).min(50);
     let mut results: Vec<HybridResult> = index
@@ -211,7 +211,7 @@ pub fn hybrid_search(query: &str, index: &BM25Index, top_k: usize) -> Vec<Hybrid
 
 /// Dense vector search over pre-computed chunk embeddings.
 /// Uses O(n log k) binary-heap top-k selection for small indices, HNSW for large ones.
-#[cfg(feature = "embeddings")]
+#[cfg(feature = "dense")]
 fn dense_search(
     query: &str,
     engine: &EmbeddingEngine,
@@ -246,13 +246,13 @@ fn dense_search(
         .collect()
 }
 
-#[cfg(any(test, feature = "embeddings"))]
+#[cfg(any(test, feature = "dense"))]
 fn result_key(file_path: &str, start_line: usize) -> String {
     format!("{file_path}:{start_line}")
 }
 
 /// Result from dense (embedding-based) search.
-#[cfg(any(test, feature = "embeddings"))]
+#[cfg(any(test, feature = "dense"))]
 #[derive(Debug, Clone)]
 pub struct DenseSearchResult {
     pub chunk_idx: usize,

@@ -38,13 +38,9 @@ so the values are fixed:
 | Field | Value |
 |---|---|
 | `max_gotchas_per_project` | 100 |
-| `retrieval_budget_per_room` | 10 |
-| `default_decay_rate` | 0.03 |
-| `category_decay_overrides` | empty |
 
-Of these, only `max_gotchas_per_project` is read at runtime (by the doctor
-storage check). The store enforces its own constants in
-`rust/src/core/gotcha_tracker/model.rs`.
+It is read by the doctor storage check. The store enforces its own constants
+in `rust/src/core/gotcha_tracker/model.rs`.
 
 ## Store limits and decay
 

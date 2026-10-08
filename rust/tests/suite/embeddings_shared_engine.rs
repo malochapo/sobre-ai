@@ -7,7 +7,7 @@
 //! the CI flake of 2026-06-11. Integration-test binaries run in their own
 //! process, so the lock here is guaranteed untouched. Keep this file
 //! single-test for that reason.
-#![cfg(feature = "embeddings")]
+#![cfg(feature = "dense")]
 
 #[test]
 fn try_shared_engine_returns_none_when_not_initialized() {

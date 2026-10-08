@@ -173,7 +173,7 @@ pub fn entropy_compress_task_conditioned(
 /// on a model load) and only for files small enough that per-line embedding
 /// stays within the read-path latency budget. Embeddings are cached by line
 /// hash so re-reads cost nothing.
-#[cfg(feature = "embeddings")]
+#[cfg(feature = "dense")]
 fn line_embedder(line_count: usize) -> impl Fn(&str) -> Option<Vec<f32>> {
     use std::collections::HashMap;
     use std::sync::Mutex;
@@ -214,7 +214,7 @@ fn line_embedder(line_count: usize) -> impl Fn(&str) -> Option<Vec<f32>> {
     }
 }
 
-#[cfg(not(feature = "embeddings"))]
+#[cfg(not(feature = "dense"))]
 fn line_embedder(_line_count: usize) -> impl Fn(&str) -> Option<Vec<f32>> {
     |_: &str| None
 }

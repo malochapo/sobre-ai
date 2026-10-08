@@ -1,4 +1,0 @@
-# Keep the gateway image build context lean: only rust/ is copied
-# (docker/Dockerfile.gateway), and build artifacts must never leak in.
-rust/target/
-**/.DS_Store
