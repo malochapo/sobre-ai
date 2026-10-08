@@ -341,7 +341,10 @@ fn resolve_symbol_root(args: &Map<String, Value>, session_root: &str) -> String 
         .or_else(|| get_str(args, "file"))
         .filter(|p| std::path::Path::new(p.as_str()).is_absolute());
 
+    // A file inside the session's project keeps that project: the detected
+    // root (the nearest git root) may be an ancestor with no graph of its own.
     if let Some(abs_path) = candidate
+        && !std::path::Path::new(&abs_path).starts_with(session_root)
         && let Some(detected) = crate::core::protocol::detect_project_root(&abs_path)
         && detected != session_root
     {

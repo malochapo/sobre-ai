@@ -35,42 +35,34 @@ export const b = () => c();
 
         let root_s = root.to_string_lossy().to_string();
 
-        // Build graph (deterministic file ordering + edge insertion).
-        let build = sobre::tools::ctx_impact::handle("build", None, &root_s, None, Some("json"));
-        let build_v = parse_json(&build);
-        assert_eq!(build_v["tool"], "ctx_impact");
-        assert_eq!(build_v["action"], "build");
+        // Build graph (deterministic file ordering + edge insertion), the
+        // same scan `ctx_graph action=build` runs.
+        sobre::core::graph_index::scan(&root_s);
 
-        let status = sobre::tools::ctx_impact::handle("status", None, &root_s, None, Some("json"));
-        let status_v = parse_json(&status);
-        assert_eq!(status_v["tool"], "ctx_impact");
-        assert_eq!(status_v["action"], "status");
-        assert_ne!(status_v["freshness"], "empty");
-
-        // Dependency chain should be deterministic.
-        let chain = sobre::tools::ctx_impact::handle(
-            "chain",
-            Some("src/a.ts->src/c.ts"),
+        // The dependency chain should be deterministic.
+        let chain = sobre::tools::ctx_graph_primitives::shortest_path(
+            Some("src/a.ts"),
+            Some("src/c.ts"),
             &root_s,
-            None,
             Some("json"),
         );
         let chain_v = parse_json(&chain);
-        assert_eq!(chain_v["found"], true);
+        assert_eq!(chain_v["connected"], true);
         assert_eq!(
             chain_v["path"],
             serde_json::json!(["src/a.ts", "src/b.ts", "src/c.ts"])
         );
 
         // Impact should be stable-sorted.
-        let impact = sobre::tools::ctx_impact::handle(
-            "analyze",
+        let impact = sobre::tools::ctx_graph_impact::impact(
             Some("src/c.ts"),
             &root_s,
             Some(10),
             Some("json"),
         );
         let impact_v = parse_json(&impact);
+        assert_eq!(impact_v["tool"], "ctx_graph");
+        assert_eq!(impact_v["action"], "impact");
         assert_eq!(impact_v["affected_files_total"], 2);
         assert_eq!(
             impact_v["affected_files"],

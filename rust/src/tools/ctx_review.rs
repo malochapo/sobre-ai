@@ -1,5 +1,14 @@
+//! `ctx_review`: what a change to a file touches, for a reviewer. The files
+//! that depend on it, the call sites of its functions in other files, and its
+//! test files, all read from the code graph.
+
 use crate::core::tokens::count_tokens;
 use std::path::Path;
+
+/// Affected files listed before the rest is summarized as a count.
+const SHOWN_FILES: usize = 30;
+/// Functions of the file whose outside call sites are listed.
+const SHOWN_FUNCTIONS: usize = 15;
 
 /// Dispatches code review actions (review, diff-review, checklist).
 pub fn handle(action: &str, path: Option<&str>, root: &str, depth: Option<usize>) -> String {
@@ -15,67 +24,127 @@ fn handle_review(path: Option<&str>, root: &str, depth: usize) -> String {
     let Some(target) = path else {
         return "path is required for 'review' action".to_string();
     };
-
-    let mut sections = Vec::new();
-
-    sections.push(format!("## Review: {target}\n"));
-
-    let impact = super::ctx_impact::handle("analyze", Some(target), root, Some(depth), None);
-    if !impact.contains("No") && !impact.contains("empty") {
-        sections.push("### Impact Analysis".to_string());
-        sections.push(impact);
-    }
-
-    let file_stem = Path::new(target)
-        .file_stem()
-        .and_then(|s| s.to_str())
-        .unwrap_or("");
-
-    if !file_stem.is_empty() {
-        let callers =
-            super::ctx_graph_calls::callers_or_callees(Some(file_stem), true, None, 1, root);
-        if !callers.contains("No callers") {
-            sections.push("### Callers".to_string());
-            sections.push(callers);
-        }
-    }
-
-    let tests = find_related_tests(target, root);
-    if tests.is_empty() {
-        sections.push("### Related Tests".to_string());
-        sections.push("  (no test files found)".to_string());
-    } else {
-        sections.push("### Related Tests".to_string());
-        for t in &tests {
-            sections.push(format!("  - {t}"));
-        }
-    }
-
-    let output = sections.join("\n");
+    let output = review_sections(target, root, depth).join("\n");
     let tok = count_tokens(&output);
     format!("{output}\n\n[{tok} tok]")
 }
 
-fn handle_diff_review(diff_input: Option<&str>, root: &str) -> String {
-    let Some(diff_text) = diff_input else {
-        return "path (git diff output) is required for 'diff-review'".to_string();
-    };
+fn review_sections(target: &str, root: &str, depth: usize) -> Vec<String> {
+    let rel = crate::core::index_paths::graph_relative_key(target, root);
+    let mut sections = vec![format!("## Review: {rel}\n")];
 
-    let changed_files = extract_changed_files(diff_text);
-    if changed_files.is_empty() {
-        return "No changed files detected in diff input.".to_string();
+    sections.push(impact_section(target, root, depth));
+    if let Some(callers) = callers_section(&rel, root) {
+        sections.push(callers);
     }
 
-    let mut sections = Vec::new();
-    sections.push(format!(
+    let tests = find_related_tests(&rel, root);
+    sections.push("### Related tests".to_string());
+    if tests.is_empty() {
+        sections.push("  (no test files found by name)".to_string());
+    } else {
+        sections.extend(tests.iter().map(|t| format!("  - {t}")));
+    }
+    sections
+}
+
+/// The files that depend on `target`, up to `depth` hops.
+fn impact_section(target: &str, root: &str, depth: usize) -> String {
+    match crate::tools::ctx_graph_impact::affected_files(target, root, depth) {
+        None => format!(
+            "### Impact\n  '{target}' is not an indexed file or a known type, so its \
+             dependents are unknown."
+        ),
+        Some(files) if files.is_empty() => {
+            format!("### Impact (depth {depth})\n  no file depends on it.")
+        }
+        Some(files) => {
+            let mut out = format!("### Impact (depth {depth}): {} files", files.len());
+            for f in files.iter().take(SHOWN_FILES) {
+                out.push_str(&format!("\n  - {f}"));
+            }
+            if files.len() > SHOWN_FILES {
+                out.push_str(&format!("\n  ... +{} more", files.len() - SHOWN_FILES));
+            }
+            out
+        }
+    }
+}
+
+/// Call sites in other files of the functions defined in `rel`. `None` when
+/// the graph has no symbols for the file.
+fn callers_section(rel: &str, root: &str) -> Option<String> {
+    let graph = crate::core::graph_provider::open_or_build(root)?;
+    let mut names: Vec<String> = graph
+        .find_symbols("", Some(rel), None)
+        .into_iter()
+        .filter(|s| s.file == rel)
+        .map(|s| s.name)
+        .collect();
+    names.sort();
+    names.dedup();
+    if names.is_empty() {
+        return None;
+    }
+
+    let calls = crate::tools::ctx_graph_calls::load(root);
+    let mut lines = Vec::new();
+    for name in &names {
+        let mut sites: Vec<String> = calls
+            .callers_of(name)
+            .into_iter()
+            .filter(|e| e.caller_file != rel)
+            .map(|e| format!("{}:L{}", e.caller_file, e.caller_line))
+            .collect();
+        if sites.is_empty() {
+            continue;
+        }
+        sites.sort();
+        sites.dedup();
+        let shown = sites.iter().take(5).cloned().collect::<Vec<_>>().join(", ");
+        let more = sites.len().saturating_sub(5);
+        let more = if more > 0 {
+            format!(" +{more} more")
+        } else {
+            String::new()
+        };
+        lines.push(format!("  {name} ← {shown}{more}"));
+        if lines.len() == SHOWN_FUNCTIONS {
+            break;
+        }
+    }
+    Some(if lines.is_empty() {
+        "### Callers from other files\n  none found (calls are matched by name)".to_string()
+    } else {
+        format!(
+            "### Callers from other files (matched by name)\n{}",
+            lines.join("\n")
+        )
+    })
+}
+
+/// Review every changed file: the files named in `diff_text` (git diff
+/// output), or the uncommitted changes when no diff is given.
+fn handle_diff_review(diff_input: Option<&str>, root: &str) -> String {
+    let changed_files = match diff_input {
+        Some(diff_text) => extract_changed_files(diff_text),
+        None => crate::tools::ctx_graph_impact::git_changed_files(root),
+    };
+    if changed_files.is_empty() {
+        return if diff_input.is_some() {
+            "No changed files detected in diff input.".to_string()
+        } else {
+            "No uncommitted changes.".to_string()
+        };
+    }
+
+    let mut sections = vec![format!(
         "## Diff Review: {} file(s) changed\n",
         changed_files.len()
-    ));
-
+    )];
     for file in &changed_files {
-        sections.push(format!("---\n### {file}"));
-        let review = handle_review(Some(file), root, 2);
-        sections.push(review);
+        sections.push("---".to_string());
+        sections.extend(review_sections(file, root, 2));
     }
 
     let output = sections.join("\n");
@@ -94,12 +163,11 @@ fn handle_checklist(path: Option<&str>, root: &str, depth: usize) -> String {
         "- [ ] Are all public API changes in `{target}` backward-compatible?"
     ));
 
-    let impact = super::ctx_impact::handle("analyze", Some(target), root, Some(depth), None);
-    let affected_count = impact.lines().filter(|l| l.contains("→")).count();
-
-    if affected_count > 0 {
+    let affected = crate::tools::ctx_graph_impact::affected_files(target, root, depth)
+        .map_or(0, |files| files.len());
+    if affected > 0 {
         questions.push(format!(
-            "- [ ] {affected_count} downstream file(s) affected — have they been reviewed?"
+            "- [ ] {affected} downstream file(s) affected — have they been reviewed?"
         ));
         questions.push(
             "- [ ] Do downstream consumers handle the changed interface correctly?".to_string(),

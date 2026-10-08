@@ -92,7 +92,6 @@ pub fn build_registry() -> ToolRegistry {
     registry.register(Box::new(registered::ctx_expand::CtxExpandTool));
     registry.register(Box::new(registered::ctx_refactor::CtxRefactorTool));
     registry.register(Box::new(registered::ctx_review::CtxReviewTool));
-    registry.register(Box::new(registered::ctx_impact::CtxImpactTool));
     registry.register(Box::new(registered::ctx_read::CtxReadTool));
     registry.register(Box::new(registered::ctx_patch::CtxPatchTool));
     registry.register(Box::new(registered::ctx_glob::CtxGlobTool));

@@ -263,7 +263,7 @@ impl CodeGraph {
     }
 
     /// Files that define a symbol named exactly `name` (GH #398 symbol-name
-    /// `ctx_impact analyze` fallback). Backed by `node::resolve_symbol_def_files`.
+    /// `ctx_graph action=impact` fallback). Backed by `node::resolve_symbol_def_files`.
     pub fn resolve_symbol_def_files(&self, name: &str) -> anyhow::Result<Vec<String>> {
         node::resolve_symbol_def_files(&self.conn, name)
     }

@@ -165,21 +165,36 @@ pub(super) fn get_by_symbol(
     Ok(result)
 }
 
+/// Escape `LIKE` wildcards so a name or path matches literally: `_` and `%`
+/// are ordinary characters in identifiers and file names.
+fn like_escape(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for c in s.chars() {
+        if matches!(c, '\\' | '%' | '_') {
+            out.push('\\');
+        }
+        out.push(c);
+    }
+    out
+}
+
 pub(super) fn find_symbols(
     conn: &Connection,
     name: &str,
     file_filter: Option<&str>,
     kind_filter: Option<&str>,
 ) -> anyhow::Result<Vec<Node>> {
-    let name_lower = name.to_lowercase();
+    let name_lower = like_escape(&name.to_lowercase());
     let mut sql = String::from(
         "SELECT n.id, n.kind, n.name, p.path, n.line_start, n.line_end, n.metadata
          FROM nodes n JOIN paths p ON p.id = n.file_id WHERE n.kind != 'file'
-         AND LOWER(name) LIKE '%' || ?1 || '%'",
+         AND LOWER(name) LIKE '%' || ?1 || '%' ESCAPE '\\'",
     );
     let mut param_idx = 2;
     if file_filter.is_some() {
-        sql.push_str(&format!(" AND p.path LIKE '%' || ?{param_idx} || '%'"));
+        sql.push_str(&format!(
+            " AND p.path LIKE '%' || ?{param_idx} || '%' ESCAPE '\\'"
+        ));
         param_idx += 1;
     }
     if kind_filter.is_some() {
@@ -192,7 +207,7 @@ pub(super) fn find_symbols(
     let params_vec: Vec<Box<dyn rusqlite::types::ToSql>> = {
         let mut v: Vec<Box<dyn rusqlite::types::ToSql>> = vec![Box::new(name_lower)];
         if let Some(f) = file_filter {
-            v.push(Box::new(f.to_string()));
+            v.push(Box::new(like_escape(f)));
         }
         if let Some(k) = kind_filter {
             v.push(Box::new(k.to_string()));
@@ -225,8 +240,8 @@ pub(super) fn find_symbols(
 /// its `file_path` (definitions, call-sites and `type_ref` targets all stamp
 /// the definer), so this maps a bare type/class name to its source file(s).
 ///
-/// Powers the `ctx_impact analyze` symbol-name fallback (GH #398): a user who
-/// asks for the impact of a *class* (`ctx_impact analyze ArcPoint`) instead of
+/// Powers the `ctx_graph action=impact` symbol-name fallback (GH #398): a user who
+/// asks for the impact of a *class* (`ctx_graph impact ArcPoint`) instead of
 /// a file path is resolved to the file(s) that define it. Results are sorted
 /// for output determinism (#498).
 pub(super) fn resolve_symbol_def_files(
@@ -283,7 +298,7 @@ pub(super) fn symbol_count(conn: &Connection) -> anyhow::Result<usize> {
 
 /// Number of `file` nodes — accurate on both builder paths (the `file_catalog`
 /// table is only populated by the minimal/non-embeddings builder, so it cannot
-/// back a count). Used by the `ctx_impact analyze` diagnostic (GH #398).
+/// back a count). Used by the `ctx_graph action=impact` diagnostic (GH #398).
 pub(super) fn file_count(conn: &Connection) -> anyhow::Result<usize> {
     let c: i64 = conn.query_row(
         "SELECT COUNT(*) FROM nodes WHERE kind = 'file'",

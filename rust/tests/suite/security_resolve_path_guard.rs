@@ -29,10 +29,6 @@ fn registry_tools_use_resolved_path() {
             "ctx_review",
             include_str!("../../src/tools/registered/ctx_review.rs"),
         ),
-        (
-            "ctx_impact",
-            include_str!("../../src/tools/registered/ctx_impact.rs"),
-        ),
     ];
     for (name, src) in registry_tools {
         assert!(

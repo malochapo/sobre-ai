@@ -16,6 +16,25 @@ fn tokenize_splits_code() {
 }
 
 #[test]
+fn tokenize_splits_snake_case_and_adds_singulars() {
+    let tokens = tokenize("fn retry_with_backoff(attempts: u32)");
+    for t in [
+        "retry_with_backoff",
+        "retry",
+        "backoff",
+        "attempts",
+        "attempt",
+    ] {
+        assert!(tokens.contains(&t.to_string()), "missing {t}: {tokens:?}");
+    }
+    let query = tokenize("where are retries handled");
+    assert!(query.contains(&"retry".to_string()), "{query:?}");
+    let kept = tokenize("class status");
+    assert!(!kept.contains(&"statu".to_string()), "{kept:?}");
+    assert!(!kept.contains(&"clas".to_string()), "{kept:?}");
+}
+
+#[test]
 fn format_search_results_normalizes_windows_separators() {
     // Issue #324: Windows backslash paths in search output were dropped or
     // escape-mangled by client render layers. They must come out with
@@ -924,4 +943,26 @@ fn remove_chunks_with_prefix_evicts_only_matching() {
     );
     // A no-match prefix is a no-op.
     assert_eq!(index.remove_chunks_with_prefix("nope://"), 0);
+}
+
+/// A plain-language question finds the snake_case function it describes (B16).
+#[test]
+fn plain_language_query_finds_snake_case_function() {
+    let dir = tempdir().unwrap();
+    std::fs::write(
+        dir.path().join("net.rs"),
+        "pub fn retry_with_backoff(attempts: u32) -> u32 {\n    attempts * 2\n}\n\n\
+         pub fn open_socket() -> u32 {\n    1\n}\n",
+    )
+    .unwrap();
+    let index = BM25Index::build_from_directory(dir.path());
+    for query in ["retry backoff", "where are retries handled"] {
+        let hits = index.search(query, 3);
+        assert!(
+            hits.first()
+                .is_some_and(|h| h.symbol_name.contains("retry_with_backoff")),
+            "{query}: {:?}",
+            hits.iter().map(|h| &h.symbol_name).collect::<Vec<_>>()
+        );
+    }
 }

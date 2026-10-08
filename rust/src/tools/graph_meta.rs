@@ -1,5 +1,5 @@
-//! Shared project + property-graph metadata summaries embedded in the JSON
-//! output of `ctx_impact` and `ctx_architecture`.
+//! Project and property-graph metadata embedded in the JSON output of the
+//! graph's impact actions.
 
 use serde_json::{Value, json};
 use std::path::Path;

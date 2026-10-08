@@ -9,8 +9,8 @@ Make graph-driven tooling **reproducible** (CI/proofs), **deterministic** (stabl
 This contract covers:
 
 - Property graph storage under `$SOBRE_DATA_DIR/graphs/<project_hash>/graph.db`
-- Graph build + freshness semantics (`ctx_impact action=build|status`)
-- Deterministic outputs from `ctx_impact` and `ctx_graph` (incl. `format=json`)
+- Graph build + freshness semantics (`ctx_graph action=build|status`)
+- Deterministic outputs from `ctx_graph` (incl. `format=json`)
 
 ## Version
 
@@ -22,16 +22,17 @@ This contract covers:
 ### Auto-build (zero-config)
 
 - Tools **may** auto-build the property graph when it is missing/empty:
-  - `ctx_impact action=analyze` (auto-build if empty)
+  - `ctx_graph action=impact|changes` (auto-build if empty or built by an
+    older engine)
 
 ### Explicit rebuild
 
-- `ctx_impact action=build` rescans the project and rewrites `graph.db` (in
+- `ctx_graph action=build` rescans the project and rewrites `graph.db` (in
   `$SOBRE_DATA_DIR/graphs/<project_hash>/`) and `graph.meta.json` alongside
   it. Files whose content hash is unchanged are reused, so the result equals a
   build from scratch.
-- There is one extractor: `ctx_impact build`, `ctx_graph build` and
-  `sobre index build` all run the same scan.
+- There is one extractor: `ctx_graph build` and `sobre index build` run the
+  same scan.
 
 ### Edge semantics
 
@@ -42,7 +43,7 @@ This contract covers:
 
 ### Freshness check
 
-- `ctx_impact action=status` reports whether the graph looks **fresh** or **stale**.
+- `ctx_graph action=status` reports whether the graph looks **fresh** or **stale**.
 - Staleness is determined by comparing build metadata (git head/dirty) to current repo state when available.
 
 ## Determinism (MUST)
@@ -58,14 +59,14 @@ Rules:
 
 ## Output format (tools)
 
-`ctx_impact` and `ctx_graph action=neighbors|path` accept:
+`ctx_graph action=neighbors|path|impact|changes` accept:
 
 - `format=text|json` (default: `text`)
 
 When `format=json`:
 
 - Output is machine-readable JSON (no token-suffix lines).
-- Payload includes:
+- The `impact` payload includes:
   - `schema_version` (Graph Reproducibility Contract v1)
   - `tool`, `action`
   - `project.project_root_hash` + `project.project_identity_hash` (hash-only; never leak identity strings)
@@ -74,7 +75,7 @@ When `format=json`:
 
 ## Boundedness (MUST)
 
-`ctx_impact` affected-file lists are capped by `IMPACT_AFFECTED_FILES_LIMIT`
+`ctx_graph action=impact` affected-file lists are capped by `IMPACT_AFFECTED_FILES_LIMIT`
 (`rust/src/core/budgets.rs`) to prevent DoS/token-burn. `ctx_graph` outputs
 are not budgeted.
 

@@ -15,11 +15,12 @@ impl McpTool for CtxReviewTool {
     fn tool_def(&self) -> Tool {
         tool_def(
             "ctx_review",
-            "Automated code review with impact analysis, caller tracking, and test discovery.\n\
-             Actions: review (single file), diff-review (from git diff text),\n\
-             checklist (structured review questions). depth=N (default 3).\n\
-             WORKFLOW: run tests first, then use review for structured analysis.\n\
-             ANTIPATTERN: not a substitute for actual test execution.",
+            "What a change to a file touches: the files that depend on it, the call sites of \
+             its functions in other files, and its test files.\n\
+             Actions: review (one file), diff-review (every file in git diff text, or the \
+             uncommitted changes when path is omitted), checklist (review questions). \
+             depth=N hops of dependents (default 3).\n\
+             Not a substitute for running the tests.",
             json!({
                 "type": "object",
                 "properties": {
@@ -29,7 +30,7 @@ impl McpTool for CtxReviewTool {
                     },
                     "path": {
                         "type": "string",
-                        "description": "File path (review/checklist) or git diff text (diff-review)"
+                        "description": "File path (review/checklist) or git diff text (diff-review; omit for the uncommitted changes)"
                     },
                     "depth": {
                         "type": "integer",
@@ -41,13 +42,6 @@ impl McpTool for CtxReviewTool {
                     {
                         "if": {
                             "properties": { "action": { "const": "review" } },
-                            "required": ["action"]
-                        },
-                        "then": { "required": ["action", "path"] }
-                    },
-                    {
-                        "if": {
-                            "properties": { "action": { "const": "diff-review" } },
                             "required": ["action"]
                         },
                         "then": { "required": ["action", "path"] }

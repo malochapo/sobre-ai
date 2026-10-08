@@ -22,13 +22,12 @@ pub fn handle(
         "build" => handle_build(root),
         "related" => handle_related(path, root),
         "symbol" => handle_symbol(path, root, cache, crp_mode),
-        "impact" => handle_impact(path, root),
         "status" => handle_status(root),
         "diagram" => crate::tools::ctx_graph_diagram::handle(path, depth, kind, root),
         "neighbors" => crate::tools::ctx_graph_primitives::neighbors(path, root, depth, format),
         "path" => crate::tools::ctx_graph_primitives::shortest_path(path, to, root, format),
-        _ => "Unknown action. Use: build, status, related, symbol, impact, neighbors, path, \
-              diagram, callers, callees, trace"
+        _ => "Unknown action. Use: build, status, related, symbol, impact, changes, neighbors, \
+              path, diagram, callers, callees, trace"
             .to_string(),
     }
 }
@@ -273,172 +272,6 @@ fn render_symbol_snippet(
     format!("{result}[ctx_graph symbol: {tokens} tok (full file: {full_tokens} tok, -{pct}%)]")
 }
 
-fn file_path_to_module_prefixes(
-    rel_path: &str,
-    project_root: &str,
-    provider: &GraphProvider,
-) -> Vec<String> {
-    let rel_path_slash = index_paths::graph_match_key(rel_path);
-    let without_ext = rel_path_slash
-        .strip_suffix(".rs")
-        .or_else(|| rel_path_slash.strip_suffix(".ts"))
-        .or_else(|| rel_path_slash.strip_suffix(".tsx"))
-        .or_else(|| rel_path_slash.strip_suffix(".js"))
-        .or_else(|| rel_path_slash.strip_suffix(".py"))
-        .or_else(|| rel_path_slash.strip_suffix(".kt"))
-        .or_else(|| rel_path_slash.strip_suffix(".kts"))
-        .or_else(|| rel_path_slash.strip_suffix(".gd"))
-        .unwrap_or(&rel_path_slash);
-
-    let module_path = without_ext
-        .strip_prefix("src/")
-        .unwrap_or(without_ext)
-        .replace('/', "::");
-
-    let module_path = if module_path.ends_with("::mod") {
-        module_path
-            .strip_suffix("::mod")
-            .unwrap_or(&module_path)
-            .to_string()
-    } else {
-        module_path
-    };
-
-    let crate_name = std::fs::read_to_string(Path::new(project_root).join("Cargo.toml"))
-        .or_else(|_| std::fs::read_to_string(Path::new(project_root).join("package.json")))
-        .ok()
-        .and_then(|c| {
-            c.lines()
-                .find(|l| l.contains("\"name\"") || l.starts_with("name"))
-                .and_then(|l| l.split('"').nth(1))
-                .map(|n| n.replace('-', "_"))
-        })
-        .unwrap_or_default();
-
-    let mut prefixes = vec![
-        format!("crate::{module_path}"),
-        format!("super::{module_path}"),
-        module_path.clone(),
-    ];
-    if !crate_name.is_empty() {
-        prefixes.insert(0, format!("{crate_name}::{module_path}"));
-    }
-
-    let ext = Path::new(rel_path)
-        .extension()
-        .and_then(|e| e.to_str())
-        .unwrap_or("");
-    if ext == "gd" {
-        // GDScript import edges resolve to the target script's project-relative
-        // path (e.g. "actors/Player.gd"), not a Rust-style module path, so the
-        // path itself is the key that `graph impact` must match on (#314).
-        prefixes.push(rel_path_slash.clone());
-    }
-    if matches!(ext, "kt" | "kts") {
-        let abs_path = Path::new(project_root).join(rel_path.trim_start_matches(['/', '\\']));
-        if let Ok(content) = std::fs::read_to_string(abs_path)
-            && let Some(package_name) = content.lines().map(str::trim).find_map(|line| {
-                line.strip_prefix("package ")
-                    .map(|rest| rest.trim().trim_end_matches(';').to_string())
-            })
-        {
-            prefixes.push(package_name.clone());
-            if let Some(entry) = provider.get_file_entry(rel_path) {
-                for export in &entry.exports {
-                    prefixes.push(format!("{package_name}.{export}"));
-                }
-            }
-            if let Some(file_stem) = Path::new(rel_path).file_stem().and_then(|s| s.to_str()) {
-                prefixes.push(format!("{package_name}.{file_stem}"));
-            }
-        }
-    }
-
-    prefixes.sort();
-    prefixes.dedup();
-    prefixes
-}
-
-fn edge_matches_file(edge_to: &str, module_prefixes: &[String]) -> bool {
-    module_prefixes.iter().any(|prefix| {
-        edge_to == *prefix
-            || edge_to.starts_with(&format!("{prefix}::"))
-            || edge_to.starts_with(&format!("{prefix},"))
-    })
-}
-
-fn handle_impact(path: Option<&str>, root: &str) -> String {
-    let Some(target) = path else {
-        return "path is required for 'impact' action".to_string();
-    };
-
-    let Some(open) = graph_provider::open_or_build(root) else {
-        return "No graph index found. Run ctx_graph with action='build' first.".to_string();
-    };
-    let gp = &open;
-
-    let rel_target = index_paths::graph_relative_key(target, root);
-    let module_prefixes = file_path_to_module_prefixes(&rel_target, root, gp);
-
-    // Direct importers come from two complementary lookups, merged + deduped:
-    //   1. `dependents(rel_target)` — the import resolver records edges keyed by
-    //      the target's project-relative *file path*, so this is the primary,
-    //      backend-agnostic match (works for Rust/TS/JS/Python/…).
-    //   2. `edge_matches_file` over module-path prefixes — additionally catches
-    //      edges keyed by a module/symbol path rather than a file (Rust `mod`,
-    //      Kotlin package, barrel re-exports), which the file-path match misses.
-    let mut direct: Vec<String> = gp.dependents(&rel_target);
-    for e in gp.edges_by_kind("import") {
-        if edge_matches_file(&e.to, &module_prefixes) && !direct.contains(&e.from) {
-            direct.push(e.from);
-        }
-    }
-    direct.retain(|d| *d != rel_target);
-
-    let mut all_dependents: Vec<String> = direct.clone();
-    for d in &direct {
-        for dep in gp.dependents(d) {
-            if !all_dependents.contains(&dep) && dep != rel_target {
-                all_dependents.push(dep);
-            }
-        }
-    }
-
-    if all_dependents.is_empty() {
-        return format!(
-            "No files depend on {}",
-            crate::core::protocol::shorten_path(target)
-        );
-    }
-
-    let mut result = format!(
-        "Impact of {} ({} dependents):\n",
-        crate::core::protocol::shorten_path(target),
-        all_dependents.len()
-    );
-
-    if !direct.is_empty() {
-        result.push_str(&format!("\nDirect ({}):\n", direct.len()));
-        for d in &direct {
-            result.push_str(&format!("  {}\n", crate::core::protocol::shorten_path(d)));
-        }
-    }
-
-    let indirect: Vec<&String> = all_dependents
-        .iter()
-        .filter(|d| !direct.contains(d))
-        .collect();
-    if !indirect.is_empty() {
-        result.push_str(&format!("\nIndirect ({}):\n", indirect.len()));
-        for d in &indirect {
-            result.push_str(&format!("  {}\n", crate::core::protocol::shorten_path(d)));
-        }
-    }
-
-    let tokens = count_tokens(&result);
-    format!("{result}[ctx_graph impact: {tokens} tok]")
-}
-
 fn handle_status(root: &str) -> String {
     let Some(open) = graph_provider::open_best_effort(root) else {
         return "No graph index. Run ctx_graph action='build' to create one.".to_string();
@@ -465,80 +298,17 @@ fn handle_status(root: &str) -> String {
         .join(" ");
 
     format!(
-        "Graph: {} files, {} symbols, {} edges | {} tok total\nLast scan: {}\nLanguages: {lang_summary}\nStored: {}",
+        "Graph: {} files, {} symbols, {} edges | {} tok total\nLast scan: {} ({})\nLanguages: {lang_summary}\nStored: {}",
         gp.file_count(),
         gp.symbol_count(),
         gp.edge_count().unwrap_or(0),
         total_tokens,
         gp.last_scan(),
+        crate::tools::ctx_graph_impact::freshness(root),
         GraphProvider::index_dir(root)
             .map(|d| d.to_string_lossy().to_string())
             .unwrap_or_default()
     )
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_edge_matches_file_crate_prefix() {
-        let prefixes = vec![
-            "sobre::core::cache".to_string(),
-            "crate::core::cache".to_string(),
-            "super::core::cache".to_string(),
-            "core::cache".to_string(),
-        ];
-        assert!(edge_matches_file(
-            "sobre::core::cache::SessionCache",
-            &prefixes
-        ));
-        assert!(edge_matches_file(
-            "crate::core::cache::SessionCache",
-            &prefixes
-        ));
-        assert!(edge_matches_file("crate::core::cache", &prefixes));
-        assert!(!edge_matches_file("sobre::core::config::Config", &prefixes));
-        assert!(!edge_matches_file("crate::core::cached_reader", &prefixes));
-    }
-
-    #[test]
-    fn test_file_path_to_module_prefixes_rust() {
-        let gp =
-            GraphProvider::from_index(&crate::core::graph_index::ProjectIndex::new("/nonexistent"));
-        let prefixes = file_path_to_module_prefixes("src/core/cache.rs", "/nonexistent", &gp);
-        assert!(prefixes.contains(&"crate::core::cache".to_string()));
-        assert!(prefixes.contains(&"core::cache".to_string()));
-    }
-
-    #[test]
-    fn test_file_path_to_module_prefixes_mod_rs() {
-        let gp =
-            GraphProvider::from_index(&crate::core::graph_index::ProjectIndex::new("/nonexistent"));
-        let prefixes = file_path_to_module_prefixes("src/core/mod.rs", "/nonexistent", &gp);
-        assert!(prefixes.contains(&"crate::core".to_string()));
-        assert!(!prefixes.iter().any(|p| p.contains("mod")));
-    }
-
-    #[test]
-    fn test_file_path_to_module_prefixes_gd_uses_path() {
-        // GDScript import edges store the resolved project-relative path, so the
-        // path itself must be among the prefixes `graph impact` matches on (#314).
-        let gp =
-            GraphProvider::from_index(&crate::core::graph_index::ProjectIndex::new("/nonexistent"));
-        let prefixes = file_path_to_module_prefixes("actors/Player.gd", "/nonexistent", &gp);
-        assert!(
-            prefixes.contains(&"actors/Player.gd".to_string()),
-            "got: {prefixes:?}"
-        );
-    }
-
-    #[test]
-    fn test_edge_matches_file_gd_path() {
-        let prefixes = vec!["actors/Base.gd".to_string()];
-        assert!(edge_matches_file("actors/Base.gd", &prefixes));
-        assert!(!edge_matches_file("actors/Enemy.gd", &prefixes));
-    }
 }
 
 /// End-to-end GDScript graph coverage on a real Godot fixture (#314): four `.gd`
@@ -598,7 +368,7 @@ mod gdscript_p0_tests {
         let _lock = crate::core::data_dir::test_env_lock();
         let (_tmp, root) = godot_fixture();
         let _ = handle_build(&root);
-        let out = handle_impact(Some("actors/Base.gd"), &root);
+        let out = crate::tools::ctx_graph_impact::impact(Some("actors/Base.gd"), &root, None, None);
         assert!(
             out.contains("Player.gd"),
             "Base.gd dependents should include Player: {out}"

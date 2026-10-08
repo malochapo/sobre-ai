@@ -4,7 +4,7 @@
 
 Source of truth: `rust/src/server/registry.rs` and the tool definitions it registers.
 
-sobre registers **16 MCP tools**. Each entry below lists the tool name, what it does, and its parameters (`*` marks required).
+sobre registers **15 MCP tools**. Each entry below lists the tool name, what it does, and its parameters (`*` marks required).
 
 ## `ctx_checkpoint`
 
@@ -44,20 +44,12 @@ Parameters: `ignore_gitignore`, `max_results`, `path`, `paths`, `pattern`*
 ## `ctx_graph`
 
 Code graph: file dependencies and function calls.
-Files: neighbors=imports±direction, impact=reverse-dep blast radius, path path→to=dependency chain, related.
+Files: neighbors=imports±direction, impact path=file or type → files that depend on it (depth, default 5), changes → files affected by uncommitted changes, path path→to=dependency chain, related.
 Calls: callers|callees symbol='fn' → every call site with file:line (depth≤5, path scopes to a file); trace symbol→to=call chain.
 symbol symbol='fn' (or path="file.rs::fn") returns the definition. diagram kind=deps|calls (Mermaid).
 For understanding code use ctx_compose FIRST.
 
 Parameters: `action`*, `depth`, `format`, `kind`, `path`, `project_root`, `symbol`, `to`
-
-## `ctx_impact`
-
-Change impact analysis — assess blast radius before refactoring.
-action=analyze path="file.rs" maps downstream dependents; action=diff compares git refs;
-action=chain traces from→to dependency paths. depth controls traversal (default 5).
-
-Parameters: `action`, `depth`, `format`, `path`, `root`
 
 ## `ctx_knowledge`
 
@@ -107,11 +99,9 @@ Parameters: `action`*, `column`, `end_line`, `expected_hash`, `file`, `line`, `n
 
 ## `ctx_review`
 
-Automated code review with impact analysis, caller tracking, and test discovery.
-Actions: review (single file), diff-review (from git diff text),
-checklist (structured review questions). depth=N (default 3).
-WORKFLOW: run tests first, then use review for structured analysis.
-ANTIPATTERN: not a substitute for actual test execution.
+What a change to a file touches: the files that depend on it, the call sites of its functions in other files, and its test files.
+Actions: review (one file), diff-review (every file in git diff text, or the uncommitted changes when path is omitted), checklist (review questions). depth=N hops of dependents (default 3).
+Not a substitute for running the tests.
 
 Parameters: `action`*, `depth`, `path`
 

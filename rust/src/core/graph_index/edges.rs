@@ -96,7 +96,7 @@ fn build_edges_with_cache(index: &mut ProjectIndex, content_cache: &HashMap<Stri
     // Cross-file type-reference edges for C#/Java same-namespace usage (GH #398).
     // Emitted in the durable graph_index -> PropertyGraph mirror so a background
     // reindex preserves the impact blast radius instead of clearing it; shares
-    // its resolution with the `ctx_impact` builder via `type_ref_edges`.
+    // its resolution with the impact builder via `type_ref_edges`.
     let type_ref_inputs: Vec<crate::core::type_ref_edges::FileAnalysis> = type_inputs
         .iter()
         .map(

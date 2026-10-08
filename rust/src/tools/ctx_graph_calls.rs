@@ -32,10 +32,39 @@ pub fn callers_or_callees(
     let graph = load(project_root);
     let filter = scope.map(|f| graph_file_filter(f, project_root));
     let depth = depth.clamp(1, MAX_BFS_DEPTH);
-    with_handle_hint(if depth == 1 {
+    let body = if depth == 1 {
         direct(&graph, symbol, callers, filter.as_deref())
     } else {
         transitive(&graph, symbol, callers, depth, filter.as_deref())
+    };
+    let note = if callers || filter.is_some() {
+        None
+    } else {
+        ambiguity_note(&graph, symbol)
+    };
+    with_handle_hint(match note {
+        Some(note) => format!("{note}\n{body}"),
+        None => body,
+    })
+}
+
+/// When functions named `symbol` call out from more than one file, their
+/// callees are merged: say so, and name the files to scope with `path=`.
+fn ambiguity_note(graph: &CallGraph, symbol: &str) -> Option<String> {
+    let mut files: Vec<&str> = graph
+        .callees_of(symbol)
+        .into_iter()
+        .map(|e| e.caller_file.as_str())
+        .collect();
+    files.sort_unstable();
+    files.dedup();
+    (files.len() > 1).then(|| {
+        format!(
+            "[sobre: '{symbol}' names functions in {} files ({}): their callees are merged; \
+             pass path= to pick one]",
+            files.len(),
+            files.join(", ")
+        )
     })
 }
 
