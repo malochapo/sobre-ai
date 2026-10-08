@@ -1,5 +1,4 @@
-//! Minimal, dependency-free git shell-outs shared by the context-artifact and
-//! analysis tools (`ctx_impact`, `ctx_architecture`, `context_artifacts`).
+//! Minimal, dependency-free git shell-outs for the graph's impact actions.
 //!
 //! These intentionally stay tiny and best-effort: a missing or failing git
 //! never aborts a tool, it just yields `false`/`None` so callers degrade

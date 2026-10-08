@@ -9,8 +9,8 @@
 //! - the durable `graph_index` -> `PropertyGraph` mirror (`graph_index::edges`),
 //!   so a background reindex reproduces the edges instead of dropping them
 //!   (the GH #398 regression: the mirror clears the graph and previously had no
-//!   type-usage edges, silently wiping `ctx_impact`'s blast radius), and
-//! - the `ctx_impact` graph builder, which additionally emits the symbol-level
+//!   type-usage edges, silently wiping the impact blast radius), and
+//! - the impact graph builder, which additionally emits the symbol-level
 //!   edges `dead_code` relies on.
 //!
 //! Both callers therefore agree on the file-level blast radius.
@@ -59,7 +59,7 @@ pub struct ResolveScope {
 }
 
 /// The resolution scope for a file, by language. Centralizes what was
-/// previously duplicated across the mirror and both `ctx_impact` index paths.
+/// previously duplicated across the mirror and both impact index paths.
 pub fn resolve_scope(rel_path: &str, ext: &str, analysis: &DeepAnalysis) -> ResolveScope {
     match ext {
         "cs" | "kt" | "kts" => ResolveScope {

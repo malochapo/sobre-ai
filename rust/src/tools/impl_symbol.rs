@@ -20,7 +20,10 @@ pub(crate) fn handle(
     };
     let gp = &open;
 
-    let matches = gp.find_symbols(name, file, kind);
+    // The graph stores project-relative paths: an absolute `file` must be
+    // turned into that key or it matches nothing.
+    let file_key = file.map(|f| crate::core::index_paths::graph_relative_key(f, project_root));
+    let matches = gp.find_symbols(name, file_key.as_deref(), kind);
 
     if matches.is_empty() {
         return (
@@ -402,5 +405,30 @@ mod tests {
         assert_eq!(first_highest_score(&[0, 0, 0]), Some(0));
         assert_eq!(first_highest_score(&[2, 7, 7]), Some(1));
         assert_eq!(first_highest_score(&[]), None);
+    }
+
+    /// An absolute `file` and an `_` in the name match literally (B15).
+    #[test]
+    fn absolute_file_and_underscore_match_literally() {
+        let _iso = crate::core::data_dir::isolated_data_dir();
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let root = tmp.path();
+        std::fs::create_dir_all(root.join("src")).unwrap();
+        std::fs::write(root.join("Cargo.toml"), "[package]\nname = \"p\"\n").unwrap();
+        std::fs::write(
+            root.join("src/lib.rs"),
+            "pub fn a_b() {}\n\npub fn axb() {}\n",
+        )
+        .unwrap();
+        let root_str = root.to_string_lossy().to_string();
+        crate::core::graph_index::scan(&root_str);
+
+        let abs = root.join("src/lib.rs").to_string_lossy().to_string();
+        let (out, _) = handle("a_b", Some(&abs), None, &root_str);
+        assert!(out.contains("pub fn a_b()"), "{out}");
+        assert!(
+            !out.contains("axb"),
+            "`_` must not act as a wildcard: {out}"
+        );
     }
 }

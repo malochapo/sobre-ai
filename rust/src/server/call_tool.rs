@@ -190,7 +190,7 @@ impl SobreServer {
         self.record_receipt(name, args, action.as_deref(), &result_text)
             .await;
 
-        let skip_checkpoint = matches!(name, "ctx_session" | "ctx_knowledge" | "ctx_impact");
+        let skip_checkpoint = matches!(name, "ctx_session" | "ctx_knowledge");
 
         // The only place that advances `call_count`.
         if !skip_checkpoint {

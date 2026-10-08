@@ -1,39 +1,90 @@
-//! `ctx_impact` — Graph-based impact analysis tool.
-//!
-//! Uses the SQLite-backed Property Graph to answer: "What breaks when file X changes?"
-//! Performs BFS traversal of reverse import edges to find all transitively affected files.
+//! `ctx_graph action=impact|changes`: what breaks when a file, a type or the
+//! uncommitted changes move. A breadth-first walk of reverse dependency edges
+//! in the SQLite property graph.
 
-use crate::core::property_graph::{CodeGraph, DependencyChain, ImpactResult};
+use crate::core::property_graph::{CodeGraph, ImpactResult};
 use crate::core::tokens::count_tokens;
 use serde_json::{Value, json};
 use std::collections::BTreeSet;
-use std::path::Path;
 use std::process::Stdio;
 
-use crate::core::git_util::{git_dirty, git_out};
 use crate::tools::graph_meta::{graph_summary, project_meta};
 use crate::tools::output_format::{OutputFormat, parse_format};
 
-pub fn handle(
-    action: &str,
+/// Whether the graph was built from the current checkout: `stale` when the
+/// git `HEAD` or the dirty state differs from the build's, `fresh` otherwise.
+pub(crate) fn freshness(root: &str) -> &'static str {
+    let root_path = std::path::Path::new(root);
+    let Some(meta) = crate::core::property_graph::load_meta(root) else {
+        return "unknown";
+    };
+    let head = crate::core::git_util::git_out(root_path, &["rev-parse", "--short", "HEAD"]);
+    let head_moved =
+        matches!((meta.git_head.as_ref(), head.as_ref()), (Some(a), Some(b)) if a != b);
+    let dirty_changed = meta
+        .git_dirty
+        .is_some_and(|d| d != crate::core::git_util::git_dirty(root_path));
+    if head_moved || dirty_changed {
+        "stale"
+    } else {
+        "fresh"
+    }
+}
+
+/// Hops followed from the target when `depth` is not given.
+pub const DEFAULT_DEPTH: usize = 5;
+
+/// `action=impact`: the files that depend on `path`, a file or a type name.
+pub fn impact(
     path: Option<&str>,
     root: &str,
     depth: Option<usize>,
     format: Option<&str>,
 ) -> String {
-    let fmt = match parse_format(format) {
-        Ok(f) => f,
-        Err(e) => return e,
-    };
-
-    match action {
-        "analyze" => handle_analyze(path, root, depth.unwrap_or(5), fmt),
-        "diff" => handle_diff(root, depth.unwrap_or(5), fmt),
-        "chain" => handle_chain(path, root, fmt),
-        "build" => handle_build(root, fmt),
-        "status" => handle_status(root, fmt),
-        _ => "Unknown action. Use: analyze, diff, chain, build, status".to_string(),
+    match parse_format(format) {
+        Ok(fmt) => handle_analyze(path, root, depth.unwrap_or(DEFAULT_DEPTH), fmt),
+        Err(e) => e,
     }
+}
+
+/// `action=changes`: the files that depend on what changed since `HEAD`
+/// (working tree, staged and untracked files).
+pub fn changes(root: &str, depth: Option<usize>, format: Option<&str>) -> String {
+    match parse_format(format) {
+        Ok(fmt) => handle_diff(root, depth.unwrap_or(DEFAULT_DEPTH), fmt),
+        Err(e) => e,
+    }
+}
+
+/// The files affected by a change to `target` (a file or a type name), for
+/// callers that need the list rather than the rendered text. `None` when the
+/// target is neither an indexed file nor a known symbol.
+pub(crate) fn affected_files(target: &str, root: &str, depth: usize) -> Option<Vec<String>> {
+    let graph = open_graph_fresh(root).ok()?;
+    let rel_target = graph_target_key(target, root);
+    if graph.get_node_by_path(&rel_target).ok().flatten().is_some() {
+        let mut files = graph
+            .impact_analysis(&rel_target, depth)
+            .ok()?
+            .affected_files;
+        files.sort();
+        return Some(files);
+    }
+    let symbol = symbol_query_name(target);
+    let def_files = graph.resolve_symbol_def_files(&symbol).ok()?;
+    if symbol.is_empty() || def_files.is_empty() {
+        return None;
+    }
+    let mut affected: BTreeSet<String> = BTreeSet::new();
+    for f in &def_files {
+        if let Ok(r) = graph.impact_analysis(f, depth) {
+            affected.extend(r.affected_files);
+        }
+    }
+    for f in &def_files {
+        affected.remove(f);
+    }
+    Some(affected.into_iter().collect())
 }
 
 fn open_graph(root: &str) -> Result<CodeGraph, String> {
@@ -51,11 +102,10 @@ fn open_graph_fresh(root: &str) -> Result<CodeGraph, String> {
     let outdated = !empty && crate::core::property_graph::engine_outdated(root);
     if empty || outdated {
         drop(graph);
-        let build_result = handle_build(root, OutputFormat::Text);
+        crate::core::graph_index::scan(root);
         tracing::info!(
-            "Rebuilt property graph before impact query ({}): {}",
+            "Rebuilt property graph before impact query ({})",
             if empty { "empty" } else { "engine outdated" },
-            &build_result[..build_result.len().min(100)]
         );
         return open_graph(root);
     }
@@ -64,7 +114,7 @@ fn open_graph_fresh(root: &str) -> Result<CodeGraph, String> {
 
 fn handle_analyze(path: Option<&str>, root: &str, max_depth: usize, fmt: OutputFormat) -> String {
     let Some(target) = path else {
-        return "path is required for 'analyze' action".to_string();
+        return "path is required for action=impact".to_string();
     };
 
     let graph = match open_graph_fresh(root) {
@@ -88,7 +138,7 @@ fn handle_analyze(path: Option<&str>, root: &str, max_depth: usize, fmt: OutputF
     }
 
     // 2) Symbol-name fallback (GH #398): callers — and LLMs — routinely ask for
-    //    the impact of a *class/type* by name (`ctx_impact analyze ArcPoint`)
+    //    the impact of a *class/type* by name (`ctx_graph impact ArcPoint`)
     //    rather than its file path. Resolve the bare name to the file(s) that
     //    define it and report their combined blast radius, instead of the
     //    misleading "leaf node" answer a non-file target produced before.
@@ -166,8 +216,8 @@ fn analyze_symbol(
         OutputFormat::Json => {
             let v = json!({
                 "schema_version": crate::core::contracts::GRAPH_REPRODUCIBILITY_V1_SCHEMA_VERSION,
-                "tool": "ctx_impact",
-                "action": "analyze",
+                "tool": "ctx_graph",
+                "action": "impact",
                 "project": project_meta(root),
                 "graph": graph_summary(root),
                 "graph_meta": crate::core::property_graph::load_meta(root),
@@ -189,7 +239,7 @@ fn analyze_symbol(
                     "No files depend on {symbol} (defined in {defined}); it is a leaf in the dependency graph."
                 );
                 let tokens = count_tokens(&result);
-                return format!("{result}\n[ctx_impact: {tokens} tok]");
+                return format!("{result}\n[ctx_graph impact: {tokens} tok]");
             }
             let mut result = format!(
                 "Impact of changing {symbol} (defined in {defined}): {total} affected files \
@@ -202,12 +252,12 @@ fn analyze_symbol(
                 result.push_str(&format!("  ... +{} more\n", total - limit));
             }
             let tokens = count_tokens(&result);
-            format!("{result}[ctx_impact: {tokens} tok]")
+            format!("{result}[ctx_graph impact: {tokens} tok]")
         }
     }
 }
 
-/// Diagnostic for an `analyze` target that matched neither a file node nor a
+/// Diagnostic for an `impact` target that matched neither a file node nor a
 /// symbol. Replaces the old silent "leaf node" answer — indistinguishable from
 /// a real leaf — with the indexed counts and a concrete next step (GH #398).
 fn analyze_unresolved(
@@ -222,15 +272,15 @@ fn analyze_unresolved(
     match fmt {
         OutputFormat::Json => {
             let v = json!({
-                "tool": "ctx_impact",
-                "action": "analyze",
+                "tool": "ctx_graph",
+                "action": "impact",
                 "project": project_meta(root),
                 "graph": graph_summary(root),
                 "target": target,
                 "resolved": false,
                 "indexed_files": files,
                 "indexed_symbols": symbols,
-                "hint": "Target is neither an indexed file path nor a known symbol. Pass a path relative to the project root, or rebuild with action='build'."
+                "hint": "Target is neither an indexed file path nor a known symbol. Pass a path relative to the project root, or rebuild with ctx_graph action='build'."
             });
             serde_json::to_string_pretty(&v).unwrap_or_else(|_| "{}".to_string())
         }
@@ -239,10 +289,10 @@ fn analyze_unresolved(
                 "'{target}' is not a known file or symbol in the graph \
                  ({files} files, {symbols} symbols indexed).\n  \
                  - As a file: pass a path relative to the project root (looked up '{rel_target}').\n  \
-                 - As a class/type: check the spelling, or run ctx_impact action='build' to (re)index."
+                 - As a class/type: check the spelling, or run ctx_graph action='build' to (re)index."
             );
             let tokens = count_tokens(&result);
-            format!("{result}\n[ctx_impact: {tokens} tok]")
+            format!("{result}\n[ctx_graph impact: {tokens} tok]")
         }
     }
 }
@@ -262,8 +312,8 @@ fn format_impact(impact: &ImpactResult, target: &str, root: &str, fmt: OutputFor
         OutputFormat::Json => {
             let v = json!({
                 "schema_version": crate::core::contracts::GRAPH_REPRODUCIBILITY_V1_SCHEMA_VERSION,
-                "tool": "ctx_impact",
-                "action": "analyze",
+                "tool": "ctx_graph",
+                "action": "impact",
                 "project": project_meta(root),
                 "graph": graph_summary(root),
                 "graph_meta": crate::core::property_graph::load_meta(root),
@@ -281,7 +331,7 @@ fn format_impact(impact: &ImpactResult, target: &str, root: &str, fmt: OutputFor
                 let result =
                     format!("No files depend on {target} (leaf node in the dependency graph).");
                 let tokens = count_tokens(&result);
-                return format!("{result}\n[ctx_impact: {tokens} tok]");
+                return format!("{result}\n[ctx_graph impact: {tokens} tok]");
             }
 
             let mut result = format!(
@@ -297,7 +347,7 @@ fn format_impact(impact: &ImpactResult, target: &str, root: &str, fmt: OutputFor
             }
 
             let tokens = count_tokens(&result);
-            format!("{result}[ctx_impact: {tokens} tok]")
+            format!("{result}[ctx_graph impact: {tokens} tok]")
         }
     }
 }
@@ -308,8 +358,8 @@ fn handle_diff(root: &str, max_depth: usize, fmt: OutputFormat) -> String {
         return match fmt {
             OutputFormat::Json => {
                 let v = json!({
-                    "tool": "ctx_impact",
-                    "action": "diff",
+                    "tool": "ctx_graph",
+                    "action": "changes",
                     "changed_files": [],
                     "blast_radius": [],
                     "total_affected": 0
@@ -328,9 +378,11 @@ fn handle_diff(root: &str, max_depth: usize, fmt: OutputFormat) -> String {
     compute_diff_impact(&graph, &changed, root, max_depth, fmt)
 }
 
-fn git_changed_files(root: &str) -> Vec<String> {
+/// Files changed since `HEAD` (working tree, staged and untracked), relative to
+/// `root` and limited to it, like the graph's own paths.
+pub(crate) fn git_changed_files(root: &str) -> Vec<String> {
     let output = std::process::Command::new("git")
-        .args(["diff", "--name-only", "HEAD"])
+        .args(["diff", "--name-only", "--relative", "HEAD"])
         .current_dir(root)
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
@@ -350,7 +402,7 @@ fn git_changed_files(root: &str) -> Vec<String> {
     }
 
     let staged = std::process::Command::new("git")
-        .args(["diff", "--name-only", "--cached"])
+        .args(["diff", "--name-only", "--relative", "--cached"])
         .current_dir(root)
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
@@ -429,8 +481,8 @@ fn compute_diff_impact(
                 })
                 .collect();
             let v = json!({
-                "tool": "ctx_impact",
-                "action": "diff",
+                "tool": "ctx_graph",
+                "action": "changes",
                 "changed_files": changed,
                 "blast_radius": items,
                 "total_affected": all_affected.len()
@@ -439,7 +491,7 @@ fn compute_diff_impact(
         }
         OutputFormat::Text => {
             let mut result = format!(
-                "Diff Impact Analysis ({} changed files, {} blast radius)\n\n",
+                "Impact of uncommitted changes ({} changed files, {} affected)\n\n",
                 changed.len(),
                 all_affected.len()
             );
@@ -462,90 +514,7 @@ fn compute_diff_impact(
             }
 
             let tokens = count_tokens(&result);
-            format!("{result}\n[ctx_impact diff: {tokens} tok]")
-        }
-    }
-}
-
-fn handle_chain(path: Option<&str>, root: &str, fmt: OutputFormat) -> String {
-    let Some(spec) = path else {
-        return "path is required for 'chain' action (format: from_file->to_file)".to_string();
-    };
-
-    let (from, to) = match spec.split_once("->") {
-        Some((f, t)) => (f.trim(), t.trim()),
-        None => {
-            return format!(
-                "Invalid chain spec '{spec}'. Use format: from_file->to_file\n\
-                 Example: src/server.rs->src/core/config.rs"
-            );
-        }
-    };
-
-    let graph = match open_graph_fresh(root) {
-        Ok(g) => g,
-        Err(e) => return e,
-    };
-
-    let rel_from = graph_target_key(from, root);
-    let rel_to = graph_target_key(to, root);
-
-    match graph.dependency_chain(&rel_from, &rel_to) {
-        Ok(Some(chain)) => format_chain(&chain, root, fmt),
-        Ok(None) => match fmt {
-            OutputFormat::Json => {
-                let v = json!({
-                    "schema_version": crate::core::contracts::GRAPH_REPRODUCIBILITY_V1_SCHEMA_VERSION,
-                    "tool": "ctx_impact",
-                    "action": "chain",
-                    "project": project_meta(root),
-                    "graph": graph_summary(root),
-                    "graph_meta": crate::core::property_graph::load_meta(root),
-                    "from": rel_from,
-                    "to": rel_to,
-                    "found": false
-                });
-                serde_json::to_string_pretty(&v).unwrap_or_else(|_| "{}".to_string())
-            }
-            OutputFormat::Text => {
-                let result = format!("No dependency path from {rel_from} to {rel_to}");
-                let tokens = count_tokens(&result);
-                format!("{result}\n[ctx_impact chain: {tokens} tok]")
-            }
-        },
-        Err(e) => format!("Chain analysis failed: {e}"),
-    }
-}
-
-fn format_chain(chain: &DependencyChain, root: &str, fmt: OutputFormat) -> String {
-    match fmt {
-        OutputFormat::Json => {
-            let v = json!({
-                "schema_version": crate::core::contracts::GRAPH_REPRODUCIBILITY_V1_SCHEMA_VERSION,
-                "tool": "ctx_impact",
-                "action": "chain",
-                "project": project_meta(root),
-                "graph": graph_summary(root),
-                "graph_meta": crate::core::property_graph::load_meta(root),
-                "found": true,
-                "depth": chain.depth,
-                "path": chain.path
-            });
-            serde_json::to_string_pretty(&v).unwrap_or_else(|_| "{}".to_string())
-        }
-        OutputFormat::Text => {
-            let mut result = format!("Dependency chain (depth {}):\n", chain.depth);
-            for (i, step) in chain.path.iter().enumerate() {
-                if i > 0 {
-                    result.push_str("  -> ");
-                } else {
-                    result.push_str("  ");
-                }
-                result.push_str(step);
-                result.push('\n');
-            }
-            let tokens = count_tokens(&result);
-            format!("{result}[ctx_impact chain: {tokens} tok]")
+            format!("{result}\n[ctx_graph changes: {tokens} tok]")
         }
     }
 }
@@ -560,121 +529,6 @@ fn graph_target_key(path: &str, root: &str) -> String {
     }
 }
 
-/// Scan the project and write the graph (unchanged files are reused by
-/// content hash, so a rebuild costs only what changed).
-fn handle_build(root: &str, fmt: OutputFormat) -> String {
-    let t0 = std::time::Instant::now();
-    let index = crate::core::graph_index::scan(root);
-    let build_time_ms = t0.elapsed().as_millis() as u64;
-    let graph = match open_graph(root) {
-        Ok(g) => g,
-        Err(e) => return e,
-    };
-    let nodes = graph.node_count().unwrap_or(0);
-    let edges = graph.edge_count().unwrap_or(0);
-    let files = index.files.len();
-
-    match fmt {
-        OutputFormat::Json => {
-            let v = json!({
-                "schema_version": crate::core::contracts::GRAPH_REPRODUCIBILITY_V1_SCHEMA_VERSION,
-                "tool": "ctx_impact",
-                "action": "build",
-                "project": project_meta(root),
-                "graph": graph_summary(root),
-                "graph_meta": crate::core::property_graph::load_meta(root),
-                "indexed_files": files,
-                "nodes": nodes,
-                "edges": edges,
-                "build_time_ms": build_time_ms,
-                "db_path": graph.db_path().display().to_string()
-            });
-            serde_json::to_string_pretty(&v).unwrap_or_else(|_| "{}".to_string())
-        }
-        OutputFormat::Text => {
-            let result = format!(
-                "Graph built: {nodes} nodes, {edges} edges from {files} files\n\
-                 Stored at: {}\n\
-                 Build time: {build_time_ms}ms",
-                graph.db_path().display()
-            );
-            let tokens = count_tokens(&result);
-            format!("{result}\n[ctx_impact build: {tokens} tok]")
-        }
-    }
-}
-
-fn handle_status(root: &str, fmt: OutputFormat) -> String {
-    let graph = match open_graph(root) {
-        Ok(g) => g,
-        Err(e) => return e,
-    };
-
-    let nodes = graph.node_count().unwrap_or(0);
-    let edges = graph.edge_count().unwrap_or(0);
-
-    if nodes == 0 {
-        return match fmt {
-            OutputFormat::Json => {
-                let v = json!({
-                    "schema_version": crate::core::contracts::GRAPH_REPRODUCIBILITY_V1_SCHEMA_VERSION,
-                    "tool": "ctx_impact",
-                    "action": "status",
-                    "project": project_meta(root),
-                    "graph": graph_summary(root),
-                    "freshness": "empty",
-                    "hint": "Run ctx_impact action='build' to index."
-                });
-                serde_json::to_string_pretty(&v).unwrap_or_else(|_| "{}".to_string())
-            }
-            OutputFormat::Text => {
-                "Graph is empty. Run ctx_impact action='build' to index.".to_string()
-            }
-        };
-    }
-
-    let root_path = Path::new(root);
-    let meta = crate::core::property_graph::load_meta(root);
-    let current_head = git_out(root_path, &["rev-parse", "--short", "HEAD"]);
-    let current_dirty = git_dirty(root_path);
-    let stale = meta.as_ref().is_some_and(|m| {
-        let head_mismatch = match (m.git_head.as_ref(), current_head.as_ref()) {
-            (Some(a), Some(b)) => a != b,
-            _ => false,
-        };
-        let dirty_mismatch = match (m.git_dirty, Some(current_dirty)) {
-            (Some(a), Some(b)) => a != b,
-            _ => false,
-        };
-        head_mismatch || dirty_mismatch
-    });
-    let freshness = if stale { "stale" } else { "fresh" };
-
-    match fmt {
-        OutputFormat::Json => {
-            let v = json!({
-                "schema_version": crate::core::contracts::GRAPH_REPRODUCIBILITY_V1_SCHEMA_VERSION,
-                "tool": "ctx_impact",
-                "action": "status",
-                "project": project_meta(root),
-                "graph": graph_summary(root),
-                "freshness": freshness,
-                "meta": meta
-            });
-            serde_json::to_string_pretty(&v).unwrap_or_else(|_| "{}".to_string())
-        }
-        OutputFormat::Text => {
-            let db_display = graph.db_path().display();
-            let mut out =
-                format!("Property Graph: {nodes} nodes, {edges} edges\nStored: {db_display}");
-            if stale {
-                out.push_str("\nWARNING: graph looks stale (git HEAD / dirty mismatch). Run ctx_impact action='build' to refresh.");
-            }
-            out
-        }
-    }
-}
-
 #[cfg(test)]
-#[path = "ctx_impact_tests.rs"]
+#[path = "ctx_graph_impact_tests.rs"]
 mod tests;

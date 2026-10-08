@@ -17,7 +17,7 @@ The MCP tool surface is capped at **20 tools**. There is no exception, no
 "internal" tool that doesn't count, no meta-tool that fans out to a hidden
 registry.
 
-The surface currently stands at 16, leaving four slots. That margin is
+The surface currently stands at 15, leaving five slots. That margin is
 deliberate: a cap you are already touching is a cap you will break.
 
 Adding a tool requires naming the tool it replaces, in the same PR. If nothing

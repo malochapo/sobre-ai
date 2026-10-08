@@ -27,34 +27,9 @@ fn format_impact_with_files() {
 }
 
 #[test]
-fn format_chain_display() {
-    let chain = DependencyChain {
-        path: vec!["a.rs".to_string(), "b.rs".to_string(), "c.rs".to_string()],
-        depth: 2,
-    };
-    let result = format_chain(&chain, "/tmp", OutputFormat::Text);
-    assert!(result.contains("depth 2"));
-    assert!(result.contains("a.rs"));
-    assert!(result.contains("-> b.rs"));
-    assert!(result.contains("-> c.rs"));
-}
-
-#[test]
-fn handle_missing_path() {
-    let result = handle("analyze", None, "/tmp", None, None);
+fn impact_requires_a_path() {
+    let result = impact(None, "/tmp", None, None);
     assert!(result.contains("path is required"));
-}
-
-#[test]
-fn handle_invalid_chain_spec() {
-    let result = handle("chain", Some("no_arrow_here"), "/tmp", None, None);
-    assert!(result.contains("Invalid chain spec"));
-}
-
-#[test]
-fn handle_unknown_action() {
-    let result = handle("invalid", None, "/tmp", None, None);
-    assert!(result.contains("Unknown action"));
 }
 
 #[test]
@@ -114,7 +89,7 @@ fn csharp_same_namespace_type_use_is_not_a_leaf() {
     .unwrap();
 
     let root_str = root.to_string_lossy().to_string();
-    let out = handle("build", None, &root_str, None, Some("text"));
+    let out = build_graph(&root_str);
     assert!(!out.contains("ERROR"), "graph build failed: {out}");
 
     let graph =
@@ -181,7 +156,7 @@ fn go_same_package_type_use_is_not_a_leaf() {
     .unwrap();
 
     let root_str = root.to_string_lossy().to_string();
-    let out = handle("build", None, &root_str, None, Some("text"));
+    let out = build_graph(&root_str);
     assert!(!out.contains("ERROR"), "graph build failed: {out}");
 
     let graph =
@@ -238,7 +213,7 @@ fn kotlin_same_package_type_use_is_not_a_leaf() {
     .unwrap();
 
     let root_str = root.to_string_lossy().to_string();
-    let out = handle("build", None, &root_str, None, Some("text"));
+    let out = build_graph(&root_str);
     assert!(!out.contains("ERROR"), "graph build failed: {out}");
 
     let graph =
@@ -294,7 +269,7 @@ fn stale_engine_graph_is_rebuilt_before_query() {
     let root_str = root.to_string_lossy().to_string();
 
     // Build a correct graph, then stamp its meta back to engine version 0.
-    let out = handle("build", None, &root_str, None, Some("text"));
+    let out = build_graph(&root_str);
     assert!(!out.contains("ERROR"), "graph build failed: {out}");
     let mut meta = crate::core::property_graph::load_meta(&root_str).expect("meta after build");
     assert_eq!(
@@ -310,13 +285,7 @@ fn stale_engine_graph_is_rebuilt_before_query() {
     );
 
     // The query path must transparently rebuild the stale graph.
-    let analysis = handle(
-        "analyze",
-        Some("Models/Engine.cs"),
-        &root_str,
-        None,
-        Some("text"),
-    );
+    let analysis = impact(Some("Models/Engine.cs"), &root_str, None, Some("text"));
     assert!(
         analysis.contains("Services/Motor.cs"),
         "stale graph must be rebuilt so the DI consumer surfaces; got: {analysis}"
@@ -385,7 +354,7 @@ fn csharp_expression_position_type_use_is_not_a_leaf() {
     .unwrap();
 
     let root_str = root.to_string_lossy().to_string();
-    let out = handle("build", None, &root_str, None, Some("text"));
+    let out = build_graph(&root_str);
     assert!(!out.contains("ERROR"), "graph build failed: {out}");
 
     let graph =
@@ -461,7 +430,7 @@ fn csharp_extension_method_host_is_in_blast_radius() {
     .unwrap();
 
     let root_str = root.to_string_lossy().to_string();
-    let out = handle("build", None, &root_str, None, Some("text"));
+    let out = build_graph(&root_str);
     assert!(!out.contains("ERROR"), "graph build failed: {out}");
 
     let graph =
@@ -516,7 +485,7 @@ fn csharp_type_use_namespace_disambiguation() {
     .unwrap();
 
     let root_str = root.to_string_lossy().to_string();
-    let out = handle("build", None, &root_str, None, Some("text"));
+    let out = build_graph(&root_str);
     assert!(!out.contains("ERROR"), "graph build failed: {out}");
 
     let graph =
@@ -581,7 +550,7 @@ fn csharp_type_use_namespace_cap_bypass() {
     .unwrap();
 
     let root_str = root.to_string_lossy().to_string();
-    let out = handle("build", None, &root_str, None, Some("text"));
+    let out = build_graph(&root_str);
     assert!(!out.contains("ERROR"), "graph build failed: {out}");
 
     let graph =
@@ -610,7 +579,7 @@ fn csharp_type_use_namespace_cap_bypass() {
 /// consumer and definer in the *same* namespace. Real C# services live in
 /// their own namespace and reach a model/contract through a `using`
 /// directive, injected by interface (never `new`-ed). This exercises the
-/// full `handle("analyze")` text path — exactly what the MCP tool runs —
+/// full `impact` text path — exactly what the MCP tool runs —
 /// for the interface contract changing:
 ///   * the concrete implementor (reached via the base list), and
 ///   * the cross-namespace DI consumer (reached via `using` + ctor param).
@@ -656,16 +625,10 @@ fn csharp_cross_namespace_using_di_blast_radius() {
     let root_str = root.to_string_lossy().to_string();
 
     // Full MCP path: build then analyze (text), exactly like the tool runs.
-    let build = handle("build", None, &root_str, None, Some("text"));
+    let build = build_graph(&root_str);
     assert!(!build.contains("ERROR"), "graph build failed: {build}");
 
-    let iface = handle(
-        "analyze",
-        Some("Models/IEngine.cs"),
-        &root_str,
-        None,
-        Some("text"),
-    );
+    let iface = impact(Some("Models/IEngine.cs"), &root_str, None, Some("text"));
     assert!(
         iface.contains("Models/Engine.cs"),
         "implementor (base list) must be impacted by IEngine.cs; got: {iface}"
@@ -681,14 +644,14 @@ fn csharp_cross_namespace_using_di_blast_radius() {
     );
 }
 
-/// GH #398 (root cause of the persistent reports): `ctx_impact analyze` is
-/// asked for the impact of a *class name* — `ctx_impact analyze ArcPoint` —
+/// GH #398 (root cause of the persistent reports): `ctx_graph action=impact` is
+/// asked for the impact of a *class name* — `ctx_graph impact ArcPoint` —
 /// not a file path. Before the symbol-name fallback the bare name matched no
 /// file node, so impact returned a misleading "leaf node / no impact". The
 /// fallback must resolve the class to its defining file and surface the real
 /// consumers, while a genuinely unknown target gets an actionable
 /// diagnostic rather than a false "no impact". Exercises the full
-/// `handle("analyze")` path on both builder paths (gated on `tree-sitter`).
+/// `impact` path on both builder paths (gated on `tree-sitter`).
 #[cfg(feature = "tree-sitter")]
 #[test]
 fn csharp_analyze_by_class_name_resolves_to_file() {
@@ -713,11 +676,11 @@ fn csharp_analyze_by_class_name_resolves_to_file() {
     .unwrap();
 
     let root_str = root.to_string_lossy().to_string();
-    let build = handle("build", None, &root_str, None, Some("text"));
+    let build = build_graph(&root_str);
     assert!(!build.contains("ERROR"), "graph build failed: {build}");
 
     // The actual user/LLM call: a bare class name, NOT a file path.
-    let by_name = handle("analyze", Some("Engine"), &root_str, None, Some("text"));
+    let by_name = impact(Some("Engine"), &root_str, None, Some("text"));
     assert!(
         by_name.contains("Services/Motor.cs"),
         "class-name analyze must resolve 'Engine' to its file and surface the \
@@ -729,33 +692,21 @@ fn csharp_analyze_by_class_name_resolves_to_file() {
     );
 
     // A file path must still work unchanged (regression guard).
-    let by_path = handle(
-        "analyze",
-        Some("Models/Engine.cs"),
-        &root_str,
-        None,
-        Some("text"),
-    );
+    let by_path = impact(Some("Models/Engine.cs"), &root_str, None, Some("text"));
     assert!(
         by_path.contains("Services/Motor.cs"),
         "file-path analyze must keep working; got: {by_path}"
     );
 
     // An unknown target gets a diagnostic, not a false "leaf node".
-    let unknown = handle(
-        "analyze",
-        Some("NoSuchThing"),
-        &root_str,
-        None,
-        Some("text"),
-    );
+    let unknown = impact(Some("NoSuchThing"), &root_str, None, Some("text"));
     assert!(
         unknown.contains("not a known file or symbol"),
         "unknown target must produce the actionable diagnostic; got: {unknown}"
     );
 
     // JSON shape carries the resolution provenance for programmatic callers.
-    let json = handle("analyze", Some("Engine"), &root_str, None, Some("json"));
+    let json = impact(Some("Engine"), &root_str, None, Some("json"));
     assert!(
         json.contains("\"resolved_from\": \"symbol\""),
         "json must mark symbol-resolved analyses; got: {json}"
@@ -764,7 +715,7 @@ fn csharp_analyze_by_class_name_resolves_to_file() {
 
 /// The decisive real-world #398 case: the class name does **not** match its
 /// file name (`ArcPoint` lives in `Shapes.cs`), which is exactly why a
-/// user/LLM types `ctx_impact ArcPoint` instead of a path — and why the old
+/// user/LLM types `ctx_graph impact ArcPoint` instead of a path — and why the old
 /// file-only lookup always missed. Both a cross-namespace `using` consumer
 /// and a same-namespace no-`using` consumer must surface; an unrelated file
 /// must not (non-vacuous).
@@ -809,10 +760,10 @@ fn csharp_analyze_by_class_name_when_filename_differs() {
     .unwrap();
 
     let root_str = root.to_string_lossy().to_string();
-    let build = handle("build", None, &root_str, None, Some("text"));
+    let build = build_graph(&root_str);
     assert!(!build.contains("ERROR"), "graph build failed: {build}");
 
-    let out = handle("analyze", Some("ArcPoint"), &root_str, None, Some("text"));
+    let out = impact(Some("ArcPoint"), &root_str, None, Some("text"));
     assert!(
         out.contains("Geometry/Shapes.cs"),
         "name must resolve to the (differently named) definer file; got: {out}"
@@ -829,4 +780,10 @@ fn csharp_analyze_by_class_name_when_filename_differs() {
         !out.contains("Misc/Clock.cs"),
         "unrelated file must NOT appear (non-vacuous); got: {out}"
     );
+}
+
+/// Build the project graph the way `ctx_graph action=build` does.
+fn build_graph(root: &str) -> String {
+    let index = crate::core::graph_index::scan(root);
+    format!("{} files", index.files.len())
 }

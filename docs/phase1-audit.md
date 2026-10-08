@@ -240,7 +240,8 @@ Fixed in #31. How the fixes work:
 
 Fixed so far: #32 (paths, `ctx_read`, hidden read state), #33 (what the
 agent receives: prefixes, markers, footers, prompts and resources), #34
-(edits).
+(edits), #PR_B4 (graph: `ctx_impact` merged into `ctx_graph`, `ctx_review`
+repaired).
 
 ### Bugs
 
@@ -304,7 +305,7 @@ agent receives: prefixes, markers, footers, prompts and resources), #34
     second run's output. A code comment calls this intentional.
   - This breaks "original reachable".
   - Fix: make the name unique per run.
-- [ ] **B8 `format=json` on `ctx_graph` (neighbors, path) and `ctx_impact`
+- [x] **B8 `format=json` on `ctx_graph` (neighbors, path) and `ctx_impact`
   returns JSON that does not parse.**
   - Neither overrides `produces_machine_readable` (`tool_trait.rs:109`);
     only `ctx_outline` does.
@@ -348,21 +349,21 @@ agent receives: prefixes, markers, footers, prompts and resources), #34
   - Concurrent requests overwrite it.
   - `ctx_shell.rs:244-262` sends progress on a stale token.
   - Fix: one sender per request, through `ToolContext`.
-- [ ] **B15 `ctx_search action=symbol` with an absolute `file=` finds
+- [x] **B15 `ctx_search action=symbol` with an absolute `file=` finds
   nothing** (`registered/ctx_search.rs:384`).
   - The raw path goes into SQL `LIKE '%file%'`
     (`core/property_graph/node.rs:181`), but the graph stores relative
     paths, and `_` acts as a wildcard.
   - Fix: `index_paths::graph_relative_key(file, root)`, and escape the
     pattern.
-- [ ] **B16 Semantic search does not split snake_case.**
+- [x] **B16 Semantic search does not split snake_case.**
   - "retry backoff" finds nothing, while "retry_with_backoff" finds the
     function.
   - The skill's own example, "where are retries handled", finds nothing.
-- [ ] **B17 `ctx_graph` call-site line numbers are off.**
+- [x] **B17 `ctx_graph` call-site line numbers are off.**
   - Callers report L11 and L17, and the parser reports L16, where the real
     lines are 10, 16 and 15.
-- [ ] **B18 `ctx_graph callees symbol=main` merges Rust's and Python's
+- [x] **B18 `ctx_graph callees symbol=main` merges Rust's and Python's
   `main`**, with no warning about the ambiguity.
 - [ ] **B19 `ctx_knowledge remember` rejects the documented form.**
   - `{"action":"remember","value":"…"}` (and the same with `content` or
@@ -435,6 +436,21 @@ agent receives: prefixes, markers, footers, prompts and resources), #34
 - [x] **B60 The `replace_lines` error message carried a run of spaces** from
   a broken line continuation.
 
+### Found while fixing (graph)
+
+- [x] **B61 `ctx_impact action=diff` found nothing when the project is below
+  the git root.** `git diff --name-only` gives paths from the git root,
+  the graph stores them from the project root. `ctx_graph action=changes`
+  asks git for paths relative to the project.
+- [x] **B62 An absolute `file=` inside the project switched `ctx_search
+  action=symbol` to the nearest git root**, which has no graph when the
+  project is a subdirectory. A file inside the session's project now keeps
+  that project.
+- [x] **B63 `ctx_graph action=impact` printed bare file names**
+  (`mod.rs` four times) and stopped at two hops. It now uses the impact
+  walk `ctx_impact` had: project-relative paths, `depth` (default 5), and a
+  type name resolved to its file.
+
 ### Incomplete features
 
 - [ ] **B23 `ctx_refactor`** (decision 5, open).
@@ -478,7 +494,7 @@ agent receives: prefixes, markers, footers, prompts and resources), #34
     (`:284-295`) and `replace_symbol` (`:510-516`) return a canned
     "DRY RUN: would …".
   - `ops[]` without a top-level `path` prints an empty path.
-- [ ] **B25 Repair `ctx_review` (decision 6).**
+- [x] **B25 Repair `ctx_review` (decision 6).**
   - Its checklist counts lines containing `→` (`ctx_review.rs:98`), but
     `ctx_impact` output never contains `→`.
   - It drops the impact section whenever the output contains "No" or
@@ -514,7 +530,7 @@ agent receives: prefixes, markers, footers, prompts and resources), #34
 
 ### Drift from the invariants
 
-- [ ] **B31 Merge `ctx_impact` into `ctx_graph` (decision 1).**
+- [x] **B31 Merge `ctx_impact` into `ctx_graph` (decision 1).**
   - `ctx_graph` has build, status, impact and path
     (`tools/ctx_graph.rs:22-29,36,370,442`).
   - `ctx_impact` has build, status, analyze and chain

@@ -143,12 +143,11 @@ impl CallGraph {
                         .calls
                         .iter()
                         .map(|call| {
-                            let caller_sym =
-                                find_enclosing_symbol_owned(file_symbols, call.line + 1);
+                            let caller_sym = find_enclosing_symbol_owned(file_symbols, call.line);
                             CallEdge {
                                 caller_file: rel_path.clone(),
                                 caller_symbol: caller_sym,
-                                caller_line: call.line + 1,
+                                caller_line: call.line,
                                 callee_name: call.callee.clone(),
                             }
                         })

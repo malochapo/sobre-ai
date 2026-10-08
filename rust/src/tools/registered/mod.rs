@@ -4,7 +4,6 @@ pub mod ctx_compose;
 pub mod ctx_expand;
 pub mod ctx_glob;
 pub mod ctx_graph;
-pub mod ctx_impact;
 pub mod ctx_knowledge;
 pub mod ctx_outline;
 pub mod ctx_patch;

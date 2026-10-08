@@ -16,7 +16,8 @@ impl McpTool for CtxGraphTool {
         tool_def(
             "ctx_graph",
             "Code graph: file dependencies and function calls.\n\
-             Files: neighbors=imports±direction, impact=reverse-dep blast radius, \
+             Files: neighbors=imports±direction, impact path=file or type → files that \
+             depend on it (depth, default 5), changes → files affected by uncommitted changes, \
              path path→to=dependency chain, related.\n\
              Calls: callers|callees symbol='fn' → every call site with file:line \
              (depth≤5, path scopes to a file); trace symbol→to=call chain.\n\
@@ -28,7 +29,7 @@ impl McpTool for CtxGraphTool {
                 "properties": {
                     "action": {
                         "type": "string",
-                        "description": "build|status|related|symbol|impact|neighbors|path|diagram|callers|callees|trace"
+                        "description": "build|status|related|symbol|impact|changes|neighbors|path|diagram|callers|callees|trace"
                     },
                     "path": {
                         "type": "string",
@@ -36,9 +37,9 @@ impl McpTool for CtxGraphTool {
                     },
                     "symbol": { "type": "string", "description": "Function (symbol|callers|callees|trace)" },
                     "to": { "type": "string", "description": "Target file (path) or function (trace)" },
-                    "depth": { "type": "integer", "description": "Hops; callers|callees 1-5 (default 1)" },
+                    "depth": { "type": "integer", "description": "Hops; callers|callees 1-5 (default 1), impact|changes (default 5)" },
                     "kind": { "type": "string", "description": "diagram: deps|calls" },
-                    "format": { "type": "string", "description": "neighbors|path: text|json" },
+                    "format": { "type": "string", "description": "neighbors|path|impact|changes: text|json" },
                     "project_root": { "type": "string" }
                 },
                 "required": ["action"],
@@ -51,6 +52,16 @@ impl McpTool for CtxGraphTool {
                 ]
             }),
         )
+    }
+
+    /// `format=json` answers are JSON documents: they go out verbatim (#990).
+    fn produces_machine_readable(&self, args: Option<&Map<String, Value>>) -> bool {
+        let Some(args) = args else { return false };
+        get_str(args, "format").is_some_and(|f| f.eq_ignore_ascii_case("json"))
+            && matches!(
+                get_str(args, "action").as_deref(),
+                Some("neighbors" | "path" | "impact" | "changes")
+            )
     }
 
     fn handle(
@@ -123,6 +134,29 @@ impl McpTool for CtxGraphTool {
         let depth = get_usize(args, "depth").map(|d| d.min(64));
         let kind = get_str(args, "kind");
         let format = get_str(args, "format");
+
+        // `impact` takes a file or a type name, so the raw `path` is used when
+        // the dispatcher could not resolve it as a file.
+        let impact = match action.as_str() {
+            "impact" => Some(crate::tools::ctx_graph_impact::impact(
+                path.as_deref().or(get_str(args, "path").as_deref()),
+                &root,
+                depth,
+                format.as_deref(),
+            )),
+            "changes" => Some(crate::tools::ctx_graph_impact::changes(
+                &root,
+                depth,
+                format.as_deref(),
+            )),
+            _ => None,
+        };
+        if let Some(text) = impact {
+            return Ok(ToolOutput {
+                mode: Some(action),
+                ..ToolOutput::simple(text)
+            });
+        }
         let to = if let Some(p) = ctx.resolved_path("to") {
             Some(p.to_string())
         } else if let Some(err) = ctx
@@ -220,6 +254,11 @@ mod tests {
         );
         assert!(callers.contains("1 caller(s) of 'beta'"), "{callers}");
         assert!(callers.contains("alpha"), "{callers}");
+        // `beta();` sits on line 2 of src/lib.rs.
+        assert!(
+            callers.contains("(L2)"),
+            "call sites carry their real line: {callers}"
+        );
 
         let scoped_out = call(
             &root,
@@ -280,5 +319,18 @@ mod tests {
             elsewhere.contains("not found in src/other.rs"),
             "{elsewhere}"
         );
+    }
+
+    #[test]
+    fn json_impact_is_machine_readable_and_parses() {
+        let (_iso, _tmp, root) = chain_fixture();
+        let args = json!({"action": "impact", "path": "src/lib.rs", "format": "json"});
+        assert!(CtxGraphTool.produces_machine_readable(args.as_object()));
+        let out = call(&root, &args);
+        let v: Value = serde_json::from_str(&out).expect("impact json parses");
+        assert_eq!(v["tool"], "ctx_graph");
+        assert_eq!(v["action"], "impact");
+        let text = json!({"action": "impact", "path": "src/lib.rs"});
+        assert!(!CtxGraphTool.produces_machine_readable(text.as_object()));
     }
 }

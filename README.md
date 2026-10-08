@@ -46,7 +46,7 @@ the measured state of each.
 5. **The agent host decides.** `sobre` allows, blocks and hides nothing: it
    labels every change it makes and keeps the original reachable.
 
-All five hold today: 16 tools, one fixed surface; one config file with 11 keys
+All five hold today: 15 tools, one fixed surface; one config file with 11 keys
 and no per-project files, profiles or behaviour-changing environment
 variables; no network request you did not ask for; and no gate, approval or
 hidden transform of sobre's own.

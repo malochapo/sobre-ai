@@ -28,29 +28,62 @@ pub(crate) fn tokenize_for_index(text: &str) -> Vec<String> {
     tokenize(text)
 }
 
+/// Each token, then its parts: `retry_with_backoff` also gives `retry`,
+/// `with` and `backoff`, `parseConfig` gives `parse` and `Config`. Every word
+/// also gets its singular (`retries` → `retry`), so a plain-language query
+/// meets the identifier it describes.
 pub(crate) fn split_camel_case_tokens(tokens: &[String]) -> Vec<String> {
     let mut result = Vec::new();
     for token in tokens {
-        result.push(token.clone());
-        let mut start = 0;
-        let chars: Vec<char> = token.chars().collect();
-        for i in 1..chars.len() {
-            if chars[i].is_uppercase() && (i + 1 >= chars.len() || !chars[i + 1].is_uppercase()) {
-                let part: String = chars[start..i].iter().collect();
-                if part.len() >= 2 {
-                    result.push(part);
-                }
-                start = i;
+        push_with_singular(&mut result, token);
+        let snake: Vec<&str> = token.split('_').filter(|p| p.len() >= 2).collect();
+        if snake.len() > 1 {
+            for part in &snake {
+                push_with_singular(&mut result, part);
             }
         }
-        if start > 0 {
-            let part: String = chars[start..].iter().collect();
-            if part.len() >= 2 {
-                result.push(part);
+        for word in snake {
+            let chars: Vec<char> = word.chars().collect();
+            let mut start = 0;
+            for i in 1..chars.len() {
+                if chars[i].is_uppercase() && (i + 1 >= chars.len() || !chars[i + 1].is_uppercase())
+                {
+                    let part: String = chars[start..i].iter().collect();
+                    if part.len() >= 2 {
+                        push_with_singular(&mut result, &part);
+                    }
+                    start = i;
+                }
+            }
+            if start > 0 {
+                let part: String = chars[start..].iter().collect();
+                if part.len() >= 2 {
+                    push_with_singular(&mut result, &part);
+                }
             }
         }
     }
     result
+}
+
+/// Push `word`, then its singular when that differs: `retries` → `retry`,
+/// `files` → `file`. Words ending in `ss`, `us` or `is` stay as they are.
+fn push_with_singular(out: &mut Vec<String>, word: &str) {
+    out.push(word.to_string());
+    let lower = word.to_ascii_lowercase();
+    let singular = if let Some(stem) = lower.strip_suffix("ies").filter(|s| s.len() >= 2) {
+        format!("{stem}y")
+    } else if lower.len() > 3
+        && lower.ends_with('s')
+        && !lower.ends_with("ss")
+        && !lower.ends_with("us")
+        && !lower.ends_with("is")
+    {
+        lower[..lower.len() - 1].to_string()
+    } else {
+        return;
+    };
+    out.push(singular);
 }
 
 pub(crate) fn extract_chunks(file_path: &str, content: &str) -> Vec<CodeChunk> {
