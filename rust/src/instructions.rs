@@ -24,7 +24,7 @@ sobre: local context tools (MCP server `lean-ctx`). Prefer them when they fit; n
 • Orient: ctx_compose first (no task = project overview; with task = ranked files + source).
 • Read: ctx_read(path, mode=auto|signatures|map|full|lines:N-M|anchored). Unchanged re-reads cost ~13 tokens.
 • Find: ctx_search (regex | action=symbol | action=semantic), ctx_glob (files), ctx_tree, ctx_outline (symbols).
-• Impact: ctx_callgraph (callers/callees), ctx_graph, ctx_impact (blast radius).
+• Impact: ctx_graph (action=callers|callees|trace for calls, impact|path for files), ctx_impact (blast radius).
 • Edit: ctx_read(mode=anchored) → ctx_patch (line+hash anchors; op=create for new files). Native Edit also works.
 • Shell: ctx_shell compresses output; long jobs → run_in_background=true.
 • Memory: ctx_session (task, findings, decisions), ctx_knowledge (facts across sessions); undo: ctx_checkpoint.
@@ -165,7 +165,7 @@ mod tests {
             .split(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
             .filter(|w| w.starts_with("ctx_") && w.len() > 4)
             .collect();
-        assert!(named.len() >= 15, "guide names {named:?}");
+        assert!(named.len() >= 14, "guide names {named:?}");
         for tool in named {
             assert!(
                 crate::server::registry::is_registered(tool),

@@ -3,7 +3,7 @@
 //! Fans complexity hotspots out across the shared data fabric so health becomes
 //! a *queryable, cross-linked* signal rather than a leaf report:
 //!   - **BM25** gets a `health://complexity/...` chunk per hotspot, so
-//!     `ctx_semantic_search "complex functions"` surfaces them.
+//!     `ctx_search action=semantic "complex functions"` surfaces them.
 //!   - The **property graph** gets a `health_hotspot` cross-source edge from the
 //!     code file to that URI, so `ctx_read` shows a hotspot hint inline.
 //!   - **Knowledge** gets a `code_health` fact, so `ctx_knowledge` can recall a
@@ -53,9 +53,10 @@ fn item_id(file: &str, symbol: &str) -> String {
 ///     (`score.hotspots`) — the searchable/recallable set, kept small so the
 ///     index and memory don't bloat.
 ///   - **Property-graph edges** cover *every* over-threshold function (capped at
-///     `MAX_PG_HOTSPOT_EDGES`), so `ctx_symbol`/`ctx_callgraph` can annotate
-///     any hotspot symbol with its cc. Edges are one cheap row each and survive
-///     the code-graph mirror (`clear_code_graph` preserves cross-source edges).
+///     `MAX_PG_HOTSPOT_EDGES`), so `ctx_read` hints and the dense-search
+///     complexity boost can see any hotspot symbol's cc. Edges are one cheap row
+///     each and survive the code-graph mirror (`clear_code_graph` preserves
+///     cross-source edges).
 ///
 /// Order follows the (pre-sorted) score and a stable worst-first sort, so
 /// repeated builds are byte-identical (#498).
@@ -137,7 +138,10 @@ fn pg_hotspots(health: &ProjectHealth) -> Vec<super::Hotspot> {
 /// health fabric (the `health_hotspot` cross-source edges written by [`apply`]).
 /// Returns the highest cc among same-named hotspots, or `None` when the symbol
 /// is not a recorded hotspot or the graph is unavailable. Best-effort + cheap:
-/// one SQLite read, no parsing.
+/// one SQLite read, no parsing. Its one caller, the dense-search complexity
+/// boost, exists only with `embeddings`; the function is not gated so its test
+/// runs in the default build.
+#[cfg_attr(not(feature = "embeddings"), allow(dead_code))]
 pub fn hotspot_cc(root: &str, symbol: &str) -> Option<u32> {
     let pg = crate::core::property_graph::CodeGraph::open(root).ok()?;
     pg.all_cross_source_edges()
@@ -372,7 +376,7 @@ mod tests {
     }
 
     /// `hotspot_cc` recovers a symbol's complexity from the persisted edges —
-    /// the lookup `ctx_callgraph risk` uses.
+    /// the lookup the dense-search complexity boost uses.
     // `apply` writes into stores the sibling tests in this module also touch,
     // so a parallel run reads back another test's state. Serialized rather than
     // ignored: the assertion itself is meaningful.

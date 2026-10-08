@@ -1,9 +1,9 @@
 pub mod autonomy;
-pub mod ctx_callgraph;
 pub mod ctx_compose;
 pub mod ctx_expand;
 pub mod ctx_glob;
 pub mod ctx_graph;
+pub mod ctx_graph_calls;
 pub mod ctx_graph_diagram;
 pub mod ctx_graph_primitives;
 pub mod ctx_impact;

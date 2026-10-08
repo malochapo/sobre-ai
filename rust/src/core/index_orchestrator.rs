@@ -163,9 +163,7 @@ pub fn warm_need_for_tool(tool: &str) -> WarmNeed {
     match tool {
         "ctx_search" => WarmNeed::Search,
         // Tools that build/consume the graph, call-graph, BM25 or artifact index.
-        "ctx_graph" | "ctx_callgraph" | "ctx_impact" | "ctx_compose" | "ctx_review" => {
-            WarmNeed::Heavy
-        }
+        "ctx_graph" | "ctx_impact" | "ctx_compose" | "ctx_review" => WarmNeed::Heavy,
         _ => WarmNeed::None,
     }
 }
@@ -1005,13 +1003,7 @@ mod tests {
         }
         // ctx_search only needs the cheap trigram index.
         assert_eq!(warm_need_for_tool("ctx_search"), WarmNeed::Search);
-        for heavy in [
-            "ctx_graph",
-            "ctx_callgraph",
-            "ctx_impact",
-            "ctx_compose",
-            "ctx_review",
-        ] {
+        for heavy in ["ctx_graph", "ctx_impact", "ctx_compose", "ctx_review"] {
             assert_eq!(warm_need_for_tool(heavy), WarmNeed::Heavy, "{heavy}");
         }
     }
@@ -1033,11 +1025,11 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let root = tmp.path().to_string_lossy().to_string();
         assert!(
-            ensure_warm_for_tool(&root, "ctx_callgraph"),
+            ensure_warm_for_tool(&root, "ctx_graph"),
             "first heavy warm must signal true"
         );
         assert!(
-            !ensure_warm_for_tool(&root, "ctx_callgraph"),
+            !ensure_warm_for_tool(&root, "ctx_graph"),
             "second heavy warm must be deduped to false"
         );
         assert!(

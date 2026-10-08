@@ -4,16 +4,7 @@
 
 Source of truth: `rust/src/server/registry.rs` and the tool definitions it registers.
 
-lean-ctx registers **17 MCP tools** (granular profile). Each entry below lists the tool name, what it does, and its parameters (`*` marks required).
-
-## `ctx_callgraph`
-
-Callers/callees for one symbol (function call edges, not const/var refs).
-action=callers|callees symbol='fn' → every call site with file:line.
-action=trace from→to finds the path between two symbols (depth=N).
-For end-to-end flow understanding use ctx_compose FIRST.
-
-Parameters: `action`*, `depth`, `file`, `from`, `symbol`, `to`
+lean-ctx registers **16 MCP tools**. Each entry below lists the tool name, what it does, and its parameters (`*` marks required).
 
 ## `ctx_checkpoint`
 
@@ -52,11 +43,13 @@ Parameters: `ignore_gitignore`, `max_results`, `path`, `paths`, `pattern`*
 
 ## `ctx_graph`
 
-File-level dependency graph queries.
-action=symbol path="file.rs::fnName" returns the DEFINITION (not usages — use ctx_search for references). neighbors=imports±direction, impact=reverse-dep blast radius, path from→to=dependency chain, diagram kind=deps|calls (Mermaid).
+Code graph: file dependencies and function calls.
+Files: neighbors=imports±direction, impact=reverse-dep blast radius, path path→to=dependency chain, related.
+Calls: callers|callees symbol='fn' → every call site with file:line (depth≤5, path scopes to a file); trace symbol→to=call chain.
+symbol symbol='fn' (or path="file.rs::fn") returns the definition. diagram kind=deps|calls (Mermaid).
 For understanding code use ctx_compose FIRST.
 
-Parameters: `action`*, `depth`, `format`, `kind`, `path`, `project_root`, `to`
+Parameters: `action`*, `depth`, `format`, `kind`, `path`, `project_root`, `symbol`, `to`
 
 ## `ctx_impact`
 

@@ -27,10 +27,9 @@ pub fn handle(
         "diagram" => crate::tools::ctx_graph_diagram::handle(path, depth, kind, root),
         "neighbors" => crate::tools::ctx_graph_primitives::neighbors(path, root, depth, format),
         "path" => crate::tools::ctx_graph_primitives::shortest_path(path, to, root, format),
-        _ => {
-            "Unknown action. Use: build, related, symbol, impact, status, diagram, neighbors, path"
-                .to_string()
-        }
+        _ => "Unknown action. Use: build, status, related, symbol, impact, neighbors, path, \
+              diagram, callers, callees, trace"
+            .to_string(),
     }
 }
 
@@ -126,7 +125,7 @@ fn handle_symbol(
     crp_mode: crate::tools::CrpMode,
 ) -> String {
     let Some(spec) = path else {
-        return "path is required for 'symbol' action (format: <file>::<symbol>, or a bare <symbol> name)".to_string();
+        return "a symbol is required for 'symbol' action (a bare <symbol> name, or <file>::<symbol>)".to_string();
     };
 
     let Some(open) = graph_provider::open_or_build(root) else {

@@ -48,7 +48,7 @@ src/
 ├─ cli/               subcommands, dispatch, completion, help
 ├─ core/              the engine: cache, compression, graph, session, config
 ├─ server/            MCP server: registry, dispatch, tool visibility
-├─ tools/             the 17 MCP tools
+├─ tools/             the 16 MCP tools
 ├─ instructions.rs    the MCP server instructions — the one rules channel
 ├─ shell/             shell-output compression patterns
 ├─ proxy/             local provider proxy

@@ -4,7 +4,6 @@ use std::collections::HashSet;
 
 use serde_json::{Value, json};
 
-use super::ctx_callgraph::CtxCallgraphTool;
 use super::ctx_expand::CtxExpandTool;
 use super::ctx_graph::CtxGraphTool;
 use super::ctx_knowledge::CtxKnowledgeTool;
@@ -18,13 +17,7 @@ fn validator(tool: &dyn McpTool) -> jsonschema::Validator {
 }
 
 #[test]
-fn callgraph_expand_and_graph_require_action_inputs() {
-    let callgraph = validator(&CtxCallgraphTool);
-    assert!(callgraph.is_valid(&json!({"action":"callers","symbol":"f"})));
-    assert!(callgraph.is_valid(&json!({"action":"trace","from":"a","to":"b"})));
-    assert!(!callgraph.is_valid(&json!({})));
-    assert!(!callgraph.is_valid(&json!({"action":"trace","from":"a"})));
-
+fn expand_and_graph_require_action_inputs() {
     let expand = validator(&CtxExpandTool);
     assert!(expand.is_valid(&json!({"id":"cargo_test_1a2b3c4d.log"})));
     assert!(expand.is_valid(&json!({"id":"x.log","start_line":1,"end_line":9})));
@@ -35,7 +28,17 @@ fn callgraph_expand_and_graph_require_action_inputs() {
     assert!(graph.is_valid(&json!({"action":"status"})));
     assert!(graph.is_valid(&json!({"action":"path","path":"a","to":"b"})));
     assert!(!graph.is_valid(&json!({"action":"symbol"})));
+    assert!(graph.is_valid(&json!({"action":"symbol","symbol":"f"})));
+    assert!(graph.is_valid(&json!({"action":"symbol","path":"a.rs::f"})));
+    assert!(!graph.is_valid(&json!({"action":"related"})));
     assert!(!graph.is_valid(&json!({"action":"path","path":"a"})));
+    assert!(graph.is_valid(&json!({"action":"callers","symbol":"f"})));
+    assert!(graph.is_valid(&json!({"action":"callees","symbol":"f","path":"a.rs","depth":2})));
+    assert!(graph.is_valid(&json!({"action":"trace","symbol":"a","to":"b"})));
+    assert!(!graph.is_valid(&json!({})));
+    assert!(!graph.is_valid(&json!({"action":"callers"})));
+    assert!(!graph.is_valid(&json!({"action":"trace","symbol":"a"})));
+    assert!(!graph.is_valid(&json!({"action":"trace","to":"b"})));
 }
 
 #[test]

@@ -54,7 +54,7 @@ The goal of the fork is **subtraction**, not addition. Categories removed:
 | Graph reports and side views: communities, central and bridge nodes, cycles, entry points, smells, enrichment with commits and tests (`ctx_graph explain|diff|cycles|entrypoints|enrich|context`, smells in `ctx_review`), and the CLI-only `repomap`, `smells`, `graph export-html|--heatmap|parity|snapshot` | The graph answers questions about code (dependencies, dependents, impact, symbols, calls); it does not grade it |
 | The downstream packages, language SDKs and editor extensions | A distribution surface two maintainers can support |
 | Marketing, blog and email material | Not source code |
-| Multiple tool-visibility modes, tool profiles, per-client quirks, `ctx_context`, `ctx_execute` | Replaced by a single fixed surface of 17 tools |
+| Multiple tool-visibility modes, tool profiles, per-client quirks, `ctx_context`, `ctx_execute`, and `ctx_callgraph` as a tool of its own | Replaced by a single fixed surface of 16 tools; `ctx_graph` answers call questions too |
 | 150+ configuration keys, profiles and environment overrides | One config file with 12 keys |
 | Per-project settings files (`.lean-ctx.json`, `.lean-ctx-artifacts.json`, `.lean-ctx-id`), `multi-repo.toml`, user output filters, behaviour-changing environment variables, settings kept in the session | Behaviour comes from `config.toml` alone |
 | The shell hook: rc-file aliases with `track` / `compress` / `off` modes, the `.zshenv` / `.bashenv` redirect, agent aliases, `env.sh`, `lean-ctx -t` | Agent shell commands go through the agent's own hook; sobre never edits shell files |
