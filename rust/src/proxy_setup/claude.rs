@@ -80,7 +80,12 @@ pub(crate) fn uninstall_claude_env(home: &Path, quiet: bool) {
         return;
     };
 
-    if !env_obj.contains_key("ANTHROPIC_BASE_URL") {
+    // Only undo sobre's own redirect; an endpoint the user set stays as it is.
+    if !env_obj
+        .get("ANTHROPIC_BASE_URL")
+        .and_then(|v| v.as_str())
+        .is_some_and(is_local_sobre_url)
+    {
         return;
     }
 
@@ -173,35 +178,21 @@ pub(crate) fn install_claude_env_inner(home: &Path, port: u16, quiet: bool, forc
         return;
     }
 
-    // HARD GUARD: never overwrite non-local endpoints unless --force
+    // A custom endpoint the user set is never replaced unless --force; with
+    // --force the proxy forwards to it.
+    let mut custom_upstream = None;
     if let Some(upstream) = normalize_url_opt(&current_url)
         && !is_local_proxy_url(&upstream)
     {
-        if !Config::load_global()
-            .proxy
-            .upstreams
-            .contains_key("anthropic")
-            && let Err(e) = Config::update_global(|c| {
-                c.proxy
-                    .upstreams
-                    .insert("anthropic".to_string(), upstream.clone());
-            })
-        {
-            tracing::warn!("could not persist proxy upstream: {e}");
-        }
-
         if !force {
             if !quiet {
-                eprintln!("  \u{26a0} Custom endpoint detected: {upstream}");
-                eprintln!(
-                    "    Skipping proxy URL write. Use `sobre proxy enable --force` to override."
-                );
+                eprintln!("  \u{26a0} Claude Code already points at a custom endpoint: {upstream}");
+                eprintln!("    Left as it is. `sobre proxy enable --force` routes Claude Code");
+                eprintln!("    through the proxy, which then forwards to that endpoint.");
             }
             return;
         }
-        if !quiet {
-            println!("  Overriding custom endpoint (--force): {upstream}");
-        }
+        custom_upstream = Some(upstream);
     }
 
     if !is_proxy_reachable(port) {
@@ -209,6 +200,10 @@ pub(crate) fn install_claude_env_inner(home: &Path, port: u16, quiet: bool, forc
             println!("  Skipping Claude Code proxy env (proxy not running on port {port})");
         }
         return;
+    }
+
+    if let Some(upstream) = custom_upstream {
+        keep_custom_endpoint_as_upstream(&upstream, quiet);
     }
 
     if let Some(env_obj) = doc.as_object_mut().and_then(|o| {
@@ -227,5 +222,38 @@ pub(crate) fn install_claude_env_inner(home: &Path, port: u16, quiet: bool, forc
     let _ = std::fs::write(&settings_path, content + "\n");
     if !quiet {
         println!("  Configured ANTHROPIC_BASE_URL in Claude Code settings");
+    }
+}
+
+/// With `--force`, the proxy replaces the custom endpoint in Claude Code's
+/// settings, so the proxy must forward there: the endpoint becomes
+/// `proxy.upstreams.anthropic` in config.toml, unless the user already set one.
+fn keep_custom_endpoint_as_upstream(upstream: &str, quiet: bool) {
+    use crate::core::config::Config;
+
+    let path =
+        Config::path().map_or_else(|| "config.toml".to_string(), |p| p.display().to_string());
+    if let Some(existing) = Config::load_global().proxy.upstreams.get("anthropic") {
+        if !quiet && existing != upstream {
+            println!(
+                "  Claude Code pointed at {upstream}, but proxy.upstreams.anthropic in {path} \
+                 is {existing}: the proxy forwards there."
+            );
+        }
+        return;
+    }
+    match Config::update_global(|c| {
+        c.proxy
+            .upstreams
+            .insert("anthropic".to_string(), upstream.to_string());
+    }) {
+        Ok(_) => {
+            if !quiet {
+                println!("  Saved Claude Code's endpoint {upstream} as proxy.upstreams.anthropic");
+                println!("    in {path}: the proxy forwards Claude Code's requests there,");
+                println!("    and `sobre proxy disable` or `sobre uninstall` puts it back.");
+            }
+        }
+        Err(e) => eprintln!("  \u{26a0} Could not save {upstream} as the proxy's upstream: {e}"),
     }
 }

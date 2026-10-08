@@ -52,8 +52,15 @@ pub fn install_proxy_env_unchecked(home: &Path, port: u16, quiet: bool, force_en
 pub fn preview_proxy_cleanup(home: &Path) {
     let settings_dir = crate::core::editor_registry::claude_state_dir(home);
     let settings_path = settings_dir.join("settings.json");
-    if let Ok(content) = std::fs::read_to_string(&settings_path)
-        && content.contains("ANTHROPIC_BASE_URL")
+    if std::fs::read_to_string(&settings_path)
+        .ok()
+        .and_then(|content| crate::core::jsonc::parse_jsonc(&content).ok())
+        .is_some_and(|doc| {
+            doc.get("env")
+                .and_then(|e| e.get("ANTHROPIC_BASE_URL"))
+                .and_then(|v| v.as_str())
+                .is_some_and(is_local_sobre_url)
+        })
     {
         let cfg = crate::core::config::Config::load();
         if let Some(ref upstream) = cfg.proxy.upstreams.get("anthropic").cloned() {

@@ -288,3 +288,97 @@ fn auth_is_chatgpt_detects_login_mode() {
         assert!(auth_is_chatgpt(&codex_dir), "{mode} => true");
     }
 }
+
+fn anthropic_base_url(home: &Path) -> Option<String> {
+    let content = std::fs::read_to_string(home.join(".claude/settings.json")).ok()?;
+    let doc = crate::core::jsonc::parse_jsonc(&content).ok()?;
+    doc.get("env")?
+        .get("ANTHROPIC_BASE_URL")?
+        .as_str()
+        .map(String::from)
+}
+
+#[test]
+fn custom_endpoint_is_left_alone_and_not_saved_without_force() {
+    if claude_dir_overridden() {
+        return;
+    }
+    let _iso = crate::core::data_dir::isolated_data_dir();
+    let home = tempfile::tempdir().unwrap();
+    write_claude_settings(
+        home.path(),
+        r#"{"env": {"ANTHROPIC_API_KEY": "sk-test", "ANTHROPIC_BASE_URL": "https://gateway.example.com"}}"#,
+    );
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+
+    install_claude_env_inner(home.path(), port, true, false);
+
+    assert_eq!(
+        anthropic_base_url(home.path()).as_deref(),
+        Some("https://gateway.example.com")
+    );
+    assert!(
+        !crate::core::config::Config::load_global()
+            .proxy
+            .upstreams
+            .contains_key("anthropic"),
+        "nothing is saved when the proxy is not put in front of the endpoint"
+    );
+}
+
+#[test]
+fn forced_custom_endpoint_becomes_the_upstream_and_comes_back_on_uninstall() {
+    if claude_dir_overridden() {
+        return;
+    }
+    let _iso = crate::core::data_dir::isolated_data_dir();
+    let home = tempfile::tempdir().unwrap();
+    write_claude_settings(
+        home.path(),
+        r#"{"env": {"ANTHROPIC_API_KEY": "sk-test", "ANTHROPIC_BASE_URL": "https://gateway.example.com"}}"#,
+    );
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+
+    install_claude_env_inner(home.path(), port, true, true);
+
+    assert_eq!(
+        anthropic_base_url(home.path()),
+        Some(format!("http://127.0.0.1:{port}"))
+    );
+    assert_eq!(
+        crate::core::config::Config::load_global()
+            .proxy
+            .upstreams
+            .get("anthropic")
+            .map(String::as_str),
+        Some("https://gateway.example.com")
+    );
+
+    uninstall_claude_env(home.path(), true);
+    assert_eq!(
+        anthropic_base_url(home.path()).as_deref(),
+        Some("https://gateway.example.com")
+    );
+}
+
+#[test]
+fn uninstall_leaves_an_endpoint_the_user_set() {
+    if claude_dir_overridden() {
+        return;
+    }
+    let _iso = crate::core::data_dir::isolated_data_dir();
+    let home = tempfile::tempdir().unwrap();
+    write_claude_settings(
+        home.path(),
+        r#"{"env": {"ANTHROPIC_BASE_URL": "https://gateway.example.com"}}"#,
+    );
+
+    uninstall_claude_env(home.path(), true);
+
+    assert_eq!(
+        anthropic_base_url(home.path()).as_deref(),
+        Some("https://gateway.example.com")
+    );
+}

@@ -138,6 +138,12 @@ upstreams are `proxy.upstreams.anthropic` and `proxy.upstreams.openai`; a local
 model server that speaks the Anthropic API, such as Ollama, is reached by
 pointing `anthropic` at it.
 
+If Claude Code already points at an endpoint of your own (`ANTHROPIC_BASE_URL`
+in its `settings.json`), `proxy enable` leaves it alone and says so.
+`proxy enable --force` puts the proxy in front of it instead: it saves that
+endpoint as `proxy.upstreams.anthropic` (unless you set one), prints where, and
+`proxy disable` or `uninstall` puts it back.
+
 ## License
 
 Apache-2.0. See [LICENSE](LICENSE).

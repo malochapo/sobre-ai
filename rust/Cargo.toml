@@ -6,10 +6,10 @@ default-members = ["."]
 
 [package]
 name = "sobre"
-version = "3.9.12"
+version = "0.1.0"
 edition = "2024"
 autobins = false
-description = "sobre: a local context layer for AI coding agents — 17 MCP tools that read, search and run commands with compressed, labelled output, plus cross-session memory. Runs entirely on your machine."
+description = "sobre: a local context layer for AI coding agents — 16 MCP tools that read, search and run commands with compressed, labelled output, plus cross-session memory. Runs entirely on your machine."
 license = "Apache-2.0"
 repository = "https://github.com/malochapo/sobre-ai"
 readme = "README.md"
