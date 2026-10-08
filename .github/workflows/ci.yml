@@ -37,7 +37,7 @@ jobs:
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
         with:
           workspaces: rust -> target
-      - name: fmt, clippy, doc, generated docs, file size, line ceiling
+      - name: fmt, clippy, doc, generated docs, file size
         run: scripts/preflight.sh
       - name: Dependency licenses and advisories
         uses: EmbarkStudios/cargo-deny-action@5bb39ff5d5a0e94dc9e2dc94eced0c6129743a57 # v2

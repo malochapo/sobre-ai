@@ -57,7 +57,7 @@ pub(crate) fn shell_cwd_is_divergent_checkout(project_root: &str, shell_cwd: &st
 
 /// Resolve a (possibly relative) tool path to a normalized absolute path. sobre
 /// does not confine paths: what may be read or written is the agent host's
-/// decision (invariant 6).
+/// decision (invariant 5).
 ///
 /// Resolution order for relative inputs:
 /// 1. absolute path → used as-is

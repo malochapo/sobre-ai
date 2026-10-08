@@ -177,7 +177,7 @@ mod tests {
     }
 
     // An explicit `paths` entry outside the project root resolves: sobre
-    // does not decide what the agent may read (INVARIANTS.md §6).
+    // does not decide what the agent may read (INVARIANTS.md §5).
     #[test]
     fn explicit_paths_outside_root_resolve() {
         let base = tempfile::tempdir().unwrap();

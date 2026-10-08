@@ -281,7 +281,7 @@ mod tests {
         }
     }
 
-    /// Invariant 6: a rewrite keeps the original, and text below
+    /// Invariant 5: a rewrite keeps the original, and text below
     /// [`ccr::MIN_TEE_BYTES`] is not kept, so it is never rewritten.
     #[test]
     fn text_too_small_to_keep_is_never_rewritten() {
@@ -480,7 +480,7 @@ mod tests {
         );
     }
 
-    /// Invariant 6: every rewrite says so and names the kept original,
+    /// Invariant 5: every rewrite says so and names the kept original,
     /// including one that saves fewer bytes than [`ccr::MIN_TEE_BYTES`].
     #[test]
     fn every_rewrite_ends_with_a_sobre_label() {

@@ -43,13 +43,13 @@ the measured state of each.
    session, every configuration. A surface that varies is a surface nobody can
    reason about.
 4. **Nothing to sell.** No accounts, no plans, no telemetry, no shared instance.
-5. **A ceiling on size.** The Rust under `rust/src` stays below a fixed line
-   budget, so growth has to displace something.
+5. **The agent host decides.** `sobre` allows, blocks and hides nothing: it
+   labels every change it makes and keeps the original reachable.
 
-Invariants 1 to 5 hold today: 16 tools, one fixed surface; one config file
-with 11 keys and no per-project files, profiles or behaviour-changing
-environment variables; no network request you did not ask for; and about
-118,000 lines of production Rust under a 200,000 ceiling.
+All five hold today: 16 tools, one fixed surface; one config file with 11 keys
+and no per-project files, profiles or behaviour-changing environment
+variables; no network request you did not ask for; and no gate, approval or
+hidden transform of sobre's own.
 
 ## Build
 
