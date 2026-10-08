@@ -61,6 +61,12 @@ pub fn run_setup_with_options(opts: SetupOptions) -> Result<SetupReport, String>
     let binary = resolve_portable_binary();
     let home_str = home.to_string_lossy().to_string();
 
+    // The data dir `doctor` checks for. Created here, not left to the first
+    // write, which may come from the background index build after setup.
+    if let Ok(dir) = crate::core::data_dir::lean_ctx_data_dir() {
+        let _ = std::fs::create_dir_all(dir);
+    }
+
     let mut steps: Vec<SetupStepReport> = Vec::new();
 
     // Step: Editor MCP config
