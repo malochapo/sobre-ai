@@ -50,7 +50,7 @@ The lots run in this order:
 | Lot | Scope | Status |
 |---|---|---|
 | A | The user's machine: `uninstall`, `init`, agent integration | done (#31) |
-| B | The MCP tools: bugs, incomplete features, drift; decisions 1–4 and 6 | done (#32, #33, #34, #35, #36, #PR_B23) |
+| B | The MCP tools: bugs, incomplete features, drift; decisions 1–4 and 6 | done (#32, #33, #34, #35, #36, #37) |
 | C | The CLI and the proxy | open |
 | R | Tool names `ctx_*` → `sobre_*` (decision 9) | open |
 | D | Dead code, stale files, stale comments, duplicates; decision 7 | open |
@@ -242,7 +242,7 @@ Fixed so far: #32 (paths, `ctx_read`, hidden read state), #33 (what the
 agent receives: prefixes, markers, footers, prompts and resources), #34
 (edits), #35 (graph: `ctx_impact` merged into `ctx_graph`, `ctx_review`
 repaired), #36 (errors, knowledge, sessions, the edit-quality store and
-the edit_health hook), #PR_B23 (`ctx_refactor`, decision 5).
+the edit_health hook), #37 (`ctx_refactor`, decision 5).
 
 ### Bugs
 
@@ -463,7 +463,7 @@ the edit_health hook), #PR_B23 (`ctx_refactor`, decision 5).
 
 ### Incomplete features
 
-- [x] **B23 `ctx_refactor`** (decision 5: the recommendation, #PR_B23).
+- [x] **B23 `ctx_refactor`** (decision 5: the recommendation, #37).
   - **Origin.** All four parts predate the fork. They worked only through
     the JetBrains plugin, which was removed.
   - **`file`** was meant to scope `name_path` lookup to one file, to stop
