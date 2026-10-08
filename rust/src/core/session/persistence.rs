@@ -119,6 +119,13 @@ impl SessionState {
 
     /// Loads the most recent session matching a specific project root.
     pub fn load_latest_for_project_root(project_root: &str) -> Option<Self> {
+        Self::all_for_project_root(project_root)
+            .into_iter()
+            .max_by_key(|s| s.updated_at)
+    }
+
+    /// Loads every saved session that belongs to a project root.
+    pub fn all_for_project_root(project_root: &str) -> Vec<Self> {
         // Broad roots ("/", HOME, agent sandboxes) never own a session. Bail out
         // BEFORE scanning: the daemon boots with cwd "/" and previously walked
         // every stored session here, stat-ing each session's project_root /
@@ -127,14 +134,19 @@ impl SessionState {
         // and `shell_cwd.starts_with("/")` could even leak an arbitrary
         // project's session into the broad-root context.
         if crate::core::pathutil::is_broad_or_unsafe_root(std::path::Path::new(project_root)) {
-            return None;
+            return Vec::new();
         }
-        let dir = sessions_dir()?;
+        let Some(dir) = sessions_dir() else {
+            return Vec::new();
+        };
+        let Ok(entries) = std::fs::read_dir(&dir) else {
+            return Vec::new();
+        };
         let target_root =
             crate::core::pathutil::safe_canonicalize_or_self(std::path::Path::new(project_root));
-        let mut latest_match: Option<Self> = None;
+        let mut matches = Vec::new();
 
-        for entry in std::fs::read_dir(&dir).ok()?.flatten() {
+        for entry in entries.flatten() {
             let path = entry.path();
             if path.extension().and_then(|e| e.to_str()) != Some("json") {
                 continue;
@@ -150,19 +162,12 @@ impl SessionState {
                 continue;
             };
 
-            if !session_matches_project_root(&session, &target_root) {
-                continue;
-            }
-
-            if latest_match
-                .as_ref()
-                .is_none_or(|existing| session.updated_at > existing.updated_at)
-            {
-                latest_match = Some(session);
+            if session_matches_project_root(&session, &target_root) {
+                matches.push(session);
             }
         }
 
-        latest_match
+        matches
     }
 
     /// Loads a specific session from disk by its unique ID.
