@@ -59,6 +59,9 @@ pub(crate) fn shell_cwd_is_divergent_checkout(project_root: &str, shell_cwd: &st
 /// does not confine paths: what may be read or written is the agent host's
 /// decision (invariant 5).
 ///
+/// An empty path and `.` resolve to the project root (else the shell cwd, else
+/// the process cwd as an absolute path).
+///
 /// Resolution order for relative inputs:
 /// 1. absolute path → used as-is
 /// 2. `<project_root>/<path>` if it exists
@@ -78,12 +81,20 @@ pub fn resolve_tool_path(
     raw: &str,
 ) -> Result<String, String> {
     let normalized = crate::core::pathutil::normalize_tool_path(raw);
+    let base = project_root
+        .or(shell_cwd)
+        .map(PathBuf::from)
+        .or_else(|| std::env::current_dir().ok())
+        .unwrap_or_else(|| PathBuf::from("."));
+    // An empty path and `.` name the project, never the process cwd.
     if normalized.is_empty() || normalized == "." {
-        return Ok(normalized);
+        let resolved = crate::core::pathutil::canonicalize_or_self(&base);
+        return Ok(crate::core::pathutil::normalize_tool_path(
+            &resolved.to_string_lossy().replace('\\', "/"),
+        ));
     }
 
     let p = Path::new(&normalized);
-    let base = project_root.or(shell_cwd).unwrap_or(".").to_string();
 
     let resolved: PathBuf = if p.is_absolute() {
         PathBuf::from(&normalized)
@@ -109,7 +120,7 @@ pub fn resolve_tool_path(
     } else if let Some(cwd) = shell_cwd {
         Path::new(cwd).join(&normalized)
     } else {
-        Path::new(&base).join(&normalized)
+        base.join(&normalized)
     };
 
     let resolved = crate::core::pathutil::canonicalize_or_self(&resolved);
@@ -124,9 +135,21 @@ mod tests {
     use std::fs;
 
     #[test]
-    fn empty_and_dot_pass_through() {
-        assert_eq!(resolve_tool_path(None, None, "").unwrap(), "");
-        assert_eq!(resolve_tool_path(None, None, ".").unwrap(), ".");
+    fn empty_and_dot_name_the_project_root() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = crate::core::pathutil::canonicalize_or_self(tmp.path());
+        let root_str = root.to_string_lossy().to_string();
+        for raw in ["", "."] {
+            assert_eq!(
+                resolve_tool_path(Some(&root_str), None, raw).unwrap(),
+                root_str
+            );
+            assert_eq!(
+                resolve_tool_path(None, Some(&root_str), raw).unwrap(),
+                root_str
+            );
+        }
+        assert!(Path::new(&resolve_tool_path(None, None, ".").unwrap()).is_absolute());
     }
 
     #[test]

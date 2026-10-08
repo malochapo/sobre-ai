@@ -25,6 +25,7 @@ fn ctx_for(root: &std::path::Path, file: &str) -> ToolContext {
         path_errors: std::collections::HashMap::new(),
         bm25_cache: None,
         progress_sender: None,
+        shell_cwd: None,
     }
 }
 

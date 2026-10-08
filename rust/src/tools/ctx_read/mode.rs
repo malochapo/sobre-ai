@@ -146,8 +146,9 @@ impl ParseModeError {
                 format!("invalid read mode \"{s}\": expected density:0.NN, e.g. density:0.40")
             }
             ParseModeError::Malformed(s) | ParseModeError::Unknown(s) => format!(
-                "invalid read mode \"{s}\": expected one of full, signatures, map, auto, raw, \
-                 anchored, reference, diff, lines:N-M, anchored:N-M, density:0.NN"
+                "invalid read mode \"{s}\": expected one of auto, full, full-compact, raw, \
+                 map, signatures, aggressive, entropy, task, reference, diff, anchored, \
+                 lines:N-M, anchored:N-M, density:0.NN"
             ),
         }
     }

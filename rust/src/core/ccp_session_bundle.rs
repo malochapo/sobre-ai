@@ -222,12 +222,10 @@ pub fn import_bundle_v1_into_session(
         decisions: imported.decisions.clone(),
         files_touched: imported.files_touched.clone(),
         evidence: imported.evidence.clone(),
-        active_structured_intent: None,
         stats: imported.stats.clone(),
         last_consolidate_ts: None,
         extra_roots: Vec::new(),
         playbook: crate::core::session::Playbook::default(),
-        last_semantic_query: None,
         last_flush: None,
     };
 

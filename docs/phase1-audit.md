@@ -50,7 +50,7 @@ The lots run in this order:
 | Lot | Scope | Status |
 |---|---|---|
 | A | The user's machine: `uninstall`, `init`, agent integration | done (#31) |
-| B | The MCP tools: bugs, incomplete features, drift; decisions 1–4 and 6 | open |
+| B | The MCP tools: bugs, incomplete features, drift; decisions 1–4 and 6 | in progress (#32) |
 | C | The CLI and the proxy | open |
 | R | Tool names `ctx_*` → `sobre_*` (decision 9) | open |
 | D | Dead code, stale files, stale comments, duplicates; decision 7 | open |
@@ -238,9 +238,11 @@ Fixed in #31. How the fixes work:
 
 ## Lot B — the MCP tools
 
+Fixed so far: #32 (paths, `ctx_read`, hidden read state).
+
 ### Bugs
 
-- [ ] **B1 `ctx_tree`, `ctx_glob` and regex `ctx_search` without `path`
+- [x] **B1 `ctx_tree`, `ctx_glob` and regex `ctx_search` without `path`
   walk the server's cwd instead of the project root.**
   - `server/multi_path.rs:87` falls back to `.`, and its doc wrongly calls
     that the project root.
@@ -250,7 +252,7 @@ Fixed in #31. How the fixes work:
     not.
   - Fix: fall back to `ctx.project_root`, and map `.` and the empty path
     to it.
-- [ ] **B2 `ctx_read` rejects files over 4 MB before any line window**
+- [x] **B2 `ctx_read` rejects files over 4 MB before any line window**
   (`tools/registered/ctx_read.rs:259-274`).
   - `lines:`, `start_line`+`limit` and `anchored:N-M` all fail, while the
     error suggests exactly those, so the agent loops.
@@ -259,7 +261,7 @@ Fixed in #31. How the fixes work:
     gets there.
   - The message says "or increase the limit", which cannot be configured.
   - Fix: skip the gate for windows, and stream `lines:` too.
-- [ ] **B3 `ctx_read` changes modes silently.**
+- [x] **B3 `ctx_read` changes modes silently.**
   - It forces `full` for "instruction files": any path containing
     `/skills/` or `/agents.md`, or named `rules.md`, `skill.md` or
     `.cursorrules` (`registered/ctx_read.rs:216`, `ctx_read/helpers.rs`,
@@ -271,7 +273,7 @@ Fixed in #31. How the fixes work:
     saying so.
   - Fix: honour the requested mode, reject unknown modes, and label any
     fallback.
-- [ ] **B4 Batch `ctx_read` (`paths=[…]`) drops files.**
+- [x] **B4 Batch `ctx_read` (`paths=[…]`) drops files.**
   - Binary and oversized files are skipped silently
     (`batch_read.rs:58-65`), while the summary says "Read N files".
   - The file that crosses the 512 KB cap is read and marked delivered
@@ -281,7 +283,7 @@ Fixed in #31. How the fixes work:
     `protect` and `lines:` validation.
   - Fix: list skipped files, check the cap before marking delivered, and
     reject parameters batch does not support.
-- [ ] **B5 Under lock contention `ctx_read` reports a missing or unreadable
+- [x] **B5 Under lock contention `ctx_read` reports a missing or unreadable
   file as empty.**
   - `registered/ctx_read.rs:579-583` does
     `read_file_lossy(..).unwrap_or_default()`, then
@@ -327,7 +329,7 @@ Fixed in #31. How the fixes work:
   - It also makes `raw` not raw.
   - The once-per-session briefing is lost if the first eligible call is an
     image read or an error.
-- [ ] **B12 `ctx_shell` turning `cat <file>` into a read is broken**
+- [x] **B12 `ctx_shell` turning `cat <file>` into a read is broken**
   (`registered/ctx_shell.rs:109-133`).
   - The path is resolved against the server cwd, ignoring the `cwd` argument
     and the session's shell cwd.
@@ -366,14 +368,14 @@ Fixed in #31. How the fixes work:
     exit 0.
   - The description says "action=remember value='Y' saves a fact (key
     optional)".
-- [ ] **B20 `ctx_read mode=diff` does not diff against git.**
+- [x] **B20 `ctx_read mode=diff` does not diff against git.**
   - The skill and instructions say it shows changes since HEAD.
   - The CLI answers "[no cached version for diff — use mode=full first…]".
   - Over MCP, after a full read, it answers "(no changes)" despite an
     uncommitted change.
 - [ ] **B21 Outlines and signatures replace parameter types with letters**,
   e.g. `parse_config(input:s)`, `normalize(s:s)`, `attempts:n`.
-- [ ] **B22 `raw` and `full` are not exact.**
+- [x] **B22 `raw` and `full` are not exact.**
   - Every `ctx_read` output goes through `redaction::redact_text`
     (`ctx_read/mod.rs:886,941`, `registered/ctx_read.rs:683`,
     `redaction.rs:254-277`).
@@ -383,6 +385,26 @@ Fixed in #31. How the fixes work:
     suffix and a degrade note (`registered/ctx_read.rs:853-901`).
   - Fix: `raw` returns the bytes; any redaction is labelled where it
     happens.
+
+### Found while fixing (paths and reads)
+
+- [x] **B50 `ctx_read` guessed the task and an "intent".**
+  - Every fifth read, it inferred the session task from plan files, the git
+    diff or the files touched (`auto_infer_task`).
+  - It also inferred an "intent" from the files read.
+  - Both steered `entropy`/`aggressive` compression, and the guessed task
+    showed in the AUTO CONTEXT prefix.
+  - Fix: removed. Only the task the agent states conditions compression.
+- [x] **B51 Semantic search stored its last query in the cwd's latest
+  session**, and later compressed reads used it as relevance keywords.
+  Removed.
+- [ ] **B52 Compaction consolidates knowledge from the cwd's latest session**
+  (`server/compaction_sync.rs:34`), behind the agent's back.
+- [x] **B53 The anti-inflation cap replaced a lossy view with the whole file
+  silently** (#361). The file now comes with one line saying so.
+- [x] **B54 `is_instruction_file` matched any path containing `/skills/`**,
+  so `src/skills/mod.rs` counted as one. Only markdown under `skills/`
+  counts now.
 
 ### Incomplete features
 
@@ -496,18 +518,18 @@ Fixed in #31. How the fixes work:
     including the per-session degrade (`server_handler.rs:198`), so the
     wording depends on session state. Invariant 3 only allows
     `compression_level` to change it.
-- [ ] **B36 The broad-root guard refuses explicit paths**
+- [x] **B36 The broad-root guard refuses explicit paths**
   (`tools/walk_guard.rs:19`).
   - In `ctx_tree`, `ctx_glob` and `ctx_search`, `path="~/notes"`,
     `"/usr/include"` or `"~/.config/sobre"` returns "ERROR: refusing to
     scan".
   - Its doc says it is meant for defaulted paths. Gate only those
     (invariant 5).
-- [ ] **B37 `ToolContext::resolve_path_sync` passes `shell_cwd=None`**
+- [x] **B37 `ToolContext::resolve_path_sync` passes `shell_cwd=None`**
   (`tool_trait.rs:177`).
   - It is used for `ctx_patch` `ops[]` paths (`ctx_patch.rs:257,365`) and
     for `paths[]` (`multi_path.rs:95`), so those ignore the worktree rule.
-- [ ] **B38 Some calls read the project from the process cwd instead of the
+- [x] **B38 Some calls read the project from the process cwd instead of the
   session's project root.**
   - `ctx_session load` without an id goes through
     `SessionState::load_latest` → `current_dir` (`ctx_session.rs:26`).
@@ -518,12 +540,12 @@ Fixed in #31. How the fixes work:
     (`ctx_patch/anchors.rs:105-109`).
   - The messages "replace_unique/replace_symbol cannot be batched in
     ops[]" contradict the description and cannot be reached.
-- [ ] **B40 The `ctx_read` mode descriptions are wrong**
+- [x] **B40 The `ctx_read` mode descriptions are wrong**
   (`registered/ctx_read.rs:48`).
   - `reference` is described as quotes; it is a one-line summary.
   - `diff` is described as a git delta; it is a diff against sobre's
     cached copy (see B20).
-- [ ] **B41 `ctx_search queries[]` searches only `roots[0]`**
+- [x] **B41 `ctx_search queries[]` searches only `roots[0]`**
   (`ctx_search.rs:542`).
 - [ ] **B42 `ctx_search` is annotated read-only and idempotent**
   (`tool_defs/mod.rs:18`), though `reindex` writes and the semantic action

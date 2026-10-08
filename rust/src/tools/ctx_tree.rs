@@ -32,11 +32,6 @@ pub fn handle(
             0,
         );
     }
-    // Broad-root guard (#356 class): with cwd == $HOME a defaulted `path`
-    // would walk the whole home dir and trip macOS TCC privacy prompts.
-    if let Some(err) = crate::tools::walk_guard::deny_unsafe_walk_root(path) {
-        return (err, 0);
-    }
 
     let raw_output = generate_raw_tree(root, depth, show_hidden, respect_gitignore);
     let compact_output = generate_compact_tree(root, depth, show_hidden, respect_gitignore);
@@ -212,18 +207,6 @@ mod tests {
                 ratio * 100.0
             );
         }
-    }
-
-    #[test]
-    fn tree_refuses_home_directory_root() {
-        // #356 class: never walk the whole home dir (macOS TCC prompts).
-        let home = dirs::home_dir().expect("home dir in test env");
-        let (output, tokens) = handle(home.to_string_lossy().as_ref(), 2, false, true);
-        assert!(
-            output.starts_with("ERROR:") && output.contains("refusing to scan"),
-            "home root must be refused: {output}"
-        );
-        assert_eq!(tokens, 0);
     }
 
     #[test]

@@ -45,9 +45,9 @@ impl McpTool for CtxReadTool {
                     "paths": { "type": "array", "items": { "type": "string" }, "description": "Batch read" },
                     "mode": {
                         "type": "string",
-                        "description": "Recommended (defaults to auto). full=verbatim(edit-ready) anchored=full+N:hh|anchors(edit via ctx_patch) raw=exact-bytes signatures=API map=structure auto=smart diff=git-delta lines:N-M=window (comma multi-selects: lines:5,10-20) reference=quotes task=focus"
+                        "description": "Defaults to auto (sobre picks). full=whole file, edit-ready; secret-like values show as [REDACTED:…] anchored=full with N:hh anchors to edit via ctx_patch raw=the bytes on disk: no framing, no redaction signatures=API map=structure aggressive|entropy|task=lossy summaries diff=what changed since this session last read the file reference=one line: size and type lines:N-M=window (lines:5,10-20 multi-selects) anchored:N-M=anchored window density:0.NN=target share of tokens"
                     },
-                    "raw": { "type": "boolean", "description": "Verbatim (= mode=raw + fresh)" },
+                    "raw": { "type": "boolean", "description": "Same as mode=raw" },
                     "start_line": { "type": "integer", "description": "1-based" },
                     "offset": { "type": "integer", "description": "start_line alias" },
                     "limit": { "type": "integer", "description": "Max lines" },
@@ -135,15 +135,11 @@ impl CtxReadTool {
         let arg_raw = get_bool(args, "raw").unwrap_or(false);
         let explicit_mode_arg = resolve_raw_alias(arg_raw, get_str(args, "mode"));
         let explicit_mode = explicit_mode_arg.is_some();
-        // #1209: a malformed line-range payload (e.g. `lines:44:48` with a colon
-        // instead of a dash) must fail loudly, not silently return an empty
-        // window on small files or bounce to a full-file dump on large ones.
-        // `lines:` and `anchored:` share `parse_line_range`, so validating both
-        // line-range modes at the boundary catches the typo for either. Other
-        // modes are left untouched: bare `density:` is a valid fallback and
-        // unknown keywords keep the historical warn-and-fall-back behaviour.
+        // An unknown or malformed mode fails loudly (#1209: `lines:44:48` with a
+        // colon) instead of silently returning the whole file. A bare
+        // `density:` stays valid: it takes the aggressiveness target.
         if let Some(ref requested) = explicit_mode_arg
-            && (requested.starts_with("lines:") || requested.starts_with("anchored:"))
+            && requested != "density:"
             && let Err(e) = requested.parse::<crate::tools::ctx_read::ReadMode>()
         {
             return Err(ErrorData::invalid_params(e.user_message(), None));
@@ -213,7 +209,9 @@ impl CtxReadTool {
             mode = overridden;
         }
 
-        let mut mode = if crate::tools::ctx_read::is_instruction_file(path) {
+        // An instruction file (SKILL.md, AGENTS.md, rules) is read whole when
+        // the agent did not pick a mode; a mode it picked is honoured.
+        let mut mode = if !explicit_mode && crate::tools::ctx_read::is_instruction_file(path) {
             "full".to_string()
         } else {
             mode
@@ -256,21 +254,42 @@ impl CtxReadTool {
             let msg = crate::core::binary_detect::binary_file_message(path);
             return Err(ErrorData::invalid_params(msg, None));
         }
-        {
+        // A file over the read limit is read in windows: `lines:N-M` and
+        // `anchored:N-M` stream just the window, so only whole-file modes are
+        // refused.
+        let is_window = mode.starts_with("lines:") || mode.starts_with("anchored:");
+        if !is_window {
             let cap = crate::core::limits::max_read_bytes() as u64;
             if let Ok(meta) = std::fs::metadata(path)
                 && meta.len() > cap
             {
                 let msg = format!(
-                    "File too large ({} bytes, limit {} bytes). \
-                     Use mode=\"lines:1-100\" or start_line+limit for partial reads, \
-                     mode=\"anchored\" with start_line+limit for edit-ready windows, \
-                     or increase the limit.",
+                    "File too large to read whole ({} bytes, limit {} bytes). \
+                     Read it in windows: mode=\"lines:1-200\" or start_line+limit, \
+                     or mode=\"anchored\" with start_line+limit for edit-ready lines.",
                     meta.len(),
                     cap
                 );
                 return Err(ErrorData::invalid_params(msg, None));
             }
+        }
+
+        // `raw` is the file as it is on disk: no cache, no framing, no
+        // redaction, nothing appended. Every other mode may shape the content
+        // and says so.
+        if mode == "raw" {
+            let content = crate::tools::ctx_read::read_file_lossy(path)
+                .map_err(|e| ErrorData::invalid_params(format!("{path}: {e}"), None))?;
+            let tokens = crate::core::tokens::count_tokens(&content);
+            return Ok(ToolOutput {
+                text: content,
+                original_tokens: tokens,
+                saved_tokens: 0,
+                mode: Some("raw".to_string()),
+                path: Some(path.to_string()),
+                shell_outcome: None,
+                content_blocks: None,
+            });
         }
 
         // Compaction-aware: if host compacted since last check, reset delivery flags
@@ -483,6 +502,28 @@ impl CtxReadTool {
                         },
                     }
 
+                    // The content to render when the cache holds none: the
+                    // preread, else the file itself. `None` after an error
+                    // was sent: a file that cannot be read is never empty.
+                    let content_or_disk = |cached: Option<String>| -> Option<String> {
+                        if let Some(c) = cached.or_else(|| preread.clone()) {
+                            return Some(c);
+                        }
+                        match crate::tools::ctx_read::read_file_lossy(&path_owned) {
+                            Ok(raw) => Some(raw),
+                            Err(e) => {
+                                let _ = tx.send((
+                                    format!("{path_owned}: {e}"),
+                                    "error".into(),
+                                    0,
+                                    false,
+                                    None,
+                                ));
+                                None
+                            }
+                        }
+                    };
+
                     let outcome = {
                         let mut cache = acquire_write!(10, "prepare 10s");
 
@@ -558,28 +599,31 @@ impl CtxReadTool {
                                         cache.file_ref_map().get(path_owned.as_str()).cloned();
                                     PrepareOutcome::Hit(hit, resolved, orig, true, fref)
                                 } else {
-                                    let c = content_opt
-                                        .or_else(|| preread.as_deref().map(String::from));
+                                    let Some(c) = content_or_disk(content_opt) else {
+                                        return;
+                                    };
                                     PrepareOutcome::Compute {
                                         resolved_mode: resolved,
-                                        content: c.unwrap_or_default(),
+                                        content: c,
                                         original_tokens: orig_tok,
                                     }
                                 }
                             } else {
-                                let c =
-                                    content_opt.or_else(|| preread.as_deref().map(String::from));
+                                let Some(c) = content_or_disk(content_opt) else {
+                                    return;
+                                };
                                 PrepareOutcome::Compute {
                                     resolved_mode: resolved,
-                                    content: c.unwrap_or_default(),
+                                    content: c,
                                     original_tokens: orig_tok,
                                 }
                             }
                         } else {
-                            let raw = preread.unwrap_or_else(|| {
-                                crate::tools::ctx_read::read_file_lossy(&path_owned)
-                                    .unwrap_or_default()
-                            });
+                            // A file that cannot be read is an error, as on
+                            // the fast path: never an empty file.
+                            let Some(raw) = content_or_disk(None) else {
+                                return;
+                            };
                             let sr = cache.store(&path_owned, &raw);
                             let resolved = if mode_eff == "auto" {
                                 tuning.auto_density_mode().unwrap_or_else(|| {
@@ -651,6 +695,7 @@ impl CtxReadTool {
                                 ft,
                                 &compute_content,
                                 original_tokens,
+                                "full",
                             );
                             (out, "full".to_string())
                         }
@@ -673,6 +718,7 @@ impl CtxReadTool {
                                 ft,
                                 &compute_content,
                                 original_tokens,
+                                &resolved_mode,
                             )
                         } else {
                             out
@@ -786,21 +832,6 @@ impl CtxReadTool {
                 }
                 if is_cache_hit {
                     session.record_cache_hit();
-                }
-                if session.active_structured_intent.is_none() && session.files_touched.len() >= 2 {
-                    let touched: Vec<String> = session
-                        .files_touched
-                        .iter()
-                        .map(|f| f.path.clone())
-                        .collect();
-                    let inferred =
-                        crate::core::intent_engine::StructuredIntent::from_file_patterns(&touched);
-                    if inferred.confidence >= 0.4 {
-                        session.active_structured_intent = Some(inferred);
-                    }
-                }
-                if session.task.is_none() && session.stats.files_read % 5 == 0 {
-                    session.auto_infer_task();
                 }
                 let root_missing = session
                     .project_root

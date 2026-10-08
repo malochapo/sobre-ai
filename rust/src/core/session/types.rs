@@ -16,7 +16,6 @@ pub struct SessionState {
     pub decisions: Vec<Decision>,
     pub files_touched: Vec<FileTouched>,
     pub evidence: Vec<EvidenceRecord>,
-    pub active_structured_intent: Option<crate::core::intent_engine::StructuredIntent>,
     pub stats: SessionStats,
     /// Watermark: timestamp of last auto-consolidation to prevent duplicate knowledge entries.
     pub last_consolidate_ts: Option<DateTime<Utc>>,
@@ -29,9 +28,6 @@ pub struct SessionState {
     /// ACE delta playbook (#541): incremental, stable-ID checkpoint entries —
     /// grown by ctx_compress, never rewritten (anti context-collapse).
     pub playbook: super::playbook::Playbook,
-    /// Last ctx_semantic_search query (#542): fallback query source for
-    /// query-conditioned IB compression when no explicit task is set.
-    pub last_semantic_query: Option<String>,
     /// #717: in-memory timestamp of the last flush to disk. Backs the
     /// time-based save trigger so a slow trickle of changes (below the
     /// 5-change batch) still reaches disk — the dashboard reads session

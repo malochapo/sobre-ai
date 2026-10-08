@@ -36,12 +36,10 @@ impl SessionState {
             decisions: Vec::new(),
             files_touched: Vec::new(),
             evidence: Vec::new(),
-            active_structured_intent: None,
             stats: SessionStats::default(),
             last_consolidate_ts: None,
             extra_roots: Vec::new(),
             playbook: super::playbook::Playbook::default(),
-            last_semantic_query: None,
             last_flush: None,
         }
     }
@@ -72,148 +70,13 @@ impl SessionState {
         }
     }
 
-    /// Sets the active task and infers a structured intent from the description.
+    /// Sets the task the agent stated (`ctx_session action=task`).
     pub fn set_task(&mut self, description: &str, intent: Option<&str>) {
         self.task = Some(TaskInfo {
             description: description.to_string(),
             intent: intent.map(std::string::ToString::to_string),
         });
-
-        let touched: Vec<String> = self.files_touched.iter().map(|f| f.path.clone()).collect();
-        let si = if touched.is_empty() {
-            crate::core::intent_engine::StructuredIntent::from_query(description)
-        } else {
-            crate::core::intent_engine::StructuredIntent::from_query_with_session(
-                description,
-                &touched,
-            )
-        };
-        if si.confidence >= 0.7 {
-            self.active_structured_intent = Some(si);
-        }
-
         self.increment();
-    }
-
-    /// Auto-infers the task from available context (plans, git diff, file patterns).
-    /// Only sets if no explicit task is already set or it's stale.
-    pub fn auto_infer_task(&mut self) {
-        // Don't overwrite explicitly set tasks
-        if self.task.is_some() {
-            return;
-        }
-
-        // Source 1: Active .cursor/plans/*.plan.md
-        if let Some(task_from_plan) = Self::infer_task_from_plans() {
-            self.set_task(&task_from_plan, Some("plan"));
-            return;
-        }
-
-        // Source 2: git diff summary
-        if let Some(ref root) = self.project_root
-            && let Some(task_from_git) = Self::infer_task_from_git(root)
-        {
-            self.set_task(&task_from_git, Some("git"));
-            return;
-        }
-
-        // Source 3: File patterns from intent engine
-        if self.files_touched.len() >= 3 {
-            let touched: Vec<String> = self.files_touched.iter().map(|f| f.path.clone()).collect();
-            let intent = crate::core::intent_engine::StructuredIntent::from_file_patterns(&touched);
-            if intent.confidence >= 0.5 {
-                let dirs: std::collections::HashSet<&str> = touched
-                    .iter()
-                    .filter_map(|f| std::path::Path::new(f).parent()?.to_str())
-                    .collect();
-                let primary_dir = dirs.iter().next().unwrap_or(&".");
-                let desc = format!("Working on {} ({})", primary_dir, intent.task_type.as_str());
-                self.set_task(&desc, Some("inferred"));
-            }
-        }
-    }
-
-    fn infer_task_from_plans() -> Option<String> {
-        let plans_dir = std::path::Path::new(".cursor/plans");
-        if !plans_dir.exists() {
-            return None;
-        }
-
-        let mut newest: Option<(std::time::SystemTime, String)> = None;
-        if let Ok(entries) = std::fs::read_dir(plans_dir) {
-            for entry in entries.flatten() {
-                let path = entry.path();
-                if !path.to_string_lossy().ends_with(".plan.md") {
-                    continue;
-                }
-                let mtime = entry.metadata().ok()?.modified().ok()?;
-                let content = std::fs::read_to_string(&path).ok()?;
-
-                // Check if plan has active (pending/in_progress) todos
-                let has_active =
-                    content.contains("status: pending") || content.contains("status: in_progress");
-                if !has_active {
-                    continue;
-                }
-
-                // Extract plan name from frontmatter
-                let name = content
-                    .lines()
-                    .find(|l| l.starts_with("name:"))
-                    .map_or("Unknown Plan", |l| {
-                        l.trim_start_matches("name:").trim().trim_matches('"')
-                    });
-
-                let better = newest.as_ref().is_none_or(|(t, _)| mtime > *t);
-                if better {
-                    newest = Some((mtime, name.to_string()));
-                }
-            }
-        }
-
-        newest.map(|(_, name)| name)
-    }
-
-    fn infer_task_from_git(project_root: &str) -> Option<String> {
-        let output = std::process::Command::new("git")
-            .args(["diff", "--stat", "--no-color"])
-            .current_dir(project_root)
-            .output()
-            .ok()?;
-
-        if !output.status.success() {
-            return None;
-        }
-
-        let stat = String::from_utf8_lossy(&output.stdout);
-        let lines: Vec<&str> = stat.lines().collect();
-        if lines.is_empty() {
-            return None;
-        }
-
-        // Last line typically has "N files changed, M insertions(+), K deletions(-)"
-        let summary_line = lines.last()?;
-        if !summary_line.contains("changed") {
-            return None;
-        }
-
-        // Find common directory prefix
-        let file_lines: Vec<&str> = lines[..lines.len() - 1].to_vec();
-        let dirs: std::collections::HashSet<&str> = file_lines
-            .iter()
-            .filter_map(|l| {
-                let path = l.split('|').next()?.trim();
-                std::path::Path::new(path).parent()?.to_str()
-            })
-            .collect();
-
-        let primary = if dirs.len() == 1 {
-            dirs.into_iter().next().unwrap_or(".")
-        } else {
-            "multiple dirs"
-        };
-
-        Some(format!("Modified: {} in {}", summary_line.trim(), primary))
     }
 
     /// Records a finding (discovery or observation) in the session log.

@@ -30,27 +30,37 @@ pub fn handle_with_task_fresh(
     let mut files_read = 0usize;
     let mut truncated = false;
 
+    let mut capped: Vec<&str> = Vec::new();
     for path in paths {
-        let effective_mode = if ctx_read::is_instruction_file(path) {
+        // Instruction files are read whole when no mode was picked; a mode the
+        // agent picked is honoured.
+        let effective_mode = if mode == "auto" && ctx_read::is_instruction_file(path) {
             "full"
         } else {
             mode
         };
+        if truncated {
+            capped.push(path);
+            continue;
+        }
         let chunk = if fresh {
             ctx_read::handle_fresh_with_task(cache, path, effective_mode, crp_mode, task)
         } else {
             ctx_read::handle_with_task(cache, path, effective_mode, crp_mode, task)
         };
+        let chunk_bytes = chunk.len();
+        if accumulated_bytes > 0 && accumulated_bytes + chunk_bytes > max_bytes {
+            // This file was read but is not sent: forget the read, so a later
+            // ctx_read returns its content instead of an [unchanged] stub.
+            cache.invalidate(path);
+            truncated = true;
+            capped.push(path);
+            continue;
+        }
         let original = cache.get(path).map_or(0, |e| e.original_tokens);
         let sent = count_tokens(&chunk);
         total_original = total_original.saturating_add(original);
         total_saved = total_saved.saturating_add(original.saturating_sub(sent));
-
-        let chunk_bytes = chunk.len();
-        if accumulated_bytes > 0 && accumulated_bytes + chunk_bytes > max_bytes {
-            truncated = true;
-            break;
-        }
         accumulated_bytes += chunk_bytes;
         sections.push(chunk);
         files_read += 1;
@@ -58,11 +68,11 @@ pub fn handle_with_task_fresh(
 
     let body = sections.join("\n---\n");
     let summary = if truncated {
-        let skipped = n - files_read;
         format!(
             "Read {files_read}/{n} files | {total_saved} tokens saved\n\
-             ⚠ Output capped at {max_bytes} bytes. \
-             {skipped} file(s) skipped. Use individual ctx_read calls for remaining files."
+             ⚠ Output capped at {max_bytes} bytes. Not read: {}. \
+             Read them with ctx_read(path=…) or a smaller paths list.",
+            capped.join(", ")
         )
     } else if total_saved > 0 {
         format!("Read {n} files | {total_saved} tokens saved")

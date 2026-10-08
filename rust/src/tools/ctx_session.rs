@@ -20,10 +20,15 @@ pub fn handle(
         "status" | "show" => session.format_compact(),
 
         "load" => {
+            // Without an id: this project's latest session, never the one of
+            // the server's cwd.
             let loaded = if let Some(id) = session_id {
                 SessionState::load_by_id(id)
             } else {
-                SessionState::load_latest()
+                session
+                    .project_root
+                    .as_deref()
+                    .and_then(SessionState::load_latest_for_project_root)
             };
 
             if let Some(prev) = loaded {

@@ -703,6 +703,7 @@ fn render_aggressive(content: &str, ctx: RenderCtx<'_>) -> (String, usize) {
         file_path,
         original_tokens,
         line_count,
+        task,
         ..
     } = ctx;
     // Structured JSON (#936): a redundant array-of-objects compacts far
@@ -757,9 +758,11 @@ fn render_aggressive(content: &str, ctx: RenderCtx<'_>) -> (String, usize) {
 
     let base = ast_pruned.as_deref().unwrap_or(content);
 
-    let session_intent =
-        crate::core::session::SessionState::load_latest().and_then(|s| s.active_structured_intent);
-    let raw = if let Some(ref intent) = session_intent {
+    // Only a task the agent stated conditions the compression.
+    let task_intent = task
+        .filter(|t| !t.trim().is_empty())
+        .map(crate::core::intent_engine::StructuredIntent::from_query);
+    let raw = if let Some(ref intent) = task_intent {
         compressor::task_aware_compress(base, Some(ext), intent)
     } else {
         compressor::aggressive_compress(base, Some(ext))
@@ -783,23 +786,11 @@ fn render_entropy(content: &str, ctx: RenderCtx<'_>, tuning: &ReadTuning<'_>) ->
         task,
         ..
     } = ctx;
-    // Query-conditioned IB (#542) — relevance source chain: explicit
-    // task param > active session intent > last semantic-search query.
+    // Query-conditioned IB (#542): only a task the agent stated conditions
+    // the compression.
     let task_kws: Vec<String> = task
         .filter(|t| !t.trim().is_empty())
         .map(|t| crate::core::task_relevance::parse_task_hints(t).1)
-        .filter(|kws| !kws.is_empty())
-        .or_else(|| {
-            let session = crate::core::session::SessionState::load_latest()?;
-            if let Some(intent) = session.active_structured_intent
-                && !intent.keywords.is_empty()
-            {
-                return Some(intent.keywords);
-            }
-            let q = session.last_semantic_query?;
-            let kws = crate::core::task_relevance::parse_task_hints(&q).1;
-            (!kws.is_empty()).then_some(kws)
-        })
         .unwrap_or_default();
     let result = match (task_kws.is_empty(), tuning.aggressiveness) {
         // Aggressiveness overrides the learned BPE-entropy threshold for

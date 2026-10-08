@@ -11,7 +11,10 @@ pub fn is_instruction_file(path: &str) -> bool {
     matches!(
         filename,
         "skill.md" | "agents.md" | "rules.md" | ".cursorrules"
-    ) || lower.contains("/skills/")
+    ) || (lower.contains("/skills/")
+        && std::path::Path::new(&lower)
+            .extension()
+            .is_some_and(|ext| ext.eq_ignore_ascii_case("md")))
         || lower.contains("/.cursor/rules/")
         || lower.contains("/.claude/rules/")
         || lower.contains("/agents.md")

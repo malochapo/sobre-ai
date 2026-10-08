@@ -353,7 +353,9 @@ pub(crate) fn build_wakeup_briefing(project_root: &str, task: Option<&str>) -> S
         }
     }
 
-    if let Some(session) = crate::core::session::SessionState::load_latest() {
+    if let Some(session) =
+        crate::core::session::SessionState::load_latest_for_project_root(project_root)
+    {
         if let Some(ref task) = session.task {
             parts.push(format!("LAST_TASK:{}", task.description));
         }
@@ -531,8 +533,13 @@ fn partial_overview(project_root: &str) -> String {
     }
     out.push(String::new());
 
-    // Shallow tree (depth 2) of what's on disk right now.
-    let (tree, _) = crate::tools::ctx_tree::handle(project_root, 2, false, true);
+    // Shallow tree (depth 2) of what's on disk right now; never of a broad
+    // root such as the home directory.
+    let (tree, _) = if crate::tools::walk_guard::deny_unsafe_walk_root(project_root).is_none() {
+        crate::tools::ctx_tree::handle(project_root, 2, false, true)
+    } else {
+        (String::new(), 0)
+    };
     if !tree.trim().is_empty() {
         out.push("STRUCTURE (depth 2):".to_string());
         out.push(tree);
