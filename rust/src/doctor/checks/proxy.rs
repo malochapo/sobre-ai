@@ -28,7 +28,7 @@ pub(crate) fn proxy_health_outcome() -> Outcome {
                     return Outcome {
                         ok: false,
                         line: format!(
-                            "{BOLD}Proxy{RST}  {YELLOW}running on port {port} but auth probe failed{RST}  {YELLOW}fix: lean-ctx proxy restart{RST}"
+                            "{BOLD}Proxy{RST}  {YELLOW}running on port {port} but auth probe failed{RST}  {YELLOW}fix: sobre proxy restart{RST}"
                         ),
                     };
                 }
@@ -37,7 +37,7 @@ pub(crate) fn proxy_health_outcome() -> Outcome {
                     Outcome {
                         ok: true,
                         line: format!(
-                            "{BOLD}Proxy{RST}  {GREEN}running on port {port}{RST}  {YELLOW}autostart not installed — persist: lean-ctx proxy enable{RST}"
+                            "{BOLD}Proxy{RST}  {GREEN}running on port {port}{RST}  {YELLOW}autostart not installed — persist: sobre proxy enable{RST}"
                         ),
                     }
                 } else {
@@ -52,7 +52,7 @@ pub(crate) fn proxy_health_outcome() -> Outcome {
                 Outcome {
                     ok: false,
                     line: format!(
-                        "{BOLD}Proxy{RST}  {RED}enabled but not reachable on port {port}{RST}  {YELLOW}fix: lean-ctx proxy start{RST}"
+                        "{BOLD}Proxy{RST}  {RED}enabled but not reachable on port {port}{RST}  {YELLOW}fix: sobre proxy start{RST}"
                     ),
                 }
             } else {
@@ -61,7 +61,7 @@ pub(crate) fn proxy_health_outcome() -> Outcome {
                 Outcome {
                     ok: true,
                     line: format!(
-                        "{BOLD}Proxy{RST}  {YELLOW}enabled but not running{RST}  {DIM}autostart unavailable on this platform — start: lean-ctx proxy start{RST}"
+                        "{BOLD}Proxy{RST}  {YELLOW}enabled but not running{RST}  {DIM}autostart unavailable on this platform — start: sobre proxy start{RST}"
                     ),
                 }
             }
@@ -69,13 +69,13 @@ pub(crate) fn proxy_health_outcome() -> Outcome {
         Some(false) => Outcome {
             ok: true,
             line: format!(
-                "{BOLD}Proxy{RST}  {DIM}disabled (optional feature){RST}  {DIM}enable: lean-ctx proxy enable{RST}"
+                "{BOLD}Proxy{RST}  {DIM}disabled (optional feature){RST}  {DIM}enable: sobre proxy enable{RST}"
             ),
         },
         None => Outcome {
             ok: true,
             line: format!(
-                "{BOLD}Proxy{RST}  {DIM}not configured{RST}  {DIM}enable: lean-ctx proxy enable{RST}"
+                "{BOLD}Proxy{RST}  {DIM}not configured{RST}  {DIM}enable: sobre proxy enable{RST}"
             ),
         },
     }
@@ -103,8 +103,8 @@ pub(crate) fn stale_proxy_env_outcome() -> Option<Outcome> {
         line: format!(
             "{BOLD}Proxy env{RST}  {RED}{agents} → local proxy, but proxy is {state}{RST}\n\
              {DIM}         Their API requests go to a proxy that is {state} and fail. Fix:{RST}\n\
-             {YELLOW}           lean-ctx proxy cleanup    {DIM}(remove stale URL){RST}\n\
-             {YELLOW}           lean-ctx proxy enable     {DIM}(enable the proxy){RST}"
+             {YELLOW}           sobre proxy cleanup    {DIM}(remove stale URL){RST}\n\
+             {YELLOW}           sobre proxy enable     {DIM}(enable the proxy){RST}"
         ),
     })
 }
@@ -135,7 +135,7 @@ pub(crate) fn proxy_subscription_conflict_outcome() -> Option<Outcome> {
         .unwrap_or("");
 
     // No local redirect → nothing to warn about.
-    if !crate::proxy_setup::is_local_lean_ctx_url(base_url) {
+    if !crate::proxy_setup::is_local_sobre_url(base_url) {
         return None;
     }
 
@@ -150,8 +150,8 @@ pub(crate) fn proxy_subscription_conflict_outcome() -> Option<Outcome> {
             "{BOLD}Claude auth{RST}  {RED}ANTHROPIC_BASE_URL → proxy but no ANTHROPIC_API_KEY (Pro/Max subscription){RST}\n\
              {DIM}         A subscription token only authenticates against api.anthropic.com; routing it{RST}\n\
              {DIM}         through the proxy causes a login loop / 401. Fix one of:{RST}\n\
-             {YELLOW}           lean-ctx proxy disable     {DIM}(keep your subscription; use ctx_* MCP tools for savings){RST}\n\
-             {YELLOW}           export ANTHROPIC_API_KEY=…  {DIM}then: lean-ctx proxy enable  (pay-as-you-go via proxy){RST}"
+             {YELLOW}           sobre proxy disable     {DIM}(keep your subscription; use ctx_* MCP tools for savings){RST}\n\
+             {YELLOW}           export ANTHROPIC_API_KEY=…  {DIM}then: sobre proxy enable  (pay-as-you-go via proxy){RST}"
         ),
     })
 }
@@ -193,7 +193,7 @@ pub(super) fn upstream_outcome(
             return Outcome {
                 ok: false,
                 line: format!(
-                    "{BOLD}Proxy upstream{RST}  {RED}{label} upstream points back to the proxy itself{RST}  {YELLOW}run: lean-ctx config set {key} <url>{RST}"
+                    "{BOLD}Proxy upstream{RST}  {RED}{label} upstream points back to the proxy itself{RST}  {YELLOW}run: sobre config set {key} <url>{RST}"
                 ),
             };
         }
@@ -271,7 +271,7 @@ pub(crate) fn proxy_upstream_drift_outcome() -> Option<Outcome> {
     Some(Outcome {
         ok: false,
         line: format!(
-            "{BOLD}Proxy upstream drift{RST}  {YELLOW}{} — check the upstream in config.toml, then: lean-ctx proxy restart{RST}",
+            "{BOLD}Proxy upstream drift{RST}  {YELLOW}{} — check the upstream in config.toml, then: sobre proxy restart{RST}",
             drifted.join("; ")
         ),
     })

@@ -44,19 +44,19 @@ pub(crate) async fn send_upstream(
             return first.map_err(|_| StatusCode::BAD_GATEWAY);
         }
         Err(e) => {
-            tracing::error!("lean-ctx proxy: {provider_label} upstream error: {e}");
+            tracing::error!("sobre proxy: {provider_label} upstream error: {e}");
             return Err(StatusCode::BAD_GATEWAY);
         }
     };
 
-    tracing::warn!("lean-ctx proxy: {provider_label} upstream {retry_reason} — retrying once");
+    tracing::warn!("sobre proxy: {provider_label} upstream {retry_reason} — retrying once");
     retry_backoff().await;
     match send_once(body).await {
         Ok(resp) => Ok(resp),
         Err(e) => {
             // Second failure: surface the ORIGINAL outcome when it was an HTTP
             // response (its status/headers are more honest than our 502).
-            tracing::error!("lean-ctx proxy: {provider_label} retry failed: {e}");
+            tracing::error!("sobre proxy: {provider_label} retry failed: {e}");
             first.map_err(|_| StatusCode::BAD_GATEWAY)
         }
     }

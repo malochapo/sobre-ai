@@ -1,8 +1,8 @@
 use std::sync::atomic::Ordering;
 
-use super::server::LeanCtxServer;
+use super::server::SobreServer;
 
-impl LeanCtxServer {
+impl SobreServer {
     /// Per-call bookkeeping that is not usage: the agent heartbeat and the
     /// session's own counters. Usage goes to the ledger from `call_tool`, once
     /// the final sent-token count is known.
@@ -10,7 +10,7 @@ impl LeanCtxServer {
         if let Some(agent_id) = self.presence_agent_id.read().await.clone()
             && let Err(error) = crate::core::agents::AgentRegistry::heartbeat_persistent(&agent_id)
         {
-            tracing::warn!("lean-ctx: failed to update MCP agent heartbeat: {error}");
+            tracing::warn!("sobre: failed to update MCP agent heartbeat: {error}");
         }
         let mut session = self.session.write().await;
         session.record_tool_call(saved as u64, original as u64);

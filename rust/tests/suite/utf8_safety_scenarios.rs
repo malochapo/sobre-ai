@@ -32,7 +32,7 @@ fn hash_fast_cyrillic_no_panic() {
         s.len() > 16 * 1024,
         "string must exceed hash_fast threshold"
     );
-    let hash = lean_ctx::server::helpers::hash_fast(&s);
+    let hash = sobre::server::helpers::hash_fast(&s);
     assert!(!hash.is_empty());
 }
 
@@ -40,7 +40,7 @@ fn hash_fast_cyrillic_no_panic() {
 fn hash_fast_emoji_no_panic() {
     let s = make_emoji_heavy(20_000);
     assert!(s.len() > 16 * 1024);
-    let hash = lean_ctx::server::helpers::hash_fast(&s);
+    let hash = sobre::server::helpers::hash_fast(&s);
     assert!(!hash.is_empty());
 }
 
@@ -48,7 +48,7 @@ fn hash_fast_emoji_no_panic() {
 fn hash_fast_mixed_multibyte_no_panic() {
     let s = make_mixed_multibyte(20_000);
     assert!(s.len() > 16 * 1024);
-    let hash = lean_ctx::server::helpers::hash_fast(&s);
+    let hash = sobre::server::helpers::hash_fast(&s);
     assert!(!hash.is_empty());
 }
 
@@ -64,7 +64,7 @@ fn hash_fast_boundary_at_4096() {
     while s.len() < 20_000 {
         s.push('x');
     }
-    let hash = lean_ctx::server::helpers::hash_fast(&s);
+    let hash = sobre::server::helpers::hash_fast(&s);
     assert!(!hash.is_empty());
 }
 
@@ -78,15 +78,15 @@ fn hash_fast_boundary_at_4095() {
     while s.len() < 20_000 {
         s.push('x');
     }
-    let hash = lean_ctx::server::helpers::hash_fast(&s);
+    let hash = sobre::server::helpers::hash_fast(&s);
     assert!(!hash.is_empty());
 }
 
 #[test]
 fn hash_fast_consistent() {
     let s = make_cyrillic_string(20_000);
-    let h1 = lean_ctx::server::helpers::hash_fast(&s);
-    let h2 = lean_ctx::server::helpers::hash_fast(&s);
+    let h1 = sobre::server::helpers::hash_fast(&s);
+    let h2 = sobre::server::helpers::hash_fast(&s);
     assert_eq!(h1, h2, "hash_fast must be deterministic");
 }
 
@@ -94,7 +94,7 @@ fn hash_fast_consistent() {
 fn hash_fast_small_string_no_truncation() {
     let s = "маленькая строка";
     assert!(s.len() <= 16 * 1024);
-    let hash = lean_ctx::server::helpers::hash_fast(s);
+    let hash = sobre::server::helpers::hash_fast(s);
     assert!(!hash.is_empty());
 }
 
@@ -107,7 +107,7 @@ fn redev1l_exact_scenario() {
     while s.len() < 20_000 {
         s.push_str("\nДополнительная строка с кириллицей для тестирования буфера.");
     }
-    let hash = lean_ctx::server::helpers::hash_fast(&s);
+    let hash = sobre::server::helpers::hash_fast(&s);
     assert!(
         !hash.is_empty(),
         "must not panic on ReDev1L's exact file pattern"

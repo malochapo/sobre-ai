@@ -9,7 +9,7 @@ pub struct PropertyGraphMetaV1 {
     /// changes, so a graph built by an older engine is rebuilt instead of
     /// silently served without the new edges.
     pub engine_version: u32,
-    /// lean-ctx version (`CARGO_PKG_VERSION`) that built this graph, recorded
+    /// sobre version (`CARGO_PKG_VERSION`) that built this graph, recorded
     /// for diagnostics.
     pub built_with: String,
     /// Absolute, normalized project root this graph was built for. Recorded so

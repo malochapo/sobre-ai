@@ -5,7 +5,7 @@
 .DESCRIPTION
   Windows has no ulimit. A Job Object is the kernel's equivalent: every process
   started inside it (cargo, rustc, build scripts, link.exe, test binaries, the
-  lean-ctx binary that tests spawn, and their children) is counted and limited
+  sobre binary that tests spawn, and their children) is counted and limited
   together.
 
     memory  JOB_OBJECT_LIMIT_JOB_MEMORY: hard ceiling on the COMMITTED memory of
@@ -68,7 +68,7 @@
     SOBRE_CAP_OFF             1 = no job at all, priority only.
     SOBRE_CAP_EXE             program to run. Default cargo.
 
-  For test/bench, PROPTEST_CASES=64 and LEAN_CTX_EMBEDDINGS_AUTO_DOWNLOAD=0 are
+  For test/bench, PROPTEST_CASES=64 and SOBRE_EMBEDDINGS_AUTO_DOWNLOAD=0 are
   also set when unset - the values CI and scripts/preflight.sh use. Every value
   the script sets is printed before cargo starts.
 #>
@@ -372,7 +372,7 @@ $defaults = [ordered]@{ CARGO_BUILD_JOBS = (EnvOr 'SOBRE_CAP_JOBS' '3') }
 if ($isTest) {
     $defaults['RUST_TEST_THREADS'] = (EnvOr 'SOBRE_CAP_TEST_THREADS' '4')
     $defaults['PROPTEST_CASES'] = '64'
-    $defaults['LEAN_CTX_EMBEDDINGS_AUTO_DOWNLOAD'] = '0'
+    $defaults['SOBRE_EMBEDDINGS_AUTO_DOWNLOAD'] = '0'
 }
 $shown = @()
 foreach ($name in $defaults.Keys) {

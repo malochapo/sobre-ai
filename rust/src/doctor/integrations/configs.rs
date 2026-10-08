@@ -22,13 +22,13 @@ pub(crate) fn check_zed_settings(path: &std::path::Path, binary: &str) -> NamedC
     };
     let entry = v
         .get("context_servers")
-        .and_then(|m| m.get("lean-ctx"))
+        .and_then(|m| m.get("sobre"))
         .cloned();
     let Some(e) = entry else {
         return NamedCheck {
             name: "Zed config".to_string(),
             ok: false,
-            detail: format!("lean-ctx missing ({})", path.display()),
+            detail: format!("sobre missing ({})", path.display()),
         };
     };
 
@@ -65,11 +65,11 @@ pub(crate) fn check_vscode_mcp(path: &std::path::Path, binary: &str) -> NamedChe
             detail: format!("invalid JSON ({})", path.display()),
         };
     };
-    let Some(e) = v.get("servers").and_then(|m| m.get("lean-ctx")) else {
+    let Some(e) = v.get("servers").and_then(|m| m.get("sobre")) else {
         return NamedCheck {
             name: "VS Code MCP".to_string(),
             ok: false,
-            detail: format!("lean-ctx missing ({})", path.display()),
+            detail: format!("sobre missing ({})", path.display()),
         };
     };
 
@@ -108,11 +108,11 @@ pub(crate) fn check_copilot_cli_mcp(path: &std::path::Path, binary: &str) -> Nam
             detail: format!("invalid JSON ({})", path.display()),
         };
     };
-    let Some(e) = v.get("mcpServers").and_then(|m| m.get("lean-ctx")) else {
+    let Some(e) = v.get("mcpServers").and_then(|m| m.get("sobre")) else {
         return NamedCheck {
             name: "Copilot CLI MCP".to_string(),
             ok: false,
-            detail: format!("lean-ctx missing in mcpServers ({})", path.display()),
+            detail: format!("sobre missing in mcpServers ({})", path.display()),
         };
     };
 
@@ -150,11 +150,11 @@ pub(crate) fn check_opencode_config(path: &std::path::Path, binary: &str) -> Nam
             detail: format!("invalid JSON ({})", path.display()),
         };
     };
-    let Some(e) = v.get("mcp").and_then(|m| m.get("lean-ctx")) else {
+    let Some(e) = v.get("mcp").and_then(|m| m.get("sobre")) else {
         return NamedCheck {
             name: "OpenCode MCP".to_string(),
             ok: false,
-            detail: format!("lean-ctx missing ({})", path.display()),
+            detail: format!("sobre missing ({})", path.display()),
         };
     };
 

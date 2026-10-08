@@ -3,13 +3,13 @@
 //! two kinds of events to
 //! `<state_dir>/logs/debug.log`:
 //!
-//! 1. **MCP tool calls** handled by the lean-ctx server (`ctx_*`) — tool name, a
+//! 1. **MCP tool calls** handled by the sobre server (`ctx_*`) — tool name, a
 //!    redacted argument summary, a one-line result preview, byte size, token
 //!    savings and wall time.
-//! 2. **Hook routing decisions** — for every native tool call lean-ctx *can*
-//!    intercept (shell / Read / Grep), whether it was routed to `lean-ctx` or
+//! 2. **Hook routing decisions** — for every native tool call sobre *can*
+//!    intercept (shell / Read / Grep), whether it was routed to `sobre` or
 //!    left to the editor's **native** tool, and *why*. This is #520's core ask:
-//!    explain why one call used lean-ctx and the next fell back to the native
+//!    explain why one call used sobre and the next fell back to the native
 //!    Read/Grep tool.
 //!
 //! All writes are best-effort and never panic — logging must never break a hook
@@ -34,8 +34,8 @@ const FIELD_CLAMP: usize = 200;
 /// Where a hook sent an intercepted native tool call.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Route {
-    /// Rewritten / redirected through lean-ctx (compression + caching).
-    LeanCtx,
+    /// Rewritten / redirected through sobre (compression + caching).
+    Sobre,
     /// Left to the editor's native tool.
     Native,
 }
@@ -43,7 +43,7 @@ pub enum Route {
 impl Route {
     fn label(self) -> &'static str {
         match self {
-            Route::LeanCtx => "lean-ctx",
+            Route::Sobre => "sobre",
             Route::Native => "native",
         }
     }
@@ -65,7 +65,7 @@ pub fn log_path() -> Option<PathBuf> {
     Some(dir.join("debug.log"))
 }
 
-/// Record an MCP tool call handled by the lean-ctx server.
+/// Record an MCP tool call handled by the sobre server.
 pub fn log_mcp_call(
     tool: &str,
     args: Option<&Map<String, Value>>,
@@ -255,13 +255,7 @@ mod tests {
         let iso = crate::core::data_dir::isolated_data_dir();
         enable(&iso);
 
-        log_hook_decision(
-            "rewrite",
-            "Bash",
-            Route::LeanCtx,
-            "cat foo.rs",
-            "rewritable",
-        );
+        log_hook_decision("rewrite", "Bash", Route::Sobre, "cat foo.rs", "rewritable");
         log_hook_decision(
             "redirect",
             "Read",
@@ -271,7 +265,7 @@ mod tests {
         );
 
         let content = std::fs::read_to_string(log_path().unwrap()).unwrap();
-        assert!(content.contains("hook rewrite Bash -> lean-ctx (rewritable): cat foo.rs"));
+        assert!(content.contains("hook rewrite Bash -> sobre (rewritable): cat foo.rs"));
         assert!(content.contains("hook redirect Read -> native (sensitive path): /etc/passwd"));
     }
 

@@ -1,11 +1,11 @@
 ---
 name: sobre
-description: How to work through sobre's ctx_* MCP tools (server `lean-ctx`) — orienting in a codebase, reading files at the right granularity, searching, editing by anchors, running shell commands with compressed output, getting exact content back, and keeping memory across sessions. Use when the ctx_* tools are available and you are exploring, reading, searching, editing or running commands in a repository.
+description: How to work through sobre's ctx_* MCP tools — orienting in a codebase, reading files at the right granularity, searching, editing by anchors, running shell commands with compressed output, getting exact content back, and keeping memory across sessions. Use when the ctx_* tools are available and you are exploring, reading, searching, editing or running commands in a repository.
 ---
 
 # sobre
 
-sobre is a local MCP server (`lean-ctx`) and CLI that answers file, search and
+sobre is a local MCP server and CLI that answers file, search and
 shell requests with the smallest output that still does the job. Everything
 runs on this machine. Native tools keep working; the ctx_* tools are cheaper
 when they fit.
@@ -87,7 +87,7 @@ editing from it:
 - an output footer with an id → `ctx_expand(id=...)`, optionally `search=` or a
   line range;
 - a file → `ctx_read(mode="full")` or `raw=true`, or read the path with any tool;
-- a command → `ctx_shell(raw=true)`, or on the CLI `lean-ctx raw "<command>"`.
+- a command → `ctx_shell(raw=true)`, or on the CLI `sobre raw "<command>"`.
 
 Never rebuild exact content from a compressed view in line-by-line chunks.
 

@@ -29,16 +29,16 @@ use std::path::{Path, PathBuf};
 
 /// Resolve the directory for graph.db and graph.meta.json.
 ///
-/// Uses `$LEAN_CTX_DATA_DIR/graphs/<project_hash>/` (consistent with
-/// `ProjectIndex::index_dir`).  Falls back to `<project>/.lean-ctx/`
+/// Uses `$SOBRE_DATA_DIR/graphs/<project_hash>/` (consistent with
+/// `ProjectIndex::index_dir`).  Falls back to `<project>/.sobre/`
 /// only when the global data directory cannot be resolved.
 pub fn graph_dir(project_root: &str) -> PathBuf {
-    if let Ok(data_dir) = crate::core::data_dir::lean_ctx_data_dir() {
+    if let Ok(data_dir) = crate::core::data_dir::sobre_data_dir() {
         let normalized = crate::core::index_paths::normalize_project_root(project_root);
         let hash = crate::core::project_hash::hash_project_root(&normalized);
         data_dir.join("graphs").join(hash)
     } else {
-        Path::new(project_root).join(".lean-ctx")
+        Path::new(project_root).join(".sobre")
     }
 }
 
@@ -486,13 +486,13 @@ mod tests {
         std::fs::create_dir_all(&data_dir).unwrap();
 
         let _guard = test_env_lock();
-        crate::test_env::set_var("LEAN_CTX_DATA_DIR", data_dir.to_str().unwrap());
+        crate::test_env::set_var("SOBRE_DATA_DIR", data_dir.to_str().unwrap());
 
         let dir = graph_dir(project.to_str().unwrap());
         assert!(dir.starts_with(&data_dir));
         assert!(dir.to_string_lossy().contains("graphs"));
 
-        crate::test_env::remove_var("LEAN_CTX_DATA_DIR");
+        crate::test_env::remove_var("SOBRE_DATA_DIR");
     }
 
     #[test]
@@ -505,14 +505,14 @@ mod tests {
         std::fs::create_dir_all(&data_dir).unwrap();
 
         let _guard = test_env_lock();
-        crate::test_env::set_var("LEAN_CTX_DATA_DIR", data_dir.to_str().unwrap());
+        crate::test_env::set_var("SOBRE_DATA_DIR", data_dir.to_str().unwrap());
 
         let dir1 = graph_dir(project.to_str().unwrap());
         let dir2 = graph_dir(project.to_str().unwrap());
         assert_eq!(dir1, dir2, "graph_dir should be deterministic");
         assert!(dir1.to_string_lossy().contains("graphs"));
 
-        crate::test_env::remove_var("LEAN_CTX_DATA_DIR");
+        crate::test_env::remove_var("SOBRE_DATA_DIR");
     }
 
     #[test]
@@ -525,13 +525,13 @@ mod tests {
         std::fs::create_dir_all(&data_dir).unwrap();
 
         let _guard = test_env_lock();
-        crate::test_env::set_var("LEAN_CTX_DATA_DIR", data_dir.to_str().unwrap());
+        crate::test_env::set_var("SOBRE_DATA_DIR", data_dir.to_str().unwrap());
 
         let g = CodeGraph::open(project.to_str().unwrap()).unwrap();
         assert!(g.db_path().starts_with(&data_dir));
         assert!(g.db_path().to_string_lossy().contains("graph.db"));
 
-        crate::test_env::remove_var("LEAN_CTX_DATA_DIR");
+        crate::test_env::remove_var("SOBRE_DATA_DIR");
     }
 
     #[test]
@@ -544,13 +544,13 @@ mod tests {
         std::fs::create_dir_all(&data_dir).unwrap();
 
         let _guard = test_env_lock();
-        crate::test_env::set_var("LEAN_CTX_DATA_DIR", data_dir.to_str().unwrap());
+        crate::test_env::set_var("SOBRE_DATA_DIR", data_dir.to_str().unwrap());
 
         let mp = meta::meta_path(project.to_str().unwrap());
         assert!(mp.starts_with(&data_dir));
         assert!(mp.to_string_lossy().contains("graph.meta.json"));
 
-        crate::test_env::remove_var("LEAN_CTX_DATA_DIR");
+        crate::test_env::remove_var("SOBRE_DATA_DIR");
     }
 
     #[test]

@@ -4,7 +4,7 @@ use md5::{Digest, Md5};
 
 pub(crate) fn vectors_dir(project_root: &Path) -> PathBuf {
     let hash = namespace_hash(project_root);
-    if let Ok(data_dir) = crate::core::data_dir::lean_ctx_data_dir() {
+    if let Ok(data_dir) = crate::core::data_dir::sobre_data_dir() {
         return data_dir.join("vectors").join(hash);
     }
 

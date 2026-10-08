@@ -310,7 +310,7 @@ mod tests {
     #[test]
     fn cache_aware_prefix_is_byte_stable_across_turns() {
         // CCR handles embed the content-addressed tee path (`state_dir()`-derived);
-        // serialize against tests that repoint LEAN_CTX_DATA_DIR so the data dir
+        // serialize against tests that repoint SOBRE_DATA_DIR so the data dir
         // stays fixed across turns — exactly the stable-env reality in production.
         let _lock = crate::core::data_dir::test_env_lock();
         let long = (0..30)

@@ -1,4 +1,4 @@
-//! `lean-ctx doctor integrations` — per-editor wiring health, split by
+//! `sobre doctor integrations` — per-editor wiring health, split by
 //! concern. Submodules are re-exported flat; `run_integrations` stays the
 //! only entry point.
 
@@ -6,8 +6,7 @@ use chrono::Utc;
 use serde::Serialize;
 
 use super::{
-    BOLD, DIM, GREEN, RST, WHITE, YELLOW, claude_binary_exists, resolve_lean_ctx_binary,
-    tildify_home,
+    BOLD, DIM, GREEN, RST, WHITE, YELLOW, claude_binary_exists, resolve_sobre_binary, tildify_home,
 };
 
 #[derive(Debug, Clone, Copy)]
@@ -68,7 +67,7 @@ pub(super) fn run_integrations(opts: &IntegrationsOptions) -> i32 {
         binary: binary.clone(),
         integrations,
         ok,
-        repair_command: "lean-ctx init --repair".to_string(),
+        repair_command: "sobre init --repair".to_string(),
     };
 
     if opts.json {

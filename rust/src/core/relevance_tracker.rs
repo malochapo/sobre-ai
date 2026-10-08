@@ -2,7 +2,7 @@
 //! Proactive context expansion (#1122): automatically injects previously
 //! compressed data when it becomes relevant to the current request.
 //!
-//! When lean-ctx compresses content (via CCR tee-store), this module indexes
+//! When sobre compresses content (via CCR tee-store), this module indexes
 //! keywords from the original. On subsequent tool calls, if the current request
 //! context matches indexed keywords above a threshold, the relevant compressed
 //! content is proactively expanded and appended.

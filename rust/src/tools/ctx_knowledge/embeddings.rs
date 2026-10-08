@@ -77,7 +77,7 @@ pub(crate) fn handle_embeddings_status(project_root: &str) -> String {
         )
         .map_or(0, |i| i.entries.len());
 
-        let path = crate::core::data_dir::lean_ctx_data_dir()
+        let path = crate::core::data_dir::sobre_data_dir()
             .ok()
             .map(|d| {
                 d.join("knowledge")
@@ -128,7 +128,7 @@ pub(crate) fn handle_embeddings_reindex(project_root: &str) -> String {
         let policy = crate::core::memory_policy::MemoryPolicy::default();
 
         let Some(engine) = embedding_engine() else {
-            return "Embeddings model not installed. Run `lean-ctx embeddings provision`, then re-run."
+            return "Embeddings model not installed. Run `sobre embeddings provision`, then re-run."
                     .to_string();
         };
 

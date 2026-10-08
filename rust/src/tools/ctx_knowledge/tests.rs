@@ -36,14 +36,14 @@ struct DataDirGuard;
 
 impl DataDirGuard {
     fn set(path: &std::path::Path) -> Self {
-        crate::test_env::set_var("LEAN_CTX_DATA_DIR", path);
+        crate::test_env::set_var("SOBRE_DATA_DIR", path);
         Self
     }
 }
 
 impl Drop for DataDirGuard {
     fn drop(&mut self) {
-        crate::test_env::remove_var("LEAN_CTX_DATA_DIR");
+        crate::test_env::remove_var("SOBRE_DATA_DIR");
     }
 }
 

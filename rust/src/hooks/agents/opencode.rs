@@ -23,7 +23,7 @@ pub(crate) fn install_opencode_hook() {
     } else {
         String::new()
     };
-    let has_lean_ctx = content.contains("lean-ctx");
+    let has_sobre = content.contains("sobre");
 
     let mut json = crate::core::jsonc::parse_jsonc(&content)
         .unwrap_or_else(|_| serde_json::Value::Object(serde_json::Map::new()));
@@ -31,7 +31,7 @@ pub(crate) fn install_opencode_hook() {
         return;
     };
 
-    let mcp_written = if has_lean_ctx {
+    let mcp_written = if has_sobre {
         false
     } else {
         if !file_existed {
@@ -42,7 +42,7 @@ pub(crate) fn install_opencode_hook() {
         }
         let mcp = obj.entry("mcp").or_insert_with(|| serde_json::json!({}));
         if let Some(mcp_obj) = mcp.as_object_mut() {
-            mcp_obj.insert("lean-ctx".to_string(), desired);
+            mcp_obj.insert("sobre".to_string(), desired);
             true
         } else {
             false
@@ -60,7 +60,7 @@ pub(crate) fn install_opencode_hook() {
                 eprintln!("  \x1b[32m✓\x1b[0m OpenCode MCP configured at {display_path}");
             }
         }
-    } else if has_lean_ctx && !mcp_server_quiet_mode() {
+    } else if has_sobre && !mcp_server_quiet_mode() {
         eprintln!("OpenCode MCP already configured at {display_path}");
     }
 }
@@ -77,7 +77,7 @@ pub(crate) fn install_opencode_plugin(home: &std::path::Path, binary: &str) {
 }
 
 fn opencode_plugin_source(binary: &str) -> String {
-    let bin = serde_json::to_string(binary).unwrap_or_else(|_| "\"lean-ctx\"".to_string());
+    let bin = serde_json::to_string(binary).unwrap_or_else(|_| "\"sobre\"".to_string());
     format!(
         r#"// Installed by sobre. Compresses the output of a successful `bash` tool
 // call after it ran; the command itself is never changed. Compressed output
@@ -115,8 +115,8 @@ export const Sobre = async () => ({{
 mod tests {
     #[test]
     fn plugin_embeds_the_quoted_binary() {
-        let src = super::opencode_plugin_source("/opt/my dir/lean-ctx");
-        assert!(src.contains(r#"const BIN = "/opt/my dir/lean-ctx";"#));
+        let src = super::opencode_plugin_source("/opt/my dir/sobre");
+        assert!(src.contains(r#"const BIN = "/opt/my dir/sobre";"#));
         assert!(src.contains(r#"["hook", "compress"]"#));
     }
 }

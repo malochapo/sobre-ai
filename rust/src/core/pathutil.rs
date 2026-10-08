@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 pub fn safe_canonicalize(path: &Path) -> std::io::Result<PathBuf> {
     // TCC choke-point (#356): a launchd-standalone process (daemon/proxy/auto-
     // updater, ppid 1) must never realpath a path under ~/Documents, ~/Desktop
-    // or ~/Downloads — the `stat` trips the macOS privacy prompt in lean-ctx's
+    // or ~/Downloads — the `stat` trips the macOS privacy prompt in sobre's
     // own name, and every release re-invalidates the grant (new cdhash), so it
     // re-prompts forever. Heuristic call sites (project-root detection, session
     // matching, path normalization, scan-root checks) all funnel through here,
@@ -128,7 +128,7 @@ pub fn strip_verbatim_str(path: &str) -> Option<String> {
 ///
 /// Returns `None` when the path does not carry a single-letter drive prefix.
 /// Callers must apply this **only on Windows hosts**: clients running under
-/// MSYS2/Git Bash hand POSIX-style drive paths to a native Windows lean-ctx.
+/// MSYS2/Git Bash hand POSIX-style drive paths to a native Windows sobre.
 /// On Linux/macOS `/c/...` is a literal directory and must pass through
 /// untouched (GH #397 — the unconditional rewrite broke every `ctx_*` tool
 /// for Linux projects rooted under `/c/...` and similar paths).
@@ -304,7 +304,7 @@ pub fn is_symlink_or_reparse(meta: &std::fs::Metadata) -> bool {
 /// home subdirectories (`Documents`, `Desktop`, `Downloads`).
 ///
 /// macOS guards these with TCC: the first time a process *enumerates or stats
-/// inside* one, the OS pops a privacy prompt ("lean-ctx would like to access
+/// inside* one, the OS pops a privacy prompt ("sobre would like to access
 /// files in your Documents folder", #356). They are also never valid project
 /// roots or multi-repo workspace parents, so scan heuristics should treat them
 /// as off-limits *without* calling `read_dir` (which is what trips the prompt).
@@ -348,9 +348,9 @@ pub fn is_under_tcc_protected_dir(path: &Path) -> bool {
 /// TCC-granted host like a terminal or an editor.
 ///
 /// Context (#356): TCC permissions attach to the *responsible process*. The
-/// lean-ctx proxy LaunchAgent runs directly under `launchd` (ppid 1), so any
+/// sobre proxy LaunchAgent runs directly under `launchd` (ppid 1), so any
 /// `stat`/`read_dir` it performs under `~/Documents` pops the privacy prompt
-/// **in lean-ctx's own name** — and because every release replaces the
+/// **in sobre's own name** — and because every release replaces the
 /// ad-hoc-signed binary (new cdhash), a previously granted permission is
 /// invalidated on each update, re-prompting forever. Such processes must never probe TCC-protected paths on their own
 /// initiative. Child processes of a terminal or editor (MCP server, CLI)
@@ -363,7 +363,7 @@ pub fn process_is_tcc_standalone() -> bool {
         // change the answer after startup. The env override exists for tests
         // only; the shipped binary never reads it.
         #[cfg(test)]
-        if let Ok(v) = std::env::var("LEAN_CTX_TCC_STANDALONE") {
+        if let Ok(v) = std::env::var("SOBRE_TCC_STANDALONE") {
             match v.trim() {
                 "1" | "true" => return true,
                 "0" | "false" => return false,
@@ -390,7 +390,7 @@ pub fn process_is_tcc_standalone() -> bool {
 }
 
 /// Returns `true` when this process may `stat`/`read_dir`/`canonicalize`
-/// `path` without risking a macOS TCC privacy prompt in lean-ctx's name.
+/// `path` without risking a macOS TCC privacy prompt in sobre's name.
 ///
 /// Heuristic call sites (project-marker probes, session/root matching) must
 /// consult this before touching paths from persisted state; security
@@ -468,12 +468,12 @@ mod tests {
     #[test]
     fn expand_user_path_leaves_other_vars_literal() {
         // Any variable but HOME would make the path depend on the reader's env.
-        crate::test_env::set_var("LEAN_CTX_TEST_SUB", "sub");
+        crate::test_env::set_var("SOBRE_TEST_SUB", "sub");
         assert_eq!(
-            expand_user_path("$LEAN_CTX_TEST_SUB/code"),
-            PathBuf::from("$LEAN_CTX_TEST_SUB/code")
+            expand_user_path("$SOBRE_TEST_SUB/code"),
+            PathBuf::from("$SOBRE_TEST_SUB/code")
         );
-        crate::test_env::remove_var("LEAN_CTX_TEST_SUB");
+        crate::test_env::remove_var("SOBRE_TEST_SUB");
     }
 
     #[test]
@@ -533,7 +533,7 @@ mod tests {
     #[serial_test::serial]
     fn tcc_standalone_blocks_probes_under_protected_dirs() {
         // `#[serial]` and `test_env_lock` are two different mutexes; the tests
-        // in this module need both. `LEAN_CTX_TCC_STANDALONE` is read by
+        // in this module need both. `SOBRE_TCC_STANDALONE` is read by
         // `is_tcc_standalone` (line ~376) on every path normalization, so
         // setting it here reaches any test that resolves a path — most of which
         // serialize on `test_env_lock`, not on `#[serial]`.
@@ -543,7 +543,7 @@ mod tests {
         };
         let doc_proj = home.join("Documents/some-project");
 
-        crate::test_env::set_var("LEAN_CTX_TCC_STANDALONE", "1");
+        crate::test_env::set_var("SOBRE_TCC_STANDALONE", "1");
         assert!(process_is_tcc_standalone());
         assert!(!may_probe_path(&doc_proj));
         // Non-protected paths stay probeable even for standalone processes.
@@ -551,10 +551,10 @@ mod tests {
         // has_project_marker must refuse without touching the filesystem.
         assert!(!has_project_marker(&doc_proj));
 
-        crate::test_env::set_var("LEAN_CTX_TCC_STANDALONE", "0");
+        crate::test_env::set_var("SOBRE_TCC_STANDALONE", "0");
         assert!(!process_is_tcc_standalone());
         assert!(may_probe_path(&doc_proj));
-        crate::test_env::remove_var("LEAN_CTX_TCC_STANDALONE");
+        crate::test_env::remove_var("SOBRE_TCC_STANDALONE");
     }
 
     #[test]
@@ -571,7 +571,7 @@ mod tests {
         // sentinel (inherited from its sandboxed launchd parent) counts as
         // standalone even when ppid != 1, so its heuristic probes stay
         // suppressed — this is the proxy→daemon chain the ppid check missed. (#356)
-        crate::test_env::remove_var("LEAN_CTX_TCC_STANDALONE");
+        crate::test_env::remove_var("SOBRE_TCC_STANDALONE");
         crate::test_env::set_var(crate::core::tcc_guard_sandbox::SEATBELT_SENTINEL, "1");
         assert!(process_is_tcc_standalone());
         assert!(!may_probe_path(&doc_proj));
@@ -595,9 +595,9 @@ mod tests {
         // `std::fs::canonicalize` (which would Err on a missing path) — proving
         // the filesystem is never touched (#356). This is the structural fix:
         // every heuristic canonicalize funnels through here.
-        let missing = home.join("Documents/lean-ctx-tcc-test-does-not-exist-xyzzy");
+        let missing = home.join("Documents/sobre-tcc-test-does-not-exist-xyzzy");
 
-        crate::test_env::set_var("LEAN_CTX_TCC_STANDALONE", "1");
+        crate::test_env::set_var("SOBRE_TCC_STANDALONE", "1");
         let guarded = safe_canonicalize(&missing);
         assert!(
             guarded.is_ok(),
@@ -607,15 +607,15 @@ mod tests {
         assert_eq!(safe_canonicalize_or_self(&missing), missing);
 
         // Outside the protected dirs the guard never engages, even when standalone.
-        let tmp_missing = Path::new("/tmp/lean-ctx-tcc-test-does-not-exist-xyzzy");
+        let tmp_missing = Path::new("/tmp/sobre-tcc-test-does-not-exist-xyzzy");
         assert!(safe_canonicalize(tmp_missing).is_err());
 
         // Without standalone the guard is inactive: a missing ~/Documents path
         // Errs from the real `std::fs::canonicalize` as before.
-        crate::test_env::set_var("LEAN_CTX_TCC_STANDALONE", "0");
+        crate::test_env::set_var("SOBRE_TCC_STANDALONE", "0");
         assert!(safe_canonicalize(&missing).is_err());
 
-        crate::test_env::remove_var("LEAN_CTX_TCC_STANDALONE");
+        crate::test_env::remove_var("SOBRE_TCC_STANDALONE");
     }
 
     #[test]
@@ -632,9 +632,9 @@ mod tests {
         let Some(home) = dirs::home_dir() else {
             return;
         };
-        let missing = home.join("Documents/lean-ctx-secure-canon-does-not-exist-xyzzy");
+        let missing = home.join("Documents/sobre-secure-canon-does-not-exist-xyzzy");
 
-        crate::test_env::set_var("LEAN_CTX_TCC_STANDALONE", "1");
+        crate::test_env::set_var("SOBRE_TCC_STANDALONE", "1");
         // Guarded sink short-circuits (no fs access).
         assert_eq!(safe_canonicalize(&missing).unwrap(), missing);
         // Security sink ignores the guard and actually stats -> Err on a missing
@@ -645,7 +645,7 @@ mod tests {
             "canonicalize_secure must bypass the TCC guard and touch the filesystem"
         );
         assert_eq!(canonicalize_secure_or_self(&missing), missing);
-        crate::test_env::remove_var("LEAN_CTX_TCC_STANDALONE");
+        crate::test_env::remove_var("SOBRE_TCC_STANDALONE");
     }
 
     #[test]
@@ -672,8 +672,8 @@ mod tests {
     #[test]
     fn strip_str_regular() {
         assert_eq!(
-            strip_verbatim_str(r"\\?\E:\code\lean-ctx"),
-            Some("E:/code/lean-ctx".to_string())
+            strip_verbatim_str(r"\\?\E:\code\sobre"),
+            Some("E:/code/sobre".to_string())
         );
     }
 
@@ -726,12 +726,12 @@ mod tests {
     #[test]
     fn normalize_msys_path_to_native() {
         assert_eq!(
-            normalize_tool_path("/c/Users/ABC/AppData/lean-ctx"),
-            "C:/Users/ABC/AppData/lean-ctx"
+            normalize_tool_path("/c/Users/ABC/AppData/sobre"),
+            "C:/Users/ABC/AppData/sobre"
         );
         assert_eq!(
-            normalize_tool_path("/D/Program Files/lean-ctx.exe"),
-            "D:/Program Files/lean-ctx.exe"
+            normalize_tool_path("/D/Program Files/sobre.exe"),
+            "D:/Program Files/sobre.exe"
         );
     }
 
@@ -753,24 +753,24 @@ mod tests {
     #[test]
     fn normalize_native_windows_path_unchanged() {
         assert_eq!(
-            normalize_tool_path("C:/Users/ABC/lean-ctx.exe"),
-            "C:/Users/ABC/lean-ctx.exe"
+            normalize_tool_path("C:/Users/ABC/sobre.exe"),
+            "C:/Users/ABC/sobre.exe"
         );
     }
 
     #[test]
     fn normalize_backslash_windows_path() {
         assert_eq!(
-            normalize_tool_path(r"C:\Users\ABC\lean-ctx.exe"),
-            "C:/Users/ABC/lean-ctx.exe"
+            normalize_tool_path(r"C:\Users\ABC\sobre.exe"),
+            "C:/Users/ABC/sobre.exe"
         );
     }
 
     #[test]
     fn normalize_unix_path_unchanged() {
         assert_eq!(
-            normalize_tool_path("/usr/local/bin/lean-ctx"),
-            "/usr/local/bin/lean-ctx"
+            normalize_tool_path("/usr/local/bin/sobre"),
+            "/usr/local/bin/sobre"
         );
     }
 
@@ -792,8 +792,8 @@ mod tests {
     #[test]
     fn normalize_double_slashes() {
         assert_eq!(
-            normalize_tool_path("C:/Users//ABC//lean-ctx"),
-            "C:/Users/ABC/lean-ctx"
+            normalize_tool_path("C:/Users//ABC//sobre"),
+            "C:/Users/ABC/sobre"
         );
     }
 
@@ -874,7 +874,7 @@ mod tests {
 
     #[test]
     fn agent_config_dir_ignores_real_projects() {
-        assert!(!is_agent_config_dir(Path::new("/home/user/code/lean-ctx")));
+        assert!(!is_agent_config_dir(Path::new("/home/user/code/sobre")));
         assert!(!is_agent_config_dir(Path::new(r"C:\src\app")));
     }
 

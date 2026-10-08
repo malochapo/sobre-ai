@@ -15,8 +15,8 @@ pub(super) fn toml_quote(value: &str) -> String {
 
 /// The MCP server entry sobre writes. Never an approval setting
 /// (`autoApprove`, `trust`, …): what may run without asking is the host's call.
-pub(super) fn lean_ctx_server_entry(binary: &str) -> Value {
-    // No `env` block: lean-ctx resolves its per-category dirs (config/data/
+pub(super) fn sobre_server_entry(binary: &str) -> Value {
+    // No `env` block: sobre resolves its per-category dirs (config/data/
     // state/cache) at runtime.
     serde_json::json!({
         "command": binary
@@ -38,14 +38,14 @@ pub(super) fn backup_invalid_file(path: &std::path::Path) -> Result<std::path::P
     let nanos = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_or(0, |d| d.as_nanos());
-    let bak = parent.join(format!("{filename}.lean-ctx.invalid.{pid}.{nanos}.bak"));
+    let bak = parent.join(format!("{filename}.sobre.invalid.{pid}.{nanos}.bak"));
     std::fs::copy(path, &bak).map_err(|e| e.to_string())?;
     Ok(bak)
 }
 
 /// Safe handler for invalid JSON config files. NEVER silently overwrites.
 /// Strategy:
-/// 1. If lean-ctx is already present in text → skip (no-op)
+/// 1. If sobre is already present in text → skip (no-op)
 /// 2. Try text-based injection into the container key
 /// 3. If injection fails → warn user with clear instructions, do NOT modify file
 pub(super) fn handle_invalid_json_write(
@@ -70,7 +70,7 @@ pub(super) fn handle_invalid_json_write(
 
     if !allow_inject {
         return Err(format!(
-            "{} contains invalid JSON. Fix the syntax and re-run lean-ctx init.\n  Path: {}",
+            "{} contains invalid JSON. Fix the syntax and re-run sobre init.\n  Path: {}",
             path.display(),
             path.display()
         ));
@@ -97,7 +97,7 @@ pub(super) fn handle_invalid_json_write(
 
     // Cannot safely modify — inform user
     eprintln!(
-        "\x1b[33m⚠\x1b[0m  {} contains invalid JSON that lean-ctx cannot safely modify.",
+        "\x1b[33m⚠\x1b[0m  {} contains invalid JSON that sobre cannot safely modify.",
         path.display()
     );
     eprintln!("   \x1b[1mYour config was NOT changed.\x1b[0m");
@@ -106,7 +106,7 @@ pub(super) fn handle_invalid_json_write(
         "     1. Open {} and correct the JSON syntax errors",
         path.display()
     );
-    eprintln!("     2. Re-run: lean-ctx init");
+    eprintln!("     2. Re-run: sobre init");
     eprintln!("   (Common issue: trailing commas, missing quotes, unmatched braces)");
     Ok(WriteResult {
         action: WriteAction::Already,

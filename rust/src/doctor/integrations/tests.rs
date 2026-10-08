@@ -18,9 +18,9 @@ fn codex_desktop_note_is_informational_and_never_fails() {
 #[test]
 fn hook_binary_refs_extracts_token_before_hook_keyword() {
     let content =
-        r#"{"command": "/opt/lean-ctx hook compress"} {"command": "/opt/lean-ctx hook observe"}"#;
+        r#"{"command": "/opt/sobre hook compress"} {"command": "/opt/sobre hook observe"}"#;
     let refs = hook_binary_refs(content);
-    assert_eq!(refs, vec!["/opt/lean-ctx", "/opt/lean-ctx"]);
+    assert_eq!(refs, vec!["/opt/sobre", "/opt/sobre"]);
 }
 
 #[test]
@@ -34,44 +34,44 @@ fn hook_binary_refs_handles_minified_json() {
     // token must still be extracted cleanly. Regression: the whitespace-only
     // split used to capture the entire JSON prefix as the "binary".
     let content =
-        r#"[{"hooks":[{"command":"lean-ctx hook compress"},{"command":"lean-ctx hook observe"}]}]"#;
-    assert_eq!(hook_binary_refs(content), vec!["lean-ctx", "lean-ctx"]);
+        r#"[{"hooks":[{"command":"sobre hook compress"},{"command":"sobre hook observe"}]}]"#;
+    assert_eq!(hook_binary_refs(content), vec!["sobre", "sobre"]);
 }
 
 #[test]
 fn stale_hook_binary_accepts_minified_bare_command() {
-    let content = r#"[{"hooks":[{"command":"lean-ctx hook compress"}]}]"#;
-    assert!(stale_hook_binary(content, "/anything/lean-ctx").is_none());
+    let content = r#"[{"hooks":[{"command":"sobre hook compress"}]}]"#;
+    assert!(stale_hook_binary(content, "/anything/sobre").is_none());
 }
 
 #[test]
 fn stale_hook_binary_flags_minified_foreign_path() {
-    let content = r#"[{"hooks":[{"command":"/old/install/lean-ctx hook compress"}]}]"#;
+    let content = r#"[{"hooks":[{"command":"/old/install/sobre hook compress"}]}]"#;
     assert_eq!(
-        stale_hook_binary(content, "/current/lean-ctx").as_deref(),
-        Some("/old/install/lean-ctx")
+        stale_hook_binary(content, "/current/sobre").as_deref(),
+        Some("/old/install/sobre")
     );
 }
 
 #[test]
 fn stale_hook_binary_flags_foreign_path() {
-    let content = r#""/nonexistent/old/lean-ctx hook compress""#;
-    let stale = stale_hook_binary(content, "/current/install/lean-ctx");
-    assert_eq!(stale.as_deref(), Some("/nonexistent/old/lean-ctx"));
+    let content = r#""/nonexistent/old/sobre hook compress""#;
+    let stale = stale_hook_binary(content, "/current/install/sobre");
+    assert_eq!(stale.as_deref(), Some("/nonexistent/old/sobre"));
 }
 
 #[test]
 fn stale_hook_binary_accepts_current_binary() {
-    let bin = "/current/install/lean-ctx";
+    let bin = "/current/install/sobre";
     let content = format!(r#""{bin} hook compress""#);
     assert!(stale_hook_binary(&content, bin).is_none());
 }
 
 #[test]
 fn stale_hook_binary_accepts_bare_path_command() {
-    // The bare `lean-ctx` PATH form is always considered current.
-    let content = r#""lean-ctx hook compress""#;
-    assert!(stale_hook_binary(content, "/anything/lean-ctx").is_none());
+    // The bare `sobre` PATH form is always considered current.
+    let content = r#""sobre hook compress""#;
+    assert!(stale_hook_binary(content, "/anything/sobre").is_none());
 }
 
 /// #708: a configured verbatim hook binary ($HOME/... synced across machines)
@@ -81,16 +81,16 @@ fn stale_hook_binary_accepts_bare_path_command() {
 fn stale_hook_binary_accepts_configured_portable_override() {
     let iso = crate::core::data_dir::isolated_data_dir();
     let cfg = iso.path().join("config.toml");
-    std::fs::write(&cfg, "hook_binary = \"$HOME/.local/bin/lean-ctx\"\n").unwrap();
-    let content = r#""$HOME/.local/bin/lean-ctx hook compress""#;
-    assert!(stale_hook_binary(content, "/machine/abs/lean-ctx").is_none());
+    std::fs::write(&cfg, "hook_binary = \"$HOME/.local/bin/sobre\"\n").unwrap();
+    let content = r#""$HOME/.local/bin/sobre hook compress""#;
+    assert!(stale_hook_binary(content, "/machine/abs/sobre").is_none());
     std::fs::remove_file(&cfg).unwrap();
 
     // Without the override the same content IS stale — the acceptance is
     // strictly opt-in.
     assert_eq!(
-        stale_hook_binary(content, "/machine/abs/lean-ctx").as_deref(),
-        Some("$HOME/.local/bin/lean-ctx")
+        stale_hook_binary(content, "/machine/abs/sobre").as_deref(),
+        Some("$HOME/.local/bin/sobre")
     );
 }
 
@@ -102,7 +102,7 @@ fn finalize_hook_check_reports_drift_missing_and_stale() {
     assert!(!missing.ok);
     assert!(missing.detail.contains("drift"));
 
-    let stale = finalize_hook_check("Hooks", p, true, Some("/old/lean-ctx".to_string()));
+    let stale = finalize_hook_check("Hooks", p, true, Some("/old/sobre".to_string()));
     assert!(!stale.ok);
     assert!(stale.detail.contains("stale binary"));
     assert!(stale.detail.contains("init --repair"));
@@ -121,13 +121,13 @@ fn check_cursor_hooks_detects_stale_binary() {
         r#"{
   "hooks": {
 "preToolUse": [
-  { "matcher": "Shell", "command": "/old/bin/lean-ctx hook cursor" }
+  { "matcher": "Shell", "command": "/old/bin/sobre hook cursor" }
 ]
   }
 }"#,
     )
     .unwrap();
-    let check = check_cursor_hooks(&path, "/new/bin/lean-ctx");
+    let check = check_cursor_hooks(&path, "/new/bin/sobre");
     assert!(!check.ok, "stale binary path must fail the hook check");
     assert!(check.detail.contains("stale binary"));
 }
@@ -141,15 +141,12 @@ fn check_cursor_hooks_ok_for_bare_command() {
         r#"{
   "hooks": {
 "preToolUse": [
-  { "matcher": "Shell", "command": "lean-ctx hook cursor" }
+  { "matcher": "Shell", "command": "sobre hook cursor" }
 ]
   }
 }"#,
     )
     .unwrap();
-    let check = check_cursor_hooks(&path, "/new/bin/lean-ctx");
-    assert!(
-        check.ok,
-        "bare lean-ctx command is PATH-resolved and current"
-    );
+    let check = check_cursor_hooks(&path, "/new/bin/sobre");
+    assert!(check.ok, "bare sobre command is PATH-resolved and current");
 }

@@ -24,7 +24,7 @@ pub(crate) fn write_copilot_cli(
                     &target.config_path,
                     &content,
                     "mcpServers",
-                    "lean-ctx",
+                    "sobre",
                     &desired,
                     opts.overwrite_invalid,
                 );
@@ -41,7 +41,7 @@ pub(crate) fn write_copilot_cli(
             .as_object_mut()
             .ok_or_else(|| "\"mcpServers\" must be an object".to_string())?;
 
-        let existing = servers_obj.get("lean-ctx").cloned();
+        let existing = servers_obj.get("sobre").cloned();
         if existing.as_ref() == Some(&desired) {
             return Ok(WriteResult {
                 action: WriteAction::Already,
@@ -49,7 +49,7 @@ pub(crate) fn write_copilot_cli(
             });
         }
 
-        servers_obj.insert("lean-ctx".to_string(), desired);
+        servers_obj.insert("sobre".to_string(), desired);
         let out = serde_json::to_string_pretty(&json).map_err(|e| e.to_string())?;
         crate::config_io::write_atomic_with_backup(&target.config_path, &out)?;
         return Ok(WriteResult {
@@ -64,7 +64,7 @@ pub(crate) fn write_copilot_cli(
     }
     let content = serde_json::to_string_pretty(&serde_json::json!({
         "mcpServers": {
-            "lean-ctx": {
+            "sobre": {
                 "type": "local",
                 "command": binary,
                 "args": ["mcp"],

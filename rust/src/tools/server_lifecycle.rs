@@ -8,16 +8,16 @@ use crate::core::cache::SessionCache;
 use crate::core::session::SessionState;
 
 use super::autonomy;
-use super::server::LeanCtxServer;
+use super::server::SobreServer;
 use super::startup::detect_startup_context;
 
-impl Default for LeanCtxServer {
+impl Default for SobreServer {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl LeanCtxServer {
+impl SobreServer {
     /// Creates a new server with default settings, auto-detecting the project root.
     pub fn new() -> Self {
         Self::new_with_project_root(None)
@@ -88,7 +88,7 @@ impl LeanCtxServer {
             match crate::core::agents::AgentRegistry::register_mcp_process(presence_root) {
                 Ok(agent_id) => Some(agent_id),
                 Err(error) => {
-                    tracing::warn!("lean-ctx: failed to register MCP agent presence: {error}");
+                    tracing::warn!("sobre: failed to register MCP agent presence: {error}");
                     None
                 }
             };
@@ -156,7 +156,7 @@ impl LeanCtxServer {
         if let Some(agent_id) = self.presence_agent_id.read().await.clone()
             && let Err(error) = crate::core::agents::AgentRegistry::finish_persistent(&agent_id)
         {
-            tracing::warn!("lean-ctx: failed to finish MCP agent presence: {error}");
+            tracing::warn!("sobre: failed to finish MCP agent presence: {error}");
         }
         {
             let session = self.session.read().await;

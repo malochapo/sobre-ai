@@ -33,8 +33,8 @@ fn refresh_sets_reference_only_hook_capable_agents() {
 fn hook_command_binary_honors_override_and_skips_msys_rewrite() {
     let iso = crate::core::data_dir::isolated_data_dir();
     let cfg = iso.path().join("config.toml");
-    std::fs::write(&cfg, "hook_binary = \"$HOME/.local/bin/lean-ctx\"\n").unwrap();
-    assert_eq!(resolve_hook_command_binary(), "$HOME/.local/bin/lean-ctx");
+    std::fs::write(&cfg, "hook_binary = \"$HOME/.local/bin/sobre\"\n").unwrap();
+    assert_eq!(resolve_hook_command_binary(), "$HOME/.local/bin/sobre");
 
     std::fs::remove_file(&cfg).unwrap();
     // Without an override the #367 contract holds: resolved absolute path.
@@ -49,7 +49,7 @@ fn claude_settings_hooks_emit_override_verbatim_and_stay_idempotent() {
     let iso = crate::core::data_dir::isolated_data_dir();
     std::fs::write(
         iso.path().join("config.toml"),
-        "hook_binary = \"$USERPROFILE/AppData/Roaming/npm/node_modules/lean-ctx-bin/bin/lean-ctx.exe\"\n",
+        "hook_binary = \"$USERPROFILE/AppData/Roaming/npm/node_modules/sobre-bin/bin/sobre.exe\"\n",
     )
     .unwrap();
     let home = tempfile::tempdir().unwrap();
@@ -60,7 +60,7 @@ fn claude_settings_hooks_emit_override_verbatim_and_stay_idempotent() {
     let settings = std::fs::read_to_string(&settings_path).expect("settings.json written");
     assert!(
         settings.contains(
-            "$USERPROFILE/AppData/Roaming/npm/node_modules/lean-ctx-bin/bin/lean-ctx.exe hook compress"
+            "$USERPROFILE/AppData/Roaming/npm/node_modules/sobre-bin/bin/sobre.exe hook compress"
         ),
         "hook command must carry the portable form verbatim: {settings}"
     );
@@ -78,7 +78,7 @@ fn claude_settings_hooks_emit_override_verbatim_and_stay_idempotent() {
 
 #[test]
 fn hooks_installed_for_is_false_without_artifacts() {
-    let tmp = unique_tmp_dir("leanctx_refresh_empty");
+    let tmp = unique_tmp_dir("sobre_refresh_empty");
     for agent in REFRESHABLE_HOOK_AGENTS {
         // `codex` resolves its dir via the global CODEX_HOME-aware resolver
         // (not the passed home), so it cannot be isolated to a temp dir here;
@@ -96,7 +96,7 @@ fn hooks_installed_for_is_false_without_artifacts() {
 
 #[test]
 fn hooks_installed_for_detects_marker_content() {
-    let tmp = unique_tmp_dir("leanctx_refresh_marker");
+    let tmp = unique_tmp_dir("sobre_refresh_marker");
     let hooks = tmp.join(".codeium/windsurf/hooks.json");
     std::fs::create_dir_all(hooks.parent().unwrap()).unwrap();
 
@@ -104,8 +104,8 @@ fn hooks_installed_for_detects_marker_content() {
     std::fs::write(&hooks, "{\"hooks\":{}}").unwrap();
     assert!(!hooks_installed_for("windsurf", &tmp));
 
-    // Once it mentions lean-ctx, it is ours and must be refreshed.
-    std::fs::write(&hooks, "{\"hooks\":{\"cmd\":\"lean-ctx hook observe\"}}").unwrap();
+    // Once it mentions sobre, it is ours and must be refreshed.
+    std::fs::write(&hooks, "{\"hooks\":{\"cmd\":\"sobre hook observe\"}}").unwrap();
     assert!(hooks_installed_for("windsurf", &tmp));
 
     let _ = std::fs::remove_dir_all(&tmp);
@@ -123,22 +123,22 @@ fn unique_tmp_dir(prefix: &str) -> std::path::PathBuf {
 #[test]
 fn bash_path_windows_drive_converted() {
     assert_eq!(
-        to_bash_compatible_path("C:\\Users\\Fraser\\bin\\lean-ctx.exe"),
-        "/c/Users/Fraser/bin/lean-ctx.exe"
+        to_bash_compatible_path("C:\\Users\\Fraser\\bin\\sobre.exe"),
+        "/c/Users/Fraser/bin/sobre.exe"
     );
 }
 
 #[test]
 fn bash_path_windows_forward_slashes() {
     assert_eq!(
-        to_bash_compatible_path("C:/Users/Fraser/bin/lean-ctx.exe"),
-        "/c/Users/Fraser/bin/lean-ctx.exe"
+        to_bash_compatible_path("C:/Users/Fraser/bin/sobre.exe"),
+        "/c/Users/Fraser/bin/sobre.exe"
     );
 }
 
 #[test]
 fn bash_path_bare_name_unchanged() {
-    assert_eq!(to_bash_compatible_path("lean-ctx"), "lean-ctx");
+    assert_eq!(to_bash_compatible_path("sobre"), "sobre");
 }
 
 // MSYS2 drive mapping applies on Windows hosts only — on Linux/macOS
@@ -241,33 +241,33 @@ fn normalize_unc_path_preserved() {
 #[test]
 fn from_bash_to_native_converts_msys_drive() {
     assert_eq!(
-        from_bash_to_native_path("/c/Users/ABC/lean-ctx"),
-        "C:/Users/ABC/lean-ctx"
+        from_bash_to_native_path("/c/Users/ABC/sobre"),
+        "C:/Users/ABC/sobre"
     );
     assert_eq!(
-        from_bash_to_native_path("/d/Program Files/lean-ctx.exe"),
-        "D:/Program Files/lean-ctx.exe"
+        from_bash_to_native_path("/d/Program Files/sobre.exe"),
+        "D:/Program Files/sobre.exe"
     );
 }
 
 #[test]
 fn from_bash_to_native_bare_name() {
-    assert_eq!(from_bash_to_native_path("lean-ctx"), "lean-ctx");
+    assert_eq!(from_bash_to_native_path("sobre"), "sobre");
 }
 
 // The bash→native return leg only translates on Windows hosts (GH #397).
 #[cfg(windows)]
 #[test]
 fn roundtrip_windows_path() {
-    let native = r"C:\Users\ABC\AppData\Local\lean-ctx\lean-ctx.exe";
+    let native = r"C:\Users\ABC\AppData\Local\sobre\sobre.exe";
     let bash = to_bash_compatible_path(native);
     let back = from_bash_to_native_path(&bash);
-    assert_eq!(back, "C:/Users/ABC/AppData/Local/lean-ctx/lean-ctx.exe");
+    assert_eq!(back, "C:/Users/ABC/AppData/Local/sobre/sobre.exe");
 }
 
 #[test]
 fn roundtrip_unix_path() {
-    let native = "/usr/local/bin/lean-ctx";
+    let native = "/usr/local/bin/sobre";
     let bash = to_bash_compatible_path(native);
     assert_eq!(bash, native);
     let back = from_bash_to_native_path(&bash);

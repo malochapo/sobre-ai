@@ -15,7 +15,7 @@ fn install_claude_mcp_server(home: &std::path::Path) {
     let binary = super::super::resolve_binary_path();
 
     let existing = std::fs::read_to_string(&config_path).unwrap_or_default();
-    if existing.contains("\"lean-ctx\"") && existing.contains("mcpServers") {
+    if existing.contains("\"sobre\"") && existing.contains("mcpServers") {
         return;
     }
 
@@ -32,10 +32,10 @@ fn install_claude_mcp_server(home: &std::path::Path) {
             .entry("mcpServers")
             .or_insert_with(|| serde_json::json!({}));
         if let Some(servers_obj) = servers.as_object_mut()
-            && !servers_obj.contains_key("lean-ctx")
+            && !servers_obj.contains_key("sobre")
         {
             servers_obj.insert(
-                "lean-ctx".to_string(),
+                "sobre".to_string(),
                 serde_json::json!({
                     "command": binary,
                     "args": []
@@ -46,7 +46,7 @@ fn install_claude_mcp_server(home: &std::path::Path) {
                 &serde_json::to_string_pretty(&root).unwrap_or_default(),
             );
             if !super::super::mcp_server_quiet_mode() {
-                eprintln!("Added lean-ctx MCP server to {}", config_path.display());
+                eprintln!("Added sobre MCP server to {}", config_path.display());
             }
         }
     }
@@ -75,44 +75,44 @@ fn ensure_read_dedup_hook(
     }
 }
 
-/// The trailing action token of a lean-ctx hook command, e.g. `"hook compress"`.
+/// The trailing action token of a sobre hook command, e.g. `"hook compress"`.
 ///
 /// Commands are rendered as `<binary> hook <action>`, where `<binary>` is either a bare
-/// `lean-ctx` (when it is on `PATH`) or an absolute path (when it is not). The action token
-/// is therefore the only path-independent way to recognise a lean-ctx hook.
-fn lean_ctx_action_token(command: &str) -> &str {
+/// `sobre` (when it is on `PATH`) or an absolute path (when it is not). The action token
+/// is therefore the only path-independent way to recognise a sobre hook.
+fn sobre_action_token(command: &str) -> &str {
     match command.rfind(" hook ") {
         Some(i) => command[i + 1..].trim_end(),
         None => command.trim_end(),
     }
 }
 
-/// True if `hook` is a lean-ctx command hook for `action`, regardless of how the binary path
-/// was rendered (bare `lean-ctx` vs an absolute path).
-fn is_lean_ctx_command_for(hook: &serde_json::Value, action: &str) -> bool {
+/// True if `hook` is a sobre command hook for `action`, regardless of how the binary path
+/// was rendered (bare `sobre` vs an absolute path).
+fn is_sobre_command_for(hook: &serde_json::Value, action: &str) -> bool {
     if hook.get("type").and_then(|t| t.as_str()) != Some("command") {
         return false;
     }
     let Some(cmd) = hook.get("command").and_then(|c| c.as_str()) else {
         return false;
     };
-    if !cmd.contains("lean-ctx") {
+    if !cmd.contains("sobre") {
         return false;
     }
     cmd.trim_end().ends_with(action)
 }
 
-/// Ensure exactly one lean-ctx hook for `command`'s action exists under `matcher`.
+/// Ensure exactly one sobre hook for `command`'s action exists under `matcher`.
 ///
-/// A lean-ctx hook is recognised by its action token, whatever its binary path or matcher
+/// A sobre hook is recognised by its action token, whatever its binary path or matcher
 /// group: every one for this action is stripped and a single fresh one re-added, so re-runs
-/// stay idempotent when the binary path changes. Non-lean-ctx hooks are left untouched.
+/// stay idempotent when the binary path changes. Non-sobre hooks are left untouched.
 fn ensure_command_hook(pre_arr: &mut Vec<serde_json::Value>, matcher: &str, command: &str) {
-    let action = lean_ctx_action_token(command);
+    let action = sobre_action_token(command);
 
     for group in pre_arr.iter_mut() {
         if let Some(hooks) = group.get_mut("hooks").and_then(|h| h.as_array_mut()) {
-            hooks.retain(|h| !is_lean_ctx_command_for(h, action));
+            hooks.retain(|h| !is_sobre_command_for(h, action));
         }
     }
     pre_arr.retain(|g| {
@@ -261,19 +261,16 @@ mod tests {
         pre.iter()
             .filter_map(|g| g.get("hooks").and_then(|h| h.as_array()))
             .flatten()
-            .filter(|h| is_lean_ctx_command_for(h, action))
+            .filter(|h| is_sobre_command_for(h, action))
             .filter_map(|h| h.get("command").and_then(|c| c.as_str()).map(String::from))
             .collect()
     }
 
     #[test]
     fn action_token_is_path_independent() {
+        assert_eq!(sobre_action_token("sobre hook compress"), "hook compress");
         assert_eq!(
-            lean_ctx_action_token("lean-ctx hook compress"),
-            "hook compress"
-        );
-        assert_eq!(
-            lean_ctx_action_token("/Users/x/.local/bin/lean-ctx hook read-dedup"),
+            sobre_action_token("/Users/x/.local/bin/sobre hook read-dedup"),
             "hook read-dedup"
         );
     }
@@ -283,39 +280,30 @@ mod tests {
         // Installed once off PATH (absolute path), then re-run on PATH (bare name).
         let mut pre = vec![json!({
             "matcher": BASH,
-            "hooks": [{ "type": "command", "command": "/abs/bin/lean-ctx hook compress" }]
+            "hooks": [{ "type": "command", "command": "/abs/bin/sobre hook compress" }]
         })];
-        ensure_command_hook(&mut pre, BASH, "lean-ctx hook compress");
-        assert_eq!(
-            commands_for(&pre, "hook compress"),
-            ["lean-ctx hook compress"]
-        );
+        ensure_command_hook(&mut pre, BASH, "sobre hook compress");
+        assert_eq!(commands_for(&pre, "hook compress"), ["sobre hook compress"]);
     }
 
     #[test]
     fn repeated_calls_are_idempotent() {
         let mut pre = vec![];
         for _ in 0..5 {
-            ensure_command_hook(&mut pre, BASH, "lean-ctx hook compress");
+            ensure_command_hook(&mut pre, BASH, "sobre hook compress");
         }
-        assert_eq!(
-            commands_for(&pre, "hook compress"),
-            ["lean-ctx hook compress"]
-        );
+        assert_eq!(commands_for(&pre, "hook compress"), ["sobre hook compress"]);
     }
 
     #[test]
     fn heals_preexisting_duplicates_across_groups() {
         // Two copies of the same hook with different matchers/paths.
         let mut pre = vec![
-            json!({ "matcher": "Bash", "hooks": [{ "type": "command", "command": "/a/lean-ctx hook compress" }] }),
-            json!({ "matcher": BASH, "hooks": [{ "type": "command", "command": "lean-ctx hook compress" }] }),
+            json!({ "matcher": "Bash", "hooks": [{ "type": "command", "command": "/a/sobre hook compress" }] }),
+            json!({ "matcher": BASH, "hooks": [{ "type": "command", "command": "sobre hook compress" }] }),
         ];
-        ensure_command_hook(&mut pre, BASH, "lean-ctx hook compress");
-        assert_eq!(
-            commands_for(&pre, "hook compress"),
-            ["lean-ctx hook compress"]
-        );
+        ensure_command_hook(&mut pre, BASH, "sobre hook compress");
+        assert_eq!(commands_for(&pre, "hook compress"), ["sobre hook compress"]);
     }
 
     #[test]
@@ -324,14 +312,11 @@ mod tests {
             "matcher": BASH,
             "hooks": [
                 { "type": "command", "command": "my-own-tool --flag" },
-                { "type": "command", "command": "/abs/lean-ctx hook compress" }
+                { "type": "command", "command": "/abs/sobre hook compress" }
             ]
         })];
-        ensure_command_hook(&mut pre, BASH, "lean-ctx hook compress");
-        assert_eq!(
-            commands_for(&pre, "hook compress"),
-            ["lean-ctx hook compress"]
-        );
+        ensure_command_hook(&mut pre, BASH, "sobre hook compress");
+        assert_eq!(commands_for(&pre, "hook compress"), ["sobre hook compress"]);
         let all: Vec<String> = pre
             .iter()
             .filter_map(|g| g.get("hooks").and_then(|h| h.as_array()))
@@ -347,16 +332,16 @@ mod tests {
     #[test]
     fn compress_and_read_dedup_coexist_after_reruns() {
         let mut post = vec![];
-        ensure_command_hook(&mut post, BASH, "lean-ctx hook compress");
-        ensure_command_hook(&mut post, READ_DEDUP_MATCHER, "lean-ctx hook read-dedup");
-        ensure_command_hook(&mut post, BASH, "lean-ctx hook compress"); // re-run
+        ensure_command_hook(&mut post, BASH, "sobre hook compress");
+        ensure_command_hook(&mut post, READ_DEDUP_MATCHER, "sobre hook read-dedup");
+        ensure_command_hook(&mut post, BASH, "sobre hook compress"); // re-run
         assert_eq!(
             commands_for(&post, "hook compress"),
-            ["lean-ctx hook compress"]
+            ["sobre hook compress"]
         );
         assert_eq!(
             commands_for(&post, "hook read-dedup"),
-            ["lean-ctx hook read-dedup"]
+            ["sobre hook read-dedup"]
         );
     }
 
@@ -365,9 +350,9 @@ mod tests {
         // GL #1140: the PostToolUse array carries observe (matcher .*) AND
         // read-dedup (matcher Read); repeated installs must not duplicate either.
         let mut hooks_obj = serde_json::Map::new();
-        ensure_claude_observe_hooks(&mut hooks_obj, "lean-ctx hook observe");
-        ensure_read_dedup_hook(&mut hooks_obj, "lean-ctx hook read-dedup");
-        ensure_read_dedup_hook(&mut hooks_obj, "lean-ctx hook read-dedup"); // re-run
+        ensure_claude_observe_hooks(&mut hooks_obj, "sobre hook observe");
+        ensure_read_dedup_hook(&mut hooks_obj, "sobre hook read-dedup");
+        ensure_read_dedup_hook(&mut hooks_obj, "sobre hook read-dedup"); // re-run
 
         let post = hooks_obj
             .get("PostToolUse")

@@ -1,7 +1,7 @@
 use thiserror::Error;
 
 #[derive(Error, Debug)]
-pub enum LeanCtxError {
+pub enum SobreError {
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
 
@@ -47,7 +47,7 @@ pub enum ConfigError {
     #[error("Error saving config: {source}")]
     Save {
         #[source]
-        source: Box<LeanCtxError>,
+        source: Box<SobreError>,
     },
 
     #[error("Expected bool (true/false), got: {value}")]
@@ -134,14 +134,14 @@ impl From<&str> for ConfigError {
     }
 }
 
-impl From<toml::de::Error> for LeanCtxError {
+impl From<toml::de::Error> for SobreError {
     fn from(e: toml::de::Error) -> Self {
-        LeanCtxError::Config(ConfigError::Message(e.to_string()))
+        SobreError::Config(ConfigError::Message(e.to_string()))
     }
 }
 
-impl From<serde_json::Error> for LeanCtxError {
+impl From<serde_json::Error> for SobreError {
     fn from(e: serde_json::Error) -> Self {
-        LeanCtxError::Parse(e.to_string())
+        SobreError::Parse(e.to_string())
     }
 }

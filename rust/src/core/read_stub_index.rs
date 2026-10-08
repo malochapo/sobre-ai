@@ -170,7 +170,7 @@ fn index_path_in(data_dir: &Path) -> Option<PathBuf> {
 }
 
 fn data_dir() -> Option<PathBuf> {
-    crate::core::data_dir::lean_ctx_data_dir().ok()
+    crate::core::data_dir::sobre_data_dir().ok()
 }
 
 // --- Pure file helpers (explicit path → unit-testable without globals) -------

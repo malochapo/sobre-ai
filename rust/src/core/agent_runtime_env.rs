@@ -1,13 +1,13 @@
-//! Bridge agent runtime/session environment variables across lean-ctx processes.
+//! Bridge agent runtime/session environment variables across sobre processes.
 //!
-//! The lean-ctx MCP server is a long-lived child of the agent host. Some agents
+//! The sobre MCP server is a long-lived child of the agent host. Some agents
 //! (notably Codex) expose runtime/session variables such as `CODEX_THREAD_ID`
 //! only in the *native agent shell* environment, not in the MCP server process
 //! (#370). `ctx_shell` runs inside the MCP server, so it cannot forward those
 //! variables by reading its own `std::env`.
 //!
-//! Short-lived lean-ctx processes that *do* run inside the agent environment —
-//! the hook handlers (`lean-ctx hook …`) and the `lean-ctx -c` shell wrapper —
+//! Short-lived sobre processes that *do* run inside the agent environment —
+//! the hook handlers (`sobre hook …`) and the `sobre -c` shell wrapper —
 //! [`capture`] the relevant variables into a small file in the data dir. The MCP
 //! server then [`load`]s them when constructing the child environment for
 //! `ctx_shell` (see `crate::server::execute`).
@@ -55,7 +55,7 @@ const FILE_NAME: &str = "agent_runtime_env.json";
 /// worse than forwarding none, and a fresh session re-captures on its first hook.
 const TTL_SECS: u64 = 7_200;
 
-/// Whether `key` is an agent runtime variable lean-ctx forwards to child shells.
+/// Whether `key` is an agent runtime variable sobre forwards to child shells.
 ///
 /// A variable qualifies only when it (1) matches a forwardable agent prefix AND
 /// (2) is not credential-shaped — session/thread identifiers cross the bridge,
@@ -144,9 +144,9 @@ pub fn capture() {
 /// Load captured agent runtime variables, honoring the freshness TTL.
 ///
 /// When no valid capture exists, falls back to probing the parent process's
-/// environment (#800). This covers the case where the lean-ctx MCP server was
+/// environment (#800). This covers the case where the sobre MCP server was
 /// spawned by an agent that sets runtime vars only in native shell commands
-/// (e.g. Codex with CODEX_THREAD_ID) without going through `lean-ctx -c` first.
+/// (e.g. Codex with CODEX_THREAD_ID) without going through `sobre -c` first.
 #[must_use]
 pub fn load() -> BTreeMap<String, String> {
     let Some(path) = store_path() else {
@@ -271,7 +271,7 @@ mod tests {
         assert!(is_forwardable("OPENCODE_FOO"));
         assert!(!is_forwardable("PATH"));
         assert!(!is_forwardable("HOME"));
-        assert!(!is_forwardable("LEAN_CTX_DATA_DIR"));
+        assert!(!is_forwardable("SOBRE_DATA_DIR"));
     }
 
     #[test]
@@ -415,13 +415,13 @@ mod tests {
         let _lock = crate::core::data_dir::test_env_lock();
         let state = tempfile::tempdir().unwrap();
         let config = tempfile::tempdir().unwrap();
-        crate::test_env::set_var("LEAN_CTX_STATE_DIR", state.path());
-        crate::test_env::set_var("LEAN_CTX_CONFIG_DIR", config.path());
+        crate::test_env::set_var("SOBRE_STATE_DIR", state.path());
+        crate::test_env::set_var("SOBRE_CONFIG_DIR", config.path());
 
         let path = store_path().unwrap();
 
-        crate::test_env::remove_var("LEAN_CTX_STATE_DIR");
-        crate::test_env::remove_var("LEAN_CTX_CONFIG_DIR");
+        crate::test_env::remove_var("SOBRE_STATE_DIR");
+        crate::test_env::remove_var("SOBRE_CONFIG_DIR");
 
         assert!(
             path.starts_with(state.path()),

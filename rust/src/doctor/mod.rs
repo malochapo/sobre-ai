@@ -1,4 +1,4 @@
-//! Environment diagnostics for lean-ctx installation and integration.
+//! Environment diagnostics for sobre installation and integration.
 
 mod checks;
 mod common;
@@ -70,27 +70,27 @@ impl Scoreboard {
 
 /// Run diagnostic checks and print colored results to stdout.
 /// Renders the full diagnostics board and returns how many checks need
-/// attention, so `lean-ctx doctor` can exit non-zero when something is wrong
+/// attention, so `sobre doctor` can exit non-zero when something is wrong
 /// (a health gate must fail loudly, not silently exit 0).
 pub fn run() -> u32 {
     let mut board = Scoreboard::default();
 
-    println!("{BOLD}{WHITE}lean-ctx doctor{RST}  {DIM}diagnostics{RST}");
+    println!("{BOLD}{WHITE}sobre doctor{RST}  {DIM}diagnostics{RST}");
     println!("  {}", summary_line());
     println!("  {}\n", debug_log_line());
 
     // 1) Binary on PATH
-    let path_bin = resolve_lean_ctx_binary();
+    let path_bin = resolve_sobre_binary();
     let also_in_path_dirs = path_in_path_env();
     let bin_ok = path_bin.is_some() || also_in_path_dirs;
     let bin_line = if let Some(p) = path_bin {
-        format!("{BOLD}lean-ctx in PATH{RST}  {WHITE}{}{RST}", p.display())
+        format!("{BOLD}sobre in PATH{RST}  {WHITE}{}{RST}", p.display())
     } else if also_in_path_dirs {
         format!(
-            "{BOLD}lean-ctx in PATH{RST}  {YELLOW}found via PATH walk (not resolved by `command -v`){RST}"
+            "{BOLD}sobre in PATH{RST}  {YELLOW}found via PATH walk (not resolved by `command -v`){RST}"
         )
     } else {
-        format!("{BOLD}lean-ctx in PATH{RST}  {RED}not found{RST}")
+        format!("{BOLD}sobre in PATH{RST}  {RED}not found{RST}")
     };
     board.check(&Outcome {
         ok: bin_ok,
@@ -99,17 +99,17 @@ pub fn run() -> u32 {
 
     // 2) Version from PATH binary
     let ver = if bin_ok {
-        lean_ctx_version_from_path()
+        sobre_version_from_path()
     } else {
         Outcome {
             ok: false,
-            line: format!("{BOLD}lean-ctx version{RST}  {RED}skipped (binary not in PATH){RST}"),
+            line: format!("{BOLD}sobre version{RST}  {RED}skipped (binary not in PATH){RST}"),
         }
     };
     board.check(&ver);
 
-    // 3) data directory (respects LEAN_CTX_DATA_DIR)
-    let lean_dir = crate::core::data_dir::lean_ctx_data_dir().ok();
+    // 3) data directory (respects SOBRE_DATA_DIR)
+    let lean_dir = crate::core::data_dir::sobre_data_dir().ok();
     let dir_outcome = match &lean_dir {
         Some(p) if p.is_dir() => Outcome {
             ok: true,
@@ -165,7 +165,7 @@ pub fn run() -> u32 {
     board.check(&usage_outcome);
 
     // 5) config.toml (missing is OK). It lives in the CONFIG dir
-    // ($XDG_CONFIG_HOME/lean-ctx), resolved through Config::path() to match
+    // ($XDG_CONFIG_HOME/sobre), resolved through Config::path() to match
     // the loader's logic (#435).
     let config_path = crate::core::config::Config::path();
     let config_outcome = match &config_path {
@@ -233,7 +233,7 @@ pub fn run() -> u32 {
     let mcp = mcp_config_outcome();
     board.check(&mcp);
     let user_scope_mcp_locations = dirs::home_dir()
-        .map(|home| lean_ctx_mcp_location_names(&home))
+        .map(|home| sobre_mcp_location_names(&home))
         .unwrap_or_default();
 
     // 7b) WSL2 + VS Code: surface the upstream first-call invoke race (GH #669)
@@ -355,19 +355,19 @@ pub fn run() -> u32 {
     println!("  {BOLD}{WHITE}Summary:{RST}  {GREEN}{passed}{RST}{DIM}/{total}{RST} checks passed");
     if needs_attention > 0 {
         println!(
-            "  {YELLOW}{needs_attention} check(s) need attention.{RST}  Auto-repair what's fixable:  {BOLD}lean-ctx doctor --fix{RST}"
+            "  {YELLOW}{needs_attention} check(s) need attention.{RST}  Auto-repair what's fixable:  {BOLD}sobre doctor --fix{RST}"
         );
     } else {
         println!("  {GREEN}Everything looks good.{RST}");
     }
     println!("  {DIM}LSP servers are optional enhancements (not counted in score){RST}");
-    println!("  {DIM}lean-ctx {}{RST}", env!("CARGO_PKG_VERSION"));
+    println!("  {DIM}sobre {}{RST}", env!("CARGO_PKG_VERSION"));
 
     needs_attention
 }
 
 /// One line on the install: the running version and which detected agents
-/// have a lean-ctx MCP entry.
+/// have a sobre MCP entry.
 fn summary_line() -> String {
     let version = env!("CARGO_PKG_VERSION");
     let detected: Vec<_> = dirs::home_dir()
@@ -378,7 +378,7 @@ fn summary_line() -> String {
         .collect();
     let connected: Vec<&str> = detected
         .iter()
-        .filter(|t| std::fs::read_to_string(&t.config_path).is_ok_and(|s| s.contains("lean-ctx")))
+        .filter(|t| std::fs::read_to_string(&t.config_path).is_ok_and(|s| s.contains("sobre")))
         .map(|t| t.name)
         .collect();
     let names = if connected.is_empty() {
@@ -387,7 +387,7 @@ fn summary_line() -> String {
         format!(" ({})", connected.join(", "))
     };
     format!(
-        "{WHITE}lean-ctx {version}{RST}  agents connected: {}/{} detected{names}",
+        "{WHITE}sobre {version}{RST}  agents connected: {}/{} detected{names}",
         connected.len(),
         detected.len()
     )
@@ -421,15 +421,15 @@ pub fn run_cli(args: &[String]) -> i32 {
 
     if help {
         println!("Usage:");
-        println!("  lean-ctx doctor");
+        println!("  sobre doctor");
         println!(
-            "  lean-ctx doctor overhead [--json] [--gate]   Fixed context cost per session (--gate: non-zero exit when over the 8000-token budget)"
+            "  sobre doctor overhead [--json] [--gate]   Fixed context cost per session (--gate: non-zero exit when over the 8000-token budget)"
         );
         println!(
-            "  lean-ctx doctor lint-context [--json]   Lint injected context for low-signal/dup lines"
+            "  sobre doctor lint-context [--json]   Lint injected context for low-signal/dup lines"
         );
-        println!("  lean-ctx doctor integrations [--json]");
-        println!("  lean-ctx doctor --fix [--json]");
+        println!("  sobre doctor integrations [--json]");
+        println!("  sobre doctor --fix [--json]");
         return 0;
     }
 
@@ -449,7 +449,7 @@ pub fn run_cli(args: &[String]) -> i32 {
     }
 
     if !fix {
-        // Non-zero exit when checks need attention so `lean-ctx doctor` works
+        // Non-zero exit when checks need attention so `sobre doctor` works
         // as a CI/health gate, not just a pretty printer.
         return i32::from(run() > 0);
     }
@@ -467,10 +467,10 @@ pub fn compact_score() -> (u32, u32) {
     let mut passed = 0u32;
     let total = 4u32;
 
-    if resolve_lean_ctx_binary().is_some() || path_in_path_env() {
+    if resolve_sobre_binary().is_some() || path_in_path_env() {
         passed += 1;
     }
-    let lean_dir = crate::core::data_dir::lean_ctx_data_dir().ok();
+    let lean_dir = crate::core::data_dir::sobre_data_dir().ok();
     if lean_dir.as_ref().is_some_and(|p| p.is_dir()) {
         passed += 1;
     }
@@ -493,7 +493,7 @@ pub(super) fn print_compact_status(passed: u32, total: u32) {
     let status = if passed == total {
         format!("{GREEN}✓ All {total} checks passed{RST}")
     } else {
-        format!("{YELLOW}{passed}/{total} passed{RST} — run {BOLD}lean-ctx doctor{RST} for details")
+        format!("{YELLOW}{passed}/{total} passed{RST} — run {BOLD}sobre doctor{RST} for details")
     };
     println!("  {status}");
 }

@@ -1,7 +1,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use super::parsers::{remove_lean_ctx_from_json, remove_lean_ctx_from_toml};
+use super::parsers::{remove_sobre_from_json, remove_sobre_from_toml};
 use super::{backup_before_modify, safe_remove, safe_write, shorten};
 
 // ---------------------------------------------------------------------------
@@ -41,16 +41,16 @@ pub(super) fn remove_mcp_configs(home: &Path, dry_run: bool) -> bool {
         let Ok(content) = fs::read_to_string(path) else {
             continue;
         };
-        if !content.contains("lean-ctx") {
+        if !content.contains("sobre") {
             continue;
         }
 
         let is_toml = path.extension().and_then(|e| e.to_str()) == Some("toml");
 
         let cleaned = if is_toml {
-            Some(remove_lean_ctx_from_toml(&content))
+            Some(remove_sobre_from_toml(&content))
         } else {
-            remove_lean_ctx_from_json(&content)
+            remove_sobre_from_json(&content)
         };
 
         if let Some(cleaned) = cleaned {
@@ -65,14 +65,14 @@ pub(super) fn remove_mcp_configs(home: &Path, dry_run: bool) -> bool {
         }
     }
 
-    // Zed: uses `context_servers` key — handled by remove_lean_ctx_from_json
+    // Zed: uses `context_servers` key — handled by remove_sobre_from_json
     let zed_path = crate::core::editor_registry::zed_settings_path(home);
     if zed_path.exists()
         && let Ok(content) = fs::read_to_string(&zed_path)
-        && content.contains("lean-ctx")
+        && content.contains("sobre")
     {
         backup_before_modify(&zed_path, dry_run);
-        if let Some(cleaned) = remove_lean_ctx_from_json(&content) {
+        if let Some(cleaned) = remove_sobre_from_json(&content) {
             if let Err(e) = safe_write(&zed_path, &cleaned, dry_run) {
                 tracing::warn!("Failed to update Zed config: {e}");
             } else {
@@ -87,8 +87,8 @@ pub(super) fn remove_mcp_configs(home: &Path, dry_run: bool) -> bool {
     let label = "VS Code / Copilot";
     if vscode_path.exists()
         && let Ok(content) = fs::read_to_string(&vscode_path)
-        && content.contains("lean-ctx")
-        && let Some(cleaned) = remove_lean_ctx_from_json(&content)
+        && content.contains("sobre")
+        && let Some(cleaned) = remove_sobre_from_json(&content)
     {
         backup_before_modify(&vscode_path, dry_run);
         if let Err(e) = safe_write(&vscode_path, &cleaned, dry_run) {
@@ -132,10 +132,10 @@ pub(super) fn remove_skills(home: &Path, dry_run: bool) -> bool {
 // ---------------------------------------------------------------------------
 
 /// Apply hook cleanup result to a file: write cleaned content, remove if entirely
-/// lean-ctx, or leave untouched on parse error / no changes.
+/// sobre, or leave untouched on parse error / no changes.
 fn apply_hook_cleanup(path: &Path, label: &str, content: &str, dry_run: bool) -> bool {
     let verb = if dry_run { "Would" } else { "✓" };
-    match remove_lean_ctx_from_hooks_json(content) {
+    match remove_sobre_from_hooks_json(content) {
         HookCleanupResult::Cleaned(cleaned) => {
             if let Err(e) = safe_write(path, &cleaned, dry_run) {
                 tracing::warn!("Failed to update {label}: {e}");
@@ -144,7 +144,7 @@ fn apply_hook_cleanup(path: &Path, label: &str, content: &str, dry_run: bool) ->
             println!("  {verb} {label} cleaned (user settings preserved)");
             true
         }
-        HookCleanupResult::EntirelyLeanCtx => {
+        HookCleanupResult::EntirelySobre => {
             if let Err(e) = safe_remove(path, dry_run) {
                 tracing::warn!("Failed to remove {label}: {e}");
                 return false;
@@ -181,12 +181,12 @@ pub(super) fn remove_hook_files(home: &Path, dry_run: bool) -> bool {
         println!("  {verb} OpenCode plugin removed");
     }
 
-    // Claude Code global settings: surgically remove lean-ctx hook entries
+    // Claude Code global settings: surgically remove sobre hook entries
     let claude_settings =
         crate::core::editor_registry::claude_state_dir(home).join("settings.json");
     if claude_settings.exists()
         && let Ok(content) = fs::read_to_string(&claude_settings)
-        && content.contains("lean-ctx")
+        && content.contains("sobre")
     {
         backup_before_modify(&claude_settings, dry_run);
         removed |= apply_hook_cleanup(
@@ -197,7 +197,7 @@ pub(super) fn remove_hook_files(home: &Path, dry_run: bool) -> bool {
         );
     }
 
-    // hooks.json: surgically remove lean-ctx entries instead of deleting
+    // hooks.json: surgically remove sobre entries instead of deleting
     for (label, hj_path) in [
         ("Cursor", home.join(".cursor/hooks.json")),
         (
@@ -216,7 +216,7 @@ pub(super) fn remove_hook_files(home: &Path, dry_run: bool) -> bool {
         let Ok(content) = fs::read_to_string(&hj_path) else {
             continue;
         };
-        if !content.contains("lean-ctx") {
+        if !content.contains("sobre") {
             continue;
         }
 
@@ -227,32 +227,32 @@ pub(super) fn remove_hook_files(home: &Path, dry_run: bool) -> bool {
     removed
 }
 
-/// Result of attempting to remove lean-ctx from a JSON config file.
+/// Result of attempting to remove sobre from a JSON config file.
 #[derive(Debug)]
 pub(super) enum HookCleanupResult {
-    /// No lean-ctx references found; file unchanged.
+    /// No sobre references found; file unchanged.
     Unchanged,
-    /// lean-ctx entries removed; cleaned JSON content with remaining settings returned.
+    /// sobre entries removed; cleaned JSON content with remaining settings returned.
     Cleaned(String),
-    /// File is entirely lean-ctx-only; safe to delete.
-    EntirelyLeanCtx,
+    /// File is entirely sobre-only; safe to delete.
+    EntirelySobre,
     /// JSON parse failed; file should NOT be touched.
     ParseError,
 }
 
-/// Check if a single string value references lean-ctx.
-fn str_is_lean_ctx(s: &str) -> bool {
-    s.contains("lean-ctx")
+/// Check if a single string value references sobre.
+fn str_is_sobre(s: &str) -> bool {
+    s.contains("sobre")
 }
 
-/// For flat hook entries: check `command`, `bash`, or any string field for lean-ctx.
-fn flat_entry_is_lean_ctx(entry: &serde_json::Value) -> bool {
+/// For flat hook entries: check `command`, `bash`, or any string field for sobre.
+fn flat_entry_is_sobre(entry: &serde_json::Value) -> bool {
     let Some(obj) = entry.as_object() else {
         return false;
     };
     for key in ["command", "bash"] {
         if let Some(serde_json::Value::String(s)) = obj.get(key)
-            && str_is_lean_ctx(s)
+            && str_is_sobre(s)
         {
             return true;
         }
@@ -261,7 +261,7 @@ fn flat_entry_is_lean_ctx(entry: &serde_json::Value) -> bool {
 }
 
 /// For nested hook entries (`{matcher, hooks: [{command: ...}]}`):
-/// Remove only lean-ctx sub-hooks, preserving user hooks in the same group.
+/// Remove only sobre sub-hooks, preserving user hooks in the same group.
 /// Returns true if the entry was modified or should be removed entirely.
 fn clean_nested_entry(entry: &mut serde_json::Value) -> bool {
     let Some(obj) = entry.as_object_mut() else {
@@ -271,17 +271,17 @@ fn clean_nested_entry(entry: &mut serde_json::Value) -> bool {
         return false;
     };
     let before = sub_hooks.len();
-    sub_hooks.retain(|h| !flat_entry_is_lean_ctx(h));
+    sub_hooks.retain(|h| !flat_entry_is_sobre(h));
     sub_hooks.len() < before
 }
 
-/// Remove lean-ctx hook entries from hooks/settings JSON, preserving other entries.
+/// Remove sobre hook entries from hooks/settings JSON, preserving other entries.
 ///
 /// Handles multiple formats:
-/// - Flat: `{command: "lean-ctx ..."}` (Cursor hooks.json)
-/// - Nested: `{matcher: "...", hooks: [{type: "command", command: "lean-ctx ..."}]}` (Claude/Codex)
-/// - Copilot: `{bash: "lean-ctx ..."}` (Copilot hooks)
-pub(super) fn remove_lean_ctx_from_hooks_json(content: &str) -> HookCleanupResult {
+/// - Flat: `{command: "sobre ..."}` (Cursor hooks.json)
+/// - Nested: `{matcher: "...", hooks: [{type: "command", command: "sobre ..."}]}` (Claude/Codex)
+/// - Copilot: `{bash: "sobre ..."}` (Copilot hooks)
+pub(super) fn remove_sobre_from_hooks_json(content: &str) -> HookCleanupResult {
     let Ok(mut parsed) = crate::core::jsonc::parse_jsonc(content) else {
         return HookCleanupResult::ParseError;
     };
@@ -309,12 +309,12 @@ pub(super) fn remove_lean_ctx_from_hooks_json(content: &str) -> HookCleanupResul
                     true
                 });
 
-                // Then: remove flat entries that are lean-ctx
+                // Then: remove flat entries that are sobre
                 arr.retain(|entry| {
                     if entry.get("hooks").is_some() {
                         return true; // nested — already handled above
                     }
-                    !flat_entry_is_lean_ctx(entry)
+                    !flat_entry_is_sobre(entry)
                 });
 
                 if arr.len() < before {
@@ -336,7 +336,7 @@ pub(super) fn remove_lean_ctx_from_hooks_json(content: &str) -> HookCleanupResul
     // Check if any meaningful content remains. `version` / `$schema` are
     // format boilerplate written by installers (e.g. Copilot hooks.json
     // `{"hooks": {}, "version": 1}`) — an otherwise-empty file is still
-    // entirely lean-ctx-owned and safe to delete (GL #558).
+    // entirely sobre-owned and safe to delete (GL #558).
     let has_remaining = parsed.as_object().is_some_and(|obj| {
         obj.iter().any(|(key, val)| match key.as_str() {
             "hooks" => val.as_object().is_some_and(|h| !h.is_empty()),
@@ -353,6 +353,6 @@ pub(super) fn remove_lean_ctx_from_hooks_json(content: &str) -> HookCleanupResul
     if has_remaining {
         HookCleanupResult::Cleaned(pretty)
     } else {
-        HookCleanupResult::EntirelyLeanCtx
+        HookCleanupResult::EntirelySobre
     }
 }

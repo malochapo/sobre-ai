@@ -103,7 +103,7 @@ pub fn detect_claude_path() -> PathBuf {
         // State dir counts as installed: doctor's Claude checks and the skill
         // both key off `~/.claude/` existing. Without this fallback
         // a machine with only the state dir hits a dead loop — doctor says
-        // "run: lean-ctx init", but setup skips Claude (detect_path missing)
+        // "run: sobre init", but setup skips Claude (detect_path missing)
         // and the warning never clears.
         let state_dir = super::claude_state_dir(&home);
         if state_dir.exists() {

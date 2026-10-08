@@ -12,7 +12,7 @@
 #[test]
 fn try_shared_engine_returns_none_when_not_initialized() {
     assert!(
-        lean_ctx::core::embeddings::try_shared_engine().is_none(),
+        sobre::core::embeddings::try_shared_engine().is_none(),
         "try_shared_engine must return None without triggering a load"
     );
 }

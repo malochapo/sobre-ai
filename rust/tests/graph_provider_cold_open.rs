@@ -40,7 +40,7 @@ fn open_or_build_returns_graph_on_first_cold_open() {
     let root_str = root.to_string_lossy().to_string();
 
     // First call, no warm-up, no retry — must build synchronously.
-    let provider = lean_ctx::core::graph_provider::open_or_build(&root_str);
+    let provider = sobre::core::graph_provider::open_or_build(&root_str);
     assert!(
         provider.is_some(),
         "first cold open_or_build must build the graph synchronously \

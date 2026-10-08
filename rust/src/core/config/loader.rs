@@ -9,7 +9,7 @@ use super::{Config, ConfigCacheSlot};
 /// fails to parse. When that happens `Config::load()` silently falls back to the
 /// built-in defaults and only logs to stderr — which is invisible over an MCP/stdio
 /// transport. Recording it here lets callers (e.g. the shell-allowlist diagnostic
-/// and `lean-ctx doctor`) surface "you're on defaults because your config is broken".
+/// and `sobre doctor`) surface "you're on defaults because your config is broken".
 static LAST_PARSE_ERROR: Mutex<Option<String>> = Mutex::new(None);
 
 /// Returns the most recent global config parse error, or `None` if the current
@@ -26,7 +26,7 @@ fn record_parse_error(err: Option<String>) {
 }
 
 impl Config {
-    /// Returns the path to the global config file (`$XDG_CONFIG_HOME/lean-ctx/config.toml`).
+    /// Returns the path to the global config file (`$XDG_CONFIG_HOME/sobre/config.toml`).
     ///
     /// Resolves via [`crate::core::paths::config_dir`] so config lives in the
     /// RO-safe config category (GH #408 / GL #602).
@@ -37,11 +37,11 @@ impl Config {
     }
 
     /// `Some(path)` when the global config the runtime *resolves* does not exist,
-    /// so lean-ctx is silently on built-in defaults. `None` when a config file is
+    /// so sobre is silently on built-in defaults. `None` when a config file is
     /// present (or HOME is unresolvable).
     ///
-    /// The directory is layout-dependent (XDG `~/.config/lean-ctx` vs
-    /// `$LEAN_CTX_CONFIG_DIR`) and an MCP client may launch the
+    /// The directory is layout-dependent (XDG `~/.config/sobre` vs
+    /// `$SOBRE_CONFIG_DIR`) and an MCP client may launch the
     /// server in a sandbox/container with a different `$HOME`. An edit made to a
     /// *different* `config.toml` than this one is silently ignored; the block
     /// messages use this to say so out loud over MCP, where the stderr path is
@@ -60,7 +60,7 @@ impl Config {
     /// mtime-only invalidation silently served a stale `Config` whenever a
     /// content edit preserved the mtime (coarse filesystem mtime resolution,
     /// `cp -p`, atomic save-then-rename, two edits within the same second). A
-    /// long-lived MCP server then kept the old value while a fresh `lean-ctx
+    /// long-lived MCP server then kept the old value while a fresh `sobre
     /// doctor` process saw the new one (#406). The file is tiny, so reading +
     /// hashing it on every load is negligible and guarantees liveness.
     pub fn load() -> Self {
@@ -97,8 +97,8 @@ impl Config {
                     record_parse_error(Some(format!("{e}")));
                     tracing::warn!("config parse error in {}: {e}", path.display());
                     eprintln!(
-                        "\x1b[33m[lean-ctx] WARNING: config parse error in {}: {e}\n  \
-                         Using defaults. Run `lean-ctx doctor --fix` to repair.\x1b[0m",
+                        "\x1b[33m[sobre] WARNING: config parse error in {}: {e}\n  \
+                         Using defaults. Run `sobre doctor --fix` to repair.\x1b[0m",
                         path.display()
                     );
                     Self::default()

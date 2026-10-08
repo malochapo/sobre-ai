@@ -17,14 +17,14 @@ fn claude_mcp_add_json_used_when_available() {
     if cfg!(windows) {
         return;
     }
-    let _g = lean_ctx::core::data_dir::test_env_lock();
+    let _g = sobre::core::data_dir::test_env_lock();
     let tmp = tempfile::tempdir().expect("tempdir");
     let home = tmp.path().join("home");
     let bin_dir = tmp.path().join("bin");
     std::fs::create_dir_all(&home).expect("mkdir home");
     std::fs::create_dir_all(&bin_dir).expect("mkdir bin");
 
-    // Fake claude binary that accepts: claude mcp add-json --scope user lean-ctx
+    // Fake claude binary that accepts: claude mcp add-json --scope user sobre
     // It writes the stdin JSON to a file so we can assert it was used.
     let claude = bin_dir.join(if cfg!(windows) {
         "claude.cmd"
@@ -51,19 +51,19 @@ fn claude_mcp_add_json_used_when_available() {
     // SAFETY: serialized by `test_env_lock()`.
     unsafe { std::env::set_var("PATH", new_path) };
 
-    let targets = lean_ctx::core::editor_registry::detect::build_targets(&home);
+    let targets = sobre::core::editor_registry::detect::build_targets(&home);
     let claude_target = targets
         .iter()
         .find(|t| t.agent_key == "claude")
         .expect("claude target");
 
     let bin = std::env::current_exe()
-        .unwrap_or_else(|_| PathBuf::from("lean-ctx"))
+        .unwrap_or_else(|_| PathBuf::from("sobre"))
         .to_string_lossy()
         .to_string();
 
     let res =
-        lean_ctx::core::editor_registry::writers::write_config(claude_target, &bin).expect("write");
+        sobre::core::editor_registry::writers::write_config(claude_target, &bin).expect("write");
     assert!(
         res.note.as_deref() == Some("via claude mcp add-json"),
         "{res:?}"

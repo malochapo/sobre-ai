@@ -52,7 +52,7 @@ pub(super) fn exec_buffered(command: &str, shell: &str, shell_flag: &str) -> i32
     let mut child = match child {
         Ok(c) => c,
         Err(e) => {
-            tracing::error!("lean-ctx: failed to execute: {e}");
+            tracing::error!("sobre: failed to execute: {e}");
             return 127;
         }
     };

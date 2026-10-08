@@ -7,7 +7,7 @@ use std::sync::OnceLock;
 fn isolated_state_dir() -> &'static Path {
     static DIR: OnceLock<PathBuf> = OnceLock::new();
     DIR.get_or_init(|| {
-        let dir = std::env::temp_dir().join(format!("lean-ctx-it-state-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("sobre-it-state-{}", std::process::id()));
         std::fs::create_dir_all(&dir).expect("create isolated state dir");
         dir
     })
@@ -18,40 +18,40 @@ fn isolated_state_dir() -> &'static Path {
 fn isolated_config_dir() -> &'static Path {
     static DIR: OnceLock<PathBuf> = OnceLock::new();
     DIR.get_or_init(|| {
-        let dir = std::env::temp_dir().join(format!("lean-ctx-it-config-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("sobre-it-config-{}", std::process::id()));
         std::fs::create_dir_all(&dir).expect("create isolated config dir");
         dir
     })
 }
 
-fn lean_ctx_bin() -> Command {
-    let mut cmd = Command::new(env!("CARGO_BIN_EXE_lean-ctx"));
+fn sobre_bin() -> Command {
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_sobre"));
     cmd.current_dir(env!("CARGO_MANIFEST_DIR"));
-    cmd.env("LEAN_CTX_STATE_DIR", isolated_state_dir());
-    cmd.env("LEAN_CTX_CONFIG_DIR", isolated_config_dir());
+    cmd.env("SOBRE_STATE_DIR", isolated_state_dir());
+    cmd.env("SOBRE_CONFIG_DIR", isolated_config_dir());
     cmd
 }
 
 #[test]
 fn binary_prints_help() {
-    let output = lean_ctx_bin()
+    let output = sobre_bin()
         .arg("--help")
         .output()
-        .expect("failed to run lean-ctx");
+        .expect("failed to run sobre");
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(
         stdout.contains("local context tools for coding agents"),
         "help should contain tagline"
     );
-    assert!(stdout.contains("lean-ctx"), "help should mention lean-ctx");
+    assert!(stdout.contains("sobre"), "help should mention sobre");
 }
 
 #[test]
 fn shell_hook_compresses_echo() {
-    let output = lean_ctx_bin()
+    let output = sobre_bin()
         .args(["-c", "echo", "hello", "world"])
         .output()
-        .expect("failed to run lean-ctx -c");
+        .expect("failed to run sobre -c");
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(
         stdout.contains("hello"),
@@ -61,14 +61,14 @@ fn shell_hook_compresses_echo() {
 
 #[test]
 fn help_shows_escape_hatches() {
-    let output = lean_ctx_bin()
+    let output = sobre_bin()
         .arg("--help")
         .output()
-        .expect("failed to run lean-ctx");
+        .expect("failed to run sobre");
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(
-        stdout.contains("lean-ctx raw"),
-        "help should document `lean-ctx raw`"
+        stdout.contains("sobre raw"),
+        "help should document `sobre raw`"
     );
 }
 
@@ -79,12 +79,12 @@ fn pipe_guard_no_compression_when_stdout_is_piped() {
     if cfg!(windows) {
         return;
     }
-    let output = Command::new(env!("CARGO_BIN_EXE_lean-ctx"))
+    let output = Command::new(env!("CARGO_BIN_EXE_sobre"))
         .current_dir(env!("CARGO_MANIFEST_DIR"))
-        .env("LEAN_CTX_STATE_DIR", isolated_state_dir())
+        .env("SOBRE_STATE_DIR", isolated_state_dir())
         .args(["-c", "echo hello world"])
         .output()
-        .expect("failed to run lean-ctx -c with piped stdout");
+        .expect("failed to run sobre -c with piped stdout");
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert_eq!(
         stdout.trim(),
@@ -98,12 +98,12 @@ fn pipe_guard_force_compress_overrides_pipe_guard() {
     if cfg!(windows) {
         return;
     }
-    let output = Command::new(env!("CARGO_BIN_EXE_lean-ctx"))
+    let output = Command::new(env!("CARGO_BIN_EXE_sobre"))
         .current_dir(env!("CARGO_MANIFEST_DIR"))
-        .env("LEAN_CTX_STATE_DIR", isolated_state_dir())
+        .env("SOBRE_STATE_DIR", isolated_state_dir())
         .args(["-c", "echo hello world"])
         .output()
-        .expect("failed to run lean-ctx -c with piped stdout");
+        .expect("failed to run sobre -c with piped stdout");
     assert!(
         output.status.success(),
         "`-c` should not crash even with piped stdout"
@@ -121,12 +121,12 @@ fn pipe_guard_multiline_output_unchanged_when_piped() {
         return;
     }
     let script = "echo line1; echo line2; echo line3; echo 'result: 42'";
-    let output = Command::new(env!("CARGO_BIN_EXE_lean-ctx"))
+    let output = Command::new(env!("CARGO_BIN_EXE_sobre"))
         .current_dir(env!("CARGO_MANIFEST_DIR"))
-        .env("LEAN_CTX_STATE_DIR", isolated_state_dir())
+        .env("SOBRE_STATE_DIR", isolated_state_dir())
         .args(["-c", script])
         .output()
-        .expect("failed to run lean-ctx -c with multiline output");
+        .expect("failed to run sobre -c with multiline output");
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("line1"), "must contain line1");
     assert!(stdout.contains("line2"), "must contain line2");
@@ -138,9 +138,9 @@ fn pipe_guard_multiline_output_unchanged_when_piped() {
 }
 
 // ── Redirect-to-file fidelity under FORCED compression ──────
-// Regression: an agent's command hook routes through `lean-ctx -c` with no pipe
+// Regression: an agent's command hook routes through `sobre -c` with no pipe
 // guard (an agent IS the consumer), so an agent running
-// `git status --short > files.txt` reached `lean-ctx -c` with stdout pointing at a
+// `git status --short > files.txt` reached `sobre -c` with stdout pointing at a
 // regular FILE and forced compression on. The compressed digest was written INTO
 // the file, dropping/abbreviating lines and producing contradictory diffs. Output
 // redirected to a regular file must ALWAYS stay byte-faithful, even when
@@ -150,22 +150,22 @@ fn pipe_guard_multiline_output_unchanged_when_piped() {
 // (the truncate-with-safety-scan fallback collapses the middle). This makes the
 // assertions below meaningful — pre-fix, the file held the compressed digest.
 // The payload must NOT contain any passthrough/verbatim keyword (notably the
-// literal "lean-ctx", which classifies the whole command as Passthrough), or the
+// literal "sobre", which classifies the whole command as Passthrough), or the
 // output would never be compressed and the test would be vacuous.
 fn redirect_fidelity_command() -> &'static str {
     "i=0; while [ $i -lt 60 ]; do echo \"row $i alpha beta gamma delta payload\"; i=$((i+1)); done"
 }
 
-/// `lean-ctx -c` with a *hermetic* control environment for the compression
-/// fidelity tests. `LEAN_CTX_WRAPPED` must go: running `cargo test` *through* the lean-ctx
-/// wrapper stamps it on every child, and the nested `lean-ctx -c` under test
+/// `sobre -c` with a *hermetic* control environment for the compression
+/// fidelity tests. `SOBRE_WRAPPED` must go: running `cargo test` *through* the sobre
+/// wrapper stamps it on every child, and the nested `sobre -c` under test
 /// would then (correctly) defer to the parent instead of compressing.
 fn forced_compress_bin() -> Command {
-    let mut cmd = Command::new(env!("CARGO_BIN_EXE_lean-ctx"));
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_sobre"));
     cmd.current_dir(env!("CARGO_MANIFEST_DIR"))
-        .env_remove("LEAN_CTX_WRAPPED")
-        .env("LEAN_CTX_STATE_DIR", isolated_state_dir())
-        .env("LEAN_CTX_CONFIG_DIR", isolated_config_dir());
+        .env_remove("SOBRE_WRAPPED")
+        .env("SOBRE_STATE_DIR", isolated_state_dir())
+        .env("SOBRE_CONFIG_DIR", isolated_config_dir());
     cmd
 }
 
@@ -176,17 +176,17 @@ fn force_compress_redirect_to_file_is_byte_faithful() {
     }
     let cmd = redirect_fidelity_command();
 
-    // Ground truth: the raw command output (no lean-ctx in the loop).
+    // Ground truth: the raw command output (no sobre in the loop).
     let raw = Command::new("sh")
         .args(["-c", cmd])
         .output()
         .expect("failed to run raw command");
     let raw_stdout = String::from_utf8_lossy(&raw.stdout).to_string();
 
-    // Run lean-ctx with forced compression, stdout redirected to a real file —
+    // Run sobre with forced compression, stdout redirected to a real file —
     // exactly the agent `cmd > file` scenario.
     let tmp = std::env::temp_dir().join(format!(
-        "lean-ctx-redirect-fidelity-{}.txt",
+        "sobre-redirect-fidelity-{}.txt",
         std::process::id()
     ));
     let file = std::fs::File::create(&tmp).expect("create temp file");
@@ -194,8 +194,8 @@ fn force_compress_redirect_to_file_is_byte_faithful() {
         .args(["-c", cmd])
         .stdout(std::process::Stdio::from(file))
         .status()
-        .expect("failed to run lean-ctx -c with file redirect");
-    assert!(status.success(), "lean-ctx -c should exit cleanly");
+        .expect("failed to run sobre -c with file redirect");
+    assert!(status.success(), "sobre -c should exit cleanly");
 
     let file_content = std::fs::read_to_string(&tmp).expect("read temp file");
     let _ = std::fs::remove_file(&tmp);
@@ -225,7 +225,7 @@ fn force_compress_pipe_still_compresses() {
     let piped = forced_compress_bin()
         .args(["-c", cmd])
         .output()
-        .expect("failed to run lean-ctx -c with piped stdout");
+        .expect("failed to run sobre -c with piped stdout");
     let piped_stdout = String::from_utf8_lossy(&piped.stdout).to_string();
 
     assert_ne!(
@@ -238,10 +238,10 @@ fn force_compress_pipe_still_compresses() {
 
 #[test]
 fn binary_gain_json_returns_valid_json() {
-    let output = lean_ctx_bin()
+    let output = sobre_bin()
         .args(["gain", "--json"])
         .output()
-        .expect("failed to run lean-ctx gain --json");
+        .expect("failed to run sobre gain --json");
     assert!(
         output.status.success(),
         "gain --json should succeed: {}\nstderr: {}",
@@ -258,13 +258,13 @@ fn binary_gain_json_returns_valid_json() {
 
 #[test]
 fn binary_doctor_runs_without_crash() {
-    let output = lean_ctx_bin()
+    let output = sobre_bin()
         .arg("doctor")
         .output()
-        .expect("failed to run lean-ctx doctor");
+        .expect("failed to run sobre doctor");
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(
-        stdout.contains("lean-ctx")
+        stdout.contains("sobre")
             || stdout.contains("doctor")
             || stdout.contains("✓")
             || stdout.contains("check"),
@@ -278,13 +278,13 @@ fn pipe_guard_rust_side_defense_in_depth() {
         return;
     }
     let script = "for i in 1 2 3 4 5; do echo \"item_$i: $(date +%s)\"; done";
-    let output = Command::new(env!("CARGO_BIN_EXE_lean-ctx"))
+    let output = Command::new(env!("CARGO_BIN_EXE_sobre"))
         .current_dir(env!("CARGO_MANIFEST_DIR"))
-        .env("LEAN_CTX_STATE_DIR", isolated_state_dir())
-        .env("LEAN_CTX_CONFIG_DIR", isolated_config_dir())
+        .env("SOBRE_STATE_DIR", isolated_state_dir())
+        .env("SOBRE_CONFIG_DIR", isolated_config_dir())
         .args(["-c", script])
         .output()
-        .expect("failed to run lean-ctx -c");
+        .expect("failed to run sobre -c");
     let stdout = String::from_utf8_lossy(&output.stdout);
     for i in 1..=5 {
         assert!(

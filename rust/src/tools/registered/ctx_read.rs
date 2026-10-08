@@ -276,7 +276,7 @@ impl CtxReadTool {
         // Compaction-aware: if host compacted since last check, reset delivery flags
         // so post-compaction reads deliver full content instead of stubs.
         if !fresh
-            && let Ok(data_dir) = crate::core::data_dir::lean_ctx_data_dir()
+            && let Ok(data_dir) = crate::core::data_dir::sobre_data_dir()
             && let Ok(mut cache) = cache_lock.try_write()
         {
             crate::server::compaction_sync::sync_if_compacted(&mut cache, &data_dir);

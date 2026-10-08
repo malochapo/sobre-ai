@@ -2,7 +2,7 @@
 //!
 //! Editors such as VS Code, Copilot and Cursor support a project-local
 //! MCP config (e.g. `.vscode/mcp.json`) in addition to the user-global one.
-//! When lean-ctx is registered in BOTH scopes — or when a workspace config is
+//! When sobre is registered in BOTH scopes — or when a workspace config is
 //! malformed — Copilot/VS Code surface opaque runtime errors later, e.g.
 //! `Collection or definition not found for mcp.config.ws0` or
 //! "Tool … was not contributed". This module gives `doctor` a clear, early
@@ -71,7 +71,7 @@ pub(super) fn workspace_scope_outcome(
         }
         match crate::core::jsonc::parse_jsonc(&content) {
             Ok(_) => {
-                if super::has_lean_ctx_mcp_entry(&content) {
+                if super::has_sobre_mcp_entry(&content) {
                     registered.push((loc, format!("{} ({})", loc.label, loc.rel)));
                 }
             }
@@ -103,7 +103,7 @@ pub(super) fn workspace_scope_outcome(
     //
     // This is informational (WARN), not a hard failure: dual-scope *can* cause
     // Copilot "ws0 not found" errors, but is also the expected state when
-    // running inside the lean-ctx repo itself (the workspace config is part of
+    // running inside the sobre repo itself (the workspace config is part of
     // the distribution). Marking it `ok: true` keeps it out of the failure
     // count while still surfacing the hint.
     let duplicated: Vec<String> = registered
@@ -120,7 +120,7 @@ pub(super) fn workspace_scope_outcome(
         return Some(Outcome {
             ok: true,
             line: format!(
-                "{BOLD}Workspace MCP{RST}  {YELLOW}lean-ctx registered in BOTH user and \
+                "{BOLD}Workspace MCP{RST}  {YELLOW}sobre registered in BOTH user and \
                  workspace scope{RST} {DIM}({}){RST}  {DIM}(keep only one scope — duplicate \
                  registration can cause Copilot 'ws0 not found' / 'tool not contributed' \
                  errors){RST}",
@@ -133,7 +133,7 @@ pub(super) fn workspace_scope_outcome(
     Some(Outcome {
         ok: true,
         line: format!(
-            "{BOLD}Workspace MCP{RST}  {GREEN}lean-ctx found in workspace scope: {}{RST}",
+            "{BOLD}Workspace MCP{RST}  {GREEN}sobre found in workspace scope: {}{RST}",
             registered
                 .into_iter()
                 .map(|(_, display)| display)
@@ -143,7 +143,7 @@ pub(super) fn workspace_scope_outcome(
     })
 }
 
-/// Removes lean-ctx from workspace-scope MCP configs when user-scope already
+/// Removes sobre from workspace-scope MCP configs when user-scope already
 /// has it registered. Called by `doctor --fix` to resolve the dual-scope conflict.
 /// Returns the number of files cleaned up.
 pub(super) fn fix_workspace_dual_scope(user_scope_mcp_locations: &BTreeSet<&'static str>) -> usize {
@@ -167,17 +167,17 @@ pub(super) fn fix_workspace_dual_scope(user_scope_mcp_locations: &BTreeSet<&'sta
         let Ok(content) = std::fs::read_to_string(&path) else {
             continue;
         };
-        if content.trim().is_empty() || !super::has_lean_ctx_mcp_entry(&content) {
+        if content.trim().is_empty() || !super::has_sobre_mcp_entry(&content) {
             continue;
         }
         if let Ok(mut json) = crate::core::jsonc::parse_jsonc(&content) {
-            let removed = remove_lean_ctx_from_json(&mut json);
+            let removed = remove_sobre_from_json(&mut json);
             if removed
                 && let Ok(out) = serde_json::to_string_pretty(&json)
                 && std::fs::write(&path, out.as_bytes()).is_ok()
             {
                 tracing::info!(
-                    "Removed lean-ctx from workspace-scope {} (user-scope preferred)",
+                    "Removed sobre from workspace-scope {} (user-scope preferred)",
                     path.display()
                 );
                 fixed += 1;
@@ -187,16 +187,16 @@ pub(super) fn fix_workspace_dual_scope(user_scope_mcp_locations: &BTreeSet<&'sta
     fixed
 }
 
-/// Remove lean-ctx server entries from a parsed JSON value.
-fn remove_lean_ctx_from_json(json: &mut serde_json::Value) -> bool {
+/// Remove sobre server entries from a parsed JSON value.
+fn remove_sobre_from_json(json: &mut serde_json::Value) -> bool {
     let containers = ["servers", "mcpServers"];
     let mut removed = false;
     for key in containers {
         if let Some(obj) = json.get_mut(key).and_then(|m| m.as_object_mut()) {
-            if obj.remove("lean-ctx").is_some() {
+            if obj.remove("sobre").is_some() {
                 removed = true;
             }
-            if obj.remove("user-lean-ctx").is_some() {
+            if obj.remove("user-sobre").is_some() {
                 removed = true;
             }
         }
@@ -245,14 +245,14 @@ mod tests {
         write(
             tmp.path(),
             ".vscode/mcp.json",
-            r#"{"servers": {"lean-ctx": {"command": "lean-ctx"}}}"#,
+            r#"{"servers": {"sobre": {"command": "sobre"}}}"#,
         );
         let out = with_cwd(tmp.path(), || {
             workspace_scope_outcome(&BTreeSet::from(["VS Code"]))
         })
         .unwrap();
         // Dual-scope is a WARN (informational), not a hard failure — it's the
-        // expected state inside the lean-ctx repo itself.
+        // expected state inside the sobre repo itself.
         assert!(out.ok, "dual-scope should be ok:true (informational WARN)");
         assert!(out.line.contains("BOTH user and"));
     }
@@ -263,7 +263,7 @@ mod tests {
         write(
             tmp.path(),
             ".vscode/mcp.json",
-            r#"{"servers": {"lean-ctx": {"command": "lean-ctx"}}}"#,
+            r#"{"servers": {"sobre": {"command": "sobre"}}}"#,
         );
         let out = with_cwd(tmp.path(), || workspace_scope_outcome(&BTreeSet::new())).unwrap();
         assert!(out.ok);
@@ -274,11 +274,7 @@ mod tests {
     fn malformed_workspace_config_is_flagged() {
         let tmp = tempfile::tempdir().unwrap();
         // Unbalanced braces — not recoverable even as JSONC.
-        write(
-            tmp.path(),
-            ".vscode/mcp.json",
-            r#"{"servers": {"lean-ctx": "#,
-        );
+        write(tmp.path(), ".vscode/mcp.json", r#"{"servers": {"sobre": "#);
         let out = with_cwd(tmp.path(), || {
             workspace_scope_outcome(&BTreeSet::from(["VS Code"]))
         })
@@ -293,7 +289,7 @@ mod tests {
         write(
             tmp.path(),
             ".vscode/mcp.json",
-            r#"{"servers": {"lean-ctx": {"command": "lean-ctx"}}}"#,
+            r#"{"servers": {"sobre": {"command": "sobre"}}}"#,
         );
         let out = with_cwd(tmp.path(), || {
             workspace_scope_outcome(&BTreeSet::from(["GitHub Copilot CLI"]))
@@ -310,7 +306,7 @@ mod tests {
         write(
             tmp.path(),
             ".vscode/mcp.json",
-            "{\n  \"servers\": {\n    \"lean-ctx\": { \"command\": \"lean-ctx\" },\n  },\n}",
+            "{\n  \"servers\": {\n    \"sobre\": { \"command\": \"sobre\" },\n  },\n}",
         );
         let out = with_cwd(tmp.path(), || workspace_scope_outcome(&BTreeSet::new())).unwrap();
         assert!(out.ok, "JSONC with trailing commas must parse cleanly");
@@ -322,7 +318,7 @@ mod tests {
         write(
             tmp.path(),
             ".vscode/mcp.json",
-            r#"{"servers": {"lean-ctx": {"command": "lean-ctx"}}}"#,
+            r#"{"servers": {"sobre": {"command": "sobre"}}}"#,
         );
         let fixed = with_cwd(tmp.path(), || {
             fix_workspace_dual_scope(&BTreeSet::from(["GitHub Copilot CLI"]))
@@ -330,7 +326,7 @@ mod tests {
         assert_eq!(fixed, 0);
 
         let content = fs::read_to_string(tmp.path().join(".vscode/mcp.json")).unwrap();
-        assert!(content.contains("lean-ctx"));
+        assert!(content.contains("sobre"));
     }
 
     #[test]
@@ -339,7 +335,7 @@ mod tests {
         write(
             tmp.path(),
             ".vscode/mcp.json",
-            r#"{"servers": {"lean-ctx": {"command": "lean-ctx"}}}"#,
+            r#"{"servers": {"sobre": {"command": "sobre"}}}"#,
         );
         let fixed = with_cwd(tmp.path(), || {
             fix_workspace_dual_scope(&BTreeSet::from(["VS Code"]))
@@ -347,6 +343,6 @@ mod tests {
         assert_eq!(fixed, 1);
 
         let content = fs::read_to_string(tmp.path().join(".vscode/mcp.json")).unwrap();
-        assert!(!content.contains("lean-ctx"));
+        assert!(!content.contains("sobre"));
     }
 }

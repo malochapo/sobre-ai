@@ -52,7 +52,7 @@ impl KnowledgeArchetype {
     }
 
     /// Stable lowercase token used as the Open Knowledge Format (OKF) `type`
-    /// field and in `leanctx_archetype`. Single words, so snake_case == the
+    /// field and in `sobre_archetype`. Single words, so snake_case == the
     /// serde name; kept as an explicit method to avoid a serde round-trip on
     /// the export hot path and to give a symmetric [`Self::from_type_str`].
     pub fn as_type_str(&self) -> &'static str {
@@ -70,7 +70,7 @@ impl KnowledgeArchetype {
         }
     }
 
-    /// Inverse of [`Self::as_type_str`]. Foreign OKF `type` values that lean-ctx
+    /// Inverse of [`Self::as_type_str`]. Foreign OKF `type` values that sobre
     /// does not model fall back to [`Self::Fact`] — OKF only mandates `type`, so
     /// an unknown producer type is imported as a plain fact rather than rejected.
     pub fn from_type_str(s: &str) -> Self {
@@ -155,7 +155,7 @@ pub struct Contradiction {
 
 /// Outcome of a write-time admission decision (#970), returned by
 /// `ProjectKnowledge::remember_admitted`. It is the difference between "the agent
-/// asked to store X" and "what lean-ctx actually persisted".
+/// asked to store X" and "what sobre actually persisted".
 #[derive(Debug, Clone)]
 pub enum AdmissionResult {
     /// Inserted / confirmed / superseded the normal way; carries any

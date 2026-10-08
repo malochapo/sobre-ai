@@ -1,17 +1,17 @@
 //! End-to-end anti-inflation guarantee for reads (#361). This exercises the
-//! SHIPPED binary end-to-end (`lean-ctx call ctx_read`: resolver → frame → cap
+//! SHIPPED binary end-to-end (`sobre call ctx_read`: resolver → frame → cap
 //! → print) and proves that an `auto` read can never emit more tokens than the
 //! bare file. It complements the in-process `cap_to_raw` unit tests.
 
 use std::path::Path;
 use std::process::Command;
 
-use lean_ctx::core::tokens::count_tokens;
+use sobre::core::tokens::count_tokens;
 
-/// Runs an `auto` read of `file` through `lean-ctx call ctx_read` fully
+/// Runs an `auto` read of `file` through `sobre call ctx_read` fully
 /// hermetically and returns stdout.
 ///
-/// Isolation: `HOME`/XDG point at empty temp dirs and `LEAN_CTX_DATA_DIR`
+/// Isolation: `HOME`/XDG point at empty temp dirs and `SOBRE_DATA_DIR`
 /// keeps stat tracking out of the real data dir.
 fn read_auto(bin: &str, home: &Path, data_dir: &Path, file: &Path) -> String {
     let json = serde_json::json!({ "path": file, "mode": "auto" }).to_string();
@@ -22,9 +22,9 @@ fn read_auto(bin: &str, home: &Path, data_dir: &Path, file: &Path) -> String {
         .env("HOME", home)
         .env("XDG_DATA_HOME", home.join("share"))
         .env("XDG_CONFIG_HOME", home.join("config"))
-        .env("LEAN_CTX_DATA_DIR", data_dir)
+        .env("SOBRE_DATA_DIR", data_dir)
         .output()
-        .expect("run lean-ctx call ctx_read");
+        .expect("run sobre call ctx_read");
     assert!(
         out.status.success(),
         "read failed for {}: {}",
@@ -36,7 +36,7 @@ fn read_auto(bin: &str, home: &Path, data_dir: &Path, file: &Path) -> String {
 
 #[test]
 fn auto_read_never_inflates_tiny_files() {
-    let bin = env!("CARGO_BIN_EXE_lean-ctx");
+    let bin = env!("CARGO_BIN_EXE_sobre");
     let dir = tempfile::tempdir().unwrap();
     let home = tempfile::tempdir().unwrap();
     let data = tempfile::tempdir().unwrap();

@@ -55,7 +55,7 @@ pub fn accelerate(engine: &mut Engine, delta: u32) -> u32 {
 }
 ";
 
-/// Fully isolated lean-ctx environment with a one-file project tree.
+/// Fully isolated sobre environment with a one-file project tree.
 struct McpSandbox {
     _root: tempfile::TempDir,
     home: PathBuf,
@@ -94,12 +94,12 @@ impl McpSandbox {
     }
 
     fn base_command(&self) -> Command {
-        let mut cmd = Command::new(env!("CARGO_BIN_EXE_lean-ctx"));
+        let mut cmd = Command::new(env!("CARGO_BIN_EXE_sobre"));
         cmd.env("HOME", &self.home)
-            .env("LEAN_CTX_CONFIG_DIR", &self.config)
-            .env("LEAN_CTX_DATA_DIR", &self.data)
-            .env("LEAN_CTX_STATE_DIR", &self.state)
-            .env("LEAN_CTX_CACHE_DIR", &self.cache)
+            .env("SOBRE_CONFIG_DIR", &self.config)
+            .env("SOBRE_DATA_DIR", &self.data)
+            .env("SOBRE_STATE_DIR", &self.state)
+            .env("SOBRE_CACHE_DIR", &self.cache)
             // Resolve the project root synchronously from the host env, as
             // Claude Code sets it (no async
             // client-roots / cwd race) so the auto-context overview is live on
@@ -117,7 +117,7 @@ impl McpSandbox {
             .args(["index", "build", "--root"])
             .arg(&self.project)
             .output()
-            .expect("spawn lean-ctx index build");
+            .expect("spawn sobre index build");
         assert!(
             out.status.success(),
             "index build failed: {}\nstdout:\n{}\nstderr:\n{}",
@@ -146,7 +146,7 @@ impl McpSession {
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
             .spawn()
-            .expect("spawn lean-ctx mcp");
+            .expect("spawn sobre mcp");
         let stdin = child.stdin.take().expect("mcp stdin");
         let stdout = child.stdout.take().expect("mcp stdout");
         let mut session = Self {

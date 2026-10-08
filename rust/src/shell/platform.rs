@@ -16,7 +16,7 @@ pub(crate) fn apply_utf8_locale(cmd: &mut std::process::Command) {
 
 /// Neutralizes inherited startup-file hooks so a non-login/non-interactive
 /// `sh -c` / `bash -c` cannot be hijacked into sourcing a profile or rc file
-/// (#451). lean-ctx runs the system POSIX shell profile-free and deterministic;
+/// (#451). sobre runs the system POSIX shell profile-free and deterministic;
 /// a stray inherited `BASH_ENV` (read by bash even for `bash -c`) or `ENV`
 /// pointing at e.g. an `exec nu` snippet would otherwise silently replace the
 /// shell. Cleared to empty so the expansion names no file. No-op in effect for
@@ -26,7 +26,7 @@ pub(crate) fn apply_profile_free_env(cmd: &mut std::process::Command) {
 }
 
 /// Block SIGPIPE in the calling thread only. CLI runs restore the default
-/// SIGPIPE disposition (so `lean-ctx … | head` exits quietly), which would
+/// SIGPIPE disposition (so `sobre … | head` exits quietly), which would
 /// otherwise kill the whole process when this thread writes to a child that
 /// already exited. Blocked here, that write fails with EPIPE instead, and the
 /// thread-directed signal is discarded when the thread ends. Call it only on
@@ -223,7 +223,7 @@ pub(super) fn detect_shell() -> String {
             .and_then(|n| n.to_str())
             .unwrap_or("sh");
 
-        if bin == "lean-ctx" {
+        if bin == "sobre" {
             return find_real_shell();
         }
         // #451: `$SHELL` is the user's *interactive* shell preference, not the
@@ -243,7 +243,7 @@ pub(super) fn detect_shell() -> String {
 /// Whether a `$SHELL` value may be auto-selected as the command-execution shell.
 ///
 /// On Unix this rejects non-POSIX interactive shells (Nushell, Fish, Elvish,
-/// xonsh, PowerShell) so lean-ctx never feeds them bash/POSIX syntax (#451). On
+/// xonsh, PowerShell) so sobre never feeds them bash/POSIX syntax (#451). On
 /// Windows the intended shells *are* PowerShell/cmd, so any `$SHELL` is honored
 /// (the POSIX gate would wrongly reject them).
 #[cfg(unix)]
@@ -657,7 +657,7 @@ mod platform_tests {
         );
     }
 
-    // #451: a non-interactive `bash -c` sources $BASH_ENV. lean-ctx must run
+    // #451: a non-interactive `bash -c` sources $BASH_ENV. sobre must run
     // profile-free, so `apply_profile_free_env` has to neutralize an inherited
     // BASH_ENV before it can pull in a contaminating startup file.
     #[cfg(unix)]
@@ -671,7 +671,7 @@ mod platform_tests {
         };
 
         let startup = std::env::temp_dir().join(format!(
-            "lean_ctx_bashenv_{}_{}.sh",
+            "sobre_bashenv_{}_{}.sh",
             std::process::id(),
             "guard"
         ));

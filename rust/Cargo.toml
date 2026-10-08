@@ -5,7 +5,7 @@ members = [
 default-members = ["."]
 
 [package]
-name = "lean-ctx"
+name = "sobre"
 version = "3.9.12"
 edition = "2024"
 autobins = false
@@ -26,14 +26,14 @@ pkg-fmt = "zip"
 pkg-url = "{ repo }/releases/download/v{ version }/{ name }-{ target }.zip"
 
 [lib]
-name = "lean_ctx"
+name = "sobre"
 path = "src/lib.rs"
 # No doctests exist (doc comments hold only `text` and `toml` blocks); without
 # this, every `cargo test` runs rustdoc over the whole crate for nothing.
 doctest = false
 
 [[bin]]
-name = "lean-ctx"
+name = "sobre"
 path = "src/main.rs"
 # main.rs has no tests: skip building an empty test harness for the binary.
 test = false

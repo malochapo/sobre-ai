@@ -1,14 +1,14 @@
-use lean_ctx::core::compressor::{aggressive_compress, lightweight_cleanup, safeguard_ratio};
-use lean_ctx::core::config::CompressionLevel;
-use lean_ctx::core::entropy::entropy_compress_adaptive;
-use lean_ctx::core::signatures::extract_signatures;
-use lean_ctx::core::tokens::count_tokens;
-use lean_ctx::tools::CrpMode;
+use sobre::core::compressor::{aggressive_compress, lightweight_cleanup, safeguard_ratio};
+use sobre::core::config::CompressionLevel;
+use sobre::core::entropy::entropy_compress_adaptive;
+use sobre::core::signatures::extract_signatures;
+use sobre::core::tokens::count_tokens;
+use sobre::tools::CrpMode;
 
 /// The instructions with no output style, so budgets do not move with the
 /// developer's own `compression_level`.
 fn instructions_at_off(crp: CrpMode) -> String {
-    lean_ctx::instructions::render(CompressionLevel::Off, crp)
+    sobre::instructions::render(CompressionLevel::Off, crp)
 }
 
 // ---------------------------------------------------------------------------
@@ -24,7 +24,7 @@ fn compression_ratio(original: usize, compressed: usize) -> f64 {
 
 fn measure_pattern(command: &str, output: &str) -> (usize, usize, f64) {
     let original = count_tokens(output);
-    let compressed = lean_ctx::core::patterns::compress_output(command, output)
+    let compressed = sobre::core::patterns::compress_output(command, output)
         .unwrap_or_else(|| output.to_string());
     let comp_tokens = count_tokens(&compressed);
     (
@@ -112,7 +112,7 @@ fn bench_system_instructions_token_count() {
 
 #[test]
 fn bench_tool_descriptions_token_count() {
-    let descriptions = lean_ctx::server::tool_descriptions_for_test();
+    let descriptions = sobre::server::tool_descriptions_for_test();
 
     let mut total = 0usize;
     eprintln!("\n{}", "=".repeat(70));
@@ -175,8 +175,8 @@ fn bench_tool_descriptions_token_count() {
 #[test]
 fn bench_total_input_overhead() {
     let instructions = instructions_at_off(CrpMode::Off);
-    let descs = lean_ctx::server::tool_descriptions_for_test();
-    let schemas = lean_ctx::server::tool_schemas_json_for_test();
+    let descs = sobre::server::tool_descriptions_for_test();
+    let schemas = sobre::server::tool_schemas_json_for_test();
 
     let instr_tokens = count_tokens(&instructions);
     let desc_tokens: usize = descs.iter().map(|(_, d)| count_tokens(d)).sum();
@@ -501,7 +501,7 @@ fn bench_rrf_eviction_handles_single_entry() {
 
     let now = Instant::now();
     let key = "solo.rs".to_string();
-    let entry = lean_ctx::core::cache::CacheEntry::new(
+    let entry = sobre::core::cache::CacheEntry::new(
         "single",
         "h".to_string(),
         1,
@@ -510,8 +510,8 @@ fn bench_rrf_eviction_handles_single_entry() {
         None,
     );
 
-    let refs: Vec<(&String, &lean_ctx::core::cache::CacheEntry)> = vec![(&key, &entry)];
-    let scores = lean_ctx::core::cache::eviction_scores_rrf(&refs, now);
+    let refs: Vec<(&String, &sobre::core::cache::CacheEntry)> = vec![(&key, &entry)];
+    let scores = sobre::core::cache::eviction_scores_rrf(&refs, now);
     assert_eq!(scores.len(), 1);
     assert!(
         scores[0].1 > 0.0,
@@ -523,7 +523,7 @@ fn bench_rrf_eviction_handles_single_entry() {
 fn bench_rrf_eviction_empty() {
     use std::time::Instant;
     let now = Instant::now();
-    let scores = lean_ctx::core::cache::eviction_scores_rrf(&[], now);
+    let scores = sobre::core::cache::eviction_scores_rrf(&[], now);
     assert!(scores.is_empty());
 }
 
@@ -646,7 +646,7 @@ fn guard_pattern_never_inflates() {
     ];
 
     for (cmd, output) in &commands {
-        if let Some(compressed) = lean_ctx::core::patterns::compress_output(cmd, output) {
+        if let Some(compressed) = sobre::core::patterns::compress_output(cmd, output) {
             let orig = count_tokens(output);
             let comp = count_tokens(&compressed);
             assert!(
@@ -660,7 +660,7 @@ fn guard_pattern_never_inflates() {
 
 #[test]
 fn guard_tool_descriptions_not_empty() {
-    let descs = lean_ctx::server::tool_descriptions_for_test();
+    let descs = sobre::server::tool_descriptions_for_test();
     for (name, desc) in &descs {
         assert!(
             !desc.is_empty(),
@@ -1202,7 +1202,7 @@ fn generate_git_log_stat(n: usize) -> String {
 // v3.4.1 Optimization benchmarks: Token overhead + Latency
 // ---------------------------------------------------------------------------
 
-/// Points `LEAN_CTX_DATA_DIR` at a fresh temp dir for the guard's lifetime and
+/// Points `SOBRE_DATA_DIR` at a fresh temp dir for the guard's lifetime and
 /// restores the previous value on drop. Callers hold `test_env_lock()`.
 struct TempConfig {
     _dir: tempfile::TempDir,
@@ -1212,9 +1212,9 @@ struct TempConfig {
 impl TempConfig {
     fn new() -> Self {
         let dir = tempfile::tempdir().expect("tempdir");
-        let prev_data_dir = std::env::var("LEAN_CTX_DATA_DIR").ok();
+        let prev_data_dir = std::env::var("SOBRE_DATA_DIR").ok();
         // SAFETY: serialized by `test_env_lock()`.
-        unsafe { std::env::set_var("LEAN_CTX_DATA_DIR", dir.path()) };
+        unsafe { std::env::set_var("SOBRE_DATA_DIR", dir.path()) };
         Self {
             _dir: dir,
             prev_data_dir,
@@ -1226,9 +1226,9 @@ impl Drop for TempConfig {
     fn drop(&mut self) {
         match self.prev_data_dir.take() {
             // SAFETY: serialized by `test_env_lock()`.
-            Some(v) => unsafe { std::env::set_var("LEAN_CTX_DATA_DIR", v) },
+            Some(v) => unsafe { std::env::set_var("SOBRE_DATA_DIR", v) },
             // SAFETY: serialized by `test_env_lock()`.
-            None => unsafe { std::env::remove_var("LEAN_CTX_DATA_DIR") },
+            None => unsafe { std::env::remove_var("SOBRE_DATA_DIR") },
         }
     }
 }
@@ -1237,7 +1237,7 @@ impl Drop for TempConfig {
 fn bench_minimal_overhead_suppresses_all_meta_strings() {
     // The data dir is process-global; serialize against the other instruction
     // benchmarks.
-    let _lock = lean_ctx::core::data_dir::test_env_lock();
+    let _lock = sobre::core::data_dir::test_env_lock();
     let _config = TempConfig::new();
 
     let instructions = instructions_at_off(CrpMode::Tdd);
@@ -1257,8 +1257,8 @@ fn bench_minimal_overhead_suppresses_all_meta_strings() {
 
 #[test]
 fn bench_hash_fast_vs_full_correctness() {
-    use lean_ctx::core::hasher::hash_str;
-    use lean_ctx::server::helpers::hash_fast;
+    use sobre::core::hasher::hash_str;
+    use sobre::server::helpers::hash_fast;
 
     let small = "a".repeat(1000);
     assert_eq!(
@@ -1345,7 +1345,7 @@ fn bench_count_tokens_cache_effectiveness() {
 
 #[test]
 fn bench_session_prepare_save_is_cpu_only() {
-    use lean_ctx::core::session::SessionState;
+    use sobre::core::session::SessionState;
 
     let mut session = SessionState::new();
     session.set_task("benchmark task for save split", None);
@@ -1388,7 +1388,7 @@ fn bench_session_prepare_save_is_cpu_only() {
 
 #[test]
 fn bench_session_save_semantics() {
-    use lean_ctx::core::session::SessionState;
+    use sobre::core::session::SessionState;
 
     let mut session = SessionState::new();
     for _ in 0..6 {

@@ -38,7 +38,7 @@ pub(crate) fn parent_dir_slash(path: &str) -> String {
 }
 
 pub(crate) fn sessions_dir() -> Option<PathBuf> {
-    crate::core::data_dir::lean_ctx_data_dir()
+    crate::core::data_dir::sobre_data_dir()
         .ok()
         .map(|d| d.join("sessions"))
 }

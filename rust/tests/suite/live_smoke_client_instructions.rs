@@ -1,9 +1,9 @@
 //! Live client-wiring smoke.
 //!
 //! Boots the REAL binary end-to-end, in an isolated HOME:
-//!   1. `lean-ctx init --agent <client>` installs the MCP registration and the
+//!   1. `sobre init --agent <client>` installs the MCP registration and the
 //!      skill, and writes no rules into the agent's own files,
-//!   2. `lean-ctx mcp` is spoken to over actual stdio JSON-RPC,
+//!   2. `sobre mcp` is spoken to over actual stdio JSON-RPC,
 //!   3. every client gets the same `initialize` instructions — the one rules
 //!      channel — and the same `tools/list` surface.
 
@@ -39,7 +39,7 @@ fn base_cmd(bin: &str, env: &TestEnv) -> Command {
     let mut cmd = Command::new(bin);
     cmd.current_dir(&env.project)
         .env("HOME", &env.home)
-        .env("LEAN_CTX_DATA_DIR", &env.data)
+        .env("SOBRE_DATA_DIR", &env.data)
         .env("CODEX_HOME", env.home.join(".codex"));
     cmd
 }
@@ -157,7 +157,7 @@ fn assert_full_surface(tools: &[String], client: &str) {
     // Invariant 3: every client sees the same surface, and it is the whole
     // registry. This used to mirror a per-client quirk that hid `ctx_patch`
     // from clients with a native editor.
-    let registered: Vec<String> = lean_ctx::server::registry::build_registry()
+    let registered: Vec<String> = sobre::server::registry::build_registry()
         .tool_defs()
         .into_iter()
         .map(|t| t.name.to_string())
@@ -176,7 +176,7 @@ fn assert_full_surface(tools: &[String], client: &str) {
     ignore = "HOME-override isolation is Unix-only (dirs::home_dir uses the Win32 API)"
 )]
 fn every_client_gets_the_same_instructions_and_no_rules_file() {
-    let bin = env!("CARGO_BIN_EXE_lean-ctx");
+    let bin = env!("CARGO_BIN_EXE_sobre");
     let env = test_env();
 
     for agent in ["cursor", "claude", "codex"] {
@@ -185,26 +185,26 @@ fn every_client_gets_the_same_instructions_and_no_rules_file() {
 
     // Wiring on disk: MCP registrations, and no rules written anywhere.
     let mcp_json = std::fs::read_to_string(env.home.join(".cursor/mcp.json")).expect("mcp.json");
-    assert!(mcp_json.contains("lean-ctx"), "mcp.json must register us");
+    assert!(mcp_json.contains("sobre"), "mcp.json must register us");
     assert!(
         !mcp_json.contains("instructions"),
         "the MCP entry carries no copy of the instructions"
     );
     let config = std::fs::read_to_string(env.home.join(".codex/config.toml")).expect("config");
-    assert!(config.contains("lean-ctx"), "config.toml must register us");
+    assert!(config.contains("sobre"), "config.toml must register us");
     for rules in [
-        ".cursor/rules/lean-ctx.mdc",
+        ".cursor/rules/sobre.mdc",
         ".claude/CLAUDE.md",
         ".codex/instructions.md",
         ".codex/AGENTS.md",
-        ".codex/LEAN-CTX.md",
+        ".codex/SOBRE.md",
     ] {
         assert!(
             !env.home.join(rules).exists(),
             "init must not write {rules}"
         );
     }
-    for name in ["AGENTS.md", "LEAN-CTX.md", "CLAUDE.md"] {
+    for name in ["AGENTS.md", "SOBRE.md", "CLAUDE.md"] {
         assert!(
             !env.project.join(name).exists(),
             "init must not write {name}"

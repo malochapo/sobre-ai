@@ -24,7 +24,7 @@ pub(crate) fn install_copilot_hook() {
     install_copilot_hooks();
 }
 
-/// Register lean-ctx in the Copilot CLI's global MCP config at
+/// Register sobre in the Copilot CLI's global MCP config at
 /// `~/.copilot/mcp-config.json`. Reuses the canonical `CopilotCli` writer so the
 /// entry format and merge behavior match `configure_agent_mcp`, and uses the
 /// portable binary path so repeated installs stay idempotent (no churn).
@@ -54,9 +54,9 @@ fn write_copilot_cli_home_mcp() {
                 use crate::core::editor_registry::WriteAction;
                 let label = "~/.copilot/mcp-config.json";
                 let msg = match result.action {
-                    WriteAction::Created => format!("Created {label} with lean-ctx MCP server"),
-                    WriteAction::Updated => format!("Added lean-ctx to {label}"),
-                    WriteAction::Already => format!("lean-ctx already configured in {label}"),
+                    WriteAction::Created => format!("Created {label} with sobre MCP server"),
+                    WriteAction::Updated => format!("Added sobre to {label}"),
+                    WriteAction::Already => format!("sobre already configured in {label}"),
                 };
                 eprintln!("  \x1b[32m✓\x1b[0m {msg}");
             }
@@ -159,7 +159,7 @@ fn is_sobre_entry(entry: &serde_json::Value) -> bool {
         entry
             .get(*k)
             .and_then(|c| c.as_str())
-            .is_some_and(|c| c.contains("lean-ctx") && c.contains(" hook "))
+            .is_some_and(|c| c.contains("sobre") && c.contains(" hook "))
     })
 }
 
@@ -190,29 +190,27 @@ fn write_mcp_config(
                 if let Some(obj) = json.as_object_mut() {
                     let servers = obj.entry(root_key).or_insert_with(|| serde_json::json!({}));
                     if let Some(servers_obj) = servers.as_object_mut() {
-                        if servers_obj.get("lean-ctx") == Some(&desired) {
+                        if servers_obj.get("sobre") == Some(&desired) {
                             if !mcp_server_quiet_mode() {
-                                eprintln!(
-                                    "  \x1b[32m✓\x1b[0m lean-ctx already configured in {label}"
-                                );
+                                eprintln!("  \x1b[32m✓\x1b[0m sobre already configured in {label}");
                             }
                             return;
                         }
-                        servers_obj.insert("lean-ctx".to_string(), desired);
+                        servers_obj.insert("sobre".to_string(), desired);
                     }
                     write_file(
                         mcp_path,
                         &serde_json::to_string_pretty(&json).unwrap_or_default(),
                     );
                     if !mcp_server_quiet_mode() {
-                        eprintln!("  \x1b[32m✓\x1b[0m Added lean-ctx to {label}");
+                        eprintln!("  \x1b[32m✓\x1b[0m Added sobre to {label}");
                     }
                     return;
                 }
             }
             Err(e) => {
                 tracing::warn!(
-                    "Could not parse MCP config at {}: {e}\nAdd to \"{root_key}\": \"lean-ctx\": {{ \"command\": \"{}\", \"args\": [] }}",
+                    "Could not parse MCP config at {}: {e}\nAdd to \"{root_key}\": \"sobre\": {{ \"command\": \"{}\", \"args\": [] }}",
                     mcp_path.display(),
                     binary
                 );
@@ -227,7 +225,7 @@ fn write_mcp_config(
 
     let config = serde_json::json!({
         root_key: {
-            "lean-ctx": desired
+            "sobre": desired
         }
     });
 
@@ -236,7 +234,7 @@ fn write_mcp_config(
         &serde_json::to_string_pretty(&config).unwrap_or_default(),
     );
     if !mcp_server_quiet_mode() {
-        eprintln!("  \x1b[32m✓\x1b[0m Created {label} with lean-ctx MCP server");
+        eprintln!("  \x1b[32m✓\x1b[0m Created {label} with sobre MCP server");
     }
 }
 
@@ -247,29 +245,26 @@ mod tests {
     #[test]
     fn hook_entry_carries_bash_and_powershell_with_quoting() {
         // Windows-style install path with a space — the #381 failure shape.
-        let entry = copilot_hook_entry(
-            r"C:\Users\Jane Doe\AppData\Local\lean-ctx.exe",
-            "compress",
-            15,
-        );
+        let entry =
+            copilot_hook_entry(r"C:\Users\Jane Doe\AppData\Local\sobre.exe", "compress", 15);
         assert_eq!(
-            entry["bash"], "\"/c/Users/Jane Doe/AppData/Local/lean-ctx.exe\" hook compress",
+            entry["bash"], "\"/c/Users/Jane Doe/AppData/Local/sobre.exe\" hook compress",
             "bash field must use a quoted MSYS-style path"
         );
         assert_eq!(
             entry["powershell"],
-            "& \"C:\\Users\\Jane Doe\\AppData\\Local\\lean-ctx.exe\" hook compress",
+            "& \"C:\\Users\\Jane Doe\\AppData\\Local\\sobre.exe\" hook compress",
             "powershell field must invoke the quoted native path via the call operator"
         );
         assert_eq!(entry["timeoutSec"], 15);
         assert_eq!(entry["type"], "command");
 
         // Unix paths stay untouched (modulo quoting).
-        let unix = copilot_hook_entry("/usr/local/bin/lean-ctx", "observe", 5);
-        assert_eq!(unix["bash"], "\"/usr/local/bin/lean-ctx\" hook observe");
+        let unix = copilot_hook_entry("/usr/local/bin/sobre", "observe", 5);
+        assert_eq!(unix["bash"], "\"/usr/local/bin/sobre\" hook observe");
         assert_eq!(
             unix["powershell"],
-            "& \"/usr/local/bin/lean-ctx\" hook observe"
+            "& \"/usr/local/bin/sobre\" hook observe"
         );
     }
 }

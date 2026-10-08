@@ -175,7 +175,7 @@ mod tests {
     fn issue_198_gh_api_jq() {
         // gh api returns JSON — verbatim (API data)
         assert_eq!(
-            classify("gh api repos/yvgude/lean-ctx/issues/198 --jq '.body'", &[]),
+            classify("gh api repos/yvgude/sobre/issues/198 --jq '.body'", &[]),
             OutputPolicy::Verbatim
         );
     }
@@ -251,15 +251,12 @@ mod tests {
     }
 
     #[test]
-    fn lean_ctx_is_passthrough() {
+    fn sobre_is_passthrough() {
         assert_eq!(
-            classify("lean-ctx init powershell", &[]),
+            classify("sobre init powershell", &[]),
             OutputPolicy::Passthrough
         );
-        assert_eq!(
-            classify("lean-ctx overview", &[]),
-            OutputPolicy::Passthrough
-        );
+        assert_eq!(classify("sobre overview", &[]), OutputPolicy::Passthrough);
     }
 
     #[test]

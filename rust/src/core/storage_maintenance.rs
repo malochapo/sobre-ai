@@ -1,6 +1,6 @@
 //! Daemon-safe storage maintenance.
 //!
-//! Unlike the interactive `lean-ctx doctor --fix` (which reports what it
+//! Unlike the interactive `sobre doctor --fix` (which reports what it
 //! pruned), these routines are silent (tracing only) so they can run inside the MCP
 //! daemon without corrupting the stdio protocol. They remove accumulated
 //! quarantined BM25 indexes (#2364).
@@ -21,7 +21,7 @@ const QUARANTINED_FILES: &[&str] = &["bm25_index.bin.zst.quarantined"];
 fn prune_quarantined_bm25() -> (u32, u64) {
     let mut removed = 0u32;
     let mut freed = 0u64;
-    let Ok(data_dir) = crate::core::data_dir::lean_ctx_data_dir() else {
+    let Ok(data_dir) = crate::core::data_dir::sobre_data_dir() else {
         return (removed, freed);
     };
     let vectors_dir = data_dir.join("vectors");
@@ -72,7 +72,7 @@ mod tests {
     fn prune_removes_quarantined_files() {
         let _lock = crate::core::data_dir::test_env_lock();
         let tmp = tempfile::tempdir().unwrap();
-        crate::test_env::set_var("LEAN_CTX_DATA_DIR", tmp.path());
+        crate::test_env::set_var("SOBRE_DATA_DIR", tmp.path());
 
         let idx_dir = tmp.path().join("vectors").join("proj_abc");
         std::fs::create_dir_all(&idx_dir).unwrap();
@@ -88,6 +88,6 @@ mod tests {
             "live index must be preserved"
         );
 
-        crate::test_env::remove_var("LEAN_CTX_DATA_DIR");
+        crate::test_env::remove_var("SOBRE_DATA_DIR");
     }
 }

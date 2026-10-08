@@ -123,7 +123,7 @@ impl SessionState {
         // BEFORE scanning: the daemon boots with cwd "/" and previously walked
         // every stored session here, stat-ing each session's project_root /
         // shell_cwd. For roots under ~/Documents that probe popped the macOS
-        // TCC prompt in lean-ctx's name on every launchd (re)start (#356) —
+        // TCC prompt in sobre's name on every launchd (re)start (#356) —
         // and `shell_cwd.starts_with("/")` could even leak an arbitrary
         // project's session into the broad-root context.
         if crate::core::pathutil::is_broad_or_unsafe_root(std::path::Path::new(project_root)) {

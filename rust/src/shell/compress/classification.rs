@@ -839,7 +839,7 @@ enum ToonHeader {
 /// Classifies a single, already left-trimmed line as a TOON array header.
 ///
 /// Keys on TOON's bracketed length marker so prose like `see [1] above` or a
-/// stray `[lean-ctx: …]` footer is rejected (the key must be a single,
+/// stray `[sobre: …]` footer is rejected (the key must be a single,
 /// space-free identifier token preceding `[`).
 fn toon_header_kind(line: &str) -> Option<ToonHeader> {
     let open = line.find('[')?;
@@ -931,7 +931,7 @@ mod toon_tests {
 
     #[test]
     fn rejects_plain_yaml_without_toon_markers() {
-        let yaml = "name: lean-ctx\nversion: 3.7.2\nfeatures:\n  - compress\n  - read";
+        let yaml = "name: sobre\nversion: 3.7.2\nfeatures:\n  - compress\n  - read";
         assert!(!looks_like_toon(yaml));
     }
 
@@ -948,8 +948,8 @@ mod toon_tests {
     }
 
     #[test]
-    fn rejects_lean_ctx_footer_line() {
-        let line = "[lean-ctx: 120->40 tok, compressed]\nsome other content line";
+    fn rejects_sobre_footer_line() {
+        let line = "[sobre: 120->40 tok, compressed]\nsome other content line";
         assert!(!looks_like_toon(line));
     }
 

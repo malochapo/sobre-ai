@@ -1,4 +1,4 @@
-//! #476: `lean-ctx uninstall --help` (and `-h`) must print usage and remove
+//! #476: `sobre uninstall --help` (and `-h`) must print usage and remove
 //! NOTHING. Previously the `uninstall` dispatch arm ignored `--help`, so the
 //! flag fell through to a real, irreversible uninstall.
 //!
@@ -9,7 +9,7 @@
 use std::path::PathBuf;
 use std::process::{Command, Output};
 
-/// Isolated environment: HOME + all lean-ctx dirs redirected into a tempdir,
+/// Isolated environment: HOME + all sobre dirs redirected into a tempdir,
 /// with a marker file in the data dir whose survival proves "nothing removed".
 struct Sandbox {
     _root: tempfile::TempDir,
@@ -36,12 +36,12 @@ impl Sandbox {
     }
 
     fn run_uninstall(&self, flag: &str) -> Output {
-        Command::new(env!("CARGO_BIN_EXE_lean-ctx"))
+        Command::new(env!("CARGO_BIN_EXE_sobre"))
             .args(["uninstall", flag])
             .env("HOME", &self.home)
-            .env("LEAN_CTX_DATA_DIR", &self.data)
+            .env("SOBRE_DATA_DIR", &self.data)
             .output()
-            .expect("spawn lean-ctx uninstall")
+            .expect("spawn sobre uninstall")
     }
 }
 

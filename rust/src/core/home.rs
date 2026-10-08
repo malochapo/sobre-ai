@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-/// Codex profile name exported by launchers, honoured when lean-ctx runs
+/// Codex profile name exported by launchers, honoured when sobre runs
 /// outside the Codex process that received `--profile`.
 pub const CODEX_PROFILE_ENV: &str = "CODEX_PROFILE";
 
@@ -24,7 +24,7 @@ impl CodexConfigPaths {
         self.profile.as_deref()
     }
 
-    /// Path lean-ctx should write for the active Codex configuration.
+    /// Path sobre should write for the active Codex configuration.
     pub fn effective(&self) -> &Path {
         self.profile().unwrap_or_else(|| self.base())
     }
@@ -131,7 +131,7 @@ pub fn resolve_codex_config_paths() -> Option<CodexConfigPaths> {
     Some(codex_config_paths_at(&codex_dir, profile_name))
 }
 
-/// Resolve the path lean-ctx should write for the active Codex profile.
+/// Resolve the path sobre should write for the active Codex profile.
 pub fn resolve_codex_config_path() -> Option<PathBuf> {
     resolve_codex_config_paths().map(|paths| paths.effective().to_path_buf())
 }

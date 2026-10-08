@@ -1,13 +1,13 @@
 //! E2E tests for shell detection (`$SHELL`),
 //! agent init, Windows path handling,
-//! and pipe-guard (stdout not a terminal → bypass lean-ctx).
+//! and pipe-guard (stdout not a terminal → bypass sobre).
 // noqa: SIZE_OK — single-responsibility E2E test module for the CLI binary.
 
 use std::io::Write;
 use std::process::{Command, Stdio};
 
-fn lean_ctx_bin() -> String {
-    env!("CARGO_BIN_EXE_lean-ctx").to_string()
+fn sobre_bin() -> String {
+    env!("CARGO_BIN_EXE_sobre").to_string()
 }
 
 fn run_with_env(
@@ -15,7 +15,7 @@ fn run_with_env(
     env_vars: &[(&str, &str)],
     stdin_data: Option<&str>,
 ) -> (String, String, i32) {
-    let mut cmd = Command::new(lean_ctx_bin());
+    let mut cmd = Command::new(sobre_bin());
     cmd.args(args)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -25,7 +25,7 @@ fn run_with_env(
         cmd.env(k, v);
     }
 
-    let mut child = cmd.spawn().expect("failed to spawn lean-ctx");
+    let mut child = cmd.spawn().expect("failed to spawn sobre");
 
     if let Some(data) = stdin_data {
         child
@@ -48,7 +48,7 @@ fn run_hook_test(
     env_vars: &[(&str, &str)],
     stdin_data: Option<&str>,
 ) -> (String, String, i32) {
-    let mut cmd = Command::new(lean_ctx_bin());
+    let mut cmd = Command::new(sobre_bin());
     cmd.args(args)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -58,7 +58,7 @@ fn run_hook_test(
         cmd.env(k, v);
     }
 
-    let mut child = cmd.spawn().expect("failed to spawn lean-ctx");
+    let mut child = cmd.spawn().expect("failed to spawn sobre");
 
     if let Some(data) = stdin_data {
         child
@@ -82,13 +82,13 @@ fn posix_shell_from_env_is_used() {
         return; // /bin/sh not available on Windows
     }
     let (stdout, _stderr, code) = run_with_env(
-        &["-c", "echo lean_ctx_shell_works"],
+        &["-c", "echo sobre_shell_works"],
         &[("SHELL", "/bin/sh")],
         None,
     );
     assert_eq!(code, 0, "should succeed with /bin/sh");
     assert!(
-        stdout.contains("lean_ctx_shell_works"),
+        stdout.contains("sobre_shell_works"),
         "should see echo output: {stdout}"
     );
 }
@@ -150,8 +150,8 @@ fn shell_exec_env_var_expansion() {
         return; // $VAR syntax is bash-only; PowerShell uses $env:VAR
     }
     let (stdout, _stderr, code) = run_with_env(
-        &["-c", "echo $TEST_LEAN_CTX_VAR"],
-        &[("TEST_LEAN_CTX_VAR", "expanded_value")],
+        &["-c", "echo $TEST_SOBRE_VAR"],
+        &[("TEST_SOBRE_VAR", "expanded_value")],
         None,
     );
     assert_eq!(code, 0);
@@ -205,7 +205,7 @@ fn hook_compress_replaces_long_bash_output_with_a_labelled_copy() {
     .to_string();
     let (stdout, stderr, code) = run_hook_test(
         &["hook", "compress"],
-        &[("HOME", &home_s), ("LEAN_CTX_DATA_DIR", &home_s)],
+        &[("HOME", &home_s), ("SOBRE_DATA_DIR", &home_s)],
         Some(&input),
     );
     assert_eq!(code, 0, "hook compress must not fail: {stderr}");
@@ -231,7 +231,7 @@ fn hook_cursor_wraps_known_commands_without_a_permission_decision() {
     let input = r#"{"tool_name":"Shell","tool_input":{"command":"git status"}}"#;
     let (stdout, stderr, code) = run_hook_test(
         &["hook", "cursor"],
-        &[("HOME", &home_s), ("LEAN_CTX_DATA_DIR", &home_s)],
+        &[("HOME", &home_s), ("SOBRE_DATA_DIR", &home_s)],
         Some(input),
     );
     assert_eq!(code, 0, "hook cursor must not fail: {stderr}");
@@ -257,7 +257,7 @@ fn hook_cursor_wraps_known_commands_without_a_permission_decision() {
     // the first reply for a few seconds (#1032).
     let (stdout, _stderr, _code) = run_hook_test(
         &["hook", "cursor"],
-        &[("HOME", &home_s), ("LEAN_CTX_DATA_DIR", &home_s)],
+        &[("HOME", &home_s), ("SOBRE_DATA_DIR", &home_s)],
         Some(r#"{"tool_name":"Shell","tool_input":{"command":"git diff"}}"#),
     );
     assert_eq!(
@@ -286,7 +286,7 @@ fn agent_init_codex_installs_hooks_and_skill() {
     let (_stdout, stderr, code) = run_with_env(&["init", "--agent", "codex"], &envs, None);
     assert_eq!(code, 0, "codex init should succeed: {stderr}");
 
-    for name in ["AGENTS.md", "LEAN-CTX.md"] {
+    for name in ["AGENTS.md", "SOBRE.md"] {
         assert!(
             !codex_dir.join(name).exists(),
             "init must not write {name}: rules travel in the MCP instructions"
@@ -322,7 +322,7 @@ fn piped_output_is_not_compressed() {
     if cfg!(windows) {
         return;
     }
-    let bin = lean_ctx_bin();
+    let bin = sobre_bin();
     let script = r#"echo "line one"; echo "line two"; echo "line three""#.to_string();
     let output = Command::new(&bin)
         .args(["-c", &script])
@@ -338,31 +338,31 @@ fn piped_output_is_not_compressed() {
 }
 
 #[test]
-fn lean_ctx_c_preserves_output_when_piped() {
+fn sobre_c_preserves_output_when_piped() {
     if cfg!(windows) {
         return;
     }
-    let bin = lean_ctx_bin();
+    let bin = sobre_bin();
 
     let output = Command::new(&bin)
         .args(["-c", "echo MARKER_STRING_12345"])
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .output()
-        .expect("run lean-ctx -c echo");
+        .expect("run sobre -c echo");
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(
         stdout.contains("MARKER_STRING_12345"),
-        "lean-ctx -c must preserve output content when piped: {stdout}"
+        "sobre -c must preserve output content when piped: {stdout}"
     );
 }
 
 #[test]
-fn lean_ctx_c_multiline_preserves_all_lines_when_piped() {
+fn sobre_c_multiline_preserves_all_lines_when_piped() {
     if cfg!(windows) {
         return;
     }
-    let bin = lean_ctx_bin();
+    let bin = sobre_bin();
     let cmd = "echo LINE_A && echo LINE_B && echo LINE_C";
     let output = Command::new(&bin)
         .args(["-c", cmd])

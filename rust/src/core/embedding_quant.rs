@@ -1,7 +1,7 @@
 //! int8 scalar quantization + SIMD-friendly scoring for embedding vectors.
 //!
 //! Adapted from the TurboQuant approach (RyanCodrai/turbovec, ICLR 2026): a
-//! data-oblivious, training-free, single-pass quantizer. At lean-ctx's scale
+//! data-oblivious, training-free, single-pass quantizer. At sobre's scale
 //! (hundreds of facts × 384-dim MiniLM vectors) the win is twofold:
 //!   1. **4× smaller** on-disk knowledge index (`i8` codes vs `f32`).
 //!   2. **Faster scoring** — the query is rotated once into the codebook domain

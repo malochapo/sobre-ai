@@ -31,7 +31,7 @@ pub type SharedCache = Arc<RwLock<SessionCache>>;
 
 /// Central MCP server state: cache, session, metrics, and autonomy runtime.
 #[derive(Clone)]
-pub struct LeanCtxServer {
+pub struct SobreServer {
     pub cache: SharedCache,
     pub session: Arc<RwLock<SessionState>>,
     pub call_count: Arc<AtomicUsize>,

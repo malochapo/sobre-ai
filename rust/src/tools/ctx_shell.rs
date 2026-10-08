@@ -124,7 +124,7 @@ mod tests {
 
     #[test]
     fn auth_flow_ignores_normal_build_output() {
-        let output = "Compiling lean-ctx v2.21.9\nFinished release profile\n";
+        let output = "Compiling sobre v2.21.9\nFinished release profile\n";
         assert!(!contains_auth_flow(output));
     }
 
@@ -136,7 +136,7 @@ mod tests {
 
     #[test]
     fn auth_flow_ignores_npm_install_output() {
-        let output = "added 150 packages in 3s\n\n24 packages are looking for funding\n  run `npm fund` for details\nhttps://npmjs.com/package/lean-ctx";
+        let output = "added 150 packages in 3s\n\n24 packages are looking for funding\n  run `npm fund` for details\nhttps://npmjs.com/package/sobre";
         assert!(!contains_auth_flow(output));
     }
 

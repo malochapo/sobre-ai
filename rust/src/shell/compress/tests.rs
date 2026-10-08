@@ -928,7 +928,7 @@ mod verbatim_output_tests {
     #[test]
     fn cat_output_preserved() {
         let content = r#"{
-  "name": "lean-ctx",
+  "name": "sobre",
   "version": "3.5.16",
   "description": "Context Runtime for AI Agents",
   "main": "index.js",
@@ -1034,7 +1034,7 @@ mod cli_api_data_tests {
 
     #[test]
     fn gh_search_and_release_verbatim() {
-        assert!(is_verbatim_output("gh search repos lean-ctx"));
+        assert!(is_verbatim_output("gh search repos sobre"));
         assert!(is_verbatim_output("gh release view v3.5.18"));
         assert!(is_verbatim_output("gh gist view abc123"));
         assert!(is_verbatim_output("gh gist list"));
@@ -1276,7 +1276,7 @@ mod structural_output_tests {
 /// Regression guard: test-runner output must never have its pass/fail summaries
 /// compressed or truncated away — even a large, fully-passing run. This is the
 /// exact failure where a multi-crate `cargo test` lost its per-binary
-/// `test result:` lines and the user had to fall back to `lean-ctx raw`.
+/// `test result:` lines and the user had to fall back to `sobre raw`.
 #[cfg(test)]
 mod test_runner_output_tests {
     use super::super::engine::compress_if_beneficial;

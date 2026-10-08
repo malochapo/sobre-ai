@@ -36,7 +36,7 @@ mod toon_passthrough_tests {
 
     #[test]
     fn toon_passthrough_is_command_agnostic() {
-        // A command lean-ctx would normally compress still passes TOON through,
+        // A command sobre would normally compress still passes TOON through,
         // because the decision is output-shape based, not command based.
         let toon = toon_task_list(20);
         let result = compress_if_beneficial("my-tool report --format toon", &toon);
@@ -64,7 +64,7 @@ mod toon_passthrough_tests {
 
 /// Exit-code-aware compression (#809 / #810): a command that actually FAILED must
 /// never be lossily compressed, so the agent always sees the real error and never
-/// re-runs the command without lean-ctx.
+/// re-runs the command without sobre.
 #[cfg(test)]
 mod outcome_aware_tests {
     use super::super::engine::{compress_and_measure, compress_for_outcome};

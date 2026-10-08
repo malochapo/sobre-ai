@@ -2,8 +2,8 @@
 //! Tests cover: delivery flag reset, stub-path guards, compaction sync, and
 //! edge cases.
 
-use lean_ctx::core::cache::SessionCache;
-use lean_ctx::core::protocol::CrpMode;
+use sobre::core::cache::SessionCache;
+use sobre::core::protocol::CrpMode;
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // 1. SessionCache — reset_delivery_flags and is_full_delivered
@@ -138,8 +138,8 @@ mod cache_delivery_flags {
 
 mod compaction_sync_scenarios {
     use super::*;
-    use lean_ctx::server::compaction_sync::{LAST_COMPACTION_TS, sync_if_compacted};
     use serial_test::serial;
+    use sobre::server::compaction_sync::{LAST_COMPACTION_TS, sync_if_compacted};
     use std::sync::atomic::Ordering;
     use tempfile::TempDir;
 
@@ -212,7 +212,7 @@ mod compaction_sync_scenarios {
 
 mod ctx_read_stub_behavior {
     use super::*;
-    use lean_ctx::tools::ctx_read::handle_with_task_resolved;
+    use sobre::tools::ctx_read::handle_with_task_resolved;
     use std::io::Write;
     use tempfile::NamedTempFile;
 

@@ -1,7 +1,7 @@
 //! Scenario tests for an issue reported by `BazsiBazsi`: the cache-hit
 //! message was misleading when a subagent had cached the file.
 
-use lean_ctx::core::protocol::CrpMode;
+use sobre::core::protocol::CrpMode;
 use std::io::Write;
 
 // ==========================================================================
@@ -12,10 +12,10 @@ use std::io::Write;
 
 #[test]
 fn scenario_cache_hit_message_format() {
-    use lean_ctx::core::cache::SessionCache;
+    use sobre::core::cache::SessionCache;
 
     let mut cache = SessionCache::new();
-    let dir = std::env::temp_dir().join("lean_ctx_bazsi_cache_test");
+    let dir = std::env::temp_dir().join("sobre_bazsi_cache_test");
     let _ = std::fs::create_dir_all(&dir);
     let file_path = dir.join("test_file.py");
     {
@@ -26,7 +26,7 @@ fn scenario_cache_hit_message_format() {
     let path_str = file_path.to_str().unwrap();
 
     // First read: should return full content
-    let result1 = lean_ctx::tools::ctx_read::handle(&mut cache, path_str, "full", CrpMode::Off);
+    let result1 = sobre::tools::ctx_read::handle(&mut cache, path_str, "full", CrpMode::Off);
     assert!(
         !result1.contains("[unchanged"),
         "First read should NOT say unchanged: got {result1}"
@@ -37,7 +37,7 @@ fn scenario_cache_hit_message_format() {
     );
 
     // Second read (cache hit): should use new message format
-    let result2 = lean_ctx::tools::ctx_read::handle(&mut cache, path_str, "full", CrpMode::Off);
+    let result2 = sobre::tools::ctx_read::handle(&mut cache, path_str, "full", CrpMode::Off);
     assert!(
         result2.contains("[unchanged") || result2.contains("use cached context"),
         "Cache hit should use new message format: got {result2}"

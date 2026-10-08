@@ -1,6 +1,6 @@
 //! Auto-generated config schema from `Config` struct metadata.
 //!
-//! Used by `lean-ctx config init` to document every key, and by `lean-ctx
+//! Used by `sobre config init` to document every key, and by `sobre
 //! doctor` to flag keys of a user config.toml that no setting reads.
 
 use serde::Serialize;
@@ -269,7 +269,7 @@ mod tests {
         ] {
             assert!(
                 schema.lookup(key).is_some(),
-                "`lean-ctx config set {key} <v>` fails with 'Unknown config key' — \
+                "`sobre config set {key} <v>` fails with 'Unknown config key' — \
                  add `{key}` to a sections_*.rs schema"
             );
         }

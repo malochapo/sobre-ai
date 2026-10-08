@@ -146,9 +146,9 @@ mod config_path_visibility_tests {
     #[test]
     fn missing_config_path_flags_absent_then_clears_when_present() {
         let _lock = crate::core::data_dir::test_env_lock();
-        let saved = std::env::var("LEAN_CTX_CONFIG_DIR").ok();
+        let saved = std::env::var("SOBRE_CONFIG_DIR").ok();
         let dir = tempfile::tempdir().unwrap();
-        crate::test_env::set_var("LEAN_CTX_CONFIG_DIR", dir.path());
+        crate::test_env::set_var("SOBRE_CONFIG_DIR", dir.path());
 
         // No config.toml in the resolved dir → flagged as missing (on defaults).
         assert_eq!(
@@ -160,9 +160,9 @@ mod config_path_visibility_tests {
         std::fs::write(dir.path().join("config.toml"), "ultra_compact = true\n").unwrap();
         assert!(Config::missing_config_path().is_none());
 
-        crate::test_env::remove_var("LEAN_CTX_CONFIG_DIR");
+        crate::test_env::remove_var("SOBRE_CONFIG_DIR");
         if let Some(v) = saved {
-            crate::test_env::set_var("LEAN_CTX_CONFIG_DIR", v);
+            crate::test_env::set_var("SOBRE_CONFIG_DIR", v);
         }
     }
 }

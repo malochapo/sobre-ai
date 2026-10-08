@@ -19,9 +19,7 @@ use std::path::{Path, PathBuf};
 const MAX_LOG_BYTES: u64 = 1024 * 1024;
 
 fn crash_log_dir() -> Option<PathBuf> {
-    let dir = crate::core::data_dir::lean_ctx_data_dir()
-        .ok()?
-        .join("logs");
+    let dir = crate::core::data_dir::sobre_data_dir().ok()?.join("logs");
     std::fs::create_dir_all(&dir).ok()?;
     Some(dir)
 }
@@ -51,7 +49,7 @@ fn write_entry_to(dir: &Path, location: &str, thread: &str, payload: &str) -> Op
 
     let backtrace = std::backtrace::Backtrace::force_capture();
     let entry = format!(
-        "=== panic at {} (lean-ctx v{}) ===\nthread: {thread}\nlocation: {location}\npayload: {payload}\nbacktrace:\n{backtrace}\n\n",
+        "=== panic at {} (sobre v{}) ===\nthread: {thread}\nlocation: {location}\npayload: {payload}\nbacktrace:\n{backtrace}\n\n",
         chrono::Utc::now().to_rfc3339(),
         env!("CARGO_PKG_VERSION"),
     );
@@ -116,9 +114,9 @@ pub fn install_panic_hook() {
                 .unwrap_or_default();
 
         let mut msg = String::from(
-            "lean-ctx: unexpected error (your command was not affected)\n\
-             \x20 Diagnose and repair: lean-ctx doctor --fix\n\
-             \x20 Full uninstall:      lean-ctx uninstall\n",
+            "sobre: unexpected error (your command was not affected)\n\
+             \x20 Diagnose and repair: sobre doctor --fix\n\
+             \x20 Full uninstall:      sobre uninstall\n",
         );
         if let Some(m) = info.payload().downcast_ref::<&str>() {
             let _ = std::fmt::Write::write_fmt(&mut msg, format_args!("  Details: {m}\n"));

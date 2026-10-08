@@ -24,7 +24,7 @@ use rmcp::model::{
 };
 use rmcp::service::{RequestContext, RoleServer};
 
-use crate::tools::{CrpMode, LeanCtxServer};
+use crate::tools::{CrpMode, SobreServer};
 mod call_tool;
 mod post_dispatch;
 mod post_process;
@@ -245,7 +245,7 @@ mod tests {
     #[test]
     fn is_broad_or_unsafe_root_allows_tmp_subdirs() {
         assert!(!is_broad_or_unsafe_root(std::path::Path::new(
-            "/tmp/leanctx-test"
+            "/tmp/sobre-test"
         )));
         assert!(!is_broad_or_unsafe_root(std::path::Path::new(
             "/tmp/my-project"

@@ -492,8 +492,8 @@ mod cargo_tests {
     #[test]
     fn cargo_test_all_passing() {
         let output = "\
-   Compiling lean-ctx v3.9.11 (/Users/test/rust)
-     Running unittests src/lib.rs (target/debug/deps/lean_ctx-abc123)
+   Compiling sobre v3.9.11 (/Users/test/rust)
+     Running unittests src/lib.rs (target/debug/deps/sobre-abc123)
 
 running 245 tests
 test core::tokens::tests::count_empty ... ok

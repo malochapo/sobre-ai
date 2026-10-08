@@ -23,13 +23,13 @@ pub(crate) fn check_mcp_json(path: &std::path::Path, binary: &str) -> NamedCheck
         };
     };
 
-    let entry = v.get("mcpServers").and_then(|m| m.get("lean-ctx")).cloned();
+    let entry = v.get("mcpServers").and_then(|m| m.get("sobre")).cloned();
 
     let Some(e) = entry else {
         return NamedCheck {
             name: "MCP config".to_string(),
             ok: false,
-            detail: format!("lean-ctx missing ({})", path.display()),
+            detail: format!("sobre missing ({})", path.display()),
         };
     };
 
@@ -56,10 +56,10 @@ pub(crate) fn cmd_matches_expected(cmd: &str, portable: &str) -> bool {
     if cmd == portable.trim() {
         return true;
     }
-    if cmd == "lean-ctx" {
+    if cmd == "sobre" {
         return true;
     }
-    // #708: a configured verbatim hook binary ($HOME/.local/bin/lean-ctx for
+    // #708: a configured verbatim hook binary ($HOME/.local/bin/sobre for
     // settings synced across machines) is the expected command by definition —
     // never flag it stale, or doctor --fix would rewrite it back to the
     // machine-absolute path and restart the sync ping-pong.
@@ -68,7 +68,7 @@ pub(crate) fn cmd_matches_expected(cmd: &str, portable: &str) -> bool {
     {
         return true;
     }
-    if let Some(resolved) = resolve_lean_ctx_binary()
+    if let Some(resolved) = resolve_sobre_binary()
         && cmd == resolved.to_string_lossy().trim()
     {
         return true;
@@ -76,7 +76,7 @@ pub(crate) fn cmd_matches_expected(cmd: &str, portable: &str) -> bool {
     false
 }
 
-/// Collect the `lean-ctx` binary tokens that appear immediately before a
+/// Collect the `sobre` binary tokens that appear immediately before a
 /// ` hook ` invocation inside a hook config file. Managed hook commands look
 /// like `"<binary> hook compress"` / `"<binary> hook observe"`, so the token
 /// directly preceding a
@@ -99,14 +99,14 @@ pub(crate) fn hook_binary_refs(content: &str) -> Vec<String> {
                 .find(|tok| !tok.is_empty())
                 .map(|tok| tok.trim_end_matches(',').to_string())
         })
-        .filter(|tok| tok.contains("lean-ctx"))
+        .filter(|tok| tok.contains("sobre"))
         .collect()
 }
 
-/// If a hook file references a `lean-ctx` binary path that does not match the
+/// If a hook file references a `sobre` binary path that does not match the
 /// currently installed binary (and none of its references do), return that
 /// stale path. Returns `None` when there are no hook references or at least one
-/// reference points at the current binary (or the bare `lean-ctx` PATH command).
+/// reference points at the current binary (or the bare `sobre` PATH command).
 pub(crate) fn stale_hook_binary(content: &str, binary: &str) -> Option<String> {
     let refs = hook_binary_refs(content);
     if refs.is_empty() || refs.iter().any(|r| cmd_matches_expected(r, binary)) {
@@ -115,7 +115,7 @@ pub(crate) fn stale_hook_binary(content: &str, binary: &str) -> Option<String> {
     refs.into_iter().next()
 }
 
-/// Cascade hook health for Windsurf (#593). `lean-ctx init` writes observe +
+/// Cascade hook health for Windsurf (#593). `sobre init` writes observe +
 /// pre_mcp_tool_use hooks into `~/.codeium/windsurf/hooks.json`; the `hook
 /// observe` command is the stable marker. A missing file is genuine drift, fixed
 /// by re-running setup.
@@ -128,7 +128,7 @@ pub(crate) fn check_windsurf_hooks(home: &std::path::Path) -> NamedCheck {
         detail: if ok {
             format!("ok ({})", path.display())
         } else {
-            "missing (run: lean-ctx init)".to_string()
+            "missing (run: sobre init)".to_string()
         },
     }
 }
@@ -146,8 +146,8 @@ pub(crate) fn skill_not_applicable_note() -> NamedCheck {
 
 /// Most recent `ctx_*` MCP tool call from the usage ledger ("12m ago" /
 /// "never"). #593: the clearest signal of whether the agent actually drives
-/// lean-ctx through MCP — an empty `watch` plus "never" means the agent is using
-/// native tools instead of `ctx_*`, not that lean-ctx is broken. Never fails
+/// sobre through MCP — an empty `watch` plus "never" means the agent is using
+/// native tools instead of `ctx_*`, not that sobre is broken. Never fails
 /// (informational), and reads the live ledger so it is naturally dynamic.
 pub(crate) fn last_ctx_call_check() -> NamedCheck {
     let detail = match last_ctx_call_ago() {

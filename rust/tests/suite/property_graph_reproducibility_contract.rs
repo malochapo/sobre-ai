@@ -36,20 +36,19 @@ export const b = () => c();
         let root_s = root.to_string_lossy().to_string();
 
         // Build graph (deterministic file ordering + edge insertion).
-        let build = lean_ctx::tools::ctx_impact::handle("build", None, &root_s, None, Some("json"));
+        let build = sobre::tools::ctx_impact::handle("build", None, &root_s, None, Some("json"));
         let build_v = parse_json(&build);
         assert_eq!(build_v["tool"], "ctx_impact");
         assert_eq!(build_v["action"], "build");
 
-        let status =
-            lean_ctx::tools::ctx_impact::handle("status", None, &root_s, None, Some("json"));
+        let status = sobre::tools::ctx_impact::handle("status", None, &root_s, None, Some("json"));
         let status_v = parse_json(&status);
         assert_eq!(status_v["tool"], "ctx_impact");
         assert_eq!(status_v["action"], "status");
         assert_ne!(status_v["freshness"], "empty");
 
         // Dependency chain should be deterministic.
-        let chain = lean_ctx::tools::ctx_impact::handle(
+        let chain = sobre::tools::ctx_impact::handle(
             "chain",
             Some("src/a.ts->src/c.ts"),
             &root_s,
@@ -64,7 +63,7 @@ export const b = () => c();
         );
 
         // Impact should be stable-sorted.
-        let impact = lean_ctx::tools::ctx_impact::handle(
+        let impact = sobre::tools::ctx_impact::handle(
             "analyze",
             Some("src/c.ts"),
             &root_s,

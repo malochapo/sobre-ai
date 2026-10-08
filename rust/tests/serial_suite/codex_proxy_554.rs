@@ -3,7 +3,7 @@
 //!
 //! - **API-key** mode: Codex is pointed at the proxy's `/v1` rail (top-level
 //!   `openai_base_url`).
-//! - **ChatGPT login**: left native — no lean-ctx Codex config — so history and
+//! - **ChatGPT login**: left native — no sobre Codex config — so history and
 //!   `codex cloud`/remote keep working (#597).
 //!
 //! All scenarios live in one serial test: they redirect Codex via `CODEX_HOME`
@@ -19,10 +19,10 @@ use std::path::Path;
 /// sets to isolate a test's config/data/state/cache. Re-declared here because that
 /// helper is `#[cfg(test)]` and therefore unavailable to this integration-test binary.
 const ISOLATED_ENV_VARS: [&str; 4] = [
-    "LEAN_CTX_DATA_DIR",
-    "LEAN_CTX_CONFIG_DIR",
-    "LEAN_CTX_STATE_DIR",
-    "LEAN_CTX_CACHE_DIR",
+    "SOBRE_DATA_DIR",
+    "SOBRE_CONFIG_DIR",
+    "SOBRE_STATE_DIR",
+    "SOBRE_CACHE_DIR",
 ];
 
 /// Scope-guard that points `CODEX_HOME` at `dir` and restores the previous value on
@@ -136,11 +136,11 @@ fn proxy_enable_respects_codex_auth_mode_554() {
         let _codex_home = CodexHome::set(&codex);
         let _openai_key = EnvVar::set("OPENAI_API_KEY", "sk-unrelated");
         let (_listener, port) = dummy_proxy_port();
-        lean_ctx::proxy_setup::install_proxy_env_unchecked(home.path(), port, true, false);
+        sobre::proxy_setup::install_proxy_env_unchecked(home.path(), port, true, false);
 
         let cfg = std::fs::read_to_string(codex.join("config.toml")).unwrap();
         assert!(
-            !cfg.contains("model_provider = \"leanctx-chatgpt\""),
+            !cfg.contains("model_provider = \"sobre-chatgpt\""),
             "a ChatGPT login must stay native — no model_provider pin (#597), got:\n{cfg}"
         );
         assert!(
@@ -163,7 +163,7 @@ fn proxy_enable_respects_codex_auth_mode_554() {
             codex_home_with_auth(r#"{"auth_mode":"apikey","OPENAI_API_KEY":"sk-test"}"#);
         let _codex_home = CodexHome::set(&codex);
         let (_listener, port) = dummy_proxy_port();
-        lean_ctx::proxy_setup::install_proxy_env_unchecked(home.path(), port, true, false);
+        sobre::proxy_setup::install_proxy_env_unchecked(home.path(), port, true, false);
 
         let cfg = std::fs::read_to_string(codex.join("config.toml")).unwrap();
         assert!(

@@ -71,7 +71,7 @@ fn unknown_action_help_lists_the_available_actions() {
         }
     }
 
-    let dir = std::env::temp_dir().join(format!("leanctx_r1_{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("sobre_r1_{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     let file = dir.join("x.rs");
     std::fs::write(&file, "fn x() {}\n").unwrap();
@@ -101,7 +101,7 @@ fn resolve_name_path_unique_class() {
     let tmp = tempfile::tempdir().unwrap();
     let data = tmp.path().join("data");
     std::fs::create_dir_all(&data).unwrap();
-    crate::test_env::set_var("LEAN_CTX_DATA_DIR", data.to_string_lossy().to_string());
+    crate::test_env::set_var("SOBRE_DATA_DIR", data.to_string_lossy().to_string());
 
     let proj = tmp.path().join("proj");
     std::fs::create_dir_all(proj.join("src")).unwrap();
@@ -121,7 +121,7 @@ fn resolve_name_path_unique_class() {
     assert!(r.rel_path.ends_with("lib.rs"), "got: {}", r.rel_path);
     assert!(r.end_line >= r.start_line && r.start_line > 0);
 
-    crate::test_env::remove_var("LEAN_CTX_DATA_DIR");
+    crate::test_env::remove_var("SOBRE_DATA_DIR");
 }
 
 #[test]
@@ -130,7 +130,7 @@ fn resolve_name_path_unknown_is_no_symbol() {
     let tmp = tempfile::tempdir().unwrap();
     let data = tmp.path().join("data");
     std::fs::create_dir_all(&data).unwrap();
-    crate::test_env::set_var("LEAN_CTX_DATA_DIR", data.to_string_lossy().to_string());
+    crate::test_env::set_var("SOBRE_DATA_DIR", data.to_string_lossy().to_string());
 
     let proj = tmp.path().join("proj");
     std::fs::create_dir_all(proj.join("src")).unwrap();
@@ -149,7 +149,7 @@ fn resolve_name_path_unknown_is_no_symbol() {
     let err = super::resolve_name_path("ZzzNoSuchSymbol123", &root).unwrap_err();
     assert!(err.starts_with("NO_SYMBOL"), "got: {err}");
 
-    crate::test_env::remove_var("LEAN_CTX_DATA_DIR");
+    crate::test_env::remove_var("SOBRE_DATA_DIR");
 }
 
 #[test]
@@ -159,7 +159,7 @@ fn resolve_name_path_trait_impl_method() {
     let tmp = tempfile::tempdir().unwrap();
     let data = tmp.path().join("data");
     std::fs::create_dir_all(&data).unwrap();
-    crate::test_env::set_var("LEAN_CTX_DATA_DIR", data.to_string_lossy().to_string());
+    crate::test_env::set_var("SOBRE_DATA_DIR", data.to_string_lossy().to_string());
 
     let proj = tmp.path().join("proj");
     std::fs::create_dir_all(proj.join("src")).unwrap();
@@ -191,7 +191,7 @@ fn resolve_name_path_trait_impl_method() {
     );
     assert!(r.end_line >= r.start_line && r.start_line > 0);
 
-    crate::test_env::remove_var("LEAN_CTX_DATA_DIR");
+    crate::test_env::remove_var("SOBRE_DATA_DIR");
 }
 
 #[test]
@@ -211,7 +211,7 @@ fn resolve_name_path_inherent_impl_method() {
     let tmp = tempfile::tempdir().unwrap();
     let data = tmp.path().join("data");
     std::fs::create_dir_all(&data).unwrap();
-    crate::test_env::set_var("LEAN_CTX_DATA_DIR", data.to_string_lossy().to_string());
+    crate::test_env::set_var("SOBRE_DATA_DIR", data.to_string_lossy().to_string());
 
     let proj = tmp.path().join("proj");
     std::fs::create_dir_all(proj.join("src")).unwrap();
@@ -235,7 +235,7 @@ fn resolve_name_path_inherent_impl_method() {
     assert!(r.rel_path.ends_with("lib.rs"), "got: {}", r.rel_path);
     assert!(r.start_line >= 2 && r.end_line >= r.start_line);
 
-    crate::test_env::remove_var("LEAN_CTX_DATA_DIR");
+    crate::test_env::remove_var("SOBRE_DATA_DIR");
 }
 
 #[test]
@@ -245,7 +245,7 @@ fn resolve_name_path_ambiguous_trait_impls() {
     let tmp = tempfile::tempdir().unwrap();
     let data = tmp.path().join("data");
     std::fs::create_dir_all(&data).unwrap();
-    crate::test_env::set_var("LEAN_CTX_DATA_DIR", data.to_string_lossy().to_string());
+    crate::test_env::set_var("SOBRE_DATA_DIR", data.to_string_lossy().to_string());
 
     let proj = tmp.path().join("proj");
     std::fs::create_dir_all(proj.join("src")).unwrap();
@@ -288,14 +288,14 @@ fn resolve_name_path_ambiguous_trait_impls() {
         .expect_err("two trait impls (cross-file) with same method must be ambiguous");
     assert!(err.starts_with("AMBIGUOUS_SYMBOL"), "got: {err}");
 
-    crate::test_env::remove_var("LEAN_CTX_DATA_DIR");
+    crate::test_env::remove_var("SOBRE_DATA_DIR");
 }
 
 /// #845: file_scope narrows ambiguous symbols to a single file.
 #[test]
 fn file_scope_disambiguates_ambiguous_symbol() {
     // Private data dir under the global env lock: serializes this test against
-    // resolve_name_path_unknown_is_no_symbol (which sets LEAN_CTX_DATA_DIR and
+    // resolve_name_path_unknown_is_no_symbol (which sets SOBRE_DATA_DIR and
     // reaches the same graph build) and restores the env on drop, even on panic.
     let _data = crate::core::data_dir::isolated_data_dir();
     let dir = tempfile::tempdir().unwrap();
@@ -438,7 +438,7 @@ fn handle_replace_symbol_worktree_mismatch_blocks_write() {
     let tmp = tempfile::tempdir().unwrap();
     let data = tmp.path().join("data");
     std::fs::create_dir_all(&data).unwrap();
-    crate::test_env::set_var("LEAN_CTX_DATA_DIR", data.to_string_lossy().to_string());
+    crate::test_env::set_var("SOBRE_DATA_DIR", data.to_string_lossy().to_string());
 
     // Main checkout root with a symbol.
     let main_root = tmp.path().join("repo");
@@ -494,5 +494,5 @@ fn handle_replace_symbol_worktree_mismatch_blocks_write() {
         "worktree must NOT be modified: {wt_content}"
     );
 
-    crate::test_env::remove_var("LEAN_CTX_DATA_DIR");
+    crate::test_env::remove_var("SOBRE_DATA_DIR");
 }

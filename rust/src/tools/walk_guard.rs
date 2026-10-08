@@ -57,7 +57,7 @@ mod tests {
 
     #[test]
     fn relative_dot_is_absolutized_not_blanket_refused() {
-        // The test process runs inside the lean-ctx repo (a real project with
+        // The test process runs inside the sobre repo (a real project with
         // markers), so "." must absolutize to a safe root.
         assert_eq!(deny_unsafe_walk_root("."), None);
     }

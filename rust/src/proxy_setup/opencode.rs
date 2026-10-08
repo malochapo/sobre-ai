@@ -218,7 +218,7 @@ mod tests {
     fn remove_base_url_prunes_only_what_it_emptied() {
         let ours = proxy_base_url(4444);
         let mut doc = json!({
-            "mcp": {"lean-ctx": {"type": "local"}},
+            "mcp": {"sobre": {"type": "local"}},
             "provider": {
                 "anthropic": {"options": {"baseURL": proxy_base_url(5555)}},
                 "openai": {"options": {"baseURL": ours, "timeout": 5}},
@@ -229,7 +229,7 @@ mod tests {
         assert_eq!(
             doc,
             json!({
-                "mcp": {"lean-ctx": {"type": "local"}},
+                "mcp": {"sobre": {"type": "local"}},
                 "provider": {"openai": {"options": {"timeout": 5}}}
             })
         );

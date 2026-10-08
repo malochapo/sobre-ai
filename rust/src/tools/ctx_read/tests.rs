@@ -397,7 +397,7 @@ fn signatures_on_unsupported_language_carries_marker() {
 // (limitations doc #11).
 #[test]
 fn read_file_lossy_strips_utf8_bom() {
-    let p = std::env::temp_dir().join("lean_ctx_bom_test.txt");
+    let p = std::env::temp_dir().join("sobre_bom_test.txt");
     std::fs::write(&p, b"\xEF\xBB\xBFhello\n").unwrap();
     let s = read_file_lossy(p.to_str().unwrap()).unwrap();
     let _ = std::fs::remove_file(&p);

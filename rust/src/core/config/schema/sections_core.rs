@@ -46,7 +46,7 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
         key(
             "bool",
             serde_json::json!(false),
-            "Opt-in (default off): write a human-readable debug log of intercepted MCP tool calls and hook routing decisions (lean-ctx vs native, with the reason) to <state_dir>/logs/debug.log; `lean-ctx doctor` prints the path",
+            "Opt-in (default off): write a human-readable debug log of intercepted MCP tool calls and hook routing decisions (sobre vs native, with the reason) to <state_dir>/logs/debug.log; `sobre doctor` prints the path",
         ),
     );
     root.insert(
@@ -54,7 +54,7 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
         key(
             "string?",
             serde_json::json!(null),
-            "Verbatim binary path/expression for generated agent-hook commands (e.g. $HOME/.local/bin/lean-ctx) — for settings files synced across machines with different usernames. Shell-expanded by the hook host at run time; doctor accepts it as current. Empty = automatic absolute-path resolution",
+            "Verbatim binary path/expression for generated agent-hook commands (e.g. $HOME/.local/bin/sobre) — for settings files synced across machines with different usernames. Shell-expanded by the hook host at run time; doctor accepts it as current. Empty = automatic absolute-path resolution",
         ),
     );
     root.insert(

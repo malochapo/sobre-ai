@@ -92,10 +92,10 @@ impl EmbeddingEngine {
 
         // Never download here: loading happens on tool paths the user did not
         // ask to touch the network. The model arrives through the explicit
-        // `lean-ctx embeddings provision`, which calls `ensure_downloaded`.
+        // `sobre embeddings provision`, which calls `ensure_downloaded`.
         anyhow::ensure!(
             model_files_present(&model_dir),
-            "embedding model not installed — run `lean-ctx embeddings provision`"
+            "embedding model not installed — run `sobre embeddings provision`"
         );
 
         let meta = ModelMeta::load(&model_dir);
@@ -747,7 +747,7 @@ pub fn try_shared_engine() -> Option<&'static EmbeddingEngine> {
 /// model is loading. If a detached loader thread is still mid-load when the
 /// process returns from `main`, it races `libonnxruntime`'s static-destructor
 /// teardown — a use-after-free SIGSEGV inside `onnx::OpSchema` on an ORT worker
-/// thread. The shipped `lean-ctx` daemon/MCP server is long-lived, so its
+/// thread. The shipped `sobre` daemon/MCP server is long-lived, so its
 /// warmup always finishes well before exit; short-lived processes (`cargo test`/
 /// bench/doctest binaries, build-time generators) can exit mid-load, so we
 /// refuse the background spawn for them. Their semantic features simply stay
@@ -831,15 +831,15 @@ mod tests {
 
     #[test]
     fn model_directory_follows_cache_dir() {
-        // Serialize env mutation: LEAN_CTX_CACHE_DIR is process-global and
+        // Serialize env mutation: SOBRE_CACHE_DIR is process-global and
         // shared with `ensure_downloaded_is_offline_noop_when_model_present`.
         let _lock = crate::core::data_dir::test_env_lock();
-        let unique = "/tmp/lean_ctx_test_embed_42xyz";
-        crate::test_env::set_var("LEAN_CTX_CACHE_DIR", unique);
+        let unique = "/tmp/sobre_test_embed_42xyz";
+        crate::test_env::set_var("SOBRE_CACHE_DIR", unique);
         let dir = EmbeddingEngine::model_directory();
         assert_eq!(dir, std::path::Path::new(unique).join("models"));
         assert!(!EmbeddingEngine::is_available());
-        crate::test_env::remove_var("LEAN_CTX_CACHE_DIR");
+        crate::test_env::remove_var("SOBRE_CACHE_DIR");
     }
 
     /// #545: with a complete model cache, `ensure_downloaded` is a no-op that
@@ -850,11 +850,11 @@ mod tests {
     /// placeholder files are enough to exercise the short-circuit offline.
     #[test]
     fn ensure_downloaded_is_offline_noop_when_model_present() {
-        // Serialize env mutation (LEAN_CTX_CACHE_DIR is process-global) so a
+        // Serialize env mutation (SOBRE_CACHE_DIR is process-global) so a
         // sibling env test can't clobber the dir between set_var and the checks.
         let _lock = crate::core::data_dir::test_env_lock();
         let tmp = std::env::temp_dir().join(format!("lc-embed-545-{}", std::process::id()));
-        crate::test_env::set_var("LEAN_CTX_CACHE_DIR", tmp.to_str().unwrap());
+        crate::test_env::set_var("SOBRE_CACHE_DIR", tmp.to_str().unwrap());
 
         let selected = model_registry::resolve_model();
         let model_dir = tmp.join("models").join(selected.storage_dir_name());
@@ -865,7 +865,7 @@ mod tests {
         assert!(EmbeddingEngine::is_available());
         assert!(EmbeddingEngine::ensure_downloaded().is_ok());
 
-        crate::test_env::remove_var("LEAN_CTX_CACHE_DIR");
+        crate::test_env::remove_var("SOBRE_CACHE_DIR");
         std::fs::remove_dir_all(&tmp).ok();
     }
 
@@ -880,21 +880,21 @@ mod tests {
             "/repo/rust/target/debug/deps/conformance_suite-0a1b2c3d4e5f6789"
         )));
         assert!(exe_path_is_test_artifact(Path::new(
-            "/repo/rust/target/release/deps/lean_ctx-deadbeefcafef00d"
+            "/repo/rust/target/release/deps/sobre-deadbeefcafef00d"
         )));
         // Shipped/installed binary: never a direct child of `deps`.
         assert!(!exe_path_is_test_artifact(Path::new(
-            "/usr/local/bin/lean-ctx"
+            "/usr/local/bin/sobre"
         )));
         assert!(!exe_path_is_test_artifact(Path::new(
-            "/Users/x/.local/bin/lean-ctx"
+            "/Users/x/.local/bin/sobre"
         )));
         // A renamed shipped binary is still allowed (rename-independent signal).
         assert!(!exe_path_is_test_artifact(Path::new("/opt/tools/ctx")));
-        // The plain target dir build (e.g. `target/debug/lean-ctx`) is not under
+        // The plain target dir build (e.g. `target/debug/sobre`) is not under
         // `deps/` — treated as a product binary, not a test artifact.
         assert!(!exe_path_is_test_artifact(Path::new(
-            "/repo/rust/target/debug/lean-ctx"
+            "/repo/rust/target/debug/sobre"
         )));
     }
 
@@ -956,7 +956,7 @@ mod tests {
             model_registry::EmbeddingModel::parse("hf:sentence-transformers/all-MiniLM-L6-v2@main")
                 .expect("valid hf: spec");
 
-        let base = std::env::temp_dir().join("lean_ctx_test_custom_hf_e2e");
+        let base = std::env::temp_dir().join("sobre_test_custom_hf_e2e");
         download::ensure_model(&base.join(model.storage_dir_name()), &model).expect("download");
         let engine = EmbeddingEngine::load_model(&base, &model).expect("load custom model");
 
@@ -999,7 +999,7 @@ mod tests {
         let model = model_registry::EmbeddingModel::parse("hf:minishlab/potion-base-8M@main")
             .expect("valid hf: spec");
 
-        let base = std::env::temp_dir().join("lean_ctx_test_model2vec_e2e");
+        let base = std::env::temp_dir().join("sobre_test_model2vec_e2e");
         download::ensure_model(&base.join(model.storage_dir_name()), &model).expect("download");
         let engine = EmbeddingEngine::load_model(&base, &model).expect("load model2vec model");
 

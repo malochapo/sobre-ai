@@ -1,14 +1,14 @@
-use lean_ctx::core::knowledge::ProjectKnowledge;
-use lean_ctx::core::memory_policy::MemoryPolicy;
+use sobre::core::knowledge::ProjectKnowledge;
+use sobre::core::memory_policy::MemoryPolicy;
 
 #[test]
 fn recall_rehydrates_from_archive_when_active_set_empty() {
-    let _g = lean_ctx::core::data_dir::test_env_lock();
+    let _g = sobre::core::data_dir::test_env_lock();
     let tmp = tempfile::tempdir().expect("tempdir");
     let data_dir = tmp.path().join("data");
     std::fs::create_dir_all(&data_dir).expect("mkdir");
     // SAFETY: serialized by `test_env_lock()`.
-    unsafe { std::env::set_var("LEAN_CTX_DATA_DIR", data_dir.to_string_lossy().to_string()) };
+    unsafe { std::env::set_var("SOBRE_DATA_DIR", data_dir.to_string_lossy().to_string()) };
 
     let project_root = tmp.path().join("proj");
     std::fs::create_dir_all(&project_root).expect("mkdir proj");
@@ -22,7 +22,7 @@ fn recall_rehydrates_from_archive_when_active_set_empty() {
     k.save().expect("save");
 
     // Now the active set should be empty (fact archived), so recall should rehydrate it.
-    let out = lean_ctx::tools::ctx_knowledge::handle(
+    let out = sobre::tools::ctx_knowledge::handle(
         &project_root_str,
         "recall",
         None,
@@ -43,5 +43,5 @@ fn recall_rehydrates_from_archive_when_active_set_empty() {
     );
 
     // SAFETY: serialized by `test_env_lock()`.
-    unsafe { std::env::remove_var("LEAN_CTX_DATA_DIR") };
+    unsafe { std::env::remove_var("SOBRE_DATA_DIR") };
 }

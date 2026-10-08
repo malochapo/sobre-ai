@@ -4,7 +4,7 @@
 
 Source of truth: `rust/src/server/registry.rs` and the tool definitions it registers.
 
-lean-ctx registers **16 MCP tools**. Each entry below lists the tool name, what it does, and its parameters (`*` marks required).
+sobre registers **16 MCP tools**. Each entry below lists the tool name, what it does, and its parameters (`*` marks required).
 
 ## `ctx_checkpoint`
 

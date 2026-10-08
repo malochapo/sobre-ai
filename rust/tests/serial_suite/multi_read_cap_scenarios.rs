@@ -1,6 +1,6 @@
-use lean_ctx::core::cache::SessionCache;
-use lean_ctx::tools::CrpMode;
-use lean_ctx::tools::impl_multi_read;
+use sobre::core::cache::SessionCache;
+use sobre::tools::CrpMode;
+use sobre::tools::impl_multi_read;
 
 /// The multi-read output cap (512 KiB, a fixed constant).
 const CAP_BYTES: usize = 512 * 1024;

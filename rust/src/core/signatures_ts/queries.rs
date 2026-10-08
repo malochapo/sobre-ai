@@ -8,7 +8,7 @@
 //!   mode. A pinned crate version yields one grammar revision for every user;
 //!   a downloaded/`.wasm` grammar would make signatures depend on whatever
 //!   blob happens to be on disk, breaking byte-stable prompt caching.
-//! - **Offline & hermetic:** lean-ctx runs in sandboxes with no network. A
+//! - **Offline & hermetic:** sobre runs in sandboxes with no network. A
 //!   runtime grammar fetch would fail there and silently degrade extraction.
 //! - **Security / supply chain:** a static crate is vendored, version-pinned
 //!   and `cargo audit`-able. Loading arbitrary native/WASM grammars at runtime

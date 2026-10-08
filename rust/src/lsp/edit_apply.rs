@@ -161,7 +161,7 @@ fn write_file_atomic(path: &str, content: &str) -> Result<(), String> {
         .ok_or_else(|| "invalid path (no filename)".to_string())?
         .to_string_lossy();
     let pid = std::process::id();
-    let tmp = parent.join(format!(".{filename}.lean-ctx.v2a.tmp.{pid}"));
+    let tmp = parent.join(format!(".{filename}.sobre.v2a.tmp.{pid}"));
     std::fs::write(&tmp, content.as_bytes())
         .map_err(|e| format!("cannot write {}: {e}", tmp.display()))?;
     std::fs::rename(&tmp, p).map_err(|e| {

@@ -66,7 +66,7 @@ fn capacity_hint_is_actionable_for_both_states() {
     // CRIT (over cap): give an immediate compaction action for that project.
     let crit = capacity_hint(true, Some("/p"));
     assert!(crit.contains(
-        r#"lean-ctx call ctx_knowledge --project-root '/p' --json '{"action":"consolidate"}'"#
+        r#"sobre call ctx_knowledge --project-root '/p' --json '{"action":"consolidate"}'"#
     ));
 
     assert_ne!(warn, crit);
@@ -89,7 +89,7 @@ fn cwd_looks_like_agent_dir_matches_both_separators() {
 fn cwd_looks_like_agent_dir_ignores_real_projects() {
     for cwd in [
         "/home/me/work/myproj",
-        "/Users/me/code/lean-ctx",
+        "/Users/me/code/sobre",
         "C:\\src\\app",
     ] {
         assert!(
@@ -134,7 +134,7 @@ fn nothing_installed_fails_and_suggests_setup() {
     let out = check(tmp.path());
     assert!(!out.ok);
     assert!(
-        out.line.contains("lean-ctx init"),
+        out.line.contains("sobre init"),
         "must suggest a command that actually fixes it: {}",
         out.line
     );

@@ -3,7 +3,7 @@
 //! and repeated failures must make the (ext × mode) pair risky so *other*
 //! files of the same type stop being compressed with the failing mode.
 //!
-//! Single test in its own binary: it sets `LEAN_CTX_DATA_DIR` process-wide
+//! Single test in its own binary: it sets `SOBRE_DATA_DIR` process-wide
 //! before the edit-quality store's `OnceLock` is first touched.
 
 #[path = "support/user_dirs.rs"]
@@ -14,8 +14,8 @@ fn harness_sandboxes_user_dirs() {
     user_dirs::assert_sandboxed();
 }
 
-use lean_ctx::core::auto_mode_resolver::{AutoModeContext, resolve};
-use lean_ctx::tools::impl_edit::{EditParams, record_outcome, run_io};
+use sobre::core::auto_mode_resolver::{AutoModeContext, resolve};
+use sobre::tools::impl_edit::{EditParams, record_outcome, run_io};
 
 fn params_for(path: &str, old_string: &str) -> EditParams {
     EditParams {
@@ -41,7 +41,7 @@ fn edit_fail_after_map_read_escalates_and_penalizes() {
     // SAFETY: the project's test suite always runs with `--test-threads=1`
     // (env-race legacy — see .github/workflows/ci.yml), so no other test in
     // this binary touches the environment concurrently.
-    unsafe { std::env::set_var("LEAN_CTX_DATA_DIR", tmp.path()) };
+    unsafe { std::env::set_var("SOBRE_DATA_DIR", tmp.path()) };
 
     let file = tmp.path().join("golden.rs");
     std::fs::write(&file, "fn real_function() { 1 }\n".repeat(60)).unwrap();

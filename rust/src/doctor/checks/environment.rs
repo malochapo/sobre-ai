@@ -26,7 +26,7 @@ pub(crate) fn mcp_config_outcome() -> Outcome {
     };
 
     let locations = mcp_config_locations(&home);
-    let location_names = lean_ctx_mcp_location_names(&home);
+    let location_names = sobre_mcp_location_names(&home);
     let mut found: Vec<String> = Vec::new();
     let mut exists_no_ref: Vec<String> = Vec::new();
 
@@ -49,7 +49,7 @@ pub(crate) fn mcp_config_outcome() -> Outcome {
         Outcome {
             ok: true,
             line: format!(
-                "{BOLD}MCP config{RST}  {GREEN}lean-ctx found in: {}{RST}",
+                "{BOLD}MCP config{RST}  {GREEN}sobre found in: {}{RST}",
                 found.join(", ")
             ),
         }
@@ -57,20 +57,20 @@ pub(crate) fn mcp_config_outcome() -> Outcome {
         let has_claude = exists_no_ref.iter().any(|n| n.starts_with("Claude Code"));
         let cause = if has_claude {
             format!(
-                "{DIM}(Claude Code may overwrite ~/.claude.json on startup — lean-ctx entry missing from mcpServers){RST}"
+                "{DIM}(Claude Code may overwrite ~/.claude.json on startup — sobre entry missing from mcpServers){RST}"
             )
         } else {
             String::new()
         };
         let hint = if has_claude {
-            format!("{DIM}(run: lean-ctx doctor --fix OR lean-ctx init --agent claude){RST}")
+            format!("{DIM}(run: sobre doctor --fix OR sobre init --agent claude){RST}")
         } else {
-            format!("{DIM}(run: lean-ctx doctor --fix OR lean-ctx init){RST}")
+            format!("{DIM}(run: sobre doctor --fix OR sobre init){RST}")
         };
         Outcome {
             ok: false,
             line: format!(
-                "{BOLD}MCP config{RST}  {YELLOW}config exists for {} but mcpServers does not contain lean-ctx{RST}  {cause} {hint}",
+                "{BOLD}MCP config{RST}  {YELLOW}config exists for {} but mcpServers does not contain sobre{RST}  {cause} {hint}",
                 exists_no_ref.join(", "),
             ),
         }
@@ -78,7 +78,7 @@ pub(crate) fn mcp_config_outcome() -> Outcome {
         Outcome {
             ok: false,
             line: format!(
-                "{BOLD}MCP config{RST}  {YELLOW}no MCP config found{RST}  {DIM}(run: lean-ctx init){RST}"
+                "{BOLD}MCP config{RST}  {YELLOW}no MCP config found{RST}  {DIM}(run: sobre init){RST}"
             ),
         }
     }
@@ -94,13 +94,13 @@ pub(crate) fn wsl_vscode_mcp_outcome() -> Option<Outcome> {
         return None;
     }
     let home = dirs::home_dir()?;
-    if !lean_ctx_mcp_location_names(&home).contains("VS Code") {
+    if !sobre_mcp_location_names(&home).contains("VS Code") {
         return None;
     }
     Some(Outcome {
         ok: true,
         line: format!(
-            "{BOLD}WSL2 + VS Code{RST}  {YELLOW}known first-call race in VS Code's MCP client{RST}  {DIM}(a fresh conversation's first ctx_* call may fail with \"reading 'invoke'\" — retry succeeds; upstream: microsoft/vscode#321150. Mitigation: run the MCP server once via \"MCP: List Servers\" → lean-ctx → Start){RST}"
+            "{BOLD}WSL2 + VS Code{RST}  {YELLOW}known first-call race in VS Code's MCP client{RST}  {DIM}(a fresh conversation's first ctx_* call may fail with \"reading 'invoke'\" — retry succeeds; upstream: microsoft/vscode#321150. Mitigation: run the MCP server once via \"MCP: List Servers\" → sobre → Start){RST}"
         ),
     })
 }
@@ -227,7 +227,7 @@ pub(crate) fn cwd_looks_like_agent_dir(cwd_str: &str) -> bool {
     crate::core::pathutil::is_agent_config_dir(std::path::Path::new(cwd_str))
 }
 
-/// Warn if lean-ctx is running as an MCP server from a directory that lacks
+/// Warn if sobre is running as an MCP server from a directory that lacks
 /// a project marker and looks like an IDE/agent tool directory (e.g. .lmstudio,
 /// .claude). This usually means the MCP client launched the process from the
 /// wrong CWD, causing "path escapes project root" errors for every tool call.
@@ -263,7 +263,7 @@ pub(crate) fn mcp_server_cwd_outcome() -> Outcome {
         Outcome {
             ok: false,
             line: format!(
-                "{BOLD}MCP server CWD{RST}  {YELLOW}launched from an IDE/agent config dir{RST}  {DIM}lean-ctx was launched from {}, which is not a project root. It auto-corrects to your real project on the first absolute path (#580); for relative paths to resolve immediately, set `cwd` in your MCP client config to your project directory.{RST}",
+                "{BOLD}MCP server CWD{RST}  {YELLOW}launched from an IDE/agent config dir{RST}  {DIM}sobre was launched from {}, which is not a project root. It auto-corrects to your real project on the first absolute path (#580); for relative paths to resolve immediately, set `cwd` in your MCP client config to your project directory.{RST}",
                 cwd.display()
             ),
         }

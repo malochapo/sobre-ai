@@ -3,8 +3,8 @@
 // JSON garbage. The fix serializes the read-modify-write under a per-project
 // lock and writes the file atomically (temp + rename).
 
-use lean_ctx::core::knowledge::ProjectKnowledge;
-use lean_ctx::core::memory_policy::MemoryPolicy;
+use sobre::core::knowledge::ProjectKnowledge;
+use sobre::core::memory_policy::MemoryPolicy;
 
 /// Sets an isolated data dir for this test binary so the real data dir is never
 /// touched.
@@ -13,11 +13,11 @@ fn isolate_data_dir() -> tempfile::TempDir {
     // SAFETY: the project's test suite always runs with `--test-threads=1`
     // (env-race legacy — see .github/workflows/ci.yml), so no other test in
     // this binary touches the environment concurrently.
-    unsafe { std::env::set_var("LEAN_CTX_DATA_DIR", dir.path()) };
+    unsafe { std::env::set_var("SOBRE_DATA_DIR", dir.path()) };
     dir
 }
 
-// A single `#[test]` keeps the process-global `LEAN_CTX_DATA_DIR` override
+// A single `#[test]` keeps the process-global `SOBRE_DATA_DIR` override
 // race-free (cargo runs test fns in this binary on parallel threads).
 #[test]
 fn parallel_writes_are_lossless_atomic_and_clean() {
@@ -40,7 +40,7 @@ fn parallel_remember_preserves_every_fact_and_valid_json() {
         ("deployment", "build-run", "cargo build"),
         ("conventions", "env-shell", "bash"),
         ("conventions", "repo-boundary", "single repo"),
-        ("conventions", "lean-ctx-note", "use mcp"),
+        ("conventions", "sobre-note", "use mcp"),
     ];
 
     let handles: Vec<_> = facts
@@ -78,7 +78,7 @@ fn parallel_remember_preserves_every_fact_and_valid_json() {
     assert_eq!(knowledge.facts.len(), facts.len(), "expected all 7 facts");
 
     // The on-disk file must be valid JSON (no trailing garbage).
-    let data_dir = lean_ctx::core::data_dir::lean_ctx_data_dir().unwrap();
+    let data_dir = sobre::core::data_dir::sobre_data_dir().unwrap();
     let path = data_dir
         .join("knowledge")
         .join(&knowledge.project_hash)
@@ -98,7 +98,7 @@ fn save_is_atomic_and_leaves_no_temp_files() {
     })
     .unwrap();
 
-    let data_dir = lean_ctx::core::data_dir::lean_ctx_data_dir().unwrap();
+    let data_dir = sobre::core::data_dir::sobre_data_dir().unwrap();
     let dir = data_dir.join("knowledge").join(&knowledge.project_hash);
 
     // The committed file exists and parses…

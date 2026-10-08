@@ -115,7 +115,7 @@ fn subscription_guard_repairs_stale_local_redirect() {
         .and_then(|v| v.as_str())
         .unwrap_or("");
     assert!(
-        !is_local_lean_ctx_url(base),
+        !is_local_sobre_url(base),
         "stale local redirect must be repaired in subscription mode, got {base:?}"
     );
 }

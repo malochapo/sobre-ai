@@ -77,7 +77,7 @@ pub fn handle(
                     }
                 } else {
                     root_path
-                        .join(".lean-ctx")
+                        .join(".sobre")
                         .join("session_bundles")
                         .join(format!(
                             "ccp-session-bundle-v1_{}_{}.json",

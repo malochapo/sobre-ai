@@ -8,7 +8,7 @@ Make graph-driven tooling **reproducible** (CI/proofs), **deterministic** (stabl
 
 This contract covers:
 
-- Property graph storage under `$LEAN_CTX_DATA_DIR/graphs/<project_hash>/graph.db`
+- Property graph storage under `$SOBRE_DATA_DIR/graphs/<project_hash>/graph.db`
 - Graph build + freshness semantics (`ctx_impact action=build|status`)
 - Deterministic outputs from `ctx_impact` and `ctx_graph` (incl. `format=json`)
 
@@ -27,11 +27,11 @@ This contract covers:
 ### Explicit rebuild
 
 - `ctx_impact action=build` rescans the project and rewrites `graph.db` (in
-  `$LEAN_CTX_DATA_DIR/graphs/<project_hash>/`) and `graph.meta.json` alongside
+  `$SOBRE_DATA_DIR/graphs/<project_hash>/`) and `graph.meta.json` alongside
   it. Files whose content hash is unchanged are reused, so the result equals a
   build from scratch.
 - There is one extractor: `ctx_impact build`, `ctx_graph build` and
-  `lean-ctx index build` all run the same scan.
+  `sobre index build` all run the same scan.
 
 ### Edge semantics
 
@@ -80,6 +80,6 @@ are not budgeted.
 
 ## Security & privacy
 
-- Graph DB + meta are written **only** under `$LEAN_CTX_DATA_DIR/graphs/<project_hash>/`.
+- Graph DB + meta are written **only** under `$SOBRE_DATA_DIR/graphs/<project_hash>/`.
 - No secrets must appear in graph artifacts, logs, or exports.
 

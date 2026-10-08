@@ -6,7 +6,7 @@ use crate::doctor::common::*;
 use crate::doctor::{BOLD, DIM, GREEN, Outcome, RED, RST, YELLOW};
 
 pub(crate) fn bm25_cache_health_outcome() -> Outcome {
-    let Ok(data_dir) = crate::core::data_dir::lean_ctx_data_dir() else {
+    let Ok(data_dir) = crate::core::data_dir::sobre_data_dir() else {
         return Outcome {
             ok: true,
             line: format!("{BOLD}BM25 cache{RST}  {DIM}skipped (no data dir){RST}"),
@@ -65,7 +65,7 @@ pub(crate) fn bm25_cache_health_outcome() -> Outcome {
         return Outcome {
             ok: false,
             line: format!(
-                "{BOLD}BM25 cache{RST}  {RED}{} index(es) exceed limit ({:.0} MB){RST}: {}  {DIM}(run: lean-ctx doctor --fix){RST}",
+                "{BOLD}BM25 cache{RST}  {RED}{} index(es) exceed limit ({:.0} MB){RST}: {}  {DIM}(run: sobre doctor --fix){RST}",
                 oversized.len(),
                 max_bytes / (1024 * 1024),
                 details.join(", ")
@@ -89,7 +89,7 @@ pub(crate) fn bm25_cache_health_outcome() -> Outcome {
     }
 
     let quarantine_note = if quarantined_count > 0 {
-        format!("  {YELLOW}{quarantined_count} quarantined (run: lean-ctx doctor --fix){RST}")
+        format!("  {YELLOW}{quarantined_count} quarantined (run: sobre doctor --fix){RST}")
     } else {
         String::new()
     };
@@ -133,7 +133,7 @@ pub(crate) fn semantic_index_outcome() -> Option<Outcome> {
         "failed" => Outcome {
             ok: false,
             line: format!(
-                "{BOLD}Semantic index{RST}  {RED}FAILED{RST}: {}  {DIM}(run: lean-ctx index build){RST}",
+                "{BOLD}Semantic index{RST}  {RED}FAILED{RST}: {}  {DIM}(run: sobre index build){RST}",
                 summary
                     .last_error
                     .or(summary.note)
@@ -230,7 +230,7 @@ pub(crate) fn ram_guardian_outcome() -> Outcome {
 /// Reports knowledge stores whose `project_root` was deleted (removed git
 /// worktrees, thrown-away projects). Such a store can never be written again, so
 /// its eviction cap can never self-heal — it is pure accumulated bloat. This is
-/// informational (never a hard failure); `lean-ctx doctor --fix` reclaims it (#615).
+/// informational (never a hard failure); `sobre doctor --fix` reclaims it (#615).
 pub(crate) fn orphaned_knowledge_outcome() -> Outcome {
     let orphans = crate::core::knowledge::maintenance::find_orphaned_stores();
     if orphans.is_empty() {
@@ -243,7 +243,7 @@ pub(crate) fn orphaned_knowledge_outcome() -> Outcome {
     Outcome {
         ok: true,
         line: format!(
-            "{BOLD}Knowledge stores{RST}  {YELLOW}{} orphaned ({} reclaimable){RST}  {DIM}(deleted projects — reclaim: lean-ctx doctor --fix){RST}",
+            "{BOLD}Knowledge stores{RST}  {YELLOW}{} orphaned ({} reclaimable){RST}  {DIM}(deleted projects — reclaim: sobre doctor --fix){RST}",
             orphans.len(),
             human_bytes(bytes)
         ),
@@ -270,7 +270,7 @@ pub(crate) fn capacity_level(name: &str, current: usize, limit: usize) -> Option
 }
 
 pub(crate) fn capacity_warnings() -> Vec<Outcome> {
-    let Ok(data_dir) = crate::core::data_dir::lean_ctx_data_dir() else {
+    let Ok(data_dir) = crate::core::data_dir::sobre_data_dir() else {
         return vec![];
     };
 
@@ -427,6 +427,6 @@ pub(crate) fn capacity_hint(critical: bool, project_root: Option<&str>) -> Strin
     }
     let root = project_root.unwrap_or("<project>");
     format!(
-        "over cap — eviction is behind. Compact it now: lean-ctx call ctx_knowledge --project-root '{root}' --json '{{\"action\":\"consolidate\"}}'"
+        "over cap — eviction is behind. Compact it now: sobre call ctx_knowledge --project-root '{root}' --json '{{\"action\":\"consolidate\"}}'"
     )
 }

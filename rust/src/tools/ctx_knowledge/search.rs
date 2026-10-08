@@ -8,7 +8,7 @@ pub(crate) fn handle_search(query: Option<&str>) -> String {
         return "Error: query is required for search".to_string();
     };
 
-    let Ok(data_dir) = crate::core::data_dir::lean_ctx_data_dir() else {
+    let Ok(data_dir) = crate::core::data_dir::sobre_data_dir() else {
         return "Cannot determine data directory.".to_string();
     };
 

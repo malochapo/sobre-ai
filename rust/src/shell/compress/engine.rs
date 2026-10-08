@@ -41,7 +41,7 @@ pub(in crate::shell) fn compress_and_measure(
 /// A non-zero exit keeps the output verbatim (size-capped via [`truncate_verbatim`]
 /// with safety-needle-preserving head/tail truncation) so the real error always
 /// reaches the model and the agent never has to re-run the command without
-/// lean-ctx (#809 / #810). This generalizes the build-tool-error guard inside
+/// sobre (#809 / #810). This generalizes the build-tool-error guard inside
 /// [`compress_if_beneficial`] to ANY non-zero exit. Empty output and explicit
 /// `<lc_safe>` spans keep the normal pipeline (the latter so its markers are
 /// stripped correctly); a succeeding command still compresses as before.

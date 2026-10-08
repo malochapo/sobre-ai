@@ -3,7 +3,7 @@
 //! Scientific basis: Malkov & Yashunin, "Efficient and Robust Approximate Nearest Neighbor
 //! using Hierarchical Navigable Small World Graphs" (IEEE TPAMI 2018).
 //!
-//! This is a minimal implementation optimized for lean-ctx's embedding dimensions (384-d).
+//! This is a minimal implementation optimized for sobre's embedding dimensions (384-d).
 //! For indices under BRUTE_FORCE_THRESHOLD chunks, falls back to exact linear scan
 //! with binary-heap top-k selection (O(n log k) instead of O(n log n)).
 //!

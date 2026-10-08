@@ -4,7 +4,7 @@ use anyhow::Result;
 ///
 /// Returns `Some(output)` if the child exits within `timeout`, or `None` if it
 /// had to be killed (timed out) or could not be spawned. This is the safe way
-/// to invoke `launchctl`, which must never be able to hang a `lean-ctx`
+/// to invoke `launchctl`, which must never be able to hang a `sobre`
 /// command.
 ///
 /// Note: intended for commands with small output. The child's stdout/stderr are
@@ -191,9 +191,9 @@ pub fn force_kill(pid: u32) -> Result<()> {
 /// PIDs this process must never signal: itself, its ancestor chain, and every
 /// member of its own process group.
 ///
-/// The ancestor chain matters whenever `lean-ctx uninstall` runs *under*
-/// lean-ctx itself — a `lean-ctx -c` wrapper (Cursor/Gemini hooks) can be the
-/// parent, so the process tree is `lean-ctx -c … → sh → lean-ctx uninstall`.
+/// The ancestor chain matters whenever `sobre uninstall` runs *under*
+/// sobre itself — a `sobre -c` wrapper (Cursor/Gemini hooks) can be the
+/// parent, so the process tree is `sobre -c … → sh → sobre uninstall`.
 /// Excluding only `getpid()` SIGTERMs the wrapper parent, which takes the
 /// whole pipeline down mid-run (exit 143, #714).
 ///
@@ -269,7 +269,7 @@ pub fn find_pids_by_name(name: &str) -> Vec<u32> {
         }
 
         // Also find processes where the full command line contains the binary path
-        // (catches processes launched via absolute path, e.g. /Users/x/.local/bin/lean-ctx)
+        // (catches processes launched via absolute path, e.g. /Users/x/.local/bin/sobre)
         if let Ok(output) = std::process::Command::new("pgrep")
             .arg("-f")
             .arg(format!("/{name}(\\s|$)"))
@@ -324,7 +324,7 @@ fn collect_pids(stdout: &[u8], protected: &std::collections::HashSet<u32>, out: 
     }
 }
 
-/// Returns PIDs that are NOT MCP stdio servers (safe to kill during `lean-ctx uninstall`).
+/// Returns PIDs that are NOT MCP stdio servers (safe to kill during `sobre uninstall`).
 /// MCP servers are child processes of the IDE and must not be killed — the IDE
 /// will immediately respawn them, causing a kill loop that requires a reboot.
 pub fn find_killable_pids(name: &str) -> Vec<u32> {
@@ -376,8 +376,8 @@ fn is_mcp_stdio_process(pid: u32) -> bool {
             }
         }
         let cmd_part = parts.get(1..).map(|p| p.join(" ")).unwrap_or_default();
-        // MCP stdio servers: bare `lean-ctx` with no subcommand (or just `mcp`)
-        if (cmd_part.ends_with("/lean-ctx") || cmd_part == "lean-ctx")
+        // MCP stdio servers: bare `sobre` with no subcommand (or just `mcp`)
+        if (cmd_part.ends_with("/sobre") || cmd_part == "sobre")
             && !cmd_part.contains("proxy")
             && !cmd_part.contains("dashboard")
             && !cmd_part.contains("daemon")
@@ -386,7 +386,7 @@ fn is_mcp_stdio_process(pid: u32) -> bool {
         {
             return true;
         }
-        // Hook processes spawned by an agent host (`lean-ctx hook <action>`)
+        // Hook processes spawned by an agent host (`sobre hook <action>`)
         if cmd_part.contains(" hook ") {
             return true;
         }
@@ -506,8 +506,8 @@ mod tests {
         }
     }
 
-    /// #714: `uninstall` running *under* a lean-ctx shell wrapper
-    /// (`lean-ctx -c … → sh → lean-ctx uninstall`) must not SIGTERM its own
+    /// #714: `uninstall` running *under* a sobre shell wrapper
+    /// (`sobre -c … → sh → sobre uninstall`) must not SIGTERM its own
     /// ancestor chain — that kills the pipeline mid-run (exit 143).
     #[test]
     fn protected_pids_cover_self_and_ancestors() {
@@ -537,7 +537,7 @@ mod tests {
         // Regardless of what matches by name, the returned set must be
         // disjoint from the protected self/ancestor set (#714).
         let protected = protected_self_pids();
-        for pid in find_pids_by_name("lean-ctx") {
+        for pid in find_pids_by_name("sobre") {
             assert!(!protected.contains(&pid), "own tree pid {pid} reported");
         }
     }

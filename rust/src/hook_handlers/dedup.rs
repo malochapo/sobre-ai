@@ -143,7 +143,7 @@ fn key(event: &str, key_material: &str) -> String {
 }
 
 fn hook_dir() -> Option<std::path::PathBuf> {
-    let dir = std::env::temp_dir().join("lean-ctx-hook");
+    let dir = std::env::temp_dir().join("sobre-hook");
     fs::create_dir_all(&dir).ok()?;
     #[cfg(unix)]
     {
@@ -268,7 +268,7 @@ mod tests {
     #[test]
     fn missing_dir_falls_back_to_work() {
         // A non-existent, non-creatable dir must never break the hook.
-        let bogus = Path::new("/proc/nonexistent-lean-ctx/does/not/exist");
+        let bogus = Path::new("/proc/nonexistent-sobre/does/not/exist");
         let out = deduped_in(bogus, "redirect", "x", || "FALLBACK".to_string());
         assert_eq!(out, "FALLBACK");
     }

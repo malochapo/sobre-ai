@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Pre-release quality gate for lean-ctx.
+# Pre-release quality gate for sobre.
 # Run this BEFORE tagging a new version.
 # Usage: cd rust && bash tests/pre_release_check.sh
 set -euo pipefail
@@ -12,7 +12,7 @@ TARGET_DIR=$(cargo metadata --no-deps --format-version=1 2>/dev/null \
     | head -1 \
     | sed -E 's/^"target_directory":"(.*)"$/\1/' \
     | sed 's/\\\\/\//g' || true)
-BIN="${TARGET_DIR:-./target}/release/lean-ctx"
+BIN="${TARGET_DIR:-./target}/release/sobre"
 PASS=0
 FAIL=0
 

@@ -20,7 +20,7 @@ const MAX_INSTRUCTION_CHARS: usize = 2048;
 
 /// What every client is told, whatever its level.
 pub const GUIDE: &str = "\
-sobre: local context tools (MCP server `lean-ctx`). Prefer them when they fit; native tools keep working.
+sobre: local context tools. Prefer them when they fit; native tools keep working.
 • Orient: ctx_compose first (no task = project overview; with task = ranked files + source).
 • Read: ctx_read(path, mode=auto|signatures|map|full|lines:N-M|anchored). Unchanged re-reads cost ~13 tokens.
 • Find: ctx_search (regex | action=symbol | action=semantic), ctx_glob (files), ctx_tree, ctx_outline (symbols).
@@ -28,7 +28,7 @@ sobre: local context tools (MCP server `lean-ctx`). Prefer them when they fit; n
 • Edit: ctx_read(mode=anchored) → ctx_patch (line+hash anchors; op=create for new files). Native Edit also works.
 • Shell: ctx_shell compresses output; long jobs → run_in_background=true.
 • Memory: ctx_session (task, findings, decisions), ctx_knowledge (facts across sessions); undo: ctx_checkpoint.
-RECOVER: compressed output is not exact evidence. Footer id → ctx_expand(id); file → ctx_read(mode=full) or read the shown path; shell → ctx_shell(raw=true) or `lean-ctx raw \"<command>\"`. Never rebuild exact content line-by-line.
+RECOVER: compressed output is not exact evidence. Footer id → ctx_expand(id); file → ctx_read(mode=full) or read the shown path; shell → ctx_shell(raw=true) or `sobre raw \"<command>\"`. Never rebuild exact content line-by-line.
 Full guide: the `sobre` skill, if your agent has skills.
 OUTPUT: never echo tool output, no narration comments, show only changed code.";
 
@@ -200,7 +200,7 @@ mod tests {
             "ctx_expand(id)",
             "ctx_read(mode=full)",
             "ctx_shell(raw=true)",
-            "lean-ctx raw \"<command>\"",
+            "sobre raw \"<command>\"",
             "not exact evidence",
         ] {
             assert!(GUIDE.contains(path), "guide must name {path}");

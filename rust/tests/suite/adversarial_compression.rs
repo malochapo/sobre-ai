@@ -1,7 +1,7 @@
 //! Adversarial compression tests based on TheDecipherist/rtk-test methodology.
 //! Each test verifies that safety-critical information survives compression.
 
-use lean_ctx::core::patterns::compress_output;
+use sobre::core::patterns::compress_output;
 
 #[test]
 fn adversarial_git_diff_preserves_code_content() {
@@ -276,7 +276,7 @@ fn adversarial_middle_truncation_preserves_errors() {
     lines[35] = "WARNING: disk space low".to_string();
     let output = lines.join("\n");
 
-    let compressed = lean_ctx::shell::compress_if_beneficial_pub("unknown-command", &output);
+    let compressed = sobre::shell::compress_if_beneficial_pub("unknown-command", &output);
     if compressed.contains('[') && compressed.contains("omitted") {
         assert!(
             compressed.contains("ERROR") || compressed.contains("critical failure"),
@@ -860,7 +860,7 @@ fn adversarial_git_log_explicit_limit_unlimited() {
 
 #[test]
 fn adversarial_safeguard_ratio_prevents_over_compression() {
-    use lean_ctx::core::compressor::safeguard_ratio;
+    use sobre::core::compressor::safeguard_ratio;
 
     let original = "a]b ".repeat(200);
     let over_compressed = "x";
@@ -888,7 +888,7 @@ fn adversarial_shell_hook_preserves_errors_in_truncation() {
     lines[75] = "ERROR: payment processing service unreachable".to_string();
     let output = lines.join("\n");
 
-    let compressed = lean_ctx::shell::compress_if_beneficial_pub("cat /var/log/app.log", &output);
+    let compressed = sobre::shell::compress_if_beneficial_pub("cat /var/log/app.log", &output);
     assert!(
         compressed.contains("CRITICAL") || compressed.contains("database corruption"),
         "shell hook must preserve CRITICAL lines during truncation: {compressed}"
@@ -981,7 +981,7 @@ fn adversarial_gh_diff_preserves_security_change() {
         "- const isAdmin = await checkAdminRole(user);",
         "+ const isAdmin = true; // HACK: bypassed for demo"
     );
-    let shell_result = lean_ctx::shell::compress_if_beneficial_pub("gh pr diff 200", &diff);
+    let shell_result = sobre::shell::compress_if_beneficial_pub("gh pr diff 200", &diff);
     assert!(
         shell_result.contains("isAdmin = true") || shell_result.contains("HACK"),
         "gh pr diff through shell hook must preserve security-critical diff content: {shell_result}"
@@ -1005,8 +1005,7 @@ fn rg_large_output_compresses_through_pipeline() {
     let output = lines.join("\n");
     let input_len = output.len();
 
-    let result =
-        lean_ctx::shell::compress_if_beneficial_pub("rg 'fn ' --no-heading -n src/", &output);
+    let result = sobre::shell::compress_if_beneficial_pub("rg 'fn ' --no-heading -n src/", &output);
 
     assert!(
         result.len() < input_len,
@@ -1015,7 +1014,7 @@ fn rg_large_output_compresses_through_pipeline() {
         input_len
     );
     assert!(
-        !result.contains("[lean-ctx:"),
+        !result.contains("[sobre:"),
         "savings footer must be silent by default"
     );
 }

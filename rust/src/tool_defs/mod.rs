@@ -55,7 +55,7 @@ pub fn apply_tool_annotations(tools: Vec<Tool>) -> Vec<Tool> {
 /// OpenAI/Azure (Pydantic-based), Claude thinking models and OpenAI-compatible
 /// backends like SGLang reject tool schemas that are valid JSON Schema but
 /// omit fields the spec treats as optional. Community-reported failures
-/// (OpenCode: "Invalid schema for function 'lean-ctx_ctx_expand': None is not
+/// (OpenCode: "Invalid schema for function 'sobre_ctx_expand': None is not
 /// of type 'array'"):
 ///
 /// - `type: "object"` with `properties` but no `required` → clients forward

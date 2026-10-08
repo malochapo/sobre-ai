@@ -22,7 +22,7 @@ use opencode::{has_proxy_base_url, install_opencode_env, uninstall_opencode_env}
 
 pub use claude::anthropic_api_key_available;
 pub(crate) use codex::install_codex_env;
-pub use util::{default_port, is_local_lean_ctx_url, proxy_timeout};
+pub use util::{default_port, is_local_sobre_url, proxy_timeout};
 
 pub fn install_proxy_env(home: &Path, port: u16, quiet: bool) {
     let cfg = crate::core::config::Config::load();
@@ -37,7 +37,7 @@ pub fn install_proxy_env(home: &Path, port: u16, quiet: bool) {
     install_opencode_env(home, port, quiet);
 }
 
-/// Install proxy env without config guard (used by `lean-ctx proxy enable` which has already set the flag).
+/// Install proxy env without config guard (used by `sobre proxy enable` which has already set the flag).
 /// `force_endpoint`: if true, overrides even non-local custom endpoints.
 pub fn install_proxy_env_unchecked(home: &Path, port: u16, quiet: bool, force_endpoint: bool) {
     if force_endpoint {
@@ -95,7 +95,7 @@ pub fn cleanup_stale_proxy_env(home: &Path) -> usize {
             .and_then(|e| e.get("ANTHROPIC_BASE_URL"))
             .and_then(|v| v.as_str())
             .map(String::from)
-        && is_local_lean_ctx_url(&base_url)
+        && is_local_sobre_url(&base_url)
         && let Some(env_obj) = doc.get_mut("env").and_then(|e| e.as_object_mut())
     {
         if let Some(ref upstream) = cfg.proxy.upstreams.get("anthropic").cloned() {
@@ -151,7 +151,7 @@ pub fn stale_proxy_agents(home: &Path) -> Vec<&'static str> {
             doc.get("env")
                 .and_then(|e| e.get("ANTHROPIC_BASE_URL"))
                 .and_then(|v| v.as_str())
-                .is_some_and(is_local_lean_ctx_url)
+                .is_some_and(is_local_sobre_url)
         })
     {
         stale.push("Claude Code");

@@ -11,7 +11,7 @@ pub(crate) fn install_named_json_server(
 
     if config_path.exists() {
         let content = std::fs::read_to_string(config_path).unwrap_or_default();
-        if content.contains("lean-ctx") {
+        if content.contains("sobre") {
             if !super::mcp_server_quiet_mode() {
                 eprintln!("{name} MCP already configured at {display_path}");
             }
@@ -48,7 +48,7 @@ fn update_named_json_server(
     let Some(servers_obj) = servers.as_object_mut() else {
         return false;
     };
-    servers_obj.insert("lean-ctx".to_string(), entry.clone());
+    servers_obj.insert("sobre".to_string(), entry.clone());
     write_json_config(config_path, &json)
 }
 
@@ -58,7 +58,7 @@ fn write_named_json_server_root(
     entry: serde_json::Value,
 ) -> bool {
     let mut servers = serde_json::Map::new();
-    servers.insert("lean-ctx".to_string(), entry);
+    servers.insert("sobre".to_string(), entry);
 
     let mut root = serde_json::Map::new();
     root.insert(root_key.to_string(), serde_json::Value::Object(servers));

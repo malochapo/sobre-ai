@@ -24,7 +24,7 @@ pub(crate) fn claude_instructions_check(home: &std::path::Path) -> Outcome {
         format!("{BOLD}Claude Code skill{RST}  {GREEN}sobre skill installed{RST}")
     } else {
         format!(
-            "{BOLD}Claude Code skill{RST}  {YELLOW}sobre skill missing or outdated{RST}  {DIM}(run: lean-ctx init){RST}"
+            "{BOLD}Claude Code skill{RST}  {YELLOW}sobre skill missing or outdated{RST}  {DIM}(run: sobre init){RST}"
         )
     };
     Outcome { ok: current, line }

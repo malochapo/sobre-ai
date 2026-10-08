@@ -437,7 +437,7 @@ fn handle_export(project_root: &str) -> String {
     let Some(knowledge) = ProjectKnowledge::load(project_root) else {
         return "No knowledge to export.".to_string();
     };
-    let data_dir = match crate::core::data_dir::lean_ctx_data_dir() {
+    let data_dir = match crate::core::data_dir::sobre_data_dir() {
         Ok(d) => d,
         Err(e) => return format!("Export failed: {e}"),
     };
@@ -481,7 +481,7 @@ pub fn handle_export_okf(project_root: &str, out: Option<&str>) -> String {
 
     let dir = match out {
         Some(p) => std::path::PathBuf::from(p),
-        None => match crate::core::data_dir::lean_ctx_data_dir() {
+        None => match crate::core::data_dir::sobre_data_dir() {
             Ok(d) => d
                 .join("exports")
                 .join("okf")

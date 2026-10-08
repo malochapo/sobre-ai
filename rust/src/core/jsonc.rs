@@ -3,7 +3,7 @@ use serde_json::Value;
 /// Strip `//` line comments, `/* */` block comments and trailing commas from
 /// JSONC, then parse with serde_json. String contents are preserved verbatim.
 ///
-/// This makes lean-ctx tolerant of the JSONC dialect that editors like VS Code
+/// This makes sobre tolerant of the JSONC dialect that editors like VS Code
 /// use for `settings.json` / `mcp.json` (comments + trailing commas are valid
 /// there but rejected by strict JSON). See issue #311.
 pub fn parse_jsonc(input: &str) -> Result<Value, serde_json::Error> {
@@ -345,19 +345,19 @@ mod tests {
         let input = r#"{
   // Claude Code Einstellungen
   "mcpServers": {
-    /* Lean-CTX Konfiguration für /Users/müller/Projekte */
-    "lean-ctx": {
-      "command": "/Users/müller/.local/bin/lean-ctx",
+    /* sobre-Konfiguration für /Users/müller/Projekte */
+    "sobre": {
+      "command": "/Users/müller/.local/bin/sobre",
       "args": ["--project", "/Users/müller/Projekte/größtes-projekt"]
     }
   }
 }"#;
         let v = parse_jsonc(input).unwrap();
         assert_eq!(
-            v["mcpServers"]["lean-ctx"]["command"],
-            "/Users/müller/.local/bin/lean-ctx"
+            v["mcpServers"]["sobre"]["command"],
+            "/Users/müller/.local/bin/sobre"
         );
-        let args = v["mcpServers"]["lean-ctx"]["args"].as_array().unwrap();
+        let args = v["mcpServers"]["sobre"]["args"].as_array().unwrap();
         assert_eq!(args[1], "/Users/müller/Projekte/größtes-projekt");
     }
 }

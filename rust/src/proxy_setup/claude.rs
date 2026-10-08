@@ -2,7 +2,7 @@
 
 use std::path::Path;
 
-use super::util::{is_local_lean_ctx_url, is_proxy_reachable};
+use super::util::{is_local_sobre_url, is_proxy_reachable};
 
 /// Returns true when an Anthropic **API key** is available for the proxy to forward
 /// upstream.
@@ -57,9 +57,9 @@ fn warn_claude_subscription_skip() {
     eprintln!("    The proxy forwards your credential upstream but never injects one, and a");
     eprintln!("    subscription token only authenticates against api.anthropic.com directly.");
     eprintln!("    Leaving ANTHROPIC_BASE_URL untouched so Claude Code keeps working.");
-    eprintln!("    Savings on a subscription: use the lean-ctx MCP tools (ctx_read /");
+    eprintln!("    Savings on a subscription: use the sobre MCP tools (ctx_read /");
     eprintln!("    ctx_search / ctx_shell). Pay-as-you-go? Set ANTHROPIC_API_KEY, then run:");
-    eprintln!("      lean-ctx proxy enable");
+    eprintln!("      sobre proxy enable");
 }
 
 pub(crate) fn uninstall_claude_env(home: &Path, quiet: bool) {
@@ -142,7 +142,7 @@ pub(crate) fn install_claude_env_inner(home: &Path, port: u16, quiet: bool, forc
     // key lives somewhere we cannot probe (e.g. a keychain or apiKeyHelper we missed).
     if !force && !anthropic_api_key_available(home) {
         // Repair an existing stale local redirect so Claude Code reaches Anthropic again.
-        if is_local_lean_ctx_url(&current_url) {
+        if is_local_sobre_url(&current_url) {
             let cfg = Config::load();
             if let Some(env_obj) = doc.get_mut("env").and_then(|e| e.as_object_mut()) {
                 if let Some(ref upstream) = cfg.proxy.upstreams.get("anthropic").cloned() {
@@ -194,7 +194,7 @@ pub(crate) fn install_claude_env_inner(home: &Path, port: u16, quiet: bool, forc
             if !quiet {
                 eprintln!("  \u{26a0} Custom endpoint detected: {upstream}");
                 eprintln!(
-                    "    Skipping proxy URL write. Use `lean-ctx proxy enable --force` to override."
+                    "    Skipping proxy URL write. Use `sobre proxy enable --force` to override."
                 );
             }
             return;

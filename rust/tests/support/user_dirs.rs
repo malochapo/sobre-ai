@@ -3,11 +3,11 @@
 //!
 //! Integration tests link the library without `cfg(test)`, so its per-process
 //! test sandbox does not apply and every store write would land in the real
-//! `~/.local/share/lean-ctx`, `~/.local/state/lean-ctx` and `~/.cache/lean-ctx`.
+//! `~/.local/share/sobre`, `~/.local/state/sobre` and `~/.cache/sobre`.
 //!
 //! The static below runs before `main` and points HOME and the XDG bases at a
 //! fresh per-process temp dir, so config, data, state and cache all resolve
-//! inside it. A test that sets its own `LEAN_CTX_<CATEGORY>_DIR` moves only
+//! inside it. A test that sets its own `SOBRE_<CATEGORY>_DIR` moves only
 //! that category.
 
 const SANDBOXED_VARS: &[(&str, &str)] = &[
@@ -19,7 +19,7 @@ const SANDBOXED_VARS: &[(&str, &str)] = &[
 ];
 
 extern "C" fn sandbox_user_dirs() {
-    let root = std::env::temp_dir().join(format!("lean-ctx-it-{}", std::process::id()));
+    let root = std::env::temp_dir().join(format!("sobre-it-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&root);
     for (var, rel) in SANDBOXED_VARS {
         let dir = root.join(rel);
@@ -45,10 +45,10 @@ static SANDBOX_USER_DIRS: extern "C" fn() = sandbox_user_dirs;
 /// The initializer ran: HOME points into this process's sandbox. Holds the env
 /// lock so a test that temporarily repoints HOME cannot race the read.
 pub(crate) fn assert_sandboxed() {
-    let _lock = lean_ctx::core::data_dir::test_env_lock();
+    let _lock = sobre::core::data_dir::test_env_lock();
     let home = std::env::var("HOME").unwrap_or_default();
     assert!(
-        home.contains(&format!("lean-ctx-it-{}", std::process::id())),
+        home.contains(&format!("sobre-it-{}", std::process::id())),
         "the pre-main sandbox did not run: HOME is {home:?}, so tests would write to real user dirs"
     );
 }

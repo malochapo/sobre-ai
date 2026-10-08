@@ -1,21 +1,21 @@
 // Auto-split from the former monolithic dispatch.rs. run() (the command
 // match) stays in mod.rs; standalone helpers grouped by concern.
 
-/// Short, friendly orientation shown when a human runs bare `lean-ctx` in a
+/// Short, friendly orientation shown when a human runs bare `sobre` in a
 /// terminal (where the silent stdio MCP server would otherwise just hang). One
 /// obvious next step (`init`), not the full command reference.
 pub(super) fn quickstart_text() -> String {
     format!(
-        "lean-ctx {version} — sobre, local context tools for coding agents
+        "sobre {version} — sobre, local context tools for coding agents
 
-With no arguments, lean-ctx speaks the MCP protocol on stdin/stdout — that is
+With no arguments, sobre speaks the MCP protocol on stdin/stdout — that is
 for your AI agent, not for interactive use, so it is waiting silently. You
 probably want one of these:
 
-  lean-ctx init          Connect every detected agent
-  lean-ctx init claude   Connect one agent (claude, codex, cursor, ...)
-  lean-ctx doctor        Check that everything is wired up correctly
-  lean-ctx help          Common commands (or `help all` for everything)
+  sobre init          Connect every detected agent
+  sobre init claude   Connect one agent (claude, codex, cursor, ...)
+  sobre doctor        Check that everything is wired up correctly
+  sobre help          Common commands (or `help all` for everything)
 ",
         version = env!("CARGO_PKG_VERSION"),
     )
@@ -34,36 +34,36 @@ pub(super) fn capability_banner() -> String {
     )
 }
 
-/// Concise, tiered help shown by default for `lean-ctx help` and `--help`.
-/// The exhaustive reference lives behind `lean-ctx help all`.
+/// Concise, tiered help shown by default for `sobre help` and `--help`.
+/// The exhaustive reference lives behind `sobre help all`.
 pub(super) fn print_help_concise() {
     print!("{}", concise_help_text());
 }
 
 pub(super) fn concise_help_text() -> String {
     format!(
-        "lean-ctx {version} — sobre, local context tools for coding agents
+        "sobre {version} — sobre, local context tools for coding agents
 
 {banner}
 
 GETTING STARTED:
-    lean-ctx init                  Connect every detected agent
-    lean-ctx init <agent>          Connect one agent (claude, codex, copilot, cursor,
+    sobre init                  Connect every detected agent
+    sobre init <agent>          Connect one agent (claude, codex, copilot, cursor,
                                    gemini, opencode, windsurf, zed)
-    lean-ctx doctor                Check that everything is wired up correctly
-    lean-ctx gain                  See how many tokens you have saved
+    sobre doctor                Check that everything is wired up correctly
+    sobre gain                  See how many tokens you have saved
 
 EVERYDAY COMMANDS:
-    lean-ctx -c \"command\"          Run a shell command with compressed output
-    lean-ctx raw \"command\"         Run a shell command with its exact output
-    lean-ctx call <tool> ...       Call one MCP tool from the shell
+    sobre -c \"command\"          Run a shell command with compressed output
+    sobre raw \"command\"         Run a shell command with its exact output
+    sobre call <tool> ...       Call one MCP tool from the shell
 
 MANAGE:
-    lean-ctx config                Show or edit the config file
-    lean-ctx uninstall             Remove everything init wrote
+    sobre config                Show or edit the config file
+    sobre uninstall             Remove everything init wrote
 
 MORE:
-    lean-ctx help all              Full command reference (every subcommand)
+    sobre help all              Full command reference (every subcommand)
 ",
         version = env!("CARGO_PKG_VERSION"),
         banner = capability_banner(),
@@ -72,23 +72,23 @@ MORE:
 
 pub(super) fn print_help() {
     println!(
-        "lean-ctx {version} — sobre, local context tools for coding agents
+        "sobre {version} — sobre, local context tools for coding agents
 
 {banner}
 
 GETTING STARTED:
-    lean-ctx init                  Connect every detected agent
-    lean-ctx init <agent>          Connect one agent
-    lean-ctx doctor                Check that everything is wired up correctly
-    lean-ctx gain                  See how many tokens you have saved
-    (everything below is reference — run `lean-ctx help` for the short version)
+    sobre init                  Connect every detected agent
+    sobre init <agent>          Connect one agent
+    sobre doctor                Check that everything is wired up correctly
+    sobre gain                  See how many tokens you have saved
+    (everything below is reference — run `sobre help` for the short version)
 
 USAGE:
-    lean-ctx                       Start the MCP server (stdio)
-    lean-ctx mcp                   Same, explicitly
-    lean-ctx -c \"command\"          Run with compressed output (used by agent hooks)
-    lean-ctx raw \"command\"         Run with the exact, uncompressed output
-    lean-ctx call <tool> --project-root <path> --json '<json>'
+    sobre                       Start the MCP server (stdio)
+    sobre mcp                   Same, explicitly
+    sobre -c \"command\"          Run with compressed output (used by agent hooks)
+    sobre raw \"command\"         Run with the exact, uncompressed output
+    sobre call <tool> --project-root <path> --json '<json>'
                                    Call one MCP tool from the shell
 
 SAVINGS:
@@ -138,9 +138,9 @@ OPTIONS:
     --help, -h                     Show this help
 
 TROUBLESHOOTING:
-    Something broken?    lean-ctx doctor --fix
-    Permanent fix?       lean-ctx uninstall       (removes all hooks)
-    Preview init?        lean-ctx init --check
+    Something broken?    sobre doctor --fix
+    Permanent fix?       sobre uninstall       (removes all hooks)
+    Preview init?        sobre init --check
 ",
         version = env!("CARGO_PKG_VERSION"),
         banner = capability_banner(),

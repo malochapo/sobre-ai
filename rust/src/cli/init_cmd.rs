@@ -22,11 +22,11 @@ fn install_agents(args: &[String]) {
 
     if dry_run {
         let binary = crate::core::portable_binary::resolve_portable_binary();
-        let data_dir = crate::core::data_dir::lean_ctx_data_dir().map_or_else(
-            |_| "~/.local/share/lean-ctx/".to_string(),
+        let data_dir = crate::core::data_dir::sobre_data_dir().map_or_else(
+            |_| "~/.local/share/sobre/".to_string(),
             |p| p.to_string_lossy().to_string(),
         );
-        qprintln!("\nlean-ctx init --check\n");
+        qprintln!("\nsobre init --check\n");
         if agents.is_empty() {
             qprintln!("  Would connect: every detected agent (MCP entry, hooks, skill)");
         } else {
@@ -45,7 +45,7 @@ fn install_agents(args: &[String]) {
             eprintln!("  ✗ {agent_name}: {e}");
         }
     }
-    qprintln!("\nRun 'lean-ctx gain' after using some commands to see your savings.");
+    qprintln!("\nRun 'sobre gain' after using some commands to see your savings.");
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -224,7 +224,7 @@ fn ask_about_proxy() {
 }
 
 /// Semantic search needs a local model. It is downloaded only with consent:
-/// here, or later with `lean-ctx embeddings provision`. Asked only by builds
+/// here, or later with `sobre embeddings provision`. Asked only by builds
 /// that can use it, and only while the model is missing.
 fn ask_about_embeddings() {
     #[cfg(feature = "embeddings")]
@@ -251,7 +251,7 @@ fn ask_about_embeddings() {
                 eprintln!("  Download failed: {e}");
             }
         } else {
-            println!("  Skipped. Download later with `lean-ctx embeddings provision`.");
+            println!("  Skipped. Download later with `sobre embeddings provision`.");
         }
     }
 }

@@ -1,4 +1,4 @@
-//! Open Knowledge Format (OKF) rendering for lean-ctx project knowledge.
+//! Open Knowledge Format (OKF) rendering for sobre project knowledge.
 //!
 //! OKF (Google Cloud, June 2026) formalises the "LLM-wiki" pattern: a *directory
 //! of Markdown files*, one concept per file, each with a small YAML frontmatter
@@ -16,12 +16,12 @@
 //! ## Determinism (#498)
 //! Every byte of the export is a pure function of the snapshot: frontmatter keys
 //! are emitted in a fixed order (reserved OKF keys first, then sorted
-//! `leanctx_*`), file slugs are stable, relation lines are sorted, and no
+//! `sobre_*`), file slugs are stable, relation lines are sorted, and no
 //! `now()` or counter ever reaches the output. Two exports of the same snapshot
 //! are byte-identical, which keeps provider prompt-caching effective.
 //!
 //! ## Lossless round-trip
-//! lean-ctx-specific fields ride along as producer-owned `leanctx_*` keys (OKF
+//! sobre-specific fields ride along as producer-owned `sobre_*` keys (OKF
 //! §reserves only a small set and lets producers add their own), so an
 //! export -> import cycle reconstructs the same facts, archetypes, and relations.
 //! Foreign bundles that carry only `type` import as plain facts rather than
@@ -59,7 +59,7 @@ pub struct OkfEdge {
     pub kind: KnowledgeEdgeKind,
 }
 
-/// The result of parsing an OKF directory back into lean-ctx structures.
+/// The result of parsing an OKF directory back into sobre structures.
 #[derive(Debug, Default)]
 pub struct OkfImport {
     pub facts: Vec<KnowledgeFact>,
@@ -174,7 +174,7 @@ fn render_concept(f: &KnowledgeFact, rel_lines: &[String]) -> String {
 }
 
 /// Ordered frontmatter for a fact: reserved OKF keys first (fixed order), then
-/// producer-owned `leanctx_*` keys sorted for determinism and lossless import.
+/// producer-owned `sobre_*` keys sorted for determinism and lossless import.
 /// Emits an `f32` as its shortest round-trippable decimal so frontmatter shows
 /// `0.9` rather than the f64-widened `0.8999999761581421`. Keeps git diffs and
 /// prompt-cache bytes stable while parsing back to the same `f32` on import.
@@ -198,39 +198,36 @@ fn concept_frontmatter(f: &KnowledgeFact) -> Vec<(String, Value)> {
     ));
 
     let mut extra: BTreeMap<String, Value> = BTreeMap::new();
-    extra.insert("leanctx_archetype".into(), f.archetype.as_type_str().into());
-    extra.insert("leanctx_category".into(), f.category.clone().into());
-    extra.insert("leanctx_confidence".into(), clean_f32(f.confidence));
+    extra.insert("sobre_archetype".into(), f.archetype.as_type_str().into());
+    extra.insert("sobre_category".into(), f.category.clone().into());
+    extra.insert("sobre_confidence".into(), clean_f32(f.confidence));
     extra.insert(
-        "leanctx_confirmation_count".into(),
+        "sobre_confirmation_count".into(),
         f.confirmation_count.into(),
     );
+    extra.insert("sobre_created_at".into(), f.created_at.to_rfc3339().into());
+    extra.insert("sobre_key".into(), f.key.clone().into());
     extra.insert(
-        "leanctx_created_at".into(),
-        f.created_at.to_rfc3339().into(),
-    );
-    extra.insert("leanctx_key".into(), f.key.clone().into());
-    extra.insert(
-        "leanctx_last_confirmed".into(),
+        "sobre_last_confirmed".into(),
         f.last_confirmed.to_rfc3339().into(),
     );
-    extra.insert("leanctx_revision_count".into(), f.revision_count.into());
+    extra.insert("sobre_revision_count".into(), f.revision_count.into());
     extra.insert(
-        "leanctx_sensitivity".into(),
+        "sobre_sensitivity".into(),
         serde_json::to_value(f.sensitivity).unwrap_or_else(|_| "public".into()),
     );
     extra.insert(
-        "leanctx_source_session".into(),
+        "sobre_source_session".into(),
         f.source_session.clone().into(),
     );
     if let Some(vf) = f.valid_from {
-        extra.insert("leanctx_valid_from".into(), vf.to_rfc3339().into());
+        extra.insert("sobre_valid_from".into(), vf.to_rfc3339().into());
     }
     if let Some(vu) = f.valid_until {
-        extra.insert("leanctx_valid_until".into(), vu.to_rfc3339().into());
+        extra.insert("sobre_valid_until".into(), vu.to_rfc3339().into());
     }
     if let Some(s) = &f.supersedes {
-        extra.insert("leanctx_supersedes".into(), s.clone().into());
+        extra.insert("sobre_supersedes".into(), s.clone().into());
     }
     pairs.extend(extra);
     pairs
@@ -245,14 +242,11 @@ fn render_pattern(p: &ProjectPattern) -> String {
         pairs.push(("description".into(), Value::from(desc)));
     }
     let mut extra: BTreeMap<String, Value> = BTreeMap::new();
+    extra.insert("sobre_created_at".into(), p.created_at.to_rfc3339().into());
+    extra.insert("sobre_examples".into(), Value::from(p.examples.clone()));
+    extra.insert("sobre_kind".into(), "pattern".into());
     extra.insert(
-        "leanctx_created_at".into(),
-        p.created_at.to_rfc3339().into(),
-    );
-    extra.insert("leanctx_examples".into(), Value::from(p.examples.clone()));
-    extra.insert("leanctx_kind".into(), "pattern".into());
-    extra.insert(
-        "leanctx_source_session".into(),
+        "sobre_source_session".into(),
         p.source_session.clone().into(),
     );
     pairs.extend(extra);
@@ -278,7 +272,7 @@ fn render_index(facts: &[&KnowledgeFact], patterns: &[ProjectPattern]) -> String
         *counts.entry(f.category.clone()).or_insert(0) += 1;
     }
     let mut out = String::from(
-        "# Knowledge Index\n\nOpen Knowledge Format (OKF) bundle exported by lean-ctx.\n\n## Concepts by category\n\n",
+        "# Knowledge Index\n\nOpen Knowledge Format (OKF) bundle exported by sobre.\n\n## Concepts by category\n\n",
     );
     if counts.is_empty() {
         out.push_str("_none_\n");
@@ -335,7 +329,7 @@ pub fn from_okf_dir(dir: &Path) -> Result<OkfImport, String> {
             continue;
         }
 
-        if fm.get("leanctx_kind").and_then(Value::as_str) == Some("pattern") {
+        if fm.get("sobre_kind").and_then(Value::as_str) == Some("pattern") {
             if let Some(p) = build_pattern(&fm, &body) {
                 imp.patterns.push(p);
             }
@@ -393,31 +387,31 @@ fn build_fact(fm: &Map<String, Value>, body: &str, category: String, key: String
     } else {
         content
     };
-    let archetype = get_str(fm, "leanctx_archetype").map_or_else(
+    let archetype = get_str(fm, "sobre_archetype").map_or_else(
         || KnowledgeArchetype::from_type_str(&type_str),
         |s| KnowledgeArchetype::from_type_str(&s),
     );
     let confidence = fm
-        .get("leanctx_confidence")
+        .get("sobre_confidence")
         .and_then(Value::as_f64)
         .map_or(0.8, |v| v as f32);
     let source_session =
-        get_str(fm, "leanctx_source_session").unwrap_or_else(|| "okf-import".to_string());
-    let created_at = get_dt(fm, "leanctx_created_at").unwrap_or_else(Utc::now);
-    let last_confirmed = get_dt(fm, "leanctx_last_confirmed")
+        get_str(fm, "sobre_source_session").unwrap_or_else(|| "okf-import".to_string());
+    let created_at = get_dt(fm, "sobre_created_at").unwrap_or_else(Utc::now);
+    let last_confirmed = get_dt(fm, "sobre_last_confirmed")
         .or_else(|| get_dt(fm, "timestamp"))
         .unwrap_or(created_at);
-    let valid_from = get_dt(fm, "leanctx_valid_from").or(Some(created_at));
-    let valid_until = get_dt(fm, "leanctx_valid_until");
+    let valid_from = get_dt(fm, "sobre_valid_from").or(Some(created_at));
+    let valid_until = get_dt(fm, "sobre_valid_until");
     let confirmation_count = fm
-        .get("leanctx_confirmation_count")
+        .get("sobre_confirmation_count")
         .and_then(Value::as_u64)
         .unwrap_or(1) as u32;
     let revision_count = fm
-        .get("leanctx_revision_count")
+        .get("sobre_revision_count")
         .and_then(Value::as_u64)
         .unwrap_or(0) as u32;
-    let sensitivity = get_str(fm, "leanctx_sensitivity")
+    let sensitivity = get_str(fm, "sobre_sensitivity")
         .and_then(|s| serde_json::from_value(Value::String(s)).ok())
         .unwrap_or_else(|| sensitivity::classify_content(&value));
 
@@ -433,7 +427,7 @@ fn build_fact(fm: &Map<String, Value>, body: &str, category: String, key: String
         last_retrieved: None,
         valid_from,
         valid_until,
-        supersedes: get_str(fm, "leanctx_supersedes"),
+        supersedes: get_str(fm, "sobre_supersedes"),
         confirmation_count,
         feedback_up: 0,
         feedback_down: 0,
@@ -454,7 +448,7 @@ fn build_pattern(fm: &Map<String, Value>, body: &str) -> Option<ProjectPattern> 
         content
     };
     let examples = fm
-        .get("leanctx_examples")
+        .get("sobre_examples")
         .and_then(Value::as_array)
         .map(|arr| {
             arr.iter()
@@ -466,9 +460,9 @@ fn build_pattern(fm: &Map<String, Value>, body: &str) -> Option<ProjectPattern> 
         pattern_type,
         description,
         examples,
-        source_session: get_str(fm, "leanctx_source_session")
+        source_session: get_str(fm, "sobre_source_session")
             .unwrap_or_else(|| "okf-import".to_string()),
-        created_at: get_dt(fm, "leanctx_created_at").unwrap_or_else(Utc::now),
+        created_at: get_dt(fm, "sobre_created_at").unwrap_or_else(Utc::now),
     })
 }
 
@@ -599,13 +593,13 @@ fn split_body_content(body: &str) -> String {
 }
 
 fn concept_category(fm: &Map<String, Value>) -> String {
-    get_str(fm, "leanctx_category")
+    get_str(fm, "sobre_category")
         .or_else(|| get_str_array_first(fm, "tags"))
         .unwrap_or_else(|| "imported".to_string())
 }
 
 fn concept_key(fm: &Map<String, Value>) -> String {
-    get_str(fm, "leanctx_key")
+    get_str(fm, "sobre_key")
         .or_else(|| get_str(fm, "title"))
         .unwrap_or_else(|| "concept".to_string())
 }
@@ -852,7 +846,7 @@ mod tests {
         assert_eq!(f.value, "We run everything on Kubernetes.");
         assert_eq!(
             f.key, "concept",
-            "no title/leanctx_key falls back to a default"
+            "no title/sobre_key falls back to a default"
         );
     }
 

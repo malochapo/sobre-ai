@@ -9,7 +9,7 @@
 //!
 //! Every invocation is wrapped in a hard timeout via
 //! [`crate::ipc::process::run_with_timeout`], so a stuck `launchctl` can never
-//! block a `lean-ctx` command.
+//! block a `sobre` command.
 
 use std::path::Path;
 use std::process::Command;

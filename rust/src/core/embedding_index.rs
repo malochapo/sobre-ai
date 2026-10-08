@@ -70,7 +70,7 @@ pub enum EmbeddingBuildOutcome {
 
 /// Build or update the persistent embedding index for a project.
 ///
-/// Called by `lean-ctx index build` after the BM25 index is ready. This is a
+/// Called by `sobre index build` after the BM25 index is ready. This is a
 /// *background-friendly* operation: it runs the ONNX
 /// model incrementally (only chunks whose content hash changed) and persists
 /// `embeddings.bin` (postcard) so later `ctx_search` dense/hybrid calls find a warm cache.
@@ -81,12 +81,12 @@ pub enum EmbeddingBuildOutcome {
 pub fn build_or_update(root: &Path, bm25: &super::bm25_index::BM25Index) -> EmbeddingBuildOutcome {
     {
         // Never download here: `index build` also runs in the background
-        // after `init`. The model arrives through `lean-ctx embeddings
+        // after `init`. The model arrives through `sobre embeddings
         // provision` (or init's prompt), with the user's consent.
         let root_key = root.to_string_lossy().to_string();
         if !crate::core::embeddings::EmbeddingEngine::is_available() {
             return EmbeddingBuildOutcome::ModelNotAvailable(
-                "not installed — run `lean-ctx embeddings provision`".to_string(),
+                "not installed — run `sobre embeddings provision`".to_string(),
             );
         }
 
@@ -94,7 +94,7 @@ pub fn build_or_update(root: &Path, bm25: &super::bm25_index::BM25Index) -> Embe
             Ok(engine) => engine,
             Err(e) => {
                 let reason = format!(
-                    "embedding model files found but engine failed to load: {e}. Fix: run `lean-ctx embeddings provision` to install the managed ONNX Runtime"
+                    "embedding model files found but engine failed to load: {e}. Fix: run `sobre embeddings provision` to install the managed ONNX Runtime"
                 );
                 tracing::warn!("[embedding_index] build_or_update failed: {reason}");
                 return EmbeddingBuildOutcome::ModelNotAvailable(reason);
@@ -754,7 +754,7 @@ mod tests {
     fn save_and_load_roundtrip() {
         let _lock = crate::core::data_dir::test_env_lock();
         let data_dir = tempfile::tempdir().unwrap();
-        crate::test_env::set_var("LEAN_CTX_DATA_DIR", data_dir.path());
+        crate::test_env::set_var("SOBRE_DATA_DIR", data_dir.path());
 
         let project_dir = tempfile::tempdir().unwrap();
 
@@ -777,7 +777,7 @@ mod tests {
         assert!((recon[1] - 2.0).abs() < 0.02);
         assert!((recon[2] - 3.0).abs() < 0.02);
 
-        crate::test_env::remove_var("LEAN_CTX_DATA_DIR");
+        crate::test_env::remove_var("SOBRE_DATA_DIR");
     }
 
     #[test]

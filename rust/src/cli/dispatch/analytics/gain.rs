@@ -1,4 +1,4 @@
-//! `lean-ctx gain` — what the usage ledger says sobre saved.
+//! `sobre gain` — what the usage ledger says sobre saved.
 //!
 //! Every figure is computed from `usage.jsonl` when the command runs (see
 //! [`crate::core::usage`]). Measured cost needs the proxy: without it the
@@ -56,7 +56,7 @@ fn flag_value(rest: &[String], name: &str) -> Option<String> {
 
 /// The model a host hook last reported, when the proxy saw no calls.
 fn detected_model() -> Option<String> {
-    let path = crate::core::data_dir::lean_ctx_data_dir()
+    let path = crate::core::data_dir::sobre_data_dir()
         .ok()?
         .join("detected_model.json");
     let v: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(path).ok()?).ok()?;
@@ -160,7 +160,7 @@ fn print_summary(s: &Summary, quote: &ModelQuote, period: &str) {
             price_label(quote)
         );
         println!(
-            "  {dim}No proxy in the path, so no measured cost. `lean-ctx proxy start` measures it.{rst}"
+            "  {dim}No proxy in the path, so no measured cost. `sobre proxy start` measures it.{rst}"
         );
     }
 

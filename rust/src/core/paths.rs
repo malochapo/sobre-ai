@@ -1,19 +1,19 @@
-//! Typed XDG base-directory resolvers for lean-ctx (GH #408 / GL #602).
+//! Typed XDG base-directory resolvers for sobre (GH #408 / GL #602).
 //!
 //! One typed resolver per XDG category, so `config.toml` never mixes with
 //! runtime data and the config dir can stay read-only.
 //!
-//! Each category resolves to its own `LEAN_CTX_<CATEGORY>_DIR` override, else
-//! its XDG base: config `$XDG_CONFIG_HOME/lean-ctx`, data
-//! `$XDG_DATA_HOME/lean-ctx`, state `$XDG_STATE_HOME/lean-ctx`, cache
-//! `$XDG_CACHE_HOME/lean-ctx`. An override only ever moves its own category.
+//! Each category resolves to its own `SOBRE_<CATEGORY>_DIR` override, else
+//! its XDG base: config `$XDG_CONFIG_HOME/sobre`, data
+//! `$XDG_DATA_HOME/sobre`, state `$XDG_STATE_HOME/sobre`, cache
+//! `$XDG_CACHE_HOME/sobre`. An override only ever moves its own category.
 //!
 //! Determinism (#498): every resolver is a pure function of environment + HOME;
 //! no timestamps, counters or randomness.
 
 use std::path::{Path, PathBuf};
 
-use super::data_dir::{ensure_dir_permissions, lean_ctx_data_dir};
+use super::data_dir::{ensure_dir_permissions, sobre_data_dir};
 
 /// Reads a directory path from `name`, treating empty/whitespace as unset.
 fn env_path(name: &str) -> Option<PathBuf> {
@@ -26,7 +26,7 @@ fn env_path(name: &str) -> Option<PathBuf> {
 
 /// Resolves an XDG base directory (e.g. `~/.config`), honoring the `env_name`
 /// override and falling back to `$HOME/<home_fallback>`. Returns the base only;
-/// callers append `lean-ctx`.
+/// callers append `sobre`.
 fn xdg_base(env_name: &str, home_fallback: &str) -> Result<PathBuf, String> {
     if let Some(p) = env_path(env_name) {
         return Ok(p);
@@ -37,9 +37,9 @@ fn xdg_base(env_name: &str, home_fallback: &str) -> Result<PathBuf, String> {
 }
 
 /// Pure resolution order for a category: explicit override > XDG default
-/// (`<base>/lean-ctx`).
+/// (`<base>/sobre`).
 fn resolve(category_override: Option<PathBuf>, xdg_base_dir: &Path) -> PathBuf {
-    category_override.unwrap_or_else(|| xdg_base_dir.join("lean-ctx"))
+    category_override.unwrap_or_else(|| xdg_base_dir.join("sobre"))
 }
 
 /// Shared resolver for the config/state/cache categories.
@@ -73,9 +73,9 @@ fn category_dir(cat_env: &str, xdg_env: &str, home_fallback: &str) -> Result<Pat
 }
 
 /// Config directory — `config.toml`. RO-safe.
-/// Override: `LEAN_CTX_CONFIG_DIR`; default `$XDG_CONFIG_HOME/lean-ctx`.
+/// Override: `SOBRE_CONFIG_DIR`; default `$XDG_CONFIG_HOME/sobre`.
 pub fn config_dir() -> Result<PathBuf, String> {
-    category_dir("LEAN_CTX_CONFIG_DIR", "XDG_CONFIG_HOME", ".config")
+    category_dir("SOBRE_CONFIG_DIR", "XDG_CONFIG_HOME", ".config")
 }
 
 /// A member (a file or sub-directory) of the config dir.
@@ -85,22 +85,22 @@ pub fn config_dir_member(sub: &str) -> Result<PathBuf, String> {
 
 /// Data directory — sessions, vectors, graphs, knowledge, archives, memory.
 ///
-/// Delegates to [`lean_ctx_data_dir`]: `LEAN_CTX_DATA_DIR`, else
-/// `$XDG_DATA_HOME/lean-ctx`.
+/// Delegates to [`sobre_data_dir`]: `SOBRE_DATA_DIR`, else
+/// `$XDG_DATA_HOME/sobre`.
 pub fn data_dir() -> Result<PathBuf, String> {
-    lean_ctx_data_dir()
+    sobre_data_dir()
 }
 
 /// State directory — events, stats, logs, journals, ledgers, captured keys.
-/// Override: `LEAN_CTX_STATE_DIR`; default `$XDG_STATE_HOME/lean-ctx`.
+/// Override: `SOBRE_STATE_DIR`; default `$XDG_STATE_HOME/sobre`.
 pub fn state_dir() -> Result<PathBuf, String> {
-    category_dir("LEAN_CTX_STATE_DIR", "XDG_STATE_HOME", ".local/state")
+    category_dir("SOBRE_STATE_DIR", "XDG_STATE_HOME", ".local/state")
 }
 
 /// Cache directory — semantic cache, models, learned patterns. tmpfs-safe.
-/// Override: `LEAN_CTX_CACHE_DIR`; default `$XDG_CACHE_HOME/lean-ctx`.
+/// Override: `SOBRE_CACHE_DIR`; default `$XDG_CACHE_HOME/sobre`.
 pub fn cache_dir() -> Result<PathBuf, String> {
-    category_dir("LEAN_CTX_CACHE_DIR", "XDG_CACHE_HOME", ".cache")
+    category_dir("SOBRE_CACHE_DIR", "XDG_CACHE_HOME", ".cache")
 }
 
 #[cfg(test)]
@@ -113,7 +113,7 @@ mod tests {
         let base = PathBuf::from("/xdg/base");
 
         assert_eq!(resolve(Some(over.clone()), &base), over);
-        assert_eq!(resolve(None, &base), PathBuf::from("/xdg/base/lean-ctx"));
+        assert_eq!(resolve(None, &base), PathBuf::from("/xdg/base/sobre"));
     }
 
     #[test]
@@ -126,7 +126,7 @@ mod tests {
         assert_eq!(from_env, tmp.path());
 
         // Unset var → falls back to $HOME/<home_fallback>.
-        let fallback = xdg_base("LEAN_CTX_NONEXISTENT_XDG_VAR", ".cache").unwrap();
+        let fallback = xdg_base("SOBRE_NONEXISTENT_XDG_VAR", ".cache").unwrap();
         assert!(fallback.ends_with(".cache"), "got: {}", fallback.display());
     }
 
@@ -134,9 +134,9 @@ mod tests {
     fn config_dir_honors_explicit_override() {
         let _lock = crate::core::data_dir::test_env_lock();
         let tmp = tempfile::tempdir().unwrap();
-        crate::test_env::set_var("LEAN_CTX_CONFIG_DIR", tmp.path());
+        crate::test_env::set_var("SOBRE_CONFIG_DIR", tmp.path());
         let got = config_dir().unwrap();
-        crate::test_env::remove_var("LEAN_CTX_CONFIG_DIR");
+        crate::test_env::remove_var("SOBRE_CONFIG_DIR");
         assert_eq!(got, tmp.path());
     }
 
@@ -145,22 +145,22 @@ mod tests {
         let _lock = crate::core::data_dir::test_env_lock();
         let state = tempfile::tempdir().unwrap();
         let cache = tempfile::tempdir().unwrap();
-        crate::test_env::set_var("LEAN_CTX_STATE_DIR", state.path());
-        crate::test_env::set_var("LEAN_CTX_CACHE_DIR", cache.path());
+        crate::test_env::set_var("SOBRE_STATE_DIR", state.path());
+        crate::test_env::set_var("SOBRE_CACHE_DIR", cache.path());
         let got_state = state_dir().unwrap();
         let got_cache = cache_dir().unwrap();
-        crate::test_env::remove_var("LEAN_CTX_STATE_DIR");
-        crate::test_env::remove_var("LEAN_CTX_CACHE_DIR");
+        crate::test_env::remove_var("SOBRE_STATE_DIR");
+        crate::test_env::remove_var("SOBRE_CACHE_DIR");
         assert_eq!(got_state, state.path());
         assert_eq!(got_cache, cache.path());
     }
 
     #[test]
-    fn data_dir_matches_lean_ctx_data_dir() {
+    fn data_dir_matches_sobre_data_dir() {
         let _guard = crate::core::data_dir::isolated_data_dir();
         assert_eq!(
             data_dir().unwrap(),
-            crate::core::data_dir::lean_ctx_data_dir().unwrap()
+            crate::core::data_dir::sobre_data_dir().unwrap()
         );
     }
 }

@@ -2,11 +2,11 @@
 //! Each module tests a fix with multiple realistic agent interaction scenarios.
 #![allow(clippy::needless_raw_string_hashes)]
 
-use lean_ctx::core::cache::SessionCache;
-use lean_ctx::core::protocol::CrpMode;
+use sobre::core::cache::SessionCache;
+use sobre::core::protocol::CrpMode;
 use std::io::Write;
 
-/// Reads the full `LeanCtxServer` dispatch source across its split submodules
+/// Reads the full `SobreServer` dispatch source across its split submodules
 /// (`mod.rs`, `call_tool.rs`, `server_handler.rs`) so that the invariant checks
 /// below stay robust to internal module structure.
 fn server_dispatch_src() -> String {
@@ -37,7 +37,7 @@ fn skip_terse_body(src: &str) -> String {
 // =============================================================================
 
 mod correction_loop {
-    use lean_ctx::core::refetch_signals::RefetchSignals;
+    use sobre::core::refetch_signals::RefetchSignals;
 
     #[test]
     fn scenario_agent_rereads_same_file_fresh() {
@@ -224,7 +224,7 @@ mod cache_hit_messages {
         let path = file.to_string_lossy().to_string();
 
         let mut cache = SessionCache::new();
-        lean_ctx::tools::ctx_read::handle(&mut cache, &path, "full", CrpMode::Off);
+        sobre::tools::ctx_read::handle(&mut cache, &path, "full", CrpMode::Off);
 
         // Modify file
         std::thread::sleep(std::time::Duration::from_millis(50));
@@ -238,7 +238,7 @@ mod cache_hit_messages {
                 .unwrap();
         }
 
-        let result = lean_ctx::tools::ctx_read::handle(&mut cache, &path, "full", CrpMode::Off);
+        let result = sobre::tools::ctx_read::handle(&mut cache, &path, "full", CrpMode::Off);
         assert!(
             result.contains("version 2") || result.contains("new_function"),
             "modified file must return new content"
@@ -251,7 +251,7 @@ mod cache_hit_messages {
 // =============================================================================
 
 mod test_identifiers {
-    use lean_ctx::core::patterns::compress_output as compress;
+    use sobre::core::patterns::compress_output as compress;
 
     #[test]
     fn scenario_cargo_test_preserves_names() {
@@ -365,8 +365,8 @@ tests/test_auth.py::test_refresh PASSED
 // =============================================================================
 
 mod auto_degrade {
-    use lean_ctx::core::config::CompressionLevel;
     use serial_test::serial;
+    use sobre::core::config::CompressionLevel;
 
     #[test]
     #[serial]
@@ -398,7 +398,7 @@ mod auto_degrade {
     #[test]
     #[serial]
     fn scenario_effective_uses_degrade_when_set() {
-        let cfg = lean_ctx::core::config::Config::load();
+        let cfg = sobre::core::config::Config::load();
         CompressionLevel::set_session_degrade(&CompressionLevel::Lite);
         let effective = CompressionLevel::effective(&cfg);
         assert_eq!(effective, CompressionLevel::Lite);
@@ -407,8 +407,8 @@ mod auto_degrade {
 
     #[test]
     fn scenario_server_degrade_thresholds() {
-        use lean_ctx::core::config::CompressionLevel;
-        use lean_ctx::core::config::SessionDegrade::{Clear, Leave, Set};
+        use sobre::core::config::CompressionLevel;
+        use sobre::core::config::SessionDegrade::{Clear, Leave, Set};
         // Behavioral invariant for the dispatch's auto-degrade. Asserted via the
         // pure `degrade_action` decision rather than grepping the dispatch source
         // for a literal, so an internal rename (e.g. #941's `correction_count` →
@@ -507,7 +507,7 @@ mod overview_descriptions {
 
         // Use ctx_read to verify file is readable, then check overview behavior
         let mut cache = SessionCache::new();
-        let content = lean_ctx::tools::ctx_read::handle(&mut cache, &path, "full", CrpMode::Off);
+        let content = sobre::tools::ctx_read::handle(&mut cache, &path, "full", CrpMode::Off);
         assert!(content.contains("Session-level"));
     }
 
@@ -523,7 +523,7 @@ mod overview_descriptions {
         let path = file.to_string_lossy().to_string();
 
         let mut cache = SessionCache::new();
-        let content = lean_ctx::tools::ctx_read::handle(&mut cache, &path, "full", CrpMode::Off);
+        let content = sobre::tools::ctx_read::handle(&mut cache, &path, "full", CrpMode::Off);
         assert!(content.contains("Utility functions"));
     }
 
@@ -539,7 +539,7 @@ mod overview_descriptions {
         let path = file.to_string_lossy().to_string();
 
         let mut cache = SessionCache::new();
-        let content = lean_ctx::tools::ctx_read::handle(&mut cache, &path, "full", CrpMode::Off);
+        let content = sobre::tools::ctx_read::handle(&mut cache, &path, "full", CrpMode::Off);
         assert!(content.contains("REST API"));
     }
 
@@ -563,8 +563,8 @@ mod overview_descriptions {
 
 mod integration {
     use super::*;
-    use lean_ctx::core::config::CompressionLevel;
-    use lean_ctx::core::refetch_signals::RefetchSignals;
+    use sobre::core::config::CompressionLevel;
+    use sobre::core::refetch_signals::RefetchSignals;
 
     #[test]
     fn scenario_full_correction_loop_triggers_degrade() {
@@ -619,14 +619,14 @@ mod integration {
         let mut cache = SessionCache::new();
 
         // Read 1: full content
-        let r1 = lean_ctx::tools::ctx_read::handle(&mut cache, &path, "full", CrpMode::Off);
+        let r1 = sobre::tools::ctx_read::handle(&mut cache, &path, "full", CrpMode::Off);
         assert!(r1.contains("stable_function"));
 
         // Read 2: still returns content (marks as delivered)
-        lean_ctx::tools::ctx_read::handle(&mut cache, &path, "full", CrpMode::Off);
+        sobre::tools::ctx_read::handle(&mut cache, &path, "full", CrpMode::Off);
 
         // Read 3: now cache hit with proof
-        let r3 = lean_ctx::tools::ctx_read::handle(&mut cache, &path, "full", CrpMode::Off);
+        let r3 = sobre::tools::ctx_read::handle(&mut cache, &path, "full", CrpMode::Off);
         assert!(
             r3.contains("unchanged") || r3.contains("cached"),
             "third read should be a cache hit: {r3}"

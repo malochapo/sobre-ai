@@ -86,7 +86,7 @@ pub(crate) fn execute_command_with_env_cancellable(
     //      MCP server process.
     //   2. From the captured agent-env store — covers agents like Codex where the
     //      vars live only in the native agent shell, not the MCP server process
-    //      (#370). Hooks / `lean-ctx -c` capture them; the process env wins on
+    //      (#370). Hooks / `sobre -c` capture them; the process env wins on
     //      conflict, and explicit `extra_env` (below) wins over both.
     let mut forwarded: std::collections::HashSet<String> = std::collections::HashSet::new();
     for (key, val) in std::env::vars() {
@@ -206,7 +206,7 @@ pub(crate) fn execute_command_with_env_cancellable(
             text.push('\n');
         }
         text.push_str(&format!(
-            "[lean-ctx: output reader still draining after {}s — a background process is likely \
+            "[sobre: output reader still draining after {}s — a background process is likely \
              holding the pipe open; output above may be partial]",
             READER_RESULT_TIMEOUT.as_secs()
         ));
@@ -555,10 +555,10 @@ mod tests {
         // #370: the MCP server process lacks CODEX_THREAD_ID; a hook captured it
         // from the agent shell. ctx_shell must still forward it to the child.
         let _lock = crate::core::data_dir::test_env_lock();
-        let dir = std::env::temp_dir().join("lean_ctx_exec_runtime_env");
+        let dir = std::env::temp_dir().join("sobre_exec_runtime_env");
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
-        crate::test_env::set_var("LEAN_CTX_DATA_DIR", &dir);
+        crate::test_env::set_var("SOBRE_DATA_DIR", &dir);
 
         // Simulate a hook capturing the var from the native agent environment.
         crate::test_env::remove_var("CODEX_THREAD_ID");
@@ -569,7 +569,7 @@ mod tests {
 
         let (output, code) = execute_command_in("printf 'TID=%s' \"$CODEX_THREAD_ID\"", ".");
 
-        crate::test_env::remove_var("LEAN_CTX_DATA_DIR");
+        crate::test_env::remove_var("SOBRE_DATA_DIR");
         let _ = std::fs::remove_dir_all(&dir);
 
         assert_eq!(code, 0, "command failed: {output}");

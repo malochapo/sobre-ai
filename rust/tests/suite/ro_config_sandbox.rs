@@ -1,9 +1,9 @@
 //! GH #408 RO-config sandbox gate (brought forward from GL #607).
 //!
 //! With the config dir read-only and the data/state/cache categories split out
-//! via `LEAN_CTX_*_DIR`, a full lean-ctx shell cycle must run without writing
+//! via `SOBRE_*_DIR`, a full sobre shell cycle must run without writing
 //! anything into the config dir. This is the exact acceptance criterion from
-//! #408 (`--ro $XDG_CONFIG_HOME/lean-ctx`).
+//! #408 (`--ro $XDG_CONFIG_HOME/sobre`).
 //!
 //! `config_dir()` resets its own perms to `0o700` on access, so `chmod 0o500` is
 //! a best-effort RO simulation only — the real gate is the assertion that the
@@ -66,12 +66,12 @@ fn full_cycle_never_writes_into_readonly_config_dir() {
 
     // A full shell cycle: reads config for compression, captures the forwardable
     // key into the state dir, runs the command, flushes stats into the data dir.
-    let out = Command::new(env!("CARGO_BIN_EXE_lean-ctx"))
-        .args(["-c", "echo lean-ctx-ro-sandbox-sentinel"])
-        .env("LEAN_CTX_CONFIG_DIR", &config)
-        .env("LEAN_CTX_DATA_DIR", &data)
-        .env("LEAN_CTX_STATE_DIR", &state)
-        .env("LEAN_CTX_CACHE_DIR", &cache)
+    let out = Command::new(env!("CARGO_BIN_EXE_sobre"))
+        .args(["-c", "echo sobre-ro-sandbox-sentinel"])
+        .env("SOBRE_CONFIG_DIR", &config)
+        .env("SOBRE_DATA_DIR", &data)
+        .env("SOBRE_STATE_DIR", &state)
+        .env("SOBRE_CACHE_DIR", &cache)
         .env("HOME", root.path())
         // Forwardable session id → captured into the state dir (proof writes
         // land there). A credential-shaped var is also set and must NOT be
@@ -80,7 +80,7 @@ fn full_cycle_never_writes_into_readonly_config_dir() {
         .env("CODEX_THREAD_ID", "ro-sandbox-session")
         .env("GEMINI_API_KEY", "ro-sandbox-secret")
         .output()
-        .expect("spawn lean-ctx -c");
+        .expect("spawn sobre -c");
 
     // Restore perms so the tempdir can be cleaned up regardless of assertions.
     let _ = std::fs::set_permissions(&config, std::fs::Permissions::from_mode(0o700));
@@ -93,7 +93,7 @@ fn full_cycle_never_writes_into_readonly_config_dir() {
         String::from_utf8_lossy(&out.stderr)
     );
     assert!(
-        stdout.contains("lean-ctx-ro-sandbox-sentinel"),
+        stdout.contains("sobre-ro-sandbox-sentinel"),
         "command output missing; got:\n{stdout}"
     );
 

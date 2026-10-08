@@ -1,16 +1,16 @@
 //! `.lmd.md` reads are raw — like any other file.
 //!
-//! After the lmd reverse-cut, lean-ctx has no `.lmd.md`-specific code path: a
+//! After the lmd reverse-cut, sobre has no `.lmd.md`-specific code path: a
 //! read returns the raw source verbatim (never an error, never a half-rendered
 //! document). Rendering `.lmd.md` is owned entirely by the external lean-md
 //! addon (`ctx_md_render` / CLI `lean-md render`) and is out of scope here.
-//! This end-to-end check drives the freshly built `lean-ctx` binary and asserts
+//! This end-to-end check drives the freshly built `sobre` binary and asserts
 //! a `.lmd.md` read surfaces the raw marker.
 use std::process::Command;
 
-/// The lean-ctx binary under test — the freshly built one, never the (possibly
-/// stale) `lean-ctx` on PATH.
-const LEAN_CTX_BIN: &str = env!("CARGO_BIN_EXE_lean-ctx");
+/// The sobre binary under test — the freshly built one, never the (possibly
+/// stale) `sobre` on PATH.
+const SOBRE_BIN: &str = env!("CARGO_BIN_EXE_sobre");
 
 #[test]
 fn ctx_read_lmd_md_returns_raw_source() {
@@ -22,18 +22,18 @@ fn ctx_read_lmd_md_returns_raw_source() {
     // the read is `fresh`, so it never returns an `[unchanged …]` cache stub
     // seeded by a prior run, and never touches the real store.
     let fixture = tempfile::tempdir().expect("fixture dir");
-    let data_dir = tempfile::tempdir().expect("isolated LEAN_CTX_DATA_DIR");
+    let data_dir = tempfile::tempdir().expect("isolated SOBRE_DATA_DIR");
     let f = fixture.path().join("d.lmd.md");
     std::fs::write(&f, "@date\nRAW_DELEGATION_MARKER\n").unwrap();
 
     let json = serde_json::json!({ "path": f, "mode": "full", "fresh": true }).to_string();
-    let out = Command::new(LEAN_CTX_BIN)
-        .env("LEAN_CTX_DATA_DIR", data_dir.path())
+    let out = Command::new(SOBRE_BIN)
+        .env("SOBRE_DATA_DIR", data_dir.path())
         .args(["call", "ctx_read", "--project-root"])
         .arg(fixture.path())
         .args(["--json", &json])
         .output()
-        .expect("lean-ctx call ctx_read");
+        .expect("sobre call ctx_read");
     let text = String::from_utf8_lossy(&out.stdout);
 
     assert!(

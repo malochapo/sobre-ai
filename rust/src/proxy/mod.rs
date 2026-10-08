@@ -121,7 +121,7 @@ fn log_upstream_change(old: &Upstreams, new: &Upstreams) {
 }
 
 pub async fn start_proxy(port: u16) -> anyhow::Result<()> {
-    let token = crate::core::session_token::resolve_proxy_token("LEAN_CTX_PROXY_TOKEN");
+    let token = crate::core::session_token::resolve_proxy_token("SOBRE_PROXY_TOKEN");
     start_proxy_with_token(port, Some(token)).await
 }
 
@@ -132,7 +132,7 @@ pub async fn start_proxy(port: u16) -> anyhow::Result<()> {
 fn effective_auth_token(auth_token: Option<String>) -> String {
     auth_token
         .filter(|t| !t.trim().is_empty())
-        .unwrap_or_else(|| crate::core::session_token::resolve_proxy_token("LEAN_CTX_PROXY_TOKEN"))
+        .unwrap_or_else(|| crate::core::session_token::resolve_proxy_token("SOBRE_PROXY_TOKEN"))
 }
 
 pub async fn start_proxy_with_token(port: u16, auth_token: Option<String>) -> anyhow::Result<()> {
@@ -157,7 +157,7 @@ pub async fn start_proxy_with_token(port: u16, auth_token: Option<String>) -> an
 
     // The proxy reads its upstreams live from a watch channel: a background task
     // re-resolves them from config.toml on an interval and publishes any change,
-    // so `lean-ctx config set proxy.upstreams.<id>` (or any config.toml edit) takes
+    // so `sobre config set proxy.upstreams.<id>` (or any config.toml edit) takes
     // effect on the running proxy within seconds, without a restart (#449).
     let (upstream_tx, upstream_rx) = tokio::sync::watch::channel(Arc::new(initial.clone()));
     spawn_upstream_refresh(upstream_tx, initial.clone());
@@ -175,7 +175,7 @@ pub async fn start_proxy_with_token(port: u16, auth_token: Option<String>) -> an
     let app = app(state, auth_token);
 
     let addr = SocketAddr::from((bind_host, port));
-    println!("lean-ctx proxy listening on http://{addr} (token auth enabled)");
+    println!("sobre proxy listening on http://{addr} (token auth enabled)");
     println!("  Anthropic: POST /v1/messages → {anthropic_upstream}");
     println!("  OpenAI:    POST /v1/chat/completions → {openai_upstream}");
     println!(
@@ -193,7 +193,7 @@ pub async fn start_proxy_with_token(port: u16, auth_token: Option<String>) -> an
         .with_graceful_shutdown(shutdown_signal())
         .await?;
 
-    println!("lean-ctx proxy shut down cleanly.");
+    println!("sobre proxy shut down cleanly.");
     Ok(())
 }
 
@@ -258,7 +258,7 @@ async fn shutdown_signal() {
                 }
             }
             Err(e) => {
-                tracing::warn!("lean-ctx proxy: SIGTERM handler unavailable ({e}); Ctrl-C only");
+                tracing::warn!("sobre proxy: SIGTERM handler unavailable ({e}); Ctrl-C only");
                 ctrl_c.await.ok();
             }
         }
@@ -269,13 +269,13 @@ async fn shutdown_signal() {
         ctrl_c.await.ok();
     }
 
-    println!("lean-ctx proxy: received shutdown signal, draining…");
+    println!("sobre proxy: received shutdown signal, draining…");
 }
 
 async fn health() -> impl IntoResponse {
     let body = serde_json::json!({
         "status": "ok",
-        "service": "lean-ctx-proxy",
+        "service": "sobre-proxy",
         "pid": std::process::id(),
     });
     (StatusCode::OK, axum::Json(body))
@@ -318,7 +318,7 @@ async fn status_handler(State(state): State<ProxyState>) -> impl IntoResponse {
     let up = state.upstream_snapshot();
 
     // Usage (calls, tokens, cost, savings) is in the usage ledger, which
-    // `lean-ctx gain` reads; this endpoint only says where traffic goes.
+    // `sobre gain` reads; this endpoint only says where traffic goes.
     let body = serde_json::json!({
         "status": "running",
         "port": state.port,
@@ -355,7 +355,7 @@ async fn proxy_auth_guard(
     }
 
     // A provider API key on a provider route is enough: a local AI tool
-    // authenticates with its own key, without the lean-ctx token.
+    // authenticates with its own key, without the sobre token.
     if has_provider_api_key(&req) && is_provider_route(path) {
         return Ok(next.run(req).await);
     }
@@ -365,9 +365,9 @@ async fn proxy_auth_guard(
 
 fn auth_error_response(path: &str) -> Response {
     let hint = if is_provider_route(path) {
-        "Provider route requires authentication. Set your API key header or use: lean-ctx proxy token"
+        "Provider route requires authentication. Set your API key header or use: sobre proxy token"
     } else {
-        "This endpoint requires a lean-ctx Bearer token. Get it with: lean-ctx proxy token"
+        "This endpoint requires a sobre Bearer token. Get it with: sobre proxy token"
     };
 
     let body = serde_json::json!({
@@ -530,11 +530,11 @@ fn host_allowed(host_header: &str) -> bool {
 async fn fallback(req: Request<Body>) -> Response {
     let method = req.method().to_string();
     let path = req.uri().path().to_string();
-    eprintln!("lean-ctx proxy: unmatched {method} {path}");
+    eprintln!("sobre proxy: unmatched {method} {path}");
     Response::builder()
         .status(StatusCode::NOT_FOUND)
         .body(Body::from(format!(
-            "lean-ctx proxy: no handler for {method} {path}"
+            "sobre proxy: no handler for {method} {path}"
         )))
         .expect("BUG: building 404 response should never fail")
 }

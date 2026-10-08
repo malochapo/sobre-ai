@@ -7,17 +7,17 @@ fn main() {
     // `sandbox-exec` are macOS features, so the guard module isn't built on
     // other platforms.
     #[cfg(target_os = "macos")]
-    lean_ctx::core::tcc_guard_sandbox::reexec_under_seatbelt_if_needed();
+    sobre::core::tcc_guard_sandbox::reexec_under_seatbelt_if_needed();
 
     // Crash log + stderr message for every panic in any thread (#378
     // diagnosability: stderr is lost for daemon/LaunchAgent processes,
     // <data dir>/logs/crash.log is not).
-    lean_ctx::core::crash_log::install_panic_hook();
+    sobre::core::crash_log::install_panic_hook();
 
     // Prevent SIGABRT on uncaught panics (e.g. during MCP startup bursts).
     // The panic hook above still prints details; we just exit cleanly.
     let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        lean_ctx::cli::dispatch::run();
+        sobre::cli::dispatch::run();
     }));
     if res.is_err() {
         std::process::exit(1);

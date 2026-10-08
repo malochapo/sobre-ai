@@ -2,7 +2,7 @@
 //!
 //! When `cargo`/`tsc`/`eslint` fail, the files they point at are the most
 //! task-relevant files in the project — the agent will read them next to fix
-//! the build. The shell layer already sees this output (CLI `lean-ctx -c` and
+//! the build. The shell layer already sees this output (CLI `sobre -c` and
 //! MCP `ctx_shell`); this store extracts the structured `(file, line)` pairs
 //! and makes them available to auto-mode, relevance ranking and the triage.
 //!
@@ -143,7 +143,7 @@ impl DiagnosticsStore {
 }
 
 fn store_path() -> PathBuf {
-    crate::core::data_dir::lean_ctx_data_dir()
+    crate::core::data_dir::sobre_data_dir()
         .unwrap_or_else(|_| PathBuf::from("."))
         .join(STORE_FILE)
 }
@@ -424,7 +424,7 @@ mod tests {
     use super::*;
 
     const CARGO_OUT: &str = r#"
-   Compiling lean-ctx v3.7.5
+   Compiling sobre v3.7.5
 error[E0308]: mismatched types
   --> src/core/cache.rs:42:9
    |

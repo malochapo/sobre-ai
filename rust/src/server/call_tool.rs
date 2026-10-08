@@ -1,11 +1,11 @@
-//! `LeanCtxServer::call_tool_guarded` — the guarded tool-dispatch path — and
+//! `SobreServer::call_tool_guarded` — the guarded tool-dispatch path — and
 //! root resolution. Split out of `server/mod.rs` to keep that module focused on
 //! wiring. `use super::*` re-imports the parent aliases and sibling submodules.
 
 #[allow(clippy::wildcard_imports)]
 use super::*;
 
-impl LeanCtxServer {
+impl SobreServer {
     pub(crate) async fn call_tool_guarded(
         &self,
         request: CallToolRequestParams,

@@ -1,6 +1,6 @@
-use lean_ctx::core::cache::SessionCache;
-use lean_ctx::tools::CrpMode;
-use lean_ctx::tools::autonomy::{
+use sobre::core::cache::SessionCache;
+use sobre::tools::CrpMode;
+use sobre::tools::autonomy::{
     AutonomyState, is_session_overview_call, maybe_auto_dedup, session_lifecycle_pre_hook,
 };
 use std::sync::OnceLock;
@@ -12,7 +12,7 @@ fn init_test_data_dir() {
     // SAFETY: the project's test suite always runs with `--test-threads=1`
     // (env-race legacy — see .github/workflows/ci.yml), so no other test in
     // this binary touches the environment concurrently.
-    unsafe { std::env::set_var("LEAN_CTX_DATA_DIR", dir.path()) };
+    unsafe { std::env::set_var("SOBRE_DATA_DIR", dir.path()) };
 }
 
 fn make_state() -> AutonomyState {
@@ -27,7 +27,7 @@ fn project_with_graph() -> tempfile::TempDir {
     std::fs::write(dir.path().join("Cargo.toml"), "[package]\nname = \"p\"\n").unwrap();
     std::fs::create_dir_all(dir.path().join("src")).unwrap();
     std::fs::write(dir.path().join("src/main.rs"), "fn main() {}\n").unwrap();
-    lean_ctx::core::graph_index::scan(&dir.path().to_string_lossy());
+    sobre::core::graph_index::scan(&dir.path().to_string_lossy());
     dir
 }
 
@@ -87,7 +87,7 @@ fn session_lifecycle_waits_for_a_graph_and_builds_none() {
         "the session stays eligible until a graph exists"
     );
     assert!(
-        lean_ctx::core::graph_provider::open_best_effort(&root).is_none(),
+        sobre::core::graph_provider::open_best_effort(&root).is_none(),
         "the briefing must not build a graph"
     );
 }

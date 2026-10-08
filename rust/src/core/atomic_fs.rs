@@ -50,7 +50,7 @@ pub(crate) fn try_atomic_write(
     let nanos = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_or(0, |d| d.as_nanos());
-    let tmp = parent.join(format!(".{filename}.lean-ctx.tmp.{pid}.{nanos}"));
+    let tmp = parent.join(format!(".{filename}.sobre.tmp.{pid}.{nanos}"));
 
     {
         let mut f = std::fs::OpenOptions::new()
@@ -127,11 +127,11 @@ fn fsync_dir(dir: &Path) {
     }
 }
 
-/// Removes `.{filename}.lean-ctx.tmp.{pid}.{nanos}` leftovers in `parent` from
+/// Removes `.{filename}.sobre.tmp.{pid}.{nanos}` leftovers in `parent` from
 /// a crash between temp-file creation and rename (#958).
 fn cleanup_orphaned_temps(parent: &Path, filename: &str) {
     const STALE_AGE: std::time::Duration = std::time::Duration::from_hours(1);
-    let prefix = format!(".{filename}.lean-ctx.tmp.");
+    let prefix = format!(".{filename}.sobre.tmp.");
 
     let Ok(entries) = std::fs::read_dir(parent) else {
         return;
@@ -270,7 +270,7 @@ mod tests {
         let dead_pid = 999_999_999u32;
         let orphan = dir
             .path()
-            .join(format!(".{filename}.lean-ctx.tmp.{dead_pid}.123"));
+            .join(format!(".{filename}.sobre.tmp.{dead_pid}.123"));
         std::fs::write(&orphan, b"stale").unwrap();
 
         cleanup_orphaned_temps(dir.path(), filename);
@@ -288,7 +288,7 @@ mod tests {
         let my_pid = std::process::id();
         let in_progress = dir
             .path()
-            .join(format!(".{filename}.lean-ctx.tmp.{my_pid}.123"));
+            .join(format!(".{filename}.sobre.tmp.{my_pid}.123"));
         std::fs::write(&in_progress, b"still writing").unwrap();
 
         cleanup_orphaned_temps(dir.path(), filename);
@@ -306,7 +306,7 @@ mod tests {
         let my_pid = std::process::id();
         let ancient = dir
             .path()
-            .join(format!(".{filename}.lean-ctx.tmp.{my_pid}.123"));
+            .join(format!(".{filename}.sobre.tmp.{my_pid}.123"));
         std::fs::write(&ancient, b"ancient").unwrap();
         filetime::set_file_mtime(&ancient, filetime::FileTime::from_unix_time(0, 0)).unwrap();
 
@@ -339,7 +339,7 @@ mod tests {
         let strays: Vec<_> = std::fs::read_dir(dir.path())
             .unwrap()
             .flatten()
-            .filter(|e| e.file_name().to_string_lossy().contains(".lean-ctx.tmp."))
+            .filter(|e| e.file_name().to_string_lossy().contains(".sobre.tmp."))
             .collect();
         assert!(strays.is_empty(), "temp file must not linger");
         try_atomic_write(&path, b"second", None).unwrap();

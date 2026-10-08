@@ -20,11 +20,11 @@ pub(crate) fn cmd_index(args: &[String]) {
         Some("build") => build(&project_root, args.iter().any(|a| a == "--force")),
         _ => {
             eprintln!(
-                "Usage: lean-ctx index <build|status> [--root <path>]\n\
-                   lean-ctx index build            graph + BM25 indexes, and the dense index\n\
+                "Usage: sobre index <build|status> [--root <path>]\n\
+                   sobre index build            graph + BM25 indexes, and the dense index\n\
                                                    in builds with local embeddings\n\
-                   lean-ctx index build --force    drop the indexes first, rebuild from scratch\n\
-                   lean-ctx index status [--json]  what is built\n\
+                   sobre index build --force    drop the indexes first, rebuild from scratch\n\
+                   sobre index status [--json]  what is built\n\
                  Leave files out of every index with `ignore` in config.toml."
             );
         }
@@ -73,7 +73,7 @@ fn build(project_root: &str, force: bool) {
 }
 
 /// The dense (embedding) index, on top of the fresh BM25 index. Uses the
-/// model `lean-ctx embeddings provision` installed; never downloads it.
+/// model `sobre embeddings provision` installed; never downloads it.
 #[cfg(feature = "embeddings")]
 fn build_dense(project_root: &str) {
     crate::core::interrupt::install_ctrlc_handler();

@@ -78,7 +78,7 @@ pub(crate) fn finalize_hook_check(
     let detail = if !entries_ok {
         format!("drift ({})", path.display())
     } else if let Some(old) = stale {
-        format!("stale binary {old} — run lean-ctx init --repair")
+        format!("stale binary {old} — run sobre init --repair")
     } else {
         format!("ok ({})", path.display())
     };

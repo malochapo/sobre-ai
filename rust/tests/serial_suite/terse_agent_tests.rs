@@ -1,7 +1,7 @@
-use lean_ctx::core::config::{CompressionLevel, Config};
-use lean_ctx::instructions;
+use sobre::core::config::{CompressionLevel, Config};
+use sobre::instructions;
 
-/// Points every lean-ctx dir at a fresh temp dir holding `config.toml` with the
+/// Points every sobre dir at a fresh temp dir holding `config.toml` with the
 /// given contents, restoring the previous env on drop. The serial harness runs
 /// one test at a time, so mutating the process env here is race-free.
 struct ConfigGuard {
@@ -9,7 +9,7 @@ struct ConfigGuard {
     prev: Vec<(&'static str, Option<std::ffi::OsString>)>,
 }
 
-const ISOLATED_ENV_VARS: [&str; 2] = ["LEAN_CTX_DATA_DIR", "LEAN_CTX_CONFIG_DIR"];
+const ISOLATED_ENV_VARS: [&str; 2] = ["SOBRE_DATA_DIR", "SOBRE_CONFIG_DIR"];
 
 fn with_config(toml: &str) -> ConfigGuard {
     let tmp = tempfile::tempdir().expect("tempdir");

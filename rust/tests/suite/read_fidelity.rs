@@ -5,7 +5,7 @@
 //!
 //! We spawn the real binary with the densest `compression_level` (so terse
 //! *would* fire if it were allowed to) and call `ctx_read` through
-//! `lean-ctx call`, so the assertion fails loudly on any regression.
+//! `sobre call`, so the assertion fails loudly on any regression.
 
 use std::path::Path;
 use std::process::{Command, Output};
@@ -30,14 +30,14 @@ fn read_output(home: &Path, file: &Path, mode: &str) -> Output {
     // Force the densest compression so a missing guard would visibly mangle.
     std::fs::write(data.join("config.toml"), "compression_level = 0.7\n").unwrap();
     let json = serde_json::json!({ "path": file, "mode": mode, "fresh": true }).to_string();
-    Command::new(env!("CARGO_BIN_EXE_lean-ctx"))
+    Command::new(env!("CARGO_BIN_EXE_sobre"))
         .args(["call", "ctx_read", "--project-root"])
         .arg(file.parent().unwrap())
         .args(["--json", &json])
-        .env("LEAN_CTX_DATA_DIR", &data)
+        .env("SOBRE_DATA_DIR", &data)
         .env("HOME", home)
         .output()
-        .expect("spawn lean-ctx call ctx_read")
+        .expect("spawn sobre call ctx_read")
 }
 
 #[test]

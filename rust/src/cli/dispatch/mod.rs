@@ -99,9 +99,7 @@ pub fn run() {
                     "read-dedup" => hook_handlers::handle_read_dedup(),
                     "observe" => hook_handlers::handle_observe(),
                     _ => {
-                        eprintln!(
-                            "Usage: lean-ctx hook <compress|cursor|gemini|read-dedup|observe>"
-                        );
+                        eprintln!("Usage: sobre hook <compress|cursor|gemini|read-dedup|observe>");
                         eprintln!("  Internal commands used by agent hooks");
                         std::process::exit(1);
                     }
@@ -124,7 +122,7 @@ pub fn run() {
             // `raw` runs the command with its output passed through unchanged.
             "raw" => handle_raw(&args, &rest),
             "--version" | "-V" => {
-                println!("lean-ctx {}", env!("CARGO_PKG_VERSION"));
+                println!("sobre {}", env!("CARGO_PKG_VERSION"));
                 return;
             }
             "help" | "--help" | "-h" => {
@@ -141,20 +139,20 @@ pub fn run() {
             "mcp" => {}
             _ => {
                 let unknown = &args[1];
-                eprintln!("lean-ctx: unknown command '{unknown}'");
+                eprintln!("sobre: unknown command '{unknown}'");
                 if let Some(suggestion) = suggest::closest_command(unknown) {
                     eprintln!("       did you mean '{suggestion}'?");
                 }
-                eprintln!("       run 'lean-ctx help' for the full command list");
+                eprintln!("       run 'sobre help' for the full command list");
                 std::process::exit(1);
             }
         }
     }
 
-    // Bare `lean-ctx` in an interactive terminal: a human almost certainly did
+    // Bare `sobre` in an interactive terminal: a human almost certainly did
     // not mean to start a silent stdio MCP server (which just hangs waiting for
     // JSON-RPC). Show a short quickstart instead. MCP clients pipe stdin (not a
-    // TTY) so they still get the server, and explicit `lean-ctx mcp` always
+    // TTY) so they still get the server, and explicit `sobre mcp` always
     // serves regardless of TTY.
     if args.len() == 1 && std::io::IsTerminal::is_terminal(&std::io::stdin()) {
         print_quickstart();
@@ -162,7 +160,7 @@ pub fn run() {
     }
 
     if let Err(e) = run_mcp_server() {
-        tracing::error!("lean-ctx: {e}");
+        tracing::error!("sobre: {e}");
         std::process::exit(1);
     }
 }
@@ -181,7 +179,7 @@ fn handle_exec(args: &[String]) -> ! {
     } else {
         shell::join_command(cmd_args)
     };
-    // The `lean-ctx -c` wrapper runs inside the agent shell, which carries
+    // The `sobre -c` wrapper runs inside the agent shell, which carries
     // runtime/session vars the MCP server never sees. Bridge them so ctx_shell
     // can forward them too (#370).
     core::agent_runtime_env::capture();
@@ -196,7 +194,7 @@ fn handle_exec(args: &[String]) -> ! {
 
 fn handle_raw(args: &[String], rest: &[String]) -> ! {
     if rest.is_empty() {
-        eprintln!("Usage: lean-ctx raw \"command\"");
+        eprintln!("Usage: sobre raw \"command\"");
         eprintln!("Runs the command with output passed through unchanged (no compression).");
         std::process::exit(1);
     }
@@ -212,7 +210,7 @@ fn handle_raw(args: &[String], rest: &[String]) -> ! {
 
 /// Restore the default SIGPIPE disposition for short-lived CLI invocations.
 ///
-/// Rust's runtime ignores SIGPIPE process-wide, so `lean-ctx doctor | head`
+/// Rust's runtime ignores SIGPIPE process-wide, so `sobre doctor | head`
 /// made `println!` panic with BrokenPipe; the LineWriter flush in stdout's
 /// Drop then panicked again *during unwinding*, which aborts — the SIGABRT
 /// (exit 134) of upstream #378 / GL#436. Real CLIs (cat, grep, rg) terminate
@@ -247,7 +245,7 @@ pub(super) fn run_async<F: std::future::Future>(future: F) -> F::Output {
     match tokio::runtime::Runtime::new() {
         Ok(rt) => rt.block_on(future),
         Err(e) => {
-            eprintln!("lean-ctx: failed to create async runtime: {e}");
+            eprintln!("sobre: failed to create async runtime: {e}");
             std::process::exit(1);
         }
     }
@@ -266,19 +264,19 @@ mod tests {
     fn server_modes_keep_ignored_sigpipe() {
         for mode in ["mcp", "proxy"] {
             assert!(
-                is_server_mode(&args_of(&["lean-ctx", mode])),
+                is_server_mode(&args_of(&["sobre", mode])),
                 "{mode} must count as server mode"
             );
         }
         // Bare invocation = MCP server spawned by a client.
-        assert!(is_server_mode(&args_of(&["lean-ctx"])));
+        assert!(is_server_mode(&args_of(&["sobre"])));
     }
 
     #[test]
     fn cli_modes_restore_default_sigpipe() {
         for mode in ["doctor", "-c", "index", "call", "gain", "help"] {
             assert!(
-                !is_server_mode(&args_of(&["lean-ctx", mode])),
+                !is_server_mode(&args_of(&["sobre", mode])),
                 "{mode} must count as CLI mode (SIGPIPE default)"
             );
         }
@@ -287,8 +285,8 @@ mod tests {
     #[test]
     fn quickstart_is_short_and_points_to_setup() {
         let q = quickstart_text();
-        assert!(q.contains("lean-ctx init"), "quickstart must point to wrap");
-        assert!(q.contains("lean-ctx help"), "quickstart must point to help");
+        assert!(q.contains("sobre init"), "quickstart must point to wrap");
+        assert!(q.contains("sobre help"), "quickstart must point to help");
         // Must stay a *quickstart*, not the full reference — keep it tight.
         assert!(
             q.lines().count() <= 16,
@@ -304,15 +302,9 @@ mod tests {
     #[test]
     fn concise_help_is_short_and_points_to_full() {
         let h = concise_help_text();
-        assert!(h.contains("lean-ctx init"), "must lead with init");
-        assert!(
-            h.contains("lean-ctx help all"),
-            "must point to full reference"
-        );
-        assert!(
-            h.contains("lean-ctx gain"),
-            "must surface the savings report"
-        );
+        assert!(h.contains("sobre init"), "must lead with init");
+        assert!(h.contains("sobre help all"), "must point to full reference");
+        assert!(h.contains("sobre gain"), "must surface the savings report");
         // Concise means concise — keep it well under the full reference.
         assert!(
             h.lines().count() <= 40,

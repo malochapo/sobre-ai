@@ -1,4 +1,4 @@
-//! `lean-ctx embeddings` — semantic-embedding runtime management (GH #732).
+//! `sobre embeddings` — semantic-embedding runtime management (GH #732).
 //!
 //! The embedding engine loads ONNX Runtime dynamically. `provision` performs
 //! the **explicit, consent-gated** download of the official CPU runtime into
@@ -79,8 +79,8 @@ pub(crate) fn cmd_embeddings(rest: &[String]) {
             eprintln!(
                 "Unknown subcommand `{other}`.\n\n\
                  Usage:\n  \
-                 lean-ctx embeddings status              Show the managed ONNX Runtime state\n  \
-                                 lean-ctx embeddings provision [--force] Download the official CPU runtime (sha256-pinned) and the model"
+                 sobre embeddings status              Show the managed ONNX Runtime state\n  \
+                                 sobre embeddings provision [--force] Download the official CPU runtime (sha256-pinned) and the model"
             );
             std::process::exit(1);
         }

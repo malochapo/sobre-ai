@@ -67,8 +67,8 @@ fn write_token_file(path: &PathBuf, token: &str) {
 }
 
 fn token_file_path() -> PathBuf {
-    crate::core::data_dir::lean_ctx_data_dir()
-        .unwrap_or_else(|_| PathBuf::from(".lean-ctx"))
+    crate::core::data_dir::sobre_data_dir()
+        .unwrap_or_else(|_| PathBuf::from(".sobre"))
         .join(TOKEN_FILE)
 }
 

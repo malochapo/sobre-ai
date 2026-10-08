@@ -63,7 +63,7 @@ pub fn run_setup_with_options(opts: SetupOptions) -> Result<SetupReport, String>
 
     // The data dir `doctor` checks for. Created here, not left to the first
     // write, which may come from the background index build after setup.
-    if let Ok(dir) = crate::core::data_dir::lean_ctx_data_dir() {
+    if let Ok(dir) = crate::core::data_dir::sobre_data_dir() {
         let _ = std::fs::create_dir_all(dir);
     }
 
@@ -189,7 +189,7 @@ pub fn run_setup_with_options(opts: SetupOptions) -> Result<SetupReport, String>
             name: "proxy".to_string(),
             status: "skipped".to_string(),
             path: None,
-            note: Some("Proxy not enabled (run `lean-ctx proxy enable`)".to_string()),
+            note: Some("Proxy not enabled (run `sobre proxy enable`)".to_string()),
         });
     } else {
         let proxy_cfg = crate::core::config::Config::load();
@@ -218,9 +218,7 @@ pub fn run_setup_with_options(opts: SetupOptions) -> Result<SetupReport, String>
                 name: "proxy".to_string(),
                 status: "skipped".to_string(),
                 path: None,
-                note: Some(
-                    "Proxy not opted-in (run `lean-ctx proxy enable` to activate)".to_string(),
-                ),
+                note: Some("Proxy not opted-in (run `sobre proxy enable` to activate)".to_string()),
             });
         }
     }
@@ -308,7 +306,7 @@ pub fn run_setup_with_options(opts: SetupOptions) -> Result<SetupReport, String>
 /// #356: decide whether a setup refresh may auto-index `cwd`. Returns `false`
 /// for any cwd inside a macOS TCC-protected home dir (`~/Documents`, `~/Desktop`,
 /// `~/Downloads`) so a setup refresh run from a project there never stats
-/// marker files in it. That stat pops the macOS privacy prompt when lean-ctx is
+/// marker files in it. That stat pops the macOS privacy prompt when sobre is
 /// its own TCC responsible process, and a maintenance refresh has no need to
 /// trigger it — the graph builds on the next real tool use anyway. On non-macOS
 /// hosts `is_under_tcc_protected_dir` is always `false`, so behaviour is

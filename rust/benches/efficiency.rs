@@ -12,9 +12,9 @@
 use std::path::Path;
 use std::time::{Duration, Instant};
 
-use lean_ctx::core::protocol::CrpMode;
-use lean_ctx::core::tokens::count_tokens;
-use lean_ctx::tools::ctx_search;
+use sobre::core::protocol::CrpMode;
+use sobre::core::tokens::count_tokens;
+use sobre::tools::ctx_search;
 
 const ITERS: usize = 50;
 
@@ -105,7 +105,7 @@ fn main() {
 
     // --- Walk path (legacy): force index off so numbers are uncontaminated ---
     // SAFETY: single-threaded bench `main()`; runs before any worker threads start.
-    unsafe { std::env::set_var("LEAN_CTX_DISABLE_SEARCH_INDEX", "1") };
+    unsafe { std::env::set_var("SOBRE_DISABLE_SEARCH_INDEX", "1") };
     println!("## Walk path (legacy)\n");
     println!("| query | p50 ms | p95 ms | p99 ms | resp tokens |");
     println!("|---|---|---|---|---|");
@@ -118,8 +118,8 @@ fn main() {
 
     // --- Resident index path: warm synchronously, then measure ---
     // SAFETY: single-threaded bench `main()`; runs before any worker threads start.
-    unsafe { std::env::remove_var("LEAN_CTX_DISABLE_SEARCH_INDEX") };
-    let warmed = lean_ctx::core::search_index::warm_blocking(&corpus_str, true);
+    unsafe { std::env::remove_var("SOBRE_DISABLE_SEARCH_INDEX") };
+    let warmed = sobre::core::search_index::warm_blocking(&corpus_str, true);
     println!("\n## Resident index path (warm={warmed})\n");
     println!("| query | p50 ms | p95 ms | p99 ms | resp tokens |");
     println!("|---|---|---|---|---|");

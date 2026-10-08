@@ -1,4 +1,4 @@
-//! Composable post-processing stages for `LeanCtxServer::call_tool_guarded`
+//! Composable post-processing stages for `SobreServer::call_tool_guarded`
 //! (issue #144).
 //!
 //! `call_tool_guarded` historically inlined a ~1000-line pre/post-dispatch

@@ -9,7 +9,7 @@ test-threads = -4
 retries = 2
 
 # The `serial` integration binary holds tests that change process-global state,
-# some of them through FIXED temp paths (e.g. temp_dir()/lean_ctx_bazsi_test)
+# some of them through FIXED temp paths (e.g. temp_dir()/sobre_bazsi_test)
 # that setup removes and recreates. Its pre-main initializer only serializes
 # within one process — but nextest runs each test in its own process, so tests
 # in that binary would still race on shared paths. Pinning them to a
@@ -25,7 +25,7 @@ test-group = 'serial-state'
 [scripts.setup.tmpdir]
 command = ['bash', '.config/nextest-tmpdir.sh']
 
-# Apply dir isolation to every test: point LEAN_CTX_{CONFIG,DATA,STATE,CACHE}_DIR
+# Apply dir isolation to every test: point SOBRE_{CONFIG,DATA,STATE,CACHE}_DIR
 # at empty dirs so tests never read or write the host's config, data, state and
 # cache dirs.
 [[profile.default.scripts]]

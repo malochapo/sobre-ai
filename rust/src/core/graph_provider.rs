@@ -407,7 +407,7 @@ mod tests {
         let tmp = tempfile::tempdir().expect("tempdir");
         let data = tmp.path().join("data");
         std::fs::create_dir_all(&data).expect("mkdir data");
-        crate::test_env::set_var("LEAN_CTX_DATA_DIR", data.to_string_lossy().to_string());
+        crate::test_env::set_var("SOBRE_DATA_DIR", data.to_string_lossy().to_string());
 
         let project_root = tmp.path().join("proj");
         std::fs::create_dir_all(&project_root).expect("mkdir proj");
@@ -416,7 +416,7 @@ mod tests {
         let open = open_best_effort(&root);
         assert!(open.is_none());
 
-        crate::test_env::remove_var("LEAN_CTX_DATA_DIR");
+        crate::test_env::remove_var("SOBRE_DATA_DIR");
     }
 
     fn handle_provider() -> GraphProvider {

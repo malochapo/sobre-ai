@@ -43,7 +43,7 @@
 //! chat is therefore detected with no lag, closing the small window in which a
 //! stub could still leak before the next refresh sampled it.
 //!
-//! What is *not* reachable as a pure lean-ctx change is recovering the stub
+//! What is *not* reachable as a pure sobre change is recovering the stub
 //! savings while chats run concurrently: that needs a per-call caller identity,
 //! and Cursor exposes none. The MCP `tools/call` carries no conversation id (no
 //! documented `_meta`), and a `beforeMCPExecution` hook can gate a call's

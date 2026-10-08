@@ -108,7 +108,7 @@ struct ArchiveEnvelopeRef<'a, T: Serialize> {
 }
 
 fn archive_dir(store: MemoryStore, scope: Option<&str>) -> Result<PathBuf, String> {
-    let base = crate::core::data_dir::lean_ctx_data_dir()?
+    let base = crate::core::data_dir::sobre_data_dir()?
         .join("memory")
         .join("archive");
     let dir = match (store.subdir(), scope) {
@@ -223,14 +223,14 @@ mod tests {
     fn with_temp_data_dir<T>(f: impl FnOnce() -> T) -> T {
         let _lock = crate::core::data_dir::test_env_lock();
         let dir = std::env::temp_dir().join(format!(
-            "lctx-archive-{}-{}",
+            "sobre-archive-{}-{}",
             std::process::id(),
             Utc::now().timestamp_nanos_opt().unwrap_or(0)
         ));
         let _ = std::fs::create_dir_all(&dir);
-        crate::test_env::set_var("LEAN_CTX_DATA_DIR", dir.to_str().unwrap());
+        crate::test_env::set_var("SOBRE_DATA_DIR", dir.to_str().unwrap());
         let out = f();
-        crate::test_env::remove_var("LEAN_CTX_DATA_DIR");
+        crate::test_env::remove_var("SOBRE_DATA_DIR");
         let _ = std::fs::remove_dir_all(&dir);
         out
     }
@@ -283,7 +283,7 @@ mod tests {
     #[test]
     fn facts_use_root_other_stores_are_scoped() {
         with_temp_data_dir(|| {
-            let base = crate::core::data_dir::lean_ctx_data_dir()
+            let base = crate::core::data_dir::sobre_data_dir()
                 .unwrap()
                 .join("memory")
                 .join("archive");

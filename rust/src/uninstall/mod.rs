@@ -19,7 +19,7 @@ pub(super) fn backup_before_modify(path: &Path, dry_run: bool) {
 
 pub fn bak_path_for(path: &Path) -> PathBuf {
     let filename = path.file_name().unwrap_or_default().to_string_lossy();
-    path.with_file_name(format!("{filename}.lean-ctx.bak"))
+    path.with_file_name(format!("{filename}.sobre.bak"))
 }
 
 fn cleanup_bak(path: &Path) {
@@ -65,15 +65,15 @@ pub(super) fn safe_remove(path: &Path, dry_run: bool) -> Result<(), std::io::Err
 pub fn print_help() {
     println!(
         "\
-lean-ctx uninstall — remove lean-ctx cleanly
+sobre uninstall — remove sobre cleanly
 
 USAGE:
-    lean-ctx uninstall [OPTIONS]
+    sobre uninstall [OPTIONS]
 
 OPTIONS:
     --dry-run        Preview every change without modifying anything
     --keep-config    Preserve MCP configs and rules (for a later reinstall)
-    --keep-binary    Leave the lean-ctx binary in place
+    --keep-binary    Leave the sobre binary in place
     -h, --help       Show this help and exit (does NOT uninstall)
 
 WHAT IT REMOVES:
@@ -81,13 +81,13 @@ WHAT IT REMOVES:
     • The proxy base URLs written into agent configs (if the proxy was enabled)
     • MCP server configs and hooks from every detected AI tool/IDE
     • Skill directories
-    • The data directory and the lean-ctx binary
+    • The data directory and the sobre binary
 
-    Modified files are backed up as <file>.lean-ctx.bak before removal.
+    Modified files are backed up as <file>.sobre.bak before removal.
 
 EXAMPLES:
-    lean-ctx uninstall --dry-run     # see exactly what would change
-    lean-ctx uninstall               # full clean removal"
+    sobre uninstall --dry-run     # see exactly what would change
+    sobre uninstall               # full clean removal"
     );
 }
 
@@ -108,10 +108,10 @@ pub fn run(dry_run: bool, keep_config: bool, keep_binary: bool) {
     };
 
     if dry_run {
-        println!("\n  lean-ctx {mode_label} --dry-run\n  ──────────────────────────────────\n");
+        println!("\n  sobre {mode_label} --dry-run\n  ──────────────────────────────────\n");
         println!("  Preview mode — no files will be modified.\n");
     } else {
-        println!("\n  lean-ctx {mode_label}\n  ──────────────────────────────────\n");
+        println!("\n  sobre {mode_label}\n  ──────────────────────────────────\n");
     }
 
     if keep_config {
@@ -170,21 +170,21 @@ pub fn run(dry_run: bool, keep_config: bool, keep_binary: bool) {
         println!("  ──────────────────────────────────");
         if dry_run {
             println!(
-                "  The above changes WOULD be applied.\n  Run `lean-ctx {mode_label}` to execute.\n"
+                "  The above changes WOULD be applied.\n  Run `sobre {mode_label}` to execute.\n"
             );
         } else if keep_config {
             println!(
                 "  Runtime data removed. MCP configs preserved for reinstall.\n  \
-                 Reinstall with: cargo install lean-ctx\n"
+                 Reinstall with: cargo install sobre\n"
             );
         } else {
             println!(
-                "  lean-ctx fully removed.\n  \
-                 Verify with: command -v lean-ctx   # should print nothing\n"
+                "  sobre fully removed.\n  \
+                 Verify with: command -v sobre   # should print nothing\n"
             );
         }
     } else {
-        println!("  Nothing to remove — lean-ctx was not configured.\n");
+        println!("  Nothing to remove — sobre was not configured.\n");
     }
 }
 
@@ -192,9 +192,9 @@ pub fn run(dry_run: bool, keep_config: bool, keep_binary: bool) {
 // Data directory
 // ---------------------------------------------------------------------------
 
-/// Every lean-ctx directory an uninstall must delete, de-duplicated and
+/// Every sobre directory an uninstall must delete, de-duplicated and
 /// order-preserving: resolved through [`core::paths`](crate::core::paths) for
-/// every XDG category (config/data/state/cache, honoring `LEAN_CTX_*_DIR` and
+/// every XDG category (config/data/state/cache, honoring `SOBRE_*_DIR` and
 /// `XDG_*` overrides).
 fn data_dirs_to_remove() -> Vec<PathBuf> {
     let mut dirs = Vec::new();
@@ -245,9 +245,9 @@ fn remove_data_dir(home: &Path, dry_run: bool) -> bool {
         }
     }
 
-    // Project-local .lean-ctx/ in CWD
+    // Project-local .sobre/ in CWD
     if let Ok(cwd) = std::env::current_dir() {
-        let project_dir = cwd.join(".lean-ctx");
+        let project_dir = cwd.join(".sobre");
         if project_dir.is_dir() {
             if dry_run {
                 println!("  Would remove {}", project_dir.display());
@@ -267,12 +267,12 @@ fn remove_data_dir(home: &Path, dry_run: bool) -> bool {
 
 fn try_claude_mcp_remove() {
     let result = std::process::Command::new("claude")
-        .args(["mcp", "remove", "lean-ctx", "--scope", "user"])
+        .args(["mcp", "remove", "sobre", "--scope", "user"])
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
         .status();
     match result {
-        Ok(s) if s.success() => println!("  ✓ Removed lean-ctx from Claude MCP registry"),
+        Ok(s) if s.success() => println!("  ✓ Removed sobre from Claude MCP registry"),
         _ => {} // claude CLI not available or already removed
     }
 }
@@ -327,17 +327,17 @@ fn cleanup_bak_files(home: &Path) {
             for entry in entries.flatten() {
                 let name = entry.file_name();
                 let name_str = name.to_string_lossy();
-                if name_str.contains(".lean-ctx.invalid.") && name_str.ends_with(".bak") {
+                if name_str.contains(".sobre.invalid.") && name_str.ends_with(".bak") {
                     let _ = fs::remove_file(entry.path());
                     cleaned += 1;
                     continue;
                 }
-                if name_str.ends_with(".lean-ctx.bak") {
-                    let original_name = name_str.trim_end_matches(".lean-ctx.bak");
+                if name_str.ends_with(".sobre.bak") {
+                    let original_name = name_str.trim_end_matches(".sobre.bak");
                     let original = entry.path().with_file_name(original_name);
                     if original.exists() {
                         match fs::read_to_string(&original) {
-                            Ok(c) if !c.contains("lean-ctx") => {
+                            Ok(c) if !c.contains("sobre") => {
                                 let _ = fs::remove_file(entry.path());
                                 cleaned += 1;
                             }
@@ -352,11 +352,11 @@ fn cleanup_bak_files(home: &Path) {
                 // Plain .bak files next to known config files (created by
                 // config_io). Removed whether or not the original still exists:
                 // when uninstall deletes a config file that only contained
-                // lean-ctx content, its backup would otherwise be orphaned.
+                // sobre content, its backup would otherwise be orphaned.
                 if name_str.ends_with(".bak")
-                    && !name_str.contains(".lean-ctx")
+                    && !name_str.contains(".sobre")
                     && let Ok(bak_content) = fs::read_to_string(entry.path())
-                    && bak_content.contains("lean-ctx")
+                    && bak_content.contains("sobre")
                 {
                     let _ = fs::remove_file(entry.path());
                     cleaned += 1;

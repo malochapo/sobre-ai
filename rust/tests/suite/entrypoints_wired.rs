@@ -1,7 +1,7 @@
 //! Entrypoint smoke gate (#902): every advertised entrypoint must be reachable.
 //!
 //! Background: the v3.4.7 release shipped tools/commands whose *implementation*
-//! existed but whose *entrypoint* was not wired — `lean-ctx pack` / `index` fell
+//! existed but whose *entrypoint* was not wired — `sobre pack` / `index` fell
 //! through to the global help, and some tools were missing from the manifest.
 //! "Implemented" must imply "invokable". Two independent surfaces are guarded:
 //!
@@ -41,7 +41,7 @@ fn collect_names(value: &Value, out: &mut std::collections::BTreeSet<String>) {
 
 #[test]
 fn mcp_entrypoint_tools_are_advertised() {
-    let manifest = lean_ctx::core::mcp_manifest::manifest_value();
+    let manifest = sobre::core::mcp_manifest::manifest_value();
     let mut names = std::collections::BTreeSet::new();
     collect_names(&manifest, &mut names);
 
@@ -73,11 +73,11 @@ fn mcp_entrypoint_tools_are_advertised() {
     }
 }
 
-fn lean_ctx() -> Command {
-    let mut cmd = Command::new(env!("CARGO_BIN_EXE_lean-ctx"));
+fn sobre() -> Command {
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_sobre"));
     // Mirror cli_characterization.rs: sandbox the binary so subcommands are
     // side-effect-free (no daemon, no real HOME writes).
-    cmd.env("HOME", "/tmp/lean-ctx-entrypoint-test");
+    cmd.env("HOME", "/tmp/sobre-entrypoint-test");
     cmd
 }
 
@@ -85,10 +85,10 @@ fn lean_ctx() -> Command {
 /// code. Stderr matters because the unknown-command handler reports on stderr
 /// (#1046 premium UX), so the wiring detector keys off it.
 fn run(args: &[&str]) -> (String, String, i32) {
-    let out = lean_ctx()
+    let out = sobre()
         .args(args)
         .output()
-        .expect("failed to spawn lean-ctx binary");
+        .expect("failed to spawn sobre binary");
     let stdout = String::from_utf8_lossy(&out.stdout).trim().to_string();
     let stderr = String::from_utf8_lossy(&out.stderr).trim().to_string();
     (stdout, stderr, out.status.code().unwrap_or(-1))
@@ -97,11 +97,11 @@ fn run(args: &[&str]) -> (String, String, i32) {
 #[test]
 fn cli_subcommands_are_wired() {
     // The dispatch fallthrough for an unknown command (#1046 premium UX) reports on
-    // stderr — `lean-ctx: unknown command '<cmd>'` plus a "did you mean?" hint —
+    // stderr — `sobre: unknown command '<cmd>'` plus a "did you mean?" hint —
     // with empty stdout and exit 1. That stderr marker is the *signature* of "not
     // wired" — the exact v3.4.7 `pack`/`index` regression. Derive it from a token
     // that can never be a real command, so the detector validates itself.
-    let (stdout, stderr, code) = run(&["__leanctx_not_a_command__"]);
+    let (stdout, stderr, code) = run(&["__sobre_not_a_command__"]);
     assert!(
         stdout.is_empty() && stderr.contains("unknown command") && code == 1,
         "unknown-command fallthrough changed (stdout={stdout:?}, stderr={stderr:?}, \
@@ -116,12 +116,12 @@ fn cli_subcommands_are_wired() {
     // unknown subcommand. That every command name dispatches at all is pinned by
     // `known_commands_match_dispatch_arms`; the *full* tool surface is guarded
     // MCP-side by `mcp_entrypoint_tools_are_advertised`.
-    let probe = "__leanctx_wiring_probe__";
+    let probe = "__sobre_wiring_probe__";
     for cmd in ["index", "config", "embeddings", "proxy", "hook"] {
         let (_stdout, stderr, _code) = run(&[cmd, probe]);
         assert!(
             !stderr.contains(&format!("unknown command '{cmd}'")),
-            "`lean-ctx {cmd}` falls through to the unknown-command handler — it is not \
+            "`sobre {cmd}` falls through to the unknown-command handler — it is not \
              wired in cli/dispatch (the v3.4.7 entrypoint regression)."
         );
     }

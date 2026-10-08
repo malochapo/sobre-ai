@@ -5,7 +5,7 @@
 //! Policy (decided on the issue, aligned with epic #724):
 //!
 //! - Release binaries stay CPU-only `load-dynamic`; nothing is bundled.
-//! - Provisioning is **explicit** (`lean-ctx embeddings provision`) — never a
+//! - Provisioning is **explicit** (`sobre embeddings provision`) — never a
 //!   silent download on first tool call.
 //! - Only the official CPU runtime is managed. GPU/NPU execution providers
 //!   remain opt-in feature builds with user-supplied runtimes.
@@ -109,7 +109,7 @@ fn dylib_filename() -> &'static str {
 
 /// The managed install dir: `<data_dir>/addons/bin/onnxruntime/<version>/`.
 pub fn managed_dir() -> Result<PathBuf, String> {
-    Ok(crate::core::data_dir::lean_ctx_data_dir()?
+    Ok(crate::core::data_dir::sobre_data_dir()?
         .join("addons")
         .join("bin")
         .join("onnxruntime")
@@ -146,7 +146,7 @@ pub fn provision(force: bool) -> Result<PathBuf, String> {
         .get(archive.url)
         .header(
             "User-Agent",
-            &format!("lean-ctx/{}", env!("CARGO_PKG_VERSION")),
+            &format!("sobre/{}", env!("CARGO_PKG_VERSION")),
         )
         .call()
         .map_err(|e| format!("ONNX Runtime fetch failed: {e}"))?;
@@ -267,7 +267,7 @@ pub fn status_line() -> String {
     match managed_dylib_path() {
         Some(p) => format!("managed ONNX Runtime {ORT_VERSION}: {}", p.display()),
         None => format!(
-            "managed ONNX Runtime: not installed (run  lean-ctx embeddings provision  \
+            "managed ONNX Runtime: not installed (run  sobre embeddings provision  \
              to fetch the official CPU runtime {ORT_VERSION})"
         ),
     }

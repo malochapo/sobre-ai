@@ -31,7 +31,7 @@ pub fn handle_observe() {
     if let Some(session_id) = v.get("session_id").and_then(|s| s.as_str()) {
         super::read_dedup::purge_session(session_id);
     }
-    if let Ok(data_dir) = crate::core::data_dir::lean_ctx_data_dir() {
+    if let Ok(data_dir) = crate::core::data_dir::sobre_data_dir() {
         let ts = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
@@ -90,7 +90,7 @@ fn persist_detected_model(model: &str) {
         return;
     }
 
-    let Ok(data_dir) = crate::core::data_dir::lean_ctx_data_dir() else {
+    let Ok(data_dir) = crate::core::data_dir::sobre_data_dir() else {
         return;
     };
     let path = data_dir.join("detected_model.json");
@@ -117,7 +117,7 @@ pub fn model_context_window(model: &str) -> usize {
 }
 
 pub fn load_detected_model() -> Option<(String, usize)> {
-    let data_dir = crate::core::data_dir::lean_ctx_data_dir().ok()?;
+    let data_dir = crate::core::data_dir::sobre_data_dir().ok()?;
     let path = data_dir.join("detected_model.json");
     let content = std::fs::read_to_string(&path).ok()?;
     let v: serde_json::Value = serde_json::from_str(&content).ok()?;
@@ -135,7 +135,7 @@ pub fn load_detected_model() -> Option<(String, usize)> {
 }
 
 fn persist_transcript_path(path: &str, conversation_id: Option<&str>, session_id: Option<&str>) {
-    let Ok(data_dir) = crate::core::data_dir::lean_ctx_data_dir() else {
+    let Ok(data_dir) = crate::core::data_dir::sobre_data_dir() else {
         return;
     };
     let meta_path = data_dir.join("active_transcript.json");
@@ -158,7 +158,7 @@ fn persist_transcript_path(path: &str, conversation_id: Option<&str>, session_id
 }
 
 pub fn load_active_transcript() -> Option<(String, Option<String>)> {
-    let data_dir = crate::core::data_dir::lean_ctx_data_dir().ok()?;
+    let data_dir = crate::core::data_dir::sobre_data_dir().ok()?;
     let path = data_dir.join("active_transcript.json");
     let content = std::fs::read_to_string(&path).ok()?;
     let v: serde_json::Value = serde_json::from_str(&content).ok()?;
