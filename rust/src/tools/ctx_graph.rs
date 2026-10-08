@@ -125,7 +125,7 @@ fn handle_symbol(
     crp_mode: crate::tools::CrpMode,
 ) -> String {
     let Some(spec) = path else {
-        return "path is required for 'symbol' action (format: <file>::<symbol>, or a bare <symbol> name)".to_string();
+        return "a symbol is required for 'symbol' action (a bare <symbol> name, or <file>::<symbol>)".to_string();
     };
 
     let Some(open) = graph_provider::open_or_build(root) else {

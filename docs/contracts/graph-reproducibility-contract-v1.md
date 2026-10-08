@@ -58,7 +58,7 @@ Rules:
 
 ## Output format (tools)
 
-`ctx_impact` and `ctx_graph` accept:
+`ctx_impact` and `ctx_graph action=neighbors|path` accept:
 
 - `format=text|json` (default: `text`)
 
@@ -74,7 +74,9 @@ When `format=json`:
 
 ## Boundedness (MUST)
 
-Graph tool outputs are capped by hard budgets (see `rust/src/core/budgets.rs`) to prevent DoS/token-burn.
+`ctx_impact` affected-file lists are capped by `IMPACT_AFFECTED_FILES_LIMIT`
+(`rust/src/core/budgets.rs`) to prevent DoS/token-burn. `ctx_graph` outputs
+are not budgeted.
 
 ## Security & privacy
 

@@ -50,8 +50,8 @@ fn normalize_newlines(s: &str) -> String {
 // MCP tools
 // ---------------------------------------------------------------------------
 
-/// Markdown reference for every registered MCP tool (granular profile),
-/// rendered from the same manifest the editors consume.
+/// Markdown reference for every registered MCP tool, rendered from the same
+/// manifest the editors consume.
 pub fn mcp_tools_markdown() -> String {
     let manifest = crate::core::mcp_manifest::manifest_value();
     let mut tools: Vec<&Value> = manifest
@@ -70,8 +70,8 @@ pub fn mcp_tools_markdown() -> String {
         "Source of truth: `rust/src/server/registry.rs` and the tool definitions it registers.\n\n",
     );
     out.push_str(&format!(
-        "lean-ctx registers **{} MCP tools** (granular profile). Each entry below lists the \
-         tool name, what it does, and its parameters (`*` marks required).\n\n",
+        "lean-ctx registers **{} MCP tools**. Each entry below lists the tool name, what it \
+         does, and its parameters (`*` marks required).\n\n",
         tools.len()
     ));
 

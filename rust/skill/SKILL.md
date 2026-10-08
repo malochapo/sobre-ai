@@ -48,8 +48,9 @@ Re-reading an unchanged file returns a short stub (~13 tokens); pass
 - `ctx_graph(action="callers"|"callees", symbol=...)` — call sites;
   `ctx_graph(action="trace", symbol=..., to=...)` — the call chain between two
   functions.
-- `ctx_graph(action="impact"|"neighbors"|"path", path=...)` / `ctx_impact` —
-  file dependencies and blast radius.
+- `ctx_graph(action="impact"|"neighbors", path=...)`,
+  `ctx_graph(action="path", path=..., to=...)` / `ctx_impact` — file
+  dependencies and blast radius.
 
 A question about meaning goes to search, not to whole-file reads: reading more
 is not understanding more.

@@ -32,9 +32,9 @@ impl ContextOverhead {
     }
 
     /// Measure the overhead for the currently-configured MCP surface. Uses the
-    /// same advertisement policy as the live `tools/list` handler (candidate
-    /// set, profile gates, invoker, description compression), so the number
-    /// reflects what this install actually advertises (#572).
+    /// same advertisement policy as the live `tools/list` handler (the registry
+    /// with description compression), so the number reflects what this install
+    /// actually advertises (#572).
     #[must_use]
     pub fn measure() -> Self {
         let tools = crate::server::tool_visibility::advertised_tool_defs_default();
@@ -93,11 +93,11 @@ mod tests {
 
     #[test]
     fn per_turn_prefix_stays_within_budget() {
-        // Ratchet on the fixed per-turn prefix: the 16 tool schemas, the MCP
-        // instructions and the rules block. Measured at 4921 tokens; the budget
-        // leaves ~3% for small wording changes. A tool or a paragraph more fails
-        // here, which is the point — raise the budget only in the same commit
-        // that justifies the growth.
+        // Ratchet on the fixed per-turn prefix: the 16 tool schemas and the MCP
+        // instructions. Measured at 4921 tokens; the budget leaves ~3% for
+        // small wording changes. A tool or a paragraph more fails here, which
+        // is the point — raise the budget only in the same commit that
+        // justifies the growth.
         const PER_TURN_PREFIX_BUDGET_TOKENS: usize = 5070;
 
         let _iso = crate::core::data_dir::isolated_data_dir();

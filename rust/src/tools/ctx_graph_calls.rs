@@ -15,41 +15,39 @@ pub fn load(project_root: &str) -> CallGraph {
     graph
 }
 
-/// `ctx_graph action=callers|callees|trace`. `symbol` is the function asked
-/// about (the start of a trace), `scope` an optional file that callers/callees
-/// are restricted to, `to` the end of a trace and `depth` the hops followed by
-/// callers/callees (1-5).
-pub fn handle(
-    action: &str,
+/// `ctx_graph action=callers|callees`: the callers (`callers`) or callees of
+/// `symbol` up to `depth` hops (1-5), restricted to call sites in the file
+/// `scope` when given.
+pub fn callers_or_callees(
     symbol: Option<&str>,
+    callers: bool,
     scope: Option<&str>,
-    to: Option<&str>,
     depth: usize,
     project_root: &str,
 ) -> String {
     let Some(symbol) = symbol else {
+        let action = if callers { "callers" } else { "callees" };
         return format!("symbol is required for action={action}");
     };
-    match action {
-        "callers" | "callees" => {
-            let graph = load(project_root);
-            let filter = scope.map(|f| graph_file_filter(f, project_root));
-            let callers = action == "callers";
-            let depth = depth.clamp(1, MAX_BFS_DEPTH);
-            with_handle_hint(if depth == 1 {
-                direct(&graph, symbol, callers, filter.as_deref())
-            } else {
-                transitive(&graph, symbol, callers, depth, filter.as_deref())
-            })
-        }
-        "trace" => {
-            let Some(to) = to else {
-                return "to is required for action=trace".to_string();
-            };
-            with_handle_hint(trace(&load(project_root), symbol, to))
-        }
-        _ => format!("Unknown call action '{action}'. Use: callers|callees|trace"),
-    }
+    let graph = load(project_root);
+    let filter = scope.map(|f| graph_file_filter(f, project_root));
+    let depth = depth.clamp(1, MAX_BFS_DEPTH);
+    with_handle_hint(if depth == 1 {
+        direct(&graph, symbol, callers, filter.as_deref())
+    } else {
+        transitive(&graph, symbol, callers, depth, filter.as_deref())
+    })
+}
+
+/// `ctx_graph action=trace`: the shortest call chain from `symbol` to `to`.
+pub fn trace(symbol: Option<&str>, to: Option<&str>, project_root: &str) -> String {
+    let Some(from) = symbol else {
+        return "symbol is required for action=trace".to_string();
+    };
+    let Some(to) = to else {
+        return "to is required for action=trace".to_string();
+    };
+    with_handle_hint(call_path(&load(project_root), from, to))
 }
 
 /// Every call edge into (`callers`) or out of `symbol`, one line per call site.
@@ -126,7 +124,7 @@ fn transitive(
 }
 
 /// The shortest call chain from `from` to `to`.
-fn trace(graph: &CallGraph, from: &str, to: &str) -> String {
+fn call_path(graph: &CallGraph, from: &str, to: &str) -> String {
     let Some(hops) = graph.find_call_path(from, to) else {
         return format!("No call path found from '{from}' to '{to}' (searched up to depth 10)");
     };
@@ -182,11 +180,19 @@ mod tests {
 
     #[test]
     fn missing_inputs_return_errors() {
-        let callers = handle("callers", None, None, None, 1, "/tmp");
-        assert!(callers.contains("symbol is required"), "{callers}");
-        let trace_from = handle("trace", None, None, Some("b"), 1, "/tmp");
+        let callers = callers_or_callees(None, true, None, 1, "/tmp");
+        assert!(
+            callers.contains("symbol is required for action=callers"),
+            "{callers}"
+        );
+        let callees = callers_or_callees(None, false, None, 1, "/tmp");
+        assert!(
+            callees.contains("symbol is required for action=callees"),
+            "{callees}"
+        );
+        let trace_from = trace(None, Some("b"), "/tmp");
         assert!(trace_from.contains("symbol is required"), "{trace_from}");
-        let trace_to = handle("trace", Some("a"), None, None, 1, "/tmp");
+        let trace_to = trace(Some("a"), None, "/tmp");
         assert!(trace_to.contains("to is required"), "{trace_to}");
     }
 

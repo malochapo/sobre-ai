@@ -20,7 +20,7 @@ impl McpTool for CtxGraphTool {
              path path→to=dependency chain, related.\n\
              Calls: callers|callees symbol='fn' → every call site with file:line \
              (depth≤5, path scopes to a file); trace symbol→to=call chain.\n\
-             symbol path=\"file.rs::fnName\" or a bare name returns the definition. \
+             symbol symbol='fn' (or path=\"file.rs::fn\") returns the definition. \
              diagram kind=deps|calls (Mermaid).\n\
              For understanding code use ctx_compose FIRST.",
             json!({
@@ -32,18 +32,19 @@ impl McpTool for CtxGraphTool {
                     },
                     "path": {
                         "type": "string",
-                        "description": "File; file::symbol or a name for symbol; file scope for callers|callees"
+                        "description": "File; file scope for symbol|callers|callees"
                     },
-                    "symbol": { "type": "string", "description": "Function (callers|callees|trace)" },
+                    "symbol": { "type": "string", "description": "Function (symbol|callers|callees|trace)" },
                     "to": { "type": "string", "description": "Target file (path) or function (trace)" },
                     "depth": { "type": "integer", "description": "Hops; callers|callees 1-5 (default 1)" },
                     "kind": { "type": "string", "description": "diagram: deps|calls" },
-                    "format": { "type": "string", "description": "text|json" },
+                    "format": { "type": "string", "description": "neighbors|path: text|json" },
                     "project_root": { "type": "string" }
                 },
                 "required": ["action"],
                 "allOf": [
-                    { "if": { "properties": { "action": { "enum": ["related", "symbol", "impact", "neighbors", "path"] } }, "required": ["action"] }, "then": { "required": ["path"] } },
+                    { "if": { "properties": { "action": { "enum": ["related", "impact", "neighbors", "path"] } }, "required": ["action"] }, "then": { "required": ["path"] } },
+                    { "if": { "properties": { "action": { "const": "symbol" } }, "required": ["action"] }, "then": { "anyOf": [{ "required": ["symbol"] }, { "required": ["path"] }] } },
                     { "if": { "properties": { "action": { "const": "path" } }, "required": ["action"] }, "then": { "required": ["path", "to"] } },
                     { "if": { "properties": { "action": { "enum": ["callers", "callees"] } }, "required": ["action"] }, "then": { "required": ["symbol"] } },
                     { "if": { "properties": { "action": { "const": "trace" } }, "required": ["action"] }, "then": { "required": ["symbol", "to"] } }
@@ -74,15 +75,23 @@ impl McpTool for CtxGraphTool {
         // The call actions read `symbol`, `path` and `to` raw: the dispatcher
         // resolves `path` and `to` as filesystem paths, which would turn a
         // function name into `<root>/name`. They need no session cache either.
-        if matches!(action.as_str(), "callers" | "callees" | "trace") {
-            let text = crate::tools::ctx_graph_calls::handle(
-                &action,
-                get_str(args, "symbol").as_deref(),
+        let symbol = get_str(args, "symbol");
+        let calls = match action.as_str() {
+            "callers" | "callees" => Some(crate::tools::ctx_graph_calls::callers_or_callees(
+                symbol.as_deref(),
+                action == "callers",
                 get_str(args, "path").as_deref(),
-                get_str(args, "to").as_deref(),
                 get_usize(args, "depth").unwrap_or(1),
                 &root,
-            );
+            )),
+            "trace" => Some(crate::tools::ctx_graph_calls::trace(
+                symbol.as_deref(),
+                get_str(args, "to").as_deref(),
+                &root,
+            )),
+            _ => None,
+        };
+        if let Some(text) = calls {
             return Ok(ToolOutput {
                 mode: Some(action),
                 ..ToolOutput::simple(text)
@@ -90,9 +99,16 @@ impl McpTool for CtxGraphTool {
         }
 
         // `diagram` takes a substring filter and `symbol` a `file::symbol` spec
-        // or a bare name, neither of which is a filesystem path.
-        let path = if matches!(action.as_str(), "diagram" | "symbol") {
+        // or a bare name, neither of which is a filesystem path. A name given
+        // in `symbol` makes `path` the file it is looked up in.
+        let path = if action == "diagram" {
             get_str(args, "path")
+        } else if action == "symbol" {
+            match (symbol, get_str(args, "path")) {
+                (Some(name), Some(file)) => Some(format!("{file}::{name}")),
+                (Some(name), None) => Some(name),
+                (None, spec) => spec,
+            }
         } else if let Some(p) = ctx.resolved_path("path") {
             Some(p.to_string())
         } else if let Some(err) = ctx
@@ -149,15 +165,14 @@ impl McpTool for CtxGraphTool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::data_dir::IsolatedDataDir;
 
     /// A project where `alpha` calls `beta` and `beta` calls `gamma`, with the
-    /// graph index built. Returns (tempdir guard, root).
-    fn chain_fixture() -> (tempfile::TempDir, String) {
+    /// graph index built in a private data dir. Returns (data-dir guard,
+    /// project tempdir guard, root).
+    fn chain_fixture() -> (IsolatedDataDir, tempfile::TempDir, String) {
+        let iso = crate::core::data_dir::isolated_data_dir();
         let tmp = tempfile::tempdir().expect("tempdir");
-        let data = tmp.path().join("data");
-        std::fs::create_dir_all(&data).unwrap();
-        crate::test_env::set_var("LEAN_CTX_DATA_DIR", data.to_string_lossy().to_string());
-
         let proj = tmp.path().join("proj");
         std::fs::create_dir_all(proj.join("src")).unwrap();
         std::fs::write(
@@ -172,7 +187,7 @@ mod tests {
         .unwrap();
         let root = proj.to_string_lossy().to_string();
         crate::core::graph_index::scan(&root);
-        (tmp, root)
+        (iso, tmp, root)
     }
 
     /// Run `ctx_graph` the way the dispatcher does: `path` and `to` arrive
@@ -197,8 +212,7 @@ mod tests {
 
     #[test]
     fn call_actions_take_function_names_not_paths() {
-        let _lock = crate::core::data_dir::test_env_lock();
-        let (_tmp, root) = chain_fixture();
+        let (_iso, _tmp, root) = chain_fixture();
 
         let callers = call(
             &root,
@@ -229,14 +243,11 @@ mod tests {
         );
         assert!(trace.contains("Call path (2 hop(s))"), "{trace}");
         assert!(trace.contains("→ gamma"), "{trace}");
-
-        crate::test_env::remove_var("LEAN_CTX_DATA_DIR");
     }
 
     #[test]
     fn symbol_action_resolves_a_bare_name() {
-        let _lock = crate::core::data_dir::test_env_lock();
-        let (_tmp, root) = chain_fixture();
+        let (_iso, _tmp, root) = chain_fixture();
 
         let bare = call(&root, &json!({"action": "symbol", "path": "beta"}));
         assert!(bare.contains("pub fn beta()"), "{bare}");
@@ -246,7 +257,28 @@ mod tests {
             &json!({"action": "symbol", "path": "src/lib.rs::gamma"}),
         );
         assert!(qualified.contains("pub fn gamma()"), "{qualified}");
+    }
 
-        crate::test_env::remove_var("LEAN_CTX_DATA_DIR");
+    #[test]
+    fn symbol_action_takes_the_name_in_symbol() {
+        let (_iso, _tmp, root) = chain_fixture();
+
+        let named = call(&root, &json!({"action": "symbol", "symbol": "beta"}));
+        assert!(named.contains("pub fn beta()"), "{named}");
+
+        let scoped = call(
+            &root,
+            &json!({"action": "symbol", "symbol": "gamma", "path": "src/lib.rs"}),
+        );
+        assert!(scoped.contains("pub fn gamma()"), "{scoped}");
+
+        let elsewhere = call(
+            &root,
+            &json!({"action": "symbol", "symbol": "gamma", "path": "src/other.rs"}),
+        );
+        assert!(
+            elsewhere.contains("not found in src/other.rs"),
+            "{elsewhere}"
+        );
     }
 }

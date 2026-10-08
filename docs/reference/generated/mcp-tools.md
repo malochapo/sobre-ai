@@ -4,7 +4,7 @@
 
 Source of truth: `rust/src/server/registry.rs` and the tool definitions it registers.
 
-lean-ctx registers **16 MCP tools** (granular profile). Each entry below lists the tool name, what it does, and its parameters (`*` marks required).
+lean-ctx registers **16 MCP tools**. Each entry below lists the tool name, what it does, and its parameters (`*` marks required).
 
 ## `ctx_checkpoint`
 
@@ -46,7 +46,7 @@ Parameters: `ignore_gitignore`, `max_results`, `path`, `paths`, `pattern`*
 Code graph: file dependencies and function calls.
 Files: neighbors=imports±direction, impact=reverse-dep blast radius, path path→to=dependency chain, related.
 Calls: callers|callees symbol='fn' → every call site with file:line (depth≤5, path scopes to a file); trace symbol→to=call chain.
-symbol path="file.rs::fnName" or a bare name returns the definition. diagram kind=deps|calls (Mermaid).
+symbol symbol='fn' (or path="file.rs::fn") returns the definition. diagram kind=deps|calls (Mermaid).
 For understanding code use ctx_compose FIRST.
 
 Parameters: `action`*, `depth`, `format`, `kind`, `path`, `project_root`, `symbol`, `to`

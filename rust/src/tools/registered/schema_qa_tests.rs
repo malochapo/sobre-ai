@@ -28,6 +28,9 @@ fn expand_and_graph_require_action_inputs() {
     assert!(graph.is_valid(&json!({"action":"status"})));
     assert!(graph.is_valid(&json!({"action":"path","path":"a","to":"b"})));
     assert!(!graph.is_valid(&json!({"action":"symbol"})));
+    assert!(graph.is_valid(&json!({"action":"symbol","symbol":"f"})));
+    assert!(graph.is_valid(&json!({"action":"symbol","path":"a.rs::f"})));
+    assert!(!graph.is_valid(&json!({"action":"related"})));
     assert!(!graph.is_valid(&json!({"action":"path","path":"a"})));
     assert!(graph.is_valid(&json!({"action":"callers","symbol":"f"})));
     assert!(graph.is_valid(&json!({"action":"callees","symbol":"f","path":"a.rs","depth":2})));

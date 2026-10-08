@@ -3,7 +3,7 @@
 //! Fans complexity hotspots out across the shared data fabric so health becomes
 //! a *queryable, cross-linked* signal rather than a leaf report:
 //!   - **BM25** gets a `health://complexity/...` chunk per hotspot, so
-//!     `ctx_semantic_search "complex functions"` surfaces them.
+//!     `ctx_search action=semantic "complex functions"` surfaces them.
 //!   - The **property graph** gets a `health_hotspot` cross-source edge from the
 //!     code file to that URI, so `ctx_read` shows a hotspot hint inline.
 //!   - **Knowledge** gets a `code_health` fact, so `ctx_knowledge` can recall a
@@ -138,8 +138,10 @@ fn pg_hotspots(health: &ProjectHealth) -> Vec<super::Hotspot> {
 /// health fabric (the `health_hotspot` cross-source edges written by [`apply`]).
 /// Returns the highest cc among same-named hotspots, or `None` when the symbol
 /// is not a recorded hotspot or the graph is unavailable. Best-effort + cheap:
-/// one SQLite read, no parsing.
-#[cfg(feature = "embeddings")]
+/// one SQLite read, no parsing. Its one caller, the dense-search complexity
+/// boost, exists only with `embeddings`; the function is not gated so its test
+/// runs in the default build.
+#[cfg_attr(not(feature = "embeddings"), allow(dead_code))]
 pub fn hotspot_cc(root: &str, symbol: &str) -> Option<u32> {
     let pg = crate::core::property_graph::CodeGraph::open(root).ok()?;
     pg.all_cross_source_edges()
@@ -378,7 +380,6 @@ mod tests {
     // `apply` writes into stores the sibling tests in this module also touch,
     // so a parallel run reads back another test's state. Serialized rather than
     // ignored: the assertion itself is meaningful.
-    #[cfg(feature = "embeddings")]
     #[test]
     #[serial_test::serial(code_health_fabric)]
     fn hotspot_cc_reads_back_persisted_edge() {
