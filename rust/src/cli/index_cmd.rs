@@ -168,7 +168,7 @@ pub(crate) fn cmd_index(args: &[String]) {
         _ => {
             eprintln!(
                 "Usage: lean-ctx index <status|build|build-full|build-graph|build-semantic|watch> [--root <path>]\n\
-                 Filter flags (#735, apply to this run; persist via [index] config):\n\
+                 Filter flags (#735, apply to this run; persist excludes via `ignore` in config.toml):\n\
                    --exclude <glob>       drop matching files from the corpus (repeatable)\n\
                    --include <glob>       corpus = matching files only (repeatable)\n\
                    --no-gitignore         index .gitignore'd files too\n\

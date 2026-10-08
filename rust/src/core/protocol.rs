@@ -163,8 +163,8 @@ pub fn shorten_path_relative(path: &str, root: &str) -> String {
 /// truncation form (`[lean-ctx: 4200→840 tok, verbatim truncated]`). The
 /// `/v1/compress` contract surfaces savings in a structured `stats` field, so
 /// message bodies must stay footer-free and byte-stable for prompt caching
-/// (#498). This strips that trailing line regardless of the ambient
-/// `savings_footer` setting; content without a footer is returned untouched.
+/// (#498). This strips that trailing line; content without a footer is
+/// returned untouched.
 pub fn strip_trailing_savings_footer(output: &str) -> &str {
     let body = output.trim_end_matches('\n');
     let (head, last_line) = match body.rfind('\n') {

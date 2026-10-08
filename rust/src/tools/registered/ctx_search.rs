@@ -157,7 +157,6 @@ const KNOWN_KEYS: &[&str] = &[
     "include",
     "exclude",
     "exclude_pattern",
-    "ext",
     "anchored",
     "max_results",
     "top_k",
@@ -196,10 +195,7 @@ fn handle_regex(args: &Map<String, Value>, ctx: &ToolContext) -> Result<ToolOutp
         })?;
     let resolved = crate::server::multi_path::resolve_tool_paths(args, ctx)
         .map_err(|e| ErrorData::invalid_params(format!("ERROR: {e}"), None))?;
-    // `include` is the canonical glob filter; `ext` is the deprecated alias
-    // (bare extension → `*.{ext}`). `include` wins when both are supplied.
-    let include =
-        get_str(args, "include").or_else(|| get_str(args, "ext").map(|e| ext_to_include(&e)));
+    let include = get_str(args, "include");
     let max = (get_int(args, "max_results").unwrap_or(20) as usize).min(500);
     let no_gitignore = get_bool(args, "ignore_gitignore").unwrap_or(false);
     // #1008: opt-in N:hh line anchors on each hit for direct ctx_patch edits.
@@ -518,13 +514,6 @@ fn search_single(
     })
 }
 
-/// Translate the deprecated `ext` parameter into an `include` glob.
-///
-/// The historical `ext` accepted a bare extension (`rs` or `.rs`) and matched it
-/// exactly; the equivalent glob is `*.{ext}` (the `glob` crate's `*` spans path
-/// separators, so it still matches at any depth, preserving the old behaviour).
-/// A value that already looks like a glob/path (`*`, `{`, `?`, `/`) is passed
-/// through untouched so any power user who put a pattern in `ext` keeps working.
 /// #871: batch multi-query — runs each query independently and groups output.
 fn handle_batch_queries(
     queries: &[Value],
@@ -573,8 +562,7 @@ fn handle_batch_queries(
             ));
             continue;
         };
-        let include =
-            get_str(obj, "include").or_else(|| get_str(obj, "ext").map(|e| ext_to_include(&e)));
+        let include = get_str(obj, "include");
         let exclude = get_str(obj, "exclude");
         let exclude_pattern = get_str(obj, "exclude_pattern");
 
@@ -644,17 +632,9 @@ fn truncate_query(q: &str, max: usize) -> String {
     }
 }
 
-fn ext_to_include(ext: &str) -> String {
-    if ext.contains(['*', '{', '?', '/']) {
-        return ext.to_string();
-    }
-    let bare = ext.strip_prefix('.').unwrap_or(ext);
-    format!("*.{bare}")
-}
-
 #[cfg(test)]
 mod tests {
-    use super::{SearchAction, ext_to_include};
+    use super::SearchAction;
     use serde_json::{Map, Value, json};
 
     fn args(pairs: &[(&str, Value)]) -> Map<String, Value> {
@@ -734,26 +714,6 @@ mod tests {
         );
         // Nothing recognizable → default regex (the empty-call default).
         assert_eq!(SearchAction::resolve(&args(&[])), SearchAction::Regex);
-    }
-
-    #[test]
-    fn ext_alias_bare_extension_becomes_glob() {
-        assert_eq!(ext_to_include("rs"), "*.rs");
-        assert_eq!(ext_to_include("ts"), "*.ts");
-    }
-
-    #[test]
-    fn ext_alias_strips_leading_dot() {
-        assert_eq!(ext_to_include(".rs"), "*.rs");
-        assert_eq!(ext_to_include(".tsx"), "*.tsx");
-    }
-
-    #[test]
-    fn ext_alias_passes_through_glob_like_values() {
-        // Already a glob/path → keep verbatim, don't double-wrap.
-        assert_eq!(ext_to_include("*.rs"), "*.rs");
-        assert_eq!(ext_to_include("*.{rs,ts}"), "*.{rs,ts}");
-        assert_eq!(ext_to_include("src/**/*.tsx"), "src/**/*.tsx");
     }
 
     #[test]

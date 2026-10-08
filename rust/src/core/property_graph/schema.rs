@@ -1,4 +1,4 @@
-//! Database schema initialization and migration for the code graph.
+//! Database schema initialization for the code graph.
 
 use rusqlite::Connection;
 

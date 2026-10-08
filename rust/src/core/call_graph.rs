@@ -53,10 +53,9 @@ pub struct CallGraphInputs {
 }
 
 impl CallGraphInputs {
-    /// Open the project graph (PropertyGraph, falling back to legacy) and
-    /// materialize call-graph inputs. Returns empty inputs (rooted at
-    /// `project_root`) when no graph is available yet — matching the old
-    /// behaviour of building from an empty index.
+    /// Open (or build) the property graph and materialize call-graph inputs.
+    /// Returns empty inputs (rooted at `project_root`) when no graph is
+    /// available.
     pub fn open(project_root: &str) -> Self {
         match crate::core::graph_provider::open_or_build(project_root) {
             Some(open) => Self::from_provider(project_root, &open),

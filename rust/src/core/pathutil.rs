@@ -236,8 +236,8 @@ pub fn is_agent_config_dir(dir: &Path) -> bool {
 /// Returns `true` if the directory is too broad to be a valid project root.
 /// Rejects the home directory, filesystem root, `.` (bare CWD), and agent/IDE
 /// config directories ([`AGENT_CONFIG_DIRS`]). Used to prevent adopting a bogus
-/// project root and writing project-scoped data into the global `~/.lean-ctx/`
-/// data directory.
+/// project root and writing project-scoped data into the global data
+/// directory.
 pub fn is_broad_or_unsafe_root(dir: &Path) -> bool {
     if let Some(home) = dirs::home_dir()
         && dir == home
@@ -348,12 +348,11 @@ pub fn is_under_tcc_protected_dir(path: &Path) -> bool {
 /// TCC-granted host like a terminal or an editor.
 ///
 /// Context (#356): TCC permissions attach to the *responsible process*. The
-/// lean-ctx daemon/proxy LaunchAgents and the scheduled auto-updater run
-/// directly under `launchd` (ppid 1), so any `stat`/`read_dir` they perform
-/// under `~/Documents` pops the privacy prompt **in lean-ctx's own name** —
-/// and because every release replaces the ad-hoc-signed binary (new cdhash),
-/// a previously granted permission is invalidated on each update, re-prompting
-/// forever. Such processes must never probe TCC-protected paths on their own
+/// lean-ctx proxy LaunchAgent runs directly under `launchd` (ppid 1), so any
+/// `stat`/`read_dir` it performs under `~/Documents` pops the privacy prompt
+/// **in lean-ctx's own name** — and because every release replaces the
+/// ad-hoc-signed binary (new cdhash), a previously granted permission is
+/// invalidated on each update, re-prompting forever. Such processes must never probe TCC-protected paths on their own
 /// initiative. Child processes of a terminal or editor (MCP server, CLI)
 /// inherit their host's TCC grant and keep full functionality.
 pub fn process_is_tcc_standalone() -> bool {

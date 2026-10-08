@@ -417,9 +417,8 @@ fn compressed_cache_key_distinguishes_task() {
     let tdd_no_task = compressed_cache_key("map", CrpMode::Tdd, None, None, &[]);
     let with_task = compressed_cache_key("map", CrpMode::Off, Some("fix login"), None, &[]);
     let other_task = compressed_cache_key("map", CrpMode::Off, Some("refactor db"), None, &[]);
-    // Versioned so stale pre-line-range entries cannot be served.
-    assert_eq!(no_task, "map:v2");
-    assert_eq!(tdd_no_task, "map:v2:tdd");
+    assert_eq!(no_task, "map");
+    assert_eq!(tdd_no_task, "map:tdd");
     assert_ne!(with_task, no_task);
     assert_ne!(with_task, other_task);
 }
@@ -428,7 +427,7 @@ fn compressed_cache_key_distinguishes_task() {
 fn compressed_cache_key_distinguishes_aggressiveness() {
     // None → byte-identical to today's keys (#714 must not shift existing cache).
     let base = compressed_cache_key("map", CrpMode::Off, None, None, &[]);
-    assert_eq!(base, "map:v2");
+    assert_eq!(base, "map");
     // Same aggressiveness → same key (determinism, #498).
     let a = compressed_cache_key("map", CrpMode::Off, None, Some(0.7), &[]);
     assert_eq!(
@@ -663,7 +662,7 @@ fn instruction_file_detection() {
     assert!(is_instruction_file(
         "/home/user/.pi/agent/skills/committing-changes/SKILL.md"
     ));
-    assert!(is_instruction_file("/workspace/.cursor/rules/lean-ctx.mdc"));
+    assert!(is_instruction_file("/workspace/.cursor/rules/team.mdc"));
     assert!(is_instruction_file("/project/AGENTS.md"));
     assert!(is_instruction_file("/project/.cursorrules"));
     assert!(is_instruction_file("/home/user/.claude/rules/my-rule.md"));

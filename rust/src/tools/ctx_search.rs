@@ -47,32 +47,6 @@ impl SearchOutcome {
 /// tool returns partial results with a hint instead of appearing to hang.
 const SEARCH_DEADLINE: Duration = Duration::from_secs(10);
 
-/// Back-compat shim: the pre-#870 8-arg entry point. Delegates to
-/// [`handle_filtered`] with no exclude filters. New callers pass the two
-/// `exclude` args directly.
-#[allow(clippy::too_many_arguments)]
-pub fn handle(
-    pattern: &str,
-    dir: &str,
-    include: Option<&str>,
-    max_results: usize,
-    crp_mode: CrpMode,
-    respect_gitignore: bool,
-    anchored: bool,
-) -> SearchOutcome {
-    handle_filtered(
-        pattern,
-        dir,
-        include,
-        max_results,
-        crp_mode,
-        respect_gitignore,
-        anchored,
-        None,
-        None,
-    )
-}
-
 /// Searches files for a regex pattern with compressed output and monorepo scope hints.
 ///
 /// `anchored` (opt-in, #1008) appends a `:hh` line-hash to every match
@@ -715,7 +689,20 @@ mod tests {
             .unwrap();
         }
         let root = dir.path().to_string_lossy().into_owned();
-        let run = || handle("target", &root, Some("*.rs"), 20, CrpMode::Off, true, false).text;
+        let run = || {
+            handle_filtered(
+                "target",
+                &root,
+                Some("*.rs"),
+                20,
+                CrpMode::Off,
+                true,
+                false,
+                None,
+                None,
+            )
+            .text
+        };
         assert_eq!(run(), run(), "search output must be deterministic");
     }
 
@@ -728,7 +715,18 @@ mod tests {
         std::fs::write(dir.path().join("a.rs"), "let needle = 1;\nother\n").unwrap();
         let root = dir.path().to_string_lossy().into_owned();
 
-        let plain = handle("needle", &root, Some("*.rs"), 10, CrpMode::Off, true, false).text;
+        let plain = handle_filtered(
+            "needle",
+            &root,
+            Some("*.rs"),
+            10,
+            CrpMode::Off,
+            true,
+            false,
+            None,
+            None,
+        )
+        .text;
         assert!(
             !plain.contains("[anchored:"),
             "default must carry no legend"
@@ -738,7 +736,18 @@ mod tests {
             "default keeps path:line content: {plain}"
         );
 
-        let anchored = handle("needle", &root, Some("*.rs"), 10, CrpMode::Off, true, true).text;
+        let anchored = handle_filtered(
+            "needle",
+            &root,
+            Some("*.rs"),
+            10,
+            CrpMode::Off,
+            true,
+            true,
+            None,
+            None,
+        )
+        .text;
         let hh = crate::core::anchor::line_hash("let needle = 1;");
         assert!(anchored.contains("[anchored: path:line:hh → edit via ctx_patch]"));
         assert!(
@@ -758,7 +767,7 @@ mod tests {
             "fn outer() {\n    let needle = 1;\n    needle\n}\nfn tiny() {}\n",
         )
         .unwrap();
-        let out = handle(
+        let out = handle_filtered(
             "needle",
             dir.path().to_string_lossy().as_ref(),
             Some("*.rs"),
@@ -766,6 +775,8 @@ mod tests {
             CrpMode::Off,
             true,
             false,
+            None,
+            None,
         )
         .text;
         assert!(
@@ -784,7 +795,7 @@ mod tests {
         // tag, so the default output stays byte-identical (no `∈`, no legend).
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join("a.rs"), "fn one_liner() {}\n").unwrap();
-        let out = handle(
+        let out = handle_filtered(
             "one_liner",
             dir.path().to_string_lossy().as_ref(),
             Some("*.rs"),
@@ -792,6 +803,8 @@ mod tests {
             CrpMode::Off,
             true,
             false,
+            None,
+            None,
         )
         .text;
         assert!(!out.contains('∈'), "single-line symbol → no tag: {out}");
@@ -805,7 +818,7 @@ mod tests {
         std::fs::write(&b, "match\n").unwrap();
         std::fs::write(&a, "match\n").unwrap();
 
-        let out = handle(
+        let out = handle_filtered(
             "match",
             dir.path().to_string_lossy().as_ref(),
             Some("*.txt"),
@@ -813,6 +826,8 @@ mod tests {
             CrpMode::Off,
             true,
             false,
+            None,
+            None,
         )
         .text;
 
@@ -858,7 +873,18 @@ mod tests {
             "index should warm for a small clean corpus"
         );
 
-        let out = handle("authenticate", &root, None, 10, CrpMode::Off, true, false).text;
+        let out = handle_filtered(
+            "authenticate",
+            &root,
+            None,
+            10,
+            CrpMode::Off,
+            true,
+            false,
+            None,
+            None,
+        )
+        .text;
         assert!(
             out.contains("a.rs"),
             "warm-index + cache search must find the match: {out}"
@@ -893,7 +919,7 @@ mod tests {
 
         // (1) A brand-new file created after the warm.
         std::fs::write(dir.path().join("c.rs"), "fn added_after_warm_zzz() {}\n").unwrap();
-        let out_new = handle(
+        let out_new = handle_filtered(
             "added_after_warm_zzz",
             &root,
             None,
@@ -901,6 +927,8 @@ mod tests {
             CrpMode::Off,
             true,
             false,
+            None,
+            None,
         )
         .text;
         assert!(
@@ -914,7 +942,7 @@ mod tests {
             "fn existing() {}\nfn edited_after_warm_zzz() {}\n",
         )
         .unwrap();
-        let out_edit = handle(
+        let out_edit = handle_filtered(
             "edited_after_warm_zzz",
             &root,
             None,
@@ -922,6 +950,8 @@ mod tests {
             CrpMode::Off,
             true,
             false,
+            None,
+            None,
         )
         .text;
         assert!(
@@ -941,7 +971,7 @@ mod tests {
         )
         .unwrap();
 
-        let out = handle(
+        let out = handle_filtered(
             "longIdentifier",
             dir.path().to_string_lossy().as_ref(),
             Some("*.rs"),
@@ -949,6 +979,8 @@ mod tests {
             CrpMode::Off,
             true,
             false,
+            None,
+            None,
         )
         .text;
 
@@ -973,7 +1005,7 @@ mod tests {
         std::fs::write(&min, "needle\n").unwrap();
         std::fs::write(dir.path().join("ok.txt"), "needle\n").unwrap();
 
-        let out = handle(
+        let out = handle_filtered(
             "needle",
             dir.path().to_string_lossy().as_ref(),
             None,
@@ -981,13 +1013,15 @@ mod tests {
             CrpMode::Off,
             true,
             false,
+            None,
+            None,
         )
         .text;
         assert!(out.contains("ok.txt"), "got: {out}");
         assert!(!out.contains("app.min.js:"), "got: {out}");
         assert!(out.contains("1 files skipped by type"), "got: {out}");
 
-        let out = handle(
+        let out = handle_filtered(
             "needle",
             min.to_string_lossy().as_ref(),
             None,
@@ -995,6 +1029,8 @@ mod tests {
             CrpMode::Off,
             true,
             false,
+            None,
+            None,
         )
         .text;
         assert!(
@@ -1027,7 +1063,7 @@ mod tests {
         let (tx, rx) = mpsc::channel();
         std::thread::spawn(move || {
             // Fresh temp dir → no warm index yet, so this exercises the walk path.
-            let out = handle(
+            let out = handle_filtered(
                 "needle_here",
                 &dir_path,
                 None,
@@ -1035,6 +1071,8 @@ mod tests {
                 CrpMode::Off,
                 true,
                 false,
+                None,
+                None,
             )
             .text;
             let _ = tx.send(out);
@@ -1060,7 +1098,7 @@ mod tests {
         std::fs::write(a.path().join("x.rs"), "repeat_needle_q7\n").unwrap();
         std::fs::write(b.path().join("y.rs"), "repeat_needle_q7\n").unwrap();
         let run = |dir: &std::path::Path| {
-            handle(
+            handle_filtered(
                 "repeat_needle_q7",
                 dir.to_string_lossy().as_ref(),
                 None,
@@ -1068,6 +1106,8 @@ mod tests {
                 CrpMode::Off,
                 true,
                 false,
+                None,
+                None,
             )
             .text
         };
@@ -1086,7 +1126,7 @@ mod tests {
         std::fs::write(dir.path().join("b.ts"), "brace_glob_needle\n").unwrap();
         std::fs::write(dir.path().join("c.py"), "brace_glob_needle\n").unwrap();
 
-        let out = handle(
+        let out = handle_filtered(
             "brace_glob_needle",
             dir.path().to_string_lossy().as_ref(),
             Some("*.{rs,ts}"),
@@ -1094,6 +1134,8 @@ mod tests {
             CrpMode::Off,
             true,
             false,
+            None,
+            None,
         )
         .text;
 
@@ -1112,7 +1154,7 @@ mod tests {
         std::fs::write(dir.path().join("root.rs"), "needle\n").unwrap();
         std::fs::write(dir.path().join("other.py"), "needle\n").unwrap();
 
-        let out = handle(
+        let out = handle_filtered(
             "needle",
             dir.path().to_string_lossy().as_ref(),
             Some("*.rs"),
@@ -1120,6 +1162,8 @@ mod tests {
             CrpMode::Off,
             true,
             false,
+            None,
+            None,
         )
         .text;
 
@@ -1131,7 +1175,7 @@ mod tests {
         assert!(!out.contains("other.py"), ".py must be excluded: {out}");
 
         // Also test bare filename glob (no wildcard at all)
-        let out2 = handle(
+        let out2 = handle_filtered(
             "needle",
             dir.path().to_string_lossy().as_ref(),
             Some("file.rs"),
@@ -1139,6 +1183,8 @@ mod tests {
             CrpMode::Off,
             true,
             false,
+            None,
+            None,
         )
         .text;
 
@@ -1155,7 +1201,7 @@ mod tests {
         std::fs::write(dir.path().join("src/inner/deep.rs"), "needle\n").unwrap();
         std::fs::write(dir.path().join("top.rs"), "needle\n").unwrap();
 
-        let out = handle(
+        let out = handle_filtered(
             "needle",
             dir.path().to_string_lossy().as_ref(),
             Some("src/**/*.rs"),
@@ -1163,6 +1209,8 @@ mod tests {
             CrpMode::Off,
             true,
             false,
+            None,
+            None,
         )
         .text;
 
@@ -1244,7 +1292,7 @@ mod tests {
         // #356 class: the MCP server often runs with cwd == $HOME; a defaulted
         // `path` must never walk the whole home dir (macOS TCC prompts).
         let home = dirs::home_dir().expect("home dir in test env");
-        let out = handle(
+        let out = handle_filtered(
             "needle",
             home.to_string_lossy().as_ref(),
             None,
@@ -1252,6 +1300,8 @@ mod tests {
             CrpMode::Off,
             true,
             false,
+            None,
+            None,
         )
         .text;
         assert!(

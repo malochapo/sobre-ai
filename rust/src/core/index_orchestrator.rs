@@ -558,7 +558,7 @@ fn bm25_build_note(
             limit_bytes,
         }) => format!(
             "indexed {doc_count} chunks but NOT persisted to disk: compressed {:.1} MB exceeds the {:.0} MB cap. \
-             Add the large paths to extra_ignore_patterns, \
+             Add the large paths to `ignore` in config.toml, \
              then run `lean-ctx reindex`. Until then the index is rebuilt from scratch on every cold start.",
             *compressed_bytes as f64 / 1_048_576.0,
             *limit_bytes as f64 / 1_048_576.0
@@ -1078,7 +1078,7 @@ mod tests {
             "must flag non-persistence: {note}"
         );
         assert!(
-            note.contains("extra_ignore_patterns") && note.contains("reindex"),
+            note.contains("`ignore`") && note.contains("reindex"),
             "too-large note must carry an actionable remedy: {note}"
         );
     }

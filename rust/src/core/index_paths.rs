@@ -1,8 +1,8 @@
 //! Index path utilities — project-root normalization and graph match keys.
 //!
-//! Extracted from the deprecated `graph_index` module (#682) so these pure path
-//! helpers survive the removal of the in-memory `ProjectIndex` graph. They have
-//! no dependency on any graph backend — only `pathutil` and std.
+//! Pure path helpers shared by the graph index, the property graph and the
+//! graph tools. They have no dependency on any graph backend — only `pathutil`
+//! and std.
 
 use std::path::Path;
 

@@ -219,8 +219,8 @@ impl CtxReadTool {
             mode
         };
 
-        // Delta-aware explicit re-reads (opt-in: config `delta_explicit`). Re-requesting full/lines:N-M content for a file
-        // this session already read re-emits content the model already holds;
+        // Delta-aware explicit re-reads. Re-requesting full/lines:N-M content for
+        // a file this session already read re-emits content the model already holds;
         // when the file changed on disk, a diff carries the same information in
         // a fraction of the tokens, and an unchanged lines: request of a
         // fully-delivered file collapses to the full-mode stub. The decision is
@@ -240,7 +240,6 @@ impl CtxReadTool {
                 &mode,
                 explicit_mode,
                 fresh,
-                true,
             );
             mode = decision.mode;
             delta_explicit_note = decision.note;

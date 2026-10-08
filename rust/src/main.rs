@@ -1,10 +1,11 @@
 fn main() {
     // #356: before anything touches the filesystem, a launchd-standalone
-    // process (daemon/proxy/auto-updater booted from a stale, pre-seatbelt
-    // plist — e.g. a brew-only upgrade) re-execs itself under the
-    // deny-~/Documents seatbelt. No-op for terminal/editor children (they
-    // inherit the host TCC grant). macOS-only: TCC and `sandbox-exec` are
-    // macOS features, so the guard module isn't built on other platforms.
+    // process not launched through the seatbelt-wrapped LaunchAgent (e.g. a
+    // detached proxy re-parented to launchd before reaching `main`) re-execs
+    // itself under the deny-~/Documents seatbelt. No-op for terminal/editor
+    // children (they inherit the host TCC grant). macOS-only: TCC and
+    // `sandbox-exec` are macOS features, so the guard module isn't built on
+    // other platforms.
     #[cfg(target_os = "macos")]
     lean_ctx::core::tcc_guard_sandbox::reexec_under_seatbelt_if_needed();
 

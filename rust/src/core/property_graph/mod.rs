@@ -34,7 +34,7 @@ use std::path::{Path, PathBuf};
 /// only when the global data directory cannot be resolved.
 pub fn graph_dir(project_root: &str) -> PathBuf {
     if let Ok(data_dir) = crate::core::data_dir::lean_ctx_data_dir() {
-        let normalized = crate::core::graph_index::normalize_project_root(project_root);
+        let normalized = crate::core::index_paths::normalize_project_root(project_root);
         let hash = crate::core::project_hash::hash_project_root(&normalized);
         data_dir.join("graphs").join(hash)
     } else {
@@ -42,28 +42,17 @@ pub fn graph_dir(project_root: &str) -> PathBuf {
     }
 }
 
-/// Property-graph engine generation. Bump whenever edge extraction changes
-/// (e.g. the `type_ref` edges that connect C#/Java same-namespace consumers to
-/// their definers, GH #398) so an existing graph built by an older engine is
-/// transparently rebuilt on the next query instead of being served without the
-/// new edges. Graphs whose `graph.meta.json` predates this stamp deserialize to
-/// engine version `0`, so the first query after an upgrade rebuilds once.
-///
-/// History:
-/// - `2`: `type_ref` edges added to the `ctx_impact` builder (v3.8.3).
-/// - `3`: `type_ref` edges moved into the durable `graph_index` mirror so a
-///   background reindex can no longer wipe the C# blast radius (GH #398); every
-///   graph stamped by an engine that predates the mirror fix must rebuild.
-/// - `4`: same-package `type_ref` edges extended to Go (directory-scoped) and
-///   Kotlin (GH #398 bug class); graphs built before they existed must rebuild.
-/// - `5`: PropertyGraph file paths use interned IDs; pre-ID databases rebuild.
+/// Property-graph engine generation, stamped into `graph.meta.json` on every
+/// build. Bump whenever edge extraction or the storage layout changes: a graph
+/// stamped with an older engine version is rebuilt on the next query instead
+/// of being served without the new edges.
 pub const GRAPH_ENGINE_VERSION: u32 = 5;
 
 /// `true` when the persisted graph was built by an engine older than
-/// [`GRAPH_ENGINE_VERSION`] — or predates the version stamp entirely (missing or
-/// unreadable meta) — and must therefore be rebuilt before its edges can be
-/// trusted. Callers pair this with a node-count check: an empty graph is rebuilt
-/// regardless; a non-empty-but-outdated graph is rebuilt by this gate.
+/// [`GRAPH_ENGINE_VERSION`] — or has no readable meta (never built) — and must
+/// therefore be rebuilt before its edges can be trusted. Callers pair this with
+/// a node-count check: an empty graph is rebuilt regardless; a
+/// non-empty-but-outdated graph is rebuilt by this gate.
 pub fn engine_outdated(project_root: &str) -> bool {
     load_meta(project_root).is_none_or(|m| m.engine_version < GRAPH_ENGINE_VERSION)
 }
@@ -573,7 +562,7 @@ mod tests {
         // No meta on disk yet -> outdated (an unbuilt graph forces a build).
         assert!(engine_outdated(root), "missing meta must read as outdated");
 
-        // Meta from an engine generation before the version stamp -> outdated.
+        // Meta stamped with an older engine version -> outdated.
         let mut meta = PropertyGraphMetaV1 {
             built_at: "2026-01-01T00:00:00Z".to_string(),
             engine_version: 0,

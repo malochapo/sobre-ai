@@ -26,30 +26,12 @@ fn normalize_key(path: &str) -> String {
     crate::core::pathutil::normalize_tool_path(path)
 }
 
-/// Built-in default token budget for the in-memory read cache.
+/// Built-in token budget for the in-memory read cache.
 /// 2M covers ~100 typical source files, reducing premature eviction
 /// before re-reads occur. RAM-pressure eviction via EvictionOrchestrator
 /// provides an independent safety net regardless of this budget.
-pub(crate) const DEFAULT_CACHE_MAX_TOKENS: usize = 2_000_000;
-
-/// Pure resolver for the read-cache token budget: the `configured`
-/// `cache_max_tokens` when positive, else [`DEFAULT_CACHE_MAX_TOKENS`] (`0`
-/// means "use the default"). Split out so it is unit-testable without touching
-/// the global config.
-fn resolve_cache_max_tokens(configured: usize) -> usize {
-    if configured > 0 {
-        configured
-    } else {
-        DEFAULT_CACHE_MAX_TOKENS
-    }
-}
-
-/// Resolved token budget for the read cache: `cache_max_tokens` in
-/// config.toml, else [`DEFAULT_CACHE_MAX_TOKENS`].
 /// Shared with `eviction_orchestrator` so both eviction rails read one budget.
-pub(crate) fn max_cache_tokens() -> usize {
-    resolve_cache_max_tokens(0)
-}
+pub(crate) const CACHE_MAX_TOKENS: usize = 2_000_000;
 
 /// A cached file read: zstd-compressed content, hash, token count, and access metadata.
 ///
@@ -581,7 +563,7 @@ impl SessionCache {
     /// Evict until cache fits within token budget using RRF (Reciprocal Rank Fusion).
     /// Combines recency, frequency, and size signals to evict least-valuable entries first.
     pub fn evict_if_needed(&mut self, incoming_tokens: usize) {
-        let max_tokens = max_cache_tokens();
+        let max_tokens = CACHE_MAX_TOKENS;
         let current = self.total_cached_tokens();
         if current + incoming_tokens <= max_tokens {
             return;
@@ -1059,14 +1041,6 @@ mod tests {
             score_a > score_b,
             "frequently accessed entries should score higher via RRF"
         );
-    }
-
-    #[test]
-    fn cache_budget_resolver_precedence() {
-        // configured value wins when positive
-        assert_eq!(resolve_cache_max_tokens(42_000), 42_000);
-        // nothing set → built-in default
-        assert_eq!(resolve_cache_max_tokens(0), DEFAULT_CACHE_MAX_TOKENS);
     }
 
     #[test]

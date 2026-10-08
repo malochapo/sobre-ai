@@ -5,17 +5,16 @@
 //! the index corpus) are different axes: a file can be versioned and important
 //! while still being bad context for code search (CSV seed data, fixtures,
 //! lockfiles, vendored blobs). This module carries the declared retrieval
-//! policy — `[index] include/exclude/respect_gitignore` from config, plus an
-//! optional per-run CLI overlay (`lean-ctx index build --exclude …`) — so the
-//! BM25, graph, and watch builders can never disagree about corpus membership.
+//! policy — the `ignore` globs from config.toml (excludes), plus an optional
+//! per-run CLI overlay (`lean-ctx index build --exclude …`) — so the BM25,
+//! graph, and watch builders can never disagree about corpus membership.
 //! The semantic (embedding) index chunks the BM25 corpus, so it inherits the
 //! same universe by construction.
 //!
 //! Excluded files never enter the pipeline: no chunks, no graph nodes, no
 //! embeddings. Globs are evaluated against the root-relative path with forward
-//! slashes (same semantics as `extra_ignore_patterns`, which remains honored
-//! as the legacy exclude list). Precedence: exclude wins over include; a
-//! non-empty include list turns the corpus into "matching files only".
+//! slashes. Precedence: exclude wins over include; a non-empty include list
+//! turns the corpus into "matching files only".
 
 use std::sync::RwLock;
 
@@ -58,11 +57,11 @@ pub struct IndexFileFilter {
 }
 
 impl IndexFileFilter {
-    /// Resolve the effective filter: `[index]` config, extended by the CLI
-    /// overlay. CLI `--exclude` appends to the config excludes; CLI
-    /// `--include` replaces the config include set for this run (a one-off
+    /// Resolve the effective filter: config `ignore` globs as excludes,
+    /// extended by the CLI overlay. CLI `--exclude` appends to the config
+    /// excludes; CLI `--include` sets the include list for this run (a one-off
     /// experiment declares its corpus outright); an explicit gitignore flag
-    /// overrides the config boolean.
+    /// overrides the default of honoring `.gitignore`.
     pub fn effective() -> Self {
         let cfg = crate::core::config::Config::load();
         Self::resolve(&cfg)
@@ -92,8 +91,7 @@ impl IndexFileFilter {
     }
 
     /// Build a filter from raw glob lists. Invalid globs are dropped with a
-    /// warning rather than aborting the build — matching the long-standing
-    /// `extra_ignore_patterns` behavior.
+    /// warning rather than aborting the build.
     pub fn from_lists(include: &[String], exclude: &[String], respect_gitignore: bool) -> Self {
         let compile = |patterns: &[String], role: &str| -> Vec<glob::Pattern> {
             patterns

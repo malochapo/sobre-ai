@@ -26,7 +26,7 @@ pub fn hints_for_file(
     edges: &[IndexEdge],
     project_root: &str,
 ) -> Vec<CrossSourceHint> {
-    let rel = crate::core::graph_index::graph_relative_key(file_path, project_root);
+    let rel = crate::core::index_paths::graph_relative_key(file_path, project_root);
 
     let matches_path = |edge_path: &str| -> bool { edge_path == file_path || edge_path == rel };
 

@@ -21,7 +21,7 @@ pub(crate) fn namespace_hash(project_root: &Path) -> String {
 fn namespace_seed(project_root: &Path) -> String {
     let root_s = project_root.to_string_lossy().to_string();
     crate::core::project_hash::project_identity(&root_s)
-        .unwrap_or_else(|| crate::core::graph_index::normalize_project_root(&root_s))
+        .unwrap_or_else(|| crate::core::index_paths::normalize_project_root(&root_s))
 }
 
 #[cfg(test)]

@@ -83,7 +83,7 @@ fn admit_with(kind: BuildKind, corpus_bytes: u64, rss_bytes: u64, limit_bytes: u
         parallel_ok: false,
         reason: Some(format!(
             "{} corpus {:.0} MB × {} ≈ {:.0} MB estimated peak exceeds the {:.0} MB headroom \
-             (RSS {:.0} MB, hard limit {:.0} MB = 1.5× max_ram_percent) — degrading to the \
+             (RSS {:.0} MB, hard limit {:.0} MB = 1.5× the RAM cap) — degrading to the \
              sequential build with memory-pressure breaks",
             kind.label(),
             corpus_bytes as f64 / 1_048_576.0,

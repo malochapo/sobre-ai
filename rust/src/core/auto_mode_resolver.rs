@@ -177,17 +177,15 @@ fn resolve_inner(ctx: &AutoModeContext) -> ResolvedMode {
     // caching (#498).
 
     // Deterministic cold-read fallback. Every read that reaches here missed the
-    // session cache (a warm hit returns `full`/`diff` above). `structure_first`
-    // lets a phase-isolated host opt into a lower `map` floor for medium code
-    // files; all capability guards (diagnostic / edit-fail / intent) already ran
-    // above, and the anti-inflation guarantee keeps `map` break-even at worst.
-    // Structure-first is how sobre reads cold code: a medium source file comes
-    // back as `map`, not `full`, so the agent localizes before paying for the
-    // body. It shipped as a config key defaulting to `true` — a knob whose only
-    // useful position was the default.
-    let structure_first = true;
-    let heuristic = heuristic_mode(ext, ctx.token_count, structure_first);
-    let source = if structure_first && heuristic == "map" && ctx.token_count <= 6000 {
+    // session cache (a warm hit returns `full`/`diff` above). Structure-first is
+    // how sobre reads cold code: a medium source file comes back as `map`, not
+    // `full`, so the agent localizes before paying for the body. All capability
+    // guards (diagnostic / edit-fail / intent) already ran above, and the
+    // anti-inflation guarantee keeps `map` break-even at worst. Medium code
+    // (up to 6000 tokens) is labelled `structure_first`; larger code maps on
+    // size alone.
+    let heuristic = heuristic_mode(ext, ctx.token_count);
+    let source = if heuristic == "map" && ctx.token_count <= 6000 {
         "structure_first"
     } else {
         "heuristic"
@@ -231,27 +229,20 @@ fn intent_recommended_mode(task: Option<&str>) -> Option<String> {
     Some(mode)
 }
 
-fn heuristic_mode(ext: &str, token_count: usize, structure_first: bool) -> String {
+fn heuristic_mode(ext: &str, token_count: usize) -> String {
     if token_count > 8000 {
         if is_code(ext) {
             return "map".to_string();
         }
         return "aggressive".to_string();
     }
-    // Raised from 3000 → 6000: at 3-6k tokens, returning only signatures forces
-    // the agent into a follow-up full/lines read for the body it actually
-    // needs. Keeping `full` here trades a few hundred tokens per call for
-    // fewer round-trips — the right call per the total-task-token principle.
-    if token_count > 6000 && is_code(ext) {
-        return "map".to_string();
-    }
     // Structure-first cold-read floor (#361): on a phase-isolated harness a cold
-    // `full` read never amortizes, so medium code files default to `map`
-    // (deps + exports + key signatures) — cheaper and a better localization
-    // surface. `map` keeps far more than `signatures` (no empty bodies), so the
-    // follow-up-read risk that justifies the 6000 floor above is much lower; the
-    // 500-token floor stays above the trivial files where `full` is already best.
-    if structure_first && token_count > 500 && is_code(ext) {
+    // `full` read never amortizes, so code files default to `map` (deps +
+    // exports + key signatures) — cheaper and a better localization surface.
+    // `map` keeps far more than `signatures` (no empty bodies), so the
+    // follow-up-read risk is low; the 500-token floor stays above the trivial
+    // files where `full` is already best.
+    if token_count > 500 && is_code(ext) {
         return "map".to_string();
     }
     "full".to_string()
@@ -535,37 +526,28 @@ mod tests {
     }
 
     #[test]
-    fn heuristic_full_for_medium_code_by_default() {
-        // Default (structure_first off): medium code stays full so the agent
-        // gets the body in one round-trip on a warm, re-readable session.
-        assert_eq!(heuristic_mode("rs", 1500, false), "full");
-        assert_eq!(heuristic_mode("ts", 1000, false), "full");
-    }
-
-    #[test]
     fn heuristic_structure_first_maps_medium_code() {
         // Structure-first: medium code becomes `map` on a cold read.
-        assert_eq!(heuristic_mode("rs", 1500, true), "map");
-        assert_eq!(heuristic_mode("c", 800, true), "map");
+        assert_eq!(heuristic_mode("rs", 1500), "map");
+        assert_eq!(heuristic_mode("c", 800), "map");
     }
 
     #[test]
     fn heuristic_structure_first_keeps_tiny_and_prose_full() {
         // Below the 500-token floor `full` is already best.
-        assert_eq!(heuristic_mode("rs", 400, true), "full");
+        assert_eq!(heuristic_mode("rs", 400), "full");
         // Non-code (prose / data) is never structure-first mapped.
-        assert_eq!(heuristic_mode("md", 4000, true), "full");
-        assert_eq!(heuristic_mode("txt", 1000, true), "full");
+        assert_eq!(heuristic_mode("md", 4000), "full");
+        assert_eq!(heuristic_mode("txt", 1000), "full");
     }
 
     #[test]
     fn heuristic_large_code_maps_regardless() {
-        assert_eq!(heuristic_mode("rs", 9000, false), "map");
-        assert_eq!(heuristic_mode("rs", 9000, true), "map");
+        assert_eq!(heuristic_mode("rs", 9000), "map");
     }
 
     /// Bug-fix read pattern: while localizing a planted defect the agent reads
-    /// many medium source files cold. With structure_first the resolver returns
+    /// many medium source files cold. The structure-first resolver returns
     /// `map` (cheap, localization-friendly) instead of an un-amortized `full`,
     /// while every capability guard still takes precedence because it runs
     /// before this fallback (here: the small-file guard keeps a tiny file full).

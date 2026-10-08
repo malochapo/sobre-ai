@@ -81,7 +81,7 @@ pub(crate) fn bm25_cache_health_outcome() -> Outcome {
         return Outcome {
             ok: true,
             line: format!(
-                "{BOLD}BM25 cache{RST}  {YELLOW}{} index(es) >80% of {effective_mb} MB limit{RST}: {}  {DIM}(consider extra_ignore_patterns){RST}",
+                "{BOLD}BM25 cache{RST}  {YELLOW}{} index(es) >80% of {effective_mb} MB limit{RST}: {}  {DIM}(consider adding paths to `ignore`){RST}",
                 warnings.len(),
                 details.join(", ")
             ),

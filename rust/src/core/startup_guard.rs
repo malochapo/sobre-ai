@@ -38,8 +38,8 @@ impl StartupLockGuard {
 /// A lock whose recorded owner PID is no longer alive is reclaimed immediately —
 /// this is what stops a crashed/killed holder's lock from lingering until
 /// `stale_after` elapses (the cause of the stale `.graph-idx-*.lock` build-up).
-/// If the owner is alive, or the lock predates PID tracking (legacy 0-byte
-/// file), we fall back to the long-standing mtime staleness safety valve.
+/// If the owner is alive or no PID is readable (e.g. a crash between create and
+/// write), we fall back to the mtime staleness check.
 fn lock_is_reclaimable(path: &std::path::Path, stale_after: Duration) -> bool {
     if let Ok(content) = std::fs::read_to_string(path)
         && let Some(pid) = content

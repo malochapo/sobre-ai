@@ -252,7 +252,7 @@ impl ModelPricing {
             },
         );
 
-        // Conservative blended fallback (used by legacy stats output).
+        // Conservative blended fallback for unknown models.
         models.insert(
             "fallback-blended".to_string(),
             ModelCost {
@@ -268,9 +268,7 @@ impl ModelPricing {
 
     pub fn quote(&self, model: Option<&str>) -> ModelQuote {
         let raw = model.unwrap_or_default();
-        // Exact = a direct hit in the loaded table (embedded + operator
-        // overrides, #1189) — not a fixed key list, so `[cost.prices]` rows
-        // with custom names ("internal-llm") price exactly. Dashed API ids
+        // Exact = a direct hit in the embedded table. Dashed API ids
         // (`claude-sonnet-4-5`) retry with dotted versions (`…-4.5`).
         let m = normalize(raw);
         if !m.is_empty() {

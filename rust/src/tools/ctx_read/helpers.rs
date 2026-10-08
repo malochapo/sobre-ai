@@ -10,7 +10,7 @@ pub fn is_instruction_file(path: &str) -> bool {
 
     matches!(
         filename,
-        "skill.md" | "agents.md" | "rules.md" | ".cursorrules" | "lean-ctx.md" | "lean-ctx.mdc"
+        "skill.md" | "agents.md" | "rules.md" | ".cursorrules"
     ) || lower.contains("/skills/")
         || lower.contains("/.cursor/rules/")
         || lower.contains("/.claude/rules/")

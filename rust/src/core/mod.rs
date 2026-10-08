@@ -294,9 +294,9 @@ pub mod session_token;
 pub mod startup_guard;
 pub mod syntax_validate;
 pub mod task_briefing;
-/// macOS Seatbelt self-sandbox (#356): wraps launchd-owned daemon/proxy/updater
-/// in a `sandbox-exec` profile that denies `~/Documents`/`~/Desktop`/
-/// `~/Downloads`, so the TCC privacy prompt can never appear.
+/// macOS Seatbelt self-sandbox (#356): wraps the launchd-owned proxy in a
+/// `sandbox-exec` profile that denies `~/Documents`/`~/Desktop`/`~/Downloads`,
+/// so the TCC privacy prompt can never appear.
 #[cfg(target_os = "macos")]
 pub mod tcc_guard_sandbox;
 pub mod tdd_schema;

@@ -7,8 +7,8 @@
 
 use std::collections::{HashMap, HashSet, VecDeque};
 
-use crate::core::graph_index;
 use crate::core::graph_provider::{self, EdgeInfo};
+use crate::core::index_paths;
 use crate::core::protocol::shorten_path;
 use crate::core::tokens::count_tokens;
 
@@ -63,11 +63,11 @@ impl Adj {
     /// Resolve a user-supplied path to a concrete graph node. Tries an exact
     /// repo-relative match first, then a unique path/basename suffix match.
     fn resolve(&self, input: &str, root: &str) -> Result<String, String> {
-        let rel = graph_index::graph_relative_key(input, root);
+        let rel = index_paths::graph_relative_key(input, root);
         if self.node_set.contains(&rel) {
             return Ok(rel);
         }
-        let needle = graph_index::graph_match_key(&rel);
+        let needle = index_paths::graph_match_key(&rel);
         if self.node_set.contains(&needle) {
             return Ok(needle);
         }
@@ -78,7 +78,7 @@ impl Adj {
             .nodes
             .iter()
             .filter(|n| {
-                let nk = graph_index::graph_match_key(n);
+                let nk = index_paths::graph_match_key(n);
                 nk == needle || nk.ends_with(&suffix) || nk == base || nk.ends_with(&base_suffix)
             })
             .collect();

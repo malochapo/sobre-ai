@@ -317,16 +317,8 @@ stale_files: {}\n",
 
         "output_stats" => crate::core::output_verification::stats_snapshot().format_compact(),
 
-        "verify" => {
-            let snap = crate::core::output_verification::stats_snapshot();
-            format!(
-                "DEPRECATION: action=\"verify\" is renamed to action=\"output_stats\".\n{}",
-                snap.format_compact()
-            )
-        }
-
         _ => format!(
-            "Unknown action: {action}. Use: status, load, save, task, finding, decision, reset, list, cleanup, snapshot, restore, resume, diff, output_stats, verify, export, import"
+            "Unknown action: {action}. Use: status, load, save, task, finding, decision, reset, list, cleanup, snapshot, restore, resume, diff, output_stats, export, import"
         ),
     }
 }
