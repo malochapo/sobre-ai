@@ -31,7 +31,7 @@ through `redaction::redact_text`. There is no unredacted export.
 
 ## Where a bundle is written
 
-`ctx_session action=export` returns the bundle. With `path=` it also writes
+`sobre_session action=export` returns the bundle. With `path=` it also writes
 it there; with `write=true` and no `path`, under
 `$SOBRE_DATA_DIR/exports/sessions/`. Nothing is written into the project
 unless `path=` points there.
@@ -52,12 +52,12 @@ unless `path=` points there.
 
 Tool:
 
-- `ctx_session action=export format=json|summary write=true|false path=<optional>`
-- `ctx_session action=import path=<bundle.json>`
+- `sobre_session action=export format=json|summary write=true|false path=<optional>`
+- `sobre_session action=import path=<bundle.json>`
 
 ## Relevant code
 
 - Bundle contract/runtime: `rust/src/core/ccp_session_bundle.rs`
 - Session store: `rust/src/core/session/`
-- Tool surface: `rust/src/tools/ctx_session.rs` (registered in
-  `rust/src/tools/registered/ctx_session.rs`)
+- Tool surface: `rust/src/tools/sobre_session.rs` (registered in
+  `rust/src/tools/registered/sobre_session.rs`)

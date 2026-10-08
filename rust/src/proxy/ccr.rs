@@ -279,7 +279,7 @@ mod tests {
     fn resolve_tee_does_not_capture_reference_ids() {
         let _lock = crate::core::data_dir::test_env_lock();
         // A reference-store id (`ref_<16hex>`, no `.log`) must fall through the
-        // tee resolver so ctx_expand routes it to the reference store, not the
+        // tee resolver so sobre_expand routes it to the reference store, not the
         // tee store — the precedence guard for the unified retrieve ladder.
         assert!(resolve_tee("ref_deadbeefcafef00d").is_none());
         // A bare 16-hex archive id with no backing tee file also stays None.

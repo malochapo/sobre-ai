@@ -1,6 +1,6 @@
 //! Related-file hints from the Property Graph.
 //!
-//! `ctx_read` appends a one-line hint of the nearest neighbours; the session
+//! `sobre_read` appends a one-line hint of the nearest neighbours; the session
 //! compactor uses the CSV form. A budgeted `GraphContext` block also lived
 //! here, gated on a profile output-hint no shipped profile ever set.
 

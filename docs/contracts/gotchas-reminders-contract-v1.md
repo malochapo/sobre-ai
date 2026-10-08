@@ -64,7 +64,7 @@ Fixed constants in `gotcha_tracker/model.rs` and `gotcha_tracker/mod.rs`:
 
 ## Tool Actions
 
-`ctx_knowledge action=gotcha` records a gotcha for the current project:
+`sobre_knowledge action=gotcha` records a gotcha for the current project:
 `trigger` and `resolution` are required, `severity` and `category` optional
 (category defaults to `convention`). Recorded gotchas are recalled through the
 knowledge search.

@@ -22,7 +22,7 @@ fn recall_rehydrates_from_archive_when_active_set_empty() {
     k.save().expect("save");
 
     // Now the active set should be empty (fact archived), so recall should rehydrate it.
-    let out = sobre::tools::ctx_knowledge::handle(
+    let out = sobre::tools::sobre_knowledge::handle(
         &project_root_str,
         "recall",
         None,

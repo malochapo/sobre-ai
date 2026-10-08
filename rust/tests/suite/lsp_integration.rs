@@ -48,7 +48,7 @@ fn call_refactor(args: &serde_json::Value, root: &str) -> String {
         .get("path")
         .and_then(|v| v.as_str())
         .unwrap_or_default();
-    sobre::tools::ctx_refactor::handle(args, root, abs_path)
+    sobre::tools::sobre_refactor::handle(args, root, abs_path)
 }
 
 fn wait_for_lsp_ready(dir: &std::path::Path, root: &str) {

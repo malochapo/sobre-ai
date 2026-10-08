@@ -5,7 +5,7 @@
 //! a project is opened cold. If `open_or_build` went through that path, the
 //! background build would acquire the `graph-idx` lock and the synchronous
 //! `load_or_build` fallback would then contend on the same lock and return an
-//! empty index, so the very first `ctx_graph` / `export_graph_html` on a fresh
+//! empty index, so the very first `sobre_graph` / `export_graph_html` on a fresh
 //! repo failed with "No graph available" until a retry (#695/#682.2).
 //!
 //! Current `open_or_build` opens via `open_existing` (which never triggers the

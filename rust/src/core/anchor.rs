@@ -13,12 +13,12 @@
 //!   whitespace trimmed, so re-indentation or a stray trailing space does not
 //!   spuriously invalidate an anchor while still pinning the meaningful content.
 //! * **Determinism-native (#498)**: an anchor is a pure function of the line's
-//!   bytes, so `ctx_read(mode="anchored")` is byte-stable across identical
+//!   bytes, so `sobre_read(mode="anchored")` is byte-stable across identical
 //!   re-reads and provider prompt caching still applies.
 //!
 //! This module is the single source of truth for the hash + rendering so the
-//! read side ([`crate::tools::ctx_read`]) and the edit side
-//! ([`crate::tools::ctx_patch`]) can never compute anchors differently.
+//! read side ([`crate::tools::sobre_read`]) and the edit side
+//! ([`crate::tools::sobre_patch`]) can never compute anchors differently.
 
 use crate::core::hasher;
 
@@ -54,7 +54,7 @@ pub fn hash_matches(line: &str, provided: &str) -> bool {
 ///
 /// The returned string has no trailing newline, so callers control framing.
 /// Note: line splitting follows [`str::lines`] (a trailing newline does not
-/// yield an extra empty line), matching how the rest of `ctx_read` counts lines.
+/// yield an extra empty line), matching how the rest of `sobre_read` counts lines.
 #[must_use]
 pub fn annotate(content: &str, start_line: usize) -> String {
     let mut out =
@@ -128,7 +128,7 @@ mod tests {
 
     #[test]
     fn annotate_format_is_parseable() {
-        // Format contract relied on by ctx_patch's anchor parser: `N:hh|content`.
+        // Format contract relied on by sobre_patch's anchor parser: `N:hh|content`.
         let out = annotate("hello world", 1);
         let (prefix, body) = out.split_once('|').unwrap();
         assert_eq!(body, "hello world");

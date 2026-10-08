@@ -18,7 +18,7 @@ is their call to make, not ours.
 
 `sobre` runs as your user, on your machine, with your permissions. It is not a
 sandbox and does not try to be one. Concretely, it can read any file you can
-read, and `ctx_shell` runs commands as you.
+read, and `sobre_shell` runs commands as you.
 
 What it does defend against:
 

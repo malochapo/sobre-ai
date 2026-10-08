@@ -1,4 +1,4 @@
-//! Embedding-based Knowledge Retrieval for `ctx_knowledge`.
+//! Embedding-based Knowledge Retrieval for `sobre_knowledge`.
 //!
 //! Wraps `ProjectKnowledge` with a vector index for semantic recall.
 //! Facts are automatically embedded on `remember` and searched via

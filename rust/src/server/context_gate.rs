@@ -3,14 +3,14 @@
 /// pressure-downgrade, and the graph/knowledge heuristics below must never
 /// silently reinterpret one of these to e.g. `full`, which would discard the
 /// exact window/anchors/delta the caller asked for. Classifies off the typed
-/// `ReadMode` (single source of truth, see `tools::ctx_read::mode`) rather than
+/// `ReadMode` (single source of truth, see `tools::sobre_read::mode`) rather than
 /// a hand-maintained string-prefix list, so a future precise mode has to be
 /// added to `ReadMode::is_precise_pinned_read` explicitly instead of silently
 /// falling through an allowlist. An unparseable mode is conservatively treated
 /// as *not* pinned, matching prior behaviour for anything outside this set.
 fn is_precise_pinned_mode(requested_mode: &str) -> bool {
     requested_mode
-        .parse::<crate::tools::ctx_read::ReadMode>()
+        .parse::<crate::tools::sobre_read::ReadMode>()
         .is_ok_and(|m| m.is_precise_pinned_read())
 }
 
@@ -170,7 +170,7 @@ mod tests {
         // `lines:A-B`, but it parsed as Malformed, so `is_precise_pinned_mode`
         // reported "not pinned" and bounce-prevention rewrote an 8-line request
         // into a full-file read. Exercises the edit-forced branch, which is what
-        // the field report actually hit (a ctx_patch anchored edit immediately
+        // the field report actually hit (a sobre_patch anchored edit immediately
         // before the read).
         {
             let mut bt = crate::core::bounce_tracker::global()

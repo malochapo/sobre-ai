@@ -121,13 +121,13 @@ pub(crate) fn check_codex_hooks_enabled(home: &std::path::Path) -> NamedCheck {
 /// the surface (CLI / Desktop / Cloud), the Codex version, and whether the hooks
 /// are trusted (`/hooks`). Rather than asserting any one surface "can't" run hooks
 /// (it varies and changes across Codex releases), this note points at the reliable
-/// path: the sobre MCP tools (`ctx_shell`/`ctx_read`/`ctx_search`) compress on
+/// path: the sobre MCP tools (`sobre_shell`/`sobre_read`/`sobre_search`) compress on
 /// every surface. Guidance only — it never fails.
 pub(crate) fn codex_desktop_note() -> NamedCheck {
     NamedCheck {
         name: "Codex compression".to_string(),
         ok: true,
-        detail: "hooks auto-compress when trusted (/hooks); the ctx_shell/ctx_read/ctx_search MCP tools compress reliably on every surface (CLI/Desktop/Cloud)".to_string(),
+        detail: "hooks auto-compress when trusted (/hooks); the sobre_shell/sobre_read/sobre_search MCP tools compress reliably on every surface (CLI/Desktop/Cloud)".to_string(),
     }
 }
 

@@ -66,7 +66,7 @@ fn capacity_hint_is_actionable_for_both_states() {
     // CRIT (over cap): give an immediate compaction action for that project.
     let crit = capacity_hint(true, Some("/p"));
     assert!(crit.contains(
-        r#"sobre call ctx_knowledge --project-root '/p' --json '{"action":"consolidate"}'"#
+        r#"sobre call sobre_knowledge --project-root '/p' --json '{"action":"consolidate"}'"#
     ));
 
     assert_ne!(warn, crit);

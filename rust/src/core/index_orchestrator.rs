@@ -143,13 +143,13 @@ fn finish_err(c: &mut Component, e: String) {
 
 /// The index warmth a tool benefits from. Drives lazy, demand-driven warming
 /// (issue #152) so the server no longer scans the whole project eagerly on every
-/// `initialize` — a session that only uses `ctx_read`/`ctx_shell`/`ctx_tree`
+/// `initialize` — a session that only uses `sobre_read`/`sobre_shell`/`sobre_tree`
 /// pays zero indexing cost.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WarmNeed {
     /// No prebuilt index needed.
     None,
-    /// Only the resident line-search (trigram) index — cheap, used by `ctx_search`.
+    /// Only the resident line-search (trigram) index — cheap, used by `sobre_search`.
     Search,
     /// Full project indices (graph + BM25; this also warms the search index).
     Heavy,
@@ -161,9 +161,9 @@ pub enum WarmNeed {
 #[must_use]
 pub fn warm_need_for_tool(tool: &str) -> WarmNeed {
     match tool {
-        "ctx_search" => WarmNeed::Search,
+        "sobre_search" => WarmNeed::Search,
         // Tools that build/consume the graph, call-graph, BM25 or artifact index.
-        "ctx_graph" | "ctx_compose" | "ctx_review" => WarmNeed::Heavy,
+        "sobre_graph" | "sobre_compose" | "sobre_review" => WarmNeed::Heavy,
         _ => WarmNeed::None,
     }
 }
@@ -182,7 +182,7 @@ pub fn ensure_warm_for_tool(project_root: &str, tool: &str) -> bool {
         WarmNeed::None => false,
         WarmNeed::Search => {
             // The search index has its own TTL + background-rebuild dedup, so it
-            // is safe (and cheap) to nudge on every `ctx_search`.
+            // is safe (and cheap) to nudge on every `sobre_search`.
             crate::core::search_index::ensure_background(project_root, true);
             false
         }
@@ -987,28 +987,28 @@ mod tests {
     fn warm_need_classifies_tools() {
         // Lightweight tools must never trigger a project scan (#152).
         for light in [
-            "ctx_read",
-            "ctx_shell",
-            "ctx_tree",
-            "ctx_knowledge",
+            "sobre_read",
+            "sobre_shell",
+            "sobre_tree",
+            "sobre_knowledge",
             "unknown_tool",
         ] {
             assert_eq!(warm_need_for_tool(light), WarmNeed::None, "{light}");
         }
-        // ctx_search only needs the cheap trigram index.
-        assert_eq!(warm_need_for_tool("ctx_search"), WarmNeed::Search);
-        for heavy in ["ctx_graph", "ctx_compose", "ctx_review"] {
+        // sobre_search only needs the cheap trigram index.
+        assert_eq!(warm_need_for_tool("sobre_search"), WarmNeed::Search);
+        for heavy in ["sobre_graph", "sobre_compose", "sobre_review"] {
             assert_eq!(warm_need_for_tool(heavy), WarmNeed::Heavy, "{heavy}");
         }
     }
 
     #[test]
     fn ensure_warm_lightweight_and_search_never_signal_first_warm() {
-        assert!(!ensure_warm_for_tool("", "ctx_graph"));
+        assert!(!ensure_warm_for_tool("", "sobre_graph"));
         let tmp = tempfile::tempdir().unwrap();
         let root = tmp.path().to_string_lossy().to_string();
-        assert!(!ensure_warm_for_tool(&root, "ctx_read"));
-        assert!(!ensure_warm_for_tool(&root, "ctx_search"));
+        assert!(!ensure_warm_for_tool(&root, "sobre_read"));
+        assert!(!ensure_warm_for_tool(&root, "sobre_search"));
     }
 
     #[test]
@@ -1019,11 +1019,11 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let root = tmp.path().to_string_lossy().to_string();
         assert!(
-            ensure_warm_for_tool(&root, "ctx_graph"),
+            ensure_warm_for_tool(&root, "sobre_graph"),
             "first heavy warm must signal true"
         );
         assert!(
-            !ensure_warm_for_tool(&root, "ctx_graph"),
+            !ensure_warm_for_tool(&root, "sobre_graph"),
             "second heavy warm must be deduped to false"
         );
         assert!(

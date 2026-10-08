@@ -38,10 +38,10 @@ fn multi_read_respects_output_cap() {
         &output[output.len().saturating_sub(300)..]
     );
     // The files left out are named, and none of them counts as read: a
-    // later ctx_read returns its content, not an [unchanged] stub.
+    // later sobre_read returns its content, not an [unchanged] stub.
     assert!(output.contains("Not read:"), "must name the files left out");
     assert!(output.contains("file_19.txt"), "the last file is left out");
-    let again = sobre::tools::ctx_read::handle(&mut cache, &paths[19], "full", CrpMode::Off);
+    let again = sobre::tools::sobre_read::handle(&mut cache, &paths[19], "full", CrpMode::Off);
     assert!(
         again.contains("// File 19"),
         "{}",

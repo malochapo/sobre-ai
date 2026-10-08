@@ -80,7 +80,7 @@ use crate::core::tokens::count_tokens;
 pub fn compress_output(command: &str, output: &str) -> Option<String> {
     // Policy gate: protected commands (Passthrough + Verbatim) must
     // never be pattern-compressed. The caller (compress_if_beneficial
-    // or ctx_shell::handle) should have already checked, but we
+    // or sobre_shell::handle) should have already checked, but we
     // defend in depth here.
     let policy = crate::shell::output_policy::classify(command, &[]);
     if policy.is_protected() {

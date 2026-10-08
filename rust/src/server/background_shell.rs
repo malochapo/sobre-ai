@@ -1,4 +1,4 @@
-//! Explicit, in-process background jobs for `ctx_shell`.
+//! Explicit, in-process background jobs for `sobre_shell`.
 //!
 //! The MCP request may complete immediately, but the child keeps the exact
 //! timeout and process-group policy of foreground shell execution. Jobs intentionally live in the daemon: restarting it invalidates

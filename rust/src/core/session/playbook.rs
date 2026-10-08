@@ -63,7 +63,7 @@ pub struct Playbook {
 }
 
 impl Playbook {
-    /// Vote on an entry by stable ID (agent feedback via ctx_session).
+    /// Vote on an entry by stable ID (agent feedback via sobre_session).
     #[cfg(test)]
     pub fn vote(&mut self, id: u32, helpful: bool) -> bool {
         match self.entries.iter_mut().find(|e| e.id == id) {
@@ -113,7 +113,7 @@ impl Playbook {
         }
         if elided > 0 {
             out.push_str(&format!(
-                "… {elided} low-salience entries elided (recall via ctx_session)\n"
+                "… {elided} low-salience entries elided (recall via sobre_session)\n"
             ));
         }
         out

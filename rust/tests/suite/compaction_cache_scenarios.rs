@@ -207,12 +207,12 @@ mod compaction_sync_scenarios {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// 3. Integration: ctx_read stub behavior with delivery flags
+// 3. Integration: sobre_read stub behavior with delivery flags
 // ═══════════════════════════════════════════════════════════════════════════════
 
-mod ctx_read_stub_behavior {
+mod sobre_read_stub_behavior {
     use super::*;
-    use sobre::tools::ctx_read::handle_with_task_resolved;
+    use sobre::tools::sobre_read::handle_with_task_resolved;
     use std::io::Write;
     use tempfile::NamedTempFile;
 

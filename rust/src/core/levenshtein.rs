@@ -80,9 +80,9 @@ mod tests {
 
     #[test]
     fn closest_respects_length_scaled_budget() {
-        let tools = ["ctx_read", "ctx_search", "ctx_shell", "ctx_tree"];
-        assert_eq!(closest("ctx_raed", tools), Some("ctx_read"));
-        assert_eq!(closest("ctx_serach", tools), Some("ctx_search"));
+        let tools = ["sobre_read", "sobre_search", "sobre_shell", "sobre_tree"];
+        assert_eq!(closest("sobre_raed", tools), Some("sobre_read"));
+        assert_eq!(closest("sobre_serach", tools), Some("sobre_search"));
         // Distance beyond the budget → no confident suggestion.
         assert_eq!(closest("completely_else", tools), None);
         assert_eq!(closest("", tools), None);

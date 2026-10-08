@@ -95,7 +95,7 @@ async fn memory_benchmark_suite_persists_core_artifacts() {
     // 1) Establish project context (tool pipeline).
     let _ = call_tool_json(
         &svc,
-        "ctx_read",
+        "sobre_read",
         json!({
             "path": file_path.to_string_lossy().to_string(),
             "mode": "full"
@@ -106,7 +106,7 @@ async fn memory_benchmark_suite_persists_core_artifacts() {
     // 2) Knowledge: remember + feedback + relations.
     let _ = call_tool_json(
         &svc,
-        "ctx_knowledge",
+        "sobre_knowledge",
         json!({
             "action": "remember",
             "category": "arch",
@@ -118,7 +118,7 @@ async fn memory_benchmark_suite_persists_core_artifacts() {
     .await;
     let _ = call_tool_json(
         &svc,
-        "ctx_knowledge",
+        "sobre_knowledge",
         json!({
             "action": "remember",
             "category": "arch",
@@ -130,7 +130,7 @@ async fn memory_benchmark_suite_persists_core_artifacts() {
     .await;
     let _ = call_tool_json(
         &svc,
-        "ctx_knowledge",
+        "sobre_knowledge",
         json!({
             "action": "feedback",
             "category": "arch",
@@ -141,7 +141,7 @@ async fn memory_benchmark_suite_persists_core_artifacts() {
     .await;
     let relate_resp = call_tool_json(
         &svc,
-        "ctx_knowledge",
+        "sobre_knowledge",
         json!({
             "action": "relate",
             "category": "arch",

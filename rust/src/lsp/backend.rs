@@ -14,7 +14,7 @@ pub struct TextRange0Based {
 }
 
 /// A resolved, ready-to-apply edit. The `name_path` → range resolution has already
-/// happened in `ctx_refactor`; the backend only ever sees an absolute path + range.
+/// happened in `sobre_refactor`; the backend only ever sees an absolute path + range.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RangeEdit {
     /// Absolute, resolved path of the file to edit.

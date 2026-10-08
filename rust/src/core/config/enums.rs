@@ -116,7 +116,7 @@ impl CompressionLevel {
 
     /// Maps re-fetch *pressure* to a session-degrade decision. Pressure is the
     /// stronger of the correction-loop count (re-reads/re-runs) and the CCR
-    /// retrieve count (`ctx_expand`) — two views of the same "too
+    /// retrieve count (`sobre_expand`) — two views of the same "too
     /// aggressive" signal (#941): 5+ degrades to `Off`, 3+ to `Lite`, 0 clears,
     /// and the 1–2 band leaves the current degrade untouched.
     ///

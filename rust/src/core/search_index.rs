@@ -1,6 +1,6 @@
-//! Resident line-search index for `ctx_search` (Phase 1 of the efficiency epic).
+//! Resident line-search index for `sobre_search` (Phase 1 of the efficiency epic).
 //!
-//! Historically `ctx_search` walked the filesystem, read every file, and ran a
+//! Historically `sobre_search` walked the filesystem, read every file, and ran a
 //! regex on every line on *every* call — `O(files × lines)`. That is the
 //! 40–200 ms latency floor this module eliminates.
 //!
@@ -8,12 +8,12 @@
 //! common case (an identifier / literal query) collapses to: intersect a few
 //! posting lists in memory → read & regex-verify only the handful of candidate
 //! files. The index never decides matches itself; it only *narrows the file
-//! set*, then `ctx_search` verifies candidates with the exact same regex loop,
+//! set*, then `sobre_search` verifies candidates with the exact same regex loop,
 //! so the returned `file:line` hits are byte-identical to the walk path.
 //!
 //! Design notes:
 //! - The index is built with the *same* walk config and file filters as
-//!   `ctx_search` (see [`crate::tools::ctx_search`]) so the searchable universe
+//!   `sobre_search` (see [`crate::tools::sobre_search`]) so the searchable universe
 //!   is identical — that is what guarantees recall parity.
 //! - Only `[A-Za-z0-9_]` trigrams are indexed. Lookups only ever use trigrams
 //!   from pure-identifier queries, so this is both sufficient and memory-bounded.
@@ -38,7 +38,7 @@ use std::time::Duration;
 use glob::Pattern;
 use ignore::WalkBuilder;
 
-use crate::tools::ctx_search::{MAX_FILE_SIZE, MAX_WALK_DEPTH, is_binary_ext, is_generated_file};
+use crate::tools::sobre_search::{MAX_FILE_SIZE, MAX_WALK_DEPTH, is_binary_ext, is_generated_file};
 
 /// Upper bound on indexed files; larger trees fall back to the walk path.
 const MAX_FILES: usize = 200_000;
@@ -74,7 +74,7 @@ fn pack(b0: u8, b1: u8, b2: u8) -> u32 {
 
 /// How candidate files are narrowed for a literal query. Two tiers, chosen by
 /// corpus size, both providing a *superset* of true matches (zero false
-/// negatives) which `ctx_search` then regex-verifies:
+/// negatives) which `sobre_search` then regex-verifies:
 /// - `Postings`: exact inverted lists `trigram → sorted file ids`. Fast, sparse
 ///   lookups; used while total entries fit [`MAX_POSTING_ENTRIES`].
 /// - `Blooms`: one compact per-file Bloom filter of the file's trigrams. ~3×
@@ -141,7 +141,7 @@ impl FileBloom {
     }
 }
 
-/// Files the corpus walk left out on purpose, so `ctx_search` can say so.
+/// Files the corpus walk left out on purpose, so `sobre_search` can say so.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct WalkSkips {
     /// Binary, minified, lock, map and similar files skipped by name.
@@ -156,7 +156,7 @@ pub struct SearchIndex {
     /// Candidate-narrowing structure (exact postings or compact per-file Bloom).
     narrowing: Narrowing,
     respect_gitignore: bool,
-    /// Files the corpus walk left out, reported by `ctx_search`.
+    /// Files the corpus walk left out, reported by `sobre_search`.
     skips: WalkSkips,
     /// Signature of the on-disk corpus this index was built from — the freshness
     /// truth checked on every [`get_fresh`] (see [`corpus_signature`]).
@@ -165,7 +165,7 @@ pub struct SearchIndex {
 
 impl SearchIndex {
     /// Build the index by walking `root` with the exact same config and filters
-    /// as `ctx_search`, so the searchable file universe is identical.
+    /// as `sobre_search`, so the searchable file universe is identical.
     pub fn build(root: &str, respect_gitignore: bool) -> Option<Self> {
         let mut files: Vec<PathBuf> = Vec::new();
         // Per-file sorted, deduped trigrams. Same memory as the posting lists
@@ -189,10 +189,10 @@ impl SearchIndex {
             file_count += 1;
 
             // Read the corpus exactly once (issue #148): reuse a fresh cached
-            // copy if a prior `ctx_search`/build already read this file, else
-            // read it now and publish it so the upcoming `ctx_search` verify
+            // copy if a prior `sobre_search`/build already read this file, else
+            // read it now and publish it so the upcoming `sobre_search` verify
             // pass is an in-memory hit instead of a second disk read. Mirrors
-            // ctx_search: a non-UTF-8 file is never searchable, so it is skipped
+            // sobre_search: a non-UTF-8 file is never searchable, so it is skipped
             // for trigrams (but already folded into the signature above).
             let content: std::sync::Arc<str> = if let Some(cached) =
                 state.and_then(|s| crate::core::content_cache::get(path, s))
@@ -425,7 +425,7 @@ fn intersect_sorted(a: &[u32], b: &[u32]) -> Vec<u32> {
 // makes the equality check trustworthy).
 // ---------------------------------------------------------------------------
 
-/// Walk `root` with the *exact* `ctx_search` file universe — same gitignore
+/// Walk `root` with the *exact* `sobre_search` file universe — same gitignore
 /// semantics, depth limit, and binary/generated/secret/size/regular-file guards
 /// — invoking `visit(path, state)` for every eligible regular file with its
 /// `(mtime, size)` identity (`None` only when the platform cannot report mtime).
@@ -708,7 +708,7 @@ enum BuildOutcome {
 /// The trigram index is RAM-resident (not shareable on disk), so on lock
 /// contention we *defer* the proactive pre-warm instead of running a second
 /// simultaneous file walk: a boot wave of N sessions on one repo then triggers
-/// ~1 walk at a time, not N. Deferring is safe — `ctx_search` still works via
+/// ~1 walk at a time, not N. Deferring is safe — `sobre_search` still works via
 /// its walk fallback, and the per-process `building` flag is cleared so the next
 /// `get_fresh` / `ensure_background` nudge retries once the holder releases. The
 /// short 200 ms wait keeps the common single-session path latency-free.

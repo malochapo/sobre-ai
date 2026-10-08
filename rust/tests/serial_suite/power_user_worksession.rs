@@ -102,7 +102,7 @@ async fn phase1_tree_depth() {
     let (_dir, engine) = setup_project();
 
     let tree = engine
-        .call_tool_text("ctx_tree", Some(json!({"depth": 3})))
+        .call_tool_text("sobre_tree", Some(json!({"depth": 3})))
         .await
         .expect("tree");
     assert!(tree.contains("src"), "tree should show src: {tree}");
@@ -128,7 +128,10 @@ async fn phase2_read_full_and_cache_stub() {
     let main_path = project.join("src/main.rs").to_string_lossy().to_string();
 
     let full1 = engine
-        .call_tool_text("ctx_read", Some(json!({"path": main_path, "mode": "full"})))
+        .call_tool_text(
+            "sobre_read",
+            Some(json!({"path": main_path, "mode": "full"})),
+        )
         .await
         .expect("full read 1");
     assert!(
@@ -137,7 +140,10 @@ async fn phase2_read_full_and_cache_stub() {
     );
 
     let full2 = engine
-        .call_tool_text("ctx_read", Some(json!({"path": main_path, "mode": "full"})))
+        .call_tool_text(
+            "sobre_read",
+            Some(json!({"path": main_path, "mode": "full"})),
+        )
         .await
         .expect("full read 2");
     assert!(
@@ -163,7 +169,7 @@ async fn phase2_read_signatures() {
 
     let sigs = engine
         .call_tool_text(
-            "ctx_read",
+            "sobre_read",
             Some(json!({"path": main_path, "mode": "signatures"})),
         )
         .await
@@ -188,7 +194,7 @@ async fn phase2_read_map() {
     let lib_path = project.join("src/lib.rs").to_string_lossy().to_string();
 
     let map = engine
-        .call_tool_text("ctx_read", Some(json!({"path": lib_path, "mode": "map"})))
+        .call_tool_text("sobre_read", Some(json!({"path": lib_path, "mode": "map"})))
         .await
         .expect("map read");
     assert!(!map.is_empty(), "map should not be empty");
@@ -209,7 +215,7 @@ async fn phase2_read_lines_range() {
 
     let lines = engine
         .call_tool_text(
-            "ctx_read",
+            "sobre_read",
             Some(json!({"path": main_path, "mode": "lines:1-5"})),
         )
         .await
@@ -234,7 +240,10 @@ async fn phase2_read_auto() {
     let main_path = project.join("src/main.rs").to_string_lossy().to_string();
 
     let auto = engine
-        .call_tool_text("ctx_read", Some(json!({"path": main_path, "mode": "auto"})))
+        .call_tool_text(
+            "sobre_read",
+            Some(json!({"path": main_path, "mode": "auto"})),
+        )
         .await
         .expect("auto read");
     assert!(!auto.is_empty(), "auto mode should return content");
@@ -255,7 +264,7 @@ async fn phase2_read_aggressive() {
 
     let aggressive = engine
         .call_tool_text(
-            "ctx_read",
+            "sobre_read",
             Some(json!({"path": main_path, "mode": "aggressive"})),
         )
         .await
@@ -280,7 +289,10 @@ async fn phase2_read_diff_after_edit() {
     let main_path = project.join("src/main.rs").to_string_lossy().to_string();
 
     let _ = engine
-        .call_tool_text("ctx_read", Some(json!({"path": main_path, "mode": "full"})))
+        .call_tool_text(
+            "sobre_read",
+            Some(json!({"path": main_path, "mode": "full"})),
+        )
         .await
         .expect("initial read");
 
@@ -289,7 +301,10 @@ async fn phase2_read_diff_after_edit() {
     std::fs::write(project.join("src/main.rs"), &modified).unwrap();
 
     let diff = engine
-        .call_tool_text("ctx_read", Some(json!({"path": main_path, "mode": "diff"})))
+        .call_tool_text(
+            "sobre_read",
+            Some(json!({"path": main_path, "mode": "diff"})),
+        )
         .await
         .expect("diff read");
     assert!(
@@ -314,7 +329,7 @@ async fn phase3_search_regex() {
     let (_dir, engine) = setup_project();
 
     let out = engine
-        .call_tool_text("ctx_search", Some(json!({"pattern": "fn main"})))
+        .call_tool_text("sobre_search", Some(json!({"pattern": "fn main"})))
         .await
         .expect("search");
     assert!(
@@ -335,7 +350,7 @@ async fn phase3_search_with_path_filter() {
 
     let out = engine
         .call_tool_text(
-            "ctx_search",
+            "sobre_search",
             Some(json!({"pattern": "pub fn", "path": "src/utils"})),
         )
         .await
@@ -360,7 +375,7 @@ async fn phase4_shell_echo() {
 
     let out = engine
         .call_tool_text(
-            "ctx_shell",
+            "sobre_shell",
             Some(json!({"command": "echo hello-from-shell"})),
         )
         .await
@@ -383,7 +398,7 @@ async fn phase4_shell_raw_mode() {
 
     let out = engine
         .call_tool_text(
-            "ctx_shell",
+            "sobre_shell",
             Some(json!({"command": "echo raw-test-value", "raw": true})),
         )
         .await
@@ -412,7 +427,7 @@ async fn phase7_knowledge_remember_and_recall() {
 
     let remember = engine
         .call_tool_text(
-            "ctx_knowledge",
+            "sobre_knowledge",
             Some(json!({
                 "action": "remember",
                 "category": "architecture",
@@ -426,7 +441,7 @@ async fn phase7_knowledge_remember_and_recall() {
 
     let recall = engine
         .call_tool_text(
-            "ctx_knowledge",
+            "sobre_knowledge",
             Some(json!({"action": "recall", "category": "architecture"})),
         )
         .await
@@ -449,7 +464,7 @@ async fn phase7_knowledge_timeline_and_rooms() {
 
     let _ = engine
         .call_tool_text(
-            "ctx_knowledge",
+            "sobre_knowledge",
             Some(json!({
                 "action": "remember",
                 "category": "decisions",
@@ -462,7 +477,7 @@ async fn phase7_knowledge_timeline_and_rooms() {
 
     let timeline = engine
         .call_tool_text(
-            "ctx_knowledge",
+            "sobre_knowledge",
             Some(json!({"action": "timeline", "category": "decisions"})),
         )
         .await
@@ -470,7 +485,7 @@ async fn phase7_knowledge_timeline_and_rooms() {
     assert!(!timeline.is_empty(), "timeline should return entries");
 
     let rooms = engine
-        .call_tool_text("ctx_knowledge", Some(json!({"action": "rooms"})))
+        .call_tool_text("sobre_knowledge", Some(json!({"action": "rooms"})))
         .await
         .expect("rooms");
     assert!(
@@ -491,7 +506,7 @@ async fn phase7_session_finding_and_decision() {
 
     let finding = engine
         .call_tool_text(
-            "ctx_session",
+            "sobre_session",
             Some(json!({
                 "action": "finding",
                 "content": "Config struct lacks validation for port range",
@@ -503,7 +518,7 @@ async fn phase7_session_finding_and_decision() {
 
     let decision = engine
         .call_tool_text(
-            "ctx_session",
+            "sobre_session",
             Some(json!({
                 "action": "decision",
                 "content": "Use builder pattern for Config validation",
@@ -530,14 +545,14 @@ async fn phase9_session_save() {
 
     let _ = engine
         .call_tool_text(
-            "ctx_session",
+            "sobre_session",
             Some(json!({"action": "task", "content": "Final verification"})),
         )
         .await
         .expect("set task");
 
     let save = engine
-        .call_tool_text("ctx_session", Some(json!({"action": "save"})))
+        .call_tool_text("sobre_session", Some(json!({"action": "save"})))
         .await
         .expect("session save");
     assert!(!save.is_empty(), "save should return confirmation");

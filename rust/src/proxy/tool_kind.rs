@@ -47,14 +47,14 @@ pub(crate) fn classify_tool_name(name: &str) -> ToolResultKind {
         "cat_file",
         "get_file",
         "fetch_file",
-        "ctx_read",
+        "sobre_read",
         "multi_read",
         "multiread",
         "read_many", // Gemini CLI `read_many_files`
         "read_files",
         "str_replace_editor", // view sub-mode returns file content
-        "ctx_patch",          // #818: diff previews are code — never abbreviate
-        "ctx_refactor",       // symbol edits return code diffs
+        "sobre_patch",        // #818: diff previews are code — never abbreviate
+        "sobre_refactor",     // symbol edits return code diffs
     ];
     if FILE_READ.iter().any(|k| n.contains(k)) {
         return ToolResultKind::FileRead;
@@ -76,8 +76,8 @@ pub(crate) fn classify_tool_name(name: &str) -> ToolResultKind {
         "listfiles",
         "ls",
         "codebase_search",
-        "ctx_search",
-        "ctx_tree",
+        "sobre_search",
+        "sobre_tree",
     ];
     if SEARCH.iter().any(|k| n.contains(k)) {
         return ToolResultKind::Search;
@@ -93,7 +93,7 @@ pub(crate) fn classify_tool_name(name: &str) -> ToolResultKind {
         "execute_command",
         "exec_command",
         "command_exec",
-        "ctx_shell",
+        "sobre_shell",
     ];
     if SHELL.iter().any(|k| n.contains(k)) {
         return ToolResultKind::Shell;
@@ -328,7 +328,7 @@ mod tests {
             "Read",
             "read_file",
             "view_file",
-            "ctx_read",
+            "sobre_read",
             "mcp__fs__readFile",
             // Multi-file reads return file content and must be protected too.
             "read_many_files",
@@ -445,7 +445,7 @@ mod tests {
     /// lines are decorative separator comments must be recognized as source, so
     /// the proxy protects it (when routed through an unrecognized tool) instead
     /// of lossy-compressing it and silently dropping the `// ————` separators —
-    /// the exact divergence that made the model's `ctx_edit` fail on a whitespace
+    /// the exact divergence that made the model's `sobre_edit` fail on a whitespace
     /// mismatch.
     #[test]
     fn test_file_with_separator_comments_is_source() {
@@ -507,12 +507,15 @@ mod tests {
         assert!(!looks_like_source_code(log));
     }
 
-    /// #818: ctx_patch and ctx_refactor must be classified as FileRead
+    /// #818: sobre_patch and sobre_refactor must be classified as FileRead
     /// so their diff previews are never abbreviation-compressed.
     #[test]
-    fn ctx_patch_and_refactor_classified_as_file_read() {
-        assert_eq!(classify_tool_name("ctx_patch"), ToolResultKind::FileRead);
-        assert_eq!(classify_tool_name("ctx_refactor"), ToolResultKind::FileRead);
+    fn sobre_patch_and_refactor_classified_as_file_read() {
+        assert_eq!(classify_tool_name("sobre_patch"), ToolResultKind::FileRead);
+        assert_eq!(
+            classify_tool_name("sobre_refactor"),
+            ToolResultKind::FileRead
+        );
     }
 
     /// #818: diff preview with - /+ prefixes must be protected.

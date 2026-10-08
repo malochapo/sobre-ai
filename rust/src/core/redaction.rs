@@ -88,7 +88,7 @@ fn is_identifier_reference(value: &str) -> bool {
 
 /// #718: obvious placeholder/example values (`ghp_change_me`, `your_key_here`,
 /// `<insert-token>`) are documentation, not secrets — `.env.example` files
-/// must survive ctx_read verbatim.
+/// must survive sobre_read verbatim.
 fn is_placeholder_value(value: &str) -> bool {
     let v = value
         .trim()
@@ -118,7 +118,7 @@ fn is_placeholder_value(value: &str) -> bool {
 
 /// Right-hand sides that look like `key: value` but are obviously not secrets:
 /// TypeScript type annotations and language literals. Redacting these corrupts
-/// source files read through `ctx_read` (GH #430), so the key/value rules skip
+/// source files read through `sobre_read` (GH #430), so the key/value rules skip
 /// them. Compared case-insensitively after trimming surrounding quotes.
 fn is_non_secret_literal(value: &str) -> bool {
     let v = value
@@ -132,7 +132,7 @@ fn is_non_secret_literal(value: &str) -> bool {
     // Type expressions are never flat secret tokens: real keys/tokens are drawn
     // from `[A-Za-z0-9+/=_-]`, whereas type annotations carry angle brackets,
     // unions, arrays or call/object syntax. `password: Promise<string>` and
-    // `apiKey: Record<string, unknown>` must survive ctx_read verbatim (GH #430).
+    // `apiKey: Record<string, unknown>` must survive sobre_read verbatim (GH #430).
     if v.contains(['<', '>', '|', '(', ')', '[', ']', '{', '}']) {
         return true;
     }
@@ -309,7 +309,7 @@ mod tests {
     }
 
     /// GH #430: TypeScript type annotations and language literals must NOT be
-    /// redacted — over-eager masking corrupted source files read via ctx_read.
+    /// redacted — over-eager masking corrupted source files read via sobre_read.
     #[test]
     fn keeps_non_secret_literals() {
         for s in [

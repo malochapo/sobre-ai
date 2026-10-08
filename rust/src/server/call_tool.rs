@@ -22,7 +22,7 @@ impl SobreServer {
         let name = tool_name.as_str();
         let args = tool_args.as_ref();
 
-        // #990: a machine-readable invocation (e.g. ctx_outline format=json)
+        // #990: a machine-readable invocation (e.g. sobre_outline format=json)
         // must reach the client byte-exact and parseable, so every prose
         // decoration and terse compression is suppressed and the pure
         // pre-decoration body is restored at the end (see the
@@ -56,7 +56,7 @@ impl SobreServer {
             return Ok(result);
         }
 
-        let is_raw_shell = name == "ctx_shell" && {
+        let is_raw_shell = name == "sobre_shell" && {
             let arg_raw = helpers::get_bool(args, "raw").unwrap_or(false);
             let arg_bypass = helpers::get_bool(args, "bypass").unwrap_or(false);
             arg_raw || arg_bypass || crate::core::runtime_flags::raw_enabled()
@@ -65,20 +65,20 @@ impl SobreServer {
         let pre_terse_len = result_text.len();
         let output_tokens = crate::core::tokens::count_tokens(&result_text) as u64;
 
-        // Re-fetch feedback: re-reads, re-runs and `ctx_expand` mean the
+        // Re-fetch feedback: re-reads, re-runs and `sobre_expand` mean the
         // compressed form lost something. The session degrade can only lower
         // compression below the configured level, and a change is announced.
         let degrade_note = {
             let mut signals = self.refetch_signals.write().await;
-            if name == "ctx_read" {
+            if name == "sobre_read" {
                 let path = helpers::get_str(args, "path").unwrap_or_default();
                 let mode = helpers::get_str(args, "mode").unwrap_or_else(|| "auto".into());
                 let fresh = helpers::get_bool(args, "fresh").unwrap_or(false);
                 signals.record_read(&path, &mode, fresh);
-            } else if name == "ctx_shell" {
+            } else if name == "sobre_shell" {
                 let cmd = helpers::get_str(args, "command").unwrap_or_default();
                 signals.record_shell(&cmd);
-            } else if name == "ctx_expand" {
+            } else if name == "sobre_expand" {
                 signals.record_retrieve();
             }
             use crate::core::config::CompressionLevel;
@@ -120,7 +120,7 @@ impl SobreServer {
             result_text = format!("{result_text}\n\n{note}");
         }
 
-        if name == "ctx_read" {
+        if name == "sobre_read" {
             let cache_clone = self.cache.clone();
             let autonomy_clone = self.autonomy.clone();
             tokio::spawn(async move {
@@ -190,14 +190,14 @@ impl SobreServer {
         self.record_receipt(name, args, action.as_deref(), &result_text)
             .await;
 
-        let skip_checkpoint = matches!(name, "ctx_session" | "ctx_knowledge");
+        let skip_checkpoint = matches!(name, "sobre_session" | "sobre_knowledge");
 
         // The only place that advances `call_count`.
         if !skip_checkpoint {
             self.increment_call_count();
         }
 
-        // #990: a machine-readable invocation (e.g. ctx_outline format=json) must
+        // #990: a machine-readable invocation (e.g. sobre_outline format=json) must
         // return a byte-exact, parseable payload. The state-consuming briefings
         // are already skipped above (so their once-per-session flags survive),
         // but other steps still append recomputed prose (verify footer, throttle
@@ -205,7 +205,7 @@ impl SobreServer {
         // which break a JSON contract. This guard is the robust catch-all:
         // restore the pure body captured *before* compression and decoration.
         // Redaction + sensitivity were applied earlier so the security envelope
-        // is preserved. `ctx_outline` output is never teed, so
+        // is preserved. `sobre_outline` output is never teed, so
         // `pre_compression` is the unmodified body here; no-op otherwise.
         if machine_readable {
             result_text = pre_compression;

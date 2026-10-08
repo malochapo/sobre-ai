@@ -131,7 +131,7 @@ SETUP AND MAINTENANCE:
                                    Remove hooks, MCP configs, the skill, autostart,
                                    data and the binary
 
-SHELL OUTPUT PATTERNS (95+, for the hooks, ctx_shell and -c):
+SHELL OUTPUT PATTERNS (95+, for the hooks, sobre_shell and -c):
     git, docker, npm/pnpm, cargo, gh, kubectl, python (pip, ruff, poetry, uv),
     linters, tsc and bundlers, ruby, test runners, terraform/make/maven/gradle,
     data tools, security scanners, jj/mise/buf, cloud CLIs, curl/grep/find/ls

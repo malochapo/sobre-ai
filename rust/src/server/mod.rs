@@ -156,7 +156,7 @@ pub fn tool_schemas_json_for_test() -> String {
 }
 
 fn is_shell_tool_name(name: &str) -> bool {
-    name == "ctx_shell"
+    name == "sobre_shell"
 }
 
 #[cfg(test)]

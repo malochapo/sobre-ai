@@ -1,7 +1,7 @@
 //! Tee logging for shell output.
 //!
 //! Secret masking is delegated to [`crate::core::redaction`] — the single
-//! source of truth shared with `ctx_read` redaction — so the regex set can
+//! source of truth shared with `sobre_read` redaction — so the regex set can
 //! never drift between the two layers again (it used to be a hand-copied
 //! duplicate). `save_tee` then runs the config-driven secret scanner on top
 //! for defense in depth.
@@ -56,7 +56,7 @@ pub fn save_tee(command: &str, output: &str) -> Option<String> {
     crate::core::relevance_tracker::register_compressed(
         handle.clone(),
         output,
-        "ctx_shell",
+        "sobre_shell",
         crate::core::tokens::count_tokens(output),
         0,
     );

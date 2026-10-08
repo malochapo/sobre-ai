@@ -181,7 +181,7 @@ impl ProjectKnowledge {
         contradiction
     }
 
-    /// Write-time admission gate for the agent-facing `ctx_knowledge remember`
+    /// Write-time admission gate for the agent-facing `sobre_knowledge remember`
     /// path (#970). Unlike [`Self::remember`] (which every internal restorer also
     /// calls), this enforces the [`crate::core::memory_policy::AdmissionPolicy`]:
     /// near-duplicates are merged instead of inserted, and low-salience noise is

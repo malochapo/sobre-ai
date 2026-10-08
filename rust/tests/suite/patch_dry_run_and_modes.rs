@@ -1,4 +1,4 @@
-//! `ctx_patch` writes keep the file's mode, and a dry run checks everything
+//! `sobre_patch` writes keep the file's mode, and a dry run checks everything
 //! and writes nothing (audit B9, B10, B24).
 use std::collections::HashMap;
 use std::path::Path;
@@ -8,7 +8,7 @@ use serde_json::{Map, Value, json};
 use sobre::core::cache::SessionCache;
 use sobre::core::session::SessionState;
 use sobre::server::tool_trait::{McpTool, ToolContext};
-use sobre::tools::registered::ctx_patch::CtxPatchTool;
+use sobre::tools::registered::sobre_patch::SobrePatchTool;
 use tokio::sync::RwLock;
 
 fn ctx_for(root: &Path, path: &Path) -> ToolContext {
@@ -29,8 +29,8 @@ fn args(v: Value) -> Map<String, Value> {
 }
 
 fn patch(args: &Map<String, Value>, ctx: &ToolContext) -> String {
-    tokio::task::block_in_place(|| CtxPatchTool.handle(args, ctx))
-        .unwrap_or_else(|e| panic!("ctx_patch rejected: {}", e.message))
+    tokio::task::block_in_place(|| SobrePatchTool.handle(args, ctx))
+        .unwrap_or_else(|e| panic!("sobre_patch rejected: {}", e.message))
         .text
 }
 

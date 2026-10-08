@@ -17,23 +17,23 @@ fn server_dispatch_src() -> String {
 }
 
 // ---------------------------------------------------------------------------
-// M2 — ReDoS guard in ctx_search
+// M2 — ReDoS guard in sobre_search
 // ---------------------------------------------------------------------------
 #[test]
-fn ctx_search_has_pattern_length_limit() {
-    let src = include_str!("../../src/tools/ctx_search.rs");
+fn sobre_search_has_pattern_length_limit() {
+    let src = include_str!("../../src/tools/sobre_search.rs");
 
     assert!(
         src.contains("MAX_PATTERN_LEN"),
-        "M2: ctx_search must limit pattern length"
+        "M2: sobre_search must limit pattern length"
     );
     assert!(
         src.contains(".size_limit("),
-        "M2: ctx_search must set regex size_limit"
+        "M2: sobre_search must set regex size_limit"
     );
     assert!(
         src.contains("RegexBuilder::new("),
-        "M2: ctx_search must use RegexBuilder (not Regex::new) for size limits"
+        "M2: sobre_search must use RegexBuilder (not Regex::new) for size limits"
     );
 }
 
@@ -61,7 +61,7 @@ fn mcp_stdio_has_bounded_max_length() {
 fn raw_shell_skips_all_postprocessing() {
     let src = crate::suite::security_hardening::server_dispatch_src().replace("\r\n", "\n");
     assert!(
-        src.contains("let is_raw_shell = name == \"ctx_shell\""),
+        src.contains("let is_raw_shell = name == \"sobre_shell\""),
         "call_tool must compute is_raw_shell flag"
     );
     assert!(

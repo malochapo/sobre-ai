@@ -472,7 +472,7 @@ mod tests {
         tracker.register(
             "html_abc123.log".to_string(),
             "The proxy forward module handles upstream HTTP requests with authentication",
-            "ctx_shell",
+            "sobre_shell",
             500,
             50,
         );
@@ -490,7 +490,7 @@ mod tests {
             tracker.register(
                 format!("entry_{i}.log"),
                 "proxy forward authentication tokens request handling",
-                "ctx_shell",
+                "sobre_shell",
                 500, // 500 tokens each
                 50,
             );
@@ -511,7 +511,7 @@ mod tests {
             tracker.register(
                 format!("entry_{i}.log"),
                 &format!("content for entry number {i}"),
-                "ctx_shell",
+                "sobre_shell",
                 100,
                 10,
             );
@@ -551,7 +551,7 @@ mod edge_tests {
     #[test]
     fn handles_empty_content_registration() {
         let mut tracker = RelevanceTracker::new();
-        tracker.register("empty.log".into(), "", "ctx_shell", 0, 0);
+        tracker.register("empty.log".into(), "", "sobre_shell", 0, 0);
         assert!(tracker.find_matches("anything").is_empty());
     }
 

@@ -3,13 +3,13 @@
 //!
 //! ## What this proves
 //!
-//! `ctx_edit` is a `str_replace` tool: to change a line the agent must hand it an
+//! `sobre_edit` is a `str_replace` tool: to change a line the agent must hand it an
 //! `old_string` that (a) matches the bytes on disk and (b) is **unique**. The
 //! epic's thesis is that requirement (b) — positional ambiguity — is a
 //! model-independent failure: the line the agent wants to fix is frequently not
 //! unique (`acc += 1;`, `return a - b`, `}` …), so a minimal, natural edit
 //! attempt is rejected and the agent must recall extra surrounding context.
-//! `ctx_patch` removes that tax: it targets a line by `(number, content-hash)`,
+//! `sobre_patch` removes that tax: it targets a line by `(number, content-hash)`,
 //! so a duplicated line is no obstacle.
 //!
 //! ## Why it is not a live multi-model run
@@ -22,13 +22,13 @@
 //!
 //! ## Honesty controls
 //!
-//! `ctx_edit` already tolerates trailing-whitespace/CRLF drift, so this does NOT
+//! `sobre_edit` already tolerates trailing-whitespace/CRLF drift, so this does NOT
 //! claim a win there. Three measurements per language keep the comparison fair:
 //!   1. **control** (unique line, exact recall): both tools succeed.
 //!   2. **ambiguity / minimal recall** (duplicated line, bare `old_string`):
-//!      `ctx_edit` is rejected as non-unique; `ctx_patch` succeeds positionally.
+//!      `sobre_edit` is rejected as non-unique; `sobre_patch` succeeds positionally.
 //!   3. **ambiguity / full recall** (duplicated line, `old_string` widened with
-//!      the recalled neighbouring line): `ctx_edit` now succeeds — proving the
+//!      the recalled neighbouring line): `sobre_edit` now succeeds — proving the
 //!      gap in (2) is the recall tax, not a broken tool.
 
 use std::fs;
@@ -36,11 +36,11 @@ use std::path::Path;
 
 use sobre::core::anchor::{annotate, line_hash};
 use sobre::core::tokens::count_tokens;
-use sobre::tools::ctx_patch::{self, AnchorOp, PatchParams};
 use sobre::tools::impl_edit::{self, CacheEffect, EditParams};
+use sobre::tools::sobre_patch::{self, AnchorOp, PatchParams};
 
 /// One language's two source variants plus the lines that carry the mechanical
-/// bug. Sources are complete, syntactically valid units so the `ctx_patch`
+/// bug. Sources are complete, syntactically valid units so the `sobre_patch`
 /// tree-sitter gate sees a clean→clean transition (the bug is *semantic*).
 struct Lang {
     name: &'static str,
@@ -174,8 +174,8 @@ fn nth_line(content: &str, line_1based: usize) -> &str {
 }
 
 /// Fix one line by anchor on a fresh copy; returns (success, resulting bytes).
-/// Also asserts the read→edit roundtrip: the hash fed to `ctx_patch` is exactly
-/// what `ctx_read(mode="anchored")` (`annotate`) would have shown for that line.
+/// Also asserts the read→edit roundtrip: the hash fed to `sobre_patch` is exactly
+/// what `sobre_read(mode="anchored")` (`annotate`) would have shown for that line.
 fn fix_anchored(
     dir: &Path,
     tag: &str,
@@ -193,7 +193,7 @@ fn fix_anchored(
     let shown = nth_line(&annotated, line);
     assert!(
         shown.starts_with(&format!("{line}:{hash}|")),
-        "anchor roundtrip mismatch for {tag}: ctx_read would show {shown:?}"
+        "anchor roundtrip mismatch for {tag}: sobre_read would show {shown:?}"
     );
 
     let ops = vec![AnchorOp::SetLine {
@@ -201,7 +201,7 @@ fn fix_anchored(
         hash,
         new_text: fixed.to_string(),
     }];
-    let (_text, effect) = ctx_patch::run_io(&patch_params(&path, ops), "");
+    let (_text, effect) = sobre_patch::run_io(&patch_params(&path, ops), "");
     (succeeded(&effect), fs::read_to_string(&path).unwrap())
 }
 
@@ -250,10 +250,10 @@ fn anchored_editing_beats_str_replace_on_ambiguity_across_languages() {
             lang.ctrl_buggy,
             lang.ctrl_fixed,
         );
-        assert!(a_ctrl, "[{}] ctx_patch must fix a unique line", lang.name);
+        assert!(a_ctrl, "[{}] sobre_patch must fix a unique line", lang.name);
         assert!(
             e_ctrl,
-            "[{}] ctx_edit must fix a unique line (exact recall)",
+            "[{}] sobre_edit must fix a unique line (exact recall)",
             lang.name
         );
         assert_eq!(nth_line(&a_ctrl_out, lang.ctrl_line), lang.ctrl_fixed);
@@ -282,7 +282,7 @@ fn anchored_editing_beats_str_replace_on_ambiguity_across_languages() {
         );
         assert!(
             a_amb,
-            "[{}] ctx_patch must fix one of two identical lines positionally",
+            "[{}] sobre_patch must fix one of two identical lines positionally",
             lang.name
         );
         // Anchored edit touched ONLY the targeted line.
@@ -300,7 +300,7 @@ fn anchored_editing_beats_str_replace_on_ambiguity_across_languages() {
         );
         assert!(
             !e_amb,
-            "[{}] ctx_edit must be rejected on a non-unique bare old_string (the recall tax)",
+            "[{}] sobre_edit must be rejected on a non-unique bare old_string (the recall tax)",
             lang.name
         );
         anchored_ok += usize::from(a_amb);
@@ -320,7 +320,7 @@ fn anchored_editing_beats_str_replace_on_ambiguity_across_languages() {
         );
         assert!(
             e_amb_full,
-            "[{}] ctx_edit should succeed once the agent recalls extra context",
+            "[{}] sobre_edit should succeed once the agent recalls extra context",
             lang.name
         );
         assert_eq!(nth_line(&e_amb_full_out, lang.amb_line), lang.amb_fixed);
@@ -334,39 +334,39 @@ fn anchored_editing_beats_str_replace_on_ambiguity_across_languages() {
         langs.len()
     );
     println!(
-        "  ctx_patch (anchored)              : {anchored_ok}/{attempts}  ({:.0}%)",
+        "  sobre_patch (anchored)              : {anchored_ok}/{attempts}  ({:.0}%)",
         pct(anchored_ok)
     );
     println!(
-        "  ctx_edit  (str_replace, minimal)  : {str_replace_minimal_ok}/{attempts}  ({:.0}%)",
+        "  sobre_edit  (str_replace, minimal)  : {str_replace_minimal_ok}/{attempts}  ({:.0}%)",
         pct(str_replace_minimal_ok)
     );
     println!(
-        "  ctx_edit  (str_replace, +recall)  : {str_replace_full_recall_ok}/{attempts}  ({:.0}%)",
+        "  sobre_edit  (str_replace, +recall)  : {str_replace_full_recall_ok}/{attempts}  ({:.0}%)",
         pct(str_replace_full_recall_ok)
     );
 
     // Anchored editing fixes every mechanical bug regardless of uniqueness.
     assert_eq!(
         anchored_ok, attempts,
-        "ctx_patch must achieve 100% — anchors are immune to the ambiguity tax"
+        "sobre_patch must achieve 100% — anchors are immune to the ambiguity tax"
     );
     // The minimal (natural) str_replace attempt is strictly worse: it loses
     // every ambiguity case. This is the regression guard for the epic's claim.
     assert!(
         str_replace_minimal_ok < anchored_ok,
-        "ctx_edit minimal recall ({str_replace_minimal_ok}) must trail ctx_patch ({anchored_ok})"
+        "sobre_edit minimal recall ({str_replace_minimal_ok}) must trail sobre_patch ({anchored_ok})"
     );
     assert_eq!(
         str_replace_minimal_ok,
         langs.len(),
-        "ctx_edit minimal recall should pass exactly the control cases"
+        "sobre_edit minimal recall should pass exactly the control cases"
     );
     // Fairness: the gap is the recall tax, not a broken tool — with the extra
     // recalled context str_replace also reaches 100%.
     assert_eq!(
         str_replace_full_recall_ok, attempts,
-        "ctx_edit recovers to 100% only by paying the extra-context recall tax"
+        "sobre_edit recovers to 100% only by paying the extra-context recall tax"
     );
 }
 
@@ -375,9 +375,9 @@ fn anchored_editing_beats_str_replace_on_ambiguity_across_languages() {
 /// Reliability (above) is one axis; the other is what each success *costs* in
 /// output tokens — the argument bytes the model must emit per tool call:
 ///
-/// * `ctx_patch`: `line`, 4-hex `hash`, `new_text` — the old span is referenced,
+/// * `sobre_patch`: `line`, 4-hex `hash`, `new_text` — the old span is referenced,
 ///   never reproduced.
-/// * `ctx_edit`:  `old_string` + `new_string` — the old span is paid verbatim,
+/// * `sobre_edit`:  `old_string` + `new_string` — the old span is paid verbatim,
 ///   and on the ambiguity cases the *widened* variant (the one that actually
 ///   succeeds, see test above) pays the recalled neighbour line twice: once in
 ///   `old_string` and once again echoed in `new_string`.
@@ -440,8 +440,8 @@ fn anchored_args_cost_fewer_output_tokens_on_identical_fixes() {
         "\nA/B output-token cost ({cases} successful fixes across {} languages):",
         langs.len()
     );
-    println!("  ctx_patch (anchored) args : {anchored_total} tok");
-    println!("  ctx_edit  (str_replace)   : {str_replace_total} tok");
+    println!("  sobre_patch (anchored) args : {anchored_total} tok");
+    println!("  sobre_edit  (str_replace)   : {str_replace_total} tok");
     println!(
         "  avoided                   : {saved} tok ({:.0}%)  [{tiny_span_regressions} tiny-span cases where the anchor cost more]",
         (saved as f64 / str_replace_total as f64) * 100.0

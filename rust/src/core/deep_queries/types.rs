@@ -36,7 +36,7 @@ pub struct TypeDef {
     /// Declaring namespace, when the language makes it cheaply derivable from
     /// the AST. Currently only filled for C# (block- and file-scoped); other
     /// languages leave it `None`. Drives namespace-aware type resolution in
-    /// `ctx_graph action=impact` so homonyms across namespaces are not conflated (GH #398).
+    /// `sobre_graph action=impact` so homonyms across namespaces are not conflated (GH #398).
     pub namespace: Option<String>,
 }
 

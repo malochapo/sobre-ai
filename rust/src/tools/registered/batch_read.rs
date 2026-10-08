@@ -1,14 +1,14 @@
-//! Batch read behind `ctx_read(paths=…)`.
+//! Batch read behind `sobre_read(paths=…)`.
 
 use rmcp::ErrorData;
 use serde_json::{Map, Value};
 
 use crate::server::tool_trait::{ToolContext, ToolOutput, get_bool, get_str, get_str_array};
 
-/// Batch read behind `ctx_read(paths=…)` (#509): reads multiple files in one
+/// Batch read behind `sobre_read(paths=…)` (#509): reads multiple files in one
 /// call.
 ///
-/// Panic guard (mirrors ctx_read): a panic in tree-sitter / compression must
+/// Panic guard (mirrors sobre_read): a panic in tree-sitter / compression must
 /// never unwind through the dispatch `block_in_place` and kill the MCP server.
 pub(crate) fn batch_read(
     args: &Map<String, Value>,
@@ -17,7 +17,7 @@ pub(crate) fn batch_read(
     match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| handle_inner(args, ctx))) {
         Ok(result) => result,
         Err(_) => Err(ErrorData::internal_error(
-            "ctx_read(paths=…) panicked while processing the batch. This is a bug — please report it.",
+            "sobre_read(paths=…) panicked while processing the batch. This is a bug — please report it.",
             None,
         )),
     }
@@ -39,18 +39,20 @@ fn handle_inner(args: &Map<String, Value>, ctx: &ToolContext) -> Result<ToolOutp
         .ok_or_else(|| ErrorData::invalid_params("paths array is required", None))?;
     if let Some(arg) = SINGLE_FILE_ARGS.iter().find(|a| args.contains_key(**a)) {
         return Err(ErrorData::invalid_params(
-            format!("`{arg}` applies to one file: read it with ctx_read(path=…) instead of paths"),
+            format!(
+                "`{arg}` applies to one file: read it with sobre_read(path=…) instead of paths"
+            ),
             None,
         ));
     }
     if let Some(mode) = get_str(args, "mode") {
-        let parsed = mode.parse::<crate::tools::ctx_read::ReadMode>();
+        let parsed = mode.parse::<crate::tools::sobre_read::ReadMode>();
         if let Err(e) = parsed {
             return Err(ErrorData::invalid_params(e.user_message(), None));
         }
         if mode.starts_with("lines:") || mode.starts_with("anchored:") {
             return Err(ErrorData::invalid_params(
-                "a line window applies to one file: read it with ctx_read(path=…)",
+                "a line window applies to one file: read it with sobre_read(path=…)",
                 None,
             ));
         }
@@ -76,7 +78,7 @@ fn handle_inner(args: &Map<String, Value>, ctx: &ToolContext) -> Result<ToolOutp
         let Some(session) = crate::server::bounded_lock::read(session_lock, "batch_read:session")
         else {
             return Err(ErrorData::internal_error(
-                "session read-lock timeout in batch ctx_read — another tool may be holding it. Retry in a moment.",
+                "session read-lock timeout in batch sobre_read — another tool may be holding it. Retry in a moment.",
                 None,
             ));
         };
@@ -93,7 +95,7 @@ fn handle_inner(args: &Map<String, Value>, ctx: &ToolContext) -> Result<ToolOutp
                 && meta.len() > cap
             {
                 skipped.push(format!(
-                    "{p} (over {} MB: read it in windows with ctx_read(path=…, mode=\"lines:1-200\"))",
+                    "{p} (over {} MB: read it in windows with sobre_read(path=…, mode=\"lines:1-200\"))",
                     cap / (1024 * 1024)
                 ));
                 continue;
@@ -111,19 +113,19 @@ fn handle_inner(args: &Map<String, Value>, ctx: &ToolContext) -> Result<ToolOutp
         ));
     }
 
-    // Default to auto and let ctx_read resolve the optimal mode per file.
+    // Default to auto and let sobre_read resolve the optimal mode per file.
     // Previously this forced auto→full, which is exactly the "everything comes
     // back as full" complaint (#421): batch reads must honour auto like single
-    // ctx_read does.
+    // sobre_read does.
     let mode = get_str(args, "mode").unwrap_or_else(|| "auto".to_string());
     let fresh = get_bool(args, "fresh").unwrap_or(false);
 
     // Batch read under one bounded write lock. `bounded_lock` guarantees we never
     // block the runtime indefinitely and degrade gracefully on contention instead
-    // of hanging; ctx_read's own fast/slow path tolerates this lock being held.
+    // of hanging; sobre_read's own fast/slow path tolerates this lock being held.
     let Some(mut cache) = crate::server::bounded_lock::write(cache_lock, "batch_read:cache") else {
         return Err(ErrorData::internal_error(
-            "cache write-lock timeout in batch ctx_read — another tool may be holding it. Retry in a moment.",
+            "cache write-lock timeout in batch sobre_read — another tool may be holding it. Retry in a moment.",
             None,
         ));
     };

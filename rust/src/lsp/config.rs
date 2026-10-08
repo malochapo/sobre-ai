@@ -137,12 +137,12 @@ pub fn check_server_available(language: &str) -> Result<PathBuf, String> {
         format!(
             "Language server '{}' not found in PATH.\n\
              \n\
-             ctx_refactor requires an external language server for '{}' files.\n\
+             sobre_refactor requires an external language server for '{}' files.\n\
              Install it with:\n\
              \n\
              \x20   {}\n\
              \n\
-             Then retry. This is optional — ctx_search and ctx_graph work without it.",
+             Then retry. This is optional — sobre_search and sobre_graph work without it.",
             config.command, language, hint
         )
     })

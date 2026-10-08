@@ -8,7 +8,7 @@
 //!
 //! The full, locked orchestrator (import + history + lifecycle + per-store
 //! reclaim + report) lives in
-//! `ctx_knowledge::consolidate_project_knowledge_with`; this module owns the
+//! `sobre_knowledge::consolidate_project_knowledge_with`; this module owns the
 //! shared import primitive plus the thin `scheduled` wrapper the background
 //! drivers call.
 
@@ -240,7 +240,7 @@ pub fn consolidate_latest(
 ) -> Result<ConsolidationOutcome, String> {
     let opts = ConsolidateOptions::scheduled(budgets);
     let report =
-        crate::tools::ctx_knowledge::consolidate_project_knowledge_with(project_root, &opts)?;
+        crate::tools::sobre_knowledge::consolidate_project_knowledge_with(project_root, &opts)?;
     Ok(ConsolidationOutcome {
         promoted: (report.imported_decisions + report.imported_findings) as u32,
         promoted_decisions: report.imported_decisions as u32,

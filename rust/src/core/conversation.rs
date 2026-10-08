@@ -23,7 +23,7 @@
 //! ## Concurrency hardening (#1040)
 //!
 //! `active_transcript.json` is a single, last-writer-wins slot, and an MCP
-//! `ctx_read` call carries no caller identity (`ToolContext` has none), so with
+//! `sobre_read` call carries no caller identity (`ToolContext` has none), so with
 //! **two concurrent top-level chats** the daemon
 //! cannot prove which chat is asking: the resolved id may be the *other* chat's
 //! (last writer) or a TTL-stale value. A matching id is therefore untrustworthy
@@ -48,7 +48,7 @@
 //! and Cursor exposes none. The MCP `tools/call` carries no conversation id (no
 //! documented `_meta`), and a `beforeMCPExecution` hook can gate a call's
 //! *permission* but not rewrite its *arguments*. So the daemon cannot prove
-//! which chat a direct `ctx_read` belongs to, and withholding under concurrency
+//! which chat a direct `sobre_read` belongs to, and withholding under concurrency
 //! stays the correct ceiling until the host adds per-call identity.
 
 use std::sync::OnceLock;

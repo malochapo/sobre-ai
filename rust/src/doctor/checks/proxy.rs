@@ -150,7 +150,7 @@ pub(crate) fn proxy_subscription_conflict_outcome() -> Option<Outcome> {
             "{BOLD}Claude auth{RST}  {RED}ANTHROPIC_BASE_URL → proxy but no ANTHROPIC_API_KEY (Pro/Max subscription){RST}\n\
              {DIM}         A subscription token only authenticates against api.anthropic.com; routing it{RST}\n\
              {DIM}         through the proxy causes a login loop / 401. Fix one of:{RST}\n\
-             {YELLOW}           sobre proxy disable     {DIM}(keep your subscription; use ctx_* MCP tools for savings){RST}\n\
+             {YELLOW}           sobre proxy disable     {DIM}(keep your subscription; use sobre_* MCP tools for savings){RST}\n\
              {YELLOW}           export ANTHROPIC_API_KEY=…  {DIM}then: sobre proxy enable  (pay-as-you-go via proxy){RST}"
         ),
     })

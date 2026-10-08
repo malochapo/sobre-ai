@@ -158,7 +158,7 @@ impl ProjectKnowledge {
             if size > 1_000_000 {
                 tracing::warn!(
                     "knowledge.json is large ({:.1} MB) — recall may be slow. \
-                     Consider running ctx_knowledge(action=\"consolidate\") to compact it.",
+                     Consider running sobre_knowledge(action=\"consolidate\") to compact it.",
                     size as f64 / 1_048_576.0,
                 );
             }

@@ -50,7 +50,7 @@ pub(crate) fn integration_generic(
 
     // #593: Windsurf is wired through MCP + Cascade hooks and has no skills. Surface a consolidated status so an empty
     // `watch` or a "missing skill" is not misread as a broken install, and show
-    // the last real ctx_* MCP call so users can see whether Cascade actually
+    // the last real sobre_* MCP call so users can see whether Cascade actually
     // drives sobre (GLM 5.2 and other weaker models often call native tools).
     if target.name == "Windsurf" {
         checks.push(check_windsurf_hooks(home));
@@ -136,7 +136,7 @@ pub(crate) fn integration_claude(home: &std::path::Path, binary: &str) -> Integr
     // #637: surface the Read-redirect posture so a Claude Code user understands why
     // native reads are not transparently compressed here. Purely informational.
     {
-        let detail = "native Read passes through Claude Code's read-before-write guard; re-reads dedup via PostToolUse, ctx_read + Grep/Glob still compress (#637)";
+        let detail = "native Read passes through Claude Code's read-before-write guard; re-reads dedup via PostToolUse, sobre_read + Grep/Glob still compress (#637)";
         checks.push(NamedCheck {
             name: "Read redirect".to_string(),
             ok: true,

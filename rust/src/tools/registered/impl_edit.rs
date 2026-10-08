@@ -7,22 +7,22 @@ use crate::server::tool_trait::{
 };
 use crate::tool_defs::tool_def;
 
-pub(crate) struct CtxEditTool;
+pub(crate) struct SobreEditTool;
 
-impl McpTool for CtxEditTool {
+impl McpTool for SobreEditTool {
     fn name(&self) -> &'static str {
-        "ctx_edit"
+        "sobre_edit"
     }
 
     fn tool_def(&self) -> Tool {
         tool_def(
-            "ctx_edit",
+            "sobre_edit",
             "Search-and-replace edit with race-condition guards — for simple text replacement in a single file.\n\
-             For editing code you've read, prefer ctx_patch (hash-anchored): it never makes you reproduce old text byte-for-byte. Read with ctx_read(mode=\"anchored\") first.\n\
+             For editing code you've read, prefer sobre_patch (hash-anchored): it never makes you reproduce old text byte-for-byte. Read with sobre_read(mode=\"anchored\") first.\n\
              old_string must be unique unless replace_all=true. create=true writes new files.\n\
              backup creates .bak. MD5/size/mtime pre-guards prevent race conditions.\n\
-             ANTIPATTERN: Do NOT loop on failures — switch to ctx_patch (anchored), or verify file content and adjust old_string.\n\
-             For LSP-aware refactoring (rename, move, inline), use ctx_refactor.",
+             ANTIPATTERN: Do NOT loop on failures — switch to sobre_patch (anchored), or verify file content and adjust old_string.\n\
+             For LSP-aware refactoring (rename, move, inline), use sobre_refactor.",
             json!({
                 "type": "object",
                 "properties": {
@@ -145,7 +145,7 @@ impl McpTool for CtxEditTool {
                     }
                     Err(_) => {
                         tracing::warn!(
-                            "ctx_edit: cache write-lock timeout (5s) applying post-edit cache effect for {path}"
+                            "sobre_patch: cache write-lock timeout (5s) applying post-edit cache effect for {path}"
                         );
                     }
                 }

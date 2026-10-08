@@ -3,10 +3,10 @@
 //! Fans complexity hotspots out across the shared data fabric so health becomes
 //! a *queryable, cross-linked* signal rather than a leaf report:
 //!   - **BM25** gets a `health://complexity/...` chunk per hotspot, so
-//!     `ctx_search action=semantic "complex functions"` surfaces them.
+//!     `sobre_search action=semantic "complex functions"` surfaces them.
 //!   - The **property graph** gets a `health_hotspot` cross-source edge from the
-//!     code file to that URI, so `ctx_read` shows a hotspot hint inline.
-//!   - **Knowledge** gets a `code_health` fact, so `ctx_knowledge` can recall a
+//!     code file to that URI, so `sobre_read` shows a hotspot hint inline.
+//!   - **Knowledge** gets a `code_health` fact, so `sobre_knowledge` can recall a
 //!     function's complexity without re-parsing.
 //!
 //! Crucially this is a *replace-source*, not an append: each pass prunes the
@@ -53,7 +53,7 @@ fn item_id(file: &str, symbol: &str) -> String {
 ///     (`score.hotspots`) — the searchable/recallable set, kept small so the
 ///     index and memory don't bloat.
 ///   - **Property-graph edges** cover *every* over-threshold function (capped at
-///     `MAX_PG_HOTSPOT_EDGES`), so `ctx_read` hints and the dense-search
+///     `MAX_PG_HOTSPOT_EDGES`), so `sobre_read` hints and the dense-search
 ///     complexity boost can see any hotspot symbol's cc. Edges are one cheap row
 ///     each and survive the code-graph mirror (`clear_code_graph` preserves
 ///     cross-source edges).

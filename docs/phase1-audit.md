@@ -52,7 +52,7 @@ The lots run in this order:
 | A | The user's machine: `uninstall`, `init`, agent integration | done (#31) |
 | B | The MCP tools: bugs, incomplete features, drift; decisions 1–4 and 6 | done (#32, #33, #34, #35, #36, #37) |
 | C | The CLI and the proxy | done (#38, #39) |
-| R | Tool names `ctx_*` → `sobre_*` (decision 9) | open |
+| R | Tool names `ctx_*` → `sobre_*` (decision 9) | done (#PR_R) |
 | D | Dead code, stale files, stale comments, duplicates; decision 7 | open |
 | F | Release: publish a `dense` binary (decision 8) | open |
 | E | Documentation and install path, written last so it describes the final behaviour | open |
@@ -687,7 +687,10 @@ proxy, help, `sobre call`).
 
 ## Lot R — tool names
 
-- [ ] **R1 Rename the MCP tools from `ctx_*` to `sobre_*` (decision 9).**
+Fixed: #PR_R. The lots done before this one keep the `ctx_*` names they were
+written with; the lots after it use the new names.
+
+- [x] **R1 Rename the MCP tools from `ctx_*` to `sobre_*` (decision 9).**
   - This touches the registry, schemas, hook matchers, instructions,
     prompts, SKILL.md, generated references, contracts and tests.
   - Do it after B31, so the merged graph tool is renamed only once.
@@ -767,7 +770,7 @@ proxy, help, `sobre call`).
     dead.
   - `min_salience` is always 0, so the salience floor (`core.rs:215-224`),
     `AdmissionResult::RejectedLowSalience` and the handler at
-    `tools/ctx_knowledge/remember.rs:56-62` are dead.
+    `tools/sobre_knowledge/remember.rs:56-62` are dead.
   - `archetype_aware_decay` is always false (`memory_lifecycle.rs:144-148`,
     `stability_multiplier`).
   - `GotchaPolicy.retrieval_budget_per_room`, `default_decay_rate` and
@@ -925,7 +928,7 @@ proxy, help, `sobre call`).
   - `cache.rs:323`.
   - `hasher.rs:1-5`.
   - `aggressiveness.rs:1-10`.
-  - `tools/ctx_read/mod.rs:299-301`.
+  - `tools/sobre_read/mod.rs:299-301`.
   - `logging.rs:15-16`.
   - `session_token.rs:1`.
   - `auto_mode_resolver.rs:6-7,26-28,58-59`.
@@ -933,9 +936,21 @@ proxy, help, `sobre call`).
   - `ort_provision.rs:129`.
   - `benches/efficiency.rs:3`.
   - "PathJail": `server/tool_trait.rs:136,185`,
-    `tools/ctx_refactor/mod.rs:345`, `tools/ctx_patch/mod.rs:255`,
+    `tools/sobre_refactor/mod.rs:345`, `tools/sobre_patch/mod.rs:255`,
     `core/pathutil.rs:93,397`.
-  - "ctx_url_read": `Cargo.toml:173`, `proxy/compress.rs:16`.
+  - "ctx_url_read": `Cargo.toml:177`, `proxy/compress.rs:16`, `core/web/pdf.rs:4`.
+  - Names of removed tools left after lot R (`ctx_metrics`, `ctx_quality`,
+    `ctx_symbol`, `ctx_semantic_search`, `ctx_multi_read`, `ctx_compress`,
+    `ctx_preload`, `ctx_overview`, `ctx_md_render`, `ctx_call`,
+    `ctx_compare`): `auto_mode_resolver.rs:7`,
+    `code_health/{annotate.rs:53,mod.rs:36,score.rs:8}`,
+    `cooccurrence.rs:210`, `git_signals.rs:6`, `session/playbook.rs:10`,
+    `session/types.rs:29`, `server_handler.rs:156`, `tool_visibility.rs:56`,
+    `registered/sobre_glob.rs:62`, `registered/sobre_read.rs:68`,
+    `registered/sobre_search.rs:13,364`, `sobre_read/render.rs:50`,
+    `LOCK_ORDERING.md:33`, and tests (`index_orchestrator.rs:1030`,
+    `terse/mod.rs:102`, `intensive_benchmarks.rs`,
+    `hn_hardening_scenarios.rs`, `sobre_read_lmd_md_raw.rs:6`).
 
 ### Duplicates
 
@@ -944,7 +959,7 @@ proxy, help, `sobre call`).
     `index_namespace::namespace_hash` (MD5) and `git/shadow.rs:259` (FNV-1a).
   - MD5 in `cache.rs:746`, `embedding_index.rs:432`,
     `index_namespace.rs:16`, `knowledge/ranking.rs:194` and
-    `ctx_session.rs:159`, next to the BLAKE3 `hasher`.
+    `sobre_session.rs:159`, next to the BLAKE3 `hasher`.
   - `edit_io.rs:31` has an `md5` field that holds a BLAKE3 hash.
   - Three hex encoders, and two SHA-256 file hashers plus
     `ort_provision::sha256_bytes`.
@@ -1013,9 +1028,9 @@ proxy, help, `sobre call`).
 - [ ] **E6 `README.md:81` says `uninstall` removes "everything init
   wrote".** Document what it really removes once A3 is settled.
 - [ ] **E7 "Parameters never change" does not hold across builds.**
-  - `README.md:41-44` and `INVARIANTS.md:62-68` say so, but `ctx_search`
+  - `README.md:41-44` and `INVARIANTS.md:62-68` say so, but `sobre_search`
     gains `mode` in embeddings builds
-    (`registered/ctx_search.rs:114-121`).
+    (`registered/sobre_search.rs:114-121`).
   - The generated reference shows the default build only.
   - Document that the list is fixed per build; with a published dense
     binary there are two lists.
@@ -1037,7 +1052,7 @@ proxy, help, `sobre call`).
 - [ ] **E10 SKILL.md and the instructions.**
   - They call `full` "verbatim" and `raw` "exact bytes" (see B22).
   - "Poll the returned job_id": the real call is
-    `ctx_shell(background_action="status", job_id=…)`.
+    `sobre_shell(background_action="status", job_id=…)`.
   - `replace_unique(old_text,new_text)` reads like a function; it is
     `op="replace_unique"`. The anchored op names are never given.
 - [ ] **E11 Contracts.** The upstream tracker IDs and wording are covered

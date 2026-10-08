@@ -1,4 +1,4 @@
-//! Path and content heuristics shared by `ctx_read` summaries and the code
+//! Path and content heuristics shared by `sobre_read` summaries and the code
 //! health scan.
 
 /// Returns true for paths that are noise rather than signal:

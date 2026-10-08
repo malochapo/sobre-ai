@@ -12,12 +12,12 @@ use serde_json::{Map, Value};
 use crate::core::config::{CompressionLevel, Config};
 
 /// The tools whose text the terse stage may condense: prose about what was
-/// recorded (`ctx_knowledge`, `ctx_session`) and shell output, whose original
-/// stays reachable through the footer's `ctx_expand` id. Every other tool
+/// recorded (`sobre_knowledge`, `sobre_session`) and shell output, whose original
+/// stays reachable through the footer's `sobre_expand` id. Every other tool
 /// returns content the agent acts on — file text, search hits, signatures,
-/// diffs, paths, the original `ctx_expand` returns — where the dictionary and
+/// diffs, paths, the original `sobre_expand` returns — where the dictionary and
 /// line-dropping layers would change what the agent reads.
-const TERSE_TOOLS: [&str; 3] = ["ctx_shell", "ctx_knowledge", "ctx_session"];
+const TERSE_TOOLS: [&str; 3] = ["sobre_shell", "sobre_knowledge", "sobre_session"];
 
 /// Whether the terse stage must leave this call's output alone: any tool not
 /// in [`TERSE_TOOLS`], raw shell, and shell output with structure
@@ -25,7 +25,7 @@ const TERSE_TOOLS: [&str; 3] = ["ctx_shell", "ctx_knowledge", "ctx_session"];
 fn skip_terse(name: &str, args: Option<&Map<String, Value>>, is_raw_shell: bool) -> bool {
     !TERSE_TOOLS.contains(&name)
         || is_raw_shell
-        || (name == "ctx_shell"
+        || (name == "sobre_shell"
             && crate::server::helpers::get_str(args, "command")
                 .is_some_and(|c| crate::shell::compress::has_structural_output(&c)))
 }
@@ -81,29 +81,32 @@ mod tests {
 
     #[test]
     fn terse_reaches_only_prose_and_shell_output() {
-        for tool in ["ctx_shell", "ctx_knowledge", "ctx_session"] {
+        for tool in ["sobre_shell", "sobre_knowledge", "sobre_session"] {
             assert!(!skip_terse(tool, None, false), "{tool} is condensable");
         }
         // Content the agent acts on stays as the tool returned it: file text,
-        // the original ctx_expand returns, edit evidence (#382), search hits,
+        // the original sobre_expand returns, edit evidence (#382), search hits,
         // signatures, diffs and paths.
         for tool in [
-            "ctx_read",
-            "ctx_expand",
-            "ctx_patch",
-            "ctx_search",
-            "ctx_outline",
-            "ctx_compose",
-            "ctx_refactor",
-            "ctx_checkpoint",
-            "ctx_review",
-            "ctx_tree",
-            "ctx_glob",
-            "ctx_graph",
+            "sobre_read",
+            "sobre_expand",
+            "sobre_patch",
+            "sobre_search",
+            "sobre_outline",
+            "sobre_compose",
+            "sobre_refactor",
+            "sobre_checkpoint",
+            "sobre_review",
+            "sobre_tree",
+            "sobre_glob",
+            "sobre_graph",
         ] {
             assert!(skip_terse(tool, None, false), "{tool} must stay verbatim");
         }
-        assert!(skip_terse("ctx_shell", None, true), "raw shell skips terse");
+        assert!(
+            skip_terse("sobre_shell", None, true),
+            "raw shell skips terse"
+        );
     }
 
     #[test]
@@ -116,10 +119,10 @@ mod tests {
             compression_level: 0.7,
             ..Config::default()
         };
-        let out = compress_terse(content.to_string(), "ctx_read", None, &cfg, false);
+        let out = compress_terse(content.to_string(), "sobre_read", None, &cfg, false);
         assert_eq!(
             out, content,
-            "ctx_read output must be byte-identical (#404)"
+            "sobre_read output must be byte-identical (#404)"
         );
     }
 
@@ -137,7 +140,7 @@ mod tests {
             compression_level: 0.7,
             ..Config::default()
         };
-        let out = compress_terse(text.clone(), "ctx_shell", None, &cfg, false);
+        let out = compress_terse(text.clone(), "sobre_shell", None, &cfg, false);
         assert_ne!(out, text, "this input is expected to condense");
         assert!(
             out.ends_with("% smaller]"),

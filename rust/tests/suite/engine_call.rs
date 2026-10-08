@@ -9,7 +9,7 @@ async fn context_engine_call_tool_text_reads_file() {
     let engine = sobre::engine::ContextEngine::with_project_root(dir.path());
     let out = engine
         .call_tool_text(
-            "ctx_read",
+            "sobre_read",
             Some(json!({
                 "path": file_path.to_string_lossy().to_string(),
                 "mode": "full"
@@ -52,7 +52,7 @@ async fn context_engine_handles_concurrent_reads_without_hang() {
             .to_string();
         handles.push(tokio::spawn(async move {
             engine
-                .call_tool_text("ctx_read", Some(json!({ "path": path, "mode": "full" })))
+                .call_tool_text("sobre_read", Some(json!({ "path": path, "mode": "full" })))
                 .await
         }));
     }

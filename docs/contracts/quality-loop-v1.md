@@ -2,7 +2,7 @@
 
 Status: experimental (GL #494)
 Owner: core engine
-Consumers: `auto_mode_resolver`, `ctx_patch`
+Consumers: `auto_mode_resolver`, `sobre_patch`
 
 ## Problem
 
@@ -15,14 +15,14 @@ of a similar file would be compressed the same way.
 
 ## Signals
 
-Edit outcomes are recorded by the two edit engines behind `ctx_patch`, keyed
+Edit outcomes are recorded by the two edit engines behind `sobre_patch`, keyed
 by the **mode of the last sobre read of that file** (session cache
 `last_mode`):
 
 - string replacement (`op=replace_unique`): `tools/impl_edit.rs`
   `record_outcome` → `core::edit_quality::record_edit_outcome`
 - anchored ops (`set_line`, `replace_lines`, `insert_after`, `delete`, …):
-  `tools/ctx_patch/mod.rs` `record_outcome` →
+  `tools/sobre_patch/mod.rs` `record_outcome` →
   `core::edit_quality::record_anchored_edit_outcome`
 
 Only these outcomes carry signal:
@@ -34,7 +34,7 @@ Only these outcomes carry signal:
 | Stale-anchor failure | anchored op returns `CONFLICT:` (the anchors the model edited against had drifted) | failure for `(ext, last_mode)` |
 
 Explicitly **not** recorded (no compression signal): file creation
-(`ctx_patch op=create`; a new file has no recorded read mode), empty or identical `old_string`/`new_string`,
+(`sobre_patch op=create`; a new file has no recorded read mode), empty or identical `old_string`/`new_string`,
 preimage/TOCTOU mismatches, missing files, already-applied edits, structural
 errors in anchored ops, and files never read through sobre (`last_mode`
 empty).
@@ -50,7 +50,7 @@ escalations (`core/edit_quality.rs`), checked first in
 
 | Failure | Arms (when last mode ≠ target) | Next `mode=auto` resolution | Resolver source |
 |---|---|---|---|
-| Stale `ctx_patch` anchor (`CONFLICT:`) | anchored escalation | `anchored` (fresh line anchors, so the agent retries by reference) | `anchored_edit_fail_escalation` |
+| Stale `sobre_patch` anchor (`CONFLICT:`) | anchored escalation | `anchored` (fresh line anchors, so the agent retries by reference) | `anchored_edit_fail_escalation` |
 | `old_string` not found | full escalation | `full` | `edit_fail_escalation` |
 
 The anchored escalation is checked before the full one. Each escalation is

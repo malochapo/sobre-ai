@@ -95,7 +95,7 @@ impl ServerHandler for SobreServer {
 
         // Indices are warmed lazily on first use of a tool that needs them
         // (issue #152), not eagerly here — a session that only uses
-        // ctx_read/ctx_shell/ctx_tree must not pay a full graph + BM25 scan.
+        // sobre_read/sobre_shell/sobre_tree must not pay a full graph + BM25 scan.
         // See `index_orchestrator::ensure_warm_for_tool`, driven from dispatch.
 
         let agent_root = effective_root.clone().unwrap_or_default();
@@ -204,7 +204,7 @@ impl ServerHandler for SobreServer {
             // A panic here must NOT leave the agent tool-less — that is
             // indistinguishable from "MCP totally failed" and gives the user no
             // recovery path. Fall back to the static lazy-core defs (a pure,
-            // panic-free function) so ctx_read/ctx_shell stay available
+            // panic-free function) so sobre_read/sobre_shell stay available
             // even if the dynamic/registry path blew up.
             tracing::error!(
                 "list_tools panicked; serving the static lazy-core tool set as a fallback"
@@ -294,7 +294,7 @@ mod tests {
         let _guard = crate::core::data_dir::isolated_data_dir();
         let defs = crate::server::registry::build_registry().tool_defs();
         assert!(!defs.is_empty(), "the fallback must not be empty");
-        for essential in ["ctx_read", "ctx_shell"] {
+        for essential in ["sobre_read", "sobre_shell"] {
             assert!(
                 defs.iter().any(|t| t.name.as_ref() == essential),
                 "{essential} must survive the fallback"

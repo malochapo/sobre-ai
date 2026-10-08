@@ -1,6 +1,6 @@
 //! #990 e2e — machine-readable purity, and no unrequested text.
 //!
-//! `ctx_outline format=json` must return byte-exact, parseable JSON with no
+//! `sobre_outline format=json` must return byte-exact, parseable JSON with no
 //! prose decoration, and no call — first or later — carries text the agent
 //! did not ask for.
 //!
@@ -14,7 +14,7 @@ use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
 
 use serde_json::{Value, json};
 
-const SAMPLE_RS: &str = r"//! Sample module for ctx_outline e2e.
+const SAMPLE_RS: &str = r"//! Sample module for sobre_outline e2e.
 
 pub struct Engine {
     pub name: String,
@@ -208,7 +208,7 @@ impl McpSession {
         text_content(&resp).unwrap_or_default()
     }
 
-    /// Poll `ctx_compose` without a task (the session-start overview) until the
+    /// Poll `sobre_compose` without a task (the session-start overview) until the
     /// project graph is ready. That call counts as the session briefing, so a
     /// session warmed this way gets no further auto-context.
     fn shutdown(mut self) {
@@ -238,11 +238,11 @@ fn json_call_is_pure_and_no_call_carries_a_briefing() {
     // and C are the same plain-text outline.
     let call_a = session.call(
         2,
-        "ctx_outline",
+        "sobre_outline",
         &json!({ "path": "sample.rs", "format": "json" }),
     );
-    let call_b = session.call(3, "ctx_outline", &json!({ "path": "sample.rs" }));
-    let call_c = session.call(4, "ctx_outline", &json!({ "path": "sample.rs" }));
+    let call_b = session.call(3, "sobre_outline", &json!({ "path": "sample.rs" }));
+    let call_c = session.call(4, "sobre_outline", &json!({ "path": "sample.rs" }));
     session.shutdown();
 
     // (1) Machine-readable purity: A is byte-exact JSON, no prose decoration.

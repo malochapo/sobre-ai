@@ -1,9 +1,9 @@
 //! Resident, bounded file-content cache shared across the search-index build and
-//! `ctx_search` (issue #148).
+//! `sobre_search` (issue #148).
 //!
 //! Before this module the trigram [`search_index`](crate::core::search_index)
 //! build read *every* file in the corpus to extract trigrams and then threw the
-//! content away, after which `ctx_search` read the narrowed candidate files
+//! content away, after which `sobre_search` read the narrowed candidate files
 //! **again** to run the regex line-by-line — the corpus was read from disk
 //! twice. This cache lets the first reader (whichever it is) populate file
 //! contents once, keyed by absolute path and validated by `(mtime, size)`, and

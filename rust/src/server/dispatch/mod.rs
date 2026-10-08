@@ -140,9 +140,9 @@ impl SobreServer {
 
             if let Some(ref path) = output.path {
                 {
-                    // Skip ledger record for ctx_read — it's recorded in post_dispatch
+                    // Skip ledger record for sobre_read — it's recorded in post_dispatch
                     // with correct final token counts after terse compression.
-                    if name != "ctx_read" {
+                    if name != "sobre_read" {
                         let sent_tokens = if output.original_tokens > 0 {
                             output.original_tokens.saturating_sub(output.saved_tokens)
                         } else {
@@ -169,7 +169,7 @@ impl SobreServer {
         }
 
         // Unknown tool (#712): suggest the closest registered name so a typo
-        // (`ctx_raed`) costs the agent a hint instead of a blind retry.
+        // (`sobre_raed`) costs the agent a hint instead of a blind retry.
         let suggestion = self
             .registry
             .as_ref()
@@ -271,7 +271,7 @@ impl SobreServer {
 
     /// Watchdog deadline for a single tool handler, or `None` to disable it.
     ///
-    /// `ctx_shell` runs arbitrary user commands (builds, long
+    /// `sobre_shell` runs arbitrary user commands (builds, long
     /// test suites) and already enforces its own command timeout, so a generic
     /// watchdog would wrongly abort a legitimate long-running command. Every
     /// other tool is bounded so a hang can never swallow the JSON-RPC response.
@@ -336,8 +336,8 @@ mod tests {
     #[test]
     fn watchdog_disabled_for_long_running_shell_tools() {
         assert!(
-            SobreServer::handler_watchdog("ctx_shell").is_none(),
-            "ctx_shell runs arbitrary user commands and must not be watchdog-bounded"
+            SobreServer::handler_watchdog("sobre_shell").is_none(),
+            "sobre_shell runs arbitrary user commands and must not be watchdog-bounded"
         );
     }
 
@@ -396,7 +396,7 @@ mod tests {
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn watchdog_none_awaits_handler_to_completion() {
         let join = tokio::task::spawn_blocking(|| Ok(ToolOutput::simple("ok".to_string())));
-        let result = SobreServer::watchdog_join("ctx_shell", join, None).await;
+        let result = SobreServer::watchdog_join("sobre_shell", join, None).await;
         assert_eq!(result.unwrap().text, "ok");
     }
 
@@ -419,16 +419,16 @@ mod tests {
         let server = crate::tools::create_server();
 
         let err = server
-            .dispatch_tool("ctx_raed", None, None)
+            .dispatch_tool("sobre_raed", None, None)
             .await
             .expect_err("typo'd tool must error");
         assert!(
-            err.message.contains("Unknown tool: ctx_raed"),
+            err.message.contains("Unknown tool: sobre_raed"),
             "unexpected message: {}",
             err.message
         );
         assert!(
-            err.message.contains("did you mean 'ctx_read'"),
+            err.message.contains("did you mean 'sobre_read'"),
             "missing suggestion: {}",
             err.message
         );
@@ -453,7 +453,7 @@ mod tests {
         let mut args = serde_json::Map::new();
         args.insert("action".into(), serde_json::json!("bogus"));
         let (text, _, outcome, _) = server
-            .dispatch_tool("ctx_graph", Some(&args), None)
+            .dispatch_tool("sobre_graph", Some(&args), None)
             .await
             .expect("dispatch");
         assert!(text.starts_with("Unknown action"), "{text}");
@@ -464,7 +464,7 @@ mod tests {
 
         args.insert("action".into(), serde_json::json!("status"));
         let (_, _, outcome, _) = server
-            .dispatch_tool("ctx_graph", Some(&args), None)
+            .dispatch_tool("sobre_graph", Some(&args), None)
             .await
             .expect("dispatch");
         assert_eq!(outcome, None, "a normal answer is not a failure");

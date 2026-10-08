@@ -1,13 +1,13 @@
-//! Regression for #885 (fixed by #851/#843): a windowed `ctx_read(mode=anchored)`
-//! must keep windowing after the same file is edited via `ctx_patch`.
+//! Regression for #885 (fixed by #851/#843): a windowed `sobre_read(mode=anchored)`
+//! must keep windowing after the same file is edited via `sobre_patch`.
 use std::sync::Arc;
 
 use serde_json::json;
 use sobre::core::cache::SessionCache;
 use sobre::core::session::SessionState;
 use sobre::server::tool_trait::{McpTool, ToolContext};
-use sobre::tools::registered::ctx_patch::CtxPatchTool;
-use sobre::tools::registered::ctx_read::CtxReadTool;
+use sobre::tools::registered::sobre_patch::SobrePatchTool;
+use sobre::tools::registered::sobre_read::SobreReadTool;
 use tokio::sync::RwLock;
 
 fn ctx_for(root: &std::path::Path, file: &str) -> ToolContext {
@@ -61,7 +61,7 @@ async fn anchored_window_survives_ctx_patch() {
         .clone();
 
     // 1) anchored window before any edit — must window, and expose anchors.
-    let before = tokio::task::block_in_place(|| CtxReadTool.handle(&read_args, &ctx)).unwrap();
+    let before = tokio::task::block_in_place(|| SobreReadTool.handle(&read_args, &ctx)).unwrap();
     assert!(
         before.text.lines().count() < 8,
         "pre-edit anchored window must be small, got {} lines:\n{}",
@@ -70,7 +70,7 @@ async fn anchored_window_survives_ctx_patch() {
     );
     let hash5 = anchor_hash_for_line(&before.text, 5);
 
-    // 2) anchored ctx_patch — marks the path `recently_edited` in the tracker.
+    // 2) anchored sobre_patch — marks the path `recently_edited` in the tracker.
     let patch = json!({
         "path": p,
         "op": "insert_after",
@@ -81,11 +81,11 @@ async fn anchored_window_survives_ctx_patch() {
     .as_object()
     .unwrap()
     .clone();
-    let pr = tokio::task::block_in_place(|| CtxPatchTool.handle(&patch, &ctx)).unwrap();
+    let pr = tokio::task::block_in_place(|| SobrePatchTool.handle(&patch, &ctx)).unwrap();
     assert!(!pr.text.starts_with("ERROR"), "patch failed: {}", pr.text);
 
     // 3) anchored window after the edit — must STILL window (the #885 bug).
-    let after = tokio::task::block_in_place(|| CtxReadTool.handle(&read_args, &ctx)).unwrap();
+    let after = tokio::task::block_in_place(|| SobreReadTool.handle(&read_args, &ctx)).unwrap();
     assert!(
         after.text.lines().count() < 8,
         "post-edit anchored window LEAKED the whole file: {} lines (mode={:?})\n{}",

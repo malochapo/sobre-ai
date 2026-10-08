@@ -30,7 +30,7 @@ pub mod scoring;
 
 /// Tools whose textual output is read content the agent edits against and must
 /// therefore be returned byte-for-byte.
-const READ_FAMILY: &[&str] = &["ctx_read"];
+const READ_FAMILY: &[&str] = &["sobre_read"];
 
 /// Whether a tool's output must be returned verbatim and so must never pass
 /// through the prose terse pipeline (#404).
@@ -85,7 +85,7 @@ mod verbatim_read_tests {
     #[test]
     fn read_family_is_always_verbatim() {
         {
-            let name = "ctx_read";
+            let name = "sobre_read";
             // Even an intentionally-lossy mode like `signatures` is exempt: the
             // read tool applies its own structure-preserving compression and the
             // generic prose terse layer must never run on top of it (#404).
@@ -107,10 +107,10 @@ mod verbatim_read_tests {
     fn non_read_lossy_modes_stay_eligible() {
         for mode in ["map", "aggressive", "entropy", "signatures"] {
             assert!(
-                !is_verbatim_read("ctx_search", Some(mode)),
+                !is_verbatim_read("sobre_search", Some(mode)),
                 "non-read {mode} must remain terse-eligible"
             );
         }
-        assert!(!is_verbatim_read("ctx_shell", None));
+        assert!(!is_verbatim_read("sobre_shell", None));
     }
 }

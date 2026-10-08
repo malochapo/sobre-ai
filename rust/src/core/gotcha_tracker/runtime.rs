@@ -11,7 +11,7 @@
 //! ## State model
 //! Pending errors are in-memory by design (`GotchaStore.pending_errors` is
 //! `#[serde(skip)]`). A process-global active store keeps them alive across
-//! calls, so in the long-lived daemon a fail→fix spanning two `ctx_shell` calls
+//! calls, so in the long-lived daemon a fail→fix spanning two `sobre_shell` calls
 //! correlates. Durable gotchas / error logs / stats are persisted to
 //! `gotchas.json`, so the injection block and CLI see them across processes.
 //!

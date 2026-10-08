@@ -27,7 +27,7 @@ Each line is one OpenTelemetry log record in the OTLP/JSON encoding:
   "eventName": "sobre.compression",
   "attributes": [
     { "key": "sobre.surface", "value": { "stringValue": "mcp" } },
-    { "key": "sobre.tool", "value": { "stringValue": "ctx_read" } },
+    { "key": "sobre.tool", "value": { "stringValue": "sobre_read" } },
     { "key": "sobre.tokens.original", "value": { "intValue": "4210" } },
     { "key": "sobre.tokens.sent", "value": { "intValue": "612" } }
   ]

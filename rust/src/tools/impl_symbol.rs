@@ -13,7 +13,7 @@ pub(crate) fn handle(
         return (
             format!(
                 "Symbol '{name}' not found (graph index is building in the background — \
-                 retry in a few seconds). Try ctx_search(pattern=\"{name}\") for an immediate broader search.",
+                 retry in a few seconds). Try sobre_search(pattern=\"{name}\") for an immediate broader search.",
             ),
             0,
         );
@@ -29,7 +29,7 @@ pub(crate) fn handle(
         return (
             format!(
                 "Symbol '{name}' not found in index ({} symbols indexed, root={project_root}). \
-                 Try ctx_search(pattern=\"{name}\") for a broader search.",
+                 Try sobre_search(pattern=\"{name}\") for a broader search.",
                 gp.symbol_count()
             ),
             0,
@@ -143,7 +143,7 @@ pub(crate) fn render_by_handle(handle: &str, project_root: &str) -> (String, usi
         None => (
             format!(
                 "No symbol for handle '{handle}'. \
-                 Try ctx_search(action=\"symbol\", name=\"{}\").",
+                 Try sobre_search(action=\"symbol\", name=\"{}\").",
                 parsed.name
             ),
             0,
@@ -193,7 +193,7 @@ fn render_single(sym: &SymbolInfo, gp: &GraphProvider, project_root: &str) -> (S
     let vis = if sym.is_exported { "+" } else { "-" };
     let cc_note = symbol_cc_note(&content, &sym.file, &sym.name, sym.start_line);
     // Lead with the stable handle (`path#name@Lline`) so the agent can re-target
-    // this exact symbol next turn via ctx_search(action="symbol", handle=…).
+    // this exact symbol next turn via sobre_search(action="symbol", handle=…).
     let handle = crate::core::handle::emit(&sym.file, &sym.name, sym.start_line);
     let header = format!(
         "{handle}  ({vis} {}, L{}-{}){cc_note}",

@@ -240,8 +240,8 @@ pub(super) fn find_symbols(
 /// its `file_path` (definitions, call-sites and `type_ref` targets all stamp
 /// the definer), so this maps a bare type/class name to its source file(s).
 ///
-/// Powers the `ctx_graph action=impact` symbol-name fallback (GH #398): a user who
-/// asks for the impact of a *class* (`ctx_graph impact ArcPoint`) instead of
+/// Powers the `sobre_graph action=impact` symbol-name fallback (GH #398): a user who
+/// asks for the impact of a *class* (`sobre_graph impact ArcPoint`) instead of
 /// a file path is resolved to the file(s) that define it. Results are sorted
 /// for output determinism (#498).
 pub(super) fn resolve_symbol_def_files(
@@ -298,7 +298,7 @@ pub(super) fn symbol_count(conn: &Connection) -> anyhow::Result<usize> {
 
 /// Number of `file` nodes — accurate on both builder paths (the `file_catalog`
 /// table is only populated by the minimal/non-embeddings builder, so it cannot
-/// back a count). Used by the `ctx_graph action=impact` diagnostic (GH #398).
+/// back a count). Used by the `sobre_graph action=impact` diagnostic (GH #398).
 pub(super) fn file_count(conn: &Connection) -> anyhow::Result<usize> {
     let c: i64 = conn.query_row(
         "SELECT COUNT(*) FROM nodes WHERE kind = 'file'",

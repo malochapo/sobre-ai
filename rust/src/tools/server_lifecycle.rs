@@ -49,7 +49,7 @@ impl SobreServer {
         let session = Arc::new(RwLock::new(session));
 
         // Indices are NOT built eagerly here. A freshly connected agent that sits
-        // idle — or only uses ctx_read/ctx_shell/ctx_tree — must pay zero indexing
+        // idle — or only uses sobre_read/sobre_shell/sobre_tree — must pay zero indexing
         // cost. Heavy/search tools warm their indices lazily on first use via
         // `index_orchestrator::ensure_warm_for_tool`, driven from dispatch (#152).
         // An eager full graph + BM25 scan on every `new()` pegged a CPU core on

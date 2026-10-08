@@ -7,7 +7,7 @@ use crate::core::cache::SessionCache;
 /// Tracks the one-shot cache deduplication.
 pub struct AutonomyState {
     pub dedup_applied: AtomicBool,
-    /// One-shot keys for large-output hints (`ctx_shell` bytes, `ctx_read` full tokens).
+    /// One-shot keys for large-output hints (`sobre_shell` bytes, `sobre_read` full tokens).
     pub large_output_hints_shown: Mutex<HashSet<String>>,
 }
 

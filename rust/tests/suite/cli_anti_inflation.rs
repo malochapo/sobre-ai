@@ -1,5 +1,5 @@
 //! End-to-end anti-inflation guarantee for reads (#361). This exercises the
-//! SHIPPED binary end-to-end (`sobre call ctx_read`: resolver → frame → cap
+//! SHIPPED binary end-to-end (`sobre call sobre_read`: resolver → frame → cap
 //! → print) and proves that an `auto` read can never emit more tokens than the
 //! bare file. It complements the in-process `cap_to_raw` unit tests.
 
@@ -8,7 +8,7 @@ use std::process::Command;
 
 use sobre::core::tokens::count_tokens;
 
-/// Runs an `auto` read of `file` through `sobre call ctx_read` fully
+/// Runs an `auto` read of `file` through `sobre call sobre_read` fully
 /// hermetically and returns stdout.
 ///
 /// Isolation: `HOME`/XDG point at empty temp dirs and `SOBRE_DATA_DIR`
@@ -16,7 +16,7 @@ use sobre::core::tokens::count_tokens;
 fn read_auto(bin: &str, home: &Path, data_dir: &Path, file: &Path) -> String {
     let json = serde_json::json!({ "path": file, "mode": "auto" }).to_string();
     let out = Command::new(bin)
-        .args(["call", "ctx_read", "--project-root"])
+        .args(["call", "sobre_read", "--project-root"])
         .arg(file.parent().unwrap())
         .args(["--json", &json])
         .env("HOME", home)
@@ -24,7 +24,7 @@ fn read_auto(bin: &str, home: &Path, data_dir: &Path, file: &Path) -> String {
         .env("XDG_CONFIG_HOME", home.join("config"))
         .env("SOBRE_DATA_DIR", data_dir)
         .output()
-        .expect("run sobre call ctx_read");
+        .expect("run sobre call sobre_read");
     assert!(
         out.status.success(),
         "read failed for {}: {}",

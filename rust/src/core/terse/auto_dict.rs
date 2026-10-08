@@ -181,7 +181,7 @@ mod tests {
 
     /// #498: same input compressed repeatedly must yield byte-identical
     /// output — the determinism/prompt-cache guarantee the maintainer asked
-    /// for, same pattern as the existing guards in `ctx_read`/`shell::redact`.
+    /// for, same pattern as the existing guards in `sobre_read`/`shell::redact`.
     #[test]
     fn mining_output_is_deterministic_across_repeated_calls() {
         let text = "AlphaBetaGammaDeltaEpsilon here\nAlphaBetaGammaDeltaEpsilon there\nAlphaBetaGammaDeltaEpsilon again\nZetaEtaThetaIotaKappaOmega here\nZetaEtaThetaIotaKappaOmega there\nZetaEtaThetaIotaKappaOmega again";

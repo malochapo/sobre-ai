@@ -69,7 +69,7 @@ fn compress_if_beneficial_with_exit(command: &str, output: &str, exit_code: i32)
     }
 
     // #709: honour explicit <lc_safe>…</lc_safe> spans. Secret redaction has
-    // already run upstream (ctx_shell::handle → redact_shell_output_secrets), so
+    // already run upstream (sobre_shell::handle → redact_shell_output_secrets), so
     // the pipeline order is redact → protect → compress and a marker can never
     // smuggle a secret past redaction. Protected spans pass through verbatim;
     // each unprotected segment flows through the normal pipeline.
@@ -111,7 +111,7 @@ fn compress_if_beneficial_with_exit(command: &str, output: &str, exit_code: i32)
         return truncate_verbatim(&base, count_tokens(&base));
     }
 
-    if !is_search_output(command) && crate::tools::ctx_shell::contains_auth_flow(output) {
+    if !is_search_output(command) && crate::tools::sobre_shell::contains_auth_flow(output) {
         return output.to_string();
     }
 

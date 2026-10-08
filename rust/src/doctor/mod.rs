@@ -340,7 +340,7 @@ pub fn run(json: bool) -> u32 {
 
     // LSP servers (optional, informational)
     board.note(&format!(
-        "\n  {BOLD}{WHITE}LSP (optional — for ctx_refactor):{RST}"
+        "\n  {BOLD}{WHITE}LSP (optional — for sobre_refactor):{RST}"
     ));
     let lsp_outcomes = lsp_server_outcomes();
     for lsp_check in &lsp_outcomes {

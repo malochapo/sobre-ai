@@ -75,7 +75,7 @@ mod tests {
     fn full_mode_unchanged() {
         let desc = "Read a file from disk with caching.";
         assert_eq!(
-            compress_description("ctx_read", desc, DescriptionMode::Full),
+            compress_description("sobre_read", desc, DescriptionMode::Full),
             desc
         );
     }
@@ -83,7 +83,7 @@ mod tests {
     #[test]
     fn terse_mode_abbreviates() {
         let desc = "Read a configuration file from the directory.";
-        let result = compress_description("ctx_read", desc, DescriptionMode::Terse);
+        let result = compress_description("sobre_read", desc, DescriptionMode::Terse);
         assert!(
             result.contains("cfg") || result.contains("dir"),
             "should abbreviate: {result}"
@@ -93,7 +93,7 @@ mod tests {
     #[test]
     fn lazy_mode_short() {
         let desc = "Read a file from disk with intelligent caching and compression modes.\nSupports 10 different read modes for optimal token efficiency.";
-        let result = compress_description("ctx_read", desc, DescriptionMode::Lazy);
+        let result = compress_description("sobre_read", desc, DescriptionMode::Lazy);
         assert_eq!(
             result,
             "Read a file from disk with intelligent caching and compression modes."
@@ -104,14 +104,14 @@ mod tests {
     fn lazy_mode_single_line_omits_docs_suffix() {
         // A description that already fits on one line is kept verbatim (#680).
         let desc = "Directory tree (replaces ls/find). Compact maps.";
-        let result = compress_description("ctx_tree", desc, DescriptionMode::Lazy);
+        let result = compress_description("sobre_tree", desc, DescriptionMode::Lazy);
         assert_eq!(result, desc, "single-line lazy desc must be verbatim");
     }
 
     #[test]
     fn lazy_mode_truncates_a_long_first_line() {
         let desc = "This is a deliberately long single-line tool description that exceeds eighty characters to force truncation.";
-        let result = compress_description("ctx_x", desc, DescriptionMode::Lazy);
+        let result = compress_description("sobre_x", desc, DescriptionMode::Lazy);
         assert!(result.ends_with('…'), "{result}");
         assert!(result.chars().count() <= 78, "{result}");
     }
