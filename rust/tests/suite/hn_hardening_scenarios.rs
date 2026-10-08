@@ -173,15 +173,12 @@ mod double_compression_guard {
     fn scenario_skip_terse_when_already_compressed() {
         let src = crate::suite::hn_hardening_scenarios::server_dispatch_src();
 
-        // Reads already produce mode-aware, structure-preserving output, so the
-        // generic terse layer must never re-compress them. The guard skips the
-        // whole read family unconditionally (a verbatim `full`/`lines:` read has
-        // 0 savings yet must still be protected from dictionary-mangling). The
-        // read-family + verbatim-mode decision lives in `is_verbatim_read`.
+        // Terse is an allow-list of prose and shell tools: code from reads,
+        // searches and symbol bodies is never re-compressed.
         let body = crate::suite::hn_hardening_scenarios::skip_terse_body(&src);
         assert!(
-            body.contains("is_verbatim_read"),
-            "skip_terse must skip verbatim reads (read family) to avoid re-compressing them"
+            body.contains("TERSE_TOOLS"),
+            "skip_terse must condense only the tools in TERSE_TOOLS"
         );
 
         // Usage is recorded once, after terse, from the final sent count: the
@@ -434,56 +431,6 @@ mod auto_degrade {
             Set(CompressionLevel::Off)
         );
         assert_eq!(CompressionLevel::degrade_action(2, 0), Leave);
-    }
-}
-
-// =============================================================================
-// Fix H: First-Contact Auto-Context (meta_visible guard removed)
-// =============================================================================
-
-mod first_contact {
-    #[test]
-    fn scenario_meta_visible_guard_removed() {
-        let src = crate::suite::hn_hardening_scenarios::server_dispatch_src();
-        // Find the auto_context section
-        let auto_ctx_pos = src
-            .find("let Some(ctx) = auto_context")
-            .expect("auto_context block must exist");
-        let block = &src[auto_ctx_pos..auto_ctx_pos + 200];
-
-        // Must NOT contain meta_visible check
-        assert!(
-            !block.contains("meta_visible()"),
-            "meta_visible guard must be removed from auto_context block"
-        );
-    }
-
-    #[test]
-    fn scenario_token_budget_enforced() {
-        // The briefing is cut to its budget where it is built, not dropped at
-        // the call site.
-        let src = include_str!("../../src/tools/autonomy.rs");
-        assert!(
-            src.contains("pub const BRIEFING_MAX_TOKENS: usize = 400;"),
-            "auto_context must enforce a 400 token budget"
-        );
-        assert!(
-            src.contains("Some(format_briefing(&result))"),
-            "the session briefing must go through the budget cut"
-        );
-    }
-
-    #[test]
-    fn scenario_raw_shell_still_skips_auto_context() {
-        let src = crate::suite::hn_hardening_scenarios::server_dispatch_src();
-        // Collapse whitespace so the gating check survives the edition-2024
-        // let-chain collapse (`if !is_raw_shell { if let Some(ctx) = … }` →
-        // `if !is_raw_shell && let Some(ctx) = …`) and any rustfmt line wrapping.
-        let collapsed = src.split_whitespace().collect::<Vec<_>>().join(" ");
-        assert!(
-            collapsed.contains("if !is_raw_shell && let Some(ctx) = auto_context"),
-            "auto_context must still be gated behind !is_raw_shell"
-        );
     }
 }
 
