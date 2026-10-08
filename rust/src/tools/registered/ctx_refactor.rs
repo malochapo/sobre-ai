@@ -21,30 +21,25 @@ impl McpTool for CtxRefactorTool {
     fn tool_def(&self) -> Tool {
         tool_def(
             "ctx_refactor",
-            "Symbol navigation and edits: rename, references, definition, implementations \
-             via the language server; symbols_overview and symbol body edits work without one.\n\
-             WORKFLOW: use action=references first to find usages before refactoring.\n\
-             ANTIPATTERN: not for symbol discovery — use ctx_search action=symbol or ctx_compose.\n\
-             Symbol edits (replace_symbol_body, insert_before_symbol, insert_after_symbol) \
-             resolve the target by name_path.",
+            "Symbol navigation via the language server: references, definition, \
+             implementations, and rename as a preview (nothing is written; apply with ctx_patch).\n\
+             Symbol edits work without one: replace_symbol_body, insert_before_symbol, \
+             insert_after_symbol resolve the target by name_path (in path's file when path is \
+             given) or by path+line.\n\
+             ANTIPATTERN: not for symbol discovery — use ctx_search action=symbol, ctx_outline \
+             for a file's symbols.",
             json!({
                 "type": "object",
                 "properties": {
                     "action": {
                         "type": "string",
-                        "description": "rename|references|definition|implementations|symbols_overview|replace_symbol_body|insert_before_symbol|insert_after_symbol"
+                        "description": "rename|references|definition|implementations|replace_symbol_body|insert_before_symbol|insert_after_symbol"
                     },
-                    "path": { "type": "string", "description": "Path" },
+                    "path": { "type": "string", "description": "File; for symbol edits, the file name_path is looked up in" },
                     "line": { "type": "integer", "description": "1-indexed line" },
                     "column": { "type": "integer", "description": "0-indexed column" },
-                    "new_name": { "type": "string", "description": "New symbol name" },
-                    "scope": {
-                        "type": "string",
-                        "enum": ["project", "all"],
-                        "description": "project|all"
-                    },
+                    "new_name": { "type": "string", "description": "New symbol name (rename preview)" },
                     "name_path": { "type": "string", "description": "Symbol path for body edits (qualified or bare)" },
-                    "file": { "type": "string", "description": "Scope name_path resolution to this file (avoids AMBIGUOUS_SYMBOL for common names)" },
                     "new_text": { "type": "string", "description": "Full replacement declaration text (replace_symbol_body)" },
                     "text": { "type": "string", "description": "Sibling text to insert (auto-indented)" },
                     "end_line": { "type": "integer", "description": "1-based last line (path+line fallback)" },
@@ -65,10 +60,6 @@ impl McpTool for CtxRefactorTool {
                     },
                     {
                         "if": { "properties": { "action": { "const": "implementations" } }, "required": ["action"] },
-                        "then": { "required": ["action", "path"] }
-                    },
-                    {
-                        "if": { "properties": { "action": { "const": "symbols_overview" } }, "required": ["action"] },
                         "then": { "required": ["action", "path"] }
                     },
                     {
@@ -129,8 +120,7 @@ mod schema_tests {
         let schema = serde_json::to_string(&CtxRefactorTool.tool_def()).unwrap();
         for needle in [
             "references",
-            "\"scope\"",
-            "symbols_overview",
+            "preview",
             "replace_symbol_body",
             "insert_before_symbol",
             "insert_after_symbol",
@@ -141,6 +131,9 @@ mod schema_tests {
             assert!(schema.contains(needle), "schema missing {needle}: {schema}");
         }
         for gone in [
+            "symbols_overview",
+            "\"scope\"",
+            "\"file\"",
             "rename_preview",
             "move_apply",
             "inline_preview",

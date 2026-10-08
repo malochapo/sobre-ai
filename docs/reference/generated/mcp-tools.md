@@ -90,12 +90,11 @@ Parameters: `aggressiveness`, `fresh`, `limit`, `mode`, `offset`, `path`, `paths
 
 ## `ctx_refactor`
 
-Symbol navigation and edits: rename, references, definition, implementations via the language server; symbols_overview and symbol body edits work without one.
-WORKFLOW: use action=references first to find usages before refactoring.
-ANTIPATTERN: not for symbol discovery — use ctx_search action=symbol or ctx_compose.
-Symbol edits (replace_symbol_body, insert_before_symbol, insert_after_symbol) resolve the target by name_path.
+Symbol navigation via the language server: references, definition, implementations, and rename as a preview (nothing is written; apply with ctx_patch).
+Symbol edits work without one: replace_symbol_body, insert_before_symbol, insert_after_symbol resolve the target by name_path (in path's file when path is given) or by path+line.
+ANTIPATTERN: not for symbol discovery — use ctx_search action=symbol, ctx_outline for a file's symbols.
 
-Parameters: `action`*, `column`, `end_line`, `expected_hash`, `file`, `line`, `name_path`, `new_name`, `new_text`, `path`, `scope`, `text`
+Parameters: `action`*, `column`, `end_line`, `expected_hash`, `line`, `name_path`, `new_name`, `new_text`, `path`, `text`
 
 ## `ctx_review`
 

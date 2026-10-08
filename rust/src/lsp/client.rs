@@ -428,7 +428,6 @@ impl crate::lsp::backend::LspBackend for LspClient {
         &mut self,
         uri: &lsp_types::Uri,
         position: lsp_types::Position,
-        _scope: &str,
     ) -> Result<Vec<lsp_types::Location>, String> {
         LspClient::references(self, uri, position)
     }
@@ -443,7 +442,6 @@ impl crate::lsp::backend::LspBackend for LspClient {
         &mut self,
         uri: &lsp_types::Uri,
         position: lsp_types::Position,
-        _scope: &str,
     ) -> Result<Vec<lsp_types::Location>, String> {
         LspClient::implementations(self, uri, position)
     }

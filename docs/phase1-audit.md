@@ -34,7 +34,7 @@ Taken on 2026-10-08.
 | 2 | The AUTO CONTEXT prefix on the first call of a session | Remove it. |
 | 3 | `edit_quality.json`, which carries state from one run to the next and changes what `mode=auto` resolves to | Stop persisting it (invariant 2). |
 | 4 | The `edit_health` hook writing `ctx_knowledge` facts the agent never asked for | Remove those writes (invariant 5). |
-| 5 | `ctx_refactor`: `file` and `scope` are ignored, `rename` only previews, `symbols_overview` needs an LSP | **Open.** What each was meant to do is under B23. |
+| 5 | `ctx_refactor`: `file` and `scope` are ignored, `rename` only previews, `symbols_overview` needs an LSP | Yes, the recommendation: `file` through `path`, drop `scope`, `rename` labelled a preview, `symbols_overview` dropped for `ctx_outline` (B23). |
 | 6 | `ctx_review`, whose heuristics are broken | Repair it. |
 | 7 | The non-PDF extractors (about 2,100 lines that never run) | Remove them. |
 | 8 | Release binaries are built without `dense` | Publish a `dense` binary as well. |
@@ -50,7 +50,7 @@ The lots run in this order:
 | Lot | Scope | Status |
 |---|---|---|
 | A | The user's machine: `uninstall`, `init`, agent integration | done (#31) |
-| B | The MCP tools: bugs, incomplete features, drift; decisions 1–4 and 6 | done except B23, which waits on decision 5 (#32, #33, #34, #35, #36) |
+| B | The MCP tools: bugs, incomplete features, drift; decisions 1–4 and 6 | done (#32, #33, #34, #35, #36, #37) |
 | C | The CLI and the proxy | open |
 | R | Tool names `ctx_*` → `sobre_*` (decision 9) | open |
 | D | Dead code, stale files, stale comments, duplicates; decision 7 | open |
@@ -242,7 +242,7 @@ Fixed so far: #32 (paths, `ctx_read`, hidden read state), #33 (what the
 agent receives: prefixes, markers, footers, prompts and resources), #34
 (edits), #35 (graph: `ctx_impact` merged into `ctx_graph`, `ctx_review`
 repaired), #36 (errors, knowledge, sessions, the edit-quality store and
-the edit_health hook). Only B23 is left, waiting on decision 5.
+the edit_health hook), #37 (`ctx_refactor`, decision 5).
 
 ### Bugs
 
@@ -463,42 +463,24 @@ the edit_health hook). Only B23 is left, waiting on decision 5.
 
 ### Incomplete features
 
-- [ ] **B23 `ctx_refactor`** (decision 5, open).
+- [x] **B23 `ctx_refactor`** (decision 5: the recommendation, #37).
   - **Origin.** All four parts predate the fork. They worked only through
     the JetBrains plugin, which was removed.
   - **`file`** was meant to scope `name_path` lookup to one file, to stop
-    AMBIGUOUS_SYMBOL on common names. It never worked for the three edits
-    that remain.
-    - Fix: scope by `path`, moving the filter into the SQL query, which
-      today applies it after a `LIMIT 100`.
-  - **`scope`** was `project` or `all` (libraries and SDK). Only the IDE knew
-    it; LSP has no such notion.
-  - **`rename`** never applied an edit, even upstream. Applying one needs
-    the server to have finished indexing; rust-analyzer answers before.
-  - **`symbols_overview`** was meant to list symbols from the index without
-    a server. It still starts one (up to 60 s) before answering, and
-    `ctx_outline` already does the job better.
-  - **Recommendation:**
-    - make `file` work through `path`;
-    - drop `scope`;
-    - label `rename` a preview;
-    - drop `symbols_overview` in favour of `ctx_outline`.
-  - The `file` parameter is advertised (`registered/ctx_refactor.rs:41`)
-    but never read: `handle_symbol_edit` uses the unscoped
-    `resolve_name_path` (`ctx_refactor/mod.rs:286`), and
-    `resolve_name_path_scoped` is used only in tests.
-  - The `scope` parameter is ignored (`lsp/client.rs:431,446` take
-    `_scope`).
-  - `rename` only previews (`mod.rs:47-67`), but the description lists it
-    under edits.
-  - `symbols_overview` requires an LSP, although the description says it
-    works without one (`registered/ctx_refactor.rs:19`, `mod.rs:26`).
-    `overview_from_index` (`lsp/edit_apply.rs:94`) uses the nearest `.git`
-    instead of the session root.
-  - The router's error lists "Supported: rs, ts, tsx, js, py, go", but
-    `language_for_extension` also maps java, kt, rb, c, cpp and cs.
-  - The LSP backend is cached per language with the first project root
-    (`lsp/router.rs:54`).
+    AMBIGUOUS_SYMBOL on common names; it was advertised and never read.
+    Done: `path` scopes the lookup, and the file filter is in the SQL
+    query, ahead of its row limit. The worktree mismatch check is gone with
+    it: a scoped lookup cannot land in another checkout.
+  - **`scope`** (`project`/`all`) was ignored; only the IDE knew it.
+    Removed from the schema, the backend trait and the client.
+  - **`rename`** never applied an edit. It is now described and labelled as
+    a preview ("nothing was written; apply with ctx_patch").
+  - **`symbols_overview`** started a language server to list symbols from
+    the index. Removed in favour of `ctx_outline`, with
+    `overview_from_index` and its nearest-`.git` root.
+  - The router's error now lists every extension `language_for_extension`
+    maps, and language servers are cached per language and project root
+    instead of per language.
 - [x] **B24 `ctx_patch dry_run` validates nothing except `replace_all`.**
   - The anchored ops (`ctx_patch.rs:110-115`), `replace_unique`
     (`:284-295`) and `replace_symbol` (`:510-516`) return a canned

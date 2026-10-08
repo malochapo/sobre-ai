@@ -92,47 +92,6 @@ pub fn local_range_write(edit: &RangeEdit) -> Result<EditResult, String> {
     })
 }
 
-/// Walk up from a file path to the nearest ancestor directory containing `.git`
-/// (best-effort project-root detection; `nearest_project_root` does not exist in
-/// this repo). Returns None if no `.git` ancestor is found.
-fn nearest_git_root(abs_path: &str) -> Option<String> {
-    let mut dir = std::path::Path::new(abs_path).parent();
-    while let Some(d) = dir {
-        if d.join(".git").exists() {
-            return Some(d.to_string_lossy().to_string());
-        }
-        dir = d.parent();
-    }
-    None
-}
-
-/// Build a file's structure overview from the tree-sitter symbol index
-/// (headless `symbols_overview` default, spec v2a §5.2). Best-effort: returns
-/// an empty vec when no graph is available.
-pub fn overview_from_index(abs_path: &str) -> Vec<crate::lsp::backend::SymbolOverviewItem> {
-    use crate::core::graph_provider;
-    let Some(project_root) = nearest_git_root(abs_path) else {
-        return Vec::new();
-    };
-    let Some(open) = graph_provider::open_or_build(&project_root) else {
-        return Vec::new();
-    };
-    let rel = abs_path
-        .strip_prefix(&project_root)
-        .map_or(abs_path, |s| s.trim_start_matches('/'));
-    let mut items: Vec<_> = open
-        .find_symbols("", Some(rel), None)
-        .into_iter()
-        .map(|s| crate::lsp::backend::SymbolOverviewItem {
-            name: s.name,
-            kind: s.kind,
-            line: s.start_line as u32,
-        })
-        .collect();
-    items.sort_by_key(|i| i.line);
-    items
-}
-
 /// Compute the 0-based range the freshly written `text` now occupies, given the
 /// `prefix` (everything before the insertion point).
 fn range_after_write(prefix: &str, text: &str) -> TextRange0Based {
@@ -178,8 +137,8 @@ fn strip_error(e: String) -> String {
 }
 
 /// Zero-dependency backend that carries only the Trait default-apply for the
-/// three edit methods (used by ctx_refactor when no IDE is reachable). The five
-/// mandatory read methods are unsupported here (edits never call them).
+/// three edit methods. The read methods need a language server and are
+/// unsupported here (edits never call them).
 pub struct HeadlessBackend;
 
 impl crate::lsp::backend::LspBackend for HeadlessBackend {
@@ -190,7 +149,6 @@ impl crate::lsp::backend::LspBackend for HeadlessBackend {
         &mut self,
         _u: &lsp_types::Uri,
         _p: lsp_types::Position,
-        _s: &str,
     ) -> Result<Vec<lsp_types::Location>, String> {
         Err("references requires a backend".into())
     }
@@ -205,7 +163,6 @@ impl crate::lsp::backend::LspBackend for HeadlessBackend {
         &mut self,
         _u: &lsp_types::Uri,
         _p: lsp_types::Position,
-        _s: &str,
     ) -> Result<Vec<lsp_types::Location>, String> {
         Err("implementations requires a backend".into())
     }
@@ -278,13 +235,6 @@ mod tests {
         assert!(res.applied);
         assert_eq!(std::fs::read_to_string(&p).unwrap(), "aaa\nNEW\nccc\n");
         assert_eq!(res.edited_text, "NEW");
-    }
-
-    #[test]
-    fn overview_from_index_is_empty_without_graph() {
-        // A path outside any project root must degrade to empty, not panic.
-        let items = overview_from_index("/nonexistent/Nope.rs");
-        assert!(items.is_empty());
     }
 
     #[test]

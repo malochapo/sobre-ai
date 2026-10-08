@@ -42,7 +42,6 @@ fn unknown_action_help_lists_the_available_actions() {
             &mut self,
             _uri: &lsp_types::Uri,
             _position: lsp_types::Position,
-            _scope: &str,
         ) -> Result<Vec<lsp_types::Location>, String> {
             Ok(vec![])
         }
@@ -57,7 +56,6 @@ fn unknown_action_help_lists_the_available_actions() {
             &mut self,
             _uri: &lsp_types::Uri,
             _position: lsp_types::Position,
-            _scope: &str,
         ) -> Result<Vec<lsp_types::Location>, String> {
             Ok(vec![])
         }
@@ -79,13 +77,22 @@ fn unknown_action_help_lists_the_available_actions() {
     let abs = file.to_string_lossy().to_string();
 
     let _stub = crate::lsp::router::stub_test_lock();
-    crate::lsp::router::seed_stub_backend("rust", Box::new(StubBackend));
+    crate::lsp::router::seed_stub_backend("rust", &root, Box::new(StubBackend));
 
     let args = json!({"action": "definitely_bogus", "path": "x.rs", "line": 1});
     let out = super::handle(&args, &root, &abs);
-    for action in ["references", "symbols_overview", "replace_symbol_body"] {
+    for action in [
+        "references",
+        "rename (preview)",
+        "replace_symbol_body",
+        "ctx_outline",
+    ] {
         assert!(out.contains(action), "help text missing {action}: {out}");
     }
+    assert!(
+        !out.contains("symbols_overview"),
+        "help still lists symbols_overview: {out}"
+    );
     assert!(
         !out.contains("declaration"),
         "help still lists declaration: {out}"
@@ -117,7 +124,8 @@ fn resolve_name_path_unique_class() {
     .unwrap();
     let root = proj.to_string_lossy().to_string();
 
-    let r = super::resolve_name_path("UniqueZqWidget", &root).expect("unique resolution");
+    let r =
+        super::resolve_name_path_scoped("UniqueZqWidget", &root, None).expect("unique resolution");
     assert!(r.rel_path.ends_with("lib.rs"), "got: {}", r.rel_path);
     assert!(r.end_line >= r.start_line && r.start_line > 0);
 
@@ -146,7 +154,7 @@ fn resolve_name_path_unknown_is_no_symbol() {
     .unwrap();
     let root = proj.to_string_lossy().to_string();
 
-    let err = super::resolve_name_path("ZzzNoSuchSymbol123", &root).unwrap_err();
+    let err = super::resolve_name_path_scoped("ZzzNoSuchSymbol123", &root, None).unwrap_err();
     assert!(err.starts_with("NO_SYMBOL"), "got: {err}");
 
     crate::test_env::remove_var("SOBRE_DATA_DIR");
@@ -179,7 +187,7 @@ fn resolve_name_path_trait_impl_method() {
     .unwrap();
     let root = proj.to_string_lossy().to_string();
 
-    let r = super::resolve_name_path("RenderBridge/execute", &root)
+    let r = super::resolve_name_path_scoped("RenderBridge/execute", &root, None)
         .expect("trait-impl method should resolve");
     assert!(r.rel_path.ends_with("lib.rs"), "got: {}", r.rel_path);
     // Muss auf den Impl-Methoden-Body zeigen (Zeile >= 3), nicht auf das
@@ -230,7 +238,7 @@ fn resolve_name_path_inherent_impl_method() {
     .unwrap();
     let root = proj.to_string_lossy().to_string();
 
-    let r = super::resolve_name_path("RenderBridge/run", &root)
+    let r = super::resolve_name_path_scoped("RenderBridge/run", &root, None)
         .expect("inherent-impl method should still resolve");
     assert!(r.rel_path.ends_with("lib.rs"), "got: {}", r.rel_path);
     assert!(r.start_line >= 2 && r.end_line >= r.start_line);
@@ -284,7 +292,7 @@ fn resolve_name_path_ambiguous_trait_impls() {
     // "RenderBridge/execute": two segments → container_matches_ancestor runs for each hit.
     // "A for RenderBridge" and "B for RenderBridge" both match ancestor "RenderBridge",
     // producing two distinct hits (src/a.rs and src/b.rs) → AMBIGUOUS_SYMBOL.
-    let err = super::resolve_name_path("RenderBridge/execute", &root)
+    let err = super::resolve_name_path_scoped("RenderBridge/execute", &root, None)
         .expect_err("two trait impls (cross-file) with same method must be ambiguous");
     assert!(err.starts_with("AMBIGUOUS_SYMBOL"), "got: {err}");
 
@@ -329,7 +337,7 @@ fn file_scope_disambiguates_ambiguous_symbol() {
     );
 
     // Without file_scope: ambiguous (2 matches).
-    let err = super::resolve_name_path("RenderBridge/execute", &root)
+    let err = super::resolve_name_path_scoped("RenderBridge/execute", &root, None)
         .expect_err("should be ambiguous without file_scope");
     assert!(err.starts_with("AMBIGUOUS_SYMBOL"), "got: {err}");
 
@@ -426,11 +434,10 @@ fn handle_replace_symbol_body_conflict_on_stale_hash() {
     );
 }
 
-/// #803: when `name_path` resolves to a file that differs from the caller's
-/// explicit `path`, the edit must be rejected with WORKTREE_MISMATCH instead
-/// of silently writing to the wrong checkout. Simulates the real scenario
-/// where a git worktree lives INSIDE the project root (e.g.
-/// `/repo/.claude/worktrees/wt/`).
+/// #803: with an explicit `path`, `name_path` is looked up in that file only,
+/// so a symbol the index knows from another checkout is never the target.
+/// Simulates a git worktree INSIDE the project root
+/// (`/repo/.claude/worktrees/wt/`): the edit fails and neither file changes.
 #[test]
 #[ignore = "requires pre-built symbol index; flaky under parallel cargo test"]
 fn handle_replace_symbol_worktree_mismatch_blocks_write() {
@@ -465,11 +472,10 @@ fn handle_replace_symbol_worktree_mismatch_blocks_write() {
     .unwrap();
 
     // The symbol resolves via the main-root index to "src/lib.rs".
-    let resolved = super::resolve_name_path("worktree_canary_zz", &root);
+    let resolved = super::resolve_name_path_scoped("worktree_canary_zz", &root, None);
     assert!(resolved.is_ok(), "symbol should resolve: {resolved:?}");
 
-    // Caller provides a path inside the worktree that differs from the
-    // index-resolved location — this must be caught.
+    // Caller provides a path inside the worktree: the lookup is scoped to it.
     let wt_file = main_root.join(".claude/worktrees/wt/src/lib.rs");
     let args = serde_json::json!({
         "action": "replace_symbol_body",
@@ -479,8 +485,8 @@ fn handle_replace_symbol_worktree_mismatch_blocks_write() {
     });
     let out = super::handle(&args, &root, "");
     assert!(
-        out.contains("WORKTREE_MISMATCH"),
-        "should detect mismatch, got: {out}"
+        out.starts_with("ERROR"),
+        "must not resolve elsewhere, got: {out}"
     );
     // Verify neither file was modified.
     let main_content = std::fs::read_to_string(main_root.join("src/lib.rs")).unwrap();
@@ -495,4 +501,41 @@ fn handle_replace_symbol_worktree_mismatch_blocks_write() {
     );
 
     crate::test_env::remove_var("SOBRE_DATA_DIR");
+}
+
+/// Decision 5: with `path`, `name_path` resolves in that file only, so a name
+/// defined in several files edits the one the caller named.
+#[test]
+fn name_path_with_path_edits_that_file() {
+    let _data = crate::core::data_dir::isolated_data_dir();
+    let dir = tempfile::tempdir().unwrap();
+    let proj = dir.path().join("proj_scope");
+    std::fs::create_dir_all(proj.join("src")).unwrap();
+    for file in ["src/a.rs", "src/b.rs"] {
+        std::fs::write(proj.join(file), "pub fn execute() -> u8 {\n    1\n}\n").unwrap();
+    }
+    let root = proj.to_string_lossy().to_string();
+    assert!(
+        !crate::core::graph_index::scan(&root).files.is_empty(),
+        "premise: symbol graph must build for the fixture"
+    );
+
+    let unscoped = super::handle(
+        &json!({"action": "replace_symbol_body", "name_path": "execute",
+                "new_text": "pub fn execute() -> u8 {\n    2\n}"}),
+        &root,
+        "",
+    );
+    assert!(unscoped.contains("AMBIGUOUS_SYMBOL"), "{unscoped}");
+
+    let scoped = super::handle(
+        &json!({"action": "replace_symbol_body", "name_path": "execute", "path": "src/b.rs",
+                "new_text": "pub fn execute() -> u8 {\n    2\n}"}),
+        &root,
+        "",
+    );
+    assert!(scoped.contains("replace_symbol_body applied"), "{scoped}");
+    let read = |f: &str| std::fs::read_to_string(proj.join(f)).unwrap();
+    assert!(read("src/b.rs").contains("    2"), "b.rs must be edited");
+    assert!(read("src/a.rs").contains("    1"), "a.rs must be untouched");
 }

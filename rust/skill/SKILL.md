@@ -64,8 +64,9 @@ is not understanding more.
    across files if needed.
 3. `CONFLICT` means the file changed under you: read it again.
 
-Native Read → Edit also works. `ctx_refactor` renames and finds references
-through the language server. `ctx_checkpoint` snapshots your changes in a
+Native Read → Edit also works. `ctx_refactor` finds references and
+definitions through the language server, and previews a rename (it writes
+nothing; apply the edits with `ctx_patch`). `ctx_checkpoint` snapshots your changes in a
 history separate from the user's git, and can restore them.
 
 ## Shell
