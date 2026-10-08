@@ -237,7 +237,7 @@ pub fn status(id: &str) -> Option<JobState> {
 /// How long `cancel` waits for the job to stop before answering.
 const CANCEL_WAIT: Duration = Duration::from_secs(2);
 
-/// Ask a job to stop and wait up to [`CANCEL_WAIT`] for it, so the answer says
+/// Ask a job to stop and wait up to two seconds for it, so the answer says
 /// what happened. `Running` comes back only when the job is still stopping.
 pub fn cancel(id: &str) -> Option<JobState> {
     {
