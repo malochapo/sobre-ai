@@ -9,13 +9,13 @@
 //! atomic write — so there is exactly one symbol-edit implementation.
 //!
 //! It is intentionally **not** an [`super::anchors::AnchorOp`]: it goes through a
-//! different (symbol-resolution) write path, so it cannot share the line-model
-//! batch's single-preimage invariant and is handled as a standalone op.
+//! different (symbol-resolution) write path, so inside `ops[]` it runs as its
+//! own step rather than joining a line-model batch.
 
 use serde_json::{Map, Value};
 
-/// True when the args describe a single `replace_symbol` op (never inside a
-/// batch `ops[]`, which is reserved for the atomic line-model).
+/// True when the args describe a single top-level `replace_symbol` op (inside
+/// `ops[]` it is dispatched by the mixed-batch path).
 pub(crate) fn is_replace_symbol(args: &Map<String, Value>) -> bool {
     args.get("ops").is_none() && str_field(args, "op").as_deref() == Some("replace_symbol")
 }
@@ -59,6 +59,9 @@ pub(crate) fn build_refactor_args(args: &Map<String, Value>) -> Result<Map<Strin
     out.insert("new_text".to_string(), Value::String(new_text));
     if let Some(h) = str_field(args, "expected_hash") {
         out.insert("expected_hash".to_string(), Value::String(h));
+    }
+    if let Some(d) = args.get("dry_run").filter(|v| v.is_boolean()) {
+        out.insert("dry_run".to_string(), d.clone());
     }
     Ok(out)
 }

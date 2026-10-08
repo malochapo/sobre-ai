@@ -50,7 +50,7 @@ The lots run in this order:
 | Lot | Scope | Status |
 |---|---|---|
 | A | The user's machine: `uninstall`, `init`, agent integration | done (#31) |
-| B | The MCP tools: bugs, incomplete features, drift; decisions 1–4 and 6 | in progress (#32, #33) |
+| B | The MCP tools: bugs, incomplete features, drift; decisions 1–4 and 6 | in progress (#32, #33, #34) |
 | C | The CLI and the proxy | open |
 | R | Tool names `ctx_*` → `sobre_*` (decision 9) | open |
 | D | Dead code, stale files, stale comments, duplicates; decision 7 | open |
@@ -239,7 +239,8 @@ Fixed in #31. How the fixes work:
 ## Lot B — the MCP tools
 
 Fixed so far: #32 (paths, `ctx_read`, hidden read state), #33 (what the
-agent receives: prefixes, markers, footers, prompts and resources).
+agent receives: prefixes, markers, footers, prompts and resources), #34
+(edits).
 
 ### Bugs
 
@@ -307,14 +308,14 @@ agent receives: prefixes, markers, footers, prompts and resources).
   returns JSON that does not parse.**
   - Neither overrides `produces_machine_readable` (`tool_trait.rs:109`);
     only `ctx_outline` does.
-- [ ] **B9 `ctx_patch op=replace_all` sets the file mode to 0600**
+- [x] **B9 `ctx_patch op=replace_all` sets the file mode to 0600**
   (`registered/ctx_patch.rs:606` uses `config_io::write_atomic`, which
   forces 0600 at `config_io.rs:189-197`).
   - It also reads before taking the per-file lock (`:584` vs `:600`), and
     skips the symlink guard, `session.mark_modified` and the bounce
     tracker.
   - Fix: use `edit_io` with permissions, under the lock.
-- [ ] **B10 Symbol edits lose the file mode and replace symlinks.** This
+- [x] **B10 Symbol edits lose the file mode and replace symlinks.** This
   covers `ctx_refactor replace_symbol_body` and `insert_*`, and
   `ctx_patch op=replace_symbol`.
   - `lsp/edit_apply.rs:154-171` writes with `std::fs::write` to a fixed
@@ -426,6 +427,14 @@ agent receives: prefixes, markers, footers, prompts and resources).
   or a symbol body could lose lines. It now runs only on prose and shell
   output: `ctx_shell`, `ctx_knowledge` and `ctx_session`.
 
+### Found while fixing (edits)
+
+- [x] **B59 A failed edit marked the file as modified.** `ctx_patch` and the
+  shared edit path called `session.mark_modified` after a CONFLICT, an
+  ambiguous match or any error. Only a write marks it now.
+- [x] **B60 The `replace_lines` error message carried a run of spaces** from
+  a broken line continuation.
+
 ### Incomplete features
 
 - [ ] **B23 `ctx_refactor`** (decision 5, open).
@@ -464,7 +473,7 @@ agent receives: prefixes, markers, footers, prompts and resources).
     `language_for_extension` also maps java, kt, rb, c, cpp and cs.
   - The LSP backend is cached per language with the first project root
     (`lsp/router.rs:54`).
-- [ ] **B24 `ctx_patch dry_run` validates nothing except `replace_all`.**
+- [x] **B24 `ctx_patch dry_run` validates nothing except `replace_all`.**
   - The anchored ops (`ctx_patch.rs:110-115`), `replace_unique`
     (`:284-295`) and `replace_symbol` (`:510-516`) return a canned
     "DRY RUN: would …".
@@ -554,7 +563,7 @@ agent receives: prefixes, markers, footers, prompts and resources).
   - `ctx_session load` without an id goes through
     `SessionState::load_latest` → `current_dir` (`ctx_session.rs:26`).
   - `render_aggressive` and `render_entropy` read the intent the same way.
-- [ ] **B39 The `ctx_patch` schema is wrong.**
+- [x] **B39 The `ctx_patch` schema is wrong.**
   - It requires `start_hash`/`end_hash` for `replace_lines`
     (`ctx_patch.rs:59`), while the parser treats them as optional
     (`ctx_patch/anchors.rs:105-109`).
@@ -583,7 +592,7 @@ agent receives: prefixes, markers, footers, prompts and resources).
   - "Ledger cleared (0% pressure)" (`ctx_session.rs:229`).
   - `LCTX_MAX_READ_BYTES` in the `tests_windowed.rs` doc.
   - "IDE-first" (`ctx_refactor/mod.rs`).
-  - "read-only-roots deny" (`ctx_patch/mod.rs:14`).
+  - ~~"read-only-roots deny" (`ctx_patch/mod.rs:14`).~~ Removed (#34).
   - "operator env pin" (`execute.rs:404`).
 - [ ] **B45 `ctx_shell background_action=cancel` answers
   `[background:X running]`** (`background_shell.rs:237-246`).
