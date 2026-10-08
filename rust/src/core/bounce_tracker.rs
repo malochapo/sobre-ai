@@ -6,7 +6,7 @@ const BOUNCE_RATE_THRESHOLD: f64 = 0.30;
 /// Seq-tick window during which a full read is treated as *edit-forced* rather
 /// than a compression bounce. Must match the window `should_force_full` uses to
 /// escalate post-edit reads to `full`, so the read we forced is never blamed on
-/// the compression arm (GL #622).
+/// the compression arm.
 const EDIT_FORCE_WINDOW: u64 = 10;
 /// Outer-map retention: a path whose newest activity is older than this many seq ticks
 /// can no longer satisfy BOUNCE_WINDOW (5) or the edit-force window (10), so it is inert
@@ -108,7 +108,7 @@ impl BounceTracker {
 
     fn detect_bounce(&mut self, norm_path: &str, full_seq: u64) {
         // A full re-read the system itself forced after an edit is not a
-        // compression failure (GL #622): `should_force_full` returns `full` for
+        // compression failure: `should_force_full` returns `full` for
         // EDIT_FORCE_WINDOW ticks post-edit, so the agent had no choice. Counting
         // it as a bounce would penalize the compression arm for the edit and
         // inflate the per-extension bounce rate until `should_force_full` pins the
@@ -273,7 +273,7 @@ mod tests {
 
     #[test]
     fn edit_forced_full_read_is_not_a_bounce() {
-        // GL #622: a compressed overview read, then an edit, then the `full`
+        // A compressed overview read, then an edit, then the `full`
         // re-read that `should_force_full` mandates must NOT register as a bounce
         // — the edit forced it, the compression did not fail.
         let mut bt = BounceTracker::new();

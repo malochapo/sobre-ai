@@ -1,8 +1,5 @@
-//! Central hashing utility using BLAKE3.
-//!
-//! Replaces scattered MD5 helpers with a single, fast, non-cryptographic
-//! hash function. BLAKE3 runs at 8+ GB/s (vs MD5 ~3 GB/s) and produces
-//! collision-resistant 256-bit digests.
+//! Central hashing utility using BLAKE3: fast, collision-resistant 256-bit
+//! digests.
 
 /// Lowercase hex of arbitrary bytes (a digest another hasher produced).
 pub fn hex_encode(bytes: &[u8]) -> String {

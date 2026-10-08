@@ -167,7 +167,7 @@ fn shrink_resident_after_embedding(root: &Path, index: std::sync::Arc<BM25Index>
 #[must_use]
 pub(crate) fn handle_reindex(path: &str) -> String {
     // Promote to the project root so the rebuilt index lands in the same
-    // namespace the search path resolves to (#948) — reindexing a subdirectory
+    // namespace the search path resolves to — reindexing a subdirectory
     // would otherwise build an index the search can never find.
     let (root_buf, _subdir) = match resolve_search_root(path) {
         Ok(v) => v,

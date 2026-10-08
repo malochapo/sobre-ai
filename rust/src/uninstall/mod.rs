@@ -162,7 +162,7 @@ mod tests {
     fn data_dirs_cover_every_category_once() {
         // `core::paths::*_dir()` reads the (test-sandboxed) data-dir env, which a
         // parallel `isolated_data_dir()` repoints under `test_env_lock`; hold the
-        // lock so both reads below see the same values (#991).
+        // lock so both reads below see the same values.
         let _lock = crate::core::data_dir::test_env_lock();
         let dirs: Vec<PathBuf> = data_dirs().into_iter().map(|(d, _)| d).collect();
         for resolved in [

@@ -5,7 +5,7 @@
 // =============================================================================
 
 mod contracts_integrity {
-    /// Guards the load-bearing invariant behind #348: in MCP stdio mode `stdout`
+    /// Guards the load-bearing invariant: in MCP stdio mode `stdout`
     /// is the JSON-RPC transport, so every diagnostic MUST go to `stderr`. A stray
     /// switch to stdout would silently corrupt every MCP client's protocol stream.
     /// `tracing-subscriber` does not expose the runtime writer, so we assert on the

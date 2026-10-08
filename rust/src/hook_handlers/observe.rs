@@ -21,8 +21,8 @@ pub fn handle_observe() {
         return;
     }
     // Compaction evicts the conversation the read-dedup stubs would point into
-    // (GL #1140): purge the session's re-read records so every file delivers
-    // full content again, mirroring the MCP-side compaction sync (GL #555).
+    //: purge the session's re-read records so every file delivers
+    // full content again, mirroring the MCP-side compaction sync.
     if let Some(session_id) = v.get("session_id").and_then(|s| s.as_str()) {
         super::read_dedup::purge_session(session_id);
     }
@@ -48,7 +48,7 @@ fn record_session_context(v: &serde_json::Value) {
     // Claude Code / Codex carry a per-session `session_id` but no
     // `conversation_id`. Persisting it lets the read-cache scope a session's
     // deliveries the same way Cursor's `conversation_id` does, so a new session
-    // never inherits a prior one's `[unchanged]` stubs (#1004).
+    // never inherits a prior one's `[unchanged]` stubs.
     if let Some(tp) = non_empty_str(v, "transcript_path") {
         persist_transcript_path(
             tp,
@@ -61,7 +61,7 @@ fn record_session_context(v: &serde_json::Value) {
 /// Claude Code emits `hook_event_name: "PreCompact"` (code.claude.com/docs/
 /// en/hooks); the generic `event`/`compaction` shapes cover other hosts.
 /// Every Claude hook payload also carries `session_id`, so this must not be
-/// confused with a plain session event (GL #555).
+/// confused with a plain session event.
 fn is_compaction(v: &serde_json::Value) -> bool {
     v.get("compaction").is_some()
         || v.get("messages_count").is_some()
@@ -160,7 +160,7 @@ pub fn load_active_transcript() -> Option<(String, Option<String>)> {
     let tp = v.get("transcript_path")?.as_str()?.to_string();
     // Prefer Cursor's `conversation_id`; fall back to the host `session_id`
     // (Claude Code / Codex) so the read-cache still has a per-session
-    // identity to scope stubs against (#1004).
+    // identity to scope stubs against.
     let conv = v
         .get("conversation_id")
         .and_then(|c| c.as_str())
@@ -200,7 +200,7 @@ mod tests {
     use super::*;
 
     /// Real Claude Code PreCompact payload (code.claude.com/docs/en/hooks):
-    /// carries `session_id` like every Claude hook (GL #555).
+    /// carries `session_id` like every Claude hook.
     #[test]
     fn claude_precompact_is_compaction() {
         let v = serde_json::json!({
@@ -225,7 +225,7 @@ mod tests {
         }
     }
 
-    /// #1004: a Claude/Codex payload has no `conversation_id`, so the
+    /// A Claude/Codex payload has no `conversation_id`, so the
     /// persisted `session_id` must surface as the scope id — otherwise the read
     /// cache sees `None` and a new session inherits the prior one's stubs.
     #[test]

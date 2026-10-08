@@ -71,7 +71,7 @@ fn stop_proxy_process(port: u16) -> bool {
 
 /// Prints the proxy's live upstreams (from `/status`) and warns when one
 /// differs from what config.toml resolves to — the proxy keeps its last good
-/// value when an edit fails validation (#449).
+/// value when an edit fails validation.
 fn print_live_upstreams_and_drift(v: &serde_json::Value, cfg: &crate::core::config::Config) {
     let Some(up) = v.get("upstreams").and_then(|u| u.as_object()) else {
         return;
@@ -100,7 +100,7 @@ fn print_live_upstreams_and_drift(v: &serde_json::Value, cfg: &crate::core::conf
 
 pub(crate) fn cmd_proxy(rest: &[String]) {
     {
-        // `--help` anywhere must never execute the verb (GH #393).
+        // `--help` anywhere must never execute the verb.
         if wants_help(rest) {
             crate::outln!("{USAGE}");
             crate::outln!();
@@ -164,7 +164,7 @@ pub(crate) fn cmd_proxy(rest: &[String]) {
                     // Managed service (LaunchAgent / systemd): a clean bootout +
                     // bootstrap restarts the proxy so it re-reads config.toml. It
                     // makes config.toml the single source of truth for the
-                    // long-lived proxy (#449).
+                    // long-lived proxy.
                     crate::proxy_autostart::stop();
                     std::thread::sleep(std::time::Duration::from_millis(700));
                     if crate::proxy_autostart::start_on_port(port) {
@@ -195,7 +195,7 @@ pub(crate) fn cmd_proxy(rest: &[String]) {
                 crate::outln!("  Port:    {port}");
                 // Liveness comes from the *public* /health endpoint so a running
                 // proxy is never misreported as down — even mid-upgrade when the
-                // managed proxy still holds an old session token (#449). The live
+                // managed proxy still holds an old session token. The live
                 // upstreams come from the authenticated /status; if that 401s
                 // while /health is up, we still report it as running and point at
                 // `proxy restart`. Usage and savings are in `sobre gain`.
@@ -318,7 +318,7 @@ pub(crate) fn cmd_proxy(rest: &[String]) {
     /// Fork a child process running `sobre proxy start --port=N` with
     /// stdout/stderr redirected to a log file, then exit the parent immediately.
     /// The child's PID is written to the proxy PID file so `sobre proxy stop`
-    /// can find and kill it (#758).
+    /// can find and kill it.
     fn start_detached(port: u16) {
         let exe = std::env::current_exe().unwrap_or_else(|_| "sobre".into());
         let log_dir =

@@ -5,7 +5,7 @@ use serde_json::Value;
 ///
 /// This makes sobre tolerant of the JSONC dialect that editors like VS Code
 /// use for `settings.json` / `mcp.json` (comments + trailing commas are valid
-/// there but rejected by strict JSON). See issue #311.
+/// there but rejected by strict JSON).
 pub fn parse_jsonc(input: &str) -> Result<Value, serde_json::Error> {
     let stripped = strip_json_comments(input);
     let cleaned = strip_trailing_commas(&stripped);
@@ -276,7 +276,7 @@ mod tests {
         assert!(parse_jsonc("").is_err());
     }
 
-    // --- #311: trailing comma support (VS Code / JSONC dialect) ---
+    // --- trailing comma support (VS Code / JSONC dialect) ---
 
     #[test]
     fn strips_trailing_comma_in_object() {
@@ -327,7 +327,7 @@ mod tests {
 
     #[test]
     fn issue_311_vscode_settings_with_trailing_comma_and_comments() {
-        // Mirrors the real VS Code user settings.json that triggered #311:
+        // Mirrors the real VS Code user settings.json that broke the strict parser:
         // "trailing comma at line 4 column 5" plus JSONC comments.
         let input = r#"{
   // editor settings

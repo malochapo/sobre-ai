@@ -1,10 +1,10 @@
-//! Inline tests extracted from sobre_read.rs (#660 LOC gate).
+//! Inline tests extracted from sobre_read.rs (LOC gate).
 use super::*;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 #[test]
 fn raw_alias_forces_raw_mode_over_explicit_mode() {
-    // #513: raw=true is the verbatim escape hatch and must win over any
+    // Raw=true is the verbatim escape hatch and must win over any
     // mode arg an agent also happened to pass.
     assert_eq!(
         resolve_raw_alias(true, Some("signatures".to_string())),
@@ -97,7 +97,7 @@ fn per_file_lock_allows_parallel_different_paths() {
     assert!(max_concurrent.load(Ordering::SeqCst) > 1);
 }
 
-// -- Regression: GitHub Issue #253 + #259 --
+// -- Regression: explicit mode and line 1 --
 // Delegates to the real runtime helper so this test can never drift from
 // production behaviour.
 fn apply_start_line(
@@ -129,7 +129,7 @@ fn start_line_gt1_overrides_implicit_mode() {
 
 #[test]
 fn start_line_gt1_overrides_explicit_map_to_lines() {
-    // #811: start_line always wins — prevents full-file materialization
+    // Start_line always wins — prevents full-file materialization
     // on large files. If only the map is needed, omit start_line.
     let mut mode = "map".to_string();
     let mut fresh = false;
@@ -140,7 +140,7 @@ fn start_line_gt1_overrides_explicit_map_to_lines() {
 
 #[test]
 fn start_line_gt1_overrides_explicit_signatures_to_lines() {
-    // #811: start_line always wins
+    // Start_line always wins
     let mut mode = "signatures".to_string();
     let mut fresh = false;
     apply_start_line(&mut mode, &mut fresh, true, Some(100));
@@ -148,7 +148,7 @@ fn start_line_gt1_overrides_explicit_signatures_to_lines() {
     assert!(fresh);
 }
 
-/// #811: anchored + start_line + limit → anchored:N-M (preserves
+/// Anchored + start_line + limit → anchored:N-M (preserves
 /// anchor hashes for sobre_patch, streams only the window off disk).
 #[test]
 fn anchored_with_start_line_and_limit_becomes_windowed_anchored() {
@@ -190,7 +190,7 @@ fn start_line_1_with_explicit_mode_preserves_it() {
     assert!(!fresh);
 }
 
-// -- Regression: GitHub Issue #432 — `offset`/`limit` aliases --
+// -- Regression: `offset`/`limit` aliases --
 
 #[test]
 fn offset_is_alias_for_start_line() {
@@ -247,7 +247,7 @@ fn lines_mode_bounds_are_inclusive() {
 
 #[test]
 fn offset_limit_overrides_explicit_map_to_lines() {
-    // #811: line window always wins to prevent full-file materialization
+    // Line window always wins to prevent full-file materialization
     let mut mode = "map".to_string();
     let mut fresh = false;
     super::apply_line_window(&mut mode, &mut fresh, true, None, Some(40), Some(20));
@@ -255,7 +255,7 @@ fn offset_limit_overrides_explicit_map_to_lines() {
     assert!(fresh);
 }
 
-/// Schema/handler consistency (GitHub #432): the handler reads
+/// Schema/handler consistency: the handler reads
 /// start_line/offset/limit, so the advertised schema must document them —
 /// otherwise agents (and the generated docs/manifest) can't discover the
 /// aliases and the divergence that caused this bug returns.

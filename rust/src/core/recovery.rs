@@ -8,7 +8,7 @@
 //! phrasing so every compressed `sobre_read` view renders identical, byte-stable
 //! wording.
 //!
-//! Determinism (#498): the footer is a pure function of its input path, never
+//! Determinism: the footer is a pure function of its input path, never
 //! of per-call session state. It is therefore "deduped by
 //! mode" — only lossy/compressed views carry it; escalating to `full`/`raw` (the
 //! recovery action itself) drops it — rather than by fragile session state that
@@ -42,7 +42,7 @@ mod tests {
         );
     }
 
-    /// Determinism (#498): the footer/clause are pure functions of their inputs,
+    /// Determinism: the footer/clause are pure functions of their inputs,
     /// so repeated calls are byte-identical (provider prompt caching depends on it).
     #[test]
     fn footer_is_byte_stable() {

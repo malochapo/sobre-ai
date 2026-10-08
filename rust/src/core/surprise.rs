@@ -90,7 +90,7 @@ pub fn should_keep_line(trimmed: &str, entropy_threshold: f64) -> bool {
 }
 
 // ---------------------------------------------------------------------------
-// Semantic redundancy scoring (#544, EFF-7)
+// Semantic redundancy scoring
 // ---------------------------------------------------------------------------
 //
 // The Zipf prior measures *lexical* rarity: a rare boilerplate identifier
@@ -159,7 +159,7 @@ fn cosine(a: &[f32], b: &[f32]) -> f64 {
     dot / (na.sqrt() * nb.sqrt())
 }
 
-/// Semantic-redundancy keep decision (#544): the Zipf path nominates keep
+/// Semantic-redundancy keep decision: the Zipf path nominates keep
 /// candidates exactly as `should_keep_line`; candidates that embed nearly
 /// identically to an already-kept line are dropped (MMR). `embed` returning
 /// `None` (engine not loaded / feature off) preserves today's behavior

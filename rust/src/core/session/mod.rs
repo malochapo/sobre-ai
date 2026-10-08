@@ -19,10 +19,10 @@ mod tests {
 
     #[test]
     fn load_latest_for_broad_root_returns_none_without_scanning() {
-        // The daemon boots with cwd "/" and the dispatcher passes that as the
+        // The MCP server boots with cwd "/" and the dispatcher passes that as the
         // project root. Broad roots must bail out before walking the session
-        // store — stat-ing persisted roots under ~/Documents from the launchd
-        // daemon pops the macOS TCC prompt (#356).
+        // store — stat-ing persisted roots under ~/Documents from a
+        // launchd-owned process pops the macOS TCC prompt.
         assert!(SessionState::load_latest_for_project_root("/").is_none());
         if let Some(home) = dirs::home_dir() {
             let home = home.to_string_lossy().to_string();
@@ -40,7 +40,7 @@ mod tests {
         let _env_lock = crate::core::data_dir::test_env_lock();
         // A session whose project_root is a plausible real project must not be
         // marker-probed at load time when the process is TCC-standalone: the
-        // probe itself would trip the privacy prompt (#356). The repair
+        // probe itself would trip the privacy prompt. The repair
         // heuristic only ever fires for agent/temp roots.
         crate::test_env::set_var("SOBRE_TCC_STANDALONE", "1");
         let mut session = SessionState::new();
@@ -57,7 +57,7 @@ mod tests {
         crate::test_env::remove_var("SOBRE_TCC_STANDALONE");
     }
 
-    /// #707: an explicit `cwd` param must persist as the live
+    /// An explicit `cwd` param must persist as the live
     /// shell cwd — worktree switches arrive as `cwd` params, not `cd`
     /// commands, and the divergence check in path resolution reads
     /// `shell_cwd`. Relative or nonexistent paths are ignored.
@@ -85,8 +85,8 @@ mod tests {
         let _ = std::fs::remove_dir_all(&tmp);
     }
 
-    /// #717: the 5-change batch alone left slowly-ticking sessions invisible
-    /// to the dashboard. First change on a fresh in-memory session flushes
+    /// The 5-change batch alone kept a slowly-ticking session off disk for
+    /// a long time. First change on a fresh in-memory session flushes
     /// immediately; afterwards the time-based trigger fires once a change is
     /// older than SESSION_FLUSH_INTERVAL, and the batch threshold still wins.
     #[test]

@@ -1,5 +1,5 @@
 //! Resident, bounded file-content cache shared across the search-index build and
-//! `sobre_search` (issue #148).
+//! `sobre_search`.
 //!
 //! Before this module the trigram [`search_index`](crate::core::search_index)
 //! build read *every* file in the corpus to extract trigrams and then threw the

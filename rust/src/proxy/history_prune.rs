@@ -35,7 +35,7 @@ pub(crate) fn prune_boundary(len: usize) -> usize {
 /// `cache_control` breakpoint. On cache-metered rails (Anthropic) this content
 /// must never be rewritten, or the prompt cache is invalidated from the first
 /// changed message — re-billing cheap reads (0.1x) as writes (1.25x) every time
-/// the prune boundary advances a stride (#448). Returns `0` when no
+/// the prune boundary advances a stride. Returns `0` when no
 /// `cache_control` marker is present (e.g. every OpenAI request), so pruning is
 /// unchanged there.
 pub(crate) fn cached_prefix_len(messages: &[Value]) -> usize {
@@ -91,7 +91,7 @@ pub(crate) fn prune_history(
 /// Like [`prune_history`] but only rewrites `messages[prune_start..prune_end]`.
 /// `prune_start` skips the client's provider-cached prefix (see
 /// [`cached_prefix_len`]) so cache-aware pruning never invalidates an
-/// already-cached prompt prefix on metered rails (#448). With `prune_start = 0`
+/// already-cached prompt prefix on metered rails. With `prune_start = 0`
 /// this is identical to the historical `prune_history` behaviour.
 pub(crate) fn prune_history_range(
     messages: &mut [Value],
@@ -197,11 +197,11 @@ pub(crate) fn prune_output_text(text: &str, kind: ToolResultKind) -> Option<Stri
 /// For a *protected* (file/source) result, emit an honest, recoverable stub. For
 /// everything else, head/tail summarize so diagnostics stay readable.
 ///
-/// CCR (#482): both paths persist the verbatim original to the content-addressed
+/// CCR: both paths persist the verbatim original to the content-addressed
 /// tee store and embed a retrieval handle, so the model can recover the exact
 /// *historical* bytes instead of re-reading a file that may have changed (or
 /// vanished) since. The handle is a pure function of the content hash, so the
-/// stub stays byte-identical across turns — cache-safe by construction (#448).
+/// stub stays byte-identical across turns — cache-safe by construction.
 /// `None` when the original cannot be kept: nothing is pruned then.
 fn summarize_or_stub(text: &str, kind: ToolResultKind) -> Option<String> {
     if should_protect(kind, text) {
@@ -431,7 +431,7 @@ mod tests {
         );
     }
 
-    /// CCR (#482): a pruned file read must (a) be honest that the bytes are a
+    /// CCR: a pruned file read must (a) be honest that the bytes are a
     /// historical version, (b) carry a recovery handle, and (c) let the verbatim
     /// original be read back from that handle — so the model recovers the exact
     /// historical content instead of a stale re-read.
@@ -580,7 +580,7 @@ mod tests {
         assert_eq!(cached_prefix_len(&msgs), 0);
     }
 
-    /// Inverted form of the #448 reporter's churn test: with a client
+    /// Inverted form of the reporter's churn test: with a client
     /// `cache_control` breakpoint on the latest `tool_result` (the whole history
     /// is cached), advancing the prune boundary across a `STRIDE` multiple must
     /// NOT rewrite any cached message — otherwise Anthropic's prompt cache is
@@ -610,7 +610,7 @@ mod tests {
         assert_eq!(stubs(20), 0, "still zero deep into the session");
 
         // Contrast: the unguarded boundary (`prune_start = 0`) DOES stub the
-        // cached prefix at the same length — the exact churn #448 fixes.
+        // cached prefix at the same length — the exact churn this prevents.
         let mut unguarded = anthropic_turns(12, true);
         let boundary = prune_boundary(unguarded.len());
         prune_history(&mut unguarded, boundary, &no_names());

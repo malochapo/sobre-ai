@@ -226,7 +226,7 @@ fn claude_config_dir_fallback_writes_dot_claude_json() {
     );
     assert!(content.contains("sobre"), "must contain sobre entry");
 
-    // `doctor` is a health gate (#1046): it exits non-zero whenever *any* check
+    // `doctor` is a health gate: it exits non-zero whenever *any* check
     // needs attention, and this sandbox legitimately fails several unrelated
     // ones (no sobre on PATH, no shell profile, a fake `claude` that exits 1)
     // — the same reason the bootstrap smoke test tolerates a non-zero code. The

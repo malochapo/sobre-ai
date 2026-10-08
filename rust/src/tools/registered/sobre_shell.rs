@@ -140,7 +140,7 @@ impl McpTool for SobreShellTool {
                     );
                     let output = redact_shell_output_secrets(&raw_output);
                     // Keep failure reporting consistent on this degraded path:
-                    // same [exit:N] footer and the same structured outcome (#389).
+                    // same [exit:N] footer and the same structured outcome.
                     let exit_suffix = match exit_code {
                         0 => String::new(),
                         124 => "\n[exit:124 — command timed out]".to_string(),
@@ -152,7 +152,7 @@ impl McpTool for SobreShellTool {
                         ..ToolOutput::simple(format!("{output}{exit_suffix}"))
                     });
                 };
-                // #707: an explicit `cwd` param is the client
+                // An explicit `cwd` param is the client
                 // telling us where it now works (worktree switches arrive
                 // this way, not as `cd` commands) — persist it so path
                 // resolution's divergence check tracks the live checkout.
@@ -210,9 +210,9 @@ impl McpTool for SobreShellTool {
 
             // Foreground runs still detach onto a pollable job if they outlast
             // the soft cap, so the MCP host's ~120s abort never strands the
-            // result behind an unresolvable task id (#1106).
+            // result behind an unresolvable task id.
             //
-            // #1173: `timeout_ms` is the *job's* lifetime, never the foreground
+            // `timeout_ms` is the *job's* lifetime, never the foreground
             // wait, so it must not raise this cap. Raising it bought no extra
             // inline wait — the host aborts at ~120s regardless — it only
             // suppressed our own detach, producing exactly the unresolvable
@@ -250,7 +250,7 @@ impl McpTool for SobreShellTool {
                         return Ok(ToolOutput {
                             shell_outcome: Some(ShellOutcome::Exit(0)),
                             content_blocks: None,
-                            // #1173: a detach is not a failure — the command is
+                            // A detach is not a failure — the command is
                             // alive and its output is recoverable, so say so
                             // rather than leaving the caller to infer a hang.
                             ..ToolOutput::simple(format!(
@@ -261,7 +261,7 @@ impl McpTool for SobreShellTool {
                     }
                 };
 
-            // Structured diagnostics (#499) — same hook as the CLI path.
+            // Structured diagnostics — same hook as the CLI path.
             crate::core::diagnostics_store::record_from_shell(&cmd_clone, &raw_output, exit_code);
 
             let output = redact_shell_output_secrets(&raw_output);
@@ -313,7 +313,7 @@ impl McpTool for SobreShellTool {
             };
 
             let result_out = crate::core::redaction::redact_text(&result_out);
-            // #815: exit 124 = timeout signal (from timeout(1) / sobre
+            // Exit 124 = timeout signal (from timeout(1) / sobre
             // shell timeout). Make it explicit so agents don't confuse a
             // timed-out command with a successful empty result.
             let exit_suffix = match exit_code {
@@ -343,11 +343,11 @@ impl McpTool for SobreShellTool {
 }
 
 /// A timeout notice is framework metadata, not recoverable command output. Do
-/// not archive it as a tee artifact: expanding it cannot recover any bytes (#995).
+/// not archive it as a tee artifact: expanding it cannot recover any bytes.
 ///
 /// Keyed on what precedes the marker rather than on the notice's exact shape,
 /// so enriching it (the idle-timeout wording, the still-running segment list)
-/// cannot silently turn every timeout back into an archived artifact (#1173).
+/// cannot silently turn every timeout back into an archived artifact.
 fn is_timeout_notice_only(output: &str, exit_code: i32) -> bool {
     exit_code == 124
         && crate::server::execute::output_before_timeout_marker(output).is_some_and(str::is_empty)
@@ -447,7 +447,7 @@ fn should_auto_background(command: &str, timeout_ms: Option<u64>) -> bool {
 /// Foreground wait budget before a still-running command is detached into a
 /// pollable background job. Kept below the MCP host's ~120s tool-call abort so
 /// the caller always receives a real `shell_*` job id instead of an
-/// unresolvable task id (#1106).
+/// unresolvable task id.
 fn foreground_soft_cap_ms() -> u64 {
     110_000
 }
@@ -492,7 +492,7 @@ mod tests {
             "ERROR: command timed out after 200ms",
             1
         ));
-        // #1173: the notice now carries the idle wording and the still-running
+        // The notice now carries the idle wording and the still-running
         // segment list. It is still pure metadata — nothing to recover — so it
         // must not become a tee artifact just because it grew.
         assert!(is_timeout_notice_only(

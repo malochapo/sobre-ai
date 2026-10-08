@@ -64,7 +64,7 @@ pub fn information_density(original: &str, compressed: &str, ext: &str) -> f64 {
     (semantic_token_estimate as f64 / output_tokens as f64).min(1.0)
 }
 
-/// #940: density-specific guard that does NOT penalise line reduction.
+/// Density-specific guard that does NOT penalise line reduction.
 ///
 /// The standard `score()` composite weights `line_score` at 20% and the
 /// adaptive threshold rises as `line_score` drops — so a density target of

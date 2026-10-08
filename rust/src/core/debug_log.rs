@@ -1,4 +1,4 @@
-//! Opt-in human-readable debug log of intercepted tool activity (#520).
+//! Opt-in human-readable debug log of intercepted tool activity.
 //! Off by default. Enable with the `debug_log = true` config key. Records
 //! two kinds of events to
 //! `<state_dir>/logs/debug.log`:
@@ -8,7 +8,7 @@
 //!    savings and wall time.
 //! 2. **Hook routing decisions** — for every native tool call sobre *can*
 //!    intercept (shell / Read / Grep), whether it was routed to `sobre` or
-//!    left to the editor's **native** tool, and *why*. This is #520's core ask:
+//!    left to the editor's **native** tool, and *why*. This is the core ask:
 //!    explain why one call used sobre and the next fell back to the native
 //!    Read/Grep tool.
 //!
@@ -23,7 +23,7 @@ use std::time::Duration;
 use serde_json::{Map, Value};
 
 /// Rotate once the log crosses this size, keeping a single `.1` backup so the
-/// file cannot grow without bound on a long-lived daemon.
+/// file cannot grow without bound on a long-lived MCP server.
 const MAX_LOG_BYTES: u64 = 5 * 1024 * 1024;
 
 /// Clamp any single field rendered into a log line so one huge argument or

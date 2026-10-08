@@ -33,7 +33,7 @@ pub(super) struct Outcome {
 }
 
 /// Accumulates doctor checks so the rendered ✓/✗ list and the summary tally can
-/// never diverge (#433): every scored check is counted exactly once via
+/// never diverge: every scored check is counted exactly once via
 /// [`Scoreboard::check`]; only explicitly-optional advisories (LSP, "not
 /// configured" notes) use [`Scoreboard::info`], which renders without counting.
 /// The old hand-maintained `passed`/`effective_total` pair drifted whenever a
@@ -104,7 +104,7 @@ pub fn run(json: bool) -> u32 {
     board.note(&format!("  {}", summary_line()));
     board.note(&format!("  {}\n", debug_log_line()));
 
-    // 1) Binary on PATH
+    // Binary on PATH
     let path_bin = resolve_sobre_binary();
     let also_in_path_dirs = path_in_path_env();
     let bin_ok = path_bin.is_some() || also_in_path_dirs;
@@ -122,7 +122,7 @@ pub fn run(json: bool) -> u32 {
         line: bin_line,
     });
 
-    // 2) Version from PATH binary
+    // Version from PATH binary
     let ver = if bin_ok {
         sobre_version_from_path()
     } else {
@@ -133,7 +133,7 @@ pub fn run(json: bool) -> u32 {
     };
     board.check(&ver);
 
-    // 3) data directory (respects SOBRE_DATA_DIR)
+    // Data directory (respects SOBRE_DATA_DIR)
     let lean_dir = crate::core::data_dir::sobre_data_dir().ok();
     let dir_outcome = match &lean_dir {
         Some(p) if p.is_dir() => Outcome {
@@ -157,7 +157,7 @@ pub fn run(json: bool) -> u32 {
     };
     board.check(&dir_outcome);
 
-    // 4) usage ledger + size (missing is OK: it appears with the first
+    // Usage ledger + size (missing is OK: it appears with the first
     // compression)
     let usage_path = lean_dir.as_ref().map(|d| d.join("usage.jsonl"));
     let shown = usage_path
@@ -189,9 +189,9 @@ pub fn run(json: bool) -> u32 {
     };
     board.check(&usage_outcome);
 
-    // 5) config.toml (missing is OK). It lives in the CONFIG dir
+    // config.toml (missing is OK). It lives in the CONFIG dir
     // ($XDG_CONFIG_HOME/sobre), resolved through Config::path() to match
-    // the loader's logic (#435).
+    // the loader's logic.
     let config_path = crate::core::config::Config::path();
     let config_outcome = match &config_path {
         Some(p) => match std::fs::metadata(p) {
@@ -224,41 +224,37 @@ pub fn run(json: bool) -> u32 {
     };
     board.check(&config_outcome);
 
-    // 5b) Silent config parse error trap (#341)
+    // Silent config parse error trap
     let parse_outcome = config_parse_outcome();
     board.check(&parse_outcome);
 
-    // 5b2) Search roots that never resolve (GH #392)
+    // Search roots that never resolve
     let search_roots = search_roots_outcome();
     board.check(&search_roots);
 
-    // 5b3c) Managed addon binaries (GH #725): receipt path + sha256 pin +
-    // revocation, so binhash-gate refusals surface here instead of at first
-    // tool call. Silent when nothing is managed.
-
-    // 5b3d) Managed ONNX Runtime (GH #732): present + readable on
+    // Managed ONNX Runtime: present + readable on
     // embedding-enabled builds. Silent when not provisioned (opt-in).
     if let Some(managed_ort) = managed_ort_outcome() {
         board.check(&managed_ort);
     }
 
-    // 6) Proxy upstreams
+    // Proxy upstreams
     let proxy_outcome = proxy_upstream_outcome();
     board.check(&proxy_outcome);
 
-    // 8) MCP
+    // MCP
     let mcp = mcp_config_outcome();
     board.check(&mcp);
     let user_scope_mcp_locations = dirs::home_dir()
         .map(|home| sobre_mcp_location_names(&home))
         .unwrap_or_default();
 
-    // 7b) WSL2 + VS Code: surface the upstream first-call invoke race (GH #669)
+    // WSL2 + VS Code: surface the upstream first-call invoke race
     if let Some(wsl_hint) = wsl_vscode_mcp_outcome() {
         board.check(&wsl_hint);
     }
 
-    // 8) Workspace-scope MCP (optional; only when a project-local config exists)
+    // Workspace-scope MCP (optional; only when a project-local config exists)
     let workspace_scope = workspace_scope::workspace_scope_outcome(&user_scope_mcp_locations);
     if let Some(ref ws) = workspace_scope {
         board.check(ws);
@@ -282,42 +278,42 @@ pub fn run(json: bool) -> u32 {
         }
     }
 
-    // 9) Session state (project_root + shell_cwd)
+    // Session state (project_root + shell_cwd)
     let session_outcome = session_state_outcome();
     board.check(&session_outcome);
 
-    // 14) Claude Code instruction truncation guard
+    // Claude Code instruction truncation guard
     let claude_truncation = claude_truncation_outcome();
     if let Some(ref ct) = claude_truncation {
         board.check(ct);
     }
 
-    // 15) BM25 cache health
+    // BM25 cache health
     let bm25_health = bm25_cache_health_outcome();
     board.check(&bm25_health);
 
-    // 15a) Semantic index runtime status (state/timing/persistence) for the
-    // active project — surfaces a stuck "warming" index (issue #249).
+    // Semantic index runtime status (state/timing/persistence) for the
+    // active project — surfaces a stuck "warming" index.
     let semantic_index = semantic_index_outcome();
     if let Some(ref check) = semantic_index {
         board.check(check);
     }
 
-    // 19) Capacity warnings (memory stores near limits)
+    // Capacity warnings (memory stores near limits)
     let cap_warnings = capacity_warnings();
     for cw in &cap_warnings {
         board.check(cw);
     }
 
-    // 19b) Orphaned knowledge stores (deleted projects — reclaimable bloat, #615)
+    // Orphaned knowledge stores (deleted projects — reclaimable bloat)
     let orphan_outcome = orphaned_knowledge_outcome();
     board.check(&orphan_outcome);
 
-    // 20) Proxy health
+    // Proxy health
     let proxy_health = proxy_health_outcome();
     board.check(&proxy_health);
 
-    // 20a) Proxy upstream drift (#449): running proxy serves a different upstream
+    // Proxy upstream drift: running proxy serves a different upstream
     // than config.toml resolves to (env override masking config). Only surfaces
     // when the proxy is up and actually drifting.
     let upstream_drift = proxy_upstream_drift_outcome();
@@ -325,13 +321,13 @@ pub fn run(json: bool) -> u32 {
         board.check(check);
     }
 
-    // 20) Stale proxy env (ANTHROPIC_BASE_URL pointing to local proxy while proxy is not enabled)
+    // Stale proxy env (ANTHROPIC_BASE_URL pointing to local proxy while proxy is not enabled)
     let stale_env = stale_proxy_env_outcome();
     if let Some(ref check) = stale_env {
         board.check(check);
     }
 
-    // 21) Claude Pro/Max subscription routed through the proxy without an API key
+    // Claude Pro/Max subscription routed through the proxy without an API key
     let subscription_conflict = proxy_subscription_conflict_outcome();
     if let Some(ref check) = subscription_conflict {
         board.check(check);
@@ -348,7 +344,7 @@ pub fn run(json: bool) -> u32 {
 
     // Tool-schema footprint (informational, not scored). There is one surface —
     // the registry — so report its size rather than a tier name. This used to
-    // branch on a pinned tier and print it; #415 was already a bug where it
+    // branch on a pinned tier and print it; that was already a bug once, where it
     // claimed "power" right after the wizard chose lean.
     let advertised = crate::server::registry::build_registry().tool_defs().len();
     board.note(&format!(
@@ -357,7 +353,7 @@ pub fn run(json: bool) -> u32 {
     ));
 
     // The board counted exactly what it rendered — the displayed ✓/✗ list and
-    // this tally can no longer drift apart (#433).
+    // this tally can no longer drift apart.
     let passed = board.passed;
     let total = board.total;
     let needs_attention = total.saturating_sub(passed);

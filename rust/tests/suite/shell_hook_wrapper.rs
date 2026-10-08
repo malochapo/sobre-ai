@@ -1,4 +1,4 @@
-//! End-to-end regression for GitHub #595.
+//! End-to-end regression.
 //!
 //! Claude Code wraps every Bash tool call in its own scaffolding before the
 //! sobre shell hook forwards it to `sobre -c`. The real shape (from Claude
@@ -32,10 +32,10 @@ fn run_dash_c(command: &str, home: &Path) -> Output {
 // Claude Code's cwd-snapshot wrapper is POSIX-bash: `pwd -P >| <path>`, `source`,
 // `/dev/null`. On Windows `sobre` selects PowerShell/cmd unless it is running
 // inside Git Bash, and the Windows snapshot path (backslashes) breaks when
-// embedded in a bash redirect target — so the snapshot-file half of #595 is
+// embedded in a bash redirect target — so the snapshot-file half of the bug is
 // exercised on POSIX only. The security boundary (a bare model-chosen `eval`
 // stays hard-blocked) is verified on every platform by
-// `model_chosen_eval_without_cwd_marker_still_blocks` below (#1057).
+// `model_chosen_eval_without_cwd_marker_still_blocks` below.
 #[test]
 #[cfg_attr(
     windows,
@@ -56,7 +56,7 @@ fn claude_wrapper_runs_inner_command_and_preserves_cwd_snapshot() {
     let stdout = String::from_utf8_lossy(&out.stdout);
     let stderr = String::from_utf8_lossy(&out.stderr);
 
-    // The whole point of #595: the wrapper must NOT be hard-blocked any more.
+    // The whole point: the wrapper must NOT be hard-blocked any more.
     assert_ne!(
         out.status.code(),
         Some(126),
@@ -83,7 +83,7 @@ fn claude_wrapper_runs_inner_command_and_preserves_cwd_snapshot() {
 
 // POSIX-bash only, for the same reason as the test above: the production
 // `bashProvider.ts` shape relies on `source`/`pwd -P >|` and a POSIX shell +
-// path semantics that Windows does not provide here (#1057).
+// path semantics that Windows does not provide here.
 #[test]
 #[cfg_attr(
     windows,
@@ -129,7 +129,7 @@ fn real_bashprovider_wrapper_with_source_prefix_runs() {
     );
 }
 
-/// GitHub #745: zsh sandbox wraps with `setopt … && eval '<cmd>' … && pwd`
+/// zsh sandbox wraps with `setopt … && eval '<cmd>' … && pwd`
 /// (stdout cwd, no file redirect). Must run the inner command, not exit 126.
 #[test]
 #[cfg_attr(

@@ -59,7 +59,7 @@ pub(crate) fn cmd_matches_expected(cmd: &str, portable: &str) -> bool {
     if cmd == "sobre" {
         return true;
     }
-    // #708: a configured verbatim hook binary ($HOME/.local/bin/sobre for
+    // A configured verbatim hook binary ($HOME/.local/bin/sobre for
     // settings synced across machines) is the expected command by definition —
     // never flag it stale, or doctor --fix would rewrite it back to the
     // machine-absolute path and restart the sync ping-pong.
@@ -115,7 +115,7 @@ pub(crate) fn stale_hook_binary(content: &str, binary: &str) -> Option<String> {
     refs.into_iter().next()
 }
 
-/// Cascade hook health for Windsurf (#593). `sobre init` writes observe +
+/// Cascade hook health for Windsurf. `sobre init` writes observe +
 /// pre_mcp_tool_use hooks into `~/.codeium/windsurf/hooks.json`; the `hook
 /// observe` command is the stable marker. A missing file is genuine drift, fixed
 /// by re-running setup.
@@ -135,7 +135,7 @@ pub(crate) fn check_windsurf_hooks(home: &std::path::Path) -> NamedCheck {
 
 /// Skill is intentionally absent for agents that consume dedicated markdown rules
 /// (Windsurf): no `SKILL.md` is installed, by design. Stating it explicitly stops
-/// users from treating the absence as a fault (#593).
+/// users from treating the absence as a fault.
 pub(crate) fn skill_not_applicable_note() -> NamedCheck {
     NamedCheck {
         name: "Skill".to_string(),
@@ -145,7 +145,7 @@ pub(crate) fn skill_not_applicable_note() -> NamedCheck {
 }
 
 /// Most recent `sobre_*` MCP tool call from the usage ledger ("12m ago" /
-/// "never"). #593: the clearest signal of whether the agent actually drives
+/// "never"). The clearest signal of whether the agent actually drives
 /// sobre through MCP — an empty `watch` plus "never" means the agent is using
 /// native tools instead of `sobre_*`, not that sobre is broken. Never fails
 /// (informational), and reads the live ledger so it is naturally dynamic.

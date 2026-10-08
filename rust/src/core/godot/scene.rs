@@ -6,7 +6,7 @@
 //! the graph index can materialise Scene→Script (and Scene→Scene) edges through
 //! the shared GDScript resolver (`res://` paths resolve identically to a
 //! `preload`). Binary assets (textures, audio, fonts) are intentionally skipped:
-//! they are not navigable source nodes. (#316)
+//! they are not navigable source nodes.
 
 use crate::core::deep_queries::{ImportInfo, ImportKind};
 

@@ -240,10 +240,10 @@ pub(super) fn find_symbols(
 /// its `file_path` (definitions, call-sites and `type_ref` targets all stamp
 /// the definer), so this maps a bare type/class name to its source file(s).
 ///
-/// Powers the `sobre_graph action=impact` symbol-name fallback (GH #398): a user who
+/// Powers the `sobre_graph action=impact` symbol-name fallback: a user who
 /// asks for the impact of a *class* (`sobre_graph impact ArcPoint`) instead of
 /// a file path is resolved to the file(s) that define it. Results are sorted
-/// for output determinism (#498).
+/// for output determinism.
 pub(super) fn resolve_symbol_def_files(
     conn: &Connection,
     name: &str,
@@ -298,7 +298,7 @@ pub(super) fn symbol_count(conn: &Connection) -> anyhow::Result<usize> {
 
 /// Number of `file` nodes — accurate on both builder paths (the `file_catalog`
 /// table is only populated by the minimal/non-embeddings builder, so it cannot
-/// back a count). Used by the `sobre_graph action=impact` diagnostic (GH #398).
+/// back a count). Used by the `sobre_graph action=impact` diagnostic.
 pub(super) fn file_count(conn: &Connection) -> anyhow::Result<usize> {
     let c: i64 = conn.query_row(
         "SELECT COUNT(*) FROM nodes WHERE kind = 'file'",
@@ -314,7 +314,7 @@ pub(super) fn all_edges_flat(
     // The `edges` table carries no weight column — impact scoring derives the
     // weight from the edge kind (see `queries::edge_weight`). Selecting a
     // non-existent `e.weight` made this query error out, so PG `edges()` always
-    // returned empty (#682.3). Compute the weight from the kind instead.
+    // returned empty. Compute the weight from the kind instead.
     let mut stmt = conn.prepare(
         "SELECT p1.path, p2.path, e.kind
          FROM edges e

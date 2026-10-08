@@ -194,7 +194,7 @@ impl ProjectKnowledge {
             return String::new();
         }
 
-        // Theta-gamma chunking (#543): salience-ordered top-K facts grouped
+        // Theta-gamma chunking: salience-ordered top-K facts grouped
         // into 4±1-sized thematic chunks; shared headers amortize category
         // prefixes (token savings) and prime related facts (recall).
         let mut top_facts: Vec<&KnowledgeFact> = current_facts;

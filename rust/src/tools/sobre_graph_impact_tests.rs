@@ -43,7 +43,7 @@ fn graph_target_key_normalizes_windows_styles() {
     assert_eq!(target, expected);
 }
 
-/// End-to-end regression for GH #398: C# files in the same namespace use
+/// End-to-end regression: C# files in the same namespace use
 /// each other's types **without any `using` directive**, and dependency
 /// injection means the type is often never `new`-ed by its consumer. With
 /// import- and call-edges only, the consumed class is a false-negative
@@ -121,7 +121,7 @@ fn csharp_same_namespace_type_use_is_not_a_leaf() {
     );
 }
 
-/// GH #398 bug class (Go): files in the same package (== same directory) use
+/// Bug class (Go): files in the same package (== same directory) use
 /// each other's types with **no import at all**, so import edges leave the
 /// consumed type a false-negative leaf — and the coarse `package` edge is
 /// not even a structural impact edge. The directory-scoped `type_ref` edge
@@ -179,7 +179,7 @@ fn go_same_package_type_use_is_not_a_leaf() {
     );
 }
 
-/// GH #398 bug class (Kotlin): same-*package* types need no import, and the
+/// Bug class (Kotlin): same-*package* types need no import, and the
 /// package is independent of the directory. A consumer in a different
 /// directory but the same package must land in the blast radius (proving
 /// package-, not directory-based resolution), while a different-package file
@@ -298,7 +298,7 @@ fn stale_engine_graph_is_rebuilt_before_query() {
     );
 }
 
-/// End-to-end regression for GH #398 (expression-position follow-up): a C#
+/// End-to-end regression for (expression-position follow-up): a C#
 /// file that consumes types only through static calls, enum values or
 /// attributes — no `using`, no `new`, no field/param of that type — must
 /// still land in the blast radius of the defining file.
@@ -389,7 +389,7 @@ fn csharp_expression_position_type_use_is_not_a_leaf() {
     );
 }
 
-/// GH #398 follow-up (extension methods, #642): an extension method
+/// Follow-up (extension methods): an extension method
 /// `value.WordCount()` makes the consuming file depend on the file that
 /// *defines* the extension — the receiver is an instance and the definer's
 /// type name is never written, so neither import- nor type-usage edges
@@ -449,7 +449,7 @@ fn csharp_extension_method_host_is_in_blast_radius() {
     );
 }
 
-/// GH #398 follow-up (namespace-aware resolution, #641): two project types
+/// Follow-up (namespace-aware resolution): two project types
 /// share a name in different namespaces. A consumer that sees only one of
 /// them (its own namespace) must link to *that* definer and not the
 /// homonym in an unrelated namespace. The pre-fix resolver linked both.
@@ -509,7 +509,7 @@ fn csharp_type_use_namespace_disambiguation() {
     );
 }
 
-/// GH #398 follow-up (cap bypass, #641): a type name defined in more files
+/// Follow-up (cap bypass): a type name defined in more files
 /// than the failsafe fallback cap is normally dropped as too generic. But
 /// when exactly one definer sits in the consumer's visible namespace, that
 /// unambiguous match must still be linked — the namespace evidence beats
@@ -575,7 +575,7 @@ fn csharp_type_use_namespace_cap_bypass() {
     );
 }
 
-/// GH #398 (real-world cross-namespace DI): every existing e2e test keeps
+/// (real-world cross-namespace DI): every existing e2e test keeps
 /// consumer and definer in the *same* namespace. Real C# services live in
 /// their own namespace and reach a model/contract through a `using`
 /// directive, injected by interface (never `new`-ed). This exercises the
@@ -644,7 +644,7 @@ fn csharp_cross_namespace_using_di_blast_radius() {
     );
 }
 
-/// GH #398 (root cause of the persistent reports): `sobre_graph action=impact` is
+/// (root cause of the persistent reports): `sobre_graph action=impact` is
 /// asked for the impact of a *class name* — `sobre_graph impact ArcPoint` —
 /// not a file path. Before the symbol-name fallback the bare name matched no
 /// file node, so impact returned a misleading "leaf node / no impact". The
@@ -713,7 +713,7 @@ fn csharp_analyze_by_class_name_resolves_to_file() {
     );
 }
 
-/// The decisive real-world #398 case: the class name does **not** match its
+/// The decisive real-world case: the class name does **not** match its
 /// file name (`ArcPoint` lives in `Shapes.cs`), which is exactly why a
 /// user/LLM types `sobre_graph impact ArcPoint` instead of a path — and why the old
 /// file-only lookup always missed. Both a cross-namespace `using` consumer

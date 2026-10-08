@@ -1,4 +1,4 @@
-//! Theta-gamma chunking for wakeup facts (#543, EFF-6).
+//! Theta-gamma chunking for wakeup facts.
 //!
 //! Working memory holds ~4±1 items as *chunks* nested in theta cycles, not as
 //! a flat list (Lisman/Idiart). The LLM equivalent: semantically related

@@ -14,7 +14,7 @@ pub fn cmd_init(args: &[String]) {
     }
 
     // An unknown flag must never fall through to a run that rewrites agent
-    // configs (#476).
+    // configs.
     const KNOWN: &[&str] = &["--agent", "--check", "--dry-run", "--repair", "--json"];
     if let Some(unknown) = args
         .iter()

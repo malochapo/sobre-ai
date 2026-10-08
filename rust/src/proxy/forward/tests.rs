@@ -221,7 +221,7 @@ fn upstream_url_preserves_query_params() {
 
 #[test]
 fn forwards_openai_project_and_auth_headers() {
-    // #366: project-scoped OpenAI keys carry the scope via `OpenAI-Project`.
+    // Project-scoped OpenAI keys carry the scope via `OpenAI-Project`.
     // It must be forwarded upstream, otherwise the Responses API rejects the
     // call with `Missing scopes: api.responses.write`.
     for required in ["authorization", "openai-project", "openai-organization"] {

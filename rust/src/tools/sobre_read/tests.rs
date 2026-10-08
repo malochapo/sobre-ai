@@ -54,7 +54,7 @@ fn test_tdd_symbols_are_compact() {
 
 #[test]
 fn test_task_mode_filters_content() {
-    // #840: file must exceed TASK_MIN_LINES (250) to engage filtering.
+    // File must exceed TASK_MIN_LINES (250) to engage filtering.
     let content = (0..300)
         .map(|i| {
             if i % 20 == 0 {
@@ -324,7 +324,7 @@ fn map_mode_inlines_task_relevant_body() {
 
 // `lines:5,10-12` is multi-select (comma-separated lines/ranges), not a range.
 // Callers who meant a span get stray lines back — the output must say what
-// the comma did so the mistake is visible (limitations audit 2026-07-03, #7).
+// the comma did so the mistake is visible (limitations audit 2026-07-03).
 #[test]
 fn lines_comma_multiselect_gets_hint() {
     let content = (1..=30)
@@ -393,7 +393,7 @@ fn signatures_on_unsupported_language_carries_marker() {
 }
 
 // UTF-8 BOM must not leak into the first line of sobre_read output
-// (limitations doc #11).
+// (a documented limitation).
 #[test]
 fn read_file_lossy_strips_utf8_bom() {
     let p = std::env::temp_dir().join("sobre_bom_test.txt");
@@ -424,10 +424,10 @@ fn compressed_cache_key_distinguishes_task() {
 
 #[test]
 fn compressed_cache_key_distinguishes_aggressiveness() {
-    // None → byte-identical to today's keys (#714 must not shift existing cache).
+    // None → byte-identical to today's keys (must not shift existing cache).
     let base = compressed_cache_key("map", CrpMode::Off, None, None, &[]);
     assert_eq!(base, "map");
-    // Same aggressiveness → same key (determinism, #498).
+    // Same aggressiveness → same key (determinism).
     let a = compressed_cache_key("map", CrpMode::Off, None, Some(0.7), &[]);
     assert_eq!(
         a,
@@ -447,10 +447,10 @@ fn compressed_cache_key_distinguishes_aggressiveness() {
 
 #[test]
 fn compressed_cache_key_distinguishes_protect() {
-    // Empty protect → byte-identical to today's keys (#720 must not shift cache).
+    // Empty protect → byte-identical to today's keys (must not shift cache).
     let base = compressed_cache_key("entropy", CrpMode::Off, None, None, &[]);
     assert_eq!(base, "entropy");
-    // A non-empty protect list changes the key (lossy output differs, #498)…
+    // A non-empty protect list changes the key (lossy output differs)…
     let p = compressed_cache_key("entropy", CrpMode::Off, None, None, &["TODO".to_string()]);
     assert_ne!(p, base);
     // …deterministically, and independent of token order / duplicates.
@@ -490,7 +490,7 @@ fn aggressiveness_is_deterministic_and_monotonic() {
         ));
     }
     let render_at = |a: f64| -> String {
-        // Bare `density:` exercises the aggressiveness-target fallback (#714).
+        // Bare `density:` exercises the aggressiveness-target fallback.
         let (out, _) = process_mode_tuned(
             &content,
             "density:",
@@ -507,7 +507,7 @@ fn aggressiveness_is_deterministic_and_monotonic() {
         );
         out
     };
-    // Determinism (#498): same aggressiveness → byte-identical output. Guards the
+    // Determinism: same aggressiveness → byte-identical output. Guards the
     // canonical-order entropy summation fix in `token_entropy_from_ids`.
     assert_eq!(render_at(0.7), render_at(0.7));
     // Monotonic: more aggressive keeps no more tokens than less aggressive.
@@ -524,7 +524,7 @@ fn aggressive_json_uses_lossless_crush_core() {
     let _iso = crate::core::data_dir::isolated_data_dir();
 
     // A redundant array-of-objects JSON file: aggressive mode compacts it through
-    // the shared json_crush core (#936) instead of generic text pruning, which
+    // the shared json_crush core instead of generic text pruning, which
     // would mangle the structure. Constant columns + many rows so it halves.
     let items: Vec<String> = (0..40)
         .map(|i| {
@@ -562,7 +562,7 @@ fn aggressive_json_uses_lossless_crush_core() {
 #[test]
 fn map_mode_includes_signature_line_ranges() {
     // Map formatting is rendered by `process_mode`; assert it directly so the
-    // structure check stays independent of the handle-level #361 cap, which
+    // structure check stays independent of the handle-level cap, which
     // legitimately collapses this tiny fixture to raw.
     let content = "pub struct Config {}\n\npub fn build() -> Config { Config {} }\n";
     let (result, _) = process_mode(
@@ -592,7 +592,7 @@ fn map_mode_includes_signature_line_ranges() {
 
 #[test]
 fn map_mode_omits_exports_already_in_api() {
-    // #361 follow-up: the `exports:` line duplicated symbols the API section
+    // Follow-up: the `exports:` line duplicated symbols the API section
     // already lists with full signatures + line ranges. Map must not repeat
     // exports that the API already covers (pure redundant tokens). Rendered by
     // `process_mode`; assert it directly (handle would cap this tiny fixture).
@@ -622,7 +622,7 @@ fn map_mode_omits_exports_already_in_api() {
 
 #[test]
 fn tdd_map_output_carries_symbol_legend() {
-    // GL #580: symbol notation must be self-describing for vanilla agents.
+    // Symbol notation must be self-describing for vanilla agents.
     // Rendered by `process_mode`; assert it directly (handle caps this fixture).
     let content = "pub struct Config {}\n\npub fn build() -> Config { Config {} }\n";
     let (result, _) = process_mode(
@@ -689,7 +689,7 @@ fn resolve_auto_mode_returns_full_for_instruction_files() {
     assert_eq!(mode, "full", ".cursorrules must always be read in full");
 }
 
-/// Phase 1a (epic #1008): `mode=anchored` returns each source line as a
+/// `mode=anchored` returns each source line as a
 /// `N:hh|content` anchor the model can edit against via `sobre_patch`, plus a
 /// self-describing legend. End-to-end through the real read pipeline.
 #[test]
@@ -721,7 +721,7 @@ fn anchored_mode_emits_line_hash_anchors() {
     }
 }
 
-/// Anchored mode is lossless, so the #361 raw cap must never strip the anchors
+/// Anchored mode is lossless, so the raw cap must never strip the anchors
 /// on a small file (it opts out of the cap) — the agent always gets editable
 /// anchors back.
 #[test]
@@ -766,7 +766,7 @@ fn raw_mode_returns_exact_file_content() {
     assert!(!output.contains("deps"), "raw mode must not contain deps");
 }
 
-/// Regression for GH #628: the verbatim views (`full`, `raw`, `lines:N-M`) must
+/// Regression: the verbatim views (`full`, `raw`, `lines:N-M`) must
 /// reproduce every source line — including decorative separator comments
 /// (`// ————`, `// ----`) — so the content the model edits never diverges from
 /// disk. The original report saw these silently stripped, which then broke
@@ -825,7 +825,7 @@ fn verbatim_modes_preserve_decorative_comment_lines() {
     );
 }
 
-/// Determinism contract (#498): tool output must be a pure function of
+/// Determinism contract: tool output must be a pure function of
 /// (content, mode, crp_mode, task). Timestamps, counters or random hints in
 /// the body would make otherwise-identical outputs unique and defeat
 /// provider-side prompt caching.
@@ -874,7 +874,7 @@ fn process_mode_output_is_byte_stable_across_calls() {
 
 /// The reactive recovery footer (#premium-recovery): present on compressed views,
 /// leading with the MCP-free native path; absent from verbatim views; and
-/// byte-stable across calls (#498).
+/// byte-stable across calls.
 #[test]
 fn recovery_footer_is_compressed_only() {
     // `isolated_data_dir()` already holds `test_env_lock` for its lifetime; taking
@@ -906,7 +906,7 @@ fn recovery_footer_is_compressed_only() {
         sigs.contains("full source in \"/tmp/rec.rs\" (read it directly)"),
         "compressed view must surface the MCP-free recovery path: {sigs}"
     );
-    // Determinism (#498): byte-stable across calls.
+    // Determinism: byte-stable across calls.
     assert_eq!(sigs, run("signatures"), "footer must be byte-stable");
 
     // The verbatim escape hatch itself carries no footer (nothing to recover).
@@ -917,7 +917,7 @@ fn recovery_footer_is_compressed_only() {
 }
 
 // ---------------------------------------------------------------------------
-// #361 anti-inflation invariant: a `sobre_read` must never cost more tokens than
+// anti-inflation invariant: a `sobre_read` must never cost more tokens than
 // the raw file. The framing header only earns its keep on large files and
 // cached re-reads; on a cold read of a small file it is pure overhead, so the
 // guard ships bare content (break-even, never a loss). The guard now applies to
@@ -1036,7 +1036,7 @@ fn auto_read_still_compresses_large_file() {
 
 #[test]
 fn explicit_compressed_mode_capped_on_tiny_file() {
-    // #361 applies to explicit modes too: `signatures` of a tiny file costs
+    // Applies to explicit modes too: `signatures` of a tiny file costs
     // more than the file, so the file is sent instead, labelled as such.
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("lib.rs");
@@ -1082,7 +1082,7 @@ fn explicit_signatures_still_compresses_large_file() {
 
 #[test]
 fn cache_hit_stub_is_byte_stable_across_rereads() {
-    // #498 determinism: re-reading an unchanged file must yield byte-identical
+    // Determinism: re-reading an unchanged file must yield byte-identical
     // output (no read-count note, no rotating proof line) so provider prompt
     // caching applies to the repeated stub.
     let _iso = crate::core::data_dir::isolated_data_dir();
@@ -1114,7 +1114,7 @@ fn cache_hit_stub_is_byte_stable_across_rereads() {
 
 // ---------------------------------------------------------------------------
 
-// -- Regression: GitHub Issue #775 --
+// -- Regression --
 // After a full-file read is cached, a subsequent ranged read with `lines:N-M`
 // must return only the requested window — not the full file content again.
 
@@ -1234,7 +1234,7 @@ fn gh775_cold_ranged_read_returns_only_window() {
 }
 
 // ---------------------------------------------------------------------------
-// #811: the `anchored:N-M` disk-streaming short-circuit. A fresh, explicitly
+// the `anchored:N-M` disk-streaming short-circuit. A fresh, explicitly
 // windowed anchored read must never materialize the whole file — these tests
 // exercise `read_line_window`/`parse_disk_anchor_range` directly, and the
 // end-to-end case that motivated it: a file bigger than the read size limit

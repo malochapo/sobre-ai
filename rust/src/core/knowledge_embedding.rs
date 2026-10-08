@@ -133,7 +133,7 @@ impl KnowledgeEmbeddingIndex {
         // Atomic write (temp + rename) so a concurrent, lock-free reader in
         // `recall` (which loads the index without taking the per-project lock)
         // never observes a half-written file — it sees either the old or the new
-        // complete index, never trailing garbage (issue #412).
+        // complete index, never trailing garbage.
         crate::config_io::write_atomic(&path, &json)
     }
 }
@@ -600,7 +600,7 @@ mod tests {
 
     #[test]
     fn concurrent_remember_keeps_all_embeddings() {
-        // #412: the embedding-index read-modify-write must be serialized under
+        // The embedding-index read-modify-write must be serialized under
         // the per-project lock and compacted against fresh on-disk knowledge.
         // The old lock-free + stale-snapshot path let parallel writers clobber
         // each other's vectors and prune just-stored ones. This mirrors

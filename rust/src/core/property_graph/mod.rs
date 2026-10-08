@@ -87,10 +87,8 @@ impl CodeGraph {
 
         // Concurrent opens race on `PRAGMA journal_mode=WAL` and the initial DDL,
         // which SQLite reports as SQLITE_BUSY without invoking the busy handler
-        // (`busy_timeout` therefore does not apply). Deeper addon integration can
-        // have a gateway ingest thread and the main session's graph build open
-        // the same db at once (#1102); retry briefly so neither silently loses
-        // its writes. Once WAL is recorded in the file header, opens stop racing.
+        // (`busy_timeout` therefore does not apply). Two sessions can open the
+        // same db at once; retry briefly so neither silently loses its writes. Once WAL is recorded in the file header, opens stop racing.
         const MAX_ATTEMPTS: u32 = 12;
         let mut attempt = 0;
         loop {
@@ -198,7 +196,7 @@ impl CodeGraph {
 
     /// Persist a cross-source edge (code file ↔ external source URI) into the
     /// dedicated `cross_source_edges` table. Keeps the higher weight on conflict
-    /// so repeated provider ingests don't downgrade an established link (#682).
+    /// so repeated provider ingests don't downgrade an established link.
     pub fn upsert_cross_source_edge(
         &self,
         from: &str,
@@ -227,7 +225,7 @@ impl CodeGraph {
     }
 
     /// Clear only the code graph (nodes, edges, file catalog), preserving
-    /// provider `cross_source_edges`. Used by the graph_index→PG mirror (#682.1)
+    /// provider `cross_source_edges`. Used by the graph_index→PG mirror
     /// so rebuilding the code graph never drops lateral provider hints, which
     /// live in their own table and are repopulated on a separate ingest cycle.
     pub fn clear_code_graph(&self) -> anyhow::Result<()> {
@@ -262,7 +260,7 @@ impl CodeGraph {
         node::find_symbols(&self.conn, name, file_filter, kind_filter)
     }
 
-    /// Files that define a symbol named exactly `name` (GH #398 symbol-name
+    /// Files that define a symbol named exactly `name` (symbol-name
     /// `sobre_graph action=impact` fallback). Backed by `node::resolve_symbol_def_files`.
     pub fn resolve_symbol_def_files(&self, name: &str) -> anyhow::Result<Vec<String>> {
         node::resolve_symbol_def_files(&self.conn, name)
@@ -279,7 +277,7 @@ impl CodeGraph {
     }
 
     /// Every symbol node with its line span (unfiltered). Backend for the
-    /// call-graph symbol table after the `graph_index` teardown (#696).
+    /// call-graph symbol table after the `graph_index` teardown.
     pub fn all_symbols(&self) -> anyhow::Result<Vec<Node>> {
         node::all_symbols(&self.conn)
     }

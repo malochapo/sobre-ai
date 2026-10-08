@@ -9,9 +9,10 @@ const MAX_DECISIONS: usize = 10;
 const MAX_FILES: usize = 50;
 const MAX_EVIDENCE: usize = 500;
 pub(crate) const BATCH_SAVE_INTERVAL: u32 = 5;
-/// #717: max time an unsaved change may linger before it is flushed even
-/// below the batch threshold — the dashboard reads session JSONs from disk,
-/// so a slow trickle of tool calls must still become visible promptly.
+/// Max time an unsaved change may linger before it is flushed even
+/// below the batch threshold — other processes (the next session,
+/// `sobre call`) read session JSONs from disk, so a slow trickle of tool
+/// calls must still reach it promptly.
 pub(crate) const SESSION_FLUSH_INTERVAL: std::time::Duration = std::time::Duration::from_mins(1);
 
 impl Default for SessionState {
@@ -52,10 +53,9 @@ impl SessionState {
     }
 
     /// Returns `true` if enough changes have accumulated to warrant a disk
-    /// save — or, since #717, if any change has waited longer than
-    /// `SESSION_FLUSH_INTERVAL`: the 5-change batch alone left slow
-    /// sessions invisible to the dashboard (stuck "idle") for the whole
-    /// batch window. A fresh in-memory session flushes its first change
+    /// save — or, if any change has waited longer than
+    /// `SESSION_FLUSH_INTERVAL`: the 5-change batch alone kept slow
+    /// sessions off disk for the whole batch window. A fresh in-memory session flushes its first change
     /// immediately so new activity surfaces at once.
     pub fn should_save(&self) -> bool {
         if self.stats.unsaved_changes == 0 {
@@ -262,7 +262,7 @@ impl SessionState {
     }
 
     /// Persist an explicit `cwd` argument as the live shell
-    /// cwd (#707). `update_shell_cwd` only tracks `cd` inside the command
+    /// cwd. `update_shell_cwd` only tracks `cd` inside the command
     /// text, but clients that switch checkouts mid-session (Claude Code
     /// after `EnterWorktree`) pass the new directory as the `cwd` *param* of
     /// every subsequent call — without persisting it, the worktree-divergence

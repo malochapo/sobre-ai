@@ -1,4 +1,4 @@
-//! Entrypoint smoke gate (#902): every advertised entrypoint must be reachable.
+//! Entrypoint smoke gate: every advertised entrypoint must be reachable.
 //!
 //! Background: the v3.4.7 release shipped tools/commands whose *implementation*
 //! existed but whose *entrypoint* was not wired — `sobre pack` / `index` fell
@@ -75,14 +75,14 @@ fn mcp_entrypoint_tools_are_advertised() {
 fn sobre() -> Command {
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_sobre"));
     // Mirror cli_characterization.rs: sandbox the binary so subcommands are
-    // side-effect-free (no daemon, no real HOME writes).
+    // side-effect-free (no background process, no real HOME writes).
     cmd.env("HOME", "/tmp/sobre-entrypoint-test");
     cmd
 }
 
 /// Run the sandboxed binary; return trimmed stdout, trimmed stderr and the exit
 /// code. Stderr matters because the unknown-command handler reports on stderr
-/// (#1046 premium UX), so the wiring detector keys off it.
+/// (premium UX), so the wiring detector keys off it.
 fn run(args: &[&str]) -> (String, String, i32) {
     let out = sobre()
         .args(args)
@@ -95,7 +95,7 @@ fn run(args: &[&str]) -> (String, String, i32) {
 
 #[test]
 fn cli_subcommands_are_wired() {
-    // The dispatch fallthrough for an unknown command (#1046 premium UX) reports on
+    // The dispatch fallthrough for an unknown command (premium UX) reports on
     // stderr — `sobre: unknown command '<cmd>'` plus a "did you mean?" hint —
     // with empty stdout and exit 2. That stderr marker is the *signature* of "not
     // wired" — the exact v3.4.7 `pack`/`index` regression. Derive it from a token

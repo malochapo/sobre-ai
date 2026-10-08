@@ -4,7 +4,7 @@
 //!
 //! Both the CLI buffered path (`shell::pipeline`) and the MCP `sobre_shell`
 //! handler call [`should_tee`]. The rule is simply "compression cut something":
-//! whatever the agent did not see must stay retrievable (#809 / #811).
+//! whatever the agent did not see must stay retrievable.
 
 /// Save the full output whenever the inline output does not contain all of it.
 /// A blank output or a bare timeout notice has nothing to recover.

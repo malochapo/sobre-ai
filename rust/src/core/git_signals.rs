@@ -1,9 +1,9 @@
-//! Git working-set signals for relevance ranking (#497).
+//! Git working-set signals for relevance ranking.
 //!
 //! Git already knows what the developer is working on: uncommitted changes
 //! are near-certainly task-relevant, and files with recent churn are
 //! hotspots. This module turns `git status` + `git log` into per-file scores
-//! consumed by `task_relevance`, `ctx_preload` and the context triage.
+//! consumed by the project overview (`sobre_compose`).
 //!
 //! All git access goes through `git_cache` (TTL cache) — no subprocess storm,
 //! and absent-repo roots are remembered per process so non-git projects never

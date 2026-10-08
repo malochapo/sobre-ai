@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 /// Cache payload for [`Config::load_arc`]: the shared config alongside the
 /// content hash of the file it was built from, so a
-/// later load re-reads + re-hashes and only rebuilds on a real change (#406).
+/// later load re-reads + re-hashes and only rebuilds on a real change.
 type ConfigCacheSlot = Option<(Arc<Config>, Option<String>)>;
 
 mod enums;
@@ -35,7 +35,7 @@ pub use proxy::{
 /// eviction orchestrator (which measures real heap).
 pub const DEFAULT_BM25_PERSIST_MB: u64 = 512;
 
-/// Fixed-context budget (#964): the per-session footprint sobre adds — tool
+/// Fixed-context budget: the per-session footprint sobre adds — tool
 /// schemas + MCP instructions + auto-loaded rules files + the wakeup briefing —
 /// is checked against this in `doctor overhead` and `gain`.
 pub const CONTEXT_BUDGET_TOKENS: usize = 8000;
@@ -50,10 +50,10 @@ pub const PROACTIVE_EXPANSION_MAX_AGE_SECS: u64 = 3600;
 /// Graph indexes untouched for longer than this are purged.
 pub const GRAPH_INDEX_MAX_AGE_HOURS: u64 = 48;
 
-/// Compact output formats preserved verbatim instead of recompressed (#342).
+/// Compact output formats preserved verbatim instead of recompressed.
 pub const PRESERVE_COMPACT_FORMATS: &[&str] = &["toon"];
 
-/// Cap on files the graph index scans, bounding its RAM (#790).
+/// Cap on files the graph index scans, bounding its RAM.
 pub const GRAPH_INDEX_MAX_FILES: u64 = 15_000;
 
 /// Share of system RAM the memory guard allows sobre to use.
@@ -95,13 +95,13 @@ pub struct Config {
     /// roots of a multi-root workspace (absolute, `~`/`$HOME` expanded).
     #[serde(default)]
     pub search_roots: Vec<String>,
-    /// Opt-in (#520): write a human-readable debug log of intercepted MCP tool
+    /// Opt-in: write a human-readable debug log of intercepted MCP tool
     /// calls and hook routing decisions (sobre vs native, with reasons) to
     /// `<state_dir>/logs/debug.log`.
     #[serde(default)]
     pub debug_log: bool,
-    /// Verbatim binary path/expression for generated agent-hook commands
-    /// (#708). Users who sync agent settings (`~/.claude/settings.json`, …)
+    /// Verbatim binary path/expression for generated agent-hook commands.
+    /// Users who sync agent settings (`~/.claude/settings.json`, …)
     /// across machines with different usernames need an env-based form like
     /// `$HOME/.local/bin/sobre` — agent hosts run hook commands through a
     /// shell, which expands it. When set, every hook writer emits the value verbatim instead of
@@ -109,7 +109,7 @@ pub struct Config {
     /// rewriting synced files into sync ping-pong. Autostart plists/services
     /// and daemon spawns are NOT affected — launchd/systemd do not expand
     /// shell variables, so those keep the real absolute path. Empty (default)
-    /// = automatic absolute-path resolution (#367).
+    /// = automatic absolute-path resolution.
     #[serde(default)]
     pub hook_binary: Option<String>,
     /// Timeout in seconds for shell commands. `None` resolves to the built-in
@@ -150,7 +150,7 @@ impl Config {
     /// Safely mutate and persist the config. Reads the file (bypassing the
     /// cache), applies `f`, then writes minimally. Refuses (returns `Err`) when
     /// the file exists but is unparseable, so a typo can never clobber a
-    /// customized config (#443). Returns the saved `Config`.
+    /// customized config. Returns the saved `Config`.
     pub fn update_global<F>(f: F) -> std::result::Result<Self, super::error::SobreError>
     where
         F: FnOnce(&mut Self),

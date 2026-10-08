@@ -9,7 +9,7 @@ mod config_load_cache_tests {
     use super::super::*;
     use crate::core::data_dir::isolated_data_dir;
 
-    /// #406 regression: `Config::load()` must reflect a content change even when
+    /// Regression: `Config::load` must reflect a content change even when
     /// the file mtime is unchanged. A mtime-only cache (the old behaviour) kept a
     /// long-lived MCP server on a stale `search_roots` while a fresh `doctor`
     /// process — with an empty cache — saw the new value. The cache is now keyed
@@ -28,7 +28,7 @@ mod config_load_cache_tests {
         assert!(Config::load().search_roots.is_empty());
 
         // Add a root but restore the original mtime, so any mtime-only
-        // cache would serve the stale value (#406).
+        // cache would serve the stale value.
         std::fs::write(&path, "search_roots = [\"/srv\"]\n").unwrap();
         filetime::set_file_mtime(&path, filetime::FileTime::from_system_time(mtime0)).unwrap();
 
@@ -41,7 +41,7 @@ mod config_load_cache_tests {
 
 #[cfg(test)]
 mod persist_global_tests {
-    //! Regression tests for #443: persisting config must never reset customized
+    //! Regression tests: persisting config must never reset customized
     //! values.
     use super::super::*;
 
@@ -139,7 +139,7 @@ mod shell_timeout_and_writes_tests {
 mod config_path_visibility_tests {
     use super::super::*;
 
-    // #540: `missing_config_path()` is the visible signal that the runtime
+    // `missing_config_path` is the visible signal that the runtime
     // resolved a `config.toml` that doesn't exist — i.e. an edit landed in a
     // different file (a custom config dir, or a sandboxed HOME). The block messages
     // turn this into an over-MCP-visible note.

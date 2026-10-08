@@ -1,4 +1,4 @@
-//! Shared edit-distance "did you mean" helper (#712).
+//! Shared edit-distance "did you mean" helper.
 //!
 //! One implementation for every typo-suggestion surface: CLI commands
 //! (`cli/dispatch/suggest.rs`), config keys (`cli/config_cmd.rs`) and MCP

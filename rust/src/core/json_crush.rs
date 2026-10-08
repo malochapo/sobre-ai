@@ -1,5 +1,5 @@
 //! Deterministic JSON crusher — single source of truth for structural JSON
-//! compaction (#934, Headroom "Smart Crusher" port, GitLab #935).
+//! compaction (a port of Headroom's "Smart Crusher").
 //!
 //! Real JSON payloads (API responses, `kubectl get -o json`, DB dumps, RAG
 //! chunks) are dominated by arrays of objects that repeat the same keys and
@@ -14,7 +14,7 @@
 //!   (timestamps, UUIDs — pure noise for an agent) recorded in `_dropped`. The
 //!   exact original is then recovered out-of-band via CCR, never from the text.
 //!
-//! Determinism (#498): the output is a pure function of the input `Value` — no
+//! Determinism: the output is a pure function of the input `Value` — no
 //! timestamps, counters, randomness, or hash-map order leakage (candidate keys
 //! are walked through a [`BTreeSet`], value frequencies through a [`BTreeMap`]).
 //! The crusher never inflates: callers gate on `shorter_only`, and a no-op input
@@ -43,7 +43,7 @@ const MIN_DOMINANCE: f64 = 0.5;
 /// enough that the compact form is at most `1/KEEP_DATA_DIVISOR` of the input;
 /// heterogeneous/low-redundancy data falls through to each caller's own outline.
 /// Single source for the shell (`json_schema`, `curl`) and read (`structured_read`)
-/// paths so the gate can never drift (#936).
+/// paths so the gate can never drift.
 pub const KEEP_DATA_DIVISOR: usize = 2;
 
 /// Result of a crush pass.

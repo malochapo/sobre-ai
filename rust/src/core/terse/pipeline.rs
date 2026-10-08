@@ -62,7 +62,7 @@ pub fn compress(
     let mut result = match pattern_compressed {
         Some(after_patterns) => compress_with_patterns(input, after_patterns, level),
         // Fenced code blocks (``` / ~~~) carry verbatim source — diffs, file
-        // excerpts, edit evidence (#382). The dictionary/line-score layers
+        // excerpts, edit evidence. The dictionary/line-score layers
         // would corrupt them, so prose is compressed around the fences and
         // fence content stays byte-exact.
         None => match compress_fence_aware(input, level) {
@@ -308,7 +308,7 @@ mod tests {
         assert_eq!(result.tokens_before, 0);
     }
 
-    /// #382: fenced code (edit evidence diffs) must survive byte-exact —
+    /// Fenced code (edit evidence diffs) must survive byte-exact —
     /// no dictionary abbreviation, no blank-line stripping, no line drops.
     #[test]
     fn fenced_code_is_byte_exact() {

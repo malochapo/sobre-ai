@@ -4,7 +4,7 @@
 //! sentence-transformers metadata on explicit request. Files are cached
 //! per-model under the models directory and only downloaded once.
 //!
-//! Supply-chain integrity (GL #397): after the first successful download a
+//! Supply-chain integrity: after the first successful download a
 //! `model.lock.json` records the SHA-256 of every artifact (trust-on-first-use).
 //! Any later re-download of the same file must reproduce the pinned hash —
 //! an upstream repo that silently swaps bytes under the same revision fails hard.

@@ -82,11 +82,11 @@ pub fn run() {
             "hook" => {
                 // Hooks run inside the agent shell environment, so they can see
                 // runtime/session vars (e.g. CODEX_THREAD_ID) that the long-lived
-                // MCP server process never receives. Bridge them for sobre_shell (#370).
+                // MCP server process never receives. Bridge them for sobre_shell.
                 core::agent_runtime_env::capture();
                 let action = rest.first().map_or("help", std::string::String::as_str);
                 // Rewrite hooks self-bound their work and FAIL OPEN inside the
-                // handler (#1035), so they must NOT also carry the force-exit
+                // handler, so they must NOT also carry the force-exit
                 // watchdog (which would `exit(1)` with no reply and wedge the
                 // host). The remaining hooks keep the simple zombie-guard.
                 if !matches!(action, "cursor" | "gemini") {
@@ -108,7 +108,7 @@ pub fn run() {
             }
             "uninstall" => {
                 // Safety: `--help`/`-h` must NEVER fall through to a real
-                // uninstall (issue #476). Short-circuit before any removal.
+                // uninstall. Short-circuit before any removal.
                 if rest.iter().any(|a| a == "--help" || a == "-h") {
                     uninstall::print_help();
                     return;
@@ -185,7 +185,7 @@ fn handle_exec(args: &[String]) -> ! {
     };
     // The `sobre -c` wrapper runs inside the agent shell, which carries
     // runtime/session vars the MCP server never sees. Bridge them so sobre_shell
-    // can forward them too (#370).
+    // can forward them too.
     core::agent_runtime_env::capture();
     if crate::shell::reentry::should_pass_through() {
         passthrough(&command);
@@ -214,7 +214,7 @@ fn handle_raw(args: &[String], rest: &[String]) -> ! {
 /// Rust's runtime ignores SIGPIPE process-wide, so `sobre doctor | head`
 /// made `println!` panic with BrokenPipe; the LineWriter flush in stdout's
 /// Drop then panicked again *during unwinding*, which aborts — the SIGABRT
-/// (exit 134) of upstream #378 / GL#436. Real CLIs (cat, grep, rg) terminate
+/// (exit 134) seen upstream. Real CLIs (cat, grep, rg) terminate
 /// silently with exit 141 instead; SIG_DFL gives us exactly that. Children
 /// spawned via std::process::Command are unaffected either way (std resets
 /// their SIGPIPE disposition since Rust 1.65).

@@ -1,4 +1,4 @@
-//! Single memory capacity manager (#995 Phase 2).
+//! Single memory capacity manager (Phase 2).
 //!
 //! One reclaim formula and one generic, archive-backed, hysteresis reclaim used
 //! by every store. Replaces the duplicated `reclaim_target_capacity` and the
@@ -31,7 +31,7 @@ pub fn should_reclaim(len: usize, max: usize) -> bool {
 }
 
 /// How many items a [`reclaim_store`] would archive for a store at `len`, without
-/// touching the store or the archive. Powers dry-run previews (#995 Phase 6).
+/// touching the store or the archive. Powers dry-run previews (Phase 6).
 pub fn reclaim_preview(len: usize, max: usize, headroom_pct: f32) -> usize {
     if !should_reclaim(len, max) {
         return 0;

@@ -14,14 +14,14 @@ pub(crate) use support::{CodexHooksFlag, ensure_codex_hooks_enabled, remove_code
 /// Agent hooks (Codex, Cursor, Claude, Gemini, …) are executed by
 /// the host under a plain non-login shell (`sh -c …`) whose `PATH` is not
 /// guaranteed to contain the install dir (e.g. `/usr/local/bin`). A bare
-/// `sobre` therefore fails with exit code 127 (#367). Always emitting the
+/// `sobre` therefore fails with exit code 127. Always emitting the
 /// resolved absolute path makes hook execution deterministic and matches what
 /// MCP setup (`setup/mcp.rs`) and `doctor` already do.
 ///
 /// Kept strictly absolute — also used for MCP server `command` fields, which
 /// hosts spawn **directly** (no shell), so `$HOME/...` forms would break
 /// there. Shell-executed hook commands go through
-/// [`resolve_hook_command_binary`], which honors the portable override (#708).
+/// [`resolve_hook_command_binary`], which honors the portable override.
 fn resolve_binary_path() -> String {
     crate::core::portable_binary::resolve_portable_binary()
 }
@@ -29,7 +29,7 @@ fn resolve_binary_path() -> String {
 /// Binary token for **shell-executed** hook commands (`<binary> hook compress`
 /// and the like in Claude/Cursor/Gemini/… hook configs).
 ///
-/// Portable override (#708): the
+/// Portable override: the
 /// `hook_binary`, is emitted **verbatim** — for settings files synced across
 /// machines with different usernames (`$HOME/.local/bin/sobre`). Hook
 /// hosts run these commands through a shell, so the variable expands at

@@ -33,7 +33,7 @@ fn cache() -> &'static Mutex<Option<Cached>> {
     CACHE.get_or_init(|| Mutex::new(None))
 }
 
-/// Drop the cached HNSW index (#685 eviction hook). The next large-corpus
+/// Drop the cached HNSW index (eviction hook). The next large-corpus
 /// query transparently rebuilds it; queries in between fall back to exact
 /// brute force, so correctness is unaffected. Called by the eviction
 /// orchestrator under memory pressure — before this hook the built graph +

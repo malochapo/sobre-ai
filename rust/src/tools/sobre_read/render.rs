@@ -8,16 +8,16 @@ use crate::core::aggressiveness::AggressivenessProfile;
 
 /// Per-read tuning threaded into the per-mode renderers. `Default` reproduces
 /// the behaviour from before the aggressiveness knob existed (no override), so
-/// every existing caller and test keeps its exact byte output (#498).
+/// every existing caller and test keeps its exact byte output.
 #[derive(Clone, Copy, Default)]
 pub(crate) struct ReadTuning<'a> {
     /// Resolved 0.0–1.0 compression intensity, or `None` to use each mode's
     /// built-in default. Already resolved via `aggressiveness::effective` at the
     /// read boundary, so the renderer treats it as authoritative.
     pub aggressiveness: Option<f64>,
-    /// Explicit `protect` tokens (#709): every line containing one of these
+    /// Explicit `protect` tokens: every line containing one of these
     /// survives the line-based lossy filters (entropy / information-bottleneck)
-    /// verbatim. Empty slice reproduces the pre-protect byte output (#498).
+    /// verbatim. Empty slice reproduces the pre-protect byte output.
     /// Borrowed from the read boundary for the duration of the render call.
     pub protect: &'a [String],
 }
@@ -46,8 +46,8 @@ impl<'a> ReadTuning<'a> {
 
 /// Render a trailing ` [a, b]` techniques tag, or `""` when no compression
 /// technique fired. Avoids the empty ` []` metadata field a bare `join` would
-/// leave on an incompressible file (#509 output-waste audit, same class as the
-/// `ctx_semantic_search` `(rrf: X, )` fix in #511).
+/// leave on an incompressible file (the same class as the `(rrf: X)` fix in
+/// semantic search).
 fn techniques_tag(techniques: &[String]) -> String {
     if techniques.is_empty() {
         String::new()
@@ -59,7 +59,7 @@ fn techniques_tag(techniques: &[String]) -> String {
 /// Code-health annotations (function name → note like `cc=18`) for the
 /// over-threshold functions in `content`.
 /// Empty when disabled, unsupported, or nothing qualifies. Deterministic
-/// (#498-safe): a pure function of content + the active threshold.
+/// (deterministic): a pure function of content + the active threshold.
 fn health_annotations(content: &str, ext: &str) -> std::collections::HashMap<String, String> {
     let annotations = crate::core::code_health::annotate::annotations_for_file(
         content,
@@ -85,7 +85,7 @@ pub(crate) fn format_full_output(
 
 /// Headerless, trailing-whitespace-stripped output (`full-compact` mode).
 ///
-/// No framing header (offset/limit stay correct, #1021 follow-up) and trailing
+/// No framing header (offset/limit stay correct) and trailing
 /// whitespace is stripped per line for modest compression without breaking
 /// line structure or edit round-trips.
 pub(crate) fn format_full_compact_output(content: &str) -> (String, usize) {
@@ -99,11 +99,11 @@ pub(crate) fn format_full_compact_output(content: &str) -> (String, usize) {
 }
 
 /// Render `content` with per-line `N:hh|` hash anchors for `sobre_patch`
-/// (mode=anchored, epic #1008). The body is verbatim source prefixed with a
+/// (mode=anchored). The body is verbatim source prefixed with a
 /// stable, self-describing one-line legend so a vanilla agent can read the
-/// format without prior knowledge (GL#580 self-describing-output philosophy).
+/// format without prior knowledge (self-describing-output philosophy).
 ///
-/// #498 determinism: the output is a pure function of `(short,
+/// Determinism: the output is a pure function of `(short,
 /// content, line_count)` — no savings footer, timestamps or counters — so
 /// identical re-reads stay byte-stable and provider prompt caching applies.
 pub(crate) fn format_anchored_output(
@@ -114,7 +114,7 @@ pub(crate) fn format_anchored_output(
     format_anchored_output_window(short, content, line_count, None)
 }
 
-/// Windowed variant of [`format_anchored_output`] (#811): when `window` is
+/// Windowed variant of [`format_anchored_output`]: when `window` is
 /// `Some((start, end))`, `content` is sliced to that 1-based inclusive span
 /// *before* anchoring, so a bounded anchored read never has to hash/render
 /// lines outside the requested window — only the slice is annotated, numbered
@@ -291,8 +291,8 @@ pub(crate) fn process_mode_tuned(
                 .map(|a| AggressivenessProfile::from_level(a).density_target);
             let target: f64 = mode[8..].parse().ok().or(aggr_target).unwrap_or(0.5);
             let result = entropy::entropy_compress_to_density(content, target);
-            // #798: Quality gate — reject density output that breaks AST/symbols.
-            // #940: use density-specific guard that only checks AST/identifiers,
+            // Quality gate — reject density output that breaks AST/symbols.
+            // Use density-specific guard that only checks AST/identifiers,
             // not line count — density mode *intentionally* reduces lines.
             let (guarded_output, _q) =
                 crate::core::quality::guard_density(content, &result.output, ext, target);
@@ -412,7 +412,7 @@ pub(crate) const LINES_COMMA_HINT: &str = "\n[lines: comma = multi-select (e.g. 
 
 /// Marker for a map/signatures view that extracted nothing — a language with
 /// no grammar/regex coverage must be distinguishable from a file with no API
-/// (limitations audit, #4). Shared with the CLI arms.
+/// (limitations audit). Shared with the CLI arms.
 pub(crate) fn no_structure_marker(ext: &str) -> String {
     format!(
         "\n  [no extractable structure for .{ext} — header only; use mode=\"lines:N-M\" or \"full\"]"
@@ -450,7 +450,7 @@ pub(crate) fn extract_line_range(content: &str, range_str: &str) -> String {
 }
 
 /// Parses a single `"start-end"` (or bare `"start"`, meaning "to EOF") window
-/// payload for `anchored:N-M` (#811). Single-span only — unlike `lines:`,
+/// payload for `anchored:N-M`. Single-span only — unlike `lines:`,
 /// an anchored window feeds `sobre_patch`, which edits one contiguous region at
 /// a time, so comma multi-select isn't needed here.
 fn parse_anchored_range(range_str: &str, total: usize) -> (usize, usize) {
@@ -487,7 +487,7 @@ mod render_tests {
     #[test]
     fn techniques_tag_omits_empty_brackets() {
         // An incompressible file leaves no techniques — the header must not
-        // carry an empty ` []` field (#509 output-waste audit).
+        // carry an empty ` []` field (output-waste audit).
         assert_eq!(techniques_tag(&[]), "");
     }
 
@@ -545,7 +545,7 @@ fn render_signatures(content: &str, ctx: RenderCtx<'_>) -> (String, usize) {
             .collect();
         output.push_str(&format!("\n deps {}", imports_str.join(",")));
     }
-    // Self-describing outputs (GL #580): symbol notation always ships
+    // Self-describing outputs: symbol notation always ships
     // its own one-line legend so vanilla agents can read it.
     if crp_mode.is_tdd() {
         let refs: Vec<&signatures::Signature> = sigs.iter().collect();
@@ -569,7 +569,7 @@ fn render_signatures(content: &str, ctx: RenderCtx<'_>) -> (String, usize) {
         }
     }
     // Same honesty rule as map: an empty signature view for a language
-    // without an extractor must be labeled (limitations audit, #4).
+    // without an extractor must be labeled (limitations audit).
     if sigs.is_empty() && dep_info.imports.is_empty() {
         output.push_str(&no_structure_marker(ext));
     }
@@ -577,13 +577,13 @@ fn render_signatures(content: &str, ctx: RenderCtx<'_>) -> (String, usize) {
         output.push('\n');
         output.push_str(&body);
     }
-    // JIT disclosure (GL#447): signatures carry L-spans, so point at the
+    // JIT disclosure: signatures carry L-spans, so point at the
     // targeted range expansion before the full-read escalation.
     if !sigs.is_empty() {
         output.push_str(&format!(
                     "\n  ↳ expand a symbol: sobre_read(\"{file_path}\", mode=\"lines:N-M\") using the spans above"
                 ));
-        // Located symbols are addressable as stable handles (#607).
+        // Located symbols are addressable as stable handles.
         output.push_str(&format!("\n  {}", crate::core::handle::USAGE_HINT));
     }
     let sent = count_tokens(&output);
@@ -645,7 +645,7 @@ fn render_map(content: &str, ctx: RenderCtx<'_>) -> (String, usize) {
         .collect();
 
     // Drop exports the API section already lists with full signatures
-    // (pure redundant tokens in map mode, #361).
+    // (pure redundant tokens in map mode).
     let extra_exports = signatures::exports_not_in_signatures(&dep_info.exports, &key_sigs);
     if !extra_exports.is_empty() {
         output.push_str("\n  exports: ");
@@ -654,7 +654,7 @@ fn render_map(content: &str, ctx: RenderCtx<'_>) -> (String, usize) {
 
     if !key_sigs.is_empty() {
         output.push_str("\n  API:");
-        // Self-describing outputs (GL #580): legend precedes symbols.
+        // Self-describing outputs: legend precedes symbols.
         if crp_mode.is_tdd() {
             let legend = signatures::tdd_legend(&key_sigs);
             if !legend.is_empty() {
@@ -687,7 +687,7 @@ fn render_map(content: &str, ctx: RenderCtx<'_>) -> (String, usize) {
         output.push('\n');
         output.push_str(&body);
     }
-    // Located symbols are addressable as stable handles (#607).
+    // Located symbols are addressable as stable handles.
     if !key_sigs.is_empty() {
         output.push_str(&format!("\n  {}", crate::core::handle::USAGE_HINT));
     }
@@ -706,7 +706,7 @@ fn render_aggressive(content: &str, ctx: RenderCtx<'_>) -> (String, usize) {
         task,
         ..
     } = ctx;
-    // Structured JSON (#936): a redundant array-of-objects compacts far
+    // Structured JSON: a redundant array-of-objects compacts far
     // better — and losslessly — through the shared `json_crush` core than
     // generic text pruning, which mangles structure. Fires only when it
     // at least halves the file and shrinks the token count; the exact
@@ -722,7 +722,7 @@ fn render_aggressive(content: &str, ctx: RenderCtx<'_>) -> (String, usize) {
         }
     }
 
-    // Tabular data (CSV/TSV, #982): a redundant table hoists its constant
+    // Tabular data (CSV/TSV): a redundant table hoists its constant
     // columns once through the columnar crusher (lossless); the exact
     // bytes stay recoverable via a `full`/`raw` re-read.
     if let Some(delim) = compressor::tabular_delimiter(Some(ext))
@@ -736,7 +736,7 @@ fn render_aggressive(content: &str, ctx: RenderCtx<'_>) -> (String, usize) {
         }
     }
 
-    // YAML (#985): a verbose document compacts losslessly to compact JSON
+    // YAML: a verbose document compacts losslessly to compact JSON
     // through the shared crusher (formatting dropped, redundant
     // `items`/`list` arrays factored); the exact bytes stay recoverable
     // via a `full`/`raw` re-read.
@@ -786,7 +786,7 @@ fn render_entropy(content: &str, ctx: RenderCtx<'_>, tuning: &ReadTuning<'_>) ->
         task,
         ..
     } = ctx;
-    // Query-conditioned IB (#542): only a task the agent stated conditions
+    // Query-conditioned IB: only a task the agent stated conditions
     // the compression.
     let task_kws: Vec<String> = task
         .filter(|t| !t.trim().is_empty())
@@ -846,7 +846,7 @@ fn render_task_mode(content: &str, ctx: RenderCtx<'_>, tuning: &ReadTuning<'_>) 
         let sent = count_tokens(&out);
         return (out, sent);
     }
-    // #840: small files save too few tokens to justify the risk of dropping
+    // Small files save too few tokens to justify the risk of dropping
     // relevant content. Degrade to full — the agent gets the complete file
     // for a negligible token cost and avoids the "had to retry with mode=full"
     // round-trip that the issue reported.

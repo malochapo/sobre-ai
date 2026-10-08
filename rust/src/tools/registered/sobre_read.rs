@@ -20,7 +20,7 @@ use crate::tool_defs::tool_def;
 /// wait cheaply on the per-file mutex, then hit the warm cache.
 ///
 /// Backed by the shared `core::path_locks` registry so reads and edits of the
-/// same path coordinate through a single mutex (see issue #320).
+/// same path coordinate through a single mutex.
 fn per_file_lock(path: &str) -> Arc<Mutex<()>> {
     crate::core::path_locks::per_file_lock(path)
 }
@@ -65,7 +65,7 @@ impl McpTool for SobreReadTool {
         args: &Map<String, Value>,
         ctx: &ToolContext,
     ) -> Result<ToolOutput, ErrorData> {
-        // #509: sobre_read absorbs multi-file batch reads (supersedes ctx_multi_read).
+        // sobre_read absorbs multi-file batch reads.
         // A non-empty `paths` array routes to the one shared batch implementation.
         if args
             .get("paths")
@@ -112,7 +112,7 @@ impl SobreReadTool {
             let deadline = std::time::Instant::now() + std::time::Duration::from_secs(8);
             let mut attempt = 0u32;
             loop {
-                // #1018: use try_read_owned instead of Handle::block_on to avoid
+                // Use try_read_owned instead of Handle::block_on to avoid
                 // the async-runtime-saturation anti-pattern on Windows.
                 if let Ok(guard) = session_lock.clone().try_read_owned() {
                     break guard.task.as_ref().map(|t| t.description.clone());
@@ -128,14 +128,14 @@ impl SobreReadTool {
             }
         };
         let task_ref = current_task.as_deref();
-        // #513: `raw=true` is the intuitive "give me the exact bytes" escape an
+        // `raw=true` is the intuitive "give me the exact bytes" escape an
         // agent reaches for. Alias it to mode="raw" (verbatim, unframed) and
         // force a fresh disk read below so a re-read never collapses to an
         // `[unchanged]`/auto-delta stub. An explicit raw flag wins over `mode`.
         let arg_raw = get_bool(args, "raw").unwrap_or(false);
         let explicit_mode_arg = resolve_raw_alias(arg_raw, get_str(args, "mode"));
         let explicit_mode = explicit_mode_arg.is_some();
-        // An unknown or malformed mode fails loudly (#1209: `lines:44:48` with a
+        // An unknown or malformed mode fails loudly (`lines:44:48` with a
         // colon) instead of silently returning the whole file. A bare
         // `density:` stays valid: it takes the aggressiveness target.
         if let Some(ref requested) = explicit_mode_arg
@@ -156,7 +156,7 @@ impl SobreReadTool {
             "full".to_string()
         };
         let mut fresh = get_bool(args, "fresh").unwrap_or(false);
-        // #513: a raw/verbatim request always reads from disk — the whole point
+        // A raw/verbatim request always reads from disk — the whole point
         // is exact current bytes, never a cached stub or delta.
         if arg_raw {
             fresh = true;
@@ -168,7 +168,7 @@ impl SobreReadTool {
         // route through the proven density path at the mapped target. An explicit
         // mode (incl. entropy/task) instead has the knob tune it via ReadTuning.
         if !explicit_mode && let Some(a) = aggressiveness {
-            // SSOT mode construction via the typed `ReadMode` (#528): the typed
+            // SSOT mode construction via the typed `ReadMode`: the typed
             // `Density` Display emits the same `density:0.NN` the pipeline parses.
             mode = crate::tools::sobre_read::ReadMode::Density(
                 crate::core::aggressiveness::AggressivenessProfile::from_level(a).density_target,
@@ -178,7 +178,7 @@ impl SobreReadTool {
         // `start_line` (and its `offset`/`limit` aliases) can pin a line window.
         // The resolution lives in `apply_line_window`/`resolve_line_window` so
         // the runtime path and the unit tests share one implementation and can
-        // never drift (GitHub #432 aliases, #259 explicit-mode, #253 line-1).
+        // never drift (aliases, explicit mode, line 1).
         apply_line_window(
             &mut mode,
             &mut fresh,
@@ -194,7 +194,7 @@ impl SobreReadTool {
             task_ref,
             Some(&ctx.project_root),
         );
-        // #513: an explicit raw/verbatim request is never silently downgraded by
+        // An explicit raw/verbatim request is never silently downgraded by
         // the budget gate — the caller asked for exact bytes.
         let mut mode_override_note: Option<String> = None;
         if mode != "raw"
@@ -415,7 +415,7 @@ impl SobreReadTool {
                         return;
                     }
 
-                    // ── Two-Phase Read (#1098) ──────────────────────────
+                    // ── Two-Phase Read ──────────────────────────
                     //
                     // Phase 1 (read lock): try the [unchanged] stub — this is the
                     // ~70% case (repeated reads of unchanged files). Previously
@@ -443,7 +443,7 @@ impl SobreReadTool {
                         return;
                     }
 
-                    // ── Phase 2b: Three-sub-phase read (#807) ──────────
+                    // ── Phase 2b: Three-sub-phase read ──────────
                     //
                     // Previously held the global cache write-lock for the
                     // entire computation (tree-sitter, entropy compression).
@@ -825,7 +825,7 @@ impl SobreReadTool {
             if let Ok(mut session) = session_guard {
                 session.touch_file(path, file_ref.as_deref(), &resolved_mode, original);
                 // Capture the recent working set (under the lock) so the
-                // background thread can record a traversal/co-access edge (#289).
+                // background thread can record a traversal/co-access edge.
                 traversal_working_set =
                     crate::core::tool_lifecycle::recent_working_set(&session, path);
                 let file_summary = extract_file_summary(&output, path);
@@ -856,7 +856,7 @@ impl SobreReadTool {
         }
 
         // The co-access edge is a side effect that never influences this
-        // response; keep its disk I/O off the hot path (#149).
+        // response; keep its disk I/O off the hot path.
         {
             let path_bg = path.to_string();
             let project_root_bg = project_root_snapshot.clone();
@@ -865,7 +865,7 @@ impl SobreReadTool {
                 // it never affects the already-returned read response.
                 let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(move || {
                     // Traversal/co-access edge: this read fired together with the
-                    // recent working set captured under the session lock (#289).
+                    // recent working set captured under the session lock.
                     if let Some(root) =
                         crate::core::tool_lifecycle::usable_root(Some(project_root_bg.as_str()))
                     {
@@ -881,7 +881,7 @@ impl SobreReadTool {
 
         // Cross-source hints: if the property graph has cross-source edges
         // pointing to this file, append compact hints so the agent knows about
-        // related issues/PRs/schemas without a separate tool call (#682). Only
+        // related issues/PRs/schemas without a separate tool call. Only
         // touch the DB when it already exists — never create graph.db on a read.
         let hints_suffix = {
             let graph_db =
@@ -912,7 +912,7 @@ impl SobreReadTool {
         if let Some(ref w) = mode_override_note {
             warnings.push(w.as_str());
         }
-        // #977: notices (mode override, budget, degradation, delta) go BEFORE the
+        // Notices (mode override, budget, degradation, delta) go BEFORE the
         // payload so client-side truncation of large outputs cannot hide them.
         let final_output = if !warnings.is_empty() {
             format!("{}\n\n{output}{hints_suffix}", warnings.join("\n"))
@@ -950,7 +950,7 @@ impl SobreReadTool {
 /// `offset` is an alias for `start_line` (1-based first line); `start_line`
 /// wins if a caller passes both. `limit` (when > 0) bounds the number of lines;
 /// a bare `limit` reads from line 1. Returns `None` when no windowing argument
-/// is present, so the caller leaves the mode untouched (GitHub #432).
+/// is present, so the caller leaves the mode untouched.
 fn resolve_line_window(
     start_line: Option<i64>,
     offset: Option<i64>,
@@ -974,7 +974,7 @@ fn lines_mode(start: i64, limit: Option<i64>) -> String {
     }
 }
 
-/// Build the `anchored:N-M` mode string for a resolved window (#811) — mirrors
+/// Build the `anchored:N-M` mode string for a resolved window — mirrors
 /// `lines_mode`, keeping the `anchored:` prefix so the render path re-attaches
 /// hash anchors to the window instead of falling back to plain numbered lines.
 fn anchored_lines_mode(start: i64, limit: Option<i64>) -> String {
@@ -985,9 +985,9 @@ fn anchored_lines_mode(start: i64, limit: Option<i64>) -> String {
 }
 
 /// Apply a resolved line window to `mode`/`fresh`. An explicit non-lines mode
-/// (map/signatures/…) is never clobbered (#259), and `start_line=1` with no
-/// limit is a no-op so it cannot disturb an auto/explicit read (#253). An
-/// explicit `anchored` mode is windowed in place (`anchored:N-M`, #811)
+/// (map/signatures/…) is never clobbered, and `start_line=1` with no
+/// limit is a no-op so it cannot disturb an auto/explicit read. An
+/// explicit `anchored` mode is windowed in place (`anchored:N-M`)
 /// instead of being collapsed to `lines:N-M` — that would silently drop the
 /// hash anchors the caller asked for, and previously let a bounded anchored
 /// read fall through to rendering (and erroring on) the whole file.
@@ -1006,7 +1006,7 @@ fn apply_line_window(
         return;
     }
     *fresh = true;
-    // #811: anchored gets its own windowed variant (preserves hashes for
+    // Anchored gets its own windowed variant (preserves hashes for
     // sobre_patch); every other mode switches to lines:N-M to prevent
     // full-file materialization on large files.
     if mode == "anchored" {
@@ -1016,7 +1016,7 @@ fn apply_line_window(
     }
 }
 
-/// #513: resolve the `raw=true` convenience flag into the effective explicit
+/// Resolve the `raw=true` convenience flag into the effective explicit
 /// `mode` argument. Agents reach for `raw:true` to get exact bytes; it aliases
 /// to `mode="raw"` (verbatim, unframed) and wins over any caller-supplied
 /// `mode`. When `raw` is unset, the caller's `mode` (if any) passes through
@@ -1047,7 +1047,7 @@ fn extract_file_summary(output: &str, path: &str) -> String {
     }
 }
 
-// #660 LOC gate: inline tests split out to keep this file under the line cap.
+// LOC gate: inline tests split out to keep this file under the line cap.
 #[cfg(test)]
 #[path = "sobre_read_inline_tests.rs"]
 mod tests;

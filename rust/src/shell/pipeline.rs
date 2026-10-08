@@ -33,10 +33,10 @@ pub(super) fn exec_buffered(command: &str, shell: &str, shell_flag: &str) -> i32
     }
 
     cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
-    // #720: buffered path serves agents and pipes; interactive TTY stays intact.
+    // Buffered path serves agents and pipes; interactive TTY stays intact.
     let isolate = !io::stdin().is_terminal();
     if isolate {
-        // #806: piped stdin lets callers legitimately pipe data.
+        // Piped stdin lets callers legitimately pipe data.
         cmd.stdin(Stdio::piped());
         #[cfg(unix)]
         {
@@ -57,7 +57,7 @@ pub(super) fn exec_buffered(command: &str, shell: &str, shell_flag: &str) -> i32
         }
     };
 
-    // #806: relay parent stdin to child stdin.
+    // Relay parent stdin to child stdin.
     if isolate && let Some(child_stdin) = child.stdin.take() {
         std::thread::Builder::new()
             .name("stdin-relay".into())

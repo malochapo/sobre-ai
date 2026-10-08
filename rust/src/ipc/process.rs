@@ -43,7 +43,7 @@ pub fn run_with_timeout(
     }
 }
 
-/// Spawn a long-lived background process (proxy, daemon) detached from the
+/// Spawn a long-lived background process (the proxy) detached from the
 /// current process so it survives the parent's exit.
 ///
 /// On Unix a child simply outlives its parent, so this is a plain spawn. On
@@ -52,7 +52,7 @@ pub fn run_with_timeout(
 /// kill-on-close Jobs; without detachment the auto-started proxy dies the
 /// moment the client recycles its MCP process, which users observe as
 /// "Cannot connect to API: The socket connection was closed unexpectedly"
-/// plus repeated proxy cold-starts (GL #545).
+/// plus repeated proxy cold-starts.
 ///
 /// Strategy on Windows:
 ///  1. `DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP | CREATE_BREAKAWAY_FROM_JOB`
@@ -195,13 +195,13 @@ pub fn force_kill(pid: u32) -> Result<()> {
 /// sobre itself — a `sobre -c` wrapper (Cursor/Gemini hooks) can be the
 /// parent, so the process tree is `sobre -c … → sh → sobre uninstall`.
 /// Excluding only `getpid()` SIGTERMs the wrapper parent, which takes the
-/// whole pipeline down mid-run (exit 143, #714).
+/// whole pipeline down mid-run (exit 143).
 ///
 /// The process *group* matters because agent harnesses (Cursor's shell) can
 /// reparent intermediaries to PID 1 mid-run — the `ps ppid` walk then stops
 /// before reaching the outer wrapper, but the wrapper still shares the
-/// foreground pgid; signalling it kills the pipeline all the same (#714
-/// follow-up, reproduced twice on the first fix).
+/// foreground pgid; signalling it kills the pipeline all the same
+/// (reproduced twice on the first fix).
 fn protected_self_pids() -> std::collections::HashSet<u32> {
     let mut protected = std::collections::HashSet::new();
     protected.insert(std::process::id());
@@ -252,7 +252,7 @@ fn process_group_pids(pgid: libc::pid_t) -> Vec<u32> {
 }
 
 /// PIDs of the current user's processes named `name`, excluding this process
-/// and its ancestor chain (#714).
+/// and its ancestor chain.
 pub fn find_pids_by_name(name: &str) -> Vec<u32> {
     let protected = protected_self_pids();
     let mut pids = Vec::new();
@@ -352,7 +352,7 @@ mod tests {
         );
     }
 
-    /// #714 follow-up: agent harnesses reparent intermediaries to PID 1, so
+    /// Follow-up: agent harnesses reparent intermediaries to PID 1, so
     /// the ppid walk alone misses the outer wrapper — the shared foreground
     /// process group must be protected too.
     #[cfg(unix)]
@@ -381,7 +381,7 @@ mod tests {
         }
     }
 
-    /// #714: `uninstall` running *under* a sobre shell wrapper
+    /// `uninstall` running *under* a sobre shell wrapper
     /// (`sobre -c … → sh → sobre uninstall`) must not SIGTERM its own
     /// ancestor chain — that kills the pipeline mid-run (exit 143).
     #[test]
@@ -410,7 +410,7 @@ mod tests {
     #[test]
     fn find_pids_never_reports_own_process_tree() {
         // Regardless of what matches by name, the returned set must be
-        // disjoint from the protected self/ancestor set (#714).
+        // disjoint from the protected self/ancestor set.
         let protected = protected_self_pids();
         for pid in find_pids_by_name("sobre") {
             assert!(!protected.contains(&pid), "own tree pid {pid} reported");

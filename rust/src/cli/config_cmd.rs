@@ -18,7 +18,7 @@ pub fn cmd_config(args: &[String]) {
             let val = &args[2];
 
             // Upstream URLs are normalized before the single governed write
-            // path below, so the #852 review covers every route.
+            // path below, so the review covers every route.
             let (write_key, write_val): (String, String) = match key.as_str() {
                 k if k.starts_with("proxy.upstreams.") => {
                     let effective = normalize_optional_upstream(val).unwrap_or_default();
@@ -37,7 +37,7 @@ pub fn cmd_config(args: &[String]) {
     }
 }
 
-/// Single governed write path for `config set` (#852).
+/// Single governed write path for `config set`.
 ///
 /// `key`/`value` are the resolved pair actually persisted; `display_key`/
 /// `display_val` are what the user typed (kept for messaging, e.g. when a value
@@ -101,7 +101,7 @@ fn write_config_key(key: &str, value: &str, display_key: &str, display_val: &str
 /// file yields defaults, and an unparseable one is surfaced as an error so the
 /// caller can refuse to clobber it.
 ///
-/// This is the regression guard for #443: `config init` once wrote
+/// This is the regression guard: `config init` once wrote
 /// `Config::default()`, and `Config::save()` overwrites any key present in both
 /// the incoming document and the file (see `config_io::merge_table`), which
 /// silently reset customized values like `search_roots` or `compression_level`.
@@ -113,7 +113,7 @@ fn config_for_init(existing_raw: Option<&str>) -> Result<config::Config, String>
 }
 
 /// Implements `config init`: (re)writes the global config as a fully
-/// annotated reference document, seeded with the user's existing values (#443).
+/// annotated reference document, seeded with the user's existing values.
 ///
 /// Unlike `save()` (which keeps the file minimal), this emits every key with its
 /// documentation. The body is a verbatim serialization of the resolved config,
@@ -151,7 +151,7 @@ fn init_config() {
 /// scriptable).
 ///
 /// This is the canonical way to verify that the CLI and the MCP server resolve
-/// the *same* config file (GH #594): run `sobre config path` in a terminal
+/// the *same* config file: run `sobre config path` in a terminal
 /// and from the editor's MCP context, then compare. Output is the bare path so
 /// it can be diffed/captured in scripts and tests; it exits non-zero only when
 /// no config directory can be resolved at all.
@@ -229,7 +229,7 @@ mod tests {
         assert!(config_for_init(Some("shell_timeout_secs = = =")).is_err());
     }
 
-    // #443 end-to-end: `config init` must not reset a customized value.
+    // End-to-end: `config init` must not reset a customized value.
     #[test]
     fn init_preserves_value_through_save_merge() {
         let existing = "shell_timeout_secs = 90\n";

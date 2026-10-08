@@ -9,7 +9,7 @@ pub static LAST_COMPACTION_TS: AtomicU64 = AtomicU64::new(0);
 /// If so, reset all `full_content_delivered` flags so the next read
 /// delivers full content instead of a stub.
 ///
-/// Detection (#808) reads the `last_compaction.json` marker file, written
+/// Detection reads the `last_compaction.json` marker file, written
 /// atomically by the observe hook. It is only a few bytes, immune to being
 /// displaced by large events.
 pub fn sync_if_compacted(cache: &mut SessionCache, data_dir: &Path) -> bool {
@@ -21,7 +21,7 @@ pub fn sync_if_compacted(cache: &mut SessionCache, data_dir: &Path) -> bool {
 
     LAST_COMPACTION_TS.store(latest_compaction_ts, Ordering::Relaxed);
     let reset_count = cache.reset_delivery_flags();
-    // Drop the persistent stub index too (#955): the conversation's context was
+    // Drop the persistent stub index too: the conversation's context was
     // summarised away, so neither a warm nor a cold stub may claim "you already
     // have this". Writes the emptied index synchronously so a restart in the
     // crash window can't resurrect a pre-compaction stub.
@@ -34,7 +34,7 @@ pub fn sync_if_compacted(cache: &mut SessionCache, data_dir: &Path) -> bool {
 }
 
 // ---------------------------------------------------------------------------
-// Detection: marker file (#808)
+// Detection: marker file
 // ---------------------------------------------------------------------------
 
 /// Read `last_compaction.json` — a few-byte file written atomically by the

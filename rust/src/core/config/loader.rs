@@ -29,7 +29,7 @@ impl Config {
     /// Returns the path to the global config file (`$XDG_CONFIG_HOME/sobre/config.toml`).
     ///
     /// Resolves via [`crate::core::paths::config_dir`] so config lives in the
-    /// RO-safe config category (GH #408 / GL #602).
+    /// RO-safe config category.
     pub fn path() -> Option<PathBuf> {
         crate::core::paths::config_dir()
             .ok()
@@ -46,7 +46,7 @@ impl Config {
     /// server in a sandbox/container with a different `$HOME`. An edit made to a
     /// *different* `config.toml` than this one is silently ignored; the block
     /// messages use this to say so out loud over MCP, where the stderr path is
-    /// invisible (#540).
+    /// invisible.
     #[must_use]
     pub fn missing_config_path() -> Option<PathBuf> {
         match Self::path() {
@@ -62,7 +62,7 @@ impl Config {
     /// content edit preserved the mtime (coarse filesystem mtime resolution,
     /// `cp -p`, atomic save-then-rename, two edits within the same second). A
     /// long-lived MCP server then kept the old value while a fresh `sobre
-    /// doctor` process saw the new one (#406). The file is tiny, so reading +
+    /// doctor` process saw the new one. The file is tiny, so reading +
     /// hashing it on every load is negligible and guarantees liveness.
     pub fn load() -> Self {
         (*Self::load_arc()).clone()

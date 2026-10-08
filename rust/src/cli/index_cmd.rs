@@ -38,7 +38,7 @@ pub(crate) fn cmd_index(args: &[String]) {
 /// Build (or with `force`, rebuild from scratch) the project's indexes:
 /// graph, then BM25, then the dense index in builds with local embeddings.
 fn build(project_root: &str, force: bool) {
-    // #790: activate the memory guardian for CLI builds so graph/BM25 abort
+    // Activate the memory guardian for CLI builds so graph/BM25 abort
     // checks actually fire.
     crate::core::memory_guard::start_guard(std::sync::Arc::new(|level| {
         tracing::warn!("[index build] memory pressure: {level:?} — background tasks will throttle");
@@ -51,7 +51,7 @@ fn build(project_root: &str, force: bool) {
     if force {
         let root = Path::new(project_root);
         let _ = std::fs::remove_file(crate::core::bm25_index::BM25Index::index_file_path(root));
-        // #696 C4: purge the property graph (graph.db + wal/shm + meta) and
+        // C4: purge the property graph (graph.db + wal/shm + meta) and
         // the call-graph cache so the rebuild starts clean.
         crate::core::graph_index::purge_index(project_root);
         let _ = std::fs::remove_file(
@@ -203,7 +203,7 @@ fn print_human_status(project_root: &str) {
         "  Semantic Index: {}",
         format_disk_line(&disk.semantic_index, "vectors")
     );
-    // #735: surface the `ignore` globs so a filtered index is always
+    // Surface the `ignore` globs so a filtered index is always
     // recognizable. Absent when `ignore` is empty.
     if let Some(summary) = crate::core::index_filter::IndexFileFilter::effective().summary() {
         println!("  Index Filters:  {summary}");

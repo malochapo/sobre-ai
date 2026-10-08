@@ -1,4 +1,4 @@
-//! Index-time file filters (#735): one shared corpus-membership decision for
+//! Index-time file filters: one shared corpus-membership decision for
 //! every index builder.
 //!
 //! Source-control intent (`.gitignore`) and retrieval policy (what belongs in
@@ -86,7 +86,7 @@ mod tests {
 
     #[test]
     fn exclude_glob_drops_matching_files() {
-        // The #735 motivating case: versioned Liquibase CSV seed data.
+        // The motivating case: versioned Liquibase CSV seed data.
         let f = filter(&["src/main/resources/liquibase/data/*.csv"]);
         assert!(f.is_excluded("src/main/resources/liquibase/data/users.csv"));
         assert!(!f.is_excluded("src/main/java/App.java"));

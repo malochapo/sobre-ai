@@ -60,7 +60,7 @@ impl McpTool for SobreGraphTool {
         )
     }
 
-    /// `format=json` answers are JSON documents: they go out verbatim (#990).
+    /// `format=json` answers are JSON documents: they go out verbatim.
     fn produces_machine_readable(&self, args: Option<&Map<String, Value>>) -> bool {
         let Some(args) = args else { return false };
         get_str(args, "format").is_some_and(|f| f.eq_ignore_ascii_case("json"))

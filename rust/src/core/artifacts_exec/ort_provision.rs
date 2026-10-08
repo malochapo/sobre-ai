@@ -1,8 +1,8 @@
-//! Managed ONNX Runtime provisioning (GH #732) — the consent-gated download
+//! Managed ONNX Runtime provisioning — the consent-gated download
 //! that makes embeddings work out of the box, without owning a GPU driver
 //! matrix.
 //!
-//! Policy (decided on the issue, aligned with epic #724):
+//! Policy:
 //!
 //! - Release binaries stay CPU-only `load-dynamic`; nothing is bundled.
 //! - Provisioning is **explicit** (`sobre embeddings provision`) — never a
@@ -11,7 +11,7 @@
 //!   remain opt-in feature builds with user-supplied runtimes.
 //!
 //! The managed copy lives in the same layout as every other managed binary
-//! artifact (`<data_dir>/addons/bin/onnxruntime/<version>/`), is SHA-256
+//! artifact (`<data_dir>/onnxruntime/<version>/`), is SHA-256
 //! pinned against the official `microsoft/onnxruntime` release assets, and is
 //! resolved by `ort_environment::resolve_ort_dylib` right after
 //! `ORT_DYLIB_PATH` — the operator override always wins.
@@ -107,11 +107,9 @@ fn dylib_filename() -> &'static str {
     }
 }
 
-/// The managed install dir: `<data_dir>/addons/bin/onnxruntime/<version>/`.
+/// The managed install dir: `<data_dir>/onnxruntime/<version>/`.
 pub fn managed_dir() -> Result<PathBuf, String> {
     Ok(crate::core::data_dir::sobre_data_dir()?
-        .join("addons")
-        .join("bin")
         .join("onnxruntime")
         .join(ORT_VERSION))
 }

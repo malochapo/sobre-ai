@@ -1,4 +1,4 @@
-//! Windowed-read tests extracted from tests.rs (#660 LOC gate, frozen limit).
+//! Windowed-read tests extracted from tests.rs (LOC gate, frozen limit).
 use super::*;
 
 #[test]
@@ -18,7 +18,7 @@ fn read_line_window_clamps_end_to_eof() {
 }
 
 /// The end-to-end regression case: a file over the read size limit must
-/// still serve a bounded `anchored:N-M` read. Before #811's disk-streaming
+/// still serve a bounded `anchored:N-M` read. Before the disk-streaming
 /// short-circuit, `handle_with_options_inner` always called `read_file_lossy`
 /// first regardless of mode, so a window request on an oversized file failed
 /// with the same "file too large" error as a `full` read — even though
@@ -85,16 +85,16 @@ fn disk_windowed_anchored_read_serves_file_over_the_size_cap() {
     );
 }
 
-/// #875: a windowed `anchored:N-M` read served through the two-phase
+/// A windowed `anchored:N-M` read served through the two-phase
 /// (`preread`-supplied) slow path must still return only that window with its
 /// `N:hh|` hash anchors — never fall through to a full-file dump. The
-/// disk-streaming short-circuit (#811) only fires on the fast path, where no
+/// disk-streaming short-circuit only fires on the fast path, where no
 /// preread is in hand; the slow path (spawned-thread read under lock
 /// contention) hands `handle_with_options_inner` the whole file as `preread`,
 /// so `try_disk_anchored_window` bows out and the window must instead be cut
 /// and anchored by `process_mode_tuned`. Before the anchored:N-M arm existed
 /// there, this path dumped the entire file with no anchors — the exact symptom
-/// #875 reported after the first windowed read.
+/// seen after the first windowed read.
 #[test]
 fn windowed_anchored_read_via_preread_slow_path_stays_windowed() {
     let dir = tempfile::tempdir().unwrap();

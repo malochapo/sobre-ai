@@ -13,7 +13,7 @@
 //! snapshot, so OKF and ctxpkg can never disagree on what the project's
 //! knowledge is.
 //!
-//! ## Determinism (#498)
+//! ## Determinism
 //! Every byte of the export is a pure function of the snapshot: frontmatter keys
 //! are emitted in a fixed order (reserved OKF keys first, then sorted
 //! `sobre_*`), file slugs are stable, relation lines are sorted, and no

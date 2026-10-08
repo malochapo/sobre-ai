@@ -1,4 +1,4 @@
-//! Cross-file type-reference edges (GH #398).
+//! Cross-file type-reference edges.
 //!
 //! C#, Java, Go and Kotlin resolve types declared in the same namespace/package
 //! **without any import statement**, so import edges alone miss those file
@@ -8,7 +8,7 @@
 //! It is the single source of truth for that resolution, shared by:
 //! - the durable `graph_index` -> `PropertyGraph` mirror (`graph_index::edges`),
 //!   so a background reindex reproduces the edges instead of dropping them
-//!   (the GH #398 regression: the mirror clears the graph and previously had no
+//!   (the regression: the mirror clears the graph and previously had no
 //!   type-usage edges, silently wiping the impact blast radius), and
 //! - the impact graph builder, which additionally emits the symbol-level
 //!   edges `dead_code` relies on.
@@ -321,11 +321,11 @@ mod tests {
         }
     }
 
-    /// GH #398 (+ #641 namespace-aware): the TypeRef target resolution — unique
+    /// Namespace-aware TypeRef target resolution — unique
     /// definers connect, self-references are skipped, over-generic names (>
     /// fallback cap of 5 with no namespace match) are dropped, a definer in the
     /// consumer's visible namespace is linked even past the cap while its
-    /// homonyms are discarded, and output is sorted + deduped (determinism #498).
+    /// homonyms are discarded, and output is sorted + deduped (deterministic).
     #[test]
     fn type_ref_targets_resolution_rules() {
         let mut def_index = DefIndex::new();
@@ -443,7 +443,7 @@ mod tests {
         );
     }
 
-    /// Go (GH #398 bug class): an unqualified type name declared in many
+    /// Go (bug class): an unqualified type name declared in many
     /// packages must resolve **only** to the same-directory definer — even when
     /// the global definer count is far past the fallback cap — and must never
     /// link across directories. This is the case a namespace-free fallback gets

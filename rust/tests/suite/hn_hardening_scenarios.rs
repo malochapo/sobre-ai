@@ -160,7 +160,7 @@ mod double_compression_guard {
     #[test]
     fn scenario_dispatch_returns_saved_tokens() {
         // Verify the dispatch_tool return type includes saved_tokens (the
-        // third element carries the shell outcome for MCP isError, GH #389)
+        // third element carries the shell outcome for MCP isError)
         // and content_blocks (fourth element for image/binary MCP output).
         let src = include_str!("../../src/server/dispatch/mod.rs");
         assert!(
@@ -408,8 +408,8 @@ mod auto_degrade {
         use sobre::core::config::SessionDegrade::{Clear, Leave, Set};
         // Behavioral invariant for the dispatch's auto-degrade. Asserted via the
         // pure `degrade_action` decision rather than grepping the dispatch source
-        // for a literal, so an internal rename (e.g. #941's `correction_count` →
-        // retrieve-coupled `pressure`) can't silently rot this guard again (#957).
+        // for a literal, so an internal rename (e.g. `correction_count` →
+        // retrieve-coupled `pressure`) can't silently rot this guard again.
         assert_eq!(
             CompressionLevel::degrade_action(5, 0),
             Set(CompressionLevel::Off),
@@ -435,7 +435,7 @@ mod auto_degrade {
 }
 
 // =============================================================================
-// Fix G: ctx_overview Module Descriptions
+// Fix G: project overview module descriptions
 // =============================================================================
 
 mod overview_descriptions {
@@ -495,11 +495,11 @@ mod overview_descriptions {
         let src = include_str!("../../src/tools/impl_overview.rs");
         assert!(
             src.contains("extract_module_doc"),
-            "ctx_overview must call extract_module_doc"
+            "the overview must call extract_module_doc"
         );
         assert!(
             src.contains("knowledge_doc_for_file"),
-            "ctx_overview must have knowledge fallback"
+            "the overview must have a knowledge fallback"
         );
     }
 }
@@ -585,7 +585,7 @@ mod integration {
         // Structural test: verify the pipeline
         let src = crate::suite::hn_hardening_scenarios::server_dispatch_src();
 
-        // 1. dispatch threads saved_tokens (+ shell outcome, GH #389,
+        // 1. dispatch threads saved_tokens (+ shell outcome,
         // content_blocks) out of the tool call
         assert!(
             src.contains("let (mut result_text, tool_saved_tokens, shell_outcome, content_blocks)")

@@ -13,8 +13,7 @@ pub fn init_logging() {
         .try_init();
 }
 
-/// Initialize logging for daemon/MCP mode (stderr, defaults to `info`).
-/// Daemon logs go to a file, so verbosity is fine.
+/// Initialize logging for the MCP server (stderr, defaults to `info`).
 pub fn init_mcp_logging() {
     let filter = std::env::var("RUST_LOG").unwrap_or_else(|_| "info".to_string());
 

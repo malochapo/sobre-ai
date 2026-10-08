@@ -19,7 +19,7 @@ pub struct ResolvedPaths {
 ///
 /// Returns `Err` when an **explicit** `path`/`paths` argument was supplied but
 /// could not be resolved. Silently falling back to the project root in that case made
-/// `sobre_tree path=/outside/repo` return the whole project tree (#401).
+/// `sobre_tree path=/outside/repo` return the whole project tree.
 pub fn resolve_tool_paths(
     args: &Map<String, Value>,
     ctx: &ToolContext,
@@ -35,14 +35,14 @@ pub fn resolve_tool_paths(
             });
         }
         // The caller explicitly listed paths but none resolved — surface
-        // the failure instead of scanning the project root (#401).
+        // the failure instead of scanning the project root.
         return Err(format!(
             "none of the requested paths could be resolved: {}",
             paths.join(", ")
         ));
     }
 
-    // #846: `file_path` is an alias for `path` in sobre_search — agents
+    // `file_path` is an alias for `path` in sobre_search — agents
     // (especially Claude Code) send it expecting file-level scoping.
     // Without this fallback the parameter is silently ignored and the
     // search runs on the project root.
@@ -55,7 +55,7 @@ pub fn resolve_tool_paths(
         }
         // An explicit path the dispatcher could not resolve lands in
         // `path_errors`. Do NOT fall back to the project root — return the
-        // resolution error rather than silently an unrelated tree (#401).
+        // resolution error rather than silently an unrelated tree.
         if let Some(detail) = ctx.path_error(key) {
             return Err(detail.to_string());
         }
@@ -86,7 +86,7 @@ pub fn resolve_tool_paths(
     // No path given: the project root, never the server's cwd. A broad root
     // (home, the filesystem root, ~/Library, …) is refused here and only
     // here: a client started from $HOME would otherwise walk the whole home
-    // directory (#356), while a path the agent names is always walked.
+    // directory, while a path the agent names is always walked.
     let root = ctx.resolve_path_sync(".")?;
     if let Some(err) = crate::tools::walk_guard::deny_unsafe_walk_root(&root) {
         return Err(err);
@@ -178,7 +178,7 @@ mod tests {
         assert!(!result.is_multi);
     }
 
-    // #401: an explicit `path` the dispatcher could not resolve must surface
+    // An explicit `path` the dispatcher could not resolve must surface
     // the error — NOT silently
     // fall back to the project root and return an unrelated tree.
     #[test]

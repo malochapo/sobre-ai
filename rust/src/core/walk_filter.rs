@@ -4,7 +4,7 @@
 //! Combines two protections:
 //! 1. Cloud-placeholder pruning (`cloud_files::keep_entry`) so walks never
 //!    hydrate OneDrive/iCloud stubs.
-//! 2. A conservative vendor-directory skip list (#400). Package-manager
+//! 2. A conservative vendor-directory skip list. Package-manager
 //!    output like `node_modules` is never useful in scans and explodes the
 //!    overview/index when no `.gitignore` applies — e.g. a project without a
 //!    `.git` directory, where the `ignore` crate skips `.gitignore` files
@@ -25,7 +25,7 @@ const VENV_DIR_NAMES: &[&str] = &[".venv", "venv"];
 
 /// Resolve an explicitly requested Windows directory junction before handing it
 /// to `ignore::WalkBuilder`. The walker can treat a reparse-point root as a
-/// leaf, while normal file reads transparently follow it (#1003). Canonicalizing
+/// leaf, while normal file reads transparently follow it. Canonicalizing
 /// only the already-resolved root preserves the rule that nested links are never
 /// followed and strips Windows' verbatim prefix for `ignore` compatibility.
 pub fn explicit_walk_root(root: &std::path::Path) -> std::path::PathBuf {

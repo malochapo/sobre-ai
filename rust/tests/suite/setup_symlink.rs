@@ -1,4 +1,4 @@
-//! End-to-end regression for GitHub #596:
+//! End-to-end regression:
 //! "installer fails on symlinked claude and codex folders".
 //!
 //! Dotfiles users symlink their agent config (`~/.claude.json`,

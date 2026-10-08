@@ -1,5 +1,5 @@
 #![allow(clippy::cast_precision_loss)]
-//! Proactive context expansion (#1122): automatically injects previously
+//! Proactive context expansion: automatically injects previously
 //! compressed data when it becomes relevant to the current request.
 //!
 //! When sobre compresses content (via CCR tee-store), this module indexes
@@ -7,7 +7,7 @@
 //! context matches indexed keywords above a threshold, the relevant compressed
 //! content is proactively expanded and appended.
 //!
-//! Determinism (#498): expansion decisions are pure functions of
+//! Determinism: expansion decisions are pure functions of
 //! (query_terms, stored_entries, budget). No timestamps in scoring —
 //! age eviction uses monotonic seq_ticks.
 

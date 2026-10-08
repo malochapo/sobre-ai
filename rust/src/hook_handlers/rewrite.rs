@@ -50,7 +50,7 @@ fn compute(host: Host) -> String {
     };
     let cwd = payload_cwd(&v);
 
-    // #1032: Cursor fires preToolUse twice; the second fire replays the first.
+    // Cursor fires preToolUse twice; the second fire replays the first.
     let key = format!("{host:?}\u{0}{cmd}");
     dedup::deduped("rewrite", &key, || {
         let binary = resolve_binary();

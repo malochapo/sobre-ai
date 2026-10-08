@@ -476,7 +476,7 @@ pub fn information_bottleneck_filter(
     information_bottleneck_filter_typed(content, task_keywords, budget_ratio, None, force_keep)
 }
 
-/// #840: IB filter with optional markdown section-header preservation.
+/// IB filter with optional markdown section-header preservation.
 /// When `preserve_section_headers` is true, the nearest preceding `#`-header
 /// for each selected line is injected into the output so fragments remain
 /// attributable to their enclosing sections.
@@ -535,8 +535,8 @@ fn inject_section_headers(original: &str, filtered: &str) -> String {
 }
 
 /// Task-type-aware IB filter. Uses `TaskType` to adjust structural weights.
-/// `force_keep` lines (explicit `protect` tokens, #709) are kept verbatim on top
-/// of the budget; `&[]` reproduces the pre-protect output byte-for-byte (#498).
+/// `force_keep` lines (explicit `protect` tokens) are kept verbatim on top
+/// of the budget; `&[]` reproduces the pre-protect output byte-for-byte.
 pub fn information_bottleneck_filter_typed(
     content: &str,
     task_keywords: &[String],
@@ -647,7 +647,7 @@ pub fn information_bottleneck_filter_typed(
                 * (information * 0.25 + 0.05)
                 * (attn_weight * 0.15 + 0.05);
 
-            // Explicit protect tokens (#709) force the line to the top of the
+            // Explicit protect tokens force the line to the top of the
             // ranking; INF survives the MMR lambda penalty so it is always kept.
             let score = if super::protect::line_is_protected(line, force_keep) {
                 f64::INFINITY
@@ -659,9 +659,9 @@ pub fn information_bottleneck_filter_typed(
         })
         .collect();
 
-    // Protected lines (#709) are kept on top of the ranked budget, so widen the
+    // Protected lines are kept on top of the ranked budget, so widen the
     // budget to hold them without displacing other selected content. With an
-    // empty `force_keep` this adds zero and the budget is byte-identical (#498).
+    // empty `force_keep` this adds zero and the budget is byte-identical.
     let protected_count = lines
         .iter()
         .filter(|l| super::protect::line_is_protected(l, force_keep))
@@ -907,7 +907,7 @@ mod tests {
 
     #[test]
     fn ib_empty_force_keep_is_byte_identical() {
-        // Protect must not change the unprotected IB output (#498).
+        // Protect must not change the unprotected IB output.
         let content = "fn main() {\n    let x = 1;\n    return Err(\"e\");\n    let y = 2;\n}\n";
         let a = information_bottleneck_filter(content, &["main".to_string()], 0.5, &[]);
         let b = information_bottleneck_filter_typed(content, &["main".to_string()], 0.5, None, &[]);

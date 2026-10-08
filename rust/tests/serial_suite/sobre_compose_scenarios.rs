@@ -75,7 +75,7 @@ fn compose_surfaces_associative_neighbours() {
 }
 
 /// Two files define a symbol of the same name; the task keywords point at one.
-/// Regression for #993: `best_symbol_snippet` used to inline `find_symbols(name)
+/// Regression: `best_symbol_snippet` used to inline `find_symbols(name)
 /// .next()` — an arbitrary match — so a trivial config accessor could win over
 /// the OCPP charger method the task was about. It must now pick by path/keyword
 /// relevance.

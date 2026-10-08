@@ -4,8 +4,8 @@
 //! Each line is one OpenTelemetry log record in OTLP/JSON form, with the GenAI
 //! semantic-convention attribute names where one exists
 //! (`gen_ai.usage.input_tokens`, `gen_ai.request.model`, …) and `sobre.*`
-//! names for the rest. Nothing exports it; the format only means an exporter
-//! can be added later without a migration.
+//! names for the rest. Nothing exports it; the format means an OpenTelemetry
+//! exporter could read it as is.
 //!
 //! Three events:
 //!

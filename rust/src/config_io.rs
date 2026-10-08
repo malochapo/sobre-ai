@@ -222,7 +222,7 @@ pub fn write_toml_preserving_minimal(
             // Refuse to overwrite a non-empty file we cannot parse. `new_content`
             // and `default_content` come from our own serializer (always valid),
             // so a merge failure means the on-disk config is corrupt — clobbering
-            // it with defaults would silently wipe customizations (#443). We
+            // it with defaults would silently wipe customizations. We
             // propagate the error and leave the file untouched instead.
             merge_toml_inner(&existing, new_content, Some(default_content)).map_err(|e| {
                 format!(
@@ -341,12 +341,12 @@ fn item_equals_default(item: &toml_edit::Item, default: Option<&toml_edit::Item>
 }
 
 pub fn write_atomic(path: &Path, content: &str) -> Result<(), String> {
-    // #596: a user may symlink agent config (`~/.claude.json`,
+    // A user may symlink agent config (`~/.claude.json`,
     // `~/.codex/config.toml`, …) into a managed dotfiles repo. Resolve the
     // symlink to its real target and write THROUGH it (preserving the symlink)
     // instead of hard-blocking. The target must stay within `$HOME`, so a
     // planted symlink can never redirect a config write outside the user's own
-    // home (preserves the GL#442 symlink-hijack protection).
+    // home (preserves the symlink-hijack protection).
     let target = resolve_write_target(path)?;
 
     if let Some(parent) = target.parent() {
@@ -355,7 +355,7 @@ pub fn write_atomic(path: &Path, content: &str) -> Result<(), String> {
 
     // An existing file keeps its mode; a new one is owner-only. Windows ACLs
     // are left untouched. The temp+rename mechanics and the read-only-directory
-    // in-place fallback (#459) are shared with the edit tools via
+    // in-place fallback are shared with the edit tools via
     // `core::atomic_fs`.
     #[cfg(unix)]
     let perms = {
@@ -371,7 +371,7 @@ pub fn write_atomic(path: &Path, content: &str) -> Result<(), String> {
     crate::core::atomic_fs::write_bytes_with_fallback(&target, content.as_bytes(), perms.as_ref())
 }
 
-/// Resolve the real file to write, honoring a user-managed symlink (#596).
+/// Resolve the real file to write, honoring a user-managed symlink.
 ///
 /// * not a symlink (or missing) → `path` unchanged.
 /// * symlink → its resolved target (write THROUGH, preserving the symlink) —
@@ -435,7 +435,7 @@ fn canonicalize_existing_prefix(path: &Path) -> Result<PathBuf, String> {
     }
 }
 
-/// `create_dir_all` that tolerates a user-managed symlinked directory (#596):
+/// `create_dir_all` that tolerates a user-managed symlinked directory:
 ///
 /// * regular dir / missing path → `create_dir_all`.
 /// * symlink to an existing directory → ok (no-op).
@@ -569,7 +569,7 @@ enabled = true
 
     #[test]
     fn minimal_mode_refuses_to_clobber_unparseable_existing() {
-        // #443: a corrupt config must never be silently replaced with defaults.
+        // A corrupt config must never be silently replaced with defaults.
         let tmp = unique_tmp("cfg_corrupt");
         let _ = std::fs::create_dir_all(&tmp);
         let path = tmp.join("config.toml");
@@ -596,7 +596,7 @@ enabled = true
     }
 }
 
-/// #596: write THROUGH a user-managed symlink to its real target, and make
+/// Write THROUGH a user-managed symlink to its real target, and make
 /// `ensure_dir` tolerant of symlinked directories. Unix-only (POSIX symlinks + `$HOME` override).
 #[cfg(all(test, unix))]
 mod symlink_596_tests {

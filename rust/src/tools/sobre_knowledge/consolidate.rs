@@ -1,5 +1,5 @@
 //! Consolidation engine: session import, fact lifecycle, lossless capacity
-//! reclaim and the consolidation reports (#995).
+//! reclaim and the consolidation reports.
 
 use chrono::{DateTime, Utc};
 
@@ -42,12 +42,12 @@ pub(crate) fn consolidate_project_knowledge(
     consolidate_project_knowledge_with(project_root, &ConsolidateOptions::manual())
 }
 
-/// Canonical consolidation engine (#995 Phase 4). Every driver — CLI/MCP, the
+/// Canonical consolidation engine (Phase 4). Every driver — CLI/MCP, the
 /// scheduled post-dispatch pass ([`crate::core::consolidation_engine::consolidate_latest`]),
 /// and startup auto-consolidate — funnels through here, parameterised by
 /// [`ConsolidateOptions`], so session import, fact keys, lifecycle and the
 /// lossless per-store capacity reclaim behave identically. Session loads are
-/// project-scoped (cwd bug #2362), and `opts.dry_run` previews without mutating
+/// project-scoped (not cwd-scoped), and `opts.dry_run` previews without mutating
 /// knowledge, archives or the session.
 pub(crate) fn consolidate_project_knowledge_with(
     project_root: &str,
@@ -168,7 +168,7 @@ fn run_consolidation_locked(
 
 /// Preview a consolidation on a throwaway clone: identical math, zero writes to
 /// knowledge, archives or the session. Reuses the real lifecycle/import code so
-/// the counts match what a non-dry run would produce (#995 Phase 6).
+/// the counts match what a non-dry run would produce (Phase 6).
 fn dry_run_report(
     project_root: &str,
     session: Option<&SessionState>,

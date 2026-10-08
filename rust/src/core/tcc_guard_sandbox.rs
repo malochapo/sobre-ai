@@ -1,4 +1,4 @@
-//! macOS Seatbelt self-sandbox for launchd-owned sobre processes (#356).
+//! macOS Seatbelt self-sandbox for launchd-owned sobre processes.
 //!
 //! The proxy runs as a LaunchAgent — i.e. under `launchd` (`ppid 1`) with its
 //! own TCC identity. Any `stat`/`read_dir`/`realpath` it performs under
@@ -28,7 +28,7 @@ use std::process::Command;
 const SANDBOX_EXEC: &str = "/usr/bin/sandbox-exec";
 
 /// The macOS "magic" home subdirectories whose mere enumeration trips the TCC
-/// privacy prompt (#356).
+/// privacy prompt.
 const TCC_PROTECTED_SUBDIRS: [&str; 3] = ["Documents", "Desktop", "Downloads"];
 
 /// Env sentinel marking that this process is already running under (or is
@@ -74,7 +74,7 @@ fn sbpl_escape(s: &str) -> String {
 }
 
 /// Wrap launchd `ProgramArguments` so the spawned process runs under the
-/// deny-`~/Documents` Seatbelt sandbox (#356).
+/// deny-`~/Documents` Seatbelt sandbox.
 ///
 /// Returns `[SANDBOX_EXEC, "-p", <profile>, binary, args…]` when `sandbox-exec`
 /// is present and accepts the generated profile (smoke-tested against
@@ -112,7 +112,7 @@ fn should_reexec_under_seatbelt(standalone: bool, sentinel_present: bool) -> boo
     standalone && !sentinel_present
 }
 
-/// Belt-and-suspenders (#356): if this is a launchd-standalone process
+/// Belt-and-suspenders: if this is a launchd-standalone process
 /// (`ppid 1`, its own TCC identity) that is not already running under the
 /// seatbelt, re-exec self wrapped in `sandbox-exec` with the deny-`~/Documents`
 /// profile. This covers any standalone process the LaunchAgent wrapper did not
@@ -170,10 +170,10 @@ fn sandbox_exec_usable(profile: &str) -> bool {
 }
 
 /// Build the `EnvironmentVariables` plist block that pins a launchd-spawned
-/// sobre process to the directory layout the *installing CLI* resolves (#449).
+/// sobre process to the directory layout the *installing CLI* resolves.
 ///
 /// A LaunchAgent inherits only launchd's minimal environment (no `HOME`, no XDG
-/// vars), so the proxy/daemon would otherwise resolve a *different* config/data
+/// vars), so the proxy would otherwise resolve a *different* config/data
 /// dir than the CLI that installed it: it never sees the user's `config.toml`
 /// edits (the live-upstream reload reads an empty/foreign config) and derives a
 /// mismatched session token. Baking the exact resolved dirs into the plist makes
@@ -183,7 +183,7 @@ fn sandbox_exec_usable(profile: &str) -> bool {
 /// (4-space indented, trailing newline) or an empty string when nothing resolves.
 pub fn pinned_layout_env_xml() -> String {
     let mut entries: Vec<(&str, String)> = Vec::new();
-    // #356 sentinel: marks the spawned process as launched by the LaunchAgent
+    // Sentinel: marks the spawned process as launched by the LaunchAgent
     // (it carries the seatbelt wrapper, or wrapping is impossible on this host).
     // Its presence makes `reexec_under_seatbelt_if_needed` a no-op, so a
     // plist-launched process never double-wraps.
@@ -279,8 +279,8 @@ mod tests {
 
     #[test]
     fn unwrapped_args_prepend_binary() {
-        let got = unwrapped_args("/bin/sobre", &["serve", "--_foreground-daemon"]);
-        assert_eq!(got, vec!["/bin/sobre", "serve", "--_foreground-daemon"]);
+        let got = unwrapped_args("/bin/sobre", &["proxy", "start"]);
+        assert_eq!(got, vec!["/bin/sobre", "proxy", "start"]);
     }
 
     #[test]
@@ -318,7 +318,7 @@ mod tests {
     #[test]
     fn pinned_layout_env_carries_seatbelt_sentinel() {
         // The plist must mark the processes it launches so the boot-time re-exec
-        // guard (#356) treats them as already-wrapped and never double-wraps.
+        // guard treats them as already-wrapped and never double-wraps.
         let xml = pinned_layout_env_xml();
         assert!(xml.contains(&format!("<key>{SEATBELT_SENTINEL}</key>")));
     }

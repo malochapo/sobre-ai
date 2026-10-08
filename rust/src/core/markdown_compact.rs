@@ -2,7 +2,7 @@
 //!
 //! Keeps heading topology intact, treats fenced code blocks as atomic units, and
 //! selects high-signal body units with a small IDF-style scorer. Intentionally
-//! std-only and byte-stable (#498): per-line token sets are ordered
+//! std-only and byte-stable: per-line token sets are ordered
 //! (`BTreeSet`), so the f64 score summation order — and therefore the selected
 //! lines and omission markers — are a pure function of the input bytes.
 
@@ -266,7 +266,7 @@ fn is_heading(line: &str) -> bool {
 
 /// Per-line token sets. `BTreeSet` (not `HashSet`) is load-bearing: the score
 /// is an f64 sum over these tokens, and f64 addition is not associative, so the
-/// iteration order must be fixed for the output to be byte-stable (#498).
+/// iteration order must be fixed for the output to be byte-stable.
 fn token_sets(lines: &[&str]) -> Vec<BTreeSet<String>> {
     lines
         .iter()
@@ -442,7 +442,7 @@ mod tests {
 
     #[test]
     fn output_is_deterministic_across_calls() {
-        // #498 regression guard: the score is an f64 sum over per-line token
+        // Regression guard: the score is an f64 sum over per-line token
         // sets. With unordered sets, near-tied lines could flip across calls
         // (each std HashSet instance iterates in its own random order), moving
         // omission markers and changing bytes. Mixed token frequencies below

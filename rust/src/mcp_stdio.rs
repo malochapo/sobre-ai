@@ -347,7 +347,7 @@ impl<T: DeserializeOwned> HybridJsonRpcMessageCodec<T> {
                 // An ignored notification — fall through and scan the next frame.
                 Ok(None) => {}
                 // Skip a malformed body instead of fusing the transport (see
-                // `decode_json_line` / #453). The Content-Length framing stayed
+                // `decode_json_line`). The Content-Length framing stayed
                 // intact, so the next frame in the buffer is still recoverable.
                 Err(err) => {
                     tracing::warn!("skipping malformed Content-Length frame: {err}");
@@ -393,7 +393,7 @@ impl<T: DeserializeOwned> HybridJsonRpcMessageCodec<T> {
                         // (`has_errored`), so the next poll yields `None`; rmcp then
                         // exits with `QuitReason::Closed`, the agent respawns us, and
                         // the fresh process pays another index build — the respawn /
-                        // idle-CPU churn behind #453. The bad line is already consumed
+                        // idle-CPU churn. The bad line is already consumed
                         // (`split_to` above), so we just skip it and resync on the
                         // next newline-delimited frame.
                         Err(err) => {
@@ -555,7 +555,7 @@ mod tests {
     fn decode_skips_malformed_json_line_and_recovers() {
         // A bad line followed by a valid frame: the codec must skip the bad one
         // and return the valid frame in the same decode pass — never an Err that
-        // would fuse the transport and trigger an MCP-server respawn (#453).
+        // would fuse the transport and trigger an MCP-server respawn.
         let protocol = SharedProtocol::new();
         let mut codec = HybridJsonRpcMessageCodec::<serde_json::Value>::new(protocol);
         let good = serde_json::to_vec(&sample_message()).unwrap();

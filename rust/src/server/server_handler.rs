@@ -58,7 +58,7 @@ impl ServerHandler for SobreServer {
                 session.project_root = Some(root.clone());
                 tracing::info!("Project root set to: {root}");
                 // Cursor multi-root: register sibling workspace folders as extra
-                // roots (#699).
+                // roots.
                 for other in roots::workspace_roots_from_env() {
                     if &other != root && !session.extra_roots.contains(&other) {
                         session.extra_roots.push(other);
@@ -94,7 +94,7 @@ impl ServerHandler for SobreServer {
         }
 
         // Indices are warmed lazily on first use of a tool that needs them
-        // (issue #152), not eagerly here — a session that only uses
+        //, not eagerly here — a session that only uses
         // sobre_read/sobre_shell/sobre_tree must not pay a full graph + BM25 scan.
         // See `index_orchestrator::ensure_warm_for_tool`, driven from dispatch.
 
@@ -110,7 +110,7 @@ impl ServerHandler for SobreServer {
                 std::time::Duration::from_mins(2),
             );
             if maintenance.is_some() {
-                // Prune accumulated quarantined BM25 indexes (#2364). Silent
+                // Prune accumulated quarantined BM25 indexes. Silent
                 // (tracing only) so it never corrupts the MCP stdio protocol.
                 let _ = crate::core::storage_maintenance::run_quiet();
             }
@@ -235,7 +235,7 @@ mod tests {
 
     /// The `list_tools` panic guard serves the registry, so an internal panic
     /// never leaves the agent tool-less — indistinguishable from "MCP totally
-    /// failed". Regression guard for #688.
+    /// failed". Regression guard.
     ///
     /// It used to serve a hand-maintained static list, which is how the
     /// advertised surface drifted from the registry in the first place.

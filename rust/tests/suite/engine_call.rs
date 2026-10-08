@@ -21,7 +21,7 @@ async fn context_engine_call_tool_text_reads_file() {
     assert!(out.contains("hello-engine"));
 }
 
-/// #271 regression: many concurrent reads must all return through the
+/// Regression: many concurrent reads must all return through the
 /// `spawn_blocking` dispatch path without starving the core workers or hanging.
 /// Before the dispatch watchdog, a single hung handler could swallow its
 /// response (client crash: "Cannot read properties of undefined (reading

@@ -184,10 +184,10 @@ impl AgentRegistry {
     /// Atomically load, mutate, and persist the registry under a single file
     /// lock. `load_or_create()` + mutate + `save()` is a read-modify-write
     /// race: `save()` only locks the final write, so two concurrent callers
-    /// (two MCP sessions registering, or the dashboard's own poll-triggered
+    /// (two MCP sessions registering, or one registering while another runs
     /// `cleanup_stale` + save) can each load a stale snapshot and the last
     /// writer silently drops the other's changes — e.g. a second session's
-    /// registration vanishing from the dashboard. Holding the lock across
+    /// registration vanishing. Holding the lock across
     /// the re-read closes that window: the read inside always sees the
     /// latest on-disk state.
     pub fn mutate_locked<T>(f: impl FnOnce(&mut Self) -> T) -> Result<(Self, T), String> {
@@ -241,13 +241,10 @@ fn generate_short_id() -> String {
     format!("{:08x}", hasher.finish() as u32)
 }
 
-/// #576 already fixed this exact hardcoded-`true` anti-pattern for
-/// `daemon::is_daemon_running` by delegating to `ipc::process::is_alive`
-/// (which has a real Windows `OpenProcess` check); this duplicate copy was
-/// missed, so on non-unix targets `cleanup_stale` could never flip a dead
-/// MCP session's entry to `Finished`, leaving `registry.json` accumulating
-/// stale `Active` entries forever — the root cause of the "N active agents"
-/// dashboard bug on Windows.
+/// Delegates to `ipc::process::is_alive`, which has a real Windows
+/// `OpenProcess` check. A hardcoded `true` here meant `cleanup_stale` could
+/// never flip a dead MCP session's entry to `Finished` on non-unix targets,
+/// so `registry.json` kept stale `Active` entries forever.
 pub fn is_process_alive(pid: u32) -> bool {
     crate::ipc::process::is_alive(pid)
 }
@@ -338,7 +335,7 @@ mod tests {
         }
     }
 
-    /// #419: the wake-up briefing scopes agents to the current project via
+    /// The wake-up briefing scopes agents to the current project via
     /// `list_active(Some(root))`. Peers working on *other* projects must never
     /// leak into the briefing.
     #[test]
@@ -357,7 +354,7 @@ mod tests {
         assert_eq!(reg.list_active(None).len(), 2);
     }
 
-    /// #419: a crashed/exited MCP process leaves an `Active` entry behind.
+    /// A crashed/exited MCP process leaves an `Active` entry behind.
     /// `cleanup_stale` must flip it to `Finished` (regardless of age) so
     /// `list_active` no longer surfaces it as a live peer — the ghost the
     /// briefing used to show. Previously `#[cfg(unix)]`-only, which is why
@@ -403,8 +400,7 @@ mod tests {
     /// each other's changes. Before `mutate_locked`, `save()` only locked the
     /// final write — the preceding `load()` was unlocked, so a second writer
     /// could load a stale snapshot and overwrite the first writer's addition
-    /// (e.g. a second Claude Code session's agent registration vanishing
-    /// from the dashboard).
+    /// (e.g. a second Claude Code session's agent registration vanishing).
     #[test]
     fn mutate_locked_survives_concurrent_writers() {
         let _iso = crate::core::data_dir::isolated_data_dir();

@@ -2,12 +2,12 @@
 //!
 //! The body is the verbatim [`toml::to_string_pretty`] serialization of the
 //! supplied [`Config`], so every field round-trips exactly — independent of
-//! schema completeness (#443). Schema descriptions, allowed values and defaults
+//! schema completeness. Schema descriptions, allowed values and defaults
 //! are then woven in as `#` comment lines *above* each key and section, and
 //! every key the body leaves out (an unset optional) is listed commented out
 //! in its section. Only comment lines are inserted; key/value lines are never
 //! touched, which guarantees `parse(render(cfg)) == cfg` and keeps the output a
-//! deterministic function of `(cfg, schema)` (#498).
+//! deterministic function of `(cfg, schema)`.
 
 use super::Config;
 use super::schema::{ConfigSchema, KeySchema};
@@ -212,7 +212,7 @@ mod tests {
         cfg
     }
 
-    // #443 core safety net: rendering then parsing must reproduce the config
+    // Core safety net: rendering then parsing must reproduce the config
     // exactly, regardless of how complete the schema is. The comparison goes
     // through `toml::Value` (map equality is order-independent) so it is robust
     // against `HashMap` iteration order in fields like `tool_total_limits`.
@@ -248,7 +248,7 @@ mod tests {
         );
     }
 
-    // Output must be a deterministic function of its inputs (#498) and actually
+    // Output must be a deterministic function of its inputs and actually
     // carry documentation.
     #[test]
     fn render_is_deterministic_and_annotated() {

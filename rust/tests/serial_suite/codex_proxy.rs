@@ -1,10 +1,10 @@
-//! End-to-end regression for #554 / #597: `proxy enable` must treat the two
+//! End-to-end regression: `proxy enable` must treat the two
 //! Codex auth modes differently.
 //!
 //! - **API-key** mode: Codex is pointed at the proxy's `/v1` rail (top-level
 //!   `openai_base_url`).
 //! - **ChatGPT login**: left native — no sobre Codex config — so history and
-//!   `codex cloud`/remote keep working (#597).
+//!   `codex cloud`/remote keep working.
 //!
 //! All scenarios live in one serial test: they redirect Codex via `CODEX_HOME`
 //! (the documented override `resolve_codex_dir` honours) and a live dummy proxy so
@@ -128,7 +128,7 @@ fn proxy_enable_respects_codex_auth_mode_554() {
 
     const CHATGPT_AUTH: &str = r#"{"auth_mode":"chatgpt","tokens":{"access_token":"x"}}"#;
 
-    // --- ChatGPT login: stay native, write no proxy entries (#597). Codex does
+    // --- ChatGPT login: stay native, write no proxy entries. Codex does
     // not read OPENAI_API_KEY for model traffic, so a key in the environment
     // must not turn the stored login into API-key mode.
     {

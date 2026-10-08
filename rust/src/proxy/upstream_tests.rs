@@ -1,4 +1,4 @@
-//! Split from `proxy/mod.rs` (#660 LOC gate): `upstream_tests`.
+//! Split from `proxy/mod.rs` (LOC gate): `upstream_tests`.
 
 use super::*;
 
@@ -9,7 +9,7 @@ fn upstreams_with_openai(openai: &str) -> Upstreams {
     }
 }
 
-/// The #449 core wiring: provider handlers read the upstream per request from
+/// The core wiring: provider handlers read the upstream per request from
 /// the watch channel, so a published change is served immediately, without
 /// rebuilding the `ProxyState`.
 #[tokio::test]
@@ -33,7 +33,7 @@ async fn proxy_state_reads_upstream_live_from_watch() {
     assert_eq!(state.upstream_snapshot().openai, "https://new.example");
 }
 
-/// End-to-end #449 repro (in-process, no network): a `config set`-style edit
+/// End-to-end repro (in-process, no network): a `config set`-style edit
 /// to config.toml is picked up by a *running* proxy's refresh task within the
 /// reload interval — without any restart. Before the fix this value stayed
 /// frozen at the start-time upstream forever.

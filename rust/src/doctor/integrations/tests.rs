@@ -74,7 +74,7 @@ fn stale_hook_binary_accepts_bare_path_command() {
     assert!(stale_hook_binary(content, "/anything/sobre").is_none());
 }
 
-/// #708: a configured verbatim hook binary ($HOME/... synced across machines)
+/// A configured verbatim hook binary ($HOME/... synced across machines)
 /// is the expected command — doctor must not flag it stale, or --fix would
 /// rewrite it back to an absolute path and restart the sync ping-pong.
 #[test]

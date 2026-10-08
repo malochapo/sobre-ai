@@ -14,7 +14,7 @@ const SPIN_INTERVAL: Duration = Duration::from_millis(20);
 ///
 /// Unlike the previous `Handle::block_on` approach, this never parks a blocking
 /// thread waiting for the async runtime to make progress — eliminating the
-/// stall-under-load anti-pattern on Windows (#1018). The loop yields the thread
+/// stall-under-load anti-pattern on Windows. The loop yields the thread
 /// between attempts so it does not starve other work on the blocking pool.
 ///
 /// Returns `None` on timeout (caller must provide graceful fallback).
@@ -52,7 +52,7 @@ pub fn read_within<T: Send + Sync + 'static>(
 }
 
 /// Acquire a write lock via a non-blocking spin loop with an adaptive timeout.
-/// See `read()` for design rationale (#1018).
+/// See `read` for design rationale.
 ///
 /// Returns `None` on timeout (caller must provide graceful fallback).
 pub fn write<T: Send + Sync + 'static>(

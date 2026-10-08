@@ -3,13 +3,13 @@
 //! The `[unchanged]` re-read stub means *"you already have this in context"* —
 //! which is only true within the **same conversation / context window**. The
 //! read [`SessionCache`](crate::core::cache::SessionCache) is shared across all
-//! chats served by one daemon, so without scoping a file delivered in chat A
+//! chats served by one MCP server, so without scoping a file delivered in chat A
 //! could be stubbed for a re-read in chat B (which never received it).
 //!
 //! Cursor's hooks write the live conversation id to `active_transcript.json`;
 //! hosts without one (Claude Code / Codex) supply a per-session
 //! `session_id` instead, which `load_active_transcript` returns as the scope id
-//! so a new session never inherits a prior one's stubs (#1004). Either way it
+//! so a new session never inherits a prior one's stubs. Either way it
 //! carries a 2h TTL and we read it via
 //! [`crate::hook_handlers::load_active_transcript`] but
 //! cache it behind a short TTL so the read hot path never stats+parses a file on
@@ -18,24 +18,24 @@
 //!
 //! A Cursor subagent (`CURSOR_TASK_ID` set) is given its own `task:{id}` scope,
 //! so it is never served — nor records — a stub under another agent's identity;
-//! this lets the stub gate replace the old blanket subagent force-fresh (#956).
+//! this lets the stub gate replace the old blanket subagent force-fresh.
 //!
-//! ## Concurrency hardening (#1040)
+//! ## Concurrency hardening
 //!
 //! `active_transcript.json` is a single, last-writer-wins slot, and an MCP
 //! `sobre_read` call carries no caller identity (`ToolContext` has none), so with
-//! **two concurrent top-level chats** the daemon
+//! **two concurrent top-level chats** the MCP server
 //! cannot prove which chat is asking: the resolved id may be the *other* chat's
 //! (last writer) or a TTL-stale value. A matching id is therefore untrustworthy
 //! while more than one conversation is live. Rather than risk serving chat B a
 //! stub for content only chat A received, the gate **withholds every stub while
 //! more than one conversation has been active recently** — correctness over the
-//! re-read savings. Single-conversation daemons (the common case) keep the full
+//! re-read savings. Single-conversation servers (the common case) keep the full
 //! savings; sightings are sampled on each transcript refresh. Subagents never
 //! feed this signal (they short-circuit on their `task:` scope), so a parent +
 //! its subagents are not counted as concurrent.
 //!
-//! ### Zero detection lag, and the host limit (#1042)
+//! ### Zero detection lag, and the host limit
 //!
 //! The stub decision resolves the caller with [`current_conversation_id_fresh`],
 //! which re-samples `active_transcript.json` (bypassing the `REFRESH_TTL`
@@ -47,7 +47,7 @@
 //! savings while chats run concurrently: that needs a per-call caller identity,
 //! and Cursor exposes none. The MCP `tools/call` carries no conversation id (no
 //! documented `_meta`), and a `beforeMCPExecution` hook can gate a call's
-//! *permission* but not rewrite its *arguments*. So the daemon cannot prove
+//! *permission* but not rewrite its *arguments*. So the MCP server cannot prove
 //! which chat a direct `sobre_read` belongs to, and withholding under concurrency
 //! stays the correct ceiling until the host adds per-call identity.
 
@@ -61,7 +61,7 @@ const REFRESH_TTL: Duration = Duration::from_secs(3);
 /// How long a sighting of a conversation id keeps counting toward "concurrently
 /// active". Sized to comfortably span a multi-tab session's think/act gaps so a
 /// second chat that briefly goes quiet doesn't drop below the concurrency
-/// threshold and re-open the cross-chat stub hazard (#1040).
+/// threshold and re-open the cross-chat stub hazard.
 const CONCURRENCY_WINDOW: Duration = Duration::from_secs(30);
 
 struct Cached {
@@ -76,7 +76,7 @@ fn store() -> &'static RwLock<Option<Cached>> {
 
 /// Recent sightings of distinct conversation ids (`id` → last-seen instant),
 /// fed by [`refresh`]. Drives [`multiple_conversations_recent`] so the stub gate
-/// can tell when the daemon is multiplexing more than one chat (#1040).
+/// can tell when the MCP server is multiplexing more than one chat.
 fn seen_store() -> &'static RwLock<Vec<(String, Instant)>> {
     static SEEN: OnceLock<RwLock<Vec<(String, Instant)>>> = OnceLock::new();
     SEEN.get_or_init(|| RwLock::new(Vec::new()))
@@ -97,8 +97,7 @@ fn subagent_scope_from(task_id: Option<&str>) -> Option<String> {
 /// Giving it a distinct, non-`None` scope means it can never match the parent's
 /// (or a sibling's) `delivered_conversation`, so it is never served a stub for
 /// content only another agent received — while its *own* re-reads still collapse
-/// to the cheap stub. This replaces the old blanket force-fresh for subagents
-/// (#952/#956).
+/// to the cheap stub. This replaces the old blanket force-fresh for subagents.
 fn subagent_scope() -> Option<String> {
     static SCOPE: OnceLock<Option<String>> = OnceLock::new();
     SCOPE
@@ -121,7 +120,7 @@ pub fn current_conversation_id() -> Option<String> {
 /// path: re-sampling notes a freshly-appeared second chat into the recency log
 /// (via `refresh`) *before* the gate runs, so concurrency is detected with no
 /// TTL lag and a stub can never leak to chat B in the window before detection
-/// catches up (#1042). The cost is one tiny, OS-cached transcript read per
+/// catches up. The cost is one tiny, OS-cached transcript read per
 /// re-read — negligible against the source re-read it guards.
 pub fn current_conversation_id_fresh() -> Option<String> {
     resolve_conversation_id(Freshness::Fresh)
@@ -217,9 +216,9 @@ fn distinct_within(v: &[(String, Instant)], now: Instant, window: Duration) -> u
 }
 
 /// True when more than one conversation has been active within
-/// [`CONCURRENCY_WINDOW`] — i.e. the daemon is multiplexing chats, so the shared
+/// [`CONCURRENCY_WINDOW`] — i.e. the MCP server is multiplexing chats, so the shared
 /// `active_transcript.json` id can't be trusted to name the current caller and no
-/// stub is provably in-context (#1040).
+/// stub is provably in-context.
 pub(crate) fn multiple_conversations_recent() -> bool {
     seen_store()
         .read()
@@ -232,7 +231,7 @@ pub(crate) fn multiple_conversations_recent() -> bool {
 /// `current == None` (no conversation context) keeps the process-scoped
 /// behavior — stub allowed — **unless** more than one conversation
 /// has been active recently, in which case every stub is withheld because the
-/// shared id signal can't identify the caller (#1040).
+/// shared id signal can't identify the caller.
 pub fn conversation_allows_stub(current: Option<&str>, delivered: Option<&str>) -> bool {
     allows_stub(multiple_conversations_recent(), current, delivered)
 }
@@ -241,20 +240,20 @@ pub fn conversation_allows_stub(current: Option<&str>, delivered: Option<&str>) 
 fn allows_stub(concurrent: bool, current: Option<&str>, delivered: Option<&str>) -> bool {
     if concurrent {
         // Multiple chats live: a matching id can't be trusted to name THIS caller,
-        // so nothing is provably in-context — withhold every stub (#1040).
+        // so nothing is provably in-context — withhold every stub.
         return false;
     }
     match (current, delivered) {
         (Some(c), Some(d)) => c == d,
         // Known caller, unknown delivery (pre-scoping entry) → can't prove → block.
         (Some(_), None) => false,
-        // Unknown caller on a single-conversation daemon → allow.
+        // Unknown caller on a single-conversation server → allow.
         (None, _) => true,
     }
 }
 
 /// Whether a *cold* `[unchanged]` stub may be served — i.e. one backed only by
-/// the persisted index ([`crate::core::read_stub_index`]) after a daemon
+/// the persisted index ([`crate::core::read_stub_index`]) after an MCP
 /// restart, with no live in-memory entry.
 ///
 /// Stricter than [`conversation_allows_stub`]: a cold stub crosses a process
@@ -262,7 +261,7 @@ fn allows_stub(concurrent: bool, current: Option<&str>, delivered: Option<&str>)
 /// conversation. Unlike the warm path there is no "no context → allow" escape,
 /// because without a current conversation id we cannot prove the content is in
 /// the new process's context, and a wrong cold stub would resurrect exactly the
-/// cross-chat hazard #954 closed. Also withheld under concurrency (#1040).
+/// cross-chat hazard closed. Also withheld under concurrency.
 pub fn conversation_allows_cold_stub(current: Option<&str>, delivered: Option<&str>) -> bool {
     allows_cold_stub(multiple_conversations_recent(), current, delivered)
 }
@@ -282,7 +281,7 @@ mod tests {
 
     #[test]
     fn no_current_context_allows_stub() {
-        // Single-conversation daemon, scoping on: behave exactly as before.
+        // Single-conversation server, scoping on: behave exactly as before.
         assert!(allows_stub(false, None, None));
         assert!(allows_stub(false, None, Some("conv-a")));
     }
@@ -305,7 +304,7 @@ mod tests {
 
     #[test]
     fn concurrency_withholds_every_warm_stub() {
-        // #1040: while >1 chat is live, even a same-id match is untrustworthy.
+        // While >1 chat is live, even a same-id match is untrustworthy.
         assert!(!allows_stub(true, Some("conv-a"), Some("conv-a")));
         assert!(!allows_stub(true, None, None));
         assert!(!allows_stub(true, None, Some("conv-a")));
@@ -323,7 +322,7 @@ mod tests {
 
     #[test]
     fn cold_stub_withheld_under_concurrency() {
-        // #1040: a matching cold stub is still withheld while chats are multiplexed.
+        // A matching cold stub is still withheld while chats are multiplexed.
         assert!(!allows_cold_stub(true, Some("c"), Some("c")));
     }
 
@@ -331,7 +330,7 @@ mod tests {
     fn fresh_request_resamples_cached_request_honors_ttl() {
         let ttl = Duration::from_secs(3);
         // `Fresh` ignores the cache even for a brand-new entry → always re-samples,
-        // so the stub gate sees a just-appeared second chat with zero lag (#1042).
+        // so the stub gate sees a just-appeared second chat with zero lag.
         assert!(!cache_is_usable(
             Freshness::Fresh,
             Duration::from_millis(0),

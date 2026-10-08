@@ -1,4 +1,4 @@
-//! Shared low-level file-edit I/O primitives (epic #1008).
+//! Shared low-level file-edit I/O primitives.
 //!
 //! Extracted from `sobre_edit` so the anchored editor (`sobre_patch`) reuses the
 //! *exact same* TOCTOU-safe read→verify→atomic-write path instead of growing a
@@ -10,13 +10,13 @@
 //! * whole-file preimage fingerprint (size + mtime + BLAKE3) for the TOCTOU
 //!   guard ([`ensure_preimage_still_matches`]),
 //! * permission-preserving crash-atomic `rename`, with the read-only-directory
-//!   in-place fallback (#459).
+//!   in-place fallback.
 //!
 //! One implementation = one audited boundary. `sobre_edit` (`str_replace`) and
 //! `sobre_patch` (anchored) both apply through these functions, so a fix here
 //! protects both tools at once.
 //!
-//! **Known limitation (#960):** the TOCTOU guard is a point-in-time check,
+//! **Known limitation:** the TOCTOU guard is a point-in-time check,
 //! not a held lock — see [`ensure_preimage_still_matches`] for the residual
 //! window between that check and the atomic write it gates.
 
@@ -52,7 +52,7 @@ pub(crate) fn system_time_to_millis(t: SystemTime) -> u64 {
 /// here, so this only fires when the target could not be resolved.
 pub(crate) fn reject_symlink(path: &Path) -> Result<(), String> {
     if let Ok(meta) = std::fs::symlink_metadata(path) {
-        // Windows: also covers NTFS junctions/reparse points (GL#442).
+        // Windows: also covers NTFS junctions/reparse points.
         if crate::core::pathutil::is_symlink_or_reparse(&meta) {
             return Err(format!(
                 "ERROR: {} is a symlink — editing it would replace the link with a plain file. \
@@ -163,13 +163,13 @@ pub(crate) fn read_preimage(
 /// (TOCTOU guard): a concurrent writer between the preimage read and the write
 /// is detected here so the edit aborts instead of clobbering newer bytes.
 ///
-/// **Residual window (#960, accepted limitation):** this is a point-in-time
+/// **Residual window (accepted limitation):** this is a point-in-time
 /// check, not a held lock — it only detects a write that already happened
 /// *before* this call returns. Callers still compute `new_content` and hand
 /// it to [`write_atomic_bytes_with_permissions`] afterward; nothing guards
 /// that gap. An external editor writing to `path` between this check
 /// succeeding and the temp+rename completing is not detected, and its write
-/// is silently overwritten. Acceptable for sobre's single-writer-daemon
+/// is silently overwritten. Acceptable for sobre's single-writer MCP server
 /// model — the MCP server is the only intended writer of files it edits — but
 /// a real gap if an external editor (or a second sobre instance) writes to
 /// the same file concurrently. Closing it fully would need a held file lock
@@ -223,7 +223,7 @@ pub(crate) fn write_atomic_bytes_with_permissions(
     }
 
     // Mechanics — temp+rename with the read-only-directory in-place fallback
-    // (#459) — are shared with `config_io` via `core::atomic_fs`. The symlink /
+    // — are shared with `config_io` via `core::atomic_fs`. The symlink /
     // TOCTOU / read-only-root policy above stays here, so the edit tools keep
     // their audited boundary while the durable-write dance lives in one place.
     crate::core::atomic_fs::write_bytes_with_fallback(path, bytes, permissions)

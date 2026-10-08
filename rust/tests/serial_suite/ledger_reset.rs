@@ -1,8 +1,8 @@
-// Integration tests for Issue #244: Unable to clear context pressure.
+// Integration tests: Unable to clear context pressure.
 // Tests ledger reset, eviction, session reset clearing ledger,
 // and actionable eviction hints.
 
-mod ledger_reset {
+mod reset {
     use sobre::core::context_ledger::{ContextLedger, PressureAction};
 
     #[test]
@@ -34,8 +34,6 @@ mod ledger_reset {
         assert_eq!(ledger.window_size, 200_000);
     }
 }
-
-mod ledger_evict {}
 
 mod session_reset_clears_ledger {
     use sobre::core::context_ledger::{ContextLedger, PressureAction};

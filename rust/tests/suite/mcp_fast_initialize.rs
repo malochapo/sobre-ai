@@ -1,4 +1,4 @@
-//! Fast-initialize contract (GH #669).
+//! Fast-initialize contract.
 //!
 //! VS Code's start-on-demand MCP lifecycle races the first tool call of a
 //! fresh conversation against server startup (microsoft/vscode#321150). The

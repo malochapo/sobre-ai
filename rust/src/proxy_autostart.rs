@@ -175,7 +175,7 @@ pub fn stop() {
 }
 
 /// Start the installed manager after atomically taking ownership of `port`.
-/// This also handles the case where an IDE/dashboard spawned a standalone
+/// This also handles the case where an MCP server spawned a standalone
 /// proxy while the manager was temporarily unloaded.
 pub fn start_on_port(port: u16) -> bool {
     #[cfg(target_os = "macos")]
@@ -223,7 +223,7 @@ pub fn uninstall(_quiet: bool) {
 
 /// Whether this platform has a proxy-autostart backend (LaunchAgent on macOS,
 /// systemd user service on Linux). Windows and other targets have none, so a
-/// missing autostart there must not be treated as a failure by `doctor` (#416).
+/// missing autostart there must not be treated as a failure by `doctor`.
 pub fn is_supported() -> bool {
     cfg!(any(target_os = "macos", target_os = "linux"))
 }
@@ -282,19 +282,19 @@ fn install_launchagent(binary: &str, port: u16, quiet: bool) -> bool {
 
     let plist_path = plist_dir.join(format!("{PLIST_LABEL}.plist"));
     // Stop the registered job first, then take over any standalone proxy an
-    // IDE/dashboard may have spawned while launchd was unloaded. Starting the
+    // MCP server may have spawned while launchd was unloaded. Starting the
     // new job with an occupied port causes an unconditional KeepAlive loop.
     crate::core::launchd::bootout(PLIST_LABEL, &plist_path);
     if !release_proxy_port(port, quiet) {
         return false;
     }
-    // GH #439: proxy logs are STATE — $XDG_STATE_HOME/sobre/logs.
+    // Proxy logs are STATE — $XDG_STATE_HOME/sobre/logs.
     let log_dir = crate::core::paths::state_dir()
         .unwrap_or_else(|_| std::env::temp_dir().join("sobre"))
         .join("logs");
     let _ = std::fs::create_dir_all(&log_dir);
 
-    // #356: wrap the launchd invocation in a deny-~/Documents seatbelt sandbox
+    // Wrap the launchd invocation in a deny-~/Documents seatbelt sandbox
     // so the proxy (a TCC-standalone process) can never trip the privacy prompt.
     let port_arg = format!("--port={port}");
     let program_args = crate::core::tcc_guard_sandbox::program_args_xml(
@@ -302,7 +302,7 @@ fn install_launchagent(binary: &str, port: u16, quiet: bool) -> bool {
         "        ",
     );
 
-    // #449: pin the directory layout. A launchd-spawned proxy inherits only
+    // Pin the directory layout. A launchd-spawned proxy inherits only
     // launchd's minimal environment (no HOME, no XDG vars), so it resolves a
     // *different* config/data dir than the CLI that installed it — it never sees
     // the user's config.toml edits (live-upstream reload reads nothing) and

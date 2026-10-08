@@ -1,4 +1,4 @@
-/// Auto-generated session tokens for proxy/HTTP server security.
+/// Auto-generated session tokens for the proxy.
 ///
 /// Security principle: Least Action — minimize attack surface by always having
 /// a token, even when the user hasn't explicitly configured one. The token is

@@ -56,7 +56,7 @@ pub struct CacheEntry {
     /// Conversation id that received the full content (see
     /// [`crate::core::conversation`]). The `[unchanged]` stub is only valid for
     /// a re-read from this same conversation; `None` means delivered without a
-    /// known conversation context (legacy / hooks absent).
+    /// known conversation context (hooks absent).
     pub delivered_conversation: Option<String>,
     /// Last read mode used for this file (for auto-escalation on edit failure).
     pub last_mode: String,
@@ -186,7 +186,7 @@ impl CacheEntry {
 const RRF_K: f64 = 60.0;
 
 /// Hebbian protection added to an entry's RRF eviction score per unit of
-/// association strength with the currently-active working set (#3). Files that
+/// association strength with the currently-active working set. Files that
 /// are read together resist eviction together ("fire together, wire together").
 /// Deterministic: a fixed multiplier, no sampling.
 const HEBBIAN_PROTECT_WEIGHT: f64 = 0.05;
@@ -257,7 +257,7 @@ pub fn eviction_scores_rrf(entries: &[(&String, &CacheEntry)], now: Instant) -> 
         .collect()
 }
 
-/// Add the Hebbian co-access bonus (#3) to RRF eviction scores in place. A
+/// Add the Hebbian co-access bonus to RRF eviction scores in place. A
 /// higher score means "keep longer", so co-accessed entries are protected.
 fn apply_hebbian_bonus(scores: &mut [(String, f64)], bonus: &HashMap<String, f64>) {
     if bonus.is_empty() {
@@ -287,7 +287,7 @@ pub struct SessionCache {
     file_refs: HashMap<String, String>,
     next_ref: usize,
     shared_blocks: Vec<SharedBlock>,
-    /// Hebbian co-access matrix (#3): tracks which files are read together so
+    /// Hebbian co-access matrix: tracks which files are read together so
     /// eviction can protect co-accessed clusters. Updated on `store`, consulted
     /// during eviction.
     co_access: crate::core::hebbian_cache::CoAccessMatrix,
@@ -318,7 +318,7 @@ impl SessionCache {
         self.co_access.end_burst();
     }
 
-    /// Per-entry Hebbian eviction bonus (#3): each cached entry that is
+    /// Per-entry Hebbian eviction bonus: each cached entry that is
     /// co-accessed with the recently-active working set earns a positive bonus
     /// that is added to its RRF score, so clustered files survive eviction
     /// together. Deterministic (no sampling); ticks the activation registry when
@@ -395,7 +395,7 @@ impl SessionCache {
     /// Stores file content in the cache; returns a hit if content hash matches.
     pub fn store(&mut self, path: &str, content: &str) -> StoreResult {
         let key = normalize_key(path);
-        // #3: feed the Hebbian co-access matrix on every read so eviction can
+        // Feed the Hebbian co-access matrix on every read so eviction can
         // later protect files that are habitually read together.
         self.co_access
             .record_access(crate::core::hebbian_cache::path_hash(&key));
@@ -566,8 +566,8 @@ impl SessionCache {
         if let Some(entry) = self.entries.get_mut(&key) {
             entry.mark_full_delivered(conversation.clone());
             // Write-through to the persistent stub index so an unchanged re-read
-            // in the same conversation survives a daemon restart / idle clear
-            // (#955). `record` ignores None-conversation deliveries.
+            // in the same conversation survives an MCP restart or idle clear.
+            // `record` ignores None-conversation deliveries.
             crate::core::read_stub_index::record(crate::core::read_stub_index::StubRecord::new(
                 key.clone(),
                 entry.hash.clone(),
@@ -850,7 +850,7 @@ mod tests {
 
     #[test]
     fn hebbian_eviction_bonus_is_wired() {
-        // #3: files read together build a Hebbian association via store()'s
+        // Files read together build a Hebbian association via store's
         // recording, and that association must feed the eviction bonus.
         //
         // Warm up tiktoken first: the very first count_tokens() in the process
@@ -941,7 +941,7 @@ mod tests {
         assert!(is_cache_entry_stale(&p, entry.stored_mtime));
     }
 
-    // P0-7 (#419): a *backward* mtime (git checkout, touch -t) is a change.
+    // P0-7: a *backward* mtime (git checkout, touch -t) is a change.
     #[test]
     fn stale_detection_flags_backward_mtime() {
         let dir = tempfile::tempdir().unwrap();
@@ -967,7 +967,7 @@ mod tests {
         );
     }
 
-    // P0-7 (#419): identical mtime with different content (same-second write,
+    // P0-7: identical mtime with different content (same-second write,
     // restored timestamps) is caught by the content-hash verification.
     #[test]
     fn verified_staleness_catches_same_mtime_content_change() {

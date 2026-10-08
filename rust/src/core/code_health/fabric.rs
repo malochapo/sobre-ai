@@ -1,4 +1,4 @@
-//! Code-health interconnection fabric (Phase 3 / #1083).
+//! Code-health interconnection fabric.
 //!
 //! Fans complexity hotspots out across the shared data fabric so health becomes
 //! a *queryable, cross-linked* signal rather than a leaf report:
@@ -59,7 +59,7 @@ fn item_id(file: &str, symbol: &str) -> String {
 ///     cross-source edges).
 ///
 /// Order follows the (pre-sorted) score and a stable worst-first sort, so
-/// repeated builds are byte-identical (#498).
+/// repeated builds are byte-identical.
 pub fn build_artifacts(health: &ProjectHealth) -> ConsolidationArtifacts {
     let mut artifacts = ConsolidationArtifacts::default();
 
@@ -284,7 +284,7 @@ mod tests {
         // graph / knowledge). Hold the env lock via an isolated data dir so a
         // parallel test flipping `SOBRE_DATA_DIR` mid-apply cannot split
         // the write and the read-back across two different dirs (the
-        // pre-existing full-suite flake reported in #695).
+        // pre-existing full-suite flake).
         let _iso = crate::core::data_dir::isolated_data_dir();
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path().to_str().unwrap();
@@ -350,7 +350,7 @@ mod tests {
     }
 
     /// PG edges give per-symbol coverage of *every* over-threshold function, even
-    /// when the score's hotspot list is bounded to fewer (#1084).
+    /// when the score's hotspot list is bounded to fewer.
     #[test]
     fn pg_edges_cover_all_over_threshold_not_just_score() {
         let top = hotspot("src/a.rs", "worst", 1, 40);
@@ -385,7 +385,7 @@ mod tests {
     fn hotspot_cc_reads_back_persisted_edge() {
         // serial_test only orders this module's tests; a test elsewhere that
         // flips `SOBRE_DATA_DIR` can still split apply's write and the
-        // read-back across two dirs (#695). Same guard as the sibling above.
+        // read-back across two dirs. Same guard as the sibling above.
         let _iso = crate::core::data_dir::isolated_data_dir();
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path().to_str().unwrap();

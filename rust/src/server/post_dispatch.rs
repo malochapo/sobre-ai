@@ -1,5 +1,4 @@
-//! Post-dispatch side-effect stages for `SobreServer::call_tool_guarded`
-//! (issue #144).
+//! Post-dispatch side-effect stages for `SobreServer::call_tool_guarded`.
 //!
 //! These blocks run *after* a tool produced its (already post-processed) output
 //! and perform pure side effects — they never mutate the text returned to the
@@ -51,7 +50,7 @@ impl SobreServer {
             tokio::task::spawn_blocking(move || {
                 let _ = prepared.write_to_disk();
                 // Flush the persistent stub index on the same batch cadence so
-                // recent full deliveries survive a restart as cheap stubs (#955).
+                // recent full deliveries survive a restart as cheap stubs.
                 crate::core::read_stub_index::persist();
             });
         }

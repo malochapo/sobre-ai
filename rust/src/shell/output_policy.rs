@@ -264,7 +264,7 @@ mod tests {
         assert_eq!(classify("stripe charges list", &[]), OutputPolicy::Verbatim);
     }
 
-    // --- Regression: daviddatu_ git command rewriting bug ---
+    // --- Regression: git command rewriting bug ---
 
     #[test]
     fn git_commit_is_verbatim() {

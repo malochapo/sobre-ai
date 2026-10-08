@@ -36,7 +36,7 @@ fn openai_key_re() -> &'static Regex {
     static_regex!(r"sk-[A-Za-z0-9]{20,}")
 }
 
-// #718 word boundaries for the generic key/value patterns: the keyword must
+// Word boundaries for the generic key/value patterns: the keyword must
 // not be a camelCase subword (`superuserPassword`), while SNAKE_CASE env
 // names (`MY_TOKEN=…`) keep matching — `_` stays a permitted predecessor.
 // Group 1 = predecessor + key prefix (kept on redaction), group 2 = value
@@ -98,14 +98,14 @@ const BUILTIN_PATTERNS: &[(&str, fn() -> &'static Regex)] = &[
 
 /// Key/value patterns with a kept prefix (group 1) and a guarded value
 /// (group 2): identifier references, placeholders and language literals are
-/// benign (#718) and neither reported nor redacted.
+/// benign and neither reported nor redacted.
 const GUARDED_PATTERNS: &[(&str, fn() -> &'static Regex)] = &[
     ("generic_api_key", generic_api_key_re),
     ("high_entropy_secret", high_entropy_b64_re),
 ];
 
 /// True when a guarded-pattern match should be skipped: the value is benign
-/// (#718) — shares the benign-value heuristics with `core::redaction` so the
+/// — shares the benign-value heuristics with `core::redaction` so the
 /// two layers cannot drift.
 fn guarded_match_is_benign(caps: &regex::Captures) -> bool {
     caps.get(2)

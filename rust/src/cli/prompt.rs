@@ -1,11 +1,8 @@
 //! Shared interactive-confirmation helpers for consequential CLI writes.
 //!
-//! Originally lived privately in [`crate::cli::security_cmd`] for the
-//! `yolo` / `secure` master switches (#507). Promoted to a shared module for
-//! #852 so the same governance — *show the consequence, then require explicit
-//! approval* — guards every state-mutating write that can clobber existing
-//! state (knowledge overwrites, behavior-changing `config set`), not just the
-//! security toggles.
+//! One governance — *show the consequence, then require explicit approval* —
+//! guards every state-mutating write that can clobber existing state
+//! (knowledge overwrites, behavior-changing `config set`).
 //!
 //! Invariant: with no TTY and no `--yes` we **refuse** rather than silently
 //! apply. An automated/unattended run must never weaken state without an

@@ -74,7 +74,7 @@ fn pytest_success_output_folds_passed_lines_and_preserves_summary() {
 
 #[test]
 fn markdown_compaction_is_deterministic_across_calls() {
-    // #498: aggressive compaction must be a pure function of the input bytes.
+    // Aggressive compaction must be a pure function of the input bytes.
     // Mixed token frequencies engineer near-tied line scores on purpose — with
     // unordered per-line token sets the f64 summation order could flip the
     // selected lines between calls.

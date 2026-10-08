@@ -22,7 +22,7 @@ use tokenizer::TokenizedInput;
 
 // `embed_batch` parallelises tokenization in every build (rayon is a core, non
 // optional dependency), so this import must not be feature-gated — otherwise the
-// no-embeddings build (e.g. FreeBSD, #586) loses `par_iter`.
+// no-embeddings build (e.g. FreeBSD) loses `par_iter`.
 use rayon::prelude::*;
 #[cfg(feature = "dense")]
 use std::sync::Mutex;
@@ -45,7 +45,7 @@ pub struct EmbeddingEngine {
     output_pooled: bool,
 }
 
-/// The two ONNX graph topologies we can drive (GL #452).
+/// The two ONNX graph topologies we can drive.
 ///
 /// Transformers take `[1, seq]` id/mask tensors and emit per-token hidden
 /// states `[1, seq, dim]` that we mean-pool. model2vec exports are
@@ -140,7 +140,7 @@ impl EmbeddingEngine {
             );
         }
 
-        // Topology detection (GL #452): model2vec EmbeddingBag graphs expose
+        // Topology detection: model2vec EmbeddingBag graphs expose
         // exactly (input_ids, offsets) — structurally incompatible with the
         // transformer path, so they get their own input adapter.
         let graph_inputs = if is_embedding_bag_signature(&input_names) {
@@ -357,7 +357,7 @@ impl EmbeddingEngine {
     ///
     /// The explicit index-build path uses this to cold-start a fresh machine.
     /// `is_available()` alone is only a file check, so the build path must call
-    /// this to actually trigger the download instead of bailing (#545).
+    /// this to actually trigger the download instead of bailing.
     pub fn ensure_downloaded() -> anyhow::Result<()> {
         let selected = model_registry::resolve_model();
         let model_dir = Self::model_directory().join(selected.storage_dir_name());
@@ -741,13 +741,13 @@ pub fn try_shared_engine() -> Option<&'static EmbeddingEngine> {
 }
 
 /// Whether this process may load the ONNX model on a **detached background
-/// thread** (#519).
+/// thread**.
 ///
 /// ONNX Runtime registers its op schemas in global C++ static state while a
 /// model is loading. If a detached loader thread is still mid-load when the
 /// process returns from `main`, it races `libonnxruntime`'s static-destructor
 /// teardown — a use-after-free SIGSEGV inside `onnx::OpSchema` on an ORT worker
-/// thread. The shipped `sobre` daemon/MCP server is long-lived, so its
+/// thread. The shipped `sobre` MCP server is long-lived, so its
 /// warmup always finishes well before exit; short-lived processes (`cargo test`/
 /// bench/doctest binaries, build-time generators) can exit mid-load, so we
 /// refuse the background spawn for them. Their semantic features simply stay
@@ -781,7 +781,7 @@ fn current_exe_is_test_artifact() -> bool {
 /// directly inside `…/target/<profile>/deps/`. The shipped binary lives in a
 /// package `bin` directory (`/usr/bin`, `~/.local/bin`, `…/Homebrew/bin`, …) and
 /// is never a direct child of a `deps/` directory, so the parent-dir name is an
-/// install-location-independent signal (survives renames of the binary). (#519)
+/// install-location-independent signal (survives renames of the binary).
 #[cfg(feature = "dense")]
 fn exe_path_is_test_artifact(path: &Path) -> bool {
     path.parent()
@@ -842,7 +842,7 @@ mod tests {
         crate::test_env::remove_var("SOBRE_CACHE_DIR");
     }
 
-    /// #545: with a complete model cache, `ensure_downloaded` is a no-op that
+    /// With a complete model cache, `ensure_downloaded` is a no-op that
     /// never touches the network and agrees with `is_available` on the model
     /// directory. The build path relies on this so a cold availability check can
     /// route through the (real) download without redundantly re-fetching a model
@@ -869,7 +869,7 @@ mod tests {
         std::fs::remove_dir_all(&tmp).ok();
     }
 
-    /// #519: Cargo test/bench/doctest binaries live under `…/deps/`; the shipped
+    /// Cargo test/bench/doctest binaries live under `…/deps/`; the shipped
     /// binary lives in a `bin` directory. The parent-dir probe must distinguish
     /// them so background ORT loads are refused only in short-lived processes.
     #[test]
@@ -900,14 +900,14 @@ mod tests {
 
     /// In the unit-test binary `background_load_allowed` must be false via the
     /// `cfg!(test)` short-circuit — no detached ORT load may ever be spawned
-    /// from a test process (the #519 teardown race).
+    /// from a test process (the teardown race).
     #[test]
     #[cfg(feature = "dense")]
     fn background_load_disallowed_in_tests() {
         assert!(!background_load_allowed());
     }
 
-    /// GL #452: the EmbeddingBag detection is purely name-based — exactly two
+    /// The EmbeddingBag detection is purely name-based — exactly two
     /// inputs with the second named `offsets`. Everything else (classic 2-/
     /// 3-input transformers, unnamed graphs) must stay on the transformer path.
     #[test]
@@ -940,10 +940,10 @@ mod tests {
     // NOTE: `try_shared_engine_returns_none_when_not_initialized` lives in
     // `tests/embeddings_shared_engine.rs` (own process). SHARED_ENGINE is a
     // process-wide OnceLock: in the unit-test suite any sibling test that
-    // legitimately loads the engine (or #551 background activation) would
+    // legitimately loads the engine (or the background activation) would
     // initialize it first and make the assertion order-dependent/flaky.
 
-    /// Live proof for GL #397: loads a real HuggingFace repo through the
+    /// Live proof: loads a real HuggingFace repo through the
     /// `org/repo@rev` spec (download → SHA-256 lockfile → tokenizer.json →
     /// ONNX inference → dimension probe). Ignored by default (network + ~91MB);
     /// run explicitly:
@@ -988,7 +988,7 @@ mod tests {
         );
     }
 
-    /// Live proof for GL #452: a model2vec EmbeddingBag graph end-to-end
+    /// Live proof: a model2vec EmbeddingBag graph end-to-end
     /// through the same `hf:` scheme (potion-base-8M, ~30MB). Ignored by
     /// default (network); run explicitly:
     /// `cargo test --lib --features dense -- --ignored model2vec_potion_end_to_end`

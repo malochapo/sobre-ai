@@ -19,7 +19,7 @@ pub(crate) fn proxy_health_outcome() -> Outcome {
                 TcpStream::connect_timeout(&addr, crate::proxy_setup::proxy_timeout()).is_ok()
             };
             // Autostart has no backend on Windows/other platforms, so a missing
-            // autostart must never be a hard failure there (#416).
+            // autostart must never be a hard failure there.
             let supported = crate::proxy_autostart::is_supported();
 
             if reachable {
@@ -57,7 +57,7 @@ pub(crate) fn proxy_health_outcome() -> Outcome {
                 }
             } else {
                 // Windows/other: no autostart backend, so a stopped proxy is a
-                // setup note (start it manually), not a doctor failure (#416).
+                // setup note (start it manually), not a doctor failure.
                 Outcome {
                     ok: true,
                     line: format!(
@@ -241,7 +241,7 @@ pub(super) fn upstream_outcome(
         Outcome { ok: true, line }
     }
 }
-/// #449 drift check: warns when the running proxy forwards to a different
+/// Drift check: warns when the running proxy forwards to a different
 /// upstream than config.toml resolves to (an edit that failed validation).
 /// Returns `None` when the proxy is down or in sync, so the board stays quiet
 /// unless there is something actionable.

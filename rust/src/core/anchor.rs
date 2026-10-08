@@ -1,5 +1,4 @@
 //! Hash-anchored line identifiers — the shared spine of anchored editing
-//! (epic #1008 / GL#1009).
 //!
 //! Each source line is tagged with a short content hash so an agent can edit
 //! "by reference" (line number + hash) instead of reproducing the exact old
@@ -12,7 +11,7 @@
 //! * **Whitespace-tolerant**: the hash is computed over the line with trailing
 //!   whitespace trimmed, so re-indentation or a stray trailing space does not
 //!   spuriously invalidate an anchor while still pinning the meaningful content.
-//! * **Determinism-native (#498)**: an anchor is a pure function of the line's
+//! * **Determinism-native**: an anchor is a pure function of the line's
 //!   bytes, so `sobre_read(mode="anchored")` is byte-stable across identical
 //!   re-reads and provider prompt caching still applies.
 //!
@@ -50,7 +49,7 @@ pub fn hash_matches(line: &str, provided: &str) -> bool {
 }
 
 /// Render `content` as anchored lines `N:hh|text`, numbering from `start_line`
-/// (1-based). Pure function of `(content, start_line)` for determinism (#498).
+/// (1-based). Pure function of `(content, start_line)` for determinism.
 ///
 /// The returned string has no trailing newline, so callers control framing.
 /// Note: line splitting follows [`str::lines`] (a trailing newline does not

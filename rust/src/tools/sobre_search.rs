@@ -42,20 +42,20 @@ impl SearchOutcome {
 
 /// Wall-clock budget for a single `sobre_search` call. The regular-file guard in
 /// the read loop removes the known infinite block — `read_to_string` on a
-/// FIFO/socket/device (#336) — while this deadline is the backstop for any
+/// FIFO/socket/device — while this deadline is the backstop for any
 /// *other* pathological case (a gigantic corpus, a stuck network mount): the
 /// tool returns partial results with a hint instead of appearing to hang.
 const SEARCH_DEADLINE: Duration = Duration::from_secs(10);
 
 /// Searches files for a regex pattern with compressed output and monorepo scope hints.
 ///
-/// `anchored` (opt-in, #1008) appends a `:hh` line-hash to every match
+/// `anchored` (opt-in) appends a `:hh` line-hash to every match
 /// (`path:line:hh content`) so a hit can be edited directly with `sobre_patch`
 /// without a separate `sobre_read(mode="anchored")`. Default output is byte-for-byte
-/// unchanged (#498).
+/// unchanged.
 ///
 /// `exclude` (path glob, complement of `include`) and `exclude_pattern` (regex
-/// on result lines, like `grep -v`) are the negative filters added in #870.
+/// on result lines, like `grep -v`) are the negative filters added.
 #[allow(clippy::too_many_arguments)]
 pub fn handle_filtered(
     pattern: &str,
@@ -76,7 +76,7 @@ pub fn handle_filtered(
     // means "no filter", so a typo never silently drops every match.
     let include_patterns = compile_include(include);
     // `exclude` is the negative complement of `include`: a file matching any
-    // exclude glob is dropped, even when it also matches `include` (#870).
+    // exclude glob is dropped, even when it also matches `include`.
     let exclude_patterns = compile_include(exclude);
     const MAX_PATTERN_LEN: usize = 1024;
     const MAX_REGEX_SIZE: usize = 1 << 20; // 1 MiB DFA limit
@@ -96,7 +96,7 @@ pub fn handle_filtered(
         Ok(r) => r,
         Err(e) => return SearchOutcome::error(format!("ERROR: invalid regex: {e}")),
     };
-    // #870: `exclude_pattern` drops any *result line* matching this regex — the
+    // `exclude_pattern` drops any *result line* matching this regex — the
     // in-pipeline equivalent of `grep -v`. An unparsable pattern is ignored
     // (no exclusion), so a typo never silently hides every match.
     let exclude_re = exclude_pattern.and_then(|p| {
@@ -122,7 +122,7 @@ pub fn handle_filtered(
     let mut files_skipped_type = 0u32;
     let mut deadline_hit = false;
     // Set when any hit gained an `∈name@Lstart` enclosing tag, so the
-    // self-describing legend is emitted only when it is actually needed (#580).
+    // self-describing legend is emitted only when it is actually needed.
     let mut any_enclosing = false;
 
     // Fast path: a warm resident trigram index narrows the candidate files in
@@ -146,7 +146,7 @@ pub fn handle_filtered(
 
     if !used_index {
         // Vendor dirs (node_modules, …) follow the gitignore toggle: explicitly
-        // disabling gitignore is the escape hatch to look inside them (#400).
+        // disabling gitignore is the escape hatch to look inside them.
         let walker = WalkBuilder::new(root)
             .hidden(true)
             .max_depth(Some(MAX_WALK_DEPTH))
@@ -195,7 +195,7 @@ pub fn handle_filtered(
         }
     }
 
-    // #870: drop excluded paths after both the index and walk populate `files`,
+    // Drop excluded paths after both the index and walk populate `files`,
     // so the negative glob filter applies uniformly to either collection path.
     if !exclude_patterns.is_empty() {
         files.retain(|path| {
@@ -216,7 +216,7 @@ pub fn handle_filtered(
         }
 
         // Stop gracefully instead of appearing to hang on a pathological corpus
-        // or a stuck read (#336): once the wall-clock budget is spent, return
+        // or a stuck read: once the wall-clock budget is spent, return
         // the partial results gathered so far with a hint to narrow the search.
         if deadline.is_some_and(|dl| Instant::now() >= dl) {
             deadline_hit = true;
@@ -225,7 +225,7 @@ pub fn handle_filtered(
 
         // Only ever read regular files within the size budget. A FIFO, socket or
         // device node would block `read_to_string` forever — the root cause of
-        // #336 — and oversized or unstatable files are skipped. `metadata`
+        // a hang — and oversized or unstatable files are skipped. `metadata`
         // (stat) never opens the file, so it cannot block on a special file.
         let state = match std::fs::metadata(path) {
             Ok(meta) if !meta.file_type().is_file() => {
@@ -243,7 +243,7 @@ pub fn handle_filtered(
             }
         };
 
-        // Reuse the copy the trigram-index build already read (issue #148): the
+        // Reuse the copy the trigram-index build already read: the
         // corpus is read from disk once and the regex-verify pass here is an
         // in-memory hit. On a miss (cold cache / evicted) read once and publish
         // it for the next caller. `(mtime, size)` validation guarantees we never
@@ -269,7 +269,7 @@ pub fn handle_filtered(
         let mut file_enclosing: Option<EnclosingIndex> = None;
 
         for (i, line) in content.lines().enumerate() {
-            // #870: `exclude_pattern` filters out matching lines (grep -v).
+            // `exclude_pattern` filters out matching lines (grep -v).
             if re.is_match(line) && !exclude_re.as_ref().is_some_and(|ex| ex.is_match(line)) {
                 let short_path =
                     protocol::shorten_path_relative(&path.to_string_lossy(), &root_str);
@@ -284,7 +284,7 @@ pub fn handle_filtered(
                     shown.truncate(shown.floor_char_boundary(MAX_MATCH_LINE_WIDTH));
                     shown.push_str("...");
                 }
-                // grep-ast enrichment (#608): name the enclosing symbol + its
+                // grep-ast enrichment: name the enclosing symbol + its
                 // handle anchor so the hit is actionable without a follow-up
                 // read. Appended after `shown`, so the `path:line content` prefix
                 // every caller/test relies on is untouched.
@@ -316,7 +316,7 @@ pub fn handle_filtered(
         }
     }
 
-    // #883: sort matches by file match-density — files with more hits surface
+    // Sort matches by file match-density — files with more hits surface
     // first, which is a proxy for relevance when the pattern contains common tokens.
     if matches.len() > 1 {
         use std::collections::HashMap;
@@ -396,11 +396,11 @@ pub fn handle_filtered(
         }
     }
     result.push_str(":\n");
-    // Self-describing output (GL #580): the anchor notation ships its own legend.
+    // Self-describing output: the anchor notation ships its own legend.
     if anchored {
         result.push_str("[anchored: path:line:hh → edit via sobre_patch]\n");
     }
-    // Self-describing output (GL #580 / #608): explain the `∈` enclosing tag and
+    // Self-describing output: explain the `∈` enclosing tag and
     // how to turn it into a handle. Emitted only when at least one hit carries it.
     if any_enclosing {
         result.push_str(
@@ -433,7 +433,7 @@ pub fn handle_filtered(
         ));
     }
 
-    // Determinism contract (#498): the hint must be a pure function of the
+    // Determinism contract: the hint must be a pure function of the
     // results. A show-once AtomicBool here made the first call differ from
     // every repeat, breaking byte-stability for provider prompt caches.
     let scope_hint = monorepo_scope_hint(&matches, dir);
@@ -518,7 +518,7 @@ pub(crate) fn is_generated_file(path: &Path) -> bool {
 /// function/class a match lives in — and the handle to fetch it — without a
 /// follow-up read. Tree-sitter-gated by construction: the regex-fallback
 /// extractor yields single-line spans (`end == start`), which are filtered out
-/// here, so a non-tree-sitter build emits byte-identical output (#498).
+/// here, so a non-tree-sitter build emits byte-identical output.
 struct EnclosingIndex {
     /// `(start_line, end_line, name)` for multi-line symbols, sorted by start.
     spans: Vec<(usize, usize, String)>,
@@ -674,7 +674,7 @@ mod tests {
     use super::*;
     use crate::tools::CrpMode;
 
-    /// Determinism contract (#498): identical search over identical files
+    /// Determinism contract: identical search over identical files
     /// must produce byte-identical output — a prerequisite for provider
     /// prompt-cache hits on repeated tool results.
     #[test]
@@ -705,9 +705,9 @@ mod tests {
         assert_eq!(run(), run(), "search output must be deterministic");
     }
 
-    /// #1008: opt-in anchored search tags each hit with `:hh` (matching
+    /// Opt-in anchored search tags each hit with `:hh` (matching
     /// `sobre_read`/`sobre_patch`'s line hash) and ships a legend; the default
-    /// (anchored=false) output stays byte-identical so #498 is preserved.
+    /// (anchored=false) output stays byte-identical (deterministic).
     #[test]
     fn anchored_search_emits_line_hash_per_hit_opt_in_only() {
         let dir = tempfile::tempdir().unwrap();
@@ -758,7 +758,7 @@ mod tests {
     #[test]
     #[cfg(feature = "tree-sitter")]
     fn hits_inside_multiline_symbols_carry_enclosing_tag() {
-        // #608: a hit inside a multi-line function names its enclosing symbol +
+        // A hit inside a multi-line function names its enclosing symbol +
         // the handle anchor, and the output ships a self-describing legend.
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(
@@ -790,7 +790,7 @@ mod tests {
 
     #[test]
     fn single_line_symbols_get_no_enclosing_tag() {
-        // #498/#608: a match whose only enclosing symbol is single-line gets no
+        // A match whose only enclosing symbol is single-line gets no
         // tag, so the default output stays byte-identical (no `∈`, no legend).
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join("a.rs"), "fn one_liner() {}\n").unwrap();
@@ -852,7 +852,7 @@ mod tests {
     #[test]
     fn warm_index_and_content_cache_path_returns_correct_matches() {
         // Exercises the trigram-index fast path together with the shared content
-        // cache (#148): the index build reads the corpus once and publishes it,
+        // cache: the index build reads the corpus once and publishes it,
         // then this search reuses those bytes. Results must be byte-identical to
         // the walk path — this asserts that correctness, independent of whether
         // any individual file is a cache hit or a fallback re-read.
@@ -900,7 +900,7 @@ mod tests {
 
     #[test]
     fn search_finds_word_literals_added_after_index_warm() {
-        // #624 regression: a native edit or add after the trigram index was
+        // Regression: a native edit or add after the trigram index was
         // warmed must be found immediately. The resident index is gated by a live
         // corpus signature, so stale trigrams can never hide on-disk content from
         // a word-literal query — the very path that uses trigram narrowing.
@@ -1043,7 +1043,7 @@ mod tests {
     #[cfg(unix)]
     fn search_skips_named_pipe_without_hanging() {
         use std::sync::mpsc;
-        // #336: a named pipe (FIFO) in the search universe used to block
+        // A named pipe (FIFO) in the search universe used to block
         // `read_to_string` forever, hanging the whole call with no output. It
         // must be skipped, the real file still matched, and the call must return.
         let dir = tempfile::tempdir().unwrap();
@@ -1222,7 +1222,7 @@ mod tests {
 
     #[test]
     fn exclude_glob_drops_paths_and_exclude_pattern_drops_lines() {
-        // #870: `exclude` is the negative complement of `include` (path glob),
+        // `exclude` is the negative complement of `include` (path glob),
         // and `exclude_pattern` is a `grep -v` over result lines.
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join("app.rs"), "needle\n// needle skip me\n").unwrap();
@@ -1267,7 +1267,7 @@ mod tests {
 
     #[test]
     fn invalid_exclude_pattern_is_ignored_not_fatal() {
-        // #870: a malformed exclude regex must not hide matches — it's ignored.
+        // A malformed exclude regex must not hide matches — it's ignored.
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join("a.rs"), "needle\n").unwrap();
         let root = dir.path().to_string_lossy().into_owned();

@@ -1,5 +1,5 @@
 //! Anchored-edit operations: the `AnchorOp` vocabulary, JSON parsing and the
-//! per-anchor staleness check (epic #1008).
+//! per-anchor staleness check.
 //!
 //! An *anchor* is `(line, hash)` where `hash` is [`crate::core::anchor::line_hash`]
 //! of the line the model was shown by `sobre_read(mode="anchored")`. The edit side
@@ -101,7 +101,7 @@ fn parse_one(obj: &Map<String, Value>) -> Result<AnchorOp, String> {
             let start_line = req_line(obj, "start_line")
                 .map_err(|e| missing.push(e))
                 .ok();
-            // #1114: hashes are optional — when omitted, the edit proceeds
+            // Hashes are optional — when omitted, the edit proceeds
             // without conflict detection. This makes replace_lines usable
             // from sobre_read(mode="lines:N-M") output which lacks anchors.
             let start_hash = get_str(obj, "start_hash").unwrap_or_default();
@@ -396,7 +396,7 @@ mod tests {
 
     #[test]
     fn new_body_is_not_accepted_new_text_is_the_only_key() {
-        // #1020: new_body was fully retired in favour of new_text (no fallback).
+        // New_body was fully retired in favour of new_text (no fallback).
         // A stray new_body must fail with the canonical new_text error, not apply.
         let err = parse_ops(&obj(
             json!({"op": "set_line", "line": 3, "hash": "ab12", "new_body": "x"}),

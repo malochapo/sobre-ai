@@ -1,6 +1,6 @@
 //! Persistent crash log for panic diagnosability.
 //!
-//! Motivated by upstream issue #378: 38 SIGABRT coredumps from a stripped
+//! Motivated by an upstream report: 38 SIGABRT coredumps from a stripped
 //! release binary left users (and us) with zero actionable data, because the
 //! panic hook only printed to stderr — which is lost for daemon, LaunchAgent
 //! and MCP-child processes.
@@ -81,20 +81,20 @@ pub fn write_crash_entry(info: &std::panic::PanicHookInfo<'_>) -> Option<PathBuf
 }
 
 /// Installs the process-wide panic hook: persistent crash log + the friendly
-/// stderr message. Used by the binary entry point (CLI, MCP server, proxy and
-/// daemon all run through it).
+/// stderr message. Used by the binary entry point (CLI, MCP server and proxy
+/// all run through it).
 ///
 /// The hook itself must be panic-free: a panic inside the panic hook is a
 /// double panic and the runtime `abort()`s the whole process. `eprintln!`
 /// panics on I/O errors — background workers whose stderr is gone (terminal
 /// closed, parent recycled the pipe → EPIPE) turned every ordinary panic into
-/// a SIGABRT coredump (GitHub #378: 38 cores, all `abort` in the panic path).
+/// a SIGABRT coredump (38 cores, all `abort` in the panic path).
 /// Everything here is therefore best-effort writes + catch_unwind.
 pub fn install_panic_hook() {
     std::panic::set_hook(Box::new(|info| {
         use std::io::Write;
 
-        // #826: stderr BrokenPipe panics are harmless — they happen when
+        // Stderr BrokenPipe panics are harmless — they happen when
         // the MCP client (Codex CLI) closes the pipe while tracing/eprintln!
         // is still writing. Don't log these as crashes.
         let is_broken_pipe = info

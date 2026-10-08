@@ -1,9 +1,9 @@
-//! `sobre embeddings` — semantic-embedding runtime management (GH #732).
+//! `sobre embeddings` — semantic-embedding runtime management.
 //!
 //! The embedding engine loads ONNX Runtime dynamically. `provision` performs
 //! the **explicit, consent-gated** download of the official CPU runtime into
 //! the managed artifact layout; `status` shows what the resolver would use.
-//! Nothing here runs implicitly — the policy decided on #732 is "no silent
+//! Nothing here runs implicitly — the policy is "no silent
 //! download at first tool call, ever".
 
 use crate::core::artifacts_exec::ort_provision;

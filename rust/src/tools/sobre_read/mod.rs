@@ -12,7 +12,7 @@ mod helpers;
 pub use helpers::is_instruction_file;
 mod render;
 pub(crate) use render::*;
-/// Type-safe read-mode vocabulary (#528): single source of truth for which
+/// Type-safe read-mode vocabulary: single source of truth for which
 /// modes exist and how each is classified.
 pub(crate) mod mode;
 pub(crate) use mode::ReadMode;
@@ -31,13 +31,13 @@ pub struct ReadOutput {
     /// Approximate output token count from mode processing.
     /// The dispatch layer recounts the final assembled string for accurate savings.
     pub output_tokens: usize,
-    /// Structurally determined cache-hit flag (#1133). Set by the code that
+    /// Structurally determined cache-hit flag. Set by the code that
     /// serves the read (stub, delta, cached mode), not sniffed from rendered
     /// output. Replaces the fragile `content.contains("[unchanged")` checks.
     pub is_cache_hit: bool,
 }
 
-/// SSOT via [`ReadMode`] (#528): the `map`/`signatures` summaries whose rendered
+/// SSOT via [`ReadMode`]: the `map`/`signatures` summaries whose rendered
 /// body is stored per-file in `compressed_outputs`. Unknown modes are not
 /// cacheable, matching the prior `["map","signatures"].contains(mode)`.
 pub(crate) fn is_cacheable_mode(mode: &str) -> bool {
@@ -45,7 +45,7 @@ pub(crate) fn is_cacheable_mode(mode: &str) -> bool {
         .is_ok_and(|m| m.is_compressed_cacheable())
 }
 
-/// `#361` anti-inflation capping applies to whole-file views (`full` and the
+/// Anti-inflation capping applies to whole-file views (`full` and the
 /// lossy summaries `map`/`signatures`/`aggressive`/`entropy`/`task`/…), where the
 /// raw file is a strict superset of the information and is therefore never a
 /// worse answer when the framing happens to inflate on a small file. `full` is
@@ -55,8 +55,8 @@ pub(crate) fn is_cacheable_mode(mode: &str) -> bool {
 /// `diff` a delta, `raw` the bytes — so replacing them with the whole file would
 /// be wrong, not cheaper, and they are never capped.
 pub(crate) fn mode_allows_raw_cap(mode: &str) -> bool {
-    // SSOT via [`ReadMode`] (#528). Unknown modes keep the prior default of
-    // `true` (only `lines:`/`reference`/`diff`/`raw` opt out of the #361 cap).
+    // SSOT via [`ReadMode`]. Unknown modes keep the prior default of
+    // `true` (only `lines:`/`reference`/`diff`/`raw` opt out of the cap).
     mode.parse::<ReadMode>()
         .map_or(true, |m| m.allows_raw_cap())
 }
@@ -85,7 +85,7 @@ pub(crate) fn compressed_cache_key(
         None => base,
     };
     // Aggressiveness and the explicit protect list both change lossy output, so
-    // both must change the key (#498). Empty fragments keep pre-feature keys
+    // both must change the key. Empty fragments keep pre-feature keys
     // byte-identical, so unmodified reads still hit their existing cache entries.
     let mut key = keyed;
     let aggr_frag = crate::core::aggressiveness::cache_fragment(aggressiveness);
@@ -140,14 +140,14 @@ pub fn read_file_lossy(path: &str) -> Result<String, std::io::Error> {
         Err(e) => String::from_utf8_lossy(e.as_bytes()).into_owned(),
     };
     // A UTF-8 BOM is an encoding artifact, not content — leaking it corrupts
-    // the first line of every downstream view (limitations doc #11).
+    // the first line of every downstream view (a documented limitation).
     Ok(match s.strip_prefix('\u{feff}') {
         Some(rest) => rest.to_owned(),
         None => s,
     })
 }
 
-/// A streamed line-window read (#811): only the requested span's raw lines,
+/// A streamed line-window read: only the requested span's raw lines,
 /// plus the file's true total line count for the header — the rest of the
 /// file is never buffered.
 struct LineWindow {
@@ -175,7 +175,7 @@ fn parse_disk_anchor_range(payload: &str) -> Option<(usize, usize)> {
 
 /// Streams `path` line-by-line and extracts only `[start, end]` (1-based,
 /// inclusive) without ever holding the whole file in memory — the
-/// anchored-window counterpart to [`read_file_lossy`] (#811). Every line is
+/// anchored-window counterpart to [`read_file_lossy`]. Every line is
 /// still counted (one cheap UTF-8 pass, no per-line allocation outside the
 /// requested window) so the caller can report the true total. Returns `None`
 /// on anything that isn't a clean streamed text read (I/O error, a binary
@@ -206,7 +206,7 @@ fn read_line_window(path: &str, start: usize, end: usize) -> Option<LineWindow> 
     })
 }
 
-/// #811: attempt the disk-streaming short-circuit for a fresh `anchored:N-M`
+/// Attempt the disk-streaming short-circuit for a fresh `anchored:N-M`
 /// read. `None` when the request isn't eligible (not a windowed anchored
 /// read, or a preread is already in hand — nothing to short-circuit) or the
 /// fast path can't run cleanly (binary file, invalid UTF-8, I/O error); the
@@ -339,7 +339,7 @@ pub fn handle_with_task_resolved(
 }
 
 /// Like [`handle_with_task_resolved`] but with an explicit per-call
-/// aggressiveness (the `sobre_read` `aggressiveness` arg, #714). `None` falls back
+/// aggressiveness (the `sobre_read` `aggressiveness` arg). `None` falls back
 /// to the config field.
 pub fn handle_with_task_resolved_tuned(
     cache: &mut SessionCache,
@@ -392,7 +392,7 @@ pub fn handle_fresh_with_task_resolved(
     )
 }
 
-/// Fresh-read variant of [`handle_with_task_resolved_tuned`] (#714).
+/// Fresh-read variant of [`handle_with_task_resolved_tuned`].
 pub fn handle_fresh_with_task_resolved_tuned(
     cache: &mut SessionCache,
     path: &str,
@@ -463,7 +463,7 @@ fn handle_with_options_resolved_preread(
 
     if let Some(entry) = cache.get_mut(path) {
         entry.last_mode.clone_from(&result.resolved_mode);
-        // #841: a partial/filtered read means the model's most recent view is NOT
+        // A partial/filtered read means the model's most recent view is NOT
         // the full content. Clear the delivery flag so a subsequent mode="full"
         // re-delivers real content instead of the [unchanged] stub. Without this,
         // a task→full sequence returns an empty stub because the flag was set by an
@@ -473,7 +473,7 @@ fn handle_with_options_resolved_preread(
         }
     }
 
-    // SSOT via [`ReadMode`] (#528): lossy summaries may elide shared blocks.
+    // SSOT via [`ReadMode`]: lossy summaries may elide shared blocks.
     let dedup_allowed = result
         .resolved_mode
         .parse::<ReadMode>()
@@ -512,7 +512,7 @@ fn handle_with_options_resolved_preread(
 pub fn try_stub_hit_readonly(cache: &SessionCache, path: &str) -> Option<ReadOutput> {
     // Resolve the caller *fresh* (TTL-bypassed): the stub gate's concurrency
     // detection must see a just-appeared second chat with zero lag, else a stub
-    // could leak across chats in the pre-detection window (#1042).
+    // could leak across chats in the pre-detection window.
     let current_conversation = crate::core::conversation::current_conversation_id_fresh();
     try_stub_hit_readonly_scoped(cache, path, current_conversation.as_deref())
 }
@@ -541,7 +541,7 @@ pub(crate) fn try_stub_hit_readonly_scoped(
         {
             return None;
         }
-        // Conversation scoping (#954): only stub when THIS conversation received
+        // Conversation scoping: only stub when THIS conversation received
         // the content. A different (or unknown) conversation re-delivers in full
         // rather than emit a misleading stub. `current == None` (hooks absent)
         // preserves legacy process-scoped behavior, so single-chat hit rates are
@@ -556,7 +556,7 @@ pub(crate) fn try_stub_hit_readonly_scoped(
         return Some(render_unchanged_stub(&file_ref, path, line_count));
     }
 
-    // Cold fallback (#955): no live entry (e.g. after a daemon restart or idle
+    // Cold fallback: no live entry (e.g. after an MCP restart or idle
     // clear). Serve the stub from the persisted index iff the file is unchanged
     // AND the *same known* conversation is asking — a stricter gate than the warm
     // path, because a cold stub crosses a process boundary (no "no context →
@@ -576,11 +576,11 @@ pub(crate) fn try_stub_hit_readonly_scoped(
 
 /// Renders the `[unchanged …]` stub body shared by the warm and cold stub paths.
 ///
-/// #498 determinism: the stub is a pure function of (file_ref, path, line_count),
+/// Determinism: the stub is a pure function of (file_ref, path, line_count),
 /// so identical re-reads stay byte-stable and provider prompt caching applies.
 /// The `fresh=true` escape is a *static* suffix (no rotating proof lines or
 /// read-count notes), so a re-reader in non-meta mode still sees how to force the
-/// content (#513) without breaking byte-stability.
+/// content without breaking byte-stability.
 fn render_unchanged_stub(file_ref: &str, path: &str, line_count: usize) -> ReadOutput {
     let short = protocol::shorten_path(path);
     let out = format!("{file_ref}={short} [unchanged {line_count}L · fresh=true to re-read]");
@@ -624,7 +624,7 @@ pub struct DeltaExplicitDecision {
 /// caller gates those before calling. Staleness uses the **verified** variant
 /// ([`crate::core::cache::is_cache_entry_stale_verified`]) so a same-second
 /// write on a coarse-granularity filesystem cannot be mistaken for "unchanged"
-/// and yield a misleading empty diff (#498 determinism).
+/// and yield a misleading empty diff (determinism).
 ///
 /// Pure w.r.t. (cache, path, mode): no wall-clock, counters, or
 /// randomness enter the result, so identical inputs stay byte-stable.
@@ -709,7 +709,7 @@ fn handle_with_options_inner(
         cache.invalidate(path);
     }
 
-    // #811: a fresh, explicitly windowed `anchored:N-M` read never needs the
+    // A fresh, explicitly windowed `anchored:N-M` read never needs the
     // cache (fresh always bypasses it) or the whole file in memory — try the
     // disk-streaming short-circuit first.
     if let Some(out) = try_disk_anchored_window(path, mode, fresh, preread.is_none(), &short) {
@@ -757,7 +757,7 @@ fn handle_with_options_inner(
         // re-delivered the whole file ("re-reads aren't cached"). Resolving
         // up-front also lets us hit the compressed-output cache BEFORE
         // decompressing the full body (avoids ~2-5ms zstd on hits). The
-        // aggressiveness knob (#714) still routes `auto` through the density path.
+        // aggressiveness knob still routes `auto` through the density path.
         let resolved_mode = if mode == "auto" {
             tuning
                 .auto_density_mode()
@@ -838,7 +838,7 @@ fn handle_with_options_inner(
                 task,
                 tuning,
             );
-            // #361 anti-inflation for lossy whole-file summaries (auto OR
+            // Anti-inflation for lossy whole-file summaries (auto OR
             // explicit): map/signatures/… must never cost more than the raw file.
             // Selection/delta views keep their exact shape (see
             // mode_allows_raw_cap). Cap before caching so re-read hits serve the
@@ -877,7 +877,7 @@ fn handle_with_options_inner(
         cache.invalidate(path);
     }
 
-    // Two-Phase Read (#1098): when pre-read content was provided (disk I/O
+    // Two-Phase Read: when pre-read content was provided (disk I/O
     // already happened outside the cache lock), use it directly. Otherwise
     // fall back to reading from disk (legacy path, still used by fast-path
     // inline calls where the write lock was immediately available).
@@ -961,10 +961,10 @@ fn handle_with_options_inner(
         task,
         tuning,
     );
-    // #361 anti-inflation for lossy whole-file summaries (auto OR explicit);
+    // Anti-inflation for lossy whole-file summaries (auto OR explicit);
     // selection/delta views keep their exact shape (see mode_allows_raw_cap).
     // Cap first, then cache the pure capped body so re-reads stay byte-stable
-    // (#498) — the optional, read-state-dependent navigation hints below are
+    // — the optional, read-state-dependent navigation hints below are
     // appended to the returned value only, never to the cached body.
     let output = if mode_allows_raw_cap(&resolved_mode) {
         let framed_tokens = count_tokens(&output);
@@ -998,11 +998,11 @@ fn handle_with_options_inner(
     }
 }
 
-/// #361 anti-inflation invariant: a `sobre_read` must never cost more tokens than
+/// Anti-inflation invariant: a `sobre_read` must never cost more tokens than
 /// reading the raw file would. Framing (file-ref header, deps/exports summary,
 /// savings footer, navigation hints) only earns its keep on large files and
 /// repeated reads — on a cold read of a small file it is pure overhead, the
-/// exact inflation an independent benchmark measured (#361). When the framed
+/// exact inflation an independent benchmark measured. When the framed
 /// payload exceeds the bare content we ship the content verbatim, so a read is
 /// break-even at worst and a win whenever a compressed mode or a cached re-read
 /// applies. Re-reads are unaffected: the cache keys on path and re-derives the
@@ -1094,10 +1094,10 @@ fn handle_full_with_auto_delta(
     let store_result = cache.store(path, &disk_content);
 
     if store_result.was_hit {
-        // #1128: no stub here. Whether an unchanged file may collapse to
+        // No stub here. Whether an unchanged file may collapse to
         // `[unchanged …]` is decided once, by `try_stub_hit_readonly`, which the
         // caller already consulted before routing here — and only that gate knows
-        // whether THIS conversation received the content (#954/#955). A second
+        // whether THIS conversation received the content. A second
         // decision built from `StoreResult` cannot: `full_content_delivered` is
         // carried over from the cache entry, so it answers "some conversation got
         // this", which is the question the gate exists to stop trusting.

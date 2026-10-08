@@ -1,7 +1,7 @@
-//! PostToolUse re-read dedup for Claude Code's native Read (GL #1140).
+//! PostToolUse re-read dedup for Claude Code's native Read.
 //!
 //! sobre never redirects a native Read before it runs (that would break Claude
-//! Code's read-before-write guard, GH #637, and change what the host's Read
+//! Code's read-before-write guard, and change what the host's Read
 //! does). This handler saves on re-reads **after** the native Read ran on the
 //! real path:
 //!
@@ -28,7 +28,7 @@
 //!   claim content this conversation has never seen).
 //! - Compaction wipes the session's records (see [`purge_session`], wired to the
 //!   PreCompact-aware observe handler) so post-compaction re-reads deliver full
-//!   content again, mirroring the MCP-side compaction sync (GL #555).
+//!   content again, mirroring the MCP-side compaction sync.
 
 #[allow(clippy::wildcard_imports)]
 use super::*;
@@ -103,7 +103,7 @@ fn compute_read_dedup(input: &str) -> Option<String> {
 
     let (prev_hash, prev_tool_use) = parse_record(&prev)?;
     // Same tool_use_id = a duplicate fire of the SAME event (Cursor
-    // double-fires hooks, #1032). The first fire passed the content
+    // double-fires hooks). The first fire passed the content
     // through, so its twin must too.
     if prev_hash != disk_hash || (!tool_use_id.is_empty() && prev_tool_use == tool_use_id) {
         write_record(&store, &disk_hash, &tool_use_id);
@@ -246,7 +246,7 @@ fn replace_slot(
 }
 
 /// The replacement body. Deterministic function of (path, line_count) — no
-/// timestamps or counters (#498), so identical re-reads stay byte-stable and
+/// timestamps or counters, so identical re-reads stay byte-stable and
 /// provider prompt caching applies. Wording mirrors sobre_read's `[unchanged]`
 /// stub, adapted for a host whose Read has no `fresh=true` escape: touching the
 /// file or editing it changes the hash and the next Read delivers full content.
@@ -308,7 +308,7 @@ fn write_record(store: &std::path::Path, hash: &str, tool_use_id: &str) {
 
 /// Drop every read record of `session_id` — called when the host compacts its
 /// context (PreCompact): the conversation the stub would point into is gone, so
-/// the next Read of each file must deliver full content again (GL #555 parity).
+/// the next Read of each file must deliver full content again (parity).
 pub(super) fn purge_session(session_id: &str) {
     let Some(root) = read_dedup_root() else {
         return;
@@ -456,7 +456,7 @@ mod tests {
 
     #[test]
     fn duplicate_fire_of_same_tool_use_never_stubs() {
-        // Cursor double-fires hooks (#1032): the twin of a first read must not
+        // Cursor double-fires hooks: the twin of a first read must not
         // be mistaken for a re-read.
         let _guard = guard_env();
         let dir = tempfile::tempdir().unwrap();
@@ -654,7 +654,7 @@ mod tests {
 
     #[test]
     fn stub_is_deterministic() {
-        // #498: byte-stable output for identical inputs.
+        // Byte-stable output for identical inputs.
         assert_eq!(
             render_dedup_stub("/a/b.rs", 42),
             render_dedup_stub("/a/b.rs", 42)

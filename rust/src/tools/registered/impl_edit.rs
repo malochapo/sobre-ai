@@ -90,7 +90,7 @@ impl McpTool for SobreEditTool {
             // Serialize edits to the SAME file via a cheap per-file lock. This
             // lets the (slow) disk read/replace/write run WITHOUT holding the
             // global cache write-lock, so concurrent agents editing different
-            // files never block each other (issue #320). Correctness for same-file
+            // files never block each other. Correctness for same-file
             // edits is still guaranteed by the TOCTOU preimage guard + atomic
             // rename inside run_io.
             let file_lock = crate::core::path_locks::per_file_lock(&path);
@@ -128,7 +128,7 @@ impl McpTool for SobreEditTool {
             // Heavy disk I/O — no global cache lock held here.
             let (output, effect) = crate::tools::impl_edit::run_io(&edit_params, &last_mode);
 
-            // Quality loop (#494): feed success/old_string-miss back into
+            // Quality loop: feed success/old_string-miss back into
             // per-(ext × mode) stats and the one-shot read escalation.
             crate::tools::impl_edit::record_outcome(&edit_params, &last_mode, &output, &effect);
 

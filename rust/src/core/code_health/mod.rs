@@ -32,8 +32,7 @@ use serde::Serialize;
 pub const COGNITIVE_THRESHOLD: u32 = 15;
 
 /// Combined per-file health: cognitive scores plus naming findings. This is the
-/// single entry point used by the edit-gate, read annotations, and the
-/// `ctx_quality` tool.
+/// single entry point used by the edit-gate and read annotations.
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]
 pub struct FileHealth {
     pub functions: Vec<FunctionCognitive>,

@@ -31,7 +31,7 @@ mod tests {
         k.facts.iter().filter(|f| f.is_current()).count()
     }
 
-    // === Write-time admission (#970) ===
+    // === Write-time admission ===
 
     #[test]
     fn admission_merges_same_category_near_duplicate_without_growing() {
@@ -410,7 +410,7 @@ mod tests {
         k.remember("arch", "auth", "JWT", "s1", 0.95, &policy);
         k.remember("arch", "db", "PG", "s1", 0.8, &policy);
 
-        // Theta-gamma chunked format (#543): same-category facts share one
+        // Theta-gamma chunked format: same-category facts share one
         // `[topic]` header that amortizes the category prefix.
         let wakeup = k.format_wakeup();
         assert!(wakeup.contains("FACTS:"));
@@ -426,7 +426,7 @@ mod tests {
         k.remember("finding", "f1", "some thing", "s1", 0.9, &policy);
         k.remember("decision", "d1", "important", "s1", 0.85, &policy);
 
-        // Chunked format (#543): the founding fact of the first chunk is the
+        // Chunked format: the founding fact of the first chunk is the
         // most salient one, so the decision chunk must render first.
         let wakeup = k.format_wakeup();
         let d = wakeup.find("d1=important").expect("decision in wakeup");

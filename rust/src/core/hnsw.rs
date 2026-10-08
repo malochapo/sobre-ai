@@ -360,7 +360,7 @@ impl AnnIndex {
     }
 
     /// Approximate resident bytes: the flat f32 corpus plus the graph's
-    /// adjacency lists. Used by the eviction orchestrator (#685) to weigh
+    /// adjacency lists. Used by the eviction orchestrator to weigh
     /// this index against the RSS budget.
     #[must_use]
     pub fn memory_usage_bytes(&self) -> usize {

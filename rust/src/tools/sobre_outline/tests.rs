@@ -97,7 +97,7 @@ fn file_outline_includes_line_spans() {
 
 #[test]
 fn file_outline_emits_handle_hint() {
-    // Located symbols are addressable as stable handles (#607): the outline
+    // Located symbols are addressable as stable handles: the outline
     // carries one self-describing usage hint.
     let tmp = tempfile::tempdir().unwrap();
     write(tmp.path(), "a.rs", "pub fn alpha() {}\n");
@@ -156,8 +156,8 @@ fn no_match_message_is_informative() {
 #[cfg(unix)]
 fn symlink_in_tree_is_followed() {
     // `run` outlines the symlink's real target; escape protection (a symlink
-    // pointing outside the project root) is the resolution layer's job and is
-    // covered by the PathJail tests in `server::tool_trait`. Here we lock in that
+    // pointing outside the project root) is the resolution layer's job. Here we
+    // lock in that
     // an *in-tree* symlink is treated like the file it points at, not rejected
     // with a misleading "skipped for security" message that never fires on the
     // live MCP path.

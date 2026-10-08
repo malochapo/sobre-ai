@@ -1,11 +1,5 @@
-//! Hebbian Co-Access Cache with Boltzmann-Temperature Eviction.
-//!
-//! Scientific basis:
-//! - Hebb (1949): "Neurons that fire together wire together" — files accessed together
-//!   strengthen their association, making co-accessed files resistant to eviction.
-//! - Boltzmann distribution (Statistical Physics): P(evict) = exp(-E/kT) where E is the
-//!   "value" of a cache entry and T is the memory pressure. Low T = deterministic (only
-//!   lowest-value entries evicted), High T = stochastic (prevents thrashing).
+//! Co-access matrix: files read together strengthen their association, which
+//! decays with a half-life (Hebb: "fire together, wire together").
 
 use std::collections::HashMap;
 use std::time::Instant;
@@ -168,8 +162,6 @@ pub fn path_hash(path: &str) -> u64 {
     path.hash(&mut h);
     h.finish()
 }
-
-// ─── Boltzmann-Temperature Eviction ───────────────────────────────────────────
 
 #[cfg(test)]
 mod tests {

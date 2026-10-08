@@ -1,5 +1,5 @@
 //! Deterministic tabular (CSV/TSV) crusher — columnar redundancy factoring for
-//! delimited data (#982, Headroom tabular-compressor port, GitLab Epic #973).
+//! delimited data (a port of Headroom's tabular compressor).
 //!
 //! Real-world CSV/TSV dumps (DB exports, `psql -A -F,`, analytics extracts) are
 //! dominated by columns that repeat one value on every row (a `status`, `region`,
@@ -17,8 +17,8 @@
 //! The compact form is serialized with `serde_json` (robust quoting, escapes and
 //! Unicode — no hand-rolled format that could desync the reader), and the output
 //! is a pure function of the input (columns walked in header order, `_const`
-//! keyed deterministically), so identical input yields byte-identical output
-//! (#498). The crusher never inflates: callers gate on the shared
+//! keyed deterministically), so identical input yields byte-identical output.
+//! The crusher never inflates: callers gate on the shared
 //! [`crate::core::json_crush::KEEP_DATA_DIVISOR`] threshold and a no-op input returns [`None`].
 
 use std::collections::BTreeSet;

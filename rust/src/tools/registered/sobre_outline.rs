@@ -73,9 +73,9 @@ impl McpTool for SobreOutlineTool {
         })
     }
 
-    /// `format=json` produces a deterministic, byte-stable JSON document (#498):
+    /// `format=json` produces a deterministic, byte-stable JSON document:
     /// it must be returned verbatim, so the dispatch pipeline skips all prose
-    /// decorations and compression for it (#990).
+    /// decorations and compression for it.
     fn produces_machine_readable(&self, args: Option<&Map<String, Value>>) -> bool {
         args.and_then(|a| a.get("format")).and_then(Value::as_str) == Some("json")
     }

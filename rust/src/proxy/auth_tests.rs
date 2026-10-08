@@ -1,8 +1,8 @@
-//! Split from `proxy/mod.rs` (#660 LOC gate): `auth_tests`.
+//! Split from `proxy/mod.rs` (LOC gate): `auth_tests`.
 
 use super::*;
 
-// P0-4 (#416): the proxy must never run unauthenticated — `None` means
+// P0-4: the proxy must never run unauthenticated — `None` means
 // "resolve the session token", not "no auth".
 #[test]
 fn effective_auth_token_never_yields_empty() {
@@ -103,7 +103,7 @@ fn has_provider_api_key_no_headers() {
 
 #[test]
 fn has_provider_api_key_accepts_non_sk_bearer() {
-    // #362: OpenAI-*compatible* providers (Azure, OpenRouter, Groq, vLLM/
+    // OpenAI-*compatible* providers (Azure, OpenRouter, Groq, vLLM/
     // Ollama gateways, project/service keys) issue keys without the sk-/gsk_
     // prefix. OpenCode (@ai-sdk/openai) forwards them as `Bearer <key>`; they
     // must authenticate on a loopback provider route. The upstream validates
@@ -154,7 +154,7 @@ fn x_sobre_project_never_forwarded_upstream() {
     assert!(!forward::is_allowed_request_header("x-sobre-project"));
 }
 
-// --- #353: bare provider endpoints (OpenCode / @ai-sdk/openai) ---
+// --- bare provider endpoints (OpenCode / @ai-sdk/openai) ---
 
 #[test]
 fn is_provider_route_bare_responses_and_messages() {
@@ -210,7 +210,7 @@ fn canonical_provider_path_ignores_already_canonical_and_unknown() {
 
 #[test]
 fn canonical_provider_path_collapses_double_v1_prefix() {
-    // The OpenAI base URL sobre writes carries `/v1` (#366); a client treating
+    // The OpenAI base URL sobre writes carries `/v1`; a client treating
     // it as an origin and appending `/v1/...` itself produces a double prefix.
     assert_eq!(
         canonical_provider_path("/v1/v1/responses").as_deref(),

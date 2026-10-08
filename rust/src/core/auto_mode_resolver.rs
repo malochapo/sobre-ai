@@ -15,7 +15,7 @@ pub struct ResolvedMode {
 /// Single entry point for auto-mode resolution.
 /// Merges Pipeline A (select_mode_with_task) and Pipeline B (resolve_auto_mode).
 pub fn resolve(ctx: &AutoModeContext) -> ResolvedMode {
-    // Quality loop (#1008): a sobre_patch anchor went stale — hand back fresh line
+    // Quality loop: a sobre_patch anchor went stale — hand back fresh line
     // anchors (not `full`) so the agent retries by reference, one-shot. Checked
     // before the `full` escalation: it is the strictly better recovery for a
     // model already editing via anchors.
@@ -23,7 +23,7 @@ pub fn resolve(ctx: &AutoModeContext) -> ResolvedMode {
         return resolved("anchored", "anchored_edit_fail_escalation");
     }
 
-    // Quality loop (#494), signal 1: an edit on this file just failed after a
+    // Quality loop, signal 1: an edit on this file just failed after a
     // compressed read — the agent needs the real body now, one-shot.
     if crate::core::edit_quality::take_pending_escalation(ctx.path) {
         return resolved("full", "edit_fail_escalation");
@@ -31,7 +31,7 @@ pub fn resolve(ctx: &AutoModeContext) -> ResolvedMode {
 
     let r = resolve_inner(ctx);
 
-    // Quality loop (#494), signal 2: this mode keeps producing edit failures
+    // Quality loop, signal 2: this mode keeps producing edit failures
     // for this file type — compression here is a proven net loss, use full.
     if r.mode != "full" && crate::core::edit_quality::is_risky_mode(ctx.path, &r.mode) {
         return resolved("full", "edit_quality_penalty");
@@ -62,7 +62,7 @@ fn resolve_inner(ctx: &AutoModeContext) -> ResolvedMode {
         // read and collapses the cache hit rate: the 2nd read of every file
         // blows up to full and stub hits only begin at the 3rd read (which
         // agents rarely reach). Only short-circuit once full was delivered;
-        // otherwise fall through to the predictor, which deterministically
+        // otherwise fall through to the size heuristic, which deterministically
         // reproduces the cached compressed mode and serves it from the
         // compressed-output cache as a cheap, consistent hit.
         if cache.is_full_delivered(ctx.path) {
@@ -83,13 +83,13 @@ fn resolve_inner(ctx: &AutoModeContext) -> ResolvedMode {
         return resolved("full", "config_data");
     }
 
-    // Active compiler error (#499): the agent reads this file to fix the
+    // Active compiler error: the agent reads this file to fix the
     // build — compressed modes would hide the error region.
     if crate::core::diagnostics_store::has_error(ctx.path) {
         return resolved("full", "active_diagnostic");
     }
 
-    // Suspect file (#361 capability): the task explicitly names this file
+    // Suspect file (capability): the task explicitly names this file
     // (e.g. "fix the version sort in versioncmp.c"), so the agent is about to
     // inspect it for the defect. Keep the full body it needs to localize and
     // edit, ahead of any task-type intent default that might compress it.
@@ -103,7 +103,7 @@ fn resolve_inner(ctx: &AutoModeContext) -> ResolvedMode {
 
     // The capability guards above plus the deterministic heuristic below make
     // `auto` a pure function of (file, task) — byte-stable for provider prompt
-    // caching (#498).
+    // caching.
 
     // Deterministic cold-read fallback. Every read that reaches here missed the
     // session cache (a warm hit returns `full`/`diff` above). Structure-first is
@@ -165,7 +165,7 @@ fn heuristic_mode(ext: &str, token_count: usize) -> String {
         }
         return "aggressive".to_string();
     }
-    // Structure-first cold-read floor (#361): on a phase-isolated harness a cold
+    // Structure-first cold-read floor: on a phase-isolated harness a cold
     // `full` read never amortizes, so code files default to `map` (deps +
     // exports + key signatures) — cheaper and a better localization surface.
     // `map` keeps far more than `signatures` (no empty bodies), so the
@@ -303,7 +303,7 @@ mod tests {
         //
         // Sized > 6000 tokens so the deterministic default heuristic itself
         // picks a compressed mode (`map` for large code) — making the
-        // compressed-only premise real even with learning off (#683); the
+        // compressed-only premise real; the
         // invariant under test is that the `cache_hit` shortcut never fires for
         // an entry whose full body was not delivered.
         let dir = tempfile::tempdir().unwrap();
@@ -472,9 +472,8 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
-    /// #683: with learning off (the default), a medium code file with no task
-    /// resolves through the deterministic size heuristic — never a learning
-    /// source — and is byte-stable across repeated calls.
+    /// A medium code file with no task resolves through the deterministic
+    /// size heuristic and is byte-stable across repeated calls.
     #[test]
     fn learning_off_by_default_is_deterministic() {
         let _lock = crate::core::data_dir::test_env_lock();

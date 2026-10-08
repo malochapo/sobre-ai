@@ -1,4 +1,4 @@
-//! Regression for #885 (fixed by #851/#843): a windowed `sobre_read(mode=anchored)`
+//! Regression: a windowed `sobre_read(mode=anchored)`
 //! must keep windowing after the same file is edited via `sobre_patch`.
 use std::sync::Arc;
 
@@ -84,7 +84,7 @@ async fn anchored_window_survives_ctx_patch() {
     let pr = tokio::task::block_in_place(|| SobrePatchTool.handle(&patch, &ctx)).unwrap();
     assert!(!pr.text.starts_with("ERROR"), "patch failed: {}", pr.text);
 
-    // 3) anchored window after the edit — must STILL window (the #885 bug).
+    // 3) anchored window after the edit — must STILL window (the bug).
     let after = tokio::task::block_in_place(|| SobreReadTool.handle(&read_args, &ctx)).unwrap();
     assert!(
         after.text.lines().count() < 8,

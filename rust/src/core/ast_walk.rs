@@ -4,11 +4,11 @@
 //! generated, minified, or pathologically nested source can produce a tree
 //! thousands of levels deep, which overflows the (small, ~2 MiB) worker-thread
 //! stack used for background indexing. Rust turns a stack overflow into an
-//! immediate `abort()` of the whole process — the SIGABRT reported in #378.
+//! immediate `abort` of the whole process — the SIGABRT.
 //!
 //! These helpers walk the tree with a heap-allocated work stack instead, so the
 //! traversal depth is bounded by available heap rather than by the native call
-//! stack. Indexing a single deep file can therefore no longer crash the daemon.
+//! stack. Indexing a single deep file can therefore no longer crash the MCP server.
 
 #[cfg(feature = "tree-sitter")]
 use tree_sitter::Node;
@@ -113,7 +113,7 @@ mod tests {
     }
 
     /// A tree thousands of levels deep must not overflow the stack — this is the
-    /// regression guard for the #378 SIGABRT.
+    /// regression guard for the SIGABRT.
     #[test]
     fn deeply_nested_tree_does_not_overflow() {
         let depth = 20_000;

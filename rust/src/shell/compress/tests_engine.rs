@@ -1,6 +1,6 @@
 #[allow(unused_imports)]
 use super::*;
-/// #342: already-compact TOON output must be preserved verbatim (not recompressed)
+/// Already-compact TOON output must be preserved verbatim (not recompressed)
 /// regardless of the command, because re-compressing it destroys the exact
 /// line/field shape agents use to validate CLI output contracts.
 #[cfg(test)]
@@ -62,7 +62,7 @@ mod toon_passthrough_tests {
     }
 }
 
-/// Exit-code-aware compression (#809 / #810): a command that actually FAILED must
+/// Exit-code-aware compression: a command that actually FAILED must
 /// never be lossily compressed, so the agent always sees the real error and never
 /// re-runs the command without sobre.
 #[cfg(test)]
@@ -135,7 +135,7 @@ mod outcome_aware_tests {
         );
     }
 }
-/// #848: MSBuild parallel diagnostics dedup
+/// MSBuild parallel diagnostics dedup
 #[test]
 fn msbuild_parallel_dedup_removes_duplicate_diagnostics() {
     let output = "Microsoft (R) Build Engine\n\
@@ -170,7 +170,7 @@ Build succeeded with warnings.\n\
     );
 }
 
-// #1130: chained commands must not be pattern-compressed
+// Chained commands must not be pattern-compressed
 #[test]
 fn chained_command_detection() {
     use super::engine::is_chained_command;
@@ -192,7 +192,7 @@ fn chained_git_fetch_preserves_worktree_output() {
     );
 }
 
-// #1129: small output should NOT be compressed — verbatim is cheaper
+// Small output should NOT be compressed — verbatim is cheaper
 #[test]
 fn small_output_stays_verbatim() {
     let cmd = "ls -la /tmp/templates";

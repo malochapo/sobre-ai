@@ -119,7 +119,7 @@ pub struct KnowledgeFact {
     pub feedback_up: u32,
     pub feedback_down: u32,
     pub last_feedback: Option<DateTime<Utc>>,
-    /// Per-item sensitivity classification (#212). Set at creation from
+    /// Per-item sensitivity classification. Set at creation from
     /// content and enforced by the policy floor at injection time.
     pub sensitivity: SensitivityLevel,
     pub imported_from: Option<String>,
@@ -137,7 +137,7 @@ pub struct Contradiction {
     pub resolution: String,
 }
 
-/// Outcome of a write-time admission decision (#970), returned by
+/// Outcome of a write-time admission decision, returned by
 /// `ProjectKnowledge::remember_admitted`. It is the difference between "the agent
 /// asked to store X" and "what sobre actually persisted".
 #[derive(Debug, Clone)]

@@ -209,7 +209,7 @@ pub(crate) fn boost_with_splade(
     });
 }
 
-/// Boost results by code-health complexity signal (#877, #882).
+/// Boost results by code-health complexity signal.
 ///
 /// Symbols with higher cognitive complexity (handle, dispatch, orchestration
 /// functions) are more likely edit targets than small leaf helpers sharing

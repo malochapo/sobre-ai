@@ -284,7 +284,7 @@ pub fn thresholds_for_path(path: &str) -> CompressionThresholds {
 
 /// Per-language thresholds, adjusted for how compressible this content is.
 /// A pure function of `path` and `content`, so the same file always
-/// compresses the same way (#498).
+/// compresses the same way.
 pub fn adaptive_thresholds(path: &str, content: &str) -> CompressionThresholds {
     let mut base = thresholds_for_path(path);
     if content.len() > 500 {

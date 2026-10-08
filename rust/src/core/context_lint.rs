@@ -1,4 +1,4 @@
-//! Injected-context linter (#960) — keeps sobre's OWN injected context
+//! Injected-context linter — keeps sobre's OWN injected context
 //! (the MCP instructions + advertised tool descriptions) high-signal.
 //!
 //! The Nisi/WorkOS "Case" talk is the motivation: comprehensive prose and
@@ -207,7 +207,7 @@ mod tests {
 
     /// The enforced gate: the live injected rules surface must carry zero Error
     /// findings, proving the trim landed and guarding against future re-teaching
-    /// or duplication regressions (#960).
+    /// or duplication regressions.
     #[test]
     fn live_injected_context_has_no_error_findings() {
         let _iso = crate::core::data_dir::isolated_data_dir();

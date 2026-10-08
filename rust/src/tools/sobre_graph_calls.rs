@@ -170,7 +170,7 @@ fn call_path(graph: &CallGraph, from: &str, to: &str) -> String {
     out
 }
 
-/// Append the stable-handle usage hint (#607) to a non-empty result so the
+/// Append the stable-handle usage hint to a non-empty result so the
 /// agent can re-target any listed symbol via `sobre_search(action="symbol",
 /// handle=…)`. Skips error/empty messages (which start with "No ") so failures
 /// stay clean.

@@ -12,7 +12,7 @@ fn copilot_hook_entry(binary: &str, action: &str, timeout_sec: u64) -> serde_jso
     })
 }
 
-/// User-level Copilot hooks live under `~/.copilot/hooks` (#381), or under
+/// User-level Copilot hooks live under `~/.copilot/hooks`, or under
 /// `$COPILOT_HOME/hooks`.
 fn copilot_user_hooks_dir() -> Option<PathBuf> {
     if let Ok(copilot_home) = std::env::var("COPILOT_HOME") {
@@ -69,7 +69,7 @@ mod tests {
 
     #[test]
     fn hook_entry_carries_bash_and_powershell_with_quoting() {
-        // Windows-style install path with a space — the #381 failure shape.
+        // Windows-style install path with a space — the failure shape.
         let entry =
             copilot_hook_entry(r"C:\Users\Jane Doe\AppData\Local\sobre.exe", "compress", 15);
         assert_eq!(

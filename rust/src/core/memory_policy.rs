@@ -48,12 +48,12 @@ pub struct LifecyclePolicy {
     /// Characteristic memory stability in days for the Ebbinghaus curve.
     pub base_stability_days: f32,
     /// Archive single-confirmation facts untouched for this many days that were
-    /// never retrieved — dead weight regardless of confidence (#962). Defaults to
-    /// a conservative 90 days (#972): genuinely cold facts are archived (and
+    /// never retrieved — dead weight regardless of confidence. Defaults to
+    /// a conservative 90 days: genuinely cold facts are archived (and
     /// rehydrate on recall), so a store self-curates instead of only churning at
     /// its cap. Set `None`/`off` to disable.
     pub prune_unretrieved_after_days: Option<i64>,
-    /// Proactive headroom on a capacity reclaim (#995): when a store reaches its
+    /// Proactive headroom on a capacity reclaim: when a store reaches its
     /// cap, settle it at `1 - reclaim_headroom_pct` (e.g. `0.25` → 75%) instead
     /// of churning right at the cap. Lossless — the reclaimed tail is archived
     /// and restorable.
@@ -97,7 +97,7 @@ impl Default for GotchaPolicy {
     }
 }
 
-/// Write-time admission control for the knowledge store (#970). The cap +
+/// Write-time admission control for the knowledge store. The cap +
 /// importance-eviction is a backstop *after* the fact is written; admission is
 /// the boundary *before* it, so a capped store fills with signal, not noise.
 /// Applied only to direct `sobre_knowledge remember` (the agent-facing path);
@@ -125,7 +125,7 @@ mod tests {
 
     #[test]
     fn memory_discipline_defaults_are_premium() {
-        // #970/#972: self-curation is on by default, but lossless.
+        // Self-curation is on by default, but lossless.
         let p = MemoryPolicy::default();
         assert_eq!(
             p.lifecycle.prune_unretrieved_after_days,

@@ -1,4 +1,4 @@
-//! Result rendering for `sobre_patch` (epic #1008): the success summary and —
+//! Result rendering for `sobre_patch`: the success summary and —
 //! the premium recovery path — a `CONFLICT` report that hands the model *fresh*
 //! anchors for exactly the lines that drifted, so it can retry in one step
 //! without a separate re-read.
@@ -135,7 +135,7 @@ mod tests {
 
     #[test]
     fn conflict_render_is_byte_stable() {
-        // Determinism (#498): the conflict text is the model's retry surface, so
+        // Determinism: the conflict text is the model's retry surface, so
         // it must be a pure function of (path, lines, misses) for prompt-cache
         // stability across repeated attempts.
         let lines: Vec<String> = ["a", "b", "c", "d", "e", "f"]

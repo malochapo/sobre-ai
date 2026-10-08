@@ -1,4 +1,4 @@
-//! #404 regression: a read must return file content byte-for-byte for
+//! Regression: a read must return file content byte-for-byte for
 //! verbatim modes (`full`, `lines:`). The prose terse pipeline once ran on
 //! read output and mangled source (dictionary substitutions, line-drop dedup),
 //! breaking a `full` read's "complete content" contract.
@@ -63,7 +63,7 @@ fn lines_read_is_byte_exact() {
     // The contract under test is fidelity: the SELECTED lines must survive
     // verbatim with no terse substitutions, regardless of how the range is
     // rendered. `lines:1-3` is windowed output, not a full-file dump, so the
-    // oracle is the selected slice — not the whole SAMPLE (#684 fix made
+    // oracle is the selected slice — not the whole SAMPLE (fix made
     // `lines:` actually honour the window instead of returning the full file).
     let selected_lines = &SAMPLE.lines().collect::<Vec<_>>()[..3];
     for line in selected_lines {

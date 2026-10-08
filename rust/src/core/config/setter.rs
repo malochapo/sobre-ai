@@ -53,7 +53,7 @@ pub fn set_by_key(key: &str, value: &str) -> Result<Config, crate::core::error::
 /// as the string a user would type (no TOML quoting), or `None` if the key is
 /// unset (still at its schema default).
 ///
-/// Powers the before→after review for consequential `config set` writes (#852).
+/// Powers the before→after review for consequential `config set` writes.
 /// Reads only the user's file, so an unset key is reported as `None` rather than
 /// the default — the review then shows `(default) → <new>`.
 #[must_use]

@@ -1,4 +1,4 @@
-//! Edit-reliability benchmark (#1008 / GL#1015) — a deterministic regression
+//! Edit-reliability benchmark — a deterministic regression
 //! guard for anchored editing's core promise.
 //!
 //! ## What this proves
@@ -370,7 +370,7 @@ fn anchored_editing_beats_str_replace_on_ambiguity_across_languages() {
     );
 }
 
-/// A/B output-token cost on the exact same successful edits (#1008 metering).
+/// A/B output-token cost on the exact same successful edits (metering).
 ///
 /// Reliability (above) is one axis; the other is what each success *costs* in
 /// output tokens — the argument bytes the model must emit per tool call:
@@ -463,7 +463,7 @@ fn anchored_args_cost_fewer_output_tokens_on_identical_fixes() {
 
 #[test]
 fn anchored_reads_and_edits_are_deterministic_across_languages() {
-    // Determinism contract (#498), analogous to
+    // Determinism contract, analogous to
     // `process_mode_output_is_byte_stable_across_calls`: anchored reads are a
     // pure function of content, and an identical anchored edit yields identical
     // bytes — so provider prompt caching is never defeated by anchoring.

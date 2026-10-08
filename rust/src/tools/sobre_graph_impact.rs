@@ -137,7 +137,7 @@ fn handle_analyze(path: Option<&str>, root: &str, max_depth: usize, fmt: OutputF
         return format_impact(&impact, &rel_target, root, fmt);
     }
 
-    // 2) Symbol-name fallback (GH #398): callers — and LLMs — routinely ask for
+    // 2) Symbol-name fallback: callers — and LLMs — routinely ask for
     //    the impact of a *class/type* by name (`sobre_graph impact ArcPoint`)
     //    rather than its file path. Resolve the bare name to the file(s) that
     //    define it and report their combined blast radius, instead of the
@@ -155,7 +155,7 @@ fn handle_analyze(path: Option<&str>, root: &str, max_depth: usize, fmt: OutputF
     analyze_unresolved(&graph, target, &rel_target, root, fmt)
 }
 
-/// Reduce a user-supplied target to a bare symbol name for the #398 fallback:
+/// Reduce a user-supplied target to a bare symbol name for the fallback:
 /// drop any directory prefix and a single trailing source extension, so
 /// `Models/ArcPoint.cs`, `ArcPoint.cs` and `ArcPoint` all query `ArcPoint`.
 /// Returns an empty string for inputs that cannot name a single symbol
@@ -177,10 +177,10 @@ fn symbol_query_name(target: &str) -> String {
     stem.to_string()
 }
 
-/// Combined blast radius of every file that defines `symbol` (GH #398
+/// Combined blast radius of every file that defines `symbol` (the
 /// symbol-name fallback). The defining files are what changes, so they are
 /// excluded from the affected set; the resolved files are surfaced so the
-/// answer stays transparent. Output is sorted + capped for determinism (#498).
+/// answer stays transparent. Output is sorted + capped for determinism.
 fn analyze_symbol(
     graph: &CodeGraph,
     symbol: &str,
@@ -259,7 +259,7 @@ fn analyze_symbol(
 
 /// Diagnostic for an `impact` target that matched neither a file node nor a
 /// symbol. Replaces the old silent "leaf node" answer — indistinguishable from
-/// a real leaf — with the indexed counts and a concrete next step (GH #398).
+/// a real leaf — with the indexed counts and a concrete next step.
 fn analyze_unresolved(
     graph: &CodeGraph,
     target: &str,

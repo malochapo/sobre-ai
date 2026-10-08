@@ -602,7 +602,7 @@ impl StructuredIntent {
         let mut intent = Self::from_query(query);
 
         // Text signals too weak (unknown wording or language)? Behavioral
-        // signals from the session outrank a blind Explore fallback (#591).
+        // signals from the session outrank a blind Explore fallback.
         if intent.confidence < 0.5 && !touched_files.is_empty() {
             let behavioral = Self::from_file_patterns(touched_files);
             if behavioral.confidence > intent.confidence {
@@ -1023,7 +1023,7 @@ mod tests {
         assert_eq!(route.model_tier, ModelTier::Standard);
     }
 
-    /// #591 acceptance: de/fr/es sentences per TaskType, ≥90% hit rate.
+    /// Acceptance: de/fr/es sentences per TaskType, ≥90% hit rate.
     #[test]
     fn classify_multilingual_table() {
         let table: &[(&str, TaskType)] = &[
@@ -1093,7 +1093,7 @@ mod tests {
         );
     }
 
-    /// #591 acceptance: German filler words must not pollute keywords.
+    /// Acceptance: German filler words must not pollute keywords.
     #[test]
     fn keywords_filter_german_fillers() {
         let r = classify("bitte kannst du diese funktion aufräumen, ich möchte sauberen code");
@@ -1123,7 +1123,7 @@ mod tests {
         assert!(intent.format_header().contains("URGENT"));
     }
 
-    /// #591: with weak text confidence, session file patterns outrank the
+    /// With weak text confidence, session file patterns outrank the
     /// blind Explore fallback.
     #[test]
     fn behavioral_signals_beat_low_confidence_text() {

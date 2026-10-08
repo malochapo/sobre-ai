@@ -49,7 +49,7 @@ extern "C" fn handle_sigint(_sig: libc::c_int) {
 /// Install the cooperative SIGINT handler (idempotent).
 ///
 /// Call this at the start of a long-running, cancellable CLI operation. The
-/// daemon/MCP server never calls it, so [`is_cancelled`] stays `false` there
+/// MCP server never calls it, so [`is_cancelled`] stays `false` there
 /// and background embedding is unaffected.
 #[cfg(feature = "dense")]
 pub fn install_ctrlc_handler() {

@@ -2,8 +2,7 @@
 //!
 //! After the lmd reverse-cut, sobre has no `.lmd.md`-specific code path: a
 //! read returns the raw source verbatim (never an error, never a half-rendered
-//! document). Rendering `.lmd.md` is owned entirely by the external lean-md
-//! addon (`ctx_md_render` / CLI `lean-md render`) and is out of scope here.
+//! document). Rendering `.lmd.md` is out of scope.
 //! This end-to-end check drives the freshly built `sobre` binary and asserts
 //! a `.lmd.md` read surfaces the raw marker.
 use std::process::Command;
@@ -14,7 +13,7 @@ const SOBRE_BIN: &str = env!("CARGO_BIN_EXE_sobre");
 
 #[test]
 fn sobre_read_lmd_md_returns_raw_source() {
-    // No addon installed (default CI state) → a read of a `.lmd.md` must surface
+    // A read of a `.lmd.md` must surface
     // the raw source, never an error or a half-rendered document. We assert the
     // marker survives the read.
     //
@@ -38,7 +37,7 @@ fn sobre_read_lmd_md_returns_raw_source() {
 
     assert!(
         text.contains("RAW_DELEGATION_MARKER"),
-        "without an addon a .lmd.md read must return raw text (no error, no half-render): {text}"
+        "a .lmd.md read must return raw text (no error, no half-render): {text}"
     );
     // The `@date` directive is what discriminates raw from rendered: any renderer
     // consumes it and substitutes a date. Asserting on the plain marker alone would
