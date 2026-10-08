@@ -91,7 +91,7 @@ impl ToolOutput {
 /// The async boundary (cache locks, session reads) is handled by the dispatch
 /// layer before calling `handle`.
 pub trait McpTool: Send + Sync {
-    /// Tool name as registered in the MCP protocol (e.g. "ctx_tree").
+    /// Tool name as registered in the MCP protocol (e.g. "sobre_tree").
     fn name(&self) -> &'static str;
 
     /// MCP tool definition including JSON schema.
@@ -161,7 +161,7 @@ fn is_section_label(line: &str) -> bool {
 #[derive(Clone)]
 pub struct ToolContext {
     pub project_root: String,
-    /// The session's shell cwd (where `ctx_shell` last ran), snapshotted like
+    /// The session's shell cwd (where `sobre_shell` last ran), snapshotted like
     /// `extra_roots`: relative paths fall back to it, and a cwd in another git
     /// checkout outranks `project_root` (#707).
     pub shell_cwd: Option<String>,

@@ -379,6 +379,6 @@ pub(crate) fn capacity_hint(critical: bool, project_root: Option<&str>) -> Strin
     }
     let root = project_root.unwrap_or("<project>");
     format!(
-        "over cap — eviction is behind. Compact it now: sobre call ctx_knowledge --project-root '{root}' --json '{{\"action\":\"consolidate\"}}'"
+        "over cap — eviction is behind. Compact it now: sobre call sobre_knowledge --project-root '{root}' --json '{{\"action\":\"consolidate\"}}'"
     )
 }

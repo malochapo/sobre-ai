@@ -328,7 +328,7 @@ fn bench_pattern_coverage_comprehensive() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// SECTION 3: COMPRESSION MODE BENCHMARKS — ctx_read modes on real-like files
+// SECTION 3: COMPRESSION MODE BENCHMARKS — sobre_read modes on real-like files
 // ═══════════════════════════════════════════════════════════════════════════
 
 #[test]
@@ -579,14 +579,14 @@ fn guard_essential_instructions_present() {
 
     let required = vec![
         "native tools keep working",
-        "ctx_expand",
-        "ctx_patch",
-        "ctx_read",
-        "ctx_shell",
-        "ctx_search",
-        "ctx_tree",
-        "ctx_compose",
-        "ctx_session",
+        "sobre_expand",
+        "sobre_patch",
+        "sobre_read",
+        "sobre_shell",
+        "sobre_search",
+        "sobre_tree",
+        "sobre_compose",
+        "sobre_session",
     ];
 
     for keyword in &required {

@@ -19,7 +19,7 @@ use std::process::Command;
 use serde_json::Value;
 
 /// Collect every `"name"` string field anywhere in the manifest JSON. Tool names
-/// (`ctx_*`) only ever appear as tool entry names, so membership is unambiguous.
+/// (`sobre_*`) only ever appear as tool entry names, so membership is unambiguous.
 fn collect_names(value: &Value, out: &mut std::collections::BTreeSet<String>) {
     match value {
         Value::Object(map) => {
@@ -54,14 +54,14 @@ fn mcp_entrypoint_tools_are_advertised() {
     // read/search surface. If a handler exists but is not advertised here, the
     // tool is unreachable for MCP clients (the v3.4.7 "missing manifest entry").
     let required = [
-        "ctx_read",
-        "ctx_shell",
-        "ctx_search",
-        "ctx_compose",
-        "ctx_graph",
-        "ctx_knowledge",
-        "ctx_session",
-        "ctx_patch",
+        "sobre_read",
+        "sobre_shell",
+        "sobre_search",
+        "sobre_compose",
+        "sobre_graph",
+        "sobre_knowledge",
+        "sobre_session",
+        "sobre_patch",
     ];
     for tool in required {
         assert!(

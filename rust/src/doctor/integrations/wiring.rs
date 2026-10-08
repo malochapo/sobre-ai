@@ -144,18 +144,18 @@ pub(crate) fn skill_not_applicable_note() -> NamedCheck {
     }
 }
 
-/// Most recent `ctx_*` MCP tool call from the usage ledger ("12m ago" /
+/// Most recent `sobre_*` MCP tool call from the usage ledger ("12m ago" /
 /// "never"). #593: the clearest signal of whether the agent actually drives
 /// sobre through MCP — an empty `watch` plus "never" means the agent is using
-/// native tools instead of `ctx_*`, not that sobre is broken. Never fails
+/// native tools instead of `sobre_*`, not that sobre is broken. Never fails
 /// (informational), and reads the live ledger so it is naturally dynamic.
 pub(crate) fn last_ctx_call_check() -> NamedCheck {
     let detail = match last_ctx_call_ago() {
-        Some(ago) => format!("{ago} (most recent ctx_* MCP call)"),
-        None => "never — the agent has not called any ctx_* MCP tool yet".to_string(),
+        Some(ago) => format!("{ago} (most recent sobre_* MCP call)"),
+        None => "never — the agent has not called any sobre_* MCP tool yet".to_string(),
     };
     NamedCheck {
-        name: "Last ctx_* call".to_string(),
+        name: "Last sobre_* call".to_string(),
         ok: true,
         detail,
     }

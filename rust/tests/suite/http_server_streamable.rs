@@ -32,7 +32,7 @@ async fn streamable_http_stateless_json_tool_call_works() {
         "id": 1,
         "method": "tools/call",
         "params": {
-            "name": "ctx_read",
+            "name": "sobre_read",
             "arguments": {
                 "path": file_path.to_string_lossy().to_string(),
                 "mode": "full"

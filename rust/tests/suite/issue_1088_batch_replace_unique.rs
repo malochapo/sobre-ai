@@ -1,4 +1,4 @@
-//! Regression for #1088: `replace_unique` must work inside a `ctx_patch`
+//! Regression for #1088: `replace_unique` must work inside a `sobre_patch`
 //! ops[] batch, applied in order against the post-state of preceding ops.
 use std::sync::Arc;
 
@@ -6,7 +6,7 @@ use serde_json::json;
 use sobre::core::cache::SessionCache;
 use sobre::core::session::SessionState;
 use sobre::server::tool_trait::{McpTool, ToolContext};
-use sobre::tools::registered::ctx_patch::CtxPatchTool;
+use sobre::tools::registered::sobre_patch::SobrePatchTool;
 use tokio::sync::RwLock;
 
 fn ctx_for(root: &std::path::Path) -> ToolContext {
@@ -38,7 +38,7 @@ async fn batched_replace_unique_applies_sequentially() {
     .unwrap()
     .clone();
 
-    let out = tokio::task::block_in_place(|| CtxPatchTool.handle(&args, &ctx))
+    let out = tokio::task::block_in_place(|| SobrePatchTool.handle(&args, &ctx))
         .unwrap_or_else(|e| panic!("batch rejected: {}", e.message));
     assert!(
         !out.text.contains("cannot be batched"),
@@ -67,7 +67,7 @@ async fn batched_replace_unique_spans_files_without_top_level_path() {
     .unwrap()
     .clone();
 
-    tokio::task::block_in_place(|| CtxPatchTool.handle(&args, &ctx))
+    tokio::task::block_in_place(|| SobrePatchTool.handle(&args, &ctx))
         .unwrap_or_else(|e| panic!("cross-file batch rejected: {}", e.message));
     assert_eq!(std::fs::read_to_string(&a).unwrap(), "uno\n");
     assert_eq!(std::fs::read_to_string(&b).unwrap(), "dos\n");
@@ -95,7 +95,7 @@ async fn mixed_anchored_and_replace_unique_apply_in_order() {
     .unwrap()
     .clone();
 
-    tokio::task::block_in_place(|| CtxPatchTool.handle(&args, &ctx))
+    tokio::task::block_in_place(|| SobrePatchTool.handle(&args, &ctx))
         .unwrap_or_else(|e| panic!("mixed batch rejected: {}", e.message));
     assert_eq!(std::fs::read_to_string(&path).unwrap(), "X1\nl2\nl3\n");
 }

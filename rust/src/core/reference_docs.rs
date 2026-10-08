@@ -225,10 +225,13 @@ mod tests {
             "expected at least one heading per tool: {headings} headings for {count} tools"
         );
         // Spot-check a couple of always-present tools.
-        assert!(md.contains("## `ctx_read`"), "ctx_read must be documented");
         assert!(
-            md.contains("## `ctx_shell`"),
-            "ctx_shell must be documented"
+            md.contains("## `sobre_read`"),
+            "sobre_read must be documented"
+        );
+        assert!(
+            md.contains("## `sobre_shell`"),
+            "sobre_shell must be documented"
         );
     }
 

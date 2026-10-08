@@ -494,7 +494,7 @@ public class OrderRepository { public void Persist() {} }\n";
 /// GH #398 regression — the durable mirror must carry the C# same-namespace
 /// blast radius. The bug every previous fix missed: the impact builder wrote precise
 /// `type_ref` edges into the PropertyGraph, but every `ProjectIndex::save()`
-/// (daemon reindex, dashboard, `ctx_graph`) mirrors graph_index over it via
+/// (daemon reindex, dashboard, `sobre_graph`) mirrors graph_index over it via
 /// `clear_code_graph()` — and graph_index emitted none, silently wiping the
 /// blast radius and leaving the consumer a false-negative leaf. With type_ref
 /// edges now produced here, the mirrored graph keeps the consumer reachable.

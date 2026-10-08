@@ -33,7 +33,7 @@ pub fn tdd_schema_value() -> Value {
                 "For code reads, prefer map/signatures/task over full."
             ]
         },
-        "ctx_read": {
+        "sobre_read": {
             "read_modes": [
                 {"name":"auto","description":"Predict best mode (predictor + adaptive policy)."},
                 {"name":"full","description":"Full file content (cached)."},

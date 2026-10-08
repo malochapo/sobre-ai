@@ -221,7 +221,7 @@ mod cache_hit_messages {
         let path = file.to_string_lossy().to_string();
 
         let mut cache = SessionCache::new();
-        sobre::tools::ctx_read::handle(&mut cache, &path, "full", CrpMode::Off);
+        sobre::tools::sobre_read::handle(&mut cache, &path, "full", CrpMode::Off);
 
         // Modify file
         std::thread::sleep(std::time::Duration::from_millis(50));
@@ -235,7 +235,7 @@ mod cache_hit_messages {
                 .unwrap();
         }
 
-        let result = sobre::tools::ctx_read::handle(&mut cache, &path, "full", CrpMode::Off);
+        let result = sobre::tools::sobre_read::handle(&mut cache, &path, "full", CrpMode::Off);
         assert!(
             result.contains("version 2") || result.contains("new_function"),
             "modified file must return new content"
@@ -452,9 +452,9 @@ mod overview_descriptions {
         .unwrap();
         let path = file.to_string_lossy().to_string();
 
-        // Use ctx_read to verify file is readable, then check overview behavior
+        // Use sobre_read to verify file is readable, then check overview behavior
         let mut cache = SessionCache::new();
-        let content = sobre::tools::ctx_read::handle(&mut cache, &path, "full", CrpMode::Off);
+        let content = sobre::tools::sobre_read::handle(&mut cache, &path, "full", CrpMode::Off);
         assert!(content.contains("Session-level"));
     }
 
@@ -470,7 +470,7 @@ mod overview_descriptions {
         let path = file.to_string_lossy().to_string();
 
         let mut cache = SessionCache::new();
-        let content = sobre::tools::ctx_read::handle(&mut cache, &path, "full", CrpMode::Off);
+        let content = sobre::tools::sobre_read::handle(&mut cache, &path, "full", CrpMode::Off);
         assert!(content.contains("Utility functions"));
     }
 
@@ -486,7 +486,7 @@ mod overview_descriptions {
         let path = file.to_string_lossy().to_string();
 
         let mut cache = SessionCache::new();
-        let content = sobre::tools::ctx_read::handle(&mut cache, &path, "full", CrpMode::Off);
+        let content = sobre::tools::sobre_read::handle(&mut cache, &path, "full", CrpMode::Off);
         assert!(content.contains("REST API"));
     }
 
@@ -566,14 +566,14 @@ mod integration {
         let mut cache = SessionCache::new();
 
         // Read 1: full content
-        let r1 = sobre::tools::ctx_read::handle(&mut cache, &path, "full", CrpMode::Off);
+        let r1 = sobre::tools::sobre_read::handle(&mut cache, &path, "full", CrpMode::Off);
         assert!(r1.contains("stable_function"));
 
         // Read 2: still returns content (marks as delivered)
-        sobre::tools::ctx_read::handle(&mut cache, &path, "full", CrpMode::Off);
+        sobre::tools::sobre_read::handle(&mut cache, &path, "full", CrpMode::Off);
 
         // Read 3: now cache hit with proof
-        let r3 = sobre::tools::ctx_read::handle(&mut cache, &path, "full", CrpMode::Off);
+        let r3 = sobre::tools::sobre_read::handle(&mut cache, &path, "full", CrpMode::Off);
         assert!(
             r3.contains("unchanged") || r3.contains("cached"),
             "third read should be a cache hit: {r3}"

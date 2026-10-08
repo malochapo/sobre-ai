@@ -7,7 +7,7 @@ use crate::tools::CrpMode;
 ///
 /// Provides a compact map of the entire project, organized by task relevance.
 /// Files are shown at different detail levels based on their relevance score:
-/// - Level 0 (full): directly task-relevant files → full content (use ctx_read)
+/// - Level 0 (full): directly task-relevant files → full content (use sobre_read)
 /// - Level 1 (signatures): graph neighbors → key signatures
 /// - Level 2 (reference): distant files → name + line count only
 ///
@@ -63,7 +63,7 @@ pub(crate) fn handle(
             use crate::core::context_handles::HandleRegistry;
 
             let mut handle_reg = HandleRegistry::new();
-            output.push("▸ DIRECTLY RELEVANT (use ctx_read):".to_string());
+            output.push("▸ DIRECTLY RELEVANT (use sobre_read):".to_string());
             for r in &high {
                 let line_count = file_line_count(&r.path);
                 let item_id = ContextItemId::from_file(&r.path);
@@ -96,7 +96,7 @@ pub(crate) fn handle(
 
         if !medium.is_empty() {
             let knowledge = crate::core::knowledge::ProjectKnowledge::load(&project_root);
-            output.push("▸ CONTEXT (use ctx_read signatures/map):".to_string());
+            output.push("▸ CONTEXT (use sobre_read signatures/map):".to_string());
             for r in medium.iter().take(20) {
                 let line_count = file_line_count(&r.path);
                 let doc = extract_module_doc(&r.path)
@@ -167,7 +167,7 @@ pub(crate) fn handle(
         };
         // #658 F6: the header counts file-level (import/type_ref) edges; the
         // function-level call graph is a separate artifact. When one has been
-        // built (the ctx_graph call actions persist it lazily), surface it too —
+        // built (the sobre_graph call actions persist it lazily), surface it too —
         // otherwise a single-file project reads "0 edges" while it has call edges.
         let call_edges =
             crate::core::call_graph::CallGraph::load(&project_root).map_or(0, |g| g.edges.len());
@@ -516,7 +516,7 @@ fn partial_overview(project_root: &str) -> String {
     // Shallow tree (depth 2) of what's on disk right now; never of a broad
     // root such as the home directory.
     let (tree, _) = if crate::tools::walk_guard::deny_unsafe_walk_root(project_root).is_none() {
-        crate::tools::ctx_tree::handle(project_root, 2, false, true)
+        crate::tools::sobre_tree::handle(project_root, 2, false, true)
     } else {
         (String::new(), 0)
     };
@@ -542,7 +542,7 @@ fn partial_overview(project_root: &str) -> String {
 
     out.push(
         "The full task-relevant graph view (signatures, neighbors, relevance) will be \
-         available shortly — call ctx_compose again without a task to get it."
+         available shortly — call sobre_compose again without a task to get it."
             .to_string(),
     );
     out.join("\n")

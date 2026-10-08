@@ -139,7 +139,7 @@ fn initialize_answers_fast_and_first_call_succeeds() {
     let call = serde_json::json!({
         "jsonrpc": "2.0", "id": 2, "method": "tools/call",
         "params": {
-            "name": "ctx_read",
+            "name": "sobre_read",
             "arguments": { "path": env.project.join("hello.txt").to_string_lossy() }
         }
     });
@@ -154,7 +154,7 @@ fn initialize_answers_fast_and_first_call_succeeds() {
         .unwrap_or_default();
     assert!(
         text.contains("hello fast init"),
-        "ctx_read must deliver the file on the first post-initialize call; got: {call_res}"
+        "sobre_read must deliver the file on the first post-initialize call; got: {call_res}"
     );
 
     drop(stdin); // EOF → clean server shutdown

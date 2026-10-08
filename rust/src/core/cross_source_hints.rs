@@ -1,6 +1,6 @@
 //! Cross-source hints — lateral connections between cortical columns.
 //!
-//! When `ctx_read` delivers a file, this module appends hints about related
+//! When `sobre_read` delivers a file, this module appends hints about related
 //! data from other sources (issues, PRs, DB schemas, wiki pages) discovered
 //! via the graph index's cross-source edges.
 //!
@@ -20,7 +20,7 @@ pub struct CrossSourceHint {
 /// Find cross-source hints for a given file path by looking up
 /// edges in the graph index that connect to external URIs.
 /// Matches both absolute and project-relative paths since edges
-/// store relative paths while ctx_read passes absolute ones.
+/// store relative paths while sobre_read passes absolute ones.
 pub fn hints_for_file(
     file_path: &str,
     edges: &[IndexEdge],
@@ -63,7 +63,7 @@ pub fn hints_for_file(
     hints
 }
 
-/// Format hints as a compact string for appending to ctx_read output.
+/// Format hints as a compact string for appending to sobre_read output.
 pub fn format_hints(hints: &[CrossSourceHint]) -> String {
     if hints.is_empty() {
         return String::new();

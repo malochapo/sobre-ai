@@ -115,7 +115,7 @@ pub fn crush_value_if_beneficial(value: &Value, raw_len: usize) -> Option<String
 
 /// Parse `text` as JSON and losslessly crush it, returning the compact form only
 /// when it at least halves the input ([`KEEP_DATA_DIVISOR`]). The shared gate for
-/// callers that start from raw text (`structured_read`, `ctx_read` aggressive).
+/// callers that start from raw text (`structured_read`, `sobre_read` aggressive).
 /// `None` for non-JSON or low-redundancy input — the caller keeps its own path.
 pub fn crush_text_if_beneficial(text: &str) -> Option<String> {
     let trimmed = text.trim();

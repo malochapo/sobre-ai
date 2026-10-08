@@ -70,7 +70,7 @@ impl SessionState {
         }
     }
 
-    /// Sets the task the agent stated (`ctx_session action=task`).
+    /// Sets the task the agent stated (`sobre_session action=task`).
     pub fn set_task(&mut self, description: &str, intent: Option<&str>) {
         self.task = Some(TaskInfo {
             description: description.to_string(),

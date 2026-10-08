@@ -247,7 +247,7 @@ fn replace_slot(
 
 /// The replacement body. Deterministic function of (path, line_count) — no
 /// timestamps or counters (#498), so identical re-reads stay byte-stable and
-/// provider prompt caching applies. Wording mirrors ctx_read's `[unchanged]`
+/// provider prompt caching applies. Wording mirrors sobre_read's `[unchanged]`
 /// stub, adapted for a host whose Read has no `fresh=true` escape: touching the
 /// file or editing it changes the hash and the next Read delivers full content.
 fn render_dedup_stub(path: &str, line_count: usize) -> String {

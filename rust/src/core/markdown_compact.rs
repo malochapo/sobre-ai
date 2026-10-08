@@ -329,7 +329,7 @@ fn score_line(
         || line.contains("SHOULD")
         || line.contains("BLOCKING")
         || line.contains("WARNING")
-        || line.contains("ctx_")
+        || line.contains("sobre_")
         || line.contains("sobre")
     {
         score += 10.0;
@@ -387,7 +387,7 @@ mod tests {
     #[test]
     fn keeps_all_headings_and_shrinks() {
         let input = "# Title\n\nIntro paragraph with ordinary words.\n\n## Setup\n\n";
-        let body = "- `ctx_read` keeps important details for agents.\n";
+        let body = "- `sobre_read` keeps important details for agents.\n";
         let repeated = "This sentence is useful once but repeated many times for filler.\n";
         let mut doc = input.to_string();
         for _ in 0..20 {
@@ -404,7 +404,7 @@ mod tests {
         assert!(compacted.contains("# Title"));
         assert!(compacted.contains("## Setup"));
         assert!(compacted.contains("## Safety"));
-        assert!(compacted.contains("ctx_read"));
+        assert!(compacted.contains("sobre_read"));
         assert!(compacted.contains("MUST preserve"));
         assert!(compacted.contains("[sobre: omitted"));
     }
@@ -421,7 +421,7 @@ mod tests {
                 ));
             }
             doc.push_str(&format!(
-                "BLOCKING section {section} exact requirement with `ctx_read`.\n"
+                "BLOCKING section {section} exact requirement with `sobre_read`.\n"
             ));
         }
 
@@ -473,8 +473,8 @@ mod tests {
         for _ in 0..30 {
             doc.push_str(filler);
         }
-        doc.push_str("Run the exact `ctx_read` command below:\n\n");
-        doc.push_str("```bash\nsobre read src/lib.rs\n\nsobre search \"ctx_read\" src/\n```\n");
+        doc.push_str("Run the exact `sobre_read` command below:\n\n");
+        doc.push_str("```bash\nsobre read src/lib.rs\n\nsobre search \"sobre_read\" src/\n```\n");
         for _ in 0..30 {
             doc.push_str(filler);
         }
@@ -499,8 +499,9 @@ mod tests {
         // This block is high-signal, so it must survive whole — including its
         // blank interior line (kept fences are verbatim).
         assert!(
-            compacted
-                .contains("```bash\nsobre read src/lib.rs\n\nsobre search \"ctx_read\" src/\n```")
+            compacted.contains(
+                "```bash\nsobre read src/lib.rs\n\nsobre search \"sobre_read\" src/\n```"
+            )
         );
         assert!(compacted.contains("[sobre: omitted"));
     }

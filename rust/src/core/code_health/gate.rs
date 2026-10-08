@@ -1,4 +1,4 @@
-//! Edit-time code-health gate — shared by `ctx_edit`, `ctx_patch`, and the
+//! Edit-time code-health gate — shared by `sobre_edit`, `sobre_patch`, and the
 //! native-edit hook.
 //!
 //! Drift prevention is the lever sobre has that a post-hoc scanner does not:

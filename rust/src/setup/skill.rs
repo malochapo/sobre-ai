@@ -99,7 +99,7 @@ mod tests {
     fn every_tool_the_skill_names_is_registered() {
         let named: std::collections::BTreeSet<&str> = SKILL_MD
             .split(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
-            .filter(|w| w.starts_with("ctx_") && w.len() > 4)
+            .filter(|w| w.starts_with("sobre_") && w.len() > 6)
             .collect();
         for tool in named {
             assert!(

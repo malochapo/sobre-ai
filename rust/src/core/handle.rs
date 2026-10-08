@@ -102,7 +102,7 @@ pub fn emit(path: &str, name: &str, line: usize) -> String {
 /// addressable as a stable handle. Matches the codebase's `↳ …` hint style and
 /// is a constant, so it stays deterministic (#498).
 pub const USAGE_HINT: &str =
-    "↳ re-target any symbol: ctx_search(action=\"symbol\", handle=\"path#name@Lstart\")";
+    "↳ re-target any symbol: sobre_search(action=\"symbol\", handle=\"path#name@Lstart\")";
 
 #[cfg(test)]
 mod tests {

@@ -13,7 +13,7 @@ const TIMEOUT_MARKER: &str = "ERROR: command timed out after ";
 /// produced nothing recoverable.
 ///
 /// Single source of truth for "was anything captured before the timeout?":
-/// `call_tool` decides `isError` with it (#1086) and `ctx_shell` decides
+/// `call_tool` decides `isError` with it (#1086) and `sobre_shell` decides
 /// whether the notice is worth archiving (#995). It lives beside the code that
 /// writes the marker because both callers previously re-derived it by matching
 /// the whole output, so enriching the notice broke them silently (#1173).
@@ -81,7 +81,7 @@ pub(crate) fn execute_command_with_env_cancellable(
     crate::shell::platform::apply_profile_free_env(&mut cmd);
 
     // Auto-forward agent runtime env vars (CODEX_THREAD_ID, CLAUDE_*, …) so
-    // session-aware commands run through ctx_shell can see the active session.
+    // session-aware commands run through sobre_shell can see the active session.
     //   1. From this process's own env — covers agents that pass the vars to the
     //      MCP server process.
     //   2. From the captured agent-env store — covers agents like Codex where the
@@ -554,7 +554,7 @@ mod tests {
     #[cfg_attr(windows, ignore)]
     fn forwards_captured_agent_runtime_env() {
         // #370: the MCP server process lacks CODEX_THREAD_ID; a hook captured it
-        // from the agent shell. ctx_shell must still forward it to the child.
+        // from the agent shell. sobre_shell must still forward it to the child.
         let _lock = crate::core::data_dir::test_env_lock();
         let dir = std::env::temp_dir().join("sobre_exec_runtime_env");
         let _ = std::fs::remove_dir_all(&dir);

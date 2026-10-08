@@ -1,5 +1,5 @@
 //! Central `filter_entry` predicate shared by every directory walker
-//! (graph/index builders, `ctx_search`, `ctx_tree`, `ctx_glob`, CLI scans).
+//! (graph/index builders, `sobre_search`, `sobre_tree`, `sobre_glob`, CLI scans).
 //!
 //! Combines two protections:
 //! 1. Cloud-placeholder pruning (`cloud_files::keep_entry`) so walks never
@@ -11,7 +11,7 @@
 //!    entirely unless `require_git(false)` is set.
 //!
 //! Explicitly requested roots stay reachable: the guard only prunes entries
-//! at `depth > 0`, so `ctx_tree path=node_modules/react` still works.
+//! at `depth > 0`, so `sobre_tree path=node_modules/react` still works.
 
 /// Directory names that are unambiguously package-manager/dependency output.
 /// Deliberately conservative — anything project-specific (`dist`, `build`,
@@ -126,7 +126,7 @@ mod tests {
     #[test]
     fn explicit_root_named_node_modules_is_not_pruned() {
         // depth == 0 must never be filtered, otherwise an explicitly
-        // requested path like `ctx_tree node_modules/react` returns nothing.
+        // requested path like `sobre_tree node_modules/react` returns nothing.
         let tmp = tempfile::tempdir().expect("tempdir");
         let nm = tmp.path().join("node_modules");
         std::fs::create_dir_all(&nm).expect("mkdir");

@@ -118,7 +118,7 @@ fn module_explicitly_mentioned(task_l: &str, module: &str) -> bool {
             task_l.contains("cargo")
                 || task_l.contains("clippy")
                 || task_l.contains("rust")
-                || task_l.contains("ctx_")
+                || task_l.contains("sobre_")
                 || task_l.contains("mcp")
         }
         "website" => {
@@ -147,10 +147,10 @@ mod tests {
     #[test]
     fn pop_excludes_unmentioned_module() {
         let root = "/repo";
-        let task = "fix rust bug in ctx_read";
+        let task = "fix rust bug in sobre_read";
         let candidates = [
             RelevanceScore {
-                path: "/repo/rust/src/tools/ctx_read.rs".to_string(),
+                path: "/repo/rust/src/tools/sobre_read.rs".to_string(),
                 score: 0.9,
                 recommended_mode: "full",
             },

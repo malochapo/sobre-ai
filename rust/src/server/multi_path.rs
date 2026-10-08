@@ -19,7 +19,7 @@ pub struct ResolvedPaths {
 ///
 /// Returns `Err` when an **explicit** `path`/`paths` argument was supplied but
 /// could not be resolved. Silently falling back to the project root in that case made
-/// `ctx_tree path=/outside/repo` return the whole project tree (#401).
+/// `sobre_tree path=/outside/repo` return the whole project tree (#401).
 pub fn resolve_tool_paths(
     args: &Map<String, Value>,
     ctx: &ToolContext,
@@ -42,7 +42,7 @@ pub fn resolve_tool_paths(
         ));
     }
 
-    // #846: `file_path` is an alias for `path` in ctx_search — agents
+    // #846: `file_path` is an alias for `path` in sobre_search — agents
     // (especially Claude Code) send it expecting file-level scoping.
     // Without this fallback the parameter is silently ignored and the
     // search runs on the project root.

@@ -104,9 +104,9 @@ const SNIFF_BYTES: usize = 8192;
 
 /// Auto-generated dependency lockfiles. These are pinned dependency manifests —
 /// never useful for code understanding, often huge, and a token sink whenever a
-/// retrieval surface (`ctx_compose`, BM25 search) inlines them, so every index
+/// retrieval surface (`sobre_compose`, BM25 search) inlines them, so every index
 /// walker skips them via [`IngestKind::Generated`]. An explicit
-/// `ctx_read`/`ctx_tree`/`ctx_glob` of a lockfile still works — those paths
+/// `sobre_read`/`sobre_tree`/`sobre_glob` of a lockfile still works — those paths
 /// never consult the ingestion gate.
 ///
 /// Detection is by file *name*, independent of directory depth (so a monorepo's

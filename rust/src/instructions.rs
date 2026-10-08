@@ -20,14 +20,14 @@ const MAX_INSTRUCTION_CHARS: usize = 2048;
 /// What every client is told, whatever its level.
 pub const GUIDE: &str = "\
 sobre: local context tools. Prefer them when they fit; native tools keep working.
-• Orient: ctx_compose first (no task = project overview; with task = ranked files + source).
-• Read: ctx_read(path, mode=auto|signatures|map|full|lines:N-M|anchored). Unchanged re-reads cost ~13 tokens.
-• Find: ctx_search (regex | action=symbol | action=semantic), ctx_glob (files), ctx_tree, ctx_outline (symbols).
-• Impact: ctx_graph (action=callers|callees|trace for calls; impact|changes|path for files).
-• Edit: ctx_read(mode=anchored) → ctx_patch (line+hash anchors; op=create for new files). Native Edit also works.
-• Shell: ctx_shell compresses output; long jobs → run_in_background=true.
-• Memory: ctx_session (task, findings, decisions), ctx_knowledge (facts across sessions); undo: ctx_checkpoint.
-RECOVER: compressed output is not exact evidence. Footer id → ctx_expand(id); file → ctx_read(mode=full) or read the shown path; shell → ctx_shell(raw=true) or `sobre raw \"<command>\"`. Never rebuild exact content line-by-line.
+• Orient: sobre_compose first (no task = project overview; with task = ranked files + source).
+• Read: sobre_read(path, mode=auto|signatures|map|full|lines:N-M|anchored). Unchanged re-reads cost ~13 tokens.
+• Find: sobre_search (regex | action=symbol | action=semantic), sobre_glob (files), sobre_tree, sobre_outline (symbols).
+• Impact: sobre_graph (action=callers|callees|trace for calls; impact|changes|path for files).
+• Edit: sobre_read(mode=anchored) → sobre_patch (line+hash anchors; op=create for new files). Native Edit also works.
+• Shell: sobre_shell compresses output; long jobs → run_in_background=true.
+• Memory: sobre_session (task, findings, decisions), sobre_knowledge (facts across sessions); undo: sobre_checkpoint.
+RECOVER: compressed output is not exact evidence. Footer id → sobre_expand(id); file → sobre_read(mode=full) or read the shown path; shell → sobre_shell(raw=true) or `sobre raw \"<command>\"`. Never rebuild exact content line-by-line.
 Full guide: the `sobre` skill, if your agent has skills.
 OUTPUT: never echo tool output, no narration comments, show only changed code.";
 
@@ -150,7 +150,7 @@ mod tests {
     fn every_named_tool_is_registered() {
         let named: std::collections::BTreeSet<&str> = GUIDE
             .split(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
-            .filter(|w| w.starts_with("ctx_") && w.len() > 4)
+            .filter(|w| w.starts_with("sobre_") && w.len() > 6)
             .collect();
         assert!(named.len() >= 13, "guide names {named:?}");
         for tool in named {
@@ -184,9 +184,9 @@ mod tests {
         // compressed: the expand id, a full read, and raw shell output — the
         // last one on the CLI too, since hooks compress native shell output.
         for path in [
-            "ctx_expand(id)",
-            "ctx_read(mode=full)",
-            "ctx_shell(raw=true)",
+            "sobre_expand(id)",
+            "sobre_read(mode=full)",
+            "sobre_shell(raw=true)",
             "sobre raw \"<command>\"",
             "not exact evidence",
         ] {

@@ -41,7 +41,7 @@ accessor function.
 | L66 | `JOBS` | `server/background_shell.rs` | `LazyLock<Mutex<HashMap<String, Job>>>` | Content-addressed background shell jobs; held only to insert, inspect, or remove a job, released before executing or joining its worker thread; independent leaf lock |
 | L67 | `BUILD_GATE` | `core/graph_provider.rs` | `LazyLock<Mutex<()>>` | Serializes synchronous graph-index builds; acquired with `try_lock()` and held only while the spawned builder is awaited |
 | L87 | `CACHE` (ANN) | `core/ann_cache.rs` (fn-local) | `OnceLock<Mutex<Option<Cached>>>` | Cached approximate-nearest-neighbour index keyed by a vector fingerprint; independent leaf lock |
-| L88 | `CACHE` (content) | `core/content_cache.rs` | `OnceLock<Mutex<Cache>>` | Bounded file-content cache shared by the search-index build and `ctx_search`, validated by `(mtime, size)`; independent leaf lock |
+| L88 | `CACHE` (content) | `core/content_cache.rs` | `OnceLock<Mutex<Cache>>` | Bounded file-content cache shared by the search-index build and `sobre_search`, validated by `(mtime, size)`; independent leaf lock |
 | L89 | `STORE` (diagnostics) | `core/diagnostics_store.rs` | `OnceLock<Mutex<DiagnosticsStore>>` | Active compiler/linter diagnostics (TTL- and size-bounded) used as a context-priority signal; independent leaf lock |
 | L90 | `STORE` (edit quality) | `core/edit_quality.rs` | `OnceLock<Mutex<EditQualityStore>>` | Per-(extension × read mode) edit success/failure stats for the quality loop; independent leaf lock |
 | L92 | `ACTIVE` | `core/gotcha_tracker/runtime.rs` | `OnceLock<Mutex<Option<Active>>>` | Active per-project gotcha store, kept in memory so pending errors survive across shell calls; independent leaf lock |
@@ -54,7 +54,7 @@ accessor function.
 | # | Lock | File | Type | Purpose |
 |---|------|------|------|---------|
 | E4 | `LOCK` (data dir) | `core/data_dir.rs` (fn-local in `test_env_lock`) | `OnceLock<Mutex<()>>` | Serializes tests that mutate data-dir environment variables |
-| E6 | `LOCK` (knowledge cwd) | `tools/ctx_knowledge/tests.rs` (fn-local in `CurrentDirGuard::enter`) | `OnceLock<Mutex<()>>` | Serializes `ctx_knowledge` tests that change the process working directory |
+| E6 | `LOCK` (knowledge cwd) | `tools/sobre_knowledge/tests.rs` (fn-local in `CurrentDirGuard::enter`) | `OnceLock<Mutex<()>>` | Serializes `sobre_knowledge` tests that change the process working directory |
 
 Locks declared inside `#[cfg(test)]` items are test-only and are not listed here.
 
@@ -108,14 +108,14 @@ never held simultaneously. L41 (`KNOWLEDGE_LOCKS`) follows the same pattern.
 ### Per-file Path Lock (L17)
 
 L17 lives in the shared `core::path_locks` registry (`per_file_lock`) and is used by **both**
-`ctx_read` (`tools/registered/ctx_read.rs`) and the edit path, `ctx_patch`
-(`tools/registered/ctx_patch.rs`, `tools/ctx_patch/`; its `replace_unique` op runs through the
+`sobre_read` (`tools/registered/sobre_read.rs`) and the edit path, `sobre_patch`
+(`tools/registered/sobre_patch.rs`, `tools/sobre_patch/`; its `replace_unique` op runs through the
 string-replacement engine in `tools/registered/impl_edit.rs` and `tools/impl_edit.rs`). The outer `Mutex<HashMap>` is held
 briefly to clone the per-path `Arc<Mutex<()>>`, then dropped before the per-file lock is
 acquired. The per-file lock is acquired before the session cache lock. This serializes
 concurrent operations on the *same* path; operations on different files proceed independently.
 
-**Edit path:** `ctx_patch` acquires the L17 per-file lock (bounded `try_lock()` loop, 30s
+**Edit path:** `sobre_patch` acquires the L17 per-file lock (bounded `try_lock()` loop, 30s
 deadline) and then performs **all** disk I/O — read preimage, apply, TOCTOU recheck, atomic
 rename — *without* holding the session cache write-lock. The cache lock is taken only twice,
 each briefly and with a 5s timeout: a shared `read()` to fetch the recorded read mode before the
@@ -125,7 +125,7 @@ atomic temp-file rename inside `run_io`, not by the cache lock. The `replace_all
 holds the per-file lock with a blocking `lock()` for the write, then invalidates the cache
 entry under a brief write lock (2s timeout).
 
-**Read path (spawned thread):** `ctx_read`'s slow path runs in a spawned thread:
+**Read path (spawned thread):** `sobre_read`'s slow path runs in a spawned thread:
 
 1. **Phase 1 (shared lock):** Try the `[unchanged]` stub under `cache.try_read()`; on a hit,
    return without taking the write lock.

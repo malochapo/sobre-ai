@@ -1,7 +1,7 @@
 use crate::core::cache::SessionCache;
 use crate::core::tokens::count_tokens;
 use crate::tools::CrpMode;
-use crate::tools::ctx_read;
+use crate::tools::sobre_read;
 
 const DEFAULT_MAX_MULTI_READ_BYTES: usize = 512 * 1024;
 
@@ -34,7 +34,7 @@ pub fn handle_with_task_fresh(
     for path in paths {
         // Instruction files are read whole when no mode was picked; a mode the
         // agent picked is honoured.
-        let effective_mode = if mode == "auto" && ctx_read::is_instruction_file(path) {
+        let effective_mode = if mode == "auto" && sobre_read::is_instruction_file(path) {
             "full"
         } else {
             mode
@@ -44,14 +44,14 @@ pub fn handle_with_task_fresh(
             continue;
         }
         let chunk = if fresh {
-            ctx_read::handle_fresh_with_task(cache, path, effective_mode, crp_mode, task)
+            sobre_read::handle_fresh_with_task(cache, path, effective_mode, crp_mode, task)
         } else {
-            ctx_read::handle_with_task(cache, path, effective_mode, crp_mode, task)
+            sobre_read::handle_with_task(cache, path, effective_mode, crp_mode, task)
         };
         let chunk_bytes = chunk.len();
         if accumulated_bytes > 0 && accumulated_bytes + chunk_bytes > max_bytes {
             // This file was read but is not sent: forget the read, so a later
-            // ctx_read returns its content instead of an [unchanged] stub.
+            // sobre_read returns its content instead of an [unchanged] stub.
             cache.invalidate(path);
             truncated = true;
             capped.push(path);
@@ -71,7 +71,7 @@ pub fn handle_with_task_fresh(
         format!(
             "Read {files_read}/{n} files | {total_saved} tokens saved\n\
              ⚠ Output capped at {max_bytes} bytes. Not read: {}. \
-             Read them with ctx_read(path=…) or a smaller paths list.",
+             Read them with sobre_read(path=…) or a smaller paths list.",
             capped.join(", ")
         )
     } else if total_saved > 0 {

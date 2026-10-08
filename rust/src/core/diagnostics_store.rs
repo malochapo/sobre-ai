@@ -3,12 +3,12 @@
 //! When `cargo`/`tsc`/`eslint` fail, the files they point at are the most
 //! task-relevant files in the project — the agent will read them next to fix
 //! the build. The shell layer already sees this output (CLI `sobre -c` and
-//! MCP `ctx_shell`); this store extracts the structured `(file, line)` pairs
+//! MCP `sobre_shell`); this store extracts the structured `(file, line)` pairs
 //! and makes them available to auto-mode, relevance ranking and the triage.
 //!
 //! Persistence: `<data dir>/diagnostics.json` — the CLI runs as a separate
 //! process from the MCP server, so an in-memory store would never be seen by
-//! `ctx_read`'s auto-mode. Entries expire after `TTL_SECS`; a succeeding run
+//! `sobre_read`'s auto-mode. Entries expire after `TTL_SECS`; a succeeding run
 //! of the same tool clears its diagnostics.
 
 use std::collections::HashMap;
@@ -431,7 +431,7 @@ error[E0308]: mismatched types
 42 |         "x"
    |         ^^^ expected `usize`, found `&str`
 warning: unused variable: `foo`
-  --> src/tools/ctx_read.rs:10:9
+  --> src/tools/sobre_read.rs:10:9
 error: aborting due to 1 previous error
 "#;
 
@@ -442,7 +442,7 @@ error: aborting due to 1 previous error
         assert_eq!(diags[0].path, "src/core/cache.rs");
         assert_eq!(diags[0].line, Some(42));
         assert_eq!(diags[0].severity, Severity::Error);
-        assert_eq!(diags[1].path, "src/tools/ctx_read.rs");
+        assert_eq!(diags[1].path, "src/tools/sobre_read.rs");
         assert_eq!(diags[1].severity, Severity::Warning);
     }
 

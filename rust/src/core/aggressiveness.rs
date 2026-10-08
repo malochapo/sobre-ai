@@ -1,6 +1,6 @@
 //! Single 0.0–1.0 compression-intensity knob.
 //!
-//! TTC-style UX parity: callers (the `ctx_read` tool, the proxy, the CLI) can
+//! TTC-style UX parity: callers (the `sobre_read` tool, the proxy, the CLI) can
 //! express "how hard should I compress?" as one number instead of picking among
 //! the ten read modes. The number is *mapped* onto the existing density /
 //! entropy / information-bottleneck stages — it never introduces a model, so the

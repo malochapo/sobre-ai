@@ -73,7 +73,7 @@ pub enum EmbeddingBuildOutcome {
 /// Called by `sobre index build` after the BM25 index is ready. This is a
 /// *background-friendly* operation: it runs the ONNX
 /// model incrementally (only chunks whose content hash changed) and persists
-/// `embeddings.bin` (postcard) so later `ctx_search` dense/hybrid calls find a warm cache.
+/// `embeddings.bin` (postcard) so later `sobre_search` dense/hybrid calls find a warm cache.
 ///
 /// Returns [`EmbeddingBuildOutcome`] — the orchestrator uses this to set the
 /// semantic component state without aborting the overall index build.

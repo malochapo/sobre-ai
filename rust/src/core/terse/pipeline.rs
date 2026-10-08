@@ -38,7 +38,7 @@ pub fn compress(
     // Structured-data fast path: tool/command output that is a single JSON
     // document (API responses, `gh api`, `cargo --message-format=json`, MCP
     // bridge results) compacts losslessly far better than the token engine.
-    // ctx_read outputs carry a header line, so they never match here —
+    // sobre_read outputs carry a header line, so they never match here —
     // only genuine pure-JSON payloads do, keeping file reads byte-exact.
     if let Some(compact) = crate::core::structured_compact::compact_json(input) {
         let before = counter::count(input);

@@ -305,7 +305,7 @@ use std::collections::HashMap;
 
     #[test]
     fn rust_pub_use_reexport() {
-        let src = r"pub use crate::tools::ctx_read;";
+        let src = r"pub use crate::tools::sobre_read;";
         let analysis = analyze(src, "rs");
         assert_eq!(analysis.imports.len(), 1);
         assert_eq!(analysis.imports[0].kind, ImportKind::Reexport);

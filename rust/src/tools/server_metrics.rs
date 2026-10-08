@@ -14,7 +14,7 @@ impl SobreServer {
         }
         let mut session = self.session.write().await;
         session.record_tool_call(saved as u64, original as u64);
-        if tool == "ctx_shell" {
+        if tool == "sobre_shell" {
             session.record_command();
         }
         let pending_save = if session.should_save() {

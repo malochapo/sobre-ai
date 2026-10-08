@@ -995,7 +995,7 @@ fn rg_large_output_compresses_through_pipeline() {
         for f in &[
             "src/core/mod.rs",
             "src/cli/dispatch.rs",
-            "src/tools/ctx_shell.rs",
+            "src/tools/sobre_shell.rs",
             "src/server/mod.rs",
             "src/lib.rs",
         ] {

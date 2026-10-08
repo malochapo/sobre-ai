@@ -5,7 +5,7 @@
 //! line-by-line (the "too compressed" complaint). The `RECOVER` line of the MCP
 //! instructions ([`crate::instructions::GUIDE`]) teaches the vocabulary once;
 //! this module is the reactive half: it owns the canonical, **non-MCP-first**
-//! phrasing so every compressed `ctx_read` view renders identical, byte-stable
+//! phrasing so every compressed `sobre_read` view renders identical, byte-stable
 //! wording.
 //!
 //! Determinism (#498): the footer is a pure function of its input path, never
@@ -18,13 +18,13 @@
 pub const COMPACT_VIEW_HEADER: &str =
     "[sobre: compact view — nothing lost, full source on request]";
 
-/// Footer appended to a compressed `ctx_read` view: one line that leads with the
+/// Footer appended to a compressed `sobre_read` view: one line that leads with the
 /// MCP-free path ("read the file directly") so orgs that forbid MCP still have a
-/// route, then the `ctx_read` shortcut.
+/// route, then the `sobre_read` shortcut.
 #[must_use]
 pub fn read_footer(file_path: &str) -> String {
     format!(
-        "[sobre: full source in \"{file_path}\" (read it directly), or ctx_read(\"{file_path}\", mode=\"full\")]"
+        "[sobre: full source in \"{file_path}\" (read it directly), or sobre_read(\"{file_path}\", mode=\"full\")]"
     )
 }
 
@@ -38,7 +38,7 @@ mod tests {
         assert!(minimal.lines().count() == 1, "minimal is a single line");
         // Non-MCP path must come before the MCP shortcut.
         let native = minimal.find("full source in \"src/x.rs\"").unwrap();
-        let mcp = minimal.find("ctx_read(").unwrap();
+        let mcp = minimal.find("sobre_read(").unwrap();
         assert!(native < mcp, "native path must precede the MCP route");
         assert!(
             crate::server::registry::unregistered_tool_mentions(&minimal).is_empty(),

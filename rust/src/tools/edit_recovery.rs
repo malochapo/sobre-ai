@@ -1,4 +1,4 @@
-//! Recovery context for failed `ctx_edit` calls (issue #331).
+//! Recovery context for failed `sobre_edit` calls (issue #331).
 //!
 //! When an edit cannot be applied, these helpers turn the failure into
 //! actionable guidance so the agent does not have to spend a turn re-reading
@@ -27,7 +27,7 @@ const MAX_WALK_DEPTH: usize = 12;
 const MAX_FILES_SCANNED: usize = 5_000;
 /// Stop after this many candidate files — more than enough to disambiguate.
 const MAX_HITS: usize = 5;
-/// Skip files larger than this when scanning content (matches `ctx_search`).
+/// Skip files larger than this when scanning content (matches `sobre_search`).
 const MAX_FILE_SIZE: u64 = 512_000;
 /// Minimum length for a line to be a distinctive cross-file search needle,
 /// so trivial lines like `}` or `{` never trigger noisy matches.

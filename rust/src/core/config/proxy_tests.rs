@@ -128,5 +128,5 @@ fn live_compress_exclude_defaults_to_serena() {
     let cfg = ProxyConfig::default();
     assert!(cfg.is_tool_live_compress_excluded("mcp__serena__find_symbol"));
     assert!(cfg.is_tool_live_compress_excluded("Serena.search_for_pattern"));
-    assert!(!cfg.is_tool_live_compress_excluded("ctx_shell"));
+    assert!(!cfg.is_tool_live_compress_excluded("sobre_shell"));
 }

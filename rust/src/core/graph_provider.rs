@@ -346,8 +346,8 @@ impl GraphProvider {
 }
 
 /// Open the built graph, or `None` when there is none yet. Never builds:
-/// callers whose answer only improves with a graph (the `ctx_read` context
-/// gate, search ranking, compaction, `ctx_graph status`) use this; tools that
+/// callers whose answer only improves with a graph (the `sobre_read` context
+/// gate, search ranking, compaction, `sobre_graph status`) use this; tools that
 /// need one to answer at all use [`open_or_build`].
 pub fn open_best_effort(project_root: &str) -> Option<GraphProvider> {
     let graph = CodeGraph::open(project_root).ok()?;

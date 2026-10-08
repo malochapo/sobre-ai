@@ -10,7 +10,7 @@
 //! associations fade. Over time the graph learns the project's real working
 //! paths — which the static import/AST graph cannot capture.
 //!
-//! The learned association is an additive retrieval signal: `ctx_compose` and
+//! The learned association is an additive retrieval signal: `sobre_compose` and
 //! the graph context [`load`] it to rank the files history says tend to be
 //! touched alongside the ones in focus.
 //!
@@ -80,7 +80,7 @@ impl CoAccessGraph {
     /// **star**, not a clique — after one global decay step.
     ///
     /// This is the right model for *streaming* access where one new file enters
-    /// the working set (e.g. each `ctx_read`): it associates the newcomer with
+    /// the working set (e.g. each `sobre_read`): it associates the newcomer with
     /// the recent set without re-reinforcing the already-known pairs among
     /// `others` (which [`CoAccessGraph::record`] would, biasing toward early files).
     pub fn record_focus(&mut self, focus: &str, others: &[String]) {
@@ -207,7 +207,7 @@ pub fn record_access(project_root: &str, files: &[String]) {
 
 // ── Traversal-edge surface (repo-relative) ─────────────────────────────────
 //
-// These wrappers (used by ctx_read / ctx_semantic_search / the dashboard)
+// These wrappers (used by sobre_read / ctx_semantic_search / the dashboard)
 // normalize paths to the repo-relative form the code graph uses, so learned edges line up with static edges (#289).
 
 /// Normalize an absolute-or-relative path to the repo-relative form used as the

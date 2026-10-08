@@ -302,20 +302,24 @@ fn audit_full_savings_pipeline() {
     eprintln!("  FULL SAVINGS PIPELINE AUDIT");
     eprintln!("{}", "=".repeat(70));
 
-    // 1. ctx_read — first read in full mode: savings should be ~0
+    // 1. sobre_read — first read in full mode: savings should be ~0
     {
         let mut cache = SessionCache::new();
         let content = "use std::io;\nfn main() {\n    println!(\"hello\");\n}\n";
         let tmp = std::env::temp_dir().join("audit_test_file.rs");
         std::fs::write(&tmp, content).unwrap();
 
-        let output =
-            sobre::tools::ctx_read::handle(&mut cache, tmp.to_str().unwrap(), "full", CrpMode::Off);
+        let output = sobre::tools::sobre_read::handle(
+            &mut cache,
+            tmp.to_str().unwrap(),
+            "full",
+            CrpMode::Off,
+        );
         let file_tokens = count_tokens(content);
         let output_tokens = count_tokens(&output);
         let saved = file_tokens.saturating_sub(output_tokens);
 
-        eprintln!("\n  ctx_read (first read, full mode):");
+        eprintln!("\n  sobre_read (first read, full mode):");
         eprintln!("    file tokens:   {file_tokens}");
         eprintln!("    output tokens: {output_tokens}");
         eprintln!("    saved:         {saved}");
@@ -329,14 +333,18 @@ fn audit_full_savings_pipeline() {
             "first full read includes header, so output >= original: {output_tokens} vs {file_tokens}"
         );
 
-        // 2. ctx_read — second read (cache hit): massive savings
-        let output2 =
-            sobre::tools::ctx_read::handle(&mut cache, tmp.to_str().unwrap(), "full", CrpMode::Off);
+        // 2. sobre_read — second read (cache hit): massive savings
+        let output2 = sobre::tools::sobre_read::handle(
+            &mut cache,
+            tmp.to_str().unwrap(),
+            "full",
+            CrpMode::Off,
+        );
         let output2_tokens = count_tokens(&output2);
         let is_cache_hit =
             output2.is_empty() || output2.contains("unchanged") || output2.contains("cached");
 
-        eprintln!("\n  ctx_read (cache re-read):");
+        eprintln!("\n  sobre_read (cache re-read):");
         eprintln!("    file tokens:   {file_tokens}");
         eprintln!("    output tokens: {output2_tokens}");
         eprintln!("    is_cache_hit:  {is_cache_hit}");
@@ -354,7 +362,7 @@ fn audit_full_savings_pipeline() {
         let _ = std::fs::remove_file(&tmp);
     }
 
-    // 3. ctx_read — compressed mode (signatures): fair comparison
+    // 3. sobre_read — compressed mode (signatures): fair comparison
     {
         let mut cache = SessionCache::new();
         let mut code = Vec::new();
@@ -378,7 +386,7 @@ fn audit_full_savings_pipeline() {
         let tmp = std::env::temp_dir().join("audit_test_sigs.rs");
         std::fs::write(&tmp, &content).unwrap();
 
-        let output = sobre::tools::ctx_read::handle(
+        let output = sobre::tools::sobre_read::handle(
             &mut cache,
             tmp.to_str().unwrap(),
             "signatures",
@@ -393,7 +401,7 @@ fn audit_full_savings_pipeline() {
             0.0
         };
 
-        eprintln!("\n  ctx_read (signatures mode, 50 multi-line fns):");
+        eprintln!("\n  sobre_read (signatures mode, 50 multi-line fns):");
         eprintln!("    file tokens:   {file_tokens}");
         eprintln!("    output tokens: {output_tokens}");
         eprintln!("    savings:       {saved} ({ratio:.1}%)");
@@ -410,10 +418,10 @@ fn audit_full_savings_pipeline() {
         let _ = std::fs::remove_file(&tmp);
     }
 
-    // 4. ctx_tree — fair comparison (same depth)
+    // 4. sobre_tree — fair comparison (same depth)
     {
         let dir = env!("CARGO_MANIFEST_DIR");
-        let (output, raw_tokens) = sobre::tools::ctx_tree::handle(dir, 2, false, true);
+        let (output, raw_tokens) = sobre::tools::sobre_tree::handle(dir, 2, false, true);
         let compact_tokens = count_tokens(&output);
         let savings = raw_tokens.saturating_sub(compact_tokens);
         let ratio = if raw_tokens > 0 {
@@ -422,7 +430,7 @@ fn audit_full_savings_pipeline() {
             0.0
         };
 
-        eprintln!("\n  ctx_tree (depth=2):");
+        eprintln!("\n  sobre_tree (depth=2):");
         eprintln!("    raw tokens:     {raw_tokens}");
         eprintln!("    compact tokens: {compact_tokens}");
         eprintln!("    savings:        {savings} ({ratio:.1}%)");
@@ -437,7 +445,7 @@ fn audit_full_savings_pipeline() {
         );
     }
 
-    // 5. ctx_shell — real compression
+    // 5. sobre_shell — real compression
     {
         let raw_output = generate_git_log_patch(10);
         let original = count_tokens(&raw_output);
@@ -451,7 +459,7 @@ fn audit_full_savings_pipeline() {
             0.0
         };
 
-        eprintln!("\n  ctx_shell (git log -p, 10 commits):");
+        eprintln!("\n  sobre_shell (git log -p, 10 commits):");
         eprintln!("    raw tokens:       {original}");
         eprintln!("    compressed tokens: {compressed_tokens}");
         eprintln!("    savings:          {saved} ({ratio:.1}%)");

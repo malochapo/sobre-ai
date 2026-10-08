@@ -2,7 +2,7 @@
 
 **Status**: Stable  
 **Version**: 1  
-**Runtime source**: `rust/src/tools/ctx_knowledge/search.rs`, `rust/src/core/session/persistence.rs`, `rust/src/core/gotcha_tracker/persist.rs`
+**Runtime source**: `rust/src/tools/sobre_knowledge/search.rs`, `rust/src/core/session/persistence.rs`, `rust/src/core/gotcha_tracker/persist.rs`
 
 ## Purpose
 
@@ -15,6 +15,6 @@ working directory.
 
 | Tool / action | Behaviour |
 |---|---|
-| `ctx_knowledge action=search` | The current project's knowledge facts, and the findings and decisions of its saved sessions |
-| `ctx_knowledge action=recall` | Loads from the current project only |
+| `sobre_knowledge action=search` | The current project's knowledge facts, and the findings and decisions of its saved sessions |
+| `sobre_knowledge action=recall` | Loads from the current project only |
 | Session `load_latest` | Scoped to the project root; no global fallback |

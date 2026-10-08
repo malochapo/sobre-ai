@@ -147,8 +147,8 @@ fn parse_args(args: &[String]) -> Result<CallArgs, CallError> {
 
 fn oneshot_ctx(project_root: String, resolved_paths: HashMap<String, String>) -> ToolContext {
     // The project's latest session and a fresh file cache, as a starting MCP
-    // server has: the tools that track reads or memory (`ctx_read`,
-    // `ctx_shell`, `ctx_session`, `ctx_knowledge`) refuse to run without them.
+    // server has: the tools that track reads or memory (`sobre_read`,
+    // `sobre_shell`, `sobre_session`, `sobre_knowledge`) refuse to run without them.
     // The session is stamped with the canonical root so a later load matches it.
     let mut session = SessionState::load_latest_for_project_root(&project_root).unwrap_or_default();
     session.project_root = Some(
@@ -164,7 +164,7 @@ fn oneshot_ctx(project_root: String, resolved_paths: HashMap<String, String>) ->
         cache: Some(Arc::new(RwLock::new(SessionCache::new()))),
         session: Some(Arc::new(RwLock::new(session))),
         // Give tools a real (empty) resident BM25 cache, as the MCP server does.
-        // Without it, cache-aware tools (e.g. ctx_compose's specificity ranking)
+        // Without it, cache-aware tools (e.g. sobre_compose's specificity ranking)
         // silently take their cold-start fallback and CLI `call` stops mirroring
         // the server path it exists to reproduce.
         bm25_cache: Some(Arc::new(std::sync::Mutex::new(None))),
@@ -190,7 +190,7 @@ pub(crate) fn run_call(args: &[String]) -> Result<String, CallError> {
     };
 
     // Pre-resolve a `path` string arg into resolved_paths so handlers that read
-    // ctx.resolved_path("path") (e.g. ctx_tree, require_resolved_path) work.
+    // ctx.resolved_path("path") (e.g. sobre_tree, require_resolved_path) work.
     // Without this, multi_path falls back to "." (CWD), not project_root.
     let mut resolved_paths = HashMap::new();
     if let Some(p) = args_map.get("path").and_then(Value::as_str) {
@@ -222,11 +222,11 @@ pub(crate) fn run_call(args: &[String]) -> Result<String, CallError> {
         .get_arc(&parsed.tool)
         .ok_or_else(|| CallError::UnknownTool(parsed.tool.clone()))?;
 
-    // The process exits after this call, so what `ctx_session` recorded (a
+    // The process exits after this call, so what `sobre_session` recorded (a
     // task, a finding, a decision) is saved now, as the server would save it.
     // Other tools' session bookkeeping (files read, an inferred task) says what
     // an agent has seen; a shell call is not the agent, so it is dropped.
-    let save_session = parsed.tool == "ctx_session";
+    let save_session = parsed.tool == "sobre_session";
 
     // Run the synchronous handler on the blocking pool of a runtime, as the
     // server does: handlers that lock the session block on it there.
@@ -282,7 +282,7 @@ mod tests {
     #[test]
     fn invalid_json_is_cli_error() {
         let args = vec![
-            "ctx_tree".to_string(),
+            "sobre_tree".to_string(),
             "--project-root".to_string(),
             std::env::temp_dir().to_string_lossy().to_string(),
             "--json".to_string(),
@@ -295,7 +295,7 @@ mod tests {
     #[test]
     fn unsafe_root_is_rejected() {
         let args = vec![
-            "ctx_tree".to_string(),
+            "sobre_tree".to_string(),
             "--project-root".to_string(),
             "/".to_string(),
             "--json".to_string(),
@@ -310,10 +310,10 @@ mod tests {
     #[test]
     fn project_root_defaults_to_cwd_and_dot_is_absolute() {
         let cwd = std::env::current_dir().unwrap();
-        let bare = parse_args(&["ctx_tree".to_string()]).unwrap();
+        let bare = parse_args(&["sobre_tree".to_string()]).unwrap();
         assert!(cwd.starts_with(&bare.project_root), "{}", bare.project_root);
         let dot = parse_args(&[
-            "ctx_tree".to_string(),
+            "sobre_tree".to_string(),
             "--project-root".to_string(),
             ".".to_string(),
         ])
@@ -336,7 +336,7 @@ mod tests {
         std::fs::write(&marker, b"x").unwrap();
 
         let args = vec![
-            "ctx_tree".to_string(),
+            "sobre_tree".to_string(),
             "--project-root".to_string(),
             dir.to_string_lossy().to_string(),
             "--json".to_string(),
@@ -357,13 +357,13 @@ mod tests {
         let project = tempfile::tempdir().unwrap();
         let call = |json: &str| {
             run_call(&[
-                "ctx_session".to_string(),
+                "sobre_session".to_string(),
                 "--project-root".to_string(),
                 project.path().to_string_lossy().to_string(),
                 "--json".to_string(),
                 json.to_string(),
             ])
-            .expect("ctx_session call")
+            .expect("sobre_session call")
         };
 
         call(r#"{"action": "task", "value": "wire the parser"}"#);

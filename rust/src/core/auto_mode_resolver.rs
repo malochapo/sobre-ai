@@ -86,7 +86,7 @@ pub struct ResolvedMode {
 /// Single entry point for auto-mode resolution.
 /// Merges Pipeline A (select_mode_with_task) and Pipeline B (resolve_auto_mode).
 pub fn resolve(ctx: &AutoModeContext) -> ResolvedMode {
-    // Quality loop (#1008): a ctx_patch anchor went stale — hand back fresh line
+    // Quality loop (#1008): a sobre_patch anchor went stale — hand back fresh line
     // anchors (not `full`) so the agent retries by reference, one-shot. Checked
     // before the `full` escalation: it is the strictly better recovery for a
     // model already editing via anchors.
@@ -111,7 +111,7 @@ pub fn resolve(ctx: &AutoModeContext) -> ResolvedMode {
 }
 
 fn resolve_inner(ctx: &AutoModeContext) -> ResolvedMode {
-    if crate::tools::ctx_read::is_instruction_file(ctx.path) {
+    if crate::tools::sobre_read::is_instruction_file(ctx.path) {
         return resolved("full", "instruction_file");
     }
 

@@ -182,7 +182,7 @@ mod tests {
     #[test]
     fn forge_shell_tool_result_compresses() {
         // A vendor-prefixed foreign shell tool reaches the proxy; its log output
-        // must still be compressed (rtk/ctx_* never see another server's tools).
+        // must still be compressed (rtk/sobre_* never see another server's tools).
         let body = forge_log_body("forge_shell");
         let bytes = serde_json::to_vec(&body).unwrap();
         let (_out, orig, comp) = compress_request_body(body, bytes.len());

@@ -252,7 +252,7 @@ fn rust_impl_re() -> &'static Regex {
 
 /// Which extractor produced a signature set: the primary tree-sitter AST path
 /// ([`crate::core::signatures_ts`]) or the line-oriented regex fallback in this
-/// module. Surfaced so navigation output (`ctx_outline`) can label its backend
+/// module. Surfaced so navigation output (`sobre_outline`) can label its backend
 /// honestly and verifiably instead of merely *claiming* "via tree-sitter"
 /// (gitlab #981).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

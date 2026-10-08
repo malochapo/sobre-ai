@@ -70,7 +70,7 @@ pub fn apply_artifacts_to_stores(
     }
 
     // Cross-source edges → property graph (#682). Evict prior edges of this kind
-    // first so a replace-source's resolved links disappear from `ctx_read` hints.
+    // first so a replace-source's resolved links disappear from `sobre_read` hints.
     if prune.edge_kind.is_some() || !artifacts.edges.is_empty() {
         match crate::core::property_graph::CodeGraph::open(project_root) {
             Ok(pg) => {
@@ -85,7 +85,7 @@ pub fn apply_artifacts_to_stores(
 
     // Knowledge: evict the prior category, then remember the current facts.
     // MUST go through `mutate_locked`: this runs on a background thread, and a
-    // load → modify → blind save here raced parallel `ctx_knowledge remember`
+    // load → modify → blind save here raced parallel `sobre_knowledge remember`
     // calls — the stale snapshot clobbered facts the agent had just committed
     // (lost update, the exact #326 failure mode).
     if prune.fact_category.is_some() || !artifacts.facts.is_empty() {

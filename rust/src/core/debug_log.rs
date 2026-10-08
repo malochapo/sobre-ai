@@ -3,7 +3,7 @@
 //! two kinds of events to
 //! `<state_dir>/logs/debug.log`:
 //!
-//! 1. **MCP tool calls** handled by the sobre server (`ctx_*`) — tool name, a
+//! 1. **MCP tool calls** handled by the sobre server (`sobre_*`) — tool name, a
 //!    redacted argument summary, a one-line result preview, byte size, token
 //!    savings and wall time.
 //! 2. **Hook routing decisions** — for every native tool call sobre *can*
@@ -202,7 +202,7 @@ mod tests {
     fn disabled_by_default_writes_nothing() {
         let iso = crate::core::data_dir::isolated_data_dir();
         // Config default is `debug_log = false`, so nothing should be written.
-        log_mcp_call("ctx_read", None, "hello", 5, 0, Duration::from_millis(1));
+        log_mcp_call("sobre_read", None, "hello", 5, 0, Duration::from_millis(1));
         let path = iso.path().join("logs").join("debug.log");
         assert!(!path.exists(), "debug.log must not exist when disabled");
     }
@@ -216,7 +216,7 @@ mod tests {
         args.insert("mode".into(), Value::String("full".into()));
 
         log_mcp_call(
-            "ctx_read",
+            "sobre_read",
             Some(&args),
             "first line of result",
             1234,
@@ -225,7 +225,7 @@ mod tests {
         );
 
         let content = std::fs::read_to_string(log_path().unwrap()).unwrap();
-        assert!(content.contains("mcp  ctx_read("), "tool name + marker");
+        assert!(content.contains("mcp  sobre_read("), "tool name + marker");
         assert!(content.contains("path=\"src/main.rs\""), "arg summary");
         assert!(content.contains("mode=\"full\""), "arg summary");
         assert!(content.contains("saved≈87 tok"), "savings");
@@ -240,7 +240,7 @@ mod tests {
         let mut args = Map::new();
         args.insert("command".into(), Value::String(secret.into()));
 
-        log_mcp_call("ctx_shell", Some(&args), secret, 10, 0, Duration::ZERO);
+        log_mcp_call("sobre_shell", Some(&args), secret, 10, 0, Duration::ZERO);
 
         let content = std::fs::read_to_string(log_path().unwrap()).unwrap();
         assert!(content.contains("[REDACTED"), "secret must be redacted");
@@ -298,7 +298,7 @@ mod tests {
         f.set_len(MAX_LOG_BYTES + 1).unwrap();
         drop(f);
 
-        log_mcp_call("ctx_read", None, "after rotation", 14, 0, Duration::ZERO);
+        log_mcp_call("sobre_read", None, "after rotation", 14, 0, Duration::ZERO);
 
         assert!(rotated_path(&path).exists(), "backup debug.log.1 created");
         let fresh = std::fs::read_to_string(&path).unwrap();

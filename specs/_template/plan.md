@@ -18,7 +18,7 @@
 | `path/to/file` | … | new / modify |
 
 ## Impact (run impact analysis first)
-> `ctx_graph action=impact` (MCP), or from a shell: `sobre call ctx_graph --project-root . --json '{"action":"impact","path":"<file>"}'`.
+> `sobre_graph action=impact` (MCP), or from a shell: `sobre call sobre_graph --project-root . --json '{"action":"impact","path":"<file>"}'`.
 - Affected tests: <list — this is the verification set>
 - Affected modules: <…>
 

@@ -82,7 +82,7 @@ pub fn run() {
             "hook" => {
                 // Hooks run inside the agent shell environment, so they can see
                 // runtime/session vars (e.g. CODEX_THREAD_ID) that the long-lived
-                // MCP server process never receives. Bridge them for ctx_shell (#370).
+                // MCP server process never receives. Bridge them for sobre_shell (#370).
                 core::agent_runtime_env::capture();
                 let action = rest.first().map_or("help", std::string::String::as_str);
                 // Rewrite hooks self-bound their work and FAIL OPEN inside the
@@ -184,7 +184,7 @@ fn handle_exec(args: &[String]) -> ! {
         shell::join_command(cmd_args)
     };
     // The `sobre -c` wrapper runs inside the agent shell, which carries
-    // runtime/session vars the MCP server never sees. Bridge them so ctx_shell
+    // runtime/session vars the MCP server never sees. Bridge them so sobre_shell
     // can forward them too (#370).
     core::agent_runtime_env::capture();
     if crate::shell::reentry::should_pass_through() {

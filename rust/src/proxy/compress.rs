@@ -53,7 +53,7 @@ fn label(original: &str, result: String) -> String {
         .file_name()
         .map_or_else(|| handle.clone(), |n| n.to_string_lossy().into_owned());
     let labeled = format!(
-        "{}\n[sobre: compressed by the proxy, {before} → {after} tokens; full original at {handle}, or ctx_expand(id=\"{name}\") for a slice]",
+        "{}\n[sobre: compressed by the proxy, {before} → {after} tokens; full original at {handle}, or sobre_expand(id=\"{name}\") for a slice]",
         result.trim_end()
     );
     if labeled.len() < original.len() {
@@ -73,7 +73,7 @@ fn compress_inner(content: &str, tool_name: Option<&str>) -> String {
     // the configured aggressiveness. Their `raw` intent lives in the originating
     // `tool_use` input, which is invisible here, so re-compressing on the wire
     // would silently undo an explicit `raw=true` and double-compress everything
-    // else. Pass results from `ctx_*` tools through untouched.
+    // else. Pass results from `sobre_*` tools through untouched.
     if tool_name.is_some_and(is_sobre_tool) {
         return content.to_string();
     }
@@ -199,13 +199,13 @@ fn squeeze_research_prose(content: &str) -> Option<String> {
     Some(squeezed)
 }
 
-/// True when `name` refers to one of sobre's own `ctx_*` MCP tools, whose
+/// True when `name` refers to one of sobre's own `sobre_*` MCP tools, whose
 /// results are already compressed at the tool boundary and must not be touched
 /// again by the proxy (#479).
 ///
-/// Clients namespace MCP tools differently, so a plain `starts_with("ctx_")`
+/// Clients namespace MCP tools differently, so a plain `starts_with("sobre_")`
 /// misses the real-world callers: Claude Code (the reporter's setup) sends
-/// `mcp__sobre__ctx_shell`, others use `sobre:ctx_read`. Strip the client
+/// `mcp__sobre__sobre_shell`, others use `sobre:sobre_read`. Strip the client
 /// prefix down to the bare tool segment before matching.
 fn is_sobre_tool(name: &str) -> bool {
     let bare = name
@@ -215,7 +215,7 @@ fn is_sobre_tool(name: &str) -> bool {
         .rsplit([':', '/', '.'])
         .next()
         .unwrap_or(name);
-    bare.starts_with("ctx_") || name.starts_with("ctx_")
+    bare.starts_with("sobre_") || name.starts_with("sobre_")
 }
 
 fn infer_command(content: &str, tool_name: Option<&str>) -> String {
@@ -328,7 +328,7 @@ mod tests {
 
     #[test]
     fn sobre_tool_results_pass_through_verbatim() {
-        // A ctx_shell result the tool already produced (raw=true, or its own
+        // A sobre_shell result the tool already produced (raw=true, or its own
         // compression). The proxy must NOT re-compress / re-truncate it — that
         // was the #479 defect where `raw=true` was silently undone on the wire.
         let raw = (1..=120)
@@ -337,13 +337,13 @@ mod tests {
             .join("\n");
         assert!(raw.len() > 200);
         // Bare names AND the namespaced forms real MCP clients emit (Claude Code
-        // `mcp__sobre__ctx_shell`, colon-style `sobre:ctx_read`).
+        // `mcp__sobre__sobre_shell`, colon-style `sobre:sobre_read`).
         for tool in [
-            "ctx_shell",
-            "ctx_read",
-            "ctx_search",
-            "mcp__sobre__ctx_shell",
-            "sobre:ctx_read",
+            "sobre_shell",
+            "sobre_read",
+            "sobre_search",
+            "mcp__sobre__sobre_shell",
+            "sobre:sobre_read",
         ] {
             assert_eq!(
                 compress_tool_result(&raw, Some(tool)),

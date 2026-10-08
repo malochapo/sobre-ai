@@ -3,25 +3,25 @@
 //! The sobre MCP server is a long-lived child of the agent host. Some agents
 //! (notably Codex) expose runtime/session variables such as `CODEX_THREAD_ID`
 //! only in the *native agent shell* environment, not in the MCP server process
-//! (#370). `ctx_shell` runs inside the MCP server, so it cannot forward those
+//! (#370). `sobre_shell` runs inside the MCP server, so it cannot forward those
 //! variables by reading its own `std::env`.
 //!
 //! Short-lived sobre processes that *do* run inside the agent environment —
 //! the hook handlers (`sobre hook …`) and the `sobre -c` shell wrapper —
 //! [`capture`] the relevant variables into a small file in the data dir. The MCP
 //! server then [`load`]s them when constructing the child environment for
-//! `ctx_shell` (see `crate::server::execute`).
+//! `sobre_shell` (see `crate::server::execute`).
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 /// Env var name prefixes identifying agent runtime/session state worth forwarding
-/// to `ctx_shell` child processes.
+/// to `sobre_shell` child processes.
 pub const FORWARD_PREFIXES: &[&str] = &["CODEX_", "CLAUDE_", "OPENCODE_", "GEMINI_"];
 
 /// Case-insensitive name substrings that mark an env var as credential-shaped.
 ///
-/// A variable whose name contains any of these is NEVER forwarded to `ctx_shell`
+/// A variable whose name contains any of these is NEVER forwarded to `sobre_shell`
 /// children — and never captured to disk — even when it matches a forwardable
 /// prefix. Forwarding API keys / tokens / passwords into every child shell is an
 /// exfiltration risk that output redaction cannot stop: a `curl … -d "$KEY"`
@@ -112,7 +112,7 @@ fn read_store(path: &Path) -> Option<(BTreeMap<String, String>, u64)> {
 }
 
 /// Capture forwardable variables from the current (agent) environment into the
-/// data dir so the MCP server can forward them to `ctx_shell` children.
+/// data dir so the MCP server can forward them to `sobre_shell` children.
 ///
 /// No-op when the current environment carries no forwardable variables — this
 /// prevents a process with a stripped environment (e.g. the MCP server itself)

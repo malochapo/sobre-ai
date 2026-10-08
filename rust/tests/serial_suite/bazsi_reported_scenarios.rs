@@ -26,7 +26,7 @@ fn scenario_cache_hit_message_format() {
     let path_str = file_path.to_str().unwrap();
 
     // First read: should return full content
-    let result1 = sobre::tools::ctx_read::handle(&mut cache, path_str, "full", CrpMode::Off);
+    let result1 = sobre::tools::sobre_read::handle(&mut cache, path_str, "full", CrpMode::Off);
     assert!(
         !result1.contains("[unchanged"),
         "First read should NOT say unchanged: got {result1}"
@@ -37,7 +37,7 @@ fn scenario_cache_hit_message_format() {
     );
 
     // Second read (cache hit): should use new message format
-    let result2 = sobre::tools::ctx_read::handle(&mut cache, path_str, "full", CrpMode::Off);
+    let result2 = sobre::tools::sobre_read::handle(&mut cache, path_str, "full", CrpMode::Off);
     assert!(
         result2.contains("[unchanged") || result2.contains("use cached context"),
         "Cache hit should use new message format: got {result2}"

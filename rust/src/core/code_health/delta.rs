@@ -2,7 +2,7 @@
 //!
 //! Computes how an edit changes per-function cognitive complexity **without
 //! touching the index** — pure and deterministic, so it can run inside the
-//! edit path (`ctx_edit`, `ctx_patch`) and the native-edit hook to prevent
+//! edit path (`sobre_edit`, `sobre_patch`) and the native-edit hook to prevent
 //! complexity drift at the moment it is introduced. Functions are matched by
 //! name (their stable identity across an in-place edit).
 

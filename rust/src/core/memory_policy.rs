@@ -17,9 +17,9 @@ pub struct KnowledgePolicy {
     pub contradiction_threshold: f32,
     /// Maximum number of facts returned by recall operations.
     pub recall_facts_limit: usize,
-    /// Maximum number of rooms returned by `ctx_knowledge action=rooms`.
+    /// Maximum number of rooms returned by `sobre_knowledge action=rooms`.
     pub rooms_limit: usize,
-    /// Maximum number of timeline entries returned by `ctx_knowledge action=timeline`.
+    /// Maximum number of timeline entries returned by `sobre_knowledge action=timeline`.
     pub timeline_limit: usize,
     /// Maximum number of relations/edges returned by relations queries/diagrams.
     pub relations_limit: usize,
@@ -112,7 +112,7 @@ impl Default for GotchaPolicy {
 /// Write-time admission control for the knowledge store (#970). The cap +
 /// importance-eviction is a backstop *after* the fact is written; admission is
 /// the boundary *before* it, so a capped store fills with signal, not noise.
-/// Applied only to direct `ctx_knowledge remember` (the agent-facing path);
+/// Applied only to direct `sobre_knowledge remember` (the agent-facing path);
 /// internal restorers (archive rehydrate, cognition auto-promotion) bypass it.
 #[derive(Debug, Clone)]
 pub struct AdmissionPolicy {

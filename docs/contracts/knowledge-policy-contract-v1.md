@@ -79,9 +79,9 @@ Checked against the current fact with the same `(category, key)`
 ### Retrieval budgets (bounded, deterministic)
 
 - `recall_facts_limit`: max facts in recall outputs
-- `rooms_limit`: max rooms in `ctx_knowledge action=rooms`
-- `timeline_limit`: max entries in `ctx_knowledge action=timeline`
-- `relations_limit`: max edges in `ctx_knowledge action=relations|relations_diagram`
+- `rooms_limit`: max rooms in `sobre_knowledge action=rooms`
+- `timeline_limit`: max entries in `sobre_knowledge action=timeline`
+- `relations_limit`: max edges in `sobre_knowledge action=relations|relations_diagram`
 
 Results are sorted with stable tie-breaks, then truncated.
 
@@ -113,16 +113,16 @@ by `base_stability_days`, `low_confidence_threshold`, `stale_days`,
 
 ## Tool surface
 
-- `ctx_knowledge` (MCP): `rust/src/tools/ctx_knowledge/`,
-  registered in `rust/src/tools/registered/ctx_knowledge.rs`
+- `sobre_knowledge` (MCP): `rust/src/tools/sobre_knowledge/`,
+  registered in `rust/src/tools/registered/sobre_knowledge.rs`
   - `action=policy` with `value=show` (the default): prints the effective
     knowledge and lifecycle values. Any other `value` returns an error.
   - `action=consolidate` (with `dry_run=true` ⇒ preview without writes)
   - `action=restore` (`store` = `facts|history|patterns`, `query`,
     `limit`, default 50) ⇒ lossless undo from the archive
-- From a shell: `sobre call ctx_knowledge --project-root <path> --json
+- From a shell: `sobre call sobre_knowledge --project-root <path> --json
   '{"action":"consolidate"}'` (or `restore`, with the same arguments)
-- Relations: `rust/src/tools/ctx_knowledge_relations.rs` (bounded,
+- Relations: `rust/src/tools/sobre_knowledge_relations.rs` (bounded,
   deterministic outputs)
 
 ## Security & privacy

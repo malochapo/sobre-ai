@@ -146,7 +146,7 @@ mod tests {
     #[test]
     fn line_is_otlp_json_and_round_trips() {
         let mut ev = Event::now("sobre.compression");
-        ev.attr("sobre.tool", Value::Str("ctx_read".into()));
+        ev.attr("sobre.tool", Value::Str("sobre_read".into()));
         ev.attr("sobre.tokens.original", Value::Int(1200));
         ev.attr("sobre.upstream.local", Value::Bool(true));
         let line = ev.to_json_line();

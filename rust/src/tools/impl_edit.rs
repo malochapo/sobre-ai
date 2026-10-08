@@ -3,8 +3,8 @@ use std::path::{Path, PathBuf};
 use crate::core::cache::SessionCache;
 use crate::core::tokens::count_tokens;
 // Shared TOCTOU-safe read→verify→atomic-write primitives (epic #1008): the same
-// audited boundary `ctx_patch` (anchored editing) builds on, so a fix protects
-// both tools. `verify_expected_preimage` stays here — it is `ctx_edit`-specific
+// audited boundary `sobre_patch` (anchored editing) builds on, so a fix protects
+// both tools. `verify_expected_preimage` stays here — it is `sobre_edit`-specific
 // (keyed on `EditParams`).
 use crate::tools::edit_io::{
     FileFingerprint, FilePreimage, default_backup_path, ensure_preimage_still_matches,
@@ -18,7 +18,7 @@ pub struct EditParams {
     pub new_string: String,
     pub replace_all: bool,
     pub create: bool,
-    /// Optional preimage guards. If provided, ctx_edit fails if the current file preimage differs.
+    /// Optional preimage guards. If provided, sobre_edit fails if the current file preimage differs.
     pub expected_md5: Option<String>,
     pub expected_size: Option<u64>,
     pub expected_mtime_ms: Option<u64>,
@@ -73,7 +73,7 @@ fn verify_expected_preimage(pre: &FilePreimage, params: &EditParams) -> Result<(
 }
 
 /// Bounded, secret-redacted unified diff for edit evidence. `pub(crate)` so the
-/// anchored editor (`ctx_patch`) reuses the identical evidence format (#1008).
+/// anchored editor (`sobre_patch`) reuses the identical evidence format (#1008).
 pub fn build_diff_evidence(old: &str, new: &str, label: &str, max_lines: usize) -> String {
     let diff = similar::TextDiff::from_lines(old, new)
         .unified_diff()
@@ -673,7 +673,7 @@ mod tests {
     /// `record_outcome` -> `apply_cache_effect`). It used to be a shipped free
     /// function whose only callers were the tests below, so it is test
     /// scaffolding now rather than dead production code. It must stay in step
-    /// with `registered::impl_edit::CtxEditTool::handle`, which runs the same
+    /// with `registered::impl_edit::SobreEditTool::handle`, which runs the same
     /// three calls for real.
     fn handle(cache: &mut SessionCache, params: &EditParams) -> String {
         let last_mode = cache
@@ -793,7 +793,7 @@ mod tests {
         assert_eq!(std::fs::read(&path).unwrap(), b"world");
     }
 
-    // GH #459 end-to-end: the full ctx_edit flow (read -> preimage -> write)
+    // GH #459 end-to-end: the full sobre_edit flow (read -> preimage -> write)
     // must succeed when the parent dir is read-only but the file is writable.
     #[cfg(unix)]
     #[test]

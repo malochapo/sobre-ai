@@ -57,7 +57,7 @@ pub(super) fn compress_diff(output: &str) -> String {
             }
             let hidden = file_lines.len() - 250;
             result.push(format!(
-                "[WARNING: diff truncated ({hidden} lines hidden). Use ctx_shell(raw=true) for full output]"
+                "[WARNING: diff truncated ({hidden} lines hidden). Use sobre_shell(raw=true) for full output]"
             ));
             for l in &file_lines[file_lines.len() - 50..] {
                 result.push(l.to_string());

@@ -363,7 +363,7 @@ impl BM25Index {
 
             // Content sources, cheapest first: an explicit per-build hint, then
             // the shared resident content cache (populated by the search-index
-            // build / ctx_search, issue #148) validated by `(mtime, size)`, then
+            // build / sobre_search, issue #148) validated by `(mtime, size)`, then
             // a one-time disk read that also publishes into the shared cache.
             let cache_state = crate::core::content_cache::FileState {
                 mtime_ms: state.mtime_ms,

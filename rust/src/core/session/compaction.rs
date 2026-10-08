@@ -238,7 +238,7 @@ impl SessionState {
                 escape_xml_attr(&ft.last_mode)
             };
             recovery_queries.push(format!(
-                r#"<query tool="ctx_read" path="{path_esc}" mode="{mode}" />"#,
+                r#"<query tool="sobre_read" path="{path_esc}" mode="{mode}" />"#,
             ));
             let pattern = file_stem_search_pattern(&ft.path);
             if !pattern.is_empty() {
@@ -246,7 +246,7 @@ impl SessionState {
                 let pat_esc = escape_xml_attr(&pattern);
                 let dir_esc = escape_xml_attr(&search_dir);
                 recovery_queries.push(format!(
-                    r#"<query tool="ctx_search" pattern="{pat_esc}" path="{dir_esc}" />"#,
+                    r#"<query tool="sobre_search" pattern="{pat_esc}" path="{dir_esc}" />"#,
                 ));
             }
         }

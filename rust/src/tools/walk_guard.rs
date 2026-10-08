@@ -1,5 +1,5 @@
 //! Root guard for walks nobody asked for by name: a tool called without a
-//! `path` walks the project root, and the session overview and `ctx_compose`
+//! `path` walks the project root, and the session overview and `sobre_compose`
 //! walk it on their own.
 //!
 //! The MCP server is often spawned with `cwd == $HOME` (Cursor starts

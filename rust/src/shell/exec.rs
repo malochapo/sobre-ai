@@ -237,7 +237,7 @@ pub(super) fn exec_limits(command: &str) -> (usize, std::time::Duration) {
     (max_bytes, shell_timeout(command))
 }
 
-/// Resolve the timeout `ctx_shell` / `sobre -c` grants a command.
+/// Resolve the timeout `sobre_shell` / `sobre -c` grants a command.
 ///
 /// Heavy builds/tests (cargo install/nextest/build, npm ci, git commit/push, …)
 /// get the long ceiling instead of being killed at the 2-minute default, keeping
@@ -255,7 +255,7 @@ pub(crate) fn shell_timeout(command: &str) -> std::time::Duration {
 /// the executor for days.
 const MAX_CALL_TIMEOUT_MS: u64 = 3_600_000; // 1 hour
 
-/// [`shell_timeout`] with an optional per-call override (ctx_shell's
+/// [`shell_timeout`] with an optional per-call override (sobre_shell's
 /// `timeout_ms` arg). Precedence: per-call override (clamped to
 /// [`MAX_CALL_TIMEOUT_MS`], zero ignored) > per-tier config > built-in
 /// heavy/normal ceilings.
@@ -1025,7 +1025,7 @@ mod exec_tests {
         );
     }
 
-    // Per-call `timeout_ms` (ctx_shell tool arg): explicit caller intent beats
+    // Per-call `timeout_ms` (sobre_shell tool arg): explicit caller intent beats
     // the built-in tiers in both directions, absurd values clamp to the 1h
     // ceiling, and zero is ignored.
     #[test]

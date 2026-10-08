@@ -130,7 +130,7 @@ pub fn strip_verbatim_str(path: &str) -> Option<String> {
 /// Callers must apply this **only on Windows hosts**: clients running under
 /// MSYS2/Git Bash hand POSIX-style drive paths to a native Windows sobre.
 /// On Linux/macOS `/c/...` is a literal directory and must pass through
-/// untouched (GH #397 — the unconditional rewrite broke every `ctx_*` tool
+/// untouched (GH #397 — the unconditional rewrite broke every `sobre_*` tool
 /// for Linux projects rooted under `/c/...` and similar paths).
 fn translate_msys_drive_prefix(p: &str) -> Option<String> {
     if p.len() >= 3

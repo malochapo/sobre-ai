@@ -1,6 +1,6 @@
 //! Shared low-level file-edit I/O primitives (epic #1008).
 //!
-//! Extracted from `ctx_edit` so the anchored editor (`ctx_patch`) reuses the
+//! Extracted from `sobre_edit` so the anchored editor (`sobre_patch`) reuses the
 //! *exact same* TOCTOU-safe read→verify→atomic-write path instead of growing a
 //! second, drifting copy of this security-critical code:
 //!
@@ -12,8 +12,8 @@
 //! * permission-preserving crash-atomic `rename`, with the read-only-directory
 //!   in-place fallback (#459).
 //!
-//! One implementation = one audited boundary. `ctx_edit` (`str_replace`) and
-//! `ctx_patch` (anchored) both apply through these functions, so a fix here
+//! One implementation = one audited boundary. `sobre_edit` (`str_replace`) and
+//! `sobre_patch` (anchored) both apply through these functions, so a fix here
 //! protects both tools at once.
 //!
 //! **Known limitation (#960):** the TOCTOU guard is a point-in-time check,

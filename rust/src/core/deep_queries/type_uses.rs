@@ -40,7 +40,7 @@ pub(super) fn extract_type_uses(root: Node, src: &str, ext: &str) -> Vec<TypeUse
 /// or as an attribute (`[ApiController]`) carries no `type` field, yet it still
 /// makes the consuming file depend on the definer. Those are collected here so
 /// the property graph can build the `TypeRef` edge. The def-index resolution in
-/// `ctx_graph action=impact` discards any name that is not an actual project type, so this
+/// `sobre_graph action=impact` discards any name that is not an actual project type, so this
 /// stays precise even though it is intentionally broad at the AST level.
 #[cfg(feature = "tree-sitter")]
 fn extract_csharp(root: Node, src: &str) -> Vec<TypeUse> {

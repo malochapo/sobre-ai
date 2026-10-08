@@ -7,7 +7,7 @@
 //! 1. **Universal markers** `<lc_safe>…</lc_safe>`: any compressor wraps its
 //!    work in [`compress_preserving`]; the content between the markers passes
 //!    through verbatim and the markers themselves are stripped from the output.
-//! 2. **`protect` token list** (`ctx_read` convenience): [`line_is_protected`]
+//! 2. **`protect` token list** (`sobre_read` convenience): [`line_is_protected`]
 //!    lets the line-based lossy filters (entropy / information-bottleneck)
 //!    force-keep every line that contains one of the given tokens.
 //!

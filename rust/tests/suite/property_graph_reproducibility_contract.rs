@@ -36,11 +36,11 @@ export const b = () => c();
         let root_s = root.to_string_lossy().to_string();
 
         // Build graph (deterministic file ordering + edge insertion), the
-        // same scan `ctx_graph action=build` runs.
+        // same scan `sobre_graph action=build` runs.
         sobre::core::graph_index::scan(&root_s);
 
         // The dependency chain should be deterministic.
-        let chain = sobre::tools::ctx_graph_primitives::shortest_path(
+        let chain = sobre::tools::sobre_graph_primitives::shortest_path(
             Some("src/a.ts"),
             Some("src/c.ts"),
             &root_s,
@@ -54,14 +54,14 @@ export const b = () => c();
         );
 
         // Impact should be stable-sorted.
-        let impact = sobre::tools::ctx_graph_impact::impact(
+        let impact = sobre::tools::sobre_graph_impact::impact(
             Some("src/c.ts"),
             &root_s,
             Some(10),
             Some("json"),
         );
         let impact_v = parse_json(&impact);
-        assert_eq!(impact_v["tool"], "ctx_graph");
+        assert_eq!(impact_v["tool"], "sobre_graph");
         assert_eq!(impact_v["action"], "impact");
         assert_eq!(impact_v["affected_files_total"], 2);
         assert_eq!(

@@ -9,7 +9,7 @@ fn codex_desktop_note_is_informational_and_never_fails() {
         "the Codex Desktop note is informational, never a failure"
     );
     assert!(
-        note.detail.contains("ctx_shell") && note.detail.contains("every surface"),
+        note.detail.contains("sobre_shell") && note.detail.contains("every surface"),
         "note must steer users to the MCP tools as the reliable cross-surface path: {}",
         note.detail
     );

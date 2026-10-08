@@ -4,7 +4,7 @@
 //! breaking a `full` read's "complete content" contract.
 //!
 //! We spawn the real binary with the densest `compression_level` (so terse
-//! *would* fire if it were allowed to) and call `ctx_read` through
+//! *would* fire if it were allowed to) and call `sobre_read` through
 //! `sobre call`, so the assertion fails loudly on any regression.
 
 use std::path::Path;
@@ -31,13 +31,13 @@ fn read_output(home: &Path, file: &Path, mode: &str) -> Output {
     std::fs::write(data.join("config.toml"), "compression_level = 0.7\n").unwrap();
     let json = serde_json::json!({ "path": file, "mode": mode, "fresh": true }).to_string();
     Command::new(env!("CARGO_BIN_EXE_sobre"))
-        .args(["call", "ctx_read", "--project-root"])
+        .args(["call", "sobre_read", "--project-root"])
         .arg(file.parent().unwrap())
         .args(["--json", &json])
         .env("SOBRE_DATA_DIR", &data)
         .env("HOME", home)
         .output()
-        .expect("spawn sobre call ctx_read")
+        .expect("spawn sobre call sobre_read")
 }
 
 #[test]
@@ -78,13 +78,13 @@ fn call_read(home: &Path, project: &Path, args: &serde_json::Value) -> Output {
     let data = home.join("data");
     std::fs::create_dir_all(&data).unwrap();
     Command::new(env!("CARGO_BIN_EXE_sobre"))
-        .args(["call", "ctx_read", "--project-root"])
+        .args(["call", "sobre_read", "--project-root"])
         .arg(project)
         .args(["--json", &args.to_string()])
         .env("SOBRE_DATA_DIR", &data)
         .env("HOME", home)
         .output()
-        .expect("spawn sobre call ctx_read")
+        .expect("spawn sobre call sobre_read")
 }
 
 #[test]
