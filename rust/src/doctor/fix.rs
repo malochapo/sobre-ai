@@ -140,30 +140,32 @@ fn build_and_persist_fix_report(
         steps.push(hooks_step);
     }
 
-    let mut bm25_step = SetupStepReport {
-        name: "bm25_cache_prune".to_string(),
-        ok: true,
-        items: Vec::new(),
-        warnings: Vec::new(),
-        errors: Vec::new(),
-    };
-    let prune_result = crate::cli::prune_bm25_caches();
-    bm25_step.items.push(SetupItem {
-        name: "prune".to_string(),
-        status: if prune_result.removed > 0 {
-            "pruned".to_string()
-        } else {
-            "clean".to_string()
-        },
-        path: None,
-        note: Some(format!(
-            "scanned {}, removed {}, freed {:.1} MB",
-            prune_result.scanned,
-            prune_result.removed,
-            prune_result.bytes_freed as f64 / 1_048_576.0
-        )),
-    });
-    steps.push(bm25_step);
+    for (name, prune_result) in [
+        ("bm25_cache_prune", prune_bm25_caches()),
+        ("graph_cache_prune", prune_graph_caches()),
+    ] {
+        steps.push(SetupStepReport {
+            name: name.to_string(),
+            ok: true,
+            items: vec![SetupItem {
+                name: "prune".to_string(),
+                status: if prune_result.removed > 0 {
+                    "pruned".to_string()
+                } else {
+                    "clean".to_string()
+                },
+                path: None,
+                note: Some(format!(
+                    "scanned {}, removed {}, freed {:.1} MB",
+                    prune_result.scanned,
+                    prune_result.removed,
+                    prune_result.bytes_freed as f64 / 1_048_576.0
+                )),
+            }],
+            warnings: Vec::new(),
+            errors: Vec::new(),
+        });
+    }
 
     let mut proxy_env_step = SetupStepReport {
         name: "proxy_env".to_string(),
@@ -279,4 +281,158 @@ fn build_and_persist_fix_report(
     crate::config_io::write_atomic_with_backup(&path, &json_text)?;
 
     Ok(report)
+}
+
+pub(super) struct PruneResult {
+    pub scanned: u32,
+    pub removed: u32,
+    pub bytes_freed: u64,
+}
+
+/// Drop BM25 indexes that are quarantined, over the persist cap, or belong to
+/// a project that no longer exists. A dropped index is rebuilt on next use.
+pub(super) fn prune_bm25_caches() -> PruneResult {
+    let mut result = PruneResult {
+        scanned: 0,
+        removed: 0,
+        bytes_freed: 0,
+    };
+    let Ok(data_dir) = crate::core::data_dir::lean_ctx_data_dir() else {
+        return result;
+    };
+    let Ok(entries) = std::fs::read_dir(data_dir.join("vectors")) else {
+        return result;
+    };
+    let max_bytes = crate::core::config::DEFAULT_BM25_PERSIST_MB * 1024 * 1024;
+
+    for dir in entries.flatten().map(|e| e.path()).filter(|p| p.is_dir()) {
+        result.scanned += 1;
+
+        let quarantined = dir.join("bm25_index.bin.zst.quarantined");
+        if let Ok(meta) = std::fs::metadata(&quarantined)
+            && std::fs::remove_file(&quarantined).is_ok()
+        {
+            result.bytes_freed += meta.len();
+            result.removed += 1;
+        }
+
+        let index_path = dir.join("bm25_index.bin.zst");
+        if let Ok(meta) = std::fs::metadata(&index_path)
+            && meta.len() > max_bytes
+            && std::fs::remove_file(&index_path).is_ok()
+        {
+            result.bytes_freed += meta.len();
+            result.removed += 1;
+        }
+
+        if let Ok(root) = std::fs::read_to_string(dir.join("project_root.txt"))
+            && !std::path::Path::new(root.trim()).exists()
+        {
+            remove_dir(&dir, &mut result);
+        }
+    }
+    result
+}
+
+/// Drop property graphs whose project no longer exists (the meta file records
+/// the absolute root) and pathologically large ones (> 100 MB). A dropped
+/// graph is rebuilt on the next query.
+pub(super) fn prune_graph_caches() -> PruneResult {
+    let mut result = PruneResult {
+        scanned: 0,
+        removed: 0,
+        bytes_freed: 0,
+    };
+    let Ok(data_dir) = crate::core::data_dir::lean_ctx_data_dir() else {
+        return result;
+    };
+    let Ok(entries) = std::fs::read_dir(data_dir.join("graphs")) else {
+        return result;
+    };
+
+    for dir in entries.flatten().map(|e| e.path()).filter(|p| p.is_dir()) {
+        let meta_file = dir.join("graph.meta.json");
+        let db_file = dir.join("graph.db");
+        if !meta_file.exists() && !db_file.exists() {
+            continue;
+        }
+        result.scanned += 1;
+
+        let orphaned = std::fs::read_to_string(&meta_file)
+            .ok()
+            .and_then(|c| serde_json::from_str::<serde_json::Value>(&c).ok())
+            .and_then(|v| v.get("project_root")?.as_str().map(String::from))
+            .is_some_and(|root| !root.is_empty() && !std::path::Path::new(&root).exists());
+        let oversized = std::fs::metadata(&db_file).is_ok_and(|m| m.len() > 100 * 1024 * 1024);
+        if orphaned || oversized {
+            remove_dir(&dir, &mut result);
+        }
+    }
+    result
+}
+
+fn remove_dir(dir: &std::path::Path, result: &mut PruneResult) {
+    let freed = dir_size(dir);
+    if std::fs::remove_dir_all(dir).is_ok() {
+        result.bytes_freed += freed;
+        result.removed += 1;
+    }
+}
+
+fn dir_size(path: &std::path::Path) -> u64 {
+    let Ok(entries) = std::fs::read_dir(path) else {
+        return 0;
+    };
+    entries
+        .flatten()
+        .map(|e| e.path())
+        .map(|p| {
+            if p.is_dir() {
+                dir_size(&p)
+            } else {
+                std::fs::metadata(&p).map_or(0, |m| m.len())
+            }
+        })
+        .sum()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{prune_bm25_caches, prune_graph_caches};
+
+    #[test]
+    fn prune_drops_indexes_of_deleted_projects_only() {
+        let data = crate::core::data_dir::isolated_data_dir();
+        let live = tempfile::tempdir().unwrap();
+        let live_root = live.path().to_string_lossy().to_string();
+        let gone_root = "/nonexistent/sobre-prune-test".to_string();
+
+        let vectors = data.path().join("vectors");
+        let graphs = data.path().join("graphs");
+        for (name, root) in [("gone", &gone_root), ("live", &live_root)] {
+            let bm25 = vectors.join(name);
+            std::fs::create_dir_all(&bm25).unwrap();
+            std::fs::write(bm25.join("project_root.txt"), root).unwrap();
+            std::fs::write(bm25.join("bm25_index.bin.zst"), b"x").unwrap();
+
+            let graph = graphs.join(name);
+            std::fs::create_dir_all(&graph).unwrap();
+            std::fs::write(graph.join("graph.db"), b"x").unwrap();
+            std::fs::write(
+                graph.join("graph.meta.json"),
+                serde_json::json!({ "project_root": root }).to_string(),
+            )
+            .unwrap();
+        }
+
+        let bm25 = prune_bm25_caches();
+        assert_eq!((bm25.scanned, bm25.removed), (2, 1));
+        assert!(!vectors.join("gone").exists());
+        assert!(vectors.join("live").exists());
+
+        let graph = prune_graph_caches();
+        assert_eq!((graph.scanned, graph.removed), (2, 1));
+        assert!(!graphs.join("gone").exists());
+        assert!(graphs.join("live").exists());
+    }
 }

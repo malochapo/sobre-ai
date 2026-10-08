@@ -156,10 +156,6 @@ pub fn stop() {
     }
 }
 
-pub fn start() -> bool {
-    start_on_port(crate::proxy_setup::default_port())
-}
-
 /// Start the installed manager after atomically taking ownership of `port`.
 /// This also handles the case where an IDE/dashboard spawned a standalone
 /// proxy while the manager was temporarily unloaded.

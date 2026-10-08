@@ -1,48 +1,3 @@
-pub(crate) fn load_shell_history() -> Vec<String> {
-    let shell = std::env::var("SHELL").unwrap_or_default();
-    let Some(home) = dirs::home_dir() else {
-        return Vec::new();
-    };
-
-    let history_file = if shell.contains("zsh") {
-        home.join(".zsh_history")
-    } else if shell.contains("fish") {
-        home.join(".local/share/fish/fish_history")
-    } else if cfg!(windows) && shell.is_empty() {
-        home.join("AppData")
-            .join("Roaming")
-            .join("Microsoft")
-            .join("Windows")
-            .join("PowerShell")
-            .join("PSReadLine")
-            .join("ConsoleHost_history.txt")
-    } else {
-        home.join(".bash_history")
-    };
-
-    // Shell history files (especially zsh's metafied format) frequently contain
-    // non-UTF-8 bytes; `read_to_string` would reject the whole file. Read raw and
-    // decode lossily so a single bad byte never hides 900 lines of real history.
-    match std::fs::read(&history_file) {
-        Ok(bytes) => String::from_utf8_lossy(&bytes)
-            .lines()
-            .filter_map(|l| {
-                let trimmed = l.trim();
-                if trimmed.starts_with(':') {
-                    trimmed
-                        .split(';')
-                        .nth(1)
-                        .map(std::string::ToString::to_string)
-                } else {
-                    Some(trimmed.to_string())
-                }
-            })
-            .filter(|l| !l.is_empty())
-            .collect(),
-        Err(_) => Vec::new(),
-    }
-}
-
 pub(crate) fn format_tokens_cli(tokens: u64) -> String {
     if tokens >= 1_000_000_000_000 {
         format!("{:.2}T", tokens as f64 / 1_000_000_000_000.0)
@@ -56,33 +11,6 @@ pub(crate) fn format_tokens_cli(tokens: u64) -> String {
     } else {
         format!("{tokens}")
     }
-}
-
-pub(crate) fn cli_track_read(path: &str, mode: &str, original_tokens: usize, output_tokens: usize) {
-    crate::core::tool_lifecycle::record_file_read(
-        path,
-        mode,
-        original_tokens,
-        output_tokens,
-        false,
-    );
-}
-
-pub(crate) fn cli_track_read_cached(
-    path: &str,
-    mode: &str,
-    original_tokens: usize,
-    output_tokens: usize,
-) {
-    crate::core::tool_lifecycle::record_file_read(path, mode, original_tokens, output_tokens, true);
-}
-
-pub(crate) fn cli_track_search(observed_tokens: usize, output_tokens: usize) {
-    crate::core::tool_lifecycle::record_search(observed_tokens, output_tokens);
-}
-
-pub(crate) fn cli_track_tree(original_tokens: usize, output_tokens: usize) {
-    crate::core::tool_lifecycle::record_tree(original_tokens, output_tokens);
 }
 
 pub(crate) fn detect_project_root(args: &[String]) -> String {

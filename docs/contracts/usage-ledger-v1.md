@@ -53,8 +53,8 @@ to compress (`original = 0`) is not recorded.
 
 | Attribute | Type | Meaning |
 |---|---|---|
-| `sobre.surface` | string | `mcp`, `shell` (`lean-ctx -c`), `hook`, `cli` or `proxy` |
-| `sobre.tool` | string | MCP tool name, shell program name (`cargo`, `git`), hook name, CLI command, or `request` for the proxy |
+| `sobre.surface` | string | `mcp`, `shell` (`lean-ctx -c`), `hook` or `proxy` |
+| `sobre.tool` | string | MCP tool name, shell program name (`cargo`, `git`), hook name, or `request` for the proxy |
 | `sobre.tokens.original` | int | Tokens before compression |
 | `sobre.tokens.sent` | int | Tokens actually sent to the model |
 

@@ -37,10 +37,7 @@ impl Drop for ConfigGuard {
     }
 }
 
-fn set_compression(compression: &str) -> ConfigGuard {
-    let value = CompressionLevel::from_str_label(compression)
-        .expect("known level name")
-        .value();
+fn set_compression(value: f64) -> ConfigGuard {
     with_config(&format!("compression_level = {value}\n"))
 }
 
@@ -48,7 +45,7 @@ fn set_compression(compression: &str) -> ConfigGuard {
 
 #[test]
 fn compression_level_lite_injects_concise() {
-    let _g = set_compression("lite");
+    let _g = set_compression(0.3);
     let text = instructions::build_instructions();
     assert!(
         text.contains("OUTPUT STYLE: concise"),
@@ -58,7 +55,7 @@ fn compression_level_lite_injects_concise() {
 
 #[test]
 fn compression_level_standard_injects_dense() {
-    let _g = set_compression("standard");
+    let _g = set_compression(0.5);
     let text = instructions::build_instructions();
     assert!(
         text.contains("OUTPUT STYLE: dense"),
@@ -72,7 +69,7 @@ fn compression_level_standard_injects_dense() {
 
 #[test]
 fn compression_level_max_injects_expert_terse() {
-    let _g = set_compression("max");
+    let _g = set_compression(0.7);
     let text = instructions::build_instructions();
     assert!(
         text.contains("OUTPUT STYLE: expert-terse"),
@@ -82,7 +79,7 @@ fn compression_level_max_injects_expert_terse() {
 
 #[test]
 fn compression_level_off_no_output_style() {
-    let _g = set_compression("off");
+    let _g = set_compression(0.0);
     let text = instructions::build_instructions();
     assert!(
         !text.contains("OUTPUT STYLE"),
@@ -132,7 +129,6 @@ fn compression_level_bands() {
         (1.0, CompressionLevel::Raw),
     ] {
         assert_eq!(CompressionLevel::from_value(value), level, "{value}");
-        assert_eq!(CompressionLevel::from_value(level.value()), level);
     }
 }
 

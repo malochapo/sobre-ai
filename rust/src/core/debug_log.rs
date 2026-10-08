@@ -112,46 +112,6 @@ pub fn log_hook_decision(event: &str, tool: &str, route: Route, subject: &str, r
     ));
 }
 
-/// Return the log content for display (most-recent `tail_lines`, `0` = all).
-#[must_use]
-pub fn read_log(tail_lines: usize) -> String {
-    let Some(path) = log_path() else {
-        return "Debug log unavailable (state dir not resolvable).".to_string();
-    };
-    if !path.exists() {
-        return format!(
-            "No debug-log entries yet. Enable with \
-             `lean-ctx config set debug_log true`, then re-run your tool calls.\nPath: {}",
-            path.display()
-        );
-    }
-    let content = std::fs::read_to_string(&path).unwrap_or_default();
-    if tail_lines == 0 {
-        return content;
-    }
-    let lines: Vec<&str> = content.lines().collect();
-    let start = lines.len().saturating_sub(tail_lines);
-    lines[start..].join("\n")
-}
-
-/// Delete the debug log (and its rotated backup). Returns a status line.
-#[must_use]
-pub fn clear() -> String {
-    let Some(path) = log_path() else {
-        return "Debug log unavailable (state dir not resolvable).".to_string();
-    };
-    let mut removed = 0u32;
-    for p in [path.clone(), rotated_path(&path)] {
-        if p.exists() && std::fs::remove_file(&p).is_ok() {
-            removed += 1;
-        }
-    }
-    format!(
-        "Cleared {removed} debug-log file(s) from {}",
-        path.display()
-    )
-}
-
 // ---- internals -------------------------------------------------------------
 
 fn redact(s: &str) -> String {

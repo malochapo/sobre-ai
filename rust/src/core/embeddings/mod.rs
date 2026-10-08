@@ -91,9 +91,8 @@ impl EmbeddingEngine {
         let model_dir = base_dir.join(model.storage_dir_name());
 
         // Never download here: loading happens on tool paths the user did not
-        // ask to touch the network. The model arrives through an explicit
-        // request (`lean-ctx embeddings provision`, `init`, `index
-        // build-semantic`), which call `ensure_downloaded` first.
+        // ask to touch the network. The model arrives through the explicit
+        // `lean-ctx embeddings provision`, which calls `ensure_downloaded`.
         anyhow::ensure!(
             model_files_present(&model_dir),
             "embedding model not installed — run `lean-ctx embeddings provision`"

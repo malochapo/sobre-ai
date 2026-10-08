@@ -257,42 +257,6 @@ fn binary_gain_json_returns_valid_json() {
 }
 
 #[test]
-fn binary_grep_finds_matches() {
-    let output = lean_ctx_bin()
-        .args(["grep", "fn main", "src/"])
-        .output()
-        .expect("failed to run lean-ctx grep");
-    assert!(
-        output.status.success(),
-        "grep should succeed (exit={})",
-        output.status.code().unwrap_or(-1)
-    );
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(
-        stdout.contains("main") || stdout.contains("fn"),
-        "grep should find matches: {stdout}"
-    );
-}
-
-#[test]
-fn binary_ls_shows_tree() {
-    let output = lean_ctx_bin()
-        .args(["ls", "--depth", "2"])
-        .output()
-        .expect("failed to run lean-ctx ls");
-    assert!(
-        output.status.success(),
-        "ls should succeed (exit={})",
-        output.status.code().unwrap_or(-1)
-    );
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(
-        stdout.contains("src") || stdout.contains("Cargo"),
-        "ls should show directory tree: {stdout}"
-    );
-}
-
-#[test]
 fn binary_doctor_runs_without_crash() {
     let output = lean_ctx_bin()
         .arg("doctor")

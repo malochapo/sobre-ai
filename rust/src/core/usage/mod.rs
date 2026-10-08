@@ -27,7 +27,7 @@ use std::io::Write;
 use std::path::PathBuf;
 
 pub use otlp::{Event, Value};
-pub use summary::{Period, Summary, ToolTotals, summarize};
+pub use summary::{Period, Summary, summarize};
 
 pub const EVENT_COMPRESSION: &str = "sobre.compression";
 pub const EVENT_LLM_CALL: &str = "gen_ai.client.inference.operation.details";
@@ -44,8 +44,6 @@ pub enum Surface {
     Shell,
     /// A host hook (post-tool compression, read dedup).
     Hook,
-    /// A CLI command (`lean-ctx read`, `diff`, …).
-    Cli,
     /// The API proxy, on tool results inside a request.
     Proxy,
 }
@@ -57,7 +55,6 @@ impl Surface {
             Self::Mcp => "mcp",
             Self::Shell => "shell",
             Self::Hook => "hook",
-            Self::Cli => "cli",
             Self::Proxy => "proxy",
         }
     }

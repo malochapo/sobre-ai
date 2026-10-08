@@ -31,7 +31,7 @@ This contract covers:
   it. Files whose content hash is unchanged are reused, so the result equals a
   build from scratch.
 - There is one extractor: `ctx_impact build`, `ctx_graph build` and
-  `lean-ctx graph build` all run the same scan.
+  `lean-ctx index build` all run the same scan.
 
 ### Edge semantics
 

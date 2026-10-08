@@ -57,7 +57,6 @@ pub fn contract_docs() -> Vec<ContractDoc> {
         doc("usage-ledger", "usage-ledger-v1.md", 1, Frozen),
         // ── Stable: additive evolution allowed ──────────────────────────────
         doc("ccp-session-bundle", "ccp-session-bundle-v1.md", 1, Stable),
-        doc("conformance", "conformance-v1.md", 1, Stable),
         doc("extractors", "extractors-v1.md", 1, Stable),
         doc(
             "gotchas-reminders",

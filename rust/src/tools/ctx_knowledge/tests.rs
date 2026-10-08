@@ -99,7 +99,7 @@ fn consolidation_report_includes_session_and_lifecycle_stats() {
     );
     assert!(out.contains("archived 3, compacted 4, remaining 5"));
     // Lossless: a run that archived items points at the restore path.
-    assert!(out.contains("restore with: lean-ctx knowledge restore"));
+    assert!(out.contains("restore with: ctx_knowledge action=restore"));
 }
 
 #[test]
@@ -218,46 +218,4 @@ fn consolidation_loads_session_for_requested_project_root() {
             .iter()
             .any(|f| f.value == "wrong cwd finding")
     );
-}
-
-#[test]
-fn consolidate_all_project_knowledge_runs_every_known_project() {
-    let _env_lock = crate::core::data_dir::test_env_lock();
-    let data_dir = tempfile::tempdir().unwrap();
-    let _data_dir = DataDirGuard::set(data_dir.path());
-    let project_a = tempfile::tempdir().unwrap();
-    let project_b = tempfile::tempdir().unwrap();
-    let root_a = project_a.path().to_string_lossy().to_string();
-    let root_b = project_b.path().to_string_lossy().to_string();
-    let policy = MemoryPolicy::default();
-
-    let mut knowledge_a = ProjectKnowledge::new(&root_a);
-    knowledge_a.remember("finding", "a", "project a fact", "s1", 0.8, &policy);
-    knowledge_a.save().unwrap();
-
-    let mut knowledge_b = ProjectKnowledge::new(&root_b);
-    knowledge_b.remember("finding", "b", "project b fact", "s1", 0.8, &policy);
-    knowledge_b.save().unwrap();
-
-    let reports = consolidate_all_project_knowledge_with(&ConsolidateOptions::manual()).unwrap();
-    let roots: Vec<_> = reports.iter().map(|(root, _)| root.clone()).collect();
-    let mut expected = vec![root_a, root_b];
-    expected.sort();
-
-    assert_eq!(roots, expected);
-    assert_eq!(reports.len(), 2);
-    assert!(
-        reports
-            .iter()
-            .all(|(_, report)| report.session_id.is_none())
-    );
-}
-
-#[test]
-fn all_consolidation_report_marks_empty_store_set() {
-    let reports = Vec::new();
-
-    let out = format_all_consolidation_reports(&reports);
-
-    assert_eq!(out, "No project knowledge stores found.");
 }

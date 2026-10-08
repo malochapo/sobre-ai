@@ -4,7 +4,6 @@ static RAW: AtomicBool = AtomicBool::new(false);
 static COMPRESS: AtomicBool = AtomicBool::new(false);
 static QUIET: AtomicBool = AtomicBool::new(false);
 static MCP_SERVER: AtomicBool = AtomicBool::new(false);
-static HOOK_CHILD: AtomicBool = AtomicBool::new(false);
 
 pub struct FlagGuard {
     flag: &'static AtomicBool,
@@ -34,10 +33,6 @@ pub fn enable_mcp_server() {
     MCP_SERVER.store(true, Ordering::Relaxed);
 }
 
-pub fn mark_hook_child() {
-    HOOK_CHILD.store(true, Ordering::Relaxed);
-}
-
 pub fn scoped_quiet() -> FlagGuard {
     set_scoped(&QUIET)
 }
@@ -56,8 +51,4 @@ pub fn quiet_enabled() -> bool {
 
 pub fn mcp_server_enabled() -> bool {
     MCP_SERVER.load(Ordering::Relaxed)
-}
-
-pub fn hook_child_enabled() -> bool {
-    HOOK_CHILD.load(Ordering::Relaxed)
 }

@@ -172,6 +172,7 @@ pub(crate) fn build_header(
     header
 }
 
+#[cfg(test)]
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn process_mode(
     content: &str,

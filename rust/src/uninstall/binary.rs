@@ -10,9 +10,9 @@ use std::path::{Path, PathBuf};
 
 use super::shorten;
 
-/// Stops the proxy and any stray lean-ctx processes (mirrors `lean-ctx stop`,
-/// but never exits the process — the uninstall must keep going). The current process and
-/// IDE-owned MCP servers are excluded by `find_killable_pids`.
+/// Stops the proxy and any stray lean-ctx processes, without ever exiting the process —
+/// the uninstall must keep going. The current process and IDE-owned MCP servers are
+/// excluded by `find_killable_pids`.
 pub(super) fn stop_processes(dry_run: bool) {
     if dry_run {
         println!("  Would stop the proxy and any running lean-ctx processes");

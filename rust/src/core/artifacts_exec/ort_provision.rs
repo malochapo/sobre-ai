@@ -183,7 +183,10 @@ pub fn provision(force: bool) -> Result<PathBuf, String> {
         let _ = std::fs::set_permissions(&tmp, std::fs::Permissions::from_mode(0o444));
     }
     #[cfg(target_os = "macos")]
-    crate::core::codesign::adhoc_sign(&tmp);
+    let _ = std::process::Command::new("codesign")
+        .args(["--force", "-s", "-"])
+        .arg(&tmp)
+        .output();
 
     std::fs::rename(&tmp, &dest).map_err(|e| e.to_string())?;
 

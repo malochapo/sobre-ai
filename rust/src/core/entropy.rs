@@ -13,7 +13,6 @@ const BPE_ENTROPY_THRESHOLD: f64 = 1.0;
 pub struct EntropyResult {
     pub output: String,
     pub original_tokens: usize,
-    pub compressed_tokens: usize,
     pub techniques: Vec<String>,
 }
 
@@ -101,15 +100,16 @@ pub fn kolmogorov_proxy(content: &str) -> f64 {
 }
 
 /// Compresses content by removing low-entropy lines and deduplicating patterns.
+#[cfg(test)]
 pub fn entropy_compress(content: &str) -> EntropyResult {
     entropy_compress_with_thresholds(content, BPE_ENTROPY_THRESHOLD, 0.7, &[])
 }
 
 /// Entropy compression with the opportunistic semantic redundancy filter
 /// (#544) pinned OFF. The regular path uses the shared embedding engine
-/// whenever it happens to be loaded, so its output depends on runtime state.
-/// Benchmarks and the scorecard (#211) need run-to-run and machine-to-machine
-/// reproducibility, so they must go through this entry point.
+/// whenever it happens to be loaded, so its output depends on runtime state;
+/// the property tests go through this entry point to stay reproducible.
+#[cfg(test)]
 pub fn entropy_compress_deterministic(content: &str) -> EntropyResult {
     entropy_compress_inner(content, BPE_ENTROPY_THRESHOLD, 0.7, &[], false, &[])
 }
@@ -348,16 +348,10 @@ fn entropy_compress_inner(
     } else {
         output
     };
-    let final_tokens = if compressed_tokens > original_tokens {
-        original_tokens
-    } else {
-        compressed_tokens
-    };
 
     EntropyResult {
         output: final_output,
         original_tokens,
-        compressed_tokens: final_tokens,
         techniques,
     }
 }
@@ -448,7 +442,6 @@ pub fn entropy_compress_to_density(content: &str, target: f64) -> EntropyResult 
         return EntropyResult {
             output: String::new(),
             original_tokens,
-            compressed_tokens: 0,
             techniques: vec![format!("density target={target:.2} (empty input)")],
         };
     }
@@ -507,13 +500,11 @@ pub fn entropy_compress_to_density(content: &str, target: f64) -> EntropyResult 
         }
     }
     let output = out_lines.join("\n");
-    let compressed_tokens = count_tokens(&output);
 
     let dropped = lines.len() - kept_count;
     EntropyResult {
         output,
         original_tokens,
-        compressed_tokens,
         techniques: vec![format!(
             "density target={target:.2} budget={budget} tok, kept {kept_count}/{} lines (⊘ {dropped})",
             lines.len()
@@ -688,7 +679,7 @@ mod tests {
         let content = "fn main() {\n    println!(\"hello\");\n}\n\n// comment\n// another comment\n\nfn helper() {\n    let x = 42;\n}\n";
         let result = entropy_compress(content);
         assert!(!result.output.is_empty(), "should produce non-empty output");
-        assert!(result.compressed_tokens <= result.original_tokens);
+        assert!(count_tokens(&result.output) <= result.original_tokens);
     }
 
     #[test]
@@ -762,7 +753,7 @@ mod tests {
         let orig = count_tokens(&content);
         for target in [0.3, 0.5, 0.7] {
             let r = entropy_compress_to_density(&content, target);
-            let actual = r.compressed_tokens as f64 / orig as f64;
+            let actual = count_tokens(&r.output) as f64 / orig as f64;
             // Tolerance of 0.15: the delimiter balance guard (#798) may
             // force-keep call/index continuation lines beyond the budget.
             assert!(
@@ -779,7 +770,6 @@ mod tests {
         let a = entropy_compress_to_density(&content, 0.4);
         let b = entropy_compress_to_density(&content, 0.4);
         assert_eq!(a.output, b.output);
-        assert_eq!(a.compressed_tokens, b.compressed_tokens);
     }
 
     #[test]
@@ -801,7 +791,6 @@ mod tests {
     #[test]
     fn density_empty_input() {
         let r = entropy_compress_to_density("", 0.5);
-        assert_eq!(r.compressed_tokens, 0);
         assert!(r.output.is_empty());
     }
 
@@ -895,5 +884,42 @@ mod tests {
             "high-entropy line must survive: {}",
             r.output
         );
+    }
+
+    // Property/fuzz tests go through the deterministic entry point: the
+    // semantic-redundancy filter (#544) would otherwise depend on whether the
+    // embedding engine happens to be loaded.
+    proptest::proptest! {
+        #[test]
+        fn output_is_subset_of_lines(content in "[a-zA-Z0-9(){};= \n]{10,800}") {
+            let result = entropy_compress_deterministic(&content);
+            for line in result.output.lines() {
+                if line.trim().is_empty() {
+                    continue;
+                }
+                proptest::prop_assert!(
+                    content.contains(line.trim()),
+                    "entropy output line not found in original: {:?}",
+                    line
+                );
+            }
+        }
+
+        #[test]
+        fn tokens_not_greater(content in "[a-zA-Z0-9(){};= \n]{10,600}") {
+            let result = entropy_compress_deterministic(&content);
+            let compressed = count_tokens(&result.output);
+            proptest::prop_assert!(
+                compressed <= result.original_tokens,
+                "compressed {} > original {}",
+                compressed,
+                result.original_tokens
+            );
+        }
+
+        #[test]
+        fn no_panic_on_arbitrary_utf8(content in "\\PC{0,1000}") {
+            let _ = entropy_compress_deterministic(&content);
+        }
     }
 }

@@ -75,7 +75,9 @@ impl Scoreboard {
 pub fn run() -> u32 {
     let mut board = Scoreboard::default();
 
-    println!("{BOLD}{WHITE}lean-ctx doctor{RST}  {DIM}diagnostics{RST}\n");
+    println!("{BOLD}{WHITE}lean-ctx doctor{RST}  {DIM}diagnostics{RST}");
+    println!("  {}", summary_line());
+    println!("  {}\n", debug_log_line());
 
     // 1) Binary on PATH
     let path_bin = resolve_lean_ctx_binary();
@@ -364,6 +366,46 @@ pub fn run() -> u32 {
     needs_attention
 }
 
+/// One line on the install: the running version and which detected agents
+/// have a lean-ctx MCP entry.
+fn summary_line() -> String {
+    let version = env!("CARGO_PKG_VERSION");
+    let detected: Vec<_> = dirs::home_dir()
+        .map(|home| crate::core::editor_registry::build_targets(&home))
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|t| t.detect_path.exists())
+        .collect();
+    let connected: Vec<&str> = detected
+        .iter()
+        .filter(|t| std::fs::read_to_string(&t.config_path).is_ok_and(|s| s.contains("lean-ctx")))
+        .map(|t| t.name)
+        .collect();
+    let names = if connected.is_empty() {
+        String::new()
+    } else {
+        format!(" ({})", connected.join(", "))
+    };
+    format!(
+        "{WHITE}lean-ctx {version}{RST}  agents connected: {}/{} detected{names}",
+        connected.len(),
+        detected.len()
+    )
+}
+
+/// Where the opt-in debug log (config key `debug_log`) is written.
+fn debug_log_line() -> String {
+    let state = if crate::core::debug_log::is_enabled() {
+        "on"
+    } else {
+        "off, set debug_log = true to record"
+    };
+    match crate::core::debug_log::log_path() {
+        Some(p) => format!("{DIM}debug log: {} ({state}){RST}", p.display()),
+        None => format!("{DIM}debug log: state dir unresolvable ({state}){RST}"),
+    }
+}
+
 pub fn run_cli(args: &[String]) -> i32 {
     let (sub, rest) = match args.first().map(String::as_str) {
         Some("integrations") => ("integrations", &args[1..]),
@@ -423,7 +465,7 @@ pub fn run_cli(args: &[String]) -> i32 {
 
 pub fn compact_score() -> (u32, u32) {
     let mut passed = 0u32;
-    let total = 5u32;
+    let total = 4u32;
 
     if resolve_lean_ctx_binary().is_some() || path_in_path_env() {
         passed += 1;

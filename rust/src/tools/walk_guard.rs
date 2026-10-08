@@ -11,8 +11,8 @@
 //! The graph/BM25/search-index builders already refuse such roots via
 //! `is_safe_scan_root_public`; this module applies the same policy to the
 //! direct walk fallbacks. Relative paths are absolutized against the process
-//! cwd first, so `lean-ctx grep` / `lean-ctx ls` from inside a real project
-//! keep working unchanged.
+//! cwd first, so a relative `path` from inside a real project keeps working
+//! unchanged.
 
 /// Returns an actionable `ERROR:` message when `dir` must not be walked,
 /// or `None` when the walk is safe to proceed.
@@ -58,8 +58,7 @@ mod tests {
     #[test]
     fn relative_dot_is_absolutized_not_blanket_refused() {
         // The test process runs inside the lean-ctx repo (a real project with
-        // markers), so "." must absolutize to a safe root — this is exactly
-        // the `lean-ctx grep` / `lean-ctx ls` CLI case.
+        // markers), so "." must absolutize to a safe root.
         assert_eq!(deny_unsafe_walk_root("."), None);
     }
 }

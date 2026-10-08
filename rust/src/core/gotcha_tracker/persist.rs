@@ -1,4 +1,4 @@
-use super::model::{Gotcha, GotchaStore, MAX_PENDING};
+use super::model::{GotchaStore, MAX_PENDING};
 use std::path::PathBuf;
 
 impl GotchaStore {
@@ -33,12 +33,7 @@ impl GotchaStore {
         let tmp = path.with_extension("tmp");
         let json = serde_json::to_string_pretty(self).map_err(|e| e.to_string())?;
         std::fs::write(&tmp, &json).map_err(|e| e.to_string())?;
-        std::fs::rename(&tmp, &path).map_err(|e| e.to_string())?;
-        let universal = self.extract_universal();
-        if !universal.is_empty() {
-            let _ = save_universal_gotchas(&universal);
-        }
-        Ok(())
+        std::fs::rename(&tmp, &path).map_err(|e| e.to_string())
     }
 }
 
@@ -48,32 +43,6 @@ fn gotcha_path(project_hash: &str) -> PathBuf {
         .join("knowledge")
         .join(project_hash)
         .join("gotchas.json")
-}
-
-// ---------------------------------------------------------------------------
-// Universal gotchas (cross-project)
-// ---------------------------------------------------------------------------
-
-pub fn load_universal_gotchas() -> Vec<Gotcha> {
-    let Ok(dir) = crate::core::data_dir::lean_ctx_data_dir() else {
-        return Vec::new();
-    };
-    let path = dir.join("universal-gotchas.json");
-    if let Ok(content) = std::fs::read_to_string(&path) {
-        serde_json::from_str(&content).unwrap_or_default()
-    } else {
-        Vec::new()
-    }
-}
-
-pub fn save_universal_gotchas(gotchas: &[Gotcha]) -> Result<(), String> {
-    let dir = crate::core::data_dir::lean_ctx_data_dir()?;
-    let path = dir.join("universal-gotchas.json");
-    let tmp = path.with_extension("tmp");
-    let json = serde_json::to_string_pretty(gotchas).map_err(|e| e.to_string())?;
-    std::fs::write(&tmp, &json).map_err(|e| e.to_string())?;
-    std::fs::rename(&tmp, &path).map_err(|e| e.to_string())?;
-    Ok(())
 }
 
 #[cfg(test)]

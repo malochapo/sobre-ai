@@ -177,10 +177,6 @@ pub async fn start_proxy_with_token(port: u16, auth_token: Option<String>) -> an
         .read_timeout(std::time::Duration::from_secs(read_idle_timeout_secs()))
         .build()?;
 
-    // Live model prices (#1179): load the price list cached by
-    // `lean-ctx pricing refresh`, if any. No network here.
-    crate::core::pricing::live::ensure_loaded();
-
     let cfg = Config::load();
     // Read once at startup — avoids a Config::load() on every proxied request.
     // The proxy serves this machine only: it always binds loopback.

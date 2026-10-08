@@ -3,7 +3,9 @@
 use crate::doctor::{BOLD, DIM, GREEN, Outcome, RED, RST};
 
 /// Flags when `config.toml` fails to parse (the silent-default trap behind
-/// #341, where an edit appears to "do nothing" because the file never loaded).
+/// #341, where an edit appears to "do nothing" because the file never loaded),
+/// and keys that no setting reads: they are ignored, so a typo would
+/// otherwise go unnoticed.
 pub(crate) fn config_parse_outcome() -> Outcome {
     if let Some(err) = crate::core::config::last_config_parse_error() {
         let short = err.lines().next().unwrap_or("parse error");
@@ -14,10 +16,66 @@ pub(crate) fn config_parse_outcome() -> Outcome {
             ),
         };
     }
+    let raw = crate::core::config::Config::path().and_then(|p| std::fs::read_to_string(p).ok());
+    let unknown = raw.as_deref().map(unknown_config_keys).unwrap_or_default();
+    if !unknown.is_empty() {
+        return Outcome {
+            ok: false,
+            line: format!(
+                "{BOLD}Config file{RST}  {RED}{} unknown key(s), ignored{RST}  {DIM}({}){RST}",
+                unknown.len(),
+                unknown.join(", ")
+            ),
+        };
+    }
     Outcome {
         ok: true,
         line: format!("{BOLD}Config file{RST}  {GREEN}parses{RST}"),
     }
+}
+
+/// Keys of a `config.toml` document that no setting reads, each with the
+/// closest known key when one is near. A key inside a free-form table
+/// (`proxy.routing.aliases`, `proxy.routing.tiers`) belongs to that table;
+/// every other key must be listed, so `[proxy] prot = 4444` is flagged.
+pub(crate) fn unknown_config_keys(raw: &str) -> Vec<String> {
+    fn flatten(table: &toml::Table, prefix: &str, out: &mut Vec<String>) {
+        for (k, v) in table {
+            let full = if prefix.is_empty() {
+                k.clone()
+            } else {
+                format!("{prefix}.{k}")
+            };
+            match v {
+                toml::Value::Table(sub) => flatten(sub, &full, out),
+                _ => out.push(full),
+            }
+        }
+    }
+
+    let Ok(table) = raw.parse::<toml::Table>() else {
+        return Vec::new();
+    };
+    let known = crate::core::config::schema::ConfigSchema::generate().known_keys();
+    // A free-form table is a known key that no other known key extends: its
+    // own keys are the user's (model names, tiers). `proxy` and
+    // `proxy.upstreams` list theirs, so a typo under them is caught.
+    let free_form: Vec<String> = known
+        .iter()
+        .map(|n| format!("{n}."))
+        .filter(|prefix| !known.iter().any(|o| o.starts_with(prefix)))
+        .collect();
+    let mut keys = Vec::new();
+    flatten(&table, "", &mut keys);
+    keys.into_iter()
+        .filter(|k| !known.contains(k) && !free_form.iter().any(|p| k.starts_with(p)))
+        .map(
+            |k| match crate::core::levenshtein::closest(&k, known.iter().map(String::as_str)) {
+                Some(near) => format!("{k}, did you mean {near}?"),
+                None => k,
+            },
+        )
+        .collect()
 }
 
 /// Reports configured `search_roots` that never resolve (GH #392): an

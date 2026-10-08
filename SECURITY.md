@@ -39,12 +39,11 @@ each started by you:
 
 - the local proxy, which forwards your agent's requests to the providers you
   configure;
-- `lean-ctx pricing refresh`, which fetches model prices;
-- in builds with `--features dense` only: `lean-ctx embeddings provision`,
-  which downloads the ONNX runtime and the embedding model, and
-  `lean-ctx index build-semantic` / `build-full`, which download the model if
-  it is missing. A search never downloads anything; without the model it says
-  so. Builds without embeddings download neither. The `minilm` and `nomic`
+- in builds with `--features dense` only: `lean-ctx embeddings provision`
+  (or saying yes when `lean-ctx init` offers it), which downloads the ONNX
+  runtime and the embedding model. Neither `lean-ctx index build` nor a search
+  ever downloads anything; without the model they say so. Builds without
+  embeddings download neither. The `minilm` and `nomic`
   aliases are pinned to a HuggingFace commit; a model named as `org/repo`
   without `@revision` follows that repo's `main` branch.
 

@@ -56,12 +56,11 @@ impl EmbeddingEntry {
 }
 
 /// Outcome of a `build_or_update` call from the index orchestrator.
+#[cfg(feature = "embeddings")]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum EmbeddingBuildOutcome {
     /// Embeddings were built or already up-to-date.
     Ready,
-    /// Skipped because the embeddings feature is not enabled or disabled by config.
-    Skipped,
     /// The embedding engine (ONNX model) is not available.
     /// Carries the reason so the orchestrator can show a helpful message.
     ModelNotAvailable(String),
@@ -69,65 +68,26 @@ pub enum EmbeddingBuildOutcome {
     Failed,
 }
 
-impl EmbeddingBuildOutcome {
-    pub fn label(&self) -> &'static str {
-        match self {
-            Self::Ready => "ready",
-            Self::Skipped => "skipped",
-            Self::ModelNotAvailable(_) => "model-not-available",
-            Self::Failed => "failed",
-        }
-    }
-
-    pub fn reason(&self) -> Option<&str> {
-        match self {
-            Self::ModelNotAvailable(r) => Some(r.as_str()),
-            _ => None,
-        }
-    }
-}
-
 /// Build or update the persistent embedding index for a project.
 ///
-/// Called by the index orchestrator during `build-full` / `build` after the BM25
-/// index is ready.  This is a *background-friendly* operation: it runs the ONNX
+/// Called by `lean-ctx index build` after the BM25 index is ready. This is a
+/// *background-friendly* operation: it runs the ONNX
 /// model incrementally (only chunks whose content hash changed) and persists
 /// `embeddings.bin` (postcard) so later `ctx_search` dense/hybrid calls find a warm cache.
 ///
 /// Returns [`EmbeddingBuildOutcome`] — the orchestrator uses this to set the
 /// semantic component state without aborting the overall index build.
-///
-/// Feature-gated: when `embeddings` is not compiled in, this is a no-op that
-/// returns `Skipped`.
+#[cfg(feature = "embeddings")]
 pub fn build_or_update(root: &Path, bm25: &super::bm25_index::BM25Index) -> EmbeddingBuildOutcome {
-    #[cfg(feature = "embeddings")]
     {
-        // Bootstrap the model if it isn't on disk yet. `build_or_update` only
-        // runs for an explicit build request (`index build` / `build-full` /
-        // `build-semantic`), so a cold machine should download the model now
-        // rather than dead-end. `is_available()` is just a file check, so the
-        // earlier short-circuit on it meant the auto-download never started
-        // (#545). `ensure_downloaded()` is pure network/file IO and never
-        // initializes ORT, so the teardown-safety rationale for deferring the
-        // `shared_engine()` load still holds: on download failure we return
-        // without ever having touched the ONNX Runtime.
+        // Never download here: `index build` also runs in the background
+        // after `init`. The model arrives through `lean-ctx embeddings
+        // provision` (or init's prompt), with the user's consent.
         let root_key = root.to_string_lossy().to_string();
         if !crate::core::embeddings::EmbeddingEngine::is_available() {
-            tracing::info!(
-                "[embedding_index] embedding model absent — downloading from HuggingFace"
+            return EmbeddingBuildOutcome::ModelNotAvailable(
+                "not installed — run `lean-ctx embeddings provision`".to_string(),
             );
-            // Download has no reliable total → indeterminate progress.
-            crate::core::index_progress::report(
-                &root_key,
-                crate::core::index_progress::IndexComponent::Semantic,
-                0,
-                0,
-            );
-            if let Err(e) = crate::core::embeddings::EmbeddingEngine::ensure_downloaded() {
-                let reason = format!("embedding model auto-download from HuggingFace failed: {e}");
-                tracing::warn!("[embedding_index] build_or_update failed: {reason}");
-                return EmbeddingBuildOutcome::ModelNotAvailable(reason);
-            }
         }
 
         let engine = match crate::core::embeddings::shared_engine_result() {
@@ -236,12 +196,6 @@ pub fn build_or_update(root: &Path, bm25: &super::bm25_index::BM25Index) -> Embe
             total = bm25.chunks.len()
         );
         EmbeddingBuildOutcome::Ready
-    }
-
-    #[cfg(not(feature = "embeddings"))]
-    {
-        let _ = (root, bm25);
-        EmbeddingBuildOutcome::Skipped
     }
 }
 

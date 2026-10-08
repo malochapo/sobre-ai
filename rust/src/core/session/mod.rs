@@ -6,7 +6,7 @@ pub mod playbook;
 mod state;
 mod types;
 
-pub use playbook::{EntryKind, Playbook, PlaybookEntry};
+pub use playbook::Playbook;
 pub use types::{
     Decision, EvidenceKind, EvidenceRecord, FileTouched, Finding, PreparedSave, SessionState,
     SessionStats, SessionSummary, TaskInfo,
@@ -14,9 +14,8 @@ pub use types::{
 
 #[cfg(test)]
 mod tests {
-    use super::paths::{extract_cd_target, sessions_dir};
+    use super::paths::extract_cd_target;
     use super::types::*;
-    use chrono::{Duration, Utc};
 
     #[test]
     fn load_latest_for_broad_root_returns_none_without_scanning() {
@@ -115,66 +114,6 @@ mod tests {
             session.last_flush = Some(old);
             assert!(session.should_save(), "stale change must trigger flush");
         }
-    }
-
-    #[test]
-    fn delete_session_removes_file_snapshot_and_latest_pointer() {
-        let _data = crate::core::data_dir::isolated_data_dir();
-        let mut session = SessionState::new();
-        session.id = "delete-me".to_string();
-        session.save().unwrap();
-
-        let dir = sessions_dir().unwrap();
-        let path = dir.join("delete-me.json");
-        let snapshot = dir.join("delete-me_snapshot.txt");
-        let latest = dir.join("latest.json");
-        std::fs::write(&snapshot, "snapshot").unwrap();
-        assert!(path.exists());
-        assert!(snapshot.exists());
-        assert!(latest.exists());
-
-        assert!(SessionState::delete_session("delete-me").unwrap());
-
-        assert!(!path.exists());
-        assert!(!snapshot.exists());
-        assert!(!latest.exists());
-        assert!(SessionState::list_sessions().is_empty());
-    }
-
-    #[test]
-    fn delete_latest_session_repoints_latest_to_newest_remaining() {
-        let _data = crate::core::data_dir::isolated_data_dir();
-        let mut older = SessionState::new();
-        older.id = "older".to_string();
-        older.updated_at = Utc::now() - Duration::days(1);
-        older.save().unwrap();
-
-        let mut newer = SessionState::new();
-        newer.id = "newer".to_string();
-        newer.updated_at = Utc::now();
-        newer.save().unwrap();
-        assert_eq!(
-            SessionState::load_global_latest_pointer().unwrap().id,
-            "newer"
-        );
-
-        assert!(SessionState::delete_session("newer").unwrap());
-
-        let latest = SessionState::load_global_latest_pointer().unwrap();
-        assert_eq!(latest.id, "older");
-        assert_eq!(SessionState::list_sessions().len(), 1);
-    }
-
-    #[test]
-    fn delete_session_rejects_path_traversal_id() {
-        let data = crate::core::data_dir::isolated_data_dir();
-        let outside = data.path().join("outside.json");
-        std::fs::write(&outside, "{}").unwrap();
-
-        let err = SessionState::delete_session("../outside").unwrap_err();
-
-        assert_eq!(err, "invalid session id");
-        assert!(outside.exists());
     }
 
     #[test]

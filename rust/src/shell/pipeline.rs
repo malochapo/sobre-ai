@@ -1,7 +1,6 @@
 use std::io::{self, IsTerminal, Read, Write};
 use std::process::{Command, Stdio};
 
-use crate::core::slow_log;
 use crate::core::tokens::count_tokens;
 
 use super::exec::{combine_streams, exec_limits, wait_with_limits};
@@ -9,8 +8,6 @@ use super::exec::{combine_streams, exec_limits, wait_with_limits};
 pub(super) fn exec_buffered(command: &str, shell: &str, shell_flag: &str) -> i32 {
     #[cfg(windows)]
     super::platform::set_console_utf8();
-
-    let start = std::time::Instant::now();
 
     let mut cmd = Command::new(shell);
 
@@ -89,7 +86,6 @@ pub(super) fn exec_buffered(command: &str, shell: &str, shell_flag: &str) -> i32
     let (max_bytes, timeout) = exec_limits(command);
     let output = wait_with_limits(child, max_bytes, timeout, isolate);
 
-    let duration_ms = start.elapsed().as_millis();
     let exit_code = output.status.code().unwrap_or(1);
     let stdout =
         super::platform::resolve_carriage_returns(&super::platform::decode_output(&output.stdout));
@@ -127,11 +123,6 @@ pub(super) fn exec_buffered(command: &str, shell: &str, shell_flag: &str) -> i32
         if !crate::core::runtime_flags::quiet_enabled() {
             eprintln!("[sobre: output compressed, {input_tokens} → {output_tokens} tokens{kept}]");
         }
-    }
-
-    let threshold = crate::core::config::SLOW_COMMAND_THRESHOLD_MS;
-    if threshold > 0 && duration_ms >= threshold as u128 {
-        slow_log::record(command, duration_ms, exit_code);
     }
 
     exit_code

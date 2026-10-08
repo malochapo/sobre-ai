@@ -1,15 +1,7 @@
-//! Shared tool lifecycle — ensures CLI and MCP paths have identical side effects.
-//!
-//! The MCP server dispatcher handles session, ledger, usage, intent detection,
-//! and knowledge consolidation inline (via in-memory state). When the daemon is
-//! unavailable, CLI commands call functions here to achieve the same coverage by
-//! loading/saving state from disk.
-//!
-//! NOTE: When the daemon IS running, CLI routes through `daemon_client` which
-//! calls the MCP server — these functions are NOT called in that path.
+//! Shared tool lifecycle — gives the `lean-ctx -c` shell wrapper the session,
+//! usage and consolidation side effects the MCP server applies inline, by
+//! loading and saving state from disk.
 
-use crate::core::context_ledger::ContextLedger;
-use crate::core::intent_engine::StructuredIntent;
 use crate::core::session::SessionState;
 use crate::core::usage::{self, Surface};
 
@@ -37,85 +29,6 @@ pub(crate) fn recent_working_set(session: &SessionState, current: &str) -> Vec<S
 /// Whether `root` is a usable project root for repo-relative normalization.
 pub(crate) fn usable_root(root: Option<&str>) -> Option<&str> {
     root.filter(|r| !r.trim().is_empty() && *r != ".")
-}
-
-/// Record a file-read operation with full Context OS side effects.
-pub fn record_file_read(
-    path: &str,
-    mode: &str,
-    original_tokens: usize,
-    output_tokens: usize,
-    is_cache_hit: bool,
-) {
-    usage::record_compression(Surface::Cli, "read", original_tokens, output_tokens);
-
-    if let Some(mut session) = SessionState::load_latest() {
-        session.touch_file(path, None, mode, original_tokens);
-        if is_cache_hit {
-            session.record_cache_hit();
-        }
-
-        if session.active_structured_intent.is_none() && session.files_touched.len() >= 2 {
-            let touched: Vec<String> = session
-                .files_touched
-                .iter()
-                .map(|ft| ft.path.clone())
-                .collect();
-            let inferred = StructuredIntent::from_file_patterns(&touched);
-            if inferred.confidence >= 0.4 {
-                session.active_structured_intent = Some(inferred);
-            }
-        }
-
-        let project_root = session.project_root.clone();
-        let calls = session.stats.total_tool_calls;
-
-        // Traversal edges: associate this read with the recent working set so the
-        // graph learns the files this task actually touches together (#289).
-        let working_set = recent_working_set(&session, path);
-
-        let _ = session.save();
-
-        if let Some(root) = usable_root(project_root.as_deref()) {
-            crate::core::cooccurrence::record_focus_access(root, path, &working_set);
-        }
-        maybe_consolidate(project_root.as_deref(), calls);
-    }
-
-    // Only real files belong in the context ledger (GL #512): directory
-    // overviews and synthetic paths would show up as "files" in the pressure
-    // table with eviction/pin semantics that make no sense for them.
-    if std::path::Path::new(path).is_file() {
-        let mut ledger = ContextLedger::load();
-        ledger.record(path, mode, original_tokens, output_tokens);
-        ledger.save();
-    }
-}
-
-/// Record a search/grep operation with full Context OS side effects.
-///
-/// `observed_tokens` is the measured size of the raw matched lines.
-pub fn record_search(observed_tokens: usize, output_tokens: usize) {
-    usage::record_compression(Surface::Cli, "grep", observed_tokens, output_tokens);
-
-    if let Some(mut session) = SessionState::load_latest() {
-        session.record_command();
-        let project_root = session.project_root.clone();
-        let calls = session.stats.total_tool_calls;
-        let _ = session.save();
-
-        maybe_consolidate(project_root.as_deref(), calls);
-    }
-}
-
-/// Record a tree/ls operation with full Context OS side effects.
-pub fn record_tree(original_tokens: usize, output_tokens: usize) {
-    usage::record_compression(Surface::Cli, "ls", original_tokens, output_tokens);
-
-    if let Some(mut session) = SessionState::load_latest() {
-        session.record_command();
-        let _ = session.save();
-    }
 }
 
 /// Record a shell command with full Context OS side effects. The usage ledger
@@ -184,24 +97,6 @@ mod tests {
     // exactly delivered/original.
 
     #[test]
-    fn record_file_read_does_not_panic_without_session() {
-        let _dir = crate::core::data_dir::isolated_data_dir();
-        record_file_read("/tmp/nonexistent.rs", "full", 100, 50, false);
-    }
-
-    #[test]
-    fn record_search_does_not_panic_without_session() {
-        let _dir = crate::core::data_dir::isolated_data_dir();
-        record_search(200, 150);
-    }
-
-    #[test]
-    fn record_tree_does_not_panic_without_session() {
-        let _dir = crate::core::data_dir::isolated_data_dir();
-        record_tree(100, 80);
-    }
-
-    #[test]
     fn record_shell_does_not_panic_without_session() {
         let _dir = crate::core::data_dir::isolated_data_dir();
         record_shell_command("cargo test", 500, 200);
@@ -221,19 +116,5 @@ mod tests {
         // (e.g. a CLI arm followed by an atexit path) must never panic.
         flush_all();
         flush_all();
-    }
-
-    #[test]
-    fn cli_read_records_one_usage_event() {
-        let dir = crate::core::data_dir::isolated_data_dir();
-        let file = dir.path().join("sample.rs");
-        std::fs::write(&file, "fn main() {}\n").unwrap();
-        record_file_read(&file.to_string_lossy(), "full", 1000, 200, false);
-
-        let events = usage::load();
-        assert_eq!(events.len(), 1, "one CLI read is one ledger event");
-        assert_eq!(events[0].str("sobre.surface"), Some("cli"));
-        assert_eq!(events[0].int("sobre.tokens.original"), Some(1000));
-        assert_eq!(events[0].int("sobre.tokens.sent"), Some(200));
     }
 }

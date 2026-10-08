@@ -4,7 +4,7 @@
 //! evicted tail under `memory/archive/<store>/` before dropping it. This module
 //! reads those archives back and merges the matching items into the live stores —
 //! the user-facing "undo" for an over-eager reclaim, surfaced as
-//! `lean-ctx knowledge restore` and `ctx_knowledge action=restore`.
+//! `ctx_knowledge action=restore`.
 //!
 //! Idempotent: an item already present (by its store-specific identity) is never
 //! duplicated, and a live fact never has its key clobbered by an older archived

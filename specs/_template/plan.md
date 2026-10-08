@@ -18,7 +18,7 @@
 | `path/to/file` | … | new / modify |
 
 ## Impact (run impact analysis first)
-> `ctx_impact` (MCP) or `lean-ctx graph impact <file>` (CLI).
+> `ctx_impact` (MCP), or from a shell: `lean-ctx call ctx_impact --project-root . --json '{"action":"analyze","path":"<file>"}'`.
 - Affected tests: <list — this is the verification set>
 - Affected modules: <…>
 

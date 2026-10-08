@@ -337,8 +337,8 @@ mod tests {
         );
     }
 
-    fn file_report(hotspots: Vec<Hotspot>) -> crate::core::code_health::FileReport {
-        crate::core::code_health::FileReport {
+    fn file_report(hotspots: Vec<Hotspot>) -> crate::core::code_health::scan::FileReport {
+        crate::core::code_health::scan::FileReport {
             file: hotspots.first().map(|h| h.file.clone()).unwrap_or_default(),
             total_functions: hotspots.len(),
             over_threshold: hotspots.len(),

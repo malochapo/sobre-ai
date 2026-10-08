@@ -8,10 +8,6 @@ pub(super) const MAX_SESSION_LOGS: usize = 20;
 pub(super) const MAX_PENDING: usize = 10;
 pub(super) const PENDING_TIMEOUT_SECS: i64 = 900; // 15 minutes
 pub(super) const DECAY_ARCHIVE_THRESHOLD: f32 = 0.15;
-const PROMOTION_CONFIDENCE: f32 = 0.9;
-const PROMOTION_OCCURRENCES: u32 = 5;
-const PROMOTION_SESSIONS: usize = 3;
-const PROMOTION_PREVENTED: u32 = 2;
 
 // ---------------------------------------------------------------------------
 // Core types
@@ -76,13 +72,6 @@ impl GotchaSeverity {
             Self::Critical => 1.5,
             Self::Warning => 1.0,
             Self::Info => 0.7,
-        }
-    }
-
-    pub fn prefix(&self) -> &'static str {
-        match self {
-            Self::Critical | Self::Warning => "!",
-            Self::Info => "",
         }
     }
 }
@@ -173,13 +162,6 @@ impl Gotcha {
         }
         self.confidence = self.confidence.max(other.confidence);
     }
-
-    pub fn is_promotable(&self) -> bool {
-        self.confidence >= PROMOTION_CONFIDENCE
-            && self.occurrences >= PROMOTION_OCCURRENCES
-            && self.session_ids.len() >= PROMOTION_SESSIONS
-            && self.prevented_count >= PROMOTION_PREVENTED
-    }
 }
 
 // ---------------------------------------------------------------------------
@@ -233,19 +215,6 @@ pub struct FixEntry {
 }
 
 // ---------------------------------------------------------------------------
-// Stats
-// ---------------------------------------------------------------------------
-
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct GotchaStats {
-    pub total_errors_detected: u64,
-    pub total_fixes_correlated: u64,
-    pub total_prevented: u64,
-    pub gotchas_promoted: u64,
-    pub gotchas_decayed: u64,
-}
-
-// ---------------------------------------------------------------------------
 // GotchaStore
 // ---------------------------------------------------------------------------
 
@@ -254,7 +223,6 @@ pub struct GotchaStore {
     pub project_hash: String,
     pub gotchas: Vec<Gotcha>,
     pub error_log: Vec<SessionErrorLog>,
-    pub stats: GotchaStats,
     pub updated_at: DateTime<Utc>,
 
     // Persisted (#451 shell-ding): a fail→fix spanning two `lean-ctx -c`
@@ -271,16 +239,9 @@ impl GotchaStore {
             project_hash: project_hash.to_string(),
             gotchas: Vec::new(),
             error_log: Vec::new(),
-            stats: GotchaStats::default(),
             updated_at: Utc::now(),
             pending_errors: Vec::new(),
         }
-    }
-
-    pub fn clear(&mut self) {
-        self.gotchas.clear();
-        self.pending_errors.clear();
-        self.updated_at = Utc::now();
     }
 }
 

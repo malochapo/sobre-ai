@@ -28,7 +28,6 @@ pub(in crate::cli::dispatch) fn cmd_gain(rest: &[String]) {
         .and_then(|v| v.parse::<usize>().ok())
         .unwrap_or(10);
 
-    crate::core::pricing::live::ensure_loaded();
     let pricing = ModelPricing::load();
     let summary = usage::summarize(&usage::load(), period, &pricing);
     let model = flag_value(rest, "--model")

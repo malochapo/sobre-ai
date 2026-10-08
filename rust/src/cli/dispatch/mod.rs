@@ -1,4 +1,4 @@
-use crate::{core, doctor, hook_handlers, shell, status, uninstall};
+use crate::{core, doctor, hook_handlers, shell, uninstall};
 
 mod analytics;
 mod help;
@@ -11,8 +11,6 @@ pub(crate) mod suggest;
 use analytics::*;
 #[allow(clippy::wildcard_imports)]
 use help::*;
-#[allow(clippy::wildcard_imports)]
-use lifecycle::*;
 #[allow(clippy::wildcard_imports)]
 use network::*;
 #[allow(clippy::wildcard_imports)]
@@ -41,51 +39,17 @@ pub fn run() {
         let rest = args[2..].to_vec();
 
         match args[1].as_str() {
-            // `-c` is not a human-facing alias of `exec` — it is the wire form
-            // the Cursor/Gemini pre-run hooks emit (`<binary> -c '<command>'`,
-            // hook_handlers/rewrite.rs). Removing it makes every wrapped
-            // command fail.
-            // shell/exec.rs:684 also matches on it when collapsing nesting.
-            "-c" | "exec" => handle_exec(&args, &rest),
+            // `-c` is the wire form the Cursor/Gemini pre-run hooks emit
+            // (`<binary> -c '<command>'`, hook_handlers/rewrite.rs). Removing it
+            // makes every wrapped command fail. shell/exec.rs also matches on
+            // it when collapsing nesting.
+            "-c" => handle_exec(&args),
             "gain" => {
                 cmd_gain(&rest);
                 return;
             }
-            "conformance" => {
-                cmd_conformance(&rest);
-                return;
-            }
-            "health" => {
-                let code = crate::cli::health_cmd::cmd_health(&rest);
-                if code != 0 {
-                    std::process::exit(code);
-                }
-                return;
-            }
             "embeddings" => {
                 crate::cli::embeddings_cmd::cmd_embeddings(&rest);
-                return;
-            }
-            "pricing" => {
-                crate::cli::pricing_cmd::cmd_pricing(&rest);
-                return;
-            }
-            // Distinct from `eval ab`: that measures answer-quality
-            // non-regression, this produces the reproducible savings + recall +
-            // latency scorecard the CI publishes as an artifact.
-            "benchmark" => {
-                super::cmd_benchmark(&rest);
-                return;
-            }
-            "verify-cache" => {
-                let code = crate::cli::verify_cache_cmd::cmd_verify_cache(&rest);
-                if code != 0 {
-                    std::process::exit(code);
-                }
-                return;
-            }
-            "visualize" => {
-                super::cmd_visualize(&rest);
                 return;
             }
             "index" => {
@@ -100,113 +64,12 @@ pub fn run() {
                 super::cmd_init(&rest);
                 return;
             }
-            "status" => {
-                let code = status::run_cli(&rest);
-                if code != 0 {
-                    std::process::exit(code);
-                }
-                return;
-            }
-            "read" => {
-                super::cmd_read(&rest);
-                core::tool_lifecycle::flush_all();
-                return;
-            }
             "call" => {
                 super::cmd_call(&rest);
                 return;
             }
-            "diff" => {
-                super::cmd_diff(&rest);
-                core::tool_lifecycle::flush_all();
-                return;
-            }
-            "grep" => {
-                super::cmd_grep(&rest);
-                core::tool_lifecycle::flush_all();
-                return;
-            }
-            "glob" => {
-                super::cmd_glob(&rest);
-                return;
-            }
-            "find" => {
-                super::cmd_find(&rest);
-                core::tool_lifecycle::flush_all();
-                return;
-            }
-            "ls" => {
-                super::cmd_ls(&rest);
-                core::tool_lifecycle::flush_all();
-                return;
-            }
-            "deps" => {
-                super::cmd_deps(&rest);
-                core::tool_lifecycle::flush_all();
-                return;
-            }
-            "ghost" => {
-                super::cmd_ghost(&rest);
-                return;
-            }
-            "graph" => {
-                cmd_graph(&rest);
-                return;
-            }
-            "session" => {
-                super::cmd_session_action(&rest);
-                return;
-            }
-            "knowledge" => {
-                super::cmd_knowledge(&rest);
-                return;
-            }
-            "sessions" => {
-                super::cmd_sessions(&rest);
-                return;
-            }
-            "compact" => {
-                cmd_compact(&rest);
-                return;
-            }
             "config" => {
                 super::cmd_config(&rest);
-                return;
-            }
-            "cache" => {
-                super::cmd_cache(&rest);
-                return;
-            }
-            "tee" => {
-                super::cmd_tee(&rest);
-                return;
-            }
-            "terse" => {
-                super::cmd_compression(&rest);
-                return;
-            }
-            "slow-log" => {
-                super::cmd_slow_log(&rest);
-                return;
-            }
-            "debug-log" => {
-                super::cmd_debug_log(&rest);
-                return;
-            }
-            "restart" => {
-                cmd_restart();
-                return;
-            }
-            "stop" => {
-                cmd_stop();
-                return;
-            }
-            "dev-install" => {
-                cmd_dev_install();
-                return;
-            }
-            "codesign-setup" => {
-                cmd_codesign_setup();
                 return;
             }
             "doctor" => {
@@ -216,25 +79,7 @@ pub fn run() {
                 }
                 return;
             }
-            "completions" => {
-                super::completions::run_completions(&rest);
-                return;
-            }
-            "__complete" => {
-                #[allow(non_snake_case)]
-                super::completions::run___complete(&rest);
-                return;
-            }
-            "gotchas" => {
-                super::gotchas_cmd::cmd_gotchas(&rest);
-                return;
-            }
-            "learn" => {
-                super::cmd_learn(&rest);
-                return;
-            }
             "hook" => {
-                hook_handlers::mark_hook_environment();
                 // Hooks run inside the agent shell environment, so they can see
                 // runtime/session vars (e.g. CODEX_THREAD_ID) that the long-lived
                 // MCP server process never receives. Bridge them for ctx_shell (#370).
@@ -282,18 +127,7 @@ pub fn run() {
                 println!("lean-ctx {}", env!("CARGO_PKG_VERSION"));
                 return;
             }
-            "help" => {
-                let want_all = rest
-                    .iter()
-                    .any(|a| matches!(a.as_str(), "all" | "full" | "--all" | "-a"));
-                if want_all {
-                    print_help();
-                } else {
-                    print_help_concise();
-                }
-                return;
-            }
-            "--help" | "-h" => {
+            "help" | "--help" | "-h" => {
                 if rest
                     .iter()
                     .any(|a| matches!(a.as_str(), "all" | "full" | "--all" | "-a"))
@@ -340,9 +174,8 @@ fn is_server_mode(args: &[String]) -> bool {
             .is_some_and(|a| matches!(a.as_str(), "mcp" | "proxy"))
 }
 
-fn handle_exec(args: &[String], rest: &[String]) -> ! {
-    let raw = rest.first().is_some_and(|a| a == "--raw");
-    let cmd_args = if raw { &args[3..] } else { &args[2..] };
+fn handle_exec(args: &[String]) -> ! {
+    let cmd_args = &args[2..];
     let command = if cmd_args.len() == 1 {
         cmd_args[0].clone()
     } else {
@@ -355,11 +188,7 @@ fn handle_exec(args: &[String], rest: &[String]) -> ! {
     if crate::shell::reentry::should_pass_through() {
         passthrough(&command);
     }
-    if raw {
-        core::runtime_flags::enable_raw();
-    } else {
-        core::runtime_flags::enable_compress();
-    }
+    core::runtime_flags::enable_compress();
     let code = shell::exec(&command);
     core::tool_lifecycle::flush_all();
     std::process::exit(code);
@@ -447,7 +276,7 @@ mod tests {
 
     #[test]
     fn cli_modes_restore_default_sigpipe() {
-        for mode in ["doctor", "-c", "status", "ls", "grep", "gain", "help"] {
+        for mode in ["doctor", "-c", "index", "call", "gain", "help"] {
             assert!(
                 !is_server_mode(&args_of(&["lean-ctx", mode])),
                 "{mode} must count as CLI mode (SIGPIPE default)"

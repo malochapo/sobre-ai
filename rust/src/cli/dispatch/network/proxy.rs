@@ -36,7 +36,7 @@ fn stop_proxy_process(port: u16) -> bool {
         }
         None => {
             println!(
-                "Proxy on port {port} running but could not parse PID. Use `lean-ctx stop` to kill all."
+                "Proxy on port {port} is running but /health gave no PID; stop the process that owns the port."
             );
         }
     }
@@ -123,9 +123,9 @@ pub(crate) fn cmd_proxy(rest: &[String]) {
             println!(
                 "  start     Run the compression proxy (foreground; -d/--detach for background; --autostart installs a service)"
             );
-            println!("  stop      Stop the proxy on the given port");
+            println!("  stop      Unload the autostart unit and stop the proxy process");
             println!(
-                "  restart   Restart the managed proxy (re-reads config.toml; drops env overrides)"
+                "  restart   Reload the autostart unit, or restart the proxy process (re-reads config.toml)"
             );
             println!("  status    Show proxy config, process, live upstreams and stats");
             println!("  enable    Enable the proxy: config flag, autostart service, env wiring");
@@ -161,7 +161,13 @@ pub(crate) fn cmd_proxy(rest: &[String]) {
             }
             "stop" => {
                 let port = parse_proxy_port(rest);
-                if !stop_proxy_process(port) {
+                // Unload the unit first, or launchd/systemd would start the
+                // proxy again as soon as its process exits.
+                let managed = crate::proxy_autostart::is_loaded();
+                crate::proxy_autostart::stop();
+                if managed {
+                    println!("Autostart unit unloaded; the proxy is stopped.");
+                } else if !stop_proxy_process(port) {
                     println!("No proxy running on port {port}.");
                 }
             }
@@ -184,13 +190,10 @@ pub(crate) fn cmd_proxy(rest: &[String]) {
                         std::process::exit(1);
                     }
                 } else if stop_proxy_process(port) {
-                    println!();
-                    println!("  No autostart service installed — start the proxy again:");
-                    println!("    lean-ctx proxy start --port={port}");
+                    start_detached(port);
                 } else {
-                    println!("No proxy running on port {port} and no autostart service installed.");
-                    println!("  Start it now:       lean-ctx proxy start --port={port}");
-                    println!("  Or install service: lean-ctx proxy enable");
+                    println!("No proxy running on port {port}.");
+                    println!("  Start it: lean-ctx proxy start --port={port}");
                 }
             }
             "status" => {

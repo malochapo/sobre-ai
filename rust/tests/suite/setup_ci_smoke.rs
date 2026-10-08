@@ -1,7 +1,6 @@
 use std::process::Command;
 
 use lean_ctx::core::setup_report::SetupReport;
-use lean_ctx::status::StatusReport;
 
 fn run_json(bin: &str, args: &[&str], envs: &[(&str, &str)]) -> (i32, String) {
     let mut cmd = Command::new(bin);
@@ -53,7 +52,7 @@ fn write_exe(path: &std::path::Path, content: &str) {
     windows,
     ignore = "Windows handle inheritance causes subprocess hangs in CI"
 )]
-fn setup_bootstrap_doctor_status_json_smoke() {
+fn setup_bootstrap_doctor_json_smoke() {
     let bin = env!("CARGO_BIN_EXE_lean-ctx");
 
     let tmp = tempfile::tempdir().unwrap();
@@ -142,11 +141,21 @@ fn setup_bootstrap_doctor_status_json_smoke() {
     let doctor_report: SetupReport = serde_json::from_str(&out).expect("doctor JSON parse");
     assert_eq!(doctor_report.schema_version, 1);
 
-    // status --json returns clean JSON
-    let (code, out) = run_json(bin, &["status", "--json"], &envs);
-    assert_eq!(code, 0, "status exit code");
-    let status: StatusReport = serde_json::from_str(&out).expect("status JSON parse");
-    assert_eq!(status.schema_version, 1);
+    // doctor opens with the install summary: version and connected agents.
+    let out = Command::new(bin)
+        .arg("doctor")
+        .envs(envs.iter().copied())
+        .output()
+        .expect("doctor");
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        stdout.contains(&format!("lean-ctx {}", env!("CARGO_PKG_VERSION"))),
+        "doctor must show the version: {stdout}"
+    );
+    assert!(
+        stdout.contains("agents connected:"),
+        "doctor must show the connected agents: {stdout}"
+    );
 }
 
 #[test]

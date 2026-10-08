@@ -117,18 +117,6 @@ impl SessionState {
         Self::load_latest_for_project_root(&cwd.to_string_lossy())
     }
 
-    /// Loads the session referenced by the global `latest.json` pointer,
-    /// regardless of project. Intended only for explicit, cross-project UX
-    /// (e.g. `lean-ctx session` status from an arbitrary directory) — never for
-    /// injecting knowledge into a new project's context. Prefer `load_latest`.
-    pub fn load_global_latest_pointer() -> Option<Self> {
-        let dir = sessions_dir()?;
-        let latest_path = dir.join("latest.json");
-        let pointer_json = std::fs::read_to_string(&latest_path).ok()?;
-        let pointer: LatestPointer = serde_json::from_str(&pointer_json).ok()?;
-        Self::load_by_id(&pointer.id)
-    }
-
     /// Loads the most recent session matching a specific project root.
     pub fn load_latest_for_project_root(project_root: &str) -> Option<Self> {
         // Broad roots ("/", HOME, agent sandboxes) never own a session. Bail out
@@ -187,54 +175,6 @@ impl SessionState {
         Some(normalize_loaded_session(session))
     }
 
-    /// Deletes a saved session and its compaction snapshot.
-    ///
-    /// If the deleted session is the global latest pointer, the pointer is
-    /// moved to the newest remaining session or removed when none remain.
-    pub fn delete_session(id: &str) -> Result<bool, String> {
-        validate_session_id(id)?;
-        let Some(dir) = sessions_dir() else {
-            return Ok(false);
-        };
-        let path = dir.join(format!("{id}.json"));
-        if !path.exists() {
-            return Ok(false);
-        }
-
-        std::fs::remove_file(&path).map_err(|e| e.to_string())?;
-
-        let snapshot = dir.join(format!("{id}_snapshot.txt"));
-        match std::fs::remove_file(&snapshot) {
-            Ok(()) => {}
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-            Err(e) => return Err(e.to_string()),
-        }
-
-        let latest_path = dir.join("latest.json");
-        let points_to_deleted = std::fs::read_to_string(&latest_path)
-            .ok()
-            .and_then(|json| serde_json::from_str::<LatestPointer>(&json).ok())
-            .is_some_and(|pointer| pointer.id == id);
-        if points_to_deleted {
-            if let Some(next) = Self::list_sessions().into_iter().next() {
-                let latest_tmp = dir.join(".latest.json.tmp");
-                let pointer_json = serde_json::to_string(&LatestPointer { id: next.id })
-                    .map_err(|e| e.to_string())?;
-                std::fs::write(&latest_tmp, pointer_json).map_err(|e| e.to_string())?;
-                restrict_file_permissions(&latest_tmp);
-                std::fs::rename(&latest_tmp, &latest_path).map_err(|e| e.to_string())?;
-            } else {
-                match std::fs::remove_file(&latest_path) {
-                    Ok(()) => {}
-                    Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-                    Err(e) => return Err(e.to_string()),
-                }
-            }
-        }
-
-        Ok(true)
-    }
-
     /// Lists all saved sessions as summaries, sorted by most recently updated.
     pub fn list_sessions() -> Vec<SessionSummary> {
         let Some(dir) = sessions_dir() else {
@@ -270,56 +210,6 @@ impl SessionState {
 
         summaries.sort_by_key(|x| std::cmp::Reverse(x.updated_at));
         summaries
-    }
-
-    /// Scans all saved sessions for contaminated ones — those rooted at a
-    /// broad/unsafe path (HOME, filesystem root, agent sandbox dir) without a
-    /// real project marker, i.e. the historic "HOME mega-session" artifact.
-    ///
-    /// Returns `(found, quarantined)` where `found` is `(id, root)` pairs. When
-    /// `apply` is true, each offending session file is moved to a
-    /// `sessions/quarantine/` subdirectory (non-destructive) instead of being
-    /// loaded into any project's context.
-    pub fn doctor_quarantine_unsafe_roots(apply: bool) -> (Vec<(String, String)>, usize) {
-        let mut found: Vec<(String, String)> = Vec::new();
-        let mut quarantined = 0usize;
-        let Some(dir) = sessions_dir() else {
-            return (found, quarantined);
-        };
-        let Ok(entries) = std::fs::read_dir(&dir) else {
-            return (found, quarantined);
-        };
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if path.extension().and_then(|e| e.to_str()) != Some("json") {
-                continue;
-            }
-            let Some(id) = path.file_stem().and_then(|n| n.to_str()) else {
-                continue;
-            };
-            if id == "latest" || id.starts_with('.') {
-                continue;
-            }
-            let Some(session) = Self::load_by_id(id) else {
-                continue;
-            };
-            let Some(root) = session.project_root.as_deref() else {
-                continue;
-            };
-            let root_path = std::path::Path::new(root);
-            if crate::core::pathutil::is_broad_or_unsafe_root(root_path) {
-                found.push((id.to_string(), root.to_string()));
-                if apply {
-                    let q_dir = dir.join("quarantine");
-                    if std::fs::create_dir_all(&q_dir).is_ok()
-                        && std::fs::rename(&path, q_dir.join(format!("{id}.json"))).is_ok()
-                    {
-                        quarantined += 1;
-                    }
-                }
-            }
-        }
-        (found, quarantined)
     }
 
     /// Deletes sessions older than `max_age_days`, preserving the latest. Returns count removed.

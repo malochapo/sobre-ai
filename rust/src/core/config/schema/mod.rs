@@ -1,7 +1,7 @@
 //! Auto-generated config schema from `Config` struct metadata.
 //!
-//! Used by `lean-ctx config schema` to emit JSON and by
-//! `lean-ctx config validate` to check user config.toml files.
+//! Used by `lean-ctx config init` to document every key, and by `lean-ctx
+//! doctor` to flag keys of a user config.toml that no setting reads.
 
 use serde::Serialize;
 use std::collections::BTreeMap;
@@ -68,7 +68,7 @@ impl ConfigSchema {
     /// Combines the hand-written schema (which carries descriptions, types and
     /// help text) with the keys derived from the live `Config` struct. The
     /// struct is the source of truth for *what is valid*, so a field added to
-    /// `Config` is recognised by `config apply` / `config validate` immediately,
+    /// `Config` is recognised by `doctor`'s unknown-key check immediately,
     /// without anyone remembering to mirror it into `sections_*.rs` (#456).
     pub fn known_keys(&self) -> Vec<String> {
         let mut keys = Vec::new();
@@ -160,8 +160,8 @@ mod tests {
     ///
     /// A `sections_*.rs` entry that hardcodes its default — `json!(false)`,
     /// `json!([])` — instead of reading `cfg.<field>` keeps compiling after the
-    /// struct field is deleted. The key then stays in `config schema`, in
-    /// `config validate` and in the published
+    /// struct field is deleted. The key then stays in `config init`, in
+    /// `doctor`'s unknown-key check and in the published
     /// `docs/reference/generated/config-keys.md` while nothing reads it: a
     /// setting the user can write that silently does nothing. `shell_allowlist`,
     /// `shell_allowlist_extra` and `update_check_disabled` each survived their
@@ -215,7 +215,7 @@ mod tests {
         );
     }
 
-    /// Mirrors the acceptance rule used by `config validate` / `config apply`:
+    /// Mirrors the acceptance rule `doctor` uses for unknown keys:
     /// a key is valid if it is listed verbatim or sits under a known section.
     fn accepted(known: &[String], key: &str) -> bool {
         known.iter().any(|k| k == key) || known.iter().any(|k| key.starts_with(&format!("{k}.")))

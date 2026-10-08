@@ -412,6 +412,7 @@ where
 /// The BM25 index must already exist on disk — this function loads it and runs
 /// `embedding_index::build_or_update`. Updates the in-memory semantic component
 /// state on completion.
+#[cfg(feature = "embeddings")]
 pub fn build_semantic(project_root: &str) {
     let state = entry_for(project_root);
     let root = Path::new(project_root);
@@ -439,13 +440,6 @@ pub fn build_semantic(project_root: &str) {
             match outcome {
                 crate::core::embedding_index::EmbeddingBuildOutcome::Ready => {
                     finish_ok(&mut s.semantic);
-                }
-                crate::core::embedding_index::EmbeddingBuildOutcome::Skipped => {
-                    finish_ok(&mut s.semantic);
-                    s.semantic.note = Some(
-                        "embeddings not built into this binary (the `embeddings` feature is off)"
-                            .to_string(),
-                    );
                 }
                 crate::core::embedding_index::EmbeddingBuildOutcome::ModelNotAvailable(
                     ref reason,
@@ -577,10 +571,10 @@ pub struct Bm25Summary {
 }
 
 /// Lightweight snapshot of the semantic (dense embedding) component.
+#[cfg(feature = "embeddings")]
 #[derive(Debug, Clone)]
 pub struct SemanticSummary {
     pub state: &'static str,
-    pub elapsed_ms: Option<u64>,
     pub note: Option<String>,
     pub last_error: Option<String>,
 }
@@ -603,16 +597,16 @@ fn component_elapsed_and_state(c: &Component) -> (&'static str, Option<u64>) {
     (state, elapsed_ms)
 }
 
+#[cfg(feature = "embeddings")]
 pub fn semantic_summary(project_root: &str) -> SemanticSummary {
     let entry = entry_for(project_root);
     let s = entry
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
     let c = &s.semantic;
-    let (state, elapsed_ms) = component_elapsed_and_state(c);
+    let (state, _) = component_elapsed_and_state(c);
     SemanticSummary {
         state,
-        elapsed_ms,
         note: c.note.clone(),
         last_error: c.last_error.clone(),
     }

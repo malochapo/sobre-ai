@@ -112,12 +112,12 @@ fn cli_subcommands_are_wired() {
     // `pack --help` skips dashed args and runs the default PR packer (a side effect).
     // A wired command routes to its own handler and never emits the top-level
     // `unknown command '<cmd>'` marker; an un-wired one hits the fallthrough and
-    // does. Set = the regressed entrypoints (`pack`, `index`) plus representative
-    // read / compile / observability commands, each verified side-effect-free on an
-    // unknown subcommand. The *full* tool surface is guarded MCP-side by
-    // `mcp_entrypoint_tools_are_advertised`.
+    // does. Set = every command with subcommands, each side-effect-free on an
+    // unknown subcommand. That every command name dispatches at all is pinned by
+    // `known_commands_match_dispatch_arms`; the *full* tool surface is guarded
+    // MCP-side by `mcp_entrypoint_tools_are_advertised`.
     let probe = "__leanctx_wiring_probe__";
-    for cmd in ["index", "graph", "session", "knowledge"] {
+    for cmd in ["index", "config", "embeddings", "proxy", "hook"] {
         let (_stdout, stderr, _code) = run(&[cmd, probe]);
         assert!(
             !stderr.contains(&format!("unknown command '{cmd}'")),

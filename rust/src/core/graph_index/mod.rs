@@ -530,9 +530,6 @@ fn source_content_changed_since_index(index: &ProjectIndex, root_abs: &str) -> b
     let index_filter = crate::core::index_filter::IndexFileFilter::effective();
     let walker = ignore::WalkBuilder::new(root_abs)
         .hidden(true)
-        .git_ignore(index_filter.respect_gitignore)
-        .git_global(index_filter.respect_gitignore)
-        .git_exclude(index_filter.respect_gitignore)
         .require_git(false)
         .max_depth(Some(20))
         .filter_entry(crate::core::walk_filter::keep_entry)
@@ -587,7 +584,7 @@ fn source_content_changed_since_index(index: &ProjectIndex, root_abs: &str) -> b
 }
 
 /// Delete the persisted graph-index artifacts for a project so the next scan
-/// rebuilds from scratch. Backs `graph build --force`.
+/// rebuilds from scratch. Backs `lean-ctx index build --force`.
 ///
 /// The property graph (`graph.db` + `graph.meta.json`) is the sole store.
 pub fn purge_index(project_root: &str) {
@@ -656,9 +653,6 @@ fn scan_inner(project_root: &str) -> (ProjectIndex, HashMap<String, String>) {
 
     let walker = ignore::WalkBuilder::new(&project_root)
         .hidden(true)
-        .git_ignore(index_filter.respect_gitignore)
-        .git_global(index_filter.respect_gitignore)
-        .git_exclude(index_filter.respect_gitignore)
         .require_git(false)
         .max_depth(Some(20))
         .filter_entry(crate::core::walk_filter::keep_entry)

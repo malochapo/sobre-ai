@@ -23,10 +23,10 @@
 //!
 //! ## Cost-quality awareness
 //!
-//! When live model prices are available (loaded by the proxy at startup from
-//! `~/.config/lean-ctx/model-prices.json`), the router annotates its decision
-//! with cost savings estimates. This is observability only — the tier lookup
-//! is the authoritative routing decision, not a dynamic cost optimizer.
+//! The router annotates its decision with an estimated cost ratio taken from a
+//! static table of relative model price tiers (`model_cost_tier`). This is
+//! observability only — the tier lookup is the authoritative routing decision,
+//! not a dynamic cost optimizer.
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -166,8 +166,8 @@ fn estimate_cost_ratio(original: &str, routed: &str) -> Option<f64> {
 }
 
 /// Relative cost tier for well-known models (normalized to Sonnet = 1.0).
-/// These are static approximations for estimation only — live prices from
-/// the model-prices.json file are used for actual billing.
+/// These are static approximations for estimation only; savings figures use
+/// the embedded price table (`core::pricing`).
 fn model_cost_tier(model: &str) -> Option<f64> {
     let m = model.to_lowercase();
     if m.contains("nano") || m.contains("gpt-4.1-nano") {

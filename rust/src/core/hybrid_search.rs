@@ -9,6 +9,7 @@
 //! Reference: Cormack, Clarke & Buettcher (2009), "Reciprocal Rank Fusion
 //! outperforms Condorcet and individual Rank Learning Methods"
 
+#[cfg(any(test, feature = "embeddings"))]
 use std::collections::HashMap;
 
 use super::bm25_index::{BM25Index, ChunkKind, SearchResult};
@@ -18,13 +19,17 @@ use super::embeddings::EmbeddingEngine;
 #[cfg(feature = "embeddings")]
 use super::hnsw::FlatEmbeddings;
 
+#[cfg(any(test, feature = "embeddings"))]
 const RRF_K: f64 = 60.0;
 
 /// Default weights for standard RRF: equal contribution per ranking (`Σ weight/(k+r)` with weight=1).
+#[cfg(any(test, feature = "embeddings"))]
 const DEFAULT_BM25_WEIGHT: f64 = 1.0;
+#[cfg(any(test, feature = "embeddings"))]
 const DEFAULT_DENSE_WEIGHT: f64 = 1.0;
 
 /// Hybrid search weights and candidate counts (built-in, not configurable).
+#[cfg(any(test, feature = "embeddings"))]
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(default)]
 pub struct HybridConfig {
@@ -37,10 +42,12 @@ pub struct HybridConfig {
     pub splade_weight: f64,
 }
 
+#[cfg(any(test, feature = "embeddings"))]
 fn default_splade_weight() -> f64 {
     0.5
 }
 
+#[cfg(any(test, feature = "embeddings"))]
 impl Default for HybridConfig {
     fn default() -> Self {
         Self {
@@ -57,6 +64,7 @@ impl Default for HybridConfig {
 ///
 /// `graph_file_ranks`: optional repo-relative file path → rank (0-based) for neighbors of
 /// recently touched session files; each matching result gets an extra `1/(k+r)` term.
+#[cfg(any(test, feature = "embeddings"))]
 pub fn reciprocal_rank_fusion(
     bm25_results: &[SearchResult],
     dense_results: &[DenseSearchResult],
@@ -238,11 +246,13 @@ fn dense_search(
         .collect()
 }
 
+#[cfg(any(test, feature = "embeddings"))]
 fn result_key(file_path: &str, start_line: usize) -> String {
     format!("{file_path}:{start_line}")
 }
 
 /// Result from dense (embedding-based) search.
+#[cfg(any(test, feature = "embeddings"))]
 #[derive(Debug, Clone)]
 pub struct DenseSearchResult {
     pub chunk_idx: usize,

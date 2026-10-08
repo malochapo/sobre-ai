@@ -89,19 +89,6 @@ impl CompressionLevel {
         }
     }
 
-    /// The `compression_level` value a level name stands for: `off` is 0, the
-    /// others sit in the middle of their band.
-    #[must_use]
-    pub fn value(self) -> f64 {
-        match self {
-            Self::Off => 0.0,
-            Self::Lite => 0.3,
-            Self::Standard => 0.5,
-            Self::Max => 0.7,
-            Self::Raw => 0.9,
-        }
-    }
-
     /// Session-level degrade: re-fetches detected, temporarily reduce compression.
     /// 0 = no override, 1 = Off, 2 = Lite
     pub fn session_degrade_level() -> Option<Self> {
@@ -163,17 +150,6 @@ impl CompressionLevel {
         (after != before).then_some(after)
     }
 
-    pub fn from_str_label(s: &str) -> Option<Self> {
-        match s.trim().to_lowercase().as_str() {
-            "off" => Some(Self::Off),
-            "lite" => Some(Self::Lite),
-            "standard" | "std" => Some(Self::Standard),
-            "max" => Some(Self::Max),
-            "raw" => Some(Self::Raw),
-            _ => None,
-        }
-    }
-
     pub fn is_active(&self) -> bool {
         !matches!(self, Self::Off)
     }
@@ -185,18 +161,6 @@ impl CompressionLevel {
             Self::Standard => "standard",
             Self::Max => "max",
             Self::Raw => "raw",
-        }
-    }
-
-    pub fn description(&self) -> &'static str {
-        match self {
-            Self::Off => "No compression — full verbose output",
-            Self::Lite => "Light compression — concise output, basic terse filtering",
-            Self::Standard => {
-                "Standard compression — dense output, compact protocol, pattern-aware"
-            }
-            Self::Max => "Maximum compression — expert mode, TDD protocol, all layers active",
-            Self::Raw => "Raw-dense compression — bullet points only, zero prose, diff-style facts",
         }
     }
 }

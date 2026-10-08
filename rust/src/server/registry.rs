@@ -30,15 +30,11 @@ impl ToolRegistry {
         self.tools.insert(name, Arc::from(tool));
     }
 
-    pub fn get(&self, name: &str) -> Option<&dyn McpTool> {
-        self.tools.get(name).map(|t| &**t)
-    }
-
     /// Clone an owned, `'static` handle to a registered tool.
     ///
-    /// Unlike [`get`](Self::get), the returned `Arc` can be moved into
-    /// `spawn_blocking`, so the dispatch layer can execute the (synchronous)
-    /// handler off the async core workers under a watchdog (#271).
+    /// The returned `Arc` can be moved into `spawn_blocking`, so the dispatch
+    /// layer can execute the (synchronous) handler off the async core workers
+    /// under a watchdog (#271).
     pub fn get_arc(&self, name: &str) -> Option<Arc<dyn McpTool>> {
         self.tools.get(name).cloned()
     }
@@ -220,12 +216,7 @@ mod tests {
     }
 
     #[test]
-    fn get_and_get_arc_agree_for_core_tool() {
-        let registry = build_registry();
-        assert_eq!(
-            registry.get("ctx_read").is_some(),
-            registry.get_arc("ctx_read").is_some(),
-            "get and get_arc must agree on tool presence"
-        );
+    fn get_arc_finds_a_core_tool() {
+        assert!(build_registry().get_arc("ctx_read").is_some());
     }
 }
