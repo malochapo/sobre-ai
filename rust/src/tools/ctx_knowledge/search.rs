@@ -3,143 +3,89 @@
 
 #[allow(clippy::wildcard_imports)]
 use super::*;
-pub(crate) fn handle_search(query: Option<&str>) -> String {
+/// Searches this project's knowledge facts and the findings and decisions of
+/// its saved sessions. Nothing from another project is read.
+pub(crate) fn handle_search(project_root: &str, query: Option<&str>) -> String {
     let Some(q) = query else {
         return "Error: query is required for search".to_string();
     };
-
-    let Ok(data_dir) = crate::core::data_dir::sobre_data_dir() else {
-        return "Cannot determine data directory.".to_string();
-    };
-
-    let sessions_dir = data_dir.join("sessions");
-
-    if !sessions_dir.exists() {
-        return "No sessions found.".to_string();
-    }
-
-    let knowledge_dir = data_dir.join("knowledge");
-
-    let current_project_hash = std::env::current_dir()
-        .ok()
-        .map(|p| crate::core::project_hash::hash_project_root(&p.to_string_lossy()));
-
     let q_lower = q.to_lowercase();
     let terms: Vec<&str> = q_lower.split_whitespace().collect();
-    let mut results = Vec::new();
+    if terms.is_empty() {
+        return "Error: query is required for search".to_string();
+    }
+    let relevance = |text: &str| {
+        let text = text.to_lowercase();
+        let hits = terms.iter().filter(|t| text.contains(**t)).count();
+        hits as f32 / terms.len() as f32
+    };
 
-    if knowledge_dir.exists()
-        && let Ok(entries) = std::fs::read_dir(&knowledge_dir)
-    {
-        for entry in entries.flatten() {
-            let dir_name = entry.file_name().to_string_lossy().to_string();
+    // (category, key, value, confidence, relevance)
+    let mut results: Vec<(String, String, String, f32, f32)> = Vec::new();
 
-            // Knowledge search stays within the current project.
-            if let Some(ref current_hash) = current_project_hash
-                && &dir_name != current_hash
-            {
-                continue;
-            }
-
-            let knowledge_file = entry.path().join("knowledge.json");
-            if let Ok(content) = std::fs::read_to_string(&knowledge_file)
-                && let Ok(knowledge) = serde_json::from_str::<ProjectKnowledge>(&content)
-            {
-                for fact in &knowledge.facts {
-                    let searchable = format!(
-                        "{} {} {}",
-                        fact.category.to_lowercase(),
-                        fact.key.to_lowercase(),
-                        fact.value.to_lowercase()
-                    );
-                    let match_count = terms.iter().filter(|t| searchable.contains(**t)).count();
-                    if match_count > 0 {
-                        results.push((
-                            knowledge.project_root.clone(),
-                            fact.category.clone(),
-                            fact.key.clone(),
-                            fact.value.clone(),
-                            fact.confidence,
-                            match_count as f32 / terms.len() as f32,
-                        ));
-                    }
-                }
+    if let Some(knowledge) = ProjectKnowledge::load(project_root) {
+        for fact in &knowledge.facts {
+            let r = relevance(&format!("{} {} {}", fact.category, fact.key, fact.value));
+            if r > 0.0 {
+                results.push((
+                    fact.category.clone(),
+                    fact.key.clone(),
+                    fact.value.clone(),
+                    fact.confidence,
+                    r,
+                ));
             }
         }
     }
 
-    if let Ok(entries) = std::fs::read_dir(&sessions_dir) {
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if path.extension().and_then(|e| e.to_str()) != Some("json") {
-                continue;
+    for session in SessionState::all_for_project_root(project_root) {
+        for finding in &session.findings {
+            let r = relevance(&finding.summary);
+            if r > 0.0 {
+                results.push((
+                    "session-finding".to_string(),
+                    session.id.clone(),
+                    finding.summary.clone(),
+                    0.6,
+                    r,
+                ));
             }
-            if path.file_name().and_then(|n| n.to_str()) == Some("latest.json") {
-                continue;
-            }
-            if let Ok(json) = std::fs::read_to_string(&path)
-                && let Ok(session) = serde_json::from_str::<SessionState>(&json)
-            {
-                for finding in &session.findings {
-                    let searchable = finding.summary.to_lowercase();
-                    let match_count = terms.iter().filter(|t| searchable.contains(**t)).count();
-                    if match_count > 0 {
-                        let project = session
-                            .project_root
-                            .clone()
-                            .unwrap_or_else(|| "unknown".to_string());
-                        results.push((
-                            project,
-                            "session-finding".to_string(),
-                            session.id.clone(),
-                            finding.summary.clone(),
-                            0.6,
-                            match_count as f32 / terms.len() as f32,
-                        ));
-                    }
-                }
-                for decision in &session.decisions {
-                    let searchable = decision.summary.to_lowercase();
-                    let match_count = terms.iter().filter(|t| searchable.contains(**t)).count();
-                    if match_count > 0 {
-                        let project = session
-                            .project_root
-                            .clone()
-                            .unwrap_or_else(|| "unknown".to_string());
-                        results.push((
-                            project,
-                            "session-decision".to_string(),
-                            session.id.clone(),
-                            decision.summary.clone(),
-                            0.7,
-                            match_count as f32 / terms.len() as f32,
-                        ));
-                    }
-                }
+        }
+        for decision in &session.decisions {
+            let r = relevance(&decision.summary);
+            if r > 0.0 {
+                results.push((
+                    "session-decision".to_string(),
+                    session.id.clone(),
+                    decision.summary.clone(),
+                    0.7,
+                    r,
+                ));
             }
         }
     }
 
     if results.is_empty() {
-        return format!("No results found for '{q}' across all sessions and projects.");
+        return format!("No results for '{q}' in this project's knowledge and sessions.");
     }
 
     results.sort_by(|a, b| {
-        b.5.partial_cmp(&a.5)
+        b.4.partial_cmp(&a.4)
             .unwrap_or(std::cmp::Ordering::Equal)
-            .then_with(|| b.4.partial_cmp(&a.4).unwrap_or(std::cmp::Ordering::Equal))
+            .then_with(|| b.3.partial_cmp(&a.3).unwrap_or(std::cmp::Ordering::Equal))
             .then_with(|| a.0.cmp(&b.0))
             .then_with(|| a.1.cmp(&b.1))
             .then_with(|| a.2.cmp(&b.2))
-            .then_with(|| a.3.cmp(&b.3))
     });
-    results.truncate(crate::core::budgets::KNOWLEDGE_CROSS_PROJECT_SEARCH_LIMIT);
+    results.truncate(crate::core::budgets::KNOWLEDGE_SEARCH_LIMIT);
 
-    let mut out = format!("Cross-session search '{q}' ({} results):\n", results.len());
-    for (project, cat, key, value, conf, _relevance) in &results {
-        let project_short = short_path(project);
+    let mut out = format!(
+        "Search '{q}' in this project's knowledge and sessions ({} results):\n",
+        results.len()
+    );
+    for (cat, key, value, conf, _relevance) in &results {
         out.push_str(&format!(
-            "  [{cat}/{key}] {value} (project: {project_short}, conf: {:.0}%)\n",
+            "  [{cat}/{key}] {value} (conf: {:.0}%)\n",
             conf * 100.0
         ));
     }
@@ -239,14 +185,6 @@ pub(crate) fn format_facts_with_annotations(
         ));
     }
     out
-}
-
-pub(crate) fn short_path(path: &str) -> String {
-    let parts: Vec<&str> = path.split('/').collect();
-    if parts.len() <= 2 {
-        return path.to_string();
-    }
-    parts[parts.len() - 2..].join("/")
 }
 
 pub(crate) fn short_hash(hash: &str) -> &str {

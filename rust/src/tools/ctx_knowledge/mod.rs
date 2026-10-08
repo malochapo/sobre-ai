@@ -82,7 +82,7 @@ pub fn handle(
         "restore" => handle_restore(project_root, category, query, None),
         "timeline" => handle_timeline(project_root, category),
         "rooms" => handle_rooms(project_root),
-        "search" => handle_search(query),
+        "search" => handle_search(project_root, query),
         "wakeup" => handle_wakeup(project_root),
         "embeddings_status" => handle_embeddings_status(project_root),
         "embeddings_reset" => handle_embeddings_reset(project_root),

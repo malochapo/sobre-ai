@@ -219,3 +219,47 @@ fn consolidation_loads_session_for_requested_project_root() {
             .any(|f| f.value == "wrong cwd finding")
     );
 }
+
+#[test]
+fn search_reads_only_the_requested_project() {
+    let _env_lock = crate::core::data_dir::test_env_lock();
+    let data_dir = tempfile::tempdir().unwrap();
+    let _data_dir = DataDirGuard::set(data_dir.path());
+    let other_project = tempfile::tempdir().unwrap();
+    let target_project = tempfile::tempdir().unwrap();
+    let other_root = other_project.path().to_string_lossy().to_string();
+    let target_root = target_project.path().to_string_lossy().to_string();
+    let policy = MemoryPolicy::default();
+
+    for (root, tag) in [(&target_root, "target"), (&other_root, "other")] {
+        let mut knowledge = ProjectKnowledge::new(root);
+        knowledge.remember(
+            "deploy",
+            "pipeline",
+            &format!("retries happen in the {tag} pipeline"),
+            "s1",
+            0.8,
+            &policy,
+        );
+        knowledge.save().unwrap();
+
+        let mut session = SessionState::new();
+        session.project_root = Some(root.clone());
+        session.add_finding(None, None, &format!("{tag} finding about retries"));
+        session.add_decision(&format!("{tag} decision about retries"), None);
+        session.save().unwrap();
+    }
+
+    // The server's cwd is another project: the search must follow the
+    // session's project root, not the process directory.
+    let _cwd = CurrentDirGuard::enter(other_project.path());
+    let out = handle_search(&target_root, Some("retries"));
+
+    assert!(
+        out.contains("retries happen in the target pipeline"),
+        "{out}"
+    );
+    assert!(out.contains("target finding about retries"), "{out}");
+    assert!(out.contains("target decision about retries"), "{out}");
+    assert!(!out.contains("other"), "another project leaked in: {out}");
+}
