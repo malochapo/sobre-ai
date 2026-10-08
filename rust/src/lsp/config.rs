@@ -77,6 +77,12 @@ pub fn default_servers() -> HashMap<&'static str, LspServerConfig> {
     m
 }
 
+/// The extensions [`language_for_extension`] maps, for error messages.
+pub const SUPPORTED_EXTENSIONS: [&str; 21] = [
+    "rs", "ts", "tsx", "js", "jsx", "mjs", "cjs", "py", "pyi", "go", "java", "kt", "kts", "rb",
+    "c", "h", "cpp", "cxx", "cc", "hpp", "cs",
+];
+
 pub fn language_for_extension(ext: &str) -> Option<&'static str> {
     match ext {
         "rs" => Some("rust"),

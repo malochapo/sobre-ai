@@ -18,10 +18,6 @@ pub fn handle(args: &Value, project_root: &str, abs_path: &str) -> String {
 
     let line = args.get("line").and_then(Value::as_u64).unwrap_or(1) as u32;
     let column = args.get("column").and_then(Value::as_u64).unwrap_or(0) as u32;
-    let scope = args
-        .get("scope")
-        .and_then(Value::as_str)
-        .unwrap_or("project");
 
     let uri = match crate::lsp::router::open_file(abs_path, project_root) {
         Ok(u) => u,
@@ -32,14 +28,13 @@ pub fn handle(args: &Value, project_root: &str, abs_path: &str) -> String {
 
     match action {
         "rename" => handle_rename(args, abs_path, project_root, &uri, position),
-        "references" => handle_references(abs_path, project_root, &uri, position, scope),
+        "references" => handle_references(abs_path, project_root, &uri, position),
         "definition" => handle_definition(abs_path, project_root, &uri, position),
-        "implementations" => handle_implementations(abs_path, project_root, &uri, position, scope),
-        "symbols_overview" => handle_symbols_overview(abs_path, project_root, &uri),
+        "implementations" => handle_implementations(abs_path, project_root, &uri, position),
         _ => format!(
-            "ERROR: Unknown action '{action}'. Available: rename, references, definition, \
-             implementations, symbols_overview, replace_symbol_body, insert_before_symbol, \
-             insert_after_symbol."
+            "ERROR: Unknown action '{action}'. Available: rename (preview), references, \
+             definition, implementations, replace_symbol_body, insert_before_symbol, \
+             insert_after_symbol. For a file's symbols use ctx_outline."
         ),
     }
 }
@@ -71,10 +66,9 @@ fn handle_references(
     project_root: &str,
     uri: &lsp_types::Uri,
     position: Position,
-    scope: &str,
 ) -> String {
     let result = crate::lsp::router::with_backend(file_path, project_root, |backend, _| {
-        backend.references(uri, position, scope)
+        backend.references(uri, position)
     });
 
     match result {
@@ -117,10 +111,9 @@ fn handle_implementations(
     project_root: &str,
     uri: &lsp_types::Uri,
     position: Position,
-    scope: &str,
 ) -> String {
     let result = crate::lsp::router::with_backend(file_path, project_root, |backend, _| {
-        backend.implementations(uri, position, scope)
+        backend.implementations(uri, position)
     });
 
     match result {
@@ -128,8 +121,6 @@ fn handle_implementations(
         Err(e) => format!("ERROR: {e}"),
     }
 }
-
-use crate::lsp::backend::SymbolOverviewItem;
 
 /// A resolved symbol location (project-relative path + 1-based inclusive line span).
 #[derive(Debug)]
@@ -193,12 +184,8 @@ fn container_matches_ancestor(name: &str, ancestor: &str) -> bool {
 /// Resolve a `name_path` (`Class/method` or bare `name`) to a single symbol via
 /// the tree-sitter index (spec v2a §3/§5.3). Disambiguates a qualified path by
 /// enclosing-range containment (ancestor symbol's line span contains the leaf's).
-/// #845: optional `file_scope` narrows candidates to a single file, preventing
-/// AMBIGUOUS_SYMBOL for common names like `Dispose` that appear repo-wide.
-pub(crate) fn resolve_name_path(name_path: &str, project_root: &str) -> Result<Resolved, String> {
-    resolve_name_path_scoped(name_path, project_root, None)
-}
-
+/// #845: `file_scope` (a project-relative path) narrows candidates to that
+/// file, preventing AMBIGUOUS_SYMBOL for common names like `Dispose`.
 pub(crate) fn resolve_name_path_scoped(
     name_path: &str,
     project_root: &str,
@@ -215,16 +202,13 @@ pub(crate) fn resolve_name_path_scoped(
         .ok_or_else(|| "NO_SYMBOL: empty name_path".to_string())?;
 
     // Exact-name leaf candidates (case-sensitive — the index may substring-match).
+    // The file scope goes into the query itself, so a common name defined in
+    // many files cannot push the scoped one past the query's row limit.
     let mut leaves: Vec<_> = gp
-        .find_symbols(leaf, None, None)
+        .find_symbols(leaf, file_scope, None)
         .into_iter()
-        .filter(|s| s.name == leaf)
+        .filter(|s| s.name == leaf && file_scope.is_none_or(|f| s.file == f))
         .collect();
-
-    // #845: narrow by file when the caller provides a scope.
-    if let Some(scope) = file_scope {
-        leaves.retain(|s| s.file.ends_with(scope) || s.file == scope);
-    }
 
     if segments.len() >= 2 {
         let ancestor = segments[segments.len() - 2];
@@ -267,64 +251,18 @@ pub(crate) fn resolve_name_path_scoped(
     }
 }
 
-fn handle_symbols_overview(file_path: &str, project_root: &str, uri: &lsp_types::Uri) -> String {
-    let result = crate::lsp::router::with_backend(file_path, project_root, |backend, _| {
-        backend.symbols_overview(uri)
-    });
-    match result {
-        Ok(items) => format_symbols_overview(&items),
-        Err(e) => format!("ERROR: {e}"),
-    }
-}
-
 fn handle_symbol_edit(action: &str, args: &Value, project_root: &str) -> String {
     let explicit_path = args.get("path").and_then(Value::as_str);
 
     let (rel_path, start_line, end_line) = if let Some(np) =
         args.get("name_path").and_then(Value::as_str)
     {
-        match resolve_name_path(np, project_root) {
-            Ok(r) => {
-                // #803 WORKTREE SAFETY: when the caller also provided `path`,
-                // verify the index-resolved file matches the caller's target.
-                // In git worktrees the index may point to the main checkout
-                // while the caller works in a linked worktree — writing to the
-                // wrong root causes silent data loss.
-                if let Some(caller_path) = explicit_path {
-                    let resolved_abs = match crate::core::path_resolve::resolve_tool_path(
-                        Some(project_root),
-                        None,
-                        &r.rel_path,
-                    ) {
-                        Ok(p) => p,
-                        Err(e) => return format!("ERROR: {e}"),
-                    };
-                    let caller_abs = match crate::core::path_resolve::resolve_tool_path(
-                        Some(project_root),
-                        None,
-                        caller_path,
-                    ) {
-                        Ok(p) => p,
-                        Err(e) => return format!("ERROR: {e}"),
-                    };
-                    let resolved_real = std::fs::canonicalize(&resolved_abs)
-                        .unwrap_or_else(|_| std::path::PathBuf::from(&resolved_abs));
-                    let caller_real = std::fs::canonicalize(&caller_abs)
-                        .unwrap_or_else(|_| std::path::PathBuf::from(&caller_abs));
-                    if resolved_real != caller_real {
-                        return format!(
-                            "ERROR: WORKTREE_MISMATCH: symbol '{np}' resolved to '{resolved_abs}' \
-                             but caller specified '{caller_abs}'. The symbol index points to a \
-                             different checkout (likely a git worktree mismatch). \
-                             Use op=replace_lines with explicit line range instead, \
-                             or re-index from the correct root.",
-                        );
-                    }
-                    (caller_path.to_string(), r.start_line, r.end_line)
-                } else {
-                    (r.rel_path, r.start_line, r.end_line)
-                }
-            }
+        // With `path`, the name is looked up in that file only: a common name
+        // defined elsewhere is neither ambiguous nor a wrong target.
+        let scope =
+            explicit_path.map(|p| crate::core::index_paths::graph_relative_key(p, project_root));
+        match resolve_name_path_scoped(np, project_root, scope.as_deref()) {
+            Ok(r) => (r.rel_path, r.start_line, r.end_line),
             Err(e) => return format!("ERROR: {e}"),
         }
     } else {
@@ -495,20 +433,6 @@ fn format_edit_result(
     )
 }
 
-fn format_symbols_overview(items: &[SymbolOverviewItem]) -> String {
-    if items.is_empty() {
-        return "No symbols found.".to_string();
-    }
-    let mut out = format!("{} symbol(s):\n", items.len());
-    for item in items {
-        out.push_str(&format!(
-            "  {} {} (line {})\n",
-            item.kind, item.name, item.line
-        ));
-    }
-    out
-}
-
 fn format_locations(locations: &[Location], project_root: &str) -> String {
     if locations.is_empty() {
         return "No results found.".to_string();
@@ -533,7 +457,7 @@ fn format_locations(locations: &[Location], project_root: &str) -> String {
 }
 
 fn format_workspace_edit(edit: &lsp_types::WorkspaceEdit, project_root: &str) -> String {
-    let mut out = String::from("Rename edits:\n");
+    let mut out = String::from("Rename preview — nothing was written:\n");
     let mut file_count = 0;
     let mut edit_count = 0;
 
@@ -586,7 +510,7 @@ fn format_workspace_edit(edit: &lsp_types::WorkspaceEdit, project_root: &str) ->
     }
 
     out.push_str(&format!(
-        "\nTotal: {edit_count} edit(s) across {file_count} file(s)."
+        "\nTotal: {edit_count} edit(s) across {file_count} file(s). Apply them with ctx_patch."
     ));
     out
 }

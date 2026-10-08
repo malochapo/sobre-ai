@@ -34,45 +34,49 @@ fn select_backend(language: &str, project_root: &str) -> Result<Box<dyn LspBacke
     Ok(Box::new(client) as Box<dyn LspBackend>)
 }
 
-pub fn with_backend<F, R>(file_path: &str, project_root: &str, f: F) -> Result<R, String>
-where
-    F: FnOnce(&mut dyn LspBackend, &str) -> Result<R, String>,
-{
-    let ext = Path::new(file_path)
-        .extension()
-        .and_then(|e| e.to_str())
-        .unwrap_or("");
-
-    let language = language_for_extension(ext).ok_or_else(|| {
-        format!(
-            "No LSP server configured for extension '.{ext}'. Supported: rs, ts, tsx, js, py, go"
-        )
-    })?;
-
-    let mut backends = BACKENDS.lock().map_err(|e| e.to_string())?;
-
-    if !backends.contains_key(language) {
-        let backend = select_backend(language, project_root)?;
-        backends.insert(language.to_string(), backend);
-    }
-
-    let backend = backends
-        .get_mut(language)
-        .ok_or_else(|| format!("LSP backend for '{language}' not available"))?;
-
-    f(backend.as_mut(), language)
+/// One language server per language and project: a server started for one
+/// project root answers for that project only.
+fn backend_key(language: &str, project_root: &str) -> String {
+    format!("{language}\0{project_root}")
 }
 
-pub fn open_file(file_path: &str, project_root: &str) -> Result<Uri, String> {
+/// The language for `file_path`'s extension, or the error that lists the
+/// extensions that have one.
+fn language_of(file_path: &str) -> Result<&'static str, String> {
     let ext = Path::new(file_path)
         .extension()
         .and_then(|e| e.to_str())
         .unwrap_or("");
     language_for_extension(ext).ok_or_else(|| {
         format!(
-            "No LSP server configured for extension '.{ext}'. Supported: rs, ts, tsx, js, py, go"
+            "No LSP server configured for extension '.{ext}'. Supported: {}",
+            super::config::SUPPORTED_EXTENSIONS.join(", ")
         )
-    })?;
+    })
+}
+
+pub fn with_backend<F, R>(file_path: &str, project_root: &str, f: F) -> Result<R, String>
+where
+    F: FnOnce(&mut dyn LspBackend, &str) -> Result<R, String>,
+{
+    let language = language_of(file_path)?;
+    let key = backend_key(language, project_root);
+    let mut backends = BACKENDS.lock().map_err(|e| e.to_string())?;
+
+    if !backends.contains_key(&key) {
+        let backend = select_backend(language, project_root)?;
+        backends.insert(key.clone(), backend);
+    }
+
+    let backend = backends
+        .get_mut(&key)
+        .ok_or_else(|| format!("LSP backend for '{language}' not available"))?;
+
+    f(backend.as_mut(), language)
+}
+
+pub fn open_file(file_path: &str, project_root: &str) -> Result<Uri, String> {
+    language_of(file_path)?;
 
     let content = std::fs::read_to_string(file_path)
         .map_err(|e| format!("Cannot read '{file_path}': {e}"))?;
@@ -86,9 +90,9 @@ pub fn open_file(file_path: &str, project_root: &str) -> Result<Uri, String> {
 }
 
 #[cfg(test)]
-pub(crate) fn seed_stub_backend(language: &str, backend: Box<dyn LspBackend>) {
+pub(crate) fn seed_stub_backend(language: &str, project_root: &str, backend: Box<dyn LspBackend>) {
     if let Ok(mut backends) = BACKENDS.lock() {
-        backends.insert(language.to_string(), backend);
+        backends.insert(backend_key(language, project_root), backend);
     }
 }
 
