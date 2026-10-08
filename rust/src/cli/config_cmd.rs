@@ -12,7 +12,7 @@ pub fn cmd_config(args: &[String]) {
         Some("set") => {
             if args.len() < 3 {
                 crate::errln!("Usage: sobre config set <key> <value>");
-                std::process::exit(1);
+                std::process::exit(2);
             }
             let key = &args[1];
             let val = &args[2];
@@ -32,7 +32,7 @@ pub fn cmd_config(args: &[String]) {
         Some("path") => cmd_config_path(),
         _ => {
             crate::errln!("Usage: sobre config [show|set <key> <value>|path|init]");
-            std::process::exit(1);
+            std::process::exit(2);
         }
     }
 }

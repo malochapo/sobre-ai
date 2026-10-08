@@ -86,7 +86,7 @@ fn removed_commands_are_unknown() {
         "completions",
     ] {
         let out = run(&[cmd, "x"]);
-        assert_eq!(exit_code(&out), 1, "{cmd} must be unknown");
+        assert_eq!(exit_code(&out), 2, "{cmd} must be unknown");
         assert!(
             stderr(&out).contains("unknown command"),
             "{cmd}: {}",
@@ -171,7 +171,7 @@ fn config_path_prints_the_file() {
 fn config_rejects_removed_subcommands() {
     for sub in ["validate", "schema", "apply", "effective", "which"] {
         let out = run(&["config", sub]);
-        assert_eq!(exit_code(&out), 1, "config {sub}");
+        assert_eq!(exit_code(&out), 2, "config {sub}");
         assert!(
             stderr(&out).contains("Usage"),
             "config {sub}: {}",

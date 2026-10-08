@@ -101,7 +101,7 @@ pub fn run() {
                     _ => {
                         eprintln!("Usage: sobre hook <compress|cursor|gemini|read-dedup|observe>");
                         eprintln!("  Internal commands used by agent hooks");
-                        std::process::exit(1);
+                        std::process::exit(2);
                     }
                 }
                 return;
@@ -200,7 +200,7 @@ fn handle_raw(args: &[String], rest: &[String]) -> ! {
     if rest.is_empty() {
         eprintln!("Usage: sobre raw \"command\"");
         eprintln!("Runs the command with output passed through unchanged (no compression).");
-        std::process::exit(1);
+        std::process::exit(2);
     }
     let command = if rest.len() == 1 {
         rest[0].clone()
