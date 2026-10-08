@@ -42,7 +42,6 @@ impl Default for KnowledgePolicy {
 
 #[derive(Debug, Clone)]
 pub struct LifecyclePolicy {
-    pub decay_rate: f32,
     pub low_confidence_threshold: f32,
     pub stale_days: i64,
     pub similarity_threshold: f32,
@@ -67,7 +66,6 @@ pub struct LifecyclePolicy {
 impl Default for LifecyclePolicy {
     fn default() -> Self {
         Self {
-            decay_rate: 0.01,
             low_confidence_threshold: 0.3,
             stale_days: 30,
             similarity_threshold: 0.85,
