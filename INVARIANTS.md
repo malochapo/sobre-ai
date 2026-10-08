@@ -1,4 +1,4 @@
-# The six invariants
+# The five invariants
 
 These are not guidelines. They are the definition of the project. A change that
 breaks one of them is out of scope no matter how good it is — and if we ever
@@ -100,65 +100,7 @@ it might be monetisable later, or whether some organisation might want it. It is
 load-bearing, and it is the sharpest tool we have against re-growing into what
 we forked away from.
 
-## 5. Subtraction is the default; the line budget is a hard ceiling
-
-Every release must be **smaller than or equal to** the previous one in lines of
-Rust, unless the PR states the exception explicitly and it is accepted.
-
-- Ceiling: **200,000 lines of production Rust** under `rust/src`, excluding
-  vendored code **and tests** — `#[cfg(test)]` blocks and `rust/tests/`.
-- A PR that adds net lines must say so in its description and justify it.
-- "We might need it later" is not a justification. `git revert` exists.
-
-### Why tests are outside the ceiling
-
-They were inside it until the count was measured: **112,160 lines across 933
-`#[cfg(test)]` blocks**, a quarter of `rust/src`, all of it pushing against a
-budget the production code has to fit in. That is a standing incentive to
-delete tests, and this project has already been burned twice by not running the
-ones it has — a warning cleanup left `--features dense` broken at 62 errors for
-days, and `CORE_TOOL_NAMES references 'shell' which is not registered` sat red
-from the commit that caused it until an audit went looking. The suite is the
-only reliable oracle here. A budget that taxes it is aimed at the wrong thing.
-
-### Where we actually stand
-
-`rust/src` is about 169,600 lines, of which about 51,500 are test code.
-**Production code: about 118,100 — some 81,900 below the ceiling.** (It was
-343,328 when this section was first written, 183,800 at the end of phase 1,
-about 173,000 after the single rules channel, and about 148,400 before the
-phase-1 decisions on the CLI, the proxy and the call graph.)
-
-### Where 200,000 comes from
-
-The first ceiling, 380,000, came from the first estimate of what phase 1 could
-remove, made at 491,554 lines in `rust/src` — a count that included the tests
-on both sides. Once tests left the budget, that ceiling sat about 200,000 lines
-above the production code and constrained nothing.
-
-200,000 is the production code measured after phase 1 and the single
-rules-channel work (about 173,000), plus some 15% of headroom: room to build
-phase 2, small enough that real growth has to displace something. It is the
-target for the scope we chose: the MCP context layer **plus** the local
-compressing proxy.
-
-### Scope decision behind the number
-
-`proxy/` stays. It is the only part of the system that acts on *all* traffic
-rather than on the tools an agent chooses to call, and it is what makes the
-token claim true rather than aspirational. It runs entirely on the user's
-machine and nobody else connects to it, so it sits inside invariant 4. It
-speaks the two dialects the supported agents use, Anthropic Messages and
-OpenAI Responses/Chat, and translates neither. A Claude-shaped client reaches a
-local Ollama by pointing `proxy.upstreams.anthropic` at it, because Ollama
-serves the Anthropic Messages API itself — squarely the local-first use case.
-
-If the proxy is ever dropped, this ceiling drops with it, by the proxy's own
-size (about 4,200 lines): to 196,000.
-
----
-
-## 6. The agent host is in control
+## 5. The agent host is in control
 
 **`sobre` never decides what may run, be read or be written: no allow list, no
 deny list, no block. What the agent host already governs is neither reproduced

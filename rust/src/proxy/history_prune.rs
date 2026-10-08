@@ -180,7 +180,7 @@ fn summarize_anthropic_tool_result(block: &mut Value, kind: ToolResultKind) -> b
 /// Returns `Some(pruned)` only when the original is kept in the tee store
 /// ([`super::ccr::persist`], which skips text below
 /// [`super::ccr::MIN_TEE_BYTES`]) AND the pruned form is actually shorter;
-/// otherwise `None` (leave it intact). Invariant 6: what a prune drops stays
+/// otherwise `None` (leave it intact). Invariant 5: what a prune drops stays
 /// reachable, and the result says where. The result is content-deterministic —
 /// it depends only on `text` and `kind`, never on position — so a pruned
 /// output is byte-identical on every later turn.
@@ -253,7 +253,7 @@ mod tests {
         assert!(!last.contains("pruned"), "recent message should be kept");
     }
 
-    /// Invariant 6: a prune leaves the original reachable. Text too small to
+    /// Invariant 5: a prune leaves the original reachable. Text too small to
     /// be kept in the tee store is therefore not pruned at all.
     #[test]
     fn text_too_small_to_keep_is_never_pruned() {

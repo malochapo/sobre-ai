@@ -372,7 +372,7 @@ impl SessionState {
     /// Returns the effective working directory for shell commands.
     /// Priority: explicit cwd arg (relative to the project root) > session
     /// shell_cwd > project_root > process cwd. sobre does not confine it: the
-    /// agent host decides where commands may run (invariant 6).
+    /// agent host decides where commands may run (invariant 5).
     pub fn effective_cwd(&self, explicit_cwd: Option<&str>) -> String {
         if let Some(cwd) = explicit_cwd
             && !cwd.is_empty()

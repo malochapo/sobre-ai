@@ -1,5 +1,5 @@
 //! The host's own command rules, read so a rewrite never changes how the host
-//! treats a command (INVARIANTS.md §6).
+//! treats a command (INVARIANTS.md §5).
 //!
 //! Cursor and Gemini CLI get `cmd` rewritten to `lean-ctx -c 'cmd'` before it
 //! runs. That is only acceptable when the host would treat both strings the

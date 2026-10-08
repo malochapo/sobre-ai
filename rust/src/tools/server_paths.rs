@@ -66,7 +66,7 @@ impl LeanCtxServer {
         };
 
         // sobre does not confine paths: the agent host decides what may be
-        // read or written (invariant 6). An absolute path outside a root that
+        // read or written (invariant 5). An absolute path outside a root that
         // is not a real project (an agent config dir, a markerless client cwd)
         // re-roots the session on the project that path belongs to (#580/#649).
         let root_path = std::path::Path::new(&root);

@@ -436,7 +436,7 @@ fn shell_mismatch_hint(command: &str, output: &str) -> String {
 }
 
 /// The `env` argument as a map. Every variable is set as given: what a
-/// command may do is the agent host's decision, not sobre's (invariant 6).
+/// command may do is the agent host's decision, not sobre's (invariant 5).
 fn extra_env_from_args(args: &Map<String, Value>) -> std::collections::HashMap<String, String> {
     args.get("env")
         .and_then(|v| v.as_object())
