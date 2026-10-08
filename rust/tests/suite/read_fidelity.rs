@@ -157,7 +157,11 @@ fn a_file_over_the_read_limit_is_read_in_windows() {
     std::fs::create_dir_all(&proj).unwrap();
     let file = proj.join("big.log");
     let line = "x".repeat(99);
-    let body: String = (1..=50_000).map(|i| format!("{i:05} {line}\n")).collect();
+    let body = (1..=50_000).fold(String::new(), |mut body, i| {
+        use std::fmt::Write as _;
+        let _ = writeln!(body, "{i:05} {line}");
+        body
+    });
     std::fs::write(&file, body).unwrap();
     assert!(std::fs::metadata(&file).unwrap().len() > 4 * 1024 * 1024);
 
