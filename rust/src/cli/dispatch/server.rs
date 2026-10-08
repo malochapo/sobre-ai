@@ -139,10 +139,6 @@ pub(super) fn run_mcp_server() -> Result<()> {
 
         server_handle.shutdown().await;
 
-        // Single source of truth for the buffered-telemetry flush set, shared
-        // with the CLI tool arms and the parent watchdog so they can't drift (#550).
-        core::tool_lifecycle::flush_all();
-
         Ok(())
     });
 
@@ -273,9 +269,6 @@ fn spawn_parent_watchdog() {
                             "[parent-watchdog] parent PID changed ({ppid} → {current_ppid}), \
                              IDE likely closed — exiting to prevent orphan"
                         );
-                        // Same flush set as the clean shutdown path (#550) — the
-                        // hand-rolled copy here used to miss the predictor + feedback.
-                        core::tool_lifecycle::flush_all();
                         std::process::exit(0);
                     }
                 }

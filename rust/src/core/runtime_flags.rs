@@ -1,7 +1,5 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 
-static RAW: AtomicBool = AtomicBool::new(false);
-static COMPRESS: AtomicBool = AtomicBool::new(false);
 static QUIET: AtomicBool = AtomicBool::new(false);
 static MCP_SERVER: AtomicBool = AtomicBool::new(false);
 
@@ -21,28 +19,12 @@ fn set_scoped(flag: &'static AtomicBool) -> FlagGuard {
     FlagGuard { flag, previous }
 }
 
-pub fn enable_raw() {
-    RAW.store(true, Ordering::Relaxed);
-}
-
-pub fn enable_compress() {
-    COMPRESS.store(true, Ordering::Relaxed);
-}
-
 pub fn enable_mcp_server() {
     MCP_SERVER.store(true, Ordering::Relaxed);
 }
 
 pub fn scoped_quiet() -> FlagGuard {
     set_scoped(&QUIET)
-}
-
-pub fn raw_enabled() -> bool {
-    RAW.load(Ordering::Relaxed)
-}
-
-pub fn compress_enabled() -> bool {
-    COMPRESS.load(Ordering::Relaxed)
 }
 
 pub fn quiet_enabled() -> bool {

@@ -152,7 +152,7 @@ pub fn classify_path(path: &Path) -> IngestKind {
         return IngestKind::Binary;
     }
     // Binary documents with a dedicated extractor (PDF, …): ingestible as
-    // documents — the indexer routes their bytes through `extractors::extract`
+    // documents — the indexer routes their bytes through `extractors::text`
     // instead of reading them as UTF-8.
     if EXTRACTABLE_DOC_EXTS.contains(&ext.as_str()) {
         return IngestKind::Document;
@@ -250,7 +250,7 @@ mod tests {
     #[test]
     fn pdf_is_ingestible_via_extractor() {
         // PDF has a dedicated extractor, so it classifies as an ingestible
-        // document (read through `extractors::extract`, not as UTF-8).
+        // document (read through `extractors::text`, not as UTF-8).
         assert_eq!(classify_path(&p("report.pdf")), IngestKind::Document);
         assert_eq!(classify_path(&p("REPORT.PDF")), IngestKind::Document);
         assert!(is_ingestible(&p("report.pdf")));

@@ -1,4 +1,4 @@
-use std::io::{self, IsTerminal, Read};
+use std::io::{self, Read};
 use std::process::{Child, Command, Output, Stdio};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -414,7 +414,17 @@ fn stdout_is_regular_file() -> bool {
     }
 }
 
-pub fn exec(command: &str) -> i32 {
+/// How [`exec`] treats the command's output.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum ExecMode {
+    /// `sobre -c`: compressed, unless the command is passthrough or writes
+    /// to a file.
+    Compress,
+    /// `sobre raw`: the exact output.
+    Raw,
+}
+
+pub fn exec(command: &str, mode: ExecMode) -> i32 {
     let mut collapsed_nested = false;
     let collapsed;
     let command = if let Some(c) = collapse_nested_sobre_exec(command) {
@@ -431,45 +441,26 @@ pub fn exec(command: &str) -> i32 {
         return exec_shell_default(command, &shell, &shell_flag);
     }
 
-    let cfg = config::Config::load();
-    let force_compress = crate::core::runtime_flags::compress_enabled();
-    let raw_mode = crate::core::runtime_flags::raw_enabled();
-
-    if raw_mode {
+    if mode == ExecMode::Raw {
         return exec_inherit_tracked(command, &shell, &shell_flag);
     }
 
+    let cfg = config::Config::load();
     let policy = super::output_policy::classify(command, &cfg.passthrough_commands);
 
-    // Passthrough: ALWAYS bypass compression, even with force_compress.
+    // Passthrough: never compressed. A verbatim command still takes the
+    // buffered path, where `compress_if_beneficial` only size-caps it.
     if policy == super::output_policy::OutputPolicy::Passthrough {
         return exec_inherit_tracked(command, &shell, &shell_flag);
     }
 
-    // Verbatim: bypass compression unless force_compress is set,
-    // in which case use buffered path (compress_if_beneficial will
-    // respect the verbatim classification and only size-cap).
-    if policy == super::output_policy::OutputPolicy::Verbatim && !force_compress {
-        return exec_inherit_tracked(command, &shell, &shell_flag);
-    }
-
-    if !force_compress {
-        if io::stdout().is_terminal() {
-            return exec_inherit_tracked(command, &shell, &shell_flag);
-        }
-        let code = exec_inherit(command, &shell, &shell_flag);
-        crate::core::tool_lifecycle::record_shell_command(command, 0, 0);
-        return code;
-    }
-
-    // Compression is forced (`-c`, e.g. from an agent's command hook).
-    // It must STILL never alter bytes destined for a file: a redirect
+    // Compression must never alter bytes destined for a file: a redirect
     // (`cmd > out`, `cmd >> out`) means the output is captured as data, not read by
     // a human or agent. Writing the compressed digest there would silently
     // drop/abbreviate lines and corrupt the file (e.g. contradictory `git diff`
     // dumps). Pass redirected-to-file output through verbatim; pipes (agent
     // capture) and TTYs keep compressing. This is the single choke point, so it
-    // holds for every caller (hook, direct CLI, Pi/MCP bridges).
+    // holds for every caller (hook, direct CLI).
     if stdout_is_regular_file() {
         return exec_inherit_tracked(command, &shell, &shell_flag);
     }

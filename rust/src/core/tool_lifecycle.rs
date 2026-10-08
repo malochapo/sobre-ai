@@ -54,16 +54,6 @@ pub(crate) fn program_name(command: &str) -> &str {
     first.rsplit(['/', '\\']).next().unwrap_or(first)
 }
 
-/// Flush every buffered store to disk.
-///
-/// The long-lived MCP daemon flushes these once at shutdown
-/// (`cli/dispatch/server.rs`). Single-shot CLI commands exit immediately, so
-/// without this their buffered writes are lost the moment the process ends.
-/// The usage ledger needs no flush: every event is appended as it happens.
-pub fn flush_all() {
-    crate::core::auto_mode_resolver::flush_sources();
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -87,14 +77,5 @@ mod tests {
         assert_eq!(program_name("/usr/bin/git log -5"), "git");
         assert_eq!(program_name("cargo test"), "cargo");
         assert_eq!(program_name(""), "");
-    }
-
-    #[test]
-    fn flush_all_is_idempotent_and_safe_without_state() {
-        let _dir = crate::core::data_dir::isolated_data_dir();
-        // Empty buffers: flushing must be a harmless no-op, and calling it twice
-        // (e.g. a CLI arm followed by an atexit path) must never panic.
-        flush_all();
-        flush_all();
     }
 }

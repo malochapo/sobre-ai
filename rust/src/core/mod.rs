@@ -4,7 +4,6 @@
 pub mod aggressiveness;
 pub mod artifacts_exec;
 pub mod auto_findings;
-pub mod codebook;
 pub mod compressor;
 pub mod entropy;
 pub mod json_crush;
@@ -21,7 +20,6 @@ pub mod yaml_crush;
 
 /// Convenience re-export: all compression-related modules.
 pub mod compression {
-    pub use super::codebook;
     pub use super::compressor;
     pub use super::entropy;
     pub use super::json_crush;

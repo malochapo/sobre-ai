@@ -1,111 +1,13 @@
-//! Format extractors & format-aware chunkers (`extractors-v1`, EPIC 12.13).
+//! Text from binary documents for the search index.
 //!
-//! The front-door that turns a non-code document/data file into clean LLM text
-//! plus structure-aware chunks. It complements [`super::ingestion`] (which
-//! decides *whether* to index) by deciding *how* to read a given format:
-//!
-//! | Format | Extractor | Chunking |
-//! |--------|-----------|----------|
-//! | JSON   | [`json`] | per array element / object entry |
-//! | CSV/TSV| [`csv`]  | header-prefixed row groups |
-//! | EML    | [`eml`]  | header summary + body paragraphs |
-//! | HTML   | [`super::web::html_to_text`] | paragraphs of rendered Markdown |
-//! | PDF    | [`super::web::pdf`] | paragraphs of extracted text |
-//! | text   | (verbatim) | paragraphs |
-//!
-//! Every extractor degrades gracefully — arbitrary input never panics and
-//! non-empty input always yields at least one non-empty chunk.
-
-pub mod csv;
-pub mod eml;
-pub mod json;
+//! Text formats (code, Markdown, JSON, CSV, HTML…) are indexed as UTF-8 as
+//! they are. The one binary format the indexer reads is PDF, through
+//! [`super::web::pdf`].
 
 use std::path::Path;
 
-/// The result of extracting one document: a stable kind tag, clean text, and
-/// structure-aware chunks.
-#[derive(Debug, Clone)]
-pub struct Extracted {
-    pub kind: &'static str,
-    pub text: String,
-    pub chunks: Vec<String>,
-}
-
-/// Extract clean text + chunks from raw `bytes`, dispatching on `path`'s
-/// extension. Binary formats (PDF) read from bytes; text formats decode UTF-8
-/// lossily so malformed encodings still produce content.
-#[must_use]
-pub fn extract(path: &Path, bytes: &[u8]) -> Extracted {
-    let ext = path
-        .extension()
-        .and_then(|e| e.to_str())
-        .unwrap_or_default()
-        .to_ascii_lowercase();
-
-    match ext.as_str() {
-        "json" | "jsonl" | "ndjson" => {
-            let s = String::from_utf8_lossy(bytes);
-            Extracted {
-                kind: "json",
-                text: json::to_text(&s),
-                chunks: json::chunks(&s),
-            }
-        }
-        "csv" | "tsv" => {
-            let s = String::from_utf8_lossy(bytes);
-            let delim = if ext == "tsv" { '\t' } else { ',' };
-            Extracted {
-                kind: "csv",
-                text: csv::to_text(&s, delim),
-                chunks: csv::chunks(&s, delim),
-            }
-        }
-        "eml" => {
-            let s = String::from_utf8_lossy(bytes);
-            Extracted {
-                kind: "eml",
-                text: eml::to_text(&s),
-                chunks: eml::chunks(&s),
-            }
-        }
-        "html" | "htm" | "xhtml" => {
-            let s = String::from_utf8_lossy(bytes);
-            let doc = super::web::html_to_text::parse(&s);
-            Extracted {
-                kind: "html",
-                chunks: paragraph_chunks(&doc.markdown),
-                text: doc.markdown,
-            }
-        }
-        "pdf" => match super::web::pdf::extract_text(bytes) {
-            Ok(text) => Extracted {
-                kind: "pdf",
-                chunks: paragraph_chunks(&text),
-                text,
-            },
-            Err(e) => Extracted {
-                kind: "pdf",
-                text: String::new(),
-                chunks: vec![format!("[pdf extraction failed: {e}]")],
-            },
-        },
-        _ => {
-            let s = String::from_utf8_lossy(bytes).to_string();
-            Extracted {
-                kind: "text",
-                chunks: paragraph_chunks(&s),
-                text: s,
-            }
-        }
-    }
-}
-
-/// Whether `path` is a binary document format that must be read through
-/// [`extract`] from raw bytes because it is not valid UTF-8 text. Text and
-/// structured formats (json/csv/eml/html/markdown/…) index fine as raw UTF-8;
-/// only true binary documents — currently PDF — need byte-level extraction
-/// before they can enter the text index. Grows as binary extractors (DOCX,
-/// XLSX, …) are added. Single source of truth for the indexer's read path.
+/// Whether `path` is a binary document that must go through [`text`] before
+/// it can be indexed. Only PDF.
 #[must_use]
 pub fn is_binary_document(path: &Path) -> bool {
     matches!(
@@ -117,15 +19,11 @@ pub fn is_binary_document(path: &Path) -> bool {
     )
 }
 
-/// Split `text` into paragraph chunks on blank-line boundaries, trimming and
-/// dropping empties. The shared fallback chunker for prose-like formats.
+/// The text of a PDF, or an empty string when it has none (empty,
+/// malformed or image-only input). Never panics.
 #[must_use]
-pub fn paragraph_chunks(text: &str) -> Vec<String> {
-    text.split("\n\n")
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .map(String::from)
-        .collect()
+pub fn text(bytes: &[u8]) -> String {
+    super::web::pdf::extract_text(bytes).unwrap_or_default()
 }
 
 #[cfg(test)]
@@ -133,80 +31,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn dispatches_json_by_extension() {
-        let e = extract(Path::new("data.json"), br#"[{"a":1}]"#);
-        assert_eq!(e.kind, "json");
-        assert_eq!(e.chunks.len(), 1);
-    }
-
-    #[test]
-    fn dispatches_csv_and_tsv() {
-        let csv = extract(Path::new("t.csv"), b"a,b\n1,2");
-        assert_eq!(csv.kind, "csv");
-        assert!(csv.text.contains("a: 1 | b: 2"));
-        let tsv = extract(Path::new("t.tsv"), b"a\tb\n1\t2");
-        assert!(tsv.text.contains("a: 1 | b: 2"));
-    }
-
-    #[test]
-    fn dispatches_html_to_markdown() {
-        let e = extract(Path::new("p.html"), b"<h1>Title</h1><p>Body</p>");
-        assert_eq!(e.kind, "html");
-        assert!(e.text.contains("Title"));
-    }
-
-    #[test]
-    fn unknown_extension_is_text_paragraphs() {
-        let e = extract(Path::new("notes.txt"), b"one\n\ntwo");
-        assert_eq!(e.kind, "text");
-        assert_eq!(e.chunks, vec!["one", "two"]);
-    }
-
-    /// The `extractors-v1` invariants: empty input gives no chunks, non-empty
-    /// input (valid, plain or malformed) gives at least one non-empty chunk,
-    /// and the same input always gives the same output.
-    #[test]
-    fn text_formats_keep_the_chunk_invariants() {
-        let samples: [(&str, &[u8]); 6] = [
-            ("d.json", br#"[{"a":1},{"b":2}]"#),
-            ("t.csv", b"a,b\n1,2"),
-            ("t.tsv", b"a\tb\n1\t2"),
-            ("m.eml", b"Subject: hi\n\nbody"),
-            ("p.html", b"<p>Body</p>"),
-            ("n.txt", b"one\n\ntwo"),
-        ];
-        for (name, sample) in samples {
-            let path = Path::new(name);
-            assert!(
-                extract(path, b"").chunks.is_empty(),
-                "{name}: empty input must give no chunks"
-            );
-            for input in [sample, b"hello world", b"\xff{\"unclosed\n,\""] {
-                let first = extract(path, input);
-                assert!(
-                    first.chunks.iter().any(|c| !c.trim().is_empty()),
-                    "{name}: {input:?} must give a non-empty chunk"
-                );
-                let again = extract(path, input);
-                assert_eq!(
-                    (first.text, first.chunks),
-                    (again.text, again.chunks),
-                    "{name}: {input:?} must extract deterministically"
-                );
-            }
-        }
-    }
-
-    #[test]
-    fn unreadable_pdf_becomes_one_failure_chunk() {
+    fn unreadable_pdf_gives_no_text() {
         for input in [b"".as_slice(), b"not a pdf", b"%PDF-1.7 truncated"] {
-            let e = extract(Path::new("r.pdf"), input);
-            assert!(e.text.is_empty(), "{input:?}");
-            assert_eq!(e.chunks.len(), 1, "{input:?}");
-            assert!(
-                e.chunks[0].starts_with("[pdf extraction failed"),
-                "{input:?}"
-            );
+            assert!(text(input).is_empty(), "{input:?}");
         }
     }
 

@@ -141,7 +141,7 @@ fn prepare_file(
         // extraction yields nothing. Never populates the UTF-8 content cache.
         match std::fs::read(&abs) {
             Ok(bytes) => {
-                let text = crate::core::extractors::extract(&abs, &bytes).text;
+                let text = crate::core::extractors::text(&bytes);
                 if text.is_empty() {
                     return None;
                 }
@@ -372,7 +372,7 @@ impl BM25Index {
             let content = if crate::core::extractors::is_binary_document(&abs) {
                 match std::fs::read(&abs) {
                     Ok(bytes) => {
-                        let text = crate::core::extractors::extract(&abs, &bytes).text;
+                        let text = crate::core::extractors::text(&bytes);
                         if text.is_empty() {
                             continue;
                         }

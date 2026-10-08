@@ -53,7 +53,7 @@ The lots run in this order:
 | B | The MCP tools: bugs, incomplete features, drift; decisions 1–4 and 6 | done (#32, #33, #34, #35, #36, #37) |
 | C | The CLI and the proxy | done (#38, #39) |
 | R | Tool names `ctx_*` → `sobre_*` (decision 9) | done (#40) |
-| D | Dead code, stale files, stale comments, duplicates; decision 7 | open |
+| D | Dead code, stale files, stale comments, duplicates; decision 7 | in progress (#41) |
 | F | Release: publish a `dense` binary (decision 8) | open |
 | E | Documentation and install path, written last so it describes the final behaviour | open |
 
@@ -697,6 +697,8 @@ written with; the lots after it use the new names.
 
 ## Lot D — dead code and cleanup
 
+Fixed so far: #41 (dead code, write-only stores, decision 7).
+
 ### Code that compiles but never does anything
 
 - [ ] **D1 About 244 `pub` items are unused from the binary's point of
@@ -705,7 +707,7 @@ written with; the lots after it use the new names.
     sees `pub` items.
   - Sweep them with the oracle; the items below are the ones confirmed by
     hand.
-- [ ] **D2 Remove the non-PDF extractors (decision 7).**
+- [x] **D2 Remove the non-PDF extractors (decision 7).**
   - Production calls `extractors::extract` only behind
     `is_binary_document()`, which matches `.pdf` only
     (`core/extractors/mod.rs:110-117`). The callers are
@@ -717,14 +719,14 @@ written with; the lots after it use the new names.
     `Extracted.kind` and `.chunks`.
   - Keep: the PDF path and `csv::parse`, which `tabular_crush` uses.
   - Update `docs/contracts/extractors-v1.md`.
-- [ ] **D3 `shell::exec` (`shell/exec.rs:435-462`) always compresses.**
+- [x] **D3 `shell::exec` (`shell/exec.rs:435-462`) always compresses.**
   - `force_compress` is always true, so the `Verbatim && !force_compress`
     branch and the `if !force_compress {…}` block are dead.
   - Replace the `RAW`/`COMPRESS` globals in `core/runtime_flags.rs` with a
     mode argument.
   - `server/call_tool.rs:99` `runtime_flags::raw_enabled()` is always
     false inside the MCP server.
-- [ ] **D4 Unreachable branches.**
+- [x] **D4 Unreachable branches.**
   - `tools/impl_dedup.rs:79-236` `analyze`: `handle_action` is only called
     with `"apply"`.
   - `context_ledger.rs:14-32`: the per-agent ledger path, since
@@ -734,19 +736,19 @@ written with; the lots after it use the new names.
   - `bm25_index/mod.rs:667` `load_or_build_fast` (zero callers), hence
     `bm25_index_looks_stale_fast` (`:749`), the fast branch (`:775-810`)
     and `SENTINEL_SAMPLE_SIZE` (`:822`).
-- [ ] **D5 `pub fn`s with zero references.**
+- [x] **D5 `pub fn`s with zero references.**
   - `memory_lifecycle.rs:379-419` `apply_replay_boost`, and the
     `REPLAY_*` consts (`:23-27`).
   - `paths.rs:82` `config_dir_member`.
   - `sanitize.rs:25` `neutralize_shell_content`.
   - `tools/server_paths.rs:98` `resolve_path_or_passthrough`.
-- [ ] **D6 Dead code hidden by `#[allow(dead_code)]`.**
+- [x] **D6 Dead code hidden by `#[allow(dead_code)]`.**
   - `property_graph/path_id.rs:29,40` (`get`, `resolve`).
   - `graph_index/file_id.rs:12-100`.
 
 ### Data written and never read
 
-- [ ] **D7 Write-only stores.**
+- [x] **D7 Write-only stores.**
   - `graph_index/mod.rs:231` `ProjectIndex.interner` is rebuilt on every
     scan and never read. Delete it with `file_id.rs`.
   - ~~In `client_capabilities.rs:150-189`, `GLOBAL` is never read,
@@ -762,6 +764,9 @@ written with; the lots after it use the new names.
     `RelevanceTracker` nothing in the proxy queries.
   - `tools/autonomy.rs:16` `large_output_hints_shown` is never read or
     written.
+  - Found while fixing: with `analyze` gone, `core/codebook.rs` had no
+    caller; with `SOURCE_COUNTS` gone, `tool_lifecycle::flush_all` flushed
+    nothing. Both removed.
 
 ### Settings that always have the same value
 

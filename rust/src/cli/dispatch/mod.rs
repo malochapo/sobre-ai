@@ -190,9 +190,7 @@ fn handle_exec(args: &[String]) -> ! {
     if crate::shell::reentry::should_pass_through() {
         passthrough(&command);
     }
-    core::runtime_flags::enable_compress();
-    let code = shell::exec(&command);
-    core::tool_lifecycle::flush_all();
+    let code = shell::exec(&command, shell::ExecMode::Compress);
     std::process::exit(code);
 }
 
@@ -207,8 +205,7 @@ fn handle_raw(args: &[String], rest: &[String]) -> ! {
     } else {
         shell::join_command(&args[2..])
     };
-    core::runtime_flags::enable_raw();
-    let code = shell::exec(&command);
+    let code = shell::exec(&command, shell::ExecMode::Raw);
     std::process::exit(code);
 }
 

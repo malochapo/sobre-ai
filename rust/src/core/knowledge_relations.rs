@@ -54,13 +54,6 @@ impl KnowledgeEdgeKind {
     }
 }
 
-fn default_strength() -> f64 {
-    0.5
-}
-fn default_decay_rate() -> f64 {
-    0.02
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct KnowledgeEdge {
     pub from: KnowledgeNodeRef,
@@ -70,8 +63,6 @@ pub struct KnowledgeEdge {
     pub last_seen: Option<DateTime<Utc>>,
     pub count: u32,
     pub source_session: String,
-    pub strength: f64,
-    pub decay_rate: f64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -147,7 +138,6 @@ impl KnowledgeRelationGraph {
             e.count = e.count.saturating_add(1).max(1);
             e.last_seen = Some(now);
             e.source_session = session_id.to_string();
-            e.strength = (e.strength + 0.1 * (1.0 - e.strength)).min(1.0);
             self.updated_at = now;
             return false;
         }
@@ -160,8 +150,6 @@ impl KnowledgeRelationGraph {
             last_seen: Some(now),
             count: 1,
             source_session: session_id.to_string(),
-            strength: default_strength(),
-            decay_rate: default_decay_rate(),
         });
         self.updated_at = now;
         true
@@ -206,51 +194,6 @@ impl KnowledgeRelationGraph {
 
         self.edges.truncate(max_edges);
         true
-    }
-
-    /// Hebbian strengthening: saturating formula so strength approaches but never exceeds 1.0
-    pub fn strengthen_edge(
-        &mut self,
-        from: &KnowledgeNodeRef,
-        to: &KnowledgeNodeRef,
-        amount: f64,
-    ) -> bool {
-        if let Some(e) = self
-            .edges
-            .iter_mut()
-            .find(|e| &e.from == from && &e.to == to)
-        {
-            e.strength = (e.strength + amount * (1.0 - e.strength)).min(1.0);
-            e.last_seen = Some(Utc::now());
-            e.count = e.count.saturating_add(1);
-            return true;
-        }
-        if let Some(e) = self
-            .edges
-            .iter_mut()
-            .find(|e| &e.from == to && &e.to == from)
-        {
-            e.strength = (e.strength + amount * (1.0 - e.strength)).min(1.0);
-            e.last_seen = Some(Utc::now());
-            e.count = e.count.saturating_add(1);
-            return true;
-        }
-        false
-    }
-
-    /// Time-based exponential decay on all edge strengths
-    pub fn decay_all_edges(&mut self, days_elapsed: f64) {
-        for e in &mut self.edges {
-            e.strength *= (1.0 - e.decay_rate).powf(days_elapsed);
-            e.strength = e.strength.max(0.0);
-        }
-    }
-
-    /// Remove edges whose strength has fallen below `threshold`
-    pub fn prune_weak_edges(&mut self, threshold: f64) -> usize {
-        let before = self.edges.len();
-        self.edges.retain(|e| e.strength >= threshold);
-        before - self.edges.len()
     }
 }
 
@@ -308,78 +251,4 @@ pub fn format_mermaid(edges: &[KnowledgeEdge]) -> String {
         ));
     }
     lines.join("\n")
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn strengthen_edge_saturating() {
-        let mut graph = KnowledgeRelationGraph::new("test");
-        let from = KnowledgeNodeRef::new("a", "1");
-        let to = KnowledgeNodeRef::new("b", "2");
-        graph.upsert_edge(from.clone(), to.clone(), KnowledgeEdgeKind::RelatedTo, "s1");
-
-        let initial = graph.edges[0].strength;
-        assert!((initial - 0.5).abs() < 0.01);
-
-        graph.strengthen_edge(&from, &to, 0.3);
-        assert!(graph.edges[0].strength > initial);
-        assert!(graph.edges[0].strength <= 1.0);
-
-        for _ in 0..100 {
-            graph.strengthen_edge(&from, &to, 0.5);
-        }
-        assert!(graph.edges[0].strength <= 1.0);
-        assert!(graph.edges[0].strength > 0.99);
-    }
-
-    #[test]
-    fn decay_reduces_strength() {
-        let mut graph = KnowledgeRelationGraph::new("test");
-        let from = KnowledgeNodeRef::new("a", "1");
-        let to = KnowledgeNodeRef::new("b", "2");
-        graph.upsert_edge(from, to, KnowledgeEdgeKind::RelatedTo, "s1");
-
-        let initial = graph.edges[0].strength;
-        graph.decay_all_edges(10.0);
-        assert!(graph.edges[0].strength < initial);
-        assert!(graph.edges[0].strength > 0.0);
-    }
-
-    #[test]
-    fn prune_weak_edges_removes_below_threshold() {
-        let mut graph = KnowledgeRelationGraph::new("test");
-        graph.upsert_edge(
-            KnowledgeNodeRef::new("a", "1"),
-            KnowledgeNodeRef::new("b", "2"),
-            KnowledgeEdgeKind::RelatedTo,
-            "s1",
-        );
-        graph.upsert_edge(
-            KnowledgeNodeRef::new("c", "3"),
-            KnowledgeNodeRef::new("d", "4"),
-            KnowledgeEdgeKind::RelatedTo,
-            "s2",
-        );
-
-        graph.edges[1].strength = 0.01;
-
-        let removed = graph.prune_weak_edges(0.05);
-        assert_eq!(removed, 1);
-        assert_eq!(graph.edges.len(), 1);
-    }
-
-    #[test]
-    fn strengthen_edge_bidirectional() {
-        let mut graph = KnowledgeRelationGraph::new("test");
-        let from = KnowledgeNodeRef::new("a", "1");
-        let to = KnowledgeNodeRef::new("b", "2");
-        graph.upsert_edge(from.clone(), to.clone(), KnowledgeEdgeKind::RelatedTo, "s1");
-
-        let found = graph.strengthen_edge(&to, &from, 0.2);
-        assert!(found);
-        assert!(graph.edges[0].strength > 0.5);
-    }
 }

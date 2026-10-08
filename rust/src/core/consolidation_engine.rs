@@ -69,8 +69,6 @@ pub struct ConsolidateOptions {
     pub run_lifecycle: bool,
     /// Run the lossless capacity reclaim for history / patterns.
     pub reclaim_stores: bool,
-    /// Emit a `KnowledgeUpdate` event after a successful (non-dry) run.
-    pub emit_event: bool,
     /// Compute the report without mutating knowledge, archives or the session.
     pub dry_run: bool,
 }
@@ -89,7 +87,6 @@ impl ConsolidateOptions {
             incremental: false,
             run_lifecycle: true,
             reclaim_stores: true,
-            emit_event: false,
             dry_run: false,
         }
     }
@@ -107,7 +104,6 @@ impl ConsolidateOptions {
             incremental: false,
             run_lifecycle: true,
             reclaim_stores: false,
-            emit_event: true,
             dry_run: false,
         }
     }
@@ -124,7 +120,6 @@ impl ConsolidateOptions {
             incremental: true,
             run_lifecycle: false,
             reclaim_stores: false,
-            emit_event: false,
             dry_run: false,
         }
     }

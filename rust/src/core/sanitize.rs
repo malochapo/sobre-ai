@@ -22,22 +22,6 @@ pub fn neutralize_metadata(input: &str) -> String {
     out
 }
 
-pub fn neutralize_shell_content(input: &str) -> String {
-    let mut out = String::with_capacity(input.len());
-    let mut i = 0;
-    let chars: Vec<char> = input.chars().collect();
-    while i < chars.len() {
-        let ch = chars[i];
-        if (ch as u32) < 0x20 && ch != '\n' && ch != '\t' && ch != '\r' {
-            i += 1;
-            continue;
-        }
-        out.push(ch);
-        i += 1;
-    }
-    out
-}
-
 fn to_hex(bytes: &[u8]) -> String {
     const HEX: &[u8; 16] = b"0123456789abcdef";
     let mut out = String::with_capacity(bytes.len() * 2);
