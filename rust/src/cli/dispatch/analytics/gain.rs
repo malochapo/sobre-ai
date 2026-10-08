@@ -131,11 +131,8 @@ fn print_summary(s: &Summary, quote: &ModelQuote, period: &str) {
         let counterfactual = s.real_cost_usd + saved_usd;
         println!("{bold}Cost{rst} {dim}(measured by the proxy){rst}");
         println!("  LLM calls     {}", s.llm_calls);
-        let table_priced = s.llm_calls - s.provider_priced_calls - s.local_calls;
-        let mut sources = vec![
-            format!("{} priced by the provider", s.provider_priced_calls),
-            format!("{table_priced} from the price table"),
-        ];
+        let table_priced = s.llm_calls - s.local_calls;
+        let mut sources = vec![format!("{table_priced} from the price table")];
         if s.local_calls > 0 {
             sources.push(format!("{} local, free", s.local_calls));
         }
@@ -239,7 +236,6 @@ fn to_json(s: &Summary, quote: &ModelQuote, period: &str) -> String {
             "cache_read_tokens": s.cache_read_tokens,
             "cache_write_tokens": s.cache_write_tokens,
             "real_cost_usd": measured.then_some(s.real_cost_usd),
-            "provider_priced_calls": s.provider_priced_calls,
             "local_calls": s.local_calls,
         },
         "pricing": {

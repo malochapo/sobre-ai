@@ -120,7 +120,7 @@ SETUP AND MAINTENANCE:
     embeddings status|provision    Local ONNX runtime and model for semantic search
     proxy start [--port=N] [--detach] | stop | restart | status
                                    Local API proxy
-    proxy enable | disable         Turn the proxy on or off (autostart and env wiring)
+    proxy enable | disable         Turn the proxy on or off (autostart and agent wiring)
     proxy cleanup                  Remove proxy URLs left in agent configs while it is off
     proxy token                    Print the proxy's bearer token
     hook <name>                    Internal: run by the hooks init installs

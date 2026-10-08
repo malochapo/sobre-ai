@@ -26,7 +26,6 @@ pub mod hook_handlers;
 pub mod hooks;
 pub mod instructions;
 pub mod lsp;
-pub mod marked_block;
 pub mod mcp_stdio;
 pub mod rewrite_registry;
 pub mod server;

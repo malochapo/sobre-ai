@@ -7,13 +7,6 @@ pub mod auto_findings;
 pub mod codebook;
 pub mod compressor;
 pub mod entropy;
-// Without `embeddings` the engine still compiles these modules — their
-// entry points are internally cfg-gated and fall back — but their helpers
-// go uncalled. That is honest unused code, not dead code, so it is silenced
-// only in that configuration. TODO: proper cfg hygiene across the 21 call
-// sites listed in docs/removals.md would let this attribute go away.
-#[cfg_attr(not(feature = "embeddings"), allow(dead_code))]
-pub mod extractive;
 pub mod json_crush;
 pub mod markdown_compact;
 pub mod pop_pruning;

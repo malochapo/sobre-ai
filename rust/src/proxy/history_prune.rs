@@ -204,14 +204,11 @@ fn summarize_or_stub(text: &str, kind: ToolResultKind) -> String {
     if should_protect(kind, text) {
         let lines = text.lines().count();
         return match super::ccr::persist(text) {
-            Some(handle) => {
-                super::sticky_tools::mark_ccr_active(0);
-                format!(
-                    "[lean-ctx: an earlier file read ({lines} lines) was pruned from older context to save tokens. This is the version shown that turn — the file may have changed since. Full original at {handle}. Re-read the file for its current contents.]"
-                )
-            }
+            Some(handle) => format!(
+                "[sobre: an earlier file read ({lines} lines) was pruned from older context to save tokens. This is the version shown that turn — the file may have changed since. Full original at {handle}. Re-read the file for its current contents.]"
+            ),
             None => format!(
-                "[lean-ctx: an earlier file read ({lines} lines) was pruned from older context to save tokens. This was an older version — the file may have changed since. Re-read the file for its current contents.]"
+                "[sobre: an earlier file read ({lines} lines) was pruned from older context to save tokens. This was an older version — the file may have changed since. Re-read the file for its current contents.]"
             ),
         };
     }
@@ -230,14 +227,11 @@ fn summarize_text(text: &str) -> String {
     // CCR (#482): a head/tail summary drops the middle; offer a recovery handle
     // to the verbatim original (content-addressed → cache-safe, MCP-independent).
     let recover = super::ccr::persist(text)
-        .map(|h| {
-            super::sticky_tools::mark_ccr_active(0);
-            format!(" · full at {h}")
-        })
+        .map(|h| format!(" · full at {h}"))
         .unwrap_or_default();
 
     format!(
-        "{}\n[...{} lines pruned by lean-ctx{}...]\n{}",
+        "{}\n[...{} lines pruned by sobre{}...]\n{}",
         first_3.join("\n"),
         lines.len() - 5,
         recover,
@@ -399,7 +393,7 @@ mod tests {
             block["content"][0]["text"]
                 .as_str()
                 .unwrap()
-                .contains("pruned by lean-ctx")
+                .contains("pruned by sobre")
         );
     }
 
@@ -508,7 +502,7 @@ mod tests {
         prune_history(&mut messages, 1, &names);
         let summary = messages[0]["content"].as_str().unwrap();
         assert!(
-            summary.contains("lines pruned by lean-ctx"),
+            summary.contains("lines pruned by sobre"),
             "logs keep head/tail summary"
         );
     }

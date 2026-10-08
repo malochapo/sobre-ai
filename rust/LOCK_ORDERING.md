@@ -28,7 +28,6 @@ accessor function.
 | L27 | `CACHE` (git) | `core/git_cache.rs` | `LazyLock<Mutex<GitCache>>` | Cached git metadata (branch, status) |
 | L33 | `CACHE` (search) | `core/search_index.rs` | `OnceLock<Mutex<HashMap<String, CacheEntry>>>` | Search index query cache |
 | L34 | `GLOBAL` (capabilities) | `core/client_capabilities.rs` | `OnceLock<Mutex<ClientMcpCapabilities>>` | Client MCP capability flags |
-| L37 | `LAST_REAL` | `proxy/introspect.rs` | `Mutex<[Option<String>; 3]>` | Last 3 real (non-proxy) request paths |
 | L38 | `GLOBAL_TRACKER` | `core/bounce_tracker.rs` | `OnceLock<Mutex<BounceTracker>>` | Tracks repeated tool-call bounces |
 | L41 | `KNOWLEDGE_LOCKS` | `core/knowledge/persist.rs` (fn-local) | `OnceLock<Mutex<HashMap<String, Arc<Mutex<()>>>>>` | Per-project knowledge.json read-modify-write serialization (same outer/inner pattern as L1/L2) |
 | L42 | `LAST_PARSE_ERROR` | `core/config/loader.rs` | `Mutex<Option<String>>` | Most recent global `config.toml` parse error (surfaced by doctor/diagnostics); never held together with L4 |
@@ -36,12 +35,10 @@ accessor function.
 | L48 | `NO_GIT_ROOTS` | `core/git_signals.rs` | `Mutex<Option<HashSet<String>>>` | Roots probed and found non-git — negative cache so each root is probed at most once per process |
 | L50 | `LINE_EMBED_CACHE` | `core/entropy.rs` (fn-local) | `Mutex<Option<HashMap<u64, Vec<f32>>>>` | Per-line embedding cache (line-hash → vector) for the semantic redundancy filter; capacity-bounded, never blocks on model loads |
 | L53 | `REGISTRY` (introspect) | `core/introspect.rs` | `LazyLock<Mutex<Registry>>` | Activity registry — per-subsystem tick counters + last-run; flushed debounced to a project-scoped JSON so `introspect cognition` / `doctor` can report wired/active across processes |
-| L56 | `MEMO` | `proxy/prose_ranker.rs` | `Mutex<Option<HashMap<u64, String>>>` | Wire-prose squeeze memo: the first squeeze of a `(content, budget)` is frozen for the process lifetime so a later recompute returns identical bytes (provider prompt-cache stability); capacity-bounded, independent leaf lock |
 | L57 | `SEEN` | `core/conversation.rs` (fn-local) | `OnceLock<RwLock<Vec<(String, Instant)>>>` | Recent sightings of distinct conversation ids feeding the multi-conversation detector; capacity-pruned, independent leaf lock |
 | L58 | `STORE` (conversation) | `core/conversation.rs` (fn-local) | `OnceLock<RwLock<Option<Cached>>>` | Cached current conversation id with its refresh instant; independent leaf lock, never held together with L57 |
 | L62 | `TARGETS` | `core/eviction_orchestrator.rs` | `LazyLock<Mutex<EvictionRegistry>>` | Registry of live `EvictionOrchestrator` weak refs: `register()`/`on_memory_pressure()` lock it only to clone/upgrade the target list, then drop it before calling `on_pressure()` on each target; never held while any other lock is acquired |
 | L63 | `BLOCK` | `core/events.rs` (fn-local in `next_event_id`) | `OnceLock<Mutex<LocalBlock>>` | Per-process cache of the current pre-reserved event-id block: most calls bump `next` under the lock; on exhaustion the lock is held across `reserve_event_id_block_at`, which takes its own OS file lock (`events.seq.lock`, not a Rust static) — never nested with another static Rust lock |
-| L65 | `SESSIONS` | `proxy/sticky_tools.rs` (fn-local) | `OnceLock<Mutex<HashSet<u64>>>` | Active proxy conversation tracking; capacity-bounded with oldest-first eviction; independent leaf lock |
 | L66 | `JOBS` | `server/background_shell.rs` | `LazyLock<Mutex<HashMap<String, Job>>>` | Content-addressed background shell jobs; held only to insert, inspect, or remove a job, released before executing or joining its worker thread; independent leaf lock |
 | L67 | `BUILD_GATE` | `core/graph_provider.rs` | `LazyLock<Mutex<()>>` | Serializes synchronous graph-index builds; acquired with `try_lock()` and held only while the spawned builder is awaited |
 | L87 | `CACHE` (ANN) | `core/ann_cache.rs` (fn-local) | `OnceLock<Mutex<Option<Cached>>>` | Cached approximate-nearest-neighbour index keyed by a vector fingerprint; independent leaf lock |
@@ -52,10 +49,6 @@ accessor function.
 | L93 | `MAP` | `core/index_progress.rs` (fn-local) | `OnceLock<Mutex<ProgressMap>>` | Index build progress snapshots per `(root, component)`; independent leaf lock |
 | L94 | `G` | `core/read_stub_index.rs` (fn-local) | `OnceLock<RwLock<ReadStubIndex>>` | Persistent, conversation-scoped index of fully delivered file reads (bookkeeping only, never content) used to serve the `[unchanged]` stub across restarts; independent leaf lock |
 | L95 | `TRACKER` (relevance) | `core/relevance_tracker.rs` | `LazyLock<Mutex<RelevanceTracker>>` | Bounded relevance-tracking entries (keywords, age, token budget); independent leaf lock |
-| L96 | `STORE` (cache attribution) | `proxy/cache_attribution.rs` (fn-local) | `OnceLock<Mutex<HashMap<u64, PrefixState>>>` | Per-prefix provider cache state for cold-start / warm-reuse / TTL-lapse attribution; independent leaf lock |
-| L97 | `STORE` (proxy cost) | `proxy/cost.rs` (fn-local) | `OnceLock<Mutex<HashMap<String, ModelAccum>>>` | Per-model cost accumulators, capped at 256 model buckets; independent leaf lock |
-| L98 | `STORE` (prefix replay) | `proxy/prefix_replay.rs` (fn-local) | `OnceLock<Mutex<HashMap<u64, ConversationPrefix>>>` | Forwarded prefix bytes per conversation, replayed so an unchanged prefix is re-sent byte-identical; independent leaf lock |
-| L99 | `STORE` (usage meter) | `proxy/usage_meter.rs` (fn-local) | `OnceLock<Mutex<HashMap<String, ModelUsage>>>` | Per-model proxy usage counters, capped at 256 model buckets; independent leaf lock |
 
 ### Test / Environment Locks (serialise env-var and cwd mutations)
 

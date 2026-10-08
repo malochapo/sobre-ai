@@ -58,7 +58,7 @@ pub fn squeeze_prose(text: &str, max_chars: usize) -> String {
 
 /// Lines that must survive dedup: citations, links, headings and quote/list
 /// markers carry attribution or structure even when textually similar.
-pub(crate) fn is_protected_line(line: &str) -> bool {
+fn is_protected_line(line: &str) -> bool {
     let t = line.trim_start();
     t.starts_with("Source:")
         || t.starts_with("Site:")
@@ -69,42 +69,6 @@ pub(crate) fn is_protected_line(line: &str) -> bool {
         || t.starts_with('#')
         || t.starts_with("---")
 }
-
-// ── Sentence splitting ─────────────────────────────────────────────────────
-
-/// Split text into trimmed, non-empty sentences across line boundaries.
-pub fn split_sentences(text: &str) -> Vec<String> {
-    let mut sentences = Vec::new();
-    for line in text.lines() {
-        let line = line.trim();
-        if line.is_empty() {
-            continue;
-        }
-        let mut current = String::new();
-        let mut chars = line.chars().peekable();
-        while let Some(c) = chars.next() {
-            current.push(c);
-            if matches!(c, '.' | '!' | '?') {
-                let boundary = chars.peek().is_none_or(|n| n.is_whitespace());
-                if boundary {
-                    push_trimmed(&mut sentences, &current);
-                    current.clear();
-                }
-            }
-        }
-        push_trimmed(&mut sentences, &current);
-    }
-    sentences
-}
-
-fn push_trimmed(acc: &mut Vec<String>, s: &str) {
-    let trimmed = s.trim();
-    if !trimmed.is_empty() {
-        acc.push(trimmed.to_string());
-    }
-}
-
-// ── Scoring ────────────────────────────────────────────────────────────────
 
 // ── Word helpers ───────────────────────────────────────────────────────────
 
@@ -129,15 +93,6 @@ fn jaccard(a: &str, b: &str) -> f64 {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn splits_sentences_across_lines() {
-        let text = "First sentence here. Second one follows!\nThird line stands alone?";
-        let s = split_sentences(text);
-        assert_eq!(s.len(), 3);
-        assert_eq!(s[0], "First sentence here.");
-        assert_eq!(s[2], "Third line stands alone?");
-    }
 
     #[test]
     fn squeeze_prose_dedupes_and_collapses_blanks() {

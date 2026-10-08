@@ -1,11 +1,13 @@
-//! Install / uninstall LLM-client proxy environment wiring.
+//! Point installed agents at the proxy, each through its own configuration:
+//! Claude Code's `settings.json`, Codex's `config.toml` and OpenCode's
+//! `opencode.json`. Nothing is written into shell rc files.
 //!
-//! Submodules hold per-client setup (Claude, Codex, shell). This
-//! facade keeps the public API stable as `crate::proxy_setup::*`.
+//! Submodules hold per-client setup. This facade keeps the public API stable
+//! as `crate::proxy_setup::*`.
 
 mod claude;
 mod codex;
-mod shell;
+mod opencode;
 mod util;
 
 #[cfg(test)]
@@ -14,12 +16,9 @@ mod tests;
 
 use std::path::Path;
 
-use crate::marked_block;
-
 use claude::{install_claude_env, install_claude_env_inner, uninstall_claude_env};
 use codex::{codex_config_has_local_proxy_entry, strip_codex_proxy_entries, uninstall_codex_env};
-use shell::install_shell_exports;
-use util::{PROXY_ENV_END, PROXY_ENV_START};
+use opencode::{has_proxy_base_url, install_opencode_env, uninstall_opencode_env};
 
 pub use claude::anthropic_api_key_available;
 pub(crate) use codex::install_codex_env;
@@ -33,21 +32,21 @@ pub fn install_proxy_env(home: &Path, port: u16, quiet: bool) {
         }
         return;
     }
-    install_shell_exports(home, port, quiet);
     install_claude_env(home, port, quiet);
     install_codex_env(home, port, quiet);
+    install_opencode_env(home, port, quiet);
 }
 
 /// Install proxy env without config guard (used by `lean-ctx proxy enable` which has already set the flag).
 /// `force_endpoint`: if true, overrides even non-local custom endpoints.
 pub fn install_proxy_env_unchecked(home: &Path, port: u16, quiet: bool, force_endpoint: bool) {
-    install_shell_exports(home, port, quiet);
     if force_endpoint {
         install_claude_env_inner(home, port, quiet, true);
     } else {
         install_claude_env(home, port, quiet);
     }
     install_codex_env(home, port, quiet);
+    install_opencode_env(home, port, quiet);
 }
 
 pub fn preview_proxy_cleanup(home: &Path) {
@@ -71,9 +70,13 @@ pub fn preview_proxy_cleanup(home: &Path) {
     {
         println!("  Would remove Codex proxy URL from config.toml");
     }
+
+    if has_proxy_base_url(home, default_port()) {
+        println!("  Would remove the proxy base URLs from OpenCode's opencode.json");
+    }
 }
 
-/// Removes stale proxy URLs from Claude Code / Codex settings when the proxy is not enabled.
+/// Removes stale proxy URLs from Claude Code / Codex / OpenCode settings when the proxy is not enabled.
 /// Returns the number of stale URLs cleaned up.
 pub fn cleanup_stale_proxy_env(home: &Path) -> usize {
     let cfg = crate::core::config::Config::load();
@@ -124,6 +127,10 @@ pub fn cleanup_stale_proxy_env(home: &Path) -> usize {
         cleaned += 1;
     }
 
+    if uninstall_opencode_env(home, default_port(), false) {
+        cleaned += 1;
+    }
+
     cleaned
 }
 
@@ -152,39 +159,7 @@ pub fn has_stale_proxy_url(home: &Path) -> bool {
 }
 
 pub fn uninstall_proxy_env(home: &Path, quiet: bool) {
-    for rc in &[home.join(".zshrc"), home.join(".bashrc")] {
-        let label = format!(
-            "proxy env from ~/{}",
-            rc.file_name().unwrap_or_default().to_string_lossy()
-        );
-        marked_block::remove_from_file(rc, PROXY_ENV_START, PROXY_ENV_END, quiet, &label);
-    }
-
-    let fish_config = home.join(".config/fish/config.fish");
-    if fish_config.exists() {
-        marked_block::remove_from_file(
-            &fish_config,
-            PROXY_ENV_START,
-            PROXY_ENV_END,
-            quiet,
-            "proxy env from ~/.config/fish/config.fish",
-        );
-    }
-
-    let ps_profile =
-        dirs::home_dir().map(|h| crate::shell::platform::resolve_powershell_profile_path(&h));
-    if let Some(ref ps) = ps_profile
-        && ps.exists()
-    {
-        marked_block::remove_from_file(
-            ps,
-            PROXY_ENV_START,
-            PROXY_ENV_END,
-            quiet,
-            "proxy env from PowerShell profile",
-        );
-    }
-
     uninstall_claude_env(home, quiet);
     uninstall_codex_env(home, quiet);
+    uninstall_opencode_env(home, default_port(), quiet);
 }

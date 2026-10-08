@@ -198,11 +198,6 @@ pub(crate) fn proxy_upstream_outcome() -> Outcome {
             "proxy.upstreams.openai",
             cfg.proxy.resolve_upstream(ProxyProvider::OpenAi),
         ),
-        (
-            "Gemini",
-            "proxy.upstreams.gemini",
-            cfg.proxy.resolve_upstream(ProxyProvider::Gemini),
-        ),
     ];
 
     let mut custom = Vec::new();
@@ -230,9 +225,6 @@ pub(crate) fn proxy_upstream_outcome() -> Outcome {
         ) || matches!(
             *label,
             "OpenAI" if resolved == "https://api.openai.com"
-        ) || matches!(
-            *label,
-            "Gemini" if resolved == "https://generativelanguage.googleapis.com"
         );
         if !is_default {
             custom.push(format!("{label}={resolved}"));
@@ -276,13 +268,12 @@ pub(crate) fn proxy_upstream_drift_outcome() -> Option<Outcome> {
         return None;
     }
     let port = crate::proxy_setup::default_port();
-    let (live_anthropic, live_openai, live_gemini) = proxy_live_upstreams(port)?;
+    let (live_anthropic, live_openai) = proxy_live_upstreams(port)?;
     let configured = cfg.proxy.resolve_all();
 
     let drifted: Vec<String> = [
         ("Anthropic", &configured.anthropic, &live_anthropic),
         ("OpenAI", &configured.openai, &live_openai),
-        ("Gemini", &configured.gemini, &live_gemini),
     ]
     .into_iter()
     .filter(|(_, configured, live)| upstream_drifted(configured, live))

@@ -195,8 +195,8 @@ fn ask_about_proxy() {
 
     println!();
     println!("  The local proxy routes LLM requests through sobre, which buys");
-    println!("  extra tool-result compression and an exact record of what you");
-    println!("  actually spent. Everything else — MCP tools, the agent hooks,");
+    println!("  extra tool-result compression and a record of the tokens each");
+    println!("  call was billed. Everything else — MCP tools, the agent hooks,");
     println!("  gain tracking — works without it.");
     println!();
     print!("  Enable the local proxy? [y/N] ");

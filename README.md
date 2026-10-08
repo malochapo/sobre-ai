@@ -47,7 +47,7 @@ the measured state of each.
    budget, so growth has to displace something.
 
 Invariants 1 to 5 hold today: 16 tools, one fixed surface; one config file
-with 12 keys and no per-project files, profiles or behaviour-changing
+with 11 keys and no per-project files, profiles or behaviour-changing
 environment variables; no network request you did not ask for; and about
 150,000 lines of production Rust under a 200,000 ceiling.
 
@@ -117,11 +117,27 @@ lean-ctx gain --daily          # per day
 ```
 
 Tokens saved are measured. What they are worth in money is only measured when
-the optional proxy (`lean-ctx proxy start`) sits between the agent and its
-provider: it records each call's real usage and, when the provider reports it,
-the real charge. Without the proxy, `gain` prices saved tokens at a model's
-input rate and says it is an estimate. The proxy works only with API keys; a
-subscription login (Claude Pro or Max) cannot go through it.
+the optional proxy sits between the agent and its provider: it records the
+tokens each call was billed, and `gain` prices them. Without the proxy, `gain`
+prices saved tokens at a model's input rate and says it is an estimate.
+
+## Proxy
+
+`lean-ctx proxy enable` starts a local proxy on `127.0.0.1` and points the
+agents that can use it at it, each through its own configuration: Claude Code
+(`settings.json`), Codex (`config.toml`) and OpenCode (`opencode.json`). It
+forwards Anthropic Messages and OpenAI Chat Completions and Responses traffic,
+compresses the tool results inside each request, and records the usage the
+provider reports. Every tool result it rewrites ends with a `[sobre: …]` line
+that says so and where the full original was kept; the rest of the request body
+goes upstream as the agent sent it.
+
+The proxy forwards the key the agent sends and never adds one, so it works
+only with API keys: a subscription login (Claude Pro or Max, ChatGPT) keeps
+talking to its provider directly. Gemini CLI does not go through it. The
+upstreams are `proxy.upstreams.anthropic` and `proxy.upstreams.openai`; a local
+model server that speaks the Anthropic API, such as Ollama, is reached by
+pointing `anthropic` at it.
 
 ## License
 

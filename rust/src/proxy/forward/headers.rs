@@ -10,7 +10,7 @@
 pub(crate) const ALLOWED_REQUEST_HEADERS: &[&str] = &[
     "authorization",
     "x-api-key",
-    // Azure OpenAI / AI Foundry credential header (universal providers, #7).
+    // Azure OpenAI credential header, for an `openai` upstream on Azure.
     "api-key",
     "content-type",
     "accept",
@@ -42,14 +42,11 @@ pub(crate) const ALLOWED_REQUEST_HEADERS: &[&str] = &[
     "mcp-session-id",
     "last-event-id",
     "cache-control",
-    "x-goog-api-key",
-    "x-goog-api-client",
     "x-session-id",
 ];
 
 pub(crate) fn is_allowed_request_header(name: &str) -> bool {
     ALLOWED_REQUEST_HEADERS.contains(&name)
-        || crate::proxy::bedrock::is_bedrock_request_header(name)
 }
 
 pub(crate) fn should_forward_request_header(name: &str, preserve_content_encoding: bool) -> bool {
@@ -88,5 +85,4 @@ pub(crate) fn is_forwarded_response_header(name: &str) -> bool {
     FORWARDED_HEADERS.contains(&name)
         || name.starts_with("x-codex-")
         || name.starts_with("x-ratelimit-")
-        || crate::proxy::bedrock::is_bedrock_response_header(name)
 }

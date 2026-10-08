@@ -1,4 +1,4 @@
-//! `lean-ctx proxy …` — proxy lifecycle, upstream stats.
+//! `lean-ctx proxy …` — proxy lifecycle and live upstreams.
 
 #[allow(clippy::wildcard_imports)]
 use super::*;
@@ -43,35 +43,6 @@ fn stop_proxy_process(port: u16) -> bool {
     true
 }
 
-fn print_compression_by_upstream(v: &serde_json::Value) {
-    let Some(per_upstream) = v.get("per_upstream").and_then(|u| u.as_object()) else {
-        return;
-    };
-    println!("  Compression by upstream:");
-    for (label, key) in [
-        ("Anthropic", "anthropic"),
-        ("OpenAI", "openai"),
-        ("Gemini", "gemini"),
-    ] {
-        let Some(row) = per_upstream.get(key).and_then(|x| x.as_object()) else {
-            continue;
-        };
-        let requests = row
-            .get("requests_total")
-            .and_then(serde_json::Value::as_u64)
-            .unwrap_or(0);
-        let saved = row
-            .get("tokens_saved")
-            .and_then(serde_json::Value::as_u64)
-            .unwrap_or(0);
-        let ratio = row
-            .get("compression_ratio_pct")
-            .and_then(|x| x.as_str())
-            .unwrap_or("0.0");
-        println!("    {label:<10} {ratio:>5}% saved, {saved} tok, {requests} req");
-    }
-}
-
 /// Prints the proxy's live upstreams (from `/status`) and warns when one
 /// differs from what config.toml resolves to — the proxy keeps its last good
 /// value when an edit fails validation (#449).
@@ -85,24 +56,14 @@ fn print_live_upstreams_and_drift(v: &serde_json::Value, cfg: &crate::core::conf
     for (label, key, configured_val) in [
         ("Anthropic", "anthropic", &configured.anthropic),
         ("OpenAI", "openai", &configured.openai),
-        ("Gemini", "gemini", &configured.gemini),
     ] {
         let live = up.get(key).and_then(|x| x.as_str()).unwrap_or("?");
         println!("    {label:<10} {live}");
         if live != "?" && crate::core::config::upstream_drifted(configured_val, live) {
             notes.push(format!(
                 "  \x1b[33m⚠ {label}: proxy serves {live} but config.toml resolves to {configured_val}.\x1b[0m\n  \
-                   \x1b[33m  Check proxy.{key}_upstream, then: lean-ctx proxy restart\x1b[0m",
+                   \x1b[33m  Check proxy.upstreams.{key}, then: lean-ctx proxy restart\x1b[0m",
             ));
-        }
-    }
-    // The closed provider list (Ollama, Bedrock)
-    // only appears under `/providers/{id}/…`.
-    if let Some(providers) = v.get("providers").and_then(|p| p.as_array()) {
-        for p in providers {
-            let id = p.get("id").and_then(|x| x.as_str()).unwrap_or("?");
-            let base = p.get("base_url").and_then(|x| x.as_str()).unwrap_or("?");
-            println!("    {id:<10} {base}");
         }
     }
     for note in notes {
@@ -127,8 +88,8 @@ pub(crate) fn cmd_proxy(rest: &[String]) {
             println!(
                 "  restart   Reload the autostart unit, or restart the proxy process (re-reads config.toml)"
             );
-            println!("  status    Show proxy config, process, live upstreams and stats");
-            println!("  enable    Enable the proxy: config flag, autostart service, env wiring");
+            println!("  status    Show proxy config, process and live upstreams");
+            println!("  enable    Enable the proxy: config flag, autostart service, agent wiring");
             println!("  disable   Disable the proxy and restore the original endpoint");
             println!("  cleanup   Remove stale proxy URLs from AI tool configs");
             println!("  token     Print the current proxy Bearer token (for MCP/HTTP clients)");
@@ -208,10 +169,10 @@ pub(crate) fn cmd_proxy(rest: &[String]) {
                 println!("  Port:    {port}");
                 // Liveness comes from the *public* /health endpoint so a running
                 // proxy is never misreported as down — even mid-upgrade when the
-                // managed proxy still holds an old session token (#449). The rich
-                // detail (stats + live upstreams) comes from the authenticated
-                // /status; if that 401s while /health is up, we still report it as
-                // running and point at `proxy restart`.
+                // managed proxy still holds an old session token (#449). The live
+                // upstreams come from the authenticated /status; if that 401s
+                // while /health is up, we still report it as running and point at
+                // `proxy restart`. Usage and savings are in `lean-ctx gain`.
                 let alive = ureq::get(&format!("http://127.0.0.1:{port}/health"))
                     .call()
                     .is_ok();
@@ -225,14 +186,6 @@ pub(crate) fn cmd_proxy(rest: &[String]) {
                     if let Ok(resp) = status {
                         let body = resp.into_body().read_to_string().unwrap_or_default();
                         if let Ok(v) = serde_json::from_str::<serde_json::Value>(&body) {
-                            println!("  Requests:    {}", v["requests_total"]);
-                            println!("  Compressed:  {}", v["requests_compressed"]);
-                            println!("  Tokens saved: {} (estimated)", v["tokens_saved"]);
-                            println!(
-                                "  Compression: {}%",
-                                v["compression_ratio_pct"].as_str().unwrap_or("0.0")
-                            );
-                            print_compression_by_upstream(&v);
                             print_live_upstreams_and_drift(&v, &cfg);
                         }
                     } else {

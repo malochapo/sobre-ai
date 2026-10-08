@@ -13,7 +13,7 @@
 //!   wrapper, host hook, CLI command, proxy), as tokens before and after, both
 //!   counted by [`crate::core::tokens::count_tokens`].
 //! - [`EVENT_LLM_CALL`]: one upstream LLM call the proxy forwarded, with the
-//!   usage the provider reported and, when it reports one, the cost it charged.
+//!   usage the provider reported.
 //! - [`EVENT_BOUNCE`]: tokens re-sent because a compressed read was not enough
 //!   and the agent read the file again in full.
 //!
@@ -67,7 +67,7 @@ pub struct LlmCall {
     pub provider: String,
     /// The model the client asked for.
     pub request_model: String,
-    /// The model that answered (differs when the proxy routed the call).
+    /// The model that answered.
     pub response_model: String,
     /// All input tokens, cache reads and writes included, as the GenAI
     /// conventions define `gen_ai.usage.input_tokens`.
@@ -75,8 +75,6 @@ pub struct LlmCall {
     pub output_tokens: u64,
     pub cache_read_tokens: u64,
     pub cache_write_tokens: u64,
-    /// What the provider charged, when the response says (OpenRouter, LiteLLM).
-    pub cost_usd: Option<f64>,
     /// The upstream is a loopback or local endpoint: no bill to price.
     pub local: bool,
 }
@@ -126,9 +124,6 @@ pub fn record_llm_call(call: &LlmCall) {
         "gen_ai.usage.cache_creation.input_tokens",
         Value::Int(call.cache_write_tokens),
     );
-    if let Some(usd) = call.cost_usd {
-        ev.attr("sobre.cost.usd", Value::Double(usd));
-    }
     if call.local {
         ev.attr("sobre.upstream.local", Value::Bool(true));
     }
@@ -204,7 +199,6 @@ mod tests {
             output_tokens: 200,
             cache_read_tokens: 4000,
             cache_write_tokens: 0,
-            cost_usd: None,
             local: false,
         });
         record_bounce("ctx_read", 300);

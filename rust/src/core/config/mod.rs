@@ -24,9 +24,8 @@ mod tests_parsing;
 pub use enums::{CompressionLevel, SessionDegrade};
 pub use loader::last_config_parse_error;
 pub use proxy::{
-    ProxyConfig, ProxyProvider, ResolvedProvider, RoutingRules, Upstreams, WireShape,
-    is_local_proxy_url, normalize_url, normalize_url_opt, parse_route_target, upstream_drifted,
-    upstream_ids,
+    ProxyConfig, ProxyProvider, Upstreams, is_local_proxy_url, normalize_url, normalize_url_opt,
+    upstream_drifted, upstream_ids,
 };
 
 /// On-disk ceiling (MB) for the persisted BM25 index.

@@ -56,7 +56,7 @@ The goal of the fork is **subtraction**, not addition. Categories removed:
 | The downstream packages, language SDKs and editor extensions | A distribution surface two maintainers can support |
 | Marketing, blog and email material | Not source code |
 | Multiple tool-visibility modes, tool profiles, per-client quirks, `ctx_context`, `ctx_execute`, and `ctx_callgraph` as a tool of its own | Replaced by a single fixed surface of 16 tools; `ctx_graph` answers call questions too |
-| 150+ configuration keys, profiles and environment overrides | One config file with 12 keys |
+| 150+ configuration keys, profiles and environment overrides | One config file with 11 keys |
 | Per-project settings files (`.lean-ctx.json`, `.lean-ctx-artifacts.json`, `.lean-ctx-id`), `multi-repo.toml`, user output filters, behaviour-changing environment variables, settings kept in the session | Behaviour comes from `config.toml` alone |
 | The shell hook: rc-file aliases with `track` / `compress` / `off` modes, the `.zshenv` / `.bashenv` redirect, agent aliases, `env.sh`, `lean-ctx -t` | Agent shell commands go through the agent's own hook; sobre never edits shell files |
 | Per-repository install (`init --project`, Copilot / VS Code configs inside the repo) | Installed once, at user level |
@@ -66,6 +66,7 @@ The goal of the fork is **subtraction**, not addition. Categories removed:
 | Approval settings written into the host (`autoApprove`, Gemini `trust`, plan-mode permissions), `allow` decisions from hooks | Same: sobre never approves anything on the host's behalf |
 | The native Read/Grep redirect and the `cat` / `grep` / `ls` rewrites | They changed what the host's own tools returned; shell output is now compressed after the fact, or wrapped whole in `lean-ctx -c` |
 | The output sanitizer, the Windows `;` → `&&` rewrite | Silent changes to output or commands; anything sobre changes is now labelled |
+| Proxy extras: Amazon Bedrock signing, model routing and aliases, Anthropic ↔ OpenAI translation, the `/providers` registry, the `/v1/compress` and `/v1/retrieve` gateway API, the local model catalog, prefix replay, sticky tools, SSE keepalives, the WebSocket bridge, injected usage options, OpenRouter and LiteLLM cost accounting, trace ids, and Gemini traffic | The proxy compresses tool results for the agents sobre wires to it, labels every rewrite and records billed usage; it does not route, translate, sign or otherwise change requests, and agents are wired through their own configuration, never shell rc files |
 | The contributor licence agreement | Contributions are under Apache-2.0, like the rest of the repository |
 
 The complete removal log, with measured line counts and coupling for each

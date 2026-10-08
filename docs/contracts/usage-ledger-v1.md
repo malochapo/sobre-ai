@@ -36,7 +36,7 @@ Each line is one OpenTelemetry log record in the OTLP/JSON encoding:
 
 - `timeUnixNano` and every `intValue` are decimal strings, as OTLP/JSON
   encodes 64-bit integers.
-- Values use `stringValue`, `intValue`, `doubleValue` or `boolValue`.
+- Values use `stringValue`, `intValue` or `boolValue`.
 - Attribute names follow the OpenTelemetry GenAI semantic conventions where one
   exists; the others are under `sobre.*`.
 
@@ -68,14 +68,13 @@ One upstream LLM call the proxy forwarded, as the provider reported it.
 | Attribute | Type | Meaning |
 |---|---|---|
 | `gen_ai.operation.name` | string | `chat` |
-| `gen_ai.provider.name` | string | `anthropic`, `openai`, `azure.ai.openai`, `aws.bedrock`, `gcp.gemini`, or a configured provider id |
+| `gen_ai.provider.name` | string | `anthropic` or `openai` |
 | `gen_ai.request.model` | string | Model the client asked for |
-| `gen_ai.response.model` | string | Model that answered (differs when the proxy routed the call) |
+| `gen_ai.response.model` | string | Model that answered |
 | `gen_ai.usage.input_tokens` | int | All input tokens, cache reads and writes included |
 | `gen_ai.usage.output_tokens` | int | Output tokens, reasoning included |
 | `gen_ai.usage.cache_read.input_tokens` | int | Input tokens served from the prompt cache |
 | `gen_ai.usage.cache_creation.input_tokens` | int | Input tokens written to the prompt cache |
-| `sobre.cost.usd` | double | What the provider charged, when the response says (OpenRouter, LiteLLM). Absent otherwise |
 | `sobre.upstream.local` | bool | Present and `true` when the upstream is a local endpoint |
 
 ### `sobre.bounce`
@@ -94,8 +93,8 @@ file again in full.
 
 - **Net saved tokens**: the sum of `original − sent` over compressions, minus
   the sum of `wasted` over bounces.
-- **Real cost**: the sum over LLM calls of `sobre.cost.usd` when present, `0`
-  for a local upstream, else the price table applied to the reported tokens.
+- **Real cost**: the price table applied to the tokens each LLM call
+  reported, `0` for a call to a local upstream.
   Without the proxy there are no calls and no real cost.
 - **Saved value**: net saved tokens at the uncached input price of a model:
   the one passed with `--model`, else the model that answered the most calls,

@@ -1,17 +1,16 @@
 //! Real provider-reported token usage extraction.
 //!
 //! The proxy already rewrites requests; this module reads the *response* so the
-//! dashboard/terminal can show **measured** cost (the user's real provider bill)
-//! instead of an estimate. All three providers report the exact model and the
-//! billed token breakdown — including prompt-cache reads/writes — in the final
-//! event of a stream (or the body of a non-streaming response):
+//! ledger holds the tokens the provider actually billed instead of an estimate.
+//! Both providers report the exact model and the billed token breakdown —
+//! including prompt-cache reads/writes — in the final event of a stream (or the
+//! body of a non-streaming response):
 //!
 //! - Anthropic: `message_start` carries model + input/cache tokens, the final
 //!   `message_delta` carries `output_tokens`. Non-streaming: one `usage` object.
 //! - OpenAI Responses: the `response.completed` event nests `response.usage`.
-//! - OpenAI Chat Completions: the final chunk carries `usage` (needs
-//!   `stream_options.include_usage`, which the proxy injects).
-//! - Gemini: every chunk carries `usageMetadata`; the last one has the totals.
+//! - OpenAI Chat Completions: the final chunk carries `usage` when the client
+//!   asked for it with `stream_options.include_usage`; the proxy does not add it.
 //!
 //! [`RealUsage`] normalizes every provider onto the four billable buckets that
 //! [`crate::core::pricing::ModelCost::estimate_usd`] prices:
@@ -27,16 +26,22 @@ pub(crate) enum Provider {
     /// Covers both Chat Completions and the Responses API (same `usage` dialects
     /// are detected by field name).
     OpenAi,
-    Gemini,
 }
 
 impl Provider {
-    /// Maps the proxy's `provider_label` (`"Anthropic"`, `"OpenAI"`, else Gemini).
-    pub(crate) fn from_label(label: &str) -> Self {
-        match label {
-            "Anthropic" | "Bedrock" => Self::Anthropic,
-            "OpenAI" | "Azure" => Self::OpenAi,
-            _ => Self::Gemini,
+    /// The provider's name in log lines.
+    pub(crate) fn label(self) -> &'static str {
+        match self {
+            Self::Anthropic => "Anthropic",
+            Self::OpenAi => "OpenAI",
+        }
+    }
+
+    /// The provider as a GenAI `gen_ai.provider.name` value.
+    pub(crate) fn semconv_name(self) -> &'static str {
+        match self {
+            Self::Anthropic => "anthropic",
+            Self::OpenAi => "openai",
         }
     }
 }
@@ -59,45 +64,35 @@ pub(crate) struct RealUsage {
     pub cache_write_tokens: u64,
     /// Reasoning/thinking subset of `output_tokens` (display only).
     pub reasoning_tokens: u64,
-    /// USD the provider *actually charged* for this turn, when the response
-    /// reports it. OpenRouter: `usage.cost` in credits (≡ USD); for BYOK
-    /// requests the separate `cost_details.upstream_inference_cost` is added
-    /// when it differs from `cost` (#746 — non-BYOK mirrors cost there).
-    /// The measured figure beats any price-table estimate wherever both exist.
-    /// `None` for providers that report tokens only (Anthropic/OpenAI/Gemini).
-    pub provider_cost_usd: Option<f64>,
-    /// Request-side context: the project tag, compression savings and baseline inputs, stamped from the request before
-    /// it left for the upstream. `None` outside the forward path (e.g. tests
-    /// that only parse response bodies).
+    /// Request-side context, stamped from the request before it left for the
+    /// upstream. `None` outside the forward path (e.g. tests that only parse
+    /// response bodies).
     pub wire: Option<Box<WireContext>>,
 }
 
 /// Request-side context the forward path knows and the response scanner does
 /// not. Travels inside [`RealUsage`] so `usage_meter::record` stays the single
 /// choke-point through which every measured turn flows.
-#[derive(Debug, Clone, Default, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub(crate) struct WireContext {
-    /// Provider label (`Anthropic|OpenAI|Gemini`) or registry id of the
-    /// serving route.
-    pub provider: String,
+    /// The provider the request was forwarded to.
+    pub provider: Provider,
+    /// The `model` the request named, when it named one.
+    pub request_model: Option<String>,
     /// True when the serving upstream is a local/loopback endpoint: no bill.
     pub is_local: bool,
-    /// Originally requested model when the router downgraded/aliased it
-    /// (enterprise#13); `None` for passthrough.
-    pub routed_from: Option<String>,
 }
 
 impl RealUsage {
-    /// True once any model, token or measured-cost field has been observed —
-    /// the gate for recording. Avoids emitting empty rows for streams that
-    /// never reported usage.
+    /// True once the model or any token field has been observed — the gate
+    /// for recording. Avoids emitting empty rows for streams that never
+    /// reported usage.
     fn is_meaningful(&self) -> bool {
         !self.model.is_empty()
             || self.input_tokens > 0
             || self.output_tokens > 0
             || self.cache_read_tokens > 0
             || self.cache_write_tokens > 0
-            || self.provider_cost_usd.is_some()
     }
 }
 
@@ -112,44 +107,26 @@ const MAX_LINE_BYTES: usize = 1 << 20; // 1 MiB
 /// usage once the stream ends.
 pub(crate) struct Scanner {
     provider: Provider,
-    /// Model parsed from the request URL (Gemini puts it there, not in the body).
-    url_model: Option<String>,
     /// Request-side context (see [`WireContext`]), stamped at finalize.
     wire: Option<Box<WireContext>>,
-    /// Billed USD from a gateway response header (#1189), stamped at finalize
-    /// unless the body already reported the charge.
-    header_cost: Option<f64>,
     buf: Vec<u8>,
     usage: RealUsage,
 }
 
 impl Scanner {
-    pub(crate) fn new(provider: Provider, url_model: Option<String>) -> Self {
+    pub(crate) fn new(provider: Provider) -> Self {
         Self {
             provider,
-            url_model,
             wire: None,
-            header_cost: None,
             buf: Vec::new(),
             usage: RealUsage::default(),
         }
     }
 
-    /// Attaches the request-side context (project tag, wire savings, baseline
-    /// inputs) stamped onto the usage record.
+    /// Attaches the request-side context stamped onto the usage record.
     #[must_use]
     pub(crate) fn with_wire_context(mut self, wire: Option<Box<WireContext>>) -> Self {
         self.wire = wire;
-        self
-    }
-
-    /// Attaches a billed USD figure reported by the upstream via a response
-    /// header (LiteLLM `x-litellm-response-cost`, #1189). Applied at finalize only when
-    /// the body did not already carry a measured cost — a body figure
-    /// (OpenRouter `usage.cost`) is the bill itself and always wins.
-    #[must_use]
-    pub(crate) fn with_header_cost(mut self, cost: Option<f64>) -> Self {
-        self.header_cost = cost.filter(|c| c.is_finite() && *c >= 0.0);
         self
     }
 
@@ -183,11 +160,6 @@ impl Scanner {
             let line = std::mem::take(&mut self.buf);
             self.scan_line(&line);
         }
-        // Gateway header cost (#1189): measured, but the body figure is the
-        // bill itself (OpenRouter usage.cost) and keeps priority when present.
-        if self.usage.provider_cost_usd.is_none() {
-            self.usage.provider_cost_usd = self.header_cost;
-        }
         if self.usage.is_meaningful() {
             self.usage.wire = self.wire;
             Some(self.usage)
@@ -205,38 +177,20 @@ impl Scanner {
             return;
         }
         // Cheap pre-filter: skip the bulk of the stream (content deltas) and only
-        // JSON-parse lines that can carry usage or the model name.
-        if !self.line_might_be_relevant(trimmed) {
+        // JSON-parse lines that can carry usage. Anthropic `message_start`/
+        // `message_delta` and OpenAI `usage`/`response.*` events all contain
+        // the substring "usage".
+        if !trimmed.contains("usage") {
             return;
         }
-        let json_str = if let Some(rest) = trimmed.strip_prefix("data:") {
-            // SSE (Anthropic, OpenAI, Gemini with alt=sse).
-            let r = rest.trim();
-            if r.is_empty() || r == "[DONE]" {
-                return;
-            }
-            r
-        } else if trimmed.starts_with('{') {
-            // NDJSON / array-element line (Gemini x-ndjson). Tolerate the array
-            // punctuation a streamed JSON array puts around an element.
-            trimmed
-                .trim_start_matches([',', '['])
-                .trim_end_matches([',', ']'])
-                .trim()
-        } else {
+        let Some(json_str) = trimmed.strip_prefix("data:").map(str::trim) else {
             return;
         };
+        if json_str.is_empty() || json_str == "[DONE]" {
+            return;
+        }
         if let Ok(v) = serde_json::from_str::<Value>(json_str) {
             self.absorb(&v);
-        }
-    }
-
-    fn line_might_be_relevant(&self, s: &str) -> bool {
-        match self.provider {
-            // Anthropic `message_start`/`message_delta` and OpenAI `usage`/
-            // `response.*` events all contain the substring "usage".
-            Provider::Anthropic | Provider::OpenAi => s.contains("usage"),
-            Provider::Gemini => s.contains("usageMetadata"),
         }
     }
 
@@ -244,7 +198,6 @@ impl Scanner {
         match self.provider {
             Provider::Anthropic => absorb_anthropic(&mut self.usage, v),
             Provider::OpenAi => absorb_openai(&mut self.usage, v),
-            Provider::Gemini => absorb_gemini(&mut self.usage, v, self.url_model.as_deref()),
         }
     }
 }
@@ -287,13 +240,9 @@ fn absorb_anthropic(u: &mut RealUsage, v: &Value) {
 /// `usage` dialects are accepted (Responses: `input_tokens`/`output_tokens`;
 /// Chat: `prompt_tokens`/`completion_tokens`). `cached_tokens` is the cache-read
 /// portion of the reported input; OpenAI bills no separate cache write, but
-/// OpenRouter reports one (`prompt_tokens_details.cache_write_tokens`) for
-/// models with explicit cache-write pricing.
-///
-/// OpenRouter usage accounting additionally carries the money actually charged:
-/// `usage.cost` (credits ≡ USD) and, for BYOK requests, the upstream provider's
-/// own bill under `cost_details.upstream_inference_cost`. Their sum is this
-/// turn's real price — measured, not table-derived.
+/// OpenAI-compatible upstreams such as OpenRouter report one
+/// (`prompt_tokens_details.cache_write_tokens`) for models with explicit
+/// cache-write pricing.
 fn absorb_openai(u: &mut RealUsage, v: &Value) {
     let root = v.get("response").unwrap_or(v);
     if let Some(model) = root.get("model").and_then(Value::as_str)
@@ -307,27 +256,6 @@ fn absorb_openai(u: &mut RealUsage, v: &Value) {
     if usage.is_null() {
         // `response.created` / `response.in_progress` carry `usage: null`.
         return;
-    }
-
-    // Measured cost (OpenRouter dialect). Parsed before the token guard so a
-    // cost-bearing usage object is never lost, and `0` is preserved — a
-    // `:free` model's real price IS zero, not "unknown".
-    if let Some(cost) = usage.get("cost").and_then(Value::as_f64) {
-        let upstream = usage
-            .get("cost_details")
-            .and_then(|d| d.get("upstream_inference_cost"))
-            .and_then(Value::as_f64)
-            .unwrap_or(0.0);
-        // #746: non-BYOK responses may mirror `cost` in upstream_inference_cost;
-        // summing both would double-count. BYOK responses split the total:
-        // `cost` = OpenRouter fee (small), `upstream` = provider bill (large,
-        // always different from cost). Only add when genuinely distinct.
-        let byok_upstream = if upstream > 0.0 && upstream != cost {
-            upstream
-        } else {
-            0.0
-        };
-        u.provider_cost_usd = Some(cost + byok_upstream);
     }
 
     let total_input = usage
@@ -373,61 +301,6 @@ fn absorb_openai(u: &mut RealUsage, v: &Value) {
     u.reasoning_tokens = reasoning;
 }
 
-/// Gemini: `usageMetadata` carries the counts; `modelVersion` (or the request
-/// URL) the model. `thoughtsTokenCount` is billed at the output rate and is not
-/// part of `candidatesTokenCount`, so it is added into `output_tokens`.
-fn absorb_gemini(u: &mut RealUsage, v: &Value, url_model: Option<&str>) {
-    if let Some(mv) = v.get("modelVersion").and_then(Value::as_str)
-        && !mv.is_empty()
-    {
-        u.model = mv.to_string();
-    } else if u.model.is_empty()
-        && let Some(m) = url_model
-        && !m.is_empty()
-    {
-        u.model = m.to_string();
-    }
-    let Some(um) = v.get("usageMetadata") else {
-        return;
-    };
-    let prompt = um
-        .get("promptTokenCount")
-        .and_then(Value::as_u64)
-        .unwrap_or(0);
-    let candidates = um
-        .get("candidatesTokenCount")
-        .and_then(Value::as_u64)
-        .unwrap_or(0);
-    let cached = um
-        .get("cachedContentTokenCount")
-        .and_then(Value::as_u64)
-        .unwrap_or(0);
-    let thoughts = um
-        .get("thoughtsTokenCount")
-        .and_then(Value::as_u64)
-        .unwrap_or(0);
-    if prompt == 0 && candidates == 0 && thoughts == 0 {
-        return;
-    }
-    u.input_tokens = prompt.saturating_sub(cached);
-    u.cache_read_tokens = cached;
-    u.cache_write_tokens = 0;
-    u.output_tokens = candidates + thoughts;
-    u.reasoning_tokens = thoughts;
-}
-
-/// Extracts the model from a Gemini request path
-/// (`/v1beta/models/{model}:generateContent`). Returns `None` for other paths.
-pub(crate) fn gemini_model_from_path(path: &str) -> Option<String> {
-    let after = path.rsplit_once("/models/").map(|(_, m)| m)?;
-    let model = after.split(':').next().unwrap_or(after).trim();
-    if model.is_empty() {
-        None
-    } else {
-        Some(model.to_string())
-    }
-}
-
 /// Wraps a response byte stream so every chunk is forwarded **byte-for-byte**
 /// while a [`Scanner`] observes it; on stream end the merged usage is recorded.
 /// Memory overhead is one buffered SSE line, never the whole response.
@@ -468,12 +341,8 @@ where
 mod tests {
     use super::*;
 
-    fn feed_lines(
-        provider: Provider,
-        url_model: Option<&str>,
-        lines: &[&str],
-    ) -> Option<RealUsage> {
-        let mut s = Scanner::new(provider, url_model.map(str::to_string));
+    fn feed_lines(provider: Provider, lines: &[&str]) -> Option<RealUsage> {
+        let mut s = Scanner::new(provider);
         for line in lines {
             s.feed(line.as_bytes());
             s.feed(b"\n");
@@ -485,7 +354,6 @@ mod tests {
     fn anthropic_merges_message_start_and_delta() {
         let u = feed_lines(
             Provider::Anthropic,
-            None,
             &[
                 r#"data: {"type":"message_start","message":{"model":"claude-opus-4-5-20251101","usage":{"input_tokens":100,"cache_read_input_tokens":2000,"cache_creation_input_tokens":50,"output_tokens":1}}}"#,
                 r#"data: {"type":"content_block_delta","index":0,"delta":{"text":"hello"}}"#,
@@ -503,7 +371,7 @@ mod tests {
 
     #[test]
     fn anthropic_non_streaming_body() {
-        let mut s = Scanner::new(Provider::Anthropic, None);
+        let mut s = Scanner::new(Provider::Anthropic);
         s.feed_body(
             br#"{"model":"claude-sonnet-4-5","usage":{"input_tokens":24,"output_tokens":18,"cache_creation_input_tokens":0,"cache_read_input_tokens":0}}"#,
         );
@@ -518,11 +386,11 @@ mod tests {
         // The request-side context must survive scanning and
         // arrive on the finalized record that usage_meter/store consume.
         let wire = Box::new(WireContext {
-            provider: "Anthropic".into(),
+            provider: Provider::Anthropic,
+            request_model: Some("claude-sonnet-4-5".into()),
             is_local: false,
-            routed_from: None,
         });
-        let mut s = Scanner::new(Provider::Anthropic, None).with_wire_context(Some(wire.clone()));
+        let mut s = Scanner::new(Provider::Anthropic).with_wire_context(Some(wire.clone()));
         s.feed_body(
             br#"{"model":"claude-sonnet-4-5","usage":{"input_tokens":24,"output_tokens":18}}"#,
         );
@@ -534,7 +402,6 @@ mod tests {
     fn openai_responses_completed_event() {
         let u = feed_lines(
             Provider::OpenAi,
-            None,
             &[
                 r#"data: {"type":"response.created","response":{"model":"gpt-5.4","usage":null}}"#,
                 r#"data: {"type":"response.completed","response":{"model":"gpt-5.4","usage":{"input_tokens":1289,"input_tokens_details":{"cached_tokens":289},"output_tokens":685,"output_tokens_details":{"reasoning_tokens":640},"total_tokens":1974}}}"#,
@@ -552,7 +419,6 @@ mod tests {
     fn openai_chat_final_usage_chunk() {
         let u = feed_lines(
             Provider::OpenAi,
-            None,
             &[
                 r#"data: {"choices":[{"delta":{"content":"hi"}}],"model":"gpt-5.4-mini"}"#,
                 r#"data: {"choices":[],"model":"gpt-5.4-mini","usage":{"prompt_tokens":500,"prompt_tokens_details":{"cached_tokens":100},"completion_tokens":40,"total_tokens":540}}"#,
@@ -564,20 +430,16 @@ mod tests {
         assert_eq!(u.input_tokens, 400);
         assert_eq!(u.cache_read_tokens, 100);
         assert_eq!(u.output_tokens, 40);
-        assert_eq!(u.provider_cost_usd, None, "OpenAI reports no usage.cost");
     }
 
     #[test]
-    fn openrouter_cost_and_cache_writes_are_measured() {
-        // #1179: OpenRouter usage accounting — the final streamed chunk carries
-        // the billed USD (`cost`) and the cache-write bucket inside
-        // prompt_tokens_details. All three token buckets must stay disjoint.
+    fn openai_compatible_cache_writes_stay_a_separate_bucket() {
+        // OpenRouter reports cache writes inside prompt_tokens_details; the
+        // three input buckets must stay disjoint.
         let u = feed_lines(
             Provider::OpenAi,
-            None,
             &[
-                r#"data: {"choices":[{"delta":{"content":"hi"}}],"model":"deepseek/deepseek-v4-flash-20260423"}"#,
-                r#"data: {"choices":[],"model":"deepseek/deepseek-v4-flash-20260423","usage":{"prompt_tokens":700,"prompt_tokens_details":{"cached_tokens":150,"cache_write_tokens":50},"completion_tokens":40,"cost":0.0123,"cost_details":{"upstream_inference_cost":null},"total_tokens":740}}"#,
+                r#"data: {"choices":[],"model":"deepseek/deepseek-v4-flash","usage":{"prompt_tokens":700,"prompt_tokens_details":{"cached_tokens":150,"cache_write_tokens":50},"completion_tokens":40,"total_tokens":740}}"#,
                 "data: [DONE]",
             ],
         )
@@ -586,108 +448,11 @@ mod tests {
         assert_eq!(u.cache_read_tokens, 150);
         assert_eq!(u.cache_write_tokens, 50);
         assert_eq!(u.output_tokens, 40);
-        let cost = u.provider_cost_usd.expect("measured cost");
-        assert!((cost - 0.0123).abs() < 1e-12);
-    }
-
-    #[test]
-    fn openrouter_byok_adds_upstream_inference_cost() {
-        let mut s = Scanner::new(Provider::OpenAi, None);
-        s.feed_body(
-            br#"{"model":"anthropic/claude-sonnet-5","usage":{"prompt_tokens":100,"completion_tokens":10,"cost":0.05,"cost_details":{"upstream_inference_cost":0.95}}}"#,
-        );
-        let u = s.finalize().expect("usage");
-        let cost = u.provider_cost_usd.expect("measured cost");
-        assert!(
-            (cost - 1.0).abs() < 1e-12,
-            "OpenRouter fee + BYOK upstream bill"
-        );
-    }
-
-    /// #746: non-BYOK responses mirror `cost` in `upstream_inference_cost`.
-    /// The gateway must not sum both — that would double-count.
-    #[test]
-    fn non_byok_upstream_equal_to_cost_is_not_doubled() {
-        let mut s = Scanner::new(Provider::OpenAi, None);
-        s.feed_body(
-            br#"{"model":"deepseek/deepseek-v4-flash","usage":{"prompt_tokens":50,"completion_tokens":5,"cost":0.000001568,"cost_details":{"upstream_inference_cost":0.000001568}}}"#,
-        );
-        let u = s.finalize().expect("usage");
-        let cost = u.provider_cost_usd.expect("measured cost");
-        assert!(
-            (cost - 0.000001568).abs() < 1e-15,
-            "#746: must book cost once, not 2x; got {cost}"
-        );
-    }
-
-    #[test]
-    fn gateway_header_cost_fills_when_body_has_none() {
-        // #1189: a LiteLLM-style gateway reports the bill in a header; tokens
-        // come from a normal OpenAI-shaped body without `usage.cost`.
-        let mut s = Scanner::new(Provider::OpenAi, None).with_header_cost(Some(0.0042));
-        s.feed_body(
-            br#"{"model":"azure-gpt-4o","usage":{"prompt_tokens":100,"completion_tokens":10}}"#,
-        );
-        let u = s.finalize().expect("usage");
-        assert_eq!(u.provider_cost_usd, Some(0.0042), "header is measured");
-    }
-
-    #[test]
-    fn body_reported_cost_beats_the_header_figure() {
-        // OpenRouter behind another gateway: `usage.cost` is the bill itself.
-        let mut s = Scanner::new(Provider::OpenAi, None).with_header_cost(Some(9.99));
-        s.feed_body(
-            br#"{"model":"deepseek/deepseek-v4-flash","usage":{"prompt_tokens":100,"completion_tokens":10,"cost":0.05}}"#,
-        );
-        let u = s.finalize().expect("usage");
-        assert_eq!(u.provider_cost_usd, Some(0.05), "body wins over header");
-    }
-
-    #[test]
-    fn openrouter_free_model_reports_zero_cost_as_measured() {
-        let mut s = Scanner::new(Provider::OpenAi, None);
-        s.feed_body(
-            br#"{"model":"poolside/laguna-xs-2.1:free","usage":{"prompt_tokens":80,"completion_tokens":20,"cost":0}}"#,
-        );
-        let u = s.finalize().expect("usage");
-        assert_eq!(u.provider_cost_usd, Some(0.0), "free is a price, not a gap");
-    }
-
-    #[test]
-    fn gemini_usage_metadata_with_url_model() {
-        let u = feed_lines(
-            Provider::Gemini,
-            Some("gemini-2.5-pro"),
-            &[
-                r#"data: {"candidates":[{"content":{"parts":[{"text":"hi"}]}}],"usageMetadata":{"promptTokenCount":25,"candidatesTokenCount":7,"thoughtsTokenCount":39,"totalTokenCount":71}}"#,
-            ],
-        )
-        .expect("usage");
-        assert_eq!(u.model, "gemini-2.5-pro");
-        assert_eq!(u.input_tokens, 25);
-        assert_eq!(u.output_tokens, 46); // candidates 7 + thoughts 39
-        assert_eq!(u.reasoning_tokens, 39);
-    }
-
-    #[test]
-    fn gemini_prefers_model_version_over_url() {
-        let u = feed_lines(
-            Provider::Gemini,
-            Some("gemini-2.5-pro"),
-            &[
-                r#"data: {"modelVersion":"gemini-2.5-pro-002","usageMetadata":{"promptTokenCount":10,"candidatesTokenCount":5,"cachedContentTokenCount":4,"totalTokenCount":15}}"#,
-            ],
-        )
-        .expect("usage");
-        assert_eq!(u.model, "gemini-2.5-pro-002");
-        assert_eq!(u.input_tokens, 6); // 10 - 4 cached
-        assert_eq!(u.cache_read_tokens, 4);
-        assert_eq!(u.output_tokens, 5);
     }
 
     #[test]
     fn split_chunks_reassemble_across_feed_calls() {
-        let mut s = Scanner::new(Provider::Anthropic, None);
+        let mut s = Scanner::new(Provider::Anthropic);
         let line = r#"data: {"type":"message_delta","delta":{},"usage":{"output_tokens":42}}"#;
         let bytes = format!("{line}\n");
         let (a, b) = bytes.as_bytes().split_at(20);
@@ -701,7 +466,6 @@ mod tests {
     fn no_usage_yields_none() {
         let out = feed_lines(
             Provider::OpenAi,
-            None,
             &[r#"data: {"choices":[{"delta":{"content":"hi"}}],"model":"gpt-5.4"}"#],
         );
         assert!(out.is_none(), "content-only stream reports no usage");
@@ -709,24 +473,10 @@ mod tests {
 
     #[test]
     fn final_event_without_trailing_newline() {
-        let mut s = Scanner::new(Provider::Anthropic, None);
+        let mut s = Scanner::new(Provider::Anthropic);
         s.feed(br#"data: {"type":"message_delta","delta":{},"usage":{"output_tokens":7}}"#);
         let u = s.finalize().expect("flushes trailing partial line");
         assert_eq!(u.output_tokens, 7);
-    }
-
-    #[test]
-    fn gemini_model_from_path_extracts() {
-        assert_eq!(
-            gemini_model_from_path("/v1beta/models/gemini-2.5-pro:streamGenerateContent")
-                .as_deref(),
-            Some("gemini-2.5-pro")
-        );
-        assert_eq!(
-            gemini_model_from_path("/v1beta/models/gemini-2.5-flash:generateContent").as_deref(),
-            Some("gemini-2.5-flash")
-        );
-        assert_eq!(gemini_model_from_path("/v1/chat/completions"), None);
     }
 
     #[tokio::test]
@@ -736,7 +486,7 @@ mod tests {
             Ok(b"data: {\"type\":\"message_delta\",\"delta\":{},\"usage\":{\"output_tokens\":9}}\n".to_vec()),
         ];
         let inner = futures::stream::iter(chunks);
-        let scanner = Scanner::new(Provider::Anthropic, None);
+        let scanner = Scanner::new(Provider::Anthropic);
         let teed = tee_stream(inner, scanner);
         let collected: Vec<_> = teed.collect().await;
         // Byte-for-byte passthrough preserved.

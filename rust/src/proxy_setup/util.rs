@@ -1,14 +1,6 @@
 //! Shared proxy-setup constants and helpers.
 
-pub(crate) const PROXY_ENV_START: &str = "# >>> lean-ctx proxy env >>>";
-pub(crate) const PROXY_ENV_END: &str = "# <<< lean-ctx proxy env <<<";
 pub(crate) const DEFAULT_PROXY_PORT: u16 = 4444;
-
-/// Comment written in place of the `ANTHROPIC_BASE_URL` export when no Anthropic API
-/// key is detectable. A Claude Pro/Max subscription authenticates via OAuth against
-/// `api.anthropic.com` directly and is rejected by any custom base URL, so we must not
-/// route it through the proxy.
-pub(crate) const ANTHROPIC_OMITTED_NOTE: &str = "ANTHROPIC_BASE_URL omitted: Claude Pro/Max subscription authenticates against api.anthropic.com directly (set ANTHROPIC_API_KEY to route Claude through the proxy)";
 
 pub fn is_local_lean_ctx_url(url: &str) -> bool {
     url.starts_with("http://127.0.0.1:") || url.starts_with("http://localhost:")

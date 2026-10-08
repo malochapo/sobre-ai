@@ -1,6 +1,5 @@
 use super::claude::*;
 use super::codex::*;
-use super::shell::*;
 use super::util::*;
 use super::*;
 
@@ -151,44 +150,6 @@ fn install_redirects_claude_when_api_key_present() {
     );
 }
 
-/// Shell export: subscription mode keeps OpenAI/Gemini but omits the ANTHROPIC line
-/// (replaced by an explanatory comment), so a shell-launched Claude stays on
-/// api.anthropic.com.
-#[test]
-fn shell_export_omits_anthropic_without_key() {
-    if env_provides_anthropic_key() || claude_dir_overridden() {
-        return;
-    }
-    let home = tempfile::tempdir().unwrap();
-    std::fs::write(home.path().join(".zshrc"), "# user rc\n").unwrap();
-    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-    let port = listener.local_addr().unwrap().port();
-
-    install_shell_exports(home.path(), port, true);
-
-    let rc = std::fs::read_to_string(home.path().join(".zshrc")).unwrap();
-    assert!(
-        rc.contains(&format!(
-            "export OPENAI_BASE_URL=\"http://127.0.0.1:{port}/v1\""
-        )),
-        "OpenAI export must remain and carry the /v1 suffix (#366)"
-    );
-    assert!(
-        rc.contains(&format!(
-            "export GEMINI_API_BASE_URL=\"http://127.0.0.1:{port}\""
-        )),
-        "Gemini export must remain WITHOUT /v1 (SDK appends /v1beta itself)"
-    );
-    assert!(
-        !rc.contains("export ANTHROPIC_BASE_URL="),
-        "ANTHROPIC export must be omitted in subscription mode"
-    );
-    assert!(
-        rc.contains(ANTHROPIC_OMITTED_NOTE),
-        "omission must be explained in the RC block"
-    );
-}
-
 /// Codex CLI config: a fresh install writes the `/v1`-suffixed proxy URL (#366).
 #[test]
 fn codex_env_writes_v1_suffixed_url() {
@@ -326,27 +287,4 @@ fn auth_is_chatgpt_detects_login_mode() {
         .unwrap();
         assert!(auth_is_chatgpt(&codex_dir), "{mode} => true");
     }
-}
-
-/// Shell export: API-key mode includes the ANTHROPIC export (symmetry check).
-#[test]
-fn shell_export_includes_anthropic_with_key() {
-    if claude_dir_overridden() {
-        return;
-    }
-    let home = tempfile::tempdir().unwrap();
-    std::fs::write(home.path().join(".zshrc"), "# user rc\n").unwrap();
-    write_claude_settings(home.path(), r#"{"env": {"ANTHROPIC_API_KEY": "sk-test"}}"#);
-    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-    let port = listener.local_addr().unwrap().port();
-
-    install_shell_exports(home.path(), port, true);
-
-    let rc = std::fs::read_to_string(home.path().join(".zshrc")).unwrap();
-    assert!(
-        rc.contains(&format!(
-            "export ANTHROPIC_BASE_URL=\"http://127.0.0.1:{port}\""
-        )),
-        "API-key mode must export ANTHROPIC_BASE_URL"
-    );
 }

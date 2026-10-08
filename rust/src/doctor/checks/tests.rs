@@ -143,8 +143,7 @@ fn nothing_installed_fails_and_suggests_setup() {
 #[test]
 fn unknown_config_keys_flags_typos_only() {
     let raw = "compresion_level = 0.5\nshell_timeout_secs = 30\n\n\
-               [proxy]\nport = 4444\n\n[proxy.upstreams]\nanthropic = \"https://x\"\n\n\
-               [proxy.routing.aliases]\n\"gpt-4.1\" = \"openai:gpt-4.1-mini\"\n";
+               [proxy]\nport = 4444\n\n[proxy.upstreams]\nanthropic = \"https://x\"\n";
     let unknown = unknown_config_keys(raw);
     assert_eq!(unknown.len(), 1, "{unknown:?}");
     assert!(
@@ -162,6 +161,14 @@ fn unknown_config_keys_flags_typos_only() {
     );
     assert!(
         unknown[1].starts_with("proxy.upstreams.antrhopic"),
+        "{unknown:?}"
+    );
+
+    // No table under [proxy] is free-form.
+    let unknown = unknown_config_keys("[proxy.routing.aliases]\n\"gpt-4.1\" = \"gpt-4.1-mini\"\n");
+    assert_eq!(unknown.len(), 1, "{unknown:?}");
+    assert!(
+        unknown[0].starts_with("proxy.routing.aliases."),
         "{unknown:?}"
     );
 

@@ -30,25 +30,15 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
                 "string?",
                 serde_json::json!(null),
                 &format!(
-                    "Upstream URL for the {id} provider (unset = its default{}). Writing a URL is the opt-in for a custom or plaintext host",
-                    if id == "bedrock" { "; bedrock is served only when set" } else { "" }
+                    "Upstream URL for the {id} provider (unset = its default). Writing a URL is the opt-in for a custom or plaintext host"
                 ),
             ),
         );
     }
-    proxy.insert(
-        "routing".into(),
-        key(
-            "table",
-            serde_json::json!({}),
-            "Model routing: [proxy.routing.aliases] maps a requested model to \"model\" or \"provider:model\"; [proxy.routing.tiers] maps fast/standard/premium to a target. Active as soon as one rule is written",
-        ),
-    );
     sections.insert(
         "proxy".into(),
         SectionSchema {
-            description: "The local API proxy: switch, port, upstream URLs and model routing"
-                .into(),
+            description: "The local API proxy: switch, port and upstream URLs".into(),
             keys: proxy,
         },
     );

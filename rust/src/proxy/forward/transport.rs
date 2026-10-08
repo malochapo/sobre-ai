@@ -9,9 +9,7 @@ use axum::{
 use super::headers::{is_forwarded_response_header, should_forward_request_header};
 use crate::proxy::ProxyState;
 use crate::proxy::codec::{is_retryable_status, retry_backoff};
-
-#[cfg(feature = "shape-xlat")]
-use super::xlat::xlat_response_bytes;
+use crate::proxy::usage::{Provider, Scanner, WireContext, tee_stream};
 
 pub(crate) async fn send_upstream(
     state: &ProxyState,
@@ -64,49 +62,27 @@ pub(crate) async fn send_upstream(
     }
 }
 
-#[allow(clippy::too_many_arguments)]
 pub(crate) async fn build_response(
     response: reqwest::Response,
-    extra_stream_types: &[&str],
-    usage_provider: crate::proxy::usage::Provider,
-    url_model: Option<String>,
-    wire: Option<Box<crate::proxy::usage::WireContext>>,
-    xlat: bool,
+    provider: Provider,
+    wire: WireContext,
 ) -> Result<Response, StatusCode> {
     let status = StatusCode::from_u16(response.status().as_u16()).unwrap_or(StatusCode::OK);
     let resp_headers = response.headers().clone();
+    let mut scanner = Scanner::new(provider).with_wire_context(Some(Box::new(wire)));
 
-    // Gateway-billed USD from response headers (#1189): LiteLLM's standard
-    // header. Body-reported costs (OpenRouter usage.cost) beat this inside the
-    // scanner.
-    let header_cost = crate::proxy::usage_accounting::cost_from_headers(&resp_headers, None);
-
-    let is_sse = crate::proxy::bedrock::response_is_sse(&resp_headers);
-    let is_stream = is_sse
-        || resp_headers
-            .get("content-type")
-            .and_then(|v| v.to_str().ok())
-            .is_some_and(|ct| extra_stream_types.iter().any(|t| ct.contains(t)));
-
-    if is_stream {
-        let scanner = crate::proxy::usage::Scanner::new(usage_provider, url_model)
-            .with_wire_context(wire)
-            .with_header_cost(header_cost);
-        let inner = Box::pin(response.bytes_stream());
-        let body = crate::proxy::bedrock::build_stream_body(
-            inner,
-            scanner,
-            is_sse,
-            extra_stream_types.contains(&"application/vnd.amazon.eventstream"),
-            xlat,
-        );
-        let mut resp = Response::builder().status(status);
-        for (k, v) in &resp_headers {
-            let ks = k.as_str().to_lowercase();
-            if is_forwarded_response_header(&ks) {
-                resp = resp.header(k, v);
-            }
+    let mut resp = Response::builder().status(status);
+    for (k, v) in &resp_headers {
+        let ks = k.as_str().to_lowercase();
+        if is_forwarded_response_header(&ks) {
+            resp = resp.header(k, v);
         }
+    }
+
+    if response_is_sse(&resp_headers) {
+        // Every chunk goes to the client unchanged while the scanner reads
+        // the usage events on the way through.
+        let body = Body::from_stream(tee_stream(Box::pin(response.bytes_stream()), scanner));
         return resp
             .body(body)
             .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR);
@@ -118,53 +94,18 @@ pub(crate) async fn build_response(
         .map_err(|_| StatusCode::BAD_GATEWAY)?;
 
     // Non-streaming: the whole body is one JSON object carrying `usage`.
-    let mut scanner = crate::proxy::usage::Scanner::new(usage_provider, url_model)
-        .with_wire_context(wire)
-        .with_header_cost(header_cost);
     scanner.feed_body(&resp_bytes);
     if let Some(usage) = scanner.finalize() {
         crate::proxy::usage_meter::record(&usage);
     }
 
-    let resp_bytes = if xlat {
-        xlat_response_bytes(&resp_bytes, status)
-    } else {
-        resp_bytes.to_vec()
-    };
-
-    let mut resp = Response::builder().status(status);
-    for (k, v) in &resp_headers {
-        let ks = k.as_str().to_lowercase();
-        if is_forwarded_response_header(&ks) {
-            resp = resp.header(k, v);
-        }
-    }
     resp.body(Body::from(resp_bytes))
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)
 }
 
-/// Streaming body, translated back to Anthropic SSE when `xlat` is set.
-#[cfg(feature = "shape-xlat")]
-pub(crate) fn xlat_stream_body<S>(teed: S, xlat: bool) -> Body
-where
-    S: futures::Stream<Item = Result<axum::body::Bytes, reqwest::Error>> + Send + Unpin + 'static,
-{
-    if xlat {
-        Body::from_stream(crate::proxy::shape_xlat::to_anthropic_stream(teed))
-    } else {
-        Body::from_stream(teed)
-    }
-}
-
-#[cfg(not(feature = "shape-xlat"))]
-pub(crate) fn xlat_stream_body<S>(teed: S, _xlat: bool) -> Body
-where
-    S: futures::Stream<Item = Result<axum::body::Bytes, reqwest::Error>> + Send + Unpin + 'static,
-{
-    Body::from_stream(teed)
-}
-
-#[cfg(not(feature = "shape-xlat"))]
-fn xlat_response_bytes(resp_bytes: &[u8], _status: StatusCode) -> Vec<u8> {
-    resp_bytes.to_vec()
+fn response_is_sse(headers: &axum::http::HeaderMap) -> bool {
+    headers
+        .get("content-type")
+        .and_then(|value| value.to_str().ok())
+        .is_some_and(|value| value.to_ascii_lowercase().contains("text/event-stream"))
 }

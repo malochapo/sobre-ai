@@ -6,8 +6,6 @@ fn upstreams_with_openai(openai: &str) -> Upstreams {
     Upstreams {
         anthropic: "https://api.anthropic.com".into(),
         openai: openai.into(),
-        gemini: "https://generativelanguage.googleapis.com".into(),
-        providers: Vec::new(),
     }
 }
 
