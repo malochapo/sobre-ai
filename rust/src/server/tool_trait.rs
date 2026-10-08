@@ -2,14 +2,16 @@ use rmcp::ErrorData;
 use rmcp::model::{ContentBlock, Tool};
 use serde_json::{Map, Value};
 
-/// Outcome of a shell execution, carried alongside the rendered text so the
-/// MCP dispatch layer can surface failures in protocol metadata instead of
-/// only as an `[exit:N]` text footer (GitHub #389: clients had no programmatic
-/// way to detect ctx_shell failures and resorted to fragile regex matching).
+/// Outcome of a call, carried alongside the rendered text so the MCP dispatch
+/// layer can surface failures in protocol metadata (`isError`) instead of only
+/// in the text (GitHub #389: clients had no programmatic way to detect
+/// failures and resorted to fragile regex matching).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ShellOutcome {
     /// The command ran; carries its real exit code (0 = success).
     Exit(i32),
+    /// A non-shell tool failed: an error, a conflict or an unknown action.
+    Failed,
 }
 
 impl ShellOutcome {
@@ -17,6 +19,7 @@ impl ShellOutcome {
     pub fn is_error(self) -> bool {
         match self {
             ShellOutcome::Exit(code) => code != 0,
+            ShellOutcome::Failed => true,
         }
     }
 
@@ -26,7 +29,7 @@ impl ShellOutcome {
     /// token-neutral for clients that render structured content.
     pub fn structured(self) -> Option<serde_json::Value> {
         match self {
-            ShellOutcome::Exit(0) => None,
+            ShellOutcome::Exit(0) | ShellOutcome::Failed => None,
             ShellOutcome::Exit(code) => Some(serde_json::json!({ "exitCode": code })),
         }
     }
@@ -109,6 +112,43 @@ pub trait McpTool: Send + Sync {
     fn produces_machine_readable(&self, _args: Option<&Map<String, Value>>) -> bool {
         false
     }
+
+    /// Whether this tool's text starts with `ERROR`, `CONFLICT` or `Unknown
+    /// action` exactly when the call failed, so dispatch can mark the result
+    /// `isError` ([`reports_failure`]). Tools that return file or command
+    /// content keep `false`: that content may start with anything.
+    fn text_reports_failures(&self) -> bool {
+        false
+    }
+}
+
+/// Whether a tool's text answer reports a failure: its first line, or the
+/// first line of a `[file]` section in a multi-file answer, starts with one of
+/// the prefixes the tool cores use for errors, conflicts and unknown actions.
+pub fn reports_failure(text: &str) -> bool {
+    const PREFIXES: [&str; 5] = ["ERROR", "Error:", "ERR:", "CONFLICT", "Unknown action"];
+    let fails = |line: &str| PREFIXES.iter().any(|p| line.trim_start().starts_with(p));
+    let mut lines = text.lines();
+    let Some(first) = lines.next() else {
+        return false;
+    };
+    if fails(first) {
+        return true;
+    }
+    let mut after_label = is_section_label(first);
+    for line in lines {
+        if after_label && fails(line) {
+            return true;
+        }
+        after_label = is_section_label(line);
+    }
+    false
+}
+
+/// A `[path]` line that opens one file's part of a multi-file answer.
+fn is_section_label(line: &str) -> bool {
+    let t = line.trim();
+    t.len() > 2 && t.starts_with('[') && t.ends_with(']') && !t.contains(' ')
 }
 
 /// Context passed to tool handlers. Contains pre-resolved values that
@@ -264,6 +304,31 @@ mod tests {
 
     fn empty_ctx() -> ToolContext {
         ToolContext::default()
+    }
+
+    #[test]
+    fn failures_are_recognised_by_their_prefix() {
+        for text in [
+            "ERROR: path is required for action=impact",
+            "Error: value is required for remember",
+            "ERR: empty index. Try action=reindex first.",
+            "Unknown action: x. Use: status, load",
+            "[src/a.rs]\nCONFLICT: 1 stale anchor(s) in a.rs",
+            "[a.rs]\n✓ a.rs: 1 edit\n\n[b.rs]\nERROR: file changed since read",
+        ] {
+            assert!(reports_failure(text), "{text}");
+        }
+        for text in [
+            "Impact of changing src/a.rs: 2 affected files",
+            "[a.rs]\n✓ a.rs: 1 edit",
+            "No files depend on src/a.rs (leaf node in the dependency graph).",
+            "line one\nERROR: inside the content, not a section start",
+            "",
+        ] {
+            assert!(!reports_failure(text), "{text}");
+        }
+        assert!(ShellOutcome::Failed.is_error());
+        assert_eq!(ShellOutcome::Failed.structured(), None);
     }
 
     #[test]

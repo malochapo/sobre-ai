@@ -13,6 +13,12 @@ impl McpTool for CtxOutlineTool {
         "ctx_outline"
     }
 
+    /// Errors, conflicts and unknown actions start with `ERROR`, `CONFLICT`
+    /// or `Unknown action` (B29).
+    fn text_reports_failures(&self) -> bool {
+        true
+    }
+
     fn tool_def(&self) -> Tool {
         tool_def(
             "ctx_outline",

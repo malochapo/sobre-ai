@@ -14,6 +14,12 @@ impl McpTool for CtxPatchTool {
         "ctx_patch"
     }
 
+    /// Errors, conflicts and unknown actions start with `ERROR`, `CONFLICT`
+    /// or `Unknown action` (B29).
+    fn text_reports_failures(&self) -> bool {
+        true
+    }
+
     // Schema diet (#576 pattern): the advertised surface carries only the
     // functional teaching (anchor source, op routing, batch atomicity).
     // Handler-only params stay supported but unadvertised: expected_md5,

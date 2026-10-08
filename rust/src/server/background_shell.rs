@@ -234,15 +234,30 @@ pub fn status(id: &str) -> Option<JobState> {
         .map(|job| job.state.clone())
 }
 
+/// How long `cancel` waits for the job to stop before answering.
+const CANCEL_WAIT: Duration = Duration::from_secs(2);
+
+/// Ask a job to stop and wait up to [`CANCEL_WAIT`] for it, so the answer says
+/// what happened. `Running` comes back only when the job is still stopping.
 pub fn cancel(id: &str) -> Option<JobState> {
-    let mut jobs = JOBS
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
-    let job = jobs.get_mut(id)?;
-    if matches!(job.state, JobState::Running) {
+    {
+        let mut jobs = JOBS
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let job = jobs.get_mut(id)?;
+        if !matches!(job.state, JobState::Running) {
+            return Some(job.state.clone());
+        }
         job.cancel.store(true, Ordering::Release);
     }
-    Some(job.state.clone())
+    let deadline = Instant::now() + CANCEL_WAIT;
+    loop {
+        let state = status(id)?;
+        if !matches!(state, JobState::Running) || Instant::now() >= deadline {
+            return Some(state);
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    }
 }
 
 #[cfg(test)]
@@ -443,14 +458,12 @@ mod tests {
             std::collections::HashMap::default(),
             Some(10_000),
         );
-        assert!(matches!(cancel(&id), Some(JobState::Running)));
-        for _ in 0..40 {
-            if let Some(JobState::Cancelled { output }) = status(&id) {
-                assert!(output.contains("command cancelled"));
-                return;
+        // B45: the answer to a cancel is the cancelled job, not "running".
+        match cancel(&id) {
+            Some(JobState::Cancelled { output }) => {
+                assert!(output.contains("command cancelled"), "{output}");
             }
-            std::thread::sleep(Duration::from_millis(25));
+            other => panic!("background job was not cancelled: {other:?}"),
         }
-        panic!("background job was not cancelled");
     }
 }

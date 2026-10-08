@@ -379,7 +379,8 @@ fn is_shell_error(outcome: crate::server::tool_trait::ShellOutcome, output: &str
             // signals the timeout to the agent.
             crate::server::execute::output_before_timeout_marker(output).is_none_or(str::is_empty)
         }
-        crate::server::tool_trait::ShellOutcome::Exit(_) => true,
+        crate::server::tool_trait::ShellOutcome::Exit(_)
+        | crate::server::tool_trait::ShellOutcome::Failed => true,
     }
 }
 
@@ -395,6 +396,14 @@ mod shell_outcome_tests {
             .and_then(|c| c.as_text())
             .map(|t| t.text.clone())
             .unwrap_or_default()
+    }
+
+    #[test]
+    fn a_failed_tool_sets_is_error_without_structured_content() {
+        let r = finalize_call_result("ERROR: path is required", Some(ShellOutcome::Failed));
+        assert_eq!(r.is_error, Some(true));
+        assert!(r.structured_content.is_none());
+        assert_eq!(text_of(&r), "ERROR: path is required");
     }
 
     #[test]

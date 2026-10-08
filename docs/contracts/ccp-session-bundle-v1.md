@@ -27,7 +27,14 @@ Top-level fields:
 ## Privacy
 
 Exports are always redacted: evidence `value`s are dropped and strings go
-through `redaction::redact_text`. `privacy=full` is refused.
+through `redaction::redact_text`. There is no unredacted export.
+
+## Where a bundle is written
+
+`ctx_session action=export` returns the bundle. With `path=` it also writes
+it there; with `write=true` and no `path`, under
+`$SOBRE_DATA_DIR/exports/sessions/`. Nothing is written into the project
+unless `path=` points there.
 
 ## Import semantics
 

@@ -11,7 +11,6 @@ const HOOK_GATING_TIMEOUT: Duration = Duration::from_secs(15);
 // Post-run shell output compression (Claude Code, Copilot CLI, OpenCode).
 mod compress;
 mod dedup;
-mod edit_health;
 // The host's own command rules, checked before any rewrite.
 mod host_rules;
 mod observe;

@@ -87,7 +87,7 @@ fn handle_build(root: &str) -> String {
 
 fn handle_related(path: Option<&str>, root: &str) -> String {
     let Some(target) = path else {
-        return "path is required for 'related' action".to_string();
+        return "ERROR: path is required for 'related' action".to_string();
     };
 
     let Some(open) = graph_provider::open_or_build(root) else {
@@ -124,7 +124,7 @@ fn handle_symbol(
     crp_mode: crate::tools::CrpMode,
 ) -> String {
     let Some(spec) = path else {
-        return "a symbol is required for 'symbol' action (a bare <symbol> name, or <file>::<symbol>)".to_string();
+        return "ERROR: a symbol is required for 'symbol' action (a bare <symbol> name, or <file>::<symbol>)".to_string();
     };
 
     let Some(open) = graph_provider::open_or_build(root) else {

@@ -77,7 +77,7 @@ pub fn handle(
         "health" => handle_health(project_root),
         "lifecycle_report" => handle_lifecycle_report(project_root),
         "remove" => handle_remove(project_root, category, key),
-        "export" => handle_export(project_root),
+        "export" => handle_export(project_root, None),
         "consolidate" => handle_consolidate(project_root),
         "restore" => handle_restore(project_root, category, query, None),
         "timeline" => handle_timeline(project_root, category),
@@ -433,22 +433,25 @@ fn handle_remove(project_root: &str, category: Option<&str>, key: Option<&str>) 
     format!("Removed [{cat}] {k}")
 }
 
-fn handle_export(project_root: &str) -> String {
+/// Write the project's knowledge as JSON to `out` (a file, or a directory to
+/// put a dated file in), or under the data directory when `out` is `None`.
+pub fn handle_export(project_root: &str, out: Option<&str>) -> String {
     let Some(knowledge) = ProjectKnowledge::load(project_root) else {
         return "No knowledge to export.".to_string();
     };
-    let data_dir = match crate::core::data_dir::sobre_data_dir() {
-        Ok(d) => d,
-        Err(e) => return format!("Export failed: {e}"),
-    };
-
-    let export_dir = data_dir.join("exports").join("knowledge");
     let ts = Utc::now().format("%Y%m%d-%H%M%S");
     let filename = format!(
         "knowledge-{}-{ts}.json",
         short_hash(&knowledge.project_hash)
     );
-    let path = export_dir.join(filename);
+    let path = match out.map(std::path::PathBuf::from) {
+        Some(p) if p.is_dir() => p.join(filename),
+        Some(p) => p,
+        None => match crate::core::data_dir::sobre_data_dir() {
+            Ok(d) => d.join("exports").join("knowledge").join(filename),
+            Err(e) => return format!("ERROR: export failed: {e}"),
+        },
+    };
 
     match serde_json::to_string_pretty(&knowledge) {
         Ok(mut json) => {
@@ -517,7 +520,7 @@ pub fn handle_import(
 
     let data = match std::fs::read_to_string(path) {
         Ok(d) => d,
-        Err(e) => return format!("Failed to read {path}: {e}"),
+        Err(e) => return format!("ERROR: failed to read {path}: {e}"),
     };
     let facts = match crate::core::knowledge::parse_import_data(&data) {
         Ok(f) => f,

@@ -27,7 +27,7 @@ pub fn callers_or_callees(
 ) -> String {
     let Some(symbol) = symbol else {
         let action = if callers { "callers" } else { "callees" };
-        return format!("symbol is required for action={action}");
+        return format!("ERROR: symbol is required for action={action}");
     };
     let graph = load(project_root);
     let filter = scope.map(|f| graph_file_filter(f, project_root));
@@ -71,10 +71,10 @@ fn ambiguity_note(graph: &CallGraph, symbol: &str) -> Option<String> {
 /// `ctx_graph action=trace`: the shortest call chain from `symbol` to `to`.
 pub fn trace(symbol: Option<&str>, to: Option<&str>, project_root: &str) -> String {
     let Some(from) = symbol else {
-        return "symbol is required for action=trace".to_string();
+        return "ERROR: symbol is required for action=trace".to_string();
     };
     let Some(to) = to else {
-        return "to is required for action=trace".to_string();
+        return "ERROR: to is required for action=trace".to_string();
     };
     with_handle_hint(call_path(&load(project_root), from, to))
 }

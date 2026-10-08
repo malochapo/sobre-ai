@@ -70,6 +70,12 @@ impl McpTool for CtxShellTool {
                 });
             };
             let (text, exit_code) = match state {
+                crate::server::background_shell::JobState::Running if action == "cancel" => (
+                    format!(
+                        "[background:{id} cancel requested; still stopping — check with background_action=\"status\"]"
+                    ),
+                    0,
+                ),
                 crate::server::background_shell::JobState::Running => {
                     (format!("[background:{id} running]"), 0)
                 }

@@ -463,7 +463,7 @@ fn handle_symbol_edit(action: &str, args: &Value, project_root: &str) -> String 
         );
     }
 
-    // 5) Dispatch (IDE-first, headless fallback) + format.
+    // 5) Write the range and format the result.
     match apply_symbol_edit(action, project_root, &edit) {
         Ok(res) => format_edit_result(action, &edit.abs_path, &res),
         Err(e) => format!("ERROR: {e}"),

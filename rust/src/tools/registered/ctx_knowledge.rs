@@ -14,6 +14,12 @@ impl McpTool for CtxKnowledgeTool {
         "ctx_knowledge"
     }
 
+    /// Errors, conflicts and unknown actions start with `ERROR`, `CONFLICT`
+    /// or `Unknown action` (B29).
+    fn text_reports_failures(&self) -> bool {
+        true
+    }
+
     fn tool_def(&self) -> Tool {
         tool_def(
             "ctx_knowledge",
@@ -34,7 +40,7 @@ action=consolidate imports latest session if present, runs lifecycle, then frees
                     "trigger": { "type": "string", "description": "gotcha trigger pattern" },
                     "resolution": { "type": "string", "description": "gotcha resolution/fix" },
                     "severity": { "type": "string", "description": "gotcha: critical|warning|info" },
-                    "category": { "type": "string", "description": "Fact category" },
+                    "category": { "type": "string", "description": "Fact category (remember: default general)" },
                     "key": { "type": "string" },
                     "value": { "type": "string" },
                     "content": { "type": "string", "description": "Alias for value (remember)" },
@@ -54,7 +60,7 @@ action=consolidate imports latest session if present, runs lifecycle, then frees
                 "allOf": [
                     {
                         "if": { "properties": { "action": { "const": "remember" } }, "required": ["action"] },
-                        "then": { "required": ["category"], "anyOf": [{ "required": ["value"] }, { "required": ["content"] }] }
+                        "then": { "anyOf": [{ "required": ["value"] }, { "required": ["content"] }] }
                     },
                     {
                         "if": { "properties": { "action": { "const": "pattern" } }, "required": ["action"] },
@@ -191,17 +197,24 @@ action=consolidate imports latest session if present, runs lifecycle, then frees
             return Ok(text_output(&action, text));
         }
 
-        // OKF export/import handled inline so `format`/`path`/`merge` stay off the
+        // Export/import handled inline so `format`/`path`/`merge` stay off the
         // shared handle() signature (same pattern as restore/gotcha above).
-        if action == "export" && get_str(args, "format").as_deref() == Some("okf") {
-            let out = get_str(args, "path").or_else(|| get_str(args, "output"));
-            return Ok(text_output(
-                &action,
-                crate::tools::ctx_knowledge::handle_export_okf(&project_root, out.as_deref()),
-            ));
+        // `path` is resolved like any tool path: against the project and the
+        // session's working directory, not the server's (B27).
+        let io_path = ctx
+            .resolved_path("path")
+            .map(str::to_string)
+            .or_else(|| get_str(args, "path"));
+        if action == "export" {
+            let text = if get_str(args, "format").as_deref() == Some("okf") {
+                crate::tools::ctx_knowledge::handle_export_okf(&project_root, io_path.as_deref())
+            } else {
+                crate::tools::ctx_knowledge::handle_export(&project_root, io_path.as_deref())
+            };
+            return Ok(text_output(&action, text));
         }
         if action == "import" {
-            let Some(path) = get_str(args, "path").or_else(|| query.clone()) else {
+            let Some(path) = io_path.or_else(|| query.clone()) else {
                 return Ok(text_output(
                     &action,
                     "ERROR: import requires `path` (a file or an OKF directory)".to_string(),

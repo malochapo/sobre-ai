@@ -114,7 +114,7 @@ fn open_graph_fresh(root: &str) -> Result<CodeGraph, String> {
 
 fn handle_analyze(path: Option<&str>, root: &str, max_depth: usize, fmt: OutputFormat) -> String {
     let Some(target) = path else {
-        return "path is required for action=impact".to_string();
+        return "ERROR: path is required for action=impact".to_string();
     };
 
     let graph = match open_graph_fresh(root) {

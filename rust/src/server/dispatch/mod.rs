@@ -118,7 +118,14 @@ impl SobreServer {
             // would crash with "Cannot read properties of undefined (reading
             // 'invoke')". `spawn_blocking` keeps the core workers free and lets
             // the watchdog always return a response.
-            let output = self.run_tool_handler(name, tool, args_map, ctx).await?;
+            let reports_failures = tool.text_reports_failures();
+            let mut output = self.run_tool_handler(name, tool, args_map, ctx).await?;
+            if output.shell_outcome.is_none()
+                && reports_failures
+                && crate::server::tool_trait::reports_failure(&output.text)
+            {
+                output.shell_outcome = Some(crate::server::tool_trait::ShellOutcome::Failed);
+            }
 
             // Image/binary content blocks bypass all text processing.
             if output.content_blocks.is_some() {
@@ -435,5 +442,31 @@ mod tests {
             "no confident suggestion for garbage: {}",
             err.message
         );
+    }
+
+    /// B29: a tool whose text reports a failure comes back as a failure, so
+    /// the client sets `isError` instead of reading an error as a success.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn failure_text_marks_the_call_failed() {
+        let _dir = crate::core::data_dir::isolated_data_dir();
+        let server = crate::tools::create_server();
+        let mut args = serde_json::Map::new();
+        args.insert("action".into(), serde_json::json!("bogus"));
+        let (text, _, outcome, _) = server
+            .dispatch_tool("ctx_graph", Some(&args), None)
+            .await
+            .expect("dispatch");
+        assert!(text.starts_with("Unknown action"), "{text}");
+        assert_eq!(
+            outcome,
+            Some(crate::server::tool_trait::ShellOutcome::Failed)
+        );
+
+        args.insert("action".into(), serde_json::json!("status"));
+        let (_, _, outcome, _) = server
+            .dispatch_tool("ctx_graph", Some(&args), None)
+            .await
+            .expect("dispatch");
+        assert_eq!(outcome, None, "a normal answer is not a failure");
     }
 }

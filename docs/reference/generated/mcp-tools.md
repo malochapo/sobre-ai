@@ -115,9 +115,10 @@ Parameters: `action`, `anchored`, `exclude`, `exclude_pattern`, `file`, `file_pa
 
 Session memory. save at session end, load at start, status = snapshot;
 task|finding|decision record progress (value=text).
+export returns the session as a redacted JSON bundle (write=true or path= also saves it); import path= loads one.
 ANTIPATTERN: permanent project knowledge → ctx_knowledge.
 
-Parameters: `action`*, `session_id`, `value`
+Parameters: `action`*, `format`, `path`, `session_id`, `value`, `write`
 
 ## `ctx_shell`
 

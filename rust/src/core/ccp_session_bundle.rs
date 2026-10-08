@@ -8,21 +8,6 @@ use crate::core::session::{
 
 const MAX_BUNDLE_BYTES: usize = 250_000;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum BundlePrivacyV1 {
-    Redacted,
-    Full,
-}
-
-impl BundlePrivacyV1 {
-    pub fn parse(s: Option<&str>) -> Self {
-        match s.unwrap_or("redacted").trim().to_lowercase().as_str() {
-            "full" => Self::Full,
-            _ => Self::Redacted,
-        }
-    }
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CcpSessionBundleV1 {
     pub schema_version: u32,
@@ -55,7 +40,8 @@ pub struct SessionExcerptV1 {
     pub compression_level: String,
 }
 
-pub fn build_bundle_v1(session: &SessionState, privacy: BundlePrivacyV1) -> CcpSessionBundleV1 {
+/// The session as an exportable bundle, always redacted.
+pub fn build_bundle_v1(session: &SessionState) -> CcpSessionBundleV1 {
     // The bundle records the exporting machine's compression style; importing
     // never applies it (settings come from the importer's config.toml).
     let export_level =
@@ -105,15 +91,7 @@ pub fn build_bundle_v1(session: &SessionState, privacy: BundlePrivacyV1) -> CcpS
         }
     }
 
-    match privacy {
-        BundlePrivacyV1::Full => {
-            // Exports are always redacted: `full` redacts the same as `redacted`.
-            redact_excerpt_in_place(&mut excerpt);
-        }
-        BundlePrivacyV1::Redacted => {
-            redact_excerpt_in_place(&mut excerpt);
-        }
-    }
+    redact_excerpt_in_place(&mut excerpt);
 
     CcpSessionBundleV1 {
         schema_version: crate::core::contracts::CCP_SESSION_BUNDLE_V1_SCHEMA_VERSION,
@@ -130,7 +108,7 @@ pub fn serialize_bundle_v1_pretty(bundle: &CcpSessionBundleV1) -> Result<String,
     let json = serde_json::to_string_pretty(bundle).map_err(|e| e.to_string())?;
     if json.len() > MAX_BUNDLE_BYTES {
         return Err(format!(
-            "ERROR: bundle too large ({} bytes > max {}). Use privacy=redacted and/or reduce session evidence.",
+            "ERROR: bundle too large ({} bytes > max {}). Reduce the session evidence.",
             json.len(),
             MAX_BUNDLE_BYTES
         ));
@@ -296,14 +274,14 @@ mod tests {
     fn redacted_export_drops_evidence_values() {
         let mut s = SessionState::new();
         s.record_manual_evidence("k", Some("secret=abcdef0123456789abcdef0123456789"));
-        let b = build_bundle_v1(&s, BundlePrivacyV1::Redacted);
+        let b = build_bundle_v1(&s);
         assert!(b.session.evidence.iter().all(|e| e.value.is_none()));
     }
 
     #[test]
     fn serialize_respects_size_cap() {
         let s = SessionState::new();
-        let b = build_bundle_v1(&s, BundlePrivacyV1::Redacted);
+        let b = build_bundle_v1(&s);
         let json = serialize_bundle_v1_pretty(&b).expect("json");
         assert!(json.len() < MAX_BUNDLE_BYTES);
         let parsed = parse_bundle_v1(&json).expect("parse");
@@ -320,7 +298,7 @@ mod tests {
                 .to_string(),
         );
         s.touch_file("does-not-exist-xyz.txt", None, "full", 10);
-        let b = build_bundle_v1(&s, BundlePrivacyV1::Redacted);
+        let b = build_bundle_v1(&s);
 
         let root = std::env::current_dir()
             .unwrap()

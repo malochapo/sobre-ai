@@ -401,9 +401,10 @@ fn ensure_utf8_locale(
 }
 
 fn command_timeout(command: &str, timeout_ms: Option<u64>) -> Duration {
-    // Single source of truth: operator env pin > per-call `timeout_ms` >
-    // per-tier env/config > built-in heavy/normal ceilings. Keeps this path
-    // identical to the interactive hook (`shell::exec::shell_timeout`).
+    // Single source of truth: per-call `timeout_ms` > `shell_timeout_secs`
+    // (at least the heavy ceiling for heavy commands) > built-in heavy/normal
+    // ceilings. Keeps this path identical to the interactive hook
+    // (`shell::exec::shell_timeout`).
     crate::shell::shell_timeout_with_override(command, timeout_ms)
 }
 

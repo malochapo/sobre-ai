@@ -12,21 +12,32 @@ impl McpTool for CtxSessionTool {
         "ctx_session"
     }
 
+    /// Errors, conflicts and unknown actions start with `ERROR`, `CONFLICT`
+    /// or `Unknown action` (B29).
+    fn text_reports_failures(&self) -> bool {
+        true
+    }
+
     fn tool_def(&self) -> Tool {
         tool_def(
             "ctx_session",
             "Session memory. save at session end, load at start, status = snapshot;\n\
              task|finding|decision record progress (value=text).\n\
+             export returns the session as a redacted JSON bundle (write=true or path= also \
+             saves it); import path= loads one.\n\
              ANTIPATTERN: permanent project knowledge → ctx_knowledge.",
             json!({
                 "type": "object",
                 "properties": {
                     "action": {
                         "type": "string",
-                        "description": "status|load|save|task|finding|decision|list|… (invalid action lists all)"
+                        "description": "status|load|save|task|finding|decision|list|export|import|… (invalid action lists all)"
                     },
                     "value": { "type": "string" },
-                    "session_id": { "type": "string", "description": "Omit for latest" }
+                    "session_id": { "type": "string", "description": "Omit for latest" },
+                    "path": { "type": "string", "description": "export: file to write; import: bundle to read" },
+                    "format": { "type": "string", "description": "export: json|summary" },
+                    "write": { "type": "boolean", "description": "export: also save the bundle (default location under the data directory)" }
                 },
                 "required": ["action"]
             }),
@@ -43,9 +54,13 @@ impl McpTool for CtxSessionTool {
         let value = get_str(args, "value");
         let sid = get_str(args, "session_id");
         let format = get_str(args, "format");
-        let path = get_str(args, "path");
+        // Resolved like any tool path: against the project and the session's
+        // working directory, not the server's.
+        let path = ctx
+            .resolved_path("path")
+            .map(str::to_string)
+            .or_else(|| get_str(args, "path"));
         let write = get_bool(args, "write").unwrap_or(false);
-        let privacy = get_str(args, "privacy");
 
         let session_handle = ctx
             .session
@@ -61,7 +76,6 @@ impl McpTool for CtxSessionTool {
                 format: format.as_deref(),
                 path: path.as_deref(),
                 write,
-                privacy: privacy.as_deref(),
             },
         );
 
