@@ -50,7 +50,7 @@ The lots run in this order:
 | Lot | Scope | Status |
 |---|---|---|
 | A | The user's machine: `uninstall`, `init`, agent integration | done (#31) |
-| B | The MCP tools: bugs, incomplete features, drift; decisions 1–4 and 6 | in progress (#32, #33, #34, #35) |
+| B | The MCP tools: bugs, incomplete features, drift; decisions 1–4 and 6 | done except B23, which waits on decision 5 (#32, #33, #34, #35, #36) |
 | C | The CLI and the proxy | open |
 | R | Tool names `ctx_*` → `sobre_*` (decision 9) | open |
 | D | Dead code, stale files, stale comments, duplicates; decision 7 | open |
@@ -241,7 +241,7 @@ Fixed in #31. How the fixes work:
 Fixed so far: #32 (paths, `ctx_read`, hidden read state), #33 (what the
 agent receives: prefixes, markers, footers, prompts and resources), #34
 (edits), #35 (graph: `ctx_impact` merged into `ctx_graph`, `ctx_review`
-repaired), #PR_B5 (errors, knowledge, sessions, the edit-quality store and
+repaired), #36 (errors, knowledge, sessions, the edit-quality store and
 the edit_health hook). Only B23 is left, waiting on decision 5.
 
 ### Bugs
