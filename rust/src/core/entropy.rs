@@ -107,9 +107,8 @@ pub fn entropy_compress(content: &str) -> EntropyResult {
 
 /// Entropy compression with the opportunistic semantic redundancy filter
 /// (#544) pinned OFF. The regular path uses the shared embedding engine
-/// whenever it happens to be loaded, so its output depends on runtime state.
-/// Benchmarks and the scorecard (#211) need run-to-run and machine-to-machine
-/// reproducibility, so they must go through this entry point.
+/// whenever it happens to be loaded, so its output depends on runtime state;
+/// the property tests go through this entry point to stay reproducible.
 #[cfg(test)]
 pub fn entropy_compress_deterministic(content: &str) -> EntropyResult {
     entropy_compress_inner(content, BPE_ENTROPY_THRESHOLD, 0.7, &[], false, &[])

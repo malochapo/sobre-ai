@@ -32,8 +32,9 @@ arbitrary (agent-supplied, possibly malformed):
    single text chunk rather than dropping content).
 4. **Deterministic** — identical input yields identical output.
 
-The unit tests in `rust/src/core/extractors/` pin these invariants for every
-format.
+A unit test in `rust/src/core/extractors/mod.rs` pins invariants 2–4 for every
+text format. A PDF that yields no text (empty, malformed or image-only input)
+becomes a single `[pdf extraction failed: …]` chunk with empty `text`.
 
 ## Versioning
 

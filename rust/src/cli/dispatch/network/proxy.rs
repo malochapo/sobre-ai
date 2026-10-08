@@ -189,9 +189,11 @@ pub(crate) fn cmd_proxy(rest: &[String]) {
                         );
                         std::process::exit(1);
                     }
-                } else {
-                    stop_proxy_process(port);
+                } else if stop_proxy_process(port) {
                     start_detached(port);
+                } else {
+                    println!("No proxy running on port {port}.");
+                    println!("  Start it: lean-ctx proxy start --port={port}");
                 }
             }
             "status" => {

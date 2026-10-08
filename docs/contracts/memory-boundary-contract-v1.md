@@ -19,4 +19,3 @@ session and labels each hit with its project.
 | `ctx_knowledge action=search` | Knowledge facts: current project only. Session findings and decisions: all saved sessions, each labeled with its project |
 | `ctx_knowledge action=recall` | Loads from the current project only |
 | Session `load_latest` | Scoped to the project root; no global fallback |
-| Universal gotchas | Shared across projects by design; `universal-gotchas.json` in the data directory is always loaded |

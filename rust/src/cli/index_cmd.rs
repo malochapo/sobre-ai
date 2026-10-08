@@ -1,5 +1,5 @@
 use std::path::Path;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use crate::terminal_ui::ProgressIndicator;
 
@@ -56,9 +56,7 @@ fn build(project_root: &str, force: bool) {
     }
 
     crate::core::index_orchestrator::ensure_all_background(project_root);
-    if !wait_graph_bm25_progress(project_root, Duration::from_mins(5)) {
-        return;
-    }
+    wait_graph_bm25_progress(project_root);
 
     // Surface the BM25 build outcome (chunk count + persisted size, or the
     // "too large to persist" remedy) so the operator knows the index state.
@@ -95,31 +93,27 @@ fn build_dense(project_root: &str) {
     }
 }
 
-/// Wait for graph + BM25 with a shared progress indicator.
-///
-/// Uses [`progress_view`] (typed) — no JSON scrape. Returns `false` on timeout
-/// (background work continues).
-fn wait_graph_bm25_progress(project_root: &str, timeout: Duration) -> bool {
+/// Wait for graph + BM25 with a shared progress indicator, using
+/// [`progress_view`](crate::core::index_orchestrator::progress_view) (typed, no
+/// JSON scrape). No timeout: the builders run on this process's threads, so
+/// returning early would stop them when the process exits. Both phases always
+/// end, a panic included, so the wait does too.
+fn wait_graph_bm25_progress(project_root: &str) {
     let mut progress = ProgressIndicator::new("indexes");
-    let start = Instant::now();
     loop {
         let view = crate::core::index_orchestrator::progress_view(project_root);
         if !view.graph_bm25_active() {
-            progress.finish("indexes (graph + BM25) done (search may still be warming)");
-            return true;
+            progress.finish("indexes (graph + BM25) done");
+            return;
         }
         apply_graph_bm25_progress(&mut progress, &view);
         progress.tick();
-        if start.elapsed() > timeout {
-            progress.finish("indexes still building (timeout — check `lean-ctx index status`)");
-            return false;
-        }
         std::thread::sleep(Duration::from_millis(100));
     }
 }
 
-/// Build the dense index on a worker thread while showing progress. Gives up
-/// waiting after ten minutes; the worker keeps running.
+/// Build the dense index on a worker thread while showing progress, and wait
+/// for it to finish: the worker stops when this process exits.
 #[cfg(feature = "embeddings")]
 fn wait_semantic_progress(project_root: &str) {
     let root = project_root.to_string();
@@ -127,23 +121,14 @@ fn wait_semantic_progress(project_root: &str) {
         crate::core::index_orchestrator::build_semantic(&root);
     });
     let mut progress = ProgressIndicator::new("dense");
-    let start = Instant::now();
-    let timeout = Duration::from_mins(10);
-    loop {
-        if handle.is_finished() {
-            let _ = handle.join();
-            progress.finish("dense done");
-            return;
-        }
+    while !handle.is_finished() {
         let view = crate::core::index_orchestrator::progress_view(project_root);
         apply_semantic_progress(&mut progress, &view);
         progress.tick();
-        if start.elapsed() > timeout {
-            progress.finish("dense index still building (timeout — check `lean-ctx index status`)");
-            return;
-        }
         std::thread::sleep(Duration::from_millis(100));
     }
+    let _ = handle.join();
+    progress.finish("dense done");
 }
 
 fn apply_graph_bm25_progress(

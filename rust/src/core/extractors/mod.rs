@@ -162,6 +162,54 @@ mod tests {
         assert_eq!(e.chunks, vec!["one", "two"]);
     }
 
+    /// The `extractors-v1` invariants: empty input gives no chunks, non-empty
+    /// input (valid, plain or malformed) gives at least one non-empty chunk,
+    /// and the same input always gives the same output.
+    #[test]
+    fn text_formats_keep_the_chunk_invariants() {
+        let samples: [(&str, &[u8]); 6] = [
+            ("d.json", br#"[{"a":1},{"b":2}]"#),
+            ("t.csv", b"a,b\n1,2"),
+            ("t.tsv", b"a\tb\n1\t2"),
+            ("m.eml", b"Subject: hi\n\nbody"),
+            ("p.html", b"<p>Body</p>"),
+            ("n.txt", b"one\n\ntwo"),
+        ];
+        for (name, sample) in samples {
+            let path = Path::new(name);
+            assert!(
+                extract(path, b"").chunks.is_empty(),
+                "{name}: empty input must give no chunks"
+            );
+            for input in [sample, b"hello world", b"\xff{\"unclosed\n,\""] {
+                let first = extract(path, input);
+                assert!(
+                    first.chunks.iter().any(|c| !c.trim().is_empty()),
+                    "{name}: {input:?} must give a non-empty chunk"
+                );
+                let again = extract(path, input);
+                assert_eq!(
+                    (first.text, first.chunks),
+                    (again.text, again.chunks),
+                    "{name}: {input:?} must extract deterministically"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn unreadable_pdf_becomes_one_failure_chunk() {
+        for input in [b"".as_slice(), b"not a pdf", b"%PDF-1.7 truncated"] {
+            let e = extract(Path::new("r.pdf"), input);
+            assert!(e.text.is_empty(), "{input:?}");
+            assert_eq!(e.chunks.len(), 1, "{input:?}");
+            assert!(
+                e.chunks[0].starts_with("[pdf extraction failed"),
+                "{input:?}"
+            );
+        }
+    }
+
     #[test]
     fn binary_document_predicate_matches_pdf_only() {
         assert!(is_binary_document(Path::new("a.pdf")));

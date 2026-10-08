@@ -584,7 +584,7 @@ fn source_content_changed_since_index(index: &ProjectIndex, root_abs: &str) -> b
 }
 
 /// Delete the persisted graph-index artifacts for a project so the next scan
-/// rebuilds from scratch. Backs `graph build --force`.
+/// rebuilds from scratch. Backs `lean-ctx index build --force`.
 ///
 /// The property graph (`graph.db` + `graph.meta.json`) is the sole store.
 pub fn purge_index(project_root: &str) {

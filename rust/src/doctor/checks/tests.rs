@@ -143,7 +143,8 @@ fn nothing_installed_fails_and_suggests_setup() {
 #[test]
 fn unknown_config_keys_flags_typos_only() {
     let raw = "compresion_level = 0.5\nshell_timeout_secs = 30\n\n\
-               [proxy]\nport = 4444\n\n[proxy.upstreams]\nanthropic = \"https://x\"\n";
+               [proxy]\nport = 4444\n\n[proxy.upstreams]\nanthropic = \"https://x\"\n\n\
+               [proxy.routing.aliases]\n\"gpt-4.1\" = \"openai:gpt-4.1-mini\"\n";
     let unknown = unknown_config_keys(raw);
     assert_eq!(unknown.len(), 1, "{unknown:?}");
     assert!(
@@ -151,4 +152,24 @@ fn unknown_config_keys_flags_typos_only() {
         "{unknown:?}"
     );
     assert!(unknown_config_keys("not = = toml").is_empty());
+
+    let unknown =
+        unknown_config_keys("[proxy]\nprot = 4444\n\n[proxy.upstreams]\nantrhopic = \"x\"\n");
+    assert_eq!(unknown.len(), 2, "{unknown:?}");
+    assert!(
+        unknown[0].starts_with("proxy.prot, did you mean proxy.port"),
+        "{unknown:?}"
+    );
+    assert!(
+        unknown[1].starts_with("proxy.upstreams.antrhopic"),
+        "{unknown:?}"
+    );
+
+    // The file `config init` writes is clean.
+    let schema = crate::core::config::schema::ConfigSchema::generate();
+    let rendered = crate::core::config::render_annotated_config(
+        &crate::core::config::Config::default(),
+        &schema,
+    );
+    assert!(unknown_config_keys(&rendered).is_empty(), "{rendered}");
 }

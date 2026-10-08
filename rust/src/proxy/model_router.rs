@@ -23,10 +23,10 @@
 //!
 //! ## Cost-quality awareness
 //!
-//! When live model prices are available (loaded by the proxy at startup from
-//! `~/.config/lean-ctx/model-prices.json`), the router annotates its decision
-//! with cost savings estimates. This is observability only — the tier lookup
-//! is the authoritative routing decision, not a dynamic cost optimizer.
+//! The router annotates its decision with an estimated cost ratio taken from a
+//! static table of relative model price tiers (`model_cost_tier`). This is
+//! observability only — the tier lookup is the authoritative routing decision,
+//! not a dynamic cost optimizer.
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;

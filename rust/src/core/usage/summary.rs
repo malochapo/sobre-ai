@@ -84,7 +84,7 @@ fn signed(n: u64) -> i64 {
 pub struct Summary {
     /// Compression totals over every surface.
     pub compression: ToolTotals,
-    /// Keyed by surface (`mcp`, `shell`, `hook`, `cli`, `proxy`).
+    /// Keyed by surface (`mcp`, `shell`, `hook`, `proxy`).
     pub by_surface: BTreeMap<String, ToolTotals>,
     /// Keyed by tool name.
     pub by_tool: BTreeMap<String, ToolTotals>,

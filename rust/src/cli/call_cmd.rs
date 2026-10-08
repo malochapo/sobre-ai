@@ -132,11 +132,18 @@ fn parse_args(args: &[String]) -> Result<CallArgs, CallError> {
 }
 
 fn oneshot_ctx(project_root: String, resolved_paths: HashMap<String, String>) -> ToolContext {
-    // A fresh session and file cache, as a starting MCP server has: the tools
-    // that track reads or memory (`ctx_read`, `ctx_shell`, `ctx_session`,
-    // `ctx_knowledge`) refuse to run without them.
-    let mut session = SessionState::new();
-    session.project_root = Some(project_root.clone());
+    // The project's latest session and a fresh file cache, as a starting MCP
+    // server has: the tools that track reads or memory (`ctx_read`,
+    // `ctx_shell`, `ctx_session`, `ctx_knowledge`) refuse to run without them.
+    // The session is stamped with the canonical root so a later load matches it.
+    let mut session = SessionState::load_latest_for_project_root(&project_root).unwrap_or_default();
+    session.project_root = Some(
+        crate::core::pathutil::safe_canonicalize_or_self(Path::new(&project_root))
+            .to_string_lossy()
+            .into_owned(),
+    );
+    // What is on disk is saved; only this call's changes count as unsaved.
+    session.stats.unsaved_changes = 0;
     ToolContext {
         project_root,
         resolved_paths,
@@ -201,10 +208,26 @@ pub(crate) fn run_call(args: &[String]) -> Result<String, CallError> {
         .get_arc(&parsed.tool)
         .ok_or_else(|| CallError::UnknownTool(parsed.tool.clone()))?;
 
+    // The process exits after this call, so what `ctx_session` recorded (a
+    // task, a finding, a decision) is saved now, as the server would save it.
+    // Other tools' session bookkeeping (files read, an inferred task) says what
+    // an agent has seen; a shell call is not the agent, so it is dropped.
+    let save_session = parsed.tool == "ctx_session";
+
     // Run the synchronous handler on the blocking pool of a runtime, as the
     // server does: handlers that lock the session block on it there.
     let output = super::dispatch::run_async(async move {
-        tokio::task::spawn_blocking(move || tool.handle(&args_map, &ctx)).await
+        tokio::task::spawn_blocking(move || {
+            let output = tool.handle(&args_map, &ctx);
+            if save_session && let Some(session) = &ctx.session {
+                let mut session = session.blocking_write();
+                if session.stats.unsaved_changes > 0 {
+                    let _ = session.save();
+                }
+            }
+            output
+        })
+        .await
     })
     .map_err(|e| e.to_string())
     .and_then(|r| r.map_err(|e| e.to_string()))
@@ -300,5 +323,28 @@ mod tests {
         );
 
         std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn session_changes_persist_across_calls() {
+        let _data = crate::core::data_dir::isolated_data_dir();
+        let project = tempfile::tempdir().unwrap();
+        let call = |json: &str| {
+            run_call(&[
+                "ctx_session".to_string(),
+                "--project-root".to_string(),
+                project.path().to_string_lossy().to_string(),
+                "--json".to_string(),
+                json.to_string(),
+            ])
+            .expect("ctx_session call")
+        };
+
+        call(r#"{"action": "task", "value": "wire the parser"}"#);
+        let status = call(r#"{"action": "status"}"#);
+        assert!(
+            status.contains("wire the parser"),
+            "the task set by the first call is lost:\n{status}"
+        );
     }
 }

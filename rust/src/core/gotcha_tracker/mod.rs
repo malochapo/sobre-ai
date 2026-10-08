@@ -7,8 +7,8 @@ pub use detect::{
     DetectedError, detect_error_pattern, is_correlatable_command, normalize_error_signature,
 };
 pub use model::{
-    ErrorEntry, FixEntry, Gotcha, GotchaCategory, GotchaSeverity, GotchaSource, GotchaStats,
-    GotchaStore, PendingError, SessionErrorLog,
+    ErrorEntry, FixEntry, Gotcha, GotchaCategory, GotchaSeverity, GotchaSource, GotchaStore,
+    PendingError, SessionErrorLog,
 };
 pub use runtime::record_shell_outcome;
 
@@ -53,7 +53,6 @@ impl GotchaStore {
         }
 
         self.log_error(session_id, &signature, command);
-        self.stats.total_errors_detected += 1;
         true
     }
 
@@ -105,7 +104,6 @@ impl GotchaStore {
             &resolution,
             &changed_files,
         );
-        self.stats.total_fixes_correlated += 1;
         self.updated_at = Utc::now();
 
         Some(gotcha)
@@ -238,7 +236,6 @@ impl GotchaStore {
 
     pub fn apply_decay(&mut self) {
         let now = Utc::now();
-        let mut decayed = 0u64;
 
         for gotcha in &mut self.gotchas {
             let days_since = (now - gotcha.last_seen).num_days().max(0) as f32;
@@ -251,12 +248,8 @@ impl GotchaStore {
             gotcha.confidence = (gotcha.confidence - decay).max(0.0);
         }
 
-        let before = self.gotchas.len();
         self.gotchas
             .retain(|g| g.confidence >= DECAY_ARCHIVE_THRESHOLD);
-        decayed += (before - self.gotchas.len()) as u64;
-
-        self.stats.gotchas_decayed += decayed;
     }
 }
 
@@ -483,28 +476,6 @@ mod tests {
         store.cross_session_boost();
         assert!(store.gotchas[0].confidence > 0.6);
         assert!(store.gotchas[0].session_ids.len() >= 3);
-    }
-
-    #[test]
-    fn promotion_criteria() {
-        let mut g = Gotcha::new(
-            GotchaCategory::Convention,
-            GotchaSeverity::Warning,
-            "use thiserror",
-            "derive thiserror::Error",
-            GotchaSource::AgentReported {
-                session_id: "s1".into(),
-            },
-            "s1",
-        );
-        g.confidence = 0.95;
-        g.occurrences = 6;
-        g.session_ids = vec!["s1".into(), "s2".into(), "s3".into()];
-        g.prevented_count = 3;
-        assert!(g.is_promotable());
-
-        g.occurrences = 2;
-        assert!(!g.is_promotable());
     }
 
     #[test]

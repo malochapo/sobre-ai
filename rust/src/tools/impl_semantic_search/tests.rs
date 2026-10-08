@@ -135,10 +135,10 @@ mod cold_start_guard_tests {
     #[test]
     fn dense_build_hint_always_points_at_the_cli_build() {
         let full = dense_build_hint(22_741, false);
-        assert!(full.contains("lean-ctx index build"));
+        assert!(full.ends_with("lean-ctx index build]"));
         assert!(full.contains("22741"));
         let compact = dense_build_hint(22_741, true);
-        assert!(compact.contains("lean-ctx index build"));
+        assert!(compact.ends_with("lean-ctx index build]"));
         assert!(compact.contains("22741"));
     }
 }

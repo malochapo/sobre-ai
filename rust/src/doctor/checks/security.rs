@@ -35,8 +35,9 @@ pub(crate) fn config_parse_outcome() -> Outcome {
 }
 
 /// Keys of a `config.toml` document that no setting reads, each with the
-/// closest known key when one is near. A key under a table setting
-/// (`proxy.upstreams.<id>`) belongs to that setting.
+/// closest known key when one is near. A key inside a free-form table
+/// (`proxy.routing.aliases`, `proxy.routing.tiers`) belongs to that table;
+/// every other key must be listed, so `[proxy] prot = 4444` is flagged.
 pub(crate) fn unknown_config_keys(raw: &str) -> Vec<String> {
     fn flatten(table: &toml::Table, prefix: &str, out: &mut Vec<String>) {
         for (k, v) in table {
@@ -56,14 +57,18 @@ pub(crate) fn unknown_config_keys(raw: &str) -> Vec<String> {
         return Vec::new();
     };
     let known = crate::core::config::schema::ConfigSchema::generate().known_keys();
+    // A free-form table is a known key that no other known key extends: its
+    // own keys are the user's (model names, tiers). `proxy` and
+    // `proxy.upstreams` list theirs, so a typo under them is caught.
+    let free_form: Vec<String> = known
+        .iter()
+        .map(|n| format!("{n}."))
+        .filter(|prefix| !known.iter().any(|o| o.starts_with(prefix)))
+        .collect();
     let mut keys = Vec::new();
     flatten(&table, "", &mut keys);
     keys.into_iter()
-        .filter(|k| {
-            !known
-                .iter()
-                .any(|n| k == n || k.starts_with(&format!("{n}.")))
-        })
+        .filter(|k| !known.contains(k) && !free_form.iter().any(|p| k.starts_with(p)))
         .map(
             |k| match crate::core::levenshtein::closest(&k, known.iter().map(String::as_str)) {
                 Some(near) => format!("{k}, did you mean {near}?"),
