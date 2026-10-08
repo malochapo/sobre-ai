@@ -32,9 +32,8 @@ is being replaced, the answer is no.
 - **No layering.** No defaults → profile → file → env → flag resolution chain.
   If a value can come from two places, it comes from one place.
 - **No environment variables that change behaviour.** Variables may exist for
-  paths and secrets — while the binary is still `lean-ctx`, they are
-  `LEAN_CTX_*` (`LEAN_CTX_CONFIG_DIR`, `LEAN_CTX_DATA_DIR`,
-  `LEAN_CTX_PROXY_TOKEN`, …). Never for what the tool does.
+  paths and secrets — `SOBRE_CONFIG_DIR`, `SOBRE_DATA_DIR`,
+  `SOBRE_PROXY_TOKEN`, …. Never for what the tool does.
 - **No profiles**, no presets, no modes.
 - **No settings outside the file.** No per-project files, no settings kept in
   session state, nothing a previous run persisted that later acts as a value.
