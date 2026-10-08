@@ -29,12 +29,12 @@ when they fit.
 |---|---|
 | `signatures` | the API: declarations only |
 | `map` | structure with line ranges |
-| `full` | verbatim, ready for an edit |
+| `full` | the whole file, ready for an edit (secret-like values show as `[REDACTED:…]`) |
 | `anchored` | full text with `N:hash` anchors for `ctx_patch` |
 | `lines:N-M` | a window (`lines:5,10-20` for several) |
-| `diff` | what changed since git HEAD |
+| `diff` | what changed since this session last read the file |
 | `task` | the parts relevant to a task |
-| `raw=true` | exact bytes, bypassing cache and compression |
+| `raw=true` | the bytes on disk: no cache, framing or redaction |
 
 Re-reading an unchanged file returns a short stub (~13 tokens); pass
 `fresh=true` to force the content again.

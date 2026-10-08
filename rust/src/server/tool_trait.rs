@@ -121,6 +121,10 @@ pub trait McpTool: Send + Sync {
 #[derive(Clone)]
 pub struct ToolContext {
     pub project_root: String,
+    /// The session's shell cwd (where `ctx_shell` last ran), snapshotted like
+    /// `extra_roots`: relative paths fall back to it, and a cwd in another git
+    /// checkout outranks `project_root` (#707).
+    pub shell_cwd: Option<String>,
     /// Session-scoped extra roots (MCP `roots/list`, config `search_roots`),
     /// snapshotted from the session so sync handlers can honor them without an
     /// async lock. Empty = single root (#403).
@@ -149,6 +153,7 @@ impl Default for ToolContext {
     fn default() -> Self {
         Self {
             project_root: String::new(),
+            shell_cwd: None,
             extra_roots: Vec::new(),
             resolved_paths: std::collections::HashMap::new(),
             crp_mode: crate::tools::CrpMode::Off,
@@ -171,11 +176,12 @@ impl ToolContext {
         self.path_errors.get(key).map(String::as_str)
     }
 
-    /// Sync path resolution using `project_root` + session `extra_roots`. Thin
-    /// wrapper over [`crate::core::path_resolve::resolve_tool_path`]
-    /// for sync tool handlers.
+    /// Sync path resolution with the same rules as the dispatcher: a thin
+    /// wrapper over [`crate::core::path_resolve::resolve_tool_path`] with
+    /// `project_root` and `shell_cwd`.
     pub fn resolve_path_sync(&self, path: &str) -> Result<String, String> {
-        crate::core::path_resolve::resolve_tool_path(Some(&self.project_root), None, path)
+        let root = (!self.project_root.is_empty()).then_some(self.project_root.as_str());
+        crate::core::path_resolve::resolve_tool_path(root, self.shell_cwd.as_deref(), path)
     }
 }
 

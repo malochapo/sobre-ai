@@ -937,7 +937,7 @@ fn cap_to_raw_falls_back_when_framing_inflates() {
         "fixture must inflate to exercise the guard"
     );
     assert_eq!(
-        cap_to_raw(framed, framed_tokens, raw, raw_tokens),
+        cap_to_raw(framed, framed_tokens, raw, raw_tokens, "full"),
         raw,
         "framing larger than raw must fall back to bare content"
     );
@@ -949,7 +949,7 @@ fn cap_to_raw_keeps_framing_when_not_larger() {
     let framed = "sig summary".to_string();
     let framed_tokens = count_tokens(&framed);
     assert_eq!(
-        cap_to_raw(framed.clone(), framed_tokens, raw, 100),
+        cap_to_raw(framed.clone(), framed_tokens, raw, 100, "map"),
         framed,
         "output at or below raw must be returned untouched"
     );
@@ -962,7 +962,7 @@ fn cap_to_raw_keeps_framing_for_empty_file() {
     let framed = "F1=empty.rs 0L".to_string();
     let framed_tokens = count_tokens(&framed);
     assert_eq!(
-        cap_to_raw(framed.clone(), framed_tokens, "", 0),
+        cap_to_raw(framed.clone(), framed_tokens, "", 0, "map"),
         framed,
         "empty files keep their framing signal"
     );
@@ -1037,9 +1037,8 @@ fn auto_read_still_compresses_large_file() {
 
 #[test]
 fn explicit_compressed_mode_capped_on_tiny_file() {
-    // #361 now applies to explicit modes too: asking for `signatures` of a tiny
-    // file must never cost more tokens than reading it raw. (On a tiny file the
-    // capped result is the raw content, which still carries the symbols.)
+    // #361 applies to explicit modes too: `signatures` of a tiny file costs
+    // more than the file, so the file is sent instead, labelled as such.
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("lib.rs");
     let p = path.to_string_lossy().to_string();
@@ -1048,12 +1047,10 @@ fn explicit_compressed_mode_capped_on_tiny_file() {
 
     let mut cache = SessionCache::new();
     let out = handle_with_task_resolved(&mut cache, &p, "signatures", CrpMode::Off, None);
-    assert!(
-        out.output_tokens <= count_tokens(content),
-        "explicit signatures of a tiny file must not inflate past raw: {} > {}\n{}",
-        out.output_tokens,
-        count_tokens(content),
-        out.content
+    // The file itself, with the one line that says the view was replaced.
+    assert_eq!(
+        out.content,
+        format!("[signatures view is larger than the file: whole file below]\n{content}")
     );
 }
 

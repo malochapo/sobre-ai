@@ -4,66 +4,27 @@ use super::startup::{
 };
 
 impl SobreServer {
-    /// Resolves a (possibly relative) tool path against the session's project_root.
-    /// Absolute paths and "." are returned as-is. Relative paths like "src/main.rs"
-    /// are joined with project_root so tools work regardless of the server's cwd.
+    /// Resolves a tool path through [`crate::core::path_resolve::resolve_tool_path`]
+    /// with the session's project root and shell cwd: an empty path or `.` is
+    /// the project root, and a relative path never resolves against the
+    /// server's own cwd.
     pub async fn resolve_path(&self, path: &str) -> Result<String, String> {
         let normalized = crate::core::pathutil::normalize_tool_path(path);
-        if normalized.is_empty() || normalized == "." {
-            return Ok(normalized);
-        }
         let p = std::path::Path::new(&normalized);
-
-        let (resolved, root) = {
+        let (project_root, shell_cwd) = {
             let session = self.session.read().await;
-            let root = session
-                .project_root
-                .as_deref()
-                .or(session.shell_cwd.as_deref())
-                .unwrap_or(".")
-                .to_string();
-
-            // #707: a shell_cwd tracking a mid-session worktree switch
-            // (different git checkout) outranks the stale project_root — same
-            // precedence as core::path_resolve. Checked BEFORE the `p.exists()`
-            // probe below: that probe runs against the *process* CWD, which
-            // IDEs routinely set to the original project root, so it would
-            // short-circuit every relative path back to the stale checkout and
-            // the divergence rule could never apply.
-            let worktree_cwd = if p.is_absolute() {
-                None
-            } else {
-                session
-                    .project_root
-                    .as_deref()
-                    .zip(session.shell_cwd.as_deref())
-                    .filter(|(root, cwd)| {
-                        crate::core::path_resolve::shell_cwd_is_divergent_checkout(root, cwd)
-                    })
-                    .map(|(_, cwd)| std::path::Path::new(cwd).join(&normalized))
-            };
-
-            let resolved = if let Some(overridden) = worktree_cwd {
-                overridden
-            } else if p.is_absolute() || p.exists() {
-                std::path::PathBuf::from(&normalized)
-            } else if let Some(ref root) = session.project_root {
-                let joined = std::path::Path::new(root).join(&normalized);
-                if joined.exists() {
-                    joined
-                } else if let Some(ref cwd) = session.shell_cwd {
-                    std::path::Path::new(cwd).join(&normalized)
-                } else {
-                    std::path::Path::new(&root).join(&normalized)
-                }
-            } else if let Some(ref cwd) = session.shell_cwd {
-                std::path::Path::new(cwd).join(&normalized)
-            } else {
-                std::path::Path::new(&root).join(&normalized)
-            };
-
-            (resolved, root)
+            (session.project_root.clone(), session.shell_cwd.clone())
         };
+        // A few `exists()` probes: cheap enough to run on the async thread.
+        let resolved = crate::core::path_resolve::resolve_tool_path(
+            project_root.as_deref(),
+            shell_cwd.as_deref(),
+            path,
+        )?;
+        let resolved = std::path::PathBuf::from(resolved);
+        let root = project_root
+            .or(shell_cwd)
+            .unwrap_or_else(|| ".".to_string());
 
         // sobre does not confine paths: the agent host decides what may be
         // read or written (invariant 5). An absolute path outside a root that
@@ -87,17 +48,6 @@ impl SobreServer {
                 .or_else(|| Some(new_root_str.clone()));
             let _ = session.save();
         }
-        let resolved = crate::core::pathutil::canonicalize_or_self(&resolved);
-
-        Ok(crate::core::pathutil::normalize_tool_path(
-            &resolved.to_string_lossy().replace('\\', "/"),
-        ))
-    }
-
-    /// Like `resolve_path`, but returns the original path on failure instead of an error.
-    pub async fn resolve_path_or_passthrough(&self, path: &str) -> String {
-        self.resolve_path(path)
-            .await
-            .unwrap_or_else(|_| path.to_string())
+        Ok(resolved.to_string_lossy().to_string())
     }
 }

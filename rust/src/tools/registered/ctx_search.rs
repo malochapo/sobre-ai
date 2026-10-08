@@ -539,9 +539,10 @@ fn handle_batch_queries(
     let anchored = get_bool(args, "anchored").unwrap_or(false);
     let crp = ctx.crp_mode;
     let respect = !no_gitignore;
-    let root = &resolved.roots[0];
+    let roots = &resolved.roots;
     let global_max = (get_int(args, "max_results").unwrap_or(20) as usize).min(500);
     let per_query_max = (global_max / queries.len()).max(5);
+    let per_search_max = (per_query_max / roots.len()).max(5);
 
     let mut combined = String::new();
     let mut total_observed: usize = 0;
@@ -566,23 +567,6 @@ fn handle_batch_queries(
         let exclude = get_str(obj, "exclude");
         let exclude_pattern = get_str(obj, "exclude_pattern");
 
-        let search_result = tokio::task::block_in_place(|| {
-            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                crate::tools::ctx_search::handle_filtered(
-                    &pattern,
-                    root,
-                    include.as_deref(),
-                    per_query_max,
-                    crp,
-                    respect,
-                    anchored,
-                    exclude.as_deref(),
-                    exclude_pattern.as_deref(),
-                )
-            }))
-            .ok()
-        });
-
         let label = if queries.len() > 1 {
             format!(
                 "── query {}: '{}' ──\n",
@@ -593,15 +577,38 @@ fn handle_batch_queries(
             String::new()
         };
 
-        let Some(outcome) = search_result else {
-            combined.push_str(&format!("{label}ERROR: search panicked\n\n"));
-            continue;
-        };
-
-        if !outcome.text.trim().is_empty() {
-            combined.push_str(&format!("{label}{}\n\n", outcome.text));
-            total_observed += outcome.observed_tokens;
-            total_sent += crate::core::tokens::count_tokens(&outcome.text);
+        // Every root of a multi-root session is searched, as for one pattern.
+        for root in roots {
+            let search_result = tokio::task::block_in_place(|| {
+                std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    crate::tools::ctx_search::handle_filtered(
+                        &pattern,
+                        root,
+                        include.as_deref(),
+                        per_search_max,
+                        crp,
+                        respect,
+                        anchored,
+                        exclude.as_deref(),
+                        exclude_pattern.as_deref(),
+                    )
+                }))
+                .ok()
+            });
+            let root_label = if roots.len() > 1 {
+                format!("{label}── {root} ──\n")
+            } else {
+                label.clone()
+            };
+            let Some(outcome) = search_result else {
+                combined.push_str(&format!("{root_label}ERROR: search panicked\n\n"));
+                continue;
+            };
+            if !outcome.text.trim().is_empty() {
+                combined.push_str(&format!("{root_label}{}\n\n", outcome.text));
+                total_observed += outcome.observed_tokens;
+                total_sent += crate::core::tokens::count_tokens(&outcome.text);
+            }
         }
     }
 

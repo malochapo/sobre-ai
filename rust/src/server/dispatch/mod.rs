@@ -114,9 +114,13 @@ impl SobreServer {
             }
 
             let crp_mode = crate::tools::CrpMode::effective();
-            let extra_roots = self.session.read().await.extra_roots.clone();
+            let (extra_roots, shell_cwd) = {
+                let session = self.session.read().await;
+                (session.extra_roots.clone(), session.shell_cwd.clone())
+            };
             let ctx = crate::server::tool_trait::ToolContext {
                 project_root,
+                shell_cwd,
                 extra_roots,
                 resolved_paths,
                 crp_mode,

@@ -103,37 +103,6 @@ impl McpTool for CtxShellTool {
             .ok_or_else(|| ErrorData::invalid_params("command is required", None))?;
         let timeout_ms = get_int(args, "timeout_ms").and_then(|n| u64::try_from(n).ok());
 
-        // #842: a bare `cat <file>` is better served by ctx_read — it delivers
-        // content inline instead of compressing it, avoiding a ctx_expand
-        // round-trip for agents with cat-muscle-memory.
-        if let Some(read_path) = detect_bare_cat_file(&command)
-            && let Some(cache_lock) = ctx.cache.as_ref()
-            && let Some(mut cache) = crate::server::bounded_lock::write(cache_lock, "cat_redirect")
-        {
-            let result = crate::tools::ctx_read::handle_with_task_resolved(
-                &mut cache,
-                &read_path,
-                "full",
-                crate::tools::CrpMode::Off,
-                None,
-            );
-            let note = format!(
-                "\n[ctx_shell: bare `cat` redirected to ctx_read for inline delivery. \
-                         Use ctx_read(path=\"{read_path}\") directly next time.]"
-            );
-            let out = format!("{}{note}", result.content);
-            let sent = crate::core::tokens::count_tokens(&out);
-            return Ok(ToolOutput {
-                text: out,
-                original_tokens: sent,
-                saved_tokens: 0,
-                mode: Some("cat-redirect".to_string()),
-                path: Some(read_path),
-                shell_outcome: Some(ShellOutcome::Exit(0)),
-                content_blocks: None,
-            });
-        }
-
         tokio::task::block_in_place(|| {
             let session_lock = ctx
                 .session
@@ -477,33 +446,6 @@ fn should_auto_background(command: &str, timeout_ms: Option<u64>) -> bool {
 /// unresolvable task id (#1106).
 fn foreground_soft_cap_ms() -> u64 {
     110_000
-}
-
-/// #842: detect a bare `cat <single_file>` command (no pipes, redirects, flags).
-fn detect_bare_cat_file(command: &str) -> Option<String> {
-    let trimmed = command.trim();
-    let rest = trimmed.strip_prefix("cat ")?;
-    let rest = rest.trim();
-    if rest.is_empty()
-        || rest.contains('|')
-        || rest.contains('>')
-        || rest.contains('<')
-        || rest.contains(';')
-        || rest.contains('&')
-        || rest.contains('$')
-        || rest.starts_with('-')
-    {
-        return None;
-    }
-    let parts: Vec<&str> = rest.split_whitespace().collect();
-    if parts.len() != 1 {
-        return None;
-    }
-    let file_path = parts[0].trim_matches(|c: char| c == '\'' || c == '"');
-    if file_path.is_empty() {
-        return None;
-    }
-    Some(file_path.to_string())
 }
 
 #[cfg(test)]

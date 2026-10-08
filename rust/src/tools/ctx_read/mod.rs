@@ -125,8 +125,8 @@ pub fn read_file_lossy(path: &str) -> Result<String, std::io::Error> {
         .map_err(|e| std::io::Error::other(format!("cannot stat open file descriptor: {e}")))?;
     if meta.len() > cap as u64 {
         return Err(std::io::Error::other(format!(
-            "file too large ({} bytes, limit {} bytes). \
-             Increase the limit or use a line-range read: mode=\"lines:1-100\"",
+            "file too large ({} bytes, limit {} bytes): read it in windows, \
+             mode=\"lines:1-200\" or start_line+limit",
             meta.len(),
             cap
         )));
@@ -221,6 +221,9 @@ fn try_disk_anchored_window(
     if !fresh || !preread_is_none {
         return None;
     }
+    if let Some(range) = mode.strip_prefix("lines:") {
+        return disk_lines_window(path, range, short);
+    }
     let range = mode.strip_prefix("anchored:")?;
     let (start, end) = parse_disk_anchor_range(range)?;
     let window = read_line_window(path, start, end)?;
@@ -235,6 +238,45 @@ fn try_disk_anchored_window(
     Some(ReadOutput {
         content: out,
         resolved_mode: mode.to_string(),
+        output_tokens: sent,
+        is_cache_hit: false,
+    })
+}
+
+/// A `lines:N-M` window of a file over the read size limit, streamed like an
+/// anchored one: a window is the way to read such a file, so the limit must
+/// not refuse it. Smaller files take the normal, cached path.
+fn disk_lines_window(path: &str, range: &str, short: &str) -> Option<ReadOutput> {
+    let too_large = std::fs::metadata(path)
+        .is_ok_and(|m| m.len() > crate::core::limits::max_read_bytes() as u64);
+    if !too_large || range.contains(',') {
+        return None;
+    }
+    let (start, end) = match range.split_once('-') {
+        Some((s, e)) => (
+            s.trim().parse::<usize>().ok()?.max(1),
+            e.trim().parse::<usize>().ok()?,
+        ),
+        None => (range.trim().parse::<usize>().ok()?.max(1), usize::MAX),
+    };
+    let window = read_line_window(path, start, end)?;
+    let body = if window.body.is_empty() {
+        "No lines matched the range.".to_string()
+    } else {
+        window
+            .body
+            .lines()
+            .enumerate()
+            .map(|(i, line)| format!("{:>4}| {line}", window.start + i))
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
+    let out = format!("{short} {}L lines:{range}\n{body}", window.total_lines);
+    let out = crate::core::redaction::redact_text(&out);
+    let sent = count_tokens(&out);
+    Some(ReadOutput {
+        content: out,
+        resolved_mode: format!("lines:{range}"),
         output_tokens: sent,
         is_cache_hit: false,
     })
@@ -803,7 +845,13 @@ fn handle_with_options_inner(
             // same capped, byte-stable body.
             let out = if mode_allows_raw_cap(&resolved_mode) {
                 let framed_tokens = count_tokens(&out);
-                cap_to_raw(out, framed_tokens, &content, original_tokens)
+                cap_to_raw(
+                    out,
+                    framed_tokens,
+                    &content,
+                    original_tokens,
+                    &resolved_mode,
+                )
             } else {
                 out
             };
@@ -882,6 +930,7 @@ fn handle_with_options_inner(
             framed_tokens,
             &content,
             store_result.original_tokens,
+            "full",
         );
         let output = crate::core::redaction::redact_text(&output);
         let sent = count_tokens(&output);
@@ -924,6 +973,7 @@ fn handle_with_options_inner(
             framed_tokens,
             &content,
             store_result.original_tokens,
+            &resolved_mode,
         )
     } else {
         output
@@ -962,14 +1012,23 @@ fn handle_with_options_inner(
 /// is roughly token-neutral and applied to whichever string wins), so the
 /// comparison is apples-to-apples with `original_tokens`. Empty files
 /// (`raw_tokens == 0`) keep their framing so the reader still gets a signal.
+///
+/// A lossy `mode` replaced by the file says so in one line, so the agent knows
+/// it got the whole file and not the view it asked for; a `full` view replaced
+/// by the bare content needs no label.
 pub(crate) fn cap_to_raw(
     framed: String,
     framed_tokens: usize,
     raw_content: &str,
     raw_tokens: usize,
+    mode: &str,
 ) -> String {
     if raw_tokens > 0 && framed_tokens > raw_tokens {
-        raw_content.to_string()
+        if matches!(mode, "full" | "full-compact") {
+            raw_content.to_string()
+        } else {
+            format!("[{mode} view is larger than the file: whole file below]\n{raw_content}")
+        }
     } else {
         framed
     }

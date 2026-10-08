@@ -15,7 +15,7 @@ pub struct ResolvedPaths {
 /// 1. `paths` array argument (explicit multi-root)
 /// 2. `path` string argument (single root, pre-resolved by dispatch)
 /// 3. Session `extra_roots` (default multi-root from config/MCP)
-/// 4. Fallback to `"."` (project root)
+/// 4. Fallback to the project root, refused when it is a broad directory
 ///
 /// Returns `Err` when an **explicit** `path`/`paths` argument was supplied but
 /// could not be resolved. Silently falling back to the project root in that case made
@@ -83,8 +83,16 @@ pub fn resolve_tool_paths(
         }
     }
 
+    // No path given: the project root, never the server's cwd. A broad root
+    // (home, the filesystem root, ~/Library, …) is refused here and only
+    // here: a client started from $HOME would otherwise walk the whole home
+    // directory (#356), while a path the agent names is always walked.
+    let root = ctx.resolve_path_sync(".")?;
+    if let Some(err) = crate::tools::walk_guard::deny_unsafe_walk_root(&root) {
+        return Err(err);
+    }
     Ok(ResolvedPaths {
-        roots: vec![".".to_string()],
+        roots: vec![root],
         is_multi: false,
     })
 }
@@ -110,24 +118,41 @@ mod tests {
     fn test_ctx() -> ToolContext {
         ToolContext {
             project_root: "/test/project".to_string(),
-            extra_roots: Vec::new(),
-            resolved_paths: std::collections::HashMap::new(),
-            crp_mode: crate::tools::CrpMode::Off,
-            cache: None,
-            session: None,
-            path_errors: std::collections::HashMap::new(),
-            bm25_cache: None,
-            progress_sender: None,
+            ..ToolContext::default()
         }
     }
 
     #[test]
-    fn fallback_to_dot_when_nothing_set() {
-        let args = Map::new();
-        let ctx = test_ctx();
-        let result = resolve_tool_paths(&args, &ctx).expect("no explicit path → default");
-        assert_eq!(result.roots, vec!["."]);
+    fn no_path_means_the_project_root_not_the_server_cwd() {
+        let project = tempfile::tempdir().unwrap();
+        std::fs::write(project.path().join("Cargo.toml"), "").unwrap();
+        let root = crate::core::pathutil::canonicalize_or_self(project.path())
+            .to_string_lossy()
+            .into_owned();
+        let ctx = ToolContext {
+            project_root: root.clone(),
+            ..ToolContext::default()
+        };
+        let result = resolve_tool_paths(&Map::new(), &ctx).expect("project root");
+        assert_eq!(result.roots, vec![root]);
         assert!(!result.is_multi);
+    }
+
+    #[test]
+    fn a_broad_default_root_is_refused_but_a_named_one_is_walked() {
+        let home = dirs::home_dir().expect("home dir in test env");
+        let ctx = ToolContext {
+            project_root: home.to_string_lossy().into_owned(),
+            ..ToolContext::default()
+        };
+        let err = resolve_tool_paths(&Map::new(), &ctx).expect_err("home as default");
+        assert!(err.starts_with("ERROR: refusing to scan"), "{err}");
+
+        let mut named = ctx;
+        named
+            .resolved_paths
+            .insert("path".to_string(), home.to_string_lossy().into_owned());
+        assert!(resolve_tool_paths(&Map::new(), &named).is_ok());
     }
 
     #[test]

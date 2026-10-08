@@ -23,9 +23,38 @@ pub(crate) fn batch_read(
     }
 }
 
+/// Arguments a batch read cannot honour: each one means one file's window or
+/// tuning, so it is refused rather than silently ignored.
+const SINGLE_FILE_ARGS: [&str; 6] = [
+    "raw",
+    "start_line",
+    "offset",
+    "limit",
+    "aggressiveness",
+    "protect",
+];
+
 fn handle_inner(args: &Map<String, Value>, ctx: &ToolContext) -> Result<ToolOutput, ErrorData> {
     let raw_paths = get_str_array(args, "paths")
         .ok_or_else(|| ErrorData::invalid_params("paths array is required", None))?;
+    if let Some(arg) = SINGLE_FILE_ARGS.iter().find(|a| args.contains_key(**a)) {
+        return Err(ErrorData::invalid_params(
+            format!("`{arg}` applies to one file: read it with ctx_read(path=…) instead of paths"),
+            None,
+        ));
+    }
+    if let Some(mode) = get_str(args, "mode") {
+        let parsed = mode.parse::<crate::tools::ctx_read::ReadMode>();
+        if let Err(e) = parsed {
+            return Err(ErrorData::invalid_params(e.user_message(), None));
+        }
+        if mode.starts_with("lines:") || mode.starts_with("anchored:") {
+            return Err(ErrorData::invalid_params(
+                "a line window applies to one file: read it with ctx_read(path=…)",
+                None,
+            ));
+        }
+    }
 
     let session_lock = ctx
         .session
@@ -43,7 +72,7 @@ fn handle_inner(args: &Map<String, Value>, ctx: &ToolContext) -> Result<ToolOutp
     // `block_in_place` — because the dispatch layer already wraps this handler in
     // `block_in_place`. The previous nested `block_in_place` calls could exhaust the
     // 32-thread blocking pool under concurrent reads and freeze the server (#271).
-    let (paths, current_task) = {
+    let (paths, current_task, skipped) = {
         let Some(session) = crate::server::bounded_lock::read(session_lock, "batch_read:session")
         else {
             return Err(ErrorData::internal_error(
@@ -52,26 +81,32 @@ fn handle_inner(args: &Map<String, Value>, ctx: &ToolContext) -> Result<ToolOutp
             ));
         };
         let mut paths = Vec::with_capacity(raw_paths.len());
+        let mut skipped = Vec::new();
         for p in &raw_paths {
             let resolved = super::resolve_path_sync(&session, p)
                 .map_err(|e| ErrorData::invalid_params(e, None))?;
             if crate::core::binary_detect::is_binary_file(&resolved) {
+                skipped.push(format!("{p} (binary)"));
                 continue;
             }
             if let Ok(meta) = std::fs::metadata(&resolved)
                 && meta.len() > cap
             {
+                skipped.push(format!(
+                    "{p} (over {} MB: read it in windows with ctx_read(path=…, mode=\"lines:1-200\"))",
+                    cap / (1024 * 1024)
+                ));
                 continue;
             }
             paths.push(resolved);
         }
         let current_task = session.task.as_ref().map(|t| t.description.clone());
-        (paths, current_task)
+        (paths, current_task, skipped)
     };
 
     if paths.is_empty() {
         return Err(ErrorData::invalid_params(
-            "all paths are binary or exceed the size limit",
+            format!("no file could be read: {}", skipped.join("; ")),
             None,
         ));
     }
@@ -105,6 +140,11 @@ fn handle_inner(args: &Map<String, Value>, ctx: &ToolContext) -> Result<ToolOutp
         total_original =
             total_original.saturating_add(cache.get(path).map_or(0, |e| e.original_tokens));
     }
+    let output = if skipped.is_empty() {
+        output
+    } else {
+        format!("{output}\nSkipped: {}", skipped.join("; "))
+    };
     let tokens = crate::core::tokens::count_tokens(&output);
     drop(cache);
 

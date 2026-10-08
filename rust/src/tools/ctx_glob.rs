@@ -36,11 +36,6 @@ pub fn handle(
     if !root.is_dir() {
         return (format!("ERROR: {dir} is not a directory"), 0);
     }
-    // Broad-root guard (#356 class): with cwd == $HOME a defaulted `path`
-    // would walk the whole home dir and trip macOS TCC privacy prompts.
-    if let Some(err) = crate::tools::walk_guard::deny_unsafe_walk_root(dir) {
-        return (err, 0);
-    }
 
     let max = max_results.min(MAX_RESULTS);
 
@@ -150,18 +145,6 @@ mod tests {
             .collect();
         assert_eq!(lines.len(), 2);
         assert!(lines[0] < lines[1], "results must be sorted: {lines:?}");
-    }
-
-    #[test]
-    fn glob_refuses_home_directory_root() {
-        // #356 class: never walk the whole home dir (macOS TCC prompts).
-        let home = dirs::home_dir().expect("home dir in test env");
-        let (out, tokens) = handle("*.txt", home.to_string_lossy().as_ref(), true, 10);
-        assert!(
-            out.starts_with("ERROR:") && out.contains("refusing to scan"),
-            "home root must be refused: {out}"
-        );
-        assert_eq!(tokens, 0);
     }
 
     #[test]

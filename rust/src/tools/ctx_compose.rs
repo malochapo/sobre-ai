@@ -408,6 +408,7 @@ pub fn handle(task: &str, project_root: &str, crp_mode: CrpMode) -> (String, usi
     if let Some(primary) = ranked_keywords
         .iter()
         .find(|keyword| is_code_identifier(keyword))
+        .filter(|_| crate::tools::walk_guard::deny_unsafe_walk_root(project_root).is_none())
     {
         let grep = crate::tools::ctx_search::handle_filtered(
             primary,

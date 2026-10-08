@@ -39,8 +39,10 @@ pub(crate) fn handle(
     };
     let gp = &open;
 
-    let session_intent =
-        crate::core::session::SessionState::load_latest().and_then(|s| s.active_structured_intent);
+    let session_intent = Some(crate::core::intent_engine::StructuredIntent::from_query(
+        task,
+    ))
+    .filter(|intent| intent.confidence >= 0.7);
 
     let (task_files, task_keywords) = parse_task_hints(task);
     let mut relevance = if let Some(ref intent) = session_intent {
