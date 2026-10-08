@@ -24,7 +24,6 @@ impl ProjectKnowledge {
             &mut self.history,
             policy.knowledge.max_history,
             policy.lifecycle.reclaim_headroom_pct,
-            policy.lifecycle.reclaim_enabled,
             |a, b| {
                 b.timestamp
                     .cmp(&a.timestamp)

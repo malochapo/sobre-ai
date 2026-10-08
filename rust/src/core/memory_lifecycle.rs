@@ -7,13 +7,12 @@
 //! - Archival of old/unused facts
 
 use crate::core::text_similarity::{token_jaccard, token_jaccard_f32};
-use chrono::{DateTime, Duration, Utc};
+use chrono::{Duration, Utc};
 use std::path::PathBuf;
 
 use super::knowledge::{KnowledgeFact, sort_fact_for_output};
 use super::memory_archive::{ArchiveConfig, MemoryStore};
 
-const DEFAULT_DECAY_RATE: f32 = 0.01;
 const DEFAULT_MAX_FACTS: usize = 1000;
 const LOW_CONFIDENCE_THRESHOLD: f32 = 0.3;
 const STALE_DAYS: i64 = 30;
@@ -41,79 +40,41 @@ const CONFIDENCE_FLOOR: f32 = 0.05;
 /// Default characteristic memory stability (days) for the Ebbinghaus curve.
 pub const DEFAULT_BASE_STABILITY_DAYS: f32 = 90.0;
 
-/// Which forgetting curve drives confidence decay (#1).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum ForgettingModel {
-    /// Exponential retention `R = exp(-Δt / S)` with spacing-boosted stability
-    /// `S` (Ebbinghaus forgetting curve + SM-2 spacing). Deterministic, the
-    /// default: durable memories fade gracefully, rehearsed ones persist.
-    #[default]
-    Ebbinghaus,
-    /// Legacy linear subtraction, kept for reproducibility / explicit opt-out.
-    Linear,
-}
-
-impl ForgettingModel {
-    pub fn parse(s: &str) -> Self {
-        match s.trim().to_lowercase().as_str() {
-            "linear" => Self::Linear,
-            _ => Self::Ebbinghaus,
-        }
-    }
-
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Ebbinghaus => "ebbinghaus",
-            Self::Linear => "linear",
-        }
-    }
-}
-
 #[derive(Debug, Clone)]
 pub struct LifecycleConfig {
-    pub decay_rate_per_day: f32,
     pub max_facts: usize,
     pub low_confidence_threshold: f32,
     pub stale_days: i64,
     pub consolidation_similarity: f32,
-    /// Forgetting curve (#1). Defaults to Ebbinghaus.
-    pub forgetting_model: ForgettingModel,
     /// Characteristic stability (days) for the Ebbinghaus curve before spacing
     /// and feedback modulation.
     pub base_stability_days: f32,
     /// When true, scale stability by the fact's archetype so structural *evidence*
-    /// (architecture/dependency/…) decays slower than *inference* (#802/cognition).
-    /// Default false keeps the baseline tuning byte-for-byte.
+    /// (architecture/dependency/…) decays slower than *inference*. Default false:
+    /// every archetype decays at `base_stability_days`.
     pub archetype_aware_decay: bool,
     /// Archive facts untouched for this many days that were **never** retrieved —
     /// dead weight that costs injection tokens regardless of confidence (#962).
-    /// `None` disables it (the default, so existing tuning is unchanged); the
-    /// production policy can opt in. Reversible: pruned facts go to the archive.
+    /// `None` disables it (the `LifecycleConfig` default); the production policy
+    /// sets it. Reversible: pruned facts go to the archive.
     pub prune_unretrieved_after_days: Option<i64>,
     /// Proactive headroom on a capacity reclaim (#995): when a store reaches its
     /// cap, drop down to `reclaim_target(max_facts, reclaim_headroom_pct)` so it
     /// settles with working room instead of churning at the cap. `0.25` = 75%.
     pub reclaim_headroom_pct: f32,
-    /// Master switch for the proactive capacity reclaim (#995). `false` restores
-    /// the legacy "trim only the overflow" behavior — the documented escape
-    /// hatch. Eviction stays lossless either way (excess is archived).
-    pub reclaim_enabled: bool,
 }
 
 impl Default for LifecycleConfig {
     fn default() -> Self {
         Self {
-            decay_rate_per_day: DEFAULT_DECAY_RATE,
             max_facts: DEFAULT_MAX_FACTS,
             low_confidence_threshold: LOW_CONFIDENCE_THRESHOLD,
             stale_days: STALE_DAYS,
             consolidation_similarity: 0.85,
-            forgetting_model: ForgettingModel::default(),
             base_stability_days: DEFAULT_BASE_STABILITY_DAYS,
             archetype_aware_decay: false,
             prune_unretrieved_after_days: None,
             reclaim_headroom_pct: DEFAULT_RECLAIM_HEADROOM_PCT,
-            reclaim_enabled: true,
         }
     }
 }
@@ -126,16 +87,13 @@ impl LifecycleConfig {
     pub fn from_policy(policy: &crate::core::memory_policy::MemoryPolicy) -> Self {
         Self {
             max_facts: policy.knowledge.max_facts,
-            decay_rate_per_day: policy.lifecycle.decay_rate,
             low_confidence_threshold: policy.lifecycle.low_confidence_threshold,
             stale_days: policy.lifecycle.stale_days,
             consolidation_similarity: policy.lifecycle.similarity_threshold,
-            forgetting_model: ForgettingModel::parse(&policy.lifecycle.forgetting_model),
             base_stability_days: policy.lifecycle.base_stability_days,
             archetype_aware_decay: policy.lifecycle.archetype_aware_decay,
             prune_unretrieved_after_days: policy.lifecycle.prune_unretrieved_after_days,
             reclaim_headroom_pct: policy.lifecycle.reclaim_headroom_pct,
-            reclaim_enabled: policy.lifecycle.reclaim_enabled,
         }
     }
 }
@@ -182,31 +140,21 @@ pub fn apply_confidence_decay(facts: &mut [KnowledgeFact], config: &LifecycleCon
         let net_feedback = i64::from(fact.feedback_up) - i64::from(fact.feedback_down);
 
         // Archetype-aware stability (opt-in): structural evidence is more durable
-        // than inference. Off by default → identical to the prior baseline.
+        // than inference. Off by default → every archetype uses the base stability.
         let base_stability = if config.archetype_aware_decay {
             config.base_stability_days * fact.archetype.stability_multiplier()
         } else {
             config.base_stability_days
         };
 
-        let new_confidence = match config.forgetting_model {
-            ForgettingModel::Ebbinghaus => ebbinghaus_confidence(
-                fact.confidence,
-                days_since_confirmed,
-                days_since_retrieved,
-                retrieval_count,
-                net_feedback,
-                base_stability,
-            ),
-            ForgettingModel::Linear => linear_confidence(
-                fact.confidence,
-                days_since_confirmed,
-                days_since_retrieved,
-                retrieval_count,
-                net_feedback,
-                config.decay_rate_per_day,
-            ),
-        };
+        let new_confidence = ebbinghaus_confidence(
+            fact.confidence,
+            days_since_confirmed,
+            days_since_retrieved,
+            retrieval_count,
+            net_feedback,
+            base_stability,
+        );
         if (new_confidence - fact.confidence).abs() > 0.001 {
             fact.confidence = new_confidence;
             count += 1;
@@ -238,29 +186,6 @@ fn ebbinghaus_confidence(
     let stability = (base_stability_days * spacing * feedback_mult).max(MIN_STABILITY_DAYS);
     let retention = (-(f64::from(elapsed)) / f64::from(stability)).exp() as f32;
     (confidence * retention).max(CONFIDENCE_FLOOR)
-}
-
-/// Legacy linear subtraction, preserved verbatim for `forgetting_model = linear`.
-/// FadeMem-inspired: protect frequently/recently retrieved facts; feedback
-/// steers retention. Deterministic, local-only.
-fn linear_confidence(
-    confidence: f32,
-    days_since_confirmed: f32,
-    days_since_retrieved: f32,
-    retrieval_count: f32,
-    net_feedback: i64,
-    decay_rate_per_day: f32,
-) -> f32 {
-    let freq_protect = 1.0 / (1.0 + retrieval_count.ln_1p());
-    let recency_protect = (1.0 - (days_since_retrieved / 30.0).min(1.0)).max(0.0);
-    let protect = (freq_protect * (1.0 - 0.5 * recency_protect)).max(0.05);
-    let feedback_factor = match net_feedback.cmp(&0) {
-        std::cmp::Ordering::Greater => 1.0 / (1.0 + (net_feedback as f32).ln_1p()),
-        std::cmp::Ordering::Less => (1.0 + (net_feedback.unsigned_abs() as f32).ln_1p()).min(4.0),
-        std::cmp::Ordering::Equal => 1.0,
-    };
-    let decay = decay_rate_per_day * days_since_confirmed * protect * feedback_factor;
-    (confidence - decay).max(CONFIDENCE_FLOOR)
 }
 
 pub fn consolidate_similar(facts: &mut Vec<KnowledgeFact>, similarity_threshold: f32) -> usize {
@@ -377,194 +302,6 @@ pub fn compact(
     (archived.len(), archived)
 }
 
-/// Guardrails for cluster compaction (#971). See
-/// [`crate::core::memory_policy::CompactionPolicy`] for field meanings.
-#[derive(Debug, Clone)]
-pub struct ClusterCompactionConfig {
-    pub min_cluster: usize,
-    pub similarity: f32,
-    pub max_confidence: f32,
-    pub max_confirmations: u32,
-}
-
-/// Maximum digest value length (chars). Bounded so a digest never re-bloats the
-/// store it was meant to shrink.
-const COMPACTION_VALUE_MAX: usize = 400;
-
-/// Collapse clusters of low-value, mutually-similar, same-category facts into one
-/// recoverable digest each. Returns `(clusters_collapsed, archived_originals)`;
-/// the caller archives the originals so the operation is lossless. Deterministic:
-/// candidates are scanned in the store's existing order and similarity ties
-/// resolve to the earliest-founded cluster.
-pub fn compact_clusters(
-    facts: &mut Vec<KnowledgeFact>,
-    cfg: &ClusterCompactionConfig,
-) -> (usize, Vec<KnowledgeFact>) {
-    if cfg.min_cluster < 2 {
-        return (0, Vec::new());
-    }
-    let now = Utc::now();
-
-    // Eligible = current, faded, barely-confirmed, cold, and not itself a digest
-    // or a synthesized summary (summaries are never compacted).
-    let eligible = |f: &KnowledgeFact| -> bool {
-        if !f.is_current() {
-            return false;
-        }
-        if f.source_session == crate::core::knowledge::COMPACTION_DIGEST_SOURCE
-            || f.source_session == crate::core::knowledge::COGNITION_SYNTHESIS_SOURCE
-        {
-            return false;
-        }
-        let recently_retrieved = f
-            .last_retrieved
-            .is_some_and(|t| now.signed_duration_since(t).num_days() < 14);
-        let frequently_retrieved = f.retrieval_count >= 5;
-        f.confidence < cfg.max_confidence
-            && f.confirmation_count <= cfg.max_confirmations
-            && !recently_retrieved
-            && !frequently_retrieved
-    };
-
-    // Group eligible indices by category, preserving first-seen order.
-    let mut by_category: Vec<(String, Vec<usize>)> = Vec::new();
-    for (i, f) in facts.iter().enumerate() {
-        if !eligible(f) {
-            continue;
-        }
-        match by_category.iter_mut().find(|(c, _)| *c == f.category) {
-            Some((_, v)) => v.push(i),
-            None => by_category.push((f.category.clone(), vec![i])),
-        }
-    }
-
-    // Greedy agglomerate within each category by average word similarity, then
-    // keep only clusters that reach the minimum size.
-    let mut clusters: Vec<Vec<usize>> = Vec::new();
-    for (_, indices) in &by_category {
-        let mut cat_clusters: Vec<Vec<usize>> = Vec::new();
-        for &i in indices {
-            let mut best: Option<(usize, f32)> = None;
-            for (ci, cl) in cat_clusters.iter().enumerate() {
-                let avg = cl
-                    .iter()
-                    .map(|&j| token_jaccard_f32(&facts[i].value, &facts[j].value))
-                    .sum::<f32>()
-                    / cl.len() as f32;
-                if avg >= cfg.similarity && best.is_none_or(|(_, b)| avg > b) {
-                    best = Some((ci, avg));
-                }
-            }
-            if let Some((ci, _)) = best {
-                cat_clusters[ci].push(i);
-            } else {
-                cat_clusters.push(vec![i]);
-            }
-        }
-        clusters.extend(
-            cat_clusters
-                .into_iter()
-                .filter(|c| c.len() >= cfg.min_cluster),
-        );
-    }
-
-    if clusters.is_empty() {
-        return (0, Vec::new());
-    }
-
-    // Build a digest per cluster, then remove the originals (high→low so indices
-    // stay valid) and append the digests.
-    let mut remove: Vec<usize> = Vec::new();
-    let mut digests: Vec<KnowledgeFact> = Vec::with_capacity(clusters.len());
-    for cluster in &clusters {
-        let members: Vec<&KnowledgeFact> = cluster.iter().map(|&i| &facts[i]).collect();
-        digests.push(build_digest(&members, now));
-        remove.extend(cluster.iter().copied());
-    }
-
-    remove.sort_unstable();
-    remove.dedup();
-    let mut archived: Vec<KnowledgeFact> = Vec::with_capacity(remove.len());
-    for idx in remove.into_iter().rev() {
-        archived.push(facts.remove(idx));
-    }
-    facts.extend(digests);
-
-    (clusters.len(), archived)
-}
-
-/// Synthesize one digest fact from a cluster's members. Byte-stable for a given
-/// set of members: members are sorted, the value is built deterministically, and
-/// the key is content-addressed (md5 of category + sorted member keys) so a
-/// re-run over the same inputs is idempotent.
-fn build_digest(members: &[&KnowledgeFact], now: DateTime<Utc>) -> KnowledgeFact {
-    use md5::{Digest, Md5};
-
-    let mut sorted: Vec<&KnowledgeFact> = members.to_vec();
-    sorted.sort_by(|a, b| a.key.cmp(&b.key).then_with(|| a.value.cmp(&b.value)));
-
-    let category = sorted[0].category.clone();
-    let max_conf = sorted.iter().map(|f| f.confidence).fold(0.0_f32, f32::max);
-    let confirmations: u32 = sorted.iter().map(|f| f.confirmation_count).sum();
-
-    let body: Vec<String> = sorted
-        .iter()
-        .map(|f| format!("{}: {}", f.key, f.value))
-        .collect();
-    let value_full = format!(
-        "Compacted {} low-signal {category} facts — {}",
-        sorted.len(),
-        body.join("; ")
-    );
-    let value = truncate_chars(&value_full, COMPACTION_VALUE_MAX);
-
-    let mut hasher = Md5::new();
-    hasher.update(category.as_bytes());
-    for f in &sorted {
-        hasher.update(b"\n");
-        hasher.update(f.key.as_bytes());
-    }
-    let hash = crate::core::hasher::hex_encode(&hasher.finalize());
-    let key = format!("digest-{}", &hash[..8]);
-
-    let sensitivity = crate::core::sensitivity::classify_content(&value);
-    KnowledgeFact {
-        category,
-        key,
-        value,
-        source_session: crate::core::knowledge::COMPACTION_DIGEST_SOURCE.to_string(),
-        confidence: max_conf,
-        created_at: now,
-        last_confirmed: now,
-        retrieval_count: 0,
-        last_retrieved: None,
-        valid_from: Some(now),
-        valid_until: None,
-        supersedes: None,
-        confirmation_count: confirmations.max(1),
-        feedback_up: 0,
-        feedback_down: 0,
-        last_feedback: None,
-        privacy: crate::core::memory_boundary::FactPrivacy::default(),
-        sensitivity,
-        imported_from: None,
-        archetype: crate::core::knowledge::KnowledgeArchetype::Observation,
-        fidelity: None,
-        revision_count: 0,
-    }
-}
-
-/// Truncate to at most `max` characters on a char boundary, appending an ellipsis
-/// when content was dropped.
-fn truncate_chars(s: &str, max: usize) -> String {
-    if s.chars().count() <= max {
-        return s.to_string();
-    }
-    let mut out: String = s.chars().take(max.saturating_sub(1)).collect();
-    out.push('…');
-    out
-}
-
 pub fn run_lifecycle(
     facts: &mut Vec<KnowledgeFact>,
     config: &LifecycleConfig,
@@ -586,7 +323,6 @@ pub fn run_lifecycle(
         facts,
         config.max_facts,
         config.reclaim_headroom_pct,
-        config.reclaim_enabled,
         |a, b| {
             b.is_current()
                 .cmp(&a.is_current())
@@ -629,25 +365,13 @@ pub fn list_archives() -> Vec<PathBuf> {
 
 /// The newest reachable facts archives for the recall-miss rehydrate path —
 /// bounded by [`ArchiveConfig::rehydrate_reach`] so every retained archive is
-/// reachable (closes the pre-#995 retained-vs-reachable gap).
+/// reachable.
 pub fn reachable_archives(cfg: &ArchiveConfig) -> Vec<PathBuf> {
     crate::core::memory_archive::reachable_archives(MemoryStore::Facts, None, cfg)
 }
 
 /// Replay boost (#3): lift the confidence of facts that are *related but not
 /// duplicates* and that both get retrieved often.
-///
-/// Reconciled from the deleted `core::memory_consolidation`. That module mapped
-/// every `KnowledgeFact` into a 7-field `KnowledgeEntry` shadow type, ran an
-/// NREM merge + REM prune + replay pass over it, and then read back only the
-/// importance — throwing the merges and prunes away, because merging and
-/// pruning are owned by this module.
-///
-/// That round trip was not merely wasteful, it was wrong: the merge step
-/// rewrote entry keys and the prune step dropped entries, so the key→importance
-/// map the caller rebuilt afterwards attributed boosts to the wrong fact and
-/// silently skipped others. Operating on the facts directly removes both the
-/// conversion and the bug.
 ///
 /// Additive by construction: confidence is only ever raised, never lowered, and
 /// no fact is removed. Deterministic.
@@ -734,11 +458,9 @@ mod tests {
             feedback_up: 0,
             feedback_down: 0,
             last_feedback: None,
-            privacy: crate::core::memory_boundary::FactPrivacy::default(),
             sensitivity: crate::core::sensitivity::SensitivityLevel::default(),
             imported_from: None,
             archetype: KnowledgeArchetype::default(),
-            fidelity: None,
             revision_count: 0,
         }
     }
@@ -768,11 +490,9 @@ mod tests {
             feedback_up: 0,
             feedback_down: 0,
             last_feedback: None,
-            privacy: crate::core::memory_boundary::FactPrivacy::default(),
             sensitivity: crate::core::sensitivity::SensitivityLevel::default(),
             imported_from: None,
             archetype: KnowledgeArchetype::default(),
-            fidelity: None,
             revision_count: 0,
         }
     }
@@ -886,32 +606,6 @@ mod tests {
         apply_confidence_decay(&mut a, &config);
         apply_confidence_decay(&mut b, &config);
         assert_eq!(a[0].confidence, b[0].confidence);
-    }
-
-    #[test]
-    fn linear_model_still_available() {
-        // Opt-out path keeps the legacy subtractive behavior.
-        let config = LifecycleConfig {
-            forgetting_model: ForgettingModel::Linear,
-            ..Default::default()
-        };
-        let mut facts = vec![make_old_fact("arch", "db", "PostgreSQL", 0.9, 10)];
-        let count = apply_confidence_decay(&mut facts, &config);
-        assert_eq!(count, 1);
-        assert!(facts[0].confidence < 0.9 && facts[0].confidence > 0.7);
-    }
-
-    #[test]
-    fn forgetting_model_parses() {
-        assert_eq!(ForgettingModel::parse("linear"), ForgettingModel::Linear);
-        assert_eq!(
-            ForgettingModel::parse("ebbinghaus"),
-            ForgettingModel::Ebbinghaus
-        );
-        assert_eq!(
-            ForgettingModel::parse("garbage"),
-            ForgettingModel::Ebbinghaus
-        );
     }
 
     #[test]
@@ -1095,129 +789,5 @@ mod tests {
         let report = run_lifecycle(&mut facts, &config).expect("lifecycle succeeds");
         assert!(report.remaining_facts <= config.max_facts);
         assert!(report.decayed_count > 0 || report.compacted_count > 0);
-    }
-
-    // === Cluster compaction (#971) ===
-
-    fn cc_config() -> ClusterCompactionConfig {
-        ClusterCompactionConfig {
-            min_cluster: 4,
-            similarity: 0.5,
-            max_confidence: 0.5,
-            max_confirmations: 1,
-        }
-    }
-
-    fn faded_cluster(n: usize) -> Vec<KnowledgeFact> {
-        (0..n)
-            .map(|i| {
-                make_old_fact(
-                    "logs",
-                    &format!("entry{i}"),
-                    &format!("request handler returned a transient retry case {i}"),
-                    0.2,
-                    40,
-                )
-            })
-            .collect()
-    }
-
-    #[test]
-    fn compact_clusters_collapses_low_value_cluster_into_digest() {
-        let mut facts = faded_cluster(5);
-        let (collapsed, archived) = compact_clusters(&mut facts, &cc_config());
-
-        assert_eq!(collapsed, 1);
-        assert_eq!(archived.len(), 5, "all originals archived (recoverable)");
-        assert_eq!(facts.len(), 1, "five facts became one digest");
-
-        let digest = &facts[0];
-        assert_eq!(
-            digest.source_session,
-            crate::core::knowledge::COMPACTION_DIGEST_SOURCE
-        );
-        assert!(digest.key.starts_with("digest-"));
-        assert!(digest.value.contains("Compacted 5 low-signal logs facts"));
-    }
-
-    #[test]
-    fn compact_clusters_leaves_high_value_facts() {
-        let cfg = cc_config();
-
-        // High confidence → above the importance ceiling.
-        let mut high_conf: Vec<KnowledgeFact> = (0..5)
-            .map(|i| {
-                make_old_fact(
-                    "logs",
-                    &format!("k{i}"),
-                    "request handler returned a transient retry",
-                    0.9,
-                    40,
-                )
-            })
-            .collect();
-        let (c1, _) = compact_clusters(&mut high_conf, &cfg);
-        assert_eq!(c1, 0);
-        assert_eq!(high_conf.len(), 5);
-
-        // Frequently retrieved → valuable even when faded.
-        let mut retrieved: Vec<KnowledgeFact> = (0..5)
-            .map(|i| {
-                let mut f = make_old_fact(
-                    "logs",
-                    &format!("k{i}"),
-                    "request handler returned a transient retry",
-                    0.2,
-                    40,
-                );
-                f.retrieval_count = 9;
-                f
-            })
-            .collect();
-        let (c2, _) = compact_clusters(&mut retrieved, &cfg);
-        assert_eq!(c2, 0);
-        assert_eq!(retrieved.len(), 5);
-    }
-
-    #[test]
-    fn compact_clusters_respects_min_cluster() {
-        let mut facts = faded_cluster(3); // below min_cluster (4)
-        let (collapsed, archived) = compact_clusters(&mut facts, &cc_config());
-        assert_eq!(collapsed, 0);
-        assert!(archived.is_empty());
-        assert_eq!(facts.len(), 3);
-    }
-
-    #[test]
-    fn compact_clusters_is_deterministic() {
-        let cfg = cc_config();
-        let mut a = faded_cluster(5);
-        let mut b = faded_cluster(5);
-        compact_clusters(&mut a, &cfg);
-        compact_clusters(&mut b, &cfg);
-        assert_eq!(a.len(), 1);
-        assert_eq!(b.len(), 1);
-        assert_eq!(a[0].key, b[0].key, "content-addressed digest key is stable");
-        assert_eq!(a[0].value, b[0].value, "digest value is byte-stable");
-    }
-
-    #[test]
-    fn compact_clusters_skips_digests_and_summaries() {
-        let mut facts = faded_cluster(5);
-        for f in &mut facts {
-            f.source_session = crate::core::knowledge::COMPACTION_DIGEST_SOURCE.to_string();
-        }
-        let (collapsed, _) = compact_clusters(&mut facts, &cc_config());
-        assert_eq!(collapsed, 0, "existing digests are never re-compacted");
-        assert_eq!(facts.len(), 5);
-    }
-
-    #[test]
-    fn truncate_chars_is_char_boundary_safe() {
-        let s = "äöü".repeat(300); // 900 multibyte chars, well over the cap
-        let t = truncate_chars(&s, 400);
-        assert!(t.chars().count() <= 400);
-        assert!(t.ends_with('…'));
-        // No panic on a non-ASCII boundary is the real assertion here.
     }
 }

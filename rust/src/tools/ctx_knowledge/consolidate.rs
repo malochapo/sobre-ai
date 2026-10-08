@@ -184,7 +184,6 @@ fn dry_run_report(
     let mut knowledge =
         ProjectKnowledge::load(project_root).unwrap_or_else(|| ProjectKnowledge::new(project_root));
     let headroom = policy.lifecycle.reclaim_headroom_pct;
-    let enabled = policy.lifecycle.reclaim_enabled;
 
     let mut imported = ImportCounts::default();
     let mut session_id = None;
@@ -213,8 +212,7 @@ fn dry_run_report(
             cfg.consolidation_similarity,
         );
         let (quality, _) = crate::core::memory_lifecycle::compact(&mut knowledge.facts, &cfg);
-        let capacity_archived =
-            reclaim_preview(knowledge.facts.len(), cfg.max_facts, headroom, enabled);
+        let capacity_archived = reclaim_preview(knowledge.facts.len(), cfg.max_facts, headroom);
         LifecycleReport {
             decayed_count: decayed,
             consolidated_count: consolidated,
@@ -231,13 +229,11 @@ fn dry_run_report(
         knowledge.history.len(),
         policy.knowledge.max_history,
         headroom,
-        enabled,
     );
     let patterns_compacted = reclaim_preview(
         knowledge.patterns.len(),
         policy.knowledge.max_patterns,
         headroom,
-        enabled,
     );
     let active_facts = knowledge.facts.iter().filter(|f| f.is_current()).count();
     let archived_facts = knowledge.facts.len().saturating_sub(active_facts);
@@ -280,7 +276,6 @@ fn reclaim_history(
         &mut knowledge.history,
         policy.knowledge.max_history,
         policy.lifecycle.reclaim_headroom_pct,
-        policy.lifecycle.reclaim_enabled,
         |a, b| {
             b.timestamp
                 .cmp(&a.timestamp)
@@ -301,7 +296,6 @@ fn reclaim_patterns(
         &mut knowledge.patterns,
         policy.knowledge.max_patterns,
         policy.lifecycle.reclaim_headroom_pct,
-        policy.lifecycle.reclaim_enabled,
         |a, b| {
             b.created_at
                 .cmp(&a.created_at)

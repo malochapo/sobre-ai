@@ -1,6 +1,6 @@
 //! Comprehensive scenario tests for compaction-aware cache behavior.
-//! Tests cover: delivery flag reset, stub-path guards, policy modes,
-//! compaction sync, and edge cases.
+//! Tests cover: delivery flag reset, stub-path guards, compaction sync, and
+//! edge cases.
 
 use lean_ctx::core::cache::SessionCache;
 use lean_ctx::core::protocol::CrpMode;
@@ -133,14 +133,13 @@ mod cache_delivery_flags {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// 2. Compaction Sync — radar detection and flag reset
+// 2. Compaction Sync — marker detection and flag reset
 // ═══════════════════════════════════════════════════════════════════════════════
 
 mod compaction_sync_scenarios {
     use super::*;
     use lean_ctx::server::compaction_sync::{LAST_COMPACTION_TS, sync_if_compacted};
     use serial_test::serial;
-    use std::io::Write;
     use std::sync::atomic::Ordering;
     use tempfile::TempDir;
 
@@ -157,37 +156,19 @@ mod compaction_sync_scenarios {
         cache
     }
 
-    fn write_radar(dir: &TempDir, events: &[(&str, u64)]) {
-        let path = dir.path().join("context_radar.jsonl");
-        let mut f = std::fs::File::create(&path).unwrap();
-        for (event_type, ts) in events {
-            writeln!(f, r#"{{"ts":{ts},"event_type":"{event_type}","tokens":0}}"#).unwrap();
-        }
+    fn write_marker(dir: &TempDir, ts: u64) {
+        std::fs::write(
+            dir.path().join("last_compaction.json"),
+            format!(r#"{{"ts":{ts}}}"#),
+        )
+        .unwrap();
     }
 
     #[test]
     #[serial]
-    fn no_radar_file_does_nothing() {
+    fn no_marker_file_does_nothing() {
         reset_compaction_ts();
         let dir = TempDir::new().unwrap();
-        let mut cache = make_cache(&["/tmp/a.rs"]);
-        assert!(!sync_if_compacted(&mut cache, dir.path()));
-        assert!(cache.is_full_delivered("/tmp/a.rs"));
-    }
-
-    #[test]
-    #[serial]
-    fn radar_without_compaction_does_nothing() {
-        reset_compaction_ts();
-        let dir = TempDir::new().unwrap();
-        write_radar(
-            &dir,
-            &[
-                ("mcp_call", 1000),
-                ("file_read", 2000),
-                ("native_tool", 3000),
-            ],
-        );
         let mut cache = make_cache(&["/tmp/a.rs"]);
         assert!(!sync_if_compacted(&mut cache, dir.path()));
         assert!(cache.is_full_delivered("/tmp/a.rs"));
@@ -198,40 +179,18 @@ mod compaction_sync_scenarios {
     fn newer_compaction_triggers_new_reset() {
         reset_compaction_ts();
         let dir = TempDir::new().unwrap();
-        write_radar(&dir, &[("compaction", 1000)]);
+        write_marker(&dir, 1000);
         let mut cache = make_cache(&["/tmp/a.rs"]);
 
         sync_if_compacted(&mut cache, dir.path());
         cache.store("/tmp/a.rs", "fn test() { todo!() }");
         cache.mark_full_delivered("/tmp/a.rs");
 
-        // Add newer compaction event
-        write_radar(&dir, &[("compaction", 1000), ("compaction", 3000)]);
+        // A newer compaction rewrites the marker
+        write_marker(&dir, 3000);
         assert!(sync_if_compacted(&mut cache, dir.path()));
         assert!(!cache.is_full_delivered("/tmp/a.rs"));
-    }
-
-    #[test]
-    #[serial]
-    fn multiple_compactions_takes_latest() {
-        reset_compaction_ts();
-        let dir = TempDir::new().unwrap();
-        write_radar(
-            &dir,
-            &[
-                ("mcp_call", 100),
-                ("compaction", 200),
-                ("mcp_call", 300),
-                ("compaction", 400),
-                ("mcp_call", 500),
-            ],
-        );
-        let mut cache = make_cache(&["/tmp/a.rs"]);
-        assert!(sync_if_compacted(&mut cache, dir.path()));
-
-        // Check that ts=400 was stored (not 200)
-        let ts = LAST_COMPACTION_TS.load(Ordering::Relaxed);
-        assert_eq!(ts, 400);
+        assert_eq!(LAST_COMPACTION_TS.load(Ordering::Relaxed), 3000);
     }
 
     #[test]
@@ -239,53 +198,16 @@ mod compaction_sync_scenarios {
     fn empty_cache_compaction_returns_true_but_resets_zero() {
         reset_compaction_ts();
         let dir = TempDir::new().unwrap();
-        write_radar(&dir, &[("compaction", 1000)]);
+        write_marker(&dir, 1000);
         let mut cache = SessionCache::default();
 
         // Returns true (compaction detected) but nothing to reset
         assert!(sync_if_compacted(&mut cache, dir.path()));
     }
-
-    #[test]
-    #[serial]
-    fn malformed_radar_lines_are_skipped() {
-        reset_compaction_ts();
-        let dir = TempDir::new().unwrap();
-        let path = dir.path().join("context_radar.jsonl");
-        let mut f = std::fs::File::create(&path).unwrap();
-        writeln!(f, "this is not json").unwrap();
-        writeln!(f, r#"{{"ts":2000,"event_type":"compaction","tokens":0}}"#).unwrap();
-        writeln!(f, "{{invalid").unwrap();
-        drop(f);
-
-        let mut cache = make_cache(&["/tmp/a.rs"]);
-        assert!(sync_if_compacted(&mut cache, dir.path()));
-        assert!(!cache.is_full_delivered("/tmp/a.rs"));
-    }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// 3. Cache Policy — effective_cache_policy behavior
-// ═══════════════════════════════════════════════════════════════════════════════
-
-mod cache_policy {
-    use lean_ctx::server::compaction_sync::effective_cache_policy;
-
-    #[test]
-    fn default_policy_is_aggressive() {
-        // Without env var override, default should be "aggressive"
-        // (OnceLock means this test depends on execution order,
-        // but the default Config returns None → "aggressive")
-        let policy = effective_cache_policy();
-        assert!(
-            matches!(policy, "aggressive" | "safe" | "off"),
-            "policy must be one of the three valid values, got: {policy}"
-        );
-    }
-}
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// 4. Integration: ctx_read stub behavior with delivery flags
+// 3. Integration: ctx_read stub behavior with delivery flags
 // ═══════════════════════════════════════════════════════════════════════════════
 
 mod ctx_read_stub_behavior {
@@ -393,7 +315,7 @@ mod ctx_read_stub_behavior {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// 5. Edge cases and robustness
+// 4. Edge cases and robustness
 // ═══════════════════════════════════════════════════════════════════════════════
 
 mod edge_cases {

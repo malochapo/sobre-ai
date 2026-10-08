@@ -45,17 +45,7 @@ pub(crate) fn handle_search(query: Option<&str>) -> String {
             if let Ok(content) = std::fs::read_to_string(&knowledge_file)
                 && let Ok(knowledge) = serde_json::from_str::<ProjectKnowledge>(&content)
             {
-                let is_foreign = current_project_hash
-                    .as_ref()
-                    .is_some_and(|h| h != &knowledge.project_hash);
-
                 for fact in &knowledge.facts {
-                    if is_foreign
-                        && fact.privacy == crate::core::memory_boundary::FactPrivacy::ProjectOnly
-                    {
-                        continue;
-                    }
-
                     let searchable = format!(
                         "{} {} {}",
                         fact.category.to_lowercase(),
@@ -212,10 +202,8 @@ pub(crate) fn format_facts_with_annotations(
     category: Option<&str>,
 ) -> String {
     // Preserve the caller's order: recall_for_output / recall_by_category_for_output
-    // already rank facts (balanced observation tier #802, exact-match precedence,
-    // relevance). Re-sorting here by salience would discard that ranking and bury a
-    // synthesized summary under a high-salience raw fact. The formatter renders; it
-    // does not re-rank.
+    // already rank facts (exact-match precedence, relevance). Re-sorting here by
+    // salience would discard that ranking. The formatter renders; it does not re-rank.
     let facts: Vec<&crate::core::knowledge::KnowledgeFact> = facts.iter().collect();
 
     let mut out = String::new();
@@ -267,13 +255,12 @@ pub(crate) fn short_hash(hash: &str) -> &str {
 
 #[cfg(test)]
 mod tests {
-    use crate::core::knowledge::{COGNITION_SYNTHESIS_SOURCE, ProjectKnowledge};
+    use crate::core::knowledge::ProjectKnowledge;
     use crate::core::memory_policy::MemoryPolicy;
 
-    // #802: the formatter renders in the caller's order and must never re-rank.
-    // `recall_for_output` ranks a synthesized observation ahead via the balanced tier;
-    // the display must preserve that, not re-sort by salience (which would bury the
-    // summary under a high-salience gotcha). Feeding both orders proves no re-sort.
+    // The formatter renders in the caller's order and must never re-rank: the
+    // display must not re-sort by salience (which would put the high-salience
+    // gotcha first). Feeding both orders proves no re-sort.
     #[test]
     fn format_preserves_caller_order_not_salience() {
         let policy = MemoryPolicy::default();
@@ -290,27 +277,27 @@ mod tests {
             "observation",
             "src/a.rs",
             "src/a.rs — gotcha: race condition",
-            COGNITION_SYNTHESIS_SOURCE,
+            "s2",
             0.60,
             &policy,
         );
         let obs = k
             .facts
             .iter()
-            .find(|f| f.is_synthesized_observation())
+            .find(|f| f.category == "observation")
             .cloned()
             .expect("observation present");
         let gotcha = k
             .facts
             .iter()
-            .find(|f| !f.is_synthesized_observation())
+            .find(|f| f.category == "gotcha")
             .cloned()
             .expect("gotcha present");
 
         let out = super::format_facts_with_annotations(&[obs.clone(), gotcha.clone()], 2, None);
         assert!(
             out.find("[observation/").unwrap() < out.find("[gotcha/").unwrap(),
-            "observation ranked first by recall must stay first in the rendered output"
+            "observation passed first must stay first in the rendered output"
         );
 
         let out_rev = super::format_facts_with_annotations(&[gotcha, obs], 2, None);

@@ -85,11 +85,8 @@ pub struct EditQualityStore {
     /// Normalized path -> unix time of an anchored-edit (`ctx_patch`) staleness
     /// miss. The next auto read of that path resolves to `anchored` (not `full`),
     /// so the model gets fresh line anchors to retry by reference (#1008).
-    /// `#[serde(default)]` keeps stores written before anchored editing loadable.
-    #[serde(default)]
     pub pending_anchored_escalations: HashMap<String, u64>,
     /// All-time counter of consumed escalations (observability).
-    #[serde(default)]
     pub escalations_served: u64,
     #[serde(skip)]
     dirty: bool,

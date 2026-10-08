@@ -55,10 +55,6 @@ fn gotcha_path(project_hash: &str) -> PathBuf {
 // ---------------------------------------------------------------------------
 
 pub fn load_universal_gotchas() -> Vec<Gotcha> {
-    let policy = crate::core::memory_boundary::BoundaryPolicy::default();
-    if !policy.universal_gotchas_enabled {
-        return Vec::new();
-    }
     let Ok(dir) = crate::core::data_dir::lean_ctx_data_dir() else {
         return Vec::new();
     };

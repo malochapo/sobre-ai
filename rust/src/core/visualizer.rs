@@ -85,7 +85,6 @@ pub struct SessionHistory {
     pub files_touched: Vec<FileTouchedEntry>,
     pub findings: Vec<FindingEntry>,
     pub decisions: Vec<DecisionEntry>,
-    pub progress: Vec<ProgressEntryViz>,
 }
 
 #[derive(Serialize)]
@@ -118,13 +117,6 @@ pub struct FindingEntry {
 pub struct DecisionEntry {
     pub summary: String,
     pub rationale: Option<String>,
-    pub timestamp: String,
-}
-
-#[derive(Serialize)]
-pub struct ProgressEntryViz {
-    pub action: String,
-    pub detail: Option<String>,
     pub timestamp: String,
 }
 
@@ -290,15 +282,6 @@ fn map_session(s: &SessionState) -> SessionHistory {
                 timestamp: d.timestamp.to_rfc3339(),
             })
             .collect(),
-        progress: s
-            .progress
-            .iter()
-            .map(|p| ProgressEntryViz {
-                action: p.action.clone(),
-                detail: p.detail.clone(),
-                timestamp: p.timestamp.to_rfc3339(),
-            })
-            .collect(),
     }
 }
 
@@ -356,7 +339,6 @@ mod tests {
                 files_touched: Vec::new(),
                 findings: Vec::new(),
                 decisions: Vec::new(),
-                progress: Vec::new(),
             },
         };
         let html = render_html(&data);

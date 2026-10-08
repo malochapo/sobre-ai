@@ -2,9 +2,9 @@
 //!
 //! The parallel BM25/graph builds fan the whole corpus across a rayon pool.
 //! On very large corpora (the #685 report: 1M+ files across multiple roots)
-//! the transient build state grows far past `max_ram_percent` before the
-//! memory guardian's 3 s poll can react — the kernel OOM killer fired at
-//! 75 GB RSS. Admission control closes that gap *before* the allocation
+//! the transient build state grows far past the built-in RAM share
+//! (`MAX_RAM_PERCENT`) before the memory guardian's 3 s poll can react — the
+//! kernel OOM killer fired at 75 GB RSS. Admission control closes that gap *before* the allocation
 //! happens: estimate the build's peak memory from the corpus size and only
 //! admit the parallel fast path when the estimate fits the remaining headroom
 //! below the guardian's Hard threshold. Oversized corpora degrade to the

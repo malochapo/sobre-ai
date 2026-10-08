@@ -383,7 +383,7 @@ fn run_build_worker(root: &str) {
     // After merge+save these are freed, but jemalloc retains dirty pages in
     // its arena — inflating RSS far past the logical working set. Purging
     // immediately returns those pages to the OS, keeping the serve process
-    // close to the configured max_ram_percent target.
+    // close to the built-in MAX_RAM_PERCENT target.
     crate::core::content_cache::trim_oldest_percent(75);
     crate::core::memory_guard::force_purge();
 

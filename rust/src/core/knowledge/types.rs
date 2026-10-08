@@ -1,19 +1,7 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-use crate::core::memory_boundary::FactPrivacy;
 use crate::core::sensitivity::SensitivityLevel;
-
-/// `source_session` marker for facts written by the cognition loop's observation
-/// synthesis step (#802). Lets recall distinguish synthesized entity-summaries
-/// from user-supplied findings (both are `Observation` archetype).
-pub const COGNITION_SYNTHESIS_SOURCE: &str = "cognition-synthesis";
-
-/// `source_session` marker for digest facts written by the cognition loop's
-/// cluster-compaction step (#971). A digest replaces a cluster of low-value,
-/// mutually-similar facts; the originals are archived (recoverable). Excluded
-/// from being compacted again so digests never cannibalize each other.
-pub const COMPACTION_DIGEST_SOURCE: &str = "cognition-compaction";
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 #[serde(rename_all = "snake_case")]
@@ -49,7 +37,7 @@ impl KnowledgeArchetype {
 
     /// Ebbinghaus stability multiplier (≥ 1.0 slows decay). Structural evidence is
     /// more durable than inference; only applied when `archetype_aware_decay` is on
-    /// (default off), so the baseline tuning is unchanged.
+    /// (default off).
     pub fn stability_multiplier(&self) -> f32 {
         match self {
             Self::Architecture => 1.5,
@@ -120,23 +108,6 @@ impl KnowledgeArchetype {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct FidelityScore {
-    pub structural: f64,
-    pub semantic: f64,
-    pub computed_at: DateTime<Utc>,
-}
-
-impl Default for FidelityScore {
-    fn default() -> Self {
-        Self {
-            structural: 0.0,
-            semantic: 0.0,
-            computed_at: Utc::now(),
-        }
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProjectKnowledge {
     pub project_root: String,
     pub project_hash: String,
@@ -155,37 +126,20 @@ pub struct KnowledgeFact {
     pub confidence: f32,
     pub created_at: DateTime<Utc>,
     pub last_confirmed: DateTime<Utc>,
-    #[serde(default)]
     pub retrieval_count: u32,
-    #[serde(default)]
     pub last_retrieved: Option<DateTime<Utc>>,
-    #[serde(default)]
     pub valid_from: Option<DateTime<Utc>>,
-    #[serde(default)]
     pub valid_until: Option<DateTime<Utc>>,
-    #[serde(default)]
     pub supersedes: Option<String>,
-    #[serde(default)]
     pub confirmation_count: u32,
-    #[serde(default)]
     pub feedback_up: u32,
-    #[serde(default)]
     pub feedback_down: u32,
-    #[serde(default)]
     pub last_feedback: Option<DateTime<Utc>>,
-    #[serde(default)]
-    pub privacy: FactPrivacy,
-    /// Per-item sensitivity classification (#212). Defaults to `Public`; set at
-    /// creation from content and enforced by the policy floor at injection time.
-    #[serde(default)]
+    /// Per-item sensitivity classification (#212). Set at creation from
+    /// content and enforced by the policy floor at injection time.
     pub sensitivity: SensitivityLevel,
-    #[serde(default)]
     pub imported_from: Option<String>,
-    #[serde(default)]
     pub archetype: KnowledgeArchetype,
-    #[serde(default)]
-    pub fidelity: Option<FidelityScore>,
-    #[serde(default)]
     pub revision_count: u32,
 }
 
@@ -279,21 +233,5 @@ mod archetype_tests {
     #[test]
     fn default_archetype_is_fact() {
         assert_eq!(KnowledgeArchetype::default(), KnowledgeArchetype::Fact);
-    }
-
-    #[test]
-    fn backward_compatible_deserialization() {
-        let json = r#"{
-            "category": "test",
-            "key": "k",
-            "value": "v",
-            "source_session": "s",
-            "confidence": 0.8,
-            "created_at": "2024-01-01T00:00:00Z",
-            "last_confirmed": "2024-01-01T00:00:00Z"
-        }"#;
-        let fact: KnowledgeFact = serde_json::from_str(json).unwrap();
-        assert_eq!(fact.archetype, KnowledgeArchetype::Fact);
-        assert!(fact.fidelity.is_none());
     }
 }

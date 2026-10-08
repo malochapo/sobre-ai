@@ -93,25 +93,16 @@ pub struct LedgerEntry {
     pub original_tokens: usize,
     pub sent_tokens: usize,
     pub timestamp: i64,
-    #[serde(default)]
     pub id: Option<ContextItemId>,
-    #[serde(default)]
     pub kind: Option<ContextKind>,
-    #[serde(default)]
     pub source_hash: Option<String>,
-    #[serde(default)]
     pub state: Option<ContextState>,
-    #[serde(default)]
     pub phi: Option<f64>,
-    #[serde(default)]
     pub view_costs: Option<ViewCosts>,
-    #[serde(default)]
     pub active_view: Option<ViewKind>,
-    #[serde(default)]
     pub provenance: Option<Provenance>,
     /// How many times this item has been (re)read into context. Drives the
     /// "high tokens + low recent use" eviction-candidate heuristic.
-    #[serde(default)]
     pub access_count: u32,
 }
 
@@ -180,10 +171,7 @@ impl ContextLedger {
             existing.timestamp = chrono::Utc::now().timestamp();
             existing.access_count = existing.access_count.saturating_add(1);
             existing.active_view = Some(ViewKind::parse(mode));
-            if existing.id.is_none() {
-                existing.id = Some(item_id);
-            }
-            if existing.state.is_none() || existing.state == Some(ContextState::Candidate) {
+            if existing.state == Some(ContextState::Candidate) {
                 existing.state = Some(ContextState::Included);
             }
             // #2 Sticky-Phi fix: salience is time-variant (recency, task match,
@@ -191,10 +179,9 @@ impl ContextLedger {
             // Phi on every re-read instead of freezing the first value. Blend
             // with the prior score via a fixed-alpha EMA — deterministic, and
             // damped so a single noisy read can't whipsaw eviction order.
-            existing.phi = Some(match existing.phi {
-                Some(old) => PHI_REREAD_ALPHA * phi + (1.0 - PHI_REREAD_ALPHA) * old,
-                None => phi,
-            });
+            existing.phi = existing
+                .phi
+                .map(|old| PHI_REREAD_ALPHA * phi + (1.0 - PHI_REREAD_ALPHA) * old);
         } else {
             self.entries.push(LedgerEntry {
                 path: path.clone(),

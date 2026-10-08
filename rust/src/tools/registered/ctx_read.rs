@@ -165,10 +165,6 @@ impl CtxReadTool {
         if arg_raw {
             fresh = true;
         }
-        let cache_policy = crate::server::compaction_sync::effective_cache_policy();
-        if cache_policy == "off" {
-            fresh = true;
-        }
         let aggressiveness =
             crate::core::aggressiveness::effective(get_f64(args, "aggressiveness"));
         let protect = get_str_array(args, "protect").unwrap_or_default();

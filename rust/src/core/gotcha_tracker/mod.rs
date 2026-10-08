@@ -331,7 +331,6 @@ impl GotchaStore {
                 GotchaSource::AutoDetected { .. } => "auto",
                 GotchaSource::AgentReported { .. } => "agent",
                 GotchaSource::CrossSessionCorrelated { .. } => "cross-session",
-                GotchaSource::Promoted { .. } => "promoted",
             };
             out.push(format!(
                 "  [{prefix}{label:8}] {} ({}x, {} sessions, {source}, confidence: {conf}%)",

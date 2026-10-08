@@ -7,7 +7,6 @@ pub struct MemoryPolicy {
     pub embeddings: EmbeddingsPolicy,
     pub gotcha: GotchaPolicy,
     pub admission: AdmissionPolicy,
-    pub compaction: CompactionPolicy,
 }
 
 #[derive(Debug, Clone)]
@@ -47,12 +46,10 @@ pub struct LifecyclePolicy {
     pub low_confidence_threshold: f32,
     pub stale_days: i64,
     pub similarity_threshold: f32,
-    /// Forgetting curve (#1): `ebbinghaus` (default) or `linear` (legacy).
-    pub forgetting_model: String,
     /// Characteristic memory stability in days for the Ebbinghaus curve.
     pub base_stability_days: f32,
     /// Scale Ebbinghaus stability by fact archetype so structural evidence decays
-    /// slower than inference. Default false keeps the baseline tuning unchanged.
+    /// slower than inference. Default false: every archetype decays alike.
     pub archetype_aware_decay: bool,
     /// Archive single-confirmation facts untouched for this many days that were
     /// never retrieved — dead weight regardless of confidence (#962). Defaults to
@@ -65,10 +62,6 @@ pub struct LifecyclePolicy {
     /// of churning right at the cap. Lossless — the reclaimed tail is archived
     /// and restorable.
     pub reclaim_headroom_pct: f32,
-    /// Master switch for the proactive reclaim (#995). `false` is the documented
-    /// escape hatch: trim only the overflow, no headroom. Eviction stays lossless
-    /// either way.
-    pub reclaim_enabled: bool,
 }
 
 impl Default for LifecyclePolicy {
@@ -78,12 +71,10 @@ impl Default for LifecyclePolicy {
             low_confidence_threshold: 0.3,
             stale_days: 30,
             similarity_threshold: 0.85,
-            forgetting_model: "ebbinghaus".to_string(),
             base_stability_days: crate::core::memory_lifecycle::DEFAULT_BASE_STABILITY_DAYS,
             archetype_aware_decay: false,
             prune_unretrieved_after_days: Some(90),
             reclaim_headroom_pct: crate::core::memory_lifecycle::DEFAULT_RECLAIM_HEADROOM_PCT,
-            reclaim_enabled: true,
         }
     }
 }
@@ -152,54 +143,16 @@ impl Default for AdmissionPolicy {
     }
 }
 
-/// Cluster compaction (#971): the background cognition loop collapses piles of
-/// low-value, mutually-similar facts into a single recoverable digest, so a busy
-/// store's live fact count actually *drops* instead of churning at its cap. It is
-/// strictly guarded — only faded (`< max_confidence`), barely-confirmed
-/// (`<= max_confirmations`), never-frequently/recently-retrieved facts in a
-/// cluster of at least `min_cluster` qualify — and lossless, since the originals
-/// are archived and rehydrate on recall.
-#[derive(Debug, Clone)]
-pub struct CompactionPolicy {
-    /// Master switch for cluster compaction in the cognition loop.
-    pub enabled: bool,
-    /// Minimum number of facts in a same-category cluster before it is collapsed
-    /// into a digest. Must be `>= 2`.
-    pub min_cluster: usize,
-    /// Average word-Jaccard similarity (0.0–1.0) a fact needs to join a cluster.
-    pub similarity: f32,
-    /// Importance ceiling: only facts *below* this confidence are eligible, so a
-    /// high-confidence fact is never compacted.
-    pub max_confidence: f32,
-    /// Only facts confirmed at most this many times are eligible — a
-    /// repeatedly-confirmed fact is structurally important and always kept.
-    pub max_confirmations: u32,
-}
-
-impl Default for CompactionPolicy {
-    fn default() -> Self {
-        Self {
-            enabled: true,
-            min_cluster: 4,
-            similarity: 0.5,
-            max_confidence: 0.5,
-            max_confirmations: 1,
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn memory_discipline_defaults_are_premium() {
-        // #970/#971/#972: self-curation is on by default, but lossless.
+        // #970/#972: self-curation is on by default, but lossless.
         let p = MemoryPolicy::default();
         assert!(p.admission.enabled, "admission on by default");
         assert_eq!(p.admission.min_salience, 0, "salience floor off (lossless)");
-        assert!(p.compaction.enabled, "cluster compaction on by default");
-        assert!(p.compaction.min_cluster >= 2);
         assert_eq!(
             p.lifecycle.prune_unretrieved_after_days,
             Some(90),

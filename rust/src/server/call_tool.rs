@@ -143,14 +143,9 @@ impl LeanCtxServer {
         let pre_compression = result_text.clone();
         result_text = post_process::compress_terse(result_text, name, args, &config, is_raw_shell);
 
-        let verify_cfg = crate::core::output_verification::VerificationConfig::default();
-
         if !is_raw_shell {
-            let vr = crate::core::output_verification::verify_output(
-                &pre_compression,
-                &result_text,
-                &verify_cfg,
-            );
+            let vr =
+                crate::core::output_verification::verify_output(&pre_compression, &result_text);
             if !vr.warnings.is_empty() {
                 let msg = format!("[VERIFY] {}", vr.format_compact());
                 result_text = format!("{result_text}\n\n{msg}");

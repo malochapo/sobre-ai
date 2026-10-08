@@ -67,33 +67,18 @@ pub struct KnowledgeEdge {
     pub to: KnowledgeNodeRef,
     pub kind: KnowledgeEdgeKind,
     pub created_at: DateTime<Utc>,
-    #[serde(default)]
     pub last_seen: Option<DateTime<Utc>>,
-    #[serde(default)]
     pub count: u32,
     pub source_session: String,
-    #[serde(default = "default_strength")]
     pub strength: f64,
-    #[serde(default = "default_decay_rate")]
     pub decay_rate: f64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(default)]
 pub struct KnowledgeRelationGraph {
     pub project_hash: String,
     pub edges: Vec<KnowledgeEdge>,
     pub updated_at: DateTime<Utc>,
-}
-
-impl Default for KnowledgeRelationGraph {
-    fn default() -> Self {
-        Self {
-            project_hash: String::new(),
-            edges: Vec::new(),
-            updated_at: Utc::now(),
-        }
-    }
 }
 
 impl KnowledgeRelationGraph {
@@ -115,11 +100,7 @@ impl KnowledgeRelationGraph {
     pub fn load(project_hash: &str) -> Option<Self> {
         let path = Self::path(project_hash).ok()?;
         let content = std::fs::read_to_string(&path).ok()?;
-        let mut g = serde_json::from_str::<Self>(&content).ok()?;
-        if g.project_hash.trim().is_empty() {
-            g.project_hash = project_hash.to_string();
-        }
-        Some(g)
+        serde_json::from_str::<Self>(&content).ok()
     }
 
     pub fn load_or_create(project_hash: &str) -> Self {
@@ -388,21 +369,6 @@ mod tests {
         let removed = graph.prune_weak_edges(0.05);
         assert_eq!(removed, 1);
         assert_eq!(graph.edges.len(), 1);
-    }
-
-    #[test]
-    fn backward_compatible_edge_deserialization() {
-        let json = r#"{
-            "from": {"category": "a", "key": "1"},
-            "to": {"category": "b", "key": "2"},
-            "kind": "related_to",
-            "created_at": "2024-01-01T00:00:00Z",
-            "count": 1,
-            "source_session": "s1"
-        }"#;
-        let edge: KnowledgeEdge = serde_json::from_str(json).unwrap();
-        assert!((edge.strength - 0.5).abs() < 0.01);
-        assert!((edge.decay_rate - 0.02).abs() < 0.001);
     }
 
     #[test]

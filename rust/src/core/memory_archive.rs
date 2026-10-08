@@ -20,8 +20,8 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use std::path::{Path, PathBuf};
 
-/// Retention bound on archive files, kept well above the rehydrate reach so a
-/// recall miss can still find recently-evicted items. Overridable via
+/// Retention bound on archive files. The rehydrate reach equals it, so a recall
+/// miss can find every retained archive.
 const DEFAULT_MAX_ARCHIVE_FILES: usize = 16;
 
 /// Which memory store an archive belongs to. Drives the on-disk path only — the
@@ -70,10 +70,9 @@ impl MemoryStore {
     }
 }
 
-/// Tunable archive bounds. `rehydrate_reach` is how many of the newest archives
-/// the recall-miss path scans; it defaults to `max_files` so every retained
-/// archive is actually reachable (closing the pre-#995 16-retained / 4-reachable
-/// gap). Both are overridable via env for ops tuning.
+/// Archive bounds. `rehydrate_reach` is how many of the newest archives the
+/// recall-miss path scans; it equals `max_files` so every retained archive is
+/// reachable.
 #[derive(Debug, Clone, Copy)]
 pub struct ArchiveConfig {
     pub max_files: usize,
@@ -89,22 +88,17 @@ impl Default for ArchiveConfig {
     }
 }
 
-impl ArchiveConfig {}
-
 /// Unified archive envelope for reading every store. The collection is keyed
 /// `items`.
 #[derive(Debug, Deserialize)]
 pub struct ArchiveEnvelope<T> {
     pub archived_at: DateTime<Utc>,
-    #[serde(default)]
-    pub store: String,
-    #[serde(default)]
-    pub scope: Option<String>,
     pub items: Vec<T>,
 }
 
 /// Borrowed write-side envelope, so archiving never has to clone the evicted
-/// slice. Mirrors [`ArchiveEnvelope`]'s on-disk shape exactly.
+/// slice. It also records `store` and `scope`; the reader
+/// ([`ArchiveEnvelope`]) takes only `archived_at` and `items`.
 #[derive(Serialize)]
 struct ArchiveEnvelopeRef<'a, T: Serialize> {
     archived_at: DateTime<Utc>,

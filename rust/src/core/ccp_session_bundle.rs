@@ -3,12 +3,10 @@ use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
 use crate::core::session::{
-    Decision, EvidenceRecord, FileTouched, Finding, ProgressEntry, SessionState, SessionStats,
-    TaskInfo, TestSnapshot,
+    Decision, EvidenceRecord, FileTouched, Finding, SessionState, SessionStats, TaskInfo,
 };
 
 const MAX_BUNDLE_BYTES: usize = 250_000;
-const MAX_NEXT_STEPS: usize = 25;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BundlePrivacyV1 {
@@ -51,14 +49,9 @@ pub struct SessionExcerptV1 {
     pub findings: Vec<Finding>,
     pub decisions: Vec<Decision>,
     pub files_touched: Vec<FileTouched>,
-    pub test_results: Option<TestSnapshot>,
-    pub progress: Vec<ProgressEntry>,
-    pub next_steps: Vec<String>,
     pub evidence: Vec<EvidenceRecord>,
     pub stats: SessionStats,
-    #[serde(default)]
     pub terse_mode: bool,
-    #[serde(default)]
     pub compression_level: String,
 }
 
@@ -89,14 +82,6 @@ pub fn build_bundle_v1(session: &SessionState, privacy: BundlePrivacyV1) -> CcpS
         findings: session.findings.clone(),
         decisions: session.decisions.clone(),
         files_touched: session.files_touched.clone(),
-        test_results: session.test_results.clone(),
-        progress: session.progress.clone(),
-        next_steps: session
-            .next_steps
-            .iter()
-            .take(MAX_NEXT_STEPS)
-            .cloned()
-            .collect(),
         evidence: session.evidence.clone(),
         stats: session.stats.clone(),
         terse_mode: export_level.is_active(),
@@ -122,8 +107,7 @@ pub fn build_bundle_v1(session: &SessionState, privacy: BundlePrivacyV1) -> CcpS
 
     match privacy {
         BundlePrivacyV1::Full => {
-            // Exports are always redacted: unredacted export was an admin-role
-            // privilege, and there are no roles.
+            // Exports are always redacted: `full` redacts the same as `redacted`.
             redact_excerpt_in_place(&mut excerpt);
         }
         BundlePrivacyV1::Redacted => {
@@ -237,9 +221,6 @@ pub fn import_bundle_v1_into_session(
         findings: imported.findings.clone(),
         decisions: imported.decisions.clone(),
         files_touched: imported.files_touched.clone(),
-        test_results: imported.test_results.clone(),
-        progress: imported.progress.clone(),
-        next_steps: imported.next_steps.clone(),
         evidence: imported.evidence.clone(),
         active_structured_intent: None,
         stats: imported.stats.clone(),
@@ -288,15 +269,6 @@ fn redact_excerpt_in_place(ex: &mut SessionExcerptV1) {
         if let Some(ref mut r) = d.rationale {
             *r = crate::core::redaction::redact_text(r);
         }
-    }
-    for p in &mut ex.progress {
-        p.action = crate::core::redaction::redact_text(&p.action);
-        if let Some(ref mut detail) = p.detail {
-            *detail = crate::core::redaction::redact_text(detail);
-        }
-    }
-    for s in &mut ex.next_steps {
-        *s = crate::core::redaction::redact_text(s);
     }
     for ev in &mut ex.evidence {
         ev.value = None;

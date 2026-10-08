@@ -115,7 +115,7 @@ fn write_config_key(key: &str, value: &str, display_key: &str, display_val: &str
 /// This is the regression guard for #443: `config init` once wrote
 /// `Config::default()`, and `Config::save()` overwrites any key present in both
 /// the incoming document and the file (see `config_io::merge_table`), which
-/// silently reset customized values like `max_ram_percent` or `compression_level`.
+/// silently reset customized values like `search_roots` or `compression_level`.
 fn config_for_init(existing_raw: Option<&str>) -> Result<config::Config, String> {
     match existing_raw.map(str::trim).filter(|raw| !raw.is_empty()) {
         Some(raw) => toml::from_str::<config::Config>(raw).map_err(|e| e.to_string()),

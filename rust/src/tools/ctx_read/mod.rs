@@ -487,11 +487,6 @@ pub(crate) fn try_stub_hit_readonly_scoped(
     path: &str,
     current_conversation: Option<&str>,
 ) -> Option<ReadOutput> {
-    let policy_allows_stub = crate::server::compaction_sync::effective_cache_policy() != "safe";
-    if !policy_allows_stub {
-        return None;
-    }
-
     // Warm path: a live in-memory entry is the freshest source of truth.
     if let Some(file_ref) = cache.get_file_ref_readonly(path) {
         let (cached_mtime, cached_hash, line_count, delivered_conv) = {

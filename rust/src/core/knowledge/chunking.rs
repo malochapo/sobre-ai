@@ -171,17 +171,29 @@ mod tests {
     use chrono::Utc;
 
     fn fact(cat: &str, key: &str, val: &str) -> KnowledgeFact {
-        // Build via serde so all `#[serde(default)]` fields fill themselves.
-        serde_json::from_value(serde_json::json!({
-            "category": cat,
-            "key": key,
-            "value": val,
-            "source_session": "test",
-            "confidence": 0.9,
-            "created_at": Utc::now(),
-            "last_confirmed": Utc::now(),
-        }))
-        .expect("valid fact json")
+        let now = Utc::now();
+        KnowledgeFact {
+            category: cat.to_string(),
+            key: key.to_string(),
+            value: val.to_string(),
+            source_session: "test".to_string(),
+            confidence: 0.9,
+            created_at: now,
+            last_confirmed: now,
+            retrieval_count: 0,
+            last_retrieved: None,
+            valid_from: None,
+            valid_until: None,
+            supersedes: None,
+            confirmation_count: 0,
+            feedback_up: 0,
+            feedback_down: 0,
+            last_feedback: None,
+            sensitivity: crate::core::sensitivity::SensitivityLevel::default(),
+            imported_from: None,
+            archetype: crate::core::knowledge::KnowledgeArchetype::default(),
+            revision_count: 0,
+        }
     }
 
     fn three_topic_facts() -> Vec<KnowledgeFact> {
