@@ -2,7 +2,6 @@
 
 mod checks;
 mod common;
-mod deprecations;
 mod fix;
 mod integrations;
 mod lint_context;
@@ -323,11 +322,6 @@ pub fn run() -> u32 {
     if let Some(ref check) = subscription_conflict {
         board.check(check);
     }
-
-    // 22) Deprecation register (GL #394): warn about
-    // every surface this build deprecates, with replacement and removal floor.
-    let deprecation_check = deprecations::deprecations_outcome();
-    board.check(&deprecation_check);
 
     // MCP server CWD warning (informational, only fires when running as MCP)
     let mcp_cwd = mcp_server_cwd_outcome();

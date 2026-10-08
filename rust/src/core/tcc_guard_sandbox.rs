@@ -18,9 +18,7 @@
 //! (`allow default`), so the processes keep full functionality.
 //!
 //! The deny is silent (no `(with send-signal SIGKILL)`): a production process
-//! must survive a stray access, losing only that one read. The SIGKILL variant
-//! lives solely in `tests/tcc_sandbox.sh`, where dying is how the regression
-//! test *detects* an access.
+//! must survive a stray access, losing only that one read.
 
 use std::path::Path;
 use std::process::Command;

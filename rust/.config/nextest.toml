@@ -25,8 +25,9 @@ test-group = 'serial-state'
 [scripts.setup.tmpdir]
 command = ['bash', '.config/nextest-tmpdir.sh']
 
-# Apply config isolation to every test: pointing LEAN_CTX_DATA_DIR at an empty
-# dir isolates them from the host config and keeps the real ~/.lean-ctx clean.
+# Apply dir isolation to every test: point LEAN_CTX_{CONFIG,DATA,STATE,CACHE}_DIR
+# at empty dirs so tests never read or write the host's config, data, state and
+# cache dirs.
 [[profile.default.scripts]]
 filter = 'all()'
 setup = 'tmpdir'

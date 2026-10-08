@@ -26,15 +26,15 @@ struct Gotcha {
     source: GotchaSource,
     prevented_count: u32,
     tags: Vec<String>,
-    provenance: Vec<ProvenanceRef>,  // NEW v1
-    expires_at: Option<DateTime<Utc>>,  // NEW v1
-    decay_rate_override: Option<f32>,   // NEW v1
+    provenance: Vec<ProvenanceRef>,
+    expires_at: Option<DateTime<Utc>>,
+    decay_rate_override: Option<f32>,
 }
 ```
 
 ## ProvenanceRef
 
-Structured origin tracking replacing the previous unstructured `source: String`:
+Structured origin tracking:
 
 ```rust
 struct ProvenanceRef {
@@ -81,9 +81,9 @@ Fixed constants in `gotcha_tracker/model.rs` and `gotcha_tracker/mod.rs`:
 
 ## Expiration fields
 
-`expires_at` and `decay_rate_override` are persisted on every gotcha
-(`#[serde(default)]`, `None` on creation). Decay and loading do not read them
-yet: decay always uses the source rate above.
+`expires_at` and `decay_rate_override` are persisted on every gotcha (`None`
+on creation). Decay and loading do not read them yet: decay always uses the
+source rate above.
 
 ## Tool Actions
 

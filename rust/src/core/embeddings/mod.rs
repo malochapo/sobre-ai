@@ -221,7 +221,7 @@ impl EmbeddingEngine {
         anyhow::bail!("Embeddings feature not enabled. Compile with --features embeddings")
     }
 
-    /// Load from default model directory (~/.lean-ctx/models/).
+    /// Load from the default model directory ([`model_directory`](Self::model_directory)).
     pub fn load_default() -> anyhow::Result<Self> {
         Self::load(&Self::model_directory())
     }

@@ -1,9 +1,9 @@
 //! Scenario tests for GitHub Issue #256:
 //! Stale `ANTHROPIC_BASE_URL` detection and cleanup when proxy is not enabled.
 //!
-//! Each test uses an isolated temp dir for both `LEAN_CTX_DATA_DIR` (config)
+//! Each test uses an isolated temp dir for both `LEAN_CTX_DATA_DIR` (data dir)
 //! and `CLAUDE_CONFIG_DIR` (Claude Code settings) to avoid interference
-//! with the host system's real config.
+//! with the host system's real dirs.
 
 struct TestEnv {
     _tmp: tempfile::TempDir,
@@ -14,7 +14,7 @@ impl TestEnv {
     fn new() -> Self {
         let tmp = tempfile::tempdir().unwrap();
         let home = tmp.path().to_path_buf();
-        let data_dir = home.join(".lean-ctx");
+        let data_dir = home.join("data");
         std::fs::create_dir_all(&data_dir).unwrap();
         // SAFETY: `#[serial]` (serial_test) ensures no other test in this binary runs concurrently.
         unsafe { std::env::set_var("LEAN_CTX_DATA_DIR", &data_dir) };

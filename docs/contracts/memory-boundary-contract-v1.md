@@ -47,8 +47,3 @@ project-scoped gotchas, is not reachable from configuration.
 | `ctx_knowledge action=recall` | Loads from the current project only |
 | Session `load_latest` | Scoped to the project root; no global fallback |
 | Universal gotchas | Shared across projects by design; always loaded (`BoundaryPolicy::default()`) |
-
-## Migration
-
-`KnowledgeFact` entries without a `privacy` field default to `ProjectOnly` via
-`#[serde(default)]`.

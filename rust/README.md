@@ -59,8 +59,7 @@ src/
 
 skill/SKILL.md        the `sobre` skill, embedded in the binary
 tests/                integration suites
-data/                 data compiled into the binary (deprecation register,
-                      model registry)
+data/                 data compiled into the binary (model registry)
 ```
 
 ## Generated files
