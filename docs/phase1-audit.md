@@ -51,7 +51,7 @@ The lots run in this order:
 |---|---|---|
 | A | The user's machine: `uninstall`, `init`, agent integration | done (#31) |
 | B | The MCP tools: bugs, incomplete features, drift; decisions 1–4 and 6 | done (#32, #33, #34, #35, #36, #37) |
-| C | The CLI and the proxy | in progress (#38) |
+| C | The CLI and the proxy | done (#38, #39) |
 | R | Tool names `ctx_*` → `sobre_*` (decision 9) | open |
 | D | Dead code, stale files, stale comments, duplicates; decision 7 | open |
 | F | Release: publish a `dense` binary (decision 8) | open |
@@ -617,23 +617,24 @@ the edit_health hook), #37 (`ctx_refactor`, decision 5).
 
 ## Lot C — the CLI and the proxy
 
-Fixed so far: #38 (doctor, colours, overhead).
+Fixed so far: #38 (doctor, colours, overhead), #39 (arguments, config,
+proxy, help, `sobre call`).
 
-- [ ] **C1 `proxy start --port <N>` (with a space) is ignored** and the
+- [x] **C1 `proxy start --port <N>` (with a space) is ignored** and the
   proxy listens on 4444. Only `--port=N` works; `stop` and `status` have the
   same problem.
 - [x] **C2 `doctor --json` prints the coloured human report.**
   - The flag is only read with `--fix` or a subcommand
     (`doctor/mod.rs:451-455`).
   - Help advertises `doctor [--fix] [--json]`.
-- [ ] **C3 `config set` problems.**
+- [x] **C3 `config set` problems.**
   - It clamps values silently: `compression_level 7` prints "Updated …
     = 7" and stores 1.0.
   - `proxy.port 18999` fails with "invalid type: string, expected u16".
   - Without `--yes`, `proxy.upstreams.anthropic` says "Aborted" and
     exits 0.
   - `config set bogus` does not list the valid keys.
-- [ ] **C4 Usage errors exit 0.** Seen with `index bogus`, `proxy bogus`,
+- [x] **C4 Usage errors exit 0.** Seen with `index bogus`, `proxy bogus`,
   `sobre -c` with no command, and `gain --bogus`. `gain --model=nonexistent`
   falls back silently.
 - [x] **C5 Colours ignore `NO_COLOR` and non-TTY output** in doctor, init,
@@ -653,13 +654,13 @@ Fixed so far: #38 (doctor, colours, overhead).
     binary is readable.
 - [x] **C7 Overhead figures disagree:** `gain` says 4.6K, while `doctor`
   overhead says 4,944.
-- [ ] **C8 `sobre call` needs `--project-root` even inside a repo, and
+- [x] **C8 `sobre call` needs `--project-root` even inside a repo, and
   rejects `--project-root .`** as "refusing broad/unsafe"
   (`pathutil.rs:241-252`, `call_cmd.rs:166-169`).
-- [ ] **C9 Typo suggestions and bare `sobre`.**
+- [x] **C9 Typo suggestions and bare `sobre`.**
   - There is no suggestion for `sobre inti`.
   - A bare `sobre` on a terminal says "waiting silently", then exits.
-- [ ] **C10 Help text** (`cli/help.rs`).
+- [x] **C10 Help text** (`cli/help.rs`).
   - The banner says "sobre 0.1.0 — sobre, local context tools…", with the
     name twice (`:9,45,75`).
   - `config` is described as "Show or edit", but there is no editor
@@ -669,13 +670,13 @@ Fixed so far: #38 (doctor, colours, overhead).
   - "SHELL HOOK PATTERNS" also apply to `ctx_shell` and `-c` (`:131`).
   - `proxy enable --force` is missing from `help all` (`:121-125`) and
     from `proxy --help` (`network/proxy.rs:77-95`).
-- [ ] **C11 `config init` overclaims.**
+- [x] **C11 `config init` overclaims.**
   - It claims a "full annotated reference… every key… and the
     environment variable that overrides it", but writes 5 of the 11 keys.
     Missing: `hook_binary`, `embedding_model`, `shell_timeout_secs`, and
     `proxy.enabled`/`port`/`upstreams`.
   - The environment-variable claim contradicts invariant 2.
-- [ ] **C12 Proxy behaviour.**
+- [x] **C12 Proxy behaviour.**
   - `GET /v1/responses` without auth returns 401; the 426 comes only with
     an auth header, and it has no `Upgrade` header.
   - `proxy status` and `proxy stop` assume port 4444 and do not remember

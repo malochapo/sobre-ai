@@ -98,12 +98,12 @@ fn run(args: &[&str]) -> (String, String, i32) {
 fn cli_subcommands_are_wired() {
     // The dispatch fallthrough for an unknown command (#1046 premium UX) reports on
     // stderr — `sobre: unknown command '<cmd>'` plus a "did you mean?" hint —
-    // with empty stdout and exit 1. That stderr marker is the *signature* of "not
+    // with empty stdout and exit 2. That stderr marker is the *signature* of "not
     // wired" — the exact v3.4.7 `pack`/`index` regression. Derive it from a token
     // that can never be a real command, so the detector validates itself.
     let (stdout, stderr, code) = run(&["__sobre_not_a_command__"]);
     assert!(
-        stdout.is_empty() && stderr.contains("unknown command") && code == 1,
+        stdout.is_empty() && stderr.contains("unknown command") && code == 2,
         "unknown-command fallthrough changed (stdout={stdout:?}, stderr={stderr:?}, \
          exit={code}); the wiring detector below keys off the stderr marker"
     );

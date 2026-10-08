@@ -12,7 +12,7 @@ pub fn cmd_config(args: &[String]) {
         Some("set") => {
             if args.len() < 3 {
                 crate::errln!("Usage: sobre config set <key> <value>");
-                std::process::exit(1);
+                std::process::exit(2);
             }
             let key = &args[1];
             let val = &args[2];
@@ -32,7 +32,7 @@ pub fn cmd_config(args: &[String]) {
         Some("path") => cmd_config_path(),
         _ => {
             crate::errln!("Usage: sobre config [show|set <key> <value>|path|init]");
-            std::process::exit(1);
+            std::process::exit(2);
         }
     }
 }
@@ -69,16 +69,27 @@ fn write_config_key(key: &str, value: &str, display_key: &str, display_val: &str
             &format!("Apply {display_key} = {display_val}?"),
             super::prompt::wants_yes(args),
         ) {
-            crate::outln!("{DIM}Aborted — {display_key} left unchanged.{RST}");
-            return;
+            crate::errln!("{DIM}Aborted — {display_key} left unchanged.{RST}");
+            std::process::exit(1);
         }
     }
 
     match config::setter::set_by_key(key, value) {
         Ok(_) => crate::outln!("Updated {display_key} = {display_val}"),
+        Err(e @ crate::core::error::ConfigError::UnknownKey { .. }) => {
+            let keys = config::schema::ConfigSchema::generate().known_keys();
+            crate::errln!("{e}");
+            if let Some(near) =
+                crate::core::levenshtein::closest(key, keys.iter().map(String::as_str))
+            {
+                crate::errln!("  did you mean '{near}'?");
+            }
+            crate::errln!("  keys: {}", keys.join(", "));
+            std::process::exit(2);
+        }
         Err(e) => {
             crate::errln!("{e}");
-            std::process::exit(1);
+            std::process::exit(2);
         }
     }
 }

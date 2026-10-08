@@ -101,7 +101,7 @@ pub fn run() {
                     _ => {
                         eprintln!("Usage: sobre hook <compress|cursor|gemini|read-dedup|observe>");
                         eprintln!("  Internal commands used by agent hooks");
-                        std::process::exit(1);
+                        std::process::exit(2);
                     }
                 }
                 return;
@@ -144,7 +144,7 @@ pub fn run() {
                     eprintln!("       did you mean '{suggestion}'?");
                 }
                 eprintln!("       run 'sobre help' for the full command list");
-                std::process::exit(1);
+                std::process::exit(2);
             }
         }
     }
@@ -174,6 +174,10 @@ fn is_server_mode(args: &[String]) -> bool {
 
 fn handle_exec(args: &[String]) -> ! {
     let cmd_args = &args[2..];
+    if cmd_args.iter().all(|a| a.trim().is_empty()) {
+        eprintln!("Usage: sobre -c \"command\"");
+        std::process::exit(2);
+    }
     let command = if cmd_args.len() == 1 {
         cmd_args[0].clone()
     } else {
@@ -196,7 +200,7 @@ fn handle_raw(args: &[String], rest: &[String]) -> ! {
     if rest.is_empty() {
         eprintln!("Usage: sobre raw \"command\"");
         eprintln!("Runs the command with output passed through unchanged (no compression).");
-        std::process::exit(1);
+        std::process::exit(2);
     }
     let command = if rest.len() == 1 {
         rest[0].clone()

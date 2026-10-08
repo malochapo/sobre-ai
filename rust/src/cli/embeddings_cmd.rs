@@ -82,7 +82,7 @@ pub(crate) fn cmd_embeddings(rest: &[String]) {
                  sobre embeddings status              Show the managed ONNX Runtime state\n  \
                                  sobre embeddings provision [--force] Download the official CPU runtime (sha256-pinned) and the model"
             );
-            std::process::exit(1);
+            std::process::exit(2);
         }
     }
 }

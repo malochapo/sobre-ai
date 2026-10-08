@@ -9,7 +9,30 @@ use crate::core::pricing::{ModelPricing, ModelQuote};
 use crate::core::theme;
 use crate::core::usage::{self, Period, Summary};
 
+/// The flags `gain` reads; anything else is a usage error.
+const GAIN_FLAGS: [&str; 7] = [
+    "--reset",
+    "--period",
+    "--limit",
+    "--model",
+    "--json",
+    "--by-tool",
+    "--daily",
+];
+
 pub(in crate::cli::dispatch) fn cmd_gain(rest: &[String]) {
+    let mut args = rest.iter();
+    while let Some(arg) = args.next() {
+        let name = arg.split('=').next().unwrap_or(arg);
+        if !GAIN_FLAGS.contains(&name) {
+            eprintln!("Unknown option '{arg}'. Use: {}", GAIN_FLAGS.join(", "));
+            std::process::exit(2);
+        }
+        // `--period 7d`: the value is the next argument.
+        if matches!(name, "--period" | "--limit" | "--model") && !arg.contains('=') {
+            args.next();
+        }
+    }
     if rest.iter().any(|a| a == "--reset") {
         if usage::reset() {
             println!("Usage ledger cleared.");
@@ -30,10 +53,23 @@ pub(in crate::cli::dispatch) fn cmd_gain(rest: &[String]) {
 
     let pricing = ModelPricing::load();
     let summary = usage::summarize(&usage::load(), period, &pricing);
-    let model = flag_value(rest, "--model")
+    let asked = flag_value(rest, "--model");
+    let model = asked
+        .clone()
         .or_else(|| summary.dominant_model().map(str::to_string))
         .or_else(detected_model);
     let quote = pricing.quote(model.as_deref());
+    // A model the user named but that has no price is a mistake to report,
+    // not a reason to price at the blended fallback.
+    if let Some(name) = asked
+        && quote.match_kind == crate::core::pricing::PricingMatchKind::Fallback
+    {
+        eprintln!(
+            "Unknown model '{name}'. Priced models: {}",
+            pricing.known_models().join(", ")
+        );
+        std::process::exit(2);
+    }
 
     if rest.iter().any(|a| a == "--json") {
         println!("{}", to_json(&summary, &quote, &period_arg));

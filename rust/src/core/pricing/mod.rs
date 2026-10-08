@@ -257,6 +257,19 @@ impl ModelPricing {
         Self { models }
     }
 
+    /// The priced models, sorted, without the blended fallback.
+    #[must_use]
+    pub fn known_models(&self) -> Vec<&str> {
+        let mut names: Vec<&str> = self
+            .models
+            .keys()
+            .map(String::as_str)
+            .filter(|k| *k != "fallback-blended")
+            .collect();
+        names.sort_unstable();
+        names
+    }
+
     pub fn quote(&self, model: Option<&str>) -> ModelQuote {
         let raw = model.unwrap_or_default();
         // Exact = a direct hit in the embedded table. Dashed API ids

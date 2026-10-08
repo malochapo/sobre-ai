@@ -7,7 +7,9 @@
 //! O(a·b) time per pair is irrelevant; what matters is that all callers agree
 //! on distances.
 
-/// Classic Wagner-Fischer edit distance with O(min) memory.
+/// Edit distance where inserting, deleting or replacing a character, or
+/// swapping two adjacent ones, costs one (optimal string alignment): `inti`
+/// is one edit from `init`.
 pub fn levenshtein(a: &str, b: &str) -> usize {
     let a: Vec<char> = a.chars().collect();
     let b: Vec<char> = b.chars().collect();
@@ -17,14 +19,20 @@ pub fn levenshtein(a: &str, b: &str) -> usize {
     if b.is_empty() {
         return a.len();
     }
+    let mut prev2: Vec<usize> = vec![0; b.len() + 1];
     let mut prev: Vec<usize> = (0..=b.len()).collect();
     let mut curr = vec![0usize; b.len() + 1];
-    for (i, &ca) in a.iter().enumerate() {
+    for i in 0..a.len() {
         curr[0] = i + 1;
-        for (j, &cb) in b.iter().enumerate() {
-            let cost = usize::from(ca != cb);
-            curr[j + 1] = (prev[j + 1] + 1).min(curr[j] + 1).min(prev[j] + cost);
+        for j in 0..b.len() {
+            let cost = usize::from(a[i] != b[j]);
+            let mut d = (prev[j + 1] + 1).min(curr[j] + 1).min(prev[j] + cost);
+            if i > 0 && j > 0 && a[i] == b[j - 1] && a[i - 1] == b[j] {
+                d = d.min(prev2[j - 1] + 1);
+            }
+            curr[j + 1] = d;
         }
+        std::mem::swap(&mut prev2, &mut prev);
         std::mem::swap(&mut prev, &mut curr);
     }
     prev[b.len()]
@@ -60,7 +68,8 @@ mod tests {
         assert_eq!(levenshtein("", ""), 0);
         assert_eq!(levenshtein("abc", "abc"), 0);
         assert_eq!(levenshtein("abc", "abd"), 1);
-        assert_eq!(levenshtein("udpate", "update"), 2);
+        // A swap of two adjacent letters is one edit.
+        assert_eq!(levenshtein("udpate", "update"), 1);
         assert_eq!(levenshtein("kitten", "sitting"), 3);
     }
 

@@ -6,11 +6,11 @@
 /// obvious next step (`init`), not the full command reference.
 pub(super) fn quickstart_text() -> String {
     format!(
-        "sobre {version} — sobre, local context tools for coding agents
+        "sobre {version} — local context tools for coding agents
 
-With no arguments, sobre speaks the MCP protocol on stdin/stdout — that is
-for your AI agent, not for interactive use, so it is waiting silently. You
-probably want one of these:
+Your agent starts sobre itself and talks to it over stdin/stdout (the MCP
+protocol); `sobre mcp` does the same by hand. From a terminal you probably
+want one of these:
 
   sobre init          Connect every detected agent
   sobre init claude   Connect one agent (claude, codex, cursor, ...)
@@ -42,7 +42,7 @@ pub(super) fn print_help_concise() {
 
 pub(super) fn concise_help_text() -> String {
     format!(
-        "sobre {version} — sobre, local context tools for coding agents
+        "sobre {version} — local context tools for coding agents
 
 {banner}
 
@@ -59,7 +59,7 @@ EVERYDAY COMMANDS:
     sobre call <tool> ...       Call one MCP tool from the shell
 
 MANAGE:
-    sobre config                Show or edit the config file
+    sobre config                Show the config; `config set <key> <value>` changes a key
     sobre uninstall             Remove sobre: agent entries, data and binary
 
 MORE:
@@ -72,7 +72,7 @@ MORE:
 
 pub(super) fn print_help() {
     println!(
-        "sobre {version} — sobre, local context tools for coding agents
+        "sobre {version} — local context tools for coding agents
 
 {banner}
 
@@ -88,7 +88,7 @@ USAGE:
     sobre mcp                   Same, explicitly
     sobre -c \"command\"          Run with compressed output (used by agent hooks)
     sobre raw \"command\"         Run with the exact, uncompressed output
-    sobre call <tool> --project-root <path> --json '<json>'
+    sobre call <tool> [--project-root <path>] --json '<json>'
                                    Call one MCP tool from the shell
 
 SAVINGS:
@@ -118,9 +118,12 @@ SETUP AND MAINTENANCE:
     config set <key> <value>       Change one key
     config path | config init      Print the file's path | write it with every key documented
     embeddings status|provision    Local ONNX runtime and model for semantic search
-    proxy start [--port=N] [--detach] | stop | restart | status
-                                   Local API proxy
-    proxy enable | disable         Turn the proxy on or off (autostart and agent wiring)
+    proxy start [--port N] [--detach] | stop | restart | status
+                                   Local API proxy (stop/status/restart find the last
+                                   port it was started on)
+    proxy enable [--force] | disable
+                                   Turn the proxy on or off (autostart and agent wiring;
+                                   --force rewires agents that point elsewhere)
     proxy cleanup                  Remove proxy URLs left in agent configs while it is off
     proxy token                    Print the proxy's bearer token
     hook <name>                    Internal: run by the hooks init installs
@@ -128,7 +131,7 @@ SETUP AND MAINTENANCE:
                                    Remove hooks, MCP configs, the skill, autostart,
                                    data and the binary
 
-SHELL HOOK PATTERNS (95+):
+SHELL OUTPUT PATTERNS (95+, for the hooks, ctx_shell and -c):
     git, docker, npm/pnpm, cargo, gh, kubectl, python (pip, ruff, poetry, uv),
     linters, tsc and bundlers, ruby, test runners, terraform/make/maven/gradle,
     data tools, security scanners, jj/mise/buf, cloud CLIs, curl/grep/find/ls
