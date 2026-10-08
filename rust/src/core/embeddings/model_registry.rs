@@ -3,16 +3,26 @@
 //! Every model is a HuggingFace repository that ships an ONNX export and a
 //! `tokenizer.json`. The `embedding_model` key in `config.toml` names it,
 //! either by alias (`minilm`, the default, or `nomic`) or as
-//! `org/repo[@revision]` (an optional `hf:` prefix is accepted). Pooling,
+//! `org/repo[@revision]` (an optional `hf:` prefix is accepted). Aliases are
+//! pinned to a commit, so the files they download never change under them.
+//! Pooling,
 //! query/document prompts and the sequence length come from the repo's
 //! sentence-transformers metadata, so no model needs a hand-written entry.
 
 use std::path::Path;
 
-/// Short names for well-known models.
-const ALIASES: &[(&str, &str)] = &[
-    ("minilm", "sentence-transformers/all-MiniLM-L6-v2"),
-    ("nomic", "nomic-ai/nomic-embed-text-v1.5"),
+/// Short names for well-known models: alias, repo, pinned commit.
+const ALIASES: &[(&str, &str, &str)] = &[
+    (
+        "minilm",
+        "sentence-transformers/all-MiniLM-L6-v2",
+        "1110a243fdf4706b3f48f1d95db1a4f5529b4d41",
+    ),
+    (
+        "nomic",
+        "nomic-ai/nomic-embed-text-v1.5",
+        "e9b6763023c676ca8431644204f50c2b100d9aab",
+    ),
 ];
 
 /// Longest sequence fed to the model, whatever the model allows: attention
@@ -36,13 +46,13 @@ impl EmbeddingModel {
     /// is neither an alias nor a plausible repo id.
     pub fn parse(value: &str) -> Option<Self> {
         let value = value.trim();
-        if let Some((_, repo)) = ALIASES
+        if let Some((_, repo, rev)) = ALIASES
             .iter()
-            .find(|(alias, _)| alias.eq_ignore_ascii_case(value))
+            .find(|(alias, _, _)| alias.eq_ignore_ascii_case(value))
         {
             return Some(Self {
                 repo: (*repo).to_string(),
-                revision: None,
+                revision: Some((*rev).to_string()),
             });
         }
         let spec = value.strip_prefix("hf:").unwrap_or(value);
@@ -108,7 +118,7 @@ pub fn resolve_model() -> EmbeddingModel {
              using the default",
             ALIASES
                 .iter()
-                .map(|(alias, _)| *alias)
+                .map(|(alias, _, _)| *alias)
                 .collect::<Vec<_>>()
                 .join(", ")
         );
@@ -205,6 +215,19 @@ mod tests {
             EmbeddingModel::parse("Nomic").unwrap().repo,
             "nomic-ai/nomic-embed-text-v1.5"
         );
+    }
+
+    #[test]
+    fn aliases_are_pinned_to_a_commit() {
+        for (alias, _, _) in ALIASES {
+            let m = EmbeddingModel::parse(alias).unwrap();
+            let rev = m.revision.as_deref().expect("alias carries a revision");
+            assert!(
+                rev.len() == 40 && rev.chars().all(|c| c.is_ascii_hexdigit()),
+                "{alias}: {rev:?} is not a commit SHA"
+            );
+            assert!(!m.file_url("tokenizer.json").contains("/resolve/main/"));
+        }
     }
 
     #[test]
