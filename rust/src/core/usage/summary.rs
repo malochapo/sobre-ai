@@ -3,9 +3,9 @@
 //! Two figures, kept apart because they are not equally certain:
 //!
 //! - **Real cost**: the sum over the LLM calls the proxy forwarded. Each call
-//!   is priced by what the provider charged when the response says, otherwise
-//!   by the price table on the tokens the provider reported. Without the proxy
-//!   there are no calls and no real cost.
+//!   is priced by the price table on the tokens the provider reported, and is
+//!   free when the upstream is local. Without the proxy there are no calls and
+//!   no real cost.
 //! - **Saved tokens**: the sum over compressions of tokens removed, minus the
 //!   tokens bounces re-sent. A compression that sent more than it read (a
 //!   search whose output frames its matches) counts against the total. Priced once at the model's uncached input rate,
@@ -96,8 +96,6 @@ pub struct Summary {
     pub cache_write_tokens: u64,
     /// Real cost of the calls, in USD.
     pub real_cost_usd: f64,
-    /// Calls whose cost the provider reported.
-    pub provider_priced_calls: u64,
     /// Calls to a local upstream, which cost nothing.
     pub local_calls: u64,
     /// Calls per answering model, to pick the model saved tokens are priced at.
@@ -131,8 +129,8 @@ impl Summary {
     }
 }
 
-/// Aggregates `events` over `period`. `pricing` prices calls whose cost the
-/// provider did not report.
+/// Aggregates `events` over `period`. `pricing` prices each call that did
+/// not go to a local upstream.
 #[must_use]
 pub fn summarize(events: &[Event], period: Period, pricing: &ModelPricing) -> Summary {
     let since = period.since_unix();
@@ -176,10 +174,7 @@ pub fn summarize(events: &[Event], period: Period, pricing: &ModelPricing) -> Su
                     .or_else(|| ev.str("gen_ai.request.model"))
                     .unwrap_or("")
                     .to_string();
-                let cost = if let Some(usd) = ev.double("sobre.cost.usd") {
-                    s.provider_priced_calls += 1;
-                    usd
-                } else if ev.bool("sobre.upstream.local") {
+                let cost = if ev.bool("sobre.upstream.local") {
                     s.local_calls += 1;
                     0.0
                 } else {
@@ -264,7 +259,8 @@ mod tests {
                 EVENT_LLM_CALL,
                 &[
                     ("gen_ai.response.model", Value::Str("gpt-4o".into())),
-                    ("sobre.cost.usd", Value::Double(0.5)),
+                    ("gen_ai.usage.input_tokens", Value::Int(1_000_000)),
+                    ("sobre.upstream.local", Value::Bool(true)),
                 ],
             ),
         ];
@@ -274,11 +270,10 @@ mod tests {
         assert_eq!(s.by_surface["shell"].saved(), 2_000);
         assert_eq!(s.by_tool["ctx_read"].events, 1);
         assert_eq!(s.llm_calls, 2);
-        assert_eq!(s.provider_priced_calls, 1);
-        assert_eq!(s.local_calls, 0);
+        assert_eq!(s.local_calls, 1);
         assert_eq!(s.dominant_model(), Some("gpt-4o"));
         let table = pricing.quote(Some("gpt-4o")).cost.input_per_m;
-        assert!((s.real_cost_usd - (table + 0.5)).abs() < 1e-9);
+        assert!((s.real_cost_usd - table).abs() < 1e-9);
     }
 
     #[test]

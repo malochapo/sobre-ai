@@ -224,10 +224,11 @@ pub(crate) fn codex_config_has_local_proxy_entry(body: &str) -> bool {
 }
 
 /// True when Codex will authenticate via a **ChatGPT login** (OAuth) rather than
-/// an API key. An explicit `OPENAI_API_KEY` in the environment opts into API-key
-/// mode and overrides the stored login.
+/// an API key. Codex takes its model credential from `CODEX_API_KEY` or from
+/// `auth.json`; it does not read `OPENAI_API_KEY`, so that variable never
+/// overrides a stored ChatGPT login.
 pub(crate) fn codex_uses_chatgpt_login(home: &Path) -> bool {
-    if std::env::var("OPENAI_API_KEY").is_ok_and(|v| !v.trim().is_empty()) {
+    if std::env::var("CODEX_API_KEY").is_ok_and(|v| !v.trim().is_empty()) {
         return false;
     }
     let codex_dir = crate::core::home::resolve_codex_dir().unwrap_or_else(|| home.join(".codex"));

@@ -9,6 +9,7 @@ use serde_json::Value;
 use super::ProxyState;
 use super::forward;
 use super::tool_kind::{self, ToolResultKind};
+use super::usage::Provider;
 
 pub(crate) async fn handler(
     State(state): State<ProxyState>,
@@ -21,8 +22,7 @@ pub(crate) async fn handler(
         &upstream,
         "/v1/chat/completions",
         compress_request_body,
-        "OpenAI",
-        &[],
+        Provider::OpenAi,
     )
     .await
 }
@@ -78,33 +78,9 @@ pub(super) fn compress_request_body(
         }
     }
 
-    // Ask OpenAI to append a final usage chunk so the proxy can meter real
-    // spend. Not counted as compression (it slightly grows the body), so it
-    // never inflates the savings figure.
-    inject_usage_reporting(&mut doc);
-
     let out = serde_json::to_vec(&doc).unwrap_or_default();
     let compressed_size = if modified { out.len() } else { original_size };
     (out, original_size, compressed_size)
-}
-
-/// Injects `stream_options.include_usage = true` into a streamed Chat
-/// Completions request so the final SSE chunk carries `usage` (OpenAI omits it
-/// otherwise). No-op for non-streamed requests or when the client already
-/// configured `stream_options.include_usage`.
-fn inject_usage_reporting(doc: &mut Value) {
-    if doc.get("stream").and_then(Value::as_bool) != Some(true) {
-        return;
-    }
-    let Some(obj) = doc.as_object_mut() else {
-        return;
-    };
-    let opts = obj
-        .entry("stream_options")
-        .or_insert_with(|| Value::Object(serde_json::Map::new()));
-    if let Some(opts_obj) = opts.as_object_mut() {
-        opts_obj.entry("include_usage").or_insert(Value::Bool(true));
-    }
 }
 
 #[cfg(test)]
@@ -168,10 +144,15 @@ mod tests {
     }
 
     #[test]
-    fn injects_include_usage_for_streaming() {
-        let mut doc = serde_json::json!({"model": "gpt-5.4", "stream": true, "messages": []});
-        inject_usage_reporting(&mut doc);
-        assert_eq!(doc["stream_options"]["include_usage"], Value::Bool(true));
+    fn streamed_request_is_not_given_stream_options() {
+        // The proxy never changes the protocol the client asked for: a
+        // streamed request without `stream_options` leaves without one.
+        let _iso = crate::core::data_dir::isolated_data_dir();
+        let body = serde_json::json!({"model": "gpt-5.4", "stream": true, "messages": []});
+        let bytes = serde_json::to_vec(&body).unwrap();
+        let (out, o, c) = compress_request_body(body, bytes.len());
+        assert_eq!(c, o);
+        assert_eq!(out, bytes, "the request must stay byte-identical");
     }
 
     fn long_git_status() -> String {
@@ -183,32 +164,6 @@ mod tests {
         }
         s.push_str("\nno changes added to commit (use \"git add\" and/or \"git commit -a\")\n");
         s
-    }
-
-    #[test]
-    fn no_injection_for_non_streaming() {
-        let mut doc = serde_json::json!({"model": "gpt-5.4", "messages": []});
-        inject_usage_reporting(&mut doc);
-        assert!(
-            doc.get("stream_options").is_none(),
-            "non-streamed requests get usage in the body, no injection needed"
-        );
-    }
-
-    #[test]
-    fn respects_client_set_include_usage() {
-        let mut doc = serde_json::json!({
-            "model": "gpt-5.4",
-            "stream": true,
-            "stream_options": {"include_usage": false},
-            "messages": []
-        });
-        inject_usage_reporting(&mut doc);
-        assert_eq!(
-            doc["stream_options"]["include_usage"],
-            Value::Bool(false),
-            "an explicit client value must be preserved"
-        );
     }
 
     fn big_prose() -> String {

@@ -175,26 +175,11 @@ pub(super) fn mcp_config_locations(home: &std::path::Path) -> Vec<McpLocation> {
     }
 
     {
-        #[cfg(unix)]
-        let opencode_cfg = home.join(".config").join("opencode").join("opencode.json");
-        #[cfg(unix)]
-        let opencode_display = "~/.config/opencode/opencode.json";
-
-        #[cfg(windows)]
-        let opencode_cfg = if let Ok(appdata) = std::env::var("APPDATA") {
-            std::path::PathBuf::from(appdata)
-                .join("opencode")
-                .join("opencode.json")
-        } else {
-            home.join(".config").join("opencode").join("opencode.json")
-        };
-        #[cfg(windows)]
-        let opencode_display = "%APPDATA%/opencode/opencode.json";
-
+        let path = crate::core::editor_registry::opencode_config_path(home);
         locations.push(McpLocation {
             name: "OpenCode",
-            display: opencode_display.into(),
-            path: opencode_cfg,
+            display: path.display().to_string(),
+            path,
         });
     }
 
@@ -322,9 +307,9 @@ pub(super) fn proxy_auth_probe(port: u16) -> bool {
 }
 
 /// Fetches the proxy's live upstreams from the authenticated `/status` endpoint.
-/// Returns `(anthropic, openai, gemini)`, or `None` if unreachable or
+/// Returns `(anthropic, openai)`, or `None` if unreachable or
 /// the response lacks the `upstreams` block. Drives the #449 drift check.
-pub(super) fn proxy_live_upstreams(port: u16) -> Option<(String, String, String)> {
+pub(super) fn proxy_live_upstreams(port: u16) -> Option<(String, String)> {
     let token = crate::core::session_token::resolve_proxy_token("LEAN_CTX_PROXY_TOKEN");
     let url = format!("http://127.0.0.1:{port}/status");
     let resp = ureq::get(&url)
@@ -337,7 +322,6 @@ pub(super) fn proxy_live_upstreams(port: u16) -> Option<(String, String, String)
     Some((
         up.get("anthropic")?.as_str()?.to_string(),
         up.get("openai")?.as_str()?.to_string(),
-        up.get("gemini")?.as_str()?.to_string(),
     ))
 }
 

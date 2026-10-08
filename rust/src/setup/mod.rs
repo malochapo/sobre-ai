@@ -208,7 +208,10 @@ pub fn run_setup_with_options(opts: SetupOptions) -> Result<SetupReport, String>
                 name: "proxy_env".to_string(),
                 status: "configured".to_string(),
                 path: None,
-                note: Some("ANTHROPIC_BASE_URL, OPENAI_BASE_URL, GEMINI_API_BASE_URL".to_string()),
+                note: Some(
+                    "Claude Code settings.json, Codex config.toml, OpenCode opencode.json"
+                        .to_string(),
+                ),
             });
         } else {
             proxy_step.items.push(SetupItem {

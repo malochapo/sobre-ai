@@ -11,7 +11,7 @@
 //! content-addressed tee store (`{state}/tee/`, reused from the shell path) and
 //! embedding a **retrieval handle** — the absolute path of that file — in the
 //! stub. Retrieval is MCP-independent: the agent reads the path with its native
-//! file read; no lean-ctx tool has to be attached.
+//! file read; no sobre tool has to be attached.
 //!
 //! ## Cache-safety (#448)
 //! The handle is the file path, and the path is a pure function of the content
@@ -119,15 +119,12 @@ fn is_hex(s: &str, len: usize) -> bool {
     s.len() == len && s.bytes().all(|b| b.is_ascii_hexdigit())
 }
 
-/// Canonical `proxy_{16hex}.log` name for a `proxy_` or bare-hash id, or
-/// `None`. A bare 16-hex id resolves to the `proxy_` store (the form the
-/// LiteLLM retrieve path passes).
+/// Canonical `proxy_{16hex}.log` name for a `proxy_{16hex}` id, with or
+/// without the `.log`, or `None`.
 fn canonical_tee_name(name: &str) -> Option<String> {
     let stem = name.strip_suffix(".log").unwrap_or(name);
-    if let Some(hash) = stem.strip_prefix("proxy_") {
-        return is_hex(hash, TEE_HASH_LEN).then(|| format!("proxy_{hash}.log"));
-    }
-    is_hex(stem, TEE_HASH_LEN).then(|| format!("proxy_{stem}.log"))
+    let hash = stem.strip_prefix("proxy_")?;
+    is_hex(hash, TEE_HASH_LEN).then(|| format!("proxy_{hash}.log"))
 }
 
 /// True for a shell tee basename `<slug>_<8hex>.log` (`shell::redact::save_tee`):
@@ -154,9 +151,8 @@ fn is_shell_tee_name(name: &str) -> bool {
 /// Accepts every handle form a stub or footer can carry, with a fixed precedence
 /// so the forms can never collide (#936):
 ///
-/// 1. **Proxy form** — `proxy_<16hex>(.log)`, or a bare `<16hex>` (→ `proxy_`,
-///    the form the LiteLLM retrieve path passes). The proxy history-prune / live
-///    stubs.
+/// 1. **Proxy form** — `proxy_<16hex>(.log)`: the proxy history-prune and live
+///    compression stubs.
 /// 2. **Shell-tee form** — `<slug>_<8hex>.log` (`save_tee`), so every compressed
 ///    shell command's already-teed verbatim output is surgically retrievable.
 ///
@@ -176,37 +172,6 @@ pub(crate) fn resolve_tee(id: &str) -> Option<PathBuf> {
         .join("tee")
         .join(canon);
     path.is_file().then_some(path)
-}
-
-/// Length of a LiteLLM gateway retrieval hash (#702): LiteLLM's headroom
-/// guardrail scans compressed text with `hash=([a-f0-9]{24})`
-/// (BerriAI/litellm#31681), so the marker must carry exactly 24 lowercase hex.
-pub(crate) const LITELLM_HASH_LEN: usize = 24;
-
-/// The 24-hex gateway retrieval hash for `content` (#702): the first 24 chars
-/// of the full blake3 hex. A strict extension of the 16-hex tee name
-/// ([`crate::core::hasher::hash_short`] is the same digest truncated to 16),
-/// so `hash[..16]` resolves the tee file while the extra 8 chars keep the
-/// marker collision-resistant on the gateway side. Pure — the marker embedding
-/// it stays byte-stable per content (#498).
-pub(crate) fn litellm_hash(content: &str) -> String {
-    blake3::hash(content.as_bytes()).to_hex()[..LITELLM_HASH_LEN].to_string()
-}
-
-/// Resolve a LiteLLM `hash=<24hex>` retrieval id (#702) back to the verbatim
-/// original in the tee store, for `GET /v1/retrieve/{hash}`. Shape-locked to
-/// LiteLLM's own regex (24 lowercase hex — uppercase or any other length is
-/// rejected, never coerced) so only a string the guardrail could actually have
-/// captured resolves; the first 16 chars are the `proxy_` tee content-address.
-pub(crate) fn retrieve_litellm(hash: &str) -> Option<String> {
-    if hash.len() != LITELLM_HASH_LEN
-        || !hash
-            .bytes()
-            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
-    {
-        return None;
-    }
-    std::fs::read_to_string(resolve_tee(&hash[..TEE_HASH_LEN])?).ok()
 }
 
 #[cfg(test)]
@@ -252,13 +217,12 @@ mod tests {
         let handle = persist(&content).expect("persisted");
         let hash = crate::core::hasher::hash_short(&content);
 
-        // Full path, bare file name, proxy_<hash>, and bare <hash> all resolve to
-        // the same on-disk file — whatever the agent copied out of the stub.
+        // Full path, bare file name and proxy_<hash> all resolve to the same
+        // on-disk file — whatever the agent copied out of the stub.
         for form in [
             handle.clone(),
             format!("proxy_{hash}.log"),
             format!("proxy_{hash}"),
-            hash.clone(),
         ] {
             let resolved = resolve_tee(&form).unwrap_or_else(|| panic!("must resolve {form}"));
             assert_eq!(
@@ -278,6 +242,8 @@ mod tests {
         assert!(resolve_tee("../../secret").is_none());
         assert!(resolve_tee("proxy_nothex0000000.log").is_none());
         // Right shape but no such file in the store.
+        assert!(resolve_tee("proxy_deadbeefdeadbeef").is_none());
+        // A bare hash is not a handle any stub carries.
         assert!(resolve_tee("deadbeefdeadbeef").is_none());
     }
 
@@ -318,61 +284,5 @@ mod tests {
         assert!(resolve_tee("ref_deadbeefcafef00d").is_none());
         // A bare 16-hex archive id with no backing tee file also stays None.
         assert!(resolve_tee("0123456789abcdef").is_none());
-    }
-
-    #[test]
-    fn litellm_hash_is_24_lowercase_hex_and_extends_tee_hash() {
-        let content = big("gateway retrieval body");
-        let hash = litellm_hash(&content);
-        assert_eq!(hash.len(), LITELLM_HASH_LEN);
-        assert!(
-            hash.bytes()
-                .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b)),
-            "must match LiteLLM's [a-f0-9]{{24}} class: {hash}"
-        );
-        // Same blake3 digest as the tee name, longer prefix: the first 16 chars
-        // ARE the tee content-address, which is what makes retrieval work.
-        assert_eq!(hash[..16], crate::core::hasher::hash_short(&content));
-        // Pure function of content (#498): stable across calls.
-        assert_eq!(hash, litellm_hash(&content));
-    }
-
-    #[test]
-    fn retrieve_litellm_resolves_persisted_content() {
-        let _lock = crate::core::data_dir::test_env_lock();
-        let content = big("litellm retrievable original");
-        persist(&content).expect("persisted");
-        let recovered =
-            retrieve_litellm(&litellm_hash(&content)).expect("24-hex hash must resolve");
-        assert!(recovered.contains("litellm retrievable original"));
-    }
-
-    #[test]
-    fn retrieve_litellm_is_shape_locked_to_the_guardrail_regex() {
-        let _lock = crate::core::data_dir::test_env_lock();
-        let content = big("shape locked body");
-        persist(&content).expect("persisted");
-        let hash = litellm_hash(&content);
-
-        // 16-hex (our tee id), truncated, extended, uppercased, non-hex: all
-        // rejected — only the exact shape LiteLLM's regex captures resolves.
-        assert!(retrieve_litellm(&hash[..16]).is_none(), "16-hex rejected");
-        assert!(retrieve_litellm(&hash[..23]).is_none(), "23-hex rejected");
-        assert!(
-            retrieve_litellm(&format!("{hash}0")).is_none(),
-            "25-hex rejected"
-        );
-        assert!(
-            retrieve_litellm(&hash.to_uppercase()).is_none(),
-            "uppercase rejected (regex class is [a-f0-9])"
-        );
-        assert!(
-            retrieve_litellm("zzzzzzzzzzzzzzzzzzzzzzzz").is_none(),
-            "non-hex rejected"
-        );
-        // Traversal attempts die in resolve_tee's name canonicalization.
-        assert!(retrieve_litellm("../../etc/passwd00000000").is_none());
-        // Right shape, unknown content.
-        assert!(retrieve_litellm("0123456789abcdef01234567").is_none());
     }
 }

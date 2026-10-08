@@ -45,11 +45,7 @@ mod tests {
 
     #[test]
     fn security_keys_are_consequential() {
-        for key in [
-            "proxy.upstreams.openai",
-            "proxy.upstreams.anthropic",
-            "proxy.upstreams.gemini",
-        ] {
+        for key in ["proxy.upstreams.openai", "proxy.upstreams.anthropic"] {
             assert!(is_consequential(key), "{key} should be consequential");
             assert!(!classify(key).unwrap().note.is_empty());
         }

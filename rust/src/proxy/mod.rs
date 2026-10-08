@@ -1,42 +1,26 @@
 //! Local LLM reverse proxy.
 //!
-//! Intercepts Anthropic, OpenAI and Gemini traffic on loopback,
-//! compresses prompts, records usage locally, and optionally translates
-//! request shapes (`shape-xlat`) so a Claude-shaped client can reach an
-//! OpenAI-shaped upstream such as a local Ollama.
+//! Intercepts Anthropic and OpenAI traffic on loopback, compresses the tool
+//! results in each request (every rewrite says so in the result itself), and
+//! records the usage the provider reports in the local ledger.
 
 pub(crate) mod anthropic;
 #[cfg(test)]
 mod auth_tests;
-pub(crate) mod bedrock;
 pub(crate) mod ccr;
 #[cfg(test)]
 mod ccr_robustness_tests;
 mod codec;
 pub(crate) mod compress;
-pub(crate) mod compress_api;
 pub(crate) mod forward;
-pub(crate) mod google;
 pub(crate) mod history_prune;
-pub(crate) mod model_router;
-pub(crate) mod models_api;
 pub(crate) mod openai;
 pub(crate) mod openai_responses;
-pub(crate) mod openai_responses_ws;
-pub(crate) mod prefix_replay;
-pub(crate) mod prose_ranker;
-pub(crate) mod providers;
-pub(crate) mod routing;
-#[cfg(feature = "shape-xlat")]
-pub(crate) mod shape_xlat;
-pub(crate) mod sse_keepalive;
-pub(crate) mod sticky_tools;
 pub(crate) mod tool_kind;
 pub(crate) mod tool_output;
 #[cfg(test)]
 mod upstream_tests;
 pub(crate) mod usage;
-pub(crate) mod usage_accounting;
 pub(crate) mod usage_meter;
 
 use std::net::SocketAddr;
@@ -76,11 +60,6 @@ impl ProxyState {
     /// Current OpenAI upstream (live).
     pub fn openai_upstream(&self) -> String {
         self.upstreams.borrow().openai.clone()
-    }
-
-    /// Current Gemini upstream (live).
-    pub fn gemini_upstream(&self) -> String {
-        self.upstreams.borrow().gemini.clone()
     }
 }
 
@@ -139,13 +118,6 @@ fn log_upstream_change(old: &Upstreams, new: &Upstreams) {
     if old.openai != new.openai {
         println!("  ↻ OpenAI upstream → {}", new.openai);
     }
-    if old.gemini != new.gemini {
-        println!("  ↻ Gemini upstream → {}", new.gemini);
-    }
-    if old.providers != new.providers {
-        let ids: Vec<&str> = new.providers.iter().map(|p| p.id.as_str()).collect();
-        println!("  ↻ providers → [{}]", ids.join(", "));
-    }
 }
 
 pub async fn start_proxy(port: u16) -> anyhow::Result<()> {
@@ -193,8 +165,6 @@ pub async fn start_proxy_with_token(port: u16, auth_token: Option<String>) -> an
     let Upstreams {
         anthropic: anthropic_upstream,
         openai: openai_upstream,
-        gemini: gemini_upstream,
-        providers: initial_providers,
     } = initial;
 
     let state = ProxyState {
@@ -202,65 +172,7 @@ pub async fn start_proxy_with_token(port: u16, auth_token: Option<String>) -> an
         port,
         upstreams: upstream_rx,
     };
-
-    let app = Router::new()
-        .route("/health", get(health))
-        .route("/status", get(status_handler))
-        .route("/v1/messages", any(anthropic::handler))
-        .route("/v1/messages/{*rest}", any(anthropic::handler))
-        .route("/v1/chat/completions", any(openai::handler))
-        // POST → HTTP/SSE forwarder; GET → Codex/OpenAI WebSocket bridge (#440).
-        .route(
-            "/v1/responses",
-            post(openai_responses::handler).get(openai_responses::ws_handler),
-        )
-        .route("/v1/responses/{*rest}", any(openai_responses::handler))
-        // Bare provider endpoints (no `/v1` prefix). Clients whose base URL points
-        // at the proxy root — notably OpenCode via `@ai-sdk/openai`, whose
-        // Responses-API requests hit `/responses` — dispatch here. The
-        // `normalize_provider_path` layer rewrites the URI to its canonical
-        // `/v1/...` form before the handler forwards upstream (#353).
-        .route("/messages", any(anthropic::handler))
-        .route("/messages/{*rest}", any(anthropic::handler))
-        .route("/chat/completions", any(openai::handler))
-        .route(
-            "/responses",
-            post(openai_responses::handler).get(openai_responses::ws_handler),
-        )
-        .route("/responses/{*rest}", any(openai_responses::handler))
-        // LiteLLM headroom-guardrail CCR retrieval (#702): resolves the 24-hex
-        // `hash=` marker `/v1/compress` emits back to the verbatim original.
-        .route("/v1/retrieve/{hash}", get(v1_retrieve_ccr))
-        // Org model catalog (enterprise#63): IDE clients discover the curated
-        // alias namespace (`zuehlke/fast` → provider:model) and verify their
-        // key. Exact-match only — `/v1/models/{...}` subpaths stay Gemini
-        // passthrough in the fallback router.
-        .route("/v1/models", get(models_api::handler))
-        .route("/models", get(models_api::handler))
-        // Drop-in `compress(messages, model)` contract (#739): deterministic
-        // messages-in / messages-out compression for SDK clients.
-        .route("/v1/compress", post(compress_api::handler))
-        // `/providers/{id}/...` forwards to the provider with that id in the
-        // closed list, speaking its wire shape.
-        .route("/providers/{id}/{*rest}", any(providers::handler))
-        .fallback(fallback_router);
-
-    let mut app = app
-        .layer(axum::middleware::from_fn(host_guard))
-        .with_state(state);
-
-    {
-        let expected = auth_token.clone();
-        app = app.layer(axum::middleware::from_fn(move |req, next| {
-            let expected = expected.clone();
-            proxy_auth_guard(req, next, expected)
-        }));
-    }
-
-    // Outermost layer (runs first): normalize bare provider endpoints to their
-    // canonical `/v1/...` form so auth, routing and upstream forwarding all agree,
-    // regardless of whether the client's base URL includes `/v1` (#353).
-    app = app.layer(axum::middleware::from_fn(normalize_provider_path));
+    let app = app(state, auth_token);
 
     let addr = SocketAddr::from((bind_host, port));
     println!("lean-ctx proxy listening on http://{addr} (token auth enabled)");
@@ -269,22 +181,6 @@ pub async fn start_proxy_with_token(port: u16, auth_token: Option<String>) -> an
     println!(
         "  OpenAI:    POST /v1/responses → {openai_upstream}  (bare /responses also accepted)"
     );
-    println!("  Gemini:    POST /v1beta/models/... → {gemini_upstream}");
-    println!("  Compress:  POST /v1/compress (deterministic messages-in/out, local)");
-    // Codex defaults to a WebSocket Responses transport (ws://…/responses). The
-    // proxy now bridges it to the HTTP/SSE upstream (#440), so Codex works as a
-    // drop-in without a `supports_websockets = false` workaround.
-    println!(
-        "  Codex:     WS  ws://{addr}/responses → bridged to {openai_upstream} (HTTP/SSE, #440)"
-    );
-    for p in &initial_providers {
-        println!(
-            "  Provider:  any  /providers/{}/... → {} ({} shape)",
-            p.id,
-            p.base_url,
-            p.shape.as_str(),
-        );
-    }
     if openai_upstream.starts_with("http://") && !is_local_proxy_url(&openai_upstream) {
         println!(
             "  ⚠ OpenAI upstream is plaintext HTTP to a non-loopback host \
@@ -299,6 +195,52 @@ pub async fn start_proxy_with_token(port: u16, auth_token: Option<String>) -> an
 
     println!("lean-ctx proxy shut down cleanly.");
     Ok(())
+}
+
+/// Every route and middleware of the proxy over `state`, behind `auth_token`.
+fn app(state: ProxyState, auth_token: String) -> Router {
+    let app = Router::new()
+        .route("/health", get(health))
+        .route("/status", get(status_handler))
+        .route("/v1/messages", any(anthropic::handler))
+        .route("/v1/messages/{*rest}", any(anthropic::handler))
+        .route("/v1/chat/completions", any(openai::handler))
+        .route(
+            "/v1/responses",
+            post(openai_responses::handler).get(responses_websocket_refused),
+        )
+        .route("/v1/responses/{*rest}", any(openai_responses::handler))
+        .route("/v1/models", get(models_handler))
+        .route("/v1/models/{*rest}", get(models_handler))
+        // Bare provider endpoints (no `/v1` prefix). Clients whose base URL points
+        // at the proxy root — notably OpenCode via `@ai-sdk/openai`, whose
+        // Responses-API requests hit `/responses` — dispatch here. The
+        // `normalize_provider_path` layer rewrites the URI to its canonical
+        // `/v1/...` form before the handler forwards upstream (#353).
+        .route("/messages", any(anthropic::handler))
+        .route("/messages/{*rest}", any(anthropic::handler))
+        .route("/chat/completions", any(openai::handler))
+        .route(
+            "/responses",
+            post(openai_responses::handler).get(responses_websocket_refused),
+        )
+        .route("/responses/{*rest}", any(openai_responses::handler))
+        .route("/models", get(models_handler))
+        .route("/models/{*rest}", get(models_handler))
+        .fallback(fallback);
+
+    let app = app
+        .layer(axum::middleware::from_fn(host_guard))
+        .with_state(state)
+        .layer(axum::middleware::from_fn(move |req, next| {
+            let expected = auth_token.clone();
+            proxy_auth_guard(req, next, expected)
+        }));
+
+    // Outermost layer (runs first): normalize bare provider endpoints to their
+    // canonical `/v1/...` form so auth, routing and upstream forwarding all agree,
+    // regardless of whether the client's base URL includes `/v1` (#353).
+    app.layer(axum::middleware::from_fn(normalize_provider_path))
 }
 
 async fn shutdown_signal() {
@@ -339,31 +281,34 @@ async fn health() -> impl IntoResponse {
     (StatusCode::OK, axum::Json(body))
 }
 
-/// `GET /v1/retrieve/{hash}` (#702) — LiteLLM headroom-guardrail CCR contract
-/// (BerriAI/litellm#31681): resolve a 24-hex `hash=` marker emitted by
-/// `/v1/compress` back to the verbatim original from the tee store. The reply
-/// carries `original_content` (the field LiteLLM's `_call_retrieve` reads
-/// first). The optional `?query=` the guardrail forwards is accepted but the
-/// full original is always returned — a superset of any ranked slice, and the
-/// stored blobs are single tool outputs, not corpora worth ranking. Auth: the
-/// standard proxy bearer guard wraps this route (LiteLLM sends the configured
-/// `api_key` as a Bearer token); the tee store is loopback-scoped local state.
-async fn v1_retrieve_ccr(
-    axum::extract::Path(hash): axum::extract::Path<String>,
-) -> impl IntoResponse {
-    match ccr::retrieve_litellm(&hash) {
-        Some(content) => (
-            StatusCode::OK,
-            axum::Json(serde_json::json!({ "original_content": content })),
-        ),
-        None => (
-            StatusCode::NOT_FOUND,
-            axum::Json(serde_json::json!({
-                "error": "hash not found or expired",
-                "hash": hash,
-            })),
-        ),
-    }
+/// `GET /v1/models` and `/v1/models/{id}`: forwarded unchanged to the
+/// provider the client speaks. Anthropic clients send `anthropic-version`;
+/// every other client is taken to speak OpenAI.
+async fn models_handler(
+    State(state): State<ProxyState>,
+    req: Request<Body>,
+) -> Result<Response, StatusCode> {
+    let (upstream, provider) = if req.headers().contains_key("anthropic-version") {
+        (state.anthropic_upstream(), usage::Provider::Anthropic)
+    } else {
+        (state.openai_upstream(), usage::Provider::OpenAi)
+    };
+    forward::forward_request(
+        State(state),
+        req,
+        &upstream,
+        "/v1/models",
+        |parsed, size| (serde_json::to_vec(&parsed).unwrap_or_default(), size, size),
+        provider,
+    )
+    .await
+}
+
+/// `GET /v1/responses`: the WebSocket transport Codex tries first. A 426
+/// makes Codex fall back to HTTP for the rest of the session at once, where a
+/// 404 or 405 costs seconds of retries and a 400 fails the turn.
+async fn responses_websocket_refused() -> StatusCode {
+    StatusCode::UPGRADE_REQUIRED
 }
 
 async fn status_handler(State(state): State<ProxyState>) -> impl IntoResponse {
@@ -380,14 +325,7 @@ async fn status_handler(State(state): State<ProxyState>) -> impl IntoResponse {
         "upstreams": {
             "anthropic": up.anthropic.clone(),
             "openai": up.openai.clone(),
-            "gemini": up.gemini.clone(),
         },
-        // Closed provider list (`[proxy.upstreams]` sets the URLs).
-        "providers": up.providers.iter().map(|p| serde_json::json!({
-            "id": p.id,
-            "shape": p.shape.as_str(),
-            "base_url": p.base_url,
-        })).collect::<Vec<_>>(),
     });
     (StatusCode::OK, axum::Json(body))
 }
@@ -426,10 +364,7 @@ async fn proxy_auth_guard(
 }
 
 fn auth_error_response(path: &str) -> Response {
-    let is_mcp = path.starts_with("/mcp");
-    let hint = if is_mcp {
-        "MCP Streamable HTTP requires a Bearer token. Get it with: lean-ctx proxy token"
-    } else if is_provider_route(path) {
+    let hint = if is_provider_route(path) {
         "Provider route requires authentication. Set your API key header or use: lean-ctx proxy token"
     } else {
         "This endpoint requires a lean-ctx Bearer token. Get it with: lean-ctx proxy token"
@@ -448,9 +383,9 @@ fn auth_error_response(path: &str) -> Response {
 
 fn has_provider_api_key(req: &axum::extract::Request) -> bool {
     let headers = req.headers();
-    // Provider-specific key headers: Anthropic `x-api-key`, Google
-    // `x-goog-api-key`, Azure `api-key`. Any non-empty value authenticates.
-    for key in ["x-api-key", "x-goog-api-key", "api-key"] {
+    // Provider-specific key headers: Anthropic `x-api-key`, Azure `api-key`.
+    // Any non-empty value authenticates.
+    for key in ["x-api-key", "api-key"] {
         if headers
             .get(key)
             .and_then(|v| v.to_str().ok())
@@ -482,18 +417,11 @@ fn has_provider_api_key(req: &axum::extract::Request) -> bool {
 
 fn is_provider_route(path: &str) -> bool {
     path.starts_with("/v1/")
-        || path.starts_with("/v1beta/")
         || path.starts_with("/chat/completions")
         || path.starts_with("/responses")
         || path.starts_with("/messages")
-        // Bare model-catalog discovery (enterprise#63): clients whose base URL
-        // omits `/v1` send `GET /models` with their provider key.
         || path == "/models"
-        // Universal provider registry (enterprise#7): clients point their base
-        // URL at `/providers/{id}/v1` (Azure Foundry, OpenRouter, …) and
-        // authenticate with their own provider/session Bearer. Without this,
-        // model-list + chat land as lean-ctx 401s.
-        || path.starts_with("/providers/")
+        || path.starts_with("/models/")
 }
 
 /// Maps a bare provider endpoint to its canonical `/v1/...` form, preserving any
@@ -507,9 +435,9 @@ fn is_provider_route(path: &str) -> bool {
 /// and every upstream only know the `/v1/...` paths, so an un-prefixed request
 /// would 401 (not a provider route) and then 404 (no handler). (#353)
 fn canonical_provider_path(path: &str) -> Option<String> {
-    // Inverse case of the bare-endpoint rewrite below: the advertised
-    // OPENAI_BASE_URL includes `/v1` (#366), so a client that treats the base URL
-    // as an origin and appends `/v1/...` itself produces `/v1/v1/...`.
+    // Inverse case of the bare-endpoint rewrite below: the OpenAI base URL sobre
+    // writes includes `/v1` (#366), so a client that treats the base URL as an
+    // origin and appends `/v1/...` itself produces `/v1/v1/...`.
     if let Some(rest) = path.strip_prefix("/v1/v1/") {
         return Some(format!("/v1/{rest}"));
     }
@@ -521,6 +449,7 @@ fn canonical_provider_path(path: &str) -> Option<String> {
             "/chat/completions/",
         ),
         ("/messages", "/v1/messages", "/messages/"),
+        ("/models", "/v1/models", "/models/"),
     ];
     for (bare, canonical, bare_with_slash) in BARE_TO_CANONICAL {
         if path == *bare {
@@ -598,25 +527,14 @@ fn host_allowed(host_header: &str) -> bool {
     matches!(h.as_str(), "127.0.0.1" | "localhost" | "[::1]")
 }
 
-async fn fallback_router(State(state): State<ProxyState>, req: Request<Body>) -> Response {
+async fn fallback(req: Request<Body>) -> Response {
+    let method = req.method().to_string();
     let path = req.uri().path().to_string();
-
-    if path.starts_with("/v1beta/models/") || path.starts_with("/v1/models/") {
-        match google::handler(State(state), req).await {
-            Ok(resp) => resp,
-            Err(status) => Response::builder()
-                .status(status)
-                .body(Body::from("proxy error"))
-                .expect("BUG: building error response with valid status should never fail"),
-        }
-    } else {
-        let method = req.method().to_string();
-        eprintln!("lean-ctx proxy: unmatched {method} {path}");
-        Response::builder()
-            .status(StatusCode::NOT_FOUND)
-            .body(Body::from(format!(
-                "lean-ctx proxy: no handler for {method} {path}"
-            )))
-            .expect("BUG: building 404 response should never fail")
-    }
+    eprintln!("lean-ctx proxy: unmatched {method} {path}");
+    Response::builder()
+        .status(StatusCode::NOT_FOUND)
+        .body(Body::from(format!(
+            "lean-ctx proxy: no handler for {method} {path}"
+        )))
+        .expect("BUG: building 404 response should never fail")
 }

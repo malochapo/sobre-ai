@@ -61,6 +61,38 @@ async fn proxy_serves_health_and_enforces_auth() {
         "provider route without a token/key must return 401"
     );
 
+    // Codex opens the Responses API as a WebSocket first. The refusal must be
+    // 426 on both spellings: anything else costs retries or fails the turn.
+    for path in ["/v1/responses", "/responses"] {
+        let ws = client
+            .get(format!("{base}{path}"))
+            .bearer_auth(&token)
+            .header("connection", "Upgrade")
+            .header("upgrade", "websocket")
+            .header("sec-websocket-version", "13")
+            .header("sec-websocket-key", "dGhlIHNhbXBsZSBub25jZQ==")
+            .send()
+            .await
+            .expect("request to proxy");
+        assert_eq!(
+            ws.status(),
+            reqwest::StatusCode::UPGRADE_REQUIRED,
+            "GET {path} must answer 426"
+        );
+    }
+
+    // Gemini is not served.
+    let gemini = client
+        .post(format!(
+            "{base}/v1beta/models/gemini-2.5-pro:generateContent"
+        ))
+        .bearer_auth(&token)
+        .body("{}")
+        .send()
+        .await
+        .expect("request to proxy");
+    assert_eq!(gemini.status(), reqwest::StatusCode::NOT_FOUND);
+
     // Teardown: cancel the serve task (drops the listener).
     server.abort();
 }

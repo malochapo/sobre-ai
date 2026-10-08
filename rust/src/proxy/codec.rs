@@ -90,9 +90,8 @@ pub(super) async fn retry_backoff() {
     tokio::time::sleep(std::time::Duration::from_millis(150 + jitter_ms)).await;
 }
 
-/// True when the upstream base URL points at a loopback/local endpoint (an
-/// Ollama/vLLM-style local model): billed with the transparent
-/// `local_shadow_rate` instead of provider list prices (enterprise#15/#18).
+/// True when the upstream base URL points at a loopback/local endpoint (a
+/// local model server): the ledger books the call as costing nothing.
 pub(super) fn upstream_is_local(upstream_base: &str) -> bool {
     let rest = upstream_base
         .strip_prefix("https://")

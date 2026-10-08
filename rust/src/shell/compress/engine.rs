@@ -32,12 +32,7 @@ pub(in crate::shell) fn compress_and_measure(
         result.push_str(&compressed_stderr);
     }
 
-    let content_for_counting = if let Some(pos) = result.rfind("\n[lean-ctx: ") {
-        &result[..pos]
-    } else {
-        &result
-    };
-    let output_tokens = count_tokens(content_for_counting);
+    let output_tokens = count_tokens(&result);
     (result, output_tokens)
 }
 
@@ -77,11 +72,10 @@ fn compress_if_beneficial_with_exit(command: &str, output: &str, exit_code: i32)
     // already run upstream (ctx_shell::handle → redact_shell_output_secrets), so
     // the pipeline order is redact → protect → compress and a marker can never
     // smuggle a secret past redaction. Protected spans pass through verbatim;
-    // each unprotected segment flows through the normal pipeline (footer stripped),
-    // and a single savings footer is recomputed over the spliced result.
+    // each unprotected segment flows through the normal pipeline.
     if crate::core::protect::has_markers(output) {
         return crate::core::protect::compress_preserving(output, |seg| {
-            strip_shell_footer(&compress_if_beneficial(command, seg)).to_string()
+            compress_if_beneficial(command, seg)
         });
     }
 
@@ -243,15 +237,6 @@ fn compress_if_beneficial_with_exit(command: &str, output: &str, exit_code: i32)
     output.to_string()
 }
 
-/// Strip a trailing `\n[lean-ctx: …]` savings footer so per-segment results can
-/// be spliced (protect spans, #709) before a single footer is recomputed.
-fn strip_shell_footer(s: &str) -> &str {
-    match s.rfind("\n[lean-ctx: ") {
-        Some(pos) => &s[..pos],
-        None => s,
-    }
-}
-
 /// Detects whether the output contains error diagnostics from a build/check/lint tool.
 /// When true, compression is bypassed to preserve file paths, line numbers, and messages.
 /// #848: Deduplicate identical diagnostic lines in build output.
@@ -279,7 +264,7 @@ pub(crate) fn dedup_build_diagnostics(output: &str) -> String {
     }
     if deduped_count > 0 {
         result.push("");
-        let note = format!("[lean-ctx: {deduped_count} duplicate diagnostic(s) removed]");
+        let note = format!("[sobre: {deduped_count} duplicate diagnostic(s) removed]");
         // We can't push a &str that references a local — collect into owned
         let mut out: String = result.join("\n");
         out.push('\n');

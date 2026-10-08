@@ -7,7 +7,7 @@ use super::util::{is_local_lean_ctx_url, is_proxy_reachable};
 /// Returns true when an Anthropic **API key** is available for the proxy to forward
 /// upstream.
 ///
-/// The proxy never injects credentials (see `proxy/forward.rs` — only
+/// The proxy never injects credentials (see `proxy/forward/headers.rs` — only
 /// `ALLOWED_REQUEST_HEADERS` are forwarded), so it can only help Claude Code when the
 /// user runs in API-key (pay-as-you-go) mode. A Claude **Pro/Max subscription**
 /// authenticates via OAuth directly against `api.anthropic.com`; that token is rejected

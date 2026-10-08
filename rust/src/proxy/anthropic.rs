@@ -9,7 +9,7 @@ use serde_json::Value;
 use super::ProxyState;
 use super::forward;
 use super::tool_kind::{self, ToolResultKind};
-use super::{prefix_replay, sticky_tools};
+use super::usage::Provider;
 
 pub(crate) async fn handler(
     State(state): State<ProxyState>,
@@ -22,8 +22,7 @@ pub(crate) async fn handler(
         &upstream,
         "/v1/messages",
         compress_request_body,
-        "Anthropic",
-        &[],
+        Provider::Anthropic,
     )
     .await
 }
@@ -91,33 +90,7 @@ pub(super) fn compress_request_body(
         }
     }
 
-    // Sticky CCR tool injection: once a conversation has used CCR, keep
-    // ctx_expand in tools[] to avoid prefix-cache-busting tool-list changes.
-    let system_val = doc.get("system");
-    let messages_for_id = doc.get("messages").and_then(Value::as_array);
-    if let Some(msgs) = messages_for_id {
-        let conv_id = prefix_replay::conversation_id(system_val, msgs);
-        if sticky_tools::ensure_tool_present(conv_id, &mut doc) {
-            modified = true;
-        }
-    }
-
-    // Prefix replay: if this is an append-only turn, overlay the cached
-    // forwarded prefix bytes with the fresh delta for byte-identical prefix.
-    let system_val_replay = doc.get("system");
-    let msgs_replay = doc.get("messages").and_then(Value::as_array);
-    let out = if let Some(msgs) = msgs_replay {
-        let conv_id = prefix_replay::conversation_id(system_val_replay, msgs);
-        if let Some(delta) = prefix_replay::detect_append_only(conv_id, msgs) {
-            let delta_msgs = &msgs[delta.delta_start..];
-            prefix_replay::overlay_prefix(&delta.prefix_bytes, delta_msgs)
-                .unwrap_or_else(|| serde_json::to_vec(&doc).unwrap_or_default())
-        } else {
-            serde_json::to_vec(&doc).unwrap_or_default()
-        }
-    } else {
-        serde_json::to_vec(&doc).unwrap_or_default()
-    };
+    let out = serde_json::to_vec(&doc).unwrap_or_default();
     let compressed_size = if modified { out.len() } else { original_size };
     (out, original_size, compressed_size)
 }

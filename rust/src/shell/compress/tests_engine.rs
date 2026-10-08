@@ -163,9 +163,9 @@ Build succeeded with warnings.\n\
     );
     // Error line should still be there
     assert!(deduped.contains("CS1002"), "error line must be preserved");
-    // Dedup note should be present
+    // The dedup note says so, as sobre
     assert!(
-        deduped.contains("duplicate diagnostic"),
+        deduped.contains("[sobre: ") && deduped.contains("duplicate diagnostic(s) removed]"),
         "dedup note missing: {deduped}"
     );
 }

@@ -22,71 +22,44 @@ fn research_prose_cap() -> usize {
 /// 3. Everything else (shell/build/search output) flows through the unified
 ///    `compress_if_beneficial` pipeline. A `$ ...` command hint is extracted so
 ///    the pattern engine gets the same routing as the CLI and MCP paths.
-pub(crate) fn compress_tool_result(content: &str, tool_name: Option<&str>) -> String {
-    let compressed = compress_inner(content, tool_name);
-    attach_ccr(content, compressed, CcrAudience::Local)
-}
-
-/// [`compress_tool_result`] for the `/v1/compress` gateway contract (#702):
-/// identical compression, but a lossy result advertises its retrieval hash in
-/// LiteLLM's regex-locked `hash=<24hex>` form, so a gateway running the
-/// headroom-guardrail CCR loop (BerriAI/litellm#31681) can inject its retrieve
-/// tool and resolve the original via `GET /v1/retrieve/{hash}`.
 ///
-/// Any ambient savings footer is stripped *before* the marker is attached:
-/// savings figures belong in the caller's structured `stats` (#498), while the
-/// marker is functional content that must survive as the last line.
-pub(crate) fn compress_tool_result_gateway(content: &str, tool_name: Option<&str>) -> String {
+/// A rewritten result always ends with a `[sobre: …]` line (see [`label`]).
+/// Text below [`ccr::MIN_TEE_BYTES`] is never rewritten: its original would
+/// not be kept.
+pub(crate) fn compress_tool_result(content: &str, tool_name: Option<&str>) -> String {
+    if content.len() < ccr::MIN_TEE_BYTES {
+        return content.to_string();
+    }
     let compressed = compress_inner(content, tool_name);
-    let clean = crate::core::protocol::strip_trailing_savings_footer(&compressed).to_string();
-    attach_ccr(content, clean, CcrAudience::Gateway)
+    label(content, compressed)
 }
 
-/// Who reads a CCR stub: a local agent (path handle / in-band marker) or a
-/// remote gateway whose agentic loop scans for `hash=<24hex>` (#702).
-#[derive(Clone, Copy, PartialEq)]
-enum CcrAudience {
-    Local,
-    Gateway,
-}
-
-/// Make a live-compressed `tool_result` non-lossy (#482): when compression
-/// removed a meaningful amount, tee the verbatim original to the shared
-/// content-addressed store and append a deterministic recovery handle. The
-/// handle is a pure function of the content hash, so the rewritten result is
+/// Ends a rewritten tool result with the line that says so (#482): the token
+/// counts and where the original is kept in the content-addressed tee store.
+/// Both are pure functions of the content, so the rewritten result is
 /// byte-stable across turns and never invalidates the provider cache prefix
-/// (#448). Passthrough / verbatim results (no real shrink) keep their bytes.
-fn attach_ccr(original: &str, result: String, audience: CcrAudience) -> String {
-    use super::sticky_tools;
-    if original.len() < ccr::MIN_TEE_BYTES
-        || original.len().saturating_sub(result.len()) < ccr::MIN_TEE_BYTES
-    {
+/// (#448). The original is kept as is when it cannot be stored, or when the
+/// labeled rewrite is not smaller.
+fn label(original: &str, result: String) -> String {
+    if result == original {
         return result;
     }
-    match ccr::persist(original) {
-        // Gateway (#702): the reader is a model behind a LiteLLM-style gateway.
-        // A local path is useless there; advertise the 24-hex retrieval hash in
-        // the exact shape the guardrail's marker regex captures. The hash is a
-        // pure function of the content, so the stub stays byte-stable (#498).
-        // The `[lean-ctx CCR:` prefix is deliberately NOT the savings-footer
-        // shape (`[lean-ctx: `): this line is functional content — a footer
-        // strip must never eat it.
-        Some(handle) if audience == CcrAudience::Gateway => {
-            sticky_tools::mark_ccr_active(0);
-            let hash = ccr::litellm_hash(original);
-            format!(
-                "{result}\n[lean-ctx CCR: full original elided to save tokens — call the \
-                 retrieve tool with hash={hash}, or read {handle} locally]"
-            )
-        }
-        Some(handle) => {
-            sticky_tools::mark_ccr_active(0);
-            format!(
-                "{result}\n[lean-ctx: full original at {handle} — read it directly (no MCP), or \
-                 ctx_expand(id=\"{handle}\", search=\"…\"|start_line=N) for a slice]"
-            )
-        }
-        None => result,
+    let Some(handle) = ccr::persist(original) else {
+        return original.to_string();
+    };
+    let before = count_tokens(original);
+    let after = count_tokens(&result);
+    let name = std::path::Path::new(&handle)
+        .file_name()
+        .map_or_else(|| handle.clone(), |n| n.to_string_lossy().into_owned());
+    let labeled = format!(
+        "{}\n[sobre: compressed by the proxy, {before} → {after} tokens; full original at {handle}, or ctx_expand(id=\"{name}\") for a slice]",
+        result.trim_end()
+    );
+    if labeled.len() < original.len() {
+        labeled
+    } else {
+        original.to_string()
     }
 }
 
@@ -215,7 +188,7 @@ fn looks_like_prose(content: &str) -> bool {
 /// actually saves tokens; otherwise `None` so the normal pipeline can try.
 fn squeeze_research_prose(content: &str) -> Option<String> {
     let before = count_tokens(content);
-    let squeezed = squeeze_research_prose_body(content);
+    let squeezed = distill::squeeze_prose(content, research_prose_cap());
     if squeezed.trim().is_empty() {
         return None;
     }
@@ -224,21 +197,6 @@ fn squeeze_research_prose(content: &str) -> Option<String> {
         return None;
     }
     Some(squeezed)
-}
-
-/// Choose the prose-squeeze body. Only when the content would actually be
-/// TRUNCATED (over the cap) do we upgrade from FIFO prefix truncation to
-/// extractive centrality ranking — which keeps the most representative sentences
-/// instead of just the first ones — via the cache-safe, memoized wire squeeze
-/// ([`crate::proxy::prose_ranker`]), so the cold→warm engine transition never
-/// changes a frozen-region rewrite (#448/#498). Below the cap the squeeze is a
-/// lossless dedup pass, so the cheaper truncating squeeze is used.
-fn squeeze_research_prose_body(content: &str) -> String {
-    let cap = research_prose_cap();
-    if content.len() > cap {
-        return super::prose_ranker::squeeze(content, cap);
-    }
-    distill::squeeze_prose(content, cap)
 }
 
 /// True when `name` refers to one of lean-ctx's own `ctx_*` MCP tools, whose
@@ -321,6 +279,23 @@ mod tests {
                 "the terse dictionary rewrote `{keyword}` out of a search result:\n{out}"
             );
         }
+    }
+
+    /// Invariant 6: a rewrite keeps the original, and text below
+    /// [`ccr::MIN_TEE_BYTES`] is not kept, so it is never rewritten.
+    #[test]
+    fn text_too_small_to_keep_is_never_rewritten() {
+        let mut small = String::from("$ cargo build\n");
+        for _ in 0..12 {
+            small.push_str("src/a.rs:1:1: warning: unused\n");
+        }
+        assert!(small.len() < ccr::MIN_TEE_BYTES);
+        assert_ne!(
+            compress_inner(&small, Some("bash")),
+            small,
+            "the engine alone would rewrite it"
+        );
+        assert_eq!(compress_tool_result(&small, Some("bash")), small);
     }
 
     #[test]
@@ -505,60 +480,31 @@ mod tests {
         );
     }
 
-    /// Contract test for #702, pinned to LiteLLM's marker regex: the headroom
-    /// guardrail scans compressed text with `hash=([a-f0-9]{24})`
-    /// (BerriAI/litellm#31681). If our gateway stub ever drifts from that
-    /// shape, the CCR agentic loop silently stops firing — this test fails
-    /// first.
+    /// Invariant 6: every rewrite says so and names the kept original,
+    /// including one that saves fewer bytes than [`ccr::MIN_TEE_BYTES`].
     #[test]
-    fn gateway_stub_matches_litellm_marker_regex_and_retrieves() {
+    fn every_rewrite_ends_with_a_sobre_label() {
         let _lock = crate::core::data_dir::test_env_lock();
-        let log = big_compressible_log();
-        let out = compress_tool_result_gateway(&log, Some("bash"));
-        assert!(out.len() < log.len(), "gateway funnel must still compress");
-
-        // Exactly the pattern LiteLLM compiles (`_HASH_PATTERN`).
-        let litellm_regex = regex::Regex::new(r"hash=([a-f0-9]{24})").unwrap();
-        let captured = litellm_regex
-            .captures(&out)
-            .unwrap_or_else(|| panic!("gateway stub must carry a hash= marker: {out}"))
-            .get(1)
-            .unwrap()
-            .as_str();
-        assert_eq!(captured, ccr::litellm_hash(&log));
-
-        // The captured hash resolves through the /v1/retrieve/{hash} resolver
-        // to the verbatim original — the full guardrail round-trip.
-        let recovered = ccr::retrieve_litellm(captured).expect("captured hash must resolve");
-        assert!(
-            recovered.contains("processed item 0007 ok")
-                && recovered.contains("processed item 0400 ok"),
-            "retrieve must return the verbatim original"
-        );
-
-        // Byte-stable across calls (#498): the marker is content-addressed.
-        assert_eq!(out, compress_tool_result_gateway(&log, Some("bash")));
-
-        // The functional CCR line must survive the savings-footer strip that
-        // /v1/compress applies to every payload.
-        assert_eq!(
-            crate::core::protocol::strip_trailing_savings_footer(&out),
-            out
-        );
-    }
-
-    #[test]
-    fn gateway_stub_absent_for_passthrough_and_ctx_output() {
-        let _lock = crate::core::data_dir::test_env_lock();
-        // Below the compress floor: no marker.
-        assert!(!compress_tool_result_gateway("short output", Some("bash")).contains("hash="));
-        // lean-ctx tool output passes through verbatim — a gateway must never
-        // see a retrieval marker for content that was not rewritten.
-        let raw = (1..=120)
-            .map(|i| format!("Line {i:04}: lorem ipsum dolor sit amet consectetur"))
-            .collect::<Vec<_>>()
-            .join("\n");
-        let out = compress_tool_result_gateway(&raw, Some("ctx_shell"));
-        assert_eq!(out, raw);
+        let mut small_saving =
+            String::from("$ git status\nOn branch main\nChanges not staged for commit:\n");
+        for i in 0..30 {
+            small_saving.push_str(&format!("\tmodified:   src/m{i}.rs\n"));
+        }
+        let saved = small_saving.len() - compress_inner(&small_saving, Some("bash")).len();
+        assert!(saved > 0 && saved < ccr::MIN_TEE_BYTES, "saved {saved}");
+        for input in [small_saving, big_compressible_log()] {
+            let out = compress_tool_result(&input, Some("bash"));
+            assert!(out.len() < input.len(), "{out}");
+            let last = out.lines().last().unwrap();
+            assert!(
+                last.starts_with("[sobre: compressed by the proxy, ") && last.ends_with(']'),
+                "a rewrite must end with its label: {out}"
+            );
+            let handle = ccr::persist(&input).unwrap();
+            assert!(
+                last.contains(&format!("full original at {handle}")),
+                "{last}"
+            );
+        }
     }
 }

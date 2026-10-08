@@ -209,29 +209,50 @@ fn scenario_cleanup_preserves_other_env_vars() {
 }
 
 // ---------------------------------------------------------------------------
-// Scenario 10: has_stale_proxy_url returns correct values
+// Scenario 10: stale_proxy_agents names every agent left on the proxy
 // ---------------------------------------------------------------------------
 
 #[test]
 #[serial_test::serial]
 fn scenario_has_stale_url_detection() {
+    use lean_ctx::proxy_setup::stale_proxy_agents;
+
     let env = TestEnv::new();
 
     assert!(
-        !lean_ctx::proxy_setup::has_stale_proxy_url(&env.home),
+        stale_proxy_agents(&env.home).is_empty(),
         "no file = no stale URL"
     );
 
     env.set_claude_settings(r#"{"env": {"ANTHROPIC_BASE_URL": "https://api.anthropic.com"}}"#);
     assert!(
-        !lean_ctx::proxy_setup::has_stale_proxy_url(&env.home),
+        stale_proxy_agents(&env.home).is_empty(),
         "remote URL is not stale"
     );
 
     env.set_claude_settings(r#"{"env": {"ANTHROPIC_BASE_URL": "http://127.0.0.1:4444"}}"#);
-    assert!(
-        lean_ctx::proxy_setup::has_stale_proxy_url(&env.home),
+    assert_eq!(
+        stale_proxy_agents(&env.home),
+        ["Claude Code"],
         "local URL with proxy disabled is stale"
+    );
+
+    let opencode = env.home.join(".config/opencode");
+    std::fs::create_dir_all(&opencode).unwrap();
+    std::fs::write(
+        opencode.join("opencode.json"),
+        r#"{"provider": {"openai": {"options": {"baseURL": "http://127.0.0.1:5555/v1"}}}}"#,
+    )
+    .unwrap();
+    std::fs::create_dir_all(env.home.join(".codex")).unwrap();
+    std::fs::write(
+        env.home.join(".codex/config.toml"),
+        "openai_base_url = \"http://127.0.0.1:4444/v1\"\n",
+    )
+    .unwrap();
+    assert_eq!(
+        stale_proxy_agents(&env.home),
+        ["Claude Code", "Codex", "OpenCode"]
     );
 }
 

@@ -108,9 +108,9 @@ fn codex_home_with_auth(auth_json: &str) -> (tempfile::TempDir, std::path::PathB
 
 #[test]
 fn proxy_enable_respects_codex_auth_mode_554() {
-    // An explicit OPENAI_API_KEY forces API-key mode regardless of auth.json, which
+    // An explicit CODEX_API_KEY forces API-key mode regardless of auth.json, which
     // would invalidate the ChatGPT-login halves of this test.
-    if std::env::var("OPENAI_API_KEY").is_ok_and(|v| !v.trim().is_empty()) {
+    if std::env::var("CODEX_API_KEY").is_ok_and(|v| !v.trim().is_empty()) {
         return;
     }
 
@@ -128,10 +128,13 @@ fn proxy_enable_respects_codex_auth_mode_554() {
 
     const CHATGPT_AUTH: &str = r#"{"auth_mode":"chatgpt","tokens":{"access_token":"x"}}"#;
 
-    // --- ChatGPT login: stay native, write no proxy entries (#597).
+    // --- ChatGPT login: stay native, write no proxy entries (#597). Codex does
+    // not read OPENAI_API_KEY for model traffic, so a key in the environment
+    // must not turn the stored login into API-key mode.
     {
         let (home, codex) = codex_home_with_auth(CHATGPT_AUTH);
         let _codex_home = CodexHome::set(&codex);
+        let _openai_key = EnvVar::set("OPENAI_API_KEY", "sk-unrelated");
         let (_listener, port) = dummy_proxy_port();
         lean_ctx::proxy_setup::install_proxy_env_unchecked(home.path(), port, true, false);
 

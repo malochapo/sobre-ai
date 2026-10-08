@@ -21,14 +21,10 @@ Top-level configuration keys
 
 ## `[proxy]`
 
-The local API proxy: switch, port, upstream URLs and model routing
+The local API proxy: switch, port and upstream URLs
 
 - `enabled` (bool?, default `null`) — Run the local API proxy and point installed agents at it. null = not decided yet (init asks), false = never touch it
 - `port` (u16?, default `null`) — Port the proxy listens on (default: 4444)
-- `routing` (table, default `{}`) — Model routing: [proxy.routing.aliases] maps a requested model to "model" or "provider:model"; [proxy.routing.tiers] maps fast/standard/premium to a target. Active as soon as one rule is written
 - `upstreams.anthropic` (string?, default `null`) — Upstream URL for the anthropic provider (unset = its default). Writing a URL is the opt-in for a custom or plaintext host
-- `upstreams.bedrock` (string?, default `null`) — Upstream URL for the bedrock provider (unset = its default; bedrock is served only when set). Writing a URL is the opt-in for a custom or plaintext host
-- `upstreams.gemini` (string?, default `null`) — Upstream URL for the gemini provider (unset = its default). Writing a URL is the opt-in for a custom or plaintext host
-- `upstreams.ollama` (string?, default `null`) — Upstream URL for the ollama provider (unset = its default). Writing a URL is the opt-in for a custom or plaintext host
 - `upstreams.openai` (string?, default `null`) — Upstream URL for the openai provider (unset = its default). Writing a URL is the opt-in for a custom or plaintext host
 

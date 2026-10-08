@@ -1,27 +1,15 @@
 use std::path::{Path, PathBuf};
 
-use super::paths::{claude_mcp_json_path, vscode_mcp_path, zed_config_dir, zed_settings_path};
+use super::paths::{
+    claude_mcp_json_path, opencode_config_path, vscode_mcp_path, zed_config_dir, zed_settings_path,
+};
 use super::types::{ConfigType, EditorTarget};
 
 pub fn build_targets(home: &Path) -> Vec<EditorTarget> {
-    #[cfg(windows)]
-    let opencode_cfg = if let Ok(appdata) = std::env::var("APPDATA") {
-        PathBuf::from(appdata)
-            .join("opencode")
-            .join("opencode.json")
-    } else {
-        home.join(".config/opencode/opencode.json")
-    };
-    #[cfg(not(windows))]
-    let opencode_cfg = home.join(".config/opencode/opencode.json");
-
-    #[cfg(windows)]
+    let opencode_cfg = opencode_config_path(home);
     let opencode_detect = opencode_cfg
         .parent()
-        .map(|p| p.to_path_buf())
-        .unwrap_or_else(|| home.join(".config/opencode"));
-    #[cfg(not(windows))]
-    let opencode_detect = home.join(".config/opencode");
+        .map_or_else(|| home.join(".config/opencode"), Path::to_path_buf);
 
     vec![
         EditorTarget {

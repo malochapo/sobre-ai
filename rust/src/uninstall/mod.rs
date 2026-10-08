@@ -78,7 +78,7 @@ OPTIONS:
 
 WHAT IT REMOVES:
     • Running processes (proxy) and autostart entries
-    • The proxy environment from your shell rc files (if the proxy was enabled)
+    • The proxy base URLs written into agent configs (if the proxy was enabled)
     • MCP server configs and hooks from every detected AI tool/IDE
     • Skill directories
     • The data directory and the lean-ctx binary

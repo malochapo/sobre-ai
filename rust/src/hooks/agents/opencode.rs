@@ -4,8 +4,8 @@ pub(crate) fn install_opencode_hook() {
     let binary = resolve_binary_path();
     let home = crate::core::home::resolve_home_dir().unwrap_or_default();
     install_opencode_plugin(&home, &binary);
-    let config_path = home.join(".config/opencode/opencode.json");
-    let display_path = "~/.config/opencode/opencode.json";
+    let config_path = crate::core::editor_registry::opencode_config_path(&home);
+    let display_path = config_path.display().to_string();
 
     if let Some(parent) = config_path.parent() {
         let _ = std::fs::create_dir_all(parent);

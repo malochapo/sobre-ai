@@ -9,6 +9,7 @@ use serde_json::Value;
 use super::ProxyState;
 use super::forward;
 use super::tool_kind::{self, ToolResultKind};
+use super::usage::Provider;
 
 /// Proxy handler for OpenAI's Responses API (`POST /v1/responses`).
 ///
@@ -34,24 +35,9 @@ pub(crate) async fn handler(
         &upstream,
         "/v1/responses",
         compress_request_body,
-        "OpenAI",
-        &[],
+        Provider::OpenAi,
     )
     .await
-}
-
-/// Handles the WebSocket Responses transport on `GET /v1/responses`.
-///
-/// Codex (and the OpenAI SDK) default to `ws://…/responses` with one
-/// `response.create` event per turn. Bridging the upgrade here lets the proxy be
-/// a drop-in for Codex without forcing `supports_websockets = false` (#440); the
-/// actual WS↔HTTP/SSE bridging lives in `openai_responses_ws`.
-pub(crate) async fn ws_handler(
-    State(state): State<ProxyState>,
-    headers: axum::http::HeaderMap,
-    ws: axum::extract::ws::WebSocketUpgrade,
-) -> Response {
-    super::openai_responses_ws::upgrade(state, ws, &headers)
 }
 
 pub(super) fn compress_request_body(
@@ -83,9 +69,7 @@ pub(super) fn compress_request_body(
 /// The boundary is the same monotone staircase as every other rail
 /// ([`history_prune::prune_boundary`]), so the request prefix stays byte-stable
 /// for up to a full stride and OpenAI's automatic prompt cache keeps hitting.
-///
-/// Shared with the WebSocket bridge (#440) so Codex/WS turns prune identically.
-pub(super) fn prune_responses_input(doc: &mut Value) -> bool {
+fn prune_responses_input(doc: &mut Value) -> bool {
     let Some(input) = doc.get_mut("input").and_then(|i| i.as_array_mut()) else {
         return false;
     };
@@ -119,8 +103,7 @@ fn prune_output_field(output: &mut Value, kind: ToolResultKind) -> bool {
 }
 
 /// Compresses the `function_call_output.output` entries of a Responses-API body
-/// in place, returning whether anything changed. Shared by the HTTP handler and
-/// the WebSocket bridge (#440) so both paths get identical, safe savings.
+/// in place, returning whether anything changed.
 ///
 /// The only token sink we shrink is each `function_call_output.output` — the
 /// Responses-API analogue of a Chat Completions `role:"tool"` message. We never
@@ -129,7 +112,7 @@ fn prune_output_field(output: &mut Value, kind: ToolResultKind) -> bool {
 /// their originating call), so all token reclamation happens *in place* on the
 /// output text. Cache-aware pruning of the frozen OLD region lives in
 /// [`prune_responses_input`]; this pass compresses whatever recent outputs remain.
-pub(super) fn compress_responses_input(doc: &mut Value) -> bool {
+fn compress_responses_input(doc: &mut Value) -> bool {
     let cfg = crate::core::config::Config::load();
     let mut modified = false;
     if let Some(input) = doc.get_mut("input").and_then(|i| i.as_array_mut()) {

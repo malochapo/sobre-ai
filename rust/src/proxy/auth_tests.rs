@@ -34,11 +34,6 @@ fn is_provider_route_anthropic_subpaths() {
 }
 
 #[test]
-fn is_provider_route_v1beta() {
-    assert!(is_provider_route("/v1beta/models"));
-}
-
-#[test]
 fn is_provider_route_chat() {
     assert!(is_provider_route("/chat/completions"));
 }
@@ -48,33 +43,21 @@ fn is_provider_route_rejects_non_provider() {
     assert!(!is_provider_route("/health"));
     assert!(!is_provider_route("/api/v2/test"));
     assert!(!is_provider_route("/"));
+    assert!(!is_provider_route(
+        "/v1beta/models/gemini-2.5-pro:generateContent"
+    ));
+    assert!(!is_provider_route("/providers/ollama/v1/chat/completions"));
 }
 
 #[test]
-fn is_provider_route_model_catalog() {
-    // enterprise#63: `GET /v1/models` (and the bare `/models` of clients whose
-    // base URL omits `/v1`) must authenticate like any provider route.
+fn is_provider_route_model_list() {
+    // `GET /v1/models` (and the bare `/models` of clients whose base URL
+    // omits `/v1`) must authenticate like any provider route.
     assert!(is_provider_route("/v1/models"));
     assert!(is_provider_route("/models"));
+    assert!(is_provider_route("/models/gpt-5.5"));
     // Nothing else under a bare `/models*` prefix becomes a provider route.
     assert!(!is_provider_route("/modelsx"));
-}
-
-#[test]
-fn is_provider_route_registry_providers() {
-    // enterprise#7: clients point their base URL at `/providers/{id}/v1`, so
-    // model list and chat hit `/providers/{id}/v1/...` with the client's own
-    // API Bearer. These must authenticate via provider-key fallback
-    // (loopback), not the lean-ctx token alone.
-    assert!(is_provider_route("/providers/ollama/v1/models"));
-    assert!(is_provider_route("/providers/ollama/v1/chat/completions"));
-    assert!(is_provider_route("/providers/ollama/v1/responses"));
-    assert!(is_provider_route("/providers/foundry/v1/chat/completions"));
-    // Bare prefix without trailing path still matches the registry mount.
-    assert!(is_provider_route("/providers/ollama"));
-    // Unrelated paths stay closed.
-    assert!(!is_provider_route("/provider/ollama/v1/models"));
-    assert!(!is_provider_route("/api/providers/x"));
 }
 
 fn build_request(headers: &[(&str, &str)], path: &str) -> axum::extract::Request {
@@ -88,12 +71,6 @@ fn build_request(headers: &[(&str, &str)], path: &str) -> axum::extract::Request
 #[test]
 fn has_provider_api_key_x_api_key() {
     let req = build_request(&[("x-api-key", "sk-ant-abc123")], "/v1/messages");
-    assert!(has_provider_api_key(&req));
-}
-
-#[test]
-fn has_provider_api_key_x_goog() {
-    let req = build_request(&[("x-goog-api-key", "AIzaSyAbc")], "/v1beta/models");
     assert!(has_provider_api_key(&req));
 }
 
@@ -159,12 +136,6 @@ fn has_provider_api_key_empty_bearer_rejected() {
 }
 
 #[test]
-fn auth_error_response_mcp_hint() {
-    let resp = auth_error_response("/mcp/sse");
-    assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
-}
-
-#[test]
 fn auth_error_response_provider_hint() {
     let resp = auth_error_response("/v1/messages");
     assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
@@ -208,6 +179,10 @@ fn canonical_provider_path_rewrites_bare_endpoints() {
         canonical_provider_path("/messages").as_deref(),
         Some("/v1/messages")
     );
+    assert_eq!(
+        canonical_provider_path("/models/gpt-5.5").as_deref(),
+        Some("/v1/models/gpt-5.5")
+    );
 }
 
 #[test]
@@ -235,8 +210,8 @@ fn canonical_provider_path_ignores_already_canonical_and_unknown() {
 
 #[test]
 fn canonical_provider_path_collapses_double_v1_prefix() {
-    // OPENAI_BASE_URL now advertises `/v1` (#366); a client treating it as an
-    // origin and appending `/v1/...` itself produces a double prefix.
+    // The OpenAI base URL sobre writes carries `/v1` (#366); a client treating
+    // it as an origin and appending `/v1/...` itself produces a double prefix.
     assert_eq!(
         canonical_provider_path("/v1/v1/responses").as_deref(),
         Some("/v1/responses")

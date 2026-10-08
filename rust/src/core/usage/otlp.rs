@@ -11,7 +11,6 @@ use serde_json::{Map, Value as Json, json};
 pub enum Value {
     Str(String),
     Int(u64),
-    Double(f64),
     Bool(bool),
 }
 
@@ -64,16 +63,6 @@ impl Event {
     }
 
     #[must_use]
-    pub fn double(&self, key: &str) -> Option<f64> {
-        match self.get(key)? {
-            Value::Double(n) => Some(*n),
-            #[allow(clippy::cast_precision_loss)]
-            Value::Int(n) => Some(*n as f64),
-            _ => None,
-        }
-    }
-
-    #[must_use]
     pub fn bool(&self, key: &str) -> bool {
         matches!(self.get(key), Some(Value::Bool(true)))
     }
@@ -93,7 +82,6 @@ impl Event {
                 let value = match v {
                     Value::Str(s) => json!({ "stringValue": s }),
                     Value::Int(n) => json!({ "intValue": n.to_string() }),
-                    Value::Double(n) => json!({ "doubleValue": n }),
                     Value::Bool(b) => json!({ "boolValue": b }),
                 };
                 json!({ "key": k, "value": value })
@@ -145,9 +133,6 @@ fn parse_value(v: &Map<String, Json>) -> Option<Value> {
             .or_else(|| n.as_u64())
             .map(Value::Int);
     }
-    if let Some(n) = v.get("doubleValue") {
-        return n.as_f64().map(Value::Double);
-    }
     if let Some(b) = v.get("boolValue") {
         return b.as_bool().map(Value::Bool);
     }
@@ -163,7 +148,6 @@ mod tests {
         let mut ev = Event::now("sobre.compression");
         ev.attr("sobre.tool", Value::Str("ctx_read".into()));
         ev.attr("sobre.tokens.original", Value::Int(1200));
-        ev.attr("sobre.cost.usd", Value::Double(0.25));
         ev.attr("sobre.upstream.local", Value::Bool(true));
         let line = ev.to_json_line();
 

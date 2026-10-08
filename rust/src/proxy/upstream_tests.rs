@@ -6,8 +6,6 @@ fn upstreams_with_openai(openai: &str) -> Upstreams {
     Upstreams {
         anthropic: "https://api.anthropic.com".into(),
         openai: openai.into(),
-        gemini: "https://generativelanguage.googleapis.com".into(),
-        providers: Vec::new(),
     }
 }
 
@@ -89,4 +87,69 @@ async fn config_change_is_picked_up_live_without_restart() {
     );
 
     crate::test_env::remove_var("LEAN_CTX_DATA_DIR");
+}
+
+/// A loopback upstream that answers every request with its name, the path it
+/// was asked for and the credential it received.
+async fn named_upstream(name: &'static str) -> String {
+    let upstream = Router::new().fallback(move |req: Request<Body>| async move {
+        let credential = ["x-api-key", "authorization"]
+            .iter()
+            .find_map(|h| req.headers().get(*h)?.to_str().ok())
+            .unwrap_or("none")
+            .to_string();
+        format!("{name} {} {credential}", req.uri().path())
+    });
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move { axum::serve(listener, upstream).await });
+    format!("http://{addr}")
+}
+
+/// `GET /models` and `/v1/models/{id}` are provider routes: normalised to
+/// `/v1/...`, let through on the provider key, and passed through unchanged
+/// to the upstream the client speaks (`anthropic-version` → Anthropic, any
+/// other client → OpenAI). Never a 404, never a local catalog.
+#[tokio::test]
+async fn models_route_goes_to_the_provider_the_client_speaks() {
+    let upstreams = Upstreams {
+        anthropic: named_upstream("anthropic").await,
+        openai: named_upstream("openai").await,
+    };
+    let (_tx, rx) = tokio::sync::watch::channel(Arc::new(upstreams));
+    let state = ProxyState {
+        client: reqwest::Client::new(),
+        port: 0,
+        upstreams: rx,
+    };
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let base = format!("http://{}", listener.local_addr().unwrap());
+    tokio::spawn(async move { axum::serve(listener, app(state, "proxy-token".into())).await });
+
+    let client = reqwest::Client::new();
+    for (path, anthropic, expected) in [
+        ("/models", false, "openai /v1/models Bearer sk-test"),
+        (
+            "/v1/models/gpt-5",
+            false,
+            "openai /v1/models/gpt-5 Bearer sk-test",
+        ),
+        ("/models", true, "anthropic /v1/models sk-ant-test"),
+        (
+            "/v1/models/claude-sonnet-4-5",
+            true,
+            "anthropic /v1/models/claude-sonnet-4-5 sk-ant-test",
+        ),
+    ] {
+        let req = client.get(format!("{base}{path}"));
+        let req = if anthropic {
+            req.header("x-api-key", "sk-ant-test")
+                .header("anthropic-version", "2023-06-01")
+        } else {
+            req.bearer_auth("sk-test")
+        };
+        let resp = req.send().await.unwrap();
+        assert_eq!(resp.status(), reqwest::StatusCode::OK, "GET {path}");
+        assert_eq!(resp.text().await.unwrap(), expected, "GET {path}");
+    }
 }

@@ -1,5 +1,18 @@
 use std::path::{Path, PathBuf};
 
+/// OpenCode's global `opencode.json`: `%APPDATA%\opencode` on Windows,
+/// `~/.config/opencode` elsewhere. The MCP entry and the proxy wiring both
+/// live in it.
+pub fn opencode_config_path(home: &Path) -> PathBuf {
+    #[cfg(windows)]
+    if let Ok(appdata) = std::env::var("APPDATA") {
+        return PathBuf::from(appdata)
+            .join("opencode")
+            .join("opencode.json");
+    }
+    home.join(".config/opencode/opencode.json")
+}
+
 pub fn zed_settings_path(home: &std::path::Path) -> PathBuf {
     if cfg!(target_os = "macos") {
         home.join("Library/Application Support/Zed/settings.json")

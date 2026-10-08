@@ -277,8 +277,8 @@ mod tests {
 }
 
 /// INVARIANTS.md §2: at most 15 configuration keys. A key is a top-level field
-/// or a field of `[proxy]`; a table a key holds (`proxy.upstreams`,
-/// `proxy.routing`) counts once, whatever it contains. Adding a key means
+/// or a field of `[proxy]`; a table a key holds (`proxy.upstreams`) counts
+/// once, whatever it contains. Adding a key means
 /// updating this list, which is the point: it must be a deliberate change.
 #[cfg(test)]
 mod key_cap {
@@ -292,7 +292,6 @@ mod key_cap {
         "passthrough_commands",
         "proxy.enabled",
         "proxy.port",
-        "proxy.routing",
         "proxy.upstreams",
         "search_roots",
         "shell_timeout_secs",
