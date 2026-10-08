@@ -13,6 +13,7 @@ pub const GRAPH_REPRODUCIBILITY_V1_SCHEMA_VERSION: u32 = 1;
 /// * `Stable` — additive evolution allowed (new optional fields, new sections);
 ///   breaking changes require a version bump (a new `-vN.md` file).
 /// * `Experimental` — may change or disappear without notice.
+#[cfg(any(test, feature = "test-support"))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ContractStatus {
     Frozen,
@@ -20,6 +21,7 @@ pub enum ContractStatus {
     Experimental,
 }
 
+#[cfg(any(test, feature = "test-support"))]
 impl ContractStatus {
     pub fn as_str(self) -> &'static str {
         match self {
@@ -31,6 +33,7 @@ impl ContractStatus {
 }
 
 /// One contract document under `docs/contracts/`.
+#[cfg(any(test, feature = "test-support"))]
 pub struct ContractDoc {
     /// Short stable identifier.
     pub id: &'static str,
@@ -44,6 +47,7 @@ pub struct ContractDoc {
 /// `tests/suite/contracts_frozen.rs` asserts that every file in the directory
 /// is listed here (no contract can stay unclassified) and that frozen docs
 /// never change.
+#[cfg(any(test, feature = "test-support"))]
 pub fn contract_docs() -> Vec<ContractDoc> {
     use ContractStatus::{Experimental, Frozen, Stable};
     let doc = |id, doc_file, version, status| ContractDoc {

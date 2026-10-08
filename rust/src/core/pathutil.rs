@@ -45,6 +45,7 @@ pub fn canonicalize_secure(path: &Path) -> std::io::Result<PathBuf> {
     canonicalize_raw(path)
 }
 
+#[cfg(test)]
 /// Like `canonicalize_secure` but returns the original path on failure.
 pub fn canonicalize_secure_or_self(path: &Path) -> PathBuf {
     canonicalize_secure(path).unwrap_or_else(|_| path.to_path_buf())

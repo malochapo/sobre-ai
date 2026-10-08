@@ -60,6 +60,7 @@ impl Edge {
         }
     }
 
+    #[cfg(test)]
     pub fn with_metadata(mut self, meta: &str) -> Self {
         self.metadata = Some(meta.to_string());
         self

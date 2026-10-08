@@ -15,11 +15,16 @@
 /// the default surface silently fell to ten tools out of nineteen.
 #[must_use]
 pub fn advertised_tool_defs_default() -> Vec<rmcp::model::Tool> {
+    advertised(crate::server::registry::build_registry().tool_defs())
+}
+
+/// `tools` as `tools/list` sends them: the same set, with descriptions
+/// compressed at the configured level.
+pub fn advertised(tools: Vec<rmcp::model::Tool>) -> Vec<rmcp::model::Tool> {
     let cfg = crate::core::config::Config::load();
     let level = crate::core::config::CompressionLevel::effective_configured(&cfg);
     let mode = crate::core::terse::mcp_compress::DescriptionMode::from_compression_level(&level);
-    crate::server::registry::build_registry()
-        .tool_defs()
+    tools
         .into_iter()
         .map(|mut t| {
             if mode != crate::core::terse::mcp_compress::DescriptionMode::Full {

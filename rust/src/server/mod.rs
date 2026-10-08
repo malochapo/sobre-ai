@@ -127,6 +127,7 @@ fn detect_multi_root_workspace(dir: &std::path::Path) -> Option<String> {
     None
 }
 
+#[cfg(any(test, feature = "test-support"))]
 pub fn tool_descriptions_for_test() -> Vec<(String, String)> {
     crate::server::registry::build_registry()
         .tool_defs()
@@ -140,6 +141,7 @@ pub fn tool_descriptions_for_test() -> Vec<(String, String)> {
         .collect()
 }
 
+#[cfg(any(test, feature = "test-support"))]
 pub fn tool_schemas_json_for_test() -> String {
     crate::server::registry::build_registry()
         .tool_defs()
@@ -188,20 +190,6 @@ mod tests {
             15,
             "registry tool count drift — the surface is 15 and capped at 20 \
              (invariant 1). Update this test AND the docs when it moves."
-        );
-    }
-
-    #[test]
-    fn production_server_always_has_registry() {
-        // The list_tools fallback that serves static defs when `registry` is None
-        // must stay unreachable in production: every public constructor funnels
-        // through new_with_startup, which sets registry = Some. Lock that invariant
-        // so the advertised tool set can never silently drift from what dispatch
-        // (which requires the registry) can actually execute.
-        let server = crate::tools::create_server();
-        assert!(
-            server.registry.is_some(),
-            "production server must carry a tool registry"
         );
     }
 

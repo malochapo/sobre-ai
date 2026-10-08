@@ -29,8 +29,7 @@ impl SobreServer {
         // `machine_readable` guard near the end of this function).
         let machine_readable = self
             .registry
-            .as_ref()
-            .and_then(|r| r.get_arc(name))
+            .get_arc(name)
             .is_some_and(|tool| tool.produces_machine_readable(args));
 
         let config = crate::core::config::Config::load_arc();

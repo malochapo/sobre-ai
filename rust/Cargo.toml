@@ -68,6 +68,9 @@ default = [
 dense = ["embeddings"]
 jemalloc = ["dep:tikv-jemallocator", "dep:tikv-jemalloc-ctl"]
 dev-tools = []
+# Helpers only the integration tests and benches call. Enabled for them by
+# the self dev-dependency below; never part of a release build.
+test-support = []
 embeddings = [
     "dep:ort",
     "dep:ndarray",
@@ -342,6 +345,7 @@ proptest = "1.11"
 serial_test = "3.5"
 tempfile = "3.27"
 wat = "1.252"
+sobre = { path = ".", features = ["test-support"] }
 
 [[bench]]
 name = "compression"

@@ -36,6 +36,7 @@ impl Config {
             .map(|d| d.join("config.toml"))
     }
 
+    #[cfg(test)]
     /// `Some(path)` when the global config the runtime *resolves* does not exist,
     /// so sobre is silently on built-in defaults. `None` when a config file is
     /// present (or HOME is unresolvable).

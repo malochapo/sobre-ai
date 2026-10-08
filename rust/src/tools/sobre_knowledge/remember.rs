@@ -41,32 +41,20 @@ pub(crate) fn handle_remember(
     // Serialize the read-modify-write under a per-project lock so parallel
     // `remember` calls cannot clobber each other (issue #326). The closure
     // operates on the freshly (re)loaded state inside the lock. Admission (#970)
-    // is enforced here, on the agent-facing path; lifecycle runs only when the
-    // store actually changed (a rejected low-salience write is a no-op).
+    // is enforced here, on the agent-facing path.
     let (knowledge, admission) = match ProjectKnowledge::mutate_locked(project_root, |kn| {
         let r = kn.remember_admitted(cat, k, v, session_id, conf, &policy);
-        if !matches!(r, AdmissionResult::RejectedLowSalience { .. }) {
-            let _ = kn.run_memory_lifecycle(&policy);
-        }
+        let _ = kn.run_memory_lifecycle(&policy);
         r
     }) {
         Ok(pair) => pair,
         Err(e) => return format!("Remembered [{cat}] {k}: {v}\n(save failed: {e})"),
     };
 
-    // A low-salience rejection persists nothing — return before the
-    // confirm/merge bookkeeping and the (now pointless) similarity advisories.
-    if let AdmissionResult::RejectedLowSalience { salience, floor } = admission {
-        return format!(
-            "Skipped [{cat}] {k}: salience {salience} below admission floor {floor}. \
-             Rephrase with more signal."
-        );
-    }
-
     // The contradiction (if any) only exists on the normal stored path.
     let contradiction = match &admission {
         AdmissionResult::Stored(c) => c.clone(),
-        _ => None,
+        AdmissionResult::Merged { .. } => None,
     };
     let merged = matches!(admission, AdmissionResult::Merged { .. });
 
@@ -144,7 +132,7 @@ pub(crate) fn handle_remember(
                 value,
                 ..
             } => (category.clone(), key.clone(), value.clone()),
-            _ => (cat.to_string(), k.to_string(), v.to_string()),
+            AdmissionResult::Stored(_) => (cat.to_string(), k.to_string(), v.to_string()),
         };
         // Non-blocking engine access: `remember` must never stall on a model
         // download/load (fresh install, offline sandbox — the blocking variant

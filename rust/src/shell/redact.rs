@@ -58,7 +58,6 @@ pub fn save_tee(command: &str, output: &str) -> Option<String> {
         output,
         "sobre_shell",
         crate::core::tokens::count_tokens(output),
-        0,
     );
     Some(handle)
 }

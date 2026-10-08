@@ -78,6 +78,7 @@ impl RelevanceTracker {
         }
     }
 
+    #[cfg(test)]
     pub fn with_config(budget_tokens: usize, threshold: f64) -> Self {
         Self::with_config_and_age(budget_tokens, threshold, DEFAULT_MAX_AGE_SECS)
     }
@@ -284,22 +285,16 @@ fn now_secs() -> u64 {
         .map_or(0, |duration| duration.as_secs())
 }
 
-/// Register a CCR artifact for later proactive expansion.
+/// Register a CCR artifact for later proactive expansion, with zero compressed
+/// tokens: the whole original counts toward the expansion budget.
 pub(crate) fn register_compressed(
     handle: String,
     original_content: &str,
     source_tool: &'static str,
     original_tokens: usize,
-    compressed_tokens: usize,
 ) {
     if let Ok(mut tracker) = global().lock() {
-        tracker.register(
-            handle,
-            original_content,
-            source_tool,
-            original_tokens,
-            compressed_tokens,
-        );
+        tracker.register(handle, original_content, source_tool, original_tokens, 0);
     }
 }
 

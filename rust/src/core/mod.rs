@@ -18,15 +18,6 @@ pub mod structured_read;
 pub mod tabular_crush;
 pub mod yaml_crush;
 
-/// Convenience re-export: all compression-related modules.
-pub mod compression {
-    pub use super::compressor;
-    pub use super::entropy;
-    pub use super::json_crush;
-    pub use super::preservation;
-    pub use super::rabin_karp;
-}
-
 // ---------------------------------------------------------------------------
 // Domain: Memory
 // ---------------------------------------------------------------------------
@@ -39,13 +30,6 @@ pub mod memory_policy;
 pub mod memory_salience;
 pub mod prospective_memory;
 
-/// Convenience re-export: all memory-related modules.
-pub mod memory {
-    pub use super::memory_lifecycle;
-    pub use super::memory_policy;
-    pub use super::prospective_memory;
-}
-
 // ---------------------------------------------------------------------------
 // Domain: Graph
 // ---------------------------------------------------------------------------
@@ -54,15 +38,6 @@ pub mod graph_context;
 pub mod graph_index;
 pub mod graph_provider;
 pub mod property_graph;
-
-/// Convenience re-export: all graph-related modules.
-pub mod graph {
-    pub use super::call_graph;
-    pub use super::graph_context;
-    pub use super::graph_index;
-    pub use super::graph_provider;
-    pub use super::property_graph;
-}
 
 // ---------------------------------------------------------------------------
 // Domain: Context
@@ -73,13 +48,6 @@ pub mod context_ledger;
 pub mod context_lint;
 pub mod context_overhead;
 pub mod cross_source_hints;
-
-/// Convenience re-export: all context-related modules.
-pub mod context {
-    pub use super::context_field;
-    pub use super::context_handles;
-    pub use super::context_ledger;
-}
 
 // ---------------------------------------------------------------------------
 // Domain: Knowledge
@@ -93,13 +61,6 @@ pub mod knowledge;
 #[cfg_attr(not(feature = "embeddings"), allow(dead_code))]
 pub mod knowledge_embedding;
 pub mod knowledge_relations;
-
-/// Convenience re-export: all knowledge-related modules.
-pub mod knowledge_domain {
-    pub use super::knowledge;
-    pub use super::knowledge_embedding;
-    pub use super::knowledge_relations;
-}
 
 // ---------------------------------------------------------------------------
 // Domain: Search & Retrieval
@@ -125,31 +86,12 @@ pub mod search_reranking;
 pub mod splade_retrieval;
 pub mod spreading_activation;
 
-/// Convenience re-export: all search-related modules.
-pub mod search {
-    pub use super::bm25_index;
-    pub use super::content_chunk;
-    pub use super::dense_backend;
-    pub use super::embedding_index;
-    pub use super::embeddings;
-    pub use super::hybrid_search;
-    pub use super::search_reranking;
-    pub use super::splade_retrieval;
-}
-
 // ---------------------------------------------------------------------------
 // Domain: Session & Handoff
 // ---------------------------------------------------------------------------
 pub mod ccp_session_bundle;
 pub mod session;
 pub mod session_diff;
-
-/// Convenience re-export: all session-related modules.
-pub mod session_domain {
-    pub use super::ccp_session_bundle;
-    pub use super::session;
-    pub use super::session_diff;
-}
 
 // ---------------------------------------------------------------------------
 // Domain: Neural / ML

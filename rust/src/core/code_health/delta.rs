@@ -23,6 +23,7 @@ impl CognitiveDelta {
         i64::from(self.after) - i64::from(self.before)
     }
 
+    #[cfg(test)]
     /// True when the edit pushed a previously-acceptable function over
     /// `threshold` (the case `gate="block"` refuses).
     pub fn crosses_threshold(&self, threshold: u32) -> bool {

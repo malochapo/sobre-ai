@@ -111,6 +111,7 @@ impl CacheEntry {
         self.read_count.fetch_add(1, Ordering::Relaxed) + 1
     }
 
+    #[cfg(test)]
     /// Overwrites the read count (used by `store` and tests).
     pub fn set_read_count(&self, n: u32) {
         self.read_count.store(n, Ordering::Relaxed);

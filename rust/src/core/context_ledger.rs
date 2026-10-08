@@ -117,6 +117,7 @@ impl ContextLedger {
         }
     }
 
+    #[cfg(any(test, feature = "test-support"))]
     pub fn with_window_size(size: usize) -> Self {
         Self {
             window_size: size,

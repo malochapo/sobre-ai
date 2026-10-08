@@ -691,6 +691,7 @@ pub(crate) fn is_chained_command(command: &str) -> bool {
     false
 }
 
+#[cfg(any(test, feature = "test-support"))]
 pub fn compress_if_beneficial_pub(command: &str, output: &str) -> String {
     compress_if_beneficial(command, output)
 }

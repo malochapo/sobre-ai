@@ -205,21 +205,10 @@ impl ProjectKnowledge {
             .facts
             .iter()
             .any(|f| f.category == category && f.key == key && f.is_current());
-        if !adm.enabled || has_exact {
+        if has_exact {
             return AdmissionResult::Stored(
                 self.remember(category, key, value, session_id, confidence, policy),
             );
-        }
-
-        // Salience floor: keep low-signal noise out of a capped store.
-        if adm.min_salience > 0 {
-            let salience = crate::core::memory_salience::text_salience(value);
-            if salience < adm.min_salience {
-                return AdmissionResult::RejectedLowSalience {
-                    salience,
-                    floor: adm.min_salience,
-                };
-            }
         }
 
         // Cross-key near-duplicate auto-merge within the same category.

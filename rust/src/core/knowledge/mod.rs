@@ -69,7 +69,7 @@ mod tests {
                 assert_eq!(key, "db-primary", "merges into the earliest match");
                 assert_eq!(confirmations, 2);
             }
-            other => panic!("expected Merged, got {other:?}"),
+            other @ AdmissionResult::Stored(_) => panic!("expected Merged, got {other:?}"),
         }
         assert_eq!(current_count(&k), 1, "merge must not grow the store");
         let f = k
@@ -78,29 +78,6 @@ mod tests {
             .find(|f| f.key == "db-primary" && f.is_current())
             .unwrap();
         assert_eq!(f.confirmation_count, 2);
-    }
-
-    #[test]
-    fn admission_rejects_below_salience_floor() {
-        let mut policy = default_policy();
-        policy.admission.min_salience = 100; // plain text (base 20) is below it
-
-        let mut k = ProjectKnowledge::new("/tmp/test-admission-floor");
-        let r = k.remember_admitted("misc", "note", "a quiet plain note", "s1", 0.8, &policy);
-        assert!(matches!(r, AdmissionResult::RejectedLowSalience { .. }));
-        assert_eq!(current_count(&k), 0, "rejected fact is never stored");
-
-        // High-signal content clears the floor (security+error+failed+timeout boosts).
-        let r2 = k.remember_admitted(
-            "misc",
-            "bug",
-            "security error: auth failed with timeout",
-            "s1",
-            0.8,
-            &policy,
-        );
-        assert!(matches!(r2, AdmissionResult::Stored(_)));
-        assert_eq!(current_count(&k), 1);
     }
 
     #[test]
@@ -123,35 +100,6 @@ mod tests {
             .find(|f| f.category == "arch" && f.key == "db" && f.is_current())
             .unwrap();
         assert_eq!(cur.value, "MySQL");
-    }
-
-    #[test]
-    fn admission_disabled_inserts_like_legacy() {
-        let mut policy = default_policy();
-        policy.admission.enabled = false;
-
-        let mut k = ProjectKnowledge::new("/tmp/test-admission-off");
-        k.remember_admitted(
-            "architecture",
-            "a",
-            "use postgres for the primary datastore",
-            "s1",
-            0.8,
-            &policy,
-        );
-        let r = k.remember_admitted(
-            "architecture",
-            "b",
-            "use postgres for the primary datastore",
-            "s2",
-            0.9,
-            &policy,
-        );
-        assert!(
-            matches!(r, AdmissionResult::Stored(_)),
-            "disabled admission never merges"
-        );
-        assert_eq!(current_count(&k), 2, "both distinct keys stored");
     }
 
     #[test]

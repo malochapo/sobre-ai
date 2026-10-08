@@ -47,9 +47,6 @@ pub struct LifecyclePolicy {
     pub similarity_threshold: f32,
     /// Characteristic memory stability in days for the Ebbinghaus curve.
     pub base_stability_days: f32,
-    /// Scale Ebbinghaus stability by fact archetype so structural evidence decays
-    /// slower than inference. Default false: every archetype decays alike.
-    pub archetype_aware_decay: bool,
     /// Archive single-confirmation facts untouched for this many days that were
     /// never retrieved — dead weight regardless of confidence (#962). Defaults to
     /// a conservative 90 days (#972): genuinely cold facts are archived (and
@@ -70,7 +67,6 @@ impl Default for LifecyclePolicy {
             stale_days: 30,
             similarity_threshold: 0.85,
             base_stability_days: crate::core::memory_lifecycle::DEFAULT_BASE_STABILITY_DAYS,
-            archetype_aware_decay: false,
             prune_unretrieved_after_days: Some(90),
             reclaim_headroom_pct: crate::core::memory_lifecycle::DEFAULT_RECLAIM_HEADROOM_PCT,
         }
@@ -88,23 +84,15 @@ impl Default for EmbeddingsPolicy {
     }
 }
 
-use std::collections::HashMap;
-
 #[derive(Debug, Clone)]
 pub struct GotchaPolicy {
     pub max_gotchas_per_project: usize,
-    pub retrieval_budget_per_room: usize,
-    pub default_decay_rate: f32,
-    pub category_decay_overrides: HashMap<String, f32>,
 }
 
 impl Default for GotchaPolicy {
     fn default() -> Self {
         Self {
             max_gotchas_per_project: 100,
-            retrieval_budget_per_room: 10,
-            default_decay_rate: 0.03,
-            category_decay_overrides: HashMap::new(),
         }
     }
 }
@@ -113,30 +101,20 @@ impl Default for GotchaPolicy {
 /// importance-eviction is a backstop *after* the fact is written; admission is
 /// the boundary *before* it, so a capped store fills with signal, not noise.
 /// Applied only to direct `sobre_knowledge remember` (the agent-facing path);
-/// internal restorers (archive rehydrate, cognition auto-promotion) bypass it.
+/// internal restorers (archive rehydrate) bypass it.
 #[derive(Debug, Clone)]
 pub struct AdmissionPolicy {
-    /// Master switch for write-time admission. When off, every `remember`
-    /// inserts as before (legacy behavior).
-    pub enabled: bool,
     /// A new fact whose value is at least this similar (word-Jaccard, 0.0–1.0) to
     /// an existing *current* fact in the **same category** under a different key
     /// is merged into it (a confirmation bump) instead of inserted as a new row.
-    /// High by default so only genuine near-duplicates collapse; `0.0` disables
-    /// auto-merge.
+    /// High so only genuine near-duplicates collapse.
     pub auto_merge_similarity: f32,
-    /// Facts whose content salience ([`crate::core::memory_salience::text_salience`])
-    /// is below this floor are not admitted as normal facts. `0` (default)
-    /// disables the floor — the lossless choice; raise it to curate a noisy store.
-    pub min_salience: u32,
 }
 
 impl Default for AdmissionPolicy {
     fn default() -> Self {
         Self {
-            enabled: true,
             auto_merge_similarity: 0.9,
-            min_salience: 0,
         }
     }
 }
@@ -149,8 +127,6 @@ mod tests {
     fn memory_discipline_defaults_are_premium() {
         // #970/#972: self-curation is on by default, but lossless.
         let p = MemoryPolicy::default();
-        assert!(p.admission.enabled, "admission on by default");
-        assert_eq!(p.admission.min_salience, 0, "salience floor off (lossless)");
         assert_eq!(
             p.lifecycle.prune_unretrieved_after_days,
             Some(90),
