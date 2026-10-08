@@ -24,7 +24,7 @@ pub const COMPACT_VIEW_HEADER: &str =
 #[must_use]
 pub fn read_footer(file_path: &str) -> String {
     format!(
-        "[sobre] full source: read \"{file_path}\" directly (no MCP)  ·  or ctx_read(\"{file_path}\", mode=\"full\")"
+        "[sobre: full source in \"{file_path}\" (read it directly), or ctx_read(\"{file_path}\", mode=\"full\")]"
     )
 }
 
@@ -37,7 +37,7 @@ mod tests {
         let minimal = read_footer("src/x.rs");
         assert!(minimal.lines().count() == 1, "minimal is a single line");
         // Non-MCP path must come before the MCP shortcut.
-        let native = minimal.find("read \"src/x.rs\" directly").unwrap();
+        let native = minimal.find("full source in \"src/x.rs\"").unwrap();
         let mcp = minimal.find("ctx_read(").unwrap();
         assert!(native < mcp, "native path must precede the MCP route");
         assert!(

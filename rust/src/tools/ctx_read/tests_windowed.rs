@@ -17,7 +17,7 @@ fn read_line_window_clamps_end_to_eof() {
     assert_eq!(window.body, "b\nc");
 }
 
-/// The end-to-end regression case: a file over `LCTX_MAX_READ_BYTES` must
+/// The end-to-end regression case: a file over the read size limit must
 /// still serve a bounded `anchored:N-M` read. Before #811's disk-streaming
 /// short-circuit, `handle_with_options_inner` always called `read_file_lossy`
 /// first regardless of mode, so a window request on an oversized file failed

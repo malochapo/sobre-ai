@@ -3,12 +3,11 @@ use sobre::core::config::CompressionLevel;
 use sobre::core::entropy::entropy_compress_adaptive;
 use sobre::core::signatures::extract_signatures;
 use sobre::core::tokens::count_tokens;
-use sobre::tools::CrpMode;
 
 /// The instructions with no output style, so budgets do not move with the
 /// developer's own `compression_level`.
-fn instructions_at_off(crp: CrpMode) -> String {
-    sobre::instructions::render(CompressionLevel::Off, crp)
+fn instructions_at_off() -> String {
+    sobre::instructions::render(CompressionLevel::Off)
 }
 
 // ---------------------------------------------------------------------------
@@ -46,68 +45,31 @@ fn measure_text(original: &str, compressed: &str) -> (usize, usize, f64) {
 
 #[test]
 fn bench_system_instructions_token_count() {
-    let instructions_off = instructions_at_off(CrpMode::Off);
-    let instructions_compact = instructions_at_off(CrpMode::Compact);
-    let instructions_tdd = instructions_at_off(CrpMode::Tdd);
-
-    let tok_off = count_tokens(&instructions_off);
-    let tok_compact = count_tokens(&instructions_compact);
-    let tok_tdd = count_tokens(&instructions_tdd);
-
-    eprintln!("\n{}", "=".repeat(70));
-    eprintln!("  SYSTEM INSTRUCTIONS TOKEN COUNT");
-    eprintln!("{}", "=".repeat(70));
+    let instructions = instructions_at_off();
+    let tokens = count_tokens(&instructions);
     eprintln!(
-        "  CRP Off:     {:>6} tokens ({:>5} chars)",
-        tok_off,
-        instructions_off.len()
-    );
-    eprintln!(
-        "  CRP Compact: {:>6} tokens ({:>5} chars)",
-        tok_compact,
-        instructions_compact.len()
-    );
-    eprintln!(
-        "  CRP TDD:     {:>6} tokens ({:>5} chars)",
-        tok_tdd,
-        instructions_tdd.len()
-    );
-    let compact_overhead = (tok_compact as i64) - (tok_off as i64);
-    let tdd_overhead = (tok_tdd as i64) - (tok_off as i64);
-    eprintln!("  Compact overhead: {compact_overhead:+} tokens vs Off");
-    eprintln!("  TDD overhead:     {tdd_overhead:+} tokens vs Off");
-    eprintln!("{}", "=".repeat(70));
-
-    assert!(
-        tok_off < 2300,
-        "Base instructions should be <2300 tokens, got {tok_off}"
+        "\n  SYSTEM INSTRUCTIONS: {tokens} tokens ({} chars)",
+        instructions.len()
     );
     assert!(
-        tok_compact < 2450,
-        "Compact instructions should be <2450 tokens, got {tok_compact}"
+        tokens < 2300,
+        "Base instructions should be <2300 tokens, got {tokens}"
     );
-    assert!(
-        tok_tdd < 2550,
-        "TDD instructions should be <2550 tokens, got {tok_tdd}"
-    );
-
     // Claude Code truncates server instructions at 2048 characters; the text
     // every client gets must arrive whole there.
-    for crp in [CrpMode::Off, CrpMode::Compact, CrpMode::Tdd] {
-        let chars = instructions_at_off(crp).len();
+    for level in [
+        CompressionLevel::Off,
+        CompressionLevel::Lite,
+        CompressionLevel::Standard,
+        CompressionLevel::Max,
+        CompressionLevel::Raw,
+    ] {
+        let chars = sobre::instructions::render(level).len();
         assert!(
             chars <= 2048,
-            "{crp:?} instructions are {chars} chars, over Claude Code's 2048"
+            "{level:?} instructions are {chars} chars, over Claude Code's 2048"
         );
     }
-    assert!(
-        compact_overhead.unsigned_abs() < 300,
-        "Compact mode overhead should be <300 tokens, got {compact_overhead}"
-    );
-    assert!(
-        tdd_overhead.unsigned_abs() < 650,
-        "TDD mode overhead should be <650 tokens, got {tdd_overhead}"
-    );
 }
 
 #[test]
@@ -174,7 +136,7 @@ fn bench_tool_descriptions_token_count() {
 
 #[test]
 fn bench_total_input_overhead() {
-    let instructions = instructions_at_off(CrpMode::Off);
+    let instructions = instructions_at_off();
     let descs = sobre::server::tool_descriptions_for_test();
     let schemas = sobre::server::tool_schemas_json_for_test();
 
@@ -531,73 +493,6 @@ fn bench_rrf_eviction_empty() {
 // SECTION 5: THINKING TOKEN BENCHMARKS — CRP/TDD Instruction Effectiveness
 // ═══════════════════════════════════════════════════════════════════════════
 
-#[test]
-fn bench_thinking_reduction_cues_present() {
-    let compact = instructions_at_off(CrpMode::Compact);
-    let tdd = instructions_at_off(CrpMode::Tdd);
-
-    // #579 condensed the instruction skeleton: efficiency cues now live in the
-    // one-line `CRP MODE:` suffix (lowercase), not a standalone block.
-    let compact_lc = compact.to_lowercase();
-    let tdd_lc = tdd.to_lowercase();
-    assert!(
-        compact_lc.contains("trust tool outputs") || compact_lc.contains("output efficiency"),
-        "Compact mode must contain output efficiency cue"
-    );
-    assert!(
-        compact.contains("<=200 tok")
-            || compact.contains("<=200 tokens")
-            || compact.contains("≤200"),
-        "Compact mode must contain token budget"
-    );
-    assert!(
-        tdd_lc.contains("max density") || tdd_lc.contains("output efficiency"),
-        "TDD mode must contain output efficiency cue"
-    );
-    assert!(
-        tdd.contains("<=150 tok") || tdd.contains("<=150 tokens") || tdd.contains("≤150"),
-        "TDD mode must contain strict token budget"
-    );
-    assert!(
-        tdd_lc.contains("zero narration"),
-        "TDD mode must contain zero-narration rule"
-    );
-
-    eprintln!("\n  [output efficiency] All cues present in CRP Compact and TDD modes ✓");
-}
-
-#[test]
-fn bench_crp_mode_token_budgets() {
-    let compact = instructions_at_off(CrpMode::Compact);
-    let tdd = instructions_at_off(CrpMode::Tdd);
-
-    let compact_budget_present = compact.contains("<=200 tok")
-        || compact.contains("TARGET: <=200 tokens")
-        || compact.contains("≤200");
-    let tdd_budget_present = tdd.contains("<=150 tok")
-        || tdd.contains("TOKEN BUDGET: <=150 tokens")
-        || tdd.contains("BUDGET: <=150");
-
-    eprintln!("\n  [token budgets]");
-    eprintln!(
-        "    Compact ≤200 tokens budget: {}",
-        if compact_budget_present { "✓" } else { "✗" }
-    );
-    eprintln!(
-        "    TDD ≤150 tokens budget:     {}",
-        if tdd_budget_present { "✓" } else { "✗" }
-    );
-
-    assert!(
-        compact_budget_present,
-        "Compact mode must specify ≤200 token budget"
-    );
-    assert!(
-        tdd_budget_present,
-        "TDD mode must specify ≤150 token budget"
-    );
-}
-
 // SECTION 6: PERFORMANCE BENCHMARKS removed — machine-dependent timing
 // thresholds are unsuitable for OSS CI.
 
@@ -680,7 +575,7 @@ fn guard_tool_descriptions_not_empty() {
 
 #[test]
 fn guard_essential_instructions_present() {
-    let instr = instructions_at_off(CrpMode::Off);
+    let instr = instructions_at_off();
 
     let required = vec![
         "native tools keep working",
@@ -1240,7 +1135,7 @@ fn bench_minimal_overhead_suppresses_all_meta_strings() {
     let _lock = sobre::core::data_dir::test_env_lock();
     let _config = TempConfig::new();
 
-    let instructions = instructions_at_off(CrpMode::Tdd);
+    let instructions = instructions_at_off();
     let instr_tokens = count_tokens(&instructions);
 
     eprintln!("\n{}", "=".repeat(70));

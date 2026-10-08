@@ -28,7 +28,6 @@ pub mod impl_edit;
 // Stays `pub`: driven from outside the crate by tests/serial_suite/multi_read_cap_scenarios.rs.
 pub mod impl_multi_read;
 pub(crate) mod impl_overview;
-pub(crate) mod impl_preload;
 // Stays `pub`: driven from outside the crate by tests/serial_suite/intensive_benchmarks.rs.
 pub(crate) mod impl_semantic_search;
 pub(crate) mod impl_smart_read;

@@ -2,14 +2,11 @@
 //!
 //! Shows what a session costs BEFORE sobre saves anything:
 //!  1. advertised MCP tool schemas (mirrors the live `tools/list` policy),
-//!  2. the MCP server instructions block — sobre's only guidance channel,
-//!  3. the wakeup briefing.
+//!  2. the MCP server instructions block — sobre's only guidance channel.
 //!
 //! Research context: fixed context costs both money and model attention
 //! (context degradation starts well below typical window limits), so every
 //! always-on token has to justify itself.
-
-use std::path::PathBuf;
 
 use crate::core::context_overhead::tool_tokens;
 use crate::core::tokens::count_tokens;
@@ -25,11 +22,6 @@ pub(super) struct OverheadReport {
     pub tool_count: usize,
     pub tool_schema_tokens: usize,
     pub instruction_tokens: usize,
-    /// Tokens of the wakeup briefing (knowledge + session memory), delivered
-    /// once per session via the AUTO CONTEXT block of the first tool call other
-    /// than the `ctx_compose` overview (instructions stay byte-stable, #498);
-    /// its own source, not folded into `instruction_tokens` (#964).
-    pub wakeup_tokens: usize,
     /// The per-session budget (#964); 0 disables the check.
     pub budget_tokens: usize,
     /// Whether `total_tokens` exceeds a non-zero `budget_tokens` (#964).
@@ -38,7 +30,7 @@ pub(super) struct OverheadReport {
 
 impl OverheadReport {
     fn total_tokens(&self) -> usize {
-        self.tool_schema_tokens + self.instruction_tokens + self.wakeup_tokens
+        self.tool_schema_tokens + self.instruction_tokens
     }
 
     /// Strictly above a non-zero budget; a budget of 0 disables the check (#964).
@@ -48,15 +40,9 @@ impl OverheadReport {
 }
 
 #[must_use]
-pub(super) fn measure(project: &std::path::Path) -> OverheadReport {
+pub(super) fn measure() -> OverheadReport {
     let advertised = crate::server::tool_visibility::advertised_tool_defs_default();
     let instructions = crate::instructions::build_instructions();
-
-    // The wakeup briefing rides session start as its own source (#964). It reads
-    // live knowledge + session state, so it reflects what this install actually
-    // re-injects rather than a static estimate.
-    let wakeup =
-        crate::tools::impl_overview::build_wakeup_briefing(&project.to_string_lossy(), None);
 
     let budget_tokens = crate::core::config::CONTEXT_BUDGET_TOKENS;
 
@@ -64,7 +50,6 @@ pub(super) fn measure(project: &std::path::Path) -> OverheadReport {
         tool_count: advertised.len(),
         tool_schema_tokens: advertised.iter().map(tool_tokens).sum(),
         instruction_tokens: count_tokens(&instructions),
-        wakeup_tokens: count_tokens(&wakeup),
         budget_tokens,
         over_budget: false,
     };
@@ -73,9 +58,7 @@ pub(super) fn measure(project: &std::path::Path) -> OverheadReport {
 }
 
 pub(super) fn run_overhead(json: bool, gate: bool) -> i32 {
-    let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("~"));
-    let project = std::env::current_dir().unwrap_or_else(|_| home.clone());
-    let report = measure(&project);
+    let report = measure();
 
     // `--gate` turns a budget breach into a non-zero exit for CI (#964); without
     // it the report is purely informational regardless of the breach.
@@ -107,12 +90,6 @@ pub(super) fn run_overhead(json: bool, gate: bool) -> i32 {
         report.instruction_tokens
     );
 
-    // 3. Wakeup briefing (knowledge + session memory re-injected on session start)
-    println!(
-        "  {BOLD}Wakeup briefing{RST}       {:>6} tok  {DIM}(knowledge + session memory){RST}",
-        report.wakeup_tokens
-    );
-
     println!();
     let total = report.total_tokens();
     let color = if report.over_budget { YELLOW } else { GREEN };
@@ -121,7 +98,7 @@ pub(super) fn run_overhead(json: bool, gate: bool) -> i32 {
         if report.over_budget {
             // Machine-readable so CI/log scrapers can key on a stable token (#964).
             println!(
-                "  {YELLOW}⚠ OVER_BUDGET: {total} tok > budget {} tok — trim the knowledge briefing.{RST}",
+                "  {YELLOW}⚠ OVER_BUDGET: {total} tok > budget {} tok {RST}",
                 report.budget_tokens
             );
         } else {
@@ -142,40 +119,32 @@ pub(super) fn run_overhead(json: bool, gate: bool) -> i32 {
 mod tests {
     use super::*;
 
-    fn report(schema: usize, instr: usize, wakeup: usize, budget: usize) -> OverheadReport {
+    fn report(schema: usize, instr: usize, budget: usize) -> OverheadReport {
         OverheadReport {
             tool_count: 1,
             tool_schema_tokens: schema,
             instruction_tokens: instr,
-            wakeup_tokens: wakeup,
             budget_tokens: budget,
             over_budget: false,
         }
     }
 
     #[test]
-    fn total_includes_wakeup_source() {
-        // #964: the wakeup briefing is its own fourth source in the total.
-        let r = report(100, 200, 50, 0);
-        assert_eq!(r.total_tokens(), 350);
-    }
-
-    #[test]
     fn over_budget_threshold_is_strict() {
         assert!(
-            report(100, 200, 50, 300).is_over_budget(),
+            report(150, 200, 300).is_over_budget(),
             "350 > 300 must breach"
         );
         assert!(
-            !report(100, 200, 50, 350).is_over_budget(),
+            !report(150, 200, 350).is_over_budget(),
             "a total equal to the budget is within it"
         );
         assert!(
-            !report(100, 200, 50, 8000).is_over_budget(),
+            !report(150, 200, 8000).is_over_budget(),
             "350 < 8000 is within budget"
         );
         assert!(
-            !report(100, 200, 50, 0).is_over_budget(),
+            !report(150, 200, 0).is_over_budget(),
             "budget 0 disables the check"
         );
     }

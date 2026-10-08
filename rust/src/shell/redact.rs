@@ -33,12 +33,15 @@ pub fn save_tee(command: &str, output: &str) -> Option<String> {
             }
         })
         .collect();
-    // Content-addressed path (#498): the same command always maps to the same
-    // file, so repeated tool outputs stay byte-identical (provider prompt
-    // caches reward stable text). Re-runs overwrite — newest output wins;
-    // the 24h TTL cleanup works on mtime, not the filename.
-    let cmd_hash = blake3::hash(command.as_bytes()).to_hex();
-    let filename = format!("{cmd_slug}_{}.log", &cmd_hash.as_str()[..8]);
+    // The name hashes the command and its output: a re-run that prints
+    // something else gets its own file, so an earlier footer still points at
+    // the output it described, and an identical re-run keeps the same name.
+    let mut hasher = blake3::Hasher::new();
+    hasher.update(command.as_bytes());
+    hasher.update(&[0]);
+    hasher.update(output.as_bytes());
+    let hash = hasher.finalize().to_hex();
+    let filename = format!("{cmd_slug}_{}.log", &hash.as_str()[..8]);
     let path = tee_dir.join(&filename);
 
     let masked = crate::core::redaction::redact_text(output);
@@ -150,26 +153,23 @@ mod tests {
         assert_eq!(hits, 1, "exactly one racer should win the cleanup slot");
     }
 
-    /// Determinism contract (#498): the tee path must be content-addressed —
-    /// the same command always maps to the same file so repeated tool outputs
-    /// stay byte-identical for provider prompt caching.
+    /// An identical re-run keeps its name; a re-run with other output gets its
+    /// own file, and the first file keeps the first output.
     #[test]
-    fn tee_path_is_content_addressed() {
+    fn tee_path_is_unique_per_output() {
         // Serialize against tests that repoint SOBRE_DATA_DIR (isolated_data_dir);
         // without the lock the resolved tee base races and the paths diverge.
         let _lock = crate::core::data_dir::test_env_lock();
         let first = save_tee("cargo test --lib", "output run 1").expect("tee saved");
+        let again = save_tee("cargo test --lib", "output run 1").expect("tee saved");
+        assert_eq!(first, again, "identical output keeps the same tee path");
+
         let second = save_tee("cargo test --lib", "output run 2").expect("tee saved");
-        assert_eq!(first, second, "same command must map to the same tee path");
+        assert_ne!(first, second, "different output gets its own tee path");
+        assert!(std::fs::read_to_string(&first).unwrap().contains("run 1"));
+        assert!(std::fs::read_to_string(&second).unwrap().contains("run 2"));
 
-        let other = save_tee("cargo build", "output").expect("tee saved");
-        assert_ne!(first, other, "different commands get different tee paths");
-
-        // Latest output wins on overwrite.
-        let content = std::fs::read_to_string(&second).unwrap();
-        assert!(content.contains("run 2"));
-
-        for p in [first, other] {
+        for p in [first, second] {
             let _ = std::fs::remove_file(p);
         }
     }

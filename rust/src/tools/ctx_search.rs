@@ -376,7 +376,11 @@ pub fn handle_filtered(
             .collect()
     };
 
-    let mut result = format!("{} matches in {} files", matches.len(), files_searched);
+    let mut result = format!(
+        "{} matches in {} files ({files_searched} searched)",
+        matches.len(),
+        matched_files.len()
+    );
     if matched_files.len() > 1 {
         if matched_files.len() <= 10 {
             result.push_str(" [");

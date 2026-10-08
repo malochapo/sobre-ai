@@ -904,7 +904,7 @@ fn recovery_footer_is_compressed_only() {
     // MCP-free path so an agent needing the full source never reads line-by-line.
     let sigs = run("signatures");
     assert!(
-        sigs.contains("read \"/tmp/rec.rs\" directly (no MCP)"),
+        sigs.contains("full source in \"/tmp/rec.rs\" (read it directly)"),
         "compressed view must surface the MCP-free recovery path: {sigs}"
     );
     // Determinism (#498): byte-stable across calls.
@@ -912,7 +912,7 @@ fn recovery_footer_is_compressed_only() {
 
     // The verbatim escape hatch itself carries no footer (nothing to recover).
     assert!(
-        !run("raw").contains("(no MCP)"),
+        !run("raw").contains("(read it directly)"),
         "raw view needs no recovery footer"
     );
 }
@@ -1238,7 +1238,7 @@ fn gh775_cold_ranged_read_returns_only_window() {
 // #811: the `anchored:N-M` disk-streaming short-circuit. A fresh, explicitly
 // windowed anchored read must never materialize the whole file — these tests
 // exercise `read_line_window`/`parse_disk_anchor_range` directly, and the
-// end-to-end case that motivated it: a file bigger than `LCTX_MAX_READ_BYTES`
+// end-to-end case that motivated it: a file bigger than the read size limit
 // must still serve a small anchored window instead of erroring "file too
 // large" (the bug that `read_file_lossy`'s own error message told the caller
 // to route around, but couldn't actually satisfy before this fix).

@@ -16,7 +16,7 @@
 #[must_use]
 pub fn advertised_tool_defs_default() -> Vec<rmcp::model::Tool> {
     let cfg = crate::core::config::Config::load();
-    let level = crate::core::config::CompressionLevel::effective(&cfg);
+    let level = crate::core::config::CompressionLevel::effective_configured(&cfg);
     let mode = crate::core::terse::mcp_compress::DescriptionMode::from_compression_level(&level);
     crate::server::registry::build_registry()
         .tool_defs()

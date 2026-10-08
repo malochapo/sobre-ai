@@ -214,13 +214,7 @@ impl McpTool for CtxShellTool {
             let progress_label: String = cmd_clone.chars().take(60).collect();
             let cap_secs = soft_cap.as_secs_f64();
             let on_tick = |elapsed: std::time::Duration| {
-                #[allow(clippy::unwrap_or_default)]
-                if let Some(ref ps) = progress_sender
-                    && let Some(sender) = ps
-                        .lock()
-                        .unwrap_or_else(std::sync::PoisonError::into_inner)
-                        .as_ref()
-                {
+                if let Some(ref sender) = progress_sender {
                     sender.send(
                         elapsed.as_secs_f64(),
                         Some(cap_secs),
@@ -284,7 +278,9 @@ impl McpTool for CtxShellTool {
                     crate::shell::save_tee(&cmd_clone, &output)
                         .and_then(|p| {
                             let id = std::path::Path::new(&p).file_name()?.to_str()?.to_string();
-                            Some(format!("\n[full output: ctx_expand(id=\"{id}\")]"))
+                            Some(format!(
+                                "\n[sobre: full output at {p}, or ctx_expand(id=\"{id}\")]"
+                            ))
                         })
                         .unwrap_or_default()
                 } else {

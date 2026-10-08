@@ -7,9 +7,7 @@ pub(crate) mod execute;
 pub mod helpers;
 pub mod multi_path;
 pub mod progress;
-pub mod prompts;
 pub mod registry;
-pub mod resources;
 pub mod roots;
 use roots::has_project_marker;
 pub mod tool_trait;
@@ -24,7 +22,7 @@ use rmcp::model::{
 };
 use rmcp::service::{RequestContext, RoleServer};
 
-use crate::tools::{CrpMode, SobreServer};
+use crate::tools::SobreServer;
 mod call_tool;
 mod post_dispatch;
 mod post_process;

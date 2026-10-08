@@ -31,5 +31,3 @@ impl ProgressSender {
         });
     }
 }
-
-pub type SharedProgressSender = std::sync::Arc<std::sync::Mutex<Option<ProgressSender>>>;
