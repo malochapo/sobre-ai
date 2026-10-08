@@ -41,7 +41,6 @@ from unit tests, which assert that the defaults are valid.
 
 | Field | Value |
 |---|---|
-| `decay_rate` | 0.01 |
 | `low_confidence_threshold` | 0.3 |
 | `stale_days` | 30 |
 | `similarity_threshold` | 0.85 |

@@ -108,7 +108,7 @@ fn handle_policy(value: Option<&str>) -> String {
                  - rooms_limit={}\n\
                  - timeline_limit={}\n\
                  - relations_limit={}\n\
-                 - decay_rate={}\n\
+                 - base_stability_days={}\n\
                  - stale_days={}",
                 policy.knowledge.max_facts,
                 policy.knowledge.contradiction_threshold,
@@ -116,7 +116,7 @@ fn handle_policy(value: Option<&str>) -> String {
                 policy.knowledge.rooms_limit,
                 policy.knowledge.timeline_limit,
                 policy.knowledge.relations_limit,
-                policy.lifecycle.decay_rate,
+                policy.lifecycle.base_stability_days,
                 policy.lifecycle.stale_days
             )
         }
@@ -254,9 +254,9 @@ fn handle_lifecycle_report(project_root: &str) -> String {
             let fill_pct = (active * 100).checked_div(cap).unwrap_or(0);
             out.push_str(&format!(
                 "knowledge   {active} active / {archived} archived (cap {cap}, {fill_pct}% full)\n\
-                 \x20           decay {}/day, stale >{}d, consolidate-sim {:.2}\n\
+                 \x20           stability {}d, stale >{}d, consolidate-sim {:.2}\n\
                  \x20           GC: self-limiting on remember when >{cap}; eviction archives, never deletes\n",
-                policy.lifecycle.decay_rate,
+                policy.lifecycle.base_stability_days,
                 policy.lifecycle.stale_days,
                 policy.lifecycle.similarity_threshold,
             ));
