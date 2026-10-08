@@ -25,7 +25,7 @@ impl McpTool for CtxPatchTool {
             "Safe file edit. Anchored ops use line+hash from ctx_read(mode=\"anchored\"); \
              CONFLICT means re-read. replace_unique(path,old_text,new_text) is a no-read, \
              exact unique replacement. replace_symbol/create/replace_all and cross-file ops[] \
-             (incl. replace_unique) supported.",
+             (incl. replace_unique) supported. dry_run=true shows the diff and writes nothing.",
             json!({
                 "type": "object",
                 "properties": {
@@ -56,7 +56,7 @@ impl McpTool for CtxPatchTool {
                     { "if": { "properties": { "op": { "const": "set_line" } }, "required": ["op"] },
                       "then": { "required": ["op", "line", "hash", "new_text"] } },
                     { "if": { "properties": { "op": { "const": "replace_lines" } }, "required": ["op"] },
-                      "then": { "required": ["op", "start_line", "start_hash", "end_line", "end_hash", "new_text"] } },
+                      "then": { "required": ["op", "start_line", "end_line", "new_text"] } },
                     { "if": { "properties": { "op": { "const": "replace_unique" } }, "required": ["op"] },
                       "then": { "required": ["op", "old_text", "new_text"] } },
                     { "if": { "properties": { "op": { "const": "replace_symbol" } }, "required": ["op"] },
@@ -107,13 +107,7 @@ impl McpTool for CtxPatchTool {
 /// (grouped per file, batch-atomic per file). Split out of `handle` so the
 /// mixed-batch path (#1088) can reuse it per anchored run.
 fn handle_anchored(args: &Map<String, Value>, ctx: &ToolContext) -> Result<ToolOutput, ErrorData> {
-    if get_bool(args, "dry_run").unwrap_or(false) {
-        let path = get_str(args, "path").unwrap_or_default();
-        return Ok(ToolOutput::simple(format!(
-            "DRY RUN: ctx_patch would apply anchor-based ops to {path}"
-        )));
-    }
-
+    let dry_run = get_bool(args, "dry_run").unwrap_or(false);
     let expected_md5 = get_str(args, "expected_md5");
     let backup = get_bool(args, "backup").unwrap_or(false);
     let backup_path = get_str(args, "backup_path")
@@ -144,6 +138,7 @@ fn handle_anchored(args: &Map<String, Value>, ctx: &ToolContext) -> Result<ToolO
             diff_max_lines,
             allow_lossy_utf8,
             validate_syntax,
+            dry_run,
         };
         let output = apply_one(ctx, &patch_params)?;
         texts.push(format!("[{path}]\n{output}"));
@@ -280,20 +275,6 @@ fn delegate_replace_unique(
 ) -> Result<ToolOutput, ErrorData> {
     let edit_args =
         build_unique_edit_args(args).map_err(|message| ErrorData::invalid_params(message, None))?;
-
-    if get_bool(args, "dry_run").unwrap_or(false) {
-        let old_text = get_str(args, "old_text")
-            .or_else(|| get_str(args, "old_string"))
-            .unwrap_or_default();
-        let new_text = get_str(args, "new_text")
-            .or_else(|| get_str(args, "new_string"))
-            .unwrap_or_default();
-        let path = get_str(args, "path").unwrap_or_default();
-        return Ok(ToolOutput::simple(format!(
-            "DRY RUN: replace_unique would replace {old_text:?} with {new_text:?} in {path}"
-        )));
-    }
-
     crate::tools::registered::impl_edit::CtxEditTool.handle(&edit_args, ctx)
 }
 
@@ -465,6 +446,7 @@ fn apply_one(
         let (output, effect) = crate::tools::ctx_patch::run_io(params, &last_mode);
 
         crate::tools::ctx_patch::record_outcome(params, &last_mode, &output, &effect);
+        let wrote = matches!(effect, crate::tools::impl_edit::CacheEffect::Invalidate);
 
         if !matches!(effect, crate::tools::impl_edit::CacheEffect::None) {
             match rt.block_on(tokio::time::timeout(
@@ -482,7 +464,7 @@ fn apply_one(
             }
         }
 
-        if let Some(session_lock) = ctx.session.as_ref() {
+        if wrote && let Some(session_lock) = ctx.session.as_ref() {
             let guard = rt.block_on(tokio::time::timeout(
                 std::time::Duration::from_secs(5),
                 session_lock.write(),
@@ -506,14 +488,6 @@ fn delegate_replace_symbol(
 ) -> Result<ToolOutput, ErrorData> {
     let refactor_args = crate::tools::ctx_patch::build_refactor_args(args)
         .map_err(|e| ErrorData::invalid_params(e, None))?;
-
-    if get_bool(args, "dry_run").unwrap_or(false) {
-        let name = get_str(args, "name").unwrap_or_default();
-        let path = get_str(args, "path").unwrap_or_default();
-        return Ok(ToolOutput::simple(format!(
-            "DRY RUN: replace_symbol would rewrite symbol {name:?} in {path}"
-        )));
-    }
 
     // Resolve `path` at the boundary when given (the name route resolves its own
     // path inside ctx_refactor). abs_path is unused by the symbol-edit branch but
@@ -571,54 +545,25 @@ fn resolve_find_replace(args: &Map<String, Value>) -> Result<(String, String), S
     Ok((find, replace))
 }
 
-/// #825: Bulk literal find-and-replace — no anchors needed.
+/// #825: Bulk literal find-and-replace — no anchors needed. It goes through
+/// the same edit path as `replace_unique`: per-file lock, preimage guard,
+/// permission-preserving atomic write, session and cache bookkeeping.
 fn handle_replace_all(
     args: &Map<String, Value>,
     ctx: &ToolContext,
 ) -> Result<ToolOutput, ErrorData> {
-    let path = require_resolved_path(ctx, args, "path")?;
     let (find, replace) =
         resolve_find_replace(args).map_err(|e| ErrorData::invalid_params(e, None))?;
-    let dry_run = get_bool(args, "dry_run").unwrap_or(false);
-
-    let content = std::fs::read_to_string(&path)
-        .map_err(|e| ErrorData::internal_error(format!("cannot read {path}: {e}"), None))?;
-
-    let count = content.matches(find.as_str()).count();
-    if count == 0 {
-        return Ok(ToolOutput::simple(format!(
-            "No matches for {find:?} in {path}"
-        )));
-    }
-
-    if dry_run {
-        return Ok(ToolOutput::simple(format!(
-            "DRY RUN: {count} occurrence(s) of {find:?} would be replaced with {replace:?} in {path}"
-        )));
-    }
-
-    let file_lock = crate::core::path_locks::per_file_lock(&path);
-    let _guard = file_lock
-        .lock()
-        .map_err(|_| ErrorData::internal_error(format!("lock contention for {path}"), None))?;
-
-    let new_content = content.replace(find.as_str(), &replace);
-    crate::config_io::write_atomic(std::path::Path::new(&path), &new_content)
-        .map_err(|e| ErrorData::internal_error(format!("write failed: {e}"), None))?;
-
-    if let Some(cache) = ctx.cache.as_ref() {
-        let rt = tokio::runtime::Handle::current();
-        if let Ok(mut c) = rt.block_on(tokio::time::timeout(
-            std::time::Duration::from_secs(2),
-            cache.write(),
-        )) {
-            c.invalidate(&path);
+    let mut edit_args = Map::new();
+    for key in ["path", "dry_run"] {
+        if let Some(v) = args.get(key) {
+            edit_args.insert(key.to_string(), v.clone());
         }
     }
-
-    Ok(ToolOutput::simple(format!(
-        "Replaced {count} occurrence(s) of {find:?} with {replace:?} in {path}"
-    )))
+    edit_args.insert("old_string".into(), Value::String(find));
+    edit_args.insert("new_string".into(), Value::String(replace));
+    edit_args.insert("replace_all".into(), Value::Bool(true));
+    crate::tools::registered::impl_edit::CtxEditTool.handle(&edit_args, ctx)
 }
 
 #[cfg(test)]

@@ -146,6 +146,7 @@ fn edit_params(path: &Path, old: &str, new: &str) -> EditParams {
         evidence: false,
         diff_max_lines: 0,
         allow_lossy_utf8: false,
+        dry_run: false,
     }
 }
 
@@ -160,6 +161,7 @@ fn patch_params(path: &Path, ops: Vec<AnchorOp>) -> PatchParams {
         diff_max_lines: 0,
         allow_lossy_utf8: false,
         validate_syntax: true,
+        dry_run: false,
     }
 }
 

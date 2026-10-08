@@ -38,6 +38,7 @@ mod lock_ordering_check;
 mod lsp_integration;
 mod mcp_fast_initialize_669;
 mod outline_machine_readable_e2e;
+mod patch_dry_run_and_modes;
 mod pattern_snapshots;
 mod performance_stress;
 mod project_data_dir_scenarios;

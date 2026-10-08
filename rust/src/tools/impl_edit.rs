@@ -30,6 +30,8 @@ pub struct EditParams {
     pub diff_max_lines: usize,
     /// Reject invalid UTF-8 by default; allow lossy reads only when explicitly enabled.
     pub allow_lossy_utf8: bool,
+    /// Compute the edit and show its diff without writing anything.
+    pub dry_run: bool,
 }
 
 struct ReplaceArgs<'a> {
@@ -154,6 +156,14 @@ pub fn apply_cache_effect(cache: &mut SessionCache, path: &str, effect: CacheEff
 pub fn run_io(params: &EditParams, last_mode: &str) -> (String, CacheEffect) {
     let file_path = &params.path;
 
+    if params.create && params.dry_run {
+        let path = Path::new(file_path);
+        let old = std::fs::read_to_string(path).unwrap_or_default();
+        return (
+            dry_run_text(path, &old, &params.new_string, params.diff_max_lines),
+            CacheEffect::None,
+        );
+    }
     if params.create {
         return handle_create(file_path, &params.new_string, params);
     }
@@ -415,6 +425,13 @@ fn do_replace(
         args.content.replacen(args.old_str, args.new_str, 1)
     };
 
+    if params.dry_run {
+        return (
+            dry_run_text(path, args.content, &new_content, params.diff_max_lines),
+            CacheEffect::None,
+        );
+    }
+
     // Code-health gate: an advisory notice on cognitive-complexity drift.
     let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
     let health_notice = crate::core::code_health::gate::evaluate(args.content, &new_content, ext);
@@ -513,6 +530,19 @@ postimage: bytes={}, mtime_ms={}, md5={}",
         out.push_str(&notice);
     }
     (out, CacheEffect::Invalidate)
+}
+
+/// What a dry run returns: the diff the edit would make. Nothing is written.
+pub(crate) fn dry_run_text(path: &Path, old: &str, new: &str, max_lines: usize) -> String {
+    let short = path.file_name().map_or_else(
+        || path.to_string_lossy().to_string(),
+        |f| f.to_string_lossy().to_string(),
+    );
+    let diff = build_diff_evidence(old, new, &short, max_lines.max(1));
+    format!(
+        "DRY RUN, nothing written to {}:\n```diff\n{diff}\n```",
+        path.display()
+    )
 }
 
 fn handle_create(file_path: &str, content: &str, params: &EditParams) -> (String, CacheEffect) {
@@ -680,6 +710,7 @@ mod tests {
             evidence: false,
             diff_max_lines: 200,
             allow_lossy_utf8: false,
+            dry_run: false,
         }
     }
 

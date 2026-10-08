@@ -61,6 +61,7 @@ impl McpTool for CtxEditTool {
             .and_then(|v| usize::try_from(v.max(0)).ok())
             .unwrap_or(200);
         let allow_lossy_utf8 = get_bool(args, "allow_lossy_utf8").unwrap_or(false);
+        let dry_run = get_bool(args, "dry_run").unwrap_or(false);
 
         let edit_params = crate::tools::impl_edit::EditParams {
             path: path.clone(),
@@ -76,6 +77,7 @@ impl McpTool for CtxEditTool {
             evidence,
             diff_max_lines,
             allow_lossy_utf8,
+            dry_run,
         };
 
         tokio::task::block_in_place(|| {
@@ -130,6 +132,8 @@ impl McpTool for CtxEditTool {
             // per-(ext × mode) stats and the one-shot read escalation.
             crate::tools::impl_edit::record_outcome(&edit_params, &last_mode, &output, &effect);
 
+            let wrote = matches!(effect, crate::tools::impl_edit::CacheEffect::Invalidate);
+
             // Apply the deferred cache mutation under a brief exclusive lock.
             if !matches!(effect, crate::tools::impl_edit::CacheEffect::None) {
                 match rt.block_on(tokio::time::timeout(
@@ -147,7 +151,7 @@ impl McpTool for CtxEditTool {
                 }
             }
 
-            if let Some(session_lock) = ctx.session.as_ref() {
+            if wrote && let Some(session_lock) = ctx.session.as_ref() {
                 let guard = rt.block_on(tokio::time::timeout(
                     std::time::Duration::from_secs(5),
                     session_lock.write(),

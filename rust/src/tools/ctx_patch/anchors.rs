@@ -110,7 +110,8 @@ fn parse_one(obj: &Map<String, Value>) -> Result<AnchorOp, String> {
             let new_text = req_new_text(obj).map_err(|e| missing.push(e)).ok();
             if !missing.is_empty() {
                 return Err(format!(
-                    "replace_lines requires start_line, end_line, new_text                      (start_hash/end_hash optional for conflict detection) — {}",
+                    "replace_lines requires start_line, end_line, new_text \
+                     (start_hash/end_hash optional for conflict detection) — {}",
                     missing.join("; ")
                 ));
             }
@@ -174,23 +175,13 @@ fn parse_one(obj: &Map<String, Value>) -> Result<AnchorOp, String> {
         "create" => Ok(AnchorOp::Create {
             new_text: req_new_text_create(obj)?,
         }),
-        "replace_unique" => Err(
-            "replace_unique cannot be batched in ops[] — send each replace_unique as a \
-             separate top-level ctx_patch call"
-                .to_string(),
-        ),
-        "replace_symbol" => Err(
-            "replace_symbol cannot be batched in ops[] — it is a different (symbol \
-             resolution) write path; send it as a single top-level op"
-                .to_string(),
-        ),
         "replace_all" => Err(
             "replace_all cannot be batched in ops[] — send it as a separate top-level \
              ctx_patch call"
                 .to_string(),
         ),
         other => Err(format!(
-            "unknown op '{other}' (one of: set_line, replace_lines, insert_after, delete, create, replace_symbol, replace_all)"
+            "unknown op '{other}' (one of: set_line, replace_lines, insert_after, delete, create, replace_unique, replace_symbol, replace_all)"
         )),
     }
 }

@@ -10,9 +10,8 @@
 //! in one call are **batch-atomic** — all validated against the same
 //! preimage and applied all-or-nothing, bottom-up.
 //!
-//! Reuses the exact `ctx_edit` I/O boundary (`crate::tools::edit_io`):
-//! TOCTOU preimage guard, permission-preserving atomic write, read-only-roots
-//! deny, symlink rejection. `ctx_edit` (str_replace) stays as the fallback.
+//! Reuses the `ctx_edit` I/O boundary (`crate::tools::edit_io`): TOCTOU
+//! preimage guard, permission-preserving atomic write, symlink rejection.
 
 mod anchors;
 mod apply;
@@ -55,6 +54,8 @@ pub struct PatchParams {
     /// parsing file into a broken one. Default `true`; set `false` to override
     /// (e.g. intentionally writing an incomplete snippet).
     pub validate_syntax: bool,
+    /// Run every check and show the diff without writing anything.
+    pub dry_run: bool,
 }
 
 /// Parse the raw tool arguments into [`AnchorOp`]s (single op or `ops[]`).
@@ -188,6 +189,18 @@ pub fn run_io(params: &PatchParams, _last_mode: &str) -> (String, CacheEffect) {
         return (reason, CacheEffect::None);
     }
 
+    if params.dry_run {
+        return (
+            crate::tools::impl_edit::dry_run_text(
+                path,
+                &pre.text,
+                &new_content,
+                params.diff_max_lines,
+            ),
+            CacheEffect::None,
+        );
+    }
+
     // Code-health gate: an advisory notice on cognitive-complexity drift.
     let health_notice = crate::core::code_health::gate::evaluate(&pre.text, &new_content, ext);
 
@@ -252,8 +265,8 @@ fn single_create_op(ops: &[AnchorOp]) -> Option<Result<&str, String>> {
 }
 
 /// `op=create`: write a NEW file (strict — an existing file is an error, unlike
-/// `ctx_edit create=true` which overwrites). Reuses the PathJail +
-/// atomic-write boundary of the anchored path.
+/// `ctx_edit create=true` which overwrites). Reuses the atomic-write boundary
+/// of the anchored path.
 fn handle_create(params: &PatchParams, path: &Path, content: &str) -> (String, CacheEffect) {
     if path.exists() {
         return (
@@ -262,6 +275,13 @@ fn handle_create(params: &PatchParams, path: &Path, content: &str) -> (String, C
                  Use anchored ops (ctx_read mode=\"anchored\" → set_line/replace_lines) to modify it.",
                 params.path
             ),
+            CacheEffect::None,
+        );
+    }
+
+    if params.dry_run {
+        return (
+            crate::tools::impl_edit::dry_run_text(path, "", content, params.diff_max_lines),
             CacheEffect::None,
         );
     }

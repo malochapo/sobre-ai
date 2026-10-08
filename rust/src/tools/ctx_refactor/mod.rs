@@ -342,7 +342,7 @@ fn handle_symbol_edit(action: &str, args: &Value, project_root: &str) -> String 
         (path.to_string(), line, end)
     };
 
-    // 2) PathJail on the resolved path (v1 §4.5 seam — critical before writes).
+    // 2) Resolve the path against the project root.
     let abs_path =
         match crate::core::path_resolve::resolve_tool_path(Some(project_root), None, &rel_path) {
             Ok(p) => p,
@@ -441,21 +441,26 @@ fn handle_symbol_edit(action: &str, args: &Value, project_root: &str) -> String 
         .extension()
         .and_then(std::ffi::OsStr::to_str)
         .unwrap_or("");
-    {
-        let start_off =
-            crate::lsp::edit_apply::offset_of(&content, range.start_line, range.start_char)
-                .unwrap_or(0);
-        let end_off = crate::lsp::edit_apply::offset_of(&content, range.end_line, range.end_char)
-            .unwrap_or(content.len());
-        let mut hypothetical =
-            String::with_capacity(content.len() - (end_off - start_off) + edit.text.len());
-        hypothetical.push_str(&content[..start_off]);
-        hypothetical.push_str(&edit.text);
-        hypothetical.push_str(&content[end_off..]);
-        if let Some(reason) = crate::core::syntax_validate::gate_edit(ext, &content, &hypothetical)
-        {
-            return reason;
-        }
+    let start_off = crate::lsp::edit_apply::offset_of(&content, range.start_line, range.start_char)
+        .unwrap_or(0);
+    let end_off = crate::lsp::edit_apply::offset_of(&content, range.end_line, range.end_char)
+        .unwrap_or(content.len());
+    let mut hypothetical =
+        String::with_capacity(content.len() - (end_off - start_off) + edit.text.len());
+    hypothetical.push_str(&content[..start_off]);
+    hypothetical.push_str(&edit.text);
+    hypothetical.push_str(&content[end_off..]);
+    if let Some(reason) = crate::core::syntax_validate::gate_edit(ext, &content, &hypothetical) {
+        return reason;
+    }
+
+    if args.get("dry_run").and_then(Value::as_bool) == Some(true) {
+        return crate::tools::impl_edit::dry_run_text(
+            std::path::Path::new(&edit.abs_path),
+            &content,
+            &hypothetical,
+            200,
+        );
     }
 
     // 5) Dispatch (IDE-first, headless fallback) + format.

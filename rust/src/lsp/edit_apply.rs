@@ -34,13 +34,21 @@ pub fn offset_of(content: &str, line: u32, character: u32) -> Result<usize, Stri
     ))
 }
 
-/// Apply a resolved `RangeEdit` to disk (headless). Reads the file, optionally
-/// verifies `expected_hash` against the *current* bytes covered by `range`
-/// (mismatch → `CONFLICT`), replaces the range with `text`, writes atomically,
-/// and returns the post-edit range + a compact diff.
+/// Apply a resolved `RangeEdit` to disk (headless). Under the file's edit
+/// lock: reads the file, optionally verifies `expected_hash` against the
+/// *current* bytes covered by `range` (mismatch → `CONFLICT`), replaces the
+/// range with `text`, and writes through the edit tools' boundary (symlink
+/// refusal, preimage guard, file mode kept). Returns the post-edit range and a
+/// compact diff.
 pub fn local_range_write(edit: &RangeEdit) -> Result<EditResult, String> {
-    let content = std::fs::read_to_string(&edit.abs_path)
-        .map_err(|e| format!("FILE_NOT_FOUND: {}: {e}", edit.abs_path))?;
+    let path = std::path::Path::new(&edit.abs_path);
+    let file_lock = crate::core::path_locks::per_file_lock(&edit.abs_path);
+    let _guard = file_lock
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let cap = crate::core::limits::max_read_bytes();
+    let pre = crate::tools::edit_io::read_preimage(path, cap, false).map_err(strip_error)?;
+    let content = pre.text.as_str();
 
     let start = offset_of(&content, edit.range.start_line, edit.range.start_char)?;
     let end = offset_of(&content, edit.range.end_line, edit.range.end_char)?;
@@ -63,7 +71,17 @@ pub fn local_range_write(edit: &RangeEdit) -> Result<EditResult, String> {
     new_content.push_str(&edit.text);
     new_content.push_str(&content[end..]);
 
-    write_file_atomic(&edit.abs_path, &new_content)?;
+    crate::tools::edit_io::ensure_preimage_still_matches(path, &pre.fp, cap)
+        .map_err(strip_error)?;
+    crate::tools::edit_io::write_atomic_bytes_with_permissions(
+        path,
+        new_content.as_bytes(),
+        Some(&pre.permissions),
+    )
+    .map_err(strip_error)?;
+    if let Ok(mut bt) = crate::core::bounce_tracker::global().lock() {
+        bt.record_edit(&edit.abs_path);
+    }
 
     let new_range = range_after_write(&content[..start], &edit.text);
     Ok(EditResult {
@@ -151,23 +169,9 @@ fn build_range_diff(path: &str, old: &str, new: &str) -> String {
     out
 }
 
-fn write_file_atomic(path: &str, content: &str) -> Result<(), String> {
-    let p = std::path::Path::new(path);
-    let parent = p
-        .parent()
-        .ok_or_else(|| "invalid path (no parent directory)".to_string())?;
-    let filename = p
-        .file_name()
-        .ok_or_else(|| "invalid path (no filename)".to_string())?
-        .to_string_lossy();
-    let pid = std::process::id();
-    let tmp = parent.join(format!(".{filename}.sobre.v2a.tmp.{pid}"));
-    std::fs::write(&tmp, content.as_bytes())
-        .map_err(|e| format!("cannot write {}: {e}", tmp.display()))?;
-    std::fs::rename(&tmp, p).map_err(|e| {
-        let _ = std::fs::remove_file(&tmp);
-        format!("atomic write failed: {e}")
-    })
+/// The edit boundary's errors carry an `ERROR: ` prefix; callers add their own.
+fn strip_error(e: String) -> String {
+    e.strip_prefix("ERROR: ").map_or(e.clone(), str::to_string)
 }
 
 /// Zero-dependency backend that carries only the Trait default-apply for the

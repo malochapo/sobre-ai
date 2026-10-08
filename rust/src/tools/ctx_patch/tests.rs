@@ -32,6 +32,7 @@ fn params(path: &std::path::Path, ops: Vec<AnchorOp>) -> PatchParams {
         diff_max_lines: 200,
         allow_lossy_utf8: false,
         validate_syntax: true,
+        dry_run: false,
     }
 }
 
