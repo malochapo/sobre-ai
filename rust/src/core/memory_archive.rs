@@ -92,13 +92,12 @@ impl Default for ArchiveConfig {
 /// `items`.
 #[derive(Debug, Deserialize)]
 pub struct ArchiveEnvelope<T> {
-    pub archived_at: DateTime<Utc>,
     pub items: Vec<T>,
 }
 
 /// Borrowed write-side envelope, so archiving never has to clone the evicted
-/// slice. It also records `store` and `scope`; the reader
-/// ([`ArchiveEnvelope`]) takes only `archived_at` and `items`.
+/// slice. It also records `archived_at`, `store` and `scope`; the reader
+/// ([`ArchiveEnvelope`]) takes only `items`.
 #[derive(Serialize)]
 struct ArchiveEnvelopeRef<'a, T: Serialize> {
     archived_at: DateTime<Utc>,
