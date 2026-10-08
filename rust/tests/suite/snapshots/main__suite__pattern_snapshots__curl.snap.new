@@ -1,0 +1,11 @@
+---
+source: tests/suite/pattern_snapshots.rs
+assertion_line: 14
+expression: compressed
+---
+JSON (356 bytes):
+{
+  users: [object(4K); 5]
+  total: number
+  page: number
+}
