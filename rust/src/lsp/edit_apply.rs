@@ -50,8 +50,8 @@ pub fn local_range_write(edit: &RangeEdit) -> Result<EditResult, String> {
     let pre = crate::tools::edit_io::read_preimage(path, cap, false).map_err(strip_error)?;
     let content = pre.text.as_str();
 
-    let start = offset_of(&content, edit.range.start_line, edit.range.start_char)?;
-    let end = offset_of(&content, edit.range.end_line, edit.range.end_char)?;
+    let start = offset_of(content, edit.range.start_line, edit.range.start_char)?;
+    let end = offset_of(content, edit.range.end_line, edit.range.end_char)?;
     if end < start {
         return Err("POSITION_OUT_OF_RANGE: end before start".to_string());
     }
@@ -171,7 +171,10 @@ fn build_range_diff(path: &str, old: &str, new: &str) -> String {
 
 /// The edit boundary's errors carry an `ERROR: ` prefix; callers add their own.
 fn strip_error(e: String) -> String {
-    e.strip_prefix("ERROR: ").map_or(e.clone(), str::to_string)
+    match e.strip_prefix("ERROR: ") {
+        Some(rest) => rest.to_string(),
+        None => e,
+    }
 }
 
 /// Zero-dependency backend that carries only the Trait default-apply for the

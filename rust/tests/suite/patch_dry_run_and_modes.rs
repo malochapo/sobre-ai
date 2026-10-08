@@ -22,7 +22,10 @@ fn ctx_for(root: &Path, path: &Path) -> ToolContext {
 }
 
 fn args(v: Value) -> Map<String, Value> {
-    v.as_object().expect("object").clone()
+    match v {
+        Value::Object(m) => m,
+        other => panic!("expected an object, got {other}"),
+    }
 }
 
 fn patch(args: &Map<String, Value>, ctx: &ToolContext) -> String {
