@@ -241,7 +241,7 @@ impl LeanCtxServer {
         // return a byte-exact, parseable payload. The state-consuming briefings
         // are already skipped above (so their once-per-session flags survive),
         // but other steps still append recomputed prose (verify footer, throttle
-        // / budget warning, deprecation notice) or compress the body — all of
+        // / budget warning) or compress the body — all of
         // which break a JSON contract. This guard is the robust catch-all:
         // restore the pure body captured *before* compression and decoration.
         // Redaction + sensitivity were applied earlier so the security envelope

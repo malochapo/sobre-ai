@@ -6,6 +6,7 @@ use agents::{
     install_cursor_hook_config, install_gemini_hook, install_gemini_hook_config,
     install_opencode_hook, install_opencode_plugin, install_windsurf, install_windsurf_hooks,
 };
+pub(crate) use support::is_codex_hooks_assignment;
 use support::{ensure_codex_hooks_enabled, install_named_json_server};
 
 fn mcp_server_quiet_mode() -> bool {

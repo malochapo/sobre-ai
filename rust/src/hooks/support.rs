@@ -239,7 +239,7 @@ fn parse_toml_section_name(trimmed_line: &str) -> Option<&str> {
     }
 }
 
-fn is_codex_hooks_assignment(trimmed_line: &str) -> bool {
+pub(crate) fn is_codex_hooks_assignment(trimmed_line: &str) -> bool {
     let without_comment = trimmed_line.split('#').next().unwrap_or("").trim();
     if without_comment
         .strip_prefix("codex_hooks")

@@ -227,11 +227,6 @@ stale_files: {}\n",
             let mut ledger = crate::core::context_ledger::ContextLedger::load();
             ledger.reset();
             ledger.save();
-            if let Ok(data_dir) = crate::core::data_dir::lean_ctx_data_dir() {
-                let radar_path = data_dir.join("context_radar.jsonl");
-                let prev = data_dir.join("context_radar.prev.jsonl");
-                let _ = std::fs::rename(&radar_path, &prev);
-            }
             format!(
                 "Session reset. Previous: {old_id}. New: {}. Ledger cleared (0% pressure).",
                 session.id

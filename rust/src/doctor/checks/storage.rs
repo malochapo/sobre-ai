@@ -415,11 +415,11 @@ pub(crate) fn capacity_warnings() -> Vec<Outcome> {
 /// Actionable next-step for a memory capacity warning (#972). Separated from the
 /// on-disk capacity scan so the messaging is unit-tested directly: a store *at*
 /// its cap is healthy (eviction holds it there), while *over* cap means curation
-/// is behind and the operator should compact or raise the limit.
+/// is behind and the operator should compact it.
 pub(crate) fn capacity_hint(critical: bool) -> &'static str {
     if critical {
-        "over cap — eviction is behind. Run `lean-ctx knowledge consolidate --all` to compact project memory now, or raise the relevant memory.* cap"
+        "over cap — eviction is behind. Run `lean-ctx knowledge consolidate --all` to compact project memory now"
     } else {
-        "at/near cap is healthy by design — lean-ctx self-curates (write-time dedup #970, 90-day prune #972). Raise a cap only if recall quality drops (memory.*)"
+        "at/near cap is healthy by design — eviction holds the store at its cap (write-time dedup #970, 90-day prune #972)"
     }
 }

@@ -316,6 +316,7 @@ fn remove_lean_ctx_from_json_serde(content: &str) -> Option<String> {
 pub(super) fn remove_lean_ctx_from_toml(content: &str) -> String {
     let mut out = String::with_capacity(content.len());
     let mut skip = false;
+    let mut in_features = false;
 
     for line in content.lines() {
         let trimmed = line.trim();
@@ -331,16 +332,18 @@ pub(super) fn remove_lean_ctx_from_toml(content: &str) -> String {
                 continue;
             }
             skip = false;
+            in_features = section == "features";
         }
 
         if skip {
             continue;
         }
 
+        // Install turns on Codex's hooks flag inside [features] only, under
+        // either of Codex's names for it; undo exactly that.
         let without_comment = trimmed.split('#').next().unwrap_or("").trim();
-        if without_comment
-            .strip_prefix("hooks")
-            .is_some_and(|rest| rest.trim_start().starts_with('=') && !rest.starts_with('_'))
+        if in_features
+            && crate::hooks::is_codex_hooks_assignment(trimmed)
             && without_comment.contains("true")
         {
             out.push_str(&line.replace("true", "false"));
@@ -397,6 +400,23 @@ command = \"/usr/bin/other\"
         assert!(
             result.contains("hooks = false"),
             "hooks should be set to false"
+        );
+    }
+
+    #[test]
+    fn remove_toml_turns_off_only_the_features_hooks_flag() {
+        let input = "\
+[features]
+codex_hooks = true
+
+[tools.other]
+hooks = true
+";
+        let result = remove_lean_ctx_from_toml(input);
+        assert!(result.contains("codex_hooks = false"), "{result}");
+        assert!(
+            result.contains("[tools.other]\nhooks = true"),
+            "a hooks key outside [features] belongs to someone else: {result}"
         );
     }
 

@@ -351,7 +351,7 @@ fn deferred_ranking_note(project_root: &str) -> String {
                 .unwrap_or_else(|| "unknown error".to_string());
             format!(
                 "(semantic ranking unavailable — index build FAILED: {why}. {exact}. \
-                 Inspect with `ctx_index status` / `lean-ctx doctor`, then `lean-ctx reindex`)"
+                 Inspect with `lean-ctx index status` / `lean-ctx doctor`, then `lean-ctx index build`)"
             )
         }
         "building" => {
