@@ -65,7 +65,6 @@ mod setup_ci_smoke;
 mod setup_symlink_596;
 mod shell_and_agent_tests;
 mod shell_hook_595;
-mod tcc_sandbox;
 mod terse_eval;
 mod tool_schema_strictness;
 mod uninstall_help_safety_476;

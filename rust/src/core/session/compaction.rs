@@ -51,10 +51,7 @@ impl SessionState {
         ));
 
         if let Some(ref task) = self.task {
-            let pct = task
-                .progress_pct
-                .map_or(String::new(), |p| format!(" [{p}%]"));
-            lines.push(format!("Task: {}{pct}", task.description));
+            lines.push(format!("Task: {}", task.description));
         }
 
         if let Some(ref root) = self.project_root {
@@ -117,17 +114,6 @@ impl SessionState {
             ));
         }
 
-        if let Some(ref tests) = self.test_results {
-            lines.push(format!(
-                "Tests: {}/{} pass ({})",
-                tests.passed, tests.total, tests.command
-            ));
-        }
-
-        if !self.next_steps.is_empty() {
-            lines.push(format!("Next: {}", self.next_steps.join(" | ")));
-        }
-
         // ACE playbook (#541): restore the delta log (top entries by
         // salience, stable IDs) so resumed sessions keep accumulated
         // strategies/pitfalls without re-summarization loss.
@@ -152,10 +138,7 @@ impl SessionState {
         }
 
         if let Some(ref task) = self.task {
-            let pct = task
-                .progress_pct
-                .map_or(String::new(), |p| format!(" [{p}%]"));
-            sections.push((1, format!("<task>{}{pct}</task>", task.description)));
+            sections.push((1, format!("<task>{}</task>", task.description)));
         }
 
         if !self.files_touched.is_empty() {
@@ -199,41 +182,6 @@ impl SessionState {
                 .map(|f| f.summary.clone())
                 .collect();
             sections.push((2, format!("<findings>{}</findings>", items.join(" | "))));
-        }
-
-        if !self.progress.is_empty() {
-            let items: Vec<String> = self
-                .progress
-                .iter()
-                .rev()
-                .take(5)
-                .map(|p| {
-                    let detail = p.detail.as_deref().unwrap_or("");
-                    if detail.is_empty() {
-                        p.action.clone()
-                    } else {
-                        format!("{}: {detail}", p.action)
-                    }
-                })
-                .collect();
-            sections.push((2, format!("<progress>{}</progress>", items.join(" | "))));
-        }
-
-        if let Some(ref tests) = self.test_results {
-            sections.push((
-                3,
-                format!(
-                    "<tests>{}/{} pass ({})</tests>",
-                    tests.passed, tests.total, tests.command
-                ),
-            ));
-        }
-
-        if !self.next_steps.is_empty() {
-            sections.push((
-                3,
-                format!("<next_steps>{}</next_steps>", self.next_steps.join(" | ")),
-            ));
         }
 
         sections.push((
@@ -499,10 +447,7 @@ impl SessionState {
         }
 
         if let Some(ref task) = self.task {
-            let pct = task
-                .progress_pct
-                .map_or(String::new(), |p| format!(" [{p}%]"));
-            parts.push(format!("Task: {}{pct}", task.description));
+            parts.push(format!("Task: {}", task.description));
         }
 
         if !self.decisions.is_empty() {
@@ -542,16 +487,6 @@ impl SessionState {
                 .map(|f| f.summary.as_str())
                 .collect();
             parts.push(format!("Key findings: {}", recent.join("; ")));
-        }
-
-        if !self.next_steps.is_empty() {
-            let steps: Vec<&str> = self
-                .next_steps
-                .iter()
-                .take(3)
-                .map(std::string::String::as_str)
-                .collect();
-            parts.push(format!("Next: {}", steps.join("; ")));
         }
 
         parts.push(format!(

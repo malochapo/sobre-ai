@@ -353,7 +353,6 @@ fn slow_log_exits_cleanly() {
 
 #[test]
 fn raw_no_args_prints_usage() {
-    // `raw` is the primary name for the former `bypass` subcommand (finding 5).
     let out = run(&["raw"]);
     assert_ne!(exit_code(&out), 0);
     let err = stderr(&out);
@@ -414,18 +413,14 @@ fn uninstall_dry_run_exits_zero() {
 // Machine-facing entry points
 // ═══════════════════════════════════════════════════════════════════
 
-/// `-c` is the wire form the installed shell shim (`cli/shell_init.rs`) and the
-/// hook rewriter (`hook_handlers/file_rewrite.rs`) emit as
-/// `<binary> -c "<command>"`. It was once removed as if it were a cosmetic
-/// alias of `exec`; every hooked shell command then exited 1, and the shim only
-/// falls back to the real command on 126/127, so a hooked shell simply stopped
-/// working. Assert the dispatcher still knows it.
+/// `-c` is the wire form the hook rewriter (`hook_handlers/rewrite.rs`) emits as
+/// `<binary> -c "<command>"`. Assert the dispatcher still knows it.
 #[test]
 fn dash_c_is_not_an_unknown_command() {
     let out = run(&["-c", "echo hello"]);
     let err = stderr(&out);
     assert!(
         !err.contains("unknown command"),
-        "`-c` must dispatch (shell shim + hook rewriter emit it), got stderr: {err}"
+        "`-c` must dispatch (the hook rewriter emits it), got stderr: {err}"
     );
 }

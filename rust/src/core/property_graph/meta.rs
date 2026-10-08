@@ -2,23 +2,19 @@ use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(default)]
 pub struct PropertyGraphMetaV1 {
     pub schema_version: u32,
     /// Property-graph engine generation that produced this graph (see
     /// [`super::GRAPH_ENGINE_VERSION`]). Bumped whenever edge extraction
-    /// changes, so a graph built by an older engine — e.g. before the C#/Java
-    /// `type_ref` edges existed (GH #398) — is rebuilt instead of silently
-    /// served without the new edges. Graphs written before this field existed
-    /// deserialize to `0`.
+    /// changes, so a graph built by an older engine is rebuilt instead of
+    /// silently served without the new edges.
     pub engine_version: u32,
     /// lean-ctx version (`CARGO_PKG_VERSION`) that built this graph, recorded
-    /// for diagnostics. Empty for graphs written before the stamp existed.
+    /// for diagnostics.
     pub built_with: String,
     /// Absolute, normalized project root this graph was built for. Recorded so
     /// the one-way `graphs/<hash>/` directory can be pruned when its project no
-    /// longer exists on disk (#696 C4 — replaces the `project_root` the retired
-    /// JSON index used to carry). Empty for graphs written before this field.
+    /// longer exists on disk.
     pub project_root: String,
     /// RFC3339 timestamp (UTC) of the last successful build.
     pub built_at: String,

@@ -23,8 +23,7 @@ pub struct EmbeddingIndex {
     pub dimensions: usize,
     /// Model identifier that generated these embeddings.
     /// Used for mismatch detection when the user switches models.
-    #[serde(default)]
-    pub model_id: Option<String>,
+    pub model_id: String,
     pub entries: Vec<EmbeddingEntry>,
     pub file_hashes: HashMap<String, String>,
 }
@@ -250,22 +249,12 @@ pub fn build_or_update(root: &Path, bm25: &super::bm25_index::BM25Index) -> Embe
 const CURRENT_VERSION: u32 = 3;
 
 impl EmbeddingIndex {
-    pub fn new(dimensions: usize) -> Self {
-        Self {
-            version: CURRENT_VERSION,
-            dimensions,
-            model_id: None,
-            entries: Vec::new(),
-            file_hashes: HashMap::new(),
-        }
-    }
-
     /// Create a new index tagged with a specific model identity.
     pub fn new_with_model(dimensions: usize, model_id: &str) -> Self {
         Self {
             version: CURRENT_VERSION,
             dimensions,
-            model_id: Some(model_id.to_string()),
+            model_id: model_id.to_string(),
             entries: Vec::new(),
             file_hashes: HashMap::new(),
         }
@@ -274,10 +263,7 @@ impl EmbeddingIndex {
     /// Check if the index was built with a different model than currently selected.
     /// Returns `Some((stored_model, current_model))` on mismatch, `None` if compatible.
     pub fn model_mismatch<'a>(&'a self, current_model: &'a str) -> Option<(&'a str, &'a str)> {
-        match &self.model_id {
-            Some(stored) if stored != current_model => Some((stored, current_model)),
-            _ => None,
-        }
+        (self.model_id != current_model).then_some((self.model_id.as_str(), current_model))
     }
 
     /// Check if index dimensions are incompatible with the current engine.
@@ -574,7 +560,7 @@ mod tests {
 
     #[test]
     fn new_index_is_empty() {
-        let idx = EmbeddingIndex::new(384);
+        let idx = EmbeddingIndex::new_with_model(384, "test-model");
         assert!(idx.entries.is_empty());
         assert!(idx.file_hashes.is_empty());
         assert_eq!(idx.dimensions, 384);
@@ -582,7 +568,7 @@ mod tests {
 
     #[test]
     fn files_needing_update_all_new() {
-        let idx = EmbeddingIndex::new(384);
+        let idx = EmbeddingIndex::new_with_model(384, "test-model");
         let chunks = vec![
             make_chunk("a.rs", "fn_a", "fn a() {}", 1, 3),
             make_chunk("b.rs", "fn_b", "fn b() {}", 1, 3),
@@ -593,7 +579,7 @@ mod tests {
 
     #[test]
     fn files_needing_update_unchanged() {
-        let mut idx = EmbeddingIndex::new(384);
+        let mut idx = EmbeddingIndex::new_with_model(384, "test-model");
         let chunks = vec![make_chunk("a.rs", "fn_a", "fn a() {}", 1, 3)];
 
         idx.update(
@@ -609,7 +595,7 @@ mod tests {
 
     #[test]
     fn files_needing_update_changed_content() {
-        let mut idx = EmbeddingIndex::new(384);
+        let mut idx = EmbeddingIndex::new_with_model(384, "test-model");
         let chunks_v1 = vec![make_chunk("a.rs", "fn_a", "fn a() {}", 1, 3)];
         idx.update(
             &chunks_v1,
@@ -628,7 +614,7 @@ mod tests {
 
     #[test]
     fn files_needing_update_detects_change_in_later_chunk() {
-        let mut idx = EmbeddingIndex::new(3);
+        let mut idx = EmbeddingIndex::new_with_model(3, "test-model");
         let chunks_v1 = vec![
             make_chunk("a.rs", "fn_a", "fn a() {}", 1, 3),
             make_chunk("a.rs", "fn_b", "fn b() {}", 10, 12),
@@ -653,7 +639,7 @@ mod tests {
 
     #[test]
     fn files_needing_update_deleted_file() {
-        let mut idx = EmbeddingIndex::new(384);
+        let mut idx = EmbeddingIndex::new_with_model(384, "test-model");
         let chunks = vec![
             make_chunk("a.rs", "fn_a", "fn a() {}", 1, 3),
             make_chunk("b.rs", "fn_b", "fn b() {}", 1, 3),
@@ -675,7 +661,7 @@ mod tests {
 
     #[test]
     fn pending_chunk_count_cold_start_counts_every_chunk() {
-        let idx = EmbeddingIndex::new(384);
+        let idx = EmbeddingIndex::new_with_model(384, "test-model");
         let chunks = vec![
             make_chunk("a.rs", "fn_a", "fn a() {}", 1, 3),
             make_chunk("a.rs", "fn_b", "fn b() {}", 10, 12),
@@ -690,7 +676,7 @@ mod tests {
 
     #[test]
     fn pending_chunk_count_zero_when_fully_embedded() {
-        let mut idx = EmbeddingIndex::new(384);
+        let mut idx = EmbeddingIndex::new_with_model(384, "test-model");
         let chunks = vec![
             make_chunk("a.rs", "fn_a", "fn a() {}", 1, 3),
             make_chunk("b.rs", "fn_b", "fn b() {}", 1, 3),
@@ -710,7 +696,7 @@ mod tests {
 
     #[test]
     fn pending_chunk_count_only_counts_changed_files_chunks() {
-        let mut idx = EmbeddingIndex::new(384);
+        let mut idx = EmbeddingIndex::new_with_model(384, "test-model");
         let chunks_v1 = vec![
             make_chunk("a.rs", "fn_a", "fn a() {}", 1, 3),
             make_chunk("a.rs", "fn_b", "fn b() {}", 10, 12),
@@ -742,7 +728,7 @@ mod tests {
 
     #[test]
     fn update_preserves_unchanged() {
-        let mut idx = EmbeddingIndex::new(384);
+        let mut idx = EmbeddingIndex::new_with_model(384, "test-model");
         let chunks = vec![
             make_chunk("a.rs", "fn_a", "fn a() {}", 1, 3),
             make_chunk("b.rs", "fn_b", "fn b() {}", 1, 3),
@@ -768,7 +754,7 @@ mod tests {
 
     #[test]
     fn get_aligned_flat_ok() {
-        let mut idx = EmbeddingIndex::new(2);
+        let mut idx = EmbeddingIndex::new_with_model(2, "test-model");
         let chunks = vec![
             make_chunk("a.rs", "fn_a", "fn a() {}", 1, 3),
             make_chunk("b.rs", "fn_b", "fn b() {}", 1, 3),
@@ -789,14 +775,14 @@ mod tests {
 
     #[test]
     fn get_aligned_flat_missing() {
-        let idx = EmbeddingIndex::new(384);
+        let idx = EmbeddingIndex::new_with_model(384, "test-model");
         let chunks = vec![make_chunk("a.rs", "fn_a", "fn a() {}", 1, 3)];
         assert!(idx.get_aligned_flat(&chunks).is_none());
     }
 
     #[test]
     fn coverage_calculation() {
-        let mut idx = EmbeddingIndex::new(384);
+        let mut idx = EmbeddingIndex::new_with_model(384, "test-model");
         assert!((idx.coverage(10) - 0.0).abs() < 1e-6);
 
         let chunks = vec![make_chunk("a.rs", "fn_a", "fn a() {}", 1, 3)];
@@ -818,7 +804,7 @@ mod tests {
 
         let project_dir = tempfile::tempdir().unwrap();
 
-        let mut idx = EmbeddingIndex::new(3);
+        let mut idx = EmbeddingIndex::new_with_model(3, "test-model");
         let chunks = vec![make_chunk("a.rs", "fn_a", "fn a() {}", 1, 3)];
         idx.update(
             &chunks,
@@ -843,7 +829,7 @@ mod tests {
     #[test]
     fn new_with_model_sets_model_id() {
         let idx = EmbeddingIndex::new_with_model(768, "jina-code-v2");
-        assert_eq!(idx.model_id, Some("jina-code-v2".to_string()));
+        assert_eq!(idx.model_id, "jina-code-v2");
         assert_eq!(idx.dimensions, 768);
     }
 
@@ -859,14 +845,8 @@ mod tests {
     }
 
     #[test]
-    fn model_mismatch_none_when_no_model_id() {
-        let idx = EmbeddingIndex::new(384);
-        assert!(idx.model_mismatch("anything").is_none());
-    }
-
-    #[test]
     fn dimension_mismatch_detection() {
-        let mut idx = EmbeddingIndex::new(384);
+        let mut idx = EmbeddingIndex::new_with_model(384, "test-model");
         assert!(!idx.dimension_mismatch(384));
         assert!(!idx.dimension_mismatch(768)); // no entries = no mismatch
 

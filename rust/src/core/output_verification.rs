@@ -9,83 +9,10 @@ fn global_stats() -> &'static VerificationStats {
     STATS.get_or_init(VerificationStats::new)
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-#[serde(default)]
-pub struct VerificationConfig {
-    pub enabled: Option<bool>,
-    /// Optional explicit verification mode.
-    /// - "off": disable verifier entirely
-    /// - "warn": fail only on High severity warnings
-    /// - "fail": fail on Medium+High warnings (strict)
-    pub mode: Option<String>,
-    pub strict_mode: Option<bool>,
-    pub check_paths: Option<bool>,
-    pub check_identifiers: Option<bool>,
-    pub check_line_numbers: Option<bool>,
-    pub check_structure: Option<bool>,
-}
-
-impl VerificationConfig {
-    pub fn enabled_effective(&self) -> bool {
-        self.enabled.unwrap_or(true)
-    }
-    pub fn strict_mode_effective(&self) -> bool {
-        self.strict_mode.unwrap_or(false)
-    }
-    pub fn check_paths_effective(&self) -> bool {
-        self.check_paths.unwrap_or(true)
-    }
-    pub fn check_identifiers_effective(&self) -> bool {
-        self.check_identifiers.unwrap_or(true)
-    }
-    pub fn check_line_numbers_effective(&self) -> bool {
-        self.check_line_numbers.unwrap_or(false)
-    }
-    pub fn check_structure_effective(&self) -> bool {
-        self.check_structure.unwrap_or(true)
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum VerificationMode {
-    Off,
-    Warn,
-    Fail,
-}
-
-fn parse_mode(s: &str) -> VerificationMode {
-    match s.trim().to_lowercase().as_str() {
-        "off" | "disabled" | "none" => VerificationMode::Off,
-        "fail" | "strict" | "enforce" => VerificationMode::Fail,
-        _ => VerificationMode::Warn,
-    }
-}
-
-impl VerificationConfig {
-    fn effective_mode(&self) -> VerificationMode {
-        if let Some(m) = self.mode.as_deref() {
-            return parse_mode(m);
-        }
-        if !self.enabled_effective() {
-            return VerificationMode::Off;
-        }
-        if self.strict_mode_effective() {
-            VerificationMode::Fail
-        } else {
-            VerificationMode::Warn
-        }
-    }
-
-    fn is_enabled(&self) -> bool {
-        self.effective_mode() != VerificationMode::Off
-    }
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub enum WarningKind {
     MissingPath,
     MangledIdentifier,
-    LineNumberDrift,
     TruncatedBlock,
 }
 
@@ -94,7 +21,6 @@ impl std::fmt::Display for WarningKind {
         match self {
             Self::MissingPath => write!(f, "missing_path"),
             Self::MangledIdentifier => write!(f, "mangled_identifier"),
-            Self::LineNumberDrift => write!(f, "line_drift"),
             Self::TruncatedBlock => write!(f, "truncated_block"),
         }
     }
@@ -155,12 +81,10 @@ impl VerificationResult {
     }
 }
 
-pub fn verify_output(
-    source: &str,
-    compressed: &str,
-    config: &VerificationConfig,
-) -> VerificationResult {
-    if !config.is_enabled() || source.is_empty() || compressed.is_empty() {
+/// Checks that compression kept file paths, identifiers and block structure.
+/// The result fails only on a High-severity warning.
+pub fn verify_output(source: &str, compressed: &str) -> VerificationResult {
+    if source.is_empty() || compressed.is_empty() {
         return VerificationResult::ok();
     }
 
@@ -169,29 +93,10 @@ pub fn verify_output(
         return VerificationResult::ok();
     }
 
-    let mut warnings = Vec::new();
-    let mut paths_checked = 0;
-    let mut identifiers_checked = 0;
-
-    if config.check_paths_effective() {
-        let (path_warnings, count) = check_paths(source, compressed);
-        paths_checked = count;
-        warnings.extend(path_warnings);
-    }
-
-    if config.check_identifiers_effective() {
-        let (id_warnings, count) = check_identifiers(source, compressed);
-        identifiers_checked = count;
-        warnings.extend(id_warnings);
-    }
-
-    if config.check_line_numbers_effective() {
-        warnings.extend(check_line_numbers(source, compressed));
-    }
-
-    if config.check_structure_effective() {
-        warnings.extend(check_structure(source, compressed));
-    }
+    let (mut warnings, paths_checked) = check_paths(source, compressed);
+    let (id_warnings, identifiers_checked) = check_identifiers(source, compressed);
+    warnings.extend(id_warnings);
+    warnings.extend(check_structure(source, compressed));
 
     let total_checks = (paths_checked + identifiers_checked).max(1);
     let loss_items = warnings
@@ -205,14 +110,7 @@ pub fn verify_output(
             .count() as f64;
     let info_loss_score = (loss_items / total_checks as f64).min(1.0);
 
-    let mode = config.effective_mode();
-    let pass = if mode == VerificationMode::Fail {
-        !warnings
-            .iter()
-            .any(|w| w.severity == WarningSeverity::High || w.severity == WarningSeverity::Medium)
-    } else {
-        !warnings.iter().any(|w| w.severity == WarningSeverity::High)
-    };
+    let pass = !warnings.iter().any(|w| w.severity == WarningSeverity::High);
 
     let result = VerificationResult {
         pass,
@@ -268,33 +166,6 @@ fn check_identifiers(source: &str, compressed: &str) -> (Vec<VerificationWarning
     }
 
     (warnings, significant.len())
-}
-
-fn check_line_numbers(source: &str, compressed: &str) -> Vec<VerificationWarning> {
-    let source_max = source.lines().count();
-    let mut warnings = Vec::new();
-
-    let re_like = Regex::new(r"(?:line\s+|L|:)(\d{1,6})")
-        .ok()
-        .or_else(|| Regex::new(r"(\d+)").ok());
-
-    if let Some(re_like) = re_like {
-        for cap in re_like.captures_iter(compressed) {
-            if let Some(m) = cap.get(1)
-                && let Ok(n) = m.as_str().parse::<usize>()
-                && n > source_max
-                && n < 999_999
-            {
-                warnings.push(VerificationWarning {
-                    kind: WarningKind::LineNumberDrift,
-                    detail: format!("Line {n} exceeds source max {source_max}"),
-                    severity: WarningSeverity::Low,
-                });
-            }
-        }
-    }
-
-    warnings
 }
 
 fn check_structure(source: &str, compressed: &str) -> Vec<VerificationWarning> {
@@ -497,20 +368,16 @@ impl VerificationSnapshot {
 mod tests {
     use super::*;
 
-    fn cfg() -> VerificationConfig {
-        VerificationConfig::default()
-    }
-
     #[test]
     fn empty_input_passes() {
-        let r = verify_output("", "", &cfg());
+        let r = verify_output("", "");
         assert!(r.pass);
     }
 
     #[test]
     fn identical_passes() {
         let src = "fn hello() { println!(\"world\"); }";
-        let r = verify_output(src, src, &cfg());
+        let r = verify_output(src, src);
         assert!(r.pass);
         assert!(r.warnings.is_empty());
     }
@@ -519,7 +386,7 @@ mod tests {
     fn detects_missing_path() {
         let src = "import { foo } from src/utils/helper.ts";
         let compressed = "import foo";
-        let r = verify_output(src, compressed, &cfg());
+        let r = verify_output(src, compressed);
         assert!(
             r.warnings
                 .iter()
@@ -531,7 +398,7 @@ mod tests {
     fn detects_lost_identifier() {
         let src = "fn calculate_monthly_revenue(data: &[f64]) -> f64 { data.iter().sum() }";
         let compressed = "fn calc() -> f64 { sum }";
-        let r = verify_output(src, compressed, &cfg());
+        let r = verify_output(src, compressed);
         assert!(
             r.warnings
                 .iter()
@@ -543,7 +410,7 @@ mod tests {
     fn detects_brace_mismatch() {
         let src = "fn a() { if true { b(); } } fn c() { d(); } fn e() { f(); }";
         let compressed = "fn a() { if true { b(); fn c() { d(); fn e() { f();";
-        let r = verify_output(src, compressed, &cfg());
+        let r = verify_output(src, compressed);
         assert!(
             r.warnings
                 .iter()
@@ -555,7 +422,7 @@ mod tests {
     fn preserved_identifiers_pass() {
         let src = "fn process_data(input: Vec<u8>) -> Result<()> { Ok(()) }";
         let compressed = "fn process_data(input: Vec<u8>) -> Result<()>";
-        let r = verify_output(src, compressed, &cfg());
+        let r = verify_output(src, compressed);
         let mangled = r
             .warnings
             .iter()
@@ -584,7 +451,7 @@ mod tests {
     fn info_loss_score_bounded() {
         let src = "fn very_long_function_name_here() {}\nfn another_significant_fn() {}";
         let compressed = "compressed";
-        let r = verify_output(src, compressed, &cfg());
+        let r = verify_output(src, compressed);
         assert!(r.info_loss_score >= 0.0);
         assert!(r.info_loss_score <= 1.0);
     }
@@ -597,33 +464,10 @@ mod tests {
     }
 
     #[test]
-    fn disabled_config_passes() {
-        let mut c = cfg();
-        c.enabled = Some(false);
-        let r = verify_output("fn foo() {}", "bar", &c);
-        assert!(r.pass);
-    }
-
-    #[test]
-    fn strict_mode_fails_on_medium() {
-        let mut c = cfg();
-        c.strict_mode = Some(true);
-        let src = "import { foo } from src/utils/helper.ts";
-        let compressed = "import foo";
-        let r = verify_output(src, compressed, &c);
-        assert!(!r.pass, "strict mode should FAIL on medium warnings");
-        assert!(
-            r.format_compact().starts_with("FAIL("),
-            "compact should show FAIL: {}",
-            r.format_compact()
-        );
-    }
-
-    #[test]
     fn compact_format_is_deterministic_and_sorted() {
         let src = "fn calculate_monthly_revenue() {} see src/utils/helper.ts";
         let compressed = "compressed";
-        let r = verify_output(src, compressed, &cfg());
+        let r = verify_output(src, compressed);
         let s = r.format_compact();
         // Stable ordering for parsing: keys are lexicographically sorted.
         let want_order = ["mangled_identifier", "missing_path"];

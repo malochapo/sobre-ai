@@ -35,9 +35,6 @@ impl SessionState {
             findings: Vec::new(),
             decisions: Vec::new(),
             files_touched: Vec::new(),
-            test_results: None,
-            progress: Vec::new(),
-            next_steps: Vec::new(),
             evidence: Vec::new(),
             active_structured_intent: None,
             stats: SessionStats::default(),
@@ -80,7 +77,6 @@ impl SessionState {
         self.task = Some(TaskInfo {
             description: description.to_string(),
             intent: intent.map(std::string::ToString::to_string),
-            progress_pct: None,
         });
 
         let touched: Vec<String> = self.files_touched.iter().map(|f| f.path.clone()).collect();

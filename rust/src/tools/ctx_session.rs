@@ -227,11 +227,6 @@ stale_files: {}\n",
             let mut ledger = crate::core::context_ledger::ContextLedger::load();
             ledger.reset();
             ledger.save();
-            if let Ok(data_dir) = crate::core::data_dir::lean_ctx_data_dir() {
-                let radar_path = data_dir.join("context_radar.jsonl");
-                let prev = data_dir.join("context_radar.prev.jsonl");
-                let _ = std::fs::rename(&radar_path, &prev);
-            }
             format!(
                 "Session reset. Previous: {old_id}. New: {}. Ledger cleared (0% pressure).",
                 session.id
@@ -317,16 +312,8 @@ stale_files: {}\n",
 
         "output_stats" => crate::core::output_verification::stats_snapshot().format_compact(),
 
-        "verify" => {
-            let snap = crate::core::output_verification::stats_snapshot();
-            format!(
-                "DEPRECATION: action=\"verify\" is renamed to action=\"output_stats\".\n{}",
-                snap.format_compact()
-            )
-        }
-
         _ => format!(
-            "Unknown action: {action}. Use: status, load, save, task, finding, decision, reset, list, cleanup, snapshot, restore, resume, diff, output_stats, verify, export, import"
+            "Unknown action: {action}. Use: status, load, save, task, finding, decision, reset, list, cleanup, snapshot, restore, resume, diff, output_stats, export, import"
         ),
     }
 }

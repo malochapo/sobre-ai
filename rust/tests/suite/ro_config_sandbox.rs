@@ -58,7 +58,7 @@ fn full_cycle_never_writes_into_readonly_config_dir() {
     }
 
     // The one legitimate config file. Everything else must stay out of here.
-    std::fs::write(config.join("config.toml"), "ultra_compact = true\n").unwrap();
+    std::fs::write(config.join("config.toml"), "compression_level = 0.3\n").unwrap();
     let before = snapshot(&config);
 
     // Best-effort RO (the byte-identical assertion below is the real gate).

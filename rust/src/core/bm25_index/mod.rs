@@ -32,8 +32,6 @@ const DEFAULT_BM25_IGNORES: &[&str] = &[
 ];
 
 fn max_bm25_cache_bytes() -> u64 {
-    // Decoupled from the RAM profile so large repos persist instead of
-    // rebuilding forever (issue #249).
     let mb = crate::core::config::DEFAULT_BM25_PERSIST_MB;
     mb * 1024 * 1024
 }
@@ -70,7 +68,6 @@ pub struct CodeChunk {
     pub start_line: usize,
     pub end_line: usize,
     pub content: String,
-    #[serde(default)]
     pub tokens: Vec<String>,
     pub token_count: usize,
 }
@@ -123,7 +120,6 @@ pub struct BM25Index {
     pub avg_doc_len: f64,
     pub doc_count: usize,
     pub doc_freqs: HashMap<String, usize>,
-    #[serde(default)]
     pub files: HashMap<String, IndexedFileState>,
     /// True once `shrink_resident_content_to_snippet` has trimmed each chunk's
     /// `content` down to the snippet lines. Resident-only RAM-saving state: never
@@ -580,7 +576,7 @@ impl BM25Index {
     pub fn save(&self, root: &Path) -> std::io::Result<SaveOutcome> {
         if self.chunks.len() > CHUNK_COUNT_WARNING {
             tracing::warn!(
-                "[bm25] index has {} chunks (threshold {}), consider adding extra_ignore_patterns",
+                "[bm25] index has {} chunks (threshold {}), consider adding paths to `ignore` in config.toml",
                 self.chunks.len(),
                 CHUNK_COUNT_WARNING
             );
@@ -704,16 +700,7 @@ impl BM25Index {
     }
 
     pub fn index_file_path(root: &Path) -> PathBuf {
-        let dir = index_dir(root);
-        let zst = dir.join("bm25_index.bin.zst");
-        if zst.exists() {
-            return zst;
-        }
-        let bin = dir.join("bm25_index.bin");
-        if bin.exists() {
-            return bin;
-        }
-        dir.join("bm25_index.json")
+        index_dir(root).join("bm25_index.bin.zst")
     }
 
     /// Ingest external `ContentChunk`s into the BM25 index.
@@ -865,7 +852,7 @@ fn index_dir(root: &Path) -> PathBuf {
 
 fn list_code_files(root: &Path) -> Vec<String> {
     let cfg = crate::core::config::Config::load();
-    // #735: the declared corpus filter ([index] config + CLI overlay) decides
+    // #735: the declared corpus filter (config `ignore` + CLI overlay) decides
     // membership before anything is chunked; the semantic index chunks this
     // corpus, so it inherits the same universe.
     let filter = crate::core::index_filter::IndexFileFilter::resolve(&cfg);

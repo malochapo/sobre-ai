@@ -3,6 +3,7 @@ use std::path::Path;
 
 use crate::core::graph_index;
 use crate::core::graph_provider::{self, GraphProvider};
+use crate::core::index_paths;
 use crate::core::tokens::count_tokens;
 
 #[allow(clippy::too_many_arguments)]
@@ -95,7 +96,7 @@ fn handle_related(path: Option<&str>, root: &str) -> String {
         return "No graph index found. Run ctx_graph with action='build' first.".to_string();
     };
 
-    let rel_target = graph_index::graph_relative_key(target, root);
+    let rel_target = index_paths::graph_relative_key(target, root);
 
     let related = open.related(&rel_target, 2);
     if related.is_empty() {
@@ -139,7 +140,7 @@ fn handle_symbol(
         return resolve_bare_symbol(&open, spec, root, cache, crp_mode);
     };
 
-    let rel_file = graph_index::graph_relative_key(file_part, root);
+    let rel_file = index_paths::graph_relative_key(file_part, root);
 
     let key = format!("{rel_file}::{symbol_name}");
     let Some(symbol) = open.get_symbol(&key) else {
@@ -278,7 +279,7 @@ fn file_path_to_module_prefixes(
     project_root: &str,
     provider: &GraphProvider,
 ) -> Vec<String> {
-    let rel_path_slash = graph_index::graph_match_key(rel_path);
+    let rel_path_slash = index_paths::graph_match_key(rel_path);
     let without_ext = rel_path_slash
         .strip_suffix(".rs")
         .or_else(|| rel_path_slash.strip_suffix(".ts"))
@@ -377,7 +378,7 @@ fn handle_impact(path: Option<&str>, root: &str) -> String {
     };
     let gp = &open;
 
-    let rel_target = graph_index::graph_relative_key(target, root);
+    let rel_target = index_paths::graph_relative_key(target, root);
     let module_prefixes = file_path_to_module_prefixes(&rel_target, root, gp);
 
     // Direct importers come from two complementary lookups, merged + deduped:

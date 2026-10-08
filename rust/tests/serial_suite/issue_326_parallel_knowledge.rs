@@ -6,8 +6,8 @@
 use lean_ctx::core::knowledge::ProjectKnowledge;
 use lean_ctx::core::memory_policy::MemoryPolicy;
 
-/// Sets an isolated data dir for this test binary so the real `~/.lean-ctx`
-/// store is never touched.
+/// Sets an isolated data dir for this test binary so the real data dir is never
+/// touched.
 fn isolate_data_dir() -> tempfile::TempDir {
     let dir = tempfile::tempdir().unwrap();
     // SAFETY: the project's test suite always runs with `--test-threads=1`

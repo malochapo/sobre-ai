@@ -83,7 +83,3 @@ pub fn claude_state_dir(home: &Path) -> PathBuf {
     }
     home.join(".claude")
 }
-
-pub fn claude_rules_dir(home: &Path) -> PathBuf {
-    claude_state_dir(home).join("rules")
-}

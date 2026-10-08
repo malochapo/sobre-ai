@@ -35,7 +35,6 @@ use serde_json::{Map, Value};
 use walkdir::WalkDir;
 
 use crate::core::knowledge_relations::{KnowledgeEdgeKind, KnowledgeNodeRef, parse_node_ref};
-use crate::core::memory_boundary::FactPrivacy;
 use crate::core::sensitivity;
 
 use super::snapshot::KnowledgeSnapshot;
@@ -439,11 +438,9 @@ fn build_fact(fm: &Map<String, Value>, body: &str, category: String, key: String
         feedback_up: 0,
         feedback_down: 0,
         last_feedback: None,
-        privacy: FactPrivacy::default(),
         sensitivity,
         imported_from: Some("okf".to_string()),
         archetype,
-        fidelity: None,
         revision_count,
     }
 }
@@ -738,11 +735,9 @@ mod tests {
             feedback_up: 0,
             feedback_down: 0,
             last_feedback: None,
-            privacy: FactPrivacy::default(),
             sensitivity: crate::core::sensitivity::SensitivityLevel::default(),
             imported_from: None,
             archetype,
-            fidelity: None,
             revision_count: 1,
         }
     }

@@ -37,12 +37,7 @@ pub(super) fn string_similarity(a: &str, b: &str) -> f32 {
 }
 
 pub(crate) fn sort_fact_for_output(a: &KnowledgeFact, b: &KnowledgeFact) -> std::cmp::Ordering {
-    // Pure salience ordering for display/grouping. The observation tier (#802) lives
-    // in the *selection* layer (`recall_for_output`, `semantic_recall`,
-    // `recall_by_category_for_output`) which has query context to keep a summary above
-    // incidental matches yet below an exact key hit; the display then preserves that
-    // order. Keeping this comparator tier-free avoids side effects on
-    // wakeup/summary/aaak, where facts are already grouped by category.
+    // Pure salience ordering for display/grouping.
     salience_score(b)
         .cmp(&salience_score(a))
         .then_with(|| {
@@ -99,12 +94,7 @@ fn salience_score(f: &KnowledgeFact) -> u32 {
 
     let archetype_bonus = f.archetype.salience_bonus();
 
-    let fidelity_bonus = f
-        .fidelity
-        .as_ref()
-        .map_or(0u32, |fi| (fi.structural * 10.0) as u32);
-
-    base + quality_bonus + recency_bonus + archetype_bonus + fidelity_bonus
+    base + quality_bonus + recency_bonus + archetype_bonus
 }
 
 pub(super) fn hash_project_root(root: &str) -> String {

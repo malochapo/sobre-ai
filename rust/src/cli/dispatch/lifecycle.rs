@@ -90,8 +90,7 @@ pub(super) fn cmd_dev_install() {
     };
 
     // `dev-install` builds from source (contributor workflow). Set expectations
-    // up front so the multi-minute cargo build is never mistaken for a hang, and
-    // point end-users at the fast binary self-updater instead.
+    // up front so the multi-minute cargo build is never mistaken for a hang.
     eprintln!("\x1b[1m◆ lean-ctx dev-install\x1b[0m  \x1b[2m(builds from source)\x1b[0m");
     eprintln!(
         "  \x1b[2mCompiles the binary from source — this can take several minutes the\n  \
@@ -169,8 +168,8 @@ pub(super) fn cmd_dev_install() {
         );
     }
 
-    // Kill binary drift: repoint any stale Homebrew shim at the fresh binary (#559).
-    reconcile_binary_drift(&install_path);
+    // Warn when another lean-ctx shadows the install on PATH.
+    warn_path_shadow(&install_path);
 
     // Verify under a hard timeout — a broken/hanging binary must never wedge
     // the install (which previously left users having to reboot).
@@ -186,9 +185,7 @@ pub(super) fn cmd_dev_install() {
     eprintln!("  ✓ dev-install complete: {version}");
 
     eprintln!("  Re-enabling autostart…");
-    // #356: re-install (not just bootstrap) so the LaunchAgent plists are
-    // regenerated with the current deny-~/Documents seatbelt wrapper — a plain
-    // restart would keep the previous, unwrapped plist.
+    // Re-install so the LaunchAgent points at the freshly installed binary.
     if crate::proxy_autostart::is_installed() {
         crate::proxy_autostart::install(crate::proxy_setup::default_port(), true);
     }
@@ -328,7 +325,6 @@ fn atomic_install_binary(src: &std::path::Path, dst: &std::path::Path) -> Result
 /// even if this did nothing.
 #[cfg(windows)]
 fn move_locked_destination_aside(dst: &std::path::Path) {
-    // Same sidecar convention as the self-updater (`updater.rs::replace_binary`).
     let old = dst.with_extension("old.exe");
     let _ = std::fs::remove_file(&old);
     if dst.exists() && !old.exists() {
@@ -401,63 +397,14 @@ pub(super) fn resolve_install_path() -> std::path::PathBuf {
     std::path::PathBuf::from("/usr/local/bin/lean-ctx")
 }
 
-/// Returns true if a symlink target points into a Homebrew Cellar / linuxbrew
-/// store — i.e. a `brew`-managed shim that can go stale and shadow the
-/// dev-installed binary on PATH (#559). Unix-only: Homebrew shims do not exist
-/// on Windows, where `reconcile_binary_drift` is a no-op.
-#[cfg(unix)]
-fn is_homebrew_cellar_link(target: &std::path::Path) -> bool {
-    let s = target.to_string_lossy();
-    s.contains("/Cellar/") || s.contains("/linuxbrew/")
-}
-
-/// Eliminate binary drift after a dev-install (#559).
-///
-/// A stale Homebrew shim (e.g. `/opt/homebrew/bin/lean-ctx ->
-/// ../Cellar/lean-ctx/<old>/bin/lean-ctx`) silently shadows the freshly built
-/// `~/.local/bin/lean-ctx` on PATH, so two copies can end up running
-/// *different* builds (observed md5 drift in #559). Repoint any such shim at the
-/// just-installed binary, and warn about any other PATH entry that still
-/// resolves before it.
-fn reconcile_binary_drift(install_path: &std::path::Path) {
+/// Warn when a *different* lean-ctx resolves before the freshly installed
+/// binary on PATH, so plain `lean-ctx` would run another build (#559).
+fn warn_path_shadow(install_path: &std::path::Path) {
     #[cfg(unix)]
     {
         let install_canon =
             std::fs::canonicalize(install_path).unwrap_or_else(|_| install_path.to_path_buf());
 
-        for shim in [
-            "/opt/homebrew/bin/lean-ctx",
-            "/usr/local/bin/lean-ctx",
-            "/home/linuxbrew/.linuxbrew/bin/lean-ctx",
-        ] {
-            let shim_path = std::path::Path::new(shim);
-            // Only act on symlinks; a real file here is the install target itself.
-            let Ok(target) = std::fs::read_link(shim_path) else {
-                continue;
-            };
-            if !is_homebrew_cellar_link(&target) {
-                continue;
-            }
-            // Already resolves to the fresh binary? Nothing to do.
-            if std::fs::canonicalize(shim_path).is_ok_and(|c| c == install_canon) {
-                continue;
-            }
-            // Atomically repoint: drop the stale link, recreate it at the fresh binary.
-            let _ = std::fs::remove_file(shim_path);
-            match std::os::unix::fs::symlink(install_path, shim_path) {
-                Ok(()) => eprintln!(
-                    "  ✓ Repointed stale Homebrew shim {shim} → {} (#559 drift fix)",
-                    install_path.display()
-                ),
-                Err(e) => eprintln!(
-                    "  ⚠ Stale Homebrew shim {shim} → {} couldn't be repointed ({e}). \
-                     Run: brew unlink lean-ctx",
-                    target.display()
-                ),
-            }
-        }
-
-        // Warn if a *different* lean-ctx still resolves before our install dir on PATH.
         if let Ok(path_var) = std::env::var("PATH") {
             for dir in std::env::split_paths(&path_var) {
                 let cand = dir.join("lean-ctx");
@@ -660,35 +607,5 @@ mod windows_swap_tests {
         // it first, then prove the old binary survived untouched.
         drop(holder);
         assert_eq!(fs::read(&dst).unwrap(), b"old-binary");
-    }
-}
-
-#[cfg(all(test, unix))]
-mod tests {
-    use super::is_homebrew_cellar_link;
-    use std::path::Path;
-
-    #[test]
-    fn cellar_and_linuxbrew_links_are_detected() {
-        // macOS Apple Silicon + Intel relative/absolute Cellar targets.
-        assert!(is_homebrew_cellar_link(Path::new(
-            "../Cellar/lean-ctx/3.7.1/bin/lean-ctx"
-        )));
-        assert!(is_homebrew_cellar_link(Path::new(
-            "/opt/homebrew/Cellar/lean-ctx/3.8.0/bin/lean-ctx"
-        )));
-        // Linuxbrew.
-        assert!(is_homebrew_cellar_link(Path::new(
-            "/home/linuxbrew/.linuxbrew/Cellar/lean-ctx/1.0/bin/lean-ctx"
-        )));
-    }
-
-    #[test]
-    fn non_brew_targets_are_left_alone() {
-        assert!(!is_homebrew_cellar_link(Path::new(
-            "/Users/me/.local/bin/lean-ctx"
-        )));
-        assert!(!is_homebrew_cellar_link(Path::new("/usr/local/bin/other")));
-        assert!(!is_homebrew_cellar_link(Path::new("lean-ctx")));
     }
 }

@@ -16,10 +16,8 @@ pub(super) fn toml_quote(value: &str) -> String {
 /// The MCP server entry sobre writes. Never an approval setting
 /// (`autoApprove`, `trust`, …): what may run without asking is the host's call.
 pub(super) fn lean_ctx_server_entry(binary: &str) -> Value {
-    // No `env` block: lean-ctx auto-detects its per-category dirs (config/data/
-    // state/cache) at runtime. Pinning `LEAN_CTX_DATA_DIR` here would set that var
-    // in the server's environment, forcing single-dir mode and collapsing
-    // config/state/cache onto the data dir — defeating the XDG split (GH #408).
+    // No `env` block: lean-ctx resolves its per-category dirs (config/data/
+    // state/cache) at runtime.
     serde_json::json!({
         "command": binary
     })

@@ -6,7 +6,7 @@
 //! and MCP-child processes.
 //!
 //! Every panic now also appends a structured entry (timestamp, version, thread,
-//! location, payload, backtrace) to `~/.lean-ctx/logs/crash.log` so the *first*
+//! location, payload, backtrace) to `<data dir>/logs/crash.log` so the *first*
 //! panic of a panic→abort cascade is always recoverable after the fact.
 //!
 //! Constraints: the hook must never panic itself, never block meaningfully,

@@ -16,8 +16,7 @@ use crate::tools::ctx_read;
 /// while staying far under any real file's full payload.
 const STUB_MAX_TOKENS: usize = 64;
 
-/// Exit codes: 0 = cache proven, 1 = expected stub but got full content,
-/// 2 = stubbing disabled by configuration (valid setup, but no re-read savings).
+/// Exit codes: 0 = cache proven, 1 = expected stub but got full content.
 pub(crate) fn cmd_verify_cache(args: &[String]) -> i32 {
     let json = args.iter().any(|a| a == "--json");
 
@@ -51,12 +50,6 @@ struct ProbeOutcome {
     second_tokens: usize,
     /// True when the second read returned an `[unchanged …]` / cached stub.
     is_stub: bool,
-    /// False when config/policy forces full content on every read.
-    stub_enabled: bool,
-    /// Human-readable reason stubbing is off (only when `!stub_enabled`).
-    disabled_reason: Option<String>,
-    /// Cache policy in effect (e.g. `default` / `safe`).
-    policy: String,
     /// Cache hits / total reads observed during this run.
     run_hits: u64,
     run_reads: u64,
@@ -64,18 +57,13 @@ struct ProbeOutcome {
 
 impl ProbeOutcome {
     fn passed(&self) -> bool {
-        self.stub_enabled
-            && self.is_stub
+        self.is_stub
             && self.second_tokens <= STUB_MAX_TOKENS
             && self.second_tokens < self.first_tokens
     }
 
     fn exit_code(&self) -> i32 {
-        match (self.stub_enabled, self.passed()) {
-            (false, _) => 2,
-            (true, true) => 0,
-            (true, false) => 1,
-        }
+        i32::from(!self.passed())
     }
 
     fn saved_pct(&self) -> f64 {
@@ -88,23 +76,10 @@ impl ProbeOutcome {
 }
 
 /// Run the real two-read probe against `path` using an in-process cache — the
-/// same `SessionCache` + `ctx_read` path the Pi bridge / daemon serve.
+/// same `SessionCache` + `ctx_read` path the MCP server serves.
 fn run_probe(path: &str) -> ProbeOutcome {
     let crp = CrpMode::effective();
     let mut cache = SessionCache::new();
-
-    // Mirror the stub gates the *registered* ctx_read handler honours, so a
-    // cache policy that suppresses stubbing is reported as such instead of as
-    // a confusing failure: `safe` delivers a map, `off` makes the registered
-    // handler force `fresh=true`, always re-reading from disk.
-    let policy = crate::server::compaction_sync::effective_cache_policy();
-    let disabled_reason = if policy == "safe" {
-        Some("cache policy is 'safe' (stubbing disabled)".to_string())
-    } else if policy == "off" {
-        Some("cache policy is 'off' (every read goes to disk)".to_string())
-    } else {
-        None
-    };
 
     let first = ctx_read::handle_with_task_resolved(&mut cache, path, "full", crp, None);
     let second = ctx_read::handle_with_task_resolved(&mut cache, path, "full", crp, None);
@@ -119,9 +94,6 @@ fn run_probe(path: &str) -> ProbeOutcome {
         first_tokens: first.output_tokens,
         second_tokens: second.output_tokens,
         is_stub,
-        stub_enabled: disabled_reason.is_none(),
-        disabled_reason,
-        policy: policy.to_string(),
         run_hits,
         run_reads,
     }
@@ -178,17 +150,6 @@ fn synthetic_probe_source() -> String {
 fn print_human(path: &str, o: &ProbeOutcome) {
     println!("lean-ctx verify-cache\n");
     println!("  Target:        {path}");
-    println!("  Cache policy:  {}", o.policy);
-
-    if !o.stub_enabled {
-        let reason = o.disabled_reason.as_deref().unwrap_or("stubbing disabled");
-        println!("\n  WARN — re-read stubbing is OFF: {reason}.");
-        println!(
-            "  The cache works, but unchanged re-reads will re-send full content.\n  \
-             Re-enable savings, then re-run: lean-ctx config set cache_policy default"
-        );
-        return;
-    }
 
     println!("  Read #1 (full):     {} tokens", o.first_tokens);
     println!(
@@ -215,27 +176,14 @@ fn print_human(path: &str, o: &ProbeOutcome) {
              cache is not collapsing unchanged re-reads.",
             o.second_tokens
         );
-        println!(
-            "  On Pi, ensure the embedded MCP bridge is on (LEAN_CTX_PI_ENABLE_MCP=1) so reads \
-             share one cache."
-        );
     }
 }
 
 fn print_json(path: &str, o: &ProbeOutcome) {
-    let status = if !o.stub_enabled {
-        "stubbing_disabled"
-    } else if o.passed() {
-        "pass"
-    } else {
-        "fail"
-    };
+    let status = if o.passed() { "pass" } else { "fail" };
     let json = serde_json::json!({
         "status": status,
         "target": path,
-        "cache_policy": o.policy,
-        "stub_enabled": o.stub_enabled,
-        "disabled_reason": o.disabled_reason,
         "first_read_tokens": o.first_tokens,
         "second_read_tokens": o.second_tokens,
         "second_read_is_stub": o.is_stub,
@@ -254,14 +202,11 @@ fn print_json(path: &str, o: &ProbeOutcome) {
 mod tests {
     use super::*;
 
-    fn outcome(first: usize, second: usize, is_stub: bool, stub_enabled: bool) -> ProbeOutcome {
+    fn outcome(first: usize, second: usize, is_stub: bool) -> ProbeOutcome {
         ProbeOutcome {
             first_tokens: first,
             second_tokens: second,
             is_stub,
-            stub_enabled,
-            disabled_reason: if stub_enabled { None } else { Some("x".into()) },
-            policy: "default".into(),
             run_hits: 1,
             run_reads: 2,
         }
@@ -269,14 +214,14 @@ mod tests {
 
     #[test]
     fn pass_when_second_read_is_small_stub() {
-        let o = outcome(2000, 13, true, true);
+        let o = outcome(2000, 13, true);
         assert!(o.passed());
         assert_eq!(o.exit_code(), 0);
     }
 
     #[test]
     fn fail_when_second_read_not_stubbed() {
-        let o = outcome(2000, 1900, false, true);
+        let o = outcome(2000, 1900, false);
         assert!(!o.passed());
         assert_eq!(o.exit_code(), 1);
     }
@@ -284,21 +229,14 @@ mod tests {
     #[test]
     fn fail_when_marker_present_but_above_stub_ceiling() {
         // Stub marker present, but payload above the ceiling ⇒ not a real stub.
-        let o = outcome(2000, 200, true, true);
+        let o = outcome(2000, 200, true);
         assert!(!o.passed());
         assert_eq!(o.exit_code(), 1);
     }
 
     #[test]
-    fn warn_exit_when_stubbing_disabled_by_config() {
-        let o = outcome(2000, 2000, false, false);
-        assert!(!o.passed());
-        assert_eq!(o.exit_code(), 2);
-    }
-
-    #[test]
     fn saved_pct_reflects_collapse() {
-        assert!(outcome(1000, 10, true, true).saved_pct() > 98.0);
-        assert_eq!(outcome(0, 0, true, true).saved_pct(), 0.0);
+        assert!(outcome(1000, 10, true).saved_pct() > 98.0);
+        assert_eq!(outcome(0, 0, true).saved_pct(), 0.0);
     }
 }

@@ -49,7 +49,7 @@ fn hash_path_only(root: &str) -> String {
 ///   8. `*.sln`         → first `.sln` filename
 ///
 /// Returns `None` when no identity marker is found, in which case
-/// the hash falls back to path-only (same behaviour as pre-3.3.2).
+/// the hash falls back to path-only.
 pub(crate) fn project_identity(root: &str) -> Option<String> {
     let root = Path::new(root);
 

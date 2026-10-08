@@ -25,7 +25,6 @@ mod session_features {
         session.task = Some(TaskInfo {
             description: "Build Context OS".to_string(),
             intent: Some("architecture".to_string()),
-            progress_pct: Some(0),
         });
 
         for i in 0..5 {
@@ -69,13 +68,8 @@ mod session_features {
             timestamp: chrono::Utc::now(),
         });
 
-        if let Some(ref mut t) = session.task {
-            t.progress_pct = Some(75);
-        }
-
         let resume = session.build_resume_block();
         assert!(resume.contains("Build Context OS"), "task in resume");
-        assert!(resume.contains("75%"), "progress in resume");
         assert!(resume.contains("SSE"), "decision in resume");
 
         let snapshot = session.build_compaction_snapshot();

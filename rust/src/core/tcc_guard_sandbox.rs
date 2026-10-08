@@ -1,11 +1,11 @@
 //! macOS Seatbelt self-sandbox for launchd-owned lean-ctx processes (#356).
 //!
-//! The daemon, proxy and auto-updater run as LaunchAgents — i.e. under
-//! `launchd` (`ppid 1`) with their own TCC identity. Any `stat`/`read_dir`/
-//! `realpath` they perform under `~/Documents`, `~/Desktop` or `~/Downloads`
-//! pops the macOS privacy prompt *in lean-ctx's own name*, and because every
-//! release re-signs the binary (new cdhash) the grant is invalidated on each
-//! update, so it re-prompts forever.
+//! The proxy runs as a LaunchAgent — i.e. under `launchd` (`ppid 1`) with its
+//! own TCC identity. Any `stat`/`read_dir`/`realpath` it performs under
+//! `~/Documents`, `~/Desktop` or `~/Downloads` pops the macOS privacy prompt
+//! *in lean-ctx's own name*, and because every release re-signs the binary
+//! (new cdhash) the grant is invalidated on each update, so it re-prompts
+//! forever.
 //!
 //! The opt-out path guards in [`crate::core::pathutil`] avoid those accesses
 //! per call site, but that is fragile: one forgotten probe — or a dependency
@@ -18,9 +18,7 @@
 //! (`allow default`), so the processes keep full functionality.
 //!
 //! The deny is silent (no `(with send-signal SIGKILL)`): a production process
-//! must survive a stray access, losing only that one read. The SIGKILL variant
-//! lives solely in `tests/tcc_sandbox.sh`, where dying is how the regression
-//! test *detects* an access.
+//! must survive a stray access, losing only that one read.
 
 use std::path::Path;
 use std::process::Command;
@@ -115,18 +113,18 @@ fn should_reexec_under_seatbelt(standalone: bool, sentinel_present: bool) -> boo
 }
 
 /// Belt-and-suspenders (#356): if this is a launchd-standalone process
-/// (daemon / proxy / auto-updater — `ppid 1`, its own TCC identity) that is not
-/// already running under the seatbelt, re-exec self wrapped in `sandbox-exec`
-/// with the deny-`~/Documents` profile. This closes the one gap the plist
-/// rewrite cannot: an install whose LaunchAgent plists predate the seatbelt and
-/// is only ever upgraded via `brew upgrade` (which bypasses lean-ctx's updater,
-/// so the plists are never regenerated). Without this such a process boots
-/// unwrapped and can still trip the TCC prompt.
+/// (`ppid 1`, its own TCC identity) that is not already running under the
+/// seatbelt, re-exec self wrapped in `sandbox-exec` with the deny-`~/Documents`
+/// profile. This covers any standalone process the LaunchAgent wrapper did not
+/// start — e.g. a proxy spawned detached by `lean-ctx proxy start` whose parent
+/// CLI exited before it reached `main`, leaving it re-parented to launchd
+/// without the sentinel. Without this such a process runs unwrapped and can
+/// still trip the TCC prompt.
 ///
 /// No-op unless macOS + standalone + sentinel-absent + `sandbox-exec` accepts
 /// the profile. On `exec` failure it returns and the caller continues unwrapped
 /// (the [`crate::core::pathutil`] path guards remain the safety net) rather than
-/// aborting a `KeepAlive` daemon into a crash loop.
+/// aborting a `KeepAlive` LaunchAgent into a crash loop.
 #[cfg(target_os = "macos")]
 pub fn reexec_under_seatbelt_if_needed() {
     use std::os::unix::process::CommandExt;
@@ -185,10 +183,10 @@ fn sandbox_exec_usable(profile: &str) -> bool {
 /// (4-space indented, trailing newline) or an empty string when nothing resolves.
 pub fn pinned_layout_env_xml() -> String {
     let mut entries: Vec<(&str, String)> = Vec::new();
-    // #356 sentinel: marks the spawned process as managed by current-code
+    // #356 sentinel: marks the spawned process as launched by the LaunchAgent
     // (it carries the seatbelt wrapper, or wrapping is impossible on this host).
-    // Its presence makes `reexec_under_seatbelt_if_needed` a no-op, so a current
-    // plist never double-wraps — only stale, pre-sentinel plists re-exec.
+    // Its presence makes `reexec_under_seatbelt_if_needed` a no-op, so a
+    // plist-launched process never double-wraps.
     entries.push((SEATBELT_SENTINEL, "1".to_string()));
     if let Some(home) = dirs::home_dir() {
         entries.push(("HOME", home.display().to_string()));
@@ -319,7 +317,7 @@ mod tests {
 
     #[test]
     fn pinned_layout_env_carries_seatbelt_sentinel() {
-        // The plist must mark current-code processes so the boot-time re-exec
+        // The plist must mark the processes it launches so the boot-time re-exec
         // guard (#356) treats them as already-wrapped and never double-wraps.
         let xml = pinned_layout_env_xml();
         assert!(xml.contains(&format!("<key>{SEATBELT_SENTINEL}</key>")));
@@ -328,9 +326,9 @@ mod tests {
     #[test]
     #[cfg(target_os = "macos")]
     fn reexec_policy_only_fires_for_unmarked_standalone() {
-        // Standalone + no sentinel = stale plist → must re-exec under seatbelt.
+        // Standalone + no sentinel (not plist-launched) → must re-exec under seatbelt.
         assert!(should_reexec_under_seatbelt(true, false));
-        // Already marked (current plist or prior re-exec) → never loop.
+        // Already marked (plist-launched or prior re-exec) → never loop.
         assert!(!should_reexec_under_seatbelt(true, true));
         // Terminal/editor child (host TCC grant) → never re-exec.
         assert!(!should_reexec_under_seatbelt(false, false));

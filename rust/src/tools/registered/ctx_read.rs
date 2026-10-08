@@ -165,10 +165,6 @@ impl CtxReadTool {
         if arg_raw {
             fresh = true;
         }
-        let cache_policy = crate::server::compaction_sync::effective_cache_policy();
-        if cache_policy == "off" {
-            fresh = true;
-        }
         let aggressiveness =
             crate::core::aggressiveness::effective(get_f64(args, "aggressiveness"));
         let protect = get_str_array(args, "protect").unwrap_or_default();
@@ -223,8 +219,8 @@ impl CtxReadTool {
             mode
         };
 
-        // Delta-aware explicit re-reads (opt-in: config `delta_explicit`). Re-requesting full/lines:N-M content for a file
-        // this session already read re-emits content the model already holds;
+        // Delta-aware explicit re-reads. Re-requesting full/lines:N-M content for
+        // a file this session already read re-emits content the model already holds;
         // when the file changed on disk, a diff carries the same information in
         // a fraction of the tokens, and an unchanged lines: request of a
         // fully-delivered file collapses to the full-mode stub. The decision is
@@ -244,7 +240,6 @@ impl CtxReadTool {
                 &mode,
                 explicit_mode,
                 fresh,
-                true,
             );
             mode = decision.mode;
             delta_explicit_note = decision.note;

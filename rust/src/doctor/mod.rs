@@ -2,7 +2,6 @@
 
 mod checks;
 mod common;
-mod deprecations;
 mod fix;
 mod integrations;
 mod lint_context;
@@ -324,11 +323,6 @@ pub fn run() -> u32 {
         board.check(check);
     }
 
-    // 22) Deprecation register (GL #394): warn about
-    // every surface this build deprecates, with replacement and removal floor.
-    let deprecation_check = deprecations::deprecations_outcome();
-    board.check(&deprecation_check);
-
     // MCP server CWD warning (informational, only fires when running as MCP)
     let mcp_cwd = mcp_server_cwd_outcome();
     board.check(&mcp_cwd);
@@ -366,11 +360,6 @@ pub fn run() -> u32 {
     }
     println!("  {DIM}LSP servers are optional enhancements (not counted in score){RST}");
     println!("  {DIM}lean-ctx {}{RST}", env!("CARGO_PKG_VERSION"));
-
-    // Refresh the cached latest-version in the background and, if the running
-    // binary is behind, nudge toward the fast self-updater right where a
-    // confused user looks when something seems off (the "stuck updating"
-    // report). Notify-only — never auto-installs.
 
     needs_attention
 }

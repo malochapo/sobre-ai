@@ -18,7 +18,6 @@ use super::ProjectKnowledge;
 /// A knowledge store whose recorded `project_root` no longer exists on disk.
 #[derive(Debug, Clone)]
 pub struct OrphanedStore {
-    pub hash: String,
     pub project_root: String,
     pub dir: PathBuf,
     pub size_bytes: u64,
@@ -53,7 +52,7 @@ pub fn prune_orphaned_stores() -> PruneReport {
 /// Detect orphaned stores under an explicit `data_dir` (the testable core).
 ///
 /// A store is orphaned when its `project_root` is **non-empty** and does **not**
-/// exist on disk. Stores with an empty root (the legacy/global store) and stores
+/// exist on disk. Stores with an empty root (which cannot be checked) and stores
 /// whose root still exists are always kept.
 #[must_use]
 pub fn find_orphaned_stores_in(data_dir: &Path) -> Vec<OrphanedStore> {
@@ -76,7 +75,7 @@ pub fn find_orphaned_stores_in(data_dir: &Path) -> Vec<OrphanedStore> {
         };
 
         let root = store.project_root.trim();
-        // Empty root = legacy/global store: never an orphan.
+        // An empty root cannot be checked, so the store is kept.
         if root.is_empty() {
             continue;
         }
@@ -85,17 +84,8 @@ pub fn find_orphaned_stores_in(data_dir: &Path) -> Vec<OrphanedStore> {
             continue;
         }
 
-        // The directory name is the canonical store key (it also names the
-        // sibling `memory/episodes/<hash>.json` file). It equals `project_hash`
-        // for stores written by lean-ctx; trust the on-disk name regardless.
-        let hash = dir
-            .file_name()
-            .unwrap_or_default()
-            .to_string_lossy()
-            .to_string();
         let size_bytes = dir_size(&dir);
         orphans.push(OrphanedStore {
-            hash,
             project_root: store.project_root,
             dir,
             size_bytes,
@@ -105,8 +95,7 @@ pub fn find_orphaned_stores_in(data_dir: &Path) -> Vec<OrphanedStore> {
 }
 
 /// Prune orphaned stores under an explicit `data_dir` (the testable core).
-/// Removes each orphaned `knowledge/<hash>/` directory plus the matching
-/// episodic-memory file (`memory/episodes/<hash>.json`). A failure on one store
+/// Removes each orphaned `knowledge/<hash>/` directory. A failure on one store
 /// never aborts the rest.
 #[must_use]
 pub fn prune_orphaned_stores_in(data_dir: &Path) -> PruneReport {
@@ -115,21 +104,8 @@ pub fn prune_orphaned_stores_in(data_dir: &Path) -> PruneReport {
         if std::fs::remove_dir_all(&orphan.dir).is_err() {
             continue;
         }
-        let mut freed = orphan.size_bytes;
-
-        // Episodic memory lives outside the hash dir, keyed by the same hash.
-        let episodes = data_dir
-            .join("memory")
-            .join("episodes")
-            .join(format!("{}.json", orphan.hash));
-        if let Ok(meta) = std::fs::metadata(&episodes)
-            && std::fs::remove_file(&episodes).is_ok()
-        {
-            freed = freed.saturating_add(meta.len());
-        }
-
         report.removed += 1;
-        report.reclaimed_bytes = report.reclaimed_bytes.saturating_add(freed);
+        report.reclaimed_bytes = report.reclaimed_bytes.saturating_add(orphan.size_bytes);
     }
     report
 }
@@ -172,7 +148,7 @@ mod tests {
         // Live root: the temp dir itself exists.
         let live_root = data_dir.to_string_lossy().to_string();
         write_store(data_dir, "live0000000000000", &live_root);
-        // Empty root: legacy/global store — must never be flagged.
+        // Empty root: cannot be checked — must never be flagged.
         write_store(data_dir, "empty000000000000", "");
         // Missing root: a path that does not exist — the orphan.
         let missing_root = data_dir
@@ -183,7 +159,7 @@ mod tests {
 
         let orphans = find_orphaned_stores_in(data_dir);
         assert_eq!(orphans.len(), 1, "only the missing-root store is an orphan");
-        assert_eq!(orphans[0].hash, "dead00000000000000");
+        assert!(orphans[0].dir.ends_with("dead00000000000000"));
         assert!(orphans[0].size_bytes > 0, "orphan size should be measured");
     }
 
@@ -197,11 +173,6 @@ mod tests {
         write_store(data_dir, "empty000000000000", "");
         let missing_root = data_dir.join("gone").to_string_lossy().to_string();
         write_store(data_dir, "dead00000000000000", &missing_root);
-
-        // An episodic-memory file for the orphan must be cleaned up too.
-        let episodes_dir = data_dir.join("memory").join("episodes");
-        std::fs::create_dir_all(&episodes_dir).unwrap();
-        std::fs::write(episodes_dir.join("dead00000000000000.json"), "[]").unwrap();
 
         let report = prune_orphaned_stores_in(data_dir);
         assert_eq!(report.removed, 1, "exactly one orphan pruned");
@@ -218,10 +189,6 @@ mod tests {
             "orphan store dir must be gone"
         );
         assert!(
-            !episodes_dir.join("dead00000000000000.json").exists(),
-            "orphan episodic file must be gone"
-        );
-        assert!(
             data_dir
                 .join("knowledge")
                 .join("live0000000000000")
@@ -233,7 +200,7 @@ mod tests {
                 .join("knowledge")
                 .join("empty000000000000")
                 .exists(),
-            "empty-root (legacy/global) store must be kept"
+            "empty-root store must be kept"
         );
     }
 

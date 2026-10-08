@@ -92,27 +92,16 @@ pub enum GotchaSource {
     AutoDetected { command: String, exit_code: i32 },
     AgentReported { session_id: String },
     CrossSessionCorrelated { sessions: Vec<String> },
-    Promoted { from_knowledge_key: String },
 }
 
 impl GotchaSource {
     pub fn decay_rate(&self) -> f32 {
         match self {
-            Self::Promoted { .. } => 0.01,
             Self::AgentReported { .. } => 0.02,
             Self::CrossSessionCorrelated { .. } => 0.03,
             Self::AutoDetected { .. } => 0.05,
         }
     }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ProvenanceRef {
-    pub kind: String,
-    pub url: Option<String>,
-    pub commit_hash: Option<String>,
-    pub tool_call_id: Option<String>,
-    pub session_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -131,12 +120,6 @@ pub struct Gotcha {
     pub source: GotchaSource,
     pub prevented_count: u32,
     pub tags: Vec<String>,
-    #[serde(default)]
-    pub provenance: Vec<ProvenanceRef>,
-    #[serde(default)]
-    pub expires_at: Option<DateTime<Utc>>,
-    #[serde(default)]
-    pub decay_rate_override: Option<f32>,
 }
 
 impl Gotcha {
@@ -153,7 +136,6 @@ impl Gotcha {
             GotchaSource::AgentReported { .. } => 0.9,
             GotchaSource::CrossSessionCorrelated { .. } => 0.85,
             GotchaSource::AutoDetected { .. } => 0.6,
-            GotchaSource::Promoted { .. } => 0.95,
         };
         Self {
             id: gotcha_id(trigger, &category),
@@ -170,9 +152,6 @@ impl Gotcha {
             source,
             prevented_count: 0,
             tags: Vec::new(),
-            provenance: Vec::new(),
-            expires_at: None,
-            decay_rate_override: None,
         }
     }
 
@@ -274,9 +253,7 @@ pub struct GotchaStats {
 pub struct GotchaStore {
     pub project_hash: String,
     pub gotchas: Vec<Gotcha>,
-    #[serde(default)]
     pub error_log: Vec<SessionErrorLog>,
-    #[serde(default)]
     pub stats: GotchaStats,
     pub updated_at: DateTime<Utc>,
 
@@ -284,9 +261,7 @@ pub struct GotchaStore {
     // invocations is two separate processes, so the in-memory active store
     // cannot bridge them. Persisting pending errors lets the later process load
     // and correlate the fix. Bounded by MAX_PENDING + a 15-min TTL (pruned on
-    // load and on every detect/resolve), so the file stays tiny. `default`
-    // keeps older gotchas.json files (written without the field) loadable.
-    #[serde(default)]
+    // load and on every detect/resolve), so the file stays tiny.
     pub pending_errors: Vec<PendingError>,
 }
 

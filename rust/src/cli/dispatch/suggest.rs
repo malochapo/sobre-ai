@@ -2,8 +2,7 @@
 //!
 //! Every name here must dispatch. A name that does not costs more than a
 //! missing one: the user types something close to it, gets it suggested, runs
-//! it, and lands on "unknown command". This list previously carried 38 such
-//! names left behind by removed features.
+//! it, and lands on "unknown command".
 //!
 //! `completions::spec` holds the same names with their flags, and
 //! `command_tree_covers_known_commands` enforces that this list is a subset of

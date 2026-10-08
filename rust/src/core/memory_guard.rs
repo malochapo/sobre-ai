@@ -45,7 +45,7 @@ pub fn get_system_ram_bytes() -> Option<u64> {
     }
 }
 
-/// Returns the RSS limit in bytes based on `max_ram_percent` config.
+/// Returns the RSS limit in bytes based on the built-in `MAX_RAM_PERCENT`.
 pub fn rss_limit_bytes() -> Option<u64> {
     let sys_ram = get_system_ram_bytes()?;
     let pct = super::config::MAX_RAM_PERCENT;
@@ -53,7 +53,7 @@ pub fn rss_limit_bytes() -> Option<u64> {
 }
 
 /// Computes a memory-bounded work batch from current RSS and the guardian's
-/// hard threshold (1.5× the configured base limit). Falls back to `max_files`
+/// hard threshold (1.5× the base limit). Falls back to `max_files`
 /// when RSS is unavailable. The lower bound keeps progress deterministic while
 /// allowing callers to reduce in-flight work substantially under low headroom.
 pub(crate) fn adaptive_batch_size(
@@ -165,11 +165,10 @@ impl MemorySnapshot {
 
         let base = f64::from(super::config::MAX_RAM_PERCENT);
 
-        // #790: tightened multipliers so ABORT fires earlier:
-        // - Critical: 2× (was 3×) — e.g. 10% config on 64 GB → 12.8 GB (was 19.2 GB)
-        // - Hard:     1.5× (was 2×) — 9.6 GB (was 12.8 GB)
-        // - Medium:   1.2× (was 1.4×)
-        // Users expect max_ram_percent to be a meaningful cap, not a 3× suggestion.
+        // Thresholds as multiples of the built-in RAM share (MAX_RAM_PERCENT, 5%):
+        // - Critical: 2×   — e.g. 5% on 64 GB → 6.4 GB
+        // - Hard:     1.5× — 4.8 GB
+        // - Medium:   1.2×
         let level = if pct > base * 2.0 {
             PressureLevel::Critical
         } else if pct > base * 1.5 {

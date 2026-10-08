@@ -143,14 +143,9 @@ impl LeanCtxServer {
         let pre_compression = result_text.clone();
         result_text = post_process::compress_terse(result_text, name, args, &config, is_raw_shell);
 
-        let verify_cfg = crate::core::output_verification::VerificationConfig::default();
-
         if !is_raw_shell {
-            let vr = crate::core::output_verification::verify_output(
-                &pre_compression,
-                &result_text,
-                &verify_cfg,
-            );
+            let vr =
+                crate::core::output_verification::verify_output(&pre_compression, &result_text);
             if !vr.warnings.is_empty() {
                 let msg = format!("[VERIFY] {}", vr.format_compact());
                 result_text = format!("{result_text}\n\n{msg}");
@@ -246,7 +241,7 @@ impl LeanCtxServer {
         // return a byte-exact, parseable payload. The state-consuming briefings
         // are already skipped above (so their once-per-session flags survive),
         // but other steps still append recomputed prose (verify footer, throttle
-        // / budget warning, deprecation notice) or compress the body — all of
+        // / budget warning) or compress the body — all of
         // which break a JSON contract. This guard is the robust catch-all:
         // restore the pure body captured *before* compression and decoration.
         // Redaction + sensitivity were applied earlier so the security envelope

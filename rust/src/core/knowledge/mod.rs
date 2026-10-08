@@ -20,7 +20,6 @@ pub use types::*;
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::memory_boundary::FactPrivacy;
     use crate::core::memory_policy::MemoryPolicy;
     use chrono::Utc;
 
@@ -226,71 +225,6 @@ mod tests {
         assert_eq!(arch("known_bugs"), KnowledgeArchetype::Gotcha);
         assert_eq!(arch("data_model"), KnowledgeArchetype::Architecture);
         assert_eq!(arch("misc"), KnowledgeArchetype::Fact);
-    }
-
-    #[test]
-    fn recall_surfaces_synthesized_observation_first() {
-        let policy = default_policy();
-        let mut k = ProjectKnowledge::new("/tmp/test-recall-obs");
-        // A raw decision and a synthesized observation, equally relevant to "jwt".
-        k.remember(
-            "decision",
-            "auth-choice",
-            "auth module uses jwt tokens",
-            "s1",
-            0.6,
-            &policy,
-        );
-        k.remember(
-            "observation",
-            "src/auth.rs",
-            "auth module summary jwt tokens",
-            crate::core::knowledge::COGNITION_SYNTHESIS_SOURCE,
-            0.6,
-            &policy,
-        );
-
-        let (out, total) = k.recall_for_output("jwt", 10);
-        assert!(total >= 2, "both facts match the query");
-        assert!(
-            out[0].is_synthesized_observation(),
-            "synthesized observation ranks above an equally relevant raw fact"
-        );
-        assert_eq!(out[0].key, "src/auth.rs");
-    }
-
-    #[test]
-    fn recall_exact_key_hit_outranks_observation() {
-        // #802 keeps the observation tier *balanced*: an exact key hit (+1.0) still
-        // outranks a synthesized summary (+0.4), so a stale summary can never bury a
-        // precisely-queried raw fact. This is the guarantee the reference docs make.
-        let policy = default_policy();
-        let mut k = ProjectKnowledge::new("/tmp/test-recall-exact-vs-obs");
-        k.remember(
-            "decision",
-            "jwt",
-            "auth module uses jwt tokens",
-            "s1",
-            0.6,
-            &policy,
-        );
-        k.remember(
-            "observation",
-            "src/auth.rs",
-            "auth module summary jwt tokens",
-            crate::core::knowledge::COGNITION_SYNTHESIS_SOURCE,
-            0.6,
-            &policy,
-        );
-
-        let (out, _total) = k.recall_for_output("jwt", 10);
-        assert_eq!(out[0].key, "jwt", "exact key hit leads the ranking");
-        assert_eq!(out[0].category, "decision");
-        assert!(
-            out.iter()
-                .any(crate::core::knowledge::KnowledgeFact::is_synthesized_observation),
-            "the observation is still recalled, just below the exact hit"
-        );
     }
 
     #[test]
@@ -621,11 +555,9 @@ mod tests {
             feedback_up: 0,
             feedback_down: 0,
             last_feedback: None,
-            privacy: FactPrivacy::default(),
             sensitivity: crate::core::sensitivity::SensitivityLevel::default(),
             imported_from: None,
             archetype: KnowledgeArchetype::default(),
-            fidelity: None,
             revision_count: 0,
         }];
 
@@ -658,11 +590,9 @@ mod tests {
             feedback_up: 0,
             feedback_down: 0,
             last_feedback: None,
-            privacy: FactPrivacy::default(),
             sensitivity: crate::core::sensitivity::SensitivityLevel::default(),
             imported_from: None,
             archetype: KnowledgeArchetype::default(),
-            fidelity: None,
             revision_count: 0,
         }];
 
@@ -696,11 +626,9 @@ mod tests {
             feedback_up: 0,
             feedback_down: 0,
             last_feedback: None,
-            privacy: FactPrivacy::default(),
             sensitivity: crate::core::sensitivity::SensitivityLevel::default(),
             imported_from: None,
             archetype: KnowledgeArchetype::default(),
-            fidelity: None,
             revision_count: 0,
         }];
 

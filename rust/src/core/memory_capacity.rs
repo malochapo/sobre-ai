@@ -13,8 +13,7 @@ use super::memory_archive::{ArchiveConfig, MemoryStore, archive_items};
 
 /// Live count to settle at after a reclaim: drop `ceil(max * headroom_pct)`
 /// items so a busy store keeps real headroom instead of churning right at its
-/// cap. `headroom_pct = 0.25` reproduces the prior `max - ceil(max/4)` target
-/// byte-for-byte.
+/// cap.
 pub fn reclaim_target(max: usize, headroom_pct: f32) -> usize {
     if max == 0 {
         return 0;
@@ -27,14 +26,14 @@ pub fn reclaim_target(max: usize, headroom_pct: f32) -> usize {
 /// Whether a store at `len` should reclaim now. Hysteresis: trigger only at/above
 /// the cap rather than continuously keeping N% free, so a store does not reclaim
 /// on every write once it nears capacity.
-pub fn should_reclaim(len: usize, max: usize, enabled: bool) -> bool {
-    enabled && max > 0 && len >= max
+pub fn should_reclaim(len: usize, max: usize) -> bool {
+    max > 0 && len >= max
 }
 
 /// How many items a [`reclaim_store`] would archive for a store at `len`, without
 /// touching the store or the archive. Powers dry-run previews (#995 Phase 6).
-pub fn reclaim_preview(len: usize, max: usize, headroom_pct: f32, enabled: bool) -> usize {
-    if !should_reclaim(len, max, enabled) {
+pub fn reclaim_preview(len: usize, max: usize, headroom_pct: f32) -> usize {
+    if !should_reclaim(len, max) {
         return 0;
     }
     len.saturating_sub(reclaim_target(max, headroom_pct))
@@ -45,8 +44,8 @@ pub fn reclaim_preview(len: usize, max: usize, headroom_pct: f32, enabled: bool)
 /// When `items.len() >= max`, sort by `retention_cmp` (best-kept first) and
 /// archive + drop the tail down to [`reclaim_target`]. The dropped items are
 /// archived under `store`/`scope` *before* removal, so the reclaim is lossless
-/// and restorable. Returns the archived items. No-op when disabled, under cap,
-/// or `max == 0`. If persistence fails, returns the error and leaves `items`
+/// and restorable. Returns the archived items. No-op when under cap or
+/// `max == 0`. If persistence fails, returns the error and leaves `items`
 /// unchanged.
 pub fn reclaim_store<T, F>(
     store: MemoryStore,
@@ -54,14 +53,13 @@ pub fn reclaim_store<T, F>(
     items: &mut Vec<T>,
     max: usize,
     headroom_pct: f32,
-    enabled: bool,
     mut retention_cmp: F,
 ) -> Result<Vec<T>, String>
 where
     T: Serialize,
     F: FnMut(&T, &T) -> Ordering,
 {
-    if !should_reclaim(items.len(), max, enabled) {
+    if !should_reclaim(items.len(), max) {
         return Ok(Vec::new());
     }
     let target = reclaim_target(max, headroom_pct);
@@ -146,11 +144,10 @@ mod tests {
 
     #[test]
     fn should_reclaim_hysteresis() {
-        assert!(!should_reclaim(99, 100, true), "under cap: no reclaim");
-        assert!(should_reclaim(100, 100, true), "at cap: reclaim");
-        assert!(should_reclaim(150, 100, true), "over cap: reclaim");
-        assert!(!should_reclaim(150, 100, false), "disabled: no reclaim");
-        assert!(!should_reclaim(150, 0, true), "max 0: no reclaim");
+        assert!(!should_reclaim(99, 100), "under cap: no reclaim");
+        assert!(should_reclaim(100, 100), "at cap: reclaim");
+        assert!(should_reclaim(150, 100), "over cap: reclaim");
+        assert!(!should_reclaim(150, 0), "max 0: no reclaim");
     }
 
     #[test]
@@ -164,7 +161,6 @@ mod tests {
                 &mut items,
                 8,
                 0.25,
-                true,
                 |a, b| a.rank.cmp(&b.rank),
             )
             .expect("reclaim succeeds");
@@ -193,35 +189,11 @@ mod tests {
                 &mut items,
                 10,
                 0.25,
-                true,
                 |a, b| a.rank.cmp(&b.rank),
             )
             .expect("reclaim succeeds");
             assert!(archived.is_empty());
             assert_eq!(items.len(), 3);
-        });
-    }
-
-    #[test]
-    fn reclaim_store_respects_disabled() {
-        with_temp_data_dir(|| {
-            let mut items: Vec<Item> = (0..20).map(|rank| Item { rank }).collect();
-            let archived = reclaim_store(
-                MemoryStore::Patterns,
-                Some("p"),
-                &mut items,
-                10,
-                0.25,
-                false,
-                |a, b| a.rank.cmp(&b.rank),
-            )
-            .expect("reclaim succeeds");
-            assert!(archived.is_empty());
-            assert_eq!(
-                items.len(),
-                20,
-                "disabled reclaim leaves the store untouched"
-            );
         });
     }
 
@@ -244,7 +216,6 @@ mod tests {
             &mut items,
             8,
             0.25,
-            true,
             |a, b| a.rank.cmp(&b.rank),
         );
 

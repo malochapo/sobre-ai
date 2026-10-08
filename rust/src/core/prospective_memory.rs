@@ -146,9 +146,6 @@ mod tests {
                 },
                 prevented_count: 0,
                 tags: vec!["rust".to_string()],
-                provenance: Vec::new(),
-                expires_at: None,
-                decay_rate_override: None,
             });
         }
 

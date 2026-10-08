@@ -290,7 +290,6 @@ a:hover { text-decoration: underline; }
 }
 .timeline-item.decision::before { background: var(--accent-purple); }
 .timeline-item.finding::before { background: var(--accent-green); }
-.timeline-item.progress::before { background: var(--accent-orange); }
 .timeline-time {
   font-size: 11px;
   color: var(--text-muted);
@@ -822,22 +821,21 @@ function hideTooltip() { tooltip.classList.remove('visible'); }
     });
   }
 
-  // Timeline: merge findings, decisions, progress, sort by time
+  // Timeline: merge findings and decisions, sort by time
   const timeline = document.getElementById('session-timeline');
   const events = [];
   h.findings.forEach(f => events.push({ type: 'finding', time: f.timestamp, text: f.summary, sub: f.file }));
   h.decisions.forEach(d => events.push({ type: 'decision', time: d.timestamp, text: d.summary, sub: d.rationale }));
-  h.progress.forEach(p => events.push({ type: 'progress', time: p.timestamp, text: p.action, sub: p.detail }));
   events.sort((a, b) => new Date(a.time) - new Date(b.time));
 
   if (events.length === 0) {
-    timeline.innerHTML = '<div class="empty-state"><h3>No events</h3><p>Session has no recorded findings, decisions, or progress.</p></div>';
+    timeline.innerHTML = '<div class="empty-state"><h3>No events</h3><p>Session has no recorded findings or decisions.</p></div>';
   } else {
     events.forEach(e => {
       const div = document.createElement('div');
       div.className = `timeline-item ${e.type}`;
       div.innerHTML = `
-        <div class="timeline-time">${shortDate(e.time)} &middot; <span class="badge badge-${e.type === 'decision' ? 'purple' : e.type === 'finding' ? 'green' : 'orange'}">${e.type}</span></div>
+        <div class="timeline-time">${shortDate(e.time)} &middot; <span class="badge badge-${e.type === 'decision' ? 'purple' : 'green'}">${e.type}</span></div>
         <div class="timeline-text">${escHtml(e.text)}${e.sub ? '<br/><small style="color:var(--text-muted)">' + escHtml(e.sub) + '</small>' : ''}</div>`;
       timeline.appendChild(div);
     });

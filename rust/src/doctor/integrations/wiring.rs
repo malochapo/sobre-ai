@@ -23,16 +23,7 @@ pub(crate) fn check_mcp_json(path: &std::path::Path, binary: &str) -> NamedCheck
         };
     };
 
-    let entry = v
-        .get("mcpServers")
-        .and_then(|m| m.get("lean-ctx"))
-        .cloned()
-        .or_else(|| {
-            v.get("mcp")
-                .and_then(|m| m.get("servers"))
-                .and_then(|m| m.get("lean-ctx"))
-                .cloned()
-        });
+    let entry = v.get("mcpServers").and_then(|m| m.get("lean-ctx")).cloned();
 
     let Some(e) = entry else {
         return NamedCheck {

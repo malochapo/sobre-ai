@@ -247,10 +247,6 @@ pub(crate) fn load_engine_and_index(
         idx = EmbeddingIndex::new_with_model(engine.dimensions(), model_name);
     }
 
-    if idx.model_id.is_none() {
-        idx.model_id = Some(model_name.to_string());
-    }
-
     Ok((engine, idx))
 }
 

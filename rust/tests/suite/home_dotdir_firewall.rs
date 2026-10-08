@@ -16,9 +16,6 @@
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
-/// Files allowed to construct a home-based `~/.lean-ctx` path: none.
-const ALLOWLIST: &[&str] = &[];
-
 fn collect_rs_files(dir: &Path, out: &mut Vec<PathBuf>) {
     let Ok(entries) = std::fs::read_dir(dir) else {
         return;
@@ -39,17 +36,14 @@ fn collect_rs_files(dir: &Path, out: &mut Vec<PathBuf>) {
 ///
 /// Both the bare dir (`join(".lean-ctx")`) and any subpath join
 /// (`join(".lean-ctx/logs")`, `join(".lean-ctx/agents/tasks.json")`) are
-/// matched: the byte right after `.lean-ctx` must be `"` or `/`, so the
-/// project markers `.lean-ctx.toml` / `.lean-ctx-id` (followed by `.` / `-`)
-/// stay out of scope. This closes the slash-variant gap that previously let
-/// `proxy_autostart` (`.lean-ctx/logs`) and `a2a/task` (`.lean-ctx/agents/…`)
-/// slip past the firewall.
+/// matched: the byte right after `.lean-ctx` must be `"` or `/`, so other names
+/// that merely share the prefix (followed by `.` / `-`) stay out of scope.
 ///
 /// The scan spans lines on purpose — the join is frequently chained on its own
-/// line below `dirs::home_dir()`, which a line-by-line check missed (it
-/// under-counted real writers like `core::agents`). A bounded, char-boundary
-/// safe look-back keeps project-local roots (`project_root`, `root`, `cwd`,
-/// `dir`) — which carry no `home` token — out of scope by design.
+/// line below `dirs::home_dir()`, which a line-by-line check would miss. A
+/// bounded, char-boundary safe look-back keeps project-local roots
+/// (`project_root`, `root`, `cwd`, `dir`) — which carry no `home` token — out
+/// of scope by design.
 fn builds_home_dotdir_path(text: &str) -> bool {
     const PREFIX: &str = r#"join(".lean-ctx"#;
     const LOOKBACK: usize = 160;
@@ -58,8 +52,7 @@ fn builds_home_dotdir_path(text: &str) -> bool {
     while let Some(rel) = text[search_from..].find(PREFIX) {
         let idx = search_from + rel;
         let after = idx + PREFIX.len();
-        // Legacy dir itself (`"`) or a subpath under it (`/`) — never the
-        // `.lean-ctx.toml` / `.lean-ctx-id` project markers.
+        // The dir itself (`"`) or a subpath under it (`/`).
         if matches!(bytes.get(after), Some(b'"' | b'/')) {
             let mut start = idx.saturating_sub(LOOKBACK);
             while start > 0 && !text.is_char_boundary(start) {
@@ -96,31 +89,14 @@ fn no_home_dotdir_path_construction() {
         }
     }
 
-    let allow: BTreeSet<String> = ALLOWLIST.iter().map(|s| (*s).to_string()).collect();
-
-    let added: Vec<&String> = offenders.difference(&allow).collect();
     assert!(
-        added.is_empty(),
-        "New home-based `~/.lean-ctx` path construction detected.\n\
-         Use core::paths (data_dir/state_dir/config_dir/cache_dir) instead, or — if\n\
-         this is genuinely a resolver/migrator/uninstaller — add the file to\n\
-         ALLOWLIST in this test with a reason.\nOffending file(s):\n  {}",
-        added
+        offenders.is_empty(),
+        "Home-based `~/.lean-ctx` path construction detected.\n\
+         Use core::paths (data_dir/state_dir/config_dir/cache_dir) instead.\n\
+         Offending file(s):\n  {}",
+        offenders
             .iter()
-            .map(|s| s.as_str())
-            .collect::<Vec<_>>()
-            .join("\n  ")
-    );
-
-    let removed: Vec<&String> = allow.difference(&offenders).collect();
-    assert!(
-        removed.is_empty(),
-        "ALLOWLIST has entries that no longer construct a home `~/.lean-ctx` path.\n\
-         A writer was migrated to typed dirs — remove it from ALLOWLIST to keep the\n\
-         firewall honest:\n  {}",
-        removed
-            .iter()
-            .map(|s| s.as_str())
+            .map(String::as_str)
             .collect::<Vec<_>>()
             .join("\n  ")
     );

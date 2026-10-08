@@ -70,17 +70,10 @@ pub(crate) fn compressed_cache_key(
     aggressiveness: Option<f64>,
     protect: &[String],
 ) -> String {
-    // Bump when the rendered map/signatures body changes shape so stale
-    // pre-line-range entries are not served from an older session cache.
-    let versioned_mode = match mode {
-        "map" => "map:v2",
-        "signatures" => "signatures:v2",
-        _ => mode,
-    };
     let base = if crp_mode.is_tdd() {
-        format!("{versioned_mode}:tdd")
+        format!("{mode}:tdd")
     } else {
-        versioned_mode.to_string()
+        mode.to_string()
     };
     // map/signatures output now embeds a task-relevant body, so task-aware and
     // task-free variants must cache under distinct keys.
@@ -487,11 +480,6 @@ pub(crate) fn try_stub_hit_readonly_scoped(
     path: &str,
     current_conversation: Option<&str>,
 ) -> Option<ReadOutput> {
-    let policy_allows_stub = crate::server::compaction_sync::effective_cache_policy() != "safe";
-    if !policy_allows_stub {
-        return None;
-    }
-
     // Warm path: a live in-memory entry is the freshest source of truth.
     if let Some(file_ref) = cache.get_file_ref_readonly(path) {
         let (cached_mtime, cached_hash, line_count, delivered_conv) = {
@@ -576,7 +564,7 @@ pub struct DeltaExplicitDecision {
 
 /// Decide whether an **explicit** `full`/`lines:N-M` re-read of a session-cached
 /// file should be served as a delta instead of re-emitting content the model
-/// already holds (the `delta_explicit` opt-in).
+/// already holds.
 ///
 /// Returns the mode the read should proceed with:
 /// - **Changed on disk** (verified mtime+md5 stale) and full content is cached →
@@ -593,7 +581,7 @@ pub struct DeltaExplicitDecision {
 /// write on a coarse-granularity filesystem cannot be mistaken for "unchanged"
 /// and yield a misleading empty diff (#498 determinism).
 ///
-/// Pure w.r.t. (cache, path, mode, enabled): no wall-clock, counters, or
+/// Pure w.r.t. (cache, path, mode): no wall-clock, counters, or
 /// randomness enter the result, so identical inputs stay byte-stable.
 pub fn resolve_explicit_delta_mode(
     cache: &SessionCache,
@@ -601,14 +589,12 @@ pub fn resolve_explicit_delta_mode(
     mode: &str,
     explicit_mode: bool,
     fresh: bool,
-    enabled: bool,
 ) -> DeltaExplicitDecision {
     let unchanged = DeltaExplicitDecision {
         mode: mode.to_string(),
         note: None,
     };
     if fresh
-        || !enabled
         || !explicit_mode
         || !(mode == "full" || mode == "full-compact" || mode.starts_with("lines:"))
     {

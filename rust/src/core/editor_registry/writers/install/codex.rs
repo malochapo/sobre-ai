@@ -40,18 +40,9 @@ pub(crate) fn upsert_codex_toml(existing: &str, binary: &str) -> String {
     let mut saw_section = false;
     let mut wrote_command = false;
     let mut wrote_args = false;
-    let mut inserted_parent_before_subtable = false;
-
-    let parent_block = format!(
-        "[mcp_servers.lean-ctx]\ncommand = {}\nargs = []\n\n",
-        toml_quote(binary)
-    );
 
     for line in existing.lines() {
         let trimmed = line.trim();
-        if trimmed == "[]" {
-            continue;
-        }
         if trimmed.starts_with('[') && trimmed.ends_with(']') {
             if in_section && !wrote_command {
                 out.push_str(&format!("command = {}\n", toml_quote(binary)));
@@ -64,12 +55,6 @@ pub(crate) fn upsert_codex_toml(existing: &str, binary: &str) -> String {
             in_section = trimmed == "[mcp_servers.lean-ctx]";
             if in_section {
                 saw_section = true;
-            } else if !saw_section
-                && !inserted_parent_before_subtable
-                && trimmed.starts_with("[mcp_servers.lean-ctx.")
-            {
-                out.push_str(&parent_block);
-                inserted_parent_before_subtable = true;
             }
             out.push_str(line);
             out.push('\n');
@@ -100,10 +85,6 @@ pub(crate) fn upsert_codex_toml(existing: &str, binary: &str) -> String {
         if in_section && !wrote_args {
             out.push_str("args = []\n");
         }
-        return out;
-    }
-
-    if inserted_parent_before_subtable {
         return out;
     }
 

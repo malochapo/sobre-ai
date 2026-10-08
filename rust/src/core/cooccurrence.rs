@@ -164,7 +164,7 @@ impl CoAccessGraph {
 // ── Persistence (one small JSON file per project) ──────────────────────────
 
 fn store_path(project_root: &str) -> Option<PathBuf> {
-    let normalized = crate::core::graph_index::normalize_project_root(project_root);
+    let normalized = crate::core::index_paths::normalize_project_root(project_root);
     let hash = crate::core::project_hash::hash_project_root(&normalized);
     crate::core::paths::state_dir()
         .ok()

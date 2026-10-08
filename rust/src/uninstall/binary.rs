@@ -45,7 +45,6 @@ enum Disposition {
     DevBuild,
     /// Installed by a package manager that tracks it — defer to that manager.
     Cargo,
-    Homebrew,
 }
 
 fn classify(path: &Path) -> Disposition {
@@ -54,8 +53,6 @@ fn classify(path: &Path) -> Disposition {
         Disposition::DevBuild
     } else if p.contains("/.cargo/") {
         Disposition::Cargo
-    } else if p.contains("/Cellar/") || p.contains("homebrew") {
-        Disposition::Homebrew
     } else {
         Disposition::Remove
     }
@@ -63,13 +60,9 @@ fn classify(path: &Path) -> Disposition {
 
 /// Standard locations the binary may live in, plus the currently running executable.
 fn candidate_paths(home: &Path) -> Vec<PathBuf> {
-    let install_dir = std::env::var_os("LEAN_CTX_INSTALL_DIR")
-        .map_or_else(|| home.join(".local/bin"), PathBuf::from);
-
     let mut out = vec![
-        install_dir.join("lean-ctx"),
+        home.join(".local/bin/lean-ctx"),
         PathBuf::from("/usr/local/bin/lean-ctx"),
-        PathBuf::from("/opt/homebrew/bin/lean-ctx"),
     ];
     if let Ok(exe) = std::env::current_exe() {
         out.push(exe);
@@ -93,7 +86,6 @@ pub(super) fn remove_binaries(home: &Path, dry_run: bool, keep_binary: bool) -> 
 
     let mut removed = false;
     let mut cargo_hint = false;
-    let mut brew_hint = false;
 
     for path in candidate_paths(home) {
         // `symlink_metadata` does not follow symlinks, so a PATH symlink is detected (and
@@ -105,7 +97,6 @@ pub(super) fn remove_binaries(home: &Path, dry_run: bool, keep_binary: bool) -> 
         match classify(&path) {
             Disposition::DevBuild => {} // leave the user's repo build alone
             Disposition::Cargo => cargo_hint = true,
-            Disposition::Homebrew => brew_hint = true,
             Disposition::Remove => {
                 let short = shorten(&path, home);
                 if dry_run {
@@ -144,10 +135,7 @@ pub(super) fn remove_binaries(home: &Path, dry_run: bool, keep_binary: bool) -> 
     if cargo_hint {
         println!("  · Installed via cargo — finish with: cargo uninstall lean-ctx");
     }
-    if brew_hint {
-        println!("  · Installed via Homebrew — finish with: brew uninstall lean-ctx");
-    }
-    if !removed && !cargo_hint && !brew_hint {
+    if !removed && !cargo_hint {
         println!("  · No managed binary found on standard paths");
     }
     removed
@@ -174,14 +162,6 @@ mod tests {
         assert!(matches!(
             classify(Path::new("/home/u/.cargo/bin/lean-ctx")),
             Disposition::Cargo
-        ));
-        assert!(matches!(
-            classify(Path::new("/opt/homebrew/bin/lean-ctx")),
-            Disposition::Homebrew
-        ));
-        assert!(matches!(
-            classify(Path::new("/usr/local/Cellar/lean-ctx/3.7.0/bin/lean-ctx")),
-            Disposition::Homebrew
         ));
     }
 

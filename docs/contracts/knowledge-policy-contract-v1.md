@@ -45,15 +45,13 @@ from unit tests, which assert that the defaults are valid.
 | `low_confidence_threshold` | 0.3 |
 | `stale_days` | 30 |
 | `similarity_threshold` | 0.85 |
-| `forgetting_model` | `ebbinghaus` |
 | `base_stability_days` | 90.0 |
 | `archetype_aware_decay` | false |
 | `prune_unretrieved_after_days` | 90 |
 | `reclaim_headroom_pct` | 0.25 (a full store settles at 75%) |
-| `reclaim_enabled` | true |
 
-`MemoryPolicy` also holds embeddings, gotcha, admission and compaction
-sub-policies; their defaults are in the same file. None of it is configurable.
+`MemoryPolicy` also holds embeddings, gotcha and admission sub-policies;
+their defaults are in the same file. None of it is configurable.
 
 ## Semantics (MUST)
 
@@ -90,10 +88,10 @@ Results are sorted with stable tie-breaks, then truncated.
 
 ### Lifecycle
 
-Confidence decay, consolidation and compaction are deterministic and bounded
-(`rust/src/core/memory_lifecycle.rs`), parameterised by `decay_rate`,
-`low_confidence_threshold`, `stale_days`, `similarity_threshold` and
-`max_facts`.
+Confidence decay (an Ebbinghaus curve), consolidation and compaction are
+deterministic and bounded (`rust/src/core/memory_lifecycle.rs`), parameterised
+by `base_stability_days`, `low_confidence_threshold`, `stale_days`,
+`similarity_threshold` and `max_facts`.
 
 ### Lossless eviction (MUST, #995)
 
@@ -108,7 +106,6 @@ Confidence decay, consolidation and compaction are deterministic and bounded
   (`max - ceil(max * pct)`, with `pct` clamped to `[0.0, 0.95]`) is the only
   target-size calculation. A reclaim triggers only when `len >= max` and then
   settles the store at `reclaim_target`, so there is no churn on every write.
-- **`reclaim_enabled`.** It is true. When false, `reclaim_store` does nothing.
 - **Retention ranking** per store is deterministic (stable sort tie-breaks):
   facts by `is_current` then output ranking, history and patterns newest first.
 - **Archive reachability.** `ArchiveConfig::default()` sets both `max_files`

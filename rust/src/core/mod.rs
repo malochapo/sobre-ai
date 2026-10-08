@@ -44,7 +44,6 @@ pub mod compression {
 // ---------------------------------------------------------------------------
 pub mod interrupt;
 pub mod memory_archive;
-pub mod memory_boundary;
 pub mod memory_capacity;
 pub mod memory_guard;
 pub mod memory_lifecycle;
@@ -54,7 +53,6 @@ pub mod prospective_memory;
 
 /// Convenience re-export: all memory-related modules.
 pub mod memory {
-    pub use super::memory_boundary;
     pub use super::memory_lifecycle;
     pub use super::memory_policy;
     pub use super::prospective_memory;
@@ -86,7 +84,6 @@ pub mod context_handles;
 pub mod context_ledger;
 pub mod context_lint;
 pub mod context_overhead;
-pub mod context_radar;
 pub mod cross_source_hints;
 
 /// Convenience re-export: all context-related modules.
@@ -297,9 +294,9 @@ pub mod session_token;
 pub mod startup_guard;
 pub mod syntax_validate;
 pub mod task_briefing;
-/// macOS Seatbelt self-sandbox (#356): wraps launchd-owned daemon/proxy/updater
-/// in a `sandbox-exec` profile that denies `~/Documents`/`~/Desktop`/
-/// `~/Downloads`, so the TCC privacy prompt can never appear.
+/// macOS Seatbelt self-sandbox (#356): wraps the launchd-owned proxy in a
+/// `sandbox-exec` profile that denies `~/Documents`/`~/Desktop`/`~/Downloads`,
+/// so the TCC privacy prompt can never appear.
 #[cfg(target_os = "macos")]
 pub mod tcc_guard_sandbox;
 pub mod tdd_schema;

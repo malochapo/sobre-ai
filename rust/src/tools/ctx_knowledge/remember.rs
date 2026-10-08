@@ -109,7 +109,7 @@ pub(crate) fn handle_remember(
     }
 
     // Cross-key advisories only help a genuine insert; a merge already collapsed
-    // the closest duplicate, so there is nothing left for the agent to `judge`.
+    // the closest duplicate, so there is nothing left for the agent to resolve.
     let similar = if merged {
         Vec::new()
     } else {
@@ -127,7 +127,7 @@ pub(crate) fn handle_remember(
             ));
         }
         result.push_str(
-            "\n→ ctx_knowledge(action=\"judge\", key=\"<cat/key>\", value=\"<target_cat/key>\", query=\"supersedes|compatible|unrelated\")"
+            "\n→ duplicate? ctx_knowledge(action=\"remove\", category=\"<cat>\", key=\"<key>\"), or remember under the existing key to update it"
         );
     }
 
@@ -248,7 +248,7 @@ pub(crate) fn handle_remember(
                     ));
                 }
                 result.push_str(
-                    "\n→ ctx_knowledge(action=\"judge\", key=\"<cat/key>\", value=\"<target_cat/key>\", query=\"supersedes|compatible|unrelated\")"
+                    "\n→ duplicate? ctx_knowledge(action=\"remove\", category=\"<cat>\", key=\"<key>\"), or remember under the existing key to update it"
                 );
             }
         }

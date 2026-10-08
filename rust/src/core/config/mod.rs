@@ -29,8 +29,7 @@ pub use proxy::{
     upstream_ids,
 };
 
-/// Effective on-disk ceiling (MB) for the persisted BM25 index when nothing is
-/// explicitly configured (no `bm25_max_cache_mb`, no `max_disk_mb` budget).
+/// On-disk ceiling (MB) for the persisted BM25 index.
 ///
 /// 512 MB compressed covers
 /// essentially every real repo; RAM pressure is governed separately by the
@@ -66,10 +65,6 @@ pub const IDLE_CACHE_TTL_SECS: u64 = 3600;
 
 /// Commands slower than this get a timing note in their output.
 pub const SLOW_COMMAND_THRESHOLD_MS: u64 = 5000;
-
-// Compile-time regression guard (#249): the default disk ceiling must stay well
-// above the old RAM-profile caps (64/128 MB) that starved large repos.
-const _: () = assert!(DEFAULT_BM25_PERSIST_MB >= 512);
 
 /// `compression_level` when the file does not set it: the middle of the
 /// `lite` band.
@@ -114,7 +109,7 @@ pub struct Config {
     /// across machines with different usernames need an env-based form like
     /// `$HOME/.local/bin/lean-ctx` — agent hosts run hook commands through a
     /// shell, which expands it. When set, every hook writer emits the value verbatim instead of
-    /// the machine-absolute exe path, so `init`/`doctor --fix`/`update` stop
+    /// the machine-absolute exe path, so `init`/`doctor --fix` stop
     /// rewriting synced files into sync ping-pong. Autostart plists/services
     /// and daemon spawns are NOT affected — launchd/systemd do not expand
     /// shell variables, so those keep the real absolute path. Empty (default)
@@ -229,7 +224,7 @@ impl Config {
     /// Formats the current config as a human-readable string with file paths.
     pub fn show(&self) -> String {
         let global_path = Self::path().map_or_else(
-            || "~/.lean-ctx/config.toml".to_string(),
+            || "(config dir unresolved)".to_string(),
             |p| p.to_string_lossy().to_string(),
         );
         let content = toml::to_string_pretty(self).unwrap_or_default();

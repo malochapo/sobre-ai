@@ -53,14 +53,6 @@ impl ServerHandler for LeanCtxServer {
         *self.client_name.write().await = name.clone();
         *self.peer.write().await = Some(context.peer.clone());
 
-        if let Ok(data_dir) = crate::core::data_dir::lean_ctx_data_dir() {
-            let radar = data_dir.join("context_radar.jsonl");
-            if radar.exists() {
-                let prev = data_dir.join("context_radar.prev.jsonl");
-                let _ = std::fs::rename(&radar, &prev);
-            }
-        }
-
         let has_roots = request.capabilities.roots.is_some();
         self.has_client_roots
             .store(has_roots, std::sync::atomic::Ordering::Relaxed);

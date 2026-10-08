@@ -2,7 +2,6 @@ use chrono::Utc;
 use serde::{Deserialize, Serialize};
 
 use super::types::{KnowledgeArchetype, KnowledgeFact, ProjectKnowledge};
-use crate::core::memory_boundary::FactPrivacy;
 use crate::core::memory_policy::MemoryPolicy;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -73,9 +72,7 @@ pub fn parse_import_data(data: &str) -> Result<Vec<KnowledgeFact>, String> {
                 feedback_up: 0,
                 feedback_down: 0,
                 last_feedback: None,
-                privacy: FactPrivacy::default(),
                 imported_from: None,
-                fidelity: None,
                 revision_count: 0,
             })
             .collect();
@@ -109,9 +106,7 @@ pub fn parse_import_data(data: &str) -> Result<Vec<KnowledgeFact>, String> {
                 feedback_up: 0,
                 feedback_down: 0,
                 last_feedback: None,
-                privacy: FactPrivacy::default(),
                 imported_from: None,
-                fidelity: None,
                 revision_count: 0,
             });
         } else {
@@ -147,11 +142,9 @@ fn imported_fact(source: &KnowledgeFact, session_id: &str) -> KnowledgeFact {
         feedback_up: 0,
         feedback_down: 0,
         last_feedback: None,
-        privacy: source.privacy,
         sensitivity: source.sensitivity,
         imported_from: source.imported_from.clone(),
         archetype: source.archetype.clone(),
-        fidelity: None,
         revision_count: 0,
     }
 }

@@ -2,6 +2,7 @@
 //! `super::*` resolves to the `graph_index` module.
 
 use super::*;
+use crate::core::index_paths::graph_match_key;
 use tempfile::tempdir;
 
 #[test]
@@ -117,7 +118,6 @@ fn test_compute_hash_deterministic() {
 #[test]
 fn test_project_index_new() {
     let idx = ProjectIndex::new("/test");
-    assert_eq!(idx.version, INDEX_VERSION);
     assert_eq!(idx.project_root, "/test");
     assert!(idx.files.is_empty());
 }
@@ -190,16 +190,6 @@ class UserService {
     let (start, end) = find_symbol_range(content, &sig);
     assert_eq!(start, 5);
     assert!(end >= start);
-}
-
-#[test]
-fn test_parse_stale_index_version() {
-    let json = format!(
-        r#"{{"version":{},"project_root":"/test","last_scan":"now","files":{{}},"edges":[],"symbols":{{}}}}"#,
-        INDEX_VERSION - 1
-    );
-    let parsed: ProjectIndex = serde_json::from_str(&json).unwrap();
-    assert_ne!(parsed.version, INDEX_VERSION);
 }
 
 #[test]

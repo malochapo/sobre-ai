@@ -263,14 +263,10 @@ fn kotlin_same_package_type_use_is_not_a_leaf() {
     );
 }
 
-/// Regression for GH #398's upgrade path: the v3.8.3 `type_ref` fix only
-/// helps if an *existing* graph is rebuilt after upgrading. A graph built by
-/// an older engine keeps `node_count > 0`, so without an engine-version gate
-/// `analyze` silently serves it — leaving the C# same-namespace consumer a
-/// false-negative leaf. We build a correct graph, stamp its meta back to
-/// engine version 0 (simulating a pre-`type_ref` build), and assert the next
-/// query self-heals: it rebuilds, surfaces the consumer, and re-stamps the
-/// current engine version.
+/// A graph stamped with an older engine version is rebuilt before the query:
+/// stamp the meta back to engine version 0 and assert the next `analyze`
+/// rebuilds, finds the C# same-namespace consumer, and re-stamps the current
+/// engine version.
 #[cfg(feature = "tree-sitter")]
 #[test]
 fn stale_engine_graph_is_rebuilt_before_query() {
@@ -297,8 +293,7 @@ fn stale_engine_graph_is_rebuilt_before_query() {
 
     let root_str = root.to_string_lossy().to_string();
 
-    // Build a correct graph, then simulate a graph produced by an engine
-    // that predates `type_ref` by stamping its meta back to version 0.
+    // Build a correct graph, then stamp its meta back to engine version 0.
     let out = handle("build", None, &root_str, None, Some("text"));
     assert!(!out.contains("ERROR"), "graph build failed: {out}");
     let mut meta = crate::core::property_graph::load_meta(&root_str).expect("meta after build");

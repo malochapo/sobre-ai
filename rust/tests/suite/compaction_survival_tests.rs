@@ -7,14 +7,12 @@ fn make_session_with_data() -> SessionState {
     session.task = Some(lean_ctx::core::session::TaskInfo {
         description: "Implement auth module".to_string(),
         intent: None,
-        progress_pct: Some(60),
     });
     session.decisions.push(lean_ctx::core::session::Decision {
         summary: "Use JWT for auth".to_string(),
         rationale: None,
         timestamp: chrono::Utc::now(),
     });
-    session.next_steps = vec!["Write tests".to_string(), "Deploy".to_string()];
     session.stats.total_tool_calls = 42;
     session.stats.total_tokens_saved = 15000;
     session
@@ -28,10 +26,6 @@ fn resume_block_contains_task() {
         block.contains("Implement auth module"),
         "resume block should contain task description"
     );
-    assert!(
-        block.contains("60%"),
-        "resume block should contain progress"
-    );
 }
 
 #[test]
@@ -41,16 +35,6 @@ fn resume_block_contains_decisions() {
     assert!(
         block.contains("Use JWT for auth"),
         "resume block should contain decisions"
-    );
-}
-
-#[test]
-fn resume_block_contains_next_steps() {
-    let session = make_session_with_data();
-    let block = session.build_resume_block();
-    assert!(
-        block.contains("Write tests"),
-        "resume block should contain next steps"
     );
 }
 

@@ -35,22 +35,20 @@ pub(crate) const MIN_TEE_BYTES: usize = 512;
 /// idempotent, so steady-state cost is a single `stat`).
 const CLEANUP_INTERVAL_SECS: u64 = 600;
 
-/// Length of the content hash in a proxy/json tee name ([`hash_short`]).
+/// Length of the content hash in a proxy tee name ([`hash_short`]).
 const TEE_HASH_LEN: usize = 16;
 /// Length of the command hash in a shell tee name (`shell::redact::save_tee`).
 const SHELL_TEE_HASH_LEN: usize = 8;
 
 /// Deterministic tee path for `content`:
-/// `{state}/tee/{prefix}_{blake3(content)[..16]}.log`. Pure (no I/O) so a stub
-/// embedding it stays byte-stable regardless of filesystem state. `prefix`
-/// segregates the producer (`proxy` for history-prune / live-compression stubs,
-/// `conv` for conversation history messages, `json` for the JSON crusher's
-/// lossy originals, #936) yet keeps one shared
-/// store + one resolver ([`resolve_tee`]).
-fn tee_path(content: &str, prefix: &str) -> Option<PathBuf> {
+/// `{state}/tee/proxy_{blake3(content)[..16]}.log`. Pure (no I/O) so a stub
+/// embedding it stays byte-stable regardless of filesystem state. The `proxy_`
+/// prefix keeps these apart from the shell tee files in the same store, which
+/// one resolver ([`resolve_tee`]) serves.
+fn tee_path(content: &str) -> Option<PathBuf> {
     let dir = crate::core::paths::state_dir().ok()?.join("tee");
     let hash = crate::core::hasher::hash_short(content);
-    Some(dir.join(format!("{prefix}_{hash}.log")))
+    Some(dir.join(format!("proxy_{hash}.log")))
 }
 
 /// Run the shared 24h TTL cleanup at most once per [`CLEANUP_INTERVAL_SECS`].
@@ -81,18 +79,10 @@ fn maybe_cleanup(tee_dir: &Path) {
 /// stays deterministic. Re-persisting identical content is idempotent: same
 /// content → same path → the existing file is left untouched.
 pub(crate) fn persist(content: &str) -> Option<String> {
-    persist_with(content, "proxy")
-}
-
-fn persist_with(content: &str, prefix: &str) -> Option<String> {
-    persist_with_min(content, prefix, MIN_TEE_BYTES)
-}
-
-fn persist_with_min(content: &str, prefix: &str, min_bytes: usize) -> Option<String> {
-    if content.len() < min_bytes {
+    if content.len() < MIN_TEE_BYTES {
         return None;
     }
-    let path = tee_path(content, prefix)?;
+    let path = tee_path(content)?;
     let handle = path.to_string_lossy().to_string();
 
     if !path.exists() {
@@ -114,15 +104,10 @@ fn persist_with_min(content: &str, prefix: &str, min_bytes: usize) -> Option<Str
         }
     }
     if path.is_file() {
-        let source_tool = match prefix {
-            "json" | "tbl" | "yaml" => "ctx_read",
-            "html" => "ctx_shell",
-            _ => "proxy",
-        };
         crate::core::relevance_tracker::register_compressed(
             handle.clone(),
             content,
-            source_tool,
+            "proxy",
             crate::core::tokens::count_tokens(content),
             0,
         );
@@ -134,25 +119,13 @@ fn is_hex(s: &str, len: usize) -> bool {
     s.len() == len && s.bytes().all(|b| b.is_ascii_hexdigit())
 }
 
-/// Canonical `{prefix}_{16hex}.log` name for a proxy / json / tbl / bare-hash id,
-/// or `None`. A bare 16-hex id defaults to the `proxy_` store (back-compat: that
-/// is the only form pre-#936 stubs carry).
+/// Canonical `proxy_{16hex}.log` name for a `proxy_` or bare-hash id, or
+/// `None`. A bare 16-hex id resolves to the `proxy_` store (the form the
+/// LiteLLM retrieve path passes).
 fn canonical_tee_name(name: &str) -> Option<String> {
     let stem = name.strip_suffix(".log").unwrap_or(name);
     if let Some(hash) = stem.strip_prefix("proxy_") {
         return is_hex(hash, TEE_HASH_LEN).then(|| format!("proxy_{hash}.log"));
-    }
-    if let Some(hash) = stem.strip_prefix("conv_") {
-        return is_hex(hash, TEE_HASH_LEN).then(|| format!("conv_{hash}.log"));
-    }
-    if let Some(hash) = stem.strip_prefix("json_") {
-        return is_hex(hash, TEE_HASH_LEN).then(|| format!("json_{hash}.log"));
-    }
-    if let Some(hash) = stem.strip_prefix("tbl_") {
-        return is_hex(hash, TEE_HASH_LEN).then(|| format!("tbl_{hash}.log"));
-    }
-    if let Some(hash) = stem.strip_prefix("yaml_") {
-        return is_hex(hash, TEE_HASH_LEN).then(|| format!("yaml_{hash}.log"));
     }
     is_hex(stem, TEE_HASH_LEN).then(|| format!("proxy_{stem}.log"))
 }
@@ -181,11 +154,9 @@ fn is_shell_tee_name(name: &str) -> bool {
 /// Accepts every handle form a stub or footer can carry, with a fixed precedence
 /// so the forms can never collide (#936):
 ///
-/// 1. **Prefix forms** — `proxy_<16hex>(.log)`, `conv_<16hex>(.log)`,
-///    `json_<16hex>(.log)`, `tbl_<16hex>(.log)`, `yaml_<16hex>(.log)`, or a bare
-///    `<16hex>` (→ `proxy_`,
-///    back-compat). The proxy history-prune / live stubs and the JSON / tabular /
-///    YAML crushers' lossy originals.
+/// 1. **Proxy form** — `proxy_<16hex>(.log)`, or a bare `<16hex>` (→ `proxy_`,
+///    the form the LiteLLM retrieve path passes). The proxy history-prune / live
+///    stubs.
 /// 2. **Shell-tee form** — `<slug>_<8hex>.log` (`save_tee`), so every compressed
 ///    shell command's already-teed verbatim output is surgically retrievable.
 ///

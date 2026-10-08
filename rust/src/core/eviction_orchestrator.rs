@@ -77,7 +77,7 @@ pub fn on_memory_pressure(level: memory_guard::PressureLevel) {
 
 impl EvictionOrchestrator {
     pub fn new(cache: SharedCache, bm25_cache: SharedBm25Cache) -> Self {
-        let token_budget = super::cache::max_cache_tokens();
+        let token_budget = super::cache::CACHE_MAX_TOKENS;
         Self {
             cache,
             bm25_cache,

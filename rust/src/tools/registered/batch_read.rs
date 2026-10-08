@@ -1,18 +1,12 @@
-//! Shared batch-read implementation.
-//!
-//! Extracted from the deleted `ctx_multi_read` tool: `ctx_read` calls into it
-//! whenever it is given a `paths` array, so removing the MCP wrapper would have
-//! taken the batch path down with it. Renamed to say what it is rather than
-//! which tool used to own it.
+//! Batch read behind `ctx_read(paths=…)`.
 
 use rmcp::ErrorData;
 use serde_json::{Map, Value};
 
 use crate::server::tool_trait::{ToolContext, ToolOutput, get_bool, get_str, get_str_array};
 
-/// Batch-read multiple files in one call. The single implementation shared by
-/// the (deprecated) `ctx_multi_read` tool and by `ctx_read` when it is called
-/// with a `paths` array (#509) — no duplicated batch logic across the two.
+/// Batch read behind `ctx_read(paths=…)` (#509): reads multiple files in one
+/// call.
 ///
 /// Panic guard (mirrors ctx_read): a panic in tree-sitter / compression must
 /// never unwind through the dispatch `block_in_place` and kill the MCP server.

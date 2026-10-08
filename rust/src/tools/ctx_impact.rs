@@ -42,10 +42,9 @@ fn open_graph(root: &str) -> Result<CodeGraph, String> {
 
 /// Open the property graph for a *query*, rebuilding first when it cannot be
 /// trusted: either empty (never built) or produced by an engine older than
-/// [`crate::core::property_graph::GRAPH_ENGINE_VERSION`] — e.g. an upgraded
-/// install whose graph predates the C#/Java `type_ref` edges (GH #398). The
-/// rebuild is one-shot and idempotent: a fresh build stamps the current engine
-/// version, so a healthy graph is returned without rebuilding.
+/// [`crate::core::property_graph::GRAPH_ENGINE_VERSION`]. The rebuild is
+/// one-shot and idempotent: a fresh build stamps the current engine version,
+/// so a healthy graph is returned without rebuilding.
 fn open_graph_fresh(root: &str) -> Result<CodeGraph, String> {
     let graph = open_graph(root)?;
     let empty = graph.node_count().unwrap_or(0) == 0;

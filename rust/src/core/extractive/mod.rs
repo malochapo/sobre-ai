@@ -20,8 +20,8 @@
 //!
 //! ## Graceful fallback
 //!
-//! When the embedding engine is unavailable — `embeddings` feature off, model
-//! not yet loaded, or `memory_profile=low` — [`rank_and_squeeze`] returns
+//! When the embedding engine is unavailable — `embeddings` feature off or model
+//! not yet loaded — [`rank_and_squeeze`] returns
 //! `None`, and callers fall back to the deterministic truncating squeeze. No
 //! build or OS regresses.
 

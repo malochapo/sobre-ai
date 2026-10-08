@@ -25,11 +25,10 @@ pub(super) struct OverheadReport {
     pub tool_count: usize,
     pub tool_schema_tokens: usize,
     pub instruction_tokens: usize,
-    /// Tokens of the wakeup briefing (knowledge + session memory). With the
-    /// default `minimal_overhead = true` it is delivered via the AUTO CONTEXT
-    /// block of the first tool call other than the `ctx_compose` overview (instructions stay byte-stable, #498); with
-    /// `false` it is injected at session start. Either way it bills once per
-    /// session — its own source, not folded into `instruction_tokens` (#964).
+    /// Tokens of the wakeup briefing (knowledge + session memory), delivered
+    /// once per session via the AUTO CONTEXT block of the first tool call other
+    /// than the `ctx_compose` overview (instructions stay byte-stable, #498);
+    /// its own source, not folded into `instruction_tokens` (#964).
     pub wakeup_tokens: usize,
     /// The per-session budget (#964); 0 disables the check.
     pub budget_tokens: usize,

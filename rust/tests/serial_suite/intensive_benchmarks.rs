@@ -706,8 +706,6 @@ fn guard_essential_instructions_present() {
     );
 }
 
-// AUTONOMY TOKEN IMPACT removed — writes to ~/.lean-ctx/ (not hermetic for CI)
-
 // ═══════════════════════════════════════════════════════════════════════════
 // DATA GENERATORS
 // ═══════════════════════════════════════════════════════════════════════════

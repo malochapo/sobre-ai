@@ -347,7 +347,7 @@ pub fn cmd_grep(args: &[String]) {
     let abs_path = resolve_cli_path(raw_path);
     let path = abs_path.as_str();
 
-    let outcome = crate::tools::ctx_search::handle(
+    let outcome = crate::tools::ctx_search::handle_filtered(
         pattern,
         path,
         None,
@@ -355,6 +355,8 @@ pub fn cmd_grep(args: &[String]) {
         crate::tools::CrpMode::effective(),
         true,
         false,
+        None,
+        None,
     );
     let out = outcome.text;
     println!("{out}");

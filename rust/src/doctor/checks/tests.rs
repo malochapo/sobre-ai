@@ -59,15 +59,13 @@ fn humanized_ages_cover_all_magnitudes() {
 
 #[test]
 fn capacity_hint_is_actionable_for_both_states() {
-    // WARN (at/near cap): reassure it is by-design, point at the cap lever.
+    // WARN (at/near cap): reassure it is by-design.
     let warn = capacity_hint(false);
     assert!(warn.contains("healthy by design"));
-    assert!(warn.contains("memory.*"));
 
     // CRIT (over cap): give an immediate compaction action.
     let crit = capacity_hint(true);
     assert!(crit.contains("lean-ctx knowledge consolidate --all"));
-    assert!(crit.contains("memory.*"));
 
     assert_ne!(warn, crit);
 }

@@ -6,7 +6,7 @@
 //! MCP `ctx_shell`); this store extracts the structured `(file, line)` pairs
 //! and makes them available to auto-mode, relevance ranking and the triage.
 //!
-//! Persistence: `~/.lean-ctx/diagnostics.json` — the CLI runs as a separate
+//! Persistence: `<data dir>/diagnostics.json` — the CLI runs as a separate
 //! process from the MCP server, so an in-memory store would never be seen by
 //! `ctx_read`'s auto-mode. Entries expire after `TTL_SECS`; a succeeding run
 //! of the same tool clears its diagnostics.

@@ -115,7 +115,7 @@ fn write_config_key(key: &str, value: &str, display_key: &str, display_val: &str
 /// This is the regression guard for #443: `config init` once wrote
 /// `Config::default()`, and `Config::save()` overwrites any key present in both
 /// the incoming document and the file (see `config_io::merge_table`), which
-/// silently reset customized values like `max_ram_percent` or `compression_level`.
+/// silently reset customized values like `search_roots` or `compression_level`.
 fn config_for_init(existing_raw: Option<&str>) -> Result<config::Config, String> {
     match existing_raw.map(str::trim).filter(|raw| !raw.is_empty()) {
         Some(raw) => toml::from_str::<config::Config>(raw).map_err(|e| e.to_string()),
@@ -890,20 +890,20 @@ fn cmd_show_effective() {
     println!();
     println!("{}", box_top("Built-in limits"));
     box_row(&format!(
-        " bm25_max_cache_mb      = {:>6} MB",
+        " BM25 index cap          {:>6} MB",
         crate::core::config::DEFAULT_BM25_PERSIST_MB
     ));
     box_row(&format!(
-        " graph_index_max_files  = {:>6}",
+        " graph index file cap    {:>6}",
         crate::core::config::GRAPH_INDEX_MAX_FILES
     ));
     box_row("");
     box_row(&format!(
-        " memory.knowledge.max_facts     = {:>6}",
+        " knowledge facts cap     {:>6}",
         policy.knowledge.max_facts
     ));
     box_row(&format!(
-        " memory.knowledge.max_patterns  = {:>6}",
+        " knowledge patterns cap  {:>6}",
         policy.knowledge.max_patterns
     ));
     println!("{}", box_bottom());

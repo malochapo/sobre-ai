@@ -1,15 +1,13 @@
-// DEPRECATED: This module is being replaced by PropertyGraph (core/property_graph/).
-// New code should use GraphProvider (core/graph_provider.rs) instead of accessing
-// ProjectIndex directly. The dashboard now resolves graphs through
-// `graph_coordinator` (PropertyGraph-first); the remaining direct consumers are
-// the build pipeline (index_orchestrator) and the extractor itself.
-// See OPT-14/15 (#696) plan for the full migration path.
+// Graph index build pipeline: scans the project (files, exports, symbols,
+// import/type edges) into a `ProjectIndex` and mirrors it into the property
+// graph (core/property_graph/), its only store. New readers should go through
+// GraphProvider (core/graph_provider.rs) instead of accessing ProjectIndex
+// directly.
 
 use std::collections::HashMap;
 use std::path::Path;
 
 use rayon::prelude::*;
-use serde::{Deserialize, Serialize};
 
 use crate::core::import_resolver;
 use crate::core::signatures;
@@ -20,12 +18,9 @@ pub(crate) mod file_id;
 #[cfg(test)]
 mod tests;
 
-const INDEX_VERSION: u32 = 6;
-
-// Path-key utilities moved to `core::index_paths` (#682); re-exported so existing
-// `graph_index::…` call sites keep compiling during the migration.
-use crate::core::index_paths::normalize_absolute_path;
-pub use crate::core::index_paths::{graph_match_key, graph_relative_key, normalize_project_root};
+use crate::core::index_paths::{
+    graph_relative_key, normalize_absolute_path, normalize_project_root,
+};
 
 pub fn is_safe_scan_root_public(path: &str) -> bool {
     is_safe_scan_root(path)
@@ -224,9 +219,8 @@ fn dir_has_dotnet_project(dir: &Path) -> bool {
     })
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct ProjectIndex {
-    pub version: u32,
     pub project_root: String,
     pub last_scan: String,
     pub files: HashMap<String, FileEntry>,
@@ -234,12 +228,10 @@ pub struct ProjectIndex {
     pub symbols: HashMap<String, SymbolEntry>,
     /// Graph-local path interner: one owned allocation per distinct file path.
     /// Populated during scan; used for O(1) path→id lookups in queries.
-    /// Skipped during serde — rebuilt from `files` keys on deserialization.
-    #[serde(skip)]
     pub(crate) interner: file_id::PathInterner,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct FileEntry {
     pub path: String,
     pub hash: String,
@@ -250,7 +242,7 @@ pub struct FileEntry {
     pub summary: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct SymbolEntry {
     pub file: String,
     pub name: String,
@@ -260,23 +252,17 @@ pub struct SymbolEntry {
     pub is_exported: bool,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct IndexEdge {
     pub from: String,
     pub to: String,
     pub kind: String,
-    #[serde(default = "default_edge_weight")]
     pub weight: f32,
-}
-
-fn default_edge_weight() -> f32 {
-    1.0
 }
 
 impl ProjectIndex {
     pub fn new(project_root: &str) -> Self {
         Self {
-            version: INDEX_VERSION,
             project_root: normalize_project_root(project_root),
             last_scan: chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string(),
             files: HashMap::new(),
@@ -286,9 +272,9 @@ impl ProjectIndex {
         }
     }
 
-    /// Rebuild the interner from the current `files` keys. Called after
-    /// deserialization or materialization from the property graph, where
-    /// `interner` is skipped/absent.
+    /// Rebuild the interner from the current `files` keys. Called after a scan
+    /// and after materialization from the property graph, where `interner` is
+    /// absent.
     pub(crate) fn rebuild_interner(&mut self) {
         let mut interner = file_id::PathInterner::with_capacity(self.files.len());
         for key in self.files.keys() {
@@ -317,17 +303,16 @@ impl ProjectIndex {
         Some(provider.materialize_project_index())
     }
 
-    /// Persist the index by mirroring it into the property graph (the sole store
-    /// since #696 C4). Replaces the former `index.json.zst` write; the mirror
-    /// also stamps `graph.meta.json`, which the resident graph cache fingerprints
-    /// for invalidation.
+    /// Persist the index by mirroring it into the property graph, its only
+    /// store. The mirror also stamps `graph.meta.json`, which the resident graph
+    /// cache fingerprints for invalidation.
     pub fn save(&self) -> Result<(), String> {
         crate::core::property_graph::mirror_index(&self.project_root, self)
             .map_err(|e| e.to_string())
     }
 
     /// Remove all cached graph indices that are older than max_age_hours.
-    /// Called on startup/update to prevent stale data from persisting.
+    /// Called on server startup to prevent stale data from persisting.
     pub fn purge_stale_indices() {
         let Ok(data_dir) = crate::core::data_dir::lean_ctx_data_dir() else {
             return;
@@ -343,9 +328,8 @@ impl ProjectIndex {
             if !path.is_dir() {
                 continue;
             }
-            // #696 C4: the property graph (graph.db, stamped by graph.meta.json)
-            // is the sole store; age the directory by its last build instead of
-            // the retired JSON index.
+            // The property graph (graph.db, stamped by graph.meta.json) is the
+            // only store; age the directory by its last build.
             let meta = path.join("graph.meta.json");
             let db = path.join("graph.db");
             let index_file = if meta.exists() {
@@ -509,9 +493,9 @@ fn index_looks_stale(index: &ProjectIndex, root_abs: &str) -> bool {
 
 /// Modified time of the persisted index artifact, if one exists.
 ///
-/// Since #696 C4 the property graph is the sole store, so staleness is measured
-/// against `graph.meta.json` (rewritten on every mirror) with the `graph.db`
-/// file as a fallback.
+/// The property graph is the only store, so staleness is measured against
+/// `graph.meta.json` (rewritten on every mirror) with the `graph.db` file as a
+/// fallback.
 fn index_file_mtime(root_abs: &str) -> Option<std::time::SystemTime> {
     let dir = ProjectIndex::index_dir(root_abs)?;
     for name in ["graph.meta.json", "graph.db"] {
@@ -692,11 +676,7 @@ fn scan_inner(project_root: &str) -> (ProjectIndex, HashMap<String, String>) {
     let mut content_cache: HashMap<String, String> = HashMap::new();
     let mut content_cache_bytes: usize = 0;
     const CONTENT_CACHE_MAX_BYTES: usize = 256 * 1024 * 1024; // #790: cap at 256MB
-    let max_files = if crate::core::config::GRAPH_INDEX_MAX_FILES == 0 {
-        usize::MAX // unlimited
-    } else {
-        crate::core::config::GRAPH_INDEX_MAX_FILES as usize
-    };
+    let max_files = crate::core::config::GRAPH_INDEX_MAX_FILES as usize;
     const MAX_ENTRIES_VISITED: usize = 500_000;
     const MAX_FILE_SIZE_BYTES: u64 = 2 * 1024 * 1024; // 2 MB per file
     /// Maximum phase-2 fan-out. Actual batches shrink with guardian headroom.
@@ -800,11 +780,8 @@ fn scan_inner(project_root: &str) -> (ProjectIndex, HashMap<String, String>) {
             continue;
         }
 
-        if max_files != usize::MAX && targets.len() >= max_files {
-            tracing::info!(
-                "[graph_index: reached configured limit of {} files. Set graph_index_max_files = 0 for unlimited.]",
-                max_files
-            );
+        if targets.len() >= max_files {
+            tracing::info!("[graph_index: reached the {max_files} file limit]");
             break;
         }
 

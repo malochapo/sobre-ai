@@ -351,7 +351,7 @@ fn deferred_ranking_note(project_root: &str) -> String {
                 .unwrap_or_else(|| "unknown error".to_string());
             format!(
                 "(semantic ranking unavailable — index build FAILED: {why}. {exact}. \
-                 Inspect with `ctx_index status` / `lean-ctx doctor`, then `lean-ctx reindex`)"
+                 Inspect with `lean-ctx index status` / `lean-ctx doctor`, then `lean-ctx index build`)"
             )
         }
         "building" => {
@@ -409,7 +409,7 @@ pub fn handle(task: &str, project_root: &str, crp_mode: CrpMode) -> (String, usi
         .iter()
         .find(|keyword| is_code_identifier(keyword))
     {
-        let grep = crate::tools::ctx_search::handle(
+        let grep = crate::tools::ctx_search::handle_filtered(
             primary,
             project_root,
             None,
@@ -417,6 +417,8 @@ pub fn handle(task: &str, project_root: &str, crp_mode: CrpMode) -> (String, usi
             crp_mode,
             true,
             false,
+            None,
+            None,
         )
         .text;
         out.push_str(&format!("\n## Exact matches: '{primary}'\n"));

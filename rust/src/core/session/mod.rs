@@ -8,8 +8,8 @@ mod types;
 
 pub use playbook::{EntryKind, Playbook, PlaybookEntry};
 pub use types::{
-    Decision, EvidenceKind, EvidenceRecord, FileTouched, Finding, PreparedSave, ProgressEntry,
-    SessionState, SessionStats, SessionSummary, TaskInfo, TestSnapshot,
+    Decision, EvidenceKind, EvidenceRecord, FileTouched, Finding, PreparedSave, SessionState,
+    SessionStats, SessionSummary, TaskInfo,
 };
 
 #[cfg(test)]

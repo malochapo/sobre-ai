@@ -1,7 +1,7 @@
 //! Delta-explicit re-read tests (extracted from tests.rs for LOC gate).
 //!
 //! Tests that verify explicit full/lines re-reads of changed cached files
-//! are served as diffs (opt-in delta_explicit feature).
+//! are served as diffs.
 
 use super::handle_with_task_resolved;
 use super::resolve_explicit_delta_mode;
@@ -10,7 +10,7 @@ use crate::core::cache::SessionCache;
 use crate::tools::CrpMode;
 
 // delta_explicit: serve explicit full/lines re-reads of changed cached files as
-// diffs (opt-in). The decision is the pure `resolve_explicit_delta_mode`; the
+// diffs. The decision is the pure `resolve_explicit_delta_mode`; the
 // end-to-end diff base is exercised via the engine. Mirrors the
 // `try_stub_hit_readonly` staleness-test conventions above.
 // ---------------------------------------------------------------------------
@@ -391,7 +391,7 @@ fn delta_explicit_changed_file_diverts_full_reread_to_diff() {
     crate::test_env::write_newer(&path, "fn main() { changed(); }\n");
 
     let decision = resolve_explicit_delta_mode(
-        &cache, &p, "full", /*explicit*/ true, /*fresh*/ false, true,
+        &cache, &p, "full", /*explicit*/ true, /*fresh*/ false,
     );
     assert_eq!(
         decision.mode, "diff",
@@ -435,7 +435,7 @@ fn delta_explicit_changed_lines_request_diverts_to_diff() {
 
     crate::test_env::write_newer(&path, "fn a() { x(); }\nfn b() {}\n");
 
-    let decision = resolve_explicit_delta_mode(&cache, &p, "lines:1-1", true, false, true);
+    let decision = resolve_explicit_delta_mode(&cache, &p, "lines:1-1", true, false);
     assert_eq!(
         decision.mode, "diff",
         "a changed-file lines: re-read must divert to diff, not re-extract a window"
@@ -506,7 +506,7 @@ fn delta_explicit_unchanged_lines_collapse_to_full_stub() {
 
     // No disk change. A lines: re-read of a fully-delivered file re-emits text
     // the model holds → collapse to the full-mode stub (no diff, no note).
-    let decision = resolve_explicit_delta_mode(&cache, &p, "lines:1-1", true, false, true);
+    let decision = resolve_explicit_delta_mode(&cache, &p, "lines:1-1", true, false);
     assert_eq!(
         decision.mode, "full",
         "unchanged lines: of a full file must collapse to the stub"
@@ -528,37 +528,9 @@ fn delta_explicit_unchanged_full_reread_is_untouched() {
 
     // An unchanged full re-read already hits the downstream `[unchanged]` stub;
     // the resolver leaves it untouched.
-    let decision = resolve_explicit_delta_mode(&cache, &p, "full", true, false, true);
+    let decision = resolve_explicit_delta_mode(&cache, &p, "full", true, false);
     assert_eq!(decision.mode, "full");
     assert!(decision.note.is_none());
-}
-
-#[test]
-fn delta_explicit_off_preserves_current_behavior() {
-    let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("changed.rs");
-    let p = path.to_string_lossy().to_string();
-    std::fs::write(&path, "fn main() {}\n").unwrap();
-
-    let cache = primed_full_cache(&p);
-
-    crate::test_env::write_newer(&path, "fn main() { changed(); }\n");
-
-    // enabled=false → the mode is never rewritten, no matter the disk state.
-    let decision =
-        resolve_explicit_delta_mode(&cache, &p, "full", true, false, /*enabled*/ false);
-    assert_eq!(
-        decision.mode, "full",
-        "feature OFF must preserve the requested mode"
-    );
-    assert!(decision.note.is_none());
-
-    let lines = resolve_explicit_delta_mode(&cache, &p, "lines:1-1", true, false, false);
-    assert_eq!(
-        lines.mode, "lines:1-1",
-        "feature OFF must not touch lines: either"
-    );
-    assert!(lines.note.is_none());
 }
 
 #[test]
@@ -572,8 +544,8 @@ fn delta_explicit_fresh_bypasses() {
 
     crate::test_env::write_newer(&path, "fn main() { changed(); }\n");
 
-    // fresh=true → always bypass even with the feature on and a changed file.
-    let decision = resolve_explicit_delta_mode(&cache, &p, "full", true, /*fresh*/ true, true);
+    // fresh=true → always bypass, even with a changed file.
+    let decision = resolve_explicit_delta_mode(&cache, &p, "full", true, /*fresh*/ true);
     assert_eq!(
         decision.mode, "full",
         "fresh=true must bypass the diff diversion"
@@ -590,14 +562,14 @@ fn delta_explicit_first_read_unaffected() {
 
     // Nothing cached yet — the very first read can never be a diff.
     let cache = SessionCache::new();
-    let decision = resolve_explicit_delta_mode(&cache, &p, "full", true, false, true);
+    let decision = resolve_explicit_delta_mode(&cache, &p, "full", true, false);
     assert_eq!(
         decision.mode, "full",
         "an uncached first read must be served normally"
     );
     assert!(decision.note.is_none());
 
-    let lines = resolve_explicit_delta_mode(&cache, &p, "lines:1-1", true, false, true);
+    let lines = resolve_explicit_delta_mode(&cache, &p, "lines:1-1", true, false);
     assert_eq!(lines.mode, "lines:1-1");
     assert!(lines.note.is_none());
 }
@@ -615,8 +587,7 @@ fn delta_explicit_only_fires_for_explicit_mode() {
 
     // explicit_mode=false (mode was auto-resolved) → never diverted; auto-mode
     // already has its own staleness handling.
-    let decision =
-        resolve_explicit_delta_mode(&cache, &p, "full", /*explicit*/ false, false, true);
+    let decision = resolve_explicit_delta_mode(&cache, &p, "full", /*explicit*/ false, false);
     assert_eq!(
         decision.mode, "full",
         "auto-resolved modes must not be diverted to diff"
@@ -636,8 +607,8 @@ fn delta_explicit_decision_is_byte_stable() {
     let cache = primed_full_cache(&p);
     crate::test_env::write_newer(&path, "fn main() { changed(); }\n");
 
-    let d1 = resolve_explicit_delta_mode(&cache, &p, "full", true, false, true);
-    let d2 = resolve_explicit_delta_mode(&cache, &p, "full", true, false, true);
+    let d1 = resolve_explicit_delta_mode(&cache, &p, "full", true, false);
+    let d2 = resolve_explicit_delta_mode(&cache, &p, "full", true, false);
     assert_eq!(
         d1, d2,
         "delta-explicit decision drifted between identical calls"

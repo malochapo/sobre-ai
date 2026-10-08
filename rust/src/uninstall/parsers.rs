@@ -1,8 +1,4 @@
 // ---------------------------------------------------------------------------
-// Shell block removal
-// ---------------------------------------------------------------------------
-
-// ---------------------------------------------------------------------------
 // JSON removal — textual approach preserving comments and formatting
 // ---------------------------------------------------------------------------
 
@@ -30,19 +26,6 @@ fn remove_lean_ctx_from_json_textual(content: &str) -> Option<String> {
             break;
         };
 
-        result = new_result;
-        modified = true;
-    }
-
-    // Also handle array-style entries: {"name": "lean-ctx", ...}
-    loop {
-        let bytes = result.as_bytes();
-        let Some(pos) = find_named_array_entry(bytes, "lean-ctx") else {
-            break;
-        };
-        let Some(new_result) = remove_array_entry_at(&result, pos) else {
-            break;
-        };
         result = new_result;
         modified = true;
     }
@@ -210,93 +193,6 @@ fn remove_json_entry_at(content: &str, key_start: usize) -> Option<String> {
     Some(result)
 }
 
-/// Find an array entry like `{"name": "lean-ctx", ...}` and return its start position.
-fn find_named_array_entry(bytes: &[u8], name: &str) -> Option<usize> {
-    let needle = format!("\"{name}\"");
-    let needle_bytes = needle.as_bytes();
-    let mut i = 0;
-
-    while i + needle_bytes.len() <= bytes.len() {
-        if &bytes[i..i + needle_bytes.len()] == needle_bytes && !is_inside_string(bytes, i) {
-            // Check this is a value (preceded by `:` after `"name"`)
-            // Scan backwards to check if the key is "name"
-            let mut j = i;
-            while j > 0 && bytes[j - 1].is_ascii_whitespace() {
-                j -= 1;
-            }
-            if j > 0 && bytes[j - 1] == b':' {
-                j -= 1;
-                while j > 0 && bytes[j - 1].is_ascii_whitespace() {
-                    j -= 1;
-                }
-                if j >= 6 && &bytes[j - 6..j] == b"\"name\"" {
-                    // Found "name": "lean-ctx" — now find the enclosing object `{`
-                    let mut obj_start = j - 6;
-                    while obj_start > 0 {
-                        if bytes[obj_start] == b'{' && !is_inside_string(bytes, obj_start) {
-                            return Some(obj_start);
-                        }
-                        obj_start -= 1;
-                    }
-                }
-            }
-        }
-        i += 1;
-    }
-    None
-}
-
-/// Remove an array entry (object) starting at `entry_start`, handling commas.
-fn remove_array_entry_at(content: &str, entry_start: usize) -> Option<String> {
-    let bytes = content.as_bytes();
-    if bytes[entry_start] != b'{' {
-        return None;
-    }
-    let entry_end = skip_json_value(bytes, entry_start)?;
-
-    let mut remove_start = entry_start;
-    let mut remove_end = entry_end;
-
-    // Handle leading whitespace
-    while remove_start > 0 && (bytes[remove_start - 1] == b' ' || bytes[remove_start - 1] == b'\t')
-    {
-        remove_start -= 1;
-    }
-
-    // Handle trailing comma
-    let mut fwd = entry_end;
-    while fwd < bytes.len() && bytes[fwd].is_ascii_whitespace() {
-        fwd += 1;
-    }
-    if fwd < bytes.len() && bytes[fwd] == b',' {
-        remove_end = fwd + 1;
-    } else {
-        // No trailing comma — check for leading comma
-        let mut back = remove_start;
-        while back > 0 && bytes[back - 1].is_ascii_whitespace() {
-            back -= 1;
-        }
-        if back > 0 && bytes[back - 1] == b',' {
-            remove_start = back - 1;
-        }
-    }
-
-    // Skip trailing newline
-    while remove_end < bytes.len()
-        && (bytes[remove_end] == b' ' || bytes[remove_end] == b'\t' || bytes[remove_end] == b'\r')
-    {
-        remove_end += 1;
-    }
-    if remove_end < bytes.len() && bytes[remove_end] == b'\n' {
-        remove_end += 1;
-    }
-
-    let mut result = String::with_capacity(content.len());
-    result.push_str(&content[..remove_start]);
-    result.push_str(&content[remove_end..]);
-    Some(result)
-}
-
 /// Skip over a JSON value (object, array, string, number, boolean, null)
 /// starting from `start`. Returns the position after the value.
 fn skip_json_value(bytes: &[u8], start: usize) -> Option<usize> {
@@ -394,12 +290,6 @@ fn remove_lean_ctx_from_json_serde(content: &str) -> Option<String> {
         modified |= servers.remove("lean-ctx").is_some();
     }
 
-    if let Some(servers) = parsed.get_mut("servers").and_then(|s| s.as_array_mut()) {
-        let before = servers.len();
-        servers.retain(|entry| entry.get("name").and_then(|n| n.as_str()) != Some("lean-ctx"));
-        modified |= servers.len() < before;
-    }
-
     if let Some(mcp) = parsed.get_mut("mcp").and_then(|s| s.as_object_mut()) {
         modified |= mcp.remove("lean-ctx").is_some();
     }
@@ -426,6 +316,7 @@ fn remove_lean_ctx_from_json_serde(content: &str) -> Option<String> {
 pub(super) fn remove_lean_ctx_from_toml(content: &str) -> String {
     let mut out = String::with_capacity(content.len());
     let mut skip = false;
+    let mut in_features = false;
 
     for line in content.lines() {
         let trimmed = line.trim();
@@ -441,17 +332,18 @@ pub(super) fn remove_lean_ctx_from_toml(content: &str) -> String {
                 continue;
             }
             skip = false;
+            in_features = section == "features";
         }
 
         if skip {
             continue;
         }
 
+        // Install turns on Codex's hooks flag inside [features] only, under
+        // either of Codex's names for it; undo exactly that.
         let without_comment = trimmed.split('#').next().unwrap_or("").trim();
-        if (without_comment.contains("codex_hooks")
-            || without_comment
-                .strip_prefix("hooks")
-                .is_some_and(|rest| rest.trim_start().starts_with('=') && !rest.starts_with('_')))
+        if in_features
+            && crate::hooks::is_codex_hooks_assignment(trimmed)
             && without_comment.contains("true")
         {
             out.push_str(&line.replace("true", "false"));
@@ -475,8 +367,6 @@ pub(super) fn remove_lean_ctx_from_toml(content: &str) -> String {
     }
 }
 
-// moved to core/editor_registry/paths.rs
-
 #[cfg(test)]
 mod tests {
     use super::super::agents::{HookCleanupResult, remove_lean_ctx_from_hooks_json};
@@ -489,7 +379,7 @@ mod tests {
     fn remove_toml_mcp_server_section() {
         let input = "\
 [features]
-codex_hooks = true
+hooks = true
 
 [mcp_servers.lean-ctx]
 command = \"/usr/local/bin/lean-ctx\"
@@ -508,8 +398,25 @@ command = \"/usr/bin/other\"
             "other sections should be preserved"
         );
         assert!(
-            result.contains("codex_hooks = false"),
-            "codex_hooks should be set to false"
+            result.contains("hooks = false"),
+            "hooks should be set to false"
+        );
+    }
+
+    #[test]
+    fn remove_toml_turns_off_only_the_features_hooks_flag() {
+        let input = "\
+[features]
+codex_hooks = true
+
+[tools.other]
+hooks = true
+";
+        let result = remove_lean_ctx_from_toml(input);
+        assert!(result.contains("codex_hooks = false"), "{result}");
+        assert!(
+            result.contains("[tools.other]\nhooks = true"),
+            "a hooks key outside [features] belongs to someone else: {result}"
         );
     }
 
