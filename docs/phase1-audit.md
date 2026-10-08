@@ -50,7 +50,7 @@ The lots run in this order:
 | Lot | Scope | Status |
 |---|---|---|
 | A | The user's machine: `uninstall`, `init`, agent integration | done (#31) |
-| B | The MCP tools: bugs, incomplete features, drift; decisions 1–4 and 6 | in progress (#32) |
+| B | The MCP tools: bugs, incomplete features, drift; decisions 1–4 and 6 | in progress (#32, #33) |
 | C | The CLI and the proxy | open |
 | R | Tool names `ctx_*` → `sobre_*` (decision 9) | open |
 | D | Dead code, stale files, stale comments, duplicates; decision 7 | open |
@@ -238,7 +238,7 @@ Fixed in #31. How the fixes work:
 
 ## Lot B — the MCP tools
 
-Fixed so far: #32 (paths, `ctx_read`, hidden read state), #PR_B2 (what the
+Fixed so far: #32 (paths, `ctx_read`, hidden read state), #33 (what the
 agent receives: prefixes, markers, footers, prompts and resources).
 
 ### Bugs
