@@ -306,21 +306,6 @@ fn reclaim_patterns(
     .map(|archived| archived.len())
 }
 
-/// `consolidate --all`: consolidate every stored project, with explicit options
-/// (e.g. [`ConsolidateOptions::into_dry_run`] for a preview).
-pub(crate) fn consolidate_all_project_knowledge_with(
-    opts: &ConsolidateOptions,
-) -> Result<Vec<(String, KnowledgeConsolidationReport)>, String> {
-    let roots = ProjectKnowledge::list_project_roots()?;
-    let mut reports = Vec::with_capacity(roots.len());
-    for root in roots {
-        let report = consolidate_project_knowledge_with(&root, opts)
-            .map_err(|e| format!("Consolidation failed for {}: {e}", project_label(&root)))?;
-        reports.push((root, report));
-    }
-    Ok(reports)
-}
-
 pub(crate) fn format_consolidation_report(report: &KnowledgeConsolidationReport) -> String {
     let session_line = match report.session_id.as_deref() {
         Some(session_id) => {
@@ -372,34 +357,9 @@ pub(crate) fn format_consolidation_report(report: &KnowledgeConsolidationReport)
             "archived"
         };
         format!(
-            "{body}\n{verb} {archived_total} item(s) — restore with: lean-ctx knowledge restore"
+            "{body}\n{verb} {archived_total} item(s) — restore with: ctx_knowledge action=restore"
         )
     } else {
         body
-    }
-}
-
-pub(crate) fn format_all_consolidation_reports(
-    reports: &[(String, KnowledgeConsolidationReport)],
-) -> String {
-    if reports.is_empty() {
-        return "No project knowledge stores found.".to_string();
-    }
-
-    let mut out = format!("Projects consolidated: {}", reports.len());
-    for (project_root, report) in reports {
-        out.push_str("\n\nProject: ");
-        out.push_str(project_label(project_root));
-        out.push('\n');
-        out.push_str(&format_consolidation_report(report));
-    }
-    out
-}
-
-fn project_label(project_root: &str) -> &str {
-    if project_root.trim().is_empty() {
-        "(empty project root)"
-    } else {
-        project_root
     }
 }

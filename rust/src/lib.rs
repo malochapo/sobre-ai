@@ -50,7 +50,6 @@ pub mod config_io;
 pub mod doctor;
 pub mod ipc;
 pub mod setup;
-pub mod status;
 #[cfg(test)]
 pub(crate) mod test_env;
 pub mod uninstall;

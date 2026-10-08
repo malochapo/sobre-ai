@@ -530,9 +530,6 @@ fn source_content_changed_since_index(index: &ProjectIndex, root_abs: &str) -> b
     let index_filter = crate::core::index_filter::IndexFileFilter::effective();
     let walker = ignore::WalkBuilder::new(root_abs)
         .hidden(true)
-        .git_ignore(index_filter.respect_gitignore)
-        .git_global(index_filter.respect_gitignore)
-        .git_exclude(index_filter.respect_gitignore)
         .require_git(false)
         .max_depth(Some(20))
         .filter_entry(crate::core::walk_filter::keep_entry)
@@ -656,9 +653,6 @@ fn scan_inner(project_root: &str) -> (ProjectIndex, HashMap<String, String>) {
 
     let walker = ignore::WalkBuilder::new(&project_root)
         .hidden(true)
-        .git_ignore(index_filter.respect_gitignore)
-        .git_global(index_filter.respect_gitignore)
-        .git_exclude(index_filter.respect_gitignore)
         .require_git(false)
         .max_depth(Some(20))
         .filter_entry(crate::core::walk_filter::keep_entry)

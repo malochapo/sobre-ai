@@ -13,23 +13,14 @@
 //! | PDF    | [`super::web::pdf`] | paragraphs of extracted text |
 //! | text   | (verbatim) | paragraphs |
 //!
-//! The text-based formats also register as named [`Chunker`]s in the
-//! [`extension_registry`](super::extension_registry) so they are discoverable
-//! via `/v1/capabilities` and exercised by the conformance suite. Every
-//! extractor degrades gracefully — arbitrary input never panics and non-empty
-//! input always yields at least one non-empty chunk.
-
-// Chunker::name returns &str; literals here would otherwise trip the lint.
-#![allow(clippy::unnecessary_literal_bound)]
+//! Every extractor degrades gracefully — arbitrary input never panics and
+//! non-empty input always yields at least one non-empty chunk.
 
 pub mod csv;
 pub mod eml;
 pub mod json;
 
 use std::path::Path;
-use std::sync::Arc;
-
-use super::extension_registry::{Chunker, ExtensionRegistry};
 
 /// The result of extracting one document: a stable kind tag, clean text, and
 /// structure-aware chunks.
@@ -137,43 +128,6 @@ pub fn paragraph_chunks(text: &str) -> Vec<String> {
         .collect()
 }
 
-/// Register the text-based format chunkers into `reg`. Called from
-/// [`ExtensionRegistry::with_builtins`] so the formats are first-class,
-/// discoverable, and conformance-checked.
-pub fn register_into(reg: &mut ExtensionRegistry) {
-    reg.register_chunker(Arc::new(FormatChunker {
-        name: "csv",
-        f: |s| csv::chunks(s, ','),
-    }));
-    reg.register_chunker(Arc::new(FormatChunker {
-        name: "json",
-        f: json::chunks,
-    }));
-    reg.register_chunker(Arc::new(FormatChunker {
-        name: "eml",
-        f: eml::chunks,
-    }));
-    reg.register_chunker(Arc::new(FormatChunker {
-        name: "html",
-        f: |s| paragraph_chunks(&super::web::html_to_text::parse(s).markdown),
-    }));
-}
-
-/// Adapter exposing a format chunk function as a named registry [`Chunker`].
-struct FormatChunker {
-    name: &'static str,
-    f: fn(&str) -> Vec<String>,
-}
-
-impl Chunker for FormatChunker {
-    fn name(&self) -> &str {
-        self.name
-    }
-    fn chunk(&self, input: &str) -> Vec<String> {
-        (self.f)(input)
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -214,22 +168,6 @@ mod tests {
         assert!(is_binary_document(Path::new("A.PDF")));
         for f in ["p.html", "d.json", "t.csv", "m.eml", "n.txt", "s.rs"] {
             assert!(!is_binary_document(Path::new(f)), "{f}");
-        }
-    }
-
-    #[test]
-    fn format_chunkers_register_and_run() {
-        let mut reg = ExtensionRegistry::new();
-        register_into(&mut reg);
-        for name in ["csv", "json", "eml", "html"] {
-            let c = reg
-                .chunker(name)
-                .unwrap_or_else(|| panic!("{name} missing"));
-            assert!(c.chunk("").is_empty(), "{name} empty input must be empty");
-            assert!(
-                !c.chunk("hello world").is_empty(),
-                "{name} non-empty input must chunk"
-            );
         }
     }
 }

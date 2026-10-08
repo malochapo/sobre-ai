@@ -45,7 +45,7 @@ under `tests/` pin a good deal of behaviour and `--lib` never runs them.
 src/
 ├─ main.rs            entry point
 ├─ lib.rs             crate root; re-exports drive what dead_code can see
-├─ cli/               subcommands, dispatch, completion, help
+├─ cli/               subcommands, dispatch, help
 ├─ core/              the engine: cache, compression, graph, session, config
 ├─ server/            MCP server: registry, dispatch, tool visibility
 ├─ tools/             the 16 MCP tools

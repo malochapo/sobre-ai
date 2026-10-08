@@ -103,60 +103,11 @@ mod cli_commands {
     }
 
     #[test]
-    fn cli_read_cargo_toml_full() {
-        let out = lean_ctx_bin()
-            .args(["read", "Cargo.toml"])
-            .output()
-            .unwrap();
-        assert!(out.status.success());
-        let stdout = String::from_utf8_lossy(&out.stdout);
-        assert!(
-            stdout.contains("Cargo") || stdout.contains("cached") || stdout.contains("lean"),
-            "read output should reference the file: {stdout}"
-        );
-    }
-
-    #[test]
-    fn cli_read_cargo_toml_map() {
-        let out = lean_ctx_bin()
-            .args(["read", "Cargo.toml", "-m", "map"])
-            .output()
-            .unwrap();
-        assert!(out.status.success());
-    }
-
-    #[test]
-    fn cli_read_cargo_toml_signatures() {
-        let out = lean_ctx_bin()
-            .args(["read", "Cargo.toml", "-m", "signatures"])
-            .output()
-            .unwrap();
-        assert!(out.status.success());
-    }
-
-    #[test]
     fn cli_shell_echo() {
         let out = lean_ctx_bin().args(["-c", "echo hello"]).output().unwrap();
         assert!(out.status.success());
         let stdout = String::from_utf8_lossy(&out.stdout);
         assert!(stdout.contains("hello"));
-    }
-
-    #[test]
-    fn cli_ls() {
-        let out = lean_ctx_bin().args(["ls", "."]).output().unwrap();
-        assert!(out.status.success());
-        let stdout = String::from_utf8_lossy(&out.stdout);
-        assert!(stdout.contains("Cargo.toml") || stdout.contains("src"));
-    }
-
-    #[test]
-    fn cli_grep_pattern() {
-        let out = lean_ctx_bin()
-            .args(["grep", "lean-ctx", "Cargo.toml"])
-            .output()
-            .unwrap();
-        assert!(out.status.success());
     }
 
     #[test]

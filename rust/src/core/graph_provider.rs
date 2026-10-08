@@ -357,13 +357,6 @@ pub fn open_best_effort(project_root: &str) -> Option<GraphProvider> {
     Some(GraphProvider::new(graph, project_root))
 }
 
-/// Scan the project and write the graph, synchronously.
-pub fn build_property_graph(project_root: &str) -> anyhow::Result<()> {
-    let index = graph_index::scan(project_root);
-    anyhow::ensure!(!index.files.is_empty(), "no indexable files found");
-    Ok(())
-}
-
 /// Maximum time `open_or_build` waits for a build (#1018). The build keeps
 /// running past it and writes the graph when done.
 const BUILD_TIMEOUT_SECS: u64 = 30;

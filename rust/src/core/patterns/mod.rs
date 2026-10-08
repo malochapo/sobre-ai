@@ -15,7 +15,6 @@ pub mod curl;
 pub mod dbt;
 pub mod deno;
 pub mod deploy;
-pub mod deps_cmd;
 pub mod docker;
 pub mod dotnet;
 pub mod env_filter;

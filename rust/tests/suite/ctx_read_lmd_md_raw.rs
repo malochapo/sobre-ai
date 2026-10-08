@@ -18,24 +18,22 @@ fn ctx_read_lmd_md_returns_raw_source() {
     // the raw source, never an error or a half-rendered document. We assert the
     // marker survives the read.
     //
-    // Hermetic isolation: a direct CLI `read` caches by design (read_cmd.rs), and
-    // the persistent stub index lives under `LEAN_CTX_DATA_DIR`. If the fixture
-    // path (or a prior run/retry on the same runner) already seeded that index,
-    // the read returns an `[unchanged …]` cache stub instead of the body and this
-    // assertion breaks — an artefact of test hygiene, not of `.lmd.md` handling.
-    // So we give the spawned binary a fresh, private data dir and force `--fresh`,
-    // making this an unconditional first read that never depends on nor pollutes
-    // the real store.
+    // Hermetic isolation: the spawned binary gets a fresh, private data dir and
+    // the read is `fresh`, so it never returns an `[unchanged …]` cache stub
+    // seeded by a prior run, and never touches the real store.
     let fixture = tempfile::tempdir().expect("fixture dir");
     let data_dir = tempfile::tempdir().expect("isolated LEAN_CTX_DATA_DIR");
     let f = fixture.path().join("d.lmd.md");
     std::fs::write(&f, "@date\nRAW_DELEGATION_MARKER\n").unwrap();
 
+    let json = serde_json::json!({ "path": f, "mode": "full", "fresh": true }).to_string();
     let out = Command::new(LEAN_CTX_BIN)
         .env("LEAN_CTX_DATA_DIR", data_dir.path())
-        .args(["read", f.to_str().unwrap(), "--mode", "full", "--fresh"])
+        .args(["call", "ctx_read", "--project-root"])
+        .arg(fixture.path())
+        .args(["--json", &json])
         .output()
-        .expect("lean-ctx read");
+        .expect("lean-ctx call ctx_read");
     let text = String::from_utf8_lossy(&out.stdout);
 
     assert!(

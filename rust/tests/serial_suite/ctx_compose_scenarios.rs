@@ -105,8 +105,12 @@ fn compose_disambiguates_same_named_symbol_by_task_keywords() {
     // `ctx_compose` reads symbol bodies from the graph index. Build the tiny
     // fixture explicitly so this scenario verifies disambiguation rather than
     // depending on whether a prior test happened to warm the index.
-    lean_ctx::core::graph_provider::build_property_graph(&dir.path().to_string_lossy())
-        .expect("ambiguous-symbol corpus graph must build");
+    assert!(
+        !lean_ctx::core::graph_index::scan(&dir.path().to_string_lossy())
+            .files
+            .is_empty(),
+        "ambiguous-symbol corpus graph must build"
+    );
 
     // "OCPP" in the task keywords points the symbol picker at ocpp.rs.
     let (out, _tokens) = ctx_compose::handle(

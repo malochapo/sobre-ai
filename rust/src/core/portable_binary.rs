@@ -35,8 +35,7 @@ pub fn resolve_portable_binary() -> String {
 /// Decide which `lean-ctx` path to bake into generated artifacts (autostart
 /// plists, MCP server command, agent/shell hooks). The chosen path must be the
 /// *exact build the user is running*, so every artifact agrees and a single
-/// `setup`/`dev-install` can never leave the proxy on a different build than
-/// the MCP config.
+/// `init` can never leave the proxy on a different build than the MCP config.
 ///
 /// Preference order:
 /// 1. `current_exe` when absolute and not inside a transient Cargo build dir —

@@ -1,9 +1,6 @@
 mod detect;
-pub mod learn;
-pub mod mining;
 mod model;
 mod persist;
-mod reflector;
 mod runtime;
 
 pub use detect::{
@@ -13,8 +10,6 @@ pub use model::{
     ErrorEntry, FixEntry, Gotcha, GotchaCategory, GotchaSeverity, GotchaSource, GotchaStats,
     GotchaStore, PendingError, SessionErrorLog,
 };
-pub use persist::{load_universal_gotchas, save_universal_gotchas};
-pub use reflector::{ReflectionInsight, format_ledger, reflect};
 pub use runtime::record_shell_outcome;
 
 use chrono::Utc;
@@ -263,121 +258,7 @@ impl GotchaStore {
 
         self.stats.gotchas_decayed += decayed;
     }
-
-    // -- Promotion ----------------------------------------------------------
-
-    pub fn check_promotions(&mut self) -> Vec<(String, String, String, f32)> {
-        let mut promoted = Vec::new();
-        for gotcha in &self.gotchas {
-            if gotcha.is_promotable() {
-                promoted.push((
-                    gotcha.category.to_string(),
-                    gotcha.trigger.clone(),
-                    gotcha.resolution.clone(),
-                    gotcha.confidence,
-                ));
-            }
-        }
-        self.stats.gotchas_promoted += promoted.len() as u64;
-        promoted
-    }
-
-    // -- Universal Gotchas --------------------------------------------------
-
-    pub fn extract_universal(&self) -> Vec<Gotcha> {
-        self.gotchas
-            .iter()
-            .filter(|g| {
-                g.category == GotchaCategory::Platform
-                    && g.occurrences >= 10
-                    && g.session_ids.len() >= 5
-            })
-            .cloned()
-            .collect()
-    }
-
-    // -- Relevance scoring --------------------------------------------------
-
-    // -- Prevention tracking ------------------------------------------------
-
-    pub fn add_universal(&mut self, gotcha: Gotcha) {
-        if !self.gotchas.iter().any(|g| g.id == gotcha.id) {
-            self.gotchas.push(gotcha);
-        }
-    }
-
-    // -- CLI ----------------------------------------------------------------
-
-    pub fn format_list(&self) -> String {
-        if self.gotchas.is_empty() {
-            return "No gotchas recorded for this project.".to_string();
-        }
-
-        let mut out = Vec::new();
-        out.push(format!("  {} active gotchas\n", self.gotchas.len()));
-
-        let mut sorted = self.gotchas.clone();
-        sorted.sort_by(|a, b| {
-            b.confidence
-                .partial_cmp(&a.confidence)
-                .unwrap_or(std::cmp::Ordering::Equal)
-        });
-
-        for g in &sorted {
-            let prefix = g.severity.prefix();
-            let label = g.category.short_label();
-            let conf = (g.confidence * 100.0) as u32;
-            let source = match &g.source {
-                GotchaSource::AutoDetected { .. } => "auto",
-                GotchaSource::AgentReported { .. } => "agent",
-                GotchaSource::CrossSessionCorrelated { .. } => "cross-session",
-            };
-            out.push(format!(
-                "  [{prefix}{label:8}] {} ({}x, {} sessions, {source}, confidence: {conf}%)",
-                truncate_str(&g.trigger, 60),
-                g.occurrences,
-                g.session_ids.len(),
-            ));
-            out.push(format!(
-                "             FIX: {}",
-                truncate_str(&g.resolution, 70)
-            ));
-            if g.prevented_count > 0 {
-                out.push(format!("             Prevented: {}x", g.prevented_count));
-            }
-            out.push(String::new());
-        }
-
-        out.push(format!(
-            "  Stats: {} errors detected | {} fixes correlated | {} prevented",
-            self.stats.total_errors_detected,
-            self.stats.total_fixes_correlated,
-            self.stats.total_prevented,
-        ));
-
-        out.join("\n")
-    }
 }
-
-// ---------------------------------------------------------------------------
-// Relevance scoring
-// ---------------------------------------------------------------------------
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-fn truncate_str(s: &str, max: usize) -> String {
-    if s.len() <= max {
-        s.to_string()
-    } else {
-        format!("{}...", &s[..s.floor_char_boundary(max.saturating_sub(3))])
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
 
 #[cfg(test)]
 mod tests {
@@ -624,25 +505,6 @@ mod tests {
 
         g.occurrences = 2;
         assert!(!g.is_promotable());
-    }
-
-    #[test]
-    fn truncate_str_utf8_umlaut_no_panic() {
-        let result = truncate_str("Fehler in Datei übergrößetest.rs", 20);
-        assert!(result.len() <= 23); // 20 + "..."
-        assert!(result.ends_with("..."));
-    }
-
-    #[test]
-    fn truncate_str_utf8_emoji_no_panic() {
-        let result = truncate_str("Error 🔥 in module 🧪 test", 15);
-        assert!(result.ends_with("..."));
-    }
-
-    #[test]
-    fn truncate_str_short_utf8_unchanged() {
-        let input = "Ölüm";
-        assert_eq!(truncate_str(input, 20), input);
     }
 
     #[test]

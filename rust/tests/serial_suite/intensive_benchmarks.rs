@@ -1,6 +1,6 @@
 use lean_ctx::core::compressor::{aggressive_compress, lightweight_cleanup, safeguard_ratio};
 use lean_ctx::core::config::CompressionLevel;
-use lean_ctx::core::entropy::entropy_compress;
+use lean_ctx::core::entropy::entropy_compress_adaptive;
 use lean_ctx::core::signatures::extract_signatures;
 use lean_ctx::core::tokens::count_tokens;
 use lean_ctx::tools::CrpMode;
@@ -411,7 +411,7 @@ fn bench_aggressive_mode_typescript() {
 #[test]
 fn bench_entropy_mode_rust() {
     let content = generate_rust_file(200);
-    let result = entropy_compress(&content);
+    let result = entropy_compress_adaptive(&content, "bench.rs", &[]);
     let (orig, comp, pct) = measure_text(&content, &result.output);
 
     eprintln!("\n  [entropy mode, Rust 200L] {orig} → {comp} tokens ({pct:.1}% saved)");
@@ -599,7 +599,7 @@ fn bench_crp_mode_token_budgets() {
 }
 
 // SECTION 6: PERFORMANCE BENCHMARKS removed — machine-dependent timing
-// thresholds are unsuitable for OSS CI. Use `lean-ctx benchmark` CLI instead.
+// thresholds are unsuitable for OSS CI.
 
 // ═══════════════════════════════════════════════════════════════════════════
 // SECTION 7: REGRESSION GUARDS — Ensure no performance degradation

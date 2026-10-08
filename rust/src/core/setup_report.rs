@@ -45,17 +45,6 @@ pub struct SetupItem {
     pub note: Option<String>,
 }
 
-impl SetupReport {
-    pub fn default_path() -> Result<PathBuf, String> {
-        let data_dir = crate::core::data_dir::lean_ctx_data_dir()?;
-        Ok(data_dir.join("setup/latest.json"))
-    }
-}
-
 pub fn doctor_report_path() -> Result<PathBuf, String> {
     Ok(crate::core::data_dir::lean_ctx_data_dir()?.join("doctor/latest.json"))
-}
-
-pub fn status_report_path() -> Result<PathBuf, String> {
-    Ok(crate::core::data_dir::lean_ctx_data_dir()?.join("status/latest.json"))
 }

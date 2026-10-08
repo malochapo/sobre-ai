@@ -99,7 +99,7 @@ validate_rewrite "find glob"        '{"tool_name":"Bash","command":"find . -name
 validate_rewrite "git format"       '{"tool_name":"Bash","command":"git log --format=\"%H %s\""}'                       "rewrite"
 validate_rewrite "npm build"        '{"tool_name":"Bash","command":"npm run build"}'                                    "rewrite"
 validate_rewrite "ls"               '{"tool_name":"Bash","command":"ls -la"}'                                           "rewrite"
-validate_rewrite "self-skip"        '{"tool_name":"Bash","command":"lean-ctx read main.rs"}'                            "passthrough"
+validate_rewrite "self-skip"        '{"tool_name":"Bash","command":"lean-ctx gain --json"}'                             "passthrough"
 validate_rewrite "non-bash"         '{"tool_name":"Write","command":"test"}'                                            "passthrough"
 
 # -----------------------------------------------------------------------

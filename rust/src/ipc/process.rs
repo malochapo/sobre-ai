@@ -4,13 +4,13 @@ use anyhow::Result;
 ///
 /// Returns `Some(output)` if the child exits within `timeout`, or `None` if it
 /// had to be killed (timed out) or could not be spawned. This is the safe way
-/// to invoke external control tools (`launchctl`, `systemctl`, a freshly
-/// installed binary's `--version`, …) that must never be able to hang a
-/// `lean-ctx` command — a wedged `launchctl` previously forced users to reboot.
+/// to invoke `launchctl`, which must never be able to hang a `lean-ctx`
+/// command.
 ///
 /// Note: intended for commands with small output. The child's stdout/stderr are
 /// piped; a process that writes more than the pipe buffer (~64 KiB) without
 /// exiting could block. All current callers emit at most a few lines.
+#[cfg(any(target_os = "macos", test))]
 pub fn run_with_timeout(
     mut cmd: std::process::Command,
     timeout: std::time::Duration,
@@ -191,12 +191,11 @@ pub fn force_kill(pid: u32) -> Result<()> {
 /// PIDs this process must never signal: itself, its ancestor chain, and every
 /// member of its own process group.
 ///
-/// The ancestor chain matters whenever `lean-ctx stop`/`dev-install` runs
-/// *under* lean-ctx itself — a `lean-ctx -c` wrapper (Cursor/Gemini hooks)
-/// can be the parent, so the process tree is
-/// `lean-ctx -c … → sh → lean-ctx dev-install`. Excluding only `getpid()`
-/// SIGTERMed the wrapper parent, which took the whole pipeline down mid-run
-/// (exit 143) before autostart was re-enabled (#714).
+/// The ancestor chain matters whenever `lean-ctx uninstall` runs *under*
+/// lean-ctx itself — a `lean-ctx -c` wrapper (Cursor/Gemini hooks) can be the
+/// parent, so the process tree is `lean-ctx -c … → sh → lean-ctx uninstall`.
+/// Excluding only `getpid()` SIGTERMs the wrapper parent, which takes the
+/// whole pipeline down mid-run (exit 143, #714).
 ///
 /// The process *group* matters because agent harnesses (Cursor's shell) can
 /// reparent intermediaries to PID 1 mid-run — the `ps ppid` walk then stops
@@ -325,7 +324,7 @@ fn collect_pids(stdout: &[u8], protected: &std::collections::HashSet<u32>, out: 
     }
 }
 
-/// Returns PIDs that are NOT MCP stdio servers (safe to kill during `lean-ctx stop`).
+/// Returns PIDs that are NOT MCP stdio servers (safe to kill during `lean-ctx uninstall`).
 /// MCP servers are child processes of the IDE and must not be killed — the IDE
 /// will immediately respawn them, causing a kill loop that requires a reboot.
 pub fn find_killable_pids(name: &str) -> Vec<u32> {
@@ -507,10 +506,9 @@ mod tests {
         }
     }
 
-    /// #714: `stop`/`dev-install` running *under* a lean-ctx shell wrapper
-    /// (`lean-ctx -c … → sh → lean-ctx dev-install`) must not SIGTERM its own
-    /// ancestor chain — that killed the pipeline mid-run (exit 143) before
-    /// autostart was re-enabled.
+    /// #714: `uninstall` running *under* a lean-ctx shell wrapper
+    /// (`lean-ctx -c … → sh → lean-ctx uninstall`) must not SIGTERM its own
+    /// ancestor chain — that kills the pipeline mid-run (exit 143).
     #[test]
     fn protected_pids_cover_self_and_ancestors() {
         let protected = protected_self_pids();

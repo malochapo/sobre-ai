@@ -293,12 +293,6 @@ pub fn run_setup_with_options(opts: SetupOptions) -> Result<SetupReport, String>
         errors: Vec::new(),
     };
 
-    let path = SetupReport::default_path()?;
-    let mut content =
-        serde_json::to_string_pretty(&report).map_err(|e| format!("serialize report: {e}"))?;
-    content.push('\n');
-    crate::config_io::write_atomic(&path, &content)?;
-
     Ok(report)
 }
 

@@ -4,9 +4,6 @@
 use std::sync::OnceLock;
 use tiktoken_rs::CoreBPE;
 
-/// Name of the tokenizer [`count_tokens`] uses, for reports that state it.
-pub const COUNTING_TOKENIZER: &str = "o200k_base";
-
 static BPE_O200K: OnceLock<Option<CoreBPE>> = OnceLock::new();
 
 fn get_bpe_o200k() -> Option<&'static CoreBPE> {

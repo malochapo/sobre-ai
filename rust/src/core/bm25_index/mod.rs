@@ -852,16 +852,13 @@ fn index_dir(root: &Path) -> PathBuf {
 
 fn list_code_files(root: &Path) -> Vec<String> {
     let cfg = crate::core::config::Config::load();
-    // #735: the declared corpus filter (config `ignore` + CLI overlay) decides
+    // #735: the declared corpus filter (config `ignore`) decides
     // membership before anything is chunked; the semantic index chunks this
     // corpus, so it inherits the same universe.
     let filter = crate::core::index_filter::IndexFileFilter::resolve(&cfg);
 
     let walker = ignore::WalkBuilder::new(root)
         .hidden(true)
-        .git_ignore(filter.respect_gitignore)
-        .git_global(filter.respect_gitignore)
-        .git_exclude(filter.respect_gitignore)
         .require_git(false)
         .max_depth(Some(20))
         .filter_entry(crate::core::walk_filter::keep_entry)

@@ -323,8 +323,10 @@ fn file_scope_disambiguates_ambiguous_symbol() {
     // and try_lock'ed: while ANY other test builds ANY graph, `open_or_build`
     // returns None and resolve answers "NO_SYMBOL: no symbol index available".
     // Same remedy as impl_overview's overview_header_surfaces_persisted_call_edges.
-    crate::core::graph_provider::build_property_graph(&root)
-        .expect("premise: symbol graph must build for the fixture");
+    assert!(
+        !crate::core::graph_index::scan(&root).files.is_empty(),
+        "premise: symbol graph must build for the fixture"
+    );
 
     // Without file_scope: ambiguous (2 matches).
     let err = super::resolve_name_path("RenderBridge/execute", &root)

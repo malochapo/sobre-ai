@@ -55,16 +55,12 @@ GETTING STARTED:
 
 EVERYDAY COMMANDS:
     lean-ctx -c \"command\"          Run a shell command with compressed output
-    lean-ctx raw \"command\"         Same, but full uncompressed output
-    lean-ctx read <file>           Read a file with compression
-    lean-ctx grep <pattern>        Search with compressed output
+    lean-ctx raw \"command\"         Run a shell command with its exact output
+    lean-ctx call <tool> ...       Call one MCP tool from the shell
 
 MANAGE:
-    lean-ctx status                Am I connected? (quick check)
+    lean-ctx config                Show or edit the config file
     lean-ctx uninstall             Remove everything init wrote
-
-ESCAPE HATCHES:
-    lean-ctx raw \"command\"         Run one command with unmodified output
 
 MORE:
     lean-ctx help all              Full command reference (every subcommand)
@@ -91,9 +87,9 @@ USAGE:
     lean-ctx                       Start the MCP server (stdio)
     lean-ctx mcp                   Same, explicitly
     lean-ctx -c \"command\"          Run with compressed output (used by agent hooks)
-    lean-ctx -c --raw \"command\"    Run without compression
-    lean-ctx raw \"command\"         Full, exact output
-    lean-ctx exec \"command\"        Same as -c
+    lean-ctx raw \"command\"         Run with the exact, uncompressed output
+    lean-ctx call <tool> --project-root <path> --json '<json>'
+                                   Call one MCP tool from the shell
 
 SAVINGS:
     gain                           Tokens saved, real cost (with the proxy), overhead
@@ -103,54 +99,31 @@ SAVINGS:
     gain --period=<all|today|Nd>   Period to cover (default all)
     gain --model=<m>               Price saved tokens at this model's rate
     gain --reset                   Clear the usage ledger
-    ghost [--json]                 Compressible commands run without lean-ctx
-    benchmark run|report|scorecard Benchmarks on your own project
 
-FILES AND SEARCH:
-    read <file> [-m mode]          Read a file with compression
-    diff <file1> <file2>           Compressed file diff
-    grep <pattern> [path]          Search with compressed output
-    glob <pattern> [path]          Find files by glob
-    find <pattern> [path]          Find files with compressed output
-    ls [path]                      Directory listing with compression
-    deps [path]                    Project dependencies
-    call <tool> [args]             Call one MCP tool from the command line
-
-PROJECT ANALYSIS:
-    graph build|status|related|impact|symbol|neighbors|path   Project graph queries
-    index status|build|build-full|watch [--force]       Codebase index
-    health [path] [--json] [--gate]  Code health: complexity, naming, token tax
-    visualize [--output F] [--open]  Interactive HTML graph report
-
-MEMORY:
-    session task|finding|save|load  Live session memory
-    sessions list|show|delete|cleanup  Saved session snapshots
-    knowledge remember|recall|search|export|import|remove|status  Project facts
-    gotchas list|clear|export|stats  Auto-detected error patterns
-    learn [--mine <dir>]           Show learned gotchas (read-only)
-    compact [path]                 Compact Claude Code / Cursor transcripts
+INDEX:
+    index build [--force] [--root <path>]
+                                   Build the graph and BM25 indexes (and the dense
+                                   index in builds with local embeddings);
+                                   --force rebuilds from scratch
+    index status [--json]          What is built, and how large
 
 SETUP AND MAINTENANCE:
-    init [--agent <name>] [--check] [--repair]
-    status [--json]                Setup and MCP status
-    doctor [--fix] [--json]        Diagnostics (and repair)
+    init [<agent>] [--check] [--repair] [--json]
+    doctor [--fix] [--json]        Diagnostics (and repair), version, connected agents,
+                                   debug-log path
     doctor integrations [--json]   Per-agent integration checks
-    config                         Show or edit the config file
-    terse [0.0-1.0|off|lite|standard|max|raw]  Set compression_level
-    embeddings status|provision    Local ONNX runtime for semantic search
-    pricing status|refresh         Model prices (fetched only on refresh)
-    proxy start [--port=4444] [--detach] | status   Local API proxy
-    cache list|clear|stats         File read cache
-    tee list|clear|show <file>|last  Saved full outputs (see ctx_expand)
-    slow-log list|clear            Slow command log
-    debug-log list|tail N|clear|path  Opt-in tool-call log (config key debug_log)
-    verify-cache [path] [--json]   Prove the session cache
-    conformance [--json]           Conformance scorecard (non-zero exit on failure)
-    audit                          Audit-trail report with hash-chain check
-    completions <shell>            Shell completion script
-    stop | restart                 Stop or restart lean-ctx processes
-    dev-install                    Build, install atomically, restart (development)
-    codesign-setup                 macOS: stable signing identity (stops TCC prompts)
+    doctor overhead [--json]       Fixed context cost per session
+    doctor lint-context [--json]   Low-signal or duplicate lines in injected context
+    config [show]                  Show the config file
+    config set <key> <value>       Change one key
+    config path | config init      Print the file's path | write it with every key documented
+    embeddings status|provision    Local ONNX runtime and model for semantic search
+    proxy start [--port=N] [--detach] | stop | restart | status
+                                   Local API proxy
+    proxy enable | disable         Turn the proxy on or off (autostart and env wiring)
+    proxy cleanup                  Remove proxy URLs left in agent configs while it is off
+    proxy token                    Print the proxy's bearer token
+    hook <name>                    Internal: run by the hooks init installs
     uninstall [--keep-config] [--keep-binary] [--dry-run]
                                    Remove hooks, MCP configs, the skill, autostart,
                                    data and the binary
@@ -159,20 +132,6 @@ SHELL HOOK PATTERNS (95+):
     git, docker, npm/pnpm, cargo, gh, kubectl, python (pip, ruff, poetry, uv),
     linters, tsc and bundlers, ruby, test runners, terraform/make/maven/gradle,
     data tools, security scanners, jj/mise/buf, cloud CLIs, curl/grep/find/ls
-
-READ MODES:
-    auto                           Pick the mode (default)
-    full                           Full content (unchanged re-reads ≈ 13 tokens)
-    anchored                       Full content with line+hash anchors for ctx_patch
-    raw                            Exact bytes, no cache
-    map                            Structure and API signatures
-    signatures                     Declarations only (tree-sitter)
-    task                           Parts relevant to the session task
-    reference                      One-line reference stub
-    aggressive                     Syntax-stripped content
-    entropy                        Entropy-filtered content
-    diff                           Changed lines only
-    lines:N-M                      Line ranges (e.g. lines:10-50,80)
 
 OPTIONS:
     --version, -V                  Show version

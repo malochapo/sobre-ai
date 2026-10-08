@@ -32,16 +32,8 @@ arbitrary (agent-supplied, possibly malformed):
    single text chunk rather than dropping content).
 4. **Deterministic** — identical input yields identical output.
 
-These are the same invariants the conformance suite (`conformance-v1`) enforces.
-
-## Registry integration
-
-The text-based chunkers (`csv`, `json`, `eml`, `html`) register into the
-extension registry (`rust/src/core/extension_registry.rs`), so they are
-exercised by `lean-ctx conformance` on every build.
-
-PDF is byte-only (binary input) and is reached via `extract()`, not the
-text→chunks registry.
+The unit tests in `rust/src/core/extractors/` pin these invariants for every
+format.
 
 ## Versioning
 

@@ -9,8 +9,8 @@
 use crate::core::artifacts_exec::ort_provision;
 
 /// Download everything local embeddings need: the official ONNX Runtime and
-/// the configured model. The one place either is fetched outside an explicit
-/// `index build-semantic`. A build without embeddings downloads nothing.
+/// the configured model. The one place either is fetched; `index build` uses
+/// what is installed. A build without embeddings downloads nothing.
 pub(crate) fn provision(force: bool) -> Result<(), String> {
     #[cfg(not(feature = "embeddings"))]
     {

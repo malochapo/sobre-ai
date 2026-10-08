@@ -225,7 +225,6 @@ sha2 = "0.11"
 glob = "0.3"
 urlencoding = "2.1"
 getrandom = "0.4"
-tempfile = "3.27"
 reqwest = { version = "0.13", default-features = false, features = [
   "rustls",
   "stream",
@@ -239,7 +238,6 @@ postcard = { version = "1.1", features = ["use-std"] }
 zstd = "0.13"
 lsp-types = "0.97"
 fs2 = "0.4"
-unicode-width = "0.2"
 yaml_serde = "0.10.4"
 
 [lints.rust]

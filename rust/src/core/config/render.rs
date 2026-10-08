@@ -19,7 +19,8 @@ const HEADER: &str = "\
 # variable that overrides it. The values below reflect your current configuration.
 #
 # A key left at its default may be deleted — lean-ctx falls back to the documented
-# default. After editing, run `lean-ctx config apply` to reload.
+# default. Edits apply on the next tool call; the proxy reads them on
+# `lean-ctx proxy restart`.
 
 ";
 

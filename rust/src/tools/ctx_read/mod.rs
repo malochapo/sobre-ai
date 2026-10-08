@@ -8,11 +8,9 @@ use crate::core::protocol;
 use crate::core::signatures;
 use crate::core::tokens::count_tokens;
 use crate::tools::CrpMode;
-// `pub(crate)`: the conformance suite renders modes directly for its
-// accuracy invariants (GL#441).
 mod helpers;
 pub use helpers::is_instruction_file;
-pub(crate) mod render;
+mod render;
 pub(crate) use render::*;
 /// Type-safe read-mode vocabulary (#528): single source of truth for which
 /// modes exist and how each is classified.
@@ -141,7 +139,12 @@ pub fn read_file_lossy(path: &str) -> Result<String, std::io::Error> {
         Ok(s) => s,
         Err(e) => String::from_utf8_lossy(e.as_bytes()).into_owned(),
     };
-    Ok(crate::core::text_read::strip_utf8_bom(s))
+    // A UTF-8 BOM is an encoding artifact, not content — leaking it corrupts
+    // the first line of every downstream view (limitations doc #11).
+    Ok(match s.strip_prefix('\u{feff}') {
+        Some(rest) => rest.to_owned(),
+        None => s,
+    })
 }
 
 /// A streamed line-window read (#811): only the requested span's raw lines,

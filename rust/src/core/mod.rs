@@ -5,11 +5,8 @@ pub mod aggressiveness;
 pub mod artifacts_exec;
 pub mod auto_findings;
 pub mod codebook;
-#[cfg(target_os = "macos")]
-pub mod codesign;
 pub mod compressor;
 pub mod entropy;
-pub mod eval_harness;
 // Without `embeddings` the engine still compiles these modules — their
 // entry points are internally cfg-gated and fall back — but their helpers
 // go uncalled. That is honest unused code, not dead code, so it is silenced
@@ -199,17 +196,13 @@ pub mod task_relevance;
 // ---------------------------------------------------------------------------
 // Domain: Diagnostics & Quality
 // ---------------------------------------------------------------------------
-pub mod benchmark;
 pub mod code_health;
-pub mod conformance;
 pub mod contracts;
 pub mod output_verification;
 pub mod quality;
 pub mod refetch_signals;
 pub mod safety_needles;
-pub mod scorecard;
 pub mod setup_report;
-pub mod slow_log;
 pub mod surprise;
 
 // ---------------------------------------------------------------------------
@@ -222,7 +215,6 @@ pub mod binary_detect;
 pub mod bounce_tracker;
 pub mod budgets;
 pub mod cache;
-pub mod cli_cache;
 pub mod client_capabilities;
 pub mod cloud_files;
 pub mod config;
@@ -235,7 +227,6 @@ pub mod debug_log;
 pub mod diagnostics_store;
 pub mod error;
 pub mod eviction_orchestrator;
-pub mod extension_registry;
 pub mod extractors;
 pub mod git;
 pub mod git_cache;
@@ -250,7 +241,6 @@ pub mod hnsw;
 pub mod home;
 pub mod homeostasis;
 pub mod pricing;
-pub mod quality_benchmark;
 
 pub mod edit_quality;
 pub mod http_client;
@@ -274,7 +264,6 @@ pub mod levenshtein;
 pub mod limits;
 pub mod logging;
 pub mod mcp_manifest;
-pub mod nc_compress;
 pub mod path_locks;
 pub mod path_resolve;
 pub mod paths;
@@ -301,14 +290,11 @@ pub mod task_briefing;
 pub mod tcc_guard_sandbox;
 pub mod tdd_schema;
 pub mod terse;
-pub mod text_read;
 pub mod text_similarity;
 pub mod theme;
 pub mod tokens;
 pub mod tool_lifecycle;
-pub mod transcript_compact;
 pub mod usage;
-pub mod visualizer;
 pub mod walk_filter;
 pub mod web;
 

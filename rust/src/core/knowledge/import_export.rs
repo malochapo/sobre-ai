@@ -203,20 +203,4 @@ impl ProjectKnowledge {
             replaced,
         }
     }
-
-    /// Export current facts as a simple JSON array (community-compatible schema).
-    pub fn export_simple(&self) -> Vec<SimpleFactEntry> {
-        self.facts
-            .iter()
-            .filter(|f| f.is_current())
-            .map(|f| SimpleFactEntry {
-                category: f.category.clone(),
-                key: f.key.clone(),
-                value: f.value.clone(),
-                confidence: Some(f.confidence),
-                source: Some(f.source_session.clone()),
-                timestamp: Some(f.created_at.to_rfc3339()),
-            })
-            .collect()
-    }
 }

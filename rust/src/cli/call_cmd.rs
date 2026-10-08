@@ -1,9 +1,13 @@
 use std::collections::HashMap;
 use std::path::Path;
+use std::sync::Arc;
 
 use serde_json::{Map, Value};
+use tokio::sync::RwLock;
 
+use crate::core::cache::SessionCache;
 use crate::core::error::DispatchError;
+use crate::core::session::SessionState;
 use crate::server::registry::build_registry;
 use crate::server::tool_trait::ToolContext;
 
@@ -128,14 +132,21 @@ fn parse_args(args: &[String]) -> Result<CallArgs, CallError> {
 }
 
 fn oneshot_ctx(project_root: String, resolved_paths: HashMap<String, String>) -> ToolContext {
+    // A fresh session and file cache, as a starting MCP server has: the tools
+    // that track reads or memory (`ctx_read`, `ctx_shell`, `ctx_session`,
+    // `ctx_knowledge`) refuse to run without them.
+    let mut session = SessionState::new();
+    session.project_root = Some(project_root.clone());
     ToolContext {
         project_root,
         resolved_paths,
+        cache: Some(Arc::new(RwLock::new(SessionCache::new()))),
+        session: Some(Arc::new(RwLock::new(session))),
         // Give tools a real (empty) resident BM25 cache, as the MCP server does.
         // Without it, cache-aware tools (e.g. ctx_compose's specificity ranking)
         // silently take their cold-start fallback and CLI `call` stops mirroring
         // the server path it exists to reproduce.
-        bm25_cache: Some(std::sync::Arc::new(std::sync::Mutex::new(None))),
+        bm25_cache: Some(Arc::new(std::sync::Mutex::new(None))),
         ..Default::default()
     }
 }
@@ -187,15 +198,17 @@ pub(crate) fn run_call(args: &[String]) -> Result<String, CallError> {
 
     let registry = build_registry();
     let tool = registry
-        .get(&parsed.tool)
+        .get_arc(&parsed.tool)
         .ok_or_else(|| CallError::UnknownTool(parsed.tool.clone()))?;
 
-    // Handlers are synchronous, so no tokio runtime is required here.
-    let output = tool.handle(&args_map, &ctx).map_err(|e| {
-        CallError::Dispatch(DispatchError::Tool {
-            message: e.to_string(),
-        })
-    })?;
+    // Run the synchronous handler on the blocking pool of a runtime, as the
+    // server does: handlers that lock the session block on it there.
+    let output = super::dispatch::run_async(async move {
+        tokio::task::spawn_blocking(move || tool.handle(&args_map, &ctx)).await
+    })
+    .map_err(|e| e.to_string())
+    .and_then(|r| r.map_err(|e| e.to_string()))
+    .map_err(|message| CallError::Dispatch(DispatchError::Tool { message }))?;
 
     Ok(output.text)
 }

@@ -1,23 +1,14 @@
-use std::collections::HashMap;
 use std::path::Path;
-use std::time::{Duration, Instant, UNIX_EPOCH};
+use std::time::{Duration, Instant};
 
 use crate::terminal_ui::ProgressIndicator;
 
 pub(crate) fn cmd_index(args: &[String]) {
     let project_root = super::common::detect_project_root(args);
-    let root = Path::new(&project_root);
 
-    // #735: install the per-run filter overlay (repeatable --include/--exclude
-    // globs, --no-gitignore/--respect-gitignore) before any builder runs, so
-    // BM25 + graph + semantic + watch share the declared corpus for this run.
-    install_filter_overlay(args);
-
-    let sub = find_subcommand(args);
-    match sub {
+    match find_subcommand(args) {
         Some("status") => {
-            let json_flag = args.iter().any(|a| a == "--json");
-            if json_flag {
+            if args.iter().any(|a| a == "--json") {
                 println!(
                     "{}",
                     crate::core::index_orchestrator::status_json(&project_root)
@@ -26,159 +17,80 @@ pub(crate) fn cmd_index(args: &[String]) {
                 print_human_status(&project_root);
             }
         }
-        Some("build") => {
-            // #790: activate memory guardian for CLI builds so graph/BM25 abort
-            // checks actually fire (previously only started in daemon mode).
-            crate::core::memory_guard::start_guard(std::sync::Arc::new(|level| {
-                tracing::warn!(
-                    "[index build] memory pressure: {level:?} — background tasks will throttle"
-                );
-                if level >= crate::core::memory_guard::PressureLevel::Hard {
-                    crate::core::content_cache::clear();
-                }
-                crate::core::memory_guard::force_purge();
-            }));
-            crate::core::index_orchestrator::ensure_all_background(&project_root);
-
-            if !wait_graph_bm25_progress(&project_root, Duration::from_mins(5)) {
-                return;
-            }
-
-            // Surface the BM25 build outcome so the operator knows the index
-            // state (issue #249).
-            let summary = crate::core::index_orchestrator::bm25_summary(&project_root);
-            if let Some(note) = summary.note {
-                eprintln!("  BM25: {note}");
-            }
-            if let Some(err) = summary.last_error {
-                eprintln!("  BM25 error: {err}");
-            }
-        }
-        Some("build-full") => {
-            // #790: activate memory guardian for full builds too.
-            crate::core::memory_guard::start_guard(std::sync::Arc::new(|level| {
-                tracing::warn!("[index build-full] memory pressure: {level:?}");
-                if level >= crate::core::memory_guard::PressureLevel::Hard {
-                    crate::core::content_cache::clear();
-                }
-                crate::core::memory_guard::force_purge();
-            }));
-            crate::core::interrupt::install_ctrlc_handler();
-            let bm25_path = crate::core::bm25_index::BM25Index::index_file_path(root);
-            let _ = std::fs::remove_file(&bm25_path);
-            // #696 C4: purge the property graph (graph.db + wal/shm + meta) and
-            // the call-graph cache so the rebuild starts clean.
-            crate::core::graph_index::purge_index(&project_root);
-            // Purge old embeddings so the full rebuild starts from scratch and
-            // does not re-use stale vectors from a different model or project
-            // state.
-            let vectors_dir = crate::core::index_namespace::vectors_dir(root);
-            let embedding_bin = vectors_dir.join("embeddings.bin");
-            if embedding_bin.exists() {
-                let _ = std::fs::remove_file(&embedding_bin);
-            }
-            crate::core::index_orchestrator::ensure_all_background(&project_root);
-
-            if !wait_graph_bm25_progress(&project_root, Duration::from_mins(5)) {
-                return;
-            }
-
-            // Surface the BM25 build outcome (chunk count + persisted size, or the
-            // "too large to persist" remedy) so the operator is never left guessing.
-            let summary = crate::core::index_orchestrator::bm25_summary(&project_root);
-            if let Some(note) = summary.note {
-                eprintln!("  BM25: {note}");
-            }
-            if let Some(err) = summary.last_error {
-                eprintln!("  BM25 error: {err}");
-            }
-
-            // Build semantic (dense embedding) index on top of the fresh BM25.
-            wait_semantic_progress(&project_root);
-            let sem = crate::core::index_orchestrator::semantic_summary(&project_root);
-            match sem.state {
-                "ready" => eprintln!("  semantic index ready"),
-                "failed" => eprintln!(
-                    "  semantic index failed: {}",
-                    sem.last_error.unwrap_or_else(|| String::from("unknown"))
-                ),
-                _ => {
-                    if let Some(note) = sem.note {
-                        eprintln!("  semantic: {note}");
-                    }
-                }
-            }
-        }
-        Some("build-graph") => {
-            match crate::core::graph_provider::build_property_graph(&project_root) {
-                Ok(()) => match crate::core::property_graph::CodeGraph::open(&project_root) {
-                    Ok(g) => println!(
-                        "graph built: {} nodes, {} edges, {} files",
-                        g.node_count().unwrap_or(0),
-                        g.edge_count().unwrap_or(0),
-                        g.file_catalog_count().unwrap_or(0),
-                    ),
-                    Err(_) => println!("graph built"),
-                },
-                Err(e) => eprintln!("graph build failed: {e}"),
-            }
-        }
-        Some("build-semantic") => {
-            // #790: activate memory guardian for semantic builds too.
-            crate::core::memory_guard::start_guard(std::sync::Arc::new(|level| {
-                tracing::warn!("[index build-semantic] memory pressure: {level:?}");
-                if level >= crate::core::memory_guard::PressureLevel::Hard {
-                    crate::core::content_cache::clear();
-                }
-                crate::core::memory_guard::force_purge();
-            }));
-            crate::core::interrupt::install_ctrlc_handler();
-            // Build the dense embedding index on top of BM25.  If BM25 is not yet
-            // built, build graph + BM25 first, then build semantic.
-            let disk = crate::core::index_orchestrator::disk_status(&project_root);
-            if !disk.bm25_index.exists {
-                eprintln!("BM25 index not found — building graph + BM25 first ...");
-                crate::core::index_orchestrator::ensure_all_background(&project_root);
-                if !wait_graph_bm25_progress(&project_root, Duration::from_mins(5)) {
-                    return;
-                }
-            }
-
-            wait_semantic_progress(&project_root);
-            let sem = crate::core::index_orchestrator::semantic_summary(&project_root);
-            match sem.state {
-                "ready" => eprintln!("semantic index ready"),
-                "failed" => eprintln!(
-                    "semantic index failed: {}",
-                    sem.last_error.unwrap_or_else(|| String::from("unknown"))
-                ),
-                _ => {
-                    eprintln!("semantic index not available");
-                    if let Some(ref note) = sem.note {
-                        eprintln!("  reason: {note}");
-                    }
-                }
-            }
-        }
-        Some("watch") => run_watcher(root),
+        Some("build") => build(&project_root, args.iter().any(|a| a == "--force")),
         _ => {
             eprintln!(
-                "Usage: lean-ctx index <status|build|build-full|build-graph|build-semantic|watch> [--root <path>]\n\
-                 Filter flags (#735, apply to this run; persist excludes via `ignore` in config.toml):\n\
-                   --exclude <glob>       drop matching files from the corpus (repeatable)\n\
-                   --include <glob>       corpus = matching files only (repeatable)\n\
-                   --no-gitignore         index .gitignore'd files too\n\
-                   --respect-gitignore    honor .gitignore (default)\n\
-                 Examples:\n\
-                   lean-ctx index status\n\
-                   lean-ctx index build              (graph + BM25 indexes)\n\
-                   lean-ctx index build-full         (force rebuild all indexes)\n\
-                   lean-ctx index build-full --exclude \"**/*.csv\" --exclude \"**/*.jsonl\"\n\
-                   lean-ctx index build-semantic --include \"**/*.{{java,kt,ts}}\"\n\
-                   lean-ctx index build-graph        (SQLite property graph for impact analysis)\n\
-                   lean-ctx index build-semantic     (dense embedding index, builds BM25 first if needed)\n\
-                   lean-ctx index watch"
+                "Usage: lean-ctx index <build|status> [--root <path>]\n\
+                   lean-ctx index build            graph + BM25 indexes, and the dense index\n\
+                                                   in builds with local embeddings\n\
+                   lean-ctx index build --force    drop the indexes first, rebuild from scratch\n\
+                   lean-ctx index status [--json]  what is built\n\
+                 Leave files out of every index with `ignore` in config.toml."
             );
+        }
+    }
+}
+
+/// Build (or with `force`, rebuild from scratch) the project's indexes:
+/// graph, then BM25, then the dense index in builds with local embeddings.
+fn build(project_root: &str, force: bool) {
+    // #790: activate the memory guardian for CLI builds so graph/BM25 abort
+    // checks actually fire.
+    crate::core::memory_guard::start_guard(std::sync::Arc::new(|level| {
+        tracing::warn!("[index build] memory pressure: {level:?} — background tasks will throttle");
+        if level >= crate::core::memory_guard::PressureLevel::Hard {
+            crate::core::content_cache::clear();
+        }
+        crate::core::memory_guard::force_purge();
+    }));
+
+    if force {
+        let root = Path::new(project_root);
+        let _ = std::fs::remove_file(crate::core::bm25_index::BM25Index::index_file_path(root));
+        // #696 C4: purge the property graph (graph.db + wal/shm + meta) and
+        // the call-graph cache so the rebuild starts clean.
+        crate::core::graph_index::purge_index(project_root);
+        let _ = std::fs::remove_file(
+            crate::core::index_namespace::vectors_dir(root).join("embeddings.bin"),
+        );
+    }
+
+    crate::core::index_orchestrator::ensure_all_background(project_root);
+    if !wait_graph_bm25_progress(project_root, Duration::from_mins(5)) {
+        return;
+    }
+
+    // Surface the BM25 build outcome (chunk count + persisted size, or the
+    // "too large to persist" remedy) so the operator knows the index state.
+    let summary = crate::core::index_orchestrator::bm25_summary(project_root);
+    if let Some(note) = summary.note {
+        eprintln!("  BM25: {note}");
+    }
+    if let Some(err) = summary.last_error {
+        eprintln!("  BM25 error: {err}");
+    }
+
+    #[cfg(feature = "embeddings")]
+    build_dense(project_root);
+}
+
+/// The dense (embedding) index, on top of the fresh BM25 index. Uses the
+/// model `lean-ctx embeddings provision` installed; never downloads it.
+#[cfg(feature = "embeddings")]
+fn build_dense(project_root: &str) {
+    crate::core::interrupt::install_ctrlc_handler();
+    wait_semantic_progress(project_root);
+    let sem = crate::core::index_orchestrator::semantic_summary(project_root);
+    match sem.state {
+        "ready" => eprintln!("  dense index ready"),
+        "failed" => eprintln!(
+            "  dense index failed: {}",
+            sem.last_error.unwrap_or_else(|| String::from("unknown"))
+        ),
+        _ => {
+            if let Some(note) = sem.note {
+                eprintln!("  dense index: {note}");
+            }
         }
     }
 }
@@ -206,30 +118,29 @@ fn wait_graph_bm25_progress(project_root: &str, timeout: Duration) -> bool {
     }
 }
 
-/// Build semantic on a worker thread while showing progress.
-///
-/// Returns `false` on timeout (worker keeps running).
-fn wait_semantic_progress(project_root: &str) -> bool {
+/// Build the dense index on a worker thread while showing progress. Gives up
+/// waiting after ten minutes; the worker keeps running.
+#[cfg(feature = "embeddings")]
+fn wait_semantic_progress(project_root: &str) {
     let root = project_root.to_string();
     let handle = std::thread::spawn(move || {
         crate::core::index_orchestrator::build_semantic(&root);
     });
-    let mut progress = ProgressIndicator::new("semantic");
+    let mut progress = ProgressIndicator::new("dense");
     let start = Instant::now();
     let timeout = Duration::from_mins(10);
     loop {
         if handle.is_finished() {
             let _ = handle.join();
-            progress.finish("semantic done");
-            return true;
+            progress.finish("dense done");
+            return;
         }
         let view = crate::core::index_orchestrator::progress_view(project_root);
         apply_semantic_progress(&mut progress, &view);
         progress.tick();
         if start.elapsed() > timeout {
-            progress.finish("semantic still building (timeout — check `lean-ctx index status`)");
-            // JoinHandle drop detaches — leave worker running.
-            return false;
+            progress.finish("dense index still building (timeout — check `lean-ctx index status`)");
+            return;
         }
         std::thread::sleep(Duration::from_millis(100));
     }
@@ -253,6 +164,7 @@ fn apply_graph_bm25_progress(
     }
 }
 
+#[cfg(feature = "embeddings")]
 fn apply_semantic_progress(
     progress: &mut ProgressIndicator,
     view: &crate::core::index_orchestrator::ProgressView,
@@ -264,11 +176,10 @@ fn apply_semantic_progress(
     }
 }
 
-/// First non-flag token, skipping the values of value-taking flags — so
-/// `index build --exclude "**/*.csv"` resolves the subcommand `build`, not the
-/// glob (#735).
+/// First non-flag token, skipping the value of `--root`/`--project-root`, so
+/// `index --root /x build` resolves the subcommand `build`, not the path.
 fn find_subcommand(args: &[String]) -> Option<&str> {
-    const VALUE_FLAGS: [&str; 4] = ["--exclude", "--include", "--root", "--project-root"];
+    const VALUE_FLAGS: [&str; 2] = ["--root", "--project-root"];
     let mut it = args.iter();
     while let Some(a) = it.next() {
         if VALUE_FLAGS.contains(&a.as_str()) {
@@ -281,162 +192,6 @@ fn find_subcommand(args: &[String]) -> Option<&str> {
         return Some(a.as_str());
     }
     None
-}
-
-/// Parse the #735 filter flags and install the per-run overlay. No-op when no
-/// filter flag is present, so config-only runs take the config path.
-fn install_filter_overlay(args: &[String]) {
-    let (include, exclude, respect_gitignore) = parse_filter_flags(args);
-    if !include.is_empty() || !exclude.is_empty() || respect_gitignore.is_some() {
-        crate::core::index_filter::set_cli_overlay(include, exclude, respect_gitignore);
-    }
-}
-
-/// Pure #735 flag parser: `--exclude` / `--include` are repeatable and accept
-/// both `--flag value` and `--flag=value` forms; the last of `--no-gitignore`
-/// / `--respect-gitignore` wins.
-fn parse_filter_flags(args: &[String]) -> (Vec<String>, Vec<String>, Option<bool>) {
-    let mut include: Vec<String> = Vec::new();
-    let mut exclude: Vec<String> = Vec::new();
-    let mut respect_gitignore: Option<bool> = None;
-
-    let mut it = args.iter();
-    while let Some(a) = it.next() {
-        match a.as_str() {
-            "--exclude" => {
-                if let Some(v) = it.next() {
-                    exclude.push(v.clone());
-                } else {
-                    eprintln!("--exclude requires a glob argument");
-                }
-            }
-            "--include" => {
-                if let Some(v) = it.next() {
-                    include.push(v.clone());
-                } else {
-                    eprintln!("--include requires a glob argument");
-                }
-            }
-            "--no-gitignore" => respect_gitignore = Some(false),
-            "--respect-gitignore" => respect_gitignore = Some(true),
-            other => {
-                if let Some(v) = other.strip_prefix("--exclude=") {
-                    exclude.push(v.to_string());
-                } else if let Some(v) = other.strip_prefix("--include=") {
-                    include.push(v.to_string());
-                }
-            }
-        }
-    }
-
-    (include, exclude, respect_gitignore)
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct FileState {
-    mtime_ms: u64,
-    size_bytes: u64,
-}
-
-fn run_watcher(project_root: &Path) {
-    let hash = crate::core::index_namespace::namespace_hash(project_root);
-    let lock_name = format!("index-watch-{}", &hash[..8.min(hash.len())]);
-    let Some(lock) = crate::core::startup_guard::try_acquire_lock(
-        &lock_name,
-        Duration::from_millis(800),
-        Duration::from_secs(8),
-    ) else {
-        eprintln!("index watcher already running");
-        return;
-    };
-
-    let mut last = snapshot_code_files(project_root);
-    let mut pending: Option<Instant> = None;
-    let poll = Duration::from_millis(700);
-    let debounce = Duration::from_millis(900);
-
-    loop {
-        lock.touch();
-        std::thread::sleep(poll);
-
-        let cur = snapshot_code_files(project_root);
-        if cur != last {
-            last = cur;
-            pending = Some(Instant::now());
-            continue;
-        }
-
-        if let Some(t) = pending
-            && t.elapsed() >= debounce
-        {
-            crate::core::index_orchestrator::ensure_all_background(
-                project_root.to_string_lossy().as_ref(),
-            );
-            pending = None;
-        }
-    }
-}
-
-fn snapshot_code_files(project_root: &Path) -> HashMap<String, FileState> {
-    // #735: the watcher observes the same declared corpus as the builders it
-    // triggers — a change to an excluded file must not cause rebuild churn.
-    let filter = crate::core::index_filter::IndexFileFilter::effective();
-    let walker = ignore::WalkBuilder::new(project_root)
-        .hidden(true)
-        .git_ignore(filter.respect_gitignore)
-        .git_global(filter.respect_gitignore)
-        .git_exclude(filter.respect_gitignore)
-        .require_git(false)
-        .filter_entry(crate::core::walk_filter::keep_entry)
-        .build();
-
-    let mut out: HashMap<String, FileState> = HashMap::new();
-    for entry in walker.flatten() {
-        let path = entry.path();
-        if !path.is_file() {
-            continue;
-        }
-        if path.components().any(|c| c.as_os_str() == ".git") {
-            continue;
-        }
-        if !crate::core::ingestion::is_ingestible(path) {
-            continue;
-        }
-        let Ok(meta) = path.metadata() else {
-            continue;
-        };
-        let Ok(modified) = meta.modified() else {
-            continue;
-        };
-        let Some(mtime_ms) = modified
-            .duration_since(UNIX_EPOCH)
-            .ok()
-            .map(|d| d.as_millis() as u64)
-        else {
-            continue;
-        };
-
-        let rel = path
-            .strip_prefix(project_root)
-            .unwrap_or(path)
-            .to_string_lossy()
-            .to_string();
-        if rel.is_empty() {
-            continue;
-        }
-        if filter.is_excluded(&rel.replace('\\', "/")) {
-            continue;
-        }
-
-        out.insert(
-            rel,
-            FileState {
-                mtime_ms,
-                size_bytes: meta.len(),
-            },
-        );
-    }
-    out
 }
 
 fn print_human_status(project_root: &str) {
@@ -459,9 +214,8 @@ fn print_human_status(project_root: &str) {
         "  Semantic Index: {}",
         format_disk_line(&disk.semantic_index, "vectors")
     );
-    // #735: surface the active corpus filter so a filtered index is always
-    // recognizable. Absent for the default (unfiltered) config, keeping the
-    // default output byte-identical.
+    // #735: surface the `ignore` globs so a filtered index is always
+    // recognizable. Absent when `ignore` is empty.
     if let Some(summary) = crate::core::index_filter::IndexFileFilter::effective().summary() {
         println!("  Index Filters:  {summary}");
     }
@@ -514,58 +268,17 @@ mod tests {
     }
 
     #[test]
-    fn subcommand_skips_filter_flag_values() {
-        // The glob value must never be mistaken for the subcommand (#735).
+    fn subcommand_skips_root_value() {
+        // The path must never be mistaken for the subcommand.
         assert_eq!(
-            find_subcommand(&args(&["--exclude", "**/*.csv", "build-full"])),
-            Some("build-full")
-        );
-        assert_eq!(
-            find_subcommand(&args(&["build-semantic", "--include", "**/*.java"])),
-            Some("build-semantic")
-        );
-        assert_eq!(
-            find_subcommand(&args(&["--root", "/x", "--no-gitignore", "watch"])),
-            Some("watch")
+            find_subcommand(&args(&["--root", "/x", "--force", "build"])),
+            Some("build")
         );
     }
 
     #[test]
     fn subcommand_none_for_flag_only_args() {
-        assert_eq!(find_subcommand(&args(&["--exclude", "**/*.csv"])), None);
+        assert_eq!(find_subcommand(&args(&["--root", "/x"])), None);
         assert_eq!(find_subcommand(&[]), None);
-    }
-
-    #[test]
-    fn filter_flags_repeatable_and_both_forms() {
-        let (include, exclude, gitignore) = parse_filter_flags(&args(&[
-            "build-full",
-            "--exclude",
-            "**/*.csv",
-            "--exclude=**/*.jsonl",
-            "--include",
-            "**/*.rs",
-            "--include=**/*.ts",
-        ]));
-        assert_eq!(exclude, vec!["**/*.csv", "**/*.jsonl"]);
-        assert_eq!(include, vec!["**/*.rs", "**/*.ts"]);
-        assert_eq!(gitignore, None);
-    }
-
-    #[test]
-    fn gitignore_flags_last_one_wins() {
-        let (_, _, gitignore) =
-            parse_filter_flags(&args(&["build", "--no-gitignore", "--respect-gitignore"]));
-        assert_eq!(gitignore, Some(true));
-        let (_, _, gitignore) = parse_filter_flags(&args(&["build", "--no-gitignore"]));
-        assert_eq!(gitignore, Some(false));
-    }
-
-    #[test]
-    fn no_filter_flags_yields_empty_overlay_inputs() {
-        let (include, exclude, gitignore) = parse_filter_flags(&args(&["build", "--root", "/x"]));
-        assert!(include.is_empty());
-        assert!(exclude.is_empty());
-        assert_eq!(gitignore, None);
     }
 }

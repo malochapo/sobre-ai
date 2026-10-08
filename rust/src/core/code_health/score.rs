@@ -91,17 +91,6 @@ pub fn navigability(inputs: NavigabilityInputs) -> NavigabilityScore {
     }
 }
 
-/// Letter grade for a navigability score, for compact display.
-pub fn grade(score: u32) -> char {
-    match score {
-        90..=100 => 'A',
-        75..=89 => 'B',
-        60..=74 => 'C',
-        40..=59 => 'D',
-        _ => 'F',
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -123,7 +112,6 @@ mod tests {
     fn clean_project_scores_100() {
         let s = navigability(inputs(50, 0, 8, 0));
         assert_eq!(s.score, 100);
-        assert_eq!(grade(s.score), 'A');
     }
 
     #[test]
@@ -171,14 +159,5 @@ mod tests {
         let s = navigability(inp);
         assert_eq!(s.hotspots.len(), 1);
         assert_eq!(s.hotspots[0].symbol, "high");
-    }
-
-    #[test]
-    fn grade_boundaries() {
-        assert_eq!(grade(100), 'A');
-        assert_eq!(grade(89), 'B');
-        assert_eq!(grade(60), 'C');
-        assert_eq!(grade(40), 'D');
-        assert_eq!(grade(0), 'F');
     }
 }

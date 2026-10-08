@@ -658,18 +658,6 @@ mod tests {
     }
 
     #[test]
-    fn export_simple_only_current() {
-        let policy = default_policy();
-        let mut k = ProjectKnowledge::new("/tmp/test");
-        k.remember("arch", "db", "PostgreSQL", "s1", 0.95, &policy);
-        k.remember("arch", "db", "MySQL", "s2", 0.9, &policy);
-
-        let exported = k.export_simple();
-        assert_eq!(exported.len(), 1);
-        assert_eq!(exported[0].value, "MySQL");
-    }
-
-    #[test]
     fn import_merge_parse() {
         assert_eq!(ImportMerge::parse("replace"), Some(ImportMerge::Replace));
         assert_eq!(ImportMerge::parse("append"), Some(ImportMerge::Append));

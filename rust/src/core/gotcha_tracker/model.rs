@@ -78,13 +78,6 @@ impl GotchaSeverity {
             Self::Info => 0.7,
         }
     }
-
-    pub fn prefix(&self) -> &'static str {
-        match self {
-            Self::Critical | Self::Warning => "!",
-            Self::Info => "",
-        }
-    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -275,12 +268,6 @@ impl GotchaStore {
             updated_at: Utc::now(),
             pending_errors: Vec::new(),
         }
-    }
-
-    pub fn clear(&mut self) {
-        self.gotchas.clear();
-        self.pending_errors.clear();
-        self.updated_at = Utc::now();
     }
 }
 

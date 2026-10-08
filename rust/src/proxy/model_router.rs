@@ -166,8 +166,8 @@ fn estimate_cost_ratio(original: &str, routed: &str) -> Option<f64> {
 }
 
 /// Relative cost tier for well-known models (normalized to Sonnet = 1.0).
-/// These are static approximations for estimation only — live prices from
-/// the model-prices.json file are used for actual billing.
+/// These are static approximations for estimation only; savings figures use
+/// the embedded price table (`core::pricing`).
 fn model_cost_tier(model: &str) -> Option<f64> {
     let m = model.to_lowercase();
     if m.contains("nano") || m.contains("gpt-4.1-nano") {

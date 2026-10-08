@@ -1,7 +1,7 @@
 //! Daemon-safe storage maintenance.
 //!
-//! Unlike the interactive `lean-ctx cache prune` (which prints per-file output),
-//! these routines are silent (tracing only) so they can run inside the MCP
+//! Unlike the interactive `lean-ctx doctor --fix` (which reports what it
+//! pruned), these routines are silent (tracing only) so they can run inside the MCP
 //! daemon without corrupting the stdio protocol. They remove accumulated
 //! quarantined BM25 indexes (#2364).
 

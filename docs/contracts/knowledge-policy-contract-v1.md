@@ -121,9 +121,8 @@ by `base_stability_days`, `low_confidence_threshold`, `stale_days`,
   - `action=consolidate` (with `dry_run=true` ⇒ preview without writes)
   - `action=restore` (`store` = `facts|history|patterns`, `query`,
     `limit`, default 50) ⇒ lossless undo from the archive
-- CLI (`rust/src/cli/knowledge_cmd.rs`):
-  `lean-ctx knowledge consolidate [--all] [--dry-run]` and
-  `lean-ctx knowledge restore [--store …] [--query …] [--limit N]`
+- From a shell: `lean-ctx call ctx_knowledge --project-root <path> --json
+  '{"action":"consolidate"}'` (or `restore`, with the same arguments)
 - Relations: `rust/src/tools/ctx_knowledge_relations.rs` (bounded,
   deterministic outputs)
 

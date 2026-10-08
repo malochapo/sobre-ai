@@ -65,7 +65,7 @@ pub(crate) fn bm25_cache_health_outcome() -> Outcome {
         return Outcome {
             ok: false,
             line: format!(
-                "{BOLD}BM25 cache{RST}  {RED}{} index(es) exceed limit ({:.0} MB){RST}: {}  {DIM}(run: lean-ctx cache prune){RST}",
+                "{BOLD}BM25 cache{RST}  {RED}{} index(es) exceed limit ({:.0} MB){RST}: {}  {DIM}(run: lean-ctx doctor --fix){RST}",
                 oversized.len(),
                 max_bytes / (1024 * 1024),
                 details.join(", ")
@@ -89,7 +89,7 @@ pub(crate) fn bm25_cache_health_outcome() -> Outcome {
     }
 
     let quarantine_note = if quarantined_count > 0 {
-        format!("  {YELLOW}{quarantined_count} quarantined (run: lean-ctx cache prune){RST}")
+        format!("  {YELLOW}{quarantined_count} quarantined (run: lean-ctx doctor --fix){RST}")
     } else {
         String::new()
     };
@@ -133,7 +133,7 @@ pub(crate) fn semantic_index_outcome() -> Option<Outcome> {
         "failed" => Outcome {
             ok: false,
             line: format!(
-                "{BOLD}Semantic index{RST}  {RED}FAILED{RST}: {}  {DIM}(run: lean-ctx index build-semantic){RST}",
+                "{BOLD}Semantic index{RST}  {RED}FAILED{RST}: {}  {DIM}(run: lean-ctx index build){RST}",
                 summary
                     .last_error
                     .or(summary.note)
@@ -243,7 +243,7 @@ pub(crate) fn orphaned_knowledge_outcome() -> Outcome {
     Outcome {
         ok: true,
         line: format!(
-            "{BOLD}Knowledge stores{RST}  {YELLOW}{} orphaned ({} reclaimable){RST}  {DIM}(deleted projects — reclaim: lean-ctx cache prune){RST}",
+            "{BOLD}Knowledge stores{RST}  {YELLOW}{} orphaned ({} reclaimable){RST}  {DIM}(deleted projects — reclaim: lean-ctx doctor --fix){RST}",
             orphans.len(),
             human_bytes(bytes)
         ),
@@ -299,11 +299,13 @@ pub(crate) fn capacity_warnings() -> Vec<Outcome> {
         let short_hash = &hash[..hash.len().min(8)];
 
         let mut checks: Vec<(String, usize, usize)> = Vec::new();
+        let mut project_root = None;
 
         if let Ok(content) = std::fs::read_to_string(hash_dir.join("knowledge.json"))
             && let Ok(k) =
                 serde_json::from_str::<crate::core::knowledge::ProjectKnowledge>(&content)
         {
+            project_root = Some(k.project_root.clone());
             checks.push((
                 "facts".to_string(),
                 k.facts.len(),
@@ -369,7 +371,10 @@ pub(crate) fn capacity_warnings() -> Vec<Outcome> {
             // falling behind. Point the operator at the right lever either way.
             results.push(Outcome {
                 ok: true,
-                line: format!("  {DIM}→ {}{RST}", capacity_hint(critical)),
+                line: format!(
+                    "  {DIM}→ {}{RST}",
+                    capacity_hint(critical, project_root.as_deref())
+                ),
             });
         }
     }
@@ -416,10 +421,12 @@ pub(crate) fn capacity_warnings() -> Vec<Outcome> {
 /// on-disk capacity scan so the messaging is unit-tested directly: a store *at*
 /// its cap is healthy (eviction holds it there), while *over* cap means curation
 /// is behind and the operator should compact it.
-pub(crate) fn capacity_hint(critical: bool) -> &'static str {
-    if critical {
-        "over cap — eviction is behind. Run `lean-ctx knowledge consolidate --all` to compact project memory now"
-    } else {
-        "at/near cap is healthy by design — eviction holds the store at its cap (write-time dedup #970, 90-day prune #972)"
+pub(crate) fn capacity_hint(critical: bool, project_root: Option<&str>) -> String {
+    if !critical {
+        return "at/near cap is healthy by design — eviction holds the store at its cap (write-time dedup #970, 90-day prune #972)".to_string();
     }
+    let root = project_root.unwrap_or("<project>");
+    format!(
+        "over cap — eviction is behind. Compact it now: lean-ctx call ctx_knowledge --project-root '{root}' --json '{{\"action\":\"consolidate\"}}'"
+    )
 }

@@ -144,32 +144,6 @@ impl BounceTracker {
         }
     }
 
-    pub fn record_shell_file_access(&mut self, path: &str) {
-        let norm = crate::core::pathutil::normalize_tool_path(path);
-        let seq = self.seq_counter;
-        self.detect_bounce(&norm, seq);
-    }
-
-    /// Records an explicit archive/context expansion as a quality bounce.
-    ///
-    /// Unlike a full file re-read, `ctx_expand` may address a content handle
-    /// rather than a path, so it cannot always be inferred by `detect_bounce`.
-    /// Benchmark replay uses this method to keep the quality proxy on the same
-    /// tracker as ordinary compressed-then-full bounces.
-    pub fn record_expansion(&mut self, source: Option<&str>, wasted_tokens: usize) {
-        self.total_bounces = self.total_bounces.saturating_add(1);
-        self.total_wasted_tokens = self.total_wasted_tokens.saturating_add(wasted_tokens);
-
-        if let Some(path) = source {
-            let ext = extension_of(path);
-            if !ext.is_empty() {
-                let stats = self.per_extension.entry(ext).or_default();
-                stats.bounces = stats.bounces.saturating_add(1);
-                stats.wasted_tokens = stats.wasted_tokens.saturating_add(wasted_tokens);
-            }
-        }
-    }
-
     pub fn record_edit(&mut self, path: &str) {
         let norm = crate::core::pathutil::normalize_tool_path(path);
         self.recently_edited.insert(norm, self.seq_counter);
@@ -213,17 +187,7 @@ impl BounceTracker {
         false
     }
 
-    pub fn bounce_rate_for_extension(&self, path: &str) -> Option<f64> {
-        let ext = extension_of(path);
-        self.per_extension.get(&ext).and_then(|s| {
-            if s.total_reads >= 3 {
-                Some(s.bounces as f64 / s.total_reads as f64)
-            } else {
-                None
-            }
-        })
-    }
-
+    #[cfg(test)]
     pub fn total_bounces(&self) -> u64 {
         self.total_bounces
     }
@@ -308,25 +272,6 @@ mod tests {
     }
 
     #[test]
-    fn shell_access_triggers_bounce() {
-        let mut bt = BounceTracker::new();
-        bt.seq_counter = 1;
-        bt.record_read("config.yml", "signatures", 30, 400);
-        bt.seq_counter = 3;
-        bt.record_shell_file_access("config.yml");
-        assert_eq!(bt.total_bounces(), 1);
-        assert_eq!(bt.total_wasted_tokens, 30);
-    }
-
-    #[test]
-    fn explicit_expansion_tracks_quality_and_waste() {
-        let mut bt = BounceTracker::new();
-        bt.record_expansion(Some("src/main.rs"), 125);
-        assert_eq!(bt.total_bounces(), 1);
-        assert_eq!(bt.total_wasted_tokens, 125);
-    }
-
-    #[test]
     fn edit_forced_full_read_is_not_a_bounce() {
         // GL #622: a compressed overview read, then an edit, then the `full`
         // re-read that `should_force_full` mandates must NOT register as a bounce
@@ -388,12 +333,6 @@ mod tests {
         bt.seq_counter = 2;
         bt.record_read("a.rs", "full", 500, 500);
         assert_eq!(bt.adjusted_savings(1000), 950);
-    }
-
-    #[test]
-    fn bounce_rate_for_extension_below_minimum() {
-        let bt = BounceTracker::new();
-        assert!(bt.bounce_rate_for_extension("test.rs").is_none());
     }
 
     #[test]

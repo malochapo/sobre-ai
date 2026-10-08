@@ -17,7 +17,6 @@ pub mod fabric;
 pub mod gate;
 pub mod naming;
 pub mod persist;
-pub mod report;
 pub mod scan;
 pub mod score;
 
@@ -25,8 +24,7 @@ pub use annotate::{ReadAnnotation, annotations_for_file};
 pub use cognitive::{FunctionCognitive, cognitive_per_function};
 pub use delta::{CognitiveDelta, cognitive_delta, format_gate_notice, worst_regression};
 pub use naming::{NamingFinding, cryptic_reason, naming_findings};
-pub use scan::{FileReport, ProjectHealth, scan_project};
-pub use score::{Hotspot, NavigabilityInputs, NavigabilityScore, grade, navigability};
+pub use score::{Hotspot, NavigabilityInputs, NavigabilityScore, navigability};
 
 use serde::Serialize;
 

@@ -63,9 +63,6 @@ pub const MAX_RAM_PERCENT: u8 = 5;
 /// Idle time after which the session cache is cleared.
 pub const IDLE_CACHE_TTL_SECS: u64 = 3600;
 
-/// Commands slower than this get a timing note in their output.
-pub const SLOW_COMMAND_THRESHOLD_MS: u64 = 5000;
-
 /// `compression_level` when the file does not set it: the middle of the
 /// `lite` band.
 pub const DEFAULT_COMPRESSION_LEVEL: f64 = 0.3;

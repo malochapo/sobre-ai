@@ -269,52 +269,6 @@ fn apply_hebbian_bonus(scores: &mut [(String, f64)], bonus: &HashMap<String, f64
     }
 }
 
-/// Aggregated cache statistics: hits, reads, and token savings.
-///
-/// Counters are atomic so they can be updated on the read-locked cache-hit
-/// fast path without taking a write lock.
-#[derive(Debug, Default)]
-pub struct CacheStats {
-    total_reads: AtomicU64,
-    cache_hits: AtomicU64,
-    total_original_tokens: AtomicU64,
-    total_sent_tokens: AtomicU64,
-    files_tracked: AtomicU64,
-}
-
-impl CacheStats {
-    /// Total number of read operations recorded.
-    pub fn total_reads(&self) -> u64 {
-        self.total_reads.load(Ordering::Relaxed)
-    }
-
-    /// Total number of cache hits recorded.
-    pub fn cache_hits(&self) -> u64 {
-        self.cache_hits.load(Ordering::Relaxed)
-    }
-
-    /// Sum of original (uncompressed) token counts across all reads.
-    pub fn total_original_tokens(&self) -> u64 {
-        self.total_original_tokens.load(Ordering::Relaxed)
-    }
-
-    /// Sum of tokens actually sent to the model.
-    pub fn total_sent_tokens(&self) -> u64 {
-        self.total_sent_tokens.load(Ordering::Relaxed)
-    }
-
-    /// Number of distinct files currently tracked.
-    pub fn files_tracked(&self) -> u64 {
-        self.files_tracked.load(Ordering::Relaxed)
-    }
-
-    /// Returns the total number of tokens saved by cache hits.
-    pub fn tokens_saved(&self) -> u64 {
-        self.total_original_tokens()
-            .saturating_sub(self.total_sent_tokens())
-    }
-}
-
 /// A block shared across multiple files, identified by its canonical source.
 #[derive(Clone, Debug)]
 pub struct SharedBlock {
@@ -331,7 +285,6 @@ pub struct SessionCache {
     entries: HashMap<String, CacheEntry>,
     file_refs: HashMap<String, String>,
     next_ref: usize,
-    stats: CacheStats,
     shared_blocks: Vec<SharedBlock>,
     /// Hebbian co-access matrix (#3): tracks which files are read together so
     /// eviction can protect co-accessed clusters. Updated on `store`, consulted
@@ -346,14 +299,13 @@ impl Default for SessionCache {
 }
 
 impl SessionCache {
-    /// Creates an empty session cache with default stats.
+    /// Creates an empty session cache.
     pub fn new() -> Self {
         Self {
             entries: HashMap::new(),
             file_refs: HashMap::new(),
             next_ref: 1,
             shared_blocks: Vec::new(),
-            stats: CacheStats::default(),
             co_access: crate::core::hebbian_cache::CoAccessMatrix::new(),
         }
     }
@@ -427,39 +379,15 @@ impl SessionCache {
         self.entries.get_mut(&normalize_key(path))
     }
 
-    /// Retrieves the full (uncompressed) content for a file path, if cached.
-    /// Used by the CCR (Compress-Cache-Retrieve) mechanism.
-    pub fn get_full_content(&self, path: &str) -> Option<String> {
-        self.entries
-            .get(&normalize_key(path))
-            .and_then(CacheEntry::content)
-    }
-
-    /// Records a cache hit, updates access stats, and emits a cache-hit event.
+    /// Records a cache hit: bumps the entry's read count and access time.
     ///
-    /// Takes `&self`: the hit counters use interior-mutable atomics, so this
+    /// Takes `&self`: both are interior-mutable atomics, so this
     /// runs under a shared (read) lock and lets parallel reads of different
     /// files proceed concurrently instead of serializing on a write lock.
     pub fn record_cache_hit(&self, path: &str) -> Option<&CacheEntry> {
-        let key = normalize_key(path);
-        let ref_label = self
-            .file_refs
-            .get(&key)
-            .cloned()
-            .unwrap_or_else(|| "F?".to_string());
-        let entry = self.entries.get(&key)?;
-        let new_count = entry.bump_read_count();
+        let entry = self.entries.get(&normalize_key(path))?;
+        entry.bump_read_count();
         entry.touch();
-        self.stats.total_reads.fetch_add(1, Ordering::Relaxed);
-        self.stats.cache_hits.fetch_add(1, Ordering::Relaxed);
-        self.stats
-            .total_original_tokens
-            .fetch_add(entry.original_tokens as u64, Ordering::Relaxed);
-        let hit_msg = format!("{ref_label} cached {new_count}t {}L", entry.line_count);
-        let sent_tokens = count_tokens(&hit_msg) as u64;
-        self.stats
-            .total_sent_tokens
-            .fetch_add(sent_tokens, Ordering::Relaxed);
         Some(entry)
     }
 
@@ -476,11 +404,6 @@ impl SessionCache {
         let stored_mtime = std::fs::metadata(path).and_then(|m| m.modified()).ok();
         let now = Instant::now();
 
-        self.stats.total_reads.fetch_add(1, Ordering::Relaxed);
-        self.stats
-            .total_original_tokens
-            .fetch_add(original_tokens as u64, Ordering::Relaxed);
-
         if let Some(existing) = self.entries.get_mut(&key) {
             existing.set_last_access(now);
             if stored_mtime.is_some() {
@@ -488,16 +411,6 @@ impl SessionCache {
             }
             if existing.hash == hash {
                 let new_count = existing.bump_read_count();
-                self.stats.cache_hits.fetch_add(1, Ordering::Relaxed);
-                let hit_msg = format!(
-                    "{} cached {new_count}t {}L",
-                    self.file_refs.get(&key).unwrap_or(&"F?".to_string()),
-                    existing.line_count,
-                );
-                let sent_tokens = count_tokens(&hit_msg) as u64;
-                self.stats
-                    .total_sent_tokens
-                    .fetch_add(sent_tokens, Ordering::Relaxed);
                 return StoreResult {
                     line_count: existing.line_count,
                     original_tokens: existing.original_tokens,
@@ -517,9 +430,6 @@ impl SessionCache {
             if stored_mtime.is_some() {
                 existing.stored_mtime = stored_mtime;
             }
-            self.stats
-                .total_sent_tokens
-                .fetch_add(original_tokens as u64, Ordering::Relaxed);
             return StoreResult {
                 line_count,
                 original_tokens,
@@ -542,10 +452,6 @@ impl SessionCache {
         );
 
         self.entries.insert(key, entry);
-        self.stats.files_tracked.fetch_add(1, Ordering::Relaxed);
-        self.stats
-            .total_sent_tokens
-            .fetch_add(original_tokens as u64, Ordering::Relaxed);
         StoreResult {
             line_count,
             original_tokens,
@@ -593,11 +499,6 @@ impl SessionCache {
     /// Returns all cached entries as (path, entry) pairs.
     pub fn get_all_entries(&self) -> Vec<(&String, &CacheEntry)> {
         self.entries.iter().collect()
-    }
-
-    /// Returns a reference to the aggregated cache statistics.
-    pub fn get_stats(&self) -> &CacheStats {
-        &self.stats
     }
 
     /// Returns the path-to-file-ref mapping (e.g. "/src/main.rs" → "F1").
@@ -650,15 +551,6 @@ impl SessionCache {
         let result = entry.get_compressed(mode_key)?;
         entry.bump_read_count();
         entry.touch();
-        self.stats.total_reads.fetch_add(1, Ordering::Relaxed);
-        self.stats.cache_hits.fetch_add(1, Ordering::Relaxed);
-        self.stats
-            .total_original_tokens
-            .fetch_add(entry.original_tokens as u64, Ordering::Relaxed);
-        let sent = count_tokens(result) as u64;
-        self.stats
-            .total_sent_tokens
-            .fetch_add(sent, Ordering::Relaxed);
         Some(result)
     }
 
@@ -779,14 +671,13 @@ impl SessionCache {
         }
     }
 
-    /// Clears all cached entries, file refs, and resets stats. Returns the number of entries removed.
+    /// Clears all cached entries and file refs. Returns the number of entries removed.
     pub fn clear(&mut self) -> usize {
         let count = self.entries.len();
         self.entries.clear();
         self.file_refs.clear();
         self.shared_blocks.clear();
         self.next_ref = 1;
-        self.stats = CacheStats::default();
         count
     }
 }
@@ -915,16 +806,6 @@ mod tests {
     }
 
     #[test]
-    fn cache_stats_track_correctly() {
-        let mut cache = SessionCache::new();
-        cache.store("/a.rs", "hello");
-        cache.store("/a.rs", "hello"); // hit
-        let stats = cache.get_stats();
-        assert_eq!(stats.total_reads(), 2);
-        assert_eq!(stats.cache_hits(), 1);
-    }
-
-    #[test]
     fn record_cache_hit_works_through_shared_ref() {
         let mut cache = SessionCache::new();
         cache.store("/x.rs", "hello world");
@@ -932,9 +813,8 @@ mod tests {
         let shared: &SessionCache = &cache;
         assert!(shared.record_cache_hit("/x.rs").is_some());
         assert!(shared.record_cache_hit("/x.rs").is_some());
-        // store=1 + two hits => read_count 3, cache_hits 2.
+        // store=1 + two hits => read_count 3.
         assert_eq!(cache.get("/x.rs").unwrap().read_count(), 3);
-        assert_eq!(cache.get_stats().cache_hits(), 2);
     }
 
     #[test]
@@ -962,8 +842,7 @@ mod tests {
         for h in handles {
             h.join().unwrap();
         }
-        let total = (threads * iters) as u64;
-        assert_eq!(cache.get_stats().cache_hits(), total * 2);
+        let total = threads * iters;
         assert_eq!(cache.get("/a.rs").unwrap().read_count(), 1 + total as u32);
         assert_eq!(cache.get("/b.rs").unwrap().read_count(), 1 + total as u32);
     }

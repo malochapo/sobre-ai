@@ -24,12 +24,6 @@ pub use observe::*;
 pub use read_dedup::handle_read_dedup;
 pub use rewrite::{handle_cursor, handle_gemini};
 
-/// Mark this process as a hook child so the daemon-client never auto-starts
-/// the daemon from inside a hook (which would create zombie processes).
-pub fn mark_hook_environment() {
-    crate::core::runtime_flags::mark_hook_child();
-}
-
 /// Arms a watchdog that force-exits the process after the given duration.
 /// Prevents hook processes from becoming zombies when stdin pipes break or
 /// the IDE cancels the call. Since hooks MUST NOT spawn child processes

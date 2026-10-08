@@ -198,9 +198,9 @@ mod nested_lean_ctx_exec_tests {
     }
 
     #[test]
-    fn collapses_exec_alias_and_path() {
+    fn collapses_wrapper_given_by_path() {
         assert_eq!(
-            super::collapse_nested_lean_ctx_exec("/usr/local/bin/lean-ctx exec 'git status'")
+            super::collapse_nested_lean_ctx_exec("/usr/local/bin/lean-ctx -c 'git status'")
                 .as_deref(),
             Some("git status")
         );
@@ -507,7 +507,7 @@ fn strip_one_lean_ctx_exec(command: &str) -> Option<String> {
     if words.len() < 3 || !is_lean_ctx_bin(&words[0].value) {
         return None;
     }
-    if words[1].value != "-c" && words[1].value != "exec" {
+    if words[1].value != "-c" {
         return None;
     }
     if words[2..].iter().any(|w| {
