@@ -1,4 +1,4 @@
-use super::super::{mcp_server_quiet_mode, resolve_hook_command_binary, write_file};
+use super::super::resolve_hook_command_binary;
 
 /// Keep exactly one sobre `preToolUse` entry for `matcher`; other entries,
 /// including the user's own hooks on the same matcher, are left alone.
@@ -75,48 +75,16 @@ fn merge_cursor_hooks(existing: &mut serde_json::Value, binary: &str) {
     ensure_observe_hook(hooks_obj, "preCompact", &observe_cmd);
 }
 
-pub fn install_cursor_hook() {
-    let Some(home) = crate::core::home::resolve_home_dir() else {
-        tracing::error!("Cannot resolve home directory");
-        return;
-    };
-
-    install_cursor_hook_config(&home);
-
-    if !mcp_server_quiet_mode() {
-        eprintln!("Restart Cursor to activate.");
-    }
-}
-
-pub(crate) fn install_cursor_hook_config(home: &std::path::Path) {
+pub(crate) fn install_cursor_hook_config(home: &std::path::Path) -> Result<(), String> {
     let binary = resolve_hook_command_binary();
     let hooks_json = home.join(".cursor").join("hooks.json");
-
-    let content = if hooks_json.exists() {
-        std::fs::read_to_string(&hooks_json).unwrap_or_default()
-    } else {
-        String::new()
-    };
-
-    let mut existing = if content.trim().is_empty() {
-        serde_json::json!({})
-    } else {
-        crate::core::jsonc::parse_jsonc(&content).unwrap_or_else(|_| serde_json::json!({}))
-    };
-
-    if !existing.is_object() {
-        existing = serde_json::json!({});
-    }
-
-    // Merge-based: preserve other hooks/plugins. Only upsert sobre entries.
-    merge_cursor_hooks(&mut existing, &binary);
-
-    let formatted = serde_json::to_string_pretty(&existing).unwrap_or_default();
-    write_file(&hooks_json, &formatted);
-
-    if !mcp_server_quiet_mode() {
-        eprintln!("Installed Cursor hooks at {}", hooks_json.display());
-    }
+    crate::config_io::edit_json(&hooks_json, |root| {
+        let mut value = serde_json::Value::Object(std::mem::take(root));
+        merge_cursor_hooks(&mut value, &binary);
+        if let serde_json::Value::Object(map) = value {
+            *root = map;
+        }
+    })
 }
 
 #[cfg(test)]

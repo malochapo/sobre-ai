@@ -1,8 +1,8 @@
 ---
-source: tests/pattern_snapshots.rs
+source: tests/suite/pattern_snapshots.rs
 expression: compressed
 ---
+  users: [{...8 keys}...10]
+  total: int
   page: int
   per_page: int
-  total: int
-  users: [{...8 keys}...10]

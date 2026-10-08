@@ -1820,6 +1820,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "jsonc-parser"
+version = "0.34.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0ecded084f9b9a718d39668a42657c32253663d1f6afb3fbb9134f0305f73f48"
+dependencies = [
+ "serde_json",
+]
+
+[[package]]
 name = "jsonschema"
 version = "0.46.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3433,6 +3442,7 @@ dependencies = [
  "glob",
  "ignore",
  "insta",
+ "jsonc-parser",
  "jsonschema",
  "libc",
  "libloading 0.8.9",
@@ -3681,7 +3691,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
- "getrandom 0.3.4",
+ "getrandom 0.4.3",
  "once_cell",
  "rustix",
  "windows-sys 0.61.2",

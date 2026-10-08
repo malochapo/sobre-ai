@@ -1,70 +1,20 @@
-pub(crate) fn quiet_enabled() -> bool {
-    crate::core::runtime_flags::quiet_enabled()
-}
-
-macro_rules! qprintln {
-    ($($t:tt)*) => {
-        if !quiet_enabled() {
-            println!($($t)*);
-        }
-    };
-}
-
-/// `init --agent <name>` (repeatable): connect the named agents. With
-/// `--dry-run`, describe what `init` would write instead.
-fn install_agents(args: &[String]) {
-    let dry_run = args.iter().any(|a| a == "--dry-run");
-    let agents: Vec<&str> = args
-        .windows(2)
-        .filter(|w| w[0] == "--agent")
-        .map(|w| w[1].as_str())
-        .collect();
-
-    if dry_run {
-        let binary = crate::core::portable_binary::resolve_portable_binary();
-        let data_dir = crate::core::data_dir::sobre_data_dir().map_or_else(
-            |_| "~/.local/share/sobre/".to_string(),
-            |p| p.to_string_lossy().to_string(),
-        );
-        qprintln!("\nsobre init --check\n");
-        if agents.is_empty() {
-            qprintln!("  Would connect: every detected agent (MCP entry, hooks, skill)");
-        } else {
-            qprintln!("  Would connect: {}", agents.join(", "));
-        }
-        qprintln!("  Would create:  {data_dir}");
-        qprintln!("  Binary:        {binary}");
-        qprintln!("  Shell files:   untouched (sobre never edits your shell rc)");
-        qprintln!("\n  Run without --check to apply.");
-        return;
-    }
-
-    for agent_name in &agents {
-        let result = crate::setup::setup_single_agent(agent_name);
-        for e in &result.errors {
-            eprintln!("  ✗ {agent_name}: {e}");
-        }
-    }
-    qprintln!("\nRun 'sobre gain' after using some commands to see your savings.");
-}
-
 // ═══════════════════════════════════════════════════════════════════════
 // `sobre init` — the one installation command
 // ═══════════════════════════════════════════════════════════════════════
 
-/// `sobre init` — connect sobre to this machine.
+/// `sobre init` — connect sobre to this machine's agents.
 ///
-/// One question is still asked, and only one: the proxy sees every request,
-/// so turning it on is a real decision. Everything else takes a safe default
-/// and is changed afterwards through `sobre config`.
+/// One question is asked, and only once: the proxy sees every request, so
+/// turning it on is a real decision. Everything else takes a safe default and
+/// is changed afterwards through `sobre config`.
 pub fn cmd_init(args: &[String]) {
     if args.iter().any(|a| a == "--help" || a == "-h") {
         print_init_help();
         return;
     }
 
-    // An unknown flag must never fall through to a run that rewrites the
-    // shell rc and agent configs (#476).
+    // An unknown flag must never fall through to a run that rewrites agent
+    // configs (#476).
     const KNOWN: &[&str] = &["--agent", "--check", "--dry-run", "--repair", "--json"];
     if let Some(unknown) = args
         .iter()
@@ -75,109 +25,52 @@ pub fn cmd_init(args: &[String]) {
         std::process::exit(2);
     }
 
-    // `init --agent X` or `init <agent>`.
-    // The registry is the list of agents sobre knows how to configure, so it
-    // also answers "is this positional an agent name?".
-    let known_agents: Vec<String> = dirs::home_dir()
-        .map(|h| crate::core::editor_registry::build_targets(&h))
-        .unwrap_or_default()
-        .into_iter()
-        .map(|t| t.agent_key)
-        .collect();
-    let named_agent = args
-        .iter()
-        .find(|a| !a.starts_with('-') && known_agents.iter().any(|k| k == *a))
-        .cloned();
-    let has_agent_flag = args.windows(2).any(|w| w[0] == "--agent");
-    // Any other positional (a shell name, a typo) is an error: falling through
-    // would run the whole install.
-    let agent_values: Vec<&String> = args
-        .windows(2)
-        .filter(|w| w[0] == "--agent")
-        .map(|w| &w[1])
-        .collect();
-    if let Some(stray) = args.iter().find(|a| {
-        !a.starts_with('-') && !known_agents.iter().any(|k| k == *a) && !agent_values.contains(a)
-    }) {
-        eprintln!("init: unknown agent '{stray}'\n");
-        print_init_help();
-        std::process::exit(2);
+    // `init <agent>…` and `init --agent <agent>`: any other positional (a
+    // typo) is an error, since falling through would connect every agent.
+    let mut named: Vec<&'static str> = Vec::new();
+    for arg in args.iter().filter(|a| !a.starts_with('-')) {
+        match crate::setup::agent_key(arg) {
+            Some(key) if !named.contains(&key) => named.push(key),
+            Some(_) => {}
+            None => {
+                eprintln!("init: unknown agent '{arg}'\n");
+                print_init_help();
+                std::process::exit(2);
+            }
+        }
     }
 
     let json = args.iter().any(|a| a == "--json");
     let check = args.iter().any(|a| a == "--check" || a == "--dry-run");
     let repair = args.iter().any(|a| a == "--repair");
+    let _quiet = json.then(crate::core::runtime_flags::scoped_quiet);
 
-    // `--check` writes nothing, so it must be answered before any branch that
-    // installs — including the per-agent one. Tested after it, `init claude
-    // --check` performed a real install while the help promised otherwise.
-    if check {
-        let mut preview = vec!["--dry-run".to_string()];
-        if let Some(ref agent) = named_agent {
-            preview.push("--agent".to_string());
-            preview.push(agent.clone());
-        }
-        install_agents(&preview);
-        return;
-    }
-
-    if has_agent_flag {
-        install_agents(args);
-        return;
-    }
-    if let Some(agent) = named_agent {
-        // Forward flags AND their values: `--agent` takes one; filtering on
-        // `starts_with('-')` alone would drop it.
-        let mut forwarded = vec!["--agent".to_string(), agent.clone()];
-        let mut i = 0;
-        while i < args.len() {
-            let a = &args[i];
-            if a.starts_with('-') {
-                forwarded.push(a.clone());
-                if a == "--agent"
-                    && let Some(value) = args.get(i + 1)
-                    && !value.starts_with('-')
-                {
-                    forwarded.push(value.clone());
-                    i += 1;
-                }
-            }
-            i += 1;
-        }
-        install_agents(&forwarded);
-        return;
-    }
-
-    // `--repair` is the machine entry point: no prompt, and a non-zero exit
-    // when anything failed. CI gates on that exit code.
-    if !repair && !json {
+    // `--repair` and `--json` are the machine entry points: no prompt, and a
+    // non-zero exit when anything failed. `--check` writes nothing.
+    if !check && !repair && !json && named.is_empty() {
         ask_about_proxy();
         ask_about_embeddings();
     }
 
-    let opts = crate::setup::SetupOptions {
-        non_interactive: true,
-        yes: true,
-        fix: true,
-        json,
-        ..Default::default()
-    };
-    match crate::setup::run_setup_with_options(opts) {
-        Ok(report) => {
-            if json {
-                println!(
-                    "{}",
-                    serde_json::to_string_pretty(&report).unwrap_or_else(|_| "{}".to_string())
-                );
+    if !json {
+        println!(
+            "\nsobre init{}\n",
+            if check {
+                " --check (nothing is written)"
+            } else {
+                ""
             }
-            if !report.success {
-                std::process::exit(1);
-            }
-        }
-        Err(e) => {
-            eprintln!("init: {e}");
-            std::process::exit(1);
-        }
+        );
+    }
+    let report = crate::setup::run_init(&named, check);
+    if json {
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&report).unwrap_or_else(|_| "{}".to_string())
+        );
+    }
+    if !report.success {
+        std::process::exit(1);
     }
 }
 
@@ -258,19 +151,24 @@ fn ask_about_embeddings() {
 
 fn print_init_help() {
     println!(
-        "Usage: sobre init [<agent>] [options]
+        "Usage: sobre init [<agent>...] [options]
 
-  sobre init                 Connect every detected agent (MCP entry, hooks,
-                             skill). Asks once about the proxy. Never edits
-                             your shell rc files.
-  sobre init <agent>         One agent only (claude, cursor, codex, ...)
+  sobre init                 Connect every installed agent: its MCP entry,
+                             hooks and skill. Asks once about the proxy.
+                             Never edits your shell rc files.
+  sobre init <agent>...      Only the named agents, installed or not:
+                             claude, codex, copilot, cursor, gemini,
+                             opencode, vscode, windsurf, zed
 
 Options:
-  --check                    Show what would change, write nothing
+  --check                    List the files init would create or change,
+                             and write nothing
   --repair                   No prompt, exits non-zero on failure (for CI)
   --json                     Machine-readable report; implies --repair
-  --agent <name>             Same as the positional form, repeatable
+  --agent <name>             Same as naming the agent, repeatable
 
+Edits keep your comments and key order; a file sobre edits for the first
+time is copied to <file>.sobre.bak.
 Undo it all: sobre uninstall"
     );
 }

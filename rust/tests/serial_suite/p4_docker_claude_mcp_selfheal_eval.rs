@@ -64,9 +64,10 @@ fn claude_mcp_add_json_used_when_available() {
 
     let res =
         sobre::core::editor_registry::writers::write_config(claude_target, &bin).expect("write");
-    assert!(
-        res.note.as_deref() == Some("via claude mcp add-json"),
-        "{res:?}"
+    assert_eq!(
+        res,
+        sobre::core::editor_registry::WriteAction::Created,
+        "the Claude CLI registered the entry"
     );
 
     let saved = std::fs::read_to_string(home.join("claude-mcp.json")).expect("saved json");

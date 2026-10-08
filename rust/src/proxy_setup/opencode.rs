@@ -94,10 +94,15 @@ fn read(path: &Path) -> Option<Value> {
     crate::core::jsonc::parse_jsonc(&existing).ok()
 }
 
-fn write(path: &Path, doc: &Value) {
-    if let Ok(out) = serde_json::to_string_pretty(doc) {
-        let _ = std::fs::write(path, out + "\n");
-    }
+/// Writes `doc` back over `path`, keeping the user's formatting. `install`
+/// keeps a backup of a file sobre edits for the first time; a removal does not.
+fn write(path: &Path, doc: &Value, install: bool) {
+    let original = std::fs::read_to_string(path).unwrap_or_default();
+    let _ = if install {
+        crate::config_io::write_json_edit(path, &original, doc)
+    } else {
+        crate::config_io::write_json_cleanup(path, &original, doc)
+    };
 }
 
 /// Points each OpenCode provider that uses an API key at the proxy on `port`,
@@ -146,7 +151,7 @@ pub(crate) fn install_opencode_env(home: &Path, port: u16, quiet: bool) {
         }
     }
     if changed {
-        write(&path, &doc);
+        write(&path, &doc, true);
     }
     if !quiet {
         if reachable == Some(false) {
@@ -183,7 +188,7 @@ pub(crate) fn uninstall_opencode_env(home: &Path, quiet: bool) -> bool {
         changed |= remove_base_url(&mut doc, provider);
     }
     if changed {
-        write(&path, &doc);
+        write(&path, &doc, false);
         if !quiet {
             println!("  ✓ Removed the proxy base URLs from OpenCode's opencode.json");
         }

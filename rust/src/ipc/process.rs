@@ -251,28 +251,21 @@ fn process_group_pids(pgid: libc::pid_t) -> Vec<u32> {
         .unwrap_or_default()
 }
 
-/// Find all PIDs of processes whose executable name matches `name`.
-/// Excludes the current process and its ancestor chain (#714).
+/// PIDs of the current user's processes named `name`, excluding this process
+/// and its ancestor chain (#714).
 pub fn find_pids_by_name(name: &str) -> Vec<u32> {
     let protected = protected_self_pids();
     let mut pids = Vec::new();
 
     #[cfg(unix)]
     {
-        // Exact name match first
+        // The current user's processes named exactly `name`. Matching on the
+        // full command line would also catch a script whose path merely ends
+        // in `/sobre`, and other users' processes are never ours.
+        // SAFETY: geteuid() takes no arguments and cannot fail.
+        let uid = unsafe { libc::geteuid() };
         if let Ok(output) = std::process::Command::new("pgrep")
-            .arg("-x")
-            .arg(name)
-            .output()
-        {
-            collect_pids(&output.stdout, &protected, &mut pids);
-        }
-
-        // Also find processes where the full command line contains the binary path
-        // (catches processes launched via absolute path, e.g. /Users/x/.local/bin/sobre)
-        if let Ok(output) = std::process::Command::new("pgrep")
-            .arg("-f")
-            .arg(format!("/{name}(\\s|$)"))
+            .args(["-x", "-u", &uid.to_string(), name])
             .output()
         {
             collect_pids(&output.stdout, &protected, &mut pids);
@@ -284,16 +277,12 @@ pub fn find_pids_by_name(name: &str) -> Vec<u32> {
 
     #[cfg(windows)]
     {
-        if let Ok(output) = std::process::Command::new("tasklist")
-            .args([
-                "/FI",
-                &format!("IMAGENAME eq {name}.exe"),
-                "/FO",
-                "CSV",
-                "/NH",
-            ])
-            .output()
-        {
+        let mut cmd = std::process::Command::new("tasklist");
+        cmd.args(["/FI", &format!("IMAGENAME eq {name}.exe")]);
+        if let Ok(user) = std::env::var("USERNAME") {
+            cmd.args(["/FI", &format!("USERNAME eq {user}")]);
+        }
+        if let Ok(output) = cmd.args(["/FO", "CSV", "/NH"]).output() {
             let stdout = String::from_utf8_lossy(&output.stdout);
             for line in stdout.lines() {
                 let parts: Vec<&str> = line.split(',').collect();
@@ -322,103 +311,6 @@ fn collect_pids(stdout: &[u8], protected: &std::collections::HashSet<u32>, out: 
             out.push(pid);
         }
     }
-}
-
-/// Returns PIDs that are NOT MCP stdio servers (safe to kill during `sobre uninstall`).
-/// MCP servers are child processes of the IDE and must not be killed — the IDE
-/// will immediately respawn them, causing a kill loop that requires a reboot.
-pub fn find_killable_pids(name: &str) -> Vec<u32> {
-    killable_excluding_mcp(find_pids_by_name(name), &find_mcp_server_pids(name))
-}
-
-/// Pure set-difference: every PID in `all` that is not an MCP server PID. Split
-/// out from [`find_killable_pids`] so the IDE-protection invariant — the
-/// MCP-stdio server is never returned as killable (#1036) — is unit-testable
-/// without spawning real processes.
-fn killable_excluding_mcp(all: Vec<u32>, mcp: &[u32]) -> Vec<u32> {
-    all.into_iter().filter(|p| !mcp.contains(p)).collect()
-}
-
-#[cfg(unix)]
-fn find_mcp_server_pids(name: &str) -> Vec<u32> {
-    find_pids_by_name(name)
-        .into_iter()
-        .filter(|&pid| is_mcp_stdio_process(pid))
-        .collect()
-}
-
-#[cfg(not(unix))]
-fn find_mcp_server_pids(_name: &str) -> Vec<u32> {
-    Vec::new()
-}
-
-#[cfg(unix)]
-fn is_mcp_stdio_process(pid: u32) -> bool {
-    if let Ok(output) = std::process::Command::new("ps")
-        .args(["-o", "ppid=,command=", "-p", &pid.to_string()])
-        .output()
-    {
-        let text = String::from_utf8_lossy(&output.stdout);
-        let t = text.trim();
-        if t.contains("Cursor") || t.contains("cursor") || t.contains("code") {
-            return true;
-        }
-        let parts: Vec<&str> = t.split_whitespace().collect();
-        if let Some(ppid_str) = parts.first()
-            && let Ok(ppid) = ppid_str.parse::<u32>()
-            && let Ok(pp_out) = std::process::Command::new("ps")
-                .args(["-o", "command=", "-p", &ppid.to_string()])
-                .output()
-        {
-            let pp_cmd = String::from_utf8_lossy(&pp_out.stdout);
-            if pp_cmd.contains("Cursor") || pp_cmd.contains("cursor") || pp_cmd.contains("code") {
-                return true;
-            }
-        }
-        let cmd_part = parts.get(1..).map(|p| p.join(" ")).unwrap_or_default();
-        // MCP stdio servers: bare `sobre` with no subcommand (or just `mcp`)
-        if (cmd_part.ends_with("/sobre") || cmd_part == "sobre")
-            && !cmd_part.contains("proxy")
-            && !cmd_part.contains("dashboard")
-            && !cmd_part.contains("daemon")
-            && !cmd_part.contains("stop")
-            && !cmd_part.contains("hook")
-        {
-            return true;
-        }
-        // Hook processes spawned by an agent host (`sobre hook <action>`)
-        if cmd_part.contains(" hook ") {
-            return true;
-        }
-    }
-    false
-}
-
-/// Kill non-MCP processes matching `name` (SIGTERM then SIGKILL).
-/// Returns count of killed processes.
-pub fn kill_all_by_name(name: &str) -> usize {
-    let pids = find_killable_pids(name);
-    if pids.is_empty() {
-        return 0;
-    }
-
-    for &pid in &pids {
-        let _ = terminate_gracefully(pid);
-    }
-
-    std::thread::sleep(std::time::Duration::from_millis(500));
-
-    let mut killed = 0;
-    for &pid in &pids {
-        if is_alive(pid) {
-            let _ = force_kill(pid);
-        }
-        killed += 1;
-    }
-
-    std::thread::sleep(std::time::Duration::from_millis(200));
-
-    killed
 }
 
 #[cfg(test)]
@@ -458,23 +350,6 @@ mod tests {
             start.elapsed() < std::time::Duration::from_secs(5),
             "timeout must not wait for the full command"
         );
-    }
-
-    #[test]
-    fn killable_excludes_mcp_pids() {
-        // #1036: the IDE-owned MCP stdio server PID must never be returned as
-        // killable, so `cmd_dev_install`'s force-kill cannot drop the editor's
-        // MCP connection.
-        let killable = killable_excluding_mcp(vec![1, 2, 3, 4], &[2, 4]);
-        assert_eq!(killable, vec![1, 3]);
-        assert!(!killable.contains(&2));
-        assert!(!killable.contains(&4));
-    }
-
-    #[test]
-    fn killable_with_no_mcp_returns_all() {
-        let all = vec![10, 20, 30];
-        assert_eq!(killable_excluding_mcp(all.clone(), &[]), all);
     }
 
     /// #714 follow-up: agent harnesses reparent intermediaries to PID 1, so

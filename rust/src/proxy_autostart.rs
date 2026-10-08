@@ -2,7 +2,6 @@
 use std::net::{IpAddr, Ipv4Addr, SocketAddr, TcpStream};
 #[cfg(any(target_os = "macos", target_os = "linux"))]
 use std::path::PathBuf;
-#[cfg(any(target_os = "macos", target_os = "linux"))]
 use std::time::{Duration, Instant};
 
 #[cfg(target_os = "macos")]
@@ -10,7 +9,6 @@ const PLIST_LABEL: &str = "com.sobre.proxy";
 #[cfg(target_os = "linux")]
 const SYSTEMD_SERVICE: &str = "sobre-proxy";
 
-#[cfg(any(target_os = "macos", target_os = "linux", test))]
 fn proxy_pid_from_health(body: &str) -> Option<u32> {
     let health: serde_json::Value = serde_json::from_str(body).ok()?;
     if health.get("status").and_then(serde_json::Value::as_str) != Some("ok") {
@@ -20,7 +18,6 @@ fn proxy_pid_from_health(body: &str) -> Option<u32> {
     (pid > 0).then_some(pid)
 }
 
-#[cfg(any(target_os = "macos", target_os = "linux", test))]
 fn health_identifies_sobre_proxy(body: &str) -> bool {
     serde_json::from_str::<serde_json::Value>(body)
         .ok()
@@ -34,7 +31,8 @@ fn port_is_open(port: u16) -> bool {
     TcpStream::connect_timeout(&addr, Duration::from_millis(150)).is_ok()
 }
 
-#[cfg(any(target_os = "macos", target_os = "linux"))]
+/// The PID of the sobre proxy answering `/health` on `port`, or `None` when
+/// nothing answers there or the answer is not a sobre proxy's.
 fn proxy_pid_on_port(port: u16) -> Option<u32> {
     let health_url = format!("http://127.0.0.1:{port}/health");
     let response = ureq::get(&health_url)
@@ -46,6 +44,26 @@ fn proxy_pid_on_port(port: u16) -> Option<u32> {
     let body = response.into_body().read_to_string().ok()?;
     let pid = proxy_pid_from_health(&body)?;
     health_identifies_sobre_proxy(&body).then_some(pid)
+}
+
+/// Stops the sobre proxy answering on `port` (SIGTERM, then SIGKILL after
+/// two seconds) and returns its PID. `None` when no sobre proxy answers there:
+/// a process is only ever signalled after it identified itself as sobre's
+/// proxy, so nothing else on the machine is touched.
+pub(crate) fn stop_proxy_on_port(port: u16) -> Option<u32> {
+    let pid = proxy_pid_on_port(port)?;
+    if pid == std::process::id() {
+        return None;
+    }
+    let _ = crate::ipc::process::terminate_gracefully(pid);
+    let deadline = Instant::now() + Duration::from_secs(2);
+    while Instant::now() < deadline && crate::ipc::process::is_alive(pid) {
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    if crate::ipc::process::is_alive(pid) {
+        let _ = crate::ipc::process::force_kill(pid);
+    }
+    Some(pid)
 }
 
 /// Stop a proxy already owning `port` before a managed service is started.

@@ -108,8 +108,7 @@ pub(crate) fn uninstall_claude_env(home: &Path, quiet: bool) {
         }
     }
 
-    let content = serde_json::to_string_pretty(&doc).unwrap_or_default();
-    let _ = std::fs::write(&settings_path, content + "\n");
+    let _ = crate::config_io::write_json_cleanup(&settings_path, &existing, &doc);
 }
 
 pub(crate) fn install_claude_env(home: &Path, port: u16, quiet: bool) {
@@ -161,8 +160,7 @@ pub(crate) fn install_claude_env_inner(home: &Path, port: u16, quiet: bool, forc
                         doc.as_object_mut().map(|o| o.remove("env"));
                     }
                 }
-                let out = serde_json::to_string_pretty(&doc).unwrap_or_default();
-                let _ = std::fs::write(&settings_path, out + "\n");
+                let _ = crate::config_io::write_json_cleanup(&settings_path, &existing, &doc);
             }
         }
         if !quiet {
@@ -217,9 +215,7 @@ pub(crate) fn install_claude_env_inner(home: &Path, port: u16, quiet: bool, forc
         );
     }
 
-    let _ = std::fs::create_dir_all(&settings_dir);
-    let content = serde_json::to_string_pretty(&doc).unwrap_or_default();
-    let _ = std::fs::write(&settings_path, content + "\n");
+    let _ = crate::config_io::write_json_edit(&settings_path, &existing, &doc);
     if !quiet {
         println!("  Configured ANTHROPIC_BASE_URL in Claude Code settings");
     }
