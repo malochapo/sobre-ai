@@ -50,7 +50,7 @@ The lots run in this order:
 | Lot | Scope | Status |
 |---|---|---|
 | A | The user's machine: `uninstall`, `init`, agent integration | done (#31) |
-| B | The MCP tools: bugs, incomplete features, drift; decisions 1–4 and 6 | in progress (#32, #33) |
+| B | The MCP tools: bugs, incomplete features, drift; decisions 1–4 and 6 | in progress (#32, #33, #34) |
 | C | The CLI and the proxy | open |
 | R | Tool names `ctx_*` → `sobre_*` (decision 9) | open |
 | D | Dead code, stale files, stale comments, duplicates; decision 7 | open |
@@ -239,7 +239,7 @@ Fixed in #31. How the fixes work:
 ## Lot B — the MCP tools
 
 Fixed so far: #32 (paths, `ctx_read`, hidden read state), #33 (what the
-agent receives: prefixes, markers, footers, prompts and resources), #PR_B3
+agent receives: prefixes, markers, footers, prompts and resources), #34
 (edits).
 
 ### Bugs
@@ -592,7 +592,7 @@ agent receives: prefixes, markers, footers, prompts and resources), #PR_B3
   - "Ledger cleared (0% pressure)" (`ctx_session.rs:229`).
   - `LCTX_MAX_READ_BYTES` in the `tests_windowed.rs` doc.
   - "IDE-first" (`ctx_refactor/mod.rs`).
-  - ~~"read-only-roots deny" (`ctx_patch/mod.rs:14`).~~ Removed (#PR_B3).
+  - ~~"read-only-roots deny" (`ctx_patch/mod.rs:14`).~~ Removed (#34).
   - "operator env pin" (`execute.rs:404`).
 - [ ] **B45 `ctx_shell background_action=cancel` answers
   `[background:X running]`** (`background_shell.rs:237-246`).
