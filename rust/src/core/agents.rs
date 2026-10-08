@@ -152,6 +152,7 @@ impl AgentRegistry {
         self.updated_at = Utc::now();
     }
 
+    #[cfg(test)]
     pub fn save(&self) -> Result<(), String> {
         let dir = agents_dir()?;
         std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
@@ -175,6 +176,7 @@ impl AgentRegistry {
         serde_json::from_str(&content).ok()
     }
 
+    #[cfg(test)]
     pub fn load_or_create() -> Self {
         Self::load().unwrap_or_default()
     }

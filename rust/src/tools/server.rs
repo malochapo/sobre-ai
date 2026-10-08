@@ -43,7 +43,7 @@ pub struct SobreServer {
     pub autonomy: Arc<super::autonomy::AutonomyState>,
     pub refetch_signals: Arc<RwLock<crate::core::refetch_signals::RefetchSignals>>,
     pub ledger: Arc<RwLock<crate::core::context_ledger::ContextLedger>>,
-    pub registry: Option<Arc<crate::server::registry::ToolRegistry>>,
+    pub registry: Arc<crate::server::registry::ToolRegistry>,
     pub(crate) startup_project_root: Option<String>,
     pub(crate) startup_shell_cwd: Option<String>,
     pub(crate) peer: Arc<RwLock<Option<Peer<RoleServer>>>>,

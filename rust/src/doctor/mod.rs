@@ -6,7 +6,6 @@ mod fix;
 mod integrations;
 mod lint_context;
 mod overhead;
-mod report;
 mod workspace_scope;
 
 #[allow(clippy::wildcard_imports)]

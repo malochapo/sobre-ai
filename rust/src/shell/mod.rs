@@ -7,6 +7,7 @@ mod redact;
 pub(crate) mod reentry;
 pub(crate) mod tee_policy;
 
+#[cfg(any(test, feature = "test-support"))]
 pub use compress::compress_if_beneficial_pub;
 pub(crate) use exec::shell_timeout_with_override;
 pub use exec::{ExecMode, exec};

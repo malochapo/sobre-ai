@@ -143,6 +143,7 @@ impl From<CodeChunk> for ContentChunk {
 // Chunk extraction helpers for external data
 // ---------------------------------------------------------------------------
 
+#[cfg(test)]
 /// Extract file path references from freeform text (issue bodies, PR descriptions).
 /// Looks for patterns like `src/auth.rs`, `lib/handler.ts`, `path/to/file.ext`.
 pub fn extract_file_references(text: &str) -> Vec<String> {

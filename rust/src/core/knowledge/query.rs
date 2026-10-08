@@ -37,6 +37,7 @@ impl ProjectKnowledge {
         results.into_iter().map(|(f, _)| f).collect()
     }
 
+    #[cfg(any(test, feature = "test-support"))]
     pub fn recall_by_category(&self, category: &str) -> Vec<&KnowledgeFact> {
         self.facts
             .iter()

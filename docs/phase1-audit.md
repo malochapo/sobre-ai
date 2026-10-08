@@ -53,7 +53,7 @@ The lots run in this order:
 | B | The MCP tools: bugs, incomplete features, drift; decisions 1–4 and 6 | done (#32, #33, #34, #35, #36, #37) |
 | C | The CLI and the proxy | done (#38, #39) |
 | R | Tool names `ctx_*` → `sobre_*` (decision 9) | done (#40) |
-| D | Dead code, stale files, stale comments, duplicates; decision 7 | in progress (#41) |
+| D | Dead code, stale files, stale comments, duplicates; decision 7 | in progress (#41, #PR_DB) |
 | F | Release: publish a `dense` binary (decision 8) | open |
 | E | Documentation and install path, written last so it describes the final behaviour | open |
 
@@ -697,7 +697,8 @@ written with; the lots after it use the new names.
 
 ## Lot D — dead code and cleanup
 
-Fixed so far: #41 (dead code, write-only stores, decision 7).
+Fixed so far: #41 (dead code, write-only stores, decision 7), #PR_DB
+(constant settings, test-only code, dead modules).
 
 ### Code that compiles but never does anything
 
@@ -770,7 +771,7 @@ Fixed so far: #41 (dead code, write-only stores, decision 7).
 
 ### Settings that always have the same value
 
-- [ ] **D8 `MemoryPolicy`.** Every caller uses the default.
+- [x] **D8 `MemoryPolicy`.** Every caller uses the default.
   - `admission.enabled` is always true, so `knowledge/core.rs:208` is
     dead.
   - `min_salience` is always 0, so the salience floor (`core.rs:215-224`),
@@ -780,7 +781,7 @@ Fixed so far: #41 (dead code, write-only stores, decision 7).
     `stability_multiplier`).
   - `GotchaPolicy.retrieval_budget_per_room`, `default_decay_rate` and
     `category_decay_overrides` (`memory_policy.rs:96-98`) are never read.
-- [ ] **D9 Other constant options.**
+- [x] **D9 Other constant options.**
   - `setup/mod.rs:49-55` `SetupOptions`: `non_interactive` and `yes` are
     never read, `fix` is always true, `skip_proxy` is always false.
   - `ConsolidateOptions.import_session` is always true
@@ -790,10 +791,12 @@ Fixed so far: #41 (dead code, write-only stores, decision 7).
   - `*_fresh(note: None)` writers in `editor_registry/writers/install/*`.
   - `write_atomic_with_backup_checked(.., None)`.
   - `register_compressed(.., 0)`.
+  - Found while fixing: `SetupOptions`, the `*_fresh` writers and
+    `write_atomic_with_backup_checked` were already gone with lot A.
 
 ### Test-only code shipped in the library
 
-- [ ] **D10 Gate these behind `#[cfg(test)]`, or a `test-support` feature
+- [x] **D10 Gate these behind `#[cfg(test)]`, or a `test-support` feature
   where the integration tests need them.**
   - `engine/mod.rs` `ContextEngine` (only `tests/suite/engine_call.rs` and
     `power_user_worksession.rs` use it).
@@ -817,10 +820,14 @@ Fixed so far: #41 (dead code, write-only stores, decision 7).
     - `search_index::warm_blocking`;
     - `hooks::from_bash_to_native_path`;
     - `editor_registry::writers::write_config`.
+  - Found while fixing: `write_config` is not test-only, `init` calls it
+    (`setup/mod.rs:111`). The rest are behind `#[cfg(test)]`, or behind the
+    `test-support` feature, which a self dev-dependency enables for the
+    integration tests and benches only.
 
 ### Module structure
 
-- [ ] **D11 Dead modules.**
+- [x] **D11 Dead modules.**
   - `core/mod.rs` has seven re-export modules with no users:
     `compression` (23), `memory` (45), `graph` (61), `context` (80),
     `knowledge_domain` (100), `search` (131) and `session_domain` (150).

@@ -109,9 +109,7 @@ impl SobreServer {
             ledger: Arc::new(RwLock::new(
                 crate::core::context_ledger::ContextLedger::load(),
             )),
-            registry: Some(std::sync::Arc::new(
-                crate::server::registry::build_registry(),
-            )),
+            registry: std::sync::Arc::new(crate::server::registry::build_registry()),
             startup_project_root: startup.project_root,
             startup_shell_cwd: startup.shell_cwd,
             peer: Arc::new(tokio::sync::RwLock::new(None)),

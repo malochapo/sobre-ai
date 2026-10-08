@@ -3,12 +3,8 @@
 use crate::core;
 
 /// Whether this process, rather than a managed LaunchAgent/systemd unit, owns startup.
-fn should_spawn_proxy_locally(
-    proxy_enabled: bool,
-    managed_service_loaded: bool,
-    already_running: bool,
-) -> bool {
-    proxy_enabled && !managed_service_loaded && !already_running
+fn should_spawn_proxy_locally(managed_service_loaded: bool, already_running: bool) -> bool {
+    !managed_service_loaded && !already_running
 }
 
 pub(super) fn spawn_proxy_if_needed() {
@@ -27,11 +23,7 @@ pub(super) fn spawn_proxy_if_needed() {
         TcpStream::connect_timeout(&addr, crate::proxy_setup::proxy_timeout()).is_ok()
     };
 
-    if !should_spawn_proxy_locally(
-        cfg.proxy.enabled == Some(true),
-        managed_service_loaded,
-        already_running,
-    ) {
+    if !should_spawn_proxy_locally(managed_service_loaded, already_running) {
         if managed_service_loaded {
             tracing::debug!("managed proxy service owns startup on port {port}");
         } else if already_running {
@@ -61,9 +53,8 @@ mod tests {
 
     #[test]
     fn managed_proxy_service_prevents_a_duplicate_local_spawn() {
-        assert!(should_spawn_proxy_locally(true, false, false));
-        assert!(!should_spawn_proxy_locally(false, false, false));
-        assert!(!should_spawn_proxy_locally(true, true, false));
-        assert!(!should_spawn_proxy_locally(true, false, true));
+        assert!(should_spawn_proxy_locally(false, false));
+        assert!(!should_spawn_proxy_locally(true, false));
+        assert!(!should_spawn_proxy_locally(false, true));
     }
 }

@@ -108,6 +108,7 @@ impl DiagnosticsStore {
         })
     }
 
+    #[cfg(test)]
     pub fn severity_for(&self, path: &str) -> Option<Severity> {
         let norm = crate::core::pathutil::normalize_tool_path(path);
         let mut found: Option<Severity> = None;

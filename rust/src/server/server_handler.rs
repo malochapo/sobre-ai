@@ -147,51 +147,9 @@ impl ServerHandler for SobreServer {
         // request task.
         use std::panic::AssertUnwindSafe;
         let computed = AssertUnwindSafe(async {
-            // Invariant 3: exactly one answer. The registry IS the surface —
-            // no candidate set, no client quirks, no profile, no role, no
-            // workflow state, no lazy core.
-            //
-            // What used to be here filtered the registry through nine axes. One
-            // of them silently broke the product: `CORE_TOOL_NAMES` still named
-            // `shell` and `ctx_call` after both left the registry, so the
-            // default path (no config, no env, no pinned profile) advertised
-            // their intersection — ten tools out of nineteen, with no error.
-            let tools = if let Some(ref reg) = self.registry {
-                reg.tool_defs()
-            } else {
-                // Every production constructor sets a registry; locked by
-                // `production_server_always_has_registry`.
-                tracing::error!("list_tools served without a tool registry");
-                Vec::new()
-            };
-
-            // Description compression is not a surface variation: the set of
-            // tools is identical, only the prose is squeezed. That squeeze is
-            // what the product is for.
-            let tools = {
-                let cfg = crate::core::config::Config::load();
-                let level = crate::core::config::CompressionLevel::effective_configured(&cfg);
-                let mode =
-                    crate::core::terse::mcp_compress::DescriptionMode::from_compression_level(
-                        &level,
-                    );
-                if mode == crate::core::terse::mcp_compress::DescriptionMode::Full {
-                    tools
-                } else {
-                    tools
-                        .into_iter()
-                        .map(|mut t| {
-                            let compressed = crate::core::terse::mcp_compress::compress_description(
-                                t.name.as_ref(),
-                                t.description.as_deref().unwrap_or(""),
-                                mode,
-                            );
-                            t.description = Some(compressed.into());
-                            t
-                        })
-                        .collect()
-                }
-            };
+            // Invariant 3: exactly one answer. The registry is the surface; only
+            // the descriptions are compressed.
+            let tools = crate::server::tool_visibility::advertised(self.registry.tool_defs());
 
             Ok(ListToolsResult {
                 tools,
@@ -203,18 +161,10 @@ impl ServerHandler for SobreServer {
         computed.unwrap_or_else(|_| {
             // A panic here must NOT leave the agent tool-less — that is
             // indistinguishable from "MCP totally failed" and gives the user no
-            // recovery path. Fall back to the static lazy-core defs (a pure,
-            // panic-free function) so sobre_read/sobre_shell stay available
-            // even if the dynamic/registry path blew up.
-            tracing::error!(
-                "list_tools panicked; serving the static lazy-core tool set as a fallback"
-            );
+            // recovery path. Fall back to the registry's uncompressed defs.
+            tracing::error!("list_tools panicked; serving uncompressed tool descriptions");
             Ok(ListToolsResult {
-                tools: self
-                    .registry
-                    .as_ref()
-                    .map(|r| r.tool_defs())
-                    .unwrap_or_default(),
+                tools: self.registry.tool_defs(),
                 ..Default::default()
             })
         })

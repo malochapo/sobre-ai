@@ -41,10 +41,6 @@ pub struct LifecycleConfig {
     /// Characteristic stability (days) for the Ebbinghaus curve before spacing
     /// and feedback modulation.
     pub base_stability_days: f32,
-    /// When true, scale stability by the fact's archetype so structural *evidence*
-    /// (architecture/dependency/…) decays slower than *inference*. Default false:
-    /// every archetype decays at `base_stability_days`.
-    pub archetype_aware_decay: bool,
     /// Archive facts untouched for this many days that were **never** retrieved —
     /// dead weight that costs injection tokens regardless of confidence (#962).
     /// `None` disables it (the `LifecycleConfig` default); the production policy
@@ -64,7 +60,6 @@ impl Default for LifecycleConfig {
             stale_days: STALE_DAYS,
             consolidation_similarity: 0.85,
             base_stability_days: DEFAULT_BASE_STABILITY_DAYS,
-            archetype_aware_decay: false,
             prune_unretrieved_after_days: None,
             reclaim_headroom_pct: DEFAULT_RECLAIM_HEADROOM_PCT,
         }
@@ -83,7 +78,6 @@ impl LifecycleConfig {
             stale_days: policy.lifecycle.stale_days,
             consolidation_similarity: policy.lifecycle.similarity_threshold,
             base_stability_days: policy.lifecycle.base_stability_days,
-            archetype_aware_decay: policy.lifecycle.archetype_aware_decay,
             prune_unretrieved_after_days: policy.lifecycle.prune_unretrieved_after_days,
             reclaim_headroom_pct: policy.lifecycle.reclaim_headroom_pct,
         }
@@ -131,21 +125,13 @@ pub fn apply_confidence_decay(facts: &mut [KnowledgeFact], config: &LifecycleCon
         let retrieval_count = fact.retrieval_count as f32;
         let net_feedback = i64::from(fact.feedback_up) - i64::from(fact.feedback_down);
 
-        // Archetype-aware stability (opt-in): structural evidence is more durable
-        // than inference. Off by default → every archetype uses the base stability.
-        let base_stability = if config.archetype_aware_decay {
-            config.base_stability_days * fact.archetype.stability_multiplier()
-        } else {
-            config.base_stability_days
-        };
-
         let new_confidence = ebbinghaus_confidence(
             fact.confidence,
             days_since_confirmed,
             days_since_retrieved,
             retrieval_count,
             net_feedback,
-            base_stability,
+            config.base_stability_days,
         );
         if (new_confidence - fact.confidence).abs() > 0.001 {
             fact.confidence = new_confidence;
@@ -450,37 +436,6 @@ mod tests {
         assert_eq!(count, 1);
         assert!(facts[0].confidence < 0.9);
         assert!(facts[0].confidence > 0.7);
-    }
-
-    #[test]
-    fn archetype_aware_decay_protects_evidence() {
-        // Opt-in: structural evidence (Architecture) decays slower than inference
-        // (Preference). Off (default), archetype is ignored and both decay alike.
-        let mut evidence = make_old_fact("arch", "db", "PostgreSQL", 0.9, 30);
-        evidence.archetype = KnowledgeArchetype::Architecture;
-        let mut inference = make_old_fact("pref", "style", "tabs", 0.9, 30);
-        inference.archetype = KnowledgeArchetype::Preference;
-
-        let off = LifecycleConfig::default();
-        let mut a = vec![evidence.clone(), inference.clone()];
-        apply_confidence_decay(&mut a, &off);
-        assert!(
-            (a[0].confidence - a[1].confidence).abs() < 1e-6,
-            "flag off → archetype ignored, equal decay"
-        );
-
-        let on = LifecycleConfig {
-            archetype_aware_decay: true,
-            ..Default::default()
-        };
-        let mut b = vec![evidence, inference];
-        apply_confidence_decay(&mut b, &on);
-        assert!(
-            b[0].confidence > b[1].confidence,
-            "evidence {} should outlast inference {}",
-            b[0].confidence,
-            b[1].confidence
-        );
     }
 
     #[test]

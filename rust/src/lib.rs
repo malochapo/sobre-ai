@@ -21,6 +21,7 @@ pub static malloc_conf: &[u8] = b"background_thread:true,dirty_decay_ms:1000,muz
 // ---------------------------------------------------------------------------
 pub mod compound_lexer;
 pub mod core;
+#[cfg(any(test, feature = "test-support"))]
 pub mod engine;
 pub mod hook_handlers;
 pub mod hooks;

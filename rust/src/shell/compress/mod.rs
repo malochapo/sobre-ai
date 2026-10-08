@@ -6,6 +6,7 @@ mod tests;
 #[cfg(test)]
 mod tests_engine;
 
+#[cfg(any(test, feature = "test-support"))]
 pub use engine::compress_if_beneficial_pub;
 
 pub(super) use classification::is_excluded_command;

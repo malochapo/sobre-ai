@@ -28,7 +28,7 @@ impl SobreServer {
         ),
         ErrorData,
     > {
-        if let Some(tool) = self.registry.as_ref().and_then(|r| r.get_arc(name)) {
+        if let Some(tool) = self.registry.get_arc(name) {
             let empty = serde_json::Map::new();
             let args_map = args.unwrap_or(&empty);
             let project_root = {
@@ -170,10 +170,7 @@ impl SobreServer {
 
         // Unknown tool (#712): suggest the closest registered name so a typo
         // (`sobre_raed`) costs the agent a hint instead of a blind retry.
-        let suggestion = self
-            .registry
-            .as_ref()
-            .and_then(|r| crate::core::levenshtein::closest(name, r.names()))
+        let suggestion = crate::core::levenshtein::closest(name, self.registry.names())
             .map(|s| format!(" — did you mean '{s}'?"))
             .unwrap_or_default();
         Err(ErrorData::invalid_params(

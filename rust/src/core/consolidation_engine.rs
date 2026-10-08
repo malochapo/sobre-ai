@@ -50,8 +50,6 @@ pub struct ConsolidationOutcome {
 /// import loops (each with subtly different keys, caps and confidences).
 #[derive(Debug, Clone)]
 pub struct ConsolidateOptions {
-    /// Promote the latest session's findings/decisions into knowledge.
-    pub import_session: bool,
     /// Cap promoted decisions (`None` = all).
     pub decision_budget: Option<usize>,
     /// Cap promoted findings (`None` = all).
@@ -78,7 +76,6 @@ impl ConsolidateOptions {
     /// lossless reclaim of every store.
     pub fn manual() -> Self {
         Self {
-            import_session: true,
             decision_budget: None,
             finding_budget: None,
             finding_salience_floor: None,
@@ -95,7 +92,6 @@ impl ConsolidateOptions {
     /// budgeted, runs the fact lifecycle and emits an event.
     pub fn scheduled(b: ConsolidationBudgets) -> Self {
         Self {
-            import_session: true,
             decision_budget: Some(b.max_decisions),
             finding_budget: Some(b.max_findings),
             finding_salience_floor: Some(45),
@@ -111,7 +107,6 @@ impl ConsolidateOptions {
     /// Startup auto-consolidate: incremental (watermark) import only, no lifecycle.
     pub fn incremental_auto() -> Self {
         Self {
-            import_session: true,
             decision_budget: None,
             finding_budget: None,
             finding_salience_floor: None,

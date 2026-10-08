@@ -6,7 +6,6 @@ use serde::{Deserialize, Serialize};
 mod build;
 mod chunking;
 pub use chunking::*;
-mod coordinator;
 #[cfg(test)]
 mod tests;
 

@@ -110,6 +110,7 @@ pub fn build_registry() -> ToolRegistry {
     registry
 }
 
+#[cfg(test)]
 /// Whether a tool name is registered, resolved against a set built once.
 ///
 /// [`build_registry`] allocates every tool on each call, so callers that only

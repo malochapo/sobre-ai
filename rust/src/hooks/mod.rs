@@ -56,6 +56,7 @@ pub fn to_bash_compatible_path(path: &str) -> String {
     }
 }
 
+#[cfg(test)]
 /// Convert a Unix/MSYS-style path (`/c/Users/...`) back to native Windows
 /// format (`C:/Users/...`). No-op for paths that don't match the pattern.
 pub fn from_bash_to_native_path(path: &str) -> String {

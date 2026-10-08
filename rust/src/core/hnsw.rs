@@ -51,6 +51,7 @@ impl FlatEmbeddings {
     }
 
     /// Build from a `Vec<Vec<f32>>` (for tests / migration).
+    #[cfg(any(test, feature = "test-support"))]
     pub fn from_vecs(vecs: Vec<Vec<f32>>) -> Self {
         let dim = vecs.first().map_or(0, std::vec::Vec::len);
         let n = vecs.len();

@@ -54,11 +54,7 @@ pub(crate) fn consolidate_project_knowledge_with(
     opts: &ConsolidateOptions,
 ) -> Result<KnowledgeConsolidationReport, String> {
     let policy = crate::core::memory_policy::MemoryPolicy::default();
-    let session = if opts.import_session {
-        SessionState::load_latest_for_project_root(project_root)
-    } else {
-        None
-    };
+    let session = SessionState::load_latest_for_project_root(project_root);
 
     if opts.dry_run {
         return Ok(dry_run_report(
@@ -115,9 +111,7 @@ fn run_consolidation_locked(
     let mut session_id = None;
     let mut history_compacted = 0usize;
 
-    if opts.import_session
-        && let Some(s) = session
-    {
+    if let Some(s) = session {
         session_id = Some(s.id.clone());
         imported = import_session_into(knowledge, s, opts, policy, watermark);
 
@@ -187,9 +181,7 @@ fn dry_run_report(
 
     let mut imported = ImportCounts::default();
     let mut session_id = None;
-    if opts.import_session
-        && let Some(s) = session
-    {
+    if let Some(s) = session {
         session_id = Some(s.id.clone());
         let watermark = if opts.incremental {
             s.last_consolidate_ts

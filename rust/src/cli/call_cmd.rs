@@ -43,17 +43,6 @@ impl std::fmt::Display for CallError {
     }
 }
 
-impl CallError {
-    /// All CLI-usage errors map to exit code 2 (distinct from tool functional
-    /// errors which exit 0). Reserved 1 for unexpected internal failures.
-    /// Takes `&self` so future variants can map to differentiated exit codes
-    /// without touching call sites.
-    #[allow(clippy::unused_self)]
-    pub(crate) fn exit_code(&self) -> i32 {
-        2
-    }
-}
-
 /// Parsed CLI invocation for `sobre call`.
 struct CallArgs {
     tool: String,
@@ -257,7 +246,7 @@ pub(crate) fn cmd_call(args: &[String]) {
         Ok(text) => println!("{text}"),
         Err(e) => {
             eprintln!("{e}");
-            std::process::exit(e.exit_code());
+            std::process::exit(2);
         }
     }
 }
