@@ -72,7 +72,10 @@ impl ProxyConfig {
     /// Returns `Err` when a value is *present but invalid* so a live reload can
     /// keep the last good value instead of silently rerouting to the default; an
     /// *absent* value resolves to the provider default (`Ok`).
-    fn resolve_upstream_checked(&self, provider: ProxyProvider) -> Result<String, String> {
+    pub(crate) fn resolve_upstream_checked(
+        &self,
+        provider: ProxyProvider,
+    ) -> Result<String, String> {
         let (config_val, default) = self.provider_spec(provider);
         match config_val {
             None => Ok(normalize_url(default)),

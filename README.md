@@ -229,11 +229,20 @@ One file, `~/.config/sobre/config.toml`, with 11 keys. Every key has a default,
 so the file can stay empty.
 
 ```bash
-sobre config                               # show it
+sobre config                               # every key and the value in effect
 sobre config set compression_level 0.5     # change one key
+sobre config set compression_level default # remove it: the default applies
 sobre config init                          # rewrite it with every key documented
 sobre config path                          # where it is
 ```
+
+`config set` edits the file in place, keeping its comments. It refuses a value
+the proxy or the tools would not use (an upstream without `http://` or
+`https://`, port 0, a level outside 0–1) and a key it does not know (exit 2).
+Setting a key to its default, or to `default`, removes it from the file. A
+boolean takes `true`/`false` (also `1`/`0`, `yes`/`no`); a list takes
+comma-separated values. Keys that redirect traffic ask for confirmation, or
+`--yes`.
 
 The keys are `search_roots`, `ignore`, `passthrough_commands`,
 `shell_timeout_secs`, `hook_binary`, `compression_level`, `debug_log`,

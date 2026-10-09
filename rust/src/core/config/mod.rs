@@ -161,7 +161,7 @@ impl Config {
                 super::error::SobreError::Config(
                     format!(
                         "refusing to modify an unparseable config.toml ({e}); fix it \
-                     manually or run `sobre doctor --fix`, then retry"
+                     by hand, then retry"
                     )
                     .into(),
                 )
@@ -202,15 +202,5 @@ impl Config {
         crate::config_io::write_toml_preserving_minimal(path, &content, &defaults)
             .map_err(|e| super::error::SobreError::Config(e.into()))?;
         Ok(())
-    }
-
-    /// Formats the current config as a human-readable string with file paths.
-    pub fn show(&self) -> String {
-        let global_path = Self::path().map_or_else(
-            || "(config dir unresolved)".to_string(),
-            |p| p.to_string_lossy().to_string(),
-        );
-        let content = toml::to_string_pretty(self).unwrap_or_default();
-        format!("Config: {global_path}\n\n{content}")
     }
 }

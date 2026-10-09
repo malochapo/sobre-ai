@@ -76,7 +76,7 @@ was added.
 | Lot | Scope | Status |
 |---|---|---|
 | G | Regressions and half-done phase-1 fixes | done (#51, #52, #53, #54, #55) |
-| H | The user's machine: `init`, `uninstall`, `config`, proxy wiring | in progress (#51, #56) |
+| H | The user's machine: `init`, `uninstall`, `config`, proxy wiring | in progress (#51, #56, #57) |
 | J | Editing and shell tools | open |
 | K | Reading and search tools | open |
 | L | Graph, session, knowledge, review, `gain` | open |
@@ -406,8 +406,8 @@ documented:
     claude CLI is installed".
   - Fix: remove the CLI path; the file edit is the one writer, and the
     tested one.
-- [ ] **H6 `config set`** (`cli/config_cmd.rs:21-27`,
-  `core/config/setter.rs:176-190`).
+- [x] **H6 `config set`** (`cli/config_cmd.rs:21-27`,
+  `core/config/setter.rs:176-190`). (#57)
   - Setting a key to its default is ignored. With `compression_level =
     0.7` in the file, `config set compression_level 0.3` prints "Updated"
     and the file still says 0.7: the default is skipped when serialising
@@ -426,6 +426,16 @@ documented:
     a key from the command line.
   - `sobre config` omits `compression_level` and the proxy keys, and shows
     an empty `[proxy.upstreams]`.
+  - Done. `config set` edits the TOML document in place (comments kept,
+    a removed key's comment moved, not lost). A value is parsed and checked
+    as the loader checks it before any review: an upstream needs
+    `http(s)://` and is stored normalized, the port is 1–65535. `default`,
+    an empty value or the key's default removes the key, and an emptied
+    `[proxy.upstreams]` with it. An unknown key is refused before the
+    review, against the 12 keys `config set` takes (`proxy.upstreams` is
+    named as a table). `sobre config` lists every key with the value in
+    effect, `(default)` or `not set`. `doctor` fails on an upstream the
+    proxy cannot use.
 - [ ] **H7 `init --check --json` looks like a real run.** Its JSON says
   "connected" and "created", with no dry-run field
   (`setup/mod.rs:200-226,255`).
@@ -503,6 +513,8 @@ documented:
     `core/config/mod.rs:171`). `doctor --fix` never touches the file,
     says "All 4 checks passed" and exits 0, while `doctor` shows the
     failure and exits 1. `config init` refuses to overwrite it and exits 0.
+    (#57) Done for the config: said once, telling the user to fix the
+    file by hand; `config init` exits 1.
   - `--fix` counts 4 checks, `doctor` 15: a C6 leftover.
 - [x] **H15 `proxy enable` and `disable` leave state behind and report
   what did not happen.** (#56)
