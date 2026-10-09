@@ -55,7 +55,7 @@ The lots run in this order:
 | R | Tool names `ctx_*` → `sobre_*` (decision 9) | done (#40) |
 | D | Dead code, stale files, stale comments, duplicates; decision 7 | done (#41, #42, #43, #44, #45, #46) |
 | F | Release: publish a `dense` binary (decision 8) | done (#47) |
-| E | Documentation and install path, written last so it describes the final behaviour | done (#49), except E5, E7 and E13 (#48, invariant PR) and E20 (open) |
+| E | Documentation and install path, written last so it describes the final behaviour | done (#48, #49), except E20 (open) |
 
 ## What already works
 
@@ -1125,27 +1125,27 @@ dead code) and #46 (the reachability sweep).
     keys.
   - Done: the README, the bug template and FORK.md name the nine agents;
     `help.rs` already did.
-- [ ] **E5 INVARIANTS.md contradicts `init`.**
+- [x] **E5 INVARIANTS.md contradicts `init`.**
   - It says "no per-agent init" (`:31`) and "init takes no option beyond
     which agent" (`:52`).
   - In fact there are `init <agent>`, `--check`/`--dry-run`, `--repair`,
     `--json` and `--agent`, an interactive proxy question that writes
     config and installs autostart, and the ~120 MB model question in dense
     builds.
-  - Open: an `invariant:` PR (#48), which both maintainers approve.
+  - Done in #48.
 - [x] **E6 `README.md:81` says `uninstall` removes "everything init
   wrote".** Document what it really removes once A3 is settled.
   - Done: the README's Uninstall section says what goes, including data,
     memory, models and the binary.
-- [ ] **E7 "Parameters never change" does not hold across builds.**
+- [x] **E7 "Parameters never change" does not hold across builds.**
   - `README.md:41-44` and `INVARIANTS.md:62-68` say so, but `sobre_search`
     gains `mode` in embeddings builds
     (`registered/sobre_search.rs:114-121`).
   - The generated reference shows the default build only.
   - Document that the list is fixed per build; with a published dense
     binary there are two lists.
-  - The README says so (one fixed surface per build). INVARIANTS.md is in
-    the `invariant:` PR (#48).
+  - Done: the README and INVARIANTS.md (#48) say one fixed surface per
+    build.
 - [x] **E8 The proxy section is incomplete.**
   - `proxy enable` installs a login service:
     `~/Library/LaunchAgents/com.sobre.proxy.plist` on macOS,
@@ -1181,10 +1181,10 @@ dead code) and #46 (the reachability sweep).
   what they mean.
   - Checked: the removal table now says `sobre call`; `lean-ctx -t` is the
     upstream name of the removed shell hook, as the table's note says.
-- [ ] **E13 INVARIANTS.md:152-153 says "No generated artefacts in the
+- [x] **E13 INVARIANTS.md:152-153 says "No generated artefacts in the
   repository"**, yet `docs/reference/generated/*.md` is committed and
   drift-checked.
-  - Open: the `invariant:` PR (#48).
+  - Done in #48: the rule names the generated reference pages.
 - [x] **E14 CONTRIBUTING.md:31-32 says "git hooks run the same script"**,
   but the hooks are opt-in through `make setup-hooks`, which it never
   mentions.
