@@ -12,9 +12,7 @@ fn sobre_bin() -> Command {
 }
 
 mod session_features {
-    use sobre::core::session::{
-        Decision, EvidenceKind, EvidenceRecord, FileTouched, Finding, SessionState, TaskInfo,
-    };
+    use sobre::core::session::{Decision, FileTouched, Finding, SessionState, TaskInfo};
 
     #[test]
     #[allow(clippy::field_reassign_with_default)]
@@ -55,17 +53,6 @@ mod session_features {
             });
         }
 
-        session.evidence.push(EvidenceRecord {
-            kind: EvidenceKind::Manual,
-            key: "test:unit".to_string(),
-            value: Some("42 passed, 0 failed".to_string()),
-            tool: Some("cargo test".to_string()),
-            input_hash: None,
-            output_hash: None,
-            client_name: None,
-            timestamp: chrono::Utc::now(),
-        });
-
         let resume = session.build_resume_block();
         assert!(resume.contains("Build Context OS"), "task in resume");
         assert!(resume.contains("SSE"), "decision in resume");
@@ -77,7 +64,6 @@ mod session_features {
         let restored: SessionState = serde_json::from_str(&json).unwrap();
         assert_eq!(restored.findings.len(), 5);
         assert_eq!(restored.files_touched.len(), 10);
-        assert_eq!(restored.evidence.len(), 1);
     }
 }
 

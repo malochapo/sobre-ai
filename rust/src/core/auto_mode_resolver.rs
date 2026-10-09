@@ -3,7 +3,6 @@ use crate::core::cache::SessionCache;
 pub struct AutoModeContext<'a> {
     pub path: &'a str,
     pub token_count: usize,
-    pub task: Option<&'a str>,
     pub cache: Option<&'a SessionCache>,
 }
 
@@ -91,21 +90,9 @@ fn resolve_inner(ctx: &AutoModeContext) -> ResolvedMode {
         return resolved("full", "active_diagnostic");
     }
 
-    // Suspect file (capability): the task explicitly names this file
-    // (e.g. "fix the version sort in versioncmp.c"), so the agent is about to
-    // inspect it for the defect. Keep the full body it needs to localize and
-    // edit, ahead of any task-type intent default that might compress it.
-    if task_names_file(ctx.task, ctx.path) {
-        return resolved("full", "task_suspect_file");
-    }
-
-    if let Some(mode) = intent_recommended_mode(ctx.task) {
-        return resolved(&mode, "intent");
-    }
-
     // The capability guards above plus the deterministic heuristic below make
-    // `auto` a pure function of (file, task) — byte-stable for provider prompt
-    // caching.
+    // `auto` a function of the file and of this conversation's reads and
+    // edits — never of the session's task or of knowledge (decision 4).
 
     // Deterministic cold-read fallback. Every read that reaches here missed the
     // session cache (a warm hit returns `full`/`diff` above). Structure-first is
@@ -122,42 +109,6 @@ fn resolve_inner(ctx: &AutoModeContext) -> ResolvedMode {
         "heuristic"
     };
     resolved(&heuristic, source)
-}
-
-/// True when the task text explicitly names this file (basename match). A real
-/// filename mention ("versioncmp.c") is a strong suspect signal for a bug-fix;
-/// requiring an extension-bearing, non-trivial basename keeps it precise — the
-/// bare stem in "improve the parser" must not match `parser.rs`. A rare false
-/// positive only costs a little compression on a file the user literally named,
-/// so the failure mode is capability-safe.
-fn task_names_file(task: Option<&str>, path: &str) -> bool {
-    let Some(task) = task else {
-        return false;
-    };
-    let basename = std::path::Path::new(path)
-        .file_name()
-        .and_then(|n| n.to_str())
-        .unwrap_or("");
-    if basename.len() < 4 || !basename.contains('.') {
-        return false;
-    }
-    task.to_ascii_lowercase()
-        .contains(&basename.to_ascii_lowercase())
-}
-
-fn intent_recommended_mode(task: Option<&str>) -> Option<String> {
-    let task_desc = task?;
-    let classification = crate::core::intent_engine::classify(task_desc);
-    if classification.confidence < 0.4 {
-        return None;
-    }
-    let route = crate::core::intent_engine::route_intent(task_desc, &classification);
-    let mode =
-        crate::core::intent_router::read_mode_for_tier(route.model_tier, classification.task_type);
-    if mode == "auto" {
-        return None;
-    }
-    Some(mode)
 }
 
 fn heuristic_mode(ext: &str, token_count: usize) -> String {
@@ -274,7 +225,6 @@ mod tests {
         let ctx = AutoModeContext {
             path: "test.rs",
             token_count: 100,
-            task: None,
             cache: None,
         };
         let result = resolve(&ctx);
@@ -287,7 +237,6 @@ mod tests {
         let ctx = AutoModeContext {
             path: "config.ini",
             token_count: 500,
-            task: None,
             cache: None,
         };
         let result = resolve(&ctx);
@@ -321,7 +270,6 @@ mod tests {
         let ctx = AutoModeContext {
             path,
             token_count: 7000,
-            task: None,
             cache: Some(&cache),
         };
         let result = resolve(&ctx);
@@ -349,74 +297,11 @@ mod tests {
         let ctx = AutoModeContext {
             path,
             token_count: 3000,
-            task: None,
             cache: Some(&cache),
         };
         let result = resolve(&ctx);
         assert_eq!(result.mode, "full");
         assert_eq!(result.source, "cache_hit");
-    }
-
-    #[test]
-    fn intent_explore_returns_map() {
-        let ctx = AutoModeContext {
-            path: "large.rs",
-            token_count: 5000,
-            task: Some("how does the cache work?"),
-            cache: None,
-        };
-        let result = resolve(&ctx);
-        assert_eq!(result.mode, "map");
-        assert_eq!(result.source, "intent");
-    }
-
-    #[test]
-    fn task_names_file_matches_explicit_filename() {
-        assert!(task_names_file(
-            Some("fix the version sort in versioncmp.c"),
-            "src/versioncmp.c"
-        ));
-        assert!(task_names_file(
-            Some("why does graph.ts loop?"),
-            "web/src/graph.ts"
-        ));
-    }
-
-    #[test]
-    fn task_names_file_ignores_bare_stems_and_trivia() {
-        // A bare stem mention must not match the file.
-        assert!(!task_names_file(
-            Some("improve the parser"),
-            "src/parser.rs"
-        ));
-        assert!(!task_names_file(None, "src/parser.rs"));
-        // Trivial / extension-less basenames are excluded.
-        assert!(!task_names_file(Some("touch a.c"), "a.c"));
-        assert!(!task_names_file(Some("look at Makefile"), "Makefile"));
-    }
-
-    #[test]
-    fn task_suspect_file_overrides_intent() {
-        let _lock = crate::core::data_dir::test_env_lock();
-        let dir = std::env::temp_dir().join(format!("sobre-amr-suspect-{}", std::process::id()));
-        let _ = std::fs::create_dir_all(&dir);
-        crate::test_env::set_var("SOBRE_DATA_DIR", dir.to_str().unwrap());
-
-        // An explore-style task that would otherwise map (cf.
-        // intent_explore_returns_map) — but it names the file, so the suspect
-        // guard keeps the full body for localization.
-        let ctx = AutoModeContext {
-            path: "large.rs",
-            token_count: 5000,
-            task: Some("how does large.rs build the cache?"),
-            cache: None,
-        };
-        let result = resolve(&ctx);
-        assert_eq!(result.mode, "full");
-        assert_eq!(result.source, "task_suspect_file");
-
-        crate::test_env::remove_var("SOBRE_DATA_DIR");
-        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
@@ -455,7 +340,6 @@ mod tests {
         let suspect = AutoModeContext {
             path: "src/versioncmp.c",
             token_count: 1500,
-            task: None,
             cache: None,
         };
         let result = resolve(&suspect);
@@ -465,7 +349,6 @@ mod tests {
         let tiny = AutoModeContext {
             path: "src/util.c",
             token_count: 120,
-            task: None,
             cache: None,
         };
         assert_eq!(resolve(&tiny).mode, "full");
@@ -474,7 +357,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
-    /// A medium code file with no task resolves through the deterministic
+    /// A medium code file resolves through the deterministic
     /// size heuristic and is byte-stable across repeated calls.
     #[test]
     fn learning_off_by_default_is_deterministic() {
@@ -486,7 +369,6 @@ mod tests {
         let ctx = AutoModeContext {
             path: "src/widget.rs",
             token_count: 1500,
-            task: None,
             cache: None,
         };
         let a = resolve(&ctx);

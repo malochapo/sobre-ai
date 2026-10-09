@@ -51,14 +51,26 @@ impl ImportCounts {
 
 /// The single session→knowledge import. Operates on an already-locked
 /// `knowledge` (no I/O, no lock), so the locked orchestrator and the dry-run
-/// preview share one implementation.
+/// preview share one implementation. An item this session already imported
+/// is skipped, so consolidating twice confirms nothing twice.
 pub(crate) fn import_session_into(
     knowledge: &mut ProjectKnowledge,
     session: &SessionState,
     policy: &MemoryPolicy,
 ) -> ImportCounts {
+    let already = |knowledge: &ProjectKnowledge, category: &str, key: &str, value: &str| {
+        knowledge.facts.iter().any(|f| {
+            f.is_current()
+                && f.category == category
+                && f.key == key
+                && f.value == value
+                && f.source_session == session.id
+        })
+    };
+
     let mut decisions: Vec<&crate::core::session::Decision> = session.decisions.iter().collect();
     decisions.sort_by_key(|d| std::cmp::Reverse(d.timestamp));
+    decisions.retain(|d| !already(knowledge, "decision", &slug_key(&d.summary, 50), &d.summary));
     for d in &decisions {
         let key = slug_key(&d.summary, 50);
         knowledge.remember(
@@ -73,6 +85,7 @@ pub(crate) fn import_session_into(
 
     let mut findings: Vec<&Finding> = session.findings.iter().collect();
     findings.sort_by_key(|f| std::cmp::Reverse(f.timestamp));
+    findings.retain(|f| !already(knowledge, "finding", &finding_key(f), &f.summary));
     for f in &findings {
         let key = finding_key(f);
         knowledge.remember(
@@ -142,10 +155,9 @@ mod tests {
         session.add_decision("Use archive-only memory lifecycle", None);
         session.add_finding(None, None, "panic: index out of bounds");
         session.add_finding(None, None, "just a note");
-        session.save().expect("save session");
-
         let out = crate::tools::sobre_knowledge::consolidate_project_knowledge_with(
             &project_root_str,
+            Some(&session),
             &ConsolidateOptions::manual(),
         )
         .expect("consolidate");

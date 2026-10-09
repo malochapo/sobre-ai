@@ -31,10 +31,24 @@ impl SobreServer {
         if let Some(tool) = self.registry.get_arc(name) {
             let empty = serde_json::Map::new();
             let args_map = args.unwrap_or(&empty);
-            let project_root = {
+            let root_before = self.session.read().await.project_root.clone();
+            let (resolved_paths, path_errors) = self.resolve_path_args(args_map).await;
+            let (project_root, shell_cwd) = {
                 let session = self.session.read().await;
-                session.project_root.clone().unwrap_or_default()
+                (
+                    session.project_root.clone().unwrap_or_default(),
+                    session.shell_cwd.clone(),
+                )
             };
+            // An absolute path can re-root the session (`resolve_path`): say so.
+            let reroot_note = (root_before.as_deref() != Some(project_root.as_str())
+                && !project_root.is_empty()
+                && !tool.produces_machine_readable(Some(args_map)))
+            .then(|| {
+                format!(
+                    "[sobre: project root is now {project_root}; relative paths resolve there]\n"
+                )
+            });
 
             // Lazy, demand-driven index warming: only tools that actually
             // need a prebuilt index trigger a (background, once-per-root) scan.
@@ -54,47 +68,7 @@ impl SobreServer {
                 }
             }
 
-            let mut resolved_paths = std::collections::HashMap::new();
-            let mut path_errors: std::collections::HashMap<String, String> =
-                std::collections::HashMap::new();
-            for key in PATH_LIKE_KEYS {
-                if let Some(val) = args_map.get(*key) {
-                    if let Some(raw) = val.as_str() {
-                        match self.resolve_path(raw).await {
-                            Ok(resolved) => {
-                                if !["path", "project_root"].contains(key) {
-                                    tracing::trace!(
-                                        "[paths] resolved non-standard path key '{key}': {raw} -> {resolved}"
-                                    );
-                                }
-                                resolved_paths.insert(key.to_string(), resolved);
-                            }
-                            Err(e) => {
-                                tracing::debug!(
-                                    "[dispatch] path resolution failed for '{key}' = '{raw}': {e}"
-                                );
-                                path_errors.insert(key.to_string(), e);
-                            }
-                        }
-                    } else {
-                        let type_name = match val {
-                            serde_json::Value::Number(_) => "number",
-                            serde_json::Value::Bool(_) => "boolean",
-                            serde_json::Value::Array(_) => "array",
-                            serde_json::Value::Object(_) => "object",
-                            serde_json::Value::Null => "null",
-                            serde_json::Value::String(_) => unreachable!(),
-                        };
-                        path_errors.insert(
-                            key.to_string(),
-                            format!("{key} must be a string, got {type_name}"),
-                        );
-                    }
-                }
-            }
-
             let crp_mode = crate::tools::CrpMode::effective();
-            let shell_cwd = self.session.read().await.shell_cwd.clone();
             let ctx = crate::server::tool_trait::ToolContext {
                 project_root,
                 shell_cwd,
@@ -116,6 +90,9 @@ impl SobreServer {
             // the watchdog always return a response.
             let reports_failures = tool.text_reports_failures();
             let mut output = self.run_tool_handler(name, tool, args_map, ctx).await?;
+            if let Some(note) = reroot_note {
+                output.text.insert_str(0, &note);
+            }
             if output.shell_outcome.is_none()
                 && reports_failures
                 && crate::server::tool_trait::reports_failure(&output.text)
@@ -125,7 +102,7 @@ impl SobreServer {
 
             // Image/binary content blocks bypass all text processing.
             if output.content_blocks.is_some() {
-                self.record_call(name, 0, 0).await;
+                self.record_call(name, 0).await;
                 return Ok((
                     String::new(),
                     0,
@@ -134,8 +111,7 @@ impl SobreServer {
                 ));
             }
 
-            self.record_call(name, output.original_tokens, output.saved_tokens)
-                .await;
+            self.record_call(name, output.saved_tokens).await;
 
             let saved = output.saved_tokens;
             let raw_text = output.text;
@@ -151,6 +127,57 @@ impl SobreServer {
             format!("Unknown tool: {name}{suggestion}"),
             None,
         ))
+    }
+
+    /// Resolve every path-like argument through [`Self::resolve_path`]:
+    /// the resolved paths by key, and the errors by key.
+    async fn resolve_path_args(
+        &self,
+        args_map: &serde_json::Map<String, Value>,
+    ) -> (
+        std::collections::HashMap<String, String>,
+        std::collections::HashMap<String, String>,
+    ) {
+        let mut resolved_paths = std::collections::HashMap::new();
+        let mut path_errors: std::collections::HashMap<String, String> =
+            std::collections::HashMap::new();
+        for key in PATH_LIKE_KEYS {
+            if let Some(val) = args_map.get(*key) {
+                if let Some(raw) = val.as_str() {
+                    match self.resolve_path(raw).await {
+                        Ok(resolved) => {
+                            if !["path", "project_root"].contains(key) {
+                                tracing::trace!(
+                                    "[paths] resolved non-standard path key '{key}': {raw} -> {resolved}"
+                                );
+                            }
+                            resolved_paths.insert(key.to_string(), resolved);
+                        }
+                        Err(e) => {
+                            tracing::debug!(
+                                "[dispatch] path resolution failed for '{key}' = '{raw}': {e}"
+                            );
+                            path_errors.insert(key.to_string(), e);
+                        }
+                    }
+                } else {
+                    let type_name = match val {
+                        serde_json::Value::Number(_) => "number",
+                        serde_json::Value::Bool(_) => "boolean",
+                        serde_json::Value::Array(_) => "array",
+                        serde_json::Value::Object(_) => "object",
+                        serde_json::Value::Null => "null",
+                        serde_json::Value::String(_) => unreachable!(),
+                    };
+                    path_errors.insert(
+                        key.to_string(),
+                        format!("{key} must be a string, got {type_name}"),
+                    );
+                }
+            }
+        }
+
+        (resolved_paths, path_errors)
     }
 
     /// Execute a (synchronous) tool handler on the blocking pool under a
@@ -272,11 +299,42 @@ const DEFAULT_TOOL_TIMEOUT_SECS: u64 = 120;
 
 /// The arguments a tool's schema declares as a filesystem path, resolved
 /// against the session's roots before the handler runs.
-const PATH_LIKE_KEYS: &[&str] = &["path", "to", "project_root"];
+pub(crate) const PATH_LIKE_KEYS: &[&str] = &["path", "to", "project_root"];
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// L5: a call whose absolute path re-roots the session says so.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn a_reroot_is_said_in_the_output() {
+        let _iso = crate::core::data_dir::isolated_data_dir();
+        let tmp = tempfile::tempdir().unwrap();
+        let agent = tmp.path().join(".copilot");
+        let real = tmp.path().join("repo");
+        std::fs::create_dir_all(&agent).unwrap();
+        std::fs::create_dir_all(real.join(".git")).unwrap();
+        std::fs::write(real.join("a.txt"), "ok\n").unwrap();
+
+        let server = SobreServer::new_with_startup(None, None);
+        {
+            let mut session = server.session.write().await;
+            session.project_root = Some(agent.to_string_lossy().to_string());
+            session.shell_cwd = Some(agent.to_string_lossy().to_string());
+        }
+        let args = serde_json::json!({ "path": real.join("a.txt").to_string_lossy() });
+        let (text, ..) = server
+            .dispatch_tool("sobre_read", args.as_object(), None)
+            .await
+            .unwrap();
+        assert!(text.starts_with("[sobre: project root is now "), "{text}");
+
+        let (again, ..) = server
+            .dispatch_tool("sobre_read", args.as_object(), None)
+            .await
+            .unwrap();
+        assert!(!again.contains("project root is now"), "{again}");
+    }
 
     /// Every path key the dispatcher resolves is one some tool declares.
     #[test]

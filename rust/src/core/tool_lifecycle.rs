@@ -40,11 +40,6 @@ pub fn record_shell_command(command: &str, original_tokens: usize, output_tokens
         original_tokens,
         output_tokens,
     );
-
-    if let Some(mut session) = SessionState::load_latest() {
-        session.record_command();
-        let _ = session.save();
-    }
 }
 
 /// First word of a command line, without its directory: `/usr/bin/git log`

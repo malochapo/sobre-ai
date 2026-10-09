@@ -134,22 +134,26 @@ fn parse_args(args: &[String]) -> Result<CallArgs, CallError> {
     })
 }
 
-fn oneshot_ctx(project_root: String, resolved_paths: HashMap<String, String>) -> ToolContext {
-    // The project's latest session and a fresh file cache, as a starting MCP
-    // server has: the tools that track reads or memory (`sobre_read`,
-    // `sobre_shell`, `sobre_session`, `sobre_knowledge`) refuse to run without them.
-    // The session is stamped with the canonical root so a later load matches it.
-    let mut session = SessionState::load_latest_for_project_root(&project_root).unwrap_or_default();
+fn oneshot_ctx(
+    project_root: String,
+    resolved_paths: HashMap<String, String>,
+    path_errors: HashMap<String, String>,
+) -> ToolContext {
+    // An empty session and a fresh file cache, as a starting MCP server has
+    // (decision 4): the tools that track reads or memory (`sobre_read`,
+    // `sobre_shell`, `sobre_session`, `sobre_knowledge`) refuse to run without
+    // them. The session is stamped with the canonical root so a later load
+    // matches it.
+    let mut session = SessionState::new();
     session.project_root = Some(
         crate::core::pathutil::safe_canonicalize_or_self(Path::new(&project_root))
             .to_string_lossy()
             .into_owned(),
     );
-    // What is on disk is saved; only this call's changes count as unsaved.
-    session.stats.unsaved_changes = 0;
     ToolContext {
         project_root,
         resolved_paths,
+        path_errors,
         cache: Some(Arc::new(RwLock::new(SessionCache::new()))),
         session: Some(Arc::new(RwLock::new(session))),
         // Give tools a real (empty) resident BM25 cache, as the MCP server does.
@@ -186,33 +190,31 @@ pub(crate) fn run_call(args: &[String]) -> Result<Called, CallError> {
         _ => return Err(CallError::BadJson("expected a JSON object".into())),
     };
 
-    // Pre-resolve a `path` string arg into resolved_paths so handlers that read
-    // ctx.resolved_path("path") (e.g. sobre_tree, require_resolved_path) work.
-    // Without this, multi_path falls back to "." (CWD), not project_root.
+    // Resolve the path-like arguments as the server's dispatcher does, so
+    // handlers that read `ctx.resolved_path(…)` see the same values; a failure
+    // goes to the handler as a path error, as it does over MCP.
     let mut resolved_paths = HashMap::new();
-    if let Some(p) = args_map.get("path").and_then(Value::as_str) {
+    let mut path_errors = HashMap::new();
+    for key in crate::server::dispatch::PATH_LIKE_KEYS {
+        let Some(p) = args_map.get(*key).and_then(Value::as_str) else {
+            continue;
+        };
         match crate::core::path_resolve::resolve_tool_path(Some(&parsed.project_root), None, p) {
+            // `resolve_tool_path` passes "." / "" through unchanged, which a
+            // handler would then resolve against its CWD — not project_root.
+            Ok(abs) if abs.is_empty() || abs == "." => {
+                resolved_paths.insert((*key).to_string(), parsed.project_root.clone());
+            }
             Ok(abs) => {
-                // `resolve_tool_path` passes "." / "" through unchanged, which a
-                // handler would then resolve against its CWD — not project_root.
-                // Pin those to the explicit project_root so handlers operate on
-                // the root we were given, never the process CWD.
-                let resolved = if abs.is_empty() || abs == "." {
-                    parsed.project_root.clone()
-                } else {
-                    abs
-                };
-                resolved_paths.insert("path".to_string(), resolved);
+                resolved_paths.insert((*key).to_string(), abs);
             }
             Err(e) => {
-                return Err(CallError::Dispatch(DispatchError::PathResolution {
-                    message: e,
-                }));
+                path_errors.insert((*key).to_string(), e);
             }
         }
     }
 
-    let ctx = oneshot_ctx(parsed.project_root.clone(), resolved_paths);
+    let ctx = oneshot_ctx(parsed.project_root.clone(), resolved_paths, path_errors);
 
     let registry = build_registry();
     let tool = registry
@@ -224,6 +226,7 @@ pub(crate) fn run_call(args: &[String]) -> Result<Called, CallError> {
     // Other tools' session bookkeeping (files read, an inferred task) says what
     // an agent has seen; a shell call is not the agent, so it is dropped.
     let save_session = parsed.tool == "sobre_session";
+    let tool_name = parsed.tool.clone();
 
     // Run the synchronous handler on the blocking pool of a runtime, as the
     // server does: handlers that lock the session block on it there.
@@ -243,6 +246,15 @@ pub(crate) fn run_call(args: &[String]) -> Result<Called, CallError> {
     .map_err(|e| e.to_string())
     .and_then(|r| r.map_err(|e| e.to_string()))
     .map_err(|message| CallError::Dispatch(DispatchError::Tool { message }))?;
+
+    // Recorded in the usage ledger as every other path records it.
+    let sent = crate::core::tokens::count_tokens(&output.text);
+    crate::core::usage::record_compression(
+        crate::core::usage::Surface::Call,
+        &tool_name,
+        sent + output.saved_tokens,
+        sent,
+    );
 
     let is_error = output
         .shell_outcome
@@ -380,8 +392,10 @@ mod tests {
         assert!(!fine.is_error, "{}", fine.text);
     }
 
+    /// Decision 4: each call starts an empty session; what one call saved,
+    /// `load` restores.
     #[test]
-    fn session_changes_persist_across_calls() {
+    fn a_saved_session_is_loaded_on_request() {
         let _data = crate::core::data_dir::isolated_data_dir();
         let project = tempfile::tempdir().unwrap();
         let call = |json: &str| {
@@ -398,9 +412,11 @@ mod tests {
 
         call(r#"{"action": "task", "value": "wire the parser"}"#);
         let status = call(r#"{"action": "status"}"#);
+        assert!(!status.contains("wire the parser"), "{status}");
+        let loaded = call(r#"{"action": "load"}"#);
         assert!(
-            status.contains("wire the parser"),
-            "the task set by the first call is lost:\n{status}"
+            loaded.contains("wire the parser"),
+            "the task saved by the first call is lost:\n{loaded}"
         );
     }
 }

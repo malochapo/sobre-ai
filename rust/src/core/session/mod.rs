@@ -6,8 +6,7 @@ mod state;
 mod types;
 
 pub use types::{
-    Decision, EvidenceKind, EvidenceRecord, FileTouched, Finding, SessionState, SessionStats,
-    SessionSummary, TaskInfo,
+    Decision, FileTouched, Finding, SessionState, SessionStats, SessionSummary, TaskInfo,
 };
 
 #[cfg(test)]

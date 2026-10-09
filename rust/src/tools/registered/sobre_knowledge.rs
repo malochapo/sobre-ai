@@ -27,7 +27,7 @@ impl McpTool for SobreKnowledgeTool {
              WORKFLOW: save after completing significant tasks; recall at session start.\n\
              action=remember value='Y' saves a fact (key optional — derived from value; content= is an accepted alias).\n\
              action=recall query='X' retrieves it (bare recall lists recent facts). action=status shows all categories.\n\
-action=consolidate imports latest session if present, runs lifecycle, then frees 25% facts/history/patterns capacity.\n\
+action=consolidate imports this session's findings and decisions, runs lifecycle, then frees 25% facts/history/patterns capacity.\n\
              action=gotcha trigger='X' resolution='Y' for known pitfalls.\n\
              mode=semantic|exact for recall. category groups related facts.",
             json!({
@@ -103,7 +103,7 @@ action=consolidate imports latest session if present, runs lifecycle, then frees
             .session
             .as_ref()
             .ok_or_else(|| ErrorData::internal_error("session not available", None))?;
-        let (session_id, project_root) = {
+        let (session_id, project_root, live_session) = {
             let timeout_dur =
                 crate::core::io_health::adaptive_timeout(std::time::Duration::from_secs(10));
             let read_result = tokio::task::block_in_place(|| {
@@ -116,10 +116,13 @@ action=consolidate imports latest session if present, runs lifecycle, then frees
                     .project_root
                     .clone()
                     .unwrap_or_else(|| ctx.project_root.clone());
-                (sid, root)
+                // `consolidate` imports this conversation's session as it is
+                // now, not as it was last saved.
+                let live = (action == "consolidate").then(|| session.clone());
+                (sid, root, live)
             } else {
                 tracing::warn!("sobre_knowledge: session read-lock timeout, using fallback");
-                ("unknown".to_string(), ctx.project_root.clone())
+                ("unknown".to_string(), ctx.project_root.clone(), None)
             }
         };
 
@@ -160,7 +163,7 @@ action=consolidate imports latest session if present, runs lifecycle, then frees
                     Some(ms) => Some(ms),
                     None => {
                         return Ok(text_output(format!(
-                            "Unknown store: {s}. Use: facts, history, patterns"
+                            "ERROR: unknown store: {s}. Use: facts, history, patterns"
                         )));
                     }
                 },
@@ -179,15 +182,18 @@ action=consolidate imports latest session if present, runs lifecycle, then frees
             return Ok(text_output(text));
         }
 
-        // Dry-run consolidate: preview imports + reclaim with no writes.
-        let dry_run = args
-            .get("dry_run")
-            .and_then(Value::as_bool)
-            .unwrap_or(false);
-        if action == "consolidate" && dry_run {
+        // `dry_run` previews the imports and the reclaim with no writes.
+        if action == "consolidate" {
+            let dry_run = args
+                .get("dry_run")
+                .and_then(Value::as_bool)
+                .unwrap_or(false);
+            let opts = crate::core::consolidation_engine::ConsolidateOptions::manual();
+            let opts = if dry_run { opts.into_dry_run() } else { opts };
             let text = match crate::tools::sobre_knowledge::consolidate_project_knowledge_with(
                 &project_root,
-                &crate::core::consolidation_engine::ConsolidateOptions::manual().into_dry_run(),
+                live_session.as_ref(),
+                &opts,
             ) {
                 Ok(report) => crate::tools::sobre_knowledge::format_consolidation_report(&report),
                 Err(e) => e,

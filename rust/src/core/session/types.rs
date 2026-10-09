@@ -15,7 +15,6 @@ pub struct SessionState {
     pub findings: Vec<Finding>,
     pub decisions: Vec<Decision>,
     pub files_touched: Vec<FileTouched>,
-    pub evidence: Vec<EvidenceRecord>,
     pub stats: SessionStats,
     /// Extra project roots for multi-root workspaces: config `search_roots`,
     /// the host's workspace folders and MCP `roots/list`. Rebuilt every time
@@ -69,42 +68,15 @@ pub struct FileTouched {
     pub summary: Option<String>,
 }
 
-/// Source of an evidence record: automatic tool call or manual agent entry.
-#[derive(Serialize, Deserialize, Clone, Debug)]
-#[serde(rename_all = "snake_case")]
-pub enum EvidenceKind {
-    ToolCall,
-    Manual,
-}
-
-/// An auditable record of a tool invocation or manual observation.
-#[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct EvidenceRecord {
-    pub kind: EvidenceKind,
-    pub key: String,
-    pub value: Option<String>,
-    pub tool: Option<String>,
-    pub input_hash: Option<String>,
-    pub output_hash: Option<String>,
-    pub client_name: Option<String>,
-    pub timestamp: DateTime<Utc>,
-}
-
-/// Aggregate counters for the session: tool calls, token savings, cache hits.
+/// Aggregate counters for the session: tool calls, token savings, reads and
+/// commands.
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
 pub struct SessionStats {
     pub total_tool_calls: u32,
     pub total_tokens_saved: u64,
-    pub total_tokens_input: u64,
-    pub cache_hits: u32,
     pub files_read: u32,
     pub commands_run: u32,
     pub unsaved_changes: u32,
-}
-
-#[derive(Serialize, Deserialize, Clone, Debug)]
-pub(crate) struct LatestPointer {
-    pub(crate) id: String,
 }
 
 /// Pre-serialized session data ready for background disk I/O.
@@ -114,7 +86,6 @@ pub struct PreparedSave {
     pub(crate) dir: PathBuf,
     pub(crate) id: String,
     pub(crate) json: String,
-    pub(crate) pointer_json: String,
     pub(crate) compaction_snapshot: Option<String>,
 }
 

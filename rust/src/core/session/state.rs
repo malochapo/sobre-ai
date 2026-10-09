@@ -7,12 +7,11 @@ use super::types::*;
 const MAX_FINDINGS: usize = 20;
 const MAX_DECISIONS: usize = 10;
 const MAX_FILES: usize = 50;
-const MAX_EVIDENCE: usize = 500;
 pub(crate) const BATCH_SAVE_INTERVAL: u32 = 5;
 /// Max time an unsaved change may linger before it is flushed even
-/// below the batch threshold — other processes (the next session,
-/// `sobre call`) read session JSONs from disk, so a slow trickle of tool
-/// calls must still reach it promptly.
+/// below the batch threshold — `sobre_session load` and `list` read session
+/// JSONs from disk, so a slow trickle of tool calls must still reach it
+/// promptly.
 pub(crate) const SESSION_FLUSH_INTERVAL: std::time::Duration = std::time::Duration::from_mins(1);
 
 impl Default for SessionState {
@@ -36,11 +35,31 @@ impl SessionState {
             findings: Vec::new(),
             decisions: Vec::new(),
             files_touched: Vec::new(),
-            evidence: Vec::new(),
             stats: SessionStats::default(),
             extra_roots: Vec::new(),
             last_flush: None,
         }
+    }
+
+    /// Replace this session's record with `other`, keeping where this process
+    /// works: the project root, the shell directory and the extra roots.
+    pub fn replace_record(&mut self, other: Self) {
+        let project_root = self.project_root.take();
+        let shell_cwd = self.shell_cwd.take();
+        let extra_roots = std::mem::take(&mut self.extra_roots);
+        *self = other;
+        self.project_root = project_root;
+        self.shell_cwd = shell_cwd;
+        self.extra_roots = extra_roots;
+    }
+
+    /// Whether the session holds anything worth saving: a task, findings,
+    /// decisions or touched files.
+    pub fn has_record(&self) -> bool {
+        self.task.is_some()
+            || !self.findings.is_empty()
+            || !self.decisions.is_empty()
+            || !self.files_touched.is_empty()
     }
 
     /// Bumps the version counter and marks the session as dirty.
@@ -157,67 +176,9 @@ impl SessionState {
     }
 
     /// Increments the tool call counter and accumulates token savings.
-    pub fn record_tool_call(&mut self, tokens_saved: u64, tokens_input: u64) {
+    pub fn record_tool_call(&mut self, tokens_saved: u64) {
         self.stats.total_tool_calls += 1;
         self.stats.total_tokens_saved += tokens_saved;
-        self.stats.total_tokens_input += tokens_input;
-    }
-
-    /// Appends an auditable evidence record for a tool invocation.
-    pub fn record_tool_receipt(
-        &mut self,
-        tool: &str,
-        action: Option<&str>,
-        input_hash: &str,
-        output_hash: &str,
-        client_name: Option<&str>,
-    ) {
-        let now = Utc::now();
-        let mut push = |key: String| {
-            self.evidence.push(EvidenceRecord {
-                kind: EvidenceKind::ToolCall,
-                key,
-                value: None,
-                tool: Some(tool.to_string()),
-                input_hash: Some(input_hash.to_string()),
-                output_hash: Some(output_hash.to_string()),
-                client_name: client_name.map(std::string::ToString::to_string),
-                timestamp: now,
-            });
-        };
-
-        push(format!("tool:{tool}"));
-        if let Some(a) = action {
-            push(format!("tool:{tool}:{a}"));
-        }
-        while self.evidence.len() > MAX_EVIDENCE {
-            self.evidence.remove(0);
-        }
-        self.increment();
-    }
-
-    /// Appends a manual (non-tool) evidence record to the audit log.
-    #[cfg(test)]
-    pub fn record_manual_evidence(&mut self, key: &str, value: Option<&str>) {
-        self.evidence.push(EvidenceRecord {
-            kind: EvidenceKind::Manual,
-            key: key.to_string(),
-            value: value.map(std::string::ToString::to_string),
-            tool: None,
-            input_hash: None,
-            output_hash: None,
-            client_name: None,
-            timestamp: Utc::now(),
-        });
-        while self.evidence.len() > MAX_EVIDENCE {
-            self.evidence.remove(0);
-        }
-        self.increment();
-    }
-
-    /// Increments the session-level cache hit counter.
-    pub fn record_cache_hit(&mut self) {
-        self.stats.cache_hits += 1;
     }
 
     /// Increments the session-level command counter.

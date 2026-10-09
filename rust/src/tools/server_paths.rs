@@ -29,7 +29,8 @@ impl SobreServer {
         // sobre does not confine paths: the agent host decides what may be
         // read or written (invariant 5). An absolute path outside a root that
         // is not a real project (an agent config dir, a markerless client cwd)
-        // re-roots the session on the project that path belongs to.
+        // re-roots the session on the project that path belongs to. The
+        // dispatcher says so in that call's output.
         let root_path = std::path::Path::new(&root);
         if p.is_absolute()
             && !resolved.starts_with(root_path)
@@ -46,7 +47,6 @@ impl SobreServer {
                 .filter(|cwd| std::path::Path::new(cwd).starts_with(&new_root))
                 .cloned()
                 .or_else(|| Some(new_root_str.clone()));
-            let _ = session.save();
         }
         Ok(resolved.to_string_lossy().to_string())
     }

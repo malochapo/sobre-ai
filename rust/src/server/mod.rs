@@ -2,7 +2,7 @@ pub mod background_shell;
 pub mod bounded_lock;
 pub mod compaction_sync;
 pub mod context_gate;
-mod dispatch;
+pub(crate) mod dispatch;
 pub(crate) mod execute;
 pub mod helpers;
 pub mod multi_path;

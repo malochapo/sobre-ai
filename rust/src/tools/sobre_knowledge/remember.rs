@@ -298,20 +298,23 @@ pub(crate) fn handle_recall(
 
     if let Some(cat) = category {
         let limit = policy.knowledge.recall_facts_limit;
-        let (facts, total) = knowledge.recall_by_category_for_output(cat, limit);
+        let (facts, total) = knowledge.recall_by_category_for_output(cat, query, limit);
         if facts.is_empty() || total == 0 {
             // System 2: archive rehydrate (category-only)
             let rehydrated =
                 rehydrate_from_archives(&mut knowledge, Some(cat), None, session_id, &policy);
             if rehydrated {
-                let (facts2, total2) = knowledge.recall_by_category_for_output(cat, limit);
+                let (facts2, total2) = knowledge.recall_by_category_for_output(cat, query, limit);
                 if !facts2.is_empty() && total2 > 0 {
                     let out2 = format_facts_with_annotations(&facts2, total2, Some(cat));
                     save_knowledge_deferred(knowledge, project_root);
                     return out2;
                 }
             }
-            return format!("No facts in category '{cat}'.");
+            return match query {
+                Some(q) => format!("No facts in category '{cat}' match '{q}'."),
+                None => format!("No facts in category '{cat}'."),
+            };
         }
         let out = format_facts_with_annotations(&facts, total, Some(cat));
         save_knowledge_deferred(knowledge, project_root);

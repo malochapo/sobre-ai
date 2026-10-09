@@ -29,31 +29,22 @@ pub(crate) struct KnowledgeConsolidationReport {
     pub dry_run: bool,
 }
 
-/// Explicit CLI / MCP `consolidate`: import the whole session, run the fact
-/// lifecycle and losslessly reclaim every store. Thin wrapper over the canonical
-/// [`consolidate_project_knowledge_with`].
-pub(crate) fn consolidate_project_knowledge(
-    project_root: &str,
-) -> Result<KnowledgeConsolidationReport, String> {
-    consolidate_project_knowledge_with(project_root, &ConsolidateOptions::manual())
-}
-
-/// Consolidation: session import, fact lifecycle and the lossless per-store
-/// capacity reclaim. Session loads are project-scoped (not cwd-scoped), and
-/// `opts.dry_run` previews without mutating knowledge, archives or the session.
+/// Consolidation: import `session` (this conversation's, as it is now), run
+/// the fact lifecycle and the lossless per-store capacity reclaim.
+/// `opts.dry_run` previews without mutating knowledge or archives.
 pub(crate) fn consolidate_project_knowledge_with(
     project_root: &str,
+    session: Option<&SessionState>,
     opts: &ConsolidateOptions,
 ) -> Result<KnowledgeConsolidationReport, String> {
     let policy = crate::core::memory_policy::MemoryPolicy::default();
-    let session = SessionState::load_latest_for_project_root(project_root);
 
     if opts.dry_run {
-        return Ok(dry_run_report(project_root, session.as_ref(), &policy));
+        return Ok(dry_run_report(project_root, session, &policy));
     }
 
     let (_knowledge, report) = ProjectKnowledge::mutate_locked(project_root, |knowledge| {
-        run_consolidation_locked(knowledge, session.as_ref(), &policy)
+        run_consolidation_locked(knowledge, session, &policy)
     })
     .map_err(|e| format!("Consolidation done but save failed: {e}"))?;
     report

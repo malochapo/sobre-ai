@@ -45,6 +45,9 @@ pub struct SobreServer {
     pub(crate) peer: Arc<RwLock<Option<Peer<RoleServer>>>>,
     pub(crate) has_client_roots: Arc<std::sync::atomic::AtomicBool>,
     pub(crate) roots_resolved: Arc<std::sync::atomic::AtomicBool>,
+    /// Held while `roots/list` is asked, so the calls that arrive meanwhile
+    /// wait for its answer.
+    pub(crate) roots_gate: Arc<tokio::sync::Mutex<()>>,
     /// Failed `roots/list` attempts: transient failures re-arm
     /// `roots_resolved` until a small budget is exhausted.
     pub(crate) roots_list_attempts: Arc<std::sync::atomic::AtomicU32>,

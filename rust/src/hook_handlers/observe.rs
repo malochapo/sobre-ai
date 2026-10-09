@@ -73,15 +73,18 @@ fn is_compaction(v: &serde_json::Value) -> bool {
             .is_some_and(|e| e == "compaction" || e == "compact")
 }
 
+/// A small background model (`gpt-4o-mini`, `claude-haiku-4`,
+/// `gemini-2.5-flash`), matched on whole name parts so `gemini` is not `mini`.
+fn is_background_model(model: &str) -> bool {
+    const SMALL: &[&str] = &["flash", "mini", "haiku", "fast", "nano", "small"];
+    model
+        .to_lowercase()
+        .split(|c: char| !c.is_ascii_alphanumeric())
+        .any(|part| SMALL.contains(&part))
+}
+
 fn persist_detected_model(model: &str) {
-    let m = model.to_lowercase();
-    let is_bg_model = m.contains("flash")
-        || m.contains("mini")
-        || m.contains("haiku")
-        || m.contains("fast")
-        || m.contains("nano")
-        || m.contains("small");
-    if is_bg_model {
+    if is_background_model(model) {
         return;
     }
 
@@ -167,6 +170,16 @@ fn write_compaction_marker(data_dir: &std::path::Path, ts: u64) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// L18: `gemini` is a model name, not a `mini` background model.
+    #[test]
+    fn background_models_are_matched_on_name_parts() {
+        assert!(is_background_model("gpt-4o-mini"));
+        assert!(is_background_model("gemini-2.5-flash"));
+        assert!(is_background_model("claude-haiku-4"));
+        assert!(!is_background_model("gemini-2.5-pro"));
+        assert!(!is_background_model("claude-opus-4"));
+    }
 
     /// Real Claude Code PreCompact payload (code.claude.com/docs/en/hooks):
     /// carries `session_id` like every Claude hook.

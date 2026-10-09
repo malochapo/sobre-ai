@@ -126,7 +126,6 @@ impl SobreReadTool {
                 std::thread::sleep(std::time::Duration::from_millis(25));
             }
         };
-        let task_ref = current_task.as_deref();
         // `raw=true` is the intuitive "give me the exact bytes" escape an
         // agent reaches for. Alias it to mode="raw" (verbatim, unframed) and
         // force a fresh disk read below so a re-read never collapses to an
@@ -146,7 +145,7 @@ impl SobreReadTool {
         let mut mode = if let Some(m) = explicit_mode_arg {
             m
         } else if let Ok(cache) = cache_lock.try_read() {
-            crate::tools::impl_smart_read::select_mode_with_task(&cache, path, task_ref)
+            crate::tools::impl_smart_read::select_mode(&cache, path)
         } else {
             tracing::debug!(
                 "cache lock contested during auto-mode selection for {path}; \
@@ -219,12 +218,7 @@ impl SobreReadTool {
         );
         let windowed = mode != mode_before_window;
 
-        let gate_result = crate::server::context_gate::pre_dispatch_read(
-            path,
-            &mode,
-            task_ref,
-            Some(&ctx.project_root),
-        );
+        let gate_result = crate::server::context_gate::pre_dispatch_read(path, &mode);
         // An explicit raw/verbatim request is never silently downgraded by
         // the budget gate — the caller asked for exact bytes.
         let mut mode_override_note: Option<String> = None;
@@ -333,7 +327,7 @@ impl SobreReadTool {
             });
         }
 
-        let (output, resolved_mode, original, is_cache_hit, file_ref) = read_through_cache(
+        let (output, resolved_mode, original, file_ref) = read_through_cache(
             cache_lock,
             path,
             &mode,
@@ -379,9 +373,6 @@ impl SobreReadTool {
                 let file_summary = extract_file_summary(&output, path);
                 if !file_summary.is_empty() {
                     session.set_file_summary(path, &file_summary);
-                }
-                if is_cache_hit {
-                    session.record_cache_hit();
                 }
                 let root_missing = session
                     .project_root
@@ -508,8 +499,8 @@ fn write_lock_within(
 ///   that lock does not come within 5 s.
 ///
 /// Same-file reads are serialized by the per-file lock. Returns `(output,
-/// resolved mode, original tokens, cache hit, file ref)`; `Err` when a lock
-/// does not come in time.
+/// resolved mode, original tokens, file ref)`; `Err` when a lock does not
+/// come in time.
 #[allow(clippy::too_many_arguments)]
 fn read_through_cache(
     cache_lock: &Arc<tokio::sync::RwLock<crate::core::cache::SessionCache>>,
@@ -520,7 +511,7 @@ fn read_through_cache(
     task: Option<&str>,
     aggressiveness: Option<f64>,
     protect: &[String],
-) -> Result<(String, String, usize, bool, Option<String>), String> {
+) -> Result<(String, String, usize, Option<String>), String> {
     use crate::tools::sobre_read::{Prepared, ReadTuning, finish, prepare, render, settle};
 
     let file_lock = per_file_lock(path);
@@ -546,7 +537,7 @@ fn read_through_cache(
     {
         let orig = cache.get(path).map_or(0, |e| e.original_tokens);
         let file_ref = cache.file_ref_map().get(path).cloned();
-        return Ok((out.content, out.resolved_mode, orig, true, file_ref));
+        return Ok((out.content, out.resolved_mode, orig, file_ref));
     }
 
     let tuning = ReadTuning::resolve(aggressiveness, protect);
@@ -562,13 +553,7 @@ fn read_through_cache(
                 let out = settle(&mut cache, path, out);
                 let orig = cache.get(path).map_or(0, |e| e.original_tokens);
                 let file_ref = cache.file_ref_map().get(path).cloned();
-                return Ok((
-                    out.content,
-                    out.resolved_mode,
-                    orig,
-                    out.is_cache_hit,
-                    file_ref,
-                ));
+                return Ok((out.content, out.resolved_mode, orig, file_ref));
             }
             Prepared::Render(job) => job,
         }
@@ -579,7 +564,7 @@ fn read_through_cache(
     let Some(mut cache) = write_lock_within(cache_lock, std::time::Duration::from_secs(5)) else {
         tracing::warn!("sobre_read: store-lock timeout (5s) for {path}, returning without caching");
         let out = crate::core::redaction::redact_text(&rendered);
-        return Ok((out, job.resolved_mode, job.original_tokens, false, None));
+        return Ok((out, job.resolved_mode, job.original_tokens, None));
     };
     let out = finish(
         &mut cache,
@@ -593,7 +578,7 @@ fn read_through_cache(
     let out = settle(&mut cache, path, out);
     let orig = cache.get(path).map_or(0, |e| e.original_tokens);
     let file_ref = cache.file_ref_map().get(path).cloned();
-    Ok((out.content, out.resolved_mode, orig, false, file_ref))
+    Ok((out.content, out.resolved_mode, orig, file_ref))
 }
 
 /// Resolve the `start_line`/`offset`/`limit` arguments into `(start, limit)`.
