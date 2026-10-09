@@ -94,7 +94,7 @@ Symbol navigation via the language server: references, definition, implementatio
 Symbol edits work without one: replace_symbol_body, insert_before_symbol, insert_after_symbol resolve the target by name_path (in path's file when path is given) or by path+line.
 ANTIPATTERN: not for symbol discovery — use sobre_search action=symbol, sobre_outline for a file's symbols.
 
-Parameters: `action`*, `column`, `expected_hash`, `line`, `name_path`, `new_name`, `new_text`, `path`, `text`
+Parameters: `action`*, `column`, `dry_run`, `expected_hash`, `line`, `name_path`, `new_name`, `new_text`, `path`, `text`
 
 ## `sobre_review`
 

@@ -42,7 +42,8 @@ impl McpTool for SobreRefactorTool {
                     "name_path": { "type": "string", "description": "Symbol path for body edits (qualified or bare)" },
                     "new_text": { "type": "string", "description": "Full replacement declaration text (replace_symbol_body)" },
                     "text": { "type": "string", "description": "Sibling text to insert (auto-indented)" },
-                    "expected_hash": { "type": "string", "description": "BLAKE3 hex of current range (TOCTOU guard)" }
+                    "expected_hash": { "type": "string", "description": "BLAKE3 hex of current range (TOCTOU guard)" },
+                    "dry_run": { "type": "boolean", "description": "Symbol edits: show the diff, write nothing" }
                 },
                 "allOf": [
                     {

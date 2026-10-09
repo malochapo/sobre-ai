@@ -276,3 +276,20 @@ fn dir_json_is_deterministic_and_sorted() {
     assert_eq!(files[0]["path"], "a.rs");
     assert_eq!(files[1]["path"], "z.rs");
 }
+
+/// K13: the `match` filter applies before the file cap: a symbol in the
+/// 651st file is found.
+#[test]
+fn a_match_past_the_file_cap_is_found() {
+    let dir = tempfile::tempdir().unwrap();
+    for i in 0..650 {
+        write(dir.path(), &format!("a{i:04}.rs"), "fn other() {}\n");
+    }
+    write(dir.path(), "z_last.rs", "fn needle_function() {}\n");
+    let opts = OutlineOpts {
+        name_match: Some("needle"),
+        ..Default::default()
+    };
+    let (out, _) = run(&dir.path().to_string_lossy(), &opts);
+    assert!(out.contains("needle_function"), "{out:.300}");
+}

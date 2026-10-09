@@ -312,8 +312,6 @@ fn ranked_files_budgeted(task: &str, project_root: &str, crp_mode: CrpMode) -> S
                 8,
                 crp_mode,
                 None,
-                None,
-                None,
                 Some(false),
             )
         }))
@@ -468,7 +466,8 @@ pub fn handle(task: &str, project_root: &str, crp_mode: CrpMode) -> (String, usi
                 out.push_str("\n## Top symbols (bodies)\n");
                 header_written = true;
             }
-            out.push_str(rendered);
+            // Secrets are masked as `sobre_read` masks them.
+            out.push_str(&crate::core::redaction::redact_text(rendered));
             out.push('\n');
         }
     }

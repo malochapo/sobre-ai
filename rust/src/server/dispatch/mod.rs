@@ -62,7 +62,7 @@ impl SobreServer {
                     if let Some(raw) = val.as_str() {
                         match self.resolve_path(raw).await {
                             Ok(resolved) => {
-                                if !["path", "project_root", "root"].contains(key) {
+                                if !["path", "project_root"].contains(key) {
                                     tracing::trace!(
                                         "[paths] resolved non-standard path key '{key}': {raw} -> {resolved}"
                                     );
@@ -270,36 +270,30 @@ fn watchdog_from_secs(secs: u64) -> Option<Duration> {
 /// clean error instead of a dropped request.
 const DEFAULT_TOOL_TIMEOUT_SECS: u64 = 120;
 
-const PATH_LIKE_KEYS: &[&str] = &[
-    "path",
-    "project_root",
-    "root",
-    "file",
-    "directory",
-    "dir",
-    "target",
-    "source",
-    "destination",
-    "old_path",
-    "new_path",
-    "file_path",
-    "from",
-    "to",
-    "base_path",
-    "config_path",
-    "output",
-];
+/// The arguments a tool's schema declares as a filesystem path, resolved
+/// against the session's roots before the handler runs.
+const PATH_LIKE_KEYS: &[&str] = &["path", "to", "project_root"];
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    /// Every path key the dispatcher resolves is one some tool declares.
     #[test]
-    fn path_like_keys_includes_primary_keys() {
-        for primary in &["path", "project_root", "root"] {
+    fn path_like_keys_are_declared_by_some_tool() {
+        let registry = crate::server::registry::build_registry();
+        for key in PATH_LIKE_KEYS {
             assert!(
-                PATH_LIKE_KEYS.contains(primary),
-                "primary key '{primary}' missing from PATH_LIKE_KEYS"
+                registry.names().iter().any(|name| registry
+                    .get_arc(name)
+                    .and_then(|t| t
+                        .tool_def()
+                        .input_schema
+                        .get("properties")
+                        .and_then(serde_json::Value::as_object)
+                        .map(|p| p.contains_key(*key)))
+                    .unwrap_or(false)),
+                "{key} is declared by no tool"
             );
         }
     }

@@ -604,7 +604,7 @@ pub(crate) fn settle(cache: &mut SessionCache, path: &str, mut result: ReadOutpu
         // re-delivers real content instead of the [unchanged] stub. Without this,
         // a task→full sequence returns an empty stub because the flag was set by an
         // earlier full delivery and never cleared by the intervening non-full read.
-        if !matches!(result.resolved_mode.as_str(), "full" | "full-compact") {
+        if result.resolved_mode != "full" {
             entry.full_content_delivered = false;
         }
     }
@@ -788,10 +788,7 @@ pub fn resolve_explicit_delta_mode(
         mode: mode.to_string(),
         note: None,
     };
-    if fresh
-        || !explicit_mode
-        || !(mode == "full" || mode == "full-compact" || mode.starts_with("lines:"))
-    {
+    if fresh || !explicit_mode || !(mode == "full" || mode.starts_with("lines:")) {
         return unchanged;
     }
     let Some(entry) = cache.get(path) else {
@@ -942,32 +939,9 @@ fn prepare_inner(
             mode.to_string()
         };
 
-        if resolved_mode == "full" || resolved_mode == "full-compact" {
+        if resolved_mode == "full" {
             if let Some(out) = try_stub_hit_readonly(cache, path) {
                 return Ok(out);
-            }
-            if resolved_mode == "full-compact" {
-                let content = match read_file_lossy(path) {
-                    Ok(c) => c,
-                    Err(e) => {
-                        let msg = format!("ERROR: {e}");
-                        return Ok(ReadOutput {
-                            content: msg,
-                            resolved_mode: "error".into(),
-                            output_tokens: 0,
-                            is_cache_hit: false,
-                        });
-                    }
-                };
-                let (out, _) = format_full_compact_output(&content);
-                let out = crate::core::redaction::redact_text(&out);
-                let sent = count_tokens(&out);
-                return Ok(ReadOutput {
-                    content: out,
-                    resolved_mode: "full-compact".into(),
-                    output_tokens: sent,
-                    is_cache_hit: false,
-                });
             }
             let (out, _) = handle_full_with_auto_delta(cache, path, &file_ref, &short, ext, task);
             let out = crate::core::redaction::redact_text(&out);
@@ -1043,20 +1017,8 @@ fn prepare_inner(
     // look at" from the code graph — and names only files that are *not* in the
     // session cache yet, which token overlap cannot do.
 
-    if mode == "full" || mode == "full-compact" {
+    if mode == "full" {
         cache.mark_full_delivered(path);
-
-        if mode == "full-compact" {
-            let (output, _) = format_full_compact_output(&content);
-            let output = crate::core::redaction::redact_text(&output);
-            let sent = count_tokens(&output);
-            return Ok(ReadOutput {
-                content: output,
-                resolved_mode: "full-compact".into(),
-                output_tokens: sent,
-                is_cache_hit: false,
-            });
-        }
 
         let (output, _) = format_full_output(&short, ext, &content, store_result.line_count, task);
         let framed_tokens = count_tokens(&output);
@@ -1118,7 +1080,7 @@ pub(crate) fn cap_to_raw(
     mode: &str,
 ) -> String {
     if raw_tokens > 0 && framed_tokens > raw_tokens {
-        if matches!(mode, "full" | "full-compact") {
+        if mode == "full" {
             raw_content.to_string()
         } else {
             format!("[{mode} view is larger than the file: whole file below]\n{raw_content}")

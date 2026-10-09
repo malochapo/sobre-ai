@@ -20,7 +20,7 @@ impl McpTool for SobreGlobTool {
             json!({
                 "type": "object",
                 "properties": {
-                    "pattern": { "type": "string", "description": "e.g. **/*.ts" },
+                    "pattern": { "type": "string", "description": "*.ts names a file at any depth; a glob with / (src/*.ts, src/**/*.ts) matches the path from the root, * staying within one directory" },
                     "path": { "type": "string" },
                     "paths": { "type": "array", "items": { "type": "string" } },
                     "max_results": { "type": "integer", "description": "default 200" },

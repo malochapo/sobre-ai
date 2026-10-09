@@ -186,7 +186,7 @@ pub fn handle_filtered(
             if !include_patterns.is_empty() {
                 let rel = path.strip_prefix(root).unwrap_or(path);
                 let rel_str = rel.to_string_lossy();
-                if !include_patterns.iter().any(|p| p.matches(&rel_str)) {
+                if !include_patterns.iter().any(|p| glob_matches(p, &rel_str)) {
                     continue;
                 }
             }
@@ -204,7 +204,7 @@ pub fn handle_filtered(
         files.retain(|path| {
             let rel = path.strip_prefix(root).unwrap_or(path);
             let rel_str = rel.to_string_lossy();
-            !exclude_patterns.iter().any(|p| p.matches(&rel_str))
+            !exclude_patterns.iter().any(|p| glob_matches(p, &rel_str))
         });
     }
 
@@ -579,6 +579,30 @@ impl EnclosingIndex {
     }
 }
 
+/// Compile one glob as `rg --glob` reads it: a glob without `/` (`*.rs`,
+/// `pathutil.rs`) names a file at any depth; a glob with `/` (`src/*.rs`,
+/// `src/**/*.rs`) is matched against the path from the root.
+pub(crate) fn compile_glob(glob: &str) -> Result<Pattern, glob::PatternError> {
+    if glob.contains('/') {
+        Pattern::new(glob)
+    } else {
+        Pattern::new(&format!("**/{glob}"))
+    }
+}
+
+/// Whether `path` matches `pattern` as a shell glob does: `*` and `?` stay
+/// within one path segment (`src/*.ts` is not `src/a/b.ts`); `**` crosses
+/// segments.
+pub(crate) fn glob_matches(pattern: &Pattern, path: &str) -> bool {
+    pattern.matches_with(
+        path,
+        glob::MatchOptions {
+            require_literal_separator: true,
+            ..glob::MatchOptions::default()
+        },
+    )
+}
+
 /// Upper bound on the number of globs a single `include` may expand to, so a
 /// pathological brace pattern (`{a,b}{c,d}{e,f}…`) can never blow up.
 const MAX_INCLUDE_GLOBS: usize = 64;
@@ -590,10 +614,7 @@ const MAX_INCLUDE_GLOBS: usize = 64;
 /// included when it matches *any* of the returned patterns. An empty vec means
 /// "no filter": `include` was `None`, or every expansion failed to parse.
 ///
-/// Bare globs without a `/` (e.g. `pathutil.rs`, `*.rs`) are auto-prefixed
-/// with `**/` to match at any directory depth — matching `rg --glob` and
-/// `git grep` behaviour. Globs that already contain `/` are used as-is, so
-/// `src/**/*.rs` only matches under `src/`.
+/// Each glob is read by [`compile_glob`].
 fn compile_include(include: Option<&str>) -> Vec<Pattern> {
     let Some(raw) = include else {
         return Vec::new();
@@ -602,14 +623,7 @@ fn compile_include(include: Option<&str>) -> Vec<Pattern> {
         .into_iter()
         .take(MAX_INCLUDE_GLOBS)
         .filter(|g| !g.is_empty())
-        .map(|g| {
-            if g.contains('/') {
-                g
-            } else {
-                format!("**/{g}")
-            }
-        })
-        .filter_map(|g| Pattern::new(&g).ok())
+        .filter_map(|g| compile_glob(&g).ok())
         .collect()
 }
 
