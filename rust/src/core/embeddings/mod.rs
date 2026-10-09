@@ -358,9 +358,8 @@ impl EmbeddingEngine {
     /// After `Ok`, [`is_available`](Self::is_available) is guaranteed true; on a
     /// warm cache it short-circuits without touching the network.
     ///
-    /// The explicit index-build path uses this to cold-start a fresh machine.
-    /// `is_available()` alone is only a file check, so the build path must call
-    /// this to actually trigger the download instead of bailing.
+    /// `sobre embeddings provision` (and the model question in `init`) is the
+    /// one caller: nothing else downloads the model.
     pub fn ensure_downloaded() -> anyhow::Result<()> {
         let selected = model_registry::resolve_model();
         let model_dir = Self::model_directory().join(selected.storage_dir_name());

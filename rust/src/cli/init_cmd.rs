@@ -154,18 +154,21 @@ fn print_init_help() {
         "Usage: sobre init [<agent>...] [options]
 
   sobre init                 Connect every installed agent: its MCP entry,
-                             hooks and skill. Asks once about the proxy.
-                             Never edits your shell rc files.
-  sobre init <agent>...      Only the named agents, installed or not:
-                             claude, codex, copilot, cursor, gemini,
-                             opencode, vscode, windsurf, zed
+                             hooks and skill. Asks once about the proxy and,
+                             in a build with embeddings, about downloading
+                             the model. Never edits your shell rc files.
+  sobre init <agent>...      Only the named agents, installed or not, with
+                             no question: claude, codex, copilot, cursor,
+                             gemini, opencode, vscode, windsurf, zed
 
 Options:
-  --check                    List the files init would create or change,
+  --check, --dry-run         List the files init would create or change,
                              and write nothing
-  --repair                   No prompt, exits non-zero on failure (for CI)
-  --json                     Machine-readable report; implies --repair
+  --repair                   Ask no question (for scripts and CI)
+  --json                     Machine-readable report; asks no question
   --agent <name>             Same as naming the agent, repeatable
+
+init exits non-zero when an agent could not be connected.
 
 Edits keep your comments and key order; a file sobre edits for the first
 time is copied to <file>.sobre.bak.

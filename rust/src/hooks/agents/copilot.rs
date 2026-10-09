@@ -14,14 +14,18 @@ fn copilot_hook_entry(binary: &str, action: &str, timeout_sec: u64) -> serde_jso
 
 /// User-level Copilot hooks live under `~/.copilot/hooks`, or under
 /// `$COPILOT_HOME/hooks`.
-fn copilot_user_hooks_dir() -> Option<PathBuf> {
+pub(crate) fn copilot_hooks_dir(home: &std::path::Path) -> PathBuf {
     if let Ok(copilot_home) = std::env::var("COPILOT_HOME") {
         let trimmed = copilot_home.trim();
         if !trimmed.is_empty() {
-            return Some(PathBuf::from(trimmed).join("hooks"));
+            return PathBuf::from(trimmed).join("hooks");
         }
     }
-    crate::core::home::resolve_home_dir().map(|h| h.join(".copilot").join("hooks"))
+    home.join(".copilot").join("hooks")
+}
+
+fn copilot_user_hooks_dir() -> Option<PathBuf> {
+    crate::core::home::resolve_home_dir().map(|h| copilot_hooks_dir(&h))
 }
 
 /// Copilot's `postToolUse` hooks: shell output compression and observe.

@@ -53,18 +53,7 @@ fn ensure_codex_observe_hooks(
         let Some(entries) = arr.as_array_mut() else {
             continue;
         };
-        let already = entries.iter().any(|e| {
-            e.get("hooks")
-                .and_then(|h| h.as_array())
-                .is_some_and(|hooks| {
-                    hooks.iter().any(|hook| {
-                        hook.get("command")
-                            .and_then(|c| c.as_str())
-                            .is_some_and(|c| c.contains("hook observe"))
-                    })
-                })
-        });
-        if !already {
+        if !super::refresh_commands(entries, "hook observe", observe_cmd) {
             entries.push(serde_json::json!({
                 "matcher": ".*",
                 "hooks": [{ "type": "command", "command": observe_cmd, "timeout": 5 }]
@@ -88,6 +77,24 @@ mod tests {
         assert_eq!(root["hooks"]["Stop"][0]["hooks"][0]["command"], "mine");
         for event in ["PostToolUse", "SessionStart", "SessionEnd"] {
             assert_eq!(root["hooks"][event].as_array().unwrap().len(), 1, "{event}");
+        }
+    }
+
+    /// A binary that moved: the observe hook follows it instead of keeping the
+    /// old path, and is not added a second time.
+    #[test]
+    fn observe_hooks_follow_a_moved_binary() {
+        let mut root = serde_json::json!({});
+        let obj = root.as_object_mut().unwrap();
+        ensure_codex_observe_hooks(obj, "/old/sobre hook observe");
+        ensure_codex_observe_hooks(obj, "/new/sobre hook observe");
+        for event in ["PostToolUse", "SessionStart", "SessionEnd"] {
+            let entries = root["hooks"][event].as_array().unwrap();
+            assert_eq!(entries.len(), 1, "{event}");
+            assert_eq!(
+                entries[0]["hooks"][0]["command"], "/new/sobre hook observe",
+                "{event}"
+            );
         }
     }
 }

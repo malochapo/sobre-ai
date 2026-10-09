@@ -25,12 +25,7 @@ fn ensure_observe_hook(
     let Some(entries) = arr.as_array_mut() else {
         return;
     };
-    let already = entries.iter().any(|e| {
-        e.get("command")
-            .and_then(|c| c.as_str())
-            .is_some_and(|c| c.contains("hook observe"))
-    });
-    if !already {
+    if !super::refresh_commands(entries, "hook observe", observe_cmd) {
         entries.push(serde_json::json!({ "command": observe_cmd }));
     }
 }

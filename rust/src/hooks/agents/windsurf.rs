@@ -38,12 +38,7 @@ fn ensure_windsurf_hook_entry(
     let Some(entries) = arr.as_array_mut() else {
         return;
     };
-    let already = entries.iter().any(|e| {
-        e.get("command")
-            .and_then(|c| c.as_str())
-            .is_some_and(|c| c.contains(marker))
-    });
-    if !already {
+    if !super::refresh_commands(entries, marker, command) {
         entries.push(serde_json::json!({ "command": command }));
     }
 }

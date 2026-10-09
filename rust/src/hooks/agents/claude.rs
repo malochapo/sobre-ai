@@ -114,22 +114,10 @@ fn ensure_claude_observe_hooks(
             .entry(event.to_string())
             .or_insert_with(|| serde_json::json!([]));
 
-        if let Some(arr) = entry.as_array() {
-            let already = arr.iter().any(|group| {
-                group
-                    .get("hooks")
-                    .and_then(|h| h.as_array())
-                    .is_some_and(|hooks| {
-                        hooks.iter().any(|hook| {
-                            hook.get("command")
-                                .and_then(|c| c.as_str())
-                                .is_some_and(|c| c.contains("hook observe"))
-                        })
-                    })
-            });
-            if already {
-                continue;
-            }
+        if let Some(arr) = entry.as_array_mut()
+            && super::refresh_commands(arr, "hook observe", observe_cmd)
+        {
+            continue;
         }
 
         if let Some(arr) = entry.as_array_mut() {

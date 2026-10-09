@@ -59,7 +59,10 @@ fn json_configs(home: &Path) -> Vec<JsonConfig> {
         ("Cursor", home.join(".cursor/hooks.json")),
         ("Codex CLI", codex_dir.join("hooks.json")),
         ("Windsurf", home.join(".codeium/windsurf/hooks.json")),
-        ("Copilot", home.join(".copilot/hooks/hooks.json")),
+        (
+            "Copilot",
+            crate::hooks::agents::copilot_hooks_dir(home).join("hooks.json"),
+        ),
         ("Gemini CLI", home.join(".gemini/settings.json")),
     ] {
         match configs.iter_mut().find(|c| c.path == path) {
