@@ -119,7 +119,7 @@ pub async fn start_proxy(port: u16) -> anyhow::Result<()> {
 
 /// Runs the proxy on `port` behind `auth_token`: every route but `/health`
 /// takes it (provider routes also take a provider API key, see
-/// [`proxy_auth_guard`]), so the proxy never runs unauthenticated.
+/// `proxy_auth_guard`), so the proxy never runs unauthenticated.
 pub async fn start_proxy_with_token(port: u16, auth_token: String) -> anyhow::Result<()> {
     use crate::core::config::{Config, is_local_proxy_url};
 
