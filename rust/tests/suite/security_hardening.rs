@@ -60,17 +60,31 @@ fn mcp_stdio_has_bounded_max_length() {
 #[test]
 fn raw_shell_skips_all_postprocessing() {
     let src = crate::suite::security_hardening::server_dispatch_src().replace("\r\n", "\n");
+    // The dispatch-level terse stage never sees shell output: sobre_shell
+    // condenses its own, and only outside the raw branch.
     assert!(
-        src.contains("let is_raw_shell = name == \"sobre_shell\""),
-        "call_tool must compute is_raw_shell flag"
+        src.contains("const TERSE_TOOLS: [&str; 2] = [\"sobre_knowledge\", \"sobre_session\"];"),
+        "the dispatch terse stage must not reach sobre_shell"
+    );
+    let shell = include_str!("../../src/tools/registered/sobre_shell.rs").replace("\r\n", "\n");
+    let raw_branch = shell
+        .find("if raw {")
+        .expect("sobre_shell must branch on raw");
+    let condense = shell
+        .find("condense_shell_output(")
+        .expect("sobre_shell must condense its own output");
+    let else_branch = shell[raw_branch..]
+        .find("} else {")
+        .map(|i| raw_branch + i)
+        .expect("the raw branch must have an else");
+    assert!(
+        condense > else_branch,
+        "condensing must happen outside the raw branch"
     );
     assert!(
-        src.contains("is_raw_shell")
-            && src.contains(
-                "post_process::final_token_count(&result_text, pre_terse_len, output_tokens)"
-            )
+        src.contains("post_process::final_token_count(&result_text, pre_terse_len, output_tokens)")
             && src.contains("skip_terse"),
-        "skip_terse must include is_raw_shell; the sent count must be taken after terse"
+        "the sent count must be taken after terse"
     );
     // Verification only runs on text terse changed, and terse never touches
     // raw shell output.

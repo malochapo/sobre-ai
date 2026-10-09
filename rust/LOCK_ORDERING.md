@@ -40,7 +40,6 @@ accessor function.
 | L92 | `ACTIVE` | `core/gotcha_tracker/runtime.rs` | `OnceLock<Mutex<Option<Active>>>` | Active per-project gotcha store, kept in memory so pending errors survive across shell calls; independent leaf lock |
 | L93 | `MAP` | `core/index_progress.rs` (fn-local) | `OnceLock<Mutex<ProgressMap>>` | Index build progress snapshots per `(root, component)`; independent leaf lock |
 | L94 | `G` | `core/read_stub_index.rs` (fn-local) | `OnceLock<RwLock<ReadStubIndex>>` | Persistent, conversation-scoped index of fully delivered file reads (bookkeeping only, never content) used to serve the `[unchanged]` stub across restarts; independent leaf lock |
-| L95 | `TRACKER` (relevance) | `core/relevance_tracker.rs` | `LazyLock<Mutex<RelevanceTracker>>` | Bounded relevance-tracking entries (keywords, age, token budget); independent leaf lock |
 
 ### Test / Environment Locks (serialise env-var and cwd mutations)
 

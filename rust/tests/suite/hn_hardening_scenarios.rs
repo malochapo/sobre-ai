@@ -193,15 +193,18 @@ mod double_compression_guard {
 
     #[test]
     fn scenario_raw_shell_still_bypasses() {
+        // Shell output never reaches the dispatch terse stage: skip_terse
+        // admits only the tools in TERSE_TOOLS, and sobre_shell is not one.
         let src = crate::suite::hn_hardening_scenarios::server_dispatch_src();
         let body = crate::suite::hn_hardening_scenarios::skip_terse_body(&src);
-        let raw_idx = body
-            .find("is_raw_shell")
-            .expect("skip_terse must reference is_raw_shell");
-        let saved_idx = body.find("tool_saved_tokens").unwrap_or(usize::MAX);
         assert!(
-            raw_idx < saved_idx,
-            "is_raw_shell must short-circuit first in the skip_terse body"
+            body.contains("!TERSE_TOOLS.contains(&name)"),
+            "skip_terse must admit only TERSE_TOOLS: {body}"
+        );
+        assert!(
+            !src.contains("const TERSE_TOOLS: [&str; 3]")
+                && !src.contains("\"sobre_shell\", \"sobre_knowledge\""),
+            "sobre_shell must not be in TERSE_TOOLS"
         );
     }
 }
