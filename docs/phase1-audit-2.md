@@ -75,7 +75,7 @@ was added.
 
 | Lot | Scope | Status |
 |---|---|---|
-| G | Regressions and half-done phase-1 fixes | done (#51, #52, #53, #54, #PRNUM) |
+| G | Regressions and half-done phase-1 fixes | done (#51, #52, #53, #54, #55) |
 | H | The user's machine: `init`, `uninstall`, `config`, proxy wiring | in progress (#51) |
 | J | Editing and shell tools | open |
 | K | Reading and search tools | open |
@@ -231,7 +231,7 @@ documented:
     like the in-memory one: comma parts in the order given, `N` one line,
     `N-` to the end.
 - [x] **G8 Shell output is condensed with no way back.** *Regression: B58;
-  invariant 5.* (#PRNUM)
+  invariant 5.* (#55)
   - Terse post-processing (`server/post_process.rs:19-28`,
     `tools/registered/sobre_shell.rs:279`) runs after the decision to keep the
     full output. Failed commands, small outputs, background status and
@@ -261,10 +261,10 @@ documented:
   *Regression: B38 missed this path.* It filters snapshots on a substring
   of the process's working directory (`core/session/compaction.rs:394-420`,
   `tools/registered/sobre_session.rs:262`); `list` shows every project's.
-  (#PRNUM) Done: `restore` without an id takes the latest snapshot of a
+  (#55) Done: `restore` without an id takes the latest snapshot of a
   session of this project; `list` shows this project's sessions.
 - [x] **G11 Graph outputs print bare file names.** *Regression: B63 fixed
-  `impact` only.* (#PRNUM) Done: project-relative paths everywhere, the
+  `impact` only.* (#55) Done: project-relative paths everywhere, the
   symbol shortlist that asks for `<file>::<name>` included. `neighbors`, `path`, `related` and the `symbol` header
   still call `shorten_path` (`tools/sobre_graph_primitives.rs`,
   `tools/registered/sobre_graph.rs:108-118,238`).
@@ -282,7 +282,7 @@ documented:
     ends with what the walk never looks at. The note no longer mentions
     `ignore_gitignore` (an undeclared parameter, decision 7): it says what
     was skipped for the walk that ran.
-- [x] **G13 Persisted hashes use `DefaultHasher`.** (#PRNUM) *Regression: D17 moved
+- [x] **G13 Persisted hashes use `DefaultHasher`.** (#55) *Regression: D17 moved
   the keys to BLAKE3 but not these.* `DefaultHasher` is not stable across
   Rust releases, so a toolchain update makes every stored hash mismatch.
   - Gotcha ids (`core/gotcha_tracker/model.rs:252`, matched at
@@ -293,7 +293,7 @@ documented:
     rebuild.
   - Fix: `core::hasher`.
   - Done: all three use `hasher::hash_short` (BLAKE3).
-- [x] **G14 Lot D left duplicates and a fallback into the project.** (#PRNUM)
+- [x] **G14 Lot D left duplicates and a fallback into the project.** (#55)
   *Regression: D18 says both are gone.*
   - `graph_dir` falls back to `<project>/.sobre/` when the data dir cannot
     be resolved (`core/property_graph/mod.rs:30-43`); `CodeGraph::open`
@@ -316,7 +316,7 @@ documented:
     Windows test import is gated like its user.
 - [x] **G16 `sobre_shell` and `sobre_read` inject context nobody asked
   for.** *Regression: B11 removed the AUTO CONTEXT prefix (phase-1
-  decision 2), not this second injector.* Found while fixing G8. (#PRNUM)
+  decision 2), not this second injector.* Found while fixing G8. (#55)
   - Every saved shell output was indexed by keyword
     (`core/relevance_tracker.rs`, 551 lines). A later `sobre_shell` or
     `sobre_read` whose words matched got up to 2,000 tokens of those old
