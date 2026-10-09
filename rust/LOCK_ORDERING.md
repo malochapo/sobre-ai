@@ -50,6 +50,28 @@ accessor function.
 
 Locks declared inside `#[cfg(test)]` items are test-only and are not listed here.
 
+### Cross-process File Locks
+
+OS advisory locks (`flock` on Unix, `LockFileEx` on Windows) taken through std's
+`File::lock` / `File::try_lock`. The OS releases one when its handle closes or its process
+dies, so none outlives its holder. Files are in the data directory unless noted; the
+`.<name>.lock` ones go through `core/startup_guard.rs` (`try_acquire_lock`), which polls
+`try_lock` until its wait runs out. The lock files stay, empty.
+
+| # | Lock file | Taken in | Wait, then | Purpose |
+|---|-----------|----------|------------|---------|
+| F1 | `.mcp-startup.lock` | `cli/dispatch/server.rs` | 3 s, then starts without it | Spreads simultaneous MCP server starts |
+| F2 | `.startup-maintenance.lock` | `server/server_handler.rs` | 2 s, then skips the pruning | One process prunes old sessions and indexes at a time |
+| F3 | `.graph-idx-<hash>.lock` | `core/graph_index/mod.rs` | up to 2 min, then reuses the winner's index when current | One graph scan per project |
+| F4 | `.bm25-idx-<hash>.lock` | `core/index_orchestrator.rs` | 800 ms, then loads the shared index | One BM25 build per project |
+| F5 | `.search-idx-<hash>.lock` | `core/search_index.rs` | 200 ms, then defers the pre-warm | One search-index walk per project |
+| F6 | `knowledge/<hash>/.knowledge.lock` | `core/knowledge/persist.rs` | blocks | Knowledge read-modify-write across processes; taken inside L41 |
+| F7 | `usage.jsonl` itself | `core/usage/mod.rs` | blocks | One appended line at a time |
+
+F1–F5 wait a bounded time and then go on without the lock, so they cannot deadlock. F6 and F7
+block, but only around a short file read-modify-write or append; F6 is the one taken while a
+static lock (L41's inner mutex) is held.
+
 ---
 
 ## 2. Arc-wrapped Session Locks (per-MCP-session, `tokio::sync::RwLock`)

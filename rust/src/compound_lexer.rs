@@ -1,3 +1,8 @@
+//! Splits a shell line at its operators. Hand-written: no crate splits a shell
+//! line while keeping the operators (`shlex` and `shell-words` return the words
+//! and drop `&&`, `||`, `;` and `|`, which a rewrite has to emit back as they
+//! were).
+
 /// Splits a compound shell command into segments separated by `&&`, `||`, `;`.
 /// Pipes (`|`) are treated specially: only the left side of a pipe is eligible
 /// for rewriting (the right side consumes output format and must stay raw).

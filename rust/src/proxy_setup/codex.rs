@@ -2,6 +2,8 @@
 
 use std::path::Path;
 
+use toml_edit::{DocumentMut, Item, RawString};
+
 use super::util::is_proxy_reachable;
 use super::wiring;
 
@@ -135,124 +137,68 @@ fn install_codex_env_at_path(config_path: &Path, port: u16, quiet: bool, mode: C
     }
 }
 
+/// The top-level key Codex reads its built-in OpenAI provider's base URL from.
+const BASE_URL_KEY: &str = "openai_base_url";
+
 /// Point Codex's built-in OpenAI provider at `value` via the documented top-level
 /// `openai_base_url` key, replacing the value sobre wrote earlier. An
 /// `openai_base_url` the user configured — remote or local — is preserved
-/// and never overwritten. Keys are emitted as top-level keys (before the
-/// first `[table]`) so Codex actually reads them.
+/// and never overwritten. A new key goes first in the file, ahead of the
+/// first `[table]`, so Codex reads it as a top-level key. Everything else
+/// stays as written; a file that is not valid TOML is returned unchanged.
 pub(crate) fn render_codex_config(existing: &str, entries: &[(&str, String)]) -> String {
-    let cleaned = strip_codex_proxy_entries(existing);
-
-    let mut prefix = String::new();
+    let Ok(mut doc) = existing.parse::<DocumentMut>() else {
+        return existing.to_string();
+    };
+    remove_proxy_entry(&mut doc);
     for (key, value) in entries {
-        // `strip_codex_proxy_entries` left only the user's own value.
-        let users_own = has_top_level_codex_config_key(&cleaned, key, |_| true);
-        if !users_own {
-            prefix.push_str(&format!("{key} = \"{value}\"\n"));
+        // `remove_proxy_entry` left only the user's own value.
+        if !doc.contains_key(key) {
+            doc.insert(key, toml_edit::value(value.as_str()));
+            doc.sort_values_by(|a, _, b, _| (b.get() == *key).cmp(&(a.get() == *key)));
         }
     }
-    if prefix.is_empty() {
-        cleaned
-    } else {
-        // `strip_codex_proxy_entries` already dropped local keys, so prepend fresh
-        // top-level keys ahead of every existing line.
-        format!("{prefix}{cleaned}")
-    }
+    doc.to_string()
 }
 
 /// Remove sobre's own Codex proxy entry from a `config.toml` body: a local
-/// top-level `openai_base_url`. Custom remote endpoints and tables are preserved.
+/// top-level `openai_base_url`. Custom endpoints, tables, comments and layout
+/// are preserved; a body that is not valid TOML is returned unchanged.
 pub(crate) fn strip_codex_proxy_entries(body: &str) -> String {
-    let lines: Vec<&str> = body.lines().collect();
-    let mut kept: Vec<&str> = Vec::with_capacity(lines.len());
-    let mut current_table: Option<&str> = None;
-    let mut i = 0;
-    while i < lines.len() {
-        let trimmed = lines[i].trim();
-        if lines[i].trim_start().starts_with('[') {
-            current_table = Some(trimmed);
-            kept.push(lines[i]);
-            i += 1;
-            continue;
-        }
+    let Ok(mut doc) = body.parse::<DocumentMut>() else {
+        return body.to_string();
+    };
+    remove_proxy_entry(&mut doc);
+    doc.to_string()
+}
 
-        if should_strip_codex_proxy_entry(lines[i].trim_start(), current_table) {
-            i += 1;
-            continue;
-        }
-
-        kept.push(lines[i]);
-        i += 1;
+/// Removes sobre's top-level `openai_base_url`. Comments above it move to the
+/// top of the file, where sobre writes the key, so none is lost.
+fn remove_proxy_entry(doc: &mut DocumentMut) {
+    if !holds_proxy_entry(doc) {
+        return;
     }
-
-    let out = kept;
-
-    let mut s = out.join("\n");
-    while s.contains("\n\n\n") {
-        s = s.replace("\n\n\n", "\n\n");
-    }
-    let s = s.trim_end_matches('\n');
-    if s.is_empty() {
-        String::new()
-    } else {
-        format!("{s}\n")
+    let Some((key, _)) = doc.remove_entry(BASE_URL_KEY) else {
+        return;
+    };
+    let above = key.leaf_decor().prefix().and_then(RawString::as_str);
+    if let Some(above) = above.filter(|text| text.contains('#')) {
+        let top = doc.decor().prefix().and_then(RawString::as_str);
+        let top = format!("{above}{}", top.unwrap_or_default());
+        doc.decor_mut().set_prefix(top);
     }
 }
 
-pub(crate) fn has_top_level_codex_config_key(
-    body: &str,
-    key: &str,
-    predicate: impl Fn(&str) -> bool,
-) -> bool {
-    for line in body.lines() {
-        let t = line.trim_start();
-        if t.starts_with('[') {
-            break;
-        }
-        if toml_assignment_key(t) == Some(key) && predicate(t) {
-            return true;
-        }
-    }
-    false
-}
-
-pub(crate) fn should_strip_codex_proxy_entry(t: &str, current_table: Option<&str>) -> bool {
-    match current_table {
-        None => is_local_codex_base_url_entry(t, &["openai_base_url"]),
-        _ => false,
-    }
-}
-
-/// Whether `t` assigns one of `keys` the URL sobre wrote for Codex.
-pub(crate) fn is_local_codex_base_url_entry(t: &str, keys: &[&str]) -> bool {
-    toml_assignment_key(t).is_some_and(|key| keys.contains(&key))
-        && toml_string_value(t).is_some_and(|url| wiring::is_ours(SLOT, url))
-}
-
-/// The string a `key = "value"` line assigns.
-fn toml_string_value(t: &str) -> Option<&str> {
-    let value = t.split_once('=')?.1.trim();
-    let value = value.split(" #").next().unwrap_or(value).trim();
-    value
-        .strip_prefix('"')
-        .and_then(|v| v.strip_suffix('"'))
-        .or_else(|| value.strip_prefix('\'').and_then(|v| v.strip_suffix('\'')))
-}
-
-pub(crate) fn toml_assignment_key(t: &str) -> Option<&str> {
-    let key = t.split_once('=')?.0.trim();
-    if key.is_empty() || key.starts_with('#') {
-        None
-    } else {
-        Some(key)
-    }
+/// Whether the top-level `openai_base_url` is the URL sobre wrote.
+fn holds_proxy_entry(doc: &DocumentMut) -> bool {
+    doc.get(BASE_URL_KEY)
+        .and_then(Item::as_str)
+        .is_some_and(|url| wiring::is_ours(SLOT, url))
 }
 
 pub(crate) fn codex_config_has_local_proxy_entry(body: &str) -> bool {
-    body.lines()
-        .map(str::trim_start)
-        .take_while(|t| !t.starts_with('['))
-        .any(|t| is_local_codex_base_url_entry(t, &["openai_base_url"]))
+    body.parse::<DocumentMut>()
+        .is_ok_and(|doc| holds_proxy_entry(&doc))
 }
 
 /// True when Codex will authenticate via a **ChatGPT login** (OAuth) rather than

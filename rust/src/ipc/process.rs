@@ -1,3 +1,8 @@
+//! Process control through the OS itself (`kill`, `pgrep`, `ps`, `tasklist`,
+//! `OpenProcess`). Not `sysinfo`: it is a heavy dependency for what the
+//! uninstall and stop paths need, a liveness check, a signal and a lookup by
+//! name.
+
 use anyhow::Result;
 
 /// Run a command with a hard timeout, capturing its output.

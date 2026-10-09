@@ -35,7 +35,6 @@ fn knowledge_lock(project_hash: &str) -> Arc<Mutex<()>> {
 /// cycle across *separate processes* (parallel CLI invocations, CLI + MCP
 /// server), complementing the in-process mutex.
 fn acquire_file_lock(dir: &Path) -> Option<std::fs::File> {
-    use fs2::FileExt;
     let lock_path = dir.join(".knowledge.lock");
     let file = std::fs::OpenOptions::new()
         .create(true)
@@ -50,7 +49,7 @@ fn acquire_file_lock(dir: &Path) -> Option<std::fs::File> {
     }
     // Blocks until every other process holding the lock releases it. A failure
     // here (unsupported FS, etc.) degrades to the in-process lock only.
-    file.lock_exclusive().ok()?;
+    file.lock().ok()?;
     Some(file)
 }
 
@@ -177,7 +176,6 @@ impl ProjectKnowledge {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use fs2::FileExt;
 
     #[test]
     fn file_lock_is_exclusive_across_handles() {
@@ -196,19 +194,19 @@ mod tests {
             .open(dir.path().join(".knowledge.lock"))
             .unwrap();
         assert!(
-            second.try_lock_exclusive().is_err(),
+            second.try_lock().is_err(),
             "a second handle must not acquire the lock while it is held"
         );
 
         drop(held);
         // `close()` releases the flock synchronously, so the lock IS free here.
         // Under heavy parallel test load, however, a single non-blocking
-        // `try_lock_exclusive()` can momentarily observe `EWOULDBLOCK` from
+        // `try_lock()` can momentarily observe `EWOULDBLOCK` from
         // scheduling jitter. A short bounded retry removes that flake without
         // weakening the guarantee: the lock must become acquirable again.
         let mut reacquired = false;
         for _ in 0..50 {
-            if second.try_lock_exclusive().is_ok() {
+            if second.try_lock().is_ok() {
                 reacquired = true;
                 break;
             }

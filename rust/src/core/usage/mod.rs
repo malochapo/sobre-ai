@@ -178,10 +178,9 @@ fn append(ev: &Event) {
     else {
         return;
     };
-    use fs2::FileExt;
-    if file.lock_exclusive().is_ok() {
+    if file.lock().is_ok() {
         let _ = file.write_all(line.as_bytes());
-        let _ = FileExt::unlock(&file);
+        let _ = file.unlock();
     }
 }
 

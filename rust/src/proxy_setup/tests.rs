@@ -467,3 +467,49 @@ fn codex_keeps_a_local_endpoint_of_the_users() {
     assert_eq!(cfg, original);
     assert!(!codex_config_has_local_proxy_entry(&cfg));
 }
+
+/// Codex's `config.toml` is read as TOML: text inside a multi-line string is
+/// not a key or a table, a quoted key is the same key, and comments, key
+/// order and runs of blank lines stay as written through wiring and removal.
+#[test]
+fn codex_wiring_edits_toml_and_keeps_the_rest_as_written() {
+    let _iso = crate::core::data_dir::isolated_data_dir();
+    let dir = tempfile::tempdir().unwrap();
+    let codex_dir = dir.path().join(".codex");
+    std::fs::create_dir_all(&codex_dir).unwrap();
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let ours = format!("openai_base_url = \"http://127.0.0.1:{port}/v1\"\n");
+    let original = format!(
+        "# my Codex setup\nmodel = \"gpt-5.5\"\ndeveloper_instructions = \"\"\"\n{ours}[not_a_table]\n\n\n\"\"\"\n\n\n[features]\nhooks = true # keep\n"
+    );
+    std::fs::write(codex_dir.join("config.toml"), &original).unwrap();
+
+    install_codex_env_at(&codex_dir, port, true);
+    let cfg = std::fs::read_to_string(codex_dir.join("config.toml")).unwrap();
+    assert_eq!(cfg, format!("{ours}{original}"));
+    assert!(codex_config_has_local_proxy_entry(&cfg));
+    assert_eq!(strip_codex_proxy_entries(&cfg), original);
+
+    // The same key, quoted, is still sobre's and is replaced, not doubled.
+    let quoted = format!("\"openai_base_url\" = \"http://127.0.0.1:{port}/v1\"\n{original}");
+    assert!(codex_config_has_local_proxy_entry(&quoted));
+    assert_eq!(strip_codex_proxy_entries(&quoted), original);
+    let entries = vec![("openai_base_url", format!("http://127.0.0.1:{port}/v1"))];
+    assert_eq!(
+        render_codex_config(&quoted, &entries),
+        format!("{ours}{original}")
+    );
+
+    // A comment the user put above sobre's line stays.
+    let noted = format!("# proxy on\n{ours}model = \"gpt-5.5\"\n");
+    assert_eq!(
+        strip_codex_proxy_entries(&noted),
+        "# proxy on\nmodel = \"gpt-5.5\"\n"
+    );
+
+    // A file that is not TOML is left alone.
+    let broken = format!("{ours}[unclosed\n");
+    assert_eq!(render_codex_config(&broken, &entries), broken);
+    assert_eq!(strip_codex_proxy_entries(&broken), broken);
+}

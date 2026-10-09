@@ -240,6 +240,8 @@ use languages::*;
 // Config Loaders
 // ---------------------------------------------------------------------------
 
+/// `compilerOptions.paths` of the project's tsconfig. The file is JSONC:
+/// TypeScript accepts comments and trailing commas in it.
 fn load_tsconfig_paths(root: &Path) -> HashMap<String, String> {
     let mut paths = HashMap::new();
 
@@ -247,7 +249,7 @@ fn load_tsconfig_paths(root: &Path) -> HashMap<String, String> {
     for name in &candidates {
         let tsconfig_path = root.join(name);
         if let Ok(content) = std::fs::read_to_string(&tsconfig_path) {
-            if let Ok(json) = serde_json::from_str::<serde_json::Value>(&content)
+            if let Ok(json) = crate::core::jsonc::parse_jsonc(&content)
                 && let Some(compiler) = json.get("compilerOptions")
             {
                 let base_url = compiler

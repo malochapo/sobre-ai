@@ -287,7 +287,7 @@ fn find_real_shell() -> String {
 #[cfg(windows)]
 fn find_real_shell() -> String {
     if is_running_in_msys_or_gitbash()
-        && let Some(shell) = ["bash.exe", "sh.exe"].into_iter().find_map(where_first)
+        && let Some(shell) = ["bash.exe", "sh.exe"].into_iter().find_map(path_of)
     {
         return shell;
     }
@@ -309,26 +309,16 @@ fn is_running_in_msys_or_gitbash() -> bool {
 fn which_powershell() -> Result<String, ()> {
     ["pwsh.exe", "powershell.exe"]
         .into_iter()
-        .find_map(where_first)
+        .find_map(path_of)
         .ok_or(())
 }
 
-/// The first path `where` prints for `program`.
+/// Where `program` is on PATH.
 #[cfg(windows)]
-fn where_first(program: &str) -> Option<String> {
-    let output = std::process::Command::new("where")
-        .arg(program)
-        .output()
-        .ok()?;
-    if !output.status.success() {
-        return None;
-    }
-    String::from_utf8(output.stdout)
-        .ok()?
-        .lines()
-        .map(str::trim)
-        .find(|line| !line.is_empty())
-        .map(str::to_string)
+fn path_of(program: &str) -> Option<String> {
+    which::which(program)
+        .ok()
+        .map(|p| p.to_string_lossy().into_owned())
 }
 
 /// Join multiple CLI arguments into a single command string, using quoting

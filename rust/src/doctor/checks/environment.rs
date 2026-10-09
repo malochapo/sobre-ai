@@ -181,14 +181,14 @@ pub(crate) fn humanize_age(age: chrono::Duration) -> String {
     }
 }
 pub(crate) fn lsp_server_outcomes() -> Vec<Outcome> {
-    use crate::lsp::config::{KNOWN_SERVERS, find_binary_in_path};
+    use crate::lsp::config::KNOWN_SERVERS;
 
     KNOWN_SERVERS
         .iter()
         .map(|info| {
-            let found = find_binary_in_path(info.binary);
+            let found = which::which(info.binary);
             match found {
-                Some(path) => Outcome {
+                Ok(path) => Outcome {
                     ok: true,
                     line: format!(
                         "{BOLD}{}{RST}  {GREEN}✓ {}{RST}  {DIM}{}{RST}",
@@ -197,7 +197,7 @@ pub(crate) fn lsp_server_outcomes() -> Vec<Outcome> {
                         path.display()
                     ),
                 },
-                None => Outcome {
+                Err(_) => Outcome {
                     ok: false,
                     line: format!(
                         "{BOLD}{}{RST}  {DIM}not installed{RST}  {YELLOW}{}{RST}",

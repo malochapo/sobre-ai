@@ -92,18 +92,23 @@ pub(super) async fn retry_backoff() {
 
 /// True when the upstream base URL points at a loopback/local endpoint (a
 /// local model server): the ledger books the call as costing nothing.
+/// `0.0.0.0` counts too, the address a server listening on every interface
+/// is often given as.
 pub(super) fn upstream_is_local(upstream_base: &str) -> bool {
-    let rest = upstream_base
-        .strip_prefix("https://")
-        .or_else(|| upstream_base.strip_prefix("http://"))
-        .unwrap_or(upstream_base);
-    let host_port = rest.split(['/', '?']).next().unwrap_or(rest);
-    let host = if let Some(b) = host_port.strip_prefix('[') {
-        b.split(']').next().unwrap_or(b)
-    } else {
-        host_port.split(':').next().unwrap_or(host_port)
+    use std::net::{IpAddr, Ipv4Addr};
+    let Ok(url) = reqwest::Url::parse(upstream_base) else {
+        return false;
     };
-    matches!(host, "127.0.0.1" | "localhost" | "::1" | "0.0.0.0")
+    match url.host_str() {
+        Some("localhost") => true,
+        // An IPv6 host comes between brackets.
+        Some(host) => host
+            .trim_start_matches('[')
+            .trim_end_matches(']')
+            .parse::<IpAddr>()
+            .is_ok_and(|ip| ip.is_loopback() || ip == IpAddr::V4(Ipv4Addr::UNSPECIFIED)),
+        None => false,
+    }
 }
 
 /// Constructs the full upstream URL from the request path (or default).

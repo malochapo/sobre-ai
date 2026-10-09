@@ -11,6 +11,9 @@
 //!   TOCTOU before calling in;
 //! * `config_io` resolves a user-managed symlink to its real target (within
 //!   `$HOME`) and then writes through to it.
+//!
+//! Not `tempfile::NamedTempFile::persist`: it has none of the read-only-directory
+//! fallback, the `O_NOFOLLOW` overwrite and the sweep of temps left by a crash.
 
 use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -66,21 +69,8 @@ pub(crate) fn try_atomic_write(
         let _ = std::fs::set_permissions(&tmp, perms.clone());
     }
 
-    // On Windows, `rename` fails outright if `path` already exists, so
-    // this used to `remove_file(path)` first and rename second — two
-    // non-atomic syscalls. A reader landing in that window sees ENOENT for a
-    // file that "exists", and a process that dies after the remove but
-    // before the rename loses the original file for good while the temp file
-    // is left behind orphaned. `MoveFileExW` with `MOVEFILE_REPLACE_EXISTING`
-    // performs the swap as one atomic operation, matching what `rename(2)`
-    // already gives us for free on Unix.
-    #[cfg(windows)]
-    if let Err(e) = windows_replace(&tmp, path) {
-        let _ = std::fs::remove_file(&tmp);
-        return Err(e);
-    }
-
-    #[cfg(not(windows))]
+    // `rename` replaces an existing `path` in one step on every platform
+    // (`MoveFileExW` with `MOVEFILE_REPLACE_EXISTING` on Windows).
     if let Err(e) = std::fs::rename(&tmp, path) {
         // Don't leave a half-written temp behind before the caller decides
         // whether to fall back.
@@ -91,32 +81,6 @@ pub(crate) fn try_atomic_write(
     #[cfg(unix)]
     fsync_dir(parent);
 
-    Ok(())
-}
-
-/// Atomically replace `path` with `tmp` via `MoveFileExW(MOVEFILE_REPLACE_EXISTING)`
-/// — the Windows equivalent of POSIX `rename(2)`'s implicit replace-if-exists.
-#[cfg(windows)]
-fn windows_replace(tmp: &Path, path: &Path) -> std::io::Result<()> {
-    use std::os::windows::ffi::OsStrExt;
-    use windows_sys::Win32::Storage::FileSystem::{MOVEFILE_REPLACE_EXISTING, MoveFileExW};
-
-    fn to_wide(p: &Path) -> Vec<u16> {
-        p.as_os_str()
-            .encode_wide()
-            .chain(std::iter::once(0))
-            .collect()
-    }
-
-    let tmp_w = to_wide(tmp);
-    let path_w = to_wide(path);
-
-    // SAFETY: both buffers are NUL-terminated UTF-16 strings that outlive the
-    // call; MoveFileExW only reads them.
-    let ok = unsafe { MoveFileExW(tmp_w.as_ptr(), path_w.as_ptr(), MOVEFILE_REPLACE_EXISTING) };
-    if ok == 0 {
-        return Err(std::io::Error::last_os_error());
-    }
     Ok(())
 }
 
