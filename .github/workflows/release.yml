@@ -60,7 +60,10 @@ jobs:
               echo "::error::v$version is already released; bump the version in rust/Cargo.toml"
               exit 1
             fi
-            echo "tag=v$version-rc.$GITHUB_RUN_NUMBER" >> "$GITHUB_OUTPUT"
+            # rc.N counts this version's pre-releases: rc.1, rc.2, …
+            n="$(gh release list --repo "$GITHUB_REPOSITORY" --limit 1000 --json tagName \
+              --jq "[.[] | select(.tagName | startswith(\"v$version-rc.\"))] | length")"
+            echo "tag=v$version-rc.$((n + 1))" >> "$GITHUB_OUTPUT"
             echo "prerelease=true" >> "$GITHUB_OUTPUT"
           fi
 
