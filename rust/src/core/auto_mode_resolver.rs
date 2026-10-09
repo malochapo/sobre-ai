@@ -6,13 +6,14 @@ pub struct AutoModeContext<'a> {
     pub cache: Option<&'a SessionCache>,
 }
 
+/// The concrete read mode `auto` stands for, and which rule chose it.
 pub struct ResolvedMode {
     pub mode: String,
     pub source: &'static str,
 }
 
-/// Single entry point for auto-mode resolution.
-/// Merges Pipeline A (select_mode_with_task) and Pipeline B (resolve_auto_mode).
+/// Single entry point for auto-mode resolution, shared by `sobre_read`'s
+/// `auto` and the mode it picks when the agent names none.
 pub fn resolve(ctx: &AutoModeContext) -> ResolvedMode {
     // Quality loop: a sobre_patch anchor went stale — hand back fresh line
     // anchors (not `full`) so the agent retries by reference, one-shot. Checked
@@ -130,14 +131,13 @@ fn heuristic_mode(ext: &str, token_count: usize) -> String {
     "full".to_string()
 }
 
-/// Fast O(1) staleness check: if the file's mtime still matches what was
-/// stored when the cache entry was created, the content is unchanged — no need
-/// to read the file or compute any hash. Falls back to "changed" when metadata
-/// is unavailable (e.g. file deleted) or when the cache entry predates mtime
-/// tracking (legacy entries with `stored_mtime = None`).
+/// Cheap staleness check for choosing a mode: the file's mtime still matches
+/// the one stored with the cache entry. "Changed" when metadata is
+/// unavailable (file deleted) or no mtime was stored.
 ///
-/// mtime comparison is sufficient for correctness on all major filesystems:
-/// every `write(2)` / `truncate(2)` updates mtime (POSIX guarantee).
+/// mtime alone misses a same-tick write on a coarse filesystem. That only
+/// picks the mode: every `[unchanged]` stub and every diff is decided later
+/// against the content hash ([`crate::core::cache::is_cache_entry_stale_verified`]).
 fn file_unchanged(path: &str, cached: &crate::core::cache::CacheEntry) -> bool {
     let Some(stored_mtime) = cached.stored_mtime else {
         return false;
