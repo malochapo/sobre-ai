@@ -54,7 +54,7 @@ The lots run in this order:
 | C | The CLI and the proxy | done (#38, #39) |
 | R | Tool names `ctx_*` → `sobre_*` (decision 9) | done (#40) |
 | D | Dead code, stale files, stale comments, duplicates; decision 7 | done (#41, #42, #43, #44, #45, #46) |
-| F | Release: publish a `dense` binary (decision 8) | open |
+| F | Release: publish a `dense` binary (decision 8) | done (#47) |
 | E | Documentation and install path, written last so it describes the final behaviour | open |
 
 ## What already works
@@ -1064,12 +1064,29 @@ dead code) and #46 (the reachability sweep).
 
 ## Lot F — release
 
-- [ ] **F1 Publish a `dense` binary next to the default one (decision 8).**
+- [x] **F1 Publish a `dense` binary next to the default one (decision 8).**
   - `release.yml` builds 5 targets with default features. Linux is static
     musl, which may not be able to load ONNX Runtime dynamically; check.
-- [ ] **F2 Name the two binaries, and say in the release notes which one
+  - Checked: a static musl binary cannot load any library at run time
+    (`dlopen` fails with "Dynamic loading not supported"); the same program
+    built for glibc loads it.
+  - Done: four dense builds next to the five default ones. Linux targets
+    glibc 2.28 through `cargo zigbuild` (`x86_64` and `aarch64`), the floor
+    of Microsoft's own ONNX Runtime builds; then Apple silicon and Windows
+    x64. Intel macOS has none: Microsoft ships no ONNX Runtime for it.
+  - Tested: the `x86_64` glibc 2.28 build needs nothing newer than
+    `GLIBC_2.28`; `sobre embeddings provision` downloads the runtime and the
+    model; `sobre_search` in `dense` mode ranks `login` first for "verify
+    credentials when a user signs in".
+- [x] **F2 Name the two binaries, and say in the release notes which one
   has embeddings.** Today `embedding_model` and `sobre embeddings
   provision` do nothing in every shipped binary.
+  - Done: `sobre-<target>` and `sobre-dense-<target>`; the release notes
+    open with what each has. A build without embeddings now names the
+    `sobre-dense` build in every message that asks for embeddings.
+  - Found while testing: search results were headed `rrf:` in every mode,
+    but the score is RRF only for hybrid results (BM25 score or cosine
+    similarity otherwise). Now `score:`.
 
 ## Lot E — documentation and install
 

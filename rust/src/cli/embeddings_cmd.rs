@@ -16,8 +16,8 @@ pub(crate) fn provision(force: bool) -> Result<(), String> {
     {
         let _ = force;
         Err(
-            "this build has no local embeddings (built without --features dense), \
-             so there is nothing to download"
+            "this build has no local embeddings, so there is nothing to download \
+             (they come with the sobre-dense release build, or a build with --features dense)"
                 .to_string(),
         )
     }
@@ -58,8 +58,8 @@ pub(crate) fn cmd_embeddings(rest: &[String]) {
             );
             #[cfg(not(feature = "dense"))]
             println!(
-                "This build was compiled without the `dense` feature — the managed \
-                 runtime is only used by embedding-enabled builds."
+                "This build has no local embeddings: the managed runtime serves the \
+                 sobre-dense release build (or a build with --features dense)."
             );
             if let Ok(p) = std::env::var("ORT_DYLIB_PATH") {
                 println!("ORT_DYLIB_PATH override active: {p}");

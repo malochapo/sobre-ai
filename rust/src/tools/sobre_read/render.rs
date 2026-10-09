@@ -46,8 +46,7 @@ impl<'a> ReadTuning<'a> {
 
 /// Render a trailing ` [a, b]` techniques tag, or `""` when no compression
 /// technique fired. Avoids the empty ` []` metadata field a bare `join` would
-/// leave on an incompressible file (the same class as the `(rrf: X)` fix in
-/// semantic search).
+/// leave on an incompressible file.
 fn techniques_tag(techniques: &[String]) -> String {
     if techniques.is_empty() {
         String::new()

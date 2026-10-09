@@ -328,8 +328,9 @@ pub fn format_hybrid_results(results: &[HybridResult], compact: bool) -> String 
             ));
         } else {
             // Prefix the separator inside each arm so an absent rank-source
-            // (e.g. BM25-only fallback when embeddings are off) renders a clean
-            // "(rrf: X)" instead of a dangling "(rrf: X)".
+            // (BM25-only or dense-only ranking) renders a clean "(score: X)".
+            // The score is RRF only for hybrid results; otherwise it is the
+            // BM25 score or the cosine similarity.
             let source_info = match (r.bm25_rank, r.dense_rank) {
                 (Some(bm), Some(dn)) => format!(", bm25:#{bm} + dense:#{dn}"),
                 (Some(bm), None) => format!(", bm25:#{bm}"),
@@ -337,7 +338,7 @@ pub fn format_hybrid_results(results: &[HybridResult], compact: bool) -> String 
                 _ => String::new(),
             };
             out.push_str(&format!(
-                "\n--- Result {} (rrf: {:.4}{}) ---\n{} :: {} [{:?}] (L{}-{})\n{}\n",
+                "\n--- Result {} (score: {:.4}{}) ---\n{} :: {} [{:?}] (L{}-{})\n{}\n",
                 i + 1,
                 r.rrf_score,
                 source_info,
@@ -522,7 +523,7 @@ mod tests {
     #[test]
     fn format_verbose_no_dangling_comma_when_source_absent() {
         // BM25-only fallback (embeddings off) leaves both ranks None; the header
-        // must read "(rrf: X)" with no trailing ")" waste.
+        // must read "(score: X)" with no dangling separator.
         let results = vec![HybridResult {
             file_path: "auth.rs".into(),
             symbol_name: "validate".into(),
@@ -537,7 +538,7 @@ mod tests {
         }];
         let output = format_hybrid_results(&results, false);
         assert!(
-            output.contains("(rrf: 0.5898)"),
+            output.contains("(score: 0.5898)"),
             "absent rank-source must render a clean header, got: {output}"
         );
         assert!(!output.contains(", )"), "must not emit a dangling ', )'");
