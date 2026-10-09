@@ -338,18 +338,7 @@ fn parse_value(
             Ok(toml::Value::Float(n))
         }
         "string" | "string?" => Ok(toml::Value::String(value.to_string())),
-        "enum" => {
-            if let Some(ref allowed) = schema.values
-                && !allowed.iter().any(|v| v == value)
-            {
-                return Err(crate::core::error::ConfigError::InvalidEnumValue {
-                    value: value.to_string(),
-                    allowed: allowed.join(", "),
-                });
-            }
-            Ok(toml::Value::String(value.to_string()))
-        }
-        "string[]" | "array" => {
+        "string[]" => {
             let items: Vec<toml::Value> = value
                 .split(',')
                 .map(|s| toml::Value::String(s.trim().to_string()))
@@ -357,14 +346,9 @@ fn parse_value(
                 .collect();
             Ok(toml::Value::Array(items))
         }
-        "table" => Err(crate::core::error::ConfigError::CannotSetTable {
-            value: value.to_string(),
-        }),
-        other => {
-            // Fallback: treat as string (covers unknown future types gracefully)
-            tracing::debug!("Unknown schema type '{other}', treating value as string");
-            Ok(toml::Value::String(value.to_string()))
-        }
+        other => Err(crate::core::error::ConfigError::Message(format!(
+            "no parser for the schema type '{other}'"
+        ))),
     }
 }
 
@@ -402,7 +386,6 @@ mod tests {
             ty: "bool".to_string(),
             default: serde_json::json!(false),
             description: String::new(),
-            values: None,
         };
         assert_eq!(
             parse_value("true", &schema).unwrap(),
@@ -423,7 +406,6 @@ mod tests {
             ty: "u16?".to_string(),
             default: serde_json::json!(null),
             description: String::new(),
-            values: None,
         };
         assert_eq!(
             parse_value("18999", &port).unwrap(),
@@ -440,7 +422,6 @@ mod tests {
             ty: "u32".to_string(),
             default: serde_json::json!(0),
             description: String::new(),
-            values: None,
         };
         assert_eq!(
             parse_value("42", &schema).unwrap(),
@@ -450,19 +431,19 @@ mod tests {
         assert!(parse_value("abc", &schema).is_err());
     }
 
+    /// Every type the schema uses has a parser.
     #[test]
-    fn parse_enum_validates_allowed() {
-        let schema = KeySchema {
-            ty: "enum".to_string(),
-            default: serde_json::json!("off"),
-            description: String::new(),
-            values: Some(vec!["off".into(), "lite".into(), "full".into()]),
-        };
-        assert_eq!(
-            parse_value("lite", &schema).unwrap(),
-            toml::Value::String("lite".into())
-        );
-        assert!(parse_value("invalid", &schema).is_err());
+    fn every_schema_type_parses() {
+        for section in ConfigSchema::generate().sections.values() {
+            for key in section.keys.values() {
+                let sample = match key.ty.trim_end_matches('?') {
+                    "bool" => "true",
+                    "string" | "string[]" => "x",
+                    _ => "1",
+                };
+                assert!(parse_value(sample, key).is_ok(), "{}", key.ty);
+            }
+        }
     }
 
     #[test]
@@ -471,7 +452,6 @@ mod tests {
             ty: "string[]".to_string(),
             default: serde_json::json!([]),
             description: String::new(),
-            values: None,
         };
         let result = parse_value("a, b, c", &schema).unwrap();
         let arr = result.as_array().unwrap();

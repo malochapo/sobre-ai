@@ -349,10 +349,7 @@ pub fn config_keys_markdown() -> String {
 fn render_section_keys(section: &crate::core::config::schema::SectionSchema) -> String {
     let mut out = String::new();
     for (key, ks) in &section.keys {
-        let mut ty = ks.ty.clone();
-        if let Some(values) = &ks.values {
-            ty = format!("{ty}: {}", values.join(" | "));
-        }
+        let ty = &ks.ty;
         let default = value_to_inline(&ks.default);
         let desc = ks.description.trim();
         out.push_str(&format!("- `{key}` ({ty}, default `{default}`) — {desc}\n"));

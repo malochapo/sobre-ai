@@ -224,13 +224,6 @@ fn append_key_comment(out: &mut String, key_schema: &KeySchema) {
         out.push_str(&key_schema.default.to_string());
         out.push('\n');
     }
-    if let Some(values) = &key_schema.values
-        && !values.is_empty()
-    {
-        out.push_str("#   values: ");
-        out.push_str(&values.join(", "));
-        out.push('\n');
-    }
 }
 
 #[cfg(test)]
