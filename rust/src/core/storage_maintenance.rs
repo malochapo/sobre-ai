@@ -45,7 +45,7 @@ fn prune_quarantined_bm25() -> (u32, u64) {
 }
 
 /// Run a silent maintenance pass: prune quarantined BM25 indexes and saved
-/// sessions older than [`SESSION_MAX_AGE_DAYS`]. Safe to call from the MCP
+/// sessions older than `SESSION_MAX_AGE_DAYS` days. Safe to call from the MCP
 /// server.
 pub fn run_quiet() {
     let sessions_removed =
