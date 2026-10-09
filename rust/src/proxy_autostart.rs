@@ -149,6 +149,27 @@ pub fn install(port: u16, quiet: bool) -> bool {
     }
 }
 
+/// Stops sobre's proxy wherever it runs: the autostart service, then the
+/// proxy answering on the configured port and on the port the last one was
+/// started on (`proxy start --port N`, or one an MCP server spawned). Only a
+/// process that identifies itself as sobre's proxy is signalled.
+pub fn stop_everywhere(quiet: bool) {
+    stop();
+    let mut ports = vec![crate::proxy_setup::default_port()];
+    if let Some(port) = crate::proxy_setup::last_started_port()
+        && !ports.contains(&port)
+    {
+        ports.push(port);
+    }
+    for port in ports {
+        if let Some(pid) = stop_proxy_on_port(port)
+            && !quiet
+        {
+            println!("  ✓ Proxy stopped (PID {pid}, port {port})");
+        }
+    }
+}
+
 pub fn stop() {
     #[cfg(target_os = "macos")]
     {
@@ -374,11 +395,65 @@ fn systemd_path() -> PathBuf {
         .join(format!("{SYSTEMD_SERVICE}.service"))
 }
 
+/// The unit's `Environment=` lines: the directory layout this CLI resolves,
+/// so the proxy systemd starts reads the same config and token (the plist
+/// does the same on macOS).
+#[cfg(target_os = "linux")]
+fn systemd_layout_env() -> String {
+    let mut entries: Vec<(&str, String)> = vec![("RUST_LOG", "info".to_string())];
+    if let Some(home) = dirs::home_dir() {
+        entries.push(("HOME", home.display().to_string()));
+    }
+    for (key, dir) in [
+        ("SOBRE_CONFIG_DIR", crate::core::paths::config_dir()),
+        ("SOBRE_DATA_DIR", crate::core::paths::data_dir()),
+        ("SOBRE_STATE_DIR", crate::core::paths::state_dir()),
+        ("SOBRE_CACHE_DIR", crate::core::paths::cache_dir()),
+    ] {
+        if let Ok(path) = dir {
+            entries.push((key, path.display().to_string()));
+        }
+    }
+    entries.iter().fold(String::new(), |mut out, (key, value)| {
+        out.push_str(&format!(
+            "Environment=\"{key}={}\"\n",
+            systemd_escape(value)
+        ));
+        out
+    })
+}
+
+/// Escapes `"` and `\` inside a double-quoted systemd value.
+#[cfg(target_os = "linux")]
+fn systemd_escape(value: &str) -> String {
+    value.replace('\\', "\\\\").replace('"', "\\\"")
+}
+
+/// Removes the unit file and the `default.target.wants` link `enable` made,
+/// for when the service could not start (no user session bus).
+#[cfg(target_os = "linux")]
+fn remove_systemd_unit(service_path: &std::path::Path) {
+    let _ = std::fs::remove_file(service_path);
+    if let Some(dir) = service_path.parent() {
+        let wants = dir.join("default.target.wants");
+        let _ = std::fs::remove_file(wants.join(format!("{SYSTEMD_SERVICE}.service")));
+        let _ = std::fs::remove_dir(&wants);
+        let _ = std::fs::remove_dir(dir);
+        if let Some(systemd) = dir.parent() {
+            let _ = std::fs::remove_dir(systemd);
+        }
+    }
+}
+
 #[cfg(target_os = "linux")]
 fn install_systemd(binary: &str, port: u16, quiet: bool) -> bool {
-    let service_dir = dirs::home_dir()
-        .unwrap_or_else(|| PathBuf::from("/tmp"))
-        .join(".config/systemd/user");
+    let Some(home) = dirs::home_dir() else {
+        if !quiet {
+            println!("  Cannot resolve the home directory for the systemd user service");
+        }
+        return false;
+    };
+    let service_dir = home.join(".config/systemd/user");
     let _ = std::fs::create_dir_all(&service_dir);
 
     let service_path = service_dir.join(format!("{SYSTEMD_SERVICE}.service"));
@@ -391,7 +466,7 @@ fn install_systemd(binary: &str, port: u16, quiet: bool) -> bool {
     }
 
     let unit = format!(
-        r"[Unit]
+        r#"[Unit]
 Description=sobre API Proxy
 After=network.target
 StartLimitIntervalSec=300
@@ -399,16 +474,17 @@ StartLimitBurst=5
 
 [Service]
 Type=simple
-ExecStart={binary} proxy start --port={port}
+ExecStart="{binary}" proxy start --port={port}
 Restart=on-failure
 RestartSec=5
 StandardOutput=journal
 StandardError=journal
-Environment=RUST_LOG=info
-
+{env}
 [Install]
 WantedBy=default.target
-"
+"#,
+        binary = systemd_escape(binary),
+        env = systemd_layout_env(),
     );
 
     let _ = std::fs::write(&service_path, &unit);
@@ -421,6 +497,11 @@ WantedBy=default.target
         .args(["--user", "enable", "--now", SYSTEMD_SERVICE])
         .output();
 
+    let started = result.as_ref().is_ok_and(|output| output.status.success());
+    if !started {
+        // Nothing half-installed stays behind: no unit, no wants link.
+        remove_systemd_unit(&service_path);
+    }
     if !quiet {
         match &result {
             Ok(o) if o.status.success() => {
@@ -429,15 +510,12 @@ WantedBy=default.target
             }
             Ok(o) => {
                 let err = String::from_utf8_lossy(&o.stderr);
-                println!("  Created service file but enable failed: {err}");
+                println!("  systemd could not start the service: {}", err.trim());
             }
-            Err(e) => {
-                println!("  Created service file at {}", service_path.display());
-                println!("  Could not enable: {e}");
-            }
+            Err(e) => println!("  Could not run systemctl: {e}"),
         }
     }
-    result.is_ok_and(|output| output.status.success())
+    started
 }
 
 #[cfg(target_os = "linux")]
@@ -456,7 +534,7 @@ fn uninstall_systemd(quiet: bool) {
     let _ = std::process::Command::new("systemctl")
         .args(["--user", "disable", SYSTEMD_SERVICE])
         .output();
-    let _ = std::fs::remove_file(&service_path);
+    remove_systemd_unit(&service_path);
     let _ = std::process::Command::new("systemctl")
         .args(["--user", "daemon-reload"])
         .output();

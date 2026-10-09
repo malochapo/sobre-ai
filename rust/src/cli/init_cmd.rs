@@ -99,21 +99,38 @@ fn ask_about_proxy() {
     let _ = std::io::stdin().read_line(&mut input);
     let yes = matches!(input.trim().to_lowercase().as_str(), "y" | "yes");
 
-    if let Err(e) = crate::core::config::Config::update_global(|c| c.proxy.enabled = Some(yes)) {
+    if !yes {
+        if let Err(e) =
+            crate::core::config::Config::update_global(|c| c.proxy.enabled = Some(false))
+        {
+            tracing::warn!("could not persist the proxy choice: {e}");
+        }
+        crate::outln!("  Skipped. Turn it on later with `sobre proxy enable`.");
+        return;
+    }
+    // Same path as `sobre proxy enable`: nothing is recorded unless the
+    // proxy actually runs.
+    let port = crate::proxy_setup::default_port();
+    let started = if crate::proxy_autostart::is_supported() {
+        crate::proxy_autostart::install(port, false)
+    } else {
+        crate::proxy_setup::is_proxy_reachable(port)
+    };
+    if !started {
+        crate::outln!(
+            "  The proxy could not be started, so it stays off. Start it by hand with\n  `sobre proxy start -d`, then run `sobre proxy enable`."
+        );
+        return;
+    }
+    if let Err(e) = crate::core::config::Config::update_global(|c| c.proxy.enabled = Some(true)) {
         tracing::warn!("could not persist the proxy choice: {e}");
         return;
     }
-    if yes {
-        let port = crate::proxy_setup::default_port();
-        crate::proxy_autostart::install(port, false);
-        std::thread::sleep(std::time::Duration::from_millis(500));
-        if let Some(home) = dirs::home_dir() {
-            crate::proxy_setup::install_proxy_env(&home, port, false);
-        }
-        crate::outln!("  Proxy enabled.");
-    } else {
-        crate::outln!("  Skipped. Turn it on later with `sobre proxy enable`.");
+    std::thread::sleep(std::time::Duration::from_millis(500));
+    if let Some(home) = dirs::home_dir() {
+        crate::proxy_setup::install_proxy_env(&home, port, false);
     }
+    crate::outln!("  Proxy enabled.");
 }
 
 /// Semantic search needs a local model. It is downloaded only with consent:

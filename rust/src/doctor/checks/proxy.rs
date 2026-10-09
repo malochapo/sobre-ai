@@ -120,18 +120,8 @@ pub(crate) fn proxy_subscription_conflict_outcome() -> Option<Outcome> {
         return None;
     }
 
-    let settings_path = crate::core::editor_registry::claude_state_dir(&home).join("settings.json");
-    let content = std::fs::read_to_string(&settings_path).ok()?;
-    let doc: serde_json::Value = crate::core::jsonc::parse_jsonc(&content).ok()?;
-
-    let base_url = doc
-        .get("env")
-        .and_then(|e| e.get("ANTHROPIC_BASE_URL"))
-        .and_then(|v| v.as_str())
-        .unwrap_or("");
-
-    // No local redirect → nothing to warn about.
-    if !crate::proxy_setup::is_local_sobre_url(base_url) {
+    // No redirect of sobre's → nothing to warn about.
+    if !crate::proxy_setup::claude_points_at_proxy(&home) {
         return None;
     }
 

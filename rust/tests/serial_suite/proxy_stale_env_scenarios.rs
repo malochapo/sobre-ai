@@ -18,6 +18,12 @@ impl TestEnv {
         std::fs::create_dir_all(&data_dir).unwrap();
         // SAFETY: `#[serial]` (serial_test) ensures no other test in this binary runs concurrently.
         unsafe { std::env::set_var("SOBRE_DATA_DIR", &data_dir) };
+        // The proxy wiring record lives in the state dir, the port in the
+        // config dir: both stay in the sandbox.
+        // SAFETY: `#[serial]` (serial_test) ensures no other test in this binary runs concurrently.
+        unsafe { std::env::set_var("SOBRE_STATE_DIR", home.join("state")) };
+        // SAFETY: `#[serial]` (serial_test) ensures no other test in this binary runs concurrently.
+        unsafe { std::env::set_var("SOBRE_CONFIG_DIR", home.join("config")) };
         // SAFETY: `#[serial]` (serial_test) ensures no other test in this binary runs concurrently.
         unsafe { std::env::set_var("CLAUDE_CONFIG_DIR", home.join(".claude")) };
         // SAFETY: `#[serial]` (serial_test) ensures no other test in this binary runs concurrently.
@@ -43,6 +49,10 @@ impl Drop for TestEnv {
         // SAFETY: `#[serial]` (serial_test) ensures no other test in this binary runs concurrently.
         unsafe { std::env::remove_var("SOBRE_DATA_DIR") };
         // SAFETY: `#[serial]` (serial_test) ensures no other test in this binary runs concurrently.
+        unsafe { std::env::remove_var("SOBRE_STATE_DIR") };
+        // SAFETY: `#[serial]` (serial_test) ensures no other test in this binary runs concurrently.
+        unsafe { std::env::remove_var("SOBRE_CONFIG_DIR") };
+        // SAFETY: `#[serial]` (serial_test) ensures no other test in this binary runs concurrently.
         unsafe { std::env::remove_var("CLAUDE_CONFIG_DIR") };
         // SAFETY: `#[serial]` (serial_test) ensures no other test in this binary runs concurrently.
         unsafe { std::env::remove_var("CODEX_HOME") };
@@ -50,22 +60,25 @@ impl Drop for TestEnv {
 }
 
 // ---------------------------------------------------------------------------
-// Scenario 1: is_local_sobre_url correctly identifies local proxy URLs
+// Scenario 1: only the proxy's own address is taken for the proxy
 // ---------------------------------------------------------------------------
 
 #[test]
-fn scenario_local_url_detection() {
-    use sobre::proxy_setup::is_local_sobre_url;
-
-    assert!(is_local_sobre_url("http://127.0.0.1:4444"));
-    assert!(is_local_sobre_url("http://localhost:4444"));
-    assert!(is_local_sobre_url("http://127.0.0.1:5555"));
-    assert!(is_local_sobre_url("http://localhost:3333"));
-
-    assert!(!is_local_sobre_url("https://api.anthropic.com"));
-    assert!(!is_local_sobre_url("https://proxy.company.com:4444"));
-    assert!(!is_local_sobre_url(""));
-    assert!(!is_local_sobre_url("http://192.168.1.1:4444"));
+#[serial_test::serial]
+fn scenario_other_local_endpoints_are_not_the_proxy() {
+    let env = TestEnv::new();
+    for url in [
+        "http://localhost:11434",
+        "http://127.0.0.1:4000",
+        "https://api.anthropic.com",
+    ] {
+        env.set_claude_settings(&format!(r#"{{"env": {{"ANTHROPIC_BASE_URL": "{url}"}}}}"#));
+        assert_eq!(
+            sobre::proxy_setup::cleanup_stale_proxy_env(&env.home),
+            0,
+            "{url} is not the proxy"
+        );
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -76,7 +89,10 @@ fn scenario_local_url_detection() {
 #[serial_test::serial]
 fn scenario_cleanup_removes_stale_url() {
     let env = TestEnv::new();
-    env.set_claude_settings(r#"{"env": {"ANTHROPIC_BASE_URL": "http://127.0.0.1:4444"}}"#);
+    let port = sobre::proxy_setup::default_port();
+    env.set_claude_settings(&format!(
+        r#"{{"env": {{"ANTHROPIC_BASE_URL": "http://127.0.0.1:{port}"}}}}"#
+    ));
 
     let cleaned = sobre::proxy_setup::cleanup_stale_proxy_env(&env.home);
     assert!(cleaned > 0, "should have cleaned stale URL");
@@ -169,17 +185,20 @@ fn scenario_cleanup_empty_env_object() {
 }
 
 // ---------------------------------------------------------------------------
-// Scenario 8: cleanup with localhost variant
+// Scenario 8: sobre writes 127.0.0.1; a localhost URL is the user's
 // ---------------------------------------------------------------------------
 
 #[test]
 #[serial_test::serial]
-fn scenario_cleanup_localhost_variant() {
+fn scenario_cleanup_leaves_a_localhost_url() {
     let env = TestEnv::new();
-    env.set_claude_settings(r#"{"env": {"ANTHROPIC_BASE_URL": "http://localhost:4444"}}"#);
+    let port = sobre::proxy_setup::default_port();
+    env.set_claude_settings(&format!(
+        r#"{{"env": {{"ANTHROPIC_BASE_URL": "http://localhost:{port}"}}}}"#
+    ));
 
     let cleaned = sobre::proxy_setup::cleanup_stale_proxy_env(&env.home);
-    assert!(cleaned > 0, "should clean localhost variant too");
+    assert_eq!(cleaned, 0, "sobre never writes localhost");
 }
 
 // ---------------------------------------------------------------------------
@@ -190,9 +209,10 @@ fn scenario_cleanup_localhost_variant() {
 #[serial_test::serial]
 fn scenario_cleanup_preserves_other_env_vars() {
     let env = TestEnv::new();
-    env.set_claude_settings(
-        r#"{"env": {"ANTHROPIC_BASE_URL": "http://127.0.0.1:4444", "OTHER_VAR": "keep_me"}, "hooks": {"PreToolUse": []}}"#,
-    );
+    let port = sobre::proxy_setup::default_port();
+    env.set_claude_settings(&format!(
+        r#"{{"env": {{"ANTHROPIC_BASE_URL": "http://127.0.0.1:{port}", "OTHER_VAR": "keep_me"}}, "hooks": {{"PreToolUse": []}}}}"#
+    ));
 
     let cleaned = sobre::proxy_setup::cleanup_stale_proxy_env(&env.home);
     assert!(cleaned > 0);
@@ -230,24 +250,27 @@ fn scenario_has_stale_url_detection() {
         "remote URL is not stale"
     );
 
-    env.set_claude_settings(r#"{"env": {"ANTHROPIC_BASE_URL": "http://127.0.0.1:4444"}}"#);
+    let port = sobre::proxy_setup::default_port();
+    env.set_claude_settings(&format!(
+        r#"{{"env": {{"ANTHROPIC_BASE_URL": "http://127.0.0.1:{port}"}}}}"#
+    ));
     assert_eq!(
         stale_proxy_agents(&env.home),
         ["Claude Code"],
-        "local URL with proxy disabled is stale"
+        "the proxy's URL with the proxy disabled is stale"
     );
 
     let opencode = env.home.join(".config/opencode");
     std::fs::create_dir_all(&opencode).unwrap();
     std::fs::write(
         opencode.join("opencode.json"),
-        r#"{"provider": {"openai": {"options": {"baseURL": "http://127.0.0.1:5555/v1"}}}}"#,
+        format!(r#"{{"provider": {{"openai": {{"options": {{"baseURL": "http://127.0.0.1:{port}/v1"}}}}}}}}"#),
     )
     .unwrap();
     std::fs::create_dir_all(env.home.join(".codex")).unwrap();
     std::fs::write(
         env.home.join(".codex/config.toml"),
-        "openai_base_url = \"http://127.0.0.1:4444/v1\"\n",
+        format!("openai_base_url = \"http://127.0.0.1:{port}/v1\"\n"),
     )
     .unwrap();
     assert_eq!(
@@ -257,17 +280,20 @@ fn scenario_has_stale_url_detection() {
 }
 
 // ---------------------------------------------------------------------------
-// Scenario 11: cleanup with non-default port
+// Scenario 11: a loopback URL on a port sobre never used is the user's
 // ---------------------------------------------------------------------------
 
 #[test]
 #[serial_test::serial]
-fn scenario_cleanup_non_default_port() {
+fn scenario_cleanup_leaves_another_port() {
     let env = TestEnv::new();
-    env.set_claude_settings(r#"{"env": {"ANTHROPIC_BASE_URL": "http://127.0.0.1:5555"}}"#);
+    let other = sobre::proxy_setup::default_port().wrapping_add(1111);
+    env.set_claude_settings(&format!(
+        r#"{{"env": {{"ANTHROPIC_BASE_URL": "http://127.0.0.1:{other}"}}}}"#
+    ));
 
     let cleaned = sobre::proxy_setup::cleanup_stale_proxy_env(&env.home);
-    assert!(cleaned > 0, "should clean non-default port too");
+    assert_eq!(cleaned, 0, "a URL sobre did not write stays");
 }
 
 // ---------------------------------------------------------------------------

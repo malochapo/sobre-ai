@@ -226,27 +226,28 @@ pub(crate) fn cmd_proxy(rest: &[String]) {
             }
             "enable" => {
                 let force = rest.iter().any(|a| a == "--force");
-                if let Err(e) =
-                    crate::core::config::Config::update_global(|c| c.proxy.enabled = Some(true))
-                {
-                    tracing::warn!("could not persist proxy.enabled: {e}");
-                }
-
                 let port = crate::proxy_setup::default_port();
                 if crate::proxy_autostart::is_supported() {
                     if !crate::proxy_autostart::install(port, false) {
                         crate::errln!(
-                            "\x1b[31m✗\x1b[0m Proxy enable failed; managed service did not acquire port {port}."
+                            "\x1b[31m✗\x1b[0m Proxy enable failed: the service manager did not start the proxy on port {port}. Nothing was changed.\n  Start it by hand with `sobre proxy start -d`, then run `sobre proxy enable` again."
                         );
                         std::process::exit(1);
                     }
                     std::thread::sleep(std::time::Duration::from_millis(500));
-                } else {
+                } else if !crate::proxy_setup::is_proxy_reachable(port) {
                     // No service manager integration here (Windows): the
-                    // agents are still wired, and the proxy is started by hand.
-                    crate::outln!(
-                        "  No autostart on this platform: start the proxy with `sobre proxy start -d --port {port}`."
+                    // proxy is started by hand, and only a running proxy is
+                    // wired into the agents.
+                    crate::errln!(
+                        "No autostart on this platform. Start the proxy first with `sobre proxy start -d --port {port}`,\nthen run `sobre proxy enable` again. Nothing was changed."
                     );
+                    std::process::exit(1);
+                }
+                if let Err(e) =
+                    crate::core::config::Config::update_global(|c| c.proxy.enabled = Some(true))
+                {
+                    tracing::warn!("could not persist proxy.enabled: {e}");
                 }
 
                 let home = dirs::home_dir().unwrap_or_default();
@@ -263,10 +264,17 @@ pub(crate) fn cmd_proxy(rest: &[String]) {
                 }
 
                 crate::proxy_autostart::uninstall(false);
+                crate::proxy_autostart::stop_everywhere(false);
                 let home = dirs::home_dir().unwrap_or_default();
-                crate::proxy_setup::uninstall_proxy_env(&home, false);
+                let unwired = crate::proxy_setup::uninstall_proxy_env(&home, false);
 
-                crate::outln!("\x1b[32m✓\x1b[0m Proxy disabled. Original endpoint restored.");
+                if unwired > 0 {
+                    crate::outln!(
+                        "\x1b[32m✓\x1b[0m Proxy disabled; the agents sobre had pointed at it are back on their own settings."
+                    );
+                } else {
+                    crate::outln!("\x1b[32m✓\x1b[0m Proxy disabled. No agent pointed at it.");
+                }
                 crate::outln!("  Re-enable anytime: sobre proxy enable");
             }
             "cleanup" => {
