@@ -3,7 +3,7 @@ use std::process::{Command, Stdio};
 
 use crate::core::tokens::count_tokens;
 
-use super::exec::{combine_streams, exec_limits, wait_with_limits};
+use super::exec::{combine_streams, exec_byte_cap, wait_collecting};
 
 pub(super) fn exec_buffered(command: &str, shell: &str, shell_flag: &str) -> i32 {
     #[cfg(windows)]
@@ -38,15 +38,12 @@ pub(super) fn exec_buffered(command: &str, shell: &str, shell_flag: &str) -> i32
     if isolate {
         // Piped stdin lets callers legitimately pipe data.
         cmd.stdin(Stdio::piped());
-        #[cfg(unix)]
-        {
-            use std::os::unix::process::CommandExt as _;
-            cmd.process_group(0);
-        }
     }
+    // The command stays in sobre's process group and gets the environment
+    // it was given: a host that stops the command it wrapped stops it all,
+    // and it runs as it would have without sobre.
     super::reentry::mark_child(&mut cmd);
     super::platform::apply_utf8_locale(&mut cmd);
-    super::platform::apply_profile_free_env(&mut cmd);
     let child = cmd.spawn();
 
     let mut child = match child {
@@ -83,8 +80,7 @@ pub(super) fn exec_buffered(command: &str, shell: &str, shell_flag: &str) -> i32
             .ok();
     }
 
-    let (max_bytes, timeout) = exec_limits(command);
-    let output = wait_with_limits(child, max_bytes, timeout, isolate);
+    let output = wait_collecting(child, exec_byte_cap(command));
 
     let exit_code = output.status.code().unwrap_or(1);
     let stdout =

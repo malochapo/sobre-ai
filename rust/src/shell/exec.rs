@@ -1,145 +1,113 @@
 use std::io::{self, Read};
 use std::process::{Child, Command, Output, Stdio};
-use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex, mpsc};
 
 use crate::core::config;
 
-/// Wait for a child process with output-size and time limits.
-/// Kills the process if either limit is exceeded, returning what was
-/// captured so far. Prevents unbounded memory growth on commands that
-/// produce massive output (e.g. `rg -i "pattern"` over a large tree).
-///
-/// `kill_group` (Unix): the child was spawned into its own process group
-/// (`process_group(0)`), so a timeout kill signals the whole group. Killing
-/// only the direct child (a shell) leaves orphaned grandchildren holding the
-/// stdout/stderr pipe write ends — the reader threads then never see EOF and
-/// the join below blocks forever, wedging the caller *despite* the timeout
-/// having fired (an orphaned `rg` kept a Cursor shell session dead
-/// for hours).
-pub(super) fn wait_with_limits(
-    mut child: Child,
-    max_bytes: usize,
-    timeout: std::time::Duration,
-    kill_group: bool,
-) -> Output {
-    const STDERR_LIMIT: usize = 512 * 1024;
+/// The most stderr `sobre -c` keeps.
+const STDERR_LIMIT: usize = 512 * 1024;
 
-    let stdout_pipe = child.stdout.take();
-    let stderr_pipe = child.stderr.take();
-    let start = std::time::Instant::now();
-    let truncated = Arc::new(AtomicBool::new(false));
+/// How long the readers get to reach EOF once the command has exited.
+const READER_GRACE: std::time::Duration = std::time::Duration::from_secs(2);
 
-    let stdout_truncated_flag = Arc::clone(&truncated);
-    let stdout_handle = std::thread::spawn(move || {
-        let Some(mut pipe) = stdout_pipe else {
-            return (Vec::new(), false);
-        };
-        let mut buf = Vec::with_capacity(max_bytes.min(64 * 1024));
-        let mut chunk = [0u8; 8192];
-        loop {
-            match pipe.read(&mut chunk) {
-                Ok(0) => break,
-                Ok(n) => {
-                    if buf.len() + n > max_bytes {
-                        let remaining = max_bytes.saturating_sub(buf.len());
-                        buf.extend_from_slice(&chunk[..remaining]);
-                        stdout_truncated_flag.store(true, Ordering::Relaxed);
-                        return (buf, true);
+/// What a reader kept of one pipe, and how many bytes it read past its cap.
+#[derive(Default)]
+struct Kept {
+    bytes: Vec<u8>,
+    dropped: u64,
+}
+
+/// Reads `pipe` to its end on a thread: the first `cap` bytes are kept, the
+/// rest is read and counted, never left in the pipe (a full pipe would stop
+/// the command). The receiver fires at EOF.
+fn drain<R: Read + Send + 'static>(
+    pipe: Option<R>,
+    cap: usize,
+) -> (Arc<Mutex<Kept>>, mpsc::Receiver<()>) {
+    let shared = Arc::new(Mutex::new(Kept::default()));
+    let (done_tx, done_rx) = mpsc::channel();
+    let writer = Arc::clone(&shared);
+    std::thread::spawn(move || {
+        if let Some(mut pipe) = pipe {
+            let mut chunk = [0u8; 8192];
+            loop {
+                match pipe.read(&mut chunk) {
+                    Ok(0) => break,
+                    Ok(n) => {
+                        let mut kept = writer
+                            .lock()
+                            .unwrap_or_else(std::sync::PoisonError::into_inner);
+                        let take = cap.saturating_sub(kept.bytes.len()).min(n);
+                        kept.bytes.extend_from_slice(&chunk[..take]);
+                        kept.dropped += (n - take) as u64;
                     }
-                    buf.extend_from_slice(&chunk[..n]);
+                    Err(ref e) if e.kind() == std::io::ErrorKind::Interrupted => {}
+                    Err(_) => break,
                 }
-                Err(ref e) if e.kind() == std::io::ErrorKind::Interrupted => {}
-                Err(_) => break,
             }
         }
-        (buf, false)
+        let _ = done_tx.send(());
     });
+    (shared, done_rx)
+}
 
-    let stderr_truncated_flag = Arc::clone(&truncated);
-    let stderr_handle = std::thread::spawn(move || {
-        let Some(mut pipe) = stderr_pipe else {
-            return (Vec::new(), false);
-        };
-        let mut buf = Vec::new();
-        let mut chunk = [0u8; 4096];
-        loop {
-            match pipe.read(&mut chunk) {
-                Ok(0) => break,
-                Ok(n) => {
-                    if buf.len() + n > STDERR_LIMIT {
-                        let remaining = STDERR_LIMIT.saturating_sub(buf.len());
-                        buf.extend_from_slice(&chunk[..remaining]);
-                        stderr_truncated_flag.store(true, Ordering::Relaxed);
-                        return (buf, true);
-                    }
-                    buf.extend_from_slice(&chunk[..n]);
-                }
-                Err(ref e) if e.kind() == std::io::ErrorKind::Interrupted => {}
-                Err(_) => break,
-            }
-        }
-        (buf, false)
-    });
-
-    let mut timed_out = false;
-    loop {
-        let hit_timeout = start.elapsed() > timeout;
-        if hit_timeout || truncated.load(Ordering::Relaxed) {
-            kill_child(&mut child, kill_group);
-            let _ = child.wait();
-            timed_out = hit_timeout;
-            break;
-        }
-        match child.try_wait() {
-            Ok(Some(_)) | Err(_) => break,
-            Ok(None) => std::thread::sleep(std::time::Duration::from_millis(50)),
-        }
-    }
-
-    let (mut stdout_buf, stdout_truncated) = stdout_handle.join().unwrap_or_default();
-    let (mut stderr_buf, stderr_truncated) = stderr_handle.join().unwrap_or_default();
-
-    if timed_out || stdout_truncated {
-        let notice = format!(
-            "\n[sobre: output truncated at {} MB / {}s limit]\n",
-            max_bytes / (1024 * 1024),
-            timeout.as_secs()
-        );
-        stdout_buf.extend_from_slice(notice.as_bytes());
-    }
-    if stderr_truncated {
-        let notice = format!(
-            "\n[sobre: stderr truncated at {} KB limit]\n",
-            STDERR_LIMIT / 1024
-        );
-        stderr_buf.extend_from_slice(notice.as_bytes());
-    }
-
+/// Waits for a `sobre -c` command to exit and collects its output. The
+/// command runs as it would without sobre: no timeout of sobre's own (the
+/// host has one), and output past `max_bytes` (stdout) or [`STDERR_LIMIT`]
+/// is read and dropped rather than stopping it; the result says how much.
+/// A background process the command left holding the pipe does not hold
+/// this up past [`READER_GRACE`]; the result says so.
+pub(super) fn wait_collecting(mut child: Child, max_bytes: usize) -> Output {
+    let (out, out_done) = drain(child.stdout.take(), max_bytes);
+    let (err, err_done) = drain(child.stderr.take(), STDERR_LIMIT);
     let status = child.wait().unwrap_or_else(|_| synthetic_failure_status());
+
+    let deadline = std::time::Instant::now() + READER_GRACE;
+    let wait = |done: &mpsc::Receiver<()>| {
+        done.recv_timeout(deadline.saturating_duration_since(std::time::Instant::now()))
+            .is_ok()
+    };
+    let complete = wait(&out_done) & wait(&err_done);
+    let take = |kept: &Arc<Mutex<Kept>>| {
+        let mut kept = kept
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        (std::mem::take(&mut kept.bytes), kept.dropped)
+    };
+    let (mut stdout, out_dropped) = take(&out);
+    let (mut stderr, err_dropped) = take(&err);
+
+    if out_dropped > 0 {
+        stdout.extend_from_slice(
+            format!(
+                "\n[sobre: {out_dropped} more bytes of output not kept (past {} MB); \
+                 the command ran to the end]\n",
+                max_bytes / (1024 * 1024)
+            )
+            .as_bytes(),
+        );
+    }
+    if err_dropped > 0 {
+        stderr.extend_from_slice(
+            format!(
+                "\n[sobre: {err_dropped} more bytes of stderr not kept (past {} KB)]\n",
+                STDERR_LIMIT / 1024
+            )
+            .as_bytes(),
+        );
+    }
+    if !complete {
+        stdout.extend_from_slice(
+            b"\n[sobre: a background process the command started still holds its output; \
+              what it writes from now on is not shown]\n",
+        );
+    }
 
     Output {
         status,
-        stdout: stdout_buf,
-        stderr: stderr_buf,
+        stdout,
+        stderr,
     }
-}
-
-/// Kill a timed-out child — and, when it owns a process group, every
-/// descendant in that group. SIGKILL to the negative pgid reaps
-/// shells' grandchildren so the captured pipes actually close.
-fn kill_child(child: &mut Child, kill_group: bool) {
-    #[cfg(unix)]
-    if kill_group {
-        let pgid = child.id() as libc::pid_t;
-        if pgid > 0 {
-            // SAFETY: plain syscall; a stale pgid at worst returns ESRCH.
-            unsafe { libc::killpg(pgid, libc::SIGKILL) };
-        }
-    }
-    #[cfg(not(unix))]
-    let _ = kill_group;
-    let _ = child.kill();
 }
 
 /// A synthetic failed `ExitStatus`, used only when `Child::wait()` itself
@@ -228,25 +196,18 @@ const DEFAULT_TIMEOUT: std::time::Duration = std::time::Duration::from_mins(2);
 const HEAVY_MAX_BYTES: usize = 32 * 1024 * 1024; // 32 MB
 const HEAVY_TIMEOUT: std::time::Duration = std::time::Duration::from_mins(10);
 
-pub(super) fn exec_limits(command: &str) -> (usize, std::time::Duration) {
-    let max_bytes = if is_heavy_command(command) {
+/// The most stdout `sobre -c` keeps of `command`.
+pub(super) fn exec_byte_cap(command: &str) -> usize {
+    if is_heavy_command(command) {
         HEAVY_MAX_BYTES
     } else {
         DEFAULT_MAX_BYTES
-    };
-    (max_bytes, shell_timeout(command))
+    }
 }
 
-/// Resolve the timeout `sobre_shell` / `sobre -c` grants a command.
-///
-/// Heavy builds/tests (cargo install/nextest/build, npm ci, git commit/push, …)
-/// get the long ceiling instead of being killed at the 2-minute default, keeping
-/// the MCP path and the interactive hook consistent:
-///
-/// - normal command → config `shell_timeout_secs`, else [`DEFAULT_TIMEOUT`];
-/// - heavy command → the larger of `shell_timeout_secs` and [`HEAVY_TIMEOUT`].
-#[must_use]
-pub(crate) fn shell_timeout(command: &str) -> std::time::Duration {
+/// [`shell_timeout_with_override`] with no per-call override.
+#[cfg(test)]
+fn shell_timeout(command: &str) -> std::time::Duration {
     shell_timeout_with_override(command, None)
 }
 
@@ -255,10 +216,15 @@ pub(crate) fn shell_timeout(command: &str) -> std::time::Duration {
 /// the executor for days.
 const MAX_CALL_TIMEOUT_MS: u64 = 3_600_000; // 1 hour
 
-/// [`shell_timeout`] with an optional per-call override (sobre_shell's
-/// `timeout_ms` arg). Precedence: per-call override (clamped to
-/// [`MAX_CALL_TIMEOUT_MS`], zero ignored) > per-tier config > built-in
-/// heavy/normal ceilings.
+/// The timeout `sobre_shell` grants a command (`sobre -c` sets none: the
+/// host times the command it wrapped). Heavy builds/tests (cargo
+/// install/nextest/build, npm ci, git commit/push, …) get the long ceiling
+/// instead of the 2-minute default:
+///
+/// - per-call `timeout_ms` (clamped to [`MAX_CALL_TIMEOUT_MS`], zero ignored);
+/// - else a normal command → config `shell_timeout_secs`, or [`DEFAULT_TIMEOUT`];
+/// - else a heavy command → the larger of `shell_timeout_secs` and
+///   [`HEAVY_TIMEOUT`].
 #[must_use]
 pub(crate) fn shell_timeout_with_override(
     command: &str,
@@ -582,7 +548,6 @@ fn exec_inherit(command: &str, shell: &str, shell_flag: &str) -> i32 {
         .stderr(Stdio::inherit());
     super::reentry::mark_child(&mut cmd);
     super::platform::apply_utf8_locale(&mut cmd);
-    super::platform::apply_profile_free_env(&mut cmd);
     let status = cmd.status();
 
     match status {
@@ -603,7 +568,6 @@ fn exec_shell_default(command: &str, shell: &str, shell_flag: &str) -> i32 {
         .stderr(Stdio::inherit());
     super::reentry::clear_shell_default_markers(&mut cmd);
     super::platform::apply_utf8_locale(&mut cmd);
-    super::platform::apply_profile_free_env(&mut cmd);
     let status = cmd.status();
 
     match status {
@@ -667,42 +631,49 @@ mod exec_tests {
         assert_eq!(super::combine_streams("", "only stderr", 1), "only stderr");
     }
 
-    #[test]
-    fn wait_with_limits_captures_output() {
-        let child = std::process::Command::new("echo")
-            .arg("hello")
+    #[cfg(unix)]
+    fn piped(args: &[&str]) -> std::process::Child {
+        std::process::Command::new("sh")
+            .args(["-c"])
+            .args(args)
+            .stdin(std::process::Stdio::null())
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped())
             .spawn()
-            .unwrap();
+            .unwrap()
+    }
 
-        let output = super::wait_with_limits(child, 1024, std::time::Duration::from_secs(5), false);
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        assert!(
-            stdout.contains("hello"),
-            "expected 'hello' in output: {stdout}"
-        );
+    #[cfg(unix)]
+    #[test]
+    fn wait_collecting_captures_output() {
+        let output = super::wait_collecting(piped(&["echo hello"]), 1024);
+        assert!(String::from_utf8_lossy(&output.stdout).contains("hello"));
         assert!(output.status.success());
     }
 
+    /// J11: output past the cap is read and dropped, labelled; the command
+    /// is never stopped for it.
+    #[cfg(unix)]
     #[test]
-    fn wait_with_limits_truncates_large_output() {
-        // Generate ~100 KB of output, limit to 1 KB
-        let child = std::process::Command::new("sh")
-            .args(["-c", "yes 'aaaa' | head -25000"])
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped())
-            .spawn()
-            .unwrap();
-
-        let output =
-            super::wait_with_limits(child, 1024, std::time::Duration::from_secs(10), false);
+    fn output_past_the_cap_is_dropped_and_the_command_runs_to_the_end() {
+        let dir = tempfile::tempdir().unwrap();
+        let marker = dir.path().join("finished");
+        let script = format!(
+            "yes aaaa | head -25000; yes bbbbbbbbbb | head -200000 >&2; touch {}",
+            marker.display()
+        );
+        let output = super::wait_collecting(piped(&[&script]), 1024);
+        assert!(output.status.success());
+        assert!(marker.exists(), "the command must run to its end");
         let stdout = String::from_utf8_lossy(&output.stdout);
         assert!(
-            stdout.contains("[sobre: output truncated"),
-            "expected truncation notice, got len={}: ...{}",
-            stdout.len(),
-            &stdout[stdout.len().saturating_sub(80)..]
+            stdout.contains("more bytes of output not kept"),
+            "{stdout:.200}"
+        );
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(
+            stderr.contains("more bytes of stderr not kept"),
+            "{stderr:.200}"
         );
     }
 
@@ -718,160 +689,26 @@ mod exec_tests {
         }
     }
 
+    /// A background process left holding the pipe does not hold the result
+    /// back past the grace period.
+    #[cfg(unix)]
     #[test]
-    fn wait_with_limits_truncates_large_stderr() {
-        let child = std::process::Command::new("sh")
-            .args(["-c", "yes 'aaaaaaaaaa' | head -200000 >&2"])
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped())
-            .spawn()
-            .unwrap();
-
-        let output = super::wait_with_limits(
-            child,
-            1024 * 1024,
-            std::time::Duration::from_secs(10),
-            false,
-        );
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        assert!(
-            stderr.contains("[sobre: stderr truncated"),
-            "expected stderr truncation notice, got len={}: ...{}",
-            stderr.len(),
-            &stderr[stderr.len().saturating_sub(80)..]
-        );
-    }
-
-    #[test]
-    fn wait_with_limits_kills_promptly_on_truncation() {
-        let child = std::process::Command::new("yes")
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped())
-            .spawn()
-            .unwrap();
-
+    fn a_background_process_holding_the_pipe_does_not_wedge_the_wait() {
         let start = std::time::Instant::now();
-        let output =
-            super::wait_with_limits(child, 4096, std::time::Duration::from_secs(20), false);
-        let elapsed = start.elapsed();
-
+        let output = super::wait_collecting(piped(&["sleep 30 & echo hi"]), 1024);
         assert!(
-            elapsed < std::time::Duration::from_secs(3),
-            "truncation should kill promptly, took {elapsed:?} (timeout was 20s)"
+            start.elapsed() < std::time::Duration::from_secs(10),
+            "took {:?}",
+            start.elapsed()
         );
         let stdout = String::from_utf8_lossy(&output.stdout);
-        assert!(stdout.contains("[sobre: output truncated"));
-    }
-
-    #[test]
-    fn wait_with_limits_timeout_kills_process() {
-        let child = std::process::Command::new("sleep")
-            .arg("60")
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped())
-            .spawn()
-            .unwrap();
-
-        let start = std::time::Instant::now();
-        let output =
-            super::wait_with_limits(child, 1024, std::time::Duration::from_millis(200), false);
-        let elapsed = start.elapsed();
-
-        assert!(
-            elapsed < std::time::Duration::from_secs(3),
-            "timeout should kill quickly, took {elapsed:?}"
-        );
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        assert!(stdout.contains("[sobre: output truncated"));
-    }
-
-    /// Killing only the direct child (a shell) on timeout leaves its
-    /// grandchildren alive holding the stdout pipe — the reader threads never
-    /// see EOF and `wait_with_limits` blocks forever even though the timeout
-    /// fired. With the child in its own process group and a group kill, the
-    /// whole tree dies and the call returns promptly.
-    #[cfg(unix)]
-    #[test]
-    fn wait_with_limits_group_kill_reaps_grandchildren() {
-        use std::os::unix::process::CommandExt as _;
-        // The shell spawns a grandchild that inherits stdout and sleeps far
-        // beyond the timeout; the shell itself also sleeps so the timeout path
-        // (not natural exit) is exercised.
-        let mut cmd = std::process::Command::new("sh");
-        cmd.args(["-c", "sleep 30 & sleep 30"])
-            .stdin(std::process::Stdio::null())
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped());
-        cmd.process_group(0);
-        let child = cmd.spawn().unwrap();
-        let pgid = child.id() as libc::pid_t;
-
-        let start = std::time::Instant::now();
-        let _ = super::wait_with_limits(child, 1024, std::time::Duration::from_millis(200), true);
-        let elapsed = start.elapsed();
-
-        assert!(
-            elapsed < std::time::Duration::from_secs(5),
-            "group kill must unblock the reader threads, took {elapsed:?}"
-        );
-        // The whole group must be dead, not just the direct child.
-        // A brief grace period lets the kernel finish the kill.
-        let mut group_gone = false;
-        for _ in 0..50 {
-            if process_group_dead(pgid) {
-                group_gone = true;
-                break;
-            }
-            std::thread::sleep(std::time::Duration::from_millis(20));
-        }
-        assert!(group_gone, "process group {pgid} must be fully killed");
-    }
-
-    /// True once no live process remains in group `pgid`. The killed
-    /// grandchild is orphaned and reparented to PID 1; it stays a zombie until
-    /// PID 1 reaps it, which some container inits never do, and
-    /// `killpg(pgid, 0)` still counts a zombie. On Linux, /proc tells a dead
-    /// zombie from a survivor.
-    #[cfg(unix)]
-    fn process_group_dead(pgid: libc::pid_t) -> bool {
-        // SAFETY: signal 0 only probes for existence.
-        if unsafe { libc::killpg(pgid, 0) } == -1 {
-            return true;
-        }
-        cfg!(target_os = "linux") && live_group_members(pgid).is_empty()
-    }
-
-    /// PIDs in group `pgid` whose state is neither zombie nor dead, read from
-    /// /proc/<pid>/stat: `pid (comm) state ppid pgrp ...`.
-    #[cfg(unix)]
-    fn live_group_members(pgid: libc::pid_t) -> Vec<libc::pid_t> {
-        let mut live = Vec::new();
-        for entry in std::fs::read_dir("/proc").expect("/proc must be readable") {
-            let Ok(entry) = entry else { continue };
-            let Ok(pid) = entry.file_name().to_string_lossy().parse::<libc::pid_t>() else {
-                continue;
-            };
-            // A process that exits between read_dir and here has no stat.
-            let Ok(stat) = std::fs::read_to_string(entry.path().join("stat")) else {
-                continue;
-            };
-            // `comm` may contain spaces and parentheses: fields resume after the last ')'.
-            let Some((_, rest)) = stat.rsplit_once(')') else {
-                continue;
-            };
-            let mut fields = rest.split_whitespace();
-            let state = fields.next();
-            let pgrp = fields.nth(1).and_then(|f| f.parse::<libc::pid_t>().ok());
-            if pgrp == Some(pgid) && !matches!(state, Some("Z" | "X")) {
-                live.push(pid);
-            }
-        }
-        live
+        assert!(stdout.contains("hi"), "{stdout}");
+        assert!(stdout.contains("still holds its output"), "{stdout}");
     }
 
     #[test]
     fn heavy_commands_get_higher_byte_limits() {
-        // exec_limits owns the byte ceiling; timeout resolution is covered by
+        // exec_byte_cap owns the byte ceiling; timeout resolution is covered by
         // `shell_timeout_resolves_heavy_normal_and_config_overrides` (which is
         // config-isolated, so these stay deterministic regardless of the
         // operator's config.toml).
@@ -891,7 +728,7 @@ mod exec_tests {
             "cd /foo/bar && cargo build --release",
             "cd /workspace; npm ci",
         ] {
-            let (bytes, _) = super::exec_limits(cmd);
+            let bytes = super::exec_byte_cap(cmd);
             assert_eq!(bytes, super::HEAVY_MAX_BYTES, "heavy byte limit for {cmd}");
         }
     }
@@ -901,7 +738,7 @@ mod exec_tests {
         // Read-only git verbs stay on the default ceiling — only `commit`/`push`
         // (which fire the cargo-heavy hooks) are promoted.
         for cmd in ["echo hello", "git status", "git log --oneline -5"] {
-            let (bytes, _) = super::exec_limits(cmd);
+            let bytes = super::exec_byte_cap(cmd);
             assert_eq!(
                 bytes,
                 super::DEFAULT_MAX_BYTES,

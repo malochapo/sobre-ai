@@ -246,7 +246,7 @@ pub(crate) fn run_call(args: &[String]) -> Result<Called, CallError> {
 
     let is_error = output
         .shell_outcome
-        .is_some_and(|outcome| crate::server::call_tool::is_shell_error(outcome, &output.text));
+        .is_some_and(crate::server::tool_trait::ShellOutcome::is_error);
     Ok(Called {
         text: output.text,
         is_error,

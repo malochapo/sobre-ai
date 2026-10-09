@@ -13,20 +13,9 @@ pub(crate) use support::{CodexHooksFlag, ensure_codex_hooks_enabled, remove_code
 /// directory, quoted or not, or PowerShell's `& "…"` form; or it is the
 /// `hook_binary` the config sets. Another tool's `… hook observe` is not.
 pub(crate) fn is_sobre_hook_command(command: &str) -> bool {
-    let Some(at) = command.find(" hook ") else {
+    let Some(program) = hook_program(command) else {
         return false;
     };
-    let program = command[..at].trim();
-    let program = program.strip_prefix('&').map_or(program, str::trim_start);
-    let program = program
-        .strip_prefix('"')
-        .and_then(|p| p.strip_suffix('"'))
-        .or_else(|| {
-            program
-                .strip_prefix('\'')
-                .and_then(|p| p.strip_suffix('\''))
-        })
-        .unwrap_or(program);
     let name = program.rsplit(['/', '\\']).next().unwrap_or(program);
     let stem = name
         .len()
@@ -35,6 +24,42 @@ pub(crate) fn is_sobre_hook_command(command: &str) -> bool {
         .map_or(name, |i| &name[..i]);
     stem.eq_ignore_ascii_case("sobre")
         || crate::core::portable_binary::hook_binary_override().is_some_and(|b| b == program)
+}
+
+/// The program a hook command `<binary> hook <action>` runs: the text before
+/// ` hook `, without PowerShell's `&` and one level of quotes.
+pub(crate) fn hook_program(command: &str) -> Option<&str> {
+    let at = command.find(" hook ")?;
+    let program = command[..at].trim();
+    let program = program.strip_prefix('&').map_or(program, str::trim_start);
+    Some(
+        program
+            .strip_prefix('"')
+            .and_then(|p| p.strip_suffix('"'))
+            .or_else(|| {
+                program
+                    .strip_prefix('\'')
+                    .and_then(|p| p.strip_suffix('\''))
+            })
+            .unwrap_or(program),
+    )
+}
+
+/// `path` as one word for the shell a host runs commands through: as it is
+/// when it holds nothing a shell treats specially, else single-quoted on
+/// Unix and double-quoted on Windows (`C:\Users\Jane Doe\…`).
+pub(crate) fn shell_word(path: &str) -> String {
+    let plain = !path.is_empty()
+        && path
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || "/\\._-:+@,=~".contains(c));
+    if plain {
+        path.to_string()
+    } else if cfg!(windows) {
+        format!("\"{path}\"")
+    } else {
+        format!("'{}'", path.replace('\'', "'\\''"))
+    }
 }
 
 /// Resolve the sobre binary to an **absolute** path for generated hook
@@ -56,7 +81,8 @@ fn resolve_binary_path() -> String {
 }
 
 /// Binary token for **shell-executed** hook commands (`<binary> hook compress`
-/// and the like in Claude/Cursor/Gemini/… hook configs).
+/// and the like in Claude/Cursor/Gemini/… hook configs): the absolute path,
+/// quoted when it holds a space ([`shell_word`]).
 ///
 /// Portable override: the
 /// `hook_binary`, is emitted **verbatim** — for settings files synced across
@@ -69,7 +95,13 @@ fn resolve_hook_command_binary() -> String {
     if let Some(portable) = crate::core::portable_binary::hook_binary_override() {
         return portable;
     }
-    resolve_binary_path()
+    shell_word(&resolve_binary_path())
+}
+
+/// The hook binary unquoted, for a host whose hook format quotes it itself
+/// (Copilot's `bash`/`powershell` fields).
+fn hook_binary_unquoted() -> String {
+    crate::core::portable_binary::hook_binary_override().unwrap_or_else(resolve_binary_path)
 }
 
 pub fn to_bash_compatible_path(path: &str) -> String {

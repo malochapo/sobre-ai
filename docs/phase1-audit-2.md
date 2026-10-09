@@ -77,7 +77,7 @@ was added.
 |---|---|---|
 | G | Regressions and half-done phase-1 fixes | done (#51, #52, #53, #54, #55) |
 | H | The user's machine: `init`, `uninstall`, `config`, proxy wiring | done (#51, #56, #57, #58) |
-| J | Editing and shell tools | open |
+| J | Editing and shell tools | done (#59, #60) |
 | K | Reading and search tools | open |
 | L | Graph, session, knowledge, review, `gain` | open |
 | M | Code: dense-only code in the default build, leftovers, Windows lints | open |
@@ -600,21 +600,25 @@ documented:
   reaches this since B9.
   Done: only a complete escalation is recorded; a partial one says which
   lines it shows.
-- [ ] **J7 Non-ASCII commands get ids `sobre_expand` refuses.** The id slug
+- [x] **J7 Non-ASCII commands get ids `sobre_expand` refuses.** The id slug
   keeps Unicode letters (`shell/redact.rs:25-35`); the resolver accepts
-  ASCII only (`proxy/ccr.rs:124-138`).
-- [ ] **J8 `isError` in `sobre_shell`** (`server/call_tool.rs:359-379`).
+  ASCII only (`proxy/ccr.rs:124-138`). (#60) Done: the slug is ASCII.
+- [x] **J8 `isError` in `sobre_shell`** (`server/call_tool.rs:359-379`).
   - Exit 1 with output is not an error; exit 1 without output is.
   - sobre's own failures (a missing `cwd`, an unknown background job) are
     not errors.
   - Decision 5.
-- [ ] **J9 Background job ids come from the command text**
+  - Done (#60): any non-zero exit sets `isError` and `exitCode`, and the
+    text, output included, is unchanged; sobre's own failures exit 1, so
+    they are errors too. `sobre call` follows the same rule.
+- [x] **J9 Background job ids come from the command text**
   (`server/background_shell.rs:84-131,186-200`).
   - Starting a command again while the first run is going returns the
     first run's output.
   - A foreground run of the same command deletes the background result.
   - Same class as B7. Fix: one id per launch.
-- [ ] **J10 `sobre_checkpoint`** (`core/git/shadow.rs:136-172,264-279`).
+  - Done (#60): `shell_<pid>_<n>`, one per launch.
+- [x] **J10 `sobre_checkpoint`** (`core/git/shadow.rs:136-172,264-279`).
   - `restore` runs `git checkout <ref> -- .` with no snapshot first: every
     change since the checkpoint, the user's included, is lost with no way
     back.
@@ -624,7 +628,12 @@ documented:
     worktree with HEAD; the schema says `HEAD~1..HEAD`.
   - Fix: snapshot before `restore`; say what was not restored; follow the
     schema.
-- [ ] **J11 `sobre -c` kills the command.** *Invariant 5: the wrapped
+  - Done (#60): `restore` checkpoints the tree first and names that
+    checkpoint as the undo; it lists the excludes and says files created
+    since are left in place. `diff` runs from `from` (default: the last
+    checkpoint) to `to` (default: the working tree), and the schema says
+    so.
+- [x] **J11 `sobre -c` kills the command.** *Invariant 5: the wrapped
   command must run as the original would.*
   - It kills the command past 512 KB of stderr, 8 MB of stdout or the
     2-minute default timeout (`shell/exec.rs:85-93,225-229`).
@@ -633,7 +642,16 @@ documented:
   - It clears `BASH_ENV` and `ENV`.
   - Fix: past the cap, keep draining and drop the excess, labelled; no
     timeout of its own (the host has one); keep the environment.
-- [ ] **J12 Hook commands break when the binary path holds a space.**
+  - Done (#60):
+    - output past the cap is read and dropped, with "N more bytes of
+      output not kept … the command ran to the end";
+    - there is no timeout and no kill;
+    - `BASH_ENV`/`ENV` are left as they are;
+    - the command stays in sobre's process group, so the host's own stop
+      reaches it;
+    - a background process left holding the pipe no longer holds the
+      result past 2 s, and the result says so.
+- [x] **J12 Hook commands break when the binary path holds a space.**
   - Claude, Cursor, Gemini, Codex and Windsurf hooks are built as
     `format!("{binary} hook …")`, unquoted (`hooks/agents/claude.rs:166-168`,
     `hooks/agents/cursor.rs:62,67`, `hooks/agents/gemini.rs:33-42`,
@@ -650,6 +668,15 @@ documented:
     inside single quotes gets expanded.
   - Fix: quote the binary in every hook and in the rewrite; parse quoted
     paths in `doctor`.
+  - Done (#60):
+    - every hook command quotes a binary path that needs it: single
+      quotes on Unix, double quotes on Windows;
+    - the Cursor/Gemini rewrite does the same on Unix;
+    - on Windows, where the host's shell may be cmd or PowerShell, a
+      command or binary path that needs more than plain double quotes is
+      left as written;
+    - `doctor` reads hook commands from the file's JSON strings and
+      unquotes the program.
 - [x] **J13 The syntax check blocks writes.** (#59) *Invariant 5.*
   - An edit that leaves a syntax error is refused.
   - `validate_syntax=false` is not honoured by `replace_symbol` and
@@ -660,14 +687,16 @@ documented:
     symbol edits, dry runs) writes, then reports "⚠ syntax: this edit
     leaves a syntax error near line N". `validate_syntax` and the
     brace-balance count are gone.
-- [ ] **J14 Smaller ones.**
+- [x] **J14 Smaller ones.** (#59, #60)
   - `ops[]` batches are not atomic; the schema says "batch-atomic".
   - `timeout_ms` is described as the command's lifetime; it is enforced as
-    idle time.
+    idle time. Done in #60: the schema and `shell_timeout_secs` say
+    "without new output", with the 1-hour ceiling.
   - `allow_lossy_utf8` rewrites the whole file with U+FFFD, unlabelled, and
     the diff hides it. The error that would need it does not mention it.
   - `agent_runtime_env::capture` never refreshes its timestamp, so the
-    2-hour expiry hits during a session.
+    2-hour expiry hits during a session. Done in #60: a capture a
+    quarter of the TTL old is rewritten.
   - `sobre_refactor` checks for the language server before the action: an
     unknown action answers "pylsp not found".
   - `sobre_patch`'s not-found error names `old_string` for the parameter
@@ -685,13 +714,15 @@ documented:
     - an unknown `sobre_refactor` action is refused before any language
       server starts.
 
-- [ ] **J15 Compressed `git log --stat` states wrong totals.** On this
+- [x] **J15 Compressed `git log --stat` states wrong totals.** (#60) On this
   repository's `git log -n 40 --stat`, the hook prints `[40 commits,
   +0/-119 total]`; the real totals are +19,855/−116,368.
   `compress_log_summary` (`core/patterns/git/log.rs:250-258,288-293`)
   counts lines that start with `+` or `-`, which in `--stat` output are
   bullet lines from commit messages. Fix: read the "insertions(+),
   deletions(-)" lines, or print no total.
+  Done: the totals are the stat summary lines' sum; with only a diff, only
+  the diff's hunk lines count.
 
 ## Lot K — reading and search tools
 

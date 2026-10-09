@@ -44,9 +44,9 @@ ANTIPATTERN: Never touches the user's repository — completely isolated shadow 
                         "description": "snapshot|log|diff|restore (default: log)"
                     },
                     "message": { "type": "string", "description": "Label for the snapshot (action=snapshot only)" },
-                    "from": { "type": "string", "description": "Base checkpoint SHA for diff (default: HEAD~1, action=diff only)" },
-                    "to": { "type": "string", "description": "Target checkpoint SHA for diff (default: HEAD, action=diff only)" },
-                    "ref": { "type": "string", "description": "Checkpoint SHA to restore (required for action=restore)" },
+                    "from": { "type": "string", "description": "Checkpoint SHA to diff from (default: the last checkpoint, action=diff only)" },
+                    "to": { "type": "string", "description": "Checkpoint SHA to diff to (default: the working tree, action=diff only)" },
+                    "ref": { "type": "string", "description": "Checkpoint SHA to restore (required for action=restore). The current tree is checkpointed first, so a restore can be undone" },
                     "path": { "type": "string", "description": "File/dir to restore (omit for full restore, action=restore only)" },
                     "limit": { "type": "integer", "description": "Max checkpoints in log (default: 20, max: 200)" }
                 },

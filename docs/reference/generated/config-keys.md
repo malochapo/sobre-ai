@@ -17,7 +17,7 @@ Top-level configuration keys
 - `ignore` (string[], default `[]`) — Globs kept out of the index and project walks, on top of .gitignore (always respected)
 - `passthrough_commands` (string[], default `[]`) — Commands whose output is passed through uncompressed (the command still runs normally)
 - `search_roots` (string[], default `[]`) — Extra directories searched alongside the project root, as the other roots of a multi-root workspace
-- `shell_timeout_secs` (u64?, default `null`) — Shell command timeout (seconds) for normal commands. null = built-in 2-minute default
+- `shell_timeout_secs` (u64?, default `null`) — sobre_shell stops a command after this many seconds without new output (null = 120; builds and tests get at least 600; a call's timeout_ms wins)
 
 ## `[proxy]`
 

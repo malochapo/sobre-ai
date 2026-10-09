@@ -76,31 +76,42 @@ pub(crate) fn cmd_matches_expected(cmd: &str, portable: &str) -> bool {
     false
 }
 
-/// Collect the `sobre` binary tokens that appear immediately before a
-/// ` hook ` invocation inside a hook config file. Managed hook commands look
-/// like `"<binary> hook compress"` / `"<binary> hook observe"`, so the token
-/// directly preceding a
-/// ` hook ` delimiter is the binary the hook will execute.
+/// The programs of the `sobre` hook commands in a hook config file, unquoted:
+/// every JSON string that is a hook command `<binary> hook <action>`
+/// ([`crate::hooks::hook_program`]), so a path with a space reads whole.
 pub(crate) fn hook_binary_refs(content: &str) -> Vec<String> {
-    let pieces: Vec<&str> = content.split(" hook ").collect();
-    if pieces.len() < 2 {
-        return Vec::new();
-    }
-    pieces[..pieces.len() - 1]
+    json_strings(content)
         .iter()
-        .filter_map(|piece| {
-            // The binary token is the trailing run before " hook ", bounded by
-            // whitespace or JSON string delimiters. Splitting on whitespace
-            // alone breaks on minified JSON (e.g. `serde_json::to_string`
-            // output), where there is no space between the opening quote and
-            // the command — we would otherwise capture the whole JSON prefix.
-            piece
-                .rsplit(|c: char| c.is_whitespace() || c == '"' || c == '\'' || c == '`')
-                .find(|tok| !tok.is_empty())
-                .map(|tok| tok.trim_end_matches(',').to_string())
-        })
-        .filter(|tok| tok.contains("sobre"))
+        .filter(|s| crate::hooks::is_sobre_hook_command(s))
+        .filter_map(|s| crate::hooks::hook_program(s).map(str::to_string))
         .collect()
+}
+
+/// The string literals of a JSON (or JSONC) text, unescaped; tolerant of
+/// anything between them, so it reads a file a parser would refuse.
+fn json_strings(content: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut chars = content.chars();
+    while let Some(c) = chars.next() {
+        if c != '"' {
+            continue;
+        }
+        let mut s = String::new();
+        while let Some(c) = chars.next() {
+            match c {
+                '"' => break,
+                '\\' => match chars.next() {
+                    Some('n') => s.push('\n'),
+                    Some('t') => s.push('\t'),
+                    Some(other) => s.push(other),
+                    None => {}
+                },
+                other => s.push(other),
+            }
+        }
+        out.push(s);
+    }
+    out
 }
 
 /// If a hook file references a `sobre` binary path that does not match the

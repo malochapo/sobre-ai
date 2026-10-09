@@ -387,6 +387,20 @@ mod tests {
         );
     }
 
+    /// J15: the totals come from the `--stat` summary lines; a commit
+    /// message's `- bullet` lines are not deletions.
+    #[test]
+    fn git_log_stat_totals_are_the_summary_lines() {
+        let mut output = String::new();
+        for i in 0..5 {
+            output.push_str(&format!(
+                "commit {i:07}abc1234\nAuthor: U <u@e.com>\nDate:   Mon\n\n    msg {i}\n\n    - first point\n    - second point\n\n src/file{i}.rs | 10 ++++------\n 1 file changed, 4 insertions(+), 6 deletions(-)\n\n"
+            ));
+        }
+        let result = compress("git log --stat", &output).unwrap();
+        assert!(result.contains("+20/-30 total"), "{result}");
+    }
+
     #[test]
     fn git_commit_with_feature_branch() {
         let output = "[feature/my-branch abc1234] feat: add new thing\n 3 files changed, 20 insertions(+), 5 deletions(-)\n";

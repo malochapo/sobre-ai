@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use super::super::{resolve_hook_command_binary, to_bash_compatible_path};
+use super::super::{hook_binary_unquoted, to_bash_compatible_path};
 
 fn copilot_hook_entry(binary: &str, action: &str, timeout_sec: u64) -> serde_json::Value {
     let bash_binary = to_bash_compatible_path(binary);
@@ -30,7 +30,7 @@ fn copilot_user_hooks_dir() -> Option<PathBuf> {
 
 /// Copilot's `postToolUse` hooks: shell output compression and observe.
 pub(crate) fn install_copilot_hooks() -> Result<(), String> {
-    let binary = resolve_hook_command_binary();
+    let binary = hook_binary_unquoted();
     let mut compress = copilot_hook_entry(&binary, "compress", 15);
     compress["matcher"] = serde_json::json!("bash|powershell");
     let observe = copilot_hook_entry(&binary, "observe", 5);

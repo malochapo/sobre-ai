@@ -23,7 +23,7 @@ use rmcp::model::{
 use rmcp::service::{RequestContext, RoleServer};
 
 use crate::tools::SobreServer;
-pub(crate) mod call_tool;
+mod call_tool;
 mod post_dispatch;
 pub(crate) mod post_process;
 mod server_handler;

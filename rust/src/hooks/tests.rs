@@ -247,3 +247,23 @@ fn another_tools_observe_hook_is_neither_refreshed_nor_removed() {
     assert_eq!(entries[0]["command"], acme);
     assert_eq!(entries[1]["command"], "/new/path/sobre hook observe");
 }
+
+/// J12: a binary path holding a space is one word in the hook command, and
+/// the command is still recognised as sobre's.
+#[test]
+fn a_binary_path_with_a_space_is_quoted_and_still_ours() {
+    assert_eq!(shell_word("/usr/local/bin/sobre"), "/usr/local/bin/sobre");
+    let quoted = shell_word("/Users/Jane Doe/.local/bin/sobre");
+    if cfg!(windows) {
+        assert_eq!(quoted, "\"/Users/Jane Doe/.local/bin/sobre\"");
+    } else {
+        assert_eq!(quoted, "'/Users/Jane Doe/.local/bin/sobre'");
+        assert_eq!(shell_word("/tmp/it's/sobre"), "'/tmp/it'\\''s/sobre'");
+    }
+    let command = format!("{quoted} hook observe");
+    assert!(is_sobre_hook_command(&command), "{command}");
+    assert_eq!(
+        hook_program(&command),
+        Some("/Users/Jane Doe/.local/bin/sobre")
+    );
+}
