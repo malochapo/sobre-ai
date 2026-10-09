@@ -42,7 +42,7 @@ fn parse_heading(line: &str) -> Option<String> {
 }
 
 /// JSON structure: key-tree with types, depth 3, max 20 keys per level.
-/// Reuses logic from `patterns::json_schema` but produces a read-mode output.
+/// The `map` view of a JSON file.
 pub fn extract_json_structure(content: &str) -> String {
     let trimmed = content.trim();
     let val: serde_json::Value = match serde_json::from_str(trimmed) {
@@ -181,8 +181,17 @@ pub fn extract_toml_structure(content: &str) -> String {
         }
 
         if trimmed.starts_with('[') {
-            if let Some(end) = trimmed.find(']') {
-                current_section = trimmed[1..end].to_string();
+            // `[table]`, or `[[array]]` kept as `[array]` so it prints as
+            // `[[array]]`.
+            let is_array = trimmed.starts_with("[[");
+            let inner = trimmed.trim_start_matches('[');
+            if let Some(end) = inner.find(']') {
+                let name = &inner[..end];
+                current_section = if is_array {
+                    format!("[{name}]")
+                } else {
+                    name.to_string()
+                };
                 sections.entry(current_section.clone()).or_default();
             }
             continue;
@@ -433,6 +442,14 @@ mod tests {
         assert!(structure.contains("name = \"test\""));
         assert!(structure.contains("[dependencies]"));
         assert!(structure.contains("serde = \"1.0\""));
+    }
+
+    #[test]
+    fn toml_structure_shows_arrays_of_tables() {
+        let toml = "[[bin]]\nname = \"sobre\"\npath = \"src/main.rs\"";
+        let structure = extract_toml_structure(toml);
+        assert!(structure.contains("[[bin]]"), "{structure}");
+        assert!(!structure.contains("[[bin]\n"), "{structure}");
     }
 
     #[test]
