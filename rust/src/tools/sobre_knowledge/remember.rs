@@ -390,9 +390,9 @@ pub(crate) fn handle_recall(
 
         if !embedded && (mode == "semantic" || mode == "hybrid") {
             return format!(
-                "mode={mode} recall needs embeddings: a build with --features dense and a \
-                 built index (sobre_knowledge action=\"embeddings_reindex\"). Use mode=auto \
-                 for lexical recall."
+                "mode={mode} recall needs embeddings: the sobre-dense release build (or a \
+                 build with --features dense) and a built index (sobre_knowledge \
+                 action=\"embeddings_reindex\"). Use mode=auto for lexical recall."
             );
         }
 

@@ -32,7 +32,8 @@ impl SearchMode {
             #[cfg(not(feature = "dense"))]
             "dense" | "hybrid" => Err(format!(
                 "mode={mode} needs local embeddings, which this build does not include \
-                 (build with --features dense). Use mode=bm25."
+                 (they come with the sobre-dense release build, or a build with \
+                 --features dense). Use mode=bm25."
             )),
             _ => Err(format!("unknown mode '{mode}'. Use bm25, dense or hybrid.")),
         }

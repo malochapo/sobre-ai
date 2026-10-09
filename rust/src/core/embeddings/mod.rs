@@ -217,7 +217,10 @@ impl EmbeddingEngine {
 
     #[cfg(not(feature = "dense"))]
     pub fn load(_model_dir: &Path) -> anyhow::Result<Self> {
-        anyhow::bail!("Embeddings feature not enabled. Compile with --features dense")
+        anyhow::bail!(
+            "this build has no local embeddings: use the sobre-dense release build, \
+             or build with --features dense"
+        )
     }
 
     /// Load from the default model directory ([`model_directory`](Self::model_directory)).
